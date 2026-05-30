@@ -302,3 +302,121 @@ def get_spending_trend(months: int = 3) -> dict:
         return {"status": "ok", "trend": trend, "current_month_projected": projected}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+def create_subscription(
+    name: str,
+    valor: float,
+    ciclo: str,
+    next_billing: str,
+    conta: str,
+    categoria: str,
+    notes: str = "",
+) -> dict:
+    if ciclo not in ("mensal", "anual"):
+        return {"status": "error", "message": "ciclo deve ser 'mensal' ou 'anual'"}
+    acc = _match_account(conta)
+    if acc is None:
+        return {"status": "error", "message": f"Conta inválida: '{conta}'. Opções: {', '.join(ACCOUNTS)}"}
+    cat = _match_category(categoria)
+    if cat is None:
+        return {"status": "error", "message": f"Categoria inválida: '{categoria}'"}
+
+    sub_id = str(uuid.uuid4())
+    sql = f"""
+        INSERT INTO {_table("subscriptions")} (id, name, valor, ciclo, next_billing, conta, categoria, status, notes, created_at)
+        VALUES (@id, @name, @valor, @ciclo, @next_billing, @conta, @categoria, 'ativa', @notes, CURRENT_TIMESTAMP())
+    """
+    params = [
+        bigquery.ScalarQueryParameter("id", "STRING", sub_id),
+        bigquery.ScalarQueryParameter("name", "STRING", name),
+        bigquery.ScalarQueryParameter("valor", "FLOAT64", float(valor)),
+        bigquery.ScalarQueryParameter("ciclo", "STRING", ciclo),
+        bigquery.ScalarQueryParameter("next_billing", "DATE", next_billing),
+        bigquery.ScalarQueryParameter("conta", "STRING", acc),
+        bigquery.ScalarQueryParameter("categoria", "STRING", cat),
+        bigquery.ScalarQueryParameter("notes", "STRING", notes or None),
+    ]
+
+    try:
+        _run_dml(sql, params)
+        return {"status": "ok", "id": sub_id, "message": f"Assinatura criada: {name} R${float(valor):.2f}/{ciclo}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def list_subscriptions(status: str = "ativa") -> dict:
+    sql = f"""
+        SELECT id, name, valor, ciclo, CAST(next_billing AS STRING) AS next_billing,
+               conta, categoria, status, notes
+        FROM {_table("subscriptions")}
+        WHERE status = @status
+        ORDER BY next_billing
+    """
+    params = [bigquery.ScalarQueryParameter("status", "STRING", status)]
+
+    try:
+        rows = _run_select(sql, params)
+        total_mensal = sum(
+            r["valor"] if r["ciclo"] == "mensal" else r["valor"] / 12
+            for r in rows
+        )
+        return {"status": "ok", "subscriptions": rows, "total_mensal": round(total_mensal, 2)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def update_subscription(
+    id: str,
+    name: str = "",
+    valor: float = None,
+    ciclo: str = "",
+    next_billing: str = "",
+    conta: str = "",
+    status: str = "",
+    notes: str = "",
+) -> dict:
+    sets = ["updated_at = CURRENT_TIMESTAMP()"]
+    params = [bigquery.ScalarQueryParameter("id", "STRING", id)]
+
+    if name:
+        sets.append("name = @name")
+        params.append(bigquery.ScalarQueryParameter("name", "STRING", name))
+    if valor is not None:
+        sets.append("valor = @valor")
+        params.append(bigquery.ScalarQueryParameter("valor", "FLOAT64", float(valor)))
+    if ciclo:
+        if ciclo not in ("mensal", "anual"):
+            return {"status": "error", "message": "ciclo deve ser 'mensal' ou 'anual'"}
+        sets.append("ciclo = @ciclo")
+        params.append(bigquery.ScalarQueryParameter("ciclo", "STRING", ciclo))
+    if next_billing:
+        sets.append("next_billing = @next_billing")
+        params.append(bigquery.ScalarQueryParameter("next_billing", "DATE", next_billing))
+    if conta:
+        acc = _match_account(conta)
+        if acc is None:
+            return {"status": "error", "message": f"Conta inválida: '{conta}'"}
+        sets.append("conta = @conta")
+        params.append(bigquery.ScalarQueryParameter("conta", "STRING", acc))
+    if status:
+        if status not in ("ativa", "pausada", "cancelada"):
+            return {"status": "error", "message": "status deve ser 'ativa', 'pausada' ou 'cancelada'"}
+        sets.append("status = @status")
+        params.append(bigquery.ScalarQueryParameter("status", "STRING", status))
+    if notes:
+        sets.append("notes = @notes")
+        params.append(bigquery.ScalarQueryParameter("notes", "STRING", notes))
+
+    if len(sets) == 1:
+        return {"status": "error", "message": "Nenhum campo para atualizar"}
+
+    sql = f"UPDATE {_table('subscriptions')} SET {', '.join(sets)} WHERE id = @id"
+
+    try:
+        affected = _run_dml(sql, params)
+        if affected == 0:
+            return {"status": "error", "message": f"Assinatura não encontrada: {id}"}
+        return {"status": "ok", "message": "Assinatura atualizada"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
