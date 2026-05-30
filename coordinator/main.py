@@ -83,10 +83,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         session_id=chat_id,
         new_message=new_message,
     ):
-        if event.is_final_response() and event.content and event.content.parts:
+        is_final = event.is_final_response()
+        author = getattr(event, "author", "?")
+        has_text = bool(event.content and event.content.parts)
+        logger.info(f"[event] author={author} is_final={is_final} has_text={has_text}")
+        if has_text:
+            snippet = "".join(p.text or "" for p in event.content.parts)[:120]
+            logger.info(f"[event] text={snippet!r}")
+        if is_final and has_text:
             final_text = "".join(p.text or "" for p in event.content.parts)
 
-    await update.message.reply_text(final_text or "(sem resposta)")
+    await update.message.reply_text(final_text or "(sem resposta)", parse_mode="Markdown")
 
 
 def main() -> None:
