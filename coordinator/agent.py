@@ -1,4 +1,5 @@
 from google.adk.agents import Agent
+from google.adk.tools import AgentTool
 
 # knowledge_tool — Obsidian vault via Vertex AI RAG (Fase 5).
 # Import comentado: VertexAiRagRetrieval só é necessário na Fase 5 e, dependendo
@@ -10,8 +11,10 @@ from google.adk.agents import Agent
 #     similarity_top_k=5,
 # )
 
-# Sub-agents (descomente conforme cada fase for implementada).
-# Fase 1 — Nami (finanças). Pacote local: makima é self-contained.
+# Agentes especialistas como ferramentas (AgentTool) em vez de sub_agents.
+# Com sub_agents, o ADK faz o sub-agente ser a resposta final — Makima nunca
+# gera texto próprio. Com AgentTool, Makima chama o especialista como tool,
+# recebe o resultado e gera ela mesma a resposta final.
 from agents.nami.agent import nami_agent
 # from agents.lucy.agent import lucy_agent
 # from agents.tasks.agent import tasks_agent
@@ -55,7 +58,12 @@ makima = Agent(
 
         Responda sempre em português. Nunca quebre o personagem.
     """,
-    # tools=[knowledge_tool],
-    # Fase 1: apenas o Nami. Demais sub-agentes entram nas próximas fases.
-    sub_agents=[nami_agent],
+    tools=[
+        AgentTool(agent=nami_agent),
+        # AgentTool(agent=lucy_agent),
+        # AgentTool(agent=tasks_agent),
+        # AgentTool(agent=media_agent),
+        # AgentTool(agent=books_agent),
+        # knowledge_tool,
+    ],
 )
