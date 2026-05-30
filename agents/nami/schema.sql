@@ -1,7 +1,7 @@
 -- Run in BigQuery console after creating dataset:
---   bq mk --dataset <GCP_PROJECT_ID>:nami
+--   bq mk --dataset <GCP_PROJECT_ID>:nami_finance_agent
 
-CREATE TABLE IF NOT EXISTS `nami.transactions` (
+CREATE TABLE IF NOT EXISTS `nami_finance_agent.transactions` (
   id              STRING    NOT NULL,
   name            STRING    NOT NULL,
   valor           FLOAT64   NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS `nami.transactions` (
 PARTITION BY data
 CLUSTER BY categoria, conta;
 
-CREATE TABLE IF NOT EXISTS `nami.subscriptions` (
+CREATE TABLE IF NOT EXISTS `nami_finance_agent.subscriptions` (
   id           STRING    NOT NULL,
   name         STRING    NOT NULL,
   valor        FLOAT64   NOT NULL,

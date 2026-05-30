@@ -34,7 +34,7 @@ def _project() -> str:
 
 
 def _table(name: str = "transactions") -> str:
-    return f"`{_project()}.nami.{name}`"
+    return f"`{_project()}.nami_finance_agent.{name}`"
 
 
 def _norm(s: str) -> str:
