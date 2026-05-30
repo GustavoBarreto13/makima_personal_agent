@@ -189,3 +189,116 @@ def delete_transaction(id: str) -> dict:
         return {"status": "ok", "message": "Transação removida"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+def query_expenses(start_date: str = "", end_date: str = "") -> dict:
+    start = start_date or _month_start()
+    end = end_date or _today()
+
+    sql = f"""
+        SELECT id, name, valor, tipo, categoria, conta,
+               CAST(data AS STRING) AS data, source, notes, subscription_id
+        FROM {_table()}
+        WHERE data BETWEEN @start AND @end
+          AND deleted = FALSE
+        ORDER BY data DESC
+    """
+    params = [
+        bigquery.ScalarQueryParameter("start", "DATE", start),
+        bigquery.ScalarQueryParameter("end", "DATE", end),
+    ]
+
+    try:
+        rows = _run_select(sql, params)
+        total = sum(r["valor"] for r in rows)
+        return {"status": "ok", "transactions": rows, "count": len(rows), "total": total}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def get_spending_summary(period: str = "month", group_by: str = "categoria") -> dict:
+    import calendar
+    from datetime import timedelta
+
+    if group_by not in ("categoria", "conta", "tipo"):
+        return {"status": "error", "message": "group_by deve ser 'categoria', 'conta' ou 'tipo'"}
+
+    today = date.today()
+    if period == "month":
+        start = today.replace(day=1).strftime("%Y-%m-%d")
+        end = today.strftime("%Y-%m-%d")
+    elif period == "week":
+        start = (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
+        end = today.strftime("%Y-%m-%d")
+    elif period == "year":
+        start = today.replace(month=1, day=1).strftime("%Y-%m-%d")
+        end = today.strftime("%Y-%m-%d")
+    elif len(period) == 7 and period[4] == "-":
+        year, month = int(period[:4]), int(period[5:])
+        last_day = calendar.monthrange(year, month)[1]
+        start = f"{period}-01"
+        end = f"{period}-{last_day:02d}"
+    else:
+        return {"status": "error", "message": "period inválido. Use 'month', 'week', 'year' ou 'YYYY-MM'"}
+
+    sql = f"""
+        SELECT {group_by}, SUM(valor) AS total
+        FROM {_table()}
+        WHERE data BETWEEN @start AND @end
+          AND deleted = FALSE
+        GROUP BY {group_by}
+        ORDER BY total DESC
+    """
+    params = [
+        bigquery.ScalarQueryParameter("start", "DATE", start),
+        bigquery.ScalarQueryParameter("end", "DATE", end),
+    ]
+
+    try:
+        rows = _run_select(sql, params)
+        summary = {r[group_by]: r["total"] for r in rows}
+        return {
+            "status": "ok",
+            "summary": summary,
+            "total": sum(summary.values()),
+            "period": period,
+            "group_by": group_by,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def get_spending_trend(months: int = 3) -> dict:
+    import calendar
+    from datetime import timedelta
+
+    today = date.today()
+    start = today.replace(day=1)
+    for _ in range(months):
+        start = (start - timedelta(days=1)).replace(day=1)
+
+    sql = f"""
+        SELECT FORMAT_DATE('%Y-%m', data) AS month, SUM(valor) AS total
+        FROM {_table()}
+        WHERE data BETWEEN @start AND @end
+          AND deleted = FALSE
+        GROUP BY month
+        ORDER BY month
+    """
+    params = [
+        bigquery.ScalarQueryParameter("start", "DATE", start.strftime("%Y-%m-%d")),
+        bigquery.ScalarQueryParameter("end", "DATE", today.strftime("%Y-%m-%d")),
+    ]
+
+    try:
+        rows = _run_select(sql, params)
+        trend = {r["month"]: r["total"] for r in rows}
+
+        current_month = today.strftime("%Y-%m")
+        current_spend = trend.get(current_month, 0.0)
+        days_in_month = calendar.monthrange(today.year, today.month)[1]
+        projected = round(current_spend / today.day * days_in_month, 2) if today.day > 0 else 0.0
+
+        return {"status": "ok", "trend": trend, "current_month_projected": projected}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
