@@ -10,7 +10,7 @@ O design completo — arquitetura, fases, schemas BigQuery, custos — está em 
 
 ## Relação com n8n-python-scripts
 
-Este repo **depende** do [`n8n-python-scripts`](https://github.com/Gusstavo42/n8n-python-scripts) como base de implementação. Lá ficam os scripts batch (chamados pelo n8n) e os agentes ADK (importados aqui).
+Este repo **depende** do [`n8n-python-scripts`](https://github.com/Gusstavo42/n8n-python-scripts) C:\Users\gusta\Documents\GitHub\n8n-python-scripts como base de implementação. Lá ficam os scripts batch (chamados pelo n8n) e os agentes ADK (importados aqui).
 
 ### O que vem de lá
 
