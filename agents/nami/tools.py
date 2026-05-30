@@ -65,18 +65,14 @@ def _month_start() -> str:
 
 def _match_category(name: str) -> str | None:
     norm = _norm(name)
-    for c in CATEGORIES:
-        if _norm(c) == norm or _norm(c).startswith(norm):
-            return c
-    return None
+    matches = [c for c in CATEGORIES if _norm(c) == norm or _norm(c).startswith(norm)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _match_account(name: str) -> str | None:
     norm = _norm(name)
-    for a in ACCOUNTS:
-        if _norm(a) == norm or _norm(a).startswith(norm):
-            return a
-    return None
+    matches = [a for a in ACCOUNTS if _norm(a) == norm or _norm(a).startswith(norm)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def create_transaction(
@@ -183,7 +179,7 @@ def update_transaction(
 
 
 def delete_transaction(id: str) -> dict:
-    sql = f"UPDATE {_table()} SET deleted = TRUE, updated_at = CURRENT_TIMESTAMP() WHERE id = @id"
+    sql = f"UPDATE {_table()} SET deleted = TRUE, updated_at = CURRENT_TIMESTAMP() WHERE id = @id AND deleted = FALSE"
     params = [bigquery.ScalarQueryParameter("id", "STRING", id)]
 
     try:
