@@ -1,2 +1,3 @@
-google-adk
-python-telegram-bot
+google-adk          # Agent, InMemoryRunner, sessões em memória
+python-telegram-bot # bot Telegram
+requests            # usado pelo nami tools.py (reusa o main.py do n8n-python-scripts)

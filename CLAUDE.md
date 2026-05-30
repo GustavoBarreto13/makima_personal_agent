@@ -10,41 +10,38 @@ O design completo — arquitetura, fases, schemas BigQuery, custos — está em 
 
 ## Relação com n8n-python-scripts
 
-Este repo **depende** do [`n8n-python-scripts`](https://github.com/Gusstavo42/n8n-python-scripts) C:\Users\gusta\Documents\GitHub\n8n-python-scripts como base de implementação. Lá ficam os scripts batch (chamados pelo n8n) e os agentes ADK (importados aqui).
+Os dois repositórios são **independentes**. O `makima_personal_agent` é self-contained: não importa nada do [`n8n-python-scripts`](https://github.com/Gusstavo42/n8n-python-scripts) (local: `C:\Users\gusta\Documents\GitHub\n8n-python-scripts`) em runtime.
 
-### O que vem de lá
+O `n8n-python-scripts` serve apenas como **referência**: lá ficam os scripts batch (chamados pelo n8n) cuja lógica de acesso às APIs (Notion, Gmail, etc.) usamos como modelo ao escrever as tools dos agentes aqui. Os IDs e schemas são **copiados, não importados** — o custo dessa independência é manter essas constantes em sincronia manualmente se a fonte mudar.
 
-Cada módulo do `n8n-python-scripts` expõe dois arquivos para este repo:
+### Onde vivem os agentes (neste repo)
+
+Cada agente especialista é um pacote local em `agents/`:
 
 ```
-n8n-python-scripts/
-├── nami_finance_agent/
-│   ├── main.py      ← batch, usado pelo n8n (não importamos)
-│   ├── tools.py     ← funções puras de acesso ao Notion
-│   └── agent.py     ← nami_agent (Agent ADK) — importamos aqui
-├── lucy_email_agent/
-│   ├── tools.py     ← funções IMAP/Gmail
-│   └── agent.py     ← lucy_agent
-├── ticktick_notion_sync/
-│   └── agent.py     ← tasks_agent
-├── series_sync/ + gustavoboxd/ + anime_sync/
-│   └── agent.py     ← media_agent (unifica os três)
-└── books_sync/
-    └── agent.py     ← books_agent
+makima_personal_agent/
+├── agents/
+│   ├── nami/        # finanças (Notion)        ← Fase 1 ✅
+│   │   ├── tools.py     # acesso ao Notion (ref.: n8n nami_finance_agent/main.py)
+│   │   └── agent.py     # nami_agent (Agent ADK)
+│   ├── lucy/        # email (Gmail IMAP)        — Fase 2
+│   ├── tasks/       # TickTick/Notion           — Fase 4
+│   ├── media/       # séries+filmes+anime       — Fase 4
+│   └── books/       # livros                    — Fase 4
 ```
 
 ### Como o coordinator importa
 
 ```python
 # coordinator/agent.py
-from nami_finance_agent.agent import nami_agent
-from lucy_email_agent.agent import lucy_agent
-from tasks_agent.agent import tasks_agent
-from media_agent.agent import media_agent
-from books_agent.agent import books_agent
+from agents.nami.agent import nami_agent
+# from agents.lucy.agent import lucy_agent
+# from agents.tasks.agent import tasks_agent
+# from agents.media.agent import media_agent
+# from agents.books.agent import books_agent
 ```
 
-Isso funciona porque o `n8n-python-scripts` é montado no `PYTHONPATH` do container (ver Dockerfile e docker-compose).
+Imports locais — nada de `PYTHONPATH` apontando para outro repo.
 
 ---
 
@@ -56,15 +53,15 @@ Telegram (usuário)
 coordinator/main.py  (python-telegram-bot, sessão por chat_id)
     ↓
 coordinator/agent.py  (Makima — Agent ADK)
-    ├── nami_agent      → Notion (finanças)
-    ├── lucy_agent      → Gmail IMAP
-    ├── tasks_agent     → TickTick / Notion tasks
-    ├── media_agent     → Notion (séries + filmes + anime)
-    ├── books_agent     → Notion (livros)
+    ├── nami_agent      → Notion (finanças)      [agents/nami]
+    ├── lucy_agent      → Gmail IMAP             [agents/lucy]
+    ├── tasks_agent     → TickTick / Notion tasks [agents/tasks]
+    ├── media_agent     → Notion (séries + filmes + anime) [agents/media]
+    ├── books_agent     → Notion (livros)        [agents/books]
     └── knowledge_tool  → Vertex AI RAG (Obsidian vault via Google Drive)
 ```
 
-**Makima não tem tools próprias** — ela só delega. Toda lógica de acesso a APIs fica nos agents especialistas do `n8n-python-scripts`.
+**Makima não tem tools próprias** — ela só delega. Toda lógica de acesso a APIs fica nas tools dos agents especialistas em `agents/`.
 
 ---
 
@@ -79,16 +76,19 @@ coordinator/agent.py  (Makima — Agent ADK)
 
 ```
 TELEGRAM_BOT_TOKEN              # token do bot da Makima (diferente do bot atual do Nami)
-GOOGLE_APPLICATION_CREDENTIALS  # path do service account GCP (mesmo do n8n-python-scripts)
-GCP_PROJECT_ID                  # projeto GCP (mesmo do BigQuery)
-VERTEX_RAG_CORPUS               # ID do corpus Vertex AI RAG (após Fase 5)
+GEMINI_API_KEY                 # chave do Google AI Studio (modelo Gemini dos agentes)
+NOTION_TOKEN                   # token da integração Notion (usado pelas tools do Nami)
+NOTION_DB_TRANSACTIONS         # opcional: override do ID do database 💰 Transações
+GOOGLE_APPLICATION_CREDENTIALS # path do service account GCP (Fase 5 / Vertex)
+GCP_PROJECT_ID                 # projeto GCP (mesmo do BigQuery)
+VERTEX_RAG_CORPUS              # ID do corpus Vertex AI RAG (após Fase 5)
 ```
 
-As credenciais de domínio (Notion, Gmail, TickTick, TMDB, etc.) são as mesmas env vars já configuradas no Dokploy para o `n8n-python-scripts` — o docker-compose compartilha o mesmo `.env` ou as repassa para o container da Makima.
+As credenciais de domínio (Notion, Gmail, TickTick, TMDB, etc.) são as mesmas já configuradas no Dokploy para o `n8n-python-scripts`. Como os repos são independentes, o container da Makima precisa receber essas env vars explicitamente (mesmo `.env` compartilhado ou repassadas no docker-compose) — não há código compartilhado entre os dois.
 
 ### Sessão Telegram
 
-`InMemorySessionService` — uma sessão por `chat_id`. Memória persiste entre mensagens mas reinicia com o container. Aceitável para começar; evoluir para SQLite ou Firestore se reinicializações frequentes forem problema.
+`InMemoryRunner` (cria os serviços de sessão/memória em memória) — uma sessão por `chat_id`. Memória persiste entre mensagens mas reinicia com o container. Aceitável para começar; evoluir para SQLite ou Firestore se reinicializações frequentes forem problema.
 
 ---
 
@@ -97,9 +97,15 @@ As credenciais de domínio (Notion, Gmail, TickTick, TMDB, etc.) são as mesmas 
 ```
 makima_personal_agent/
 ├── coordinator/
-│   ├── main.py          # Telegram bot loop + sessões
+│   ├── main.py          # Telegram bot loop + sessões (ADK)
 │   ├── agent.py         # Makima (Agent ADK) + sub_agents + knowledge_tool
 │   └── Dockerfile
+├── agents/
+│   ├── __init__.py
+│   └── nami/            # agente de finanças (Fase 1)
+│       ├── __init__.py
+│       ├── tools.py     # tools de acesso ao Notion
+│       └── agent.py     # nami_agent
 ├── requirements.txt
 ├── PLAN.md              # design completo, fases, schemas, custos
 └── CLAUDE.md            # este arquivo
@@ -110,11 +116,12 @@ makima_personal_agent/
 ## Dependências
 
 ```
-google-adk          # Agent, InMemoryRunner, InMemorySessionService, VertexAiRagRetrieval
+google-adk          # Agent, InMemoryRunner, sessões em memória, (Fase 5) VertexAiRagRetrieval
 python-telegram-bot # bot Telegram
+requests            # acesso HTTP às APIs (Notion etc.) nas tools dos agentes
 ```
 
-O `n8n-python-scripts` também precisa estar instalável no ambiente — via bind mount no docker-compose ou `pip install -e /path/to/n8n-python-scripts`.
+Como o repo é self-contained, **não há dependência do `n8n-python-scripts`**. Ambiente local: `.venv` própria do makima.
 
 ---
 
@@ -122,20 +129,20 @@ O `n8n-python-scripts` também precisa estar instalável no ambiente — via bin
 
 | Fase | O que fazer | Onde |
 |---|---|---|
-| **1** | Extrair `tools.py` + `agent.py` do Nami. Ligar ao coordinator. Testar via Telegram. | `n8n-python-scripts/nami_finance_agent/` |
-| **2** | Extrair `tools.py` + `agent.py` do Lucy. Adicionar ao coordinator. | `n8n-python-scripts/lucy_email_agent/` |
-| **3** | Adicionar `upsert_bigquery()` nos scripts de sync de mídia/livros. | `n8n-python-scripts/series_sync/`, `gustavoboxd/`, etc. |
-| **4** | Criar agents de tasks, media e books. Adicionar ao coordinator. Ativar morning briefing. | `n8n-python-scripts/` + `coordinator/agent.py` |
+| **1** | Criar `agents/nami/` (tools + agent) com base no Nami. Ligar ao coordinator. Testar via Telegram. | `agents/nami/` (ref.: `n8n-python-scripts/nami_finance_agent/`) |
+| **2** | Criar `agents/lucy/` (tools IMAP/Gmail + agent). Adicionar ao coordinator. | `agents/lucy/` (ref.: `n8n-python-scripts/lucy_email_agent/`) |
+| **3** | Adicionar `upsert_bigquery()` nos scripts de sync de mídia/livros. | `n8n-python-scripts/series_sync/`, `gustavoboxd/`, etc. (batch — fica lá) |
+| **4** | Criar `agents/tasks`, `agents/media`, `agents/books`. Adicionar ao coordinator. Ativar morning briefing. | `agents/` + `coordinator/agent.py` |
 | **5** | Configurar Vertex AI RAG (Google Drive → Data Store). Adicionar `knowledge_tool`. | GCP Console + `coordinator/agent.py` |
 
-**Fase atual: 1** — scaffold criado, sub-agents comentados aguardando `tools.py` no `n8n-python-scripts`.
+**Fase atual: 1 ✅** — `agents/nami/` criado (tools + agent), Nami ligado ao coordinator e validado: imports OK contra `google-adk` e `query_expenses` testado read-only no Notion real. Próximos passos: deploy (substituir o workflow Telegram do Nami no n8n pela Makima) e Fase 2 (Lucy).
 
 ---
 
 ## Como adicionar um novo sub-agent
 
-1. No `n8n-python-scripts`, criar `modulo/tools.py` e `modulo/agent.py`
-2. Neste repo, descomentar o import em `coordinator/agent.py`
+1. Criar o pacote `agents/<dominio>/` com `__init__.py`, `tools.py` e `agent.py` (use os scripts do `n8n-python-scripts` apenas como referência da lógica de API)
+2. Descomentar/adicionar o import em `coordinator/agent.py`
 3. Adicionar o agent à lista `sub_agents` do Makima
 4. Testar: enviar mensagem no Telegram que acione o novo domínio
 
@@ -144,13 +151,16 @@ O `n8n-python-scripts` também precisa estar instalável no ambiente — via bin
 ## Como rodar localmente
 
 ```bash
-# instalar dependências
-pip install -r requirements.txt
-pip install -e /caminho/para/n8n-python-scripts  # para os imports funcionarem
+# criar venv e instalar dependências
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt   # Windows
+# source .venv/bin/activate && pip install -r requirements.txt  # Linux/Mac
 
-# rodar
-TELEGRAM_BOT_TOKEN=xxx python -m coordinator.main
+# variáveis necessárias: TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, NOTION_TOKEN
+python -m coordinator.main
 ```
+
+> Os agentes usam o modelo `gemini-2.0-flash`. O ADK lê a chave do Gemini de `GEMINI_API_KEY` (Google AI Studio) ou usa Vertex se `GOOGLE_GENAI_USE_VERTEXAI=1` estiver setado.
 
 ---
 

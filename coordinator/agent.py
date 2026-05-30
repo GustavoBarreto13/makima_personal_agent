@@ -1,18 +1,22 @@
 from google.adk.agents import Agent
-from google.adk.tools import VertexAiRagRetrieval
 
-# knowledge_tool — Obsidian vault via Vertex AI RAG
+# knowledge_tool — Obsidian vault via Vertex AI RAG (Fase 5).
+# Import comentado: VertexAiRagRetrieval só é necessário na Fase 5 e, dependendo
+# da versão do google-adk, vive em outro módulo. Deixar comentado evita quebrar
+# o import do coordinator antes da hora.
+# from google.adk.tools import VertexAiRagRetrieval
 # knowledge_tool = VertexAiRagRetrieval(
 #     rag_corpus="projects/SEU_PROJETO/locations/us-central1/ragCorpora/SEU_CORPUS",
 #     similarity_top_k=5,
 # )
 
-# Sub-agents (uncomment as each phase is implemented)
-# from nami_finance_agent.agent import nami_agent
-# from lucy_email_agent.agent import lucy_agent
-# from tasks_agent.agent import tasks_agent
-# from media_agent.agent import media_agent
-# from books_agent.agent import books_agent
+# Sub-agents (descomente conforme cada fase for implementada).
+# Fase 1 — Nami (finanças). Pacote local: makima é self-contained.
+from agents.nami.agent import nami_agent
+# from agents.lucy.agent import lucy_agent
+# from agents.tasks.agent import tasks_agent
+# from agents.media.agent import media_agent
+# from agents.books.agent import books_agent
 
 makima = Agent(
     name="makima",
@@ -29,8 +33,12 @@ makima = Agent(
         múltiplos domínios. Consulte a base de conhecimento quando o usuário perguntar
         sobre anotações ou projetos pessoais.
 
+        Atualmente apenas a Nami (finanças) está ativa — para outros domínios,
+        avise que ainda não estão disponíveis.
+
         Responda sempre em português. Seja direta e eficiente.
     """,
     # tools=[knowledge_tool],
-    # sub_agents=[nami_agent, lucy_agent, tasks_agent, media_agent, books_agent],
+    # Fase 1: apenas o Nami. Demais sub-agentes entram nas próximas fases.
+    sub_agents=[nami_agent],
 )

@@ -91,22 +91,29 @@ coordinator/
 
 ### Padrão de cada agente especialista
 
-Cada agente tem:
-- `tools.py` — funções puras extraídas do `main.py` existente
+> **Nota de arquitetura:** os repositórios `makima_personal_agent` e `n8n-python-scripts`
+> são **independentes**. Os agentes ADK vivem **dentro do makima** (em `agents/<dominio>/`),
+> e usam o `main.py` batch do `n8n-python-scripts` apenas como **referência** de como falar
+> com cada API. Nada é importado de um repo para o outro — IDs/schemas são copiados.
+
+Cada agente (em `agents/<dominio>/`) tem:
+- `tools.py` — funções de acesso à API (modeladas a partir do `main.py` de referência)
 - `agent.py` — definição ADK usando as tools
 
-O `main.py` original **não muda** — continua sendo chamado pelo n8n para batch.
+O `main.py` original no `n8n-python-scripts` **não muda** — continua sendo chamado pelo n8n para batch.
 
 ```
-nami_finance_agent/
-├── main.py        ← não muda (batch via n8n)
-├── tools.py       ← NOVO: create_transaction, query_expenses, etc.
-└── agent.py       ← NOVO: Agent(tools=[...])
+makima_personal_agent/agents/
+├── nami/
+│   ├── tools.py    # create_transaction, query_expenses, update, delete
+│   └── agent.py    # nami_agent = Agent(tools=[...])
+└── lucy/
+    ├── tools.py    # fetch_emails, label_and_archive, search_emails
+    └── agent.py    # lucy_agent = Agent(tools=[...])
 
-lucy_email_agent/
-├── main.py        ← não muda (digest diário via n8n)
-├── tools.py       ← NOVO: fetch_emails, label_and_archive, search_emails
-└── agent.py       ← NOVO: Agent(tools=[...])
+n8n-python-scripts/   (apenas referência — não importado)
+├── nami_finance_agent/main.py   # batch via n8n
+└── lucy_email_agent/main.py     # digest diário via n8n
 ```
 
 ---
@@ -313,14 +320,14 @@ Adicionadas ao `coordinator/Dockerfile`. Os scripts existentes não mudam suas d
 ## Migração incremental (ordem recomendada)
 
 ### Fase 1 — Coordinator + Nami
-- Cria `nami_finance_agent/tools.py` extraindo funções do `main.py`
-- Cria `nami_finance_agent/agent.py`
+- Cria `agents/nami/tools.py` (acesso ao Notion, usando o `main.py` do n8n só como referência)
+- Cria `agents/nami/agent.py`
 - Cria `coordinator/` com Nami como único sub-agente
 - Substitui o workflow Telegram do Nami no n8n pelo coordinator
 - **Entrega**: Nami continua funcionando + ganha memória de sessão
 
 ### Fase 2 — Lucy interativa
-- Cria `lucy_email_agent/tools.py`
+- Cria `agents/lucy/tools.py` (IMAP/Gmail, ref.: `n8n-python-scripts/lucy_email_agent/`)
 - Adiciona Lucy ao coordinator
 - O digest batch diário não muda
 - **Entrega**: queries sobre email via Telegram ("tem algo urgente?")
