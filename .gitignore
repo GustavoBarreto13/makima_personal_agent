@@ -16,6 +16,7 @@ venv/
 
 # GCP
 *.json
+.gcp-sa.json
 
 # IDE
 .vscode/
