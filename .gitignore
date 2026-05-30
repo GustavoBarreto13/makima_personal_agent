@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Env
+.env
+.env.local
+
+# Runtime
+*.json.lock
+.last_sync.json
+
+# GCP
+*.json
+
+# IDE
+.vscode/
+.idea/
+
+# Superpowers
+.superpowers/
