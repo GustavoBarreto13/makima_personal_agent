@@ -22,7 +22,18 @@ _bq_client = None
 def _client() -> bigquery.Client:
     global _bq_client
     if _bq_client is None:
-        _bq_client = bigquery.Client(project=_project())
+        creds_json = os.environ.get("GCP_CREDENTIALS_JSON", "")
+        if creds_json:
+            import json
+            from google.oauth2 import service_account
+            info = json.loads(creds_json)
+            creds = service_account.Credentials.from_service_account_info(
+                info,
+                scopes=["https://www.googleapis.com/auth/bigquery"],
+            )
+            _bq_client = bigquery.Client(project=_project(), credentials=creds)
+        else:
+            _bq_client = bigquery.Client(project=_project())
     return _bq_client
 
 
