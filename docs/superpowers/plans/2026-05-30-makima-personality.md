@@ -1,26 +1,25 @@
-from google.adk.agents import Agent
+# Makima Personality Implementation Plan
 
-# knowledge_tool — Obsidian vault via Vertex AI RAG (Fase 5).
-# Import comentado: VertexAiRagRetrieval só é necessário na Fase 5 e, dependendo
-# da versão do google-adk, vive em outro módulo. Deixar comentado evita quebrar
-# o import do coordinator antes da hora.
-# from google.adk.tools import VertexAiRagRetrieval
-# knowledge_tool = VertexAiRagRetrieval(
-#     rag_corpus="projects/SEU_PROJETO/locations/us-central1/ragCorpora/SEU_CORPUS",
-#     similarity_top_k=5,
-# )
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-# Sub-agents (descomente conforme cada fase for implementada).
-# Fase 1 — Nami (finanças). Pacote local: makima é self-contained.
-from agents.nami.agent import nami_agent
-# from agents.lucy.agent import lucy_agent
-# from agents.tasks.agent import tasks_agent
-# from agents.media.agent import media_agent
-# from agents.books.agent import books_agent
+**Goal:** Replace the generic coordinator instruction with a Makima-voiced persona — calm, authoritative, cordial but superior, framing limitations as decisions.
 
-makima = Agent(
-    name="makima",
-    model="gemini-2.0-flash",
+**Architecture:** Single change to the `instruction` string in `coordinator/agent.py`. No new files, no structural changes. Persona is inline in the Agent definition, consistent with how the ADK processes system prompts.
+
+**Tech Stack:** Google ADK (`Agent`), Gemini 2.0 Flash, Python
+
+---
+
+### Task 1: Update Makima instruction in coordinator/agent.py
+
+**Files:**
+- Modify: `coordinator/agent.py`
+
+- [ ] **Step 1: Replace the `instruction` field**
+
+Open `coordinator/agent.py` and replace the current `instruction=` value with:
+
+```python
     instruction="""
         Você é Makima. Coordenadora. Você não é uma assistente — você é quem decide o que
         acontece e quem o faz. Os especialistas sob seu comando executam; você orquestra.
@@ -51,7 +50,19 @@ makima = Agent(
 
         Responda sempre em português. Nunca quebre o personagem.
     """,
-    # tools=[knowledge_tool],
-    # Fase 1: apenas o Nami. Demais sub-agentes entram nas próximas fases.
-    sub_agents=[nami_agent],
-)
+```
+
+- [ ] **Step 2: Verify the file is valid Python**
+
+```bash
+python -c "import ast; ast.parse(open('coordinator/agent.py').read()); print('OK')"
+```
+
+Expected output: `OK`
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add coordinator/agent.py
+git commit -m "feat: give Makima her personality (Chainsaw Man-inspired coordinator persona)"
+```
