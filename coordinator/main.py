@@ -90,6 +90,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if has_text:
             snippet = "".join(p.text or "" for p in event.content.parts)[:120]
             logger.info(f"[event] text={snippet!r}")
+        for part in (event.content.parts if event.content else []):
+            if hasattr(part, "function_response") and part.function_response:
+                fr = part.function_response
+                logger.info(f"[tool] {fr.name} → {str(fr.response)[:300]}")
         if is_final and has_text:
             final_text = "".join(p.text or "" for p in event.content.parts)
 
