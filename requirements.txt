@@ -1,5 +1,7 @@
 google-adk          # Agent, InMemoryRunner, sessões em memória
 python-telegram-bot # bot Telegram
 python-dotenv       # carrega variáveis do arquivo .env
-requests            # acesso HTTP às APIs (Notion etc.) nas tools dos agentes
+requests
+google-cloud-bigquery
+db-dtypes
 tzdata              # base de fusos horários p/ zoneinfo (imagens slim não trazem)
