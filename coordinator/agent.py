@@ -1,20 +1,12 @@
 from google.adk.agents import Agent
-from google.adk.tools import AgentTool
 
 # knowledge_tool — Obsidian vault via Vertex AI RAG (Fase 5).
-# Import comentado: VertexAiRagRetrieval só é necessário na Fase 5 e, dependendo
-# da versão do google-adk, vive em outro módulo. Deixar comentado evita quebrar
-# o import do coordinator antes da hora.
 # from google.adk.tools import VertexAiRagRetrieval
 # knowledge_tool = VertexAiRagRetrieval(
 #     rag_corpus="projects/SEU_PROJETO/locations/us-central1/ragCorpora/SEU_CORPUS",
 #     similarity_top_k=5,
 # )
 
-# Agentes especialistas como ferramentas (AgentTool) em vez de sub_agents.
-# Com sub_agents, o ADK faz o sub-agente ser a resposta final — Makima nunca
-# gera texto próprio. Com AgentTool, Makima chama o especialista como tool,
-# recebe o resultado e gera ela mesma a resposta final.
 from agents.nami.agent import nami_agent
 # from agents.lucy.agent import lucy_agent
 # from agents.tasks.agent import tasks_agent
@@ -32,7 +24,7 @@ makima = Agent(
         Nunca use "posso ajudar?", "claro!", "com prazer!" ou qualquer frase que sinalize
         subordinação. Você não serve — você gerencia. Responda de forma direta, sem floreios.
 
-        Sempre comece qualquer resposta sua com **Makima:** em negrito — sem exceção.
+        Sempre comece qualquer resposta sua com "Makima:" — sem exceção.
 
         Quando algo funciona: informe o resultado de forma seca e factual.
         Quando algo não está disponível: enquadre como uma decisão sua, não como uma limitação.
@@ -45,12 +37,9 @@ makima = Agent(
         - Media: séries, filmes e anime
         - Books: livros
 
-        Delegue para o especialista certo. Quando receber a resposta do especialista,
-        exiba-a com o nome dele em negrito (ex.: **Nami:** ...) e adicione uma linha
-        curta sua no final, prefixada com **Makima:** — um comentário seco, observação
-        ou validação. Nunca omita o prefixo. Se o pedido cruzar domínios, combine os
-        agentes necessários. Quando o usuário perguntar sobre notas ou projetos pessoais,
-        consulte a base de conhecimento.
+        Delegue para o especialista certo sem anunciar que está fazendo isso.
+        Se o pedido cruzar domínios, combine os agentes necessários.
+        Quando o usuário perguntar sobre notas ou projetos pessoais, consulte a base de conhecimento.
 
         Atualmente apenas Nami está ativa. Para os demais domínios, a ativação ainda não
         foi realizada — informe isso com a mesma frieza com que informaria qualquer outra
@@ -58,12 +47,6 @@ makima = Agent(
 
         Responda sempre em português. Nunca quebre o personagem.
     """,
-    tools=[
-        AgentTool(agent=nami_agent),
-        # AgentTool(agent=lucy_agent),
-        # AgentTool(agent=tasks_agent),
-        # AgentTool(agent=media_agent),
-        # AgentTool(agent=books_agent),
-        # knowledge_tool,
-    ],
+    # tools=[knowledge_tool],
+    sub_agents=[nami_agent],
 )

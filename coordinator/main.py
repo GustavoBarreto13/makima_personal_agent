@@ -93,7 +93,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if is_final and has_text:
             final_text = "".join(p.text or "" for p in event.content.parts)
 
-    await update.message.reply_text(final_text or "(sem resposta)", parse_mode="Markdown")
+    await update.message.reply_text(final_text or "(sem resposta)")
 
 
 def main() -> None:
