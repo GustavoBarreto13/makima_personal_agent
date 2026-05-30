@@ -65,6 +65,28 @@ coordinator/agent.py  (Makima — Agent ADK)
 
 ---
 
+## Personalidades dos agentes
+
+### Makima (coordinator)
+
+Inspirada na Makima de Chainsaw Man — calma, autoritária, cordial mas levemente superior.
+
+- Nunca usa frases de subordinação ("posso ajudar?", "claro!", "com prazer!")
+- Sempre começa a resposta com `Makima:`
+- Enquadra limitações como decisões, não falhas: "Esse recurso ainda não foi ativado."
+- Nunca quebra o personagem
+
+### Nami (agente de finanças)
+
+Inspirada na Nami de One Piece — tesoureira obcecada por dinheiro.
+
+- Sempre começa a resposta com `Nami:`
+- Despesas: reage com fúria e reclamação
+- Receitas: comemora com ganância e alegria
+- Confirma sempre valor, categoria e conta
+
+---
+
 ## Infraestrutura
 
 ### VPS
@@ -129,7 +151,7 @@ Como o repo é self-contained, **não há dependência do `n8n-python-scripts`**
 
 | Fase | O que fazer | Onde |
 |---|---|---|
-| **1** | Criar `agents/nami/` (tools + agent) com base no Nami. Ligar ao coordinator. Testar via Telegram. | `agents/nami/` (ref.: `n8n-python-scripts/nami_finance_agent/`) |
+| **1** | Criar `agents/nami/` (tools + agent) com base no Nami. Ligar ao coordinator. Testar via Telegram. Personalidades implementadas (Makima + Nami). | `agents/nami/` (ref.: `n8n-python-scripts/nami_finance_agent/`) |
 | **2** | Criar `agents/lucy/` (tools IMAP/Gmail + agent). Adicionar ao coordinator. | `agents/lucy/` (ref.: `n8n-python-scripts/lucy_email_agent/`) |
 | **3** | Adicionar `upsert_bigquery()` nos scripts de sync de mídia/livros. | `n8n-python-scripts/series_sync/`, `gustavoboxd/`, etc. (batch — fica lá) |
 | **4** | Criar `agents/tasks`, `agents/media`, `agents/books`. Adicionar ao coordinator. Ativar morning briefing. | `agents/` + `coordinator/agent.py` |
@@ -146,6 +168,12 @@ Como o repo é self-contained, **não há dependência do `n8n-python-scripts`**
 3. Adicionar o agent à lista `sub_agents` do Makima
 4. Testar: enviar mensagem no Telegram que acione o novo domínio
 
+**Nota sobre sub_agents vs AgentTool:**
+Com `sub_agents`, o sub-agente gera a resposta final — Makima não tem como adicionar
+texto depois. Com `AgentTool`, Makima fala por último mas o sub-agente não completa
+ciclos multi-turn (tool calls intermediárias são perdidas). Decisão atual: usar
+`sub_agents` para garantir que os agentes completem suas queries corretamente.
+
 ---
 
 ## Como rodar localmente
@@ -161,6 +189,8 @@ python -m coordinator.main
 ```
 
 > Os agentes usam o modelo `gemini-2.0-flash`. O ADK lê a chave do Gemini de `GEMINI_API_KEY` (Google AI Studio) ou usa Vertex se `GOOGLE_GENAI_USE_VERTEXAI=1` estiver setado.
+
+**Telegram parse_mode:** Não use `parse_mode` no `reply_text`. Os agentes geram texto com emojis e caracteres especiais (!, ?, R$) que quebram o parser do Telegram. As respostas são enviadas como texto plano.
 
 ---
 
