@@ -1,0 +1,13 @@
+# Deploy da Makima como um único serviço (bot Telegram persistente).
+# As variáveis de ambiente vêm do arquivo .env (não do painel do Dokploy).
+services:
+  makima:
+    build:
+      # Contexto = raiz do repo (para COPY . . pegar coordinator/ e agents/).
+      context: .
+      dockerfile: coordinator/Dockerfile
+    container_name: makima
+    # Injeta TODAS as variáveis do .env como env vars do container.
+    env_file: .env
+    # Reinicia o bot automaticamente se cair ou no boot do host.
+    restart: unless-stopped

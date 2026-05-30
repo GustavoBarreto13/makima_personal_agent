@@ -1,3 +1,5 @@
 google-adk          # Agent, InMemoryRunner, sessões em memória
 python-telegram-bot # bot Telegram
-requests            # usado pelo nami tools.py (reusa o main.py do n8n-python-scripts)
+python-dotenv       # carrega variáveis do arquivo .env
+requests            # acesso HTTP às APIs (Notion etc.) nas tools dos agentes
+tzdata              # base de fusos horários p/ zoneinfo (imagens slim não trazem)

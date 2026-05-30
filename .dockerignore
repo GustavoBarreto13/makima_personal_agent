@@ -1,0 +1,14 @@
+# Nunca copiar segredos nem lixo local para dentro da imagem.
+.env
+.env.local
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.git/
+.gitignore
+*.json
+.vscode/
+.idea/
+.superpowers/
+.claude/

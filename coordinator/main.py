@@ -16,6 +16,7 @@ API alvo: google-adk 1.x
 import os
 import logging
 
+from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
@@ -23,6 +24,18 @@ from google.adk.runners import InMemoryRunner
 from google.genai import types
 
 from coordinator.agent import makima
+
+# Carrega o .env e prepara as env vars ANTES de lê-las / rodar o bot.
+# - Localmente: load_dotenv() lê o arquivo .env na raiz do repo.
+# - No container: o docker-compose injeta as vars via `env_file` (não há .env
+#   dentro da imagem), e load_dotenv() simplesmente não acha arquivo — tudo bem.
+load_dotenv()
+
+# O ADK/google-genai autenticam o Gemini via GOOGLE_API_KEY. Seu .env usa o nome
+# GEMINI_API_KEY (mesmo do batch), então fazemos a ponte sem duplicar a chave.
+os.environ.setdefault("GOOGLE_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+# Usamos a API do Google AI Studio (não Vertex) para o modelo gemini-2.0-flash.
+os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
