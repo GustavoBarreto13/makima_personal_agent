@@ -5,16 +5,14 @@ Makima Coordinator - loop do bot Telegram
 Recebe mensagens do Telegram e as encaminha para o agente Makima (ADK),
 mantendo uma sessão de memória por chat_id.
 
-API alvo: google-adk 1.x
-- InMemoryRunner cria internamente os serviços (sessão/artefatos/memória) em memória;
-  acessamos o serviço de sessão por runner.session_service.
-- session_service.create_session é assíncrono (precisa de await).
-- runner.run_async recebe new_message: types.Content e devolve um async generator
-  de eventos; o texto final está no evento marcado por is_final_response().
+A inicialização é async porque a Kaguya precisa iniciar o servidor MCP do TickTick
+via stdio antes de o bot começar a aceitar mensagens.
 """
 
-import os
+import asyncio
 import logging
+import os
+from contextlib import AsyncExitStack
 
 from dotenv import load_dotenv
 from telegram import Update
@@ -23,39 +21,29 @@ from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTyp
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
-from coordinator.agent import makima
-
-# Carrega o .env e prepara as env vars ANTES de lê-las / rodar o bot.
-# - Localmente: load_dotenv() lê o arquivo .env na raiz do repo.
-# - No container: o docker-compose injeta as vars via `env_file` (não há .env
-#   dentro da imagem), e load_dotenv() simplesmente não acha arquivo — tudo bem.
+# Carrega o .env antes de qualquer outra importação que leia env vars
 load_dotenv()
 
-# O ADK/google-genai autenticam o Gemini via GOOGLE_API_KEY. Seu .env usa o nome
-# GEMINI_API_KEY (mesmo do batch), então fazemos a ponte sem duplicar a chave.
+# O ADK lê GOOGLE_API_KEY; nosso .env usa GEMINI_API_KEY — fazemos a ponte aqui
 os.environ.setdefault("GOOGLE_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
-# Usamos a API do Google AI Studio (não Vertex) para o modelo gemini-2.0-flash.
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
+
+from coordinator.agent import create_makima  # noqa: E402 — import após load_dotenv
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-
-# Nome lógico da app ADK. Precisa ser o mesmo no runner e ao criar sessões.
 APP_NAME = "makima"
 
-# O InMemoryRunner monta os serviços em memória; ele NÃO recebe session_service.
-runner = InMemoryRunner(agent=makima, app_name=APP_NAME)
-
-# chat_ids que já têm sessão criada (evita recriar a cada mensagem).
+# Essas variáveis são inicializadas no setup async antes do bot começar
+runner: InMemoryRunner = None
 _sessions: set[str] = set()
 
 
 async def ensure_session(chat_id: str) -> None:
     """Garante que existe uma sessão ADK para este chat_id (cria na primeira vez)."""
     if chat_id not in _sessions:
-        # user_id e session_id usam o próprio chat_id: uma sessão por conversa.
         await runner.session_service.create_session(
             app_name=APP_NAME,
             user_id=chat_id,
@@ -73,12 +61,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await ensure_session(chat_id)
 
-    # A mensagem do usuário precisa ser empacotada como types.Content.
     new_message = types.Content(role="user", parts=[types.Part(text=text)])
 
-    # run_async devolve um stream de eventos. Coletamos o texto de TODOS os eventos
-    # finais — quando há múltiplos agentes respondendo (ex: Nami + Kaguya), cada um
-    # gera seu próprio evento final e precisamos enviar todas as respostas.
+    # Coleta todos os eventos finais — múltiplos agentes podem gerar respostas separadas
     final_parts: list[str] = []
     async for event in runner.run_async(
         user_id=chat_id,
@@ -97,26 +82,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 fr = part.function_response
                 logger.info(f"[tool] {fr.name} → {str(fr.response)[:300]}")
         if is_final and has_text:
-            # Acumula cada resposta final — não sobrescreve
-            text = "".join(p.text or "" for p in event.content.parts)
-            if text.strip():
-                final_parts.append(text)
+            text_resp = "".join(p.text or "" for p in event.content.parts)
+            if text_resp.strip():
+                final_parts.append(text_resp)
 
-    # Envia cada resposta final como mensagem separada no Telegram.
-    # Isso preserva as respostas individuais de cada agente (ex: Nami e Kaguya).
     if final_parts:
         for part in final_parts:
-            # parse_mode="HTML" permite que os agentes formatem respostas com <b>, emojis, etc.
             await update.message.reply_text(part, parse_mode="HTML")
     else:
         await update.message.reply_text("(sem resposta)", parse_mode="HTML")
 
 
+async def main_async() -> None:
+    """Setup async: inicializa agentes MCP, cria o runner e sobe o bot Telegram."""
+    global runner
+
+    # O exit_stack gerencia o ciclo de vida do servidor MCP da Kaguya.
+    # Ele é fechado automaticamente quando o bloco 'async with' termina (shutdown do bot).
+    async with AsyncExitStack() as exit_stack:
+        # Inicializa Makima (e internamente a Kaguya com o servidor MCP)
+        makima = await create_makima(exit_stack)
+        runner = InMemoryRunner(agent=makima, app_name=APP_NAME)
+
+        app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+        logger.info("Makima online.")
+
+        # run_polling é bloqueante; quando o bot para (Ctrl+C ou sinal),
+        # o bloco 'async with' fecha o exit_stack e encerra o servidor MCP filho
+        await app.run_polling()
+
+
 def main() -> None:
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    logger.info("Makima online.")
-    app.run_polling()
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":
