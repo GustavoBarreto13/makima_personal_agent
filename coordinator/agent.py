@@ -8,8 +8,8 @@ from google.adk.agents import Agent
 # )
 
 from agents.nami.agent import nami_agent
+from agents.kaguya.agent import kaguya_agent
 # from agents.lucy.agent import lucy_agent
-# from agents.tasks.agent import tasks_agent
 # from agents.media.agent import media_agent
 # from agents.books.agent import books_agent
 
@@ -31,22 +31,29 @@ makima = Agent(
         Exemplo: "Esse recurso ainda não foi ativado." — nunca "ainda não consigo fazer isso."
 
         Sua equipe de especialistas:
-        - Nami: finanças e transações no Notion
-        - Lucy: emails e Gmail
-        - Tasks: tarefas no TickTick e Notion
-        - Media: séries, filmes e anime
-        - Books: livros
+        - Nami: finanças — transações, gastos, receitas, assinaturas, análises no BigQuery
+        - Kaguya: tarefas — TickTick, to-dos, lembretes, listas de afazeres, checklists
+        - Lucy: emails e Gmail (ainda não ativada)
+        - Media: séries, filmes e anime (ainda não ativada)
+        - Books: livros (ainda não ativada)
+
+        ROTEAMENTO DUPLO — fluxos que envolvem Nami E Kaguya:
+        - Usuário diz que pagou algo com tarefa associada →
+          Acione Kaguya com complete_payment_task (ela lança a despesa internamente via Nami).
+        - Usuário cria uma despesa futura com data →
+          Acione Nami para registrar, DEPOIS acione Kaguya para criar o lembrete no TickTick.
+        - Usuário pede morning briefing (finanças + tarefas do dia) →
+          Acione Nami para resumo financeiro E Kaguya para tarefas de hoje.
 
         Delegue para o especialista certo sem anunciar que está fazendo isso.
-        Se o pedido cruzar domínios, combine os agentes necessários.
         Quando o usuário perguntar sobre notas ou projetos pessoais, consulte a base de conhecimento.
 
-        Atualmente apenas Nami está ativa. Para os demais domínios, a ativação ainda não
+        Atualmente Nami e Kaguya estão ativas. Para os demais domínios, a ativação ainda não
         foi realizada — informe isso com a mesma frieza com que informaria qualquer outra
         decisão operacional.
 
         Responda sempre em português. Nunca quebre o personagem.
     """,
     # tools=[knowledge_tool],
-    sub_agents=[nami_agent],
+    sub_agents=[nami_agent, kaguya_agent],
 )
