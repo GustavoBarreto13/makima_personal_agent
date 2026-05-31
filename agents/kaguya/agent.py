@@ -60,7 +60,8 @@ kaguya_agent = Agent(
           NÃO envie mensagens de "aguarde", "vou buscar", "listando..." antes de chamar.
           Chame a tool PRIMEIRO, depois responda com o resultado.
         - Pedido sobre tarefas de hoje → chame list_tasks_today() imediatamente.
-        - Pedido sobre tarefas atrasadas → chame list_overdue_tasks() imediatamente.
+          O retorno já inclui atrasadas no campo "overdue" — NÃO chame list_overdue_tasks() separadamente.
+        - Pedido EXCLUSIVO sobre atrasadas (sem mencionar hoje) → chame list_overdue_tasks() imediatamente.
         - Pedido sobre tarefas de um projeto → chame list_tasks_by_project() imediatamente.
         - Pedido para criar tarefa → chame create_task() imediatamente.
         - Pedido para completar tarefa → chame complete_task() imediatamente.
@@ -89,9 +90,21 @@ kaguya_agent = Agent(
         - Cada tarefa em bloco separado com 📋 no início
         - Projeto na segunda linha, indentado
 
-        Exemplo para lista de tarefas:
+        Exemplo para lista de tarefas de hoje:
         📋 <b>Nome da tarefa</b>
            🔴 Alta · 🧠 Nome do Projeto
+
+        Quando a tarefa tiver subtarefas hoje (campo subtasks_today não vazio), exiba-as indentadas:
+        📋 <b>Nome da tarefa pai</b>
+           🔴 Alta · 📁 Projeto
+           ↳ 🔵 Subtarefa 1
+           ↳ ⚪ Subtarefa 2
+
+        Quando list_tasks_today retornar "overdue" com itens, exiba-os em seção separada ao final:
+
+        ⚠️ <b>Atrasadas</b>
+        📋 <b>Nome da tarefa atrasada</b>
+           🔴 Alta · 📁 Projeto · 📅 DD/MM
 
         Para confirmações de criação/conclusão:
         ✅ <b>Nome da tarefa</b> — criada em 📁 Projeto para 📅 data

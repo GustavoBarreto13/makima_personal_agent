@@ -300,25 +300,75 @@ def list_projects() -> dict:
 
 
 def list_tasks_today() -> dict:
-    """Lista todas as tarefas com vencimento hoje em todos os projetos.
+    """Lista tarefas de hoje E tarefas atrasadas.
 
-    Use quando o usuário perguntar "o que tenho para hoje?" ou "minhas tarefas de hoje".
+    Use quando o usuário perguntar "o que tenho para hoje?", "minhas tarefas de hoje"
+    ou qualquer variação. O retorno já inclui atrasadas no campo "overdue" — não é
+    necessário chamar list_overdue_tasks() separadamente.
+
+    Subtarefas com dueDate de hoje aparecem no campo "subtasks_today" da tarefa pai,
+    não como itens independentes na lista.
     """
     try:
         today_str = date.today().strftime("%Y-%m-%d")
         tasks_today = []
+        overdue = []
+
         for project in _get_projects():
             project_id = project.get("id", "")
             project_name = project.get("name", "")
             data = _api_get(f"/project/{project_id}/data")
             if not data or not isinstance(data.get("tasks"), list):
                 continue
-            for task in data["tasks"]:
+
+            all_tasks = data["tasks"]
+
+            # Separa tarefas principais (sem parentId) de subtarefas (com parentId)
+            main_tasks = [t for t in all_tasks if not t.get("parentId")]
+            child_tasks = [t for t in all_tasks if t.get("parentId")]
+
+            # Índice de subtarefas por parentId para lookup rápido
+            subtasks_by_parent: dict[str, list] = {}
+            for st in child_tasks:
+                subtasks_by_parent.setdefault(st["parentId"], []).append(st)
+
+            for task in main_tasks:
+                if task.get("status", 0) == 2:
+                    continue  # ignora concluídas
+
                 due = task.get("dueDate", "")
-                # Inclui tarefas cujo dueDate começa com a data de hoje (formato ISO)
-                if due and due.startswith(today_str) and task.get("status", 0) != 2:
-                    tasks_today.append(_format_task(task, project_name))
-        return {"status": "ok", "tasks": tasks_today, "count": len(tasks_today), "date": today_str}
+                task_due_today = bool(due and due.startswith(today_str))
+                task_overdue = bool(due and due[:10] < today_str)
+
+                # Subtarefas desta tarefa pai que vencem hoje (ativas)
+                children_today = [
+                    _format_task(st, project_name)
+                    for st in subtasks_by_parent.get(task.get("id", ""), [])
+                    if st.get("dueDate", "").startswith(today_str) and st.get("status", 0) != 2
+                ]
+
+                if task_due_today or children_today:
+                    # Tarefa vence hoje (ou tem subtarefas hoje) — vai para a lista principal
+                    formatted = _format_task(task, project_name)
+                    formatted["subtasks_today"] = children_today
+                    tasks_today.append(formatted)
+                elif task_overdue:
+                    # Tarefa atrasada — vai para seção separada
+                    formatted = _format_task(task, project_name)
+                    formatted["subtasks_today"] = []
+                    overdue.append(formatted)
+
+        # Ordena atrasadas da mais antiga para a mais recente
+        overdue.sort(key=lambda t: t.get("due_date", ""))
+
+        return {
+            "status": "ok",
+            "tasks": tasks_today,
+            "overdue": overdue,
+            "count": len(tasks_today),
+            "overdue_count": len(overdue),
+            "date": today_str,
+        }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
