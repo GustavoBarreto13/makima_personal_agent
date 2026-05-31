@@ -84,7 +84,8 @@ def _refresh_token() -> str:
     expires_in = int(data.get("expires_in", 15552000))
     _cached_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
     log.info(f"TickTick: token renovado, expira em {_cached_expires_at.isoformat()}")
-    log.info(f"TickTick: novo access token — atualize TICKTICK_ACCESS_TOKEN no Dokploy: {_cached_token}")
+    # Exibe apenas os primeiros 8 chars para identificação sem expor o token completo
+    log.info(f"TickTick: novo access token — atualize TICKTICK_ACCESS_TOKEN no Dokploy: {_cached_token[:8]}***")
 
     return _cached_token
 
