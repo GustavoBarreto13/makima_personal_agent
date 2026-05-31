@@ -5,3 +5,4 @@ requests
 google-cloud-bigquery
 db-dtypes
 tzdata              # base de fusos horários p/ zoneinfo (imagens slim não trazem)
+mcp                 # Model Context Protocol para integração com servidores MCP
