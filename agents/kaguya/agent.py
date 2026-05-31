@@ -138,14 +138,16 @@ def create_kaguya_agent() -> Agent:
     }
 
     # McpToolset é instanciado com os parâmetros de conexão stdio.
-    # StdioConnectionParams é o wrapper recomendado pelo ADK atual.
+    # timeout=60s: list_tasks_today faz N+1 GETs (1 por projeto) — o padrão de 5s
+    # estoura com 10+ projetos. 60s cobre até ~25 projetos com latência normal.
     mcp_toolset = McpToolset(
         connection_params=StdioConnectionParams(
             server_params=StdioServerParameters(
                 command="python",
                 args=[server_path],
                 env=mcp_env,
-            )
+            ),
+            timeout=60.0,
         )
     )
 

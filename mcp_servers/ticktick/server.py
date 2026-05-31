@@ -41,11 +41,12 @@ _PROJECTS_CACHE_TTL = timedelta(minutes=5)
 
 
 def _is_token_expired() -> bool:
-    """Verifica se o access token está expirado ou prestes a expirar (margem de 5 min)."""
+    """Verifica se o access token está expirado ou prestes a expirar (margem de 5 min).
+    Sem data de expiração configurada (TICKTICK_EXPIRES_AT vazio), assume válido."""
     if _cached_token is None:
         return True
     if _cached_expires_at is None:
-        return True
+        return False  # sem informação de expiração → assume válido
     return datetime.now(timezone.utc) >= _cached_expires_at - timedelta(minutes=5)
 
 
