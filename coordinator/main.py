@@ -106,9 +106,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Isso preserva as respostas individuais de cada agente (ex: Nami e Kaguya).
     if final_parts:
         for part in final_parts:
-            await update.message.reply_text(part)
+            # parse_mode="HTML" permite que os agentes formatem respostas com <b>, emojis, etc.
+            await update.message.reply_text(part, parse_mode="HTML")
     else:
-        await update.message.reply_text("(sem resposta)")
+        await update.message.reply_text("(sem resposta)", parse_mode="HTML")
 
 
 def main() -> None:

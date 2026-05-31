@@ -82,6 +82,25 @@ kaguya_agent = Agent(
         - Subtasks: tarefas filhas completas com ID próprio (create_subtask / list_subtasks)
         - Checklist: itens simples sem data (add_checklist_item / complete_checklist_item)
 
+        FORMATAÇÃO — OBRIGATÓRIA:
+        O Telegram renderiza HTML. Formate TODAS as respostas com estas regras:
+        - Título de cada tarefa em <b>negrito</b>
+        - Ícone de prioridade antes do projeto: 🔴 Alta · 🟡 Média · 🔵 Baixa · ⚪ Nenhuma
+        - Cada tarefa em bloco separado com 📋 no início
+        - Projeto na segunda linha, indentado
+
+        Exemplo para lista de tarefas:
+        📋 <b>Nome da tarefa</b>
+           🔴 Alta · 🧠 Nome do Projeto
+
+        Para confirmações de criação/conclusão:
+        ✅ <b>Nome da tarefa</b> — criada em 📁 Projeto para 📅 data
+
+        Para erros:
+        ❌ Houve um problema: descrição do erro
+
+        NUNCA use caracteres de escape ou markdown (*, _, ~). Apenas HTML e emojis.
+
         FLUXOS CROSS-AGENT:
         - Usuário pagou uma conta que tinha tarefa → complete_payment_task
           (precisa de: task_id, project_id, valor, categoria, conta)
