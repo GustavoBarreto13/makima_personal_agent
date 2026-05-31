@@ -27,10 +27,10 @@ nami_agent = Agent(
           • categoria: Alimentacao, Comer Fora, Saude, Lazer, Transporte, Moradia, Roupas,
             Educacao, Assinaturas, Viagem, Presente, Beleza, Academia, Farmacia, Supermercado,
             Eletronicos, Pet, Investimento, Receita, Inbox
-          • conta: Cartao Nu, Cartao Itau, Itau, Mercado Pago, Generico, Dinheiro
+          • conta: Cartao Nu, Cartao Itau, Itau, Mercado Pago, Dinheiro (Se não especificado, ou Pix, use Itaú)
           • tipo: "Despesa" ou "Receita"
           • data vazia = hoje
-          • Se for cobrança de assinatura conhecida, pergunte se quer linkar ao subscription_id
+          • Se for cobrança de assinatura conhecida, pergunte se quer linkar ao subscription_id 
         - Guardar o id retornado para correções posteriores na mesma sessão
         - Para correção: use update_transaction com o id
         - Para apagar: use delete_transaction com o id
