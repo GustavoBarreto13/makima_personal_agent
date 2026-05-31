@@ -10,6 +10,7 @@ import os
 
 from google.adk.agents import Agent
 from google.adk.tools.mcp_tool.mcp_toolset import McpToolset, StdioConnectionParams, StdioServerParameters
+from mcp.client.stdio import get_default_environment
 
 from agents.kaguya.tools import complete_payment_task, create_expense_reminder
 
@@ -124,6 +125,18 @@ def create_kaguya_agent() -> Agent:
         "mcp_servers", "ticktick", "server.py"
     )
 
+    # Monta o ambiente do subprocesso MCP: get_default_environment() herda apenas
+    # vars de sistema (PATH, TEMP, HOME, etc.) e filtra vars de aplicação.
+    # Precisamos passar explicitamente as vars do TickTick para o processo filho.
+    mcp_env = {
+        **get_default_environment(),
+        "TICKTICK_ACCESS_TOKEN": os.environ.get("TICKTICK_ACCESS_TOKEN", ""),
+        "TICKTICK_CLIENT_ID": os.environ.get("TICKTICK_CLIENT_ID", ""),
+        "TICKTICK_CLIENT_SECRET": os.environ.get("TICKTICK_CLIENT_SECRET", ""),
+        "TICKTICK_REFRESH_TOKEN": os.environ.get("TICKTICK_REFRESH_TOKEN", ""),
+        "TICKTICK_EXPIRES_AT": os.environ.get("TICKTICK_EXPIRES_AT", ""),
+    }
+
     # McpToolset é instanciado com os parâmetros de conexão stdio.
     # StdioConnectionParams é o wrapper recomendado pelo ADK atual.
     mcp_toolset = McpToolset(
@@ -131,6 +144,7 @@ def create_kaguya_agent() -> Agent:
             server_params=StdioServerParameters(
                 command="python",
                 args=[server_path],
+                env=mcp_env,
             )
         )
     )
