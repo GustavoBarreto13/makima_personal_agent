@@ -82,6 +82,9 @@ _INSTRUCTION = """
     📋 <b>Nome da tarefa</b>
        🔴 Alta · 🧠 Nome do Projeto
 
+    📋 <b>Nome da tarefa</b>
+       🔴 Alta · 🧠 Nome do Projeto
+
     Quando a tarefa tiver subtarefas hoje (campo subtasks_today não vazio), exiba-as indentadas:
     📋 <b>Nome da tarefa pai</b>
        🔴 Alta · 📁 Projeto
