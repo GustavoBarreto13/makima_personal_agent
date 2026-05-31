@@ -260,3 +260,179 @@ def _format_task(task: dict, project_name: str = "") -> dict:
             for item in task.get("items", [])
         ],
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TOOLS PÚBLICAS DE LEITURA — retornam dados do TickTick
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def list_projects() -> dict:
+    """Lista todos os projetos ativos disponíveis no TickTick.
+
+    Use para descobrir os projetos disponíveis quando o usuário mencionar um
+    projeto desconhecido ou para apresentar as opções ao usuário.
+    """
+    try:
+        projects = _get_projects()
+        return {
+            "status": "ok",
+            "projects": [{"id": p.get("id"), "name": p.get("name")} for p in projects],
+            "count": len(projects),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def list_tasks_today() -> dict:
+    """Lista todas as tarefas com vencimento hoje em todos os projetos.
+
+    Use quando o usuário perguntar "o que tenho para hoje?" ou "minhas tarefas de hoje".
+    """
+    try:
+        today_str = date.today().strftime("%Y-%m-%d")
+        tasks_today = []
+        for project in _get_projects():
+            project_id = project.get("id", "")
+            project_name = project.get("name", "")
+            data = _api_get(f"/project/{project_id}/data")
+            if not data or not isinstance(data.get("tasks"), list):
+                continue
+            for task in data["tasks"]:
+                due = task.get("dueDate", "")
+                # Inclui tarefas cujo dueDate começa com a data de hoje (formato ISO)
+                if due and due.startswith(today_str) and task.get("status", 0) != 2:
+                    tasks_today.append(_format_task(task, project_name))
+        return {"status": "ok", "tasks": tasks_today, "count": len(tasks_today), "date": today_str}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def list_overdue_tasks() -> dict:
+    """Lista todas as tarefas ativas com data de vencimento no passado.
+
+    Use quando o usuário perguntar sobre tarefas atrasadas ou pendências.
+    """
+    try:
+        today_str = date.today().strftime("%Y-%m-%d")
+        overdue = []
+        for project in _get_projects():
+            project_id = project.get("id", "")
+            project_name = project.get("name", "")
+            data = _api_get(f"/project/{project_id}/data")
+            if not data or not isinstance(data.get("tasks"), list):
+                continue
+            for task in data["tasks"]:
+                due = task.get("dueDate", "")
+                # Tarefa atrasada: tem data, a data é anterior a hoje, e ainda está ativa
+                if due and due[:10] < today_str and task.get("status", 0) != 2:
+                    overdue.append(_format_task(task, project_name))
+        # Ordena da mais atrasada para a mais recente
+        overdue.sort(key=lambda t: t.get("due_date", ""))
+        return {"status": "ok", "tasks": overdue, "count": len(overdue)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def list_tasks_by_project(project_name: str) -> dict:
+    """Lista todas as tarefas ativas de um projeto específico.
+
+    Parâmetros:
+        project_name — Nome do projeto (aceita prefixo case-insensitive, ex: "fin" → "Finanças").
+    """
+    try:
+        project = _resolve_project(project_name)
+        if not project:
+            available = [p.get("name") for p in _get_projects()]
+            return {"status": "error", "message": f"Projeto '{project_name}' não encontrado. Disponíveis: {available}"}
+        data = _api_get(f"/project/{project['id']}/data")
+        if not data:
+            return {"status": "error", "message": f"Projeto não encontrado: {project['id']}"}
+        tasks = [
+            _format_task(t, project["name"])
+            for t in data.get("tasks", [])
+            if t.get("status", 0) != 2  # exclui tarefas já concluídas
+        ]
+        return {"status": "ok", "tasks": tasks, "count": len(tasks), "project": project["name"]}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def search_tasks(query: str) -> dict:
+    """Busca tarefas pelo título (case-insensitive) em todos os projetos.
+
+    Parâmetros:
+        query — Texto para buscar no título das tarefas.
+
+    Use quando o usuário referenciar uma tarefa pelo nome sem saber o projeto.
+    Retorna tarefas ativas e concluídas que contenham o texto.
+    """
+    try:
+        norm_query = query.strip().lower()
+        matches = []
+        for project in _get_projects():
+            project_id = project.get("id", "")
+            project_name = project.get("name", "")
+            data = _api_get(f"/project/{project_id}/data")
+            if not data or not isinstance(data.get("tasks"), list):
+                continue
+            for task in data["tasks"]:
+                if norm_query in task.get("title", "").lower():
+                    matches.append(_format_task(task, project_name))
+        return {"status": "ok", "tasks": matches, "count": len(matches), "query": query}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def get_task_detail(task_id: str, project_id: str) -> dict:
+    """Retorna todos os detalhes de uma tarefa: descrição, subtasks, checklist, tags, prioridade.
+
+    Parâmetros:
+        task_id    — ID da tarefa no TickTick.
+        project_id — ID do projeto ao qual a tarefa pertence.
+
+    Use quando o usuário pedir detalhes de uma tarefa específica ou para listar subtasks.
+    """
+    try:
+        task = _api_get(f"/project/{project_id}/task/{task_id}")
+        if not task:
+            return {"status": "error", "message": f"Tarefa não encontrada: {task_id}"}
+        formatted = _format_task(task)
+        # Subtasks são tarefas normais com parentId apontando para esta tarefa
+        data = _api_get(f"/project/{project_id}/data")
+        subtasks = []
+        if data and isinstance(data.get("tasks"), list):
+            subtasks = [
+                _format_task(t) for t in data["tasks"]
+                if t.get("parentId") == task_id
+            ]
+        formatted["subtasks"] = subtasks
+        return {"status": "ok", "task": formatted}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def list_subtasks(task_id: str, project_id: str) -> dict:
+    """Lista as subtasks de uma tarefa pai.
+
+    Parâmetros:
+        task_id    — ID da tarefa pai.
+        project_id — ID do projeto onde a tarefa pai está.
+
+    Subtasks são tarefas filhas completas (com data/prioridade própria), diferentes
+    de checklist items (itens simples sem data).
+    """
+    try:
+        data = _api_get(f"/project/{project_id}/data")
+        if not data:
+            return {"status": "error", "message": "Projeto não encontrado"}
+        subtasks = [
+            _format_task(t) for t in data.get("tasks", [])
+            if t.get("parentId") == task_id
+        ]
+        return {"status": "ok", "subtasks": subtasks, "count": len(subtasks)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
