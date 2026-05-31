@@ -436,3 +436,251 @@ def list_subtasks(task_id: str, project_id: str) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TOOLS PÚBLICAS DE ESCRITA — criam, editam, completam e deletam no TickTick
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def create_task(
+    title: str,
+    project_name: str = "",
+    due_date: str = "",
+    priority: str = "Nenhuma",
+    description: str = "",
+) -> dict:
+    """Cria uma nova tarefa no TickTick.
+
+    Parâmetros:
+        title        — Título da tarefa (obrigatório).
+        project_name — Nome do projeto (opcional). Se omitido, cria no Inbox do TickTick.
+        due_date     — Data de vencimento no formato YYYY-MM-DD (opcional).
+        priority     — "Nenhuma", "Baixa", "Média" ou "Alta" (padrão: "Nenhuma").
+        description  — Texto de descrição/notas (opcional).
+
+    Retorna o ID e project_id da tarefa criada — guarde para operações subsequentes.
+    """
+    try:
+        payload: dict = {
+            "title": title,
+            "priority": PRIORITY_VALUE.get(priority.strip().lower(), 0),
+        }
+
+        # Resolve o projeto dinamicamente se informado
+        if project_name:
+            project = _resolve_project(project_name)
+            if not project:
+                available = [p.get("name") for p in _get_projects()]
+                return {"status": "error", "message": f"Projeto '{project_name}' não encontrado. Disponíveis: {available}"}
+            payload["projectId"] = project["id"]
+
+        if due_date:
+            payload["dueDate"] = f"{due_date}T00:00:00+0000"
+
+        if description:
+            payload["content"] = description
+
+        result = _api_post("/task", payload)
+        if not result or "id" not in result:
+            return {"status": "error", "message": "API não retornou ID da tarefa criada"}
+
+        return {
+            "status": "ok",
+            "id": result["id"],
+            "project_id": result.get("projectId", ""),
+            "message": f"Tarefa criada: '{title}'" + (f" em {project_name}" if project_name else ""),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def update_task(
+    task_id: str,
+    project_id: str,
+    title: str = "",
+    due_date: str = "",
+    priority: str = "",
+    description: str = "",
+    project_name: str = "",
+) -> dict:
+    """Edita campos de uma tarefa existente. Apenas os campos informados (não-vazios) são alterados.
+
+    Parâmetros:
+        task_id      — ID da tarefa (obrigatório).
+        project_id   — ID do projeto atual da tarefa (obrigatório).
+        title        — Novo título (opcional).
+        due_date     — Nova data no formato YYYY-MM-DD (opcional).
+        priority     — Nova prioridade: "Nenhuma", "Baixa", "Média" ou "Alta" (opcional).
+        description  — Novo texto de descrição (opcional).
+        project_name — Mover para outro projeto pelo nome (opcional).
+    """
+    try:
+        # A API do TickTick exige o objeto completo da tarefa no POST de atualização
+        task = _api_get(f"/project/{project_id}/task/{task_id}")
+        if not task:
+            return {"status": "error", "message": f"Tarefa não encontrada: {task_id}"}
+
+        if title:
+            task["title"] = title
+        if due_date:
+            task["dueDate"] = f"{due_date}T00:00:00+0000"
+        if priority:
+            task["priority"] = PRIORITY_VALUE.get(priority.strip().lower(), task.get("priority", 0))
+        if description:
+            task["content"] = description
+        if project_name:
+            project = _resolve_project(project_name)
+            if not project:
+                return {"status": "error", "message": f"Projeto '{project_name}' não encontrado"}
+            task["projectId"] = project["id"]
+
+        result = _api_post(f"/task/{task_id}", task)
+        if not result:
+            return {"status": "error", "message": "Falha ao atualizar tarefa"}
+
+        return {"status": "ok", "message": f"Tarefa '{task.get('title')}' atualizada"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def complete_task(task_id: str, project_id: str) -> dict:
+    """Marca uma tarefa (ou subtask) como concluída no TickTick.
+
+    Parâmetros:
+        task_id    — ID da tarefa a completar.
+        project_id — ID do projeto ao qual a tarefa pertence.
+    """
+    try:
+        resp = _api_post(f"/project/{project_id}/task/{task_id}/complete")
+        # A API retorna {} (body vazio) em caso de sucesso
+        if resp is None:
+            return {"status": "error", "message": f"Tarefa não encontrada ou já concluída: {task_id}"}
+        return {"status": "ok", "message": "Tarefa concluída"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def delete_task(task_id: str, project_id: str) -> dict:
+    """Deleta permanentemente uma tarefa do TickTick.
+
+    Parâmetros:
+        task_id    — ID da tarefa a deletar.
+        project_id — ID do projeto ao qual a tarefa pertence.
+
+    ATENÇÃO: Operação irreversível. Confirme com o usuário antes de chamar.
+    """
+    try:
+        success = _api_delete(f"/project/{project_id}/tasks/{task_id}")
+        if not success:
+            return {"status": "error", "message": f"Falha ao deletar tarefa: {task_id}"}
+        return {"status": "ok", "message": "Tarefa deletada"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def create_subtask(
+    parent_task_id: str,
+    parent_project_id: str,
+    title: str,
+    due_date: str = "",
+    priority: str = "Nenhuma",
+) -> dict:
+    """Cria uma subtask (tarefa filha) dentro de uma tarefa existente.
+
+    Parâmetros:
+        parent_task_id    — ID da tarefa pai.
+        parent_project_id — ID do projeto da tarefa pai.
+        title             — Título da subtask.
+        due_date          — Data de vencimento no formato YYYY-MM-DD (opcional).
+        priority          — "Nenhuma", "Baixa", "Média" ou "Alta" (padrão: "Nenhuma").
+
+    Subtasks são tarefas filhas completas (com ID próprio, data e prioridade),
+    diferentes de checklist items (itens simples sem data).
+    """
+    try:
+        payload: dict = {
+            "title": title,
+            "projectId": parent_project_id,
+            "parentId": parent_task_id,  # campo que define a hierarquia no TickTick
+            "priority": PRIORITY_VALUE.get(priority.strip().lower(), 0),
+        }
+        if due_date:
+            payload["dueDate"] = f"{due_date}T00:00:00+0000"
+
+        result = _api_post("/task", payload)
+        if not result or "id" not in result:
+            return {"status": "error", "message": "API não retornou ID da subtask criada"}
+
+        return {
+            "status": "ok",
+            "id": result["id"],
+            "parent_task_id": parent_task_id,
+            "message": f"Subtask criada: '{title}'",
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def add_checklist_item(task_id: str, project_id: str, item_text: str) -> dict:
+    """Adiciona um item de checklist simples a uma tarefa existente.
+
+    Parâmetros:
+        task_id    — ID da tarefa.
+        project_id — ID do projeto da tarefa.
+        item_text  — Texto do item a adicionar.
+
+    Checklist items são itens simples sem data/prioridade própria (items[] na tarefa),
+    diferentes de subtasks (que são tarefas filhas completas).
+    """
+    try:
+        import uuid
+        task = _api_get(f"/project/{project_id}/task/{task_id}")
+        if not task:
+            return {"status": "error", "message": f"Tarefa não encontrada: {task_id}"}
+
+        # Adiciona o novo item à lista existente sem remover os anteriores
+        new_item = {"id": str(uuid.uuid4()), "title": item_text, "status": 0}
+        task["items"] = task.get("items", []) + [new_item]
+
+        result = _api_post(f"/task/{task_id}", task)
+        if not result:
+            return {"status": "error", "message": "Falha ao adicionar item de checklist"}
+
+        return {"status": "ok", "item_id": new_item["id"], "message": f"Item adicionado: '{item_text}'"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def complete_checklist_item(task_id: str, project_id: str, item_id: str) -> dict:
+    """Marca um item de checklist como concluído.
+
+    Parâmetros:
+        task_id    — ID da tarefa que contém o checklist.
+        project_id — ID do projeto da tarefa.
+        item_id    — ID do item de checklist a marcar como concluído.
+    """
+    try:
+        task = _api_get(f"/project/{project_id}/task/{task_id}")
+        if not task:
+            return {"status": "error", "message": f"Tarefa não encontrada: {task_id}"}
+
+        items = task.get("items", [])
+        item_found = False
+        for item in items:
+            if item.get("id") == item_id:
+                item["status"] = 2  # 2 = concluído no TickTick
+                item_found = True
+                break
+
+        if not item_found:
+            return {"status": "error", "message": f"Item de checklist não encontrado: {item_id}"}
+
+        task["items"] = items
+        result = _api_post(f"/task/{task_id}", task)
+        if not result:
+            return {"status": "error", "message": "Falha ao atualizar checklist"}
+
+        return {"status": "ok", "message": "Item de checklist concluído"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
