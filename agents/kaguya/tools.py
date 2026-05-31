@@ -571,7 +571,7 @@ def delete_task(task_id: str, project_id: str) -> dict:
     ATENÇÃO: Operação irreversível. Confirme com o usuário antes de chamar.
     """
     try:
-        success = _api_delete(f"/project/{project_id}/tasks/{task_id}")
+        success = _api_delete(f"/project/{project_id}/task/{task_id}")
         if not success:
             return {"status": "error", "message": f"Falha ao deletar tarefa: {task_id}"}
         return {"status": "ok", "message": "Tarefa deletada"}
@@ -644,7 +644,7 @@ def add_checklist_item(task_id: str, project_id: str, item_text: str) -> dict:
         task["items"] = task.get("items", []) + [new_item]
 
         result = _api_post(f"/task/{task_id}", task)
-        if not result:
+        if result is None:  # None = 404, {} = sucesso (corpo vazio)
             return {"status": "error", "message": "Falha ao adicionar item de checklist"}
 
         return {"status": "ok", "item_id": new_item["id"], "message": f"Item adicionado: '{item_text}'"}
@@ -678,7 +678,7 @@ def complete_checklist_item(task_id: str, project_id: str, item_id: str) -> dict
 
         task["items"] = items
         result = _api_post(f"/task/{task_id}", task)
-        if not result:
+        if result is None:  # None = 404, {} = sucesso (corpo vazio)
             return {"status": "error", "message": "Falha ao atualizar checklist"}
 
         return {"status": "ok", "message": "Item de checklist concluído"}
