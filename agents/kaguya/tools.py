@@ -44,7 +44,7 @@ def _is_token_expired() -> bool:
     if _cached_token is None:
         return True
     if _cached_expires_at is None:
-        return False  # sem data de expiração, assume válido
+        return True  # sem data de expiração, assume expirado para forçar refresh seguro
     return datetime.now(timezone.utc) >= _cached_expires_at - timedelta(minutes=5)
 
 
@@ -219,6 +219,8 @@ def _resolve_project(name: str) -> Optional[dict]:
             return p
     # Fallback: prefixo (ex.: "fin" → "Finanças")
     matches = [p for p in projects if p.get("name", "").lower().startswith(norm)]
+    if len(matches) > 1:
+        log.warning(f"Múltiplas correspondências para '{name}': {[p.get('name') for p in matches]}")
     return matches[0] if len(matches) == 1 else None
 
 
