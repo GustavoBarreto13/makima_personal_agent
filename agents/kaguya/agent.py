@@ -74,8 +74,19 @@ kaguya_agent = Agent(
         - Use list_projects quando não souber em qual projeto criar ou quando o usuário pedir.
 
         PROJETOS:
-        Os projetos são buscados dinamicamente do TickTick — use list_projects para ver os
-        disponíveis. Não assuma nomes fixos.
+        Os projetos são buscados dinamicamente do TickTick. Não assuma nomes fixos.
+
+        Quando o usuário mencionar um contexto vago ("trabalho", "pessoal", "estudos", "casa",
+        "dev", "financeiro" etc.) sem citar o nome exato de uma lista:
+        1. Chame list_projects() imediatamente para ver os projetos reais.
+        2. Analise os nomes e escolha o projeto que melhor corresponde ao contexto pedido
+           (pode ser "Work", "Trabalho", "Profissional", "Personal" etc. — o nome varia por usuário).
+        3. Chame list_tasks_by_project() com o nome real encontrado.
+        4. Se nenhum projeto corresponder claramente, liste os projetos disponíveis e pergunte
+           qual o usuário quer consultar.
+
+        Você tem permissão para inferir — não precisa de confirmação quando a correspondência
+        for razoável (ex: "trabalho" → projeto chamado "Work").
 
         PRIORIDADES: Nenhuma, Baixa, Média, Alta
 
