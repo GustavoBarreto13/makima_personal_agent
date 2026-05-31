@@ -684,3 +684,120 @@ def complete_checklist_item(task_id: str, project_id: str, item_id: str) -> dict
         return {"status": "ok", "message": "Item de checklist concluído"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TOOLS COMBINADAS — cross-agent: TickTick + BigQuery (Nami)
+# Importam diretamente as funções de agents/nami/tools.py para manter o fluxo
+# síncrono e evitar overhead de LLM. Não chamam o agente Nami — chamam as tools.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def complete_payment_task(
+    task_id: str,
+    project_id: str,
+    amount: float,
+    category: str,
+    account: str,
+    transaction_name: str = "",
+) -> dict:
+    """Completa uma tarefa de pagamento no TickTick E lança a despesa no BigQuery.
+
+    Use quando o usuário disser que pagou algo que tinha uma tarefa associada.
+    Este é o fluxo principal de integração Kaguya + Nami.
+
+    Parâmetros:
+        task_id          — ID da tarefa de pagamento no TickTick.
+        project_id       — ID do projeto da tarefa.
+        amount           — Valor pago em reais.
+        category         — Categoria da despesa (ex: "Moradia", "Assinaturas").
+        account          — Conta/meio de pagamento (ex: "Itau", "Cartao Nu").
+        transaction_name — Nome para a transação no BigQuery (padrão: título da tarefa).
+
+    Retorna confirmação de ambas as operações ou detalhes do erro se alguma falhar.
+    """
+    # Importação local para evitar importação circular no nível do módulo
+    from agents.nami.tools import create_transaction
+
+    results = {}
+
+    # Passo 1: Completa a tarefa no TickTick
+    try:
+        resp = _api_post(f"/project/{project_id}/task/{task_id}/complete")
+        if resp is None:
+            results["ticktick"] = {"status": "error", "message": "Tarefa não encontrada ou já concluída"}
+        else:
+            results["ticktick"] = {"status": "ok", "message": "Tarefa concluída no TickTick"}
+    except Exception as e:
+        results["ticktick"] = {"status": "error", "message": str(e)}
+
+    # Passo 2: Lança a despesa no BigQuery via tools da Nami.
+    # Executa mesmo se o TickTick falhou — as duas operações são independentes.
+    try:
+        name = transaction_name
+        if not name:
+            # Tenta obter o título da tarefa para usar como nome da transação
+            task = _api_get(f"/project/{project_id}/task/{task_id}")
+            name = task.get("title", "Pagamento") if task else "Pagamento"
+
+        tx_result = create_transaction(
+            name=name,
+            valor=amount,
+            tipo="Despesa",
+            categoria=category,
+            conta=account,
+        )
+        results["bigquery"] = tx_result
+    except Exception as e:
+        results["bigquery"] = {"status": "error", "message": str(e)}
+
+    # Status geral: "ok" apenas se as duas operações tiveram sucesso
+    overall = "ok" if all(r["status"] == "ok" for r in results.values()) else "partial"
+
+    return {
+        "status": overall,
+        "ticktick": results["ticktick"],
+        "bigquery": results["bigquery"],
+        "message": (
+            f"Tarefa concluída e despesa de R${amount:.2f} lançada em {category}."
+            if overall == "ok"
+            else "Uma ou mais operações falharam — veja detalhes acima."
+        ),
+    }
+
+
+def create_expense_reminder(
+    title: str,
+    due_date: str,
+    project_name: str = "Finanças",
+    amount: float = 0.0,
+    description: str = "",
+) -> dict:
+    """Cria uma tarefa de lembrete de pagamento no TickTick.
+
+    Use quando o usuário criar ou mencionar uma despesa futura e quiser um lembrete.
+    Esta tool APENAS cria a tarefa — o lançamento da despesa fica para quando o
+    usuário realmente pagar (via complete_payment_task).
+
+    Parâmetros:
+        title        — Título do lembrete (ex: "Pagar aluguel").
+        due_date     — Data de vencimento no formato YYYY-MM-DD.
+        project_name — Nome do projeto no TickTick (padrão: "Finanças").
+        amount       — Valor esperado — incluído na descrição para referência (opcional).
+        description  — Notas adicionais (opcional).
+    """
+    try:
+        # Inclui o valor na descrição para referência quando for completar depois
+        full_description = description
+        if amount > 0:
+            full_description = f"Valor esperado: R${amount:.2f}. {description}".strip()
+
+        return create_task(
+            title=title,
+            project_name=project_name,
+            due_date=due_date,
+            priority="Alta",  # lembretes de pagamento têm prioridade alta por padrão
+            description=full_description,
+        )
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
