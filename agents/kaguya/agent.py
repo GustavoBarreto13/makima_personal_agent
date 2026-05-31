@@ -9,7 +9,7 @@
 import os
 
 from google.adk.agents import Agent
-from google.adk.tools.mcp_tool.mcp_toolset import McpToolset, StdioServerParameters
+from google.adk.tools.mcp_tool.mcp_toolset import McpToolset, StdioConnectionParams, StdioServerParameters
 
 from agents.kaguya.tools import complete_payment_task, create_expense_reminder
 
@@ -125,11 +125,13 @@ def create_kaguya_agent() -> Agent:
     )
 
     # McpToolset é instanciado com os parâmetros de conexão stdio.
-    # O ADK chama get_tools() internamente ao registrar o agente.
+    # StdioConnectionParams é o wrapper recomendado pelo ADK atual.
     mcp_toolset = McpToolset(
-        connection_params=StdioServerParameters(
-            command="python",
-            args=[server_path],
+        connection_params=StdioConnectionParams(
+            server_params=StdioServerParameters(
+                command="python",
+                args=[server_path],
+            )
         )
     )
 
