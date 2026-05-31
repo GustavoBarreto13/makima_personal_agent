@@ -1,5 +1,3 @@
-from contextlib import AsyncExitStack
-
 from google.adk.agents import Agent
 
 from agents.nami.agent import nami_agent
@@ -66,16 +64,12 @@ _MAKIMA_INSTRUCTION = """
 """
 
 
-async def create_makima(exit_stack: AsyncExitStack) -> Agent:
-    """Inicializa o coordinator Makima com todos os sub-agentes.
+def create_makima() -> Agent:
+    """Cria o coordinator Makima com todos os sub-agentes.
 
-    Recebe o exit_stack do main.py para que o cleanup dos recursos MCP
-    seja controlado pelo ciclo de vida do bot Telegram.
+    Kaguya agora é síncrona — o ADK gerencia o ciclo de vida do MCP internamente.
     """
-    # Kaguya precisa de inicialização async por causa do MCPToolset
-    kaguya_agent, kaguya_stack = await create_kaguya_agent()
-    # Transfere o exit_stack da Kaguya para o stack principal do main.py
-    await exit_stack.enter_async_context(kaguya_stack)
+    kaguya_agent = create_kaguya_agent()
 
     return Agent(
         name="makima",

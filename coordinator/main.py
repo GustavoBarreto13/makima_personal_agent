@@ -4,15 +4,10 @@ Makima Coordinator - loop do bot Telegram
 
 Recebe mensagens do Telegram e as encaminha para o agente Makima (ADK),
 mantendo uma sessão de memória por chat_id.
-
-A inicialização é async porque a Kaguya precisa iniciar o servidor MCP do TickTick
-via stdio antes de o bot começar a aceitar mensagens.
 """
 
-import asyncio
 import logging
 import os
-from contextlib import AsyncExitStack
 
 from dotenv import load_dotenv
 from telegram import Update
@@ -36,8 +31,10 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 APP_NAME = "makima"
 
-# Essas variáveis são inicializadas no setup async antes do bot começar
-runner: InMemoryRunner = None
+# Makima e runner são criados de forma síncrona — ADK gerencia MCP internamente
+makima = create_makima()
+runner = InMemoryRunner(agent=makima, app_name=APP_NAME)
+
 _sessions: set[str] = set()
 
 
@@ -91,31 +88,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(part, parse_mode="HTML")
     else:
         await update.message.reply_text("(sem resposta)", parse_mode="HTML")
-
-
-async def main_async() -> None:
-    """Setup async: inicializa agentes MCP, cria o runner e sobe o bot Telegram."""
-    global runner
-
-    # O exit_stack gerencia o ciclo de vida do servidor MCP da Kaguya.
-    # Ele é fechado automaticamente quando o bloco 'async with' termina (shutdown do bot).
-    async with AsyncExitStack() as exit_stack:
-        # Inicializa Makima (e internamente a Kaguya com o servidor MCP)
-        makima = await create_makima(exit_stack)
-        runner = InMemoryRunner(agent=makima, app_name=APP_NAME)
-
-        app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-        logger.info("Makima online.")
-
-        # run_polling é bloqueante; quando o bot para (Ctrl+C ou sinal),
-        # o bloco 'async with' fecha o exit_stack e encerra o servidor MCP filho
-        await app.run_polling()
-
-
-def main() -> None:
-    asyncio.run(main_async())
 
 
 if __name__ == "__main__":

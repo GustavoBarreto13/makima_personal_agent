@@ -1,16 +1,15 @@
 # Definição do agente Kaguya — gestor de tarefas via TickTick.
 # Tools genéricas do TickTick vêm do servidor MCP (mcp_servers/ticktick/server.py)
-# via MCPToolset. Tools cross-agent (complete_payment_task, create_expense_reminder)
-# vêm diretamente de agents/kaguya/tools.py.
+# via McpToolset (SDK google-adk). Tools cross-agent (complete_payment_task,
+# create_expense_reminder) vêm diretamente de agents/kaguya/tools.py.
 #
-# A inicialização é assíncrona porque MCPToolset.from_server() precisa de await
-# para iniciar o processo filho do servidor MCP via stdio.
+# McpToolset é passado diretamente em tools=[...] — o ADK chama get_tools()
+# internamente e gerencia o ciclo de vida da sessão MCP.
 
 import os
-from contextlib import AsyncExitStack
 
 from google.adk.agents import Agent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParameters
+from google.adk.tools.mcp_tool.mcp_toolset import McpToolset, StdioServerParameters
 
 from agents.kaguya.tools import complete_payment_task, create_expense_reminder
 
@@ -112,11 +111,11 @@ _INSTRUCTION = """
 """
 
 
-async def create_kaguya_agent() -> tuple[Agent, AsyncExitStack]:
-    """Inicializa o agente Kaguya com o servidor MCP do TickTick.
+def create_kaguya_agent() -> Agent:
+    """Cria o agente Kaguya com o servidor MCP do TickTick.
 
-    Retorna o agente e o exit_stack — o exit_stack deve ser mantido vivo
-    enquanto o bot estiver rodando e fechado no shutdown.
+    McpToolset é passado diretamente em tools — o ADK gerencia internamente
+    o ciclo de vida da sessão MCP (não precisa de exit_stack manual).
     """
     # Calcula o caminho absoluto para o servidor MCP
     # (necessário quando o working directory pode variar)
@@ -125,15 +124,16 @@ async def create_kaguya_agent() -> tuple[Agent, AsyncExitStack]:
         "mcp_servers", "ticktick", "server.py"
     )
 
-    # Inicializa as tools MCP via stdio — inicia o processo filho do servidor
-    mcp_tools, exit_stack = await MCPToolset.from_server(
+    # McpToolset é instanciado com os parâmetros de conexão stdio.
+    # O ADK chama get_tools() internamente ao registrar o agente.
+    mcp_toolset = McpToolset(
         connection_params=StdioServerParameters(
             command="python",
             args=[server_path],
         )
     )
 
-    agent = Agent(
+    return Agent(
         name="kaguya_agent",
         model="gemini-2.0-flash",
         description=(
@@ -144,7 +144,5 @@ async def create_kaguya_agent() -> tuple[Agent, AsyncExitStack]:
             "lembretes de despesas futuras."
         ),
         instruction=_INSTRUCTION,
-        tools=[*mcp_tools, complete_payment_task, create_expense_reminder],
+        tools=[mcp_toolset, complete_payment_task, create_expense_reminder],
     )
-
-    return agent, exit_stack
