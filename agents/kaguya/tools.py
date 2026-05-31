@@ -100,7 +100,11 @@ def _refresh_token() -> str:
 
 
 def _get_access_token() -> str:
-    """Retorna um access token válido, renovando automaticamente se expirado."""
+    """Retorna um access token válido, renovando automaticamente se expirado.
+
+    Se TICKTICK_REFRESH_TOKEN não estiver configurado, usa o access token diretamente
+    sem tentar refresh — o TickTick emite tokens de 180 dias, então refresh é opcional.
+    """
     global _cached_token, _cached_expires_at
 
     # Inicializa o cache na primeira chamada a partir das variáveis de ambiente
@@ -116,7 +120,18 @@ def _get_access_token() -> str:
                 _cached_expires_at = None
 
     if _is_token_expired():
-        return _refresh_token()
+        # Só tenta refresh se o refresh token estiver disponível
+        if os.environ.get("TICKTICK_REFRESH_TOKEN", ""):
+            return _refresh_token()
+        # Sem refresh token: usa o access token mesmo que pareça expirado.
+        # O TickTick emite tokens de 180 dias — se expirou, o erro 401 vai aparecer
+        # na chamada à API e o usuário precisará rodar get_token.py novamente.
+        if not _cached_token:
+            raise EnvironmentError(
+                "TICKTICK_ACCESS_TOKEN não configurado. "
+                "Execute get_token.py e configure a variável no Dokploy."
+            )
+        log.warning("TickTick: token pode estar expirado e sem refresh token configurado. Tentando mesmo assim.")
 
     return _cached_token
 
