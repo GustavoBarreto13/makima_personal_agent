@@ -76,8 +76,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # A mensagem do usuário precisa ser empacotada como types.Content.
     new_message = types.Content(role="user", parts=[types.Part(text=text)])
 
-    # run_async devolve um stream de eventos; guardamos o texto da resposta final.
-    final_text = ""
+    # run_async devolve um stream de eventos. Coletamos o texto de TODOS os eventos
+    # finais — quando há múltiplos agentes respondendo (ex: Nami + Kaguya), cada um
+    # gera seu próprio evento final e precisamos enviar todas as respostas.
+    final_parts: list[str] = []
     async for event in runner.run_async(
         user_id=chat_id,
         session_id=chat_id,
@@ -95,9 +97,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 fr = part.function_response
                 logger.info(f"[tool] {fr.name} → {str(fr.response)[:300]}")
         if is_final and has_text:
-            final_text = "".join(p.text or "" for p in event.content.parts)
+            # Acumula cada resposta final — não sobrescreve
+            text = "".join(p.text or "" for p in event.content.parts)
+            if text.strip():
+                final_parts.append(text)
 
-    await update.message.reply_text(final_text or "(sem resposta)")
+    # Envia cada resposta final como mensagem separada no Telegram.
+    # Isso preserva as respostas individuais de cada agente (ex: Nami e Kaguya).
+    if final_parts:
+        for part in final_parts:
+            await update.message.reply_text(part)
+    else:
+        await update.message.reply_text("(sem resposta)")
 
 
 def main() -> None:
