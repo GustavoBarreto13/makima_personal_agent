@@ -17,7 +17,7 @@ mcp = FastMCP("google_calendar")
 # Escopo OAuth necessário (leitura + escrita)
 _SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-# Cache do cliente da API em memória (recriado se token renovar)
+# Cache do cliente da API e das credenciais em memória
 _service = None
 _cached_creds: Optional[Credentials] = None
 
@@ -26,47 +26,43 @@ def _get_service():
     """Retorna o cliente da Google Calendar API, renovando o token se necessário."""
     global _service, _cached_creds
 
-    # Lê as credenciais das variáveis de ambiente
-    access_token = os.environ.get("GOOGLE_CALENDAR_ACCESS_TOKEN", "")
-    refresh_token = os.environ.get("GOOGLE_CALENDAR_REFRESH_TOKEN", "")
-    client_id = os.environ.get("GOOGLE_CALENDAR_CLIENT_ID", "")
-    client_secret = os.environ.get("GOOGLE_CALENDAR_CLIENT_SECRET", "")
-    token_expiry_str = os.environ.get("GOOGLE_CALENDAR_TOKEN_EXPIRY", "")
+    # Inicializa as credenciais na primeira chamada, lendo as env vars
+    if _cached_creds is None:
+        access_token = os.environ.get("GOOGLE_CALENDAR_ACCESS_TOKEN", "")
+        refresh_token = os.environ.get("GOOGLE_CALENDAR_REFRESH_TOKEN", "")
+        client_id = os.environ.get("GOOGLE_CALENDAR_CLIENT_ID", "")
+        client_secret = os.environ.get("GOOGLE_CALENDAR_CLIENT_SECRET", "")
+        token_expiry_str = os.environ.get("GOOGLE_CALENDAR_TOKEN_EXPIRY", "")
 
-    # Converte a string de expiração para datetime com timezone UTC
-    token_expiry = None
-    if token_expiry_str:
-        try:
-            token_expiry = datetime.fromisoformat(token_expiry_str)
-            # Garante que o datetime tem timezone para comparação correta
-            if token_expiry.tzinfo is None:
-                token_expiry = token_expiry.replace(tzinfo=timezone.utc)
-        except ValueError:
-            pass
+        # Converte a string de expiração para datetime com timezone UTC
+        token_expiry = None
+        if token_expiry_str:
+            try:
+                token_expiry = datetime.fromisoformat(token_expiry_str)
+                # Garante que o datetime tem timezone para comparação correta
+                if token_expiry.tzinfo is None:
+                    token_expiry = token_expiry.replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass
 
-    # Cria o objeto de credenciais do Google
-    creds = Credentials(
-        token=access_token,
-        refresh_token=refresh_token,
-        client_id=client_id,
-        client_secret=client_secret,
-        token_uri="https://oauth2.googleapis.com/token",
-        scopes=_SCOPES,
-        expiry=token_expiry,
-    )
+        _cached_creds = Credentials(
+            token=access_token,
+            refresh_token=refresh_token,
+            client_id=client_id,
+            client_secret=client_secret,
+            token_uri="https://oauth2.googleapis.com/token",
+            scopes=_SCOPES,
+            expiry=token_expiry,
+        )
 
-    # Renova o token se estiver expirado ou prestes a expirar (margem de 5 minutos)
-    if token_expiry and datetime.now(timezone.utc) >= token_expiry - timedelta(minutes=5):
-        creds.refresh(Request())
-        # Atualiza as vars em memória com o novo token
-        os.environ["GOOGLE_CALENDAR_ACCESS_TOKEN"] = creds.token
-        if creds.expiry:
-            os.environ["GOOGLE_CALENDAR_TOKEN_EXPIRY"] = creds.expiry.isoformat()
+    # Renova o token se estiver expirado ou inválido (google-auth verifica internamente)
+    if not _cached_creds.valid:
+        _cached_creds.refresh(Request())
         _service = None  # força recriação do serviço com novo token
 
     # Cria o cliente da API apenas se necessário
     if _service is None:
-        _service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+        _service = build("calendar", "v3", credentials=_cached_creds, cache_discovery=False)
 
     return _service
 
@@ -78,16 +74,6 @@ def _main_calendar_id() -> str:
         raise EnvironmentError("GOOGLE_CALENDAR_MAIN_CALENDAR_ID não configurado")
     return cal_id
 
-
-def _assert_is_main_calendar(calendar_id: str) -> None:
-    """Lança erro se calendar_id não for o calendário principal.
-    Impede escrita acidental em calendários secundários (aniversários, feriados, etc.)."""
-    main = _main_calendar_id()
-    if calendar_id != main:
-        raise PermissionError(
-            f"Escrita permitida apenas no calendário principal '{main}'. "
-            f"'{calendar_id}' é somente leitura."
-        )
 
 
 @mcp.tool()
@@ -157,15 +143,18 @@ def list_events_today() -> dict:
         Dict com chave = nome do calendário, valor = lista de eventos do dia.
     """
     service = _get_service()
-    today = datetime.now(timezone.utc).date()
+    # Usa o fuso horário de São Paulo para determinar o "hoje" corretamente
+    sp_tz = timezone(timedelta(hours=-3))
+    today = datetime.now(sp_tz).date()
     date_str = today.isoformat()
 
     # Busca todos os calendários disponíveis
     cal_result = service.calendarList().list().execute()
     calendars = cal_result.get("items", [])
 
-    time_min = f"{date_str}T00:00:00Z"
-    time_max = f"{date_str}T23:59:59Z"
+    # Delimita o dia em horário local de São Paulo (UTC-3)
+    time_min = f"{date_str}T00:00:00-03:00"
+    time_max = f"{date_str}T23:59:59-03:00"
 
     all_events: dict[str, list] = {}
     for cal in calendars:
@@ -335,8 +324,9 @@ def find_free_slots(
     cal_result = service.calendarList().list().execute()
     calendar_ids = [{"id": cal["id"]} for cal in cal_result.get("items", [])]
 
-    time_min = f"{date_from}T08:00:00Z"  # considera dia útil a partir das 8h
-    time_max = f"{date_to}T22:00:00Z"   # até as 22h
+    # Usa horário local de São Paulo (UTC-3) para delimitar o dia útil
+    time_min = f"{date_from}T08:00:00-03:00"
+    time_max = f"{date_to}T22:00:00-03:00"
 
     freebusy_result = service.freebusy().query(body={
         "timeMin": time_min,
