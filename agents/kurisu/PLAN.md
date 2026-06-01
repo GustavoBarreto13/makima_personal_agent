@@ -130,7 +130,7 @@ VERTEX_RAG_CORPUS=projects/projetos-448301/locations/us-central1/ragCorpora/XXXX
 
 1. [x] Criar `agents/kurisu/__init__.py` e `agents/kurisu/agent.py`
 2. [ ] Setup manual do Vertex AI (Data Store + corpus — único passo fora do código)
-3. [ ] Atualizar `coordinator/agent.py` (import + sub_agents + instrução Makima)
+3. [x] Atualizar `coordinator/agent.py` (import + sub_agents + instrução Makima)
 4. [ ] Atualizar `.env` com `VERTEX_RAG_CORPUS`
 5. [ ] Testar localmente com `python -m coordinator.main`
 6. [ ] Deploy no Dokploy (adicionar env var + redeploy)

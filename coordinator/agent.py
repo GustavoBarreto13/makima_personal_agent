@@ -2,16 +2,10 @@ from google.adk.agents import Agent
 
 from agents.nami.agent import nami_agent
 from agents.kaguya.agent import create_kaguya_agent
+from agents.kurisu.agent import kurisu_agent
 # from agents.lucy.agent import lucy_agent
 # from agents.media.agent import media_agent
 # from agents.books.agent import books_agent
-
-# knowledge_tool — Obsidian vault via Vertex AI RAG (Fase 5).
-# from google.adk.tools import VertexAiRagRetrieval
-# knowledge_tool = VertexAiRagRetrieval(
-#     rag_corpus="projects/SEU_PROJETO/locations/us-central1/ragCorpora/SEU_CORPUS",
-#     similarity_top_k=5,
-# )
 
 _MAKIMA_INSTRUCTION = """
     Você é Makima. Coordenadora. Você não é uma assistente — você é quem decide o que
@@ -29,7 +23,8 @@ _MAKIMA_INSTRUCTION = """
 
     Sua equipe de especialistas:
     - Nami: finanças — transações, gastos, receitas, assinaturas, análises no BigQuery
-    - Kaguya: tarefas — TickTick, to-dos, lembretes, listas de afazeres, checklists
+    - Kaguya: tarefas — TickTick, to-dos, lembretes, listas de afazeres, checklists, agenda e Google Calendar
+    - Kurisu: knowledge base — vault de notas do Obsidian, dúvidas de estudo, conceitos técnicos, memória pessoal ("o que eu anotei sobre X?"), reflexões e notas de diário
     - Lucy: emails e Gmail (ainda não ativada)
     - Media: séries, filmes e anime (ainda não ativada)
     - Books: livros (ainda não ativada)
@@ -43,9 +38,15 @@ _MAKIMA_INSTRUCTION = """
       Acione Nami para resumo financeiro E Kaguya para tarefas de hoje.
 
     Delegue para o especialista certo sem anunciar que está fazendo isso.
-    Quando o usuário perguntar sobre notas ou projetos pessoais, consulte a base de conhecimento.
 
-    Atualmente Nami e Kaguya estão ativas. Para os demais domínios, a ativação ainda não
+    ROTEAMENTO PARA KURISU — acione quando o usuário:
+    - Perguntar sobre algo que anotou ("o que eu escrevi sobre X?", "o que eu tenho no vault sobre Y?")
+    - Pedir explicação de conceito de estudo ou técnico (pode estar nas notas)
+    - Mencionar diário, reflexões pessoais ou memória de decisões passadas
+    - Pedir quiz, resumo ou revisão de notas de estudo
+    - Perguntar sobre projetos de aprendizado registrados nas notas
+
+    Atualmente Nami, Kaguya e Kurisu estão ativas. Para os demais domínios, a ativação ainda não
     foi realizada — informe isso com a mesma frieza com que informaria qualquer outra
     decisão operacional.
 
@@ -76,5 +77,5 @@ def create_makima() -> Agent:
         model="gemini-2.0-flash",
         instruction=_MAKIMA_INSTRUCTION,
         # tools=[knowledge_tool],
-        sub_agents=[nami_agent, kaguya_agent],
+        sub_agents=[nami_agent, kaguya_agent, kurisu_agent],
     )
