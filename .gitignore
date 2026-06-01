@@ -24,3 +24,6 @@ venv/
 
 # Superpowers
 .superpowers/
+
+# Claude Code (machine-specific paths)
+.claude/
