@@ -34,14 +34,17 @@ def _get_service():
         client_secret = os.environ.get("GOOGLE_CALENDAR_CLIENT_SECRET", "")
         token_expiry_str = os.environ.get("GOOGLE_CALENDAR_TOKEN_EXPIRY", "")
 
-        # Converte a string de expiração para datetime com timezone UTC
+        # Converte a string de expiração para datetime naive UTC.
+        # google-auth compara expiry com datetime.utcnow() (offset-naive) internamente,
+        # então o expiry deve ser naive — passar aware causa "can't compare offset-naive
+        # and offset-aware datetimes".
         token_expiry = None
         if token_expiry_str:
             try:
                 token_expiry = datetime.fromisoformat(token_expiry_str)
-                # Garante que o datetime tem timezone para comparação correta
-                if token_expiry.tzinfo is None:
-                    token_expiry = token_expiry.replace(tzinfo=timezone.utc)
+                if token_expiry.tzinfo is not None:
+                    # Converte para UTC naive (remove timezone info)
+                    token_expiry = token_expiry.astimezone(timezone.utc).replace(tzinfo=None)
             except ValueError:
                 pass
 
