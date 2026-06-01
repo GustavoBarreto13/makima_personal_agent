@@ -159,10 +159,16 @@ def list_events_today() -> dict:
     time_min = f"{date_str}T00:00:00-03:00"
     time_max = f"{date_str}T23:59:59-03:00"
 
+    # Calendários externos sincronizados que não devem aparecer na agenda
+    _BLOCKED_CALENDARS = {"TickTick"}
+
     all_events: dict[str, list] = {}
     for cal in calendars:
         cal_id = cal["id"]
         cal_name = cal.get("summary", cal_id)
+
+        if cal_name in _BLOCKED_CALENDARS:
+            continue
 
         try:
             result = service.events().list(
