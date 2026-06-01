@@ -13,37 +13,41 @@ no contexto de cada sessão Claude Code.
 
 1. Crie `.claude/settings.local.json` na raiz do projeto (ajuste o caminho absoluto):
 
-**Linux/Mac:**
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "command": "cd /caminho/para/makima_personal_agent && .venv/bin/python scripts/ticktick_status.py"
-      }
-    ]
-  }
-}
-```
+   **Linux/Mac:**
 
-**Windows:**
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "command": "cd C:\\caminho\\para\\makima_personal_agent && .venv\\Scripts\\python scripts/ticktick_status.py"
-      }
-    ]
-  }
-}
-```
+   ```json
+   {
+     "hooks": {
+       "SessionStart": [
+         {
+           "command": "cd /caminho/para/makima_personal_agent && .venv/bin/python scripts/ticktick_status.py"
+         }
+       ]
+     }
+   }
+   ```
+
+   **Windows:**
+
+   ```json
+   {
+     "hooks": {
+       "SessionStart": [
+         {
+           "command": "C:\\caminho\\para\\makima_personal_agent\\.venv\\Scripts\\python C:\\caminho\\para\\makima_personal_agent\\scripts\\ticktick_status.py"
+         }
+       ]
+     }
+   }
+   ```
+
+   > **Nota:** O `&&` não funciona no PowerShell 5.1 (padrão do Windows). Por isso usamos o caminho absoluto para o Python e para o script, sem `cd`.
 
 2. Abra uma nova sessão Claude Code no projeto — o status do TickTick aparece automaticamente.
 
 ## Saída esperada
 
-```
+```text
 === Makima - Personal Agent (TickTick) ===
 [ ] Nami - Finance Agent
     [ ] Contas Fixas
