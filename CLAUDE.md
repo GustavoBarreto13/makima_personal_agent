@@ -21,18 +21,22 @@ Cada agente especialista é um pacote local em `agents/`:
 ```
 makima_personal_agent/
 ├── agents/
-│   ├── nami/        # finanças (BigQuery)           ← Fase 1 ✅
+│   ├── nami/        # finanças (BigQuery)                      ← Fase 1 ✅
 │   │   ├── tools.py     # acesso ao BigQuery (ref.: n8n nami_finance_agent/main.py)
 │   │   └── agent.py     # nami_agent (Agent ADK)
-│   ├── kaguya/      # tarefas (TickTick via MCP)    ← Fase 2 ✅
+│   ├── kaguya/      # tarefas (TickTick via MCP) + agenda      ← Fase 2 ✅
 │   │   ├── tools.py     # tools cross-agent (complete_payment_task, create_expense_reminder)
-│   │   └── agent.py     # create_kaguya_agent() — factory que instancia o McpToolset
-│   ├── lucy/        # email (Gmail IMAP)             — Fase 3
-│   ├── media/       # séries+filmes+anime            — Fase 4
-│   └── books/       # livros                         — Fase 4
+│   │   └── agent.py     # create_kaguya_agent() — factory com dois McpToolsets
+│   ├── lucy/        # email (Gmail IMAP)                        — Fase 3
+│   ├── media/       # séries+filmes+anime                       — Fase 4
+│   └── books/       # livros                                    — Fase 4
 ├── mcp_servers/
-│   └── ticktick/
-│       └── server.py    # servidor MCP stdio — tools genéricas do TickTick (list, create, update, complete, delete...)
+│   ├── ticktick/
+│   │   └── server.py    # servidor MCP stdio — tools genéricas do TickTick
+│   └── calendar/
+│       └── server.py    # servidor MCP stdio — Google Calendar (leitura todos, escrita só principal)
+├── scripts/
+│   └── authorize_calendar.py  # gera credenciais OAuth do Google Calendar (rodar uma vez)
 ```
 
 ### Como o coordinator importa
@@ -58,12 +62,13 @@ Telegram (usuário)
 coordinator/main.py  (python-telegram-bot, sessão por chat_id)
     ↓
 coordinator/agent.py  (Makima — Agent ADK)
-    ├── nami_agent      → BigQuery (finanças)             [agents/nami]
-    ├── kaguya_agent    → TickTick via MCP stdio          [agents/kaguya + mcp_servers/ticktick]
-    ├── lucy_agent      → Gmail IMAP                      [agents/lucy]     (ainda não ativada)
-    ├── media_agent     → Notion (séries + filmes + anime)[agents/media]    (ainda não ativada)
-    ├── books_agent     → Notion (livros)                 [agents/books]    (ainda não ativada)
-    └── knowledge_tool  → Vertex AI RAG (Obsidian vault via Google Drive)   (ainda não ativada)
+    ├── nami_agent      → BigQuery (finanças)                        [agents/nami]
+    ├── kaguya_agent    → TickTick via MCP stdio                     [agents/kaguya + mcp_servers/ticktick]
+    │                  → Google Calendar via MCP stdio               [mcp_servers/calendar]
+    ├── lucy_agent      → Gmail IMAP                                 [agents/lucy]     (ainda não ativada)
+    ├── media_agent     → Notion (séries + filmes + anime)           [agents/media]    (ainda não ativada)
+    ├── books_agent     → Notion (livros)                            [agents/books]    (ainda não ativada)
+    └── knowledge_tool  → Vertex AI RAG (Obsidian vault via Google Drive)              (ainda não ativada)
 ```
 
 **Makima não tem tools próprias** — ela só delega. Toda lógica de acesso a APIs fica nas tools dos agents especialistas em `agents/`.
@@ -92,14 +97,15 @@ Inspirada na Nami de One Piece — tesoureira obcecada por dinheiro.
 - Confirma sempre valor, categoria e conta após salvar (sem pedir confirmação antes)
 - Formata em HTML (não markdown)
 
-### Kaguya (agente de tarefas)
+### Kaguya (agente de tarefas + agenda)
 
 Inspirada na Kaguya Shinomiya de Kaguya-sama — aristocrática, organizada, levemente condescendente.
 
 - Sempre começa a resposta com `Kaguya:`
 - Tom de quem faz um favor — nunca admite diretamente que admira o usuário (escapa em "...")
 - Sempre chama a tool PRIMEIRO, depois responde com o resultado (nunca manda "aguarde...")
-- Confirma título, projeto e data de vencimento após criar/editar
+- Confirma título, projeto e data de vencimento após criar/editar tarefa
+- Confirma título, data/hora de início e fim após criar/editar evento do calendário
 - Formata em HTML (não markdown)
 
 ---
@@ -121,15 +127,37 @@ Makima conhece os fluxos duplos e roteia corretamente:
 
 ---
 
-## MCP Server — TickTick
+## MCP Servers
 
-As tools genéricas do TickTick (list, create, update, complete, delete, search, projetos, subtasks, checklist...) vivem em `mcp_servers/ticktick/server.py` como um servidor MCP FastMCP.
+A Kaguya usa **dois** servidores MCP, ambos rodando como processo filho stdio via `McpToolset`. O coordinator não muda — só chama `create_kaguya_agent()`.
 
-- Roda como **processo filho** (stdio) iniciado pelo ADK via `McpToolset`
-- O ADK gerencia o ciclo de vida — não precisa de `exit_stack` manual
-- Timeout configurado para 60s (list_tasks_today faz N+1 GETs, um por projeto)
-- Credenciais OAuth do TickTick passadas via `env` no `StdioConnectionParams`
-- Cache de projetos em memória com TTL de 5 minutos (dentro do processo servidor)
+### TickTick (`mcp_servers/ticktick/server.py`)
+
+Tools genéricas do TickTick: list, create, update, complete, delete, search, projetos, subtasks, checklist.
+
+- Timeout: 60s (list_tasks_today faz N+1 GETs, um por projeto)
+- Credenciais via env vars: `TICKTICK_ACCESS_TOKEN`, `TICKTICK_CLIENT_ID`, `TICKTICK_CLIENT_SECRET`, `TICKTICK_REFRESH_TOKEN`, `TICKTICK_EXPIRES_AT`
+- Cache de projetos em memória com TTL de 5 minutos
+
+### Google Calendar (`mcp_servers/calendar/server.py`)
+
+Tools de agenda: `list_calendars`, `list_events`, `list_events_today`, `get_event`, `create_event`, `update_event`, `delete_event`, `find_free_slots`.
+
+- Timeout: 30s
+- **Leitura**: todos os calendários. **Escrita**: apenas `GOOGLE_CALENDAR_MAIN_CALENDAR_ID`
+- Credenciais via env vars: `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_ACCESS_TOKEN`, `GOOGLE_CALENDAR_REFRESH_TOKEN`, `GOOGLE_CALENDAR_TOKEN_EXPIRY`, `GOOGLE_CALENDAR_MAIN_CALENDAR_ID`
+- Refresh automático de token OAuth (usa `creds.valid` do google-auth)
+- `expiry` passado como datetime **naive UTC** ao objeto `Credentials` — google-auth compara internamente com `datetime.utcnow()` (também naive); passar aware datetime causa `TypeError`
+- `list_events_today` filtra o calendário **"TickTick"** (sincronizado externamente) via `_BLOCKED_CALENDARS`
+- Para bloquear outros calendários externos, adicionar o nome ao conjunto `_BLOCKED_CALENDARS` em `server.py`
+- Fuso horário: `America/Sao_Paulo` (UTC-3) — timestamps usam `-03:00`
+
+#### Gerar credenciais OAuth (primeira vez)
+
+1. Google Cloud Console → projeto do BigQuery → APIs e Serviços → Biblioteca → habilitar **Google Calendar API**
+2. Criar credencial OAuth 2.0 tipo **Desktop app** → baixar JSON → salvar como `scripts/client_secret.json`
+3. Rodar `python scripts/authorize_calendar.py` — abre browser, imprime os valores das env vars
+4. Copiar os valores para `.env` e para o Dokploy
 
 ---
 
@@ -153,6 +181,12 @@ TICKTICK_CLIENT_ID             # client ID do app TickTick
 TICKTICK_CLIENT_SECRET         # client secret do app TickTick
 TICKTICK_REFRESH_TOKEN         # refresh token OAuth
 TICKTICK_EXPIRES_AT            # ISO 8601 — data de expiração do access token
+GOOGLE_CALENDAR_CLIENT_ID      # client ID do app OAuth do Google Calendar
+GOOGLE_CALENDAR_CLIENT_SECRET  # client secret do app OAuth
+GOOGLE_CALENDAR_ACCESS_TOKEN   # access token OAuth
+GOOGLE_CALENDAR_REFRESH_TOKEN  # refresh token OAuth
+GOOGLE_CALENDAR_TOKEN_EXPIRY   # ISO 8601 — data de expiração do access token
+GOOGLE_CALENDAR_MAIN_CALENDAR_ID # ID do calendário principal (geralmente o email Gmail)
 VERTEX_RAG_CORPUS              # ID do corpus Vertex AI RAG (após Fase 5)
 ```
 
@@ -177,15 +211,21 @@ makima_personal_agent/
 │   │   ├── tools.py     # tools de acesso ao BigQuery
 │   │   ├── agent.py     # nami_agent
 │   │   └── schema.sql   # schema das tabelas BigQuery
-│   └── kaguya/          # agente de tarefas — Fase 2 ✅
+│   └── kaguya/          # agente de tarefas + agenda — Fase 2 ✅
 │       ├── __init__.py
 │       ├── tools.py     # tools cross-agent (complete_payment_task, create_expense_reminder)
-│       └── agent.py     # create_kaguya_agent() — factory com McpToolset
+│       └── agent.py     # create_kaguya_agent() — factory com dois McpToolsets (TickTick + Calendar)
 ├── mcp_servers/
 │   ├── __init__.py
-│   └── ticktick/
+│   ├── ticktick/
+│   │   ├── __init__.py
+│   │   └── server.py    # servidor MCP FastMCP — tools genéricas do TickTick
+│   └── calendar/
 │       ├── __init__.py
-│       └── server.py    # servidor MCP FastMCP — tools genéricas do TickTick
+│       └── server.py    # servidor MCP FastMCP — Google Calendar (leitura todos, escrita só principal)
+├── scripts/
+│   ├── authorize_calendar.py  # gera credenciais OAuth do Google Calendar (rodar uma vez)
+│   └── .gitignore             # exclui client_secret.json do git
 ├── requirements.txt
 ├── PLAN.md              # design completo, fases, schemas, custos
 └── CLAUDE.md            # este arquivo
@@ -196,11 +236,14 @@ makima_personal_agent/
 ## Dependências
 
 ```
-google-adk          # Agent, InMemoryRunner, McpToolset, (Fase 5) VertexAiRagRetrieval
-python-telegram-bot # bot Telegram
-google-cloud-bigquery # acesso ao BigQuery (Nami)
-requests            # acesso HTTP às APIs (TickTick, etc.) nas tools dos agentes
-mcp[cli]            # FastMCP — servidor MCP do TickTick
+google-adk               # Agent, InMemoryRunner, McpToolset, (Fase 5) VertexAiRagRetrieval
+python-telegram-bot      # bot Telegram
+google-cloud-bigquery    # acesso ao BigQuery (Nami)
+requests                 # acesso HTTP às APIs (TickTick, etc.) nas tools dos agentes
+mcp[cli]                 # FastMCP — servidor MCP do TickTick e Calendar
+google-auth              # OAuth para Google Calendar
+google-auth-oauthlib     # fluxo OAuth desktop (script de autorização)
+google-api-python-client # cliente da Google Calendar API v3
 ```
 
 Ambiente local: `.venv` própria do makima.
@@ -217,7 +260,7 @@ Ambiente local: `.venv` própria do makima.
 | **4** | Media + Books: agentes de entretenimento + morning briefing completo. | `agents/media/`, `agents/books/` | — |
 | **5** | Vertex AI RAG: Google Drive → Data Store. Adicionar `knowledge_tool`. | GCP Console + `coordinator/agent.py` | — |
 
-**Fase atual: 2 ✅** — Nami e Kaguya ativas. Deploy pendente (substituir workflow Telegram do Nami no n8n pela Makima). Próximos passos: deploy + Fase 3 (Lucy).
+**Fase atual: 2 ✅** — Nami e Kaguya ativas (TickTick + Google Calendar). Deploy feito no VPS. Próximos passos: Fase 3 (Lucy).
 
 ---
 
@@ -255,6 +298,9 @@ python -m venv .venv
 # TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, GOOGLE_APPLICATION_CREDENTIALS (BigQuery)
 # TICKTICK_ACCESS_TOKEN, TICKTICK_CLIENT_ID, TICKTICK_CLIENT_SECRET,
 # TICKTICK_REFRESH_TOKEN, TICKTICK_EXPIRES_AT
+# GOOGLE_CALENDAR_CLIENT_ID, GOOGLE_CALENDAR_CLIENT_SECRET,
+# GOOGLE_CALENDAR_ACCESS_TOKEN, GOOGLE_CALENDAR_REFRESH_TOKEN,
+# GOOGLE_CALENDAR_TOKEN_EXPIRY, GOOGLE_CALENDAR_MAIN_CALENDAR_ID
 
 python -m coordinator.main
 ```
