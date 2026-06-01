@@ -111,6 +111,29 @@ _INSTRUCTION = """
     - Usuário quer lembrete para pagar algo futuro → create_expense_reminder
       (precisa de: título, data de vencimento)
 
+    GOOGLE CALENDAR:
+    Você também tem acesso ao Google Calendar do usuário via tools de calendário.
+    - list_calendars() → lista todos os calendários disponíveis
+    - list_events_today() → eventos do dia em TODOS os calendários (use para briefings)
+    - list_events(calendar_id, date_from, date_to) → eventos num intervalo de datas
+    - get_event(calendar_id, event_id) → detalhe de um evento
+    - create_event(summary, start_datetime, end_datetime, ...) → SOMENTE no calendário principal
+    - update_event(event_id, ...) → SOMENTE no calendário principal
+    - delete_event(event_id) → SOMENTE no calendário principal (confirme antes — é irreversível)
+    - find_free_slots(date_from, date_to, duration_minutes) → horários livres em todos os calendários
+
+    REGRA DE ESCRITA: Leitura é permitida em todos os calendários.
+    Escrita (criar, editar, deletar) é permitida APENAS no calendário principal.
+    Se o usuário pedir para editar evento de outro calendário, explique a limitação.
+
+    Para eventos: use o formato ISO 8601 nos datetimes (ex: 2026-06-01T15:00:00).
+    Fuso horário padrão: America/Sao_Paulo.
+    Confirme sempre: título, data/hora de início e fim após criar ou editar evento.
+
+    Formatação de eventos em HTML:
+    📅 <b>Título do evento</b>
+       🕐 HH:MM – HH:MM · 📍 Local (se houver)
+
     Responda sempre em português. Nunca quebre o personagem.
 """
 
@@ -154,16 +177,46 @@ def create_kaguya_agent() -> Agent:
         )
     )
 
+    # Caminho absoluto para o servidor MCP do Google Calendar
+    calendar_server_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "mcp_servers", "calendar", "server.py"
+    )
+
+    # Variáveis de ambiente do Google Calendar passadas explicitamente ao subprocesso
+    calendar_env = {
+        **get_default_environment(),
+        "GOOGLE_CALENDAR_CLIENT_ID": os.environ.get("GOOGLE_CALENDAR_CLIENT_ID", ""),
+        "GOOGLE_CALENDAR_CLIENT_SECRET": os.environ.get("GOOGLE_CALENDAR_CLIENT_SECRET", ""),
+        "GOOGLE_CALENDAR_ACCESS_TOKEN": os.environ.get("GOOGLE_CALENDAR_ACCESS_TOKEN", ""),
+        "GOOGLE_CALENDAR_REFRESH_TOKEN": os.environ.get("GOOGLE_CALENDAR_REFRESH_TOKEN", ""),
+        "GOOGLE_CALENDAR_TOKEN_EXPIRY": os.environ.get("GOOGLE_CALENDAR_TOKEN_EXPIRY", ""),
+        "GOOGLE_CALENDAR_MAIN_CALENDAR_ID": os.environ.get("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", ""),
+    }
+
+    # McpToolset para o Google Calendar — timeout 30s (Calendar API é mais rápida que TickTick)
+    mcp_calendar = McpToolset(
+        connection_params=StdioConnectionParams(
+            server_params=StdioServerParameters(
+                command="python",
+                args=[calendar_server_path],
+                env=calendar_env,
+            ),
+            timeout=30.0,
+        )
+    )
+
     return Agent(
         name="kaguya_agent",
         model="gemini-2.0-flash",
         description=(
-            "Especialista em gestão de tarefas via TickTick. Cria, edita, completa e organiza "
-            "tarefas, subtasks e checklists. Gerencia projetos, datas de vencimento e prioridades. "
-            "Use para qualquer pedido sobre tarefas, to-dos, lembretes, pendências, listas de "
-            "afazeres. Também lida com fluxos financeiros: completar tarefa de pagamento e criar "
-            "lembretes de despesas futuras."
+            "Especialista em gestão de tarefas via TickTick e agenda via Google Calendar. "
+            "Cria, edita, completa e organiza tarefas, subtasks e checklists. Gerencia projetos, "
+            "datas de vencimento e prioridades. Consulta e cria eventos no Google Calendar. "
+            "Use para qualquer pedido sobre tarefas, to-dos, lembretes, pendências, agenda, "
+            "eventos, horários livres. Também lida com fluxos financeiros: completar tarefa de "
+            "pagamento e criar lembretes de despesas futuras."
         ),
         instruction=_INSTRUCTION,
-        tools=[mcp_toolset, complete_payment_task, create_expense_reminder],
+        tools=[mcp_toolset, mcp_calendar, complete_payment_task, create_expense_reminder],
     )
