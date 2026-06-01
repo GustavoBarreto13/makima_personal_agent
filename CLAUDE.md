@@ -27,9 +27,11 @@ makima_personal_agent/
 │   ├── kaguya/      # tarefas (TickTick via MCP) + agenda      ← Fase 2 ✅
 │   │   ├── tools.py     # tools cross-agent (complete_payment_task, create_expense_reminder)
 │   │   └── agent.py     # create_kaguya_agent() — factory com dois McpToolsets
-│   ├── lucy/        # email (Gmail IMAP)                        — Fase 3
-│   ├── media/       # séries+filmes+anime                       — Fase 4
-│   └── books/       # livros                                    — Fase 4
+│   ├── kurisu/      # knowledge base (Vertex AI RAG)            ← Fase 3 🔧 (estrutura criada)
+│   │   └── agent.py     # kurisu_agent — singleton com VertexAiRagRetrieval
+│   ├── lucy/        # email (Gmail IMAP)                        — Fase 4
+│   ├── media/       # séries+filmes+anime                       — Fase 5
+│   └── books/       # livros                                    — Fase 5
 ├── mcp_servers/
 │   ├── ticktick/
 │   │   └── server.py    # servidor MCP stdio — tools genéricas do TickTick
@@ -45,6 +47,7 @@ makima_personal_agent/
 # coordinator/agent.py
 from agents.nami.agent import nami_agent
 from agents.kaguya.agent import create_kaguya_agent   # factory (instancia McpToolset)
+# from agents.kurisu.agent import kurisu_agent         # pendente: setup Vertex AI RAG
 # from agents.lucy.agent import lucy_agent
 # from agents.media.agent import media_agent
 # from agents.books.agent import books_agent
@@ -65,10 +68,10 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── nami_agent      → BigQuery (finanças)                        [agents/nami]
     ├── kaguya_agent    → TickTick via MCP stdio                     [agents/kaguya + mcp_servers/ticktick]
     │                  → Google Calendar via MCP stdio               [mcp_servers/calendar]
+    ├── kurisu_agent    → Vertex AI RAG (vault Obsidian)             [agents/kurisu]   (estrutura criada, pendente corpus)
     ├── lucy_agent      → Gmail IMAP                                 [agents/lucy]     (ainda não ativada)
     ├── media_agent     → Notion (séries + filmes + anime)           [agents/media]    (ainda não ativada)
-    ├── books_agent     → Notion (livros)                            [agents/books]    (ainda não ativada)
-    └── knowledge_tool  → Vertex AI RAG (Obsidian vault via Google Drive)              (ainda não ativada)
+    └── books_agent     → Notion (livros)                            [agents/books]    (ainda não ativada)
 ```
 
 **Makima não tem tools próprias** — ela só delega. Toda lógica de acesso a APIs fica nas tools dos agents especialistas em `agents/`.
@@ -106,6 +109,32 @@ Inspirada na Kaguya Shinomiya de Kaguya-sama — aristocrática, organizada, lev
 - Sempre chama a tool PRIMEIRO, depois responde com o resultado (nunca manda "aguarde...")
 - Confirma título, projeto e data de vencimento após criar/editar tarefa
 - Confirma título, data/hora de início e fim após criar/editar evento do calendário
+- Formata em HTML (não markdown)
+
+### Kurisu (agente de knowledge base)
+
+Inspirada na Kurisu Makise de Steins;Gate — neurocientista prodígio, direta, levemente sarcástica.
+
+Dois modos de operação, detectados automaticamente pelo contexto:
+
+**Modo Tutora** (notas de estudo, técnicas, projetos):
+
+- Sempre começa com `Kurisu:`
+- Tom didático, rigoroso — referencia fontes do vault quando encontradas
+- Sarcasmo saudável se a resposta estiver nas próprias notas: "Isso está nas suas próprias notas, El Psy Kongroo."
+- Nunca simplifica demais
+
+**Modo Amiga** (notas pessoais, diário, reflexões):
+
+- Começa direto com a fala, sem prefixo `Kurisu:`
+- Tom caloroso, honesto, sem julgamento — linguagem natural ("você escreveu uma vez que...")
+- Pode discordar, mas sempre com empatia
+
+Comportamento geral:
+
+- Sempre busca no knowledge base (Vertex AI RAG) ANTES de responder
+- Se não encontrar nada no vault, é explícita: "Não encontrei nada no seu vault sobre isso, mas posso responder com base no que sei:"
+- Frases características: "El Psy Kongroo", "Isso é elementar", "Não seja impreciso"
 - Formata em HTML (não markdown)
 
 ---
@@ -202,7 +231,7 @@ VERTEX_RAG_CORPUS              # ID do corpus Vertex AI RAG (após Fase 5)
 makima_personal_agent/
 ├── coordinator/
 │   ├── main.py          # Telegram bot loop + sessões (ADK)
-│   ├── agent.py         # Makima (Agent ADK) + sub_agents + knowledge_tool
+│   ├── agent.py         # Makima (Agent ADK) + sub_agents
 │   └── Dockerfile
 ├── agents/
 │   ├── __init__.py
@@ -211,10 +240,15 @@ makima_personal_agent/
 │   │   ├── tools.py     # tools de acesso ao BigQuery
 │   │   ├── agent.py     # nami_agent
 │   │   └── schema.sql   # schema das tabelas BigQuery
-│   └── kaguya/          # agente de tarefas + agenda — Fase 2 ✅
+│   ├── kaguya/          # agente de tarefas + agenda — Fase 2 ✅
+│   │   ├── __init__.py
+│   │   ├── tools.py     # tools cross-agent (complete_payment_task, create_expense_reminder)
+│   │   ├── agent.py     # create_kaguya_agent() — factory com dois McpToolsets (TickTick + Calendar)
+│   │   └── PLAN.md      # documentação do agente
+│   └── kurisu/          # agente de knowledge base — Fase 3 🔧 (pendente corpus Vertex AI)
 │       ├── __init__.py
-│       ├── tools.py     # tools cross-agent (complete_payment_task, create_expense_reminder)
-│       └── agent.py     # create_kaguya_agent() — factory com dois McpToolsets (TickTick + Calendar)
+│       ├── agent.py     # kurisu_agent — singleton com VertexAiRagRetrieval
+│       └── PLAN.md      # documentação + checklist de setup do Vertex AI
 ├── mcp_servers/
 │   ├── __init__.py
 │   ├── ticktick/
@@ -256,11 +290,11 @@ Ambiente local: `.venv` própria do makima.
 | --- | --- | --- | --- |
 | **1** | Nami (finanças): tools BigQuery + agent. Ligar ao coordinator. | `agents/nami/` | ✅ |
 | **2** | Kaguya (tarefas): MCP server TickTick + tools cross-agent + agent. Ligar ao coordinator. Integração dupla Kaguya+Nami. | `agents/kaguya/` + `mcp_servers/ticktick/` | ✅ |
-| **3** | Lucy (email): tools IMAP/Gmail + agent. Adicionar ao coordinator. | `agents/lucy/` (ref.: `n8n-python-scripts/lucy_email_agent/`) | — |
-| **4** | Media + Books: agentes de entretenimento + morning briefing completo. | `agents/media/`, `agents/books/` | — |
-| **5** | Vertex AI RAG: Google Drive → Data Store. Adicionar `knowledge_tool`. | GCP Console + `coordinator/agent.py` | — |
+| **3** | Kurisu (knowledge base): Vertex AI RAG sobre vault Obsidian. Estrutura criada, pendente setup do corpus no GCP. | `agents/kurisu/` + GCP Console | 🔧 |
+| **4** | Lucy (email): tools IMAP/Gmail + agent. Adicionar ao coordinator. | `agents/lucy/` (ref.: `n8n-python-scripts/lucy_email_agent/`) | — |
+| **5** | Media + Books: agentes de entretenimento + morning briefing completo. | `agents/media/`, `agents/books/` | — |
 
-**Fase atual: 2 ✅** — Nami e Kaguya ativas (TickTick + Google Calendar). Deploy feito no VPS. Próximos passos: Fase 3 (Lucy).
+**Fase atual: 3 🔧** — Kurisu com estrutura criada. Próximo passo: criar o Data Store no Vertex AI Agent Builder e configurar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/PLAN.md`).
 
 ---
 
@@ -311,18 +345,23 @@ python -m coordinator.main
 
 ---
 
-## Knowledge (Obsidian via Vertex AI RAG)
+## Knowledge (Obsidian via Vertex AI RAG) — Kurisu
 
-O vault do Obsidian já está sincronizado com o Google Drive. Na Fase 5:
+O vault do Obsidian já está sincronizado com o Google Drive. A estrutura da Kurisu está criada em `agents/kurisu/`. Para ativar:
 
-1. Criar Data Store no Vertex AI Agent Builder apontando para a pasta do vault no Drive
-2. Aguardar indexação inicial
-3. Copiar o corpus ID e definir em `VERTEX_RAG_CORPUS`
-4. Descomentar `knowledge_tool` em `coordinator/agent.py`
+1. Google Cloud Console → projeto `projetos-448301` → habilitar **Vertex AI API** e **Vertex AI Agent Builder API**
+2. Agent Builder → Data Stores → Create → Google Drive → selecionar pasta do vault
+3. Aguardar indexação (15–30 min na primeira vez)
+4. Copiar o corpus resource name: `projects/projetos-448301/locations/us-central1/ragCorpora/XXXXXXXX`
+5. Adicionar `VERTEX_RAG_CORPUS` ao `.env` e ao Dokploy
+6. Descomentar `from agents.kurisu.agent import kurisu_agent` em `coordinator/agent.py`
+7. Adicionar `kurisu_agent` ao `sub_agents` da Makima e atualizar a instrução de roteamento
+
+Ver checklist completo em `agents/kurisu/PLAN.md`.
 
 **Plano B**: se o custo do Vertex AI Search (~US$4/1.000 queries) for relevante, substituir por ChromaDB self-hosted no mesmo VPS.
 
-Ver seção "Estrutura ideal das notas para RAG" no `PLAN.md` antes de indexar.
+**Nota sobre singleton vs. factory**: Kurisu é singleton (como Nami) — `VertexAiRagRetrieval` é uma tool ADK nativa, não spawna processo filho. Diferente da Kaguya que usa `McpToolset` e precisa de factory.
 
 ---
 

@@ -14,10 +14,10 @@ coordinator/main.py  (python-telegram-bot)
 coordinator/agent.py  (Makima — Agent ADK)
     ├── Nami       → BigQuery (finanças)                      ✅ ativo
     ├── Kaguya     → TickTick via MCP + Google Calendar MCP   ✅ ativo
-    ├── Lucy       → Gmail IMAP                               — fase 3
-    ├── Media      → Notion (séries, filmes, anime)           — fase 4
-    ├── Books      → Notion (livros)                          — fase 4
-    └── knowledge  → Vertex AI RAG (vault Obsidian)          — fase 5
+    ├── Kurisu     → Vertex AI RAG (vault Obsidian)           🔧 estrutura criada, pendente corpus
+    ├── Lucy       → Gmail IMAP                               — fase 4
+    ├── Media      → Notion (séries, filmes, anime)           — fase 5
+    └── Books      → Notion (livros)                          — fase 5
 ```
 
 Makima não executa nenhuma ação diretamente — ela apenas roteia para o agente correto. Toda lógica de API fica nos agentes especialistas.
@@ -40,6 +40,15 @@ Inspirada na Kaguya Shinomiya de Kaguya-sama. Aristocrática e organizada. Geren
 | `complete_payment_task` | Completa tarefa no TickTick **e** lança despesa no BigQuery |
 | `create_expense_reminder` | Cria lembrete de pagamento no TickTick (sem lançar despesa ainda) |
 
+### Kurisu — knowledge base
+
+Inspirada na Kurisu Makise de Steins;Gate. Neurocientista prodígio, direta e levemente sarcástica. Acessa o vault de notas do Obsidian via Vertex AI RAG para explicar conceitos, cruzar informações entre notas e responder sobre estudos e memória pessoal.
+
+Opera em dois modos detectados automaticamente:
+
+- **Tutora** — notas de estudo e técnicas: tom rigoroso, referencia fontes do vault, sarcasmo saudável
+- **Amiga** — notas pessoais e diário: tom caloroso, linguagem natural, sem estrutura formal
+
 ---
 
 ## Estrutura de arquivos
@@ -53,11 +62,15 @@ makima_personal_agent/
 ├── agents/
 │   ├── nami/
 │   │   ├── tools.py         # acesso ao BigQuery
-│   │   ├── agent.py         # nami_agent
+│   │   ├── agent.py         # nami_agent (singleton)
 │   │   └── schema.sql       # schema das tabelas BigQuery
-│   └── kaguya/
-│       ├── tools.py         # tools cross-agent (Kaguya+Nami)
-│       └── agent.py         # create_kaguya_agent() — factory com dois McpToolsets
+│   ├── kaguya/
+│   │   ├── tools.py         # tools cross-agent (Kaguya+Nami)
+│   │   ├── agent.py         # create_kaguya_agent() — factory com dois McpToolsets
+│   │   └── PLAN.md          # documentação do agente
+│   └── kurisu/
+│       ├── agent.py         # kurisu_agent (singleton, VertexAiRagRetrieval)
+│       └── PLAN.md          # documentação + checklist de setup do Vertex AI
 ├── mcp_servers/
 │   ├── ticktick/
 │   │   └── server.py        # servidor MCP — tools genéricas do TickTick
@@ -128,9 +141,11 @@ GOOGLE_CALENDAR_REFRESH_TOKEN=
 GOOGLE_CALENDAR_TOKEN_EXPIRY=      # ISO 8601
 GOOGLE_CALENDAR_MAIN_CALENDAR_ID=  # geralmente o email Gmail
 
+# Kurisu — Vertex AI RAG (fase 3)
+VERTEX_RAG_CORPUS=             # projects/{PROJECT_ID}/locations/us-central1/ragCorpora/{ID}
+
 # Uso futuro
 NOTION_TOKEN=
-VERTEX_RAG_CORPUS=
 ```
 
 ---
@@ -174,11 +189,11 @@ Os agentes usam `gemini-2.0-flash`. A chave Gemini é lida de `GEMINI_API_KEY` (
 |---|---|---|
 | 1 | Nami (finanças): tools BigQuery + agente | ✅ |
 | 2 | Kaguya (tarefas + agenda): MCP TickTick + MCP Calendar + tools cross-agent | ✅ |
-| 3 | Lucy (email): tools Gmail IMAP + agente | — |
-| 4 | Media + Books: entretenimento + morning briefing completo | — |
-| 5 | Knowledge: Vertex AI RAG sobre vault Obsidian (Google Drive) | — |
+| 3 | Kurisu (knowledge base): Vertex AI RAG sobre vault Obsidian — estrutura criada, pendente corpus GCP | 🔧 |
+| 4 | Lucy (email): tools Gmail IMAP + agente | — |
+| 5 | Media + Books: entretenimento + morning briefing completo | — |
 
-**Fase atual: 2** — Nami e Kaguya ativas, deploy feito no VPS.
+**Fase atual: 3 🔧** — Kurisu com estrutura criada. Próximo passo: setup do Data Store no Vertex AI Agent Builder (ver `agents/kurisu/PLAN.md`).
 
 ---
 
