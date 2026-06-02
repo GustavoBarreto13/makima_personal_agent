@@ -120,27 +120,77 @@ n8n-python-scripts/   (apenas referência — não importado)
 
 ### Agentes por domínio
 
-**Nami Agent** (finanças)
+Os nomes dos agentes são inspirados em personagens de anime/mangá. Cada agente é um pacote
+independente em `agents/<dominio>/`.
+
+---
+
+**Nami** — Finance Agent ✅ Fase 1 concluída
+- Inspiração: Nami de One Piece (tesoureira obcecada por dinheiro)
+- Domínio: finanças pessoais
 - Tools: `create_transaction`, `query_expenses`, `update_transaction`, `delete_transaction`
-- Fonte: Notion 💰 Transações
+- Fonte: BigQuery (tabelas de transações financeiras)
+- Localização: `agents/nami/`
 
-**Lucy Agent** (email — interativo)
-- Tools: `fetch_emails(filtros)`, `label_and_archive(uid, label)`, `search_emails(query)`, `get_email_body(uid)`
+**Kaguya Shinomiya** — Tasks + Calendar Agent ✅ Fase 2 concluída
+- Inspiração: Kaguya Shinomiya de Kaguya-sama (aristocrática e organizada)
+- Domínio: tarefas e agenda
+- Tools: tools genéricas do TickTick via MCP + Google Calendar via MCP + tools cross-agent
+  (`complete_payment_task`, `create_expense_reminder`)
+- Fontes: TickTick API (MCP stdio) + Google Calendar API (MCP stdio)
+- Localização: `agents/kaguya/` + `mcp_servers/ticktick/` + `mcp_servers/calendar/`
+
+**Makise Kurisu** — Knowledge Base Agent 🔧 Fase 3 (estrutura criada, corpus pendente)
+- Inspiração: Kurisu Makise de Steins;Gate (neurocientista prodígio e direta)
+- Domínio: base de conhecimento pessoal (vault Obsidian)
+- Tool: `VertexAiRagRetrieval` — busca semântica no vault indexado pelo Vertex AI
+- Fonte: Google Drive (vault Obsidian sincronizado) → Vertex AI Agent Builder → RAG corpus
+- Localização: `agents/kurisu/`
+- Próximo passo: criar corpus no Vertex AI e configurar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/PLAN.md`)
+
+**Lucy** — Email Agent (Fase 4, não iniciada)
+- Domínio: email e Gmail
+- Tools planejadas: `fetch_emails`, `label_and_archive`, `search_emails`, `get_email_body`
 - Fonte: Gmail IMAP
-- Nota: o digest batch diário continua em `main.py` — Lucy interativa é complementar
+- Nota: o digest batch diário (n8n) continua independente — Lucy é a camada interativa
 
-**Tasks Agent** (tarefas)
-- Tools: `get_tasks_today`, `create_task`, `complete_task`, `list_overdue`
-- Fonte: TickTick API / Notion (reusar lógica do `ticktick_notion_sync`)
+**Marin Kitagawa** — Anime / Manga Agent (Fase 5, não iniciada)
+- Inspiração: Marin Kitagawa de My Dress-Up Darling (entusiasta de cultura pop)
+- Domínio: acompanhamento de anime e mangá
+- Fonte planejada: Notion (estado atual) + BigQuery mirror
+- Referência de implementação: `n8n-python-scripts/anime_sync/`
 
-**Media Agent** (séries + filmes + anime)
-- Tools: `get_watching_now`, `get_watch_history(periodo)`, `mark_episode_watched`, `get_stats`
-- Fontes: Notion (estado atual) + BigQuery (histórico analítico)
-- Combina dados de `series_sync`, `gustavoboxd`, `anime_sync`
+**Akane Kurokawa** — Movies Agent (Fase 5, não iniciada)
+- Inspiração: Akane Kurokawa de Oshi no Ko (atriz — mundo do entretenimento)
+- Domínio: filmes e acompanhamento via Letterboxd
+- Fonte planejada: Notion + BigQuery mirror
+- Referência de implementação: `n8n-python-scripts/gustavoboxd/`
 
-**Books Agent** (livros)
-- Tools: `get_current_book`, `get_read_history`, `add_book`, `mark_finished`
-- Fontes: Notion + BigQuery mirror
+**Mai Sakurajima** — TV Shows Agent (Fase 5, não iniciada)
+- Inspiração: Mai Sakurajima de Bunny Girl Senpai (presença marcante, séries longas)
+- Domínio: séries de TV
+- Fonte planejada: Notion + BigQuery mirror
+- Referência de implementação: `n8n-python-scripts/series_sync/`
+
+**Frieren** — Books Agent (Fase 5, não iniciada)
+- Inspiração: Frieren de Frieren: Beyond Journey's End (maga antiga, acumulo de conhecimento)
+- Domínio: livros e leitura
+- Tools planejadas: `get_current_book`, `get_read_history`, `add_book`, `mark_finished`
+- Fonte planejada: Notion + BigQuery mirror
+
+**Misato Katsuragi** — Work Agent (não iniciada, prioridade média)
+- Inspiração: Misato Katsuragi de Evangelion (comandante operacional)
+- Domínio: gestão de trabalho e projetos profissionais
+- Escopo a definir (pode integrar com Notion, GitHub, etc.)
+
+**Kaori / Bocchi** — Spotify Agent (não iniciada, baixa prioridade)
+- Inspiração: Kaori de Shigatsu wa Kimi no Uso / Bocchi de Bocchi the Rock (músicas)
+- Domínio: música e Spotify
+- Fonte planejada: Spotify API + BigQuery (`spotify.streaming_history` já existe)
+
+**Games Agent** (não iniciada, baixa prioridade)
+- Domínio: acompanhamento de jogos
+- Escopo e nome do personagem a definir
 
 ---
 
