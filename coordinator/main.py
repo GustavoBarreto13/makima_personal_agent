@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
-from google.adk.runners import InMemoryRunner
+from google.adk.runners import Runner
+from google.adk.sessions import DatabaseSessionService
 from google.genai import types
 
 # Carrega o .env antes de qualquer outra importação que leia env vars
@@ -31,21 +32,40 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 APP_NAME = "makima"
 
+# Conecta ao PostgreSQL para persistir sessões entre reinícios do container
+DATABASE_URL = os.environ["DATABASE_URL"]
+# DatabaseSessionService cria as tabelas automaticamente na primeira execução
+session_service = DatabaseSessionService(db_url=DATABASE_URL)
+
 # Makima e runner são criados de forma síncrona — ADK gerencia MCP internamente
 makima = create_makima()
-runner = InMemoryRunner(agent=makima, app_name=APP_NAME)
+runner = Runner(agent=makima, app_name=APP_NAME, session_service=session_service)
 
 _sessions: set[str] = set()
 
 
 async def ensure_session(chat_id: str) -> None:
-    """Garante que existe uma sessão ADK para este chat_id (cria na primeira vez)."""
+    """Garante que existe uma sessão ADK para este chat_id (cria na primeira vez).
+
+    O set _sessions evita chamadas repetidas ao banco durante o mesmo processo.
+    Após reinício do container o set está vazio, então verificamos no banco antes
+    de tentar criar — evita erro caso a sessão já exista no PostgreSQL.
+    """
     if chat_id not in _sessions:
-        await runner.session_service.create_session(
+        # Verifica se a sessão já existe no banco (caso de restart do container)
+        existing = await runner.session_service.get_session(
             app_name=APP_NAME,
             user_id=chat_id,
             session_id=chat_id,
         )
+        if existing is None:
+            # Sessão nova: cria no banco pela primeira vez
+            await runner.session_service.create_session(
+                app_name=APP_NAME,
+                user_id=chat_id,
+                session_id=chat_id,
+            )
+        # Marca como conhecida neste processo para evitar consultas futuras ao banco
         _sessions.add(chat_id)
 
 

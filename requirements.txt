@@ -1,4 +1,4 @@
-google-adk          # Agent, InMemoryRunner, sessões em memória
+google-adk          # Agent, Runner, DatabaseSessionService — sessões persistentes
 python-telegram-bot # bot Telegram
 python-dotenv       # carrega variáveis do arquivo .env
 requests
@@ -9,3 +9,5 @@ mcp                 # Model Context Protocol para integração com servidores MC
 google-auth         # Autenticação Google (OAuth2)
 google-auth-oauthlib # OAuth2 para Google (flow de autorização)
 google-api-python-client # Cliente Python para APIs Google (Calendar, Drive, etc.)
+asyncpg             # driver async para PostgreSQL (exigido pelo DatabaseSessionService do ADK)
+sqlalchemy          # ORM usado internamente pelo ADK para criar e acessar as tabelas

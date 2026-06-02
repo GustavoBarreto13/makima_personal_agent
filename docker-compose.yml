@@ -1,6 +1,27 @@
-# Deploy da Makima como um único serviço (bot Telegram persistente).
+# Deploy da Makima: bot Telegram + banco PostgreSQL para persistência de sessão.
 # As variáveis de ambiente vêm do arquivo .env (não do painel do Dokploy).
 services:
+
+  # Banco de dados PostgreSQL — armazena histórico de sessões do ADK
+  postgres:
+    image: postgres:16-alpine
+    container_name: makima-postgres
+    environment:
+      # Credenciais do banco — vêm do .env via substituição do Docker Compose
+      POSTGRES_DB: makima
+      POSTGRES_USER: makima
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      # Volume nomeado para persistir os dados mesmo após reinício do container
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    # Healthcheck: só considera o Postgres "pronto" quando aceitar conexões
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U makima -d makima"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   makima:
     build:
       # Contexto = raiz do repo (para COPY . . pegar coordinator/ e agents/).
@@ -11,3 +32,11 @@ services:
     env_file: .env
     # Reinicia o bot automaticamente se cair ou no boot do host.
     restart: unless-stopped
+    # Aguarda o Postgres estar realmente pronto antes de iniciar o bot
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+# Volume nomeado — os dados sobrevivem a "docker compose down" (mas não a "down -v")
+volumes:
+  postgres_data:
