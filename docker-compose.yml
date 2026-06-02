@@ -5,7 +5,7 @@ services:
   # Banco de dados PostgreSQL — armazena histórico de sessões do ADK
   postgres:
     image: postgres:16-alpine
-    container_name: makima-postgres
+    container_name: makima-db
     environment:
       # Credenciais do banco — vêm do .env via substituição do Docker Compose
       POSTGRES_DB: makima
@@ -27,7 +27,7 @@ services:
       # Contexto = raiz do repo (para COPY . . pegar coordinator/ e agents/).
       context: .
       dockerfile: coordinator/Dockerfile
-    container_name: makima
+    container_name: makima-bot
     # Injeta TODAS as variáveis do .env como env vars do container.
     env_file: .env
     # Reinicia o bot automaticamente se cair ou no boot do host.
