@@ -9,10 +9,16 @@ from google.adk.tools.retrieval import VertexAiRagRetrieval
 _rag_corpus = os.environ.get("VERTEX_RAG_CORPUS", "")
 
 # Tool que envia a query para o Vertex AI RAG e retorna os chunks mais relevantes do vault.
+# rag_corpora: lista com o resource name do corpus (API atual do ADK exige lista, não string).
 # similarity_top_k=5: retorna os 5 trechos mais próximos semanticamente.
 # vector_distance_threshold=0.5: descarta chunks pouco similares para evitar ruído.
 knowledge_tool = VertexAiRagRetrieval(
-    rag_corpus=_rag_corpus,
+    name="buscar_no_vault",
+    description=(
+        "Busca informações no vault de notas do Obsidian do usuário via Vertex AI RAG. "
+        "Use para perguntas sobre notas de estudo, diário, projetos e memória pessoal."
+    ),
+    rag_corpora=[_rag_corpus] if _rag_corpus else [],
     similarity_top_k=5,
     vector_distance_threshold=0.5,
 )
