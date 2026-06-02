@@ -148,49 +148,177 @@ independente em `agents/<dominio>/`.
 - Localização: `agents/kurisu/`
 - Próximo passo: criar corpus no Vertex AI e configurar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/PLAN.md`)
 
-**Lucy** — Email Agent (Fase 4, não iniciada)
-- Domínio: email e Gmail
-- Tools planejadas: `fetch_emails`, `label_and_archive`, `search_emails`, `get_email_body`
-- Fonte: Gmail IMAP
-- Nota: o digest batch diário (n8n) continua independente — Lucy é a camada interativa
+**Lucy** — Email Agent (Fase 4)
+- Inspiração: Lucy de Elfen Lied — aparência calma, triagem clínica e implacável de tudo que não merece atenção
+- Domínio: email, Gmail (leitura, busca, arquivamento, respostas, rascunhos)
+- Personalidade:
+  - Começa com `Lucy:`
+  - Tom direto e frio: "Três emails não lidos. Dois são irrelevantes."
+  - Frieza clínica ao categorizar: "Isso não requer sua atenção."
+  - Nunca entusiasmo — apenas precisão
+- Tools planejadas:
+  - `list_emails(max_results, unread_only, label)` — lista emails da caixa de entrada
+  - `search_emails(query, max_results)` — pesquisa com sintaxe Gmail (from:, subject:, is:unread)
+  - `get_email_body(message_id)` — corpo completo de um email
+  - `mark_as_read(message_id)` — marcar como lido
+  - `archive_email(message_id)` — arquivar (sair da INBOX sem deletar)
+  - `label_email(message_id, label_name, add)` — adicionar/remover label
+  - `send_reply(message_id, body)` — responder thread existente
+  - `create_draft(to, subject, body, reply_to_id)` — criar rascunho (não envia)
+- Fonte: **Gmail API v1** via `google-api-python-client` (já instalado) — não IMAP
+  - Motivo: mais confiável, suporte nativo a labels/threads, client já presente no projeto
+- Auth: OAuth2, mesma abordagem do Google Calendar
+  - Script `scripts/authorize_gmail.py` (padrão de `authorize_calendar.py`)
+  - Credencial OAuth Desktop no mesmo Google Cloud project (`projetos-448301`)
+- Env vars necessárias:
+  ```
+  GMAIL_CLIENT_ID
+  GMAIL_CLIENT_SECRET
+  GMAIL_ACCESS_TOKEN
+  GMAIL_REFRESH_TOKEN
+  GMAIL_TOKEN_EXPIRY
+  ```
+- Tipo de agente: **singleton** (sem MCP, sem subprocess — igual à Nami)
+- Referência de implementação: `n8n-python-scripts/lucy_email_agent/main.py`
+- Localização: `agents/lucy/`
+- Nota: digest batch diário (n8n) continua independente — Lucy é a camada interativa
 
-**Marin Kitagawa** — Anime / Manga Agent (Fase 5, não iniciada)
-- Inspiração: Marin Kitagawa de My Dress-Up Darling (entusiasta de cultura pop)
-- Domínio: acompanhamento de anime e mangá
-- Fonte planejada: Notion (estado atual) + BigQuery mirror
-- Referência de implementação: `n8n-python-scripts/anime_sync/`
+**Setup (fazer uma vez antes da implementação):**
+1. Google Cloud Console → `projetos-448301` → habilitar **Gmail API**
+2. Criar credencial OAuth 2.0 tipo Desktop → baixar JSON → `scripts/gmail_client_secret.json`
+3. `python scripts/authorize_gmail.py` → copiar vars para `.env` e Dokploy
+4. Descomentar import e adicionar `lucy_agent` ao `sub_agents` em `coordinator/agent.py`
+5. Atualizar `_MAKIMA_INSTRUCTION` com Lucy na lista de especialistas ativos
 
-**Akane Kurokawa** — Movies Agent (Fase 5, não iniciada)
-- Inspiração: Akane Kurokawa de Oshi no Ko (atriz — mundo do entretenimento)
-- Domínio: filmes e acompanhamento via Letterboxd
-- Fonte planejada: Notion + BigQuery mirror
-- Referência de implementação: `n8n-python-scripts/gustavoboxd/`
+**Marin Kitagawa** — Media Agent (anime + filmes + séries) (Fase 5)
+- Inspiração: Marin Kitagawa de My Dress-Up Darling — entusiasta incondicional de toda cultura pop
+- Domínio: anime, filmes e séries de TV (rastreamento via Notion)
+- Decisão de design: agente unificado para os três domínios (`media_agent`) — o coordinator
+  já prevê esse slot único; Marin cobre todo o espectro de entretenimento pop
+- Personalidade:
+  - Começa com `Marin:`
+  - Tom entusiástico e expressivo: "AAAH esse anime É DEMAIS!"
+  - Zero julgamento sobre escolhas do usuário
+  - Referencia outros títulos relacionados quando relevante
+  - Usa emojis com frequência
+- Tools planejadas:
 
-**Mai Sakurajima** — TV Shows Agent (Fase 5, não iniciada)
-- Inspiração: Mai Sakurajima de Bunny Girl Senpai (presença marcante, séries longas)
-- Domínio: séries de TV
-- Fonte planejada: Notion + BigQuery mirror
-- Referência de implementação: `n8n-python-scripts/series_sync/`
+  **Anime** (fonte: Notion — `NOTION_ANIME_DB_ID`):
+  - `get_anime_list(status)` — lista por status: Assistindo / Completo / Planejo Ver / Pausado / Dropado
+  - `update_anime_progress(page_id, episode)` — atualizar episódio atual
+  - `add_anime(title, status, total_episodes)` — adicionar novo título
+  - `get_anime_stats()` — resumo: total por status, episódios assistidos
 
-**Frieren** — Books Agent (Fase 5, não iniciada)
-- Inspiração: Frieren de Frieren: Beyond Journey's End (maga antiga, acumulo de conhecimento)
-- Domínio: livros e leitura
-- Tools planejadas: `get_current_book`, `get_read_history`, `add_book`, `mark_finished`
-- Fonte planejada: Notion + BigQuery mirror
+  **Filmes** (fonte: Notion — `NOTION_MOVIES_DB_ID`):
+  - `get_movies_list(status)` — lista por status: Assistido / Quer Ver / Assistindo
+  - `add_movie(title, year, status, rating, watched_date)` — adicionar filme
+  - `update_movie(page_id, status, rating, watched_date)` — atualizar dados
+  - `get_movie_stats()` — filmes vistos, nota média
 
-**Misato Katsuragi** — Work Agent (não iniciada, prioridade média)
-- Inspiração: Misato Katsuragi de Evangelion (comandante operacional)
-- Domínio: gestão de trabalho e projetos profissionais
-- Escopo a definir (pode integrar com Notion, GitHub, etc.)
+  **Séries** (fonte: Notion — `NOTION_SERIES_DB_ID`):
+  - `get_series_list(status)` — lista por status: Assistindo / Completo / Pausado / etc.
+  - `update_series_progress(page_id, season, episode)` — atualizar temporada/episódio
+  - `add_series(title, status, total_seasons)` — adicionar série
+  - `get_series_stats()` — séries ativas, completas
 
-**Kaori / Bocchi** — Spotify Agent (não iniciada, baixa prioridade)
-- Inspiração: Kaori de Shigatsu wa Kimi no Uso / Bocchi de Bocchi the Rock (músicas)
-- Domínio: música e Spotify
-- Fonte planejada: Spotify API + BigQuery (`spotify.streaming_history` já existe)
+  **BigQuery mirror** (ao atualizar/finalizar qualquer título):
+  - Upsert em `media.anime_history`, `media.movies_history`, `media.series_history`
+  - Mesmo padrão de `create_transaction` na Nami (função auxiliar `_upsert_bq()`)
 
-**Games Agent** (não iniciada, baixa prioridade)
-- Domínio: acompanhamento de jogos
-- Escopo e nome do personagem a definir
+- Tipo de agente: **singleton** (sem MCP)
+- Env vars necessárias:
+  ```
+  NOTION_TOKEN          (já existe)
+  NOTION_ANIME_DB_ID
+  NOTION_MOVIES_DB_ID
+  NOTION_SERIES_DB_ID
+  ```
+  Descobrir IDs em: `n8n-python-scripts/anime_sync/`, `gustavoboxd/`, `series_sync/`
+- Referências de implementação:
+  - `n8n-python-scripts/anime_sync/` e `mal_sync/` (anime)
+  - `n8n-python-scripts/gustavoboxd/` (filmes)
+  - `n8n-python-scripts/series_sync/` (séries)
+- Localização: `agents/media/`
+
+**Setup:**
+1. Descobrir database IDs do Notion nas referências (ou via Notion API)
+2. Adicionar env vars ao `.env` e Dokploy
+3. Implementar `agents/media/tools.py` + `agents/media/agent.py`
+4. Descomentar import e adicionar `media_agent` ao `sub_agents` em `coordinator/agent.py`
+
+---
+
+**Frieren** — Books Agent (Fase 5)
+- Inspiração: Frieren de Frieren: Beyond Journey's End — maga milenar, acúmulo paciente
+  de conhecimento, contemplativa, mede progresso com perspectiva de longa duração
+- Domínio: livros e leitura pessoal
+- Personalidade:
+  - Começa com `Frieren:`
+  - Tom calmo e contemplativo: "Levei apenas algumas semanas. Rápido."
+  - Perspectiva milenar: "Em cem anos você terá lido muitos livros."
+  - Curiosamente fascinada por livros finos: "Terminado em um dia? Impressionante."
+  - Nunca demonstra pressa
+- Tools planejadas:
+  - `get_reading_list(status)` — lista por status: Lendo / Lido / Quero Ler / Pausado
+  - `get_current_reading()` — livro(s) atual(is) com % de progresso
+  - `update_reading_progress(page_id, current_page)` — atualizar página atual
+  - `add_book(title, author, total_pages, status)` — adicionar livro à lista
+  - `finish_book(page_id, rating, date_finished)` — marcar concluído + nota + upsert BQ
+  - `get_reading_stats()` — livros lidos no ano, total de páginas, nota média
+
+  **BigQuery mirror** (ao concluir livro via `finish_book`):
+  - Upsert em `media.books_history` (schema: title, author, status, date_started,
+    date_finished, pages, rating)
+
+- Tipo de agente: **singleton** (sem MCP)
+- Env vars necessárias:
+  ```
+  NOTION_TOKEN          (já existe)
+  NOTION_BOOKS_DB_ID
+  ```
+- Referência de implementação: `n8n-python-scripts/` (verificar se há books_sync)
+- Localização: `agents/books/`
+
+**Setup:**
+1. Descobrir `NOTION_BOOKS_DB_ID` (Notion API ou referência n8n)
+2. Adicionar env var ao `.env` e Dokploy
+3. Implementar `agents/books/tools.py` + `agents/books/agent.py`
+4. Descomentar import e adicionar `books_agent` ao `sub_agents` em `coordinator/agent.py`
+
+---
+
+**Misato Katsuragi** — Work Agent (sem fase definida, prioridade média)
+- Inspiração: Misato de Evangelion — comandante operacional, decisões sob pressão, pragmática
+- Domínio: trabalho e projetos profissionais
+- Personalidade:
+  - `Misato:`, tom de comando direto: "Situação: 3 PRs abertos, 1 urgente."
+  - Usa jargão levemente militar, nunca pânico, foca no que importa agora
+- Tools candidatas:
+  - GitHub: `list_open_prs()`, `list_issues(repo, state)`, `get_pr_status(pr_id)`
+  - Notion (projetos): `get_active_projects()`, `update_project_status()`
+- Env vars: `GITHUB_TOKEN`, `NOTION_WORK_DB_ID`
+- Decisão a tomar: escopo exato (só GitHub? Notion também? Linear?)
+- Localização futura: `agents/misato/`
+
+**Kaori / Bocchi** — Spotify Agent (baixa prioridade)
+- Inspiração: Kaori (Shigatsu wa Kimi no Uso) para música emotiva /
+  Bocchi (Bocchi the Rock) para música independente — personalidade a definir
+- Domínio: música, histórico Spotify, descoberta
+- Tools candidatas:
+  - `get_current_track()` — música tocando agora (Spotify Web API)
+  - `get_listening_history(days)` — histórico de audição (BigQuery `spotify.streaming_history`)
+  - `get_top_artists(period)` — artistas mais ouvidos
+  - `get_top_tracks(period)` — músicas mais ouvidas
+  - `search_track(query)` — busca no Spotify
+- Fonte: Spotify Web API + BigQuery (tabela `spotify.streaming_history` já existe)
+- Env vars: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REFRESH_TOKEN`
+- Localização futura: `agents/spotify/`
+
+**Games Agent** (baixa prioridade, nome/personagem a definir)
+- Domínio: acompanhamento de jogos (backlog, progresso, tempo jogado)
+- Fontes candidatas: Notion, IGDB API, HowLongToBeat
+- Personalidade e nome: a definir (candidatos: Kirito, Subaru, Rimuru)
+- Localização futura: `agents/games/`
 
 ---
 
@@ -354,6 +482,72 @@ A API de busca é idêntica — migrar Vertex → ChromaDB é trocar a implement
 
 ---
 
+---
+
+### Morning Briefing (Fase 6)
+
+Síntese diária de todos os domínios, acionada pelo comando `/briefing` no Telegram ou
+pelo n8n às 8h.
+
+**Como funciona:**
+O `coordinator/main.py` detecta o comando `/briefing` e injeta um prompt estruturado no
+runner do ADK. O Makima recebe esse prompt como uma mensagem normal, orquestra os
+sub-agentes ativos em sequência, e retorna o bloco HTML consolidado.
+
+**Prompt injetado por `main.py`:**
+```
+Faça o morning briefing completo. Consulte em sequência:
+1. Nami: gastos de ontem + projeção de gastos do mês atual
+2. Kaguya: tarefas de hoje + tarefas atrasadas
+3. Lucy: emails não lidos (se ativa) — resumir em 1-2 linhas
+4. Marin: o que estou assistindo agora (se ativa) — próximo episódio de cada título ativo
+5. Frieren: progresso do livro atual (se ativa)
+Apresente como briefing diário em HTML formatado, seção por seção, conciso.
+```
+
+**Trigger via n8n:**
+- N8n envia `sendMessage` da Telegram API para o `chat_id` do dono com o texto `/briefing`
+- O bot recebe como mensagem normal e o handler de comando dispara
+- Não requer endpoint HTTP separado — usa o fluxo Telegram já existente
+
+**Implementação em `coordinator/main.py`:**
+```python
+# Handler adicional para o comando /briefing
+async def briefing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    briefing_prompt = (
+        "Faça o morning briefing completo. Consulte Nami (gastos de ontem + projeção), "
+        "Kaguya (tarefas de hoje + atrasadas), Lucy (emails não lidos se ativa), "
+        "Marin (o que estou assistindo se ativa), Frieren (livro atual se ativo). "
+        "Apresente seção por seção em HTML conciso."
+    )
+    # Reutiliza a lógica do handle_message substituindo o texto
+    await _process_message(update, context, text=briefing_prompt)
+
+application.add_handler(CommandHandler("briefing", briefing_command))
+```
+
+**Exemplo de saída esperada:**
+```
+💰 Finanças (Nami)
+Ontem: R$127,50. Projeção do mês: R$2.340,00.
+
+📋 Tarefas (Kaguya)
+3 para hoje · 1 atrasada.
+
+📬 Emails (Lucy)
+2 não lidos — nenhum prioritário.
+
+📺 Mídia (Marin)
+Dandadan EP 8/12 · One Piece EP 1112.
+
+📚 Leitura (Frieren)
+O Problema dos Três Corpos — 47% (pág. 234/498).
+```
+
+**Dependências:** todos os outros agentes. Implementar por último (Fase 6).
+
+---
+
 ## Dependências novas
 
 ```
@@ -367,35 +561,58 @@ Adicionadas ao `coordinator/Dockerfile`. Os scripts existentes não mudam suas d
 
 ---
 
-## Migração incremental (ordem recomendada)
+## Ordem de implementação (revisada)
 
-### Fase 1 — Coordinator + Nami
-- Cria `agents/nami/tools.py` (acesso ao Notion, usando o `main.py` do n8n só como referência)
-- Cria `agents/nami/agent.py`
-- Cria `coordinator/` com Nami como único sub-agente
-- Substitui o workflow Telegram do Nami no n8n pelo coordinator
-- **Entrega**: Nami continua funcionando + ganha memória de sessão
+| Fase | Agente | Domínio | Dependências | Status |
+|------|--------|---------|--------------|--------|
+| 1 | Nami | Finanças (BigQuery) | — | ✅ |
+| 2 | Kaguya | Tarefas + Calendar (MCP) | — | ✅ |
+| 3 | Kurisu | Knowledge base (Vertex AI RAG) | Corpus GCP | 🔧 |
+| 4 | Lucy | Email (Gmail API v1) | OAuth Gmail, habilitar Gmail API | — |
+| 5a | Marin (`media_agent`) | Anime + Filmes + Séries (Notion) | Notion DB IDs x3 | — |
+| 5b | Frieren (`books_agent`) | Livros (Notion + BQ mirror) | Notion DB ID | — |
+| 6 | Morning Briefing | `/briefing` command no Telegram | Fases 1–5 | — |
+| — | Misato | Trabalho/GitHub | GitHub token | — |
+| — | Kaori/Bocchi | Spotify | Spotify API | — |
+| — | Games | Jogos | A definir | — |
 
-### Fase 2 — Lucy interativa
-- Cria `agents/lucy/tools.py` (IMAP/Gmail, ref.: `n8n-python-scripts/lucy_email_agent/`)
-- Adiciona Lucy ao coordinator
-- O digest batch diário não muda
-- **Entrega**: queries sobre email via Telegram ("tem algo urgente?")
+### Detalhes por fase
 
-### Fase 3 — BQ mirror
-- Adiciona `upsert_bigquery()` nos scripts de series/filmes/anime/livros
-- **Entrega**: histórico analítico cross-domain disponível
+**Fase 1 — Nami** ✅
+- `agents/nami/tools.py` (BigQuery) + `agents/nami/agent.py`
+- Coordinator com Nami como único sub-agente
 
-### Fase 4 — Media + Books + Tasks agents
-- Cria agents para os três domínios
-- Adiciona ao coordinator
-- **Entrega**: sistema completo + morning briefing
+**Fase 2 — Kaguya** ✅
+- MCP servers TickTick + Google Calendar
+- Tools cross-agent (`complete_payment_task`, `create_expense_reminder`)
 
-### Fase 5 — Knowledge (Obsidian)
-- Configura sync Obsidian → Google Drive (plugin no Obsidian)
-- Cria corpus no Vertex AI RAG apontando para a pasta do Drive
-- Adiciona `knowledge_tool` (VertexAiRagRetrieval) ao coordinator
-- **Entrega**: coordinator responde perguntas sobre o vault + combina conhecimento com ações
+**Fase 3 — Kurisu** 🔧
+- Estrutura criada; corpus Vertex AI pendente
+- Ver `agents/kurisu/PLAN.md` para checklist de setup GCP
+
+**Fase 4 — Lucy**
+- Habilitar Gmail API no projeto `projetos-448301`
+- `scripts/authorize_gmail.py` → vars no `.env` e Dokploy
+- Implementar `agents/lucy/tools.py` (Gmail API v1, ref.: `n8n-python-scripts/lucy_email_agent/`)
+- Adicionar `lucy_agent` ao coordinator
+- **Entrega**: queries sobre email via Telegram ("tem algo urgente?", "arquiva os newsletters")
+
+**Fase 5a — Media (Marin)**
+- Descobrir Notion DB IDs em `n8n-python-scripts/`
+- Implementar tools para anime + filmes + séries + upsert BQ
+- Adicionar `media_agent` ao coordinator
+- **Entrega**: rastrear progresso de anime/filmes/séries via Telegram
+
+**Fase 5b — Books (Frieren)**
+- Descobrir `NOTION_BOOKS_DB_ID`
+- Implementar tools de leitura + upsert BQ ao concluir
+- Adicionar `books_agent` ao coordinator
+- **Entrega**: progresso de leitura, marcar livro como concluído
+
+**Fase 6 — Morning Briefing**
+- Handler `/briefing` em `coordinator/main.py`
+- N8n chama `/briefing` via Telegram API às 8h
+- **Entrega**: síntese diária de todos os domínios ativos
 
 ---
 
