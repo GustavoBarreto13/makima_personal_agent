@@ -570,3 +570,170 @@ def add_book(
         f"<b>{titulo_final}</b> de {autor_final}{paginas_txt} "
         f"adicionado ao catálogo com status <b>{status}</b>."
     )
+
+
+def log_reading(
+    book_query: str,
+    current_page: int,
+    session_notes: str | None = None,
+    log_date: str | None = None,
+) -> str:
+    """
+    Registra o progresso de leitura de um livro.
+    'Li o Duna até a página 80' → loga a sessão calculando delta desde o último registro.
+
+    Parâmetros:
+        book_query    — Título parcial ou completo do livro (ex: "Duna", "Harry Potter")
+        current_page  — Página atual do leitor após a sessão de leitura
+        session_notes — Anotações opcionais sobre a sessão (impressões, citações, etc.)
+        log_date      — Data da leitura no formato YYYY-MM-DD (padrão: hoje)
+    """
+
+    # ── 1. Localiza o livro pelo termo de busca ───────────────────────────────
+    # Usamos _find_book_by_query para fazer busca fuzzy (ignora acentos, maiúsculas).
+    # O livro precisa estar cadastrado antes de poder registrar progresso —
+    # não queremos criar livros implicitamente para evitar inconsistências de dados.
+    book = _find_book_by_query(book_query)
+    if book is None:
+        return (
+            f"Nenhum livro encontrado para '<b>{book_query}</b>'. "
+            "Adicione o livro ao catálogo primeiro com o comando de adicionar livro."
+        )
+
+    # ── 2. Valida que a página informada é um número não-negativo ─────────────
+    # Página 0 é válida (indica início do livro / recomeço), mas negativos não fazem sentido.
+    if current_page < 0:
+        return "O número de página não pode ser negativo."
+
+    # ── 3. Valida que a página não ultrapassa o total do livro ────────────────
+    # Se o livro tem total_pages cadastrado, verificamos o limite.
+    # Sugerimos finish_book porque ao concluir o livro o fluxo é diferente
+    # (atualiza status para 'lido', registra date_finished, solicita avaliação).
+    total_pages = book.get("total_pages")
+    if total_pages and current_page > total_pages:
+        return (
+            f"A página <b>{current_page}</b> ultrapassa o total de páginas de "
+            f"<b>{book['title']}</b> ({total_pages} páginas). "
+            "Se você terminou o livro, use o comando de finalizar leitura."
+        )
+
+    # ── 4. Busca o último log de leitura para calcular o delta ────────────────
+    # O "delta" (páginas lidas nesta sessão) é fundamental para medir o progresso.
+    # Calculamos como: páginas_lidas = página_atual - página_final_do_último_log.
+    # Ordenamos por date DESC, created_at DESC para pegar o registro mais recente,
+    # mesmo que dois logs tenham a mesma data (o inserted_at desempata).
+    book_id = book["id"]
+    sql_last = f"""
+        SELECT page_end
+        FROM `{_table("reading_logs")}`
+        WHERE book_id = @book_id
+        ORDER BY date DESC, created_at DESC
+        LIMIT 1
+    """
+    last_params = [
+        bigquery.ScalarQueryParameter("book_id", "STRING", book_id),
+    ]
+    last_logs = _run_select(sql_last, last_params)
+
+    # page_start = última página registrada, ou 0 se nunca houve nenhum log
+    # (ou seja, o usuário nunca registrou progresso antes para este livro)
+    page_start = last_logs[0]["page_end"] if last_logs else 0
+
+    # ── 5. Calcula as páginas lidas nesta sessão ──────────────────────────────
+    pages_read = current_page - page_start
+
+    # Detecta inconsistência: a página atual é MENOR que a última registrada.
+    # Isso pode acontecer se o usuário informou a página errada ou está relendo
+    # um trecho anterior. Pedimos confirmação em vez de registrar valor negativo.
+    if pages_read < 0:
+        return (
+            f"A página <b>{current_page}</b> é menor que a última registrada "
+            f"(<b>{page_start}</b>) para <b>{book['title']}</b>. "
+            "Verifique se informou a página correta."
+        )
+
+    # Nenhuma página nova foi lida — evita criar um log inútil no banco.
+    if pages_read == 0:
+        return (
+            f"<b>{book['title']}</b> já estava registrado na página <b>{page_start}</b>. "
+            "Nenhum progresso novo para registrar."
+        )
+
+    # ── 6. Determina a data da sessão ─────────────────────────────────────────
+    # Se o usuário não informou a data, usamos hoje (no fuso brasileiro).
+    # Isso permite registrar sessões retroativamente (ex: "ontem li até a página 80").
+    entry_date = log_date if log_date else str(_today())
+
+    # ── 7. Gera ID único para este log ────────────────────────────────────────
+    # UUID v4 garante unicidade sem depender de sequência auto-incrementada no BigQuery.
+    log_id = str(uuid.uuid4())
+
+    # ── 8. Insere o registro na tabela reading_logs ───────────────────────────
+    # Armazenamos book_title como cópia desnormalizada para facilitar consultas
+    # históricas sem precisar de JOIN com a tabela books (BigQuery é orientado a colunas,
+    # JOINs desnecessários adicionam custo de processamento).
+    agora = _now()
+    sql_insert = f"""
+        INSERT INTO `{_table("reading_logs")}` (
+            id, book_id, book_title, date,
+            page_start, page_end, pages_read,
+            session_notes, created_at
+        ) VALUES (
+            @id, @book_id, @book_title, @date,
+            @page_start, @page_end, @pages_read,
+            @session_notes, @created_at
+        )
+    """
+    insert_params = [
+        bigquery.ScalarQueryParameter("id",            "STRING",    log_id),
+        bigquery.ScalarQueryParameter("book_id",       "STRING",    book_id),
+        bigquery.ScalarQueryParameter("book_title",    "STRING",    book["title"]),
+        bigquery.ScalarQueryParameter("date",          "DATE",      entry_date),
+        bigquery.ScalarQueryParameter("page_start",    "INT64",     page_start),
+        bigquery.ScalarQueryParameter("page_end",      "INT64",     current_page),
+        bigquery.ScalarQueryParameter("pages_read",    "INT64",     pages_read),
+        bigquery.ScalarQueryParameter("session_notes", "STRING",    session_notes),
+        bigquery.ScalarQueryParameter("created_at",    "TIMESTAMP", agora),
+    ]
+    _run_dml(sql_insert, insert_params)
+
+    # ── 9. Atualiza status do livro para 'lendo' se necessário ────────────────
+    # Se o livro estava como 'quero_ler', 'pausado' ou outro status,
+    # o ato de registrar progresso implica que a leitura foi (re)iniciada.
+    # COALESCE(date_started, @today) preserva a data de início original se já existia —
+    # evitamos sobrescrever a data em que a leitura foi de fato começada.
+    if book.get("status") != "lendo":
+        today_str = str(_today())
+        sql_update = f"""
+            UPDATE `{_table("books")}`
+            SET status = 'lendo',
+                date_started = COALESCE(date_started, @today),
+                updated_at = @now
+            WHERE id = @book_id
+        """
+        update_params = [
+            bigquery.ScalarQueryParameter("today",   "DATE",      today_str),
+            bigquery.ScalarQueryParameter("now",     "TIMESTAMP", agora),
+            bigquery.ScalarQueryParameter("book_id", "STRING",    book_id),
+        ]
+        _run_dml(sql_update, update_params)
+
+    # ── 10. Monta a mensagem de confirmação com o progresso ───────────────────
+    titulo = book["title"]
+
+    if total_pages:
+        # Calcula o percentual concluído e as páginas restantes para terminar
+        percent = round((current_page / total_pages) * 100, 1)
+        remaining = total_pages - current_page
+
+        return (
+            f"<b>{titulo}</b> — <b>{percent}%</b> concluído "
+            f"({current_page}/{total_pages} páginas, {remaining} restantes)\n"
+            f"📖 {pages_read} páginas lidas nesta sessão."
+        )
+    else:
+        # Sem total de páginas cadastrado, mostra apenas a página atual e o delta
+        return (
+            f"<b>{titulo}</b> — página <b>{current_page}</b>\n"
+            f"📖 {pages_read} páginas lidas nesta sessão."
+        )
