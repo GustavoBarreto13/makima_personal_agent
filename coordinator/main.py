@@ -130,6 +130,20 @@ def _build_book_menu(data: dict) -> tuple[str, InlineKeyboardMarkup]:
     return texto, InlineKeyboardMarkup([linha1, linha2])
 
 
+async def _edit_menu_message(query, texto: str, keyboard: InlineKeyboardMarkup) -> None:
+    """
+    Edita a mensagem de menu — usa edit_message_caption para mensagens com foto
+    e edit_message_text para mensagens de texto puro.
+    O Telegram não permite converter entre os dois tipos na edição.
+    """
+    if query.message.photo:
+        # Mensagem original era uma foto: edita apenas a legenda e o teclado
+        await query.edit_message_caption(caption=texto, reply_markup=keyboard, parse_mode="HTML")
+    else:
+        # Mensagem original era texto: edita o texto e o teclado normalmente
+        await query.edit_message_text(texto, reply_markup=keyboard, parse_mode="HTML")
+
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handler para todos os cliques nos botões inline do menu de livros (fm_*).
@@ -169,7 +183,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if book:
             menu_data = _book_to_menu_data(book)
             texto, keyboard = _build_book_menu(menu_data)
-            await query.edit_message_text(texto, reply_markup=keyboard, parse_mode="HTML")
+            await _edit_menu_message(query, texto, keyboard)
         return
 
     # ── fm_status:<id> — exibe teclado de escolha de status ──────────────────
@@ -199,7 +213,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if book:
             menu_data = _book_to_menu_data(book)
             texto, keyboard = _build_book_menu(menu_data)
-            await query.edit_message_text(texto, reply_markup=keyboard, parse_mode="HTML")
+            await _edit_menu_message(query, texto, keyboard)
         return
 
     # ── fm_note:<id> — remove teclado e pede nota em texto livre ─────────────
@@ -219,7 +233,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if book:
             menu_data = _book_to_menu_data(book)
             texto, keyboard = _build_book_menu(menu_data)
-            await query.edit_message_text(texto, reply_markup=keyboard, parse_mode="HTML")
+            await _edit_menu_message(query, texto, keyboard)
         return
 
     # ── fm_back:<id> — recarrega e exibe o menu principal do livro ───────────
@@ -229,7 +243,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if book:
             menu_data = _book_to_menu_data(book)
             texto, keyboard = _build_book_menu(menu_data)
-            await query.edit_message_text(texto, reply_markup=keyboard, parse_mode="HTML")
+            await _edit_menu_message(query, texto, keyboard)
         return
 
     # ── fm_cancel — remove o teclado e encerra o menu ────────────────────────
@@ -268,6 +282,7 @@ def _book_to_menu_data(book: dict) -> dict:
         "total_pages":   book.get("total_pages"),
         "date_started":  str(book["date_started"]) if book.get("date_started") else None,
         "date_finished": str(book["date_finished"]) if book.get("date_finished") else None,
+        "cover_url":     book.get("cover_url"),
     }
 
 
@@ -400,7 +415,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 if isinstance(menu_data, dict) and menu_data.get("type") == "book_menu":
                     # JSON de menu identificado — monta e envia com botões inline
                     msg_text, keyboard = _build_book_menu(menu_data)
-                    await update.message.reply_text(msg_text, reply_markup=keyboard, parse_mode="HTML")
+                    cover_url = menu_data.get("cover_url")
+                    if cover_url:
+                        # Envia a capa do livro como foto com o menu na legenda
+                        await update.message.reply_photo(
+                            photo=cover_url,
+                            caption=msg_text,
+                            reply_markup=keyboard,
+                            parse_mode="HTML",
+                        )
+                    else:
+                        # Sem capa — envia como mensagem de texto normal
+                        await update.message.reply_text(msg_text, reply_markup=keyboard, parse_mode="HTML")
                     return
             except (ValueError, TypeError):
                 # Não é JSON válido — segue para o envio de texto normal

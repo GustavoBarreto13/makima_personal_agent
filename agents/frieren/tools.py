@@ -1374,7 +1374,8 @@ def get_book_menu_data(book_query: str) -> str:
     ])
     current_page = int(last_logs[0]["page_end"]) if last_logs else 0
 
-    # Monta o dicionário com todos os dados necessários para o menu
+    # Monta o dicionário com todos os dados necessários para o menu.
+    # cover_url é incluído para que o coordinator possa enviar a capa do livro junto com o menu.
     data = {
         "type":          "book_menu",
         "book_id":       book["id"],
@@ -1386,6 +1387,7 @@ def get_book_menu_data(book_query: str) -> str:
         "total_pages":   book.get("total_pages"),
         "date_started":  str(book["date_started"]) if book.get("date_started") else None,
         "date_finished": str(book["date_finished"]) if book.get("date_finished") else None,
+        "cover_url":     book.get("cover_url"),
     }
     # ensure_ascii=False preserva caracteres UTF-8 (acentos, etc.)
     return _json.dumps(data, ensure_ascii=False)
