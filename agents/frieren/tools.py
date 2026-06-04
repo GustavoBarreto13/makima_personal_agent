@@ -259,17 +259,24 @@ def _fetch_google_books(query: str, max_results: int = 5) -> list[dict]:
     if api_key:
         request_params["key"] = api_key
 
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    _log.info(f"[books_api] GET {_BOOKS_API_URL} params={request_params}")
+
     try:
         # Faz a requisição GET para a API com timeout de 10 segundos
         response = requests.get(_BOOKS_API_URL, params=request_params, timeout=10)
+        _log.info(f"[books_api] status={response.status_code} body={response.text[:500]!r}")
         response.raise_for_status()  # Lança exceção se o status HTTP for erro (4xx/5xx)
         data = response.json()
-    except requests.RequestException:
+    except requests.RequestException as e:
         # Qualquer erro de rede ou HTTP — retorna lista vazia sem quebrar o agente
+        _log.warning(f"[books_api] erro na requisição: {e}")
         return []
 
     # 'items' pode estar ausente se a API não encontrou nenhum resultado
     items = data.get("items", [])
+    _log.info(f"[books_api] {len(items)} item(s) retornados para query={query!r}")
 
     # Lista que acumula os dicionários de metadados extraídos de cada item
     results = []
