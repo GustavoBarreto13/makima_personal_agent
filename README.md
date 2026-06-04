@@ -15,9 +15,9 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── Nami       → BigQuery (finanças)                      ✅ ativo
     ├── Kaguya     → TickTick via MCP + Google Calendar MCP   ✅ ativo
     ├── Kurisu     → Vertex AI RAG (vault Obsidian)           🔧 estrutura criada, pendente corpus
+    ├── Frieren    → BigQuery + Google Books API (livros)     ✅ ativo
     ├── Lucy       → Gmail IMAP                               — fase 4
-    ├── Media      → Notion (séries, filmes, anime)           — fase 5
-    └── Books      → Notion (livros)                          — fase 5
+    └── Media      → Notion (séries, filmes, anime)           — fase 5b
 ```
 
 Makima não executa nenhuma ação diretamente — ela apenas roteia para o agente correto. Toda lógica de API fica nos agentes especialistas.
@@ -49,6 +49,22 @@ Opera em dois modos detectados automaticamente:
 - **Tutora** — notas de estudo e técnicas: tom rigoroso, referencia fontes do vault, sarcasmo saudável
 - **Amiga** — notas pessoais e diário: tom caloroso, linguagem natural, sem estrutura formal
 
+### Frieren — livros
+
+Inspirada em Frieren de *Frieren: Beyond Journey's End* — elfa maga milenar, contemplativa, paciente.
+
+Gerencia o catálogo pessoal de livros e rastreia o progresso de leitura por páginas. Integra com a Google Books API para enriquecer automaticamente os metadados (capa, autor, ISBN, sinopse) ao adicionar um livro.
+
+**Funcionalidades:**
+- Adicionar livros com status: lendo, lido, quero\_ler, pausado, abandonado
+- Registrar sessões de leitura por página atual (calcula delta automaticamente)
+- Menu interativo com botões inline: avaliar, trocar status, adicionar nota, marcar como lido
+- Envio da capa do livro junto com o menu (via Google Books API)
+- Estatísticas anuais: livros lidos, páginas totais, ritmo médio de leitura
+- Histórico cronológico de sessões por livro
+
+**Armazenamento:** BigQuery — dataset `frieren_books_agent`, tabelas `books` e `reading_logs`.
+
 ---
 
 ## Estrutura de arquivos
@@ -56,21 +72,26 @@ Opera em dois modos detectados automaticamente:
 ```
 makima_personal_agent/
 ├── coordinator/
-│   ├── main.py              # Telegram bot loop + sessões ADK
+│   ├── main.py              # Telegram bot loop + sessões ADK + menu interativo (botões inline)
 │   ├── agent.py             # Makima (Agent ADK) + sub_agents
 │   └── Dockerfile
 ├── agents/
 │   ├── nami/
-│   │   ├── tools.py         # acesso ao BigQuery
+│   │   ├── tools.py         # acesso ao BigQuery (finanças)
 │   │   ├── agent.py         # nami_agent (singleton)
 │   │   └── schema.sql       # schema das tabelas BigQuery
 │   ├── kaguya/
 │   │   ├── tools.py         # tools cross-agent (Kaguya+Nami)
 │   │   ├── agent.py         # create_kaguya_agent() — factory com dois McpToolsets
 │   │   └── PLAN.md          # documentação do agente
-│   └── kurisu/
-│       ├── agent.py         # kurisu_agent (singleton, VertexAiRagRetrieval)
-│       └── PLAN.md          # documentação + checklist de setup do Vertex AI
+│   ├── kurisu/
+│   │   ├── agent.py         # kurisu_agent (singleton, VertexAiRagRetrieval)
+│   │   └── PLAN.md          # documentação + checklist de setup do Vertex AI
+│   └── frieren/
+│       ├── tools.py         # BigQuery (catálogo + logs) + Google Books API
+│       ├── agent.py         # frieren_agent (singleton)
+│       ├── schema.sql       # schema das tabelas BigQuery (books, reading_logs)
+│       └── CLAUDE.md        # documentação completa do agente
 ├── mcp_servers/
 │   ├── ticktick/
 │   │   └── server.py        # servidor MCP — tools genéricas do TickTick
@@ -123,8 +144,14 @@ TELEGRAM_BOT_TOKEN=
 GEMINI_API_KEY=
 
 # Google Cloud / BigQuery
-GOOGLE_APPLICATION_CREDENTIALS=   # path do service account JSON
+# Conteúdo completo do JSON do service account como string (não path de arquivo)
+# Necessário para Nami (finanças) e Frieren (livros)
+GCP_CREDENTIALS_JSON=
 GCP_PROJECT_ID=
+
+# Sessões ADK — PostgreSQL externo (gerenciado pelo Dokploy)
+# Formato: postgresql://user:pass@host:5432/db (o código normaliza para +asyncpg automaticamente)
+DATABASE_URL=
 
 # TickTick OAuth
 TICKTICK_ACCESS_TOKEN=
@@ -140,6 +167,10 @@ GOOGLE_CALENDAR_ACCESS_TOKEN=
 GOOGLE_CALENDAR_REFRESH_TOKEN=
 GOOGLE_CALENDAR_TOKEN_EXPIRY=      # ISO 8601
 GOOGLE_CALENDAR_MAIN_CALENDAR_ID=  # geralmente o email Gmail
+
+# Frieren — Google Books API (opcional)
+# Sem a chave o limite é ~1.000 req/dia; com ela sobe para 10.000 req/dia
+GOOGLE_BOOKS_API_KEY=
 
 # Kurisu — Vertex AI RAG (fase 3)
 VERTEX_RAG_CORPUS=             # projects/{PROJECT_ID}/locations/us-central1/ragCorpora/{ID}
@@ -191,7 +222,8 @@ Os agentes usam `gemini-2.0-flash`. A chave Gemini é lida de `GEMINI_API_KEY` (
 | 2 | Kaguya (tarefas + agenda): MCP TickTick + MCP Calendar + tools cross-agent | ✅ |
 | 3 | Kurisu (knowledge base): Vertex AI RAG sobre vault Obsidian — estrutura criada, pendente corpus GCP | 🔧 |
 | 4 | Lucy (email): tools Gmail IMAP + agente | — |
-| 5 | Media + Books: entretenimento + morning briefing completo | — |
+| 5a | Frieren (livros): BigQuery + Google Books API + menu interativo Telegram | ✅ |
+| 5b | Media (séries, filmes, anime): Notion + morning briefing completo | — |
 
 **Fase atual: 3 🔧** — Kurisu com estrutura criada. Próximo passo: setup do Data Store no Vertex AI Agent Builder (ver `agents/kurisu/PLAN.md`).
 

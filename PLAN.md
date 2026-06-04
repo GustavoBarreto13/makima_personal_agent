@@ -27,12 +27,12 @@ A chave é **não migrar o que já funciona**. O digest diário do Lucy, os sync
 Telegram (usuário)
     ↓
 Coordinator Bot (Python persistente no VPS)
-    ├── Nami Agent      → Notion (finanças)
-    ├── Lucy Agent      → Gmail IMAP
-    ├── Tasks Agent     → TickTick / Notion tasks
-    ├── Media Agent     → Notion (séries + filmes + anime)
-    ├── Books Agent     → Notion (livros)
-    └── knowledge_tool  → Vertex AI RAG corpus (Obsidian vault via Drive)
+    ├── Nami Agent      → BigQuery (finanças)                        ✅ ativo
+    ├── Kaguya Agent    → TickTick via MCP + Google Calendar via MCP ✅ ativo
+    ├── Kurisu Agent    → Vertex AI RAG (vault Obsidian via Drive)   🔧 estrutura criada, corpus pendente
+    ├── Frieren Agent   → BigQuery + Google Books API (livros)       ✅ ativo
+    ├── Lucy Agent      → Gmail API v1                               — fase 4
+    └── Media Agent     → Notion (séries + filmes + anime)           — fase 5b
 
 n8n (continua como hub de automações batch)
     ├── Schedule 8h → lucy/main.py (digest diário, não muda)
@@ -41,12 +41,14 @@ n8n (continua como hub de automações batch)
     └── GitHub Sync webhook (não muda)
 
 BigQuery
-    ├── spotify.streaming_history (já existe)
-    ├── media.series_history      (espelho novo)
-    ├── media.movies_history      (espelho novo)
-    ├── media.anime_history       (espelho novo)
-    ├── media.books_history       (espelho novo)
-    └── coordinator.action_logs   (novo — observabilidade)
+    ├── spotify.streaming_history           (já existe)
+    ├── nami_finance_agent.*                (Nami — finanças)
+    ├── frieren_books_agent.books           (Frieren — catálogo de livros)
+    ├── frieren_books_agent.reading_logs    (Frieren — sessões de leitura)
+    ├── media.series_history                (espelho futuro — Fase 5b)
+    ├── media.movies_history                (espelho futuro — Fase 5b)
+    ├── media.anime_history                 (espelho futuro — Fase 5b)
+    └── coordinator.action_logs             (futuro — observabilidade)
 ```
 
 ---
@@ -72,11 +74,12 @@ coordinator = Agent(
         - Books: livros
         Combine agentes quando necessário. Responda em português. Seja direto.
     """,
-    sub_agents=[nami_agent, lucy_agent, tasks_agent, media_agent, books_agent]
+    sub_agents=[nami_agent, kaguya_agent, kurisu_agent, frieren_agent]
+    # lucy_agent e media_agent adicionados nas fases 4 e 5b
 )
 ```
 
-**Sessão**: uma por `chat_id` do Telegram, `InMemorySessionService` (memória dentro da sessão, reinicia com o container — aceitável para começar).
+**Sessão**: uma por `chat_id` do Telegram, `DatabaseSessionService` persistida em PostgreSQL externo (gerenciado pelo Dokploy). O histórico sobrevive a reinícios de container. `DATABASE_URL` com prefixo `postgresql://` é normalizado automaticamente para `postgresql+asyncpg://` (driver async exigido pelo ADK).
 
 **Estrutura de arquivos:**
 ```
@@ -248,42 +251,51 @@ independente em `agents/<dominio>/`.
 
 ---
 
-**Frieren** — Books Agent (Fase 5)
-- Inspiração: Frieren de Frieren: Beyond Journey's End — maga milenar, acúmulo paciente
-  de conhecimento, contemplativa, mede progresso com perspectiva de longa duração
+**Frieren** — Books Agent ✅ Fase 5a concluída
+- Inspiração: Frieren de Frieren: Beyond Journey's End — maga milenar, contemplativa, perspectiva de séculos
 - Domínio: livros e leitura pessoal
 - Personalidade:
   - Começa com `Frieren:`
-  - Tom calmo e contemplativo: "Levei apenas algumas semanas. Rápido."
+  - Tom calmo e contemplativo: "O tempo passa, mas os livros ficam."
   - Perspectiva milenar: "Em cem anos você terá lido muitos livros."
-  - Curiosamente fascinada por livros finos: "Terminado em um dia? Impressionante."
-  - Nunca demonstra pressa
-- Tools planejadas:
-  - `get_reading_list(status)` — lista por status: Lendo / Lido / Quero Ler / Pausado
-  - `get_current_reading()` — livro(s) atual(is) com % de progresso
-  - `update_reading_progress(page_id, current_page)` — atualizar página atual
-  - `add_book(title, author, total_pages, status)` — adicionar livro à lista
-  - `finish_book(page_id, rating, date_finished)` — marcar concluído + nota + upsert BQ
-  - `get_reading_stats()` — livros lidos no ano, total de páginas, nota média
+  - Nunca demonstra pressa, nunca julga ritmo de leitura
+- Tools implementadas:
+  - `search_book(query, publisher)` — busca na Google Books API antes de adicionar
+  - `add_book(title, status, google_books_id, author, total_pages)` — adiciona com enriquecimento automático de metadados
+  - `log_reading(book_query, current_page, session_notes, log_date)` — registra sessão de leitura; se `book_query` omitido, usa o livro com o log mais recente
+  - `get_current_reading()` — livros em leitura com progresso atual
+  - `get_reading_list(status)` — catálogo completo, agrupado por status
+  - `finish_book(book_query, rating, notes, date_finished, date_started)` — conclui com data e avaliação
+  - `update_book_status(book_query, status)` — pausa, retoma, abandona
+  - `update_book_pages(book_query, total_pages)` — corrige total de páginas da edição física
+  - `get_reading_stats(year)` — estatísticas anuais: livros, páginas, ritmo, avaliação média
+  - `get_book_history(book_query)` — histórico cronológico de sessões de leitura
+  - `get_book_menu_data(book_query)` — retorna JSON para o coordinator montar menu interativo
+- Funções auxiliares (não tools do agente, importadas pelo coordinator):
+  - `get_book_by_id(book_id)` — busca por ID exato para callbacks de botões
+  - `update_book_by_id(book_id, ...)` — SET dinâmico para callbacks inline
 
-  **BigQuery mirror** (ao concluir livro via `finish_book`):
-  - Upsert em `media.books_history` (schema: title, author, status, date_started,
-    date_finished, pages, rating)
+- **Decisão de design — BigQuery em vez de Notion:**
+  O plano original era usar Notion. Decidimos BigQuery por:
+  1. Persistência robusta de logs imutáveis de sessão por páginas (lida X páginas, de p.X até p.Y)
+  2. Queries analíticas rápidas sem rate limit da Notion API
+  3. Padrão já estabelecido pela Nami (dataset separado, mesmo service account)
+  4. Google Books API como fonte de metadados (capa, autor, ISBN, sinopse) — independente de Notion
 
-- Tipo de agente: **singleton** (sem MCP)
-- Env vars necessárias:
+- **Banco de dados:** BigQuery, dataset `frieren_books_agent`
+  - `books` — catálogo, estado de leitura, metadados, avaliação
+  - `reading_logs` — sessões imutáveis (page_start, page_end, pages_read por data)
+
+- **Menu interativo Telegram:** botões inline para gerenciar livro sem digitar (avaliar, trocar status, adicionar nota, marcar como lido). Se cover_url disponível, envia a capa do livro via `send_photo` com o menu na legenda. Callbacks processados em `coordinator/main.py` via `handle_callback`.
+
+- Tipo de agente: **singleton** (sem MCP, igual à Nami)
+- Env vars:
   ```
-  NOTION_TOKEN          (já existe)
-  NOTION_BOOKS_DB_ID
+  GCP_PROJECT_ID          (compartilhado com Nami)
+  GCP_CREDENTIALS_JSON    (compartilhado com Nami)
+  GOOGLE_BOOKS_API_KEY    (opcional — aumenta cota de ~1.000 para 10.000 req/dia)
   ```
-- Referência de implementação: `n8n-python-scripts/` (verificar se há books_sync)
-- Localização: `agents/books/`
-
-**Setup:**
-1. Descobrir `NOTION_BOOKS_DB_ID` (Notion API ou referência n8n)
-2. Adicionar env var ao `.env` e Dokploy
-3. Implementar `agents/books/tools.py` + `agents/books/agent.py`
-4. Descomentar import e adicionar `books_agent` ao `sub_agents` em `coordinator/agent.py`
+- Localização: `agents/frieren/` — documentação detalhada em `agents/frieren/CLAUDE.md`
 
 ---
 
@@ -569,8 +581,8 @@ Adicionadas ao `coordinator/Dockerfile`. Os scripts existentes não mudam suas d
 | 2 | Kaguya | Tarefas + Calendar (MCP) | — | ✅ |
 | 3 | Kurisu | Knowledge base (Vertex AI RAG) | Corpus GCP | 🔧 |
 | 4 | Lucy | Email (Gmail API v1) | OAuth Gmail, habilitar Gmail API | — |
-| 5a | Marin (`media_agent`) | Anime + Filmes + Séries (Notion) | Notion DB IDs x3 | — |
-| 5b | Frieren (`books_agent`) | Livros (Notion + BQ mirror) | Notion DB ID | — |
+| 5a | Frieren (`frieren_agent`) | Livros (BigQuery + Google Books API) | GCP_CREDENTIALS_JSON, GCP_PROJECT_ID | ✅ |
+| 5b | Marin (`media_agent`) | Anime + Filmes + Séries (Notion) | Notion DB IDs x3 | — |
 | 6 | Morning Briefing | `/briefing` command no Telegram | Fases 1–5 | — |
 | — | Misato | Trabalho/GitHub | GitHub token | — |
 | — | Kaori/Bocchi | Spotify | Spotify API | — |
@@ -597,17 +609,18 @@ Adicionadas ao `coordinator/Dockerfile`. Os scripts existentes não mudam suas d
 - Adicionar `lucy_agent` ao coordinator
 - **Entrega**: queries sobre email via Telegram ("tem algo urgente?", "arquiva os newsletters")
 
-**Fase 5a — Media (Marin)**
+**Fase 5a — Frieren** ✅
+- BigQuery dataset `frieren_books_agent` criado com tabelas `books` e `reading_logs`
+- Google Books API para enriquecimento automático de metadados (capa, ISBN, páginas, autor)
+- Menu interativo com botões inline no Telegram (avaliar, status, nota, marcar como lido)
+- `frieren_agent` adicionado ao coordinator como singleton
+- **Entregue**: catálogo de livros, log de leitura por páginas, estatísticas anuais, histórico de sessões, menu interativo com capa
+
+**Fase 5b — Media (Marin)**
 - Descobrir Notion DB IDs em `n8n-python-scripts/`
 - Implementar tools para anime + filmes + séries + upsert BQ
 - Adicionar `media_agent` ao coordinator
 - **Entrega**: rastrear progresso de anime/filmes/séries via Telegram
-
-**Fase 5b — Books (Frieren)**
-- Descobrir `NOTION_BOOKS_DB_ID`
-- Implementar tools de leitura + upsert BQ ao concluir
-- Adicionar `books_agent` ao coordinator
-- **Entrega**: progresso de leitura, marcar livro como concluído
 
 **Fase 6 — Morning Briefing**
 - Handler `/briefing` em `coordinator/main.py`
@@ -642,7 +655,7 @@ curl -X POST localhost:8080/briefing -d '{"user_id":"seu_chat_id"}'
 
 ## Decisões em aberto (para evolução futura)
 
-- **Persistência de sessão**: InMemorySessionService para começar. Se reinicializações forem problema, migrar para SQLite local ou Firestore.
+- **Persistência de sessão**: ✅ resolvido — `DatabaseSessionService` com PostgreSQL externo (Dokploy). Sessões sobrevivem a reinícios. `DATABASE_URL` normalizado de `postgresql://` para `postgresql+asyncpg://` automaticamente.
 - **Autenticação do endpoint**: coordinator exposto só internamente no Docker network — sem auth por ora.
 - **Gemini model**: `gemini-2.0-flash` para todos os agentes. Pode escalar para Gemini Pro no coordinator se precisar de raciocínio mais complexo.
 - **Parallel tool calls**: o ADK suporta, mas requer configuração explícita. Considerar para o morning briefing (todos os agentes em paralelo).
