@@ -13,7 +13,7 @@ from agents.nami.tools import (
 
 nami_agent = Agent(
     name="nami_agent",
-    model="gemini-2.5-flash-preview-05-20",
+    model="gemini-2.5-flash",
     description="Especialista em finanças pessoais. Registra, consulta, corrige e remove "
                 "transações (gastos e receitas). Analisa gastos por categoria, evolução mensal "
                 "e projeções. Gerencia assinaturas recorrentes. Use para qualquer pedido sobre "

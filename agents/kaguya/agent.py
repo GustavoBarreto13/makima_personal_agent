@@ -208,7 +208,7 @@ def create_kaguya_agent() -> Agent:
 
     return Agent(
         name="kaguya_agent",
-        model="gemini-2.5-flash-preview-05-20",
+        model="gemini-2.5-flash",
         description=(
             "Especialista em gestão de tarefas via TickTick e agenda via Google Calendar. "
             "Cria, edita, completa e organiza tarefas, subtasks e checklists. Gerencia projetos, "
