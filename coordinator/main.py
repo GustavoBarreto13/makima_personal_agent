@@ -392,16 +392,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # quer gerenciar um livro. Nesse caso, montamos os botões inline em vez
         # de exibir o JSON cru.
         response_text = "".join(final_parts)
-        try:
-            menu_data = _json.loads(response_text)
-            if isinstance(menu_data, dict) and menu_data.get("type") == "book_menu":
-                # JSON de menu identificado — monta e envia com botões inline
-                msg_text, keyboard = _build_book_menu(menu_data)
-                await update.message.reply_text(msg_text, reply_markup=keyboard, parse_mode="HTML")
-                return
-        except (ValueError, TypeError):
-            # Não é JSON — segue para o envio de texto normal
-            pass
+        # O agente pode prefixar o JSON com "Frieren: " — buscamos o primeiro '{' para isolar o JSON
+        json_start = response_text.find("{")
+        if json_start != -1:
+            try:
+                menu_data = _json.loads(response_text[json_start:])
+                if isinstance(menu_data, dict) and menu_data.get("type") == "book_menu":
+                    # JSON de menu identificado — monta e envia com botões inline
+                    msg_text, keyboard = _build_book_menu(menu_data)
+                    await update.message.reply_text(msg_text, reply_markup=keyboard, parse_mode="HTML")
+                    return
+            except (ValueError, TypeError):
+                # Não é JSON válido — segue para o envio de texto normal
+                pass
 
         # Envio normal: divide em partes caso o agente tenha gerado múltiplos blocos
         for part in final_parts:
