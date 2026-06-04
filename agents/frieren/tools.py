@@ -272,7 +272,17 @@ def _find_book_by_query(query: str) -> dict | None:
     rows = _run_select(sql, params)
 
     if not rows:
-        # Nenhum livro encontrado com esse termo de busca
+        # ── Fallback: tenta cada segmento separado por ": " ──────────────────
+        # O agente às vezes usa o título completo com subtítulo (ex.: "Stardust: O mistério
+        # da estrela"), que não casa com o título curto armazenado no banco ("Stardust").
+        # Dividimos por ": " e tentamos cada parte de forma independente.
+        segmentos = [s.strip() for s in query.split(":") if s.strip()]
+        if len(segmentos) > 1:
+            for segmento in segmentos:
+                resultado = _find_book_by_query(segmento)
+                if resultado:
+                    return resultado
+        # Nenhum livro encontrado nem pelos segmentos
         return None
 
     # Se o primeiro resultado já é 'lendo', retorna ele diretamente
