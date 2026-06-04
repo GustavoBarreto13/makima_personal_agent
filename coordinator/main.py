@@ -416,14 +416,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     # JSON de menu identificado — monta e envia com botões inline
                     msg_text, keyboard = _build_book_menu(menu_data)
                     cover_url = menu_data.get("cover_url")
+
+                    # Google Books às vezes retorna URLs com http:// — o Telegram rejeita;
+                    # convertemos para https:// para evitar falha no send_photo.
+                    if cover_url and cover_url.startswith("http://"):
+                        cover_url = "https://" + cover_url[len("http://"):]
+
                     if cover_url:
-                        # Envia a capa do livro como foto com o menu na legenda
-                        await update.message.reply_photo(
-                            photo=cover_url,
-                            caption=msg_text,
-                            reply_markup=keyboard,
-                            parse_mode="HTML",
-                        )
+                        try:
+                            # Tenta enviar a capa como foto com o menu na legenda
+                            await update.message.reply_photo(
+                                photo=cover_url,
+                                caption=msg_text,
+                                reply_markup=keyboard,
+                                parse_mode="HTML",
+                            )
+                        except Exception:
+                            # Se o Telegram rejeitar a URL (imagem inválida, inacessível, etc.),
+                            # exibe o menu como texto puro — melhor do que não mostrar nada.
+                            await update.message.reply_text(msg_text, reply_markup=keyboard, parse_mode="HTML")
                     else:
                         # Sem capa — envia como mensagem de texto normal
                         await update.message.reply_text(msg_text, reply_markup=keyboard, parse_mode="HTML")
