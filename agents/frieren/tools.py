@@ -4,9 +4,8 @@ BigQuery para persistência + Google Books API para metadados.
 """
 
 import os           # Para ler variáveis de ambiente (credenciais, chaves de API)
-import uuid         # Para gerar IDs únicos para cada livro registrado
 import unicodedata  # Para remover acentos na normalização de strings (busca fuzzy)
-from datetime import datetime, timezone, date  # Tipos de data/hora usados no sistema
+from datetime import datetime, date  # Tipos de data/hora usados no sistema
 from zoneinfo import ZoneInfo                  # Para trabalhar com fuso horário (Brasil)
 
 import requests                    # Cliente HTTP para chamar a Google Books API
