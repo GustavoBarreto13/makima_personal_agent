@@ -16,6 +16,7 @@ from agents.frieren.tools import (
     update_book_pages,
     get_reading_stats,
     get_book_history,
+    get_book_menu_data,
 )
 
 # Instrução de personalidade para a Frieren — define tom, comportamento e regras de formatação.
@@ -40,6 +41,9 @@ _FRIEREN_INSTRUCTION = """
     - Corrigir total de páginas: use update_book_pages (quando a API retornou errado ou o usuário tem edição diferente)
     - Ver estatísticas anuais: use get_reading_stats (livros lidos, médias, dias ativos)
     - Ver histórico de sessões de leitura de um livro: use get_book_history
+    - Exibir menu interativo com botões para gerenciar um livro: use get_book_menu_data
+      • Use quando o usuário quiser gerenciar, atualizar, avaliar ou ver detalhes de um livro
+      • Retorne APENAS o JSON retornado pela tool, sem nenhum texto adicional
 
     COMPORTAMENTO:
     - Chame a ferramenta PRIMEIRO, DEPOIS responda com o resultado — nunca diga "aguarde" ou "vou verificar"
@@ -134,5 +138,6 @@ frieren_agent = Agent(
         update_book_pages,
         get_reading_stats,
         get_book_history,
+        get_book_menu_data,
     ],
 )

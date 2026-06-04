@@ -6,12 +6,20 @@ Recebe mensagens do Telegram e as encaminha para o agente Makima (ADK),
 mantendo uma sessão de memória por chat_id.
 """
 
+import json as _json
 import logging
 import os
+from datetime import date
 
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 from google.adk.runners import Runner
 from google.adk.sessions import DatabaseSessionService
@@ -26,6 +34,7 @@ os.environ.setdefault("GOOGLE_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
 
 from coordinator.agent import create_makima  # noqa: E402 — import após load_dotenv
+from agents.frieren.tools import get_book_by_id, update_book_by_id  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,6 +56,219 @@ makima = create_makima()
 runner = Runner(agent=makima, app_name=APP_NAME, session_service=session_service)
 
 _sessions: set[str] = set()
+
+# Armazena ação pendente aguardando input de texto do usuário (ex.: digitar uma nota).
+# Chave: chat_id (str); Valor: dict com {action, book_id, title}
+_pending_action: dict[str, dict] = {}
+
+
+# Mapeamento de status para rótulo legível exibido no menu
+_STATUS_LABEL = {
+    "quero_ler":  "📚 Quero ler",
+    "lendo":      "📖 Lendo",
+    "lido":       "✅ Lido",
+    "pausado":    "⏸️ Pausado",
+    "abandonado": "❌ Abandonado",
+}
+
+
+def _build_book_menu(data: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """
+    Constrói o texto resumo e o teclado inline para o menu de gerenciamento de livro.
+
+    Recebe o dict com type='book_menu' retornado por get_book_menu_data e retorna
+    uma tupla (texto_html, InlineKeyboardMarkup) pronta para reply_text.
+    """
+    # ── Monta o texto de resumo do livro ──────────────────────────────────────
+    book_id    = data["book_id"]
+    titulo     = data["title"]
+    autor      = data.get("author") or "autor desconhecido"
+    status_raw = data.get("status", "")
+    status_txt = _STATUS_LABEL.get(status_raw, status_raw)
+    rating     = data.get("rating")
+    cur_page   = data.get("current_page") or 0
+    total      = data.get("total_pages")
+
+    # Linha de progresso: mostra porcentagem se soubermos o total de páginas
+    if total and cur_page:
+        percent  = round((cur_page / total) * 100, 1)
+        progresso = f"Progresso: <b>{percent}%</b> (p.{cur_page}/{total})"
+    elif cur_page:
+        progresso = f"Página atual: <b>{cur_page}</b>"
+    else:
+        progresso = "Nenhum progresso registrado"
+
+    # Linha de avaliação: exibe estrelas se já foi avaliado
+    rating_txt = f"⭐ <b>{rating}/5</b>" if rating is not None else "Sem avaliação"
+
+    texto = (
+        f"📖 <b>{titulo}</b>\n"
+        f"<i>{autor}</i>\n\n"
+        f"{status_txt} · {rating_txt}\n"
+        f"{progresso}"
+    )
+
+    # ── Monta os botões inline ────────────────────────────────────────────────
+    # callback_data tem limite de 64 bytes no Telegram.
+    # Formato dos prefixos: fm_<ação>:<book_id> (UUID = 36 chars)
+    # Os prefixos mais longos usados: "fm_finish:" (10) + UUID(36) = 46 bytes — OK.
+
+    # Linha 1: ações principais
+    linha1 = [
+        InlineKeyboardButton("⭐ Avaliar",    callback_data=f"fm_rate:{book_id}"),
+        InlineKeyboardButton("🔄 Status",     callback_data=f"fm_status:{book_id}"),
+        InlineKeyboardButton("📝 Nota",       callback_data=f"fm_note:{book_id}"),
+    ]
+
+    # Linha 2: ação contextual + fechar
+    linha2 = []
+    if status_raw != "lido":
+        # Só exibe "Marcar como lido" se o livro ainda não está concluído
+        linha2.append(InlineKeyboardButton("✅ Marcar como lido", callback_data=f"fm_finish:{book_id}"))
+    linha2.append(InlineKeyboardButton("❌ Fechar", callback_data="fm_cancel"))
+
+    return texto, InlineKeyboardMarkup([linha1, linha2])
+
+
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handler para todos os cliques nos botões inline do menu de livros (fm_*).
+    Cada prefixo de callback_data corresponde a uma ação diferente.
+    """
+    query    = update.callback_query
+    chat_id  = str(query.message.chat_id)
+    data_str = query.data or ""
+
+    # Responde ao Telegram imediatamente para remover o "spinner" no botão
+    await query.answer()
+
+    # ── fm_rate:<id> — exibe teclado de estrelas (1 a 5) ─────────────────────
+    if data_str.startswith("fm_rate:"):
+        book_id = data_str[len("fm_rate:"):]
+        # Cada botão de estrela carrega o ID e a nota escolhida
+        botoes = [
+            InlineKeyboardButton(f"{'⭐' * i}", callback_data=f"fm_r:{book_id}:{i}")
+            for i in range(1, 6)
+        ]
+        # Botão de voltar ao menu principal
+        voltar = InlineKeyboardButton("⬅️ Voltar", callback_data=f"fm_back:{book_id}")
+        await query.edit_message_reply_markup(
+            reply_markup=InlineKeyboardMarkup([botoes, [voltar]])
+        )
+        return
+
+    # ── fm_r:<id>:<nota> — salva avaliação e volta ao menu ───────────────────
+    if data_str.startswith("fm_r:"):
+        # Formato: fm_r:<uuid>:<nota>
+        partes   = data_str.split(":")
+        book_id  = partes[1]
+        nota     = float(partes[2])
+        update_book_by_id(book_id, rating=nota)
+        # Recarrega os dados atualizados e reconstrói o menu
+        book = get_book_by_id(book_id)
+        if book:
+            menu_data = _book_to_menu_data(book)
+            texto, keyboard = _build_book_menu(menu_data)
+            await query.edit_message_text(texto, reply_markup=keyboard, parse_mode="HTML")
+        return
+
+    # ── fm_status:<id> — exibe teclado de escolha de status ──────────────────
+    if data_str.startswith("fm_status:"):
+        book_id = data_str[len("fm_status:"):]
+        # Um botão por status válido
+        botoes = [
+            InlineKeyboardButton(label, callback_data=f"fm_s:{book_id}:{slug}")
+            for slug, label in _STATUS_LABEL.items()
+        ]
+        # Distribui em linhas de 2 para não ficar apertado
+        linhas = [botoes[i:i+2] for i in range(0, len(botoes), 2)]
+        linhas.append([InlineKeyboardButton("⬅️ Voltar", callback_data=f"fm_back:{book_id}")])
+        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(linhas))
+        return
+
+    # ── fm_s:<id>:<status> — salva status e volta ao menu ────────────────────
+    if data_str.startswith("fm_s:"):
+        # Formato: fm_s:<uuid>:<status>  (status pode ter underscores, sem dois-pontos)
+        _, book_id, novo_status = data_str.split(":", 2)
+        # Se marcando como lido, registra a data de conclusão
+        kwargs: dict = {"status": novo_status}
+        if novo_status == "lido":
+            kwargs["date_finished"] = str(date.today())
+        update_book_by_id(book_id, **kwargs)
+        book = get_book_by_id(book_id)
+        if book:
+            menu_data = _book_to_menu_data(book)
+            texto, keyboard = _build_book_menu(menu_data)
+            await query.edit_message_text(texto, reply_markup=keyboard, parse_mode="HTML")
+        return
+
+    # ── fm_note:<id> — remove teclado e pede nota em texto livre ─────────────
+    if data_str.startswith("fm_note:"):
+        book_id = data_str[len("fm_note:"):]
+        # Guarda estado: próxima mensagem de texto deste chat_id será a nota
+        _pending_action[chat_id] = {"action": "note", "book_id": book_id}
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text("📝 Digite a nota que deseja salvar para este livro:")
+        return
+
+    # ── fm_finish:<id> — marca livro como lido com data de hoje ──────────────
+    if data_str.startswith("fm_finish:"):
+        book_id = data_str[len("fm_finish:"):]
+        update_book_by_id(book_id, status="lido", date_finished=str(date.today()))
+        book = get_book_by_id(book_id)
+        if book:
+            menu_data = _book_to_menu_data(book)
+            texto, keyboard = _build_book_menu(menu_data)
+            await query.edit_message_text(texto, reply_markup=keyboard, parse_mode="HTML")
+        return
+
+    # ── fm_back:<id> — recarrega e exibe o menu principal do livro ───────────
+    if data_str.startswith("fm_back:"):
+        book_id = data_str[len("fm_back:"):]
+        book = get_book_by_id(book_id)
+        if book:
+            menu_data = _book_to_menu_data(book)
+            texto, keyboard = _build_book_menu(menu_data)
+            await query.edit_message_text(texto, reply_markup=keyboard, parse_mode="HTML")
+        return
+
+    # ── fm_cancel — remove o teclado e encerra o menu ────────────────────────
+    if data_str == "fm_cancel":
+        await query.edit_message_reply_markup(reply_markup=None)
+        return
+
+
+def _book_to_menu_data(book: dict) -> dict:
+    """
+    Converte um dict de livro retornado pelo BigQuery no formato
+    esperado por _build_book_menu, incluindo a página atual via logs.
+    """
+    from agents.frieren.tools import _run_select, _table
+    from google.cloud import bigquery as _bq
+
+    # Busca a última página registrada (pode não existir se nunca houve log)
+    sql = f"""
+        SELECT page_end
+        FROM `{_table('reading_logs')}`
+        WHERE book_id = @book_id
+        ORDER BY date DESC, created_at DESC
+        LIMIT 1
+    """
+    rows = _run_select(sql, [_bq.ScalarQueryParameter("book_id", "STRING", book["id"])])
+    current_page = int(rows[0]["page_end"]) if rows else 0
+
+    return {
+        "type":          "book_menu",
+        "book_id":       book["id"],
+        "title":         book["title"],
+        "author":        book.get("author") or "",
+        "status":        book["status"],
+        "rating":        book.get("rating"),
+        "current_page":  current_page,
+        "total_pages":   book.get("total_pages"),
+        "date_started":  str(book["date_started"]) if book.get("date_started") else None,
+        "date_finished": str(book["date_finished"]) if book.get("date_finished") else None,
+    }
 
 
 async def ensure_session(chat_id: str) -> None:
@@ -80,6 +302,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     text = update.message.text
 
     logger.info(f"[{chat_id}] {text}")
+
+    # ── Intercepta ações pendentes (ex.: nota de livro aguardando input) ──────
+    # Antes de passar para o agente, verifica se há uma ação pendente para este chat.
+    # Isso ocorre quando o usuário clicou em "📝 Nota" e agora está digitando a nota.
+    if chat_id in _pending_action:
+        pending = _pending_action.pop(chat_id)
+        if pending["action"] == "note":
+            # Salva a nota digitada diretamente no BigQuery, sem passar pelo agente
+            update_book_by_id(pending["book_id"], notes=text)
+            await update.message.reply_text("📝 Nota salva.")
+            return
 
     await ensure_session(chat_id)
 
@@ -154,6 +387,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             final_parts.append(combined)
 
     if final_parts:
+        # ── Detecta JSON de menu interativo antes de enviar como texto ────────
+        # O frieren_agent retorna um JSON com type='book_menu' quando o usuário
+        # quer gerenciar um livro. Nesse caso, montamos os botões inline em vez
+        # de exibir o JSON cru.
+        response_text = "".join(final_parts)
+        try:
+            menu_data = _json.loads(response_text)
+            if isinstance(menu_data, dict) and menu_data.get("type") == "book_menu":
+                # JSON de menu identificado — monta e envia com botões inline
+                msg_text, keyboard = _build_book_menu(menu_data)
+                await update.message.reply_text(msg_text, reply_markup=keyboard, parse_mode="HTML")
+                return
+        except (ValueError, TypeError):
+            # Não é JSON — segue para o envio de texto normal
+            pass
+
+        # Envio normal: divide em partes caso o agente tenha gerado múltiplos blocos
         for part in final_parts:
             await update.message.reply_text(part, parse_mode="HTML")
     else:
@@ -162,6 +412,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 def main() -> None:
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    # CallbackQueryHandler ANTES do MessageHandler para que cliques em botões
+    # não sejam engolidos pelo handler de texto
+    app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     logger.info("Makima online.")
     app.run_polling()
