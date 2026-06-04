@@ -590,9 +590,28 @@ def add_book(
     )
 
 
+def _get_last_logged_book() -> dict | None:
+    """
+    Retorna o livro com o log de leitura mais recente (por date DESC, created_at DESC).
+    Usado como fallback quando o usuário não especifica qual livro está logando.
+    Retorna None se não houver nenhum log ainda.
+    """
+    # Junta reading_logs com books para obter todos os campos do livro
+    sql = f"""
+        SELECT b.id, b.title, b.author, b.total_pages, b.status,
+               b.date_started, b.date_finished
+        FROM `{_table("reading_logs")}` rl
+        JOIN `{_table("books")}` b ON b.id = rl.book_id
+        ORDER BY rl.date DESC, rl.created_at DESC
+        LIMIT 1
+    """
+    rows = _run_select(sql, [])
+    return rows[0] if rows else None
+
+
 def log_reading(
-    book_query: str,
-    current_page: int,
+    book_query: str = "",
+    current_page: int = 0,
     session_notes: str | None = None,
     log_date: str | None = None,
 ) -> str:
@@ -601,22 +620,32 @@ def log_reading(
     'Li o Duna até a página 80' → loga a sessão calculando delta desde o último registro.
 
     Parâmetros:
-        book_query    — Título parcial ou completo do livro (ex: "Duna", "Harry Potter")
+        book_query    — Título parcial ou completo do livro (ex: "Duna", "Harry Potter").
+                        Se vazio ou omitido, usa automaticamente o livro com o log mais recente.
         current_page  — Página atual do leitor após a sessão de leitura
         session_notes — Anotações opcionais sobre a sessão (impressões, citações, etc.)
         log_date      — Data da leitura no formato YYYY-MM-DD (padrão: hoje)
     """
 
     # ── 1. Localiza o livro pelo termo de busca ───────────────────────────────
-    # Usamos _find_book_by_query para fazer busca fuzzy (ignora acentos, maiúsculas).
-    # O livro precisa estar cadastrado antes de poder registrar progresso —
-    # não queremos criar livros implicitamente para evitar inconsistências de dados.
-    book = _find_book_by_query(book_query)
-    if book is None:
-        return (
-            f"Nenhum livro encontrado para '<b>{book_query}</b>'. "
-            "Adicione o livro ao catálogo primeiro com o comando de adicionar livro."
-        )
+    # Se book_query não foi informado, usa o livro com o log mais recente —
+    # assume que o usuário está continuando a leitura que já estava registrando.
+    if book_query.strip():
+        # Busca fuzzy pelo título informado pelo usuário
+        book = _find_book_by_query(book_query)
+        if book is None:
+            return (
+                f"Nenhum livro encontrado para '<b>{book_query}</b>'. "
+                "Adicione o livro ao catálogo primeiro com o comando de adicionar livro."
+            )
+    else:
+        # Sem título informado — usa o livro com o registro de leitura mais recente
+        book = _get_last_logged_book()
+        if book is None:
+            return (
+                "Nenhum log de leitura anterior encontrado. "
+                "Informe o título do livro para registrar o progresso."
+            )
 
     # ── 2. Valida que a página informada é um número não-negativo ─────────────
     # Página 0 é válida (indica início do livro / recomeço), mas negativos não fazem sentido.

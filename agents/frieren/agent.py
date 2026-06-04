@@ -33,6 +33,7 @@ _FRIEREN_INSTRUCTION = """
     - Adicionar livro ao catálogo: use add_book (quero ler, estou lendo, já li)
     - Registrar progresso (página atual, páginas lidas na sessão): use log_reading
       • Frases do usuário que indicam log_reading: "li até a página X", "cheguei na página X", "li X páginas"
+      • Se o usuário NÃO mencionar o título do livro, chame log_reading com book_query="" — a tool identifica automaticamente o último livro logado
     - Ver livro em leitura agora: use get_current_reading
     - Listar todos os livros: use get_reading_list (filtra por status se o usuário pedir)
     - Marcar livro como concluído: use finish_book (com rating 1–5 estrelas, e datas retroativas
