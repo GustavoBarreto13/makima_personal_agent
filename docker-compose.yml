@@ -14,3 +14,13 @@ services:
     env_file: .env
     # Reinicia o bot automaticamente se cair ou no boot do host.
     restart: unless-stopped
+    networks:
+      # Rede padrão do compose (isolamento do serviço)
+      - default
+      # Rede compartilhada do Dokploy onde o banco PostgreSQL separado roda
+      - dokploy-network
+
+# Declara a rede do Dokploy como externa — já existe, não criamos aqui
+networks:
+  dokploy-network:
+    external: true
