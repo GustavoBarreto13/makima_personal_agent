@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo                  # Para trabalhar com fuso horári
 
 import requests                    # Cliente HTTP para chamar a Google Books API
 from google.cloud import bigquery  # Cliente oficial do BigQuery (banco de dados na nuvem)
-from google.oauth2 import service_account  # Para autenticação via arquivo de service account
+from google.oauth2 import service_account  # Para criar credenciais a partir do JSON do service account
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -51,34 +51,37 @@ def _project() -> str:
     return os.environ.get("GCP_PROJECT_ID", "")
 
 
+# Cache do cliente BigQuery — evita criar múltiplas conexões entre chamadas de tool
+_bq_client: bigquery.Client | None = None
+
+
 def _client() -> bigquery.Client:
-    """Cria e retorna um cliente BigQuery autenticado.
+    """Retorna o cliente BigQuery, criando-o na primeira chamada (singleton).
 
-    Tenta autenticar via GOOGLE_APPLICATION_CREDENTIALS (arquivo JSON do
-    service account). Se a variável não estiver definida, cai para o ADC
-    (Application Default Credentials) — útil em desenvolvimento local com
-    `gcloud auth application-default login`.
-
-    Diferente da Nami (que usa GCP_CREDENTIALS_JSON com o conteúdo do JSON),
-    aqui usamos o caminho do arquivo — padrão do Google SDK.
+    Usa GCP_CREDENTIALS_JSON (conteúdo JSON do service account como string),
+    igual ao padrão da Nami — funciona em Docker/Dokploy sem montar arquivos.
+    Fallback para ADC em desenvolvimento local.
     """
-    # Lê o caminho do arquivo de credenciais do service account
-    creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    global _bq_client
 
-    project = _project()  # ID do projeto GCP (ex.: "projetos-448301")
+    if _bq_client is None:
+        # Lê o conteúdo JSON do service account direto da env var (padrão Docker/Dokploy)
+        creds_json = os.environ.get("GCP_CREDENTIALS_JSON", "")
 
-    if creds_path:
-        # Carrega as credenciais do arquivo de service account no caminho indicado.
-        # O escopo 'bigquery' limita o acesso apenas ao BigQuery (menor privilégio).
-        creds = service_account.Credentials.from_service_account_file(
-            creds_path,
-            scopes=["https://www.googleapis.com/auth/bigquery"],
-        )
-        # Cria o cliente com credenciais explícitas e o projeto correto
-        return bigquery.Client(project=project, credentials=creds)
-    else:
-        # Sem arquivo de credenciais: usa ADC (funciona quando já autenticado via gcloud)
-        return bigquery.Client(project=project)
+        if creds_json:
+            import json
+            # Converte a string JSON para dict e cria credenciais sem precisar de arquivo
+            info = json.loads(creds_json)
+            creds = service_account.Credentials.from_service_account_info(
+                info,
+                scopes=["https://www.googleapis.com/auth/bigquery"],
+            )
+            _bq_client = bigquery.Client(project=_project(), credentials=creds)
+        else:
+            # ADC — funciona localmente com `gcloud auth application-default login`
+            _bq_client = bigquery.Client(project=_project())
+
+    return _bq_client
 
 
 def _table(name: str) -> str:
