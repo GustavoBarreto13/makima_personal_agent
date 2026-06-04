@@ -27,6 +27,8 @@ _FRIEREN_INSTRUCTION = """
 
     LEITURA — FERRAMENTAS:
     - Buscar metadados (título, autor, páginas): use search_book (antes de add_book)
+      • Se o usuário mencionar a editora, passe no parâmetro publisher (ex: publisher="Companhia das Letras")
+      • O filtro inpublisher: ajuda a encontrar a edição certa quando há várias edições do mesmo livro
     - Adicionar livro ao catálogo: use add_book (quero ler, estou lendo, já li)
     - Registrar progresso (página atual, páginas lidas na sessão): use log_reading
       • Frases do usuário que indicam log_reading: "li até a página X", "cheguei na página X", "li X páginas"

@@ -356,13 +356,22 @@ def _fetch_google_books(query: str, max_results: int = 5) -> list[dict]:
 # FERRAMENTAS PÚBLICAS — chamadas diretamente pelo agente Frieren
 # ─────────────────────────────────────────────────────────────────────────────
 
-def search_book(query: str) -> str:
+def search_book(query: str, publisher: str | None = None) -> str:
     """
     Busca livros na Google Books API pelo título, autor ou ISBN.
     Use antes de add_book para confirmar o google_books_id do livro correto.
+
+    Args:
+        query:     título, autor, ISBN ou qualquer termo de busca
+        publisher: editora do livro (opcional) — filtra usando inpublisher: para
+                   resultados mais precisos quando há múltiplas edições
     """
+    # Monta a query final: se a editora for informada, usa o filtro estruturado
+    # inpublisher: que a Google Books API entende, mais preciso que texto livre
+    full_query = f"{query} inpublisher:{publisher}" if publisher else query
+
     # Chama o helper privado para buscar até 5 resultados na Google Books API
-    results = _fetch_google_books(query, max_results=5)
+    results = _fetch_google_books(full_query, max_results=5)
 
     # Se a API não retornou nada, orienta o usuário sobre como adicionar manualmente
     if not results:
