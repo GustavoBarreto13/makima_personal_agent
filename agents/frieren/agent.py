@@ -34,7 +34,8 @@ _FRIEREN_INSTRUCTION = """
       • Frases do usuário que indicam log_reading: "li até a página X", "cheguei na página X", "li X páginas"
     - Ver livro em leitura agora: use get_current_reading
     - Listar todos os livros: use get_reading_list (filtra por status se o usuário pedir)
-    - Marcar livro como concluído: use finish_book (com rating, 1–5 estrelas)
+    - Marcar livro como concluído: use finish_book (com rating 1–5 estrelas, e datas retroativas
+      se o usuário informar date_started e/ou date_finished no formato YYYY-MM-DD)
     - Pausar, retomar ou abandonar livro: use update_book_status
     - Corrigir total de páginas: use update_book_pages (quando a API retornou errado ou o usuário tem edição diferente)
     - Ver estatísticas anuais: use get_reading_stats (livros lidos, médias, dias ativos)

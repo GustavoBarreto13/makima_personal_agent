@@ -911,15 +911,23 @@ def get_reading_list(status: str | None = None) -> str:
     return "\n\n".join(secoes)
 
 
-def finish_book(book_query: str, rating: float | None = None, notes: str | None = None) -> str:
+def finish_book(
+    book_query: str,
+    rating: float | None = None,
+    notes: str | None = None,
+    date_finished: str | None = None,
+    date_started: str | None = None,
+) -> str:
     """
-    Marca um livro como lido, registra a data de conclusão e opcionalmente salva
-    a avaliação (nota de 1.0 a 5.0) e anotações finais.
+    Marca um livro como lido, registra as datas e opcionalmente salva avaliação e notas.
+    Aceita datas retroativas — útil quando o usuário já terminou o livro mas registra depois.
 
     Parâmetros:
-        book_query — Título parcial ou completo do livro a concluir
-        rating     — Nota de 1.0 a 5.0 (opcional)
-        notes      — Anotações finais sobre o livro (opcional)
+        book_query    — Título parcial ou completo do livro a concluir
+        rating        — Nota de 1.0 a 5.0 (opcional)
+        notes         — Anotações finais sobre o livro (opcional)
+        date_finished — Data de conclusão no formato YYYY-MM-DD (padrão: hoje)
+        date_started  — Data de início no formato YYYY-MM-DD (opcional — sobrescreve se informado)
     """
     # ── 1. Localiza o livro no catálogo ───────────────────────────────────────
     book = _find_book_by_query(book_query)
@@ -951,23 +959,34 @@ def finish_book(book_query: str, rating: float | None = None, notes: str | None 
     total_pages_read = sum_rows[0]["total_pages_read"] if sum_rows else 0
 
     # ── 4. Atualiza o registro do livro no BigQuery ───────────────────────────
-    today_str = str(_today())
-    agora     = _now()
+    # Usa a data informada pelo usuário ou cai para hoje como padrão
+    finished_str = date_finished if date_finished else str(_today())
+    agora        = _now()
 
-    # COALESCE(@notes, notes) preserva as anotações já existentes se o usuário não
-    # informou novas — evita apagar notas anteriores sem querer.
+    # Monta SET dinâmico: date_started só é atualizado se o usuário informou
+    # (COALESCE preservaria o valor existente, mas se o usuário quer sobrescrever
+    # uma data errada, precisamos de SET condicional via parâmetro)
+    set_date_started = (
+        "date_started = @date_started,"
+        if date_started
+        else "date_started = COALESCE(date_started, @date_started),"
+    )
+
+    # COALESCE(@notes, notes) preserva as anotações já existentes se não informadas
     sql_update = f"""
         UPDATE `{_table("books")}`
         SET
             status        = 'lido',
             date_finished = @date_finished,
+            {set_date_started}
             rating        = @rating,
             notes         = COALESCE(@notes, notes),
             updated_at    = @updated_at
         WHERE id = @book_id
     """
     update_params = [
-        bigquery.ScalarQueryParameter("date_finished", "DATE",      today_str),
+        bigquery.ScalarQueryParameter("date_finished", "DATE",      finished_str),
+        bigquery.ScalarQueryParameter("date_started",  "DATE",      date_started),
         bigquery.ScalarQueryParameter("rating",        "FLOAT64",   rating),
         bigquery.ScalarQueryParameter("notes",         "STRING",    notes),
         bigquery.ScalarQueryParameter("updated_at",    "TIMESTAMP", agora),
@@ -976,12 +995,14 @@ def finish_book(book_query: str, rating: float | None = None, notes: str | None 
     _run_dml(sql_update, update_params)
 
     # ── 5. Monta a mensagem de confirmação ────────────────────────────────────
-    titulo     = book["title"]
-    rating_txt = f" · ⭐ {rating}/5.0" if rating is not None else ""
+    titulo      = book["title"]
+    rating_txt  = f" · ⭐ {rating}/5.0" if rating is not None else ""
+    started_txt = f"\n   Início: {date_started}" if date_started else ""
 
     return (
-        f"✅ <b>{titulo}</b> concluído em {today_str}"
+        f"✅ <b>{titulo}</b> concluído em {finished_str}"
         f"{rating_txt} · {total_pages_read} páginas lidas no total."
+        f"{started_txt}"
     )
 
 
