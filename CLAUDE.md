@@ -47,10 +47,10 @@ makima_personal_agent/
 # coordinator/agent.py
 from agents.nami.agent import nami_agent
 from agents.kaguya.agent import create_kaguya_agent   # factory (instancia McpToolset)
+from agents.frieren.agent import frieren_agent
 # from agents.kurisu.agent import kurisu_agent         # pendente: setup Vertex AI RAG
 # from agents.lucy.agent import lucy_agent
 # from agents.media.agent import media_agent
-# from agents.books.agent import books_agent
 ```
 
 Imports locais — nada de `PYTHONPATH` apontando para outro repo.
@@ -69,9 +69,9 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── kaguya_agent    → TickTick via MCP stdio                     [agents/kaguya + mcp_servers/ticktick]
     │                  → Google Calendar via MCP stdio               [mcp_servers/calendar]
     ├── kurisu_agent    → Vertex AI RAG (vault Obsidian)             [agents/kurisu]   (estrutura criada, pendente corpus)
+    ├── frieren_agent   → BigQuery (livros)                          [agents/frieren]
     ├── lucy_agent      → Gmail IMAP                                 [agents/lucy]     (ainda não ativada)
-    ├── media_agent     → Notion (séries + filmes + anime)           [agents/media]    (ainda não ativada)
-    └── books_agent     → Notion (livros)                            [agents/books]    (ainda não ativada)
+    └── media_agent     → Notion (séries + filmes + anime)           [agents/media]    (ainda não ativada)
 ```
 
 **Makima não tem tools próprias** — ela só delega. Toda lógica de acesso a APIs fica nas tools dos agents especialistas em `agents/`.
