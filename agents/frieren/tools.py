@@ -1310,3 +1310,113 @@ def get_book_history(book_query: str) -> str:
 
     # Une cabeçalho e itens de sessão
     return cabecalho + "\n".join(itens)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MENU INTERATIVO — usadas pelo coordinator para montar botões inline Telegram
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_book_menu_data(book_query: str) -> str:
+    """
+    Retorna dados estruturados de um livro como JSON para o coordinator montar
+    um menu interativo com botões inline no Telegram.
+    Use quando o usuário quiser gerenciar, atualizar ou ver detalhes de um livro.
+
+    Retorna APENAS o JSON — sem texto adicional. O coordinator detecta esse JSON
+    e constrói os botões automaticamente.
+    """
+    import json as _json
+
+    # Busca o livro no catálogo pelo título (fuzzy match)
+    book = _find_book_by_query(book_query)
+    if not book:
+        return f"Não encontrei '{book_query}' no catálogo."
+
+    # Busca a última página registrada nos logs de leitura
+    sql_last = f"""
+        SELECT page_end
+        FROM `{_table('reading_logs')}`
+        WHERE book_id = @book_id
+        ORDER BY date DESC, created_at DESC
+        LIMIT 1
+    """
+    last_logs = _run_select(sql_last, [
+        bigquery.ScalarQueryParameter("book_id", "STRING", book["id"])
+    ])
+    current_page = int(last_logs[0]["page_end"]) if last_logs else 0
+
+    # Monta o dicionário com todos os dados necessários para o menu
+    data = {
+        "type":          "book_menu",
+        "book_id":       book["id"],
+        "title":         book["title"],
+        "author":        book.get("author") or "",
+        "status":        book["status"],
+        "rating":        book.get("rating"),
+        "current_page":  current_page,
+        "total_pages":   book.get("total_pages"),
+        "date_started":  str(book["date_started"]) if book.get("date_started") else None,
+        "date_finished": str(book["date_finished"]) if book.get("date_finished") else None,
+    }
+    # ensure_ascii=False preserva caracteres UTF-8 (acentos, etc.)
+    return _json.dumps(data, ensure_ascii=False)
+
+
+def get_book_by_id(book_id: str) -> dict | None:
+    """Busca um livro pelo ID exato — usado pelo coordinator para re-exibir o menu."""
+    sql = f"SELECT * FROM `{_table('books')}` WHERE id = @book_id AND deleted = FALSE"
+    rows = _run_select(sql, [bigquery.ScalarQueryParameter("book_id", "STRING", book_id)])
+    return rows[0] if rows else None
+
+
+def update_book_by_id(
+    book_id: str,
+    status: str | None = None,
+    rating: float | None = None,
+    notes: str | None = None,
+    date_finished: str | None = None,
+    date_started: str | None = None,
+) -> None:
+    """
+    Atualiza campos específicos de um livro pelo ID exato.
+    Usado pelo coordinator ao processar callbacks de botões inline —
+    não é exposto como tool do agente, só importado diretamente.
+    Só atualiza os campos que não forem None.
+    """
+    sets: list[str] = []
+    params: list = [
+        bigquery.ScalarQueryParameter("book_id", "STRING",    book_id),
+        bigquery.ScalarQueryParameter("now",     "TIMESTAMP", _now()),
+    ]
+
+    # Adiciona cada campo apenas se foi fornecido
+    if status is not None:
+        sets.append("status = @status")
+        params.append(bigquery.ScalarQueryParameter("status", "STRING", status))
+        # Se marcando como lido, garante que date_started não fique nulo
+        if status == "lido" and date_finished is None:
+            date_finished = str(_today())
+
+    if rating is not None:
+        sets.append("rating = @rating")
+        params.append(bigquery.ScalarQueryParameter("rating", "FLOAT64", rating))
+
+    if notes is not None:
+        # CONCAT preserva notas anteriores, separando com quebra de linha
+        sets.append("notes = CASE WHEN notes IS NULL THEN @notes ELSE CONCAT(notes, '\\n', @notes) END")
+        params.append(bigquery.ScalarQueryParameter("notes", "STRING", notes))
+
+    if date_finished is not None:
+        sets.append("date_finished = @date_finished")
+        params.append(bigquery.ScalarQueryParameter("date_finished", "DATE", date_finished))
+
+    if date_started is not None:
+        sets.append("date_started = @date_started")
+        params.append(bigquery.ScalarQueryParameter("date_started", "DATE", date_started))
+
+    if not sets:
+        return  # Nada para atualizar
+
+    sets.append("updated_at = @now")
+    sql = f"UPDATE `{_table('books')}` SET {', '.join(sets)} WHERE id = @book_id"
+    _run_dml(sql, params)
