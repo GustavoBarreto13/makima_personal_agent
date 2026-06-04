@@ -16,6 +16,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     MessageHandler,
     filters,
@@ -60,6 +61,16 @@ _sessions: set[str] = set()
 # Armazena ação pendente aguardando input de texto do usuário (ex.: digitar uma nota).
 # Chave: chat_id (str); Valor: dict com {action, book_id, title}
 _pending_action: dict[str, dict] = {}
+
+# Domínios válidos — usados para classificação, validação no /limpar e rótulos no /tokens
+_DOMAINS = ("financas", "livros", "tarefas", "knowledge", "geral")
+
+# Acumula tokens consumidos por session_id neste processo (reseta ao reiniciar o container).
+# Chave: session_id completo (ex.: "987654321_financas"); Valor: total de tokens acumulados
+_session_tokens: dict[str, int] = {}
+
+# Threshold de aviso: quando uma sessão ultrapassa esse número de tokens, o usuário é avisado
+TOKEN_WARN_THRESHOLD = 80_000
 
 
 # Mapeamento de status para rótulo legível exibido no menu
@@ -286,29 +297,55 @@ def _book_to_menu_data(book: dict) -> dict:
     }
 
 
-async def ensure_session(chat_id: str) -> None:
-    """Garante que existe uma sessão ADK para este chat_id (cria na primeira vez).
+def _classify_domain(text: str) -> str:
+    """
+    Classifica uma mensagem de texto em um domínio para escolher a sessão correta.
+    Usa palavras-chave simples — sem custo de LLM e sem latência adicional.
+    Retorna um dos valores de _DOMAINS.
+    """
+    t = text.lower()
+    # Finanças: palavras relacionadas a dinheiro, despesas, receitas e contas
+    if any(w in t for w in ["gastei", "recebi", "salário", "despesa", "receita",
+                             "r$", "pagamento", "conta", "saldo", "extrato", "subscri"]):
+        return "financas"
+    # Livros: palavras relacionadas a leitura e catálogo de livros
+    if any(w in t for w in ["livro", "página", "leitura", "ler",
+                             "isbn", "autor", "frieren"]):
+        return "livros"
+    # Tarefas e agenda: TickTick, Google Calendar, lembretes e eventos
+    if any(w in t for w in ["tarefa", "task", "agenda", "evento",
+                             "reunião", "lembrete", "ticktick", "calendário", "prazo"]):
+        return "tarefas"
+    # Knowledge base: notas do Obsidian e estudos via Kurisu
+    if any(w in t for w in ["nota", "vault", "obsidian", "anotação", "estudo", "kurisu"]):
+        return "knowledge"
+    # Fallback: domínio genérico para mensagens que não se encaixam nas categorias acima
+    return "geral"
 
+
+async def ensure_session(chat_id: str, session_id: str) -> None:
+    """
+    Garante que existe uma sessão ADK para este session_id (cria na primeira vez).
     O set _sessions evita chamadas repetidas ao banco durante o mesmo processo.
     Após reinício do container o set está vazio, então verificamos no banco antes
     de tentar criar — evita erro caso a sessão já exista no PostgreSQL.
     """
-    if chat_id not in _sessions:
+    if session_id not in _sessions:
         # Verifica se a sessão já existe no banco (caso de restart do container)
         existing = await runner.session_service.get_session(
             app_name=APP_NAME,
             user_id=chat_id,
-            session_id=chat_id,
+            session_id=session_id,
         )
         if existing is None:
             # Sessão nova: cria no banco pela primeira vez
             await runner.session_service.create_session(
                 app_name=APP_NAME,
                 user_id=chat_id,
-                session_id=chat_id,
+                session_id=session_id,
             )
         # Marca como conhecida neste processo para evitar consultas futuras ao banco
-        _sessions.add(chat_id)
+        _sessions.add(session_id)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -321,6 +358,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # ── Intercepta ações pendentes (ex.: nota de livro aguardando input) ──────
     # Antes de passar para o agente, verifica se há uma ação pendente para este chat.
     # Isso ocorre quando o usuário clicou em "📝 Nota" e agora está digitando a nota.
+    # Esse fluxo chama o BigQuery diretamente — não usa sessão ADK, então não precisa de domain.
     if chat_id in _pending_action:
         pending = _pending_action.pop(chat_id)
         if pending["action"] == "note":
@@ -329,7 +367,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text("📝 Nota salva.")
             return
 
-    await ensure_session(chat_id)
+    # Classifica o domínio da mensagem para usar a sessão isolada correta.
+    # Isso evita que histórico de finanças contamine contexto de livros, etc.
+    domain     = _classify_domain(text)
+    session_id = f"{chat_id}_{domain}"
+
+    logger.info(f"[{chat_id}] domínio={domain} session_id={session_id}")
+
+    await ensure_session(chat_id, session_id)
 
     new_message = types.Content(role="user", parts=[types.Part(text=text)])
 
@@ -341,13 +386,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     all_agent_texts: dict[str, list[str]] = {}  # autor → lista de textos coletados
     last_final_author: str | None = None
 
-    # Retry loop: se a sessão foi deletada externamente (ex.: limpeza manual do banco),
+    # Retry loop: se a sessão foi deletada externamente (ex.: /limpar ou limpeza manual),
     # o ADK lança SessionNotFoundError. Recriamos a sessão e tentamos uma segunda vez.
     for attempt in range(2):
         try:
             async for event in runner.run_async(
                 user_id=chat_id,
-                session_id=chat_id,
+                session_id=session_id,
                 new_message=new_message,
             ):
                 is_final = event.is_final_response()
@@ -372,6 +417,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     if getattr(part, "text", None) and part.text.strip():
                         all_agent_texts.setdefault(author, []).append(part.text)
 
+                # Acumula contagem de tokens do evento (usage_metadata só vem em alguns eventos)
+                usage = getattr(event, "usage_metadata", None)
+                if usage:
+                    total_tokens = getattr(usage, "total_token_count", 0) or 0
+                    _session_tokens[session_id] = _session_tokens.get(session_id, 0) + total_tokens
+
                 if is_final:
                     last_final_author = author
                     # Tenta extrair texto direto do evento final
@@ -384,9 +435,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         except SessionNotFoundError:
             if attempt == 0:
                 # Sessão foi deletada externamente — limpa o cache e recria para retry
-                logger.warning(f"[session] {chat_id} não encontrada, recriando e tentando novamente...")
-                _sessions.discard(chat_id)
-                await ensure_session(chat_id)
+                logger.warning(f"[session] {session_id} não encontrada, recriando e tentando novamente...")
+                _sessions.discard(session_id)
+                await ensure_session(chat_id, session_id)
             else:
                 # Segunda falha consecutiva — desiste e avisa o usuário
                 logger.error(f"[session] {chat_id} falhou após recriação")
@@ -400,6 +451,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         combined = "".join(all_agent_texts[last_final_author])
         if combined.strip():
             final_parts.append(combined)
+
+    # Avisa o usuário quando o contexto do domínio está ficando grande demais.
+    # O aviso aparece logo antes da resposta do agente para ser visível.
+    if _session_tokens.get(session_id, 0) > TOKEN_WARN_THRESHOLD:
+        await update.message.reply_text(
+            f"⚠️ O contexto de <b>{domain}</b> está grande "
+            f"({_session_tokens[session_id]:,} tokens). "
+            f"Use /limpar {domain} para resetar.",
+            parse_mode="HTML",
+        )
 
     if final_parts:
         # ── Detecta JSON de menu interativo antes de enviar como texto ────────
@@ -450,8 +511,79 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("(sem resposta)", parse_mode="HTML")
 
 
+async def handle_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Comando /tokens — exibe o total de tokens acumulados por domínio neste processo.
+    O contador reseta ao reiniciar o container.
+    """
+    chat_id = str(update.message.chat_id)
+    linhas  = ["📊 <b>Tokens acumulados nesta sessão:</b>"]
+    total_geral = 0
+    for domain in _DOMAINS:
+        sid    = f"{chat_id}_{domain}"
+        tokens = _session_tokens.get(sid, 0)
+        if tokens:
+            linhas.append(f"• {domain}: <b>{tokens:,}</b>")
+            total_geral += tokens
+    if total_geral == 0:
+        linhas.append("Nenhum token registrado ainda.")
+    else:
+        linhas.append(f"\nTotal: <b>{total_geral:,}</b>")
+    linhas.append("\n<i>Contador reseta ao reiniciar o container.</i>")
+    await update.message.reply_text("\n".join(linhas), parse_mode="HTML")
+
+
+async def handle_limpar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Comando /limpar [dominio] — deleta a sessão ADK do domínio especificado (ou todos).
+    Exemplos:
+      /limpar           → limpa todos os domínios
+      /limpar financas  → limpa apenas a sessão de finanças
+      /limpar livros    → limpa apenas a sessão de livros
+    """
+    chat_id = str(update.message.chat_id)
+    args    = context.args  # lista de palavras digitadas após o comando
+    alvo    = args[0].lower() if args else None
+
+    # Decide quais domínios serão limpos
+    if alvo and alvo in _DOMAINS:
+        dominios = [alvo]
+    elif alvo:
+        # Domínio informado não é válido — informa as opções disponíveis
+        await update.message.reply_text(
+            f"Domínio <b>{alvo}</b> inválido. Opções: {', '.join(_DOMAINS)}.",
+            parse_mode="HTML",
+        )
+        return
+    else:
+        # Sem argumento → limpa todos os domínios do usuário
+        dominios = list(_DOMAINS)
+
+    limpos = []
+    for domain in dominios:
+        sid = f"{chat_id}_{domain}"
+        # Deleta a sessão do banco se ela existe (em memória ou com tokens acumulados)
+        if sid in _sessions or _session_tokens.get(sid, 0) > 0:
+            await runner.session_service.delete_session(
+                app_name=APP_NAME, user_id=chat_id, session_id=sid)
+            _sessions.discard(sid)
+            _session_tokens.pop(sid, None)
+            limpos.append(domain)
+
+    if limpos:
+        await update.message.reply_text(
+            f"🗑️ Contexto limpo: <b>{', '.join(limpos)}</b>.",
+            parse_mode="HTML",
+        )
+    else:
+        await update.message.reply_text("Nenhuma sessão ativa para limpar.", parse_mode="HTML")
+
+
 def main() -> None:
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    # Comandos primeiro — devem ter prioridade sobre o handler de texto genérico
+    app.add_handler(CommandHandler("tokens", handle_tokens))
+    app.add_handler(CommandHandler("limpar", handle_limpar))
     # CallbackQueryHandler ANTES do MessageHandler para que cliques em botões
     # não sejam engolidos pelo handler de texto
     app.add_handler(CallbackQueryHandler(handle_callback))
