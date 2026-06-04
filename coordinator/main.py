@@ -14,7 +14,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
 from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
+from google.adk.sessions import DatabaseSessionService
 from google.genai import types
 
 # Carrega o .env antes de qualquer outra importação que leia env vars
@@ -32,8 +32,11 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 APP_NAME = "makima"
 
-# Sessões em memória — não persistem entre reinícios do container (temporário)
-session_service = InMemorySessionService()
+# Conecta ao PostgreSQL externo (gerenciado pelo Dokploy) para persistir sessões entre reinícios
+# DATABASE_URL configurada no painel do Dokploy → Environment (formato: postgresql+asyncpg://...)
+DATABASE_URL = os.environ["DATABASE_URL"]
+# DatabaseSessionService cria as tabelas automaticamente na primeira execução
+session_service = DatabaseSessionService(db_url=DATABASE_URL)
 
 # Makima e runner são criados de forma síncrona — ADK gerencia MCP internamente
 makima = create_makima()
