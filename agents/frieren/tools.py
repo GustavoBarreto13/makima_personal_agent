@@ -737,3 +737,472 @@ def log_reading(
             f"<b>{titulo}</b> — página <b>{current_page}</b>\n"
             f"📖 {pages_read} páginas lidas nesta sessão."
         )
+
+
+def get_current_reading() -> str:
+    """
+    Retorna todos os livros com status 'lendo', com o progresso atual
+    baseado no último log de leitura registrado.
+
+    Usa LEFT JOIN para trazer o progresso mesmo quando não há nenhum log ainda
+    (ex.: livro adicionado como 'lendo' mas sem log de páginas).
+    """
+    # Tabelas completas para usar no SQL
+    books_table = _table("books")
+    logs_table  = _table("reading_logs")
+
+    # Query única com LEFT JOIN — MAX(rl.page_end) dá a página mais avançada lida,
+    # COUNT(rl.id) conta quantas sessões foram registradas para este livro.
+    # GROUP BY é necessário porque estamos usando funções de agregação.
+    sql = f"""
+        SELECT
+            b.id,
+            b.title,
+            b.author,
+            b.total_pages,
+            b.date_started,
+            MAX(rl.page_end)  AS current_page,
+            COUNT(rl.id)      AS total_sessions
+        FROM `{books_table}` b
+        LEFT JOIN `{logs_table}` rl ON rl.book_id = b.id
+        WHERE b.status = 'lendo' AND b.deleted = FALSE
+        GROUP BY b.id, b.title, b.author, b.total_pages, b.date_started
+        ORDER BY b.updated_at DESC
+    """
+
+    # Nenhum parâmetro de usuário nesta query — os filtros são literais seguros
+    rows = _run_select(sql, [])
+
+    # Caso não haja nenhum livro em leitura no momento
+    if not rows:
+        return "Nenhum livro em leitura no momento."
+
+    # Constrói a mensagem formatada para cada livro encontrado
+    linhas = []
+    for row in rows:
+        titulo       = row["title"]
+        autor        = row.get("author") or "autor desconhecido"
+        total_pages  = row.get("total_pages")          # Pode ser None se não cadastrado
+        current_page = row.get("current_page")         # Pode ser None se nunca houve log
+        date_started = row.get("date_started")         # Data de início, pode ser None
+
+        # Formata a data de início como string legível, ou omite se ausente
+        inicio_txt = f" · começou em {date_started}" if date_started else ""
+
+        if total_pages and current_page is not None:
+            # Temos total de páginas e progresso: calculamos o percentual concluído
+            percent = round((current_page / total_pages) * 100, 1)
+            progresso_txt = f"{percent}% ({current_page}/{total_pages} páginas)"
+        elif current_page is not None:
+            # Temos progresso mas não sabemos o total de páginas
+            progresso_txt = f"página {current_page}"
+        else:
+            # Nunca houve nenhum log de leitura para este livro
+            progresso_txt = "não iniciado"
+
+        # Monta o bloco de texto para este livro
+        bloco = (
+            f"📖 <b>{titulo}</b>\n"
+            f"   {autor} · {progresso_txt}{inicio_txt}"
+        )
+        linhas.append(bloco)
+
+    # Separa cada livro com linha em branco para melhor legibilidade
+    return "\n\n".join(linhas)
+
+
+def get_reading_list(status: str | None = None) -> str:
+    """
+    Lista todos os livros do catálogo, opcionalmente filtrados por status.
+    Agrupa os resultados por status com cabeçalhos visuais com emoji.
+
+    Parâmetros:
+        status — Filtra por um status específico (ex.: 'lendo', 'lido').
+                 Se None, retorna todos os livros agrupados por status.
+    """
+    # Tabela de livros
+    books_table = _table("books")
+
+    # Mapeamento de status para emoji de cabeçalho — facilita leitura visual no Telegram
+    STATUS_EMOJI = {
+        "lendo":      "📖",
+        "lido":       "✅",
+        "quero_ler":  "📚",
+        "pausado":    "⏸️",
+        "abandonado": "❌",
+    }
+
+    # Monta a query base — WHERE deleted=FALSE exclui livros removidos logicamente
+    sql = f"""
+        SELECT title, author, total_pages, status, date_started, date_finished, rating
+        FROM `{books_table}`
+        WHERE deleted = FALSE
+    """
+    params = []
+
+    if status is not None:
+        # Filtra por status específico se informado pelo usuário
+        # Parâmetro nomeado @status para evitar SQL injection
+        sql += " AND status = @status"
+        params.append(bigquery.ScalarQueryParameter("status", "STRING", status))
+
+    # Ordena por status primeiro (agrupamento), depois por data de atualização mais recente
+    sql += " ORDER BY status, updated_at DESC"
+
+    rows = _run_select(sql, params)
+
+    # Lista vazia: nenhum livro cadastrado ou nenhum com o status solicitado
+    if not rows:
+        if status:
+            return f"Nenhum livro com status <b>{status}</b> encontrado."
+        return "Nenhum livro no catálogo ainda."
+
+    # Agrupa as linhas por status usando um dicionário ordenado
+    # Chave: string do status; Valor: lista de dicts de cada livro naquele status
+    grupos: dict[str, list[dict]] = {}
+    for row in rows:
+        s = row["status"]
+        if s not in grupos:
+            grupos[s] = []
+        grupos[s].append(row)
+
+    # Constrói o texto de saída agrupado por status
+    secoes = []
+    for s, livros in grupos.items():
+        # Cabeçalho da seção: emoji + nome do status em negrito
+        emoji = STATUS_EMOJI.get(s, "📗")
+        cabecalho = f"{emoji} <b>{s.upper()}</b>"
+
+        # Lista os livros dentro do grupo
+        itens = []
+        for livro in livros:
+            titulo = livro["title"]
+
+            # Número de páginas formatado com N p. — omite se não cadastrado
+            paginas_txt = f" ({livro['total_pages']}p.)" if livro.get("total_pages") else ""
+
+            # Avaliação com estrela — omite se não avaliado
+            rating_txt = f" · ⭐ {livro['rating']}" if livro.get("rating") is not None else ""
+
+            itens.append(f"• {titulo}{paginas_txt}{rating_txt}")
+
+        # Une cabeçalho e itens da seção
+        secoes.append(cabecalho + "\n" + "\n".join(itens))
+
+    # Separa seções com linha em branco
+    return "\n\n".join(secoes)
+
+
+def finish_book(book_query: str, rating: float | None = None, notes: str | None = None) -> str:
+    """
+    Marca um livro como lido, registra a data de conclusão e opcionalmente salva
+    a avaliação (nota de 1.0 a 5.0) e anotações finais.
+
+    Parâmetros:
+        book_query — Título parcial ou completo do livro a concluir
+        rating     — Nota de 1.0 a 5.0 (opcional)
+        notes      — Anotações finais sobre o livro (opcional)
+    """
+    # ── 1. Localiza o livro no catálogo ───────────────────────────────────────
+    book = _find_book_by_query(book_query)
+    if book is None:
+        return (
+            f"Nenhum livro encontrado para '<b>{book_query}</b>'. "
+            "Verifique o título e tente novamente."
+        )
+
+    # ── 2. Valida a avaliação se fornecida ────────────────────────────────────
+    # A escala vai de 1.0 a 5.0 — valores fora disso são rejeitados
+    if rating is not None and not (1.0 <= rating <= 5.0):
+        return "A avaliação deve ser um valor entre <b>1.0</b> e <b>5.0</b>."
+
+    # ── 3. Calcula o total de páginas lidas nos logs ───────────────────────────
+    # SUM(pages_read) soma todas as sessões de leitura registradas para este livro
+    book_id = book["id"]
+    sql_sum = f"""
+        SELECT COALESCE(SUM(pages_read), 0) AS total_pages_read
+        FROM `{_table("reading_logs")}`
+        WHERE book_id = @book_id
+    """
+    sum_params = [
+        bigquery.ScalarQueryParameter("book_id", "STRING", book_id),
+    ]
+    sum_rows = _run_select(sql_sum, sum_params)
+
+    # COALESCE garante que retorne 0 mesmo se não houver nenhum log
+    total_pages_read = sum_rows[0]["total_pages_read"] if sum_rows else 0
+
+    # ── 4. Atualiza o registro do livro no BigQuery ───────────────────────────
+    today_str = str(_today())
+    agora     = _now()
+
+    # COALESCE(@notes, notes) preserva as anotações já existentes se o usuário não
+    # informou novas — evita apagar notas anteriores sem querer.
+    sql_update = f"""
+        UPDATE `{_table("books")}`
+        SET
+            status        = 'lido',
+            date_finished = @date_finished,
+            rating        = @rating,
+            notes         = COALESCE(@notes, notes),
+            updated_at    = @updated_at
+        WHERE id = @book_id
+    """
+    update_params = [
+        bigquery.ScalarQueryParameter("date_finished", "DATE",      today_str),
+        bigquery.ScalarQueryParameter("rating",        "FLOAT64",   rating),
+        bigquery.ScalarQueryParameter("notes",         "STRING",    notes),
+        bigquery.ScalarQueryParameter("updated_at",    "TIMESTAMP", agora),
+        bigquery.ScalarQueryParameter("book_id",       "STRING",    book_id),
+    ]
+    _run_dml(sql_update, update_params)
+
+    # ── 5. Monta a mensagem de confirmação ────────────────────────────────────
+    titulo     = book["title"]
+    rating_txt = f" · ⭐ {rating}/5.0" if rating is not None else ""
+
+    return (
+        f"✅ <b>{titulo}</b> concluído em {today_str}"
+        f"{rating_txt} · {total_pages_read} páginas lidas no total."
+    )
+
+
+def update_book_status(book_query: str, status: str) -> str:
+    """
+    Atualiza o status de um livro no catálogo.
+    Se o novo status for 'lendo' e o livro ainda não tem date_started, registra hoje.
+
+    Parâmetros:
+        book_query — Título parcial ou completo do livro a atualizar
+        status     — Novo status (deve ser um dos VALID_STATUSES)
+    """
+    # ── 1. Valida o status antes de qualquer acesso ao banco ──────────────────
+    # Rejeita valores inválidos para manter integridade dos dados
+    if status not in VALID_STATUSES:
+        return (
+            f"Status inválido: <b>{status}</b>. "
+            f"Use um dos seguintes: {', '.join(VALID_STATUSES)}."
+        )
+
+    # ── 2. Localiza o livro no catálogo ───────────────────────────────────────
+    book = _find_book_by_query(book_query)
+    if book is None:
+        return (
+            f"Nenhum livro encontrado para '<b>{book_query}</b>'. "
+            "Verifique o título e tente novamente."
+        )
+
+    # ── 3. Atualiza o status no BigQuery ──────────────────────────────────────
+    today_str = str(_today())
+    agora     = _now()
+
+    # CASE WHEN: se o novo status é 'lendo' E date_started ainda é NULL,
+    # registra hoje como data de início. Caso contrário, preserva o valor existente.
+    # Isso evita sobrescrever a data real de início quando o status já foi 'lendo' antes.
+    sql = f"""
+        UPDATE `{_table("books")}`
+        SET
+            status       = @status,
+            date_started = CASE
+                               WHEN @status = 'lendo' AND date_started IS NULL
+                               THEN @today
+                               ELSE date_started
+                           END,
+            updated_at   = @updated_at
+        WHERE id = @book_id
+    """
+    params = [
+        bigquery.ScalarQueryParameter("status",     "STRING",    status),
+        bigquery.ScalarQueryParameter("today",      "DATE",      today_str),
+        bigquery.ScalarQueryParameter("updated_at", "TIMESTAMP", agora),
+        bigquery.ScalarQueryParameter("book_id",    "STRING",    book["id"]),
+    ]
+    _run_dml(sql, params)
+
+    # ── 4. Retorna confirmação ────────────────────────────────────────────────
+    return f"<b>{book['title']}</b> → status atualizado para <b>{status}</b>."
+
+
+def get_reading_stats(year: int | None = None) -> str:
+    """
+    Retorna estatísticas de leitura para um ano específico.
+    Se year não for informado, usa o ano corrente.
+
+    Métricas calculadas:
+    - Livros concluídos no ano
+    - Total de páginas lidas (pela soma dos logs)
+    - Total de sessões de leitura
+    - Ritmo médio de leitura (páginas/dia nos últimos 30 dias com leitura)
+    - Avaliação média dos livros concluídos
+    """
+    # Usa o ano atual se não for informado pelo usuário
+    if year is None:
+        year = _today().year
+
+    books_table = _table("books")
+    logs_table  = _table("reading_logs")
+
+    # ── Query 1: Livros concluídos e avaliação média no ano ───────────────────
+    # Filtra livros com status 'lido' cujo date_finished caiu no ano alvo
+    sql_books = f"""
+        SELECT
+            COUNT(*)     AS books_finished,
+            AVG(rating)  AS avg_rating
+        FROM `{books_table}`
+        WHERE status = 'lido'
+          AND EXTRACT(YEAR FROM date_finished) = @year
+          AND deleted = FALSE
+    """
+    params_books = [
+        bigquery.ScalarQueryParameter("year", "INT64", year),
+    ]
+    rows_books = _run_select(sql_books, params_books)
+
+    # ── Query 2: Total de páginas e sessões de leitura no ano ────────────────
+    # SUM(pages_read) soma todas as sessões; COUNT(*) conta o número de sessões
+    sql_logs = f"""
+        SELECT
+            COALESCE(SUM(pages_read), 0) AS total_pages,
+            COUNT(*)                     AS total_sessions
+        FROM `{logs_table}`
+        WHERE EXTRACT(YEAR FROM date) = @year
+    """
+    params_logs = [
+        bigquery.ScalarQueryParameter("year", "INT64", year),
+    ]
+    rows_logs = _run_select(sql_logs, params_logs)
+
+    # ── Query 3: Ritmo de leitura — últimos 30 dias com leitura no ano ────────
+    # Agrega pages_read por dia para calcular a média diária de leitura.
+    # LIMIT 30 pega os 30 dias mais recentes em que houve leitura.
+    # Nota: conta dias com leitura, não dias corridos — evita distorção por dias sem leitura.
+    sql_pace = f"""
+        SELECT
+            date,
+            SUM(pages_read) AS daily_pages
+        FROM `{logs_table}`
+        WHERE EXTRACT(YEAR FROM date) = @year
+        GROUP BY date
+        ORDER BY date DESC
+        LIMIT 30
+    """
+    params_pace = [
+        bigquery.ScalarQueryParameter("year", "INT64", year),
+    ]
+    rows_pace = _run_select(sql_pace, params_pace)
+
+    # ── Extrai os valores das queries ─────────────────────────────────────────
+    # Número de livros concluídos — 0 se não houver
+    books_finished = int(rows_books[0]["books_finished"]) if rows_books else 0
+
+    # Avaliação média — None se não houver livros avaliados
+    avg_rating = rows_books[0]["avg_rating"] if rows_books else None
+
+    # Total de páginas lidas nos logs do ano
+    total_pages = int(rows_logs[0]["total_pages"]) if rows_logs else 0
+
+    # Total de sessões de leitura no ano
+    total_sessions = int(rows_logs[0]["total_sessions"]) if rows_logs else 0
+
+    # Ritmo médio: média de páginas por dia com leitura (últimos 30 dias)
+    # Só calcula se houver dados de ritmo disponíveis
+    avg_daily = None
+    if rows_pace:
+        soma_diaria = sum(r["daily_pages"] for r in rows_pace)
+        avg_daily   = round(soma_diaria / len(rows_pace), 1)
+
+    # ── Monta a mensagem de estatísticas ─────────────────────────────────────
+    # Só exibe linhas que têm dados relevantes (evita linhas de "0" sem contexto)
+    linhas = [f"<b>Estatísticas de leitura — {year}</b>\n"]
+
+    # Livros concluídos — sempre mostra (mesmo que seja 0)
+    linhas.append(f"📚 Livros concluídos: <b>{books_finished}</b>")
+
+    if total_pages > 0:
+        # Formata com separador de milhar para legibilidade (ex.: 1,234)
+        linhas.append(f"📄 Páginas lidas: <b>{total_pages:,}</b>")
+
+    if total_sessions > 0:
+        linhas.append(f"📖 Sessões de leitura: <b>{total_sessions}</b>")
+
+    if avg_daily is not None:
+        linhas.append(f"⚡ Ritmo médio: <b>{avg_daily} páginas/dia</b> (últimos 30 dias com leitura)")
+
+    if avg_rating is not None:
+        # Exibe com uma casa decimal para consistência (ex.: 4.2/5.0)
+        linhas.append(f"⭐ Avaliação média: <b>{avg_rating:.1f}/5.0</b>")
+
+    return "\n".join(linhas)
+
+
+def get_book_history(book_query: str) -> str:
+    """
+    Retorna o histórico completo de sessões de leitura de um livro específico.
+    Mostra data, intervalo de páginas, páginas lidas e anotações de cada sessão.
+
+    Parâmetros:
+        book_query — Título parcial ou completo do livro
+    """
+    # ── 1. Localiza o livro no catálogo ───────────────────────────────────────
+    book = _find_book_by_query(book_query)
+    if book is None:
+        return (
+            f"Nenhum livro encontrado para '<b>{book_query}</b>'. "
+            "Verifique o título e tente novamente."
+        )
+
+    # ── 2. Busca todas as sessões de leitura do livro ─────────────────────────
+    # Ordena por data ASC (cronológica) e created_at ASC para desempatar sessões
+    # no mesmo dia — mantém a ordem em que foram registradas.
+    book_id = book["id"]
+    sql = f"""
+        SELECT
+            date,
+            page_start,
+            page_end,
+            pages_read,
+            session_notes
+        FROM `{_table("reading_logs")}`
+        WHERE book_id = @book_id
+        ORDER BY date ASC, created_at ASC
+    """
+    params = [
+        bigquery.ScalarQueryParameter("book_id", "STRING", book_id),
+    ]
+    logs = _run_select(sql, params)
+
+    # ── 3. Trata o caso de nenhum log registrado ──────────────────────────────
+    if not logs:
+        return (
+            f"<b>{book['title']}</b> — nenhuma sessão de leitura registrada ainda."
+        )
+
+    # ── 4. Calcula totais para o cabeçalho do histórico ───────────────────────
+    total_sessoes = len(logs)
+    total_paginas = sum(r["pages_read"] for r in logs)
+
+    # ── 5. Monta o cabeçalho ──────────────────────────────────────────────────
+    cabecalho = (
+        f"<b>{book['title']}</b> — histórico de leitura\n\n"
+        f"Total: {total_sessoes} sessões · {total_paginas} páginas\n"
+    )
+
+    # ── 6. Formata cada sessão como um item da lista ──────────────────────────
+    itens = []
+    for log in logs:
+        data       = log["date"]            # Data da sessão (objeto date ou string)
+        page_start = log["page_start"]      # Página onde a sessão começou
+        page_end   = log["page_end"]        # Página onde a sessão terminou
+        pages_read = log["pages_read"]      # Quantas páginas foram lidas na sessão
+        notas      = log.get("session_notes")  # Anotações opcionais — pode ser None
+
+        # Formata as anotações da sessão: adiciona " — notas" se existirem
+        notas_txt = f" — {notas}" if notas else ""
+
+        # Linha da sessão no formato: "• data: p.X → p.Y (Z páginas) — notas"
+        itens.append(
+            f"• {data}: p.{page_start} → p.{page_end} ({pages_read} páginas){notas_txt}"
+        )
+
+    # Une cabeçalho e itens de sessão
+    return cabecalho + "\n".join(itens)
