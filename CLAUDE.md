@@ -62,7 +62,7 @@ Imports locais — nada de `PYTHONPATH` apontando para outro repo.
 ```
 Telegram (usuário)
     ↓
-coordinator/main.py  (python-telegram-bot, sessão por chat_id)
+coordinator/main.py  (python-telegram-bot, sessões por domínio)
     ↓
 coordinator/agent.py  (Makima — Agent ADK)
     ├── nami_agent      → BigQuery (finanças)                        [agents/nami]
@@ -244,11 +244,35 @@ Exemplo canônico: `agents/nami/tools.py` função `_client()`.
 
 ### Sessão Telegram
 
-`DatabaseSessionService` do ADK — uma sessão por `chat_id` persistida em PostgreSQL. O histórico de conversa sobrevive a reinícios do container.
+`DatabaseSessionService` do ADK — sessões persistidas em PostgreSQL por domínio. O histórico de conversa sobrevive a reinícios do container.
 
 **Banco de dados**: serviço separado criado no Dokploy (Databases → PostgreSQL), **não** embutido no `docker-compose.yml`. Isso garante que os dados persistam mesmo se o serviço Makima for recriado.
 
 **Variável `DATABASE_URL`**: configurada no painel de Environment do Dokploy (não no `.env` do repo). O Dokploy gera a URL com prefixo `postgresql://`; o código normaliza automaticamente para `postgresql+asyncpg://` (driver async exigido pelo ADK).
+
+#### Sessões por domínio
+
+Para evitar que o histórico de todas as conversas se acumule em uma única sessão (desperdiçando tokens), o coordinator usa `session_id = "{chat_id}_{domain}"`:
+
+| session_id | Histórico de |
+|---|---|
+| `<chat_id>_financas` | Conversas com a Nami (finanças) |
+| `<chat_id>_livros` | Conversas com a Frieren (livros) |
+| `<chat_id>_tarefas` | Conversas com a Kaguya (tarefas + agenda) |
+| `<chat_id>_knowledge` | Conversas com a Kurisu (knowledge base) |
+| `<chat_id>_geral` | Tudo que não se encaixa nos domínios acima |
+
+A função `_classify_domain(text)` em `coordinator/main.py` faz a classificação por palavras-chave, sem custo de LLM. O `user_id` continua sendo o `chat_id` puro — o domínio só altera o `session_id`.
+
+#### Comandos de gerenciamento de sessão
+
+| Comando | O que faz |
+|---|---|
+| `/tokens` | Exibe tokens acumulados por domínio neste processo (reseta no restart) |
+| `/limpar` | Deleta todas as sessões do usuário no banco |
+| `/limpar <dominio>` | Deleta apenas a sessão do domínio especificado (ex.: `/limpar financas`) |
+
+O aviso de contexto grande (> 80.000 tokens em um domínio) é exibido automaticamente antes da resposta quando o threshold é atingido.
 
 **Rede Docker**: o banco roda na `dokploy-network`. O `docker-compose.yml` conecta a Makima a essa rede como externa para que o hostname interno do banco resolva dentro do container:
 
