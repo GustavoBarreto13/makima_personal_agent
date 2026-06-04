@@ -4,6 +4,7 @@ BigQuery para persistência + Google Books API para metadados.
 """
 
 import os           # Para ler variáveis de ambiente (credenciais, chaves de API)
+import uuid         # Para gerar IDs únicos universais (UUID v4) para cada livro
 import unicodedata  # Para remover acentos na normalização de strings (busca fuzzy)
 from datetime import datetime, date  # Tipos de data/hora usados no sistema
 from zoneinfo import ZoneInfo                  # Para trabalhar com fuso horário (Brasil)
@@ -343,3 +344,229 @@ def _fetch_google_books(query: str, max_results: int = 5) -> list[dict]:
         })
 
     return results
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FERRAMENTAS PÚBLICAS — chamadas diretamente pelo agente Frieren
+# ─────────────────────────────────────────────────────────────────────────────
+
+def search_book(query: str) -> str:
+    """
+    Busca livros na Google Books API pelo título, autor ou ISBN.
+    Use antes de add_book para confirmar o google_books_id do livro correto.
+    """
+    # Chama o helper privado para buscar até 5 resultados na Google Books API
+    results = _fetch_google_books(query, max_results=5)
+
+    # Se a API não retornou nada, orienta o usuário sobre como adicionar manualmente
+    if not results:
+        return (
+            "Nenhum livro encontrado para esse termo. "
+            "Você pode adicionar manualmente informando título, autor e número de páginas."
+        )
+
+    # Monta uma lista HTML numerada com os dados de cada livro encontrado
+    linhas = []
+    for i, livro in enumerate(results, start=1):
+        # Formata o ano de publicação — mostra apenas se disponível
+        ano = f" ({livro['published_year']})" if livro.get("published_year") else ""
+
+        # Formata o número de páginas — mostra apenas se disponível
+        paginas = f" — {livro['total_pages']} páginas" if livro.get("total_pages") else ""
+
+        # Autor: usa o valor extraído ou indica que não foi informado
+        autor = livro["author"] if livro.get("author") else "autor desconhecido"
+
+        # Monta o bloco de texto deste resultado com as três linhas de informação
+        bloco = (
+            f"{i}. <b>{livro['title']}</b>{ano}\n"          # Linha 1: título e ano
+            f"   {autor}{paginas}\n"                          # Linha 2: autor e páginas
+            f"   ID Google Books: <code>{livro['google_books_id']}</code>"  # Linha 3: ID
+        )
+        linhas.append(bloco)
+
+    # Une todos os blocos separados por linha em branco para facilitar a leitura
+    return "\n\n".join(linhas)
+
+
+def add_book(
+    title: str,
+    status: str = "quero_ler",
+    google_books_id: str | None = None,
+    author: str | None = None,
+    total_pages: int | None = None,
+) -> str:
+    """
+    Adiciona um livro ao catálogo. Enriquece metadados via Google Books API automaticamente.
+    Se google_books_id for fornecido, busca aquele volume específico.
+    """
+    # ── 1. Valida o status informado ──────────────────────────────────────────
+    # Rejeita qualquer status que não esteja na lista de valores aceitos pelo sistema
+    if status not in VALID_STATUSES:
+        return (
+            f"Status inválido: <b>{status}</b>. "
+            f"Use um dos seguintes: {', '.join(VALID_STATUSES)}."
+        )
+
+    # ── 2. Verifica duplicatas no catálogo ────────────────────────────────────
+    # Busca no banco se já existe um livro com título parecido para evitar duplicação
+    existente = _find_book_by_query(title)
+    if existente and _norm(existente["title"]) == _norm(title):
+        # Livro já cadastrado — informa o status atual para o usuário saber o estado
+        return (
+            f"<b>{existente['title']}</b> já está no catálogo "
+            f"com status <b>{existente['status']}</b>."
+        )
+
+    # ── 3. Obtém metadados do livro ───────────────────────────────────────────
+    # Dicionário que vai acumular os metadados do livro (da API ou fornecidos manualmente)
+    meta: dict = {}
+
+    if google_books_id:
+        # Se o usuário informou um ID específico, busca diretamente aquele volume
+        # Isso é mais preciso do que uma busca por texto (evita pegar a edição errada)
+        try:
+            resp = requests.get(
+                f"{_BOOKS_API_URL}/{google_books_id}",
+                timeout=10,
+            )
+            resp.raise_for_status()  # Lança exceção se o volume não existir (404, etc.)
+            item = resp.json()
+            info = item.get("volumeInfo", {})
+
+            # Extrai os campos necessários do volumeInfo retornado pela API
+            authors_list = info.get("authors", [])
+            categories = info.get("categories", [])
+            image_links = info.get("imageLinks", {})
+            description_full = info.get("description", "")
+            published_date = info.get("publishedDate", "")
+
+            # Ano de publicação: pega os primeiros 4 caracteres da data
+            pub_year = None
+            if published_date and len(published_date) >= 4:
+                try:
+                    pub_year = int(published_date[:4])
+                except ValueError:
+                    pub_year = None
+
+            # Extrai o ISBN preferindo ISBN-13 sobre ISBN-10 (mesma lógica do _fetch_google_books)
+            isbn_val = None
+            for identifier in info.get("industryIdentifiers", []):
+                if identifier.get("type") == "ISBN_13":
+                    isbn_val = identifier.get("identifier")
+                    break
+                elif identifier.get("type") == "ISBN_10" and isbn_val is None:
+                    isbn_val = identifier.get("identifier")
+
+            # Monta o dicionário de metadados com todos os campos extraídos
+            meta = {
+                "google_books_id": google_books_id,
+                "title": info.get("title", title),  # Fallback para o título informado pelo usuário
+                "author": ", ".join(authors_list) if authors_list else "",
+                "total_pages": info.get("pageCount"),
+                "isbn": isbn_val,
+                "cover_url": image_links.get("thumbnail") or image_links.get("smallThumbnail"),
+                "description": description_full[:500] if description_full else "",
+                "genre": ", ".join(categories) if categories else "",
+                "language": info.get("language", ""),
+                "published_year": pub_year,
+            }
+        except requests.RequestException:
+            # Falha na requisição — continua sem metadados da API; tentará busca textual abaixo
+            meta = {}
+
+    # Se ainda não temos metadados (não veio por ID ou falhou), tenta busca textual
+    if not meta:
+        resultados = _fetch_google_books(title, max_results=1)
+        if resultados:
+            # Usa o primeiro resultado como fonte de metadados
+            meta = resultados[0]
+
+    # Se mesmo a busca textual não retornou nada, monta um dict manual com os dados fornecidos
+    if not meta:
+        meta = {
+            "google_books_id": None,
+            "title": title,
+            "author": author or "",
+            "total_pages": total_pages,
+            "isbn": None,
+            "cover_url": None,
+            "description": "",
+            "genre": "",
+            "language": "",
+            "published_year": None,
+        }
+
+    # ── 4. Sobrescreve campos se o usuário forneceu manualmente ───────────────
+    # A edição física do usuário pode ter número de páginas diferente do cadastrado na API
+    # (ex.: edições especiais, omnibus, traduções com diagramação diferente)
+    if total_pages is not None:
+        meta["total_pages"] = total_pages
+
+    # O autor fornecido manualmente tem precedência sobre o retornado pela API
+    # (útil para pseudônimos, co-autores ou grafias diferentes)
+    if author is not None:
+        meta["author"] = author
+
+    # ── 5. Gera ID único para o livro ─────────────────────────────────────────
+    # UUID v4 garante unicidade global sem necessidade de sequência numérica no banco
+    book_id = str(uuid.uuid4())
+
+    # ── 6. Define data de início de leitura ───────────────────────────────────
+    # Só registra date_started se o livro já está sendo lido — outros status não têm data de início
+    date_started = str(_today()) if status == "lendo" else None
+
+    # ── 7. Insere o livro na tabela books do BigQuery ─────────────────────────
+    # Usa parâmetros nomeados (@placeholder) para todos os valores variáveis.
+    # NULL e FALSE são literais SQL seguros (sem entrada do usuário) — não precisam de params.
+    # Os campos date_finished, rating, notes são NULL pois o livro está sendo adicionado agora.
+    sql = f"""
+        INSERT INTO `{_table("books")}` (
+            id, google_books_id, title, author, total_pages,
+            isbn, cover_url, description, genre, language, published_year,
+            status, date_started, date_finished, rating, notes,
+            source, created_at, updated_at, deleted
+        ) VALUES (
+            @id, @google_books_id, @title, @author, @total_pages,
+            @isbn, @cover_url, @description, @genre, @language, @published_year,
+            @status, @date_started, NULL, NULL, NULL,
+            @source, @created_at, @updated_at, FALSE
+        )
+    """
+
+    # Timestamp atual para os campos de auditoria (created_at e updated_at)
+    agora = _now()
+
+    # Monta a lista de parâmetros tipados — o BigQuery exige o tipo explícito para cada valor
+    params = [
+        bigquery.ScalarQueryParameter("id",              "STRING",    book_id),
+        bigquery.ScalarQueryParameter("google_books_id", "STRING",    meta.get("google_books_id")),
+        bigquery.ScalarQueryParameter("title",           "STRING",    meta.get("title", title)),
+        bigquery.ScalarQueryParameter("author",          "STRING",    meta.get("author") or None),
+        bigquery.ScalarQueryParameter("total_pages",     "INT64",     meta.get("total_pages")),
+        bigquery.ScalarQueryParameter("isbn",            "STRING",    meta.get("isbn")),
+        bigquery.ScalarQueryParameter("cover_url",       "STRING",    meta.get("cover_url")),
+        bigquery.ScalarQueryParameter("description",     "STRING",    meta.get("description") or None),
+        bigquery.ScalarQueryParameter("genre",           "STRING",    meta.get("genre") or None),
+        bigquery.ScalarQueryParameter("language",        "STRING",    meta.get("language") or None),
+        bigquery.ScalarQueryParameter("published_year",  "INT64",     meta.get("published_year")),
+        bigquery.ScalarQueryParameter("status",          "STRING",    status),
+        bigquery.ScalarQueryParameter("date_started",    "DATE",      date_started),
+        bigquery.ScalarQueryParameter("source",          "STRING",    "telegram"),
+        bigquery.ScalarQueryParameter("created_at",      "TIMESTAMP", agora),
+        bigquery.ScalarQueryParameter("updated_at",      "TIMESTAMP", agora),
+    ]
+
+    # Executa o INSERT — _run_dml aguarda a conclusão e retorna linhas afetadas
+    _run_dml(sql, params)
+
+    # ── 8. Monta a mensagem de confirmação ────────────────────────────────────
+    # Exibe o título final (que pode ter vindo da API), o autor e as páginas
+    titulo_final = meta.get("title", title)
+    autor_final  = meta.get("author") or "autor desconhecido"
+    paginas_txt  = f" ({meta.get('total_pages')} páginas)" if meta.get("total_pages") else ""
+
+    return (
+        f"<b>{titulo_final}</b> de {autor_final}{paginas_txt} "
+        f"adicionado ao catálogo com status <b>{status}</b>."
+    )
