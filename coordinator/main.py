@@ -15,6 +15,7 @@ from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTyp
 
 from google.adk.runners import Runner
 from google.adk.sessions import DatabaseSessionService
+from google.adk.errors.session_not_found_error import SessionNotFoundError
 from google.genai import types
 
 # Carrega o .env antes de qualquer outra importação que leia env vars
@@ -92,39 +93,57 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     all_agent_texts: dict[str, list[str]] = {}  # autor → lista de textos coletados
     last_final_author: str | None = None
 
-    async for event in runner.run_async(
-        user_id=chat_id,
-        session_id=chat_id,
-        new_message=new_message,
-    ):
-        is_final = event.is_final_response()
-        author = getattr(event, "author", "?")
-        parts = event.content.parts if event.content and event.content.parts else []
+    # Retry loop: se a sessão foi deletada externamente (ex.: limpeza manual do banco),
+    # o ADK lança SessionNotFoundError. Recriamos a sessão e tentamos uma segunda vez.
+    for attempt in range(2):
+        try:
+            async for event in runner.run_async(
+                user_id=chat_id,
+                session_id=chat_id,
+                new_message=new_message,
+            ):
+                is_final = event.is_final_response()
+                author = getattr(event, "author", "?")
+                parts = event.content.parts if event.content and event.content.parts else []
 
-        # Log detalhado de cada parte para facilitar diagnóstico
-        if not parts:
-            logger.info(f"[event] author={author} is_final={is_final} no_content")
-        for part in parts:
-            if getattr(part, "text", None):
-                logger.info(f"[event] author={author} is_final={is_final} text={part.text[:120]!r}")
-            elif getattr(part, "function_call", None):
-                fc = part.function_call
-                logger.info(f"[event] author={author} is_final={is_final} func_call={fc.name}")
-            elif getattr(part, "function_response", None):
-                fr = part.function_response
-                logger.info(f"[tool] {fr.name} → {str(fr.response)[:300]}")
+                # Log detalhado de cada parte para facilitar diagnóstico
+                if not parts:
+                    logger.info(f"[event] author={author} is_final={is_final} no_content")
+                for part in parts:
+                    if getattr(part, "text", None):
+                        logger.info(f"[event] author={author} is_final={is_final} text={part.text[:120]!r}")
+                    elif getattr(part, "function_call", None):
+                        fc = part.function_call
+                        logger.info(f"[event] author={author} is_final={is_final} func_call={fc.name}")
+                    elif getattr(part, "function_response", None):
+                        fr = part.function_response
+                        logger.info(f"[tool] {fr.name} → {str(fr.response)[:300]}")
 
-        # Acumula texto de qualquer evento (não só final) — fallback para sub_agents
-        for part in parts:
-            if getattr(part, "text", None) and part.text.strip():
-                all_agent_texts.setdefault(author, []).append(part.text)
+                # Acumula texto de qualquer evento (não só final) — fallback para sub_agents
+                for part in parts:
+                    if getattr(part, "text", None) and part.text.strip():
+                        all_agent_texts.setdefault(author, []).append(part.text)
 
-        if is_final:
-            last_final_author = author
-            # Tenta extrair texto direto do evento final
-            text_resp = "".join(p.text or "" for p in parts if getattr(p, "text", None))
-            if text_resp.strip():
-                final_parts.append(text_resp)
+                if is_final:
+                    last_final_author = author
+                    # Tenta extrair texto direto do evento final
+                    text_resp = "".join(p.text or "" for p in parts if getattr(p, "text", None))
+                    if text_resp.strip():
+                        final_parts.append(text_resp)
+
+            break  # loop do runner concluído sem erro — sai do retry
+
+        except SessionNotFoundError:
+            if attempt == 0:
+                # Sessão foi deletada externamente — limpa o cache e recria para retry
+                logger.warning(f"[session] {chat_id} não encontrada, recriando e tentando novamente...")
+                _sessions.discard(chat_id)
+                await ensure_session(chat_id)
+            else:
+                # Segunda falha consecutiva — desiste e avisa o usuário
+                logger.error(f"[session] {chat_id} falhou após recriação")
+                await update.message.reply_text("❌ Erro ao iniciar sessão. Tente novamente.", parse_mode="HTML")
+                return
 
     # Fallback: se o evento final veio vazio (padrão de sub_agents), usa o texto
     # coletado nos eventos não-finais do mesmo autor
