@@ -84,8 +84,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     new_message = types.Content(role="user", parts=[types.Part(text=text)])
 
-    # Coleta todos os eventos finais — múltiplos agentes podem gerar respostas separadas
+    # Coleta texto de TODOS os eventos por autor.
+    # Com sub_agents, o texto do sub-agente pode vir em eventos não-finais —
+    # o evento final (is_final=True) é apenas o sinal de "done" e pode ter content=None.
+    # Por isso mantemos um fallback por autor para não perder a resposta.
     final_parts: list[str] = []
+    all_agent_texts: dict[str, list[str]] = {}  # autor → lista de textos coletados
+    last_final_author: str | None = None
+
     async for event in runner.run_async(
         user_id=chat_id,
         session_id=chat_id,
@@ -93,19 +99,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     ):
         is_final = event.is_final_response()
         author = getattr(event, "author", "?")
-        has_text = bool(event.content and event.content.parts)
-        logger.info(f"[event] author={author} is_final={is_final} has_text={has_text}")
-        if has_text:
-            snippet = "".join(p.text or "" for p in event.content.parts)[:120]
-            logger.info(f"[event] text={snippet!r}")
-        for part in (event.content.parts if event.content and event.content.parts else []):
-            if hasattr(part, "function_response") and part.function_response:
+        parts = event.content.parts if event.content and event.content.parts else []
+
+        # Log detalhado de cada parte para facilitar diagnóstico
+        if not parts:
+            logger.info(f"[event] author={author} is_final={is_final} no_content")
+        for part in parts:
+            if getattr(part, "text", None):
+                logger.info(f"[event] author={author} is_final={is_final} text={part.text[:120]!r}")
+            elif getattr(part, "function_call", None):
+                fc = part.function_call
+                logger.info(f"[event] author={author} is_final={is_final} func_call={fc.name}")
+            elif getattr(part, "function_response", None):
                 fr = part.function_response
                 logger.info(f"[tool] {fr.name} → {str(fr.response)[:300]}")
-        if is_final and has_text:
-            text_resp = "".join(p.text or "" for p in event.content.parts)
+
+        # Acumula texto de qualquer evento (não só final) — fallback para sub_agents
+        for part in parts:
+            if getattr(part, "text", None) and part.text.strip():
+                all_agent_texts.setdefault(author, []).append(part.text)
+
+        if is_final:
+            last_final_author = author
+            # Tenta extrair texto direto do evento final
+            text_resp = "".join(p.text or "" for p in parts if getattr(p, "text", None))
             if text_resp.strip():
                 final_parts.append(text_resp)
+
+    # Fallback: se o evento final veio vazio (padrão de sub_agents), usa o texto
+    # coletado nos eventos não-finais do mesmo autor
+    if not final_parts and last_final_author and last_final_author in all_agent_texts:
+        logger.info(f"[fallback] usando texto de eventos não-finais de {last_final_author!r}")
+        combined = "".join(all_agent_texts[last_final_author])
+        if combined.strip():
+            final_parts.append(combined)
 
     if final_parts:
         for part in final_parts:
