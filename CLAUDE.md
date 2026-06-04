@@ -137,6 +137,16 @@ Comportamento geral:
 - Frases características: "El Psy Kongroo", "Isso é elementar", "Não seja impreciso"
 - Formata em HTML (não markdown)
 
+### Frieren (agente de livros)
+
+Inspirada em Frieren de Frieren Beyond Journey's End — maga élfica milenar, contemplativa, paciente.
+
+- Sempre começa a resposta com `Frieren:`
+- Tom calmo, levemente distante — perspectiva de quem já viveu muito tempo
+- Coloca leitura em perspectiva temporal: "Em cem anos você terá lido muitos livros"
+- Chama a tool PRIMEIRO, confirma depois: título, páginas lidas na sessão, progresso %
+- Formata em HTML (não markdown)
+
 ---
 
 ## Integração cross-agent: Kaguya + Nami
@@ -217,6 +227,7 @@ GOOGLE_CALENDAR_REFRESH_TOKEN  # refresh token OAuth
 GOOGLE_CALENDAR_TOKEN_EXPIRY   # ISO 8601 — data de expiração do access token
 GOOGLE_CALENDAR_MAIN_CALENDAR_ID # ID do calendário principal (geralmente o email Gmail)
 VERTEX_RAG_CORPUS              # ID do corpus Vertex AI RAG (após Fase 5)
+GOOGLE_BOOKS_API_KEY           # (opcional) chave da Google Books API — aumenta cota de 1000 para 10.000 req/dia
 ```
 
 ### Sessão Telegram
@@ -245,10 +256,15 @@ makima_personal_agent/
 │   │   ├── tools.py     # tools cross-agent (complete_payment_task, create_expense_reminder)
 │   │   ├── agent.py     # create_kaguya_agent() — factory com dois McpToolsets (TickTick + Calendar)
 │   │   └── PLAN.md      # documentação do agente
-│   └── kurisu/          # agente de knowledge base — Fase 3 🔧 (pendente corpus Vertex AI)
+│   ├── kurisu/          # agente de knowledge base — Fase 3 🔧 (pendente corpus Vertex AI)
+│   │   ├── __init__.py
+│   │   ├── agent.py     # kurisu_agent — singleton com VertexAiRagRetrieval
+│   │   └── PLAN.md      # documentação + checklist de setup do Vertex AI
+│   └── frieren/         # agente de livros — Fase 5a ✅
 │       ├── __init__.py
-│       ├── agent.py     # kurisu_agent — singleton com VertexAiRagRetrieval
-│       └── PLAN.md      # documentação + checklist de setup do Vertex AI
+│       ├── tools.py     # BigQuery + Google Books API
+│       ├── agent.py     # frieren_agent
+│       └── schema.sql   # schema das tabelas BigQuery
 ├── mcp_servers/
 │   ├── __init__.py
 │   ├── ticktick/
@@ -292,7 +308,8 @@ Ambiente local: `.venv` própria do makima.
 | **2** | Kaguya (tarefas): MCP server TickTick + tools cross-agent + agent. Ligar ao coordinator. Integração dupla Kaguya+Nami. | `agents/kaguya/` + `mcp_servers/ticktick/` | ✅ |
 | **3** | Kurisu (knowledge base): Vertex AI RAG sobre vault Obsidian. Estrutura criada, pendente setup do corpus no GCP. | `agents/kurisu/` + GCP Console | 🔧 |
 | **4** | Lucy (email): tools IMAP/Gmail + agent. Adicionar ao coordinator. | `agents/lucy/` (ref.: `n8n-python-scripts/lucy_email_agent/`) | — |
-| **5** | Media + Books: agentes de entretenimento + morning briefing completo. | `agents/media/`, `agents/books/` | — |
+| **5a** | Frieren (livros): BigQuery + Google Books API + log de leitura por páginas. | `agents/frieren/` | ✅ |
+| **5b** | Media (séries+filmes+anime): agentes de entretenimento + morning briefing completo. | `agents/media/` | — |
 
 **Fase atual: 3 🔧** — Kurisu com estrutura criada. Próximo passo: criar o Data Store no Vertex AI Agent Builder e configurar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/PLAN.md`).
 
