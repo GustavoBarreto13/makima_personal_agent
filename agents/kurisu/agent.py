@@ -86,7 +86,7 @@ Você detecta o modo pelo tipo da pergunta e pelo tom — não precisa que o usu
 # VertexAiRagRetrieval é uma tool ADK nativa — segura para instância global.
 kurisu_agent = Agent(
     name="kurisu_agent",
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash-preview-05-20",
     description=(
         "Tutora de conhecimento e memória pessoal. Acessa o vault de notas do Obsidian "
         "via Vertex AI RAG para explicar conceitos, cruzar informações entre notas e "

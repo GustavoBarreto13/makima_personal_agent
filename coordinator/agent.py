@@ -74,7 +74,7 @@ def create_makima() -> Agent:
 
     return Agent(
         name="makima",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash-preview-05-20",
         instruction=_MAKIMA_INSTRUCTION,
         # tools=[knowledge_tool],
         sub_agents=[nami_agent, kaguya_agent, kurisu_agent, frieren_agent],
