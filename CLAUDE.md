@@ -213,7 +213,7 @@ Tools de agenda: `list_calendars`, `list_events`, `list_events_today`, `get_even
 TELEGRAM_BOT_TOKEN              # token do bot da Makima
 GEMINI_API_KEY                 # chave do Google AI Studio (modelo Gemini dos agentes)
 NOTION_TOKEN                   # token da integração Notion (uso futuro — Lucy/media/books)
-GOOGLE_APPLICATION_CREDENTIALS # path do service account GCP (BigQuery + Fase 5 Vertex)
+GCP_CREDENTIALS_JSON           # conteúdo JSON do service account GCP como string (BigQuery + Vertex AI)
 GCP_PROJECT_ID                 # projeto GCP (mesmo do BigQuery)
 TICKTICK_ACCESS_TOKEN          # token OAuth do TickTick
 TICKTICK_CLIENT_ID             # client ID do app TickTick
@@ -230,6 +230,17 @@ VERTEX_RAG_CORPUS              # ID do corpus Vertex AI RAG (após Fase 5)
 GOOGLE_BOOKS_API_KEY           # (opcional) chave da Google Books API — aumenta cota de 1000 para 10.000 req/dia
 DATABASE_URL                   # connection string do PostgreSQL separado no Dokploy (formato: postgresql://user:pass@host:5432/db — o código adiciona +asyncpg automaticamente)
 ```
+
+### Autenticação BigQuery (padrão para todos os agentes)
+
+Todo agente que usa BigQuery deve seguir o padrão da Nami — **sem arquivo de service account montado no container**:
+
+- **Env var**: `GCP_CREDENTIALS_JSON` — conteúdo completo do JSON do service account como string (copiar do GCP Console → IAM → Service Accounts → Chaves → Criar chave JSON → copiar o conteúdo)
+- **No código** (`_client()` em `tools.py`): usar `service_account.Credentials.from_service_account_info(json.loads(creds_json))` — nunca `from_service_account_file`
+- **Motivo**: `GOOGLE_APPLICATION_CREDENTIALS` aponta para um arquivo que não existe dentro do container Docker/Dokploy. Passar o JSON como string na env var elimina a necessidade de montar volumes ou copiar arquivos.
+- **Singleton**: cachear o cliente em `_bq_client: bigquery.Client | None = None` (global) para reutilizar a conexão entre chamadas de tool.
+
+Exemplo canônico: `agents/nami/tools.py` função `_client()`.
 
 ### Sessão Telegram
 
@@ -361,7 +372,7 @@ python -m venv .venv
 # source .venv/bin/activate && pip install -r requirements.txt  # Linux/Mac
 
 # variáveis necessárias:
-# TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, GOOGLE_APPLICATION_CREDENTIALS (BigQuery)
+# TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, GCP_CREDENTIALS_JSON (BigQuery), GCP_PROJECT_ID
 # TICKTICK_ACCESS_TOKEN, TICKTICK_CLIENT_ID, TICKTICK_CLIENT_SECRET,
 # TICKTICK_REFRESH_TOKEN, TICKTICK_EXPIRES_AT
 # GOOGLE_CALENDAR_CLIENT_ID, GOOGLE_CALENDAR_CLIENT_SECRET,
