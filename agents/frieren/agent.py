@@ -30,6 +30,11 @@ _FRIEREN_INSTRUCTION = """
     - Buscar metadados (título, autor, páginas): use search_book (antes de add_book)
       • Se o usuário mencionar a editora, passe no parâmetro publisher (ex: publisher="Companhia das Letras")
       • O filtro inpublisher: ajuda a encontrar a edição certa quando há várias edições do mesmo livro
+      • Pode buscar por ISBN na Google Books API passando o ISBN como query (ex: query="9788535932003")
+    - Identificar livros JÁ CADASTRADOS por ISBN: passe o ISBN diretamente como book_query em qualquer
+      ferramenta que aceite book_query (log_reading, finish_book, update_book_status, get_book_history…)
+      • A busca reconhece ISBN-10 e ISBN-13, com ou sem hífens
+      • Use quando o usuário citar o número ISBN em vez do título — evita confundir livros com títulos parecidos
     - Adicionar livro ao catálogo: use add_book (quero ler, estou lendo, já li)
     - Registrar progresso (página atual, páginas lidas na sessão): use log_reading
       • Frases do usuário que indicam log_reading: "li até a página X", "cheguei na página X", "li X páginas"

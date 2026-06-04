@@ -181,19 +181,61 @@ def _run_dml(sql: str, params: list) -> int:
     return job.num_dml_affected_rows or 0
 
 
+def _is_isbn(query: str) -> bool:
+    """Verifica se uma string parece ser um ISBN (10 ou 13 dígitos, com ou sem hífens).
+
+    Remove hífens e espaços antes de verificar — ISBNs podem ser formatados como
+    "978-85-359-3200-3" ou "9788535932003"; ambos são válidos.
+
+    Retorna True apenas para 10 ou 13 dígitos — comprimentos exatos dos formatos de ISBN.
+    """
+    # Remove os separadores comuns no formato de ISBN antes de contar dígitos
+    digits_only = query.replace("-", "").replace(" ", "")
+
+    # ISBN-10 tem exatamente 10 dígitos; ISBN-13 tem exatamente 13 dígitos
+    return digits_only.isdigit() and len(digits_only) in (10, 13)
+
+
 def _find_book_by_query(query: str) -> dict | None:
-    """Busca um livro na tabela books por título ou autor usando correspondência parcial.
+    """Busca um livro na tabela books por título, autor ou ISBN.
 
     Prioriza livros com status 'lendo' no topo dos resultados — quando o usuário
     diz "atualize meu livro atual", é quase sempre o que está lendo agora.
     Retorna o primeiro resultado 'lendo' se existir, caso contrário o mais recente.
 
+    Se a query parecer um ISBN (10 ou 13 dígitos), tenta primeiro a correspondência
+    exata por ISBN antes de fazer a busca fuzzy por título/autor.
+
     Parâmetros:
-        query — Texto de busca (título parcial, nome do autor, etc.)
+        query — Texto de busca (título parcial, nome do autor, ou ISBN)
 
     Retorna:
         Dicionário com os dados do livro encontrado, ou None se não encontrar nada.
     """
+    # Remove hífens e espaços para comparação de ISBN (ex.: "978-85-..." → "9788535...")
+    isbn_clean = query.replace("-", "").replace(" ", "")
+
+    # ── Busca por ISBN exato (se a query parece um ISBN) ──────────────────────
+    # Tentamos primeiro porque ISBN é um identificador único — é mais preciso
+    # do que a correspondência parcial por título, que pode retornar livros errados.
+    if _is_isbn(query):
+        sql_isbn = f"""
+            SELECT *
+            FROM `{_table("books")}`
+            WHERE isbn = @isbn AND deleted = FALSE
+            ORDER BY
+                CASE WHEN status = 'lendo' THEN 0 ELSE 1 END ASC,
+                updated_at DESC
+            LIMIT 1
+        """
+        isbn_rows = _run_select(sql_isbn, [
+            bigquery.ScalarQueryParameter("isbn", "STRING", isbn_clean),
+        ])
+        if isbn_rows:
+            # ISBN encontrado — retorna diretamente, sem precisar de busca fuzzy
+            return isbn_rows[0]
+
+    # ── Busca fuzzy por título ou autor ───────────────────────────────────────
     # Normaliza a query para busca case-insensitive sem acentos
     norm_query = _norm(query)
 
@@ -201,13 +243,20 @@ def _find_book_by_query(query: str) -> dict | None:
     # Ex.: "duna" casa com "Duna", "A Saga de Duna", "Duna: Messias"
     like_pattern = f"%{norm_query}%"
 
-    # Busca por título OU autor — LOWER() no SQL para ignorar maiúsculas/minúsculas
-    # ORDER BY: status 'lendo' primeiro (CASE retorna 0), depois por data de atualização
-    # Isso garante que o livro em leitura atual apareça antes de livros já lidos
+    # Busca por título OU autor — LOWER() no SQL para ignorar maiúsculas/minúsculas.
+    # Também inclui busca por ISBN com LIKE para cobrir buscas parciais de ISBN
+    # (ex.: usuário digita só parte do número).
+    # ORDER BY: status 'lendo' primeiro (CASE retorna 0), depois por data de atualização.
+    # Isso garante que o livro em leitura atual apareça antes de livros já lidos.
     sql = f"""
         SELECT *
         FROM `{_table("books")}`
-        WHERE (LOWER(title) LIKE @query OR LOWER(author) LIKE @query)
+        WHERE (
+            LOWER(title) LIKE @query
+            OR LOWER(author) LIKE @query
+            OR isbn LIKE @isbn_like
+        )
+        AND deleted = FALSE
         ORDER BY
             CASE WHEN status = 'lendo' THEN 0 ELSE 1 END ASC,
             updated_at DESC
@@ -215,7 +264,9 @@ def _find_book_by_query(query: str) -> dict | None:
     """
 
     params = [
-        bigquery.ScalarQueryParameter("query", "STRING", like_pattern),
+        bigquery.ScalarQueryParameter("query",     "STRING", like_pattern),
+        # isbn_like usa o valor sem hífens para normalizar a comparação
+        bigquery.ScalarQueryParameter("isbn_like", "STRING", f"%{isbn_clean}%"),
     ]
 
     rows = _run_select(sql, params)
@@ -363,6 +414,10 @@ def search_book(query: str, publisher: str | None = None) -> str:
     """
     Busca livros na Google Books API pelo título, autor ou ISBN.
     Use antes de add_book para confirmar o google_books_id do livro correto.
+
+    Nota: para localizar um livro JÁ CADASTRADO no catálogo pelo ISBN, use as
+    ferramentas que aceitam book_query (log_reading, finish_book, etc.) passando
+    o ISBN diretamente — _find_book_by_query detecta ISBNs automaticamente.
 
     Args:
         query:     título, autor, ISBN ou qualquer termo de busca
