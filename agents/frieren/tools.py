@@ -234,10 +234,8 @@ def _find_book_by_query(query: str) -> dict | None:
 def _fetch_google_books(query: str, max_results: int = 5) -> list[dict]:
     """Busca metadados de livros na Google Books API.
 
-    Restringe a busca a livros em português (langRestrict="pt") porque o
-    usuário lê principalmente em PT-BR — evita poluir resultados com edições
-    estrangeiras do mesmo título. Para livros em inglês, o usuário pode
-    especificar explicitamente o título em inglês.
+    Sem restrição de idioma — busca em qualquer língua para não perder livros
+    japoneses, ingleses ou de outras origens que o usuário leia.
 
     Parâmetros:
         query       — Termo de busca (título, autor, ISBN, etc.)
@@ -246,12 +244,13 @@ def _fetch_google_books(query: str, max_results: int = 5) -> list[dict]:
     Retorna:
         Lista de dicionários com os metadados extraídos, ou [] em caso de erro.
     """
-    # Monta os parâmetros da requisição HTTP para a Google Books API
+    # Monta os parâmetros da requisição HTTP para a Google Books API.
+    # Sem langRestrict para não perder livros japoneses, ingleses ou de qualquer
+    # idioma que o usuário leia — o filtro de idioma era restritivo demais.
     request_params = {
         "q": query,                    # Termo de busca
         "maxResults": max_results,     # Limita a quantidade de resultados
         "printType": "books",          # Filtra apenas livros (exclui revistas/periódicos)
-        "langRestrict": "pt",          # Restringe ao português para relevância pessoal
     }
 
     # Adiciona a chave de API se disponível — aumenta o limite de requisições diárias
