@@ -299,12 +299,13 @@ def _fetch_google_books(query: str, max_results: int = 5) -> list[dict]:
         Lista de dicionários com os metadados extraídos, ou [] em caso de erro.
     """
     # Monta os parâmetros da requisição HTTP para a Google Books API.
-    # Sem langRestrict para não perder livros japoneses, ingleses ou de qualquer
-    # idioma que o usuário leia — o filtro de idioma era restritivo demais.
+    # langRestrict="pt" filtra resultados em português — retorna edições brasileiras/portuguesas
+    # primeiro, o que evita que a API priorize edições em inglês para títulos internacionais.
     request_params = {
         "q": query,                    # Termo de busca
         "maxResults": max_results,     # Limita a quantidade de resultados
         "printType": "books",          # Filtra apenas livros (exclui revistas/periódicos)
+        "langRestrict": "pt",          # Restringe resultados ao idioma português
     }
 
     # Adiciona a chave de API se disponível — aumenta o limite de requisições diárias
