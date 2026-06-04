@@ -228,11 +228,26 @@ GOOGLE_CALENDAR_TOKEN_EXPIRY   # ISO 8601 — data de expiração do access toke
 GOOGLE_CALENDAR_MAIN_CALENDAR_ID # ID do calendário principal (geralmente o email Gmail)
 VERTEX_RAG_CORPUS              # ID do corpus Vertex AI RAG (após Fase 5)
 GOOGLE_BOOKS_API_KEY           # (opcional) chave da Google Books API — aumenta cota de 1000 para 10.000 req/dia
+DATABASE_URL                   # connection string do PostgreSQL separado no Dokploy (formato: postgresql://user:pass@host:5432/db — o código adiciona +asyncpg automaticamente)
 ```
 
 ### Sessão Telegram
 
-`InMemoryRunner` — uma sessão por `chat_id`. Memória persiste entre mensagens mas reinicia com o container. Aceitável para começar; evoluir para SQLite ou Firestore se reinicializações frequentes forem problema.
+`DatabaseSessionService` do ADK — uma sessão por `chat_id` persistida em PostgreSQL. O histórico de conversa sobrevive a reinícios do container.
+
+**Banco de dados**: serviço separado criado no Dokploy (Databases → PostgreSQL), **não** embutido no `docker-compose.yml`. Isso garante que os dados persistam mesmo se o serviço Makima for recriado.
+
+**Variável `DATABASE_URL`**: configurada no painel de Environment do Dokploy (não no `.env` do repo). O Dokploy gera a URL com prefixo `postgresql://`; o código normaliza automaticamente para `postgresql+asyncpg://` (driver async exigido pelo ADK).
+
+**Rede Docker**: o banco roda na `dokploy-network`. O `docker-compose.yml` conecta a Makima a essa rede como externa para que o hostname interno do banco resolva dentro do container:
+
+```yaml
+networks:
+  dokploy-network:
+    external: true
+```
+
+Se o hostname interno do banco não resolver (`Temporary failure in name resolution`), verificar se o container do banco está em `dokploy-network` via `docker inspect <container-do-banco> --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'`.
 
 ---
 
