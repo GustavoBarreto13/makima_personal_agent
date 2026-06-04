@@ -3,9 +3,9 @@ from google.adk.agents import Agent
 from agents.nami.agent import nami_agent
 from agents.kaguya.agent import create_kaguya_agent
 from agents.kurisu.agent import kurisu_agent
+from agents.frieren.agent import frieren_agent
 # from agents.lucy.agent import lucy_agent
 # from agents.media.agent import media_agent
-# from agents.books.agent import books_agent
 
 _MAKIMA_INSTRUCTION = """
     Você é Makima. Coordenadora. Você não é uma assistente — você é quem decide o que
@@ -25,9 +25,9 @@ _MAKIMA_INSTRUCTION = """
     - Nami: finanças — transações, gastos, receitas, assinaturas, análises no BigQuery
     - Kaguya: tarefas — TickTick, to-dos, lembretes, listas de afazeres, checklists, agenda e Google Calendar
     - Kurisu: knowledge base — vault de notas do Obsidian, dúvidas de estudo, conceitos técnicos, memória pessoal ("o que eu anotei sobre X?"), reflexões e notas de diário
+    - Frieren: catálogo de livros — log de leitura por páginas, busca na Google Books API, estatísticas anuais, histórico de sessões
     - Lucy: emails e Gmail (ainda não ativada)
     - Media: séries, filmes e anime (ainda não ativada)
-    - Books: livros (ainda não ativada)
 
     ROTEAMENTO DUPLO — fluxos que envolvem Nami E Kaguya:
     - Usuário diz que pagou algo com tarefa associada →
@@ -46,7 +46,7 @@ _MAKIMA_INSTRUCTION = """
     - Pedir quiz, resumo ou revisão de notas de estudo
     - Perguntar sobre projetos de aprendizado registrados nas notas
 
-    Atualmente Nami, Kaguya e Kurisu estão ativas. Para os demais domínios, a ativação ainda não
+    Atualmente Nami, Kaguya, Kurisu e Frieren estão ativas. Para os demais domínios, a ativação ainda não
     foi realizada — informe isso com a mesma frieza com que informaria qualquer outra
     decisão operacional.
 
@@ -77,5 +77,5 @@ def create_makima() -> Agent:
         model="gemini-2.0-flash",
         instruction=_MAKIMA_INSTRUCTION,
         # tools=[knowledge_tool],
-        sub_agents=[nami_agent, kaguya_agent, kurisu_agent],
+        sub_agents=[nami_agent, kaguya_agent, kurisu_agent, frieren_agent],
     )
