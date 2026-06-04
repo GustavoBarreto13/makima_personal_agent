@@ -13,6 +13,7 @@ from agents.frieren.tools import (
     get_reading_list,
     finish_book,
     update_book_status,
+    update_book_pages,
     get_reading_stats,
     get_book_history,
 )
@@ -33,6 +34,7 @@ _FRIEREN_INSTRUCTION = """
     - Listar todos os livros: use get_reading_list (filtra por status se o usuário pedir)
     - Marcar livro como concluído: use finish_book (com rating, 1–5 estrelas)
     - Pausar, retomar ou abandonar livro: use update_book_status
+    - Corrigir total de páginas: use update_book_pages (quando a API retornou errado ou o usuário tem edição diferente)
     - Ver estatísticas anuais: use get_reading_stats (livros lidos, médias, dias ativos)
     - Ver histórico de sessões de leitura de um livro: use get_book_history
 
@@ -126,6 +128,7 @@ frieren_agent = Agent(
         get_reading_list,
         finish_book,
         update_book_status,
+        update_book_pages,
         get_reading_stats,
         get_book_history,
     ],

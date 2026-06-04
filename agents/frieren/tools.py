@@ -1023,6 +1023,71 @@ def update_book_status(book_query: str, status: str) -> str:
     return f"<b>{book['title']}</b> → status atualizado para <b>{status}</b>."
 
 
+def update_book_pages(book_query: str, total_pages: int) -> str:
+    """
+    Atualiza o total de páginas de um livro no catálogo.
+    Útil quando a Google Books API retornou um número errado ou
+    a edição física do usuário tem uma contagem diferente.
+
+    Args:
+        book_query: título ou trecho do título do livro
+        total_pages: número correto de páginas da edição do usuário
+
+    Returns:
+        Confirmação com título e novo total de páginas.
+    """
+    # Valida que o número de páginas faz sentido
+    if total_pages <= 0:
+        return "Número de páginas inválido. Deve ser maior que zero."
+
+    # Busca o livro no catálogo pelo título (fuzzy match)
+    book = _find_book_by_query(book_query)
+    if not book:
+        return f"Não encontrei '{book_query}' no catálogo."
+
+    now = _now()
+
+    # Atualiza o total de páginas e o timestamp de atualização
+    sql = f"""
+        UPDATE `{_table('books')}`
+        SET
+            total_pages = @total_pages,
+            updated_at  = @now
+        WHERE id = @book_id
+    """
+    _run_dml(sql, [
+        bigquery.ScalarQueryParameter("total_pages", "INT64",     total_pages),
+        bigquery.ScalarQueryParameter("now",         "TIMESTAMP", now),
+        bigquery.ScalarQueryParameter("book_id",     "STRING",    book["id"]),
+    ])
+
+    # Calcula o progresso atualizado se houver logs de leitura
+    last_log_sql = f"""
+        SELECT page_end
+        FROM `{_table('reading_logs')}`
+        WHERE book_id = @book_id
+        ORDER BY date DESC, created_at DESC
+        LIMIT 1
+    """
+    last_logs = _run_select(
+        last_log_sql,
+        [bigquery.ScalarQueryParameter("book_id", "STRING", book["id"])]
+    )
+
+    # Monta a resposta com o novo progresso percentual, se aplicável
+    if last_logs and last_logs[0]["page_end"]:
+        current = last_logs[0]["page_end"]
+        percent = round((current / total_pages) * 100, 1)
+        progress = f" · progresso recalculado: {percent}% ({current}/{total_pages} páginas)"
+    else:
+        progress = ""
+
+    return (
+        f"<b>{book['title']}</b> → total de páginas atualizado para "
+        f"<b>{total_pages}</b>{progress}."
+    )
+
+
 def get_reading_stats(year: int | None = None) -> str:
     """
     Retorna estatísticas de leitura para um ano específico.
