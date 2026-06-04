@@ -9,6 +9,7 @@ import unicodedata  # Para remover acentos na normalização de strings (busca f
 from datetime import datetime, date  # Tipos de data/hora usados no sistema
 from zoneinfo import ZoneInfo                  # Para trabalhar com fuso horário (Brasil)
 
+import re                           # Para remover pontuação na normalização de strings (busca fuzzy)
 import requests                    # Cliente HTTP para chamar a Google Books API
 from google.cloud import bigquery  # Cliente oficial do BigQuery (banco de dados na nuvem)
 from google.oauth2 import service_account  # Para criar credenciais a partir do JSON do service account
@@ -115,13 +116,16 @@ def _today() -> date:
 
 
 def _norm(s: str) -> str:
-    """Normaliza uma string para busca fuzzy: minúsculas, sem acentos, sem espaços extras.
+    """Normaliza uma string para busca fuzzy: minúsculas, sem acentos, sem pontuação, sem espaços extras.
 
     Usa decomposição NFD (Normalization Form Decomposition) para separar os
     caracteres base dos diacríticos (acentos). Por exemplo, "ã" é decomposto
     em "a" + til combinante (categoria Unicode "Mn"). Em seguida, filtramos
     apenas os caracteres que NÃO são marcas combinantes (Mn), descartando
     os acentos e ficando só com as letras base.
+
+    Também remove pontuação comum (vírgulas, dois-pontos, etc.) para tolerar
+    variações de título. Ex.: "Belo mundo, onde" e "Belo mundo onde" são iguais.
 
     Isso permite que "Duna", "duna" e "Düna" sejam tratados como iguais numa busca.
     """
@@ -133,7 +137,51 @@ def _norm(s: str) -> str:
 
     # Mantém apenas caracteres que NÃO são marcas combinantes (acentos, cedilhas, etc.)
     # unicodedata.category(c) == "Mn" identifica uma "Mark, Nonspacing" (acento solto)
-    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    s = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+
+    # Substitui pontuação comum por espaço para que "mundo, onde" == "mundo onde"
+    s = re.sub(r'[,.;:!?]', ' ', s)
+
+    # Colapsa múltiplos espaços consecutivos em um único espaço
+    s = re.sub(r'  +', ' ', s).strip()
+
+    return s
+
+
+def _norm_sql_col(col: str) -> str:
+    """Retorna uma expressão SQL BigQuery que normaliza uma coluna de texto
+    da mesma forma que _norm() faz no Python.
+
+    Permite comparar títulos armazenados no banco (com acentos e pontuação,
+    vindos da Google Books API) contra queries do usuário (sem acentos, sem
+    pontuação) usando LIKE — sem necessidade de coluna extra no schema.
+
+    Exemplo: título armazenado "Belo mundo, onde você está" é normalizado para
+    "belo mundo onde voce esta", que casa com a query "belo mundo onde voce esta".
+    """
+    # Passo 1: converte para minúsculas
+    expr = f"LOWER({col})"
+
+    # Passo 2: substitui letras acentuadas pela letra base equivalente
+    # — mesma lógica do _norm() Python via NFD, mas implementada com REGEXP_REPLACE
+    # porque BigQuery não expõe normalização NFD diretamente via SQL
+    for padrao, repl in [
+        ("[àáâãä]", "a"),
+        ("[èéêë]",  "e"),
+        ("[ìíîï]",  "i"),
+        ("[òóôõö]", "o"),
+        ("[ùúûü]",  "u"),
+        ("ç",       "c"),
+    ]:
+        expr = f"REGEXP_REPLACE({expr}, '{padrao}', '{repl}')"
+
+    # Passo 3: remove pontuação comum (substitui por espaço para não juntar palavras)
+    expr = f"REGEXP_REPLACE({expr}, '[,.;:!?]', ' ')"
+
+    # Passo 4: colapsa múltiplos espaços e remove espaços nas bordas
+    expr = f"TRIM(REGEXP_REPLACE({expr}, '  +', ' '))"
+
+    return expr
 
 
 def _run_select(sql: str, params: list) -> list[dict]:
@@ -243,17 +291,18 @@ def _find_book_by_query(query: str) -> dict | None:
     # Ex.: "duna" casa com "Duna", "A Saga de Duna", "Duna: Messias"
     like_pattern = f"%{norm_query}%"
 
-    # Busca por título OU autor — LOWER() no SQL para ignorar maiúsculas/minúsculas.
-    # Também inclui busca por ISBN com LIKE para cobrir buscas parciais de ISBN
-    # (ex.: usuário digita só parte do número).
+    # Busca por título OU autor — usando _norm_sql_col() para normalizar o texto armazenado
+    # da mesma forma que _norm() normalizou a query do usuário.
+    # Isso garante que "Belo mundo, onde você está" case com "belo mundo onde voce esta":
+    # a função remove acentos e pontuação antes de fazer o LIKE.
     # ORDER BY: status 'lendo' primeiro (CASE retorna 0), depois por data de atualização.
     # Isso garante que o livro em leitura atual apareça antes de livros já lidos.
     sql = f"""
         SELECT *
         FROM `{_table("books")}`
         WHERE (
-            LOWER(title) LIKE @query
-            OR LOWER(author) LIKE @query
+            {_norm_sql_col("title")} LIKE @query
+            OR {_norm_sql_col("author")} LIKE @query
             OR isbn LIKE @isbn_like
         )
         AND deleted = FALSE
