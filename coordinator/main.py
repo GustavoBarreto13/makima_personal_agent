@@ -33,8 +33,11 @@ TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 APP_NAME = "makima"
 
 # Conecta ao PostgreSQL externo (gerenciado pelo Dokploy) para persistir sessões entre reinícios
-# DATABASE_URL configurada no painel do Dokploy → Environment (formato: postgresql+asyncpg://...)
-DATABASE_URL = os.environ["DATABASE_URL"]
+# O Dokploy gera a URL com prefixo "postgresql://", mas o ADK exige "postgresql+asyncpg://"
+# para usar o driver async correto. Corrigimos automaticamente aqui.
+DATABASE_URL = os.environ["DATABASE_URL"].replace(
+    "postgresql://", "postgresql+asyncpg://", 1
+)
 # DatabaseSessionService cria as tabelas automaticamente na primeira execução
 session_service = DatabaseSessionService(db_url=DATABASE_URL)
 
