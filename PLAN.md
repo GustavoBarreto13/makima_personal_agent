@@ -149,7 +149,7 @@ independente em `agents/<dominio>/`.
 - Tool: `VertexAiRagRetrieval` — busca semântica no vault indexado pelo Vertex AI
 - Fonte: Google Drive (vault Obsidian sincronizado) → Vertex AI Agent Builder → RAG corpus
 - Localização: `agents/kurisu/`
-- Próximo passo: criar corpus no Vertex AI e configurar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/PLAN.md`)
+- Próximo passo: criar corpus no Vertex AI e configurar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/CLAUDE.md`)
 
 **Lucy** — Email Agent (Fase 4)
 - Inspiração: Lucy de Elfen Lied — aparência calma, triagem clínica e implacável de tudo que não merece atenção
@@ -600,7 +600,7 @@ Adicionadas ao `coordinator/Dockerfile`. Os scripts existentes não mudam suas d
 
 **Fase 3 — Kurisu** 🔧
 - Estrutura criada; corpus Vertex AI pendente
-- Ver `agents/kurisu/PLAN.md` para checklist de setup GCP
+- Ver `agents/kurisu/CLAUDE.md` para checklist de setup GCP
 
 **Fase 4 — Lucy**
 - Habilitar Gmail API no projeto `projetos-448301`

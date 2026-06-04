@@ -141,6 +141,53 @@ para as chamadas diretas (não MCP).
 
 ---
 
+## MCP Server — Google Calendar (`mcp_servers/calendar/server.py`)
+
+Segundo servidor MCP da Kaguya, rodando como processo filho stdio via `McpToolset`.
+
+### Tools expostas
+
+| Tool | Descrição |
+|---|---|
+| `list_calendars` | Lista todos os calendários do usuário |
+| `list_events` | Eventos de um período (qualquer calendário) |
+| `list_events_today` | Eventos de hoje (exclui calendários bloqueados) |
+| `get_event` | Detalhes de um evento específico |
+| `create_event` | Cria evento (apenas no calendário principal) |
+| `update_event` | Atualiza evento (apenas no calendário principal) |
+| `delete_event` | Remove evento (apenas no calendário principal) |
+| `find_free_slots` | Encontra horários livres em um intervalo |
+
+### Comportamento importante
+
+- **Leitura**: todos os calendários. **Escrita**: apenas `GOOGLE_CALENDAR_MAIN_CALENDAR_ID`
+- Timeout: 30s
+- `list_events_today` filtra o calendário **"TickTick"** (sincronizado externamente) via `_BLOCKED_CALENDARS` em `server.py`
+- Para bloquear outros calendários externos, adicionar o nome ao conjunto `_BLOCKED_CALENDARS`
+- Fuso horário: `America/Sao_Paulo` (UTC-3) — timestamps usam `-03:00`
+- `expiry` passado como datetime **naive UTC** ao objeto `Credentials` — google-auth compara internamente com `datetime.utcnow()` (também naive); passar aware datetime causa `TypeError`
+- Refresh automático de token OAuth (usa `creds.valid` do google-auth)
+
+### Variáveis de ambiente
+
+```
+GOOGLE_CALENDAR_CLIENT_ID        # client ID do app OAuth
+GOOGLE_CALENDAR_CLIENT_SECRET    # client secret do app OAuth
+GOOGLE_CALENDAR_ACCESS_TOKEN     # access token OAuth
+GOOGLE_CALENDAR_REFRESH_TOKEN    # refresh token OAuth
+GOOGLE_CALENDAR_TOKEN_EXPIRY     # ISO 8601 — data de expiração do access token
+GOOGLE_CALENDAR_MAIN_CALENDAR_ID # ID do calendário principal (geralmente o email Gmail)
+```
+
+### Gerar credenciais OAuth (primeira vez)
+
+1. Google Cloud Console → projeto do BigQuery → APIs e Serviços → Biblioteca → habilitar **Google Calendar API**
+2. Criar credencial OAuth 2.0 tipo **Desktop app** → baixar JSON → salvar como `scripts/client_secret.json`
+3. Rodar `python scripts/authorize_calendar.py` — abre browser, imprime os valores das env vars
+4. Copiar os valores para `.env` e para o Dokploy
+
+---
+
 ## Formatação
 
 O Telegram renderiza HTML. Kaguya usa HTML + emojis em todas as respostas.

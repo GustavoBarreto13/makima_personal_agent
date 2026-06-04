@@ -225,7 +225,7 @@ Os agentes usam `gemini-2.0-flash`. A chave Gemini é lida de `GEMINI_API_KEY` (
 | 5a | Frieren (livros): BigQuery + Google Books API + menu interativo Telegram | ✅ |
 | 5b | Media (séries, filmes, anime): Notion + morning briefing completo | — |
 
-**Fase atual: 3 🔧** — Kurisu com estrutura criada. Próximo passo: setup do Data Store no Vertex AI Agent Builder (ver `agents/kurisu/PLAN.md`).
+**Fase atual: 3 🔧** — Kurisu com estrutura criada. Próximo passo: setup do Data Store no Vertex AI Agent Builder (ver `agents/kurisu/CLAUDE.md`).
 
 ---
 
