@@ -1,0 +1,3 @@
+# No frontend, arquivos JSON são de configuração (package.json, tsconfig.json, etc.)
+# e precisam ser versionados — por isso excluímos a regra *.json do .gitignore raiz.
+!*.json
