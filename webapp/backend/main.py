@@ -15,8 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware  # Middleware que libera requ
 from fastapi.staticfiles import StaticFiles  # Serve arquivos estáticos (HTML, CSS, JS do React)
 from starlette.middleware.sessions import SessionMiddleware  # Middleware de sessão Starlette — necessário para o fluxo CSRF do OAuth
 
-# Importa o router de autenticação e o segredo de sessão
+# Importa os routers registrados na aplicação e o segredo de sessão
 from webapp.backend.routers import auth as auth_router
+from webapp.backend.routers import finances as finances_router
 from webapp.backend.config import SESSION_SECRET
 
 # Cria a instância principal da aplicação FastAPI.
@@ -33,6 +34,11 @@ app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 # --- Router de autenticação ---
 # Registra as rotas /auth/login, /auth/callback, /auth/logout e /auth/me
 app.include_router(auth_router.router, prefix="/auth", tags=["auth"])
+
+# --- Router de finanças ---
+# Registra todos os endpoints da Nami sob /api/finances
+# Ex.: GET /api/finances/transactions, POST /api/finances/accounts, etc.
+app.include_router(finances_router.router, prefix="/api/finances", tags=["finances"])
 
 # --- CORS (Cross-Origin Resource Sharing) ---
 # O navegador bloqueia requisições entre origens diferentes por segurança.
