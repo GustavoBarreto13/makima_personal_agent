@@ -1,7 +1,7 @@
 # Design: Expansão da Nami — Controle Financeiro Completo
 
-**Data:** 2026-06-05  
-**Status:** Aprovado pelo usuário  
+**Data:** 2026-06-05
+**Status:** Aprovado pelo usuário
 **Agente:** Nami (`agents/nami/`)
 
 ---
@@ -16,7 +16,7 @@ O objetivo desta expansão é transformar a Nami em uma **consultora financeira 
 3. Conecta ao RAG (Kurisu) para respostas embasadas em material curado pelo usuário
 
 ---
-
+B
 ## Features — Escopo e Ordem de Implementação
 
 ### Feature 1 — Controle de Parcelas
@@ -62,7 +62,7 @@ CREATE TABLE nami_finance_agent.installment_groups (
 
 **Fluxo de cadastro:**
 - Usuário informa: nome, limite, dívida atual, taxa de juros mensal, dia do fechamento, dia do vencimento
-- Nami vincula ao `conta` existente (ex: "Cartao Nu") — gastos já registrados alimentam o saldo
+- Nami vincula ao `conta` existente (ex: "Cartao Nu") — dívida inicial é lançada como transação **Despesa** na conta do cartão; despesas e receitas futuras nessa conta alimentam o saldo automaticamente
 
 **Alertas comportamentais:**
 - Ao registrar despesa em cartão com dívida: *"Você deve R$2.400 nesse cartão. Com essa compra vai pra R$2.550. Pagando só o mínimo de 15%, vai demorar 14 meses e custar R$1.890 em juros."*
@@ -89,23 +89,10 @@ CREATE TABLE nami_finance_agent.credit_cards (
 )
 ```
 
-**Schema — nova tabela `card_debt_entries`:**
-```sql
-CREATE TABLE nami_finance_agent.card_debt_entries (
-  id          STRING NOT NULL,
-  card_id     STRING NOT NULL,   -- FK credit_cards.id
-  entry_date  DATE NOT NULL,
-  tipo        STRING NOT NULL,   -- "saldo_inicial" | "pagamento" | "ajuste"
-  valor       FLOAT64 NOT NULL,  -- positivo = aumenta dívida, negativo = reduz
-  notes       STRING,
-  created_at  TIMESTAMP NOT NULL
-)
-```
-
 **Tools novas:**
-- `register_credit_card(name, conta_key, limite, taxa_juros_mensal, closing_day, due_day, current_debt)` — cadastra cartão com saldo inicial
-- `get_card_debt_summary()` — dívida atual de cada cartão + total
-- `register_card_payment(card_id, valor, data)` — registra pagamento de fatura
+- `register_credit_card(name, conta_key, limite, taxa_juros_mensal, closing_day, due_day, current_debt)` — cadastra cartão; dívida inicial vira transação Despesa na conta do cartão
+- `get_card_debt_summary()` — dívida atual de cada cartão + total (calculada via `transactions`)
+- `register_card_payment(card_id, valor, data)` — registra pagamento de fatura como transação **Receita** na conta do cartão, reduzindo o saldo calculado
 - `simulate_debt_payoff(monthly_payment)` — projeção de quitação com Método Avalanche
 - `get_minimum_payment_cost(card_id)` — custo total de pagar só o mínimo
 
@@ -260,11 +247,12 @@ Escopo menor, implementadas após a dívida estar sob controle.
 |---|---|
 | `installment_groups` | Parcelas |
 | `credit_cards` | Tracker cartões |
-| `card_debt_entries` | Tracker cartões |
 | `loans` | Financiamento |
 | `budgets` | Orçamento |
 | `emergency_fund` | Reserva (futuro) |
 | `financial_goals` | Metas (futuro) |
+
+> **Decisão arquitetural (commit `995ab53`):** `card_debt_entries` foi removida. O saldo do cartão é calculado em tempo real como `SUM(Despesas) − SUM(Receitas)` filtradas pela `conta` do cartão no ciclo de faturamento vigente. Isso elimina duplicação de estado e mantém `transactions` como única fonte da verdade.
 
 ### Mudança em tabela existente
 
