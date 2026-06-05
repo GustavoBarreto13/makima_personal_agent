@@ -11,6 +11,7 @@ import uuid
 from agents.nami.tools import (
     _run_dml, _run_select, _table, _project,
     _match_account, ACCOUNTS,
+    create_transaction,
 )
 from agents.nami.tools_credit_cards import get_card_debt_summary
 from google.cloud import bigquery
@@ -483,6 +484,93 @@ def compare_payoff_priority() -> dict:
             "status": "ok",
             "priority": priority,
             "recomendacao": recomendacao,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def register_loan_payment(loan_id: str, data: str = "") -> dict:
+    """Registra o pagamento de uma parcela de empréstimo ou financiamento.
+
+    Incrementa o contador de parcelas pagas no empréstimo E cria uma transação
+    tipo Despesa em `transactions` — mantendo a fonte da verdade unificada.
+
+    Args:
+        loan_id: ID do empréstimo (retornado por register_loan)
+        data: Data do pagamento no formato AAAA-MM-DD (padrão: hoje)
+
+    Returns:
+        Dicionário com status, saldo restante e número de parcelas restantes.
+    """
+    sql_loan = f"""
+        SELECT id, name, tipo, sistema_amortizacao, valor_original,
+               taxa_juros_mensal, num_parcelas_total, parcelas_pagas,
+               valor_parcela, conta, desconto_folha, status
+        FROM {_table("loans")}
+        WHERE id = @loan_id AND status = 'ativo'
+    """
+    params = [bigquery.ScalarQueryParameter("loan_id", "STRING", loan_id)]
+
+    try:
+        loans = _run_select(sql_loan, params)
+        if not loans:
+            return {"status": "error", "message": f"Empréstimo não encontrado ou inativo: {loan_id}"}
+
+        loan = loans[0]
+        k = loan["parcelas_pagas"]
+        n = loan["num_parcelas_total"]
+
+        if k >= n:
+            return {"status": "error", "message": f"Empréstimo '{loan['name']}' já está quitado ({n}/{n} parcelas)"}
+
+        # Mapeia tipo do empréstimo para categoria da transação
+        _CATEGORIA_MAP = {
+            "imobiliario": "Moradia",
+            "veiculo": "Transporte",
+        }
+        categoria = _CATEGORIA_MAP.get(loan["tipo"], "Inbox")
+
+        # Cria transação Despesa — registra o pagamento na fonte da verdade
+        tx = create_transaction(
+            name=f"Parcela {k + 1}/{n} — {loan['name']}",
+            valor=float(loan["valor_parcela"]),
+            tipo="Despesa",
+            categoria=categoria,
+            conta=loan["conta"],
+            data=data,
+        )
+        if tx.get("status") != "ok":
+            return {"status": "error", "message": f"Erro ao registrar transação: {tx.get('message')}"}
+
+        # Incrementa parcelas_pagas no empréstimo
+        sql_update = f"""
+            UPDATE {_table("loans")}
+            SET parcelas_pagas = parcelas_pagas + 1,
+                updated_at = CURRENT_TIMESTAMP()
+            WHERE id = @loan_id
+        """
+        _run_dml(sql_update, params)
+
+        # Calcula saldo restante após este pagamento
+        k_novo = k + 1
+        pv = loan["valor_original"]
+        i = loan["taxa_juros_mensal"]
+        if loan["sistema_amortizacao"] == "PRICE":
+            saldo_restante = max(0.0, _price_balance(pv, i, n, k_novo))
+        else:
+            saldo_restante = max(0.0, _sac_balance(pv, n, k_novo))
+
+        return {
+            "status": "ok",
+            "message": (
+                f"Parcela {k + 1}/{n} de '{loan['name']}' registrada — "
+                f"R${loan['valor_parcela']:.2f}. "
+                f"Saldo restante: R${saldo_restante:.2f} ({n - k_novo} parcelas)"
+            ),
+            "parcelas_pagas": k_novo,
+            "parcelas_restantes": n - k_novo,
+            "saldo_restante": round(saldo_restante, 2),
+            "transaction_id": tx.get("id"),
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}

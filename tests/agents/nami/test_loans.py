@@ -143,3 +143,39 @@ def test_compare_payoff_priority_ordena_por_taxa(mock_project, mock_select):
     # Pessoal (8% a.m.) deve vir antes do Carro (0.99% a.m.)
     assert result["priority"][0]["name"] == "Pessoal"
     assert result["priority"][1]["name"] == "Carro"
+
+
+@patch("agents.nami.tools_loans._run_dml")
+@patch("agents.nami.tools_loans._run_select")
+@patch("agents.nami.tools._project")
+def test_register_loan_payment_cria_transacao_e_incrementa_parcela(mock_project, mock_select, mock_dml):
+    """Verifica que register_loan_payment cria transação Despesa e incrementa parcelas_pagas."""
+    mock_project.return_value = "test-project"
+    mock_select.return_value = [{
+        "id": "loan-1", "name": "Carro", "tipo": "veiculo",
+        "sistema_amortizacao": "PRICE", "valor_original": 12000.0,
+        "taxa_juros_mensal": 0.015, "num_parcelas_total": 48,
+        "parcelas_pagas": 10, "valor_parcela": 333.60,
+        "conta": "Itau", "desconto_folha": False, "status": "ativo",
+    }]
+    mock_dml.return_value = 1
+
+    with patch("agents.nami.tools_loans.create_transaction") as mock_ct:
+        mock_ct.return_value = {"status": "ok", "id": "tx-parcela"}
+
+        from agents.nami.tools_loans import register_loan_payment
+        result = register_loan_payment("loan-1")
+
+    assert result["status"] == "ok"
+    assert result["parcelas_pagas"] == 11
+    assert result["parcelas_restantes"] == 37
+    # Transação criada como Despesa
+    mock_ct.assert_called_once()
+    call_kwargs = mock_ct.call_args[1]
+    assert call_kwargs.get("tipo") == "Despesa"
+    # Categoria de veículo = Transporte
+    assert call_kwargs.get("categoria") == "Transporte"
+    # UPDATE de parcelas_pagas foi executado
+    assert mock_dml.call_count == 1
+    update_sql = mock_dml.call_args[0][0].lower()
+    assert "parcelas_pagas" in update_sql

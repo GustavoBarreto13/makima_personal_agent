@@ -43,6 +43,7 @@ from agents.nami.tools_loans import (
     simulate_amortization,
     simulate_accelerated_payment,
     compare_payoff_priority,
+    register_loan_payment,
 )
 from agents.nami.tools_budgets import (
     set_budget,
@@ -192,6 +193,7 @@ nami_agent = Agent(
         simulate_amortization,
         simulate_accelerated_payment,
         compare_payoff_priority,
+        register_loan_payment,
         # Feature 4: Orçamento por categoria
         set_budget,
         get_budget_status,

@@ -59,11 +59,14 @@ CREATE TABLE IF NOT EXISTS `nami_finance_agent.installment_groups` (
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Feature 2: Tracker de Cartões de Crédito
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Saldo do cartão é derivado de `transactions` (Despesas - Receitas da conta
+-- no ciclo de faturamento). A tabela `credit_cards` guarda apenas metadados.
+-- card_debt_entries foi removida — transactions é a única fonte da verdade.
 
 CREATE TABLE IF NOT EXISTS `nami_finance_agent.credit_cards` (
   id                  STRING    NOT NULL,
   name                STRING    NOT NULL,
-  conta_key           STRING    NOT NULL,
+  conta_key           STRING    NOT NULL,  -- chave da conta em transactions
   limite              FLOAT64   NOT NULL,
   taxa_juros_mensal   FLOAT64   NOT NULL,
   closing_day         INT64     NOT NULL,
@@ -72,16 +75,6 @@ CREATE TABLE IF NOT EXISTS `nami_finance_agent.credit_cards` (
   notes               STRING,
   created_at          TIMESTAMP NOT NULL,
   updated_at          TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS `nami_finance_agent.card_debt_entries` (
-  id          STRING    NOT NULL,
-  card_id     STRING    NOT NULL,
-  entry_date  DATE      NOT NULL,
-  tipo        STRING    NOT NULL,  -- "saldo_inicial" | "pagamento" | "ajuste"
-  valor       FLOAT64   NOT NULL,  -- positivo = aumenta dívida, negativo = reduz
-  notes       STRING,
-  created_at  TIMESTAMP NOT NULL
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
