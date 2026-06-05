@@ -81,16 +81,18 @@ from agents.nami.tools_installments import (
 
 # ─── Helper interno ───────────────────────────────────────────────────────────
 
-def _check_result(result: dict, status_code_ok: int = 200) -> dict:
+def _check_result(result: dict) -> dict:
     """Verificar o resultado de uma tool da Nami e lançar exceção se houve erro.
 
     As tools da Nami sempre retornam um dict com "status": "ok" ou "status": "error".
     Esta função centraliza a conversão para exceções HTTP, evitando repetição em
     cada endpoint.
 
+    O código HTTP de sucesso (200 ou 201) é controlado pelo decorador da rota
+    (`status_code=201`), não por esta função.
+
     Args:
         result: Dicionário retornado pela tool da Nami.
-        status_code_ok: Código HTTP de sucesso a usar (200 ou 201).
 
     Returns:
         O próprio `result` se status == "ok".
@@ -200,7 +202,7 @@ class CreateSubscriptionBody(BaseModel):
     valor: float                      # Valor mensal ou anual em reais
     conta: str = ""                   # Conta de débito (vazio = resolução automática)
     ciclo: str = "mensal"             # "mensal" ou "anual"
-    dia_cobranca: int = 1             # Dia do mês em que a cobrança ocorre
+    next_billing: str = ""            # Data da próxima cobrança no formato YYYY-MM-DD (vazio = 1º do mês seguinte)
     categoria: str = "Assinaturas"   # Categoria (padrão: Assinaturas)
 
 
@@ -224,22 +226,20 @@ def list_transactions(
     # Parâmetros opcionais de filtro via query string (ex.: ?start_date=2026-06-01)
     start_date: str = Query(default="", description="Data inicial no formato YYYY-MM-DD"),
     end_date: str = Query(default="", description="Data final no formato YYYY-MM-DD"),
-    categoria: str = Query(default="", description="Filtrar por categoria"),
-    conta: str = Query(default="", description="Filtrar por conta"),
     # Dependência de autenticação — retorna 401 se o cookie de sessão for inválido
     user: dict = Depends(require_user),
 ) -> dict:
-    """Consultar transações financeiras com filtros opcionais.
+    """Consultar transações financeiras com filtros opcionais de período.
 
-    Retorna a lista de transações não deletadas, filtradas por período, categoria
-    e/ou conta. Todos os filtros são opcionais — sem filtros, retorna as
-    transações dos últimos 30 dias (comportamento padrão da tool).
+    Retorna a lista de transações não deletadas no período informado.
+    Sem filtros, retorna as transações do mês atual (comportamento padrão da tool).
+
+    Nota: a tool `query_expenses` filtra apenas por período. Filtros por categoria
+    e conta não são suportados pela tool atual.
 
     Args:
-        start_date: Data inicial (YYYY-MM-DD). Vazio = usa padrão da tool.
-        end_date: Data final (YYYY-MM-DD). Vazio = usa padrão da tool.
-        categoria: Categoria para filtrar (vazio = todas).
-        conta: Conta para filtrar (vazio = todas).
+        start_date: Data inicial (YYYY-MM-DD). Vazio = 1º dia do mês atual.
+        end_date: Data final (YYYY-MM-DD). Vazio = hoje.
         user: Dados do usuário autenticado (injetado automaticamente pelo Depends).
 
     Returns:
@@ -249,7 +249,7 @@ def list_transactions(
         HTTPException: 400 se os filtros forem inválidos.
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    # Chama a tool da Nami passando os filtros recebidos
+    # Chama a tool da Nami passando os filtros de período recebidos
     result = query_expenses(
         start_date=start_date,
         end_date=end_date,
@@ -286,7 +286,7 @@ def create_transaction_endpoint(
         notes=body.notes,
         card_id=body.card_id,
     )
-    return _check_result(result, status_code_ok=201)
+    return _check_result(result)
 
 
 @router.patch("/transactions/{tx_id}")
@@ -519,7 +519,7 @@ def create_account_endpoint(
         data_inicio=body.data_inicio,
         balance_inicial=body.balance_inicial,
     )
-    return _check_result(result, status_code_ok=201)
+    return _check_result(result)
 
 
 @router.get("/accounts/{account_id}/balance")
@@ -605,7 +605,7 @@ def register_card_endpoint(
         due_day=body.due_day,
         current_debt=body.divida_inicial,
     )
-    return _check_result(result, status_code_ok=201)
+    return _check_result(result)
 
 
 @router.post("/cards/{card_id}/payment", status_code=201)
@@ -637,7 +637,7 @@ def card_payment_endpoint(
         valor=body.valor,
         data=body.data,
     )
-    return _check_result(result, status_code_ok=201)
+    return _check_result(result)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -699,7 +699,7 @@ def register_loan_endpoint(
         primeiro_vencimento=body.data_inicio,
         conta=body.conta,
     )
-    return _check_result(result, status_code_ok=201)
+    return _check_result(result)
 
 
 @router.get("/loans/{loan_id}/balance")
@@ -789,7 +789,7 @@ def set_budget_endpoint(
         categoria=body.categoria,
         limite=body.limite,
     )
-    return _check_result(result, status_code_ok=201)
+    return _check_result(result)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -836,16 +836,28 @@ def create_subscription_endpoint(
         HTTPException: 400 se os dados forem inválidos.
         HTTPException: 401 se o usuário não estiver autenticado.
     """
+    # Se next_billing não foi informado, usa o 1º dia do mês seguinte como padrão.
+    # A tool create_subscription exige esse campo no formato YYYY-MM-DD.
+    if body.next_billing:
+        next_billing = body.next_billing
+    else:
+        from datetime import date, timedelta
+        # Avança para o primeiro dia do mês seguinte somando dias suficientes
+        today = date.today()
+        # replace(day=1) vai ao início do mês atual; + timedelta(days=31) pula para o mês seguinte
+        next_month_first = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+        next_billing = next_month_first.strftime("%Y-%m-%d")
+
     # Cadastra a assinatura com os dados do body
     result = create_subscription(
         name=body.name,
         valor=body.valor,
-        conta=body.conta,
         ciclo=body.ciclo,
-        dia_cobranca=body.dia_cobranca,
+        next_billing=next_billing,
+        conta=body.conta,
         categoria=body.categoria,
     )
-    return _check_result(result, status_code_ok=201)
+    return _check_result(result)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -905,4 +917,4 @@ def create_installment_endpoint(
         categoria=body.categoria,
         first_due=body.data_inicio,
     )
-    return _check_result(result, status_code_ok=201)
+    return _check_result(result)
