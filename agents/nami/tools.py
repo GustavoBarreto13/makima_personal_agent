@@ -1,6 +1,14 @@
-# Módulo de ferramentas do agente Nami — responsável por todas as operações
-# financeiras: criar, editar, deletar e consultar transações e assinaturas
-# no BigQuery (banco de dados em nuvem do Google).
+"""Ferramentas do agente Nami para gerenciamento de finanças pessoais.
+
+Todas as operações financeiras — criar, editar, deletar e consultar
+transações e assinaturas — são feitas aqui e armazenadas no BigQuery
+(banco de dados em nuvem do Google).
+
+Usage:
+    As ferramentas deste módulo são registradas automaticamente no
+    nami_agent e chamadas pelo modelo de IA conforme necessário.
+    Não é necessário chamá-las diretamente.
+"""
 
 import os       # Para ler variáveis de ambiente (credenciais, IDs do projeto)
 import uuid     # Para gerar IDs únicos para cada transação/assinatura

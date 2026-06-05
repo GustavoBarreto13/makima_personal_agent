@@ -4,6 +4,23 @@ Bot Telegram multi-agente construído com **Google ADK**. Recebe mensagens e del
 
 ---
 
+## Uso rápido
+
+Envie mensagens em linguagem natural pelo Telegram. Makima identifica o domínio e roteia automaticamente:
+
+| Mensagem | Agente | O que acontece |
+|---|---|---|
+| "gastei 35 reais no almoço, débito Itaú" | Nami 💰 | Registra despesa no BigQuery |
+| "quanto gastei essa semana?" | Nami 💰 | Consulta e resume as transações |
+| "adiciona tarefa: revisar relatório até sexta" | Kaguya 📋 | Cria tarefa no TickTick |
+| "o que tenho na agenda amanhã?" | Kaguya 📋 | Lista eventos do Google Calendar |
+| "paguei a Netflix, 55 reais" | Kaguya + Nami | Completa tarefa e lança despesa |
+| "o que é machine learning?" | Kurisu 🧠 | Busca no vault Obsidian via RAG |
+| "adiciona o livro Duna" | Frieren 📚 | Busca metadados e adiciona ao catálogo |
+| "li até a página 120" | Frieren 📚 | Registra sessão de leitura |
+
+---
+
 ## Arquitetura
 
 ```

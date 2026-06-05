@@ -1,3 +1,14 @@
+"""Definição do agente coordenador Makima e seus sub-agentes especialistas.
+
+Makima é o ponto central do sistema — ela recebe a mensagem do usuário
+e decide qual agente especialista deve responder, sem executar nenhuma
+ação diretamente.
+
+Usage:
+    from coordinator.agent import create_makima
+    makima = create_makima()
+"""
+
 from google.adk.agents import Agent
 
 from agents.nami.agent import nami_agent
