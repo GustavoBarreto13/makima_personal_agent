@@ -57,6 +57,54 @@ CREATE TABLE IF NOT EXISTS `nami_finance_agent.installment_groups` (
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Accounts — entidade mestra de contas (substitui lista ACCOUNTS hardcoded)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS `nami_finance_agent.accounts` (
+  id              STRING    NOT NULL,   -- UUID gerado em Python
+  name            STRING    NOT NULL,   -- "Cartao Nu", "NuConta", "Itau"
+  institution     STRING,               -- "Nubank", "Itaú", "Mercado Pago"
+  type            STRING    NOT NULL,   -- "corrente" | "poupanca" | "cartao_credito" | "dinheiro" | "investimento"
+  balance_inicial FLOAT64   NOT NULL DEFAULT 0.0,
+  data_inicio     DATE      NOT NULL,
+  status          STRING    NOT NULL DEFAULT "ativo",  -- "ativo" | "encerrado"
+  notes           STRING,
+  created_at      TIMESTAMP NOT NULL,
+  updated_at      TIMESTAMP
+);
+
+-- Adicionar account_id FK a todas as tabelas existentes (rodar no BQ Console):
+-- ALTER TABLE `<GCP_PROJECT_ID>.nami_finance_agent.transactions`       ADD COLUMN account_id STRING;
+-- ALTER TABLE `<GCP_PROJECT_ID>.nami_finance_agent.subscriptions`      ADD COLUMN account_id STRING;
+-- ALTER TABLE `<GCP_PROJECT_ID>.nami_finance_agent.installment_groups` ADD COLUMN account_id STRING;
+-- ALTER TABLE `<GCP_PROJECT_ID>.nami_finance_agent.credit_cards`       ADD COLUMN account_id STRING;
+-- ALTER TABLE `<GCP_PROJECT_ID>.nami_finance_agent.loans`              ADD COLUMN account_id STRING;
+
+-- Backfill: criar contas iniciais e popular account_id (rodar após CREATE accounts):
+-- INSERT INTO `<GCP_PROJECT_ID>.nami_finance_agent.accounts`
+--   (id, name, institution, type, balance_inicial, data_inicio, status, created_at)
+-- VALUES
+--   (GENERATE_UUID(), 'Cartao Nu',    'Nubank',       'cartao_credito', 0, CURRENT_DATE(), 'ativo', CURRENT_TIMESTAMP()),
+--   (GENERATE_UUID(), 'Cartao Itau',  'Itaú',         'cartao_credito', 0, CURRENT_DATE(), 'ativo', CURRENT_TIMESTAMP()),
+--   (GENERATE_UUID(), 'Itau',         'Itaú',         'corrente',       0, CURRENT_DATE(), 'ativo', CURRENT_TIMESTAMP()),
+--   (GENERATE_UUID(), 'Mercado Pago', 'Mercado Pago', 'corrente',       0, CURRENT_DATE(), 'ativo', CURRENT_TIMESTAMP()),
+--   (GENERATE_UUID(), 'Generico',     NULL,           'corrente',       0, CURRENT_DATE(), 'ativo', CURRENT_TIMESTAMP()),
+--   (GENERATE_UUID(), 'Dinheiro',     NULL,           'dinheiro',       0, CURRENT_DATE(), 'ativo', CURRENT_TIMESTAMP());
+--
+-- UPDATE `<GCP_PROJECT_ID>.nami_finance_agent.transactions`
+--   SET account_id = (SELECT id FROM `<GCP_PROJECT_ID>.nami_finance_agent.accounts` WHERE name = conta LIMIT 1)
+--   WHERE TRUE;
+-- UPDATE `<GCP_PROJECT_ID>.nami_finance_agent.subscriptions`
+--   SET account_id = (SELECT id FROM `<GCP_PROJECT_ID>.nami_finance_agent.accounts` WHERE name = conta LIMIT 1)
+--   WHERE TRUE;
+-- UPDATE `<GCP_PROJECT_ID>.nami_finance_agent.installment_groups`
+--   SET account_id = (SELECT id FROM `<GCP_PROJECT_ID>.nami_finance_agent.accounts` WHERE name = conta LIMIT 1)
+--   WHERE TRUE;
+-- UPDATE `<GCP_PROJECT_ID>.nami_finance_agent.loans`
+--   SET account_id = (SELECT id FROM `<GCP_PROJECT_ID>.nami_finance_agent.accounts` WHERE name = conta LIMIT 1)
+--   WHERE TRUE;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Feature 2: Tracker de Cartões de Crédito
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Saldo do cartão é derivado de `transactions` (Despesas - Receitas da conta
@@ -66,7 +114,7 @@ CREATE TABLE IF NOT EXISTS `nami_finance_agent.installment_groups` (
 CREATE TABLE IF NOT EXISTS `nami_finance_agent.credit_cards` (
   id                  STRING    NOT NULL,
   name                STRING    NOT NULL,
-  conta_key           STRING    NOT NULL,  -- chave da conta em transactions
+  account_id          STRING    NOT NULL,  -- FK para accounts.id (conta do tipo cartao_credito)
   limite              FLOAT64   NOT NULL,
   taxa_juros_mensal   FLOAT64   NOT NULL,
   closing_day         INT64     NOT NULL,
