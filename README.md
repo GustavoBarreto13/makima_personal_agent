@@ -12,6 +12,10 @@ Envie mensagens em linguagem natural pelo Telegram. Makima identifica o domínio
 |---|---|---|
 | "gastei 35 reais no almoço, débito Itaú" | Nami 💰 | Registra despesa no BigQuery |
 | "quanto gastei essa semana?" | Nami 💰 | Consulta e resume as transações |
+| "comprei no crédito em 12x, R$1200" | Nami 💰 | Cria parcelamento (12 transações) |
+| "qual minha dívida no Nubank?" | Nami 💰 | Calcula dívida atual do cartão |
+| "qual meu score de saúde financeira?" | Nami 💰 | Score 0-100 em 4 dimensões |
+| "quanto posso gastar em lazer esse mês?" | Nami 💰 | Verifica orçamento da categoria |
 | "adiciona tarefa: revisar relatório até sexta" | Kaguya 📋 | Cria tarefa no TickTick |
 | "o que tenho na agenda amanhã?" | Kaguya 📋 | Lista eventos do Google Calendar |
 | "paguei a Netflix, 55 reais" | Kaguya + Nami | Completa tarefa e lança despesa |
@@ -48,6 +52,17 @@ Inspirada na Makima de Chainsaw Man. Calma, autoritária, nunca usa frases de su
 
 ### Nami — finanças
 Inspirada na Nami de One Piece. Acessa o BigQuery para registrar e consultar transações financeiras. Reage com fúria em despesas, comemora receitas.
+
+**Funcionalidades:**
+- Transações (gastos e receitas) com categorias e contas
+- Compras parceladas — gera N transações automaticamente com datas mensais
+- Cartões de crédito — dívida atual, simulação de quitação, custo do mínimo
+- Empréstimos e financiamentos — sistemas PRICE e SAC, simulação de amortização
+- Orçamento por categoria — alertas quando o limite está próximo
+- Score de saúde financeira 0-100 em 4 dimensões (poupança, dívidas, orçamento, tendência)
+- Contas financeiras — cadastro dinâmico (corrente, poupança, cartão de crédito, dinheiro, investimento)
+
+**Armazenamento:** BigQuery — dataset `nami_finance_agent`.
 
 ### Kaguya — tarefas e agenda
 Inspirada na Kaguya Shinomiya de Kaguya-sama. Aristocrática e organizada. Gerencia tarefas no TickTick e eventos no Google Calendar via dois servidores MCP. Possui tools cross-agent para integrar com a Nami:
@@ -94,9 +109,15 @@ makima_personal_agent/
 │   └── Dockerfile
 ├── agents/
 │   ├── nami/
-│   │   ├── tools.py         # acesso ao BigQuery (finanças)
-│   │   ├── agent.py         # nami_agent (singleton)
-│   │   └── schema.sql       # schema das tabelas BigQuery
+│   │   ├── tools.py             # transações, assinaturas, helpers BigQuery
+│   │   ├── tools_accounts.py    # contas financeiras (create/list/balance)
+│   │   ├── tools_installments.py # compras parceladas
+│   │   ├── tools_credit_cards.py # cartões de crédito
+│   │   ├── tools_loans.py       # empréstimos e financiamentos (PRICE/SAC)
+│   │   ├── tools_budgets.py     # orçamento por categoria
+│   │   ├── tools_health.py      # score de saúde financeira
+│   │   ├── agent.py             # nami_agent (singleton, 32 tools)
+│   │   └── schema.sql           # schema das tabelas BigQuery
 │   ├── kaguya/
 │   │   ├── tools.py         # tools cross-agent (Kaguya+Nami)
 │   │   ├── agent.py         # create_kaguya_agent() — factory com dois McpToolsets
@@ -198,6 +219,23 @@ NOTION_TOKEN=
 
 ---
 
+## Setup inicial da Nami (primeira vez)
+
+Antes de registrar qualquer transação, cadastre as contas financeiras via Telegram:
+
+```
+"Nami, cria uma conta chamada Itau, tipo corrente, instituição Itaú, início 2026-01-01"
+"Nami, cria uma conta Cartao Nu, tipo cartão de crédito, instituição Nubank, início 2026-01-01"
+```
+
+Depois, vincule os cartões de crédito à conta correspondente:
+
+```
+"Nami, cadastra meu cartão Nubank, conta Cartao Nu, limite 1600, taxa 16.1% ao mês, fechamento dia 6, vencimento dia 13"
+```
+
+---
+
 ## Autorizar o Google Calendar (primeira vez)
 
 1. Google Cloud Console → projeto do BigQuery → **APIs e Serviços → Biblioteca** → habilitar **Google Calendar API**
@@ -218,7 +256,7 @@ O script abre o browser, solicita permissão e imprime os valores das variáveis
 python -m coordinator.main
 ```
 
-Os agentes usam `gemini-2.0-flash`. A chave Gemini é lida de `GEMINI_API_KEY` (Google AI Studio). Para usar Vertex AI em vez do AI Studio, definir `GOOGLE_GENAI_USE_VERTEXAI=1`.
+Os agentes usam `gemini-2.5-flash`. A chave Gemini é lida de `GEMINI_API_KEY` (Google AI Studio). Para usar Vertex AI em vez do AI Studio, definir `GOOGLE_GENAI_USE_VERTEXAI=1`.
 
 ---
 
