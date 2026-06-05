@@ -1,0 +1,8 @@
+/* Importa as três camadas do Tailwind CSS:
+   - base: reset de estilos e elementos HTML padrão
+   - components: classes reutilizáveis de componentes
+   - utilities: classes utilitárias (as classes como text-xl, bg-blue-500, etc.)
+*/
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

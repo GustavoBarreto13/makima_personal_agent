@@ -20,6 +20,27 @@ services:
       # Rede compartilhada do Dokploy onde o banco PostgreSQL separado roda
       - dokploy-network
 
+  web:
+    build:
+      # Contexto = raiz do repo (para COPY . . e COPY webapp/frontend/ funcionarem corretamente).
+      context: .
+      dockerfile: webapp/backend/Dockerfile
+    container_name: makima-web
+    # Injeta variáveis do .env para desenvolvimento local.
+    # No Dokploy as vars vêm do painel de Environment, não deste arquivo.
+    env_file: .env
+    # Reinicia automaticamente se o container cair ou no boot do host.
+    restart: unless-stopped
+    ports:
+      # Expõe a porta 8080 do container como 8080 no host.
+      # O reverse proxy do Dokploy vai rotear o subdomínio para esta porta.
+      - "8080:8080"
+    networks:
+      # Rede padrão do compose (isolamento do serviço)
+      - default
+      # Rede compartilhada do Dokploy (acesso ao banco e outros serviços)
+      - dokploy-network
+
 # Declara a rede do Dokploy como externa — já existe, não criamos aqui
 networks:
   dokploy-network:
