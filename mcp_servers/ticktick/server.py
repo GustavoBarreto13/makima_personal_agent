@@ -1,6 +1,18 @@
-# Servidor MCP do TickTick — expõe as tools genéricas de gestão de tarefas via MCP stdio.
-# Roda como processo filho do agente Kaguya (iniciado pelo ADK via MCPToolset).
-# Lê as credenciais OAuth do TickTick das variáveis de ambiente herdadas do processo pai.
+"""Servidor MCP do TickTick — expõe as tools genéricas de gestão de tarefas via MCP stdio.
+
+Roda como processo filho do agente Kaguya, iniciado pelo ADK via McpToolset.
+Lê as credenciais OAuth do TickTick das variáveis de ambiente repassadas explicitamente
+pelo processo pai em agents/kaguya/agent.py (via mcp_env no McpToolset).
+
+Tools disponíveis: list_projects, list_tasks_today, list_overdue_tasks,
+list_tasks_by_project, search_tasks, get_task_detail, list_subtasks,
+create_task, update_task, complete_task, delete_task,
+create_subtask, add_checklist_item, complete_checklist_item.
+
+Usage:
+    Iniciado automaticamente pelo ADK em agents/kaguya/agent.py (create_kaguya_agent).
+    Não rodar diretamente em produção — o ADK gerencia o ciclo de vida do processo.
+"""
 
 import logging
 import os

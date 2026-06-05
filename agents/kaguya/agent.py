@@ -1,10 +1,17 @@
-# Definição do agente Kaguya — gestor de tarefas via TickTick.
-# Tools genéricas do TickTick vêm do servidor MCP (mcp_servers/ticktick/server.py)
-# via McpToolset (SDK google-adk). Tools cross-agent (complete_payment_task,
-# create_expense_reminder) vêm diretamente de agents/kaguya/tools.py.
-#
-# McpToolset é passado diretamente em tools=[...] — o ADK chama get_tools()
-# internamente e gerencia o ciclo de vida da sessão MCP.
+"""Definição do agente Kaguya — gestor de tarefas via TickTick e agenda via Google Calendar.
+
+As tools genéricas do TickTick vêm do servidor MCP (mcp_servers/ticktick/server.py)
+via McpToolset do SDK google-adk. As tools cross-agent (complete_payment_task,
+create_expense_reminder) vêm diretamente de agents/kaguya/tools.py porque dependem
+de lógica interna do projeto (importar a Nami) — algo que o MCP server isolado não pode fazer.
+
+McpToolset é passado diretamente em tools=[...] — o ADK chama get_tools() internamente
+e gerencia o ciclo de vida da sessão MCP (subprocesso stdio).
+
+Usage:
+    from agents.kaguya.agent import create_kaguya_agent
+    kaguya = create_kaguya_agent()
+"""
 
 import os
 
@@ -139,33 +146,40 @@ _INSTRUCTION = """
 
 
 def create_kaguya_agent() -> Agent:
-    """Cria o agente Kaguya com o servidor MCP do TickTick.
+    """Cria e retorna o agente Kaguya com os dois servidores MCP (TickTick e Calendar).
 
-    McpToolset é passado diretamente em tools — o ADK gerencia internamente
-    o ciclo de vida da sessão MCP (não precisa de exit_stack manual).
+    Usa factory function porque McpToolset instancia um processo filho a cada chamada —
+    não pode ser compartilhado entre sessões nem definido como variável global.
+
+    O ADK gerencia internamente o ciclo de vida dos processos filhos MCP
+    (não precisa de exit_stack ou context manager manual).
+
+    Returns:
+        Instância configurada do agente Kaguya com todas as tools disponíveis.
     """
-    # Calcula o caminho absoluto para o servidor MCP
-    # (necessário quando o working directory pode variar)
+    # Calcula o caminho absoluto para o servidor MCP do TickTick.
+    # __file__ aponta para agents/kaguya/agent.py; subimos 2 níveis para chegar à raiz.
     server_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
         "mcp_servers", "ticktick", "server.py"
     )
 
-    # Monta o ambiente do subprocesso MCP: get_default_environment() herda apenas
-    # vars de sistema (PATH, TEMP, HOME, etc.) e filtra vars de aplicação.
-    # Precisamos passar explicitamente as vars do TickTick para o processo filho.
+    # Monta o ambiente do subprocesso MCP do TickTick.
+    # get_default_environment() herda apenas vars de sistema (PATH, TEMP, HOME, etc.),
+    # filtrando vars de aplicação. Precisamos passar explicitamente as vars do TickTick
+    # para o processo filho, pois ele não herda o ambiente completo do processo pai.
     mcp_env = {
         **get_default_environment(),
-        "TICKTICK_ACCESS_TOKEN": os.environ.get("TICKTICK_ACCESS_TOKEN", ""),
-        "TICKTICK_CLIENT_ID": os.environ.get("TICKTICK_CLIENT_ID", ""),
-        "TICKTICK_CLIENT_SECRET": os.environ.get("TICKTICK_CLIENT_SECRET", ""),
-        "TICKTICK_REFRESH_TOKEN": os.environ.get("TICKTICK_REFRESH_TOKEN", ""),
-        "TICKTICK_EXPIRES_AT": os.environ.get("TICKTICK_EXPIRES_AT", ""),
+        "TICKTICK_ACCESS_TOKEN":    os.environ.get("TICKTICK_ACCESS_TOKEN", ""),
+        "TICKTICK_CLIENT_ID":       os.environ.get("TICKTICK_CLIENT_ID", ""),
+        "TICKTICK_CLIENT_SECRET":   os.environ.get("TICKTICK_CLIENT_SECRET", ""),
+        "TICKTICK_REFRESH_TOKEN":   os.environ.get("TICKTICK_REFRESH_TOKEN", ""),
+        "TICKTICK_EXPIRES_AT":      os.environ.get("TICKTICK_EXPIRES_AT", ""),
     }
 
-    # McpToolset é instanciado com os parâmetros de conexão stdio.
-    # timeout=60s: list_tasks_today faz N+1 GETs (1 por projeto) — o padrão de 5s
-    # estoura com 10+ projetos. 60s cobre até ~25 projetos com latência normal.
+    # McpToolset para o TickTick.
+    # timeout=60s: list_tasks_today faz N+1 chamadas GET (uma por projeto) — o padrão
+    # de 5s estoura com 10+ projetos. 60s cobre até ~25 projetos com latência normal.
     mcp_toolset = McpToolset(
         connection_params=StdioConnectionParams(
             server_params=StdioServerParameters(
@@ -177,24 +191,26 @@ def create_kaguya_agent() -> Agent:
         )
     )
 
-    # Caminho absoluto para o servidor MCP do Google Calendar
+    # Caminho absoluto para o servidor MCP do Google Calendar (mesmo padrão do TickTick)
     calendar_server_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
         "mcp_servers", "calendar", "server.py"
     )
 
-    # Variáveis de ambiente do Google Calendar passadas explicitamente ao subprocesso
+    # Variáveis de ambiente do Google Calendar passadas explicitamente ao subprocesso.
+    # O token OAuth e as credenciais do app são necessários para autenticar na API.
     calendar_env = {
         **get_default_environment(),
-        "GOOGLE_CALENDAR_CLIENT_ID": os.environ.get("GOOGLE_CALENDAR_CLIENT_ID", ""),
-        "GOOGLE_CALENDAR_CLIENT_SECRET": os.environ.get("GOOGLE_CALENDAR_CLIENT_SECRET", ""),
-        "GOOGLE_CALENDAR_ACCESS_TOKEN": os.environ.get("GOOGLE_CALENDAR_ACCESS_TOKEN", ""),
-        "GOOGLE_CALENDAR_REFRESH_TOKEN": os.environ.get("GOOGLE_CALENDAR_REFRESH_TOKEN", ""),
-        "GOOGLE_CALENDAR_TOKEN_EXPIRY": os.environ.get("GOOGLE_CALENDAR_TOKEN_EXPIRY", ""),
+        "GOOGLE_CALENDAR_CLIENT_ID":        os.environ.get("GOOGLE_CALENDAR_CLIENT_ID", ""),
+        "GOOGLE_CALENDAR_CLIENT_SECRET":    os.environ.get("GOOGLE_CALENDAR_CLIENT_SECRET", ""),
+        "GOOGLE_CALENDAR_ACCESS_TOKEN":     os.environ.get("GOOGLE_CALENDAR_ACCESS_TOKEN", ""),
+        "GOOGLE_CALENDAR_REFRESH_TOKEN":    os.environ.get("GOOGLE_CALENDAR_REFRESH_TOKEN", ""),
+        "GOOGLE_CALENDAR_TOKEN_EXPIRY":     os.environ.get("GOOGLE_CALENDAR_TOKEN_EXPIRY", ""),
         "GOOGLE_CALENDAR_MAIN_CALENDAR_ID": os.environ.get("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", ""),
     }
 
-    # McpToolset para o Google Calendar — timeout 30s (Calendar API é mais rápida que TickTick)
+    # McpToolset para o Google Calendar.
+    # timeout=30s: a Calendar API é mais rápida que o TickTick (não faz N+1 requests)
     mcp_calendar = McpToolset(
         connection_params=StdioConnectionParams(
             server_params=StdioServerParameters(
@@ -206,6 +222,7 @@ def create_kaguya_agent() -> Agent:
         )
     )
 
+    # Monta e retorna o agente com ambos os McpToolsets e as duas tools cross-agent
     return Agent(
         name="kaguya_agent",
         model="gemini-2.5-flash",
@@ -218,5 +235,7 @@ def create_kaguya_agent() -> Agent:
             "pagamento e criar lembretes de despesas futuras."
         ),
         instruction=_INSTRUCTION,
+        # A lista de tools mistura dois McpToolsets (processos filhos MCP)
+        # e duas tools Python diretas (cross-agent, que importam a Nami)
         tools=[mcp_toolset, mcp_calendar, complete_payment_task, create_expense_reminder],
     )

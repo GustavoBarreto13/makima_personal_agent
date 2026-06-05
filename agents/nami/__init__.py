@@ -1,1 +1,1 @@
-"""Nami — agente especialista em finanças (Notion)."""
+"""Nami — agente especialista em finanças pessoais (BigQuery)."""

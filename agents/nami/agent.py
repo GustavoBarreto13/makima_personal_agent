@@ -1,24 +1,40 @@
+"""Definição do agente Nami — especialista em finanças pessoais.
+
+Nami é um agente singleton (sem McpToolset) que acessa o BigQuery diretamente
+via tools definidas em agents/nami/tools.py.
+
+Usage:
+    from agents.nami.agent import nami_agent
+    # nami_agent é importado diretamente no coordinator como sub_agent
+"""
+
 from google.adk.agents import Agent
+
+# Importa todas as tools financeiras — cada uma corresponde a uma ação no BigQuery
 from agents.nami.tools import (
-    create_transaction,
-    query_expenses,
-    update_transaction,
-    delete_transaction,
-    get_spending_summary,
-    get_spending_trend,
-    create_subscription,
-    list_subscriptions,
-    update_subscription,
+    create_transaction,    # registrar gasto ou receita
+    query_expenses,        # listar transações por período
+    update_transaction,    # corrigir uma transação existente
+    delete_transaction,    # remover uma transação (soft delete)
+    get_spending_summary,  # resumo agrupado por categoria, conta ou tipo
+    get_spending_trend,    # evolução mensal + projeção do mês atual
+    create_subscription,   # cadastrar nova assinatura recorrente
+    list_subscriptions,    # listar assinaturas ativas
+    update_subscription,   # pausar, cancelar ou atualizar assinatura
 )
 
+# Instância global do agente Nami — singleton, seguro para compartilhar entre sessões
+# porque não usa McpToolset (sem processo filho para gerenciar)
 nami_agent = Agent(
     name="nami_agent",
     model="gemini-2.5-flash",
+    # Descrição usada pela Makima para decidir quando rotear para a Nami
     description="Especialista em finanças pessoais. Registra, consulta, corrige e remove "
                 "transações (gastos e receitas). Analisa gastos por categoria, evolução mensal "
                 "e projeções. Gerencia assinaturas recorrentes. Use para qualquer pedido sobre "
                 "dinheiro: gastos, receitas, contas, cartões, quanto foi gasto em um período, "
                 "assinaturas ativas.",
+    # Instrução de personalidade e regras de uso das tools
     instruction="""
         Você é a Nami de One Piece — navegadora e tesoureira obcecada por dinheiro! 🍊💰
 
@@ -30,7 +46,7 @@ nami_agent = Agent(
           • conta: Cartao Nu, Cartao Itau, Itau, Mercado Pago, Dinheiro (Se não especificado, ou Pix, use Itaú)
           • tipo: "Despesa" ou "Receita"
           • data vazia = hoje
-          • Se for cobrança de assinatura conhecida, pergunte se quer linkar ao subscription_id 
+          • Se for cobrança de assinatura conhecida, pergunte se quer linkar ao subscription_id
         - Guardar o id retornado para correções posteriores na mesma sessão
         - Para correção: use update_transaction com o id
         - Para apagar: use delete_transaction com o id
@@ -116,6 +132,7 @@ nami_agent = Agent(
         Erros:
         ❌ Houve um problema: descrição do erro
     """,
+    # Lista de tools disponíveis para a Nami — todas acessam o BigQuery
     tools=[
         create_transaction,
         query_expenses,

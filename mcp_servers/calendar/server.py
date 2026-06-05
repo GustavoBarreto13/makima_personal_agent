@@ -1,6 +1,13 @@
-# Servidor MCP do Google Calendar — expõe tools de leitura e escrita de eventos.
-# Roda como processo filho do agente Kaguya (iniciado pelo ADK via McpToolset).
-# Leitura: todos os calendários. Escrita: apenas GOOGLE_CALENDAR_MAIN_CALENDAR_ID.
+"""Servidor MCP do Google Calendar — expõe tools de leitura e escrita de eventos.
+
+Roda como processo filho do agente Kaguya, iniciado pelo ADK via McpToolset (protocolo stdio).
+Leitura permitida em todos os calendários disponíveis na conta Google.
+Escrita (criar, editar, deletar) permitida apenas no GOOGLE_CALENDAR_MAIN_CALENDAR_ID.
+
+Usage:
+    Iniciado automaticamente pelo ADK em agents/kaguya/agent.py (create_kaguya_agent).
+    Não rodar diretamente em produção — o ADK gerencia o ciclo de vida do processo.
+"""
 
 import os
 from datetime import datetime, timedelta, timezone
