@@ -496,3 +496,77 @@ class TestCards:
             valor=200.0,
             data="",
         )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TESTES — CONTAS (error path)
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestAccountsErrorPaths:
+    """Testes de error path para endpoints de contas."""
+
+    @patch("webapp.backend.routers.finances.create_account")
+    def test_post_account_tool_error_returns_400(self, mock_create):
+        """POST /accounts quando a tool retorna status:error deve retornar 400."""
+        # Simula erro da tool (tipo de conta inválido)
+        mock_create.return_value = {"status": "error", "message": "Tipo inválido"}
+
+        response = client.post(
+            "/api/finances/accounts",
+            json={"name": "Teste", "type": "invalido"},
+        )
+
+        # O router deve converter o erro da tool em HTTP 400
+        assert response.status_code == 400
+
+        # A mensagem de erro da tool deve estar no detalhe do erro HTTP
+        assert "Tipo inválido" in response.json()["detail"]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TESTES — ASSINATURAS
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestSubscriptions:
+    """Testes dos endpoints de assinaturas (/api/finances/subscriptions)."""
+
+    @patch("webapp.backend.routers.finances.update_subscription")
+    def test_patch_subscription_returns_200(self, mock_update):
+        """PATCH /subscriptions/{id} deve atualizar a assinatura e retornar 200."""
+        # Simula atualização bem-sucedida
+        mock_update.return_value = {"status": "ok", "message": "Assinatura atualizada"}
+
+        response = client.patch(
+            "/api/finances/subscriptions/sub-123",
+            json={"status": "pausada"},
+        )
+
+        # Deve retornar 200 OK
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["status"] == "ok"
+
+        # Verifica que a tool foi chamada com o ID correto e o status informado
+        mock_update.assert_called_once()
+        call_kwargs = mock_update.call_args.kwargs
+        assert call_kwargs["id"] == "sub-123"
+        assert call_kwargs["status"] == "pausada"
+
+    @patch("webapp.backend.routers.finances.update_subscription")
+    def test_patch_subscription_tool_error_returns_400(self, mock_update):
+        """PATCH /subscriptions/{id} quando a tool retorna error deve retornar 400."""
+        # Simula erro da tool (status inválido, assinatura não encontrada, etc.)
+        mock_update.return_value = {
+            "status": "error",
+            "message": "status deve ser 'ativa', 'pausada' ou 'cancelada'",
+        }
+
+        response = client.patch(
+            "/api/finances/subscriptions/sub-999",
+            json={"status": "desativada"},  # valor inválido
+        )
+
+        # O router deve converter o erro da tool em HTTP 400
+        assert response.status_code == 400
+        assert "status deve ser" in response.json()["detail"]

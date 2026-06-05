@@ -20,6 +20,9 @@ from pydantic import BaseModel
 # Optional permite que campos sejam None além do tipo normal (ex.: Optional[float] = None)
 from typing import Optional
 
+# date e timedelta são usados para calcular datas padrão (hoje, primeiro do mês seguinte, etc.)
+from datetime import date, timedelta
+
 # require_user é a dependência de autenticação — bloqueia rotas não autenticadas
 from webapp.backend.deps import require_user
 
@@ -206,15 +209,31 @@ class CreateSubscriptionBody(BaseModel):
     categoria: str = "Assinaturas"   # Categoria (padrão: Assinaturas)
 
 
+class UpdateSubscriptionBody(BaseModel):
+    """Campos opcionais para atualizar uma assinatura existente.
+
+    Todos os campos são opcionais — só os enviados (não-vazios/não-None) serão alterados.
+    """
+    name: str = ""               # Novo nome do serviço (vazio = não altera)
+    valor: Optional[float] = None  # Novo valor em reais (None = não altera)
+    ciclo: str = ""              # Novo ciclo: "mensal" ou "anual" (vazio = não altera)
+    next_billing: str = ""       # Nova data de cobrança YYYY-MM-DD (vazio = não altera)
+    conta: str = ""              # Nova conta de débito (vazio = não altera)
+    status: str = ""             # Novo status: "ativa" | "pausada" | "cancelada" (vazio = não altera)
+    notes: str = ""              # Novas observações (vazio = não altera)
+
+
 class CreateInstallmentBody(BaseModel):
     """Corpo da requisição para registrar uma compra parcelada."""
     name: str                   # Nome da compra (ex.: "Notebook Dell")
     valor_total: float          # Valor total em reais
     num_parcelas: int           # Número de parcelas (mínimo 2)
-    conta: str = ""             # Conta/cartão usado
+    conta: str = ""             # Conta usada (vazio = resolução automática)
     categoria: str = "Inbox"   # Categoria da compra
     data_inicio: str = ""       # Data da 1ª parcela (vazio = hoje)
-    card_id: str = ""           # ID do cartão (quando a compra é no crédito)
+    # card_id não suportado ainda: create_installment() não aceita este parâmetro.
+    # Compras parceladas de cartão de crédito precisam ser registradas manualmente
+    # via create_transaction com card_id para cada parcela individualmente.
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -432,7 +451,6 @@ def health_score(
     """
     # Se o mês não foi informado, usa o mês atual no formato YYYY-MM
     if not month:
-        from datetime import date
         month = date.today().strftime("%Y-%m")
 
     result = get_financial_health_score(month=month)
@@ -512,11 +530,13 @@ def create_account_endpoint(
         HTTPException: 400 se o tipo for inválido ou o nome já existir.
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    # Cadastra a conta com os dados do body
+    # Cadastra a conta com os dados do body.
+    # data_inicio é obrigatório no BigQuery (campo DATE) — usa hoje como fallback
+    # para evitar 500 quando o campo não é enviado pelo cliente.
     result = create_account(
         name=body.name,
         type=body.type,
-        data_inicio=body.data_inicio,
+        data_inicio=body.data_inicio or date.today().strftime("%Y-%m-%d"),
         balance_inicial=body.balance_inicial,
     )
     return _check_result(result)
@@ -758,7 +778,6 @@ def budget_status(
     """
     # Se o mês não foi informado, usa o mês atual
     if not month:
-        from datetime import date
         month = date.today().strftime("%Y-%m")
 
     result = get_budget_status(month=month)
@@ -841,7 +860,6 @@ def create_subscription_endpoint(
     if body.next_billing:
         next_billing = body.next_billing
     else:
-        from datetime import date, timedelta
         # Avança para o primeiro dia do mês seguinte somando dias suficientes
         today = date.today()
         # replace(day=1) vai ao início do mês atual; + timedelta(days=31) pula para o mês seguinte
@@ -857,6 +875,54 @@ def create_subscription_endpoint(
         conta=body.conta,
         categoria=body.categoria,
     )
+    return _check_result(result)
+
+
+@router.patch("/subscriptions/{sub_id}", status_code=200)
+def update_subscription_endpoint(
+    sub_id: str,                        # ID da assinatura, vem na URL (ex.: /subscriptions/abc-123)
+    body: UpdateSubscriptionBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Atualizar status, valor ou outros campos de uma assinatura existente.
+
+    Só altera os campos fornecidos no body — os demais permanecem inalterados.
+    Permite pausar ("pausada"), cancelar ("cancelada") ou reativar ("ativa") uma assinatura.
+
+    Args:
+        sub_id: ID único da assinatura a ser atualizada.
+        body: Campos a atualizar (todos opcionais).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+
+    Raises:
+        HTTPException: 400 se a assinatura não for encontrada ou os dados forem inválidos.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    # Monta o dicionário de argumentos para a tool, incluindo apenas os campos
+    # que foram preenchidos (não-vazios / não-None) — a tool update_subscription
+    # só altera o que for informado, ignorando strings vazias e None.
+    kwargs: dict = {"id": sub_id}  # O parâmetro da tool se chama "id", não "sub_id"
+
+    if body.name:
+        kwargs["name"] = body.name
+    if body.valor is not None:
+        kwargs["valor"] = body.valor
+    if body.ciclo:
+        kwargs["ciclo"] = body.ciclo
+    if body.next_billing:
+        kwargs["next_billing"] = body.next_billing
+    if body.conta:
+        kwargs["conta"] = body.conta
+    if body.status:
+        kwargs["status"] = body.status
+    if body.notes:
+        kwargs["notes"] = body.notes
+
+    # Chama a tool de atualização com os kwargs montados acima
+    result = update_subscription(**kwargs)
     return _check_result(result)
 
 
