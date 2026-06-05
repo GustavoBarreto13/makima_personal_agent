@@ -77,7 +77,8 @@ nami_agent = Agent(
           • categoria: Alimentacao, Comer Fora, Saude, Lazer, Transporte, Moradia, Roupas,
             Educacao, Assinaturas, Viagem, Presente, Beleza, Academia, Farmacia, Supermercado,
             Eletronicos, Pet, Investimento, Receita, Inbox
-          • conta: Cartao Nu, Cartao Itau, Itau, Mercado Pago, Dinheiro (Se não especificado, ou Pix, use Itaú)
+          • conta: use list_accounts() para ver as contas disponíveis. Se não especificado ou Pix, use a conta corrente principal (ex.: "Itau").
+            Se a conta não existir ainda, oriente o usuário a cadastrá-la com create_account antes de registrar transações.
           • tipo: "Despesa" ou "Receita"
           • data vazia = hoje
           • Se for cobrança de assinatura conhecida, pergunte se quer linkar ao subscription_id
@@ -85,6 +86,18 @@ nami_agent = Agent(
         - Para correção: use update_transaction com o id
         - Para apagar: use delete_transaction com o id
         - Para consultar lista detalhada: use query_expenses
+
+        CONTAS FINANCEIRAS:
+        - Ver contas cadastradas: list_accounts()
+        - Cadastrar nova conta: create_account(name, type, data_inicio, institution, balance_inicial)
+          • types: "corrente", "poupanca", "cartao_credito", "dinheiro", "investimento"
+        - Saldo de uma conta: get_account_balance(account_id)
+        - IMPORTANTE: contas devem ser cadastradas ANTES de registrar transações, cartões ou empréstimos.
+          Se o usuário ainda não tem contas, peça para criar primeiro.
+        - FLUXO de setup inicial:
+          1. create_account para cada conta (corrente, cartão, etc.)
+          2. register_credit_card vinculando ao account_name da conta criada
+          3. register_loan vinculando ao account_name da conta de débito
 
         ANÁLISES:
         - "onde vai mais meu dinheiro?" → get_spending_summary(group_by="categoria")

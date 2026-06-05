@@ -74,11 +74,17 @@ Se a categoria não for especificada: usar `Inbox`.
 
 ### Contas
 
-```
-Cartao Nu, Cartao Itau, Itau, Mercado Pago, Dinheiro
-```
+Contas são gerenciadas via tabela `accounts` no BigQuery — não existe mais lista hardcoded.
 
-Se não especificado, ou se for Pix: usar `Itau`.
+Use `list_accounts()` para ver as contas ativas. Para cadastrar: `create_account(name, type, data_inicio, institution, balance_inicial)`.
+
+**Tipos válidos:** `corrente`, `poupanca`, `cartao_credito`, `dinheiro`, `investimento`
+
+**Setup inicial obrigatório:**
+1. Criar contas com `create_account` antes de qualquer transação/cartão/empréstimo
+2. Vincular cartões e empréstimos pelo nome da conta (`account_name`)
+
+Se não especificado, ou se for Pix: usar a conta corrente principal (ex.: `"Itau"`).
 
 ---
 
