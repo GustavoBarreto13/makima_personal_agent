@@ -13,10 +13,26 @@ import os  # Para verificar se o diretório de build do frontend existe
 from fastapi import FastAPI  # Framework web — define rotas e lida com requisições HTTP
 from fastapi.middleware.cors import CORSMiddleware  # Middleware que libera requisições cross-origin
 from fastapi.staticfiles import StaticFiles  # Serve arquivos estáticos (HTML, CSS, JS do React)
+from starlette.middleware.sessions import SessionMiddleware  # Middleware de sessão Starlette — necessário para o fluxo CSRF do OAuth
+
+# Importa o router de autenticação e o segredo de sessão
+from webapp.backend.routers import auth as auth_router
+from webapp.backend.config import SESSION_SECRET
 
 # Cria a instância principal da aplicação FastAPI.
 # Tudo (rotas, middleware, static files) é registrado neste objeto.
 app = FastAPI(title="Makima Web Interface")
+
+# --- SessionMiddleware (obrigatório para o fluxo OAuth) ---
+# O Authlib precisa de request.session para armazenar o `state` CSRF durante o fluxo OAuth.
+# O `state` é um token aleatório gerado no /auth/login e verificado no /auth/callback,
+# garantindo que o callback veio do mesmo navegador que iniciou o login.
+# IMPORTANTE: este middleware deve ser adicionado ANTES do CORSMiddleware.
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
+
+# --- Router de autenticação ---
+# Registra as rotas /auth/login, /auth/callback, /auth/logout e /auth/me
+app.include_router(auth_router.router, prefix="/auth", tags=["auth"])
 
 # --- CORS (Cross-Origin Resource Sharing) ---
 # O navegador bloqueia requisições entre origens diferentes por segurança.
