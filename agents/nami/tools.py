@@ -30,14 +30,57 @@ CATEGORIES = [
     "Eletronicos", "Pet", "Investimento", "Receita", "Inbox",
 ]
 
-# Lista de contas/meios de pagamento válidos.
-# Qualquer valor fora dessa lista será rejeitado.
+# Lista hardcoded mantida apenas para compatibilidade com testes legados.
+# A fonte canônica de contas agora é a tabela `accounts` no BigQuery.
 ACCOUNTS = ["Cartao Nu", "Cartao Itau", "Itau", "Mercado Pago", "Generico", "Dinheiro"]
 
 # Variável global que armazena o cliente do BigQuery após a primeira criação.
-# Fica em None até ser inicializado pela função _client(), para evitar
-# conectar ao banco antes de precisar (inicialização "lazy" / sob demanda).
 _bq_client = None
+
+# Cache das contas carregadas da tabela `accounts` no BigQuery.
+# None = não carregado ainda; lista vazia = nenhuma conta cadastrada.
+_accounts_cache: list[dict] | None = None
+
+
+def _load_accounts() -> list[dict]:
+    """Carrega contas ativas do BigQuery e armazena em cache para evitar queries repetidas."""
+    global _accounts_cache
+    if _accounts_cache is None:
+        try:
+            rows = _run_select(
+                f"SELECT id, name FROM `{_project()}.nami_finance_agent.accounts` WHERE status = 'ativo'",
+                [],
+            )
+            _accounts_cache = rows
+        except Exception:
+            # Se a tabela ainda não existir (ex.: ambiente de testes sem BQ),
+            # retorna lista vazia em vez de lançar exceção
+            _accounts_cache = []
+    return _accounts_cache
+
+
+def _invalidate_accounts_cache() -> None:
+    """Invalida o cache de contas para forçar recarga na próxima chamada."""
+    global _accounts_cache
+    _accounts_cache = None
+
+
+def _resolve_account(name: str) -> dict | None:
+    """Resolve nome de conta para {id, name} consultando a tabela accounts.
+
+    Aceita correspondência exata ou por prefixo (case-insensitive, sem acentos).
+    Retorna None se não encontrar ou se houver ambiguidade (mais de 1 match).
+
+    Args:
+        name: Nome ou prefixo da conta digitado pelo usuário.
+
+    Returns:
+        Dicionário {"id": ..., "name": ...} ou None.
+    """
+    norm = _norm(name)
+    accounts = _load_accounts()
+    matches = [a for a in accounts if _norm(a["name"]) == norm or _norm(a["name"]).startswith(norm)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _client() -> bigquery.Client:
@@ -190,19 +233,13 @@ def _match_category(name: str) -> str | None:
 
 
 def _match_account(name: str) -> str | None:
-    """Tenta encontrar uma conta válida a partir de um texto digitado pelo usuário.
+    """Alias de compatibilidade — usa _resolve_account internamente.
 
-    Mesma lógica de _match_category: aceita correspondência exata ou prefixo,
-    e só retorna se houver exatamente 1 match para evitar ambiguidade.
+    Retorna o nome canônico da conta (string) ou None se não encontrar.
+    Prefira _resolve_account quando precisar do account_id.
     """
-    # Normaliza o texto para comparação sem acentos e em minúsculas
-    norm = _norm(name)
-
-    # Filtra as contas que correspondem (exata ou por prefixo)
-    matches = [a for a in ACCOUNTS if _norm(a) == norm or _norm(a).startswith(norm)]
-
-    # Retorna apenas se for inequívoco (exatamente 1 resultado)
-    return matches[0] if len(matches) == 1 else None
+    result = _resolve_account(name)
+    return result["name"] if result else None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

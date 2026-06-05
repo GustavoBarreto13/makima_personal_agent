@@ -21,19 +21,21 @@ from unittest.mock import patch, MagicMock
 @patch("agents.nami.tools._project")
 def test_create_transaction_success(mock_project, mock_dml):
     """Verifica que create_transaction insere uma transação válida e retorna status ok."""
-    # Configura os mocks para simular ambiente de banco funcionando
     mock_project.return_value = "test-project"
-    mock_dml.return_value = 1  # 1 linha afetada = INSERT bem-sucedido
+    mock_dml.return_value = 1
+
+    # Pré-popula cache de contas para evitar query ao BQ em testes unitários
+    import agents.nami.tools as t
+    t._accounts_cache = [{"id": "acc-generico", "name": "Generico"}]
 
     from agents.nami.tools import create_transaction
     result = create_transaction("Almoço iFood", 45.0, "Despesa", "Alimentacao")
 
-    # Verifica que a função retornou sucesso e gerou um ID
     assert result["status"] == "ok"
     assert "id" in result
-
-    # Verifica que o INSERT foi chamado exatamente uma vez
     mock_dml.assert_called_once()
+
+    t._accounts_cache = None  # limpa após o teste
 
 
 @patch("agents.nami.tools._run_dml")
@@ -171,6 +173,9 @@ def test_create_subscription_success(mock_project, mock_dml):
     mock_project.return_value = "test-project"
     mock_dml.return_value = 1
 
+    import agents.nami.tools as t
+    t._accounts_cache = [{"id": "acc-cartao-nu", "name": "Cartao Nu"}]
+
     from agents.nami.tools import create_subscription
     result = create_subscription(
         name="Netflix", valor=55.0, ciclo="mensal",
@@ -180,6 +185,8 @@ def test_create_subscription_success(mock_project, mock_dml):
     assert result["status"] == "ok"
     assert "id" in result
     mock_dml.assert_called_once()
+
+    t._accounts_cache = None
 
 
 @patch("agents.nami.tools._run_select")
