@@ -9,7 +9,7 @@ Responsabilidades:
 - Gerenciar assinaturas recorrentes, compras parceladas e cartões de crédito
 - Controlar empréstimos e financiamentos (PRICE e SAC)
 - Monitorar orçamento por categoria e calcular score de saúde financeira
-- Gerenciar contas financeiras (corrente, poupança, cartão, dinheiro, investimento)
+- Gerenciar contas financeiras (corrente, poupança, dinheiro, investimento)
 
 ---
 
@@ -76,7 +76,34 @@ def _resolve_account(name: str) -> dict | None:
 
 - Aceita correspondência exata ou por prefixo (case-insensitive, sem acentos)
 - Cache em memória — recarrega do BQ na primeira chamada ou após `_invalidate_accounts_cache()`
-- Todo INSERT que referencia uma conta deve escrever AMBOS: `conta` (nome display) e `account_id` (FK)
+- Todo INSERT de transação de **conta** deve escrever AMBOS: `conta` (nome display) e `account_id` (FK); `card_id` fica NULL
+
+### Resolução de cartões (`_resolve_credit_card`)
+
+**Nunca hardcode nomes de cartão.** A lista de cartões ativos vive na tabela `credit_cards`.
+
+```python
+# tools.py
+_cards_cache: list[dict] | None = None
+
+def _resolve_credit_card(name: str) -> dict | None:
+    """Retorna {"id": ..., "name": ...} ou None se não encontrar."""
+```
+
+- Mesmo padrão de `_resolve_account`: exata ou prefixo, case-insensitive
+- Cache em memória — recarrega após `_invalidate_cards_cache()` (chamado automaticamente em `register_credit_card`)
+- Todo INSERT de transação de **cartão** deve preencher `card_id` com `credit_cards.id`; `account_id` fica NULL
+
+### Separação account_id / card_id em transactions
+
+`account_id` e `card_id` são **mutuamente exclusivos** na tabela `transactions`:
+
+| Transação de | `account_id` | `card_id` |
+|---|---|---|
+| Conta bancária (débito, Pix, dinheiro) | UUID da conta | NULL |
+| Cartão de crédito (compra, pagamento de fatura) | NULL | UUID do cartão |
+
+Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitetura atual.
 
 ---
 
@@ -96,7 +123,7 @@ def _resolve_account(name: str) -> dict | None:
 
 | Tool | Descrição |
 |---|---|
-| `create_transaction` | Registra gasto ou receita — chama `_resolve_account` internamente |
+| `create_transaction` | Registra gasto ou receita. Parâmetro `card_id` opcional: quando fornecido, `account_id` fica NULL (transação de cartão). Quando omitido, resolve conta via `_resolve_account`. |
 | `query_expenses` | Consulta lista detalhada com filtros de período/categoria/conta |
 | `update_transaction` | Corrige campo(s) de uma transação existente pelo `id` |
 | `delete_transaction` | Soft delete — marca `deleted=TRUE` |
@@ -119,9 +146,9 @@ def _resolve_account(name: str) -> dict | None:
 
 | Tool | Descrição |
 |---|---|
-| `register_credit_card` | Cadastra cartão vinculado a uma conta (`account_name`) |
-| `get_card_debt_summary` | Dívida atual de todos os cartões ativos |
-| `register_card_payment` | Registra pagamento da fatura (Receita na conta do cartão) |
+| `register_credit_card` | Cadastra cartão vinculado a uma conta **corrente ou poupança** (`account_name`). Dívida inicial → transação com `card_id` |
+| `get_card_debt_summary` | Dívida atual de todos os cartões. Filtra `transactions` por `card_id = credit_cards.id` |
+| `register_card_payment` | Registra pagamento da fatura — transação Receita com `card_id` (reduz a dívida) |
 | `simulate_debt_payoff` | Simula meses para quitar dado um pagamento mensal |
 | `get_minimum_payment_cost` | Custo total de pagar apenas o mínimo até quitar |
 
@@ -193,8 +220,10 @@ Mapeamento de tipo de empréstimo → categoria em `register_loan_payment`: `vei
 ## O que NÃO fazer
 
 - **Não hardcode nomes de conta** — a lista é dinâmica. Sempre `_resolve_account(name)` para resolver. Nunca recriar uma lista `ACCOUNTS`.
-- **Não usar `conta_key`** — foi removido. Cartões agora usam `account_id` (FK para `accounts.id`).
-- **Não criar `card_debt_entries`** — decisão arquitetural (commit `995ab53`): dívida inicial de cartão é uma transação Despesa normal; pagamento de fatura é uma transação Receita. A tabela `transactions` é a única fonte da verdade para saldos de cartão.
+- **Não criar conta do tipo `cartao_credito`** — esse tipo foi removido. Cartões de crédito são entidades separadas em `credit_cards`, não em `accounts`. Use `create_account` apenas para corrente, poupança, dinheiro ou investimento.
+- **Não popular `account_id` em transações de cartão** — use `card_id`. Os dois são mutuamente exclusivos. Transação de conta bancária → `account_id` preenchido, `card_id` NULL. Transação de cartão → `card_id` preenchido, `account_id` NULL.
+- **Não usar `conta_key`** — foi removido (commit anterior). O campo legado não existe mais.
+- **Não criar `card_debt_entries`** — decisão arquitetural (commit `995ab53`): dívida inicial de cartão é uma transação Despesa com `card_id`; pagamento de fatura é uma transação Receita com `card_id`. A tabela `transactions` é a única fonte da verdade para saldos de cartão.
 - **Não pedir confirmação** antes de `create_transaction` — chamar imediatamente com os dados disponíveis.
 - **Não usar markdown** (`*`, `_`, `~`) nas respostas — o Telegram renderiza HTML. Usar apenas tags HTML e emojis.
 - **Não criar nova tabela** para um novo tipo de dado sem verificar se cabe em `transactions` com uma categoria específica.
@@ -305,8 +334,11 @@ Sempre começa com `Nami:`. Tom ganancioso e dramático.
 
 | Termo | Significado |
 |---|---|
-| `account_id` | FK UUID para `accounts.id` — identifica a conta de forma estável mesmo que o nome mude |
-| `conta` | Campo display denormalizado (nome da conta como string) — mantido para evitar JOINs em queries de leitura |
+| `account_id` | FK UUID para `accounts.id` — preenchido em transações de conta bancária, NULL em transações de cartão |
+| `card_id` | FK UUID para `credit_cards.id` — preenchido em transações de cartão, NULL em transações de conta. Mutuamente exclusivo com `account_id` |
+| `conta` | Campo display denormalizado (nome da conta ou cartão como string) — mantido para evitar JOINs em queries de leitura |
+| `_resolve_account` | Helper em `tools.py` que converte nome de conta em `{id, name}` com cache em memória |
+| `_resolve_credit_card` | Helper em `tools.py` que converte nome de cartão em `{id, name}` com cache em memória |
 | `installment_group` | Grupo que agrupa N transações de uma compra parcelada |
 | `parcelas_pagas` | Campo em `loans` que rastreia quantas parcelas já foram quitadas |
 | PRICE | Sistema de amortização com parcela fixa — amortização cresce ao longo do tempo |
