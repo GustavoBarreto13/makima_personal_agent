@@ -22,6 +22,7 @@ from datetime import date
 from agents.nami.tools import (
     _run_dml, _run_select, _table, _project,
     _resolve_account,
+    _invalidate_cards_cache,
     create_transaction,
 )
 from google.cloud import bigquery
@@ -67,14 +68,16 @@ def register_credit_card(
     current_debt: float = 0.0,
     notes: str = "",
 ) -> dict:
-    """Cadastra um cartão de crédito e vincula a uma conta existente.
+    """Cadastra um cartão de crédito e vincula a uma conta corrente ou poupança.
 
-    A conta deve estar cadastrada em `accounts` (tipo cartao_credito).
-    Se houver dívida inicial, ela é registrada como transação tipo Despesa.
+    A conta (account_name) deve ser do tipo corrente, poupança, dinheiro ou investimento
+    — representa a conta de onde a fatura será paga. Cartões não são contas.
+    Se houver dívida inicial, ela é registrada como transação tipo Despesa vinculada
+    ao cartão (card_id) — não à conta bancária.
 
     Args:
         name: Nome do cartão (ex.: "Nubank", "Itaú Platinum")
-        account_name: Nome da conta na tabela accounts (ex.: "Cartao Nu")
+        account_name: Nome da conta corrente/poupança vinculada (ex.: "Itau")
         limite: Limite total do cartão em reais
         taxa_juros_mensal: Taxa de juros mensal decimal (ex.: 0.15 para 15%)
         closing_day: Dia do fechamento da fatura (1-31)
@@ -112,17 +115,20 @@ def register_credit_card(
 
     try:
         _run_dml(sql, params)
+        # Invalida o cache para que o novo cartão apareça imediatamente em _load_cards()
+        _invalidate_cards_cache()
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-    # Dívida inicial → transação Despesa na conta do cartão (fonte da verdade)
+    # Dívida inicial → transação Despesa vinculada ao cartão (não à conta bancária)
     if current_debt > 0:
         tx = create_transaction(
             name=f"Saldo inicial — {name}",
             valor=float(current_debt),
             tipo="Despesa",
             categoria="Inbox",
-            conta=acc["name"],
+            conta=name,         # nome do cartão para exibição
+            card_id=card_id,    # vincula ao cartão — account_id fica NULL
         )
         if tx.get("status") != "ok":
             return {"status": "error", "message": f"Cartão criado mas erro ao registrar dívida: {tx.get('message')}"}
@@ -162,19 +168,19 @@ def get_card_debt_summary() -> dict:
         for card in cards:
             start_date, end_date = _billing_cycle(card["closing_day"])
 
-            # Filtra transactions pelo account_id (FK) — mais preciso que filtrar por nome
+            # Filtra transactions pelo card_id — separa completamente das transações de conta bancária
             sql_saldo = f"""
                 SELECT
                     COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0.0)
                   - COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0.0)
                   AS saldo
                 FROM {_table("transactions")}
-                WHERE account_id = @account_id
+                WHERE card_id = @card_id
                   AND deleted = FALSE
                   AND data BETWEEN @start_date AND @end_date
             """
             params_saldo = [
-                bigquery.ScalarQueryParameter("account_id", "STRING", card["account_id"]),
+                bigquery.ScalarQueryParameter("card_id", "STRING", card["id"]),
                 bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
                 bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
             ]
@@ -233,14 +239,15 @@ def register_card_payment(card_id: str, valor: float, data: str = "") -> dict:
 
         card = cards[0]
 
-        # Pagamento vira Receita na conta do cartão — reduz o saldo no ciclo
+        # Pagamento vira Receita vinculada ao cartão — reduz o saldo calculado em get_card_debt_summary
         from agents.nami.tools import _today
         tx = create_transaction(
             name=f"Pagamento fatura — {card['name']}",
             valor=float(valor),
             tipo="Receita",
             categoria="Inbox",
-            conta=card["conta"],
+            conta=card["name"],    # nome do cartão para exibição
+            card_id=card["id"],    # vincula ao cartão — account_id fica NULL
             data=data or _today(),
         )
         if tx.get("status") != "ok":
@@ -337,19 +344,19 @@ def get_minimum_payment_cost(card_id: str) -> dict:
         card = cards[0]
         start_date, end_date = _billing_cycle(card["closing_day"])
 
-        # Busca saldo via account_id (FK) em vez de nome da conta
+        # Busca saldo via card_id — separa completamente das transações de conta bancária
         sql_saldo = f"""
             SELECT
                 COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0.0)
               - COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0.0)
               AS saldo
             FROM {_table("transactions")}
-            WHERE account_id = @account_id
+            WHERE card_id = @card_id
               AND deleted = FALSE
               AND data BETWEEN @start_date AND @end_date
         """
         params_saldo = [
-            bigquery.ScalarQueryParameter("account_id", "STRING", card["account_id"]),
+            bigquery.ScalarQueryParameter("card_id", "STRING", card["id"]),
             bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
             bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
         ]

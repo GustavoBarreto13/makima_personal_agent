@@ -915,13 +915,12 @@ async def handle_criar_conta(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def handle_criar_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Inicia o wizard de cadastro de cartão de crédito (7 passos)."""
     chat_id = str(update.message.chat_id)
-    # Busca contas do tipo cartao_credito para montar os botões de seleção
+    # Busca todas as contas ativas — cartões vinculam a contas correntes/poupança
     result = list_accounts(status="ativo")
-    contas = [c for c in result.get("accounts", []) if c.get("type") == "cartao_credito"]
+    contas = result.get("accounts", [])
     if not contas:
         await update.message.reply_text(
-            "❌ Nenhuma conta do tipo <b>cartão de crédito</b> encontrada.\n\n"
-            "Crie primeiro com /criar_conta (tipo: Cartão de Crédito).",
+            "❌ Nenhuma conta cadastrada.\n\nCrie primeiro com /criar_conta.",
             parse_mode="HTML",
         )
         return

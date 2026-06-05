@@ -14,7 +14,9 @@ from google.cloud import bigquery
 from agents.nami.tools import _project, _run_select, _run_dml, _invalidate_accounts_cache
 
 # Tipos de conta aceitos
-ACCOUNT_TYPES = ["corrente", "poupanca", "cartao_credito", "dinheiro", "investimento"]
+# Tipos de conta bancária aceitos. Cartões de crédito são gerenciados
+# separadamente em credit_cards e NÃO são contas — não estão aqui.
+ACCOUNT_TYPES = ["corrente", "poupanca", "dinheiro", "investimento"]
 
 
 def _table(name: str = "accounts") -> str:

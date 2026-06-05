@@ -86,7 +86,7 @@ def _resolve_account(name: str) -> dict | None:
 
 | Tool | Parâmetros obrigatórios |
 |---|---|
-| `create_account` | `name, type, data_inicio` — types: `corrente\|poupanca\|cartao_credito\|dinheiro\|investimento` |
+| `create_account` | `name, type, data_inicio` — types: `corrente\|poupanca\|dinheiro\|investimento` (cartões não são contas) |
 | `list_accounts` | `status="ativo"` — ou `"encerrado"`, `"todos"` |
 | `get_account_balance` | `account_id` — saldo = balance_inicial + receitas − despesas |
 

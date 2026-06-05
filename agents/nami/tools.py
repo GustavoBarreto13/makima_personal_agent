@@ -65,6 +65,52 @@ def _invalidate_accounts_cache() -> None:
     _accounts_cache = None
 
 
+# Cache de cartões ativos — mesmo padrão do cache de contas.
+# None = ainda não carregado; lista = já carregado (pode ser vazia).
+_cards_cache: list[dict] | None = None
+
+
+def _load_cards() -> list[dict]:
+    """Carrega cartões ativos do BigQuery e armazena em cache para evitar queries repetidas."""
+    global _cards_cache
+    if _cards_cache is None:
+        try:
+            rows = _run_select(
+                f"SELECT id, name FROM `{_project()}.nami_finance_agent.credit_cards` WHERE status = 'ativo'",
+                [],
+            )
+            _cards_cache = rows
+        except Exception:
+            # Se a tabela ainda não existir (ex.: ambiente de testes sem BQ),
+            # retorna lista vazia em vez de lançar exceção
+            _cards_cache = []
+    return _cards_cache
+
+
+def _invalidate_cards_cache() -> None:
+    """Invalida o cache de cartões para forçar recarga na próxima chamada."""
+    global _cards_cache
+    _cards_cache = None
+
+
+def _resolve_credit_card(name: str) -> dict | None:
+    """Resolve nome de cartão para {id, name} consultando credit_cards.
+
+    Aceita correspondência exata ou por prefixo (case-insensitive, sem acentos).
+    Retorna None se não encontrar ou se houver ambiguidade (mais de 1 match).
+
+    Args:
+        name: Nome ou prefixo do cartão digitado pelo usuário.
+
+    Returns:
+        Dicionário {"id": ..., "name": ...} ou None.
+    """
+    norm = _norm(name)
+    cards = _load_cards()
+    matches = [c for c in cards if _norm(c["name"]) == norm or _norm(c["name"]).startswith(norm)]
+    return matches[0] if len(matches) == 1 else None
+
+
 def _resolve_account(name: str) -> dict | None:
     """Resolve nome de conta para {id, name} consultando a tabela accounts.
 
@@ -250,11 +296,12 @@ def create_transaction(
     name: str,
     valor: float,
     tipo: str,
-    categoria: str,
-    conta: str = "Generico",
+    categoria: str = "Inbox",
+    conta: str = "",
     data: str = "",
     notes: str = "",
     subscription_id: str = "",
+    card_id: str = "",
 ) -> dict:
     """Cria uma nova transação financeira (despesa ou receita) no BigQuery.
 
@@ -263,10 +310,13 @@ def create_transaction(
         valor         — Valor em reais (ex.: 25.50)
         tipo          — "Despesa" ou "Receita"
         categoria     — Categoria da transação (deve estar na lista CATEGORIES)
-        conta         — Conta/meio de pagamento (padrão: "Generico")
+        conta         — Conta/meio de pagamento (padrão: resolução automática)
         data          — Data no formato AAAA-MM-DD (padrão: hoje)
         notes         — Observações opcionais
         subscription_id — ID de assinatura vinculada (opcional)
+        card_id       — ID do cartão de crédito (opcional). Quando fornecido,
+                        account_id fica NULL — a transação pertence ao cartão,
+                        não a uma conta bancária.
 
     Retorna um dicionário com "status": "ok" e o ID gerado, ou "status": "error"
     com uma mensagem descritiva se algo for inválido.
@@ -277,11 +327,19 @@ def create_transaction(
         # Retorna erro com a lista de opções válidas para o usuário corrigir
         return {"status": "error", "message": f"Categoria inválida: '{categoria}'. Opções: {', '.join(CATEGORIES)}"}
 
-    # Valida a conta: verifica se o texto informado corresponde a uma conta conhecida
-    acc = _match_account(conta)
-    if acc is None:
-        # Retorna erro com a lista de opções válidas
-        return {"status": "error", "message": f"Conta inválida: '{conta}'. Opções: {', '.join(ACCOUNTS)}"}
+    # Separa o caminho: transação de cartão vs. transação de conta bancária.
+    # As duas são mutuamente exclusivas — nunca account_id e card_id populados juntos.
+    if card_id:
+        # Transação pertence ao cartão: usa o nome passado como display, account_id fica NULL
+        acc = conta  # nome do cartão para exibição (campo conta continua preenchido por legibilidade)
+        acc_id = None
+    else:
+        # Transação pertence a uma conta bancária: resolve nome → {id, name}
+        acc_obj = _resolve_account(conta or "Generico")
+        if acc_obj is None:
+            return {"status": "error", "message": f"Conta inválida: '{conta}'. Use list_accounts() para ver as contas disponíveis."}
+        acc = acc_obj["name"]
+        acc_id = acc_obj["id"]
 
     # Valida o tipo: só aceita "Despesa" ou "Receita" — nada mais
     if tipo not in ("Despesa", "Receita"):
@@ -296,8 +354,8 @@ def create_transaction(
     # Monta a query SQL de inserção com parâmetros nomeados (@nome)
     # para evitar SQL injection (nunca concatenamos valores direto na string)
     sql = f"""
-        INSERT INTO {_table()} (id, name, valor, tipo, categoria, conta, data, source, notes, subscription_id, created_at, deleted)
-        VALUES (@id, @name, @valor, @tipo, @categoria, @conta, @data, @source, @notes, @subscription_id, CURRENT_TIMESTAMP(), FALSE)
+        INSERT INTO {_table()} (id, name, valor, tipo, categoria, conta, account_id, card_id, data, source, notes, subscription_id, created_at, deleted)
+        VALUES (@id, @name, @valor, @tipo, @categoria, @conta, @account_id, @card_id, @data, @source, @notes, @subscription_id, CURRENT_TIMESTAMP(), FALSE)
     """
 
     # Define os valores que substituirão cada @placeholder na query,
@@ -307,11 +365,13 @@ def create_transaction(
         bigquery.ScalarQueryParameter("name", "STRING", name),
         bigquery.ScalarQueryParameter("valor", "FLOAT64", float(valor)),  # float() garante tipo numérico
         bigquery.ScalarQueryParameter("tipo", "STRING", tipo),
-        bigquery.ScalarQueryParameter("categoria", "STRING", cat),   # cat já é o nome normalizado
-        bigquery.ScalarQueryParameter("conta", "STRING", acc),        # acc já é o nome normalizado
+        bigquery.ScalarQueryParameter("categoria", "STRING", cat),     # cat já é o nome normalizado
+        bigquery.ScalarQueryParameter("conta", "STRING", acc),          # acc já é o nome normalizado
+        bigquery.ScalarQueryParameter("account_id", "STRING", acc_id),  # NULL para transações de cartão
+        bigquery.ScalarQueryParameter("card_id", "STRING", card_id or None),  # NULL para transações de conta
         bigquery.ScalarQueryParameter("data", "DATE", tx_date),
         bigquery.ScalarQueryParameter("source", "STRING", "telegram"),  # marca que veio pelo bot
-        bigquery.ScalarQueryParameter("notes", "STRING", notes or None),            # None = NULL no banco
+        bigquery.ScalarQueryParameter("notes", "STRING", notes or None),
         bigquery.ScalarQueryParameter("subscription_id", "STRING", subscription_id or None),
     ]
 

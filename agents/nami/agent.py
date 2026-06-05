@@ -90,13 +90,16 @@ nami_agent = Agent(
         CONTAS FINANCEIRAS:
         - Ver contas cadastradas: list_accounts()
         - Cadastrar nova conta: create_account(name, type, data_inicio, institution, balance_inicial)
-          • types: "corrente", "poupanca", "cartao_credito", "dinheiro", "investimento"
+          • types: "corrente", "poupanca", "dinheiro", "investimento"
+          • Cartões de crédito NÃO são contas — não use tipo "cartao_credito". Cadastre o cartão
+            com register_credit_card vinculando a uma conta corrente ou poupança existente.
         - Saldo de uma conta: get_account_balance(account_id)
         - IMPORTANTE: contas devem ser cadastradas ANTES de registrar transações, cartões ou empréstimos.
           Se o usuário ainda não tem contas, peça para criar primeiro.
         - FLUXO de setup inicial:
-          1. create_account para cada conta (corrente, cartão, etc.)
-          2. register_credit_card vinculando ao account_name da conta criada
+          1. create_account para cada conta corrente/poupança
+          2. register_credit_card vinculando ao account_name de uma conta corrente ou poupança
+             (o cartão rastreia a dívida separadamente via card_id em transactions)
           3. register_loan vinculando ao account_name da conta de débito
 
         ANÁLISES:

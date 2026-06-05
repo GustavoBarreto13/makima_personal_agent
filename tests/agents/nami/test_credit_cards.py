@@ -63,6 +63,7 @@ def test_register_credit_card_com_divida_gera_transacao(mock_project, mock_dml, 
     mock_ct.assert_called_once()
     _, kwargs = mock_ct.call_args
     assert kwargs.get("tipo") == "Despesa"
+    assert kwargs.get("card_id") is not None  # transação de dívida inicial deve ter card_id
     _clear_cache()
 
 
@@ -126,7 +127,8 @@ def test_register_card_payment_gera_transacao_receita(mock_project, mock_select,
     mock_ct.assert_called_once()
     _, kwargs = mock_ct.call_args
     assert kwargs.get("tipo") == "Receita"
-    assert kwargs.get("conta") == "Cartao Nu"
+    assert kwargs.get("conta") == "Nu"       # nome do cartão, não da conta bancária
+    assert kwargs.get("card_id") == "card-1" # vincula ao cartão
 
 
 @patch("agents.nami.tools_credit_cards.get_card_debt_summary")

@@ -1,7 +1,7 @@
 -- Run in BigQuery console after creating dataset:
 --   bq mk --dataset <GCP_PROJECT_ID>:nami_finance_agent
 
-CREATE TABLE IF NOT EXISTS `nami_finance_agent.transactions` (
+CREATE OR REPLACE TABLE `nami_finance_agent.transactions` (
   id              STRING    NOT NULL,
   name            STRING    NOT NULL,
   valor           FLOAT64   NOT NULL,
@@ -14,12 +14,12 @@ CREATE TABLE IF NOT EXISTS `nami_finance_agent.transactions` (
   subscription_id STRING,
   created_at      TIMESTAMP NOT NULL,
   updated_at      TIMESTAMP,
-  deleted         BOOL      NOT NULL DEFAULT FALSE
+  deleted         BOOL      NOT NULL
 )
 PARTITION BY data
 CLUSTER BY categoria, conta;
 
-CREATE TABLE IF NOT EXISTS `nami_finance_agent.subscriptions` (
+CREATE OR REPLACE TABLE `nami_finance_agent.subscriptions` (
   id           STRING    NOT NULL,
   name         STRING    NOT NULL,
   valor        FLOAT64   NOT NULL,
@@ -42,7 +42,7 @@ CLUSTER BY status;
 -- ALTER TABLE `<GCP_PROJECT_ID>.nami_finance_agent.transactions`
 --   ADD COLUMN IF NOT EXISTS installment_group_id STRING;
 
-CREATE TABLE IF NOT EXISTS `nami_finance_agent.installment_groups` (
+CREATE OR REPLACE TABLE `nami_finance_agent.installment_groups` (
   id            STRING    NOT NULL,
   name          STRING    NOT NULL,
   total_valor   FLOAT64   NOT NULL,
@@ -60,14 +60,14 @@ CREATE TABLE IF NOT EXISTS `nami_finance_agent.installment_groups` (
 -- Accounts — entidade mestra de contas (substitui lista ACCOUNTS hardcoded)
 -- ─────────────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS `nami_finance_agent.accounts` (
+CREATE OR REPLACE TABLE `nami_finance_agent.accounts` (
   id              STRING    NOT NULL,   -- UUID gerado em Python
   name            STRING    NOT NULL,   -- "Cartao Nu", "NuConta", "Itau"
   institution     STRING,               -- "Nubank", "Itaú", "Mercado Pago"
   type            STRING    NOT NULL,   -- "corrente" | "poupanca" | "cartao_credito" | "dinheiro" | "investimento"
-  balance_inicial FLOAT64   NOT NULL DEFAULT 0.0,
+  balance_inicial FLOAT64   DEFAULT 0.0,
   data_inicio     DATE      NOT NULL,
-  status          STRING    NOT NULL DEFAULT "ativo",  -- "ativo" | "encerrado"
+  status          STRING    DEFAULT "ativo",  -- "ativo" | "encerrado"
   notes           STRING,
   created_at      TIMESTAMP NOT NULL,
   updated_at      TIMESTAMP
@@ -79,6 +79,11 @@ CREATE TABLE IF NOT EXISTS `nami_finance_agent.accounts` (
 -- ALTER TABLE `<GCP_PROJECT_ID>.nami_finance_agent.installment_groups` ADD COLUMN account_id STRING;
 -- ALTER TABLE `<GCP_PROJECT_ID>.nami_finance_agent.credit_cards`       ADD COLUMN account_id STRING;
 -- ALTER TABLE `<GCP_PROJECT_ID>.nami_finance_agent.loans`              ADD COLUMN account_id STRING;
+
+-- card_id: quando a transação pertence a um cartão de crédito (e não a uma conta bancária),
+-- este campo contém o ID do cartão (credit_cards.id) e account_id fica NULL.
+-- account_id e card_id são mutuamente exclusivos — nunca os dois populados na mesma linha.
+-- ALTER TABLE `<GCP_PROJECT_ID>.nami_finance_agent.transactions` ADD COLUMN card_id STRING;
 
 -- Backfill: criar contas iniciais e popular account_id (rodar após CREATE accounts):
 -- INSERT INTO `<GCP_PROJECT_ID>.nami_finance_agent.accounts`
@@ -111,10 +116,10 @@ CREATE TABLE IF NOT EXISTS `nami_finance_agent.accounts` (
 -- no ciclo de faturamento). A tabela `credit_cards` guarda apenas metadados.
 -- card_debt_entries foi removida — transactions é a única fonte da verdade.
 
-CREATE TABLE IF NOT EXISTS `nami_finance_agent.credit_cards` (
+CREATE OR REPLACE TABLE `nami_finance_agent.credit_cards` (
   id                  STRING    NOT NULL,
   name                STRING    NOT NULL,
-  account_id          STRING    NOT NULL,  -- FK para accounts.id (conta do tipo cartao_credito)
+  account_id          STRING    NOT NULL,  -- FK para accounts.id (conta corrente ou poupança de onde a fatura é paga)
   limite              FLOAT64   NOT NULL,
   taxa_juros_mensal   FLOAT64   NOT NULL,
   closing_day         INT64     NOT NULL,
@@ -129,7 +134,7 @@ CREATE TABLE IF NOT EXISTS `nami_finance_agent.credit_cards` (
 -- Feature 3: Tracker de Empréstimos e Financiamentos
 -- ─────────────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS `nami_finance_agent.loans` (
+CREATE OR REPLACE TABLE `nami_finance_agent.loans` (
   id                  STRING    NOT NULL,
   name                STRING    NOT NULL,
   tipo                STRING    NOT NULL,
@@ -152,7 +157,7 @@ CREATE TABLE IF NOT EXISTS `nami_finance_agent.loans` (
 -- Feature 4: Orçamento por Categoria
 -- ─────────────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS `nami_finance_agent.budgets` (
+CREATE OR REPLACE TABLE `nami_finance_agent.budgets` (
   id         STRING    NOT NULL,
   month      STRING    NOT NULL,   -- "YYYY-MM"
   categoria  STRING    NOT NULL,
