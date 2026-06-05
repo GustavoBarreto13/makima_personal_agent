@@ -12,7 +12,7 @@ import pytest
 from unittest.mock import patch, MagicMock, call
 
 
-@patch("agents.nami.tools._run_dml")
+@patch("agents.nami.tools_installments._run_dml")
 @patch("agents.nami.tools._project")
 def test_create_installment_gera_n_transacoes(mock_project, mock_dml):
     """Verifica que create_installment faz 1 INSERT no grupo + N INSERTs de parcelas."""

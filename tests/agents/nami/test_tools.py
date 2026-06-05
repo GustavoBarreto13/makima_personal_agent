@@ -141,10 +141,12 @@ def test_get_spending_summary_by_categoria(mock_project, mock_select):
 def test_get_spending_trend_includes_projection(mock_project, mock_select):
     """Verifica que get_spending_trend retorna o histórico mensal e inclui projeção."""
     mock_project.return_value = "test-project"
+    from datetime import date
+    cur = date.today().strftime("%Y-%m")
     mock_select.return_value = [
         {"month": "2026-03", "total": 2100.0},
         {"month": "2026-04", "total": 1950.0},
-        {"month": "2026-05", "total": 1200.0},
+        {"month": cur, "total": 1200.0},
     ]
 
     from agents.nami.tools import get_spending_trend
