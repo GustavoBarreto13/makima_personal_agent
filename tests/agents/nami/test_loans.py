@@ -48,6 +48,9 @@ def test_register_loan_price_success(mock_project, mock_dml):
     mock_project.return_value = "test-project"
     mock_dml.return_value = 1
 
+    import agents.nami.tools as t
+    t._accounts_cache = [{"id": "acc-itau", "name": "Itau"}]
+
     from agents.nami.tools_loans import register_loan
     result = register_loan(
         name="Carro Onix", tipo="veiculo", sistema_amortizacao="PRICE",

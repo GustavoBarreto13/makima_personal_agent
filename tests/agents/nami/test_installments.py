@@ -19,6 +19,9 @@ def test_create_installment_gera_n_transacoes(mock_project, mock_dml):
     mock_project.return_value = "test-project"
     mock_dml.return_value = 1
 
+    import agents.nami.tools as t
+    t._accounts_cache = [{"id": "acc-nu", "name": "Cartao Nu"}]
+
     from agents.nami.tools_installments import create_installment
     result = create_installment(
         name="Notebook Dell",
@@ -34,6 +37,7 @@ def test_create_installment_gera_n_transacoes(mock_project, mock_dml):
     assert len(result["transaction_ids"]) == 12
     # 1 INSERT no grupo + 12 INSERTs de parcelas = 13 chamadas
     assert mock_dml.call_count == 13
+    t._accounts_cache = None
 
 
 @patch("agents.nami.tools._run_dml")
@@ -43,12 +47,16 @@ def test_create_installment_valor_parcela_correto(mock_project, mock_dml):
     mock_project.return_value = "test-project"
     mock_dml.return_value = 1
 
+    import agents.nami.tools as t
+    t._accounts_cache = [{"id": "acc-itau", "name": "Cartao Itau"}]
+
     from agents.nami.tools_installments import create_installment
     result = create_installment("Geladeira", 1200.0, 4, "Cartao Itau", "Eletronicos", "2026-07-01")
 
     assert result["status"] == "ok"
     # 1200 / 4 = 300.00 por parcela
     assert "300,00" in result["message"] or "300.00" in result["message"]
+    t._accounts_cache = None
 
 
 @patch("agents.nami.tools._run_dml")

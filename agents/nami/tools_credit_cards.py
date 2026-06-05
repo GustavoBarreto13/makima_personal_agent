@@ -6,10 +6,10 @@ e simular cenários de quitação usando o Método Avalanche.
 Arquitetura: `transactions` é a fonte da verdade para saldo de cartões.
 - Dívida inicial → transação tipo Despesa na conta do cartão
 - Pagamento de fatura → transação tipo Receita na conta do cartão
-- Saldo atual = SUM(Despesas) - SUM(Receitas) da conta no ciclo de faturamento
+- Saldo atual = SUM(Despesas) - SUM(Receitas) via account_id no ciclo de faturamento
 
-A tabela `credit_cards` guarda apenas metadados (limite, taxa, dias de fechamento).
-A tabela `card_debt_entries` foi removida.
+A tabela `credit_cards` guarda apenas metadados (limite, taxa, dias de fechamento)
+e vincula ao cadastro em `accounts` via account_id (FK lógica).
 
 Usage:
     Importado automaticamente pelo nami_agent em agents/nami/agent.py.
@@ -21,7 +21,7 @@ from datetime import date
 
 from agents.nami.tools import (
     _run_dml, _run_select, _table, _project,
-    _match_account, _today, ACCOUNTS,
+    _resolve_account,
     create_transaction,
 )
 from google.cloud import bigquery
@@ -44,15 +44,12 @@ def _billing_cycle(closing_day: int) -> tuple:
     today = date.today()
 
     if today.day <= closing_day:
-        # Ainda não passou o fechamento deste mês — ciclo começou no mês anterior
         prev_month = today.month - 1 if today.month > 1 else 12
         prev_year = today.year if today.month > 1 else today.year - 1
-        # Garante que o dia de início não ultrapasse o último dia do mês anterior
         last_day_prev = monthrange(prev_year, prev_month)[1]
         start_day = min(closing_day + 1, last_day_prev)
         start = date(prev_year, prev_month, start_day)
     else:
-        # Fechamento já passou este mês — ciclo começou logo após o fechamento
         last_day_cur = monthrange(today.year, today.month)[1]
         start_day = min(closing_day + 1, last_day_cur)
         start = date(today.year, today.month, start_day)
@@ -62,7 +59,7 @@ def _billing_cycle(closing_day: int) -> tuple:
 
 def register_credit_card(
     name: str,
-    conta_key: str,
+    account_name: str,
     limite: float,
     taxa_juros_mensal: float,
     closing_day: int,
@@ -70,16 +67,16 @@ def register_credit_card(
     current_debt: float = 0.0,
     notes: str = "",
 ) -> dict:
-    """Cadastra um cartão de crédito com suas informações e dívida inicial.
+    """Cadastra um cartão de crédito e vincula a uma conta existente.
 
-    Se houver dívida inicial, ela é registrada como uma transação tipo Despesa
-    na conta do cartão — mantendo `transactions` como fonte da verdade.
+    A conta deve estar cadastrada em `accounts` (tipo cartao_credito).
+    Se houver dívida inicial, ela é registrada como transação tipo Despesa.
 
     Args:
-        name: Nome do cartão (ex.: "Nubank")
-        conta_key: Chave da conta em transactions (deve estar em ACCOUNTS)
+        name: Nome do cartão (ex.: "Nubank", "Itaú Platinum")
+        account_name: Nome da conta na tabela accounts (ex.: "Cartao Nu")
         limite: Limite total do cartão em reais
-        taxa_juros_mensal: Taxa de juros mensal (ex.: 0.15 para 15%)
+        taxa_juros_mensal: Taxa de juros mensal decimal (ex.: 0.15 para 15%)
         closing_day: Dia do fechamento da fatura (1-31)
         due_day: Dia do vencimento da fatura (1-31)
         current_debt: Dívida atual em reais (padrão: 0)
@@ -88,29 +85,29 @@ def register_credit_card(
     Returns:
         Dicionário com "status": "ok" e id do cartão, ou "status": "error".
     """
-    acc = _match_account(conta_key)
+    # Resolve nome → {id, name} na tabela accounts
+    acc = _resolve_account(account_name)
     if acc is None:
-        return {"status": "error", "message": f"Conta inválida: '{conta_key}'. Opções: {', '.join(ACCOUNTS)}"}
+        return {"status": "error", "message": f"Conta não encontrada: '{account_name}'. Use list_accounts() para ver as contas disponíveis."}
 
     card_id = str(uuid.uuid4())
 
-    # Insere os metadados do cartão (limite, taxa, dias de fechamento/vencimento)
     sql = f"""
         INSERT INTO {_table("credit_cards")}
-          (id, name, conta_key, limite, taxa_juros_mensal, closing_day, due_day,
+          (id, name, account_id, limite, taxa_juros_mensal, closing_day, due_day,
            status, notes, created_at)
-        VALUES (@id, @name, @conta_key, @limite, @taxa, @closing, @due,
+        VALUES (@id, @name, @account_id, @limite, @taxa, @closing, @due,
                 'ativo', @notes, CURRENT_TIMESTAMP())
     """
     params = [
         bigquery.ScalarQueryParameter("id", "STRING", card_id),
         bigquery.ScalarQueryParameter("name", "STRING", name),
-        bigquery.ScalarQueryParameter("conta_key", "STRING", acc),
+        bigquery.ScalarQueryParameter("account_id", "STRING", acc["id"]),
         bigquery.ScalarQueryParameter("limite", "FLOAT64", float(limite)),
         bigquery.ScalarQueryParameter("taxa", "FLOAT64", float(taxa_juros_mensal)),
         bigquery.ScalarQueryParameter("closing", "INT64", int(closing_day)),
         bigquery.ScalarQueryParameter("due", "INT64", int(due_day)),
-        bigquery.ScalarQueryParameter("notes", "STRING", notes or None),
+        bigquery.ScalarQueryParameter("notes", "STRING", notes or ""),
     ]
 
     try:
@@ -125,7 +122,7 @@ def register_credit_card(
             valor=float(current_debt),
             tipo="Despesa",
             categoria="Inbox",
-            conta=acc,
+            conta=acc["name"],
         )
         if tx.get("status") != "ok":
             return {"status": "error", "message": f"Cartão criado mas erro ao registrar dívida: {tx.get('message')}"}
@@ -141,15 +138,18 @@ def get_card_debt_summary() -> dict:
     """Retorna dívida atual de cada cartão ativo e total consolidado.
 
     O saldo de cada cartão é calculado somando as Despesas menos as Receitas
-    em transactions para a conta do cartão, no ciclo de faturamento atual.
+    em transactions filtradas por account_id, no ciclo de faturamento atual.
 
     Returns:
         Dicionário com lista de cartões, dívida e utilização de cada um, e totais.
     """
+    # Busca cartões com nome da conta via JOIN em accounts
     sql_cards = f"""
-        SELECT id, name, conta_key, limite, taxa_juros_mensal, closing_day, due_day
-        FROM {_table("credit_cards")}
-        WHERE status = 'ativo'
+        SELECT cc.id, cc.name, cc.account_id, a.name AS conta,
+               cc.limite, cc.taxa_juros_mensal, cc.closing_day, cc.due_day
+        FROM {_table("credit_cards")} cc
+        JOIN {_table("accounts")} a ON a.id = cc.account_id
+        WHERE cc.status = 'ativo'
     """
 
     try:
@@ -160,22 +160,21 @@ def get_card_debt_summary() -> dict:
         total_limite = 0.0
 
         for card in cards:
-            # Calcula o intervalo do ciclo de faturamento deste cartão
             start_date, end_date = _billing_cycle(card["closing_day"])
 
-            # Saldo = Despesas - Receitas da conta no ciclo atual
+            # Filtra transactions pelo account_id (FK) — mais preciso que filtrar por nome
             sql_saldo = f"""
                 SELECT
                     COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0.0)
                   - COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0.0)
                   AS saldo
                 FROM {_table("transactions")}
-                WHERE conta = @conta_key
+                WHERE account_id = @account_id
                   AND deleted = FALSE
                   AND data BETWEEN @start_date AND @end_date
             """
             params_saldo = [
-                bigquery.ScalarQueryParameter("conta_key", "STRING", card["conta_key"]),
+                bigquery.ScalarQueryParameter("account_id", "STRING", card["account_id"]),
                 bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
                 bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
             ]
@@ -218,8 +217,13 @@ def register_card_payment(card_id: str, valor: float, data: str = "") -> dict:
     Returns:
         Dicionário com "status": "ok" ou "status": "error".
     """
-    # Busca o cartão para obter nome e conta_key
-    sql_card = f"SELECT name, conta_key FROM {_table('credit_cards')} WHERE id = @id AND status = 'ativo'"
+    # Busca cartão com nome da conta via JOIN (necessário para create_transaction)
+    sql_card = f"""
+        SELECT cc.id, cc.name, cc.account_id, a.name AS conta
+        FROM {_table("credit_cards")} cc
+        JOIN {_table("accounts")} a ON a.id = cc.account_id
+        WHERE cc.id = @id AND cc.status = 'ativo'
+    """
     params = [bigquery.ScalarQueryParameter("id", "STRING", card_id)]
 
     try:
@@ -230,12 +234,13 @@ def register_card_payment(card_id: str, valor: float, data: str = "") -> dict:
         card = cards[0]
 
         # Pagamento vira Receita na conta do cartão — reduz o saldo no ciclo
+        from agents.nami.tools import _today
         tx = create_transaction(
             name=f"Pagamento fatura — {card['name']}",
             valor=float(valor),
             tipo="Receita",
             categoria="Inbox",
-            conta=card["conta_key"],
+            conta=card["conta"],
             data=data or _today(),
         )
         if tx.get("status") != "ok":
@@ -265,7 +270,6 @@ def simulate_debt_payoff(monthly_payment: float) -> dict:
     if not cards:
         return {"status": "ok", "message": "Nenhuma dívida ativa nos cartões", "meses": 0, "juros_total": 0.0}
 
-    # Ordena pelo maior juros primeiro (Método Avalanche)
     cards_sorted = sorted(cards, key=lambda c: c["taxa_juros_mensal"], reverse=True)
 
     balances = {c["id"]: c["divida_atual"] for c in cards_sorted}
@@ -277,14 +281,12 @@ def simulate_debt_payoff(monthly_payment: float) -> dict:
         meses += 1
         payment_left = monthly_payment
 
-        # Aplica juros mensais em todos os cartões com saldo
         for cid in balances:
             if balances[cid] > 0:
                 juros = balances[cid] * rates[cid]
                 balances[cid] += juros
                 juros_total += juros
 
-        # Paga em ordem Avalanche (maior taxa primeiro)
         for card in cards_sorted:
             if payment_left <= 0:
                 break
@@ -312,7 +314,6 @@ def get_minimum_payment_cost(card_id: str) -> dict:
     """Calcula o custo total de pagar apenas o mínimo em um cartão.
 
     Simula o cenário de pagar apenas 15% do saldo por mês (padrão brasileiro).
-    O saldo atual é buscado via transactions (ciclo de faturamento atual).
 
     Args:
         card_id: ID do cartão a analisar
@@ -321,9 +322,10 @@ def get_minimum_payment_cost(card_id: str) -> dict:
         Dicionário com meses, juros total e custo total da dívida.
     """
     sql_card = f"""
-        SELECT id, name, taxa_juros_mensal, limite, conta_key, closing_day, due_day
-        FROM {_table('credit_cards')}
-        WHERE id = @id AND status = 'ativo'
+        SELECT cc.id, cc.name, cc.account_id, cc.taxa_juros_mensal, cc.limite,
+               cc.closing_day, cc.due_day
+        FROM {_table("credit_cards")} cc
+        WHERE cc.id = @id AND cc.status = 'ativo'
     """
     params = [bigquery.ScalarQueryParameter("id", "STRING", card_id)]
 
@@ -335,19 +337,19 @@ def get_minimum_payment_cost(card_id: str) -> dict:
         card = cards[0]
         start_date, end_date = _billing_cycle(card["closing_day"])
 
-        # Busca saldo via transactions (mesma lógica de get_card_debt_summary)
+        # Busca saldo via account_id (FK) em vez de nome da conta
         sql_saldo = f"""
             SELECT
                 COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0.0)
               - COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0.0)
               AS saldo
             FROM {_table("transactions")}
-            WHERE conta = @conta_key
+            WHERE account_id = @account_id
               AND deleted = FALSE
               AND data BETWEEN @start_date AND @end_date
         """
         params_saldo = [
-            bigquery.ScalarQueryParameter("conta_key", "STRING", card["conta_key"]),
+            bigquery.ScalarQueryParameter("account_id", "STRING", card["account_id"]),
             bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
             bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
         ]
@@ -359,8 +361,8 @@ def get_minimum_payment_cost(card_id: str) -> dict:
                     "custo_total": 0.0, "meses_para_quitar": 0, "juros_total": 0.0, "divida_atual": 0.0}
 
         i = card["taxa_juros_mensal"]
-        MIN_RATE = 0.15   # mínimo = 15% do saldo (regra padrão Brasil)
-        MIN_FLOOR = 50.0  # piso mínimo em reais
+        MIN_RATE = 0.15
+        MIN_FLOOR = 50.0
 
         balance = divida
         juros_total = 0.0

@@ -10,7 +10,7 @@ Usage:
 import uuid
 from agents.nami.tools import (
     _run_dml, _run_select, _table, _project,
-    _match_account, ACCOUNTS,
+    _resolve_account,
     create_transaction,
 )
 from agents.nami.tools_credit_cards import get_card_debt_summary
@@ -149,9 +149,9 @@ def register_loan(
     if sistema_amortizacao not in SISTEMAS_VALIDOS:
         return {"status": "error", "message": f"sistema_amortizacao inválido. Opções: {', '.join(SISTEMAS_VALIDOS)}"}
 
-    acc = _match_account(conta)
-    if acc is None:
-        return {"status": "error", "message": f"Conta inválida: '{conta}'. Opções: {', '.join(ACCOUNTS)}"}
+    acc_obj = _resolve_account(conta)
+    if acc_obj is None:
+        return {"status": "error", "message": f"Conta não encontrada: '{conta}'. Use list_accounts() para ver as contas disponíveis."}
 
     loan_id = str(uuid.uuid4())
 
@@ -159,10 +159,10 @@ def register_loan(
         INSERT INTO {_table("loans")}
           (id, name, tipo, sistema_amortizacao, valor_original, taxa_juros_mensal,
            num_parcelas_total, parcelas_pagas, valor_parcela, primeiro_vencimento,
-           conta, desconto_folha, status, notes, created_at)
+           conta, account_id, desconto_folha, status, notes, created_at)
         VALUES (@id, @name, @tipo, @sistema, @valor_original, @taxa,
                 @num_parcelas, @parcelas_pagas, @valor_parcela, @primeiro_vencimento,
-                @conta, @desconto_folha, 'ativo', @notes, CURRENT_TIMESTAMP())
+                @conta, @account_id, @desconto_folha, 'ativo', @notes, CURRENT_TIMESTAMP())
     """
     params = [
         bigquery.ScalarQueryParameter("id", "STRING", loan_id),
@@ -175,7 +175,8 @@ def register_loan(
         bigquery.ScalarQueryParameter("parcelas_pagas", "INT64", int(parcelas_pagas)),
         bigquery.ScalarQueryParameter("valor_parcela", "FLOAT64", float(valor_parcela)),
         bigquery.ScalarQueryParameter("primeiro_vencimento", "DATE", primeiro_vencimento),
-        bigquery.ScalarQueryParameter("conta", "STRING", acc),
+        bigquery.ScalarQueryParameter("conta", "STRING", acc_obj["name"]),
+        bigquery.ScalarQueryParameter("account_id", "STRING", acc_obj["id"]),
         bigquery.ScalarQueryParameter("desconto_folha", "BOOL", bool(desconto_folha)),
         bigquery.ScalarQueryParameter("notes", "STRING", notes or None),
     ]

@@ -16,8 +16,8 @@ from google.cloud import bigquery
 # Importa os helpers privados e constantes compartilhados do módulo principal
 from agents.nami.tools import (
     _run_dml, _run_select, _table, _project,
-    _match_category, _match_account,
-    CATEGORIES, ACCOUNTS,
+    _match_category, _resolve_account,
+    CATEGORIES,
 )
 
 
@@ -40,7 +40,7 @@ def create_installment(
         name: Nome da compra (ex.: "Notebook Dell")
         total_valor: Valor total em reais (ex.: 3600.00)
         num_parcelas: Número de parcelas — mínimo 2
-        conta: Conta/cartão usado (deve estar em ACCOUNTS)
+        conta: Conta/cartão usado (deve estar cadastrada em accounts)
         categoria: Categoria da compra (deve estar em CATEGORIES)
         first_due: Data da 1ª parcela no formato AAAA-MM-DD
         notes: Observações opcionais
@@ -54,9 +54,9 @@ def create_installment(
         {"status": "ok", "group_id": "...", "transaction_ids": [...]}
     """
     # Valida conta e categoria antes de qualquer acesso ao banco
-    acc = _match_account(conta)
-    if acc is None:
-        return {"status": "error", "message": f"Conta inválida: '{conta}'. Opções: {', '.join(ACCOUNTS)}"}
+    acc_obj = _resolve_account(conta)
+    if acc_obj is None:
+        return {"status": "error", "message": f"Conta não encontrada: '{conta}'. Use list_accounts() para ver as contas disponíveis."}
 
     cat = _match_category(categoria)
     if cat is None:
@@ -74,10 +74,10 @@ def create_installment(
     # Insere o registro do grupo na tabela installment_groups
     sql_group = f"""
         INSERT INTO {_table("installment_groups")}
-          (id, name, total_valor, num_parcelas, valor_parcela, conta, categoria,
-           first_due, notes, created_at, deleted)
+          (id, name, total_valor, num_parcelas, valor_parcela, conta, account_id,
+           categoria, first_due, notes, created_at, deleted)
         VALUES (@id, @name, @total_valor, @num_parcelas, @valor_parcela, @conta,
-                @categoria, @first_due, @notes, CURRENT_TIMESTAMP(), FALSE)
+                @account_id, @categoria, @first_due, @notes, CURRENT_TIMESTAMP(), FALSE)
     """
     params_group = [
         bigquery.ScalarQueryParameter("id", "STRING", group_id),
@@ -85,7 +85,8 @@ def create_installment(
         bigquery.ScalarQueryParameter("total_valor", "FLOAT64", float(total_valor)),
         bigquery.ScalarQueryParameter("num_parcelas", "INT64", int(num_parcelas)),
         bigquery.ScalarQueryParameter("valor_parcela", "FLOAT64", valor_parcela),
-        bigquery.ScalarQueryParameter("conta", "STRING", acc),
+        bigquery.ScalarQueryParameter("conta", "STRING", acc_obj["name"]),
+        bigquery.ScalarQueryParameter("account_id", "STRING", acc_obj["id"]),
         bigquery.ScalarQueryParameter("categoria", "STRING", cat),
         bigquery.ScalarQueryParameter("first_due", "DATE", first_due),
         bigquery.ScalarQueryParameter("notes", "STRING", notes or None),
@@ -118,17 +119,18 @@ def create_installment(
 
         sql_tx = f"""
             INSERT INTO {_table()}
-              (id, name, valor, tipo, categoria, conta, data, source,
+              (id, name, valor, tipo, categoria, conta, account_id, data, source,
                notes, subscription_id, installment_group_id, created_at, deleted)
-            VALUES (@id, @name, @valor, 'Despesa', @categoria, @conta, @data,
-                    'telegram', @notes, NULL, @group_id, CURRENT_TIMESTAMP(), FALSE)
+            VALUES (@id, @name, @valor, 'Despesa', @categoria, @conta, @account_id,
+                    @data, 'telegram', @notes, NULL, @group_id, CURRENT_TIMESTAMP(), FALSE)
         """
         params_tx = [
             bigquery.ScalarQueryParameter("id", "STRING", tx_id),
             bigquery.ScalarQueryParameter("name", "STRING", parcela_name),
             bigquery.ScalarQueryParameter("valor", "FLOAT64", valor_parcela),
             bigquery.ScalarQueryParameter("categoria", "STRING", cat),
-            bigquery.ScalarQueryParameter("conta", "STRING", acc),
+            bigquery.ScalarQueryParameter("conta", "STRING", acc_obj["name"]),
+            bigquery.ScalarQueryParameter("account_id", "STRING", acc_obj["id"]),
             bigquery.ScalarQueryParameter("data", "DATE", parcela_date),
             bigquery.ScalarQueryParameter("notes", "STRING", parcela_notes),
             bigquery.ScalarQueryParameter("group_id", "STRING", group_id),

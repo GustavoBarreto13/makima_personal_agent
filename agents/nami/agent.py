@@ -28,6 +28,11 @@ from agents.nami.tools_installments import (
     get_future_commitments,
     cancel_installment_group,
 )
+from agents.nami.tools_accounts import (
+    create_account,
+    list_accounts,
+    get_account_balance,
+)
 from agents.nami.tools_credit_cards import (
     register_credit_card,
     get_card_debt_summary,
@@ -163,6 +168,10 @@ nami_agent = Agent(
     """,
     # Lista de tools disponíveis para a Nami — todas acessam o BigQuery
     tools=[
+        # Contas financeiras
+        create_account,
+        list_accounts,
+        get_account_balance,
         # Transações e consultas
         create_transaction,
         query_expenses,
