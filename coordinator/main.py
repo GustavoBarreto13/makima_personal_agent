@@ -564,12 +564,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 pending["data"]["name"] = text
                 pending["step"] = "tipo"
                 botoes = [
-                    [InlineKeyboardButton("🏦 Corrente",          callback_data="nc_tipo:corrente"),
-                     InlineKeyboardButton("💰 Poupança",          callback_data="nc_tipo:poupanca")],
-                    [InlineKeyboardButton("💳 Cartão de Crédito", callback_data="nc_tipo:cartao_credito")],
-                    [InlineKeyboardButton("💵 Dinheiro",          callback_data="nc_tipo:dinheiro"),
-                     InlineKeyboardButton("📈 Investimento",      callback_data="nc_tipo:investimento")],
-                    [InlineKeyboardButton("❌ Cancelar",          callback_data="nc_cancel")],
+                    [InlineKeyboardButton("🏦 Corrente",    callback_data="nc_tipo:corrente"),
+                     InlineKeyboardButton("💰 Poupança",    callback_data="nc_tipo:poupanca")],
+                    [InlineKeyboardButton("💵 Dinheiro",    callback_data="nc_tipo:dinheiro"),
+                     InlineKeyboardButton("📈 Investimento", callback_data="nc_tipo:investimento")],
+                    [InlineKeyboardButton("❌ Cancelar",    callback_data="nc_cancel")],
                 ]
                 await update.message.reply_text(
                     f"🏦 <b>{text}</b> — Qual o tipo?",
@@ -920,7 +919,9 @@ async def handle_criar_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE
     contas = result.get("accounts", [])
     if not contas:
         await update.message.reply_text(
-            "❌ Nenhuma conta cadastrada.\n\nCrie primeiro com /criar_conta.",
+            "❌ Nenhuma conta bancária cadastrada.\n\n"
+            "Cartões de crédito precisam de uma conta corrente ou poupança para vincular.\n\n"
+            "Crie primeiro com /criar_conta (tipo: Corrente ou Poupança).",
             parse_mode="HTML",
         )
         return
