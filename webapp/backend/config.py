@@ -9,18 +9,28 @@ Usage:
     from webapp.backend.config import SESSION_SECRET, ALLOWED_EMAIL
 """
 
+import logging  # Módulo padrão do Python para emitir avisos e logs
 import os  # Módulo padrão do Python para ler variáveis de ambiente
 
 # --- Variáveis de autenticação e segurança ---
 
 # Email permitido para login via Google OAuth.
 # Somente este email poderá acessar a webapp. Se vazio, qualquer email passa (inseguro em produção).
-ALLOWED_EMAIL: str = os.getenv("ALLOWED_EMAIL", "")
+# O .strip() remove espaços acidentais ao redor do valor (ex.: "email@gmail.com " no .env)
+ALLOWED_EMAIL: str = os.getenv("ALLOWED_EMAIL", "").strip()
 
 # Segredo usado para assinar cookies de sessão.
 # Em produção, deve ser uma string longa e aleatória (ex.: gerada com `secrets.token_hex(32)`).
 # O valor padrão "dev-secret-change-me" só deve existir em ambiente de desenvolvimento.
 SESSION_SECRET: str = os.getenv("SESSION_SECRET", "dev-secret-change-me")
+
+# Avisa no log se SESSION_SECRET estiver com o valor padrão inseguro.
+# Isso garante visibilidade em produção se a variável não foi configurada corretamente.
+if SESSION_SECRET == "dev-secret-change-me":
+    logging.warning(
+        "AVISO DE SEGURANÇA: SESSION_SECRET está com o valor padrão inseguro. "
+        "Configure a variável de ambiente SESSION_SECRET antes do deploy em produção."
+    )
 
 # Client ID do app OAuth do Google Cloud Console.
 # Necessário para o fluxo de login "Entrar com Google".

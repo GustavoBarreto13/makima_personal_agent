@@ -83,5 +83,15 @@ def require_user(makima_session: str | None = Cookie(default=None)) -> dict:
             detail="Sessão inválida: cookie corrompido ou adulterado.",
         )
 
+    except itsdangerous.BadData:
+        # Catch-all para qualquer outro erro de desserialização do itsdangerous:
+        # payload corrompido, encoding inválido, formato inesperado, etc.
+        # BadPayload (subclasse de BadData) não é capturado pelos blocos acima,
+        # então sem este bloco ele propagaria como erro 500 interno.
+        raise HTTPException(
+            status_code=401,
+            detail="Sessão inválida.",
+        )
+
     # Retorna o payload decodificado com os dados do usuário
     return payload

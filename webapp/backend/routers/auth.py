@@ -188,14 +188,23 @@ async def logout() -> RedirectResponse:
     Returns:
         Redirecionamento para "/" sem o cookie de sessão.
     """
+    # Determina se a aplicação está rodando em HTTPS (produção).
+    # Em produção, o cookie foi criado com Secure=True; para deletá-lo, o request
+    # de deleção também precisa incluir Secure=True — caso contrário, o browser ignora
+    # a instrução de deleção e o logout falha silenciosamente.
+    is_secure = OAUTH_REDIRECT_URL.startswith("https://")
+
     # Cria a resposta de redirecionamento para a página inicial
     response = RedirectResponse(url="/")
 
-    # Remove o cookie apagando-o (define expiração imediata)
+    # Remove o cookie apagando-o (define expiração imediata).
+    # Os atributos (httponly, samesite, secure) devem ser idênticos aos usados ao criar
+    # o cookie em /callback — browsers só sobrescrevem/deletam cookies com atributos iguais.
     response.delete_cookie(
         key=_COOKIE_NAME,
         httponly=True,
         samesite="lax",
+        secure=is_secure,
     )
 
     return response
@@ -241,6 +250,15 @@ async def me(request: Request) -> JSONResponse:
         return JSONResponse(
             status_code=401,
             content={"error": "Sessão inválida: cookie corrompido ou adulterado."},
+        )
+    except itsdangerous.BadData:
+        # Catch-all para qualquer outro erro de desserialização do itsdangerous:
+        # payload corrompido, encoding inválido, formato inesperado, etc.
+        # BadPayload (subclasse de BadData) não é capturado pelos blocos acima,
+        # então sem este bloco ele propagaria como erro 500 interno.
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Sessão inválida."},
         )
 
     # Retorna os dados do usuário armazenados no cookie
