@@ -16,8 +16,8 @@ Usage:
 import itsdangerous  # Biblioteca de assinatura segura de dados (mesmo usado em auth.py)
 from fastapi import Cookie, HTTPException  # Cookie extrai o valor do cookie; HTTPException retorna erros HTTP
 
-# Importa o segredo compartilhado com o módulo de autenticação
-from webapp.backend.config import SESSION_SECRET
+# Importa as constantes compartilhadas com o módulo de autenticação
+from webapp.backend.config import SESSION_COOKIE_NAME, SESSION_MAX_AGE, SESSION_SECRET
 
 # --- Serializer para validar os cookies de sessão ---
 
@@ -25,9 +25,9 @@ from webapp.backend.config import SESSION_SECRET
 # Se qualquer parâmetro diferir (segredo, salt), a validação falhará.
 _serializer = itsdangerous.URLSafeTimedSerializer(SESSION_SECRET, salt="makima-session")
 
-# Tempo máximo de validade do cookie: 7 dias em segundos.
-# Tokens mais antigos que isso são rejeitados, mesmo que a assinatura seja válida.
-_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 604800 segundos
+# Aliases locais — SESSION_MAX_AGE e SESSION_COOKIE_NAME são fonte única de verdade (config.py)
+_COOKIE_MAX_AGE = SESSION_MAX_AGE    # 7 dias em segundos
+_COOKIE_NAME = SESSION_COOKIE_NAME   # "makima_session"
 
 
 def require_user(makima_session: str | None = Cookie(default=None)) -> dict:

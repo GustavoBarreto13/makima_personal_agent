@@ -22,6 +22,8 @@ from webapp.backend.config import (
     GOOGLE_OAUTH_CLIENT_ID,  # ID do app no Google Cloud Console
     GOOGLE_OAUTH_CLIENT_SECRET,  # Segredo do app no Google Cloud Console
     OAUTH_REDIRECT_URL,  # URL para onde o Google redireciona após o login
+    SESSION_COOKIE_NAME,  # Nome do cookie de sessão (fonte única de verdade)
+    SESSION_MAX_AGE,  # Expiração do cookie em segundos (fonte única de verdade)
     SESSION_SECRET,  # Chave para assinar os cookies de sessão
 )
 
@@ -53,11 +55,9 @@ oauth.register(
 # "makima-session" é o "salt" — diferencia tokens de contextos diferentes com o mesmo segredo.
 _serializer = itsdangerous.URLSafeTimedSerializer(SESSION_SECRET, salt="makima-session")
 
-# Tempo de expiração do cookie de sessão: 7 dias em segundos
-_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 604800 segundos
-
-# Nome do cookie de sessão persistido no navegador
-_COOKIE_NAME = "makima_session"
+# Aliases locais para as constantes de config — facilita leitura interna do módulo
+_COOKIE_MAX_AGE = SESSION_MAX_AGE  # 7 dias em segundos (definido em config.py)
+_COOKIE_NAME = SESSION_COOKIE_NAME  # "makima_session" (definido em config.py)
 
 
 # --- Criação do router FastAPI ---

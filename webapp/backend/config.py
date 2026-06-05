@@ -35,3 +35,13 @@ GOOGLE_OAUTH_CLIENT_SECRET: str = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
 OAUTH_REDIRECT_URL: str = os.getenv(
     "OAUTH_REDIRECT_URL", "http://localhost:8080/auth/callback"
 )
+
+# --- Constantes de sessão ---
+
+# Nome do cookie de sessão gravado no navegador do usuário.
+# Compartilhado entre auth.py (que emite o cookie) e deps.py (que valida o cookie).
+SESSION_COOKIE_NAME: str = "makima_session"
+
+# Duração máxima do cookie de sessão: 7 dias em segundos.
+# Após esse período, o itsdangerous rejeita o token mesmo que a assinatura seja válida.
+SESSION_MAX_AGE: int = 60 * 60 * 24 * 7  # 604800 segundos
