@@ -36,6 +36,8 @@ os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
 
 from coordinator.agent import create_makima  # noqa: E402 — import após load_dotenv
 from agents.frieren.tools import get_book_by_id, update_book_by_id  # noqa: E402
+from agents.nami.tools_accounts import create_account, list_accounts  # noqa: E402
+from agents.nami.tools_credit_cards import register_credit_card  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -262,6 +264,118 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_reply_markup(reply_markup=None)
         return
 
+    # ── Wizard /criar-conta (prefixo nc_) ─────────────────────────────────────
+
+    if data_str.startswith("nc_tipo:"):
+        # Usuário escolheu o tipo da conta — avança para o passo de instituição
+        tipo = data_str.split(":", 1)[1]
+        pending = _pending_action.get(chat_id, {})
+        if pending.get("action") != "criar_conta":
+            await query.answer("Wizard expirou. Use /criar_conta novamente.")
+            return
+        pending["data"]["type"] = tipo
+        pending["step"] = "instituicao"
+        teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⏭ Pular", callback_data="nc_skip_inst")]])
+        await query.edit_message_text(
+            f"🏦 <b>Nova Conta</b> — tipo: <b>{tipo}</b>\n\nQual a instituição?\n<i>Exemplo: Nubank, Itaú</i>",
+            parse_mode="HTML", reply_markup=teclado,
+        )
+        return
+
+    if data_str == "nc_skip_inst":
+        pending = _pending_action.get(chat_id, {})
+        if pending.get("action") != "criar_conta":
+            return
+        pending["data"]["institution"] = ""
+        pending["step"] = "data_inicio"
+        teclado = InlineKeyboardMarkup([[InlineKeyboardButton("📅 Hoje", callback_data="nc_hoje")]])
+        await query.edit_message_text(
+            "🏦 <b>Nova Conta</b>\n\nData de início do rastreamento?\n<i>Formato: YYYY-MM-DD</i>",
+            parse_mode="HTML", reply_markup=teclado,
+        )
+        return
+
+    if data_str == "nc_hoje":
+        pending = _pending_action.get(chat_id, {})
+        if pending.get("action") != "criar_conta":
+            return
+        pending["data"]["data_inicio"] = date.today().isoformat()
+        pending["step"] = "balance"
+        teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⏭ R$0,00", callback_data="nc_skip_bal")]])
+        await query.edit_message_text(
+            "🏦 <b>Nova Conta</b>\n\nSaldo inicial em reais?\n<i>Exemplo: 1500 ou 1500.50</i>",
+            parse_mode="HTML", reply_markup=teclado,
+        )
+        return
+
+    if data_str == "nc_skip_bal":
+        pending = _pending_action.get(chat_id, {})
+        if pending.get("action") != "criar_conta":
+            return
+        await _finalizar_criar_conta(chat_id, pending, query=query)
+        return
+
+    if data_str == "nc_cancel":
+        _pending_action.pop(chat_id, None)
+        await query.edit_message_text("❌ Cancelado.", parse_mode="HTML")
+        return
+
+    # ── Wizard /criar-cartao (prefixo ncc_) ───────────────────────────────────
+
+    if data_str.startswith("ncc_acc:"):
+        # Formato: ncc_acc:<account_id> — usuário escolheu a conta para vincular ao cartão
+        acc_id = data_str[len("ncc_acc:"):]
+        pending = _pending_action.get(chat_id, {})
+        if pending.get("action") != "criar_cartao":
+            await query.answer("Wizard expirou. Use /criar_cartao novamente.")
+            return
+        # Recupera o nome da conta a partir do dict guardado no início do wizard
+        acc_name = pending.get("contas", {}).get(acc_id, acc_id)
+        pending["data"]["account_id"] = acc_id
+        pending["data"]["account_name"] = acc_name
+        pending["step"] = "nome"
+        await query.edit_message_text(
+            f"💳 <b>Conta:</b> {acc_name}\n\nQual o nome do cartão?\n<i>Exemplo: Nubank, Itaú Platinum</i>",
+            parse_mode="HTML",
+        )
+        return
+
+    if data_str.startswith("ncc_day:"):
+        # Formato: ncc_day:<n> — usado tanto para dia de fechamento quanto de vencimento
+        day = int(data_str.split(":")[1])
+        pending = _pending_action.get(chat_id, {})
+        if pending.get("action") != "criar_cartao":
+            return
+        if pending["step"] == "fechamento":
+            pending["data"]["closing_day"] = day
+            pending["step"] = "vencimento"
+            await query.edit_message_text(
+                f"💳 Fechamento: dia <b>{day}</b>\n\nDia de <b>vencimento</b>? (1–31)",
+                parse_mode="HTML", reply_markup=_day_buttons("ncc_day"),
+            )
+        elif pending["step"] == "vencimento":
+            pending["data"]["due_day"] = day
+            pending["step"] = "divida"
+            teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⏭ Nenhuma (R$0,00)", callback_data="ncc_skip_debt")]])
+            await query.edit_message_text(
+                f"💳 Vencimento: dia <b>{day}</b>\n\nDívida atual em reais?\n<i>Ou clique em Nenhuma</i>",
+                parse_mode="HTML", reply_markup=teclado,
+            )
+        return
+
+    if data_str == "ncc_skip_debt":
+        pending = _pending_action.get(chat_id, {})
+        if pending.get("action") != "criar_cartao":
+            return
+        pending["data"]["current_debt"] = 0.0
+        await _finalizar_criar_cartao(chat_id, pending, query=query)
+        return
+
+    if data_str == "ncc_cancel":
+        _pending_action.pop(chat_id, None)
+        await query.edit_message_text("❌ Cancelado.", parse_mode="HTML")
+        return
+
 
 def _book_to_menu_data(book: dict) -> dict:
     """
@@ -295,6 +409,78 @@ def _book_to_menu_data(book: dict) -> dict:
         "date_finished": str(book["date_finished"]) if book.get("date_finished") else None,
         "cover_url":     book.get("cover_url"),
     }
+
+
+def _day_buttons(prefix: str) -> InlineKeyboardMarkup:
+    """Gera teclado inline com dias comuns de fechamento/vencimento de fatura."""
+    dias = [1, 3, 5, 6, 10, 13, 15, 20, 25, 30]
+    linhas = [
+        [InlineKeyboardButton(str(d), callback_data=f"{prefix}:{d}") for d in dias[:5]],
+        [InlineKeyboardButton(str(d), callback_data=f"{prefix}:{d}") for d in dias[5:]],
+    ]
+    return InlineKeyboardMarkup(linhas)
+
+
+async def _finalizar_criar_conta(chat_id: str, pending: dict, query=None, update=None) -> None:
+    """Executa create_account com os dados coletados e envia confirmação ao usuário."""
+    d = pending["data"]
+    _pending_action.pop(chat_id, None)
+    result = create_account(
+        name=d["name"],
+        type=d["type"],
+        data_inicio=d.get("data_inicio", ""),
+        institution=d.get("institution", ""),
+        balance_inicial=float(d.get("balance_inicial", 0.0)),
+    )
+    if result["status"] == "ok":
+        bal = float(d.get("balance_inicial", 0))
+        inst = d.get("institution") or "—"
+        msg = (
+            f"✅ <b>Conta criada!</b>\n\n"
+            f"📛 <b>{result['name']}</b>\n"
+            f"🏷 Tipo: {d['type']} · 🏦 {inst}\n"
+            f"💰 Saldo inicial: R${bal:.2f}"
+        )
+    else:
+        msg = f"❌ Erro ao criar conta: {result['message']}"
+    if query:
+        await query.edit_message_text(msg, parse_mode="HTML")
+    elif update:
+        await update.message.reply_text(msg, parse_mode="HTML")
+
+
+async def _finalizar_criar_cartao(chat_id: str, pending: dict, query=None, update=None) -> None:
+    """Executa register_credit_card com os dados coletados e envia confirmação ao usuário."""
+    d = pending["data"]
+    _pending_action.pop(chat_id, None)
+    # Taxa: se o usuário digitou 15 (para 15%), converte para 0.15; se já é decimal, usa diretamente
+    taxa_raw = float(d["taxa"])
+    taxa_decimal = taxa_raw / 100 if taxa_raw > 1 else taxa_raw
+    taxa_pct = taxa_raw if taxa_raw > 1 else taxa_raw * 100
+    result = register_credit_card(
+        name=d["name"],
+        account_name=d["account_name"],
+        limite=float(d["limite"]),
+        taxa_juros_mensal=taxa_decimal,
+        closing_day=int(d["closing_day"]),
+        due_day=int(d["due_day"]),
+        current_debt=float(d.get("current_debt", 0.0)),
+    )
+    if result["status"] == "ok":
+        msg = (
+            f"✅ <b>Cartão cadastrado!</b>\n\n"
+            f"💳 <b>{d['name']}</b> — {d['account_name']}\n"
+            f"💰 Limite: R${float(d['limite']):.2f} · 📈 Taxa: {taxa_pct:.1f}%/mês\n"
+            f"📅 Fechamento: dia {d['closing_day']} · Vencimento: dia {d['due_day']}"
+        )
+        if float(d.get("current_debt", 0)) > 0:
+            msg += f"\n💸 Dívida inicial: R${float(d['current_debt']):.2f}"
+    else:
+        msg = f"❌ Erro ao cadastrar cartão: {result['message']}"
+    if query:
+        await query.edit_message_text(msg, parse_mode="HTML")
+    elif update:
+        await update.message.reply_text(msg, parse_mode="HTML")
 
 
 def _classify_domain(text: str) -> str:
@@ -355,17 +541,153 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     logger.info(f"[{chat_id}] {text}")
 
-    # ── Intercepta ações pendentes (ex.: nota de livro aguardando input) ──────
+    # ── Intercepta ações pendentes (nota de livro ou wizards de conta/cartão) ──
     # Antes de passar para o agente, verifica se há uma ação pendente para este chat.
-    # Isso ocorre quando o usuário clicou em "📝 Nota" e agora está digitando a nota.
-    # Esse fluxo chama o BigQuery diretamente — não usa sessão ADK, então não precisa de domain.
+    # Para "note" (passo único): faz pop imediatamente.
+    # Para wizards multi-passo: mantém o estado até o passo final.
     if chat_id in _pending_action:
-        pending = _pending_action.pop(chat_id)
-        if pending["action"] == "note":
-            # Salva a nota digitada diretamente no BigQuery, sem passar pelo agente
+        pending = _pending_action[chat_id]
+        action = pending.get("action", "")
+
+        # ── Nota de livro (passo único) ───────────────────────────────────────
+        if action == "note":
+            _pending_action.pop(chat_id)
             update_book_by_id(pending["book_id"], notes=text)
             await update.message.reply_text("📝 Nota salva.")
             return
+
+        # ── Wizard /criar-conta ───────────────────────────────────────────────
+        if action == "criar_conta":
+            step = pending["step"]
+
+            if step == "nome":
+                pending["data"]["name"] = text
+                pending["step"] = "tipo"
+                botoes = [
+                    [InlineKeyboardButton("🏦 Corrente",          callback_data="nc_tipo:corrente"),
+                     InlineKeyboardButton("💰 Poupança",          callback_data="nc_tipo:poupanca")],
+                    [InlineKeyboardButton("💳 Cartão de Crédito", callback_data="nc_tipo:cartao_credito")],
+                    [InlineKeyboardButton("💵 Dinheiro",          callback_data="nc_tipo:dinheiro"),
+                     InlineKeyboardButton("📈 Investimento",      callback_data="nc_tipo:investimento")],
+                    [InlineKeyboardButton("❌ Cancelar",          callback_data="nc_cancel")],
+                ]
+                await update.message.reply_text(
+                    f"🏦 <b>{text}</b> — Qual o tipo?",
+                    parse_mode="HTML", reply_markup=InlineKeyboardMarkup(botoes),
+                )
+                return
+
+            if step == "instituicao":
+                pending["data"]["institution"] = text
+                pending["step"] = "data_inicio"
+                teclado = InlineKeyboardMarkup([[InlineKeyboardButton("📅 Hoje", callback_data="nc_hoje")]])
+                await update.message.reply_text(
+                    "🏦 <b>Nova Conta</b>\n\nData de início? <i>(YYYY-MM-DD)</i>",
+                    parse_mode="HTML", reply_markup=teclado,
+                )
+                return
+
+            if step == "data_inicio":
+                pending["data"]["data_inicio"] = text
+                pending["step"] = "balance"
+                teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⏭ R$0,00", callback_data="nc_skip_bal")]])
+                await update.message.reply_text(
+                    "🏦 <b>Nova Conta</b>\n\nSaldo inicial? <i>(ex: 1500)</i>",
+                    parse_mode="HTML", reply_markup=teclado,
+                )
+                return
+
+            if step == "balance":
+                try:
+                    pending["data"]["balance_inicial"] = float(text.replace(",", "."))
+                except ValueError:
+                    await update.message.reply_text("❌ Valor inválido. Digite um número (ex: 1500 ou 1500.50).")
+                    return
+                await _finalizar_criar_conta(chat_id, pending, update=update)
+                return
+
+            return  # passo desconhecido — não passa para o agente
+
+        # ── Wizard /criar-cartao ──────────────────────────────────────────────
+        if action == "criar_cartao":
+            step = pending["step"]
+
+            if step == "nome":
+                pending["data"]["name"] = text
+                pending["step"] = "limite"
+                await update.message.reply_text(
+                    f"💳 <b>{text}</b>\n\nQual o limite do cartão? <i>(ex: 5000)</i>",
+                    parse_mode="HTML",
+                )
+                return
+
+            if step == "limite":
+                try:
+                    pending["data"]["limite"] = float(text.replace(",", "."))
+                except ValueError:
+                    await update.message.reply_text("❌ Valor inválido. Digite um número (ex: 5000).")
+                    return
+                pending["step"] = "taxa"
+                await update.message.reply_text(
+                    "💳 <b>Taxa de juros mensal?</b>\n<i>Ex: 15 para 15% ou 0.15 para 15%</i>",
+                    parse_mode="HTML",
+                )
+                return
+
+            if step == "taxa":
+                try:
+                    pending["data"]["taxa"] = float(text.replace(",", ".").replace("%", ""))
+                except ValueError:
+                    await update.message.reply_text("❌ Valor inválido. Ex: 15 para 15%.")
+                    return
+                pending["step"] = "fechamento"
+                await update.message.reply_text(
+                    "💳 <b>Dia de fechamento da fatura?</b> (1–31)",
+                    parse_mode="HTML", reply_markup=_day_buttons("ncc_day"),
+                )
+                return
+
+            if step == "fechamento":
+                try:
+                    day = int(text)
+                    assert 1 <= day <= 31
+                except (ValueError, AssertionError):
+                    await update.message.reply_text("❌ Dia inválido (1–31).")
+                    return
+                pending["data"]["closing_day"] = day
+                pending["step"] = "vencimento"
+                await update.message.reply_text(
+                    f"💳 Fechamento: dia <b>{day}</b>\n\nDia de <b>vencimento</b>? (1–31)",
+                    parse_mode="HTML", reply_markup=_day_buttons("ncc_day"),
+                )
+                return
+
+            if step == "vencimento":
+                try:
+                    day = int(text)
+                    assert 1 <= day <= 31
+                except (ValueError, AssertionError):
+                    await update.message.reply_text("❌ Dia inválido (1–31).")
+                    return
+                pending["data"]["due_day"] = day
+                pending["step"] = "divida"
+                teclado = InlineKeyboardMarkup([[InlineKeyboardButton("⏭ Nenhuma (R$0,00)", callback_data="ncc_skip_debt")]])
+                await update.message.reply_text(
+                    f"💳 Vencimento: dia <b>{day}</b>\n\nDívida atual? <i>(ex: 500)</i>",
+                    parse_mode="HTML", reply_markup=teclado,
+                )
+                return
+
+            if step == "divida":
+                try:
+                    pending["data"]["current_debt"] = float(text.replace(",", "."))
+                except ValueError:
+                    await update.message.reply_text("❌ Valor inválido. Ex: 500 ou 0.")
+                    return
+                await _finalizar_criar_cartao(chat_id, pending, update=update)
+                return
+
+            return  # passo desconhecido — não passa para o agente
 
     # Classifica o domínio da mensagem para usar a sessão isolada correta.
     # Isso evita que histórico de finanças contamine contexto de livros, etc.
@@ -579,11 +901,53 @@ async def handle_limpar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("Nenhuma sessão ativa para limpar.", parse_mode="HTML")
 
 
+async def handle_criar_conta(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Inicia o wizard de criação de conta financeira (5 passos)."""
+    chat_id = str(update.message.chat_id)
+    # Limpa qualquer wizard anterior pendente para este usuário
+    _pending_action[chat_id] = {"action": "criar_conta", "step": "nome", "data": {}}
+    await update.message.reply_text(
+        "🏦 <b>Nova Conta</b>\n\nQual é o nome da conta?\n<i>Exemplo: Itau, Cartao Nu, NuConta</i>",
+        parse_mode="HTML",
+    )
+
+
+async def handle_criar_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Inicia o wizard de cadastro de cartão de crédito (7 passos)."""
+    chat_id = str(update.message.chat_id)
+    # Busca contas do tipo cartao_credito para montar os botões de seleção
+    result = list_accounts(status="ativo")
+    contas = [c for c in result.get("accounts", []) if c.get("type") == "cartao_credito"]
+    if not contas:
+        await update.message.reply_text(
+            "❌ Nenhuma conta do tipo <b>cartão de crédito</b> encontrada.\n\n"
+            "Crie primeiro com /criar_conta (tipo: Cartão de Crédito).",
+            parse_mode="HTML",
+        )
+        return
+    # Guarda mapa id→name para recuperar o nome quando o botão for clicado
+    _pending_action[chat_id] = {
+        "action": "criar_cartao",
+        "step": "conta",
+        "data": {},
+        "contas": {c["id"]: c["name"] for c in contas},
+    }
+    # Cada conta vira um botão — callback_data: ncc_acc:<uuid> (44 bytes, dentro do limite de 64)
+    botoes = [[InlineKeyboardButton(f"💳 {c['name']}", callback_data=f"ncc_acc:{c['id']}")] for c in contas]
+    botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="ncc_cancel")])
+    await update.message.reply_text(
+        "💳 <b>Novo Cartão</b>\n\nQual conta vincular?",
+        parse_mode="HTML", reply_markup=InlineKeyboardMarkup(botoes),
+    )
+
+
 def main() -> None:
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     # Comandos primeiro — devem ter prioridade sobre o handler de texto genérico
     app.add_handler(CommandHandler("tokens", handle_tokens))
     app.add_handler(CommandHandler("limpar", handle_limpar))
+    app.add_handler(CommandHandler("criar_conta", handle_criar_conta))
+    app.add_handler(CommandHandler("criar_cartao", handle_criar_cartao))
     # CallbackQueryHandler ANTES do MessageHandler para que cliques em botões
     # não sejam engolidos pelo handler de texto
     app.add_handler(CallbackQueryHandler(handle_callback))
