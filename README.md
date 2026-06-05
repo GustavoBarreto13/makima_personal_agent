@@ -60,7 +60,7 @@ Inspirada na Nami de One Piece. Acessa o BigQuery para registrar e consultar tra
 - Empréstimos e financiamentos — sistemas PRICE e SAC, simulação de amortização
 - Orçamento por categoria — alertas quando o limite está próximo
 - Score de saúde financeira 0-100 em 4 dimensões (poupança, dívidas, orçamento, tendência)
-- Contas financeiras — cadastro dinâmico (corrente, poupança, cartão de crédito, dinheiro, investimento)
+- Contas financeiras — cadastro dinâmico (corrente, poupança, dinheiro, investimento)
 
 **Armazenamento:** BigQuery — dataset `nami_finance_agent`.
 
@@ -144,6 +144,22 @@ makima_personal_agent/
 
 ---
 
+## Comandos Telegram
+
+| Comando | O que faz |
+|---|---|
+| `/limpar` | Reseta o contexto de todos os domínios (nova conversa do zero) |
+| `/limpar financas` | Reseta só o contexto de finanças (Nami) |
+| `/limpar livros` | Reseta só o contexto de livros (Frieren) |
+| `/limpar tarefas` | Reseta só o contexto de tarefas/agenda (Kaguya) |
+| `/limpar knowledge` | Reseta só o contexto de knowledge base (Kurisu) |
+| `/tokens` | Exibe o total de tokens consumidos por domínio nesta sessão do container |
+
+> O bot avisa automaticamente quando o contexto de um domínio está ficando grande e sugere o `/limpar <dominio>`.
+> O contador de `/tokens` reseta ao reiniciar o container.
+
+---
+
 ## Pré-requisitos
 
 - Python 3.11+
@@ -221,18 +237,20 @@ NOTION_TOKEN=
 
 ## Setup inicial da Nami (primeira vez)
 
-Antes de registrar qualquer transação, cadastre as contas financeiras via Telegram:
+Antes de registrar qualquer transação, cadastre as contas bancárias via Telegram:
 
 ```
 "Nami, cria uma conta chamada Itau, tipo corrente, instituição Itaú, início 2026-01-01"
-"Nami, cria uma conta Cartao Nu, tipo cartão de crédito, instituição Nubank, início 2026-01-01"
 ```
 
-Depois, vincule os cartões de crédito à conta correspondente:
+Depois, cadastre os cartões de crédito vinculando a uma conta corrente ou poupança:
 
 ```
-"Nami, cadastra meu cartão Nubank, conta Cartao Nu, limite 1600, taxa 16.1% ao mês, fechamento dia 6, vencimento dia 13"
+"Nami, cadastra meu cartão Nubank, conta Itau, limite 1600, taxa 16.1% ao mês, fechamento dia 6, vencimento dia 13"
 ```
+
+> Cartões de crédito não são contas — não crie conta do tipo "cartão de crédito".
+> O cartão rastreia a dívida separadamente; o vínculo com uma conta corrente indica de onde a fatura será paga.
 
 ---
 

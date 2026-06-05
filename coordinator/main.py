@@ -941,6 +941,7 @@ async def handle_criar_cartao(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 def main() -> None:
+    """Inicializar e executar o bot Telegram em modo polling."""
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     # Comandos primeiro — devem ter prioridade sobre o handler de texto genérico
     app.add_handler(CommandHandler("tokens", handle_tokens))
