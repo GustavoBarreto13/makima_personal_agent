@@ -35,7 +35,7 @@ app.add_middleware(
 
 # --- Rota de health check ---
 @app.get("/api/healthz")
-async def healthz() -> dict:
+async def healthz() -> dict[str, str]:
     """Verificar se a aplicação está rodando corretamente.
 
     Rota simples usada por orquestradores (Dokploy, Docker, load balancers) para

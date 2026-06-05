@@ -8,7 +8,11 @@ __pycache__/
 .git/
 .gitignore
 *.json
+# Exceção: arquivos JSON do frontend precisam entrar no build context para o npm ci funcionar
+!webapp/frontend/*.json
 .vscode/
 .idea/
 .superpowers/
 .claude/
+# Excluir node_modules local para não inflar a imagem Docker
+webapp/frontend/node_modules/

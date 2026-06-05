@@ -33,5 +33,5 @@ GOOGLE_OAUTH_CLIENT_SECRET: str = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
 # URL para onde o Google redireciona o usuário após autorizar o login.
 # Em produção, deve ser o domínio real (ex.: https://makima.exemplo.com/auth/callback).
 OAUTH_REDIRECT_URL: str = os.getenv(
-    "OAUTH_REDIRECT_URL", "http://localhost:8000/auth/callback"
+    "OAUTH_REDIRECT_URL", "http://localhost:8080/auth/callback"
 )

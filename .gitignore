@@ -18,6 +18,9 @@ venv/
 *.json
 .gcp-sa.json
 
+# Node (frontend)
+webapp/frontend/node_modules/
+
 # IDE
 .vscode/
 .idea/
