@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { label: 'Empréstimos',   path: '/loans' },
   { label: 'Orçamentos',    path: '/budgets' },
   { label: 'Assinaturas',   path: '/subscriptions' },
+  { label: 'Livros',       path: '/books' },
 ]
 
 /**

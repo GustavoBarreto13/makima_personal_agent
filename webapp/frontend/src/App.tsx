@@ -15,6 +15,8 @@ import Cards         from './pages/Cards'               // Cartões de crédito 
 import Loans         from './pages/Loans'               // Empréstimos e saldo devedor
 import Budgets       from './pages/Budgets'             // Orçamentos por categoria
 import Subscriptions from './pages/Subscriptions'       // Assinaturas recorrentes
+import Books      from './pages/Books'       // Lista de livros com agrupamento por status
+import BookDetail from './pages/BookDetail'  // Detalhe do livro com histórico de leitura
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
@@ -97,6 +99,12 @@ function App() {
 
           {/* Assinaturas recorrentes */}
           <Route path="/subscriptions" element={<Subscriptions />} />
+
+          {/* Lista de livros agrupada por status */}
+          <Route path="/books"    element={<Books />} />
+
+          {/* Detalhe de um livro com histórico de sessões */}
+          <Route path="/books/:id" element={<BookDetail />} />
         </Routes>
       </Layout>
     </BrowserRouter>

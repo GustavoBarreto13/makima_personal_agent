@@ -18,6 +18,7 @@ from starlette.middleware.sessions import SessionMiddleware  # Middleware de ses
 # Importa os routers registrados na aplicação e o segredo de sessão
 from webapp.backend.routers import auth as auth_router
 from webapp.backend.routers import finances as finances_router
+from webapp.backend.routers import books as books_router
 from webapp.backend.config import SESSION_SECRET
 
 # Cria a instância principal da aplicação FastAPI.
@@ -39,6 +40,11 @@ app.include_router(auth_router.router, prefix="/auth", tags=["auth"])
 # Registra todos os endpoints da Nami sob /api/finances
 # Ex.: GET /api/finances/transactions, POST /api/finances/accounts, etc.
 app.include_router(finances_router.router, prefix="/api/finances", tags=["finances"])
+
+# --- Router de livros ---
+# Registra todos os endpoints da Frieren sob /api/books
+# Ex.: GET /api/books, GET /api/books/stats, POST /api/books, etc.
+app.include_router(books_router.router, prefix="/api/books", tags=["books"])
 
 # --- CORS (Cross-Origin Resource Sharing) ---
 # O navegador bloqueia requisições entre origens diferentes por segurança.
