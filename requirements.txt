@@ -11,3 +11,11 @@ google-auth-oauthlib # OAuth2 para Google (flow de autorização)
 google-api-python-client # Cliente Python para APIs Google (Calendar, Drive, etc.)
 asyncpg             # driver async para PostgreSQL (exigido pelo DatabaseSessionService do ADK)
 sqlalchemy          # ORM usado internamente pelo ADK para criar e acessar as tabelas
+
+# Web interface (webapp/)
+fastapi              # Framework web ASGI — define rotas e serialização JSON
+uvicorn[standard]    # Servidor ASGI que roda a aplicação FastAPI
+authlib              # Implementa o fluxo Google OAuth (OIDC) para autenticação
+itsdangerous         # Assina e verifica cookies de sessão de forma segura
+python-multipart     # Suporte a formulários HTML no FastAPI (necessário para OAuth)
+httpx                # Cliente HTTP async usado pelo Authlib no fluxo OAuth
