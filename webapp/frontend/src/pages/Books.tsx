@@ -76,9 +76,10 @@ const EMPTY_ADD_FORM: AddForm = {
 
 // ── Constantes de agrupamento ──────────────────────────────────────────────────────────────────
 
-// Define a ordem de exibição dos grupos de status
+// Define a ordem de exibição dos grupos de status na aba "Estante"
 // Livros "lendo" aparecem primeiro, pois são a prioridade atual do leitor
-const STATUS_ORDER = ['lendo', 'quero_ler', 'pausado', 'lido', 'abandonado']
+// "quero_ler" é excluído aqui — fica na aba "Lista de Desejos"
+const STATUS_ORDER = ['lendo', 'pausado', 'lido', 'abandonado']
 
 // Rótulos visuais com emoji para cada status
 const STATUS_LABEL: Record<string, string> = {
@@ -138,6 +139,97 @@ function calcProgress(current: number | null, total: number | null): number {
   return Math.min(100, Math.round((current / total) * 100))
 }
 
+// ── Componente BookCard ───────────────────────────────────────────────────────────────────────
+
+/**
+ * Card reutilizável de livro — exibe capa, título, autor, progresso e avaliação.
+ * Usado tanto na aba "Estante" (agrupada por status) quanto na aba "Lista de Desejos" (lista plana).
+ *
+ * Args:
+ *   book    - Objeto do livro a exibir.
+ *   onClick - Função chamada ao clicar no card (navega para o detalhe do livro).
+ *
+ * Returns:
+ *   JSX com o card do livro.
+ */
+function BookCard({ book, onClick }: { book: Book; onClick: () => void }) {
+  return (
+    // Card clicável — borda cinza que clareia ao passar o mouse
+    <div
+      onClick={onClick}
+      className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center gap-4 hover:border-gray-600 cursor-pointer transition-colors"
+    >
+
+      {/* ── Capa do livro ── */}
+      {book.cover_url ? (
+        // Exibe a capa real se a URL estiver disponível
+        <img
+          src={book.cover_url}
+          alt={`Capa de ${book.title}`}
+          className="w-12 h-16 object-cover rounded flex-shrink-0"
+        />
+      ) : (
+        // Placeholder cinza quando não há capa disponível
+        // flex-shrink-0 evita que o placeholder encolha com textos longos
+        <div className="w-12 h-16 bg-gray-700 rounded flex-shrink-0 flex items-center justify-center">
+          <span className="text-gray-500 text-xs">📖</span>
+        </div>
+      )}
+
+      {/* ── Informações do livro ── */}
+      <div className="flex-1 min-w-0">
+        {/* min-w-0 é necessário para que o texto truncate funcione corretamente em flex */}
+
+        {/* Título e badge de status na mesma linha */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Título truncado para não quebrar o layout em títulos longos */}
+          <span className="text-white font-medium text-sm truncate">
+            {book.title}
+          </span>
+          {/* Badge colorido indicando o status de leitura */}
+          <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
+            STATUS_BADGE[book.status] ?? 'bg-gray-700 text-gray-400'
+          }`}>
+            {book.status.replace('_', ' ')}
+          </span>
+        </div>
+
+        {/* Nome do autor */}
+        {book.author && (
+          <p className="text-gray-400 text-xs mt-0.5 truncate">
+            {book.author}
+          </p>
+        )}
+
+        {/* ── Barra de progresso — apenas para livros em andamento ── */}
+        {book.status === 'lendo' && (
+          <div className="mt-2 space-y-1">
+            {/* Trilha cinza da barra; a barra azul interna representa o progresso */}
+            <div className="bg-gray-700 rounded-full h-1.5">
+              <div
+                className="bg-blue-500 h-1.5 rounded-full transition-all"
+                style={{ width: `${calcProgress(book.current_page, book.total_pages)}%` }}
+              />
+            </div>
+            {/* Texto auxiliar com página atual e total */}
+            <p className="text-gray-500 text-xs">
+              {book.current_page ?? 0} / {book.total_pages ?? '?'} páginas
+              {' '}({calcProgress(book.current_page, book.total_pages)}%)
+            </p>
+          </div>
+        )}
+
+        {/* ── Estrelas de avaliação — apenas para livros lidos ── */}
+        {book.status === 'lido' && (
+          <p className="text-yellow-400 text-sm mt-1" title={`Avaliação: ${book.rating ?? 'sem nota'}`}>
+            {renderStars(book.rating)}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Componente principal ───────────────────────────────────────────────────────────────────────
 
 /**
@@ -193,6 +285,12 @@ export default function Books() {
 
   // Indica se o formulário está sendo submetido (desabilita o botão Salvar)
   const [saving, setSaving] = useState(false)
+
+  // ── Aba ativa ──
+  // Controla qual visão principal está ativa:
+  //   'estante'  → livros que o usuário tem/teve (lendo, pausado, lido, abandonado)
+  //   'desejos'  → livros com status 'quero_ler' (lista de desejos)
+  const [activeTab, setActiveTab] = useState<'estante' | 'desejos'>('estante')
 
   // ── Carregamento inicial ──
   // useEffect com array vazio [] executa apenas uma vez, quando o componente é montado na tela.
@@ -348,7 +446,8 @@ export default function Books() {
 
   // ── Agrupamento de livros por status ──
 
-  // Agrupa os livros segundo a ordem definida em STATUS_ORDER.
+  // Agrupa os livros da Estante segundo a ordem definida em STATUS_ORDER.
+  // Exclui 'quero_ler' — esses ficam na aba de desejos.
   // Grupos sem livros são filtrados (não aparecem na tela).
   const grouped = STATUS_ORDER
     .map((s) => ({
@@ -357,6 +456,9 @@ export default function Books() {
       items:  books.filter((b) => b.status === s),  // Filtra apenas os livros deste status
     }))
     .filter((g) => g.items.length > 0) // Remove grupos vazios para não poluir a interface
+
+  // Lista plana de livros com status 'quero_ler' — exibida na aba "Lista de Desejos"
+  const wishlist = books.filter((b) => b.status === 'quero_ler')
 
   // ── Renderização ──
 
@@ -376,6 +478,34 @@ export default function Books() {
         </button>
       </div>
 
+      {/* ── Abas principais: Estante / Lista de Desejos ── */}
+      {/* Dois botões que controlam qual visão está ativa.
+          A aba ativa fica azul; a inativa fica cinza escuro. */}
+      <div className="flex gap-2">
+        {/* Botão da aba "Estante" — livros que o usuário tem ou já leu */}
+        <button
+          onClick={() => setActiveTab('estante')}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'estante'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+          }`}
+        >
+          Estante
+        </button>
+        {/* Botão da aba "Lista de Desejos" — livros com status quero_ler */}
+        <button
+          onClick={() => setActiveTab('desejos')}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'desejos'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+          }`}
+        >
+          Lista de Desejos
+        </button>
+      </div>
+
       {/* ── Estado de carregamento ── */}
       {/* Exibe um spinner animado enquanto a lista está sendo carregada do backend */}
       {loading && (
@@ -390,7 +520,8 @@ export default function Books() {
         <p className="text-red-400 text-sm">{error}</p>
       )}
 
-      {/* ── Estado vazio: nenhum livro cadastrado ── */}
+      {/* ── Estado vazio global: nenhum livro cadastrado ── */}
+      {/* Só aparece se não há nenhum livro em nenhuma aba */}
       {!loading && !error && books.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-gray-500">
           <span className="text-4xl mb-3">📚</span>
@@ -399,97 +530,63 @@ export default function Books() {
         </div>
       )}
 
-      {/* ── Lista de livros agrupada por status ── */}
-      {/* Só renderiza quando o carregamento terminou, sem erros e com livros */}
-      {!loading && !error && grouped.map((group) => (
-        <div key={group.status} className="space-y-3">
+      {/* ══════════════════════════════════════════════════════════════════
+          ABA "ESTANTE" — livros com status lendo, pausado, lido, abandonado
+          Exibe os livros agrupados por status, excluindo "quero_ler"
+      ══════════════════════════════════════════════════════════════════ */}
+      {!loading && !error && activeTab === 'estante' && (
+        <>
+          {/* Mensagem de vazio específica para a Estante */}
+          {grouped.length === 0 && books.length > 0 && (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+              <span className="text-4xl mb-3">📖</span>
+              <p className="text-sm">Nenhum livro na estante ainda.</p>
+            </div>
+          )}
 
-          {/* Cabeçalho do grupo — ex: "📖 LENDO" */}
-          <h2 className="text-xs font-semibold text-gray-400 tracking-widest uppercase">
-            {group.label}
-          </h2>
+          {/* Lista de grupos de status */}
+          {grouped.map((group) => (
+            <div key={group.status} className="space-y-3">
 
-          {/* Lista de cards de livros deste grupo */}
-          <div className="space-y-2">
-            {group.items.map((book) => (
-              // Card do livro — clicável, navega para a página de detalhe
-              <div
-                key={book.id}
-                onClick={() => navigate(`/books/${book.id}`)}
-                className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center gap-4 hover:border-gray-600 cursor-pointer transition-colors"
-              >
+              {/* Cabeçalho do grupo — ex: "📖 LENDO" */}
+              <h2 className="text-xs font-semibold text-gray-400 tracking-widest uppercase">
+                {group.label}
+              </h2>
 
-                {/* ── Capa do livro ── */}
-                {book.cover_url ? (
-                  // Exibe a capa real se a URL estiver disponível
-                  <img
-                    src={book.cover_url}
-                    alt={`Capa de ${book.title}`}
-                    className="w-12 h-16 object-cover rounded flex-shrink-0"
-                  />
-                ) : (
-                  // Placeholder cinza quando não há capa disponível
-                  // flex-shrink-0 evita que o placeholder encolha com textos longos
-                  <div className="w-12 h-16 bg-gray-700 rounded flex-shrink-0 flex items-center justify-center">
-                    <span className="text-gray-500 text-xs">📖</span>
-                  </div>
-                )}
-
-                {/* ── Informações do livro ── */}
-                <div className="flex-1 min-w-0">
-                  {/* min-w-0 é necessário para que o texto truncate funcione corretamente em flex */}
-
-                  {/* Título e badge de status na mesma linha */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {/* Título truncado para não quebrar o layout em títulos longos */}
-                    <span className="text-white font-medium text-sm truncate">
-                      {book.title}
-                    </span>
-                    {/* Badge colorido indicando o status de leitura */}
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
-                      STATUS_BADGE[book.status] ?? 'bg-gray-700 text-gray-400'
-                    }`}>
-                      {book.status.replace('_', ' ')}
-                    </span>
-                  </div>
-
-                  {/* Nome do autor */}
-                  {book.author && (
-                    <p className="text-gray-400 text-xs mt-0.5 truncate">
-                      {book.author}
-                    </p>
-                  )}
-
-                  {/* ── Barra de progresso — apenas para livros em andamento ── */}
-                  {book.status === 'lendo' && (
-                    <div className="mt-2 space-y-1">
-                      {/* Trilha cinza da barra; a barra azul interna representa o progresso */}
-                      <div className="bg-gray-700 rounded-full h-1.5">
-                        <div
-                          className="bg-blue-500 h-1.5 rounded-full transition-all"
-                          style={{ width: `${calcProgress(book.current_page, book.total_pages)}%` }}
-                        />
-                      </div>
-                      {/* Texto auxiliar com página atual e total */}
-                      <p className="text-gray-500 text-xs">
-                        {book.current_page ?? 0} / {book.total_pages ?? '?'} páginas
-                        {' '}({calcProgress(book.current_page, book.total_pages)}%)
-                      </p>
-                    </div>
-                  )}
-
-                  {/* ── Estrelas de avaliação — apenas para livros lidos ── */}
-                  {book.status === 'lido' && (
-                    <p className="text-yellow-400 text-sm mt-1" title={`Avaliação: ${book.rating ?? 'sem nota'}`}>
-                      {renderStars(book.rating)}
-                    </p>
-                  )}
-                </div>
+              {/* Cards dos livros deste grupo */}
+              <div className="space-y-2">
+                {group.items.map((book) => (
+                  <BookCard key={book.id} book={book} onClick={() => navigate(`/books/${book.id}`)} />
+                ))}
               </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          ABA "LISTA DE DESEJOS" — livros com status quero_ler
+          Lista plana, sem agrupamento por sub-status
+      ══════════════════════════════════════════════════════════════════ */}
+      {!loading && !error && activeTab === 'desejos' && (
+        <>
+          {/* Mensagem de vazio da lista de desejos */}
+          {wishlist.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+              <span className="text-4xl mb-3">🌟</span>
+              <p className="text-sm">Sua lista de desejos está vazia.</p>
+              <p className="text-sm">Adicione livros com status "Quero Ler".</p>
+            </div>
+          )}
+
+          {/* Lista plana de livros da lista de desejos */}
+          <div className="space-y-2">
+            {wishlist.map((book) => (
+              <BookCard key={book.id} book={book} onClick={() => navigate(`/books/${book.id}`)} />
             ))}
           </div>
-        </div>
-      ))}
+        </>
+      )}
 
       {/* ── Modal "Adicionar Livro" ── */}
       {modalOpen && (
