@@ -1,8 +1,7 @@
 """Ferramentas do agente Nami para gerenciamento de finanças pessoais.
 
 Todas as operações financeiras — criar, editar, deletar e consultar
-transações e assinaturas — são feitas aqui e armazenadas no BigQuery
-(banco de dados em nuvem do Google).
+transações e assinaturas — são feitas aqui e armazenadas no PostgreSQL.
 
 Usage:
     As ferramentas deste módulo são registradas automaticamente no
@@ -10,12 +9,12 @@ Usage:
     Não é necessário chamá-las diretamente.
 """
 
-import os       # Para ler variáveis de ambiente (credenciais, IDs do projeto)
 import uuid     # Para gerar IDs únicos para cada transação/assinatura
 from datetime import date          # Para obter a data de hoje
 from zoneinfo import ZoneInfo      # Para trabalhar com fuso horário (horário de Brasília)
 
-from google.cloud import bigquery  # Cliente oficial do BigQuery (banco de dados na nuvem)
+# Importa os helpers PostgreSQL compartilhados — substituem o BigQuery _run_select/_run_dml
+from agents.db import run_select, run_dml
 
 # Fuso horário de São Paulo / Brasília — usado para garantir que as datas
 # registradas sejam no horário brasileiro, não no UTC do servidor
@@ -31,29 +30,26 @@ CATEGORIES = [
 ]
 
 # Lista hardcoded mantida apenas para compatibilidade com testes legados.
-# A fonte canônica de contas agora é a tabela `accounts` no BigQuery.
+# A fonte canônica de contas agora é a tabela `accounts` no PostgreSQL.
 ACCOUNTS = ["Cartao Nu", "Cartao Itau", "Itau", "Mercado Pago", "Generico", "Dinheiro"]
 
-# Variável global que armazena o cliente do BigQuery após a primeira criação.
-_bq_client = None
-
-# Cache das contas carregadas da tabela `accounts` no BigQuery.
+# Cache das contas carregadas da tabela `accounts` no PostgreSQL.
 # None = não carregado ainda; lista vazia = nenhuma conta cadastrada.
 _accounts_cache: list[dict] | None = None
 
 
 def _load_accounts() -> list[dict]:
-    """Carrega contas ativas do BigQuery e armazena em cache para evitar queries repetidas."""
+    """Carrega contas ativas do PostgreSQL e armazena em cache para evitar queries repetidas."""
     global _accounts_cache
     if _accounts_cache is None:
         try:
-            rows = _run_select(
-                f"SELECT id, name FROM `{_project()}.nami_finance_agent.accounts` WHERE status = 'ativo'",
-                [],
+            # Busca contas ativas — usa run_select do módulo agents.db (PostgreSQL)
+            rows = run_select(
+                "SELECT id, name FROM accounts WHERE status = 'ativo'",
             )
             _accounts_cache = rows
         except Exception:
-            # Se a tabela ainda não existir (ex.: ambiente de testes sem BQ),
+            # Se a tabela ainda não existir (ex.: ambiente de testes sem banco),
             # retorna lista vazia em vez de lançar exceção
             _accounts_cache = []
     return _accounts_cache
@@ -71,18 +67,17 @@ _cards_cache: list[dict] | None = None
 
 
 def _load_cards() -> list[dict]:
-    """Carrega cartões ativos do BigQuery e armazena em cache para evitar queries repetidas."""
+    """Carrega cartões ativos do PostgreSQL e armazena em cache para evitar queries repetidas."""
     global _cards_cache
     if _cards_cache is None:
         try:
-            rows = _run_select(
-                f"SELECT id, name FROM `{_project()}.nami_finance_agent.credit_cards` WHERE status = 'ativo'",
-                [],
+            # Busca cartões ativos — usa run_select do módulo agents.db (PostgreSQL)
+            rows = run_select(
+                "SELECT id, name FROM credit_cards WHERE status = 'ativo'",
             )
             _cards_cache = rows
         except Exception:
-            # Se a tabela ainda não existir (ex.: ambiente de testes sem BQ),
-            # retorna lista vazia em vez de lançar exceção
+            # Se a tabela ainda não existir, retorna lista vazia
             _cards_cache = []
     return _cards_cache
 
@@ -129,73 +124,6 @@ def _resolve_account(name: str) -> dict | None:
     return matches[0] if len(matches) == 1 else None
 
 
-def _client() -> bigquery.Client:
-    """Retorna o cliente do BigQuery, criando-o na primeira chamada.
-
-    Usa a variável global _bq_client para reutilizar a conexão entre chamadas
-    e evitar abrir múltiplas conexões desnecessárias ao banco.
-    """
-    global _bq_client  # Indica que vamos modificar a variável global, não criar uma local
-
-    # Só cria o cliente se ainda não foi inicializado
-    if _bq_client is None:
-        # Tenta ler as credenciais do GCP a partir de uma variável de ambiente
-        # (string JSON com o conteúdo do arquivo de service account)
-        creds_json = os.environ.get("GCP_CREDENTIALS_JSON", "")
-
-        if creds_json:
-            # Se a variável GCP_CREDENTIALS_JSON estiver definida, usa as credenciais
-            # diretamente do JSON — útil em ambientes como Docker/VPS onde montar
-            # arquivos é mais difícil do que definir variáveis de ambiente
-            import json
-            from google.oauth2 import service_account
-
-            # Converte a string JSON em dicionário Python
-            info = json.loads(creds_json)
-
-            # Cria as credenciais de serviço a partir do dicionário,
-            # limitando o acesso ao escopo do BigQuery (princípio de menor privilégio)
-            creds = service_account.Credentials.from_service_account_info(
-                info,
-                scopes=["https://www.googleapis.com/auth/bigquery"],
-            )
-
-            # Instancia o cliente do BigQuery com as credenciais explícitas
-            _bq_client = bigquery.Client(project=_project(), credentials=creds)
-        else:
-            # Se GCP_CREDENTIALS_JSON não estiver definida, o cliente usa as
-            # credenciais padrão do ambiente (Application Default Credentials —
-            # funciona localmente com `gcloud auth application-default login`)
-            _bq_client = bigquery.Client(project=_project())
-
-    return _bq_client
-
-
-def _project() -> str:
-    """Retorna o ID do projeto GCP lido da variável de ambiente GCP_PROJECT_ID.
-
-    Lança um erro se a variável não estiver definida, porque sem o projeto
-    não é possível fazer nenhuma query no BigQuery.
-    """
-    p = os.environ.get("GCP_PROJECT_ID", "")  # Lê a variável de ambiente
-
-    # Se o valor for vazio, o sistema não sabe qual projeto usar — aborta com erro claro
-    if not p:
-        raise EnvironmentError("GCP_PROJECT_ID not set")
-
-    return p
-
-
-def _table(name: str = "transactions") -> str:
-    """Retorna o caminho completo de uma tabela no BigQuery no formato esperado pelo SQL.
-
-    O formato é: `projeto.dataset.tabela` — as crases são necessárias no SQL
-    do BigQuery quando o nome contém hífens ou outros caracteres especiais.
-    """
-    # Exemplo de resultado: `meu-projeto.nami_finance_agent.transactions`
-    return f"`{_project()}.nami_finance_agent.{name}`"
-
-
 def _norm(s: str) -> str:
     """Normaliza uma string removendo acentos e convertendo para minúsculas.
 
@@ -211,43 +139,8 @@ def _norm(s: str) -> str:
     return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode().lower()
 
 
-def _run_select(sql: str, params: list = None) -> list[dict]:
-    """Executa uma query SELECT no BigQuery e retorna as linhas como lista de dicionários.
-
-    Usa parâmetros nomeados (@nome) no SQL para evitar SQL injection —
-    nunca concatenamos valores do usuário direto na string SQL.
-    """
-    # Configura os parâmetros da query (substitui os @placeholder pelos valores reais)
-    job_config = bigquery.QueryJobConfig(query_parameters=params or [])
-
-    # Envia a query para o BigQuery e aguarda (.result()) até ela terminar
-    result = _client().query(sql, job_config=job_config).result()
-
-    # Converte cada linha do resultado em um dicionário Python para fácil manipulação
-    return [dict(row) for row in result]
-
-
-def _run_dml(sql: str, params: list = None) -> int:
-    """Executa uma operação de modificação de dados (INSERT, UPDATE, DELETE) no BigQuery.
-
-    Retorna o número de linhas afetadas — útil para verificar se algo foi
-    realmente alterado (ex.: se 0 linhas foram afetadas, o registro não existia).
-    """
-    # Configura os parâmetros da query (evita SQL injection)
-    job_config = bigquery.QueryJobConfig(query_parameters=params or [])
-
-    # Envia a operação para o BigQuery
-    job = _client().query(sql, job_config=job_config)
-
-    # Aguarda a operação terminar no servidor
-    job.result()
-
-    # Retorna quantas linhas foram afetadas (0 se nenhuma foi modificada)
-    return job.num_dml_affected_rows or 0
-
-
 def _today() -> str:
-    """Retorna a data de hoje no formato 'AAAA-MM-DD' (padrão aceito pelo BigQuery)."""
+    """Retorna a data de hoje no formato 'AAAA-MM-DD' (padrão aceito pelo PostgreSQL)."""
     return date.today().strftime("%Y-%m-%d")
 
 
@@ -274,7 +167,6 @@ def _match_category(name: str) -> str | None:
     matches = [c for c in CATEGORIES if _norm(c) == norm or _norm(c).startswith(norm)]
 
     # Só retorna se houver exatamente 1 correspondência — evita ambiguidade
-    # (ex.: "sa" poderia ser "Saude" ou "Supermercado" — retorna None nesses casos)
     return matches[0] if len(matches) == 1 else None
 
 
@@ -303,7 +195,7 @@ def create_transaction(
     subscription_id: str = "",
     card_id: str = "",
 ) -> dict:
-    """Cria uma nova transação financeira (despesa ou receita) no BigQuery.
+    """Cria uma nova transação financeira (despesa ou receita) no PostgreSQL.
 
     Parâmetros:
         name          — Descrição da transação (ex.: "Almoço no bandejão")
@@ -324,7 +216,6 @@ def create_transaction(
     # Valida a categoria: verifica se o texto informado corresponde a uma categoria conhecida
     cat = _match_category(categoria)
     if cat is None:
-        # Retorna erro com a lista de opções válidas para o usuário corrigir
         return {"status": "error", "message": f"Categoria inválida: '{categoria}'. Opções: {', '.join(CATEGORIES)}"}
 
     # Separa o caminho: transação de cartão vs. transação de conta bancária.
@@ -351,37 +242,36 @@ def create_transaction(
     # Usa a data informada ou, se não foi informada, usa a data de hoje
     tx_date = data or _today()
 
-    # Monta a query SQL de inserção com parâmetros nomeados (@nome)
+    # Monta a query SQL de inserção com parâmetros nomeados %(nome)s
     # para evitar SQL injection (nunca concatenamos valores direto na string)
-    sql = f"""
-        INSERT INTO {_table()} (id, name, valor, tipo, categoria, conta, account_id, card_id, data, source, notes, subscription_id, created_at, deleted)
-        VALUES (@id, @name, @valor, @tipo, @categoria, @conta, @account_id, @card_id, @data, @source, @notes, @subscription_id, CURRENT_TIMESTAMP(), FALSE)
+    sql = """
+        INSERT INTO transactions (id, name, valor, tipo, categoria, conta, account_id, card_id, data, source, notes, subscription_id, created_at, deleted)
+        VALUES (%(id)s, %(name)s, %(valor)s, %(tipo)s, %(categoria)s, %(conta)s, %(account_id)s, %(card_id)s, %(data)s, %(source)s, %(notes)s, %(subscription_id)s, NOW(), FALSE)
     """
 
-    # Define os valores que substituirão cada @placeholder na query,
-    # com seus tipos de dados corretos para o BigQuery
-    params = [
-        bigquery.ScalarQueryParameter("id", "STRING", tx_id),
-        bigquery.ScalarQueryParameter("name", "STRING", name),
-        bigquery.ScalarQueryParameter("valor", "FLOAT64", float(valor)),  # float() garante tipo numérico
-        bigquery.ScalarQueryParameter("tipo", "STRING", tipo),
-        bigquery.ScalarQueryParameter("categoria", "STRING", cat),     # cat já é o nome normalizado
-        bigquery.ScalarQueryParameter("conta", "STRING", acc),          # acc já é o nome normalizado
-        bigquery.ScalarQueryParameter("account_id", "STRING", acc_id),  # NULL para transações de cartão
-        bigquery.ScalarQueryParameter("card_id", "STRING", card_id or None),  # NULL para transações de conta
-        bigquery.ScalarQueryParameter("data", "DATE", tx_date),
-        bigquery.ScalarQueryParameter("source", "STRING", "telegram"),  # marca que veio pelo bot
-        bigquery.ScalarQueryParameter("notes", "STRING", notes or None),
-        bigquery.ScalarQueryParameter("subscription_id", "STRING", subscription_id or None),
-    ]
+    # Define os valores que substituirão cada %(placeholder)s na query
+    params = {
+        "id":              tx_id,
+        "name":            name,
+        "valor":           float(valor),  # float() garante tipo numérico
+        "tipo":            tipo,
+        "categoria":       cat,           # cat já é o nome normalizado
+        "conta":           acc,           # acc já é o nome normalizado
+        "account_id":      acc_id,        # None para transações de cartão (vira NULL no banco)
+        "card_id":         card_id or None,  # None para transações de conta
+        "data":            tx_date,
+        "source":          "telegram",    # marca que veio pelo bot
+        "notes":           notes or None,
+        "subscription_id": subscription_id or None,
+    }
 
     try:
-        # Executa a inserção no BigQuery
-        _run_dml(sql, params)
+        # Executa a inserção no PostgreSQL
+        run_dml(sql, params)
         # Retorna confirmação com o ID gerado e um resumo legível
         return {"status": "ok", "id": tx_id, "message": f"Transação criada: {name} R${float(valor):.2f} ({cat})"}
     except Exception as e:
-        # Captura qualquer erro do BigQuery e retorna como mensagem amigável
+        # Captura qualquer erro do banco e retorna como mensagem amigável
         return {"status": "error", "message": str(e)}
 
 
@@ -395,7 +285,7 @@ def update_transaction(
     data: str = "",
     notes: str = "",
 ) -> dict:
-    """Atualiza campos de uma transação existente no BigQuery.
+    """Atualiza campos de uma transação existente no PostgreSQL.
 
     Só altera os campos que forem informados (não-vazios / não-None).
     O campo `updated_at` é sempre atualizado para registrar quando ocorreu a mudança.
@@ -407,51 +297,51 @@ def update_transaction(
     Retorna "status": "ok" se atualizado, "status": "error" se não encontrado ou inválido.
     """
     # Lista de cláusulas SET do SQL — começa sempre com updated_at para registrar a edição
-    sets = ["updated_at = CURRENT_TIMESTAMP()"]
+    sets = ["updated_at = NOW()"]
 
     # Parâmetros da query — começa com o ID para o WHERE no final
-    params = [bigquery.ScalarQueryParameter("id", "STRING", id)]
+    params = {"id": id}
 
     # Para cada campo opcional, só adiciona ao SET se o valor foi informado
     if name:
-        sets.append("name = @name")
-        params.append(bigquery.ScalarQueryParameter("name", "STRING", name))
+        sets.append("name = %(name)s")
+        params["name"] = name
 
     if valor is not None:
         # Verifica explicitamente None (não string vazia) porque 0.0 é um valor válido
-        sets.append("valor = @valor")
-        params.append(bigquery.ScalarQueryParameter("valor", "FLOAT64", float(valor)))
+        sets.append("valor = %(valor)s")
+        params["valor"] = float(valor)
 
     if tipo:
         # Valida o tipo antes de aceitar
         if tipo not in ("Despesa", "Receita"):
             return {"status": "error", "message": "tipo deve ser 'Despesa' ou 'Receita'"}
-        sets.append("tipo = @tipo")
-        params.append(bigquery.ScalarQueryParameter("tipo", "STRING", tipo))
+        sets.append("tipo = %(tipo)s")
+        params["tipo"] = tipo
 
     if categoria:
         # Valida e normaliza o nome da categoria
         cat = _match_category(categoria)
         if cat is None:
             return {"status": "error", "message": f"Categoria inválida: '{categoria}'"}
-        sets.append("categoria = @categoria")
-        params.append(bigquery.ScalarQueryParameter("categoria", "STRING", cat))
+        sets.append("categoria = %(categoria)s")
+        params["categoria"] = cat
 
     if conta:
         # Valida e normaliza o nome da conta
         acc = _match_account(conta)
         if acc is None:
             return {"status": "error", "message": f"Conta inválida: '{conta}'"}
-        sets.append("conta = @conta")
-        params.append(bigquery.ScalarQueryParameter("conta", "STRING", acc))
+        sets.append("conta = %(conta)s")
+        params["conta"] = acc
 
     if data:
-        sets.append("data = @data")
-        params.append(bigquery.ScalarQueryParameter("data", "DATE", data))
+        sets.append("data = %(data)s")
+        params["data"] = data
 
     if notes:
-        sets.append("notes = @notes")
-        params.append(bigquery.ScalarQueryParameter("notes", "STRING", notes))
+        sets.append("notes = %(notes)s")
+        params["notes"] = notes
 
     # Se só o updated_at foi adicionado, não há campos reais para mudar — aborta
     if len(sets) == 1:
@@ -459,10 +349,10 @@ def update_transaction(
 
     # Monta o UPDATE com todos os campos coletados acima
     # AND deleted = FALSE garante que não atualizamos transações já deletadas
-    sql = f"UPDATE {_table()} SET {', '.join(sets)} WHERE id = @id AND deleted = FALSE"
+    sql = f"UPDATE transactions SET {', '.join(sets)} WHERE id = %(id)s AND deleted = FALSE"
 
     try:
-        affected = _run_dml(sql, params)
+        affected = run_dml(sql, params)
 
         # Se nenhuma linha foi afetada, o ID não existe ou já foi deletado
         if affected == 0:
@@ -486,11 +376,11 @@ def delete_transaction(id: str) -> dict:
     """
     # Soft delete: atualiza o flag `deleted` para TRUE em vez de usar DELETE
     # Também registra o momento da remoção em `updated_at`
-    sql = f"UPDATE {_table()} SET deleted = TRUE, updated_at = CURRENT_TIMESTAMP() WHERE id = @id AND deleted = FALSE"
-    params = [bigquery.ScalarQueryParameter("id", "STRING", id)]
+    sql = "UPDATE transactions SET deleted = TRUE, updated_at = NOW() WHERE id = %(id)s AND deleted = FALSE"
+    params = {"id": id}
 
     try:
-        affected = _run_dml(sql, params)
+        affected = run_dml(sql, params)
 
         # Se 0 linhas foram afetadas, o ID não existe ou já estava deletado
         if affected == 0:
@@ -518,23 +408,21 @@ def query_expenses(start_date: str = "", end_date: str = "") -> dict:
 
     # Query que busca todas as transações não-deletadas no período,
     # ordenadas da mais recente para a mais antiga
-    sql = f"""
+    # data::text converte o campo date para string (equivalente ao CAST(data AS STRING) do BigQuery)
+    sql = """
         SELECT id, name, valor, tipo, categoria, conta,
-               CAST(data AS STRING) AS data, source, notes, subscription_id
-        FROM {_table()}
-        WHERE data BETWEEN @start AND @end
+               data::text AS data, source, notes, subscription_id
+        FROM transactions
+        WHERE data BETWEEN %(start)s AND %(end)s
           AND deleted = FALSE
         ORDER BY data DESC
     """
 
     # Parâmetros de data para o filtro BETWEEN
-    params = [
-        bigquery.ScalarQueryParameter("start", "DATE", start),
-        bigquery.ScalarQueryParameter("end", "DATE", end),
-    ]
+    params = {"start": start, "end": end}
 
     try:
-        rows = _run_select(sql, params)
+        rows = run_select(sql, params)
 
         # Soma todos os valores das transações para calcular o total do período
         total = sum(r["valor"] for r in rows)
@@ -597,20 +485,17 @@ def get_spending_summary(period: str = "month", group_by: str = "categoria") -> 
     # O nome da coluna (group_by) é inserido diretamente porque já foi validado acima
     sql = f"""
         SELECT {group_by}, SUM(valor) AS total
-        FROM {_table()}
-        WHERE data BETWEEN @start AND @end
+        FROM transactions
+        WHERE data BETWEEN %(start)s AND %(end)s
           AND deleted = FALSE
         GROUP BY {group_by}
         ORDER BY total DESC
     """
 
-    params = [
-        bigquery.ScalarQueryParameter("start", "DATE", start),
-        bigquery.ScalarQueryParameter("end", "DATE", end),
-    ]
+    params = {"start": start, "end": end}
 
     try:
-        rows = _run_select(sql, params)
+        rows = run_select(sql, params)
 
         # Converte a lista de linhas em um dicionário {grupo: total}
         # Ex.: {"Alimentacao": 450.0, "Transporte": 120.0}
@@ -650,23 +535,23 @@ def get_spending_trend(months: int = 3) -> dict:
         # Subtrai 1 dia (vai para o último dia do mês anterior) e troca para dia 1
         start = (start - timedelta(days=1)).replace(day=1)
 
-    # Query que agrupa o total por mês no formato "YYYY-MM"
-    sql = f"""
-        SELECT FORMAT_DATE('%Y-%m', data) AS month, SUM(valor) AS total
-        FROM {_table()}
-        WHERE data BETWEEN @start AND @end
+    # TO_CHAR formata a data como "YYYY-MM" — equivalente ao FORMAT_DATE('%Y-%m', ...) do BigQuery
+    sql = """
+        SELECT TO_CHAR(data, 'YYYY-MM') AS month, SUM(valor) AS total
+        FROM transactions
+        WHERE data BETWEEN %(start)s AND %(end)s
           AND deleted = FALSE
         GROUP BY month
         ORDER BY month
     """
 
-    params = [
-        bigquery.ScalarQueryParameter("start", "DATE", start.strftime("%Y-%m-%d")),
-        bigquery.ScalarQueryParameter("end", "DATE", today.strftime("%Y-%m-%d")),
-    ]
+    params = {
+        "start": start.strftime("%Y-%m-%d"),
+        "end":   today.strftime("%Y-%m-%d"),
+    }
 
     try:
-        rows = _run_select(sql, params)
+        rows = run_select(sql, params)
 
         # Converte a lista de linhas em um dicionário {mês: total}
         # Ex.: {"2025-01": 1200.0, "2025-02": 980.0, "2025-03": 430.0}
@@ -727,24 +612,24 @@ def create_subscription(
 
     # Monta a query de inserção na tabela de assinaturas
     # status 'ativa' é o valor inicial — pode ser alterado depois via update_subscription
-    sql = f"""
-        INSERT INTO {_table("subscriptions")} (id, name, valor, ciclo, next_billing, conta, categoria, status, notes, created_at)
-        VALUES (@id, @name, @valor, @ciclo, @next_billing, @conta, @categoria, 'ativa', @notes, CURRENT_TIMESTAMP())
+    sql = """
+        INSERT INTO subscriptions (id, name, valor, ciclo, next_billing, conta, categoria, status, notes, created_at)
+        VALUES (%(id)s, %(name)s, %(valor)s, %(ciclo)s, %(next_billing)s, %(conta)s, %(categoria)s, 'ativa', %(notes)s, NOW())
     """
 
-    params = [
-        bigquery.ScalarQueryParameter("id", "STRING", sub_id),
-        bigquery.ScalarQueryParameter("name", "STRING", name),
-        bigquery.ScalarQueryParameter("valor", "FLOAT64", float(valor)),
-        bigquery.ScalarQueryParameter("ciclo", "STRING", ciclo),
-        bigquery.ScalarQueryParameter("next_billing", "DATE", next_billing),
-        bigquery.ScalarQueryParameter("conta", "STRING", acc),
-        bigquery.ScalarQueryParameter("categoria", "STRING", cat),
-        bigquery.ScalarQueryParameter("notes", "STRING", notes or None),  # None = NULL no banco
-    ]
+    params = {
+        "id":           sub_id,
+        "name":         name,
+        "valor":        float(valor),
+        "ciclo":        ciclo,
+        "next_billing": next_billing,
+        "conta":        acc,
+        "categoria":    cat,
+        "notes":        notes or None,  # None = NULL no banco
+    }
 
     try:
-        _run_dml(sql, params)
+        run_dml(sql, params)
         # Retorna confirmação com um resumo legível da assinatura criada
         return {"status": "ok", "id": sub_id, "message": f"Assinatura criada: {name} R${float(valor):.2f}/{ciclo}"}
     except Exception as e:
@@ -763,18 +648,19 @@ def list_subscriptions(status: str = "ativa") -> dict:
     Retorna lista de assinaturas e o custo mensal equivalente total.
     """
     # Busca as assinaturas com o status solicitado, ordenando pela próxima cobrança
-    sql = f"""
-        SELECT id, name, valor, ciclo, CAST(next_billing AS STRING) AS next_billing,
+    # next_billing::text converte o campo date para string (equivalente ao CAST(... AS STRING) do BigQuery)
+    sql = """
+        SELECT id, name, valor, ciclo, next_billing::text AS next_billing,
                conta, categoria, status, notes
-        FROM {_table("subscriptions")}
-        WHERE status = @status
+        FROM subscriptions
+        WHERE status = %(status)s
         ORDER BY next_billing
     """
 
-    params = [bigquery.ScalarQueryParameter("status", "STRING", status)]
+    params = {"status": status}
 
     try:
-        rows = _run_select(sql, params)
+        rows = run_select(sql, params)
 
         # Calcula o total mensal equivalente:
         # - Assinaturas mensais: usa o valor diretamente
@@ -812,60 +698,60 @@ def update_subscription(
     Retorna "status": "ok" se atualizado, "status": "error" se não encontrada ou inválida.
     """
     # Lista de cláusulas SET — começa com updated_at para registrar quando foi alterado
-    sets = ["updated_at = CURRENT_TIMESTAMP()"]
+    sets = ["updated_at = NOW()"]
 
     # Parâmetros começam com o ID que será usado no WHERE
-    params = [bigquery.ScalarQueryParameter("id", "STRING", id)]
+    params = {"id": id}
 
     # Adiciona cada campo ao SET apenas se foi informado pelo usuário
     if name:
-        sets.append("name = @name")
-        params.append(bigquery.ScalarQueryParameter("name", "STRING", name))
+        sets.append("name = %(name)s")
+        params["name"] = name
 
     if valor is not None:
         # Checa None explicitamente pois 0.0 seria um valor válido (mesmo que estranho)
-        sets.append("valor = @valor")
-        params.append(bigquery.ScalarQueryParameter("valor", "FLOAT64", float(valor)))
+        sets.append("valor = %(valor)s")
+        params["valor"] = float(valor)
 
     if ciclo:
         # Valida o ciclo antes de aceitar
         if ciclo not in ("mensal", "anual"):
             return {"status": "error", "message": "ciclo deve ser 'mensal' ou 'anual'"}
-        sets.append("ciclo = @ciclo")
-        params.append(bigquery.ScalarQueryParameter("ciclo", "STRING", ciclo))
+        sets.append("ciclo = %(ciclo)s")
+        params["ciclo"] = ciclo
 
     if next_billing:
-        sets.append("next_billing = @next_billing")
-        params.append(bigquery.ScalarQueryParameter("next_billing", "DATE", next_billing))
+        sets.append("next_billing = %(next_billing)s")
+        params["next_billing"] = next_billing
 
     if conta:
         # Valida e normaliza a conta
         acc = _match_account(conta)
         if acc is None:
             return {"status": "error", "message": f"Conta inválida: '{conta}'"}
-        sets.append("conta = @conta")
-        params.append(bigquery.ScalarQueryParameter("conta", "STRING", acc))
+        sets.append("conta = %(conta)s")
+        params["conta"] = acc
 
     if status:
         # Só aceita os três estados válidos do ciclo de vida de uma assinatura
         if status not in ("ativa", "pausada", "cancelada"):
             return {"status": "error", "message": "status deve ser 'ativa', 'pausada' ou 'cancelada'"}
-        sets.append("status = @status")
-        params.append(bigquery.ScalarQueryParameter("status", "STRING", status))
+        sets.append("status = %(status)s")
+        params["status"] = status
 
     if notes:
-        sets.append("notes = @notes")
-        params.append(bigquery.ScalarQueryParameter("notes", "STRING", notes))
+        sets.append("notes = %(notes)s")
+        params["notes"] = notes
 
     # Se só o updated_at foi adicionado, não há campos reais a mudar — aborta
     if len(sets) == 1:
         return {"status": "error", "message": "Nenhum campo para atualizar"}
 
     # Monta o UPDATE — sem filtro deleted porque assinaturas não usam soft delete
-    sql = f"UPDATE {_table('subscriptions')} SET {', '.join(sets)} WHERE id = @id"
+    sql = f"UPDATE subscriptions SET {', '.join(sets)} WHERE id = %(id)s"
 
     try:
-        affected = _run_dml(sql, params)
+        affected = run_dml(sql, params)
 
         # Se nenhuma linha foi afetada, o ID não existe na tabela
         if affected == 0:
