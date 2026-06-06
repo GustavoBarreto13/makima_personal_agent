@@ -576,9 +576,9 @@ export default function Journal() {
     const dayOfWeek = start.getDay() || 7
     start.setDate(start.getDate() - (dayOfWeek - 1))
 
-    // Percorre 53 semanas (53 * 7 = 371 dias, cobrindo mais de um ano)
+    // Percorre 52 semanas (52 * 7 = 364 dias — aproximadamente um ano)
     const cur = new Date(start)
-    for (let w = 0; w < 53; w++) {
+    for (let w = 0; w < 52; w++) {
       const week = []
       for (let d = 0; d < 7; d++) {
         const iso = cur.toISOString().split('T')[0]
