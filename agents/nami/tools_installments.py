@@ -11,11 +11,11 @@ import uuid
 import calendar
 from datetime import date
 
-from google.cloud import bigquery
+# Importa os helpers PostgreSQL compartilhados
+from agents.db import run_select, run_dml
 
 # Importa os helpers privados e constantes compartilhados do módulo principal
 from agents.nami.tools import (
-    _run_dml, _run_select, _table, _project,
     _match_category, _resolve_account,
     CATEGORIES,
 )
@@ -30,7 +30,7 @@ def create_installment(
     first_due: str,
     notes: str = "",
 ) -> dict:
-    """Registra uma compra parcelada e gera todas as parcelas no BigQuery.
+    """Registra uma compra parcelada e gera todas as parcelas no PostgreSQL.
 
     Cria uma linha em `installment_groups` e `num_parcelas` transações
     individuais em `transactions`, cada uma com data mensal a partir de
@@ -72,28 +72,28 @@ def create_installment(
     group_id = str(uuid.uuid4())
 
     # Insere o registro do grupo na tabela installment_groups
-    sql_group = f"""
-        INSERT INTO {_table("installment_groups")}
+    sql_group = """
+        INSERT INTO installment_groups
           (id, name, total_valor, num_parcelas, valor_parcela, conta, account_id,
            categoria, first_due, notes, created_at, deleted)
-        VALUES (@id, @name, @total_valor, @num_parcelas, @valor_parcela, @conta,
-                @account_id, @categoria, @first_due, @notes, CURRENT_TIMESTAMP(), FALSE)
+        VALUES (%(id)s, %(name)s, %(total_valor)s, %(num_parcelas)s, %(valor_parcela)s, %(conta)s,
+                %(account_id)s, %(categoria)s, %(first_due)s, %(notes)s, NOW(), FALSE)
     """
-    params_group = [
-        bigquery.ScalarQueryParameter("id", "STRING", group_id),
-        bigquery.ScalarQueryParameter("name", "STRING", name),
-        bigquery.ScalarQueryParameter("total_valor", "FLOAT64", float(total_valor)),
-        bigquery.ScalarQueryParameter("num_parcelas", "INT64", int(num_parcelas)),
-        bigquery.ScalarQueryParameter("valor_parcela", "FLOAT64", valor_parcela),
-        bigquery.ScalarQueryParameter("conta", "STRING", acc_obj["name"]),
-        bigquery.ScalarQueryParameter("account_id", "STRING", acc_obj["id"]),
-        bigquery.ScalarQueryParameter("categoria", "STRING", cat),
-        bigquery.ScalarQueryParameter("first_due", "DATE", first_due),
-        bigquery.ScalarQueryParameter("notes", "STRING", notes or None),
-    ]
+    params_group = {
+        "id":           group_id,
+        "name":         name,
+        "total_valor":  float(total_valor),
+        "num_parcelas": int(num_parcelas),
+        "valor_parcela": valor_parcela,
+        "conta":        acc_obj["name"],
+        "account_id":   acc_obj["id"],
+        "categoria":    cat,
+        "first_due":    first_due,
+        "notes":        notes or None,
+    }
 
     try:
-        _run_dml(sql_group, params_group)
+        run_dml(sql_group, params_group)
     except Exception as e:
         return {"status": "error", "message": f"Erro ao criar grupo de parcelas: {e}"}
 
@@ -117,27 +117,28 @@ def create_installment(
         parcela_name = f"{name} ({parcela_num}/{num_parcelas})"
         parcela_notes = f"Parcela {parcela_num}/{num_parcelas}" + (f" — {notes}" if notes else "")
 
-        sql_tx = f"""
-            INSERT INTO {_table()}
+        # Insere a transação individual da parcela
+        sql_tx = """
+            INSERT INTO transactions
               (id, name, valor, tipo, categoria, conta, account_id, data, source,
                notes, subscription_id, installment_group_id, created_at, deleted)
-            VALUES (@id, @name, @valor, 'Despesa', @categoria, @conta, @account_id,
-                    @data, 'telegram', @notes, NULL, @group_id, CURRENT_TIMESTAMP(), FALSE)
+            VALUES (%(id)s, %(name)s, %(valor)s, 'Despesa', %(categoria)s, %(conta)s, %(account_id)s,
+                    %(data)s, 'telegram', %(notes)s, NULL, %(group_id)s, NOW(), FALSE)
         """
-        params_tx = [
-            bigquery.ScalarQueryParameter("id", "STRING", tx_id),
-            bigquery.ScalarQueryParameter("name", "STRING", parcela_name),
-            bigquery.ScalarQueryParameter("valor", "FLOAT64", valor_parcela),
-            bigquery.ScalarQueryParameter("categoria", "STRING", cat),
-            bigquery.ScalarQueryParameter("conta", "STRING", acc_obj["name"]),
-            bigquery.ScalarQueryParameter("account_id", "STRING", acc_obj["id"]),
-            bigquery.ScalarQueryParameter("data", "DATE", parcela_date),
-            bigquery.ScalarQueryParameter("notes", "STRING", parcela_notes),
-            bigquery.ScalarQueryParameter("group_id", "STRING", group_id),
-        ]
+        params_tx = {
+            "id":         tx_id,
+            "name":       parcela_name,
+            "valor":      valor_parcela,
+            "categoria":  cat,
+            "conta":      acc_obj["name"],
+            "account_id": acc_obj["id"],
+            "data":       parcela_date,
+            "notes":      parcela_notes,
+            "group_id":   group_id,
+        }
 
         try:
-            _run_dml(sql_tx, params_tx)
+            run_dml(sql_tx, params_tx)
         except Exception as e:
             return {"status": "error", "message": f"Erro ao criar parcela {parcela_num}: {e}"}
 
@@ -161,14 +162,16 @@ def list_installments(status: str = "ativo") -> dict:
     # Filtra apenas grupos não-deletados quando status="ativo"
     where_clause = "ig.deleted = FALSE" if status == "ativo" else "TRUE"
 
+    # COUNTIF do BigQuery → COUNT com filtro FILTER no PostgreSQL
+    # first_due::text converte date para string — equivalente ao CAST(... AS STRING) do BigQuery
     sql = f"""
         SELECT
             ig.id, ig.name, ig.total_valor, ig.num_parcelas, ig.valor_parcela,
-            ig.conta, ig.categoria, CAST(ig.first_due AS STRING) AS first_due, ig.notes,
-            COUNTIF(t.data <= CURRENT_DATE() AND t.deleted = FALSE) AS parcelas_pagas,
-            COUNTIF(t.data > CURRENT_DATE() AND t.deleted = FALSE) AS parcelas_pendentes
-        FROM {_table("installment_groups")} ig
-        LEFT JOIN {_table()} t ON t.installment_group_id = ig.id
+            ig.conta, ig.categoria, ig.first_due::text AS first_due, ig.notes,
+            COUNT(t.id) FILTER (WHERE t.data <= CURRENT_DATE AND t.deleted = FALSE) AS parcelas_pagas,
+            COUNT(t.id) FILTER (WHERE t.data > CURRENT_DATE AND t.deleted = FALSE) AS parcelas_pendentes
+        FROM installment_groups ig
+        LEFT JOIN transactions t ON t.installment_group_id = ig.id
         WHERE {where_clause}
         GROUP BY ig.id, ig.name, ig.total_valor, ig.num_parcelas, ig.valor_parcela,
                  ig.conta, ig.categoria, ig.first_due, ig.notes
@@ -176,7 +179,7 @@ def list_installments(status: str = "ativo") -> dict:
     """
 
     try:
-        rows = _run_select(sql)
+        rows = run_select(sql)
         return {"status": "ok", "installments": rows, "count": len(rows)}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -201,30 +204,27 @@ def get_future_commitments(month: str) -> dict:
     end = f"{month}-{last_day:02d}"
 
     # Soma parcelas futuras (transações vinculadas a installment_group_id) no mês
-    sql_parcelas = f"""
+    sql_parcelas = """
         SELECT COALESCE(SUM(valor), 0) AS total
-        FROM {_table()}
-        WHERE data BETWEEN @start AND @end
+        FROM transactions
+        WHERE data BETWEEN %(start)s AND %(end)s
           AND installment_group_id IS NOT NULL
           AND deleted = FALSE
     """
 
     # Soma assinaturas ativas com cobrança prevista no mês
-    sql_subs = f"""
+    sql_subs = """
         SELECT COALESCE(SUM(valor), 0) AS total
-        FROM {_table("subscriptions")}
-        WHERE next_billing BETWEEN @start AND @end
+        FROM subscriptions
+        WHERE next_billing BETWEEN %(start)s AND %(end)s
           AND status = 'ativa'
     """
 
-    params = [
-        bigquery.ScalarQueryParameter("start", "DATE", start),
-        bigquery.ScalarQueryParameter("end", "DATE", end),
-    ]
+    params = {"start": start, "end": end}
 
     try:
-        rows_parcelas = _run_select(sql_parcelas, params)
-        rows_subs = _run_select(sql_subs, params)
+        rows_parcelas = run_select(sql_parcelas, params)
+        rows_subs = run_select(sql_subs, params)
 
         total_parcelas = float(rows_parcelas[0]["total"]) if rows_parcelas else 0.0
         total_subs = float(rows_subs[0]["total"]) if rows_subs else 0.0
@@ -252,27 +252,27 @@ def cancel_installment_group(id: str) -> dict:
     Returns:
         Dicionário com quantidade de parcelas futuras canceladas.
     """
-    params = [bigquery.ScalarQueryParameter("id", "STRING", id)]
+    params = {"id": id}
 
     # Soft delete nas parcelas futuras (data > hoje) do grupo
-    sql_tx = f"""
-        UPDATE {_table()}
-        SET deleted = TRUE, updated_at = CURRENT_TIMESTAMP()
-        WHERE installment_group_id = @id
-          AND data > CURRENT_DATE()
+    sql_tx = """
+        UPDATE transactions
+        SET deleted = TRUE, updated_at = NOW()
+        WHERE installment_group_id = %(id)s
+          AND data > CURRENT_DATE
           AND deleted = FALSE
     """
 
     # Soft delete no próprio grupo
-    sql_group = f"""
-        UPDATE {_table("installment_groups")}
+    sql_group = """
+        UPDATE installment_groups
         SET deleted = TRUE
-        WHERE id = @id AND deleted = FALSE
+        WHERE id = %(id)s AND deleted = FALSE
     """
 
     try:
-        cancelled = _run_dml(sql_tx, params)
-        _run_dml(sql_group, params)
+        cancelled = run_dml(sql_tx, params)
+        run_dml(sql_group, params)
         return {"status": "ok", "message": f"{cancelled} parcelas futuras canceladas"}
     except Exception as e:
         return {"status": "error", "message": str(e)}

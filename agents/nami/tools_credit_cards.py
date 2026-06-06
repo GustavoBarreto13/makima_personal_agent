@@ -19,13 +19,13 @@ import uuid
 from calendar import monthrange
 from datetime import date
 
+# Importa os helpers PostgreSQL compartilhados
+from agents.db import run_select, run_dml
 from agents.nami.tools import (
-    _run_dml, _run_select, _table, _project,
     _resolve_account,
     _invalidate_cards_cache,
     create_transaction,
 )
-from google.cloud import bigquery
 
 
 def _billing_cycle(closing_day: int) -> tuple:
@@ -95,26 +95,26 @@ def register_credit_card(
 
     card_id = str(uuid.uuid4())
 
-    sql = f"""
-        INSERT INTO {_table("credit_cards")}
+    sql = """
+        INSERT INTO credit_cards
           (id, name, account_id, limite, taxa_juros_mensal, closing_day, due_day,
            status, notes, created_at)
-        VALUES (@id, @name, @account_id, @limite, @taxa, @closing, @due,
-                'ativo', @notes, CURRENT_TIMESTAMP())
+        VALUES (%(id)s, %(name)s, %(account_id)s, %(limite)s, %(taxa)s, %(closing)s, %(due)s,
+                'ativo', %(notes)s, NOW())
     """
-    params = [
-        bigquery.ScalarQueryParameter("id", "STRING", card_id),
-        bigquery.ScalarQueryParameter("name", "STRING", name),
-        bigquery.ScalarQueryParameter("account_id", "STRING", acc["id"]),
-        bigquery.ScalarQueryParameter("limite", "FLOAT64", float(limite)),
-        bigquery.ScalarQueryParameter("taxa", "FLOAT64", float(taxa_juros_mensal)),
-        bigquery.ScalarQueryParameter("closing", "INT64", int(closing_day)),
-        bigquery.ScalarQueryParameter("due", "INT64", int(due_day)),
-        bigquery.ScalarQueryParameter("notes", "STRING", notes or ""),
-    ]
+    params = {
+        "id":         card_id,
+        "name":       name,
+        "account_id": acc["id"],
+        "limite":     float(limite),
+        "taxa":       float(taxa_juros_mensal),
+        "closing":    int(closing_day),
+        "due":        int(due_day),
+        "notes":      notes or "",
+    }
 
     try:
-        _run_dml(sql, params)
+        run_dml(sql, params)
         # Invalida o cache para que o novo cartão apareça imediatamente em _load_cards()
         _invalidate_cards_cache()
     except Exception as e:
@@ -144,22 +144,22 @@ def get_card_debt_summary() -> dict:
     """Retorna dívida atual de cada cartão ativo e total consolidado.
 
     O saldo de cada cartão é calculado somando as Despesas menos as Receitas
-    em transactions filtradas por account_id, no ciclo de faturamento atual.
+    em transactions filtradas por card_id, no ciclo de faturamento atual.
 
     Returns:
         Dicionário com lista de cartões, dívida e utilização de cada um, e totais.
     """
     # Busca cartões com nome da conta via JOIN em accounts
-    sql_cards = f"""
+    sql_cards = """
         SELECT cc.id, cc.name, cc.account_id, a.name AS conta,
                cc.limite, cc.taxa_juros_mensal, cc.closing_day, cc.due_day
-        FROM {_table("credit_cards")} cc
-        JOIN {_table("accounts")} a ON a.id = cc.account_id
+        FROM credit_cards cc
+        JOIN accounts a ON a.id = cc.account_id
         WHERE cc.status = 'ativo'
     """
 
     try:
-        cards = _run_select(sql_cards)
+        cards = run_select(sql_cards)
 
         result = []
         total_divida = 0.0
@@ -169,22 +169,22 @@ def get_card_debt_summary() -> dict:
             start_date, end_date = _billing_cycle(card["closing_day"])
 
             # Filtra transactions pelo card_id — separa completamente das transações de conta bancária
-            sql_saldo = f"""
+            sql_saldo = """
                 SELECT
                     COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0.0)
                   - COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0.0)
                   AS saldo
-                FROM {_table("transactions")}
-                WHERE card_id = @card_id
+                FROM transactions
+                WHERE card_id = %(card_id)s
                   AND deleted = FALSE
-                  AND data BETWEEN @start_date AND @end_date
+                  AND data BETWEEN %(start_date)s AND %(end_date)s
             """
-            params_saldo = [
-                bigquery.ScalarQueryParameter("card_id", "STRING", card["id"]),
-                bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
-                bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
-            ]
-            rows = _run_select(sql_saldo, params_saldo)
+            params_saldo = {
+                "card_id":    card["id"],
+                "start_date": start_date,
+                "end_date":   end_date,
+            }
+            rows = run_select(sql_saldo, params_saldo)
             divida = max(0.0, float(rows[0]["saldo"]) if rows else 0.0)
 
             utilizacao = divida / card["limite"] * 100 if card["limite"] > 0 else 0.0
@@ -224,16 +224,16 @@ def register_card_payment(card_id: str, valor: float, data: str = "") -> dict:
         Dicionário com "status": "ok" ou "status": "error".
     """
     # Busca cartão com nome da conta via JOIN (necessário para create_transaction)
-    sql_card = f"""
+    sql_card = """
         SELECT cc.id, cc.name, cc.account_id, a.name AS conta
-        FROM {_table("credit_cards")} cc
-        JOIN {_table("accounts")} a ON a.id = cc.account_id
-        WHERE cc.id = @id AND cc.status = 'ativo'
+        FROM credit_cards cc
+        JOIN accounts a ON a.id = cc.account_id
+        WHERE cc.id = %(id)s AND cc.status = 'ativo'
     """
-    params = [bigquery.ScalarQueryParameter("id", "STRING", card_id)]
+    params = {"id": card_id}
 
     try:
-        cards = _run_select(sql_card, params)
+        cards = run_select(sql_card, params)
         if not cards:
             return {"status": "error", "message": f"Cartão não encontrado: {card_id}"}
 
@@ -328,16 +328,16 @@ def get_minimum_payment_cost(card_id: str) -> dict:
     Returns:
         Dicionário com meses, juros total e custo total da dívida.
     """
-    sql_card = f"""
+    sql_card = """
         SELECT cc.id, cc.name, cc.account_id, cc.taxa_juros_mensal, cc.limite,
                cc.closing_day, cc.due_day
-        FROM {_table("credit_cards")} cc
-        WHERE cc.id = @id AND cc.status = 'ativo'
+        FROM credit_cards cc
+        WHERE cc.id = %(id)s AND cc.status = 'ativo'
     """
-    params = [bigquery.ScalarQueryParameter("id", "STRING", card_id)]
+    params = {"id": card_id}
 
     try:
-        cards = _run_select(sql_card, params)
+        cards = run_select(sql_card, params)
         if not cards:
             return {"status": "error", "message": f"Cartão não encontrado: {card_id}"}
 
@@ -345,22 +345,22 @@ def get_minimum_payment_cost(card_id: str) -> dict:
         start_date, end_date = _billing_cycle(card["closing_day"])
 
         # Busca saldo via card_id — separa completamente das transações de conta bancária
-        sql_saldo = f"""
+        sql_saldo = """
             SELECT
                 COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0.0)
               - COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0.0)
               AS saldo
-            FROM {_table("transactions")}
-            WHERE card_id = @card_id
+            FROM transactions
+            WHERE card_id = %(card_id)s
               AND deleted = FALSE
-              AND data BETWEEN @start_date AND @end_date
+              AND data BETWEEN %(start_date)s AND %(end_date)s
         """
-        params_saldo = [
-            bigquery.ScalarQueryParameter("card_id", "STRING", card["id"]),
-            bigquery.ScalarQueryParameter("start_date", "DATE", start_date),
-            bigquery.ScalarQueryParameter("end_date", "DATE", end_date),
-        ]
-        rows = _run_select(sql_saldo, params_saldo)
+        params_saldo = {
+            "card_id":    card["id"],
+            "start_date": start_date,
+            "end_date":   end_date,
+        }
+        rows = run_select(sql_saldo, params_saldo)
         divida = max(0.0, float(rows[0]["saldo"]) if rows else 0.0)
 
         if divida <= 0:

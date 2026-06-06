@@ -11,9 +11,9 @@ import uuid
 import calendar
 from datetime import date
 
-from google.cloud import bigquery
+# Importa os helpers PostgreSQL compartilhados
+from agents.db import run_select, run_dml
 from agents.nami.tools import (
-    _run_dml, _run_select, _table, _project,
     _match_category, _today, CATEGORIES,
 )
 
@@ -37,48 +37,41 @@ def set_budget(month: str, categoria: str, limite: float) -> dict:
         return {"status": "error", "message": f"Categoria inválida: '{categoria}'. Opções: {', '.join(CATEGORIES)}"}
 
     # Verifica se já existe envelope para essa combinação mês+categoria
-    sql_check = f"""
-        SELECT id FROM {_table("budgets")}
-        WHERE month = @month AND categoria = @cat
+    sql_check = """
+        SELECT id FROM budgets
+        WHERE month = %(month)s AND categoria = %(cat)s
         LIMIT 1
     """
-    params_check = [
-        bigquery.ScalarQueryParameter("month", "STRING", month),
-        bigquery.ScalarQueryParameter("cat", "STRING", cat),
-    ]
+    params_check = {"month": month, "cat": cat}
 
     try:
-        existing = _run_select(sql_check, params_check)
+        existing = run_select(sql_check, params_check)
 
         if existing:
-            # Atualiza o limite existente
-            sql = f"""
-                UPDATE {_table("budgets")}
-                SET limite = @limite, updated_at = CURRENT_TIMESTAMP()
-                WHERE month = @month AND categoria = @cat
+            # Atualiza o limite existente — updated_at registra quando foi alterado
+            sql = """
+                UPDATE budgets
+                SET limite = %(limite)s, updated_at = NOW()
+                WHERE month = %(month)s AND categoria = %(cat)s
             """
-            params = [
-                bigquery.ScalarQueryParameter("limite", "FLOAT64", float(limite)),
-                bigquery.ScalarQueryParameter("month", "STRING", month),
-                bigquery.ScalarQueryParameter("cat", "STRING", cat),
-            ]
-            _run_dml(sql, params)
+            params = {"limite": float(limite), "month": month, "cat": cat}
+            run_dml(sql, params)
             msg = f"Orçamento de {cat} em {month} atualizado para R${limite:.2f}"
         else:
-            # Cria um novo envelope
+            # Cria um novo envelope com ID único
             budget_id = str(uuid.uuid4())
-            sql = f"""
-                INSERT INTO {_table("budgets")}
+            sql = """
+                INSERT INTO budgets
                   (id, month, categoria, limite, created_at)
-                VALUES (@id, @month, @cat, @limite, CURRENT_TIMESTAMP())
+                VALUES (%(id)s, %(month)s, %(cat)s, %(limite)s, NOW())
             """
-            params = [
-                bigquery.ScalarQueryParameter("id", "STRING", budget_id),
-                bigquery.ScalarQueryParameter("month", "STRING", month),
-                bigquery.ScalarQueryParameter("cat", "STRING", cat),
-                bigquery.ScalarQueryParameter("limite", "FLOAT64", float(limite)),
-            ]
-            _run_dml(sql, params)
+            params = {
+                "id":     budget_id,
+                "month":  month,
+                "cat":    cat,
+                "limite": float(limite),
+            }
+            run_dml(sql, params)
             msg = f"Orçamento definido: {cat} em {month} = R${limite:.2f}"
 
         return {"status": "ok", "message": msg}
@@ -96,10 +89,10 @@ def get_budget_status(month: str) -> dict:
         Lista de envelopes com gasto atual, restante, % utilizado e flag de estouro.
     """
     # Busca os envelopes definidos para o mês
-    sql_budgets = f"""
+    sql_budgets = """
         SELECT id, categoria, limite
-        FROM {_table("budgets")}
-        WHERE month = @month
+        FROM budgets
+        WHERE month = %(month)s
     """
 
     # Calcula o primeiro e último dia do mês para filtrar as transações
@@ -109,24 +102,21 @@ def get_budget_status(month: str) -> dict:
     end = f"{month}-{last_day:02d}"
 
     # Soma gastos reais por categoria no mês (apenas despesas não-deletadas)
-    sql_gastos = f"""
+    sql_gastos = """
         SELECT categoria, SUM(valor) AS total
-        FROM {_table()}
-        WHERE data BETWEEN @start AND @end
+        FROM transactions
+        WHERE data BETWEEN %(start)s AND %(end)s
           AND tipo = 'Despesa'
           AND deleted = FALSE
         GROUP BY categoria
     """
 
-    params_month = [bigquery.ScalarQueryParameter("month", "STRING", month)]
-    params_dates = [
-        bigquery.ScalarQueryParameter("start", "DATE", start),
-        bigquery.ScalarQueryParameter("end", "DATE", end),
-    ]
+    params_month = {"month": month}
+    params_dates = {"start": start, "end": end}
 
     try:
-        budgets = _run_select(sql_budgets, params_month)
-        gastos = _run_select(sql_gastos, params_dates)
+        budgets = run_select(sql_budgets, params_month)
+        gastos = run_select(sql_gastos, params_dates)
 
         # Cria dicionário categoria → gasto real para lookup eficiente
         gasto_map = {g["categoria"]: g["total"] for g in gastos}

@@ -8,8 +8,9 @@ Usage:
 """
 
 import calendar
-from google.cloud import bigquery
-from agents.nami.tools import _run_select, _table, _project
+
+# Importa os helpers PostgreSQL compartilhados
+from agents.db import run_select
 from agents.nami.tools_credit_cards import get_card_debt_summary
 from agents.nami.tools_installments import get_future_commitments
 
@@ -36,21 +37,18 @@ def get_financial_health_score(month: str) -> dict:
     end = f"{month}-{last_day:02d}"
 
     # Busca receitas e despesas do mês agrupadas por tipo
-    sql = f"""
+    sql = """
         SELECT tipo, SUM(valor) AS total
-        FROM {_table()}
-        WHERE data BETWEEN @start AND @end
+        FROM transactions
+        WHERE data BETWEEN %(start)s AND %(end)s
           AND deleted = FALSE
           AND tipo IN ('Receita', 'Despesa')
         GROUP BY tipo
     """
-    params = [
-        bigquery.ScalarQueryParameter("start", "DATE", start),
-        bigquery.ScalarQueryParameter("end", "DATE", end),
-    ]
+    params = {"start": start, "end": end}
 
     try:
-        rows = _run_select(sql, params)
+        rows = run_select(sql, params)
         totals = {r["tipo"]: r["total"] for r in rows}
 
         receita = totals.get("Receita", 0.0)

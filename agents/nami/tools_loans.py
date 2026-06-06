@@ -8,13 +8,14 @@ Usage:
 """
 
 import uuid
+
+# Importa os helpers PostgreSQL compartilhados
+from agents.db import run_select, run_dml
 from agents.nami.tools import (
-    _run_dml, _run_select, _table, _project,
     _resolve_account,
     create_transaction,
 )
 from agents.nami.tools_credit_cards import get_card_debt_summary
-from google.cloud import bigquery
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -124,7 +125,7 @@ def register_loan(
     desconto_folha: bool = False,
     notes: str = "",
 ) -> dict:
-    """Cadastra um empréstimo ou financiamento no BigQuery.
+    """Cadastra um empréstimo ou financiamento no PostgreSQL.
 
     Args:
         name: Nome do empréstimo (ex.: "Carro Onix", "Consignado Itaú")
@@ -136,7 +137,7 @@ def register_loan(
         parcelas_pagas: Quantas já foram pagas até hoje
         valor_parcela: Valor da parcela atual (para SAC: próxima parcela)
         primeiro_vencimento: Data da 1ª parcela no formato AAAA-MM-DD
-        conta: Conta de débito (deve estar em ACCOUNTS)
+        conta: Conta de débito (deve estar em accounts)
         desconto_folha: True se for consignado/débito automático em folha
         notes: Observações opcionais
 
@@ -155,34 +156,34 @@ def register_loan(
 
     loan_id = str(uuid.uuid4())
 
-    sql = f"""
-        INSERT INTO {_table("loans")}
+    sql = """
+        INSERT INTO loans
           (id, name, tipo, sistema_amortizacao, valor_original, taxa_juros_mensal,
            num_parcelas_total, parcelas_pagas, valor_parcela, primeiro_vencimento,
            conta, account_id, desconto_folha, status, notes, created_at)
-        VALUES (@id, @name, @tipo, @sistema, @valor_original, @taxa,
-                @num_parcelas, @parcelas_pagas, @valor_parcela, @primeiro_vencimento,
-                @conta, @account_id, @desconto_folha, 'ativo', @notes, CURRENT_TIMESTAMP())
+        VALUES (%(id)s, %(name)s, %(tipo)s, %(sistema)s, %(valor_original)s, %(taxa)s,
+                %(num_parcelas)s, %(parcelas_pagas)s, %(valor_parcela)s, %(primeiro_vencimento)s,
+                %(conta)s, %(account_id)s, %(desconto_folha)s, 'ativo', %(notes)s, NOW())
     """
-    params = [
-        bigquery.ScalarQueryParameter("id", "STRING", loan_id),
-        bigquery.ScalarQueryParameter("name", "STRING", name),
-        bigquery.ScalarQueryParameter("tipo", "STRING", tipo),
-        bigquery.ScalarQueryParameter("sistema", "STRING", sistema_amortizacao),
-        bigquery.ScalarQueryParameter("valor_original", "FLOAT64", float(valor_original)),
-        bigquery.ScalarQueryParameter("taxa", "FLOAT64", float(taxa_juros_mensal)),
-        bigquery.ScalarQueryParameter("num_parcelas", "INT64", int(num_parcelas)),
-        bigquery.ScalarQueryParameter("parcelas_pagas", "INT64", int(parcelas_pagas)),
-        bigquery.ScalarQueryParameter("valor_parcela", "FLOAT64", float(valor_parcela)),
-        bigquery.ScalarQueryParameter("primeiro_vencimento", "DATE", primeiro_vencimento),
-        bigquery.ScalarQueryParameter("conta", "STRING", acc_obj["name"]),
-        bigquery.ScalarQueryParameter("account_id", "STRING", acc_obj["id"]),
-        bigquery.ScalarQueryParameter("desconto_folha", "BOOL", bool(desconto_folha)),
-        bigquery.ScalarQueryParameter("notes", "STRING", notes or None),
-    ]
+    params = {
+        "id":                  loan_id,
+        "name":                name,
+        "tipo":                tipo,
+        "sistema":             sistema_amortizacao,
+        "valor_original":      float(valor_original),
+        "taxa":                float(taxa_juros_mensal),
+        "num_parcelas":        int(num_parcelas),
+        "parcelas_pagas":      int(parcelas_pagas),
+        "valor_parcela":       float(valor_parcela),
+        "primeiro_vencimento": primeiro_vencimento,
+        "conta":               acc_obj["name"],
+        "account_id":          acc_obj["id"],
+        "desconto_folha":      bool(desconto_folha),
+        "notes":               notes or None,
+    }
 
     try:
-        _run_dml(sql, params)
+        run_dml(sql, params)
         return {"status": "ok", "id": loan_id, "message": f"Empréstimo '{name}' cadastrado com sucesso"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -197,19 +198,20 @@ def list_loans(status: str = "ativo") -> dict:
     Returns:
         Lista de empréstimos com saldo devedor calculado pelo sistema de amortização.
     """
-    sql = f"""
+    # primeiro_vencimento::text converte date para string — equivalente ao CAST(... AS STRING) do BigQuery
+    sql = """
         SELECT id, name, tipo, sistema_amortizacao, valor_original, taxa_juros_mensal,
                num_parcelas_total, parcelas_pagas, valor_parcela,
-               CAST(primeiro_vencimento AS STRING) AS primeiro_vencimento,
+               primeiro_vencimento::text AS primeiro_vencimento,
                conta, desconto_folha, status, notes
-        FROM {_table("loans")}
-        WHERE status = @status
+        FROM loans
+        WHERE status = %(status)s
         ORDER BY taxa_juros_mensal DESC
     """
-    params = [bigquery.ScalarQueryParameter("status", "STRING", status)]
+    params = {"status": status}
 
     try:
-        rows = _run_select(sql, params)
+        rows = run_select(sql, params)
 
         # Calcula saldo devedor para cada empréstimo usando o sistema correto
         for loan in rows:
@@ -237,11 +239,11 @@ def get_loan_balance(loan_id: str) -> dict:
     Returns:
         Dicionário com saldo devedor, parcelas restantes e próxima parcela.
     """
-    sql = f"SELECT * FROM {_table('loans')} WHERE id = @id AND status = 'ativo'"
-    params = [bigquery.ScalarQueryParameter("id", "STRING", loan_id)]
+    sql = "SELECT * FROM loans WHERE id = %(id)s AND status = 'ativo'"
+    params = {"id": loan_id}
 
     try:
-        rows = _run_select(sql, params)
+        rows = run_select(sql, params)
         if not rows:
             return {"status": "error", "message": f"Empréstimo não encontrado: {loan_id}"}
 
@@ -324,11 +326,11 @@ def simulate_amortization(loan_id: str, extra_value: float) -> dict:
     Returns:
         Dicionário com parcelas eliminadas e economia de juros.
     """
-    sql = f"SELECT * FROM {_table('loans')} WHERE id = @id AND status = 'ativo'"
-    params = [bigquery.ScalarQueryParameter("id", "STRING", loan_id)]
+    sql = "SELECT * FROM loans WHERE id = %(id)s AND status = 'ativo'"
+    params = {"id": loan_id}
 
     try:
-        rows = _run_select(sql, params)
+        rows = run_select(sql, params)
         if not rows:
             return {"status": "error", "message": f"Empréstimo não encontrado: {loan_id}"}
 
@@ -377,11 +379,11 @@ def simulate_accelerated_payment(loan_id: str, extra_monthly: float) -> dict:
     Returns:
         Dicionário com meses economizados e juros poupados.
     """
-    sql = f"SELECT * FROM {_table('loans')} WHERE id = @id AND status = 'ativo'"
-    params = [bigquery.ScalarQueryParameter("id", "STRING", loan_id)]
+    sql = "SELECT * FROM loans WHERE id = %(id)s AND status = 'ativo'"
+    params = {"id": loan_id}
 
     try:
-        rows = _run_select(sql, params)
+        rows = run_select(sql, params)
         if not rows:
             return {"status": "error", "message": f"Empréstimo não encontrado: {loan_id}"}
 
@@ -428,15 +430,15 @@ def compare_payoff_priority() -> dict:
     Returns:
         Lista priorizada de todas as dívidas com recomendação de ordem de ataque.
     """
-    sql = f"""
+    sql = """
         SELECT id, name, taxa_juros_mensal, valor_original,
                num_parcelas_total, parcelas_pagas, sistema_amortizacao, valor_parcela
-        FROM {_table("loans")}
+        FROM loans
         WHERE status = 'ativo'
     """
 
     try:
-        loans = _run_select(sql)
+        loans = run_select(sql)
         card_summary = get_card_debt_summary()
 
         priority = []
@@ -503,17 +505,17 @@ def register_loan_payment(loan_id: str, data: str = "") -> dict:
     Returns:
         Dicionário com status, saldo restante e número de parcelas restantes.
     """
-    sql_loan = f"""
+    sql_loan = """
         SELECT id, name, tipo, sistema_amortizacao, valor_original,
                taxa_juros_mensal, num_parcelas_total, parcelas_pagas,
                valor_parcela, conta, desconto_folha, status
-        FROM {_table("loans")}
-        WHERE id = @loan_id AND status = 'ativo'
+        FROM loans
+        WHERE id = %(loan_id)s AND status = 'ativo'
     """
-    params = [bigquery.ScalarQueryParameter("loan_id", "STRING", loan_id)]
+    params = {"loan_id": loan_id}
 
     try:
-        loans = _run_select(sql_loan, params)
+        loans = run_select(sql_loan, params)
         if not loans:
             return {"status": "error", "message": f"Empréstimo não encontrado ou inativo: {loan_id}"}
 
@@ -527,7 +529,7 @@ def register_loan_payment(loan_id: str, data: str = "") -> dict:
         # Mapeia tipo do empréstimo para categoria da transação
         _CATEGORIA_MAP = {
             "imobiliario": "Moradia",
-            "veiculo": "Transporte",
+            "veiculo":     "Transporte",
         }
         categoria = _CATEGORIA_MAP.get(loan["tipo"], "Inbox")
 
@@ -543,14 +545,14 @@ def register_loan_payment(loan_id: str, data: str = "") -> dict:
         if tx.get("status") != "ok":
             return {"status": "error", "message": f"Erro ao registrar transação: {tx.get('message')}"}
 
-        # Incrementa parcelas_pagas no empréstimo
-        sql_update = f"""
-            UPDATE {_table("loans")}
+        # Incrementa parcelas_pagas no empréstimo via UPDATE
+        sql_update = """
+            UPDATE loans
             SET parcelas_pagas = parcelas_pagas + 1,
-                updated_at = CURRENT_TIMESTAMP()
-            WHERE id = @loan_id
+                updated_at = NOW()
+            WHERE id = %(loan_id)s
         """
-        _run_dml(sql_update, params)
+        run_dml(sql_update, params)
 
         # Calcula saldo restante após este pagamento
         k_novo = k + 1
