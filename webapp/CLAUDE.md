@@ -1,8 +1,9 @@
 ## Módulo: webapp
 
 Painel web do Makima — FastAPI (backend) + React (frontend) servidos por um único container.
-A API importa diretamente as tools dos agentes (`agents/nami/`, `agents/frieren/`), lendo e escrevendo
-nas mesmas tabelas BigQuery usadas pelo bot do Telegram.
+A API importa diretamente as tools dos agentes (`agents/nami/`, `agents/frieren/`, `agents/journal/`),
+lendo e escrevendo nas mesmas tabelas (BigQuery para finanças/livros; PostgreSQL para o journal)
+usadas pelo bot do Telegram.
 
 ---
 
@@ -18,16 +19,18 @@ nas mesmas tabelas BigQuery usadas pelo bot do Telegram.
 ```
 webapp/
 ├── backend/
-│   ├── main.py        # app FastAPI: registra routers, CORS (dev), SessionMiddleware, serve dist/
-│   ├── config.py      # todas as env vars do módulo (SESSION_SECRET, ALLOWED_EMAIL, etc.)
-│   ├── deps.py        # require_user() → valida cookie makima_session via itsdangerous
+│   ├── main.py         # app FastAPI: registra routers, CORS (dev), SessionMiddleware, serve dist/
+│   ├── config.py       # todas as env vars do módulo (SESSION_SECRET, ALLOWED_EMAIL, etc.)
+│   ├── deps.py         # require_user() → valida cookie makima_session via itsdangerous
 │   └── routers/
-│       ├── auth.py    # /auth/login → /auth/callback → cookie ; /auth/logout ; /auth/me
-│       └── finances.py # /api/finances/* → wraps tools da Nami
+│       ├── auth.py     # /auth/login → /auth/callback → cookie ; /auth/logout ; /auth/me
+│       ├── finances.py # /api/finances/* → wraps tools da Nami (BigQuery)
+│       ├── books.py    # /api/books/*   → wraps tools da Frieren (BigQuery)
+│       └── journal.py  # /api/journal/* → wraps tools do Journal (PostgreSQL)
 └── frontend/
     └── src/
         ├── lib/api.ts  # fetch tipado, envia cookie automaticamente
-        └── pages/      # uma página por domínio financeiro
+        └── pages/      # uma página por domínio
 ```
 
 ---
@@ -69,6 +72,35 @@ Fluxo: `GET /auth/login` → Google OIDC → `GET /auth/callback` → cookie `ma
 
 ---
 
+### Domínio: Journal (Diário pessoal)
+
+Router: `routers/journal.py` · Tools: `agents/journal/tools.py` · Storage: **PostgreSQL** (não BigQuery)
+
+O Journal é o único domínio que usa o PostgreSQL compartilhado com o ADK, em vez do BigQuery.
+
+**Modelo de dados:**
+- `journal_types` — tipos de diário (ex.: id=1 → "personal"); extensível
+- `journal_pages` — uma página por (type_id, date); criada sob demanda pelo `get_or_create_page`
+- `journal_bullets` — bullets numerados por posição dentro da página; cada bullet tem conteúdo livre
+- `journal_mentions` — extração automática de `@pessoa` e `#tag` de cada bullet
+
+**Endpoints disponíveis:**
+| Endpoint | Método | Descrição |
+|---|---|---|
+| `/api/journal/page?date=YYYY-MM-DD&type_id=1` | GET | Busca/cria página para uma data |
+| `/api/journal/bullets` | POST | Upsert de bullet (por page_id + position) |
+| `/api/journal/bullets/{id}` | DELETE | Remove bullet (cascade apaga menções) |
+| `/api/journal/heatmap?year=2026` | GET | Contagem de bullets por dia (para o heatmap) |
+| `/api/journal/mentions?kind=person\|tag` | GET | Lista menções distintas com count DESC |
+| `/api/journal/filter?kind=person\|tag&value=X` | GET | Bullets que mencionam uma pessoa ou tag |
+| `/api/journal/search?q=texto` | GET | Full-text search com dicionário `portuguese` |
+
+**Diferença na validação de resultado:**
+`list_heatmap`, `list_mentions`, `get_bullets_by_mention` e `search_bullets` retornam listas/dicts diretamente — **sem** campo `"status"`, então **não** usar `_check_result` neles.
+`get_or_create_page` retorna `{"error": "..."}` (não `{"status": "error"}`) quando `type_id` não existe — verificar `result.get("error")` explicitamente antes de chamar `_check_result`.
+
+---
+
 ### Variáveis de ambiente
 
 | Variável | Obrigatório | Descrição |
@@ -80,6 +112,7 @@ Fluxo: `GET /auth/login` → Google OIDC → `GET /auth/callback` → cookie `ma
 | `OAUTH_REDIRECT_URL` | sim | URL de callback (dev: `http://localhost:8080/auth/callback`) |
 | `GCP_PROJECT_ID` | sim | Herdado do bot — necessário para as tools de BigQuery |
 | `GCP_CREDENTIALS_JSON` | sim | Herdado do bot — credenciais de serviço GCP |
+| `DATABASE_URL` | sim | PostgreSQL compartilhado com o ADK — usado pelas tools do journal |
 
 As variáveis de BigQuery/GCP são lidas pelas tools dos agentes diretamente do ambiente — `config.py` não as reexporta.
 
@@ -106,22 +139,25 @@ Em desenvolvimento o CORS libera `localhost:5173`. Em produção (container), o 
 
 ### Fatias de implementação
 
-| Fatia | Status |
-|---|---|
-| 0 — Esqueleto (main.py, Dockerfile, healthz) | ✅ |
-| 1 — Autenticação Google OAuth | ✅ |
-| 2 — Finanças (Nami) — todas as pages | ✅ |
-| 3 — Livros (Frieren) | ✅ |
-| 4 — Tarefas/Agenda (Kaguya) | — |
-| 5 — Painel de chat (Makima) | — |
+| Fatia | Descrição | Status |
+|---|---|---|
+| 0 | Esqueleto (main.py, Dockerfile, healthz) | ✅ |
+| 1 | Autenticação Google OAuth | ✅ |
+| 2 | Finanças (Nami) — todas as páginas | ✅ |
+| 3 | Livros (Frieren) | ✅ |
+| 4 | Journal/Diário pessoal (PostgreSQL) | ✅ |
+| 5 | Tarefas/Agenda (Kaguya) | — |
+| 6 | Painel de chat (Makima) | — |
 
 ---
 
 ### O que NÃO fazer aqui
 
-- **Nunca modificar** `agents/nami/`, `agents/frieren/`, `mcp_servers/` ou `coordinator/` — são importados como estão
-- **Não instanciar** o ADK (`InMemoryRunner`, `Agent`) fora da Fatia 5 (chat) — os routers 2/3/4 chamam tools Python puras
+- **Nunca modificar** `agents/nami/`, `agents/frieren/`, `agents/journal/`, `mcp_servers/` ou `coordinator/` — são importados como estão
+- **Não instanciar** o ADK (`InMemoryRunner`, `Agent`) fora da Fatia 6 (chat) — os routers 2/3/4/5 chamam tools Python puras
 - **Não registrar** routers sem o `Depends(require_user)` em todas as rotas — vazamento de dados financeiros
 - **`create_installment()` não aceita `card_id`** — compras parceladas de cartão de crédito precisam ser criadas com `create_transaction` por parcela individualmente
 - **Não usar `git add .`** ao commitar — `webapp/frontend/dist/` (build) não vai para o git (está no `.gitignore`)
 - **Não expor `SESSION_SECRET` em logs** — nunca fazer `logging.info(config.SESSION_SECRET)`
+- **Não usar `_check_result`** nos endpoints do journal que retornam lista/dict diretamente (`list_heatmap`, `list_mentions`, `get_bullets_by_mention`, `search_bullets`) — essas tools não têm campo `"status"`
+- **Não confundir o schema de erro do journal**: `get_or_create_page` retorna `{"error": "..."}`, não `{"status": "error"}` — verificar `result.get("error")` explicitamente
