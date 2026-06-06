@@ -197,7 +197,7 @@ export default function Loans() {
       sistema:         form.sistema,
       valor_original:  parseFloat(form.valor_original),
       taxa_juros_mensal: parseFloat(form.taxa_mensal),
-      num_parcelas:    parseInt(form.prazo, 10),           // parseInt com base 10 para evitar bugs
+      prazo_meses:     parseInt(form.prazo, 10),           // parseInt com base 10 para evitar bugs; backend espera "prazo_meses"
       parcelas_pagas:  parseInt(form.parcelas_pagas, 10),
       valor_parcela:   parseFloat(form.valor_parcela),
       data_inicio:     form.data_inicio,
@@ -282,11 +282,15 @@ export default function Loans() {
                   {/* Progresso de parcelas: pagas / total */}
                   <td className="px-4 py-3 text-gray-300">
                     {loan.parcelas_pagas}/{loan.num_parcelas}
-                    {/* Barra de progresso das parcelas */}
+                    {/* Barra de progresso das parcelas.
+                        Guarda contra divisão por zero quando num_parcelas === 0. */}
                     <div className="w-24 h-1.5 bg-gray-700 rounded-full mt-1 overflow-hidden">
                       <div
                         className="h-full bg-indigo-500 rounded-full"
-                        style={{ width: `${(loan.parcelas_pagas / loan.num_parcelas) * 100}%` }}
+                        style={{ width: loan.num_parcelas > 0
+                          ? `${Math.round((loan.parcelas_pagas / loan.num_parcelas) * 100)}%`
+                          : '0%'
+                        }}
                       />
                     </div>
                   </td>

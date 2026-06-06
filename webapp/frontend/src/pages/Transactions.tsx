@@ -201,8 +201,9 @@ export default function Transactions() {
     setSubmitting(true)
 
     // Monta o payload para enviar ao backend
+    // Atenção: o backend espera o campo "name" (em inglês), não "nome"
     const payload = {
-      nome:      form.nome,
+      name:      form.nome,
       valor:     parseFloat(form.valor),  // Converte string → número para o JSON
       tipo:      form.tipo,
       categoria: form.categoria,
@@ -307,9 +308,11 @@ export default function Transactions() {
                       : 'bg-gray-900'        // Fundo padrão para despesas
                   }`}
                 >
-                  {/* Data formatada para o padrão brasileiro */}
+                  {/* Data formatada para o padrão brasileiro.
+                      Usamos split em vez de new Date() para evitar o bug de fuso horário UTC
+                      que faz datas como "2026-06-15" aparecerem como "14/06/2026" em timezones negativos. */}
                   <td className="px-4 py-3 text-gray-400">
-                    {new Date(tx.data).toLocaleDateString('pt-BR')}
+                    {(() => { const [y, m, d] = (tx.data || '').split('T')[0].split('-'); return `${d}/${m}/${y}` })()}
                   </td>
                   <td className="px-4 py-3 text-gray-200">{tx.nome}</td>
                   <td className="px-4 py-3">

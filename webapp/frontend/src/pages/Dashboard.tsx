@@ -272,8 +272,9 @@ export default function Dashboard() {
 
               {/* Lista detalhada de itens */}
               <div className="space-y-2">
-                {commitments.items.map((item, idx) => (
-                  <div key={idx} className="flex justify-between text-sm">
+                {commitments.items.map((item) => (
+                  // Chave estável baseada em campos únicos do item (evita bugs de re-renderização com índice)
+                  <div key={`${item.nome}-${item.vencimento}`} className="flex justify-between text-sm">
                     <span className="text-gray-300">{item.nome}</span>
                     <span className="text-white font-medium">{formatBRL(item.valor)}</span>
                   </div>

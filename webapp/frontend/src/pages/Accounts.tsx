@@ -177,11 +177,12 @@ export default function Accounts() {
     setFormError(null)
     setSubmitting(true)
 
+    // O backend espera os campos em inglês: name, type, balance_inicial, data_inicio
     const payload = {
-      nome:          form.nome,
-      tipo:          form.tipo,
-      saldo_inicial: parseFloat(form.saldo_inicial),  // Converte string → número
-      data_inicio:   form.data_inicio,
+      name:           form.nome,
+      type:           form.tipo,
+      balance_inicial: parseFloat(form.saldo_inicial),  // Converte string → número
+      data_inicio:    form.data_inicio,
     }
 
     try {
@@ -251,9 +252,10 @@ export default function Accounts() {
                       {account.tipo}
                     </span>
                   </td>
-                  {/* Data de criação formatada em português */}
+                  {/* Data de criação formatada em português.
+                      Usamos split para evitar o bug de fuso horário UTC em timezones negativos. */}
                   <td className="px-4 py-3 text-gray-400">
-                    {new Date(account.criada_em).toLocaleDateString('pt-BR')}
+                    {(() => { const [y, m, d] = (account.criada_em || '').split('T')[0].split('-'); return `${d}/${m}/${y}` })()}
                   </td>
                   {/* Coluna de saldo: mostra spinner, valor ou vazio */}
                   <td className="px-4 py-3 text-gray-200">
@@ -322,7 +324,7 @@ export default function Accounts() {
                   className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 >
                   <option value="corrente">Corrente</option>
-                  <option value="poupança">Poupança</option>
+                  <option value="poupanca">Poupança</option>
                   <option value="dinheiro">Dinheiro</option>
                   <option value="investimento">Investimento</option>
                 </select>

@@ -189,8 +189,9 @@ export default function Budgets() {
     setFormError(null)
     setSubmitting(true)
 
+    // O backend espera o campo "month" (em inglês) para o mês do orçamento
     const payload = {
-      mes:       form.mes,
+      month:     form.mes,
       categoria: form.categoria,
       limite:    parseFloat(form.limite),  // Converte string → número
     }

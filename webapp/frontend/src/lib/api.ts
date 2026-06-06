@@ -112,6 +112,10 @@ export const api = {
     // Se o servidor retornou um erro (4xx, 5xx), lança uma exceção com o código HTTP
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
+    // 204 No Content: o servidor confirmou a deleção mas não retorna corpo JSON.
+    // Tentar chamar res.json() aqui causaria erro de parse; retornamos objeto vazio.
+    if (res.status === 204) return {} as T
+
     // Deserializa e retorna o JSON da resposta como o tipo T informado
     return res.json() as Promise<T>
   },

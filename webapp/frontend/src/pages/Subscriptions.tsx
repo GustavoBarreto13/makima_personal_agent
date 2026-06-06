@@ -208,8 +208,9 @@ export default function Subscriptions() {
     setFormError(null)
     setSubmitting(true)
 
+    // O backend espera o campo "name" (em inglês) para o nome da assinatura
     const payload = {
-      nome:         form.nome,
+      name:         form.nome,
       valor:        parseFloat(form.valor),  // Converte string → número
       ciclo:        form.ciclo,
       conta:        form.conta,
@@ -301,9 +302,10 @@ export default function Subscriptions() {
                       {sub.ciclo}
                     </span>
                   </td>
-                  {/* Data da próxima cobrança formatada */}
+                  {/* Data da próxima cobrança formatada.
+                      Usamos split para evitar o bug de fuso horário UTC em timezones negativos. */}
                   <td className="px-4 py-3 text-gray-400">
-                    {new Date(sub.next_billing).toLocaleDateString('pt-BR')}
+                    {(() => { const [y, m, d] = (sub.next_billing || '').split('T')[0].split('-'); return `${d}/${m}/${y}` })()}
                   </td>
                   <td className="px-4 py-3 text-gray-300">{sub.conta}</td>
                   {/* Badge de status com cor dinâmica */}
