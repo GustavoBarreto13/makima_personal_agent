@@ -62,13 +62,18 @@ def run_select(sql: str, params: dict | None = None) -> list[dict]:
             return [dict(row) for row in cur.fetchall()]
 
 
-def run_dml(sql: str, params: dict | None = None) -> None:
+def run_dml(sql: str, params: dict | None = None) -> int:
     """Executa uma operação INSERT, UPDATE ou DELETE.
 
     Args:
         sql: SQL com placeholders %(nome)s.
         params: Dicionário de parâmetros.
+
+    Returns:
+        Número de linhas afetadas (rowcount).
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params or {})
+            # psycopg2 retorna o número de linhas afetadas pelo comando DML
+            return cur.rowcount
