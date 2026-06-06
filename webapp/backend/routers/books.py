@@ -228,6 +228,8 @@ def list_books(
     # CAST(...AS INT64) é necessário porque MAX() sobre INT64 pode retornar NUMERIC no BigQuery.
     # WHERE b.deleted = FALSE exclui livros removidos logicamente (soft delete).
     # ORDER BY CASE: ordena por prioridade de status, depois por data de atualização mais recente.
+    # IMPORTANTE: b.updated_at deve estar no SELECT e no GROUP BY para poder ser usado no ORDER BY —
+    # BigQuery Standard SQL não permite referenciar colunas não agrupadas no ORDER BY de queries com GROUP BY.
     sql = f"""
         SELECT
             b.id,
@@ -242,13 +244,14 @@ def list_books(
             b.genre,
             b.isbn,
             b.published_year,
+            b.updated_at,
             CAST(MAX(rl.page_end) AS INT64) AS current_page
         FROM `{books_table}` b
         LEFT JOIN `{logs_table}` rl ON rl.book_id = b.id
         WHERE b.deleted = FALSE
         GROUP BY b.id, b.title, b.author, b.total_pages, b.status,
                  b.cover_url, b.date_started, b.date_finished, b.rating,
-                 b.genre, b.isbn, b.published_year
+                 b.genre, b.isbn, b.published_year, b.updated_at
         ORDER BY
             CASE b.status
                 WHEN 'lendo'     THEN 0
