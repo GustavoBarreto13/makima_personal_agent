@@ -2,8 +2,7 @@ google-adk          # Agent, Runner, DatabaseSessionService — sessões persist
 python-telegram-bot # bot Telegram
 python-dotenv       # carrega variáveis do arquivo .env
 requests
-google-cloud-bigquery
-db-dtypes
+google-cloud-storage>=2.0
 tzdata              # base de fusos horários p/ zoneinfo (imagens slim não trazem)
 mcp                 # Model Context Protocol para integração com servidores MCP
 google-auth         # Autenticação Google (OAuth2)
