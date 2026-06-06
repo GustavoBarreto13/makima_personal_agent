@@ -1,6 +1,6 @@
 """
 Tools do agente Frieren — rastreamento de leitura pessoal.
-BigQuery para persistência + Google Books API para metadados.
+PostgreSQL para persistência + Google Books API para metadados.
 """
 
 import os           # Para ler variáveis de ambiente (credenciais, chaves de API)
@@ -11,8 +11,9 @@ from zoneinfo import ZoneInfo                  # Para trabalhar com fuso horári
 
 import re                           # Para remover pontuação na normalização de strings (busca fuzzy)
 import requests                    # Cliente HTTP para chamar a Google Books API
-from google.cloud import bigquery  # Cliente oficial do BigQuery (banco de dados na nuvem)
-from google.oauth2 import service_account  # Para criar credenciais a partir do JSON do service account
+
+# Importa os helpers PostgreSQL compartilhados — substituem o BigQuery _run_select/_run_dml
+from agents.db import run_select, run_dml
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -33,68 +34,10 @@ _TZ = ZoneInfo("America/Sao_Paulo")
 # de requisições, mas é opcional para uso pessoal em baixo volume.
 _BOOKS_API_URL = "https://www.googleapis.com/books/v1/volumes"
 
-# Nome do dataset BigQuery dedicado ao agente Frieren.
-# Separado do dataset da Nami (nami_finance_agent) para isolar domínios.
-_DATASET = "frieren_books_agent"
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPERS PRIVADOS — infraestrutura (não chamados diretamente pelo agente)
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _project() -> str:
-    """Retorna o ID do projeto GCP lido da variável de ambiente GCP_PROJECT_ID.
-
-    Retorna string vazia se não estiver configurado — os helpers de query
-    vão falhar com erro claro do BigQuery se o projeto estiver ausente.
-    """
-    # Lê o ID do projeto GCP configurado no ambiente (Dokploy/Docker/.env)
-    return os.environ.get("GCP_PROJECT_ID", "")
-
-
-# Cache do cliente BigQuery — evita criar múltiplas conexões entre chamadas de tool
-_bq_client: bigquery.Client | None = None
-
-
-def _client() -> bigquery.Client:
-    """Retorna o cliente BigQuery, criando-o na primeira chamada (singleton).
-
-    Usa GCP_CREDENTIALS_JSON (conteúdo JSON do service account como string),
-    igual ao padrão da Nami — funciona em Docker/Dokploy sem montar arquivos.
-    Fallback para ADC em desenvolvimento local.
-    """
-    global _bq_client
-
-    if _bq_client is None:
-        # Lê o conteúdo JSON do service account direto da env var (padrão Docker/Dokploy)
-        creds_json = os.environ.get("GCP_CREDENTIALS_JSON", "")
-
-        if creds_json:
-            import json
-            # Converte a string JSON para dict e cria credenciais sem precisar de arquivo
-            info = json.loads(creds_json)
-            creds = service_account.Credentials.from_service_account_info(
-                info,
-                scopes=["https://www.googleapis.com/auth/bigquery"],
-            )
-            _bq_client = bigquery.Client(project=_project(), credentials=creds)
-        else:
-            # ADC — funciona localmente com `gcloud auth application-default login`
-            _bq_client = bigquery.Client(project=_project())
-
-    return _bq_client
-
-
-def _table(name: str) -> str:
-    """Retorna o caminho completo de uma tabela no formato BigQuery SQL.
-
-    O formato é: projeto.dataset.tabela — sem crases, pois o nome do projeto
-    e dataset não contêm caracteres especiais que exijam escape.
-
-    Exemplo de resultado: "projetos-448301.frieren_books_agent.books"
-    """
-    return f"{_project()}.{_DATASET}.{name}"
-
 
 def _now() -> datetime:
     """Retorna o datetime atual no fuso horário de São Paulo.
@@ -149,12 +92,12 @@ def _norm(s: str) -> str:
 
 
 def _norm_sql_col(col: str) -> str:
-    """Retorna uma expressão SQL BigQuery que normaliza uma coluna de texto
+    """Retorna uma expressão SQL PostgreSQL que normaliza uma coluna de texto
     da mesma forma que _norm() faz no Python.
 
     Permite comparar títulos armazenados no banco (com acentos e pontuação,
     vindos da Google Books API) contra queries do usuário (sem acentos, sem
-    pontuação) usando LIKE — sem necessidade de coluna extra no schema.
+    pontuação) usando ILIKE — sem necessidade de coluna extra no schema.
 
     Exemplo: título armazenado "Belo mundo, onde você está" é normalizado para
     "belo mundo onde voce esta", que casa com a query "belo mundo onde voce esta".
@@ -164,7 +107,7 @@ def _norm_sql_col(col: str) -> str:
 
     # Passo 2: substitui letras acentuadas pela letra base equivalente
     # — mesma lógica do _norm() Python via NFD, mas implementada com REGEXP_REPLACE
-    # porque BigQuery não expõe normalização NFD diretamente via SQL
+    # A flag 'g' no PostgreSQL equivale ao comportamento global do BigQuery
     for padrao, repl in [
         ("[àáâãä]", "a"),
         ("[èéêë]",  "e"),
@@ -173,60 +116,16 @@ def _norm_sql_col(col: str) -> str:
         ("[ùúûü]",  "u"),
         ("ç",       "c"),
     ]:
-        expr = f"REGEXP_REPLACE({expr}, '{padrao}', '{repl}')"
+        # PostgreSQL REGEXP_REPLACE exige a flag 'g' para substituição global
+        expr = f"REGEXP_REPLACE({expr}, '{padrao}', '{repl}', 'g')"
 
     # Passo 3: remove pontuação comum (substitui por espaço para não juntar palavras)
-    expr = f"REGEXP_REPLACE({expr}, '[,.;:!?]', ' ')"
+    expr = f"REGEXP_REPLACE({expr}, '[,.;:!?]', ' ', 'g')"
 
     # Passo 4: colapsa múltiplos espaços e remove espaços nas bordas
-    expr = f"TRIM(REGEXP_REPLACE({expr}, '  +', ' '))"
+    expr = f"TRIM(REGEXP_REPLACE({expr}, '  +', ' ', 'g'))"
 
     return expr
-
-
-def _run_select(sql: str, params: list) -> list[dict]:
-    """Executa uma query SELECT no BigQuery e retorna as linhas como lista de dicionários.
-
-    Usa parâmetros nomeados (@placeholder) para evitar SQL injection —
-    os valores do usuário nunca são concatenados diretamente na string SQL.
-
-    Parâmetros:
-        sql    — Query SQL com @placeholders para os parâmetros
-        params — Lista de bigquery.ScalarQueryParameter com os valores reais
-    """
-    # Configura o job com os parâmetros que substituirão os @placeholders
-    job_config = bigquery.QueryJobConfig(query_parameters=params)
-
-    # Envia a query para o BigQuery, aguarda o resultado e converte para lista de dicts
-    result = _client().query(sql, job_config=job_config).result()
-
-    return [dict(row) for row in result]
-
-
-def _run_dml(sql: str, params: list) -> int:
-    """Executa uma operação DML (INSERT/UPDATE/DELETE) no BigQuery.
-
-    Aguarda a conclusão do job e retorna o número de linhas afetadas,
-    útil para verificar se um UPDATE encontrou o registro alvo.
-
-    Parâmetros:
-        sql    — Query DML com @placeholders
-        params — Lista de bigquery.ScalarQueryParameter com os valores
-
-    Retorna:
-        Número de linhas afetadas (0 se nenhum registro foi modificado)
-    """
-    # Configura os parâmetros para evitar SQL injection
-    job_config = bigquery.QueryJobConfig(query_parameters=params)
-
-    # Envia a operação para o BigQuery
-    job = _client().query(sql, job_config=job_config)
-
-    # Aguarda a conclusão no servidor — sem isso, o job pode ainda estar rodando
-    job.result()
-
-    # num_dml_affected_rows pode ser None se a operação não retornar contagem
-    return job.num_dml_affected_rows or 0
 
 
 def _is_isbn(query: str) -> bool:
@@ -264,23 +163,18 @@ def _find_book_by_query(query: str) -> dict | None:
     isbn_clean = query.replace("-", "").replace(" ", "")
 
     # ── Busca por ISBN exato (se a query parece um ISBN) ──────────────────────
-    # Tentamos primeiro porque ISBN é um identificador único — é mais preciso
-    # do que a correspondência parcial por título, que pode retornar livros errados.
     if _is_isbn(query):
-        sql_isbn = f"""
+        sql_isbn = """
             SELECT *
-            FROM `{_table("books")}`
-            WHERE isbn = @isbn AND deleted = FALSE
+            FROM books
+            WHERE isbn = %(isbn)s AND deleted = FALSE
             ORDER BY
                 CASE WHEN status = 'lendo' THEN 0 ELSE 1 END ASC,
                 updated_at DESC
             LIMIT 1
         """
-        isbn_rows = _run_select(sql_isbn, [
-            bigquery.ScalarQueryParameter("isbn", "STRING", isbn_clean),
-        ])
+        isbn_rows = run_select(sql_isbn, {"isbn": isbn_clean})
         if isbn_rows:
-            # ISBN encontrado — retorna diretamente, sem precisar de busca fuzzy
             return isbn_rows[0]
 
     # ── Busca fuzzy por título ou autor ───────────────────────────────────────
@@ -288,22 +182,17 @@ def _find_book_by_query(query: str) -> dict | None:
     norm_query = _norm(query)
 
     # Padrão LIKE com % nas duas pontas para correspondência parcial
-    # Ex.: "duna" casa com "Duna", "A Saga de Duna", "Duna: Messias"
     like_pattern = f"%{norm_query}%"
 
-    # Busca por título OU autor — usando _norm_sql_col() para normalizar o texto armazenado
-    # da mesma forma que _norm() normalizou a query do usuário.
-    # Isso garante que "Belo mundo, onde você está" case com "belo mundo onde voce esta":
-    # a função remove acentos e pontuação antes de fazer o LIKE.
+    # Busca por título OU autor usando _norm_sql_col() para normalizar o texto armazenado
     # ORDER BY: status 'lendo' primeiro (CASE retorna 0), depois por data de atualização.
-    # Isso garante que o livro em leitura atual apareça antes de livros já lidos.
     sql = f"""
         SELECT *
-        FROM `{_table("books")}`
+        FROM books
         WHERE (
-            {_norm_sql_col("title")} LIKE @query
-            OR {_norm_sql_col("author")} LIKE @query
-            OR isbn LIKE @isbn_like
+            {_norm_sql_col("title")} LIKE %(query)s
+            OR {_norm_sql_col("author")} LIKE %(query)s
+            OR isbn LIKE %(isbn_like)s
         )
         AND deleted = FALSE
         ORDER BY
@@ -312,19 +201,18 @@ def _find_book_by_query(query: str) -> dict | None:
         LIMIT 5
     """
 
-    params = [
-        bigquery.ScalarQueryParameter("query",     "STRING", like_pattern),
+    params = {
+        "query":     like_pattern,
         # isbn_like usa o valor sem hífens para normalizar a comparação
-        bigquery.ScalarQueryParameter("isbn_like", "STRING", f"%{isbn_clean}%"),
-    ]
+        "isbn_like": f"%{isbn_clean}%",
+    }
 
-    rows = _run_select(sql, params)
+    rows = run_select(sql, params)
 
     if not rows:
         # ── Fallback: tenta cada segmento separado por ": " ──────────────────
         # O agente às vezes usa o título completo com subtítulo (ex.: "Stardust: O mistério
         # da estrela"), que não casa com o título curto armazenado no banco ("Stardust").
-        # Dividimos por ": " e tentamos cada parte de forma independente.
         segmentos = [s.strip() for s in query.split(":") if s.strip()]
         if len(segmentos) > 1:
             for segmento in segmentos:
@@ -335,7 +223,6 @@ def _find_book_by_query(query: str) -> dict | None:
         return None
 
     # Se o primeiro resultado já é 'lendo', retorna ele diretamente
-    # Caso contrário, verifica se existe algum 'lendo' na lista e prioriza
     for row in rows:
         if row.get("status") == "lendo":
             return row
@@ -357,9 +244,7 @@ def _fetch_google_books(query: str, max_results: int = 5) -> list[dict]:
     Retorna:
         Lista de dicionários com os metadados extraídos, ou [] em caso de erro.
     """
-    # Monta os parâmetros da requisição HTTP para a Google Books API.
-    # langRestrict="pt" filtra resultados em português — retorna edições brasileiras/portuguesas
-    # primeiro, o que evita que a API priorize edições em inglês para títulos internacionais.
+    # Monta os parâmetros da requisição HTTP para a Google Books API
     request_params = {
         "q": query,                    # Termo de busca
         "maxResults": max_results,     # Limita a quantidade de resultados
@@ -368,7 +253,6 @@ def _fetch_google_books(query: str, max_results: int = 5) -> list[dict]:
     }
 
     # Adiciona a chave de API se disponível — aumenta o limite de requisições diárias
-    # Sem a chave, o limite padrão é ~1000 req/dia (suficiente para uso pessoal)
     api_key = os.environ.get("GOOGLE_BOOKS_API_KEY", "")
     if api_key:
         request_params["key"] = api_key
@@ -410,16 +294,13 @@ def _fetch_google_books(query: str, max_results: int = 5) -> list[dict]:
         # Número total de páginas — None se não informado pela Google Books
         total_pages = info.get("pageCount", None)
 
-        # ISBN: preferimos o ISBN-13 (mais moderno e universal) ao ISBN-10 (legado).
-        # A API retorna uma lista de identificadores com diferentes tipos.
+        # ISBN: preferimos o ISBN-13 (mais moderno e universal) ao ISBN-10 (legado)
         isbn = None
         for identifier in info.get("industryIdentifiers", []):
             if identifier.get("type") == "ISBN_13":
-                # ISBN-13 encontrado — usa e para de buscar (é o preferido)
                 isbn = identifier.get("identifier")
                 break
             elif identifier.get("type") == "ISBN_10" and isbn is None:
-                # ISBN-10 como fallback — só usa se ainda não encontrou ISBN-13
                 isbn = identifier.get("identifier")
 
         # URLs de capa: preferimos 'thumbnail' (maior) sobre 'smallThumbnail' (menor)
@@ -438,15 +319,12 @@ def _fetch_google_books(query: str, max_results: int = 5) -> list[dict]:
         language = info.get("language", "")
 
         # Ano de publicação: extraímos apenas os 4 primeiros caracteres da data
-        # porque o campo 'publishedDate' pode ser "2021", "2021-03", ou "2021-03-15"
         published_date = info.get("publishedDate", "")
         published_year = None
         if published_date and len(published_date) >= 4:
             try:
-                # Converte para int para facilitar comparações e ordenações
                 published_year = int(published_date[:4])
             except ValueError:
-                # Se os primeiros 4 caracteres não forem um número, mantém None
                 published_year = None
 
         # Monta o dicionário com todos os metadados extraídos deste volume
@@ -485,7 +363,6 @@ def search_book(query: str, publisher: str | None = None) -> str:
                    resultados mais precisos quando há múltiplas edições
     """
     # Monta a query final: se a editora for informada, usa o filtro estruturado
-    # inpublisher: que a Google Books API entende, mais preciso que texto livre
     full_query = f"{query} inpublisher:{publisher}" if publisher else query
 
     # Chama o helper privado para buscar até 5 resultados na Google Books API
@@ -534,7 +411,6 @@ def add_book(
     Se google_books_id for fornecido, busca aquele volume específico.
     """
     # ── 1. Valida o status informado ──────────────────────────────────────────
-    # Rejeita qualquer status que não esteja na lista de valores aceitos pelo sistema
     if status not in VALID_STATUSES:
         return (
             f"Status inválido: <b>{status}</b>. "
@@ -542,39 +418,33 @@ def add_book(
         )
 
     # ── 2. Verifica duplicatas no catálogo ────────────────────────────────────
-    # Busca no banco se já existe um livro com título parecido para evitar duplicação
     existente = _find_book_by_query(title)
     if existente and _norm(existente["title"]) == _norm(title):
-        # Livro já cadastrado — informa o status atual para o usuário saber o estado
         return (
             f"<b>{existente['title']}</b> já está no catálogo "
             f"com status <b>{existente['status']}</b>."
         )
 
     # ── 3. Obtém metadados do livro ───────────────────────────────────────────
-    # Dicionário que vai acumular os metadados do livro (da API ou fornecidos manualmente)
     meta: dict = {}
 
     if google_books_id:
         # Se o usuário informou um ID específico, busca diretamente aquele volume
-        # Isso é mais preciso do que uma busca por texto (evita pegar a edição errada)
         try:
             resp = requests.get(
                 f"{_BOOKS_API_URL}/{google_books_id}",
                 timeout=10,
             )
-            resp.raise_for_status()  # Lança exceção se o volume não existir (404, etc.)
+            resp.raise_for_status()
             item = resp.json()
             info = item.get("volumeInfo", {})
 
-            # Extrai os campos necessários do volumeInfo retornado pela API
             authors_list = info.get("authors", [])
             categories = info.get("categories", [])
             image_links = info.get("imageLinks", {})
             description_full = info.get("description", "")
             published_date = info.get("publishedDate", "")
 
-            # Ano de publicação: pega os primeiros 4 caracteres da data
             pub_year = None
             if published_date and len(published_date) >= 4:
                 try:
@@ -582,7 +452,6 @@ def add_book(
                 except ValueError:
                     pub_year = None
 
-            # Extrai o ISBN preferindo ISBN-13 sobre ISBN-10 (mesma lógica do _fetch_google_books)
             isbn_val = None
             for identifier in info.get("industryIdentifiers", []):
                 if identifier.get("type") == "ISBN_13":
@@ -591,10 +460,9 @@ def add_book(
                 elif identifier.get("type") == "ISBN_10" and isbn_val is None:
                     isbn_val = identifier.get("identifier")
 
-            # Monta o dicionário de metadados com todos os campos extraídos
             meta = {
                 "google_books_id": google_books_id,
-                "title": info.get("title", title),  # Fallback para o título informado pelo usuário
+                "title": info.get("title", title),
                 "author": ", ".join(authors_list) if authors_list else "",
                 "total_pages": info.get("pageCount"),
                 "isbn": isbn_val,
@@ -605,17 +473,15 @@ def add_book(
                 "published_year": pub_year,
             }
         except requests.RequestException:
-            # Falha na requisição — continua sem metadados da API; tentará busca textual abaixo
             meta = {}
 
-    # Se ainda não temos metadados (não veio por ID ou falhou), tenta busca textual
+    # Se ainda não temos metadados, tenta busca textual
     if not meta:
         resultados = _fetch_google_books(title, max_results=1)
         if resultados:
-            # Usa o primeiro resultado como fonte de metadados
             meta = resultados[0]
 
-    # Se mesmo a busca textual não retornou nada, monta um dict manual com os dados fornecidos
+    # Se mesmo a busca textual não retornou nada, monta um dict manual
     if not meta:
         meta = {
             "google_books_id": None,
@@ -632,69 +498,61 @@ def add_book(
 
     # ── 4. Sobrescreve campos se o usuário forneceu manualmente ───────────────
     # A edição física do usuário pode ter número de páginas diferente do cadastrado na API
-    # (ex.: edições especiais, omnibus, traduções com diagramação diferente)
     if total_pages is not None:
         meta["total_pages"] = total_pages
 
     # O autor fornecido manualmente tem precedência sobre o retornado pela API
-    # (útil para pseudônimos, co-autores ou grafias diferentes)
     if author is not None:
         meta["author"] = author
 
     # ── 5. Gera ID único para o livro ─────────────────────────────────────────
-    # UUID v4 garante unicidade global sem necessidade de sequência numérica no banco
     book_id = str(uuid.uuid4())
 
     # ── 6. Define data de início de leitura ───────────────────────────────────
-    # Só registra date_started se o livro já está sendo lido — outros status não têm data de início
+    # Só registra date_started se o livro já está sendo lido
     date_started = str(_today()) if status == "lendo" else None
 
-    # ── 7. Insere o livro na tabela books do BigQuery ─────────────────────────
-    # Usa parâmetros nomeados (@placeholder) para todos os valores variáveis.
-    # NULL e FALSE são literais SQL seguros (sem entrada do usuário) — não precisam de params.
-    # Os campos date_finished, rating, notes são NULL pois o livro está sendo adicionado agora.
-    sql = f"""
-        INSERT INTO `{_table("books")}` (
+    # ── 7. Insere o livro na tabela books do PostgreSQL ───────────────────────
+    # Usa parâmetros nomeados %(placeholder)s para todos os valores variáveis.
+    agora = _now()
+
+    sql = """
+        INSERT INTO books (
             id, google_books_id, title, author, total_pages,
             isbn, cover_url, description, genre, language, published_year,
             status, date_started, date_finished, rating, notes,
             source, created_at, updated_at, deleted
         ) VALUES (
-            @id, @google_books_id, @title, @author, @total_pages,
-            @isbn, @cover_url, @description, @genre, @language, @published_year,
-            @status, @date_started, NULL, NULL, NULL,
-            @source, @created_at, @updated_at, FALSE
+            %(id)s, %(google_books_id)s, %(title)s, %(author)s, %(total_pages)s,
+            %(isbn)s, %(cover_url)s, %(description)s, %(genre)s, %(language)s, %(published_year)s,
+            %(status)s, %(date_started)s, NULL, NULL, NULL,
+            %(source)s, %(created_at)s, %(updated_at)s, FALSE
         )
     """
 
-    # Timestamp atual para os campos de auditoria (created_at e updated_at)
-    agora = _now()
+    params = {
+        "id":              book_id,
+        "google_books_id": meta.get("google_books_id"),
+        "title":           meta.get("title", title),
+        "author":          meta.get("author") or None,
+        "total_pages":     meta.get("total_pages"),
+        "isbn":            meta.get("isbn"),
+        "cover_url":       meta.get("cover_url"),
+        "description":     meta.get("description") or None,
+        "genre":           meta.get("genre") or None,
+        "language":        meta.get("language") or None,
+        "published_year":  meta.get("published_year"),
+        "status":          status,
+        "date_started":    date_started,
+        "source":          "telegram",
+        "created_at":      agora,
+        "updated_at":      agora,
+    }
 
-    # Monta a lista de parâmetros tipados — o BigQuery exige o tipo explícito para cada valor
-    params = [
-        bigquery.ScalarQueryParameter("id",              "STRING",    book_id),
-        bigquery.ScalarQueryParameter("google_books_id", "STRING",    meta.get("google_books_id")),
-        bigquery.ScalarQueryParameter("title",           "STRING",    meta.get("title", title)),
-        bigquery.ScalarQueryParameter("author",          "STRING",    meta.get("author") or None),
-        bigquery.ScalarQueryParameter("total_pages",     "INT64",     meta.get("total_pages")),
-        bigquery.ScalarQueryParameter("isbn",            "STRING",    meta.get("isbn")),
-        bigquery.ScalarQueryParameter("cover_url",       "STRING",    meta.get("cover_url")),
-        bigquery.ScalarQueryParameter("description",     "STRING",    meta.get("description") or None),
-        bigquery.ScalarQueryParameter("genre",           "STRING",    meta.get("genre") or None),
-        bigquery.ScalarQueryParameter("language",        "STRING",    meta.get("language") or None),
-        bigquery.ScalarQueryParameter("published_year",  "INT64",     meta.get("published_year")),
-        bigquery.ScalarQueryParameter("status",          "STRING",    status),
-        bigquery.ScalarQueryParameter("date_started",    "DATE",      date_started),
-        bigquery.ScalarQueryParameter("source",          "STRING",    "telegram"),
-        bigquery.ScalarQueryParameter("created_at",      "TIMESTAMP", agora),
-        bigquery.ScalarQueryParameter("updated_at",      "TIMESTAMP", agora),
-    ]
-
-    # Executa o INSERT — _run_dml aguarda a conclusão e retorna linhas afetadas
-    _run_dml(sql, params)
+    # Executa o INSERT — run_dml aguarda a conclusão
+    run_dml(sql, params)
 
     # ── 8. Monta a mensagem de confirmação ────────────────────────────────────
-    # Exibe o título final (que pode ter vindo da API), o autor e as páginas
     titulo_final = meta.get("title", title)
     autor_final  = meta.get("author") or "autor desconhecido"
     paginas_txt  = f" ({meta.get('total_pages')} páginas)" if meta.get("total_pages") else ""
@@ -712,15 +570,15 @@ def _get_last_logged_book() -> dict | None:
     Retorna None se não houver nenhum log ainda.
     """
     # Junta reading_logs com books para obter todos os campos do livro
-    sql = f"""
+    sql = """
         SELECT b.id, b.title, b.author, b.total_pages, b.status,
                b.date_started, b.date_finished
-        FROM `{_table("reading_logs")}` rl
-        JOIN `{_table("books")}` b ON b.id = rl.book_id
+        FROM reading_logs rl
+        JOIN books b ON b.id = rl.book_id
         ORDER BY rl.date DESC, rl.created_at DESC
         LIMIT 1
     """
-    rows = _run_select(sql, [])
+    rows = run_select(sql)
     return rows[0] if rows else None
 
 
@@ -743,8 +601,6 @@ def log_reading(
     """
 
     # ── 1. Localiza o livro pelo termo de busca ───────────────────────────────
-    # Se book_query não foi informado, usa o livro com o log mais recente —
-    # assume que o usuário está continuando a leitura que já estava registrando.
     if book_query.strip():
         # Busca fuzzy pelo título informado pelo usuário
         book = _find_book_by_query(book_query)
@@ -763,14 +619,10 @@ def log_reading(
             )
 
     # ── 2. Valida que a página informada é um número não-negativo ─────────────
-    # Página 0 é válida (indica início do livro / recomeço), mas negativos não fazem sentido.
     if current_page < 0:
         return "O número de página não pode ser negativo."
 
     # ── 3. Valida que a página não ultrapassa o total do livro ────────────────
-    # Se o livro tem total_pages cadastrado, verificamos o limite.
-    # Sugerimos finish_book porque ao concluir o livro o fluxo é diferente
-    # (atualiza status para 'lido', registra date_finished, solicita avaliação).
     total_pages = book.get("total_pages")
     if total_pages and current_page > total_pages:
         return (
@@ -780,33 +632,24 @@ def log_reading(
         )
 
     # ── 4. Busca o último log de leitura para calcular o delta ────────────────
-    # O "delta" (páginas lidas nesta sessão) é fundamental para medir o progresso.
-    # Calculamos como: páginas_lidas = página_atual - página_final_do_último_log.
-    # Ordenamos por date DESC, created_at DESC para pegar o registro mais recente,
-    # mesmo que dois logs tenham a mesma data (o inserted_at desempata).
     book_id = book["id"]
-    sql_last = f"""
+    sql_last = """
         SELECT page_end
-        FROM `{_table("reading_logs")}`
-        WHERE book_id = @book_id
+        FROM reading_logs
+        WHERE book_id = %(book_id)s
         ORDER BY date DESC, created_at DESC
         LIMIT 1
     """
-    last_params = [
-        bigquery.ScalarQueryParameter("book_id", "STRING", book_id),
-    ]
-    last_logs = _run_select(sql_last, last_params)
+    last_params = {"book_id": book_id}
+    last_logs = run_select(sql_last, last_params)
 
     # page_start = última página registrada, ou 0 se nunca houve nenhum log
-    # (ou seja, o usuário nunca registrou progresso antes para este livro)
     page_start = last_logs[0]["page_end"] if last_logs else 0
 
     # ── 5. Calcula as páginas lidas nesta sessão ──────────────────────────────
     pages_read = current_page - page_start
 
-    # Detecta inconsistência: a página atual é MENOR que a última registrada.
-    # Isso pode acontecer se o usuário informou a página errada ou está relendo
-    # um trecho anterior. Pedimos confirmação em vez de registrar valor negativo.
+    # Detecta inconsistência: a página atual é MENOR que a última registrada
     if pages_read < 0:
         return (
             f"A página <b>{current_page}</b> é menor que a última registrada "
@@ -814,7 +657,7 @@ def log_reading(
             "Verifique se informou a página correta."
         )
 
-    # Nenhuma página nova foi lida — evita criar um log inútil no banco.
+    # Nenhuma página nova foi lida — evita criar um log inútil no banco
     if pages_read == 0:
         return (
             f"<b>{book['title']}</b> já estava registrado na página <b>{page_start}</b>. "
@@ -822,69 +665,62 @@ def log_reading(
         )
 
     # ── 6. Determina a data da sessão ─────────────────────────────────────────
-    # Se o usuário não informou a data, usamos hoje (no fuso brasileiro).
-    # Isso permite registrar sessões retroativamente (ex: "ontem li até a página 80").
     entry_date = log_date if log_date else str(_today())
 
     # ── 7. Gera ID único para este log ────────────────────────────────────────
-    # UUID v4 garante unicidade sem depender de sequência auto-incrementada no BigQuery.
     log_id = str(uuid.uuid4())
 
     # ── 8. Insere o registro na tabela reading_logs ───────────────────────────
-    # Armazenamos book_title como cópia desnormalizada para facilitar consultas
-    # históricas sem precisar de JOIN com a tabela books (BigQuery é orientado a colunas,
-    # JOINs desnecessários adicionam custo de processamento).
+    # book_title desnormalizado facilita consultas históricas sem JOIN
     agora = _now()
-    sql_insert = f"""
-        INSERT INTO `{_table("reading_logs")}` (
+    sql_insert = """
+        INSERT INTO reading_logs (
             id, book_id, book_title, date,
             page_start, page_end, pages_read,
             session_notes, created_at
         ) VALUES (
-            @id, @book_id, @book_title, @date,
-            @page_start, @page_end, @pages_read,
-            @session_notes, @created_at
+            %(id)s, %(book_id)s, %(book_title)s, %(date)s,
+            %(page_start)s, %(page_end)s, %(pages_read)s,
+            %(session_notes)s, %(created_at)s
         )
     """
-    insert_params = [
-        bigquery.ScalarQueryParameter("id",            "STRING",    log_id),
-        bigquery.ScalarQueryParameter("book_id",       "STRING",    book_id),
-        bigquery.ScalarQueryParameter("book_title",    "STRING",    book["title"]),
-        bigquery.ScalarQueryParameter("date",          "DATE",      entry_date),
-        bigquery.ScalarQueryParameter("page_start",    "INT64",     page_start),
-        bigquery.ScalarQueryParameter("page_end",      "INT64",     current_page),
-        bigquery.ScalarQueryParameter("pages_read",    "INT64",     pages_read),
-        bigquery.ScalarQueryParameter("session_notes", "STRING",    session_notes),
-        bigquery.ScalarQueryParameter("created_at",    "TIMESTAMP", agora),
-    ]
-    _run_dml(sql_insert, insert_params)
+    insert_params = {
+        "id":            log_id,
+        "book_id":       book_id,
+        "book_title":    book["title"],
+        "date":          entry_date,
+        "page_start":    page_start,
+        "page_end":      current_page,
+        "pages_read":    pages_read,
+        "session_notes": session_notes,
+        "created_at":    agora,
+    }
+    run_dml(sql_insert, insert_params)
 
     # ── 9. Atualiza status do livro para 'lendo' se necessário ────────────────
     # Se o livro estava como 'quero_ler', 'pausado' ou outro status,
     # o ato de registrar progresso implica que a leitura foi (re)iniciada.
-    # COALESCE(date_started, @today) preserva a data de início original se já existia —
-    # evitamos sobrescrever a data em que a leitura foi de fato começada.
+    # COALESCE(date_started, @today) preserva a data de início original se já existia.
     if book.get("status") != "lendo":
         today_str = str(_today())
-        sql_update = f"""
-            UPDATE `{_table("books")}`
+        sql_update = """
+            UPDATE books
             SET status = 'lendo',
-                date_started = COALESCE(date_started, @today),
-                updated_at = @now
-            WHERE id = @book_id
+                date_started = COALESCE(date_started, %(today)s),
+                updated_at = %(now)s
+            WHERE id = %(book_id)s
         """
-        update_params = [
-            bigquery.ScalarQueryParameter("today",   "DATE",      today_str),
-            bigquery.ScalarQueryParameter("now",     "TIMESTAMP", agora),
-            bigquery.ScalarQueryParameter("book_id", "STRING",    book_id),
-        ]
-        _run_dml(sql_update, update_params)
+        update_params = {
+            "today":   today_str,
+            "now":     agora,
+            "book_id": book_id,
+        }
+        run_dml(sql_update, update_params)
 
     # ── 10. Monta a mensagem de confirmação com o progresso ───────────────────
     titulo = book["title"]
 
     if total_pages:
-        # Calcula o percentual concluído e as páginas restantes para terminar
         percent = round((current_page / total_pages) * 100, 1)
         remaining = total_pages - current_page
 
@@ -894,7 +730,6 @@ def log_reading(
             f"📖 {pages_read} páginas lidas nesta sessão."
         )
     else:
-        # Sem total de páginas cadastrado, mostra apenas a página atual e o delta
         return (
             f"<b>{titulo}</b> — página <b>{current_page}</b>\n"
             f"📖 {pages_read} páginas lidas nesta sessão."
@@ -909,14 +744,8 @@ def get_current_reading() -> str:
     Usa LEFT JOIN para trazer o progresso mesmo quando não há nenhum log ainda
     (ex.: livro adicionado como 'lendo' mas sem log de páginas).
     """
-    # Tabelas completas para usar no SQL
-    books_table = _table("books")
-    logs_table  = _table("reading_logs")
-
-    # Query única com LEFT JOIN — MAX(rl.page_end) dá a página mais avançada lida,
-    # COUNT(rl.id) conta quantas sessões foram registradas para este livro.
-    # GROUP BY é necessário porque estamos usando funções de agregação.
-    sql = f"""
+    # Query única com LEFT JOIN — MAX(rl.page_end) dá a página mais avançada lida
+    sql = """
         SELECT
             b.id,
             b.title,
@@ -925,15 +754,14 @@ def get_current_reading() -> str:
             b.date_started,
             MAX(rl.page_end)  AS current_page,
             COUNT(rl.id)      AS total_sessions
-        FROM `{books_table}` b
-        LEFT JOIN `{logs_table}` rl ON rl.book_id = b.id
+        FROM books b
+        LEFT JOIN reading_logs rl ON rl.book_id = b.id
         WHERE b.status = 'lendo' AND b.deleted = FALSE
         GROUP BY b.id, b.title, b.author, b.total_pages, b.date_started
         ORDER BY b.updated_at DESC
     """
 
-    # Nenhum parâmetro de usuário nesta query — os filtros são literais seguros
-    rows = _run_select(sql, [])
+    rows = run_select(sql)
 
     # Caso não haja nenhum livro em leitura no momento
     if not rows:
@@ -944,32 +772,27 @@ def get_current_reading() -> str:
     for row in rows:
         titulo       = row["title"]
         autor        = row.get("author") or "autor desconhecido"
-        total_pages  = row.get("total_pages")          # Pode ser None se não cadastrado
-        current_page = row.get("current_page")         # Pode ser None se nunca houve log
-        date_started = row.get("date_started")         # Data de início, pode ser None
+        total_pages  = row.get("total_pages")
+        current_page = row.get("current_page")
+        date_started = row.get("date_started")
 
         # Formata a data de início como string legível, ou omite se ausente
         inicio_txt = f" · começou em {date_started}" if date_started else ""
 
         if total_pages and current_page is not None:
-            # Temos total de páginas e progresso: calculamos o percentual concluído
             percent = round((current_page / total_pages) * 100, 1)
             progresso_txt = f"{percent}% ({current_page}/{total_pages} páginas)"
         elif current_page is not None:
-            # Temos progresso mas não sabemos o total de páginas
             progresso_txt = f"página {current_page}"
         else:
-            # Nunca houve nenhum log de leitura para este livro
             progresso_txt = "não iniciado"
 
-        # Monta o bloco de texto para este livro
         bloco = (
             f"📖 <b>{titulo}</b>\n"
             f"   {autor} · {progresso_txt}{inicio_txt}"
         )
         linhas.append(bloco)
 
-    # Separa cada livro com linha em branco para melhor legibilidade
     return "\n\n".join(linhas)
 
 
@@ -982,10 +805,7 @@ def get_reading_list(status: str | None = None) -> str:
         status — Filtra por um status específico (ex.: 'lendo', 'lido').
                  Se None, retorna todos os livros agrupados por status.
     """
-    # Tabela de livros
-    books_table = _table("books")
-
-    # Mapeamento de status para emoji de cabeçalho — facilita leitura visual no Telegram
+    # Mapeamento de status para emoji de cabeçalho
     STATUS_EMOJI = {
         "lendo":      "📖",
         "lido":       "✅",
@@ -995,23 +815,22 @@ def get_reading_list(status: str | None = None) -> str:
     }
 
     # Monta a query base — WHERE deleted=FALSE exclui livros removidos logicamente
-    sql = f"""
+    sql = """
         SELECT title, author, total_pages, status, date_started, date_finished, rating
-        FROM `{books_table}`
+        FROM books
         WHERE deleted = FALSE
     """
-    params = []
+    params = None
 
     if status is not None:
         # Filtra por status específico se informado pelo usuário
-        # Parâmetro nomeado @status para evitar SQL injection
-        sql += " AND status = @status"
-        params.append(bigquery.ScalarQueryParameter("status", "STRING", status))
+        sql += " AND status = %(status)s"
+        params = {"status": status}
 
     # Ordena por status primeiro (agrupamento), depois por data de atualização mais recente
     sql += " ORDER BY status, updated_at DESC"
 
-    rows = _run_select(sql, params)
+    rows = run_select(sql, params)
 
     # Lista vazia: nenhum livro cadastrado ou nenhum com o status solicitado
     if not rows:
@@ -1020,7 +839,6 @@ def get_reading_list(status: str | None = None) -> str:
         return "Nenhum livro no catálogo ainda."
 
     # Agrupa as linhas por status usando um dicionário ordenado
-    # Chave: string do status; Valor: lista de dicts de cada livro naquele status
     grupos: dict[str, list[dict]] = {}
     for row in rows:
         s = row["status"]
@@ -1035,23 +853,15 @@ def get_reading_list(status: str | None = None) -> str:
         emoji = STATUS_EMOJI.get(s, "📗")
         cabecalho = f"{emoji} <b>{s.upper()}</b>"
 
-        # Lista os livros dentro do grupo
         itens = []
         for livro in livros:
             titulo = livro["title"]
-
-            # Número de páginas formatado com N p. — omite se não cadastrado
             paginas_txt = f" ({livro['total_pages']}p.)" if livro.get("total_pages") else ""
-
-            # Avaliação com estrela — omite se não avaliado
             rating_txt = f" · ⭐ {livro['rating']}" if livro.get("rating") is not None else ""
-
             itens.append(f"• {titulo}{paginas_txt}{rating_txt}")
 
-        # Une cabeçalho e itens da seção
         secoes.append(cabecalho + "\n" + "\n".join(itens))
 
-    # Separa seções com linha em branco
     return "\n\n".join(secoes)
 
 
@@ -1082,28 +892,23 @@ def finish_book(
         )
 
     # ── 2. Valida a avaliação se fornecida ────────────────────────────────────
-    # A escala vai de 1.0 a 5.0 — valores fora disso são rejeitados
     if rating is not None and not (1.0 <= rating <= 5.0):
         return "A avaliação deve ser um valor entre <b>1.0</b> e <b>5.0</b>."
 
     # ── 3. Calcula o total de páginas lidas nos logs ───────────────────────────
-    # SUM(pages_read) soma todas as sessões de leitura registradas para este livro
     book_id = book["id"]
-    sql_sum = f"""
+    sql_sum = """
         SELECT COALESCE(SUM(pages_read), 0) AS total_pages_read
-        FROM `{_table("reading_logs")}`
-        WHERE book_id = @book_id
+        FROM reading_logs
+        WHERE book_id = %(book_id)s
     """
-    sum_params = [
-        bigquery.ScalarQueryParameter("book_id", "STRING", book_id),
-    ]
-    sum_rows = _run_select(sql_sum, sum_params)
+    sum_params = {"book_id": book_id}
+    sum_rows = run_select(sql_sum, sum_params)
 
     # COALESCE garante que retorne 0 mesmo se não houver nenhum log
     total_pages_read = sum_rows[0]["total_pages_read"] if sum_rows else 0
 
-    # ── 4. Atualiza o registro do livro no BigQuery ───────────────────────────
-    # Usa a data informada pelo usuário ou cai para hoje como padrão
+    # ── 4. Atualiza o registro do livro no PostgreSQL ─────────────────────────
     finished_str = date_finished if date_finished else str(_today())
     agora        = _now()
 
@@ -1111,32 +916,32 @@ def finish_book(
     # (COALESCE preservaria o valor existente, mas se o usuário quer sobrescrever
     # uma data errada, precisamos de SET condicional via parâmetro)
     set_date_started = (
-        "date_started = @date_started,"
+        "date_started = %(date_started)s,"
         if date_started
-        else "date_started = COALESCE(date_started, @date_started),"
+        else "date_started = COALESCE(date_started, %(date_started)s),"
     )
 
-    # COALESCE(@notes, notes) preserva as anotações já existentes se não informadas
+    # COALESCE(%(notes)s, notes) preserva as anotações já existentes se não informadas
     sql_update = f"""
-        UPDATE `{_table("books")}`
+        UPDATE books
         SET
             status        = 'lido',
-            date_finished = @date_finished,
+            date_finished = %(date_finished)s,
             {set_date_started}
-            rating        = @rating,
-            notes         = COALESCE(@notes, notes),
-            updated_at    = @updated_at
-        WHERE id = @book_id
+            rating        = %(rating)s,
+            notes         = COALESCE(%(notes)s, notes),
+            updated_at    = %(updated_at)s
+        WHERE id = %(book_id)s
     """
-    update_params = [
-        bigquery.ScalarQueryParameter("date_finished", "DATE",      finished_str),
-        bigquery.ScalarQueryParameter("date_started",  "DATE",      date_started),
-        bigquery.ScalarQueryParameter("rating",        "FLOAT64",   rating),
-        bigquery.ScalarQueryParameter("notes",         "STRING",    notes),
-        bigquery.ScalarQueryParameter("updated_at",    "TIMESTAMP", agora),
-        bigquery.ScalarQueryParameter("book_id",       "STRING",    book_id),
-    ]
-    _run_dml(sql_update, update_params)
+    update_params = {
+        "date_finished": finished_str,
+        "date_started":  date_started,
+        "rating":        rating,
+        "notes":         notes,
+        "updated_at":    agora,
+        "book_id":       book_id,
+    }
+    run_dml(sql_update, update_params)
 
     # ── 5. Monta a mensagem de confirmação ────────────────────────────────────
     titulo      = book["title"]
@@ -1160,7 +965,6 @@ def update_book_status(book_query: str, status: str) -> str:
         status     — Novo status (deve ser um dos VALID_STATUSES)
     """
     # ── 1. Valida o status antes de qualquer acesso ao banco ──────────────────
-    # Rejeita valores inválidos para manter integridade dos dados
     if status not in VALID_STATUSES:
         return (
             f"Status inválido: <b>{status}</b>. "
@@ -1175,34 +979,32 @@ def update_book_status(book_query: str, status: str) -> str:
             "Verifique o título e tente novamente."
         )
 
-    # ── 3. Atualiza o status no BigQuery ──────────────────────────────────────
+    # ── 3. Atualiza o status no PostgreSQL ──────────────────────────────────────
     today_str = str(_today())
     agora     = _now()
 
     # CASE WHEN: se o novo status é 'lendo' E date_started ainda é NULL,
     # registra hoje como data de início. Caso contrário, preserva o valor existente.
-    # Isso evita sobrescrever a data real de início quando o status já foi 'lendo' antes.
-    sql = f"""
-        UPDATE `{_table("books")}`
+    sql = """
+        UPDATE books
         SET
-            status       = @status,
+            status       = %(status)s,
             date_started = CASE
-                               WHEN @status = 'lendo' AND date_started IS NULL
-                               THEN @today
+                               WHEN %(status)s = 'lendo' AND date_started IS NULL
+                               THEN %(today)s::date
                                ELSE date_started
                            END,
-            updated_at   = @updated_at
-        WHERE id = @book_id
+            updated_at   = %(updated_at)s
+        WHERE id = %(book_id)s
     """
-    params = [
-        bigquery.ScalarQueryParameter("status",     "STRING",    status),
-        bigquery.ScalarQueryParameter("today",      "DATE",      today_str),
-        bigquery.ScalarQueryParameter("updated_at", "TIMESTAMP", agora),
-        bigquery.ScalarQueryParameter("book_id",    "STRING",    book["id"]),
-    ]
-    _run_dml(sql, params)
+    params = {
+        "status":     status,
+        "today":      today_str,
+        "updated_at": agora,
+        "book_id":    book["id"],
+    }
+    run_dml(sql, params)
 
-    # ── 4. Retorna confirmação ────────────────────────────────────────────────
     return f"<b>{book['title']}</b> → status atualizado para <b>{status}</b>."
 
 
@@ -1231,31 +1033,28 @@ def update_book_pages(book_query: str, total_pages: int) -> str:
     now = _now()
 
     # Atualiza o total de páginas e o timestamp de atualização
-    sql = f"""
-        UPDATE `{_table('books')}`
+    sql = """
+        UPDATE books
         SET
-            total_pages = @total_pages,
-            updated_at  = @now
-        WHERE id = @book_id
+            total_pages = %(total_pages)s,
+            updated_at  = %(now)s
+        WHERE id = %(book_id)s
     """
-    _run_dml(sql, [
-        bigquery.ScalarQueryParameter("total_pages", "INT64",     total_pages),
-        bigquery.ScalarQueryParameter("now",         "TIMESTAMP", now),
-        bigquery.ScalarQueryParameter("book_id",     "STRING",    book["id"]),
-    ])
+    run_dml(sql, {
+        "total_pages": total_pages,
+        "now":         now,
+        "book_id":     book["id"],
+    })
 
     # Calcula o progresso atualizado se houver logs de leitura
-    last_log_sql = f"""
+    last_log_sql = """
         SELECT page_end
-        FROM `{_table('reading_logs')}`
-        WHERE book_id = @book_id
+        FROM reading_logs
+        WHERE book_id = %(book_id)s
         ORDER BY date DESC, created_at DESC
         LIMIT 1
     """
-    last_logs = _run_select(
-        last_log_sql,
-        [bigquery.ScalarQueryParameter("book_id", "STRING", book["id"])]
-    )
+    last_logs = run_select(last_log_sql, {"book_id": book["id"]})
 
     # Monta a resposta com o novo progresso percentual, se aplicável
     if last_logs and last_logs[0]["page_end"]:
@@ -1287,87 +1086,59 @@ def get_reading_stats(year: int | None = None) -> str:
     if year is None:
         year = _today().year
 
-    books_table = _table("books")
-    logs_table  = _table("reading_logs")
-
     # ── Query 1: Livros concluídos e avaliação média no ano ───────────────────
-    # Filtra livros com status 'lido' cujo date_finished caiu no ano alvo
-    sql_books = f"""
+    # EXTRACT(YEAR FROM ...) funciona igual no PostgreSQL e no BigQuery
+    sql_books = """
         SELECT
             COUNT(*)     AS books_finished,
             AVG(rating)  AS avg_rating
-        FROM `{books_table}`
+        FROM books
         WHERE status = 'lido'
-          AND EXTRACT(YEAR FROM date_finished) = @year
+          AND EXTRACT(YEAR FROM date_finished) = %(year)s
           AND deleted = FALSE
     """
-    params_books = [
-        bigquery.ScalarQueryParameter("year", "INT64", year),
-    ]
-    rows_books = _run_select(sql_books, params_books)
+    rows_books = run_select(sql_books, {"year": year})
 
     # ── Query 2: Total de páginas e sessões de leitura no ano ────────────────
-    # SUM(pages_read) soma todas as sessões; COUNT(*) conta o número de sessões
-    sql_logs = f"""
+    sql_logs = """
         SELECT
             COALESCE(SUM(pages_read), 0) AS total_pages,
             COUNT(*)                     AS total_sessions
-        FROM `{logs_table}`
-        WHERE EXTRACT(YEAR FROM date) = @year
+        FROM reading_logs
+        WHERE EXTRACT(YEAR FROM date) = %(year)s
     """
-    params_logs = [
-        bigquery.ScalarQueryParameter("year", "INT64", year),
-    ]
-    rows_logs = _run_select(sql_logs, params_logs)
+    rows_logs = run_select(sql_logs, {"year": year})
 
     # ── Query 3: Ritmo de leitura — últimos 30 dias com leitura no ano ────────
-    # Agrega pages_read por dia para calcular a média diária de leitura.
-    # LIMIT 30 pega os 30 dias mais recentes em que houve leitura.
-    # Nota: conta dias com leitura, não dias corridos — evita distorção por dias sem leitura.
-    sql_pace = f"""
+    sql_pace = """
         SELECT
             date,
             SUM(pages_read) AS daily_pages
-        FROM `{logs_table}`
-        WHERE EXTRACT(YEAR FROM date) = @year
+        FROM reading_logs
+        WHERE EXTRACT(YEAR FROM date) = %(year)s
         GROUP BY date
         ORDER BY date DESC
         LIMIT 30
     """
-    params_pace = [
-        bigquery.ScalarQueryParameter("year", "INT64", year),
-    ]
-    rows_pace = _run_select(sql_pace, params_pace)
+    rows_pace = run_select(sql_pace, {"year": year})
 
     # ── Extrai os valores das queries ─────────────────────────────────────────
-    # Número de livros concluídos — 0 se não houver
     books_finished = int(rows_books[0]["books_finished"]) if rows_books else 0
-
-    # Avaliação média — None se não houver livros avaliados
     avg_rating = rows_books[0]["avg_rating"] if rows_books else None
-
-    # Total de páginas lidas nos logs do ano
     total_pages = int(rows_logs[0]["total_pages"]) if rows_logs else 0
-
-    # Total de sessões de leitura no ano
     total_sessions = int(rows_logs[0]["total_sessions"]) if rows_logs else 0
 
-    # Ritmo médio: média de páginas por dia com leitura (últimos 30 dias)
-    # Só calcula se houver dados de ritmo disponíveis
     avg_daily = None
     if rows_pace:
         soma_diaria = sum(r["daily_pages"] for r in rows_pace)
         avg_daily   = round(soma_diaria / len(rows_pace), 1)
 
     # ── Monta a mensagem de estatísticas ─────────────────────────────────────
-    # Só exibe linhas que têm dados relevantes (evita linhas de "0" sem contexto)
     linhas = [f"<b>Estatísticas de leitura — {year}</b>\n"]
 
-    # Livros concluídos — sempre mostra (mesmo que seja 0)
     linhas.append(f"📚 Livros concluídos: <b>{books_finished}</b>")
 
     if total_pages > 0:
-        # Formata com separador de milhar para legibilidade (ex.: 1,234)
         linhas.append(f"📄 Páginas lidas: <b>{total_pages:,}</b>")
 
     if total_sessions > 0:
@@ -1377,7 +1148,6 @@ def get_reading_stats(year: int | None = None) -> str:
         linhas.append(f"⚡ Ritmo médio: <b>{avg_daily} páginas/dia</b> (últimos 30 dias com leitura)")
 
     if avg_rating is not None:
-        # Exibe com uma casa decimal para consistência (ex.: 4.2/5.0)
         linhas.append(f"⭐ Avaliação média: <b>{avg_rating:.1f}/5.0</b>")
 
     return "\n".join(linhas)
@@ -1400,30 +1170,24 @@ def get_book_history(book_query: str) -> str:
         )
 
     # ── 2. Busca todas as sessões de leitura do livro ─────────────────────────
-    # Ordena por data ASC (cronológica) e created_at ASC para desempatar sessões
-    # no mesmo dia — mantém a ordem em que foram registradas.
     book_id = book["id"]
-    sql = f"""
+    sql = """
         SELECT
             date,
             page_start,
             page_end,
             pages_read,
             session_notes
-        FROM `{_table("reading_logs")}`
-        WHERE book_id = @book_id
+        FROM reading_logs
+        WHERE book_id = %(book_id)s
         ORDER BY date ASC, created_at ASC
     """
-    params = [
-        bigquery.ScalarQueryParameter("book_id", "STRING", book_id),
-    ]
-    logs = _run_select(sql, params)
+    params = {"book_id": book_id}
+    logs = run_select(sql, params)
 
     # ── 3. Trata o caso de nenhum log registrado ──────────────────────────────
     if not logs:
-        return (
-            f"<b>{book['title']}</b> — nenhuma sessão de leitura registrada ainda."
-        )
+        return f"<b>{book['title']}</b> — nenhuma sessão de leitura registrada ainda."
 
     # ── 4. Calcula totais para o cabeçalho do histórico ───────────────────────
     total_sessoes = len(logs)
@@ -1438,21 +1202,18 @@ def get_book_history(book_query: str) -> str:
     # ── 6. Formata cada sessão como um item da lista ──────────────────────────
     itens = []
     for log in logs:
-        data       = log["date"]            # Data da sessão (objeto date ou string)
-        page_start = log["page_start"]      # Página onde a sessão começou
-        page_end   = log["page_end"]        # Página onde a sessão terminou
-        pages_read = log["pages_read"]      # Quantas páginas foram lidas na sessão
-        notas      = log.get("session_notes")  # Anotações opcionais — pode ser None
+        data       = log["date"]
+        page_start = log["page_start"]
+        page_end   = log["page_end"]
+        pages_read = log["pages_read"]
+        notas      = log.get("session_notes")
 
-        # Formata as anotações da sessão: adiciona " — notas" se existirem
         notas_txt = f" — {notas}" if notas else ""
 
-        # Linha da sessão no formato: "• data: p.X → p.Y (Z páginas) — notas"
         itens.append(
             f"• {data}: p.{page_start} → p.{page_end} ({pages_read} páginas){notas_txt}"
         )
 
-    # Une cabeçalho e itens de sessão
     return cabecalho + "\n".join(itens)
 
 
@@ -1477,16 +1238,14 @@ def get_book_menu_data(book_query: str) -> str:
         return f"Não encontrei '{book_query}' no catálogo."
 
     # Busca a última página registrada nos logs de leitura
-    sql_last = f"""
+    sql_last = """
         SELECT page_end
-        FROM `{_table('reading_logs')}`
-        WHERE book_id = @book_id
+        FROM reading_logs
+        WHERE book_id = %(book_id)s
         ORDER BY date DESC, created_at DESC
         LIMIT 1
     """
-    last_logs = _run_select(sql_last, [
-        bigquery.ScalarQueryParameter("book_id", "STRING", book["id"])
-    ])
+    last_logs = run_select(sql_last, {"book_id": book["id"]})
     current_page = int(last_logs[0]["page_end"]) if last_logs else 0
 
     # Monta o dicionário com todos os dados necessários para o menu.
@@ -1510,8 +1269,8 @@ def get_book_menu_data(book_query: str) -> str:
 
 def get_book_by_id(book_id: str) -> dict | None:
     """Busca um livro pelo ID exato — usado pelo coordinator para re-exibir o menu."""
-    sql = f"SELECT * FROM `{_table('books')}` WHERE id = @book_id AND deleted = FALSE"
-    rows = _run_select(sql, [bigquery.ScalarQueryParameter("book_id", "STRING", book_id)])
+    sql = "SELECT * FROM books WHERE id = %(book_id)s AND deleted = FALSE"
+    rows = run_select(sql, {"book_id": book_id})
     return rows[0] if rows else None
 
 
@@ -1530,42 +1289,42 @@ def update_book_by_id(
     Só atualiza os campos que não forem None.
     """
     sets: list[str] = []
-    params: list = [
-        bigquery.ScalarQueryParameter("book_id", "STRING",    book_id),
-        bigquery.ScalarQueryParameter("now",     "TIMESTAMP", _now()),
-    ]
+    params: dict = {
+        "book_id": book_id,
+        "now":     _now(),
+    }
 
     # Adiciona cada campo apenas se foi fornecido
     if status is not None:
-        sets.append("status = @status")
-        params.append(bigquery.ScalarQueryParameter("status", "STRING", status))
+        sets.append("status = %(status)s")
+        params["status"] = status
         # Se marcando como lido, garante que date_started não fique nulo
         if status == "lido" and date_finished is None:
             date_finished = str(_today())
 
     if rating is not None:
-        sets.append("rating = @rating")
-        params.append(bigquery.ScalarQueryParameter("rating", "FLOAT64", rating))
+        sets.append("rating = %(rating)s")
+        params["rating"] = rating
 
     if notes is not None:
-        # CONCAT preserva notas anteriores, separando com quebra de linha
-        sets.append("notes = CASE WHEN notes IS NULL THEN @notes ELSE CONCAT(notes, '\\n', @notes) END")
-        params.append(bigquery.ScalarQueryParameter("notes", "STRING", notes))
+        # CASE WHEN preserva notas anteriores, separando com quebra de linha
+        sets.append("notes = CASE WHEN notes IS NULL THEN %(notes)s ELSE notes || E'\\n' || %(notes)s END")
+        params["notes"] = notes
 
     if date_finished is not None:
-        sets.append("date_finished = @date_finished")
-        params.append(bigquery.ScalarQueryParameter("date_finished", "DATE", date_finished))
+        sets.append("date_finished = %(date_finished)s")
+        params["date_finished"] = date_finished
 
     if date_started is not None:
-        sets.append("date_started = @date_started")
-        params.append(bigquery.ScalarQueryParameter("date_started", "DATE", date_started))
+        sets.append("date_started = %(date_started)s")
+        params["date_started"] = date_started
 
     if not sets:
         return  # Nada para atualizar
 
-    sets.append("updated_at = @now")
-    sql = f"UPDATE `{_table('books')}` SET {', '.join(sets)} WHERE id = @book_id"
-    _run_dml(sql, params)
+    sets.append("updated_at = %(now)s")
+    sql = f"UPDATE books SET {', '.join(sets)} WHERE id = %(book_id)s"
+    run_dml(sql, params)
 
 
 def update_book_metadata_by_id(
@@ -1612,83 +1371,74 @@ def update_book_metadata_by_id(
         >>> update_book_metadata_by_id("uuid-aqui", title="Duna", total_pages=896)
         "✅ Livro atualizado com sucesso."
     """
-    # Lista de cláusulas SET que serão inseridas no UPDATE (ex.: "title = @title")
+    # Lista de cláusulas SET que serão inseridas no UPDATE (ex.: "title = %(title)s")
     sets: list[str] = []
 
     # Parâmetros obrigatórios presentes em toda execução:
     # - book_id: identifica qual linha será atualizada (cláusula WHERE)
     # - now: timestamp atual para preencher updated_at
-    params: list = [
-        bigquery.ScalarQueryParameter("book_id", "STRING",    book_id),
-        bigquery.ScalarQueryParameter("now",     "TIMESTAMP", _now()),
-    ]
+    params: dict = {
+        "book_id": book_id,
+        "now":     _now(),
+    }
 
     # Para cada campo de metadados, só adicionamos ao SET se o valor foi fornecido.
     # Isso evita sobrescrever dados existentes com None acidentalmente.
 
     if title is not None:
-        # Atualiza o título do livro
-        sets.append("title = @title")
-        params.append(bigquery.ScalarQueryParameter("title", "STRING", title))
+        sets.append("title = %(title)s")
+        params["title"] = title
 
     if author is not None:
-        # Atualiza o(s) autor(es) — string separada por vírgula se houver vários
-        sets.append("author = @author")
-        params.append(bigquery.ScalarQueryParameter("author", "STRING", author))
+        sets.append("author = %(author)s")
+        params["author"] = author
 
     if cover_url is not None:
-        # Atualiza a URL da imagem de capa (geralmente vinda da Google Books API)
-        sets.append("cover_url = @cover_url")
-        params.append(bigquery.ScalarQueryParameter("cover_url", "STRING", cover_url))
+        sets.append("cover_url = %(cover_url)s")
+        params["cover_url"] = cover_url
 
     if total_pages is not None:
-        # Atualiza o total de páginas — INT64 porque BigQuery não usa "INT" simples
-        sets.append("total_pages = @total_pages")
-        params.append(bigquery.ScalarQueryParameter("total_pages", "INT64", total_pages))
+        sets.append("total_pages = %(total_pages)s")
+        params["total_pages"] = total_pages
 
     if genre is not None:
-        # Atualiza o(s) gênero(s) — string separada por vírgula se houver vários
-        sets.append("genre = @genre")
-        params.append(bigquery.ScalarQueryParameter("genre", "STRING", genre))
+        sets.append("genre = %(genre)s")
+        params["genre"] = genre
 
     if published_year is not None:
-        # Atualiza o ano de publicação — INT64 para manter consistência com o schema
-        sets.append("published_year = @published_year")
-        params.append(bigquery.ScalarQueryParameter("published_year", "INT64", published_year))
+        sets.append("published_year = %(published_year)s")
+        params["published_year"] = published_year
 
     if isbn is not None:
-        # Atualiza o ISBN (preferência pelo ISBN-13; ISBN-10 como fallback)
-        sets.append("isbn = @isbn")
-        params.append(bigquery.ScalarQueryParameter("isbn", "STRING", isbn))
+        sets.append("isbn = %(isbn)s")
+        params["isbn"] = isbn
 
     if language is not None:
-        # Atualiza o código do idioma (ex.: "pt" para português, "en" para inglês)
-        sets.append("language = @language")
-        params.append(bigquery.ScalarQueryParameter("language", "STRING", language))
+        sets.append("language = %(language)s")
+        params["language"] = language
 
     if description is not None:
-        # Atualiza a sinopse — substitui por completo o valor anterior
-        sets.append("description = @description")
-        params.append(bigquery.ScalarQueryParameter("description", "STRING", description))
+        sets.append("description = %(description)s")
+        params["description"] = description
 
     if notes is not None:
-        # Atualiza as anotações pessoais — sobrescreve por completo o valor anterior
-        sets.append("notes = @notes")
-        params.append(bigquery.ScalarQueryParameter("notes", "STRING", notes))
+        # Sobrescreve por completo o valor anterior (diferente de update_book_by_id que appenda)
+        sets.append("notes = %(notes)s")
+        params["notes"] = notes
 
     # Se nenhum campo foi fornecido, não há nada a atualizar — retorna feedback claro
     if not sets:
         return "⚠️ Nenhum campo para atualizar foi informado."
 
     # Sempre atualiza updated_at para registrar o momento da modificação
-    sets.append("updated_at = @now")
+    sets.append("updated_at = %(now)s")
 
-    # Monta a query UPDATE com os campos dinâmicos e executa no BigQuery
-    sql = f"UPDATE `{_table('books')}` SET {', '.join(sets)} WHERE id = @book_id"
+    # Monta a query UPDATE com os campos dinâmicos e executa no PostgreSQL
+    sql = f"UPDATE books SET {', '.join(sets)} WHERE id = %(book_id)s"
 
     try:
-        # _run_dml retorna o número de linhas afetadas — 0 significa que o ID não existe
-        affected = _run_dml(sql, params)
+        # run_dml retorna o número de linhas afetadas — 0 significa que o ID não existe
+        affected = run_dml(sql, params)
     except Exception as e:
         # Captura erros de rede, permissão ou SQL e retorna mensagem legível ao agente
         return f"❌ Erro ao atualizar metadados: {e}"
