@@ -1566,3 +1566,128 @@ def update_book_by_id(
     sets.append("updated_at = @now")
     sql = f"UPDATE `{_table('books')}` SET {', '.join(sets)} WHERE id = @book_id"
     _run_dml(sql, params)
+
+
+def update_book_metadata_by_id(
+    book_id: str,
+    title: str | None = None,
+    author: str | None = None,
+    cover_url: str | None = None,
+    total_pages: int | None = None,
+    genre: str | None = None,
+    published_year: int | None = None,
+    isbn: str | None = None,
+    language: str | None = None,
+    description: str | None = None,
+) -> str:
+    """Atualiza campos de metadados de um livro pelo ID exato.
+
+    Recebe apenas os campos que devem ser sobrescritos — campos com valor None
+    são ignorados e permanecem inalterados no banco.
+    Sempre atualiza `updated_at` para o momento da chamada.
+
+    Diferente de `update_book_by_id`, esta função trata campos de metadados
+    bibliográficos (título, autor, capa, páginas, gênero, ano, ISBN, idioma,
+    descrição) e **não** toca em status, rating, notes ou datas de leitura.
+
+    Args:
+        book_id: UUID do livro na tabela `books` (campo `id`).
+        title: Novo título do livro.
+        author: Autor(es) separados por vírgula.
+        cover_url: URL da imagem de capa.
+        total_pages: Total de páginas da edição física do usuário.
+        genre: Gênero(s) separados por vírgula.
+        published_year: Ano de publicação (inteiro).
+        isbn: ISBN-13 (preferido) ou ISBN-10 como fallback.
+        language: Código do idioma (ex.: "pt", "en").
+        description: Sinopse do livro (recomendado truncar em 500 chars).
+
+    Returns:
+        Mensagem de confirmação em caso de sucesso, ou mensagem de erro
+        descrevendo o que falhou.
+
+    Example:
+        >>> update_book_metadata_by_id("uuid-aqui", title="Duna", total_pages=896)
+        "✅ Livro atualizado com sucesso."
+    """
+    # Lista de cláusulas SET que serão inseridas no UPDATE (ex.: "title = @title")
+    sets: list[str] = []
+
+    # Parâmetros obrigatórios presentes em toda execução:
+    # - book_id: identifica qual linha será atualizada (cláusula WHERE)
+    # - now: timestamp atual para preencher updated_at
+    params: list = [
+        bigquery.ScalarQueryParameter("book_id", "STRING",    book_id),
+        bigquery.ScalarQueryParameter("now",     "TIMESTAMP", _now()),
+    ]
+
+    # Para cada campo de metadados, só adicionamos ao SET se o valor foi fornecido.
+    # Isso evita sobrescrever dados existentes com None acidentalmente.
+
+    if title is not None:
+        # Atualiza o título do livro
+        sets.append("title = @title")
+        params.append(bigquery.ScalarQueryParameter("title", "STRING", title))
+
+    if author is not None:
+        # Atualiza o(s) autor(es) — string separada por vírgula se houver vários
+        sets.append("author = @author")
+        params.append(bigquery.ScalarQueryParameter("author", "STRING", author))
+
+    if cover_url is not None:
+        # Atualiza a URL da imagem de capa (geralmente vinda da Google Books API)
+        sets.append("cover_url = @cover_url")
+        params.append(bigquery.ScalarQueryParameter("cover_url", "STRING", cover_url))
+
+    if total_pages is not None:
+        # Atualiza o total de páginas — INT64 porque BigQuery não usa "INT" simples
+        sets.append("total_pages = @total_pages")
+        params.append(bigquery.ScalarQueryParameter("total_pages", "INT64", total_pages))
+
+    if genre is not None:
+        # Atualiza o(s) gênero(s) — string separada por vírgula se houver vários
+        sets.append("genre = @genre")
+        params.append(bigquery.ScalarQueryParameter("genre", "STRING", genre))
+
+    if published_year is not None:
+        # Atualiza o ano de publicação — INT64 para manter consistência com o schema
+        sets.append("published_year = @published_year")
+        params.append(bigquery.ScalarQueryParameter("published_year", "INT64", published_year))
+
+    if isbn is not None:
+        # Atualiza o ISBN (preferência pelo ISBN-13; ISBN-10 como fallback)
+        sets.append("isbn = @isbn")
+        params.append(bigquery.ScalarQueryParameter("isbn", "STRING", isbn))
+
+    if language is not None:
+        # Atualiza o código do idioma (ex.: "pt" para português, "en" para inglês)
+        sets.append("language = @language")
+        params.append(bigquery.ScalarQueryParameter("language", "STRING", language))
+
+    if description is not None:
+        # Atualiza a sinopse — substitui por completo (não faz append como em notes)
+        sets.append("description = @description")
+        params.append(bigquery.ScalarQueryParameter("description", "STRING", description))
+
+    # Se nenhum campo foi fornecido, não há nada a atualizar — retorna feedback claro
+    if not sets:
+        return "⚠️ Nenhum campo para atualizar foi informado."
+
+    # Sempre atualiza updated_at para registrar o momento da modificação
+    sets.append("updated_at = @now")
+
+    # Monta a query UPDATE com os campos dinâmicos e executa no BigQuery
+    sql = f"UPDATE `{_table('books')}` SET {', '.join(sets)} WHERE id = @book_id"
+
+    try:
+        # _run_dml retorna o número de linhas afetadas — 0 significa que o ID não existe
+        affected = _run_dml(sql, params)
+    except Exception as e:
+        # Captura erros de rede, permissão ou SQL e retorna mensagem legível ao agente
+        return f"❌ Erro ao atualizar metadados: {e}"
+
+    # Se nenhuma linha foi afetada, o book_id informado não existe na tabela
+    if affected == 0:
+        return f"❌ Livro com ID '{book_id}' não encontrado."
+
+    return "✅ Livro atualizado com sucesso."
