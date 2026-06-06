@@ -90,8 +90,14 @@ const PROMPTS = [
  *   String no formato ISO date, ex: "2026-06-06"
  */
 function todayISO(): string {
-  // toISOString() retorna "2026-06-06T12:00:00.000Z"; pegamos apenas a parte da data
-  return new Date().toISOString().split('T')[0]
+  // Usa partes locais (getFullYear/Month/Date) para evitar o bug de fuso horário:
+  // toISOString() retorna UTC, o que causaria a data errada para usuários em UTC-3 (BRT)
+  // após as 21h, por exemplo.
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 /**
@@ -139,7 +145,8 @@ function calcStreak(hm: Record<string, number>): number {
   for (let i = 0; i < 365; i++) {
     const d = new Date(today)
     d.setDate(d.getDate() - i)
-    const key = d.toISOString().split('T')[0]
+    // Usa partes locais pelo mesmo motivo do todayISO(): evitar bug de fuso horário
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
     if (hm[key] && hm[key] > 0) {
       // Dia com bullets: incrementa o streak

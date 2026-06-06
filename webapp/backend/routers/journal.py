@@ -11,6 +11,8 @@ Usage:
 
 # Imports do FastAPI: APIRouter (agrupa rotas), Depends (injeção de dependências),
 # HTTPException (lança erros HTTP), Query (extrai query params tipados)
+import re  # Para validar o formato da data (YYYY-MM-DD) antes de enviar ao banco
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 # BaseModel é a base para todos os modelos Pydantic (validação de body da requisição)
@@ -113,6 +115,10 @@ def page_endpoint(
         HTTPException: 400 se houver erro ao acessar o banco.
         HTTPException: 401 se o usuário não estiver autenticado.
     """
+    # Valida o formato da data antes de enviar ao banco — evita HTTP 500 por DataError do PostgreSQL
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
+        raise HTTPException(status_code=400, detail="Formato de data inválido. Use YYYY-MM-DD.")
+
     # Chama a tool que faz get-or-create da página no PostgreSQL
     result = get_or_create_page(date=date, type_id=type_id)
 
