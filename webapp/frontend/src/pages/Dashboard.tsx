@@ -20,12 +20,6 @@ interface HealthResponse {
   message: string      // Mensagem textual de avaliação (ex: "Finanças saudáveis")
 }
 
-// Um grupo de gastos por categoria (ex: Alimentacao → R$ 450,00)
-interface SummaryGroup {
-  label: string   // Nome da categoria
-  total: number   // Valor total gasto nessa categoria no período
-}
-
 // Resposta do endpoint GET /api/finances/summary
 // A tool retorna "summary" como dicionário {categoria: total}, não como array
 interface SummaryResponse {
