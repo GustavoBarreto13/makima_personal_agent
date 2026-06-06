@@ -168,16 +168,19 @@ function renderHighlighted(text: string): React.ReactNode {
   const parts = text.split(/(@\w+|#\w+)/g)
 
   return parts.map((part, i) => {
+    // Chave composta por índice + primeiros 8 caracteres da parte para ser mais estável
+    // que usar apenas o índice (evita problemas quando partes mudam de ordem)
+    const key = `${i}-${part.slice(0, 8)}`
     if (part.startsWith('@')) {
       // @menções aparecem em violeta para destacar pessoas
-      return <span key={i} className="text-violet-400">{part}</span>
+      return <span key={key} className="text-violet-400">{part}</span>
     }
     if (part.startsWith('#')) {
       // #tags aparecem em verde para destacar tópicos
-      return <span key={i} className="text-green-400">{part}</span>
+      return <span key={key} className="text-green-400">{part}</span>
     }
     // Texto comum sem formatação especial
-    return <span key={i}>{part}</span>
+    return <span key={key}>{part}</span>
   })
 }
 
@@ -270,6 +273,11 @@ export default function Journal() {
   // Usando ref (não state) para não causar re-render ao atualizar o timer.
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Ref para pageId — necessário para evitar closure velha no timer de autosave.
+  // O setTimeout captura variáveis pelo valor no momento em que foi criado; como pageId
+  // pode mudar depois que o timer foi agendado, usamos uma ref que sempre reflete o valor atual.
+  const pageIdRef = useRef<number | null>(null)
+
   // ── Valores derivados e memos ──
 
   // Frase de prompt selecionada aleatoriamente na montagem do componente.
@@ -282,6 +290,11 @@ export default function Journal() {
   // Extrai a data atual se estiver em modo 'day', ou string vazia.
   // Usado como dependência do useEffect que carrega os bullets do dia.
   const currentDate = mode.type === 'day' ? mode.date : ''
+
+  // Calcula o grid do heatmap apenas quando os dados do heatmap mudam.
+  // Sem useMemo, buildHeatmapGrid() seria chamada a cada render, iterando
+  // 364 células desnecessariamente enquanto o usuário digita bullets.
+  const heatmapGrid = useMemo(() => buildHeatmapGrid(), [heatmap]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Funções auxiliares ──
 
@@ -358,6 +371,16 @@ export default function Journal() {
     }).catch(console.error)
   }, []) // Executa apenas uma vez na montagem — os dados da sidebar não mudam frequentemente
 
+  // ── Efeito: cancela o timer de autosave ao desmontar o componente ──
+
+  // Cancela o timer de autosave pendente quando o componente desmonta,
+  // evitando setState em componente desmontado (memory leak e warning do React)
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    }
+  }, [])
+
   // ── Efeito: carrega os bullets quando a data muda (modo 'day') ──
 
   useEffect(() => {
@@ -367,8 +390,10 @@ export default function Journal() {
     setLoading(true)
     api.get<PageResponse>(`/api/journal/page?date=${currentDate}`)
       .then(res => {
-        // Salva o ID da página para associar novos bullets à ela
+        // Salva o ID da página para associar novos bullets à ela.
+        // Atualiza também a ref para que o timer de autosave leia sempre o valor correto.
         setPageId(res.page.id)
+        pageIdRef.current = res.page.id
 
         // Se a página não tem bullets ainda, cria um bullet vazio inicial
         // para que o usuário já tenha uma linha para começar a digitar
@@ -433,10 +458,12 @@ export default function Journal() {
     // Cancela o timer anterior (se o usuário ainda está digitando)
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
 
-    // Agenda o salvamento para 800ms após a última tecla pressionada
-    // Assim não salvamos a cada tecla, apenas quando o usuário para de digitar
+    // Agenda o salvamento para 800ms após a última tecla pressionada.
+    // Assim não salvamos a cada tecla, apenas quando o usuário para de digitar.
+    // Usamos pageIdRef.current (não pageId diretamente) para garantir que o callback
+    // leia o valor mais recente do pageId, evitando closure velha.
     saveTimerRef.current = setTimeout(() => {
-      if (pageId) saveBullet(updated[index], pageId)
+      if (pageIdRef.current) saveBullet(updated[index], pageIdRef.current)
     }, 800)
   }
 
@@ -635,7 +662,7 @@ export default function Journal() {
         <div className="p-4">
           {/* Grade de semanas × dias */}
           <div className="flex gap-0.5 overflow-x-auto">
-            {buildHeatmapGrid().map((week, wi) => (
+            {heatmapGrid.map((week, wi) => (
               // Cada coluna representa uma semana (7 dias empilhados verticalmente)
               <div key={wi} className="flex flex-col gap-0.5">
                 {week.map(cell => (
@@ -714,11 +741,12 @@ export default function Journal() {
               onChange={e => {
                 const q = e.target.value
                 setSearchQuery(q)
-                // Atualiza o modo de busca em tempo real enquanto o usuário digita
-                if (q.trim()) {
+                // Só dispara a busca após o usuário digitar pelo menos 2 caracteres,
+                // evitando chamadas desnecessárias à API a cada tecla
+                if (q.trim().length >= 2) {
                   setMode({ type: 'search', query: q })
-                } else {
-                  // Volta ao dia de hoje quando o campo é apagado
+                } else if (q.trim() === '') {
+                  // Se o campo for limpo, volta para o dia atual
                   setMode({ type: 'day', date: todayISO() })
                 }
               }}
