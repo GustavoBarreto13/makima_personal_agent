@@ -11,6 +11,7 @@ google-auth-oauthlib # OAuth2 para Google (flow de autorização)
 google-api-python-client # Cliente Python para APIs Google (Calendar, Drive, etc.)
 asyncpg             # driver async para PostgreSQL (exigido pelo DatabaseSessionService do ADK)
 sqlalchemy          # ORM usado internamente pelo ADK para criar e acessar as tabelas
+psycopg2-binary     # driver síncrono para PostgreSQL (usado pelas tools do journal)
 
 # Web interface (webapp/)
 fastapi              # Framework web ASGI — define rotas e serialização JSON

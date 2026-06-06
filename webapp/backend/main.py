@@ -19,6 +19,7 @@ from starlette.middleware.sessions import SessionMiddleware  # Middleware de ses
 from webapp.backend.routers import auth as auth_router
 from webapp.backend.routers import finances as finances_router
 from webapp.backend.routers import books as books_router
+from webapp.backend.routers import journal as journal_router
 from webapp.backend.config import SESSION_SECRET
 
 # Cria a instância principal da aplicação FastAPI.
@@ -45,6 +46,11 @@ app.include_router(finances_router.router, prefix="/api/finances", tags=["financ
 # Registra todos os endpoints da Frieren sob /api/books
 # Ex.: GET /api/books, GET /api/books/stats, POST /api/books, etc.
 app.include_router(books_router.router, prefix="/api/books", tags=["books"])
+
+# --- Router do journal ---
+# Registra todos os endpoints do diário pessoal sob /api/journal
+# Ex.: GET /api/journal/page, POST /api/journal/bullets, GET /api/journal/heatmap, etc.
+app.include_router(journal_router.router, prefix="/api/journal", tags=["journal"])
 
 # --- CORS (Cross-Origin Resource Sharing) ---
 # O navegador bloqueia requisições entre origens diferentes por segurança.

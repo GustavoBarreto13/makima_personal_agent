@@ -55,3 +55,11 @@ SESSION_COOKIE_NAME: str = "makima_session"
 # Duração máxima do cookie de sessão: 7 dias em segundos.
 # Após esse período, o itsdangerous rejeita o token mesmo que a assinatura seja válida.
 SESSION_MAX_AGE: int = 60 * 60 * 24 * 7  # 604800 segundos
+
+# --- Banco de dados ---
+
+# String de conexão ao PostgreSQL, no formato:
+# postgresql://usuario:senha@host:porta/banco
+# Usada pelas tools do journal (psycopg2) e pelo ADK DatabaseSessionService (asyncpg).
+# Em produção, injetada pelo orquestrador (Dokploy/Docker).
+DATABASE_URL: str = os.getenv("DATABASE_URL", "")
