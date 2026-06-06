@@ -11,11 +11,15 @@ Usage:
     from agents.journal.tools import get_or_create_page, upsert_bullet
 """
 
-import os   # Para ler DATABASE_URL do ambiente
-import re   # Para extrair @menções e #tags do conteúdo dos bullets
+import logging  # Para registrar avisos quando o banco não está disponível na importação
+import re       # Para extrair @menções e #tags do conteúdo dos bullets
 
 import psycopg2          # Driver PostgreSQL síncrono
+import psycopg2.errors   # Erros específicos do PostgreSQL (ex.: ForeignKeyViolation)
 import psycopg2.extras   # Fornece RealDictCursor — retorna linhas como dicts
+
+# Importa DATABASE_URL do config centralizado da webapp — evita duplicar a leitura de os.environ
+from webapp.backend.config import DATABASE_URL as _DATABASE_URL
 
 
 # ─── Conexão ─────────────────────────────────────────────────────────────────
@@ -31,11 +35,14 @@ def _get_conn():
         Objeto de conexão psycopg2 pronto para uso.
 
     Raises:
-        KeyError: Se DATABASE_URL não estiver definida no ambiente.
+        RuntimeError: Se DATABASE_URL não estiver definida no ambiente.
         psycopg2.OperationalError: Se a conexão falhar (banco indisponível, credenciais erradas).
     """
-    # os.environ lança KeyError se a variável não existir — intencional: falha rápida
-    return psycopg2.connect(os.environ["DATABASE_URL"])
+    # Verifica se DATABASE_URL está configurada antes de tentar conectar,
+    # para dar uma mensagem de erro clara em vez de um traceback confuso
+    if not _DATABASE_URL:
+        raise RuntimeError("DATABASE_URL não configurada")
+    return psycopg2.connect(_DATABASE_URL)
 
 
 # ─── Criação de tabelas ───────────────────────────────────────────────────────
@@ -217,7 +224,16 @@ def get_or_create_page(date: str, type_id: int = 1) -> dict:
                 FROM journal_pages
                 WHERE type_id = %s AND date = %s
             """, (type_id, date))
-            page = dict(cur.fetchone())
+            row = cur.fetchone()
+
+            # Guarda contra None: só ocorre se type_id não existir em journal_types
+            # (violação de FK silenciada pelo ON CONFLICT não acontece aqui, mas
+            # se o INSERT foi bloqueado por FK, fetchone() retornaria None)
+            if row is None:
+                conn.rollback()
+                return {"page": None, "bullets": [], "error": "type_id não encontrado"}
+
+            page = dict(row)
 
             # Busca todos os bullets da página, ordenados por posição crescente
             cur.execute("""
@@ -226,10 +242,14 @@ def get_or_create_page(date: str, type_id: int = 1) -> dict:
                 WHERE page_id = %s
                 ORDER BY position ASC
             """, (page["id"],))
-            bullets = [dict(row) for row in cur.fetchall()]
+            bullets = [dict(r) for r in cur.fetchall()]
 
         conn.commit()
         return {"page": page, "bullets": bullets}
+    except psycopg2.errors.ForeignKeyViolation:
+        # type_id não existe em journal_types — retorna erro amigável em vez de HTTP 500
+        conn.rollback()
+        return {"page": None, "bullets": [], "error": "type_id não encontrado"}
     finally:
         conn.close()
 
@@ -284,8 +304,11 @@ def upsert_bullet(page_id: int, position: int, content: str) -> dict:
                 DELETE FROM journal_mentions WHERE bullet_id = %s
             """, (bullet_id,))
 
-            # Extrai as novas menções do conteúdo atualizado
-            mentions = _parse_mentions(content)
+            # Extrai as novas menções do conteúdo atualizado.
+            # Deduplica com set() para evitar contagem inflada quando a mesma
+            # @pessoa ou #tag aparece mais de uma vez no mesmo bullet
+            # (ex.: "falei com @Ana e @Ana concordou" → insere @Ana apenas uma vez).
+            mentions = list(set(_parse_mentions(content)))
 
             # Insere cada menção encontrada no texto
             for kind, value in mentions:
@@ -296,6 +319,10 @@ def upsert_bullet(page_id: int, position: int, content: str) -> dict:
 
         conn.commit()
         return {"status": "ok", "bullet": bullet}
+    except psycopg2.errors.ForeignKeyViolation:
+        # page_id não existe em journal_pages — retorna erro amigável em vez de HTTP 500
+        conn.rollback()
+        return {"status": "error", "message": "page_id não encontrado"}
     finally:
         conn.close()
 
@@ -319,6 +346,13 @@ def delete_bullet(bullet_id: int) -> dict:
             cur.execute("""
                 DELETE FROM journal_bullets WHERE id = %s
             """, (bullet_id,))
+
+            # cur.rowcount indica quantas linhas foram afetadas pelo DELETE.
+            # Se for 0, o bullet não existia — retornamos erro em vez de silenciar.
+            if cur.rowcount == 0:
+                conn.rollback()
+                return {"status": "error", "message": "bullet não encontrado"}
+
         conn.commit()
         return {"status": "ok"}
     finally:
@@ -496,7 +530,13 @@ def search_bullets(query: str) -> list:
 
 # ─── Inicialização automática ─────────────────────────────────────────────────
 
-# Cria as tabelas ao importar o módulo pela primeira vez.
-# Se DATABASE_URL não estiver definida (ex.: ambiente de CI sem banco),
-# o erro será levantado aqui — intencionalmente, para falhar rápido.
-_ensure_tables()
+# Ao importar o módulo, tenta criar as tabelas. Se o banco não estiver
+# disponível ainda (ex.: ordem de inicialização dos containers ou DATABASE_URL
+# ausente em ambiente de CI), apenas registra um aviso — a criação será
+# tentada novamente na primeira chamada a qualquer tool.
+try:
+    _ensure_tables()
+except Exception as exc:  # noqa: BLE001
+    logging.getLogger(__name__).warning(
+        "journal: não foi possível criar as tabelas ao importar o módulo: %s", exc
+    )

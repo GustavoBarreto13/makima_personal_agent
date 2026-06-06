@@ -16,6 +16,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 # BaseModel é a base para todos os modelos Pydantic (validação de body da requisição)
 from pydantic import BaseModel
 
+# Literal permite restringir um parâmetro a um conjunto fixo de valores.
+# O FastAPI usa isso para validar query params automaticamente (retorna 422 se inválido).
+from typing import Literal
+
 # require_user é a dependência de autenticação — bloqueia rotas não autenticadas.
 # Obrigatória em TODAS as rotas /api/* sem exceção.
 from webapp.backend.deps import require_user
@@ -111,10 +115,16 @@ def page_endpoint(
     """
     # Chama a tool que faz get-or-create da página no PostgreSQL
     result = get_or_create_page(date=date, type_id=type_id)
+
+    # get_or_create_page pode retornar {"error": "type_id não encontrado"}
+    # quando type_id não existe — converte para HTTP 400 antes de chamar _check_result
+    if result.get("error"):
+        raise HTTPException(status_code=400, detail=result["error"])
+
     return _check_result(result)
 
 
-@router.post("/bullets", status_code=201)
+@router.post("/bullets", status_code=200)
 def upsert_bullet_endpoint(
     body: UpsertBulletBody,
     user: dict = Depends(require_user),
@@ -167,7 +177,15 @@ def delete_bullet_endpoint(
     """
     # Deleta o bullet — as menções são removidas automaticamente pelo CASCADE
     result = delete_bullet(bullet_id=bullet_id)
-    return _check_result(result)
+
+    # Se o bullet não foi encontrado, retorna 404 (não encontrado) em vez de 400 (erro genérico)
+    if result.get("status") == "error":
+        raise HTTPException(
+            status_code=404,
+            detail=result.get("message", "bullet não encontrado"),
+        )
+
+    return result
 
 
 @router.get("/heatmap")
@@ -201,8 +219,9 @@ def heatmap_endpoint(
 
 @router.get("/mentions")
 def mentions_endpoint(
-    # kind é obrigatório — 'person' ou 'tag'
-    kind: str = Query(..., description="Tipo da menção: 'person' ou 'tag'"),
+    # Literal["person", "tag"] faz o FastAPI rejeitar automaticamente com 422
+    # qualquer valor diferente de 'person' ou 'tag' — sem precisar validar manualmente
+    kind: Literal["person", "tag"] = Query(..., description="Tipo da menção: 'person' ou 'tag'"),
     user: dict = Depends(require_user),
 ) -> list:
     """Listar todas as menções distintas de um tipo, com contagem de ocorrências.
@@ -226,7 +245,8 @@ def mentions_endpoint(
 
 @router.get("/filter")
 def filter_by_mention_endpoint(
-    kind: str = Query(..., description="Tipo da menção: 'person' ou 'tag'"),
+    # Literal["person", "tag"] — FastAPI retorna 422 automaticamente para valores inválidos
+    kind: Literal["person", "tag"] = Query(..., description="Tipo da menção: 'person' ou 'tag'"),
     value: str = Query(..., description="Valor da menção sem símbolo (ex.: 'Fulano', não '@Fulano')"),
     user: dict = Depends(require_user),
 ) -> list:
