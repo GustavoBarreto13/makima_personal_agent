@@ -12,10 +12,10 @@ interface HealthResponse {
   status: string       // 'ok' quando a chamada teve sucesso
   score: number        // Pontuação de 0 a 100 da saúde financeira
   breakdown: {
-    poupanca:   number   // Componente relativo à poupança
-    dividas:    number   // Componente relativo às dívidas
-    orcamento:  number   // Componente relativo ao orçamento
-    tendencia:  number   // Componente relativo à tendência de gastos
+    taxa_gasto:              number  // Pontos pela taxa despesas/receita
+    taxa_poupanca:           number  // Pontos pela taxa de poupança
+    comprometimento_futuro:  number  // Pontos pelo comprometimento com parcelas/assinaturas
+    divida_cartao:           number  // Pontos pelo endividamento no cartão
   }
   message: string      // Mensagem textual de avaliação (ex: "Finanças saudáveis")
 }
@@ -27,23 +27,22 @@ interface SummaryGroup {
 }
 
 // Resposta do endpoint GET /api/finances/summary
+// A tool retorna "summary" como dicionário {categoria: total}, não como array
 interface SummaryResponse {
-  status:  string          // 'ok' quando a chamada teve sucesso
-  groups:  SummaryGroup[]  // Lista de categorias com seus totais
-  period:  string          // Período consultado (ex: "2026-06")
-  total:   number          // Total geral de gastos no período
+  status:  string                    // 'ok' quando a chamada teve sucesso
+  summary: Record<string, number>   // Dicionário {categoria: total}
+  period:  string                    // Período consultado (ex: "2026-06")
+  total:   number                    // Total geral de gastos no período
 }
 
 // Resposta do endpoint GET /api/finances/commitments/{month}
+// A tool retorna totais agregados, sem lista de itens individuais
 interface CommitmentsResponse {
-  status: string  // 'ok' quando a chamada teve sucesso
-  month:  string  // Mês consultado (ex: "2026-07")
-  total:  number  // Soma de todos os compromissos futuros nesse mês
-  items:  Array<{
-    nome:       string   // Nome do compromisso (ex: "Parcela carro")
-    valor:      number   // Valor do compromisso
-    vencimento: string   // Data de vencimento
-  }>
+  status:            string  // 'ok' quando a chamada teve sucesso
+  month:             string  // Mês consultado (ex: "2026-07")
+  total:             number  // Soma parcelas + assinaturas
+  total_parcelas:    number  // Só parcelas
+  total_assinaturas: number  // Só assinaturas
 }
 
 // ── Funções auxiliares ─────────────────────────────────────────────────────────────────────────
@@ -190,20 +189,20 @@ export default function Dashboard() {
               {/* Detalhamento dos componentes do score */}
               <div className="space-y-1 text-xs text-gray-400">
                 <div className="flex justify-between">
+                  <span>Taxa de gasto</span>
+                  <span className="text-gray-200">{health.breakdown.taxa_gasto}/25</span>
+                </div>
+                <div className="flex justify-between">
                   <span>Poupança</span>
-                  <span className="text-gray-200">{health.breakdown.poupanca}</span>
+                  <span className="text-gray-200">{health.breakdown.taxa_poupanca}/25</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Dívidas</span>
-                  <span className="text-gray-200">{health.breakdown.dividas}</span>
+                  <span>Comprometimento</span>
+                  <span className="text-gray-200">{health.breakdown.comprometimento_futuro}/25</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Orçamento</span>
-                  <span className="text-gray-200">{health.breakdown.orcamento}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Tendência</span>
-                  <span className="text-gray-200">{health.breakdown.tendencia}</span>
+                  <span>Dívida cartão</span>
+                  <span className="text-gray-200">{health.breakdown.divida_cartao}/25</span>
                 </div>
               </div>
             </div>
@@ -228,12 +227,12 @@ export default function Dashboard() {
 
           {summary && (
             <div>
-              {/* Lista de categorias com valores */}
+              {/* Lista de categorias com valores — summary é um dict {categoria: total} */}
               <div className="space-y-2">
-                {summary.groups.map((group) => (
-                  <div key={group.label} className="flex justify-between text-sm">
-                    <span className="text-gray-300">{group.label}</span>
-                    <span className="text-white font-medium">{formatBRL(group.total)}</span>
+                {Object.entries(summary.summary).map(([label, total]) => (
+                  <div key={label} className="flex justify-between text-sm">
+                    <span className="text-gray-300">{label}</span>
+                    <span className="text-white font-medium">{formatBRL(total)}</span>
                   </div>
                 ))}
               </div>
@@ -270,15 +269,16 @@ export default function Dashboard() {
                 {formatBRL(commitments.total)}
               </p>
 
-              {/* Lista detalhada de itens */}
-              <div className="space-y-2">
-                {commitments.items.map((item) => (
-                  // Chave estável baseada em campos únicos do item (evita bugs de re-renderização com índice)
-                  <div key={`${item.nome}-${item.vencimento}`} className="flex justify-between text-sm">
-                    <span className="text-gray-300">{item.nome}</span>
-                    <span className="text-white font-medium">{formatBRL(item.valor)}</span>
-                  </div>
-                ))}
+              {/* Detalhamento por tipo */}
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-300">Parcelas</span>
+                  <span className="text-white">{formatBRL(commitments.total_parcelas)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-300">Assinaturas</span>
+                  <span className="text-white">{formatBRL(commitments.total_assinaturas)}</span>
+                </div>
               </div>
             </div>
           )}
