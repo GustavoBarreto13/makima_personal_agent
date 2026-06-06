@@ -41,6 +41,45 @@ services:
       # Rede compartilhada do Dokploy (acesso ao banco e outros serviços)
       - dokploy-network
 
+  # Interface web leve para inspecionar e editar o PostgreSQL via navegador.
+  # Acessível apenas em localhost:8082 — não expõe para a internet.
+  adminer:
+    image: adminer:4-standalone
+    container_name: makima-adminer
+    restart: unless-stopped
+    ports:
+      # Vincula ao loopback para não expor publicamente — use SSH tunnel se necessário
+      - "127.0.0.1:8082:8080"
+    networks:
+      - dokploy-network
+    environment:
+      # Pré-seleciona o host do banco na tela de login do Adminer
+      ADMINER_DEFAULT_SERVER: ${DB_HOST:-localhost}
+
+  # Serviço de backup: executa pg_dump diariamente e envia para Google Cloud Storage.
+  # O arquivo comprimido fica disponível por 30 dias (configurar lifecycle no GCS).
+  # Pré-requisito: criar o bucket GCS uma vez com:
+  #   gcloud storage buckets create gs://makima-backups --project=SEU_PROJECT --location=southamerica-east1
+  backup:
+    image: python:3.11-slim
+    container_name: makima-backup
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # Monta o repo inteiro para que o script backup_postgres.py seja acessível
+      - .:/app
+    working_dir: /app
+    # Instala dependências mínimas e entra em loop de 24h
+    command: >
+      sh -c "pip install -q psycopg2-binary google-cloud-storage &&
+             while true; do
+               python scripts/backup_postgres.py;
+               echo 'Próximo backup em 24h';
+               sleep 86400;
+             done"
+    networks:
+      - dokploy-network
+
 # Declara a rede do Dokploy como externa — já existe, não criamos aqui
 networks:
   dokploy-network:
