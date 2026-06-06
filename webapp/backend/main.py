@@ -12,6 +12,7 @@ import os  # Para verificar se o diretório de build do frontend existe
 
 from fastapi import FastAPI  # Framework web — define rotas e lida com requisições HTTP
 from fastapi.middleware.cors import CORSMiddleware  # Middleware que libera requisições cross-origin
+from fastapi.responses import FileResponse  # Retorna um arquivo do disco como resposta HTTP
 from fastapi.staticfiles import StaticFiles  # Serve arquivos estáticos (HTML, CSS, JS do React)
 from starlette.middleware.sessions import SessionMiddleware  # Middleware de sessão Starlette — necessário para o fluxo CSRF do OAuth
 
@@ -100,16 +101,17 @@ _FRONTEND_DIST = os.path.join(
 _FRONTEND_DIST = os.path.normpath(_FRONTEND_DIST)
 
 if os.path.isdir(_FRONTEND_DIST):
-    # O build do React existe — monta os arquivos estáticos em /*
-    # html=True ativa o "SPA fallback": qualquer rota desconhecida devolve index.html,
-    # permitindo que o React Router gerencie a navegação no cliente.
-    app.mount(
-        "/",
-        StaticFiles(directory=_FRONTEND_DIST, html=True),
-        name="static",
-    )
-else:
-    # O build não existe (desenvolvimento sem frontend compilado).
-    # A API ainda funciona normalmente — só os arquivos estáticos não são servidos.
-    # Isso evita um erro fatal ao importar o módulo sem ter rodado `npm run build`.
-    pass
+    # Monta apenas o diretório /assets (JS, CSS gerados pelo Vite) em /assets.
+    # Não montamos o dist inteiro em "/" porque StaticFiles com html=True NÃO serve
+    # index.html para rotas do React Router como /journal ou /books — retorna 404.
+    _ASSETS_DIR = os.path.join(_FRONTEND_DIST, "assets")
+    if os.path.isdir(_ASSETS_DIR):
+        app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
+
+    # Catch-all SPA: qualquer rota não reconhecida pela API devolve o index.html.
+    # O React Router no navegador assume o controle e renderiza a página correta.
+    # Esta rota deve ficar APÓS todos os routers de API para não interceptá-los.
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str) -> FileResponse:
+        """Redirecionar rotas do React Router para o index.html do build."""
+        return FileResponse(os.path.join(_FRONTEND_DIST, "index.html"))
