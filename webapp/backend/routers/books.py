@@ -42,7 +42,8 @@ from agents.frieren.tools import (
     log_reading,        # Registra progresso de leitura de uma sessão
     finish_book,        # Marca livro como lido, registra data e avaliação
     update_book_status, # Atualiza o status de um livro (lendo, pausado, etc.)
-    update_book_pages,  # Corrige o total de páginas de uma edição
+    update_book_pages,          # Corrige o total de páginas de uma edição
+    update_book_metadata_by_id, # Atualiza campos de metadados do livro diretamente por ID
 )
 
 # Função de consulta estruturada — retorna dict (não string HTML)
@@ -186,6 +187,24 @@ class UpdateStatusBody(BaseModel):
 class UpdatePagesBody(BaseModel):
     """Corpo da requisição para corrigir o total de páginas de um livro."""
     total_pages: int  # Número correto de páginas da edição física do usuário
+
+
+class UpdateBookMetadataBody(BaseModel):
+    """Corpo da requisição para atualizar metadados de um livro diretamente por ID.
+
+    Todos os campos são opcionais — apenas os campos enviados serão atualizados.
+    Útil para corrigir dados enriquecidos pela Google Books API ou preencher
+    campos que ficaram vazios no cadastro inicial.
+    """
+    title: Optional[str] = None           # Título do livro
+    author: Optional[str] = None          # Autor do livro
+    cover_url: Optional[str] = None       # URL da imagem de capa
+    total_pages: Optional[int] = None     # Total de páginas da edição
+    genre: Optional[str] = None           # Gênero literário
+    published_year: Optional[int] = None  # Ano de publicação
+    isbn: Optional[str] = None            # ISBN-10 ou ISBN-13
+    language: Optional[str] = None        # Idioma (ex.: "pt-BR", "en")
+    description: Optional[str] = None     # Sinopse ou descrição do livro
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -661,6 +680,46 @@ def update_status_endpoint(
         status=body.status,
     )
     return _books_check(msg)
+
+
+@router.patch("/{book_id}/metadata")
+def update_metadata_endpoint(
+    book_id: str,                        # ID do livro, vem na URL
+    body: UpdateBookMetadataBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Atualizar metadados de um livro diretamente pelo ID.
+
+    Permite corrigir ou preencher campos como título, autor, capa, gênero, ISBN,
+    idioma e descrição sem precisar recriar o livro. Apenas os campos informados
+    no body são atualizados — campos omitidos permanecem inalterados.
+
+    Útil quando a Google Books API preencheu dados incorretos ou incompletos
+    no momento do cadastro e o usuário quer ajustar manualmente pela interface.
+
+    Args:
+        book_id: ID único do livro (UUID).
+        body: Campos a atualizar (todos opcionais — pelo menos um deve ser informado).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" em caso de sucesso.
+
+    Raises:
+        HTTPException: 400 se o livro não for encontrado ou os dados forem inválidos.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    # model_dump(exclude_none=True) gera um dict apenas com os campos enviados,
+    # ignorando os que ficaram None (não foram informados no body).
+    # Isso garante que a tool só atualize o que o usuário quis alterar.
+    msg = update_book_metadata_by_id(book_id, **body.model_dump(exclude_none=True))
+
+    # Verifica se a tool retornou uma mensagem de erro e converte para HTTP 400 se sim
+    _books_check(msg)
+
+    # Retorna confirmação de sucesso sem incluir a mensagem HTML da tool,
+    # para manter a resposta simples e previsível para o frontend
+    return {"status": "ok"}
 
 
 @router.patch("/{book_id}/pages")
