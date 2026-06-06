@@ -714,12 +714,8 @@ def update_metadata_endpoint(
     # Isso garante que a tool só atualize o que o usuário quis alterar.
     msg = update_book_metadata_by_id(book_id, **body.model_dump(exclude_none=True))
 
-    # Verifica se a tool retornou uma mensagem de erro e converte para HTTP 400 se sim
-    _books_check(msg)
-
-    # Retorna confirmação de sucesso sem incluir a mensagem HTML da tool,
-    # para manter a resposta simples e previsível para o frontend
-    return {"status": "ok"}
+    # Verifica se a tool retornou erro e converte para HTTP 400; caso contrário retorna {"status":"ok"}
+    return _books_check(msg)
 
 
 @router.patch("/{book_id}/pages")
