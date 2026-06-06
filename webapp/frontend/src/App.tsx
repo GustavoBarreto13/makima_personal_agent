@@ -17,6 +17,7 @@ import Budgets       from './pages/Budgets'             // Orçamentos por categ
 import Subscriptions from './pages/Subscriptions'       // Assinaturas recorrentes
 import Books      from './pages/Books'       // Lista de livros com agrupamento por status
 import BookDetail from './pages/BookDetail'  // Detalhe do livro com histórico de leitura
+import Journal    from './pages/Journal'     // Diário pessoal com editor de bullets e heatmap
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
@@ -105,6 +106,9 @@ function App() {
 
           {/* Detalhe de um livro com histórico de sessões */}
           <Route path="/books/:id" element={<BookDetail />} />
+
+          {/* Diário pessoal — editor de bullets com heatmap e busca */}
+          <Route path="/journal" element={<Journal />} />
         </Routes>
       </Layout>
     </BrowserRouter>

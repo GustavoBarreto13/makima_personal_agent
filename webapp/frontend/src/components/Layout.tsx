@@ -21,6 +21,8 @@ const NAV_ITEMS = [
   { label: 'Orçamentos',    path: '/budgets' },
   { label: 'Assinaturas',   path: '/subscriptions' },
   { label: 'Livros',       path: '/books' },
+  // Diário pessoal — editor de bullets com heatmap anual e busca por @menções e #tags
+  { label: 'Diário',       path: '/journal' },
 ]
 
 /**
