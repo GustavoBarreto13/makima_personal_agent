@@ -4,7 +4,7 @@
 
 **Makima** é um coordinator multi-agente construído com Google ADK. Roda como bot Telegram autônomo no VPS, recebendo mensagens e delegando para agentes especialistas conforme o domínio do pedido.
 
-O design completo — arquitetura, fases, schemas BigQuery, custos — está em `PLAN.md`.
+O design completo — arquitetura, fases, schemas PostgreSQL, custos — está em `PLAN.md`.
 
 ---
 
@@ -20,10 +20,10 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 
 | Agente | Domínio | Status | Documentação |
 |---|---|---|---|
-| `agents/nami/` | Finanças (BigQuery) | ✅ Fase 1 | `agents/nami/CLAUDE.md` |
+| `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1 | `agents/nami/CLAUDE.md` |
 | `agents/kaguya/` | Tarefas + Agenda (TickTick + Calendar via MCP) | ✅ Fase 2 | `agents/kaguya/CLAUDE.md` |
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG) | 🔧 Fase 3 | `agents/kurisu/CLAUDE.md` |
-| `agents/frieren/` | Livros (BigQuery + Google Books) | ✅ Fase 5a | `agents/frieren/CLAUDE.md` |
+| `agents/frieren/` | Livros (PostgreSQL + Google Books) | ✅ Fase 5a | `agents/frieren/CLAUDE.md` |
 | `agents/lucy/` | Email (Gmail IMAP) | — Fase 4 | — |
 | `agents/media/` | Séries + filmes + anime (Notion) | — Fase 5b | — |
 
@@ -51,11 +51,11 @@ Telegram (usuário)
 coordinator/main.py  (python-telegram-bot, sessões por domínio)
     ↓
 coordinator/agent.py  (Makima — Agent ADK)
-    ├── nami_agent      → BigQuery (finanças)                        [agents/nami]
+    ├── nami_agent      → PostgreSQL (finanças)                      [agents/nami]
     ├── kaguya_agent    → TickTick via MCP stdio                     [agents/kaguya + mcp_servers/ticktick]
     │                  → Google Calendar via MCP stdio               [mcp_servers/calendar]
     ├── kurisu_agent    → Vertex AI RAG (vault Obsidian)             [agents/kurisu]   (estrutura criada, pendente corpus)
-    ├── frieren_agent   → BigQuery (livros)                          [agents/frieren]
+    ├── frieren_agent   → PostgreSQL (livros)                        [agents/frieren]
     ├── lucy_agent      → Gmail IMAP                                 [agents/lucy]     (ainda não ativada)
     └── media_agent     → Notion (séries + filmes + anime)           [agents/media]    (ainda não ativada)
 ```
@@ -72,7 +72,7 @@ Kaguya possui duas tools especiais em `agents/kaguya/tools.py` que cruzam domín
 
 | Tool | O que faz |
 |---|---|
-| `complete_payment_task` | Completa tarefa no TickTick **e** lança despesa no BigQuery via tools da Nami |
+| `complete_payment_task` | Completa tarefa no TickTick **e** lança despesa no PostgreSQL via tools da Nami |
 | `create_expense_reminder` | Cria tarefa de lembrete de pagamento no TickTick (sem lançar despesa ainda) |
 
 Makima conhece os fluxos duplos e roteia corretamente:
@@ -96,9 +96,9 @@ makima_personal_agent/
 │   ├── __init__.py
 │   ├── nami/            # agente de finanças — Fase 1 ✅
 │   │   ├── __init__.py
-│   │   ├── tools.py     # tools de acesso ao BigQuery
+│   │   ├── tools.py     # tools de acesso ao PostgreSQL
 │   │   ├── agent.py     # nami_agent
-│   │   ├── schema.sql   # schema das tabelas BigQuery
+│   │   ├── schema_pg.sql # schema das tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, categorias, formatação, personalidade
 │   ├── kaguya/          # agente de tarefas + agenda — Fase 2 ✅
 │   │   ├── __init__.py
@@ -111,10 +111,10 @@ makima_personal_agent/
 │   │   └── CLAUDE.md    # arquitetura RAG, setup Vertex AI, checklist de ativação
 │   └── frieren/         # agente de livros — Fase 5a ✅
 │       ├── __init__.py
-│       ├── tools.py     # BigQuery + Google Books API
+│       ├── tools.py     # PostgreSQL + Google Books API
 │       ├── agent.py     # frieren_agent
-│       ├── schema.sql   # schema das tabelas BigQuery
-│       └── CLAUDE.md    # tools, schema BigQuery, menu interativo, personalidade
+│       ├── schema_pg.sql # schema das tabelas PostgreSQL
+│       └── CLAUDE.md    # tools, schema PostgreSQL, menu interativo, personalidade
 ├── mcp_servers/
 │   ├── __init__.py
 │   ├── ticktick/
@@ -125,7 +125,12 @@ makima_personal_agent/
 │       └── server.py    # servidor MCP FastMCP — Google Calendar (leitura todos, escrita só principal)
 ├── scripts/
 │   ├── authorize_calendar.py  # gera credenciais OAuth do Google Calendar (rodar uma vez)
+│   ├── setup_schemas.py       # cria tabelas PostgreSQL de Nami e Frieren (rodar uma vez no VPS)
+│   ├── migrate_bq_to_pg.py    # migração one-time: BigQuery → PostgreSQL
+│   ├── backup_postgres.py     # pg_dump → Google Cloud Storage (roda diariamente via Docker)
 │   └── .gitignore             # exclui client_secret.json do git
+├── docs/
+│   └── MIGRACAO_POSTGRES.md  # checklist de deploy da migração BigQuery → PostgreSQL
 ├── requirements.txt
 ├── PLAN.md              # design completo, fases, schemas, custos
 └── CLAUDE.md            # este arquivo — visão geral e guia de navegação
@@ -138,7 +143,8 @@ makima_personal_agent/
 ```
 google-adk               # Agent, InMemoryRunner, McpToolset, VertexAiRagRetrieval
 python-telegram-bot      # bot Telegram
-google-cloud-bigquery    # acesso ao BigQuery (Nami, Frieren)
+psycopg2-binary          # driver PostgreSQL síncrono (Nami, Frieren, Journal)
+google-cloud-storage     # backup automático do PostgreSQL para GCS
 requests                 # acesso HTTP às APIs (TickTick, etc.) nas tools dos agentes
 mcp[cli]                 # FastMCP — servidor MCP do TickTick e Calendar
 google-auth              # OAuth para Google Calendar
@@ -154,11 +160,11 @@ Ambiente local: `.venv` própria do makima.
 
 | Fase | O que fazer | Onde | Status |
 |---|---|---|---|
-| **1** | Nami (finanças): tools BigQuery + agent. | `agents/nami/` | ✅ |
+| **1** | Nami (finanças): tools PostgreSQL + agent. | `agents/nami/` | ✅ |
 | **2** | Kaguya (tarefas): MCP server TickTick + tools cross-agent + agent. Integração dupla Kaguya+Nami. | `agents/kaguya/` + `mcp_servers/ticktick/` | ✅ |
 | **3** | Kurisu (knowledge base): Vertex AI RAG sobre vault Obsidian. Estrutura criada, pendente setup do corpus no GCP. | `agents/kurisu/` + GCP Console | 🔧 |
 | **4** | Lucy (email): tools IMAP/Gmail + agent. | `agents/lucy/` (ref.: `n8n-python-scripts/lucy_email_agent/`) | — |
-| **5a** | Frieren (livros): BigQuery + Google Books API + log de leitura por páginas. | `agents/frieren/` | ✅ |
+| **5a** | Frieren (livros): PostgreSQL + Google Books API + log de leitura por páginas. | `agents/frieren/` | ✅ |
 | **5b** | Media (séries+filmes+anime). | `agents/media/` | — |
 
 **Fase atual: 3 🔧** — Kurisu com estrutura criada. Próximo passo: criar o Data Store no Vertex AI Agent Builder e configurar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/CLAUDE.md`).

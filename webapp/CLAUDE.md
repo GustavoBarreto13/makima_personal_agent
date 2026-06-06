@@ -2,8 +2,7 @@
 
 Painel web do Makima — FastAPI (backend) + React (frontend) servidos por um único container.
 A API importa diretamente as tools dos agentes (`agents/nami/`, `agents/frieren/`, `agents/journal/`),
-lendo e escrevendo nas mesmas tabelas (BigQuery para finanças/livros; PostgreSQL para o journal)
-usadas pelo bot do Telegram.
+lendo e escrevendo nas mesmas tabelas PostgreSQL usadas pelo bot do Telegram.
 
 ---
 
@@ -24,8 +23,8 @@ webapp/
 │   ├── deps.py         # require_user() → valida cookie makima_session via itsdangerous
 │   └── routers/
 │       ├── auth.py     # /auth/login → /auth/callback → cookie ; /auth/logout ; /auth/me
-│       ├── finances.py # /api/finances/* → wraps tools da Nami (BigQuery)
-│       ├── books.py    # /api/books/*   → wraps tools da Frieren (BigQuery)
+│       ├── finances.py # /api/finances/* → wraps tools da Nami (PostgreSQL)
+│       ├── books.py    # /api/books/*   → wraps tools da Frieren (PostgreSQL)
 │       └── journal.py  # /api/journal/* → wraps tools do Journal (PostgreSQL)
 └── frontend/
     └── src/
@@ -76,7 +75,7 @@ Fluxo: `GET /auth/login` → Google OIDC → `GET /auth/callback` → cookie `ma
 
 Router: `routers/journal.py` · Tools: `agents/journal/tools.py` · Storage: **PostgreSQL** (não BigQuery)
 
-O Journal é o único domínio que usa o PostgreSQL compartilhado com o ADK, em vez do BigQuery.
+Todos os domínios (finanças, livros e journal) usam o mesmo PostgreSQL compartilhado com o ADK.
 
 **Modelo de dados:**
 - `journal_types` — tipos de diário (ex.: id=1 → "personal"); extensível
@@ -110,9 +109,9 @@ O Journal é o único domínio que usa o PostgreSQL compartilhado com o ADK, em 
 | `GOOGLE_OAUTH_CLIENT_ID` | sim | Client ID do app OAuth no GCP |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | sim | Client Secret do app OAuth no GCP |
 | `OAUTH_REDIRECT_URL` | sim | URL de callback (dev: `http://localhost:8080/auth/callback`) |
-| `GCP_PROJECT_ID` | sim | Herdado do bot — necessário para as tools de BigQuery |
-| `GCP_CREDENTIALS_JSON` | sim | Herdado do bot — credenciais de serviço GCP |
-| `DATABASE_URL` | sim | PostgreSQL compartilhado com o ADK — usado pelas tools do journal |
+| `GCP_PROJECT_ID` | sim | Necessário para o GCS backup (e Vertex AI RAG do Kurisu) |
+| `GCP_CREDENTIALS_JSON` | sim | Credenciais de serviço GCP (GCS backup + Vertex AI) |
+| `DATABASE_URL` | sim | PostgreSQL compartilhado — usado por todas as tools (finanças, livros, journal) |
 
 As variáveis de BigQuery/GCP são lidas pelas tools dos agentes diretamente do ambiente — `config.py` não as reexporta.
 
