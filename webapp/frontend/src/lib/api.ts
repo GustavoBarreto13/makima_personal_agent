@@ -62,4 +62,57 @@ export const api = {
     // Deserializa e retorna o JSON da resposta como o tipo T informado
     return res.json() as Promise<T>
   },
+
+  /**
+   * Faz uma requisição PATCH autenticada com corpo JSON.
+   * Usado para atualizações parciais de recursos existentes (ex: alterar status de assinatura).
+   *
+   * @param path - Caminho da rota no backend (ex: '/api/finances/subscriptions/123')
+   * @param body - Campos a atualizar (serão convertidos para JSON)
+   * @returns Promise com o corpo da resposta deserializado como tipo T
+   * @throws Error se a resposta HTTP não for 2xx
+   */
+  patch: async <T>(path: string, body: unknown): Promise<T> => {
+    const res = await fetch(path, {
+      method: 'PATCH',
+      headers: {
+        // Informa ao servidor que o corpo da requisição é JSON
+        'Content-Type': 'application/json',
+      },
+      // Envia o cookie de sessão junto com a requisição
+      credentials: 'include',
+      // Converte o objeto JavaScript em string JSON para o corpo HTTP
+      body: JSON.stringify(body),
+    })
+
+    // Se o servidor retornou um erro (4xx, 5xx), lança uma exceção com o código HTTP
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+    // Deserializa e retorna o JSON da resposta como o tipo T informado
+    return res.json() as Promise<T>
+  },
+
+  /**
+   * Faz uma requisição DELETE autenticada.
+   * Usado para remover recursos no backend (ex: deletar uma transação).
+   * Não envia corpo — apenas o identificador do recurso fica na URL.
+   *
+   * @param path - Caminho da rota no backend com o ID do recurso (ex: '/api/finances/transactions/456')
+   * @returns Promise com o corpo da resposta deserializado como tipo T
+   * @throws Error se a resposta HTTP não for 2xx
+   */
+  del: async <T>(path: string): Promise<T> => {
+    const res = await fetch(path, {
+      method: 'DELETE',
+      // Envia o cookie de sessão junto com a requisição
+      credentials: 'include',
+      // DELETE não envia corpo — o recurso a deletar é identificado pela URL
+    })
+
+    // Se o servidor retornou um erro (4xx, 5xx), lança uma exceção com o código HTTP
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+    // Deserializa e retorna o JSON da resposta como o tipo T informado
+    return res.json() as Promise<T>
+  },
 }

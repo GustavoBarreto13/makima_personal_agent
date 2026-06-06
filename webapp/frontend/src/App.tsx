@@ -1,10 +1,22 @@
 // Componente raiz da aplicação Makima.
-// Gerencia o estado de autenticação: decide se mostra a tela de login ou o conteúdo protegido.
+// Gerencia o estado de autenticação e configura o roteamento de páginas.
 // Ao carregar, verifica com o backend se o usuário está autenticado via cookie de sessão.
+// Se autenticado, renderiza o layout completo com sidebar e as rotas de cada página.
 
-import { useEffect, useState } from 'react'   // Hooks do React: efeito colateral e estado local
-import Login from './pages/Login'              // Tela de login com botão "Entrar com Google"
-import { api } from './lib/api'                // Wrapper de fetch com cookie de sessão automático
+import { useEffect, useState } from 'react'             // Hooks do React: efeito colateral e estado local
+import { BrowserRouter, Routes, Route } from 'react-router-dom'  // Roteamento de páginas SPA
+
+import Login         from './pages/Login'               // Tela de login com botão "Entrar com Google"
+import Layout        from './components/Layout'         // Layout com sidebar de navegação
+import Dashboard     from './pages/Dashboard'           // Página inicial com resumo financeiro
+import Transactions  from './pages/Transactions'        // CRUD de transações
+import Accounts      from './pages/Accounts'            // Listagem e criação de contas
+import Cards         from './pages/Cards'               // Cartões de crédito com progress bar
+import Loans         from './pages/Loans'               // Empréstimos e saldo devedor
+import Budgets       from './pages/Budgets'             // Orçamentos por categoria
+import Subscriptions from './pages/Subscriptions'       // Assinaturas recorrentes
+
+import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
 // Tipo que representa os dados do usuário retornados pelo endpoint /auth/me
 interface User {
@@ -44,7 +56,7 @@ function App() {
   // Isso evita que o usuário veja um flash da tela de login antes de ser redirecionado.
   if (loading) {
     return (
-      // Tela de carregamento: fundo escuro com spinner e mensagem
+      // Tela de carregamento: fundo escuro com spinner centralizado
       <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
         {/* Spinner animado: borda com cor parcial que gira */}
         <div className="w-8 h-8 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
@@ -57,37 +69,37 @@ function App() {
     return <Login />
   }
 
-  // Usuário autenticado: mostra o conteúdo protegido da aplicação.
-  // Por enquanto é uma tela simples de boas-vindas — será substituída nas próximas fatias.
+  // Usuário autenticado: configura o roteamento com BrowserRouter.
+  // BrowserRouter habilita navegação SPA usando a History API do navegador (sem recarregamento de página).
+  // Layout envolve todas as rotas, garantindo que sidebar e header apareçam em todas as páginas.
   return (
-    // Container principal: fundo escuro, conteúdo centralizado
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-950 text-white">
+    <BrowserRouter>
+      {/* Layout fornece o sidebar de navegação e o header; todas as páginas ficam dentro dele */}
+      <Layout>
+        <Routes>
+          {/* Rota raiz: página inicial com resumo financeiro */}
+          <Route path="/"              element={<Dashboard />} />
 
-      {/* Título da aplicação */}
-      <h1 className="text-5xl font-bold tracking-tight mb-2">
-        Makima
-      </h1>
+          {/* CRUD de transações financeiras */}
+          <Route path="/transactions"  element={<Transactions />} />
 
-      {/* Mensagem de boas-vindas com o nome do usuário */}
-      <p className="text-gray-300 text-lg mb-1">
-        Bem-vindo, {user.name}
-      </p>
+          {/* Listagem e criação de contas bancárias */}
+          <Route path="/accounts"      element={<Accounts />} />
 
-      {/* Email do usuário autenticado */}
-      <p className="text-gray-500 text-sm mb-8">
-        {user.email}
-      </p>
+          {/* Cartões de crédito com progresso de uso */}
+          <Route path="/cards"         element={<Cards />} />
 
-      {/* Link para encerrar a sessão */}
-      {/* Ao clicar, o backend apaga o cookie e redireciona para "/", voltando para o login */}
-      <a
-        href="/auth/logout"
-        className="text-gray-400 hover:text-white text-sm underline transition-colors"
-      >
-        Sair
-      </a>
+          {/* Empréstimos e financiamentos */}
+          <Route path="/loans"         element={<Loans />} />
 
-    </div>
+          {/* Orçamentos mensais por categoria */}
+          <Route path="/budgets"       element={<Budgets />} />
+
+          {/* Assinaturas recorrentes */}
+          <Route path="/subscriptions" element={<Subscriptions />} />
+        </Routes>
+      </Layout>
+    </BrowserRouter>
   )
 }
 
