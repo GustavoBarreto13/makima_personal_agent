@@ -2,11 +2,12 @@
 // Exibe informações completas do livro (capa, status, progresso, avaliação),
 // permite registrar sessões de leitura, concluir o livro, mudar o status
 // e visualiza o histórico cronológico de todas as sessões registradas.
+// Também oferece edição inline de todos os metadados do livro.
 
 import { useEffect, useState } from 'react'          // Hooks do React: estado e efeito colateral
 import { useParams, useNavigate } from 'react-router-dom' // Hooks para pegar o ID da URL e navegar
 
-import { api } from '../lib/api'                      // Wrapper de fetch autenticado com cookie
+import { api, updateBookMetadata } from '../lib/api'  // Wrapper de fetch autenticado + função de edição
 
 // ── Interfaces de dados ────────────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,9 @@ interface Book {
   genre:          string | null   // Gênero literário
   published_year: number | null   // Ano de publicação original
   isbn:           string | null   // Código ISBN do livro
+  language:       string | null   // Idioma do livro (null se não informado)
+  description:    string | null   // Sinopse/descrição do livro (null se não informada)
+  notes:          string | null   // Notas pessoais do leitor (null se não há notas)
 }
 
 // Representa uma sessão de leitura no histórico
@@ -217,6 +221,36 @@ export default function BookDetail() {
   // Mensagem de erro do formulário de status (null = sem erro)
   const [statusError, setStatusError] = useState<string | null>(null)
 
+  // ── Estado do card informativo ──
+
+  // Controla se a sinopse está expandida ou colapsada no card de visualização.
+  // Textos longos (>200 chars) são truncados em 4 linhas por padrão.
+  const [descExpanded, setDescExpanded] = useState(false)
+
+  // Controla se o formulário de edição está visível no lugar das informações do livro
+  const [isEditing, setIsEditing] = useState(false)
+
+  // Dados do formulário de edição — pré-populados com os valores atuais do livro.
+  // Armazenamos como strings para facilitar o bind com os inputs HTML.
+  const [formData, setFormData] = useState({
+    title:          '',
+    author:         '',
+    cover_url:      '',
+    total_pages:    '',  // número armazenado como string para compatibilidade com <input>
+    genre:          '',
+    published_year: '',  // número armazenado como string para compatibilidade com <input>
+    isbn:           '',
+    language:       '',
+    description:    '',
+    notes:          '',
+  })
+
+  // Indica se o PATCH de metadados está sendo enviado (desabilita o botão Salvar)
+  const [saving, setSaving] = useState(false)
+
+  // Mensagem de erro do formulário de edição (null = sem erro)
+  const [editError, setEditError] = useState<string | null>(null)
+
   // ── Carregamento inicial ──
   // useEffect executa ao montar o componente.
   // Carrega o livro e o histórico simultaneamente para não bloquear a interface.
@@ -330,6 +364,74 @@ export default function BookDetail() {
     }
   }
 
+  /**
+   * Abre o formulário de edição pré-populando os campos com os dados atuais do livro.
+   * Converte números para string porque os inputs HTML trabalham com strings.
+   *
+   * Args:
+   *   b - Dados atuais do livro usados como valores iniciais do formulário.
+   */
+  function openEditForm(b: Book) {
+    // Preenche cada campo do formulário com o valor atual do livro (ou string vazia se null)
+    setFormData({
+      title:          b.title ?? '',
+      author:         b.author ?? '',
+      cover_url:      b.cover_url ?? '',
+      total_pages:    b.total_pages != null ? String(b.total_pages) : '',
+      genre:          b.genre ?? '',
+      published_year: b.published_year != null ? String(b.published_year) : '',
+      isbn:           b.isbn ?? '',
+      language:       b.language ?? '',
+      description:    b.description ?? '',
+      notes:          b.notes ?? '',
+    })
+    // Limpa qualquer erro anterior e ativa o modo de edição
+    setEditError(null)
+    setIsEditing(true)
+  }
+
+  /**
+   * Fecha o formulário de edição sem salvar, descartando todas as alterações.
+   */
+  function cancelEdit() {
+    setIsEditing(false)
+    setEditError(null)
+  }
+
+  /**
+   * Envia os metadados editados ao backend via PATCH /api/books/:id/metadata.
+   * Após sucesso, recarrega o livro para refletir as alterações no card e sai do modo de edição.
+   */
+  async function handleSaveMetadata() {
+    setSaving(true)
+    setEditError(null)
+    try {
+      // Monta o payload convertendo strings de volta para os tipos corretos.
+      // Campos de número vazios são omitidos (undefined) para não sobrescrever com null inválido.
+      await updateBookMetadata(id!, {
+        title:          formData.title          || undefined,
+        author:         formData.author         || undefined,
+        cover_url:      formData.cover_url      || undefined,
+        // Converte string → número inteiro; omite se vazio ou não numérico
+        total_pages:    formData.total_pages    ? parseInt(formData.total_pages, 10)    : undefined,
+        genre:          formData.genre          || undefined,
+        published_year: formData.published_year ? parseInt(formData.published_year, 10) : undefined,
+        isbn:           formData.isbn           || undefined,
+        language:       formData.language       || undefined,
+        description:    formData.description    || undefined,
+        notes:          formData.notes          || undefined,
+      })
+      // Sucesso: recarrega o livro para exibir os novos dados e fecha o formulário
+      loadBook()
+      setIsEditing(false)
+    } catch (err) {
+      // Exibe a mensagem de erro abaixo do formulário para o usuário corrigir
+      setEditError((err as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // ── Renderização: estado de carregamento ──
 
   // Spinner centralizado enquanto o livro ainda não foi carregado
@@ -365,6 +467,10 @@ export default function BookDetail() {
   // Calcula o progresso de leitura para usar na barra e no texto auxiliar
   const progress = calcProgress(book.current_page, book.total_pages)
 
+  // Determina se a sinopse é longa o suficiente para exibir o botão "Ver mais / Ver menos"
+  // O limite de 200 caracteres é arbitrário — define o que consideramos "texto longo"
+  const descIsLong = (book.description?.length ?? 0) > 200
+
   // ── Renderização principal ──
 
   return (
@@ -385,84 +491,321 @@ export default function BookDetail() {
       </div>
 
       {/* ── Seção 2: Card do livro ── */}
-      {/* Layout flex: capa à esquerda, informações à direita */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 flex gap-6">
+      {/* position: relative permite posicionar o botão de editar em absolute dentro do card */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 relative">
 
-        {/* Capa do livro */}
-        {book.cover_url ? (
-          // Exibe a capa real se a URL estiver disponível
-          <img
-            src={book.cover_url}
-            alt={`Capa de ${book.title}`}
-            className="w-24 h-32 object-cover rounded-lg flex-shrink-0"
-          />
-        ) : (
-          // Placeholder cinza quando não há imagem de capa disponível
-          <div className="w-24 h-32 bg-gray-700 rounded-lg flex-shrink-0 flex items-center justify-center">
-            <span className="text-gray-500 text-2xl">📖</span>
+        {/* ── Botão Editar — posicionado no canto superior direito do card ── */}
+        {/* Só exibe quando não estamos em modo de edição */}
+        {!isEditing && (
+          <button
+            onClick={() => openEditForm(book)}
+            className="absolute top-4 right-4 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm px-3 py-1 rounded-md transition-colors"
+            title="Editar metadados do livro"
+          >
+            ✏️ Editar
+          </button>
+        )}
+
+        {/* ── Modo de visualização: exibe as informações do livro ── */}
+        {!isEditing && (
+          // Layout flex: capa à esquerda, informações à direita
+          <div className="flex gap-6">
+
+            {/* Capa do livro */}
+            {book.cover_url ? (
+              // Exibe a capa real se a URL estiver disponível
+              <img
+                src={book.cover_url}
+                alt={`Capa de ${book.title}`}
+                className="w-24 h-32 object-cover rounded-lg flex-shrink-0"
+              />
+            ) : (
+              // Placeholder cinza quando não há imagem de capa disponível
+              <div className="w-24 h-32 bg-gray-700 rounded-lg flex-shrink-0 flex items-center justify-center">
+                <span className="text-gray-500 text-2xl">📖</span>
+              </div>
+            )}
+
+            {/* Informações do livro */}
+            <div className="flex-1 min-w-0 space-y-2">
+
+              {/* Título e badge de status na mesma linha */}
+              <div className="flex items-start gap-3 flex-wrap">
+                <h2 className="text-xl font-bold text-white leading-tight">{book.title}</h2>
+                {/* Badge colorido com o status atual do livro */}
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 mt-0.5 ${
+                  STATUS_BADGE[book.status] ?? 'bg-gray-700 text-gray-400'
+                }`}>
+                  {/* Troca underscore por espaço para exibição: "quero_ler" → "quero ler" */}
+                  {book.status.replace('_', ' ')}
+                </span>
+              </div>
+
+              {/* Nome do autor */}
+              {book.author && (
+                <p className="text-gray-400 text-sm">{book.author}</p>
+              )}
+
+              {/* Metadados secundários: gênero, ano, ISBN e idioma */}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                {book.genre          && <span>{book.genre}</span>}
+                {book.published_year && <span>{book.published_year}</span>}
+                {book.isbn           && <span>ISBN: {book.isbn}</span>}
+                {/* Idioma: exibido junto com os outros metadados quando disponível */}
+                {book.language       && <span>🌐 {book.language}</span>}
+              </div>
+
+              {/* Datas de início e conclusão */}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                {book.date_started  && <span>Iniciado: {formatDate(book.date_started)}</span>}
+                {book.date_finished && <span>Concluído: {formatDate(book.date_finished)}</span>}
+              </div>
+
+              {/* ── Barra de progresso — exibida apenas quando o livro está sendo lido ── */}
+              {book.status === 'lendo' && (
+                <div className="mt-2 space-y-1">
+                  {/* Trilha cinza da barra; a barra azul interna representa o progresso atual */}
+                  <div className="bg-gray-700 rounded-full h-2">
+                    <div
+                      className="bg-blue-500 h-2 rounded-full transition-all"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  {/* Texto auxiliar mostrando página atual, total e percentual */}
+                  <p className="text-gray-500 text-xs">
+                    Página {book.current_page ?? 0} de {book.total_pages ?? '?'} ({progress}%)
+                  </p>
+                </div>
+              )}
+
+              {/* ── Estrelas de avaliação — exibidas apenas para livros concluídos ── */}
+              {book.status === 'lido' && (
+                <p
+                  className="text-yellow-400 text-lg mt-1"
+                  title={`Avaliação: ${book.rating ?? 'sem nota'}`}
+                >
+                  {renderStars(book.rating)}
+                </p>
+              )}
+
+              {/* ── Sinopse do livro ── */}
+              {/* Exibida apenas se o livro tiver descrição cadastrada */}
+              {book.description && (
+                <div className="mt-3 space-y-1">
+                  {/*
+                    Quando descExpanded é false e o texto é longo, aplicamos `line-clamp-4`
+                    para truncar em 4 linhas e mostrar "..." no final.
+                    Quando expandido (ou texto curto), exibimos tudo.
+                  */}
+                  <p className={`text-gray-300 text-sm leading-relaxed ${
+                    !descExpanded && descIsLong ? 'line-clamp-4' : ''
+                  }`}>
+                    {book.description}
+                  </p>
+                  {/* Botão "Ver mais / Ver menos" — só aparece se o texto for longo */}
+                  {descIsLong && (
+                    <button
+                      onClick={() => setDescExpanded(!descExpanded)}
+                      className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
+                    >
+                      {descExpanded ? 'Ver menos ▲' : 'Ver mais ▼'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* ── Notas pessoais do leitor ── */}
+              {/* Exibidas apenas se o usuário tiver escrito notas pessoais */}
+              {book.notes && (
+                <div className="mt-2 border-l-2 border-gray-700 pl-3">
+                  {/* Rótulo pequeno indicando que o texto abaixo são notas do leitor */}
+                  <p className="text-gray-500 text-xs mb-0.5">📝 Minhas notas:</p>
+                  <p className="text-gray-400 text-sm italic">{book.notes}</p>
+                </div>
+              )}
+
+            </div>
           </div>
         )}
 
-        {/* Informações do livro */}
-        <div className="flex-1 min-w-0 space-y-2">
+        {/* ── Modo de edição: formulário inline para editar metadados ── */}
+        {isEditing && (
+          <div className="space-y-4">
 
-          {/* Título e badge de status na mesma linha */}
-          <div className="flex items-start gap-3 flex-wrap">
-            <h2 className="text-xl font-bold text-white leading-tight">{book.title}</h2>
-            {/* Badge colorido com o status atual do livro */}
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 mt-0.5 ${
-              STATUS_BADGE[book.status] ?? 'bg-gray-700 text-gray-400'
-            }`}>
-              {/* Troca underscore por espaço para exibição: "quero_ler" → "quero ler" */}
-              {book.status.replace('_', ' ')}
-            </span>
-          </div>
+            {/* Cabeçalho do formulário */}
+            <h3 className="text-white font-semibold text-base mb-2">Editar Metadados</h3>
 
-          {/* Nome do autor */}
-          {book.author && (
-            <p className="text-gray-400 text-sm">{book.author}</p>
-          )}
+            {/* Grid de dois campos por linha — responsivo (1 col no mobile, 2 no desktop) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-          {/* Metadados secundários: gênero, ano, ISBN */}
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-            {book.genre          && <span>{book.genre}</span>}
-            {book.published_year && <span>{book.published_year}</span>}
-            {book.isbn           && <span>ISBN: {book.isbn}</span>}
-          </div>
-
-          {/* Datas de início e conclusão */}
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-            {book.date_started  && <span>Iniciado: {formatDate(book.date_started)}</span>}
-            {book.date_finished && <span>Concluído: {formatDate(book.date_finished)}</span>}
-          </div>
-
-          {/* ── Barra de progresso — exibida apenas quando o livro está sendo lido ── */}
-          {book.status === 'lendo' && (
-            <div className="mt-2 space-y-1">
-              {/* Trilha cinza da barra; a barra azul interna representa o progresso atual */}
-              <div className="bg-gray-700 rounded-full h-2">
-                <div
-                  className="bg-blue-500 h-2 rounded-full transition-all"
-                  style={{ width: `${progress}%` }}
+              {/* Campo: Título */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Título</label>
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="Título do livro"
                 />
               </div>
-              {/* Texto auxiliar mostrando página atual, total e percentual */}
-              <p className="text-gray-500 text-xs">
-                Página {book.current_page ?? 0} de {book.total_pages ?? '?'} ({progress}%)
-              </p>
-            </div>
-          )}
 
-          {/* ── Estrelas de avaliação — exibidas apenas para livros concluídos ── */}
-          {book.status === 'lido' && (
-            <p
-              className="text-yellow-400 text-lg mt-1"
-              title={`Avaliação: ${book.rating ?? 'sem nota'}`}
-            >
-              {renderStars(book.rating)}
-            </p>
-          )}
-        </div>
+              {/* Campo: Autor */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Autor</label>
+                <input
+                  type="text"
+                  value={formData.author}
+                  onChange={(e) => setFormData({ ...formData, author: e.target.value })}
+                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="Nome do autor"
+                />
+              </div>
+
+              {/* Campo: URL da Capa (ocupa a linha inteira para poder mostrar o preview) */}
+              <div className="md:col-span-2">
+                <label className="block text-xs text-gray-400 mb-1">URL da Capa</label>
+                <input
+                  type="text"
+                  value={formData.cover_url}
+                  onChange={(e) => setFormData({ ...formData, cover_url: e.target.value })}
+                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="https://..."
+                />
+                {/* Preview da capa — exibido apenas se a URL estiver preenchida */}
+                {formData.cover_url && (
+                  <img
+                    src={formData.cover_url}
+                    alt="Preview da capa"
+                    className="mt-2 w-12 h-16 object-cover rounded"
+                    // Se a imagem falhar ao carregar, esconde o elemento para não quebrar o layout
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                  />
+                )}
+              </div>
+
+              {/* Campo: Total de Páginas */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Total de Páginas</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={formData.total_pages}
+                  onChange={(e) => setFormData({ ...formData, total_pages: e.target.value })}
+                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="Ex: 320"
+                />
+              </div>
+
+              {/* Campo: Gênero */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Gênero</label>
+                <input
+                  type="text"
+                  value={formData.genre}
+                  onChange={(e) => setFormData({ ...formData, genre: e.target.value })}
+                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="Ex: Ficção científica"
+                />
+              </div>
+
+              {/* Campo: Ano de Publicação */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Ano de Publicação</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="2100"
+                  value={formData.published_year}
+                  onChange={(e) => setFormData({ ...formData, published_year: e.target.value })}
+                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="Ex: 1984"
+                />
+              </div>
+
+              {/* Campo: ISBN */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">ISBN</label>
+                <input
+                  type="text"
+                  value={formData.isbn}
+                  onChange={(e) => setFormData({ ...formData, isbn: e.target.value })}
+                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="Ex: 978-3-16-148410-0"
+                />
+              </div>
+
+              {/* Campo: Idioma */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Idioma</label>
+                <input
+                  type="text"
+                  value={formData.language}
+                  onChange={(e) => setFormData({ ...formData, language: e.target.value })}
+                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="Ex: Português, English"
+                />
+              </div>
+
+              {/* Campo: Sinopse (textarea — ocupa a linha inteira por ser texto longo) */}
+              <div className="md:col-span-2">
+                <label className="block text-xs text-gray-400 mb-1">Sinopse</label>
+                <textarea
+                  rows={4}
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none"
+                  placeholder="Descrição ou sinopse do livro..."
+                />
+              </div>
+
+              {/* Campo: Notas Pessoais (textarea — ocupa a linha inteira por ser texto longo) */}
+              <div className="md:col-span-2">
+                <label className="block text-xs text-gray-400 mb-1">Notas pessoais</label>
+                <textarea
+                  rows={4}
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none"
+                  placeholder="Suas anotações pessoais sobre o livro..."
+                />
+              </div>
+
+            </div>
+
+            {/* Mensagem de erro do formulário de edição */}
+            {editError && (
+              <p className="text-red-400 text-sm">{editError}</p>
+            )}
+
+            {/* Botões de ação do formulário */}
+            <div className="flex gap-3">
+              {/* Botão Salvar — azul, desabilitado enquanto envia */}
+              <button
+                onClick={handleSaveMetadata}
+                disabled={saving}
+                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+              >
+                {/* Spinner inline mostrado enquanto a requisição está em andamento */}
+                {saving && (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                )}
+                {saving ? 'Salvando...' : 'Salvar'}
+              </button>
+
+              {/* Botão Cancelar — cinza, descarta as alterações e sai do modo de edição */}
+              <button
+                onClick={cancelEdit}
+                disabled={saving}
+                className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+
+          </div>
+        )}
+
       </div>
 
       {/* ── Seção 3: Painel de ações ── */}

@@ -149,6 +149,7 @@ export async function updateBookMetadata(
     isbn: string
     language: string
     description: string
+    notes: string          // Notas pessoais do leitor sobre o livro
   }>,
 ): Promise<{ status: string; message: string }> {
   // Usa o método PATCH do objeto api para fazer a requisição autenticada.
