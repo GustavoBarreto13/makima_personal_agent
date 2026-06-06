@@ -25,6 +25,28 @@ Envie mensagens em linguagem natural pelo Telegram. Makima identifica o domínio
 
 ---
 
+## Interface Web (webapp)
+
+Painel web disponível em `makima.gusstavo42-vps.cloud` — acesso restrito ao e-mail do Gustavo via Google OAuth.
+
+Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na web e vice-versa.
+
+**O que está disponível:**
+
+| Página | O que faz |
+|---|---|
+| Dashboard | Health score financeiro, gastos por categoria do mês e compromissos do próximo mês |
+| Transações | CRUD completo — filtro por mês, criação e exclusão |
+| Contas | Listagem de contas bancárias, criação e consulta de saldo atual |
+| Cartões | Dívida por cartão, barra de uso do limite, registrar pagamento |
+| Empréstimos | Saldo devedor, parcelas restantes, registrar pagamento |
+| Orçamentos | Envelopes por categoria com barra de progresso, definir novo limite |
+| Assinaturas | Lista de assinaturas recorrentes com custo mensal total |
+
+**Stack:** FastAPI (backend) + React 19 + TypeScript + Tailwind CSS (frontend) — servidos pelo mesmo container.
+
+---
+
 ## Arquitetura
 
 ```
@@ -135,6 +157,22 @@ makima_personal_agent/
 │   │   └── server.py        # servidor MCP — tools genéricas do TickTick
 │   └── calendar/
 │       └── server.py        # servidor MCP — Google Calendar
+├── webapp/
+│   ├── backend/
+│   │   ├── main.py              # FastAPI app — monta routers e serve o build do React
+│   │   ├── config.py            # variáveis de ambiente (OAuth, sessão)
+│   │   ├── deps.py              # dependência FastAPI que valida o cookie de sessão
+│   │   ├── auth.py              # Google OAuth (callback, /auth/me, logout)
+│   │   └── routers/
+│   │       └── finances.py      # /api/finances/* — importa tools da Nami diretamente
+│   ├── frontend/
+│   │   └── src/
+│   │       ├── App.tsx          # roteamento + verificação de sessão
+│   │       ├── components/
+│   │       │   └── Layout.tsx   # sidebar de navegação
+│   │       ├── pages/           # Dashboard, Transactions, Accounts, Cards, Loans, Budgets, Subscriptions
+│   │       └── lib/api.ts       # wrapper de fetch com cookie de sessão automático
+│   └── Dockerfile               # multi-stage: Node 20 (build React) → Python 3.12 (uvicorn)
 ├── scripts/
 │   └── authorize_calendar.py  # gera credenciais OAuth do Google Calendar (rodar uma vez)
 ├── requirements.txt
@@ -231,6 +269,13 @@ VERTEX_RAG_CORPUS=             # projects/{PROJECT_ID}/locations/us-central1/rag
 
 # Uso futuro
 NOTION_TOKEN=
+
+# Webapp (interface web)
+ALLOWED_EMAIL=                     # e-mail Google autorizado a logar na webapp
+SESSION_SECRET=                    # segredo para assinar cookies de sessão (gerar com secrets.token_hex(32))
+GOOGLE_OAUTH_CLIENT_ID=            # client ID do app OAuth (tipo Web Application) no Google Cloud Console
+GOOGLE_OAUTH_CLIENT_SECRET=        # client secret do mesmo app
+OAUTH_REDIRECT_URL=                # URL de callback após login (ex: https://makima.seudominio.com/auth/callback)
 ```
 
 ---
