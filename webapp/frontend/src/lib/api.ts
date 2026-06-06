@@ -130,12 +130,12 @@ export const api = {
  *
  * @param bookId - Identificador único do livro (UUID)
  * @param data - Objeto com os campos de metadado a atualizar (todos opcionais)
- * @returns Promise com a resposta do backend deserializada
+ * @returns Promise com `{ status: "ok", message: string }` em caso de sucesso
  * @throws Error se a resposta HTTP não for 2xx
  *
  * Example:
- *   >>> await updateBookMetadata("abc123", { title: "Novo Título", rating: 5 })
- *   { status: "ok", book: { ... } }
+ *   >>> await updateBookMetadata("abc123", { title: "Novo Título", cover_url: "https://..." })
+ *   { status: "ok", message: "✅ Livro atualizado com sucesso." }
  */
 export async function updateBookMetadata(
   bookId: string,
@@ -150,10 +150,9 @@ export async function updateBookMetadata(
     language: string
     description: string
   }>,
-) {
+): Promise<{ status: string; message: string }> {
   // Usa o método PATCH do objeto api para fazer a requisição autenticada.
   // O api.patch já trata credenciais (cookie), headers (Content-Type),
   // JSON serialization e validação de resposta HTTP.
-  const result = await api.patch<{ status: string }>(`/api/books/${bookId}/metadata`, data)
-  return result
+  return api.patch<{ status: string; message: string }>(`/api/books/${bookId}/metadata`, data)
 }
