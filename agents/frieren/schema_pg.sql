@@ -1,0 +1,45 @@
+-- agents/frieren/schema_pg.sql
+-- Schema das tabelas de livros da Frieren no PostgreSQL.
+
+-- Catálogo de livros com status de leitura
+CREATE TABLE IF NOT EXISTS books (
+    id              TEXT PRIMARY KEY,
+    google_books_id TEXT,
+    title           TEXT        NOT NULL,
+    author          TEXT,
+    total_pages     INTEGER,
+    isbn            TEXT,
+    cover_url       TEXT,
+    description     TEXT,
+    genre           TEXT,
+    language        TEXT,
+    published_year  INTEGER,
+    status          TEXT        DEFAULT 'quero_ler',
+    -- status: 'lendo' | 'lido' | 'quero_ler' | 'pausado' | 'abandonado'
+    date_started    DATE,
+    date_finished   DATE,
+    rating          NUMERIC,
+    notes           TEXT,
+    source          TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW(),
+    deleted         BOOLEAN     DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_books_status     ON books(status);
+CREATE INDEX IF NOT EXISTS idx_books_deleted    ON books(deleted);
+CREATE INDEX IF NOT EXISTS idx_books_created_at ON books(created_at);
+
+-- Sessões de leitura (imutáveis — nunca atualizadas, só inseridas)
+CREATE TABLE IF NOT EXISTS reading_logs (
+    id            TEXT PRIMARY KEY,
+    book_id       TEXT        REFERENCES books(id),
+    book_title    TEXT,
+    date          DATE        NOT NULL,
+    page_start    INTEGER,
+    page_end      INTEGER,
+    pages_read    INTEGER,
+    session_notes TEXT,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_reading_logs_date    ON reading_logs(date);
+CREATE INDEX IF NOT EXISTS idx_reading_logs_book_id ON reading_logs(book_id);
