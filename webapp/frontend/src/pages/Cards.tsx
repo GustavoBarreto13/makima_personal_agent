@@ -14,7 +14,7 @@ interface Card {
   account_name: string   // Nome da conta corrente vinculada
   limite:       number   // Limite total do cartão
   divida_atual: number   // Dívida atual acumulada
-  pct_usado:    number   // Percentual do limite já utilizado (0-100)
+  utilizacao_pct: number   // Percentual do limite já utilizado (0-100)
   status:       string   // Status: "ativo", "bloqueado", etc.
 }
 
@@ -227,7 +227,7 @@ export default function Cards() {
             <div className="mb-3">
               <p className="text-2xl font-bold text-white">{formatBRL(card.divida_atual)}</p>
               <p className="text-xs text-gray-400 mt-0.5">
-                de {formatBRL(card.limite)} ({card.pct_usado.toFixed(1)}% usado)
+                de {formatBRL(card.limite)} ({card.utilizacao_pct.toFixed(1)}% usado)
               </p>
             </div>
 
@@ -237,8 +237,8 @@ export default function Cards() {
               <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
                 {/* Preenchimento colorido proporcional ao uso */}
                 <div
-                  className={`h-full rounded-full transition-all ${progressColor(card.pct_usado)}`}
-                  style={{ width: `${Math.min(card.pct_usado, 100)}%` }}
+                  className={`h-full rounded-full transition-all ${progressColor(card.utilizacao_pct)}`}
+                  style={{ width: `${Math.min(card.utilizacao_pct, 100)}%` }}
                 />
               </div>
             </div>
