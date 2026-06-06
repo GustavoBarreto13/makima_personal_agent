@@ -19,7 +19,7 @@ interface Budget {
 interface BudgetsResponse {
   status:  string    // 'ok' quando a chamada teve sucesso
   month:   string    // Mês consultado (ex: "2026-06")
-  budgets: Budget[]  // Lista de orçamentos por categoria
+  envelopes: Budget[]  // Lista de orçamentos por categoria (campo retornado pelo backend)
 }
 
 // Resposta genérica de escrita
@@ -146,7 +146,7 @@ export default function Budgets() {
     setError(null)
     api.get<BudgetsResponse>('/api/finances/budgets')
       .then((res) => {
-        setBudgets(res.budgets)
+        setBudgets(res.envelopes)
         setMonth(res.month)
       })
       .catch((err: Error) => setError(err.message))
