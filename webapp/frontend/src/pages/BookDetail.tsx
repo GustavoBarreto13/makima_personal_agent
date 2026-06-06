@@ -399,28 +399,69 @@ export default function BookDetail() {
   }
 
   /**
-   * Envia os metadados editados ao backend via PATCH /api/books/:id/metadata.
-   * Após sucesso, recarrega o livro para refletir as alterações no card e sai do modo de edição.
+   * Envia ao backend apenas os campos que o usuário realmente alterou.
+   * Constrói um diff entre o formData atual e os valores originais do livro,
+   * evitando sobrescrever campos não tocados (especialmente notes, que pode
+   * ter conteúdo acumulado pelo bot do Telegram).
    */
   async function handleSaveMetadata() {
     setSaving(true)
     setEditError(null)
     try {
-      // Monta o payload convertendo strings de volta para os tipos corretos.
-      // Campos de número vazios são omitidos (undefined) para não sobrescrever com null inválido.
-      await updateBookMetadata(id!, {
-        title:          formData.title          || undefined,
-        author:         formData.author         || undefined,
-        cover_url:      formData.cover_url      || undefined,
-        // Converte string → número inteiro; omite se vazio ou não numérico
-        total_pages:    formData.total_pages    ? parseInt(formData.total_pages, 10)    : undefined,
-        genre:          formData.genre          || undefined,
-        published_year: formData.published_year ? parseInt(formData.published_year, 10) : undefined,
-        isbn:           formData.isbn           || undefined,
-        language:       formData.language       || undefined,
-        description:    formData.description    || undefined,
-        notes:          formData.notes          || undefined,
-      })
+      const b = book!
+
+      // Valores originais convertidos para string — mesma representação do formData
+      const orig = {
+        title:          b.title          ?? '',
+        author:         b.author         ?? '',
+        cover_url:      b.cover_url      ?? '',
+        total_pages:    b.total_pages    != null ? String(b.total_pages)    : '',
+        genre:          b.genre          ?? '',
+        published_year: b.published_year != null ? String(b.published_year) : '',
+        isbn:           b.isbn           ?? '',
+        language:       b.language       ?? '',
+        description:    b.description    ?? '',
+        notes:          b.notes          ?? '',
+      }
+
+      // Payload com apenas os campos que mudaram
+      const payload: Parameters<typeof updateBookMetadata>[1] = {}
+
+      // Campos de texto: inclui se o valor é diferente do original
+      if (formData.title       !== orig.title)       payload.title       = formData.title
+      if (formData.author      !== orig.author)      payload.author      = formData.author
+      if (formData.cover_url   !== orig.cover_url)   payload.cover_url   = formData.cover_url
+      if (formData.genre       !== orig.genre)       payload.genre       = formData.genre
+      if (formData.isbn        !== orig.isbn)        payload.isbn        = formData.isbn
+      if (formData.language    !== orig.language)    payload.language    = formData.language
+      if (formData.description !== orig.description) payload.description = formData.description
+      if (formData.notes       !== orig.notes)       payload.notes       = formData.notes
+
+      // Campos numéricos: valida o input antes de incluir
+      if (formData.total_pages !== orig.total_pages && formData.total_pages !== '') {
+        const parsed = parseInt(formData.total_pages, 10)
+        if (isNaN(parsed) || parsed <= 0) {
+          setEditError('Total de páginas deve ser um número inteiro positivo.')
+          return
+        }
+        payload.total_pages = parsed
+      }
+      if (formData.published_year !== orig.published_year && formData.published_year !== '') {
+        const parsed = parseInt(formData.published_year, 10)
+        if (isNaN(parsed) || parsed < 1000 || parsed > 2100) {
+          setEditError('Ano de publicação deve ser um número válido (ex.: 2024).')
+          return
+        }
+        payload.published_year = parsed
+      }
+
+      // Nenhum campo mudou — fecha sem chamar o backend
+      if (Object.keys(payload).length === 0) {
+        setIsEditing(false)
+        return
+      }
+
+      await updateBookMetadata(id!, payload)
       // Sucesso: recarrega o livro para exibir os novos dados e fecha o formulário
       loadBook()
       setIsEditing(false)

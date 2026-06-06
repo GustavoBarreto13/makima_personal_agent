@@ -1667,7 +1667,7 @@ def update_book_metadata_by_id(
         params.append(bigquery.ScalarQueryParameter("language", "STRING", language))
 
     if description is not None:
-        # Atualiza a sinopse — substitui por completo (não faz append como em notes)
+        # Atualiza a sinopse — substitui por completo o valor anterior
         sets.append("description = @description")
         params.append(bigquery.ScalarQueryParameter("description", "STRING", description))
 
