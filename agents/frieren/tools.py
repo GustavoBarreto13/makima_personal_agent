@@ -1579,6 +1579,7 @@ def update_book_metadata_by_id(
     isbn: str | None = None,
     language: str | None = None,
     description: str | None = None,
+    notes: str | None = None,
 ) -> str:
     """Atualiza campos de metadados de um livro pelo ID exato.
 
@@ -1588,7 +1589,7 @@ def update_book_metadata_by_id(
 
     Diferente de `update_book_by_id`, esta função trata campos de metadados
     bibliográficos (título, autor, capa, páginas, gênero, ano, ISBN, idioma,
-    descrição) e **não** toca em status, rating, notes ou datas de leitura.
+    descrição) e anotações pessoais do leitor.
 
     Args:
         book_id: UUID do livro na tabela `books` (campo `id`).
@@ -1601,6 +1602,7 @@ def update_book_metadata_by_id(
         isbn: ISBN-13 (preferido) ou ISBN-10 como fallback.
         language: Código do idioma (ex.: "pt", "en").
         description: Sinopse do livro (recomendado truncar em 500 chars).
+        notes: Anotações pessoais / resenha (sobrescreve o valor anterior).
 
     Returns:
         Mensagem de confirmação em caso de sucesso, ou mensagem de erro
@@ -1668,6 +1670,11 @@ def update_book_metadata_by_id(
         # Atualiza a sinopse — substitui por completo (não faz append como em notes)
         sets.append("description = @description")
         params.append(bigquery.ScalarQueryParameter("description", "STRING", description))
+
+    if notes is not None:
+        # Atualiza as anotações pessoais — sobrescreve por completo o valor anterior
+        sets.append("notes = @notes")
+        params.append(bigquery.ScalarQueryParameter("notes", "STRING", notes))
 
     # Se nenhum campo foi fornecido, não há nada a atualizar — retorna feedback claro
     if not sets:

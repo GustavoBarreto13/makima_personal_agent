@@ -205,6 +205,7 @@ class UpdateBookMetadataBody(BaseModel):
     isbn: Optional[str] = None            # ISBN-10 ou ISBN-13
     language: Optional[str] = None        # Idioma (ex.: "pt-BR", "en")
     description: Optional[str] = None     # Sinopse ou descrição do livro
+    notes: Optional[str] = None           # Anotações pessoais / resenha do leitor
 
 
 # ═════════════════════════════════════════════════════════════════════════════
