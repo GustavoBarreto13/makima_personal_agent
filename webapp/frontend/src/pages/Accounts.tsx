@@ -24,7 +24,7 @@ interface AccountsResponse {
 // Resposta do endpoint GET /api/finances/accounts/{id}/balance
 interface BalanceResponse {
   status:  string  // 'ok' quando a chamada teve sucesso
-  balance: number  // Saldo atual da conta
+  saldo_atual: number  // Saldo atual da conta (campo retornado pelo backend)
 }
 
 // Resposta genérica de operações de escrita
@@ -132,7 +132,7 @@ export default function Accounts() {
     try {
       const res = await api.get<BalanceResponse>(`/api/finances/accounts/${accountId}/balance`)
       // Armazena o saldo no mapa de saldos indexado pelo ID da conta
-      setBalances((prev) => ({ ...prev, [accountId]: res.balance }))
+      setBalances((prev) => ({ ...prev, [accountId]: res.saldo_atual }))
     } catch (err) {
       alert(`Erro ao buscar saldo: ${(err as Error).message}`)
     } finally {
