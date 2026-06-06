@@ -755,7 +755,7 @@ export default function BookDetail() {
                 <label className="block text-xs text-gray-400 mb-1">Ano de Publicação</label>
                 <input
                   type="number"
-                  min="0"
+                  min="1000"
                   max="2100"
                   value={formData.published_year}
                   onChange={(e) => setFormData({ ...formData, published_year: e.target.value })}

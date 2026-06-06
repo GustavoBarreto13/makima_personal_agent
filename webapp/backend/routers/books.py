@@ -76,6 +76,9 @@ _FRIEREN_ERRORS = [
     "não encontrei",             # Livro não encontrado no catálogo (update_book_pages)
     "já está no catálogo",       # Tentativa de adicionar livro duplicado
     "nenhum log",                # Nenhuma sessão de leitura registrada (sem log anterior)
+    "não encontrado",            # book_id inexistente (update_book_metadata_by_id)
+    "erro ao atualizar",         # Falha no BigQuery (update_book_metadata_by_id)
+    "nenhum campo para atualizar", # Payload vazio (update_book_metadata_by_id)
 ]
 
 
