@@ -206,3 +206,8 @@ python -m coordinator.main
 
 Assim como no `n8n-python-scripts`, alterações significativas neste repo devem ser refletidas no vault do Obsidian.
 Use a skill `obsidian-vault` para consultar os caminhos corretos e atualizar a documentação lá.
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->

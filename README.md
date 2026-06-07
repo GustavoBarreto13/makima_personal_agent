@@ -42,7 +42,7 @@ Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na
 | Orçamentos | Envelopes por categoria com barra de progresso, definir novo limite |
 | Assinaturas | Lista de assinaturas recorrentes com custo mensal total |
 | Livros | Catálogo pessoal com filtros por status, wishlist com preço e link |
-| Diário | Bullet journal com heatmap anual, `@pessoas`, `#tags` e busca full-text |
+| Diário | Bullet journal com timestamp por bullet, heatmap anual, `@pessoas`, `#tags` e busca full-text — sidebar direita com Insights, Pessoas, Tags e Busca |
 
 **Stack:** FastAPI (backend) + React 19 + TypeScript + Tailwind CSS (frontend) — servidos pelo mesmo container.
 
@@ -125,7 +125,7 @@ Agente interno (sem personalidade própria). Gerencia o diário bullet journal c
 
 **Funcionalidades:**
 - Uma página por dia, criada automaticamente
-- Bullets numerados por posição (upsert por posição)
+- Bullets numerados por posição (upsert por posição), com timestamp de criação (`created_at`)
 - Extração automática de `@pessoa` e `#tag` de cada bullet
 - Busca full-text com dicionário português
 - Heatmap anual de atividade (quantidade de bullets por dia)
