@@ -235,14 +235,19 @@ def get_or_create_page(date: str, type_id: int = 1) -> dict:
 
             page = dict(row)
 
-            # Busca todos os bullets da página, ordenados por posição crescente
+            # Busca todos os bullets da página, ordenados por posição crescente.
+            # created_at é incluído para exibição de timestamp no frontend.
             cur.execute("""
-                SELECT id, content, position
+                SELECT id, content, position, created_at
                 FROM journal_bullets
                 WHERE page_id = %s
                 ORDER BY position ASC
             """, (page["id"],))
-            bullets = [dict(r) for r in cur.fetchall()]
+            # Converte created_at (datetime) para string ISO antes de serializar em JSON
+            bullets = [
+                {**dict(r), "created_at": r["created_at"].isoformat() if r["created_at"] else None}
+                for r in cur.fetchall()
+            ]
 
         conn.commit()
         return {"page": page, "bullets": bullets}
@@ -285,9 +290,11 @@ def upsert_bullet(page_id: int, position: int, content: str) -> dict:
                 VALUES (%s, %s, %s)
                 ON CONFLICT (page_id, position)
                 DO UPDATE SET content = EXCLUDED.content
-                RETURNING id, content, position
+                RETURNING id, content, position, created_at
             """, (page_id, position, content))
-            bullet = dict(cur.fetchone())
+            row = cur.fetchone()
+            # Converte created_at para string ISO para serialização JSON
+            bullet = {**dict(row), "created_at": row["created_at"].isoformat() if row["created_at"] else None}
 
             # Atualiza updated_at da página sempre que um bullet é modificado,
             # para que o heatmap e listagens de páginas recentes fiquem atualizados

@@ -1,6 +1,7 @@
 // Página de diário pessoal — editor de bullets diário com heatmap anual,
 // agrupamento de @menções e #tags, busca e filtragem por pessoa/tag.
-// Fonte Lora (serif) para o conteúdo dos bullets; Cormorant Garamond para o título da data.
+// Layout: editor central + sidebar direita com heatmap/menções/busca.
+// Referência visual: Journalistic app.
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { api } from '../lib/api'
@@ -12,6 +13,7 @@ interface Bullet {
   content: string
   position: number
   localKey: string
+  createdAt: string | null  // ISO timestamp do banco (para exibir "HH:MM h" abaixo do bullet)
 }
 
 interface PageResponse {
@@ -24,6 +26,7 @@ interface PageResponse {
     id: number
     content: string
     position: number
+    created_at: string
   }>
 }
 
@@ -48,6 +51,7 @@ interface UpsertResponse {
     id: number
     content: string
     position: number
+    created_at: string
   }
 }
 
@@ -56,7 +60,7 @@ type Mode =
   | { type: 'filter'; kind: 'person' | 'tag'; value: string }
   | { type: 'search'; query: string }
 
-// ── Prompts de sugestão para o primeiro bullet vazio ──────────────────────────────────────────
+// ── Prompts de sugestão ────────────────────────────────────────────────────────────────────────
 
 const PROMPTS = [
   'Como foi seu dia?',
@@ -67,9 +71,6 @@ const PROMPTS = [
 
 // ── Funções auxiliares puras ───────────────────────────────────────────────────────────────────
 
-/**
- * Retorna a data de hoje no formato YYYY-MM-DD, usando hora local para evitar bug de fuso.
- */
 function todayISO(): string {
   const d = new Date()
   const y = d.getFullYear()
@@ -79,40 +80,41 @@ function todayISO(): string {
 }
 
 /**
- * Retorna o dia da semana em português maiúsculo, ex: "SEXTA-FEIRA".
+ * Retorna a data no formato curto: "6 jun. 2026"
+ */
+function shortDatePT(iso: string): string {
+  const d = new Date(iso + 'T12:00:00')
+  return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+/**
+ * Retorna o dia da semana com a primeira letra maiúscula: "Sexta-feira"
  */
 function weekdayPT(iso: string): string {
   const d = new Date(iso + 'T12:00:00')
-  return d.toLocaleDateString('pt-BR', { weekday: 'long' }).toUpperCase()
+  const wd = d.toLocaleDateString('pt-BR', { weekday: 'long' })
+  return wd.charAt(0).toUpperCase() + wd.slice(1)
 }
 
 /**
- * Retorna o dia + mês + ano em português, ex: "6 de junho de 2026".
- */
-function dayMonthYearPT(iso: string): string {
-  const d = new Date(iso + 'T12:00:00')
-  return d.toLocaleDateString('pt-BR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-}
-
-/**
- * Formata data completa em português, ex: "Sexta-feira, 6 de junho de 2026".
+ * Formata data completa em português para os cabeçalhos de grupo: "Sexta-feira, 6 de junho de 2026"
  */
 function formatDatePT(iso: string): string {
   const d = new Date(iso + 'T12:00:00')
-  return d.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
+  return d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 }
 
 /**
- * Calcula quantos dias consecutivos o usuário escreveu no diário, contando para trás a partir de hoje.
+ * Formata um timestamp ISO para "HH:MM h" no fuso local.
+ * Se iso for null, usa o horário atual como fallback.
+ */
+function formatTime(iso: string | null): string {
+  const d = iso ? new Date(iso) : new Date()
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' h'
+}
+
+/**
+ * Calcula streak: quantos dias consecutivos com pelo menos 1 bullet, contando para trás.
  */
 function calcStreak(hm: Record<string, number>): number {
   let streak = 0
@@ -131,7 +133,7 @@ function calcStreak(hm: Record<string, number>): number {
 }
 
 /**
- * Destaca @menções (violeta) e #tags (verde) no texto de um bullet.
+ * Destaca @menções (violeta) e #tags (verde) em texto de bullet.
  */
 function renderHighlighted(text: string): React.ReactNode {
   const parts = text.split(/(@\w+|#\w+)/g)
@@ -143,38 +145,94 @@ function renderHighlighted(text: string): React.ReactNode {
   })
 }
 
-function getInitialPosition(index: number): number {
-  return index * 1000
+function getInitialPosition(index: number): number { return index * 1000 }
+function getMidPosition(prev: number, next: number): number { return Math.floor((prev + next) / 2) }
+
+// ── Paleta de cores centralizada ──────────────────────────────────────────────────────────────
+
+const C = {
+  bg:       '#0e0d0b',
+  sidebar:  '#0a0908',
+  border:   '#2a2825',
+  text:     '#f0ebe0',
+  muted:    '#9a9185',
+  faint:    '#4a4540',
+  amber:    '#c9a96e',
+  amberDim: '#44372b',
+  violet:   '#a78bfa',
+  green:    '#86efac',
 }
 
-function getMidPosition(prev: number, next: number): number {
-  return Math.floor((prev + next) / 2)
+// ── SVG Icons inline (evita dependência de lib de ícones) ─────────────────────────────────────
+
+function IconPencil({ size = 16, color = C.muted }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+    </svg>
+  )
+}
+
+function IconBarChart({ size = 16, color = C.muted }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+    </svg>
+  )
+}
+
+function IconUsers({ size = 16, color = C.muted }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+  )
+}
+
+function IconHash({ size = 16, color = C.muted }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/>
+      <line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/>
+    </svg>
+  )
+}
+
+function IconSearch({ size = 14, color = C.faint }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+  )
 }
 
 // ── Componente principal ───────────────────────────────────────────────────────────────────────
 
-/**
- * Página de diário pessoal com editor de bullets, heatmap anual âmbar e sidebar de menções.
- * Design "literary noir": fundo quente escuro, tipografia editorial, sensação de caderno real.
- */
 export default function Journal() {
   // ── Estado principal ──
   const [mode, setMode] = useState<Mode>({ type: 'day', date: todayISO() })
   const [pageId, setPageId] = useState<number | null>(null)
+  const [pageNum, setPageNum] = useState<number | null>(null)  // page.id para exibir como #N
   const [bullets, setBullets] = useState<Bullet[]>([])
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  // ── Estado da sidebar ──
+  // ── Estado da sidebar direita ──
   const [heatmap, setHeatmap] = useState<Record<string, number>>({})
   const [streak, setStreak] = useState(0)
   const [people, setPeople] = useState<MentionItem[]>([])
   const [tags, setTags] = useState<MentionItem[]>([])
+  // Qual seção da sidebar está ativa: 'write' | 'insights' | 'people' | 'tags' | 'search'
+  const [sidebarSection, setSidebarSection] = useState<'write' | 'insights' | 'people' | 'tags' | 'search'>('write')
 
   // ── Estado de filtro/busca ──
   const [filterResults, setFilterResults] = useState<FilterGroup[]>([])
   const [searchQuery, setSearchQuery] = useState('')
-  const [loading, setLoading] = useState(true)
 
   // ── Refs ──
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -183,6 +241,7 @@ export default function Journal() {
   const randomPrompt = useMemo(() => PROMPTS[Math.floor(Math.random() * PROMPTS.length)], [])
   const currentDate = mode.type === 'day' ? mode.date : ''
   const heatmapGrid = useMemo(() => buildHeatmapGrid(), [heatmap]) // eslint-disable-line react-hooks/exhaustive-deps
+  const monthLabels = useMemo(() => buildMonthLabels(), [heatmapGrid]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Funções auxiliares ──
 
@@ -193,10 +252,7 @@ export default function Journal() {
       api.get<MentionItem[]>('/api/journal/mentions?kind=person'),
       api.get<MentionItem[]>('/api/journal/mentions?kind=tag'),
     ]).then(([hm, p, t]) => {
-      setHeatmap(hm)
-      setStreak(calcStreak(hm))
-      setPeople(p)
-      setTags(t)
+      setHeatmap(hm); setStreak(calcStreak(hm)); setPeople(p); setTags(t)
     }).catch(console.error)
   }, [])
 
@@ -205,12 +261,13 @@ export default function Journal() {
     setSaveStatus('saving')
     try {
       const res = await api.post<UpsertResponse>('/api/journal/bullets', {
-        page_id: pid,
-        position: bullet.position,
-        content: bullet.content,
+        page_id: pid, position: bullet.position, content: bullet.content,
       })
       setBullets(prev =>
-        prev.map(b => b.localKey === bullet.localKey ? { ...b, id: res.bullet.id } : b)
+        prev.map(b => b.localKey === bullet.localKey
+          ? { ...b, id: res.bullet.id, createdAt: res.bullet.created_at ?? b.createdAt }
+          : b
+        )
       )
       setSaveStatus('saved')
       refreshSidebar()
@@ -228,10 +285,7 @@ export default function Journal() {
       api.get<MentionItem[]>('/api/journal/mentions?kind=person'),
       api.get<MentionItem[]>('/api/journal/mentions?kind=tag'),
     ]).then(([hm, p, t]) => {
-      setHeatmap(hm)
-      setStreak(calcStreak(hm))
-      setPeople(p)
-      setTags(t)
+      setHeatmap(hm); setStreak(calcStreak(hm)); setPeople(p); setTags(t)
     }).catch(console.error)
   }, [])
 
@@ -245,12 +299,17 @@ export default function Journal() {
     api.get<PageResponse>(`/api/journal/page?date=${currentDate}`)
       .then(res => {
         setPageId(res.page.id)
+        setPageNum(res.page.id)
         pageIdRef.current = res.page.id
         if (res.bullets.length === 0) {
-          setBullets([{ id: null, content: '', position: getInitialPosition(0), localKey: 'initial-0' }])
+          setBullets([{ id: null, content: '', position: getInitialPosition(0), localKey: 'initial-0', createdAt: null }])
           setFocusedIndex(0)
         } else {
-          setBullets(res.bullets.map(b => ({ ...b, localKey: `${b.id}-${b.position}` })))
+          setBullets(res.bullets.map(b => ({
+            ...b,
+            localKey: `${b.id}-${b.position}`,
+            createdAt: b.created_at ?? null,
+          })))
           setFocusedIndex(null)
         }
       })
@@ -284,16 +343,24 @@ export default function Journal() {
     const prev = bullets[index]
     const next = bullets[index + 1]
     const newPos = next ? getMidPosition(prev.position, next.position) : prev.position + 1000
-    const newBullet: Bullet = { id: null, content: '', position: newPos, localKey: `new-${Date.now()}` }
-    const newBullets = [...bullets.slice(0, index + 1), newBullet, ...bullets.slice(index + 1)]
-    setBullets(newBullets)
+    const newBullet: Bullet = {
+      id: null, content: '', position: newPos,
+      localKey: `new-${Date.now()}`,
+      createdAt: new Date().toISOString(),  // fallback local até o banco confirmar
+    }
+    setBullets([...bullets.slice(0, index + 1), newBullet, ...bullets.slice(index + 1)])
     setFocusedIndex(index + 1)
     setSaveStatus('saving')
     try {
       const res = await api.post<UpsertResponse>('/api/journal/bullets', {
         page_id: pageId, position: newPos, content: '',
       })
-      setBullets(prev => prev.map(b => b.localKey === newBullet.localKey ? { ...b, id: res.bullet.id } : b))
+      setBullets(prev =>
+        prev.map(b => b.localKey === newBullet.localKey
+          ? { ...b, id: res.bullet.id, createdAt: res.bullet.created_at ?? b.createdAt }
+          : b
+        )
+      )
       setSaveStatus('saved')
     } catch {
       setSaveStatus('idle')
@@ -319,12 +386,14 @@ export default function Journal() {
     setMode({ type: 'day', date: d.toISOString().split('T')[0] })
   }
 
+  const goToDay = (date: string) => {
+    setSearchQuery('')
+    setMode({ type: 'day', date })
+    setSidebarSection('write')
+  }
+
   // ── Heatmap ──
 
-  /**
-   * Constrói a grade do heatmap: 52 semanas × 7 dias.
-   * Também calcula os rótulos de mês para exibir acima da grade.
-   */
   function buildHeatmapGrid(): { date: string; count: number }[][] {
     const weeks: { date: string; count: number }[][] = []
     const today = new Date()
@@ -345,408 +414,176 @@ export default function Journal() {
     return weeks
   }
 
-  /**
-   * Calcula os rótulos de mês para o heatmap.
-   * Retorna um array com o índice da semana e o nome do mês abreviado (quando muda o mês).
-   */
   function buildMonthLabels(): { weekIndex: number; label: string }[] {
     const labels: { weekIndex: number; label: string }[] = []
     const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
     let lastMonth = -1
     heatmapGrid.forEach((week, wi) => {
       const m = new Date(week[0].date + 'T12:00:00').getMonth()
-      if (m !== lastMonth) {
-        labels.push({ weekIndex: wi, label: MESES[m] })
-        lastMonth = m
-      }
+      if (m !== lastMonth) { labels.push({ weekIndex: wi, label: MESES[m] }); lastMonth = m }
     })
     return labels
   }
 
-  /**
-   * Retorna a cor de fundo âmbar/sépia para a célula do heatmap conforme a contagem de bullets.
-   */
-  function heatmapCellColor(count: number, date: string): string {
-    const isToday = date === todayISO()
-    // Tons âmbar/sépia: inativo → dourado intenso
-    const bg =
-      count === 0  ? '#1a1917' :
-      count <= 2   ? '#44372b' :
-      count <= 5   ? '#7a5c38' :
-      count <= 9   ? '#b8843f' : '#d4a055'
-
-    // Anel âmbar para o dia de hoje
-    const ring = isToday ? 'box-shadow: 0 0 0 1px #c9a96e;' : ''
-
-    return `background:${bg};${ring}`
-  }
-
-  const monthLabels = useMemo(() => buildMonthLabels(), [heatmapGrid]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Paleta de cores (centralizada como constantes inline para facilitar manutenção) ──
-  const C = {
-    bg:         '#0e0d0b',  // fundo principal
-    sidebar:    '#111009',  // fundo da sidebar
-    border:     '#2a2825',  // bordas e divisores
-    text:       '#f0ebe0',  // texto principal (creme quente)
-    muted:      '#9a9185',  // texto secundário
-    faint:      '#4a4540',  // placeholder, sugestões
-    amber:      '#c9a96e',  // acento âmbar (hover, hoje, streak)
-    amberDim:   '#7a5c38',  // âmbar mais escuro para fundo de badge
-    violet:     '#a78bfa',  // @pessoas
-    green:      '#86efac',  // #tags
+  function heatmapCellBg(count: number): string {
+    if (count === 0)  return '#1a1917'
+    if (count <= 2)   return '#44372b'
+    if (count <= 5)   return '#7a5c38'
+    if (count <= 9)   return '#b8843f'
+    return '#d4a055'
   }
 
   // ── Renderização ───────────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-full -m-6" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+    <div className="flex h-full -m-6" style={{ fontFamily: "'DM Sans', sans-serif", background: C.bg }}>
 
-      {/* ── Sidebar ── */}
-      <aside
-        className="w-72 shrink-0 flex flex-col overflow-y-auto"
-        style={{ background: C.sidebar, borderRight: `1px solid ${C.border}` }}
-      >
+      {/* ── Editor central ── */}
+      <main className="flex-1 overflow-y-auto relative journal-grain" style={{ background: C.bg }}>
 
-        {/* Heatmap anual */}
-        <div className="p-4 pb-3">
-
-          {/* Rótulos de mês — posicionados relativamente ao grid */}
-          <div className="relative mb-1" style={{ height: '14px' }}>
-            {monthLabels.map(({ weekIndex, label }) => (
-              <span
-                key={label + weekIndex}
-                className="absolute text-[10px] select-none"
-                style={{
-                  left: `${weekIndex * 9}px`,  // cada semana ocupa ~9px (7px célula + 2px gap)
-                  color: C.faint,
-                  letterSpacing: '0.04em',
-                }}
-              >
-                {label}
-              </span>
-            ))}
-          </div>
-
-          {/* Grade de semanas × dias */}
-          <div className="flex" style={{ gap: '2px' }}>
-            {heatmapGrid.map((week, wi) => (
-              <div key={wi} className="flex flex-col" style={{ gap: '2px' }}>
-                {week.map(cell => (
-                  <div
-                    key={cell.date}
-                    title={`${cell.date}: ${cell.count} bullet${cell.count !== 1 ? 's' : ''}`}
-                    onClick={() => setMode({ type: 'day', date: cell.date })}
-                    className="cursor-pointer rounded-[2px] transition-opacity hover:opacity-70"
-                    style={{
-                      width: '7px',
-                      height: '7px',
-                      ...Object.fromEntries(
-                        heatmapCellColor(cell.count, cell.date)
-                          .split(';')
-                          .filter(Boolean)
-                          .map(s => {
-                            const [k, ...v] = s.split(':')
-                            // Converte "background" → "background" e "box-shadow" → "boxShadow"
-                            const key = k.trim().replace(/-([a-z])/g, (_, c) => c.toUpperCase())
-                            return [key, v.join(':').trim()]
-                          })
-                      ),
-                    }}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-
-          {/* Badge de streak */}
-          {streak > 0 && (
-            <div className="mt-3 inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
-              style={{ background: C.amberDim, color: C.amber }}
-            >
-              <span>🔥</span>
-              <span style={{ fontWeight: 500 }}>{streak} {streak === 1 ? 'dia seguido' : 'dias seguidos'}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Divisor */}
-        <div style={{ height: '1px', background: C.border, margin: '0 16px' }} />
-
-        {/* @Pessoas */}
-        {people.length > 0 && (
-          <div className="px-4 py-3">
-            <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: C.faint }}>
-              Pessoas
-            </p>
-            {/* Pills inline de menções */}
-            <div className="flex flex-wrap gap-1.5">
-              {people.map(p => (
-                <button
-                  key={p.value}
-                  onClick={() => { setSearchQuery(''); setMode({ type: 'filter', kind: 'person', value: p.value }) }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-opacity hover:opacity-70"
-                  style={{
-                    background: 'rgba(167,139,250,0.12)',
-                    color: C.violet,
-                    border: '1px solid rgba(167,139,250,0.25)',
-                  }}
-                >
-                  <span>@{p.value}</span>
-                  <span style={{ color: C.faint, fontSize: '10px' }}>{p.count}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* #Tags */}
-        {tags.length > 0 && (
-          <div className="px-4 pb-3">
-            <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: C.faint }}>
-              Tags
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {tags.map(t => (
-                <button
-                  key={t.value}
-                  onClick={() => { setSearchQuery(''); setMode({ type: 'filter', kind: 'tag', value: t.value }) }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-opacity hover:opacity-70"
-                  style={{
-                    background: 'rgba(134,239,172,0.10)',
-                    color: C.green,
-                    border: '1px solid rgba(134,239,172,0.22)',
-                  }}
-                >
-                  <span>#{t.value}</span>
-                  <span style={{ color: C.faint, fontSize: '10px' }}>{t.count}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Busca — fixada no rodapé da sidebar */}
-        <div className="mt-auto px-4 py-4" style={{ borderTop: `1px solid ${C.border}` }}>
-          <div className="relative">
-            {/* Ícone de lupa */}
-            <svg
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
-              width="13" height="13" viewBox="0 0 24 24" fill="none"
-              stroke={C.faint} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            >
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            <input
-              type="text"
-              placeholder="Buscar…"
-              value={searchQuery}
-              onChange={e => {
-                const q = e.target.value
-                setSearchQuery(q)
-                if (q.trim().length >= 2) setMode({ type: 'search', query: q })
-                else if (q.trim() === '') setMode({ type: 'day', date: todayISO() })
-              }}
-              className="w-full text-sm pl-8 pr-3 py-1.5 rounded-md outline-none transition-colors"
-              style={{
-                background: '#1a1917',
-                border: `1px solid ${C.border}`,
-                color: C.text,
-                caretColor: C.amber,
-              }}
-              onFocus={e => { e.target.style.borderColor = C.amber }}
-              onBlur={e => { e.target.style.borderColor = C.border }}
-            />
-          </div>
-        </div>
-      </aside>
-
-      {/* ── Área principal do editor ── */}
-      <main
-        className="flex-1 overflow-y-auto relative journal-grain"
-        style={{ background: C.bg }}
-      >
-
-        {/* Indicador de save — ponto colorido no canto sup-direito */}
-        <div className="absolute top-5 right-6 flex items-center gap-1.5 select-none z-10">
+        {/* Indicador de save */}
+        <div className="absolute top-5 right-5 flex items-center gap-1.5 select-none z-10">
           {saveStatus === 'saving' && (
-            <>
-              <span
-                className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
-                style={{ background: C.amber }}
-              />
-              <span className="text-xs" style={{ color: C.muted }}>salvando</span>
-            </>
+            <><span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: C.amber }} />
+            <span className="text-xs" style={{ color: C.muted }}>salvando</span></>
           )}
           {saveStatus === 'saved' && (
-            <>
-              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: '#86efac' }} />
-              <span className="text-xs" style={{ color: C.faint }}>salvo</span>
-            </>
+            <><span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: C.green }} />
+            <span className="text-xs" style={{ color: C.faint }}>salvo</span></>
           )}
         </div>
 
-        <div className="max-w-2xl mx-auto px-10 py-12 relative z-10">
+        <div className="max-w-2xl mx-auto px-8 py-10 relative z-10">
 
-          {/* ── Modo 'day': editor de bullets ── */}
+          {/* ── Modo 'day' ── */}
           {mode.type === 'day' && (
             <>
-              {/* Cabeçalho editorial da data */}
-              <div className="mb-10">
+              {/* Header da data estilo Journalistic */}
+              <div className="mb-8">
 
-                {/* Linha 1: dia da semana + navegação */}
-                <div className="flex items-center gap-3 mb-1">
-                  <span
-                    className="text-[11px] tracking-[0.18em] uppercase select-none"
-                    style={{ color: C.muted }}
-                  >
-                    {weekdayPT(mode.date)}
+                {/* Linha 1: data curta + navegação */}
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="text-xs" style={{ color: C.muted }}>
+                    {shortDatePT(mode.date)}
                   </span>
-
-                  {/* Botões de navegação de dia */}
-                  <div className="ml-auto flex items-center gap-1">
+                  <div className="flex items-center gap-1">
                     <button
                       onClick={() => navigateDay(-1)}
-                      className="px-2 py-0.5 rounded transition-colors text-base leading-none"
+                      className="px-2 py-0.5 text-base leading-none transition-opacity hover:opacity-50"
                       style={{ color: C.faint }}
-                      onMouseEnter={e => (e.currentTarget.style.color = C.text)}
-                      onMouseLeave={e => (e.currentTarget.style.color = C.faint)}
                       aria-label="Dia anterior"
-                    >
-                      ‹
-                    </button>
+                    >‹</button>
                     <button
                       onClick={() => navigateDay(1)}
-                      className="px-2 py-0.5 rounded transition-colors text-base leading-none"
+                      className="px-2 py-0.5 text-base leading-none transition-opacity hover:opacity-50"
                       style={{ color: C.faint }}
-                      onMouseEnter={e => (e.currentTarget.style.color = C.text)}
-                      onMouseLeave={e => (e.currentTarget.style.color = C.faint)}
                       aria-label="Próximo dia"
-                    >
-                      ›
-                    </button>
+                    >›</button>
                     {mode.date !== todayISO() && (
                       <button
                         onClick={() => setMode({ type: 'day', date: todayISO() })}
-                        className="ml-1 text-xs px-2 py-0.5 rounded transition-colors"
+                        className="ml-1 text-xs transition-opacity hover:opacity-60"
                         style={{ color: C.amber }}
-                        onMouseEnter={e => (e.currentTarget.style.opacity = '0.7')}
-                        onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
-                      >
-                        hoje
-                      </button>
+                      >hoje</button>
                     )}
                   </div>
                 </div>
 
-                {/* Linha 2: data completa em Cormorant Garamond — o elemento editorial central */}
+                {/* Linha 2: nome do dia em Archivo Black — o elemento visual dominante */}
                 <h1
                   className="leading-none"
                   style={{
-                    fontFamily: "'Cormorant Garamond', serif",
-                    fontSize: 'clamp(2.2rem, 5vw, 3.2rem)',
-                    fontWeight: 300,
+                    fontFamily: "'Archivo Black', sans-serif",
+                    fontSize: 'clamp(2.6rem, 6vw, 3.8rem)',
                     color: C.text,
-                    letterSpacing: '-0.01em',
+                    letterSpacing: '-0.02em',
                   }}
                 >
-                  {dayMonthYearPT(mode.date)}
+                  {weekdayPT(mode.date)}
                 </h1>
 
-                {/* Divisor fino sob o título */}
-                <div className="mt-6" style={{ height: '1px', background: C.border }} />
+                {/* Linha 3: número da página */}
+                {pageNum !== null && (
+                  <p className="mt-0.5 text-xs" style={{ color: C.faint }}>
+                    #{pageNum}
+                  </p>
+                )}
+
+                {/* Divisor */}
+                <div className="mt-5" style={{ height: '1px', background: C.border }} />
               </div>
 
-              {/* Spinner de carregamento */}
+              {/* Spinner */}
               {loading && (
                 <div className="flex justify-center py-16">
-                  <div
-                    className="w-5 h-5 rounded-full border-2 animate-spin"
-                    style={{ borderColor: C.border, borderTopColor: C.amber }}
-                  />
+                  <div className="w-5 h-5 rounded-full border-2 animate-spin"
+                    style={{ borderColor: C.border, borderTopColor: C.amber }} />
                 </div>
               )}
 
-              {/* Editor de bullets */}
+              {/* Lista de bullets */}
               {!loading && (
-                <div className="space-y-0.5">
+                <div>
                   {bullets.map((bullet, index) => (
-                    <div
-                      key={bullet.localKey}
-                      className="flex items-start gap-3 group rounded-md px-2 py-0.5 -mx-2 transition-colors"
-                      style={{ background: focusedIndex === index ? '#161512' : 'transparent' }}
-                      onMouseEnter={e => {
-                        if (focusedIndex !== index) e.currentTarget.style.background = '#161512'
-                      }}
-                      onMouseLeave={e => {
-                        if (focusedIndex !== index) e.currentTarget.style.background = 'transparent'
-                      }}
-                    >
-                      {/* Marcador vertical — traço fino âmbar em foco, discreto normalmente */}
-                      <span
-                        className="mt-[0.45em] shrink-0 select-none transition-colors"
-                        style={{
-                          color: focusedIndex === index ? C.amber : C.border,
-                          fontSize: '18px',
-                          lineHeight: 1,
-                          fontFamily: 'monospace',
-                        }}
+                    <div key={bullet.localKey} className="mb-3">
+                      {/* Linha do bullet: ponto + texto */}
+                      <div
+                        className="flex items-start gap-2.5 group rounded px-1.5 py-0.5 -mx-1.5 transition-colors"
+                        style={{ background: focusedIndex === index ? '#161512' : 'transparent' }}
+                        onMouseEnter={e => { if (focusedIndex !== index) e.currentTarget.style.background = '#141210' }}
+                        onMouseLeave={e => { if (focusedIndex !== index) e.currentTarget.style.background = 'transparent' }}
                       >
-                        ▎
-                      </span>
+                        {/* Marcador */}
+                        <span
+                          className="mt-[0.3em] shrink-0 select-none text-xs"
+                          style={{ color: C.faint }}
+                        >•</span>
 
-                      {/* Input ativo quando em foco */}
-                      {focusedIndex === index ? (
-                        <input
-                          autoFocus
-                          type="text"
-                          value={bullet.content}
-                          onChange={e => handleBulletChange(index, e.target.value)}
-                          onBlur={() => setFocusedIndex(null)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') { e.preventDefault(); handleBulletEnter(index) }
-                            if (e.key === 'Backspace' && bullet.content === '') {
-                              e.preventDefault(); handleBulletBackspace(index)
+                        {/* Input ativo */}
+                        {focusedIndex === index ? (
+                          <input
+                            autoFocus
+                            type="text"
+                            value={bullet.content}
+                            onChange={e => handleBulletChange(index, e.target.value)}
+                            onBlur={() => setFocusedIndex(null)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') { e.preventDefault(); handleBulletEnter(index) }
+                              if (e.key === 'Backspace' && bullet.content === '') {
+                                e.preventDefault(); handleBulletBackspace(index)
+                              }
+                            }}
+                            placeholder={index === 0 && bullets.length === 1 && bullet.content === '' ? randomPrompt : ''}
+                            className="flex-1 bg-transparent border-none outline-none text-base leading-relaxed"
+                            style={{ color: C.text, caretColor: C.amber }}
+                          />
+                        ) : (
+                          // Visualização com highlight
+                          <div
+                            onClick={() => setFocusedIndex(index)}
+                            className="flex-1 text-base leading-relaxed cursor-text"
+                            style={{ color: C.text, minHeight: '1.6rem' }}
+                          >
+                            {bullet.content
+                              ? renderHighlighted(bullet.content)
+                              : <span style={{ color: C.faint }}>{index === 0 ? randomPrompt : ''}</span>
                             }
-                          }}
-                          placeholder={
-                            index === 0 && bullets.length === 1 && bullet.content === ''
-                              ? randomPrompt : ''
-                          }
-                          className="flex-1 bg-transparent border-none outline-none"
-                          style={{
-                            fontFamily: "'Lora', serif",
-                            fontSize: '1.15rem',
-                            lineHeight: 1.85,
-                            color: C.text,
-                            caretColor: C.amber,
-                          }}
-                        />
-                      ) : (
-                        // Visualização com @menções e #tags destacadas
-                        <div
-                          onClick={() => setFocusedIndex(index)}
-                          className="flex-1 cursor-text"
-                          style={{
-                            fontFamily: "'Lora', serif",
-                            fontSize: '1.15rem',
-                            lineHeight: 1.85,
-                            color: C.text,
-                            minHeight: '1.85rem',
-                          }}
-                        >
-                          {bullet.content
-                            ? renderHighlighted(bullet.content)
-                            : <span style={{ color: C.faint }}>{index === 0 ? randomPrompt : ''}</span>
-                          }
-                        </div>
-                      )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Timestamp abaixo do bullet */}
+                      <div className="ml-[22px] mt-0.5">
+                        <span className="text-[11px]" style={{ color: C.faint }}>
+                          {formatTime(bullet.createdAt)}
+                        </span>
+                      </div>
                     </div>
                   ))}
 
-                  {/* Dica de teclado — visível só no último bullet em foco */}
+                  {/* Dica de teclado */}
                   {focusedIndex === bullets.length - 1 && bullets.length > 0 && (
-                    <p className="text-xs ml-7 mt-2" style={{ color: C.faint }}>
+                    <p className="text-xs mt-3 ml-[22px]" style={{ color: C.faint }}>
                       Enter para nova linha · Backspace em linha vazia para deletar
                     </p>
                   )}
@@ -755,85 +592,64 @@ export default function Journal() {
             </>
           )}
 
-          {/* ── Modo 'filter' ou 'search': resultados agrupados por data ── */}
+          {/* ── Modo 'filter' ou 'search' ── */}
           {(mode.type === 'filter' || mode.type === 'search') && (
             <>
-              {/* Cabeçalho do filtro */}
-              <div className="mb-10">
-                <div className="flex items-center gap-3 mb-1">
+              <div className="mb-8">
+                <div className="flex items-center justify-between mb-0.5">
                   <button
-                    onClick={() => { setSearchQuery(''); setMode({ type: 'day', date: todayISO() }) }}
+                    onClick={() => goToDay(todayISO())}
                     className="text-xs transition-opacity hover:opacity-60"
                     style={{ color: C.muted }}
-                  >
-                    ← voltar
-                  </button>
+                  >← voltar</button>
                 </div>
 
                 <h1
                   className="leading-none"
                   style={{
-                    fontFamily: "'Cormorant Garamond', serif",
-                    fontSize: 'clamp(1.8rem, 4vw, 2.6rem)',
-                    fontWeight: 300,
+                    fontFamily: "'Archivo Black', sans-serif",
+                    fontSize: 'clamp(2rem, 5vw, 3rem)',
                     color: C.text,
+                    letterSpacing: '-0.02em',
                   }}
                 >
                   {mode.type === 'filter' && (
-                    <>
-                      {mode.kind === 'person'
-                        ? <span style={{ color: C.violet }}>@{mode.value}</span>
-                        : <span style={{ color: C.green }}>#{mode.value}</span>
-                      }
-                      <span style={{ color: C.muted, fontSize: '60%', marginLeft: '0.5em' }}>
-                        {filterResults.reduce((acc, g) => acc + g.bullets.length, 0)} menções
-                      </span>
-                    </>
+                    mode.kind === 'person'
+                      ? <span style={{ color: C.violet }}>@{mode.value}</span>
+                      : <span style={{ color: C.green }}>#{mode.value}</span>
                   )}
-                  {mode.type === 'search' && (
-                    <span>"{mode.query}"</span>
-                  )}
+                  {mode.type === 'search' && <span>"{mode.query}"</span>}
                 </h1>
+
+                {mode.type === 'filter' && (
+                  <p className="mt-0.5 text-xs" style={{ color: C.faint }}>
+                    {filterResults.reduce((acc, g) => acc + g.bullets.length, 0)} menções
+                  </p>
+                )}
 
                 <div className="mt-5" style={{ height: '1px', background: C.border }} />
               </div>
 
-              {/* Estado vazio */}
               {filterResults.length === 0 && (
                 <p className="text-sm py-12 text-center" style={{ color: C.faint }}>
                   Nenhum resultado encontrado.
                 </p>
               )}
 
-              {/* Grupos por data */}
               {filterResults.map(group => (
                 <div key={group.date} className="mb-8">
-                  {/* Data do grupo — clicável para ir ao dia completo */}
                   <button
-                    onClick={() => { setSearchQuery(''); setMode({ type: 'day', date: group.date }) }}
+                    onClick={() => goToDay(group.date)}
                     className="text-[11px] uppercase tracking-widest mb-3 transition-opacity hover:opacity-60"
                     style={{ color: C.amber }}
                   >
                     {formatDatePT(group.date)}
                   </button>
-
-                  <div className="space-y-0.5">
+                  <div>
                     {group.bullets.map(b => (
-                      <div key={b.id} className="flex items-start gap-3">
-                        <span
-                          className="mt-[0.45em] shrink-0 select-none"
-                          style={{ color: C.border, fontSize: '18px', lineHeight: 1, fontFamily: 'monospace' }}
-                        >
-                          ▎
-                        </span>
-                        <div
-                          style={{
-                            fontFamily: "'Lora', serif",
-                            fontSize: '1.05rem',
-                            lineHeight: 1.85,
-                            color: C.text,
-                          }}
-                        >
+                      <div key={b.id} className="flex items-start gap-2.5 mb-2">
+                        <span className="mt-[0.3em] shrink-0 text-xs select-none" style={{ color: C.faint }}>•</span>
+                        <div className="text-base leading-relaxed" style={{ color: C.text }}>
                           {renderHighlighted(b.content)}
                         </div>
                       </div>
@@ -843,9 +659,224 @@ export default function Journal() {
               ))}
             </>
           )}
-
         </div>
       </main>
+
+      {/* ── Sidebar direita — submenu da seção Diário ── */}
+      <aside
+        className="w-52 shrink-0 flex flex-col overflow-y-auto"
+        style={{ background: C.sidebar, borderLeft: `1px solid ${C.border}` }}
+      >
+
+        {/* Seção de navegação superior: Escrever / Insights */}
+        <nav className="px-2 pt-4 pb-2">
+          {/* Botão Escrever */}
+          <button
+            onClick={() => { setSidebarSection('write'); goToDay(todayISO()) }}
+            className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-md text-sm transition-colors mb-0.5"
+            style={{
+              background: sidebarSection === 'write' ? 'rgba(255,255,255,0.06)' : 'transparent',
+              color: sidebarSection === 'write' ? C.text : C.muted,
+            }}
+            onMouseEnter={e => { if (sidebarSection !== 'write') e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+            onMouseLeave={e => { if (sidebarSection !== 'write') e.currentTarget.style.background = 'transparent' }}
+          >
+            <IconPencil color={sidebarSection === 'write' ? C.amber : C.faint} />
+            <span>Escrever</span>
+          </button>
+
+          {/* Botão Insights (toggle heatmap) */}
+          <button
+            onClick={() => setSidebarSection(sidebarSection === 'insights' ? 'write' : 'insights')}
+            className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-md text-sm transition-colors mb-0.5"
+            style={{
+              background: sidebarSection === 'insights' ? 'rgba(255,255,255,0.06)' : 'transparent',
+              color: sidebarSection === 'insights' ? C.text : C.muted,
+            }}
+            onMouseEnter={e => { if (sidebarSection !== 'insights') e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+            onMouseLeave={e => { if (sidebarSection !== 'insights') e.currentTarget.style.background = 'transparent' }}
+          >
+            <IconBarChart color={sidebarSection === 'insights' ? C.amber : C.faint} />
+            <span>Insights</span>
+          </button>
+        </nav>
+
+        {/* Separador */}
+        <div style={{ height: '1px', background: C.border, margin: '0 12px' }} />
+
+        {/* Seção de filtros: Pessoas / Tags / Busca */}
+        <nav className="px-2 pt-2 pb-2">
+          <button
+            onClick={() => setSidebarSection(sidebarSection === 'people' ? 'write' : 'people')}
+            className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-md text-sm transition-colors mb-0.5"
+            style={{
+              background: sidebarSection === 'people' ? 'rgba(255,255,255,0.06)' : 'transparent',
+              color: sidebarSection === 'people' ? C.text : C.muted,
+            }}
+            onMouseEnter={e => { if (sidebarSection !== 'people') e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+            onMouseLeave={e => { if (sidebarSection !== 'people') e.currentTarget.style.background = 'transparent' }}
+          >
+            <IconUsers color={sidebarSection === 'people' ? C.violet : C.faint} />
+            <span>Pessoas</span>
+          </button>
+
+          <button
+            onClick={() => setSidebarSection(sidebarSection === 'tags' ? 'write' : 'tags')}
+            className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-md text-sm transition-colors mb-0.5"
+            style={{
+              background: sidebarSection === 'tags' ? 'rgba(255,255,255,0.06)' : 'transparent',
+              color: sidebarSection === 'tags' ? C.text : C.muted,
+            }}
+            onMouseEnter={e => { if (sidebarSection !== 'tags') e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+            onMouseLeave={e => { if (sidebarSection !== 'tags') e.currentTarget.style.background = 'transparent' }}
+          >
+            <IconHash color={sidebarSection === 'tags' ? C.green : C.faint} />
+            <span>Tags</span>
+          </button>
+
+          <button
+            onClick={() => setSidebarSection(sidebarSection === 'search' ? 'write' : 'search')}
+            className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-md text-sm transition-colors"
+            style={{
+              background: sidebarSection === 'search' ? 'rgba(255,255,255,0.06)' : 'transparent',
+              color: sidebarSection === 'search' ? C.text : C.muted,
+            }}
+            onMouseEnter={e => { if (sidebarSection !== 'search') e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+            onMouseLeave={e => { if (sidebarSection !== 'search') e.currentTarget.style.background = 'transparent' }}
+          >
+            <IconSearch size={16} color={sidebarSection === 'search' ? C.muted : C.faint} />
+            <span>Busca</span>
+          </button>
+        </nav>
+
+        {/* Separador antes do conteúdo expandido */}
+        <div style={{ height: '1px', background: C.border, margin: '0 12px' }} />
+
+        {/* Conteúdo expandido conforme a seção ativa */}
+        <div className="flex-1 overflow-y-auto">
+
+          {/* Insights: heatmap + streak */}
+          {sidebarSection === 'insights' && (
+            <div className="p-3">
+              {/* Rótulos de mês */}
+              <div className="relative mb-1" style={{ height: '14px' }}>
+                {monthLabels.map(({ weekIndex, label }) => (
+                  <span
+                    key={label + weekIndex}
+                    className="absolute text-[9px] select-none"
+                    style={{ left: `${weekIndex * 9}px`, color: C.faint, letterSpacing: '0.04em' }}
+                  >{label}</span>
+                ))}
+              </div>
+
+              {/* Grade do heatmap */}
+              <div className="flex" style={{ gap: '2px' }}>
+                {heatmapGrid.map((week, wi) => (
+                  <div key={wi} className="flex flex-col" style={{ gap: '2px' }}>
+                    {week.map(cell => (
+                      <div
+                        key={cell.date}
+                        title={`${cell.date}: ${cell.count} bullet${cell.count !== 1 ? 's' : ''}`}
+                        onClick={() => goToDay(cell.date)}
+                        className="cursor-pointer rounded-[2px] transition-opacity hover:opacity-70"
+                        style={{
+                          width: '7px', height: '7px',
+                          background: heatmapCellBg(cell.count),
+                          boxShadow: cell.date === todayISO() ? `0 0 0 1px ${C.amber}` : 'none',
+                        }}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+
+              {/* Streak badge */}
+              {streak > 0 && (
+                <div className="mt-3 inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
+                  style={{ background: C.amberDim, color: C.amber }}
+                >
+                  <span>🔥</span>
+                  <span style={{ fontWeight: 500 }}>{streak} {streak === 1 ? 'dia' : 'dias'}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Pessoas */}
+          {sidebarSection === 'people' && (
+            <div className="p-3">
+              {people.length === 0 && (
+                <p className="text-xs" style={{ color: C.faint }}>Nenhuma menção ainda.</p>
+              )}
+              <div className="flex flex-wrap gap-1.5">
+                {people.map(p => (
+                  <button
+                    key={p.value}
+                    onClick={() => { setSearchQuery(''); setMode({ type: 'filter', kind: 'person', value: p.value }) }}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-opacity hover:opacity-70"
+                    style={{ background: 'rgba(167,139,250,0.12)', color: C.violet, border: `1px solid rgba(167,139,250,0.25)` }}
+                  >
+                    <span>@{p.value}</span>
+                    <span style={{ color: C.faint, fontSize: '10px' }}>{p.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Tags */}
+          {sidebarSection === 'tags' && (
+            <div className="p-3">
+              {tags.length === 0 && (
+                <p className="text-xs" style={{ color: C.faint }}>Nenhuma tag ainda.</p>
+              )}
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map(t => (
+                  <button
+                    key={t.value}
+                    onClick={() => { setSearchQuery(''); setMode({ type: 'filter', kind: 'tag', value: t.value }) }}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-opacity hover:opacity-70"
+                    style={{ background: 'rgba(134,239,172,0.10)', color: C.green, border: `1px solid rgba(134,239,172,0.22)` }}
+                  >
+                    <span>#{t.value}</span>
+                    <span style={{ color: C.faint, fontSize: '10px' }}>{t.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Busca */}
+          {sidebarSection === 'search' && (
+            <div className="p-3">
+              <div className="relative">
+                <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <IconSearch />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Buscar…"
+                  value={searchQuery}
+                  autoFocus
+                  onChange={e => {
+                    const q = e.target.value
+                    setSearchQuery(q)
+                    if (q.trim().length >= 2) setMode({ type: 'search', query: q })
+                    else if (q.trim() === '') setMode({ type: 'day', date: todayISO() })
+                  }}
+                  className="w-full text-sm pl-8 pr-3 py-1.5 rounded-md outline-none transition-colors"
+                  style={{
+                    background: '#161412', border: `1px solid ${C.border}`,
+                    color: C.text, caretColor: C.amber,
+                  }}
+                  onFocus={e => { e.target.style.borderColor = C.amber }}
+                  onBlur={e => { e.target.style.borderColor = C.border }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </aside>
     </div>
   )
 }
