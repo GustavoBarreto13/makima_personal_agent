@@ -6,6 +6,7 @@ _run_select/_run_dml usado por Nami e Frieren.
 
 import os
 from contextlib import contextmanager
+from decimal import Decimal
 from typing import Generator
 
 import psycopg2
@@ -45,6 +46,19 @@ def get_conn() -> Generator[psycopg2.extensions.connection, None, None]:
         conn.close()
 
 
+def _normalize_row(row: dict) -> dict:
+    """Converte tipos PostgreSQL não-nativos para equivalentes Python simples.
+
+    psycopg2 retorna colunas NUMERIC como decimal.Decimal. O código dos agentes
+    faz aritmética com float, então a mistura causa TypeError. Convertemos aqui
+    de forma centralizada para não precisar de float() espalhado por todo o código.
+    """
+    return {
+        k: float(v) if isinstance(v, Decimal) else v
+        for k, v in row.items()
+    }
+
+
 def run_select(sql: str, params: dict | None = None) -> list[dict]:
     """Executa uma query SELECT e retorna lista de dicionários.
 
@@ -53,13 +67,13 @@ def run_select(sql: str, params: dict | None = None) -> list[dict]:
         params: Dicionário de parâmetros para substituir nos placeholders.
 
     Returns:
-        Lista de dicionários, um por linha retornada.
+        Lista de dicionários, um por linha retornada. Campos NUMERIC vêm como float.
     """
     with get_conn() as conn:
         # RealDictCursor retorna cada linha como dict {coluna: valor}
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, params or {})
-            return [dict(row) for row in cur.fetchall()]
+            return [_normalize_row(dict(row)) for row in cur.fetchall()]
 
 
 def run_dml(sql: str, params: dict | None = None) -> int:

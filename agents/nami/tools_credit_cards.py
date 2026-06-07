@@ -185,7 +185,7 @@ def get_card_debt_summary() -> dict:
                 "end_date":   end_date,
             }
             rows = run_select(sql_saldo, params_saldo)
-            divida = max(0.0, float(rows[0]["saldo"]) if rows else 0.0)
+            divida = max(0.0, rows[0]["saldo"] if rows else 0.0)
 
             utilizacao = divida / card["limite"] * 100 if card["limite"] > 0 else 0.0
             result.append({
