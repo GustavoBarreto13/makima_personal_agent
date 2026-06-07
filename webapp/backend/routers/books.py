@@ -1,7 +1,7 @@
 """Router de livros — expõe as tools da Frieren como endpoints REST.
 
 Cada endpoint embrulha diretamente uma função de tool da Frieren ou executa
-queries diretas no BigQuery via helpers privados da Frieren.
+queries diretas no PostgreSQL via run_select de agents.db.
 
 Diferença importante em relação ao router de finanças (finances.py):
 As tools da Nami retornam dicts com {"status": "ok"|"error"}, fáceis de checar.
@@ -49,15 +49,11 @@ from agents.frieren.tools import (
 # Função de consulta estruturada — retorna dict (não string HTML)
 from agents.frieren.tools import get_book_by_id
 
-# Helpers privados — importáveis mesmo sendo "privados" por convenção (underscore)
-# _run_select: executa SELECT no BigQuery e retorna lista de dicts
-# _table: retorna o caminho completo da tabela no formato BigQuery (project.dataset.table)
 # _fetch_google_books: busca metadados de livros na Google Books API
-from agents.frieren.tools import _run_select, _table, _fetch_google_books
+from agents.frieren.tools import _fetch_google_books
 
-# ScalarQueryParameter é necessário para passar parâmetros tipados ao BigQuery,
-# evitando SQL injection ao não concatenar valores diretamente nas queries
-from google.cloud import bigquery
+# run_select executa SELECT no PostgreSQL e retorna lista de dicts
+from agents.db import run_select
 
 
 # ─── Listas de padrões de erro das tools da Frieren ─────────────────────────
@@ -226,7 +222,7 @@ def list_books(
 ) -> dict:
     """Listar todos os livros do catálogo com progresso de leitura.
 
-    Executa uma query no BigQuery que une a tabela de livros com os logs
+    Executa uma query no PostgreSQL que une a tabela de livros com os logs
     de leitura para calcular a página atual de cada livro (MAX(page_end)).
 
     A ordenação prioriza livros em leitura ativa, depois lista de desejos,
@@ -241,19 +237,7 @@ def list_books(
     Raises:
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    # Caminho completo das tabelas BigQuery no formato project.dataset.table
-    books_table = _table("books")
-    logs_table  = _table("reading_logs")
-
-    # Query com LEFT JOIN: MAX(rl.page_end) calcula a página mais avançada registrada
-    # para cada livro. LEFT JOIN garante que livros sem nenhum log também apareçam
-    # (current_page = NULL nesses casos, tratado como 0 no frontend).
-    # CAST(...AS INT64) é necessário porque MAX() sobre INT64 pode retornar NUMERIC no BigQuery.
-    # WHERE b.deleted = FALSE exclui livros removidos logicamente (soft delete).
-    # ORDER BY CASE: ordena por prioridade de status, depois por data de atualização mais recente.
-    # IMPORTANTE: b.updated_at deve estar no SELECT e no GROUP BY para poder ser usado no ORDER BY —
-    # BigQuery Standard SQL não permite referenciar colunas não agrupadas no ORDER BY de queries com GROUP BY.
-    sql = f"""
+    sql = """
         SELECT
             b.id,
             b.title,
@@ -268,27 +252,26 @@ def list_books(
             b.isbn,
             b.published_year,
             b.updated_at,
-            CAST(MAX(rl.page_end) AS INT64) AS current_page
-        FROM `{books_table}` b
-        LEFT JOIN `{logs_table}` rl ON rl.book_id = b.id
+            MAX(rl.page_end) AS current_page
+        FROM books b
+        LEFT JOIN reading_logs rl ON rl.book_id = b.id
         WHERE b.deleted = FALSE
         GROUP BY b.id, b.title, b.author, b.total_pages, b.status,
                  b.cover_url, b.date_started, b.date_finished, b.rating,
                  b.genre, b.isbn, b.published_year, b.updated_at
         ORDER BY
             CASE b.status
-                WHEN 'lendo'     THEN 0
-                WHEN 'quero_ler' THEN 1
-                WHEN 'pausado'   THEN 2
-                WHEN 'lido'      THEN 3
+                WHEN 'lendo'      THEN 0
+                WHEN 'quero_ler'  THEN 1
+                WHEN 'pausado'    THEN 2
+                WHEN 'lido'       THEN 3
                 WHEN 'abandonado' THEN 4
                 ELSE 5
             END,
             b.updated_at DESC
     """
 
-    # Executa a query sem parâmetros de usuário (sem risco de SQL injection aqui)
-    rows = _run_select(sql, [])
+    rows = run_select(sql)
 
     # Converte tipos não-serializáveis (date, datetime) para string em cada linha
     books = [_serialize_book(dict(row)) for row in rows]
@@ -323,52 +306,35 @@ def reading_stats(
     if year is None:
         year = date.today().year
 
-    # Caminhos completos das tabelas BigQuery
-    books_table = _table("books")
-    logs_table  = _table("reading_logs")
-
     # ── Query 1: Livros concluídos e avaliação média ───────────────────────────
-    # Conta livros com status='lido' cujo date_finished caiu no ano especificado.
-    # AVG(rating) retorna None se nenhum livro tiver avaliação — tratado abaixo.
-    sql_books = f"""
+    sql_books = """
         SELECT COUNT(*) AS books_finished, AVG(rating) AS avg_rating
-        FROM `{books_table}`
+        FROM books
         WHERE status = 'lido'
-          AND EXTRACT(YEAR FROM date_finished) = @year
+          AND EXTRACT(YEAR FROM date_finished) = %(year)s
           AND deleted = FALSE
     """
-    rows_books = _run_select(sql_books, [
-        bigquery.ScalarQueryParameter("year", "INT64", year),
-    ])
+    rows_books = run_select(sql_books, {"year": year})
 
     # ── Query 2: Total de páginas e sessões de leitura no ano ─────────────────
-    # COALESCE(SUM(pages_read), 0) garante 0 se não houver nenhum log no ano.
-    sql_logs = f"""
+    sql_logs = """
         SELECT COALESCE(SUM(pages_read), 0) AS total_pages,
                COUNT(*) AS total_sessions
-        FROM `{logs_table}`
-        WHERE EXTRACT(YEAR FROM date) = @year
+        FROM reading_logs
+        WHERE EXTRACT(YEAR FROM date) = %(year)s
     """
-    rows_logs = _run_select(sql_logs, [
-        bigquery.ScalarQueryParameter("year", "INT64", year),
-    ])
+    rows_logs = run_select(sql_logs, {"year": year})
 
     # ── Query 3: Ritmo diário — últimos 30 dias com leitura no ano ────────────
-    # Agrega páginas por dia (GROUP BY date) e pega os 30 dias mais recentes.
-    # Usamos "dias com leitura" em vez de dias corridos para não distorcer a média
-    # com dias sem leitura. Ex.: quem lê 3x/semana tem ritmo real sem penalizar
-    # os dias de descanso.
-    sql_pace = f"""
+    sql_pace = """
         SELECT date, SUM(pages_read) AS daily_pages
-        FROM `{logs_table}`
-        WHERE EXTRACT(YEAR FROM date) = @year
+        FROM reading_logs
+        WHERE EXTRACT(YEAR FROM date) = %(year)s
         GROUP BY date
         ORDER BY date DESC
         LIMIT 30
     """
-    rows_pace = _run_select(sql_pace, [
-        bigquery.ScalarQueryParameter("year", "INT64", year),
-    ])
+    rows_pace = run_select(sql_pace, {"year": year})
 
     # ── Extrai valores das queries ────────────────────────────────────────────
 
@@ -466,18 +432,11 @@ def get_book(
     if book is None:
         raise HTTPException(status_code=404, detail="Livro não encontrado.")
 
-    # Busca a página atual: último page_end registrado nos logs, ordenado por data
-    # e created_at para desempatar múltiplos logs no mesmo dia
-    sql_current = f"""
-        SELECT page_end
-        FROM `{_table("reading_logs")}`
-        WHERE book_id = @book_id
-        ORDER BY date DESC, created_at DESC
-        LIMIT 1
-    """
-    last_logs = _run_select(sql_current, [
-        bigquery.ScalarQueryParameter("book_id", "STRING", book_id),
-    ])
+    # Busca a página atual: último page_end registrado nos logs
+    last_logs = run_select(
+        "SELECT page_end FROM reading_logs WHERE book_id = %(book_id)s ORDER BY date DESC, created_at DESC LIMIT 1",
+        {"book_id": book_id},
+    )
 
     # Se não há nenhum log ou page_end for NULL, current_page = 0
     raw_page = last_logs[0]["page_end"] if last_logs else None
@@ -510,17 +469,10 @@ def book_history(
     Raises:
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    # Query com filtro por book_id e ordenação cronológica crescente.
-    # created_at como segundo critério de ordenação para desempatar sessões no mesmo dia.
-    sql = f"""
-        SELECT date, page_start, page_end, pages_read, session_notes
-        FROM `{_table("reading_logs")}`
-        WHERE book_id = @book_id
-        ORDER BY date ASC, created_at ASC
-    """
-    logs = _run_select(sql, [
-        bigquery.ScalarQueryParameter("book_id", "STRING", book_id),
-    ])
+    logs = run_select(
+        "SELECT date, page_start, page_end, pages_read, session_notes FROM reading_logs WHERE book_id = %(book_id)s ORDER BY date ASC, created_at ASC",
+        {"book_id": book_id},
+    )
 
     # Serializa cada log (converte date para string) antes de retornar
     serialized_logs = [_serialize_book(dict(log)) for log in logs]
