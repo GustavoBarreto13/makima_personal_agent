@@ -10,9 +10,9 @@ import { api } from '../lib/api'              // Wrapper de fetch autenticado
 // Representa uma conta bancária retornada pelo backend
 interface Account {
   id:         string   // Identificador único da conta
-  nome:       string   // Nome da conta (ex: "Nubank", "Bradesco Corrente")
-  tipo:       string   // Tipo: corrente, poupança, dinheiro, investimento
-  criada_em:  string   // Data de criação em formato ISO
+  name:       string   // Nome da conta (ex: "Nubank", "Bradesco Corrente")
+  type:       string   // Tipo: corrente, poupança, dinheiro, investimento
+  created_at: string   // Data de criação em formato ISO
 }
 
 // Resposta do endpoint GET /api/finances/accounts
@@ -245,17 +245,17 @@ export default function Accounts() {
               )}
               {accounts.map((account) => (
                 <tr key={account.id} className="border-t border-gray-800 bg-gray-900">
-                  <td className="px-4 py-3 text-white font-medium">{account.nome}</td>
+                  <td className="px-4 py-3 text-white font-medium">{account.name}</td>
                   {/* Badge de tipo da conta */}
                   <td className="px-4 py-3">
                     <span className="px-2 py-0.5 bg-gray-700 text-gray-300 rounded-full text-xs">
-                      {account.tipo}
+                      {account.type}
                     </span>
                   </td>
                   {/* Data de criação formatada em português.
                       Usamos split para evitar o bug de fuso horário UTC em timezones negativos. */}
                   <td className="px-4 py-3 text-gray-400">
-                    {(() => { const [y, m, d] = (account.criada_em || '').split('T')[0].split('-'); return `${d}/${m}/${y}` })()}
+                    {(() => { const [y, m, d] = (account.created_at || '').split('T')[0].split('-'); return `${d}/${m}/${y}` })()}
                   </td>
                   {/* Coluna de saldo: mostra spinner, valor ou vazio */}
                   <td className="px-4 py-3 text-gray-200">
