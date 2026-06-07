@@ -63,7 +63,8 @@ def _bq_client() -> bigquery.Client:
         info = json.loads(creds_json)
         creds = service_account.Credentials.from_service_account_info(
             info,
-            scopes=["https://www.googleapis.com/auth/bigquery.readonly"],
+            # bigquery.readonly não permite criar jobs de query — precisa do escopo completo
+            scopes=["https://www.googleapis.com/auth/bigquery"],
         )
         return bigquery.Client(project=GCP_PROJECT, credentials=creds)
     # Fallback para Application Default Credentials (gcloud auth)

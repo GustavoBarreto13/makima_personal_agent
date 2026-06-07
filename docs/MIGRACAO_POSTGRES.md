@@ -27,7 +27,7 @@ Este script cria todas as tabelas de Nami (finanças) e Frieren (livros) no Post
 Se as tabelas já existirem, ele não faz nada (usa `CREATE TABLE IF NOT EXISTS`).
 
 ```bash
-DATABASE_URL="$DATABASE_URL" python scripts/setup_schemas.py
+DATABASE_URL="postgresql://makima:gmi6BE1jPVPGVo1xY3Mv@personal-agent-makimadb-k3bxg9:5432/makima" python scripts/setup_schemas.py
 ```
 
 Saída esperada:
