@@ -150,6 +150,8 @@ export async function updateBookMetadata(
     language: string
     description: string
     notes: string          // Notas pessoais do leitor sobre o livro
+    store_url: string      // URL do anúncio na loja (Amazon, Estante Virtual, etc.)
+    price: number          // Preço visto na loja (wishlist)
   }>,
 ): Promise<{ status: string; message: string }> {
   // Usa o método PATCH do objeto api para fazer a requisição autenticada.

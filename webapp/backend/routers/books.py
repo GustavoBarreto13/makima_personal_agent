@@ -205,6 +205,8 @@ class UpdateBookMetadataBody(BaseModel):
     language: Optional[str] = None        # Idioma (ex.: "pt-BR", "en")
     description: Optional[str] = None     # Sinopse ou descrição do livro
     notes: Optional[str] = None           # Anotações pessoais / resenha do leitor
+    store_url: Optional[str] = None       # URL do anúncio na loja (Amazon, Estante Virtual, etc.)
+    price: Optional[float] = None         # Preço visto na loja (wishlist)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -262,11 +264,13 @@ def list_books(
         ORDER BY
             CASE b.status
                 WHEN 'lendo'      THEN 0
-                WHEN 'quero_ler'  THEN 1
-                WHEN 'pausado'    THEN 2
-                WHEN 'lido'       THEN 3
-                WHEN 'abandonado' THEN 4
-                ELSE 5
+                WHEN 'estante'    THEN 1
+                WHEN 'quero_ler'  THEN 2
+                WHEN 'wishlist'   THEN 3
+                WHEN 'pausado'    THEN 4
+                WHEN 'lido'       THEN 5
+                WHEN 'abandonado' THEN 6
+                ELSE 7
             END,
             b.updated_at DESC
     """

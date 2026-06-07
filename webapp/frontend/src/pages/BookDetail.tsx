@@ -16,7 +16,7 @@ interface Book {
   id:             string          // Identificador único do livro (UUID)
   title:          string          // Título do livro
   author:         string | null   // Nome do autor (null se não informado)
-  status:         string          // Estado de leitura: 'lendo' | 'quero_ler' | 'pausado' | 'lido' | 'abandonado'
+  status:         string          // Estado de leitura: 'lendo' | 'lido' | 'quero_ler' | 'estante' | 'wishlist' | 'pausado' | 'abandonado'
   total_pages:    number | null   // Total de páginas (null = desconhecido)
   current_page:   number | null   // Página atual do leitor (null = ainda não começou)
   cover_url:      string | null   // URL da capa (null = sem capa)
@@ -29,6 +29,8 @@ interface Book {
   language:       string | null   // Idioma do livro (null se não informado)
   description:    string | null   // Sinopse/descrição do livro (null se não informada)
   notes:          string | null   // Notas pessoais do leitor (null se não há notas)
+  store_url:      string | null   // URL do anúncio na loja (Amazon, Estante Virtual, etc.)
+  price:          number | null   // Preço visto na loja (principalmente para wishlist)
 }
 
 // Representa uma sessão de leitura no histórico
@@ -66,6 +68,8 @@ const STATUS_BADGE: Record<string, string> = {
   lendo:      'bg-blue-900 text-blue-300',
   lido:       'bg-green-900 text-green-300',
   quero_ler:  'bg-purple-900 text-purple-300',
+  estante:    'bg-amber-900 text-amber-300',
+  wishlist:   'bg-indigo-900 text-indigo-300',
   pausado:    'bg-yellow-900 text-yellow-300',
   abandonado: 'bg-gray-700 text-gray-400',
 }
@@ -243,6 +247,8 @@ export default function BookDetail() {
     language:       '',
     description:    '',
     notes:          '',
+    store_url:      '',  // URL do anúncio na loja (Amazon, Estante Virtual, etc.)
+    price:          '',  // preço visto na loja, como string para compatibilidade com <input>
   })
 
   // Indica se o PATCH de metadados está sendo enviado (desabilita o botão Salvar)
@@ -384,6 +390,8 @@ export default function BookDetail() {
       language:       b.language ?? '',
       description:    b.description ?? '',
       notes:          b.notes ?? '',
+      store_url:      b.store_url ?? '',
+      price:          b.price != null ? String(b.price) : '',
     })
     // Limpa qualquer erro anterior e ativa o modo de edição
     setEditError(null)
@@ -422,6 +430,8 @@ export default function BookDetail() {
         language:       b.language       ?? '',
         description:    b.description    ?? '',
         notes:          b.notes          ?? '',
+        store_url:      b.store_url      ?? '',
+        price:          b.price          != null ? String(b.price)          : '',
       }
 
       // Payload com apenas os campos que mudaram
@@ -436,6 +446,7 @@ export default function BookDetail() {
       if (formData.language    !== orig.language)    payload.language    = formData.language
       if (formData.description !== orig.description) payload.description = formData.description
       if (formData.notes       !== orig.notes)       payload.notes       = formData.notes
+      if (formData.store_url   !== orig.store_url)   payload.store_url   = formData.store_url
 
       // Campos numéricos: valida o input antes de incluir
       if (formData.total_pages !== orig.total_pages && formData.total_pages !== '') {
@@ -453,6 +464,14 @@ export default function BookDetail() {
           return
         }
         payload.published_year = parsed
+      }
+      if (formData.price !== orig.price && formData.price !== '') {
+        const parsed = parseFloat(formData.price)
+        if (isNaN(parsed) || parsed < 0) {
+          setEditError('Preço deve ser um número positivo (ex.: 49.90).')
+          return
+        }
+        payload.price = parsed
       }
 
       // Nenhum campo mudou — fecha sem chamar o backend
@@ -665,6 +684,30 @@ export default function BookDetail() {
                 </div>
               )}
 
+              {/* ── Preço e link da loja — relevante principalmente para wishlist ── */}
+              {/* Exibe se qualquer um dos dois campos estiver preenchido */}
+              {(book.price != null || book.store_url) && (
+                <div className="flex items-center gap-4 mt-2">
+                  {/* Badge verde com o preço formatado em reais */}
+                  {book.price != null && (
+                    <span className="text-green-400 text-sm font-semibold">
+                      R$ {book.price.toFixed(2)}
+                    </span>
+                  )}
+                  {/* Link para o anúncio da loja — abre em nova aba */}
+                  {book.store_url && (
+                    <a
+                      href={book.store_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-indigo-400 hover:text-indigo-300 text-xs underline transition-colors"
+                    >
+                      🔗 Ver anúncio
+                    </a>
+                  )}
+                </div>
+              )}
+
             </div>
           </div>
         )}
@@ -809,6 +852,32 @@ export default function BookDetail() {
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none"
                   placeholder="Suas anotações pessoais sobre o livro..."
+                />
+              </div>
+
+              {/* Campo: URL do anúncio na loja (principalmente para wishlist) */}
+              <div className="md:col-span-2">
+                <label className="block text-xs text-gray-400 mb-1">Link do anúncio (Amazon, Estante Virtual, etc.)</label>
+                <input
+                  type="text"
+                  value={formData.store_url}
+                  onChange={(e) => setFormData({ ...formData, store_url: e.target.value })}
+                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="https://www.amazon.com.br/..."
+                />
+              </div>
+
+              {/* Campo: Preço visto na loja (principalmente para wishlist) */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Preço (R$)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.price}
+                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="Ex: 49.90"
                 />
               </div>
 
@@ -981,12 +1050,14 @@ export default function BookDetail() {
               onChange={(e) => setNewStatus(e.target.value)}
               className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
             >
-              {/* Os 5 estados possíveis do ciclo de leitura */}
-              <option value="quero_ler">Quero Ler</option>
-              <option value="lendo">Lendo</option>
-              <option value="pausado">Pausado</option>
-              <option value="lido">Lido</option>
-              <option value="abandonado">Abandonado</option>
+              {/* Os 7 estados possíveis do ciclo de leitura */}
+              <option value="lendo">📖 Lendo</option>
+              <option value="lido">✅ Lido</option>
+              <option value="estante">🏠 Estante</option>
+              <option value="quero_ler">📚 Quero Ler</option>
+              <option value="wishlist">🛒 Wishlist</option>
+              <option value="pausado">⏸️ Pausado</option>
+              <option value="abandonado">❌ Abandonado</option>
             </select>
           </div>
 

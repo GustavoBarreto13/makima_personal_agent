@@ -22,7 +22,7 @@ from agents.db import run_select, run_dml
 
 # Status válidos para um livro no sistema de rastreamento.
 # Qualquer valor fora dessa lista deve ser rejeitado para manter consistência.
-VALID_STATUSES = ["lendo", "lido", "quero_ler", "pausado", "abandonado"]
+VALID_STATUSES = ["lendo", "lido", "quero_ler", "estante", "wishlist", "pausado", "abandonado"]
 
 # Fuso horário do usuário (Brasil — UTC-3).
 # Usado para garantir que todas as datas sejam registradas no horário brasileiro,

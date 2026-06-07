@@ -15,11 +15,13 @@ CREATE TABLE IF NOT EXISTS books (
     language        TEXT,
     published_year  INTEGER,
     status          TEXT        DEFAULT 'quero_ler',
-    -- status: 'lendo' | 'lido' | 'quero_ler' | 'pausado' | 'abandonado'
+    -- status: 'lendo' | 'lido' | 'quero_ler' | 'estante' | 'wishlist' | 'pausado' | 'abandonado'
     date_started    DATE,
     date_finished   DATE,
     rating          NUMERIC,
     notes           TEXT,
+    store_url       TEXT,           -- URL do anúncio na loja (Amazon, Estante Virtual, etc.)
+    price           NUMERIC,        -- Preço visto na loja (principalmente para wishlist)
     source          TEXT,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW(),
