@@ -159,3 +159,111 @@ export async function updateBookMetadata(
   // JSON serialization e validação de resposta HTTP.
   return api.patch<{ status: string; message: string }>(`/api/books/${bookId}/metadata`, data)
 }
+
+// ── Tipos da seção Frieren ─────────────────────────────────────────────────
+
+// Formato exato que o backend retorna para cada livro na listagem
+export interface ApiBook {
+  id: string
+  title: string
+  author: string
+  total_pages: number | null
+  status: string               // valor português: lendo, lido, quero_ler, etc.
+  cover_url: string | null
+  date_started: string | null  // ISO date YYYY-MM-DD
+  date_finished: string | null
+  current_page: number | null  // MAX(page_end) do último log de leitura
+  rating: number | null
+  genre: string | null
+  isbn: string | null
+  published_year: number | null
+  shelves: string[]
+  notes: string | null         // só presente no endpoint de detalhe do livro
+  store_url: string | null     // só presente no endpoint de detalhe do livro
+}
+
+// Formato de uma estante retornada pelo backend
+export interface ApiShelf {
+  id: string
+  name: string
+  description: string
+  accent: string
+  book_count: number
+}
+
+// Entrada do histórico de atividade de leitura
+export interface ApiActivityEntry {
+  id: string
+  date: string
+  book_id: string
+  title: string
+  author: string
+  type: string
+  pages: number | null
+  page: number | null
+  note: string | null
+  rating: number | null
+}
+
+// Um dia no heatmap de leitura (páginas lidas por data)
+export interface ApiHeatmapDay { date: string; pages: number }
+
+// ── Funções tipadas da API de livros ─────────────────────────────────────────
+
+/**
+ * Objeto com todos os métodos da API de livros (Frieren).
+ * Centraliza os endpoints em um único lugar para facilitar manutenção.
+ */
+export const booksApi = {
+  /** Lista todos os livros com estantes, página atual e metadados básicos */
+  list: () =>
+    api.get<{ books: ApiBook[] }>('/api/books'),
+
+  /** Retorna os detalhes completos de um livro específico pelo ID */
+  get: (id: string) =>
+    api.get<ApiBook>(`/api/books/${id}`),
+
+  /** Retorna as últimas N entradas do histórico de leitura */
+  activity: (limit = 50) =>
+    api.get<{ activity: ApiActivityEntry[] }>(`/api/books/activity?limit=${limit}`),
+
+  /** Retorna o heatmap de páginas lidas por dia. Se year não informado, usa o ano atual */
+  heatmap: (year?: number) =>
+    api.get<{ heatmap: ApiHeatmapDay[] }>(`/api/books/heatmap${year ? `?year=${year}` : ''}`),
+
+  /** Lista todas as estantes do usuário */
+  shelves: () =>
+    api.get<{ shelves: ApiShelf[] }>('/api/books/shelves'),
+
+  /** Cria uma nova estante */
+  createShelf: (body: { name: string; description?: string; accent?: string }) =>
+    api.post<{ id: string }>('/api/books/shelves', body),
+
+  /** Atualiza nome, descrição ou cor de uma estante */
+  updateShelf: (id: string, body: { name?: string; description?: string; accent?: string }) =>
+    api.patch<{ status: string }>(`/api/books/shelves/${id}`, body),
+
+  /** Remove uma estante pelo ID */
+  deleteShelf: (id: string) =>
+    api.del<Record<string, never>>(`/api/books/shelves/${id}`),
+
+  /** Adiciona um livro a uma estante */
+  addToShelf: (shelfId: string, bookId: string) =>
+    api.post<Record<string, never>>(`/api/books/shelves/${shelfId}/books/${bookId}`, {}),
+
+  /** Remove um livro de uma estante */
+  removeFromShelf: (shelfId: string, bookId: string) =>
+    api.del<Record<string, never>>(`/api/books/shelves/${shelfId}/books/${bookId}`),
+
+  /** Registra uma sessão de leitura: página atual, nota, se terminou e avaliação */
+  logReading: (bookId: string, body: { page: number; note?: string; finished?: boolean; rating?: number }) =>
+    api.post<{ status: string; message: string }>(`/api/books/${bookId}/log`, body),
+
+  /** Atualiza o status de um livro (ex: "lendo" → "lido") */
+  updateStatus: (bookId: string, status: string) =>
+    api.patch<{ status: string; message: string }>(`/api/books/${bookId}/status`, { status }),
+
+  /** Atualiza metadados pessoais: URL da loja, notas e avaliação */
+  updateMetadata: (bookId: string, data: Partial<{ store_url: string; notes: string; rating: number }>) =>
+    api.patch<{ status: string; message: string }>(`/api/books/${bookId}/metadata`, data),
+}

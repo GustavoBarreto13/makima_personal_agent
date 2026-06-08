@@ -15,8 +15,7 @@ import Cards         from './pages/Cards'               // Cartões de crédito 
 import Loans         from './pages/Loans'               // Empréstimos e saldo devedor
 import Budgets       from './pages/Budgets'             // Orçamentos por categoria
 import Subscriptions from './pages/Subscriptions'       // Assinaturas recorrentes
-import Books      from './pages/Books'       // Lista de livros com agrupamento por status
-import BookDetail from './pages/BookDetail'  // Detalhe do livro com histórico de leitura
+import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell completo da seção de livros
 import Journal    from './pages/Journal'     // Diário pessoal com editor de bullets e heatmap
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
@@ -77,40 +76,43 @@ function App() {
   // Layout envolve todas as rotas, garantindo que sidebar e header apareçam em todas as páginas.
   return (
     <BrowserRouter>
-      {/* Layout fornece o sidebar de navegação e o header; todas as páginas ficam dentro dele */}
-      <Layout>
-        <Routes>
-          {/* Rota raiz: página inicial com resumo financeiro */}
-          <Route path="/"              element={<Dashboard />} />
+      <Routes>
+        {/* Frieren tem seu próprio shell com sidebar, navegação interna e tweaks.
+            O wildcard /* garante que sub-rotas internas (detalhe, estante, etc.)
+            não sejam interceptadas pelo React Router — o shell gerencia tudo internamente. */}
+        <Route path="/books/*" element={<FrierenShell />} />
 
-          {/* CRUD de transações financeiras */}
-          <Route path="/transactions"  element={<Transactions />} />
+        {/* Todas as outras rotas usam o Layout principal com sidebar Makima */}
+        <Route path="/*" element={
+          <Layout>
+            <Routes>
+              {/* Página inicial com resumo financeiro */}
+              <Route path="/" element={<Dashboard />} />
 
-          {/* Listagem e criação de contas bancárias */}
-          <Route path="/accounts"      element={<Accounts />} />
+              {/* CRUD de transações financeiras */}
+              <Route path="/transactions" element={<Transactions />} />
 
-          {/* Cartões de crédito com progresso de uso */}
-          <Route path="/cards"         element={<Cards />} />
+              {/* Listagem e criação de contas bancárias */}
+              <Route path="/accounts" element={<Accounts />} />
 
-          {/* Empréstimos e financiamentos */}
-          <Route path="/loans"         element={<Loans />} />
+              {/* Cartões de crédito com progresso de uso */}
+              <Route path="/cards" element={<Cards />} />
 
-          {/* Orçamentos mensais por categoria */}
-          <Route path="/budgets"       element={<Budgets />} />
+              {/* Empréstimos e financiamentos */}
+              <Route path="/loans" element={<Loans />} />
 
-          {/* Assinaturas recorrentes */}
-          <Route path="/subscriptions" element={<Subscriptions />} />
+              {/* Orçamentos mensais por categoria */}
+              <Route path="/budgets" element={<Budgets />} />
 
-          {/* Lista de livros agrupada por status */}
-          <Route path="/books"    element={<Books />} />
+              {/* Assinaturas recorrentes */}
+              <Route path="/subscriptions" element={<Subscriptions />} />
 
-          {/* Detalhe de um livro com histórico de sessões */}
-          <Route path="/books/:id" element={<BookDetail />} />
-
-          {/* Diário pessoal — editor de bullets com heatmap e busca */}
-          <Route path="/journal" element={<Journal />} />
-        </Routes>
-      </Layout>
+              {/* Diário pessoal — editor de bullets com heatmap e busca */}
+              <Route path="/journal" element={<Journal />} />
+            </Routes>
+          </Layout>
+        } />
+      </Routes>
     </BrowserRouter>
   )
 }
