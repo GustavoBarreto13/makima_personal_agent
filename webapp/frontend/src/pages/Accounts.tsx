@@ -173,6 +173,16 @@ export default function Accounts() {
   /**
    * Envia o formulário de criação de conta para o backend (POST).
    */
+  async function handleDelete(accountId: string, name: string) {
+    if (!window.confirm(`Deseja realmente encerrar a conta "${name}"? Ela ficará inativa.`)) return
+    try {
+      await api.del<MutationResponse>(`/api/finances/accounts/${accountId}`)
+      loadAccounts()
+    } catch (err) {
+      alert(`Erro ao encerrar conta: ${(err as Error).message}`)
+    }
+  }
+
   async function handleSubmit() {
     setFormError(null)
     setSubmitting(true)
@@ -272,15 +282,23 @@ export default function Accounts() {
                       <span className="text-t4">—</span>
                     )}
                   </td>
-                  {/* Botão para buscar o saldo desta conta */}
+                  {/* Botões de ação: ver saldo e encerrar conta */}
                   <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={() => fetchBalance(account.id)}
-                      disabled={loadingBalance[account.id]}
-                      className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 transition-colors"
-                    >
-                      Ver Saldo
-                    </button>
+                    <div className="flex items-center gap-3 justify-center">
+                      <button
+                        onClick={() => fetchBalance(account.id)}
+                        disabled={loadingBalance[account.id]}
+                        className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 transition-colors"
+                      >
+                        Ver Saldo
+                      </button>
+                      <button
+                        onClick={() => handleDelete(account.id, account.name)}
+                        className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        Encerrar
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

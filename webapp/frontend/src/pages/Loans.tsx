@@ -180,6 +180,16 @@ export default function Loans() {
    *   field - Nome do campo.
    *   value - Novo valor.
    */
+  async function handleDelete(loanId: string, nome: string) {
+    if (!window.confirm(`Deseja realmente apagar o empréstimo "${nome}"? Esta ação não pode ser desfeita.`)) return
+    try {
+      await api.del<MutationResponse>(`/api/finances/loans/${loanId}`)
+      loadLoans()
+    } catch (err) {
+      alert(`Erro ao apagar empréstimo: ${(err as Error).message}`)
+    }
+  }
+
   function handleFormChange(field: keyof FormState, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
@@ -309,15 +319,23 @@ export default function Loans() {
                       <span className="text-t4">—</span>
                     )}
                   </td>
-                  {/* Botão de ver saldo devedor */}
+                  {/* Botões de ação: ver saldo e apagar */}
                   <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={() => fetchBalance(loan.id)}
-                      disabled={loadingBalance[loan.id]}
-                      className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 transition-colors"
-                    >
-                      Ver Saldo
-                    </button>
+                    <div className="flex items-center gap-3 justify-center">
+                      <button
+                        onClick={() => fetchBalance(loan.id)}
+                        disabled={loadingBalance[loan.id]}
+                        className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 transition-colors"
+                      >
+                        Ver Saldo
+                      </button>
+                      <button
+                        onClick={() => handleDelete(loan.id, loan.nome)}
+                        className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        Excluir
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

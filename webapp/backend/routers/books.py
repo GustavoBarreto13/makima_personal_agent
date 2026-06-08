@@ -44,6 +44,8 @@ from agents.frieren.tools import (
     update_book_status, # Atualiza o status de um livro (lendo, pausado, etc.)
     update_book_pages,          # Corrige o total de páginas de uma edição
     update_book_metadata_by_id, # Atualiza campos de metadados do livro diretamente por ID
+    delete_book,        # Soft delete — marca deleted=TRUE
+    delete_reading_log, # Hard delete de uma sessão de leitura pelo ID
 )
 
 # Função de consulta estruturada — retorna dict (não string HTML)
@@ -474,7 +476,7 @@ def book_history(
         HTTPException: 401 se o usuário não estiver autenticado.
     """
     logs = run_select(
-        "SELECT date, page_start, page_end, pages_read, session_notes FROM reading_logs WHERE book_id = %(book_id)s ORDER BY date ASC, created_at ASC",
+        "SELECT id, date, page_start, page_end, pages_read, session_notes FROM reading_logs WHERE book_id = %(book_id)s ORDER BY date ASC, created_at ASC",
         {"book_id": book_id},
     )
 
@@ -713,4 +715,50 @@ def update_pages_endpoint(
         book_query=book["title"],
         total_pages=body.total_pages,
     )
+    return _books_check(msg)
+
+
+@router.delete("/{book_id}", status_code=200)
+def delete_book_endpoint(
+    book_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remover um livro do catálogo (soft delete — marca deleted=TRUE).
+
+    Args:
+        book_id: ID único do livro.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+
+    Raises:
+        HTTPException: 400 se o livro não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    msg = delete_book(book_id=book_id)
+    return _books_check(msg)
+
+
+@router.delete("/{book_id}/logs/{log_id}", status_code=200)
+def delete_log_endpoint(
+    book_id: str,
+    log_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remover uma sessão de leitura pelo ID (hard delete).
+
+    Args:
+        book_id: ID do livro pai (usado apenas para roteamento REST).
+        log_id: ID da sessão de leitura a remover.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e detalhes do log removido.
+
+    Raises:
+        HTTPException: 400 se o log não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    msg = delete_reading_log(log_id=log_id)
     return _books_check(msg)

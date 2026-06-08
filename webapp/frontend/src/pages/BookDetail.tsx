@@ -36,6 +36,7 @@ interface Book {
 // Representa uma sessão de leitura no histórico
 // Cada entrada corresponde a uma vez que o usuário registrou progresso no livro
 interface ReadingLog {
+  id:            string        // ID único da sessão de leitura (para delete)
   date:          string        // Data da sessão (YYYY-MM-DD)
   page_start:    number        // Página onde a sessão começou
   page_end:      number        // Página onde a sessão terminou
@@ -407,6 +408,39 @@ export default function BookDetail() {
   }
 
   /**
+   * Remove o livro do catálogo via DELETE /api/books/:id.
+   * Pede confirmação antes de executar e navega de volta à lista após sucesso.
+   */
+  async function handleDeleteBook() {
+    if (!window.confirm(`Deseja realmente apagar "${book!.title}"? Esta ação remove o livro e todo o histórico de leitura.`)) return
+    try {
+      await api.del(`/api/books/${id}`)
+      navigate('/books')
+    } catch (err) {
+      alert(`Erro ao apagar livro: ${(err as Error).message}`)
+    }
+  }
+
+  /**
+   * Remove uma sessão de leitura via DELETE /api/books/:bookId/logs/:logId.
+   * Pede confirmação antes de executar e recarrega o histórico após sucesso.
+   *
+   * Args:
+   *   logId - ID único da sessão a remover.
+   *   date  - Data da sessão, usada na mensagem de confirmação.
+   */
+  async function handleDeleteLog(logId: string, date: string) {
+    if (!window.confirm(`Remover a sessão de leitura do dia ${formatDate(date)}?`)) return
+    try {
+      await api.del(`/api/books/${id}/logs/${logId}`)
+      // Recarrega o histórico para refletir a remoção
+      loadHistory()
+    } catch (err) {
+      alert(`Erro ao remover sessão: ${(err as Error).message}`)
+    }
+  }
+
+  /**
    * Envia ao backend apenas os campos que o usuário realmente alterou.
    * Constrói um diff entre o formData atual e os valores originais do livro,
    * evitando sobrescrever campos não tocados (especialmente notes, que pode
@@ -554,16 +588,25 @@ export default function BookDetail() {
       {/* position: relative permite posicionar o botão de editar em absolute dentro do card */}
       <div className="bg-bg-card border border-border-base rounded-xl p-6 relative">
 
-        {/* ── Botão Editar — posicionado no canto superior direito do card ── */}
-        {/* Só exibe quando não estamos em modo de edição */}
+        {/* ── Botões Editar e Apagar — posicionados no canto superior direito do card ── */}
+        {/* Só exibem quando não estamos em modo de edição */}
         {!isEditing && (
-          <button
-            onClick={() => openEditForm(book)}
-            className="absolute top-4 right-4 bg-gray-700 hover:bg-gray-600 text-t2 text-sm px-3 py-1 rounded-md transition-colors"
-            title="Editar metadados do livro"
-          >
-            ✏️ Editar
-          </button>
+          <div className="absolute top-4 right-4 flex gap-2">
+            <button
+              onClick={() => openEditForm(book)}
+              className="bg-gray-700 hover:bg-gray-600 text-t2 text-sm px-3 py-1 rounded-md transition-colors"
+              title="Editar metadados do livro"
+            >
+              ✏️ Editar
+            </button>
+            <button
+              onClick={handleDeleteBook}
+              className="bg-red-900/40 hover:bg-red-900/70 text-red-400 text-sm px-3 py-1 rounded-md transition-colors"
+              title="Apagar livro do catálogo"
+            >
+              🗑️ Apagar
+            </button>
+          </div>
         )}
 
         {/* ── Modo de visualização: exibe as informações do livro ── */}
@@ -1100,26 +1143,34 @@ export default function BookDetail() {
         )}
 
         {/* Lista cronológica de sessões */}
-        {!loadingHistory && logs.map((log, index) => (
-          // Cada item representa uma sessão de leitura
-          // Usamos index como key pois as sessões não têm ID próprio
+        {!loadingHistory && logs.map((log) => (
           <div
-            key={index}
+            key={log.id}
             className="bg-bg-card border border-border-base rounded-lg p-3"
           >
-            {/* Linha superior: data e quantidade de páginas lidas */}
+            {/* Linha superior: data, páginas lidas e botão de excluir */}
             <div className="flex items-center justify-between mb-1">
-              {/* Data da sessão no formato brasileiro */}
-              <span className="text-t1 text-sm font-medium">
-                {formatDate(log.date)}
-              </span>
-              {/* Total de páginas lidas em destaque — informação mais importante para o leitor */}
-              <span className="text-blue-400 text-sm font-medium">
-                +{log.pages_read} páginas
-              </span>
+              <div className="flex items-center gap-3">
+                {/* Data da sessão no formato brasileiro */}
+                <span className="text-t1 text-sm font-medium">
+                  {formatDate(log.date)}
+                </span>
+                {/* Total de páginas lidas em destaque */}
+                <span className="text-blue-400 text-sm font-medium">
+                  +{log.pages_read} páginas
+                </span>
+              </div>
+              {/* Botão de excluir sessão */}
+              <button
+                onClick={() => handleDeleteLog(log.id, log.date)}
+                className="text-t4 hover:text-red-400 text-xs transition-colors px-1"
+                title="Remover esta sessão de leitura"
+              >
+                ×
+              </button>
             </div>
 
-            {/* Range de páginas: mostra de onde até onde o leitor chegou nesta sessão */}
+            {/* Range de páginas: mostra de onde até onde o leitor chegou */}
             <p className="text-t4 text-xs">
               Páginas {log.page_start} → {log.page_end}
             </p>

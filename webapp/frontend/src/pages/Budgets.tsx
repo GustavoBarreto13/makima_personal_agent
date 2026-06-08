@@ -178,6 +178,16 @@ export default function Budgets() {
    *   field - Nome do campo.
    *   value - Novo valor.
    */
+  async function handleDelete(categoria: string) {
+    if (!window.confirm(`Remover o envelope de "${categoria}" em ${month}?`)) return
+    try {
+      await api.del<MutationResponse>(`/api/finances/budgets/${month}/${encodeURIComponent(categoria)}`)
+      loadBudgets()
+    } catch (err) {
+      alert(`Erro ao remover envelope: ${(err as Error).message}`)
+    }
+  }
+
   function handleFormChange(field: keyof FormState, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
@@ -269,15 +279,24 @@ export default function Budgets() {
               />
             </div>
 
-            {/* Linha inferior: percentual e saldo restante */}
+            {/* Linha inferior: percentual, saldo restante e botão remover */}
             <div className="flex justify-between mt-1.5 text-xs text-t4">
               <span>{budget.pct_usado.toFixed(1)}% usado</span>
-              <span>
-                {budget.gasto <= budget.limite
-                  ? `Restam ${formatBRL(budget.limite - budget.gasto)}`
-                  : `Excedido em ${formatBRL(budget.gasto - budget.limite)}`
-                }
-              </span>
+              <div className="flex items-center gap-3">
+                <span>
+                  {budget.gasto <= budget.limite
+                    ? `Restam ${formatBRL(budget.limite - budget.gasto)}`
+                    : `Excedido em ${formatBRL(budget.gasto - budget.limite)}`
+                  }
+                </span>
+                <button
+                  onClick={() => handleDelete(budget.categoria)}
+                  className="text-red-400 hover:text-red-300 transition-colors"
+                  title="Remover envelope"
+                >
+                  ×
+                </button>
+              </div>
             </div>
           </div>
         ))}

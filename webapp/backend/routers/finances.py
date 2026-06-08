@@ -40,6 +40,7 @@ from agents.nami.tools import (
     create_subscription,  # Cadastra assinatura recorrente
     list_subscriptions,   # Lista assinaturas (ativa/encerrada/todas)
     update_subscription,  # Pausa, cancela ou atualiza assinatura
+    delete_subscription,  # Soft delete de assinatura — marca deleted=TRUE
 )
 
 # Contas financeiras (corrente, poupança, dinheiro, investimento)
@@ -47,6 +48,7 @@ from agents.nami.tools_accounts import (
     create_account,       # Cadastra nova conta financeira
     list_accounts,        # Lista contas por status
     get_account_balance,  # Saldo atual de uma conta específica
+    delete_account,       # Encerra conta — status → 'encerrado'
 )
 
 # Cartões de crédito
@@ -54,6 +56,7 @@ from agents.nami.tools_credit_cards import (
     register_credit_card,   # Cadastra cartão vinculado a uma conta
     get_card_debt_summary,  # Resumo de dívidas em todos os cartões
     register_card_payment,  # Registra pagamento de fatura
+    delete_credit_card,     # Encerra cartão — status → 'encerrado'
 )
 
 # Empréstimos e financiamentos
@@ -61,12 +64,14 @@ from agents.nami.tools_loans import (
     register_loan,    # Cadastra empréstimo PRICE ou SAC
     list_loans,       # Lista empréstimos por status
     get_loan_balance, # Saldo devedor atual de um empréstimo
+    delete_loan,      # Soft delete de empréstimo — marca deleted=TRUE
 )
 
 # Orçamento por categoria
 from agents.nami.tools_budgets import (
     set_budget,        # Define limite mensal para uma categoria
     get_budget_status, # Status de todas as categorias com orçamento no mês
+    delete_budget,     # Hard delete de envelope de orçamento
 )
 
 # Score de saúde financeira
@@ -76,9 +81,10 @@ from agents.nami.tools_health import (
 
 # Compras parceladas e comprometimentos futuros
 from agents.nami.tools_installments import (
-    create_installment,      # Cria grupo + N transações parceladas
-    list_installments,       # Lista grupos de parcelamentos
-    get_future_commitments,  # Soma parcelas + assinaturas de um mês futuro
+    create_installment,           # Cria grupo + N transações parceladas
+    list_installments,            # Lista grupos de parcelamentos
+    get_future_commitments,       # Soma parcelas + assinaturas de um mês futuro
+    delete_installment_group_full, # Soft delete completo do grupo (passadas + futuras)
 )
 
 
@@ -984,3 +990,138 @@ def create_installment_endpoint(
         first_due=body.data_inicio,
     )
     return _check_result(result)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENDPOINTS DELETE — encerramento/remoção de entidades
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.delete("/accounts/{account_id}", status_code=200)
+def delete_account_endpoint(
+    account_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Encerrar uma conta financeira (status → 'encerrado').
+
+    Args:
+        account_id: ID único da conta.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+
+    Raises:
+        HTTPException: 400 se a conta não for encontrada.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(delete_account(account_id=account_id))
+
+
+@router.delete("/cards/{card_id}", status_code=200)
+def delete_card_endpoint(
+    card_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Encerrar um cartão de crédito (status → 'encerrado').
+
+    Args:
+        card_id: ID único do cartão.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+
+    Raises:
+        HTTPException: 400 se o cartão não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(delete_credit_card(card_id=card_id))
+
+
+@router.delete("/loans/{loan_id}", status_code=200)
+def delete_loan_endpoint(
+    loan_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remover um empréstimo (soft delete — marca deleted=TRUE).
+
+    Args:
+        loan_id: ID único do empréstimo.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+
+    Raises:
+        HTTPException: 400 se o empréstimo não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(delete_loan(loan_id=loan_id))
+
+
+@router.delete("/subscriptions/{sub_id}", status_code=200)
+def delete_subscription_endpoint(
+    sub_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remover uma assinatura (soft delete — marca deleted=TRUE).
+
+    Args:
+        sub_id: ID único da assinatura.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+
+    Raises:
+        HTTPException: 400 se a assinatura não for encontrada.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(delete_subscription(id=sub_id))
+
+
+@router.delete("/budgets/{month}/{categoria}", status_code=200)
+def delete_budget_endpoint(
+    month: str,
+    categoria: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remover o envelope de orçamento de uma categoria em um mês (hard delete).
+
+    Args:
+        month: Mês no formato "YYYY-MM".
+        categoria: Categoria do envelope (ex.: "Lazer", "Alimentacao").
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+
+    Raises:
+        HTTPException: 400 se o envelope não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(delete_budget(month=month, categoria=categoria))
+
+
+@router.delete("/installments/{group_id}", status_code=200)
+def delete_installment_endpoint(
+    group_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remover um parcelamento completo — todas as parcelas (passadas + futuras).
+
+    Diferente do cancelamento (que preserva parcelas já pagas), esta rota apaga
+    o grupo inteiro. Use apenas quando o parcelamento foi cadastrado por engano.
+
+    Args:
+        group_id: ID único do grupo de parcelas.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e quantidade de parcelas removidas.
+
+    Raises:
+        HTTPException: 400 se o grupo não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(delete_installment_group_full(id=group_id))

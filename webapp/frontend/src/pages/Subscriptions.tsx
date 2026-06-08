@@ -159,6 +159,16 @@ export default function Subscriptions() {
    *   id     - ID da assinatura.
    *   status - Novo status: "ativa" ou "pausada".
    */
+  async function handleDelete(id: string, name: string) {
+    if (!window.confirm(`Deseja realmente excluir a assinatura "${name}"? Esta ação não pode ser desfeita.`)) return
+    try {
+      await api.del<MutationResponse>(`/api/finances/subscriptions/${id}`)
+      loadSubscriptions()
+    } catch (err) {
+      alert(`Erro ao excluir assinatura: ${(err as Error).message}`)
+    }
+  }
+
   async function updateStatus(id: string, status: string) {
     // Marca esta assinatura como "em atualização" para desabilitar os botões
     setUpdating((prev) => ({ ...prev, [id]: true }))
@@ -314,30 +324,35 @@ export default function Subscriptions() {
                       {sub.status}
                     </span>
                   </td>
-                  {/* Botões de ação: pausar ou reativar conforme o status atual */}
+                  {/* Botões de ação: pausar/reativar e excluir */}
                   <td className="px-4 py-3 text-center">
-                    {sub.status === 'ativa' ? (
-                      // Botão pausar: disponível quando a assinatura está ativa
+                    <div className="flex items-center gap-3 justify-center">
+                      {sub.status === 'ativa' ? (
+                        <button
+                          onClick={() => updateStatus(sub.id, 'pausada')}
+                          disabled={updating[sub.id]}
+                          className="text-xs text-yellow-400 hover:text-yellow-300 disabled:opacity-50 transition-colors"
+                        >
+                          {updating[sub.id] ? '...' : 'Pausar'}
+                        </button>
+                      ) : sub.status === 'pausada' ? (
+                        <button
+                          onClick={() => updateStatus(sub.id, 'ativa')}
+                          disabled={updating[sub.id]}
+                          className="text-xs text-green-400 hover:text-green-300 disabled:opacity-50 transition-colors"
+                        >
+                          {updating[sub.id] ? '...' : 'Reativar'}
+                        </button>
+                      ) : (
+                        <span className="text-t4 text-xs">—</span>
+                      )}
                       <button
-                        onClick={() => updateStatus(sub.id, 'pausada')}
-                        disabled={updating[sub.id]}
-                        className="text-xs text-yellow-400 hover:text-yellow-300 disabled:opacity-50 transition-colors"
+                        onClick={() => handleDelete(sub.id, sub.name)}
+                        className="text-xs text-red-400 hover:text-red-300 transition-colors"
                       >
-                        {updating[sub.id] ? '...' : 'Pausar'}
+                        Excluir
                       </button>
-                    ) : sub.status === 'pausada' ? (
-                      // Botão reativar: disponível quando a assinatura está pausada
-                      <button
-                        onClick={() => updateStatus(sub.id, 'ativa')}
-                        disabled={updating[sub.id]}
-                        className="text-xs text-green-400 hover:text-green-300 disabled:opacity-50 transition-colors"
-                      >
-                        {updating[sub.id] ? '...' : 'Reativar'}
-                      </button>
-                    ) : (
-                      // Status cancelada: nenhuma ação disponível
-                      <span className="text-t4 text-xs">—</span>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))}

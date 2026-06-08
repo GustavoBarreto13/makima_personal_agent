@@ -146,6 +146,16 @@ export default function Cards() {
     setPaymentError(null)
   }
 
+  async function handleDelete(cardId: string, name: string) {
+    if (!window.confirm(`Deseja realmente encerrar o cartão "${name}"? Ele ficará inativo.`)) return
+    try {
+      await api.del<MutationResponse>(`/api/finances/cards/${cardId}`)
+      loadCards()
+    } catch (err) {
+      alert(`Erro ao encerrar cartão: ${(err as Error).message}`)
+    }
+  }
+
   /**
    * Envia o pagamento para o backend via POST.
    */
@@ -243,13 +253,22 @@ export default function Cards() {
               </div>
             </div>
 
-            {/* Botão de registrar pagamento */}
-            <button
-              onClick={() => openPayment(card.id)}
-              className="w-full py-2 text-sm text-indigo-400 hover:text-indigo-300 border border-indigo-800 hover:border-indigo-600 rounded-lg transition-colors"
-            >
-              Registrar Pagamento
-            </button>
+            {/* Botões de ação do cartão */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => openPayment(card.id)}
+                className="flex-1 py-2 text-sm text-indigo-400 hover:text-indigo-300 border border-indigo-800 hover:border-indigo-600 rounded-lg transition-colors"
+              >
+                Registrar Pagamento
+              </button>
+              <button
+                onClick={() => handleDelete(card.id, card.name)}
+                className="py-2 px-3 text-sm text-red-400 hover:text-red-300 border border-red-900/40 hover:border-red-700 rounded-lg transition-colors"
+                title="Encerrar cartão"
+              >
+                🗑️
+              </button>
+            </div>
           </div>
         ))}
       </div>
