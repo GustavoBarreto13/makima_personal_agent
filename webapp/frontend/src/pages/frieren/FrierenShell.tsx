@@ -16,6 +16,8 @@ import { Icon } from './ui/Icons'
 import { NowBar } from './NowBar'
 import { LogModal } from './LogModal'
 import type { LogPayload } from './LogModal'
+import { AddBookModal } from './AddBookModal'
+import type { AddBookPayload } from './AddBookModal'
 import { Toast } from './Toast'
 import { TweaksPanel } from './TweaksPanel'
 
@@ -171,6 +173,9 @@ export function FrierenShell() {
   // ── Busca textual ──────────────────────────────────────────────────────────
   const [query, setQuery] = useState('')
 
+  // ── Modal de adição de livro ──────────────────────────────────────────────
+  const [addOpen, setAddOpen] = useState(false)
+
   // ── Modal de registro ──────────────────────────────────────────────────────
   const [modal, setModal] = useState<{ open: boolean; presetBookId: string | null }>({
     open: false,
@@ -292,6 +297,27 @@ export function FrierenShell() {
         : `+${delta} ${delta === 1 ? 'página registrada' : 'páginas registradas'}`,
     )
   }, [books])
+
+  // ── Adição de livro — envia ao backend e re-sincroniza a lista ───────────
+  const addBook = useCallback(async (payload: AddBookPayload) => {
+    await booksApi.addBook(payload)          // pode lançar (duplicado → 400) — tratado no modal
+    const booksRes = await booksApi.list()   // re-busca para refletir o novo livro na grade
+    setBooks(booksRes.books.map(toBook))
+    setToast('Livro adicionado à sua biblioteca.')
+  }, [])
+
+  // ── Remoção de livro — apaga no backend, re-sincroniza e volta à Biblioteca ─
+  const deleteBook = useCallback(async (bookId: string) => {
+    await booksApi.deleteBook(bookId)
+    const [booksRes, activityRes] = await Promise.all([
+      booksApi.list(),
+      booksApi.activity(100),
+    ])
+    setBooks(booksRes.books.map(toBook))
+    setActivity(activityRes.activity.map(toActivity))
+    navigate('catalogo')   // o livro sumiu — volta para a grade
+    setToast('Livro removido.')
+  }, [navigate])
 
   // ── Deriva nav ativa a partir da view atual ───────────────────────────────
   const activeNav =
@@ -428,6 +454,7 @@ export function FrierenShell() {
             shelves={shelves}
             navigate={navigate}
             openLog={openLog}
+            onDelete={deleteBook}
           />
         )
 
@@ -530,6 +557,11 @@ export function FrierenShell() {
           <Icon name="plus" /> <span>Registrar leitura</span>
         </button>
 
+        {/* Botão secundário — abre o modal de adição de livro novo ao catálogo */}
+        <button className="side-add-btn" onClick={() => setAddOpen(true)}>
+          <Icon name="plus" /> <span>Adicionar livro</span>
+        </button>
+
         {/* Navegação principal com dois grupos */}
         <nav className="side-nav">
 
@@ -627,6 +659,13 @@ export function FrierenShell() {
         books={books}
         onClose={() => setModal({ open: false, presetBookId: null })}
         onSave={addLog}
+      />
+
+      {/* ── Modal de adição de livro ── */}
+      <AddBookModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onAdd={addBook}
       />
 
       {/* ── Notificação toast de feedback ── */}

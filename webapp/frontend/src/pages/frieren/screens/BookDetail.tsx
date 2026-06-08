@@ -2,6 +2,7 @@
 // capa, metadados, resenha, estantes e diário de leitura específico deste livro.
 // Layout em duas colunas: capa fixa à esquerda, informações scrolláveis à direita.
 
+import { useState } from 'react'
 import type { Book, ActivityEntry, Shelf } from '../types'
 import { Icon } from '../ui/Icons'
 import { Cover } from '../ui/Cover'
@@ -17,6 +18,8 @@ interface BookDetailProps {
   shelves: Shelf[]
   navigate: (view: string, param?: string | null) => void
   openLog: (bookId?: string | null) => void
+  // Remove o livro do catálogo (chama o backend e re-sincroniza no shell)
+  onDelete: (bookId: string) => Promise<void>
 }
 
 // Formata data ISO em texto legível (ex.: "3 de Mar 2026")
@@ -40,7 +43,12 @@ function relDate(iso: string): string {
 }
 
 // Componente principal do detalhe do livro
-export function BookDetail({ bookId, books, activity, shelves, navigate, openLog }: BookDetailProps) {
+export function BookDetail({ bookId, books, activity, shelves, navigate, openLog, onDelete }: BookDetailProps) {
+  // Controla a confirmação inline de remoção (dois passos: mostrar → confirmar)
+  const [confirmando, setConfirmando] = useState(false)
+  // Spinner durante a chamada de remoção ao backend
+  const [removendo,   setRemovendo]   = useState(false)
+
   // Busca o livro pelo ID na lista carregada pelo shell
   const book = books.find(b => b.id === bookId)
 
@@ -111,6 +119,45 @@ export function BookDetail({ bookId, books, activity, shelves, navigate, openLog
           >
             <Icon name="plus" /> Registrar leitura
           </button>
+
+          {/* Remoção do livro — confirmação inline em dois passos */}
+          {!confirmando ? (
+            <button
+              className="btn btn-danger"
+              style={{ justifyContent: 'center' }}
+              onClick={() => setConfirmando(true)}
+            >
+              <Icon name="x" /> Remover livro
+            </button>
+          ) : (
+            <div className="detail-confirm">
+              <span>Remover "{book.title}"?</span>
+              <div className="detail-confirm-actions">
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => setConfirmando(false)}
+                  disabled={removendo}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="btn btn-danger"
+                  disabled={removendo}
+                  onClick={async () => {
+                    setRemovendo(true)
+                    try {
+                      await onDelete(book.id)  // shell navega para catalogo após remover
+                    } finally {
+                      setRemovendo(false)
+                      setConfirmando(false)
+                    }
+                  }}
+                >
+                  {removendo ? 'Removendo…' : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── COLUNA DIREITA: INFORMAÇÕES ── */}
