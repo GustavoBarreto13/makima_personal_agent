@@ -60,9 +60,9 @@ function App() {
   if (loading) {
     return (
       // Tela de carregamento: fundo escuro com spinner centralizado
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+      <div className="min-h-screen flex items-center justify-center bg-bg-app text-t1">
         {/* Spinner animado: borda com cor parcial que gira */}
-        <div className="w-8 h-8 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-border-base border-t-t3 rounded-full animate-spin" />
       </div>
     )
   }

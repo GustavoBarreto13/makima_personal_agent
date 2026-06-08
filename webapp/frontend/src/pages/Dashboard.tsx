@@ -68,9 +68,10 @@ function formatBRL(value: number): string {
  *   String de classes Tailwind (ex: "text-green-400").
  */
 function scoreColor(score: number): string {
-  if (score >= 70) return 'text-green-400'   // Saúde financeira boa
-  if (score >= 40) return 'text-yellow-400'  // Saúde financeira média
-  return 'text-red-400'                       // Saúde financeira ruim
+  // Usa CSS inline para cor dinâmica com os tokens do design system
+  if (score >= 70) return '#86efac'   // verde — saúde financeira boa
+  if (score >= 40) return '#fbbf24'   // âmbar — saúde financeira média
+  return '#f87171'                    // vermelho — saúde financeira ruim
 }
 
 /**
@@ -147,56 +148,73 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
 
-      {/* Título da página */}
-      <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+      {/* Título da página — cor Nami (domínio de finanças) */}
+      <h1
+        className="text-2xl font-semibold"
+        style={{ fontFamily: '"Playfair Display", Georgia, serif', color: 'var(--t1)' }}
+      >
+        Dashboard
+      </h1>
 
       {/* Grade de três colunas (empilhadas em telas menores) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
         {/* ── Card 1: Health Score ── */}
-        <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+        <div
+          className="rounded-xl p-6"
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+        >
+          <h2
+            className="text-xs font-semibold uppercase tracking-wider mb-4"
+            style={{ color: 'var(--t3)' }}
+          >
             Saúde Financeira
           </h2>
 
           {/* Estado de carregamento: spinner centralizado */}
           {loadingHealth && (
             <div className="flex justify-center py-4">
-              <div className="w-6 h-6 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+              <div
+                className="w-6 h-6 border-2 rounded-full animate-spin"
+                style={{ borderColor: 'var(--border)', borderTopColor: 'var(--t3)' }}
+              />
             </div>
           )}
 
-          {/* Estado de erro: mensagem em vermelho */}
+          {/* Estado de erro */}
           {errorHealth && (
-            <p className="text-red-400 text-sm">{errorHealth}</p>
+            <p className="text-sm" style={{ color: 'var(--c-makima)' }}>{errorHealth}</p>
           )}
 
           {/* Dados carregados com sucesso */}
           {health && (
             <div>
-              {/* Pontuação principal em fonte grande com cor dinâmica */}
-              <p className={`text-5xl font-bold mb-2 ${scoreColor(health.score)}`}>
+              {/* Pontuação principal — cor dinâmica verde/âmbar/vermelho */}
+              <p
+                className="text-5xl font-bold mb-2"
+                style={{ color: scoreColor(health.score) }}
+              >
                 {health.score}
               </p>
-              <p className="text-gray-300 text-sm mb-4">{health.message}</p>
+              <p className="text-sm mb-4" style={{ color: 'var(--t2)' }}>{health.message}</p>
 
               {/* Detalhamento dos componentes do score */}
-              <div className="space-y-1 text-xs text-gray-400">
+              <div className="space-y-1 text-xs" style={{ color: 'var(--t3)' }}>
                 <div className="flex justify-between">
                   <span>Taxa de gasto</span>
-                  <span className="text-gray-200">{health.breakdown.taxa_gasto}/25</span>
+                  <span style={{ color: 'var(--t2)' }}>{health.breakdown.taxa_gasto}/25</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Poupança</span>
-                  <span className="text-gray-200">{health.breakdown.taxa_poupanca}/25</span>
+                  <span style={{ color: 'var(--t2)' }}>{health.breakdown.taxa_poupanca}/25</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Comprometimento</span>
-                  <span className="text-gray-200">{health.breakdown.comprometimento_futuro}/25</span>
+                  <span style={{ color: 'var(--t2)' }}>{health.breakdown.comprometimento_futuro}/25</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Dívida cartão</span>
-                  <span className="text-gray-200">{health.breakdown.divida_cartao}/25</span>
+                  <span style={{ color: 'var(--t2)' }}>{health.breakdown.divida_cartao}/25</span>
                 </div>
               </div>
             </div>
@@ -204,74 +222,97 @@ export default function Dashboard() {
         </div>
 
         {/* ── Card 2: Gastos por Categoria ── */}
-        <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+        <div
+          className="rounded-xl p-6"
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+        >
+          <h2
+            className="text-xs font-semibold uppercase tracking-wider mb-4"
+            style={{ color: 'var(--t3)' }}
+          >
             Gastos por Categoria
           </h2>
 
           {loadingSummary && (
             <div className="flex justify-center py-4">
-              <div className="w-6 h-6 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+              <div
+                className="w-6 h-6 border-2 rounded-full animate-spin"
+                style={{ borderColor: 'var(--border)', borderTopColor: 'var(--t3)' }}
+              />
             </div>
           )}
 
           {errorSummary && (
-            <p className="text-red-400 text-sm">{errorSummary}</p>
+            <p className="text-sm" style={{ color: 'var(--c-makima)' }}>{errorSummary}</p>
           )}
 
           {summary && (
             <div>
-              {/* Lista de categorias com valores — summary é um dict {categoria: total} */}
+              {/* Lista de categorias com valores */}
               <div className="space-y-2">
                 {Object.entries(summary.summary).map(([label, total]) => (
                   <div key={label} className="flex justify-between text-sm">
-                    <span className="text-gray-300">{label}</span>
-                    <span className="text-white font-medium">{formatBRL(total)}</span>
+                    <span style={{ color: 'var(--t2)' }}>{label}</span>
+                    <span style={{ color: 'var(--c-nami)', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatBRL(total)}
+                    </span>
                   </div>
                 ))}
               </div>
 
               {/* Total geral no rodapé do card */}
-              <div className="mt-4 pt-3 border-t border-gray-800 flex justify-between text-sm font-semibold">
-                <span className="text-gray-400">Total</span>
-                <span className="text-white">{formatBRL(summary.total)}</span>
+              <div
+                className="mt-4 pt-3 flex justify-between text-sm font-semibold"
+                style={{ borderTop: '1px solid var(--border)' }}
+              >
+                <span style={{ color: 'var(--t3)' }}>Total</span>
+                <span style={{ color: 'var(--t1)' }}>{formatBRL(summary.total)}</span>
               </div>
             </div>
           )}
         </div>
 
         {/* ── Card 3: Compromissos Futuros ── */}
-        <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+        <div
+          className="rounded-xl p-6"
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+        >
+          <h2
+            className="text-xs font-semibold uppercase tracking-wider mb-4"
+            style={{ color: 'var(--t3)' }}
+          >
             Compromissos — {nextMonth()}
           </h2>
 
           {loadingCommitments && (
             <div className="flex justify-center py-4">
-              <div className="w-6 h-6 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+              <div
+                className="w-6 h-6 border-2 rounded-full animate-spin"
+                style={{ borderColor: 'var(--border)', borderTopColor: 'var(--t3)' }}
+              />
             </div>
           )}
 
           {errorCommitments && (
-            <p className="text-red-400 text-sm">{errorCommitments}</p>
+            <p className="text-sm" style={{ color: 'var(--c-makima)' }}>{errorCommitments}</p>
           )}
 
           {commitments && (
             <div>
               {/* Total de compromissos em destaque */}
-              <p className="text-3xl font-bold text-white mb-3">
+              <p className="text-3xl font-bold mb-3" style={{ color: 'var(--t1)' }}>
                 {formatBRL(commitments.total)}
               </p>
 
               {/* Detalhamento por tipo */}
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-300">Parcelas</span>
-                  <span className="text-white">{formatBRL(commitments.total_parcelas)}</span>
+                  <span style={{ color: 'var(--t2)' }}>Parcelas</span>
+                  <span style={{ color: 'var(--t1)' }}>{formatBRL(commitments.total_parcelas)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-300">Assinaturas</span>
-                  <span className="text-white">{formatBRL(commitments.total_assinaturas)}</span>
+                  <span style={{ color: 'var(--t2)' }}>Assinaturas</span>
+                  <span style={{ color: 'var(--t1)' }}>{formatBRL(commitments.total_assinaturas)}</span>
                 </div>
               </div>
             </div>

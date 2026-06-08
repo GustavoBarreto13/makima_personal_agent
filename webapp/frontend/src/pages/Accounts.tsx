@@ -201,10 +201,10 @@ export default function Accounts() {
 
       {/* Cabeçalho da página */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Contas</h1>
+        <h1 className="text-2xl font-bold text-t1">Contas</h1>
         <button
           onClick={openCreate}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-t1 text-sm font-medium rounded-lg transition-colors"
         >
           Nova Conta
         </button>
@@ -213,7 +213,7 @@ export default function Accounts() {
       {/* Spinner de carregamento */}
       {loading && (
         <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-border-light border-t-t3 rounded-full animate-spin" />
         </div>
       )}
 
@@ -224,10 +224,10 @@ export default function Accounts() {
 
       {/* Tabela de contas */}
       {!loading && !error && (
-        <div className="overflow-x-auto rounded-xl border border-gray-800">
+        <div className="overflow-x-auto rounded-xl border border-border-base">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-800 text-gray-400 text-left">
+              <tr className="bg-bg-elevated text-t3 text-left">
                 <th className="px-4 py-3 font-medium">Nome</th>
                 <th className="px-4 py-3 font-medium">Tipo</th>
                 <th className="px-4 py-3 font-medium">Criada em</th>
@@ -238,30 +238,30 @@ export default function Accounts() {
             <tbody>
               {accounts.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-t4">
                     Nenhuma conta encontrada.
                   </td>
                 </tr>
               )}
               {accounts.map((account) => (
-                <tr key={account.id} className="border-t border-gray-800 bg-gray-900">
-                  <td className="px-4 py-3 text-white font-medium">{account.name}</td>
+                <tr key={account.id} className="border-t border-border-base bg-bg-card">
+                  <td className="px-4 py-3 text-t1 font-medium">{account.name}</td>
                   {/* Badge de tipo da conta */}
                   <td className="px-4 py-3">
-                    <span className="px-2 py-0.5 bg-gray-700 text-gray-300 rounded-full text-xs">
+                    <span className="px-2 py-0.5 bg-gray-700 text-t2 rounded-full text-xs">
                       {account.type}
                     </span>
                   </td>
                   {/* Data de criação formatada em português.
                       Usamos split para evitar o bug de fuso horário UTC em timezones negativos. */}
-                  <td className="px-4 py-3 text-gray-400">
+                  <td className="px-4 py-3 text-t3">
                     {(() => { const [y, m, d] = (account.created_at || '').split('T')[0].split('-'); return `${d}/${m}/${y}` })()}
                   </td>
                   {/* Coluna de saldo: mostra spinner, valor ou vazio */}
-                  <td className="px-4 py-3 text-gray-200">
+                  <td className="px-4 py-3 text-t1">
                     {loadingBalance[account.id] ? (
                       // Spinner inline enquanto o saldo está sendo buscado
-                      <div className="w-4 h-4 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+                      <div className="w-4 h-4 border-2 border-border-light border-t-t3 rounded-full animate-spin" />
                     ) : balances[account.id] !== undefined ? (
                       // Saldo carregado: exibe formatado
                       <span className="font-medium text-green-400">
@@ -269,7 +269,7 @@ export default function Accounts() {
                       </span>
                     ) : (
                       // Saldo ainda não solicitado
-                      <span className="text-gray-600">—</span>
+                      <span className="text-t4">—</span>
                     )}
                   </td>
                   {/* Botão para buscar o saldo desta conta */}
@@ -296,32 +296,32 @@ export default function Accounts() {
           onClick={closeModal}
         >
           <div
-            className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-md mx-4"
+            className="bg-bg-card border border-border-base rounded-xl p-6 w-full max-w-md mx-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-semibold text-white mb-4">Nova Conta</h2>
+            <h2 className="text-lg font-semibold text-t1 mb-4">Nova Conta</h2>
 
             <div className="space-y-3">
 
               {/* Nome da conta */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Nome</label>
+                <label className="block text-sm text-t3 mb-1">Nome</label>
                 <input
                   type="text"
                   value={form.nome}
                   onChange={(e) => handleFormChange('nome', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Ex: Nubank"
                 />
               </div>
 
               {/* Tipo da conta */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Tipo</label>
+                <label className="block text-sm text-t3 mb-1">Tipo</label>
                 <select
                   value={form.tipo}
                   onChange={(e) => handleFormChange('tipo', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 >
                   <option value="corrente">Corrente</option>
                   <option value="poupanca">Poupança</option>
@@ -332,26 +332,26 @@ export default function Accounts() {
 
               {/* Saldo inicial */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Saldo Inicial (R$)</label>
+                <label className="block text-sm text-t3 mb-1">Saldo Inicial (R$)</label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={form.saldo_inicial}
                   onChange={(e) => handleFormChange('saldo_inicial', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="0.00"
                 />
               </div>
 
               {/* Data de início */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Data de Início</label>
+                <label className="block text-sm text-t3 mb-1">Data de Início</label>
                 <input
                   type="date"
                   value={form.data_inicio}
                   onChange={(e) => handleFormChange('data_inicio', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 />
               </div>
             </div>
@@ -365,14 +365,14 @@ export default function Accounts() {
             <div className="flex justify-end gap-3 mt-5">
               <button
                 onClick={closeModal}
-                className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                className="px-4 py-2 text-sm text-t3 hover:text-t1 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-t1 text-sm font-medium rounded-lg transition-colors"
               >
                 {submitting ? 'Salvando...' : 'Criar Conta'}
               </button>

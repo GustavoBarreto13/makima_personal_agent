@@ -2,6 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design tokens — paleta escura quente OKLch ── */
+/* Variáveis CSS globais usadas em todos os componentes.
+   Definidas em :root para ficarem disponíveis em qualquer elemento da página. */
+:root {
+  /* Fundos: do mais escuro (app) ao mais elevado (modais/cards) */
+  --bg-app:      #0e0d0b;   /* fundo principal da aplicação */
+  --bg-sidebar:  #0a0908;   /* sidebar esquerda, levemente mais escura */
+  --bg-card:     #16140f;   /* cards e painéis — um tom acima do fundo */
+  --bg-elevated: #1e1c17;   /* elementos flutuantes (dropdowns, modais) */
+  --bg-hover:    #23211b;   /* estado hover de itens interativos */
+
+  /* Texto: quatro níveis de ênfase (t1 = mais legível, t4 = quase invisível) */
+  --t1: #f0ebe0;   /* título/conteúdo principal */
+  --t2: #c8c0b0;   /* texto secundário */
+  --t3: #9a9185;   /* rótulos, labels, metadados */
+  --t4: #4a4540;   /* texto muito apagado, placeholders */
+
+  /* Bordas */
+  --border:       #2a2825;   /* borda padrão entre elementos */
+  --border-light: #3d3830;   /* borda em estado hover */
+
+  /* ── Cores temáticas por personagem ── */
+  /* Cada personagem tem uma cor associada ao seu domínio no app */
+  --c-makima:  #e85d5d;   /* Makima — vermelho (coordenador) */
+  --c-nami:    #c9a96e;   /* Nami — âmbar dourado (finanças) */
+  --c-frieren: #c4b5fd;   /* Frieren — lavanda (livros) */
+  --c-kaguya:  #f472b6;   /* Kaguya — rosa (tarefas) */
+  --c-kurisu:  #7dd3fc;   /* Kurisu — azul céu (knowledge base) */
+  --c-journal: #a78bfa;   /* Diário — violeta (entradas do diário) */
+
+  /* Versões escuras (dim) — usadas para fundos de badges e highlights */
+  --c-nami-dim:    #3a2e1a;
+  --c-frieren-dim: #2d2650;
+  --c-kaguya-dim:  #3d1a2e;
+  --c-kurisu-dim:  #1a2f3d;
+  --c-journal-dim: #2a1f50;
+  --c-makima-dim:  #3d1a1a;
+}
+
 /* ── Scrollbar customizado — fino e quente ── */
 ::-webkit-scrollbar {
   width: 4px;

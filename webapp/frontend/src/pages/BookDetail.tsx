@@ -71,7 +71,7 @@ const STATUS_BADGE: Record<string, string> = {
   estante:    'bg-amber-900 text-amber-300',
   wishlist:   'bg-indigo-900 text-indigo-300',
   pausado:    'bg-yellow-900 text-yellow-300',
-  abandonado: 'bg-gray-700 text-gray-400',
+  abandonado: 'bg-gray-700 text-t3',
 }
 
 // ── Funções auxiliares ─────────────────────────────────────────────────────────────────────────
@@ -499,7 +499,7 @@ export default function BookDetail() {
     return (
       <div className="flex justify-center py-12">
         {/* Círculo animado com borda parcial — padrão de spinner em Tailwind */}
-        <div className="w-8 h-8 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-border-light border-t-t3 rounded-full animate-spin" />
       </div>
     )
   }
@@ -511,7 +511,7 @@ export default function BookDetail() {
         {/* Botão de volta para não prender o usuário na tela de erro */}
         <button
           onClick={() => navigate('/books')}
-          className="text-sm text-gray-400 hover:text-white transition-colors"
+          className="text-sm text-t3 hover:text-t1 transition-colors"
         >
           ← Voltar
         </button>
@@ -542,24 +542,24 @@ export default function BookDetail() {
         {/* Botão de voltar: navega para a lista de livros sem recarregar a página */}
         <button
           onClick={() => navigate('/books')}
-          className="text-sm text-gray-400 hover:text-white transition-colors flex-shrink-0"
+          className="text-sm text-t3 hover:text-t1 transition-colors flex-shrink-0"
         >
           ← Voltar
         </button>
         {/* Título da página */}
-        <h1 className="text-2xl font-bold text-white">Detalhe do Livro</h1>
+        <h1 className="text-2xl font-bold text-t1">Detalhe do Livro</h1>
       </div>
 
       {/* ── Seção 2: Card do livro ── */}
       {/* position: relative permite posicionar o botão de editar em absolute dentro do card */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 relative">
+      <div className="bg-bg-card border border-border-base rounded-xl p-6 relative">
 
         {/* ── Botão Editar — posicionado no canto superior direito do card ── */}
         {/* Só exibe quando não estamos em modo de edição */}
         {!isEditing && (
           <button
             onClick={() => openEditForm(book)}
-            className="absolute top-4 right-4 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm px-3 py-1 rounded-md transition-colors"
+            className="absolute top-4 right-4 bg-gray-700 hover:bg-gray-600 text-t2 text-sm px-3 py-1 rounded-md transition-colors"
             title="Editar metadados do livro"
           >
             ✏️ Editar
@@ -582,7 +582,7 @@ export default function BookDetail() {
             ) : (
               // Placeholder cinza quando não há imagem de capa disponível
               <div className="w-24 h-32 bg-gray-700 rounded-lg flex-shrink-0 flex items-center justify-center">
-                <span className="text-gray-500 text-2xl">📖</span>
+                <span className="text-t4 text-2xl">📖</span>
               </div>
             )}
 
@@ -591,10 +591,10 @@ export default function BookDetail() {
 
               {/* Título e badge de status na mesma linha */}
               <div className="flex items-start gap-3 flex-wrap">
-                <h2 className="text-xl font-bold text-white leading-tight">{book.title}</h2>
+                <h2 className="text-xl font-bold text-t1 leading-tight">{book.title}</h2>
                 {/* Badge colorido com o status atual do livro */}
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 mt-0.5 ${
-                  STATUS_BADGE[book.status] ?? 'bg-gray-700 text-gray-400'
+                  STATUS_BADGE[book.status] ?? 'bg-gray-700 text-t3'
                 }`}>
                   {/* Troca underscore por espaço para exibição: "quero_ler" → "quero ler" */}
                   {book.status.replace('_', ' ')}
@@ -603,11 +603,11 @@ export default function BookDetail() {
 
               {/* Nome do autor */}
               {book.author && (
-                <p className="text-gray-400 text-sm">{book.author}</p>
+                <p className="text-t3 text-sm">{book.author}</p>
               )}
 
               {/* Metadados secundários: gênero, ano, ISBN e idioma */}
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-t4">
                 {book.genre          && <span>{book.genre}</span>}
                 {book.published_year && <span>{book.published_year}</span>}
                 {book.isbn           && <span>ISBN: {book.isbn}</span>}
@@ -616,7 +616,7 @@ export default function BookDetail() {
               </div>
 
               {/* Datas de início e conclusão */}
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-t4">
                 {book.date_started  && <span>Iniciado: {formatDate(book.date_started)}</span>}
                 {book.date_finished && <span>Concluído: {formatDate(book.date_finished)}</span>}
               </div>
@@ -632,7 +632,7 @@ export default function BookDetail() {
                     />
                   </div>
                   {/* Texto auxiliar mostrando página atual, total e percentual */}
-                  <p className="text-gray-500 text-xs">
+                  <p className="text-t4 text-xs">
                     Página {book.current_page ?? 0} de {book.total_pages ?? '?'} ({progress}%)
                   </p>
                 </div>
@@ -657,7 +657,7 @@ export default function BookDetail() {
                     para truncar em 4 linhas e mostrar "..." no final.
                     Quando expandido (ou texto curto), exibimos tudo.
                   */}
-                  <p className={`text-gray-300 text-sm leading-relaxed ${
+                  <p className={`text-t2 text-sm leading-relaxed ${
                     !descExpanded && descIsLong ? 'line-clamp-4' : ''
                   }`}>
                     {book.description}
@@ -677,10 +677,10 @@ export default function BookDetail() {
               {/* ── Notas pessoais do leitor ── */}
               {/* Exibidas apenas se o usuário tiver escrito notas pessoais */}
               {book.notes && (
-                <div className="mt-2 border-l-2 border-gray-700 pl-3">
+                <div className="mt-2 border-l-2 border-border-base pl-3">
                   {/* Rótulo pequeno indicando que o texto abaixo são notas do leitor */}
-                  <p className="text-gray-500 text-xs mb-0.5">📝 Minhas notas:</p>
-                  <p className="text-gray-400 text-sm italic">{book.notes}</p>
+                  <p className="text-t4 text-xs mb-0.5">📝 Minhas notas:</p>
+                  <p className="text-t3 text-sm italic">{book.notes}</p>
                 </div>
               )}
 
@@ -717,43 +717,43 @@ export default function BookDetail() {
           <div className="space-y-4">
 
             {/* Cabeçalho do formulário */}
-            <h3 className="text-white font-semibold text-base mb-2">Editar Metadados</h3>
+            <h3 className="text-t1 font-semibold text-base mb-2">Editar Metadados</h3>
 
             {/* Grid de dois campos por linha — responsivo (1 col no mobile, 2 no desktop) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
               {/* Campo: Título */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Título</label>
+                <label className="block text-xs text-t3 mb-1">Título</label>
                 <input
                   type="text"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Título do livro"
                 />
               </div>
 
               {/* Campo: Autor */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Autor</label>
+                <label className="block text-xs text-t3 mb-1">Autor</label>
                 <input
                   type="text"
                   value={formData.author}
                   onChange={(e) => setFormData({ ...formData, author: e.target.value })}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Nome do autor"
                 />
               </div>
 
               {/* Campo: URL da Capa (ocupa a linha inteira para poder mostrar o preview) */}
               <div className="md:col-span-2">
-                <label className="block text-xs text-gray-400 mb-1">URL da Capa</label>
+                <label className="block text-xs text-t3 mb-1">URL da Capa</label>
                 <input
                   type="text"
                   value={formData.cover_url}
                   onChange={(e) => setFormData({ ...formData, cover_url: e.target.value })}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="https://..."
                 />
                 {/* Preview da capa — exibido apenas se a URL estiver preenchida */}
@@ -770,113 +770,113 @@ export default function BookDetail() {
 
               {/* Campo: Total de Páginas */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Total de Páginas</label>
+                <label className="block text-xs text-t3 mb-1">Total de Páginas</label>
                 <input
                   type="number"
                   min="1"
                   value={formData.total_pages}
                   onChange={(e) => setFormData({ ...formData, total_pages: e.target.value })}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Ex: 320"
                 />
               </div>
 
               {/* Campo: Gênero */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Gênero</label>
+                <label className="block text-xs text-t3 mb-1">Gênero</label>
                 <input
                   type="text"
                   value={formData.genre}
                   onChange={(e) => setFormData({ ...formData, genre: e.target.value })}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Ex: Ficção científica"
                 />
               </div>
 
               {/* Campo: Ano de Publicação */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Ano de Publicação</label>
+                <label className="block text-xs text-t3 mb-1">Ano de Publicação</label>
                 <input
                   type="number"
                   min="1000"
                   max="2100"
                   value={formData.published_year}
                   onChange={(e) => setFormData({ ...formData, published_year: e.target.value })}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Ex: 1984"
                 />
               </div>
 
               {/* Campo: ISBN */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1">ISBN</label>
+                <label className="block text-xs text-t3 mb-1">ISBN</label>
                 <input
                   type="text"
                   value={formData.isbn}
                   onChange={(e) => setFormData({ ...formData, isbn: e.target.value })}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Ex: 978-3-16-148410-0"
                 />
               </div>
 
               {/* Campo: Idioma */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Idioma</label>
+                <label className="block text-xs text-t3 mb-1">Idioma</label>
                 <input
                   type="text"
                   value={formData.language}
                   onChange={(e) => setFormData({ ...formData, language: e.target.value })}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Ex: Português, English"
                 />
               </div>
 
               {/* Campo: Sinopse (textarea — ocupa a linha inteira por ser texto longo) */}
               <div className="md:col-span-2">
-                <label className="block text-xs text-gray-400 mb-1">Sinopse</label>
+                <label className="block text-xs text-t3 mb-1">Sinopse</label>
                 <textarea
                   rows={4}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none"
                   placeholder="Descrição ou sinopse do livro..."
                 />
               </div>
 
               {/* Campo: Notas Pessoais (textarea — ocupa a linha inteira por ser texto longo) */}
               <div className="md:col-span-2">
-                <label className="block text-xs text-gray-400 mb-1">Notas pessoais</label>
+                <label className="block text-xs text-t3 mb-1">Notas pessoais</label>
                 <textarea
                   rows={4}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none"
                   placeholder="Suas anotações pessoais sobre o livro..."
                 />
               </div>
 
               {/* Campo: URL do anúncio na loja (principalmente para wishlist) */}
               <div className="md:col-span-2">
-                <label className="block text-xs text-gray-400 mb-1">Link do anúncio (Amazon, Estante Virtual, etc.)</label>
+                <label className="block text-xs text-t3 mb-1">Link do anúncio (Amazon, Estante Virtual, etc.)</label>
                 <input
                   type="text"
                   value={formData.store_url}
                   onChange={(e) => setFormData({ ...formData, store_url: e.target.value })}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="https://www.amazon.com.br/..."
                 />
               </div>
 
               {/* Campo: Preço visto na loja (principalmente para wishlist) */}
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Preço (R$)</label>
+                <label className="block text-xs text-t3 mb-1">Preço (R$)</label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={formData.price}
                   onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Ex: 49.90"
                 />
               </div>
@@ -894,7 +894,7 @@ export default function BookDetail() {
               <button
                 onClick={handleSaveMetadata}
                 disabled={saving}
-                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-t1 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
               >
                 {/* Spinner inline mostrado enquanto a requisição está em andamento */}
                 {saving && (
@@ -907,7 +907,7 @@ export default function BookDetail() {
               <button
                 onClick={cancelEdit}
                 disabled={saving}
-                className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-gray-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-t2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
               >
                 Cancelar
               </button>
@@ -924,12 +924,12 @@ export default function BookDetail() {
 
         {/* ── Card de ação 1: Registrar Leitura ── */}
         {/* Permite atualizar a página atual e adicionar notas da sessão */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-white">Registrar Leitura</h3>
+        <div className="bg-bg-card border border-border-base rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-t1">Registrar Leitura</h3>
 
           {/* Campo: página atual atingida nesta sessão */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Página atual</label>
+            <label className="block text-xs text-t3 mb-1">Página atual</label>
             <input
               type="number"
               min="0"
@@ -937,30 +937,30 @@ export default function BookDetail() {
               value={logPage}
               onChange={(e) => setLogPage(e.target.value)}
               placeholder={`Até ${book.total_pages ?? '?'}`}
-              className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
             />
           </div>
 
           {/* Campo: anotações opcionais sobre a sessão de leitura */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Notas (opcional)</label>
+            <label className="block text-xs text-t3 mb-1">Notas (opcional)</label>
             <textarea
               rows={2}
               value={logNotes}
               onChange={(e) => setLogNotes(e.target.value)}
               placeholder="Como foi a leitura hoje?"
-              className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none"
+              className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none"
             />
           </div>
 
           {/* Campo: data da sessão — padrão é hoje */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Data</label>
+            <label className="block text-xs text-t3 mb-1">Data</label>
             <input
               type="date"
               value={logDate}
               onChange={(e) => setLogDate(e.target.value)}
-              className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
             />
           </div>
 
@@ -973,7 +973,7 @@ export default function BookDetail() {
           <button
             onClick={handleSaveLog}
             disabled={savingLog || !logPage}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-t1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
           >
             {savingLog ? 'Salvando...' : 'Salvar'}
           </button>
@@ -981,12 +981,12 @@ export default function BookDetail() {
 
         {/* ── Card de ação 2: Concluir Livro ── */}
         {/* Marca o livro como "lido" com avaliação e notas finais */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-white">Concluir Livro</h3>
+        <div className="bg-bg-card border border-border-base rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-t1">Concluir Livro</h3>
 
           {/* Campo: avaliação de 1 a 5 — o leitor indica o quanto gostou do livro */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Avaliação (1–5)</label>
+            <label className="block text-xs text-t3 mb-1">Avaliação (1–5)</label>
             <input
               type="number"
               min="1"
@@ -995,30 +995,30 @@ export default function BookDetail() {
               value={finishRating}
               onChange={(e) => setFinishRating(e.target.value)}
               placeholder="Ex: 4.5"
-              className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
             />
           </div>
 
           {/* Campo: notas finais sobre o livro inteiro */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Notas finais (opcional)</label>
+            <label className="block text-xs text-t3 mb-1">Notas finais (opcional)</label>
             <textarea
               rows={2}
               value={finishNotes}
               onChange={(e) => setFinishNotes(e.target.value)}
               placeholder="Sua opinião sobre o livro..."
-              className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none"
+              className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none"
             />
           </div>
 
           {/* Campo: data de conclusão — padrão é hoje */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Data de conclusão</label>
+            <label className="block text-xs text-t3 mb-1">Data de conclusão</label>
             <input
               type="date"
               value={finishDate}
               onChange={(e) => setFinishDate(e.target.value)}
-              className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
             />
           </div>
 
@@ -1031,7 +1031,7 @@ export default function BookDetail() {
           <button
             onClick={handleSaveFinish}
             disabled={savingFinish}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-t1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
           >
             {savingFinish ? 'Salvando...' : 'Salvar'}
           </button>
@@ -1039,16 +1039,16 @@ export default function BookDetail() {
 
         {/* ── Card de ação 3: Mudar Status ── */}
         {/* Permite ao usuário alterar o estado do livro (ex: pausar, abandonar, retomar) */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-white">Mudar Status</h3>
+        <div className="bg-bg-card border border-border-base rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-t1">Mudar Status</h3>
 
           {/* Select com todos os estados possíveis — pré-selecionado com o status atual */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Novo status</label>
+            <label className="block text-xs text-t3 mb-1">Novo status</label>
             <select
               value={newStatus}
               onChange={(e) => setNewStatus(e.target.value)}
-              className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
             >
               {/* Os 7 estados possíveis do ciclo de leitura */}
               <option value="lendo">📖 Lendo</option>
@@ -1070,7 +1070,7 @@ export default function BookDetail() {
           <button
             onClick={handleSaveStatus}
             disabled={savingStatus}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-t1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
           >
             {savingStatus ? 'Salvando...' : 'Salvar'}
           </button>
@@ -1081,20 +1081,20 @@ export default function BookDetail() {
       <div className="space-y-3">
 
         {/* Cabeçalho da seção */}
-        <h2 className="text-sm font-semibold text-gray-400 tracking-widest uppercase">
+        <h2 className="text-sm font-semibold text-t3 tracking-widest uppercase">
           Histórico de Sessões
         </h2>
 
         {/* Spinner enquanto o histórico está sendo carregado */}
         {loadingHistory && (
           <div className="flex justify-center py-6">
-            <div className="w-6 h-6 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-border-light border-t-t3 rounded-full animate-spin" />
           </div>
         )}
 
         {/* Estado vazio: nenhuma sessão registrada ainda */}
         {!loadingHistory && logs.length === 0 && (
-          <p className="text-gray-500 text-sm text-center py-6">
+          <p className="text-t4 text-sm text-center py-6">
             Nenhuma sessão registrada ainda.
           </p>
         )}
@@ -1105,12 +1105,12 @@ export default function BookDetail() {
           // Usamos index como key pois as sessões não têm ID próprio
           <div
             key={index}
-            className="bg-gray-900 border border-gray-800 rounded-lg p-3"
+            className="bg-bg-card border border-border-base rounded-lg p-3"
           >
             {/* Linha superior: data e quantidade de páginas lidas */}
             <div className="flex items-center justify-between mb-1">
               {/* Data da sessão no formato brasileiro */}
-              <span className="text-white text-sm font-medium">
+              <span className="text-t1 text-sm font-medium">
                 {formatDate(log.date)}
               </span>
               {/* Total de páginas lidas em destaque — informação mais importante para o leitor */}
@@ -1120,13 +1120,13 @@ export default function BookDetail() {
             </div>
 
             {/* Range de páginas: mostra de onde até onde o leitor chegou nesta sessão */}
-            <p className="text-gray-500 text-xs">
+            <p className="text-t4 text-xs">
               Páginas {log.page_start} → {log.page_end}
             </p>
 
             {/* Notas da sessão — exibidas apenas se o usuário escreveu algo */}
             {log.session_notes && (
-              <p className="text-gray-400 text-xs mt-1 italic">
+              <p className="text-t3 text-xs mt-1 italic">
                 "{log.session_notes}"
               </p>
             )}

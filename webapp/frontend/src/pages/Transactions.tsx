@@ -254,10 +254,10 @@ export default function Transactions() {
 
       {/* Cabeçalho da página com título e botão de criar */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Transações</h1>
+        <h1 className="text-2xl font-bold text-t1">Transações</h1>
         <button
           onClick={openCreate}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-t1 text-sm font-medium rounded-lg transition-colors"
         >
           Nova Transação
         </button>
@@ -266,7 +266,7 @@ export default function Transactions() {
       {/* Estado de carregamento */}
       {loading && (
         <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-border-light border-t-t3 rounded-full animate-spin" />
         </div>
       )}
 
@@ -277,10 +277,10 @@ export default function Transactions() {
 
       {/* Tabela de transações */}
       {!loading && !error && (
-        <div className="overflow-x-auto rounded-xl border border-gray-800">
+        <div className="overflow-x-auto rounded-xl border border-border-base">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-800 text-gray-400 text-left">
+              <tr className="bg-bg-elevated text-t3 text-left">
                 <th className="px-4 py-3 font-medium">Data</th>
                 <th className="px-4 py-3 font-medium">Nome</th>
                 <th className="px-4 py-3 font-medium">Tipo</th>
@@ -293,7 +293,7 @@ export default function Transactions() {
             <tbody>
               {transactions.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-t4">
                     Nenhuma transação encontrada.
                   </td>
                 </tr>
@@ -302,19 +302,19 @@ export default function Transactions() {
                 // Linhas coloridas por tipo: vermelho para despesas, verde para receitas
                 <tr
                   key={tx.id}
-                  className={`border-t border-gray-800 ${
+                  className={`border-t border-border-base ${
                     tx.tipo === 'Receita'
                       ? 'bg-green-950/30'   // Fundo verde suave para receitas
-                      : 'bg-gray-900'        // Fundo padrão para despesas
+                      : 'bg-bg-card'        // Fundo padrão para despesas
                   }`}
                 >
                   {/* Data formatada para o padrão brasileiro.
                       Usamos split em vez de new Date() para evitar o bug de fuso horário UTC
                       que faz datas como "2026-06-15" aparecerem como "14/06/2026" em timezones negativos. */}
-                  <td className="px-4 py-3 text-gray-400">
+                  <td className="px-4 py-3 text-t3">
                     {(() => { const [y, m, d] = (tx.data || '').split('T')[0].split('-'); return `${d}/${m}/${y}` })()}
                   </td>
-                  <td className="px-4 py-3 text-gray-200">{tx.nome}</td>
+                  <td className="px-4 py-3 text-t1">{tx.nome}</td>
                   <td className="px-4 py-3">
                     {/* Badge colorido por tipo */}
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -325,8 +325,8 @@ export default function Transactions() {
                       {tx.tipo}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-300">{tx.categoria}</td>
-                  <td className="px-4 py-3 text-gray-300">{tx.conta}</td>
+                  <td className="px-4 py-3 text-t2">{tx.categoria}</td>
+                  <td className="px-4 py-3 text-t2">{tx.conta}</td>
                   <td className={`px-4 py-3 text-right font-medium ${
                     tx.tipo === 'Receita' ? 'text-green-400' : 'text-red-400'
                   }`}>
@@ -365,10 +365,10 @@ export default function Transactions() {
         >
           {/* Caixa do modal; stopPropagation evita fechar ao clicar dentro */}
           <div
-            className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-md mx-4"
+            className="bg-bg-card border border-border-base rounded-xl p-6 w-full max-w-md mx-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-semibold text-white mb-4">
+            <h2 className="text-lg font-semibold text-t1 mb-4">
               {editingId ? 'Editar Transação' : 'Nova Transação'}
             </h2>
 
@@ -377,37 +377,37 @@ export default function Transactions() {
 
               {/* Campo: Nome da transação */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Nome</label>
+                <label className="block text-sm text-t3 mb-1">Nome</label>
                 <input
                   type="text"
                   value={form.nome}
                   onChange={(e) => handleFormChange('nome', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Ex: Almoço no restaurante"
                 />
               </div>
 
               {/* Campo: Valor */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Valor (R$)</label>
+                <label className="block text-sm text-t3 mb-1">Valor (R$)</label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={form.valor}
                   onChange={(e) => handleFormChange('valor', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="0.00"
                 />
               </div>
 
               {/* Campo: Tipo (Despesa / Receita) */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Tipo</label>
+                <label className="block text-sm text-t3 mb-1">Tipo</label>
                 <select
                   value={form.tipo}
                   onChange={(e) => handleFormChange('tipo', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 >
                   <option value="Despesa">Despesa</option>
                   <option value="Receita">Receita</option>
@@ -416,11 +416,11 @@ export default function Transactions() {
 
               {/* Campo: Categoria */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Categoria</label>
+                <label className="block text-sm text-t3 mb-1">Categoria</label>
                 <select
                   value={form.categoria}
                   onChange={(e) => handleFormChange('categoria', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 >
                   {/* Gera um <option> para cada categoria válida */}
                   {CATEGORIAS.map((cat) => (
@@ -431,24 +431,24 @@ export default function Transactions() {
 
               {/* Campo: Conta */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Conta</label>
+                <label className="block text-sm text-t3 mb-1">Conta</label>
                 <input
                   type="text"
                   value={form.conta}
                   onChange={(e) => handleFormChange('conta', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Ex: Nubank"
                 />
               </div>
 
               {/* Campo: Data */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Data</label>
+                <label className="block text-sm text-t3 mb-1">Data</label>
                 <input
                   type="date"
                   value={form.data}
                   onChange={(e) => handleFormChange('data', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 />
               </div>
             </div>
@@ -462,14 +462,14 @@ export default function Transactions() {
             <div className="flex justify-end gap-3 mt-5">
               <button
                 onClick={closeModal}
-                className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                className="px-4 py-2 text-sm text-t3 hover:text-t1 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-t1 text-sm font-medium rounded-lg transition-colors"
               >
                 {/* Troca o texto enquanto está salvando */}
                 {submitting ? 'Salvando...' : 'Salvar'}

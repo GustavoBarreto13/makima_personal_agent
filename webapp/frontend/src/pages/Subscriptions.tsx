@@ -89,7 +89,7 @@ function statusBadgeClass(status: string): string {
     case 'ativa':     return 'bg-green-900 text-green-300'
     case 'pausada':   return 'bg-yellow-900 text-yellow-300'
     case 'cancelada': return 'bg-red-900 text-red-300'
-    default:          return 'bg-gray-700 text-gray-400'
+    default:          return 'bg-gray-700 text-t3'
   }
 }
 
@@ -235,17 +235,17 @@ export default function Subscriptions() {
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Assinaturas</h1>
+          <h1 className="text-2xl font-bold text-t1">Assinaturas</h1>
           {/* Exibe o total mensal no subtítulo */}
           {!loading && (
-            <p className="text-sm text-gray-400 mt-0.5">
-              Total mensal: <span className="text-white font-medium">{formatBRL(totalMensal)}</span>
+            <p className="text-sm text-t3 mt-0.5">
+              Total mensal: <span className="text-t1 font-medium">{formatBRL(totalMensal)}</span>
             </p>
           )}
         </div>
         <button
           onClick={openCreate}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-t1 text-sm font-medium rounded-lg transition-colors"
         >
           Nova Assinatura
         </button>
@@ -254,7 +254,7 @@ export default function Subscriptions() {
       {/* Spinner */}
       {loading && (
         <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-border-light border-t-t3 rounded-full animate-spin" />
         </div>
       )}
 
@@ -265,10 +265,10 @@ export default function Subscriptions() {
 
       {/* Tabela de assinaturas */}
       {!loading && !error && (
-        <div className="overflow-x-auto rounded-xl border border-gray-800">
+        <div className="overflow-x-auto rounded-xl border border-border-base">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-800 text-gray-400 text-left">
+              <tr className="bg-bg-elevated text-t3 text-left">
                 <th className="px-4 py-3 font-medium">Nome</th>
                 <th className="px-4 py-3 font-medium text-right">Valor</th>
                 <th className="px-4 py-3 font-medium">Ciclo</th>
@@ -281,33 +281,33 @@ export default function Subscriptions() {
             <tbody>
               {subscriptions.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-t4">
                     Nenhuma assinatura encontrada.
                   </td>
                 </tr>
               )}
               {subscriptions.map((sub) => (
-                <tr key={sub.id} className="border-t border-gray-800 bg-gray-900">
+                <tr key={sub.id} className="border-t border-border-base bg-bg-card">
                   <td className="px-4 py-3">
-                    <div className="text-white font-medium">{sub.name}</div>
+                    <div className="text-t1 font-medium">{sub.name}</div>
                     {/* Categoria como subtexto */}
-                    <div className="text-gray-500 text-xs">{sub.categoria}</div>
+                    <div className="text-t4 text-xs">{sub.categoria}</div>
                   </td>
-                  <td className="px-4 py-3 text-right text-gray-200 font-medium">
+                  <td className="px-4 py-3 text-right text-t1 font-medium">
                     {formatBRL(sub.valor)}
                   </td>
                   {/* Badge de ciclo */}
                   <td className="px-4 py-3">
-                    <span className="px-2 py-0.5 bg-gray-700 text-gray-300 rounded-full text-xs">
+                    <span className="px-2 py-0.5 bg-gray-700 text-t2 rounded-full text-xs">
                       {sub.ciclo}
                     </span>
                   </td>
                   {/* Data da próxima cobrança formatada.
                       Usamos split para evitar o bug de fuso horário UTC em timezones negativos. */}
-                  <td className="px-4 py-3 text-gray-400">
+                  <td className="px-4 py-3 text-t3">
                     {(() => { const [y, m, d] = (sub.next_billing || '').split('T')[0].split('-'); return `${d}/${m}/${y}` })()}
                   </td>
-                  <td className="px-4 py-3 text-gray-300">{sub.conta}</td>
+                  <td className="px-4 py-3 text-t2">{sub.conta}</td>
                   {/* Badge de status com cor dinâmica */}
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadgeClass(sub.status)}`}>
@@ -336,7 +336,7 @@ export default function Subscriptions() {
                       </button>
                     ) : (
                       // Status cancelada: nenhuma ação disponível
-                      <span className="text-gray-600 text-xs">—</span>
+                      <span className="text-t4 text-xs">—</span>
                     )}
                   </td>
                 </tr>
@@ -353,21 +353,21 @@ export default function Subscriptions() {
           onClick={closeModal}
         >
           <div
-            className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-md mx-4"
+            className="bg-bg-card border border-border-base rounded-xl p-6 w-full max-w-md mx-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-semibold text-white mb-4">Nova Assinatura</h2>
+            <h2 className="text-lg font-semibold text-t1 mb-4">Nova Assinatura</h2>
 
             <div className="space-y-3">
 
               {/* Nome */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Nome</label>
+                <label className="block text-sm text-t3 mb-1">Nome</label>
                 <input
                   type="text"
                   value={form.nome}
                   onChange={(e) => handleFormChange('nome', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Ex: Netflix"
                 />
               </div>
@@ -375,23 +375,23 @@ export default function Subscriptions() {
               {/* Valor e ciclo lado a lado */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Valor (R$)</label>
+                  <label className="block text-sm text-t3 mb-1">Valor (R$)</label>
                   <input
                     type="number"
                     min="0"
                     step="0.01"
                     value={form.valor}
                     onChange={(e) => handleFormChange('valor', e.target.value)}
-                    className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                     placeholder="0.00"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Ciclo</label>
+                  <label className="block text-sm text-t3 mb-1">Ciclo</label>
                   <select
                     value={form.ciclo}
                     onChange={(e) => handleFormChange('ciclo', e.target.value)}
-                    className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   >
                     <option value="mensal">Mensal</option>
                     <option value="anual">Anual</option>
@@ -401,34 +401,34 @@ export default function Subscriptions() {
 
               {/* Conta */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Conta</label>
+                <label className="block text-sm text-t3 mb-1">Conta</label>
                 <input
                   type="text"
                   value={form.conta}
                   onChange={(e) => handleFormChange('conta', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Ex: Nubank"
                 />
               </div>
 
               {/* Próxima cobrança */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Próxima Cobrança</label>
+                <label className="block text-sm text-t3 mb-1">Próxima Cobrança</label>
                 <input
                   type="date"
                   value={form.next_billing}
                   onChange={(e) => handleFormChange('next_billing', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
               {/* Categoria */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Categoria</label>
+                <label className="block text-sm text-t3 mb-1">Categoria</label>
                 <select
                   value={form.categoria}
                   onChange={(e) => handleFormChange('categoria', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 >
                   {CATEGORIAS.map((cat) => (
                     <option key={cat} value={cat}>{cat}</option>
@@ -446,14 +446,14 @@ export default function Subscriptions() {
             <div className="flex justify-end gap-3 mt-5">
               <button
                 onClick={closeModal}
-                className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                className="px-4 py-2 text-sm text-t3 hover:text-t1 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-t1 text-sm font-medium rounded-lg transition-colors"
               >
                 {submitting ? 'Salvando...' : 'Criar'}
               </button>

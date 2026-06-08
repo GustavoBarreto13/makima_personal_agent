@@ -1,79 +1,207 @@
-// Layout principal da aplicação Makima com barra lateral de navegação.
-// Envolve todas as páginas protegidas, fornecendo o menu lateral e o cabeçalho.
-// Qualquer página que precise do sidebar deve ser renderizada como filho deste componente.
+// Layout principal da aplicação Makima com barra lateral baseada em personagens.
+// Cada personagem representa um domínio (finanças = Nami, livros = Frieren, etc.)
+// e tem sua cor temática que destaca o item ativo.
 
-import { ReactNode } from 'react'           // Tipo do React para representar elementos JSX filhos
-import { NavLink } from 'react-router-dom'  // Componente de link que sabe se está "ativo" na rota atual
+import { ReactNode } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 
-// Interface que define as props aceitas por este componente
 interface LayoutProps {
-  children: ReactNode  // Conteúdo da página atual (ex: <Dashboard />, <Transactions />)
+  children: ReactNode
 }
 
-// Lista de itens do menu lateral com rótulo e caminho de rota
-// Cada item tem um 'label' (texto exibido) e um 'path' (rota React Router)
-const NAV_ITEMS = [
-  { label: 'Dashboard',     path: '/' },
-  { label: 'Transações',    path: '/transactions' },
-  { label: 'Contas',        path: '/accounts' },
-  { label: 'Cartões',       path: '/cards' },
-  { label: 'Empréstimos',   path: '/loans' },
-  { label: 'Orçamentos',    path: '/budgets' },
-  { label: 'Assinaturas',   path: '/subscriptions' },
-  { label: 'Livros',       path: '/books' },
-  // Diário pessoal — editor de bullets com heatmap anual e busca por @menções e #tags
-  { label: 'Diário',       path: '/journal' },
+// ── Estrutura de navegação por domínio ────────────────────────────────────────────────────────
+
+// Cada domínio agrupa um personagem com suas rotas.
+// "mainPath" é o link clicável no sidebar; "activePaths" lista todas as sub-rotas que
+// fazem o item ficar "ativo" (ex: /transactions, /accounts → domínio Nami).
+interface NavDomain {
+  character: string          // Nome do personagem
+  label:     string          // Rótulo exibido (nome do domínio em pt-BR)
+  mainPath:  string          // Rota ao clicar no item
+  activePaths: string[]      // Rotas que ativam este item
+  color:     string          // Variável CSS da cor temática (ex: 'var(--c-nami)')
+  colorDim:  string          // Variável CSS da cor apagada (fundo do badge ativo)
+  sub?: Array<{ label: string; path: string }>  // Sub-links opcionais (expandidos quando ativo)
+}
+
+const DOMAINS: NavDomain[] = [
+  {
+    character:   'Nami',
+    label:       'Finanças',
+    mainPath:    '/',
+    activePaths: ['/', '/transactions', '/accounts', '/cards', '/loans', '/budgets', '/subscriptions'],
+    color:       'var(--c-nami)',
+    colorDim:    'var(--c-nami-dim)',
+    sub: [
+      { label: 'Transações',  path: '/transactions' },
+      { label: 'Contas',      path: '/accounts' },
+      { label: 'Cartões',     path: '/cards' },
+      { label: 'Empréstimos', path: '/loans' },
+      { label: 'Orçamentos',  path: '/budgets' },
+      { label: 'Assinaturas', path: '/subscriptions' },
+    ],
+  },
+  {
+    character:   'Frieren',
+    label:       'Livros',
+    mainPath:    '/books',
+    activePaths: ['/books'],
+    color:       'var(--c-frieren)',
+    colorDim:    'var(--c-frieren-dim)',
+  },
+  {
+    character:   'Diário',
+    label:       'Diário',
+    mainPath:    '/journal',
+    activePaths: ['/journal'],
+    color:       'var(--c-journal)',
+    colorDim:    'var(--c-journal-dim)',
+  },
 ]
 
+// ── Componente principal ───────────────────────────────────────────────────────────────────────
+
 /**
- * Componente de layout com sidebar e header para todas as páginas autenticadas.
+ * Layout com sidebar de personagens e área de conteúdo principal.
  *
  * Args:
- *   children - O conteúdo da página atual a ser renderizado na área principal.
+ *   children - Conteúdo da página atual.
  *
  * Returns:
- *   Estrutura completa com sidebar à esquerda e área de conteúdo à direita.
+ *   Estrutura de dois painéis: sidebar fixa à esquerda + área principal flex-1.
  */
 export default function Layout({ children }: LayoutProps) {
+  // useLocation permite saber a rota atual para aplicar destaque correto
+  const location = useLocation()
+
   return (
-    // Container externo: ocupa toda a tela, organiza sidebar + conteúdo lado a lado
-    <div className="flex min-h-screen bg-gray-950 text-white">
+    // Container externo: full height, side-by-side layout
+    <div
+      className="flex min-h-screen"
+      style={{ background: 'var(--bg-app)', color: 'var(--t1)', fontFamily: '"DM Sans", system-ui, sans-serif' }}
+    >
 
-      {/* ── Sidebar (barra lateral) ── */}
-      <aside className="w-56 shrink-0 flex flex-col bg-gray-900 border-r border-gray-800">
+      {/* ── Sidebar esquerda ── */}
+      <aside
+        className="w-[222px] shrink-0 flex flex-col"
+        style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)' }}
+      >
 
-        {/* Cabeçalho do sidebar: título da aplicação */}
-        <div className="px-6 py-5 border-b border-gray-800">
-          <span className="text-xl font-bold tracking-tight text-white">Makima</span>
+        {/* Logo Makima — tipografia display (Playfair Display) */}
+        <div
+          className="px-6 py-6 shrink-0"
+          style={{ borderBottom: '1px solid var(--border)' }}
+        >
+          {/* Playfair Display + cor Makima para o nome do coordenador */}
+          <span
+            className="text-xl font-semibold tracking-tight"
+            style={{ fontFamily: '"Playfair Display", Georgia, serif', color: 'var(--c-makima)' }}
+          >
+            Makima
+          </span>
+          {/* Subtítulo discreto */}
+          <p className="text-[11px] mt-0.5" style={{ color: 'var(--t4)' }}>personal agent</p>
         </div>
 
-        {/* Lista de links de navegação */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {NAV_ITEMS.map(({ label, path }) => (
-            <NavLink
-              key={path}
-              to={path}
-              // end=true no "/" evita que o Dashboard fique "ativo" em todas as rotas
-              end={path === '/'}
-              className={({ isActive }) =>
-                // Quando a rota está ativa: texto branco e fundo levemente destacado
-                // Quando inativa: texto cinza mais apagado
-                isActive
-                  ? 'flex items-center px-3 py-2 rounded-md text-sm font-semibold text-white bg-gray-800'
-                  : 'flex items-center px-3 py-2 rounded-md text-sm text-gray-400 hover:text-white hover:bg-gray-800 transition-colors'
-              }
-            >
-              {label}
-            </NavLink>
-          ))}
+        {/* Lista de domínios/personagens */}
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          {DOMAINS.map((domain) => {
+            // Verifica se a rota atual pertence a este domínio.
+            // Para "/" usamos exact match; para os demais, startsWith basta.
+            const isActive = domain.activePaths.some(p =>
+              p === '/' ? location.pathname === '/' : location.pathname.startsWith(p)
+            )
+
+            return (
+              <div key={domain.mainPath}>
+                {/* ── Item principal do personagem ── */}
+                <NavLink
+                  to={domain.mainPath}
+                  end={domain.mainPath === '/'}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full"
+                  style={
+                    isActive
+                      ? {
+                          // Ativo: fundo dim da cor do personagem + texto na cor temática
+                          background: domain.colorDim,
+                          color: domain.color,
+                        }
+                      : {
+                          // Inativo: texto apagado
+                          color: 'var(--t3)',
+                        }
+                  }
+                  onMouseEnter={e => {
+                    // Hover sutil: fundo levemente elevado quando não está ativo
+                    if (!isActive) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
+                  }}
+                  onMouseLeave={e => {
+                    if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'
+                  }}
+                >
+                  {/* Indicador colorido à esquerda (bolinha) */}
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ background: isActive ? domain.color : 'var(--t4)' }}
+                  />
+
+                  {/* Nome do personagem como rótulo principal */}
+                  <span className="flex-1">{domain.character}</span>
+
+                  {/* Badge com o label do domínio — visível sempre */}
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded"
+                    style={{
+                      background: isActive ? 'transparent' : 'var(--bg-card)',
+                      color: isActive ? domain.color : 'var(--t4)',
+                      border: `1px solid ${isActive ? domain.color + '44' : 'var(--border)'}`,
+                    }}
+                  >
+                    {domain.label}
+                  </span>
+                </NavLink>
+
+                {/* ── Sub-links (expandidos quando o domínio está ativo) ── */}
+                {/* Aparecem apenas se o domínio tem sub-rotas e está ativo */}
+                {isActive && domain.sub && (
+                  <div className="mt-0.5 ml-4 space-y-0.5">
+                    {domain.sub.map(sub => (
+                      <NavLink
+                        key={sub.path}
+                        to={sub.path}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors"
+                        style={({ isActive: subIsActive }) => ({
+                          color: subIsActive ? domain.color : 'var(--t4)',
+                          background: subIsActive ? domain.colorDim : 'transparent',
+                        })}
+                      >
+                        {/* Traço indicador do sub-item */}
+                        <span
+                          className="w-3 h-px shrink-0"
+                          style={{ background: 'var(--border)' }}
+                        />
+                        {sub.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </nav>
 
-        {/* Rodapé do sidebar: link de logout */}
-        <div className="px-6 py-4 border-t border-gray-800">
-          {/* href="/auth/logout" chama o endpoint do backend que apaga o cookie de sessão */}
+        {/* Rodapé: link de logout */}
+        <div
+          className="px-6 py-4 shrink-0"
+          style={{ borderTop: '1px solid var(--border)' }}
+        >
+          {/* /auth/logout apaga o cookie de sessão no backend */}
           <a
             href="/auth/logout"
-            className="text-sm text-gray-500 hover:text-red-400 transition-colors"
+            className="text-xs transition-colors"
+            style={{ color: 'var(--t4)' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--c-makima)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--t4)' }}
           >
             Sair
           </a>
@@ -81,14 +209,9 @@ export default function Layout({ children }: LayoutProps) {
       </aside>
 
       {/* ── Área principal ── */}
+      {/* flex-1 faz esta área ocupar o espaço restante após a sidebar */}
       <div className="flex-1 flex flex-col overflow-hidden">
-
-        {/* Cabeçalho superior da área de conteúdo */}
-        <header className="h-14 flex items-center px-6 border-b border-gray-800 bg-gray-900 shrink-0">
-          <span className="text-gray-400 text-sm">Makima Personal Agent</span>
-        </header>
-
-        {/* Conteúdo da página atual, passado como children */}
+        {/* Conteúdo da página atual */}
         <main className="flex-1 overflow-auto p-6">
           {children}
         </main>

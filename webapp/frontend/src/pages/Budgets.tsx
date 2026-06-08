@@ -213,15 +213,15 @@ export default function Budgets() {
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Orçamentos</h1>
+          <h1 className="text-2xl font-bold text-t1">Orçamentos</h1>
           {/* Exibe o mês dos orçamentos carregados */}
           {month && (
-            <p className="text-sm text-gray-400 mt-0.5">{month}</p>
+            <p className="text-sm text-t3 mt-0.5">{month}</p>
           )}
         </div>
         <button
           onClick={openCreate}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-t1 text-sm font-medium rounded-lg transition-colors"
         >
           Definir Orçamento
         </button>
@@ -230,7 +230,7 @@ export default function Budgets() {
       {/* Spinner */}
       {loading && (
         <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-border-light border-t-t3 rounded-full animate-spin" />
         </div>
       )}
 
@@ -241,22 +241,22 @@ export default function Budgets() {
 
       {/* Sem orçamentos */}
       {!loading && !error && budgets.length === 0 && (
-        <p className="text-gray-500 text-sm">Nenhum orçamento definido para este mês.</p>
+        <p className="text-t4 text-sm">Nenhum orçamento definido para este mês.</p>
       )}
 
       {/* Lista de orçamentos com barras de progresso */}
       <div className="space-y-3">
         {budgets.map((budget) => (
-          <div key={budget.categoria} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div key={budget.categoria} className="bg-bg-card border border-border-base rounded-xl p-4">
             {/* Linha superior: categoria e valores */}
             <div className="flex items-center justify-between mb-2">
-              <span className="text-white font-medium">{budget.categoria}</span>
+              <span className="text-t1 font-medium">{budget.categoria}</span>
               <div className="text-sm text-right">
                 {/* Valor gasto em relação ao limite */}
-                <span className={budget.pct_usado > 100 ? 'text-red-400' : 'text-gray-200'}>
+                <span className={budget.pct_usado > 100 ? 'text-red-400' : 'text-t1'}>
                   {formatBRL(budget.gasto)}
                 </span>
-                <span className="text-gray-500"> / {formatBRL(budget.limite)}</span>
+                <span className="text-t4"> / {formatBRL(budget.limite)}</span>
               </div>
             </div>
 
@@ -270,7 +270,7 @@ export default function Budgets() {
             </div>
 
             {/* Linha inferior: percentual e saldo restante */}
-            <div className="flex justify-between mt-1.5 text-xs text-gray-500">
+            <div className="flex justify-between mt-1.5 text-xs text-t4">
               <span>{budget.pct_usado.toFixed(1)}% usado</span>
               <span>
                 {budget.gasto <= budget.limite
@@ -290,31 +290,31 @@ export default function Budgets() {
           onClick={closeModal}
         >
           <div
-            className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-sm mx-4"
+            className="bg-bg-card border border-border-base rounded-xl p-6 w-full max-w-sm mx-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-semibold text-white mb-4">Definir Orçamento</h2>
+            <h2 className="text-lg font-semibold text-t1 mb-4">Definir Orçamento</h2>
 
             <div className="space-y-3">
 
               {/* Mês (input type=month aceita formato YYYY-MM) */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Mês</label>
+                <label className="block text-sm text-t3 mb-1">Mês</label>
                 <input
                   type="month"
                   value={form.mes}
                   onChange={(e) => handleFormChange('mes', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
               {/* Categoria */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Categoria</label>
+                <label className="block text-sm text-t3 mb-1">Categoria</label>
                 <select
                   value={form.categoria}
                   onChange={(e) => handleFormChange('categoria', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 >
                   {CATEGORIAS.map((cat) => (
                     <option key={cat} value={cat}>{cat}</option>
@@ -324,14 +324,14 @@ export default function Budgets() {
 
               {/* Limite */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Limite (R$)</label>
+                <label className="block text-sm text-t3 mb-1">Limite (R$)</label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={form.limite}
                   onChange={(e) => handleFormChange('limite', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="500.00"
                 />
               </div>
@@ -346,14 +346,14 @@ export default function Budgets() {
             <div className="flex justify-end gap-3 mt-5">
               <button
                 onClick={closeModal}
-                className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                className="px-4 py-2 text-sm text-t3 hover:text-t1 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-t1 text-sm font-medium rounded-lg transition-colors"
               >
                 {submitting ? 'Salvando...' : 'Salvar'}
               </button>

@@ -220,10 +220,10 @@ export default function Loans() {
 
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Empréstimos</h1>
+        <h1 className="text-2xl font-bold text-t1">Empréstimos</h1>
         <button
           onClick={openCreate}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-t1 text-sm font-medium rounded-lg transition-colors"
         >
           Registrar Empréstimo
         </button>
@@ -232,7 +232,7 @@ export default function Loans() {
       {/* Spinner */}
       {loading && (
         <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-border-light border-t-t3 rounded-full animate-spin" />
         </div>
       )}
 
@@ -243,10 +243,10 @@ export default function Loans() {
 
       {/* Tabela de empréstimos */}
       {!loading && !error && (
-        <div className="overflow-x-auto rounded-xl border border-gray-800">
+        <div className="overflow-x-auto rounded-xl border border-border-base">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-800 text-gray-400 text-left">
+              <tr className="bg-bg-elevated text-t3 text-left">
                 <th className="px-4 py-3 font-medium">Nome</th>
                 <th className="px-4 py-3 font-medium">Tipo</th>
                 <th className="px-4 py-3 font-medium">Sistema</th>
@@ -259,17 +259,17 @@ export default function Loans() {
             <tbody>
               {loans.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-t4">
                     Nenhum empréstimo encontrado.
                   </td>
                 </tr>
               )}
               {loans.map((loan) => (
-                <tr key={loan.id} className="border-t border-gray-800 bg-gray-900">
-                  <td className="px-4 py-3 text-white font-medium">{loan.nome}</td>
+                <tr key={loan.id} className="border-t border-border-base bg-bg-card">
+                  <td className="px-4 py-3 text-t1 font-medium">{loan.nome}</td>
                   {/* Badge de tipo */}
                   <td className="px-4 py-3">
-                    <span className="px-2 py-0.5 bg-gray-700 text-gray-300 rounded-full text-xs">
+                    <span className="px-2 py-0.5 bg-gray-700 text-t2 rounded-full text-xs">
                       {loan.tipo}
                     </span>
                   </td>
@@ -280,7 +280,7 @@ export default function Loans() {
                     </span>
                   </td>
                   {/* Progresso de parcelas: pagas / total */}
-                  <td className="px-4 py-3 text-gray-300">
+                  <td className="px-4 py-3 text-t2">
                     {loan.parcelas_pagas}/{loan.num_parcelas}
                     {/* Barra de progresso das parcelas.
                         Guarda contra divisão por zero quando num_parcelas === 0. */}
@@ -294,19 +294,19 @@ export default function Loans() {
                       />
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right text-gray-200">
+                  <td className="px-4 py-3 text-right text-t1">
                     {formatBRL(loan.valor_parcela)}
                   </td>
                   {/* Coluna de saldo devedor com spinner inline */}
-                  <td className="px-4 py-3 text-gray-200">
+                  <td className="px-4 py-3 text-t1">
                     {loadingBalance[loan.id] ? (
-                      <div className="w-4 h-4 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+                      <div className="w-4 h-4 border-2 border-border-light border-t-t3 rounded-full animate-spin" />
                     ) : balances[loan.id] !== undefined ? (
                       <span className="font-medium text-orange-400">
                         {formatBRL(balances[loan.id]!)}
                       </span>
                     ) : (
-                      <span className="text-gray-600">—</span>
+                      <span className="text-t4">—</span>
                     )}
                   </td>
                   {/* Botão de ver saldo devedor */}
@@ -333,21 +333,21 @@ export default function Loans() {
           onClick={closeModal}
         >
           <div
-            className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-lg mx-4 overflow-y-auto max-h-[90vh]"
+            className="bg-bg-card border border-border-base rounded-xl p-6 w-full max-w-lg mx-4 overflow-y-auto max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-semibold text-white mb-4">Registrar Empréstimo</h2>
+            <h2 className="text-lg font-semibold text-t1 mb-4">Registrar Empréstimo</h2>
 
             <div className="space-y-3">
 
               {/* Nome */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Nome</label>
+                <label className="block text-sm text-t3 mb-1">Nome</label>
                 <input
                   type="text"
                   value={form.nome}
                   onChange={(e) => handleFormChange('nome', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="Ex: Carro Fiesta"
                 />
               </div>
@@ -355,11 +355,11 @@ export default function Loans() {
               {/* Tipo e Sistema lado a lado */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Tipo</label>
+                  <label className="block text-sm text-t3 mb-1">Tipo</label>
                   <select
                     value={form.tipo}
                     onChange={(e) => handleFormChange('tipo', e.target.value)}
-                    className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   >
                     <option value="veiculo">Veículo</option>
                     <option value="consignado">Consignado</option>
@@ -369,11 +369,11 @@ export default function Loans() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Sistema</label>
+                  <label className="block text-sm text-t3 mb-1">Sistema</label>
                   <select
                     value={form.sistema}
                     onChange={(e) => handleFormChange('sistema', e.target.value)}
-                    className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   >
                     <option value="PRICE">PRICE</option>
                     <option value="SAC">SAC</option>
@@ -384,26 +384,26 @@ export default function Loans() {
               {/* Valor original e taxa mensal */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Valor Original (R$)</label>
+                  <label className="block text-sm text-t3 mb-1">Valor Original (R$)</label>
                   <input
                     type="number"
                     min="0"
                     step="0.01"
                     value={form.valor_original}
                     onChange={(e) => handleFormChange('valor_original', e.target.value)}
-                    className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                     placeholder="0.00"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Taxa Mensal (%)</label>
+                  <label className="block text-sm text-t3 mb-1">Taxa Mensal (%)</label>
                   <input
                     type="number"
                     min="0"
                     step="0.01"
                     value={form.taxa_mensal}
                     onChange={(e) => handleFormChange('taxa_mensal', e.target.value)}
-                    className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                     placeholder="1.50"
                   />
                 </div>
@@ -412,26 +412,26 @@ export default function Loans() {
               {/* Prazo e parcelas pagas */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Prazo (meses)</label>
+                  <label className="block text-sm text-t3 mb-1">Prazo (meses)</label>
                   <input
                     type="number"
                     min="1"
                     step="1"
                     value={form.prazo}
                     onChange={(e) => handleFormChange('prazo', e.target.value)}
-                    className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                     placeholder="48"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Parcelas Pagas</label>
+                  <label className="block text-sm text-t3 mb-1">Parcelas Pagas</label>
                   <input
                     type="number"
                     min="0"
                     step="1"
                     value={form.parcelas_pagas}
                     onChange={(e) => handleFormChange('parcelas_pagas', e.target.value)}
-                    className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                     placeholder="0"
                   />
                 </div>
@@ -439,14 +439,14 @@ export default function Loans() {
 
               {/* Valor da parcela */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Valor da Parcela (R$)</label>
+                <label className="block text-sm text-t3 mb-1">Valor da Parcela (R$)</label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={form.valor_parcela}
                   onChange={(e) => handleFormChange('valor_parcela', e.target.value)}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="0.00"
                 />
               </div>
@@ -454,21 +454,21 @@ export default function Loans() {
               {/* Data de início e conta */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Data de Início</label>
+                  <label className="block text-sm text-t3 mb-1">Data de Início</label>
                   <input
                     type="date"
                     value={form.data_inicio}
                     onChange={(e) => handleFormChange('data_inicio', e.target.value)}
-                    className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Conta</label>
+                  <label className="block text-sm text-t3 mb-1">Conta</label>
                   <input
                     type="text"
                     value={form.conta}
                     onChange={(e) => handleFormChange('conta', e.target.value)}
-                    className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                     placeholder="Ex: Bradesco"
                   />
                 </div>
@@ -484,14 +484,14 @@ export default function Loans() {
             <div className="flex justify-end gap-3 mt-5">
               <button
                 onClick={closeModal}
-                className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                className="px-4 py-2 text-sm text-t3 hover:text-t1 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-t1 text-sm font-medium rounded-lg transition-colors"
               >
                 {submitting ? 'Salvando...' : 'Registrar'}
               </button>

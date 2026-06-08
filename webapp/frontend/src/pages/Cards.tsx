@@ -176,10 +176,10 @@ export default function Cards() {
 
       {/* Cabeçalho da página */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Cartões</h1>
+        <h1 className="text-2xl font-bold text-t1">Cartões</h1>
         {/* Exibe dívida total geral na barra superior */}
         {!loading && cards.length > 0 && (
-          <span className="text-sm text-gray-400">
+          <span className="text-sm text-t3">
             Dívida total: <span className="text-red-400 font-semibold">{formatBRL(totalDivida)}</span>
           </span>
         )}
@@ -188,7 +188,7 @@ export default function Cards() {
       {/* Spinner de carregamento */}
       {loading && (
         <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-border-light border-t-t3 rounded-full animate-spin" />
         </div>
       )}
 
@@ -199,25 +199,25 @@ export default function Cards() {
 
       {/* Sem cartões cadastrados */}
       {!loading && !error && cards.length === 0 && (
-        <p className="text-gray-500 text-sm">Nenhum cartão encontrado.</p>
+        <p className="text-t4 text-sm">Nenhum cartão encontrado.</p>
       )}
 
       {/* Grade de cards — cada cartão ocupa um card visual */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {cards.map((card) => (
-          <div key={card.id} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div key={card.id} className="bg-bg-card border border-border-base rounded-xl p-5">
 
             {/* Nome e status do cartão */}
             <div className="flex items-start justify-between mb-3">
               <div>
-                <h3 className="text-white font-semibold">{card.name}</h3>
-                <p className="text-gray-500 text-xs mt-0.5">{card.account_name}</p>
+                <h3 className="text-t1 font-semibold">{card.name}</h3>
+                <p className="text-t4 text-xs mt-0.5">{card.account_name}</p>
               </div>
               {/* Badge de status */}
               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                 card.status === 'ativo'
                   ? 'bg-green-900 text-green-300'
-                  : 'bg-gray-700 text-gray-400'
+                  : 'bg-gray-700 text-t3'
               }`}>
                 {card.status}
               </span>
@@ -225,8 +225,8 @@ export default function Cards() {
 
             {/* Dívida atual e limite */}
             <div className="mb-3">
-              <p className="text-2xl font-bold text-white">{formatBRL(card.divida_atual)}</p>
-              <p className="text-xs text-gray-400 mt-0.5">
+              <p className="text-2xl font-bold text-t1">{formatBRL(card.divida_atual)}</p>
+              <p className="text-xs text-t3 mt-0.5">
                 de {formatBRL(card.limite)} ({card.utilizacao_pct.toFixed(1)}% usado)
               </p>
             </div>
@@ -261,35 +261,35 @@ export default function Cards() {
           onClick={closePayment}
         >
           <div
-            className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-sm mx-4"
+            className="bg-bg-card border border-border-base rounded-xl p-6 w-full max-w-sm mx-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-semibold text-white mb-4">Registrar Pagamento</h2>
+            <h2 className="text-lg font-semibold text-t1 mb-4">Registrar Pagamento</h2>
 
             <div className="space-y-3">
 
               {/* Valor do pagamento */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Valor (R$)</label>
+                <label className="block text-sm text-t3 mb-1">Valor (R$)</label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={paymentForm.valor}
                   onChange={(e) => setPaymentForm((p) => ({ ...p, valor: e.target.value }))}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="0.00"
                 />
               </div>
 
               {/* Data do pagamento */}
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Data</label>
+                <label className="block text-sm text-t3 mb-1">Data</label>
                 <input
                   type="date"
                   value={paymentForm.data}
                   onChange={(e) => setPaymentForm((p) => ({ ...p, data: e.target.value }))}
-                  className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-bg-elevated text-t1 border border-border-base rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
                 />
               </div>
             </div>
@@ -303,14 +303,14 @@ export default function Cards() {
             <div className="flex justify-end gap-3 mt-5">
               <button
                 onClick={closePayment}
-                className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                className="px-4 py-2 text-sm text-t3 hover:text-t1 transition-colors"
               >
                 Cancelar
               </button>
               <button
                 onClick={handlePaymentSubmit}
                 disabled={submitting}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-t1 text-sm font-medium rounded-lg transition-colors"
               >
                 {submitting ? 'Registrando...' : 'Confirmar'}
               </button>
