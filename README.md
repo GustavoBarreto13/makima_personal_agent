@@ -41,7 +41,7 @@ Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na
 | Empréstimos | Saldo devedor, parcelas restantes, registrar pagamento |
 | Orçamentos | Envelopes por categoria com barra de progresso, definir novo limite |
 | Assinaturas | Lista de assinaturas recorrentes com custo mensal total |
-| Livros | Catálogo pessoal com filtros por status, wishlist com preço e link |
+| Livros | Sub-app completa (Frieren): 9 telas — Início com hero e heatmap anual, Biblioteca com grade filtrável, detalhe de livro, Quero Ler, Wishlist com link de loja, Estantes (CRUD), Atividade agrupada por data, Resenhas e Estatísticas do ano |
 | Diário | Bullet journal com timestamp por bullet, heatmap anual, `@pessoas`, `#tags` e busca full-text — sidebar direita com Insights, Pessoas, Tags e Busca |
 
 **Stack:** FastAPI (backend) + React 19 + TypeScript + Tailwind CSS (frontend) — servidos pelo mesmo container.
@@ -188,7 +188,8 @@ makima_personal_agent/
 │   │       ├── components/
 │   │       │   └── Layout.tsx   # sidebar de navegação
 │   │       ├── pages/           # Dashboard, Transactions, Accounts, Cards, Loans,
-│   │       │                    # Budgets, Subscriptions, Books, BookDetail, Journal
+│   │       │                    # Budgets, Subscriptions, Journal
+│   │       │                    # frieren/  — sub-app completa (FrierenShell + 9 screens)
 │   │       └── lib/api.ts       # wrapper de fetch com cookie de sessão automático
 │   └── Dockerfile               # multi-stage: Node 20 (build React) → Python 3.12 (uvicorn)
 ├── scripts/
