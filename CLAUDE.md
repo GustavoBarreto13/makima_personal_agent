@@ -202,6 +202,24 @@ python -m coordinator.main
 
 ---
 
+## Executar scripts no VPS
+
+O hostname do PostgreSQL (`personal-agent-makimadb-k3bxg9`) é um nome de serviço Docker Swarm — **não é resolvível na shell do host**. Rodar `python -m scripts.algo` diretamente no VPS falha com `Temporary failure in name resolution`.
+
+**Sempre executar scripts de migração / manutenção de dentro do container `makima-web`:**
+
+```bash
+# Copiar o script para dentro do container (se ainda não estiver lá)
+docker cp scripts/meu_script.py makima-web:/app/scripts/meu_script.py
+
+# Executar
+docker exec makima-web sh -c "cd /app && python -m scripts.meu_script"
+```
+
+Scripts que já estão no container (imagem inclui `scripts/`) não precisam do `docker cp`.
+
+---
+
 ## Documentação no Obsidian
 
 Assim como no `n8n-python-scripts`, alterações significativas neste repo devem ser refletidas no vault do Obsidian.
