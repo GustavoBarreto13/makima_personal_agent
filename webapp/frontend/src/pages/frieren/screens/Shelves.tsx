@@ -162,7 +162,7 @@ function ShelfView({
         {shelfBooks.map(b => (
           <a
             key={b.id}
-            className="cm-item"
+            className="cover-link"
             onClick={() => navigate('detalhe', b.id)}
             style={{ cursor: 'pointer', textDecoration: 'none' }}
           >

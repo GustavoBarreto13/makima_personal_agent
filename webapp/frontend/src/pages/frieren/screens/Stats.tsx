@@ -195,16 +195,16 @@ export function Stats({ books, heatmap, activity: _activity }: StatsProps) {
           </div>
 
           {/* Container das barras — alinhadas na base para comparação visual */}
-          <div className="monthly-bars">
+          <div className="bars">
             {monthly.map((v, i) => (
-              <div key={i} className="monthly-bar-col">
+              <div key={i} className="bar-col">
                 {/* Valor acima da barra em formato compacto (k = mil) */}
                 <span className="bar-val">
                   {v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v > 0 ? String(v) : ''}
                 </span>
                 {/* Barra com altura proporcional ao máximo mensal */}
                 <div
-                  className="monthly-bar"
+                  className="bar"
                   style={{ height: `${Math.max(2, (v / maxMonthly) * 100)}%` }}
                 />
                 {/* Rótulo do mês abaixo da barra */}

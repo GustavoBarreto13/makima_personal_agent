@@ -19,7 +19,7 @@ export function Toast({ message }: ToastProps) {
 
   return (
     // Classe CSS do design system — posicionamento fixo, fundo escuro, animação de entrada
-    <div className="fr-toast visible">
+    <div className="toast visible">
       {/* Ícone de check verde para reforçar o feedback positivo */}
       <svg
         viewBox="0 0 24 24"

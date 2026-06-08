@@ -187,13 +187,13 @@ export function Home({ books, heatmap, activity, navigate, openLog, tweaks, atua
 
       {/* ── HERO ── */}
       {/* Layout controlado pelo tweak "layoutInicio" via data-layout */}
-      <div className="fr-hero" data-layout={layout}>
+      <div className="hero" data-layout={layout}>
         {/* Sobreposição de ruído granulado para textura no hero */}
         <div className="hero-grain" />
 
         <div className="hero-inner">
           {/* Coluna esquerda: saudação, livro atual, CTAs */}
-          <div className="hero-left">
+          <div className="hero-copy">
             <div className="hero-eyebrow">Biblioteca de Frieren</div>
 
             {/* Saudação dinâmica conforme horário */}
@@ -252,7 +252,7 @@ export function Home({ books, heatmap, activity, navigate, openLog, tweaks, atua
           <div className="stat-label">
             <Icon name="open" style={{ width: 12, height: 12 }} /> Páginas · 7 dias
           </div>
-          <div className="stat-val">{last7.toLocaleString('pt-BR')}</div>
+          <div className="stat-value">{last7.toLocaleString('pt-BR')}</div>
           {/* Sparkline dos últimos 14 dias para visualizar tendência */}
           <Spark data={sparkData} />
           <div className="stat-foot">
@@ -270,9 +270,9 @@ export function Home({ books, heatmap, activity, navigate, openLog, tweaks, atua
           <div className="stat-label">
             <Icon name="atividade" style={{ width: 12, height: 12 }} /> Sequência
           </div>
-          <div className="stat-val">
+          <div className="stat-value">
             {streak}
-            <span className="stat-unit">dias</span>
+            <span className="unit">dias</span>
           </div>
           <div className="stat-foot" style={{ marginTop: 14 }}>
             Dias lendo sem parar
@@ -284,9 +284,9 @@ export function Home({ books, heatmap, activity, navigate, openLog, tweaks, atua
           <div className="stat-label">
             <Icon name="stats" style={{ width: 12, height: 12 }} /> Lidos · {year}
           </div>
-          <div className="stat-val">
+          <div className="stat-value">
             {readThisYear}
-            <span className="stat-unit">livros</span>
+            <span className="unit">livros</span>
           </div>
           <div className="stat-foot" style={{ marginTop: 14 }}>
             No ano de {year}
@@ -298,9 +298,9 @@ export function Home({ books, heatmap, activity, navigate, openLog, tweaks, atua
           <div className="stat-label">
             <Icon name="catalogo" style={{ width: 12, height: 12 }} /> Média diária
           </div>
-          <div className="stat-val">
+          <div className="stat-value">
             {avgDaily}
-            <span className="stat-unit">págs/dia</span>
+            <span className="unit">págs/dia</span>
           </div>
           <div className="stat-foot" style={{ marginTop: 14 }}>
             ≈ {Math.round(avgDaily / 0.6)} min de leitura
@@ -339,7 +339,7 @@ export function Home({ books, heatmap, activity, navigate, openLog, tweaks, atua
 
         {lendo.length > 0 ? (
           // Scroll horizontal para múltiplos livros
-          <div className="now-reading-scroll">
+          <div className="row-scroll">
             {lendo.map(b => (
               <div
                 key={b.id}

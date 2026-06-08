@@ -95,7 +95,7 @@ export function Catalog({ books, navigate, sort, query, initialFilter }: Catalog
       {/* ── TOOLBAR: filtros + contagem de resultados ── */}
       <div className="cat-toolbar">
         {/* Chips de filtro de status */}
-        <div className="filter-chips">
+        <div className="chips">
           {STATUS_FILTERS.map(f => (
             <button
               key={f.id}
@@ -124,7 +124,7 @@ export function Catalog({ books, navigate, sort, query, initialFilter }: Catalog
           // Item da grade — clique navega para o detalhe do livro
           <a
             key={b.id}
-            className="cm-item"
+            className="cover-link"
             onClick={() => navigate('detalhe', b.id)}
             style={{ cursor: 'pointer', textDecoration: 'none' }}
           >

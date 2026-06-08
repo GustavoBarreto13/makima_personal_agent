@@ -183,7 +183,7 @@ export function Activity({ books, activity, navigate }: ActivityProps) {
       {dates.map(date => (
         <div key={date}>
           {/* Rótulo da data: "HOJE", "3 DE MAR", etc. */}
-          <div className="act-day-label">
+          <div className="day-label">
             {relDate(date)} · {fmtDate(date)}
           </div>
 
