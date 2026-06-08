@@ -39,7 +39,7 @@ def run() -> None:
     # ON DELETE CASCADE garante que remover um livro ou estante limpa os vínculos
     cur.execute("""
         CREATE TABLE IF NOT EXISTS book_shelves (
-            book_id    UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            book_id    TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
             shelf_id   UUID NOT NULL REFERENCES shelves(id) ON DELETE CASCADE,
             PRIMARY KEY (book_id, shelf_id)
         )

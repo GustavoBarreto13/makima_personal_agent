@@ -1612,7 +1612,7 @@ def add_book_to_shelf(book_id: str, shelf_id: str) -> dict:
     """
     # ON CONFLICT DO NOTHING evita erro se o vínculo já existir
     run_dml(
-        "INSERT INTO book_shelves(book_id, shelf_id) VALUES(%s::uuid, %s::uuid) ON CONFLICT DO NOTHING",
+        "INSERT INTO book_shelves(book_id, shelf_id) VALUES(%s, %s::uuid) ON CONFLICT DO NOTHING",
         [book_id, shelf_id]
     )
     return {"status": "ok", "message": "Livro adicionado à estante."}
@@ -1629,7 +1629,7 @@ def remove_book_from_shelf(book_id: str, shelf_id: str) -> dict:
         dict com status e mensagem.
     """
     run_dml(
-        "DELETE FROM book_shelves WHERE book_id = %s::uuid AND shelf_id = %s::uuid",
+        "DELETE FROM book_shelves WHERE book_id = %s AND shelf_id = %s::uuid",
         [book_id, shelf_id]
     )
     return {"status": "ok", "message": "Livro removido da estante."}
@@ -1658,7 +1658,7 @@ def get_activity_feed(limit: int = 50) -> dict:
         SELECT
             rl.id::text,
             rl.date::text AS date,
-            rl.book_id::text AS book_id,
+            rl.book_id AS book_id,
             b.title,
             b.author,
             rl.pages_read AS pages,
@@ -1666,7 +1666,7 @@ def get_activity_feed(limit: int = 50) -> dict:
             rl.session_notes AS note,
             b.rating,
             CASE
-                WHEN b.finished_at IS NOT NULL AND b.finished_at::date = rl.date THEN 'finished'
+                WHEN b.date_finished IS NOT NULL AND b.date_finished = rl.date THEN 'finished'
                 WHEN rl.page_start <= 1 THEN 'started'
                 ELSE 'progress'
             END AS type

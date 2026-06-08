@@ -308,7 +308,7 @@ def list_books(
     all_ids = [b["id"] for b in books]
     if all_ids:
         shelf_rows = run_select(
-            "SELECT book_id::text, shelf_id::text FROM book_shelves WHERE book_id = ANY(%s::uuid[])",
+            "SELECT book_id, shelf_id::text FROM book_shelves WHERE book_id = ANY(%s::text[])",
             [all_ids]
         )
         # Agrupa shelf_ids por book_id em um dicionário para lookup O(1)
@@ -634,7 +634,7 @@ def get_book(
 
     # Busca as estantes deste livro para incluir na resposta
     shelf_rows = run_select(
-        "SELECT shelf_id::text FROM book_shelves WHERE book_id = %s::uuid",
+        "SELECT shelf_id::text FROM book_shelves WHERE book_id = %s",
         [book_id]
     )
     serialized["shelves"] = [r["shelf_id"] for r in shelf_rows]

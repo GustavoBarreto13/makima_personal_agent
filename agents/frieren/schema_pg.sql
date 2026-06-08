@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS shelves (
 
 -- ── Relacionamento N:N livro ↔ estante ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS book_shelves (
-    book_id    UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    book_id    TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
     shelf_id   UUID NOT NULL REFERENCES shelves(id) ON DELETE CASCADE,
     PRIMARY KEY (book_id, shelf_id)
 );
