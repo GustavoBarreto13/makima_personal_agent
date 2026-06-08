@@ -571,6 +571,41 @@ def get_spending_trend(months: int = 3) -> dict:
         return {"status": "error", "message": str(e)}
 
 
+def delete_subscription(id: str) -> dict:
+    """Remove permanentemente uma assinatura do sistema (soft delete).
+
+    Diferente de update_subscription(status="cancelada") que apenas muda o status,
+    esta função marca a assinatura como deleted=TRUE, removendo-a de todas as listagens.
+
+    Args:
+        id: ID da assinatura a ser removida.
+
+    Returns:
+        Dicionário com "status": "ok" e nome/valor da assinatura removida,
+        ou "status": "error" se não encontrada.
+    """
+    # Busca nome e valor antes de deletar para exibir na confirmação
+    info_rows = run_select(
+        "SELECT name, valor, ciclo FROM subscriptions WHERE id = %(id)s AND (deleted = FALSE OR deleted IS NULL)",
+        {"id": id},
+    )
+    if not info_rows:
+        return {"status": "error", "message": f"Assinatura não encontrada: {id}"}
+
+    sub = info_rows[0]
+
+    # Soft delete: marca deleted=TRUE e registra o momento
+    sql = "UPDATE subscriptions SET deleted = TRUE, updated_at = NOW() WHERE id = %(id)s"
+    try:
+        run_dml(sql, {"id": id})
+        return {
+            "status": "ok",
+            "message": f"Assinatura '{sub['name']}' (R${float(sub['valor']):.2f}/{sub['ciclo']}) removida.",
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 def create_subscription(
     name: str,
     valor: float,
@@ -649,11 +684,13 @@ def list_subscriptions(status: str = "ativa") -> dict:
     """
     # Busca as assinaturas com o status solicitado, ordenando pela próxima cobrança
     # next_billing::text converte o campo date para string (equivalente ao CAST(... AS STRING) do BigQuery)
+    # Filtra deleted=FALSE para excluir assinaturas removidas via delete_subscription
     sql = """
         SELECT id, name, valor, ciclo, next_billing::text AS next_billing,
                conta, categoria, status, notes
         FROM subscriptions
         WHERE status = %(status)s
+          AND (deleted = FALSE OR deleted IS NULL)
         ORDER BY next_billing
     """
 

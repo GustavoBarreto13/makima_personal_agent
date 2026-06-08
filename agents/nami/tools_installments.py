@@ -240,6 +240,89 @@ def get_future_commitments(month: str) -> dict:
         return {"status": "error", "message": str(e)}
 
 
+def update_installment_group(id: str, name: str = "", notes: str = "") -> dict:
+    """Atualiza campos editáveis de um grupo de parcelamento.
+
+    Apenas nome e notas podem ser alterados — valores financeiros são imutáveis
+    pois as transações individuais já foram geradas.
+
+    Args:
+        id: ID do grupo de parcelas.
+        name: Novo nome da compra (opcional).
+        notes: Novas observações (opcional).
+
+    Returns:
+        Dicionário com "status": "ok" ou "status": "error".
+    """
+    sets = []
+    params = {"id": id}
+
+    if name:
+        sets.append("name = %(name)s")
+        params["name"] = name
+
+    if notes:
+        sets.append("notes = %(notes)s")
+        params["notes"] = notes
+
+    if not sets:
+        return {"status": "error", "message": "Nenhum campo para atualizar"}
+
+    sql = f"UPDATE installment_groups SET {', '.join(sets)} WHERE id = %(id)s AND deleted = FALSE"
+    try:
+        affected = run_dml(sql, params)
+        if affected == 0:
+            return {"status": "error", "message": f"Grupo de parcelas não encontrado: {id}"}
+        return {"status": "ok", "message": "Grupo de parcelas atualizado"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def delete_installment_group_full(id: str) -> dict:
+    """Remove completamente um grupo de parcelamento — todas as parcelas (passadas e futuras).
+
+    Diferente de cancel_installment_group (que remove apenas parcelas futuras),
+    esta função apaga o grupo inteiro incluindo parcelas já pagas.
+    Use quando o parcelamento foi cadastrado por engano.
+
+    Args:
+        id: ID do grupo de parcelas a remover.
+
+    Returns:
+        Dicionário com "status": "ok" e quantidade de parcelas removidas.
+    """
+    # Busca nome antes de deletar para confirmação
+    group_rows = run_select(
+        "SELECT name, num_parcelas FROM installment_groups WHERE id = %(id)s AND deleted = FALSE",
+        {"id": id},
+    )
+    if not group_rows:
+        return {"status": "error", "message": f"Grupo de parcelas não encontrado: {id}"}
+
+    nome = group_rows[0]["name"]
+
+    params = {"id": id}
+
+    # Soft delete em TODAS as transações do grupo (passadas e futuras)
+    sql_tx = """
+        UPDATE transactions
+        SET deleted = TRUE, updated_at = NOW()
+        WHERE installment_group_id = %(id)s AND deleted = FALSE
+    """
+    # Soft delete no grupo
+    sql_group = "UPDATE installment_groups SET deleted = TRUE WHERE id = %(id)s AND deleted = FALSE"
+
+    try:
+        cancelled = run_dml(sql_tx, params)
+        run_dml(sql_group, params)
+        return {
+            "status": "ok",
+            "message": f"Grupo '{nome}' removido completamente — {cancelled} parcelas apagadas.",
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 def cancel_installment_group(id: str) -> dict:
     """Cancela todas as parcelas futuras de um grupo (soft delete).
 

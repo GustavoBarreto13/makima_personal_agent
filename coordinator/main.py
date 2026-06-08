@@ -35,7 +35,7 @@ os.environ.setdefault("GOOGLE_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
 
 from coordinator.agent import create_makima  # noqa: E402 — import após load_dotenv
-from agents.frieren.tools import get_book_by_id, update_book_by_id  # noqa: E402
+from agents.frieren.tools import get_book_by_id, update_book_by_id, delete_book  # noqa: E402
 from agents.nami.tools_accounts import create_account, list_accounts  # noqa: E402
 from agents.nami.tools_credit_cards import register_credit_card  # noqa: E402
 
@@ -140,7 +140,10 @@ def _build_book_menu(data: dict) -> tuple[str, InlineKeyboardMarkup]:
         linha2.append(InlineKeyboardButton("✅ Marcar como lido", callback_data=f"fm_finish:{book_id}"))
     linha2.append(InlineKeyboardButton("❌ Fechar", callback_data="fm_cancel"))
 
-    return texto, InlineKeyboardMarkup([linha1, linha2])
+    # Linha 3: ação destrutiva separada para evitar clique acidental
+    linha3 = [InlineKeyboardButton("🗑️ Apagar livro", callback_data=f"fm_delete:{book_id}")]
+
+    return texto, InlineKeyboardMarkup([linha1, linha2, linha3])
 
 
 async def _edit_menu_message(query, texto: str, keyboard: InlineKeyboardMarkup) -> None:
@@ -257,6 +260,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             menu_data = _book_to_menu_data(book)
             texto, keyboard = _build_book_menu(menu_data)
             await _edit_menu_message(query, texto, keyboard)
+        return
+
+    # ── fm_delete:<id> — pede confirmação antes de apagar o livro ───────────
+    if data_str.startswith("fm_delete:"):
+        book_id = data_str[len("fm_delete:"):]
+        book = get_book_by_id(book_id)
+        titulo = book["title"] if book else book_id
+        teclado = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Confirmar", callback_data=f"fm_delete_confirm:{book_id}"),
+            InlineKeyboardButton("⬅️ Cancelar", callback_data=f"fm_back:{book_id}"),
+        ]])
+        await query.edit_message_text(
+            f"⚠️ Tem certeza que quer apagar <b>{titulo}</b>?\n"
+            "Essa ação remove o livro e todo o histórico de leitura. Não pode ser desfeita.",
+            parse_mode="HTML",
+            reply_markup=teclado,
+        )
+        return
+
+    # ── fm_delete_confirm:<id> — executa o soft delete e remove o teclado ───
+    if data_str.startswith("fm_delete_confirm:"):
+        book_id = data_str[len("fm_delete_confirm:"):]
+        resultado = delete_book(book_id)
+        await query.edit_message_text(resultado, parse_mode="HTML", reply_markup=None)
         return
 
     # ── fm_cancel — remove o teclado e encerra o menu ────────────────────────
@@ -379,21 +406,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 def _book_to_menu_data(book: dict) -> dict:
     """
-    Converte um dict de livro retornado pelo BigQuery no formato
+    Converte um dict de livro retornado pelo PostgreSQL no formato
     esperado por _build_book_menu, incluindo a página atual via logs.
     """
-    from agents.frieren.tools import _run_select, _table
-    from google.cloud import bigquery as _bq
+    from agents.db import run_select
 
-    # Busca a última página registrada (pode não existir se nunca houve log)
-    sql = f"""
-        SELECT page_end
-        FROM `{_table('reading_logs')}`
-        WHERE book_id = @book_id
-        ORDER BY date DESC, created_at DESC
-        LIMIT 1
-    """
-    rows = _run_select(sql, [_bq.ScalarQueryParameter("book_id", "STRING", book["id"])])
+    # Busca a última página registrada via PostgreSQL (pode não existir se nunca houve log)
+    rows = run_select(
+        "SELECT page_end FROM reading_logs WHERE book_id = %(book_id)s ORDER BY date DESC, created_at DESC LIMIT 1",
+        {"book_id": book["id"]},
+    )
     current_page = int(rows[0]["page_end"]) if rows else 0
 
     return {

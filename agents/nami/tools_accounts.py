@@ -107,6 +107,96 @@ def list_accounts(status: str = "ativo") -> dict:
         return {"status": "error", "message": str(e)}
 
 
+def update_account(
+    account_id: str,
+    name: str = "",
+    institution: str = "",
+    notes: str = "",
+    balance_inicial: float = None,
+) -> dict:
+    """Atualiza campos de uma conta financeira existente.
+
+    Só altera os campos informados (não-vazios / não-None).
+
+    Args:
+        account_id: ID da conta a ser atualizada.
+        name: Novo nome da conta (opcional).
+        institution: Nova instituição financeira (opcional).
+        notes: Novas observações (opcional).
+        balance_inicial: Novo saldo inicial em reais (opcional).
+
+    Returns:
+        Dicionário com "status": "ok" ou "status": "error".
+    """
+    sets = ["updated_at = NOW()"]
+    params = {"id": account_id}
+
+    if name:
+        sets.append("name = %(name)s")
+        params["name"] = name
+
+    if institution:
+        sets.append("institution = %(institution)s")
+        params["institution"] = institution
+
+    if notes:
+        sets.append("notes = %(notes)s")
+        params["notes"] = notes
+
+    if balance_inicial is not None:
+        sets.append("balance_inicial = %(balance_inicial)s")
+        params["balance_inicial"] = float(balance_inicial)
+
+    if len(sets) == 1:
+        return {"status": "error", "message": "Nenhum campo para atualizar"}
+
+    sql = f"UPDATE accounts SET {', '.join(sets)} WHERE id = %(id)s"
+    try:
+        affected = run_dml(sql, params)
+        if affected == 0:
+            return {"status": "error", "message": f"Conta não encontrada: {account_id}"}
+        # Invalida o cache para refletir o novo nome se foi alterado
+        _invalidate_accounts_cache()
+        return {"status": "ok", "message": "Conta atualizada"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def delete_account(account_id: str) -> dict:
+    """Encerra uma conta financeira (soft deactivate — muda status para 'encerrado').
+
+    Mantém o histórico de transações intacto. A conta some de list_accounts()
+    mas os dados permanecem para auditoria.
+    Avisa se a conta tem saldo diferente de zero.
+
+    Args:
+        account_id: ID da conta a ser encerrada.
+
+    Returns:
+        Dicionário com "status": "ok" ou "status": "error".
+    """
+    # Busca nome e saldo antes de encerrar para confirmação
+    acc_rows = run_select(
+        "SELECT name, balance_inicial FROM accounts WHERE id = %(id)s AND status != 'encerrado'",
+        {"id": account_id},
+    )
+    if not acc_rows:
+        return {"status": "error", "message": f"Conta não encontrada ou já encerrada: {account_id}"}
+
+    acc = acc_rows[0]
+
+    sql = "UPDATE accounts SET status = 'encerrado', updated_at = NOW() WHERE id = %(id)s"
+    try:
+        run_dml(sql, {"id": account_id})
+        _invalidate_accounts_cache()
+        return {
+            "status": "ok",
+            "message": f"Conta '{acc['name']}' encerrada. Histórico de transações preservado.",
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 def get_account_balance(account_id: str) -> dict:
     """Calcula o saldo atual de uma conta a partir das transações registradas.
 

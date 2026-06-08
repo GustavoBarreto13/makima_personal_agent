@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     status       TEXT        DEFAULT 'ativa',
     notes        TEXT,
     created_at   TIMESTAMPTZ DEFAULT NOW(),
-    updated_at   TIMESTAMPTZ DEFAULT NOW()
+    updated_at   TIMESTAMPTZ DEFAULT NOW(),
+    deleted      BOOLEAN     DEFAULT FALSE
 );
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
 
@@ -105,7 +106,8 @@ CREATE TABLE IF NOT EXISTS loans (
     status               TEXT        DEFAULT 'ativo',
     notes                TEXT,
     created_at           TIMESTAMPTZ DEFAULT NOW(),
-    updated_at           TIMESTAMPTZ DEFAULT NOW()
+    updated_at           TIMESTAMPTZ DEFAULT NOW(),
+    deleted              BOOLEAN     DEFAULT FALSE
 );
 
 -- Tabela de orçamento mensal por categoria

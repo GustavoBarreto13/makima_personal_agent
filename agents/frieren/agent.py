@@ -17,6 +17,8 @@ from agents.frieren.tools import (
     get_reading_stats,
     get_book_history,
     get_book_menu_data,
+    delete_book,
+    delete_reading_log,
 )
 
 # Instrução de personalidade para a Frieren — define tom, comportamento e regras de formatação.
@@ -50,6 +52,12 @@ _FRIEREN_INSTRUCTION = """
     - Exibir menu interativo com botões para gerenciar um livro: use get_book_menu_data
       • Use quando o usuário quiser gerenciar, atualizar, avaliar ou ver detalhes de um livro
       • Retorne APENAS o JSON retornado pela tool, sem nenhum texto adicional
+    - Apagar livro do catálogo: use delete_book(book_id)
+      • Peça confirmação antes: "Tem certeza que quer apagar '[título]'? Essa ação não pode ser desfeita."
+      • Só execute após confirmação explícita do usuário
+    - Apagar log de leitura errado: use delete_reading_log(log_id)
+      • Use quando o usuário registrou uma sessão com página errada ou data errada
+      • Peça confirmação com os detalhes do log antes de executar
 
     COMPORTAMENTO:
     - Chame a ferramenta PRIMEIRO, DEPOIS responda com o resultado — nunca diga "aguarde" ou "vou verificar"
@@ -145,5 +153,7 @@ frieren_agent = Agent(
         get_reading_stats,
         get_book_history,
         get_book_menu_data,
+        delete_book,
+        delete_reading_log,
     ],
 )

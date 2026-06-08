@@ -140,6 +140,107 @@ def register_credit_card(
     }
 
 
+def update_credit_card(
+    card_id: str,
+    name: str = "",
+    limite: float = None,
+    taxa_juros_mensal: float = None,
+    closing_day: int = None,
+    due_day: int = None,
+    notes: str = "",
+) -> dict:
+    """Atualiza campos de um cartão de crédito existente.
+
+    Só altera os campos informados (não-vazios / não-None).
+
+    Args:
+        card_id: ID do cartão a ser atualizado.
+        name: Novo nome do cartão (opcional).
+        limite: Novo limite em reais (opcional).
+        taxa_juros_mensal: Nova taxa mensal decimal, ex.: 0.15 para 15% (opcional).
+        closing_day: Novo dia de fechamento da fatura 1–31 (opcional).
+        due_day: Novo dia de vencimento 1–31 (opcional).
+        notes: Novas observações (opcional).
+
+    Returns:
+        Dicionário com "status": "ok" ou "status": "error".
+    """
+    sets = ["updated_at = NOW()"]
+    params = {"id": card_id}
+
+    if name:
+        sets.append("name = %(name)s")
+        params["name"] = name
+
+    if limite is not None:
+        sets.append("limite = %(limite)s")
+        params["limite"] = float(limite)
+
+    if taxa_juros_mensal is not None:
+        sets.append("taxa_juros_mensal = %(taxa)s")
+        params["taxa"] = float(taxa_juros_mensal)
+
+    if closing_day is not None:
+        sets.append("closing_day = %(closing_day)s")
+        params["closing_day"] = int(closing_day)
+
+    if due_day is not None:
+        sets.append("due_day = %(due_day)s")
+        params["due_day"] = int(due_day)
+
+    if notes:
+        sets.append("notes = %(notes)s")
+        params["notes"] = notes
+
+    if len(sets) == 1:
+        return {"status": "error", "message": "Nenhum campo para atualizar"}
+
+    sql = f"UPDATE credit_cards SET {', '.join(sets)} WHERE id = %(id)s AND status = 'ativo'"
+    try:
+        affected = run_dml(sql, params)
+        if affected == 0:
+            return {"status": "error", "message": f"Cartão não encontrado ou inativo: {card_id}"}
+        # Invalida o cache para refletir o novo nome se foi alterado
+        _invalidate_cards_cache()
+        return {"status": "ok", "message": "Cartão atualizado"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def delete_credit_card(card_id: str) -> dict:
+    """Encerra um cartão de crédito (soft deactivate — muda status para 'encerrado').
+
+    Mantém o histórico de transações vinculadas ao cartão intacto.
+    O cartão some de get_card_debt_summary() mas os dados permanecem para auditoria.
+
+    Args:
+        card_id: ID do cartão a ser encerrado.
+
+    Returns:
+        Dicionário com "status": "ok" ou "status": "error".
+    """
+    # Busca nome antes de encerrar para confirmação
+    card_rows = run_select(
+        "SELECT name FROM credit_cards WHERE id = %(id)s AND status = 'ativo'",
+        {"id": card_id},
+    )
+    if not card_rows:
+        return {"status": "error", "message": f"Cartão não encontrado ou já encerrado: {card_id}"}
+
+    nome = card_rows[0]["name"]
+
+    sql = "UPDATE credit_cards SET status = 'encerrado', updated_at = NOW() WHERE id = %(id)s"
+    try:
+        run_dml(sql, {"id": card_id})
+        _invalidate_cards_cache()
+        return {
+            "status": "ok",
+            "message": f"Cartão '{nome}' encerrado. Histórico de transações preservado.",
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 def get_card_debt_summary() -> dict:
     """Retorna dívida atual de cada cartão ativo e total consolidado.
 

@@ -21,17 +21,22 @@ from agents.nami.tools import (
     create_subscription,
     list_subscriptions,
     update_subscription,
+    delete_subscription,
 )
 from agents.nami.tools_installments import (
     create_installment,
     list_installments,
     get_future_commitments,
     cancel_installment_group,
+    update_installment_group,
+    delete_installment_group_full,
 )
 from agents.nami.tools_accounts import (
     create_account,
     list_accounts,
     get_account_balance,
+    update_account,
+    delete_account,
 )
 from agents.nami.tools_credit_cards import (
     register_credit_card,
@@ -39,6 +44,8 @@ from agents.nami.tools_credit_cards import (
     register_card_payment,
     simulate_debt_payoff,
     get_minimum_payment_cost,
+    update_credit_card,
+    delete_credit_card,
 )
 from agents.nami.tools_loans import (
     register_loan,
@@ -49,11 +56,14 @@ from agents.nami.tools_loans import (
     simulate_accelerated_payment,
     compare_payoff_priority,
     register_loan_payment,
+    update_loan,
+    delete_loan,
 )
 from agents.nami.tools_budgets import (
     set_budget,
     get_budget_status,
     check_category_budget,
+    delete_budget,
 )
 from agents.nami.tools_health import get_financial_health_score
 
@@ -94,6 +104,12 @@ nami_agent = Agent(
           • Cartões de crédito NÃO são contas — não use tipo "cartao_credito". Cadastre o cartão
             com register_credit_card vinculando a uma conta corrente ou poupança existente.
         - Saldo de uma conta: get_account_balance(account_id)
+        - Editar conta: update_account(account_id, name, institution, notes, balance_inicial)
+          • Use list_accounts() para obter o account_id antes de editar
+          • Só passe os campos que precisam mudar
+        - Encerrar conta: delete_account(account_id)
+          • Setar status → "encerrado" (a conta não some, só fica inativa)
+          • SEMPRE peça confirmação antes: "Tem certeza que quer encerrar a conta [nome]?"
         - IMPORTANTE: contas devem ser cadastradas ANTES de registrar transações, cartões ou empréstimos.
           Se o usuário ainda não tem contas, peça para criar primeiro.
         - FLUXO de setup inicial:
@@ -112,6 +128,41 @@ nami_agent = Agent(
         - Cadastrar nova: create_subscription (ciclo: "mensal" ou "anual")
         - Ver ativas: list_subscriptions()
         - Pausar/cancelar/atualizar valor: update_subscription com o id
+        - Remover assinatura: delete_subscription(id)
+          • SEMPRE peça confirmação antes de deletar: "Tem certeza que quer remover [nome]?"
+
+        CARTÕES DE CRÉDITO:
+        - Cadastrar cartão: register_credit_card
+        - Ver dívida: get_card_debt_summary()
+        - Pagar fatura: register_card_payment
+        - Editar cartão: update_credit_card(card_id, name, limite, taxa_juros_mensal, closing_day, due_day, notes)
+          • Use get_card_debt_summary() para ver os card_ids disponíveis
+        - Encerrar cartão: delete_credit_card(card_id)
+          • SEMPRE peça confirmação antes: "Tem certeza que quer encerrar o cartão [nome]?"
+
+        PARCELAS:
+        - Registrar compra parcelada: create_installment
+        - Ver parcelamentos ativos: list_installments()
+        - Cancelar parcelas futuras (mantém histórico): cancel_installment_group(id)
+        - Editar nome/notas de um parcelamento: update_installment_group(id, name, notes)
+          • Valores financeiros são imutáveis (já geraram N transações)
+        - Apagar parcelamento inteiro (incluindo parcelas já pagas): delete_installment_group_full(id)
+          • Use apenas quando o parcelamento foi cadastrado por engano
+          • SEMPRE peça confirmação antes, alertando que remove parcelas passadas também
+
+        EMPRÉSTIMOS:
+        - Cadastrar empréstimo: register_loan
+        - Ver empréstimos: list_loans()
+        - Editar empréstimo: update_loan(loan_id, name, notes, status, parcelas_pagas)
+          • status deve ser "ativo" ou "quitado"
+        - Apagar empréstimo: delete_loan(loan_id)
+          • SEMPRE peça confirmação antes: "Tem certeza que quer apagar o empréstimo [nome]?"
+
+        ORÇAMENTO:
+        - Definir limite: set_budget(month, categoria, limite)
+        - Ver status: get_budget_status(month)
+        - Remover envelope: delete_budget(month, categoria)
+          • SEMPRE peça confirmação antes: "Tem certeza que quer remover o envelope de [categoria] em [mês]?"
 
         COMPORTAMENTO:
         - Chame create_transaction IMEDIATAMENTE quando tiver nome, valor e tipo.
@@ -182,12 +233,14 @@ nami_agent = Agent(
         Erros:
         ❌ Houve um problema: descrição do erro
     """,
-    # Lista de tools disponíveis para a Nami — todas acessam o BigQuery
+    # Lista de tools disponíveis para a Nami — todas acessam o PostgreSQL
     tools=[
         # Contas financeiras
         create_account,
         list_accounts,
         get_account_balance,
+        update_account,
+        delete_account,
         # Transações e consultas
         create_transaction,
         query_expenses,
@@ -199,17 +252,22 @@ nami_agent = Agent(
         create_subscription,
         list_subscriptions,
         update_subscription,
+        delete_subscription,
         # Feature 1: Parcelas
         create_installment,
         list_installments,
         get_future_commitments,
         cancel_installment_group,
+        update_installment_group,
+        delete_installment_group_full,
         # Feature 2: Cartões de crédito
         register_credit_card,
         get_card_debt_summary,
         register_card_payment,
         simulate_debt_payoff,
         get_minimum_payment_cost,
+        update_credit_card,
+        delete_credit_card,
         # Feature 3: Empréstimos e financiamentos
         register_loan,
         list_loans,
@@ -219,10 +277,13 @@ nami_agent = Agent(
         simulate_accelerated_payment,
         compare_payoff_priority,
         register_loan_payment,
+        update_loan,
+        delete_loan,
         # Feature 4: Orçamento por categoria
         set_budget,
         get_budget_status,
         check_category_budget,
+        delete_budget,
         # Feature 5: Score de saúde financeira
         get_financial_health_score,
     ],

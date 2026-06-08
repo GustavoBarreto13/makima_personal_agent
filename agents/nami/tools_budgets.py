@@ -79,6 +79,43 @@ def set_budget(month: str, categoria: str, limite: float) -> dict:
         return {"status": "error", "message": str(e)}
 
 
+def delete_budget(month: str, categoria: str) -> dict:
+    """Remove o envelope de orçamento de uma categoria em um mês específico.
+
+    Args:
+        month: Mês no formato "YYYY-MM" (ex.: "2026-06").
+        categoria: Categoria do envelope a remover.
+
+    Returns:
+        Dicionário com "status": "ok" e confirmação, ou "status": "error".
+    """
+    cat = _match_category(categoria)
+    if cat is None:
+        return {"status": "error", "message": f"Categoria inválida: '{categoria}'"}
+
+    # Verifica se existe antes de deletar para retornar mensagem informativa
+    existing = run_select(
+        "SELECT id, limite FROM budgets WHERE month = %(month)s AND categoria = %(cat)s LIMIT 1",
+        {"month": month, "cat": cat},
+    )
+    if not existing:
+        return {"status": "error", "message": f"Envelope de {cat} em {month} não encontrado."}
+
+    limite = existing[0]["limite"]
+
+    try:
+        run_dml(
+            "DELETE FROM budgets WHERE month = %(month)s AND categoria = %(cat)s",
+            {"month": month, "cat": cat},
+        )
+        return {
+            "status": "ok",
+            "message": f"Envelope de {cat} em {month} (limite R${float(limite):.2f}) removido.",
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 def get_budget_status(month: str) -> dict:
     """Retorna o status de todos os envelopes do mês com gasto real vs. limite.
 

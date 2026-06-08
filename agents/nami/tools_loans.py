@@ -206,6 +206,7 @@ def list_loans(status: str = "ativo") -> dict:
                conta, desconto_folha, status, notes
         FROM loans
         WHERE status = %(status)s
+          AND (deleted = FALSE OR deleted IS NULL)
         ORDER BY taxa_juros_mensal DESC
     """
     params = {"status": status}
@@ -488,6 +489,89 @@ def compare_payoff_priority() -> dict:
             "priority": priority,
             "recomendacao": recomendacao,
         }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def update_loan(
+    loan_id: str,
+    name: str = "",
+    notes: str = "",
+    status: str = "",
+    parcelas_pagas: int = None,
+) -> dict:
+    """Atualiza campos editáveis de um empréstimo.
+
+    Args:
+        loan_id: ID do empréstimo.
+        name: Novo nome (opcional).
+        notes: Novas observações (opcional).
+        status: Novo status — "ativo" ou "quitado" (opcional).
+        parcelas_pagas: Corrige o contador de parcelas pagas (opcional).
+
+    Returns:
+        Dicionário com "status": "ok" ou "status": "error".
+    """
+    sets = ["updated_at = NOW()"]
+    params = {"id": loan_id}
+
+    if name:
+        sets.append("name = %(name)s")
+        params["name"] = name
+
+    if notes:
+        sets.append("notes = %(notes)s")
+        params["notes"] = notes
+
+    if status:
+        if status not in ("ativo", "quitado"):
+            return {"status": "error", "message": "status deve ser 'ativo' ou 'quitado'"}
+        sets.append("status = %(status)s")
+        params["status"] = status
+
+    if parcelas_pagas is not None:
+        sets.append("parcelas_pagas = %(parcelas_pagas)s")
+        params["parcelas_pagas"] = int(parcelas_pagas)
+
+    if len(sets) == 1:
+        return {"status": "error", "message": "Nenhum campo para atualizar"}
+
+    sql = f"UPDATE loans SET {', '.join(sets)} WHERE id = %(id)s"
+    try:
+        affected = run_dml(sql, params)
+        if affected == 0:
+            return {"status": "error", "message": f"Empréstimo não encontrado: {loan_id}"}
+        return {"status": "ok", "message": "Empréstimo atualizado"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def delete_loan(loan_id: str) -> dict:
+    """Remove um empréstimo do sistema (soft delete — marca deleted=TRUE).
+
+    O registro permanece no banco para auditoria mas some das listagens.
+
+    Args:
+        loan_id: ID do empréstimo a remover.
+
+    Returns:
+        Dicionário com "status": "ok" ou "status": "error".
+    """
+    loan_rows = run_select(
+        "SELECT name FROM loans WHERE id = %(id)s AND (deleted = FALSE OR deleted IS NULL)",
+        {"id": loan_id},
+    )
+    if not loan_rows:
+        return {"status": "error", "message": f"Empréstimo não encontrado: {loan_id}"}
+
+    nome = loan_rows[0]["name"]
+
+    try:
+        run_dml(
+            "UPDATE loans SET deleted = TRUE, updated_at = NOW() WHERE id = %(id)s",
+            {"id": loan_id},
+        )
+        return {"status": "ok", "message": f"Empréstimo '{nome}' removido."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

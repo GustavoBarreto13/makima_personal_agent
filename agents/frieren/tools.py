@@ -1267,6 +1267,69 @@ def get_book_menu_data(book_query: str) -> str:
     return _json.dumps(data, ensure_ascii=False)
 
 
+def delete_book(book_id: str) -> str:
+    """Apaga um livro do catálogo com soft delete (marca deleted=TRUE).
+
+    Preserva o registro no banco para histórico — o livro some das listagens
+    mas os dados ficam intactos para auditoria.
+
+    Args:
+        book_id: UUID do livro na tabela books.
+
+    Returns:
+        Mensagem de confirmação com o título do livro removido, ou erro se não encontrado.
+    """
+    # Busca o título antes de deletar para exibir na confirmação
+    title_rows = run_select(
+        "SELECT title FROM books WHERE id = %(book_id)s AND deleted = FALSE",
+        {"book_id": book_id},
+    )
+    if not title_rows:
+        return f"❌ Livro com ID '{book_id}' não encontrado ou já foi removido."
+
+    titulo = title_rows[0]["title"]
+
+    # Soft delete: marca deleted=TRUE e atualiza o timestamp
+    run_dml(
+        "UPDATE books SET deleted = TRUE, updated_at = %(now)s WHERE id = %(book_id)s",
+        {"book_id": book_id, "now": _now()},
+    )
+
+    return f"🗑️ <b>{titulo}</b> removido do catálogo."
+
+
+def delete_reading_log(log_id: str) -> str:
+    """Remove permanentemente um registro de sessão de leitura pelo ID.
+
+    Usado para corrigir logs errados (página errada, data errada, etc.).
+    Diferente de livros, logs são apagados fisicamente pois não há motivo
+    de auditoria para manter sessões incorretas.
+
+    Args:
+        log_id: UUID do log na tabela reading_logs.
+
+    Returns:
+        Mensagem de confirmação com data e páginas do log removido, ou erro se não encontrado.
+    """
+    # Busca detalhes do log antes de deletar para exibir na confirmação
+    log_rows = run_select(
+        "SELECT book_title, date, pages_read FROM reading_logs WHERE id = %(log_id)s",
+        {"log_id": log_id},
+    )
+    if not log_rows:
+        return f"❌ Log de leitura '{log_id}' não encontrado."
+
+    log = log_rows[0]
+
+    # Hard delete: remove permanentemente o registro
+    run_dml("DELETE FROM reading_logs WHERE id = %(log_id)s", {"log_id": log_id})
+
+    return (
+        f"🗑️ Log removido: <b>{log['book_title']}</b> — "
+        f"{log['date']} · {log['pages_read']} páginas."
+    )
+
+
 def get_book_by_id(book_id: str) -> dict | None:
     """Busca um livro pelo ID exato — usado pelo coordinator para re-exibir o menu."""
     sql = "SELECT * FROM books WHERE id = %(book_id)s AND deleted = FALSE"
