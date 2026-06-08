@@ -51,6 +51,13 @@ from agents.frieren.tools import (
 # Função de consulta estruturada — retorna dict (não string HTML)
 from agents.frieren.tools import get_book_by_id
 
+# Tools de estantes, feed de atividade e heatmap — retornam dicts com status
+from agents.frieren.tools import (
+    get_shelves, create_shelf, update_shelf, delete_shelf,
+    add_book_to_shelf, remove_book_from_shelf,
+    get_activity_feed, get_heatmap_data,
+)
+
 # _fetch_google_books: busca metadados de livros na Google Books API
 from agents.frieren.tools import _fetch_google_books
 
@@ -211,6 +218,20 @@ class UpdateBookMetadataBody(BaseModel):
     price: Optional[float] = None         # Preço visto na loja (wishlist)
 
 
+class CreateShelfBody(BaseModel):
+    """Dados para criar uma nova estante."""
+    name: str                                              # Nome da estante (obrigatório)
+    description: str = ""                                  # Descrição opcional
+    accent: str = "oklch(0.58 0.085 195)"                 # Cor oklch da estante
+
+
+class UpdateShelfBody(BaseModel):
+    """Dados para atualizar uma estante (todos os campos opcionais)."""
+    name: Optional[str] = None           # Novo nome da estante
+    description: Optional[str] = None   # Nova descrição
+    accent: Optional[str] = None        # Nova cor oklch
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # ENDPOINTS COM PATH FIXO — devem vir ANTES dos endpoints com {book_id}
 #
@@ -281,6 +302,26 @@ def list_books(
 
     # Converte tipos não-serializáveis (date, datetime) para string em cada linha
     books = [_serialize_book(dict(row)) for row in rows]
+
+    # Busca estantes em lote para todos os livros (evita N+1 queries)
+    # ANY(%s::uuid[]) aceita uma lista Python como array PostgreSQL
+    all_ids = [b["id"] for b in books]
+    if all_ids:
+        shelf_rows = run_select(
+            "SELECT book_id::text, shelf_id::text FROM book_shelves WHERE book_id = ANY(%s::uuid[])",
+            [all_ids]
+        )
+        # Agrupa shelf_ids por book_id em um dicionário para lookup O(1)
+        shelf_map: dict = {}
+        for r in shelf_rows:
+            shelf_map.setdefault(r["book_id"], []).append(r["shelf_id"])
+        # Adiciona a lista de estantes a cada livro serializado
+        for b in books:
+            b["shelves"] = shelf_map.get(b["id"], [])
+    else:
+        # Sem livros no catálogo — garante campo shelves presente para o frontend
+        for b in books:
+            b["shelves"] = []
 
     return {"status": "ok", "books": books}
 
@@ -405,6 +446,145 @@ def search_google_books(
     return {"status": "ok", "results": results}
 
 
+# ── Heatmap de páginas por dia ─────────────────────────────────────────────
+@router.get("/heatmap")
+def get_heatmap(year: Optional[int] = None, user: dict = Depends(require_user)) -> dict:
+    """Retornar total de páginas lidas por dia para o heatmap de leitura.
+
+    Args:
+        year: Ano para filtrar (opcional — sem filtro retorna todos os anos).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e lista de {date, pages}.
+    """
+    # get_heatmap_data retorna dict com status, não string HTML — usa _check_result interno
+    result = get_heatmap_data(year)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
+# ── Feed de atividade global ────────────────────────────────────────────────
+@router.get("/activity")
+def get_activity(limit: int = 50, user: dict = Depends(require_user)) -> dict:
+    """Retornar feed de atividade de leitura (todos os livros, mais recentes primeiro).
+
+    Args:
+        limit: Número máximo de entradas a retornar (padrão 50).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e lista de ActivityEntry.
+    """
+    result = get_activity_feed(limit)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
+# ── CRUD de Estantes ────────────────────────────────────────────────────────
+@router.get("/shelves")
+def list_shelves(user: dict = Depends(require_user)) -> dict:
+    """Listar todas as estantes com contagem de livros.
+
+    Returns:
+        Dicionário com "status": "ok" e lista de estantes.
+    """
+    result = get_shelves()
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
+@router.post("/shelves", status_code=201)
+def create_new_shelf(body: CreateShelfBody, user: dict = Depends(require_user)) -> dict:
+    """Criar uma nova estante.
+
+    Args:
+        body: Dados da estante (name obrigatório; description e accent opcionais).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e id da estante criada.
+    """
+    result = create_shelf(body.name, body.description, body.accent)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
+@router.patch("/shelves/{shelf_id}")
+def update_existing_shelf(shelf_id: str, body: UpdateShelfBody, user: dict = Depends(require_user)) -> dict:
+    """Atualizar nome, descrição ou cor de uma estante.
+
+    Args:
+        shelf_id: UUID da estante.
+        body: Campos a atualizar (todos opcionais).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+    """
+    result = update_shelf(shelf_id, body.name, body.description, body.accent)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
+@router.delete("/shelves/{shelf_id}")
+def delete_existing_shelf(shelf_id: str, user: dict = Depends(require_user)) -> dict:
+    """Remover uma estante e seus vínculos com livros.
+
+    Args:
+        shelf_id: UUID da estante.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+    """
+    result = delete_shelf(shelf_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
+@router.post("/shelves/{shelf_id}/books/{book_id}", status_code=201)
+def add_book_to_existing_shelf(shelf_id: str, book_id: str, user: dict = Depends(require_user)) -> dict:
+    """Adicionar um livro a uma estante (idempotente).
+
+    Args:
+        shelf_id: UUID da estante.
+        book_id: UUID do livro.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+    """
+    result = add_book_to_shelf(book_id, shelf_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
+@router.delete("/shelves/{shelf_id}/books/{book_id}")
+def remove_book_from_existing_shelf(shelf_id: str, book_id: str, user: dict = Depends(require_user)) -> dict:
+    """Remover um livro de uma estante.
+
+    Args:
+        shelf_id: UUID da estante.
+        book_id: UUID do livro.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+    """
+    result = remove_book_from_shelf(book_id, shelf_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # ENDPOINTS COM PARÂMETRO DE PATH — devem vir DEPOIS dos paths fixos
 # (ver nota sobre ordem de rotas no início da seção de paths fixos)
@@ -451,6 +631,13 @@ def get_book(
     # Serializa o livro (converte date/datetime para string) e adiciona current_page
     serialized = _serialize_book(dict(book))
     serialized["current_page"] = current_page
+
+    # Busca as estantes deste livro para incluir na resposta
+    shelf_rows = run_select(
+        "SELECT shelf_id::text FROM book_shelves WHERE book_id = %s::uuid",
+        [book_id]
+    )
+    serialized["shelves"] = [r["shelf_id"] for r in shelf_rows]
 
     return {"status": "ok", "book": serialized}
 

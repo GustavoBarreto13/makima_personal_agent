@@ -1511,3 +1511,207 @@ def update_book_metadata_by_id(
         return f"❌ Livro com ID '{book_id}' não encontrado."
 
     return "✅ Livro atualizado com sucesso."
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Estantes de livros
+# ═══════════════════════════════════════════════════════════════════════════
+
+def get_shelves() -> dict:
+    """Retorna todas as estantes com contagem de livros em cada uma.
+
+    Returns:
+        dict com status e lista de estantes (id, name, description, accent, book_count).
+    """
+    # Faz LEFT JOIN com book_shelves para contar livros sem excluir estantes vazias
+    rows = run_select("""
+        SELECT s.id::text, s.name, s.description, s.accent,
+               COUNT(bs.book_id)::int AS book_count
+        FROM shelves s
+        LEFT JOIN book_shelves bs ON bs.shelf_id = s.id
+        GROUP BY s.id, s.name, s.description, s.accent
+        ORDER BY s.name
+    """)
+    return {"status": "ok", "shelves": rows}
+
+
+def create_shelf(name: str, description: str = "", accent: str = "oklch(0.58 0.085 195)") -> dict:
+    """Cria uma nova estante.
+
+    Args:
+        name: Nome da estante.
+        description: Descrição opcional.
+        accent: Cor oklch da estante (ex: 'oklch(0.58 0.06 160)').
+
+    Returns:
+        dict com status e id da estante criada.
+    """
+    # Insere a estante e retorna o UUID gerado pelo PostgreSQL
+    rows = run_select(
+        "INSERT INTO shelves(name, description, accent) VALUES(%s, %s, %s) RETURNING id::text",
+        [name, description, accent]
+    )
+    return {"status": "ok", "id": rows[0]["id"]}
+
+
+def update_shelf(shelf_id: str, name: str = None, description: str = None, accent: str = None) -> dict:
+    """Atualiza campos de uma estante.
+
+    Args:
+        shelf_id: UUID da estante.
+        name: Novo nome (opcional).
+        description: Nova descrição (opcional).
+        accent: Nova cor oklch (opcional).
+
+    Returns:
+        dict com status e mensagem.
+    """
+    # Monta a lista de cláusulas SET dinamicamente — só inclui campos fornecidos
+    updates = []
+    params = []
+    if name is not None:
+        updates.append("name = %s")
+        params.append(name)
+    if description is not None:
+        updates.append("description = %s")
+        params.append(description)
+    if accent is not None:
+        updates.append("accent = %s")
+        params.append(accent)
+    if not updates:
+        return {"status": "error", "message": "Nenhum campo fornecido para atualizar."}
+    # O shelf_id vai como último parâmetro para o WHERE
+    params.append(shelf_id)
+    run_dml(f"UPDATE shelves SET {', '.join(updates)} WHERE id = %s::uuid", params)
+    return {"status": "ok", "message": "Estante atualizada com sucesso."}
+
+
+def delete_shelf(shelf_id: str) -> dict:
+    """Remove uma estante (e seus vínculos com livros via CASCADE).
+
+    Args:
+        shelf_id: UUID da estante.
+
+    Returns:
+        dict com status e mensagem.
+    """
+    # CASCADE no book_shelves cuida de apagar os vínculos automaticamente
+    run_dml("DELETE FROM shelves WHERE id = %s::uuid", [shelf_id])
+    return {"status": "ok", "message": "Estante removida com sucesso."}
+
+
+def add_book_to_shelf(book_id: str, shelf_id: str) -> dict:
+    """Adiciona um livro a uma estante (idempotente — ON CONFLICT DO NOTHING).
+
+    Args:
+        book_id: UUID do livro.
+        shelf_id: UUID da estante.
+
+    Returns:
+        dict com status e mensagem.
+    """
+    # ON CONFLICT DO NOTHING evita erro se o vínculo já existir
+    run_dml(
+        "INSERT INTO book_shelves(book_id, shelf_id) VALUES(%s::uuid, %s::uuid) ON CONFLICT DO NOTHING",
+        [book_id, shelf_id]
+    )
+    return {"status": "ok", "message": "Livro adicionado à estante."}
+
+
+def remove_book_from_shelf(book_id: str, shelf_id: str) -> dict:
+    """Remove um livro de uma estante.
+
+    Args:
+        book_id: UUID do livro.
+        shelf_id: UUID da estante.
+
+    Returns:
+        dict com status e mensagem.
+    """
+    run_dml(
+        "DELETE FROM book_shelves WHERE book_id = %s::uuid AND shelf_id = %s::uuid",
+        [book_id, shelf_id]
+    )
+    return {"status": "ok", "message": "Livro removido da estante."}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Feed de atividade global e heatmap
+# ═══════════════════════════════════════════════════════════════════════════
+
+def get_activity_feed(limit: int = 50) -> dict:
+    """Retorna as entradas mais recentes do diário de leitura (todos os livros).
+
+    Infere o tipo de cada entrada:
+    - 'started': primeiro log de um livro (page_start <= 1)
+    - 'finished': livro concluído (finished_at bate com a data do log)
+    - 'progress': demais logs
+
+    Args:
+        limit: Número máximo de entradas a retornar.
+
+    Returns:
+        dict com status e lista de ActivityEntry.
+    """
+    # CASE classifica cada log automaticamente sem campo extra no banco
+    rows = run_select("""
+        SELECT
+            rl.id::text,
+            rl.date::text AS date,
+            rl.book_id::text AS book_id,
+            b.title,
+            b.author,
+            rl.pages_read AS pages,
+            rl.page_end AS page,
+            rl.session_notes AS note,
+            b.rating,
+            CASE
+                WHEN b.finished_at IS NOT NULL AND b.finished_at::date = rl.date THEN 'finished'
+                WHEN rl.page_start <= 1 THEN 'started'
+                ELSE 'progress'
+            END AS type
+        FROM reading_logs rl
+        JOIN books b ON b.id = rl.book_id
+        WHERE b.deleted = FALSE
+        ORDER BY rl.date DESC, rl.created_at DESC
+        LIMIT %s
+    """, [limit])
+    return {"status": "ok", "activity": rows}
+
+
+def get_heatmap_data(year: int = None) -> dict:
+    """Retorna o total de páginas lidas por dia para o heatmap de leitura.
+
+    Agrega reading_logs por data. Se year for especificado, filtra pelo ano.
+
+    Args:
+        year: Ano para filtrar (ex: 2026). Se None, retorna todos os registros.
+
+    Returns:
+        dict com status e lista de {date: YYYY-MM-DD, pages: int}.
+
+    Example:
+        >>> get_heatmap_data(2026)
+        {"status": "ok", "heatmap": [{"date": "2026-01-01", "pages": 42}, ...]}
+    """
+    if year:
+        # Filtra pelo ano informado via EXTRACT para evitar conversão de string
+        rows = run_select("""
+            SELECT rl.date::text AS date, COALESCE(SUM(rl.pages_read), 0)::int AS pages
+            FROM reading_logs rl
+            JOIN books b ON b.id = rl.book_id
+            WHERE b.deleted = FALSE AND EXTRACT(YEAR FROM rl.date) = %s
+            GROUP BY rl.date
+            ORDER BY rl.date
+        """, [year])
+    else:
+        # Sem filtro de ano — retorna todos os registros históricos
+        rows = run_select("""
+            SELECT rl.date::text AS date, COALESCE(SUM(rl.pages_read), 0)::int AS pages
+            FROM reading_logs rl
+            JOIN books b ON b.id = rl.book_id
+            WHERE b.deleted = FALSE
+            GROUP BY rl.date
+            ORDER BY rl.date
+        """)
+    return {"status": "ok", "heatmap": rows}

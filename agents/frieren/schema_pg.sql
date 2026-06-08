@@ -45,3 +45,21 @@ CREATE TABLE IF NOT EXISTS reading_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_reading_logs_date    ON reading_logs(date);
 CREATE INDEX IF NOT EXISTS idx_reading_logs_book_id ON reading_logs(book_id);
+
+-- ── Estantes de livros ──────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS shelves (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    accent      TEXT NOT NULL DEFAULT 'oklch(0.58 0.085 195)',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ── Relacionamento N:N livro ↔ estante ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS book_shelves (
+    book_id    UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    shelf_id   UUID NOT NULL REFERENCES shelves(id) ON DELETE CASCADE,
+    PRIMARY KEY (book_id, shelf_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_book_shelves_shelf ON book_shelves(shelf_id);
