@@ -208,6 +208,21 @@ export interface ApiActivityEntry {
 // Um dia no heatmap de leitura (páginas lidas por data)
 export interface ApiHeatmapDay { date: string; pages: number }
 
+// Resultado de busca na Google Books API (retornado por GET /api/books/search-google).
+// Espelha exatamente o dict montado por _fetch_google_books no backend (tools.py:331).
+export interface GoogleBookResult {
+  google_books_id: string
+  title: string
+  author: string
+  total_pages: number | null
+  isbn: string | null
+  cover_url: string | null
+  description: string
+  genre: string
+  language: string
+  published_year: number | null
+}
+
 // ── Funções tipadas da API de livros ─────────────────────────────────────────
 
 /**
@@ -266,4 +281,25 @@ export const booksApi = {
   /** Atualiza metadados pessoais: URL da loja, notas e avaliação */
   updateMetadata: (bookId: string, data: Partial<{ store_url: string; notes: string; rating: number }>) =>
     api.patch<{ status: string; message: string }>(`/api/books/${bookId}/metadata`, data),
+
+  /** Busca livros na Google Books API por título, autor ou ISBN (até 8 resultados) */
+  searchGoogle: (q: string) =>
+    api.get<{ status: string; results: GoogleBookResult[] }>(
+      `/api/books/search-google?q=${encodeURIComponent(q)}`,
+    ),
+
+  /** Adiciona um livro ao catálogo. status deve ser em português (padrão "quero_ler").
+   *  Enriquece metadados via Google Books API se google_books_id for fornecido. */
+  addBook: (body: {
+    title: string
+    status?: string
+    google_books_id?: string
+    author?: string
+    total_pages?: number
+  }) =>
+    api.post<{ status: string; message: string }>('/api/books', body),
+
+  /** Remove um livro do catálogo (soft delete — marca deleted=TRUE no banco) */
+  deleteBook: (bookId: string) =>
+    api.del<{ status: string; message: string }>(`/api/books/${bookId}`),
 }
