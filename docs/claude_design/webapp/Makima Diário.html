@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Makima — Diário</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      /* Backgrounds */
+      --bg-app:     oklch(0.10 0.010 258);
+      --bg-sidebar: oklch(0.125 0.012 258);
+      --bg-main:    oklch(0.087 0.008 258);
+      --bg-panel:   oklch(0.125 0.012 258);
+      --bg-card:    oklch(0.165 0.014 258);
+      --bg-hover:   oklch(0.192 0.014 258);
+      --border:     oklch(0.225 0.012 258 / 0.5);
+      --border-s:   oklch(0.185 0.010 258 / 0.45);
+
+      /* Text scale */
+      --t1: oklch(0.93 0.006 258);
+      --t2: oklch(0.68 0.010 258);
+      --t3: oklch(0.48 0.010 258);
+      --t4: oklch(0.33 0.008 258);
+
+      /* Character accent colors */
+      --c-makima:  oklch(0.66 0.145 5);
+      --c-nami:    oklch(0.74 0.168 57);
+      --c-frieren: oklch(0.77 0.118 184);
+      --c-kaguya:  oklch(0.72 0.165 340);
+      --c-kurisu:  oklch(0.64 0.180 13);
+      --c-journal: oklch(0.70 0.088 253);
+      --c-accent:  oklch(0.77 0.155 152);   /* mint green */
+
+      /* Character bg tints */
+      --nami-tint:    oklch(0.74 0.168 57  / 0.13);
+      --frieren-tint: oklch(0.77 0.118 184 / 0.13);
+      --kaguya-tint:  oklch(0.72 0.165 340 / 0.10);
+      --kurisu-tint:  oklch(0.64 0.180 13  / 0.10);
+      --journal-tint: oklch(0.70 0.088 253 / 0.11);
+
+      /* Typography */
+      --serif: 'Playfair Display', Georgia, serif;
+      --sans:  'DM Sans', system-ui, sans-serif;
+
+      --r-sm: 6px;
+      --r-md: 10px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: var(--sans);
+      background: var(--bg-app);
+      color: var(--t1);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── Shell ──────────────────────────────────────────────── */
+    .app { display: flex; height: 100vh; overflow: hidden; }
+
+    /* ─── Sidebar ────────────────────────────────────────────── */
+    .sidebar {
+      width: 222px;
+      flex-shrink: 0;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sb-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 18px 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .sb-mark {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      overflow: hidden;
+      flex-shrink: 0;
+      border: 1.5px solid oklch(0.66 0.145 5 / 0.5);
+      box-shadow: 0 0 0 2px oklch(0.66 0.145 5 / 0.12);
+    }
+    .sb-mark img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      object-position: center 15%;
+      display: block;
+    }
+    .sb-name {
+      font-size: 15px; font-weight: 600;
+      letter-spacing: -0.025em;
+      color: var(--t1);
+    }
+
+    .sb-nav {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 0 8px;
+      scrollbar-width: none;
+    }
+    .sb-nav::-webkit-scrollbar { display: none; }
+
+    /* Top-level dashboard link */
+    .nav-top {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 12px 7px 14px;
+      margin: 0 8px;
+      border-radius: var(--r-sm);
+      cursor: pointer;
+      color: var(--t3);
+      font-size: 13px; font-weight: 400;
+      transition: background 0.12s, color 0.12s;
+      text-decoration: none;
+    }
+    .nav-top:hover { background: var(--bg-hover); color: var(--t1); }
+    .nav-top-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--c-makima);
+      flex-shrink: 0;
+      opacity: 0.7;
+    }
+
+    .sb-divider {
+      height: 1px;
+      background: var(--border-s);
+      margin: 7px 14px;
+    }
+
+    /* Character sections */
+    .nav-section { margin: 2px 0; }
+
+    .sec-trigger {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px 8px 14px;
+      margin: 0 8px;
+      border-radius: var(--r-sm);
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .sec-trigger:hover { background: var(--bg-hover); }
+
+    /* Avatar circles */
+    .avatar {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 600;
+      flex-shrink: 0;
+      letter-spacing: 0;
+      transition: transform 0.12s;
+    }
+    .sec-trigger:hover .avatar { transform: scale(1.05); }
+    .av-nami    { background: var(--nami-tint);    color: var(--c-nami);    border: 1px solid oklch(0.74 0.168 57  / 0.28); }
+    .av-frieren { background: var(--frieren-tint); color: var(--c-frieren); border: 1px solid oklch(0.77 0.118 184 / 0.28); }
+    .av-kaguya  { background: var(--kaguya-tint);  color: var(--c-kaguya);  border: 1px solid oklch(0.72 0.165 340 / 0.22); }
+    .av-kurisu  { background: var(--kurisu-tint);  color: var(--c-kurisu);  border: 1px solid oklch(0.64 0.180 13  / 0.22); }
+    .av-journal { background: var(--journal-tint); color: var(--c-journal); border: 1.5px dashed oklch(0.70 0.088 253 / 0.38); }
+
+    .sec-info { flex: 1; min-width: 0; }
+    .sec-name {
+      display: block; font-size: 13px; font-weight: 500;
+      color: var(--t1); line-height: 1.2;
+    }
+    .sec-role {
+      display: block; font-size: 10px; color: var(--t3);
+      text-transform: uppercase; letter-spacing: 0.06em; line-height: 1.4;
+    }
+
+    .sec-chevron {
+      color: var(--t4); font-size: 11px;
+      transition: transform 0.2s;
+      flex-shrink: 0; line-height: 1;
+    }
+    .nav-section.expanded .sec-chevron { transform: rotate(90deg); }
+
+    .sec-items { display: none; padding: 2px 8px 4px; }
+    .nav-section.expanded .sec-items { display: block; }
+
+    .sub-item {
+      display: block;
+      padding: 5px 10px 5px 52px;
+      margin: 1px 0;
+      border-radius: var(--r-sm);
+      font-size: 12.5px; color: var(--t3);
+      cursor: pointer;
+      transition: background 0.10s, color 0.10s;
+      text-decoration: none;
+    }
+    .sub-item:hover { background: var(--bg-hover); color: var(--t1); }
+    .sub-item.cur { color: var(--c-journal); background: var(--journal-tint); }
+
+    /* Active section — Journal */
+    .nav-section.nav-active .sec-trigger {
+      background: var(--journal-tint);
+      border-radius: var(--r-sm);
+    }
+    .nav-section.nav-active .sec-name { color: var(--c-journal); }
+
+    /* Coming-soon sections */
+    .nav-section.nav-cs { opacity: 0.32; pointer-events: none; }
+
+    /* Badges */
+    .badge-tbd {
+      font-size: 9px; white-space: nowrap; flex-shrink: 0;
+      padding: 2px 6px; border-radius: 10px; letter-spacing: 0.03em;
+      background: var(--journal-tint);
+      color: var(--c-journal);
+      border: 1px solid oklch(0.70 0.088 253 / 0.25);
+    }
+    .badge-phase {
+      font-size: 9px; white-space: nowrap; flex-shrink: 0;
+      padding: 2px 6px; border-radius: 10px; letter-spacing: 0.03em;
+      background: var(--bg-card); color: var(--t4);
+      border: 1px solid var(--border-s);
+    }
+
+    .sb-footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .logout {
+      font-size: 12px; color: var(--t4);
+      cursor: pointer; transition: color 0.12s;
+      text-decoration: none; display: inline-block;
+    }
+    .logout:hover { color: var(--c-kurisu); }
+
+    /* ─── Journal main ───────────────────────────────────────── */
+    .journal-main {
+      flex: 1; display: flex; flex-direction: column;
+      background: var(--bg-main);
+      overflow: hidden; position: relative;
+    }
+
+    .j-topbar {
+      height: 46px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 28px;
+      border-bottom: 1px solid var(--border);
+    }
+    .j-topbar-label {
+      font-size: 11px; color: var(--t4);
+      text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500;
+    }
+    .j-topbar-actions { display: flex; gap: 3px; }
+    .icon-btn {
+      width: 28px; height: 28px;
+      border-radius: var(--r-sm);
+      border: none; background: transparent;
+      color: var(--t3); font-size: 16px; line-height: 1;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.12s, color 0.12s;
+      font-family: var(--sans);
+    }
+    .icon-btn:hover { background: var(--bg-card); color: var(--t1); }
+
+    .j-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 54px 60px 80px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .j-scroll::-webkit-scrollbar { width: 3px; }
+    .j-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .j-content { max-width: 580px; margin: 0 auto; }
+
+    /* Date header */
+    .j-entry-num {
+      font-size: 11px; color: var(--t4); letter-spacing: 0.08em;
+      margin-bottom: 4px; font-weight: 500;
+      text-transform: uppercase;
+    }
+    .j-date-str { font-size: 13px; color: var(--t3); margin-bottom: 4px; }
+    .j-dayname {
+      font-family: var(--serif);
+      font-size: 58px; font-weight: 700;
+      letter-spacing: -0.03em; line-height: 1;
+      color: var(--t1); margin-bottom: 44px;
+    }
+
+    /* Bullets list */
+    .bullets { display: flex; flex-direction: column; }
+
+    .bullet {
+      display: flex; gap: 15px;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--border-s);
+    }
+    .bullet:last-child { border-bottom: none; }
+    .bullet:hover .b-dot { opacity: 1; }
+
+    .b-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--c-journal);
+      flex-shrink: 0;
+      margin-top: 8px;
+      opacity: 0.4;
+      transition: opacity 0.15s;
+    }
+
+    .b-body { flex: 1; min-width: 0; }
+    .b-text {
+      font-size: 14.5px; line-height: 1.72;
+      color: var(--t1); font-weight: 300;
+      text-wrap: pretty;
+    }
+    .b-time {
+      display: block; margin-top: 3px;
+      font-size: 10.5px; color: var(--t4);
+      letter-spacing: 0.04em;
+    }
+
+    /* Inline mention highlights */
+    .mp { color: var(--c-accent); font-weight: 400; }   /* @pessoa */
+    .mt { color: var(--c-nami);   font-weight: 400; }   /* #tag */
+
+    /* New-bullet placeholder */
+    .bullet-add {
+      display: flex; gap: 15px;
+      padding: 11px 0;
+      opacity: 0.22; cursor: text;
+      transition: opacity 0.15s;
+    }
+    .bullet-add:hover { opacity: 0.48; }
+    .bullet-add .b-dot { background: var(--t4); opacity: 1; }
+    .bullet-add-text {
+      font-size: 14.5px; color: var(--t3);
+      font-weight: 300; font-style: italic; margin-top: 1px;
+    }
+
+    /* Bottom navigation bar */
+    .j-footer {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 50px;
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+      border-top: 1px solid var(--border);
+      background: oklch(0.087 0.008 258 / 0.94);
+      backdrop-filter: blur(14px);
+    }
+    .nav-btn {
+      height: 30px; min-width: 30px; padding: 0 9px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--t2);
+      font-size: 12px; font-family: var(--sans);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+      transition: background 0.10s, color 0.10s, border-color 0.10s;
+    }
+    .nav-btn:hover { background: var(--bg-hover); color: var(--t1); border-color: oklch(0.38 0.012 258); }
+    .nav-btn.nb-today { color: var(--c-journal); border-color: oklch(0.70 0.088 253 / 0.38); }
+
+    /* ─── Insights panel ─────────────────────────────────────── */
+    .ins-panel {
+      width: 266px; flex-shrink: 0;
+      background: var(--bg-panel);
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    .ins-tabs {
+      display: flex; border-bottom: 1px solid var(--border);
+      padding: 0 14px; flex-shrink: 0;
+    }
+    .ins-tab {
+      padding: 12px 8px 10px;
+      font-size: 11.5px; color: var(--t3);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.12s;
+      white-space: nowrap;
+    }
+    .ins-tab.active {
+      color: var(--c-journal);
+      border-bottom-color: var(--c-journal);
+      font-weight: 500;
+    }
+    .ins-tab:hover:not(.active) { color: var(--t2); }
+
+    .ins-scroll {
+      flex: 1; overflow-y: auto;
+      padding: 20px 16px;
+      scrollbar-width: none;
+      display: flex; flex-direction: column; gap: 24px;
+    }
+    .ins-scroll::-webkit-scrollbar { display: none; }
+
+    .ins-section-title {
+      font-size: 10px; font-weight: 500;
+      text-transform: uppercase; letter-spacing: 0.10em;
+      color: var(--t3); margin-bottom: 11px;
+    }
+
+    /* Heatmap */
+    .hm-grid {
+      display: grid;
+      grid-template-rows: repeat(7, 3px);
+      grid-auto-flow: column;
+      gap: 1.5px;
+    }
+    .hm-cell { height: 3px; border-radius: 1px; }
+    .hm-legend {
+      display: flex; align-items: center; gap: 5px;
+      margin-top: 8px; font-size: 9px; color: var(--t4);
+      justify-content: flex-end;
+    }
+    .hm-swatches { display: flex; gap: 1.5px; }
+    .hm-sw { width: 9px; height: 9px; border-radius: 1px; }
+
+    /* People */
+    .person-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 5px 7px; border-radius: var(--r-sm);
+      cursor: pointer; transition: background 0.10s;
+    }
+    .person-row:hover { background: var(--bg-hover); }
+    .person-name { font-size: 13px; color: var(--t2); }
+    .person-count {
+      font-size: 11px; font-weight: 500; color: var(--c-accent);
+      background: oklch(0.77 0.155 152 / 0.12);
+      padding: 1px 7px; border-radius: 10px;
+    }
+
+    /* Tags */
+    .tag-wrap { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tag {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 3px 8px; border-radius: 20px;
+      font-size: 11.5px;
+      background: var(--bg-card); color: var(--t2);
+      border: 1px solid var(--border-s);
+      cursor: pointer; transition: all 0.10s;
+    }
+    .tag:hover { background: var(--bg-hover); color: var(--t1); border-color: oklch(0.36 0.012 258); }
+    .tag .cnt { font-size: 9.5px; color: var(--t4); }
+
+    /* Search */
+    .search-box {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 7px 11px;
+      font-family: var(--sans);
+      font-size: 13px; color: var(--t1);
+      outline: none; transition: border-color 0.15s;
+    }
+    .search-box::placeholder { color: var(--t4); }
+    .search-box:focus { border-color: var(--c-journal); }
+
+    /* ─── Tweak transitions ──────────────────────────────────── */
+    .sidebar   { transition: width 0.34s cubic-bezier(0.4,0,0.2,1); }
+    .ins-panel { transition: width 0.34s cubic-bezier(0.4,0,0.2,1); }
+    .j-dayname { transition: font-size 0.26s ease, margin-bottom 0.26s ease; }
+    .j-scroll  { transition: padding 0.26s ease; }
+    .b-text    { transition: font-size 0.2s ease, line-height 0.2s ease; }
+
+    /* ─── Modo: Compacto ─────────────────────────────────────── */
+    .modo-compacto .j-dayname  { font-size: 34px; margin-bottom: 24px; }
+    .modo-compacto .j-scroll   { padding: 32px 44px 70px; }
+    .modo-compacto .j-content  { max-width: 540px; }
+    .modo-compacto .b-text     { font-size: 13.5px; line-height: 1.60; }
+    .modo-compacto .bullet     { padding: 7px 0; }
+    .modo-compacto .j-date-str { font-size: 12px; }
+
+    /* ─── Modo: Foco ─────────────────────────────────────────── */
+    .modo-foco .sidebar    { width: 0; min-width: 0; overflow: hidden; border-right: none; }
+    .modo-foco .ins-panel  { width: 0; min-width: 0; overflow: hidden; border-left: none; }
+    .modo-foco .j-topbar   { border-color: transparent; background: transparent; }
+    .modo-foco .j-topbar-label { opacity: 0; transition: opacity 0.2s; }
+    .modo-foco .j-content  { max-width: 700px; }
+    .modo-foco .j-dayname  { font-size: 76px; margin-bottom: 56px; }
+    .modo-foco .j-scroll   { padding: 64px 96px 88px; }
+
+    /* ─── Tipografia: Técnica ────────────────────────────────── */
+    .tipo-tecnica .j-dayname {
+      font-family: var(--sans);
+      font-size: 40px; font-weight: 600; letter-spacing: -0.01em;
+    }
+    .tipo-tecnica .b-text {
+      font-family: 'DM Mono', 'Courier New', monospace;
+      font-size: 13px; line-height: 1.88; font-weight: 400;
+    }
+    .tipo-tecnica .b-time {
+      font-family: 'DM Mono', 'Courier New', monospace;
+      font-size: 10px; letter-spacing: 0.06em;
+    }
+    .tipo-tecnica .j-entry-num  { font-family: 'DM Mono', 'Courier New', monospace; }
+    .tipo-tecnica .bullet-add-text { font-family: 'DM Mono', 'Courier New', monospace; font-size: 13px; }
+
+    /* ─── Tipografia: Suave ──────────────────────────────────── */
+    .tipo-suave .j-dayname {
+      font-family: var(--sans);
+      font-size: 54px; font-weight: 600; letter-spacing: -0.04em;
+    }
+    .tipo-suave .b-text { font-weight: 400; font-size: 15px; line-height: 1.82; }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div class="app">
+
+  <!-- ══ SIDEBAR ══════════════════════════════════════════════ -->
+  <aside class="sidebar">
+
+    <div class="sb-brand">
+      <div class="sb-mark">
+        <img src="https://static.wikia.nocookie.net/deathbattle/images/8/8f/Portrait.makima.png/revision/latest?cb=20250330155125" alt="Makima" />
+      </div>
+      <span class="sb-name">Makima</span>
+    </div>
+
+    <nav class="sb-nav">
+
+      <a class="nav-top" href="#">
+        <span class="nav-top-dot"></span>
+        Dashboard
+      </a>
+
+      <div class="sb-divider"></div>
+
+      <!-- ── Nami · Finanças ── -->
+      <div class="nav-section" id="sec-nami">
+        <div class="sec-trigger" onclick="toggleSec('sec-nami')">
+          <div class="avatar av-nami">N</div>
+          <div class="sec-info">
+            <span class="sec-name">Nami</span>
+            <span class="sec-role">Finanças</span>
+          </div>
+          <span class="sec-chevron">›</span>
+        </div>
+        <div class="sec-items">
+          <a class="sub-item" href="#">Transações</a>
+          <a class="sub-item" href="#">Contas</a>
+          <a class="sub-item" href="#">Cartões</a>
+          <a class="sub-item" href="#">Empréstimos</a>
+          <a class="sub-item" href="#">Orçamentos</a>
+          <a class="sub-item" href="#">Assinaturas</a>
+        </div>
+      </div>
+
+      <!-- ── Frieren · Livros ── -->
+      <div class="nav-section" id="sec-frieren">
+        <div class="sec-trigger" onclick="toggleSec('sec-frieren')">
+          <div class="avatar av-frieren">F</div>
+          <div class="sec-info">
+            <span class="sec-name">Frieren</span>
+            <span class="sec-role">Livros</span>
+          </div>
+          <span class="sec-chevron">›</span>
+        </div>
+        <div class="sec-items">
+          <a class="sub-item" href="#">Catálogo</a>
+          <a class="sub-item" href="#">Wishlist</a>
+        </div>
+      </div>
+
+      <!-- ── Diário · TBD (active) ── -->
+      <div class="nav-section nav-active">
+        <div class="sec-trigger" style="cursor:default;">
+          <div class="avatar av-journal">?</div>
+          <div class="sec-info">
+            <span class="sec-name">Diário</span>
+            <span class="sec-role">Bullet journal</span>
+          </div>
+          <span class="badge-tbd">personagem em breve</span>
+        </div>
+      </div>
+
+      <div class="sb-divider"></div>
+
+      <!-- ── Kaguya · Tarefas (fase 2) ── -->
+      <div class="nav-section nav-cs">
+        <div class="sec-trigger">
+          <div class="avatar av-kaguya">K</div>
+          <div class="sec-info">
+            <span class="sec-name">Kaguya</span>
+            <span class="sec-role">Tarefas · Agenda</span>
+          </div>
+          <span class="badge-phase">fase 2</span>
+        </div>
+      </div>
+
+      <!-- ── Kurisu · Conhecimento (fase 3) ── -->
+      <div class="nav-section nav-cs">
+        <div class="sec-trigger">
+          <div class="avatar av-kurisu">Kr</div>
+          <div class="sec-info">
+            <span class="sec-name">Kurisu</span>
+            <span class="sec-role">Conhecimento</span>
+          </div>
+          <span class="badge-phase">fase 3</span>
+        </div>
+      </div>
+
+    </nav>
+
+    <div class="sb-footer">
+      <a class="logout" href="#">Sair</a>
+    </div>
+
+  </aside>
+
+  <!-- ══ JOURNAL MAIN ═════════════════════════════════════════ -->
+  <main class="journal-main">
+
+    <div class="j-topbar">
+      <span class="j-topbar-label">Diário Pessoal</span>
+      <div class="j-topbar-actions">
+        <button class="icon-btn" title="Nova entrada">+</button>
+        <button class="icon-btn" title="Mais opções" style="font-size:18px;letter-spacing:0.05em;">⋯</button>
+      </div>
+    </div>
+
+    <div class="j-scroll">
+      <div class="j-content">
+
+        <p class="j-entry-num">#142</p>
+        <p class="j-date-str">7 de junho de 2026</p>
+        <h1 class="j-dayname">Domingo</h1>
+
+        <div class="bullets">
+
+          <div class="bullet">
+            <div class="b-dot"></div>
+            <div class="b-body">
+              <p class="b-text">Acordei às 8h sem alarme pela primeira vez na semana. Tomei café devagar e li um pouco do <span class="mt">#Duna</span> antes de abrir o computador.</p>
+              <span class="b-time">09:12 h</span>
+            </div>
+          </div>
+
+          <div class="bullet">
+            <div class="b-dot"></div>
+            <div class="b-body">
+              <p class="b-text">Terminei o setup inicial do agente Kurisu no Vertex AI — falta configurar o corpus com o vault do Obsidian. Demorou mais do que o esperado mas o caminho está claro.</p>
+              <span class="b-time">11:30 h</span>
+            </div>
+          </div>
+
+          <div class="bullet">
+            <div class="b-dot"></div>
+            <div class="b-body">
+              <p class="b-text">Almoço com <span class="mp">@Pedro</span> e <span class="mp">@Rafael</span>. Falamos sobre o projeto deles de <span class="mt">#saúde</span> — parece promissor, têm uma janela real no mercado.</p>
+              <span class="b-time">12:48 h</span>
+            </div>
+          </div>
+
+          <div class="bullet">
+            <div class="b-dot"></div>
+            <div class="b-body">
+              <p class="b-text">Li sobre técnicas de <span class="mt">#RAG</span> no Vertex AI. Chunking por parágrafo parece funcionar melhor para notas do Obsidian do que por número fixo de caracteres.</p>
+              <span class="b-time">14:22 h</span>
+            </div>
+          </div>
+
+          <div class="bullet">
+            <div class="b-dot"></div>
+            <div class="b-body">
+              <p class="b-text">Ligação com <span class="mp">@Ana</span> — ela quer ir a Portugal em agosto e me convidou. Preciso calcular o financeiro antes de confirmar. Vai ser apertado mas pode valer.</p>
+              <span class="b-time">16:05 h</span>
+            </div>
+          </div>
+
+          <div class="bullet">
+            <div class="b-dot"></div>
+            <div class="b-body">
+              <p class="b-text">Fiz o <span class="mt">#treino</span> em 35 min só. Corpo ainda cansado de quinta. Melhor do que zero.</p>
+              <span class="b-time">18:34 h</span>
+            </div>
+          </div>
+
+          <div class="bullet">
+            <div class="b-dot"></div>
+            <div class="b-body">
+              <p class="b-text">Jantar em casa, vi mais dois episódios do Frieren. Faz pensar bastante sobre memória e registro — o que a Frieren experimenta é o oposto exato do que escrever num diário tenta resolver.</p>
+              <span class="b-time">20:18 h</span>
+            </div>
+          </div>
+
+          <div class="bullet">
+            <div class="b-dot"></div>
+            <div class="b-body">
+              <p class="b-text">Meta da semana: fechar o corpus do Kurisu e fazer o primeiro deploy completo da Makima com todos os agentes ativos. Parece factível até sexta se eu mantiver o ritmo.</p>
+              <span class="b-time">22:41 h</span>
+            </div>
+          </div>
+
+          <div class="bullet-add">
+            <div class="b-dot"></div>
+            <p class="bullet-add-text">Adicionar bullet…</p>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <footer class="j-footer">
+      <button class="nav-btn" title="Primeira entrada">«</button>
+      <button class="nav-btn" title="Dia anterior">←</button>
+      <button class="nav-btn" style="padding:0 12px;gap:5px;" title="Lista de entradas">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="0" y="1.5" width="12" height="1.5" rx="0.75" fill="currentColor"/>
+          <rect x="0" y="5.25" width="12" height="1.5" rx="0.75" fill="currentColor"/>
+          <rect x="0" y="9" width="12" height="1.5" rx="0.75" fill="currentColor"/>
+        </svg>
+        Lista
+      </button>
+      <button class="nav-btn nb-today" title="Hoje">●</button>
+      <button class="nav-btn" title="Próximo dia">→</button>
+      <button class="nav-btn" title="Última entrada">»</button>
+    </footer>
+
+  </main>
+
+  <!-- ══ INSIGHTS PANEL ════════════════════════════════════════ -->
+  <aside class="ins-panel">
+
+    <div class="ins-tabs">
+      <div class="ins-tab active">Insights</div>
+      <div class="ins-tab">Pessoas</div>
+      <div class="ins-tab">Tags</div>
+      <div class="ins-tab">Busca</div>
+    </div>
+
+    <div class="ins-scroll">
+
+      <!-- Heatmap -->
+      <div>
+        <p class="ins-section-title">Atividade — 2026</p>
+        <div class="hm-grid" id="heatmap"></div>
+        <div class="hm-legend">
+          <span>menos</span>
+          <div class="hm-swatches" id="hm-swatch"></div>
+          <span>mais</span>
+        </div>
+      </div>
+
+      <!-- People -->
+      <div>
+        <p class="ins-section-title">Pessoas — junho</p>
+        <div>
+          <div class="person-row"><span class="person-name">@Pedro</span><span class="person-count">8</span></div>
+          <div class="person-row"><span class="person-name">@Ana</span><span class="person-count">5</span></div>
+          <div class="person-row"><span class="person-name">@Rafael</span><span class="person-count">3</span></div>
+          <div class="person-row"><span class="person-name">@Lucas</span><span class="person-count">2</span></div>
+          <div class="person-row"><span class="person-name">@Mari</span><span class="person-count">1</span></div>
+        </div>
+      </div>
+
+      <!-- Tags -->
+      <div>
+        <p class="ins-section-title">Tags — junho</p>
+        <div class="tag-wrap">
+          <span class="tag">#trabalho <span class="cnt">12</span></span>
+          <span class="tag">#treino <span class="cnt">9</span></span>
+          <span class="tag">#leitura <span class="cnt">7</span></span>
+          <span class="tag">#RAG <span class="cnt">5</span></span>
+          <span class="tag">#saúde <span class="cnt">4</span></span>
+          <span class="tag">#Duna <span class="cnt">4</span></span>
+          <span class="tag">#viagem <span class="cnt">3</span></span>
+          <span class="tag">#código <span class="cnt">3</span></span>
+          <span class="tag">#sono <span class="cnt">2</span></span>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div>
+        <p class="ins-section-title">Busca full-text</p>
+        <input class="search-box" type="text" placeholder="Pesquisar entradas…" />
+      </div>
+
+    </div>
+  </aside>
+
+</div>
+
+<script>
+  // Sidebar section expand / collapse
+  function toggleSec(id) {
+    document.getElementById(id).classList.toggle('expanded');
+  }
+
+  // Heatmap generation
+  (function () {
+    const grid = document.getElementById('heatmap');
+    const swatch = document.getElementById('hm-swatch');
+
+    const LEVELS = [
+      'oklch(0.185 0.010 258)',   // 0 — no entry
+      'oklch(0.30 0.055 253)',    // 1
+      'oklch(0.44 0.082 253)',    // 2
+      'oklch(0.57 0.095 253)',    // 3
+      'oklch(0.70 0.100 253)',    // 4 — most active
+    ];
+
+    // Deterministic pseudo-random (seed 137) for stable display
+    let s = 137;
+    function rng() {
+      s = Math.imul(1664525, s) + 1013904223 | 0;
+      return (s >>> 0) / 0xffffffff;
+    }
+
+    // 52 weeks × 7 days — grid fills column by column (grid-auto-flow: column)
+    for (let w = 0; w < 52; w++) {
+      for (let d = 0; d < 7; d++) {
+        const cell = document.createElement('div');
+        cell.className = 'hm-cell';
+        const recency = w / 52;
+        const hasEntry = rng() < (0.22 + recency * 0.58);
+        const level = hasEntry ? (Math.floor(rng() * 4) + 1) : 0;
+        cell.style.background = LEVELS[level];
+        grid.appendChild(cell);
+      }
+    }
+
+    // Legend swatches
+    LEVELS.forEach(c => {
+      const el = document.createElement('div');
+      el.className = 'hm-sw';
+      el.style.background = c;
+      swatch.appendChild(el);
+    });
+  })();
+
+  // Panel tab switching
+  document.querySelectorAll('.ins-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.ins-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+    });
+  });
+</script>
+
+  <div id="tweaks-root"></div>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel">
+    const PALETTE_MAP = {
+      '#8899DD': { c: 'oklch(0.70 0.088 253)', tint: 'oklch(0.70 0.088 253 / 0.11)' },
+      '#4DC9C0': { c: 'oklch(0.77 0.118 184)', tint: 'oklch(0.77 0.118 184 / 0.11)' },
+      '#E8A228': { c: 'oklch(0.74 0.168 57)',  tint: 'oklch(0.74 0.168 57  / 0.11)' },
+      '#D46AAA': { c: 'oklch(0.72 0.165 340)', tint: 'oklch(0.72 0.165 340 / 0.11)' },
+    };
+
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "modo": "Compacto",
+      "tipografia": "Clássica",
+      "paletaCor": "#8899DD"
+    }/*EDITMODE-END*/;
+
+    function TweaksApp() {
+      const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+      React.useEffect(() => {
+        const app = document.querySelector('.app');
+        const root = document.documentElement;
+
+        // Modo de escrita — reshapes layout + spacing
+        app.classList.remove('modo-compacto', 'modo-foco');
+        if (t.modo === 'Compacto') app.classList.add('modo-compacto');
+        if (t.modo === 'Foco')     app.classList.add('modo-foco');
+
+        // Tipografia — reshapes the reading feel
+        app.classList.remove('tipo-tecnica', 'tipo-suave');
+        if (t.tipografia === 'Técnica') app.classList.add('tipo-tecnica');
+        if (t.tipografia === 'Suave')   app.classList.add('tipo-suave');
+
+        // Paleta do personagem — recolors the whole journal accent
+        const p = PALETTE_MAP[t.paletaCor] || PALETTE_MAP['#8899DD'];
+        root.style.setProperty('--c-journal', p.c);
+        root.style.setProperty('--journal-tint', p.tint);
+      }, [t.modo, t.tipografia, t.paletaCor]);
+
+      return (
+        <TweaksPanel>
+          <TweakSection label="Layout" />
+          <TweakRadio
+            label="Modo de escrita"
+            value={t.modo}
+            options={['Jornalístico', 'Compacto', 'Foco']}
+            onChange={v => setTweak('modo', v)}
+          />
+          <TweakSection label="Tipografia" />
+          <TweakRadio
+            label="Estilo"
+            value={t.tipografia}
+            options={['Clássica', 'Técnica', 'Suave']}
+            onChange={v => setTweak('tipografia', v)}
+          />
+          <TweakSection label="Personagem" />
+          <TweakColor
+            label="Paleta do Diário"
+            value={t.paletaCor}
+            options={['#8899DD', '#4DC9C0', '#E8A228', '#D46AAA']}
+            onChange={v => setTweak('paletaCor', v)}
+          />
+        </TweaksPanel>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('tweaks-root')).render(<TweaksApp />);
+  </script>
+</body>
+</html>
