@@ -19,6 +19,17 @@ import type { LogPayload } from './LogModal'
 import { Toast } from './Toast'
 import { TweaksPanel } from './TweaksPanel'
 
+// Importações das telas da seção Frieren
+import { Home } from './screens/Home'
+import { Catalog } from './screens/Catalog'
+import { BookDetail } from './screens/BookDetail'
+import { ToRead } from './screens/ToRead'
+import { Wishlist } from './screens/Wishlist'
+import { Shelves } from './screens/Shelves'
+import { Activity } from './screens/Activity'
+import { Reviews } from './screens/Reviews'
+import { Stats } from './screens/Stats'
+
 // ── Mapeamento de status português → inglês ───────────────────────────────────
 
 // O backend armazena status em português; o design system usa inglês
@@ -304,79 +315,135 @@ export function FrierenShell() {
 
   // ── Renderização das telas ────────────────────────────────────────────────
   const renderView = () => {
-    // As screens serão implementadas nas próximas tarefas.
-    // Por ora, todas renderizam um placeholder com o nome da view.
     switch (route.view) {
+
+      // Tela inicial com hero, stats, heatmap e atividade recente
       case 'home':
         return (
-          <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            Em construção: Home (layout={layout})
-          </div>
+          <Home
+            books={books}
+            heatmap={heatmap}
+            activity={activity}
+            navigate={navigate}
+            openLog={openLog}
+            tweaks={tweaks}
+            atual={nowBook}
+          />
         )
+
+      // Catálogo completo com filtros e ordenação
       case 'catalogo':
         return (
-          <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            Em construção: Biblioteca ({books.length} livros, busca="{query}")
-          </div>
+          <Catalog
+            books={books}
+            navigate={navigate}
+            sort={tweaks.ordenacao}
+            query={query}
+          />
         )
+
+      // Catálogo filtrado para livros em leitura ativa
       case 'lendo':
         return (
-          <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            Em construção: Lendo agora ({readingBooks.length} livros)
-          </div>
+          <Catalog
+            books={books}
+            navigate={navigate}
+            sort={tweaks.ordenacao}
+            query={query}
+            initialFilter="reading"
+          />
         )
+
+      // Pilha de livros comprados aguardando leitura
       case 'querler':
         return (
-          <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            Em construção: Quero ler
-          </div>
+          <ToRead
+            books={books}
+            navigate={navigate}
+            openLog={openLog}
+          />
         )
+
+      // Lista de desejos com suporte a links de loja
       case 'wishlist':
         return (
-          <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            Em construção: Wishlist
-          </div>
+          <Wishlist
+            books={books}
+            navigate={navigate}
+            openLog={openLog}
+            onToast={setToast}
+          />
         )
+
+      // Grade de todas as estantes
       case 'listas':
         return (
-          <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            Em construção: Estantes ({shelves.length} estantes)
-          </div>
+          <Shelves
+            books={books}
+            shelves={shelves}
+            navigate={navigate}
+            shelfParam={null}
+          />
         )
+
+      // Estante específica aberta pelo ID
       case 'estante':
         return (
-          <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            Em construção: Estante id={route.param}
-          </div>
+          <Shelves
+            books={books}
+            shelves={shelves}
+            navigate={navigate}
+            shelfParam={route.param}
+          />
         )
+
+      // Diário de leitura completo agrupado por data
       case 'atividade':
         return (
-          <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            Em construção: Atividade ({activity.length} entradas)
-          </div>
+          <Activity
+            books={books}
+            activity={activity}
+            navigate={navigate}
+          />
         )
+
+      // Livros com resenha escrita
       case 'resenhas':
         return (
-          <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            Em construção: Resenhas
-          </div>
+          <Reviews
+            books={books}
+            navigate={navigate}
+          />
         )
+
+      // Estatísticas anuais: barras mensais, distribuição de notas, destaques
       case 'stats':
         return (
-          <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            Em construção: Estatísticas
-          </div>
+          <Stats
+            books={books}
+            heatmap={heatmap}
+            activity={activity}
+          />
         )
+
+      // Detalhe de um livro específico pelo ID
       case 'detalhe':
         return (
-          <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            Em construção: Detalhe id={route.param}
-          </div>
+          <BookDetail
+            bookId={route.param ?? ''}
+            books={books}
+            activity={activity}
+            shelves={shelves}
+            navigate={navigate}
+            openLog={openLog}
+          />
         )
+
+      // Fallback para views não reconhecidas
       default:
         return (
           <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            Em construção: {route.view}
+            View não encontrada: {route.view}
           </div>
         )
     }
