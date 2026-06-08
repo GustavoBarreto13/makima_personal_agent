@@ -2,7 +2,7 @@
 // Exibe: hero com saudação, cards de estatísticas, heatmap de leitura,
 // carrossel "Lendo agora" e feed de atividade recente.
 
-import React, { useMemo } from 'react'
+import { useMemo } from 'react'
 import type { Book, HeatmapDay, ActivityEntry, Tweaks } from '../types'
 import { Icon } from '../ui/Icons'
 import { Cover } from '../ui/Cover'

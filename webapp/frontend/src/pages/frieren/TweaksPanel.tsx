@@ -2,7 +2,7 @@
 // inferior direito da tela. Permite ajustar tema, layout do hero, densidade
 // da grade e ordenação do catálogo. Portado do protótipo app.jsx.
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import type { Tweaks } from './types'
 import { Icon } from './ui/Icons'
 

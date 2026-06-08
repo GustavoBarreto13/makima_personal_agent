@@ -3,7 +3,7 @@
 // Princípio: abrir, registrar, sair. Teclado-first: Enter salva, Esc fecha.
 // Portado do protótipo logmodal.jsx.
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import type { Book } from './types'
 import { Cover } from './ui/Cover'
 import { Icon } from './ui/Icons'

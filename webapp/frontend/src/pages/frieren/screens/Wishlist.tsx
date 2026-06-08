@@ -1,11 +1,11 @@
 // Tela Wishlist — lista os livros desejados (status "wishlist") com suporte a
 // salvar/editar links de loja (Amazon, Estante Virtual, etc.) para cada livro.
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import type { Book } from '../types'
 import { Icon } from '../ui/Icons'
 import { Cover } from '../ui/Cover'
-import { booksApi } from '../../lib/api'
+import { booksApi } from '../../../lib/api'
 
 // Props recebidas da FrierenShell
 interface WishlistProps {

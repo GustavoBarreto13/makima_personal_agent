@@ -3,7 +3,6 @@
 // Barras com valor >= 70% do máximo recebem destaque visual (classe "hot").
 // Portada do protótipo ui.jsx.
 
-import React from 'react'
 
 // Props do componente Spark
 interface SparkProps {

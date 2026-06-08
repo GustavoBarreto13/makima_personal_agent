@@ -1,7 +1,7 @@
 // Tela de catálogo (Biblioteca) — exibe todos os livros com filtros por status
 // e ordenação. Permite navegar para o detalhe de cada livro.
 
-import React, { useState, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import type { Book, Tweaks } from '../types'
 import { Cover } from '../ui/Cover'
 import { Stars } from '../ui/Stars'

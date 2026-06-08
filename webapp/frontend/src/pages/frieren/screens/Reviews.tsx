@@ -1,7 +1,6 @@
 // Tela de resenhas — exibe todos os livros que têm texto de resenha.
 // Cada cartão mostra capa, título, avaliação e trecho da resenha.
 
-import React from 'react'
 import type { Book } from '../types'
 import { Cover } from '../ui/Cover'
 import { Stars } from '../ui/Stars'

@@ -2,7 +2,6 @@
 // Exibe duas camadas sobrepostas: camada de base (5 estrelas cinza) + camada superior (5 estrelas
 // douradas) com largura limitada ao percentual da nota. Portado do protótipo ui.jsx.
 
-import React from 'react'
 
 // Props do componente Stars
 interface StarsProps {

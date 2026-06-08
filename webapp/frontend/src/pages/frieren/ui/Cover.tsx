@@ -2,7 +2,6 @@
 // ou fotográfica (imagem real sobreposta quando coverUrl está disponível).
 // Portado do protótipo ui.jsx.
 
-import React from 'react'
 import type { Book } from '../types'
 import { COVER_PALETTES } from '../coverKey'
 

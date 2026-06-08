@@ -2,7 +2,6 @@
 // capa, metadados, resenha, estantes e diário de leitura específico deste livro.
 // Layout em duas colunas: capa fixa à esquerda, informações scrolláveis à direita.
 
-import React from 'react'
 import type { Book, ActivityEntry, Shelf } from '../types'
 import { Icon } from '../ui/Icons'
 import { Cover } from '../ui/Cover'

@@ -2,7 +2,7 @@
 // e botão de registro rápido. Quando há mais de um livro sendo lido, setas
 // permitem ciclar entre eles. Portado do protótipo logmodal.jsx.
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import type { Book } from './types'
 import { Cover } from './ui/Cover'
 import { ProgressBar } from './ui/ProgressBar'

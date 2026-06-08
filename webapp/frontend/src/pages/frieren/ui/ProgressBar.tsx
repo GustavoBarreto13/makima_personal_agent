@@ -2,7 +2,6 @@
 // em contextos fora da capa do livro (ex.: listas, cards de detalhe).
 // Portada do protótipo ui.jsx.
 
-import React from 'react'
 
 // Props do componente ProgressBar
 interface ProgressBarProps {

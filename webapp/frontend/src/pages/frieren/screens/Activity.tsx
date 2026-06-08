@@ -2,7 +2,6 @@
 // Cada dia com atividade é exibido como um grupo com cabeçalho de data
 // e itens de feed para cada entrada de leitura.
 
-import React from 'react'
 import type { Book, ActivityEntry } from '../types'
 import { Cover } from '../ui/Cover'
 import { Stars } from '../ui/Stars'

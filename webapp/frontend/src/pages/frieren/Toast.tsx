@@ -2,7 +2,6 @@
 // após ações do usuário (ex: "+25 páginas registradas", "Livro terminado").
 // Portado do protótipo logmodal.jsx.
 
-import React from 'react'
 
 // Props do Toast
 interface ToastProps {

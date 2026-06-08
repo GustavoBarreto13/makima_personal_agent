@@ -2,7 +2,7 @@
 // Exibe métricas consolidadas: livros lidos, páginas totais, barras mensais,
 // distribuição de notas e destaques do ano (gênero favorito, autor mais lido, streak).
 
-import React, { useMemo } from 'react'
+import { useMemo } from 'react'
 import type { Book, HeatmapDay, ActivityEntry } from '../types'
 import { Stars } from '../ui/Stars'
 
@@ -62,7 +62,7 @@ function Highlight({
 }
 
 // Componente principal da tela de estatísticas
-export function Stats({ books, heatmap, activity }: StatsProps) {
+export function Stats({ books, heatmap, activity: _activity }: StatsProps) {
   // Ano corrente — base de todos os cálculos
   const year = new Date().getFullYear()
 

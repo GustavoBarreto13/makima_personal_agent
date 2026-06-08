@@ -1,7 +1,6 @@
 // Tela "Quero ler" — lista os livros com status "owned" (já comprado, aguardando leitura).
 // Cada item exibe capa, título, autor, gênero e botão para iniciar a leitura.
 
-import React from 'react'
 import type { Book } from '../types'
 import { Icon } from '../ui/Icons'
 import { Cover } from '../ui/Cover'

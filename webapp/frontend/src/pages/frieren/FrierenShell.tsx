@@ -3,7 +3,7 @@
 // Substitui o roteamento do React Router para esta seção: usa estado interno
 // { view, param } para não poluir a URL com sub-rotas de livros.
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import './frieren.css'
 
 import { booksApi } from '../../lib/api'
@@ -304,14 +304,6 @@ export function FrierenShell() {
   const readingBooks = books.filter(b => b.status === 'reading')
   // O livro exibido na NowBar é o com maior progresso entre os lendo
   const nowBook = readingBooks.sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))[0] ?? null
-
-  // ── Layout do hero (para a tela Home) ─────────────────────────────────────
-  const layoutMap: Record<Tweaks['layoutInicio'], string> = {
-    'Cinemático': 'cinematico',
-    'Editorial':  'editorial',
-    'Galeria':    'galeria',
-  }
-  const layout = layoutMap[tweaks.layoutInicio] ?? 'cinematico'
 
   // ── Renderização das telas ────────────────────────────────────────────────
   const renderView = () => {

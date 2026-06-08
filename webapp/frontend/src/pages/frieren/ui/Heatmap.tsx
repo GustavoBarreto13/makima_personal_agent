@@ -2,7 +2,6 @@
 // Cada mês é uma grade de 7 linhas (Dom–Sáb) com células coloridas por intensidade de leitura.
 // Portado do protótipo ui.jsx.
 
-import React from 'react'
 import type { HeatmapDay } from '../types'
 
 // Props do componente Heatmap

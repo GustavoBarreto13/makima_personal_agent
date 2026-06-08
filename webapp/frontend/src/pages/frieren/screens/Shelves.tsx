@@ -2,7 +2,6 @@
 // Quando shelfParam está definido, exibe os livros de uma estante específica.
 // Reutiliza o mesmo componente para as views "listas" e "estante" do shell.
 
-import React from 'react'
 import type { Book, Shelf } from '../types'
 import { Icon } from '../ui/Icons'
 import { Cover } from '../ui/Cover'
