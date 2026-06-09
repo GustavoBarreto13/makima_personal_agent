@@ -172,7 +172,10 @@ export function NamiShell() {
       const s = await namiApi.getStats(month)
       setStats(s)
     } catch {
-      // Dados indisponíveis — mantém o estado anterior sem quebrar a tela
+      // Exibe um toast de erro em vez de engolir silenciosamente.
+      // Sem isso, qualquer falha de /stats deixa o Dashboard travado em "Carregando…"
+      // indefinidamente, pois stats permanece null e não há feedback visual para o usuário.
+      setToast('Erro ao carregar dados do mês')
     }
   }, [month])
 

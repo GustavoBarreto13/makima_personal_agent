@@ -13,6 +13,7 @@ Usage:
 # Imports do FastAPI: APIRouter (agrupa rotas), Depends (injeção de dependências),
 # HTTPException (lança erros HTTP), Query (extrai query params tipados)
 from fastapi import APIRouter, Depends, HTTPException, Query
+import calendar  # Usado para calcular o último dia real de cada mês (evita datas inválidas como 2026-06-31)
 
 # BaseModel é a base para todos os modelos Pydantic (validação de body da requisição)
 from pydantic import BaseModel
@@ -121,6 +122,34 @@ def _check_result(result: dict) -> dict:
         )
     # Retorna o resultado sem modificação para o cliente
     return result
+
+
+def _month_bounds(month: str) -> tuple[str, str]:
+    """Calcular o primeiro e o último dia reais de um mês YYYY-MM.
+
+    Evita datas inválidas como '2026-06-31' (junho tem 30 dias) que o PostgreSQL
+    rejeita com DatetimeFieldOverflow. O comentário antigo dizia que o PostgreSQL
+    trunca automaticamente — isso é falso. calendar.monthrange() retorna o número
+    correto de dias para qualquer mês, incluindo anos bissextos em fevereiro.
+
+    Args:
+        month: Mês no formato 'YYYY-MM' (ex.: '2026-06').
+
+    Returns:
+        Tupla (primeiro_dia, ultimo_dia) no formato 'YYYY-MM-DD'.
+
+    Example:
+        >>> _month_bounds('2026-06')
+        ('2026-06-01', '2026-06-30')
+        >>> _month_bounds('2024-02')   # ano bissexto
+        ('2024-02-01', '2024-02-29')
+    """
+    # Extrai ano e mês numéricos do formato YYYY-MM
+    ano, mes = int(month[:4]), int(month[5:7])
+    # monthrange(ano, mes)[1] retorna o número de dias do mês (ex.: 30 para junho)
+    ultimo_dia = calendar.monthrange(ano, mes)[1]
+    # Formata as datas no padrão YYYY-MM-DD aceito pelo PostgreSQL
+    return f"{month}-01", f"{month}-{ultimo_dia:02d}"
 
 
 # ─── Criação do router ────────────────────────────────────────────────────────
@@ -312,13 +341,26 @@ def create_transaction_endpoint(
         HTTPException: 400 se os dados forem inválidos (categoria inexistente, etc.).
         HTTPException: 401 se o usuário não estiver autenticado.
     """
+    # Resolve a conta padrão quando o cliente não enviou nenhuma (ex.: QuickAdd ou "— Automático —").
+    # A tool create_transaction faz fallback para "Generico", que pode não existir no banco.
+    # Em vez disso, pegamos a primeira conta ativa cadastrada — é sempre a escolha mais segura.
+    conta = body.conta
+    if not conta and not body.card_id:
+        # Busca a conta ativa mais antiga como padrão (a mais provável de ser a "principal")
+        default_rows = run_select(
+            "SELECT name FROM accounts WHERE status = 'ativo' ORDER BY created_at LIMIT 1"
+        )
+        if default_rows:
+            # Usa o nome da conta para que _resolve_account dentro da tool encontre corretamente
+            conta = default_rows[0]["name"]
+
     # Repassa todos os campos do body para a tool da Nami
     result = create_transaction(
         name=body.name,
         valor=body.valor,
         tipo=body.tipo,
         categoria=body.categoria,
-        conta=body.conta,
+        conta=conta,          # pode ser o padrão resolvido acima ou o enviado pelo cliente
         data=body.data,
         notes=body.notes,
         card_id=body.card_id,
@@ -1316,9 +1358,9 @@ def get_stats(
     if not month or len(month) != 7 or '-' not in month:
         raise HTTPException(status_code=400, detail="Formato de mês inválido. Use YYYY-MM.")
 
-    # Intervalo do mês selecionado
-    start = f"{month}-01"
-    end   = f"{month}-31"  # PostgreSQL trunca no último dia real do mês
+    # Intervalo do mês selecionado — _month_bounds calcula o último dia real do mês.
+    # Não usar "-31" fixo: PostgreSQL NÃO trunca datas inválidas, lança DatetimeFieldOverflow.
+    start, end = _month_bounds(month)
 
     # ── Totais do mês ──────────────────────────────────────────────────────────
     totals_rows = run_select("""
@@ -1343,12 +1385,13 @@ def get_stats(
     # ── Mês anterior (para comparação) ────────────────────────────────────────
     from datetime import date as _date
     y, m = int(month[:4]), int(month[5:7])
+    # Se é janeiro, o mês anterior é dezembro do ano passado
     if m == 1:
         prev_y, prev_m = y - 1, 12
     else:
         prev_y, prev_m = y, m - 1
-    prev_start = f"{prev_y}-{prev_m:02d}-01"
-    prev_end   = f"{prev_y}-{prev_m:02d}-31"
+    # Usa _month_bounds para calcular o fim real do mês anterior (evita "-31" inválido)
+    prev_start, prev_end = _month_bounds(f"{prev_y}-{prev_m:02d}")
 
     prev_rows = run_select("""
         SELECT COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0) AS expense

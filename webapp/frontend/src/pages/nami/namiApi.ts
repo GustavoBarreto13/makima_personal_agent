@@ -22,8 +22,15 @@ export const namiApi = {
 
   // ── Transações ───────────────────────────────────────────────────────────────
 
-  getTransactions: (month: string): Promise<{ transactions: Transaction[] }> =>
-    api.get(`/api/finances/transactions?start_date=${month}-01&end_date=${month}-31`),
+  getTransactions: (month: string): Promise<{ transactions: Transaction[] }> => {
+    // Calcula o último dia real do mês para evitar datas inválidas (ex.: "2026-06-31").
+    // new Date(y, m, 0) = dia 0 do mês seguinte = último dia do mês atual.
+    const [y, m] = month.split('-').map(Number)
+    const lastDay = new Date(y, m, 0).getDate()
+    // Formata com zero à esquerda (ex.: 06-09) para compatibilidade com o backend
+    const endDate = `${month}-${String(lastDay).padStart(2, '0')}`
+    return api.get(`/api/finances/transactions?start_date=${month}-01&end_date=${endDate}`)
+  },
 
   createTransaction: (body: {
     name: string; valor: number; tipo: string; categoria: string;
