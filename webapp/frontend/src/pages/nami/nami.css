@@ -541,11 +541,23 @@
 .nami-app .hero-cta:hover { background: var(--accent-h); }
 
 /* — Retrato/halo da Nami no hero — */
+/* frieren.css define .hero-portrait .halo e .hero-portrait img como seletores globais (sem escopo),
+   com position:absolute, transform, aspect-ratio e filter:blur. Esses estilos vazam para o DOM
+   da Nami porque a estrutura de classes é idêntica (.hero-portrait > .halo > img).
+   Solução: elevar a especificidade para 0,3,0 (frieren usa 0,2,0) e resetar explicitamente
+   cada propriedade que a Frieren injeta. */
 .nami-app .hero-portrait {
   position: relative;
   flex-shrink: 0;
 }
-.nami-app .halo {
+.nami-app .hero-portrait .halo {
+  /* reset das propriedades vazadas pelo .hero-portrait .halo global da Frieren */
+  position: static;
+  inset: auto;
+  transform: none;
+  filter: none;
+  aspect-ratio: auto;
+  /* estilo próprio da Nami */
   width: 130px;
   height: 130px;
   border-radius: 50%;
@@ -555,7 +567,11 @@
   justify-content: center;
   overflow: hidden;
 }
-.nami-app .halo img {
+.nami-app .hero-portrait .halo img {
+  /* reset das propriedades vazadas pelo .hero-portrait img global da Frieren */
+  position: static;
+  filter: none;
+  /* estilo próprio da Nami */
   width: 110px;
   height: 110px;
   object-fit: cover;

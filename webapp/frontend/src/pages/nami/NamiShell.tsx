@@ -181,19 +181,24 @@ export function NamiShell() {
   }, [month])
 
   const loadGlobal = useCallback(async () => {
-    try {
-      const [accs, cds, subs] = await Promise.all([
-        namiApi.getAccounts(),
-        namiApi.getCards(),
-        namiApi.getSubscriptions(),
-      ])
-      setAccounts(accs.accounts ?? [])
-      setCards(cds.cards ?? [])
-      setSubscriptions(subs.subscriptions ?? [])
-    } catch {
-      // Continua com arrays vazios em caso de erro de rede
+    // allSettled: mesmo que um endpoint retorne 500, os demais ainda preenchem seus estados.
+    // Isso evita que um erro em /cards ou /subscriptions apague silenciosamente a lista de contas.
+    const [accsR, cdsR, subsR] = await Promise.allSettled([
+      namiApi.getAccounts(),
+      namiApi.getCards(),
+      namiApi.getSubscriptions(),
+    ])
+
+    // Seta cada estado de forma independente — só atualiza se o pedido teve sucesso
+    if (accsR.status === 'fulfilled') setAccounts(accsR.value.accounts ?? [])
+    if (cdsR.status  === 'fulfilled') setCards(cdsR.value.cards ?? [])
+    if (subsR.status === 'fulfilled') setSubscriptions(subsR.value.subscriptions ?? [])
+
+    // Avisa o usuário se algum endpoint falhou (sem engolir o erro em silêncio)
+    if ([accsR, cdsR, subsR].some(r => r.status === 'rejected')) {
+      setToast('Alguns dados não carregaram. Tente recarregar.')
     }
-  }, [])
+  }, []) // setToast e os setters são estáveis — não precisam entrar no array de deps
 
   useEffect(() => { loadStats() },  [loadStats])
   useEffect(() => { loadGlobal() }, [loadGlobal])

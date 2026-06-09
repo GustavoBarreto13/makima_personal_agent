@@ -675,9 +675,9 @@ def cards_summary(
     from agents.db import run_select as _run_select
     if result.get("cards"):
         ids = [c["id"] for c in result["cards"]]
-        # ANY(%(ids)s::uuid[]) filtra por lista de UUIDs em PostgreSQL
+        # ANY(%(ids)s::text[]) filtra por lista de IDs — colunas id são text (não uuid) no schema
         extra_rows = _run_select(
-            "SELECT id, brand, last4, grad FROM credit_cards WHERE id = ANY(%(ids)s::uuid[])",
+            "SELECT id, brand, last4, grad FROM credit_cards WHERE id = ANY(%(ids)s::text[])",
             {"ids": ids},
         )
         # Índice id → campos extras para merge O(1)
@@ -955,7 +955,7 @@ def list_subscriptions_endpoint(
     if subs:
         ids = [s["id"] for s in subs]
         extra_rows = _run_select(
-            "SELECT id, color, icon_url, next_billing_day FROM subscriptions WHERE id = ANY(%(ids)s::uuid[])",
+            "SELECT id, color, icon_url, next_billing_day FROM subscriptions WHERE id = ANY(%(ids)s::text[])",
             {"ids": ids},
         )
         extra_map = {r["id"]: r for r in extra_rows}
