@@ -56,8 +56,8 @@ def _ensure_tables() -> None:
 
     O schema completo:
     - journal_types: tipos de diário (pessoal, profissional, viagem, etc.)
-    - journal_pages: uma página por (tipo, data), com restrição UNIQUE
-    - journal_bullets: linhas/bullets de cada página, com busca full-text em português
+    - journal_pages: uma página por (tipo, data), com restrição UNIQUE; campo dream
+    - journal_bullets: linhas/bullets de cada página, com busca full-text; campo kind
     - journal_mentions: @pessoas e #tags extraídas automaticamente dos bullets
     """
     # Conecta ao banco para criar as tabelas
@@ -100,6 +100,14 @@ def _ensure_tables() -> None:
                 )
             """)
 
+            # ── Extensão T005: campo dream em journal_pages ───────────────────
+            # ADD COLUMN IF NOT EXISTS é idempotente — seguro para re-executar em banco já existente.
+            # NULL para entries antigas (sem sonho registrado); preenchido via set_dream().
+            cur.execute("""
+                ALTER TABLE journal_pages
+                    ADD COLUMN IF NOT EXISTS dream TEXT
+            """)
+
             # ── Tabela de bullets (linhas do diário) ──────────────────────────
             # Cada bullet é uma linha de texto dentro de uma página.
             # ON DELETE CASCADE: ao deletar a página, todos os bullets são deletados.
@@ -120,6 +128,29 @@ def _ensure_tables() -> None:
                     UNIQUE (page_id, position)
                 )
             """)
+
+            # ── Extensão T005: campo kind em journal_bullets ──────────────────
+            # DEFAULT 'bullet' garante retrocompatibilidade com bullets existentes sem kind.
+            cur.execute("""
+                ALTER TABLE journal_bullets
+                    ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'bullet'
+            """)
+
+            # Adiciona CHECK constraint para kind, se ainda não existir.
+            # Verificamos em information_schema antes de criar — ADD CONSTRAINT falha
+            # se a constraint já existir, ao contrário de ADD COLUMN IF NOT EXISTS.
+            cur.execute("""
+                SELECT 1 FROM information_schema.table_constraints
+                WHERE constraint_name = 'journal_bullets_kind_check'
+                  AND table_name = 'journal_bullets'
+            """)
+            if cur.fetchone() is None:
+                # Constraint não existe — cria agora
+                cur.execute("""
+                    ALTER TABLE journal_bullets
+                        ADD CONSTRAINT journal_bullets_kind_check
+                        CHECK (kind IN ('bullet','highlight','dream','idea','wisdom','note'))
+                """)
 
             # Índice GIN para tornar buscas full-text rápidas mesmo com muitos bullets.
             # GIN (Generalized Inverted Index) é o tipo recomendado pelo PostgreSQL para TSVECTOR.
@@ -200,8 +231,8 @@ def get_or_create_page(date: str, type_id: int = 1) -> dict:
 
     Returns:
         Dicionário com:
-        - "page": {"id": int, "date": str, "type_id": int}
-        - "bullets": [{"id": int, "content": str, "position": int}, ...]
+        - "page": {"id": int, "date": str, "type_id": int, "dream": str|None, "num": int}
+        - "bullets": [{"id": int, "kind": str, "content": str, "position": int, "created_at": str}, ...]
           ordenados por position ASC.
     """
     conn = _get_conn()
@@ -218,27 +249,43 @@ def get_or_create_page(date: str, type_id: int = 1) -> dict:
                 ON CONFLICT (type_id, date) DO NOTHING
             """, (type_id, date))
 
-            # Busca a página (recém-criada ou já existente)
+            # Busca a página com dream e num (número sequencial derivado por ROW_NUMBER).
+            # ROW_NUMBER() OVER (ORDER BY date) numera as entries da mais antiga (#1) à mais nova.
+            # A subquery garante que o num seja consistente independente de qual entry buscamos.
             cur.execute("""
-                SELECT id, date::text AS date, type_id
-                FROM journal_pages
-                WHERE type_id = %s AND date = %s
-            """, (type_id, date))
+                SELECT p.id,
+                       p.date::text AS date,
+                       p.type_id,
+                       p.dream,
+                       p.created_at,
+                       p.updated_at,
+                       rn.num
+                FROM journal_pages p
+                JOIN (
+                    SELECT id,
+                           ROW_NUMBER() OVER (ORDER BY date) AS num
+                    FROM journal_pages
+                    WHERE type_id = %s
+                ) rn ON rn.id = p.id
+                WHERE p.type_id = %s AND p.date = %s
+            """, (type_id, type_id, date))
             row = cur.fetchone()
 
             # Guarda contra None: só ocorre se type_id não existir em journal_types
-            # (violação de FK silenciada pelo ON CONFLICT não acontece aqui, mas
-            # se o INSERT foi bloqueado por FK, fetchone() retornaria None)
             if row is None:
                 conn.rollback()
                 return {"page": None, "bullets": [], "error": "type_id não encontrado"}
 
             page = dict(row)
+            # Converte campos datetime para string ISO
+            if page.get("created_at"):
+                page["created_at"] = page["created_at"].isoformat()
+            if page.get("updated_at"):
+                page["updated_at"] = page["updated_at"].isoformat()
 
-            # Busca todos os bullets da página, ordenados por posição crescente.
-            # created_at é incluído para exibição de timestamp no frontend.
+            # Busca todos os bullets da página com o campo kind, ordenados por posição.
             cur.execute("""
-                SELECT id, content, position, created_at
+                SELECT id, page_id, kind, content, position, created_at
                 FROM journal_bullets
                 WHERE page_id = %s
                 ORDER BY position ASC
@@ -259,7 +306,262 @@ def get_or_create_page(date: str, type_id: int = 1) -> dict:
         conn.close()
 
 
-def upsert_bullet(page_id: int, position: int, content: str) -> dict:
+def set_dream(page_id: int, text: str) -> dict:
+    """Atualizar o campo dream de uma entry (journal_pages).
+
+    Args:
+        page_id: ID da página.
+        text: Texto do sonho (string vazia ou None limpa o campo).
+
+    Returns:
+        {"status": "ok"} ou {"status": "error", "message": ...}
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            # Salva NULL se texto vazio, para manter consistência com IS NOT NULL nas queries
+            dream_value = text if text else None
+            cur.execute(
+                "UPDATE journal_pages SET dream = %s WHERE id = %s",
+                (dream_value, page_id),
+            )
+            if cur.rowcount == 0:
+                conn.rollback()
+                return {"status": "error", "message": "page não encontrada"}
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+def list_entries(query: str = '') -> list:
+    """Listar entries resumidas para o arquivo do diário (Journal screen).
+
+    Retorna cada entry com excerpt, contadores e flags, ordenada por data DESC.
+
+    Args:
+        query: Texto de busca opcional — filtra por full-text search no conteúdo dos bullets.
+
+    Returns:
+        Lista de dicts: {date, num, excerpt, bullet_count, has_highlight, has_dream}
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if query:
+                # Filtra entries que têm pelo menos um bullet correspondendo à busca
+                cur.execute("""
+                    SELECT p.date::text AS date,
+                           ROW_NUMBER() OVER (ORDER BY p.date) AS num,
+                           (SELECT content FROM journal_bullets WHERE page_id = p.id ORDER BY position LIMIT 1) AS excerpt,
+                           COUNT(b.id) AS bullet_count,
+                           BOOL_OR(b.kind = 'highlight') AS has_highlight,
+                           p.dream IS NOT NULL AS has_dream
+                    FROM journal_pages p
+                    LEFT JOIN journal_bullets b ON b.page_id = p.id
+                    WHERE EXISTS (
+                        SELECT 1 FROM journal_bullets jb
+                        WHERE jb.page_id = p.id
+                          AND jb.search_vec @@ plainto_tsquery('portuguese', %s)
+                    )
+                    GROUP BY p.id, p.date, p.dream
+                    ORDER BY p.date DESC
+                """, (query,))
+            else:
+                cur.execute("""
+                    SELECT p.date::text AS date,
+                           ROW_NUMBER() OVER (ORDER BY p.date) AS num,
+                           (SELECT content FROM journal_bullets WHERE page_id = p.id ORDER BY position LIMIT 1) AS excerpt,
+                           COUNT(b.id) AS bullet_count,
+                           BOOL_OR(b.kind = 'highlight') AS has_highlight,
+                           p.dream IS NOT NULL AS has_dream
+                    FROM journal_pages p
+                    LEFT JOIN journal_bullets b ON b.page_id = p.id
+                    GROUP BY p.id, p.date, p.dream
+                    ORDER BY p.date DESC
+                """)
+            rows = cur.fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            # Trunca excerpt em 150 chars para o card do arquivo
+            excerpt = d.get("excerpt") or ""
+            d["excerpt"] = excerpt[:150]
+            result.append(d)
+        return result
+    finally:
+        conn.close()
+
+
+def list_collection(kind: str) -> list:
+    """Listar todos os bullets de um tipo específico.
+
+    Args:
+        kind: Tipo do bullet — highlight, dream, idea, wisdom, note.
+
+    Returns:
+        Lista de dicts: {id, kind, content, created_at, date, entry_num}
+        Ordenada por data DESC.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT b.id, b.kind, b.content,
+                       b.created_at,
+                       p.date::text AS date,
+                       ROW_NUMBER() OVER (ORDER BY p.date) AS entry_num
+                FROM journal_bullets b
+                JOIN journal_pages p ON p.id = b.page_id
+                WHERE b.kind = %s
+                ORDER BY b.created_at DESC
+            """, (kind,))
+            rows = cur.fetchall()
+        return [
+            {**dict(r), "created_at": r["created_at"].isoformat() if r["created_at"] else None}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def list_dreams() -> list:
+    """Listar todas as entries que têm campo dream não nulo.
+
+    Returns:
+        Lista de dicts: {page_id, date, entry_num, dream}
+        Ordenada por data DESC.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT p.id AS page_id,
+                       p.date::text AS date,
+                       ROW_NUMBER() OVER (ORDER BY p.date) AS entry_num,
+                       p.dream
+                FROM journal_pages p
+                WHERE p.dream IS NOT NULL
+                ORDER BY p.date DESC
+            """)
+            rows = cur.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_stats(year: int) -> dict:
+    """Retornar estatísticas agregadas do ano para a tela Insights.
+
+    Args:
+        year: Ano de referência (ex.: 2026).
+
+    Returns:
+        Dict com entries, bullets, days_written, total_words, per_day,
+        highlights, tags, mentions, dreams, highlight_rate, freq_per_week,
+        words_by_month (array 12), daytime (array 12).
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # Totais básicos do ano
+            cur.execute("""
+                SELECT
+                    COUNT(DISTINCT p.id) FILTER (WHERE b.id IS NOT NULL) AS entries,
+                    COUNT(b.id) AS bullets,
+                    COUNT(b.id) FILTER (WHERE b.kind = 'highlight') AS highlights,
+                    COUNT(DISTINCT jm_tag.value) AS tags,
+                    COUNT(DISTINCT jm_per.value) AS mentions,
+                    COUNT(DISTINCT p.id) FILTER (WHERE p.dream IS NOT NULL) AS dreams
+                FROM journal_pages p
+                LEFT JOIN journal_bullets b ON b.page_id = p.id
+                LEFT JOIN journal_mentions jm_tag ON jm_tag.bullet_id = b.id AND jm_tag.kind = 'tag'
+                LEFT JOIN journal_mentions jm_per ON jm_per.bullet_id = b.id AND jm_per.kind = 'person'
+                WHERE EXTRACT(YEAR FROM p.date) = %s
+            """, (year,))
+            totals = dict(cur.fetchone() or {})
+
+            # Palavras por dia (heatmap de palavras)
+            cur.execute("""
+                SELECT p.date::text AS date,
+                       COALESCE(SUM(
+                           array_length(string_to_array(trim(b.content), ' '), 1)
+                       ), 0) +
+                       COALESCE(
+                           array_length(string_to_array(trim(p.dream), ' '), 1), 0
+                       ) AS words
+                FROM journal_pages p
+                LEFT JOIN journal_bullets b ON b.page_id = p.id
+                WHERE EXTRACT(YEAR FROM p.date) = %s
+                  AND p.date <= CURRENT_DATE
+                GROUP BY p.id, p.date, p.dream
+                HAVING COALESCE(SUM(
+                    array_length(string_to_array(trim(b.content), ' '), 1)
+                ), 0) + COALESCE(
+                    array_length(string_to_array(trim(p.dream), ' '), 1), 0
+                ) > 0
+            """, (year,))
+            heatmap_rows = cur.fetchall()
+            days_written = len(heatmap_rows)
+            total_words = sum(int(r["words"]) for r in heatmap_rows)
+
+            # Palavras por mês (array de 12 valores, Jan=0)
+            words_by_month = [0] * 12
+            for r in heatmap_rows:
+                month_idx = int(r["date"][5:7]) - 1
+                words_by_month[month_idx] += int(r["words"])
+
+            # Distribuição de bullets por hora (12 buckets bihourly, 0h=0 ... 22h=11)
+            cur.execute("""
+                SELECT FLOOR(EXTRACT(HOUR FROM b.created_at AT TIME ZONE 'UTC') / 2)::int AS bucket,
+                       COUNT(*) AS cnt
+                FROM journal_bullets b
+                JOIN journal_pages p ON p.id = b.page_id
+                WHERE EXTRACT(YEAR FROM p.date) = %s
+                GROUP BY bucket
+            """, (year,))
+            daytime = [0] * 12
+            for r in cur.fetchall():
+                bucket = int(r["bucket"])
+                if 0 <= bucket < 12:
+                    daytime[bucket] = int(r["cnt"])
+
+        entries = int(totals.get("entries") or 0)
+        bullets = int(totals.get("bullets") or 0)
+        highlights = int(totals.get("highlights") or 0)
+        tags = int(totals.get("tags") or 0)
+        mentions = int(totals.get("mentions") or 0)
+        dreams = int(totals.get("dreams") or 0)
+
+        # Frequência por semana: dias escritos / semanas passadas no ano até hoje
+        import datetime
+        today = datetime.date.today()
+        if today.year == year:
+            day_of_year = today.timetuple().tm_yday
+        else:
+            day_of_year = 365
+        weeks = max(day_of_year / 7, 1)
+
+        return {
+            "entries": entries,
+            "bullets": bullets,
+            "days_written": days_written,
+            "total_words": total_words,
+            "per_day": round(total_words / days_written) if days_written else 0,
+            "highlights": highlights,
+            "tags": tags,
+            "mentions": mentions,
+            "dreams": dreams,
+            "highlight_rate": round(highlights / entries * 100) if entries else 0,
+            "freq_per_week": round(days_written / weeks, 1),
+            "words_by_month": words_by_month,
+            "daytime": daytime,
+        }
+    finally:
+        conn.close()
+
+
+def upsert_bullet(page_id: int, position: int, content: str, kind: str = 'bullet') -> dict:
     """Inserir ou atualizar um bullet em uma posição específica da página.
 
     Se já existir um bullet com (page_id, position), atualiza o content.
@@ -271,27 +573,28 @@ def upsert_bullet(page_id: int, position: int, content: str) -> dict:
 
     Args:
         page_id: ID da página onde o bullet pertence.
-        position: Posição (linha) do bullet na página (0-indexado ou 1-indexado).
+        position: Posição (linha) do bullet na página (esparso ×1000).
         content: Texto do bullet.
+        kind: Tipo do bullet — bullet, highlight, dream, idea, wisdom, note. Default 'bullet'.
 
     Returns:
         Dicionário com:
         - "status": "ok"
-        - "bullet": {"id": int, "content": str, "position": int}
+        - "bullet": {"id": int, "kind": str, "content": str, "position": int, "created_at": str}
     """
     conn = _get_conn()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
 
-            # INSERT ... ON CONFLICT: se já existe bullet nessa posição, atualiza content.
+            # Upsert por (page_id, position) — atualiza content e kind se já existir.
             # RETURNING retorna os dados do bullet inserido ou atualizado em uma só query.
             cur.execute("""
-                INSERT INTO journal_bullets (page_id, position, content)
-                VALUES (%s, %s, %s)
+                INSERT INTO journal_bullets (page_id, position, content, kind)
+                VALUES (%s, %s, %s, %s)
                 ON CONFLICT (page_id, position)
-                DO UPDATE SET content = EXCLUDED.content
-                RETURNING id, content, position, created_at
-            """, (page_id, position, content))
+                DO UPDATE SET content = EXCLUDED.content, kind = EXCLUDED.kind
+                RETURNING id, page_id, kind, content, position, created_at
+            """, (page_id, position, content, kind))
             row = cur.fetchone()
             # Converte created_at para string ISO para serialização JSON
             bullet = {**dict(row), "created_at": row["created_at"].isoformat() if row["created_at"] else None}
@@ -367,40 +670,47 @@ def delete_bullet(bullet_id: int) -> dict:
 
 
 def list_heatmap(year: int) -> dict:
-    """Retornar contagem de bullets por dia para o ano especificado.
+    """Retornar palavras escritas por dia para o heatmap anual.
 
-    Usado para gerar o heatmap de atividade do diário (estilo GitHub contributions).
-    Retorna apenas dias que têm pelo menos um bullet — dias sem entrada não aparecem.
+    Conta palavras dos bullets + palavras do campo dream por dia.
+    Retorna apenas dias com words > 0 e datas até hoje (sem datas futuras).
 
     Args:
         year: Ano de referência (ex.: 2026).
 
     Returns:
-        Dicionário mapeando datas para contagens:
-        {"2026-06-06": 3, "2026-06-07": 1, ...}
-
-    Example:
-        >>> list_heatmap(2026)
-        {"2026-06-06": 3}
+        Dicionário mapeando datas para contagem de palavras:
+        {"2026-06-06": 87, "2026-06-07": 145, ...}
     """
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            # Agrupa bullets por data de página e filtra pelo ano.
-            # jp.date::text converte DATE para string no formato YYYY-MM-DD.
-            # EXTRACT(YEAR FROM jp.date) filtra apenas o ano solicitado.
+            # Soma palavras de todos os bullets + palavras do campo dream da page.
+            # string_to_array + array_length conta palavras separadas por espaço.
+            # COALESCE protege contra NULL (bullet vazio ou page sem dream).
             cur.execute("""
-                SELECT jp.date::text AS date, COUNT(jb.id) AS cnt
+                SELECT jp.date::text AS date,
+                       COALESCE(SUM(
+                           array_length(string_to_array(trim(jb.content), ' '), 1)
+                       ), 0) +
+                       COALESCE(
+                           array_length(string_to_array(trim(jp.dream), ' '), 1), 0
+                       ) AS words
                 FROM journal_pages jp
-                JOIN journal_bullets jb ON jb.page_id = jp.id
+                LEFT JOIN journal_bullets jb ON jb.page_id = jp.id
                 WHERE EXTRACT(YEAR FROM jp.date) = %s
-                GROUP BY jp.date
+                  AND jp.date <= CURRENT_DATE
+                GROUP BY jp.id, jp.date, jp.dream
+                HAVING COALESCE(SUM(
+                    array_length(string_to_array(trim(jb.content), ' '), 1)
+                ), 0) + COALESCE(
+                    array_length(string_to_array(trim(jp.dream), ' '), 1), 0
+                ) > 0
                 ORDER BY jp.date
             """, (year,))
             rows = cur.fetchall()
 
-        # Converte lista de tuplas (date, cnt) para dict {date: cnt}
-        return {row[0]: row[1] for row in rows}
+        return {row[0]: int(row[1]) for row in rows}
     finally:
         conn.close()
 

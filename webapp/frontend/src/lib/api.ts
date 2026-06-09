@@ -101,6 +101,17 @@ export const api = {
    * @returns Promise com o corpo da resposta deserializado como tipo T
    * @throws Error se a resposta HTTP não for 2xx
    */
+  put: async <T>(path: string, body: unknown): Promise<T> => {
+    const res = await fetch(path, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json() as Promise<T>
+  },
+
   del: async <T>(path: string): Promise<T> => {
     const res = await fetch(path, {
       method: 'DELETE',
@@ -158,6 +169,62 @@ export async function updateBookMetadata(
   // O api.patch já trata credenciais (cookie), headers (Content-Type),
   // JSON serialization e validação de resposta HTTP.
   return api.patch<{ status: string; message: string }>(`/api/books/${bookId}/metadata`, data)
+}
+
+// ── Violet · Diário — API client ─────────────────────────────────────────
+
+/**
+ * Objeto com todos os métodos da API do diário (Violet).
+ * Espelha o padrão do booksApi — centraliza os endpoints em um único lugar.
+ */
+export const violetApi = {
+  /** Busca ou cria a page de uma data; retorna {page, bullets} */
+  page: (date: string) =>
+    api.get<{ page: Record<string, unknown>; bullets: unknown[] }>(`/api/journal/page?date=${date}`),
+
+  /** Upsert de um bullet */
+  upsertBullet: (body: { page_id: number; position: number; content: string; kind?: string }) =>
+    api.post<{ status: string; bullet: Record<string, unknown> }>('/api/journal/bullets', body),
+
+  /** Deleta um bullet pelo ID */
+  deleteBullet: (id: number) =>
+    api.del<{ status: string }>(`/api/journal/bullets/${id}`),
+
+  /** Atualiza o campo dream de uma page */
+  setDream: (page_id: number, dream: string) =>
+    api.put<{ status: string }>('/api/journal/page/dream', { page_id, dream }),
+
+  /** Heatmap de palavras por dia para o ano */
+  heatmap: (year: number) =>
+    api.get<Record<string, number>>(`/api/journal/heatmap?year=${year}`),
+
+  /** Lista @pessoas ou #tags com contagem */
+  mentions: (kind: 'person' | 'tag') =>
+    api.get<{ value: string; count: number }[]>(`/api/journal/mentions?kind=${kind}`),
+
+  /** Bullets que mencionam uma pessoa ou tag */
+  filter: (kind: 'person' | 'tag', value: string) =>
+    api.get<unknown[]>(`/api/journal/filter?kind=${kind}&value=${encodeURIComponent(value)}`),
+
+  /** Busca full-text */
+  search: (q: string) =>
+    api.get<unknown[]>(`/api/journal/search?q=${encodeURIComponent(q)}`),
+
+  /** Bullets de uma coleção (highlight/dream/idea/wisdom/note) */
+  collection: (kind: string) =>
+    api.get<unknown[]>(`/api/journal/collection/${kind}`),
+
+  /** Entries com campo dream não nulo */
+  dreams: () =>
+    api.get<unknown[]>('/api/journal/dreams'),
+
+  /** Estatísticas agregadas do ano */
+  stats: (year: number) =>
+    api.get<Record<string, unknown>>(`/api/journal/stats?year=${year}`),
+
+  /** Entries resumidas para o arquivo (Journal screen) */
+  entries: (q = '') =>
+    api.get<unknown[]>(`/api/journal/entries${q ? `?q=${encodeURIComponent(q)}` : ''}`),
 }
 
 // ── Tipos da seção Frieren ─────────────────────────────────────────────────
