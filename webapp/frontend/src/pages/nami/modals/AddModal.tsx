@@ -1,89 +1,79 @@
 // Modal de nova transação financeira.
+// Portado do handoff de referência (docs/.../nami/addmodal.jsx → AddModal).
 // Abre quando o usuário clica em "Nova transação" ou pressiona A/+.
-// Carrega a lista de categorias do backend na primeira abertura.
 
 import { useState, useEffect, useRef } from 'react'
 import { namiApi } from '../namiApi'
 import type { Account, Card, Category } from '../types'
+import { Icon, lucideToKey } from '../icons'
 
-// Props recebidas do NamiShell
 interface AddModalProps {
-  open: boolean                                  // controla visibilidade
-  accounts: Account[]                            // lista de contas para o seletor
-  cards: Card[]                                  // lista de cartões para o seletor
-  onClose: () => void                            // fecha sem salvar
-  onSaved: (msg?: string) => Promise<void>       // chamada após salvar com sucesso
+  /** Controla visibilidade */
+  open: boolean
+  /** Lista de contas para o seletor de fonte */
+  accounts: Account[]
+  /** Lista de cartões para o seletor de fonte */
+  cards: Card[]
+  /** Fecha sem salvar */
+  onClose: () => void
+  /** Chamada após salvar com sucesso */
+  onSaved: (msg?: string) => Promise<void>
 }
 
-// Categorias organizadas por tipo (in/out) para exibição no seletor
 type TipoTx = 'Despesa' | 'Receita'
 
-/** Modal de criação de transação (FR-001, FR-002). */
+/**
+ * Modal de criação de transação com categoria visual, campo de valor
+ * em destaque e atalhos de teclado (Enter = salvar, Esc = fechar).
+ * Usa as classes .modal-scrim / .modal / .type-toggle / .amt-field / .cat-grid.
+ */
 export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalProps) {
-  // Tipo da transação — alterna entre Despesa e Receita
-  const [tipo, setTipo]         = useState<TipoTx>('Despesa')
-  // Campos do formulário
-  const [name, setName]         = useState('')
-  const [valor, setValor]       = useState('')
-  const [categoria, setCategoria] = useState('Inbox')
-  // Fonte: conta bancária ou cartão de crédito
-  const [fonte, setFonte]       = useState('') // "conta:nome" ou "card:id"
-  const [data, setData]         = useState('')
-  const [notes, setNotes]       = useState('')
-  // Estado do formulário
-  const [saving, setSaving]     = useState(false)
-  const [error, setError]       = useState('')
-  // Categorias carregadas do backend
+  const [tipo, setTipo]           = useState<TipoTx>('Despesa')
+  const [name, setName]           = useState('')
+  const [valor, setValor]         = useState('')
+  const [catId, setCatId]         = useState('')
+  const [fonte, setFonte]         = useState('')   // "conta:nome" ou "card:id"
+  const [data, setData]           = useState('')
+  const [notes, setNotes]         = useState('')
+  const [saving, setSaving]       = useState(false)
+  const [error, setError]         = useState('')
   const [categories, setCategories] = useState<Category[]>([])
 
-  // Foco automático no campo nome ao abrir
-  const nameRef = useRef<HTMLInputElement>(null)
+  // Foco automático no campo de valor ao abrir
+  const valorRef = useRef<HTMLInputElement>(null)
 
-  // Carrega categorias uma única vez
+  // Carrega categorias uma única vez (sem depender de reabrir o modal)
   useEffect(() => {
     if (categories.length === 0) {
       namiApi.getCategories()
         .then(cats => setCategories(cats))
-        .catch(() => {
-          // Fallback: usa lista mínima se o endpoint falhar
-          setCategories([])
-        })
+        .catch(() => setCategories([]))
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Foca o input de nome quando o modal abre
+  // Foca o valor ao abrir
   useEffect(() => {
     if (open) {
-      setTimeout(() => nameRef.current?.focus(), 50)
+      setTimeout(() => valorRef.current?.focus(), 60)
     }
   }, [open])
 
   // Fecha ao pressionar Escape
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
   if (!open) return null
 
-  // Filtra categorias por tipo selecionado
+  // Filtra categorias pelo tipo (despesa = out, receita = in)
   const catsFiltered = categories.filter(c =>
     tipo === 'Despesa' ? c.kind === 'out' : c.kind === 'in'
   )
-  // Se não há categorias carregadas, usa lista de fallback
-  const catOptions = catsFiltered.length > 0
-    ? catsFiltered.map(c => c.id)
-    : tipo === 'Despesa'
-      ? ['Alimentacao','Comer Fora','Saude','Lazer','Transporte','Moradia',
-         'Roupas','Educacao','Assinaturas','Viagem','Presente','Beleza',
-         'Academia','Farmacia','Supermercado','Eletronicos','Pet','Inbox']
-      : ['Receita','Investimento']
 
-  // Resolve conta/cartão a partir do seletor "fonte"
+  // Resolve conta/cartão a partir do seletor de fonte
   function resolveFonte() {
     if (!fonte) return { conta: '', card_id: '' }
     const [kind, value] = fonte.split(':')
@@ -91,21 +81,32 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
     return { conta: value, card_id: '' }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim() || !valor || isNaN(Number(valor.replace(',', '.')))) {
-      setError('Nome e valor são obrigatórios.')
+  // Alterna tipo e reseta a categoria selecionada
+  function changeTipo(t: TipoTx) {
+    setTipo(t)
+    setCatId('')   // categoria da Receita não faz sentido em Despesa e vice-versa
+  }
+
+  async function handleSubmit(e?: React.FormEvent) {
+    e?.preventDefault()
+
+    // Converte vírgula para ponto e valida
+    const v = parseFloat(valor.replace(',', '.'))
+    if (!name.trim() || !v || v <= 0) {
+      setError('Descrição e valor são obrigatórios.')
       return
     }
+
     setSaving(true)
     setError('')
+
     try {
       const { conta, card_id } = resolveFonte()
       await namiApi.createTransaction({
         name: name.trim(),
-        valor: parseFloat(valor.replace(',', '.')),
+        valor: v,
         tipo,
-        categoria,
+        categoria: catId || (tipo === 'Despesa' ? 'outros' : 'receita'),
         conta,
         card_id,
         data,
@@ -114,8 +115,10 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
       // Reseta o formulário para próxima entrada rápida
       setName('')
       setValor('')
+      setCatId('')
       setNotes('')
       setData('')
+
       await onSaved('Transação salva ✓')
       onClose()
     } catch (err: unknown) {
@@ -125,219 +128,170 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
     }
   }
 
-  // Estilos reutilizáveis
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    padding: '9px 11px',
-    borderRadius: 'var(--r-sm)',
-    border: '1.5px solid var(--line)',
-    background: 'var(--paper)',
-    color: 'var(--ink)',
-    fontFamily: 'var(--sans)',
-    fontSize: 13.5,
-    outline: 'none',
-    transition: 'border-color 0.15s',
-    boxSizing: 'border-box',
-  }
-  const labelStyle: React.CSSProperties = {
-    display: 'block',
-    fontSize: 11,
-    fontWeight: 600,
-    color: 'var(--ink-3)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.07em',
-    marginBottom: 4,
+  // Enter no campo de valor submete (sem precisar clicar no botão)
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSubmit()
+    }
   }
 
   return (
-    // Scrim: fundo semitransparente que fecha o modal ao clicar
+    // Scrim: fundo semitransparente que fecha o modal ao clicar fora
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 100,
-        background: 'oklch(0 0 0 / 0.45)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backdropFilter: 'blur(3px)',
-      }}
+      className="modal-scrim"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      {/* Painel do modal */}
-      <div style={{
-        background: 'var(--card)',
-        borderRadius: 'var(--r-lg)',
-        boxShadow: 'var(--shadow-lg)',
-        width: '100%',
-        maxWidth: 440,
-        margin: '0 16px',
-        padding: '24px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-      }}>
-
+      <div className="modal">
         {/* Cabeçalho */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2 style={{ fontFamily: 'var(--display)', fontWeight: 700, fontSize: 18, color: 'var(--ink)', margin: 0 }}>
-            Nova transação
-          </h2>
-          <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', padding: 4 }}
-            aria-label="Fechar modal"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 6 6 18M6 6l12 12"/>
-            </svg>
+        <div className="modal-head">
+          <span className="modal-title">Nova transação</span>
+          <button className="modal-close" onClick={onClose} aria-label="Fechar">
+            <Icon name="x" size={16} />
           </button>
         </div>
 
-        {/* Seletor de tipo (Despesa / Receita) */}
-        <div style={{ display: 'flex', gap: 8 }}>
-          {(['Despesa', 'Receita'] as const).map(t => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => {
-                setTipo(t)
-                // Reseta categoria ao trocar tipo para evitar categoria inválida
-                setCategoria(t === 'Despesa' ? 'Inbox' : 'Receita')
-              }}
-              style={{
-                flex: 1,
-                padding: '9px',
-                borderRadius: 'var(--r-sm)',
-                border: `1.5px solid ${tipo === t
-                  ? (t === 'Despesa' ? 'var(--out)' : 'var(--in)')
-                  : 'var(--line)'}`,
-                background: tipo === t
-                  ? (t === 'Despesa' ? 'var(--out-tint)' : 'var(--in-tint)')
-                  : 'transparent',
-                color: tipo === t
-                  ? (t === 'Despesa' ? 'var(--out)' : 'var(--in)')
-                  : 'var(--ink-2)',
-                fontWeight: tipo === t ? 600 : 400,
-                fontSize: 13.5,
-                cursor: 'pointer',
-                fontFamily: 'var(--sans)',
-              }}
-            >
-              {t === 'Despesa' ? '↓ Despesa' : '↑ Receita'}
-            </button>
-          ))}
-        </div>
-
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Nome */}
-          <div>
-            <label style={labelStyle}>Descrição</label>
-            <input
-              ref={nameRef}
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder={tipo === 'Despesa' ? 'Ex.: Almoço, Uber, Netflix…' : 'Ex.: Salário, Freelance…'}
-              style={inputStyle}
-              required
-            />
-          </div>
-
-          {/* Valor */}
-          <div>
-            <label style={labelStyle}>Valor (R$)</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={valor}
-              onChange={e => setValor(e.target.value.replace(/[^0-9.,]/g, ''))}
-              placeholder="0,00"
-              style={{ ...inputStyle, fontFamily: 'var(--mono)', fontSize: 16 }}
-              required
-            />
-          </div>
-
-          {/* Categoria */}
-          <div>
-            <label style={labelStyle}>Categoria</label>
-            <select
-              value={categoria}
-              onChange={e => setCategoria(e.target.value)}
-              style={inputStyle}
-            >
-              {catOptions.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Fonte (conta ou cartão) */}
-          <div>
-            <label style={labelStyle}>Conta / Cartão</label>
-            <select
-              value={fonte}
-              onChange={e => setFonte(e.target.value)}
-              style={inputStyle}
-            >
-              <option value="">— Automático —</option>
-              {accounts.map(a => (
-                <option key={a.id} value={`conta:${a.name}`}>{a.name}</option>
-              ))}
-              {cards.map(c => (
-                <option key={c.id} value={`card:${c.id}`}>💳 {c.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Data */}
-          <div>
-            <label style={labelStyle}>Data (opcional)</label>
-            <input
-              type="date"
-              value={data}
-              onChange={e => setData(e.target.value)}
-              style={inputStyle}
-            />
-          </div>
-
-          {/* Notas */}
-          <div>
-            <label style={labelStyle}>Notas (opcional)</label>
-            <input
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder="Observações…"
-              style={inputStyle}
-            />
-          </div>
-
-          {/* Erro */}
-          {error && (
-            <div style={{ fontSize: 12.5, color: 'var(--out)', padding: '6px 10px', background: 'var(--out-tint)', borderRadius: 'var(--r-sm)' }}>
-              {error}
+        <form onSubmit={handleSubmit}>
+          <div className="modal-body">
+            {/* Toggle Despesa / Receita */}
+            <div className="type-toggle">
+              <button
+                type="button"
+                className={tipo === 'Despesa' ? 'active out' : ''}
+                onClick={() => changeTipo('Despesa')}
+              >
+                ↓ Despesa
+              </button>
+              <button
+                type="button"
+                className={tipo === 'Receita' ? 'active in' : ''}
+                onClick={() => changeTipo('Receita')}
+              >
+                ↑ Receita
+              </button>
             </div>
-          )}
 
-          {/* Botão de salvar */}
-          <button
-            type="submit"
-            disabled={saving}
-            style={{
-              padding: '10px',
-              borderRadius: 'var(--r-md)',
-              border: 'none',
-              background: tipo === 'Despesa' ? 'var(--out)' : 'var(--in)',
-              color: 'white',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: saving ? 'wait' : 'pointer',
-              opacity: saving ? 0.7 : 1,
-              fontFamily: 'var(--sans)',
-              transition: 'opacity 0.15s',
-            }}
-          >
-            {saving ? 'Salvando…' : `Lançar ${tipo}`}
-          </button>
+            {/* Campo de valor em destaque */}
+            <div className="amt-field">
+              <span className="amt-cur">R$</span>
+              <input
+                ref={valorRef}
+                className="amt-input"
+                type="text"
+                inputMode="decimal"
+                value={valor}
+                onChange={e => setValor(e.target.value.replace(/[^0-9.,]/g, ''))}
+                onKeyDown={onKeyDown}
+                placeholder="0,00"
+                aria-label="Valor"
+              />
+            </div>
+
+            {/* Campo de descrição */}
+            <div className="field" style={{ marginBottom: 16 }}>
+              <label>Descrição</label>
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                onKeyDown={onKeyDown}
+                placeholder={tipo === 'Despesa' ? 'Ex.: Almoço, Uber, Netflix…' : 'Ex.: Salário, Freelance…'}
+              />
+            </div>
+
+            {/* Grade de categorias — cards clicáveis com ícone + nome */}
+            {catsFiltered.length > 0 && (
+              <div className="cat-grid" style={{ marginBottom: 16 }}>
+                {catsFiltered.map(cat => {
+                  const iconKey = lucideToKey(cat.icon)
+                  // Fundo translúcido com a cor da categoria
+                  const iconBg = cat.color.replace(')', ' / 0.14)')
+                  const isActive = catId === cat.id
+
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      className={`cat-pick${isActive ? ' active' : ''}`}
+                      onClick={() => setCatId(id => id === cat.id ? '' : cat.id)}
+                    >
+                      <div
+                        className="cat-pick-ico"
+                        style={{ background: isActive ? iconBg : 'var(--mist)', color: cat.color }}
+                      >
+                        <Icon name={iconKey} size={14} />
+                      </div>
+                      <span className="cat-pick-name">{cat.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Conta/Cartão + Data (linha dupla) */}
+            <div className="row-2">
+              <div className="field">
+                <label>Conta / Cartão</label>
+                <select value={fonte} onChange={e => setFonte(e.target.value)}>
+                  <option value="">— Automático —</option>
+                  {accounts.map(a => (
+                    <option key={a.id} value={`conta:${a.name}`}>{a.name}</option>
+                  ))}
+                  {cards.map(c => (
+                    <option key={c.id} value={`card:${c.id}`}>⬛ {c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Data</label>
+                <input
+                  type="date"
+                  value={data}
+                  onChange={e => setData(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Notas opcionais */}
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Notas (opcional)</label>
+              <input
+                type="text"
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                onKeyDown={onKeyDown}
+                placeholder="Observações…"
+              />
+            </div>
+
+            {/* Mensagem de erro */}
+            {error && (
+              <div style={{ fontSize: 12, color: 'var(--out)', marginTop: 10, padding: '6px 10px', background: 'var(--out-t)', borderRadius: 'var(--rad-sm)' }}>
+                {error}
+              </div>
+            )}
+          </div>
+
+          {/* Rodapé com dicas de teclado + botão de salvar */}
+          <div className="modal-foot">
+            <div className="modal-foot-hints">
+              <kbd>↵</kbd> salvar
+              <kbd>esc</kbd> fechar
+            </div>
+            <div className="modal-foot-actions">
+              <button type="button" className="btn btn-ghost" onClick={onClose}>
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={saving}
+                style={{ background: tipo === 'Despesa' ? 'var(--out)' : 'var(--in)' }}
+              >
+                {saving ? 'Salvando…' : `Lançar ${tipo}`}
+              </button>
+            </div>
+          </div>
         </form>
       </div>
     </div>

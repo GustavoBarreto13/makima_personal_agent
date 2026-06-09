@@ -1,291 +1,355 @@
 // Tela de Dashboard da seção Nami.
-// Exibe resumo financeiro do mês: entradas, saídas, saldo líquido,
-// taxa de poupança e breakdown de gastos por categoria.
+// Portada do handoff de referência (docs/.../nami/screens-dash.jsx).
+// Layout: hero → QuickAdd → stat-row (4 cards) → grid-2 (fluxo+donut) →
+//         grid-2 (contas+próximos vencimentos) → preview orçamentos → transações recentes.
 
-import type { StatsResponse, Account } from '../types'
+import { useState, useEffect, useMemo } from 'react'
+import { namiApi } from '../namiApi'
+import type { StatsResponse, Account, Card, Subscription, Category } from '../types'
+import { QuickAdd } from '../components/QuickAdd'
+import { TxList } from '../components/TxRow'
+import { Icon } from '../icons'
+import { DonutPanel, CashflowBars, BigMoney, Spark, greet, daysUntil, urgency, fmtMoney } from '../ui'
+import { normalizeTx, buildCatMap, groupByDay } from '../lib'
 
-// Props recebidas do NamiShell via commonProps + searchQuery
 interface DashboardProps {
   month: string
   stats: StatsResponse | null
   accounts: Account[]
+  cards: Card[]
+  subscriptions: Subscription[]
+  onTransactionSaved: (msg?: string) => Promise<void>
+  onToast: (msg: string) => void
+  onNavigate: (view: string) => void
   onOpenAddModal: () => void
   searchQuery: string
-  // Props extras do commonProps — não usadas aqui, aceitas como unknown para evitar conflito de tipo
-  cards?: unknown
-  subscriptions?: unknown
-  onTransactionSaved?: unknown
-  onToast?: unknown
-  onNavigate?: unknown
 }
 
-/** Formata número como reais sem símbolo (usa classe .amount para privacidade). */
-function fmt(v: number): string {
-  return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(v)
-}
+/**
+ * Tela de visão geral financeira do mês selecionado.
+ * Exibe todos os KPIs principais, gráficos e atalhos de ação.
+ */
+export function Dashboard({
+  month, stats, accounts, cards, subscriptions,
+  onTransactionSaved, onToast, onNavigate, onOpenAddModal,
+}: DashboardProps) {
+  // Categorias — carregadas uma vez
+  const [categories, setCategories] = useState<Category[]>([])
+  // Transações recentes para o preview do dashboard
+  const [recentTxs, setRecentTxs]   = useState<ReturnType<typeof normalizeTx>[]>([])
+  const [deletingId, setDeletingId]  = useState<string | null>(null)
+  const [loadingTxs, setLoadingTxs]  = useState(true)
 
-/** Formata percentual com uma casa decimal. */
-function pct(v: number): string {
-  return `${(v * 100).toFixed(1)}%`
-}
+  // Carrega categorias uma vez
+  useEffect(() => {
+    namiApi.getCategories()
+      .then(cats => setCategories(cats))
+      .catch(() => {})
+  }, [])
 
-/** Tela de visão geral financeira do mês selecionado. */
-export function Dashboard({ stats, accounts, onOpenAddModal }: DashboardProps) {
-  // Se ainda não há dados, mostra estado de carregamento
-  if (!stats) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--ink-3)' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 28, marginBottom: 8 }}>⊞</div>
-          <div style={{ fontSize: 14 }}>Carregando…</div>
-        </div>
-      </div>
-    )
+  // Carrega transações recentes para o preview (últimas 5)
+  useEffect(() => {
+    setLoadingTxs(true)
+    namiApi.getTransactions(month)
+      .then(r => {
+        const normalized = (r.transactions ?? []).map(normalizeTx)
+        // Ordena decrescente por data e pega as 5 mais recentes
+        const sorted = normalized.sort((a, b) => b.date.localeCompare(a.date))
+        setRecentTxs(sorted.slice(0, 5))
+      })
+      .catch(() => setRecentTxs([]))
+      .finally(() => setLoadingTxs(false))
+  }, [month])
+
+  // Mapa de categorias para lookup
+  const catMap = useMemo(() => buildCatMap(categories), [categories])
+
+  // Remove uma transação do preview
+  async function handleDelete(id: string) {
+    setDeletingId(id)
+    try {
+      await namiApi.deleteTransaction(id)
+      setRecentTxs(prev => prev.filter(tx => tx.id !== id))
+      onToast('Transação removida')
+      await onTransactionSaved()
+    } catch {
+      onToast('Erro ao remover')
+    } finally {
+      setDeletingId(null)
+    }
   }
 
-  const income  = stats.income ?? 0
-  const expense = stats.expense ?? 0
-  const net     = stats.net ?? 0
-  const savingsRate = stats.savings_rate ?? 0
+  // Extrai dados do stats (com defaults para o estado de carregamento)
+  const income       = stats?.income       ?? 0
+  const expense      = stats?.expense      ?? 0
+  const net          = stats?.net          ?? 0
+  const savingsRate  = stats?.savings_rate ?? 0
+  const patrimonio   = stats?.patrimonio   ?? accounts.reduce((s, a) => s + (a.balance_inicial ?? 0), 0)
+  const byCategory   = stats?.by_category  ?? []
+  const cashflow     = stats?.cashflow     ?? []
+  const dailySpend   = stats?.daily_spending?.map(d => d.expense) ?? []
 
-  // Calcula patrimônio total a partir das contas (snapshot)
-  const patrimonio = accounts.reduce((s, a) => s + (a.balance_inicial ?? 0), 0)
+  // Próximos vencimentos: cartões + assinaturas com next_billing_day / due_day
+  const upcoming = useMemo(() => {
+    const items: { name: string; amount: number; days: number; kind: string }[] = []
+
+    // Cartões — vencimento da fatura
+    cards.forEach(c => {
+      if (c.due_day) {
+        const d = daysUntil(c.due_day)
+        if (d >= 0 && d <= 30) items.push({ name: c.name, amount: 0, days: d, kind: 'card' })
+      }
+    })
+
+    // Assinaturas ativas com dia de cobrança
+    subscriptions
+      .filter(s => s.status === 'ativa' && s.next_billing_day)
+      .forEach(s => {
+        const d = daysUntil(s.next_billing_day!)
+        if (d >= 0 && d <= 30) items.push({ name: s.name, amount: s.valor, days: d, kind: 'sub' })
+      })
+
+    // Ordena pelo mais próximo
+    return items.sort((a, b) => a.days - b.days).slice(0, 5)
+  }, [cards, subscriptions])
+
+  // Agrupamento das transações recentes para o TxList
+  const recentGroups = useMemo(() => groupByDay(recentTxs), [recentTxs])
 
   return (
-    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 860 }}>
+    <>
+      {/* ── Hero ─────────────────────────────────────────────────────── */}
+      <div className="hero">
+        <div className="hero-copy">
+          <div className="hero-eyebrow">Visão geral do mês</div>
+          <div className="hero-greet">{greet()}, Gustavo!</div>
 
-      {/* ── Cards de resumo do mês ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+          {/* Valor líquido do mês em destaque */}
+          <div className="hero-net">
+            <BigMoney value={net} className={net >= 0 ? 'in' : 'out'} />
+          </div>
+          <div className="hero-sub">
+            Taxa de poupança: {(savingsRate * 100).toFixed(1)}%
+            {income > 0 && ` · ${stats?.income_count ?? 0} receitas / ${stats?.expense_count ?? 0} despesas`}
+          </div>
 
-        {/* Entradas */}
-        <div style={{
-          background: 'var(--in-tint)',
-          borderRadius: 'var(--r-md)',
-          padding: '16px 18px',
-          border: '1px solid var(--line)',
-        }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--in)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
-            Entrou
-          </div>
-          <div className="amount" style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 500, color: 'var(--in)' }}>
-            R$ {fmt(income)}
-          </div>
-          <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 4 }}>
-            {stats.income_count} lançamentos
-          </div>
+          <button className="hero-cta" onClick={onOpenAddModal}>
+            <Icon name="plus" size={14} />
+            Novo lançamento
+          </button>
         </div>
 
-        {/* Saídas */}
-        <div style={{
-          background: 'var(--out-tint)',
-          borderRadius: 'var(--r-md)',
-          padding: '16px 18px',
-          border: '1px solid var(--line)',
-        }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--out)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
-            Saiu
-          </div>
-          <div className="amount" style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 500, color: 'var(--out)' }}>
-            R$ {fmt(expense)}
-          </div>
-          <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 4 }}>
-            {stats.expense_count} lançamentos
-          </div>
-        </div>
-
-        {/* Saldo do mês */}
-        <div style={{
-          background: net >= 0 ? 'var(--in-tint)' : 'var(--out-tint)',
-          borderRadius: 'var(--r-md)',
-          padding: '16px 18px',
-          border: '1px solid var(--line)',
-        }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: net >= 0 ? 'var(--in)' : 'var(--out)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
-            Saldo do mês
-          </div>
-          <div className="amount" style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 500, color: net >= 0 ? 'var(--in)' : 'var(--out)' }}>
-            R$ {fmt(Math.abs(net))}
-          </div>
-          <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 4 }}>
-            Taxa de poupança: {pct(savingsRate)}
+        {/* Retrato da Nami com efeito de halo */}
+        <div className="hero-portrait">
+          <div className="halo">
+            <img
+              src="/nami-hero.png"
+              alt="Nami"
+              onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+            />
           </div>
         </div>
       </div>
 
-      {/* ── Segunda linha: Patrimônio e Gastos por categoria ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      {/* ── QuickAdd ─────────────────────────────────────────────────── */}
+      <QuickAdd
+        categories={categories}
+        onSaved={async msg => { await onTransactionSaved(msg) }}
+      />
 
-        {/* Patrimônio total */}
-        <div style={{
-          background: 'var(--card)',
-          borderRadius: 'var(--r-md)',
-          padding: '18px',
-          border: '1px solid var(--line)',
-          boxShadow: 'var(--shadow-sm)',
-        }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', marginBottom: 12 }}>
-            PATRIMÔNIO
+      {/* ── Stat-row: 4 cards de KPI ─────────────────────────────────── */}
+      <div className="stat-row">
+        {/* Receitas */}
+        <div className="stat-card">
+          <div className="stat-label">Entrou</div>
+          <div className="stat-val in">
+            <span className="amount">{fmtMoney(income)}</span>
           </div>
+          <div className="stat-detail">{stats?.income_count ?? 0} lançamentos</div>
+        </div>
 
-          {/* Patrimônio total */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, color: 'var(--ink-4)', marginBottom: 2 }}>Total (contas)</div>
-            <div className="amount" style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 600, color: 'var(--ink)' }}>
-              R$ {fmt(patrimonio)}
-            </div>
+        {/* Despesas + sparkline */}
+        <div className="stat-card">
+          <div className="stat-label">Saiu</div>
+          <div className="stat-val out">
+            <span className="amount">{fmtMoney(expense)}</span>
           </div>
+          {dailySpend.length > 1 && (
+            <Spark data={dailySpend} color="var(--out)" />
+          )}
+        </div>
 
-          {/* Contas */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {accounts.slice(0, 4).map(acc => (
-              <div key={acc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {/* Avatar da conta (sigla ou ícone) */}
-                  <div style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 6,
-                    background: acc.color ?? 'var(--tang-tint)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: 'var(--tang-deep)',
-                    fontFamily: 'var(--mono)',
-                  }}>
-                    {acc.short ?? acc.name.slice(0, 2).toUpperCase()}
+        {/* Saldo líquido + barra de meta */}
+        <div className="stat-card">
+          <div className="stat-label">Saldo do mês</div>
+          <div className={`stat-val ${net >= 0 ? 'in' : 'out'}`}>
+            <span className="amount">{fmtMoney(net)}</span>
+          </div>
+          <div className="goal-track">
+            <div
+              className="goal-fill"
+              style={{ width: `${Math.min(savingsRate * 100, 100)}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Patrimônio */}
+        <div className="stat-card">
+          <div className="stat-label">Patrimônio</div>
+          <div className="stat-val">
+            <span className="amount">{fmtMoney(patrimonio)}</span>
+          </div>
+          <div className="stat-detail">{accounts.length} conta{accounts.length !== 1 ? 's' : ''}</div>
+        </div>
+      </div>
+
+      {/* ── Grid 2: fluxo de caixa + donut "Para onde foi" ───────────── */}
+      <div className="grid-2">
+        {/* Fluxo de caixa histórico (últimos 6 meses) */}
+        <div className="panel">
+          <div className="panel-head">
+            <span className="panel-title">Fluxo de caixa</span>
+          </div>
+          <div className="panel-body">
+            {cashflow.length > 0
+              ? <CashflowBars cashflow={cashflow} currentMonth={month} />
+              : <div className="empty" style={{ padding: '24px 0' }}><p>Sem histórico</p></div>
+            }
+          </div>
+        </div>
+
+        {/* Donut: distribuição de gastos por categoria */}
+        <div className="panel">
+          <div className="panel-head">
+            <span className="panel-title">Para onde foi</span>
+          </div>
+          <div className="panel-body">
+            {byCategory.length > 0
+              ? <DonutPanel byCategory={byCategory} catMap={catMap} totalExpense={expense} />
+              : <div className="empty" style={{ padding: '24px 0' }}><p>Sem gastos no período</p></div>
+            }
+          </div>
+        </div>
+      </div>
+
+      {/* ── Grid 2: contas + próximos vencimentos ────────────────────── */}
+      <div className="grid-2">
+        {/* Contas */}
+        <div className="panel">
+          <div className="panel-head">
+            <span className="panel-title">Contas</span>
+            <button className="panel-action" onClick={() => onNavigate('contas')}>
+              Ver todas
+            </button>
+          </div>
+          <div className="panel-body no-pad">
+            {accounts.length === 0 ? (
+              <div className="empty"><p>Nenhuma conta</p></div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {accounts.slice(0, 4).map(acc => (
+                  <div
+                    key={acc.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 16px',
+                      borderBottom: '1px solid var(--line)',
+                    }}
+                  >
+                    {/* Avatar da conta */}
+                    <div style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: 7,
+                      background: acc.color ? acc.color.replace(')', ' / 0.15)') : 'var(--accent-t)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: acc.color ?? 'var(--accent)',
+                      fontFamily: 'var(--font-mono)',
+                      overflow: 'hidden',
+                      flexShrink: 0,
+                    }}>
+                      {acc.icon_url
+                        ? <img src={acc.icon_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 7 }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                        : (acc.short ?? acc.name.slice(0, 2).toUpperCase())
+                      }
+                    </div>
+                    <span style={{ flex: 1, fontSize: 12.5, color: 'var(--ink)', fontWeight: 500 }}>{acc.name}</span>
+                    <span className="amount" style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--ink)', fontWeight: 600 }}>
+                      {fmtMoney(acc.balance_inicial ?? 0)}
+                    </span>
                   </div>
-                  <span style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>{acc.name}</span>
-                </div>
-                <span className="amount" style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink)' }}>
-                  R$ {fmt(acc.balance_inicial ?? 0)}
-                </span>
-              </div>
-            ))}
-            {accounts.length === 0 && (
-              <div style={{ fontSize: 12.5, color: 'var(--ink-4)', textAlign: 'center', padding: '8px 0' }}>
-                Nenhuma conta cadastrada
+                ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* Gastos por categoria */}
-        <div style={{
-          background: 'var(--card)',
-          borderRadius: 'var(--r-md)',
-          padding: '18px',
-          border: '1px solid var(--line)',
-          boxShadow: 'var(--shadow-sm)',
-        }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', marginBottom: 12 }}>
-            GASTOS POR CATEGORIA
+        {/* Próximos vencimentos */}
+        <div className="panel">
+          <div className="panel-head">
+            <span className="panel-title">Próximos vencimentos</span>
           </div>
-
-          {stats.by_category && stats.by_category.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {stats.by_category.slice(0, 6).map(cat => (
-                <div key={cat.categoria}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <span style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>{cat.categoria}</span>
-                    <span className="amount" style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink)' }}>
-                      R$ {fmt(cat.total)}
-                    </span>
-                  </div>
-                  {/* Barra de progresso */}
-                  <div style={{ height: 4, borderRadius: 2, background: 'var(--line)', overflow: 'hidden' }}>
-                    <div style={{
-                      height: '100%',
-                      width: `${Math.min(cat.pct, 100)}%`,
-                      background: 'var(--tang)',
-                      borderRadius: 2,
-                      transition: 'width 0.4s ease',
-                    }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ fontSize: 12.5, color: 'var(--ink-4)', textAlign: 'center', padding: '16px 0' }}>
-              Sem gastos neste mês
-            </div>
-          )}
+          <div className="panel-body no-pad">
+            {upcoming.length === 0 ? (
+              <div className="empty"><p>Nenhum vencimento nos próximos 30 dias</p></div>
+            ) : (
+              <div className="upcoming-list">
+                {upcoming.map((item, i) => {
+                  const urg = urgency(item.days)
+                  return (
+                    <div key={i} className="upcoming-item">
+                      <Icon name={item.kind === 'card' ? 'card' : 'repeat'} size={14} />
+                      <span className="upcoming-name">{item.name}</span>
+                      <span className={`upcoming-days ${urg}`}>
+                        {item.days === 0 ? 'hoje' : `${item.days}d`}
+                      </span>
+                      {item.amount > 0 && (
+                        <span className="upcoming-val amount">
+                          {fmtMoney(item.amount)}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── Fluxo de caixa histórico ── */}
-      {stats.cashflow && stats.cashflow.length > 0 && (
-        <div style={{
-          background: 'var(--card)',
-          borderRadius: 'var(--r-md)',
-          padding: '18px',
-          border: '1px solid var(--line)',
-          boxShadow: 'var(--shadow-sm)',
-        }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', marginBottom: 14 }}>
-            HISTÓRICO (ÚLTIMOS MESES)
+      {/* ── Transações recentes ───────────────────────────────────────── */}
+      {!loadingTxs && recentTxs.length > 0 && (
+        <div className="panel">
+          <div className="panel-head">
+            <span className="panel-title">Transações recentes</span>
+            <button className="panel-action" onClick={() => onNavigate('transacoes')}>
+              Ver todas
+            </button>
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', height: 80 }}>
-            {stats.cashflow.slice(-6).map(entry => {
-              // Encontra o máximo para escalar as barras
-              const maxVal = Math.max(...stats.cashflow.map(e => Math.max(e.income, e.expense)))
-              const inH = maxVal > 0 ? (entry.income / maxVal) * 100 : 0
-              const outH = maxVal > 0 ? (entry.expense / maxVal) * 100 : 0
-              return (
-                <div key={entry.month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                  <div style={{ display: 'flex', gap: 2, alignItems: 'flex-end', height: 60 }}>
-                    {/* Barra de entradas */}
-                    <div style={{ width: 10, height: `${inH}%`, minHeight: 2, background: 'var(--in)', borderRadius: '2px 2px 0 0' }} />
-                    {/* Barra de saídas */}
-                    <div style={{ width: 10, height: `${outH}%`, minHeight: 2, background: 'var(--out)', borderRadius: '2px 2px 0 0' }} />
-                  </div>
-                  <div style={{ fontSize: 9, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>
-                    {entry.month.slice(5)}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          {/* Legenda */}
-          <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--ink-3)' }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--in)', display: 'inline-block' }} />
-              Entradas
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--ink-3)' }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--out)', display: 'inline-block' }} />
-              Saídas
-            </div>
+          <div className="panel-body no-pad">
+            <TxList
+              groups={recentGroups}
+              catMap={catMap}
+              onDelete={handleDelete}
+              deletingId={deletingId}
+            />
           </div>
         </div>
       )}
 
-      {/* ── CTA quando não há lançamentos ── */}
-      {income === 0 && expense === 0 && (
-        <div style={{ textAlign: 'center', padding: '32px 0' }}>
-          <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
-          <div style={{ fontSize: 15, color: 'var(--ink-2)', marginBottom: 12 }}>
-            Nenhum lançamento este mês
-          </div>
-          <button
-            onClick={onOpenAddModal}
-            style={{
-              padding: '10px 20px',
-              borderRadius: 'var(--r-md)',
-              border: 'none',
-              background: 'var(--tang)',
-              color: 'white',
-              fontSize: 13.5,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'var(--sans)',
-            }}
-          >
-            + Primeiro lançamento
-          </button>
+      {/* ── CTA quando sem lançamentos ───────────────────────────────── */}
+      {!stats && (
+        <div className="loading">
+          <Icon name="dashboard" size={24} />
+          Carregando…
         </div>
       )}
-    </div>
+    </>
   )
 }

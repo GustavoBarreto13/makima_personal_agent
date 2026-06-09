@@ -1,6 +1,9 @@
 // Shell principal da seção Nami · Finanças.
 // Gerencia: navegação interna por hash, seletor de mês, estado global de stats,
 // atalhos de teclado, tweaks visuais e toast de feedback.
+//
+// ESTRUTURA DOM: portada do handoff de referência (docs/.../nami/app.jsx + styles.css).
+// A LÓGICA DE DADOS é preservada integralmente; só a marcação HTML foi atualizada.
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import './nami.css'
@@ -9,8 +12,10 @@ import { namiApi } from './namiApi'
 import type { StatsResponse, Account, Card, Subscription, Tweaks } from './types'
 import { Toast } from './Toast'
 import { TweaksPanel } from './TweaksPanel'
+import { Icon } from './icons'
+import { fmtMoney } from './ui'
 
-// ── Importações das telas (carregadas sob demanda pelo bundler) ───────────────
+// ── Importações das telas ─────────────────────────────────────────────────────
 import { Dashboard }     from './screens/Dashboard'
 import { Transactions }  from './screens/Transactions'
 import { Accounts }      from './screens/Accounts'
@@ -28,15 +33,7 @@ type NamiView =
   | 'dashboard' | 'transacoes' | 'contas' | 'cartoes'
   | 'orcamentos' | 'assinaturas' | 'emprestimos' | 'financiamentos'
 
-/** Estrutura de um item de navegação da sidebar. */
-interface NavItem {
-  id: NamiView
-  label: string
-  icon: string   // codepoint de emoji ou SVG path key
-  badge?: string | null
-}
-
-// ── Mapeamento hash → view (deep-link FR-006) ─────────────────────────────────
+// ── Mapeamento hash → view (deep-link) ───────────────────────────────────────
 const HASH_TO_VIEW: Record<string, NamiView> = {
   '#dashboard':     'dashboard',
   '#transacoes':    'transacoes',
@@ -70,10 +67,22 @@ const VIEW_TITLES: Record<NamiView, string> = {
   financiamentos: 'Financiamentos',
 }
 
-// Views que exibem o seletor de mês na topbar (FR-004)
+// Views que exibem o seletor de mês na topbar
 const VIEWS_WITH_MONTH: Set<NamiView> = new Set([
   'dashboard', 'transacoes', 'contas', 'cartoes', 'orcamentos',
 ])
+
+// ── Ícones de cada view na sidebar ───────────────────────────────────────────
+const VIEW_ICONS: Record<NamiView, string> = {
+  dashboard:      'dashboard',
+  transacoes:     'receipt',
+  contas:         'bank',
+  cartoes:        'card',
+  orcamentos:     'target',
+  assinaturas:    'repeat',
+  emprestimos:    'handshake',
+  financiamentos: 'building',
+}
 
 // ── Tweaks padrão e persistência ──────────────────────────────────────────────
 
@@ -84,30 +93,18 @@ const TWEAKS_DEFAULTS: Tweaks = {
   privacidade: false,
 }
 
-const ACENTO_ATTR: Record<Tweaks['acento'], string> = {
-  'Tangerina': 'tangerina',
-  'Azul-maré': 'azul-mare',
-  'Coral':     'coral',
-  'Ouro':      'ouro',
-}
-
 function loadTweaks(): Tweaks {
+  // Lê as preferências do localStorage; se não existir, usa os padrões
   try {
     return {
-      tema:       (localStorage.getItem('nami:tema') as Tweaks['tema'])       ?? TWEAKS_DEFAULTS.tema,
-      acento:     (localStorage.getItem('nami:acento') as Tweaks['acento'])   ?? TWEAKS_DEFAULTS.acento,
+      tema:       (localStorage.getItem('nami:tema') as Tweaks['tema'])           ?? TWEAKS_DEFAULTS.tema,
+      acento:     (localStorage.getItem('nami:acento') as Tweaks['acento'])       ?? TWEAKS_DEFAULTS.acento,
       densidade:  (localStorage.getItem('nami:densidade') as Tweaks['densidade']) ?? TWEAKS_DEFAULTS.densidade,
       privacidade: localStorage.getItem('nami:privacidade') === 'true',
     }
   } catch {
     return { ...TWEAKS_DEFAULTS }
   }
-}
-
-/** Formata valor em reais compacto para badges da sidebar (ex.: 12.500 → "12,5k"). */
-function formatCompact(v: number): string {
-  if (v >= 1000) return `${(v / 1000).toFixed(1).replace('.', ',')}k`
-  return v.toFixed(2).replace('.', ',')
 }
 
 /** Retorna o mês atual no formato YYYY-MM. */
@@ -123,12 +120,18 @@ function shiftMonth(month: string, delta: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-/** Formata YYYY-MM para exibição ("Junho 2026"). */
+/** Formata YYYY-MM para exibição abreviada ("Jun 2026"). */
 function formatMonthLabel(month: string): string {
   const [y, m] = month.split('-').map(Number)
-  const names = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-                 'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+  const names = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
   return `${names[m - 1]} ${y}`
+}
+
+/** Formata valor em reais compacto para badges da sidebar (ex.: 12.500 → "12,5k"). */
+function formatCompact(v: number): string {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1).replace('.', ',')}M`
+  if (v >= 1_000)     return `${(v / 1_000).toFixed(1).replace('.', ',')}k`
+  return v.toFixed(0)
 }
 
 // ── Componente Shell ──────────────────────────────────────────────────────────
@@ -137,7 +140,7 @@ function formatMonthLabel(month: string): string {
 export function NamiShell() {
   // ── Navegação interna ──────────────────────────────────────────────────────
   const [view, setView] = useState<NamiView>(() => {
-    // Lê o hash da URL para suportar deep-link (FR-006)
+    // Lê o hash da URL para suportar deep-link
     const hash = window.location.hash.toLowerCase()
     return HASH_TO_VIEW[hash] ?? 'dashboard'
   })
@@ -172,9 +175,7 @@ export function NamiShell() {
       const s = await namiApi.getStats(month)
       setStats(s)
     } catch {
-      // Exibe um toast de erro em vez de engolir silenciosamente.
-      // Sem isso, qualquer falha de /stats deixa o Dashboard travado em "Carregando…"
-      // indefinidamente, pois stats permanece null e não há feedback visual para o usuário.
+      // Toast de erro em vez de engolir silenciosamente — evita Dashboard preso em "Carregando…"
       setToast('Erro ao carregar dados do mês')
     }
   }, [month])
@@ -194,21 +195,20 @@ export function NamiShell() {
     }
   }, [])
 
-  useEffect(() => {
-    loadStats()
-  }, [loadStats])
+  useEffect(() => { loadStats() },  [loadStats])
+  useEffect(() => { loadGlobal() }, [loadGlobal])
 
-  useEffect(() => {
-    loadGlobal()
-  }, [loadGlobal])
-
-  // ── Efeito de tema ─────────────────────────────────────────────────────────
+  // ── Efeito de tema — aplica data-* no elemento raiz ───────────────────────
   useEffect(() => {
     const el = rootRef.current
     if (!el) return
+    // data-theme: "dark" | "light"
     el.setAttribute('data-theme', tweaks.tema === 'Escuro' ? 'dark' : 'light')
-    el.setAttribute('data-accent', ACENTO_ATTR[tweaks.acento])
+    // data-acento: label do acento (ex.: "Azul-maré") — lido pelo CSS via [data-acento='Azul-maré']
+    el.setAttribute('data-acento', tweaks.acento)
+    // data-privacy: "on" | "" — o CSS borra .amount quando "on"
     el.setAttribute('data-privacy', tweaks.privacidade ? 'on' : '')
+    // data-density: "compacto" | "confortavel"
     el.setAttribute('data-density', tweaks.densidade === 'Compacto' ? 'compacto' : 'confortavel')
   }, [tweaks])
 
@@ -259,51 +259,47 @@ export function NamiShell() {
   // ── Badges da sidebar ──────────────────────────────────────────────────────
   // Patrimônio total (soma dos saldos de todas as contas)
   const patrimonioTotal = accounts.reduce((s, a) => s + (a.balance_inicial ?? 0), 0)
-  // Fatura total dos cartões no mês (aproximação via stats)
-  const faturaTotal = stats?.expense ?? 0
-  // Total mensal de assinaturas
+  // Total mensal de assinaturas ativas
   const subsTotal = subscriptions
     .filter(s => s.status === 'ativa' && s.ciclo === 'mensal')
     .reduce((s, sub) => s + sub.valor, 0)
-
-  // ── Itens de navegação da sidebar ─────────────────────────────────────────
-  const navGroups: { label: string; items: NavItem[] }[] = [
-    {
-      label: 'Visão geral',
-      items: [
-        { id: 'dashboard', label: 'Dashboard', icon: '⊞' },
-      ],
-    },
-    {
-      label: 'Dia a dia',
-      items: [
-        { id: 'transacoes',  label: 'Transações', icon: '↕' },
-        { id: 'contas',      label: 'Contas',     icon: '🏦', badge: patrimonioTotal > 0 ? formatCompact(patrimonioTotal) : null },
-        { id: 'cartoes',     label: 'Cartões',    icon: '💳', badge: faturaTotal > 0 ? formatCompact(faturaTotal) : null },
-      ],
-    },
-    {
-      label: 'Planejamento',
-      items: [
-        { id: 'orcamentos',    label: 'Orçamentos',    icon: '◎' },
-        { id: 'assinaturas',   label: 'Assinaturas',   icon: '↻', badge: subsTotal > 0 ? formatCompact(subsTotal) : null },
-        { id: 'emprestimos',   label: 'Empréstimos',   icon: '🤝' },
-        { id: 'financiamentos',label: 'Financiamentos',icon: '🏗' },
-      ],
-    },
-  ]
 
   // ── Valores da SummBar ─────────────────────────────────────────────────────
   const income  = stats?.income  ?? 0
   const expense = stats?.expense ?? 0
   const net     = stats?.net     ?? 0
-  const flowPct = income > 0 ? Math.min((expense / income) * 100, 100) : 0
 
-  const fmt = (v: number) =>
-    new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(v)
+  // ── Grupos de navegação da sidebar ────────────────────────────────────────
+  const navGroups: {
+    label: string
+    items: { id: NamiView; label: string; badge?: string | null }[]
+  }[] = [
+    {
+      label: 'Visão geral',
+      items: [{ id: 'dashboard', label: 'Dashboard' }],
+    },
+    {
+      label: 'Dia a dia',
+      items: [
+        { id: 'transacoes',  label: 'Transações' },
+        { id: 'contas',      label: 'Contas',  badge: patrimonioTotal > 0 ? formatCompact(patrimonioTotal) : null },
+        { id: 'cartoes',     label: 'Cartões' },
+      ],
+    },
+    {
+      label: 'Planejamento',
+      items: [
+        { id: 'orcamentos',    label: 'Orçamentos' },
+        { id: 'assinaturas',   label: 'Assinaturas', badge: subsTotal > 0 ? formatCompact(subsTotal) : null },
+        { id: 'emprestimos',   label: 'Empréstimos' },
+        { id: 'financiamentos',label: 'Financiamentos' },
+      ],
+    },
+  ]
 
   // ── Renderização da view ativa ────────────────────────────────────────────
   function renderView() {
+    // Props compartilhadas por todas as telas
     const commonProps = {
       month,
       stats,
@@ -312,7 +308,7 @@ export function NamiShell() {
       subscriptions,
       onTransactionSaved: handleTransactionSaved,
       onToast: setToast,
-      onNavigate: navigate,
+      onNavigate: (v: string) => navigate(v as NamiView),
       onOpenAddModal: () => setAddOpen(true),
     }
 
@@ -334,122 +330,157 @@ export function NamiShell() {
       case 'financiamentos':
         return <Financings onToast={setToast} stats={stats} />
       default:
-        return <div className="nami-empty"><span className="nami-empty-text">View não encontrada.</span></div>
+        return null
     }
   }
 
   return (
-    // Elemento raiz — data-theme, data-accent, data-privacy, data-density aplicados pelo efeito
+    // Elemento raiz — recebe todos os data-* do efeito de tema
     <div className="nami-app" ref={rootRef}>
 
-      {/* ── Sidebar ── */}
-      <aside className="nami-side">
-        <div className="nami-brand">
-          <div className="nami-brand-mark">
-            <img src="/nami.jpg" alt="Nami" />
-          </div>
+      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+      <aside className="nm-side">
+
+        {/* Logo/marca da Nami */}
+        <div className="side-brand">
+          <img
+            src="/nami.jpg"
+            alt="Nami"
+            className="brand-mark"
+            // Fallback se a imagem não carregar (ex.: dev sem o asset)
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+          />
           <div>
-            <div className="nami-brand-name">Nami</div>
-            <div className="nami-brand-role">Finanças</div>
+            <div className="brand-name">Nami</div>
+            <div className="brand-sub">Finanças pessoais</div>
           </div>
         </div>
 
-        {/* Botão de ação principal */}
-        <button className="nami-side-btn" onClick={() => setAddOpen(true)}>
-          <span>+</span>
-          <span className="side-log-label">Nova transação</span>
-          <span className="nami-side-btn-shortcut">A</span>
-        </button>
+        {/* Botão de ação principal com atalho de teclado */}
+        <div className="side-add">
+          <button className="side-add-btn" onClick={() => setAddOpen(true)}>
+            <span>Nova transação</span>
+            <kbd>A</kbd>
+          </button>
+        </div>
 
         {/* Grupos de navegação */}
-        {navGroups.map(group => (
-          <div key={group.label} className="nami-nav-group">
-            <div className="nami-nav-group-label">{group.label}</div>
-            {group.items.map(item => (
-              <button
-                key={item.id}
-                className={'nami-nav-item' + (view === item.id ? ' active' : '')}
-                onClick={() => navigate(item.id)}
-              >
-                <span style={{ fontSize: 15 }}>{item.icon}</span>
-                <span className="nav-label">{item.label}</span>
-                {item.badge != null && (
-                  <span className="nami-nav-badge nav-badge">{item.badge}</span>
-                )}
-              </button>
-            ))}
-          </div>
-        ))}
+        <nav className="side-nav">
+          {navGroups.map(group => (
+            <div key={group.label}>
+              <div className="nav-group-label">{group.label}</div>
+              {group.items.map(item => (
+                <button
+                  key={item.id}
+                  className={`nav-item${view === item.id ? ' active' : ''}`}
+                  onClick={() => navigate(item.id)}
+                >
+                  {/* Ícone SVG (não emoji) */}
+                  <Icon name={VIEW_ICONS[item.id]} size={16} />
+                  <span style={{ flex: 1, textAlign: 'left' }}>{item.label}</span>
+                  {/* Badge de valor (patrimônio, assinaturas) */}
+                  {item.badge != null && (
+                    <span className="nav-amt">{item.badge}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
 
-        {/* Rodapé: volta à Makima */}
-        <div className="nami-side-foot">
-          <a className="nami-back-link" href="/">
-            <span className="nami-back-dot" />
-            <span className="side-foot-label">Voltar à Makima</span>
+        {/* Rodapé da sidebar — volta ao painel principal */}
+        <div className="side-foot">
+          <a className="back-makima" href="/">
+            <Icon name="arrowLeft" size={14} />
+            Voltar à Makima
           </a>
         </div>
       </aside>
 
-      {/* ── Topbar ── */}
-      <header className="nami-topbar">
-        <span className="nami-topbar-title">{VIEW_TITLES[view]}</span>
+      {/* ── Área principal ──────────────────────────────────────────────── */}
+      <div className="nm-main">
 
-        {/* Seletor de mês — só nas views pertinentes (FR-004) */}
-        {VIEWS_WITH_MONTH.has(view) && (
-          <div className="nami-month-selector">
-            <button className="nami-month-btn" onClick={() => setMonth(m => shiftMonth(m, -1))}>‹</button>
-            <span className="nami-month-label">{formatMonthLabel(month)}</span>
-            <button className="nami-month-btn" onClick={() => setMonth(m => shiftMonth(m, +1))}>›</button>
+        {/* Topbar com título, seletor de mês e busca */}
+        <header className="nm-topbar">
+          <span className="topbar-title">{VIEW_TITLES[view]}</span>
+          <span className="topbar-spacer" />
+
+          {/* Seletor de mês — só nas views pertinentes */}
+          {VIEWS_WITH_MONTH.has(view) && (
+            <div className="month-switch">
+              <button
+                className="month-btn"
+                onClick={() => setMonth(m => shiftMonth(m, -1))}
+                aria-label="Mês anterior"
+              >
+                <Icon name="chevL" size={14} />
+              </button>
+              <span className="mlabel">{formatMonthLabel(month)}</span>
+              <button
+                className="month-btn"
+                onClick={() => setMonth(m => shiftMonth(m, +1))}
+                aria-label="Próximo mês"
+              >
+                <Icon name="chevR" size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Campo de busca — digitar 2+ chars navega para transações */}
+          <div className="search">
+            <Icon name="search" size={14} />
+            <input
+              value={searchQuery}
+              placeholder="Buscar…"
+              onChange={e => {
+                setSearchQuery(e.target.value)
+                // Navega para transações automaticamente quando busca ≥ 2 chars
+                if (e.target.value.length >= 2 && view !== 'transacoes') navigate('transacoes')
+              }}
+            />
           </div>
-        )}
+        </header>
 
-        {/* Campo de busca — digitar 2+ chars navega para transações */}
-        <div className="nami-search">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-          </svg>
-          <input
-            value={searchQuery}
-            placeholder="Buscar…"
-            onChange={e => {
-              setSearchQuery(e.target.value)
-              if (e.target.value.length >= 2 && view !== 'transacoes') navigate('transacoes')
-            }}
-          />
-        </div>
-      </header>
+        {/* Área scrollável do conteúdo principal */}
+        <main className="nm-scroll">
+          {renderView()}
+        </main>
+      </div>
 
-      {/* ── Área de conteúdo ── */}
-      <main className="nami-content">
-        {renderView()}
-      </main>
-
-      {/* ── SummBar ── */}
-      <footer className="nami-summbar">
-        <div className="nami-summbar-item">
-          <span className="nami-summbar-label">Entrou</span>
-          <span className="nami-summbar-value nami-summbar-in amount">R$ {fmt(income)}</span>
-        </div>
-        <div className="nami-summbar-item">
-          <span className="nami-summbar-label">Saiu</span>
-          <span className="nami-summbar-value nami-summbar-out amount">R$ {fmt(expense)}</span>
-        </div>
-        <div className="nami-summbar-divider" />
-        <div className="nami-summbar-item">
-          <span className="nami-summbar-label">Saldo do mês</span>
-          <span className={`nami-summbar-value amount ${net >= 0 ? 'nami-summbar-in' : 'nami-summbar-out'}`}>
-            R$ {fmt(net)}
+      {/* ── SummBar — barra de resumo no rodapé (grid-column: 2) ────────── */}
+      <footer className="summbar">
+        <div className="summbar-item">
+          <span className="summbar-label">Entrou</span>
+          <span className="summbar-val in amount">
+            {fmtMoney(income)}
           </span>
         </div>
-        <div className="nami-flow-bar">
-          <div className="nami-flow-bar-fill" style={{ width: `${flowPct}%` }} />
+        <div className="summbar-sep" />
+        <div className="summbar-item">
+          <span className="summbar-label">Saiu</span>
+          <span className="summbar-val out amount">
+            {fmtMoney(expense)}
+          </span>
         </div>
-        <button className="nami-summbar-new-btn" onClick={() => setAddOpen(true)}>
-          + Nova transação
+        <div className="summbar-sep" />
+        <div className="summbar-item">
+          <span className="summbar-label">Saldo do mês</span>
+          <span className={`summbar-val amount ${net >= 0 ? 'in' : 'out'}`}>
+            {fmtMoney(net)}
+          </span>
+        </div>
+        <span className="summbar-spacer" />
+        <button
+          className="btn btn-primary"
+          style={{ fontSize: 12, padding: '5px 12px' }}
+          onClick={() => setAddOpen(true)}
+        >
+          <Icon name="plus" size={13} />
+          Nova transação
         </button>
       </footer>
 
-      {/* ── Modal de nova transação ── */}
+      {/* ── Modal de nova transação ────────────────────────────────────── */}
       <AddModal
         open={addOpen}
         accounts={accounts}
@@ -458,10 +489,10 @@ export function NamiShell() {
         onSaved={handleTransactionSaved}
       />
 
-      {/* ── Toast de feedback ── */}
+      {/* ── Toast de feedback ─────────────────────────────────────────── */}
       <Toast message={toast} />
 
-      {/* ── Painel de tweaks ── */}
+      {/* ── Painel de tweaks (tema / acento / densidade / privacidade) ── */}
       <TweaksPanel tweaks={tweaks} setTweak={setTweak} />
     </div>
   )

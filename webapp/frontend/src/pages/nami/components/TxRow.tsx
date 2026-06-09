@@ -1,152 +1,169 @@
-// Linha individual de transação — usada na tela de Transações.
-// Layout: ícone da categoria (38×38), nome + categoria·fonte, valor ±, botão lixeira.
-// O botão lixeira fica invisível até o hover da linha inteira.
+// Linha individual de transação — usada nas telas de Transações e Dashboard.
+// Portada do handoff de referência (docs/.../nami/screens-a.jsx → TxRow).
+// Layout: ícone da categoria, nome + meta, valor ±, botão lixeira (só no hover).
 
-import type { Transaction } from '../types'
+import { Icon, lucideToKey } from '../icons'
+import type { Category } from '../types'
+import type { NormalizedTx } from '../lib'
 
 interface TxRowProps {
-  tx: Transaction
-  // Chamado quando o usuário confirma a exclusão
+  /** Transação normalizada (type/amount/catId/merchant/source/date) */
+  tx: NormalizedTx
+  /** Mapa de categorias para lookup por id (pode ser vazio antes do carregamento) */
+  catMap: Record<string, Category>
+  /** Chamado quando o usuário clica no botão lixeira */
   onDelete: (id: string) => void
+  /** Indica se a exclusão está em progresso (desabilita o botão) */
   deleting?: boolean
 }
 
-// Mapa de ícone por categoria (emoji simples — sem dependência externa)
-const CAT_ICON: Record<string, string> = {
-  Alimentacao: '🍽', 'Comer Fora': '🍔', Saude: '💊', Lazer: '🎮',
-  Transporte: '🚌', Moradia: '🏠', Roupas: '👕', Educacao: '📚',
-  Assinaturas: '🔁', Viagem: '✈️', Presente: '🎁', Beleza: '💄',
-  Academia: '🏋️', Farmacia: '💉', Supermercado: '🛒', Eletronicos: '💻',
-  Pet: '🐾', Investimento: '📈', Receita: '💰', Inbox: '📥',
-}
+/**
+ * Linha de transação com hover para revelar botão de exclusão.
+ * Usa as classes .tx-row / .tx-ico / .tx-body / .tx-val / .tx-del definidas em nami.css.
+ *
+ * Args:
+ *   tx: transação no formato normalizado da lib.ts.
+ *   catMap: mapa {id → Category} para obter ícone e cor.
+ *   onDelete: callback de exclusão.
+ *   deleting: desabilita o botão durante a requisição.
+ */
+export function TxRow({ tx, catMap, onDelete, deleting }: TxRowProps) {
+  // Busca a categoria pelo slug; usa valores padrão se não encontrar
+  const cat = catMap[tx.catId]
 
-// Mapa de cor de fundo do badge por categoria (OKLch aproximado como hex)
-const CAT_COLOR: Record<string, string> = {
-  Alimentacao: '#F59E0B', 'Comer Fora': '#F97316', Saude: '#10B981',
-  Lazer: '#8B5CF6', Transporte: '#3B82F6', Moradia: '#6366F1',
-  Roupas: '#EC4899', Educacao: '#0EA5E9', Assinaturas: '#14B8A6',
-  Viagem: '#F59E0B', Presente: '#EF4444', Beleza: '#D946EF',
-  Academia: '#84CC16', Farmacia: '#06B6D4', Supermercado: '#22C55E',
-  Eletronicos: '#6366F1', Pet: '#F97316', Investimento: '#10B981',
-  Receita: '#22C55E', Inbox: '#94A3B8',
-}
+  // Ícone: converte o nome Lucide que vem da API para a chave do nosso conjunto SVG
+  const iconKey  = cat ? lucideToKey(cat.icon) : 'tag'
 
-/** Linha de transação com hover para revelar botão de exclusão. */
-export function TxRow({ tx, onDelete, deleting }: TxRowProps) {
-  const isReceita = tx.tipo === 'Receita'
-  const icon  = CAT_ICON[tx.categoria] ?? '💳'
-  const color = CAT_COLOR[tx.categoria] ?? '#94A3B8'
+  // Cor da categoria para o fundo translúcido do ícone
+  // Formato: "oklch(0.6 0.14 148)" → adiciona transparência
+  const catColor = cat?.color ?? 'var(--muted)'
+  const iconBg   = cat
+    ? cat.color.replace(')', ' / 0.14)')      // cria variante translúcida (14%)
+    : 'var(--mist)'
 
-  // Formata valor como BRL com tabular-nums
+  // Formatação do valor: sempre positivo, cor pelo tipo
   const fmt = (v: number) =>
     new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(v)
 
   return (
-    <div
-      className="tx-row"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '9px 12px',
-        borderRadius: 'var(--r-sm)',
-        // Hover é via CSS class .tx-row:hover definida no nami.css
-        cursor: 'default',
-        transition: 'background 0.15s',
-        position: 'relative',
-      }}
-    >
-      {/* Badge da categoria — quadrado arredondado com ícone */}
-      <div style={{
-        width: 38,
-        height: 38,
-        borderRadius: 10,
-        background: `${color}24`,  // cor com 14% de opacidade (hex 24 ≈ 14%)
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 18,
-        flexShrink: 0,
-      }}>
-        {icon}
-      </div>
-
-      {/* Nome e metadados */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 13.5,
-          fontWeight: 600,
-          color: 'var(--ink)',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}>
-          {tx.name}
-        </div>
-        {/* Pill: categoria · fonte */}
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-          fontSize: 11,
-          color: 'var(--ink-4)',
-          marginTop: 2,
-        }}>
-          <span style={{
-            background: 'var(--card-2, var(--paper))',
-            borderRadius: 4,
-            padding: '1px 6px',
-            border: '1px solid var(--line)',
-          }}>
-            {tx.categoria}
-          </span>
-          {tx.conta && (
-            <>
-              <span>·</span>
-              <span style={{ color: 'var(--ink-3)' }}>{tx.conta}</span>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Valor com sinal */}
+    <div className="tx-row">
+      {/* Ícone da categoria — quadrado arredondado com cor translúcida */}
       <div
-        className="amount"
-        style={{
-          fontFamily: 'var(--mono)',
-          fontSize: 14.5,
-          fontWeight: 700,
-          fontVariantNumeric: 'tabular-nums',
-          color: isReceita ? 'var(--in)' : 'var(--out)',
-          whiteSpace: 'nowrap',
-          flexShrink: 0,
-        }}
+        className="tx-ico"
+        style={{ background: iconBg, color: catColor }}
       >
-        {isReceita ? '+' : '−'} R$ {fmt(tx.valor)}
+        <Icon name={iconKey} size={16} />
       </div>
 
-      {/* Botão lixeira — visível só no hover via CSS */}
-      <button
-        className="tx-delete-btn"
-        onClick={() => onDelete(tx.id)}
-        disabled={deleting}
-        style={{
-          background: 'none',
-          border: 'none',
-          cursor: deleting ? 'wait' : 'pointer',
-          color: 'var(--ink-4)',
-          padding: '4px 6px',
-          flexShrink: 0,
-          // A visibilidade é controlada pelo CSS .tx-row:hover .tx-delete-btn
-          opacity: deleting ? 0.4 : 0,
-          transition: 'opacity 0.15s',
-        }}
-        aria-label="Excluir transação"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M18 6 6 18M6 6l12 12"/>
-        </svg>
-      </button>
+      {/* Nome + metadados */}
+      <div className="tx-body">
+        <div className="tx-name">{tx.merchant}</div>
+        <div className="tx-meta">
+          {/* Categoria → fonte (conta ou cartão) */}
+          {cat?.name ?? tx.catId}
+          {tx.source && ` · ${tx.source}`}
+        </div>
+      </div>
+
+      {/* Lado direito: valor + botão lixeira */}
+      <div className="tx-right">
+        {/* Valor com classe .amount para blur de privacidade */}
+        <span className={`tx-val amount ${tx.type}`}>
+          {tx.type === 'in' ? '+' : '−'} R$ {fmt(tx.amount)}
+        </span>
+
+        {/* Botão lixeira — invisível até o hover da linha (CSS .tx-row:hover .tx-del) */}
+        <button
+          className="tx-del"
+          onClick={() => onDelete(tx.id)}
+          disabled={deleting}
+          aria-label="Excluir transação"
+        >
+          <Icon name="trash" size={13} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── TxList — lista de transações agrupadas por dia ────────────────────────────
+
+interface TxListProps {
+  /** Grupos de transações por dia (já ordenados decrescente) */
+  groups: { date: string; txs: NormalizedTx[] }[]
+  /** Mapa de categorias */
+  catMap: Record<string, Category>
+  /** Callback de exclusão */
+  onDelete: (id: string) => void
+  /** Id em processo de exclusão */
+  deletingId?: string | null
+}
+
+/** Helper de formatação de data para o rótulo do grupo (ex.: "9 de jun.") */
+function fmtGroupDate(iso: string): string {
+  const d = new Date(iso + 'T12:00')
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+
+  // Datas especiais: hoje e ontem
+  if (d.toDateString() === today.toDateString()) return 'hoje'
+  if (d.toDateString() === yesterday.toDateString()) return 'ontem'
+
+  // Formato curto: "9 de jun."
+  return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '')
+}
+
+/** Calcula saldo líquido do dia (entradas - saídas). */
+function dayNet(txs: NormalizedTx[]): number {
+  return txs.reduce((s, tx) => s + (tx.type === 'in' ? tx.amount : -tx.amount), 0)
+}
+
+/**
+ * Lista de transações agrupadas por dia, com rótulo de data e saldo do dia.
+ * Portada do handoff de referência (screens-a.jsx → TxList).
+ */
+export function TxList({ groups, catMap, onDelete, deletingId }: TxListProps) {
+  if (groups.length === 0) {
+    // Estado vazio com ícone
+    return (
+      <div className="empty">
+        <Icon name="receipt" size={32} />
+        <p>Nenhuma transação no período</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="tx-list">
+      {groups.map(({ date, txs }) => {
+        const net = dayNet(txs)
+        const fmt = (v: number) =>
+          new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(Math.abs(v))
+
+        return (
+          <div key={date} className="tx-day-group">
+            {/* Rótulo do dia com saldo à direita */}
+            <div className="tx-day-label">
+              <span>{fmtGroupDate(date)}</span>
+              <span className={`tx-day-net amount ${net >= 0 ? 'in' : 'out'}`} style={{ color: net >= 0 ? 'var(--in)' : 'var(--out)' }}>
+                {net >= 0 ? '+' : '−'} R$ {fmt(net)}
+              </span>
+            </div>
+
+            {/* Linhas de transação do dia */}
+            {txs.map(tx => (
+              <TxRow
+                key={tx.id}
+                tx={tx}
+                catMap={catMap}
+                onDelete={onDelete}
+                deleting={deletingId === tx.id}
+              />
+            ))}
+          </div>
+        )
+      })}
     </div>
   )
 }

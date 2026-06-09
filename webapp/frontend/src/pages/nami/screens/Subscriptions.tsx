@@ -1,69 +1,95 @@
 // Tela de Assinaturas da seção Nami.
-// Lista serviços recorrentes com custo total mensal e anual.
-// Permite cadastrar e cancelar assinaturas.
+// Portada do handoff de referência (docs/.../nami/screens-b.jsx → Assinaturas).
+// Exibe stat-row (mês/ano/próxima) e lista de serviços recorrentes com logo e valor.
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { namiApi } from '../namiApi'
 import type { Subscription } from '../types'
+import { FormModal } from '../modals/FormModal'
+import { Icon } from '../icons'
+import { fmtMoney, daysUntil } from '../ui'
 
 interface SubscriptionsProps {
   subscriptions: Subscription[]
   onToast: (msg: string) => void
-  onSubscriptionsChanged: () => void
+  onSubscriptionsChanged: () => Promise<void>
   // Props do commonProps não usadas aqui
-  month?: string
-  stats?: unknown
-  accounts?: unknown
-  cards?: unknown
-  onTransactionSaved?: unknown
-  onNavigate?: unknown
-  onOpenAddModal?: unknown
+  month?: string; stats?: unknown; accounts?: unknown; cards?: unknown
+  onTransactionSaved?: unknown; onNavigate?: unknown; onOpenAddModal?: unknown
 }
 
-const SUB_CATEGORIES = [
-  'Assinaturas','Entretenimento','Saude','Educacao','Software','Outros'
+// Opções de cor para o logo da assinatura (circle avatar)
+const SUB_COLORS = [
+  { value: 'oklch(0.52 0.20 22)',  label: 'Vermelho' },
+  { value: 'oklch(0.62 0.16 150)', label: 'Verde' },
+  { value: 'oklch(0.55 0.02 250)', label: 'Cinza' },
+  { value: 'oklch(0.58 0.14 240)', label: 'Azul' },
+  { value: 'oklch(0.55 0.08 175)', label: 'Teal' },
+  { value: 'oklch(0.66 0.16 60)',  label: 'Âmbar' },
+  { value: 'oklch(0.45 0.02 60)',  label: 'Marrom' },
+  { value: 'oklch(0.58 0.16 320)', label: 'Rosa' },
 ]
 
-function fmt(v: number): string {
-  return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(v)
+// Formata dias até o vencimento como string amigável
+function fmtDays(days: number): string {
+  if (days === 0) return 'hoje'
+  if (days === 1) return 'amanhã'
+  return `em ${days}d`
 }
 
-/** Tela de gerenciamento de assinaturas recorrentes. */
 export function Subscriptions({ subscriptions, onToast, onSubscriptionsChanged }: SubscriptionsProps) {
-  const [showForm, setShowForm]       = useState(false)
-  const [name, setName]               = useState('')
-  const [valor, setValor]             = useState('')
-  const [ciclo, setCiclo]             = useState('mensal')
-  const [categoria, setCategoria]     = useState('Assinaturas')
-  const [nextBillingDay, setNextBillingDay] = useState('')
-  const [saving, setSaving]           = useState(false)
-  const [deleting, setDeleting]       = useState<string | null>(null)
+  const [showForm, setShowForm]   = useState(false)
+  const [saving, setSaving]       = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim() || !valor) return
+  // Apenas assinaturas ativas para os cálculos de totais
+  const active = useMemo(() =>
+    subscriptions.filter(s => s.status === 'ativa'),
+    [subscriptions]
+  )
+
+  // Total mensal convertendo anuais para equivalente mensal
+  const totalMensal = useMemo(() =>
+    active.reduce((s, sub) => s + (sub.ciclo === 'anual' ? sub.valor / 12 : sub.valor), 0),
+    [active]
+  )
+  const totalAnual = totalMensal * 12
+
+  // Ordena assinaturas pela proximidade do próximo vencimento
+  const sorted = useMemo(() => {
+    return [...subscriptions].sort((a, b) => {
+      const da = a.next_billing_day ? daysUntil(a.next_billing_day) : 999
+      const db = b.next_billing_day ? daysUntil(b.next_billing_day) : 999
+      return da - db
+    })
+  }, [subscriptions])
+
+  // A próxima assinatura a vencer
+  const proxima = sorted.find(s => s.status === 'ativa' && s.next_billing_day)
+
+  async function handleSave(values: Record<string, unknown>) {
     setSaving(true)
     try {
       await namiApi.createSubscription({
-        name: name.trim(),
-        valor: parseFloat(valor.replace(',', '.')),
-        ciclo,
-        categoria,
-        next_billing_day: nextBillingDay ? parseInt(nextBillingDay) : undefined,
+        name:             String(values.name ?? ''),
+        valor:            parseFloat(String(values.valor ?? '0').replace(',', '.')),
+        ciclo:            String(values.ciclo ?? 'mensal'),
+        categoria:        String(values.categoria ?? 'Assinaturas'),
+        next_billing_day: values.dia ? parseInt(String(values.dia)) : undefined,
+        color:            String(values.color ?? '') || undefined,
       })
-      setName(''); setValor(''); setNextBillingDay('')
+      onToast('Assinatura cadastrada ✓')
       setShowForm(false)
       await onSubscriptionsChanged()
-      onToast('Assinatura cadastrada ✓')
     } catch (err: unknown) {
-      onToast(err instanceof Error ? err.message : 'Erro ao cadastrar assinatura')
+      throw err
     } finally {
       setSaving(false)
     }
   }
 
   async function handleDelete(id: string) {
-    setDeleting(id)
+    setDeletingId(id)
     try {
       await namiApi.deleteSubscription(id)
       await onSubscriptionsChanged()
@@ -71,236 +97,141 @@ export function Subscriptions({ subscriptions, onToast, onSubscriptionsChanged }
     } catch {
       onToast('Erro ao remover assinatura')
     } finally {
-      setDeleting(null)
+      setDeletingId(null)
     }
   }
 
-  // Calcula totais mensais e anuais
-  const active = subscriptions.filter(s => s.status === 'ativa')
-  const totalMensal = active.reduce((s, sub) =>
-    s + (sub.ciclo === 'mensal' ? sub.valor : sub.valor / 12), 0
-  )
-  const totalAnual = totalMensal * 12
-
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    padding: '8px 11px',
-    borderRadius: 'var(--r-sm)',
-    border: '1.5px solid var(--line)',
-    background: 'var(--paper)',
-    color: 'var(--ink)',
-    fontFamily: 'var(--sans)',
-    fontSize: 13,
-    outline: 'none',
-    boxSizing: 'border-box',
-  }
-
   return (
-    <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 640 }}>
-
-      {/* Resumo de totais */}
-      {active.length > 0 && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 10,
-        }}>
-          <div style={{ background: 'var(--tang-tint)', borderRadius: 'var(--r-md)', padding: '12px 14px', border: '1px solid var(--line)' }}>
-            <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--tang)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
-              Total mensal
-            </div>
-            <div className="amount" style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>
-              R$ {fmt(totalMensal)}
-            </div>
-          </div>
-          <div style={{ background: 'var(--paper-2)', borderRadius: 'var(--r-md)', padding: '12px 14px', border: '1px solid var(--line)' }}>
-            <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
-              Projeção anual
-            </div>
-            <div className="amount" style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 600, color: 'var(--ink-2)' }}>
-              R$ {fmt(totalAnual)}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Cabeçalho */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-          {active.length} {active.length === 1 ? 'assinatura ativa' : 'assinaturas ativas'}
-        </div>
-        <button
-          onClick={() => setShowForm(f => !f)}
-          style={{
-            padding: '7px 14px',
-            borderRadius: 'var(--r-md)',
-            border: '1.5px solid var(--line)',
-            background: showForm ? 'var(--tang-tint)' : 'transparent',
-            color: showForm ? 'var(--tang-deep)' : 'var(--ink-2)',
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: 'pointer',
-            fontFamily: 'var(--sans)',
-          }}
-        >
-          {showForm ? '✕ Cancelar' : '+ Nova assinatura'}
+    <>
+      {/* Cabeçalho da página */}
+      <div className="page-head">
+        <h2>Assinaturas</h2>
+        <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+          <Icon name="plus" size={14} /> Nova assinatura
         </button>
       </div>
 
-      {/* Formulário de nova assinatura */}
-      {showForm && (
-        <form onSubmit={handleCreate} style={{
-          background: 'var(--card)',
-          borderRadius: 'var(--r-md)',
-          border: '1.5px solid var(--tang)',
-          padding: '18px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-        }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 4 }}>Nome</label>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Netflix, Spotify…" style={inputStyle} required />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 4 }}>Valor (R$)</label>
-              <input type="text" inputMode="decimal" value={valor} onChange={e => setValor(e.target.value.replace(/[^0-9.,]/g, ''))} placeholder="55,90" style={{ ...inputStyle, fontFamily: 'var(--mono)' }} required />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 4 }}>Ciclo</label>
-              <select value={ciclo} onChange={e => setCiclo(e.target.value)} style={inputStyle}>
-                <option value="mensal">Mensal</option>
-                <option value="anual">Anual</option>
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 4 }}>Categoria</label>
-              <select value={categoria} onChange={e => setCategoria(e.target.value)} style={inputStyle}>
-                {SUB_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: 4 }}>Dia do mês (cobrança)</label>
-              <input type="number" min={1} max={28} value={nextBillingDay} onChange={e => setNextBillingDay(e.target.value)} placeholder="1–28" style={inputStyle} />
-            </div>
+      {/* Stat-row: por mês / por ano / próxima a vencer */}
+      <div className="stat-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+        <div className="stat-card">
+          <div className="stat-label">Por mês</div>
+          <div className="stat-val out">
+            <span className="amount">{fmtMoney(totalMensal)}</span>
           </div>
-          <button
-            type="submit"
-            disabled={saving}
-            style={{
-              padding: '9px',
-              borderRadius: 'var(--r-md)',
-              border: 'none',
-              background: 'var(--tang)',
-              color: 'white',
-              fontSize: 13.5,
-              fontWeight: 600,
-              cursor: saving ? 'wait' : 'pointer',
-              opacity: saving ? 0.7 : 1,
-              fontFamily: 'var(--sans)',
-            }}
-          >
-            {saving ? 'Salvando…' : 'Cadastrar assinatura'}
-          </button>
-        </form>
-      )}
+          <div className="stat-detail">debitado todo mês</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Por ano</div>
+          <div className="stat-val">
+            <span className="amount">{fmtMoney(totalAnual)}</span>
+          </div>
+          <div className="stat-detail">projeção em 12 meses</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Próxima</div>
+          <div className="stat-val" style={{ fontSize: 17 }}>
+            {proxima ? proxima.name : '—'}
+          </div>
+          <div className="stat-detail">
+            {proxima?.next_billing_day
+              ? `dia ${proxima.next_billing_day} · ${fmtDays(daysUntil(proxima.next_billing_day))}`
+              : 'nenhuma'}
+          </div>
+        </div>
+      </div>
 
       {/* Lista de assinaturas */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {subscriptions.map(sub => (
-          <div key={sub.id} style={{
-            background: 'var(--card)',
-            borderRadius: 'var(--r-md)',
-            border: `1px solid ${sub.status !== 'ativa' ? 'var(--line-2)' : 'var(--line)'}`,
-            padding: '12px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 14,
-            opacity: sub.status !== 'ativa' ? 0.55 : 1,
-            boxShadow: 'var(--shadow-sm)',
-          }}>
-            {/* Ícone ou avatar */}
-            <div style={{
-              width: 38,
-              height: 38,
-              borderRadius: 10,
-              background: sub.color ?? 'var(--tang-tint)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 14,
-              fontWeight: 700,
-              color: 'var(--tang-deep)',
-              fontFamily: 'var(--mono)',
-              flexShrink: 0,
-              overflow: 'hidden',
-            }}>
-              {sub.icon_url
-                ? <img src={sub.icon_url} alt={sub.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : sub.name.slice(0, 2).toUpperCase()
-              }
-            </div>
+      {subscriptions.length === 0 ? (
+        <div className="empty">
+          <Icon name="repeat" size={32} />
+          <p>Nenhuma assinatura cadastrada</p>
+          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+            <Icon name="plus" size={14} /> Adicionar assinatura
+          </button>
+        </div>
+      ) : (
+        <div className="panel">
+          <div className="sub-list">
+            {sorted.map(sub => {
+              const days = sub.next_billing_day ? daysUntil(sub.next_billing_day) : null
 
-            {/* Informações */}
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{sub.name}</div>
-              <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 1 }}>
-                {sub.categoria} · {sub.ciclo}
-                {sub.next_billing_day ? ` · dia ${sub.next_billing_day}` : ''}
-              </div>
-            </div>
+              return (
+                <div
+                  key={sub.id}
+                  className="sub-row"
+                  style={{ opacity: sub.status !== 'ativa' ? 0.55 : 1 }}
+                >
+                  {/* Logo: imagem ou avatar com cor + inicial */}
+                  <div className="sub-logo" style={{ background: sub.color ?? 'var(--accent-t)', color: 'var(--card)' }}>
+                    {sub.icon_url ? (
+                      <img
+                        src={sub.icon_url}
+                        alt={sub.name}
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
+                    ) : (
+                      <span style={{ color: sub.color ? 'var(--card)' : 'var(--accent)', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 13 }}>
+                        {sub.name.slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
 
-            {/* Status badge */}
-            {sub.status !== 'ativa' && (
-              <span style={{
-                fontSize: 10,
-                padding: '2px 7px',
-                borderRadius: 4,
-                background: 'var(--line)',
-                color: 'var(--ink-3)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-              }}>
-                {sub.status}
-              </span>
-            )}
+                  {/* Informações da assinatura */}
+                  <div className="sub-body">
+                    <div className="sub-name">{sub.name}</div>
+                    <div className="sub-ciclo">
+                      {sub.categoria} · {sub.ciclo}
+                      {sub.next_billing_day ? ` · dia ${sub.next_billing_day}` : ''}
+                    </div>
+                  </div>
 
-            {/* Valor */}
-            <div className="amount" style={{ fontFamily: 'var(--mono)', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', flexShrink: 0 }}>
-              R$ {fmt(sub.valor)}
-              <span style={{ fontSize: 10.5, color: 'var(--ink-3)', fontWeight: 400 }}>
-                /{sub.ciclo === 'anual' ? 'ano' : 'mês'}
-              </span>
-            </div>
-
-            {/* Botão de remover */}
-            <button
-              onClick={() => handleDelete(sub.id)}
-              disabled={deleting === sub.id}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', padding: '4px 6px', opacity: deleting === sub.id ? 0.4 : 0.7 }}
-              title="Remover"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 6 6 18M6 6l12 12"/>
-              </svg>
-            </button>
+                  {/* Direita: próximo vencimento + valor + excluir */}
+                  <div className="sub-right">
+                    {days !== null && (
+                      <div className="sub-next">{fmtDays(days)}</div>
+                    )}
+                    <div className="sub-val amount">{fmtMoney(sub.valor)}</div>
+                    <button
+                      className="sub-del"
+                      onClick={() => handleDelete(sub.id)}
+                      disabled={deletingId === sub.id}
+                      aria-label="Remover assinatura"
+                    >
+                      <Icon name="trash" size={13} />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        ))}
+        </div>
+      )}
 
-        {subscriptions.length === 0 && !showForm && (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-3)' }}>
-            <div style={{ fontSize: 28, marginBottom: 8 }}>↻</div>
-            <div style={{ fontSize: 14 }}>Nenhuma assinatura cadastrada</div>
-            <button
-              onClick={() => setShowForm(true)}
-              style={{ marginTop: 12, padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--tang)', color: 'white', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--sans)' }}
-            >
-              + Adicionar assinatura
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
+      {/* Modal de nova assinatura */}
+      {showForm && (
+        <FormModal
+          title="Nova assinatura"
+          saving={saving}
+          onClose={() => setShowForm(false)}
+          onSave={handleSave}
+          saveLabel="Cadastrar"
+          fields={[
+            { key: 'name',      label: 'Serviço',        type: 'text',    required: true, placeholder: 'Ex: Netflix, Spotify…' },
+            { key: 'valor',     label: 'Valor mensal',   type: 'money',   required: true },
+            { key: 'ciclo',     label: 'Ciclo',          type: 'segment', options: [{ value: 'mensal', label: 'Mensal' }, { value: 'anual', label: 'Anual' }] },
+            { key: 'dia',       label: 'Dia da cobrança', type: 'number', min: 1, max: 28, placeholder: '15' },
+            { key: 'categoria', label: 'Categoria',       type: 'select', options: [
+              { value: 'Assinaturas',    label: 'Assinaturas' },
+              { value: 'Entretenimento', label: 'Entretenimento' },
+              { value: 'Saude',          label: 'Saúde' },
+              { value: 'Educacao',       label: 'Educação' },
+              { value: 'Software',       label: 'Software' },
+              { value: 'Outros',         label: 'Outros' },
+            ]},
+            { key: 'color',     label: 'Cor do avatar', type: 'color',  swatches: SUB_COLORS.map(s => s.value) },
+          ]}
+        />
+      )}
+    </>
   )
 }

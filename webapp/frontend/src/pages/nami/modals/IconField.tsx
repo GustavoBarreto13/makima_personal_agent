@@ -1,39 +1,51 @@
 // Campo de upload ou URL de ícone — usado nos formulários de Contas, Cartões e Assinaturas.
-// Exibe preview circular 56×56. Se não há imagem, mostra sigla sobre fundo colorido.
-// Permite upload de arquivo (PNG/JPEG/WebP ≤ 1 MB) ou colar URL diretamente.
+// Portado do handoff de referência (addmodal.jsx → IconField).
+// Usa as classes .icon-field / .icon-preview / .icon-url-input / .icon-upload-btn.
 
 import { useState, useRef } from 'react'
 import { namiApi } from '../namiApi'
+import { Icon } from '../icons'
 
 interface IconFieldProps {
-  value: string | null         // URL atual da imagem (null = sem ícone)
-  fallbackLabel: string        // Sigla exibida quando não há imagem (ex.: "NU", "NF")
-  onChange: (url: string | null) => void  // Chamado com nova URL ou null para remover
+  /** URL atual da imagem (null = sem ícone) */
+  value: string | null
+  /** Sigla exibida quando não há imagem (ex.: "NU", "NF") */
+  fallbackLabel: string
+  /** Chamado com nova URL ou null para remover */
+  onChange: (url: string | null) => void
 }
 
-/** Campo de ícone com preview, upload e URL direta. */
+/**
+ * Campo de ícone com preview quadrado, upload de arquivo e campo de URL direta.
+ * Usa as classes .icon-field / .icon-preview / .icon-actions definidas em nami.css.
+ *
+ * Args:
+ *   value: URL atual da imagem ou null.
+ *   fallbackLabel: sigla de até 2 chars para o placeholder.
+ *   onChange: callback com a nova URL após upload/URL ou null para remover.
+ */
 export function IconField({ value, fallbackLabel, onChange }: IconFieldProps) {
-  const [urlInput, setUrlInput] = useState(value ?? '')
+  const [urlInput, setUrlInput]   = useState(value ?? '')
   const [uploading, setUploading] = useState(false)
-  const [error, setError] = useState('')
-  const [imgError, setImgError] = useState(false)  // true quando a img falha ao carregar
+  const [error, setError]         = useState('')
+  const [imgError, setImgError]   = useState(false)  // true quando a img falha ao carregar
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // Determina se deve mostrar a imagem ou o fallback
+  // Mostra a imagem somente se há URL e ela carregou sem erro
   const showImg = !!value && !imgError
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // Validação antes do upload: só aceita images
     if (!file.type.startsWith('image/')) {
-      setError('Só são aceitos arquivos de imagem (PNG, JPEG, WebP)')
+      setError('Só são aceitos PNG, JPEG ou WebP')
       return
     }
 
     setUploading(true)
     setError('')
+
     try {
       const result = await namiApi.uploadIcon(file)
       setUrlInput(result.url)
@@ -43,7 +55,7 @@ export function IconField({ value, fallbackLabel, onChange }: IconFieldProps) {
       setError(err instanceof Error ? err.message : 'Erro ao enviar imagem')
     } finally {
       setUploading(false)
-      // Limpa o input de arquivo para permitir re-upload do mesmo arquivo
+      // Limpa o input para permitir re-upload do mesmo arquivo
       if (fileRef.current) fileRef.current.value = ''
     }
   }
@@ -63,110 +75,69 @@ export function IconField({ value, fallbackLabel, onChange }: IconFieldProps) {
   }
 
   return (
-    <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-      {/* Preview circular 56×56 */}
-      <div style={{
-        width: 56,
-        height: 56,
-        borderRadius: '50%',
-        overflow: 'hidden',
-        flexShrink: 0,
-        border: '2px solid var(--line)',
-        background: showImg ? 'transparent' : 'var(--tang-tint)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 18,
-        fontWeight: 700,
-        color: 'var(--tang-deep)',
-        fontFamily: 'var(--mono)',
-        position: 'relative',
-      }}>
+    <div className="icon-field">
+      {/* Preview quadrado arredondado 40×40 */}
+      <div
+        className="icon-preview"
+        style={{ background: showImg ? 'transparent' : 'var(--accent-t)' }}
+      >
         {showImg ? (
           <img
             src={value!}
             alt="ícone"
             onError={() => setImgError(true)}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
         ) : (
-          // Exibe sigla como fallback (máx 2 chars)
-          <span>{fallbackLabel.slice(0, 2).toUpperCase()}</span>
+          // Sigla como fallback — máximo 2 caracteres
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
+            {fallbackLabel.slice(0, 2).toUpperCase()}
+          </span>
         )}
       </div>
 
-      {/* Controles */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {/* Campo de URL direta */}
+      {/* Controles: URL + upload + remover */}
+      <div className="icon-actions">
         <input
+          className="icon-url-input"
           type="url"
           value={urlInput}
           onChange={e => setUrlInput(e.target.value)}
           onBlur={handleUrlBlur}
           placeholder="https://... ou envie uma imagem"
-          style={{
-            width: '100%',
-            padding: '7px 10px',
-            borderRadius: 'var(--r-sm)',
-            border: '1.5px solid var(--line)',
-            background: 'var(--paper)',
-            color: 'var(--ink)',
-            fontFamily: 'var(--sans)',
-            fontSize: 12.5,
-            outline: 'none',
-            boxSizing: 'border-box',
-          }}
         />
 
-        {/* Botões de ação */}
-        <div style={{ display: 'flex', gap: 6 }}>
-          {/* Botão de upload — abre file picker oculto */}
+        <div style={{ display: 'flex', gap: 5 }}>
+          {/* Botão de upload — aciona o file picker oculto */}
           <button
             type="button"
+            className="icon-upload-btn"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            style={{
-              padding: '5px 10px',
-              borderRadius: 'var(--r-sm)',
-              border: '1.5px solid var(--line)',
-              background: 'var(--paper)',
-              color: uploading ? 'var(--ink-4)' : 'var(--ink-2)',
-              fontFamily: 'var(--sans)',
-              fontSize: 12,
-              cursor: uploading ? 'wait' : 'pointer',
-            }}
           >
-            {uploading ? 'Enviando…' : '⬆ Enviar imagem'}
+            <Icon name="upload" size={12} />
+            {uploading ? 'Enviando…' : 'Enviar imagem'}
           </button>
 
           {/* Botão remover — só aparece se há imagem */}
           {value && (
             <button
               type="button"
+              className="icon-upload-btn"
               onClick={handleRemove}
-              style={{
-                padding: '5px 10px',
-                borderRadius: 'var(--r-sm)',
-                border: '1.5px solid var(--line)',
-                background: 'transparent',
-                color: 'var(--out)',
-                fontFamily: 'var(--sans)',
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
+              style={{ color: 'var(--out)', borderColor: 'var(--out-t)' }}
             >
               Remover
             </button>
           )}
         </div>
 
-        {/* Mensagem de erro */}
+        {/* Erro */}
         {error && (
-          <div style={{ fontSize: 11.5, color: 'var(--out)' }}>{error}</div>
+          <span style={{ fontSize: 11, color: 'var(--out)' }}>{error}</span>
         )}
       </div>
 
-      {/* Input de arquivo oculto — acionado pelo botão "Enviar imagem" */}
+      {/* Input de arquivo oculto */}
       <input
         ref={fileRef}
         type="file"

@@ -1,9 +1,10 @@
 // Modal genérico orientado a schema — permite criar qualquer formulário passando
-// um array de campos tipados. Usado pelas telas de Contas, Cartões e Assinaturas.
-// Fecha com Esc, clique no scrim ou botão X. Salva com Enter (se não há textarea).
+// um array de campos tipados. Portado do handoff de referência (addmodal.jsx → FormModal).
+// Usa as classes .modal / .modal-head / .modal-body / .modal-foot / .field / .money-field etc.
 
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { IconField } from './IconField'
+import { Icon } from '../icons'
 
 // ── Tipos de campo suportados ─────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ interface FieldDef {
   min?: number            // para number/money
   max?: number
   options?: { value: string; label: string }[]  // para select/segment
-  swatches?: string[]     // para color
+  swatches?: string[]     // para color (oklch ou hex)
 }
 
 interface FormModalProps {
@@ -29,20 +30,41 @@ interface FormModalProps {
   saving?: boolean
   initialValues?: Record<string, unknown>
   saveLabel?: string
-  children?: ReactNode   // conteúdo extra abaixo dos campos (rare)
+  children?: ReactNode     // conteúdo extra abaixo dos campos (raro)
 }
 
 // Swatches de cor padrão quando o campo não define os próprios
 const DEFAULT_SWATCHES = [
-  '#EF8B3D', '#3B82F6', '#10B981', '#8B5CF6', '#F97316',
-  '#EC4899', '#14B8A6', '#E0524A', '#C9A227', '#6366F1',
+  'oklch(0.685 0.176 52)',   // tangerina
+  'oklch(0.56 0.104 234)',   // azul-maré
+  'oklch(0.68 0.160 18)',    // coral
+  'oklch(0.75 0.140 85)',    // ouro
+  'oklch(0.60 0.14 148)',    // verde
+  'oklch(0.62 0.16 26)',     // vermelho
+  'oklch(0.60 0.15 290)',    // lilás
+  'oklch(0.55 0.12 200)',    // ciano
+  'oklch(0.65 0.14 320)',    // rosa
+  'oklch(0.50 0.08 60)',     // marrom
 ]
 
-/** Modal genérico com campos tipados — criação/edição de qualquer entidade Nami. */
+/**
+ * Modal genérico com campos tipados — criação/edição de qualquer entidade Nami.
+ * Fecha com Esc, clique no scrim ou botão X.
+ *
+ * Args:
+ *   title: título exibido no cabeçalho.
+ *   fields: array de definições de campo (key, label, type, options, etc.).
+ *   onSave: async callback com os valores preenchidos.
+ *   onClose: fecha o modal.
+ *   saving: exibe estado de carregamento no botão salvar.
+ *   initialValues: valores iniciais dos campos (para edição).
+ *   saveLabel: texto do botão de salvar (padrão: "Salvar").
+ *   children: conteúdo extra renderizado abaixo dos campos.
+ */
 export function FormModal({
   title, fields, onSave, onClose, saving, initialValues, saveLabel = 'Salvar', children,
 }: FormModalProps) {
-  // Estado inicial: string vazia para todos os campos (ou o valor passado em initialValues)
+  // Estado dos campos: string vazia por padrão, ou o valor de initialValues
   const [values, setValues] = useState<Record<string, unknown>>(() => {
     const init: Record<string, unknown> = {}
     fields.forEach(f => {
@@ -53,7 +75,7 @@ export function FormModal({
   const [error, setError] = useState('')
   const firstRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null)
 
-  // Foca o primeiro campo ao abrir
+  // Foca o primeiro campo ao montar
   useEffect(() => {
     setTimeout(() => firstRef.current?.focus(), 80)
   }, [])
@@ -88,44 +110,23 @@ export function FormModal({
     }
   }
 
-  // Estilo base dos inputs
-  const inputBase: React.CSSProperties = {
-    width: '100%',
-    padding: '8px 11px',
-    borderRadius: 'var(--r-sm)',
-    border: '1.5px solid var(--line)',
-    background: 'var(--paper)',
-    color: 'var(--ink)',
-    fontFamily: 'var(--sans)',
-    fontSize: 13,
-    outline: 'none',
-    boxSizing: 'border-box',
-  }
-
-  const labelStyle: React.CSSProperties = {
-    fontSize: 11,
-    fontWeight: 600,
-    color: 'var(--ink-3)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.07em',
-    display: 'block',
-    marginBottom: 4,
-  }
-
-  // Renderiza um campo baseado no tipo
+  // Renderiza o input correto para cada tipo de campo
   function renderField(f: FieldDef, idx: number) {
     const val = values[f.key]
+
+    // Referência para o primeiro campo (foco automático)
     const ref = idx === 0 ? (firstRef as React.RefObject<HTMLInputElement>) : undefined
+    const refSel = idx === 0 ? (firstRef as React.RefObject<HTMLSelectElement>) : undefined
 
     switch (f.type) {
 
+      // Select dropdown
       case 'select':
         return (
           <select
-            ref={idx === 0 ? (firstRef as React.RefObject<HTMLSelectElement>) : undefined}
+            ref={refSel}
             value={String(val ?? '')}
             onChange={e => set(f.key, e.target.value)}
-            style={{ ...inputBase }}
           >
             <option value="">— selecione —</option>
             {f.options?.map(o => (
@@ -134,26 +135,16 @@ export function FormModal({
           </select>
         )
 
+      // Botões de seleção exclusiva (radio visual)
       case 'segment':
         return (
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="segment">
             {f.options?.map(o => (
               <button
                 key={o.value}
                 type="button"
+                className={val === o.value ? 'active' : ''}
                 onClick={() => set(f.key, o.value)}
-                style={{
-                  flex: 1,
-                  padding: '7px 10px',
-                  borderRadius: 'var(--r-sm)',
-                  border: `1.5px solid ${val === o.value ? 'var(--tang)' : 'var(--line)'}`,
-                  background: val === o.value ? 'var(--tang-tint)' : 'transparent',
-                  color: val === o.value ? 'var(--tang-deep)' : 'var(--ink-2)',
-                  fontFamily: 'var(--sans)',
-                  fontSize: 12.5,
-                  fontWeight: val === o.value ? 600 : 400,
-                  cursor: 'pointer',
-                }}
               >
                 {o.label}
               </button>
@@ -161,32 +152,27 @@ export function FormModal({
           </div>
         )
 
+      // Paleta de cor como círculos clicáveis
       case 'color': {
         const swatches = f.swatches ?? DEFAULT_SWATCHES
         return (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div className="swatch-row">
             {swatches.map(sw => (
               <button
                 key={sw}
                 type="button"
+                className={`swatch-pick${val === sw ? ' active' : ''}`}
+                style={{ background: sw }}
                 onClick={() => set(f.key, sw)}
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: 9,
-                  background: sw,
-                  border: `3px solid ${val === sw ? 'var(--ink)' : 'transparent'}`,
-                  cursor: 'pointer',
-                  outline: val === sw ? '2px solid var(--paper)' : 'none',
-                  outlineOffset: -4,
-                }}
                 aria-label={sw}
+                title={sw}
               />
             ))}
           </div>
         )
       }
 
+      // Upload/URL de ícone com preview
       case 'image':
         return (
           <IconField
@@ -196,13 +182,11 @@ export function FormModal({
           />
         )
 
+      // Campo de valor monetário com prefixo R$
       case 'money':
         return (
-          <div style={{ position: 'relative' }}>
-            <span style={{
-              position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)',
-              fontSize: 12, color: 'var(--ink-3)', pointerEvents: 'none', fontFamily: 'var(--mono)',
-            }}>R$</span>
+          <div className="money-field">
+            <span className="money-cur">R$</span>
             <input
               ref={ref}
               type="text"
@@ -210,11 +194,11 @@ export function FormModal({
               value={String(val ?? '')}
               onChange={e => set(f.key, e.target.value.replace(/[^0-9.,]/g, ''))}
               placeholder={f.placeholder ?? '0,00'}
-              style={{ ...inputBase, paddingLeft: 32, fontFamily: 'var(--mono)' }}
             />
           </div>
         )
 
+      // Campos de texto, número e data
       default:
         return (
           <input
@@ -226,7 +210,6 @@ export function FormModal({
             placeholder={f.placeholder}
             min={f.min}
             max={f.max}
-            style={inputBase}
           />
         )
     }
@@ -235,100 +218,56 @@ export function FormModal({
   return (
     // Scrim — clique fora fecha
     <div
+      className="modal-scrim"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.4)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 200,
-        padding: 24,
-      }}
     >
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          background: 'var(--card)',
-          borderRadius: 'var(--r-lg)',
-          padding: 24,
-          width: '100%',
-          maxWidth: 480,
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          boxShadow: 'var(--shadow-lg)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-        }}
-      >
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <div style={{ fontFamily: 'var(--display, var(--sans))', fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>
-            {title}
-          </div>
+      <form className="modal" onSubmit={handleSubmit} style={{ maxWidth: 480 }}>
+        {/* Cabeçalho com título e botão X */}
+        <div className="modal-head">
+          <span className="modal-title">{title}</span>
           <button
             type="button"
+            className="modal-close"
             onClick={onClose}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: 'var(--ink-3)', fontSize: 20, padding: '2px 6px',
-              borderRadius: 'var(--r-sm)',
-            }}
             aria-label="Fechar"
-          >✕</button>
+          >
+            <Icon name="x" size={16} />
+          </button>
         </div>
 
-        {/* Campos */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* Corpo: campos do formulário */}
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {fields.map((f, idx) => (
-            <div key={f.key}>
-              <label style={labelStyle}>{f.label}{f.required && ' *'}</label>
+            <div className="field" key={f.key}>
+              <label>{f.label}{f.required && ' *'}</label>
               {renderField(f, idx)}
             </div>
           ))}
           {children}
+
+          {/* Mensagem de erro inline */}
+          {error && (
+            <div style={{ fontSize: 12, color: 'var(--out)', padding: '6px 10px', background: 'var(--out-t)', borderRadius: 'var(--rad-sm)' }}>
+              {error}
+            </div>
+          )}
         </div>
 
-        {/* Erro */}
-        {error && (
-          <div style={{ fontSize: 12, color: 'var(--out)', marginTop: -8 }}>{error}</div>
-        )}
-
-        {/* Botões */}
-        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              flex: 1, padding: '9px',
-              borderRadius: 'var(--r-md)',
-              border: '1.5px solid var(--line)',
-              background: 'transparent',
-              color: 'var(--ink-2)',
-              fontFamily: 'var(--sans)', fontSize: 13.5, fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            style={{
-              flex: 2, padding: '9px',
-              borderRadius: 'var(--r-md)',
-              border: 'none',
-              background: 'var(--tang)',
-              color: 'white',
-              fontFamily: 'var(--sans)', fontSize: 13.5, fontWeight: 600,
-              cursor: saving ? 'wait' : 'pointer',
-              opacity: saving ? 0.7 : 1,
-            }}
-          >
-            {saving ? 'Salvando…' : saveLabel}
-          </button>
+        {/* Rodapé: Cancelar + Salvar */}
+        <div className="modal-foot">
+          <div />
+          <div className="modal-foot-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={saving}
+            >
+              {saving ? 'Salvando…' : saveLabel}
+            </button>
+          </div>
         </div>
       </form>
     </div>

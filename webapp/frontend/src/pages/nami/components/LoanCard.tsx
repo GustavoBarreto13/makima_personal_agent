@@ -1,12 +1,19 @@
-// Card de empréstimo pessoa-a-pessoa — usado na tela Loans.tsx.
-// Exibe: badge de direção (emprestei/peguei), nome, saldo restante,
-// barra de progresso, dots de parcelas e botão de exclusão no hover.
+// Card de empréstimo pessoa-a-pessoa e financiamento.
+// Portado do handoff de referência (docs/.../nami/screens-b.jsx → LoanCard).
+// Exibe: badge de direção, nome/descrição, valor restante, dots de parcelas,
+// barra de progresso e botão de exclusão.
 
-import type { PersonalLoan } from '../types'
+import { Icon } from '../icons'
+import type { PersonalLoan, Financing } from '../types'
+
+// ── LoanCard para empréstimos pessoa-a-pessoa ─────────────────────────────────
 
 interface LoanCardProps {
+  /** Empréstimo pessoa-a-pessoa */
   loan: PersonalLoan
+  /** Callback de exclusão */
   onDelete: (id: string) => void
+  /** Indica exclusão em progresso */
   deleting?: boolean
 }
 
@@ -14,162 +21,182 @@ function fmt(v: number): string {
   return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(v)
 }
 
-/** Card de empréstimo informal com progresso de parcelas e botão de exclusão. */
+/**
+ * Card de empréstimo informal com barra de progresso e dots de parcelas.
+ * Usa as classes .loan-card / .loan-dir / .loan-person / .loan-dots / .loan-track.
+ */
 export function LoanCard({ loan, onDelete, deleting }: LoanCardProps) {
   const isLent = loan.direction === 'lent'
-  const accent = isLent ? 'var(--in)' : 'var(--out)'
-  const accentTint = isLent ? 'var(--in-tint)' : 'var(--out-tint)'
-  const badge = isLent ? '🤝 Emprestei' : '📥 Devo'
 
-  // Valor restante = total proporcional às parcelas não pagas
-  const pctPaid    = loan.installments > 0
+  // Porcentagem de progresso (parcelas pagas / total)
+  const pctPaid = loan.installments > 0
     ? loan.paid_installments / loan.installments
     : 0
+
+  // Valor restante: total proporcional às parcelas não pagas
   const remaining  = loan.total_amount * (1 - pctPaid)
   const installVal = loan.installments > 0
     ? loan.total_amount / loan.installments
     : 0
 
-  // Dots de parcelas: máximo 12 visíveis, com "…" se houver mais
-  const maxDots   = 12
-  const totalDots = Math.min(loan.installments, maxDots)
-  const overflow  = loan.installments > maxDots
+  // Dots: máximo 12 visíveis para não poluir o card
+  const MAX_DOTS = 12
+  const totalDots = Math.min(loan.installments, MAX_DOTS)
 
   return (
-    <div
-      className="tx-row"
-      style={{
-        background: 'var(--card)',
-        borderRadius: 'var(--r-md)',
-        border: '1px solid var(--line)',
-        padding: '16px',
-        boxShadow: 'var(--shadow-sm)',
-        position: 'relative',
-      }}
-    >
-      {/* Cabeçalho: badge + nome + valor + botão lixeira */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Badge de direção */}
-          <span style={{
-            display: 'inline-block',
-            fontSize: 10,
-            fontWeight: 700,
-            color: accent,
-            background: accentTint,
-            borderRadius: 4,
-            padding: '2px 7px',
-            marginBottom: 5,
-            letterSpacing: '0.05em',
-          }}>
-            {badge}
+    <div className="loan-card">
+      {/* Cabeçalho: badge de direção + botão de exclusão */}
+      <div className="loan-head">
+        <span className={`loan-dir ${isLent ? 'lent' : 'borrowed'}`}>
+          {isLent ? 'Emprestei' : 'Devo'}
+        </span>
+        <button
+          className="loan-del"
+          onClick={() => onDelete(loan.id)}
+          disabled={deleting}
+          aria-label="Excluir empréstimo"
+        >
+          <Icon name="trash" size={12} />
+        </button>
+      </div>
+
+      {/* Nome da pessoa e anotação */}
+      <div>
+        <div className="loan-person">{loan.person_name}</div>
+        {loan.note && <div className="loan-note">{loan.note}</div>}
+      </div>
+
+      {/* Valor restante com classe .amount para blur de privacidade */}
+      <div className="loan-amount amount">R$ {fmt(remaining)}</div>
+
+      {/* Dots de parcelas — círculos preenchidos = pagas */}
+      <div className="loan-dots">
+        {Array.from({ length: totalDots }, (_, i) => (
+          <div
+            key={i}
+            className={`loan-dot ${i < loan.paid_installments ? 'paid' : ''}`}
+            title={`Parcela ${i + 1}`}
+          />
+        ))}
+        {/* Indicador de overflow quando há mais de MAX_DOTS parcelas */}
+        {loan.installments > MAX_DOTS && (
+          <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
+            +{loan.installments - MAX_DOTS}
           </span>
-
-          {/* Nome da pessoa */}
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--display, var(--sans))' }}>
-            {loan.person_name}
-          </div>
-
-          {/* Detalhes: total + parcela + vencimento */}
-          <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 3 }}>
-            Total R$ {fmt(loan.total_amount)} · parcela R$ {fmt(installVal)}
-            {loan.next_due_day && ` · vence dia ${loan.next_due_day}`}
-          </div>
-
-          {/* Observação em itálico */}
-          {loan.note && (
-            <div style={{ fontSize: 11, color: 'var(--ink-3)', fontStyle: 'italic', marginTop: 2 }}>
-              {loan.note}
-            </div>
-          )}
-        </div>
-
-        {/* Valor restante + botão lixeira */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-          <div style={{ textAlign: 'right' }}>
-            <div
-              className="amount"
-              style={{
-                fontFamily: 'var(--mono)',
-                fontSize: 18,
-                fontWeight: 700,
-                fontVariantNumeric: 'tabular-nums',
-                color: accent,
-              }}
-            >
-              R$ {fmt(remaining)}
-            </div>
-            <div style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
-              {loan.paid_installments}/{loan.installments} pagas
-            </div>
-          </div>
-
-          {/* Botão lixeira — fica visível no hover via CSS .tx-row */}
-          <button
-            className="tx-delete-btn"
-            onClick={() => onDelete(loan.id)}
-            disabled={deleting}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: deleting ? 'wait' : 'pointer',
-              color: 'var(--ink-4)',
-              padding: '4px 6px',
-              opacity: deleting ? 0.4 : 0,
-              transition: 'opacity 0.15s',
-            }}
-            aria-label="Excluir empréstimo"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 6 6 18M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
+        )}
       </div>
 
       {/* Barra de progresso */}
-      <div style={{ marginBottom: 8 }}>
-        <div style={{ height: 5, borderRadius: 3, background: 'var(--line)', overflow: 'hidden' }}>
-          <div style={{
-            height: '100%',
-            width: `${pctPaid * 100}%`,
-            background: accent,
-            borderRadius: 3,
-            transition: 'width 0.4s ease',
-          }} />
-        </div>
+      <div className="loan-track">
+        <div
+          className="loan-fill"
+          style={{ width: `${pctPaid * 100}%` }}
+        />
       </div>
 
-      {/* Dots de parcelas — ✓ para pagas, número para pendentes */}
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-        {Array.from({ length: totalDots }, (_, i) => {
-          const paid = i < loan.paid_installments
-          return (
-            <span
-              key={i}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 18,
-                height: 18,
-                borderRadius: 4,
-                background: paid ? 'var(--in-tint)' : 'var(--line)',
-                fontSize: paid ? 11 : 9,
-                color: paid ? 'var(--in)' : 'var(--ink-4)',
-                fontWeight: paid ? 700 : 400,
-                fontFamily: 'var(--mono)',
-              }}
-            >
-              {paid ? '✓' : i + 1}
-            </span>
-          )
-        })}
-        {/* Indicador de overflow quando há mais de 12 parcelas */}
-        {overflow && (
-          <span style={{ fontSize: 10, color: 'var(--ink-4)', fontFamily: 'var(--mono)' }}>
-            …+{loan.installments - maxDots}
+      {/* Meta: parcelas pagas + valor por parcela + vencimento */}
+      <div className="loan-meta">
+        <span>
+          <strong>{loan.paid_installments}/{loan.installments}</strong> parcelas · R$ {fmt(installVal)}/mês
+        </span>
+        {loan.next_due_day && (
+          <span>vence dia <strong>{loan.next_due_day}</strong></span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── FinancingCard — card de financiamento estruturado ─────────────────────────
+
+interface FinancingCardProps {
+  /** Financiamento com credor formal */
+  financing: Financing
+  onDelete: (id: string) => void
+  deleting?: boolean
+}
+
+/**
+ * Card de financiamento (credor formal, taxa de juros).
+ * Compartilha o mesmo layout .loan-card, mas com badge "Financiamento".
+ */
+export function FinancingCard({ financing, onDelete, deleting }: FinancingCardProps) {
+  // Porcentagem de progresso
+  const pctPaid = financing.installments > 0
+    ? financing.paid_installments / financing.installments
+    : 0
+
+  const remaining  = financing.total_amount * (1 - pctPaid)
+  const installVal = financing.installments > 0
+    ? financing.total_amount / financing.installments
+    : 0
+
+  const MAX_DOTS = 12
+  const totalDots = Math.min(financing.installments, MAX_DOTS)
+
+  return (
+    <div className="loan-card">
+      {/* Cabeçalho: badge + botão de exclusão */}
+      <div className="loan-head">
+        <span className="loan-dir financing">Financiamento</span>
+        <button
+          className="loan-del"
+          onClick={() => onDelete(financing.id)}
+          disabled={deleting}
+          aria-label="Excluir financiamento"
+        >
+          <Icon name="trash" size={12} />
+        </button>
+      </div>
+
+      {/* Descrição e credor */}
+      <div>
+        <div className="loan-person">{financing.description}</div>
+        {financing.lender && (
+          <div className="loan-note">{financing.lender}</div>
+        )}
+        {financing.interest_rate && (
+          <div className="loan-note">Taxa: {financing.interest_rate}</div>
+        )}
+        {financing.note && (
+          <div className="loan-note">{financing.note}</div>
+        )}
+      </div>
+
+      {/* Valor restante */}
+      <div className="loan-amount amount">R$ {fmt(remaining)}</div>
+
+      {/* Dots de parcelas */}
+      <div className="loan-dots">
+        {Array.from({ length: totalDots }, (_, i) => (
+          <div
+            key={i}
+            className={`loan-dot ${i < financing.paid_installments ? 'paid' : ''}`}
+            title={`Parcela ${i + 1}`}
+          />
+        ))}
+        {financing.installments > MAX_DOTS && (
+          <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
+            +{financing.installments - MAX_DOTS}
           </span>
+        )}
+      </div>
+
+      {/* Barra de progresso */}
+      <div className="loan-track">
+        <div
+          className="loan-fill"
+          style={{ width: `${pctPaid * 100}%` }}
+        />
+      </div>
+
+      {/* Meta: parcelas + valor parcela + vencimento */}
+      <div className="loan-meta">
+        <span>
+          <strong>{financing.paid_installments}/{financing.installments}</strong> parcelas · R$ {fmt(installVal)}/mês
+        </span>
+        {financing.next_due_day && (
+          <span>vence dia <strong>{financing.next_due_day}</strong></span>
         )}
       </div>
     </div>

@@ -1,1546 +1,2011 @@
-/* ── Nami · Finanças — Sistema de design tokens ─────────────────────────────
-   Todos os CSS custom properties do handoff §2.
-   Escopo: .nami-app (raiz da seção) para não vazar para o resto do webapp.
-   Tema escuro: [data-theme="dark"] no elemento .nami-app.
-   Privacidade: [data-privacy="on"] no elemento .nami-app.
-   ──────────────────────────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Nami · Finanças — sistema visual completo
+   Portado diretamente do handoff de referência (docs/.../nami/styles.css).
 
-/* ── Fontes ─────────────────────────────────────────────────────────────────── */
+   ESCOPO OBRIGATÓRIO: todos os seletores estão sob .nami-app para não
+   colidir com o CSS global da Frieren (que define .hero, .page, .halo etc.)
+
+   Tokens: movidos de :root para .nami-app { }
+   Tema escuro: .nami-app[data-theme="dark"] { }
+   Privacidade: .nami-app[data-privacy="on"] .amount { }
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Fontes — Google Fonts ──────────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
 
-/* ── Paleta clara (padrão) ──────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   TOKENS — paleta quente "caderno de bordo"
+   Todos os custom properties ficam no .nami-app (raiz), não no :root global,
+   para não vazar cores para o resto do webapp.
+   ══════════════════════════════════════════════════════════════════════════ */
 .nami-app {
-  /* Tipografia */
-  --display: 'Bricolage Grotesque', system-ui, sans-serif;
-  --sans:    'DM Sans', system-ui, sans-serif;
-  --mono:    'DM Mono', 'Fira Code', monospace;
+  /* — Cores de base — */
+  --ink:    oklch(0.29 0.022 52);       /* marrom-tinta quente (texto principal) */
+  --sub:    oklch(0.55 0.018 58);       /* tom médio (texto secundário) */
+  --muted:  oklch(0.72 0.012 62);       /* tom apagado (placeholders, labels) */
+  --paper:  oklch(0.988 0.008 75);      /* creme quente (fundo principal) */
+  --card:   oklch(0.994 0.005 72);      /* branco creme (cards/painéis) */
+  --line:   oklch(0.91  0.008 66);      /* linha de divisória quente */
+  --mist:   oklch(0.95  0.006 62);      /* fundo fantasma (hover, fundos leves) */
 
-  /* Fundos e superfícies */
-  --paper:    oklch(0.985 0.005 80);   /* branco quente — fundo da página */
-  --paper-2:  oklch(0.975 0.006 80);   /* ligeiramente mais escuro — sidebar, cards */
-  --card:     oklch(1 0 0);            /* branco puro — cards principais */
-  --card-2:   oklch(0.965 0.005 80);   /* hover de linha de transação */
-  --mist:     oklch(0.96 0.008 230);   /* fundo do hero — tom azulado suave */
+  /* — Acento tangerina (padrão) — */
+  --tang:   oklch(0.685 0.176 52);      /* tangerina principal */
+  --tang-h: oklch(0.60  0.18  50);      /* tangerina hover/dark */
+  --tang-t: oklch(0.685 0.176 52 / 0.12); /* tangerina translúcida (fundo de badge) */
 
-  /* Texto */
-  --ink:      oklch(0.18 0.015 250);   /* texto principal — quase-preto azulado */
-  --ink-2:    oklch(0.40 0.012 250);   /* texto secundário */
-  --ink-3:    oklch(0.55 0.010 250);   /* texto terciário / labels */
-  --ink-4:    oklch(0.68 0.008 250);   /* texto desabilitado / placeholders */
+  /* — Acentos alternativos (toggle pelo TweaksPanel) — */
+  --accent:   var(--tang);
+  --accent-h: var(--tang-h);
+  --accent-t: var(--tang-t);
 
-  /* Bordas */
-  --line:     oklch(0.88 0.008 230);   /* borda padrão */
-  --line-2:   oklch(0.92 0.006 230);   /* borda sutil */
+  /* — Cores semânticas — */
+  --in:     oklch(0.60 0.14 148);       /* verde receita */
+  --in-t:   oklch(0.60 0.14 148 / 0.12);
+  --out:    oklch(0.62 0.16 26);        /* coral despesa */
+  --out-t:  oklch(0.62 0.16 26 / 0.12);
+  --gold:   oklch(0.72 0.18 75);        /* âmbar de alerta (orçamento 85–100%) */
+  --gold-t: oklch(0.72 0.18 75 / 0.14);
 
-  /* Tangerina — cor de acento principal */
-  --tang:          oklch(0.68 0.17 42);   /* tangerina padrão */
-  --tang-deep:     oklch(0.52 0.18 42);   /* tangerina escura — texto sobre fundo claro */
-  --tang-bright:   oklch(0.78 0.18 42);   /* tangerina brilhante — hover */
-  --tang-tint:     oklch(0.94 0.04 42);   /* fundo ativo da sidebar */
-  --tang-tint-2:   oklch(0.97 0.02 42);   /* hover muito sutil */
+  /* — Sombras — */
+  --sh-sm:  0 1px 3px oklch(0.29 0.022 52 / 0.08);
+  --sh-md:  0 4px 16px oklch(0.29 0.022 52 / 0.10);
+  --sh-lg:  0 8px 32px oklch(0.29 0.022 52 / 0.14);
 
-  /* Azul-maré */
-  --sea:       oklch(0.55 0.14 230);
-  --sea-deep:  oklch(0.42 0.16 230);
-  --sea-tint:  oklch(0.93 0.04 230);
+  /* — Borda e raio — */
+  --rad:    10px;
+  --rad-sm: 6px;
+  --rad-lg: 16px;
 
-  /* Ouro */
-  --gold:      oklch(0.72 0.13 78);
-  --gold-tint: oklch(0.95 0.04 78);
+  /* — Espaçamento de densidade (confortável por padrão) — */
+  --row-pad: 14px;
 
-  /* Verde (receitas / saldo positivo) */
-  --in:        oklch(0.58 0.14 162);
-  --in-tint:   oklch(0.94 0.04 162);
+  /* — Sidebar — */
+  --barbar-bg: oklch(0.975 0.007 68);   /* fundo da sidebar (ligeiramente mais escuro que paper) */
 
-  /* Coral (despesas / saldo negativo / alertas) */
-  --out:       oklch(0.56 0.19 15);
-  --out-tint:  oklch(0.95 0.05 15);
+  /* — Tipografia — */
+  --font-display: 'Bricolage Grotesque', sans-serif;
+  --font-body:    'DM Sans', sans-serif;
+  --font-mono:    'DM Mono', monospace;
 
-  /* Border radius */
-  --r-sm:  8px;
-  --r-md:  12px;
-  --r-lg:  18px;
-
-  /* Sombras */
-  --shadow-sm:  0 1px 3px oklch(0.18 0.015 250 / 0.08),
-                0 1px 2px oklch(0.18 0.015 250 / 0.06);
-  --shadow-md:  0 4px 6px oklch(0.18 0.015 250 / 0.07),
-                0 2px 4px oklch(0.18 0.015 250 / 0.06);
-  --shadow-lg:  0 10px 15px oklch(0.18 0.015 250 / 0.07),
-                0 4px 6px oklch(0.18 0.015 250 / 0.05);
-
-  /* Topbar */
-  --topbar-bg: oklch(0.985 0.005 80 / 0.85);
-
-  /* Altura de linha de transação — alterada pelo toggle de densidade */
-  --tx-height: 52px;
-
-  font-family: var(--sans);
-  color: var(--ink);
+  /* Aplicação dos tokens ao elemento raiz */
   background: var(--paper);
-}
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
 
-/* ── Paleta escura ──────────────────────────────────────────────────────────── */
-.nami-app[data-theme="dark"] {
-  --paper:    oklch(0.14 0.015 250);
-  --paper-2:  oklch(0.17 0.015 250);
-  --card:     oklch(0.19 0.015 250);
-  --card-2:   oklch(0.22 0.012 250);
-  --mist:     oklch(0.18 0.018 230);
-
-  --ink:      oklch(0.92 0.008 80);
-  --ink-2:    oklch(0.72 0.010 80);
-  --ink-3:    oklch(0.58 0.008 80);
-  --ink-4:    oklch(0.45 0.006 80);
-
-  --line:     oklch(0.28 0.012 250);
-  --line-2:   oklch(0.24 0.010 250);
-
-  /* Tangerina escura — levemente mais quente */
-  --tang:        oklch(0.72 0.16 42);
-  --tang-deep:   oklch(0.82 0.14 42);
-  --tang-bright: oklch(0.80 0.18 42);
-  --tang-tint:   oklch(0.22 0.06 42);
-  --tang-tint-2: oklch(0.19 0.04 42);
-
-  --sea:       oklch(0.60 0.13 230);
-  --sea-deep:  oklch(0.72 0.12 230);
-  --sea-tint:  oklch(0.22 0.06 230);
-
-  --gold:      oklch(0.76 0.12 78);
-  --gold-tint: oklch(0.22 0.05 78);
-
-  --in:        oklch(0.62 0.14 162);
-  --in-tint:   oklch(0.20 0.06 162);
-
-  --out:       oklch(0.60 0.18 15);
-  --out-tint:  oklch(0.22 0.07 15);
-
-  --topbar-bg: oklch(0.14 0.015 250 / 0.88);
-
-  --shadow-sm: 0 1px 3px oklch(0 0 0 / 0.30), 0 1px 2px oklch(0 0 0 / 0.24);
-  --shadow-md: 0 4px 6px oklch(0 0 0 / 0.28), 0 2px 4px oklch(0 0 0 / 0.22);
-  --shadow-lg: 0 10px 15px oklch(0 0 0 / 0.28), 0 4px 6px oklch(0 0 0 / 0.22);
-}
-
-/* ── Opções de acento — sobrescrevem as vars --tang* ────────────────────────── */
-/* Tangerina (padrão — já definida acima) */
-.nami-app[data-accent="tangerina"] {
-  --tang:        oklch(0.68 0.17 42);
-  --tang-deep:   oklch(0.52 0.18 42);
-  --tang-bright: oklch(0.78 0.18 42);
-  --tang-tint:   oklch(0.94 0.04 42);
-  --tang-tint-2: oklch(0.97 0.02 42);
-}
-
-/* Azul-maré */
-.nami-app[data-accent="azul-mare"] {
-  --tang:        oklch(0.55 0.14 230);
-  --tang-deep:   oklch(0.42 0.16 230);
-  --tang-bright: oklch(0.68 0.14 230);
-  --tang-tint:   oklch(0.93 0.04 230);
-  --tang-tint-2: oklch(0.96 0.02 230);
-}
-
-/* Coral */
-.nami-app[data-accent="coral"] {
-  --tang:        oklch(0.56 0.19 15);
-  --tang-deep:   oklch(0.44 0.20 15);
-  --tang-bright: oklch(0.66 0.19 15);
-  --tang-tint:   oklch(0.95 0.05 15);
-  --tang-tint-2: oklch(0.97 0.03 15);
-}
-
-/* Ouro */
-.nami-app[data-accent="ouro"] {
-  --tang:        oklch(0.72 0.13 78);
-  --tang-deep:   oklch(0.56 0.14 78);
-  --tang-bright: oklch(0.80 0.13 78);
-  --tang-tint:   oklch(0.95 0.04 78);
-  --tang-tint-2: oklch(0.97 0.02 78);
-}
-
-/* ── Privacidade ────────────────────────────────────────────────────────────── */
-/* Todos os valores monetários ficam embaçados quando o modo privacidade está ativo */
-.nami-app[data-privacy="on"] .amount,
-.nami-app[data-privacy="on"] .priv {
-  filter: blur(7px);
-  transition: filter 0.15s ease;
-  cursor: pointer;
-  user-select: none;
-}
-
-/* Hover remove o blur temporariamente para o usuário ver o valor */
-.nami-app[data-privacy="on"] .amount:hover,
-.nami-app[data-privacy="on"] .priv:hover {
-  filter: none;
-}
-
-/* ── Layout principal ────────────────────────────────────────────────────────── */
-.nami-app {
+  /* Grid do shell: sidebar 250px | conteúdo principal */
   display: grid;
-  /* Sidebar fixa + área de conteúdo que cresce */
   grid-template-columns: 250px 1fr;
-  grid-template-rows: 56px 1fr 64px;
-  grid-template-areas:
-    "sidebar topbar"
-    "sidebar content"
-    "sidebar summbar";
+  grid-template-rows: 1fr auto;
   height: 100vh;
   overflow: hidden;
 }
 
-/* Sidebar responsiva: colapsa para ícones em telas estreitas */
-@media (max-width: 880px) {
-  .nami-app {
-    grid-template-columns: 66px 1fr;
-  }
-
-  /* Oculta textos dos links da sidebar quando colapsada */
-  .nami-side .nav-label,
-  .nami-side .nav-badge,
-  .nami-side .brand-text,
-  .nami-side .side-log-label,
-  .nami-side .nav-group-label,
-  .nami-side .side-foot-label {
-    display: none;
-  }
-
-  /* Centraliza os ícones quando sem texto */
-  .nami-side .nav-item {
-    justify-content: center;
-    padding: 0 10px;
-  }
+/* — Densidade compacta (sobrescreve --row-pad) — */
+.nami-app[data-density='compacto'] {
+  --row-pad: 9px;
 }
 
-/* ── Sidebar ─────────────────────────────────────────────────────────────────── */
-.nami-side {
-  grid-area: sidebar;
+/* — Tema escuro — */
+.nami-app[data-theme='dark'] {
+  --ink:    oklch(0.93 0.010 58);
+  --sub:    oklch(0.70 0.012 60);
+  --muted:  oklch(0.50 0.010 62);
+  --paper:  oklch(0.17 0.014 50);
+  --card:   oklch(0.21 0.012 52);
+  --line:   oklch(0.28 0.012 54);
+  --mist:   oklch(0.24 0.010 50);
+  --sh-sm:  0 1px 3px oklch(0 0 0 / 0.25);
+  --sh-md:  0 4px 16px oklch(0 0 0 / 0.35);
+  --sh-lg:  0 8px 32px oklch(0 0 0 / 0.45);
+  --barbar-bg: oklch(0.14 0.012 50);
+}
+
+/* — Acentos alternativos (aplicados via data-acento) — */
+.nami-app[data-acento='Azul-maré'] {
+  --accent:   oklch(0.56 0.104 234);
+  --accent-h: oklch(0.48 0.110 232);
+  --accent-t: oklch(0.56 0.104 234 / 0.12);
+}
+.nami-app[data-acento='Coral'] {
+  --accent:   oklch(0.68 0.160 18);
+  --accent-h: oklch(0.58 0.165 16);
+  --accent-t: oklch(0.68 0.160 18 / 0.12);
+}
+.nami-app[data-acento='Ouro'] {
+  --accent:   oklch(0.75 0.140 85);
+  --accent-h: oklch(0.65 0.145 83);
+  --accent-t: oklch(0.75 0.140 85 / 0.12);
+}
+
+/* — Privacidade: borra todos os valores monetários quando ativado — */
+.nami-app[data-privacy='on'] .amount {
+  filter: blur(6px);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RESET BASE — somente dentro do escopo .nami-app
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app *, .nami-app *::before, .nami-app *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+.nami-app button {
+  font: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+.nami-app input, .nami-app select, .nami-app textarea {
+  font: inherit;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SHELL — estrutura do layout (sidebar + conteúdo)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* — Sidebar — */
+.nami-app .nm-side {
+  background: var(--barbar-bg);
+  border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  width: 250px;
-  background: var(--paper-2);
-  border-right: 1px solid var(--line);
+  gap: 0;
   overflow-y: auto;
-  overflow-x: hidden;
-  padding: 20px 0 12px;
-  gap: 4px;
+  grid-row: 1 / 3;            /* ocupa as duas linhas do grid (conteúdo + summbar) */
 }
 
-/* Marca da seção: ícone + nome + role */
-.nami-brand {
+/* — Logo/marca no topo da sidebar — */
+.nami-app .side-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 16px 16px;
-}
-
-.nami-brand-mark {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  overflow: hidden;
-  flex-shrink: 0;
-  border: 1.5px solid var(--line);
-}
-
-.nami-brand-mark img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.nami-brand-name {
-  font-family: var(--display);
-  font-size: 19px;
-  font-weight: 700;
-  color: var(--ink);
-  line-height: 1.1;
-}
-
-.nami-brand-role {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--tang);
-}
-
-/* Botão "Nova transação" full-width na sidebar */
-.nami-side-btn {
-  margin: 0 12px 12px;
-  padding: 9px 14px;
-  background: var(--tang);
-  color: var(--paper);
-  border: none;
-  border-radius: var(--r-md);
-  font-family: var(--sans);
-  font-size: 13.5px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: background 0.15s;
-}
-
-.nami-side-btn:hover {
-  background: var(--tang-bright);
-}
-
-/* Label do atalho "A" na sidebar */
-.nami-side-btn-shortcut {
-  margin-left: auto;
-  font-family: var(--mono);
-  font-size: 10px;
-  opacity: 0.65;
-  border: 1px solid var(--paper);
-  border-radius: 4px;
-  padding: 1px 4px;
-}
-
-/* Grupos de navegação */
-.nami-nav-group {
-  padding: 8px 16px 4px;
-}
-
-.nami-nav-group-label {
-  font-family: var(--mono);
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-  margin-bottom: 2px;
-}
-
-/* Item de navegação */
-.nami-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 12px;
-  margin: 0 4px;
-  border-radius: var(--r-sm);
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--ink-2);
-  cursor: pointer;
-  border: none;
-  background: none;
-  width: calc(100% - 8px);
-  text-align: left;
-  transition: background 0.12s, color 0.12s;
-}
-
-.nami-nav-item:hover {
-  background: var(--tang-tint-2);
-  color: var(--ink);
-}
-
-/* Estado ativo do item de navegação (FR-003) */
-.nami-nav-item.active {
-  background: var(--tang-tint);
-  color: var(--tang-deep);
-  font-weight: 600;
-}
-
-/* Badge de valor ao lado do item de navegação */
-.nami-nav-badge {
-  margin-left: auto;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Rodapé da sidebar */
-.nami-side-foot {
-  margin-top: auto;
-  padding: 12px 16px 0;
-}
-
-.nami-back-link {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
-  color: var(--ink-3);
-  text-decoration: none;
-  transition: color 0.12s;
-}
-
-.nami-back-link:hover {
-  color: var(--ink);
-}
-
-.nami-back-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--tang);
-  flex-shrink: 0;
-}
-
-/* ── Topbar ──────────────────────────────────────────────────────────────────── */
-.nami-topbar {
-  grid-area: topbar;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 24px;
-  height: 56px;
-  background: var(--topbar-bg);
-  backdrop-filter: blur(12px);
+  padding: 22px 18px 16px;
   border-bottom: 1px solid var(--line);
-  position: sticky;
-  top: 0;
-  z-index: 10;
 }
-
-.nami-topbar-title {
-  font-family: var(--display);
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ink);
-  flex: 1;
-}
-
-/* Seletor de mês: chevrons + label */
-.nami-month-selector {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.nami-month-btn {
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--card);
-  color: var(--ink-2);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  transition: background 0.12s;
-}
-
-.nami-month-btn:hover {
-  background: var(--card-2);
-}
-
-.nami-month-label {
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ink-2);
-  min-width: 104px;
-  text-align: center;
-}
-
-/* Campo de busca pill */
-.nami-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 5px 12px;
-  min-width: 190px;
-  transition: border-color 0.15s;
-}
-
-.nami-search:focus-within {
-  border-color: var(--tang);
-}
-
-.nami-search input {
-  border: none;
-  background: none;
-  font-size: 13px;
-  color: var(--ink);
-  outline: none;
-  width: 100%;
-  font-family: var(--sans);
-}
-
-.nami-search input::placeholder {
-  color: var(--ink-4);
-}
-
-.nami-search svg {
-  color: var(--ink-4);
+.nami-app .brand-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
   flex-shrink: 0;
+  border: 2px solid var(--line);
 }
-
-/* ── Área de conteúdo ────────────────────────────────────────────────────────── */
-.nami-content {
-  grid-area: content;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 28px 28px 0;
-}
-
-/* Responsivo: em telas médias, grids de 2 colunas viram 1 */
-@media (max-width: 900px) {
-  .nami-grid-2 {
-    grid-template-columns: 1fr !important;
-  }
-}
-
-/* ── SummBar — barra de resumo do mês, fixa no rodapé ──────────────────────── */
-.nami-summbar {
-  grid-area: summbar;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 0 24px;
-  height: 64px;
-  background: var(--topbar-bg);
-  backdrop-filter: blur(16px);
-  border-top: 1px solid var(--line);
-  z-index: 10;
-}
-
-.nami-summbar-item {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.nami-summbar-label {
-  font-family: var(--mono);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-4);
-}
-
-.nami-summbar-value {
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-
-.nami-summbar-in  { color: var(--in);  }
-.nami-summbar-out { color: var(--out); }
-.nami-summbar-net { color: var(--ink); }
-
-.nami-summbar-divider {
-  width: 1px;
-  height: 32px;
-  background: var(--line);
-  flex-shrink: 0;
-}
-
-/* Barra de fluxo proporcional na SummBar */
-.nami-flow-bar {
-  flex: 1;
-  height: 6px;
-  background: var(--line);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.nami-flow-bar-fill {
-  height: 100%;
-  background: var(--in);
-  border-radius: 999px;
-  transition: width 0.3s ease;
-}
-
-.nami-summbar-new-btn {
-  margin-left: auto;
-  padding: 6px 14px;
-  background: var(--tang-tint);
-  color: var(--tang-deep);
-  border: 1px solid var(--tang-tint);
-  border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s;
-}
-
-.nami-summbar-new-btn:hover {
-  background: var(--tang-tint-2);
-}
-
-/* ── Cards genéricos ─────────────────────────────────────────────────────────── */
-.nami-card {
-  background: var(--card);
-  border-radius: var(--r-lg);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-sm);
-  padding: 20px 22px;
-}
-
-.nami-card-title {
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-3);
-  margin-bottom: 10px;
-}
-
-/* ── Stat cards (4 no dashboard) ────────────────────────────────────────────── */
-.nami-stat-card {
-  background: var(--card);
-  border-radius: var(--r-lg);
-  border: 1px solid var(--line);
-  padding: 18px 20px;
-}
-
-.nami-stat-label {
-  font-family: var(--mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-3);
-  margin-bottom: 6px;
-}
-
-.nami-stat-value {
-  font-family: var(--display);
-  font-size: 26px;
+.nami-app .brand-name {
+  font-family: var(--font-display);
+  font-size: 16px;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
   color: var(--ink);
-  line-height: 1.1;
+  letter-spacing: -0.3px;
+}
+.nami-app .brand-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
 }
 
-.nami-stat-sub {
-  font-size: 11.5px;
-  color: var(--ink-3);
-  margin-top: 4px;
+/* — Botão "Nova transação" na sidebar — */
+.nami-app .side-add {
+  padding: 14px 14px 8px;
 }
-
-/* ── Toast ───────────────────────────────────────────────────────────────────── */
-.nami-toast {
-  position: fixed;
-  bottom: 88px;
-  left: 50%;
-  transform: translateX(-50%) translateY(14px);
-  background: var(--ink);
-  color: var(--paper);
-  border-radius: 999px;
-  padding: 8px 16px;
-  font-size: 13.5px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  z-index: 9999;
-  box-shadow: var(--shadow-md);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.nami-toast.visible {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
-/* ── FormModal / scrim ───────────────────────────────────────────────────────── */
-.nami-scrim {
-  position: fixed;
-  inset: 0;
-  background: oklch(0.18 0.015 250 / 0.45);
-  backdrop-filter: blur(4px);
-  z-index: 100;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 8vh;
-  overflow-y: auto;
-}
-
-.nami-modal {
-  background: var(--card);
-  border-radius: var(--r-lg);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-lg);
-  width: 100%;
-  max-width: 460px;
-  padding: 28px;
-  position: relative;
-  margin-bottom: 40px;
-}
-
-.nami-modal-header {
+.nami-app .side-add-btn {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--rad-sm);
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.nami-app .side-add-btn:hover {
+  background: var(--accent-h);
+}
+.nami-app .side-add-btn kbd {
+  font-size: 10px;
+  opacity: 0.75;
+  background: oklch(1 0 0 / 0.2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
 }
 
-.nami-modal-title {
-  font-family: var(--display);
-  font-size: 20px;
-  font-weight: 700;
+/* — Navegação lateral — */
+.nami-app .side-nav {
+  flex: 1;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nami-app .nav-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 8px 4px;
+}
+.nami-app .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--rad-sm);
+  color: var(--sub);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  position: relative;
+}
+.nami-app .nav-item:hover {
+  background: var(--mist);
   color: var(--ink);
 }
+.nami-app .nav-item.active {
+  background: var(--accent-t);
+  color: var(--accent);
+  font-weight: 600;
+}
+.nami-app .nav-item svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+.nami-app .nav-item.active svg {
+  opacity: 1;
+}
+.nami-app .nav-amt {
+  margin-left: auto;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  opacity: 0.7;
+  background: var(--mist);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.nami-app .nav-item.active .nav-amt {
+  background: var(--accent-t);
+  opacity: 1;
+}
 
-.nami-modal-close {
-  width: 30px;
-  height: 30px;
+/* — Rodapé da sidebar (voltar ao Makima) — */
+.nami-app .side-foot {
+  padding: 10px;
+  border-top: 1px solid var(--line);
+}
+.nami-app .back-makima {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--rad-sm);
+  color: var(--muted);
+  font-size: 12px;
+  transition: background 0.12s, color 0.12s;
+  text-decoration: none;
+  background: none;
   border: none;
-  background: var(--card-2);
-  border-radius: var(--r-sm);
   cursor: pointer;
+  text-align: left;
+}
+.nami-app .back-makima:hover {
+  background: var(--mist);
+  color: var(--sub);
+}
+.nami-app .back-makima svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* — Área principal — */
+.nami-app .nm-main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* — Topbar — */
+.nami-app .nm-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  height: 56px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+  flex-shrink: 0;
+}
+.nami-app .topbar-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.2px;
+}
+.nami-app .topbar-spacer { flex: 1; }
+
+/* — Seletor de mês — */
+.nami-app .month-switch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--mist);
+  border-radius: var(--rad-sm);
+  padding: 3px;
+}
+.nami-app .month-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink-3);
-  transition: background 0.12s;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  color: var(--sub);
+  transition: background 0.12s, color 0.12s;
+  background: none;
+  border: none;
+  cursor: pointer;
 }
-
-.nami-modal-close:hover {
+.nami-app .month-btn:hover {
   background: var(--line);
-}
-
-/* Campos de formulário */
-.nami-field {
-  margin-bottom: 16px;
-}
-
-.nami-field-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink-3);
-  margin-bottom: 5px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-family: var(--mono);
-}
-
-.nami-input {
-  width: 100%;
-  padding: 9px 12px;
-  background: var(--paper-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  font-size: 14px;
-  font-family: var(--sans);
   color: var(--ink);
-  outline: none;
-  transition: border-color 0.15s;
-  box-sizing: border-box;
+}
+.nami-app .month-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.nami-app .mlabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  min-width: 80px;
+  text-align: center;
+  font-family: var(--font-display);
 }
 
-.nami-input:focus {
-  border-color: var(--tang);
-}
-
-/* Campo de valor monetário */
-.nami-money-wrap {
+/* — Busca — */
+.nami-app .search {
   display: flex;
   align-items: center;
-  background: var(--paper-2);
+  gap: 6px;
+  background: var(--mist);
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  overflow: hidden;
+  border-radius: var(--rad-sm);
+  padding: 0 10px;
+  height: 32px;
   transition: border-color 0.15s;
 }
-
-.nami-money-wrap:focus-within {
-  border-color: var(--tang);
+.nami-app .search:focus-within {
+  border-color: var(--accent);
 }
-
-.nami-money-prefix {
-  padding: 9px 10px 9px 12px;
-  font-size: 13px;
-  color: var(--ink-3);
-  font-family: var(--mono);
-  border-right: 1px solid var(--line);
-  white-space: nowrap;
+.nami-app .search svg {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  flex-shrink: 0;
 }
-
-.nami-money-input {
-  flex: 1;
-  padding: 9px 12px;
+.nami-app .search input {
   border: none;
   background: none;
-  font-size: 14px;
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
+  outline: none;
+  font-size: 13px;
+  color: var(--ink);
+  width: 160px;
+}
+.nami-app .search input::placeholder {
+  color: var(--muted);
+}
+
+/* — Área scrollável do conteúdo — */
+.nami-app .nm-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SUMMBAR — barra de resumo no rodapé (fora do scroll)
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .summbar {
+  grid-column: 2;          /* só na coluna do conteúdo (não na sidebar) */
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 24px;
+  height: 40px;
+  background: var(--card);
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--sub);
+  flex-shrink: 0;
+}
+.nami-app .summbar-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.nami-app .summbar-label { color: var(--muted); }
+.nami-app .summbar-val {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--ink);
+}
+.nami-app .summbar-val.in  { color: var(--in); }
+.nami-app .summbar-val.out { color: var(--out); }
+.nami-app .summbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--line);
+}
+.nami-app .summbar-spacer { flex: 1; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PÁGINA — estrutura de cabeçalho de seção
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .page-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.nami-app .page-head h2 {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: var(--ink);
+}
+.nami-app .page-head .page-sub {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HERO — banner do Dashboard
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .hero {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--rad-lg);
+  padding: 28px 32px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--sh-sm);
+}
+.nami-app .hero-copy { flex: 1; }
+.nami-app .hero-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.nami-app .hero-greet {
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--sub);
+  margin-bottom: 4px;
+}
+.nami-app .hero-net {
+  font-family: var(--font-display);
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: -1.5px;
+  line-height: 1;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.nami-app .hero-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+.nami-app .hero-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--rad-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s;
+}
+.nami-app .hero-cta:hover { background: var(--accent-h); }
+
+/* — Retrato/halo da Nami no hero — */
+.nami-app .hero-portrait {
+  position: relative;
+  flex-shrink: 0;
+}
+.nami-app .halo {
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-t) 0%, transparent 70%);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+}
+.nami-app .halo img {
+  width: 110px;
+  height: 110px;
+  object-fit: cover;
+  object-position: top center;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   STAT-ROW — linha de 4 cards de estatística
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.nami-app .stat-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--rad);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: var(--sh-sm);
+}
+.nami-app .stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.nami-app .stat-val {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--ink);
+}
+.nami-app .stat-val.in  { color: var(--in); }
+.nami-app .stat-val.out { color: var(--out); }
+.nami-app .stat-detail {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* — Goal track (barra de progresso no stat-card de saldo) — */
+.nami-app .goal-track {
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.nami-app .goal-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PANEL — card genérico de conteúdo
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--rad);
+  overflow: hidden;
+  box-shadow: var(--sh-sm);
+}
+.nami-app .panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.nami-app .panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.nami-app .panel-action {
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font-weight: 500;
+}
+.nami-app .panel-action:hover { text-decoration: underline; }
+.nami-app .panel-body {
+  padding: 16px;
+}
+.nami-app .panel-body.no-pad { padding: 0; }
+
+/* — Grid de 2 colunas — */
+.nami-app .grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   QUICK ADD — barra de adição rápida (abaixo do hero)
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .quick-add {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--rad);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  box-shadow: var(--sh-sm);
+}
+.nami-app .qa-type {
+  display: flex;
+  gap: 4px;
+  background: var(--mist);
+  border-radius: var(--rad-sm);
+  padding: 3px;
+}
+.nami-app .qa-type button {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sub);
+  transition: background 0.12s, color 0.12s;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.nami-app .qa-type button.active {
+  background: var(--card);
+  box-shadow: var(--sh-sm);
+}
+.nami-app .qa-type button.active.in  { color: var(--in); }
+.nami-app .qa-type button.active.out { color: var(--out); }
+.nami-app .qa-cur {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.nami-app .qa-amt {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  border: none;
+  background: none;
   color: var(--ink);
   outline: none;
-  /* Remove a seta spinner de inputs numéricos */
-  -moz-appearance: textfield;
+  width: 100px;
+  letter-spacing: -0.5px;
 }
-
-.nami-money-input::-webkit-outer-spin-button,
-.nami-money-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
+.nami-app .qa-amt::placeholder { color: var(--mist); }
+.nami-app .qa-sep {
+  width: 1px;
+  height: 24px;
+  background: var(--line);
 }
-
-/* Segmentos (radio chips) */
-.nami-segment {
-  display: flex;
-  gap: 6px;
-}
-
-.nami-segment-btn {
+.nami-app .qa-desc {
   flex: 1;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--paper-2);
-  color: var(--ink-2);
+  border: none;
+  background: none;
+  outline: none;
   font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.12s;
-  text-align: center;
+  color: var(--ink);
+  min-width: 100px;
 }
-
-.nami-segment-btn.active {
-  background: var(--tang-tint);
-  color: var(--tang-deep);
-  border-color: var(--tang-tint);
-  font-weight: 600;
-}
-
-/* Swatches de cor */
-.nami-swatches {
+.nami-app .qa-desc::placeholder { color: var(--muted); }
+.nami-app .qa-cats {
   display: flex;
-  gap: 8px;
+  gap: 5px;
   flex-wrap: wrap;
 }
-
-.nami-swatch {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: transform 0.12s;
-}
-
-.nami-swatch:hover {
-  transform: scale(1.12);
-}
-
-.nami-swatch.selected {
-  border-color: var(--ink);
-  transform: scale(1.08);
-}
-
-/* Botões de ação do modal */
-.nami-modal-actions {
+.nami-app .qa-cat {
   display: flex;
-  gap: 10px;
-  margin-top: 24px;
-}
-
-.nami-btn-ghost {
-  flex: 1;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: none;
-  color: var(--ink-2);
-  font-size: 14px;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 11px;
   font-weight: 500;
+  border: 1px solid var(--line);
+  background: var(--mist);
+  color: var(--sub);
   cursor: pointer;
-  transition: background 0.12s;
+  transition: all 0.12s;
+  white-space: nowrap;
 }
-
-.nami-btn-ghost:hover {
-  background: var(--card-2);
+.nami-app .qa-cat:hover { border-color: var(--accent); color: var(--accent); }
+.nami-app .qa-cat.active {
+  border-color: var(--accent);
+  background: var(--accent-t);
+  color: var(--accent);
 }
-
-.nami-btn-primary {
-  flex: 2;
-  padding: 10px;
-  border: none;
-  border-radius: var(--r-md);
-  background: var(--tang);
-  color: var(--paper);
-  font-size: 14px;
+.nami-app .qa-save {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--rad-sm);
+  font-size: 12px;
   font-weight: 600;
+  border: none;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background 0.15s;
+  white-space: nowrap;
 }
+.nami-app .qa-save:hover { background: var(--accent-h); }
+.nami-app .qa-save svg { width: 13px; height: 13px; }
 
-.nami-btn-primary:hover:not(:disabled) {
-  background: var(--tang-bright);
+/* ══════════════════════════════════════════════════════════════════════════
+   TRANSAÇÕES — lista agrupada por dia
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .tx-list { display: flex; flex-direction: column; }
+.nami-app .tx-day-group { }
+.nami-app .tx-day-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 16px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+  background: var(--mist);
 }
-
-.nami-btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.nami-app .tx-day-net {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
 }
-
-/* ── TxRow — linha de transação ─────────────────────────────────────────────── */
-.nami-tx-row {
+.nami-app .tx-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: var(--tx-height);
-  padding: 0 4px;
-  border-radius: var(--r-sm);
-  cursor: default;
-  position: relative;
+  padding: var(--row-pad) 16px;
+  border-bottom: 1px solid var(--line);
   transition: background 0.1s;
 }
-
-.nami-tx-row:hover {
-  background: var(--card-2);
-}
-
-/* Badge de categoria: ícone com fundo colorido translúcido */
-.nami-cat-badge {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--r-sm);
+.nami-app .tx-row:last-child { border-bottom: none; }
+.nami-app .tx-row:hover { background: var(--mist); }
+.nami-app .tx-ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
-
-.nami-tx-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.nami-tx-name {
-  font-size: 13.5px;
-  font-weight: 600;
+.nami-app .tx-ico svg { width: 16px; height: 16px; }
+.nami-app .tx-body { flex: 1; min-width: 0; }
+.nami-app .tx-name {
+  font-size: 13px;
+  font-weight: 500;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.nami-tx-meta {
-  font-size: 11.5px;
-  color: var(--ink-3);
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.nami-app .tx-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
 }
-
-.nami-tx-fonte-pill {
-  display: inline-flex;
-  align-items: center;
-  background: var(--card-2);
-  border-radius: 999px;
-  padding: 1px 6px;
-  font-size: 10.5px;
-}
-
-.nami-tx-amount {
-  font-family: var(--mono);
-  font-size: 14.5px;
+.nami-app .tx-right { display: flex; align-items: center; gap: 12px; }
+.nami-app .tx-val {
+  font-family: var(--font-mono);
+  font-size: 14px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
 }
-
-.nami-tx-amount.out { color: var(--out); }
-.nami-tx-amount.in  { color: var(--in);  }
-
-/* Botão de exclusão: invisível por padrão, aparece no hover da linha */
-.nami-tx-delete {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: none;
-  color: var(--ink-3);
-  cursor: pointer;
-  border-radius: var(--r-sm);
+.nami-app .tx-val.in  { color: var(--in); }
+.nami-app .tx-val.out { color: var(--out); }
+.nami-app .tx-del {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
   opacity: 0;
-  transition: opacity 0.12s, background 0.12s;
-  flex-shrink: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
 }
+.nami-app .tx-row:hover .tx-del { opacity: 1; }
+.nami-app .tx-del:hover { background: var(--out-t); color: var(--out); }
+.nami-app .tx-del svg { width: 13px; height: 13px; }
 
-.nami-tx-row:hover .nami-tx-delete {
-  opacity: 1;
-}
-
-.nami-tx-delete:hover {
-  background: var(--out-tint);
-  color: var(--out);
-}
-
-/* ── Quick-Add bar ───────────────────────────────────────────────────────────── */
-.nami-quick-add {
+/* — Barra de filtros de transação — */
+.nami-app .toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  padding: 10px 14px;
-  margin-bottom: 20px;
-}
-
-.nami-qa-type-btn {
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
-  flex-shrink: 0;
-  transition: all 0.12s;
-}
-
-.nami-qa-value-wrap {
-  display: flex;
-  align-items: center;
-  background: var(--paper-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  overflow: hidden;
-  flex-shrink: 0;
-  width: 130px;
-}
-
-.nami-qa-prefix {
-  padding: 6px 6px 6px 10px;
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--ink-3);
-}
-
-.nami-qa-input {
-  width: 70px;
-  border: none;
-  background: none;
-  font-family: var(--mono);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-  outline: none;
-  padding: 6px 8px 6px 0;
-  -moz-appearance: textfield;
-}
-
-.nami-qa-input::-webkit-inner-spin-button,
-.nami-qa-input::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-}
-
-.nami-qa-divider {
-  width: 1px;
-  height: 24px;
-  background: var(--line);
-  flex-shrink: 0;
-}
-
-.nami-qa-desc {
-  flex: 1;
-  border: none;
-  background: none;
-  font-family: var(--sans);
-  font-size: 13.5px;
-  color: var(--ink);
-  outline: none;
-  min-width: 0;
-}
-
-.nami-qa-desc::placeholder {
-  color: var(--ink-4);
-}
-
-/* Chips de categoria na Quick-Add */
-.nami-qa-chips {
-  display: flex;
-  gap: 5px;
   flex-wrap: wrap;
 }
-
-.nami-qa-chip {
-  padding: 4px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--paper-2);
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
+.nami-app .chip {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--line);
+  background: var(--mist);
+  color: var(--sub);
+  cursor: pointer;
   transition: all 0.12s;
   white-space: nowrap;
-  color: var(--ink-2);
 }
-
-.nami-qa-chip.selected {
-  background: var(--tang-tint);
-  color: var(--tang-deep);
-  border-color: var(--tang-tint);
+.nami-app .chip:hover { border-color: var(--accent); color: var(--accent); }
+.nami-app .chip.active {
+  border-color: var(--accent);
+  background: var(--accent-t);
+  color: var(--accent);
 }
+.nami-app .chip.in.active  { border-color: var(--in);  background: var(--in-t);  color: var(--in); }
+.nami-app .chip.out.active { border-color: var(--out); background: var(--out-t); color: var(--out); }
 
-.nami-qa-submit {
-  padding: 7px 16px;
-  background: var(--tang);
-  color: var(--paper);
-  border: none;
-  border-radius: var(--r-sm);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.12s;
+/* ══════════════════════════════════════════════════════════════════════════
+   CONTAS — grade de cards de conta
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .acct-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
 }
-
-.nami-qa-submit:hover:not(:disabled) {
-  background: var(--tang-bright);
-}
-
-.nami-qa-submit:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* ── Density toggle ─────────────────────────────────────────────────────────── */
-.nami-app[data-density="compacto"] {
-  --tx-height: 40px;
-}
-
-/* ── Utilidades monetárias ──────────────────────────────────────────────────── */
-/* Classe .money aplica tabular-nums a qualquer span/div com valor */
-.money {
-  font-variant-numeric: tabular-nums;
-  font-family: var(--mono);
-}
-
-.color-in  { color: var(--in);  }
-.color-out { color: var(--out); }
-
-/* ── Placeholders de tela vazia ─────────────────────────────────────────────── */
-.nami-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 48px 24px;
-  color: var(--ink-4);
-  text-align: center;
-}
-
-.nami-empty-icon {
-  font-size: 32px;
-  opacity: 0.5;
-  margin-bottom: 4px;
-}
-
-.nami-empty-text {
-  font-size: 14px;
-  color: var(--ink-3);
-}
-
-/* ── Hero card ──────────────────────────────────────────────────────────────── */
-.nami-hero {
-  border-radius: var(--r-lg);
-  min-height: 312px;
-  padding: 32px 40px 0;
-  background: radial-gradient(ellipse at 20% 60%, var(--tang-tint) 0%, transparent 60%),
-              radial-gradient(ellipse at 80% 30%, var(--sea-tint) 0%, transparent 60%),
-              var(--mist);
-  display: flex;
-  align-items: stretch;
-  overflow: hidden;
-  margin-bottom: 20px;
-}
-
-.nami-hero-copy {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding-bottom: 32px;
-  gap: 6px;
-}
-
-.nami-hero-eyebrow {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-3);
-}
-
-.nami-hero-greeting {
-  font-family: var(--display);
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--ink-2);
-}
-
-.nami-hero-balance {
-  font-family: var(--display);
-  font-size: clamp(42px, 5.5vw, 62px);
-  font-weight: 800;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.nami-hero-balance.positive { color: var(--in);  }
-.nami-hero-balance.negative { color: var(--out); }
-
-.nami-hero-sub {
-  font-size: 13px;
-  color: var(--ink-3);
-}
-
-.nami-hero-ctas {
-  display: flex;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.nami-hero-cta-primary {
-  padding: 8px 18px;
-  background: var(--tang);
-  color: var(--paper);
-  border: none;
-  border-radius: var(--r-md);
-  font-size: 13.5px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-
-.nami-hero-cta-primary:hover {
-  background: var(--tang-bright);
-}
-
-.nami-hero-cta-ghost {
-  padding: 8px 18px;
-  background: none;
-  color: var(--ink-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  font-size: 13.5px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-
-.nami-hero-cta-ghost:hover {
-  background: var(--card-2);
-}
-
-/* Imagem do personagem no hero (oculta em mobile) */
-.nami-hero-portrait {
-  max-width: 300px;
-  align-self: flex-end;
-  filter: drop-shadow(0 8px 24px oklch(0.18 0.015 250 / 0.2));
-}
-
-@media (max-width: 760px) {
-  .nami-hero-portrait {
-    display: none;
-  }
-}
-
-/* ── Barra de progresso (orçamentos, empréstimos) ───────────────────────────── */
-.nami-progress-bar {
-  height: 6px;
-  background: var(--line);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.nami-progress-fill {
-  height: 100%;
-  border-radius: 999px;
-  transition: width 0.3s ease;
-}
-
-/* ── Dots de parcelas ───────────────────────────────────────────────────────── */
-.nami-dots {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  max-width: 100%;
-}
-
-.nami-dot {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--mono);
-  font-size: 9px;
-  font-weight: 500;
-}
-
-.nami-dot.paid {
-  background: var(--in-tint);
-  color: var(--in);
-}
-
-.nami-dot.pending {
-  background: var(--card-2);
-  color: var(--ink-3);
-}
-
-/* ── TweaksPanel ─────────────────────────────────────────────────────────────── */
-.nami-tweaks-trigger {
-  position: fixed;
-  bottom: 80px;
-  right: 16px;
-  width: 38px;
-  height: 38px;
+.nami-app .acct-card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--shadow-md);
-  color: var(--ink-3);
-  z-index: 50;
-  transition: color 0.12s, transform 0.12s;
-}
-
-.nami-tweaks-trigger:hover {
-  color: var(--ink);
-  transform: rotate(30deg);
-}
-
-.nami-tweaks-panel {
-  position: fixed;
-  bottom: 130px;
-  right: 16px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
-  padding: 16px;
-  width: 260px;
-  z-index: 50;
-}
-
-.nami-tweaks-title {
-  font-family: var(--mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-4);
-  margin-bottom: 12px;
-}
-
-.nami-tweaks-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.nami-tweaks-label {
-  font-size: 12.5px;
-  color: var(--ink-2);
-  min-width: 72px;
-}
-
-.nami-tweaks-opts {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.nami-tweaks-opt {
-  padding: 4px 9px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: none;
-  font-size: 11.5px;
-  color: var(--ink-2);
-  cursor: pointer;
-  transition: all 0.1s;
-}
-
-.nami-tweaks-opt.sel {
-  background: var(--tang-tint);
-  color: var(--tang-deep);
-  border-color: var(--tang-tint);
-  font-weight: 600;
-}
-
-/* Toggle switch para privacidade */
-.nami-toggle {
-  width: 36px;
-  height: 20px;
-  background: var(--line);
-  border-radius: 999px;
-  border: none;
-  cursor: pointer;
+  border-radius: var(--rad);
+  overflow: hidden;
+  box-shadow: var(--sh-sm);
   position: relative;
-  transition: background 0.2s;
+  display: flex;
+  flex-direction: column;
+}
+.nami-app .accent-bar {
+  height: 4px;
+  background: var(--accent);    /* sobrescrito inline pelo color da conta */
   flex-shrink: 0;
 }
-
-.nami-toggle.on {
-  background: var(--in);
-}
-
-.nami-toggle::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  background: white;
-  border-radius: 50%;
-  transition: transform 0.2s;
-}
-
-.nami-toggle.on::after {
-  transform: translateX(16px);
-}
-
-/* ── Swatches de acento no TweaksPanel ──────────────────────────────────────── */
-.nami-accent-swatch {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: transform 0.12s;
+.nami-app .acct-body { padding: 14px 14px 10px; flex: 1; }
+.nami-app .acct-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--mist);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sub);
+  overflow: hidden;
+  margin-bottom: 10px;
   flex-shrink: 0;
 }
-
-.nami-accent-swatch:hover {
-  transform: scale(1.2);
+.nami-app .acct-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
 }
-
-.nami-accent-swatch.selected {
-  border-color: var(--ink);
-  transform: scale(1.15);
+.nami-app .acct-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
 }
-
-/* ── Seção de header de aba ─────────────────────────────────────────────────── */
-.nami-section-header {
+.nami-app .acct-type {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: capitalize;
+  margin-top: 2px;
+}
+.nami-app .acct-balance {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: var(--ink);
+  margin-top: 8px;
+}
+.nami-app .acct-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--mist);
+}
+.nami-app .acct-status {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.nami-app .acct-del {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  transition: background 0.12s, color 0.12s;
+}
+.nami-app .acct-del:hover { background: var(--out-t); color: var(--out); }
+.nami-app .acct-del svg { width: 12px; height: 12px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CARTÕES — plástico visual de cartão de crédito
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .cc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.nami-app .cc-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--rad-lg);
+  overflow: hidden;
+  box-shadow: var(--sh-md);
+}
+.nami-app .cc-plastic {
+  /* Gradiente sobrescrito inline pelo campo grad do cartão */
+  background: linear-gradient(135deg, oklch(0.40 0.12 260), oklch(0.28 0.08 280));
+  padding: 18px 20px;
+  position: relative;
+  min-height: 130px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.nami-app .cc-chip {
+  width: 28px;
+  height: 20px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, oklch(0.80 0.12 80), oklch(0.68 0.10 70));
+}
+.nami-app .cc-num {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 500;
+  color: oklch(1 0 0 / 0.8);
+  letter-spacing: 0.15em;
+}
+.nami-app .cc-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+.nami-app .cc-holder {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: oklch(1 0 0 / 0.75);
+}
+.nami-app .cc-brand {
+  font-size: 12px;
+  font-weight: 700;
+  color: oklch(1 0 0 / 0.9);
+  letter-spacing: 0.02em;
+}
+.nami-app .cc-info { padding: 14px 16px; }
+.nami-app .cc-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+.nami-app .cc-limit-track {
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+.nami-app .cc-limit-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.nami-app .cc-dates {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.nami-app .cc-dates strong { color: var(--ink); }
+.nami-app .cc-foot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-top: 1px solid var(--line);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ORÇAMENTOS — lista com barras de progresso
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .budget-list { display: flex; flex-direction: column; }
+.nami-app .budget-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: var(--row-pad) 16px;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.1s;
+}
+.nami-app .budget-row:last-child { border-bottom: none; }
+.nami-app .budget-row:hover { background: var(--mist); }
+.nami-app .budget-ico {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.nami-app .budget-ico svg { width: 15px; height: 15px; }
+.nami-app .budget-body { flex: 1; min-width: 0; }
+.nami-app .budget-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.nami-app .budget-bar {
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.nami-app .budget-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.nami-app .budget-fill.over { background: var(--out); }
+.nami-app .budget-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.nami-app .budget-vals {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.nami-app .budget-spent { color: var(--ink); font-weight: 600; }
+.nami-app .budget-limit { color: var(--muted); }
+.nami-app .budget-del {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  transition: background 0.12s, color 0.12s;
+  opacity: 0;
+}
+.nami-app .budget-row:hover .budget-del { opacity: 1; }
+.nami-app .budget-del:hover { background: var(--out-t); color: var(--out); }
+.nami-app .budget-del svg { width: 12px; height: 12px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ASSINATURAS — lista de serviços recorrentes
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .sub-list { display: flex; flex-direction: column; }
+.nami-app .sub-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: var(--row-pad) 16px;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.1s;
+}
+.nami-app .sub-row:last-child { border-bottom: none; }
+.nami-app .sub-row:hover { background: var(--mist); }
+.nami-app .sub-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.nami-app .sub-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.nami-app .sub-body { flex: 1; min-width: 0; }
+.nami-app .sub-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.nami-app .sub-ciclo {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.nami-app .sub-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.nami-app .sub-val {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--out);
+}
+.nami-app .sub-next {
+  font-size: 11px;
+  color: var(--muted);
+}
+.nami-app .sub-del {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+.nami-app .sub-row:hover .sub-del { opacity: 1; }
+.nami-app .sub-del:hover { background: var(--out-t); color: var(--out); }
+.nami-app .sub-del svg { width: 13px; height: 13px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   EMPRÉSTIMOS & FINANCIAMENTOS — loan card
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .loan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.nami-app .loan-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--rad);
+  padding: 16px;
+  box-shadow: var(--sh-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.nami-app .loan-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.nami-app .loan-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.nami-app .loan-dir.lent     { background: var(--in-t);  color: var(--in); }
+.nami-app .loan-dir.borrowed { background: var(--out-t); color: var(--out); }
+.nami-app .loan-dir.financing { background: var(--accent-t); color: var(--accent); }
+.nami-app .loan-del {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  transition: background 0.12s, color 0.12s;
+}
+.nami-app .loan-del:hover { background: var(--out-t); color: var(--out); }
+.nami-app .loan-del svg { width: 12px; height: 12px; }
+.nami-app .loan-person {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.2px;
+}
+.nami-app .loan-note {
+  font-size: 11px;
+  color: var(--muted);
+}
+.nami-app .loan-amount {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: var(--ink);
+}
+.nami-app .loan-dots {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.nami-app .loan-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  background: transparent;
+}
+.nami-app .loan-dot.paid   { background: var(--accent); border-color: var(--accent); }
+.nami-app .loan-dot.done   { background: var(--in);     border-color: var(--in); }
+.nami-app .loan-track {
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.nami-app .loan-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+.nami-app .loan-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+}
+.nami-app .loan-meta strong { color: var(--ink); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DONUT CHART — gráfico de pizza SVG (componente Donut em ui.tsx)
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .donut-wrap {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.nami-app .donut-wrap svg { flex-shrink: 0; }
+.nami-app .cat-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.nami-app .cat-leg-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--sub);
+  min-width: 0;
+}
+.nami-app .cat-leg-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.nami-app .cat-leg-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nami-app .cat-leg-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CASHFLOW CHART — barras de entrada/saída por mês (.flow)
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .flow {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 120px;
+  padding-bottom: 20px;
+  position: relative;
+}
+.nami-app .flow-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  height: 100%;
+  justify-content: flex-end;
+  position: relative;
+}
+.nami-app .flow-bars {
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  width: 100%;
+  justify-content: center;
+}
+.nami-app .flow-bar {
+  width: 10px;
+  border-radius: 3px 3px 0 0;
+  min-height: 2px;
+  transition: height 0.4s ease;
+}
+.nami-app .flow-bar.in  { background: var(--in); }
+.nami-app .flow-bar.out { background: var(--out); }
+.nami-app .flow-label {
+  position: absolute;
+  bottom: 0;
+  font-size: 9px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SPARK — mini gráfico de linha (stats card)
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .spark svg { display: block; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PATRIMÔNIO — composição (barras horizontais)
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .patr-bar-wrap {
+  height: 8px;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  margin-bottom: 12px;
+}
+.nami-app .patr-seg {
+  height: 100%;
+  transition: width 0.4s ease;
+}
+.nami-app .patr-legend { display: flex; flex-direction: column; gap: 6px; }
+.nami-app .patr-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.nami-app .patr-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.nami-app .patr-name { flex: 1; color: var(--sub); }
+.nami-app .patr-val { font-family: var(--font-mono); color: var(--ink); font-weight: 500; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PRÓXIMOS VENCIMENTOS — lista no dashboard
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .upcoming-list { display: flex; flex-direction: column; gap: 0; }
+.nami-app .upcoming-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.nami-app .upcoming-item:last-child { border-bottom: none; }
+.nami-app .upcoming-name { flex: 1; color: var(--ink); font-weight: 500; }
+.nami-app .upcoming-days {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.nami-app .upcoming-days.urgent   { background: var(--out-t); color: var(--out); }
+.nami-app .upcoming-days.soon     { background: var(--accent-t); color: var(--accent); }
+.nami-app .upcoming-days.ok       { background: var(--mist); color: var(--muted); }
+.nami-app .upcoming-val { font-family: var(--font-mono); font-weight: 600; color: var(--out); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CAT-BADGE — badge colorido de categoria
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .cat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.nami-app .cat-badge svg { width: 11px; height: 11px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   EMPTY STATE — estado vazio com ícone
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 24px;
+  color: var(--muted);
+}
+.nami-app .empty svg { width: 32px; height: 32px; opacity: 0.4; }
+.nami-app .empty p { font-size: 13px; text-align: center; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BOTÃO GENÉRICO
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--rad-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s;
+}
+.nami-app .btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.nami-app .btn-primary:hover { background: var(--accent-h); }
+.nami-app .btn-ghost {
+  background: var(--mist);
+  color: var(--sub);
+  border: 1px solid var(--line);
+}
+.nami-app .btn-ghost:hover { background: var(--line); }
+.nami-app .btn svg { width: 14px; height: 14px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MODAL — overlay e painel
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .modal-scrim {
+  position: fixed;
+  inset: 0;
+  background: oklch(0.18 0.02 52 / 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: nami-scrim-in 0.15s ease;
+}
+@keyframes nami-scrim-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.nami-app .modal {
+  background: var(--card);
+  border-radius: var(--rad-lg);
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  box-shadow: var(--sh-lg);
+  animation: nami-modal-in 0.2s ease;
+}
+@keyframes nami-modal-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.nami-app .modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.nami-app .modal-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.3px;
+}
+.nami-app .modal-close {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  transition: background 0.12s, color 0.12s;
+}
+.nami-app .modal-close:hover { background: var(--mist); color: var(--ink); }
+.nami-app .modal-close svg { width: 16px; height: 16px; }
+.nami-app .modal-body { padding: 20px; }
+.nami-app .modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  gap: 10px;
+}
+.nami-app .modal-foot kbd {
+  font-size: 10px;
+  background: var(--mist);
+  border: 1px solid var(--line);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+.nami-app .modal-foot-hints {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.nami-app .modal-foot-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* — AddModal: tipo toggle — */
+.nami-app .type-toggle {
+  display: flex;
+  gap: 0;
+  background: var(--mist);
+  border-radius: var(--rad-sm);
+  padding: 3px;
+  margin-bottom: 16px;
+}
+.nami-app .type-toggle button {
+  flex: 1;
+  padding: 7px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sub);
+  transition: background 0.12s, color 0.12s;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+.nami-app .type-toggle button.active.out {
+  background: var(--card);
+  color: var(--out);
+  box-shadow: var(--sh-sm);
+}
+.nami-app .type-toggle button.active.in {
+  background: var(--card);
+  color: var(--in);
+  box-shadow: var(--sh-sm);
+}
+
+/* — Campo de valor — */
+.nami-app .amt-field {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: var(--mist);
+  border-radius: var(--rad);
+  border: 2px solid var(--line);
+  transition: border-color 0.15s;
+}
+.nami-app .amt-field:focus-within { border-color: var(--accent); }
+.nami-app .amt-cur {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.nami-app .amt-input {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  color: var(--ink);
+  border: none;
+  background: none;
+  outline: none;
+  flex: 1;
+  width: 0;
+  min-width: 0;
+}
+.nami-app .amt-input::placeholder { color: var(--line); }
+
+/* — Grid de categorias — */
+.nami-app .cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.nami-app .cat-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border-radius: var(--rad-sm);
+  cursor: pointer;
+  border: 1.5px solid var(--line);
+  background: var(--mist);
+  transition: all 0.12s;
+}
+.nami-app .cat-pick:hover { border-color: var(--accent); }
+.nami-app .cat-pick.active {
+  border-color: var(--accent);
+  background: var(--accent-t);
+}
+.nami-app .cat-pick-ico {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nami-app .cat-pick-ico svg { width: 14px; height: 14px; }
+.nami-app .cat-pick-name {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--sub);
+  text-align: center;
+  line-height: 1.2;
+}
+.nami-app .cat-pick.active .cat-pick-name { color: var(--accent); }
+
+/* — Linha de 2 campos — */
+.nami-app .row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
   margin-bottom: 16px;
 }
 
-.nami-section-title {
-  font-family: var(--display);
+/* — Campo genérico de formulário — */
+.nami-app .field { display: flex; flex-direction: column; gap: 5px; }
+.nami-app .field label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.nami-app .field input,
+.nami-app .field select,
+.nami-app .field textarea {
+  padding: 8px 10px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--rad-sm);
+  background: var(--mist);
+  color: var(--ink);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.nami-app .field input:focus,
+.nami-app .field select:focus,
+.nami-app .field textarea:focus {
+  border-color: var(--accent);
+  background: var(--card);
+}
+.nami-app .field select { cursor: pointer; }
+
+/* — Segment control (botões mutuamente exclusivos) — */
+.nami-app .segment {
+  display: flex;
+  gap: 0;
+  background: var(--mist);
+  border-radius: var(--rad-sm);
+  border: 1.5px solid var(--line);
+  overflow: hidden;
+}
+.nami-app .segment button {
+  flex: 1;
+  padding: 7px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--sub);
+  background: none;
+  border: none;
+  border-right: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.nami-app .segment button:last-child { border-right: none; }
+.nami-app .segment button.active {
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* — Paleta de cores (swatch) — */
+.nami-app .swatch-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.nami-app .swatch-pick {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform 0.12s, border-color 0.12s;
+  background: none;
+  padding: 0;
+}
+.nami-app .swatch-pick:hover { transform: scale(1.15); }
+.nami-app .swatch-pick.active { border-color: var(--ink); }
+
+/* — Campo de upload de ícone — */
+.nami-app .icon-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.nami-app .icon-preview {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1.5px solid var(--line);
+  background: var(--mist);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.nami-app .icon-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.nami-app .icon-actions { display: flex; flex-direction: column; gap: 5px; flex: 1; }
+.nami-app .icon-url-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--rad-sm);
+  background: var(--mist);
+  color: var(--ink);
+  font-size: 12px;
+  outline: none;
+}
+.nami-app .icon-url-input:focus { border-color: var(--accent); }
+.nami-app .icon-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--mist);
+  border: 1.5px solid var(--line);
+  border-radius: var(--rad-sm);
+  color: var(--sub);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.nami-app .icon-upload-btn:hover { background: var(--line); }
+.nami-app .icon-upload-btn svg { width: 12px; height: 12px; }
+
+/* — Campo de valor monetário no FormModal — */
+.nami-app .money-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--rad-sm);
+  background: var(--mist);
+  transition: border-color 0.15s;
+}
+.nami-app .money-field:focus-within { border-color: var(--accent); background: var(--card); }
+.nami-app .money-field .money-cur {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.nami-app .money-field input {
+  border: none;
+  background: none;
+  outline: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  flex: 1;
+  padding: 0;
+  font-family: var(--font-mono);
+}
+
+/* — Cabeçalho de formulário — */
+.nami-app .form-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 20px;
+}
+.nami-app .form-head h3 {
+  font-family: var(--font-display);
   font-size: 16px;
   font-weight: 700;
   color: var(--ink);
 }
+.nami-app .form-head p {
+  font-size: 12px;
+  color: var(--muted);
+}
 
-.nami-add-btn {
-  padding: 7px 14px;
-  background: var(--tang);
-  color: var(--paper);
-  border: none;
-  border-radius: var(--r-md);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
+/* ══════════════════════════════════════════════════════════════════════════
+   TOAST — notificação temporária
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .toast-host {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.nami-app .toast {
   display: flex;
   align-items: center;
-  gap: 5px;
-  transition: background 0.12s;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--rad);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: var(--sh-md);
+  pointer-events: auto;
+  animation: nami-toast-in 0.2s ease;
+  max-width: 320px;
 }
-
-.nami-add-btn:hover {
-  background: var(--tang-bright);
+@keyframes nami-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
+.nami-app .toast svg { width: 15px; height: 15px; flex-shrink: 0; }
+.nami-app .toast.error { background: var(--out); }
 
-/* ── Loader spinner ─────────────────────────────────────────────────────────── */
-.nami-loader {
+/* ══════════════════════════════════════════════════════════════════════════
+   LOADING / SKELETON
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .loading {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
-  min-height: 200px;
+  color: var(--muted);
+  font-size: 13px;
+  gap: 8px;
+}
+.nami-app .skeleton {
+  background: linear-gradient(90deg, var(--mist) 25%, var(--line) 50%, var(--mist) 75%);
+  background-size: 200% 100%;
+  animation: nami-skel 1.4s ease infinite;
+  border-radius: 4px;
+}
+@keyframes nami-skel {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
-.nami-spinner {
-  width: 28px;
-  height: 28px;
-  border: 2px solid var(--line);
-  border-top-color: var(--tang);
-  border-radius: 50%;
-  animation: nami-spin 0.75s linear infinite;
+/* ══════════════════════════════════════════════════════════════════════════
+   SCROLLBAR — estilo quente para o scroll principal
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app ::-webkit-scrollbar { width: 6px; height: 6px; }
+.nami-app ::-webkit-scrollbar-track { background: transparent; }
+.nami-app ::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 3px;
 }
+.nami-app ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
-@keyframes nami-spin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes nami-toast-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(14px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-
-/* ── TxRow: hover revela botão de exclusão ─────────────────────────────────── */
-.tx-row:hover {
-  background: var(--card-2, color-mix(in oklch, var(--paper), var(--tang) 4%));
-}
-
-/* O botão lixeira fica invisível até o hover da linha */
-.tx-row:hover .tx-delete-btn {
-  opacity: 0.7 !important;
-}
-
-.tx-delete-btn:hover {
-  opacity: 1 !important;
-  color: var(--out) !important;
-}
-
-/* ── Responsividade ────────────────────────────────────────────────────────── */
-
-/* < 880px: sidebar recolhida — só ícones */
-@media (max-width: 880px) {
-  .nami-sidebar {
-    width: 66px !important;
-  }
-  .nami-sidebar-text {
-    display: none;
-  }
-  .nami-sidebar-icon {
-    margin: 0 auto;
-  }
-}
-
-/* < 900px: grids de 2 colunas viram coluna única */
+/* ══════════════════════════════════════════════════════════════════════════
+   RESPONSIVIDADE — ajustes para telas menores
+   ══════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 900px) {
-  .nami-grid-2col {
-    grid-template-columns: 1fr !important;
+  .nami-app {
+    grid-template-columns: 200px 1fr;
   }
 }
-
-/* < 760px: hero image oculta */
-@media (max-width: 760px) {
-  .nami-hero-img {
-    display: none !important;
+@media (max-width: 700px) {
+  .nami-app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
   }
+  .nami-app .nm-side {
+    grid-row: 1;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .nami-app .stat-row { grid-template-columns: 1fr 1fr; }
+  .nami-app .grid-2 { grid-template-columns: 1fr; }
 }
