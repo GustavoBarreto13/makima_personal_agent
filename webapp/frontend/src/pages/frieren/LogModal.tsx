@@ -8,11 +8,49 @@ import type { Book } from './types'
 import { Cover } from './ui/Cover'
 import { Icon } from './ui/Icons'
 
+// ── Helper de data local ──────────────────────────────────────────────────────
+// Retorna a data de HOJE no formato YYYY-MM-DD usando o horário LOCAL do usuário.
+// Não usamos toISOString() porque ele converte para UTC — perto da meia-noite
+// poderia retornar o dia errado para usuários no Brasil (UTC-3).
+function todayISO(): string {
+  const d = new Date()
+  // Monta manualmente: ano (4 dígitos), mês (01–12), dia (01–31)
+  const yyyy = d.getFullYear()
+  const mm   = String(d.getMonth() + 1).padStart(2, '0') // getMonth() começa em 0
+  const dd   = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+// Formata uma data YYYY-MM-DD em texto amigável em português.
+// Exemplos: "Hoje, 9 de junho" · "Ontem, 8 de junho" · "5 de junho de 2026"
+function formatDateLabel(dateISO: string): string {
+  const today     = todayISO()
+  const yesterday = (() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 1)
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return `${d.getFullYear()}-${mm}-${dd}`
+  })()
+
+  // Formata apenas o dia e mês para uso com o prefixo "Hoje," / "Ontem,"
+  const dayMonth = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long' })
+    .format(new Date(dateISO + 'T12:00:00')) // horário fixo evita problemas de fuso
+
+  if (dateISO === today)     return `Hoje, ${dayMonth}`
+  if (dateISO === yesterday) return `Ontem, ${dayMonth}`
+
+  // Para datas mais antigas: inclui o ano
+  return new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
+    .format(new Date(dateISO + 'T12:00:00'))
+}
+
 // Payload enviado ao salvar o registro de leitura
 export interface LogPayload {
   bookId: string
   page: number
   note: string
+  date: string      // data da sessão no formato YYYY-MM-DD (ex: "2026-06-09")
   finished: boolean
   rating: number | null
 }
@@ -73,6 +111,10 @@ export function LogModal({ open, presetBookId, books, onClose, onSave }: LogModa
   const [page, setPage] = useState<number>(0)
   // Nota opcional do dia
   const [note, setNote] = useState('')
+  // Data da sessão de leitura no formato YYYY-MM-DD (padrão: hoje)
+  const [date, setDate] = useState(todayISO())
+  // Controla se o campo de data está expandido (true) ou apenas exibindo o texto amigável (false)
+  const [showDatePicker, setShowDatePicker] = useState(false)
   // Se o usuário marcou que terminou o livro
   const [finished, setFinished] = useState(false)
   // Avaliação de 1–5 (só aparece quando finished=true)
@@ -91,6 +133,9 @@ export function LogModal({ open, presetBookId, books, onClose, onSave }: LogModa
     // Pré-preenche com a página atual do livro para facilitar o incremento
     setPage(bk?.page ?? 0)
     setNote('')
+    // Volta a data para hoje e esconde o seletor a cada abertura
+    setDate(todayISO())
+    setShowDatePicker(false)
     setFinished(false)
     setRating(0)
   }, [open, presetBookId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -116,13 +161,14 @@ export function LogModal({ open, presetBookId, books, onClose, onSave }: LogModa
     if (!bookId) return
     await onSave({
       bookId,
-      page: Number(page) || 0,
-      note: note.trim(),
+      page:     Number(page) || 0,
+      note:     note.trim(),
+      date,                                      // data escolhida pelo usuário
       finished,
-      rating: finished && rating ? rating : null,
+      rating:   finished && rating ? rating : null,
     })
     onClose()
-  }, [bookId, page, note, finished, rating, onSave, onClose])
+  }, [bookId, page, note, date, finished, rating, onSave, onClose])
 
   // Atalhos de teclado: Esc fecha, Ctrl/Cmd+Enter salva
   useEffect(() => {
@@ -208,6 +254,44 @@ export function LogModal({ open, presetBookId, books, onClose, onSave }: LogModa
                 </span>
               )}
             </div>
+          </div>
+
+          {/* ── Seletor de data da sessão ───────────────────────────────────────── */}
+          <div className="modal-field">
+            <label className="modal-label">Quando você leu?</label>
+
+            {/* Modo compacto: mostra o texto amigável + link para trocar */}
+            {!showDatePicker ? (
+              <div className="date-display-row">
+                {/* Texto formatado: "Hoje, 9 de junho", "Ontem, 8 de junho", etc. */}
+                <span className="date-display">{formatDateLabel(date)}</span>
+                {/* Botão discreto que expande o seletor de data */}
+                <button
+                  className="date-change"
+                  onClick={() => setShowDatePicker(true)}
+                >
+                  mudar data
+                </button>
+              </div>
+            ) : (
+              // Modo expandido: input de data nativo + botão para voltar ao resumo
+              <div className="date-display-row">
+                <input
+                  className="date-input"
+                  type="date"
+                  value={date}
+                  max={todayISO()}               // impede selecionar datas futuras
+                  onChange={e => setDate(e.target.value)}
+                />
+                {/* Botão para fechar o seletor e mostrar o resumo novamente */}
+                <button
+                  className="date-change"
+                  onClick={() => setShowDatePicker(false)}
+                >
+                  fechar
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Nota opcional do dia */}

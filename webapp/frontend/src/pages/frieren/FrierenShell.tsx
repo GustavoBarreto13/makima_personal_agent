@@ -271,12 +271,32 @@ export function FrierenShell() {
 
   // ── Registro de leitura — envia ao backend e re-sincroniza estado ─────────
   const addLog = useCallback(async (payload: LogPayload) => {
-    await booksApi.logReading(payload.bookId, {
-      page:     payload.page,
-      note:     payload.note || undefined,
-      finished: payload.finished,
-      rating:   payload.rating ?? undefined,
-    })
+    // Página anterior do livro — usada para calcular o delta e evitar delta 0
+    const oldBook = books.find(b => b.id === payload.bookId)
+    const oldPage = oldBook?.page ?? 0
+    // Só há progresso real se a página nova for maior que a última registrada
+    const hasProgress = payload.page > oldPage
+
+    // 1. Registra a sessão de leitura — mas só se houve páginas novas.
+    //    O backend rejeita com 400 "nenhum progresso" quando o delta é 0.
+    //    Os nomes dos campos batem com LogReadingBody (current_page, session_notes, log_date).
+    if (hasProgress) {
+      await booksApi.logReading(payload.bookId, {
+        current_page:  payload.page,
+        session_notes: payload.note || undefined,
+        log_date:      payload.date,              // data escolhida pelo usuário
+      })
+    }
+
+    // 2. Se o usuário marcou "terminei este livro", finaliza de verdade.
+    //    Usa o endpoint /finish (separado de /log) que atualiza status → "lido",
+    //    salva a avaliação e registra a data de conclusão informada.
+    if (payload.finished) {
+      await booksApi.finish(payload.bookId, {
+        rating:        payload.rating ?? undefined,
+        date_finished: payload.date,              // mesma data escolhida no seletor
+      })
+    }
 
     // Re-busca livros e atividade após salvar para refletir o progresso atualizado
     const [booksRes, activityRes] = await Promise.all([
@@ -286,15 +306,16 @@ export function FrierenShell() {
     setBooks(booksRes.books.map(toBook))
     setActivity(activityRes.activity.map(toActivity))
 
-    // Calcula delta de páginas para a mensagem do toast
-    const oldBook = books.find(b => b.id === payload.bookId)
-    const delta   = Math.max(0, payload.page - (oldBook?.page ?? 0))
+    // Calcula delta de páginas para a mensagem de toast (pode ser 0 se só terminou)
+    const delta = Math.max(0, payload.page - oldPage)
 
-    // Mensagem de sucesso contextual
+    // Mensagem de sucesso contextual — prioridade: terminou > páginas > sem progresso
     setToast(
       payload.finished
         ? 'Livro terminado — que jornada!'
-        : `+${delta} ${delta === 1 ? 'página registrada' : 'páginas registradas'}`,
+        : delta > 0
+          ? `+${delta} ${delta === 1 ? 'página registrada' : 'páginas registradas'}`
+          : 'Nenhuma página nova para registrar.',
     )
   }, [books])
 

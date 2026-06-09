@@ -753,6 +753,47 @@ html, body {
 .rate-clear { font-family: var(--mono); font-size: 11px; color: var(--ink-4); background: none; border: none; cursor: pointer; margin-left: 8px; }
 .rate-clear:hover { color: var(--ink-2); }
 
+/* ── Seletor de data da sessão de leitura ────────────────────────────────── */
+
+/* Linha que contém o texto de data + botão "mudar data" lado a lado */
+.date-display-row { display: flex; align-items: center; gap: 12px; }
+
+/* Texto legível da data escolhida (ex: "Hoje, 9 de junho").
+   Usa a fonte sans para combinar com o restante do modal. */
+.date-display { font-size: 14px; color: var(--ink-2); }
+
+/* Botão-link discreto para expandir o seletor de data.
+   Estilo próximo ao .rate-clear: mono, pequeno, invisível como botão. */
+.date-change {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--teal-deep);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+  transition: text-decoration .1s;
+}
+.date-change:hover { text-decoration: underline; }
+
+/* Input de data nativo — espelha o .page-input para consistência visual.
+   Largura automática para não ocupar a linha toda. */
+.date-input {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--card);
+  padding: 8px 12px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  /* Largura automática: cabe a data sem esticar o modal */
+  width: auto;
+}
+.date-input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-tint); }
+
 .modal-foot { display: flex; align-items: center; gap: 12px; margin-top: 26px; }
 .modal-foot .grow { flex: 1; }
 .modal-foot .hint { font-size: 11.5px; color: var(--ink-4); }

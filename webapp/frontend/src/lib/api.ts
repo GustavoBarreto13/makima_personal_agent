@@ -270,9 +270,22 @@ export const booksApi = {
   removeFromShelf: (shelfId: string, bookId: string) =>
     api.del<Record<string, never>>(`/api/books/shelves/${shelfId}/books/${bookId}`),
 
-  /** Registra uma sessão de leitura: página atual, nota, se terminou e avaliação */
-  logReading: (bookId: string, body: { page: number; note?: string; finished?: boolean; rating?: number }) =>
+  /** Registra uma sessão de leitura.
+   *  Os nomes dos campos batem exatamente com o LogReadingBody do backend:
+   *  current_page (obrigatório), session_notes e log_date (opcionais). */
+  logReading: (
+    bookId: string,
+    body: { current_page: number; session_notes?: string; log_date?: string },
+  ) =>
     api.post<{ status: string; message: string }>(`/api/books/${bookId}/log`, body),
+
+  /** Marca um livro como lido, com avaliação e data de conclusão opcionais.
+   *  Usa o endpoint POST /api/books/{id}/finish que já existe no backend. */
+  finish: (
+    bookId: string,
+    body: { rating?: number; notes?: string; date_finished?: string; date_started?: string },
+  ) =>
+    api.post<{ status: string; message: string }>(`/api/books/${bookId}/finish`, body),
 
   /** Atualiza o status de um livro (ex: "lendo" → "lido") */
   updateStatus: (bookId: string, status: string) =>
