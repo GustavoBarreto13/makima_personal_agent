@@ -165,7 +165,6 @@ makima_personal_agent/
 │   │   └── schema_pg.sql    # schema PostgreSQL (books, reading_logs)
 │   └── journal/
 │       ├── tools.py         # PostgreSQL (pages, bullets, mentions)
-│       ├── agent.py         # journal_agent
 │       └── schema_pg.sql    # schema PostgreSQL do diário
 ├── mcp_servers/
 │   ├── ticktick/
@@ -193,10 +192,15 @@ makima_personal_agent/
 │   │       └── lib/api.ts       # wrapper de fetch com cookie de sessão automático
 │   └── Dockerfile               # multi-stage: Node 20 (build React) → Python 3.12 (uvicorn)
 ├── scripts/
-│   ├── authorize_calendar.py  # gera credenciais OAuth do Google Calendar (rodar uma vez)
-│   ├── setup_schemas.py       # cria tabelas PostgreSQL de todos os agentes
-│   ├── migrate_bq_to_pg.py    # migração one-time: BigQuery → PostgreSQL
-│   └── backup_postgres.py     # pg_dump → Google Cloud Storage (roda diariamente via Docker)
+│   ├── authorize_calendar.py    # gera credenciais OAuth do Google Calendar (rodar uma vez)
+│   ├── setup_schemas.py         # cria tabelas PostgreSQL de todos os agentes
+│   ├── migrate_bq_to_pg.py      # migração one-time: BigQuery → PostgreSQL
+│   ├── migrate_nami_webapp.py   # adiciona colunas visuais + tabelas personal_loans/financings
+│   └── backup_postgres.py       # pg_dump → Google Cloud Storage (roda diariamente via Docker)
+├── specs/
+│   ├── 001-webapp-redesign/
+│   ├── 002-nami-financas/       # spec + plano + tasks da sub-app Nami (design handoff)
+│   └── 003-violet-diario/
 ├── requirements.txt
 ├── PLAN.md                  # design completo, fases, schemas, custos
 └── CLAUDE.md                # instruções do projeto para o Claude Code
@@ -222,7 +226,7 @@ makima_personal_agent/
 
 ## Pré-requisitos
 
-- Python 3.11+
+- Python 3.12+
 - PostgreSQL (gerenciado pelo Dokploy no VPS)
 - Google Cloud com Calendar API habilitada
 - App OAuth 2.0 (tipo Desktop) no Google Cloud Console para o Calendar
