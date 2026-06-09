@@ -1,0 +1,1546 @@
+/* ── Nami · Finanças — Sistema de design tokens ─────────────────────────────
+   Todos os CSS custom properties do handoff §2.
+   Escopo: .nami-app (raiz da seção) para não vazar para o resto do webapp.
+   Tema escuro: [data-theme="dark"] no elemento .nami-app.
+   Privacidade: [data-privacy="on"] no elemento .nami-app.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/* ── Fontes ─────────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
+
+/* ── Paleta clara (padrão) ──────────────────────────────────────────────────── */
+.nami-app {
+  /* Tipografia */
+  --display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --sans:    'DM Sans', system-ui, sans-serif;
+  --mono:    'DM Mono', 'Fira Code', monospace;
+
+  /* Fundos e superfícies */
+  --paper:    oklch(0.985 0.005 80);   /* branco quente — fundo da página */
+  --paper-2:  oklch(0.975 0.006 80);   /* ligeiramente mais escuro — sidebar, cards */
+  --card:     oklch(1 0 0);            /* branco puro — cards principais */
+  --card-2:   oklch(0.965 0.005 80);   /* hover de linha de transação */
+  --mist:     oklch(0.96 0.008 230);   /* fundo do hero — tom azulado suave */
+
+  /* Texto */
+  --ink:      oklch(0.18 0.015 250);   /* texto principal — quase-preto azulado */
+  --ink-2:    oklch(0.40 0.012 250);   /* texto secundário */
+  --ink-3:    oklch(0.55 0.010 250);   /* texto terciário / labels */
+  --ink-4:    oklch(0.68 0.008 250);   /* texto desabilitado / placeholders */
+
+  /* Bordas */
+  --line:     oklch(0.88 0.008 230);   /* borda padrão */
+  --line-2:   oklch(0.92 0.006 230);   /* borda sutil */
+
+  /* Tangerina — cor de acento principal */
+  --tang:          oklch(0.68 0.17 42);   /* tangerina padrão */
+  --tang-deep:     oklch(0.52 0.18 42);   /* tangerina escura — texto sobre fundo claro */
+  --tang-bright:   oklch(0.78 0.18 42);   /* tangerina brilhante — hover */
+  --tang-tint:     oklch(0.94 0.04 42);   /* fundo ativo da sidebar */
+  --tang-tint-2:   oklch(0.97 0.02 42);   /* hover muito sutil */
+
+  /* Azul-maré */
+  --sea:       oklch(0.55 0.14 230);
+  --sea-deep:  oklch(0.42 0.16 230);
+  --sea-tint:  oklch(0.93 0.04 230);
+
+  /* Ouro */
+  --gold:      oklch(0.72 0.13 78);
+  --gold-tint: oklch(0.95 0.04 78);
+
+  /* Verde (receitas / saldo positivo) */
+  --in:        oklch(0.58 0.14 162);
+  --in-tint:   oklch(0.94 0.04 162);
+
+  /* Coral (despesas / saldo negativo / alertas) */
+  --out:       oklch(0.56 0.19 15);
+  --out-tint:  oklch(0.95 0.05 15);
+
+  /* Border radius */
+  --r-sm:  8px;
+  --r-md:  12px;
+  --r-lg:  18px;
+
+  /* Sombras */
+  --shadow-sm:  0 1px 3px oklch(0.18 0.015 250 / 0.08),
+                0 1px 2px oklch(0.18 0.015 250 / 0.06);
+  --shadow-md:  0 4px 6px oklch(0.18 0.015 250 / 0.07),
+                0 2px 4px oklch(0.18 0.015 250 / 0.06);
+  --shadow-lg:  0 10px 15px oklch(0.18 0.015 250 / 0.07),
+                0 4px 6px oklch(0.18 0.015 250 / 0.05);
+
+  /* Topbar */
+  --topbar-bg: oklch(0.985 0.005 80 / 0.85);
+
+  /* Altura de linha de transação — alterada pelo toggle de densidade */
+  --tx-height: 52px;
+
+  font-family: var(--sans);
+  color: var(--ink);
+  background: var(--paper);
+}
+
+/* ── Paleta escura ──────────────────────────────────────────────────────────── */
+.nami-app[data-theme="dark"] {
+  --paper:    oklch(0.14 0.015 250);
+  --paper-2:  oklch(0.17 0.015 250);
+  --card:     oklch(0.19 0.015 250);
+  --card-2:   oklch(0.22 0.012 250);
+  --mist:     oklch(0.18 0.018 230);
+
+  --ink:      oklch(0.92 0.008 80);
+  --ink-2:    oklch(0.72 0.010 80);
+  --ink-3:    oklch(0.58 0.008 80);
+  --ink-4:    oklch(0.45 0.006 80);
+
+  --line:     oklch(0.28 0.012 250);
+  --line-2:   oklch(0.24 0.010 250);
+
+  /* Tangerina escura — levemente mais quente */
+  --tang:        oklch(0.72 0.16 42);
+  --tang-deep:   oklch(0.82 0.14 42);
+  --tang-bright: oklch(0.80 0.18 42);
+  --tang-tint:   oklch(0.22 0.06 42);
+  --tang-tint-2: oklch(0.19 0.04 42);
+
+  --sea:       oklch(0.60 0.13 230);
+  --sea-deep:  oklch(0.72 0.12 230);
+  --sea-tint:  oklch(0.22 0.06 230);
+
+  --gold:      oklch(0.76 0.12 78);
+  --gold-tint: oklch(0.22 0.05 78);
+
+  --in:        oklch(0.62 0.14 162);
+  --in-tint:   oklch(0.20 0.06 162);
+
+  --out:       oklch(0.60 0.18 15);
+  --out-tint:  oklch(0.22 0.07 15);
+
+  --topbar-bg: oklch(0.14 0.015 250 / 0.88);
+
+  --shadow-sm: 0 1px 3px oklch(0 0 0 / 0.30), 0 1px 2px oklch(0 0 0 / 0.24);
+  --shadow-md: 0 4px 6px oklch(0 0 0 / 0.28), 0 2px 4px oklch(0 0 0 / 0.22);
+  --shadow-lg: 0 10px 15px oklch(0 0 0 / 0.28), 0 4px 6px oklch(0 0 0 / 0.22);
+}
+
+/* ── Opções de acento — sobrescrevem as vars --tang* ────────────────────────── */
+/* Tangerina (padrão — já definida acima) */
+.nami-app[data-accent="tangerina"] {
+  --tang:        oklch(0.68 0.17 42);
+  --tang-deep:   oklch(0.52 0.18 42);
+  --tang-bright: oklch(0.78 0.18 42);
+  --tang-tint:   oklch(0.94 0.04 42);
+  --tang-tint-2: oklch(0.97 0.02 42);
+}
+
+/* Azul-maré */
+.nami-app[data-accent="azul-mare"] {
+  --tang:        oklch(0.55 0.14 230);
+  --tang-deep:   oklch(0.42 0.16 230);
+  --tang-bright: oklch(0.68 0.14 230);
+  --tang-tint:   oklch(0.93 0.04 230);
+  --tang-tint-2: oklch(0.96 0.02 230);
+}
+
+/* Coral */
+.nami-app[data-accent="coral"] {
+  --tang:        oklch(0.56 0.19 15);
+  --tang-deep:   oklch(0.44 0.20 15);
+  --tang-bright: oklch(0.66 0.19 15);
+  --tang-tint:   oklch(0.95 0.05 15);
+  --tang-tint-2: oklch(0.97 0.03 15);
+}
+
+/* Ouro */
+.nami-app[data-accent="ouro"] {
+  --tang:        oklch(0.72 0.13 78);
+  --tang-deep:   oklch(0.56 0.14 78);
+  --tang-bright: oklch(0.80 0.13 78);
+  --tang-tint:   oklch(0.95 0.04 78);
+  --tang-tint-2: oklch(0.97 0.02 78);
+}
+
+/* ── Privacidade ────────────────────────────────────────────────────────────── */
+/* Todos os valores monetários ficam embaçados quando o modo privacidade está ativo */
+.nami-app[data-privacy="on"] .amount,
+.nami-app[data-privacy="on"] .priv {
+  filter: blur(7px);
+  transition: filter 0.15s ease;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Hover remove o blur temporariamente para o usuário ver o valor */
+.nami-app[data-privacy="on"] .amount:hover,
+.nami-app[data-privacy="on"] .priv:hover {
+  filter: none;
+}
+
+/* ── Layout principal ────────────────────────────────────────────────────────── */
+.nami-app {
+  display: grid;
+  /* Sidebar fixa + área de conteúdo que cresce */
+  grid-template-columns: 250px 1fr;
+  grid-template-rows: 56px 1fr 64px;
+  grid-template-areas:
+    "sidebar topbar"
+    "sidebar content"
+    "sidebar summbar";
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Sidebar responsiva: colapsa para ícones em telas estreitas */
+@media (max-width: 880px) {
+  .nami-app {
+    grid-template-columns: 66px 1fr;
+  }
+
+  /* Oculta textos dos links da sidebar quando colapsada */
+  .nami-side .nav-label,
+  .nami-side .nav-badge,
+  .nami-side .brand-text,
+  .nami-side .side-log-label,
+  .nami-side .nav-group-label,
+  .nami-side .side-foot-label {
+    display: none;
+  }
+
+  /* Centraliza os ícones quando sem texto */
+  .nami-side .nav-item {
+    justify-content: center;
+    padding: 0 10px;
+  }
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────────── */
+.nami-side {
+  grid-area: sidebar;
+  display: flex;
+  flex-direction: column;
+  width: 250px;
+  background: var(--paper-2);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 0 12px;
+  gap: 4px;
+}
+
+/* Marca da seção: ícone + nome + role */
+.nami-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.nami-brand-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 1.5px solid var(--line);
+}
+
+.nami-brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.nami-brand-name {
+  font-family: var(--display);
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.nami-brand-role {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tang);
+}
+
+/* Botão "Nova transação" full-width na sidebar */
+.nami-side-btn {
+  margin: 0 12px 12px;
+  padding: 9px 14px;
+  background: var(--tang);
+  color: var(--paper);
+  border: none;
+  border-radius: var(--r-md);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s;
+}
+
+.nami-side-btn:hover {
+  background: var(--tang-bright);
+}
+
+/* Label do atalho "A" na sidebar */
+.nami-side-btn-shortcut {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  opacity: 0.65;
+  border: 1px solid var(--paper);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+/* Grupos de navegação */
+.nami-nav-group {
+  padding: 8px 16px 4px;
+}
+
+.nami-nav-group-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  margin-bottom: 2px;
+}
+
+/* Item de navegação */
+.nami-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  margin: 0 4px;
+  border-radius: var(--r-sm);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: calc(100% - 8px);
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+
+.nami-nav-item:hover {
+  background: var(--tang-tint-2);
+  color: var(--ink);
+}
+
+/* Estado ativo do item de navegação (FR-003) */
+.nami-nav-item.active {
+  background: var(--tang-tint);
+  color: var(--tang-deep);
+  font-weight: 600;
+}
+
+/* Badge de valor ao lado do item de navegação */
+.nami-nav-badge {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Rodapé da sidebar */
+.nami-side-foot {
+  margin-top: auto;
+  padding: 12px 16px 0;
+}
+
+.nami-back-link {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  text-decoration: none;
+  transition: color 0.12s;
+}
+
+.nami-back-link:hover {
+  color: var(--ink);
+}
+
+.nami-back-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tang);
+  flex-shrink: 0;
+}
+
+/* ── Topbar ──────────────────────────────────────────────────────────────────── */
+.nami-topbar {
+  grid-area: topbar;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  height: 56px;
+  background: var(--topbar-bg);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.nami-topbar-title {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+  flex: 1;
+}
+
+/* Seletor de mês: chevrons + label */
+.nami-month-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nami-month-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: background 0.12s;
+}
+
+.nami-month-btn:hover {
+  background: var(--card-2);
+}
+
+.nami-month-label {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+  min-width: 104px;
+  text-align: center;
+}
+
+/* Campo de busca pill */
+.nami-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 12px;
+  min-width: 190px;
+  transition: border-color 0.15s;
+}
+
+.nami-search:focus-within {
+  border-color: var(--tang);
+}
+
+.nami-search input {
+  border: none;
+  background: none;
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+  width: 100%;
+  font-family: var(--sans);
+}
+
+.nami-search input::placeholder {
+  color: var(--ink-4);
+}
+
+.nami-search svg {
+  color: var(--ink-4);
+  flex-shrink: 0;
+}
+
+/* ── Área de conteúdo ────────────────────────────────────────────────────────── */
+.nami-content {
+  grid-area: content;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 28px 28px 0;
+}
+
+/* Responsivo: em telas médias, grids de 2 colunas viram 1 */
+@media (max-width: 900px) {
+  .nami-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── SummBar — barra de resumo do mês, fixa no rodapé ──────────────────────── */
+.nami-summbar {
+  grid-area: summbar;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  height: 64px;
+  background: var(--topbar-bg);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--line);
+  z-index: 10;
+}
+
+.nami-summbar-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.nami-summbar-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+}
+
+.nami-summbar-value {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.nami-summbar-in  { color: var(--in);  }
+.nami-summbar-out { color: var(--out); }
+.nami-summbar-net { color: var(--ink); }
+
+.nami-summbar-divider {
+  width: 1px;
+  height: 32px;
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+/* Barra de fluxo proporcional na SummBar */
+.nami-flow-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.nami-flow-bar-fill {
+  height: 100%;
+  background: var(--in);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.nami-summbar-new-btn {
+  margin-left: auto;
+  padding: 6px 14px;
+  background: var(--tang-tint);
+  color: var(--tang-deep);
+  border: 1px solid var(--tang-tint);
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.nami-summbar-new-btn:hover {
+  background: var(--tang-tint-2);
+}
+
+/* ── Cards genéricos ─────────────────────────────────────────────────────────── */
+.nami-card {
+  background: var(--card);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  padding: 20px 22px;
+}
+
+.nami-card-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  margin-bottom: 10px;
+}
+
+/* ── Stat cards (4 no dashboard) ────────────────────────────────────────────── */
+.nami-stat-card {
+  background: var(--card);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line);
+  padding: 18px 20px;
+}
+
+.nami-stat-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  margin-bottom: 6px;
+}
+
+.nami-stat-value {
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.nami-stat-sub {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  margin-top: 4px;
+}
+
+/* ── Toast ───────────────────────────────────────────────────────────────────── */
+.nami-toast {
+  position: fixed;
+  bottom: 88px;
+  left: 50%;
+  transform: translateX(-50%) translateY(14px);
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13.5px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 9999;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.nami-toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── FormModal / scrim ───────────────────────────────────────────────────────── */
+.nami-scrim {
+  position: fixed;
+  inset: 0;
+  background: oklch(0.18 0.015 250 / 0.45);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 8vh;
+  overflow-y: auto;
+}
+
+.nami-modal {
+  background: var(--card);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 460px;
+  padding: 28px;
+  position: relative;
+  margin-bottom: 40px;
+}
+
+.nami-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.nami-modal-title {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.nami-modal-close {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: var(--card-2);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-3);
+  transition: background 0.12s;
+}
+
+.nami-modal-close:hover {
+  background: var(--line);
+}
+
+/* Campos de formulário */
+.nami-field {
+  margin-bottom: 16px;
+}
+
+.nami-field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: var(--mono);
+}
+
+.nami-input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  font-size: 14px;
+  font-family: var(--sans);
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.nami-input:focus {
+  border-color: var(--tang);
+}
+
+/* Campo de valor monetário */
+.nami-money-wrap {
+  display: flex;
+  align-items: center;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.nami-money-wrap:focus-within {
+  border-color: var(--tang);
+}
+
+.nami-money-prefix {
+  padding: 9px 10px 9px 12px;
+  font-size: 13px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  border-right: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.nami-money-input {
+  flex: 1;
+  padding: 9px 12px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  outline: none;
+  /* Remove a seta spinner de inputs numéricos */
+  -moz-appearance: textfield;
+}
+
+.nami-money-input::-webkit-outer-spin-button,
+.nami-money-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+
+/* Segmentos (radio chips) */
+.nami-segment {
+  display: flex;
+  gap: 6px;
+}
+
+.nami-segment-btn {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+  text-align: center;
+}
+
+.nami-segment-btn.active {
+  background: var(--tang-tint);
+  color: var(--tang-deep);
+  border-color: var(--tang-tint);
+  font-weight: 600;
+}
+
+/* Swatches de cor */
+.nami-swatches {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.nami-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+
+.nami-swatch:hover {
+  transform: scale(1.12);
+}
+
+.nami-swatch.selected {
+  border-color: var(--ink);
+  transform: scale(1.08);
+}
+
+/* Botões de ação do modal */
+.nami-modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.nami-btn-ghost {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.nami-btn-ghost:hover {
+  background: var(--card-2);
+}
+
+.nami-btn-primary {
+  flex: 2;
+  padding: 10px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--tang);
+  color: var(--paper);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.nami-btn-primary:hover:not(:disabled) {
+  background: var(--tang-bright);
+}
+
+.nami-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── TxRow — linha de transação ─────────────────────────────────────────────── */
+.nami-tx-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--tx-height);
+  padding: 0 4px;
+  border-radius: var(--r-sm);
+  cursor: default;
+  position: relative;
+  transition: background 0.1s;
+}
+
+.nami-tx-row:hover {
+  background: var(--card-2);
+}
+
+/* Badge de categoria: ícone com fundo colorido translúcido */
+.nami-cat-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.nami-tx-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.nami-tx-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nami-tx-meta {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nami-tx-fonte-pill {
+  display: inline-flex;
+  align-items: center;
+  background: var(--card-2);
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+}
+
+.nami-tx-amount {
+  font-family: var(--mono);
+  font-size: 14.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.nami-tx-amount.out { color: var(--out); }
+.nami-tx-amount.in  { color: var(--in);  }
+
+/* Botão de exclusão: invisível por padrão, aparece no hover da linha */
+.nami-tx-delete {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s;
+  flex-shrink: 0;
+}
+
+.nami-tx-row:hover .nami-tx-delete {
+  opacity: 1;
+}
+
+.nami-tx-delete:hover {
+  background: var(--out-tint);
+  color: var(--out);
+}
+
+/* ── Quick-Add bar ───────────────────────────────────────────────────────────── */
+.nami-quick-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 10px 14px;
+  margin-bottom: 20px;
+}
+
+.nami-qa-type-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+  transition: all 0.12s;
+}
+
+.nami-qa-value-wrap {
+  display: flex;
+  align-items: center;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+  width: 130px;
+}
+
+.nami-qa-prefix {
+  padding: 6px 6px 6px 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.nami-qa-input {
+  width: 70px;
+  border: none;
+  background: none;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  outline: none;
+  padding: 6px 8px 6px 0;
+  -moz-appearance: textfield;
+}
+
+.nami-qa-input::-webkit-inner-spin-button,
+.nami-qa-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+
+.nami-qa-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+.nami-qa-desc {
+  flex: 1;
+  border: none;
+  background: none;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  color: var(--ink);
+  outline: none;
+  min-width: 0;
+}
+
+.nami-qa-desc::placeholder {
+  color: var(--ink-4);
+}
+
+/* Chips de categoria na Quick-Add */
+.nami-qa-chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.nami-qa-chip {
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.12s;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+
+.nami-qa-chip.selected {
+  background: var(--tang-tint);
+  color: var(--tang-deep);
+  border-color: var(--tang-tint);
+}
+
+.nami-qa-submit {
+  padding: 7px 16px;
+  background: var(--tang);
+  color: var(--paper);
+  border: none;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s;
+}
+
+.nami-qa-submit:hover:not(:disabled) {
+  background: var(--tang-bright);
+}
+
+.nami-qa-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Density toggle ─────────────────────────────────────────────────────────── */
+.nami-app[data-density="compacto"] {
+  --tx-height: 40px;
+}
+
+/* ── Utilidades monetárias ──────────────────────────────────────────────────── */
+/* Classe .money aplica tabular-nums a qualquer span/div com valor */
+.money {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+}
+
+.color-in  { color: var(--in);  }
+.color-out { color: var(--out); }
+
+/* ── Placeholders de tela vazia ─────────────────────────────────────────────── */
+.nami-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px 24px;
+  color: var(--ink-4);
+  text-align: center;
+}
+
+.nami-empty-icon {
+  font-size: 32px;
+  opacity: 0.5;
+  margin-bottom: 4px;
+}
+
+.nami-empty-text {
+  font-size: 14px;
+  color: var(--ink-3);
+}
+
+/* ── Hero card ──────────────────────────────────────────────────────────────── */
+.nami-hero {
+  border-radius: var(--r-lg);
+  min-height: 312px;
+  padding: 32px 40px 0;
+  background: radial-gradient(ellipse at 20% 60%, var(--tang-tint) 0%, transparent 60%),
+              radial-gradient(ellipse at 80% 30%, var(--sea-tint) 0%, transparent 60%),
+              var(--mist);
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.nami-hero-copy {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding-bottom: 32px;
+  gap: 6px;
+}
+
+.nami-hero-eyebrow {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+}
+
+.nami-hero-greeting {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.nami-hero-balance {
+  font-family: var(--display);
+  font-size: clamp(42px, 5.5vw, 62px);
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.nami-hero-balance.positive { color: var(--in);  }
+.nami-hero-balance.negative { color: var(--out); }
+
+.nami-hero-sub {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.nami-hero-ctas {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.nami-hero-cta-primary {
+  padding: 8px 18px;
+  background: var(--tang);
+  color: var(--paper);
+  border: none;
+  border-radius: var(--r-md);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.nami-hero-cta-primary:hover {
+  background: var(--tang-bright);
+}
+
+.nami-hero-cta-ghost {
+  padding: 8px 18px;
+  background: none;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.nami-hero-cta-ghost:hover {
+  background: var(--card-2);
+}
+
+/* Imagem do personagem no hero (oculta em mobile) */
+.nami-hero-portrait {
+  max-width: 300px;
+  align-self: flex-end;
+  filter: drop-shadow(0 8px 24px oklch(0.18 0.015 250 / 0.2));
+}
+
+@media (max-width: 760px) {
+  .nami-hero-portrait {
+    display: none;
+  }
+}
+
+/* ── Barra de progresso (orçamentos, empréstimos) ───────────────────────────── */
+.nami-progress-bar {
+  height: 6px;
+  background: var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.nami-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+/* ── Dots de parcelas ───────────────────────────────────────────────────────── */
+.nami-dots {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.nami-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.nami-dot.paid {
+  background: var(--in-tint);
+  color: var(--in);
+}
+
+.nami-dot.pending {
+  background: var(--card-2);
+  color: var(--ink-3);
+}
+
+/* ── TweaksPanel ─────────────────────────────────────────────────────────────── */
+.nami-tweaks-trigger {
+  position: fixed;
+  bottom: 80px;
+  right: 16px;
+  width: 38px;
+  height: 38px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  color: var(--ink-3);
+  z-index: 50;
+  transition: color 0.12s, transform 0.12s;
+}
+
+.nami-tweaks-trigger:hover {
+  color: var(--ink);
+  transform: rotate(30deg);
+}
+
+.nami-tweaks-panel {
+  position: fixed;
+  bottom: 130px;
+  right: 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 16px;
+  width: 260px;
+  z-index: 50;
+}
+
+.nami-tweaks-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+  margin-bottom: 12px;
+}
+
+.nami-tweaks-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.nami-tweaks-label {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  min-width: 72px;
+}
+
+.nami-tweaks-opts {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.nami-tweaks-opt {
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: none;
+  font-size: 11.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.nami-tweaks-opt.sel {
+  background: var(--tang-tint);
+  color: var(--tang-deep);
+  border-color: var(--tang-tint);
+  font-weight: 600;
+}
+
+/* Toggle switch para privacidade */
+.nami-toggle {
+  width: 36px;
+  height: 20px;
+  background: var(--line);
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.nami-toggle.on {
+  background: var(--in);
+}
+
+.nami-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.nami-toggle.on::after {
+  transform: translateX(16px);
+}
+
+/* ── Swatches de acento no TweaksPanel ──────────────────────────────────────── */
+.nami-accent-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.12s;
+  flex-shrink: 0;
+}
+
+.nami-accent-swatch:hover {
+  transform: scale(1.2);
+}
+
+.nami-accent-swatch.selected {
+  border-color: var(--ink);
+  transform: scale(1.15);
+}
+
+/* ── Seção de header de aba ─────────────────────────────────────────────────── */
+.nami-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.nami-section-title {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.nami-add-btn {
+  padding: 7px 14px;
+  background: var(--tang);
+  color: var(--paper);
+  border: none;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.12s;
+}
+
+.nami-add-btn:hover {
+  background: var(--tang-bright);
+}
+
+/* ── Loader spinner ─────────────────────────────────────────────────────────── */
+.nami-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 200px;
+}
+
+.nami-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--line);
+  border-top-color: var(--tang);
+  border-radius: 50%;
+  animation: nami-spin 0.75s linear infinite;
+}
+
+@keyframes nami-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes nami-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(14px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── TxRow: hover revela botão de exclusão ─────────────────────────────────── */
+.tx-row:hover {
+  background: var(--card-2, color-mix(in oklch, var(--paper), var(--tang) 4%));
+}
+
+/* O botão lixeira fica invisível até o hover da linha */
+.tx-row:hover .tx-delete-btn {
+  opacity: 0.7 !important;
+}
+
+.tx-delete-btn:hover {
+  opacity: 1 !important;
+  color: var(--out) !important;
+}
+
+/* ── Responsividade ────────────────────────────────────────────────────────── */
+
+/* < 880px: sidebar recolhida — só ícones */
+@media (max-width: 880px) {
+  .nami-sidebar {
+    width: 66px !important;
+  }
+  .nami-sidebar-text {
+    display: none;
+  }
+  .nami-sidebar-icon {
+    margin: 0 auto;
+  }
+}
+
+/* < 900px: grids de 2 colunas viram coluna única */
+@media (max-width: 900px) {
+  .nami-grid-2col {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* < 760px: hero image oculta */
+@media (max-width: 760px) {
+  .nami-hero-img {
+    display: none !important;
+  }
+}

@@ -17,6 +17,7 @@ import Budgets       from './pages/Budgets'             // Orçamentos por categ
 import Subscriptions from './pages/Subscriptions'       // Assinaturas recorrentes
 import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell completo da seção de livros
 import { VioletShell } from './pages/violet/VioletShell'     // Shell do diário Violet
+import { NamiShell }   from './pages/nami/NamiShell'         // Shell completo da seção de finanças (redesign)
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
@@ -82,9 +83,12 @@ function App() {
             não sejam interceptadas pelo React Router — o shell gerencia tudo internamente. */}
         <Route path="/books/*" element={<FrierenShell />} />
 
-        {/* Violet · Diário tem seu próprio shell com sidebar e tokens OKLCH isolados.
-            O wildcard /* garante que sub-rotas não sejam interceptadas pelo Router global. */}
+        {/* Violet · Diário tem seu próprio shell com sidebar e tokens OKLCH isolados. */}
         <Route path="/journal/*" element={<VioletShell />} />
+
+        {/* Nami (redesign) tem seu próprio shell com sidebar temática, tweaks e navegação por hash.
+            Deve vir ANTES da rota /* para não ser capturado pelo catch-all. */}
+        <Route path="/nami/*" element={<NamiShell />} />
 
         {/* Todas as outras rotas usam o Layout principal com sidebar Makima */}
         <Route path="/*" element={
