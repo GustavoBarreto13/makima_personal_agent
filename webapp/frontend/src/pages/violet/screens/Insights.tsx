@@ -5,43 +5,37 @@ import { violetApi } from '../../../lib/api'
 import type { Stats, HeatmapData } from '../types'
 import { HeatmapRow } from '../ui/HeatmapRow'
 import { AreaChart } from '../ui/AreaChart'
+import { Icon } from '../ui/Icon'
 
 // Abas de navegação dos Insights
 const TABS = ['Diário', 'Palavras', 'Coleções', 'Horários', 'Pessoas', 'Tags', 'Sequências'] as const
 type InsightTab = typeof TABS[number]
 
-// Cria um array de semanas para o heatmap, preenchendo com 0 os dias sem dados
-function buildHeatmapWeeks(
+// Cria um array DENSO de todos os dias de 1º jan até hoje, preenchendo zeros
+// para dias sem escrita. Usa partes locais de data (não toISOString) para evitar
+// o bug de fuso horário UTC/BRT que pode avançar ou recuar um dia.
+function buildHeatmapDays(
   heatmap: HeatmapData,
   year: number,
-): Array<Array<{ date: string; words: number }>> {
-  const weeks: Array<Array<{ date: string; words: number }>> = []
-  // Primeiro dia do ano
-  const start = new Date(year, 0, 1)
-  // Ajusta para a domingo anterior ao dia 1 (para que o heatmap comece num domingo)
-  const startSunday = new Date(start)
-  startSunday.setDate(start.getDate() - start.getDay())
+): Array<{ date: string; words: number }> {
+  const days: Array<{ date: string; words: number }> = []
+  // Começa em 1º de janeiro do ano
+  const cur = new Date(year, 0, 1)
+  // Termina hoje (não 31/dez — evita mostrar meses futuros sem dados)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
 
-  const end = new Date(year, 11, 31)
-  let cur = new Date(startSunday)
-  let week: Array<{ date: string; words: number }> = []
-
-  while (cur <= end || week.length > 0) {
-    const dateStr = cur.toISOString().slice(0, 10)
-    week.push({ date: dateStr, words: heatmap[dateStr] ?? 0 })
-    if (week.length === 7) {
-      weeks.push(week)
-      week = []
-    }
-    cur = new Date(cur.getTime() + 86400000)
-    if (cur > end && week.length > 0) {
-      // Preenche a última semana incompleta com células vazias
-      while (week.length < 7) week.push({ date: '', words: 0 })
-      weeks.push(week)
-      break
-    }
+  while (cur <= today) {
+    // Monta a string "YYYY-MM-DD" a partir de partes locais para não sofrer com UTC
+    const y = cur.getFullYear()
+    const m = String(cur.getMonth() + 1).padStart(2, '0')
+    const d = String(cur.getDate()).padStart(2, '0')
+    const dateStr = `${y}-${m}-${d}`
+    days.push({ date: dateStr, words: heatmap[dateStr] ?? 0 })
+    // Avança um dia
+    cur.setDate(cur.getDate() + 1)
   }
-  return weeks
+  return days
 }
 
 // Calcula a sequência atual e a maior sequência de dias consecutivos escritos
@@ -110,7 +104,8 @@ export function Insights() {
     )
   }
 
-  const weeks = buildHeatmapWeeks(heatmap, year)
+  // Array denso de todos os dias de 1º jan até hoje (zeros para dias sem escrita)
+  const days = buildHeatmapDays(heatmap, year)
 
   return (
     <div className="page" style={{ paddingTop: 32 }}>
@@ -165,21 +160,41 @@ export function Insights() {
             </div>
           </div>
 
-          {/* Heatmap de palavras — semanas em colunas */}
-          <div className="ins-block">
-            <div className="ins-block-title">Atividade — palavras por dia</div>
-            <div className="ins-heatmap">
-              {weeks.map((week, wi) => (
-                <HeatmapRow key={wi} days={week} />
-              ))}
-            </div>
-            {/* Legenda de intensidade */}
-            <div className="ins-heat-legend">
-              <span style={{ color: 'var(--ink-4)', fontSize: 11 }}>menos</span>
-              {[0, 1, 2, 3, 4].map(n => (
-                <div key={n} style={{ width: 9, height: 9, borderRadius: 2, background: `var(--heat-${n})` }} />
-              ))}
-              <span style={{ color: 'var(--ink-4)', fontSize: 11 }}>mais</span>
+          {/* Heatmap de palavras — layout por mês estilo GitHub */}
+          <div className="ins-heatcard">
+            {/* Grade agrupada por mês: meses como colunas, 7 linhas de dias */}
+            <HeatmapRow data={days} />
+            {/* Rodapé com chips de estatística e legenda de intensidade */}
+            <div className="heat-foot">
+              <span className="heat-stat">
+                <span className="hs-chip">
+                  <Icon name="journal" />
+                  {stats?.days_written ?? 0}
+                </span>
+                dias escritos
+              </span>
+              <span className="heat-stat">
+                <span className="hs-chip">
+                  <Icon name="write" />
+                  {stats?.entries ?? 0}
+                </span>
+                entradas
+              </span>
+              <span className="heat-stat">
+                <span className="hs-chip" style={{ color: 'var(--garnet)' }}>
+                  <Icon name="heart" />
+                  {stats?.longestStreak ?? 0}
+                </span>
+                maior sequência
+              </span>
+              {/* Legenda: menos → mais */}
+              <div className="heat-legend">
+                menos
+                {[0, 1, 2, 3, 4].map(n => (
+                  <i key={n} style={{ background: `var(--heat-${n})` }} />
+                ))}
+                mais
+              </div>
             </div>
           </div>
 
