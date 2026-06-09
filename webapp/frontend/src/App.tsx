@@ -16,7 +16,7 @@ import Loans         from './pages/Loans'               // Empréstimos e saldo 
 import Budgets       from './pages/Budgets'             // Orçamentos por categoria
 import Subscriptions from './pages/Subscriptions'       // Assinaturas recorrentes
 import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell completo da seção de livros
-import Journal    from './pages/Journal'     // Diário pessoal com editor de bullets e heatmap
+import { VioletShell } from './pages/violet/VioletShell'     // Shell do diário Violet
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
@@ -82,6 +82,10 @@ function App() {
             não sejam interceptadas pelo React Router — o shell gerencia tudo internamente. */}
         <Route path="/books/*" element={<FrierenShell />} />
 
+        {/* Violet · Diário tem seu próprio shell com sidebar e tokens OKLCH isolados.
+            O wildcard /* garante que sub-rotas não sejam interceptadas pelo Router global. */}
+        <Route path="/journal/*" element={<VioletShell />} />
+
         {/* Todas as outras rotas usam o Layout principal com sidebar Makima */}
         <Route path="/*" element={
           <Layout>
@@ -107,8 +111,7 @@ function App() {
               {/* Assinaturas recorrentes */}
               <Route path="/subscriptions" element={<Subscriptions />} />
 
-              {/* Diário pessoal — editor de bullets com heatmap e busca */}
-              <Route path="/journal" element={<Journal />} />
+              {/* /journal é tratado pelo VioletShell acima — sem Route aqui */}
             </Routes>
           </Layout>
         } />
