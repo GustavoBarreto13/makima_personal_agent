@@ -16,6 +16,7 @@ import Loans         from './pages/Loans'               // Empréstimos e saldo 
 import Budgets       from './pages/Budgets'             // Orçamentos por categoria
 import Subscriptions from './pages/Subscriptions'       // Assinaturas recorrentes
 import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell completo da seção de livros
+import { NamiShell }   from './pages/nami/NamiShell'         // Shell completo da seção de finanças (redesign)
 import Journal    from './pages/Journal'     // Diário pessoal com editor de bullets e heatmap
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
@@ -81,6 +82,10 @@ function App() {
             O wildcard /* garante que sub-rotas internas (detalhe, estante, etc.)
             não sejam interceptadas pelo React Router — o shell gerencia tudo internamente. */}
         <Route path="/books/*" element={<FrierenShell />} />
+
+        {/* Nami (redesign) tem seu próprio shell com sidebar temática, tweaks e navegação por hash.
+            Deve vir ANTES da rota /* para não ser capturado pelo catch-all. */}
+        <Route path="/nami/*" element={<NamiShell />} />
 
         {/* Todas as outras rotas usam o Layout principal com sidebar Makima */}
         <Route path="/*" element={

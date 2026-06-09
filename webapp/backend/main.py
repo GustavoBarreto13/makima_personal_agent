@@ -100,6 +100,14 @@ _FRONTEND_DIST = os.path.join(
 # Normaliza o caminho (resolve os ".." para um caminho absoluto limpo)
 _FRONTEND_DIST = os.path.normpath(_FRONTEND_DIST)
 
+# Diretório de uploads de ícones enviados pela webapp (contas, assinaturas).
+# Criado em runtime se não existir; arquivos são acessíveis via GET /uploads/icons/<nome>.
+_UPLOADS_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "uploads")
+)
+os.makedirs(os.path.join(_UPLOADS_DIR, "icons"), exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=_UPLOADS_DIR), name="uploads")
+
 if os.path.isdir(_FRONTEND_DIST):
     # Monta apenas o diretório /assets (JS, CSS gerados pelo Vite) em /assets.
     # Não montamos o dist inteiro em "/" porque StaticFiles com html=True NÃO serve

@@ -165,6 +165,10 @@ class CreateAccountBody(BaseModel):
     type: str                       # Tipo: "corrente" | "poupanca" | "dinheiro" | "investimento"
     data_inicio: str = ""           # Data de início no formato YYYY-MM-DD (vazio = hoje)
     balance_inicial: float = 0.0   # Saldo inicial em reais
+    # Campos visuais adicionados pela webapp (migração 002)
+    color: Optional[str] = None     # Cor de fundo do avatar (ex.: "#3B82C4" ou "oklch(...)")
+    short: Optional[str] = None     # Sigla curta para o avatar (máx 2-3 chars, ex.: "NU", "IT")
+    icon_url: Optional[str] = None  # URL de ícone personalizado (upload ou URL pública)
 
 
 class RegisterCreditCardBody(BaseModel):
@@ -176,6 +180,10 @@ class RegisterCreditCardBody(BaseModel):
     closing_day: int = 1              # Dia do fechamento da fatura (1-31)
     due_day: int = 10                 # Dia do vencimento da fatura (1-31)
     divida_inicial: float = 0.0      # Dívida atual em reais (padrão: 0)
+    # Campos visuais adicionados pela webapp (migração 002)
+    brand: Optional[str] = None        # Bandeira do cartão (ex.: "Mastercard", "Visa")
+    last4: Optional[str] = None        # Últimos 4 dígitos do cartão (exibidos no plástico)
+    grad: Optional[str] = None         # Gradiente CSS do plástico (ex.: "linear-gradient(...)")
 
 
 class CardPaymentBody(BaseModel):
@@ -213,6 +221,10 @@ class CreateSubscriptionBody(BaseModel):
     ciclo: str = "mensal"             # "mensal" ou "anual"
     next_billing: str = ""            # Data da próxima cobrança no formato YYYY-MM-DD (vazio = 1º do mês seguinte)
     categoria: str = "Assinaturas"   # Categoria (padrão: Assinaturas)
+    # Campos visuais adicionados pela webapp (migração 002)
+    color: Optional[str] = None          # Cor de fundo do ícone (ex.: "#E50914" para Netflix)
+    icon_url: Optional[str] = None       # URL de ícone do serviço (upload ou URL pública)
+    next_billing_day: Optional[int] = None  # Dia do mês de cobrança (1-28, para cálculo de dias restantes)
 
 
 class UpdateSubscriptionBody(BaseModel):
@@ -545,7 +557,24 @@ def create_account_endpoint(
         data_inicio=body.data_inicio or date.today().strftime("%Y-%m-%d"),
         balance_inicial=body.balance_inicial,
     )
-    return _check_result(result)
+    _check_result(result)
+
+    # Preenche os campos visuais (color, short, icon_url) que a tool não conhece.
+    # Roda UPDATE somente se ao menos um dos campos foi enviado pelo cliente.
+    if any([body.color, body.short, body.icon_url]):
+        from agents.db import run_dml as _run_dml
+        _run_dml(
+            """
+            UPDATE accounts
+               SET color    = COALESCE(%(color)s,    color),
+                   short    = COALESCE(%(short)s,    short),
+                   icon_url = COALESCE(%(icon_url)s, icon_url)
+             WHERE id = %(id)s
+            """,
+            {"color": body.color, "short": body.short,
+             "icon_url": body.icon_url, "id": result["id"]},
+        )
+    return result
 
 
 @router.get("/accounts/{account_id}/balance")
@@ -595,9 +624,29 @@ def cards_summary(
     Raises:
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    # Consulta a dívida de todos os cartões no BigQuery
+    # Consulta a dívida de todos os cartões via tool (calcula fatura do ciclo atual)
     result = get_card_debt_summary()
-    return _check_result(result)
+    _check_result(result)
+
+    # Enriquece cada cartão com os campos visuais (brand, last4, grad) que a tool não retorna.
+    # Faz um único SELECT para todos os IDs ativos em vez de N queries individuais.
+    from agents.db import run_select as _run_select
+    if result.get("cards"):
+        ids = [c["id"] for c in result["cards"]]
+        # ANY(%(ids)s::uuid[]) filtra por lista de UUIDs em PostgreSQL
+        extra_rows = _run_select(
+            "SELECT id, brand, last4, grad FROM credit_cards WHERE id = ANY(%(ids)s::uuid[])",
+            {"ids": ids},
+        )
+        # Índice id → campos extras para merge O(1)
+        extra_map = {r["id"]: r for r in extra_rows}
+        for card in result["cards"]:
+            extras = extra_map.get(card["id"], {})
+            card["brand"] = extras.get("brand")
+            card["last4"] = extras.get("last4")
+            card["grad"]  = extras.get("grad")
+
+    return result
 
 
 @router.post("/cards", status_code=201)
@@ -631,7 +680,23 @@ def register_card_endpoint(
         due_day=body.due_day,
         current_debt=body.divida_inicial,
     )
-    return _check_result(result)
+    _check_result(result)
+
+    # Preenche campos visuais (brand, last4, grad) que a tool não conhece.
+    if any([body.brand, body.last4, body.grad]):
+        from agents.db import run_dml as _run_dml
+        _run_dml(
+            """
+            UPDATE credit_cards
+               SET brand = COALESCE(%(brand)s, brand),
+                   last4 = COALESCE(%(last4)s, last4),
+                   grad  = COALESCE(%(grad)s,  grad)
+             WHERE id = %(id)s
+            """,
+            {"brand": body.brand, "last4": body.last4,
+             "grad": body.grad, "id": result["id"]},
+        )
+    return result
 
 
 @router.post("/cards/{card_id}/payment", status_code=201)
@@ -840,7 +905,25 @@ def list_subscriptions_endpoint(
     """
     # Chama a tool de listagem com o filtro de status
     result = list_subscriptions(status=status)
-    return _check_result(result)
+    _check_result(result)
+
+    # Enriquece com campos visuais (color, icon_url, next_billing_day) que a tool não retorna.
+    from agents.db import run_select as _run_select
+    subs = result.get("subscriptions", [])
+    if subs:
+        ids = [s["id"] for s in subs]
+        extra_rows = _run_select(
+            "SELECT id, color, icon_url, next_billing_day FROM subscriptions WHERE id = ANY(%(ids)s::uuid[])",
+            {"ids": ids},
+        )
+        extra_map = {r["id"]: r for r in extra_rows}
+        for sub in subs:
+            extras = extra_map.get(sub["id"], {})
+            sub["color"]            = extras.get("color")
+            sub["icon_url"]         = extras.get("icon_url")
+            sub["next_billing_day"] = extras.get("next_billing_day")
+
+    return result
 
 
 @router.post("/subscriptions", status_code=201)
@@ -881,7 +964,23 @@ def create_subscription_endpoint(
         conta=body.conta,
         categoria=body.categoria,
     )
-    return _check_result(result)
+    _check_result(result)
+
+    # Preenche campos visuais (color, icon_url, next_billing_day) que a tool não conhece.
+    if any([body.color, body.icon_url, body.next_billing_day is not None]):
+        from agents.db import run_dml as _run_dml
+        _run_dml(
+            """
+            UPDATE subscriptions
+               SET color            = COALESCE(%(color)s,            color),
+                   icon_url         = COALESCE(%(icon_url)s,         icon_url),
+                   next_billing_day = COALESCE(%(next_billing_day)s, next_billing_day)
+             WHERE id = %(id)s
+            """,
+            {"color": body.color, "icon_url": body.icon_url,
+             "next_billing_day": body.next_billing_day, "id": result["id"]},
+        )
+    return result
 
 
 @router.patch("/subscriptions/{sub_id}", status_code=200)
@@ -1125,3 +1224,502 @@ def delete_installment_endpoint(
         HTTPException: 401 se o usuário não estiver autenticado.
     """
     return _check_result(delete_installment_group_full(id=group_id))
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENDPOINTS NOVOS — NamiShell redesign (spec 002-nami-financas)
+# Não usam tools do ADK — fazem SQL direto via agents.db (mesmo PostgreSQL)
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Imports adicionais para os novos endpoints
+import os
+import uuid
+import shutil
+
+from fastapi import UploadFile, File
+
+# run_select e run_dml executam SQL no PostgreSQL compartilhado
+from agents.db import run_select, run_dml
+
+# ── Categorias fixas com metadata visual ─────────────────────────────────────
+# Espelham CATEGORIES de agents/nami/tools.py com campos adicionais (kind, color, icon).
+# Mantidas aqui como lista hardcoded para não criar dependência em tempo de runtime.
+
+_CATEGORIES_META = [
+    {"id": "Alimentacao",  "name": "Alimentação",  "icon": "UtensilsCrossed", "color": "oklch(0.92 0.06 42)",  "kind": "out"},
+    {"id": "Comer Fora",   "name": "Comer Fora",   "icon": "Coffee",          "color": "oklch(0.92 0.06 42)",  "kind": "out"},
+    {"id": "Saude",        "name": "Saúde",         "icon": "Heart",           "color": "oklch(0.93 0.06 162)", "kind": "out"},
+    {"id": "Lazer",        "name": "Lazer",         "icon": "Gamepad2",        "color": "oklch(0.92 0.07 300)", "kind": "out"},
+    {"id": "Transporte",   "name": "Transporte",    "icon": "Car",             "color": "oklch(0.92 0.05 250)", "kind": "out"},
+    {"id": "Moradia",      "name": "Moradia",       "icon": "Home",            "color": "oklch(0.92 0.05 230)", "kind": "out"},
+    {"id": "Roupas",       "name": "Roupas",        "icon": "Shirt",           "color": "oklch(0.93 0.06 300)", "kind": "out"},
+    {"id": "Educacao",     "name": "Educação",      "icon": "BookOpen",        "color": "oklch(0.93 0.06 230)", "kind": "out"},
+    {"id": "Assinaturas",  "name": "Assinaturas",   "icon": "Repeat",          "color": "oklch(0.92 0.07 280)", "kind": "out"},
+    {"id": "Viagem",       "name": "Viagem",        "icon": "Plane",           "color": "oklch(0.92 0.06 200)", "kind": "out"},
+    {"id": "Presente",     "name": "Presente",      "icon": "Gift",            "color": "oklch(0.93 0.07 15)",  "kind": "out"},
+    {"id": "Beleza",       "name": "Beleza",        "icon": "Sparkles",        "color": "oklch(0.93 0.06 320)", "kind": "out"},
+    {"id": "Academia",     "name": "Academia",      "icon": "Dumbbell",        "color": "oklch(0.93 0.05 140)", "kind": "out"},
+    {"id": "Farmacia",     "name": "Farmácia",      "icon": "Pill",            "color": "oklch(0.93 0.06 162)", "kind": "out"},
+    {"id": "Supermercado", "name": "Supermercado",  "icon": "ShoppingCart",    "color": "oklch(0.92 0.06 80)",  "kind": "out"},
+    {"id": "Eletronicos",  "name": "Eletrônicos",   "icon": "Cpu",             "color": "oklch(0.92 0.04 250)", "kind": "out"},
+    {"id": "Pet",          "name": "Pet",           "icon": "PawPrint",        "color": "oklch(0.93 0.05 60)",  "kind": "out"},
+    {"id": "Investimento", "name": "Investimento",  "icon": "TrendingUp",      "color": "oklch(0.93 0.06 162)", "kind": "out"},
+    {"id": "Receita",      "name": "Receita",       "icon": "Wallet",          "color": "oklch(0.93 0.06 162)", "kind": "in"},
+    {"id": "Inbox",        "name": "Inbox",         "icon": "Inbox",           "color": "oklch(0.92 0.03 250)", "kind": "out"},
+]
+
+
+@router.get("/categories")
+def list_categories(user: dict = Depends(require_user)) -> list:
+    """Listar categorias fixas com metadata visual (ícone, cor, tipo in/out).
+
+    Retorna a lista completa de categorias válidas para transações,
+    enriquecida com campos de UI (icon, color, kind) para o frontend.
+
+    Args:
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Lista de dicionários com id, name, icon, color e kind.
+
+    Raises:
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    # Retorna a lista hardcoded — não precisa consultar o banco
+    return _CATEGORIES_META
+
+
+# ── Stats mensais ─────────────────────────────────────────────────────────────
+
+@router.get("/stats")
+def get_stats(
+    month: str = Query(description="Mês no formato YYYY-MM (ex.: 2026-06)"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Calcular estatísticas financeiras consolidadas do mês.
+
+    Agrega receitas, despesas, breakdown por categoria e histórico de fluxo de caixa.
+    Usado pelo Dashboard do NamiShell.
+
+    Args:
+        month: Mês no formato YYYY-MM.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com income, expense, net, by_category, daily_spending e cashflow.
+
+    Raises:
+        HTTPException: 400 se o formato do mês for inválido.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    # Valida o formato do mês (YYYY-MM)
+    if not month or len(month) != 7 or '-' not in month:
+        raise HTTPException(status_code=400, detail="Formato de mês inválido. Use YYYY-MM.")
+
+    # Intervalo do mês selecionado
+    start = f"{month}-01"
+    end   = f"{month}-31"  # PostgreSQL trunca no último dia real do mês
+
+    # ── Totais do mês ──────────────────────────────────────────────────────────
+    totals_rows = run_select("""
+        SELECT
+            COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0) AS income,
+            COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0) AS expense,
+            COUNT(CASE WHEN tipo = 'Receita' THEN 1 END) AS income_count,
+            COUNT(CASE WHEN tipo = 'Despesa' THEN 1 END) AS expense_count
+        FROM transactions
+        WHERE data BETWEEN %(start)s AND %(end)s
+          AND deleted = FALSE
+    """, {"start": start, "end": end})
+
+    row = totals_rows[0] if totals_rows else {}
+    income        = float(row.get("income", 0) or 0)
+    expense       = float(row.get("expense", 0) or 0)
+    net           = income - expense
+    income_count  = int(row.get("income_count", 0) or 0)
+    expense_count = int(row.get("expense_count", 0) or 0)
+    savings_rate  = (net / income) if income > 0 else 0.0
+
+    # ── Mês anterior (para comparação) ────────────────────────────────────────
+    from datetime import date as _date
+    y, m = int(month[:4]), int(month[5:7])
+    if m == 1:
+        prev_y, prev_m = y - 1, 12
+    else:
+        prev_y, prev_m = y, m - 1
+    prev_start = f"{prev_y}-{prev_m:02d}-01"
+    prev_end   = f"{prev_y}-{prev_m:02d}-31"
+
+    prev_rows = run_select("""
+        SELECT COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0) AS expense
+        FROM transactions
+        WHERE data BETWEEN %(start)s AND %(end)s AND deleted = FALSE
+    """, {"start": prev_start, "end": prev_end})
+    prev_expense = float((prev_rows[0].get("expense") if prev_rows else 0) or 0)
+
+    # ── Patrimônio (saldo das contas) ─────────────────────────────────────────
+    pat_rows = run_select("""
+        SELECT COALESCE(SUM(balance_inicial), 0) AS patrimonio
+        FROM accounts
+        WHERE status = 'ativo'
+    """)
+    patrimonio = float((pat_rows[0].get("patrimonio") if pat_rows else 0) or 0)
+
+    # ── Breakdown por categoria ────────────────────────────────────────────────
+    cat_rows = run_select("""
+        SELECT categoria, SUM(valor) AS total
+        FROM transactions
+        WHERE data BETWEEN %(start)s AND %(end)s
+          AND tipo = 'Despesa'
+          AND deleted = FALSE
+        GROUP BY categoria
+        ORDER BY total DESC
+    """, {"start": start, "end": end})
+
+    by_category = [
+        {
+            "categoria": r["categoria"],
+            "total": float(r["total"] or 0),
+            "pct": (float(r["total"] or 0) / expense * 100) if expense > 0 else 0,
+        }
+        for r in cat_rows
+    ]
+
+    # ── Gastos diários ─────────────────────────────────────────────────────────
+    daily_rows = run_select("""
+        SELECT data AS day,
+               COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0) AS income,
+               COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0) AS expense
+        FROM transactions
+        WHERE data BETWEEN %(start)s AND %(end)s AND deleted = FALSE
+        GROUP BY data
+        ORDER BY data
+    """, {"start": start, "end": end})
+
+    daily_spending = [
+        {
+            "day": str(r["day"]),
+            "income": float(r["income"] or 0),
+            "expense": float(r["expense"] or 0),
+        }
+        for r in daily_rows
+    ]
+
+    # ── Fluxo de caixa histórico (últimos 6 meses) ─────────────────────────────
+    cashflow_rows = run_select("""
+        SELECT TO_CHAR(data, 'YYYY-MM') AS month,
+               COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0) AS income,
+               COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0) AS expense
+        FROM transactions
+        WHERE data >= (DATE %(start)s - INTERVAL '5 months')
+          AND data <= %(end)s
+          AND deleted = FALSE
+        GROUP BY TO_CHAR(data, 'YYYY-MM')
+        ORDER BY month
+    """, {"start": start, "end": end})
+
+    cashflow = [
+        {
+            "month": r["month"],
+            "income": float(r["income"] or 0),
+            "expense": float(r["expense"] or 0),
+        }
+        for r in cashflow_rows
+    ]
+
+    return {
+        "month":               month,
+        "income":              income,
+        "expense":             expense,
+        "net":                 net,
+        "income_count":        income_count,
+        "expense_count":       expense_count,
+        "prev_month_expense":  prev_expense,
+        "savings_rate":        savings_rate,
+        "patrimonio":          patrimonio,
+        "patrimonio_liquido":  patrimonio + net,
+        "by_category":         by_category,
+        "daily_spending":      daily_spending,
+        "cashflow":            cashflow,
+    }
+
+
+# ── Upload de ícone ───────────────────────────────────────────────────────────
+
+@router.post("/uploads/icon")
+async def upload_icon(
+    file: UploadFile = File(...),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Fazer upload de ícone personalizado para conta ou assinatura.
+
+    Aceita PNG ou JPEG (máx 1 MB). Salva em webapp/uploads/icons/ e
+    retorna a URL pública servida pelo endpoint /uploads/icons/<filename>.
+
+    Args:
+        file: Arquivo de imagem (PNG ou JPEG).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com {"url": "/uploads/icons/<filename>"}.
+
+    Raises:
+        HTTPException: 400 se o tipo de arquivo não for permitido ou exceder o limite.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    # Valida tipo MIME — aceita apenas imagens
+    if file.content_type not in ("image/png", "image/jpeg", "image/webp", "image/gif"):
+        raise HTTPException(status_code=400, detail="Tipo de arquivo não permitido. Use PNG, JPEG ou WebP.")
+
+    # Lê o conteúdo do arquivo para verificar o tamanho
+    content = await file.read()
+    if len(content) > 1 * 1024 * 1024:  # 1 MB
+        raise HTTPException(status_code=400, detail="Arquivo muito grande. Máximo: 1 MB.")
+
+    # Gera nome único para o arquivo usando UUID
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else "png"
+    filename = f"{uuid.uuid4().hex[:12]}.{ext}"
+
+    # Determina o diretório de destino relativo a este arquivo
+    _this_dir   = os.path.dirname(__file__)   # webapp/backend/routers/
+    _uploads_dir = os.path.normpath(os.path.join(_this_dir, "..", "..", "uploads", "icons"))
+    os.makedirs(_uploads_dir, exist_ok=True)
+
+    # Salva o arquivo no diretório de uploads
+    dest_path = os.path.join(_uploads_dir, filename)
+    with open(dest_path, "wb") as f:
+        f.write(content)
+
+    # Retorna a URL pública do ícone
+    return {"url": f"/uploads/icons/{filename}"}
+
+
+# ── Empréstimos pessoa-a-pessoa (personal_loans) ──────────────────────────────
+
+class CreatePersonalLoanBody(BaseModel):
+    """Corpo da requisição para registrar empréstimo informal entre pessoas."""
+    direction: str          # "lent" (emprestei) | "borrowed" (peguei emprestado)
+    person_name: str        # Nome da pessoa envolvida
+    total_amount: float     # Valor total do empréstimo
+    installments: int = 1   # Número de parcelas (1 = sem parcelamento)
+    paid_installments: int = 0  # Quantas parcelas já foram quitadas
+    next_due_day: Optional[int] = None  # Dia do mês de vencimento (1-28)
+    note: str = ""          # Observação livre
+
+
+@router.get("/personal-loans")
+def list_personal_loans(user: dict = Depends(require_user)) -> dict:
+    """Listar empréstimos pessoa-a-pessoa não deletados.
+
+    Retorna todos os empréstimos da tabela personal_loans onde deleted = FALSE.
+
+    Args:
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com lista "loans".
+
+    Raises:
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    rows = run_select("""
+        SELECT id, direction, person_name, total_amount, installments,
+               paid_installments, next_due_day, note, created_at
+        FROM personal_loans
+        WHERE deleted = FALSE
+        ORDER BY created_at DESC
+    """)
+    # Converte tipos serializáveis (Decimal → float, date → string)
+    loans = [
+        {
+            **r,
+            "total_amount": float(r.get("total_amount") or 0),
+            "created_at":   str(r["created_at"]) if r.get("created_at") else None,
+        }
+        for r in rows
+    ]
+    return {"loans": loans}
+
+
+@router.post("/personal-loans", status_code=201)
+def create_personal_loan(
+    body: CreatePersonalLoanBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Registrar um novo empréstimo pessoa-a-pessoa.
+
+    Args:
+        body: Dados do empréstimo (direction, person_name e total_amount são obrigatórios).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e o id do registro criado.
+
+    Raises:
+        HTTPException: 400 se direction não for "lent" ou "borrowed".
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    # Valida direção antes de inserir
+    if body.direction not in ("lent", "borrowed"):
+        raise HTTPException(status_code=400, detail="direction deve ser 'lent' ou 'borrowed'.")
+
+    loan_id = str(uuid.uuid4())
+    run_dml("""
+        INSERT INTO personal_loans
+            (id, direction, person_name, total_amount, installments,
+             paid_installments, next_due_day, note, created_at, deleted)
+        VALUES
+            (%(id)s, %(direction)s, %(person_name)s, %(total_amount)s, %(installments)s,
+             %(paid_installments)s, %(next_due_day)s, %(note)s, NOW(), FALSE)
+    """, {
+        "id":               loan_id,
+        "direction":        body.direction,
+        "person_name":      body.person_name,
+        "total_amount":     body.total_amount,
+        "installments":     body.installments,
+        "paid_installments": body.paid_installments,
+        "next_due_day":     body.next_due_day,
+        "note":             body.note,
+    })
+    return {"status": "ok", "id": loan_id}
+
+
+@router.delete("/personal-loans/{loan_id}", status_code=200)
+def delete_personal_loan(
+    loan_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Soft delete de empréstimo pessoa-a-pessoa (marca deleted=TRUE).
+
+    Args:
+        loan_id: ID único do empréstimo.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok".
+
+    Raises:
+        HTTPException: 400 se o empréstimo não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    n = run_dml("""
+        UPDATE personal_loans SET deleted = TRUE
+        WHERE id = %(id)s AND deleted = FALSE
+    """, {"id": loan_id})
+
+    # run_dml retorna número de linhas afetadas — 0 = empréstimo não encontrado
+    if n == 0:
+        raise HTTPException(status_code=400, detail="Empréstimo não encontrado.")
+    return {"status": "ok", "message": "Empréstimo removido."}
+
+
+# ── Financiamentos estruturados (financings) ──────────────────────────────────
+
+class CreateFinancingBody(BaseModel):
+    """Corpo da requisição para registrar financiamento formal."""
+    description: str           # Descrição do bem financiado (ex.: "MacBook Pro")
+    lender: str = ""           # Credor (ex.: "Nubank", "Santander")
+    total_amount: float        # Valor total financiado
+    installments: int = 1      # Total de parcelas do contrato
+    paid_installments: int = 0 # Parcelas já pagas
+    next_due_day: Optional[int] = None   # Dia do mês de vencimento (1-28)
+    interest_rate: str = ""    # Taxa descritiva: "1,2% a.m." (texto livre)
+    note: str = ""             # Observação livre
+
+
+@router.get("/financings")
+def list_financings(user: dict = Depends(require_user)) -> dict:
+    """Listar financiamentos formais não deletados.
+
+    Args:
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com lista "financings".
+
+    Raises:
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    rows = run_select("""
+        SELECT id, description, lender, total_amount, installments,
+               paid_installments, next_due_day, interest_rate, note, created_at
+        FROM financings
+        WHERE deleted = FALSE
+        ORDER BY created_at DESC
+    """)
+    financings = [
+        {
+            **r,
+            "total_amount": float(r.get("total_amount") or 0),
+            "created_at":   str(r["created_at"]) if r.get("created_at") else None,
+        }
+        for r in rows
+    ]
+    return {"financings": financings}
+
+
+@router.post("/financings", status_code=201)
+def create_financing(
+    body: CreateFinancingBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Registrar um novo financiamento formal.
+
+    Args:
+        body: Dados do financiamento (description e total_amount são obrigatórios).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e o id do registro criado.
+
+    Raises:
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    fin_id = str(uuid.uuid4())
+    run_dml("""
+        INSERT INTO financings
+            (id, description, lender, total_amount, installments, paid_installments,
+             next_due_day, interest_rate, note, created_at, deleted)
+        VALUES
+            (%(id)s, %(description)s, %(lender)s, %(total_amount)s, %(installments)s,
+             %(paid_installments)s, %(next_due_day)s, %(interest_rate)s, %(note)s, NOW(), FALSE)
+    """, {
+        "id":               fin_id,
+        "description":      body.description,
+        "lender":           body.lender,
+        "total_amount":     body.total_amount,
+        "installments":     body.installments,
+        "paid_installments": body.paid_installments,
+        "next_due_day":     body.next_due_day,
+        "interest_rate":    body.interest_rate,
+        "note":             body.note,
+    })
+    return {"status": "ok", "id": fin_id}
+
+
+@router.delete("/financings/{fin_id}", status_code=200)
+def delete_financing(
+    fin_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Soft delete de financiamento (marca deleted=TRUE).
+
+    Args:
+        fin_id: ID único do financiamento.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok".
+
+    Raises:
+        HTTPException: 400 se o financiamento não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    n = run_dml("""
+        UPDATE financings SET deleted = TRUE
+        WHERE id = %(id)s AND deleted = FALSE
+    """, {"id": fin_id})
+
+    if n == 0:
+        raise HTTPException(status_code=400, detail="Financiamento não encontrado.")
+    return {"status": "ok", "message": "Financiamento removido."}

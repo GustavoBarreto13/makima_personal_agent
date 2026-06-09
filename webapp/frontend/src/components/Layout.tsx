@@ -28,17 +28,20 @@ const DOMAINS: NavDomain[] = [
   {
     character:   'Nami',
     label:       'Finanças',
-    mainPath:    '/',
-    activePaths: ['/', '/transactions', '/accounts', '/cards', '/loans', '/budgets', '/subscriptions'],
+    // Nova rota do shell redesenhado — usa hash para navegação interna
+    mainPath:    '/nami',
+    activePaths: ['/nami'],
     color:       'var(--c-nami)',
     colorDim:    'var(--c-nami-dim)',
     sub: [
-      { label: 'Transações',  path: '/transactions' },
-      { label: 'Contas',      path: '/accounts' },
-      { label: 'Cartões',     path: '/cards' },
-      { label: 'Empréstimos', path: '/loans' },
-      { label: 'Orçamentos',  path: '/budgets' },
-      { label: 'Assinaturas', path: '/subscriptions' },
+      // href com hash — não react-router Link, para que o NamiShell leia window.location.hash
+      { label: 'Transações',    path: '/nami#transacoes' },
+      { label: 'Contas',        path: '/nami#contas' },
+      { label: 'Cartões',       path: '/nami#cartoes' },
+      { label: 'Orçamentos',    path: '/nami#orcamentos' },
+      { label: 'Assinaturas',   path: '/nami#assinaturas' },
+      { label: 'Empréstimos',   path: '/nami#emprestimos' },
+      { label: 'Financiamentos',path: '/nami#financiamentos' },
     ],
   },
   {
@@ -165,24 +168,40 @@ export default function Layout({ children }: LayoutProps) {
                 {/* Aparecem apenas se o domínio tem sub-rotas e está ativo */}
                 {isActive && domain.sub && (
                   <div className="mt-0.5 ml-4 space-y-0.5">
-                    {domain.sub.map(sub => (
-                      <NavLink
-                        key={sub.path}
-                        to={sub.path}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors"
-                        style={({ isActive: subIsActive }) => ({
-                          color: subIsActive ? domain.color : 'var(--t4)',
-                          background: subIsActive ? domain.colorDim : 'transparent',
-                        })}
-                      >
-                        {/* Traço indicador do sub-item */}
-                        <span
-                          className="w-3 h-px shrink-0"
-                          style={{ background: 'var(--border)' }}
-                        />
-                        {sub.label}
-                      </NavLink>
-                    ))}
+                    {domain.sub.map(sub => {
+                      // Links com hash (ex.: /nami#transacoes) precisam de <a href> normal,
+                      // não react-router <Link>, para que o NamiShell leia window.location.hash
+                      const hasHash = sub.path.includes('#')
+                      const subStyle = { color: 'var(--t4)', background: 'transparent' }
+                      const subContent = (
+                        <>
+                          <span className="w-3 h-px shrink-0" style={{ background: 'var(--border)' }} />
+                          {sub.label}
+                        </>
+                      )
+                      return hasHash ? (
+                        <a
+                          key={sub.path}
+                          href={sub.path}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors"
+                          style={subStyle}
+                        >
+                          {subContent}
+                        </a>
+                      ) : (
+                        <NavLink
+                          key={sub.path}
+                          to={sub.path}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-colors"
+                          style={({ isActive: subIsActive }) => ({
+                            color: subIsActive ? domain.color : 'var(--t4)',
+                            background: subIsActive ? domain.colorDim : 'transparent',
+                          })}
+                        >
+                          {subContent}
+                        </NavLink>
+                      )
+                    })}
                   </div>
                 )}
               </div>
