@@ -623,6 +623,41 @@ def get_stats(year: int) -> dict:
         conn.close()
 
 
+def get_available_years() -> list:
+    """Retornar os anos disponíveis no diário, do primeiro até o ano corrente.
+
+    Busca o menor ano com registro em journal_pages e retorna um intervalo contíguo
+    do ano corrente até esse primeiro ano (decrescente). Anos intermediários sem escrita
+    aparecem na lista mas exibem zeros na tela — comportamento aceitável para diário pessoal.
+
+    Se não houver nenhuma entrada registrada ainda, retorna apenas o ano corrente.
+
+    Returns:
+        Lista de inteiros em ordem decrescente, ex.: [2026, 2025, 2024].
+
+    Example:
+        >>> get_available_years()  # com primeira entrada em 2025 e hoje 2026
+        [2026, 2025]
+    """
+    import datetime
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            # Busca o ano da entrada mais antiga para definir o limite inferior do intervalo
+            cur.execute("SELECT MIN(EXTRACT(YEAR FROM date))::int FROM journal_pages")
+            row = cur.fetchone()
+            first = row[0] if row and row[0] else None
+    finally:
+        conn.close()
+
+    current = datetime.date.today().year
+    if first is None:
+        # Sem entradas ainda — oferece apenas o ano corrente
+        return [current]
+    # Intervalo contíguo do ano corrente até o primeiro registro, em ordem decrescente
+    return list(range(current, first - 1, -1))
+
+
 def upsert_bullet(page_id: int, position: int, content: str, kind: str = 'bullet') -> dict:
     """Inserir ou atualizar um bullet em uma posição específica da página.
 

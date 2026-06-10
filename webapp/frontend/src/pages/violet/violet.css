@@ -733,6 +733,27 @@
 /* ═══ INSIGHTS additions ════════════════════════════════════════════════════ */
 .ins-hero-text { padding-bottom: 6px; }
 .ins-eyebrow { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--accent-deep); margin-bottom: 8px; }
+
+/* Eyebrow com seletor de ano — Feature 005.
+   Layout: "ANÁLISE" + dropdown inline, mantendo o visual do eyebrow. */
+.ins-year-pick { display: flex; align-items: center; gap: 8px; }
+.ins-year-pick select {
+  /* Herda a tipografia e cor do eyebrow pai */
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--accent-deep);
+  /* Aparência discreta — sem fundo sólido, borda suave */
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 20px 2px 6px;
+  /* Seta nativa do <select> mantida — CSS reset mínimo */
+  appearance: auto;
+  cursor: pointer;
+  outline: none;
+}
 .ins-h1 { font-family: var(--serif); font-size: 52px; font-weight: 600; letter-spacing: -0.025em; line-height: 1; color: var(--ink); }
 .ins-hero-para { font-size: 14px; color: var(--ink-2); line-height: 1.62; max-width: 42ch; margin-top: 14px; }
 .ins-halo {

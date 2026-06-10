@@ -202,6 +202,9 @@ export const violetApi = {
   heatmap: (year: number) =>
     api.get<Record<string, number>>(`/api/journal/heatmap?year=${year}`),
 
+  /** Anos com registro no diário (decrescente, do primeiro ao corrente) */
+  years: () => api.get<number[]>('/api/journal/years'),
+
   /** Lista @pessoas ou #tags com contagem */
   mentions: (kind: 'person' | 'tag') =>
     api.get<{ value: string; count: number }[]>(`/api/journal/mentions?kind=${kind}`),
