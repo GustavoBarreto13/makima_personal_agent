@@ -14,7 +14,9 @@ journal_pages       id, type_id→journal_types, date (DATE), created_at, update
                     UNIQUE (type_id, date)
 
 journal_bullets     id, page_id→journal_pages, content, position (INT), created_at,
-                    search_vec TSVECTOR GENERATED (dicionário 'portuguese')
+                    search_vec TSVECTOR GENERATED (dicionário 'portuguese'),
+                    kind TEXT NOT NULL DEFAULT 'bullet',
+                    favorite BOOLEAN NOT NULL DEFAULT FALSE   [Feature 007]
                     UNIQUE (page_id, position)
 
 journal_mentions    id, bullet_id→journal_bullets, kind CHECK('person','tag'), value
@@ -54,6 +56,8 @@ O campo `search_vec` é **gerado pelo banco** a partir de `content` — não ins
 | `update_emotion_log(log_id, **campos)` | `{"status":"ok","log":{...}}` — atualização parcial |
 | `delete_emotion_log(log_id)` | `{"status":"ok"}` ou `{"status":"error", ...}` |
 | `get_emotion_stats(year)` | `{total, avg_intensity, top_emotion, by_emotion:[...], by_month:[12]}` |
+| `set_favorite(bullet_id, favorite)` | `{"status":"ok","favorite":bool}` — define favorito de um bullet por id (Feature 007) |
+| `list_favorite_days(year)` | `["YYYY-MM-DD", ...]` — datas com ao menos um bullet favorito no ano (Feature 007) |
 
 #### `_check_result` não se aplica em 3 tools de emoção
 `list_emotions`, `list_emotion_logs` e `get_emotion_stats` retornam dados direto (lista/dict), **sem** campo `"status"` — não passar para `_check_result`.

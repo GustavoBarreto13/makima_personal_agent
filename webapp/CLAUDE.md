@@ -100,6 +100,8 @@ Todos os domínios (finanças, livros e journal) usam o mesmo PostgreSQL compart
 | `/api/journal/emotion-logs/{id}` | PATCH | Atualização parcial de um registro |
 | `/api/journal/emotion-logs/{id}` | DELETE | Remove um registro emocional |
 | `/api/journal/emotion-stats?year=2026` | GET | Agregações para a aba Emoções dos Insights |
+| `/api/journal/bullets/{id}/favorite` | PATCH | Define favorito de um bullet `{favorite: bool}` (Feature 007) |
+| `/api/journal/favorite-days?year=N` | GET | Lista datas do ano com ao menos um bullet favorito (Feature 007) |
 
 **Registro Emocional (TCC) — Feature 006.** Tabelas `journal_emotions` + `journal_emotion_logs`.
 Os registros são **ortogonais aos bullets** (não contam palavras nem afetam heatmap/coleções).

@@ -39,6 +39,9 @@ from agents.journal.tools import (
     update_emotion_log,
     delete_emotion_log,
     get_emotion_stats,
+    # Feature 007 — Favoritar Bullet
+    set_favorite,
+    list_favorite_days,
 )
 
 
@@ -121,6 +124,18 @@ class UpdateEmotionLogBody(BaseModel):
     reappraised_intensity: Optional[int] = Field(default=None, ge=0, le=10)
 
 
+# ─── Modelos da Feature 007 (Favoritar Bullet) ────────────────────────────────
+
+class SetFavoriteBody(BaseModel):
+    """Corpo da requisição para favoritar ou desfavoritar um bullet.
+
+    O campo favorite define o estado-alvo explícito (não toggle no servidor),
+    tornando a operação idempotente e robusta com optimistic updates no frontend.
+    """
+    # True para favoritar, False para desfavoritar — estado-alvo, não toggle
+    favorite: bool
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # ENDPOINTS EXISTENTES (atualizados)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -193,6 +208,58 @@ def delete_bullet_endpoint(
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result.get("message", "bullet não encontrado"))
     return result
+
+
+@router.patch("/bullets/{bullet_id}/favorite")
+def set_favorite_endpoint(
+    bullet_id: int,
+    body: SetFavoriteBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Definir ou remover o estado de favorito de um bullet.
+
+    Endpoint dedicado para alternar favorito — separado do upsert_bullet para que
+    edições de texto nunca resetem o favorito (FR-005). O frontend envia o estado-alvo
+    explícito (não toggle), tornando a operação idempotente e segura com optimistic UI.
+
+    Args:
+        bullet_id: ID do bullet a ser alterado.
+        body: {favorite: bool} — estado desejado.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        {"status": "ok", "favorite": bool}
+
+    Raises:
+        HTTPException: 404 se o bullet não existir.
+    """
+    result = set_favorite(bullet_id=bullet_id, favorite=body.favorite)
+    # Reusamos _check_result para converter "error" em HTTP 400, mas realmente
+    # queremos 404 (bullet não existe) — portanto verificamos antes de chamar.
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result.get("message", "bullet não encontrado"))
+    return result
+
+
+@router.get("/favorite-days")
+def favorite_days_endpoint(
+    year: int = Query(..., description="Ano de referência"),
+    user: dict = Depends(require_user),
+) -> list:
+    """Retornar as datas do ano que possuem ao menos um bullet favorito.
+
+    Insumo para o heatmap de favoritos (spec 008, FR-007). Retorna somente datas
+    com bullet.favorite = TRUE — dias sem favorito não aparecem.
+
+    Args:
+        year: Ano de referência (ex.: 2026).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        ["YYYY-MM-DD", ...] — lista de datas ordenadas ASC. Lista vazia [] se nenhum favorito.
+    """
+    # list_favorite_days retorna lista direta (sem campo "status") — não usar _check_result.
+    return list_favorite_days(year=year)
 
 
 @router.get("/heatmap")

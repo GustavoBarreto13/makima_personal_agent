@@ -80,8 +80,12 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
     setEditing(null)
   }
 
-  function renderMark(kind: BulletKind) {
-    if (kind === 'bullet') return <span className="dot" />
+  // Renderiza o marcador (ícone/ponto) de um bullet.
+  // Quando o bullet está favoritado (favorite=true), aplica a classe "is-fav" ao elemento,
+  // que via CSS pinta o marcador na cor garnet — independentemente do tipo do bullet (FR-003).
+  function renderMark(kind: BulletKind, favorite = false) {
+    // Bullet simples: ponto redondo. Classe "is-fav" muda o background para garnet.
+    if (kind === 'bullet') return <span className={favorite ? 'dot is-fav' : 'dot'} />
     const icons: Record<string, React.ReactNode> = {
       highlight: <Icon name="heart" size={15} />,
       dream:     <Icon name="moon" size={15} />,
@@ -89,7 +93,29 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
       wisdom:    <Icon name="gem" size={15} />,
       note:      <Icon name="pin" size={15} />,
     }
-    return <span className="glyph">{icons[kind]}</span>
+    // Ícone tipado: classe "is-fav" sobrepõe a cor do kind para garnet.
+    return <span className={favorite ? 'glyph is-fav' : 'glyph'}>{icons[kind]}</span>
+  }
+
+  // Alterna o estado de favorito de um bullet com optimistic update + rollback (FR-008).
+  // 1. Guarda o valor anterior para rollback em caso de falha.
+  // 2. Atualiza o estado local imediatamente (< 200ms, SC-001).
+  // 3. Envia o estado-alvo explícito ao backend (set_favorite, não toggle no servidor).
+  // 4. Em caso de falha, reverte o estado local ao valor anterior — sem favorito "fantasma".
+  async function toggleFavorite(b: Bullet) {
+    // Salva o valor anterior antes de qualquer mudança — necessário para o rollback
+    const anterior = b.favorite
+    const novoValor = !anterior
+
+    // Optimistic update: atualiza visualmente antes da confirmação do servidor
+    setBullets(prev => prev.map(x => x.id === b.id ? { ...x, favorite: novoValor } : x))
+
+    try {
+      await violetApi.setFavorite(b.id, novoValor)
+    } catch {
+      // Rollback: reverte ao estado anterior se a requisição falhar (FR-008)
+      setBullets(prev => prev.map(x => x.id === b.id ? { ...x, favorite: anterior } : x))
+    }
   }
 
   return (
@@ -131,7 +157,19 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
       <div className="bullets">
         {bullets.map(b => (
           <div key={b.id} className="bgroup" data-kind={b.kind}>
-            <div className="b-mark">{renderMark(b.kind)}</div>
+            {/* Marcador clicável — um clique favorita ou desfavorita o bullet (FR-002).
+                role="button" torna o elemento semanticamente interativo para screen readers.
+                title e aria-label descrevem a ação ao cursor/hover e a leitores de tela (FR-004).
+                stopPropagation garante que o clique no marcador não propague ao bgroup. */}
+            <div
+              className="b-mark"
+              role="button"
+              title={b.favorite ? 'Desfavoritar' : 'Favoritar'}
+              aria-label={b.favorite ? 'Desfavoritar' : 'Favoritar'}
+              onClick={e => { e.stopPropagation(); toggleFavorite(b) }}
+            >
+              {renderMark(b.kind, b.favorite)}
+            </div>
             <div className="b-lines">
               {editing === b.position ? (
                 <textarea
