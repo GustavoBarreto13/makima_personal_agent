@@ -136,6 +136,71 @@ Em desenvolvimento o CORS libera `localhost:5173`. Em produção (container), o 
 
 ---
 
+### Padrões do frontend
+
+#### Roteamento — Shell pattern
+
+Cada domínio com UI própria é um **Shell**: componente raiz com sidebar/navegação interna, desacoplado do `Layout` global. O roteamento usa wildcard para o Shell assumir o controle total das sub-rotas.
+
+```tsx
+// App.tsx — ordem importa: Shells específicos antes do catch-all /*
+<Route path="/books/*"   element={<FrierenShell />} />   // src/pages/frieren/
+<Route path="/journal/*" element={<VioletShell />} />    // src/pages/violet/
+<Route path="/nami/*"    element={<NamiShell />} />      // src/pages/nami/
+<Route path="/*"         element={<Layout>...</Layout>} /> // rotas legadas
+```
+
+Ao criar um novo domínio: criar o Shell **antes** de adicionar a Route, e colocá-la **antes do `/*`**.
+
+#### Estrutura de pasta por domínio
+
+```
+pages/<dominio>/
+├── <Dominio>Shell.tsx     # raiz — sidebar, navegação, TweaksPanel
+├── TweaksPanel.tsx        # painel lateral de configurações do domínio
+├── <dominio>Api.ts        # wrapper tipado dos endpoints /api/<dominio>/*
+├── types.ts               # interfaces TypeScript espelhando o schema do backend
+├── <dominio>.css          # tokens CSS / variáveis OKLCH isoladas do domínio
+├── screens/               # uma tela por seção do shell (ex.: Dashboard, Transactions)
+├── modals/                # modais de criação/edição (ex.: AddModal, FormModal)
+├── components/            # componentes reutilizados dentro do domínio
+└── ui/                    # primitivos visuais (Charts, Icons, ProgressBar, etc.)
+```
+
+#### API client — padrão por domínio
+
+Cada domínio tem seu próprio objeto de API que centraliza URLs e tipos. **Componentes nunca fazem `fetch` diretamente** — usam o objeto da camada de API.
+
+```ts
+// src/pages/nami/namiApi.ts — wraps /api/finances/*
+import { api } from '../../lib/api'
+export const namiApi = {
+  getStats: (month: string) => api.get(`/api/finances/stats?month=${month}`),
+  createTransaction: (body: ...) => api.post('/api/finances/transactions', body),
+  // ...
+}
+
+// src/lib/api.ts — booksApi e violetApi ficam aqui (domínios sem pasta própria de API)
+export const booksApi = { list: () => api.get<{ books: ApiBook[] }>('/api/books'), ... }
+export const violetApi = { page: (date) => api.get(`/api/journal/page?date=${date}`), ... }
+```
+
+#### `lib/api.ts` — wrapper base
+
+`api.get / api.post / api.patch / api.put / api.del` — todos incluem `credentials: 'include'` (envia cookie de sessão) e lançam `Error` para status não-2xx. Nunca usar `fetch` nu nos componentes.
+
+---
+
+### Domínio: Violet (Diário pessoal — frontend)
+
+Shell: `pages/violet/VioletShell.tsx` · Rota: `/journal/*`
+
+Telas disponíveis: `Write` (editor de bullets), `Journal` (arquivo), `Reflect` (heatmap + insights), `People`, `Tags`, `Collection`, `Insights`.
+
+O diário usa bullets com parsing de `@pessoa` e `#tag`. O componente `RichText.tsx` faz o highlight visual. A API é `violetApi` em `lib/api.ts`.
+
+---
+
 ### Fatias de implementação
 
 | Fatia | Descrição | Status |
@@ -160,3 +225,6 @@ Em desenvolvimento o CORS libera `localhost:5173`. Em produção (container), o 
 - **Não expor `SESSION_SECRET` em logs** — nunca fazer `logging.info(config.SESSION_SECRET)`
 - **Não usar `_check_result`** nos endpoints do journal que retornam lista/dict diretamente (`list_heatmap`, `list_mentions`, `get_bullets_by_mention`, `search_bullets`) — essas tools não têm campo `"status"`
 - **Não confundir o schema de erro do journal**: `get_or_create_page` retorna `{"error": "..."}`, não `{"status": "error"}` — verificar `result.get("error")` explicitamente
+- **Não fazer `fetch` diretamente em componentes React** — usar `namiApi`, `booksApi`, `violetApi` ou `api.*` de `lib/api.ts`
+- **Não adicionar rotas de novo Shell após o `/*`** em `App.tsx` — o catch-all capturaria a rota antes do Shell
+- **Não criar arquivos em `frontend/dist/`** — é artefato de build; tudo que precisa ser servido deve ir em `frontend/public/` (imagens de personagens, ícones) ou em `/uploads/icons/` (ícones de conta enviados via webapp)
