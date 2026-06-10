@@ -93,6 +93,19 @@ Todos os domínios (finanças, livros e journal) usam o mesmo PostgreSQL compart
 | `/api/journal/mentions?kind=person\|tag` | GET | Lista menções distintas com count DESC |
 | `/api/journal/filter?kind=person\|tag&value=X` | GET | Bullets que mencionam uma pessoa ou tag |
 | `/api/journal/search?q=texto` | GET | Full-text search com dicionário `portuguese` |
+| `/api/journal/emotions` | GET | Lista o vocabulário de emoções (predefinidas + custom) |
+| `/api/journal/emotions` | POST | Cria emoção custom (idempotente, dedupe por `LOWER(name)`) |
+| `/api/journal/emotion-logs?page_id=N` | GET | Registros emocionais (TCC) de um dia |
+| `/api/journal/emotion-logs` | POST | Cria registro emocional |
+| `/api/journal/emotion-logs/{id}` | PATCH | Atualização parcial de um registro |
+| `/api/journal/emotion-logs/{id}` | DELETE | Remove um registro emocional |
+| `/api/journal/emotion-stats?year=2026` | GET | Agregações para a aba Emoções dos Insights |
+
+**Registro Emocional (TCC) — Feature 006.** Tabelas `journal_emotions` + `journal_emotion_logs`.
+Os registros são **ortogonais aos bullets** (não contam palavras nem afetam heatmap/coleções).
+Regra de negócio validada no router: `reappraised_intensity` só é aceita com `adaptive_response`
+não-vazia (senão HTTP 400). `list_emotions`, `list_emotion_logs` e `emotion-stats` retornam
+lista/dict direto — **não** usar `_check_result` neles.
 
 **Diferença na validação de resultado:**
 `list_heatmap`, `list_mentions`, `get_bullets_by_mention` e `search_bullets` retornam listas/dicts diretamente — **sem** campo `"status"`, então **não** usar `_check_result` neles.

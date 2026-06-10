@@ -13,7 +13,7 @@ import re
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from webapp.backend.deps import require_user
 
@@ -30,6 +30,14 @@ from agents.journal.tools import (
     list_collection,
     list_dreams,
     get_stats,
+    # Feature 006 — Registro Emocional TCC
+    list_emotions,
+    create_emotion,
+    list_emotion_logs,
+    create_emotion_log,
+    update_emotion_log,
+    delete_emotion_log,
+    get_emotion_stats,
 )
 
 
@@ -73,6 +81,43 @@ class DreamBody(BaseModel):
     """Corpo da requisição para atualizar o campo dream de uma page."""
     page_id: int
     dream: Optional[str] = None  # None ou string vazia limpa o campo
+
+
+# ─── Modelos da Feature 006 (Registro Emocional TCC) ──────────────────────────
+
+class CreateEmotionBody(BaseModel):
+    """Corpo da requisição para criar uma emoção custom."""
+    name: str  # nome da emoção; a tool valida não-vazio e deduplica por LOWER(name)
+
+
+class CreateEmotionLogBody(BaseModel):
+    """Corpo da requisição para criar um registro emocional (Registro de Pensamentos TCC).
+
+    Apenas page_id, emotion_id e intensity são obrigatórios. Os demais campos
+    refletem as etapas seguintes do registro TCC e podem ser preenchidos depois.
+    As intensidades são limitadas a 0–10 pelo Field(ge=0, le=10) do Pydantic.
+    """
+    page_id: int
+    emotion_id: int
+    intensity: int = Field(ge=0, le=10)
+    situation: Optional[str] = None
+    automatic_thought: Optional[str] = None
+    adaptive_response: Optional[str] = None
+    reappraised_intensity: Optional[int] = Field(default=None, ge=0, le=10)
+
+
+class UpdateEmotionLogBody(BaseModel):
+    """Corpo da requisição para atualizar um registro emocional (atualização parcial).
+
+    Todos os campos são opcionais — só os enviados são atualizados, permitindo
+    completar o registro progressivamente (ex.: adicionar a resposta adaptativa depois).
+    """
+    emotion_id: Optional[int] = None
+    intensity: Optional[int] = Field(default=None, ge=0, le=10)
+    situation: Optional[str] = None
+    automatic_thought: Optional[str] = None
+    adaptive_response: Optional[str] = None
+    reappraised_intensity: Optional[int] = Field(default=None, ge=0, le=10)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -290,3 +335,181 @@ def stats_endpoint(
          words_by_month, daytime}
     """
     return get_stats(year=year)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENDPOINTS DA FEATURE 006 (Registro Emocional TCC)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _validate_reappraisal(reappraised_intensity, adaptive_response) -> None:
+    """Garantir que a reavaliação de intensidade só venha com resposta adaptativa.
+
+    A reavaliação mede o efeito da resposta adaptativa — sem ela, não faz sentido.
+    Essa regra é validada aqui no router (além de na interface) para proteger a API.
+
+    Args:
+        reappraised_intensity: Intensidade reavaliada recebida (pode ser None).
+        adaptive_response: Resposta adaptativa recebida (pode ser None/vazia).
+
+    Raises:
+        HTTPException: 400 se reappraised_intensity vier preenchida mas
+            adaptive_response estiver ausente ou vazia.
+    """
+    # Só validamos quando o usuário enviou uma intensidade reavaliada
+    if reappraised_intensity is not None:
+        # adaptive_response precisa existir e não ser só espaços em branco
+        if not (adaptive_response and adaptive_response.strip()):
+            raise HTTPException(
+                status_code=400,
+                detail="A reavaliação de intensidade exige uma resposta adaptativa preenchida.",
+            )
+
+
+@router.get("/emotions")
+def list_emotions_endpoint(
+    user: dict = Depends(require_user),
+) -> list:
+    """Listar o vocabulário de emoções (predefinidas + custom).
+
+    Returns:
+        [{"id": int, "name": str, "is_predefined": bool}, ...]
+        (predefinidas primeiro, depois custom em ordem alfabética).
+    """
+    # Retorna a lista direto — sem _check_result (a tool não tem campo "status")
+    return list_emotions()
+
+
+@router.post("/emotions", status_code=201)
+def create_emotion_endpoint(
+    body: CreateEmotionBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Criar uma emoção custom (idempotente — retorna a existente se já houver).
+
+    Args:
+        body: {name} — nome da emoção.
+
+    Returns:
+        {"status": "ok", "emotion": {"id", "name", "is_predefined"}}
+
+    Raises:
+        HTTPException: 400 se o nome for vazio.
+    """
+    return _check_result(create_emotion(name=body.name))
+
+
+@router.get("/emotion-logs")
+def list_emotion_logs_endpoint(
+    page_id: int = Query(..., description="ID da página (dia) cujos registros queremos"),
+    user: dict = Depends(require_user),
+) -> list:
+    """Listar os registros emocionais de um dia (página).
+
+    Args:
+        page_id: ID da página.
+
+    Returns:
+        [{id, page_id, emotion_id, emotion_name, intensity, situation,
+          automatic_thought, adaptive_response, reappraised_intensity,
+          created_at}, ...] ordenado por created_at ASC.
+    """
+    # Retorna a lista direto — sem _check_result (a tool não tem campo "status")
+    return list_emotion_logs(page_id=page_id)
+
+
+@router.post("/emotion-logs", status_code=201)
+def create_emotion_log_endpoint(
+    body: CreateEmotionLogBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Criar um registro emocional (Registro de Pensamentos da TCC).
+
+    Args:
+        body: {page_id, emotion_id, intensity, situation?, automatic_thought?,
+               adaptive_response?, reappraised_intensity?}
+
+    Returns:
+        {"status": "ok", "log": {...}}
+
+    Raises:
+        HTTPException: 400 se page_id/emotion_id não existirem, ou se a reavaliação
+            vier sem resposta adaptativa.
+    """
+    # Regra de negócio: reavaliação exige resposta adaptativa preenchida
+    _validate_reappraisal(body.reappraised_intensity, body.adaptive_response)
+    return _check_result(create_emotion_log(
+        page_id=body.page_id,
+        emotion_id=body.emotion_id,
+        intensity=body.intensity,
+        situation=body.situation,
+        automatic_thought=body.automatic_thought,
+        adaptive_response=body.adaptive_response,
+        reappraised_intensity=body.reappraised_intensity,
+    ))
+
+
+@router.patch("/emotion-logs/{log_id}")
+def update_emotion_log_endpoint(
+    log_id: int,
+    body: UpdateEmotionLogBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Atualizar um registro emocional (atualização parcial dos campos enviados).
+
+    Args:
+        log_id: ID do registro.
+        body: Campos a atualizar (todos opcionais).
+
+    Returns:
+        {"status": "ok", "log": {...}}
+
+    Raises:
+        HTTPException: 400 se o registro não existir, emotion_id inválido, ou se a
+            reavaliação vier sem resposta adaptativa.
+    """
+    # Regra de negócio: reavaliação exige resposta adaptativa preenchida
+    _validate_reappraisal(body.reappraised_intensity, body.adaptive_response)
+    # exclude_unset=True: só inclui no update os campos que o cliente realmente enviou,
+    # preservando os demais valores já salvos no banco
+    updates = body.model_dump(exclude_unset=True)
+    return _check_result(update_emotion_log(log_id, **updates))
+
+
+@router.delete("/emotion-logs/{log_id}")
+def delete_emotion_log_endpoint(
+    log_id: int,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Deletar um registro emocional pelo ID.
+
+    Args:
+        log_id: ID do registro.
+
+    Returns:
+        {"status": "ok"}
+
+    Raises:
+        HTTPException: 404 se o registro não for encontrado.
+    """
+    result = delete_emotion_log(log_id=log_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result.get("message", "registro não encontrado"))
+    return result
+
+
+@router.get("/emotion-stats")
+def emotion_stats_endpoint(
+    year: int = Query(..., description="Ano de referência"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Agregações de emoções do ano para a aba "Emoções" dos Insights.
+
+    Args:
+        year: Ano de referência.
+
+    Returns:
+        {total, avg_intensity, top_emotion, by_emotion:[{name, count, avg_intensity}],
+         by_month:[12]}
+    """
+    # Retorna o dict direto — sem _check_result (a tool não tem campo "status")
+    return get_emotion_stats(year=year)

@@ -10,6 +10,10 @@
  *   const user = await api.get<{ email: string; name: string }>('/auth/me')
  */
 
+// Tipos do domínio Violet usados pelos métodos de emoção do violetApi.
+// types.ts contém só interfaces (sem runtime) — import seguro, sem ciclo.
+import type { Emotion, EmotionLog, EmotionStats } from '../pages/violet/types'
+
 /**
  * Objeto principal de chamadas à API.
  * Encapsula `fetch` com configurações padrão de autenticação via cookie.
@@ -225,6 +229,54 @@ export const violetApi = {
   /** Entries resumidas para o arquivo (Journal screen) */
   entries: (q = '') =>
     api.get<unknown[]>(`/api/journal/entries${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+
+  // ── Emoções (Feature 006 — Registro Emocional TCC) ──────────────────────
+
+  /** Lista o vocabulário de emoções (predefinidas + custom) */
+  listEmotions: () =>
+    api.get<Emotion[]>('/api/journal/emotions'),
+
+  /** Cria uma emoção custom (idempotente — devolve a existente se já houver) */
+  createEmotion: (name: string) =>
+    api.post<{ status: string; emotion: Emotion }>('/api/journal/emotions', { name }),
+
+  /** Lista os registros emocionais de um dia (página) */
+  emotionLogs: (pageId: number) =>
+    api.get<EmotionLog[]>(`/api/journal/emotion-logs?page_id=${pageId}`),
+
+  /** Cria um registro emocional */
+  createEmotionLog: (body: {
+    page_id: number
+    emotion_id: number
+    intensity: number
+    situation?: string | null
+    automatic_thought?: string | null
+    adaptive_response?: string | null
+    reappraised_intensity?: number | null
+  }) =>
+    api.post<{ status: string; log: EmotionLog }>('/api/journal/emotion-logs', body),
+
+  /** Atualiza parcialmente um registro emocional */
+  updateEmotionLog: (
+    id: number,
+    body: Partial<{
+      emotion_id: number
+      intensity: number
+      situation: string | null
+      automatic_thought: string | null
+      adaptive_response: string | null
+      reappraised_intensity: number | null
+    }>,
+  ) =>
+    api.patch<{ status: string; log: EmotionLog }>(`/api/journal/emotion-logs/${id}`, body),
+
+  /** Deleta um registro emocional pelo ID */
+  deleteEmotionLog: (id: number) =>
+    api.del<{ status: string }>(`/api/journal/emotion-logs/${id}`),
+
+  /** Estatísticas de emoções do ano (aba Emoções dos Insights) */
+  emotionStats: (year: number) =>
+    api.get<EmotionStats>(`/api/journal/emotion-stats?year=${year}`),
 }
 
 // ── Tipos da seção Frieren ─────────────────────────────────────────────────

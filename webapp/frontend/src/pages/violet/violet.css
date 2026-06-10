@@ -855,3 +855,116 @@
   .ins-hero-portrait { display: none; }
   .big-stat-row { grid-template-columns: 1fr; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Registro Emocional (TCC) — Feature 006
+   Seção na tela Escrever (abaixo do prompt de sonho) + cartões e formulário.
+   Usa os tokens OKLCH existentes; o acento emocional é o --garnet.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Container da seção inteira */
+.em-section { margin: 4px 0 22px; display: flex; flex-direction: column; gap: 10px; }
+
+/* Cabeçalho "Registro emocional" */
+.em-head { display: flex; align-items: center; gap: 8px; }
+.em-head-icon { display: inline-flex; color: var(--garnet); }
+.em-head-title {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--ink-4);
+}
+
+/* Botão/convite para abrir o formulário (estado fechado) */
+.em-add-trigger {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 12px; border: 1px dashed var(--line); border-radius: 10px;
+  background: transparent; color: var(--ink-4); cursor: pointer;
+  font-family: var(--serif); font-style: italic; font-size: 14px; text-align: left;
+  transition: border-color .15s, color .15s;
+}
+.em-add-trigger:hover { border-color: var(--garnet); color: var(--ink-3); }
+.em-add-trigger svg { color: var(--garnet); flex-shrink: 0; }
+
+/* Cartão de um registro salvo */
+.em-card {
+  border: 1px solid var(--line); border-left: 3px solid var(--garnet);
+  border-radius: 10px; padding: 10px 12px; background: var(--card-2);
+}
+.em-card-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.em-emotion-name { font-weight: 600; font-size: 14px; color: var(--ink); text-transform: capitalize; }
+.em-intensity-badge {
+  font-family: var(--mono); font-size: 11px; padding: 1px 7px; border-radius: 999px;
+  background: var(--garnet-tint); color: var(--garnet);
+}
+.em-reappraised { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+.em-time { font-family: var(--mono); font-size: 11px; color: var(--ink-4); margin-left: auto; }
+.em-card-actions { display: inline-flex; gap: 10px; }
+.em-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 12px; color: var(--ink-4); text-decoration: underline;
+}
+.em-link:hover { color: var(--ink-2); }
+.em-danger:hover { color: var(--garnet); }
+
+/* Detalhes expansíveis do cartão */
+.em-toggle {
+  background: none; border: none; padding: 4px 0 0; cursor: pointer;
+  font-family: var(--mono); font-size: 11px; color: var(--accent); text-align: left;
+}
+.em-details { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.em-detail { font-size: 13px; color: var(--ink-2); line-height: 1.5; margin: 0; }
+.em-detail-label { font-weight: 600; color: var(--ink-3); }
+
+/* Formulário de criar/editar */
+.em-form {
+  border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+  background: var(--card); display: flex; flex-direction: column; gap: 6px;
+}
+.em-field-label {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--ink-4); margin-top: 8px;
+}
+.em-field-label:first-child { margin-top: 0; }
+.em-required { color: var(--garnet); }
+.em-required-hint { text-transform: none; letter-spacing: 0; font-style: italic; }
+.em-textarea, .em-input {
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px;
+  background: var(--card-2); color: var(--ink); font-family: inherit; font-size: 14px;
+  resize: vertical; outline: none; width: 100%;
+}
+.em-textarea:focus, .em-input:focus { border-color: var(--accent); }
+
+/* Chips de emoção (predefinidas + custom) */
+.em-emotions { display: flex; flex-wrap: wrap; gap: 6px; }
+.em-chip {
+  padding: 4px 11px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--card-2); color: var(--ink-2); cursor: pointer;
+  font-size: 13px; text-transform: capitalize; transition: all .12s;
+}
+.em-chip:hover { border-color: var(--garnet); }
+.em-chip.active { background: var(--garnet); border-color: var(--garnet); color: #fff; }
+.em-chip.custom { font-style: italic; }
+
+/* Linha de adicionar emoção custom */
+.em-addrow { display: flex; gap: 6px; }
+.em-addrow .em-input { flex: 1; }
+.em-add-btn {
+  padding: 0 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card-2); color: var(--ink-3); cursor: pointer; font-size: 12px;
+}
+.em-add-btn:hover { border-color: var(--accent); color: var(--ink); }
+
+/* Slider de intensidade */
+.em-range { width: 100%; accent-color: var(--garnet); cursor: pointer; }
+
+/* Ações do formulário */
+.em-form-actions { display: flex; gap: 8px; margin-top: 12px; }
+.em-save {
+  padding: 7px 18px; border: none; border-radius: 8px;
+  background: var(--garnet); color: #fff; cursor: pointer; font-size: 14px; font-weight: 500;
+}
+.em-save:hover { filter: brightness(1.08); }
+.em-cancel {
+  padding: 7px 16px; border: 1px solid var(--line); border-radius: 8px;
+  background: transparent; color: var(--ink-3); cursor: pointer; font-size: 14px;
+}
+.em-cancel:hover { color: var(--ink); border-color: var(--ink-4); }

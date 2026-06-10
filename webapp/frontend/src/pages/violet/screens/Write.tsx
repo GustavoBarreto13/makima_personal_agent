@@ -5,6 +5,7 @@ import { violetApi } from '../../../lib/api'
 import type { Bullet, BulletKind, Entry } from '../types'
 import { Icon } from '../ui/Icon'
 import { RichText } from '../ui/RichText'
+import { EmotionSection } from '../components/EmotionLog'
 
 interface WriteProps {
   date: string
@@ -120,6 +121,11 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
           rows={1}
         />
       </div>
+
+      {/* Seção de registro emocional (TCC) — Feature 006.
+          Fica entre o prompt de sonho e os bullets; é ortogonal aos bullets
+          (não conta palavras nem afeta heatmap/coleções). */}
+      <EmotionSection pageId={page?.id ?? null} />
 
       {/* Lista de bullets */}
       <div className="bullets">

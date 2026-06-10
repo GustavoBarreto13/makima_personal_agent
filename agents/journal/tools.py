@@ -179,6 +179,68 @@ def _ensure_tables() -> None:
                 ON journal_mentions (kind, value)
             """)
 
+            # ── Tabela de emoções (vocabulário) — Feature 006 ─────────────────
+            # Guarda os nomes de emoção que o usuário pode escolher num registro.
+            # "is_predefined = TRUE" marca as 8 emoções base da TCC (terapia
+            # cognitivo-comportamental); "FALSE" marca emoções criadas pelo
+            # próprio usuário (custom). Separar o vocabulário em tabela própria
+            # permite deduplicar nomes e agregar estatísticas de forma consistente.
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS journal_emotions (
+                    id            SERIAL PRIMARY KEY,
+                    name          TEXT NOT NULL,
+                    is_predefined BOOLEAN NOT NULL DEFAULT FALSE
+                )
+            """)
+
+            # Índice ÚNICO sobre LOWER(name): garante que não existam duas emoções
+            # com o mesmo nome ignorando maiúsculas/minúsculas
+            # (ex.: "frustração" e "Frustração" são tratadas como a mesma emoção).
+            cur.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_emotions_name_lower
+                ON journal_emotions (LOWER(name))
+            """)
+
+            # Seed das 8 emoções base da TCC — inserido apenas se a tabela estiver
+            # vazia (mesmo padrão do seed de journal_types). Evita duplicatas em
+            # restarts do servidor. VALUES + WHERE NOT EXISTS faz a inserção
+            # condicional em uma única query.
+            cur.execute("""
+                INSERT INTO journal_emotions (name, is_predefined)
+                SELECT v.name, TRUE
+                FROM (VALUES ('alegria'),('tristeza'),('raiva'),('medo'),
+                             ('ansiedade'),('culpa'),('vergonha'),('nojo')) AS v(name)
+                WHERE NOT EXISTS (SELECT 1 FROM journal_emotions)
+            """)
+
+            # ── Tabela de registros emocionais (TCC) — Feature 006 ────────────
+            # Cada linha é um "Registro de Pensamentos" da TCC, ancorado em um dia
+            # (page_id). ON DELETE CASCADE: apagar a página apaga seus registros.
+            # Apenas emotion_id e intensity são obrigatórios; os demais campos são
+            # opcionais e podem ser preenchidos depois (preenchimento progressivo).
+            # As duas intensidades são limitadas a 0–10 por CHECK no banco —
+            # uma defesa extra além da validação na interface.
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS journal_emotion_logs (
+                    id                    SERIAL PRIMARY KEY,
+                    page_id               INT REFERENCES journal_pages(id) ON DELETE CASCADE,
+                    emotion_id            INT REFERENCES journal_emotions(id),
+                    intensity             SMALLINT NOT NULL CHECK (intensity BETWEEN 0 AND 10),
+                    situation             TEXT,
+                    automatic_thought     TEXT,
+                    adaptive_response     TEXT,
+                    reappraised_intensity SMALLINT CHECK (reappraised_intensity BETWEEN 0 AND 10),
+                    created_at            TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+
+            # Índice por page_id — acelera a consulta "registros deste dia",
+            # que é feita toda vez que a tela Escrever abre uma página.
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_emotion_logs_page
+                ON journal_emotion_logs (page_id)
+            """)
+
         # Commita todas as operações DDL acima de uma vez
         conn.commit()
     finally:
@@ -841,6 +903,394 @@ def search_bullets(query: str) -> list:
             grouped[date_key].append({"id": row["id"], "content": row["content"]})
 
         return [{"date": d, "bullets": bullets} for d, bullets in grouped.items()]
+    finally:
+        conn.close()
+
+
+# ─── Emoções (Feature 006 — Registro Emocional TCC) ────────────────────────────
+
+# Lista de campos do registro emocional que podem ser atualizados/lidos.
+# Centralizada numa constante para evitar repetição nas queries abaixo.
+_EMOTION_LOG_FIELDS = (
+    "intensity",
+    "situation",
+    "automatic_thought",
+    "adaptive_response",
+    "reappraised_intensity",
+)
+
+
+def _serialize_log(row: dict) -> dict:
+    """Converter uma linha de registro emocional em dict pronto para JSON.
+
+    Transforma o campo `created_at` (objeto datetime do banco) em string ISO,
+    pois o FastAPI/JSON não serializa datetime automaticamente da forma que o
+    frontend espera (string).
+
+    Args:
+        row: Linha retornada pelo cursor (já como dict via RealDictCursor).
+
+    Returns:
+        Mesmo dict, mas com `created_at` convertido para string ISO (ou None).
+    """
+    log = dict(row)
+    # Só converte se houver valor — created_at pode ser None em casos extremos
+    if log.get("created_at"):
+        log["created_at"] = log["created_at"].isoformat()
+    return log
+
+
+def list_emotions() -> list:
+    """Listar o vocabulário de emoções disponíveis (predefinidas + custom).
+
+    As 8 emoções base da TCC vêm primeiro (is_predefined = TRUE), seguidas das
+    emoções criadas pelo usuário em ordem alfabética. Essa ordem deixa as
+    emoções base sempre no topo do seletor da interface.
+
+    Returns:
+        Lista de dicts: [{"id": int, "name": str, "is_predefined": bool}, ...]
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # ORDER BY is_predefined DESC: TRUE (predefinidas) antes de FALSE (custom).
+            # LOWER(name): ordena alfabeticamente ignorando caixa.
+            cur.execute("""
+                SELECT id, name, is_predefined
+                FROM journal_emotions
+                ORDER BY is_predefined DESC, LOWER(name) ASC
+            """)
+            rows = cur.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def create_emotion(name: str) -> dict:
+    """Criar uma emoção custom, deduplicando por nome (ignorando maiúsculas).
+
+    Se já existir uma emoção com o mesmo nome (comparação case-insensitive),
+    retorna a existente em vez de criar uma duplicata — assim o usuário nunca
+    cria "Frustração" e "frustração" como emoções separadas. A operação é,
+    portanto, idempotente.
+
+    Args:
+        name: Nome da emoção (será normalizado com strip()).
+
+    Returns:
+        {"status": "ok", "emotion": {"id": int, "name": str, "is_predefined": bool}}
+        ou {"status": "error", "message": str} se o nome for vazio.
+    """
+    # Remove espaços nas pontas — "  raiva " vira "raiva"
+    clean_name = (name or "").strip()
+    if not clean_name:
+        return {"status": "error", "message": "nome da emoção não pode ser vazio"}
+
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # Procura primeiro uma emoção já existente com o mesmo nome (case-insensitive).
+            # Isso cobre tanto emoções base quanto custom criadas antes.
+            cur.execute("""
+                SELECT id, name, is_predefined
+                FROM journal_emotions
+                WHERE LOWER(name) = LOWER(%s)
+            """, (clean_name,))
+            existing = cur.fetchone()
+            if existing:
+                # Já existe — retorna a existente, sem criar duplicata
+                return {"status": "ok", "emotion": dict(existing)}
+
+            # Não existe — insere como custom (is_predefined = FALSE por default)
+            cur.execute("""
+                INSERT INTO journal_emotions (name, is_predefined)
+                VALUES (%s, FALSE)
+                RETURNING id, name, is_predefined
+            """, (clean_name,))
+            created = cur.fetchone()
+        conn.commit()
+        return {"status": "ok", "emotion": dict(created)}
+    finally:
+        conn.close()
+
+
+def list_emotion_logs(page_id: int) -> list:
+    """Listar os registros emocionais de um dia (página).
+
+    Faz JOIN com journal_emotions para incluir o nome da emoção (emotion_name),
+    poupando o frontend de uma segunda consulta. Ordena por created_at ASC para
+    exibir os registros na ordem em que foram criados ao longo do dia.
+
+    Args:
+        page_id: ID da página (dia) cujos registros queremos.
+
+    Returns:
+        Lista de dicts com todos os campos do registro + emotion_name,
+        ordenada por created_at ASC. created_at já vem como string ISO.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT l.id, l.page_id, l.emotion_id,
+                       e.name AS emotion_name,
+                       l.intensity, l.situation, l.automatic_thought,
+                       l.adaptive_response, l.reappraised_intensity,
+                       l.created_at
+                FROM journal_emotion_logs l
+                JOIN journal_emotions e ON e.id = l.emotion_id
+                WHERE l.page_id = %s
+                ORDER BY l.created_at ASC
+            """, (page_id,))
+            rows = cur.fetchall()
+        return [_serialize_log(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def create_emotion_log(
+    page_id: int,
+    emotion_id: int,
+    intensity: int,
+    situation: str | None = None,
+    automatic_thought: str | None = None,
+    adaptive_response: str | None = None,
+    reappraised_intensity: int | None = None,
+) -> dict:
+    """Criar um registro emocional (Registro de Pensamentos da TCC) num dia.
+
+    Apenas page_id, emotion_id e intensity são obrigatórios; os demais campos
+    são opcionais e refletem as etapas seguintes do registro TCC (situação,
+    pensamento automático, resposta adaptativa e reavaliação da intensidade).
+
+    Args:
+        page_id: ID da página (dia) onde o registro fica ancorado.
+        emotion_id: ID da emoção escolhida (deve existir em journal_emotions).
+        intensity: Intensidade inicial da emoção, 0–10.
+        situation: Situação/gatilho que disparou a emoção (opcional).
+        automatic_thought: Pensamento automático que surgiu (opcional).
+        adaptive_response: Resposta adaptativa/reavaliação racional (opcional).
+        reappraised_intensity: Intensidade após a resposta adaptativa, 0–10 (opcional).
+
+    Returns:
+        {"status": "ok", "log": {...}} com o registro criado (created_at em ISO),
+        ou {"status": "error", "message": str} se page_id/emotion_id não existirem.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # INSERT com RETURNING traz o registro completo recém-criado em uma só query
+            cur.execute("""
+                INSERT INTO journal_emotion_logs
+                    (page_id, emotion_id, intensity, situation,
+                     automatic_thought, adaptive_response, reappraised_intensity)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, page_id, emotion_id, intensity, situation,
+                          automatic_thought, adaptive_response,
+                          reappraised_intensity, created_at
+            """, (page_id, emotion_id, intensity, situation,
+                  automatic_thought, adaptive_response, reappraised_intensity))
+            row = cur.fetchone()
+
+            # Busca o nome da emoção para devolver junto (mesmo shape do list_emotion_logs)
+            cur.execute(
+                "SELECT name FROM journal_emotions WHERE id = %s", (emotion_id,)
+            )
+            emo = cur.fetchone()
+        conn.commit()
+        log = _serialize_log(row)
+        log["emotion_name"] = emo["name"] if emo else None
+        return {"status": "ok", "log": log}
+    except psycopg2.errors.ForeignKeyViolation:
+        # page_id ou emotion_id não existem — erro amigável em vez de HTTP 500
+        conn.rollback()
+        return {"status": "error", "message": "page_id ou emotion_id não encontrado"}
+    finally:
+        conn.close()
+
+
+def update_emotion_log(log_id: int, **fields) -> dict:
+    """Atualizar campos de um registro emocional existente (atualização parcial).
+
+    Permite completar o registro depois — ex.: criar só com emoção+intensidade e
+    depois preencher pensamento automático e resposta adaptativa. Só os campos
+    passados em **fields são atualizados; os demais permanecem como estavam.
+
+    Campos aceitos: emotion_id, intensity, situation, automatic_thought,
+    adaptive_response, reappraised_intensity.
+
+    Args:
+        log_id: ID do registro a atualizar.
+        **fields: Pares campo=valor a atualizar (subconjunto dos campos válidos).
+
+    Returns:
+        {"status": "ok", "log": {...}} com o registro atualizado, ou
+        {"status": "error", "message": str} se o registro não existir ou se
+        nenhum campo válido for passado.
+    """
+    # Campos que podem ser atualizados via esta função (emotion_id + os demais)
+    allowed = {"emotion_id", *_EMOTION_LOG_FIELDS}
+    # Filtra apenas os campos válidos que vieram preenchidos na chamada
+    updates = {k: v for k, v in fields.items() if k in allowed}
+
+    if not updates:
+        return {"status": "error", "message": "nenhum campo válido para atualizar"}
+
+    # Monta dinamicamente a cláusula SET ("campo = %s, ...") na ordem das chaves.
+    # Usamos placeholders %s — nunca interpolar valores direto (evita SQL injection).
+    set_clause = ", ".join(f"{col} = %s" for col in updates)
+    values = list(updates.values())
+    values.append(log_id)  # último parâmetro é o WHERE id = %s
+
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(f"""
+                UPDATE journal_emotion_logs
+                SET {set_clause}
+                WHERE id = %s
+                RETURNING id, page_id, emotion_id, intensity, situation,
+                          automatic_thought, adaptive_response,
+                          reappraised_intensity, created_at
+            """, values)
+            row = cur.fetchone()
+            if row is None:
+                # Nenhuma linha atualizada — o id não existe
+                conn.rollback()
+                return {"status": "error", "message": "registro não encontrado"}
+
+            # Busca o nome atual da emoção para devolver no mesmo shape das outras tools
+            cur.execute(
+                "SELECT name FROM journal_emotions WHERE id = %s", (row["emotion_id"],)
+            )
+            emo = cur.fetchone()
+        conn.commit()
+        log = _serialize_log(row)
+        log["emotion_name"] = emo["name"] if emo else None
+        return {"status": "ok", "log": log}
+    except psycopg2.errors.ForeignKeyViolation:
+        # emotion_id atualizado para um id inexistente
+        conn.rollback()
+        return {"status": "error", "message": "emotion_id não encontrado"}
+    finally:
+        conn.close()
+
+
+def delete_emotion_log(log_id: int) -> dict:
+    """Deletar um registro emocional pelo ID.
+
+    Args:
+        log_id: ID do registro a remover.
+
+    Returns:
+        {"status": "ok"} se removeu, ou {"status": "error", "message": str}
+        se o registro não existia.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM journal_emotion_logs WHERE id = %s", (log_id,)
+            )
+            # rowcount == 0 significa que nenhum registro tinha esse id
+            if cur.rowcount == 0:
+                conn.rollback()
+                return {"status": "error", "message": "registro não encontrado"}
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+def get_emotion_stats(year: int) -> dict:
+    """Agregar os registros emocionais de um ano para a aba "Emoções" dos Insights.
+
+    Calcula no banco (não no cliente) o total de registros, a intensidade média
+    geral, a emoção mais frequente, a contagem + média por emoção e a
+    distribuição dos registros por mês. Usa a intensidade inicial (intensity),
+    não a reavaliada, para as médias.
+
+    Args:
+        year: Ano de referência (ex.: 2026).
+
+    Returns:
+        {
+          "total": int,
+          "avg_intensity": float,          # 0 se não houver registros
+          "top_emotion": str | None,       # emoção mais frequente
+          "by_emotion": [{"name": str, "count": int, "avg_intensity": float}],  # count DESC
+          "by_month": [int, ...]           # 12 posições (Jan=0 ... Dez=11)
+        }
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # Junta logs → pages (para filtrar por ano da data da página) e
+            # logs → emotions (para o nome). Filtra pelo ano informado.
+            cur.execute("""
+                SELECT e.name AS name,
+                       l.intensity AS intensity,
+                       EXTRACT(MONTH FROM p.date)::int AS month
+                FROM journal_emotion_logs l
+                JOIN journal_pages p ON p.id = l.page_id
+                JOIN journal_emotions e ON e.id = l.emotion_id
+                WHERE EXTRACT(YEAR FROM p.date) = %s
+            """, (year,))
+            rows = cur.fetchall()
+
+        total = len(rows)
+
+        # Estado vazio: devolve tudo zerado/None — a interface mostra convite a registrar
+        if total == 0:
+            return {
+                "total": 0,
+                "avg_intensity": 0,
+                "top_emotion": None,
+                "by_emotion": [],
+                "by_month": [0] * 12,
+            }
+
+        # Intensidade média geral (inicial) — soma / total
+        avg_intensity = round(sum(int(r["intensity"]) for r in rows) / total, 1)
+
+        # Agrega por emoção: contagem e soma de intensidade para calcular a média depois.
+        # Usamos um dict {nome: {"count": n, "sum": s}} montado em Python — volume baixo.
+        per_emotion: dict[str, dict] = {}
+        for r in rows:
+            name = r["name"]
+            bucket = per_emotion.setdefault(name, {"count": 0, "sum": 0})
+            bucket["count"] += 1
+            bucket["sum"] += int(r["intensity"])
+
+        # Transforma o dict em lista de dicts ordenada por contagem decrescente
+        by_emotion = [
+            {
+                "name": name,
+                "count": data["count"],
+                "avg_intensity": round(data["sum"] / data["count"], 1),
+            }
+            for name, data in per_emotion.items()
+        ]
+        by_emotion.sort(key=lambda x: x["count"], reverse=True)
+
+        # A emoção mais frequente é a primeira da lista ordenada
+        top_emotion = by_emotion[0]["name"] if by_emotion else None
+
+        # Distribuição por mês: array de 12 posições (índice 0 = Janeiro)
+        by_month = [0] * 12
+        for r in rows:
+            # EXTRACT(MONTH ...) retorna 1–12; subtraímos 1 para virar índice 0–11
+            month_idx = int(r["month"]) - 1
+            if 0 <= month_idx < 12:
+                by_month[month_idx] += 1
+
+        return {
+            "total": total,
+            "avg_intensity": avg_intensity,
+            "top_emotion": top_emotion,
+            "by_emotion": by_emotion,
+            "by_month": by_month,
+        }
     finally:
         conn.close()
 

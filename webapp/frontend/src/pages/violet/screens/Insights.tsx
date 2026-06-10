@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { violetApi } from '../../../lib/api'
-import type { Stats, HeatmapData } from '../types'
+import type { Stats, HeatmapData, EmotionStats } from '../types'
 import { HeatmapRow } from '../ui/HeatmapRow'
 import { AreaChart } from '../ui/AreaChart'
 import { Icon } from '../ui/Icon'
 
 // Abas de navegação dos Insights
-const TABS = ['Diário', 'Palavras', 'Coleções', 'Horários', 'Pessoas', 'Tags', 'Sequências'] as const
+const TABS = ['Diário', 'Palavras', 'Coleções', 'Horários', 'Pessoas', 'Tags', 'Emoções', 'Sequências'] as const
 type InsightTab = typeof TABS[number]
 
 // Cria um array DENSO de todos os dias de 1º jan até hoje, preenchendo zeros
@@ -76,6 +76,8 @@ export function Insights() {
   const year = new Date().getFullYear()
   const [stats, setStats] = useState<Stats | null>(null)
   const [heatmap, setHeatmap] = useState<HeatmapData>({})
+  // Estatísticas de emoções do ano (aba Emoções) — Feature 006
+  const [emotionStats, setEmotionStats] = useState<EmotionStats | null>(null)
   const [tab, setTab] = useState<InsightTab>('Diário')
   const [loading, setLoading] = useState(true)
 
@@ -83,7 +85,8 @@ export function Insights() {
     Promise.all([
       violetApi.stats(year),
       violetApi.heatmap(year),
-    ]).then(([s, h]) => {
+      violetApi.emotionStats(year),
+    ]).then(([s, h, e]) => {
       const heatData = h as HeatmapData
       const statsData = s as unknown as Stats
       const streaks = calcStreaks(heatData)
@@ -91,6 +94,7 @@ export function Insights() {
       statsData.currentStreak = streaks.current
       setStats(statsData)
       setHeatmap(heatData)
+      setEmotionStats(e as EmotionStats)
     }).catch(() => {}).finally(() => setLoading(false))
   }, [year])
 
@@ -314,6 +318,71 @@ export function Insights() {
           <div style={{ color: 'var(--ink-3)', fontSize: 13, marginTop: 24 }}>
             Veja a tela <em>Tags</em> para a nuvem completa.
           </div>
+        </div>
+      )}
+
+      {tab === 'Emoções' && (
+        <div className="ins-section">
+          {/* Estado vazio: nenhum registro emocional no ano */}
+          {(!emotionStats || emotionStats.total === 0) ? (
+            <div style={{ textAlign: 'center', marginTop: 40, color: 'var(--ink-3)', fontSize: 13 }}>
+              Nenhum registro emocional em {year}. Registre como você se sente na tela <em>Escrever</em>.
+            </div>
+          ) : (
+            <>
+              {/* Big numbers — total, intensidade média, emoção mais frequente */}
+              <div className="ins-bignums">
+                <div className="ins-bignum">
+                  <div className="bn-value">{emotionStats.total}</div>
+                  <div className="bn-label">registros</div>
+                </div>
+                <div className="ins-bignum">
+                  <div className="bn-value">{emotionStats.avg_intensity}</div>
+                  <div className="bn-label">intensidade média</div>
+                </div>
+                <div className="ins-bignum">
+                  <div className="bn-value" style={{ fontSize: 22, textTransform: 'capitalize' }}>
+                    {emotionStats.top_emotion ?? '—'}
+                  </div>
+                  <div className="bn-label">mais frequente</div>
+                </div>
+              </div>
+
+              {/* Lista por emoção: contagem + intensidade média, ordenada por frequência */}
+              <div className="ins-block">
+                <div className="ins-block-title">Por emoção</div>
+                <div className="ins-bars">
+                  {emotionStats.by_emotion.map(emo => {
+                    // Maior contagem entre as emoções — base para a largura proporcional da barra
+                    const maxCount = Math.max(...emotionStats.by_emotion.map(x => x.count), 1)
+                    const pct = (emo.count / maxCount) * 100
+                    return (
+                      <div key={emo.name} className="ins-bar-group" style={{ width: '100%', flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        {/* Nome da emoção */}
+                        <span style={{ minWidth: 90, fontSize: 13, color: 'var(--ink-2)', textTransform: 'capitalize' }}>
+                          {emo.name}
+                        </span>
+                        {/* Barra horizontal proporcional à contagem */}
+                        <div style={{ flex: 1, height: 8, background: 'var(--line-2)', borderRadius: 4, overflow: 'hidden' }}>
+                          <div style={{ width: `${pct}%`, height: '100%', background: 'var(--garnet)' }} />
+                        </div>
+                        {/* Contagem + intensidade média */}
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink-3)', minWidth: 70, textAlign: 'right' }}>
+                          {emo.count}× · {emo.avg_intensity}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Distribuição mensal dos registros */}
+              <div className="ins-block">
+                <div className="ins-block-title">Registros por mês</div>
+                <AreaChart data={emotionStats.by_month} />
+              </div>
+            </>
+          )}
         </div>
       )}
 

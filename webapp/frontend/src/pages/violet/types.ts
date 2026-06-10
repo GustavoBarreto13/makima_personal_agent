@@ -88,6 +88,40 @@ export interface Stats {
   currentStreak?: number
 }
 
+// ── Emoções (Feature 006 — Registro Emocional TCC) ─────────────────────────
+
+// Uma emoção do vocabulário (predefinida da TCC ou criada pelo usuário)
+export interface Emotion {
+  id: number
+  name: string
+  is_predefined: boolean  // true = uma das 8 emoções base da TCC
+}
+
+// Um registro emocional — o "Registro de Pensamentos" da TCC, ancorado num dia.
+// Só emotion + intensity são obrigatórios; os demais campos são preenchidos
+// progressivamente conforme o exercício avança.
+export interface EmotionLog {
+  id: number
+  page_id: number
+  emotion_id: number
+  emotion_name: string                  // nome da emoção (vem do JOIN no backend)
+  intensity: number                     // intensidade inicial, 0–10
+  situation: string | null              // situação/gatilho
+  automatic_thought: string | null      // pensamento automático
+  adaptive_response: string | null      // resposta adaptativa (reavaliação racional)
+  reappraised_intensity: number | null  // intensidade após a resposta, 0–10
+  created_at: string                    // ISO timestamp
+}
+
+// Estatísticas agregadas de emoções de um ano (aba "Emoções" dos Insights)
+export interface EmotionStats {
+  total: number                         // total de registros do ano
+  avg_intensity: number                 // intensidade média geral (inicial)
+  top_emotion: string | null            // emoção mais frequente
+  by_emotion: { name: string; count: number; avg_intensity: number }[]  // count DESC
+  by_month: number[]                    // 12 posições (Jan=0 ... Dez=11), contagem de registros
+}
+
 // ── Reflect ───────────────────────────────────────────────────────────────
 
 // Uma pergunta de reflexão assinada pela Violet

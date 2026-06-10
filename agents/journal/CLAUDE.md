@@ -19,9 +19,20 @@ journal_bullets     id, page_id→journal_pages, content, position (INT), create
 
 journal_mentions    id, bullet_id→journal_bullets, kind CHECK('person','tag'), value
                     CASCADE: deletar bullet apaga menções automaticamente
+
+journal_emotions       id, name, is_predefined (BOOL)        [Feature 006]
+                       UNIQUE LOWER(name) — dedupe case-insensitive
+                       → seed: 8 emoções base da TCC (is_predefined=TRUE)
+
+journal_emotion_logs   id, page_id→journal_pages (CASCADE), emotion_id→journal_emotions,
+                       intensity (0–10), situation, automatic_thought,
+                       adaptive_response, reappraised_intensity (0–10, nullable),
+                       created_at                              [Feature 006]
 ```
 
 O campo `search_vec` é **gerado pelo banco** a partir de `content` — não inserir nem atualizar manualmente.
+
+**Registros emocionais são ortogonais aos bullets.** `journal_emotion_logs` NÃO conta como bullet — não afeta contagem de palavras, heatmap, coleções nem busca full-text. Não cruzar essas queries com a tabela de emoções.
 
 ---
 
@@ -36,6 +47,16 @@ O campo `search_vec` é **gerado pelo banco** a partir de `content` — não ins
 | `list_mentions(kind)` | `[{"value": str, "count": int}, ...]` |
 | `get_bullets_by_mention(kind, value)` | `[{"date": str, "bullets": [{id, content}]}, ...]` |
 | `search_bullets(query)` | `[{"date": str, "bullets": [{id, content}]}, ...]` |
+| `list_emotions()` | `[{id, name, is_predefined}, ...]` (predefinidas primeiro) |
+| `create_emotion(name)` | `{"status":"ok","emotion":{...}}` — dedupe por LOWER(name), idempotente |
+| `list_emotion_logs(page_id)` | `[{id, page_id, emotion_id, emotion_name, intensity, situation, automatic_thought, adaptive_response, reappraised_intensity, created_at}, ...]` |
+| `create_emotion_log(page_id, emotion_id, intensity, ...)` | `{"status":"ok","log":{...}}` |
+| `update_emotion_log(log_id, **campos)` | `{"status":"ok","log":{...}}` — atualização parcial |
+| `delete_emotion_log(log_id)` | `{"status":"ok"}` ou `{"status":"error", ...}` |
+| `get_emotion_stats(year)` | `{total, avg_intensity, top_emotion, by_emotion:[...], by_month:[12]}` |
+
+#### `_check_result` não se aplica em 3 tools de emoção
+`list_emotions`, `list_emotion_logs` e `get_emotion_stats` retornam dados direto (lista/dict), **sem** campo `"status"` — não passar para `_check_result`.
 
 #### `created_at` nos bullets
 `journal_bullets.created_at` é `TIMESTAMPTZ DEFAULT NOW()`. As tools já convertem para string ISO antes de retornar — o frontend recebe string, não objeto `datetime`.
