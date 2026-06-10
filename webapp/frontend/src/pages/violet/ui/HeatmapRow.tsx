@@ -26,8 +26,10 @@ function fmtDate(iso: string): string {
 
 // Uma entrada de dia no array denso
 interface DayEntry {
-  date: string   // "YYYY-MM-DD"
-  words: number  // 0 para dias sem escrita
+  date: string      // "YYYY-MM-DD"
+  words: number     // 0 para dias sem escrita
+  // Feature 008: true quando o dia contém ao menos um bullet favorito
+  favorite: boolean
 }
 
 interface HeatmapRowProps {
@@ -73,17 +75,36 @@ export function HeatmapRow({ data }: HeatmapRowProps) {
             {/* Grade de células: grid-template-rows: 7, auto-flow column
                 → semanas crescem para a direita, dias da semana ficam fixos nas linhas */}
             <div className="mo-cells">
-              {cells.map((d, i) => (
-                <div
-                  key={i}
-                  className="hc"
-                  title={d && d.words > 0 ? `${fmtDate(d.date)} · ${d.words} palavras` : (d ? fmtDate(d.date) : '')}
-                  style={{
-                    // Célula com dado: cor por nível; célula de alinhamento: transparente
-                    background: d != null ? `var(--heat-${heatLevel(d.words)})` : 'transparent',
-                  }}
-                />
-              ))}
+              {cells.map((d, i) => {
+                // Monta o tooltip incrementalmente para atender FR-003 e o edge case de
+                // acessibilidade: "data · N palavras · ♥ favorito" — a informação de
+                // favorito não depende só da cor, conforme exigido pela spec 008.
+                let tip = ''
+                if (d) {
+                  tip = fmtDate(d.date)
+                  if (d.words > 0)    tip += ` · ${d.words} palavras`
+                  if (d.favorite)     tip += ' · ♥ favorito'
+                }
+
+                return (
+                  <div
+                    key={i}
+                    className="hc"
+                    title={tip}
+                    style={{
+                      // Célula de alinhamento (null): transparente.
+                      // Dia com favorito (Feature 008, FR-001/FR-002): garnet prevalece
+                      // sobre a escala de intensidade — sinal binário, sem gradação.
+                      // Dia normal: cor pelo nível de palavras (--heat-0 a --heat-4).
+                      background: d == null
+                        ? 'transparent'
+                        : d.favorite
+                          ? 'var(--garnet)'
+                          : `var(--heat-${heatLevel(d.words)})`,
+                    }}
+                  />
+                )
+              })}
             </div>
           </div>
         )

@@ -15,11 +15,13 @@ type InsightTab = typeof TABS[number]
 // Cria um array DENSO de todos os dias do ano, preenchendo zeros para dias sem escrita.
 // Para o ano corrente o limite final é hoje; para anos anteriores é 31/dez (ano completo).
 // Usa partes locais de data (não toISOString) para evitar o bug de fuso horário UTC/BRT.
+// Feature 008: recebe o conjunto de dias com favorito para marcar cada dia na saída.
 function buildHeatmapDays(
   heatmap: HeatmapData,
   year: number,
-): Array<{ date: string; words: number }> {
-  const days: Array<{ date: string; words: number }> = []
+  favoriteDays: Set<string>,
+): Array<{ date: string; words: number; favorite: boolean }> {
+  const days: Array<{ date: string; words: number; favorite: boolean }> = []
   // Começa em 1º de janeiro do ano
   const cur = new Date(year, 0, 1)
 
@@ -42,7 +44,12 @@ function buildHeatmapDays(
     const m = String(cur.getMonth() + 1).padStart(2, '0')
     const d = String(cur.getDate()).padStart(2, '0')
     const dateStr = `${y}-${m}-${d}`
-    days.push({ date: dateStr, words: heatmap[dateStr] ?? 0 })
+    days.push({
+      date: dateStr,
+      words: heatmap[dateStr] ?? 0,
+      // Feature 008: marca como favorito se este dia está no conjunto retornado pelo backend
+      favorite: favoriteDays.has(dateStr),
+    })
     // Avança um dia
     cur.setDate(cur.getDate() + 1)
   }
@@ -94,6 +101,9 @@ export function Insights() {
 
   const [stats, setStats] = useState<Stats | null>(null)
   const [heatmap, setHeatmap] = useState<HeatmapData>({})
+  // Feature 008: Set de datas "YYYY-MM-DD" que contêm ao menos um bullet favorito.
+  // Usar Set para lookup O(1) na buildHeatmapDays — pode ser grande em anos prolíficos.
+  const [favoriteDays, setFavoriteDays] = useState<Set<string>>(new Set())
   // Estatísticas de emoções do ano (aba Emoções) — Feature 006
   const [emotionStats, setEmotionStats] = useState<EmotionStats | null>(null)
   const [tab, setTab] = useState<InsightTab>('Diário')
@@ -112,7 +122,10 @@ export function Insights() {
       violetApi.stats(year),
       violetApi.heatmap(year),
       violetApi.emotionStats(year),
-    ]).then(([s, h, e]) => {
+      // Feature 008: busca os dias com favorito junto das outras chamadas para manter
+      // a consistência de ano — FR-006 (filtro de ano) e FR-005 (reflete estado atual).
+      violetApi.favoriteDays(year),
+    ]).then(([s, h, e, f]) => {
       const heatData = h as HeatmapData
       const statsData = s as unknown as Stats
       const streaks = calcStreaks(heatData)
@@ -121,6 +134,8 @@ export function Insights() {
       setStats(statsData)
       setHeatmap(heatData)
       setEmotionStats(e as EmotionStats)
+      // Constrói o Set a partir do array de strings "YYYY-MM-DD" retornado pelo backend
+      setFavoriteDays(new Set(f as string[]))
     }).catch(() => {}).finally(() => setLoading(false))
   }, [year])
 
@@ -138,8 +153,9 @@ export function Insights() {
     )
   }
 
-  // Array denso de todos os dias do intervalo (zeros para dias sem escrita)
-  const days = buildHeatmapDays(heatmap, year)
+  // Array denso de todos os dias do intervalo (zeros para dias sem escrita).
+  // Feature 008: passa o Set de favoritos para que cada dia saiba se deve pintar garnet.
+  const days = buildHeatmapDays(heatmap, year, favoriteDays)
 
   return (
     <div className="page" style={{ paddingTop: 32 }}>
@@ -238,13 +254,18 @@ export function Insights() {
                 </span>
                 maior sequência
               </span>
-              {/* Legenda: menos → mais */}
+              {/* Legenda: menos → mais + swatch garnet para dias com favorito (FR-004) */}
               <div className="heat-legend">
                 menos
                 {[0, 1, 2, 3, 4].map(n => (
                   <i key={n} style={{ background: `var(--heat-${n})` }} />
                 ))}
                 mais
+                {/* Separador visual entre escala de intensidade e o indicador de favorito */}
+                <span style={{ margin: '0 4px', opacity: 0.35 }}>·</span>
+                {/* Swatch garnet + rótulo: comunica ao usuário o significado da célula vermelha */}
+                <i style={{ background: 'var(--garnet)' }} />
+                favorito
               </div>
             </div>
           </div>
