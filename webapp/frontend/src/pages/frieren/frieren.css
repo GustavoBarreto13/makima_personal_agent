@@ -541,6 +541,76 @@ html, body {
 .feed-tag.done { background: var(--gold-tint); color: var(--gold-deep); }
 .day-label { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-4); padding: 22px 0 4px; }
 
+/* ─── Ações por entrada do diário (editar / apagar) ───────────────────── */
+
+/* Wrapper dos botões de ação — alinhado à direita, não quebra em coluna */
+.log-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;   /* Não encolhe para não empurrar o conteúdo do feed */
+  align-self: flex-start;  /* Alinha ao topo do item, não ao centro vertical */
+  margin-left: 6px; /* Separação visual entre o feed-body e os botões */
+}
+
+/* Botão-ícone individual — pequeno, discreto, sem background visível em repouso */
+.log-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;   /* Borda invisível em repouso — aparece no hover */
+  background: none;
+  color: var(--ink-4);              /* Cor fraca para não competir com o conteúdo */
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.log-action-btn svg { width: 13px; height: 13px; }
+
+/* Hover do botão neutro (editar) — fica ligeiramente mais visível */
+.log-action-btn:hover {
+  color: var(--ink-2);
+  background: var(--line-2);
+  border-color: var(--line);
+}
+
+/* Botão de apagar — vermelho no hover */
+.log-action-btn--danger:hover {
+  color: oklch(0.55 0.18 25);
+  background: oklch(0.55 0.18 25 / 0.08);
+  border-color: oklch(0.55 0.18 25 / 0.5);
+}
+
+/* Wrapper de confirmação inline — aparece no lugar dos botões ao clicar em apagar */
+.log-actions-confirm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-left: 6px;
+}
+
+/* Texto "Apagar?" — fonte mono pequena para caber ao lado dos botões */
+.log-actions-confirm-text {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: oklch(0.55 0.18 25);   /* Vermelho para indicar ação destrutiva */
+  white-space: nowrap;
+}
+
+/* ─── Rodapé do modal de edição ───────────────────────────────────────── */
+
+/* Rodapé com os botões Cancelar / Salvar — alinhados à direita */
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px 20px;
+  border-top: 1px solid var(--line-2);
+}
+
 /* ─── Detalhe ──────────────────────────────────────────────────────────── */
 .detail-back { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); background: none; border: none; cursor: pointer; padding: 22px 0 0; font-family: var(--sans); }
 .detail-back:hover { color: var(--ink); }

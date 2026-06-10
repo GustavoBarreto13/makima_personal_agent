@@ -382,4 +382,33 @@ export const booksApi = {
   /** Remove um livro do catálogo (soft delete — marca deleted=TRUE no banco) */
   deleteBook: (bookId: string) =>
     api.del<{ status: string; message: string }>(`/api/books/${bookId}`),
+
+  /**
+   * Remove uma sessão de leitura pelo ID (hard delete).
+   * Chama DELETE /api/books/{bookId}/logs/{logId}.
+   * O bookId é exigido pela URL do backend mas não tem impacto lógico — o log é
+   * identificado unicamente por logId.
+   *
+   * @param bookId - ID do livro ao qual o log pertence (usado só na URL)
+   * @param logId  - ID único do log de leitura a remover
+   */
+  deleteLog: (bookId: string, logId: string) =>
+    api.del<{ status: string; message: string }>(`/api/books/${bookId}/logs/${logId}`),
+
+  /**
+   * Edita uma sessão de leitura existente.
+   * Chama PATCH /api/books/{bookId}/logs/{logId}.
+   * Apenas os campos presentes no body são atualizados — campos ausentes são ignorados.
+   * Se current_page for enviado, o servidor recalcula pages_read automaticamente.
+   *
+   * @param bookId - ID do livro ao qual o log pertence
+   * @param logId  - ID único do log de leitura a editar
+   * @param body   - Campos a atualizar (todos opcionais)
+   */
+  updateLog: (
+    bookId: string,
+    logId: string,
+    body: { current_page?: number; session_notes?: string; log_date?: string },
+  ) =>
+    api.patch<{ status: string; message: string }>(`/api/books/${bookId}/logs/${logId}`, body),
 }

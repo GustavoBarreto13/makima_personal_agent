@@ -16,6 +16,9 @@ import { Icon } from './ui/Icons'
 import { NowBar } from './NowBar'
 import { LogModal } from './LogModal'
 import type { LogPayload } from './LogModal'
+// Modal de edição de sessões de leitura existentes
+import { EditLogModal } from './EditLogModal'
+import type { EditLogPayload } from './EditLogModal'
 import { AddBookModal } from './AddBookModal'
 import type { AddBookPayload } from './AddBookModal'
 import { Toast } from './Toast'
@@ -176,11 +179,15 @@ export function FrierenShell() {
   // ── Modal de adição de livro ──────────────────────────────────────────────
   const [addOpen, setAddOpen] = useState(false)
 
-  // ── Modal de registro ──────────────────────────────────────────────────────
+  // ── Modal de registro de nova leitura ────────────────────────────────────
   const [modal, setModal] = useState<{ open: boolean; presetBookId: string | null }>({
     open: false,
     presetBookId: null,
   })
+
+  // ── Modal de edição de sessão existente ──────────────────────────────────
+  // null = modal fechado; ActivityEntry = entrada sendo editada
+  const [editingLog, setEditingLog] = useState<ActivityEntry | null>(null)
 
   // ── Toast de feedback ──────────────────────────────────────────────────────
   const [toast, setToast] = useState('')
@@ -327,6 +334,23 @@ export function FrierenShell() {
     setToast('Livro adicionado à sua biblioteca.')
   }, [])
 
+  // ── Helper de re-sincronização completa ──────────────────────────────────
+  // Rebusca livros, atividade E heatmap em paralelo após qualquer mutação que
+  // altere páginas lidas (editar ou apagar log). Centralizar aqui evita duplicar
+  // o mesmo Promise.all em cada handler que precisa atualizar os três estados.
+  const refreshAll = useCallback(async () => {
+    const year = new Date().getFullYear()
+    const [booksRes, activityRes, heatmapRes] = await Promise.all([
+      booksApi.list(),
+      booksApi.activity(100),
+      booksApi.heatmap(year),
+    ])
+    setBooks(booksRes.books.map(toBook))
+    setActivity(activityRes.activity.map(toActivity))
+    // Mapeia para o formato interno HeatmapDay { date, pages }
+    setHeatmap(heatmapRes.heatmap.map((h: ApiHeatmapDay) => ({ date: h.date, pages: h.pages })))
+  }, [])
+
   // ── Remoção de livro — apaga no backend, re-sincroniza e volta à Biblioteca ─
   const deleteBook = useCallback(async (bookId: string) => {
     await booksApi.deleteBook(bookId)
@@ -339,6 +363,35 @@ export function FrierenShell() {
     navigate('catalogo')   // o livro sumiu — volta para a grade
     setToast('Livro removido.')
   }, [navigate])
+
+  // ── Abre o modal de edição de uma sessão de leitura ───────────────────────
+  // Chamado pelo LogActions quando o usuário clica no lápis
+  const editLog = useCallback((entry: ActivityEntry) => {
+    setEditingLog(entry)
+  }, [])
+
+  // ── Salva as edições de uma sessão de leitura ─────────────────────────────
+  // Envia o payload ao backend, re-sincroniza todos os dados e fecha o modal
+  const saveLogEdit = useCallback(async (payload: EditLogPayload) => {
+    if (!editingLog) return
+    // Chama o endpoint PATCH — bookId é necessário pela URL do backend
+    await booksApi.updateLog(editingLog.bookId, editingLog.id, payload)
+    // Re-sincroniza livros + atividade + heatmap (as páginas lidas por dia mudaram)
+    await refreshAll()
+    // Fecha o modal de edição
+    setEditingLog(null)
+    setToast('Registro atualizado.')
+  }, [editingLog, refreshAll])
+
+  // ── Remove uma sessão de leitura do diário ────────────────────────────────
+  // Chamado pelo LogActions quando o usuário confirma o apagar
+  const deleteLog = useCallback(async (entry: ActivityEntry) => {
+    // Chama DELETE /api/books/{bookId}/logs/{logId}
+    await booksApi.deleteLog(entry.bookId, entry.id)
+    // Re-sincroniza livros + atividade + heatmap (a contagem de páginas mudou)
+    await refreshAll()
+    setToast('Registro removido.')
+  }, [refreshAll])
 
   // ── Deriva nav ativa a partir da view atual ───────────────────────────────
   const activeNav =
@@ -443,6 +496,8 @@ export function FrierenShell() {
             books={books}
             activity={activity}
             navigate={navigate}
+            onEditLog={editLog}
+            onDeleteLog={deleteLog}
           />
         )
 
@@ -476,6 +531,8 @@ export function FrierenShell() {
             navigate={navigate}
             openLog={openLog}
             onDelete={deleteBook}
+            onEditLog={editLog}
+            onDeleteLog={deleteLog}
           />
         )
 
@@ -680,6 +737,14 @@ export function FrierenShell() {
         books={books}
         onClose={() => setModal({ open: false, presetBookId: null })}
         onSave={addLog}
+      />
+
+      {/* ── Modal de edição de sessão de leitura ── */}
+      {/* Controlado por editingLog: null = fechado, ActivityEntry = aberto com dados da entrada */}
+      <EditLogModal
+        entry={editingLog}
+        onSave={saveLogEdit}
+        onClose={() => setEditingLog(null)}
       />
 
       {/* ── Modal de adição de livro ── */}

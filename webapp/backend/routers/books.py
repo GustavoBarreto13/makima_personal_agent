@@ -62,7 +62,8 @@ from agents.frieren.tools import (
 from agents.frieren.tools import _fetch_google_books
 
 # run_select executa SELECT no PostgreSQL e retorna lista de dicts
-from agents.db import run_select
+# run_dml executa INSERT/UPDATE/DELETE no PostgreSQL
+from agents.db import run_select, run_dml
 
 
 # ─── Listas de padrões de erro das tools da Frieren ─────────────────────────
@@ -216,6 +217,26 @@ class UpdateBookMetadataBody(BaseModel):
     notes: Optional[str] = None           # Anotações pessoais / resenha do leitor
     store_url: Optional[str] = None       # URL do anúncio na loja (Amazon, Estante Virtual, etc.)
     price: Optional[float] = None         # Preço visto na loja (wishlist)
+
+
+class UpdateLogBody(BaseModel):
+    """Corpo da requisição para editar uma sessão de leitura existente.
+
+    Todos os campos são opcionais — apenas os enviados serão atualizados.
+    Se current_page for informado, o servidor recalcula pages_read automaticamente.
+
+    Attributes:
+        current_page: Página alcançada ao fim da sessão (page_end no banco).
+                      O servidor recalcula pages_read = page_end - page_start.
+        session_notes: Anotação da sessão (substitui o valor existente).
+        log_date: Data da sessão no formato YYYY-MM-DD.
+    """
+    # Página alcançada — se informada, pages_read é recalculado no servidor
+    current_page: Optional[int] = None
+    # Texto livre da sessão — substitui o valor existente (None = não altera)
+    session_notes: Optional[str] = None
+    # Data da sessão no formato ISO (ex.: "2026-06-10") — None = não altera
+    log_date: Optional[str] = None
 
 
 class CreateShelfBody(BaseModel):
@@ -949,3 +970,115 @@ def delete_log_endpoint(
     """
     msg = delete_reading_log(log_id=log_id)
     return _books_check(msg)
+
+
+@router.patch("/{book_id}/logs/{log_id}", status_code=200)
+def update_log_endpoint(
+    book_id: str,
+    log_id: str,
+    body: UpdateLogBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Editar uma sessão de leitura existente (página, anotação e/ou data).
+
+    Atualiza apenas os campos enviados no body. Se current_page for informado,
+    recalcula automaticamente pages_read = current_page - page_start para manter
+    a integridade dos dados. Executa o UPDATE diretamente via run_dml (sem passar
+    pela tool da Frieren) pois agents/frieren/ não possui tool de edição de log.
+
+    Args:
+        book_id: ID do livro pai (usado apenas para roteamento REST; confirma vínculo).
+        log_id: ID da sessão de leitura a editar.
+        body: Campos a atualizar (todos opcionais — só os enviados são alterados).
+        user: Dados do usuário autenticado (injetado pela dependência de sessão).
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+
+    Raises:
+        HTTPException: 404 se o log não for encontrado.
+        HTTPException: 400 se current_page for inválido (abaixo de page_start
+                       ou acima de total_pages do livro).
+        HTTPException: 400 se o body estiver completamente vazio.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    # Rejeita body vazio logo de entrada para evitar UPDATE sem SET
+    if body.current_page is None and body.session_notes is None and body.log_date is None:
+        raise HTTPException(status_code=400, detail="Nenhum campo para atualizar.")
+
+    # Busca o log atual junto com o total de páginas do livro.
+    # O JOIN com books é necessário para validar se current_page não ultrapassa total_pages.
+    # Usamos %s (psycopg2 positional) — run_select aceita lista de parâmetros.
+    rows = run_select(
+        """
+        SELECT rl.id, rl.book_id, rl.page_start, rl.page_end,
+               b.total_pages
+        FROM reading_logs rl
+        JOIN books b ON b.id = rl.book_id
+        WHERE rl.id = %s
+          AND b.deleted = FALSE
+        """,
+        [log_id],
+    )
+
+    # Log não encontrado (ID inexistente ou livro já removido)
+    if not rows:
+        raise HTTPException(status_code=404, detail="Log de leitura não encontrado.")
+
+    # Extrai os dados atuais do log para validação e recálculo
+    log = rows[0]
+    page_start   = log["page_start"]     # Página de onde o usuário estava antes da sessão
+    total_pages  = log["total_pages"]    # Total de páginas do livro (pode ser None)
+
+    # ── Monta os campos a atualizar dinamicamente ─────────────────────────────
+    # Só incluímos no SET as colunas que o cliente efetivamente enviou.
+    # Isso evita sobrescrever valores existentes com None sem querer.
+    set_clauses = []  # Lista de "coluna = %s" para compor o SET do SQL
+    params      = []  # Valores correspondentes a cada %s, na mesma ordem
+
+    if body.current_page is not None:
+        # Valida que a página informada é >= page_start
+        if body.current_page < page_start:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Página informada ({body.current_page}) é menor que a página "
+                    f"de início da sessão ({page_start})."
+                ),
+            )
+        # Valida que a página informada não ultrapassa o total do livro (se conhecido)
+        if total_pages is not None and body.current_page > total_pages:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Página informada ({body.current_page}) ultrapassa o total "
+                    f"de páginas do livro ({total_pages})."
+                ),
+            )
+        # Calcula o novo delta de páginas lidas: diferença entre o novo page_end e o page_start
+        new_pages_read = body.current_page - page_start
+        set_clauses.append("page_end = %s")
+        params.append(body.current_page)
+        set_clauses.append("pages_read = %s")
+        params.append(new_pages_read)
+
+    if body.session_notes is not None:
+        # Substitui a anotação existente pelo novo texto (string vazia limpa a anotação)
+        set_clauses.append("session_notes = %s")
+        params.append(body.session_notes)
+
+    if body.log_date is not None:
+        # Substitui a data da sessão — o banco espera DATE, mas psycopg2 aceita string ISO
+        set_clauses.append("date = %s")
+        params.append(body.log_date)
+
+    # Adiciona o ID do log ao final dos parâmetros para a cláusula WHERE
+    params.append(log_id)
+
+    # Monta o SQL de atualização com as colunas dinâmicas
+    sql = f"UPDATE reading_logs SET {', '.join(set_clauses)} WHERE id = %s"
+
+    # Executa o UPDATE no PostgreSQL via run_dml (sem transação explícita — operação atômica)
+    run_dml(sql, params)
+
+    return {"status": "ok", "message": "Sessão de leitura atualizada."}

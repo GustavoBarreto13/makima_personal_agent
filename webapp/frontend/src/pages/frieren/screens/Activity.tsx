@@ -5,12 +5,18 @@
 import type { Book, ActivityEntry } from '../types'
 import { Cover } from '../ui/Cover'
 import { Stars } from '../ui/Stars'
+// Botões de editar e apagar por entrada do diário
+import { LogActions } from '../ui/LogActions'
 
 // Props recebidas da FrierenShell
 interface ActivityProps {
   books: Book[]
   activity: ActivityEntry[]
   navigate: (view: string, param?: string | null) => void
+  // Abre o modal de edição para a entrada clicada
+  onEditLog: (entry: ActivityEntry) => void
+  // Remove a entrada do diário (chama backend e re-sincroniza no shell)
+  onDeleteLog: (entry: ActivityEntry) => Promise<void>
 }
 
 // Nomes dos meses em português — usados na formatação de datas
@@ -42,10 +48,16 @@ function FeedItem({
   a,
   books,
   navigate,
+  onEditLog,
+  onDeleteLog,
 }: {
   a: ActivityEntry
   books: Book[]
   navigate: (view: string, param?: string | null) => void
+  // Abre o modal de edição para esta entrada específica
+  onEditLog: (entry: ActivityEntry) => void
+  // Remove esta entrada (chama backend e re-sincroniza no shell)
+  onDeleteLog: (entry: ActivityEntry) => Promise<void>
 }) {
   // Busca os dados do livro correspondente à entrada
   const b = books.find(book => book.id === a.bookId)
@@ -139,12 +151,19 @@ function FeedItem({
           {a.rating != null && <Stars value={a.rating} />}
         </div>
       </div>
+
+      {/* Botões de editar e apagar — aparecem discretamente à direita da entrada */}
+      <LogActions
+        entry={a}
+        onEdit={onEditLog}
+        onDelete={onDeleteLog}
+      />
     </div>
   )
 }
 
 // Componente principal da tela de atividade
-export function Activity({ books, activity, navigate }: ActivityProps) {
+export function Activity({ books, activity, navigate, onEditLog, onDeleteLog }: ActivityProps) {
   // Agrupa as entradas de atividade por data
   // Usa um Record para agrupar e depois ordena as datas do mais recente ao mais antigo
   const grouped: Record<string, ActivityEntry[]> = {}
@@ -190,7 +209,14 @@ export function Activity({ books, activity, navigate }: ActivityProps) {
           {/* Feed de itens de atividade para esta data */}
           <div className="feed">
             {grouped[date].map(a => (
-              <FeedItem key={a.id} a={a} books={books} navigate={navigate} />
+              <FeedItem
+                key={a.id}
+                a={a}
+                books={books}
+                navigate={navigate}
+                onEditLog={onEditLog}
+                onDeleteLog={onDeleteLog}
+              />
             ))}
           </div>
         </div>

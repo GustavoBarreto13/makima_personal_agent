@@ -38,6 +38,12 @@ const ICONS: Record<string, string> = {
   check:     'M20 6 9 17l-5-5',
   // Ícone de filtros — controles deslizantes (sliders)
   sliders:   'M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0M14 4v4M6 10v4M16 16v4',
+  // Ícone de edição — lápis (pencil)
+  // Usado nos botões de editar sessões de leitura no diário
+  pencil:    'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z',
+  // Ícone de lixeira — trash (apagar)
+  // Usado nos botões de apagar sessões de leitura no diário
+  trash:     'M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6',
   // Ícone decorativo — faísca/brilho (sparkle)
   sparkle:   'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z',
   // Ícone de livro aberto — capa esquerda e direita separadas por uma lombada central

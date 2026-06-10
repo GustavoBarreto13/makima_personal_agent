@@ -8,6 +8,8 @@ import { Icon } from '../ui/Icons'
 import { Cover } from '../ui/Cover'
 import { Stars } from '../ui/Stars'
 import { ProgressBar } from '../ui/ProgressBar'
+// Componente de botões editar/apagar para cada entrada do diário
+import { LogActions } from '../ui/LogActions'
 
 // Props recebidas da FrierenShell
 interface BookDetailProps {
@@ -20,6 +22,10 @@ interface BookDetailProps {
   openLog: (bookId?: string | null) => void
   // Remove o livro do catálogo (chama o backend e re-sincroniza no shell)
   onDelete: (bookId: string) => Promise<void>
+  // Abre o modal de edição para uma entrada específica do diário
+  onEditLog: (entry: ActivityEntry) => void
+  // Remove uma entrada do diário (chama o backend e re-sincroniza no shell)
+  onDeleteLog: (entry: ActivityEntry) => Promise<void>
 }
 
 // Formata data ISO em texto legível (ex.: "3 de Mar 2026")
@@ -43,7 +49,7 @@ function relDate(iso: string): string {
 }
 
 // Componente principal do detalhe do livro
-export function BookDetail({ bookId, books, activity, shelves, navigate, openLog, onDelete }: BookDetailProps) {
+export function BookDetail({ bookId, books, activity, shelves, navigate, openLog, onDelete, onEditLog, onDeleteLog }: BookDetailProps) {
   // Controla a confirmação inline de remoção (dois passos: mostrar → confirmar)
   const [confirmando, setConfirmando] = useState(false)
   // Spinner durante a chamada de remoção ao backend
@@ -327,6 +333,13 @@ export function BookDetail({ bookId, books, activity, shelves, navigate, openLog
                         {a.rating != null && <Stars value={a.rating} />}
                       </div>
                     </div>
+
+                    {/* Botões de editar e apagar — aparecem discretamente à direita da entrada */}
+                    <LogActions
+                      entry={a}
+                      onEdit={onEditLog}
+                      onDelete={onDeleteLog}
+                    />
                   </div>
                 ))}
               </div>
