@@ -156,7 +156,8 @@ export function VioletShell() {
       case 'reflect':
         return <Reflect navigate={navigate} />
       case 'insights':
-        return <Insights />
+        // Feature 009: Insights agora recebe navigate para poder abrir dias no Write
+        return <Insights navigate={navigate} />
       case 'dreams':
         return <Collection kind="dreams" navigate={navigate} />
       case 'highlights':

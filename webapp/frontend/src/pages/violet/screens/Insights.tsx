@@ -92,7 +92,13 @@ function calcStreaks(heatmap: HeatmapData): { current: number; longest: number }
   return { current: currentStreak, longest }
 }
 
-export function Insights() {
+// Props recebidas do VioletShell — mesmo padrão das telas Journal, Collection e Reflect.
+interface InsightsProps {
+  // Feature 009: callback de navegação do shell para abrir um dia na tela Escrever.
+  navigate: (view: string, param?: string | null) => void
+}
+
+export function Insights({ navigate }: InsightsProps) {
   // Ano selecionado pelo usuário — padrão: ano corrente (não persiste entre sessões, YAGNI)
   const currentYear = new Date().getFullYear()
   const [year, setYear] = useState(currentYear)
@@ -230,7 +236,9 @@ export function Insights() {
           {/* Heatmap de palavras — layout por mês estilo GitHub */}
           <div className="ins-heatcard">
             {/* Grade agrupada por mês: meses como colunas, 7 linhas de dias */}
-            <HeatmapRow data={days} />
+            {/* Feature 009: onDayClick navega para a tela Escrever na data clicada.
+                date já é "YYYY-MM-DD" local (sem round-trip Date) — sem shift de fuso. */}
+            <HeatmapRow data={days} onDayClick={(date) => navigate('write', date)} />
             {/* Rodapé com chips de estatística e legenda de intensidade */}
             <div className="heat-foot">
               <span className="heat-stat">

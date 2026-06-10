@@ -36,9 +36,13 @@ interface HeatmapRowProps {
   // Array denso de todos os dias do período (1º jan → hoje), ordenado por data.
   // Dias sem escrita têm words = 0.
   data: DayEntry[]
+  // Feature 009: callback disparado ao clicar num dia real.
+  // Recebe a string "YYYY-MM-DD" do dia clicado.
+  // Opcional — se omitido o heatmap funciona como antes (somente visualização).
+  onDayClick?: (date: string) => void
 }
 
-export function HeatmapRow({ data }: HeatmapRowProps) {
+export function HeatmapRow({ data, onDayClick }: HeatmapRowProps) {
   // ── Agrupa dias por mês, mantendo a ordem cronológica ──────────────────
   // Cada grupo tem um índice de mês (0–11) e seus dias
   const months: Array<{ m: number; days: DayEntry[] }> = []
@@ -91,16 +95,21 @@ export function HeatmapRow({ data }: HeatmapRowProps) {
                     key={i}
                     className="hc"
                     title={tip}
+                    // Feature 009 (FR-001/FR-002): clique navega ao dia somente em células
+                    // reais (d != null). Células de alinhamento não recebem onClick nem cursor,
+                    // portanto nunca causam navegação (SC-003).
+                    onClick={d != null ? () => onDayClick?.(d.date) : undefined}
                     style={{
-                      // Célula de alinhamento (null): transparente.
-                      // Dia com favorito (Feature 008, FR-001/FR-002): garnet prevalece
-                      // sobre a escala de intensidade — sinal binário, sem gradação.
+                      // Célula de alinhamento (null): transparente, sem interação.
+                      // Dia com favorito (Feature 008): garnet prevalece sobre --heat-N.
                       // Dia normal: cor pelo nível de palavras (--heat-0 a --heat-4).
+                      // cursor:pointer em dias reais sinaliza que são clicáveis (FR-003).
                       background: d == null
                         ? 'transparent'
                         : d.favorite
                           ? 'var(--garnet)'
                           : `var(--heat-${heatLevel(d.words)})`,
+                      cursor: d != null ? 'pointer' : undefined,
                     }}
                   />
                 )
