@@ -42,7 +42,7 @@ Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na
 | Orçamentos | Envelopes por categoria com barra de progresso, definir novo limite |
 | Assinaturas | Lista de assinaturas recorrentes com custo mensal total |
 | Livros | Sub-app completa (Frieren): 9 telas — Início com hero e heatmap anual, Biblioteca com grade filtrável, detalhe de livro, Quero Ler, Wishlist com link de loja, Estantes (CRUD), Atividade agrupada por data, Resenhas e Estatísticas do ano |
-| Diário | Bullet journal com timestamp por bullet, heatmap anual, `@pessoas`, `#tags` e busca full-text — sidebar direita com Insights, Pessoas, Tags e Busca |
+| Diário | Bullet journal com timestamp por bullet, heatmap anual, `@pessoas`, `#tags` e busca full-text — sidebar direita com Insights (filtro por ano), Pessoas, Tags e Busca — tela Write com **registro emocional TCC** (situação → emoção → pensamento automático → resposta adaptativa → reavaliação) e aba Emoções nos Insights |
 
 **Stack:** FastAPI (backend) + React 19 + TypeScript + Tailwind CSS (frontend) — servidos pelo mesmo container.
 
@@ -129,8 +129,11 @@ Agente interno (sem personalidade própria). Gerencia o diário bullet journal c
 - Extração automática de `@pessoa` e `#tag` de cada bullet
 - Busca full-text com dicionário português
 - Heatmap anual de atividade (quantidade de bullets por dia)
+- **Registro emocional TCC** — formulário de Registro de Pensamentos: situação → emoção + intensidade (0–10) → pensamento automático → resposta adaptativa → reavaliação de intensidade; vocabulário de 8 emoções-base predefinidas + emoções custom criadas pelo usuário
+- **Aba Emoções nos Insights** — frequência, intensidade média e distribuição mensal das emoções registradas no ano selecionado
+- **Filtro de ano nos Insights** — seleciona qualquer ano com entradas no diário
 
-**Armazenamento:** PostgreSQL — tabelas `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`.
+**Armazenamento:** PostgreSQL — tabelas `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_emotions`, `journal_emotion_logs`.
 
 ---
 

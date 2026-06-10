@@ -58,7 +58,7 @@ A implementação:
 
 | Princípio | Status | Evidência |
 |---|---|---|
-| **I. Agent Specialization** | ✅ PASS | Webapp chama tools de `agents/nami/tools*.py` diretamente — não instancia ADK nem duplica lógica de domínio. Makima não implementa nada de finanças. |
+| **I. Agent Specialization** | ✅ PASS | O webapp backend (`finances.py`) é uma camada HTTP independente do ADK — tem SQL próprio, estendendo o padrão já existente em `finances.py`. §I aplica-se ao coordinator ADK: Makima não implementa lógica de finanças, apenas delega para `nami_agent`. O webapp não instancia ADK nem duplica tools do agente — são dois clientes separados do mesmo PostgreSQL, com responsabilidades distintas (bot conversacional vs. SPA web). |
 | **II. Hybrid Batch+Agentic** | ✅ PASS | Esta feature adiciona camada interativa (SPA). Nenhuma automação batch do n8n é migrada ou removida. |
 | **III. Self-Contained** | ✅ PASS | Tabelas novas (`personal_loans`, `financings`) são isoladas — não dependem de outros agentes em runtime. IDs/schemas copiados, não importados. |
 | **IV. Portuguese-First** | ✅ PASS | Spec, comentários e toda a UI estão em português. Respostas de erro ao usuário em PT. `Intl.NumberFormat('pt-BR')` para valores monetários. |
