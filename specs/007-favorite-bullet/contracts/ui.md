@@ -22,14 +22,18 @@ na tela de escrita do diário.
 ### Estado com Feature 007
 
 ```
+[.bgroup]  →  quando NÃO favorito: sem data-fav, sem faixa de fundo
+[.bgroup[data-fav='true']]  →  faixa garnet em degradê no fundo da linha (idêntico ao Destaque)
+
 [.b-mark]   →  div clicável (cursor:pointer), title dinâmico, onClick → toggleFavorite
   quando NÃO favorito:
     [.dot]    →  span cinza (bullet simples) — sem classe adicional
     [.glyph]  →  span com ícone SVG na cor do kind — sem classe adicional
 
-  quando favorito (is_fav = true):
-    [.dot.is-fav]    →  background: var(--garnet) — ponto vermelho
-    [.glyph.is-fav]  →  color: var(--garnet) — ícone vermelho (independente do kind)
+  quando favorito (data-fav = 'true'):
+    [.glyph.is-fav com <Icon name="heart">]  →
+        marcador SEMPRE se torna coração garnet, independente do kind original (FR-003)
+        o tipo original é preservado nos dados; só a exibição muda
 ```
 
 ---
@@ -99,14 +103,18 @@ na tela de escrita do diário.
   transition: opacity 0.1s ease;
 }
 
-/* Ponto (bullet simples) favoritado → fica garnet */
-.b-mark .dot.is-fav {
-  background: var(--garnet);
-}
-
-/* Ícone (qualquer kind) favoritado → fica garnet (sobrepõe cor do kind) */
+/* Ícone coração favoritado → cor garnet
+   (renderMark emite glyph.is-fav com <Icon name="heart"> quando favorite=true) */
 .b-mark .glyph.is-fav {
   color: var(--garnet);
+}
+
+/* Linha inteira favorita: faixa garnet em degradê — idêntico ao Destaque */
+.bgroup[data-fav='true'] {
+  background: linear-gradient(90deg, var(--garnet-tint), transparent 70%);
+  border-radius: var(--r-sm);
+  margin: 2px -10px;
+  padding-left: 10px;
 }
 ```
 

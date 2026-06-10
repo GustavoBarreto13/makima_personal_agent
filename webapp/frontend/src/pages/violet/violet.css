@@ -356,12 +356,16 @@
 /* Leve opacidade no hover — affordance de interatividade */
 .b-mark:hover { opacity: 0.75; transition: opacity 0.1s ease; }
 
-/* Ponto (bullet simples) favoritado: fundo garnet em vez do cinza padrão */
-.b-mark .dot.is-fav { background: var(--garnet); }
-
-/* Ícone (qualquer kind) favoritado: cor garnet sobrepõe a cor do tipo (FR-003) */
-/* A especificidade é suficiente para sobrepor as regras de kind abaixo */
+/* Ícone coração favoritado: cor garnet (o renderMark já emite glyph.is-fav com o coração) */
 .b-mark .glyph.is-fav { color: var(--garnet); }
+
+/* Bullet favoritado: faixa garnet de fundo travessando a linha inteira —
+   idêntico ao visual do Destaque (data-kind='highlight') para que os dois
+   fiquem iguais. A faixa some quando o favorito é removido (data-fav desaparece). */
+.bgroup[data-fav='true'] {
+  background: linear-gradient(90deg, var(--garnet-tint), transparent 70%);
+  border-radius: var(--r-sm); margin: 2px -10px; padding-left: 10px;
+}
 
 /* kinds — marcas coloridas por tipo */
 .bgroup[data-kind='highlight'] .b-mark .glyph { color: var(--garnet); }

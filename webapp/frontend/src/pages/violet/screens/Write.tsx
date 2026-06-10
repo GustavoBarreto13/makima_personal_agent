@@ -81,11 +81,16 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
   }
 
   // Renderiza o marcador (ícone/ponto) de um bullet.
-  // Quando o bullet está favoritado (favorite=true), aplica a classe "is-fav" ao elemento,
-  // que via CSS pinta o marcador na cor garnet — independentemente do tipo do bullet (FR-003).
+  // Quando favoritado (favorite=true), o marcador SEMPRE vira um coração garnet —
+  // independente do tipo — replicando visualmente o comportamento do Destaque (FR-003).
+  // O tipo original é preservado nos dados; só a exibição visual muda.
   function renderMark(kind: BulletKind, favorite = false) {
-    // Bullet simples: ponto redondo. Classe "is-fav" muda o background para garnet.
-    if (kind === 'bullet') return <span className={favorite ? 'dot is-fav' : 'dot'} />
+    // Favoritado: coração garnet em qualquer tipo — idêntico ao marcador do Destaque
+    if (favorite) {
+      return <span className="glyph is-fav"><Icon name="heart" size={15} /></span>
+    }
+    // Não favoritado: renderização normal por tipo
+    if (kind === 'bullet') return <span className="dot" />
     const icons: Record<string, React.ReactNode> = {
       highlight: <Icon name="heart" size={15} />,
       dream:     <Icon name="moon" size={15} />,
@@ -93,8 +98,7 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
       wisdom:    <Icon name="gem" size={15} />,
       note:      <Icon name="pin" size={15} />,
     }
-    // Ícone tipado: classe "is-fav" sobrepõe a cor do kind para garnet.
-    return <span className={favorite ? 'glyph is-fav' : 'glyph'}>{icons[kind]}</span>
+    return <span className="glyph">{icons[kind]}</span>
   }
 
   // Alterna o estado de favorito de um bullet com optimistic update + rollback (FR-008).
@@ -156,7 +160,7 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
       {/* Lista de bullets */}
       <div className="bullets">
         {bullets.map(b => (
-          <div key={b.id} className="bgroup" data-kind={b.kind}>
+          <div key={b.id} className="bgroup" data-kind={b.kind} data-fav={b.favorite ? 'true' : undefined}>
             {/* Marcador clicável — um clique favorita ou desfavorita o bullet (FR-002).
                 role="button" torna o elemento semanticamente interativo para screen readers.
                 title e aria-label descrevem a ação ao cursor/hover e a leitores de tela (FR-004).

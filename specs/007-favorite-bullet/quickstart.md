@@ -54,7 +54,8 @@ conn.close()
 5. Clicar uma vez no marcador (ícone/ponto) de um bullet
 
 **Esperado:**
-- O marcador muda de cor para vermelho garnet **imediatamente** (< 200ms, sem esperar rede — SC-01)
+- O marcador se torna um **coração garnet** imediatamente (< 200ms, sem esperar rede — SC-01)
+- O bullet inteiro ganha uma **faixa de fundo garnet em degradê** — visualmente idêntico a um bullet de Destaque (FR-003)
 - O cursor ao passar sobre o marcador é `pointer` (FR-004)
 - O `title` do marcador é "Favoritar" antes do clique e "Desfavoritar" depois (FR-004)
 
@@ -83,7 +84,8 @@ conn.close()
 1. Com um bullet favorito visível, clicar no marcador garnet
 
 **Esperado:**
-- O marcador volta à cor original do tipo do bullet imediatamente
+- O marcador volta ao ícone original do tipo do bullet imediatamente (ex.: ponto, lâmpada, lua…)
+- A faixa de fundo garnet desaparece
 - Reload da página confirma que não é mais favorito
 
 ---

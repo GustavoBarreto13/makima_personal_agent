@@ -30,8 +30,9 @@ novamente e confirmar que voltou ao normal.
 **Acceptance Scenarios**:
 
 1. **Given** um bullet não favorito de qualquer tipo (bullet, destaque, sonho, ideia, sabedoria,
-   nota), **When** o usuário clica no marcador do bullet, **Then** o bullet vira favorito e o
-   marcador passa a ser exibido em vermelho (garnet) imediatamente.
+   nota), **When** o usuário clica no marcador do bullet, **Then** o bullet vira favorito: o
+   marcador se torna um coração garnet e a linha ganha faixa de fundo garnet imediatamente —
+   idêntico a um bullet de Destaque.
 
 2. **Given** um bullet favorito, **When** o usuário clica no marcador, **Then** o favorito é
    removido e o marcador volta à aparência normal do seu tipo.
@@ -68,8 +69,9 @@ novamente e confirmar que voltou ao normal.
   bullet e padrão "não favorito" na criação.
 - **FR-002**: Um clique simples no marcador (ícone/ponto) do bullet MUST alternar o estado de
   favorito — sem menus ou passos intermediários.
-- **FR-003**: O bullet favorito MUST ter sinalização visual permanente e imediata: o marcador é
-  exibido em vermelho (garnet), independentemente do tipo do bullet.
+- **FR-003**: O bullet favorito MUST ter sinalização visual permanente e imediata: o marcador
+  se torna um coração garnet (independentemente do tipo original) e a linha ganha uma faixa de
+  fundo em degradê garnet — visualmente idêntico a um bullet de Destaque.
 - **FR-004**: O marcador MUST indicar que é clicável (cursor/hover) e oferecer uma dica textual
   da ação.
 - **FR-005**: O estado de favorito MUST sobreviver a edições de texto e persistir entre sessões.
