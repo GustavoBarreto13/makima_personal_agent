@@ -349,6 +349,20 @@
 .bline .b-text { font-size: 15.5px; color: var(--ink); font-weight: 300; text-wrap: pretty; }
 .bline.lead .b-text { font-weight: 400; }
 
+/* ── Marcador clicável (Feature 007 — Favoritar Bullet) ──────────────────── */
+/* cursor:pointer indica que o marcador é clicável (FR-004) */
+.b-mark { cursor: pointer; }
+
+/* Leve opacidade no hover — affordance de interatividade */
+.b-mark:hover { opacity: 0.75; transition: opacity 0.1s ease; }
+
+/* Ponto (bullet simples) favoritado: fundo garnet em vez do cinza padrão */
+.b-mark .dot.is-fav { background: var(--garnet); }
+
+/* Ícone (qualquer kind) favoritado: cor garnet sobrepõe a cor do tipo (FR-003) */
+/* A especificidade é suficiente para sobrepor as regras de kind abaixo */
+.b-mark .glyph.is-fav { color: var(--garnet); }
+
 /* kinds — marcas coloridas por tipo */
 .bgroup[data-kind='highlight'] .b-mark .glyph { color: var(--garnet); }
 .bgroup[data-kind='dream']     .b-mark .glyph { color: var(--gold); }

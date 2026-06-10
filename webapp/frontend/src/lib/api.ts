@@ -280,6 +280,27 @@ export const violetApi = {
   /** Estatísticas de emoções do ano (aba Emoções dos Insights) */
   emotionStats: (year: number) =>
     api.get<EmotionStats>(`/api/journal/emotion-stats?year=${year}`),
+
+  // ── Favoritos (Feature 007 — Favoritar Bullet pelo Próprio Ícone) ─────────
+
+  /**
+   * Define o estado de favorito de um bullet existente.
+   * Envia o estado-alvo explícito (não toggle) para ser idempotente e seguro
+   * com optimistic updates — o frontend inverte o state antes da requisição
+   * e reverte em caso de falha (FR-008).
+   */
+  setFavorite: (id: number, favorite: boolean) =>
+    api.patch<{ status: string; favorite: boolean }>(
+      `/api/journal/bullets/${id}/favorite`,
+      { favorite },
+    ),
+
+  /**
+   * Retorna as datas do ano que possuem ao menos um bullet favorito.
+   * Insumo para o heatmap de favoritos (spec 008, FR-007).
+   */
+  favoriteDays: (year: number) =>
+    api.get<string[]>(`/api/journal/favorite-days?year=${year}`),
 }
 
 // ── Tipos da seção Frieren ─────────────────────────────────────────────────

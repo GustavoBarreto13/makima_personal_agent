@@ -1,6 +1,6 @@
 # Feature Specification: Favoritar Bullet pelo Próprio Ícone
 
-**Feature Branch**: `005-violet-journal-features`
+**Feature Branch**: `007-favorite-bullet`
 
 **Created**: 2026-06-10
 

@@ -14,6 +14,8 @@ export interface Bullet {
   content: string
   position: number
   created_at: string  // ISO timestamp
+  // Feature 007: estado de favorito — false por default (bullets antigos recebem false do banco)
+  favorite: boolean
 }
 
 // ── Entry (página do diário) ──────────────────────────────────────────────

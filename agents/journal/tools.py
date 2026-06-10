@@ -152,6 +152,17 @@ def _ensure_tables() -> None:
                         CHECK (kind IN ('bullet','highlight','dream','idea','wisdom','note'))
                 """)
 
+            # ── Extensão Feature 007: campo favorite em journal_bullets ──────
+            # Favorito é um estado booleano ortogonal ao tipo (kind) do bullet.
+            # DEFAULT FALSE garante que todos os bullets existentes nascem não-favoritos (FR-001).
+            # ADD COLUMN IF NOT EXISTS é idempotente — re-executa sem erro se a coluna já existir.
+            # O ON DELETE CASCADE em page_id já cuida de remover o favorito quando o bullet
+            # é excluído, pois favorite é uma coluna da própria linha (FR-006).
+            cur.execute("""
+                ALTER TABLE journal_bullets
+                    ADD COLUMN IF NOT EXISTS favorite BOOLEAN NOT NULL DEFAULT FALSE
+            """)
+
             # Índice GIN para tornar buscas full-text rápidas mesmo com muitos bullets.
             # GIN (Generalized Inverted Index) é o tipo recomendado pelo PostgreSQL para TSVECTOR.
             cur.execute("""
@@ -345,9 +356,11 @@ def get_or_create_page(date: str, type_id: int = 1) -> dict:
             if page.get("updated_at"):
                 page["updated_at"] = page["updated_at"].isoformat()
 
-            # Busca todos os bullets da página com o campo kind, ordenados por posição.
+            # Busca todos os bullets da página, incluindo kind e favorite, ordenados por posição.
+            # O campo favorite é necessário para o frontend exibir o estado inicial de favorito
+            # de cada bullet ao carregar a página (FR-001: bullets antigos recebem FALSE).
             cur.execute("""
-                SELECT id, page_id, kind, content, position, created_at
+                SELECT id, page_id, kind, content, position, created_at, favorite
                 FROM journal_bullets
                 WHERE page_id = %s
                 ORDER BY position ASC
@@ -685,12 +698,15 @@ def upsert_bullet(page_id: int, position: int, content: str, kind: str = 'bullet
 
             # Upsert por (page_id, position) — atualiza content e kind se já existir.
             # RETURNING retorna os dados do bullet inserido ou atualizado em uma só query.
+            # IMPORTANTE (FR-005): favorite NÃO entra no DO UPDATE SET — assim, editar o texto
+            # ou o tipo do bullet nunca reseta o estado de favorito. Só o endpoint dedicado
+            # PATCH /bullets/{id}/favorite pode alterar favorite (via set_favorite).
             cur.execute("""
                 INSERT INTO journal_bullets (page_id, position, content, kind)
                 VALUES (%s, %s, %s, %s)
                 ON CONFLICT (page_id, position)
                 DO UPDATE SET content = EXCLUDED.content, kind = EXCLUDED.kind
-                RETURNING id, page_id, kind, content, position, created_at
+                RETURNING id, page_id, kind, content, position, created_at, favorite
             """, (page_id, position, content, kind))
             row = cur.fetchone()
             # Converte created_at para string ISO para serialização JSON
@@ -762,6 +778,99 @@ def delete_bullet(bullet_id: int) -> dict:
 
         conn.commit()
         return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+def set_favorite(bullet_id: int, favorite: bool) -> dict:
+    """Definir ou remover o estado de favorito de um bullet.
+
+    Permite favoritar (favorite=True) ou desfavoritar (favorite=False) um bullet
+    diretamente pelo seu ID, sem afetar nenhum outro atributo do bullet (texto,
+    tipo, posição). Projetado para ser chamado pelo endpoint PATCH dedicado, mantendo
+    favorite ortogonal ao upsert_bullet (FR-005).
+
+    Args:
+        bullet_id: ID único do bullet a ser alterado.
+        favorite: True para favoritar, False para desfavoritar.
+
+    Returns:
+        Dicionário com:
+        - "status": "ok" e "favorite": bool — quando o bullet existe e foi atualizado.
+        - "status": "error" e "message": str — quando o bullet não existe (rowcount 0).
+
+    Example:
+        >>> set_favorite(42, True)
+        {"status": "ok", "favorite": True}
+    """
+    conn = _get_conn()
+    try:
+        # Usamos RealDictCursor para que o RETURNING retorne um dict, facilitando
+        # a extração do valor de favorite sem indexação posicional.
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+
+            # UPDATE por id (não por position) — favorite é um atributo de um bullet
+            # existente e identificado. RETURNING favorite confirma o valor persistido
+            # sem a necessidade de um segundo SELECT.
+            cur.execute("""
+                UPDATE journal_bullets
+                   SET favorite = %s
+                 WHERE id = %s
+             RETURNING favorite
+            """, (favorite, bullet_id))
+
+            row = cur.fetchone()
+
+            # rowcount 0 significa que nenhuma linha foi afetada — bullet não existe.
+            # Retornamos erro amigável em vez de silenciar (padrão de delete_bullet).
+            if cur.rowcount == 0:
+                conn.rollback()
+                return {"status": "error", "message": "bullet não encontrado"}
+
+        conn.commit()
+        # Retorna o valor real persistido no banco (confirmação do estado)
+        return {"status": "ok", "favorite": bool(row["favorite"])}
+    finally:
+        conn.close()
+
+
+def list_favorite_days(year: int) -> list:
+    """Retornar as datas que possuem ao menos um bullet favorito no ano.
+
+    Entrega o conjunto de datas necessário para o heatmap de favoritos (spec 008,
+    FR-007). Retorna apenas datas com bullet.favorite = TRUE — dias sem favorito
+    não aparecem na lista.
+
+    Args:
+        year: Ano de referência (ex.: 2026).
+
+    Returns:
+        Lista de strings "YYYY-MM-DD" ordenadas ASC — datas com ao menos um
+        bullet favoritado. Lista vazia [] se nenhum favorito no ano.
+
+    Example:
+        >>> list_favorite_days(2026)
+        ["2026-06-10", "2026-06-12"]
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+
+            # JOIN de bullets com páginas para obter a data.
+            # DISTINCT evita duplicatas quando um dia tem múltiplos bullets favoritos.
+            # Filtramos por ano via EXTRACT e por favorite = TRUE.
+            # CAST de jp.date para text retorna "YYYY-MM-DD" pronto para JSON.
+            cur.execute("""
+                SELECT DISTINCT jp.date::text AS date
+                  FROM journal_bullets b
+                  JOIN journal_pages jp ON jp.id = b.page_id
+                 WHERE EXTRACT(YEAR FROM jp.date) = %s
+                   AND b.favorite = TRUE
+                 ORDER BY date ASC
+            """, (year,))
+
+            # fetchall retorna lista de tuplas — extraímos só o primeiro elemento (a data)
+            return [row[0] for row in cur.fetchall()]
     finally:
         conn.close()
 
