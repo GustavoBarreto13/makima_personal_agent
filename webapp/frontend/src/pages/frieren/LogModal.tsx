@@ -3,7 +3,7 @@
 // Princípio: abrir, registrar, sair. Teclado-first: Enter salva, Esc fecha.
 // Portado do protótipo logmodal.jsx.
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import type { Book } from './types'
 import { Cover } from './ui/Cover'
 import { Icon } from './ui/Icons'
@@ -61,7 +61,7 @@ interface LogModalProps {
   open: boolean
   // ID do livro pré-selecionado ao abrir (vindo da barra NowBar ou de outro contexto)
   presetBookId: string | null
-  // Lista de todos os livros disponíveis para seleção
+  // Lista de TODOS os livros do catálogo — usada tanto nos candidatos quanto na busca
   books: Book[]
   // Fecha o modal sem salvar
   onClose: () => void
@@ -87,11 +87,12 @@ function StarShape({ filled }: { filled: boolean }) {
 /**
  * Modal de registro de sessão de leitura.
  * Candidatos à seleção: livros sendo lidos primeiro, depois últimos lidos (top 6),
- * depois quero_ler/wishlist (top 3).
+ * depois quero_ler/wishlist (top 3). Com o campo de busca, qualquer livro do
+ * catálogo pode ser selecionado — não só os candidatos.
  */
 export function LogModal({ open, presetBookId, books, onClose, onSave }: LogModalProps) {
-  // Monta a lista de candidatos: lendo > lidos recentemente > wishlist/owned
-  // useMemo evita recalcular a cada render quando books não muda
+  // Monta a lista de candidatos padrão: lendo > lidos recentemente > wishlist/owned.
+  // Exibida quando o campo de busca está vazio — prioriza livros relevantes.
   const candidates = useMemo(() => {
     // Livros sendo lidos agora — prioridade máxima
     const reading = books.filter(b => b.status === 'reading')
@@ -119,9 +120,67 @@ export function LogModal({ open, presetBookId, books, onClose, onSave }: LogModa
   const [finished, setFinished] = useState(false)
   // Avaliação de 1–5 (só aparece quando finished=true)
   const [rating, setRating] = useState(0)
+  // Texto digitado no campo de busca de livro
+  const [query, setQuery] = useState('')
 
-  // Livro atualmente selecionado (objeto completo)
-  const book = candidates.find(b => b.id === bookId) ?? candidates[0]
+  // Referência ao container do carrossel — usada para habilitar scroll via roda do mouse
+  const carouselRef = useRef<HTMLDivElement>(null)
+
+  // Livro atualmente selecionado (objeto completo).
+  // Busca em TODOS os livros — não só candidatos — porque o usuário pode ter escolhido
+  // um livro via busca que está fora da lista de candidatos.
+  const book = books.find(b => b.id === bookId) ?? candidates[0]
+
+  // ── Resultados de busca ────────────────────────────────────────────────────
+  // Quando o campo de busca tem texto, filtra todo o catálogo por título ou autor.
+  // O mesmo padrão usado no Catalog (screens/Catalog.tsx) para consistência.
+  const searchResults = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+    return books.filter(
+      b => b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q)
+    )
+  }, [books, query])
+
+  // Lista exibida no carrossel:
+  // - Com busca ativa: resultados da pesquisa
+  // - Sem busca: candidatos padrão (lendo + recentes + wishlist)
+  // Em ambos os casos, garante que o livro atualmente selecionado apareça no início,
+  // para que a seleção não "suma" ao limpar a busca ou mudar o filtro.
+  const displayList = useMemo(() => {
+    const base = query.trim() ? searchResults : candidates
+    // Se o livro selecionado não está na lista (ex: foi selecionado via busca e busca foi limpa),
+    // adiciona ele no início para que a ✓ continue visível
+    const selectedBook = books.find(b => b.id === bookId)
+    if (selectedBook && !base.find(b => b.id === bookId)) {
+      return [selectedBook, ...base]
+    }
+    return base
+  }, [query, searchResults, candidates, books, bookId])
+
+  // ── Scroll horizontal via roda do mouse no carrossel ──────────────────────
+  // O carrossel tem overflow-x: auto, então rola com trackpad/toque.
+  // Mas a roda do mouse convencional gera deltaY (vertical), que um container
+  // horizontal ignora. Este effect converte deltaY → scrollLeft manualmente.
+  // O listener precisa ser { passive: false } para poder chamar preventDefault()
+  // (sem isso o body do modal também rolaria junto).
+  useEffect(() => {
+    const el = carouselRef.current
+    if (!el) return
+
+    const onWheel = (e: WheelEvent) => {
+      // Se a roda tem componente horizontal real (trackpad diagonal), deixa o
+      // navegador tratar — só intercepta quando é puramente vertical
+      if (e.deltaX !== 0) return
+      e.preventDefault()
+      // Multiplica por 1 para manter a sensibilidade natural da roda
+      el.scrollLeft += e.deltaY
+    }
+
+    // passive: false é obrigatório para que preventDefault() funcione
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [open]) // re-registra ao abrir/fechar para garantir referência válida
 
   // Reinicializa o estado sempre que o modal é aberto ou o preset muda
   useEffect(() => {
@@ -129,7 +188,8 @@ export function LogModal({ open, presetBookId, books, onClose, onSave }: LogModa
     // Usa o preset se informado, senão o primeiro candidato
     const initial = presetBookId ?? candidates[0]?.id ?? ''
     setBookId(initial)
-    const bk = candidates.find(b => b.id === initial)
+    // Busca o livro em todos os livros (não só candidatos) para ter os dados corretos
+    const bk = books.find(b => b.id === initial)
     // Pré-preenche com a página atual do livro para facilitar o incremento
     setPage(bk?.page ?? 0)
     setNote('')
@@ -138,15 +198,21 @@ export function LogModal({ open, presetBookId, books, onClose, onSave }: LogModa
     setShowDatePicker(false)
     setFinished(false)
     setRating(0)
+    // Limpa a busca ao reabrir o modal
+    setQuery('')
   }, [open, presetBookId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ao selecionar outro livro, atualiza a página para a última registrada daquele livro
+  // Ao selecionar outro livro no carrossel, atualiza a página e limpa a busca
+  // para voltar à lista de candidatos com o livro escolhido já destacado
   const selectBook = useCallback((id: string) => {
     setBookId(id)
-    const bk = candidates.find(b => b.id === id)
+    // Busca em todos os livros para ter a página correta independente da origem
+    const bk = books.find(b => b.id === id)
     setPage(bk?.page ?? 0)
     setFinished(false)
-  }, [candidates])
+    // Limpa a busca: retorna ao carrossel padrão com o livro escolhido em destaque
+    setQuery('')
+  }, [books])
 
   // Total de páginas do livro selecionado (para calcular percentual e limitar input)
   const total = book?.pages ?? 0
@@ -204,20 +270,42 @@ export function LogModal({ open, presetBookId, books, onClose, onSave }: LogModa
 
         <div className="modal-body">
 
-          {/* Seleção do livro — miniaturas de capa clicáveis */}
+          {/* Seleção do livro — campo de busca + carrossel de capas clicáveis */}
           <label className="modal-label">Qual livro?</label>
-          <div className="bookpick">
-            {candidates.map(b => (
-              <div
-                key={b.id}
-                // Classe "sel" destaca o livro selecionado com borda teal
-                className={'pick' + (b.id === bookId ? ' sel' : '')}
-                onClick={() => selectBook(b.id)}
-                title={b.title}
-              >
-                <Cover book={b} />
-              </div>
-            ))}
+
+          {/* Campo de busca — filtra todo o catálogo por título ou autor */}
+          <input
+            className="book-search"
+            type="text"
+            placeholder="Buscar por título ou autor…"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            // Não recebe autoFocus — o campo de página tem prioridade (fluxo rápido)
+          />
+
+          {/* Carrossel de capas — rola com trackpad, toque E roda do mouse (via ref) */}
+          <div className="bookpick" ref={carouselRef}>
+            {displayList.length > 0 ? (
+              displayList.map(b => (
+                <div
+                  key={b.id}
+                  // Classe "sel" destaca o livro selecionado com borda teal
+                  className={'pick' + (b.id === bookId ? ' sel' : '')}
+                  onClick={() => selectBook(b.id)}
+                  title={b.title}
+                >
+                  <Cover book={b} />
+                </div>
+              ))
+            ) : (
+              // Mensagem de vazio quando a busca não encontra nenhum resultado
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: 11,
+                color: 'var(--ink-4)', padding: '10px 2px',
+              }}>
+                Nenhum livro encontrado
+              </span>
+            )}
           </div>
 
           {/* Campo de página atual */}
