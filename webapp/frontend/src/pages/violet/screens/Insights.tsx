@@ -1,4 +1,5 @@
-// Tela Insights — painel analítico com heatmap, gráfico de área, big numbers e 7 abas.
+// Tela Insights — painel analítico com heatmap, gráfico de área, big numbers e 8 abas.
+// Feature 005: seletor de ano no hero para analisar qualquer ano com registro.
 
 import { useEffect, useState } from 'react'
 import { violetApi } from '../../../lib/api'
@@ -11,9 +12,9 @@ import { Icon } from '../ui/Icon'
 const TABS = ['Diário', 'Palavras', 'Coleções', 'Horários', 'Pessoas', 'Tags', 'Emoções', 'Sequências'] as const
 type InsightTab = typeof TABS[number]
 
-// Cria um array DENSO de todos os dias de 1º jan até hoje, preenchendo zeros
-// para dias sem escrita. Usa partes locais de data (não toISOString) para evitar
-// o bug de fuso horário UTC/BRT que pode avançar ou recuar um dia.
+// Cria um array DENSO de todos os dias do ano, preenchendo zeros para dias sem escrita.
+// Para o ano corrente o limite final é hoje; para anos anteriores é 31/dez (ano completo).
+// Usa partes locais de data (não toISOString) para evitar o bug de fuso horário UTC/BRT.
 function buildHeatmapDays(
   heatmap: HeatmapData,
   year: number,
@@ -21,11 +22,21 @@ function buildHeatmapDays(
   const days: Array<{ date: string; words: number }> = []
   // Começa em 1º de janeiro do ano
   const cur = new Date(year, 0, 1)
-  // Termina hoje (não 31/dez — evita mostrar meses futuros sem dados)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
 
-  while (cur <= today) {
+  // Ano corrente: termina hoje para não mostrar meses futuros sem dados.
+  // Ano anterior: termina em 31/dez para cobrir o calendário completo (FR-005).
+  const currentYear = new Date().getFullYear()
+  const isCurrentYear = year === currentYear
+  let end: Date
+  if (isCurrentYear) {
+    end = new Date()
+    end.setHours(0, 0, 0, 0)
+  } else {
+    // 31 de dezembro do ano selecionado
+    end = new Date(year, 11, 31)
+  }
+
+  while (cur <= end) {
     // Monta a string "YYYY-MM-DD" a partir de partes locais para não sofrer com UTC
     const y = cur.getFullYear()
     const m = String(cur.getMonth() + 1).padStart(2, '0')
@@ -38,7 +49,9 @@ function buildHeatmapDays(
   return days
 }
 
-// Calcula a sequência atual e a maior sequência de dias consecutivos escritos
+// Calcula a sequência atual e a maior sequência de dias consecutivos escritos.
+// "Sequência atual" conta regressivamente a partir do HOJE REAL — por isso só é
+// exibida quando o ano selecionado é o corrente (FR-006).
 function calcStreaks(heatmap: HeatmapData): { current: number; longest: number } {
   const dates = Object.keys(heatmap).filter(d => (heatmap[d] ?? 0) > 0).sort()
   if (!dates.length) return { current: 0, longest: 0 }
@@ -57,7 +70,7 @@ function calcStreaks(heatmap: HeatmapData): { current: number; longest: number }
     }
   }
 
-  // Sequência atual: conta para trás a partir de hoje
+  // Sequência atual: conta para trás a partir de hoje (data real, não do ano selecionado)
   const today = new Date().toISOString().slice(0, 10)
   let currentStreak = 0
   let d = new Date(today)
@@ -73,7 +86,12 @@ function calcStreaks(heatmap: HeatmapData): { current: number; longest: number }
 }
 
 export function Insights() {
-  const year = new Date().getFullYear()
+  // Ano selecionado pelo usuário — padrão: ano corrente (não persiste entre sessões, YAGNI)
+  const currentYear = new Date().getFullYear()
+  const [year, setYear] = useState(currentYear)
+  // Lista de anos disponíveis no diário (do corrente ao primeiro com registro)
+  const [years, setYears] = useState<number[]>([currentYear])
+
   const [stats, setStats] = useState<Stats | null>(null)
   const [heatmap, setHeatmap] = useState<HeatmapData>({})
   // Estatísticas de emoções do ano (aba Emoções) — Feature 006
@@ -81,7 +99,15 @@ export function Insights() {
   const [tab, setTab] = useState<InsightTab>('Diário')
   const [loading, setLoading] = useState(true)
 
+  // Carrega a lista de anos disponíveis uma única vez no mount.
+  // Default já é [currentYear] — se falhar, o seletor mostra apenas o ano corrente.
   useEffect(() => {
+    violetApi.years().then(setYears).catch(() => {})
+  }, [])
+
+  // Re-busca todos os dados sempre que o ano selecionado muda
+  useEffect(() => {
+    setLoading(true)
     Promise.all([
       violetApi.stats(year),
       violetApi.heatmap(year),
@@ -98,6 +124,10 @@ export function Insights() {
     }).catch(() => {}).finally(() => setLoading(false))
   }, [year])
 
+  // Ano corrente = true quando o selecionado é o ano atual; altera o comportamento
+  // do heatmap (FR-005) e da exibição da sequência atual (FR-006)
+  const isCurrentYear = year === currentYear
+
   if (loading) {
     return (
       <div className="page" style={{ paddingTop: 40 }}>
@@ -108,7 +138,7 @@ export function Insights() {
     )
   }
 
-  // Array denso de todos os dias de 1º jan até hoje (zeros para dias sem escrita)
+  // Array denso de todos os dias do intervalo (zeros para dias sem escrita)
   const days = buildHeatmapDays(heatmap, year)
 
   return (
@@ -116,14 +146,31 @@ export function Insights() {
       {/* ── Hero ── */}
       <div className="ins-hero">
         <div className="ins-hero-text">
-          <div className="ins-eyebrow">Análise {year}</div>
+          {/* Eyebrow com seletor de ano — Feature 005 (FR-001) */}
+          <div className="ins-eyebrow ins-year-pick">
+            ANÁLISE
+            {/* Dropdown nativo: lista todos os anos do primeiro registro até o corrente */}
+            <select
+              value={year}
+              onChange={e => setYear(Number(e.target.value))}
+              aria-label="Selecionar ano"
+            >
+              {years.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
           <h1 className="ins-h1">
             {stats?.days_written ?? 0} dias<br />escritos
           </h1>
           <p className="ins-hero-para">
             {stats?.total_words?.toLocaleString('pt-BR') ?? 0} palavras,{' '}
             {stats?.entries ?? 0} entradas,{' '}
-            sequência atual de {stats?.currentStreak ?? 0} {stats?.currentStreak === 1 ? 'dia' : 'dias'}.
+            {/* No ano corrente mostra sequência atual; em anos anteriores, a maior sequência (FR-006) */}
+            {isCurrentYear
+              ? <>sequência atual de {stats?.currentStreak ?? 0} {stats?.currentStreak === 1 ? 'dia' : 'dias'}.</>
+              : <>maior sequência de {stats?.longestStreak ?? 0} {stats?.longestStreak === 1 ? 'dia' : 'dias'}.</>
+            }
           </p>
         </div>
         <div className="ins-hero-portrait">
@@ -202,12 +249,14 @@ export function Insights() {
             </div>
           </div>
 
-          {/* Sequências */}
+          {/* Chips de sequência — "sequência atual" só aparece no ano corrente (FR-006) */}
           <div className="ins-stats-row">
-            <div className="ins-stat-chip">
-              <span className="isc-value">{stats?.currentStreak ?? 0}</span>
-              <span className="isc-label">sequência atual</span>
-            </div>
+            {isCurrentYear && (
+              <div className="ins-stat-chip">
+                <span className="isc-value">{stats?.currentStreak ?? 0}</span>
+                <span className="isc-label">sequência atual</span>
+              </div>
+            )}
             <div className="ins-stat-chip">
               <span className="isc-value">{stats?.longestStreak ?? 0}</span>
               <span className="isc-label">maior sequência</span>
@@ -323,7 +372,7 @@ export function Insights() {
 
       {tab === 'Emoções' && (
         <div className="ins-section">
-          {/* Estado vazio: nenhum registro emocional no ano */}
+          {/* Estado vazio: nenhum registro emocional no ano selecionado */}
           {(!emotionStats || emotionStats.total === 0) ? (
             <div style={{ textAlign: 'center', marginTop: 40, color: 'var(--ink-3)', fontSize: 13 }}>
               Nenhum registro emocional em {year}. Registre como você se sente na tela <em>Escrever</em>.
@@ -389,10 +438,13 @@ export function Insights() {
       {tab === 'Sequências' && (
         <div className="ins-section">
           <div className="ins-bignums">
-            <div className="ins-bignum">
-              <div className="bn-value">{stats?.currentStreak ?? 0}</div>
-              <div className="bn-label">sequência atual</div>
-            </div>
+            {/* "Sequência atual" só faz sentido no ano corrente (conta a partir do hoje real) */}
+            {isCurrentYear && (
+              <div className="ins-bignum">
+                <div className="bn-value">{stats?.currentStreak ?? 0}</div>
+                <div className="bn-label">sequência atual</div>
+              </div>
+            )}
             <div className="ins-bignum">
               <div className="bn-value">{stats?.longestStreak ?? 0}</div>
               <div className="bn-label">maior sequência</div>

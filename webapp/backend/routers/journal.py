@@ -30,6 +30,7 @@ from agents.journal.tools import (
     list_collection,
     list_dreams,
     get_stats,
+    get_available_years,
     # Feature 006 — Registro Emocional TCC
     list_emotions,
     create_emotion,
@@ -335,6 +336,21 @@ def stats_endpoint(
          words_by_month, daytime}
     """
     return get_stats(year=year)
+
+
+@router.get("/years")
+def years_endpoint(user: dict = Depends(require_user)) -> list:
+    """Listar os anos com registro no diário, do mais recente ao primeiro.
+
+    Usado para popular o seletor de ano na tela Insights. Retorna intervalo
+    contíguo do ano corrente até o ano da primeira entrada registrada.
+    Se ainda não há entradas, retorna apenas o ano corrente.
+
+    Returns:
+        Lista de inteiros em ordem decrescente, ex.: [2026, 2025].
+    """
+    # Retorna lista crua — sem campo "status", não usar _check_result
+    return get_available_years()
 
 
 # ═════════════════════════════════════════════════════════════════════════════
