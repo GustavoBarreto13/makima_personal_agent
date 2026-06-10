@@ -228,5 +228,5 @@ Use a skill `obsidian-vault` para consultar os caminhos corretos e atualizar a d
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/002-nami-financas/plan.md`.
+at `specs/006-emotion-capture-tcc/plan.md`.
 <!-- SPECKIT END -->
