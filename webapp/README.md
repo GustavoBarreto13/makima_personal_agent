@@ -1,0 +1,77 @@
+# Makima · Webapp
+
+Painel web da Makima — FastAPI + React num único container, lendo e escrevendo o mesmo PostgreSQL do bot do Telegram.
+
+## O que faz
+
+O webapp é uma interface gráfica sobre os dados que os agentes especialistas da Makima já gerenciam
+pelo Telegram. Ele **não roda nenhum modelo de linguagem**: importa as tools dos agentes direto como
+funções Python, acessa o mesmo banco PostgreSQL e apresenta tudo numa SPA com tema de personagens.
+
+Domínios disponíveis hoje:
+
+| Domínio | Rota | Personagem | Status |
+|---|---|---|---|
+| Autenticação (Google OAuth) | `/auth/*` | — | ✅ |
+| Finanças | `/nami/*` | Nami | ✅ |
+| Livros | `/books/*` | Frieren | ✅ |
+| Diário pessoal | `/journal/*` | Violet | ✅ |
+| Tarefas/Agenda (Kaguya) | — | Kaguya | não construído |
+| Painel de chat (Makima/ADK) | — | Makima | não construído |
+
+## Rodar localmente
+
+```bash
+# 1. Na raiz do repositório — inicia o backend FastAPI na porta 8080
+uvicorn webapp.backend.main:app --reload --port 8080
+
+# 2. Em outra aba, dentro de webapp/frontend/ — inicia o dev server do React na porta 5173
+cd webapp/frontend
+npm install        # só na primeira vez
+npm run dev
+```
+
+Abra `http://localhost:5173` no navegador. O Vite faz proxy de `/api` e `/auth` para o backend.
+
+> **Atenção:** há uma inconsistência nas portas — veja [Problemas conhecidos](#problemas-conhecidos).
+
+## Build de produção
+
+```bash
+# Dentro de webapp/frontend/ — gera webapp/frontend/dist/ para ser servido pelo FastAPI
+npm run build
+```
+
+Em produção o container roda apenas o uvicorn (porta 8080) e ele serve o `dist/` diretamente.
+Não é necessário o dev server do Vite.
+
+## Documentação detalhada
+
+| Documento | Conteúdo |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Arquitetura interna, fluxo de dados, autenticação, acoplamento com os agentes |
+| [docs/API.md](docs/API.md) | Referência completa de todos os endpoints REST |
+| [docs/FRONTEND.md](docs/FRONTEND.md) | Stack, mapa de rotas, shells por personagem, theming, componentes |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Dockerfile, docker-compose, variáveis de ambiente, deploy no Dokploy/VPS |
+
+## Variáveis de ambiente obrigatórias
+
+| Variável | Descrição |
+|---|---|
+| `SESSION_SECRET` | Chave de assinatura dos cookies (gerar com `secrets.token_hex(32)`) |
+| `ALLOWED_EMAIL` | Único e-mail autorizado a entrar (ex.: `gustavobarreto1304@gmail.com`) |
+| `GOOGLE_OAUTH_CLIENT_ID` | Client ID do app OAuth no GCP |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | Client Secret do app OAuth no GCP |
+| `OAUTH_REDIRECT_URL` | URL de callback (dev: `http://localhost:8080/auth/callback`) |
+| `DATABASE_URL` | DSN do PostgreSQL compartilhado (ex.: `postgresql://user:pass@host/db`) |
+
+Para detalhes e como configurar no Dokploy, veja [docs/DEPLOY.md](docs/DEPLOY.md).
+
+## Problemas conhecidos
+
+| Problema | Onde está documentado |
+|---|---|
+| Proxy do Vite aponta para porta **8000** mas o backend roda na **8080** | [docs/DEPLOY.md § Rodar localmente](docs/DEPLOY.md#rodar-localmente) |
+| Docstrings de `finances.py`/`books.py` ainda citam "BigQuery" (storage real é PostgreSQL) | [docs/ARCHITECTURE.md § Camada de dados](docs/ARCHITECTURE.md#camada-de-dados) |
+| `webapp/PLAN.md` descreve BigQuery e um `/api/chat` que não existe — é histórico | [docs/ARCHITECTURE.md § Nota sobre PLAN.md](docs/ARCHITECTURE.md#nota-sobre-planmd) |
+| Páginas de finanças legadas (`/`, `/transactions`, `/accounts`…) estão roteadas mas não linkadas na sidebar | [docs/FRONTEND.md § Rotas](docs/FRONTEND.md#rotas) |
