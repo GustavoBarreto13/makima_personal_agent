@@ -116,10 +116,36 @@ if os.path.isdir(_FRONTEND_DIST):
     if os.path.isdir(_ASSETS_DIR):
         app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
 
-    # Catch-all SPA: qualquer rota não reconhecida pela API devolve o index.html.
+    # Catch-all SPA: qualquer rota não reconhecida pela API passa por aqui.
     # O React Router no navegador assume o controle e renderiza a página correta.
     # Esta rota deve ficar APÓS todos os routers de API para não interceptá-los.
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str) -> FileResponse:
-        """Redirecionar rotas do React Router para o index.html do build."""
+        """Servir arquivo estático do dist se existir; senão, devolver o index.html (SPA).
+
+        O Vite copia a pasta public/ para a raiz do dist/ sem renomear os arquivos.
+        Isso inclui imagens de personagens como /nami.jpg, /violet.png, /frieren.png etc.
+        O FastAPI só monta /assets e /uploads como estáticos, então esses arquivos da raiz
+        do dist nunca seriam encontrados pelo servidor — retornaria index.html (HTML) no
+        lugar do binário, quebrando todos os <img> que referenciam caminhos absolutos.
+        Esta função resolve isso verificando se o caminho pedido corresponde a um arquivo
+        real antes de cair no fallback do React Router.
+        """
+        # Monta o caminho candidato dentro do dist e normaliza (resolve "..", barras duplas, etc.)
+        candidate = os.path.normpath(os.path.join(_FRONTEND_DIST, full_path))
+
+        # Segurança contra path traversal: só serve se o caminho resolvido continuar
+        # DENTRO do dist. Sem isso, um pedido como /../../etc/passwd poderia escapar
+        # para fora do dist e expor arquivos sensíveis do sistema.
+        # Usamos _FRONTEND_DIST + os.sep para evitar casar prefixos parciais de pastas irmãs
+        # (ex.: um dist chamado "dist2" não casaria com dist + "/").
+        dentro_do_dist = candidate.startswith(_FRONTEND_DIST + os.sep)
+
+        # Se o caminho é um arquivo real dentro do dist (ex.: /nami.jpg, /violet.png),
+        # devolvemos o binário com o Content-Type correto (FileResponse infere pelo nome).
+        if dentro_do_dist and os.path.isfile(candidate):
+            return FileResponse(candidate)
+
+        # Qualquer outra rota (ex.: /journal, /books, /nami) é do React Router:
+        # devolve o index.html para que o SPA inicialize e navegue para a rota correta.
         return FileResponse(os.path.join(_FRONTEND_DIST, "index.html"))
