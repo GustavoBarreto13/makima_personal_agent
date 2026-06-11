@@ -6,7 +6,7 @@ import { useState } from 'react'
 import type { Task } from '../types'
 import { Icon } from '../ui/Icons'
 import { PrioFlag } from '../ui/PrioFlag'
-import { DateChip, ProjChip, TypeGlyph } from '../ui/Chips'
+import { DateChip, ProjChip, TypeGlyph, RecurChip } from '../ui/Chips'
 
 interface TaskRowProps {
   task: Task
@@ -69,9 +69,10 @@ export function TaskRow({ task, depth = 0, showProject = false, onToggle, onOpen
         {/* descrição da subtarefa (subtarefas são ricas) */}
         {depth > 0 && task.description && <div className="kg-sub-desc">{task.description}</div>}
 
-        {(task.due_date || (showProject && task.project_name)) && (
+        {(task.due_date || task.recurrence_text || (showProject && task.project_name)) && (
           <div className="kg-row-chips">
             {task.due_date && <DateChip due_date={task.due_date} due_time={task.due_time} />}
+            {task.recurrence_text && <RecurChip text={task.recurrence_text} />}
             {showProject && task.project_name && <ProjChip name={task.project_name} />}
           </div>
         )}

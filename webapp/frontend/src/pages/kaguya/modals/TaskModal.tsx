@@ -3,9 +3,38 @@
 // (cada uma com prioridade + descrição próprias).
 
 import { useState } from 'react'
-import type { Task, Project, TaskType } from '../types'
+import type { Task, Project, TaskType, RecurrenceMode } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
+
+// Presets de recorrência expostos na UI (mapeiam para RRULE no buildRRule).
+type RecurFreq = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+const RECUR_OPTS: { v: RecurFreq; label: string }[] = [
+  { v: 'none', label: 'Não repete' }, { v: 'daily', label: 'Diária' },
+  { v: 'weekly', label: 'Semanal' }, { v: 'monthly', label: 'Mensal' }, { v: 'yearly', label: 'Anual' },
+]
+
+// Deriva o preset a partir de uma RRULE existente (para abrir o modal no estado certo).
+function rruleToFreq(rrule?: string | null): RecurFreq {
+  if (!rrule) return 'none'
+  if (rrule.includes('YEARLY')) return 'yearly'
+  if (rrule.includes('MONTHLY')) return 'monthly'
+  if (rrule.includes('WEEKLY')) return 'weekly'
+  if (rrule.includes('DAILY')) return 'daily'
+  return 'none'
+}
+
+// Monta a RRULE a partir do preset + data (semanal/mensal derivam o dia da data escolhida).
+function buildRRule(freq: RecurFreq, due: string): string | null {
+  if (freq === 'daily') return 'FREQ=DAILY'
+  if (freq === 'yearly') return 'FREQ=YEARLY'
+  if (!due) return null
+  const d = new Date(`${due}T00:00:00`)
+  // getDay(): 0=domingo..6=sábado → códigos iCal.
+  if (freq === 'weekly') return `FREQ=WEEKLY;BYDAY=${['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][d.getDay()]}`
+  if (freq === 'monthly') return `FREQ=MONTHLY;BYMONTHDAY=${d.getDate()}`
+  return null
+}
 
 interface TaskModalProps {
   mode: 'create' | 'edit'
@@ -34,17 +63,27 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
   const [type, setType] = useState<TaskType>(task?.type ?? 'task')
   const [dueDate, setDueDate] = useState(task?.due_date ?? '')
   const [dueTime, setDueTime] = useState(task?.due_time ?? '')
+  // Recorrência: preset + modo, derivados da regra existente (edição).
+  const [recurFreq, setRecurFreq] = useState<RecurFreq>(rruleToFreq(task?.recurrence?.rrule))
+  const [recurMode, setRecurMode] = useState<RecurrenceMode>(task?.recurrence?.mode ?? 'fixed')
   // Subtarefas (só editáveis quando a tarefa-pai já existe).
   const [subtasks, setSubtasks] = useState<Task[]>(task?.subtasks ?? [])
   const [newSub, setNewSub] = useState('')
   const [saving, setSaving] = useState(false)
+  const [askDelete, setAskDelete] = useState(false)   // confirmação de exclusão (escopo na recorrente)
+  // Aniversário repete todo ano automaticamente no backend — escondemos o controle manual.
+  const isRecurring = task?.recurrence?.active === true
 
-  // Salva a tarefa principal (cria ou edita).
+  // Salva a tarefa principal (cria ou edita), incluindo a recorrência.
   const save = async () => {
     if (!title.trim()) { toast('O título não pode ser vazio.', 'err'); return }
+    // Recorrência (exceto aniversário, que é automático) precisa de uma data-âncora.
+    if (type !== 'birthday' && recurFreq !== 'none' && !dueDate) {
+      toast('Recorrência precisa de uma data de vencimento.', 'err'); return
+    }
     setSaving(true)
     try {
-      const body = {
+      const base = {
         title: title.trim(),
         description: description || null,
         priority,
@@ -52,11 +91,22 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
         due_date: dueDate || null,
         due_time: dueTime || null,
       }
+      // Monta a regra a partir do preset (só fora de aniversário, que o backend faz sozinho).
+      const rrule = type !== 'birthday' && recurFreq !== 'none' ? buildRRule(recurFreq, dueDate) : null
+
       if (mode === 'create') {
-        await kaguyaApi.createTask({ ...body, project_id: projectId ?? undefined })
+        await kaguyaApi.createTask({
+          ...base,
+          project_id: projectId ?? undefined,
+          ...(rrule ? { recurrence: { rrule, mode: recurMode } } : {}),
+        })
         toast('Tarefa criada.')
       } else if (task) {
-        await kaguyaApi.updateTask(task.id, { ...body, project_id: projectId ?? undefined })
+        const upd: Parameters<typeof kaguyaApi.updateTask>[1] = { ...base, project_id: projectId ?? undefined }
+        if (rrule) upd.recurrence = { rrule, mode: recurMode }
+        // Tinha regra e o usuário escolheu "não repete" → remove (sem mexer em aniversário).
+        else if (task.recurrence && type !== 'birthday') upd.clear_recurrence = true
+        await kaguyaApi.updateTask(task.id, upd)
         toast('Tarefa atualizada.')
       }
       onSaved()
@@ -66,6 +116,26 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
     } finally {
       setSaving(false)
     }
+  }
+
+  // Encerra a série recorrente: conclui a ocorrência atual e não gera a próxima.
+  const endSeries = async () => {
+    if (!task) return
+    try {
+      await kaguyaApi.complete(task.id, true, true)   // cascade + end_series
+      toast('Série encerrada.')
+      onSaved(); onClose()
+    } catch { toast('Falha ao encerrar a série.', 'err') }
+  }
+
+  // Exclui a tarefa; numa recorrente, `scope` decide entre só esta ocorrência ou a série.
+  const doDelete = async (scope: 'this' | 'series') => {
+    if (!task) return
+    try {
+      await kaguyaApi.remove(task.id, scope)
+      toast('Tarefa excluída.')
+      onSaved(); onClose()
+    } catch { toast('Falha ao excluir.', 'err') }
   }
 
   // Adiciona uma subtarefa (exige a tarefa-pai já existir).
@@ -142,6 +212,30 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
             </div>
           </div>
 
+          {/* Recorrência — aniversário é automático (todo ano), então só mostramos a dica */}
+          {type === 'birthday' ? (
+            <div className="kg-field">
+              <span className="kg-field-label">Repetir</span>
+              <div className="kg-hint">🎂 Aniversários repetem todo ano automaticamente.</div>
+            </div>
+          ) : (
+            <div className="kg-field">
+              <span className="kg-field-label">Repetir</span>
+              <div className="kg-segment">
+                {RECUR_OPTS.map((r) => (
+                  <button key={r.v} className={`kg-seg-opt${recurFreq === r.v ? ' active' : ''}`} onClick={() => setRecurFreq(r.v)}>{r.label}</button>
+                ))}
+              </div>
+              {/* Modo: data-fixa (a âncora manda) vs contar a partir da conclusão */}
+              {recurFreq !== 'none' && (
+                <div className="kg-segment" style={{ marginTop: 6 }}>
+                  <button className={`kg-seg-opt${recurMode === 'fixed' ? ' active' : ''}`} onClick={() => setRecurMode('fixed')}>Data fixa</button>
+                  <button className={`kg-seg-opt${recurMode === 'after_completion' ? ' active' : ''}`} onClick={() => setRecurMode('after_completion')}>Após concluir</button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="kg-field">
             <span className="kg-field-label">Notas</span>
             <textarea className="kg-textarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Detalhes, links, contexto…" />
@@ -174,8 +268,36 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
         </div>
 
         <div className="kg-modal-foot">
-          <button className="kg-btn kg-btn-ghost" onClick={onClose}>Cancelar</button>
-          <button className="kg-btn kg-btn-primary" onClick={save} disabled={saving}>{saving ? 'Salvando…' : 'Salvar'}</button>
+          {/* Excluir (edição): numa recorrente, pergunta o escopo só esta / série inteira */}
+          {mode === 'edit' && task && !askDelete && (
+            <button className="kg-btn kg-btn-ghost kg-btn-danger" style={{ marginRight: 'auto' }} onClick={() => setAskDelete(true)}>
+              <Icon name="trash" size={14} /> Excluir
+            </button>
+          )}
+          {askDelete && (
+            <div className="kg-del-confirm" style={{ marginRight: 'auto' }}>
+              {isRecurring ? (
+                <>
+                  <span className="kg-hint">Excluir:</span>
+                  <button className="kg-btn kg-btn-ghost" onClick={() => doDelete('this')}>Só esta</button>
+                  <button className="kg-btn kg-btn-danger" onClick={() => doDelete('series')}>A série inteira</button>
+                </>
+              ) : (
+                <>
+                  <span className="kg-hint">Confirmar exclusão?</span>
+                  <button className="kg-btn kg-btn-danger" onClick={() => doDelete('this')}>Excluir</button>
+                </>
+              )}
+              <button className="kg-btn kg-btn-ghost" onClick={() => setAskDelete(false)}>Cancelar</button>
+            </div>
+          )}
+          {!askDelete && (
+            <>
+              {isRecurring && <button className="kg-btn kg-btn-ghost" onClick={endSeries}>Concluir série</button>}
+              <button className="kg-btn kg-btn-ghost" onClick={onClose}>Cancelar</button>
+              <button className="kg-btn kg-btn-primary" onClick={save} disabled={saving}>{saving ? 'Salvando…' : 'Salvar'}</button>
+            </>
+          )}
         </div>
       </div>
     </div>

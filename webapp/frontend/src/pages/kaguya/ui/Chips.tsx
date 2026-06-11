@@ -42,3 +42,13 @@ export function TypeGlyph({ type }: { type: string }) {
   if (type === 'birthday') return <Icon name="gift" size={12} className="kg-type-glyph" />
   return null
 }
+
+/** Chip de recorrência (ícone de loop + descrição pt-BR, ex.: "todo dia 5"). */
+export function RecurChip({ text }: { text: string }) {
+  return (
+    <span className="kg-chip kg-chip-recur">
+      <Icon name="loop" size={11} />
+      {text}
+    </span>
+  )
+}

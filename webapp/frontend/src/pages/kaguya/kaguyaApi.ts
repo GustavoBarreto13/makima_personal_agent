@@ -3,7 +3,13 @@
 // tratamento de erro já resolvidos por lib/api.ts).
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, TodayResponse } from './types'
+import type { Sidebar, Task, Column, TodayResponse, RecurrenceMode } from './types'
+
+// Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
+interface RecurrenceInput {
+  rrule: string
+  mode: RecurrenceMode
+}
 
 // Resposta padrão das mutações (as tools retornam {status, ...}).
 interface MutationResult {
@@ -15,6 +21,9 @@ interface MutationResult {
   open_subtasks?: number
   position?: number
   project_id?: number
+  // numa recorrente, complete/delete devolvem a próxima ocorrência gerada
+  generated_task_id?: number | null
+  next_due_date?: string
 }
 
 const BASE = '/api/tasks'
@@ -59,20 +68,30 @@ export const kaguyaApi = {
     due_date?: string | null
     due_time?: string | null
     description?: string | null
+    recurrence?: RecurrenceInput        // recorrência opcional na criação
   }) => api.post<MutationResult>(BASE, body),
 
   updateTask: (id: number, body: Partial<{
     title: string; description: string | null; priority: number; type: string
     due_date: string | null; due_time: string | null; project_id: number; column_id: number | null
+    recurrence: RecurrenceInput; clear_recurrence: boolean   // anexar/editar/remover regra
   }>) => api.patch<MutationResult>(`${BASE}/${id}`, body),
 
-  complete: (id: number, cascade = false) =>
-    api.post<MutationResult>(`${BASE}/${id}/complete`, { cascade }),
+  // cascade conclui subtarefas; endSeries encerra a série recorrente (não gera a próxima).
+  complete: (id: number, cascade = false, endSeries = false) =>
+    api.post<MutationResult>(`${BASE}/${id}/complete`, { cascade, end_series: endSeries }),
   reopen: (id: number) => api.post<MutationResult>(`${BASE}/${id}/reopen`, {}),
   reorder: (id: number, body: { after_id?: number; before_id?: number }) =>
     api.post<MutationResult>(`${BASE}/${id}/position`, body),
-  remove: (id: number) => api.del<MutationResult>(`${BASE}/${id}`),
+  // scope: 'this' (só esta ocorrência) | 'series' (a série inteira) — só importa em recorrentes.
+  remove: (id: number, scope: 'this' | 'series' = 'this') =>
+    api.del<MutationResult>(`${BASE}/${id}?scope=${scope}`),
   restore: (id: number) => api.post<MutationResult>(`${BASE}/${id}/restore`, {}),
+
+  // Atalhos de recorrência (o mesmo efeito de PATCH com recurrence/clear_recurrence).
+  setRecurrence: (id: number, body: RecurrenceInput) =>
+    api.post<MutationResult>(`${BASE}/${id}/recurrence`, body),
+  clearRecurrence: (id: number) => api.del<MutationResult>(`${BASE}/${id}/recurrence`),
 }
 
 export type { MutationResult }

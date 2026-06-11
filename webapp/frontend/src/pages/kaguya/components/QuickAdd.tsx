@@ -43,6 +43,8 @@ export function QuickAdd({ projects, onCreated, toast }: QuickAddProps) {
         title: parsed.title,
         project_id: proj?.id,             // undefined → Inbox no backend
         priority: parsed.priority ?? 0,
+        due_date: parsed.dueDate,         // data determinística (amanhã, sexta 17h…)
+        due_time: parsed.dueTime,
       })
       setText('')
       onCreated()
@@ -67,10 +69,11 @@ export function QuickAdd({ projects, onCreated, toast }: QuickAddProps) {
         />
       </div>
       {/* dica de tokens reconhecidos */}
-      {(parsed.projectToken || parsed.priority) && (
+      {(parsed.projectToken || parsed.priority || parsed.dueDate) && (
         <div className="kg-qa-preview">
           {parsed.projectToken && <span className="kg-chip"><Icon name="inbox" size={11} />{resolveProject(parsed.projectToken)?.name ?? `Inbox (@${parsed.projectToken}?)`}</span>}
-          {parsed.priority != null && <span className="kg-chip">Prioridade {['','baixa','média','alta'][parsed.priority]}</span>}
+          {parsed.dueDate && <span className="kg-chip"><Icon name="calendar" size={11} />{parsed.dueDate.slice(8) + '/' + parsed.dueDate.slice(5, 7)}{parsed.dueTime ? ` ${parsed.dueTime}` : ''}</span>}
+          {parsed.priority != null && <span className="kg-chip">Prioridade {['', 'baixa', 'média', 'alta'][parsed.priority]}</span>}
         </div>
       )}
     </div>
