@@ -1,1 +1,1 @@
-"""Pacote do agente Kaguya — gestor de tarefas via TickTick e agenda via Google Calendar."""
+"""Pacote do agente Kaguya — gestor de tarefas (PostgreSQL próprio) e agenda (Google Calendar)."""

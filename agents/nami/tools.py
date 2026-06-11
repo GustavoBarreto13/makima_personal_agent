@@ -13,8 +13,10 @@ import uuid     # Para gerar IDs únicos para cada transação/assinatura
 from datetime import date          # Para obter a data de hoje
 from zoneinfo import ZoneInfo      # Para trabalhar com fuso horário (horário de Brasília)
 
-# Importa os helpers PostgreSQL compartilhados — substituem o BigQuery _run_select/_run_dml
-from agents.db import run_select, run_dml
+# Importa os helpers PostgreSQL compartilhados — substituem o BigQuery _run_select/_run_dml.
+# get_conn permite transações que compartilham cursor (ex.: pagamento atômico da Kaguya:
+# completar a tarefa + lançar a despesa numa única transação).
+from agents.db import run_select, run_dml, get_conn
 
 # Fuso horário de São Paulo / Brasília — usado para garantir que as datas
 # registradas sejam no horário brasileiro, não no UTC do servidor
@@ -184,6 +186,78 @@ def _match_account(name: str) -> str | None:
 # FERRAMENTAS PÚBLICAS — chamadas pelo agente Nami via ADK
 # ─────────────────────────────────────────────────────────────────────────────
 
+def create_transaction_on_cursor(
+    cur,
+    name: str,
+    valor: float,
+    tipo: str,
+    categoria: str = "Inbox",
+    conta: str = "",
+    data: str = "",
+    notes: str = "",
+    subscription_id: str = "",
+    card_id: str = "",
+    source: str = "telegram",
+) -> dict:
+    """Insere uma transação usando um cursor já aberto (sem abrir conexão própria).
+
+    Mesma validação e SQL de ``create_transaction``, mas operando no ``cur`` recebido.
+    Permite que a Kaguya lance a despesa **na mesma transação** em que completa a tarefa
+    de pagamento (atomicidade tudo-ou-nada — FR-014). NÃO faz commit: quem chama controla.
+
+    Args:
+        cur: Cursor psycopg2 ativo (dentro de uma transação do chamador).
+        name: Descrição da transação.
+        valor: Valor em reais.
+        tipo: "Despesa" ou "Receita".
+        categoria: Categoria (deve casar com CATEGORIES).
+        conta: Conta/meio de pagamento (resolvido por nome).
+        data: Data AAAA-MM-DD (padrão: hoje).
+        notes: Observações.
+        subscription_id: Assinatura vinculada (opcional).
+        card_id: Cartão de crédito (opcional; quando dado, account_id fica NULL).
+        source: Origem do registro (ex.: "telegram", "kaguya").
+
+    Returns:
+        ``{"status": "ok", "id": <uuid>}`` ou ``{"status": "error", "message": ...}``.
+        Em caso de erro, o chamador deve abortar a transação (não commitar).
+    """
+    # Valida a categoria contra a lista canônica.
+    cat = _match_category(categoria)
+    if cat is None:
+        return {"status": "error", "message": f"Categoria inválida: '{categoria}'. Opções: {', '.join(CATEGORIES)}"}
+
+    # Resolve conta vs. cartão (mutuamente exclusivos).
+    if card_id:
+        acc = conta
+        acc_id = None
+    else:
+        acc_obj = _resolve_account(conta or "Generico")
+        if acc_obj is None:
+            return {"status": "error", "message": f"Conta inválida: '{conta}'. Use list_accounts() para ver as contas disponíveis."}
+        acc = acc_obj["name"]
+        acc_id = acc_obj["id"]
+
+    if tipo not in ("Despesa", "Receita"):
+        return {"status": "error", "message": "tipo deve ser 'Despesa' ou 'Receita'"}
+
+    tx_id = str(uuid.uuid4())
+    tx_date = data or _today()
+    sql = """
+        INSERT INTO transactions (id, name, valor, tipo, categoria, conta, account_id, card_id, data, source, notes, subscription_id, created_at, deleted)
+        VALUES (%(id)s, %(name)s, %(valor)s, %(tipo)s, %(categoria)s, %(conta)s, %(account_id)s, %(card_id)s, %(data)s, %(source)s, %(notes)s, %(subscription_id)s, NOW(), FALSE)
+    """
+    params = {
+        "id": tx_id, "name": name, "valor": float(valor), "tipo": tipo,
+        "categoria": cat, "conta": acc, "account_id": acc_id, "card_id": card_id or None,
+        "data": tx_date, "source": source, "notes": notes or None,
+        "subscription_id": subscription_id or None,
+    }
+    # Executa no cursor recebido — quem chama decide commit/rollback.
+    cur.execute(sql, params)
+    return {"status": "ok", "id": tx_id, "message": f"Transação criada: {name} R${float(valor):.2f} ({cat})"}
+
+
 def create_transaction(
     name: str,
     valor: float,
@@ -213,63 +287,21 @@ def create_transaction(
     Retorna um dicionário com "status": "ok" e o ID gerado, ou "status": "error"
     com uma mensagem descritiva se algo for inválido.
     """
-    # Valida a categoria: verifica se o texto informado corresponde a uma categoria conhecida
-    cat = _match_category(categoria)
-    if cat is None:
-        return {"status": "error", "message": f"Categoria inválida: '{categoria}'. Opções: {', '.join(CATEGORIES)}"}
-
-    # Separa o caminho: transação de cartão vs. transação de conta bancária.
-    # As duas são mutuamente exclusivas — nunca account_id e card_id populados juntos.
-    if card_id:
-        # Transação pertence ao cartão: usa o nome passado como display, account_id fica NULL
-        acc = conta  # nome do cartão para exibição (campo conta continua preenchido por legibilidade)
-        acc_id = None
-    else:
-        # Transação pertence a uma conta bancária: resolve nome → {id, name}
-        acc_obj = _resolve_account(conta or "Generico")
-        if acc_obj is None:
-            return {"status": "error", "message": f"Conta inválida: '{conta}'. Use list_accounts() para ver as contas disponíveis."}
-        acc = acc_obj["name"]
-        acc_id = acc_obj["id"]
-
-    # Valida o tipo: só aceita "Despesa" ou "Receita" — nada mais
-    if tipo not in ("Despesa", "Receita"):
-        return {"status": "error", "message": "tipo deve ser 'Despesa' ou 'Receita'"}
-
-    # Gera um ID único universal (UUID v4) para identificar esta transação
-    tx_id = str(uuid.uuid4())
-
-    # Usa a data informada ou, se não foi informada, usa a data de hoje
-    tx_date = data or _today()
-
-    # Monta a query SQL de inserção com parâmetros nomeados %(nome)s
-    # para evitar SQL injection (nunca concatenamos valores direto na string)
-    sql = """
-        INSERT INTO transactions (id, name, valor, tipo, categoria, conta, account_id, card_id, data, source, notes, subscription_id, created_at, deleted)
-        VALUES (%(id)s, %(name)s, %(valor)s, %(tipo)s, %(categoria)s, %(conta)s, %(account_id)s, %(card_id)s, %(data)s, %(source)s, %(notes)s, %(subscription_id)s, NOW(), FALSE)
-    """
-
-    # Define os valores que substituirão cada %(placeholder)s na query
-    params = {
-        "id":              tx_id,
-        "name":            name,
-        "valor":           float(valor),  # float() garante tipo numérico
-        "tipo":            tipo,
-        "categoria":       cat,           # cat já é o nome normalizado
-        "conta":           acc,           # acc já é o nome normalizado
-        "account_id":      acc_id,        # None para transações de cartão (vira NULL no banco)
-        "card_id":         card_id or None,  # None para transações de conta
-        "data":            tx_date,
-        "source":          "telegram",    # marca que veio pelo bot
-        "notes":           notes or None,
-        "subscription_id": subscription_id or None,
-    }
-
+    # Delega ao helper transacional, abrindo a própria conexão (uma transação completa).
+    # Comportamento externo inalterado: mesma validação, mesmo retorno. A diferença é só
+    # que agora a lógica de INSERT mora em create_transaction_on_cursor (reuso pela Kaguya).
     try:
-        # Executa a inserção no PostgreSQL
-        run_dml(sql, params)
-        # Retorna confirmação com o ID gerado e um resumo legível
-        return {"status": "ok", "id": tx_id, "message": f"Transação criada: {name} R${float(valor):.2f} ({cat})"}
+        with get_conn() as conn:                       # get_conn faz commit ao sair sem erro
+            with conn.cursor() as cur:
+                result = create_transaction_on_cursor(
+                    cur, name=name, valor=valor, tipo=tipo, categoria=categoria,
+                    conta=conta, data=data, notes=notes,
+                    subscription_id=subscription_id, card_id=card_id,
+                )
+                # Se a validação falhou, aborta a transação (não persiste nada).
+                if result.get("status") == "error":
+                    conn.rollback()
+                return result
     except Exception as e:
         # Captura qualquer erro do banco e retorna como mensagem amigável
         return {"status": "error", "message": str(e)}

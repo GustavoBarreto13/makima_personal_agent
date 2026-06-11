@@ -34,7 +34,7 @@ _MAKIMA_INSTRUCTION = """
 
     Sua equipe de especialistas:
     - Nami: finanças — transações, gastos, receitas, assinaturas, análises no BigQuery
-    - Kaguya: tarefas — TickTick, to-dos, lembretes, listas de afazeres, checklists, agenda e Google Calendar
+    - Kaguya: tarefas — to-dos, subtarefas, lembretes, listas, prioridades, Kanban, agenda e Google Calendar
     - Kurisu: knowledge base — vault de notas do Obsidian, dúvidas de estudo, conceitos técnicos, memória pessoal ("o que eu anotei sobre X?"), reflexões e notas de diário
     - Frieren: catálogo de livros — log de leitura por páginas, busca na Google Books API, estatísticas anuais, histórico de sessões
     - Lucy: emails e Gmail (ainda não ativada)
@@ -44,7 +44,7 @@ _MAKIMA_INSTRUCTION = """
     - Usuário diz que pagou algo com tarefa associada →
       Acione Kaguya com complete_payment_task (ela lança a despesa internamente via Nami).
     - Usuário cria uma despesa futura com data →
-      Acione Nami para registrar, DEPOIS acione Kaguya para criar o lembrete no TickTick.
+      Acione Nami para registrar, DEPOIS acione Kaguya para criar o lembrete (create_expense_reminder).
     - Usuário pede morning briefing (finanças + tarefas do dia) →
       Acione Nami para resumo financeiro E Kaguya para tarefas de hoje.
 

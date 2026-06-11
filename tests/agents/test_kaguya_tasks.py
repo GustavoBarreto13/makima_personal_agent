@@ -238,3 +238,73 @@ def test_today_lists_overdue_and_today_only(inbox_id):
     assert any(t["title"] == "ontem" for t in today["overdue"])
     everything = today["today"] + today["overdue"]
     assert not any(t["title"] == "amanhã" for t in everything)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pagamento atômico — Kaguya + Nami (SC-005)
+# ─────────────────────────────────────────────────────────────────────────────
+from agents.db import run_select  # noqa: E402
+import agents.nami.tools as nami  # noqa: E402
+
+_NAMI_SCHEMA = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "agents", "nami", "schema_pg.sql",
+)
+
+
+@pytest.fixture()
+def payment_inbox(inbox_id):
+    """Prepara o ambiente do pagamento: tabela transactions da Nami + cache de contas.
+
+    Depende de ``inbox_id`` (que já recriou as tabelas de tarefas). Aplica o schema da
+    Nami (idempotente), limpa as transações e popula o cache de contas em memória para
+    ``_resolve_account`` funcionar sem depender de leitura ao banco.
+    """
+    with open(_NAMI_SCHEMA, encoding="utf-8") as f:
+        nami_sql = f.read()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(nami_sql)
+            cur.execute("TRUNCATE transactions")
+    # Conta de teste (account_id é TEXT sem FK — qualquer id serve).
+    nami._accounts_cache = [{"id": "acc-test", "name": "Nubank"}]
+    yield inbox_id
+    nami._accounts_cache = None
+
+
+def test_payment_happy_path_completes_and_books_expense(payment_inbox):
+    """Caminho feliz: tarefa concluída E despesa lançada (ambas persistem)."""
+    from agents.kaguya.tools import complete_payment_task
+    tid = T.create_task("pagar conta de luz", project_id=payment_inbox)["id"]
+    r = complete_payment_task(tid, 180.0, "Moradia", "Nubank")
+    assert r["status"] == "ok"
+    # tarefa concluída
+    task = next(t for t in T.list_tasks(payment_inbox, include_completed=True) if t["id"] == tid)
+    assert task["completed_at"] is not None
+    # despesa lançada
+    rows = run_select("SELECT name, valor, tipo FROM transactions WHERE deleted = FALSE")
+    assert len(rows) == 1 and rows[0]["valor"] == 180.0 and rows[0]["tipo"] == "Despesa"
+
+
+def test_payment_invalid_category_rolls_back_everything(payment_inbox):
+    """Falha na despesa (categoria inválida) → tarefa segue aberta e zero despesa (SC-005)."""
+    from agents.kaguya.tools import complete_payment_task
+    tid = T.create_task("pagar x", project_id=payment_inbox)["id"]
+    r = complete_payment_task(tid, 50.0, "CategoriaInexistente", "Nubank")
+    assert r["status"] == "error"
+    # a conclusão da tarefa foi desfeita (atomicidade)
+    task = next(t for t in T.list_tasks(payment_inbox, include_completed=True) if t["id"] == tid)
+    assert task["completed_at"] is None
+    assert run_select("SELECT count(*) AS c FROM transactions")[0]["c"] == 0
+
+
+def test_payment_invalid_account_rolls_back_everything(payment_inbox):
+    """Falha na despesa (conta inexistente) → tarefa segue aberta e zero despesa (SC-005)."""
+    from agents.kaguya.tools import complete_payment_task
+    nami._accounts_cache = []  # nenhuma conta resolve
+    tid = T.create_task("pagar y", project_id=payment_inbox)["id"]
+    r = complete_payment_task(tid, 50.0, "Moradia", "Conta Fantasma")
+    assert r["status"] == "error"
+    task = next(t for t in T.list_tasks(payment_inbox, include_completed=True) if t["id"] == tid)
+    assert task["completed_at"] is None
+    assert run_select("SELECT count(*) AS c FROM transactions")[0]["c"] == 0

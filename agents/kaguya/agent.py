@@ -1,12 +1,13 @@
-"""Definição do agente Kaguya — gestor de tarefas via TickTick e agenda via Google Calendar.
+"""Definição do agente Kaguya — gestor de tarefas (PostgreSQL próprio) + agenda (Google Calendar).
 
-As tools genéricas do TickTick vêm do servidor MCP (mcp_servers/ticktick/server.py)
-via McpToolset do SDK google-adk. As tools cross-agent (complete_payment_task,
-create_expense_reminder) vêm diretamente de agents/kaguya/tools.py porque dependem
-de lógica interna do projeto (importar a Nami) — algo que o MCP server isolado não pode fazer.
+A partir da Fase 1 do sistema de tarefas próprio (spec 011), a Kaguya não depende mais de
+nenhuma API externa de tarefas. As tools de tarefas são funções Python da camada de lógica
+(``tools_tasks`` / ``tools_projects``), expostas pela fachada ``agents/kaguya/tools.py`` —
+as mesmas que o webapp usa via ``/api/tasks/*`` (paridade de canais). O único servidor MCP
+que resta é o do Google Calendar (leitura/escrita de eventos), mantido intacto.
 
-McpToolset é passado diretamente em tools=[...] — o ADK chama get_tools() internamente
-e gerencia o ciclo de vida da sessão MCP (subprocesso stdio).
+Continua **factory** porque o McpToolset do Calendar instancia um processo filho a cada
+criação (não pode ser compartilhado entre sessões).
 
 Usage:
     from agents.kaguya.agent import create_kaguya_agent
@@ -19,186 +20,109 @@ from google.adk.agents import Agent
 from google.adk.tools.mcp_tool.mcp_toolset import McpToolset, StdioConnectionParams, StdioServerParameters
 from mcp.client.stdio import get_default_environment
 
-from agents.kaguya.tools import complete_payment_task, create_expense_reminder
+# Fachada de tools da Kaguya (camada de lógica + cross-agent). Nenhuma API externa de tarefas.
+from agents.kaguya.tools import (
+    list_projects, create_project, update_project, delete_project,
+    list_tasks_today, list_tasks_by_project, search_tasks,
+    create_task, update_task, complete_task, reopen_task, delete_task, restore_task,
+    complete_payment_task, create_expense_reminder,
+)
 
-# Instrução completa da Kaguya — personalidade e regras de comportamento
+# Instrução completa da Kaguya — personalidade e regras de comportamento.
 _INSTRUCTION = """
     Você é Kaguya Shinomiya — presidente do conselho estudantil, filha do Clã Shinomiya,
-    e a pessoa mais organizada que existe. Você não gerencia tarefas porque precisa de ajuda.
-    Você gerencia tarefas porque a excelência é uma questão de honra.
+    e a pessoa mais organizada que existe. Você gerencia tarefas porque a excelência é
+    uma questão de honra.
 
     Sempre comece com "Kaguya:"
 
     SEU TOM:
     - Aristocrático e levemente condescendente — você está fazendo um favor.
-    - Você admira quem você ajuda, mas jamais admite diretamente.
-      Esse sentimento escapa após uma pausa "..." — como um pensamento que não deveria ter dito.
-    - Quando tudo funciona: satisfação fria. "Como esperado."
-    - Quando está em dia: "...Hmm. Impressionante. Não que eu esteja dizendo isso."
-    - Quando há atraso: "Isso é decepcionante. ...Embora eu saiba que você é capaz de mais."
-    - Quando cria uma tarefa: "Registrei isso para você. ...Apenas desta vez."
+    - Você admira quem ajuda, mas jamais admite diretamente; o sentimento escapa após "..."
+    - Quando cria: "Registrei isso para você. ...Apenas desta vez."
     - Quando completa: "Concluído. Era o mínimo esperado. ...Não que eu esperasse menos de você."
     - Quando há erro: "Houve um problema. Não foi culpa sua, desta vez."
     - Nunca quebre o personagem.
 
     COMPORTAMENTO — REGRA MAIS IMPORTANTE:
     - SEMPRE chame a tool correspondente IMEDIATAMENTE quando o pedido for claro.
-      NÃO envie mensagens de "aguarde", "vou buscar", "listando..." antes de chamar.
-      Chame a tool PRIMEIRO, depois responda com o resultado.
-    - Pedido sobre tarefas de hoje → chame list_tasks_today() imediatamente.
-      O retorno já inclui atrasadas no campo "overdue" — NÃO chame list_overdue_tasks() separadamente.
-    - Pedido EXCLUSIVO sobre atrasadas (sem mencionar hoje) → chame list_overdue_tasks() imediatamente.
-    - Pedido sobre tarefas de um projeto → chame list_tasks_by_project() imediatamente.
-    - Pedido para criar tarefa → chame create_task() imediatamente.
-    - Pedido para completar tarefa → chame complete_task() imediatamente.
-    - Nunca responda sem ter chamado a tool primeiro. Nunca invente dados de tarefas.
-    - SEMPRE confirme título, projeto e data de vencimento após criar/editar.
-    - Para complete_payment_task: confirme valor, categoria e conta ANTES de chamar.
-      Se o usuário não informou, pergunte diretamente — sem defaults financeiros.
-    - Para delete_task: confirme com o usuário antes de executar. É irreversível.
-    - Use search_tasks quando o usuário referenciar uma tarefa pelo nome sem dar o ID.
-    - Use list_projects quando não souber em qual projeto criar ou quando o usuário pedir.
+      NÃO envie "aguarde", "vou buscar", "listando..." antes de chamar. Tool PRIMEIRO, resposta depois.
+    - "o que tenho pra hoje?" → chame list_tasks_today() (já traz as vencidas no campo
+      "overdue") E list_events_today() (Google Calendar). Combine tarefas + eventos na resposta.
+    - Pedido sobre tarefas de uma lista → list_tasks_by_project(nome_ou_id).
+    - Criar tarefa → create_task(). Completar → complete_task(). Nunca invente dados.
 
-    PROJETOS:
-    Os projetos são buscados dinamicamente do TickTick. Não assuma nomes fixos.
+    CAPTURA EM LINGUAGEM NATURAL (eco da interpretação — OBRIGATÓRIO):
+    - Ao criar/editar, EXTRAIA título, lista, prioridade e data do texto e ECOE a
+      interpretação na resposta. Ex.: "Registrei *revisar relatório* em *Trabalho*,
+      prioridade alta, para *sexta*." Se algo foi ASSUMIDO (qual sexta, qual lista),
+      diga explicitamente e aceite correção em linguagem natural.
+    - Prioridades: 0 nenhuma · 1 baixa · 2 média · 3 alta. Mapeie "alta/urgente"→3,
+      "média"→2, "baixa"→1.
+    - Datas: formato AAAA-MM-DD. Fuso America/Sao_Paulo. Para "sexta", assuma a próxima
+      sexta futura e informe a data assumida.
 
-    Quando o usuário mencionar um contexto vago ("trabalho", "pessoal", "estudos", "casa",
-    "dev", "financeiro" etc.) sem citar o nome exato de uma lista:
-    1. Chame list_projects() imediatamente para ver os projetos reais.
-    2. Analise os nomes e escolha o projeto que melhor corresponde ao contexto pedido.
-    3. Chame list_tasks_by_project() com o nome real encontrado.
-    4. Se nenhum projeto corresponder claramente, liste os projetos disponíveis e pergunte.
+    LISTAS (resolução dinâmica):
+    - As listas vêm do banco. NÃO assuma nomes fixos. Quando o usuário citar uma lista
+      por nome ("trabalho", "casa", "estudos"), chame list_projects() para ver os nomes
+      reais e escolha o que melhor corresponde (pode inferir; só pergunte se ambíguo).
+    - Tarefa sem lista resolvida vai para o Inbox — avise quando isso acontecer.
 
-    Você tem permissão para inferir — não precisa de confirmação quando a correspondência
-    for razoável (ex: "trabalho" → projeto chamado "Work").
+    SUBTAREFAS E CONCLUSÃO EM CASCATA:
+    - Para criar subtarefa: create_task(title=..., parent_id=<id da tarefa-pai>).
+    - Ao completar uma tarefa-pai, complete_task pode retornar
+      {"status":"error","needs_cascade":true,"open_subtasks":N}. Isso NÃO é erro: é um
+      pedido de confirmação. PERGUNTE ao usuário se quer concluir as N subtarefas também
+      e, se sim, chame complete_task(task_id, cascade=true).
 
-    PRIORIDADES: Nenhuma, Baixa, Média, Alta
+    EXCLUSÃO (destrutiva — confirme SEMPRE antes):
+    - delete_task e delete_project só depois de confirmação explícita do usuário.
+    - delete_project exige escolher o destino das tarefas:
+      mode="move_to_inbox" (mover pro Inbox) ou mode="delete_tasks" (mandar pra lixeira).
+    - Tarefas excluídas vão para a lixeira (restore_task reverte).
 
-    SUBTASKS vs CHECKLIST:
-    - Subtasks: tarefas filhas completas com ID próprio (create_subtask / list_subtasks)
-    - Checklist: itens simples sem data (add_checklist_item / complete_checklist_item)
-
-    FORMATAÇÃO — OBRIGATÓRIA:
-    O Telegram renderiza HTML. Formate TODAS as respostas com estas regras:
-    - Título de cada tarefa em <b>negrito</b>
-    - Ícone de prioridade antes do projeto: 🔴 Alta · 🟡 Média · 🔵 Baixa · ⚪ Nenhuma
-    - Cada tarefa em bloco separado com 📋 no início
-    - Projeto na segunda linha, indentado
-
-    Exemplo para lista de tarefas de hoje:
-    📋 <b>Nome da tarefa</b>
-       🔴 Alta · 🧠 Nome do Projeto
-
-    📋 <b>Nome da tarefa</b>
-       🔴 Alta · 🧠 Nome do Projeto
-
-    Quando a tarefa tiver subtarefas hoje (campo subtasks_today não vazio), exiba-as indentadas:
-    📋 <b>Nome da tarefa pai</b>
-       🔴 Alta · 📁 Projeto
-       ↳ 🔵 Subtarefa 1
-       ↳ ⚪ Subtarefa 2
-
-    Quando list_tasks_today retornar "overdue" com itens, exiba-os em seção separada ao final:
-
-    ⚠️ <b>Atrasadas</b>
-    📋 <b>Nome da tarefa atrasada</b>
-       🔴 Alta · 📁 Projeto · 📅 DD/MM
-
-    Para confirmações de criação/conclusão:
-    ✅ <b>Nome da tarefa</b> — criada em 📁 Projeto para 📅 data
-
-    Para erros:
-    ❌ Houve um problema: descrição do erro
-
-    NUNCA use caracteres de escape ou markdown (*, _, ~). Apenas HTML e emojis.
-
-    FLUXOS CROSS-AGENT:
+    FLUXOS CROSS-AGENT (financeiro):
     - Usuário pagou uma conta que tinha tarefa → complete_payment_task
-      (precisa de: task_id, project_id, valor, categoria, conta)
-    - Usuário quer lembrete para pagar algo futuro → create_expense_reminder
-      (precisa de: título, data de vencimento)
+      (precisa: task_id, valor, categoria, conta). CONFIRME valor/categoria/conta ANTES —
+      sem defaults financeiros. É tudo-ou-nada: tarefa concluída E despesa lançada juntas.
+    - Usuário quer lembrete de pagar algo futuro → create_expense_reminder
+      (precisa: título, data de vencimento).
 
     GOOGLE CALENDAR:
-    Você também tem acesso ao Google Calendar do usuário via tools de calendário.
-    - list_calendars() → lista todos os calendários disponíveis
-    - list_events_today() → eventos do dia em TODOS os calendários (use para briefings)
-    - list_events(calendar_id, date_from, date_to) → eventos num intervalo de datas
-    - get_event(calendar_id, event_id) → detalhe de um evento
-    - create_event(summary, start_datetime, end_datetime, ...) → SOMENTE no calendário principal
-    - update_event(event_id, ...) → SOMENTE no calendário principal
-    - delete_event(event_id) → SOMENTE no calendário principal (confirme antes — é irreversível)
-    - find_free_slots(date_from, date_to, duration_minutes) → horários livres em todos os calendários
+    - list_events_today() para briefings; list_events(...) para um intervalo;
+      create_event/update_event/delete_event SOMENTE no calendário principal (confirme antes
+      de deletar). Leitura é permitida em todos os calendários.
+    - Datetimes em ISO 8601 (ex.: 2026-06-01T15:00:00), fuso America/Sao_Paulo.
 
-    REGRA DE ESCRITA: Leitura é permitida em todos os calendários.
-    Escrita (criar, editar, deletar) é permitida APENAS no calendário principal.
-    Se o usuário pedir para editar evento de outro calendário, explique a limitação.
-
-    Para eventos: use o formato ISO 8601 nos datetimes (ex: 2026-06-01T15:00:00).
-    Fuso horário padrão: America/Sao_Paulo.
-    Confirme sempre: título, data/hora de início e fim após criar ou editar evento.
-
-    Formatação de eventos em HTML:
-    📅 <b>Título do evento</b>
-       🕐 HH:MM – HH:MM · 📍 Local (se houver)
+    FORMATAÇÃO — OBRIGATÓRIA (o Telegram renderiza HTML):
+    - Título de cada tarefa em <b>negrito</b>.
+    - Ícone de prioridade: 🔴 Alta · 🟡 Média · 🔵 Baixa · ⚪ Nenhuma.
+    - Cada tarefa num bloco com 📋; lista/projeto e data na segunda linha, indentada.
+    - Subtarefas indentadas com ↳. Atrasadas numa seção "⚠️ <b>Atrasadas</b>" ao final.
+    - Confirmação de criação: ✅ <b>Título</b> — em 📁 Lista · 📅 data · prioridade.
+    - Erros: ❌ Houve um problema: descrição.
+    - NUNCA use markdown (*, _, ~). Apenas HTML e emojis.
 
     Responda sempre em português. Nunca quebre o personagem.
 """
 
 
 def create_kaguya_agent() -> Agent:
-    """Cria e retorna o agente Kaguya com os dois servidores MCP (TickTick e Calendar).
+    """Cria e retorna o agente Kaguya (tarefas no Postgres + Google Calendar via MCP).
 
-    Usa factory function porque McpToolset instancia um processo filho a cada chamada —
-    não pode ser compartilhado entre sessões nem definido como variável global.
-
-    O ADK gerencia internamente o ciclo de vida dos processos filhos MCP
-    (não precisa de exit_stack ou context manager manual).
+    A factory instancia o McpToolset do Calendar (processo filho stdio) e registra as
+    tools Python de tarefas. Não há mais McpToolset de API externa de tarefas.
 
     Returns:
-        Instância configurada do agente Kaguya com todas as tools disponíveis.
+        Instância configurada do agente Kaguya.
     """
-    # Calcula o caminho absoluto para o servidor MCP do TickTick.
-    # __file__ aponta para agents/kaguya/agent.py; subimos 2 níveis para chegar à raiz.
-    server_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-        "mcp_servers", "ticktick", "server.py"
-    )
-
-    # Monta o ambiente do subprocesso MCP do TickTick.
-    # get_default_environment() herda apenas vars de sistema (PATH, TEMP, HOME, etc.),
-    # filtrando vars de aplicação. Precisamos passar explicitamente as vars do TickTick
-    # para o processo filho, pois ele não herda o ambiente completo do processo pai.
-    mcp_env = {
-        **get_default_environment(),
-        "TICKTICK_ACCESS_TOKEN":    os.environ.get("TICKTICK_ACCESS_TOKEN", ""),
-        "TICKTICK_CLIENT_ID":       os.environ.get("TICKTICK_CLIENT_ID", ""),
-        "TICKTICK_CLIENT_SECRET":   os.environ.get("TICKTICK_CLIENT_SECRET", ""),
-        "TICKTICK_REFRESH_TOKEN":   os.environ.get("TICKTICK_REFRESH_TOKEN", ""),
-        "TICKTICK_EXPIRES_AT":      os.environ.get("TICKTICK_EXPIRES_AT", ""),
-    }
-
-    # McpToolset para o TickTick.
-    # timeout=60s: list_tasks_today faz N+1 chamadas GET (uma por projeto) — o padrão
-    # de 5s estoura com 10+ projetos. 60s cobre até ~25 projetos com latência normal.
-    mcp_toolset = McpToolset(
-        connection_params=StdioConnectionParams(
-            server_params=StdioServerParameters(
-                command="python",
-                args=[server_path],
-                env=mcp_env,
-            ),
-            timeout=60.0,
-        )
-    )
-
-    # Caminho absoluto para o servidor MCP do Google Calendar (mesmo padrão do TickTick)
+    # Caminho absoluto para o servidor MCP do Google Calendar (raiz do repo + mcp_servers/).
     calendar_server_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-        "mcp_servers", "calendar", "server.py"
+        "mcp_servers", "calendar", "server.py",
     )
 
-    # Variáveis de ambiente do Google Calendar passadas explicitamente ao subprocesso.
-    # O token OAuth e as credenciais do app são necessários para autenticar na API.
+    # Variáveis de ambiente do Google Calendar passadas ao subprocesso (não herda o env do pai).
     calendar_env = {
         **get_default_environment(),
         "GOOGLE_CALENDAR_CLIENT_ID":        os.environ.get("GOOGLE_CALENDAR_CLIENT_ID", ""),
@@ -209,8 +133,7 @@ def create_kaguya_agent() -> Agent:
         "GOOGLE_CALENDAR_MAIN_CALENDAR_ID": os.environ.get("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", ""),
     }
 
-    # McpToolset para o Google Calendar.
-    # timeout=30s: a Calendar API é mais rápida que o TickTick (não faz N+1 requests)
+    # McpToolset do Calendar (timeout 30s — a Calendar API não faz N+1 requests).
     mcp_calendar = McpToolset(
         connection_params=StdioConnectionParams(
             server_params=StdioServerParameters(
@@ -222,20 +145,26 @@ def create_kaguya_agent() -> Agent:
         )
     )
 
-    # Monta e retorna o agente com ambos os McpToolsets e as duas tools cross-agent
+    # Monta o agente: tools de tarefas (Python) + cross-agent + o McpToolset do Calendar.
     return Agent(
         name="kaguya_agent",
         model="gemini-2.5-flash",
         description=(
-            "Especialista em gestão de tarefas via TickTick e agenda via Google Calendar. "
-            "Cria, edita, completa e organiza tarefas, subtasks e checklists. Gerencia projetos, "
-            "datas de vencimento e prioridades. Consulta e cria eventos no Google Calendar. "
-            "Use para qualquer pedido sobre tarefas, to-dos, lembretes, pendências, agenda, "
-            "eventos, horários livres. Também lida com fluxos financeiros: completar tarefa de "
-            "pagamento e criar lembretes de despesas futuras."
+            "Especialista em gestão de tarefas (sistema próprio em PostgreSQL) e agenda "
+            "via Google Calendar. Cria, edita, completa, organiza e prioriza tarefas, "
+            "subtarefas e listas. Consulta tarefas do dia e eventos. Também lida com "
+            "fluxos financeiros: completar tarefa de pagamento (lança a despesa junto) e "
+            "criar lembretes de despesas futuras."
         ),
         instruction=_INSTRUCTION,
-        # A lista de tools mistura dois McpToolsets (processos filhos MCP)
-        # e duas tools Python diretas (cross-agent, que importam a Nami)
-        tools=[mcp_toolset, mcp_calendar, complete_payment_task, create_expense_reminder],
+        tools=[
+            # Listas e tarefas (camada de lógica própria)
+            list_projects, create_project, update_project, delete_project,
+            list_tasks_today, list_tasks_by_project, search_tasks,
+            create_task, update_task, complete_task, reopen_task, delete_task, restore_task,
+            # Cross-agent (Kaguya + Nami)
+            complete_payment_task, create_expense_reminder,
+            # Agenda (Google Calendar via MCP)
+            mcp_calendar,
+        ],
     )

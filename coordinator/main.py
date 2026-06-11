@@ -520,9 +520,9 @@ def _classify_domain(text: str) -> str:
     if any(w in t for w in ["livro", "página", "leitura", "ler",
                              "isbn", "autor", "frieren"]):
         return "livros"
-    # Tarefas e agenda: TickTick, Google Calendar, lembretes e eventos
+    # Tarefas e agenda: sistema próprio de tarefas, Google Calendar, lembretes e eventos
     if any(w in t for w in ["tarefa", "task", "agenda", "evento",
-                             "reunião", "lembrete", "ticktick", "calendário", "prazo"]):
+                             "reunião", "lembrete", "kanban", "subtarefa", "calendário", "prazo"]):
         return "tarefas"
     # Knowledge base: notas do Obsidian e estudos via Kurisu
     if any(w in t for w in ["nota", "vault", "obsidian", "anotação", "estudo", "kurisu"]):

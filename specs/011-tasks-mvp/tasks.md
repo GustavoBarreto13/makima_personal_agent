@@ -71,10 +71,10 @@ desligado; quickstart V6 — `grep -ri ticktick` limpo no runtime.
 
 ### Implementation for User Story 2
 
-- [ ] T015 [US2] Reescrever `agents/kaguya/agent.py`: remover o `McpToolset` do TickTick da factory (manter o do Calendar intacto), registrar as tools de T003/T004 conforme `contracts/kaguya-tools.md`, e reescrever `_INSTRUCTION` — captura NLP em português com **eco da interpretação** (projeto/data/prioridade assumidos), confirmação obrigatória antes de `delete_task`/`delete_project`, fluxo `needs_cascade`, "o que tenho pra hoje?" = `list_tasks_today` + `list_events_today` (Calendar), personalidade e formatação HTML preservadas
-- [ ] T016 [US2] Atualizar `agents/kaguya/tools.py` como fachada: re-exportar as tools novas; remover helpers HTTP do TickTick (token cache, requests diretos)
-- [ ] T017 [US2] Atualizar `_MAKIMA_INSTRUCTION` em `coordinator/agent.py`: remover menções a TickTick, manter roteamento dos fluxos duplos (pagou → Kaguya; despesa futura → Nami + Kaguya; briefing → Nami + Kaguya)
-- [ ] T018 [US2] Remover `mcp_servers/ticktick/` do repo (git guarda histórico — research D7) e conferir que nada importa dele (`grep -ri ticktick` em `coordinator/ agents/ webapp/backend/ mcp_servers/` retorna vazio)
+- [x] T015 [US2] Reescrever `agents/kaguya/agent.py`: remover o `McpToolset` do TickTick da factory (manter o do Calendar intacto), registrar as tools de T003/T004 conforme `contracts/kaguya-tools.md`, e reescrever `_INSTRUCTION` — captura NLP em português com **eco da interpretação** (projeto/data/prioridade assumidos), confirmação obrigatória antes de `delete_task`/`delete_project`, fluxo `needs_cascade`, "o que tenho pra hoje?" = `list_tasks_today` + `list_events_today` (Calendar), personalidade e formatação HTML preservadas
+- [x] T016 [US2] Atualizar `agents/kaguya/tools.py` como fachada: re-exportar as tools novas; remover helpers HTTP do TickTick (token cache, requests diretos)
+- [x] T017 [US2] Atualizar `_MAKIMA_INSTRUCTION` em `coordinator/agent.py`: remover menções a TickTick, manter roteamento dos fluxos duplos (pagou → Kaguya; despesa futura → Nami + Kaguya; briefing → Nami + Kaguya)
+- [x] T018 [US2] Remover `mcp_servers/ticktick/` do repo (git guarda histórico — research D7) e conferir que nada importa dele (`grep -ri ticktick` em `coordinator/ agents/ webapp/backend/ mcp_servers/` retorna vazio)
 - [ ] T019 [US2] Validar quickstart V2 (Telegram sozinho) e V6 (zero resíduo TickTick; bot sobe sem `TICKTICK_*`)
 
 **Checkpoint**: os dois canais P1 vivos e independentes — paridade auditável (quickstart V3).
@@ -122,9 +122,9 @@ completa, lista e Telegram refletem.
 
 ### Implementation for User Story 5
 
-- [ ] T026 [US5] Adicionar helper `create_transaction_on_cursor(cur, ...)` em `agents/nami/tools.py` (research D3): mesma validação/SQL da tool pública, operando no cursor recebido; refatorar a tool pública para delegar a ele (comportamento externo inalterado — rodar os testes existentes da Nami se houver)
-- [ ] T027 [US5] Reescrever `complete_payment_task` e `create_expense_reminder` em `agents/kaguya/tools.py` conforme `contracts/kaguya-tools.md`: transação única (`get_conn()` + cursor compartilhado), some o status `partial`; reminder cria tarefa no Postgres (projeto "Finanças" por fuzzy, prioridade alta)
-- [ ] T028 [US5] Adicionar a `tests/agents/test_kaguya_tasks.py` os casos de atomicidade: falha no lançamento → tarefa segue aberta; falha na conclusão → zero despesa (SC-005); validar quickstart V5 no Telegram
+- [x] T026 [US5] Adicionar helper `create_transaction_on_cursor(cur, ...)` em `agents/nami/tools.py` (research D3): mesma validação/SQL da tool pública, operando no cursor recebido; refatorar a tool pública para delegar a ele (comportamento externo inalterado — rodar os testes existentes da Nami se houver)
+- [x] T027 [US5] Reescrever `complete_payment_task` e `create_expense_reminder` em `agents/kaguya/tools.py` conforme `contracts/kaguya-tools.md`: transação única (`get_conn()` + cursor compartilhado), some o status `partial`; reminder cria tarefa no Postgres (projeto "Finanças" por fuzzy, prioridade alta)
+- [x] T028 [US5] Adicionar a `tests/agents/test_kaguya_tasks.py` os casos de atomicidade: falha no lançamento → tarefa segue aberta; falha na conclusão → zero despesa (SC-005); validar quickstart V5 no Telegram
 
 **Checkpoint**: todas as user stories funcionais.
 
