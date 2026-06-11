@@ -21,7 +21,7 @@ from agents.db import get_conn
 # ── Re-exporta a camada de lógica (o agente registra estes nomes) ──
 from agents.kaguya.tools_tasks import (  # noqa: F401
     list_tasks, list_tasks_today, search_tasks, create_task, update_task,
-    complete_task, reopen_task, delete_task, restore_task,
+    complete_task, reopen_task, delete_task, restore_task, clear_recurrence,
 )
 from agents.kaguya.tools_projects import (  # noqa: F401
     get_sidebar, create_project, update_project, delete_project,
@@ -62,6 +62,49 @@ def list_tasks_by_project(project: Union[int, str], include_completed: bool = Fa
     if pid is None:
         return {"status": "error", "message": f"Lista '{project}' não encontrada."}
     return list_tasks(pid, include_completed)
+
+
+def set_task_recurrence(
+    task_id: int,
+    freq: str,
+    interval: int = 1,
+    weekday: str = "",
+    monthday: int = 0,
+    mode: str = "fixed",
+) -> dict:
+    """Define a recorrência de uma tarefa a partir de uma intenção simples (sem RRULE crua).
+
+    A Kaguya descreve a recorrência em linguagem natural; esta tool traduz para a regra
+    técnica. A tarefa **precisa ter data de vencimento** (a âncora da série).
+
+    Args:
+        task_id: Id da tarefa (tarefa-pai).
+        freq: ``DAILY`` | ``WEEKLY`` | ``MONTHLY`` | ``YEARLY``.
+        interval: A cada quantos períodos (ex.: ``freq=DAILY, interval=3`` = a cada 3 dias).
+        weekday: Para ``WEEKLY``, o dia em código (``MO`` seg, ``TU`` ter, ``WE`` qua,
+            ``TH`` qui, ``FR`` sex, ``SA`` sáb, ``SU`` dom). Vazio = qualquer.
+        monthday: Para ``MONTHLY``, o dia do mês (1–31). 0 = sem dia fixo.
+        mode: ``fixed`` (data-fixa, padrão) ou ``after_completion`` (conta da conclusão real,
+            ex.: "a cada 3 dias depois que eu fizer").
+
+    Returns:
+        ``{"status": "ok", "recurrence_text": "todo dia 5"}`` ou erro em português.
+    """
+    # Imports locais: a regra de montagem vive no motor; a persistência na camada de lógica.
+    from agents.kaguya.recurrence import build_rrule, describe_rrule
+    from agents.kaguya.tools_tasks import set_recurrence
+
+    try:
+        # Converte 0/"" para None (os opcionais que o build_rrule entende como "não usar").
+        rrule = build_rrule(freq, interval=interval, weekday=weekday or None, monthday=monthday or None)
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+
+    result = set_recurrence(task_id, rrule, mode)
+    if result.get("status") == "ok":
+        # Devolve a descrição para a Kaguya ecoar ("Recorrência: todo dia 5").
+        result["recurrence_text"] = describe_rrule(rrule)
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────

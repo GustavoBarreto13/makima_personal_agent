@@ -25,6 +25,7 @@ from agents.kaguya.tools import (
     list_projects, create_project, update_project, delete_project,
     list_tasks_today, list_tasks_by_project, search_tasks,
     create_task, update_task, complete_task, reopen_task, delete_task, restore_task,
+    set_task_recurrence, clear_recurrence,
     complete_payment_task, create_expense_reminder,
 )
 
@@ -75,8 +76,30 @@ _INSTRUCTION = """
       pedido de confirmação. PERGUNTE ao usuário se quer concluir as N subtarefas também
       e, se sim, chame complete_task(task_id, cascade=true).
 
+    RECORRÊNCIA (tarefas que se repetem):
+    - A tarefa precisa de DATA (a âncora). Crie a tarefa com create_task(...) e, com o id
+      retornado, chame set_task_recurrence(task_id, freq, ...). Exemplos de intenção:
+        · "todo dia 5" → set_task_recurrence(id, freq="MONTHLY", monthday=5)
+        · "toda segunda" → set_task_recurrence(id, freq="WEEKLY", weekday="MO")
+        · "todo dia" → set_task_recurrence(id, freq="DAILY")
+        · "a cada 3 dias, contando de quando eu fizer" → freq="DAILY", interval=3, mode="after_completion"
+        · "todo ano" → freq="YEARLY"
+      Dias da semana: MO seg · TU ter · WE qua · TH qui · FR sex · SA sáb · SU dom.
+    - ECOE a recorrência: a tool devolve "recurrence_text" (ex.: "todo dia 5"). Diga ao
+      usuário ("Recorrência: todo dia 5, a partir de <data>").
+    - ANIVERSÁRIO: para "aniversário de fulano em DD/MM", use
+      create_task(type="birthday", due_date=...) — a recorrência anual é automática (não
+      precisa de set_task_recurrence).
+    - Ao COMPLETAR uma recorrente, a próxima ocorrência nasce sozinha (a resposta traz
+      "next_due_date"). Avise a próxima data. Se o usuário quer ENCERRAR a série ("não
+      preciso mais disso"), confirme e chame complete_task(task_id, end_series=true).
+    - Para remover a repetição mas manter a tarefa: clear_recurrence(task_id).
+
     EXCLUSÃO (destrutiva — confirme SEMPRE antes):
     - delete_task e delete_project só depois de confirmação explícita do usuário.
+    - Se a tarefa for RECORRENTE, pergunte o ESCOPO antes: "só esta ocorrência ou a série
+      inteira?" → delete_task(task_id, scope="this") (gera a próxima) ou
+      delete_task(task_id, scope="series") (encerra a série).
     - delete_project exige escolher o destino das tarefas:
       mode="move_to_inbox" (mover pro Inbox) ou mode="delete_tasks" (mandar pra lixeira).
     - Tarefas excluídas vão para a lixeira (restore_task reverte).
@@ -162,6 +185,8 @@ def create_kaguya_agent() -> Agent:
             list_projects, create_project, update_project, delete_project,
             list_tasks_today, list_tasks_by_project, search_tasks,
             create_task, update_task, complete_task, reopen_task, delete_task, restore_task,
+            # Recorrência (Fase 2)
+            set_task_recurrence, clear_recurrence,
             # Cross-agent (Kaguya + Nami)
             complete_payment_task, create_expense_reminder,
             # Agenda (Google Calendar via MCP)

@@ -31,6 +31,7 @@ from agents.kaguya.tools_tasks import (
     list_tasks, list_tasks_today, search_tasks, list_trash,
     create_task, update_task, complete_task, reopen_task,
     reorder_task, delete_task, restore_task,
+    set_recurrence, clear_recurrence,
 )
 
 router = APIRouter()
@@ -100,6 +101,12 @@ class UpdateColumnBody(BaseModel):
     is_done_column: Optional[bool] = None
 
 
+class RecurrenceBody(BaseModel):
+    """Regra de recorrência: ``rrule`` (RFC 5545) + ``mode`` (fixed/after_completion)."""
+    rrule: str
+    mode: str = "fixed"
+
+
 class CreateTaskBody(BaseModel):
     """Body de criação de tarefa (o webapp manda ``project_id``; sem ele → Inbox)."""
     title: str
@@ -110,6 +117,7 @@ class CreateTaskBody(BaseModel):
     due_date: Optional[str] = None
     due_time: Optional[str] = None
     description: Optional[str] = None
+    recurrence: Optional[RecurrenceBody] = None  # nested → model_dump vira dict para a tool
 
 
 class UpdateTaskBody(BaseModel):
@@ -122,11 +130,20 @@ class UpdateTaskBody(BaseModel):
     due_time: Optional[str] = None
     project_id: Optional[int] = None
     column_id: Optional[int] = None
+    recurrence: Optional[RecurrenceBody] = None  # anexar/editar a regra
+    clear_recurrence: bool = False               # remover a regra
 
 
 class CompleteTaskBody(BaseModel):
-    """Body de conclusão (``cascade`` para concluir subtarefas abertas junto)."""
+    """Body de conclusão (``cascade`` concluir subtarefas; ``end_series`` encerra a recorrência)."""
     cascade: bool = False
+    end_series: bool = False
+
+
+class SetRecurrenceBody(BaseModel):
+    """Body do atalho de definição de recorrência."""
+    rrule: str
+    mode: str = "fixed"
 
 
 class ReorderBody(BaseModel):
@@ -263,10 +280,10 @@ def complete_task_route(
     pedido de confirmação. Retornamos 200 com o sinal para o front perguntar e repetir
     com ``cascade=true``. Erro real (tarefa inexistente) vira 400 via ``_check_result``.
     """
-    result = complete_task(task_id, body.cascade)
+    result = complete_task(task_id, body.cascade, body.end_series)
     if result.get("needs_cascade"):
         return result  # 200 — o front confirma e repete com cascade=true
-    return _check_result(result)
+    return _check_result(result)  # numa recorrente, inclui generated_task_id/next_due_date
 
 
 @router.post("/{task_id}/reopen")
@@ -282,12 +299,35 @@ def reorder_task_route(task_id: int, body: ReorderBody, user: dict = Depends(req
 
 
 @router.delete("/{task_id}")
-def delete_task_route(task_id: int, user: dict = Depends(require_user)) -> dict:
-    """Soft delete de uma tarefa (vai para a lixeira)."""
-    return _check_result(delete_task(task_id))
+def delete_task_route(
+    task_id: int,
+    scope: str = Query("this", description="this (só esta ocorrência) | series (a série inteira)"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Soft delete de uma tarefa (vai para a lixeira).
+
+    Numa recorrente, ``scope=this`` exclui só esta ocorrência e gera a próxima;
+    ``scope=series`` exclui esta e desativa a regra (sem gerar).
+    """
+    return _check_result(delete_task(task_id, scope))
 
 
 @router.post("/{task_id}/restore")
 def restore_task_route(task_id: int, user: dict = Depends(require_user)) -> dict:
     """Restaura uma tarefa da lixeira."""
     return _check_result(restore_task(task_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Recorrência (atalhos explícitos; o mesmo efeito de PATCH com recurrence)
+# ─────────────────────────────────────────────────────────────────────────────
+@router.post("/{task_id}/recurrence")
+def set_recurrence_route(task_id: int, body: SetRecurrenceBody, user: dict = Depends(require_user)) -> dict:
+    """Anexa/substitui a regra de recorrência de uma tarefa (exige ``due_date``)."""
+    return _check_result(set_recurrence(task_id, body.rrule, body.mode))
+
+
+@router.delete("/{task_id}/recurrence")
+def clear_recurrence_route(task_id: int, user: dict = Depends(require_user)) -> dict:
+    """Remove a regra de recorrência (a tarefa volta a ser simples)."""
+    return _check_result(clear_recurrence(task_id))
