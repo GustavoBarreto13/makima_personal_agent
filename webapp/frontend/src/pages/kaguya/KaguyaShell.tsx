@@ -14,6 +14,7 @@ import { Toast } from './components/Toast'
 import { TweaksPanel } from './TweaksPanel'
 import { TaskModal } from './modals/TaskModal'
 import { ProjectModal } from './modals/ProjectModal'
+import { GroupModal } from './modals/GroupModal'
 import { TodayScreen } from './screens/TodayScreen'
 import { ListScreen } from './screens/ListScreen'
 import { KanbanScreen } from './screens/KanbanScreen'
@@ -53,6 +54,7 @@ export function KaguyaShell() {
   const [tweaksOpen, setTweaksOpen] = useState(false)
   const [taskModal, setTaskModal] = useState<{ mode: 'create' | 'edit'; task?: Task; projectId?: number | null } | null>(null)
   const [projectModal, setProjectModal] = useState<{ mode: 'create' | 'edit'; project?: import('./types').Project } | null>(null)
+  const [groupModal, setGroupModal] = useState<{ mode: 'create' | 'edit'; group?: import('./types').Group } | null>(null)
   const [toast, setToast] = useState<{ msg: string; kind?: 'ok' | 'err' } | null>(null)
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState<Task[] | null>(null)
@@ -153,6 +155,8 @@ export function KaguyaShell() {
           onNavigate={navigate}
           onNewTask={openNewTask}
           onNewProject={() => setProjectModal({ mode: 'create' })}
+          onNewGroup={() => setGroupModal({ mode: 'create' })}
+          onEditGroup={(group) => setGroupModal({ mode: 'edit', group })}
           onOpenTweaks={() => setTweaksOpen(true)}
         />
 
@@ -209,6 +213,15 @@ export function KaguyaShell() {
           groups={sidebar?.groups ?? []}
           onClose={() => setProjectModal(null)}
           onSaved={() => { afterSave(); if (projectModal.mode === 'edit') navigate('today') }}
+          toast={showToast}
+        />
+      )}
+      {groupModal && (
+        <GroupModal
+          mode={groupModal.mode}
+          group={groupModal.group}
+          onClose={() => setGroupModal(null)}
+          onSaved={afterSave}
           toast={showToast}
         />
       )}
