@@ -2,7 +2,7 @@
 // marca + botão "Nova tarefa" + Views fixas + Smart lists (Fase 2) +
 // "Listas" (grupos → listas, Inbox no topo) + Hábitos + "Voltar à Makima".
 
-import type { Sidebar, KaguyaView } from '../types'
+import type { Sidebar, KaguyaView, Group } from '../types'
 import { Icon } from '../ui/Icons'
 import type { IconName } from '../ui/Icons'
 
@@ -13,6 +13,8 @@ interface SidebarNavProps {
   onNavigate: (view: KaguyaView, param?: number | null) => void
   onNewTask: () => void
   onNewProject: () => void
+  onNewGroup: () => void          // abre o modal de criar grupo
+  onEditGroup: (group: Group) => void  // abre o modal de renomear/excluir grupo
   onOpenTweaks: () => void
 }
 
@@ -24,7 +26,7 @@ const FIXED_VIEWS: { view: KaguyaView; icon: IconName; label: string }[] = [
   { view: 'eisenhower', icon: 'grid', label: 'Eisenhower' },
 ]
 
-export function SidebarNav({ sidebar, view, param, onNavigate, onNewTask, onNewProject, onOpenTweaks }: SidebarNavProps) {
+export function SidebarNav({ sidebar, view, param, onNavigate, onNewTask, onNewProject, onNewGroup, onEditGroup, onOpenTweaks }: SidebarNavProps) {
   const projects = sidebar?.projects ?? []
   const groups = sidebar?.groups ?? []
   const inbox = projects.find((p) => p.is_inbox)
@@ -69,19 +71,26 @@ export function SidebarNav({ sidebar, view, param, onNavigate, onNewTask, onNewP
         </button>
       ))}
 
-      {/* Listas (grupos → listas; Inbox no topo) */}
+      {/* Listas (grupos → listas; Inbox no topo). Dois atalhos no cabeçalho: novo grupo e nova lista.
+          O cluster fica num <div> (não <span>) porque o modo estreito esconde os <span> do cabeçalho. */}
       <div className="kg-nav-label">
         <span>Listas</span>
-        <button onClick={onNewProject} aria-label="Nova lista"><Icon name="plus" size={13} /></button>
+        <div className="kg-nav-acts">
+          <button className="kg-act-grp" onClick={onNewGroup} aria-label="Novo grupo" title="Novo grupo">+ grupo</button>
+          <button onClick={onNewProject} aria-label="Nova lista" title="Nova lista"><Icon name="plus" size={13} /></button>
+        </div>
       </div>
       {inbox && projectItem(inbox)}
       {ungrouped.map(projectItem)}
       {groups.map((g) => {
+        // Mostra TODO grupo (mesmo vazio) — senão criar um grupo parece não fazer nada.
+        // O cabeçalho é clicável: abre o modal para renomear/excluir o grupo.
         const inGroup = projects.filter((p) => p.group_id === g.id)
-        if (inGroup.length === 0) return null
         return (
           <div key={g.id}>
-            <div className="kg-group-label">{g.name}</div>
+            <button className="kg-group-label" onClick={() => onEditGroup(g)} title="Editar grupo">
+              {g.name}
+            </button>
             {inGroup.map(projectItem)}
           </div>
         )
