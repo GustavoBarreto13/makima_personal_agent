@@ -21,6 +21,7 @@ from datetime import date
 from typing import Optional
 
 from agents.db import get_conn, run_select
+from agents.kaguya import recurrence as rec_engine
 from agents.kaguya.tools_projects import resolve_project_id_by_name
 
 # Incremento padrão entre posições manuais (mesma constante semântica do Journal).
@@ -139,6 +140,249 @@ def _attach_subtasks(parents: list[dict]) -> list[dict]:
     return parents
 
 
+def _serialize_recurrence(row: dict) -> dict:
+    """Converte uma linha de ``task_recurrences`` no objeto do contrato REST.
+
+    Args:
+        row: Dicionário com ``rrule``, ``mode``, ``anchor_date``, ``active``.
+
+    Returns:
+        Dicionário com a âncora como string ISO (``anchor_date`` = "YYYY-MM-DD").
+    """
+    return {
+        "rrule": row["rrule"],
+        "mode": row["mode"],
+        # anchor_date é um date do banco; vira string ISO para o JSON/eco.
+        "anchor_date": row["anchor_date"].isoformat() if row.get("anchor_date") else None,
+        "active": row["active"],
+    }
+
+
+def _attach_recurrence(parents: list[dict]) -> list[dict]:
+    """Anexa a regra de recorrência **ativa** (se houver) a cada tarefa-pai.
+
+    Faz uma única query para todos os pais (evita N+1, igual a ``_attach_subtasks``).
+    Define sempre as chaves ``recurrence`` (objeto ou None) e ``recurrence_text``
+    (descrição pt-BR via ``describe_rrule``) para um shape de resposta consistente.
+
+    Args:
+        parents: Lista de tarefas-pai já serializadas.
+
+    Returns:
+        A mesma lista, com ``recurrence``/``recurrence_text`` preenchidos.
+    """
+    # Inicializa as chaves em todos (mesmo os sem regra) para um shape estável.
+    for p in parents:
+        p["recurrence"] = None
+        p["recurrence_text"] = None
+    ids = [p["id"] for p in parents]
+    if not ids:
+        return parents
+    rows = run_select(
+        """
+        SELECT task_id, rrule, mode, anchor_date, active
+        FROM task_recurrences
+        WHERE task_id = ANY(%(ids)s) AND active
+        """,
+        {"ids": ids},
+    )
+    by_id = {p["id"]: p for p in parents}
+    for r in rows:
+        parent = by_id.get(r["task_id"])
+        if parent is not None:
+            parent["recurrence"] = _serialize_recurrence(r)
+            # Texto amigável para a UI/eco não precisar decodificar RRULE.
+            parent["recurrence_text"] = rec_engine.describe_rrule(r["rrule"])
+    return parents
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Recorrência — validação, definição e geração da próxima ocorrência
+# ─────────────────────────────────────────────────────────────────────────────
+def _validate_recurrence(rrule: str, mode: str, due_date) -> Optional[str]:
+    """Valida uma regra de recorrência antes de persistir; retorna a mensagem de erro ou None.
+
+    Args:
+        rrule: Regra RFC 5545.
+        mode: ``fixed`` | ``after_completion``.
+        due_date: A âncora (date ou string ISO); recorrência exige data.
+
+    Returns:
+        ``None`` se a regra é válida; senão uma mensagem em português.
+    """
+    if due_date is None:
+        return "Defina uma data de vencimento antes de tornar a tarefa recorrente."
+    # Aceita tanto date quanto string ISO (create_task passa string; o banco devolve date).
+    if isinstance(due_date, str):
+        try:
+            due_date = date.fromisoformat(due_date)
+        except ValueError:
+            return "Data de vencimento inválida."
+    if mode not in (rec_engine.MODE_FIXED, rec_engine.MODE_AFTER_COMPLETION):
+        return "Modo de recorrência inválido (use 'fixed' ou 'after_completion')."
+    # Tenta calcular uma próxima ocorrência: valida de fato a RRULE (rrulestr levanta se inválida).
+    try:
+        rec_engine.next_occurrence(rrule, due_date, mode, current_due=due_date, completed_on=due_date)
+    except Exception:
+        return "Regra de recorrência inválida."
+    return None
+
+
+def _set_recurrence_on_cursor(cur, task_id: int, rrule: str, mode: str) -> dict:
+    """Anexa/substitui a regra de recorrência de uma tarefa usando um cursor aberto.
+
+    A âncora (``anchor_date``) nasce igual ao ``due_date`` da tarefa e **não** é alterada ao
+    reeditar a regra (edge case 8 da master: editar a regra não move a âncora).
+
+    Args:
+        cur: Cursor psycopg2 ativo.
+        task_id: Id da tarefa (tarefa-pai; subtarefas não recorrem).
+        rrule: Regra RFC 5545.
+        mode: ``fixed`` | ``after_completion``.
+
+    Returns:
+        ``{"status": "ok"}`` ou ``{"status": "error", "message": ...}``.
+    """
+    cur.execute("SELECT due_date, parent_id FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,))
+    row = cur.fetchone()
+    if not row:
+        return {"status": "error", "message": "Tarefa não encontrada."}
+    due_date, parent_id = row
+    if parent_id is not None:
+        return {"status": "error", "message": "Subtarefas não podem ser recorrentes."}
+    err = _validate_recurrence(rrule, mode, due_date)
+    if err:
+        return {"status": "error", "message": err}
+    # ON CONFLICT (task_id): a tabela tem UNIQUE(task_id) — reeditar não duplica e mantém a âncora.
+    cur.execute(
+        """
+        INSERT INTO task_recurrences (task_id, rrule, mode, anchor_date, active)
+        VALUES (%s, %s, %s, %s, TRUE)
+        ON CONFLICT (task_id) DO UPDATE
+            SET rrule = EXCLUDED.rrule, mode = EXCLUDED.mode, active = TRUE
+        """,
+        (task_id, rrule, mode, due_date),
+    )
+    return {"status": "ok"}
+
+
+def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
+    """Gera a próxima ocorrência de uma tarefa recorrente (modelo "completar-e-gerar").
+
+    Pressupõe que a tarefa ``task_id`` acabou de ser consumida (concluída ou excluída como
+    "só esta"). Cria uma **nova linha viva** herdando os campos, com as subtarefas resetadas
+    para não-concluídas (edge case 6), e **realoca** a regra (``task_recurrences.task_id``)
+    para a nova linha. Se a série se esgotou, desativa a regra e não gera nada.
+
+    Args:
+        cur: Cursor psycopg2 ativo (mesma transação da conclusão/exclusão).
+        task_id: Id da ocorrência consumida.
+
+    Returns:
+        ``{"generated_task_id": int, "next_due_date": str}`` quando gerou; ``None`` quando a
+        tarefa não é recorrente ativa ou a série terminou.
+    """
+    # A regra é 1:1 com a tarefa VIVA; busca a regra ativa atrelada a esta tarefa.
+    cur.execute(
+        "SELECT id, rrule, mode, anchor_date FROM task_recurrences WHERE task_id = %s AND active",
+        (task_id,),
+    )
+    rule = cur.fetchone()
+    if not rule:
+        return None  # não é recorrente (ou série já encerrada)
+    rec_id, rrule, mode, anchor_date = rule
+
+    # Campos da ocorrência consumida (herdados pela próxima).
+    cur.execute(
+        "SELECT project_id, title, description, type, priority, due_date, due_time FROM tasks WHERE id = %s",
+        (task_id,),
+    )
+    project_id, title, description, ttype, priority, due_date, due_time = cur.fetchone()
+
+    # Calcula a próxima data pela semântica do motor puro (research.md §3).
+    nxt = rec_engine.next_occurrence(
+        rrule, anchor_date, mode, current_due=due_date, completed_on=date.today()
+    )
+    if nxt is None:
+        # Série esgotada (COUNT/UNTIL): desativa a regra, não gera.
+        cur.execute("UPDATE task_recurrences SET active = FALSE WHERE id = %s", (rec_id,))
+        return None
+
+    # A nova ocorrência entra no fim da lista; em board, na primeira coluna (nunca na "done").
+    new_column = _first_column_id(cur, project_id)
+    cur.execute(
+        f"SELECT COALESCE(MAX(position), 0) + %s FROM tasks WHERE project_id = %s AND parent_id IS NULL",
+        (_POSITION_STEP, project_id),
+    )
+    position = cur.fetchone()[0]
+    cur.execute(
+        """
+        INSERT INTO tasks
+            (project_id, column_id, parent_id, title, description, type, priority, due_date, due_time, position)
+        VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+        """,
+        (project_id, new_column, title, description, ttype, priority, nxt, due_time, position),
+    )
+    new_id = cur.fetchone()[0]
+
+    # Move a regra para a nova linha viva (UNIQUE(task_id) continua válido).
+    cur.execute("UPDATE task_recurrences SET task_id = %s WHERE id = %s", (new_id, rec_id))
+
+    # Reset de subtarefas: copia as subtarefas vivas da antiga como ABERTAS na nova (edge 6).
+    cur.execute(
+        "SELECT title, description, type, priority, position FROM tasks "
+        "WHERE parent_id = %s AND deleted_at IS NULL ORDER BY position, id",
+        (task_id,),
+    )
+    for s_title, s_desc, s_type, s_prio, s_pos in cur.fetchall():
+        cur.execute(
+            """
+            INSERT INTO tasks (project_id, parent_id, title, description, type, priority, position)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (project_id, new_id, s_title, s_desc, s_type, s_prio, s_pos),
+        )
+
+    return {"generated_task_id": new_id, "next_due_date": nxt.isoformat()}
+
+
+def set_recurrence(task_id: int, rrule: str, mode: str = "fixed") -> dict:
+    """Anexa/substitui a regra de recorrência de uma tarefa (atalho público).
+
+    Args:
+        task_id: Id da tarefa (tarefa-pai com ``due_date``).
+        rrule: Regra RFC 5545 (use ``recurrence.build_rrule`` para montar).
+        mode: ``fixed`` (default) ou ``after_completion``.
+
+    Returns:
+        Dicionário de status.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            result = _set_recurrence_on_cursor(cur, task_id, rrule, mode)
+            if result["status"] == "error":
+                conn.rollback()  # nada deve persistir em caso de regra inválida
+    if result["status"] == "ok":
+        result["message"] = "Recorrência definida."
+    return result
+
+
+def clear_recurrence(task_id: int) -> dict:
+    """Remove a regra de recorrência de uma tarefa (volta a ser tarefa simples).
+
+    Args:
+        task_id: Id da tarefa.
+
+    Returns:
+        Dicionário de status.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM task_recurrences WHERE task_id = %s", (task_id,))
+    return {"status": "ok", "message": "Recorrência removida."}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Listagens
 # ─────────────────────────────────────────────────────────────────────────────
@@ -166,7 +410,8 @@ def list_tasks(project_id: int, include_completed: bool = False) -> list[dict]:
         {"pid": project_id},
     )
     parents = [_serialize_task(p) for p in parents]
-    return _attach_subtasks(parents)
+    parents = _attach_subtasks(parents)
+    return _attach_recurrence(parents)
 
 
 def list_tasks_today() -> dict:
@@ -196,6 +441,9 @@ def list_tasks_today() -> dict:
         item["project_name"] = r["project_name"]
         # due_date já é string ISO aqui; compara como texto (ISO ordena cronologicamente).
         (due_today if item["due_date"] == today else overdue).append(item)
+    # Anexa a recorrência ativa (glyph/eco) às tarefas das duas seções.
+    _attach_recurrence(overdue)
+    _attach_recurrence(due_today)
     return {"overdue": overdue, "today": due_today}
 
 
@@ -225,7 +473,7 @@ def search_tasks(query: str) -> list[dict]:
         item = _serialize_task(r)
         item["project_name"] = r["project_name"]
         out.append(item)
-    return out
+    return _attach_recurrence(out)
 
 
 def list_trash(project_id: Optional[int] = None) -> list[dict]:
@@ -261,6 +509,7 @@ def create_task(
     due_date: Optional[str] = None,
     due_time: Optional[str] = None,
     description: Optional[str] = None,
+    recurrence: Optional[dict] = None,
 ) -> dict:
     """Cria uma tarefa (ou subtarefa) e a posiciona no fim da sua lista/escopo.
 
@@ -277,6 +526,9 @@ def create_task(
         due_date: "YYYY-MM-DD" (opcional).
         due_time: "HH:MM" (exige ``due_date``).
         description: Notas (opcional).
+        recurrence: ``{"rrule": str, "mode": "fixed"|"after_completion"}`` (opcional). Exige
+            ``due_date`` (a âncora). ``type="birthday"`` + ``due_date`` cria recorrência anual
+            automática mesmo sem este parâmetro.
 
     Returns:
         ``{"status": "ok", "id": <int>, "project_id": <int>}`` ou erro em português.
@@ -290,6 +542,18 @@ def create_task(
         return {"status": "error", "message": "Tipo inválido (use task, event ou birthday)."}
     if due_time and not due_date:
         return {"status": "error", "message": "Hora de vencimento exige uma data."}
+
+    # ── Recorrência: resolve a intenção e valida ANTES de escrever (get_conn commita no return) ──
+    # Aniversário com data vira recorrência anual automática (mesmo sem o parâmetro explícito).
+    rec = recurrence
+    if type == "birthday" and due_date and rec is None:
+        rec = {"rrule": rec_engine.build_rrule("YEARLY"), "mode": "fixed"}
+    if rec is not None:
+        if parent_id is not None:
+            return {"status": "error", "message": "Subtarefas não podem ser recorrentes."}
+        err = _validate_recurrence(rec.get("rrule", ""), rec.get("mode", "fixed"), due_date)
+        if err:
+            return {"status": "error", "message": err}
 
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -349,6 +613,10 @@ def create_task(
             )
             new_id = cur.fetchone()[0]
 
+            # Recorrência: a tarefa já existe e a regra foi validada acima → anexa na mesma transação.
+            if rec is not None:
+                _set_recurrence_on_cursor(cur, new_id, rec["rrule"], rec.get("mode", "fixed"))
+
     return {"status": "ok", "id": new_id, "project_id": resolved_project, "message": f"Tarefa '{title.strip()}' criada."}
 
 
@@ -365,6 +633,8 @@ def update_task(
     due_time: Optional[str] = None,
     project_id: Optional[int] = None,
     column_id: Optional[int] = None,
+    recurrence: Optional[dict] = None,
+    clear_recurrence: bool = False,
 ) -> dict:
     """Edita campos de uma tarefa; mover de lista aplica a regra da coluna do destino.
 
@@ -376,6 +646,8 @@ def update_task(
         task_id: Id da tarefa.
         title/description/priority/type/due_date/due_time/project_id/column_id:
             Campos a atualizar (todos opcionais; PATCH parcial).
+        recurrence: ``{"rrule", "mode"}`` para anexar/editar a regra (mantém a âncora — edge 8).
+        clear_recurrence: Se True, remove a regra (tarefa volta a ser simples).
 
     Returns:
         Dicionário de status.
@@ -432,31 +704,62 @@ def update_task(
                 sets.append("column_id = %(column_id)s")
                 params["column_id"] = column_id
 
-            if not sets:
+            # Há algo a fazer? campos OU recorrência (definir/limpar/auto-aniversário).
+            if not sets and recurrence is None and not clear_recurrence and type != "birthday":
                 return {"status": "error", "message": "Nada para atualizar."}
 
-            sets.append("updated_at = now()")
-            cur.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id = %(id)s", params)
+            # Aplica as mudanças de campo (se houver) antes de mexer na recorrência.
+            if sets:
+                sets.append("updated_at = now()")
+                cur.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id = %(id)s", params)
+
+            # ── Recorrência: limpar, definir, ou garantir a anual ao virar aniversário ──
+            rec_result = None
+            if clear_recurrence:
+                cur.execute("DELETE FROM task_recurrences WHERE task_id = %s", (task_id,))
+            elif recurrence is not None:
+                rec_result = _set_recurrence_on_cursor(
+                    cur, task_id, recurrence.get("rrule", ""), recurrence.get("mode", "fixed")
+                )
+            elif type == "birthday":
+                # Virou aniversário: se tiver data e ainda não tiver regra, cria a anual automática.
+                cur.execute("SELECT due_date FROM tasks WHERE id = %s", (task_id,))
+                dd = cur.fetchone()[0]
+                if dd is not None:
+                    cur.execute("SELECT 1 FROM task_recurrences WHERE task_id = %s AND active", (task_id,))
+                    if not cur.fetchone():
+                        rec_result = _set_recurrence_on_cursor(
+                            cur, task_id, rec_engine.build_rrule("YEARLY"), "fixed"
+                        )
+            # Regra inválida → desfaz tudo (a edição de campos também) para não persistir pela metade.
+            if rec_result is not None and rec_result["status"] == "error":
+                conn.rollback()
+                return rec_result
     return {"status": "ok", "message": "Tarefa atualizada."}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Concluir / reabrir
 # ─────────────────────────────────────────────────────────────────────────────
-def _complete_task_on_cursor(cur, task_id: int, cascade: bool = False) -> dict:
+def _complete_task_on_cursor(cur, task_id: int, cascade: bool = False, end_series: bool = False) -> dict:
     """Completa uma tarefa usando um cursor já aberto (sem abrir transação própria).
 
     Extraído para que ``complete_payment_task`` (tarefa + despesa) possa completar a
-    tarefa **na mesma transação** do lançamento financeiro (atomicidade — FR-014).
+    tarefa **na mesma transação** do lançamento financeiro (atomicidade — FR-014). Se a tarefa
+    for recorrente ativa, a próxima ocorrência é gerada aqui mesmo (modelo "completar-e-gerar")
+    — então pagamentos recorrentes também regeneram atomicamente.
 
     Args:
         cur: Cursor psycopg2 ativo.
         task_id: Id da tarefa a completar.
         cascade: Se True, completa as subtarefas abertas junto.
+        end_series: Se True (numa recorrente), encerra a série — conclui sem gerar a próxima e
+            desativa a regra (preserva o histórico).
 
     Returns:
-        ``{"status": "ok"}`` ou ``{"status": "error", "needs_cascade": True, ...}``
-        quando há subtarefas abertas e ``cascade`` é False.
+        ``{"status": "ok", "generated_task_id"?: int, "next_due_date"?: str}`` ou
+        ``{"status": "error", "needs_cascade": True, ...}`` quando há subtarefas abertas e
+        ``cascade`` é False.
     """
     cur.execute(
         "SELECT parent_id, completed_at, deleted_at FROM tasks WHERE id = %s", (task_id,)
@@ -491,15 +794,34 @@ def _complete_task_on_cursor(cur, task_id: int, cascade: bool = False) -> dict:
     cur.execute(
         "UPDATE tasks SET completed_at = now(), updated_at = now() WHERE id = %s", (task_id,)
     )
-    return {"status": "ok"}
+
+    # ── Recorrência: gerar a próxima ocorrência ou encerrar a série ──
+    result = {"status": "ok"}
+    cur.execute("SELECT 1 FROM task_recurrences WHERE task_id = %s AND active", (task_id,))
+    if cur.fetchone():
+        if end_series:
+            # "Concluir para sempre": desativa a regra (preserva histórico), não gera a próxima.
+            cur.execute("UPDATE task_recurrences SET active = FALSE WHERE task_id = %s", (task_id,))
+            result["generated_task_id"] = None
+            result["series_ended"] = True
+        else:
+            gen = _generate_next_occurrence(cur, task_id)
+            result["generated_task_id"] = gen["generated_task_id"] if gen else None
+            if gen:
+                result["next_due_date"] = gen["next_due_date"]
+    return result
 
 
-def complete_task(task_id: int, cascade: bool = False) -> dict:
+def complete_task(task_id: int, cascade: bool = False, end_series: bool = False) -> dict:
     """Completa uma tarefa (e suas subtarefas, se ``cascade``). Recebe também o drop na coluna done.
+
+    Numa tarefa recorrente, concluir gera a próxima ocorrência (``generated_task_id``/
+    ``next_due_date`` na resposta); ``end_series=True`` encerra a série em vez de gerar.
 
     Args:
         task_id: Id da tarefa.
         cascade: Se True, conclui em cascata as subtarefas abertas.
+        end_series: Se True (recorrente), encerra a série em vez de gerar a próxima.
 
     Returns:
         Dicionário de status; com ``needs_cascade`` quando há subtarefas abertas e
@@ -507,7 +829,7 @@ def complete_task(task_id: int, cascade: bool = False) -> dict:
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
-            result = _complete_task_on_cursor(cur, task_id, cascade)
+            result = _complete_task_on_cursor(cur, task_id, cascade, end_series)
             if result["status"] == "error" and not result.get("needs_cascade"):
                 # Erro "real" (tarefa inexistente): desfaz para não commitar nada.
                 conn.rollback()
@@ -654,27 +976,47 @@ def reorder_task(task_id: int, after_id: Optional[int] = None, before_id: Option
 # ─────────────────────────────────────────────────────────────────────────────
 # Soft delete / restaurar
 # ─────────────────────────────────────────────────────────────────────────────
-def delete_task(task_id: int) -> dict:
+def delete_task(task_id: int, scope: str = "this") -> dict:
     """Soft delete: marca ``deleted_at`` na tarefa e nas subtarefas dela.
+
+    Numa tarefa recorrente, ``scope`` decide o destino da série:
+    ``this`` (default) exclui só esta ocorrência e **gera a próxima**; ``series`` exclui esta e
+    **desativa** a regra (sem gerar) — a regra é preservada como histórico.
 
     Args:
         task_id: Id da tarefa a excluir.
+        scope: ``this`` | ``series`` (só relevante em recorrentes).
 
     Returns:
         Dicionário de status (a tarefa fica restaurável na lixeira).
     """
+    if scope not in ("this", "series"):
+        return {"status": "error", "message": "Escopo inválido (use 'this' ou 'series')."}
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT 1 FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,))
             if not cur.fetchone():
                 return {"status": "error", "message": "Tarefa não encontrada."}
+
+            # ── Recorrência: gera a próxima (this) ou desativa a regra (series), antes de excluir ──
+            generated = None
+            cur.execute("SELECT 1 FROM task_recurrences WHERE task_id = %s AND active", (task_id,))
+            if cur.fetchone():
+                if scope == "series":
+                    cur.execute("UPDATE task_recurrences SET active = FALSE WHERE task_id = %s", (task_id,))
+                else:  # "this": a série continua — gera a próxima ocorrência antes do soft delete
+                    generated = _generate_next_occurrence(cur, task_id)
+
             # Marca a tarefa e suas subtarefas vivas de uma vez (a própria + filhas).
             cur.execute(
                 "UPDATE tasks SET deleted_at = now(), updated_at = now() "
                 "WHERE (id = %s OR parent_id = %s) AND deleted_at IS NULL",
                 (task_id, task_id),
             )
-    return {"status": "ok", "message": "Tarefa enviada para a lixeira."}
+    result = {"status": "ok", "message": "Tarefa enviada para a lixeira."}
+    if generated:
+        result["generated_task_id"] = generated["generated_task_id"]
+    return result
 
 
 def restore_task(task_id: int) -> dict:

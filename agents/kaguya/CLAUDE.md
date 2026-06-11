@@ -60,14 +60,26 @@ As tools de tarefas são **funções Python** registradas direto (não MCP).
 | `list_tasks_today()` | `{overdue, today}` — abertas com `due_date <= hoje` |
 | `search_tasks(query)` | busca por título/descrição (ILIKE) |
 | `list_trash(project_id?)` | soft-deletadas (restauráveis) |
-| `create_task(title, project_id?/project_name?, parent_id?, priority, type, due_date?, due_time?, description?)` | cria tarefa/subtarefa; sem lista → Inbox |
-| `update_task(task_id, ...)` | edita; trocar de lista aplica a regra da coluna |
-| `complete_task(task_id, cascade)` | completa; subtarefas abertas sem cascade → `needs_cascade` |
+| `create_task(..., recurrence?)` | cria tarefa/subtarefa; sem lista → Inbox; `recurrence={rrule,mode}` opcional; `type=birthday`+data → recorrência anual automática |
+| `update_task(task_id, ..., recurrence?, clear_recurrence?)` | edita; trocar de lista aplica a regra da coluna; anexa/edita/remove recorrência |
+| `complete_task(task_id, cascade, end_series?)` | completa; subtarefas abertas sem cascade → `needs_cascade`; numa recorrente gera a próxima (`generated_task_id`); `end_series=True` encerra a série |
 | `reopen_task(task_id)` | reabre; bloqueia se o pai está concluído |
 | `reorder_task(task_id, after_id?, before_id?)` | posição esparsa ×1000 + renormalização |
-| `delete_task` / `restore_task` | soft delete / restaura (com subtarefas) |
+| `delete_task(task_id, scope="this")` / `restore_task` | soft delete / restaura; recorrente: `scope=this` (gera próxima) \| `series` (desativa a regra) |
+| `set_recurrence(task_id, rrule, mode)` / `clear_recurrence(task_id)` | anexa/remove a regra (exige `due_date`) |
 
-`_complete_task_on_cursor(cur, ...)` é a versão transacional reusada pelo pagamento atômico.
+`_complete_task_on_cursor(cur, ...)` é a versão transacional reusada pelo pagamento atômico
+(pagamentos recorrentes também regeneram a próxima ocorrência atomicamente).
+
+### Recorrência (Fase 2 / fatia 012) — `recurrence.py`
+
+Motor **puro** (`agents/kaguya/recurrence.py`, sem banco) com a aritmética RRULE (RFC 5545 via
+`python-dateutil`): `next_occurrence(rrule, anchor_date, mode, current_due, completed_on)`,
+`build_rrule(...)`, `describe_rrule(...)` (pt-BR). Dois modos: `fixed` (âncora manda) e
+`after_completion` (conta da conclusão real). Modelo **"completar-e-gerar"**: cada ocorrência é
+uma linha; concluir consome a atual (vira histórico) e gera **uma** próxima (subtarefas resetam),
+realocando a regra (`task_recurrences`, 1:1 com a tarefa viva). Semântica e os 9 edge cases:
+`specs/012-tasks-recurrence/research.md` (gate em `tests/agents/test_kaguya_recurrence.py`).
 
 ### `tools_projects.py` — listas, grupos, colunas
 
@@ -91,6 +103,8 @@ Mutações retornam `{"status": "ok"|"error", ...}`; listagens retornam o dado d
 | `list_tasks_by_project(project)` | aceita id **ou** nome (resolve por prefixo) |
 | `list_tasks_today`, `search_tasks` | tarefas |
 | `create_task`, `update_task`, `complete_task`, `reopen_task`, `delete_task`, `restore_task` | tarefas |
+| `set_task_recurrence(task_id, freq, interval?, weekday?, monthday?, mode?)` | recorrência por intenção simples (monta a RRULE; ecoa `recurrence_text`) |
+| `clear_recurrence(task_id)` | remove a recorrência |
 | `create_project`, `update_project`, `delete_project` | listas |
 | **`complete_payment_task`** | cross-agent (Kaguya + Nami) — atômico |
 | **`create_expense_reminder`** | cross-agent — cria lembrete no Postgres |
@@ -116,7 +130,11 @@ cria a tarefa de lembrete (prioridade alta) no banco; **não** lança despesa.
 - Prioridades: 0 nenhuma · 1 baixa · 2 média · 3 alta.
 - `list_tasks_today` já traz as vencidas em `overdue` — não chame nada redundante.
 - **`needs_cascade`** não é erro: pergunte ao usuário e repita com `cascade=true`.
+- **Recorrência**: tarefa precisa de data; crie e chame `set_task_recurrence(id, freq, ...)`; ecoe
+  o `recurrence_text`. Aniversário (`type=birthday`+data) recorre todo ano sozinho. Ao concluir
+  uma recorrente a próxima nasce (avise `next_due_date`); "encerrar a série" → `complete_task(id, end_series=true)`.
 - `delete_task` e `delete_project` são destrutivas → **confirme sempre antes**.
+  Recorrente: pergunte o escopo (`scope="this"` só esta · `scope="series"` a série inteira).
   `delete_project` exige `mode` (`move_to_inbox` | `delete_tasks`).
 - Listas resolvidas dinamicamente por nome (prefixo) — nunca nomes fixos.
 - "o que tenho pra hoje?" = `list_tasks_today()` (banco) + `list_events_today()` (Calendar).

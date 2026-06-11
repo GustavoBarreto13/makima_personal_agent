@@ -11,6 +11,7 @@ google-api-python-client # Cliente Python para APIs Google (Calendar, Drive, etc
 asyncpg             # driver async para PostgreSQL (exigido pelo DatabaseSessionService do ADK)
 sqlalchemy          # ORM usado internamente pelo ADK para criar e acessar as tabelas
 psycopg2-binary     # driver síncrono para PostgreSQL (usado pelas tools do journal)
+python-dateutil     # aritmética de recorrência RRULE (RFC 5545) — motor da Kaguya (Fase 2)
 
 # Web interface (webapp/)
 fastapi              # Framework web ASGI — define rotas e serialização JSON

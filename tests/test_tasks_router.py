@@ -111,7 +111,8 @@ def test_complete_ok(mock_complete):
     mock_complete.return_value = {"status": "ok", "message": "Tarefa concluída."}
     resp = client.post(f"{_BASE}/42/complete", json={"cascade": True})
     assert resp.status_code == 200
-    mock_complete.assert_called_once_with(42, True)
+    # Agora a tool recebe também end_series (default False).
+    mock_complete.assert_called_once_with(42, True, False)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -155,3 +156,76 @@ def test_restore_ok(mock_restore):
     mock_restore.return_value = {"status": "ok"}
     resp = client.post(f"{_BASE}/42/restore")
     assert resp.status_code == 200
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Recorrência (fatia 012): recurrence no body, end_series, scope, endpoints próprios
+# ─────────────────────────────────────────────────────────────────────────────
+@patch("webapp.backend.routers.tasks.create_task")
+def test_create_task_with_recurrence(mock_create):
+    """POST / com recurrence aninhada → a tool recebe o dict {rrule, mode}."""
+    mock_create.return_value = {"status": "ok", "id": 7, "project_id": 1}
+    body = {"title": "aluguel", "due_date": "2026-06-05",
+            "recurrence": {"rrule": "FREQ=MONTHLY;BYMONTHDAY=5", "mode": "fixed"}}
+    resp = client.post(_BASE, json=body)
+    assert resp.status_code == 201
+    # O modelo aninhado vira dict no model_dump → a tool recebe recurrence como dict.
+    mock_create.assert_called_once_with(
+        title="aluguel", due_date="2026-06-05",
+        recurrence={"rrule": "FREQ=MONTHLY;BYMONTHDAY=5", "mode": "fixed"},
+    )
+
+
+@patch("webapp.backend.routers.tasks.complete_task")
+def test_complete_end_series(mock_complete):
+    """POST /{id}/complete com end_series=true encerra a série."""
+    mock_complete.return_value = {"status": "ok", "generated_task_id": None, "series_ended": True}
+    resp = client.post(f"{_BASE}/42/complete", json={"end_series": True})
+    assert resp.status_code == 200
+    mock_complete.assert_called_once_with(42, False, True)
+
+
+@patch("webapp.backend.routers.tasks.complete_task")
+def test_complete_recurring_returns_generated(mock_complete):
+    """POST /{id}/complete numa recorrente devolve o id gerado e a próxima data."""
+    mock_complete.return_value = {"status": "ok", "generated_task_id": 99, "next_due_date": "2026-07-05"}
+    resp = client.post(f"{_BASE}/42/complete", json={})
+    assert resp.status_code == 200
+    assert resp.json()["generated_task_id"] == 99
+    assert resp.json()["next_due_date"] == "2026-07-05"
+
+
+@patch("webapp.backend.routers.tasks.delete_task")
+def test_delete_task_default_scope_this(mock_delete):
+    """DELETE /{id} sem scope → 'this' (default)."""
+    mock_delete.return_value = {"status": "ok"}
+    resp = client.delete(f"{_BASE}/42")
+    assert resp.status_code == 200
+    mock_delete.assert_called_once_with(42, "this")
+
+
+@patch("webapp.backend.routers.tasks.delete_task")
+def test_delete_task_scope_series(mock_delete):
+    """DELETE /{id}?scope=series encerra a série."""
+    mock_delete.return_value = {"status": "ok"}
+    resp = client.delete(f"{_BASE}/42?scope=series")
+    assert resp.status_code == 200
+    mock_delete.assert_called_once_with(42, "series")
+
+
+@patch("webapp.backend.routers.tasks.set_recurrence")
+def test_set_recurrence_endpoint(mock_set):
+    """POST /{id}/recurrence anexa a regra."""
+    mock_set.return_value = {"status": "ok", "message": "Recorrência definida."}
+    resp = client.post(f"{_BASE}/42/recurrence", json={"rrule": "FREQ=YEARLY", "mode": "fixed"})
+    assert resp.status_code == 200
+    mock_set.assert_called_once_with(42, "FREQ=YEARLY", "fixed")
+
+
+@patch("webapp.backend.routers.tasks.clear_recurrence")
+def test_clear_recurrence_endpoint(mock_clear):
+    """DELETE /{id}/recurrence remove a regra."""
+    mock_clear.return_value = {"status": "ok"}
+    resp = client.delete(f"{_BASE}/42/recurrence")
+    assert resp.status_code == 200
+    mock_clear.assert_called_once_with(42)

@@ -4,6 +4,17 @@
 // Tipo de uma tarefa: tarefa comum, evento (com hora) ou aniversário (recorrência anual).
 export type TaskType = 'task' | 'event' | 'birthday'
 
+// Modo de recorrência: data-fixa (a âncora manda) ou pós-conclusão (conta de quando concluiu).
+export type RecurrenceMode = 'fixed' | 'after_completion'
+
+// Regra de recorrência de uma tarefa (1:1 com a tarefa viva da série).
+export interface Recurrence {
+  rrule: string               // regra RFC 5545 (ex.: "FREQ=MONTHLY;BYMONTHDAY=5")
+  mode: RecurrenceMode
+  anchor_date: string | null  // âncora da série ("YYYY-MM-DD")
+  active: boolean             // false = série encerrada
+}
+
 // Uma tarefa (ou subtarefa). Campos temporais chegam como string ISO do backend.
 export interface Task {
   id: number
@@ -21,6 +32,9 @@ export interface Task {
   created_at: string
   // Presente nas listagens com JOIN (today/search):
   project_name?: string
+  // Recorrência ativa (quando houver) + descrição pt-BR (ex.: "todo dia 5"):
+  recurrence?: Recurrence | null
+  recurrence_text?: string | null
   // Subtarefas aninhadas (só nas tarefas-pai retornadas por list_tasks):
   subtasks?: Task[]
 }
