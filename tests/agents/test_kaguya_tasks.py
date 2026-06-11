@@ -201,6 +201,36 @@ def test_move_between_projects_applies_column_rule(inbox_id):
     assert moved["column_id"] == first_col
 
 
+def test_create_lands_in_first_column_when_board_exists(inbox_id):
+    """Criar tarefa numa lista com board cai na 1ª coluna (sem isso, o Kanban fica vazio)."""
+    board = P.create_project("Board")["id"]
+    P.create_column(board, "A fazer")
+    P.create_column(board, "Fazendo")
+    cols = sorted(P.list_columns(board), key=lambda c: c["position"])
+    first_col, second_col = cols[0]["id"], cols[1]["id"]
+
+    # Sem column_id explícito → primeira coluna (aparece no Kanban; Lista⇄Kanban em sincronia).
+    auto = T.create_task("auto", project_id=board)["id"]
+    auto_row = next(x for x in T.list_tasks(board) if x["id"] == auto)
+    assert auto_row["column_id"] == first_col
+
+    # column_id explícito → honrado.
+    pinned = T.create_task("fixa", project_id=board, column_id=second_col)["id"]
+    pinned_row = next(x for x in T.list_tasks(board) if x["id"] == pinned)
+    assert pinned_row["column_id"] == second_col
+
+    # column_id de outra lista → erro (não pertence à lista resolvida).
+    other = P.create_project("Outra")["id"]
+    P.create_column(other, "X")
+    other_col = P.list_columns(other)[0]["id"]
+    assert T.create_task("errada", project_id=board, column_id=other_col)["status"] == "error"
+
+    # Lista sem board (Inbox recém-semeado) → tarefa fica sem coluna (Kanban é opcional).
+    no_board = T.create_task("sem board", project_id=inbox_id)["id"]
+    nb_row = next(x for x in T.list_tasks(inbox_id) if x["id"] == no_board)
+    assert nb_row["column_id"] is None
+
+
 def test_delete_column_clears_tasks_column(inbox_id):
     """Excluir coluna deixa as tarefas sem coluna (não as apaga)."""
     board = P.create_project("Board")["id"]

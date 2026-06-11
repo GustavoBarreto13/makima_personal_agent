@@ -176,6 +176,15 @@ def test_create_task_with_recurrence(mock_create):
     )
 
 
+@patch("webapp.backend.routers.tasks.create_task")
+def test_create_task_with_column(mock_create):
+    """POST / com column_id → a tool recebe a coluna (criar direto no Kanban)."""
+    mock_create.return_value = {"status": "ok", "id": 9, "project_id": 3}
+    resp = client.post(_BASE, json={"title": "no board", "project_id": 3, "column_id": 8})
+    assert resp.status_code == 201
+    mock_create.assert_called_once_with(title="no board", project_id=3, column_id=8)
+
+
 @patch("webapp.backend.routers.tasks.complete_task")
 def test_complete_end_series(mock_complete):
     """POST /{id}/complete com end_series=true encerra a série."""

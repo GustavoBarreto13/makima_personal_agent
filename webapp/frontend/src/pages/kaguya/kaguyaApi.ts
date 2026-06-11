@@ -68,6 +68,7 @@ export const kaguyaApi = {
     due_date?: string | null
     due_time?: string | null
     description?: string | null
+    column_id?: number                  // coluna do Kanban (criar direto numa coluna)
     recurrence?: RecurrenceInput        // recorrência opcional na criação
   }) => api.post<MutationResult>(BASE, body),
 

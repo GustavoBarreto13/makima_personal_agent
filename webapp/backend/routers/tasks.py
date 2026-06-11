@@ -117,6 +117,7 @@ class CreateTaskBody(BaseModel):
     due_date: Optional[str] = None
     due_time: Optional[str] = None
     description: Optional[str] = None
+    column_id: Optional[int] = None              # coluna do Kanban (criar direto numa coluna)
     recurrence: Optional[RecurrenceBody] = None  # nested → model_dump vira dict para a tool
 
 
