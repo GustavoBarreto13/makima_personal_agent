@@ -21,6 +21,7 @@ from webapp.backend.routers import auth as auth_router
 from webapp.backend.routers import finances as finances_router
 from webapp.backend.routers import books as books_router
 from webapp.backend.routers import journal as journal_router
+from webapp.backend.routers import tasks as tasks_router
 from webapp.backend.config import SESSION_SECRET
 
 # Cria a instância principal da aplicação FastAPI.
@@ -52,6 +53,11 @@ app.include_router(books_router.router, prefix="/api/books", tags=["books"])
 # Registra todos os endpoints do diário pessoal sob /api/journal
 # Ex.: GET /api/journal/page, POST /api/journal/bullets, GET /api/journal/heatmap, etc.
 app.include_router(journal_router.router, prefix="/api/journal", tags=["journal"])
+
+# --- Router de tarefas (Kaguya) ---
+# Registra todos os endpoints do sistema de tarefas próprio sob /api/tasks
+# Ex.: GET /api/tasks/sidebar, POST /api/tasks, POST /api/tasks/{id}/complete, etc.
+app.include_router(tasks_router.router, prefix="/api/tasks", tags=["tasks"])
 
 # --- CORS (Cross-Origin Resource Sharing) ---
 # O navegador bloqueia requisições entre origens diferentes por segurança.

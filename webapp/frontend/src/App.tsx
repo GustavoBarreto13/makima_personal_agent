@@ -18,6 +18,7 @@ import Subscriptions from './pages/Subscriptions'       // Assinaturas recorrent
 import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell completo da seção de livros
 import { VioletShell } from './pages/violet/VioletShell'     // Shell do diário Violet
 import { NamiShell }   from './pages/nami/NamiShell'         // Shell completo da seção de finanças (redesign)
+import { KaguyaShell } from './pages/kaguya/KaguyaShell'      // Shell de tarefas (sistema próprio, spec 011)
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
@@ -89,6 +90,10 @@ function App() {
         {/* Nami (redesign) tem seu próprio shell com sidebar temática, tweaks e navegação por hash.
             Deve vir ANTES da rota /* para não ser capturado pelo catch-all. */}
         <Route path="/nami/*" element={<NamiShell />} />
+
+        {/* Kaguya · Tarefas — shell próprio com sidebar do domínio e navegação por estado.
+            Antes do catch-all /* para o shell assumir as sub-rotas de /tasks. */}
+        <Route path="/tasks/*" element={<KaguyaShell />} />
 
         {/* Todas as outras rotas usam o Layout principal com sidebar Makima */}
         <Route path="/*" element={

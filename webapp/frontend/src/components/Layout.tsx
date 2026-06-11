@@ -60,6 +60,15 @@ const DOMAINS: NavDomain[] = [
     color:       'var(--c-journal)',
     colorDim:    'var(--c-journal-dim)',
   },
+  {
+    // Kaguya · Tarefas — quarto shell (sistema de tarefas próprio, spec 011)
+    character:   'Kaguya',
+    label:       'Tarefas',
+    mainPath:    '/tasks',
+    activePaths: ['/tasks'],
+    color:       'var(--c-kaguya)',
+    colorDim:    'var(--c-kaguya-dim)',
+  },
 ]
 
 // ── Componente principal ───────────────────────────────────────────────────────────────────────
