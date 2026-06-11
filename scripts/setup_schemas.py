@@ -19,6 +19,9 @@ from agents.db import get_conn  # noqa: E402
 SCHEMA_FILES = [
     "agents/nami/schema_pg.sql",
     "agents/frieren/schema_pg.sql",
+    # Sistema de tarefas próprio da Kaguya (spec 011). Inclui o seed do Inbox
+    # (INSERT ... ON CONFLICT DO NOTHING protegido pelo índice uq_task_projects_inbox).
+    "agents/kaguya/schema_tasks_pg.sql",
 ]
 
 

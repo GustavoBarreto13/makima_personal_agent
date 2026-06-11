@@ -18,8 +18,8 @@ testável.
 
 **Purpose**: schema no banco — pré-requisito físico de tudo.
 
-- [ ] T001 Criar `agents/kaguya/schema_tasks_pg.sql` transcrevendo fielmente o DDL completo da master (`specs/010-kaguya-tasks-app/data-model.md`): todas as tabelas (`task_project_groups`, `task_projects`, `task_columns`, `tasks`, `task_recurrences`, `task_tags`, `task_tag_links`, `task_filters`, `habits`, `habit_checkins`), índices e constraints, tudo idempotente (`IF NOT EXISTS`)
-- [ ] T002 Atualizar `scripts/setup_schemas.py` para aplicar `schema_tasks_pg.sql` e o seed do Inbox (`INSERT ... ON CONFLICT DO NOTHING` protegido por `uq_task_projects_inbox`); rodar contra o banco de dev e verificar `\dt task_*`
+- [x] T001 Criar `agents/kaguya/schema_tasks_pg.sql` transcrevendo fielmente o DDL completo da master (`specs/010-kaguya-tasks-app/data-model.md`): todas as tabelas (`task_project_groups`, `task_projects`, `task_columns`, `tasks`, `task_recurrences`, `task_tags`, `task_tag_links`, `task_filters`, `habits`, `habit_checkins`), índices e constraints, tudo idempotente (`IF NOT EXISTS`)
+- [x] T002 Atualizar `scripts/setup_schemas.py` para aplicar `schema_tasks_pg.sql` e o seed do Inbox (`INSERT ... ON CONFLICT DO NOTHING` protegido por `uq_task_projects_inbox`); rodar contra o banco de dev e verificar `\dt task_*`
 
 ---
 
@@ -30,9 +30,9 @@ ela; nenhuma user story funciona sem isso.
 
 **⚠️ CRITICAL**: nenhuma story começa antes desta fase terminar.
 
-- [ ] T003 [P] Criar `agents/kaguya/tools_projects.py` sobre `agents/db.py`: `get_sidebar`, `create_project`, `update_project`, `delete_project(mode)`, `create_group`, `update_group`, `delete_group`, `list_columns`, `create_column`, `update_column`, `delete_column` — com regras do Inbox (indelével/inarquivável), única coluna done por projeto, posições esparsas ×1000, retornos `{"status": ...}` em mutações (contrato: `contracts/api-tasks.md`)
-- [ ] T004 [P] Criar `agents/kaguya/tools_tasks.py` sobre `agents/db.py`: `list_tasks`, `list_tasks_today` (shape `{overdue, today}` por projeto), `search_tasks`, `list_trash`, `create_task` (default Inbox, `type` default `task` ∈ {task,event,birthday}, `parent_id` 1 nível), `update_task` (regra de coluna ao trocar projeto, aceita `type`), `complete_task(cascade)` (erro `needs_cascade` com subtarefas abertas), `reopen_task` (bloqueia pai concluído), criar subtarefa em pai concluído → erro sugerindo reabrir o pai (edge case da spec), `reorder_task` (posição esparsa + renormalização transacional), `delete_task`/`restore_task` (soft delete) — validações e mensagens de erro em português (regras: `data-model.md`)
-- [ ] T005 Criar `tests/agents/test_kaguya_tasks.py` (padrão `tests/agents/`): posições esparsas (inserir entre vizinhos, colisão → renormalização, 100+ reordenações — SC-006), cascata de conclusão, bloqueio de reabertura com pai concluído, regras do Inbox e de exclusão de projeto/coluna; rodar `python -m pytest tests/agents/test_kaguya_tasks.py -v`
+- [x] T003 [P] Criar `agents/kaguya/tools_projects.py` sobre `agents/db.py`: `get_sidebar`, `create_project`, `update_project`, `delete_project(mode)`, `create_group`, `update_group`, `delete_group`, `list_columns`, `create_column`, `update_column`, `delete_column` — com regras do Inbox (indelével/inarquivável), única coluna done por projeto, posições esparsas ×1000, retornos `{"status": ...}` em mutações (contrato: `contracts/api-tasks.md`)
+- [x] T004 [P] Criar `agents/kaguya/tools_tasks.py` sobre `agents/db.py`: `list_tasks`, `list_tasks_today` (shape `{overdue, today}` por projeto), `search_tasks`, `list_trash`, `create_task` (default Inbox, `type` default `task` ∈ {task,event,birthday}, `parent_id` 1 nível), `update_task` (regra de coluna ao trocar projeto, aceita `type`), `complete_task(cascade)` (erro `needs_cascade` com subtarefas abertas), `reopen_task` (bloqueia pai concluído), criar subtarefa em pai concluído → erro sugerindo reabrir o pai (edge case da spec), `reorder_task` (posição esparsa + renormalização transacional), `delete_task`/`restore_task` (soft delete) — validações e mensagens de erro em português (regras: `data-model.md`)
+- [x] T005 Criar `tests/agents/test_kaguya_tasks.py` (padrão `tests/agents/`): posições esparsas (inserir entre vizinhos, colisão → renormalização, 100+ reordenações — SC-006), cascata de conclusão, bloqueio de reabertura com pai concluído, regras do Inbox e de exclusão de projeto/coluna; rodar `python -m pytest tests/agents/test_kaguya_tasks.py -v`
 
 **Checkpoint**: camada de lógica completa e testada — US1–US5 podem começar (US1 e US2 em paralelo).
 
