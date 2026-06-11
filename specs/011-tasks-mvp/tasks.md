@@ -132,9 +132,9 @@ completa, lista e Telegram refletem.
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T029 [P] PATCH amendment da constitution (`.specify/memory/constitution.md`): linha do domínio kaguya → "tarefas + agenda (PostgreSQL + Google Calendar via MCP)", versão 1.0.0 → 1.0.1 com data (FR-015)
-- [ ] T030 [P] Reescrever `agents/kaguya/CLAUDE.md`: nova arquitetura (tools Postgres, factory só com Calendar), tabela de tools, regras de comportamento preservadas, fluxo cross-agent atômico, personalidade — remover tudo de TickTick/OAuth
-- [ ] T031 [P] Atualizar `CLAUDE.md` raiz: tabela de agentes (kaguya → PostgreSQL + Calendar), árvore de arquivos (`schema_tasks_pg.sql`, `routers/tasks.py`, `pages/kaguya/`, sem `mcp_servers/ticktick/`), seção de integração cross-agent
+- [x] T029 [P] PATCH amendment da constitution (`.specify/memory/constitution.md`): linha do domínio kaguya → "tarefas + agenda (PostgreSQL + Google Calendar via MCP)", versão 1.0.0 → 1.0.1 com data (FR-015)
+- [x] T030 [P] Reescrever `agents/kaguya/CLAUDE.md`: nova arquitetura (tools Postgres, factory só com Calendar), tabela de tools, regras de comportamento preservadas, fluxo cross-agent atômico, personalidade — remover tudo de TickTick/OAuth
+- [x] T031 [P] Atualizar `CLAUDE.md` raiz: tabela de agentes (kaguya → PostgreSQL + Calendar), árvore de arquivos (`schema_tasks_pg.sql`, `routers/tasks.py`, `pages/kaguya/`, sem `mcp_servers/ticktick/`), seção de integração cross-agent
 - [ ] T032 Rodar a validação completa do `quickstart.md` (V1–V6) + suíte pytest inteira; registrar resultados no checklist da spec
 - [ ] T033 Refletir a mudança no vault do Obsidian (skill `obsidian-vault`) — novo motor de tarefas, aposentadoria do TickTick, nota de deploy (remover `TICKTICK_*` do Dokploy após SC-001)
 

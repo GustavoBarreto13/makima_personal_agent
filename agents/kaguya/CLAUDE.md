@@ -2,9 +2,15 @@
 
 ## O que é este agente
 
-**Kaguya** é o agente especialista em gestão de tarefas. Usa o TickTick como backend via
-um servidor MCP stdio dedicado (`mcp_servers/ticktick/server.py`). Também possui duas
-tools cross-agent que integram Kaguya com Nami para fluxos financeiros+tarefas.
+**Kaguya** é o agente especialista em **tarefas + agenda**. A partir da spec
+`011-tasks-mvp`, o motor de tarefas é um **sistema próprio em PostgreSQL** (o mesmo banco
+de Nami/Frieren/Journal) — o TickTick foi aposentado. A agenda continua vindo do **Google
+Calendar via MCP**.
+
+Princípio central: **paridade de canais**. Toda capacidade nasce como função na camada de
+lógica (`tools_tasks.py` / `tools_projects.py`); o canal Telegram (este agente) e o canal
+webapp (router `/api/tasks/*`) são fachadas finas e paritárias sobre ela. O app é 100%
+utilizável sem o bot e vice-versa.
 
 ---
 
@@ -13,186 +19,129 @@ tools cross-agent que integram Kaguya com Nami para fluxos financeiros+tarefas.
 ```
 agents/kaguya/
 ├── __init__.py
-├── agent.py     # create_kaguya_agent() — factory com McpToolset
-└── tools.py     # tools cross-agent: complete_payment_task, create_expense_reminder
+├── schema_tasks_pg.sql   # schema completo do domínio (aplicado por scripts/setup_schemas.py)
+├── tools_tasks.py        # camada de lógica: CRUD de tarefas/subtarefas, completar, posições
+├── tools_projects.py     # camada de lógica: listas, grupos, colunas (Kanban), sidebar
+├── tools.py              # FACHADA: re-exporta a lógica + wrappers + cross-agent (Nami)
+├── agent.py              # create_kaguya_agent() — factory (só o McpToolset do Calendar)
+└── CLAUDE.md             # este arquivo
 
-mcp_servers/ticktick/
-└── server.py    # servidor MCP FastMCP — tools genéricas do TickTick
+mcp_servers/calendar/server.py   # único MCP da Kaguya (Google Calendar)
 ```
+
+> Não há mais `mcp_servers/ticktick/` nem variáveis `TICKTICK_*`. A Kaguya não depende de
+> nenhuma API externa de tarefas.
 
 ---
 
 ## Como o agente é criado
 
-Kaguya usa **factory function** (`create_kaguya_agent()`), não instância global.
-O `McpToolset` instancia um novo processo filho a cada criação — por isso não pode ser
-compartilhado. O coordinator chama a factory dentro de `create_makima()`.
+Continua **factory** (`create_kaguya_agent()`) porque o `McpToolset` do Calendar instancia
+um processo filho a cada criação (não pode ser compartilhado). O coordinator chama a factory
+em `create_makima()`.
 
 ```python
 # coordinator/agent.py
 from agents.kaguya.agent import create_kaguya_agent
-
-def create_makima() -> Agent:
-    kaguya_agent = create_kaguya_agent()  # instancia McpToolset aqui
-    return Agent(..., sub_agents=[nami_agent, kaguya_agent])
+kaguya_agent = create_kaguya_agent()   # instancia só o McpToolset do Calendar
 ```
+
+As tools de tarefas são **funções Python** registradas direto (não MCP).
 
 ---
 
-## MCP Server (mcp_servers/ticktick/server.py)
+## Camada de lógica (a fonte única)
 
-Processo filho stdio iniciado pelo ADK via `McpToolset`. O ADK gerencia ciclo de vida.
+### `tools_tasks.py` — tarefas e subtarefas
 
-### Tools expostas pelo servidor MCP
+| Função | O que faz |
+|---|---|
+| `list_tasks(project_id, include_completed)` | tarefas-pai da lista, com subtarefas aninhadas |
+| `list_tasks_today()` | `{overdue, today}` — abertas com `due_date <= hoje` |
+| `search_tasks(query)` | busca por título/descrição (ILIKE) |
+| `list_trash(project_id?)` | soft-deletadas (restauráveis) |
+| `create_task(title, project_id?/project_name?, parent_id?, priority, type, due_date?, due_time?, description?)` | cria tarefa/subtarefa; sem lista → Inbox |
+| `update_task(task_id, ...)` | edita; trocar de lista aplica a regra da coluna |
+| `complete_task(task_id, cascade)` | completa; subtarefas abertas sem cascade → `needs_cascade` |
+| `reopen_task(task_id)` | reabre; bloqueia se o pai está concluído |
+| `reorder_task(task_id, after_id?, before_id?)` | posição esparsa ×1000 + renormalização |
+| `delete_task` / `restore_task` | soft delete / restaura (com subtarefas) |
 
-| Tool | Descrição |
-| --- | --- |
-| `list_projects` | Lista todos os projetos do TickTick |
-| `list_tasks_today` | Tarefas de hoje + atrasadas agrupadas por projeto |
-| `list_overdue_tasks` | Apenas tarefas atrasadas |
-| `list_tasks_by_project` | Tarefas de um projeto específico (por nome ou ID) |
-| `create_task` | Cria uma tarefa com título, projeto, data e prioridade |
-| `update_task` | Atualiza campos de uma tarefa existente |
-| `complete_task` | Marca uma tarefa como concluída |
-| `delete_task` | Remove uma tarefa (irreversível — confirmar com usuário antes) |
-| `search_tasks` | Busca tarefas por nome/texto |
-| `create_subtask` | Cria uma sub-tarefa filha de outra tarefa |
-| `list_subtasks` | Lista sub-tarefas de uma tarefa pai |
-| `add_checklist_item` | Adiciona item de checklist (sem data/ID) a uma tarefa |
-| `complete_checklist_item` | Marca item de checklist como concluído |
+`_complete_task_on_cursor(cur, ...)` é a versão transacional reusada pelo pagamento atômico.
 
-### Configuração do McpToolset
+### `tools_projects.py` — listas, grupos, colunas
 
-```python
-McpToolset(
-    connection_params=StdioConnectionParams(
-        server_params=StdioServerParameters(
-            command="python",
-            args=[server_path],   # caminho absoluto para mcp_servers/ticktick/server.py
-            env=mcp_env,          # herda get_default_environment() + vars TICKTICK_*
-        ),
-        timeout=60.0,  # list_tasks_today faz N+1 GETs — 5s padrão estoura com 10+ projetos
-    )
-)
-```
+`get_sidebar`, `create_project`, `update_project`, `delete_project(mode)`, `create_group`,
+`update_group`, `delete_group`, `list_columns`, `create_column`, `update_column`,
+`delete_column`, `resolve_project_id_by_name`.
 
-### Cache de projetos
+**Regras de negócio** (validadas aqui): Inbox indelével/inarquivável; no máximo uma coluna
+`is_done_column` por lista; captura órfã → Inbox; mover entre listas → primeira coluna do
+destino (ou sem coluna); posições esparsas com renormalização transparente.
 
-O servidor MCP mantém um cache em memória dos projetos com TTL de 5 minutos.
-Isso reduz chamadas à API quando múltiplas tools precisam resolver IDs de projetos
-na mesma sessão.
+Mutações retornam `{"status": "ok"|"error", ...}`; listagens retornam o dado direto.
 
 ---
 
-## Tools cross-agent (agents/kaguya/tools.py)
+## Tools expostas ao agente (`tools.py`)
 
-Estas tools têm acesso tanto ao TickTick (via requests direto) quanto à Nami
-(via import de `agents.nami.tools`).
+| Tool | Origem |
+|---|---|
+| `list_projects` | wrapper de `get_sidebar` |
+| `list_tasks_by_project(project)` | aceita id **ou** nome (resolve por prefixo) |
+| `list_tasks_today`, `search_tasks` | tarefas |
+| `create_task`, `update_task`, `complete_task`, `reopen_task`, `delete_task`, `restore_task` | tarefas |
+| `create_project`, `update_project`, `delete_project` | listas |
+| **`complete_payment_task`** | cross-agent (Kaguya + Nami) — atômico |
+| **`create_expense_reminder`** | cross-agent — cria lembrete no Postgres |
+| (Calendar) | `list_events_today`, `create_event`, ... via MCP |
 
-### `complete_payment_task`
+### Cross-agent: pagamento atômico
 
-Fluxo: usuário pagou uma conta que tinha tarefa associada.
+`complete_payment_task(task_id, amount, category, account, transaction_name="")`:
+completa a tarefa **e** lança a despesa (via `create_transaction_on_cursor` da Nami) na
+**mesma transação PostgreSQL** — tudo-ou-nada (acabou o status `partial`). A Kaguya deve
+confirmar valor/categoria/conta **antes** de chamar — sem defaults financeiros.
 
-1. Chama `POST /project/{project_id}/task/{task_id}/complete` no TickTick
-2. Importa e chama `create_transaction()` da Nami para lançar a despesa no BigQuery
-3. Retorna status agregado (`ok` / `partial`) com detalhes de cada etapa
-
-**Parâmetros obrigatórios:** `task_id`, `project_id`, `amount`, `category`, `account`
-**Kaguya deve confirmar** esses valores com o usuário antes de chamar — sem defaults financeiros.
-
-### `create_expense_reminder`
-
-Fluxo: usuário quer lembrete para pagar algo no futuro.
-
-1. Resolve o projeto no TickTick pelo nome (fuzzy match por prefixo)
-2. Cria tarefa com prioridade Alta e data de vencimento informada
-3. **Não lança despesa** — o lançamento ocorre quando o usuário realmente pagar
-
-**Parâmetros:** `title`, `due_date` (YYYY-MM-DD), `project_name` (padrão: "Finanças"),
-`amount` (opcional — vai na descrição), `description` (opcional)
-
----
-
-## OAuth do TickTick
-
-As credenciais são passadas via variáveis de ambiente:
-
-```
-TICKTICK_ACCESS_TOKEN    # token atual
-TICKTICK_CLIENT_ID       # client ID do app
-TICKTICK_CLIENT_SECRET   # client secret do app
-TICKTICK_REFRESH_TOKEN   # para renovar automaticamente
-TICKTICK_EXPIRES_AT      # ISO 8601 — quando o access token expira
-```
-
-O servidor MCP renova o token automaticamente via refresh quando detecta expiração
-(margem de 5 minutos). As tools cross-agent em `tools.py` têm um cache mínimo próprio
-para as chamadas diretas (não MCP).
+`create_expense_reminder(title, due_date, project_name="Finanças", amount=0, description="")`:
+cria a tarefa de lembrete (prioridade alta) no banco; **não** lança despesa.
 
 ---
 
 ## Regras importantes de comportamento
 
-- **Chame a tool PRIMEIRO**, depois responda. Nunca mande "aguarde..." antes de chamar.
-- `list_tasks_today` já inclui atrasadas no campo `overdue` — não chame `list_overdue_tasks` junto.
-- `delete_task` é irreversível — sempre confirme com o usuário antes de executar.
-- Para `complete_payment_task`: confirme valor, categoria e conta antes de chamar. Sem defaults.
-- Projetos são buscados dinamicamente — não assuma nomes fixos no código ou na instrução.
+- **Chame a tool PRIMEIRO**, depois responda. Nunca mande "aguarde...".
+- Capture em linguagem natural e **ecoe a interpretação** (lista/data/prioridade assumidas);
+  aceite correção conversacional. Datas no fuso `America/Sao_Paulo`, formato `AAAA-MM-DD`.
+- Prioridades: 0 nenhuma · 1 baixa · 2 média · 3 alta.
+- `list_tasks_today` já traz as vencidas em `overdue` — não chame nada redundante.
+- **`needs_cascade`** não é erro: pergunte ao usuário e repita com `cascade=true`.
+- `delete_task` e `delete_project` são destrutivas → **confirme sempre antes**.
+  `delete_project` exige `mode` (`move_to_inbox` | `delete_tasks`).
+- Listas resolvidas dinamicamente por nome (prefixo) — nunca nomes fixos.
+- "o que tenho pra hoje?" = `list_tasks_today()` (banco) + `list_events_today()` (Calendar).
 
 ---
 
 ## MCP Server — Google Calendar (`mcp_servers/calendar/server.py`)
 
-Segundo servidor MCP da Kaguya, rodando como processo filho stdio via `McpToolset`.
+Único MCP da Kaguya. Detalhes de configuração/OAuth em `coordinator/CLAUDE.md`.
 
-### Tools expostas
-
-| Tool | Descrição |
-|---|---|
-| `list_calendars` | Lista todos os calendários do usuário |
-| `list_events` | Eventos de um período (qualquer calendário) |
-| `list_events_today` | Eventos de hoje (exclui calendários bloqueados) |
-| `get_event` | Detalhes de um evento específico |
-| `create_event` | Cria evento (apenas no calendário principal) |
-| `update_event` | Atualiza evento (apenas no calendário principal) |
-| `delete_event` | Remove evento (apenas no calendário principal) |
-| `find_free_slots` | Encontra horários livres em um intervalo |
-
-### Comportamento importante
-
-- **Leitura**: todos os calendários. **Escrita**: apenas `GOOGLE_CALENDAR_MAIN_CALENDAR_ID`
-- Timeout: 30s
-- `list_events_today` filtra o calendário **"TickTick"** (sincronizado externamente) via `_BLOCKED_CALENDARS` em `server.py`
-- Para bloquear outros calendários externos, adicionar o nome ao conjunto `_BLOCKED_CALENDARS`
-- Fuso horário: `America/Sao_Paulo` (UTC-3) — timestamps usam `-03:00`
-- `expiry` passado como datetime **naive UTC** ao objeto `Credentials` — google-auth compara internamente com `datetime.utcnow()` (também naive); passar aware datetime causa `TypeError`
-- Refresh automático de token OAuth (usa `creds.valid` do google-auth)
-
-### Variáveis de ambiente
-
-```
-GOOGLE_CALENDAR_CLIENT_ID        # client ID do app OAuth
-GOOGLE_CALENDAR_CLIENT_SECRET    # client secret do app OAuth
-GOOGLE_CALENDAR_ACCESS_TOKEN     # access token OAuth
-GOOGLE_CALENDAR_REFRESH_TOKEN    # refresh token OAuth
-GOOGLE_CALENDAR_TOKEN_EXPIRY     # ISO 8601 — data de expiração do access token
-GOOGLE_CALENDAR_MAIN_CALENDAR_ID # ID do calendário principal (geralmente o email Gmail)
-```
-
-### Gerar credenciais OAuth (primeira vez)
-
-1. Google Cloud Console → projeto do BigQuery → APIs e Serviços → Biblioteca → habilitar **Google Calendar API**
-2. Criar credencial OAuth 2.0 tipo **Desktop app** → baixar JSON → salvar como `scripts/client_secret.json`
-3. Rodar `python scripts/authorize_calendar.py` — abre browser, imprime os valores das env vars
-4. Copiar os valores para `.env` e para o Dokploy
+- **Leitura**: todos os calendários. **Escrita**: apenas `GOOGLE_CALENDAR_MAIN_CALENDAR_ID`.
+- `list_events_today` filtra o calendário externo **"TickTick"** (um calendário Google
+  sincronizado de fora) via `_BLOCKED_CALENDARS` — isso é um **nome de calendário**, não tem
+  relação com o antigo backend de tarefas.
+- Tools: `list_calendars`, `list_events`, `list_events_today`, `get_event`, `create_event`,
+  `update_event`, `delete_event`, `find_free_slots`.
 
 ---
 
-## Formatação
+## Formatação (Telegram = HTML)
 
-O Telegram renderiza HTML. Kaguya usa HTML + emojis em todas as respostas.
-Nunca usar markdown (`*`, `_`, `~`). Ver instrução completa em `agent.py` para os templates
-de cada tipo de resposta (lista de tarefas, confirmação de criação, erros, etc.).
+- Título em `<b>negrito</b>`; prioridade: 🔴 Alta · 🟡 Média · 🔵 Baixa · ⚪ Nenhuma.
+- Cada tarefa num bloco com 📋; subtarefas com ↳; vencidas em seção "⚠️ <b>Atrasadas</b>".
+- Confirmação: `✅ <b>Título</b> — em 📁 Lista · 📅 data`. Erros: `❌ Houve um problema: ...`.
+- **Nunca** use markdown (`*`, `_`, `~`). Só HTML e emojis.
 
 ---
 
@@ -201,9 +150,9 @@ de cada tipo de resposta (lista de tarefas, confirmação de criação, erros, e
 Kaguya Shinomiya — aristocrática, organizada, levemente condescendente.
 
 - Sempre começa com `Kaguya:`
-- Tom de quem faz um favor; admira o usuário mas nunca admite diretamente (escapa em `...`)
-- Quando tudo funciona: "Como esperado."
-- Quando cria: "Registrei isso para você. ...Apenas desta vez."
-- Quando completa: "Concluído. Era o mínimo esperado. ...Não que eu esperasse menos de você."
-- Quando há erro: "Houve um problema. Não foi culpa sua, desta vez."
-- Nunca quebra o personagem
+- Tom de quem faz um favor; admira o usuário mas escapa em `...`
+- Cria: "Registrei isso para você. ...Apenas desta vez."
+- Completa: "Concluído. Era o mínimo esperado."
+- Erro: "Houve um problema. Não foi culpa sua, desta vez."
+- Nunca quebra o personagem.
+</content>

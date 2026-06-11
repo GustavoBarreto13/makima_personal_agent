@@ -21,7 +21,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | Agente | Domínio | Status | Documentação |
 |---|---|---|---|
 | `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1 | `agents/nami/CLAUDE.md` |
-| `agents/kaguya/` | Tarefas + Agenda (TickTick + Calendar via MCP) | ✅ Fase 2 | `agents/kaguya/CLAUDE.md` |
+| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) | ✅ Fase 2 | `agents/kaguya/CLAUDE.md` |
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG) | 🔧 Fase 3 | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) | ✅ Fase 5a | `agents/frieren/CLAUDE.md` |
 | `agents/lucy/` | Email (Gmail IMAP) | — Fase 4 | — |
@@ -32,7 +32,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 ```python
 # coordinator/agent.py
 from agents.nami.agent import nami_agent
-from agents.kaguya.agent import create_kaguya_agent   # factory (instancia McpToolset)
+from agents.kaguya.agent import create_kaguya_agent   # factory (só o McpToolset do Calendar)
 from agents.frieren.agent import frieren_agent
 from agents.kurisu.agent import kurisu_agent
 # from agents.lucy.agent import lucy_agent
@@ -52,7 +52,7 @@ coordinator/main.py  (python-telegram-bot, sessões por domínio)
     ↓
 coordinator/agent.py  (Makima — Agent ADK)
     ├── nami_agent      → PostgreSQL (finanças)                      [agents/nami]
-    ├── kaguya_agent    → TickTick via MCP stdio                     [agents/kaguya + mcp_servers/ticktick]
+    ├── kaguya_agent    → PostgreSQL (tarefas) + /api/tasks/*        [agents/kaguya + webapp]
     │                  → Google Calendar via MCP stdio               [mcp_servers/calendar]
     ├── kurisu_agent    → Vertex AI RAG (vault Obsidian)             [agents/kurisu]   (estrutura criada, pendente corpus)
     ├── frieren_agent   → PostgreSQL (livros)                        [agents/frieren]
@@ -72,8 +72,8 @@ Kaguya possui duas tools especiais em `agents/kaguya/tools.py` que cruzam domín
 
 | Tool | O que faz |
 |---|---|
-| `complete_payment_task` | Completa tarefa no TickTick **e** lança despesa no PostgreSQL via tools da Nami |
-| `create_expense_reminder` | Cria tarefa de lembrete de pagamento no TickTick (sem lançar despesa ainda) |
+| `complete_payment_task` | Completa a tarefa **e** lança a despesa (tools da Nami) na **mesma transação PostgreSQL** — atômico, tudo-ou-nada |
+| `create_expense_reminder` | Cria tarefa de lembrete de pagamento no PostgreSQL próprio (sem lançar despesa ainda) |
 
 Makima conhece os fluxos duplos e roteia corretamente:
 
@@ -100,11 +100,14 @@ makima_personal_agent/
 │   │   ├── agent.py     # nami_agent
 │   │   ├── schema_pg.sql # schema das tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, categorias, formatação, personalidade
-│   ├── kaguya/          # agente de tarefas + agenda — Fase 2 ✅
+│   ├── kaguya/          # agente de tarefas + agenda — Fase 2 ✅ (motor próprio em PostgreSQL)
 │   │   ├── __init__.py
-│   │   ├── tools.py     # tools cross-agent (complete_payment_task, create_expense_reminder)
-│   │   ├── agent.py     # create_kaguya_agent() — factory com dois McpToolsets
-│   │   └── CLAUDE.md    # MCP TickTick + Calendar, tools cross-agent, OAuth, personalidade
+│   │   ├── schema_tasks_pg.sql # schema do sistema de tarefas (spec 011)
+│   │   ├── tools_tasks.py      # camada de lógica: CRUD de tarefas/subtarefas, posições
+│   │   ├── tools_projects.py   # camada de lógica: listas, grupos, colunas (Kanban)
+│   │   ├── tools.py            # fachada: re-exporta a lógica + cross-agent atômico (Nami)
+│   │   ├── agent.py     # create_kaguya_agent() — factory (só o McpToolset do Calendar)
+│   │   └── CLAUDE.md    # camada de lógica, tools, cross-agent atômico, Calendar, personalidade
 │   ├── kurisu/          # agente de knowledge base — Fase 3 🔧 (pendente corpus Vertex AI)
 │   │   ├── __init__.py
 │   │   ├── agent.py     # kurisu_agent — singleton com VertexAiRagRetrieval
@@ -117,9 +120,6 @@ makima_personal_agent/
 │       └── CLAUDE.md    # tools, schema PostgreSQL, menu interativo, personalidade
 ├── mcp_servers/
 │   ├── __init__.py
-│   ├── ticktick/
-│   │   ├── __init__.py
-│   │   └── server.py    # servidor MCP FastMCP — tools genéricas do TickTick
 │   └── calendar/
 │       ├── __init__.py
 │       └── server.py    # servidor MCP FastMCP — Google Calendar (leitura todos, escrita só principal)
@@ -145,8 +145,8 @@ google-adk               # Agent, InMemoryRunner, McpToolset, VertexAiRagRetriev
 python-telegram-bot      # bot Telegram
 psycopg2-binary          # driver PostgreSQL síncrono (Nami, Frieren, Journal)
 google-cloud-storage     # backup automático do PostgreSQL para GCS
-requests                 # acesso HTTP às APIs (TickTick, etc.) nas tools dos agentes
-mcp[cli]                 # FastMCP — servidor MCP do TickTick e Calendar
+requests                 # acesso HTTP às APIs externas (Google Books, etc.) nas tools dos agentes
+mcp[cli]                 # FastMCP — servidor MCP do Google Calendar
 google-auth              # OAuth para Google Calendar
 google-auth-oauthlib     # fluxo OAuth desktop (script de autorização)
 google-api-python-client # cliente da Google Calendar API v3
@@ -161,7 +161,7 @@ Ambiente local: `.venv` própria do makima.
 | Fase | O que fazer | Onde | Status |
 |---|---|---|---|
 | **1** | Nami (finanças): tools PostgreSQL + agent. | `agents/nami/` | ✅ |
-| **2** | Kaguya (tarefas): MCP server TickTick + tools cross-agent + agent. Integração dupla Kaguya+Nami. | `agents/kaguya/` + `mcp_servers/ticktick/` | ✅ |
+| **2** | Kaguya (tarefas): sistema próprio em PostgreSQL (camada de lógica + router `/api/tasks/*` + shell webapp) + Calendar via MCP + cross-agent atômico Kaguya+Nami. TickTick aposentado (spec 011). | `agents/kaguya/` + `webapp/` | ✅ |
 | **3** | Kurisu (knowledge base): Vertex AI RAG sobre vault Obsidian. Estrutura criada, pendente setup do corpus no GCP. | `agents/kurisu/` + GCP Console | 🔧 |
 | **4** | Lucy (email): tools IMAP/Gmail + agent. | `agents/lucy/` (ref.: `n8n-python-scripts/lucy_email_agent/`) | — |
 | **5a** | Frieren (livros): PostgreSQL + Google Books API + log de leitura por páginas. | `agents/frieren/` | ✅ |

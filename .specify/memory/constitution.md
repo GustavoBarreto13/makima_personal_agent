@@ -1,5 +1,13 @@
 <!--
 SYNC IMPACT REPORT
+Version change: 1.0.0 → 1.0.1 (PATCH)
+Modified principles: Principle I (Agent Specialization) — atualização factual do backend do
+  domínio kaguya: "TickTick + Google Calendar via MCP" → "PostgreSQL próprio + Google Calendar
+  via MCP" (spec 011-tasks-mvp aposentou o TickTick). Nenhuma mudança normativa de princípio.
+Templates updated: nenhum (mudança factual; os princípios e gates seguem iguais)
+Deferred TODOs: none
+
+--- Histórico anterior ---
 Version change: (template) → 1.0.0
 Added sections: Core Principles (I–V), Agent Architecture Constraints, Development Workflow, Governance
 Modified principles: N/A (initial ratification)
@@ -20,7 +28,7 @@ Each sub-agent owns exactly one domain. Makima (the coordinator) MUST NOT implem
 domain logic — she only delegates. Domain logic lives in the agent's `tools.py`.
 
 - nami → finanças (PostgreSQL)
-- kaguya → tarefas + agenda (TickTick + Google Calendar via MCP)
+- kaguya → tarefas + agenda (PostgreSQL próprio + Google Calendar via MCP)
 - kurisu → knowledge base (Vertex AI RAG)
 - frieren → livros (PostgreSQL + Google Books)
 - lucy → email (Gmail)
@@ -103,4 +111,4 @@ incompatível → MAJOR bump. Clarificações → PATCH bump.
 **Compliance**: todo `plan.md` gerado via `/speckit-plan` MUST incluir um
 "Constitution Check" verificando os cinco princípios antes de prosseguir.
 
-**Version**: 1.0.0 | **Ratified**: 2026-06-07 | **Last Amended**: 2026-06-07
+**Version**: 1.0.1 | **Ratified**: 2026-06-07 | **Last Amended**: 2026-06-11
