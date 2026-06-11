@@ -320,3 +320,5 @@ Detalhamento completo (colunas, constraints, índices, DSL de filtros): ver `dat
 - **Migração de dados do TickTick** (decisão: começar limpo).
 - **App mobile nativo / widgets** — o webapp responsivo (Fase 5) cobre mobile.
 - **Histórico materializado de ocorrências de recorrentes** — o histórico vem de `completed_at` das linhas consumidas; tabela própria só se a necessidade aparecer.
+- **Timer de foco / Pomodoro** vinculado a tarefa — marcado como *opcional* no documento de recomendações (`agents/kaguya/specs_app_tasks_recomendacoes.md` §4); fica fora da v1 (fases 011–015). Reavaliar como fase futura (ex.: Fase 6) se houver necessidade real — sem reservar schema agora.
+- **Gamificação** (pontos/Karma estilo Todoist) — marcada como *"se usar"* nas recomendações (§4); decisão: **não** entra. A motivação no domínio de produtividade vem da "força do hábito" (anti-streak, FR-022), não de pontuação. Reabrir só se a metáfora casar com um objetivo claro.
