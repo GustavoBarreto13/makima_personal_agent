@@ -4,7 +4,13 @@
 
 **Created**: 2026-06-09
 
-**Status**: Draft
+**Status**: ⛔ Superseded por [`specs/010-kaguya-tasks-app/`](../010-kaguya-tasks-app/spec.md) (2026-06-11)
+
+> **Nota de supersedência**: esta spec mantinha o TickTick como source of truth com espelho
+> local (modelo Híbrido). A decisão registrada em `agents/kaguya/specs_app_tasks_recomendacoes.md`
+> e formalizada na spec master 010 **elimina o TickTick por completo** — o PostgreSQL local
+> vira o motor de tarefas. Nada desta spec deve ser implementado; o sub-app de tarefas do
+> webapp nasce na spec `011-tasks-mvp` (filha da 010).
 
 **Input**: Seção "Tarefas" no webapp do Makima (domínio Kaguya), modelo Híbrido: espelho local
 das tarefas do TickTick sincronizado em background, com UI web rápida (estilo TickTick) que lê do
