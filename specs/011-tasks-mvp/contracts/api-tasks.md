@@ -33,8 +33,8 @@ Cada endpoint envelopa uma função da camada de lógica (`tools_tasks.py` /
 | `GET /api/tasks/today` | `list_tasks_today()` | `{overdue: [...], today: [...]}` agrupadas por projeto (abertas, `due_date <= hoje`) |
 | `GET /api/tasks/search?q=` | `search_tasks(query)` | Busca por título/descrição (ILIKE no MVP) |
 | `GET /api/tasks/trash?project_id=` | `list_trash(project_id?)` | Soft-deletadas, para restauração |
-| `POST /api/tasks` | `create_task(title, project_id?, parent_id?, priority?, due_date?, due_time?, description?)` | Sem `project_id` → Inbox. `parent_id` cria subtarefa (1 nível) |
-| `PATCH /api/tasks/{id}` | `update_task(task_id, ...)` | Campos editáveis: título, descrição, prioridade, datas, `project_id` (regra da coluna ao trocar de projeto), `column_id` |
+| `POST /api/tasks` | `create_task(title, project_id?, parent_id?, priority?, type?, due_date?, due_time?, description?)` | Sem `project_id` → Inbox. `type` default `task` (`task`/`event`/`birthday`). `parent_id` cria subtarefa (1 nível) |
+| `PATCH /api/tasks/{id}` | `update_task(task_id, ...)` | Campos editáveis: título, descrição, prioridade, `type`, datas, `project_id` (regra da coluna ao trocar de projeto), `column_id` |
 | `POST /api/tasks/{id}/complete` | `complete_task(task_id, cascade=False)` | Subtarefas abertas sem `cascade` → `{"status":"error","needs_cascade":true}` (canal confirma e repete com `cascade=true`). Recebe também o drop na coluna done |
 | `POST /api/tasks/{id}/reopen` | `reopen_task(task_id)` | Bloqueado se o pai estiver concluído |
 | `POST /api/tasks/{id}/position` | `reorder_task(task_id, after_id?, before_id?)` | Posição esparsa entre vizinhos; renormaliza em colisão |
@@ -46,10 +46,10 @@ Cada endpoint envelopa uma função da camada de lógica (`tools_tasks.py` /
 ```json
 {
   "id": 42, "project_id": 3, "column_id": 7, "parent_id": null,
-  "title": "revisar relatório", "description": null, "priority": 3,
+  "title": "revisar relatório", "description": null, "type": "task", "priority": 3,
   "due_date": "2026-06-12", "due_time": "17:00",
   "position": 3000, "completed_at": null, "created_at": "2026-06-11T10:00:00-03:00",
-  "subtasks": [ { "id": 43, "title": "...", "completed_at": null, "...": "..." } ]
+  "subtasks": [ { "id": 43, "title": "...", "priority": 1, "description": null, "completed_at": null, "...": "..." } ]
 }
 ```
 

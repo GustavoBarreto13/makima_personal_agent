@@ -17,7 +17,7 @@ interpretação na resposta em português.
 | `list_tasks_today` | `()` → `{overdue, today}` por projeto | `list_tasks_today` (mesmo shape de resposta) |
 | `list_tasks_by_project` | `(project_name_or_id)` — fuzzy por prefixo | `list_tasks_by_project` |
 | `search_tasks` | `(query)` | `search_tasks` |
-| `create_task` | `(title, project_name?, priority?, due_date?, due_time?, description?, parent_id?)` — sem projeto → Inbox | `create_task` + `create_subtask` |
+| `create_task` | `(title, project_name?, priority?, type?, due_date?, due_time?, description?, parent_id?)` — sem projeto → Inbox; `type` default `task` | `create_task` + `create_subtask` |
 | `update_task` | `(task_id, ...)` | `update_task` |
 | `complete_task` | `(task_id, cascade=False)` — `needs_cascade` → perguntar e repetir | `complete_task` |
 | `reopen_task` | `(task_id)` | — (novo) |

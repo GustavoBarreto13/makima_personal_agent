@@ -49,8 +49,9 @@ regra de negócio fora da camada de lógica); fuso fixo `America/Sao_Paulo`; zer
 referência a TickTick no runtime após esta fase.
 
 **Scale/Scope**: 1 usuário; centenas a poucos milhares de tarefas; ~6 telas/estados de
-frontend (sidebar, lista, Kanban, Hoje, TaskModal, ProjectModal); ~15 tools da Kaguya;
-~18 endpoints REST.
+frontend (SidebarNav, ListScreen, KanbanScreen, TodayScreen, TaskModal, ProjectModal) +
+componentes/primitivos do guia (TaskRow, TaskCard, QuickAdd, ParseMirror, PrioFlag, chips,
+Toast) + TweaksPanel; ~15 tools da Kaguya; ~18 endpoints REST.
 
 ## Constitution Check
 
@@ -110,19 +111,24 @@ scripts/setup_schemas.py            # aplica também schema_tasks_pg.sql + seed 
 webapp/backend/routers/tasks.py     # NOVO — router /api/tasks/* (padrão journal.py/finances.py)
 webapp/backend/main.py              # registra o router
 
+webapp/frontend/public/kaguya.jpg   # NOVO asset (brand mark da sidebar; hero do Meu Dia na Fase 3)
+                                    # origem: docs/claude_design/design_handoff_kaguya_tarefas/kaguya/kaguya.jpg
+
 webapp/frontend/src/
 ├── App.tsx                         # rota /tasks/* antes do catch-all
-├── components/Layout.tsx           # entrada Kaguya na sidebar global (--c-kaguya)
-└── pages/kaguya/                   # NOVO shell (frontend-design-guide.md da master)
-    ├── KaguyaShell.tsx
-    ├── TweaksPanel.tsx
-    ├── kaguya.css                  # tokens OKLCH escopados .kg-app
+├── components/Layout.tsx           # entrada Kaguya na sidebar global (--c-kaguya, rosa = identidade do domínio)
+└── pages/kaguya/                   # NOVO shell — segue o guia canônico (010/frontend-design-guide.md)
+    ├── KaguyaShell.tsx             # sidebar do domínio + brand mark + "Voltar à Makima"; PALETTE_MAP do acento
+    ├── TweaksPanel.tsx             # tema · acento (azul default) · densidade · marca de prioridade · animações
+    ├── kaguya.css                  # tokens OKLCH escopados .kg-app (claro/escuro; acento azul + 4 opções)
     ├── kaguyaApi.ts
     ├── types.ts
-    ├── screens/{TodayScreen,ListScreen,KanbanScreen}.tsx
-    ├── modals/{TaskModal,ProjectModal}.tsx
-    ├── components/{TaskRow,TaskCard,QuickAdd,SidebarNav}.tsx
-    └── ui/                         # ícones, chips de prioridade/projeto
+    ├── screens/{TodayScreen,ListScreen,KanbanScreen}.tsx   # (Today = "Hoje" simples no MVP)
+    ├── modals/{TaskModal,ProjectModal}.tsx                 # TaskModal: tipo + subtarefas ricas (prio+descrição)
+    ├── components/{TaskRow,TaskCard,QuickAdd,SidebarNav,Toast}.tsx   # TaskRow: subtarefas expandidas por padrão
+    └── ui/                         # Icon, Check, PrioFlag, ParseMirror, chips (Tag/Date/Proj)
+
+webapp/frontend/src/lib/parseTask.ts   # NOVO — parser determinístico pt-BR (MVP: @lista + !prio); base do ParseMirror
 
 tests/
 ├── agents/test_kaguya_tasks.py     # NOVO — camada de lógica (posições, cascata, atomicidade)
@@ -136,6 +142,18 @@ CLAUDE.md (raiz)                    # tabela de agentes/arquitetura atualizada
 lógica única (FR-002) são os módulos `tools_*.py` da Kaguya — o router FastAPI os
 importa e envelopa (exatamente como `routers/finances.py` envelopa as tools da Nami),
 e o agente os expõe ao Gemini. Nenhuma camada nova é inventada.
+
+**Front-end — fonte única de verdade**: todo o shell `pages/kaguya/` segue o **guia
+canônico** [`specs/010-kaguya-tasks-app/frontend-design-guide.md`](../010-kaguya-tasks-app/frontend-design-guide.md),
+ancorado no protótipo de alta fidelidade em
+[`docs/claude_design/design_handoff_kaguya_tarefas/`](../../docs/claude_design/design_handoff_kaguya_tarefas/)
+(reimplementar no stack real, não copiar o JSX). Decisões herdadas do handoff e válidas
+para esta e as próximas fases: **acento azul `#3B82C4` por padrão** (configurável em
+azul/rosa/violeta/dourado via `PALETTE_MAP`), tipografia **Hanken Grotesk** (display) +
+Playfair (só wordmark) + DM Sans (corpo) + DM Mono (mono), Tweaks com **marca de
+prioridade** (`data-pmark`: bar/dot/fill) e **animações** (`data-anim`), token `@lista`
+para lista (`#` reservado a tags), e subtarefas ricas (prioridade + descrição) expandidas
+por padrão na lista.
 
 ## Complexity Tracking
 

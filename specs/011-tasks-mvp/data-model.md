@@ -21,7 +21,7 @@ adormecido e as regras de estado que a camada de lógica implementa agora.
 | `task_project_groups` | grupos na sidebar (CRUD completo) |
 | `task_projects` | CRUD + regras do Inbox (indelével, inarquivável, destino de capturas órfãs) |
 | `task_columns` | Kanban: CRUD de colunas, no máximo uma `is_done_column` por projeto |
-| `tasks` | CRUD completo; campos de recorrência/Meu Dia ficam NULL |
+| `tasks` | CRUD completo; `type` ativo (`task`/`event`/`birthday`, default `task`, seletor no TaskModal); campos de recorrência/Meu Dia ficam NULL |
 | `task_tags`, `task_tag_links` | criadas, **sem UI** (Fase 2); a camada de lógica ainda não as expõe |
 
 ## Tabelas adormecidas (criadas, intocadas até a fase indicada)
@@ -47,6 +47,8 @@ adormecido e as regras de estado que a camada de lógica implementa agora.
 
 - `title` obrigatório, não-vazio após trim.
 - `priority` ∈ {0,1,2,3}.
+- `type` ∈ {`task`,`event`,`birthday`} (default `task`); a recorrência anual de `birthday`
+  só é cabeada na Fase 2 (no MVP o tipo é armazenado e exibido, sem gerar ocorrências).
 - `due_time` exige `due_date` (constraint no banco, validada antes para erro amigável).
 - `parent_id`: subtarefa não pode ter subtarefa própria nesta fase (1 nível — validado
   na lógica; o banco permite mais para extensão futura).

@@ -70,10 +70,12 @@ interpretação errada (cenário US2.2).
 
 ## D6 — Quick-add do webapp (FR-011)
 
-**Decision**: parsing determinístico **no frontend** (regex): `#palavra` → projeto
-(match case-insensitive por prefixo contra a lista carregada), `!alta|!media|!baixa` →
-prioridade. Tokens reconhecidos viram chips destacados; não reconhecidos ficam no título.
-O POST envia campos já estruturados.
+**Decision**: parsing determinístico **no frontend** (`lib/parseTask.ts`, regex):
+`@palavra` → lista/projeto (match case-insensitive por prefixo contra a sidebar carregada),
+`!alta|!media|!baixa` → prioridade. Tokens reconhecidos viram chips/segments destacados ao
+vivo (componente `ParseMirror`, classes `tok-proj`/`tok-prio-*`); não reconhecidos ficam no
+título. `#` fica **reservado a tags** (Fase 2) — nunca para lista, alinhado ao guia canônico
+(`frontend-design-guide.md` §6). O POST envia campos já estruturados.
 
 **Rationale**: master/FR-012 da 010 exige quick-add sem LLM; manter no front dá feedback
 visual imediato (highlight estilo Todoist) e zero latência.

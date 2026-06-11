@@ -67,9 +67,10 @@ Com o backend do webapp **parado**, conversar com a Kaguya:
 
 1. Tarefas com vencimento ontem/hoje/amanhã → Hoje mostra vencidas destacadas + hoje;
    amanhã não aparece.
-2. Quick-add: `ligar pro banco #Casa !alta` → chips destacados; salvar → projeto Casa,
-   prioridade 3, título limpo.
-3. `algo #NãoExiste` → vai para o Inbox com aviso de projeto não encontrado.
+2. Quick-add: `ligar pro banco @Casa !alta` → chips/segments destacados ao vivo (ParseMirror);
+   salvar → lista Casa, prioridade 3, título limpo.
+3. `algo @NãoExiste` → vai para o Inbox com aviso de lista não encontrada (`#` não vira lista —
+   reservado a tags na Fase 2).
 
 ### V5 — Pagamento atômico (US5, SC-005)
 

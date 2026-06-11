@@ -99,7 +99,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     parent_id       INT REFERENCES tasks(id) ON DELETE CASCADE,  -- subtarefa (1 nível garantido)
 
     title           TEXT NOT NULL,
-    description     TEXT,
+    description     TEXT,                               -- notas (a UI rotula como "Notas")
+    type            TEXT NOT NULL DEFAULT 'task'
+                    CHECK (type IN ('task', 'event', 'birthday')),  -- task=padrão; event=com hora; birthday=recorrência anual. Distinto dos eventos lidos do Google Calendar
     priority        SMALLINT NOT NULL DEFAULT 0
                     CHECK (priority BETWEEN 0 AND 3),   -- 0=nenhuma 1=baixa 2=média 3=alta
 
@@ -138,6 +140,11 @@ CREATE INDEX IF NOT EXISTS idx_tasks_my_day    ON tasks (my_day_date) WHERE my_d
 - Vencida: aberta e `due_date < hoje` (ou `due_date = hoje AND due_time < agora`)
 - Concluída: `completed_at IS NOT NULL`
 - Na lixeira: `deleted_at IS NOT NULL` (restaurável; purga definitiva após 30 dias é tarefa de manutenção, não constraint)
+
+**Tipos de tarefa** (`type`): `task` (padrão), `event` (tem hora — `due_time`/`start_at`) e
+`birthday` (recorrência anual via `task_recurrences`). São **tarefas próprias**, distintas
+dos eventos lidos do Google Calendar. O front mostra um glyph de tipo na linha/card; o
+seletor de tipo vive no TaskModal.
 
 ### `task_recurrences` — regra de recorrência (1:1 com a tarefa viva da série)
 

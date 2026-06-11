@@ -9,8 +9,11 @@
 **Spec master**: [`specs/010-kaguya-tasks-app/`](../010-kaguya-tasks-app/spec.md) — esta é a
 spec filha da **Fase 1**. Schema, princípios (paridade de canais, soft delete, posições
 esparsas) e edge cases de longo prazo estão definidos lá e em
-[`data-model.md`](../010-kaguya-tasks-app/data-model.md); o frontend segue o
-[`frontend-design-guide.md`](../010-kaguya-tasks-app/frontend-design-guide.md).
+[`data-model.md`](../010-kaguya-tasks-app/data-model.md). Todo o frontend desta fase (e das
+seguintes) segue o **guia canônico** de design
+[`frontend-design-guide.md`](../010-kaguya-tasks-app/frontend-design-guide.md), que por sua
+vez se ancora no protótipo de alta fidelidade em
+[`docs/claude_design/design_handoff_kaguya_tarefas/`](../../docs/claude_design/design_handoff_kaguya_tarefas/).
 
 **Input**: User description: "Tasks MVP (Fase 1 da spec master 010-kaguya-tasks-app) — primeiro corte utilizável do sistema de tarefas próprio. Aplicar o schema PostgreSQL completo; camada de lógica única; tools da Kaguya reescritas para o Postgres (sai o MCP do TickTick, fica o do Google Calendar); complete_payment_task como transação atômica local; router /api/tasks/*; shell mínimo no webapp (lista, Kanban, Hoje, quick-add); paridade total entre canais; CRUD completo com subtarefas, projetos com grupos, prioridade, posições esparsas, captura NLP em português; PATCH amendment da constitution. Critério de pronto: usuário gerencia o dia a dia de tarefas inteiramente no app próprio, por qualquer canal, sem TickTick."
 
@@ -105,8 +108,9 @@ coluna e estado de conclusão persistem e aparecem coerentes na view lista.
 ### User Story 4 - Começar o dia pela tela "Hoje" com quick-add (Priority: P3)
 
 Abro a tela "Hoje" e vejo as tarefas com vencimento hoje e as vencidas, agrupadas por
-projeto. Um campo de quick-add no topo cria tarefa em segundos, entendendo atalhos
-simples (`#projeto`, `!alta`) — a versão completa com datas e ⌘K chega nas fases 012/015.
+lista. Um campo de quick-add no topo cria tarefa em segundos, entendendo atalhos
+simples (`@lista`, `!alta`) — a versão completa com datas, `#tag` e ⌘K chega nas fases
+012/015.
 
 **Why this priority**: é a porta de entrada diária e o embrião do "Meu Dia" (Fase 3),
 mas o MVP já é utilizável navegando por projetos.
@@ -117,8 +121,8 @@ agrupamento da tela Hoje; criar tarefa pelo quick-add com atalhos e conferir os 
 **Acceptance Scenarios**:
 
 1. **Given** tarefas com vencimento ontem, hoje e amanhã, **When** abro a tela Hoje, **Then** vejo as de hoje e as vencidas (destacadas), e não vejo a de amanhã.
-2. **Given** o quick-add, **When** digito "ligar pro banco #Casa !alta" e confirmo, **Then** a tarefa nasce no projeto Casa com prioridade alta e o texto limpo "ligar pro banco".
-3. **Given** um atalho que não casa com nada ("#ProjetoQueNãoExiste"), **When** confirmo, **Then** a tarefa vai para o Inbox com o texto original preservado e a UI indica que o projeto não foi encontrado.
+2. **Given** o quick-add, **When** digito "ligar pro banco @Casa !alta" e confirmo, **Then** a tarefa nasce na lista Casa com prioridade alta e o texto limpo "ligar pro banco".
+3. **Given** um atalho que não casa com nada ("@ListaInexistente"), **When** confirmo, **Then** a tarefa vai para o Inbox com o texto original preservado e a UI indica que a lista não foi encontrada.
 
 ---
 
@@ -170,7 +174,7 @@ lançada.
 
 - **FR-004**: Usuário MUST poder criar, ler, editar, completar, reabrir, mover e excluir (soft delete, com restauração) tarefas e subtarefas (1 nível).
 - **FR-005**: Usuário MUST poder criar, renomear, reordenar e excluir projetos e grupos de projetos; o Inbox MUST ser indelével e inarquivável.
-- **FR-006**: Tarefas MUST aceitar prioridade em 4 níveis e data de vencimento com hora opcional (a UI de datas avançada é da Fase 2, mas o campo já funciona).
+- **FR-006**: Tarefas MUST aceitar prioridade em 4 níveis, tipo (`tarefa`/`evento`/`aniversário`, com `tarefa` como padrão) e data de vencimento com hora opcional (a UI de datas avançada é da Fase 2, mas os campos já funcionam; a geração de ocorrências de `aniversário` é da Fase 2).
 - **FR-007**: Completar tarefa pai com subtarefas abertas MUST pedir confirmação e completar em cascata; exclusão de tarefa via Telegram MUST sempre pedir confirmação prévia.
 - **FR-008**: A ordenação manual MUST usar posições esparsas com re-espaçamento transparente em colisão.
 
@@ -178,7 +182,7 @@ lançada.
 
 - **FR-009**: A view lista MUST mostrar as tarefas do projeto selecionado ordenadas por posição, com subtarefas aninhadas e edição inline do título.
 - **FR-010**: Projetos MAY ter board Kanban (colunas configuráveis, no máximo uma marcada como "done"); mover card para a coluna done MUST completar a tarefa; lista e Kanban MUST nunca divergir (mesma fonte).
-- **FR-011**: A tela Hoje MUST listar tarefas de hoje + vencidas agrupadas por projeto, com quick-add que entende `#projeto` e `!prioridade` de forma determinística.
+- **FR-011**: A tela Hoje MUST listar tarefas de hoje + vencidas agrupadas por lista, com quick-add que entende `@lista` e `!prioridade` de forma determinística (`#tag` e datas são da Fase 2 — `#` fica reservado para tags, nunca para listas).
 
 **Canal Telegram (Kaguya)**
 
@@ -212,7 +216,8 @@ Tag, Filtro salvo, Hábito, Check-in.
 - O schema da master é aplicado pelo mesmo mecanismo dos outros agentes (`scripts/setup_schemas.py`, executado de dentro do container no VPS, conforme `CLAUDE.md` do repo).
 - A captura NLP usa o modelo já configurado da Kaguya (Gemini) — nenhum serviço novo.
 - A tela Hoje do MVP é a versão simples (lista de hoje+vencidas); o ritual "Meu Dia" completo é da Fase 3.
-- Datas no quick-add do webapp ("amanhã", "sexta 17h") são da Fase 2 — no MVP o quick-add cobre só `#projeto` e `!prioridade`; data entra pelo TaskModal.
-- Tags existem no banco desde já, mas a UI de tags é da Fase 2.
+- Datas no quick-add do webapp ("amanhã", "sexta 17h") são da Fase 2 — no MVP o quick-add cobre só `@lista` e `!prioridade`; data entra pelo TaskModal.
+- Tags existem no banco desde já, mas a UI de tags (e o token `#tag` no quick-add) é da Fase 2.
+- **Nomenclatura na UI**: a entidade `task_projects` é exibida como "**Listas**" (sidebar, modais); o termo "projeto" usado nesta spec é o nome do modelo de dados (a coluna/FK continua `project`). Detalhe no `frontend-design-guide.md`.
 - A lixeira (restauração de soft delete) pode ser uma view simples por projeto — purga automática (30 dias) é tarefa de manutenção futura, não bloqueia o MVP.
 - O domínio de sessão "tarefas" do coordinator permanece o mesmo — só a implementação por trás muda.
