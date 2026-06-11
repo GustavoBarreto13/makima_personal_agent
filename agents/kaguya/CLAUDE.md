@@ -60,7 +60,7 @@ As tools de tarefas são **funções Python** registradas direto (não MCP).
 | `list_tasks_today()` | `{overdue, today}` — abertas com `due_date <= hoje` |
 | `search_tasks(query)` | busca por título/descrição (ILIKE) |
 | `list_trash(project_id?)` | soft-deletadas (restauráveis) |
-| `create_task(..., recurrence?)` | cria tarefa/subtarefa; sem lista → Inbox; `recurrence={rrule,mode}` opcional; `type=birthday`+data → recorrência anual automática |
+| `create_task(..., column_id?, recurrence?)` | cria tarefa/subtarefa; sem lista → Inbox; lista **com board** → 1ª coluna (ou `column_id` explícito) para aparecer no Kanban; `recurrence={rrule,mode}` opcional; `type=birthday`+data → recorrência anual automática |
 | `update_task(task_id, ..., recurrence?, clear_recurrence?)` | edita; trocar de lista aplica a regra da coluna; anexa/edita/remove recorrência |
 | `complete_task(task_id, cascade, end_series?)` | completa; subtarefas abertas sem cascade → `needs_cascade`; numa recorrente gera a próxima (`generated_task_id`); `end_series=True` encerra a série |
 | `reopen_task(task_id)` | reabre; bloqueia se o pai está concluído |

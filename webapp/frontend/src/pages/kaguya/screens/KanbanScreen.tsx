@@ -44,6 +44,18 @@ export function KanbanScreen({ projectId, projectName, reloadKey, onOpenTask, on
     catch { toast('Falha ao criar coluna.', 'err') }
   }
 
+  // Cria uma tarefa diretamente numa coluna (captura rápida por prompt, como o addColumn).
+  // O backend posiciona o card já na coluna escolhida — por isso ele aparece no board.
+  const addTask = async (col: Column) => {
+    const title = window.prompt(`Nova tarefa em "${col.name}":`)
+    if (!title?.trim()) return
+    try {
+      const r = await kaguyaApi.createTask({ title: title.trim(), project_id: projectId, column_id: col.id })
+      if (r.status === 'error') { toast(r.message ?? 'Falha ao criar tarefa.', 'err'); return }
+      await load(); onChanged()
+    } catch { toast('Falha ao criar tarefa.', 'err') }
+  }
+
   // Marca/desmarca a coluna como "concluído" (única por lista).
   const toggleDone = async (col: Column) => {
     try {
@@ -94,8 +106,11 @@ export function KanbanScreen({ projectId, projectName, reloadKey, onOpenTask, on
       <div className="kg-page-sub">Arraste os cards entre as colunas</div>
 
       <div className="kg-board">
-        {columns.map((col) => {
-          const cards = tasks.filter((t) => t.column_id === col.id)
+        {columns.map((col, idx) => {
+          // Cards desta coluna. A 1ª coluna também acolhe tarefas órfãs (column_id null) —
+          // criadas antes deste fix ou ao apagar a coluna onde estavam — para nenhuma sumir.
+          const isFirst = idx === 0
+          const cards = tasks.filter((t) => t.column_id === col.id || (isFirst && t.column_id == null))
           return (
             <div
               key={col.id}
@@ -114,6 +129,10 @@ export function KanbanScreen({ projectId, projectName, reloadKey, onOpenTask, on
               </div>
               <div className="kg-col-body">
                 {cards.map((t) => <TaskCard key={t.id} task={t} onDragStart={setDragId} onOpen={onOpenTask} />)}
+                {/* adicionar tarefa direto nesta coluna */}
+                <button className="kg-col-add" onClick={() => addTask(col)}>
+                  <Icon name="plus" size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />tarefa
+                </button>
               </div>
             </div>
           )

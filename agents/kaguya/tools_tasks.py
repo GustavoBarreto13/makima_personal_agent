@@ -510,11 +510,17 @@ def create_task(
     due_time: Optional[str] = None,
     description: Optional[str] = None,
     recurrence: Optional[dict] = None,
+    column_id: Optional[int] = None,
 ) -> dict:
     """Cria uma tarefa (ou subtarefa) e a posiciona no fim da sua lista/escopo.
 
     Resolução da lista: ``project_id`` tem prioridade; senão tenta ``project_name``
     (usado pelo agente); se nada resolver, cai no **Inbox** (captura órfã).
+
+    Resolução da coluna (Kanban): se ``column_id`` for passado, a tarefa nasce nessa coluna
+    (validada contra a lista). Se não for passado mas a lista **tiver board** (≥1 coluna), a
+    tarefa cai na **primeira coluna** — assim ela aparece no Kanban e a view Lista e o Kanban
+    nunca divergem. Listas sem board continuam com a tarefa sem coluna (Kanban é opcional).
 
     Args:
         title: Título (obrigatório, não-vazio).
@@ -529,6 +535,8 @@ def create_task(
         recurrence: ``{"rrule": str, "mode": "fixed"|"after_completion"}`` (opcional). Exige
             ``due_date`` (a âncora). ``type="birthday"`` + ``due_date`` cria recorrência anual
             automática mesmo sem este parâmetro.
+        column_id: Coluna de Kanban onde criar a tarefa (opcional). Ignorado em subtarefas. Se
+            omitido e a lista tiver board, usa a primeira coluna automaticamente.
 
     Returns:
         ``{"status": "ok", "id": <int>, "project_id": <int>}`` ou erro em português.
@@ -586,7 +594,20 @@ def create_task(
                     resolved_project = resolve_project_id_by_name(project_name) or _get_inbox_id(cur)
                 else:
                     resolved_project = _get_inbox_id(cur)
-                resolved_column = None  # tarefa nova entra sem coluna (vai para a lista; Kanban opcional)
+                # ── Coluna do Kanban (só para tarefa-pai) ──
+                if column_id is not None:
+                    # Coluna explícita: precisa existir E pertencer à lista resolvida.
+                    cur.execute(
+                        "SELECT 1 FROM task_columns WHERE id = %s AND project_id = %s",
+                        (column_id, resolved_project),
+                    )
+                    if not cur.fetchone():
+                        return {"status": "error", "message": "Coluna não encontrada nesta lista."}
+                    resolved_column = column_id
+                else:
+                    # Sem coluna explícita: se a lista tiver board, entra na 1ª coluna (aparece no
+                    # Kanban e mantém Lista⇄Kanban em sincronia); sem board, fica sem coluna.
+                    resolved_column = _first_column_id(cur, resolved_project)
                 scope_filter = "project_id = %s AND parent_id IS NULL"
                 scope_val = resolved_project
 
