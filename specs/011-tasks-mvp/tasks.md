@@ -108,7 +108,7 @@ completa, lista e Telegram refletem.
 
 - [x] T023 [P] [US4] Criar `screens/TodayScreen.tsx`: consome `GET /api/tasks/today`, vencidas destacadas em vermelho-lacre + hoje, agrupadas por projeto; view default do shell
 - [x] T024 [P] [US4] Criar `lib/parseTask.ts` + `components/QuickAdd.tsx` com `ui/ParseMirror` (guia §6, research D6): parsing determinístico no frontend — `@lista` (prefixo case-insensitive contra a sidebar carregada) e `!alta|!media|!baixa` viram chips/segments destacados ao vivo no mirror (padrão visual `RichText` do Violet, classes `tok-proj`/`tok-prio-*`); `#` fica reservado para tags (Fase 2); token não resolvido permanece no título; `@inexistente` → Inbox com aviso
-- [ ] T025 [US4] Integrar QuickAdd na TodayScreen (e no header da ListScreen) e validar quickstart V4
+- [x] T025 [US4] Integrar QuickAdd na TodayScreen (e no header da ListScreen) e validar quickstart V4
 
 **Checkpoint**: ritual diário mínimo funcionando (embrião do Meu Dia da Fase 3).
 
