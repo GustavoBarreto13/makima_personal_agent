@@ -26,6 +26,7 @@ from agents.kaguya.tools import (
     list_tasks_today, list_tasks_by_project, search_tasks,
     create_task, update_task, complete_task, reopen_task, delete_task, restore_task,
     set_task_recurrence, clear_recurrence,
+    add_task_tag, remove_task_tag, list_tasks_by_tag,
     complete_payment_task, create_expense_reminder,
 )
 
@@ -75,6 +76,16 @@ _INSTRUCTION = """
       {"status":"error","needs_cascade":true,"open_subtasks":N}. Isso NÃO é erro: é um
       pedido de confirmação. PERGUNTE ao usuário se quer concluir as N subtarefas também
       e, se sim, chame complete_task(task_id, cascade=true).
+
+    TAGS / ETIQUETAS (fatia 013):
+    - Tags são rótulos leves de contexto/energia/tempo (ex.: mercado, 5min, alta-energia).
+    - Ao CRIAR/EDITAR, se o usuário mencionar etiquetas, passe tags=["mercado","5min"] em
+      create_task/update_task. Em update_task, tags substitui o conjunto inteiro.
+    - Para ajustar uma tarefa existente sem mexer no resto: add_task_tag(task_id, "mercado")
+      ou remove_task_tag(task_id, "mercado").
+    - "o que tenho com a tag mercado?" / "tarefas marcadas com #5min" →
+      list_tasks_by_tag("mercado"). Nomes de tag são case-insensitive (Mercado == mercado).
+    - Não invente tags: use as que o usuário disser. ECOE as tags aplicadas na resposta.
 
     RECORRÊNCIA (tarefas que se repetem):
     - A tarefa precisa de DATA (a âncora). Crie a tarefa com create_task(...) e, com o id
@@ -187,6 +198,8 @@ def create_kaguya_agent() -> Agent:
             create_task, update_task, complete_task, reopen_task, delete_task, restore_task,
             # Recorrência (Fase 2)
             set_task_recurrence, clear_recurrence,
+            # Tags / etiquetas (fatia 013)
+            add_task_tag, remove_task_tag, list_tasks_by_tag,
             # Cross-agent (Kaguya + Nami)
             complete_payment_task, create_expense_reminder,
             # Agenda (Google Calendar via MCP)

@@ -238,3 +238,70 @@ def test_clear_recurrence_endpoint(mock_clear):
     resp = client.delete(f"{_BASE}/42/recurrence")
     assert resp.status_code == 200
     mock_clear.assert_called_once_with(42)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tags (etiquetas) — fatia 013
+# ─────────────────────────────────────────────────────────────────────────────
+@patch("webapp.backend.routers.tasks.create_task")
+def test_create_task_with_tags(mock_create):
+    """POST / com tags → a tool recebe a lista de nomes."""
+    mock_create.return_value = {"status": "ok", "id": 7, "project_id": 1}
+    resp = client.post(_BASE, json={"title": "comprar pão", "tags": ["mercado", "5min"]})
+    assert resp.status_code == 201
+    mock_create.assert_called_once_with(title="comprar pão", tags=["mercado", "5min"])
+
+
+@patch("webapp.backend.routers.tasks.list_tags")
+def test_list_tags(mock_list):
+    """GET /tags lista as tags (listagem — sem 'status')."""
+    mock_list.return_value = [{"id": 1, "name": "mercado", "color": None}]
+    resp = client.get(f"{_BASE}/tags")
+    assert resp.status_code == 200
+    assert resp.json()[0]["name"] == "mercado"
+
+
+@patch("webapp.backend.routers.tasks.create_tag")
+def test_create_tag_ok(mock_create):
+    """POST /tags cria a tag e devolve 201."""
+    mock_create.return_value = {"status": "ok", "id": 3}
+    resp = client.post(f"{_BASE}/tags", json={"name": "foco"})
+    assert resp.status_code == 201
+    assert resp.json()["id"] == 3
+    mock_create.assert_called_once_with(name="foco")
+
+
+@patch("webapp.backend.routers.tasks.create_tag")
+def test_create_tag_duplicate_is_400(mock_create):
+    """POST /tags com nome duplicado → 400 (status error vira HTTP 400)."""
+    mock_create.return_value = {"status": "error", "message": "Já existe uma tag 'foco'."}
+    resp = client.post(f"{_BASE}/tags", json={"name": "foco"})
+    assert resp.status_code == 400
+
+
+@patch("webapp.backend.routers.tasks.update_tag")
+def test_update_tag_ok(mock_update):
+    """PATCH /tags/{id} renomeia/recolore a tag."""
+    mock_update.return_value = {"status": "ok"}
+    resp = client.patch(f"{_BASE}/tags/3", json={"name": "foco-total"})
+    assert resp.status_code == 200
+    mock_update.assert_called_once_with(3, name="foco-total")
+
+
+@patch("webapp.backend.routers.tasks.delete_tag")
+def test_delete_tag_ok(mock_delete):
+    """DELETE /tags/{id} exclui a tag (vínculos somem, tarefas ficam)."""
+    mock_delete.return_value = {"status": "ok"}
+    resp = client.delete(f"{_BASE}/tags/3")
+    assert resp.status_code == 200
+    mock_delete.assert_called_once_with(3)
+
+
+@patch("webapp.backend.routers.tasks.list_tasks_by_tag")
+def test_tasks_by_tag(mock_by_tag):
+    """GET /by-tag?name= lista as tarefas com aquela tag."""
+    mock_by_tag.return_value = [{"id": 5, "title": "comprar pão"}]
+    resp = client.get(f"{_BASE}/by-tag?name=mercado")
+    assert resp.status_code == 200
+    assert resp.json()[0]["id"] == 5
+    mock_by_tag.assert_called_once_with("mercado")

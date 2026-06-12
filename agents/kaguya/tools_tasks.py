@@ -23,6 +23,9 @@ from typing import Optional
 from agents.db import get_conn, run_select
 from agents.kaguya import recurrence as rec_engine
 from agents.kaguya.tools_projects import resolve_project_id_by_name
+# Helpers de tags (etiquetas N:N). Import no topo é seguro: ``tools_tags`` só importa de
+# ``agents.db`` no topo dele (as funções que precisam de ``tools_tasks`` fazem import lazy).
+from agents.kaguya.tools_tags import _set_task_tags, _attach_tags
 
 # Incremento padrão entre posições manuais (mesma constante semântica do Journal).
 _POSITION_STEP = 1000
@@ -411,7 +414,9 @@ def list_tasks(project_id: int, include_completed: bool = False) -> list[dict]:
     )
     parents = [_serialize_task(p) for p in parents]
     parents = _attach_subtasks(parents)
-    return _attach_recurrence(parents)
+    parents = _attach_recurrence(parents)
+    # Anexa as tags (etiquetas) de cada tarefa-pai para a TaskRow mostrar os chips.
+    return _attach_tags(parents)
 
 
 def list_tasks_today() -> dict:
@@ -441,9 +446,11 @@ def list_tasks_today() -> dict:
         item["project_name"] = r["project_name"]
         # due_date já é string ISO aqui; compara como texto (ISO ordena cronologicamente).
         (due_today if item["due_date"] == today else overdue).append(item)
-    # Anexa a recorrência ativa (glyph/eco) às tarefas das duas seções.
+    # Anexa a recorrência ativa (glyph/eco) e as tags às tarefas das duas seções.
     _attach_recurrence(overdue)
     _attach_recurrence(due_today)
+    _attach_tags(overdue)
+    _attach_tags(due_today)
     return {"overdue": overdue, "today": due_today}
 
 
@@ -473,7 +480,9 @@ def search_tasks(query: str) -> list[dict]:
         item = _serialize_task(r)
         item["project_name"] = r["project_name"]
         out.append(item)
-    return _attach_recurrence(out)
+    out = _attach_recurrence(out)
+    # Anexa as tags para os resultados da busca também mostrarem os chips.
+    return _attach_tags(out)
 
 
 def list_trash(project_id: Optional[int] = None) -> list[dict]:
@@ -511,6 +520,7 @@ def create_task(
     description: Optional[str] = None,
     recurrence: Optional[dict] = None,
     column_id: Optional[int] = None,
+    tags: Optional[list] = None,
 ) -> dict:
     """Cria uma tarefa (ou subtarefa) e a posiciona no fim da sua lista/escopo.
 
@@ -537,6 +547,8 @@ def create_task(
             automática mesmo sem este parâmetro.
         column_id: Coluna de Kanban onde criar a tarefa (opcional). Ignorado em subtarefas. Se
             omitido e a lista tiver board, usa a primeira coluna automaticamente.
+        tags: Lista de nomes de tag a vincular (opcional). Tags inexistentes são criadas
+            na hora; o nome é único ignorando caixa (``Mercado`` == ``mercado``).
 
     Returns:
         ``{"status": "ok", "id": <int>, "project_id": <int>}`` ou erro em português.
@@ -638,6 +650,10 @@ def create_task(
             if rec is not None:
                 _set_recurrence_on_cursor(cur, new_id, rec["rrule"], rec.get("mode", "fixed"))
 
+            # Tags: grava o conjunto de etiquetas na MESMA transação (criando as que faltarem).
+            if tags is not None:
+                _set_task_tags(cur, new_id, tags)
+
     return {"status": "ok", "id": new_id, "project_id": resolved_project, "message": f"Tarefa '{title.strip()}' criada."}
 
 
@@ -656,6 +672,7 @@ def update_task(
     column_id: Optional[int] = None,
     recurrence: Optional[dict] = None,
     clear_recurrence: bool = False,
+    tags: Optional[list] = None,
 ) -> dict:
     """Edita campos de uma tarefa; mover de lista aplica a regra da coluna do destino.
 
@@ -669,6 +686,8 @@ def update_task(
             Campos a atualizar (todos opcionais; PATCH parcial).
         recurrence: ``{"rrule", "mode"}`` para anexar/editar a regra (mantém a âncora — edge 8).
         clear_recurrence: Se True, remove a regra (tarefa volta a ser simples).
+        tags: Se informado (lista de nomes), substitui o conjunto de tags da tarefa
+            (lista vazia = remover todas). ``None`` = não mexe nas tags.
 
     Returns:
         Dicionário de status.
@@ -725,14 +744,19 @@ def update_task(
                 sets.append("column_id = %(column_id)s")
                 params["column_id"] = column_id
 
-            # Há algo a fazer? campos OU recorrência (definir/limpar/auto-aniversário).
-            if not sets and recurrence is None and not clear_recurrence and type != "birthday":
+            # Há algo a fazer? campos OU recorrência (definir/limpar/auto-aniversário) OU tags.
+            if (not sets and recurrence is None and not clear_recurrence
+                    and type != "birthday" and tags is None):
                 return {"status": "error", "message": "Nada para atualizar."}
 
             # Aplica as mudanças de campo (se houver) antes de mexer na recorrência.
             if sets:
                 sets.append("updated_at = now()")
                 cur.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id = %(id)s", params)
+
+            # Tags: aplica o conjunto exato de etiquetas (lista vazia = remover todas).
+            if tags is not None:
+                _set_task_tags(cur, task_id, tags)
 
             # ── Recorrência: limpar, definir, ou garantir a anual ao virar aniversário ──
             rec_result = None

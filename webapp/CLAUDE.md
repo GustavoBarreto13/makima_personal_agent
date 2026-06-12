@@ -225,7 +225,7 @@ O diário usa bullets com parsing de `@pessoa` e `#tag`. O componente `RichText.
 | 2 | Finanças (Nami) — todas as páginas | ✅ |
 | 3 | Livros (Frieren) | ✅ |
 | 4 | Journal/Diário pessoal (PostgreSQL) | ✅ |
-| 5 | Tarefas/Agenda (Kaguya) — shell `/tasks` (router `/api/tasks/*`); Fase 1 lista/Kanban/Hoje + Fase 2 **datas e recorrência** (quick-add com datas pt-BR, controle de recorrência no TaskModal, glyph de repetição, exclusão escopada só-esta/série). Spec: `specs/011-tasks-mvp/` + `specs/012-tasks-recurrence/`. | ✅ |
+| 5 | Tarefas/Agenda (Kaguya) — shell `/tasks` (router `/api/tasks/*`); Fase 1 lista/Kanban/Hoje + Fase 2 **datas e recorrência** (quick-add com datas pt-BR, controle de recorrência no TaskModal, glyph de repetição, exclusão escopada só-esta/série) + **tags** (fatia 013: `#tag` no quick-add, `TagChip`, editor de tags no TaskModal, `/api/tasks/tags`+`/by-tag`). Spec: `specs/011-tasks-mvp/` + `specs/012-tasks-recurrence/` + `specs/013-tasks-tags-smartlists-calendar/`. | ✅ |
 | 6 | Painel de chat (Makima) | — |
 
 ---

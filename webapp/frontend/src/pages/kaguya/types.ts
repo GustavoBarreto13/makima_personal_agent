@@ -7,6 +7,13 @@ export type TaskType = 'task' | 'event' | 'birthday'
 // Modo de recorrência: data-fixa (a âncora manda) ou pós-conclusão (conta de quando concluiu).
 export type RecurrenceMode = 'fixed' | 'after_completion'
 
+// Uma tag (etiqueta) — relação N:N com a tarefa. `color` é opcional (chip neutro sem ela).
+export interface Tag {
+  id: number
+  name: string
+  color: string | null
+}
+
 // Regra de recorrência de uma tarefa (1:1 com a tarefa viva da série).
 export interface Recurrence {
   rrule: string               // regra RFC 5545 (ex.: "FREQ=MONTHLY;BYMONTHDAY=5")
@@ -35,6 +42,8 @@ export interface Task {
   // Recorrência ativa (quando houver) + descrição pt-BR (ex.: "todo dia 5"):
   recurrence?: Recurrence | null
   recurrence_text?: string | null
+  // Tags (etiquetas) da tarefa — anexadas nas listagens (sempre presente, pode ser vazia):
+  tags?: Tag[]
   // Subtarefas aninhadas (só nas tarefas-pai retornadas por list_tasks):
   subtasks?: Task[]
 }

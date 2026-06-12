@@ -45,6 +45,7 @@ export function QuickAdd({ projects, onCreated, toast }: QuickAddProps) {
         priority: parsed.priority ?? 0,
         due_date: parsed.dueDate,         // data determinística (amanhã, sexta 17h…)
         due_time: parsed.dueTime,
+        tags: parsed.tags.length ? parsed.tags : undefined,   // #tag → etiquetas
       })
       setText('')
       onCreated()
@@ -69,11 +70,13 @@ export function QuickAdd({ projects, onCreated, toast }: QuickAddProps) {
         />
       </div>
       {/* dica de tokens reconhecidos */}
-      {(parsed.projectToken || parsed.priority || parsed.dueDate) && (
+      {(parsed.projectToken || parsed.priority || parsed.dueDate || parsed.tags.length > 0) && (
         <div className="kg-qa-preview">
           {parsed.projectToken && <span className="kg-chip"><Icon name="inbox" size={11} />{resolveProject(parsed.projectToken)?.name ?? `Inbox (@${parsed.projectToken}?)`}</span>}
           {parsed.dueDate && <span className="kg-chip"><Icon name="calendar" size={11} />{parsed.dueDate.slice(8) + '/' + parsed.dueDate.slice(5, 7)}{parsed.dueTime ? ` ${parsed.dueTime}` : ''}</span>}
           {parsed.priority != null && <span className="kg-chip">Prioridade {['', 'baixa', 'média', 'alta'][parsed.priority]}</span>}
+          {/* uma "pílula" por tag reconhecida (#mercado, #5min…) */}
+          {parsed.tags.map((t) => <span key={t} className="kg-chip kg-chip-tag">#{t}</span>)}
         </div>
       )}
     </div>

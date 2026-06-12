@@ -3,7 +3,7 @@
 // tratamento de erro já resolvidos por lib/api.ts).
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, TodayResponse, RecurrenceMode } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -70,12 +70,14 @@ export const kaguyaApi = {
     description?: string | null
     column_id?: number                  // coluna do Kanban (criar direto numa coluna)
     recurrence?: RecurrenceInput        // recorrência opcional na criação
+    tags?: string[]                     // nomes das tags (criadas se não existirem)
   }) => api.post<MutationResult>(BASE, body),
 
   updateTask: (id: number, body: Partial<{
     title: string; description: string | null; priority: number; type: string
     due_date: string | null; due_time: string | null; project_id: number; column_id: number | null
     recurrence: RecurrenceInput; clear_recurrence: boolean   // anexar/editar/remover regra
+    tags: string[]                                           // substitui o conjunto de tags
   }>) => api.patch<MutationResult>(`${BASE}/${id}`, body),
 
   // cascade conclui subtarefas; endSeries encerra a série recorrente (não gera a próxima).
@@ -93,6 +95,16 @@ export const kaguyaApi = {
   setRecurrence: (id: number, body: RecurrenceInput) =>
     api.post<MutationResult>(`${BASE}/${id}/recurrence`, body),
   clearRecurrence: (id: number) => api.del<MutationResult>(`${BASE}/${id}/recurrence`),
+
+  // ── Tags (etiquetas) — fatia 013 ───────────────────────────────────────────
+  listTags: () => api.get<Tag[]>(`${BASE}/tags`),
+  createTag: (body: { name: string; color?: string }) =>
+    api.post<MutationResult>(`${BASE}/tags`, body),
+  updateTag: (id: number, body: Partial<{ name: string; color: string }>) =>
+    api.patch<MutationResult>(`${BASE}/tags/${id}`, body),
+  deleteTag: (id: number) => api.del<MutationResult>(`${BASE}/tags/${id}`),
+  // Tarefas abertas que têm uma determinada tag (busca por nome, com ou sem #).
+  tasksByTag: (name: string) => api.get<Task[]>(`${BASE}/by-tag?name=${encodeURIComponent(name)}`),
 }
 
 export type { MutationResult }

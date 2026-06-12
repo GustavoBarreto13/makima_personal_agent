@@ -66,6 +66,9 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
   // Recorrência: preset + modo, derivados da regra existente (edição).
   const [recurFreq, setRecurFreq] = useState<RecurFreq>(rruleToFreq(task?.recurrence?.rrule))
   const [recurMode, setRecurMode] = useState<RecurrenceMode>(task?.recurrence?.mode ?? 'fixed')
+  // Tags (etiquetas) — lista de nomes; editável na criação e na edição.
+  const [tags, setTags] = useState<string[]>(task?.tags?.map((t) => t.name) ?? [])
+  const [newTag, setNewTag] = useState('')
   // Subtarefas (só editáveis quando a tarefa-pai já existe).
   const [subtasks, setSubtasks] = useState<Task[]>(task?.subtasks ?? [])
   const [newSub, setNewSub] = useState('')
@@ -98,11 +101,13 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
         await kaguyaApi.createTask({
           ...base,
           project_id: projectId ?? undefined,
+          tags,                                    // etiquetas escolhidas (pode ser vazia)
           ...(rrule ? { recurrence: { rrule, mode: recurMode } } : {}),
         })
         toast('Tarefa criada.')
       } else if (task) {
-        const upd: Parameters<typeof kaguyaApi.updateTask>[1] = { ...base, project_id: projectId ?? undefined }
+        // tags sempre enviado na edição → permite REMOVER todas (set vazio persiste).
+        const upd: Parameters<typeof kaguyaApi.updateTask>[1] = { ...base, project_id: projectId ?? undefined, tags }
         if (rrule) upd.recurrence = { rrule, mode: recurMode }
         // Tinha regra e o usuário escolheu "não repete" → remove (sem mexer em aniversário).
         else if (task.recurrence && type !== 'birthday') upd.clear_recurrence = true
@@ -136,6 +141,16 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
       toast('Tarefa excluída.')
       onSaved(); onClose()
     } catch { toast('Falha ao excluir.', 'err') }
+  }
+
+  // Adiciona a tag digitada à lista local (cria de fato no backend ao salvar).
+  const addTag = () => {
+    // Tira um eventual "#" digitado pelo usuário e espaços das pontas.
+    const name = newTag.trim().replace(/^#+/, '').trim()
+    if (!name) return
+    // Não duplica ignorando caixa ("Mercado" == "mercado").
+    if (!tags.some((t) => t.toLowerCase() === name.toLowerCase())) setTags([...tags, name])
+    setNewTag('')
   }
 
   // Adiciona uma subtarefa (exige a tarefa-pai já existir).
@@ -239,6 +254,26 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
           <div className="kg-field">
             <span className="kg-field-label">Notas</span>
             <textarea className="kg-textarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Detalhes, links, contexto…" />
+          </div>
+
+          {/* Tags (etiquetas) — chips removíveis + input que adiciona por Enter (cria on-the-fly) */}
+          <div className="kg-field">
+            <span className="kg-field-label">Tags</span>
+            <div className="kg-tag-edit">
+              {tags.map((t) => (
+                <span key={t} className="kg-chip kg-chip-tag">
+                  #{t}
+                  <button className="kg-tag-x" onClick={() => setTags(tags.filter((x) => x !== t))} aria-label={`Remover ${t}`}>×</button>
+                </span>
+              ))}
+              <input
+                className="kg-input kg-tag-input"
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
+                placeholder="Adicionar tag + Enter"
+              />
+            </div>
           </div>
 
           {/* Subtarefas ricas — só quando a tarefa-pai já existe */}
