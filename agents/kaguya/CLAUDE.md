@@ -26,6 +26,8 @@ agents/kaguya/
 ├── tools_filters.py      # camada de lógica: smart-lists (filtros salvos) — fatia 013 / P2
 ├── tools_calendar.py     # camada de lógica: consulta por intervalo + projeção virtual — fatia 013 / P3
 ├── recurrence.py         # motor puro RRULE (next_occurrence, project_occurrences, build/describe)
+├── habit_strength.py     # motor PURO (sem banco): fórmula da força do hábito (Loop) — fatia 014
+├── tools_habits.py       # camada de lógica: hábitos + check-ins + histórico — fatia 014
 ├── tools.py              # FACHADA: re-exporta a lógica + wrappers + cross-agent (Nami)
 ├── agent.py              # create_kaguya_agent() — factory (só o McpToolset do Calendar)
 └── CLAUDE.md             # este arquivo
@@ -135,6 +137,21 @@ destino (ou sem coluna); posições esparsas com renormalização transparente.
 
 Mutações retornam `{"status": "ok"|"error", ...}`; listagens retornam o dado direto.
 
+### Hábitos (Fase 4 / fatia 014) — `habit_strength.py` + `tools_habits.py`
+
+Motor **puro** (`habit_strength.py`, sem banco) com a fórmula do **Loop Habit Tracker** (média
+móvel exponencial): `daily_multiplier(freq_num, freq_den)` = `0.5^(sqrt(freq)/13)`,
+`strength(done_by_date, freq_num, freq_den, until)` (itera dia a dia → 0–1),
+`adherence(...)` (cumpridos ÷ meta na janela) e `met_target(value, target)` (sim/não vs
+mensurável). A força é **calculada na leitura**, nunca persistida (gate puro em
+`tests/agents/test_kaguya_habit_strength.py` — SC-006: falha isolada não zera).
+
+Camada de lógica (`tools_habits.py`): `list_habits` (com força/aderência/`done_today`),
+`get_habit`, `create_habit`, `update_habit`, `archive_habit`/`unarchive_habit` (soft delete por
+`archived_at`), `check_in` (upsert — 1/dia, `UNIQUE (habit_id, date)`), `remove_check_in`,
+`get_habit_history(year)` (esparso, para o heatmap) e `resolve_habit_id_by_name` (Telegram fala
+por nome). Mensurável conta como cumprido quando `value >= target_value`.
+
 ---
 
 ## Tools expostas ao agente (`tools.py`)
@@ -152,6 +169,9 @@ Mutações retornam `{"status": "ok"|"error", ...}`; listagens retornam o dado d
 | `list_filters`, `create_filter(name, rules)`, `update_filter`, `delete_filter` | smart-lists (fatia 013 · DSL de regras) |
 | `list_tasks_by_filter_name(name)` / `list_today_overdue()` | abrir smart-list por nome / built-in Hoje+Vencidas |
 | `list_tasks_in_range(start_date, end_date)` | consulta por intervalo (calendário no Telegram) |
+| `list_habits`, `create_habit`, `update_habit`, `archive_habit` | hábitos (fatia 014) |
+| `check_in_habit(habit, value?)` | check-in de hoje por id **ou** nome; ecoa a força recalculada |
+| `remove_check_in(habit_id)` / `habit_status(habit?)` | desfaz o check-in / força+aderência (um ou todos) |
 | `create_project`, `update_project`, `delete_project` | listas |
 | **`complete_payment_task`** | cross-agent (Kaguya + Nami) — atômico |
 | **`create_expense_reminder`** | cross-agent — cria lembrete no Postgres |
@@ -185,6 +205,10 @@ cria a tarefa de lembrete (prioridade alta) no banco; **não** lança despesa.
   `delete_project` exige `mode` (`move_to_inbox` | `delete_tasks`).
 - Listas resolvidas dinamicamente por nome (prefixo) — nunca nomes fixos.
 - "o que tenho pra hoje?" = `list_tasks_today()` (banco) + `list_events_today()` (Calendar).
+- **Hábitos** (fatia 014): um hábito NÃO é tarefa (sem due_date; vira check-in diário). Criar →
+  `create_habit(name, freq_num, freq_den, target_value?, unit?)`; cumprir hoje →
+  `check_in_habit(nome, value?)` (ecoe a força em %); consultar → `habit_status(nome?)`;
+  "excluir" é `archive_habit` (soft, confirme antes). Hábito por nome resolve por prefixo.
 
 ---
 
