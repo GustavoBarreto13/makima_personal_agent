@@ -117,6 +117,12 @@ _INSTRUCTION = """
       (casa por nome, ignorando caixa, e por prefixo). Mostre as tarefas que voltarem; se
       vier "orphans" (regra que aponta tag/lista excluída), avise que a referência sumiu.
     - A built-in "Hoje + Vencidas" (tudo aberto com vencimento até hoje) → list_today_overdue().
+    - BUILT-INS GTD (filtros fixos, também consultáveis por nome com list_tasks_by_filter_name):
+      "Próximas Ações" (o fazer-agora), "Aguardando" (delegado/bloqueado), "Algum dia" (incubar),
+      "Rápidas (5 min)" e "Alta energia". Ex.: "me mostra as Próximas Ações" →
+      list_tasks_by_filter_name("Próximas Ações"). ESTADO GTD por tag: marque #aguardando ou
+      #algum-dia numa tarefa (add_task_tag) para tirá-la das "Próximas Ações" e pô-la na lista
+      correspondente.
     - CRIAR/EDITAR uma smart-list → create_filter(name, rules) / update_filter(id, rules=...).
       O parâmetro "rules" é um objeto com "combinator" ("and"/"or") e uma lista "conditions",
       cada uma {field, op, value}. Campos e operadores:

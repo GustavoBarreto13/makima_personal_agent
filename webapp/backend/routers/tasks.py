@@ -40,6 +40,7 @@ from agents.kaguya.tools_tags import (
 from agents.kaguya.tools_filters import (
     list_filters, create_filter, update_filter, delete_filter,
     list_tasks_by_filter, list_today_overdue,
+    list_builtin_filters, list_tasks_by_builtin,
 )
 from agents.kaguya.tools_calendar import list_tasks_in_range
 
@@ -435,6 +436,18 @@ def list_filters_route(user: dict = Depends(require_user)) -> list[dict]:
 def today_overdue_route(user: dict = Depends(require_user)) -> list[dict]:
     """Smart-list built-in "Hoje + Vencidas" (não persistida)."""
     return list_today_overdue()  # listagem
+
+
+@router.get("/filters/builtins")
+def list_builtins_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Built-ins GTD adicionais (Próximas Ações, Aguardando, Algum dia, Rápidas, Alta energia)."""
+    return list_builtin_filters()  # listagem — metadados {key, name, icon}
+
+
+@router.get("/filters/builtin/{key}/tasks")
+def builtin_tasks_route(key: str, user: dict = Depends(require_user)) -> list[dict]:
+    """Abre um built-in GTD pela chave e devolve as tarefas que casam (lista plana)."""
+    return list_tasks_by_builtin(key)  # listagem
 
 
 @router.post("/filters", status_code=201)

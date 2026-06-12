@@ -107,6 +107,14 @@ Funções: `list_filters`, `create_filter` (rejeita regra vazia), `update_filter
 `list_tasks_by_filter` (webapp, por id), `list_tasks_by_filter_name` (Telegram, por nome) e a
 built-in `list_today_overdue` ("Hoje + Vencidas", **não** persistida).
 
+**Built-ins GTD** (`BUILTIN_FILTERS`, também fixos no código — *Getting Things Done*): além de
+"Hoje + Vencidas", o `list_builtin_filters` expõe **Próximas Ações** (`next-actions`), **Aguardando**
+(`waiting`), **Algum dia** (`someday`), **Rápidas (5 min)** (`quick`) e **Alta energia** (`energy`);
+`list_tasks_by_builtin(key)` abre cada um. As listas de **estado** usam tags reservadas
+`RESERVED_TAGS = {#aguardando, #algum-dia}`. Mapeamento: Listas = Áreas · Tags = Contextos ·
+Smart-lists = listas de ação. No webapp são ids-sentinela negativos na sidebar; no Telegram
+resolvem por nome (`list_tasks_by_filter_name`).
+
 ### `tools_calendar.py` — calendário / consulta por intervalo — fatia 013 / P3
 
 `list_tasks_in_range(start_date, end_date, project_id?)`: tarefas datadas reais na janela

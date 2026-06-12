@@ -5,7 +5,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import type { Task, FilterCondition } from '../types'
-import { BUILTIN_TODAY_OVERDUE } from '../types'
+import { BUILTIN_TODAY_OVERDUE, GTD_BUILTINS } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { TaskRow } from '../components/TaskRow'
 import { Icon } from '../ui/Icons'
@@ -27,17 +27,23 @@ function describeOrphan(o: FilterCondition): string {
 }
 
 export function FilterScreen({ filterId, filterName, reloadKey, onOpenTask, onEditFilter, toast }: FilterScreenProps) {
-  const isBuiltin = filterId === BUILTIN_TODAY_OVERDUE
+  // Ids negativos são built-ins fixos do código (Hoje + Vencidas e os GTD); positivos são
+  // smart-lists salvas (editáveis). Cada built-in GTD resolve a chave da sua rota.
+  const isBuiltin = filterId < 0
+  const gtd = GTD_BUILTINS.find((b) => b.id === filterId)
   const [tasks, setTasks] = useState<Task[]>([])
   const [orphans, setOrphans] = useState<FilterCondition[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Carrega as tarefas: built-in tem endpoint próprio; salvo devolve {tasks, orphans}.
+  // Carrega as tarefas: built-ins têm endpoint próprio (lista plana); salvo devolve {tasks, orphans}.
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      if (isBuiltin) {
+      if (filterId === BUILTIN_TODAY_OVERDUE) {
         setTasks(await kaguyaApi.todayOverdue())
+        setOrphans([])
+      } else if (gtd) {
+        setTasks(await kaguyaApi.builtinTasks(gtd.key))
         setOrphans([])
       } else {
         const r = await kaguyaApi.filterTasks(filterId)
@@ -49,7 +55,7 @@ export function FilterScreen({ filterId, filterName, reloadKey, onOpenTask, onEd
     } finally {
       setLoading(false)
     }
-  }, [filterId, isBuiltin, toast])
+  }, [filterId, gtd, toast])
 
   useEffect(() => { load() }, [load, reloadKey])
 

@@ -3,7 +3,7 @@
 // Smart lists (fatia 013, abaixo das Listas) + lixeira + "Voltar à Makima".
 
 import type { Sidebar, KaguyaView, Group } from '../types'
-import { BUILTIN_TODAY_OVERDUE } from '../types'
+import { BUILTIN_TODAY_OVERDUE, GTD_BUILTINS } from '../types'
 import { Icon } from '../ui/Icons'
 import type { IconName } from '../ui/Icons'
 
@@ -114,6 +114,17 @@ export function SidebarNav({ sidebar, view, param, onNavigate, onNewTask, onNewP
         <span className="kg-nav-emoji"><Icon name="clock" size={16} /></span>
         <span>Hoje + Vencidas</span>
       </button>
+      {/* Built-ins GTD (Próximas Ações, Aguardando, Algum dia, Rápidas, Alta energia) */}
+      {GTD_BUILTINS.map((b) => (
+        <button
+          key={b.id}
+          className={`kg-nav-item${view === 'filter' && param === b.id ? ' active' : ''}`}
+          onClick={() => onNavigate('filter', b.id)}
+        >
+          <span className="kg-nav-emoji"><Icon name={b.icon as IconName} size={16} /></span>
+          <span>{b.name}</span>
+        </button>
+      ))}
       {filters.map((f) => (
         <button
           key={f.id}

@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback, type CSSProperties } from 'react'
 import './kaguya.css'
 
 import type { Sidebar, Task, Tweaks, KaguyaView, Filter } from './types'
-import { BUILTIN_TODAY_OVERDUE } from './types'
+import { BUILTIN_TODAY_OVERDUE, GTD_BUILTINS } from './types'
 import { kaguyaApi } from './kaguyaApi'
 
 import { SidebarNav } from './components/SidebarNav'
@@ -104,10 +104,14 @@ export function KaguyaShell() {
 
   // Título e nome da lista atual.
   const project = param != null ? sidebar?.projects.find((p) => p.id === param) : undefined
-  // Smart-list atual (view='filter'): a built-in tem nome fixo; as salvas vêm da sidebar.
-  const currentFilter = view === 'filter' && param != null && param !== BUILTIN_TODAY_OVERDUE
+  // Smart-list atual (view='filter'): built-ins (id negativo) têm nome fixo; as salvas (id
+  // positivo) vêm da sidebar e são editáveis.
+  const currentFilter = view === 'filter' && param != null && param > 0
     ? sidebar?.filters.find((f) => f.id === param) : undefined
-  const filterName = param === BUILTIN_TODAY_OVERDUE ? 'Hoje + Vencidas' : (currentFilter?.name ?? 'Smart list')
+  const gtdBuiltin = view === 'filter' ? GTD_BUILTINS.find((b) => b.id === param) : undefined
+  const filterName = param === BUILTIN_TODAY_OVERDUE
+    ? 'Hoje + Vencidas'
+    : (gtdBuiltin?.name ?? currentFilter?.name ?? 'Smart list')
   const titleMap: Record<KaguyaView, string> = {
     today: 'Meu Dia', kanban: project?.name ?? 'Kanban', list: project?.name ?? 'Lista',
     calendar: 'Calendário', eisenhower: 'Eisenhower', habits: 'Hábitos', trash: 'Lixeira',

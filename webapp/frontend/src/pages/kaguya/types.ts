@@ -104,6 +104,24 @@ export interface Filter {
 // usado como `param` da view 'filter' para distinguir da abertura de um filtro salvo.
 export const BUILTIN_TODAY_OVERDUE = -1
 
+// Built-ins GTD adicionais (também não persistidos). Cada um tem um id-sentinela NEGATIVO
+// (não colide com ids reais de task_filters, que são positivos) e uma `key` que casa com a
+// rota do backend (GET /filters/builtin/{key}/tasks). Metadados estáticos no front, como a
+// "Hoje + Vencidas" — as regras vivem no backend (tools_filters.BUILTIN_FILTERS).
+export interface GtdBuiltin {
+  id: number       // sentinela usado como `param` da view 'filter'
+  key: string      // chave da rota do backend
+  name: string
+  icon: string
+}
+export const GTD_BUILTINS: GtdBuiltin[] = [
+  { id: -2, key: 'next-actions', name: 'Próximas Ações', icon: 'zap' },
+  { id: -3, key: 'waiting', name: 'Aguardando', icon: 'clock' },
+  { id: -4, key: 'someday', name: 'Algum dia', icon: 'inbox' },
+  { id: -5, key: 'quick', name: 'Rápidas (5 min)', icon: 'timer' },
+  { id: -6, key: 'energy', name: 'Alta energia', icon: 'flame' },
+]
+
 // Resposta de "abrir uma smart-list": tarefas + referências órfãs (tag/lista excluída).
 export interface FilterTasksResponse {
   tasks: Task[]
