@@ -117,6 +117,8 @@ export const kaguyaApi = {
   filterTasks: (id: number) => api.get<FilterTasksResponse>(`${BASE}/filters/${id}/tasks`),
   // Built-in "Hoje + Vencidas" (não persistida).
   todayOverdue: () => api.get<Task[]>(`${BASE}/filters/today-overdue`),
+  // Built-ins GTD adicionais (não persistidos): abre um pela chave (next-actions, waiting…).
+  builtinTasks: (key: string) => api.get<Task[]>(`${BASE}/filters/builtin/${encodeURIComponent(key)}/tasks`),
 
   // ── Calendário (consulta por intervalo) — fatia 013 / P3 ────────────────────
   // Tarefas datadas + ocorrências virtuais das recorrentes na janela [start, end].

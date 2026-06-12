@@ -26,6 +26,10 @@ const PATHS: Record<string, ReactNode> = {
   gift: <><rect x="3" y="8" width="18" height="4" rx="1" /><path d="M12 8v13M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7" /><path d="M12 8S10 2 7 4s5 4 5 4M12 8s2-6 5-4-5 4-5 4" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   filter: <><path d="M22 3H2l8 9.5V19l4 2v-8.5L22 3z" /></>,
+  // Built-ins GTD (fatia 013) — estilo Lucide, viewBox 24×24.
+  zap: <><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></>,
+  timer: <><path d="M10 2h4M12 14l3-3" /><circle cx="12" cy="14" r="8" /></>,
+  flame: <><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z" /></>,
 }
 
 interface IconProps {

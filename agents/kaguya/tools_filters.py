@@ -292,6 +292,103 @@ def list_today_overdue() -> list:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Built-ins GTD adicionais (filtros fixos do código, NÃO persistidos) — fatia 013
+# ─────────────────────────────────────────────────────────────────────────────
+# Aplicação do Getting Things Done: além de "Hoje + Vencidas" (hard landscape), o usuário
+# encontra prontas as listas de **estado** (Próximas Ações / Aguardando / Algum dia) e os
+# critérios de **engajar** (Rápidas / Alta energia). Mapeamento: Listas = Áreas de Foco ·
+# Tags = Contextos · Smart-lists = listas de ação. Detalhe em specs/013…/P2-CONTEXT.md.
+#
+# As listas de estado usam tags RESERVADAS: marcar uma tarefa com #aguardando ou #algum-dia
+# a tira das "Próximas Ações" e a põe na lista correspondente — sem schema novo.
+RESERVED_TAGS = {"aguardando", "algum-dia"}
+
+# Cada built-in é identificado por uma CHAVE string estável. A mesma DSL das smart-lists
+# salvas é reusada (paridade interna de semântica). Ordem = ordem na sidebar.
+BUILTIN_FILTERS: dict[str, dict] = {
+    "next-actions": {
+        "name": "Próximas Ações",
+        "icon": "zap",
+        # O "fazer agora": aberto e NÃO adiado para aguardando/algum-dia.
+        "rules": {"combinator": "and", "conditions": [
+            {"field": "state", "op": "eq", "value": "open"},
+            {"field": "tag", "op": "not_has", "value": "aguardando"},
+            {"field": "tag", "op": "not_has", "value": "algum-dia"},
+        ]},
+    },
+    "waiting": {
+        "name": "Aguardando",
+        "icon": "clock",
+        # Delegado/bloqueado: aberto e marcado com #aguardando.
+        "rules": {"combinator": "and", "conditions": [
+            {"field": "state", "op": "eq", "value": "open"},
+            {"field": "tag", "op": "has", "value": "aguardando"},
+        ]},
+    },
+    "someday": {
+        "name": "Algum dia",
+        "icon": "inbox",
+        # Incubar: aberto e marcado com #algum-dia (revisar depois).
+        "rules": {"combinator": "and", "conditions": [
+            {"field": "state", "op": "eq", "value": "open"},
+            {"field": "tag", "op": "has", "value": "algum-dia"},
+        ]},
+    },
+    "quick": {
+        "name": "Rápidas (5 min)",
+        "icon": "timer",
+        # Critério de tempo: aberto e marcado com #5min.
+        "rules": {"combinator": "and", "conditions": [
+            {"field": "state", "op": "eq", "value": "open"},
+            {"field": "tag", "op": "has", "value": "5min"},
+        ]},
+    },
+    "energy": {
+        "name": "Alta energia",
+        "icon": "flame",
+        # Critério de energia: aberto e marcado com #alta-energia.
+        "rules": {"combinator": "and", "conditions": [
+            {"field": "state", "op": "eq", "value": "open"},
+            {"field": "tag", "op": "has", "value": "alta-energia"},
+        ]},
+    },
+}
+
+
+def list_builtin_filters() -> list:
+    """Lista os built-ins GTD adicionais (metadados para a sidebar e o agente).
+
+    Não inclui "Hoje + Vencidas" (essa tem o endpoint próprio ``list_today_overdue``).
+
+    Returns:
+        Lista de ``{key, name, icon}`` na ordem de exibição. **Listagem**.
+    """
+    return [
+        {"key": key, "name": meta["name"], "icon": meta["icon"]}
+        for key, meta in BUILTIN_FILTERS.items()
+    ]
+
+
+def list_tasks_by_builtin(key: str) -> list:
+    """Abre um built-in GTD pela chave e devolve as tarefas que casam.
+
+    As referências de tag reservada (``#aguardando``/``#algum-dia``) são intencionais — não
+    sinalizamos órfã aqui (diferente das smart-lists do usuário): a built-in só devolve a
+    lista de tarefas, como ``list_today_overdue``.
+
+    Args:
+        key: Chave do built-in (ex.: ``"next-actions"``, ``"waiting"``).
+
+    Returns:
+        Lista de tarefas serializadas (vazia se a chave não existir ou nada casar). **Listagem**.
+    """
+    meta = BUILTIN_FILTERS.get(key)
+    if not meta:
+        return []
+    return _run_filter_rules(meta["rules"])["tasks"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CRUD de smart-lists (gestão dos filtros salvos)
 # ─────────────────────────────────────────────────────────────────────────────
 def _validate_rules(rules) -> Optional[str]:
@@ -462,7 +559,18 @@ def list_tasks_by_filter_name(name: str) -> dict:
     if not name or not name.strip():
         return {"tasks": [], "orphans": [], "missing": True}
     termo = name.strip()
-    # Tenta nome exato (ignorando caixa); se não achar, tenta por prefixo.
+
+    # 1) Built-ins fixos (GTD + Hoje + Vencidas): casam por nome antes dos salvos, para o
+    #    Telegram ter paridade com a sidebar do webapp ("me mostra as Próximas Ações").
+    termo_low = termo.lower()
+    if termo_low in ("hoje + vencidas", "hoje e vencidas", "hoje", "vencidas"):
+        return {"tasks": list_today_overdue(), "orphans": []}
+    for key, meta in BUILTIN_FILTERS.items():
+        nome = meta["name"].lower()
+        if nome == termo_low or nome.startswith(termo_low):
+            return {"tasks": list_tasks_by_builtin(key), "orphans": []}
+
+    # 2) Smart-lists salvas: nome exato (ignorando caixa); se não achar, por prefixo.
     rows = run_select(
         "SELECT rules FROM task_filters WHERE LOWER(name) = LOWER(%(n)s) "
         "OR LOWER(name) LIKE LOWER(%(pref)s) ORDER BY position, id LIMIT 1",
