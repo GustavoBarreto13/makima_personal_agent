@@ -64,7 +64,7 @@ def test_criar_e_listar_habito(clean_db):
     assert len(habitos) == 1
     assert habitos[0]["name"] == "Meditar"
     assert habitos[0]["freq_num"] == 5 and habitos[0]["freq_den"] == 7
-    assert habitos[0]["strength"] == 0.0          # sem check-ins → força zero
+    assert habitos[0]["consistency"] == 0         # sem check-ins → consistência zero
     assert habitos[0]["done_today"] is False
 
 
@@ -145,10 +145,10 @@ def test_history_filtra_por_ano(clean_db):
     assert len(H.get_habit_history(hid, 2026)) == 1
 
 
-def test_forca_sobe_com_checkins_recentes(clean_db):
-    """Vários check-ins seguidos elevam a força acima de zero (integração leitura↔motor)."""
+def test_consistencia_sobe_com_checkins_recentes(clean_db):
+    """Vários check-ins seguidos elevam a consistência acima de zero (integração leitura↔motor)."""
     hid = H.create_habit("Meditar", freq_num=1, freq_den=1)["id"]
     # 10 dias seguidos até hoje.
     for i in range(10):
         H.check_in(hid, date_iso=(date.today() - timedelta(days=i)).isoformat())
-    assert H.get_habit(hid)["strength"] > 0.0
+    assert H.get_habit(hid)["consistency"] > 0

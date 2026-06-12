@@ -51,24 +51,49 @@ def _done_map(checkins: list, target_value: Optional[float]) -> dict:
     }
 
 
+def _weekly_target(freq_num: int, freq_den: int) -> float:
+    """Converte a frequência (freq_num a cada freq_den dias) em "vezes por semana".
+
+    O motor de score (``habit_strength``) raciocina em meta semanal; o banco guarda a
+    frequência como uma fração (ex.: 5/7). Esta conversão é a ponte: 5/7 → 5x/semana,
+    1/1 → 7x/semana, 1/2 → 3.5x/semana.
+
+    Args:
+        freq_num: Numerador da frequência (quantas vezes).
+        freq_den: Denominador (a cada quantos dias).
+
+    Returns:
+        A meta semanal (vezes por semana), como float.
+    """
+    if freq_den <= 0:
+        return 7.0
+    return freq_num / freq_den * 7.0
+
+
 def _serialize_habit(row: dict, checkins: list, *, today: Optional[date] = None) -> dict:
-    """Monta o dicionário de um hábito para a resposta, já com força e estado de hoje.
+    """Monta o dicionário de um hábito para a resposta, com o score "caixa d'água" e o estado de hoje.
+
+    O score vem do motor puro :func:`habit_strength.summary` em **três dimensões**:
+    consistência (0–100), tendência (subindo/caindo/estável) e recente (cumpridos nas últimas
+    2 semanas). Tudo calculado na leitura — nada persistido.
 
     Args:
         row: Linha da tabela ``habits``.
         checkins: Lista de check-ins desse hábito (``[{date, value}, ...]``).
-        today: Dia de referência (padrão: hoje). Usado para ``done_today`` e como fim da força.
+        today: Dia de referência (padrão: hoje). Usado para ``done_today`` e como fim do cálculo.
 
     Returns:
-        Dicionário do hábito com ``strength`` (0–1), ``adherence`` (0–1) e ``done_today``.
+        Dicionário do hábito com ``consistency`` (0–100), ``trend`` (up/down/flat),
+        ``recent_done``/``recent_total`` e ``done_today``.
     """
     ref = today or date.today()
     target = row.get("target_value")
     done = _done_map(checkins, target)
 
-    # Força calculada na leitura (até hoje) e aderência da última semana.
-    forca = HS.strength(done, row["freq_num"], row["freq_den"], until=ref)
-    ader = HS.adherence(done, row["freq_num"], row["freq_den"], until=ref)
+    # O motor trabalha com o CONJUNTO de datas cumpridas (não o mapa) e a meta SEMANAL.
+    datas_feitas = {dia for dia, ok in done.items() if ok}
+    meta_semanal = _weekly_target(row["freq_num"], row["freq_den"])
+    score = HS.summary(datas_feitas, meta_semanal, today=ref)
 
     return {
         "id": row["id"],
@@ -79,10 +104,12 @@ def _serialize_habit(row: dict, checkins: list, *, today: Optional[date] = None)
         "freq_den": row["freq_den"],
         "target_value": target,
         "unit": row.get("unit"),
-        # Métricas derivadas (não persistidas):
-        "strength": round(forca, 4),       # 0–1; o front exibe como %
-        "adherence": round(ader, 4),       # 0–1; "≈80%" na última semana
-        "done_today": done.get(ref, False),  # se o hábito já foi cumprido hoje
+        # Métricas derivadas (não persistidas) — modelo caixa d'água:
+        "consistency": score["consistency"],     # 0–100: a "nota" do hábito (nível da caixa)
+        "trend": score["trend"],                  # "up" | "down" | "flat"
+        "recent_done": score["recent_done"],      # cumpridos nos últimos 14 dias
+        "recent_total": score["recent_total"],    # quanto a meta esperava em 2 semanas
+        "done_today": done.get(ref, False),       # se o hábito já foi cumprido hoje
     }
 
 
@@ -333,8 +360,8 @@ def check_in(habit_id: int, date_iso: Optional[str] = None, value: Optional[floa
         value: Valor medido (hábito mensurável). ``None`` em hábito sim/não.
 
     Returns:
-        ``{"status": "ok", "strength": <0–1>, "done_today": bool, ...}`` — já devolve a força
-        recalculada para o canal ecoar; ou erro se o hábito não existir.
+        ``{"status": "ok", "consistency": <0–100>, "trend": ..., "done_today": bool, ...}`` —
+        já devolve o score recalculado para o canal ecoar; ou erro se o hábito não existir.
     """
     dia = date_iso or date.today().isoformat()
     with get_conn() as conn:
@@ -352,13 +379,15 @@ def check_in(habit_id: int, date_iso: Optional[str] = None, value: Optional[floa
                 """,
                 (habit_id, dia, value),
             )
-    # Recalcula a força para o canal ecoar ("força agora: 72%").
+    # Recalcula o score para o canal ecoar ("consistência agora: 78/100, subindo").
     h = get_habit(habit_id)
     return {
         "status": "ok",
         "message": "Check-in registrado.",
-        "strength": h.get("strength"),
-        "adherence": h.get("adherence"),
+        "consistency": h.get("consistency"),
+        "trend": h.get("trend"),
+        "recent_done": h.get("recent_done"),
+        "recent_total": h.get("recent_total"),
         "done_today": h.get("done_today"),
     }
 

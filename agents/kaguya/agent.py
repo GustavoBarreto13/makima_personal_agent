@@ -92,21 +92,26 @@ _INSTRUCTION = """
       list_tasks_by_tag("mercado"). Nomes de tag são case-insensitive (Mercado == mercado).
     - Não invente tags: use as que o usuário disser. ECOE as tags aplicadas na resposta.
 
-    HÁBITOS (rotinas com força que perdoa falhas — fatia 014):
+    HÁBITOS (rotinas com score que perdoa falhas — fatia 014):
     - Um hábito é uma rotina recorrente ("meditar", "ler 20 páginas") com uma FREQUÊNCIA ALVO
       (ex.: 5x por semana). NÃO é uma tarefa: não tem due_date nem subtarefas; vira check-in
-      diário. A FORÇA do hábito é uma métrica (0–100%) que cresce com consistência e decai
-      SUAVEMENTE com falhas — uma falha isolada NÃO zera (diferente de um streak).
+      diário. O score segue o modelo "CAIXA D'ÁGUA": uma falha isolada baixa o nível um
+      tiquinho (NÃO zera, diferente de um streak). A tool devolve TRÊS dimensões:
+        · consistency (0–100) — a nota geral (o nível da caixa);
+        · trend ("up"/"down"/"flat") — a tendência (subindo/caindo/estável);
+        · recent_done / recent_total — o dado cru ("5/6 nas últimas 2 semanas").
     - CRIAR → create_habit(name, freq_num, freq_den, target_value?, unit?). A frequência é
       "freq_num vezes a cada freq_den dias": "5x por semana" → freq_num=5, freq_den=7;
       "todo dia" → freq_num=1, freq_den=1; "dia sim, dia não" → freq_num=1, freq_den=2.
       Hábito MENSURÁVEL (tem meta numérica): passe target_value e unit, ex.: "ler 20 páginas"
       → create_habit("Ler", 1, 1, target_value=20, unit="páginas"). Sem meta = hábito sim/não.
     - CHECK-IN (o usuário cumpriu hoje) → check_in_habit(nome_ou_id). Mensurável: informe o
-      valor → check_in_habit("ler", value=25). A tool devolve "strength" — ECOE em % ("força
-      agora: 72%"). Desfazer o check-in de hoje → remove_check_in(habit_id).
-    - CONSULTAR → habit_status("meditar") devolve a força/aderência de um hábito; habit_status()
-      sem nome devolve TODOS os hábitos. Apresente a força em % e diga se já foi feito hoje.
+      valor → check_in_habit("ler", value=25). Desfazer o check-in de hoje →
+      remove_check_in(habit_id).
+    - CONSULTAR → habit_status("meditar") devolve o score de um hábito; habit_status() sem nome
+      devolve TODOS. ECOE as três dimensões num formato curto, ex.:
+      "Academia — 78/100, 📈 subindo, 5/6 nas últimas 2 semanas". Use 📈 para trend up,
+      📉 para down, ➡️ para flat. Diga também se já foi feito hoje.
     - EDITAR → update_habit(id, ...). EXCLUIR é arquivar (soft) → archive_habit(id): confirme
       antes; o histórico é preservado.
     - O heatmap anual é só do webapp (visual); no Telegram, reporte a força e a aderência.

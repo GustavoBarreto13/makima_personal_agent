@@ -138,10 +138,13 @@ export interface Column {
   is_done_column: boolean
 }
 
+// Tendência do hábito (modelo caixa d'água): média rápida vs lenta.
+export type HabitTrend = 'up' | 'down' | 'flat'
+
 // ── Hábitos (Fase 4 / fatia 014) ───────────────────────────────────────────────
 // Um hábito: rotina com frequência alvo (freq_num vezes a cada freq_den dias) e check-ins
-// diários. `strength`/`adherence`/`done_today` são DERIVADOS (calculados na leitura no backend,
-// nunca persistidos). `target_value`+`unit` => hábito mensurável; ausentes => sim/não.
+// diários. As métricas de score são DERIVADAS (calculadas na leitura no backend pelo modelo
+// "caixa d'água", nunca persistidas). `target_value`+`unit` => hábito mensurável; ausentes => sim/não.
 export interface Habit {
   id: number
   name: string
@@ -151,9 +154,12 @@ export interface Habit {
   freq_den: number
   target_value: number | null
   unit: string | null
-  strength: number     // 0–1 (a UI exibe como %)
-  adherence: number    // 0–1 (aderência da última semana)
-  done_today: boolean  // se já houve check-in cumprido hoje
+  // Score em três dimensões (modelo caixa d'água):
+  consistency: number   // 0–100 — a "nota" (nível da caixa reescalado pela meta)
+  trend: HabitTrend     // tendência: subindo / caindo / estável
+  recent_done: number   // cumpridos nos últimos 14 dias (dado cru)
+  recent_total: number  // quanto a meta esperava em 2 semanas (meta_semanal × 2)
+  done_today: boolean   // se já houve check-in cumprido hoje
 }
 
 // Um dia do histórico de check-ins (para o heatmap anual). Array esparso vindo do backend

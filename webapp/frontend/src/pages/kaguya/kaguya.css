@@ -348,6 +348,13 @@
 .kg-habit-name:hover { color: var(--kg); }
 .kg-habit-emoji { font-size: 18px; }
 .kg-habit-meta { font-size: 12.5px; color: var(--ink-3); margin-top: 2px; }
+/* Linha de score: tendência (📈/📉/➡️) + recente ("5/6 nas últimas 2 semanas"). */
+.kg-habit-score { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px; font-size: 12px; }
+.kg-trend { font-weight: 600; }
+.kg-trend-up { color: var(--done); }                 /* subindo = verde de cumprimento */
+.kg-trend-down { color: var(--p-high); }             /* caindo = vermelho de alerta */
+.kg-trend-flat { color: var(--ink-3); }              /* estável = neutro */
+.kg-habit-recent { color: var(--ink-4); }
 
 .kg-habit-actions { display: flex; align-items: center; gap: 8px; }
 .kg-habit-measure { display: flex; align-items: center; gap: 6px; }

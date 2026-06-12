@@ -139,18 +139,23 @@ Mutações retornam `{"status": "ok"|"error", ...}`; listagens retornam o dado d
 
 ### Hábitos (Fase 4 / fatia 014) — `habit_strength.py` + `tools_habits.py`
 
-Motor **puro** (`habit_strength.py`, sem banco) com a fórmula do **Loop Habit Tracker** (média
-móvel exponencial): `daily_multiplier(freq_num, freq_den)` = `0.5^(sqrt(freq)/13)`,
-`strength(done_by_date, freq_num, freq_den, until)` (itera dia a dia → 0–1),
-`adherence(...)` (cumpridos ÷ meta na janela) e `met_target(value, target)` (sim/não vs
-mensurável). A força é **calculada na leitura**, nunca persistida (gate puro em
-`tests/agents/test_kaguya_habit_strength.py` — SC-006: falha isolada não zera).
+Motor **puro** (`habit_strength.py`, sem banco) com o modelo **"caixa d'água"** (substitui a
+fórmula Loop): `summary(done_dates, weekly_target, *, weight=0.1, today, window=60)` roda uma EMA
+de **peso fixo** (`score_hoje = peso·fez + (1-peso)·score_ontem`, peso 0.1 = histórico pesa 90%)
+e **reescala pela meta** (`expected_level(weekly_target) = min(meta/7, 1)`). Devolve as **3
+dimensões**: `consistency` (0–100, a nota), `trend` (`up`/`down`/`flat`, via 2 EMAs rápida/lenta) e
+`recent_done`/`recent_total` (cumpridos nas últimas 2 semanas). `met_target(value, target)`
+resolve sim/não vs mensurável. Tudo **calculado na leitura**, nunca persistido (gate puro em
+`tests/agents/test_kaguya_habit_strength.py` — SC-006: falha isolada não derruba a consistência;
+3 de 3 num 3x/semana = ~100).
 
-Camada de lógica (`tools_habits.py`): `list_habits` (com força/aderência/`done_today`),
-`get_habit`, `create_habit`, `update_habit`, `archive_habit`/`unarchive_habit` (soft delete por
-`archived_at`), `check_in` (upsert — 1/dia, `UNIQUE (habit_id, date)`), `remove_check_in`,
-`get_habit_history(year)` (esparso, para o heatmap) e `resolve_habit_id_by_name` (Telegram fala
-por nome). Mensurável conta como cumprido quando `value >= target_value`.
+Camada de lógica (`tools_habits.py`): `list_habits`/`get_habit` (com
+`consistency`/`trend`/`recent_*`/`done_today` — `_weekly_target` converte `freq_num/freq_den` em
+vezes/semana), `create_habit`, `update_habit`, `archive_habit`/`unarchive_habit` (soft delete por
+`archived_at`), `check_in` (upsert — 1/dia, `UNIQUE (habit_id, date)`; devolve o score
+recalculado), `remove_check_in`, `get_habit_history(year)` (esparso, para o heatmap) e
+`resolve_habit_id_by_name` (Telegram fala por nome). Mensurável conta como cumprido quando
+`value >= target_value`.
 
 ---
 
@@ -170,8 +175,8 @@ por nome). Mensurável conta como cumprido quando `value >= target_value`.
 | `list_tasks_by_filter_name(name)` / `list_today_overdue()` | abrir smart-list por nome / built-in Hoje+Vencidas |
 | `list_tasks_in_range(start_date, end_date)` | consulta por intervalo (calendário no Telegram) |
 | `list_habits`, `create_habit`, `update_habit`, `archive_habit` | hábitos (fatia 014) |
-| `check_in_habit(habit, value?)` | check-in de hoje por id **ou** nome; ecoa a força recalculada |
-| `remove_check_in(habit_id)` / `habit_status(habit?)` | desfaz o check-in / força+aderência (um ou todos) |
+| `check_in_habit(habit, value?)` | check-in de hoje por id **ou** nome; ecoa o score recalculado (consistência/tendência) |
+| `remove_check_in(habit_id)` / `habit_status(habit?)` | desfaz o check-in / score em 3 dimensões (um ou todos) |
 | `create_project`, `update_project`, `delete_project` | listas |
 | **`complete_payment_task`** | cross-agent (Kaguya + Nami) — atômico |
 | **`create_expense_reminder`** | cross-agent — cria lembrete no Postgres |
@@ -207,8 +212,9 @@ cria a tarefa de lembrete (prioridade alta) no banco; **não** lança despesa.
 - "o que tenho pra hoje?" = `list_tasks_today()` (banco) + `list_events_today()` (Calendar).
 - **Hábitos** (fatia 014): um hábito NÃO é tarefa (sem due_date; vira check-in diário). Criar →
   `create_habit(name, freq_num, freq_den, target_value?, unit?)`; cumprir hoje →
-  `check_in_habit(nome, value?)` (ecoe a força em %); consultar → `habit_status(nome?)`;
-  "excluir" é `archive_habit` (soft, confirme antes). Hábito por nome resolve por prefixo.
+  `check_in_habit(nome, value?)`; consultar → `habit_status(nome?)`. Score "caixa d'água" em 3
+  dimensões — ecoe ex.: "Academia — 78/100, 📈 subindo, 5/6 nas últimas 2 semanas" (📈 up · 📉 down
+  · ➡️ flat). "excluir" é `archive_habit` (soft, confirme antes). Hábito por nome resolve por prefixo.
 
 ---
 

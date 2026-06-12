@@ -13,11 +13,12 @@ router `/api/tasks/habits/*` e tools no agente (`check_in_habit`, `habit_status`
 (integração).
 
 **Spec master**: [`specs/010-kaguya-tasks-app/`](../010-kaguya-tasks-app/spec.md) — esta é a spec
-filha da **Fase 4** ("hábitos" da master). O schema (`habits`, `habit_checkins`), a **fórmula da
-força** (Loop Habit Tracker) e os princípios (paridade de canais, soft delete, fuso
-`America/Sao_Paulo`, single-user) estão definidos lá e em
-[`data-model.md`](../010-kaguya-tasks-app/data-model.md). O frontend segue o **guia canônico**
-[`frontend-design-guide.md`](../010-kaguya-tasks-app/frontend-design-guide.md).
+filha da **Fase 4** ("hábitos" da master). O schema (`habits`, `habit_checkins`) e os princípios
+(paridade de canais, soft delete, fuso `America/Sao_Paulo`, single-user) estão definidos lá e em
+[`data-model.md`](../010-kaguya-tasks-app/data-model.md). **Nota sobre a métrica**: a master
+esboçou a força pela fórmula Loop; esta fatia **implementa o modelo "caixa d'água"** (EMA de peso
+fixo reescalada pela meta + 3 dimensões — ver abaixo), que substitui aquele esboço. O frontend
+segue o **guia canônico** [`frontend-design-guide.md`](../010-kaguya-tasks-app/frontend-design-guide.md).
 
 **Input**: User description: "User Story 4 da master 010 — Hábitos com força que perdoa falhas.
 Tabelas já nasceram dormentes na Fase 1 (habits, habit_checkins) — SEM migração de schema; só
@@ -31,9 +32,12 @@ Paridade total Telegram ⇄ webapp."
 
 **Entra na 014** (tabelas já existem no banco desde a Fase 1):
 
-- **Motor de força** (`habit_strength.py`) — função pura (sem banco) que implementa a fórmula do
-  Loop Habit Tracker: média móvel exponencial com multiplicador `0.5^(sqrt(freq)/13)`. Calculada
-  **na leitura**, nunca persistida. Gate automatizado do SC-006.
+- **Motor de score** (`habit_strength.py`) — função pura (sem banco) com o modelo **"caixa
+  d'água"**: uma média móvel exponencial (EMA) de **peso fixo** (`peso=0.1`, histórico pesa 90%)
+  reescalada pela meta semanal (`esperado = min(meta/7, 1)`). Expõe **3 dimensões**:
+  **consistência** (0–100), **tendência** (subindo/caindo/estável, via 2 EMAs rápida/lenta) e
+  **recente** (cumpridos nas últimas 2 semanas). Calculado **na leitura**, nunca persistido. Gate
+  automatizado do SC-006.
 - **CRUD de hábitos** (`tools_habits.py`) — criar/editar/arquivar (soft delete por `archived_at`),
   com frequência alvo (`freq_num`/`freq_den`) e tipo sim/não **ou** mensurável (`target_value`+`unit`).
 - **Check-ins** — um por dia por hábito (`UNIQUE (habit_id, date)`, upsert para corrigir valor);
@@ -42,7 +46,7 @@ Paridade total Telegram ⇄ webapp."
   da Frieren), com classes/tokens próprios do domínio Kaguya.
 - **Paridade total** — toda capacidade nasce na camada de lógica; o Telegram (`check_in_habit` por
   nome, `habit_status`) e o router `/api/tasks/habits/*` são fachadas finas. O heatmap é
-  webapp-only (visual); o equivalente Telegram é o relato textual de força/aderência.
+  webapp-only (visual); o equivalente Telegram é o relato textual das 3 dimensões.
 
 **Fica para depois**: lembretes proativos de hábito via Telegram (Fase 5); estatísticas avançadas
 e metas semanais; Eisenhower e Meu Dia rico (fases próprias). Sem gamificação (decisão da master:
@@ -53,28 +57,29 @@ acrescenta lógica, fachadas e UI.
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Construir hábitos com força que perdoa falhas (Priority: P1)
+### User Story 1 - Construir hábitos com score que perdoa falhas (Priority: P1)
 
 Registro hábitos ("meditar", "ler 20 páginas") com uma frequência alvo (ex.: 5x por semana) e faço
-check-ins diários, inclusive com valor mensurável. O sistema mostra a **força do hábito** — uma
-métrica que cresce com a consistência e decai suavemente com falhas (fórmula Loop), em vez de um
-streak que zera num dia ruim. Faço tudo por qualquer canal: pelo Telegram ("fiz minha meditação
-hoje") ou pelo webapp (botão de check-in na tela de Hábitos).
+check-ins diários, inclusive com valor mensurável. O sistema mostra a **consistência** (0–100) —
+uma métrica "caixa d'água" que cresce com o hábito e decai suavemente com falhas, em vez de um
+streak que zera num dia ruim — além da **tendência** (📈/📉/➡️) e do **recente** ("5/6 nas últimas
+2 semanas"). Faço tudo por qualquer canal: pelo Telegram ("fiz minha meditação hoje") ou pelo
+webapp (botão de check-in na tela de Hábitos).
 
-**Why this priority**: é o núcleo do módulo — sem o motor de força e o check-in nos dois canais, o
+**Why this priority**: é o núcleo do módulo — sem o motor de score e o check-in nos dois canais, o
 resto não existe. Sozinha, já entrega o diferencial anti-streak.
 
 **Independent Test**: criar um hábito, simular uma sequência de check-ins com uma falha isolada e
-verificar que a força segue a fórmula e permanece acima de zero; fazer check-in pelo Telegram e
+verificar que a consistência segue o modelo e permanece alta; fazer check-in pelo Telegram e
 ver o estado refletido no webapp.
 
 **Acceptance Scenarios**:
 
-1. **Given** um hábito 5x/semana com 4 check-ins na semana, **When** o usuário vê o hábito, **Then** a força reflete a consistência sem zerar por causa do dia perdido (aderência ≈ 80%).
+1. **Given** um hábito 3x/semana cumprido exatamente 3x na semana, **When** o usuário vê o hábito, **Then** a consistência chega a ~100 (a régua se ajusta à meta; os dias de folga não punem).
 2. **Given** um hábito mensurável "ler 20 páginas", **When** o usuário faz check-in com valor 25, **Then** o check-in registra o valor e conta como cumprido (25 ≥ 20).
-3. **Given** um hábito consistente, **When** o usuário falha um único dia, **Then** a força cai só um pouco e continua bem acima de zero (anti-streak — SC-006).
-4. **Given** um hábito criado pelo webapp, **When** o usuário pergunta à Kaguya "como está meu hábito de meditar?", **Then** a resposta traz a força/aderência — o mesmo dado do webapp (paridade).
-5. **Given** o check-in de hoje já feito, **When** o usuário desfaz, **Then** o cumprimento de hoje some e a força recalcula.
+3. **Given** um hábito consistente, **When** o usuário falha um único dia, **Then** a consistência cai só um pouco e continua alta (anti-streak — SC-006).
+4. **Given** um hábito criado pelo webapp, **When** o usuário pergunta à Kaguya "como está meu hábito de meditar?", **Then** a resposta traz consistência + tendência + recente — o mesmo dado do webapp (paridade).
+5. **Given** o check-in de hoje já feito, **When** o usuário desfaz, **Then** o cumprimento de hoje some e a consistência recalcula.
 
 ---
 
@@ -111,8 +116,12 @@ cada dia no lugar certo (alinhamento por dia da semana) e colore pela intensidad
 - **Frequência inválida**: `freq_num > freq_den` é rejeitado na camada de lógica (mesma invariante
   da CHECK do schema) com erro amigável — nunca um IntegrityError 500.
 - **Ano sem check-ins**: o heatmap de um ano vazio desenha a grade toda em nível base, sem quebrar.
-- **Hábito menos frequente perdoa mais**: a frequência alvo entra no multiplicador — um hábito
-  2x/semana decai mais devagar que um diário (cobrar todo dia seria injusto).
+- **Hábito menos frequente perdoa mais**: a frequência alvo entra na régua (`esperado`) — um
+  hábito 3x/semana estabiliza num nível cru menor e os dias de folga **não** contam como falha
+  (cobrar todo dia seria injusto). Por isso 3 de 3 dá consistência ~100, igual a 7 de 7 num diário.
+- **Oscilação não derruba a nota**: o nível "cru" da caixa oscila (sobe ao cumprir, vaza nas
+  folgas), mas a **consistência** (0–100) fica estável porque a divisão por `esperado` já espera
+  esse nível baixo. A nota só muda de patamar quando o **padrão real** muda (cair de 3x para 2x).
 
 ## Requirements *(mandatory)*
 
@@ -121,10 +130,13 @@ cada dia no lugar certo (alinhamento por dia da semana) e colore pela intensidad
 - **FR-001** (≡ master FR-021): O usuário MUST poder criar hábitos com frequência alvo
   (`freq_num`/`freq_den`, ex.: 5/7 = "5x por semana") e fazer check-ins diários, opcionalmente com
   valor mensurável (`target_value`+`unit`).
-- **FR-002** (≡ master FR-022): O sistema MUST calcular a força do hábito com decaimento suave
-  (fórmula Loop: multiplicador `0.5^(sqrt(freq)/13)`), nunca um streak que zera com uma falha.
-- **FR-003**: A força MUST ser **calculada na leitura** a partir de `habit_checkins` — nunca
-  persistida (a tabela de check-ins é a única fonte da verdade).
+- **FR-002** (≡ master FR-022): O sistema MUST calcular o score do hábito com decaimento suave —
+  modelo **"caixa d'água"**: EMA de peso fixo (`peso=0.1`) reescalada pela meta
+  (`esperado = min(meta_semanal/7, 1)`), nunca um streak que zera com uma falha. MUST expor as
+  **3 dimensões**: consistência (0–100), tendência (subindo/caindo/estável) e recente (cumpridos
+  nas últimas 2 semanas).
+- **FR-003**: O score MUST ser **calculado na leitura** a partir de `habit_checkins` — nunca
+  persistido (a tabela de check-ins é a única fonte da verdade).
 - **FR-004**: O check-in MUST respeitar **um por dia por hábito**; refazer o do mesmo dia atualiza o
   valor (upsert). Mensurável conta como cumprido quando `value >= target_value`.
 - **FR-005**: "Excluir" um hábito MUST ser **arquivar** (soft delete por `archived_at`), preservando
@@ -132,8 +144,8 @@ cada dia no lugar certo (alinhamento por dia da semana) e colore pela intensidad
 - **FR-006**: O sistema MUST oferecer um **heatmap anual** dos check-ins no webapp; a intensidade
   reflete cumprimento (sim/não) ou proporção da meta (mensurável).
 - **FR-007** (paridade): Toda capacidade de hábitos (criar, editar, arquivar, check-in, consultar
-  força/aderência) MUST estar disponível e idêntica nos dois canais; a *view* de heatmap é
-  webapp-only e seu equivalente no Telegram é o relato textual de força/aderência.
+  o score) MUST estar disponível e idêntica nos dois canais; a *view* de heatmap é webapp-only e
+  seu equivalente no Telegram é o relato textual das 3 dimensões (consistência/tendência/recente).
 
 ### Key Entities
 
@@ -144,17 +156,19 @@ Definidas na master (`data-model.md`). Esta fatia ativa duas entidades que estav
 - **Check-in** (`habit_checkins`): registro diário (`date`, `value`), `UNIQUE (habit_id, date)`,
   cascade ao excluir o hábito.
 
-A força e a aderência são **métricas derivadas** (não colunas) — calculadas pelo motor puro
-`habit_strength`.
+Consistência, tendência e recente são **métricas derivadas** (não colunas) — calculadas pelo
+motor puro `habit_strength` (modelo caixa d'água).
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001** (≡ master SC-006): A força de um hábito com boa aderência **permanece acima de zero**
-  após uma falha isolada — coberto por teste automatizado puro (`test_kaguya_habit_strength.py`).
-- **SC-002**: A fórmula da força bate com a do Loop Habit Tracker: multiplicador conhecido
-  (~0.948 para diário, ~0.956 para 5/7) — teste puro.
+- **SC-001** (≡ master SC-006): A consistência de um hábito com bom histórico **permanece alta**
+  após uma falha isolada (cai só ~o peso, não zera) — coberto por teste automatizado puro
+  (`test_kaguya_habit_strength.py`).
+- **SC-002**: A régua reescala pela meta: cumprir **3 de 3** num hábito 3x/semana dá consistência
+  **~100** (igual a 7 de 7 num diário); fazer 2x/semana num hábito 3x/semana cai para **~67** —
+  teste puro (tabela de referência).
 - **SC-003**: Um hábito mensurável só conta o dia como cumprido quando `value >= target_value` —
   teste (puro + integração).
 - **SC-004**: 100% das capacidades de hábitos executáveis pelos **dois canais**, com cada canal
@@ -166,10 +180,12 @@ A força e a aderência são **métricas derivadas** (não colunas) — calculad
 
 - O schema da Fase 1 (com `habits` e `habit_checkins`) já está aplicado em produção — esta fatia
   **não** altera o schema.
-- A força é calculada na leitura pelo motor puro (`habit_strength`), reusando a fórmula Loop da
-  master; nada é persistido além dos check-ins.
+- O score é calculado na leitura pelo motor puro (`habit_strength`), com o modelo caixa d'água
+  (que substitui o esboço Loop da master); nada é persistido além dos check-ins.
 - "Hoje" usa `date.today()` (fuso do sistema, `America/Sao_Paulo`), consistente com `tools_tasks`.
-- O heatmap é **webapp-only** por natureza visual; a paridade no Telegram é o relato de
-  força/aderência (`habit_status`), não uma grade.
+- O heatmap é **webapp-only** por natureza visual; a paridade no Telegram é o relato das 3
+  dimensões (`habit_status`), não uma grade.
+- O `peso` da EMA é fixo em 0.1 (estável, perdoa muito); a frequência semanal usada pelo motor
+  vem de `freq_num/freq_den*7` (a conversão fica na camada de lógica).
 - Lembretes proativos de hábito ficam para a Fase 5 (decisão da master).
 - Single-user: sem compartilhamento de hábitos.

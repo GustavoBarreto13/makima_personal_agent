@@ -1,10 +1,11 @@
 // HabitsScreen — a tela de Hábitos (Fase 4 / fatia 014).
-// Lista cartões de hábito: ícone, nome, frequência, ANEL DE FORÇA (% calculada na leitura) e
-// um botão de check-in de hoje (toggle; mensurável abre um campo de valor). Cada cartão pode
-// expandir o HEATMAP anual de check-ins. "Novo hábito" e editar abrem o HabitModal (no shell).
+// Lista cartões de hábito com o score "caixa d'água" em 3 dimensões: ANEL DE CONSISTÊNCIA
+// (0–100, calculada na leitura), TENDÊNCIA (📈/📉/➡️) e RECENTE ("5/6 nas últimas 2 semanas").
+// Cada cartão tem o check-in de hoje (toggle; mensurável abre um campo de valor) e pode expandir
+// o HEATMAP anual de check-ins. "Novo hábito" e editar abrem o HabitModal (no shell).
 
 import { useCallback, useEffect, useState } from 'react'
-import type { Habit, HabitHeatDay } from '../types'
+import type { Habit, HabitHeatDay, HabitTrend } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 import { HabitHeatmap } from '../ui/HabitHeatmap'
@@ -14,6 +15,13 @@ interface HabitsScreenProps {
   onNewHabit: () => void                  // abre o HabitModal em modo criar
   onEditHabit: (h: Habit) => void         // abre o HabitModal em modo editar
   toast: (msg: string, kind?: 'ok' | 'err') => void
+}
+
+// Rótulo + emoji de cada tendência (a setinha subindo dá o "empurrão de dopamina").
+const TREND_LABEL: Record<HabitTrend, { icon: string; label: string }> = {
+  up: { icon: '📈', label: 'subindo' },
+  down: { icon: '📉', label: 'caindo' },
+  flat: { icon: '➡️', label: 'estável' },
 }
 
 // Descreve a frequência alvo em português a partir de freq_num/freq_den.
@@ -90,7 +98,7 @@ export function HabitsScreen({ reloadKey, onNewHabit, onEditHabit, toast }: Habi
       <div className="kg-habits-top">
         <div>
           <h1 className="kg-page-title"><Icon name="flame" size={22} /> Hábitos</h1>
-          <div className="kg-page-sub">A força cresce com a consistência e perdoa uma falha isolada.</div>
+          <div className="kg-page-sub">A consistência cresce com o hábito e perdoa uma falha isolada — nada de ofensiva.</div>
         </div>
         <button className="kg-btn kg-btn-primary" onClick={onNewHabit}>
           <Icon name="plus" size={15} style={{ verticalAlign: 'middle', marginRight: 6 }} />Novo hábito
@@ -100,24 +108,27 @@ export function HabitsScreen({ reloadKey, onNewHabit, onEditHabit, toast }: Habi
       {habits.length === 0 ? (
         <div className="kg-empty">
           <div className="kg-empty-title">Nenhum hábito ainda</div>
-          Crie seu primeiro hábito para começar a construir força.
+          Crie seu primeiro hábito para começar a construir consistência.
         </div>
       ) : (
         <div className="kg-habit-list">
           {habits.map((h) => {
-            const pct = Math.round(h.strength * 100)          // força em %
-            const adh = Math.round(h.adherence * 100)         // aderência da semana em %
+            // Consistência (0–100) é a "nota" do hábito — vai no anel.
+            const cons = h.consistency
+            // Tendência → emoji + rótulo (a régua já contou os dias de folga; subir/descer
+            // só muda quando o padrão real muda).
+            const trend = TREND_LABEL[h.trend]
             const isOpen = expanded.has(h.id)
             return (
               <div key={h.id} className="kg-habit-card">
                 <div className="kg-habit-main">
-                  {/* Anel de força: conic-gradient preenchido até a % da força. */}
+                  {/* Anel de consistência: conic-gradient preenchido até a % da nota. */}
                   <div
                     className="kg-strength-ring"
-                    style={{ ['--pct' as string]: `${pct}` }}
-                    title={`Força: ${pct}% · Aderência (7d): ${adh}%`}
+                    style={{ ['--pct' as string]: `${cons}` }}
+                    title={`Consistência: ${cons}/100 · ${trend.label} · ${h.recent_done}/${h.recent_total} nas últimas 2 semanas`}
                   >
-                    <span className="kg-strength-pct">{pct}%</span>
+                    <span className="kg-strength-pct">{cons}</span>
                   </div>
 
                   <div className="kg-habit-info">
@@ -128,6 +139,11 @@ export function HabitsScreen({ reloadKey, onNewHabit, onEditHabit, toast }: Habi
                     <div className="kg-habit-meta">
                       {freqText(h.freq_num, h.freq_den)}
                       {h.target_value != null && ` · meta ${h.target_value}${h.unit ? ' ' + h.unit : ''}`}
+                    </div>
+                    {/* Tendência + recente (o dado cru que prova o esforço). */}
+                    <div className="kg-habit-score">
+                      <span className={`kg-trend kg-trend-${h.trend}`}>{trend.icon} {trend.label}</span>
+                      <span className="kg-habit-recent">{h.recent_done}/{h.recent_total} nas últimas 2 semanas</span>
                     </div>
                   </div>
 

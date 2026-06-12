@@ -133,15 +133,16 @@ def check_in_habit(habit: Union[int, str], value: float = 0) -> dict:
     """Registra o check-in de hoje de um hábito, aceitando o id **ou** o nome do hábito.
 
     É o que a Kaguya usa quando o usuário diz "fiz minha meditação de hoje". Resolve o hábito
-    por nome (prefixo, ignorando caixa) quando não vier um id, e ecoa a força recalculada.
+    por nome (prefixo, ignorando caixa) quando não vier um id, e ecoa o score recalculado
+    (consistência + tendência).
 
     Args:
         habit: Id (número) ou nome do hábito (ex.: "meditar").
         value: Valor medido (hábito mensurável, ex.: 25 páginas). 0 = sem valor (sim/não).
 
     Returns:
-        ``{"status": "ok", "strength": <0–1>, ...}`` ou ``{"status": "error", ...}`` se o nome
-        não casar nenhum hábito.
+        ``{"status": "ok", "consistency": <0–100>, "trend": ..., ...}`` ou
+        ``{"status": "error", ...}`` se o nome não casar nenhum hábito.
     """
     # Import local da função de mutação (o re-export do topo expõe os nomes ao agente; aqui
     # chamamos diretamente para não depender da ordem dos re-exports).
@@ -162,15 +163,15 @@ def check_in_habit(habit: Union[int, str], value: float = 0) -> dict:
 
 
 def habit_status(habit: str = "") -> Union[list, dict]:
-    """Consulta a força/aderência de um hábito (por nome) ou de todos os hábitos.
+    """Consulta o score (consistência/tendência/recente) de um hábito ou de todos.
 
     Args:
         habit: Nome do hábito a consultar. Vazio = devolve todos os hábitos ativos.
 
     Returns:
-        O dicionário de um hábito (com ``strength``/``adherence``/``done_today``) quando um
-        nome é informado, ou a lista de todos quando vazio; ``{"status": "error", ...}`` se o
-        nome não casar.
+        O dicionário de um hábito (com ``consistency``/``trend``/``recent_done``/
+        ``recent_total``/``done_today``) quando um nome é informado, ou a lista de todos quando
+        vazio; ``{"status": "error", ...}`` se o nome não casar.
     """
     nome = (habit or "").strip()
     if not nome:
