@@ -1,20 +1,22 @@
 // SidebarNav — a navegação interna do shell Kaguya (guia §5):
-// marca + botão "Nova tarefa" + Views fixas + Smart lists (Fase 2) +
-// "Listas" (grupos → listas, Inbox no topo) + Hábitos + "Voltar à Makima".
+// marca + botão "Nova tarefa" + Views fixas + "Listas" (grupos → listas, Inbox no topo) +
+// Smart lists (fatia 013, abaixo das Listas) + lixeira + "Voltar à Makima".
 
 import type { Sidebar, KaguyaView, Group } from '../types'
+import { BUILTIN_TODAY_OVERDUE } from '../types'
 import { Icon } from '../ui/Icons'
 import type { IconName } from '../ui/Icons'
 
 interface SidebarNavProps {
   sidebar: Sidebar | null
   view: KaguyaView
-  param: number | null      // id da lista quando view = 'list'
+  param: number | null      // id da lista (view='list') ou da smart-list (view='filter')
   onNavigate: (view: KaguyaView, param?: number | null) => void
   onNewTask: () => void
   onNewProject: () => void
   onNewGroup: () => void          // abre o modal de criar grupo
   onEditGroup: (group: Group) => void  // abre o modal de renomear/excluir grupo
+  onNewFilter: () => void         // abre o modal de criar smart-list (fatia 013)
   onOpenTweaks: () => void
 }
 
@@ -26,9 +28,10 @@ const FIXED_VIEWS: { view: KaguyaView; icon: IconName; label: string }[] = [
   { view: 'eisenhower', icon: 'grid', label: 'Eisenhower' },
 ]
 
-export function SidebarNav({ sidebar, view, param, onNavigate, onNewTask, onNewProject, onNewGroup, onEditGroup, onOpenTweaks }: SidebarNavProps) {
+export function SidebarNav({ sidebar, view, param, onNavigate, onNewTask, onNewProject, onNewGroup, onEditGroup, onNewFilter, onOpenTweaks }: SidebarNavProps) {
   const projects = sidebar?.projects ?? []
   const groups = sidebar?.groups ?? []
+  const filters = sidebar?.filters ?? []
   const inbox = projects.find((p) => p.is_inbox)
   // Listas sem grupo (exceto o Inbox, que aparece destacado no topo do bloco).
   const ungrouped = projects.filter((p) => !p.is_inbox && p.group_id == null)
@@ -96,7 +99,33 @@ export function SidebarNav({ sidebar, view, param, onNavigate, onNewTask, onNewP
         )
       })}
 
-      {/* Hábitos (entrada única — tela na Fase 4) + lixeira */}
+      {/* Smart lists (fatia 013) — abaixo das Listas. A built-in "Hoje + Vencidas" vem
+          fixa do código (não é uma linha em task_filters); depois as salvas. */}
+      <div className="kg-nav-label">
+        <span>Smart lists</span>
+        <div className="kg-nav-acts">
+          <button onClick={onNewFilter} aria-label="Nova smart-list" title="Nova smart-list"><Icon name="plus" size={13} /></button>
+        </div>
+      </div>
+      <button
+        className={`kg-nav-item${view === 'filter' && param === BUILTIN_TODAY_OVERDUE ? ' active' : ''}`}
+        onClick={() => onNavigate('filter', BUILTIN_TODAY_OVERDUE)}
+      >
+        <span className="kg-nav-emoji"><Icon name="clock" size={16} /></span>
+        <span>Hoje + Vencidas</span>
+      </button>
+      {filters.map((f) => (
+        <button
+          key={f.id}
+          className={`kg-nav-item${view === 'filter' && param === f.id ? ' active' : ''}`}
+          onClick={() => onNavigate('filter', f.id)}
+        >
+          <span className="kg-nav-emoji">{f.icon ?? <Icon name="filter" size={16} />}</span>
+          <span>{f.name}</span>
+        </button>
+      ))}
+
+      {/* lixeira */}
       <div className="kg-nav-label"><span> </span></div>
       <button className={`kg-nav-item${view === 'trash' ? ' active' : ''}`} onClick={() => onNavigate('trash')}>
         <span className="kg-nav-emoji"><Icon name="trash" size={16} /></span>

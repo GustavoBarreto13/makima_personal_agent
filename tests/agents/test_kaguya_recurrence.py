@@ -165,6 +165,58 @@ def test_describe_rrule_pt_br():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Projeção de ocorrências virtuais para o calendário (fatia 013 / P3 — SC-005)
+# Funções puras: projetam as próximas datas de uma série DENTRO de uma janela visível,
+# sem materializar nada no banco. Por isso rodam sempre (sem DATABASE_URL).
+# ──────────────────────────────────────────────────────────────────────────────
+def test_project_weekly_within_month():
+    """"Toda segunda" projeta as segundas FUTURAS da janela (exclui a ocorrência viva)."""
+    # Junho/2026: segundas em 1, 8, 15, 22, 29. A linha viva é a de 01/06 (já é real).
+    datas = R.project_occurrences(
+        RR_SEGUNDA, ANCORA_SEGUNDA, R.MODE_FIXED,
+        live_due=date(2026, 6, 1),
+        window_start=date(2026, 6, 1),
+        window_end=date(2026, 6, 30),
+    )
+    assert datas == [date(2026, 6, 8), date(2026, 6, 15), date(2026, 6, 22), date(2026, 6, 29)]
+
+
+def test_project_excludes_live_and_past_occurrences():
+    """Só projeta o que vem DEPOIS da ocorrência viva (passado/viva já são linhas reais)."""
+    # Linha viva em 15/06 → 01 e 08 são passado (linhas reais), 15 é a viva.
+    datas = R.project_occurrences(
+        RR_SEGUNDA, ANCORA_SEGUNDA, R.MODE_FIXED,
+        live_due=date(2026, 6, 15),
+        window_start=date(2026, 6, 1),
+        window_end=date(2026, 6, 30),
+    )
+    assert datas == [date(2026, 6, 22), date(2026, 6, 29)]
+
+
+def test_project_is_bounded_to_window():
+    """A projeção fica limitada à janela visível (FR-015) — não gera ocorrências sem fim."""
+    # Janela de julho: segundas em 6, 13, 20, 27 (todas depois da viva de 01/06).
+    datas = R.project_occurrences(
+        RR_SEGUNDA, ANCORA_SEGUNDA, R.MODE_FIXED,
+        live_due=date(2026, 6, 1),
+        window_start=date(2026, 7, 1),
+        window_end=date(2026, 7, 31),
+    )
+    assert datas == [date(2026, 7, 6), date(2026, 7, 13), date(2026, 7, 20), date(2026, 7, 27)]
+
+
+def test_project_after_completion_returns_empty():
+    """Modo after_completion não projeta futuro (depende da conclusão, ainda desconhecida)."""
+    datas = R.project_occurrences(
+        RR_CADA3, date(2026, 1, 1), R.MODE_AFTER_COMPLETION,
+        live_due=date(2026, 6, 1),
+        window_start=date(2026, 6, 1),
+        window_end=date(2026, 6, 30),
+    )
+    assert datas == []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Camada 2 — integração com o banco (geração ao concluir/excluir)
 # Pulada (skipif) sem DATABASE_URL; os testes puros acima continuam rodando.
 # ──────────────────────────────────────────────────────────────────────────────

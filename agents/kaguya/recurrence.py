@@ -176,6 +176,73 @@ def next_occurrence(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Projeção de ocorrências virtuais (calendário — fatia 013 / P3)
+# ─────────────────────────────────────────────────────────────────────────────
+def project_occurrences(
+    rrule: str,
+    anchor_date: date,
+    mode: str,
+    *,
+    live_due: Optional[date],
+    window_start: date,
+    window_end: date,
+) -> list[date]:
+    """Projeta as próximas ocorrências **virtuais** de uma série dentro de uma janela.
+
+    Usada pela view de calendário (fatia 013): mostra as próximas datas de uma tarefa
+    recorrente **sem materializar** linhas futuras no banco (o invariante "uma ocorrência
+    viva por série" da 012 é preservado — SC-005). A projeção é **sempre limitada à janela
+    visível** (mês/semana) para nunca gerar ocorrências sem fim (FR-015).
+
+    Só projeta o que vem **estritamente depois** da ocorrência viva (``live_due``): a viva e
+    as passadas já são linhas reais em ``tasks`` (a viva está aberta; as passadas, concluídas)
+    — projetá-las de novo duplicaria. Em modo ``after_completion`` a próxima depende da data
+    de conclusão (ainda desconhecida), então não há o que projetar → lista vazia.
+
+    Args:
+        rrule: Regra RFC 5545 (ex.: ``FREQ=WEEKLY;BYDAY=MO``).
+        anchor_date: Âncora da série (DTSTART) — base da expansão em modo ``fixed``.
+        mode: ``fixed`` ou ``after_completion``.
+        live_due: ``due_date`` da ocorrência viva (a que já existe como linha). Datas projetadas
+            saem estritamente após ela. ``None`` projeta todas as da janela (defensivo).
+        window_start: Início da janela visível (inclusive).
+        window_end: Fim da janela visível (inclusive).
+
+    Returns:
+        Lista ordenada de datas projetadas dentro de ``[window_start, window_end]`` e
+        posteriores a ``live_due``; vazia em ``after_completion`` ou se nada cair na janela.
+
+    Raises:
+        ValueError: Se ``mode`` for inválido ou a RRULE não puder ser interpretada.
+
+    Example:
+        >>> from datetime import date
+        >>> # "toda segunda", viva em 01/06 → projeta as segundas seguintes de junho
+        >>> project_occurrences("FREQ=WEEKLY;BYDAY=MO", date(2026, 6, 1), "fixed",
+        ...                      live_due=date(2026, 6, 1),
+        ...                      window_start=date(2026, 6, 1), window_end=date(2026, 6, 30))
+        [datetime.date(2026, 6, 8), datetime.date(2026, 6, 15), datetime.date(2026, 6, 22), datetime.date(2026, 6, 29)]
+    """
+    if mode not in _VALID_MODES:
+        raise ValueError(f"Modo de recorrência inválido: {mode!r} (use 'fixed' ou 'after_completion').")
+    # Futuro de after_completion é indeterminado (conta da conclusão real) → não projeta.
+    if mode == MODE_AFTER_COMPLETION:
+        return []
+
+    rule = _rule(rrule, anchor_date)
+    # ``between`` já corta na janela [start, end] — é o que torna a projeção finita (FR-015).
+    candidatas = rule.between(_to_dt(window_start), _to_dt(window_end), inc=True)
+    out: list[date] = []
+    for dt in candidatas:
+        d = dt.date()
+        # Exclui a ocorrência viva e as passadas (já são linhas reais) — só o que vem depois.
+        if live_due is not None and d <= live_due:
+            continue
+        out.append(d)
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Construção de RRULE a partir de uma intenção simples (presets da UI e do agente)
 # ─────────────────────────────────────────────────────────────────────────────
 def build_rrule(

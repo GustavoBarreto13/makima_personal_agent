@@ -5,7 +5,8 @@
 import { useEffect, useState, useCallback, type CSSProperties } from 'react'
 import './kaguya.css'
 
-import type { Sidebar, Task, Tweaks, KaguyaView } from './types'
+import type { Sidebar, Task, Tweaks, KaguyaView, Filter } from './types'
+import { BUILTIN_TODAY_OVERDUE } from './types'
 import { kaguyaApi } from './kaguyaApi'
 
 import { SidebarNav } from './components/SidebarNav'
@@ -15,10 +16,13 @@ import { TweaksPanel } from './TweaksPanel'
 import { TaskModal } from './modals/TaskModal'
 import { ProjectModal } from './modals/ProjectModal'
 import { GroupModal } from './modals/GroupModal'
+import { FilterModal } from './modals/FilterModal'
 import { TodayScreen } from './screens/TodayScreen'
 import { ListScreen } from './screens/ListScreen'
 import { KanbanScreen } from './screens/KanbanScreen'
 import { TrashScreen } from './screens/TrashScreen'
+import { FilterScreen } from './screens/FilterScreen'
+import { CalendarScreen } from './screens/CalendarScreen'
 import { Icon } from './ui/Icons'
 
 // Tweaks padrão (acento azul, claro, confortável, traço, animações ligadas).
@@ -55,6 +59,7 @@ export function KaguyaShell() {
   const [taskModal, setTaskModal] = useState<{ mode: 'create' | 'edit'; task?: Task; projectId?: number | null } | null>(null)
   const [projectModal, setProjectModal] = useState<{ mode: 'create' | 'edit'; project?: import('./types').Project } | null>(null)
   const [groupModal, setGroupModal] = useState<{ mode: 'create' | 'edit'; group?: import('./types').Group } | null>(null)
+  const [filterModal, setFilterModal] = useState<{ mode: 'create' | 'edit'; filter?: Filter } | null>(null)
   const [toast, setToast] = useState<{ msg: string; kind?: 'ok' | 'err' } | null>(null)
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState<Task[] | null>(null)
@@ -99,9 +104,14 @@ export function KaguyaShell() {
 
   // Título e nome da lista atual.
   const project = param != null ? sidebar?.projects.find((p) => p.id === param) : undefined
+  // Smart-list atual (view='filter'): a built-in tem nome fixo; as salvas vêm da sidebar.
+  const currentFilter = view === 'filter' && param != null && param !== BUILTIN_TODAY_OVERDUE
+    ? sidebar?.filters.find((f) => f.id === param) : undefined
+  const filterName = param === BUILTIN_TODAY_OVERDUE ? 'Hoje + Vencidas' : (currentFilter?.name ?? 'Smart list')
   const titleMap: Record<KaguyaView, string> = {
     today: 'Meu Dia', kanban: project?.name ?? 'Kanban', list: project?.name ?? 'Lista',
     calendar: 'Calendário', eisenhower: 'Eisenhower', habits: 'Hábitos', trash: 'Lixeira',
+    filter: filterName,
   }
 
   // Estilo do root: data-attrs (tema/densidade/pmark/anim) + acento via PALETTE_MAP.
@@ -126,13 +136,23 @@ export function KaguyaShell() {
     if (view === 'today') return <TodayScreen projects={sidebar?.projects ?? []} reloadKey={reloadKey} onChanged={loadSidebar} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} toast={showToast} />
     if (view === 'list' && param != null) return <ListScreen projectId={param} projectName={titleMap.list} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onNewTask={(pid) => setTaskModal({ mode: 'create', projectId: pid })} toast={showToast} />
     if (view === 'kanban' && param != null) return <KanbanScreen projectId={param} projectName={titleMap.kanban} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onChanged={loadSidebar} toast={showToast} />
+    if (view === 'calendar') return <CalendarScreen reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} toast={showToast} />
+    if (view === 'filter' && param != null) return (
+      <FilterScreen
+        filterId={param}
+        filterName={filterName}
+        reloadKey={reloadKey}
+        onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
+        onEditFilter={currentFilter ? () => setFilterModal({ mode: 'edit', filter: currentFilter }) : undefined}
+        toast={showToast}
+      />
+    )
     if (view === 'trash') return <TrashScreen toast={showToast} />
     // Views ainda não construídas (fases futuras)
     return (
       <div className="kg-page"><div className="kg-empty">
         <div className="kg-empty-title">Em breve</div>
-        {view === 'calendar' && 'O Calendário chega na Fase 2.'}
-        {view === 'eisenhower' && 'A matriz de Eisenhower chega na Fase 2.'}
+        {view === 'eisenhower' && 'A matriz de Eisenhower chega numa fase futura.'}
         {view === 'habits' && 'Os Hábitos chegam na Fase 4.'}
       </div></div>
     )
@@ -157,6 +177,7 @@ export function KaguyaShell() {
           onNewProject={() => setProjectModal({ mode: 'create' })}
           onNewGroup={() => setGroupModal({ mode: 'create' })}
           onEditGroup={(group) => setGroupModal({ mode: 'edit', group })}
+          onNewFilter={() => setFilterModal({ mode: 'create' })}
           onOpenTweaks={() => setTweaksOpen(true)}
         />
 
@@ -222,6 +243,18 @@ export function KaguyaShell() {
           group={groupModal.group}
           onClose={() => setGroupModal(null)}
           onSaved={afterSave}
+          toast={showToast}
+        />
+      )}
+      {filterModal && (
+        <FilterModal
+          mode={filterModal.mode}
+          filter={filterModal.filter}
+          projects={sidebar?.projects ?? []}
+          onClose={() => setFilterModal(null)}
+          // Após salvar/excluir, recarrega a sidebar (e as views). Se a smart-list aberta
+          // foi excluída, volta para "Meu Dia" para não ficar numa view órfã.
+          onSaved={() => { afterSave(); if (filterModal.mode === 'edit') navigate('today') }}
           toast={showToast}
         />
       )}

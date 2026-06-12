@@ -4,7 +4,12 @@
 
 **Created**: 2026-06-12
 
-**Status**: Draft
+**Status**: Implementado — P1 (tags), P2 (smart-lists) e P3 (calendário) entregues. Camada de
+lógica: `agents/kaguya/tools_tags.py`, `tools_filters.py`, `tools_calendar.py` +
+`recurrence.project_occurrences`. Fachadas: router `/api/tasks/{filters,calendar}/*` e tools no
+agente. UI: `FilterModal`/`FilterScreen`/`CalendarScreen` + seção na sidebar. Gates:
+`tests/agents/test_kaguya_filters.py`, `test_kaguya_calendar.py` e os testes puros de projeção em
+`test_kaguya_recurrence.py`.
 
 **Spec master**: [`specs/010-kaguya-tasks-app/`](../010-kaguya-tasks-app/spec.md) — esta é uma
 spec filha da **Fase 2** ("organização e views" da master). O schema (`task_tags`,

@@ -22,6 +22,10 @@ agents/kaguya/
 ├── schema_tasks_pg.sql   # schema completo do domínio (aplicado por scripts/setup_schemas.py)
 ├── tools_tasks.py        # camada de lógica: CRUD de tarefas/subtarefas, completar, posições
 ├── tools_projects.py     # camada de lógica: listas, grupos, colunas (Kanban), sidebar
+├── tools_tags.py         # camada de lógica: etiquetas (tags) N:N — fatia 013 / P1
+├── tools_filters.py      # camada de lógica: smart-lists (filtros salvos) — fatia 013 / P2
+├── tools_calendar.py     # camada de lógica: consulta por intervalo + projeção virtual — fatia 013 / P3
+├── recurrence.py         # motor puro RRULE (next_occurrence, project_occurrences, build/describe)
 ├── tools.py              # FACHADA: re-exporta a lógica + wrappers + cross-agent (Nami)
 ├── agent.py              # create_kaguya_agent() — factory (só o McpToolset do Calendar)
 └── CLAUDE.md             # este arquivo
@@ -75,6 +79,8 @@ As tools de tarefas são **funções Python** registradas direto (não MCP).
 
 Motor **puro** (`agents/kaguya/recurrence.py`, sem banco) com a aritmética RRULE (RFC 5545 via
 `python-dateutil`): `next_occurrence(rrule, anchor_date, mode, current_due, completed_on)`,
+`project_occurrences(rrule, anchor_date, mode, live_due, window_start, window_end)` (projeção
+virtual para o calendário — só `fixed`, limitada à janela, estritamente após a ocorrência viva),
 `build_rrule(...)`, `describe_rrule(...)` (pt-BR). Dois modos: `fixed` (âncora manda) e
 `after_completion` (conta da conclusão real). Modelo **"completar-e-gerar"**: cada ocorrência é
 uma linha; concluir consome a atual (vira histórico) e gera **uma** próxima (subtarefas resetam),
@@ -88,6 +94,26 @@ Relação **N:N** tarefa↔tag (`task_tag_links`); nome único ignorando caixa (
 e o incremental `add_task_tag`/`remove_task_tag`. Helpers transacionais reusados por
 `tools_tasks` (mesma transação): `_resolve_or_create_tag` (reuso case-insensitive — SC-002),
 `_set_task_tags` (semântica *set*), `_attach_tags` (anexa as tags às listagens, 1 query).
+
+### `tools_filters.py` — smart-lists (filtros salvos) — fatia 013 / P2
+
+Filtros salvos como objetos de 1ª classe (`task_filters`). A **DSL de regras** da master
+(`{combinator: and|or, conditions: [{field, op, value}]}`) é traduzida em `WHERE` **sempre
+parametrizado** por `_build_where_from_rules` — valores nunca são interpolados no SQL (SC-003).
+Campos: `priority`, `due_date` (com atalhos `today`/`Nd`/`overdue`/`none`/`within`), `tag`,
+`project_id`, `state`, `text`. Default "só abertas" quando não há condição `state`. Referência
+órfã (tag/lista excluída) **não casa nada e não quebra**, e volta em `orphans` (SC-006).
+Funções: `list_filters`, `create_filter` (rejeita regra vazia), `update_filter`, `delete_filter`,
+`list_tasks_by_filter` (webapp, por id), `list_tasks_by_filter_name` (Telegram, por nome) e a
+built-in `list_today_overdue` ("Hoje + Vencidas", **não** persistida).
+
+### `tools_calendar.py` — calendário / consulta por intervalo — fatia 013 / P3
+
+`list_tasks_in_range(start_date, end_date, project_id?)`: tarefas datadas reais na janela
+**mais** as ocorrências **virtuais** das recorrentes ativas (projetadas por
+`recurrence.project_occurrences`, marcadas `is_virtual=True` + `series_task_id`). **Nada é
+materializado** — o invariante "uma ocorrência viva por série" da 012 é preservado (SC-005).
+Serve a view de calendário do webapp e a consulta "o que tenho essa semana" do Telegram (FR-017).
 
 ### `tools_projects.py` — listas, grupos, colunas
 
@@ -115,6 +141,9 @@ Mutações retornam `{"status": "ok"|"error", ...}`; listagens retornam o dado d
 | `clear_recurrence(task_id)` | remove a recorrência |
 | `add_task_tag(task_id, tag)` / `remove_task_tag(task_id, tag)` | etiqueta incremental (fatia 013) |
 | `list_tasks_by_tag(name)` | tarefas abertas com uma tag (case-insensitive) |
+| `list_filters`, `create_filter(name, rules)`, `update_filter`, `delete_filter` | smart-lists (fatia 013 · DSL de regras) |
+| `list_tasks_by_filter_name(name)` / `list_today_overdue()` | abrir smart-list por nome / built-in Hoje+Vencidas |
+| `list_tasks_in_range(start_date, end_date)` | consulta por intervalo (calendário no Telegram) |
 | `create_project`, `update_project`, `delete_project` | listas |
 | **`complete_payment_task`** | cross-agent (Kaguya + Nami) — atômico |
 | **`create_expense_reminder`** | cross-agent — cria lembrete no Postgres |

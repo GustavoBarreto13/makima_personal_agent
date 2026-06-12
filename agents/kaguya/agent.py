@@ -27,6 +27,9 @@ from agents.kaguya.tools import (
     create_task, update_task, complete_task, reopen_task, delete_task, restore_task,
     set_task_recurrence, clear_recurrence,
     add_task_tag, remove_task_tag, list_tasks_by_tag,
+    list_filters, create_filter, update_filter, delete_filter,
+    list_tasks_by_filter_name, list_today_overdue,
+    list_tasks_in_range,
     complete_payment_task, create_expense_reminder,
 )
 
@@ -105,6 +108,40 @@ _INSTRUCTION = """
       "next_due_date"). Avise a próxima data. Se o usuário quer ENCERRAR a série ("não
       preciso mais disso"), confirme e chame complete_task(task_id, end_series=true).
     - Para remover a repetição mas manter a tarefa: clear_recurrence(task_id).
+
+    SMART LISTS / FILTROS SALVOS (fatia 013):
+    - Uma smart-list é um FILTRO SALVO com nome (ex.: "Urgentes da semana"): combina
+      condições sobre prioridade, data, tag, lista, estado e texto. O usuário abre pelo
+      nome em vez de remontar o filtro toda vez.
+    - CONSULTAR uma smart-list salva → list_tasks_by_filter_name("urgentes da semana")
+      (casa por nome, ignorando caixa, e por prefixo). Mostre as tarefas que voltarem; se
+      vier "orphans" (regra que aponta tag/lista excluída), avise que a referência sumiu.
+    - A built-in "Hoje + Vencidas" (tudo aberto com vencimento até hoje) → list_today_overdue().
+    - CRIAR/EDITAR uma smart-list → create_filter(name, rules) / update_filter(id, rules=...).
+      O parâmetro "rules" é um objeto com "combinator" ("and"/"or") e uma lista "conditions",
+      cada uma {field, op, value}. Campos e operadores:
+        · priority   → eq/gte/lte  (valor 0–3; alta=3, média=2, baixa=1)
+        · due_date   → eq/before/after/within/overdue/none  (valor "AAAA-MM-DD", "today",
+          "7d" para "dentro de 7 dias", ou null para overdue/none)
+        · tag        → has/not_has  (nome da tag)
+        · project_id → in/not_in    (lista de ids de lista)
+        · state      → eq           ("open" ou "completed")
+        · text       → contains     (busca em título/descrição)
+      Ex.: "salva um filtro 'Urgentes da semana' com prioridade alta e que vence em 7 dias" →
+        create_filter("Urgentes da semana", {"combinator":"and","conditions":[
+          {"field":"priority","op":"gte","value":2},
+          {"field":"due_date","op":"within","value":"7d"}]})
+    - Uma smart-list precisa de AO MENOS uma condição (senão é uma lista comum). ECOE em
+      português a regra que você salvou. EXCLUIR → delete_filter(id) (nenhuma tarefa é afetada).
+
+    CONSULTA POR INTERVALO DE DATAS (equivalente do calendário no Telegram — fatia 013):
+    - "o que tenho essa semana / esse mês / entre tal e tal dia?" → list_tasks_in_range(
+      start_date, end_date) com as datas AAAA-MM-DD (fuso America/Sao_Paulo). Calcule o
+      intervalo (ex.: semana = hoje até domingo) e informe o período assumido.
+    - O resultado inclui tarefas datadas E as próximas ocorrências das recorrentes (campo
+      "is_virtual": true nas projetadas). Trate as virtuais como ocorrências futuras normais;
+      ao agir sobre uma (concluir/editar), use a tarefa da série (campo "series_task_id").
+    - É a MESMA agenda que o calendário do webapp mostra (paridade — FR-017).
 
     EXCLUSÃO (destrutiva — confirme SEMPRE antes):
     - delete_task e delete_project só depois de confirmação explícita do usuário.
@@ -200,6 +237,11 @@ def create_kaguya_agent() -> Agent:
             set_task_recurrence, clear_recurrence,
             # Tags / etiquetas (fatia 013)
             add_task_tag, remove_task_tag, list_tasks_by_tag,
+            # Smart-lists (filtros salvos) — fatia 013 / P2
+            list_filters, create_filter, update_filter, delete_filter,
+            list_tasks_by_filter_name, list_today_overdue,
+            # Calendário: consulta por intervalo de datas — fatia 013 / P3
+            list_tasks_in_range,
             # Cross-agent (Kaguya + Nami)
             complete_payment_task, create_expense_reminder,
             # Agenda (Google Calendar via MCP)

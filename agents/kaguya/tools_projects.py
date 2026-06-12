@@ -108,14 +108,18 @@ def resolve_project_id_by_name(name: str) -> Optional[int]:
 # Sidebar (listagem agregada)
 # ─────────────────────────────────────────────────────────────────────────────
 def get_sidebar() -> dict:
-    """Monta o payload único da sidebar: grupos + listas (com contagem e flag de board).
+    """Monta o payload único da sidebar: grupos + listas + smart-lists salvas.
 
     Returns:
-        Dicionário ``{"groups": [...], "projects": [...]}`` onde cada projeto traz
-        ``open_count`` (tarefas abertas) e ``has_board`` (tem ao menos uma coluna).
-        Ordenado por ``position``; o Inbox sempre aparece (é uma lista normal com
-        ``is_inbox = True``). É uma **listagem** — não tem campo "status".
+        Dicionário ``{"groups": [...], "projects": [...], "filters": [...]}`` onde cada
+        projeto traz ``open_count`` (tarefas abertas) e ``has_board`` (tem ao menos uma
+        coluna), e ``filters`` são as smart-lists salvas (fatia 013) para a seção própria
+        da sidebar. Ordenado por ``position``; o Inbox sempre aparece (é uma lista normal
+        com ``is_inbox = True``). É uma **listagem** — não tem campo "status".
     """
+    # Import lazy: evita acoplar tools_projects a tools_filters no topo do módulo
+    # (e qualquer surpresa de ordem de import na carga do pacote).
+    from agents.kaguya.tools_filters import list_filters
     # Grupos ordenados pela posição manual.
     groups = run_select(
         "SELECT id, name, position FROM task_project_groups ORDER BY position, id"
@@ -140,7 +144,8 @@ def get_sidebar() -> dict:
         ORDER BY p.is_inbox DESC, p.position, p.id   -- Inbox primeiro, depois por posição
         """
     )
-    return {"groups": groups, "projects": projects}
+    # Smart-lists salvas (fatia 013): a built-in "Hoje + Vencidas" é constante no front.
+    return {"groups": groups, "projects": projects, "filters": list_filters()}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
