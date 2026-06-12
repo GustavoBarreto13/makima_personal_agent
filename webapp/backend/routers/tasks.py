@@ -43,6 +43,11 @@ from agents.kaguya.tools_filters import (
     list_builtin_filters, list_tasks_by_builtin,
 )
 from agents.kaguya.tools_calendar import list_tasks_in_range
+# Hábitos — fatia 014 / Fase 4. CRUD + check-ins + histórico (força calculada na leitura).
+from agents.kaguya.tools_habits import (
+    list_habits, get_habit, create_habit, update_habit,
+    archive_habit, check_in, remove_check_in, get_habit_history,
+)
 
 router = APIRouter()
 
@@ -197,6 +202,39 @@ class UpdateFilterBody(BaseModel):
     default_view: Optional[str] = None
     icon: Optional[str] = None
     position: Optional[int] = None
+
+
+class CreateHabitBody(BaseModel):
+    """Body de criação de hábito.
+
+    Frequência alvo = ``freq_num`` vezes a cada ``freq_den`` dias (ex.: 5/7 = "5x por semana").
+    ``target_value``+``unit`` tornam o hábito mensurável (ex.: 20 "páginas"); sem eles é sim/não.
+    """
+    name: str
+    freq_num: int = 1
+    freq_den: int = 1
+    target_value: Optional[float] = None
+    unit: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+
+
+class UpdateHabitBody(BaseModel):
+    """Body de edição de hábito (PATCH parcial — só campos enviados são aplicados)."""
+    name: Optional[str] = None
+    freq_num: Optional[int] = None
+    freq_den: Optional[int] = None
+    target_value: Optional[float] = None
+    unit: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    clear_target: bool = False   # True = remove a meta (volta a ser sim/não)
+
+
+class CheckInBody(BaseModel):
+    """Body de check-in de um hábito (``date`` opcional = hoje; ``value`` para mensurável)."""
+    date: Optional[str] = None   # AAAA-MM-DD; None = hoje
+    value: Optional[float] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -486,3 +524,67 @@ def calendar_route(
 ) -> list[dict]:
     """Tarefas datadas + ocorrências virtuais das recorrentes na janela (sem materializar)."""
     return list_tasks_in_range(start, end, project_id)  # listagem
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Hábitos — fatia 014 / Fase 4
+# ─────────────────────────────────────────────────────────────────────────────
+# Como nas tags, ``/habits`` é um caminho LITERAL: o conversor int de ``/{task_id}`` rejeita
+# "habits", então não há ambiguidade de rota. As métricas (força/aderência) vêm calculadas na
+# leitura pela camada de lógica — o router só envelopa as funções (paridade com o Telegram).
+@router.get("/habits")
+def list_habits_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Lista os hábitos ativos, com força, aderência e estado de hoje."""
+    return list_habits()  # listagem — sem _check_result
+
+
+@router.post("/habits", status_code=201)
+def create_habit_route(body: CreateHabitBody, user: dict = Depends(require_user)) -> dict:
+    """Cria um hábito (erro 400 se a frequência for inválida)."""
+    return _check_result(create_habit(**body.model_dump(exclude_unset=True)))
+
+
+@router.get("/habits/{habit_id}")
+def get_habit_route(habit_id: int, user: dict = Depends(require_user)) -> dict:
+    """Detalhe de um hábito (com força/aderência)."""
+    result = get_habit(habit_id)
+    # get_habit devolve {"status": "error"} quando não encontra → vira 400 via _check_result.
+    return _check_result(result) if result.get("status") == "error" else result
+
+
+@router.patch("/habits/{habit_id}")
+def update_habit_route(habit_id: int, body: UpdateHabitBody, user: dict = Depends(require_user)) -> dict:
+    """Edita um hábito (nome, frequência, meta, ícone, cor)."""
+    return _check_result(update_habit(habit_id, **body.model_dump(exclude_unset=True)))
+
+
+@router.delete("/habits/{habit_id}")
+def archive_habit_route(habit_id: int, user: dict = Depends(require_user)) -> dict:
+    """Arquiva um hábito (soft delete — o histórico é preservado)."""
+    return _check_result(archive_habit(habit_id))
+
+
+@router.get("/habits/{habit_id}/history")
+def habit_history_route(
+    habit_id: int,
+    year: int = Query(..., description="Ano do histórico (ex.: 2026)"),
+    user: dict = Depends(require_user),
+) -> list[dict]:
+    """Check-ins de um hábito num ano (esparso) para o heatmap anual."""
+    return get_habit_history(habit_id, year)  # listagem
+
+
+@router.post("/habits/{habit_id}/checkin")
+def check_in_route(habit_id: int, body: CheckInBody, user: dict = Depends(require_user)) -> dict:
+    """Registra/atualiza o check-in de um dia (um por dia; refazer atualiza o valor)."""
+    return _check_result(check_in(habit_id, body.date, body.value))
+
+
+@router.delete("/habits/{habit_id}/checkin")
+def remove_check_in_route(
+    habit_id: int,
+    date: Optional[str] = Query(None, description="Dia do check-in (AAAA-MM-DD); vazio = hoje"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remove o check-in de um dia (desfaz o cumprimento)."""
+    return _check_result(remove_check_in(habit_id, date))

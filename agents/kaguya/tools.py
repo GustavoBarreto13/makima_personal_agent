@@ -40,6 +40,12 @@ from agents.kaguya.tools_filters import (  # noqa: F401
 # Calendário — fatia 013 / P3. Consulta por intervalo de datas ("o que tenho essa semana"),
 # o equivalente Telegram da view de calendário do webapp (FR-017).
 from agents.kaguya.tools_calendar import list_tasks_in_range  # noqa: F401
+# Hábitos — fatia 014 / Fase 4. CRUD + check-in + histórico; a força é calculada na leitura
+# pelo motor puro. O agente cria hábito, faz check-in e consulta a força (paridade com o webapp).
+from agents.kaguya.tools_habits import (  # noqa: F401
+    list_habits, create_habit, update_habit, archive_habit,
+    remove_check_in, get_habit, get_habit_history, resolve_habit_id_by_name,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -118,6 +124,61 @@ def set_task_recurrence(
         # Devolve a descrição para a Kaguya ecoar ("Recorrência: todo dia 5").
         result["recurrence_text"] = describe_rrule(rrule)
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Hábitos — wrappers amigáveis ao agente (fatia 014)
+# ─────────────────────────────────────────────────────────────────────────────
+def check_in_habit(habit: Union[int, str], value: float = 0) -> dict:
+    """Registra o check-in de hoje de um hábito, aceitando o id **ou** o nome do hábito.
+
+    É o que a Kaguya usa quando o usuário diz "fiz minha meditação de hoje". Resolve o hábito
+    por nome (prefixo, ignorando caixa) quando não vier um id, e ecoa a força recalculada.
+
+    Args:
+        habit: Id (número) ou nome do hábito (ex.: "meditar").
+        value: Valor medido (hábito mensurável, ex.: 25 páginas). 0 = sem valor (sim/não).
+
+    Returns:
+        ``{"status": "ok", "strength": <0–1>, ...}`` ou ``{"status": "error", ...}`` se o nome
+        não casar nenhum hábito.
+    """
+    # Import local da função de mutação (o re-export do topo expõe os nomes ao agente; aqui
+    # chamamos diretamente para não depender da ordem dos re-exports).
+    from agents.kaguya.tools_habits import check_in
+
+    # Resolve id ou nome → id (mesma lógica de list_tasks_by_project).
+    if isinstance(habit, int):
+        hid = habit
+    elif str(habit).strip().isdigit():
+        hid = int(str(habit).strip())
+    else:
+        hid = resolve_habit_id_by_name(str(habit))
+    if hid is None:
+        return {"status": "error", "message": f"Hábito '{habit}' não encontrado."}
+
+    # value <= 0 significa "sem valor medido" (hábito sim/não): manda None para o banco.
+    return check_in(hid, value=value if value and value > 0 else None)
+
+
+def habit_status(habit: str = "") -> Union[list, dict]:
+    """Consulta a força/aderência de um hábito (por nome) ou de todos os hábitos.
+
+    Args:
+        habit: Nome do hábito a consultar. Vazio = devolve todos os hábitos ativos.
+
+    Returns:
+        O dicionário de um hábito (com ``strength``/``adherence``/``done_today``) quando um
+        nome é informado, ou a lista de todos quando vazio; ``{"status": "error", ...}`` se o
+        nome não casar.
+    """
+    nome = (habit or "").strip()
+    if not nome:
+        return list_habits()        # todos os hábitos ativos (listagem)
+    hid = resolve_habit_id_by_name(nome)
+    if hid is None:
+        return {"status": "error", "message": f"Hábito '{habit}' não encontrado."}
+    return get_habit(hid)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
