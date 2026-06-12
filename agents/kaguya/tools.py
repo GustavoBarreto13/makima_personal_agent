@@ -31,6 +31,15 @@ from agents.kaguya.tools_projects import (  # noqa: F401
 from agents.kaguya.tools_tags import (  # noqa: F401
     add_task_tag, remove_task_tag, list_tasks_by_tag,
 )
+# Smart-lists (filtros salvos) — fatia 013 / P2. O agente cria/edita/exclui passando a DSL
+# de regras e consulta uma smart-list salva pelo NOME (paridade com o webapp — FR-012).
+from agents.kaguya.tools_filters import (  # noqa: F401
+    list_filters, create_filter, update_filter, delete_filter,
+    list_tasks_by_filter_name, list_today_overdue,
+)
+# Calendário — fatia 013 / P3. Consulta por intervalo de datas ("o que tenho essa semana"),
+# o equivalente Telegram da view de calendário do webapp (FR-017).
+from agents.kaguya.tools_calendar import list_tasks_in_range  # noqa: F401
 
 
 # ─────────────────────────────────────────────────────────────────────────────

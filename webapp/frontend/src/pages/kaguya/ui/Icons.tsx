@@ -25,6 +25,7 @@ const PATHS: Record<string, ReactNode> = {
   back: <><path d="m12 19-7-7 7-7M19 12H5" /></>,
   gift: <><rect x="3" y="8" width="18" height="4" rx="1" /><path d="M12 8v13M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7" /><path d="M12 8S10 2 7 4s5 4 5 4M12 8s2-6 5-4-5 4-5 4" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  filter: <><path d="M22 3H2l8 9.5V19l4 2v-8.5L22 3z" /></>,
 }
 
 interface IconProps {

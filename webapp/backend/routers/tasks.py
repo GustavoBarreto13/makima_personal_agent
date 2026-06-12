@@ -36,6 +36,12 @@ from agents.kaguya.tools_tasks import (
 from agents.kaguya.tools_tags import (
     list_tags, create_tag, update_tag, delete_tag, list_tasks_by_tag,
 )
+# Smart-lists (filtros salvos) e calendário — fatia 013 (P2/P3).
+from agents.kaguya.tools_filters import (
+    list_filters, create_filter, update_filter, delete_filter,
+    list_tasks_by_filter, list_today_overdue,
+)
+from agents.kaguya.tools_calendar import list_tasks_in_range
 
 router = APIRouter()
 
@@ -168,6 +174,28 @@ class UpdateTagBody(BaseModel):
     """Body de edição de tag (PATCH parcial)."""
     name: Optional[str] = None
     color: Optional[str] = None
+
+
+class CreateFilterBody(BaseModel):
+    """Body de criação de smart-list (filtro salvo).
+
+    ``rules`` é o objeto da DSL ``{"combinator", "conditions": [...]}`` (≥1 condição);
+    aceitamos ``dict`` cru AQUI porque é uma estrutura de dados (não entrada solta) — a
+    camada de lógica valida o shape e **parametriza** todos os valores ao traduzir para SQL.
+    """
+    name: str
+    rules: dict
+    default_view: str = "list"
+    icon: Optional[str] = None
+
+
+class UpdateFilterBody(BaseModel):
+    """Body de edição de smart-list (PATCH parcial — só campos enviados)."""
+    name: Optional[str] = None
+    rules: Optional[dict] = None
+    default_view: Optional[str] = None
+    icon: Optional[str] = None
+    position: Optional[int] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -390,3 +418,58 @@ def list_tasks_by_tag_route(
 ) -> list[dict]:
     """Lista as tarefas abertas que têm uma determinada tag."""
     return list_tasks_by_tag(name)  # listagem
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Smart-lists (filtros salvos) — fatia 013 / P2
+# ─────────────────────────────────────────────────────────────────────────────
+# Como nas tags, ``/filters`` é um caminho LITERAL: o conversor int de ``/{task_id}``
+# rejeita "filters", então não há ambiguidade de rota.
+@router.get("/filters")
+def list_filters_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Lista as smart-lists salvas (ordem da sidebar)."""
+    return list_filters()  # listagem — sem _check_result
+
+
+@router.get("/filters/today-overdue")
+def today_overdue_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Smart-list built-in "Hoje + Vencidas" (não persistida)."""
+    return list_today_overdue()  # listagem
+
+
+@router.post("/filters", status_code=201)
+def create_filter_route(body: CreateFilterBody, user: dict = Depends(require_user)) -> dict:
+    """Cria uma smart-list (rejeita regra sem condição com 400)."""
+    return _check_result(create_filter(**body.model_dump(exclude_unset=True)))
+
+
+@router.patch("/filters/{filter_id}")
+def update_filter_route(filter_id: int, body: UpdateFilterBody, user: dict = Depends(require_user)) -> dict:
+    """Edita uma smart-list (nome, regras, ícone, view padrão, posição)."""
+    return _check_result(update_filter(filter_id, **body.model_dump(exclude_unset=True)))
+
+
+@router.delete("/filters/{filter_id}")
+def delete_filter_route(filter_id: int, user: dict = Depends(require_user)) -> dict:
+    """Exclui uma smart-list (nenhuma tarefa é afetada)."""
+    return _check_result(delete_filter(filter_id))
+
+
+@router.get("/filters/{filter_id}/tasks")
+def filter_tasks_route(filter_id: int, user: dict = Depends(require_user)) -> dict:
+    """Abre uma smart-list: ``{tasks, orphans}`` (referências órfãs sinalizadas, sem erro)."""
+    return list_tasks_by_filter(filter_id)  # listagem
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Calendário (consulta por intervalo) — fatia 013 / P3
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/calendar")
+def calendar_route(
+    start: str = Query(..., description="Início da janela (AAAA-MM-DD)"),
+    end: str = Query(..., description="Fim da janela (AAAA-MM-DD)"),
+    project_id: Optional[int] = Query(None, description="Restringe a uma lista"),
+    user: dict = Depends(require_user),
+) -> list[dict]:
+    """Tarefas datadas + ocorrências virtuais das recorrentes na janela (sem materializar)."""
+    return list_tasks_in_range(start, end, project_id)  # listagem

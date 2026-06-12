@@ -302,3 +302,62 @@
   .kg-shell { grid-template-columns: 60px 1fr; }
   .kg-brand-name, .kg-nav-item span:not(.kg-nav-emoji):not(.kg-nav-count), .kg-newbtn span, .kg-nav-label span, .kg-group-label, .kg-back span { display: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Fatia 013 — Smart-lists (filtros salvos) + Calendário
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Aviso de referência órfã na FilterScreen (tag/lista excluída) — tom de alerta suave. */
+.kg-orphan-note {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 12.5px; color: var(--p-high);
+  background: var(--p-high-t); border: 1px solid var(--p-high);
+  border-radius: var(--kg-r-sm); padding: 8px 12px; margin-bottom: 16px;
+}
+
+/* Linha de condição no construtor de regras do FilterModal. */
+.kg-cond-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.kg-cond-row .kg-select { min-width: 96px; flex: 0 0 auto; }
+.kg-cond-row .kg-input { flex: 1 1 120px; min-width: 90px; }
+.kg-cond-novalue { color: var(--ink-4); font-family: var(--mono); padding: 0 6px; }
+.kg-cond-days { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-3); }
+
+/* ─── Calendário ─── */
+.kg-cal-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.kg-cal-controls { display: flex; align-items: center; gap: 8px; }
+
+/* Grade de 7 colunas (domingo→sábado). */
+.kg-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--line-2); border: 1px solid var(--line-2); border-radius: var(--kg-r-md); overflow: hidden; }
+.kg-cal-weekday { background: var(--card-2); color: var(--ink-4); font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; text-align: center; padding: 8px 0; }
+.kg-cal-cell { background: var(--card); min-height: 96px; padding: 6px; cursor: pointer; transition: background .12s; display: flex; flex-direction: column; gap: 4px; }
+.kg-cal-week .kg-cal-cell { min-height: 220px; }
+.kg-cal-cell:hover { background: var(--card-2); }
+.kg-cal-other { background: var(--paper-2); }
+.kg-cal-other .kg-cal-daynum { color: var(--ink-4); }
+.kg-cal-today .kg-cal-daynum { background: var(--kg); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; }
+.kg-cal-selected { outline: 2px solid var(--kg); outline-offset: -2px; }
+.kg-cal-daynum { font-family: var(--mono); font-size: 12px; color: var(--ink-2); font-weight: 600; align-self: flex-start; }
+.kg-cal-pills { display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+
+/* Pílula de tarefa dentro do dia. Virtual = tracejada; concluída = riscada. */
+.kg-cal-pill {
+  display: flex; align-items: center; gap: 4px; width: 100%; text-align: left;
+  font-family: var(--sans); font-size: 11px; color: var(--ink); cursor: pointer;
+  background: var(--kg-tint); border: 1px solid transparent; border-radius: 5px;
+  padding: 2px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.kg-cal-pill:hover { background: var(--kg-tint-2); }
+.kg-cal-pill-virtual { background: transparent; border: 1px dashed var(--kg); color: var(--ink-2); cursor: default; }
+.kg-cal-pill-done { text-decoration: line-through; color: var(--ink-4); background: var(--card-2); }
+.kg-cal-pill-time { font-family: var(--mono); font-size: 9.5px; color: var(--kg-deep, var(--kg)); }
+.kg-cal-more { font-family: var(--mono); font-size: 10px; color: var(--ink-4); padding-left: 4px; }
+
+/* Painel de detalhe do dia (abaixo da grade). */
+.kg-cal-detail { margin-top: 18px; border: 1px solid var(--line-2); border-radius: var(--kg-r-md); background: var(--card); box-shadow: var(--shadow-sm); }
+.kg-cal-detail-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line-2); font-family: var(--mono); }
+.kg-cal-detail-list { display: flex; flex-direction: column; }
+.kg-cal-detail-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 16px; font-family: var(--sans); font-size: 14px; color: var(--ink); cursor: pointer; border-bottom: 1px solid var(--line-2); background: none; }
+.kg-cal-detail-item:hover { background: var(--card-2); }
+.kg-cal-detail-item.kg-cal-pill-virtual { cursor: default; border-style: solid; }
+.kg-cal-detail-proj { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+.kg-cal-recur { display: inline-flex; align-items: center; gap: 3px; font-family: var(--mono); font-size: 10.5px; color: var(--done); }

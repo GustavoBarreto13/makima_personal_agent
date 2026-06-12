@@ -46,6 +46,10 @@ export interface Task {
   tags?: Tag[]
   // Subtarefas aninhadas (só nas tarefas-pai retornadas por list_tasks):
   subtasks?: Task[]
+  // Calendário (fatia 013 / P3): ocorrência projetada (virtual) de uma recorrente.
+  // `is_virtual` = true → não tem linha própria; `series_task_id` aponta a tarefa viva da série.
+  is_virtual?: boolean
+  series_task_id?: number | null
 }
 
 // Uma lista (na UI "Lista"; no modelo "project").
@@ -68,6 +72,45 @@ export interface Group {
   position: number
 }
 
+// ── Smart-lists (filtros salvos) — fatia 013 / P2 ──────────────────────────────
+// Campos e operadores aceitos pela DSL (espelham agents/kaguya/tools_filters.py).
+export type FilterField = 'project_id' | 'priority' | 'due_date' | 'tag' | 'state' | 'text'
+export type FilterCombinator = 'and' | 'or'
+
+// Uma condição da regra: {campo, operador, valor}. O valor varia por campo (ver DSL).
+export interface FilterCondition {
+  field: FilterField
+  op: string
+  value: unknown   // número, string, lista de ids ou null — depende de field/op
+}
+
+// O objeto de regras de uma smart-list: combinador + lista de condições (≥1).
+export interface FilterRules {
+  combinator: FilterCombinator
+  conditions: FilterCondition[]
+}
+
+// Uma smart-list salva (objeto de 1ª classe — tabela task_filters).
+export interface Filter {
+  id: number
+  name: string
+  icon: string | null
+  rules: FilterRules
+  default_view: string
+  position: number
+}
+
+// Id-sentinela da smart-list built-in "Hoje + Vencidas" (não persistida no banco):
+// usado como `param` da view 'filter' para distinguir da abertura de um filtro salvo.
+export const BUILTIN_TODAY_OVERDUE = -1
+
+// Resposta de "abrir uma smart-list": tarefas + referências órfãs (tag/lista excluída).
+export interface FilterTasksResponse {
+  tasks: Task[]
+  orphans: FilterCondition[]
+  missing?: boolean
+}
+
 // Uma coluna de Kanban.
 export interface Column {
   id: number
@@ -81,6 +124,7 @@ export interface Column {
 export interface Sidebar {
   groups: Group[]
   projects: Project[]
+  filters: Filter[]   // smart-lists salvas (fatia 013)
 }
 
 // Resposta da tela Hoje.
@@ -98,5 +142,6 @@ export interface Tweaks {
   anim: 'on' | 'off'
 }
 
-// View ativa do shell. 'list' usa o param como id da lista.
-export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'trash'
+// View ativa do shell. 'list' usa o param como id da lista; 'filter' usa o param como
+// id da smart-list (ou BUILTIN_TODAY_OVERDUE para a built-in).
+export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'trash' | 'filter'

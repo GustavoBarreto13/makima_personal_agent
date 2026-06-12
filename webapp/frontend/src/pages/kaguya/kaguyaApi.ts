@@ -3,7 +3,7 @@
 // tratamento de erro já resolvidos por lib/api.ts).
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -105,6 +105,23 @@ export const kaguyaApi = {
   deleteTag: (id: number) => api.del<MutationResult>(`${BASE}/tags/${id}`),
   // Tarefas abertas que têm uma determinada tag (busca por nome, com ou sem #).
   tasksByTag: (name: string) => api.get<Task[]>(`${BASE}/by-tag?name=${encodeURIComponent(name)}`),
+
+  // ── Smart-lists (filtros salvos) — fatia 013 / P2 ──────────────────────────
+  listFilters: () => api.get<Filter[]>(`${BASE}/filters`),
+  createFilter: (body: { name: string; rules: FilterRules; default_view?: string; icon?: string | null }) =>
+    api.post<MutationResult>(`${BASE}/filters`, body),
+  updateFilter: (id: number, body: Partial<{ name: string; rules: FilterRules; default_view: string; icon: string | null; position: number }>) =>
+    api.patch<MutationResult>(`${BASE}/filters/${id}`, body),
+  deleteFilter: (id: number) => api.del<MutationResult>(`${BASE}/filters/${id}`),
+  // Abre uma smart-list salva: {tasks, orphans} (referências órfãs sinalizadas, sem erro).
+  filterTasks: (id: number) => api.get<FilterTasksResponse>(`${BASE}/filters/${id}/tasks`),
+  // Built-in "Hoje + Vencidas" (não persistida).
+  todayOverdue: () => api.get<Task[]>(`${BASE}/filters/today-overdue`),
+
+  // ── Calendário (consulta por intervalo) — fatia 013 / P3 ────────────────────
+  // Tarefas datadas + ocorrências virtuais das recorrentes na janela [start, end].
+  calendar: (start: string, end: string, projectId?: number) =>
+    api.get<Task[]>(`${BASE}/calendar?start=${start}&end=${end}${projectId ? `&project_id=${projectId}` : ''}`),
 }
 
 export type { MutationResult }
