@@ -20,12 +20,13 @@ interface SidebarNavProps {
   onOpenTweaks: () => void
 }
 
-// Views fixas (built-ins). No MVP só 'today' e 'kanban' têm telas; calendar/eisenhower vêm na Fase 2.
+// Views fixas (built-ins). 'today'/'kanban'/'habits' têm telas; calendar/eisenhower vêm na Fase 2.
 const FIXED_VIEWS: { view: KaguyaView; icon: IconName; label: string }[] = [
   { view: 'today', icon: 'sun', label: 'Meu Dia' },
   { view: 'kanban', icon: 'board', label: 'Kanban' },
   { view: 'calendar', icon: 'calendar', label: 'Calendário' },
   { view: 'eisenhower', icon: 'grid', label: 'Eisenhower' },
+  { view: 'habits', icon: 'flame', label: 'Hábitos' },
 ]
 
 export function SidebarNav({ sidebar, view, param, onNavigate, onNewTask, onNewProject, onNewGroup, onEditGroup, onNewFilter, onOpenTweaks }: SidebarNavProps) {

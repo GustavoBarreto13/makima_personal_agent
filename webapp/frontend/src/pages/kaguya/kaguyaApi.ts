@@ -3,7 +3,7 @@
 // tratamento de erro já resolvidos por lib/api.ts).
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -124,6 +124,29 @@ export const kaguyaApi = {
   // Tarefas datadas + ocorrências virtuais das recorrentes na janela [start, end].
   calendar: (start: string, end: string, projectId?: number) =>
     api.get<Task[]>(`${BASE}/calendar?start=${start}&end=${end}${projectId ? `&project_id=${projectId}` : ''}`),
+
+  // ── Hábitos (Fase 4 / fatia 014) ────────────────────────────────────────────
+  listHabits: () => api.get<Habit[]>(`${BASE}/habits`),
+  getHabit: (id: number) => api.get<Habit>(`${BASE}/habits/${id}`),
+  createHabit: (body: {
+    name: string; freq_num?: number; freq_den?: number
+    target_value?: number | null; unit?: string | null; icon?: string | null; color?: string | null
+  }) => api.post<MutationResult>(`${BASE}/habits`, body),
+  updateHabit: (id: number, body: Partial<{
+    name: string; freq_num: number; freq_den: number
+    target_value: number | null; unit: string | null; icon: string | null; color: string | null
+    clear_target: boolean
+  }>) => api.patch<MutationResult>(`${BASE}/habits/${id}`, body),
+  // Excluir = arquivar (soft delete; o histórico fica).
+  deleteHabit: (id: number) => api.del<MutationResult>(`${BASE}/habits/${id}`),
+  // Check-in de um dia (date vazio = hoje; value para mensurável). Devolve a força recalculada.
+  checkin: (id: number, body: { date?: string; value?: number | null } = {}) =>
+    api.post<MutationResult>(`${BASE}/habits/${id}/checkin`, body),
+  removeCheckin: (id: number, date?: string) =>
+    api.del<MutationResult>(`${BASE}/habits/${id}/checkin${date ? `?date=${date}` : ''}`),
+  // Histórico anual (esparso) para o heatmap.
+  habitHistory: (id: number, year: number) =>
+    api.get<HabitHeatDay[]>(`${BASE}/habits/${id}/history?year=${year}`),
 }
 
 export type { MutationResult }

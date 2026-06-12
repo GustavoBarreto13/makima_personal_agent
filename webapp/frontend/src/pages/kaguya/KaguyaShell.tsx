@@ -5,7 +5,7 @@
 import { useEffect, useState, useCallback, type CSSProperties } from 'react'
 import './kaguya.css'
 
-import type { Sidebar, Task, Tweaks, KaguyaView, Filter } from './types'
+import type { Sidebar, Task, Tweaks, KaguyaView, Filter, Habit } from './types'
 import { BUILTIN_TODAY_OVERDUE, GTD_BUILTINS } from './types'
 import { kaguyaApi } from './kaguyaApi'
 
@@ -17,12 +17,14 @@ import { TaskModal } from './modals/TaskModal'
 import { ProjectModal } from './modals/ProjectModal'
 import { GroupModal } from './modals/GroupModal'
 import { FilterModal } from './modals/FilterModal'
+import { HabitModal } from './modals/HabitModal'
 import { TodayScreen } from './screens/TodayScreen'
 import { ListScreen } from './screens/ListScreen'
 import { KanbanScreen } from './screens/KanbanScreen'
 import { TrashScreen } from './screens/TrashScreen'
 import { FilterScreen } from './screens/FilterScreen'
 import { CalendarScreen } from './screens/CalendarScreen'
+import { HabitsScreen } from './screens/HabitsScreen'
 import { Icon } from './ui/Icons'
 
 // Tweaks padrão (acento azul, claro, confortável, traço, animações ligadas).
@@ -60,6 +62,7 @@ export function KaguyaShell() {
   const [projectModal, setProjectModal] = useState<{ mode: 'create' | 'edit'; project?: import('./types').Project } | null>(null)
   const [groupModal, setGroupModal] = useState<{ mode: 'create' | 'edit'; group?: import('./types').Group } | null>(null)
   const [filterModal, setFilterModal] = useState<{ mode: 'create' | 'edit'; filter?: Filter } | null>(null)
+  const [habitModal, setHabitModal] = useState<{ mode: 'create' | 'edit'; habit?: Habit } | null>(null)
   const [toast, setToast] = useState<{ msg: string; kind?: 'ok' | 'err' } | null>(null)
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState<Task[] | null>(null)
@@ -152,12 +155,19 @@ export function KaguyaShell() {
       />
     )
     if (view === 'trash') return <TrashScreen toast={showToast} />
+    if (view === 'habits') return (
+      <HabitsScreen
+        reloadKey={reloadKey}
+        onNewHabit={() => setHabitModal({ mode: 'create' })}
+        onEditHabit={(h) => setHabitModal({ mode: 'edit', habit: h })}
+        toast={showToast}
+      />
+    )
     // Views ainda não construídas (fases futuras)
     return (
       <div className="kg-page"><div className="kg-empty">
         <div className="kg-empty-title">Em breve</div>
         {view === 'eisenhower' && 'A matriz de Eisenhower chega numa fase futura.'}
-        {view === 'habits' && 'Os Hábitos chegam na Fase 4.'}
       </div></div>
     )
   }
@@ -259,6 +269,16 @@ export function KaguyaShell() {
           // Após salvar/excluir, recarrega a sidebar (e as views). Se a smart-list aberta
           // foi excluída, volta para "Meu Dia" para não ficar numa view órfã.
           onSaved={() => { afterSave(); if (filterModal.mode === 'edit') navigate('today') }}
+          toast={showToast}
+        />
+      )}
+      {habitModal && (
+        <HabitModal
+          mode={habitModal.mode}
+          habit={habitModal.habit}
+          onClose={() => setHabitModal(null)}
+          // Após salvar/arquivar, só faz bump (a tela de hábitos recarrega pela reloadKey).
+          onSaved={bump}
           toast={showToast}
         />
       )}

@@ -138,6 +138,32 @@ export interface Column {
   is_done_column: boolean
 }
 
+// ── Hábitos (Fase 4 / fatia 014) ───────────────────────────────────────────────
+// Um hábito: rotina com frequência alvo (freq_num vezes a cada freq_den dias) e check-ins
+// diários. `strength`/`adherence`/`done_today` são DERIVADOS (calculados na leitura no backend,
+// nunca persistidos). `target_value`+`unit` => hábito mensurável; ausentes => sim/não.
+export interface Habit {
+  id: number
+  name: string
+  icon: string | null
+  color: string | null
+  freq_num: number
+  freq_den: number
+  target_value: number | null
+  unit: string | null
+  strength: number     // 0–1 (a UI exibe como %)
+  adherence: number    // 0–1 (aderência da última semana)
+  done_today: boolean  // se já houve check-in cumprido hoje
+}
+
+// Um dia do histórico de check-ins (para o heatmap anual). Array esparso vindo do backend
+// (só dias com check-in); o componente de heatmap densifica para a grade contínua.
+export interface HabitHeatDay {
+  date: string          // "YYYY-MM-DD"
+  value: number | null  // valor medido (mensurável) ou null (sim/não)
+  done: boolean         // cumpriu a meta naquele dia
+}
+
 // Payload único da sidebar.
 export interface Sidebar {
   groups: Group[]
