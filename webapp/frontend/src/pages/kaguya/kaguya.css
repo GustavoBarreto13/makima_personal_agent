@@ -212,6 +212,13 @@
 .kg-tag-x:hover { opacity: 1; }
 .kg-tag-input { flex: 1; min-width: 140px; }
 
+/* seletor de cor de tag (popover) dentro do editor de tags do TaskModal */
+.kg-tag-chip-edit { position: relative; padding-left: 4px; }          /* âncora do popover */
+.kg-tag-swatch { width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--line); padding: 0; cursor: pointer; flex: 0 0 auto; }
+.kg-tag-palette { position: absolute; top: calc(100% + 5px); left: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 5px; max-width: 168px; padding: 7px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .2); }
+.kg-tag-palette-opt { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); padding: 0; cursor: pointer; display: grid; place-items: center; }
+.kg-tag-palette-none { background: var(--card-2); color: var(--ink-3); font-size: 13px; line-height: 1; }
+
 .kg-section-toggle { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-4); background: none; border: none; cursor: pointer; padding: 14px 4px 6px; }
 .kg-empty { text-align: center; color: var(--ink-3); padding: 60px 20px; }
 .kg-empty-title { font-family: var(--display); font-weight: 700; font-size: 17px; color: var(--ink-2); margin-bottom: 6px; }

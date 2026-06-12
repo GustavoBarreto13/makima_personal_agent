@@ -2,8 +2,8 @@
 // prioridade, tipo (tarefa/evento/aniversário), data/hora e subtarefas ricas
 // (cada uma com prioridade + descrição próprias).
 
-import { useState } from 'react'
-import type { Task, Project, TaskType, RecurrenceMode } from '../types'
+import { useState, useEffect } from 'react'
+import type { Task, Project, TaskType, RecurrenceMode, Tag } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 
@@ -53,6 +53,18 @@ const PRIORITIES = [
 const TYPES: { v: TaskType; label: string }[] = [
   { v: 'task', label: 'Tarefa' }, { v: 'event', label: 'Evento' }, { v: 'birthday', label: 'Aniversário' },
 ]
+// Paleta de cores das tags (etiquetas). São cores FIXAS (OKLCH), independentes do acento
+// do shell — porque a cor é uma propriedade própria da tag (task_tags.color), não do tema.
+// Escolhidas para ler bem tanto no tema claro quanto no escuro.
+const TAG_COLORS = [
+  'oklch(0.62 0.20 25)',    // vermelho
+  'oklch(0.70 0.16 60)',    // laranja
+  'oklch(0.74 0.13 95)',    // dourado
+  'oklch(0.62 0.16 150)',   // verde
+  'oklch(0.60 0.13 230)',   // azul
+  'oklch(0.58 0.20 290)',   // violeta
+  'oklch(0.64 0.21 350)',   // rosa
+]
 
 export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onSaved, toast }: TaskModalProps) {
   // Estado do formulário, inicializado da tarefa (edição) ou dos defaults (criação).
@@ -69,6 +81,12 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
   // Tags (etiquetas) — lista de nomes; editável na criação e na edição.
   const [tags, setTags] = useState<string[]>(task?.tags?.map((t) => t.name) ?? [])
   const [newTag, setNewTag] = useState('')
+  // Catálogo de tags existentes (id + cor) — resolve nome→tag e mostra/edita a cor de cada
+  // chip. Começa com as tags da própria tarefa (edição) e é completado pelo listTags() no
+  // mount. A cor é uma propriedade GLOBAL da tag (vale em todo lugar onde ela aparece).
+  const [tagCatalog, setTagCatalog] = useState<Tag[]>(task?.tags ?? [])
+  // Nome da tag cujo seletor de cor (popover) está aberto — só uma por vez (null = nenhum).
+  const [paletteFor, setPaletteFor] = useState<string | null>(null)
   // Subtarefas (só editáveis quando a tarefa-pai já existe).
   const [subtasks, setSubtasks] = useState<Task[]>(task?.subtasks ?? [])
   const [newSub, setNewSub] = useState('')
@@ -76,6 +94,12 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
   const [askDelete, setAskDelete] = useState(false)   // confirmação de exclusão (escopo na recorrente)
   // Aniversário repete todo ano automaticamente no backend — escondemos o controle manual.
   const isRecurring = task?.recurrence?.active === true
+
+  // Carrega o catálogo completo de tags ao abrir o modal (id + cor de cada nome). Se falhar,
+  // seguimos só com as tags da tarefa: o pior caso é o chip aparecer sem cor própria.
+  useEffect(() => {
+    kaguyaApi.listTags().then(setTagCatalog).catch(() => { /* silencioso */ })
+  }, [])
 
   // Salva a tarefa principal (cria ou edita), incluindo a recorrência.
   const save = async () => {
@@ -151,6 +175,35 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
     // Não duplica ignorando caixa ("Mercado" == "mercado").
     if (!tags.some((t) => t.toLowerCase() === name.toLowerCase())) setTags([...tags, name])
     setNewTag('')
+  }
+
+  // Cor atual de uma tag pelo nome (case-insensitive), ou null se não tiver/não existir.
+  const tagColor = (name: string): string | null => {
+    const g = tagCatalog.find((x) => x.name.toLowerCase() === name.toLowerCase())
+    return g?.color ?? null
+  }
+
+  // Define (ou limpa, com color="") a cor de uma tag. Como a cor é GLOBAL, persiste já nos
+  // endpoints de tag — independente do save da tarefa. Atualiza o catálogo local para o chip
+  // recolorir na hora (otimista). Em erro de rede, avisa e mantém o estado anterior.
+  const setTagColor = async (name: string, color: string) => {
+    setPaletteFor(null)                  // fecha o popover ao escolher
+    const colorVal = color || null       // "" significa "sem cor" → null no estado local
+    const existing = tagCatalog.find((x) => x.name.toLowerCase() === name.toLowerCase())
+    try {
+      if (existing) {
+        // Tag já existe → recolore (ou limpa) globalmente.
+        await kaguyaApi.updateTag(existing.id, { color })
+        setTagCatalog(tagCatalog.map((x) => (x.id === existing.id ? { ...x, color: colorVal } : x)))
+      } else if (color) {
+        // Nome ainda não materializado + cor escolhida → cria a tag já colorida.
+        const r = await kaguyaApi.createTag({ name, color })
+        if (r.id) setTagCatalog([...tagCatalog, { id: r.id, name, color: colorVal }])
+      }
+      // Nome novo + "sem cor": nada a persistir (será criada sem cor ao salvar a tarefa).
+    } catch {
+      toast('Não foi possível mudar a cor da tag.', 'err')
+    }
   }
 
   // Adiciona uma subtarefa (exige a tarefa-pai já existir).
@@ -260,12 +313,47 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
           <div className="kg-field">
             <span className="kg-field-label">Tags</span>
             <div className="kg-tag-edit">
-              {tags.map((t) => (
-                <span key={t} className="kg-chip kg-chip-tag">
-                  #{t}
-                  <button className="kg-tag-x" onClick={() => setTags(tags.filter((x) => x !== t))} aria-label={`Remover ${t}`}>×</button>
-                </span>
-              ))}
+              {tags.map((t) => {
+                const c = tagColor(t)
+                // Cor própria sobrescreve texto/borda do chip; sem cor, herda o acento (.kg-chip-tag).
+                const chipStyle = c ? { color: c, borderColor: c } : undefined
+                return (
+                  <span key={t} className="kg-chip kg-chip-tag kg-tag-chip-edit" style={chipStyle}>
+                    {/* botão-amostra: abre/fecha a paleta para escolher a cor desta tag */}
+                    <button
+                      type="button"
+                      className="kg-tag-swatch"
+                      style={{ background: c ?? 'transparent' }}
+                      onClick={() => setPaletteFor(paletteFor === t ? null : t)}
+                      aria-label={`Mudar a cor da tag ${t}`}
+                    />
+                    #{t}
+                    <button className="kg-tag-x" onClick={() => setTags(tags.filter((x) => x !== t))} aria-label={`Remover ${t}`}>×</button>
+                    {/* paleta de cores (popover) — só aparece para a tag selecionada */}
+                    {paletteFor === t && (
+                      <div className="kg-tag-palette">
+                        {TAG_COLORS.map((col) => (
+                          <button
+                            key={col}
+                            type="button"
+                            className="kg-tag-palette-opt"
+                            style={{ background: col }}
+                            onClick={() => setTagColor(t, col)}
+                            aria-label={`Definir cor ${col}`}
+                          />
+                        ))}
+                        {/* "sem cor": volta ao acento padrão do tema */}
+                        <button
+                          type="button"
+                          className="kg-tag-palette-opt kg-tag-palette-none"
+                          onClick={() => setTagColor(t, '')}
+                          aria-label="Sem cor"
+                        >×</button>
+                      </div>
+                    )}
+                  </span>
+                )
+              })}
               <input
                 className="kg-input kg-tag-input"
                 value={newTag}
