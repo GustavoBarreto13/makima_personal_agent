@@ -114,6 +114,77 @@ Calendar) "assistir X em <data>", no padrão das tools cross-domínio da Kaguya
 **Porquê só Kaguya nesta fatia**: decisão do usuário. Nami (gasto de cinema atômico), Kurisu (notas) e
 Frieren (adaptações livro↔filme) ficam **sugeridas** para fatias futuras (ver `spec.md` › Fica para depois).
 
+## R9 — Estratégia de pôster: TMDB real + fallback tipográfico
+
+**Decisão**: a UI usa a **imagem real do TMDB** (`poster_url`/`backdrop_url`) como herói visual primário;
+quando `poster_url` é NULL (filme sem match no TMDB, ou API fora — SC-005), cai para um **pôster
+tipográfico** — campo de cor de uma das 14 paletas `POSTER` (`noir`, `rose`, `teal`, `gold`, `wine`, …)
++ título em Display + diretor·ano em mono. A paleta vem de `movies.poster_palette`, com default
+**determinístico por hash do título** (mesmo filme → sempre a mesma cor).
+
+**Alternativas**:
+- *Tipográfico puro* (como o protótipo do handoff, que não usa `<img>`): coeso e à prova de link quebrado,
+  mas joga fora as imagens reais do TMDB que o backend já busca — pior com dados reais.
+- *Sem fallback* (só `<img>` + placeholder cinza): quebra a estética densa de "galeria de cinema" quando
+  faltam pôsteres (comum em filmes obscuros/antigos do Letterboxd).
+
+**Porquê**: aproveita o melhor dos dois — imagens reais quando existem, um placeholder **bonito e
+identificável** (não um quadrado vazio) quando não. O protótipo já provê o sistema tipográfico pronto;
+ele vira a camada de fallback, não o primário.
+
+## R10 — Sistema de acento e tema (tweaks de UI)
+
+**Decisão**: a seção tem **tema claro/escuro** (escuro = padrão, "sala de cinema") e **acento trocável**
+via `[data-accent]`. A **base de tokens** (`:root` do `styles.css`) é **rosa de palco** (hue 357); os
+alternativos são `carmim` (22), `ambar` (66) e `teal` (196). O **default de fábrica** (`TWEAK_DEFAULTS`)
+aplica `data-accent='teal'` (Verde-água) no boot — então o app **abre teal**, embora a base CSS seja rosa.
+As **estrelas/nota e o histograma usam verde Letterboxd fixo** (`--gold`/verde), **independentes** do
+acento. Tudo persistido em `localStorage` (client-only, sem endpoint — ver `contracts`).
+
+**Porquê**: dá identidade Akane (palco/estrela) com paridade aos outros Shells que têm claro/escuro e
+tweaks; o verde fixo das notas preserva o vocabulário visual do Letterboxd que o usuário reconhece.
+
+> **Correção vs. specs antigas**: o `design-guide.md` original assumia acento **vermelho/crimson** fixo.
+> O protótipo é a referência definitiva — adota-se o sistema de acentos acima (default teal). Os valores
+> OKLCH reais estão em `design_handoff_akane_filmes/akane/styles.css`.
+
+## R11 — Pessoas: locais ao filme agora, link com o hub 014 depois
+
+**Decisão**: elenco/equipe (`movie_people`) e etiquetas de pessoa (`is_person_tag`) ficam **locais ao
+domínio Filmes** nesta fatia (strings + papel). A coluna `movie_people.person_id` fica **reservada**
+(NULL) para, numa fatia futura, ligar à identidade canônica `people` da **014-pessoas** via
+`person_links` (`entity_type='movie'`).
+
+**Alternativas**: integrar já com o hub 014 (grava direto em `people`/`person_links`) — unifica pessoas,
+mas **acopla a 015 à 014** (ainda em Draft/incompleta) e arrastaria o cronograma. O protótipo sinaliza
+explicitamente "vão se conectar à base de pessoas **em breve**", endossando o adiamento.
+
+**Porquê**: entrega o valor visível (créditos no detalhe, "top pessoas" no Rewind) sem bloquear na 014;
+o `person_id` reservado torna o link futuro uma migração simples.
+
+## R12 — Vault, Tags e Favoritos
+
+**Decisão**:
+- **Cofre de conteúdos** = tabela `movie_vault_items` (link tipado por filme: `video`/`article`/`essay`/
+  `review`), não JSONB — permite listar/contar e abrir item a item.
+- **Tags** = `movies.tags TEXT[]` (nível-filme) + agregação `get_tags()` para a nuvem (sem tabela de tags
+  dedicada); `diary_entries.tags` continua sendo tags **por sessão** (Letterboxd permite ambos).
+- **Favoritos** = tabela `movie_favorites (movie_id, position)` no **servidor** — não `localStorage` como
+  o protótipo —, para **paridade de canais** (FR-016: a Akane no Telegram pode ler "seus favoritos").
+
+**Porquê**: cada um é uma entidade de domínio real (não preferência de UI), então mora no banco; favoritos
+no servidor é o desvio consciente do protótipo (que usava `localStorage` por ser um mock sem backend).
+
+## R13 — Início, Rewind e Heatmap são derivados (sem tabelas de cache)
+
+**Decisão**: `get_home`, `get_rewind`/`get_stats` e `get_heatmap` são **agregações SQL** sobre
+`diary_entries`/`movies` (e `movie_people` p/ "top pessoas"), calculadas a cada chamada — espelham o IIFE
+`STATS` e o `buildHeatmap()` de `data.js`. Sem tabela materializada/cache.
+
+**Porquê**: o volume é pequeno (1 usuário, centenas–milhares de sessões); uma query por chamada resolve em
+ms e elimina a complexidade de invalidação de cache. Performance-goal do `plan.md`: uma query por endpoint
+(sem N+1). `get_home` agrega vários blocos numa só ida ao servidor.
+
 ---
 
 ## Resumo das decisões
@@ -128,5 +199,10 @@ Frieren (adaptações livro↔filme) ficam **sugeridas** para fatias futuras (ve
 | R6 | Sync | Agendado (cron no container) + manual (endpoint/botão + Akane) |
 | R7 | Agente | `akane_agent` singleton sem MCP (padrão Nami/Frieren) |
 | R8 | Cross-agent | Só Kaguya (lembrete/sessão) nesta fatia; demais adiados |
+| R9 | Pôster | TMDB real primário + **fallback tipográfico** (14 paletas, hash do título) |
+| R10 | Tema/acento | Claro/escuro + acento trocável (base rosa, **default teal**); estrelas verde fixo |
+| R11 | Pessoas | `movie_people` local agora; `person_id` reservado p/ hub 014 (futuro) |
+| R12 | Vault/Tags/Fav | Vault tabela; tags TEXT[]+agregação; favoritos no **servidor** |
+| R13 | Home/Rewind/Heatmap | Derivados (agregação SQL), sem tabela de cache |
 
 Nenhuma decisão exige dependência nova de runtime nem amendment de constitution.

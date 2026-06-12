@@ -27,12 +27,13 @@ docker exec makima-web sh -c "cd /app && python -m scripts.setup_schemas"
 python -m scripts.setup_schemas
 ```
 
-**Esperado**: as 4 tabelas criadas (`movies`, `diary_entries`, `movie_lists`, `movie_list_items`),
-com os índices únicos parciais (`movies.letterboxd_uri`, `diary_entries (letterboxd_uri, watched_date)`).
+**Esperado**: as **7 tabelas** criadas (`movies`, `diary_entries`, `movie_vault_items`, `movie_people`,
+`movie_favorites`, `movie_lists`, `movie_list_items`), com os índices únicos parciais
+(`movies.letterboxd_uri`, `diary_entries (letterboxd_uri, watched_date)`).
 
 ```sql
-\dt   -- deve listar as 4 tabelas
-\d+ movies          -- conferir idx_movies_letterboxd (UNIQUE, parcial)
+\dt   -- deve listar as 7 tabelas
+\d+ movies          -- conferir idx_movies_letterboxd (UNIQUE, parcial); colunas notes/rating_source/poster_palette/tags
 \d+ diary_entries   -- conferir idx_diary_dedup (UNIQUE, parcial)
 ```
 
@@ -109,6 +110,28 @@ python -m scripts.sync_letterboxd            # local: últimos itens do feed
 | Consulta | "quais filmes vi esse mês?" / "stats do ano" | resposta a partir das mesmas tools do webapp (HTML) |
 | Cross-agent | "me lembra de assistir Interstellar sábado" | tarefa/lembrete na Kaguya (e/ou evento Calendar) |
 
+## 5b. Onda 4 (US4) — Início, Rewind, Favoritos
+
+| Passo | Ação | Esperado (SC) |
+|---|---|---|
+| Início | abrir a seção (view Início) | hero (última sessão) + 2 stat cards (sparkline 7 dias + variação) + favoritos + atividade recente + histograma de notas |
+| Favoritos editar | Editar → remover 1 → adicionar outro (busca entre vistos) → recarregar | vitrine reflete o novo conjunto; persiste no servidor (`PUT /favorites`) (SC-009) |
+| Favoritos limite | tentar fixar um 5º / um filme não-`watched` | rejeitado com mensagem clara (≤4, só vistos) |
+| Rewind cheio | abrir Rewind do ano atual | 4 totais + sessões/mês + histograma + destaques (favorito, maratona, década, média, top gêneros/diretores/pessoas) |
+| Rewind vazio | abrir Rewind de um ano sem dados | zeros/listas vazias, **sem erro** (SC-006) |
+| Heatmap | conferir a grade/sparkline | `GET /api/movies/heatmap` retorna sessões/dia coerentes com o diário |
+
+## 5c. Onda 5 (US5) — Listas, Etiquetas, Cofre, Pessoas
+
+| Passo | Ação | Esperado (SC) |
+|---|---|---|
+| Lista criar | criar lista "Cinema japonês" + adicionar 3 filmes | lista aparece (pilha de pôsteres, accent, contagem); abri-la mostra os 3 (SC-010) |
+| Etiquetas | abrir Etiquetas → clicar numa tag | grid filtrado por aquela etiqueta (modo "tela de etiqueta"); tags de pessoa com glifo (SC-010) |
+| Cofre add/remover | na página do filme, adicionar item (tipo "ensaio") e remover | item nasce/some na galeria do Cofre (`movie_vault_items`) (SC-010) |
+| Anotações | editar `notes` no detalhe → recarregar | persiste em `movies.notes`, separado da review (SC-010) |
+| Pessoas | abrir o detalhe de um filme com elenco | `people[]` (nome + papel); `is_person_tag` destacado; `person_id` NULL (sem link 014) |
+| Pôster fallback | filme sem `poster_url` | pôster tipográfico (paleta + título), nunca quadrado vazio (SC-011) |
+
 ## 6. Paridade de canais (SC-007)
 
 Checklist: **buscar / adicionar / logar / avaliar / consultar** de filmes funcionam tanto pelo
@@ -120,13 +143,31 @@ Telegram é a resposta conversacional.
 
 ## Definition of Done da fatia
 
-- [ ] `scripts.setup_schemas` cria as 4 tabelas no container `makima-web`.
-- [ ] `test_akane.py` e `test_akane_letterboxd.py` passam (SC-001..SC-006).
-- [ ] Seção Filmes no webapp (grid + diário + watchlist + página do filme + stats) com acento vermelho em `.akane-shell`.
+**Onda 1 (US1) — núcleo**
+- [ ] `scripts.setup_schemas` cria as **7 tabelas** no container `makima-web`.
+- [ ] `test_akane.py` e `test_akane_letterboxd.py` passam (SC-001..SC-006, SC-011).
+- [ ] Seção Filmes no webapp (grid + diário + watchlist + página do filme + stats) com **tema claro/escuro
+      + acento trocável (default teal)** em `.akane-shell`; pôster TMDB com **fallback tipográfico** (SC-011).
+- [ ] `notes` (≠ review) e `rating_source` (selo "via Letterboxd") no detalhe.
 - [ ] `GET/POST/PATCH/DELETE /api/movies/*` protegidos por `require_user` (SC-008).
+
+**Onda 2 (US2) — ingestão**
 - [ ] Sync RSS idempotente, agendado (cron no container) + botão "Sincronizar agora".
 - [ ] `import_letterboxd_csv.py` pronto e idempotente (usuário carrega o histórico depois).
+
+**Onda 3 (US3) — agente**
 - [ ] Akane roteada pela Makima; domínio "filmes" reconhecido no `coordinator/main.py`; cross-agent Kaguya.
 - [ ] `agents/akane/CLAUDE.md` documenta tools, schema, TMDB, Letterboxd e cross-agent.
+
+**Onda 4 (US4) — Início / Rewind / Favoritos**
+- [ ] Tela **Início** (hero + stat cards + favoritos editáveis + atividade + histograma) renderiza.
+- [ ] **Favoritos** persistem no servidor (`PUT /favorites`) e sobrevivem a reload (SC-009).
+- [ ] **Rewind** + **heatmap** com dados ricos; ano vazio sem erro (SC-006).
+
+**Onda 5 (US5) — Listas / Etiquetas / Cofre / Pessoas**
+- [ ] **Listas** (CRUD + UI), **Etiquetas** (nuvem + filtro), **Cofre** (CRUD por filme), **Pessoas** no
+      detalhe (`person_id` reservado p/ 014) (SC-010).
+
+**Transversal**
 - [ ] CLAUDE.md raiz: tabela de agentes atualizada (Akane → filmes; `media` → séries+anime).
 - [ ] env `TMDB_TOKEN` e `LETTERBOXD_USERNAME` documentadas em `webapp/CLAUDE.md` / `coordinator/CLAUDE.md`.

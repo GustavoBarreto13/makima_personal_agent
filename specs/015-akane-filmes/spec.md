@@ -24,39 +24,60 @@ o usuário sobe os dados na sequência).
 
 ## Escopo da fatia
 
-**Entra na 015** (introduz schema novo — `agents/akane/schema_pg.sql` — e a seção webapp Filmes):
+> **Referência de design**: o protótipo hi-fi completo está em
+> `specs/015-akane-filmes/design_handoff_akane_filmes/` (HTML/CSS/JSX + `data.js` + README). Ele é a
+> **fonte de verdade visual e comportamental** da seção Filmes; as specs abaixo descrevem a experiência
+> **completa** dele. A build é **faseada em ondas** (ver `plan.md`): o **schema inteiro** (7 tabelas)
+> nasce na Onda 1; as telas/endpoints das features mais ricas entram nas Ondas **US4** (Início, Rewind,
+> Favoritos) e **US5** (Listas, Etiquetas, Cofre, Pessoas).
+
+**Entra na 015** (introduz schema novo — `agents/akane/schema_pg.sql`, **7 tabelas** — e a seção webapp Filmes):
 
 - **Catálogo de filmes** — tabela `movies` (UUID em TEXT, padrão Nami/Frieren) com metadados do TMDB
   (pôster, backdrop, gêneros, diretor, runtime, sinopse, ano), `tmdb_id`, `imdb_id`, `letterboxd_uri`
-  (chave de dedup), `status` (`watchlist`|`watched`), `rating` favorita/atual (0.5–5.0), `liked`,
+  (chave de dedup), `status` (`watchlist`|`watched`), `rating` favorita/atual (0.5–5.0), **`rating_source`**
+  (`letterboxd`|`own` — selo "via Letterboxd"), `liked`, **`tags`** (etiquetas de nível-filme), **`notes`**
+  (anotações soltas ≠ review), **`poster_palette`** (paleta do pôster tipográfico de fallback),
   `last_watched_date`, `times_watched`, soft delete.
 - **Diário de sessões** — tabela `diary_entries` (1 linha por **vez** que o filme foi assistido —
   suporta rewatch; espelha `reading_logs` da Frieren): `watched_date`, `rating`, `rewatch`, `review`,
   `tags`, `source` (`manual`|`letterboxd_rss`|`letterboxd_csv`).
-- **Listas** — tabelas `movie_lists` + `movie_list_items` (N:N, espelha `shelves`/`book_shelves`);
-  **criadas agora** (baratas, preparam o terreno), mas **sem UI** nesta fatia.
+- **Cofre de conteúdos** — tabela `movie_vault_items` (link tipado por filme: `video`/`article`/`essay`/
+  `review`) — conteúdos salvos **sobre** o filme. Tabela criada agora; **UI na Onda US5**.
+- **Pessoas do filme** — tabela `movie_people` (direção + elenco + equipe; `is_person_tag`; `person_id`
+  **reservado** para o hub `people` da fatia 014). Local ao domínio; **UI/link futuro na Onda US5**.
+- **Favoritos** — tabela `movie_favorites` (vitrine ordenada do perfil, persistida no **servidor**).
+  **UI na Onda US4**.
+- **Listas** — tabelas `movie_lists` (+`accent`) + `movie_list_items` (N:N, espelha `shelves`/`book_shelves`);
+  criadas agora, **UI na Onda US5**.
 - **Camada de lógica única** (`agents/akane/tools.py`) — CRUD do catálogo, log de sessão, watchlist,
-  rating/like, busca TMDB, agregações; resolução de filme por fuzzy match (padrão `_find_book_by_query`
-  da Frieren). Enriquecimento via TMDB com fallback gracioso (API fora → entrada sem metadados, sem quebrar).
-- **Webapp (peça central)** — seção **Filmes** no padrão Shell (`pages/akane/`): grid de pôsteres tipo
-  Letterboxd, diário cronológico, watchlist, página do filme (backdrop hero + sua nota/review + histórico
-  de sessões) e estatísticas; router FastAPI `/api/movies/*` (paritário, `Depends(require_user)`).
+  rating/like, notas, favoritos, vault, busca TMDB, agregações (stats/rewind/heatmap/tags/home/top-pessoas);
+  resolução de filme por fuzzy match (padrão `_find_book_by_query` da Frieren). Enriquecimento via TMDB
+  com fallback gracioso (API fora → entrada sem metadados + pôster tipográfico, sem quebrar).
+- **Webapp (peça central)** — seção **Filmes** no padrão Shell (`pages/akane/`), recriando o protótipo:
+  **Início** (hero + stat cards + favoritos editáveis + atividade recente + painel de notas + carrossel
+  watchlist), **Filmes** (grid de pôsteres com chips de filtro e modo "etiqueta"), **Diário** cronológico,
+  **Watchlist**, **página do filme** (backdrop hero + nota/selo Letterboxd + review + notas + Cofre +
+  etiquetas/pessoas + histórico de sessões), **Listas**, **Etiquetas** (nuvem) e **Rewind** (year-in-review).
+  Tema claro/escuro + acento trocável + barra "Próxima sessão"; router FastAPI `/api/movies/*` (paritário,
+  `Depends(require_user)`).
 - **Ingestão Letterboxd** — `scripts/sync_letterboxd.py` (RSS, idempotente, `--yesterday` para o cron
   diário no container `makima-web` + endpoint `POST /api/movies/sync-letterboxd` para o botão "Sincronizar
   agora") e `scripts/import_letterboxd_csv.py` (carga histórica da exportação oficial; o usuário roda depois).
 - **Agente Akane (Telegram)** — novo especialista (ADK, singleton, sem MCP) roteado pela Makima:
-  logar filme assistido, adicionar à watchlist, dar nota/review, consultar diário/stats.
+  logar filme assistido, adicionar à watchlist, dar nota/review, consultar diário/stats/favoritos.
 - **Cross-agent Kaguya** — tool que cria lembrete/sessão ("quero assistir X" → tarefa na Kaguya e/ou
   evento de cinema no Calendar), no padrão das tools cross-domínio da Kaguya.
 
 **Fica para depois** (sugestões registradas, fora desta fatia):
-- **UI de listas** (criar/curar listas temáticas estilo Letterboxd) — tabelas já existem, falta a tela.
+- **Link com o hub de pessoas (014)** — promover `movie_people.person_id` para FK em `people`/`person_links`
+  (`entity_type='movie'`), unificando elenco/equipe com a identidade canônica do projeto.
 - **Cross-agent Nami** — lançar o gasto do ingresso de cinema **na mesma transação** ao logar uma sessão
   "no cinema" (espelho de `complete_payment_task`); depende de definir o fluxo de conta/categoria.
 - **Cross-agent Kurisu** — análises longas viram nota no vault Obsidian.
 - **Cross-agent Frieren** — marcar filme como adaptação de um livro do catálogo (link livro↔filme).
-- **Estatísticas avançadas** ("year in review" rico, mapa de hábitos de cinema), recomendações,
-  watch providers (onde assistir), suporte a séries/anime (domínio do futuro `agents/media/`).
+- **Recomendações**, **watch providers** (onde assistir) e **suporte a séries/anime** (domínio do futuro
+  `agents/media/`, agora restrito a séries+anime).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -158,6 +179,69 @@ roteada pela Makima (domínio "filmes" reconhecido no coordinator).
 
 ---
 
+### User Story 4 - Início, Rewind e Favoritos (perfil cinéfilo) (Priority: P2)
+
+Abro a seção e a tela **Início** me dá um panorama: um hero com saudação e a última sessão, cards de
+estatística ("Filmes · 2026" com meta; "Sessões · 7 dias" com sparkline e variação vs. a semana anterior),
+a vitrine dos meus **Favoritos** (que eu posso **editar** — remover e adicionar via busca), a **atividade
+recente** do diário e um painel estilo Letterboxd com o **histograma de notas** (0,5–5,0). No fim do ano,
+abro o **Rewind**: total de filmes/sessões/horas/revisões, sessões por mês, histograma, e destaques
+(filme favorito, maior maratona, década mais vista, nota média, top gêneros/diretores/pessoas).
+
+**Why this priority**: é a camada de "perfil" que transforma o catálogo num Letterboxd pessoal —
+panorama + retrospectiva. Depende da US1 (mesmas tabelas) e da US2 (dados reais tornam o Rewind rico).
+Entrega valor visível sem novas tabelas além de `movie_favorites`.
+
+**Independent Test**: com filmes/sessões no banco, abrir **Início** e ver hero, os 2 stat cards (com
+sparkline), 4 favoritos, atividade recente e o histograma; **editar** favoritos (remover 1, adicionar
+outro via busca) e confirmar que persiste após recarregar; abrir **Rewind** do ano e ver os 4 totais +
+sessões/mês + histograma + destaques; abrir o Rewind de um ano **sem dados** e ver zeros/listas vazias
+**sem erro** (SC-006).
+
+**Acceptance Scenarios**:
+
+1. **Given** filmes e sessões no banco, **When** abro o Início, **Then** vejo hero (última sessão), os 2
+   stat cards (incl. sparkline de 7 dias com variação), favoritos, atividade recente e o histograma de notas.
+2. **Given** a vitrine de favoritos, **When** entro em "Editar", removo um e adiciono outro (busca entre os
+   vistos), **Then** o conjunto é persistido **no servidor** (`PUT /favorites`) e sobrevive a um reload.
+3. **Given** filmes assistidos no ano, **When** abro o Rewind, **Then** vejo total de filmes/sessões/horas/
+   revisões, sessões por mês, histograma de notas e os destaques (favorito, maratona, década, média, tops).
+4. **Given** um ano sem filmes, **When** abro o Rewind desse ano, **Then** todos os blocos resolvem vazios
+   (zeros/listas) **sem erro** (SC-006).
+
+---
+
+### User Story 5 - Listas, Etiquetas, Cofre e Pessoas (coleção e curadoria) (Priority: P3)
+
+Organizo meu acervo: crio **Listas** temáticas ("Atrizes em colapso", "Cinema japonês") e abro cada uma
+como uma grade de pôsteres; navego pela nuvem de **Etiquetas** e clico numa para filtrar os filmes; na
+página do filme, guardo conteúdos no **Cofre** (um vídeo-ensaio, um artigo, uma crítica), escrevo
+**anotações** soltas (≠ review), e vejo a **direção/elenco/equipe** — com as etiquetas de pessoa marcadas
+(que vão se ligar à base de pessoas no futuro).
+
+**Why this priority**: é a curadoria que dá profundidade ao acervo (coleções + descoberta por tag +
+material de estudo por filme). Depende da US1 (catálogo) e reusa as tabelas-satélite já criadas no schema.
+
+**Independent Test**: criar uma lista e adicionar 3 filmes → abrir a lista e ver os 3 pôsteres; abrir
+**Etiquetas**, clicar numa tag e ver o grid filtrado por ela; na página de um filme, **adicionar** um item
+ao Cofre (tipo "ensaio") e vê-lo listado, **remover** depois; editar as **anotações** e recarregar (persiste);
+ver a lista de **pessoas** do filme com a etiqueta de pessoa destacada.
+
+**Acceptance Scenarios**:
+
+1. **Given** filmes no acervo, **When** crio uma lista e adiciono filmes, **Then** a lista aparece com a
+   pilha de pôsteres, nome, descrição, acento e contagem; abri-la mostra a grade daqueles filmes.
+2. **Given** filmes com etiquetas, **When** abro Etiquetas e clico numa tag, **Then** vou para os Filmes
+   filtrados por aquela etiqueta (modo "tela de etiqueta"); tags de pessoa recebem o glifo de pessoa.
+3. **Given** a página de um filme, **When** adiciono um item ao Cofre (`type`, título, url) e depois removo,
+   **Then** o item nasce/some na galeria do Cofre (`movie_vault_items`), sem afetar o resto.
+4. **Given** a página de um filme, **When** edito as **anotações**, **Then** elas persistem em `movies.notes`
+   (separadas da review da sessão) e reaparecem ao recarregar.
+5. **Given** um filme com elenco/equipe, **When** abro o detalhe, **Then** vejo `people[]` (nome + papel),
+   com `is_person_tag` destacando quem também é etiqueta — `person_id` permanece reservado (sem link à 014).
+
+---
+
 ### Edge Cases
 
 - **Filme sem `letterboxd_uri`** (adicionado manualmente pelo webapp/Akane, não veio do Letterboxd):
@@ -168,7 +252,14 @@ roteada pela Makima (domínio "filmes" reconhecido no coordinator).
 - **Item de RSS que não é filme** (lista, watchlist, atividade): ignorado (sem `letterboxd:filmTitle`),
   como no `gustavoboxd`.
 - **Filme não encontrado no TMDB**: criado com os dados disponíveis (título/ano) e `poster_url` nulo;
-  a UI cai para um placeholder de pôster (sem quebrar o grid).
+  a UI cai para o **pôster tipográfico** (paleta de `poster_palette` + título), sem quebrar o grid (SC-005).
+- **Favoritos acima de 4 / com filme excluído**: `set_favorites` aceita no máximo 4 ids `watched`; um id
+  inexistente/soft-deleted é rejeitado com mensagem clara; remover o filme tira-o da vitrine (CASCADE).
+- **Etiqueta sem filmes** (após remover o último): some da nuvem (a nuvem é derivada de `movies.tags`).
+- **Item de Cofre com URL ausente**: aceito (alguns conteúdos são só título/anotação); `source` derivado
+  da URL quando houver, senão vazio.
+- **Pessoa repetida em vários filmes**: contada uma vez por filme em "top pessoas"; `normalizado` evita
+  duplicar por acento/caixa.
 - **Nota fora de 0.5–5.0** (entrada manual inválida): rejeitada com mensagem clara (validação na tool).
 - **TMDB/RSS indisponível** (rede/timeout): retorno gracioso — sync reporta erro no resumo e segue;
   busca no webapp mostra estado de erro, sem 500.
@@ -253,13 +344,67 @@ roteada pela Makima (domínio "filmes" reconhecido no coordinator).
   `CLAUDE.md` raiz MUST passar a listar a Akane (domínio **filmes**), restringindo o futuro `agents/media/`
   a séries + anime.
 
+**Catálogo enriquecido — notas, origem da nota, pôster de fallback (US1)**
+
+- **FR-018**: `movies` MUST separar **`notes`** (anotações soltas do filme) de **`review`** (texto da
+  sessão, em `diary_entries`) — campos distintos, editáveis independentemente (`PATCH /{id}/notes`).
+- **FR-019**: `movies` MUST registrar **`rating_source`** (`letterboxd`|`own`|NULL): logar/avaliar
+  manualmente grava `own`; o RSS/CSV grava `letterboxd`. A UI MUST exibir o selo **"via Letterboxd"**
+  apenas quando `rating_source='letterboxd'`.
+- **FR-020**: a UI MUST usar o pôster **real do TMDB** quando `poster_url` existe e cair para um **pôster
+  tipográfico** (campo de cor de `poster_palette` + título em Display) quando NULL — nunca um quadrado vazio
+  (reforça SC-005). `poster_palette` MUST ter default determinístico (hash do título) quando não definido.
+
+**Início, Rewind, Favoritos, Heatmap (US4)**
+
+- **FR-021**: a camada de lógica MUST oferecer agregações **derivadas** (sem tabela de cache):
+  `get_home` (bloco do Início numa só query), `get_stats`/`get_rewind` (year-in-review: contagens, horas,
+  revisões, sessões/mês, histograma, top gêneros/diretores/pessoas, década, maratona, favorito) e
+  `get_heatmap` (sessões/dia do ano) — todas **vazio-seguras** (SC-006).
+- **FR-022**: o sistema MUST persistir **favoritos no servidor** (`movie_favorites`, ordenados): `get_favorites`
+  e `set_favorites([ids≤4])`; a UI do Início MUST permitir editar (remover/adicionar via busca entre os
+  `watched`). É um desvio consciente do protótipo (que usava `localStorage`) por **paridade de canais**.
+- **FR-023**: o frontend MUST entregar a tela **Início** (hero + 2 stat cards com sparkline + favoritos
+  editáveis + atividade recente + histograma de notas + carrossel da watchlist) e a tela **Rewind**
+  (4 totais + sessões/mês + histograma + destaques), no visual do protótipo.
+
+**Listas, Etiquetas, Cofre, Pessoas (US5)**
+
+- **FR-024**: o sistema MUST oferecer **Listas** (CRUD de `movie_lists`/`movie_list_items`, com `accent`)
+  e a UI correspondente (grade de coleções com pilha de mini-pôsteres → grade da lista).
+- **FR-025**: o sistema MUST derivar a nuvem de **Etiquetas** (`get_tags` a partir de `movies.tags`, com
+  flag `person` via `movie_people.is_person_tag`) e permitir **filtrar o grid por etiqueta** (`?tag=`).
+- **FR-026**: o sistema MUST oferecer o **Cofre de conteúdos** por filme (`movie_vault_items`: CRUD de
+  links tipados `video`/`article`/`essay`/`review`) e exibi-lo na página do filme.
+- **FR-027**: o sistema MUST armazenar **direção/elenco/equipe** em `movie_people` (nome, papel,
+  `is_person_tag`) e exibi-los no detalhe e em "top pessoas" (Rewind); `person_id` MUST permanecer
+  **reservado** (NULL) nesta fatia — o link com o hub `people` da 014 é trabalho futuro.
+
+**UI: tema, acento, tweaks, barra de sessão (US1/US4)**
+
+- **FR-028**: o Shell MUST suportar **tema claro/escuro** e **acento trocável** (`[data-accent]`: base
+  rosa, alternativos carmim/âmbar/teal; **default de fábrica = teal**), com **estrelas/histograma em verde
+  Letterboxd** independentes do acento. Tweaks (tema/acento/densidade/estilo do pôster/ordenação) são
+  **client-only** (localStorage), sem endpoint.
+- **FR-029**: o Shell MUST ter a barra inferior **"Próxima sessão"** (planeja a próxima da watchlist, botão
+  "Já vi" → loga) e **toasts** de confirmação após logar/sincronizar.
+
 ### Key Entities
 
 - **Filme** (`movies`): identidade canônica do filme no catálogo; `id` UUID/TEXT, dedup por
-  `letterboxd_uri`/`tmdb_id`, soft delete, metadados do TMDB.
+  `letterboxd_uri`/`tmdb_id`, soft delete, metadados do TMDB; carrega `rating_source`, `tags` (nível-filme),
+  `notes` (anotações soltas) e `poster_palette` (fallback tipográfico).
 - **Sessão de diário** (`diary_entries`): cada vez que um filme foi assistido (suporta rewatch); FK para
   `movies`; carrega nota/review/tags/rewatch/data daquela visualização.
-- **Lista** (`movie_lists` + `movie_list_items`): coleções temáticas N:N (tabelas criadas; UI futura).
+- **Cofre de conteúdo** (`movie_vault_items`): link tipado (`video`/`article`/`essay`/`review`) salvo
+  **sobre** um filme; 1 filme → N itens.
+- **Pessoa do filme** (`movie_people`): direção/elenco/equipe local ao filme (nome, papel, `is_person_tag`);
+  `person_id` reservado para o hub `people` da fatia 014.
+- **Favorito** (`movie_favorites`): filme em destaque na vitrine do perfil; conjunto ordenado (≤4),
+  persistido no servidor.
+- **Lista** (`movie_lists` + `movie_list_items`): coleções temáticas N:N (com `accent`); UI na Onda US5.
+- **Etiqueta** (derivada): nome + contagem agregados de `movies.tags`; `person=true` quando casa com
+  `movie_people` — entidade conceitual, sem tabela própria.
 
 ## Success Criteria *(mandatory)*
 
@@ -280,6 +425,12 @@ roteada pela Makima (domínio "filmes" reconhecido no coordinator).
 - **SC-007**: 100% das capacidades de filmes (buscar/adicionar/logar/avaliar/consultar) executáveis pelos
   **dois canais** (Telegram e webapp), com a lógica numa camada única — auditável por checklist de paridade.
 - **SC-008**: Toda rota `/api/movies/*` exige sessão: chamada sem cookie válido retorna **401** — coberto por teste.
+- **SC-009**: Editar a vitrine de **favoritos** (remover + adicionar) persiste **no servidor**: após
+  `PUT /favorites` e reload, a vitrine reflete o novo conjunto ordenado (≤4) — coberto por teste.
+- **SC-010**: **Listas/Etiquetas/Cofre** fazem round-trip: criar lista + adicionar filme aparece na lista;
+  clicar numa etiqueta filtra o grid; adicionar/remover item do Cofre reflete na página — coberto por teste.
+- **SC-011**: Pôster ausente cai para **tipográfico** (paleta + título), nunca quadrado vazio; pôster real
+  do TMDB é usado quando há `poster_url` — verificável por inspeção (estende SC-005).
 
 ## Assumptions
 
@@ -294,22 +445,34 @@ roteada pela Makima (domínio "filmes" reconhecido no coordinator).
 - O agente se chama **Akane** (`akane_agent`, de *Oshi no Ko*), seguindo a convenção de personagens de
   anime; o pacote vive em `agents/akane/`. Singleton sem MCP (padrão Nami/Frieren).
 - **Filmes** passa a ser domínio da Akane; o futuro `agents/media/` fica restrito a **séries + anime**.
-- **Listas (UI), cross-agent Nami/Kurisu/Frieren, recomendações, watch providers e estatísticas
-  avançadas** ficam **fora** desta fatia (sugestões registradas).
+- **Pôster**: imagem real do TMDB é o primário; o **pôster tipográfico** (14 paletas) é o fallback quando
+  não há `poster_url` — o protótipo, que é tipográfico puro, vira referência da camada de fallback.
+- **Tema/acento**: claro/escuro + acento trocável (base rosa, **default de fábrica teal**); estrelas em
+  verde Letterboxd fixo. Tweaks são preferências de UI (localStorage), sem backend.
+- **Favoritos** são persistidos no **servidor** (`movie_favorites`), não no `localStorage` (paridade de canais).
+- **Pessoas** (elenco/equipe) ficam **locais** ao filme nesta fatia; o link com o hub `people` da **014**
+  é futuro (`movie_people.person_id` reservado).
+- **Listas (UI), Etiquetas e Rewind** entram nesta fatia, **faseados** nas Ondas US4/US5 (não mais "para
+  depois"). Ficam fora: link com o hub 014, **cross-agent Nami/Kurisu/Frieren**, recomendações e watch
+  providers.
 - A captura em linguagem natural no Telegram usa o `gemini-2.5-flash` já configurado — nenhum serviço novo.
 
 ## Ambiguity Report
 
-| Dimension          | Score | Min  | Status | Notes                                                  |
-|--------------------|-------|------|--------|--------------------------------------------------------|
-| Goal Clarity       | 0.90  | 0.75 | ✓      | Webapp Letterboxd-like + ingestão + agente, medíveis   |
-| Boundary Clarity   | 0.88  | 0.70 | ✓      | In/out explícitos; cross-agent além de Kaguya adiado   |
-| Constraint Clarity | 0.80  | 0.65 | ✓      | TMDB único, idempotência, schema novo, single-user     |
-| Acceptance Criteria| 0.85  | 0.70 | ✓      | 8 SCs pass/fail + cenários por US                       |
-| **Ambiguity**      | 0.13  | ≤0.20| ✓      | Decisões-chave fechadas no brainstorm                  |
+| Dimension          | Score | Min  | Status | Notes                                                       |
+|--------------------|-------|------|--------|-------------------------------------------------------------|
+| Goal Clarity       | 0.90  | 0.75 | ✓      | Webapp Letterboxd completo + ingestão + agente, medíveis    |
+| Boundary Clarity   | 0.86  | 0.70 | ✓      | In/out explícitos; escopo rico **faseado em ondas** (US4/5) |
+| Constraint Clarity | 0.82  | 0.65 | ✓      | TMDB+fallback, idempotência, 7 tabelas, acento, single-user |
+| Acceptance Criteria| 0.86  | 0.70 | ✓      | 11 SCs pass/fail + cenários por 5 US                        |
+| **Ambiguity**      | 0.14  | ≤0.20| ✓      | Protótipo é a referência; 3 decisões fechadas nesta revisão |
+
+> **Revisão 2026-06-12 (handoff)**: spec ampliada para incorporar o protótipo hi-fi do "Claude Design"
+> (`design_handoff_akane_filmes/`). Decisões fechadas: pôster = TMDB+fallback tipográfico; escopo completo
+> faseado em 5 ondas; pessoas locais (link 014 futuro). Schema cresce de 4 → 7 tabelas.
 
 ---
 
 *Phase: 015-akane-filmes*
-*Spec created: 2026-06-12*
-*Next step: discuss-phase / plan-phase — decisões de implementação (schema final, assinaturas das tools, telas e componentes do Shell, formato do resumo de sync)*
+*Spec created: 2026-06-12 · ampliada 2026-06-12 (design handoff)*
+*Next step: plan-phase / execução por ondas — assinaturas finais das tools, componentes do Shell (a partir do protótipo), endpoints de Listas (US5)*
