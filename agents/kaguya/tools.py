@@ -27,6 +27,10 @@ from agents.kaguya.tools_projects import (  # noqa: F401
     get_sidebar, create_project, update_project, delete_project,
     resolve_project_id_by_name,
 )
+# Tags (etiquetas) — fatia 013. Operações incrementais (add/remove) + listar por tag.
+from agents.kaguya.tools_tags import (  # noqa: F401
+    add_task_tag, remove_task_tag, list_tasks_by_tag,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

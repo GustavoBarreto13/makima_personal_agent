@@ -202,7 +202,15 @@
 .kg-chip-emoji { font-family: var(--sans); }
 .kg-chip-date.is-overdue { color: var(--p-high); border-color: var(--p-high); background: var(--p-high-t); }
 .kg-chip-recur { color: var(--done); border-color: var(--done); }   /* recorrência: verde-conclusão */
+.kg-chip-tag { color: var(--kg); border-color: var(--kg); background: var(--kg-tint); }   /* tag: acento do tema */
 .kg-type-glyph { color: var(--ink-3); }
+
+/* editor de tags no TaskModal: chips removíveis + input que cresce */
+.kg-tag-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.kg-tag-edit .kg-chip-tag { padding-right: 3px; }   /* abre espaço para o "×" */
+.kg-tag-x { background: none; border: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; opacity: .7; }
+.kg-tag-x:hover { opacity: 1; }
+.kg-tag-input { flex: 1; min-width: 140px; }
 
 .kg-section-toggle { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-4); background: none; border: none; cursor: pointer; padding: 14px 4px 6px; }
 .kg-empty { text-align: center; color: var(--ink-3); padding: 60px 20px; }
@@ -281,6 +289,7 @@
 .tok-prio-3 { color: var(--p-high); font-weight: 600; }
 .tok-tag { color: var(--ink-3); }
 .tok-date, .tok-time { color: var(--done); font-weight: 600; }
+.tok-tag { color: var(--kg); font-weight: 600; }   /* #tag no mirror do quick-add */
 .kg-qa-preview { display: flex; gap: 6px; margin-top: 8px; }
 
 /* ═══ Hoje (US4) ═══ */

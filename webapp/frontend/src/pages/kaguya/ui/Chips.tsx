@@ -52,3 +52,10 @@ export function RecurChip({ text }: { text: string }) {
     </span>
   )
 }
+
+/** Chip de tag (etiqueta). Usa a cor própria da tag, se houver; senão o acento do tema. */
+export function TagChip({ name, color }: { name: string; color?: string | null }) {
+  // Cor própria sobrescreve texto e borda; sem cor, a classe kg-chip-tag usa o acento.
+  const style = color ? { color, borderColor: color } : undefined
+  return <span className="kg-chip kg-chip-tag" style={style}>#{name}</span>
+}

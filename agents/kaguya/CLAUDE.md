@@ -60,8 +60,8 @@ As tools de tarefas são **funções Python** registradas direto (não MCP).
 | `list_tasks_today()` | `{overdue, today}` — abertas com `due_date <= hoje` |
 | `search_tasks(query)` | busca por título/descrição (ILIKE) |
 | `list_trash(project_id?)` | soft-deletadas (restauráveis) |
-| `create_task(..., column_id?, recurrence?)` | cria tarefa/subtarefa; sem lista → Inbox; lista **com board** → 1ª coluna (ou `column_id` explícito) para aparecer no Kanban; `recurrence={rrule,mode}` opcional; `type=birthday`+data → recorrência anual automática |
-| `update_task(task_id, ..., recurrence?, clear_recurrence?)` | edita; trocar de lista aplica a regra da coluna; anexa/edita/remove recorrência |
+| `create_task(..., column_id?, recurrence?, tags?)` | cria tarefa/subtarefa; sem lista → Inbox; lista **com board** → 1ª coluna (ou `column_id` explícito) para aparecer no Kanban; `recurrence={rrule,mode}` opcional; `type=birthday`+data → recorrência anual automática; `tags=["mercado",...]` cria/vincula etiquetas |
+| `update_task(task_id, ..., recurrence?, clear_recurrence?, tags?)` | edita; trocar de lista aplica a regra da coluna; anexa/edita/remove recorrência; `tags=[...]` **substitui** o conjunto de tags (lista vazia = remover todas) |
 | `complete_task(task_id, cascade, end_series?)` | completa; subtarefas abertas sem cascade → `needs_cascade`; numa recorrente gera a próxima (`generated_task_id`); `end_series=True` encerra a série |
 | `reopen_task(task_id)` | reabre; bloqueia se o pai está concluído |
 | `reorder_task(task_id, after_id?, before_id?)` | posição esparsa ×1000 + renormalização |
@@ -80,6 +80,14 @@ Motor **puro** (`agents/kaguya/recurrence.py`, sem banco) com a aritmética RRUL
 uma linha; concluir consome a atual (vira histórico) e gera **uma** próxima (subtarefas resetam),
 realocando a regra (`task_recurrences`, 1:1 com a tarefa viva). Semântica e os 9 edge cases:
 `specs/012-tasks-recurrence/research.md` (gate em `tests/agents/test_kaguya_recurrence.py`).
+
+### `tools_tags.py` — etiquetas (tags) — fatia 013
+
+Relação **N:N** tarefa↔tag (`task_tag_links`); nome único ignorando caixa (`uq_task_tags_name`).
+`list_tags`, `create_tag`, `update_tag`, `delete_tag` (cascade nos vínculos), `list_tasks_by_tag`,
+e o incremental `add_task_tag`/`remove_task_tag`. Helpers transacionais reusados por
+`tools_tasks` (mesma transação): `_resolve_or_create_tag` (reuso case-insensitive — SC-002),
+`_set_task_tags` (semântica *set*), `_attach_tags` (anexa as tags às listagens, 1 query).
 
 ### `tools_projects.py` — listas, grupos, colunas
 
@@ -105,6 +113,8 @@ Mutações retornam `{"status": "ok"|"error", ...}`; listagens retornam o dado d
 | `create_task`, `update_task`, `complete_task`, `reopen_task`, `delete_task`, `restore_task` | tarefas |
 | `set_task_recurrence(task_id, freq, interval?, weekday?, monthday?, mode?)` | recorrência por intenção simples (monta a RRULE; ecoa `recurrence_text`) |
 | `clear_recurrence(task_id)` | remove a recorrência |
+| `add_task_tag(task_id, tag)` / `remove_task_tag(task_id, tag)` | etiqueta incremental (fatia 013) |
+| `list_tasks_by_tag(name)` | tarefas abertas com uma tag (case-insensitive) |
 | `create_project`, `update_project`, `delete_project` | listas |
 | **`complete_payment_task`** | cross-agent (Kaguya + Nami) — atômico |
 | **`create_expense_reminder`** | cross-agent — cria lembrete no Postgres |

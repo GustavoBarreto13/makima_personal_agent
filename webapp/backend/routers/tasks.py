@@ -33,6 +33,9 @@ from agents.kaguya.tools_tasks import (
     reorder_task, delete_task, restore_task,
     set_recurrence, clear_recurrence,
 )
+from agents.kaguya.tools_tags import (
+    list_tags, create_tag, update_tag, delete_tag, list_tasks_by_tag,
+)
 
 router = APIRouter()
 
@@ -119,6 +122,7 @@ class CreateTaskBody(BaseModel):
     description: Optional[str] = None
     column_id: Optional[int] = None              # coluna do Kanban (criar direto numa coluna)
     recurrence: Optional[RecurrenceBody] = None  # nested → model_dump vira dict para a tool
+    tags: Optional[list[str]] = None             # nomes das tags (criadas se não existirem)
 
 
 class UpdateTaskBody(BaseModel):
@@ -133,6 +137,7 @@ class UpdateTaskBody(BaseModel):
     column_id: Optional[int] = None
     recurrence: Optional[RecurrenceBody] = None  # anexar/editar a regra
     clear_recurrence: bool = False               # remover a regra
+    tags: Optional[list[str]] = None             # substitui o conjunto de tags (vazio = remover todas)
 
 
 class CompleteTaskBody(BaseModel):
@@ -151,6 +156,18 @@ class ReorderBody(BaseModel):
     """Body de reordenação manual (vizinhos que definem a nova posição)."""
     after_id: Optional[int] = None
     before_id: Optional[int] = None
+
+
+class CreateTagBody(BaseModel):
+    """Body de criação de tag (etiqueta)."""
+    name: str
+    color: Optional[str] = None
+
+
+class UpdateTagBody(BaseModel):
+    """Body de edição de tag (PATCH parcial)."""
+    name: Optional[str] = None
+    color: Optional[str] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -332,3 +349,44 @@ def set_recurrence_route(task_id: int, body: SetRecurrenceBody, user: dict = Dep
 def clear_recurrence_route(task_id: int, user: dict = Depends(require_user)) -> dict:
     """Remove a regra de recorrência (a tarefa volta a ser simples)."""
     return _check_result(clear_recurrence(task_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tags (etiquetas) — fatia 013
+# ─────────────────────────────────────────────────────────────────────────────
+# Atenção à ordem das rotas: ``/tags`` e ``/by-tag`` são caminhos LITERAIS e precisam ser
+# casados antes de ``/{task_id}`` (que captura qualquer coisa). Como o FastAPI casa na ordem
+# de registro e ``/{task_id}`` está acima, declaramos estas com prefixos próprios (``/tags``,
+# ``/by-tag``) que não colidem com o padrão numérico de ``/{task_id}`` — o conversor de tipo
+# de ``task_id`` (int) já rejeita "tags"/"by-tag", então não há ambiguidade.
+@router.get("/tags")
+def list_tags_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Lista todas as tags cadastradas (ordem alfabética)."""
+    return list_tags()  # listagem — sem _check_result
+
+
+@router.post("/tags", status_code=201)
+def create_tag_route(body: CreateTagBody, user: dict = Depends(require_user)) -> dict:
+    """Cria uma tag (erro 400 se já existir uma com o mesmo nome ignorando caixa)."""
+    return _check_result(create_tag(**body.model_dump(exclude_unset=True)))
+
+
+@router.patch("/tags/{tag_id}")
+def update_tag_route(tag_id: int, body: UpdateTagBody, user: dict = Depends(require_user)) -> dict:
+    """Renomeia/recolore uma tag."""
+    return _check_result(update_tag(tag_id, **body.model_dump(exclude_unset=True)))
+
+
+@router.delete("/tags/{tag_id}")
+def delete_tag_route(tag_id: int, user: dict = Depends(require_user)) -> dict:
+    """Exclui uma tag (os vínculos somem; as tarefas permanecem)."""
+    return _check_result(delete_tag(tag_id))
+
+
+@router.get("/by-tag")
+def list_tasks_by_tag_route(
+    name: str = Query(..., description="Nome da tag (com ou sem #)"),
+    user: dict = Depends(require_user),
+) -> list[dict]:
+    """Lista as tarefas abertas que têm uma determinada tag."""
+    return list_tasks_by_tag(name)  # listagem
