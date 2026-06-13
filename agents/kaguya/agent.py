@@ -39,6 +39,8 @@ from agents.kaguya.tools import (
     set_estimate_by_name,
     # Eisenhower (fatia 017)
     eisenhower_status,
+    # Calendar Hub (fatia 019)
+    list_week_with_hub,
 )
 
 # Instrução completa da Kaguya — personalidade e regras de comportamento.
@@ -172,14 +174,19 @@ _INSTRUCTION = """
     - Uma smart-list precisa de AO MENOS uma condição (senão é uma lista comum). ECOE em
       português a regra que você salvou. EXCLUIR → delete_filter(id) (nenhuma tarefa é afetada).
 
-    CONSULTA POR INTERVALO DE DATAS (equivalente do calendário no Telegram — fatia 013):
-    - "o que tenho essa semana / esse mês / entre tal e tal dia?" → list_tasks_in_range(
-      start_date, end_date) com as datas AAAA-MM-DD (fuso America/Sao_Paulo). Calcule o
-      intervalo (ex.: semana = hoje até domingo) e informe o período assumido.
-    - O resultado inclui tarefas datadas E as próximas ocorrências das recorrentes (campo
-      "is_virtual": true nas projetadas). Trate as virtuais como ocorrências futuras normais;
-      ao agir sobre uma (concluir/editar), use a tarefa da série (campo "series_task_id").
-    - É a MESMA agenda que o calendário do webapp mostra (paridade — FR-017).
+    CONSULTA POR INTERVALO DE DATAS — VISÃO INTEGRADA (Calendar Hub — fatia 019):
+    - "o que tenho essa semana / esse mês / entre tal e tal dia?" →
+      USE list_week_with_hub(start_date, end_date) — é a visão COMPLETA: tarefas Kaguya
+      + lançamentos financeiros (Nami) + sessões de leitura (Frieren) + entradas de diário
+      (Violet). Calcule o intervalo (ex.: semana = próxima segunda até domingo) e informe o
+      período assumido (AAAA-MM-DD).
+    - Se o usuário quiser APENAS tarefas (sem as outras fontes): use list_tasks_in_range(
+      start_date, end_date). Inclui ocorrências virtuais das recorrentes (campo is_virtual:
+      true). Para agir sobre uma virtual, use series_task_id.
+    - Os itens cross-agent (Nami, Frieren, Violet) são SOMENTE-LEITURA: a Kaguya não edita
+      nem conclui esses itens. Se o usuário quiser agir sobre eles, oriente-o a acessar o
+      agente responsável ou o webapp.
+    - É a MESMA agenda que o calendário do webapp mostra (paridade de canais — FR-017).
 
     EXCLUSÃO (destrutiva — confirme SEMPRE antes):
     - delete_task e delete_project só depois de confirmação explícita do usuário.
@@ -304,11 +311,12 @@ def create_kaguya_agent() -> Agent:
         name="kaguya_agent",
         model="gemini-2.5-flash",
         description=(
-            "Especialista em gestão de tarefas (sistema próprio em PostgreSQL) e agenda "
-            "via Google Calendar. Cria, edita, completa, organiza e prioriza tarefas, "
-            "subtarefas e listas. Consulta tarefas do dia e eventos. Também lida com "
-            "fluxos financeiros: completar tarefa de pagamento (lança a despesa junto) e "
-            "criar lembretes de despesas futuras."
+            "Especialista em gestão de tarefas (sistema próprio em PostgreSQL), agenda "
+            "via Google Calendar e Calendar Hub (visão integrada de tarefas, finanças, "
+            "livros e diário por período). Cria, edita, completa, organiza e prioriza "
+            "tarefas, subtarefas e listas. Consulta tarefas do dia, eventos e o resumo "
+            "semanal integrado. Também lida com fluxos financeiros: completar tarefa de "
+            "pagamento (lança a despesa junto) e criar lembretes de despesas futuras."
         ),
         instruction=_INSTRUCTION,
         tools=[
@@ -323,8 +331,9 @@ def create_kaguya_agent() -> Agent:
             # Smart-lists (filtros salvos) — fatia 013 / P2
             list_filters, create_filter, update_filter, delete_filter,
             list_tasks_by_filter_name, list_today_overdue,
-            # Calendário: consulta por intervalo de datas — fatia 013 / P3
+            # Calendário: consulta por intervalo — fatia 013 / P3; hub integrado — fatia 019
             list_tasks_in_range,
+            list_week_with_hub,
             # Hábitos (Fase 4 / fatia 014)
             list_habits, create_habit, update_habit, archive_habit,
             check_in_habit, remove_check_in, habit_status,

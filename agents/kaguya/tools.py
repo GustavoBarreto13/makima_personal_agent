@@ -308,6 +308,138 @@ def _resolve_task_id(task: Union[int, str]) -> Union[int, None]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Calendar Hub — relato textual com camadas cross-agent (fatia 019)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def list_week_with_hub(start_date: str, end_date: str) -> str:
+    """Consulta tarefas Kaguya + itens de todas as fontes conectadas no intervalo dado.
+
+    Estende ``list_tasks_in_range`` com o Calendar Hub: além das tarefas Kaguya, traz
+    lançamentos financeiros (Nami), sessões de leitura (Frieren), entradas de diário
+    (Violet) e outros provedores registrados no hub. Agrupa por dia e por fonte, em
+    HTML pronto para o Telegram. Os itens cross-agent são exibidos como **somente-leitura**
+    — o usuário deve acessar o webapp do agente correspondente para editá-los.
+
+    Use esta função quando o usuário perguntar "o que tenho essa semana?" ou pedir
+    uma visão integrada de tarefas + agenda + outras fontes no mesmo período.
+
+    Args:
+        start_date: Data inicial AAAA-MM-DD.
+        end_date: Data final AAAA-MM-DD.
+
+    Returns:
+        String HTML (Telegram) com todos os itens agrupados por dia. Retorna mensagem
+        de vazio se nenhum item existir no período.
+
+    Example:
+        >>> list_week_with_hub("2026-06-09", "2026-06-15")
+        "📅 <b>Período: 2026-06-09 → 2026-06-15</b>\\n\\n<b>Seg, 09/jun</b>\\n  ..."
+    """
+    from collections import defaultdict
+    from datetime import date as _date
+
+    from agents.kaguya import calendar_hub
+    from agents.kaguya.tools_calendar import list_tasks_in_range
+
+    # --- 1. Tarefas Kaguya ---------------------------------------------------
+    # list_tasks_in_range já inclui ocorrências virtuais de recorrentes.
+    tasks = list_tasks_in_range(start_date, end_date)
+
+    # --- 2. Itens cross-agent (hub) ------------------------------------------
+    # O hub agrega Nami, Frieren, Violet, Akane. A fonte "kaguya" no hub retorna []
+    # (as tarefas vêm de list_tasks_in_range acima), então não há duplicação.
+    hub_result = calendar_hub.aggregate(start_date, end_date)
+    hub_items = hub_result.get("items", [])
+
+    # --- 3. Agrupa por data --------------------------------------------------
+    # Cada slot é uma lista de entradas {"source": str, "data": dict}.
+    by_date: dict[str, list] = defaultdict(list)
+
+    for t in tasks:
+        # Usa start_at[:10] como data quando disponível; senão due_date
+        day = (t.get("start_at") or "")[:10] or t.get("due_date", "")
+        if not day:
+            continue
+        by_date[day].append(("kaguya", t))
+
+    for item in hub_items:
+        day = item.get("date", "")
+        if not day:
+            continue
+        # Pula fonte "kaguya" (as tarefas já vieram de list_tasks_in_range)
+        if item.get("cal") == "kaguya":
+            continue
+        by_date[day].append((item.get("cal", "hub"), item))
+
+    dias_ordenados = sorted(by_date.keys())
+
+    if not dias_ordenados:
+        return f"Nenhum item no período de {_fmt_date(start_date)} a {_fmt_date(end_date)}."
+
+    # --- 4. Formata por dia --------------------------------------------------
+    linhas = [f"📅 <b>Período: {_fmt_date(start_date)} → {_fmt_date(end_date)}</b>"]
+
+    _PRIO = {3: "🔴", 2: "🟡", 1: "🔵", 0: "⚪"}
+    # Ícone por fonte cross-agent
+    _ICON = {"nami": "💰", "frieren": "📚", "violet": "📝", "akane": "🎬"}
+    # Rótulo legível por fonte
+    _LABEL = {"nami": "Nami", "frieren": "Frieren", "violet": "Violet", "akane": "Akane"}
+    # Dias da semana em pt-BR (weekday() 0=segunda…6=domingo)
+    _DIAS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+    # Meses abreviados (1-indexado)
+    _MESES = ["", "jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+
+    for dia in dias_ordenados:
+        d = _date.fromisoformat(dia)
+        nome_dia = f"{_DIAS[d.weekday()]}, {d.day:02d}/{_MESES[d.month]}"
+        linhas.append(f"\n<b>{nome_dia}</b>")
+
+        for source, entry in by_date[dia]:
+            if source == "kaguya":
+                # Tarefa Kaguya: ícone de prioridade + título em negrito + recorrência
+                prio = _PRIO.get(entry.get("priority", 0), "⚪")
+                virtual = " ↻" if entry.get("is_virtual") else ""
+                horario = ""
+                if entry.get("start_at") and len(entry["start_at"]) >= 16:
+                    # Exibe apenas HH:MM (o T separa data e hora no ISO)
+                    horario = " · " + entry["start_at"][11:16]
+                linhas.append(f"  📋 {prio} <b>{entry['title']}</b>{virtual}{horario}")
+            else:
+                # Item cross-agent: ícone por fonte + título + horário (se disponível)
+                icon = _ICON.get(source, "📌")
+                label = _LABEL.get(source, source.capitalize())
+                title = entry.get("title", "—")
+                horario = ""
+                start_str = entry.get("start") or ""
+                if start_str and not entry.get("all_day") and "T" in start_str:
+                    horario = " · " + start_str[11:16]
+                # Rótulo entre colchetes indica a fonte e que é somente-leitura
+                linhas.append(f"  {icon} {title}{horario} <i>[{label}]</i>")
+
+    # Avisa fontes que falharam durante a coleta (degradação graciosa)
+    if hub_result.get("errors"):
+        fontes_com_erro = ", ".join(hub_result["errors"])
+        linhas.append(f"\n⚠ Fontes indisponíveis: {fontes_com_erro}")
+
+    return "\n".join(linhas)
+
+
+def _fmt_date(iso: str) -> str:
+    """Formata uma data AAAA-MM-DD como DD/MM para exibição.
+
+    Args:
+        iso: Data em formato ISO (AAAA-MM-DD).
+
+    Returns:
+        String no formato DD/MM, ex.: "09/06".
+    """
+    if len(iso) < 10:
+        return iso
+    # Extrai os campos numéricos sem criar objetos desnecessariamente
+    return f"{iso[8:10]}/{iso[5:7]}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Eisenhower — relato textual por quadrante (fatia 017)
 # ─────────────────────────────────────────────────────────────────────────────
 
