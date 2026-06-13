@@ -4,13 +4,49 @@
 
 **Created**: 2026-06-13
 
-**Status**: Draft
+**Status**: Em andamento
 
 **Input**: "vamos planejar um novo agent. Vai ser Marin Kitagawa, ela vai cuidar de toda a parte de
 animes. Leia C:\Users\gusta\Documents\GitHub\n8n-python-scripts\anime_sync e
 C:\Users\gusta\Documents\GitHub\n8n-python-scripts\mal_sync como base. Vamos criar as specs iniciais,
 dê um guia para o claude design criar o front depois. Mantenha o padrão dos demais, mas dê a esse o
 seu próprio brilho."
+
+---
+
+## Status de Implementação
+
+> Atualizado em 2026-06-13. Antes de implementar qualquer coisa, **verifique esta seção** para não refazer trabalho já feito.
+
+### ✅ Concluído e commitado
+
+| O quê | Arquivo(s) | Commit |
+|---|---|---|
+| Todos os documentos de planejamento | `specs/021-marin-animes/spec.md`, `research.md`, `data-model.md`, `design-guide.md`, `contracts/api-anime.md`, `quickstart.md` | `e965988` |
+| Docstring do pacote | `agents/marin/__init__.py` | `75cd1ef` |
+| DDL PostgreSQL (4 tabelas) | `agents/marin/schema_pg.sql` | `75cd1ef` |
+| Clientes de API puros (Jikan/AniList/ARM/TMDB) | `agents/marin/metadata.py` | `75cd1ef` |
+| OAuth MAL PKCE + rotação de token | `agents/marin/mal_auth.py` | `75cd1ef` |
+| Sync delta MAL → PostgreSQL | `agents/marin/mal_sync.py` | `75cd1ef` |
+
+### ❌ Ainda não implementado (próxima sessão)
+
+| O quê | Arquivo(s) alvo | Referência |
+|---|---|---|
+| Camada de lógica / tools do agente | `agents/marin/tools.py` | FR-004, FR-005, FR-006 |
+| Agente ADK singleton + prompt | `agents/marin/agent.py`, `agents/marin/CLAUDE.md` | FR-015, FR-016 |
+| Script OAuth bootstrap | `scripts/authorize_mal.py` | FR-014 |
+| Wiring no coordinator | `coordinator/agent.py`, `coordinator/main.py`, `scripts/setup_schemas.py` | FR-017 |
+| Docs raiz atualizados | `CLAUDE.md` (raiz), `coordinator/CLAUDE.md` | FR-017 |
+
+### 🎨 Fora do escopo desta fatia (Claude Design / fatia futura)
+
+| O quê | Observação |
+|---|---|
+| Protótipo hi-fi (`design_handoff_marin_animes/`) | Criado pelo **Claude Design** usando `design-guide.md` como referência — não implementar aqui |
+| Shell React + router FastAPI `/api/animes/*` | Fatia futura, após o agente Telegram estar funcional |
+
+---
 
 **Decisões fechadas no brainstorm**:
 storage = **PostgreSQL** (padrão da casa — Nami/Kaguya/Frieren/Akane); MAL OAuth PKCE incluso na
@@ -351,4 +387,4 @@ o sync (rotação); sem `MAL_CLIENT_ID` → retorna erro claro.
 
 *Phase: 021-marin-animes*
 *Spec created: 2026-06-13*
-*Next step: plan-phase → execução (schema → metadata.py → mal_auth → tools → agent)*
+*Next step: implementar `tools.py` → `agent.py` → `authorize_mal.py` → wiring coordinator*
