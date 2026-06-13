@@ -73,6 +73,7 @@ export function CalendarScreen({ reloadKey, onOpenTask, toast }: CalendarProProp
   const [refDate, setRefDate] = useState<Date>(() => new Date())
   const [tasks, setTasks] = useState<Task[]>([])
   const [hubItems, setHubItems] = useState<CalendarItem[]>([])
+  const [gcalItems, setGcalItems] = useState<CalEvent[]>([])   // Agenda pessoal (Google)
   const [cals, setCals] = useState<Calendar[]>([])
   const [loading, setLoading] = useState(true)
   const [hintVisible, setHintVisible] = useState(false)
@@ -145,6 +146,42 @@ export function CalendarScreen({ reloadKey, onOpenTask, toast }: CalendarProProp
     return () => { cancelled = true }
   }, [sourcesKey])
 
+  // ── Carregamento da Agenda pessoal Google (eventos gcal diretos) ─────────────
+  // Carrega apenas quando o calendário "gcal" está visível nas prefs.
+  // Exclui automaticamente "Kaguya — Tarefas" e "TickTick" (feito no backend).
+
+  useEffect(() => {
+    const gcalVisible = cals.some((c) => c.id === 'gcal' && c.visible !== false)
+    if (!gcalVisible) {
+      setGcalItems([])
+      return
+    }
+    let cancelled = false
+    kaguyaApi.calendarEvents(windowStart, windowEnd)
+      .then((events) => {
+        if (cancelled) return
+        // Mapeia os eventos Google para o formato CalEvent normalizado (cal="gcal")
+        const mapped: CalEvent[] = events.map((ev) => {
+          const isAllDay = !ev.start.includes('T')
+          return {
+            id: `gcal-${ev.id}`,
+            cal: 'gcal',
+            day: ev.start.slice(0, 10),
+            start: isAllDay ? null : ev.start,
+            end: isAllDay ? null : ev.end,
+            allDay: isAllDay,
+            color: null,
+            kind: 'event' as const,
+            title: ev.summary,
+            loc: ev.location || undefined,
+          }
+        })
+        setGcalItems(mapped)
+      })
+      .catch(() => { if (!cancelled) setGcalItems([]) })
+    return () => { cancelled = true }
+  }, [windowStart, windowEnd, reloadKey, sourcesKey, cals])
+
   // ── Dica de uso ───────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -187,13 +224,13 @@ export function CalendarScreen({ reloadKey, onOpenTask, toast }: CalendarProProp
     return null
   }
 
-  // Eventos combinados: tarefas Kaguya + itens de todos os provedores cross-agent.
-  // Os dois feeds são concatenados — o grid os ordena por horário internamente.
+  // Eventos combinados: tarefas Kaguya + hub cross-agent + Agenda pessoal Google.
+  // Os feeds são concatenados — o grid os ordena por horário internamente.
   const calEvents: CalEvent[] = useMemo(() => {
     const taskEvents = tasks.flatMap((t) => { const e = taskToCalEvent(t); return e ? [e] : [] })
     const hubEvents = hubItems.map(hubToCalEvent)
-    return [...taskEvents, ...hubEvents]
-  }, [tasks, hubItems])
+    return [...taskEvents, ...hubEvents, ...gcalItems]
+  }, [tasks, hubItems, gcalItems])
 
   // ── Navegação ─────────────────────────────────────────────────────────────
 

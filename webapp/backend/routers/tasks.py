@@ -631,6 +631,123 @@ def set_calendar_pref_route(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Google Calendar CRUD — fatia 019, US4 (T031)
+# ─────────────────────────────────────────────────────────────────────────────
+# Importação lazy dentro de cada endpoint: as funções de gcal.py dependem de
+# google-auth, que pode não estar instalado em todos os ambientes.
+# Todos os endpoints exigem Depends(require_user) — sem exceção.
+
+class GCalEventBody(BaseModel):
+    """Body compartilhado para criação/atualização de evento Google Calendar."""
+    summary: str
+    start: str                        # ISO 8601 (com hora) ou YYYY-MM-DD (all-day)
+    end: str
+    all_day: bool = False
+    description: Optional[str] = None
+    location: Optional[str] = None
+
+
+class GCalEventPatchBody(BaseModel):
+    """Body de atualização parcial de evento Google Calendar (todos os campos opcionais)."""
+    summary: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
+    all_day: Optional[bool] = None
+    description: Optional[str] = None
+    location: Optional[str] = None
+    color: Optional[str] = None       # cor customizada por evento (exibida no overlay)
+
+
+@router.get("/calendar/calendars")
+def list_gcal_calendars_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Lista todos os calendários Google disponíveis na conta.
+
+    Retorna ``is_main`` e ``is_kaguya`` para que a UI possa distinguir o principal
+    e o espelho de tarefas do bot.
+    """
+    from agents.kaguya import gcal
+    return gcal.list_calendars()
+
+
+@router.get("/calendar/events")
+def list_gcal_events_route(
+    start: str = Query(..., description="Data de início YYYY-MM-DD"),
+    end: str = Query(..., description="Data de fim YYYY-MM-DD (inclusive)"),
+    user: dict = Depends(require_user),
+) -> list[dict]:
+    """Lista eventos de todos os calendários Google no intervalo.
+
+    Exclui automaticamente "Kaguya — Tarefas" e "TickTick" para evitar
+    duplicatas com as tarefas já renderizadas pelo sistema (anti-duplicação D6).
+    """
+    from agents.kaguya import gcal
+    return gcal.list_events(start, end)
+
+
+@router.post("/calendar/events", status_code=201)
+def create_gcal_event_route(
+    body: GCalEventBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Cria um evento no calendário principal (GOOGLE_CALENDAR_MAIN_CALENDAR_ID).
+
+    Para criação no calendário "Kaguya — Tarefas" (espelho de tarefa), usar
+    ``create_task`` com data — o gcal_sync espelha automaticamente.
+    """
+    import os
+    from agents.kaguya import gcal
+    cal_id = os.environ.get("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", "primary")
+    result = gcal.create_event(
+        calendar_id=cal_id,
+        summary=body.summary,
+        start=body.start,
+        end=body.end,
+        all_day=body.all_day,
+        description=body.description or "",
+        location=body.location or "",
+    )
+    return result
+
+
+@router.patch("/calendar/events/{event_id}")
+def update_gcal_event_route(
+    event_id: str,
+    body: GCalEventPatchBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Atualiza campos de um evento Google Calendar existente.
+
+    Apenas os campos não-None do body são alterados; os demais preservam o valor atual.
+    O ``event_id`` aqui pode ser de qualquer calendário — usa o calendário principal
+    para simplificar (a maioria dos eventos da "Agenda pessoal" está lá).
+    """
+    import os
+    from agents.kaguya import gcal
+    cal_id = os.environ.get("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", "primary")
+    patch = body.model_dump(exclude_none=True)
+    # Exclui "color" do patch do gcal.update_event (campo não suportado na API v3 diretamente)
+    patch.pop("color", None)
+    return gcal.update_event(calendar_id=cal_id, event_id=event_id, **patch)
+
+
+@router.delete("/calendar/events/{event_id}")
+def delete_gcal_event_route(
+    event_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remove um evento Google Calendar (irreversível).
+
+    Usa o calendário principal configurado em GOOGLE_CALENDAR_MAIN_CALENDAR_ID.
+    Para remover do espelho de tarefas, usar ``delete_task`` — o gcal_sync
+    remove o evento automaticamente.
+    """
+    import os
+    from agents.kaguya import gcal
+    cal_id = os.environ.get("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", "primary")
+    return _check_result(gcal.delete_event(calendar_id=cal_id, event_id=event_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Hábitos — fatia 014 / Fase 4
 # ─────────────────────────────────────────────────────────────────────────────
 # Como nas tags, ``/habits`` é um caminho LITERAL: o conversor int de ``/{task_id}`` rejeita

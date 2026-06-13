@@ -191,13 +191,20 @@ export const kaguyaApi = {
   setCalendarPref: (calId: string, patch: Partial<CalendarPref>) =>
     api.patch<MutationResult>(`${BASE}/calendar/prefs/${encodeURIComponent(calId)}`, patch),
 
-  // Calendários reais do Google (excluindo espelho Kaguya e TickTick)
+  // Calendários reais do Google (excluindo espelho Kaguya e TickTick).
+  // Backend retorna lista direta (não envolvida em { calendars: [...] }).
   calendarCalendars: () =>
-    api.get<{ calendars: Calendar[] }>(`${BASE}/calendar/calendars`),
+    api.get<Calendar[]>(`${BASE}/calendar/calendars`),
 
-  // Eventos da Agenda pessoal do Google no intervalo
+  // Eventos da Agenda pessoal do Google no intervalo.
+  // Backend retorna lista direta de eventos (não envolvida em { events: [...] }).
+  // Cada item tem campos: id, summary, start, end, description, location, calendar_id, calendar_name.
   calendarEvents: (start: string, end: string) =>
-    api.get<{ events: CalEvent[] }>(`${BASE}/calendar/events?start=${start}&end=${end}`),
+    api.get<Array<{
+      id: string; summary: string; start: string; end: string
+      description: string; location: string; attendees: string[]
+      link: string; calendar_id: string; calendar_name: string
+    }>>(`${BASE}/calendar/events?start=${start}&end=${end}`),
 
   // CRUD de eventos da Agenda pessoal (só cal="gcal")
   createCalendarEvent: (body: Partial<CalEvent>) =>
