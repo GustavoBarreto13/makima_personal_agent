@@ -271,7 +271,6 @@ export function CalendarsAside({
               >
                 {cal.visible ? '👁' : '·'}
               </button>
-            </div>
 
               {/* Paleta de cores (aparece ao clicar no dot de cor) */}
               {colorPickerId === cal.id && (
