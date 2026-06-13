@@ -100,6 +100,24 @@ function resolveColor(ev: CalEvent, cals: Calendar[]): string {
   return cals.find((c) => c.id === ev.cal)?.color ?? 'var(--ink-3)'
 }
 
+// Adiciona transparência a uma cor, suportando OKLCH e hex.
+// OKLCH: oklch(L C H) → oklch(L C H / alpha)
+// Hex:   #rrggbb     → #rrggbbXX  (alpha como dois dígitos hex)
+// CSS var(--foo): retorna a cor sem alpha (variáveis não suportam essa operação)
+function withAlpha(color: string, alpha: number): string {
+  if (color.startsWith('oklch(')) {
+    // Insere "/ alpha" antes do ")" final
+    return color.replace(')', ` / ${alpha})`)
+  }
+  if (color.startsWith('#')) {
+    // Converte 0..1 para dois dígitos hexadecimais (00..FF)
+    const hex = Math.round(alpha * 255).toString(16).padStart(2, '0')
+    return color + hex
+  }
+  // Fallback para variáveis CSS ou outros formatos: sem alpha
+  return color
+}
+
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface TimeGridProps {
@@ -476,7 +494,7 @@ export function TimeGrid({
                   <div
                     key={ev.id}
                     className="cad-pill"
-                    style={{ backgroundColor: color + '33', color }}
+                    style={{ backgroundColor: withAlpha(color, 0.2), color }}
                     onClick={(e) => onEventClick(ev, { x: e.clientX, y: e.clientY })}
                     onContextMenu={(e) => { e.preventDefault(); onEventContextMenu?.(ev, { x: e.clientX, y: e.clientY }) }}
                     title={ev.title}
@@ -543,7 +561,7 @@ export function TimeGrid({
                   const heightPct = Math.max((duration / 1440) * 100, 2)
                   const leftPct = (lane / totalLanes) * 100
                   const widthCalc = `calc(${100 / totalLanes}% - 2px)`
-                  const bgColor = color + 'CC'
+                  const bgColor = withAlpha(color, 0.8)
                   const isEditable = EDITABLE.has(ev.cal)
 
                   return (
