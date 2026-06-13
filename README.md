@@ -15,7 +15,7 @@ Envie mensagens pelo Telegram. Makima identifica o domínio e roteia automaticam
 | "comprei no crédito em 12x, R$1200" | Nami 💰 | Cria parcelamento (12 transações) |
 | "qual minha dívida no Nubank?" | Nami 💰 | Calcula dívida atual do cartão |
 | "qual meu score de saúde financeira?" | Nami 💰 | Score 0-100 em 4 dimensões |
-| "adiciona tarefa: revisar relatório até sexta" | Kaguya 📋 | Cria tarefa no TickTick |
+| "adiciona tarefa: revisar relatório até sexta" | Kaguya 📋 | Cria tarefa no PostgreSQL próprio |
 | "o que tenho na agenda amanhã?" | Kaguya 📋 | Lista eventos do Google Calendar |
 | "paguei a Netflix, 55 reais" | Kaguya + Nami | Completa tarefa e lança despesa |
 | "o que é machine learning?" | Kurisu 🧠 | Busca no vault Obsidian via RAG |
@@ -41,6 +41,7 @@ Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na
 | Empréstimos | Saldo devedor, parcelas restantes, registrar pagamento |
 | Orçamentos | Envelopes por categoria com barra de progresso, definir novo limite |
 | Assinaturas | Lista de assinaturas recorrentes com custo mensal total |
+| Tarefas | Sub-app completa (Kaguya): listas/projetos, colunas Kanban, Meu Dia, tags, smart-lists (filtros salvos), calendário (mês/semana com ocorrências recorrentes) e hábitos (heatmap + força) |
 | Livros | Sub-app completa (Frieren): 9 telas — Início com hero e heatmap anual, Biblioteca com grade filtrável, detalhe de livro, Quero Ler, Wishlist com link de loja, Estantes (CRUD), Atividade agrupada por data, Resenhas e Estatísticas do ano |
 | Diário | Bullet journal com timestamp por bullet, heatmap anual, `@pessoas`, `#tags` e busca full-text — sidebar direita com Insights (filtro por ano), Pessoas, Tags e Busca — tela Write com **registro emocional TCC** (situação → emoção → pensamento automático → resposta adaptativa → reavaliação) e aba Emoções nos Insights |
 
@@ -57,11 +58,12 @@ coordinator/main.py  (python-telegram-bot)
     ↓
 coordinator/agent.py  (Makima — Agent ADK)
     ├── Nami       → PostgreSQL (finanças)                      ✅ ativo
-    ├── Kaguya     → TickTick via MCP + Google Calendar MCP     ✅ ativo
+    ├── Kaguya     → PostgreSQL próprio (tarefas) + Calendar MCP ✅ ativo
     ├── Kurisu     → Vertex AI RAG (vault Obsidian)             🔧 estrutura criada, pendente corpus
     ├── Frieren    → PostgreSQL + Google Books API (livros)     ✅ ativo
-    ├── Lucy       → Gmail IMAP                                 — fase 4
-    └── Media      → Notion (séries, filmes, anime)             — fase 5b
+    ├── Violet     → PostgreSQL (diário)                        🔧 ativo na web, agente Telegram pendente
+    ├── Lucy       → Gmail API v1                               ⏳ planejado
+    └── Akane      → PostgreSQL + TMDB/Letterboxd (filmes)      ⏳ planejado
 ```
 
 Makima não executa nenhuma ação diretamente — ela apenas roteia para o agente correto. Toda lógica de acesso a APIs fica nos agentes especialistas.
@@ -90,12 +92,23 @@ Inspirada na Nami de One Piece. Acessa o PostgreSQL para registrar e consultar t
 **Armazenamento:** PostgreSQL — tabelas `transactions`, `accounts`, `credit_cards`, `loans`, `budgets`, `subscriptions`, `installment_groups`.
 
 ### Kaguya — tarefas e agenda
-Inspirada na Kaguya Shinomiya de Kaguya-sama. Aristocrática e organizada. Gerencia tarefas no TickTick e eventos no Google Calendar via dois servidores MCP. Possui tools cross-agent para integrar com a Nami:
+Inspirada na Kaguya Shinomiya de Kaguya-sama. Aristocrática e organizada. Gerencia um **sistema de tarefas próprio em PostgreSQL** (o TickTick foi aposentado na spec 011) e os eventos do Google Calendar via servidor MCP.
+
+**Funcionalidades:**
+- Tarefas e subtarefas com posições, listas/projetos, grupos e colunas Kanban
+- Recorrência via RRULE (motor próprio em `recurrence.py`)
+- Tags N:N e smart-lists (filtros salvos via DSL)
+- Calendário (mês/semana) com projeção virtual das ocorrências de tarefas recorrentes
+- Hábitos com check-ins, heatmap anual e "força" (modelo caixa d'água / EMA)
+
+Possui tools cross-agent que integram com a Nami numa **única transação PostgreSQL** (tudo-ou-nada):
 
 | Tool | O que faz |
 |---|---|
-| `complete_payment_task` | Completa tarefa no TickTick **e** lança despesa no PostgreSQL |
-| `create_expense_reminder` | Cria lembrete de pagamento no TickTick (sem lançar despesa ainda) |
+| `complete_payment_task` | Completa a tarefa **e** lança a despesa da Nami na mesma transação |
+| `create_expense_reminder` | Cria lembrete de pagamento (sem lançar despesa ainda) |
+
+**Armazenamento:** PostgreSQL — schema próprio em `agents/kaguya/schema_tasks_pg.sql`.
 
 ### Kurisu — knowledge base
 Inspirada na Kurisu Makise de Steins;Gate. Neurocientista prodígio, direta e levemente sarcástica. Acessa o vault de notas do Obsidian via Vertex AI RAG para explicar conceitos, cruzar informações entre notas e responder sobre estudos e memória pessoal.
@@ -120,8 +133,8 @@ Gerencia o catálogo pessoal de livros e rastreia o progresso de leitura por pá
 
 **Armazenamento:** PostgreSQL — tabelas `books` e `reading_logs`.
 
-### Journal — diário pessoal
-Agente interno (sem personalidade própria). Gerencia o diário bullet journal com extração automática de menções (`@pessoa`, `#tag`) e busca full-text.
+### Violet — diário pessoal (Journal)
+Diário bullet journal com extração automática de menções (`@pessoa`, `#tag`) e busca full-text. **Já é totalmente usável via webapp** (`/api/journal/*`, shell `violet/`); como agente Telegram ainda está pendente (existem as tools, falta o `agent.py` e o wiring no coordinator).
 
 **Funcionalidades:**
 - Uma página por dia, criada automaticamente
@@ -158,8 +171,17 @@ makima_personal_agent/
 │   │   ├── agent.py             # nami_agent (singleton)
 │   │   └── schema_pg.sql        # schema PostgreSQL das tabelas financeiras
 │   ├── kaguya/
-│   │   ├── tools.py         # tools cross-agent (Kaguya+Nami)
-│   │   └── agent.py         # create_kaguya_agent() — factory com dois McpToolsets
+│   │   ├── tools_tasks.py       # CRUD de tarefas/subtarefas + posições
+│   │   ├── tools_projects.py    # listas, grupos, colunas (Kanban)
+│   │   ├── tools_tags.py        # tags N:N (fatia 013)
+│   │   ├── tools_filters.py     # smart-lists via DSL (fatia 013)
+│   │   ├── tools_calendar.py    # consultas por intervalo + ocorrências recorrentes (013)
+│   │   ├── tools_habits.py      # hábitos + check-ins (fatia 014)
+│   │   ├── recurrence.py        # motor puro de recorrência (RRULE, fatia 012)
+│   │   ├── habit_strength.py    # cálculo puro da "força" do hábito (EMA)
+│   │   ├── tools.py             # fachada + cross-agent atômico (Kaguya+Nami)
+│   │   ├── agent.py             # create_kaguya_agent() — factory com McpToolset do Calendar
+│   │   └── schema_tasks_pg.sql  # schema PostgreSQL do sistema de tarefas
 │   ├── kurisu/
 │   │   └── agent.py         # kurisu_agent (singleton, VertexAiRagRetrieval)
 │   ├── frieren/
@@ -167,13 +189,11 @@ makima_personal_agent/
 │   │   ├── agent.py         # frieren_agent (singleton)
 │   │   └── schema_pg.sql    # schema PostgreSQL (books, reading_logs)
 │   └── journal/
-│       ├── tools.py         # PostgreSQL (pages, bullets, mentions)
+│       ├── tools.py         # PostgreSQL (pages, bullets, mentions, emoções)
 │       └── schema_pg.sql    # schema PostgreSQL do diário
 ├── mcp_servers/
-│   ├── ticktick/
-│   │   └── server.py        # servidor MCP — tools genéricas do TickTick
 │   └── calendar/
-│       └── server.py        # servidor MCP — Google Calendar
+│       └── server.py        # servidor MCP — Google Calendar (TickTick aposentado)
 ├── webapp/
 │   ├── backend/
 │   │   ├── main.py          # FastAPI app — monta routers e serve o build do React
@@ -183,15 +203,18 @@ makima_personal_agent/
 │   │       ├── auth.py      # Google OAuth (callback, /auth/me, logout)
 │   │       ├── finances.py  # /api/finances/* — tools da Nami
 │   │       ├── books.py     # /api/books/*   — tools da Frieren
-│   │       └── journal.py   # /api/journal/* — tools do Journal
+│   │       ├── journal.py   # /api/journal/* — tools do Journal (Violet)
+│   │       └── tasks.py     # /api/tasks/*   — tools da Kaguya
 │   ├── frontend/
 │   │   └── src/
 │   │       ├── App.tsx          # roteamento + verificação de sessão
 │   │       ├── components/
 │   │       │   └── Layout.tsx   # sidebar de navegação
 │   │       ├── pages/           # Dashboard, Transactions, Accounts, Cards, Loans,
-│   │       │                    # Budgets, Subscriptions, Journal
-│   │       │                    # frieren/  — sub-app completa (FrierenShell + 9 screens)
+│   │       │                    # Budgets, Subscriptions
+│   │       │                    # kaguya/   — sub-app de tarefas (KaguyaShell)
+│   │       │                    # frieren/  — sub-app de livros (FrierenShell + 9 screens)
+│   │       │                    # violet/   — sub-app de diário (VioletShell)
 │   │       └── lib/api.ts       # wrapper de fetch com cookie de sessão automático
 │   └── Dockerfile               # multi-stage: Node 20 (build React) → Python 3.12 (uvicorn)
 ├── scripts/
@@ -200,10 +223,13 @@ makima_personal_agent/
 │   ├── migrate_bq_to_pg.py      # migração one-time: BigQuery → PostgreSQL
 │   ├── migrate_nami_webapp.py   # adiciona colunas visuais + tabelas personal_loans/financings
 │   └── backup_postgres.py       # pg_dump → Google Cloud Storage (roda diariamente via Docker)
-├── specs/
-│   ├── 001-webapp-redesign/
-│   ├── 002-nami-financas/       # spec + plano + tasks da sub-app Nami (design handoff)
-│   └── 003-violet-diario/
+├── specs/                       # specs por fatia (Spec Kit): 001..019
+│   ├── 002-nami-financas/       # sub-app Nami (design handoff)
+│   ├── 003-violet-diario/       # sub-app de diário (Violet)
+│   ├── 011-tasks-mvp/ … 014-tasks-habitos/   # motor de tarefas próprio (Kaguya)
+│   ├── 016-tasks-meudia/ … 019-tasks-calendar-hub/  # fatias planejadas de tarefas
+│   ├── 014-pessoas/             # identidade canônica de pessoas (Komi) — planejado
+│   └── 015-akane-filmes/        # agente de filmes (Akane) — planejado
 ├── requirements.txt
 ├── PLAN.md                  # design completo, fases, schemas, custos
 └── CLAUDE.md                # instruções do projeto para o Claude Code
@@ -235,7 +261,6 @@ makima_personal_agent/
 - App OAuth 2.0 (tipo Desktop) no Google Cloud Console para o Calendar
 - App OAuth 2.0 (tipo Web Application) no Google Cloud Console para a webapp
 - Bot Telegram criado via [@BotFather](https://t.me/BotFather)
-- App TickTick com credenciais OAuth
 
 ---
 
@@ -273,13 +298,6 @@ DATABASE_URL=postgresql://user:pass@host:5432/db
 GCP_CREDENTIALS_JSON=     # conteúdo JSON do service account como string (não path)
 GCP_PROJECT_ID=
 GCS_BACKUP_BUCKET=        # nome do bucket GCS para backups (ex: makima-backups)
-
-# TickTick OAuth
-TICKTICK_ACCESS_TOKEN=
-TICKTICK_CLIENT_ID=
-TICKTICK_CLIENT_SECRET=
-TICKTICK_REFRESH_TOKEN=
-TICKTICK_EXPIRES_AT=               # ISO 8601
 
 # Google Calendar OAuth
 GOOGLE_CALENDAR_CLIENT_ID=
@@ -379,13 +397,17 @@ npm install && npm run dev   # dev server em localhost:5173
 | Fase | Descrição | Status |
 |---|---|---|
 | 1 | Nami (finanças): tools PostgreSQL + agente | ✅ |
-| 2 | Kaguya (tarefas + agenda): MCP TickTick + MCP Calendar + tools cross-agent | ✅ |
+| 2 | Kaguya (tarefas + agenda): motor próprio PostgreSQL + MCP Calendar + tools cross-agent | ✅ |
+| 2.x | Kaguya — fatias 012 (recorrência), 013 (tags/smart-lists/calendário), 014 (hábitos) | ✅ |
 | 3 | Kurisu (knowledge base): Vertex AI RAG sobre vault Obsidian — estrutura criada, pendente corpus GCP | 🔧 |
-| 4 | Lucy (email): tools Gmail IMAP + agente | — |
 | 5a | Frieren (livros): PostgreSQL + Google Books API + menu interativo Telegram | ✅ |
-| 5b | Media (séries, filmes, anime): Notion + morning briefing completo | — |
+| — | Webapp (FastAPI + React) + diário Violet na web | ✅ |
+| 016–019 | Kaguya — Meu Dia/time-blocking, Eisenhower, Command Palette ⌘K, Calendar Hub | ⏳ |
+| 014 | Komi — Pessoas (identidade canônica cross-agent) | ⏳ |
+| 015 | Akane — Filmes (Letterboxd-style, PostgreSQL + TMDB/Letterboxd) | ⏳ |
+| 4 | Lucy (email): tools Gmail API v1 + agente | ⏳ |
 
-**Fase atual: 3 🔧** — Kurisu com estrutura criada. Próximo passo: setup do Data Store no Vertex AI Agent Builder (ver `agents/kurisu/CLAUDE.md`).
+**Pendência atual:** Kurisu 🔧 — falta criar o Data Store no Vertex AI Agent Builder e setar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/CLAUDE.md`). Em paralelo: ligar o diário Violet como agente Telegram e implementar as fatias de tarefas 016–019.
 
 ---
 
@@ -400,7 +422,7 @@ asyncpg                  # driver async PostgreSQL (ADK DatabaseSessionService)
 sqlalchemy               # ORM usado internamente pelo ADK
 psycopg2-binary          # driver síncrono PostgreSQL (tools dos agentes)
 google-cloud-storage     # backup automático para GCS
-mcp                      # Model Context Protocol (servidores MCP TickTick e Calendar)
+mcp                      # Model Context Protocol (servidor MCP do Google Calendar)
 google-auth              # OAuth do Google Calendar
 google-auth-oauthlib     # fluxo OAuth desktop
 google-api-python-client # Google Calendar API v3
