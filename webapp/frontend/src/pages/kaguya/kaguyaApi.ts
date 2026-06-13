@@ -3,7 +3,7 @@
 // tratamento de erro já resolvidos por lib/api.ts).
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -170,6 +170,54 @@ export const kaguyaApi = {
   // Histórico anual (esparso) para o heatmap.
   habitHistory: (id: number, year: number) =>
     api.get<HabitHeatDay[]>(`${BASE}/habits/${id}/history?year=${year}`),
+
+  // ── Calendar Hub — fatia 019 ──────────────────────────────────────────────
+  // Fontes registradas no hub (Kaguya, Nami, Frieren, Violet, Akane, gcal)
+  calendarSources: () =>
+    api.get<{ sources: Calendar[] }>(`${BASE}/calendar/sources`),
+
+  // Agregação fan-out: itens de todas as fontes visíveis num intervalo
+  calendarAggregate: (start: string, end: string, sources?: string[]) => {
+    const params = new URLSearchParams({ start, end })
+    if (sources?.length) params.set('sources', sources.join(','))
+    return api.get<AggregateResponse>(`${BASE}/calendar/aggregate?${params}`)
+  },
+
+  // Preferências de visibilidade + cor por calendário
+  calendarPrefs: () =>
+    api.get<{ prefs: CalendarPref[] }>(`${BASE}/calendar/prefs`),
+  setCalendarPref: (calId: string, patch: Partial<CalendarPref>) =>
+    api.patch<MutationResult>(`${BASE}/calendar/prefs/${encodeURIComponent(calId)}`, patch),
+
+  // Calendários reais do Google (excluindo espelho Kaguya e TickTick)
+  calendarCalendars: () =>
+    api.get<{ calendars: Calendar[] }>(`${BASE}/calendar/calendars`),
+
+  // Eventos da Agenda pessoal do Google no intervalo
+  calendarEvents: (start: string, end: string) =>
+    api.get<{ events: CalEvent[] }>(`${BASE}/calendar/events?start=${start}&end=${end}`),
+
+  // CRUD de eventos da Agenda pessoal (só cal="gcal")
+  createCalendarEvent: (body: Partial<CalEvent>) =>
+    api.post<MutationResult>(`${BASE}/calendar/events`, body),
+  updateCalendarEvent: (id: string, body: Partial<CalEvent>) =>
+    api.patch<MutationResult>(`${BASE}/calendar/events/${id}`, body),
+  deleteCalendarEvent: (id: string) =>
+    api.del<MutationResult>(`${BASE}/calendar/events/${id}`),
 }
 
 export type { MutationResult }
+
+// Paleta de 10 cores OKLCH para recolorir calendários (usada em CalendarsAside e ContextMenu)
+export const CAL_SWATCHES = [
+  'oklch(0.70 0.17 52)',    // laranja dourado
+  'oklch(0.70 0.18 15)',    // vermelho-rosado
+  'oklch(0.68 0.18 330)',   // magenta
+  'oklch(0.62 0.18 290)',   // roxo
+  'oklch(0.65 0.20 250)',   // azul médio
+  'oklch(0.65 0.18 210)',   // azul-celeste
+  'oklch(0.72 0.10 184)',   // verde-azulado
+  'oklch(0.70 0.14 158)',   // verde
+  'oklch(0.72 0.12 90)',    // amarelo-lima
+  'oklch(0.58 0.04 0)',     // cinza
+] as const

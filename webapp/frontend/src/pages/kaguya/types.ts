@@ -53,6 +53,8 @@ export interface Task {
   subtasks?: Task[]
   // Calendário (fatia 013 / P3): ocorrência projetada (virtual) de uma recorrente.
   // `is_virtual` = true → não tem linha própria; `series_task_id` aponta a tarefa viva da série.
+  // Calendar Hub — fatia 019: id do evento espelho no Google Calendar "Kaguya — Tarefas"
+  google_event_id?: string | null
   is_virtual?: boolean
   series_task_id?: number | null
 }
@@ -222,3 +224,71 @@ export interface Tweaks {
 // View ativa do shell. 'list' usa o param como id da lista; 'filter' usa o param como
 // id da smart-list (ou BUILTIN_TODAY_OVERDUE para a built-in).
 export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'trash' | 'filter'
+
+// ── Calendar Hub — fatia 019 ───────────────────────────────────────────────────
+// CalAccount: conta Google ou Makima que agrupa calendários
+export interface CalAccount {
+  id: string
+  name: string
+  sub: string   // email ou "makima" para as bases internas
+}
+
+// Calendar: um calendário dentro de uma conta (fonte do hub ou agenda Google)
+export interface Calendar {
+  id: string
+  account: string         // id da CalAccount dona
+  kind: 'base' | 'integration'
+  name: string
+  color: string           // cor padrão (OKLCH)
+  avatar?: string         // URL do ícone (opcional)
+  visible: boolean        // vem das prefs; padrão true
+  primary?: boolean       // calendário "padrão" da conta (ex.: Kaguya Tarefas)
+  position?: number       // ordem na sidebar (das prefs)
+}
+
+// CalEvent: item normalizado para o grid (tarefas, eventos gcal, itens cross-agent)
+export interface CalEvent {
+  id: string
+  cal: string             // source id: "kaguya" | "gcal" | "nami" | "frieren" | "violet" | "akane"
+  day: string             // YYYY-MM-DD
+  start: string | null    // ISO datetime; null = all-day
+  end: string | null
+  allDay: boolean
+  color: string | null    // cor de exibição (pref sobrepõe cor padrão)
+  kind: 'event' | 'task'
+  title: string
+  loc?: string
+  taskId?: number         // para eventos Kaguya (permite editar via tasks API)
+  deepLink?: string       // para cross-agent read-only (ex.: "/nami/transactions")
+  description?: string
+}
+
+// CalendarItem: forma de wire do backend (snake_case, hub aggregate response)
+export interface CalendarItem {
+  cal: string
+  date: string            // YYYY-MM-DD
+  start?: string | null
+  end?: string | null
+  all_day: boolean
+  title: string
+  kind: string
+  ref_id?: string | null
+  deep_link?: string | null
+  color?: string | null
+  loc?: string | null
+}
+
+// CalendarPref: preferência de exibição de um calendário (persistida no banco)
+export interface CalendarPref {
+  calendar_id: string
+  visible: boolean
+  color: string | null
+  position: number
+}
+
+// Resposta do endpoint GET /api/tasks/calendar/aggregate
+export interface AggregateResponse {
+  sources: Calendar[]
+  items: CalendarItem[]
+  errors: string[]        // source_ids que falharam (best-effort)
+}
