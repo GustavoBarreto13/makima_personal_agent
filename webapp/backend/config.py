@@ -63,3 +63,29 @@ SESSION_MAX_AGE: int = 60 * 60 * 24 * 7  # 604800 segundos
 # Usada pelas tools do journal (psycopg2) e pelo ADK DatabaseSessionService (asyncpg).
 # Em produção, injetada pelo orquestrador (Dokploy/Docker).
 DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+
+# --- Google Calendar (fatia 019 — Calendar Hub) ---
+# Credenciais OAuth do Google Calendar, compartilhadas com o MCP do agente Kaguya.
+# O container makima-web precisa dessas vars porque gcal.py (cliente não-MCP) roda
+# dentro do webapp para o espelho de tarefas e o CRUD da Agenda pessoal (FR-017).
+# Em produção, injetar via Dokploy (as mesmas vars já configuradas no coordinator).
+
+# Token de acesso OAuth (curta duração; renovado automaticamente via refresh_token).
+GOOGLE_CALENDAR_ACCESS_TOKEN: str = os.getenv("GOOGLE_CALENDAR_ACCESS_TOKEN", "")
+
+# Token de renovação OAuth (longa duração; único que precisa ser persistido durável).
+GOOGLE_CALENDAR_REFRESH_TOKEN: str = os.getenv("GOOGLE_CALENDAR_REFRESH_TOKEN", "")
+
+# Client ID e Secret do app OAuth no Google Cloud Console.
+GOOGLE_CALENDAR_CLIENT_ID: str = os.getenv("GOOGLE_CALENDAR_CLIENT_ID", "")
+GOOGLE_CALENDAR_CLIENT_SECRET: str = os.getenv("GOOGLE_CALENDAR_CLIENT_SECRET", "")
+
+# Data/hora de expiração do access_token (string ISO 8601).
+GOOGLE_CALENDAR_TOKEN_EXPIRY: str = os.getenv("GOOGLE_CALENDAR_TOKEN_EXPIRY", "")
+
+# ID do calendário principal do Google (escrita de eventos só aqui).
+GOOGLE_CALENDAR_MAIN_CALENDAR_ID: str = os.getenv("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", "")
+
+# Liga/desliga o espelho automático de tarefas → Google Calendar.
+# Se "false" (qualquer caixa), o CRUD de tarefas funciona normalmente sem chamar o Google.
+GCAL_SYNC_ENABLED: bool = os.getenv("GCAL_SYNC_ENABLED", "true").lower() != "false"
