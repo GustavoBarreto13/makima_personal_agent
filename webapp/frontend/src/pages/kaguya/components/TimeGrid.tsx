@@ -201,7 +201,7 @@ export function TimeGrid({
     ev: CalEvent,
     mode: 'move' | 'resize',
     startMin: number,
-    endMin: number,
+    _endMin: number,
     day: string,
   ) => {
     // Só editáveis podem ser movidos/redimensionados
@@ -258,10 +258,6 @@ export function TimeGrid({
     const endMin = d.mode === 'move'
       ? snapMin + duration
       : Math.max(d.originMin + 15, snapTo15(rawMin))  // mínimo 15min
-
-    // Calcula posição e tamanho do fantasma em % dentro da coluna
-    const topPct = (Math.min(snapMin, d.originMin) / 1440) * 100
-    const heightPct = ((Math.abs(endMin - (d.mode === 'move' ? snapMin : d.originMin))) / 1440) * 100
 
     // Identifica a coluna visual para posicionar o fantasma
     const colIdx = days.indexOf(colInfo.day)

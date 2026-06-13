@@ -219,6 +219,8 @@ export interface Tweaks {
   density: 'confortavel' | 'compacta'
   pmark: 'bar' | 'dot' | 'fill'   // estilo da marca de prioridade
   anim: 'on' | 'off'
+  // Calendário (fatia 019): variante visual. Muda espaçamento, tipografia e posição do aside.
+  calVariant: 'agora' | 'helvetico' | 'editorial'
 }
 
 // View ativa do shell. 'list' usa o param como id da lista; 'filter' usa o param como

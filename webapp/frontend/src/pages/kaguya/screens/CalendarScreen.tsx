@@ -68,7 +68,7 @@ function hubToCalEvent(item: CalendarItem): CalEvent {
 
 // ── Componente ───────────────────────────────────────────────────────────────
 
-export function CalendarScreen({ reloadKey, onOpenTask, toast }: CalendarProProps) {
+export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast }: CalendarProProps) {
   const [view, setView] = useState<'day' | 'week' | 'month'>('week')
   const [refDate, setRefDate] = useState<Date>(() => new Date())
   const [tasks, setTasks] = useState<Task[]>([])

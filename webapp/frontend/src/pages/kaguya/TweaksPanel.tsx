@@ -67,6 +67,16 @@ export function TweaksPanel({ tweaks, onChange, onClose }: TweaksPanelProps) {
           <Seg value={tweaks.anim} onPick={(v) => onChange({ anim: v })}
             options={[{ v: 'on', label: 'Ligadas' }, { v: 'off', label: 'Desligadas' }]} />
         </div>
+
+        <div className="kg-tweak-row">
+          <span className="kg-field-label">Variante do calendário</span>
+          <Seg value={tweaks.calVariant} onPick={(v) => onChange({ calVariant: v })}
+            options={[
+              { v: 'agora', label: 'Agora' },
+              { v: 'helvetico', label: 'Helvético' },
+              { v: 'editorial', label: 'Editorial' },
+            ]} />
+        </div>
       </aside>
     </>
   )

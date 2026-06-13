@@ -30,8 +30,8 @@ import { CommandPalette } from './components/CommandPalette'
 import { Icon } from './ui/Icons'
 import { taskFromParse } from '../../lib/parseTask'
 
-// Tweaks padrão (acento azul, claro, confortável, traço, animações ligadas).
-const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'blue', density: 'confortavel', pmark: 'bar', anim: 'on' }
+// Tweaks padrão (acento azul, claro, confortável, traço, animações ligadas, variante agora).
+const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'blue', density: 'confortavel', pmark: 'bar', anim: 'on', calVariant: 'agora' }
 
 // PALETTE_MAP — sobrescreve os tokens --kg* por acento (guia §2.4). null = default azul (CSS).
 const PALETTE_MAP: Record<Tweaks['accent'], Record<string, string> | null> = {
@@ -201,6 +201,7 @@ export function KaguyaShell() {
       data-density={tweaks.density}
       data-pmark={tweaks.pmark}
       data-anim={animOff ? 'off' : 'on'}
+      data-variant={tweaks.calVariant}
       style={rootStyle}
     >
       <div className="kg-shell">
