@@ -687,7 +687,14 @@ def create_task(
             if tags is not None:
                 _set_task_tags(cur, new_id, tags)
 
-    return {"status": "ok", "id": new_id, "project_id": resolved_project, "message": f"Tarefa '{title.strip()}' criada."}
+    result = {"status": "ok", "id": new_id, "project_id": resolved_project, "message": f"Tarefa '{title.strip()}' criada."}
+    # Espelha no Google Calendar fora da transação (best-effort; nunca bloqueia o CRUD)
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        _gs.push_task(new_id)
+    except Exception:
+        pass
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -820,6 +827,11 @@ def update_task(
             if rec_result is not None and rec_result["status"] == "error":
                 conn.rollback()
                 return rec_result
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        _gs.push_task(task_id)
+    except Exception:
+        pass
     return {"status": "ok", "message": "Tarefa atualizada."}
 
 
@@ -922,6 +934,11 @@ def complete_task(task_id: int, cascade: bool = False, end_series: bool = False)
                 conn.rollback()  # ainda não concluiu nada — só sinaliza a confirmação
     if result["status"] == "ok":
         result["message"] = "Tarefa concluída."
+        try:
+            from agents.kaguya import gcal_sync as _gs
+            _gs.push_task(task_id)
+        except Exception:
+            pass
     return result
 
 
@@ -957,6 +974,11 @@ def reopen_task(task_id: int) -> dict:
             cur.execute(
                 "UPDATE tasks SET completed_at = NULL, updated_at = now() WHERE id = %s", (task_id,)
             )
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        _gs.push_task(task_id)
+    except Exception:
+        pass
     return {"status": "ok", "message": "Tarefa reaberta."}
 
 
@@ -1098,6 +1120,11 @@ def delete_task(task_id: int, scope: str = "this") -> dict:
                 "WHERE (id = %s OR parent_id = %s) AND deleted_at IS NULL",
                 (task_id, task_id),
             )
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        _gs.remove_task_event(task_id)
+    except Exception:
+        pass
     result = {"status": "ok", "message": "Tarefa enviada para a lixeira."}
     if generated:
         result["generated_task_id"] = generated["generated_task_id"]
@@ -1123,6 +1150,11 @@ def restore_task(task_id: int) -> dict:
                 "WHERE id = %s OR parent_id = %s",
                 (task_id, task_id),
             )
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        _gs.push_task(task_id)
+    except Exception:
+        pass
     return {"status": "ok", "message": "Tarefa restaurada."}
 
 
@@ -1309,6 +1341,11 @@ def set_time_block(
                     "UPDATE tasks SET start_at = %s, end_at = %s, updated_at = now() WHERE id = %s",
                     (start_at, end_at, task_id),
                 )
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        _gs.push_task(task_id)
+    except Exception:
+        pass
     return {"status": "ok", "message": "Bloco de tempo gravado.", "start_at": start_at, "end_at": end_at}
 
 
@@ -1334,6 +1371,11 @@ def clear_time_block(task_id: int) -> dict:
                 "UPDATE tasks SET start_at = NULL, end_at = NULL, updated_at = now() WHERE id = %s",
                 (task_id,),
             )
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        _gs.push_task(task_id)
+    except Exception:
+        pass
     return {"status": "ok", "message": "Bloco de tempo removido."}
 
 
