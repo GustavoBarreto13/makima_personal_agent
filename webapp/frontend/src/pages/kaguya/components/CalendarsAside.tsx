@@ -219,65 +219,59 @@ export function CalendarsAside({
       {Object.entries(sourcesByAccount).map(([account, cals]) => (
         <section key={account} className="cal-tray">
           {/* Rótulo da conta (ex.: "Makima" ou email do Google) */}
-          <div className="cal-hint" style={{ marginBottom: 4 }}>
+          {/* cal-tray-title = label uppercase monoespaçado do CSS; cal-hint é tooltip fixo — não usar aqui */}
+          <div className="cal-tray-title">
             {account === 'makima' ? 'Makima' : account}
           </div>
 
           {/* Um item por calendário da conta */}
           {cals.map((cal) => (
             <div key={cal.id} className="cal-item">
-              <div className="ci-box">
-                {/* Botão de cor: clica para abrir a paleta de swatches */}
-                <button
-                  className="cal-dot"
-                  style={{
-                    width: 12,
-                    height: 12,
-                    borderRadius: '50%',
-                    background: cal.color || 'var(--ink-4)',
-                    border: 'none',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                    padding: 0,
-                  }}
-                  onClick={() => setColorPickerId(colorPickerId === cal.id ? null : cal.id)}
-                  aria-label={`Cor de ${cal.name}`}
-                  title="Mudar cor"
-                />
+              {/*
+                ci-box é o indicador colorido de 14×14px definido no CSS.
+                Deve ser um elemento ISOLADO dentro de .cal-item, não um
+                container para nome e toggle — senão esses ficam invisíveis
+                espremidos na caixa minúscula.
+              */}
+              <button
+                className="ci-box"
+                style={{
+                  // A cor da borda/preenchimento do ci-box vem do `color` via currentColor
+                  color: cal.color || 'var(--ink-4)',
+                  background: cal.visible ? 'currentColor' : 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+                onClick={() => setColorPickerId(colorPickerId === cal.id ? null : cal.id)}
+                aria-label={`Cor de ${cal.name}`}
+                title="Mudar cor"
+              />
 
-                {/* Nome do calendário */}
-                <span
-                  style={{
-                    flex: 1,
-                    fontSize: 13,
-                    color: cal.visible ? 'var(--ink-1)' : 'var(--ink-4)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {cal.name}
-                </span>
+              {/* Nome do calendário — irmão do ci-box, não filho */}
+              <span className="cal-item-name">
+                {cal.name}
+              </span>
 
-                {/* Botão de toggle de visibilidade */}
-                <button
-                  onClick={() => toggleVisible(cal)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '2px 4px',
-                    color: cal.visible ? 'var(--ink-3)' : 'var(--ink-5)',
-                    lineHeight: 1,
-                    flexShrink: 0,
-                  }}
-                  aria-label={cal.visible ? `Ocultar ${cal.name}` : `Mostrar ${cal.name}`}
-                  title={cal.visible ? 'Ocultar' : 'Mostrar'}
-                >
-                  {/* Ícone de olho aberto/fechado simplificado em texto */}
-                  {cal.visible ? '👁' : '🚫'}
-                </button>
-              </div>
+              {/* Botão de toggle de visibilidade */}
+              <button
+                onClick={() => toggleVisible(cal)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '2px 4px',
+                  color: cal.visible ? 'var(--ink-3)' : 'var(--ink-5)',
+                  lineHeight: 1,
+                  flexShrink: 0,
+                  fontSize: 13,
+                }}
+                aria-label={cal.visible ? `Ocultar ${cal.name}` : `Mostrar ${cal.name}`}
+                title={cal.visible ? 'Ocultar' : 'Mostrar'}
+              >
+                {cal.visible ? '👁' : '·'}
+              </button>
+            </div>
 
               {/* Paleta de cores (aparece ao clicar no dot de cor) */}
               {colorPickerId === cal.id && (
