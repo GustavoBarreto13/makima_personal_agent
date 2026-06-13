@@ -206,6 +206,12 @@ export const kaguyaApi = {
       link: string; calendar_id: string; calendar_name: string
     }>>(`${BASE}/calendar/events?start=${start}&end=${end}`),
 
+  // Verifica se o Google Calendar está autenticado e acessível.
+  // Retorna { connected: true } ou { connected: false, reason: string }.
+  // Usado por CalendarsAside para exibir aviso visível em vez de fonte silenciosa.
+  gcalStatus: () =>
+    api.get<{ connected: boolean; reason: string | null }>(`${BASE}/calendar/gcal-status`),
+
   // CRUD de eventos da Agenda pessoal (só cal="gcal")
   createCalendarEvent: (body: Partial<CalEvent>) =>
     api.post<MutationResult>(`${BASE}/calendar/events`, body),

@@ -70,6 +70,11 @@ export function CalendarsAside({
   // Lista de fontes de calendário carregadas do hub.
   const [sources, setSources] = useState<Calendar[]>([])
 
+  // Estado de conexão do Google Calendar: null enquanto carrega,
+  // depois { connected: boolean, reason: string | null }.
+  // Só relevante quando existe a fonte "gcal" na lista.
+  const [gcalStatus, setGcalStatus] = useState<{ connected: boolean; reason: string | null } | null>(null)
+
   // ID do calendário cujo seletor de cor está aberto (null = nenhum).
   const [colorPickerId, setColorPickerId] = useState<string | null>(null)
 
@@ -82,7 +87,16 @@ export function CalendarsAside({
   // ── Carrega fontes na montagem ──────────────────────────────────────────────
   useEffect(() => {
     kaguyaApi.calendarSources()
-      .then(setSources)
+      .then((srcs) => {
+        setSources(srcs)
+        // Se a fonte "gcal" existe, verifica se o token OAuth ainda está válido.
+        // Isso permite mostrar um aviso visível em vez de a agenda sumir silenciosamente.
+        if (srcs.some((s) => s.id === 'gcal')) {
+          kaguyaApi.gcalStatus()
+            .then(setGcalStatus)
+            .catch(() => setGcalStatus({ connected: false, reason: 'Erro ao verificar autenticação' }))
+        }
+      })
       .catch(() => setSources([]))
   }, [])
 
@@ -251,6 +265,26 @@ export function CalendarsAside({
               {/* Nome do calendário — irmão do ci-box, não filho */}
               <span className="cal-item-name">
                 {cal.name}
+                {/*
+                  Aviso de autenticação: aparece apenas na fonte "gcal" E quando o
+                  status já foi carregado E a conexão falhou.
+                  O tooltip (title) mostra o motivo técnico completo ao passar o mouse.
+                */}
+                {cal.id === 'gcal' && gcalStatus !== null && !gcalStatus.connected && (
+                  <span
+                    title={gcalStatus.reason ?? 'Google desconectado'}
+                    style={{
+                      marginLeft: 4,
+                      fontSize: 11,
+                      color: 'oklch(0.65 0.20 30)',  // laranja-aviso
+                      cursor: 'help',
+                      userSelect: 'none',
+                    }}
+                    aria-label="Google Calendar desconectado — reautorize"
+                  >
+                    ⚠️
+                  </span>
+                )}
               </span>
 
               {/* Botão de toggle de visibilidade */}

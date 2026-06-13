@@ -723,6 +723,42 @@ def list_gcal_events_route(
         return []
 
 
+@router.get("/calendar/gcal-status")
+def gcal_status_route(user: dict = Depends(require_user)) -> dict:
+    """Verifica se o Google Calendar está autenticado e acessível.
+
+    Retorna ``{"connected": True}`` quando o token OAuth é válido, ou
+    ``{"connected": False, "reason": "<mensagem>"}`` quando não é — por exemplo,
+    quando o refresh token foi revogado (``invalid_grant``) ou as variáveis
+    GOOGLE_CALENDAR_* não estão configuradas.
+
+    Usado pelo frontend para mostrar um aviso visível na fonte "Agenda pessoal"
+    em vez de sumir silenciosamente quando a autenticação falha.
+    """
+    import os
+    import logging
+
+    # Se nem o refresh token está configurado, não há o que checar.
+    if not os.environ.get("GOOGLE_CALENDAR_REFRESH_TOKEN"):
+        return {"connected": False, "reason": "GOOGLE_CALENDAR_REFRESH_TOKEN não configurado"}
+
+    from agents.kaguya import gcal
+    try:
+        # Tenta construir o serviço OAuth — isso renuncia o access token se necessário.
+        # Se o refresh token estiver revogado, lança RefreshError aqui.
+        gcal._get_service()
+        return {"connected": True, "reason": None}
+    except Exception as exc:
+        # Loga com nível WARNING (não ERROR, pois o frontend vai mostrar o aviso para o usuário)
+        logging.getLogger(__name__).warning("gcal_status: autenticação falhou — %s", exc)
+        # Extrai a mensagem curta para exibir na UI (sem stacktrace completo)
+        reason = str(exc)
+        # O invalid_grant é a causa mais comum; torna a mensagem amigável
+        if "invalid_grant" in reason:
+            reason = "Token revogado ou expirado — rode scripts/authorize_calendar.py para gerar um novo"
+        return {"connected": False, "reason": reason}
+
+
 @router.post("/calendar/events", status_code=201)
 def create_gcal_event_route(
     body: GCalEventBody,
