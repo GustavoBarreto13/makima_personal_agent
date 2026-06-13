@@ -1,0 +1,920 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Akane · Filmes — Design System (portado do design_handoff_akane_filmes)
+   Todos os tokens são escopados em .akane-shell para não vazar para outros Shells.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Fontes do Google — as mesmas das outras Shells + DM Serif Display (títulos) */
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   .akane-shell — escopo raiz (tema escuro é o padrão — "sala de projeção")
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.akane-shell {
+  /* ── Superfícies (tema escuro) ─────────────────────────────────────────── */
+  --paper:   oklch(0.155 0.010 330);   /* fundo principal do app */
+  --paper-2: oklch(0.185 0.013 332);   /* sidebar + superfícies alternativas */
+  --card:    oklch(0.208 0.014 332);   /* cards, modais, dropdowns */
+  --card-2:  oklch(0.182 0.012 332);   /* cards secundários, fundo hero */
+  --mist:    oklch(0.255 0.030 345);   /* fundo do hero backdrop */
+
+  /* ── Tinta (texto) — escuro ─────────────────────────────────────────────── */
+  --ink:   oklch(0.955 0.008 330);   /* texto primário (quase branco rosado) */
+  --ink-2: oklch(0.78 0.018 332);    /* texto secundário */
+  --ink-3: oklch(0.62 0.016 334);    /* texto terciário / muted */
+  --ink-4: oklch(0.475 0.014 336);   /* texto muito discreto */
+
+  /* ── Linhas e bordas ─────────────────────────────────────────────────────── */
+  --line:   oklch(0.305 0.022 334);  /* borda padrão */
+  --line-2: oklch(0.245 0.016 334);  /* divisórias mais sutis */
+
+  /* ── Acento base (Rosa de palco — hue 357) ──────────────────────────────── */
+  /* Por padrão o app abre com data-accent='teal' (override abaixo)           */
+  --rose:        oklch(0.655 0.205 357);   /* acento principal */
+  --rose-deep:   oklch(0.76 0.195 357);    /* texto acento sobre escuro (+ claro) */
+  --rose-bright: oklch(0.76 0.22 354);     /* hover / destaque */
+  --rose-tint:   oklch(0.655 0.205 357 / 0.10);   /* fundo tint (badges, seleção) */
+  --rose-tint-2: oklch(0.655 0.205 357 / 0.18);   /* hover tint */
+
+  /* ── Estrelas e coração (INDEPENDENTES do acento) ───────────────────────── */
+  /* As estrelas usam verde/ouro Letterboxd FIXO, não acompanham o acento     */
+  --gold:  oklch(0.815 0.135 86);    /* estrelas + histograma de notas */
+  --heart: oklch(0.68 0.20 12);      /* coração (curtir/liked) */
+
+  /* ── Heatmap (acompanha o acento) ─────────────────────────────────────────── */
+  --heat-0: var(--line-2);
+  --heat-1: oklch(0.655 0.205 357 / 0.25);
+  --heat-2: oklch(0.655 0.205 357 / 0.50);
+  --heat-3: oklch(0.655 0.205 357 / 0.75);
+  --heat-4: oklch(0.655 0.205 357);
+
+  /* ── Tipografia ─────────────────────────────────────────────────────────── */
+  --display: 'DM Serif Display', Georgia, serif;   /* títulos grandes, pôsteres */
+  --serif: 'Newsreader', Georgia, serif;            /* reviews, notas, citações */
+  --sans:  'DM Sans', system-ui, sans-serif;        /* UI, botões, corpo */
+  --mono:  'DM Mono', ui-monospace, monospace;      /* datas, rótulos, contagens */
+
+  /* ── Raios e dimensões ──────────────────────────────────────────────────── */
+  --r-sm: 7px;
+  --r-md: 11px;
+  --r-lg: 18px;
+  --cover-w: 168px;         /* largura padrão do pôster no grid */
+  --poster-ratio: 2/3;      /* proporção pôster cinematográfico */
+
+  /* ── Sombras (mais densas no escuro) ─────────────────────────────────────── */
+  --shadow-sm:     0 1px 2px oklch(0.1 0.01 330 / 0.35), 0 1px 1px oklch(0.1 0.01 330 / 0.25);
+  --shadow-md:     0 2px 8px oklch(0.1 0.01 330 / 0.45), 0 8px 28px oklch(0.1 0.01 330 / 0.4);
+  --shadow-lg:     0 12px 40px oklch(0.1 0.01 330 / 0.55);
+  --shadow-poster: 0 4px 18px oklch(0.1 0.01 330 / 0.6), 0 1px 2px oklch(0.1 0.01 330 / 0.5);
+
+  /* ── Chrome translúcido ────────────────────────────────────────────────── */
+  --topbar-bg: oklch(0.155 0.010 330 / 0.85);   /* topbar com blur */
+  --nextbar-bg: oklch(0.185 0.013 332 / 0.92);  /* barra de próxima sessão */
+
+  font-family: var(--sans);
+  font-size: 14px;
+  background: var(--paper);
+  color: var(--ink);
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ── Tema claro (override via data-theme='light') ──────────────────────────── */
+.akane-shell[data-theme='light'] {
+  --paper:   oklch(0.985 0.004 350);
+  --paper-2: oklch(0.965 0.008 350);
+  --card:    oklch(1 0 0);
+  --card-2:  oklch(0.975 0.006 350);
+  --mist:    oklch(0.940 0.018 352);
+
+  --ink:   oklch(0.235 0.020 335);
+  --ink-2: oklch(0.42 0.018 332);
+  --ink-3: oklch(0.58 0.014 334);
+  --ink-4: oklch(0.70 0.010 336);
+
+  --line:   oklch(0.895 0.012 334);
+  --line-2: oklch(0.935 0.008 334);
+
+  --rose-deep: oklch(0.56 0.195 357);  /* texto acento sobre claro (mais escuro) */
+
+  --shadow-sm:     0 1px 2px oklch(0.3 0.02 330 / 0.06), 0 1px 1px oklch(0.3 0.02 330 / 0.05);
+  --shadow-md:     0 2px 6px oklch(0.3 0.02 330 / 0.08), 0 8px 28px oklch(0.3 0.02 330 / 0.08);
+  --shadow-lg:     0 12px 40px oklch(0.3 0.02 330 / 0.14);
+  --shadow-poster: 0 2px 8px oklch(0.3 0.02 330 / 0.18), 0 1px 2px oklch(0.3 0.02 330 / 0.14);
+
+  --topbar-bg:  oklch(0.985 0.004 350 / 0.85);
+  --nextbar-bg: oklch(0.965 0.008 350 / 0.92);
+
+  --heat-0: var(--line-2);
+}
+
+/* ── Acentos alternativos ─────────────────────────────────────────────────── */
+
+/* Verde-água (padrão de fábrica — aplicado no boot via JS) */
+.akane-shell[data-accent='teal'] {
+  --rose:        oklch(0.66 0.115 196);
+  --rose-deep:   oklch(0.78 0.105 194);
+  --rose-bright: oklch(0.76 0.125 193);
+  --rose-tint:   oklch(0.66 0.115 196 / 0.10);
+  --rose-tint-2: oklch(0.66 0.115 196 / 0.18);
+  --heat-1: oklch(0.66 0.115 196 / 0.25);
+  --heat-2: oklch(0.66 0.115 196 / 0.50);
+  --heat-3: oklch(0.66 0.115 196 / 0.75);
+  --heat-4: oklch(0.66 0.115 196);
+}
+
+/* Carmim */
+.akane-shell[data-accent='carmim'] {
+  --rose:        oklch(0.605 0.215 22);
+  --rose-deep:   oklch(0.73 0.205 22);
+  --rose-bright: oklch(0.72 0.225 20);
+  --rose-tint:   oklch(0.605 0.215 22 / 0.10);
+  --rose-tint-2: oklch(0.605 0.215 22 / 0.18);
+  --heat-1: oklch(0.605 0.215 22 / 0.25);
+  --heat-2: oklch(0.605 0.215 22 / 0.50);
+  --heat-3: oklch(0.605 0.215 22 / 0.75);
+  --heat-4: oklch(0.605 0.215 22);
+}
+
+/* Âmbar */
+.akane-shell[data-accent='ambar'] {
+  --rose:        oklch(0.74 0.155 66);
+  --rose-deep:   oklch(0.86 0.145 64);
+  --rose-bright: oklch(0.84 0.165 62);
+  --rose-tint:   oklch(0.74 0.155 66 / 0.12);
+  --rose-tint-2: oklch(0.74 0.155 66 / 0.20);
+  --heat-1: oklch(0.74 0.155 66 / 0.25);
+  --heat-2: oklch(0.74 0.155 66 / 0.50);
+  --heat-3: oklch(0.74 0.155 66 / 0.75);
+  --heat-4: oklch(0.74 0.155 66);
+}
+
+/* ── Densidades de grid ───────────────────────────────────────────────────── */
+.akane-shell[data-density='large']   { --cover-w: 198px; }
+.akane-shell[data-density='medium']  { --cover-w: 162px; }
+.akane-shell[data-density='compact'] { --cover-w: 120px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Layout do Shell
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ak-app {
+  display: grid;
+  grid-template-columns: 252px 1fr;
+  grid-template-rows: 1fr auto;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* Sidebar ─────────────────────────────────────────────────────────────────── */
+.ak-sidebar {
+  grid-row: 1/3;
+  background: var(--paper-2);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ak-sidebar-mark {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--line-2);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* Círculo com imagem da Akane + glow do acento */
+.ak-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--card);
+  box-shadow: 0 0 0 2px var(--rose-tint-2), 0 0 12px var(--rose-tint);
+}
+
+.ak-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.ak-brand-name {
+  font-family: var(--display);
+  font-size: 20px;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.ak-brand-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--rose);
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+
+/* Botão "Logar filme" — CTA principal */
+.ak-log-btn {
+  margin: 14px 16px;
+  padding: 9px 14px;
+  background: var(--rose);
+  color: oklch(0.12 0.01 330);   /* texto escuro sobre acento */
+  border: none;
+  border-radius: var(--r-md);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s, opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.ak-log-btn:hover { opacity: 0.88; }
+
+/* Navegação ─────────────────────────────────────────────────────────────────── */
+.ak-nav { flex: 1; padding: 6px 10px; overflow-y: auto; }
+
+.ak-nav-group { margin-bottom: 18px; }
+
+.ak-nav-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  padding: 0 10px 6px;
+  display: block;
+}
+
+.ak-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--ink-3);
+  transition: background 0.12s, color 0.12s;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+
+.ak-nav-item:hover {
+  background: var(--rose-tint);
+  color: var(--ink-2);
+}
+
+.ak-nav-item.active {
+  background: var(--rose-tint);
+  color: var(--rose-deep);
+  font-weight: 500;
+}
+
+.ak-nav-item .ak-nav-badge {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-4);
+  background: var(--line-2);
+  padding: 1px 5px;
+  border-radius: 99px;
+}
+
+.ak-nav-item.active .ak-nav-badge {
+  color: var(--rose);
+  background: var(--rose-tint);
+}
+
+/* Footer da sidebar (← Voltar à Makima) */
+.ak-sidebar-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--line-2);
+  flex-shrink: 0;
+}
+
+.ak-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--ink-4);
+  text-decoration: none;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  width: 100%;
+  transition: color 0.12s, background 0.12s;
+}
+
+.ak-back-btn:hover {
+  color: var(--ink-3);
+  background: var(--rose-tint);
+}
+
+/* Área de conteúdo ──────────────────────────────────────────────────────────── */
+.ak-main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+/* Topbar ─────────────────────────────────────────────────────────────────────── */
+.ak-topbar {
+  height: 56px;
+  background: var(--topbar-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 12px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.ak-topbar-title {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 17px;
+  color: var(--ink-2);
+  flex: 1;
+}
+
+/* Content scroll ─────────────────────────────────────────────────────────────── */
+.ak-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* Nextbar (barra de próxima sessão) ─────────────────────────────────────────── */
+.ak-nextbar {
+  grid-column: 1/3;
+  grid-row: 2;
+  background: var(--nextbar-bg);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  height: 68px;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 12px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Grid de pôsteres
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ak-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--cover-w), 1fr));
+  gap: 16px;
+}
+
+/* ── Cartão de pôster ─────────────────────────────────────────────────────── */
+.ak-poster-card {
+  position: relative;
+  cursor: pointer;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--card);
+  box-shadow: var(--shadow-poster);
+  transition: transform 0.18s, box-shadow 0.18s;
+  aspect-ratio: var(--poster-ratio);
+}
+
+.ak-poster-card:hover {
+  transform: translateY(-3px) scale(1.015);
+  box-shadow: var(--shadow-lg);
+}
+
+.ak-poster-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Overlay hover com nota + coração */
+.ak-poster-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, oklch(0.1 0.01 330 / 0.85) 0%, transparent 55%);
+  opacity: 0;
+  transition: opacity 0.18s;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 10px;
+  gap: 4px;
+}
+
+.ak-poster-card:hover .ak-poster-overlay { opacity: 1; }
+
+.ak-poster-title {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 12.5px;
+  line-height: 1.25;
+  color: oklch(0.96 0.005 330);
+}
+
+.ak-poster-year {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: oklch(0.75 0.01 330);
+}
+
+/* ── Pôster tipográfico (fallback quando poster_url é NULL) ──────────────── */
+.ak-typo-poster {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 14px 12px;
+  position: relative;
+}
+
+.ak-typo-title {
+  font-family: var(--display);
+  font-size: 16px;
+  line-height: 1.2;
+  word-break: break-word;
+  position: relative;
+  z-index: 1;
+}
+
+/* Paletas do pôster tipográfico (14 paletas) */
+.ak-typo-poster[data-palette='noir']   { background: oklch(0.18 0.02 300); --t: oklch(0.9 0.02 310); }
+.ak-typo-poster[data-palette='ember']  { background: oklch(0.20 0.06 25); --t: oklch(0.92 0.04 30); }
+.ak-typo-poster[data-palette='rose']   { background: oklch(0.22 0.08 355); --t: oklch(0.93 0.05 358); }
+.ak-typo-poster[data-palette='neon']   { background: oklch(0.16 0.04 280); --t: oklch(0.90 0.08 290); }
+.ak-typo-poster[data-palette='teal']   { background: oklch(0.19 0.04 190); --t: oklch(0.90 0.06 196); }
+.ak-typo-poster[data-palette='gold']   { background: oklch(0.22 0.06 65); --t: oklch(0.92 0.09 70); }
+.ak-typo-poster[data-palette='ink']    { background: oklch(0.12 0.01 240); --t: oklch(0.88 0.01 240); }
+.ak-typo-poster[data-palette='blood']  { background: oklch(0.18 0.12 20); --t: oklch(0.92 0.06 18); }
+.ak-typo-poster[data-palette='forest'] { background: oklch(0.20 0.06 140); --t: oklch(0.90 0.08 148); }
+.ak-typo-poster[data-palette='dusk']   { background: oklch(0.21 0.05 310); --t: oklch(0.90 0.04 318); }
+.ak-typo-poster[data-palette='bone']   { background: oklch(0.22 0.02 90); --t: oklch(0.92 0.04 85); }
+.ak-typo-poster[data-palette='slate']  { background: oklch(0.20 0.02 220); --t: oklch(0.88 0.02 225); }
+.ak-typo-poster[data-palette='wine']   { background: oklch(0.20 0.10 340); --t: oklch(0.90 0.06 348); }
+.ak-typo-poster[data-palette='sea']    { background: oklch(0.18 0.04 210); --t: oklch(0.90 0.06 212); }
+.ak-typo-title { color: var(--t, oklch(0.9 0.01 330)); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Chips de filtro
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ak-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.ak-chip {
+  padding: 5px 12px;
+  border-radius: 99px;
+  font-size: 12.5px;
+  font-family: var(--mono);
+  color: var(--ink-3);
+  background: var(--card);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.ak-chip:hover { border-color: var(--rose-tint-2); color: var(--ink-2); }
+.ak-chip.active {
+  background: var(--rose-tint);
+  border-color: var(--rose);
+  color: var(--rose-deep);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Stars (estrelas de avaliação) — cor Letterboxd FIXA (--gold)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ak-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.ak-star {
+  width: 12px;
+  height: 12px;
+  color: var(--gold);  /* SEMPRE verde Letterboxd — não acompanha o acento */
+}
+
+.ak-star.empty { color: var(--line); }
+.ak-star.half { color: var(--gold); }  /* SVG com clip para meia-estrela */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Coração (liked)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ak-heart {
+  color: var(--ink-4);
+  cursor: pointer;
+  transition: color 0.15s, transform 0.15s;
+}
+
+.ak-heart.liked { color: var(--heart); }
+.ak-heart:hover { transform: scale(1.2); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Diário (diary entries)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ak-diary-month { margin-bottom: 24px; }
+
+.ak-diary-month-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.ak-diary-row {
+  display: grid;
+  grid-template-columns: 48px 56px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-2);
+  cursor: pointer;
+  transition: background 0.12s;
+  border-radius: var(--r-sm);
+}
+
+.ak-diary-row:hover { background: var(--rose-tint); padding-left: 8px; padding-right: 8px; }
+
+.ak-diary-date {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-4);
+  text-align: center;
+}
+
+.ak-diary-poster {
+  width: 36px;
+  height: 54px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--card);
+  flex-shrink: 0;
+}
+
+.ak-diary-poster img { width: 100%; height: 100%; object-fit: cover; }
+
+.ak-diary-info { min-width: 0; }
+
+.ak-diary-title {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ak-diary-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+}
+
+.ak-rewatch-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rose);
+  background: var(--rose-tint);
+  padding: 1px 5px;
+  border-radius: 99px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Página de detalhe do filme (backdrop hero)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ak-hero {
+  position: relative;
+  height: 280px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.ak-hero-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: brightness(0.5) saturate(0.7);
+}
+
+.ak-hero-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent 0%, var(--paper) 100%);
+}
+
+.ak-hero-content {
+  position: absolute;
+  bottom: 20px;
+  left: 24px;
+  right: 24px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.ak-detail-poster {
+  width: 90px;
+  height: 135px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-poster);
+}
+
+.ak-detail-poster img { width: 100%; height: 100%; object-fit: cover; }
+
+.ak-detail-title {
+  font-family: var(--display);
+  font-size: 26px;
+  line-height: 1.1;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.ak-detail-meta {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Modais
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ak-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: oklch(0.05 0.005 330 / 0.72);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.ak-modal {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  width: 480px;
+  max-width: 95vw;
+  max-height: 85dvh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+}
+
+.ak-modal-header {
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid var(--line-2);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ak-modal-title {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 17px;
+  color: var(--ink);
+  flex: 1;
+}
+
+.ak-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ak-modal-footer {
+  padding: 14px 24px;
+  border-top: 1px solid var(--line-2);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Inputs genéricos do modal */
+.ak-input {
+  width: 100%;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+  font-size: 13.5px;
+  font-family: var(--sans);
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.12s;
+}
+
+.ak-input:focus { border-color: var(--rose); }
+.ak-input::placeholder { color: var(--ink-4); }
+
+/* Botões */
+.ak-btn {
+  padding: 8px 16px;
+  border-radius: var(--r-sm);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--card-2);
+  color: var(--ink-2);
+  transition: all 0.12s;
+}
+
+.ak-btn:hover { background: var(--rose-tint); border-color: var(--rose-tint-2); color: var(--ink); }
+
+.ak-btn-primary {
+  background: var(--rose);
+  border-color: var(--rose);
+  color: oklch(0.12 0.01 330);
+  font-weight: 600;
+}
+
+.ak-btn-primary:hover { opacity: 0.88; background: var(--rose); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Stats / gráficos
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ak-stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.ak-stat-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 16px 18px;
+}
+
+.ak-stat-num {
+  font-family: var(--display);
+  font-size: 32px;
+  line-height: 1;
+  color: var(--rose-deep);
+  margin-bottom: 4px;
+}
+
+.ak-stat-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+/* Histograma de notas */
+.ak-histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 64px;
+}
+
+.ak-hist-bar {
+  flex: 1;
+  background: var(--gold);   /* verde Letterboxd fixo */
+  border-radius: 3px 3px 0 0;
+  min-height: 2px;
+  opacity: 0.85;
+  transition: opacity 0.12s;
+}
+
+.ak-hist-bar:hover { opacity: 1; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Toast
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ak-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--card);
+  border: 1px solid var(--rose-tint-2);
+  border-radius: var(--r-md);
+  padding: 10px 18px;
+  font-size: 13px;
+  color: var(--ink);
+  box-shadow: var(--shadow-md);
+  z-index: 200;
+  pointer-events: none;
+  animation: ak-toast-in 0.2s ease;
+}
+
+@keyframes ak-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Selo "via Letterboxd"
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ak-lb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: oklch(0.57 0.14 159);   /* verde Letterboxd */
+  background: oklch(0.57 0.14 159 / 0.12);
+  border-radius: 99px;
+  padding: 2px 7px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Empty state
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ak-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px;
+  gap: 12px;
+  color: var(--ink-4);
+  text-align: center;
+}
+
+.ak-empty-icon { font-size: 40px; opacity: 0.35; }
+
+.ak-empty-title {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 18px;
+  color: var(--ink-3);
+}
+
+.ak-empty-sub { font-size: 13px; }
+
+/* Responsivo básico: colapsa sidebar em telas estreitas */
+@media (max-width: 880px) {
+  .ak-app { grid-template-columns: 64px 1fr; }
+  .ak-sidebar-mark .ak-brand-name,
+  .ak-sidebar-mark .ak-brand-sub,
+  .ak-nav-item span:not(.ak-nav-badge),
+  .ak-log-btn span,
+  .ak-back-btn span,
+  .ak-nav-label { display: none; }
+  .ak-nav-item { justify-content: center; padding: 10px; }
+  .ak-log-btn { padding: 10px; justify-content: center; margin: 10px 8px; }
+  .ak-nav-badge { display: none !important; }
+}
+
+@media (max-width: 720px) {
+  .ak-hero { height: 200px; }
+}

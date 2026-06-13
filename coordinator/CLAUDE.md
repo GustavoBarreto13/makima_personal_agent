@@ -40,6 +40,8 @@ GOOGLE_CALENDAR_TOKEN_EXPIRY    # ISO 8601 — data de expiração do access tok
 GOOGLE_CALENDAR_MAIN_CALENDAR_ID # ID do calendário principal (geralmente o email Gmail)
 VERTEX_RAG_CORPUS               # ID do corpus Vertex AI RAG (após ativar Kurisu)
 GOOGLE_BOOKS_API_KEY            # (opcional) chave da Google Books API — aumenta cota de 1000 para 10.000 req/dia
+TMDB_TOKEN                      # Bearer token v4 do TMDB — metadados e pôsteres para a Akane (spec 015)
+LETTERBOXD_USERNAME             # username público do Letterboxd — sync RSS automático da Akane
 DATABASE_URL                    # connection string do PostgreSQL separado no Dokploy
                                 # formato: postgresql://user:pass@host:5432/db
                                 # o código adiciona +asyncpg automaticamente
@@ -78,6 +80,7 @@ Para evitar que o histórico de todas as conversas se acumule em uma única sess
 | `<chat_id>_livros` | Conversas com a Frieren (livros) |
 | `<chat_id>_tarefas` | Conversas com a Kaguya (tarefas + agenda) |
 | `<chat_id>_knowledge` | Conversas com a Kurisu (knowledge base) |
+| `<chat_id>_filmes` | Conversas com a Akane (filmes, cinemateca) |
 | `<chat_id>_geral` | Tudo que não se encaixa nos domínios acima |
 
 A função `_classify_domain(text)` em `coordinator/main.py` faz a classificação por palavras-chave, sem custo de LLM. O `user_id` continua sendo o `chat_id` puro — o domínio só altera o `session_id`.

@@ -22,6 +22,9 @@ SCHEMA_FILES = [
     # Sistema de tarefas próprio da Kaguya (spec 011). Inclui o seed do Inbox
     # (INSERT ... ON CONFLICT DO NOTHING protegido pelo índice uq_task_projects_inbox).
     "agents/kaguya/schema_tasks_pg.sql",
+    # Catálogo de filmes da Akane (spec 015). 7 tabelas: movies, diary_entries,
+    # movie_lists, movie_list_items, movie_vault_items, movie_people, movie_favorites.
+    "agents/akane/schema_pg.sql",
 ]
 
 

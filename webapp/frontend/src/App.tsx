@@ -19,6 +19,7 @@ import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell completo d
 import { VioletShell } from './pages/violet/VioletShell'     // Shell do diário Violet
 import { NamiShell }   from './pages/nami/NamiShell'         // Shell completo da seção de finanças (redesign)
 import { KaguyaShell } from './pages/kaguya/KaguyaShell'      // Shell de tarefas (sistema próprio, spec 011)
+import { AkaneShell }  from './pages/akane/AkaneShell'         // Shell de filmes (cinemateca pessoal, spec 015)
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
@@ -94,6 +95,10 @@ function App() {
         {/* Kaguya · Tarefas — shell próprio com sidebar do domínio e navegação por estado.
             Antes do catch-all /* para o shell assumir as sub-rotas de /tasks. */}
         <Route path="/tasks/*" element={<KaguyaShell />} />
+
+        {/* Akane · Filmes — cinemateca pessoal estilo Letterboxd (spec 015).
+            Antes do catch-all /* para o shell assumir as sub-rotas de /movies. */}
+        <Route path="/movies/*" element={<AkaneShell />} />
 
         {/* Todas as outras rotas usam o Layout principal com sidebar Makima */}
         <Route path="/*" element={

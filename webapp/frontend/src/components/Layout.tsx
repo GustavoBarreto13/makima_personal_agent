@@ -69,6 +69,15 @@ const DOMAINS: NavDomain[] = [
     color:       'var(--c-kaguya)',
     colorDim:    'var(--c-kaguya-dim)',
   },
+  {
+    // Akane · Filmes — cinemateca pessoal estilo Letterboxd (spec 015)
+    character:   'Akane',
+    label:       'Filmes',
+    mainPath:    '/movies',
+    activePaths: ['/movies'],
+    color:       'var(--c-akane)',
+    colorDim:    'var(--c-akane-dim)',
+  },
 ]
 
 // ── Componente principal ───────────────────────────────────────────────────────────────────────

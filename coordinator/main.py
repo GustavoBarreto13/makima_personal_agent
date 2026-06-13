@@ -65,7 +65,7 @@ _sessions: set[str] = set()
 _pending_action: dict[str, dict] = {}
 
 # Domínios válidos — usados para classificação, validação no /limpar e rótulos no /tokens
-_DOMAINS = ("financas", "livros", "tarefas", "knowledge", "geral")
+_DOMAINS = ("financas", "livros", "tarefas", "knowledge", "filmes", "geral")
 
 # Acumula tokens consumidos por session_id neste processo (reseta ao reiniciar o container).
 # Chave: session_id completo (ex.: "987654321_financas"); Valor: total de tokens acumulados
@@ -527,6 +527,11 @@ def _classify_domain(text: str) -> str:
     # Knowledge base: notas do Obsidian e estudos via Kurisu
     if any(w in t for w in ["nota", "vault", "obsidian", "anotação", "estudo", "kurisu"]):
         return "knowledge"
+    # Filmes: cinemateca pessoal via Akane — logar sessões, watchlist, diário de filmes
+    if any(w in t for w in ["filme", "assistir", "assisti", "cinema", "diretor",
+                              "letterboxd", "watchlist", "tmdb", "akane", "animação",
+                              "vi ontem", "revi", "rewatch", "sessão de cinema"]):
+        return "filmes"
     # Fallback: domínio genérico para mensagens que não se encaixam nas categorias acima
     return "geral"
 

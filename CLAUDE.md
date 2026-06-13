@@ -24,8 +24,9 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (fatia 019) | ✅ Fase 2 + 019 | `agents/kaguya/CLAUDE.md` |
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG) | 🔧 Fase 3 | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) | ✅ Fase 5a | `agents/frieren/CLAUDE.md` |
+| `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015 | `agents/akane/CLAUDE.md` |
 | `agents/lucy/` | Email (Gmail IMAP) | — Fase 4 | — |
-| `agents/media/` | Séries + filmes + anime (Notion) | — Fase 5b | — |
+| `agents/media/` | Séries + anime (Notion) | — Fase 5b | — |
 
 ### Como o coordinator importa
 
@@ -35,6 +36,7 @@ from agents.nami.agent import nami_agent
 from agents.kaguya.agent import create_kaguya_agent   # factory (só o McpToolset do Calendar)
 from agents.frieren.agent import frieren_agent
 from agents.kurisu.agent import kurisu_agent
+from agents.akane.agent import akane_agent            # cinemateca de filmes (spec 015)
 # from agents.lucy.agent import lucy_agent
 # from agents.media.agent import media_agent
 ```
@@ -56,6 +58,7 @@ coordinator/agent.py  (Makima — Agent ADK)
     │                  → Google Calendar via MCP stdio               [mcp_servers/calendar]
     ├── kurisu_agent    → Vertex AI RAG (vault Obsidian)             [agents/kurisu]   (estrutura criada, pendente corpus)
     ├── frieren_agent   → PostgreSQL (livros)                        [agents/frieren]
+    ├── akane_agent     → PostgreSQL (filmes) + TMDB + Letterboxd    [agents/akane]
     ├── lucy_agent      → Gmail IMAP                                 [agents/lucy]     (ainda não ativada)
     └── media_agent     → Notion (séries + filmes + anime)           [agents/media]    (ainda não ativada)
 ```

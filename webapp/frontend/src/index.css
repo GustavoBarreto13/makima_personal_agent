@@ -31,6 +31,7 @@
   --c-kaguya:  #f472b6;   /* Kaguya — rosa (tarefas) */
   --c-kurisu:  #7dd3fc;   /* Kurisu — azul céu (knowledge base) */
   --c-journal: #a78bfa;   /* Diário — violeta (entradas do diário) */
+  --c-akane:   #5fc9b8;   /* Akane — teal cinematográfico (filmes, spec 015) */
 
   /* Versões escuras (dim) — usadas para fundos de badges e highlights */
   --c-nami-dim:    #3a2e1a;
@@ -39,6 +40,7 @@
   --c-kurisu-dim:  #1a2f3d;
   --c-journal-dim: #2a1f50;
   --c-makima-dim:  #3d1a1a;
+  --c-akane-dim:   #1a3230;   /* Akane dim — teal escuro para background de badge */
 }
 
 /* ── Scrollbar customizado — fino e quente ── */

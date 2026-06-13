@@ -22,6 +22,7 @@ from webapp.backend.routers import finances as finances_router
 from webapp.backend.routers import books as books_router
 from webapp.backend.routers import journal as journal_router
 from webapp.backend.routers import tasks as tasks_router
+from webapp.backend.routers import movies as movies_router  # Akane — catálogo de filmes (spec 015)
 from webapp.backend.config import SESSION_SECRET
 
 # Cria a instância principal da aplicação FastAPI.
@@ -58,6 +59,11 @@ app.include_router(journal_router.router, prefix="/api/journal", tags=["journal"
 # Registra todos os endpoints do sistema de tarefas próprio sob /api/tasks
 # Ex.: GET /api/tasks/sidebar, POST /api/tasks, POST /api/tasks/{id}/complete, etc.
 app.include_router(tasks_router.router, prefix="/api/tasks", tags=["tasks"])
+
+# --- Router de filmes (Akane) ---
+# Registra todos os endpoints do catálogo de filmes sob /api/movies (spec 015)
+# Ex.: GET /api/movies, POST /api/movies, POST /api/movies/{id}/watch, etc.
+app.include_router(movies_router.router, prefix="/api/movies", tags=["movies"])
 
 # --- CORS (Cross-Origin Resource Sharing) ---
 # O navegador bloqueia requisições entre origens diferentes por segurança.
