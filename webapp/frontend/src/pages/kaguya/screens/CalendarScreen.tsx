@@ -9,14 +9,18 @@
 //   4. useEffect(cals):  chama calendarSources() para a lista de fontes com cores
 //   5. Combina tasks + hub items em calEvents[], passa para TimeGrid ou MonthGrid
 //   6. CalendarsAside.onSourcesChanged → incrementa sourcesKey → recarrega aggregate
+//   7. onEventClick → abre EventPopover ; onEventContextMenu → abre ContextMenu
+//   8. onCreateSlot → createTask ; onTimeDrop → updateTask (time-blocking)
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Task, CalEvent, Calendar, CalendarItem } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { CalNavBar } from '../components/CalNavBar'
 import { TimeGrid } from '../components/TimeGrid'
 import { MonthGrid } from '../components/MonthGrid'
 import { CalendarsAside } from '../components/CalendarsAside'
+import { EventPopover } from '../components/EventPopover'
+import { ContextMenu } from '../components/ContextMenu'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -76,6 +80,10 @@ export function CalendarScreen({ reloadKey, onOpenTask, toast }: CalendarProProp
   // Incrementado quando o usuário alterna visibilidade/cor de um calendário.
   // Força o re-fetch do aggregate e da lista de fontes.
   const [sourcesKey, setSourcesKey] = useState(0)
+
+  // Popover e context-menu: null = fechado; { ev, pos } = aberto.
+  const [popover, setPopover] = useState<{ ev: CalEvent; pos: { x: number; y: number } } | null>(null)
+  const [ctxMenu, setCtxMenu] = useState<{ ev: CalEvent; pos: { x: number; y: number } } | null>(null)
 
   // ── Janela visível ────────────────────────────────────────────────────────
 
@@ -201,17 +209,61 @@ export function CalendarScreen({ reloadKey, onOpenTask, toast }: CalendarProProp
 
   const handleToday = () => setRefDate(new Date())
 
-  // ── Clique em evento ──────────────────────────────────────────────────────
+  // ── Refresh (pós-edição no popover/menu) ─────────────────────────────────
 
-  const handleEventClick = (ev: CalEvent) => {
-    if (ev.taskId) {
-      const t = tasks.find((t) => t.id === ev.taskId)
-      if (t) onOpenTask(t)
-    } else if (ev.deepLink) {
-      // Itens cross-agent têm deepLink para navegar para o módulo de origem
-      window.location.href = ev.deepLink
+  // Fecha o popover/menu e dispara re-fetch das tarefas e do aggregate.
+  // Definido antes dos outros handlers porque handleCreateSlot depende dele.
+  const handleRefresh = useCallback(() => {
+    setPopover(null)
+    setCtxMenu(null)
+    // Força re-fetch: bump sourcesKey não recarrega tarefas diretamente,
+    // então fazemos o equivalente ao reloadKey via setTasks([]) seguido de load.
+    setTasks((prev) => [...prev])
+    setSourcesKey((k) => k + 1)
+  }, [])
+
+  // ── Clique em evento → abre EventPopover ────────────────────────────────
+
+  const handleEventClick = useCallback((ev: CalEvent, pos: { x: number; y: number }) => {
+    setCtxMenu(null)       // fecha context-menu caso aberto
+    setPopover({ ev, pos })
+  }, [])
+
+  // ── Clique-direito em evento → abre ContextMenu ───────────────────────────
+
+  const handleEventContextMenu = useCallback((ev: CalEvent, pos: { x: number; y: number }) => {
+    setPopover(null)       // fecha popover caso aberto
+    setCtxMenu({ ev, pos })
+  }, [])
+
+  // ── Criar slot arrastando área vazia → createTask ─────────────────────────
+
+  const handleCreateSlot = useCallback(async (day: string, startISO: string, endISO: string) => {
+    try {
+      // createTask não aceita start_at/end_at — criamos a tarefa primeiro, depois gravamos o bloco.
+      const result = await kaguyaApi.createTask({ title: 'Nova tarefa', due_date: day })
+      if (result.id) {
+        await kaguyaApi.setTimeBlock(result.id, { start_at: startISO, end_at: endISO })
+      }
+      handleRefresh()
+      toast('Tarefa criada', 'ok')
+    } catch {
+      toast('Falha ao criar tarefa', 'err')
     }
-  }
+  }, [toast, handleRefresh])
+
+  // ── Time-blocking via drop de TrayCard ────────────────────────────────────
+
+  const handleTimeDrop = useCallback(async (taskId: number, day: string, startISO: string) => {
+    try {
+      // Atualiza o due_date para o dia de drop, depois grava o bloco de tempo.
+      await kaguyaApi.updateTask(taskId, { due_date: day })
+      await kaguyaApi.setTimeBlock(taskId, { start_at: startISO })
+      toast('Tarefa movida', 'ok')
+    } catch {
+      toast('Falha ao mover tarefa', 'err')
+    }
+  }, [toast])
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -255,6 +307,10 @@ export function CalendarScreen({ reloadKey, onOpenTask, toast }: CalendarProProp
                 events={calEvents}
                 cals={cals}
                 onEventClick={handleEventClick}
+                onEventContextMenu={handleEventContextMenu}
+                onCreateSlot={handleCreateSlot}
+                onTimeDrop={handleTimeDrop}
+                onRefresh={handleRefresh}
               />
             )
           )}
@@ -276,6 +332,28 @@ export function CalendarScreen({ reloadKey, onOpenTask, toast }: CalendarProProp
       <div className={`cal-hint${hintVisible ? ' visible' : ''}`}>
         Clique em um horário vazio para criar • Arraste para mover
       </div>
+
+      {/* EventPopover: abre ao clicar num evento */}
+      {popover && (
+        <EventPopover
+          ev={popover.ev}
+          cals={cals}
+          pos={popover.pos}
+          onClose={() => setPopover(null)}
+          onRefresh={handleRefresh}
+        />
+      )}
+
+      {/* ContextMenu: abre com clique-direito num evento */}
+      {ctxMenu && (
+        <ContextMenu
+          ev={ctxMenu.ev}
+          cals={cals}
+          pos={ctxMenu.pos}
+          onClose={() => setCtxMenu(null)}
+          onRefresh={handleRefresh}
+        />
+      )}
     </div>
   )
 }
