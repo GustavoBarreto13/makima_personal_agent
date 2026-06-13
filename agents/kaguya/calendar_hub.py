@@ -165,9 +165,8 @@ register(
 )
 
 # 2. Nami — Finanças
-# Tenta importar o provedor real (criado na fatia T017). Se ainda não existir,
-# usa lambda vazio — o hub não quebra durante o desenvolvimento incremental.
-_nami_provider = _try_import_provider("agents.nami.calendar_provider", "get_calendar_items")
+# Importa o provedor real de agents/nami/calendar_provider.py (criado na fatia T017).
+_nami_provider = _try_import_provider("agents.nami.calendar_provider", "list_calendar_events")
 register(
     {
         "id": "nami",
@@ -181,9 +180,9 @@ register(
 )
 
 # 3. Frieren — Livros
-# Mesmo padrão de importação segura — fatia T017 criará o provider.
+# Importa o provedor real de agents/frieren/calendar_provider.py (criado na fatia T018).
 _frieren_provider = _try_import_provider(
-    "agents.frieren.calendar_provider", "get_calendar_items"
+    "agents.frieren.calendar_provider", "list_calendar_events"
 )
 register(
     {
@@ -198,10 +197,9 @@ register(
 )
 
 # 4. Violet — Diário
-# O agente de journal ainda não existe como pacote agents/journal/ — importação
-# segura garante degradação graciosa enquanto não for implementado.
+# Importa o provedor real de agents/journal/calendar_provider.py (criado na fatia T019).
 _violet_provider = _try_import_provider(
-    "agents.journal.calendar_provider", "get_calendar_items"
+    "agents.journal.calendar_provider", "list_calendar_events"
 )
 register(
     {
