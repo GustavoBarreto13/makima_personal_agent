@@ -38,8 +38,11 @@ _VALID_TYPES = {"task", "event", "birthday"}
 # Colunas da tarefa que viajam nas respostas (ordem estável; nested subtasks à parte).
 _TASK_FIELDS = [
     "id", "project_id", "column_id", "parent_id", "title", "description", "type", "priority",
-    "due_date", "due_time", "start_at", "end_at", "duration_min", "my_day_date", "position",
-    "completed_at", "deleted_at", "created_at", "updated_at",
+    "due_date", "due_time", "start_at", "end_at", "duration_min", "my_day_date",
+    # Incluído na fatia 019 (T015): id do evento Google Calendar vinculado a esta tarefa.
+    # Viaja em TODAS as responses de tarefa (incluindo list_tasks_in_range usado pelo calendário).
+    "google_event_id",
+    "position", "completed_at", "deleted_at", "created_at", "updated_at",
 ]
 # Lista simples (sem alias) — para queries sem JOIN.
 _TASK_COLUMNS = ", ".join(_TASK_FIELDS)

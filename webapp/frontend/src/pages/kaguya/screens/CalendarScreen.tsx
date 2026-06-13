@@ -1,185 +1,279 @@
-// CalendarScreen — view de calendário (fatia 013 / P3). Posiciona as tarefas datadas
-// nos dias certos E projeta as próximas ocorrências das recorrentes (virtuais). Mês como
-// view principal + alternância para semana. Navegar recalcula a janela (a projeção é
-// sempre limitada ao período visível). Clicar num dia abre o detalhe do dia; clicar numa
-// tarefa REAL abre o TaskModal (as virtuais são projeções, só leitura).
+// CalendarScreen (CalendarPro) — orquestra as três visões do Calendar Hub (fatia 019, T014).
+// Substitui a tela de calendário anterior (013) por uma que delega para subcomponentes
+// especializados: CalNavBar (navegação), TimeGrid (dia/semana), MonthGrid (mês) e CalendarsAside.
+//
+// Fluxo principal:
+//   1. Estado: view (dia/semana/mês), refDate (data âncora), tasks (tarefas carregadas)
+//   2. useMemo calcula a janela visível (windowStart, windowEnd, days) a partir de view+refDate
+//   3. useEffect chama kaguyaApi.calendar() sempre que a janela muda ou reloadKey muda
+//   4. tasks são mapeadas para CalEvent[] (formato normalizado dos subcomponentes)
+//   5. Renderiza CalNavBar + (TimeGrid OU MonthGrid) + CalendarsAside lado a lado
 
-import { useEffect, useMemo, useState, useCallback } from 'react'
-import type { Task } from '../types'
+import { useEffect, useMemo, useState } from 'react'
+import type { Task, CalEvent } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
-import { Icon } from '../ui/Icons'
+import { CalNavBar } from '../components/CalNavBar'
+import { TimeGrid } from '../components/TimeGrid'
+import { MonthGrid } from '../components/MonthGrid'
+import { CalendarsAside } from '../components/CalendarsAside'
 
-interface CalendarScreenProps {
+// ── Props ────────────────────────────────────────────────────────────────────
+
+// Interface idêntica à CalendarScreen anterior — KaguyaShell não precisa mudar.
+interface CalendarProProps {
+  // Incrementado pelo Shell quando uma tarefa é criada/editada fora deste componente;
+  // dispara o recarregamento das tarefas.
   reloadKey: number
+  // Callback para abrir o TaskModal quando o usuário clica numa tarefa.
   onOpenTask: (task: Task) => void
+  // Callback para exibir uma notificação toast (sucesso ou erro).
   toast: (msg: string, kind?: 'ok' | 'err') => void
 }
 
-// Nomes em pt-BR (o calendário começa no domingo, como é comum no Brasil).
-const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
-const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+// ── Helpers de data ──────────────────────────────────────────────────────────
 
-// Formata uma Date local como "AAAA-MM-DD" (sem passar por UTC, que poderia trocar o dia).
+// Formata uma Date local como "AAAA-MM-DD" sem converter para UTC.
+// Usar a data local evita que datas próximas à meia-noite sejam empurradas para o dia anterior.
 function toISO(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${dd}`
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// Soma dias a uma Date (sem mutar a original).
+// Retorna uma nova Date com `n` dias somados (sem mutar a original).
 function addDays(d: Date, n: number): Date {
   const r = new Date(d)
   r.setDate(r.getDate() + n)
   return r
 }
 
-export function CalendarScreen({ reloadKey, onOpenTask, toast }: CalendarScreenProps) {
-  const [mode, setMode] = useState<'month' | 'week'>('month')
-  // `anchor` representa o período visível (qualquer dia dentro dele).
-  const [anchor, setAnchor] = useState<Date>(() => new Date())
-  const [items, setItems] = useState<Task[]>([])
+// ── Componente ───────────────────────────────────────────────────────────────
+
+// Exporta com o mesmo nome anterior (CalendarScreen) para que KaguyaShell.tsx
+// não precise mudar nenhuma linha de import.
+export function CalendarScreen({ reloadKey, onOpenTask, toast }: CalendarProProps) {
+  // Visão ativa: "day" = grade de 24h com 1 coluna; "week" = 7 colunas; "month" = grade 6×7
+  const [view, setView] = useState<'day' | 'week' | 'month'>('week')
+
+  // Data âncora: qualquer dia dentro do período visível; navegar muda este valor.
+  const [refDate, setRefDate] = useState<Date>(() => new Date())
+
+  // Tarefas carregadas da API para a janela visível atual.
+  const [tasks, setTasks] = useState<Task[]>([])
+
+  // Indica se o carregamento inicial ainda está em curso.
   const [loading, setLoading] = useState(true)
-  const [selectedDay, setSelectedDay] = useState<string | null>(null)
 
-  // Calcula a grade de dias visível (e a janela [start, end] para a consulta).
-  // Mês: 6 semanas (42 células) a partir do domingo da semana que contém o dia 1.
-  // Semana: os 7 dias da semana que contém a âncora.
-  const { days, windowStart, windowEnd, title } = useMemo(() => {
-    if (mode === 'week') {
-      const start = addDays(anchor, -anchor.getDay())     // domingo da semana
-      const list = Array.from({ length: 7 }, (_, i) => addDays(start, i))
-      const end = list[6]
-      const t = `Semana de ${start.getDate()} ${MONTHS[start.getMonth()].slice(0, 3)} – ${end.getDate()} ${MONTHS[end.getMonth()].slice(0, 3)} ${end.getFullYear()}`
-      return { days: list, windowStart: toISO(start), windowEnd: toISO(end), title: t }
+  // Controla a visibilidade da dica de uso mostrada por ~4,2 s no primeiro render.
+  const [hintVisible, setHintVisible] = useState(false)
+
+  // ── Janela visível ────────────────────────────────────────────────────────
+
+  // Calcula windowStart, windowEnd (strings ISO para a API) e days (strings ISO das colunas
+  // para TimeGrid). O cálculo é derivado de view + refDate, sem efeito colateral.
+  const { windowStart, windowEnd, days } = useMemo(() => {
+    if (view === 'day') {
+      // Dia: janela de 1 único dia; days tem exatamente 1 elemento.
+      const iso = toISO(refDate)
+      return { windowStart: iso, windowEnd: iso, days: [iso] }
     }
-    const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
-    const gridStart = addDays(first, -first.getDay())      // domingo antes/no dia 1
-    const list = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i))
-    return {
-      days: list,
-      windowStart: toISO(gridStart),
-      windowEnd: toISO(list[41]),
-      title: `${MONTHS[anchor.getMonth()]} de ${anchor.getFullYear()}`,
+
+    if (view === 'week') {
+      // Semana: de domingo (dow=0) até sábado (dow=6) da semana que contém refDate.
+      const sunday = addDays(refDate, -refDate.getDay())
+      const dayList = Array.from({ length: 7 }, (_, i) => toISO(addDays(sunday, i)))
+      return { windowStart: dayList[0], windowEnd: dayList[6], days: dayList }
     }
-  }, [anchor, mode])
 
-  // Busca as tarefas/ocorrências da janela. Re-busca ao navegar (janela muda) ou após salvar.
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      setItems(await kaguyaApi.calendar(windowStart, windowEnd))
-    } catch {
-      toast('Falha ao carregar o calendário.', 'err')
-    } finally {
-      setLoading(false)
+    // Mês: grade de 42 células (6 semanas) a partir do domingo da semana que contém o dia 1.
+    // Isso garante que o primeiro dia do mês nunca fique no meio da grade.
+    const firstOfMonth = new Date(refDate.getFullYear(), refDate.getMonth(), 1)
+    const gridStart = addDays(firstOfMonth, -firstOfMonth.getDay())
+    const dayList = Array.from({ length: 42 }, (_, i) => toISO(addDays(gridStart, i)))
+    return { windowStart: dayList[0], windowEnd: dayList[41], days: dayList }
+  }, [view, refDate])
+
+  // ── Carregamento das tarefas ──────────────────────────────────────────────
+
+  // Re-busca sempre que a janela muda (navegação) ou reloadKey é incrementado (edição externa).
+  useEffect(() => {
+    let cancelled = false   // evita atualizar state se o componente foi desmontado antes
+
+    const load = async () => {
+      setLoading(true)
+      try {
+        // kaguyaApi.calendar retorna Task[] com ocorrências virtuais de recorrentes expandidas.
+        const result = await kaguyaApi.calendar(windowStart, windowEnd)
+        if (!cancelled) setTasks(result)
+      } catch {
+        if (!cancelled) toast('Falha ao carregar o calendário.', 'err')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
-  }, [windowStart, windowEnd, toast])
 
-  useEffect(() => { load() }, [load, reloadKey])
+    load()
+    return () => { cancelled = true }
+  }, [windowStart, windowEnd, reloadKey, toast])
 
-  // Indexa as tarefas por dia (string ISO) para o lookup O(1) de cada célula.
-  const byDay = useMemo(() => {
-    const map: Record<string, Task[]> = {}
-    for (const t of items) {
-      if (!t.due_date) continue
-      ;(map[t.due_date] ??= []).push(t)
+  // ── Dica de uso (hint) ────────────────────────────────────────────────────
+
+  // Exibe a dica na primeira montagem e a esconde após 4,2 s.
+  useEffect(() => {
+    setHintVisible(true)
+    const t = setTimeout(() => setHintVisible(false), 4200)
+    return () => clearTimeout(t)
+  }, [])   // [] = só roda na montagem; nunca mais
+
+  // ── Mapeamento Task → CalEvent ────────────────────────────────────────────
+
+  // Converte uma Task para o formato normalizado CalEvent usado pelos subcomponentes.
+  // Retorna null se a tarefa não tiver data suficiente para posicionar no calendário.
+  function taskToCalEvent(t: Task): CalEvent | null {
+    if (t.start_at) {
+      // Tarefa com horário de início: evento temporizado (allDay=false).
+      // O dia é extraído do start_at (primeiro 10 caracteres = "AAAA-MM-DD").
+      return {
+        id: String(t.id),
+        cal: 'kaguya',           // identifica a origem para resolução de cor
+        day: t.start_at.slice(0, 10),
+        start: t.start_at,
+        end: t.end_at ?? null,
+        allDay: false,
+        color: null,             // usa a cor padrão do calendário "kaguya"
+        kind: 'task',
+        title: t.title,
+        taskId: t.id,            // permite abrir o TaskModal ao clicar
+      }
     }
-    return map
-  }, [items])
 
-  const todayISO = toISO(new Date())
-  const currentMonth = anchor.getMonth()
+    if (t.due_date) {
+      // Tarefa com só due_date: evento de dia inteiro (allDay=true).
+      return {
+        id: String(t.id),
+        cal: 'kaguya',
+        day: t.due_date,
+        start: null,
+        end: null,
+        allDay: true,
+        color: null,
+        kind: 'task',
+        title: t.title,
+        taskId: t.id,
+      }
+    }
 
-  // Navegação: mês ⇄ mês (ou semana ⇄ semana); "hoje" volta ao período atual.
-  const goPrev = () => setAnchor((a) => (mode === 'week' ? addDays(a, -7) : new Date(a.getFullYear(), a.getMonth() - 1, 1)))
-  const goNext = () => setAnchor((a) => (mode === 'week' ? addDays(a, 7) : new Date(a.getFullYear(), a.getMonth() + 1, 1)))
-  const goToday = () => { setAnchor(new Date()); setSelectedDay(toISO(new Date())) }
-
-  // Uma "pílula" de tarefa dentro da célula do dia. Virtual = só leitura (projeção).
-  const pill = (t: Task, key: string) => {
-    const cls = `kg-cal-pill${t.is_virtual ? ' kg-cal-pill-virtual' : ''}${t.completed_at ? ' kg-cal-pill-done' : ''}`
-    return (
-      <button
-        key={key}
-        className={cls}
-        title={t.is_virtual ? `${t.title} (ocorrência recorrente)` : t.title}
-        onClick={(e) => { e.stopPropagation(); if (!t.is_virtual) onOpenTask(t) }}
-      >
-        {t.due_time && <span className="kg-cal-pill-time">{t.due_time}</span>}
-        {t.title}
-      </button>
-    )
+    // Sem data alguma: não exibir no calendário.
+    return null
   }
 
-  const selectedItems = selectedDay ? (byDay[selectedDay] ?? []) : []
+  // Aplica o mapeamento em todas as tasks e remove os nulos (tarefas sem data).
+  const calEvents: CalEvent[] = useMemo(
+    () => tasks.flatMap((t) => { const e = taskToCalEvent(t); return e ? [e] : [] }),
+    [tasks],
+  )
+
+  // ── Navegação ─────────────────────────────────────────────────────────────
+
+  // Avança (+1) ou recua (-1) no período atual: 1 dia, 7 dias ou 1 mês.
+  const handleNav = (delta: 1 | -1) => {
+    setRefDate((prev) => {
+      if (view === 'day') return addDays(prev, delta)
+      if (view === 'week') return addDays(prev, delta * 7)
+      // Mês: soma/subtrai 1 mês preservando o dia (ou o último dia do mês destino).
+      const m = new Date(prev)
+      m.setMonth(m.getMonth() + delta)
+      return m
+    })
+  }
+
+  // Volta o período para o dia de hoje.
+  const handleToday = () => setRefDate(new Date())
+
+  // ── Clique em evento ──────────────────────────────────────────────────────
+
+  // Ao clicar num evento do grid:
+  // - Se for uma tarefa Kaguya: abre o TaskModal.
+  // - Se tiver deepLink (cross-agent): navega para aquela rota.
+  const handleEventClick = (ev: CalEvent) => {
+    if (ev.taskId) {
+      const t = tasks.find((t) => t.id === ev.taskId)
+      if (t) onOpenTask(t)
+    } else if (ev.deepLink) {
+      window.location.href = ev.deepLink
+    }
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="kg-page">
-      {/* Cabeçalho: título do período + alternador mês/semana + navegação */}
-      <div className="kg-cal-head">
-        <h1 className="kg-page-title" style={{ margin: 0, textTransform: 'capitalize' }}>{title}</h1>
-        <div className="kg-cal-controls">
-          <div className="kg-segment" style={{ width: 150 }}>
-            <button className={`kg-seg-opt${mode === 'month' ? ' active' : ''}`} onClick={() => setMode('month')}>Mês</button>
-            <button className={`kg-seg-opt${mode === 'week' ? ' active' : ''}`} onClick={() => setMode('week')}>Semana</button>
-          </div>
-          <button className="kg-icon-btn" onClick={goPrev} aria-label="Anterior"><Icon name="back" size={16} /></button>
-          <button className="kg-btn kg-btn-ghost" onClick={goToday}>Hoje</button>
-          <button className="kg-icon-btn" onClick={goNext} aria-label="Próximo"><Icon name="chevron" size={16} /></button>
-        </div>
-      </div>
+    // Container raiz ocupa 100% da altura disponível e empilha verticalmente:
+    // CalNavBar (topo fixo) → conteúdo (flex: 1, overflow oculto) → hint (rodapé)
+    <div className="calx" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
-      {loading && <div className="kg-page-sub">Carregando…</div>}
+      {/* Barra de navegação: título, alternador Dia/Semana/Mês, botões ‹ Hoje › */}
+      <CalNavBar
+        view={view}
+        refDate={refDate}
+        onViewChange={setView}
+        onNav={handleNav}
+        onToday={handleToday}
+      />
 
-      {/* Grade do calendário */}
-      <div className={`kg-cal-grid${mode === 'week' ? ' kg-cal-week' : ''}`}>
-        {WEEKDAYS.map((w) => <div key={w} className="kg-cal-weekday">{w}</div>)}
-        {days.map((d) => {
-          const iso = toISO(d)
-          const dayItems = byDay[iso] ?? []
-          const isOther = mode === 'month' && d.getMonth() !== currentMonth
-          const cls = `kg-cal-cell${isOther ? ' kg-cal-other' : ''}${iso === todayISO ? ' kg-cal-today' : ''}${iso === selectedDay ? ' kg-cal-selected' : ''}`
-          return (
-            <div key={iso} className={cls} onClick={() => setSelectedDay(iso)}>
-              <div className="kg-cal-daynum">{d.getDate()}</div>
-              <div className="kg-cal-pills">
-                {dayItems.slice(0, 3).map((t, idx) => pill(t, `${iso}-${t.id ?? 'v'}-${idx}`))}
-                {dayItems.length > 3 && <span className="kg-cal-more">+{dayItems.length - 3}</span>}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      {/* Área de conteúdo: grid principal à esquerda + sidebar de calendários à direita */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
-      {/* Detalhe do dia selecionado (FR-016): lista as tarefas e abre uma tarefa real */}
-      {selectedDay && (
-        <div className="kg-cal-detail">
-          <div className="kg-cal-detail-head">
-            <strong>{selectedDay.split('-').reverse().join('/')}</strong>
-            <button className="kg-icon-btn" onClick={() => setSelectedDay(null)} aria-label="Fechar"><Icon name="x" size={14} /></button>
-          </div>
-          {selectedItems.length === 0 ? (
-            <div className="kg-empty" style={{ padding: 16 }}>Nenhuma tarefa neste dia.</div>
-          ) : (
-            <div className="kg-cal-detail-list">
-              {selectedItems.map((t, idx) => (
-                <button
-                  key={`${t.id ?? 'v'}-${idx}`}
-                  className={`kg-cal-detail-item${t.is_virtual ? ' kg-cal-pill-virtual' : ''}${t.completed_at ? ' kg-cal-pill-done' : ''}`}
-                  onClick={() => { if (!t.is_virtual) onOpenTask(t) }}
-                >
-                  {t.due_time && <span className="kg-cal-pill-time">{t.due_time}</span>}
-                  <span>{t.title}</span>
-                  {t.is_virtual && <span className="kg-cal-recur"><Icon name="loop" size={12} /> recorrente</span>}
-                  {t.project_name && <span className="kg-cal-detail-proj">{t.project_name}</span>}
-                </button>
-              ))}
+        {/* Coluna do grid: cresce para preencher o espaço restante */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+
+          {/* Indicador de carregamento — exibido apenas enquanto a API responde */}
+          {loading && (
+            <div style={{ padding: 16, color: 'var(--ink-4)', fontSize: 13 }}>
+              Carregando…
             </div>
           )}
+
+          {/* Grid do período: MonthGrid para mês, TimeGrid para dia/semana */}
+          {!loading && (view === 'month'
+            ? (
+              // MonthGrid: grade 6×7; clicar num dia muda para a view de dia naquela data.
+              <MonthGrid
+                refDate={refDate}
+                events={calEvents}
+                cals={[]}   // calendários carregados na T022; por ora vazio
+                onDayClick={(d) => {
+                  // Seta refDate como meio-dia para evitar problemas de fuso horário
+                  setRefDate(new Date(d + 'T12:00:00'))
+                  setView('day')
+                }}
+              />
+            )
+            : (
+              // TimeGrid: colunas de 24h; `days` tem 1 (dia) ou 7 (semana) strings ISO
+              <TimeGrid
+                days={days}
+                events={calEvents}
+                cals={[]}   // calendários carregados na T022
+                onEventClick={handleEventClick}
+              />
+            )
+          )}
         </div>
-      )}
+
+        {/* Sidebar direita: mini-calendário de navegação + lista de fontes (placeholder T022) */}
+        <CalendarsAside
+          refDate={refDate}
+          selectedDate={toISO(refDate)}
+          onDayClick={(d) => {
+            // Clicar no mini-mês move o calendário principal para aquela data
+            setRefDate(new Date(d + 'T12:00:00'))
+          }}
+        />
+      </div>
+
+      {/* Dica de uso: aparece na montagem e some após 4,2 s via CSS transition.
+          A classe "visible" controla o opacity (definida em kaguya.css). */}
+      <div className={`cal-hint${hintVisible ? ' visible' : ''}`}>
+        Clique em um horário vazio para criar • Arraste para mover
+      </div>
     </div>
   )
 }
