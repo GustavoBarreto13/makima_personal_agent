@@ -576,12 +576,42 @@ class CalendarPrefBody(BaseModel):
 def calendar_sources_route(user: dict = Depends(require_user)) -> list[dict]:
     """Lista todas as fontes de calendário registradas no hub, com prefs do usuário.
 
-    Retorna kaguya, nami, frieren, violet, akane e o Google Calendar como fontes
-    disponíveis, mesclando as preferências de visibilidade e cor salvas na tabela
-    ``calendar_prefs``.
+    Retorna kaguya, nami, frieren, violet, akane e (quando as credenciais OAuth do
+    Google Calendar estão configuradas) a fonte "gcal" — Agenda pessoal. As prefs
+    de cor e visibilidade de cada fonte são mescladas da tabela ``calendar_prefs``.
+
+    A fonte "gcal" não está no hub para evitar duplicação com o aggregate (eventos
+    do Google chegam via endpoint separado /calendar/events). O endpoint a injeta
+    aqui para que ela apareça na sidebar e o frontend saiba que deve carregá-la.
     """
     # with_prefs=True mescla as prefs do banco (cor/visibilidade) sobre os metadados base
-    return list_sources(with_prefs=True)
+    sources = list_sources(with_prefs=True)
+
+    # Injeta a fonte "gcal" (Agenda pessoal do Google) quando as credenciais OAuth estão
+    # configuradas. Sem o refresh_token a integração não funciona — melhor não exibir.
+    import os
+    if os.environ.get("GOOGLE_CALENDAR_REFRESH_TOKEN"):
+        # Carrega as prefs salvas pelo usuário para a fonte gcal (cor e visibilidade)
+        try:
+            from agents.kaguya.calendar_prefs import get_calendar_prefs
+            prefs_by_id = {p["calendar_id"]: p for p in get_calendar_prefs()}
+        except Exception:
+            prefs_by_id = {}
+
+        pref = prefs_by_id.get("gcal", {})
+        sources.append({
+            "id": "gcal",
+            # Conta separada na sidebar para distinguir da suíte Makima
+            "account": "Google",
+            "kind": "integration",
+            "name": "Agenda pessoal",
+            # Azul Google — compatível com withAlpha() do TimeGrid (hex)
+            "color": pref.get("color") or "#4285F4",
+            "visible": pref.get("visible", True),
+            "position": pref.get("position", 99),
+        })
+
+    return sources
 
 
 @router.get("/calendar/aggregate")
