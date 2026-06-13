@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     end_at          TIMESTAMPTZ,                        -- fim do bloco
     duration_min    INT,                                -- estimativa de duração (ritual Meu Dia)
     my_day_date     DATE,                               -- selecionada para "Meu Dia" desta data (Fase 3)
+    google_event_id TEXT,                               -- id do evento espelho no calendário "Kaguya — Tarefas" (fatia 019)
 
     -- Ordenação manual: posições esparsas ×1000 (padrão validado no Journal).
     -- Inserir entre 1000 e 2000 vira 1500, sem renumerar a lista inteira.
@@ -216,6 +217,19 @@ CREATE TABLE IF NOT EXISTS habit_checkins (
 );
 
 CREATE INDEX IF NOT EXISTS idx_habit_checkins_date ON habit_checkins (habit_id, date);
+
+
+-- ----------------------------------------------------------------------------
+-- calendar_prefs — preferências de calendário (visibilidade + cor por calendário)
+-- ----------------------------------------------------------------------------
+-- Persistidas entre sessões. Alimentadas pelo calendar_hub (fatia 019).
+-- calendar_id corresponde ao id do CalendarItem/SOURCE (ex.: 'kaguya', 'nami', 'gcal').
+CREATE TABLE IF NOT EXISTS calendar_prefs (
+    calendar_id  TEXT PRIMARY KEY,            -- id do calendário conectado
+    visible      BOOL NOT NULL DEFAULT TRUE,  -- mostrar/ocultar no grid e no mês
+    color        TEXT,                        -- cor OKLCH sobrescrita (NULL = cor padrão do cal.)
+    position     INT  NOT NULL DEFAULT 0      -- ordem na coluna lateral
+);
 
 
 -- ----------------------------------------------------------------------------
