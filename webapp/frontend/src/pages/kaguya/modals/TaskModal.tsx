@@ -211,7 +211,7 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
     if (!task || !newSub.trim()) return
     try {
       const r = await kaguyaApi.createTask({ title: newSub.trim(), parent_id: task.id })
-      setSubtasks([...subtasks, { id: r.id!, title: newSub.trim(), priority: 0, description: null, type: 'task', project_id: task.project_id, column_id: null, parent_id: task.id, due_date: null, due_time: null, position: 0, completed_at: null, created_at: '' }])
+      setSubtasks([...subtasks, { id: r.id!, title: newSub.trim(), priority: 0, description: null, type: 'task', project_id: task.project_id, column_id: null, parent_id: task.id, due_date: null, due_time: null, position: 0, completed_at: null, created_at: '', my_day_date: null, start_at: null, end_at: null, duration_min: null }])
       setNewSub('')
     } catch { toast('Falha ao adicionar subtarefa.', 'err') }
   }

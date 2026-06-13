@@ -28,10 +28,13 @@ from agents.kaguya.tools_projects import (
     list_columns, create_column, update_column, delete_column,
 )
 from agents.kaguya.tools_tasks import (
-    list_tasks, list_tasks_today, search_tasks, list_trash,
+    list_tasks, list_tasks_today, search_tasks, list_trash, list_eisenhower_tasks,
     create_task, update_task, complete_task, reopen_task,
     reorder_task, delete_task, restore_task,
     set_recurrence, clear_recurrence,
+    # Meu Dia — fatia 016
+    add_to_my_day, remove_from_my_day, reschedule_pending,
+    set_estimate, set_time_block, clear_time_block, list_my_day,
 )
 from agents.kaguya.tools_tags import (
     list_tags, create_tag, update_tag, delete_tag, list_tasks_by_tag,
@@ -150,6 +153,29 @@ class UpdateTaskBody(BaseModel):
     recurrence: Optional[RecurrenceBody] = None  # anexar/editar a regra
     clear_recurrence: bool = False               # remover a regra
     tags: Optional[list[str]] = None             # substitui o conjunto de tags (vazio = remover todas)
+    duration_min: Optional[int] = None           # estimativa de duração (Meu Dia — fatia 016)
+
+
+# ── Meu Dia — fatia 016 ───────────────────────────────────────────────────────
+
+class AddToMyDayBody(BaseModel):
+    """Body opcional de ``POST /{id}/my-day``. Sem body = usa hoje."""
+    date: Optional[str] = None   # "YYYY-MM-DD"; ausente = hoje (fuso SP)
+
+
+class RescheduleBody(BaseModel):
+    """Body do atalho de pendências: 'today' | 'tomorrow' | 'later'."""
+    when: str  # today | tomorrow | later
+
+
+class TimeBlockBody(BaseModel):
+    """Body de time-blocking (``POST /{id}/time-block``).
+
+    ``end_at`` é derivado de ``start_at + (duration_min or 30min)`` quando ausente.
+    """
+    start_at: str            # ISO 8601, ex.: "2026-06-13T14:00:00-03:00"
+    end_at: Optional[str] = None
+    duration_min: Optional[int] = None
 
 
 class CompleteTaskBody(BaseModel):
@@ -327,6 +353,12 @@ def list_tasks_route(
 def list_tasks_today_route(user: dict = Depends(require_user)) -> dict:
     """Tarefas de hoje + vencidas (``{overdue, today}``)."""
     return list_tasks_today()  # listagem
+
+
+@router.get("/eisenhower")
+def list_eisenhower_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Todas as tarefas-pai abertas para a view Eisenhower (classificação derivada no front)."""
+    return list_eisenhower_tasks()  # listagem — sem _check_result
 
 
 @router.get("/search")
@@ -588,3 +620,53 @@ def remove_check_in_route(
 ) -> dict:
     """Remove o check-in de um dia (desfaz o cumprimento)."""
     return _check_result(remove_check_in(habit_id, date))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Meu Dia — fatia 016
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/my-day")
+def my_day_route(
+    date: Optional[str] = Query(None, description="Data YYYY-MM-DD (vazio = hoje)"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Ritual do Meu Dia: plano, pendências de ontem, sugestões e capacity.
+
+    Listagem — retorna dado direto (sem ``_check_result``).
+    A capacity cruza estimativas das tarefas com eventos do Google Calendar.
+    Se o Calendar não responder, devolve ``capacity.calendar_ok=False`` — nunca quebra.
+    """
+    return list_my_day(date)   # listagem: retorna direto, sem _check_result
+
+
+@router.post("/{task_id}/my-day")
+def add_to_my_day_route(
+    task_id: int, body: AddToMyDayBody = AddToMyDayBody(), user: dict = Depends(require_user)
+) -> dict:
+    """Marca a tarefa no Meu Dia de uma data (body opcional; ausente = hoje)."""
+    return _check_result(add_to_my_day(task_id, body.date))
+
+
+@router.delete("/{task_id}/my-day")
+def remove_from_my_day_route(task_id: int, user: dict = Depends(require_user)) -> dict:
+    """Tira a tarefa do Meu Dia (``my_day_date = NULL``); não a apaga."""
+    return _check_result(remove_from_my_day(task_id))
+
+
+@router.post("/{task_id}/reschedule")
+def reschedule_route(task_id: int, body: RescheduleBody, user: dict = Depends(require_user)) -> dict:
+    """Atalho do ritual de pendências: move para hoje, amanhã ou tira do Meu Dia."""
+    return _check_result(reschedule_pending(task_id, body.when))
+
+
+@router.post("/{task_id}/time-block")
+def set_time_block_route(task_id: int, body: TimeBlockBody, user: dict = Depends(require_user)) -> dict:
+    """Grava o bloco de tempo (time-blocking). ``end_at`` é derivado se ausente."""
+    return _check_result(set_time_block(task_id, body.start_at, body.end_at, body.duration_min))
+
+
+@router.delete("/{task_id}/time-block")
+def clear_time_block_route(task_id: int, user: dict = Depends(require_user)) -> dict:
+    """Remove o bloco de tempo (``start_at = end_at = NULL``); mantém a tarefa no plano."""
+    return _check_result(clear_time_block(task_id))

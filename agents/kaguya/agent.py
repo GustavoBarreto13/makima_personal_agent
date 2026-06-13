@@ -33,6 +33,12 @@ from agents.kaguya.tools import (
     list_habits, create_habit, update_habit, archive_habit,
     check_in_habit, remove_check_in, habit_status,
     complete_payment_task, create_expense_reminder,
+    # Meu Dia (fatia 016)
+    plan_my_day, my_day_status,
+    add_to_my_day_by_name, remove_from_my_day_by_name,
+    set_estimate_by_name,
+    # Eisenhower (fatia 017)
+    eisenhower_status,
 )
 
 # Instrução completa da Kaguya — personalidade e regras de comportamento.
@@ -184,6 +190,51 @@ _INSTRUCTION = """
       mode="move_to_inbox" (mover pro Inbox) ou mode="delete_tasks" (mandar pra lixeira).
     - Tarefas excluídas vão para a lixeira (restore_task reverte).
 
+    MATRIZ DE EISENHOWER (fatia 017):
+    - A Eisenhower é uma **view derivada** — não tem campo novo. Classifica as tarefas
+      abertas em 4 quadrantes usando a mesma régua do webapp:
+        · urgente = tem `due_date` e vence em ≤2 dias (inclui vencidas)
+        · importante = prioridade ≥ média (2)
+      Quadrantes: Faça agora (u+i) / Agende (i) / Resolva rápido (u) / Depois (nenhum).
+    - CONSULTAR → `eisenhower_status()` — relata os 4 quadrantes com as tarefas
+      correspondentes. Ex.: "o que é urgente e importante?", "mostre minha Eisenhower".
+    - REPRIORIZAR pelo Telegram: o usuário diz "coloca X no Faça agora" → interprete
+      como tornar a tarefa urgente + importante: `update_task(id, priority=2, due_date=amanhã)`.
+      Ecoe o resultado: "X agora está em Faça agora — prioridade média, vence amanhã."
+    - A grade visual 2×2 com drag-and-drop é **webapp-only**; no Telegram o relato
+      textual é a interface equivalente (paridade de canais).
+
+    MEU DIA — RITUAL DIÁRIO (fatia 016):
+    - "Meu Dia" é o plano de hoje: tarefas marcadas com my_day_date = hoje. O ritual inclui:
+      pendências de ontem (abertas que tinham my_day_date = ontem), plano de hoje e sugestões
+      (tarefas com vencimento nos próximos 7 dias, não no plano).
+    - VER O DIA → plan_my_day() (devolve o objeto completo com capacity) ou my_day_status()
+      (string curta, boa para um briefing rápido).
+    - ADICIONAR uma tarefa ao plano de hoje → add_to_my_day_by_name(id_ou_nome). Se o usuário
+      nomear várias, chame em sequência. Sem data = hoje.
+    - RETIRAR do plano → remove_from_my_day_by_name(id_ou_nome).
+    - REALOCAR pendências de ontem: use reschedule_pending (por id, via update_task com
+      my_day_date=hoje/amanhã/null). No Telegram, guie o usuário: "Hoje?", "Amanhã?" ou
+      "Depois" (some do radar).
+    - ESTIMAR duração → set_estimate_by_name(id_ou_nome, minutos). Ex.: "estima 45min pra
+      relatório" → set_estimate_by_name("relatório", 45). A capacity do dia usa essa estimativa.
+    - CAPACITY: plan_my_day() devolve "capacity" com:
+      · no_plano — número de tarefas no plano
+      · estimado_min — soma das estimativas
+      · agenda_min — minutos de eventos do Google Calendar (pode ser 0 se indisponível)
+      · livre_min — minutos livres (janela 8h–22h menos agenda)
+      · folga_min — livre_min menos estimado_min (positivo = sobra, negativo = estouro)
+      · excedeu — true se o plano estoura o tempo disponível
+      · calendar_ok — false se o Google Calendar estava fora do ar (degradação silenciosa)
+      ECOE o resumo: "Plano de hoje: 5 tarefas, ~3h estimadas, 1h de agenda, folga de 4h."
+      Se calendar_ok=false: avise "agenda não disponível no momento". Se excedeu=true: avise.
+    - TIME-BLOCK (bloco de horário) só é visível no webapp (arrastar na timeline). No Telegram,
+      o usuário pode pedir "bloqueia o relatório às 14h" → use update_task(id, start_at=...) se
+      necessário, mas normalmente redirecione para o webapp para manipular a timeline.
+    - DAILY BRIEFING INTEGRADO: "Como está meu dia?" → chame my_day_status() para o resumo de
+      tarefas + plan_my_day() para capacity, e list_events_today() para a agenda do Calendar.
+      Apresente pendências de ontem primeiro (se houver), depois o plano + capacity.
+
     FLUXOS CROSS-AGENT (financeiro):
     - Usuário pagou uma conta que tinha tarefa → complete_payment_task
       (precisa: task_id, valor, categoria, conta). CONFIRME valor/categoria/conta ANTES —
@@ -277,6 +328,12 @@ def create_kaguya_agent() -> Agent:
             # Hábitos (Fase 4 / fatia 014)
             list_habits, create_habit, update_habit, archive_habit,
             check_in_habit, remove_check_in, habit_status,
+            # Meu Dia (fatia 016)
+            plan_my_day, my_day_status,
+            add_to_my_day_by_name, remove_from_my_day_by_name,
+            set_estimate_by_name,
+            # Eisenhower (fatia 017)
+            eisenhower_status,
             # Cross-agent (Kaguya + Nami)
             complete_payment_task, create_expense_reminder,
             # Agenda (Google Calendar via MCP)

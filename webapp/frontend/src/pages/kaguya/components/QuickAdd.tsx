@@ -10,11 +10,12 @@ import { Icon } from '../ui/Icons'
 
 interface QuickAddProps {
   projects: Project[]
-  onCreated: () => void
+  onCreated: (id?: number) => void   // id opcional (backwards-compatible com callers antigos)
   toast: (msg: string, kind?: 'ok' | 'err') => void
+  placeholder?: string               // texto do input (Meu Dia usa "Adicionar ao dia…")
 }
 
-export function QuickAdd({ projects, onCreated, toast }: QuickAddProps) {
+export function QuickAdd({ projects, onCreated, toast, placeholder }: QuickAddProps) {
   const [text, setText] = useState('')
 
   // Reparseia a cada tecla (barato) para alimentar o mirror.
@@ -39,7 +40,7 @@ export function QuickAdd({ projects, onCreated, toast }: QuickAddProps) {
       toast(`Lista "@${parsed.projectToken}" não encontrada — fui pro Inbox.`, 'err')
     }
     try {
-      await kaguyaApi.createTask({
+      const r = await kaguyaApi.createTask({
         title: parsed.title,
         project_id: proj?.id,             // undefined → Inbox no backend
         priority: parsed.priority ?? 0,
@@ -48,7 +49,7 @@ export function QuickAdd({ projects, onCreated, toast }: QuickAddProps) {
         tags: parsed.tags.length ? parsed.tags : undefined,   // #tag → etiquetas
       })
       setText('')
-      onCreated()
+      onCreated(r.id)                     // passa o id para o caller (ex.: Meu Dia auto-adiciona)
     } catch {
       toast('Não foi possível criar a tarefa.', 'err')
     }
@@ -66,7 +67,7 @@ export function QuickAdd({ projects, onCreated, toast }: QuickAddProps) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
-          placeholder="Captura rápida — ex.: ligar pro banco @Casa !alta"
+          placeholder={placeholder ?? 'Captura rápida — ex.: ligar pro banco @Casa !alta'}
         />
       </div>
       {/* dica de tokens reconhecidos */}

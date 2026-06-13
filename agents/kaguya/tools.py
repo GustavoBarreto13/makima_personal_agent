@@ -183,6 +183,190 @@ def habit_status(habit: str = "") -> Union[list, dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Meu Dia — wrappers amigáveis ao agente (fatia 016)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def plan_my_day() -> dict:
+    """Lista o plano do dia hoje com o resumo de capacity (relato textual p/ o Telegram).
+
+    Returns:
+        ``{date, plano, pendencias_ontem, sugestoes, capacity}`` — a mesma estrutura
+        do endpoint ``GET /api/tasks/my-day``.
+    """
+    from agents.kaguya.tools_tasks import list_my_day
+    return list_my_day()
+
+
+def my_day_status() -> str:
+    """Retorna um resumo textual do plano + capacity de hoje (pt-BR).
+
+    Returns:
+        String formatada para o Telegram, ex.:
+        "Plano de hoje: 5 tarefas · ~3h estimadas · folga de 1h"
+    """
+    from agents.kaguya.tools_tasks import list_my_day
+    r = list_my_day()
+    cap = r["capacity"]
+    plano = r["plano"]
+    pendencias = r["pendencias_ontem"]
+
+    def fmtmin(m: int) -> str:
+        h, mins = divmod(abs(m), 60)
+        if h == 0: return f"{mins}min"
+        return f"{h}h" if mins == 0 else f"{h}h {mins}min"
+
+    partes = [f"Plano de hoje: {len(plano)} tarefa(s)"]
+    if cap["estimado_min"]:
+        partes.append(f"~{fmtmin(cap['estimado_min'])} estimados")
+    if cap["calendar_ok"] and cap["agenda_min"]:
+        partes.append(f"{fmtmin(cap['agenda_min'])} de agenda")
+    if cap["excedeu"]:
+        partes.append(f"⚠ +{fmtmin(abs(cap['folga_min']))} acima do disponível")
+    elif cap["folga_min"] > 0:
+        partes.append(f"folga de {fmtmin(cap['folga_min'])}")
+    if pendencias:
+        partes.append(f"{len(pendencias)} pendência(s) de ontem")
+    return " · ".join(partes)
+
+
+def add_to_my_day_by_name(task: Union[int, str], date: str = "") -> dict:
+    """Adiciona uma tarefa ao Meu Dia, aceitando id ou nome.
+
+    Args:
+        task: Id (número) ou nome/prefixo da tarefa.
+        date: Data "YYYY-MM-DD". Vazio = hoje.
+
+    Returns:
+        Dicionário de status.
+    """
+    from agents.kaguya.tools_tasks import add_to_my_day
+    from agents.kaguya.tools_projects import resolve_project_id_by_name
+
+    tid = _resolve_task_id(task)
+    if tid is None:
+        return {"status": "error", "message": f"Tarefa '{task}' não encontrada."}
+    return add_to_my_day(tid, date or None)
+
+
+def remove_from_my_day_by_name(task: Union[int, str]) -> dict:
+    """Remove uma tarefa do Meu Dia, aceitando id ou nome.
+
+    Args:
+        task: Id (número) ou nome/prefixo da tarefa.
+
+    Returns:
+        Dicionário de status.
+    """
+    from agents.kaguya.tools_tasks import remove_from_my_day
+
+    tid = _resolve_task_id(task)
+    if tid is None:
+        return {"status": "error", "message": f"Tarefa '{task}' não encontrada."}
+    return remove_from_my_day(tid)
+
+
+def set_estimate_by_name(task: Union[int, str], minutes: int) -> dict:
+    """Grava a estimativa de duração de uma tarefa, aceitando id ou nome.
+
+    Args:
+        task: Id (número) ou nome/prefixo da tarefa.
+        minutes: Estimativa em minutos (deve ser positivo).
+
+    Returns:
+        Dicionário de status.
+    """
+    from agents.kaguya.tools_tasks import set_estimate
+
+    tid = _resolve_task_id(task)
+    if tid is None:
+        return {"status": "error", "message": f"Tarefa '{task}' não encontrada."}
+    return set_estimate(tid, minutes)
+
+
+def _resolve_task_id(task: Union[int, str]) -> Union[int, None]:
+    """Resolve tarefa por id ou por busca de nome (prefixo, sem caixa).
+
+    Usado pelos wrappers de Meu Dia para aceitar id OU nome como as outras tools.
+
+    Args:
+        task: Id numérico ou nome/prefixo.
+
+    Returns:
+        Id da tarefa ou None se não encontrar.
+    """
+    from agents.kaguya.tools_tasks import search_tasks
+
+    if isinstance(task, int):
+        return task
+    if str(task).strip().isdigit():
+        return int(str(task).strip())
+    # Busca pelo nome (ILIKE) e pega o primeiro resultado.
+    results = search_tasks(str(task).strip())
+    if results:
+        return results[0]["id"]
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Eisenhower — relato textual por quadrante (fatia 017)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def eisenhower_status() -> str:
+    """Relata as tarefas abertas organizadas nos 4 quadrantes da matriz de Eisenhower.
+
+    A mesma classificação do webapp (urgente = vence em ≤2 dias; importante = prioridade ≥ 2).
+    A grade visual fica no webapp; no Telegram este relato textual garante a paridade.
+
+    Returns:
+        String formatada com cada quadrante e suas tarefas, em pt-BR.
+    """
+    from datetime import date as _date
+    from agents.kaguya.tools_tasks import list_eisenhower_tasks
+
+    hoje = _date.today()
+    tarefas = list_eisenhower_tasks()
+
+    def _urgente(t: dict) -> bool:
+        if not t.get("due_date"):
+            return False
+        # Calcula dias restantes (negativo = vencida → também urgente)
+        delta = (_date.fromisoformat(t["due_date"]) - hoje).days
+        return delta <= 2
+
+    def _importante(t: dict) -> bool:
+        return (t.get("priority") or 0) >= 2
+
+    # Quadrantes com nome e filtro.
+    quads = [
+        ("🔴 Faça agora (urgente + importante)",    lambda t: _urgente(t) and _importante(t)),
+        ("🟡 Agende (importante, não urgente)",      lambda t: not _urgente(t) and _importante(t)),
+        ("🔵 Resolva rápido (urgente, não importante)", lambda t: _urgente(t) and not _importante(t)),
+        ("⚪ Depois (nem urgente, nem importante)",  lambda t: not _urgente(t) and not _importante(t)),
+    ]
+
+    linhas = []
+    for nome, filtro in quads:
+        items = [t for t in tarefas if filtro(t)]
+        if not items:
+            continue
+        linhas.append(f"<b>{nome}</b>")
+        for t in items[:10]:  # limita a 10 por quadrante para não estourar o chat
+            venc = f" · 📅 {t['due_date']}" if t.get("due_date") else ""
+            lista = f" · 📁 {t.get('project_name', '')}" if t.get("project_name") else ""
+            linhas.append(f"  📋 {t['title']}{venc}{lista}")
+        if len(items) > 10:
+            linhas.append(f"  … +{len(items) - 10} mais")
+        linhas.append("")  # linha em branco entre quadrantes
+
+    if not linhas:
+        return "Nenhuma tarefa aberta no momento."
+
+    total = len(tarefas)
+    cabecalho = f"Matriz de Eisenhower — {total} tarefa(s) aberta(s)\n"
+    return cabecalho + "\n".join(linhas).rstrip()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Cross-agent: pagamento atômico (Kaguya + Nami)
 # ─────────────────────────────────────────────────────────────────────────────
 def complete_payment_task(

@@ -37,6 +37,11 @@ export interface Task {
   position: number
   completed_at: string | null // null = aberta
   created_at: string
+  // Meu Dia — fatia 016:
+  my_day_date: string | null  // "YYYY-MM-DD" — data para a qual está no Meu Dia (independente de due_date)
+  start_at: string | null     // ISO 8601 — início do bloco de tempo
+  end_at: string | null       // ISO 8601 — fim do bloco de tempo
+  duration_min: number | null // estimativa de duração em minutos (insumo da CapacityBar)
   // Presente nas listagens com JOIN (today/search):
   project_name?: string
   // Recorrência ativa (quando houver) + descrição pt-BR (ex.: "todo dia 5"):
@@ -50,6 +55,28 @@ export interface Task {
   // `is_virtual` = true → não tem linha própria; `series_task_id` aponta a tarefa viva da série.
   is_virtual?: boolean
   series_task_id?: number | null
+}
+
+// ── Meu Dia — fatia 016 ───────────────────────────────────────────────────────
+
+// Métricas de capacity: cruzamento de estimativas de tarefas com eventos do Calendar.
+export interface CapacityStats {
+  no_plano: number        // quantidade de tarefas no plano
+  estimado_min: number    // total estimado de trabalho (soma de duration_min)
+  agenda_min: number      // duração dos eventos do Google Calendar dentro da janela útil
+  livre_min: number       // janela útil (8h–22h) menos agenda (≥ 0)
+  folga_min: number       // livre menos estimado (negativo = estouro)
+  excedeu: boolean        // true quando o plano excede a janela livre
+  calendar_ok: boolean    // false quando o Calendar não respondeu (agenda_min = 0)
+}
+
+// Resposta do endpoint GET /api/tasks/my-day.
+export interface MyDayResponse {
+  date: string              // "YYYY-MM-DD" do plano
+  plano: Task[]             // tarefas selecionadas para hoje (my_day_date == date)
+  pendencias_ontem: Task[]  // abertas de dias anteriores (my_day_date < date)
+  sugestoes: Task[]         // vencem em ≤7 dias, fora do plano
+  capacity: CapacityStats
 }
 
 // Uma lista (na UI "Lista"; no modelo "project").

@@ -3,7 +3,7 @@
 // tratamento de erro já resolvidos por lib/api.ts).
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -55,6 +55,7 @@ export const kaguyaApi = {
   listTasks: (projectId: number, includeCompleted = false) =>
     api.get<Task[]>(`${BASE}?project_id=${projectId}&include_completed=${includeCompleted}`),
   today: () => api.get<TodayResponse>(`${BASE}/today`),
+  eisenhower: () => api.get<Task[]>(`${BASE}/eisenhower`),
   search: (q: string) => api.get<Task[]>(`${BASE}/search?q=${encodeURIComponent(q)}`),
   trash: (projectId?: number) =>
     api.get<Task[]>(`${BASE}/trash${projectId ? `?project_id=${projectId}` : ''}`),
@@ -78,6 +79,7 @@ export const kaguyaApi = {
     due_date: string | null; due_time: string | null; project_id: number; column_id: number | null
     recurrence: RecurrenceInput; clear_recurrence: boolean   // anexar/editar/remover regra
     tags: string[]                                           // substitui o conjunto de tags
+    duration_min: number | null                              // estimativa de duração (Meu Dia)
   }>) => api.patch<MutationResult>(`${BASE}/${id}`, body),
 
   // cascade conclui subtarefas; endSeries encerra a série recorrente (não gera a próxima).
@@ -124,6 +126,27 @@ export const kaguyaApi = {
   // Tarefas datadas + ocorrências virtuais das recorrentes na janela [start, end].
   calendar: (start: string, end: string, projectId?: number) =>
     api.get<Task[]>(`${BASE}/calendar?start=${start}&end=${end}${projectId ? `&project_id=${projectId}` : ''}`),
+
+  // ── Meu Dia — fatia 016 ───────────────────────────────────────────────────────
+  // Ritual do dia: plano + pendências de ontem + sugestões + capacity.
+  myDay: (date?: string) =>
+    api.get<MyDayResponse>(`${BASE}/my-day${date ? `?date=${date}` : ''}`),
+  // Marca/desmarca a tarefa no Meu Dia de uma data (ausente = hoje).
+  addToMyDay: (id: number, date?: string) =>
+    api.post<MutationResult>(`${BASE}/${id}/my-day`, date ? { date } : {}),
+  removeFromMyDay: (id: number) =>
+    api.del<MutationResult>(`${BASE}/${id}/my-day`),
+  // Atalho do ritual de pendências: today | tomorrow | later.
+  reschedule: (id: number, when: 'today' | 'tomorrow' | 'later') =>
+    api.post<MutationResult>(`${BASE}/${id}/reschedule`, { when }),
+  // Estimativa de duração (também via updateTask com duration_min).
+  setEstimate: (id: number, duration_min: number) =>
+    api.patch<MutationResult>(`${BASE}/${id}`, { duration_min }),
+  // Bloco de tempo (time-blocking). end_at derivado se ausente.
+  setTimeBlock: (id: number, body: { start_at: string; end_at?: string; duration_min?: number }) =>
+    api.post<MutationResult>(`${BASE}/${id}/time-block`, body),
+  clearTimeBlock: (id: number) =>
+    api.del<MutationResult>(`${BASE}/${id}/time-block`),
 
   // ── Hábitos (Fase 4 / fatia 014) ────────────────────────────────────────────
   listHabits: () => api.get<Habit[]>(`${BASE}/habits`),

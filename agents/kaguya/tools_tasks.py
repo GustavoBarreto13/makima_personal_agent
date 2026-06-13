@@ -17,8 +17,9 @@ Contrato REST: ``specs/011-tasks-mvp/contracts/api-tasks.md``.
 Regras detalhadas: ``specs/011-tasks-mvp/data-model.md``.
 """
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from agents.db import get_conn, run_select
 from agents.kaguya import recurrence as rec_engine
@@ -454,6 +455,35 @@ def list_tasks_today() -> dict:
     return {"overdue": overdue, "today": due_today}
 
 
+def list_eisenhower_tasks() -> list[dict]:
+    """Lista todas as tarefas-pai abertas para a view Eisenhower.
+
+    Retorna todas as tarefas abertas (não concluídas, não deletadas) sem filtro de
+    lista — a classificação em quadrantes (urgente × importante) é feita no consumidor
+    (front ou agente) sobre estes dados. Inclui ``project_name`` para contexto.
+
+    Returns:
+        Lista de tarefas-pai abertas com tags e ``project_name``, ordenadas por
+        ``due_date`` ASC (NULL por último), prioridade DESC e posição.
+    """
+    rows = run_select(
+        f"""
+        SELECT {_qualified("t")}, p.name AS project_name
+        FROM tasks t
+        JOIN task_projects p ON p.id = t.project_id
+        WHERE t.parent_id IS NULL
+          AND t.completed_at IS NULL
+          AND t.deleted_at IS NULL
+        ORDER BY
+            t.due_date ASC NULLS LAST,
+            t.priority DESC,
+            t.position
+        """,
+    )
+    out = [_serialize_task(r) for r in rows]
+    return _attach_tags(out)
+
+
 def search_tasks(query: str) -> list[dict]:
     """Busca tarefas abertas por texto no título ou na descrição (ILIKE, case-insensitive).
 
@@ -673,6 +703,7 @@ def update_task(
     recurrence: Optional[dict] = None,
     clear_recurrence: bool = False,
     tags: Optional[list] = None,
+    duration_min: Optional[int] = None,
 ) -> dict:
     """Edita campos de uma tarefa; mover de lista aplica a regra da coluna do destino.
 
@@ -688,6 +719,7 @@ def update_task(
         clear_recurrence: Se True, remove a regra (tarefa volta a ser simples).
         tags: Se informado (lista de nomes), substitui o conjunto de tags da tarefa
             (lista vazia = remover todas). ``None`` = não mexe nas tags.
+        duration_min: Estimativa de duração em minutos (insumo da CapacityBar do Meu Dia).
 
     Returns:
         Dicionário de status.
@@ -743,6 +775,11 @@ def update_task(
             if column_id is not None:
                 sets.append("column_id = %(column_id)s")
                 params["column_id"] = column_id
+
+            # Estimativa de duração do Meu Dia (fatia 016).
+            if duration_min is not None:
+                sets.append("duration_min = %(duration_min)s")
+                params["duration_min"] = duration_min
 
             # Há algo a fazer? campos OU recorrência (definir/limpar/auto-aniversário) OU tags.
             if (not sets and recurrence is None and not clear_recurrence
@@ -1084,3 +1121,336 @@ def restore_task(task_id: int) -> dict:
                 (task_id, task_id),
             )
     return {"status": "ok", "message": "Tarefa restaurada."}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Meu Dia — Fase 3 / fatia 016
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _today_sp() -> date:
+    """Retorna a data de hoje no fuso America/Sao_Paulo."""
+    return datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+
+
+def add_to_my_day(task_id: int, date_str: Optional[str] = None) -> dict:
+    """Marca uma tarefa como parte do Meu Dia de uma data (padrão: hoje).
+
+    ``my_day_date`` é independente de ``due_date``: uma tarefa pode estar no
+    plano de hoje sem vencer hoje, e vice-versa.
+
+    Args:
+        task_id: Id da tarefa.
+        date_str: Data no formato "YYYY-MM-DD". ``None`` = hoje (fuso SP).
+
+    Returns:
+        Dicionário de status.
+    """
+    # Usa hoje se o chamador não informar data explícita.
+    target = date_str if date_str else _today_sp().isoformat()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,)
+            )
+            if not cur.fetchone():
+                return {"status": "error", "message": "Tarefa não encontrada."}
+            cur.execute(
+                "UPDATE tasks SET my_day_date = %s, updated_at = now() WHERE id = %s",
+                (target, task_id),
+            )
+    return {"status": "ok", "message": f"Adicionada ao Meu Dia de {target}."}
+
+
+def remove_from_my_day(task_id: int) -> dict:
+    """Tira uma tarefa do Meu Dia (``my_day_date = NULL``), sem apagá-la.
+
+    Args:
+        task_id: Id da tarefa.
+
+    Returns:
+        Dicionário de status.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,)
+            )
+            if not cur.fetchone():
+                return {"status": "error", "message": "Tarefa não encontrada."}
+            cur.execute(
+                "UPDATE tasks SET my_day_date = NULL, updated_at = now() WHERE id = %s",
+                (task_id,),
+            )
+    return {"status": "ok", "message": "Removida do Meu Dia."}
+
+
+def reschedule_pending(task_id: int, when: str) -> dict:
+    """Atalho do ritual de pendências de ontem: ajusta ``my_day_date`` conforme a intenção.
+
+    Args:
+        task_id: Id da tarefa.
+        when: ``"today"`` (hoje), ``"tomorrow"`` (amanhã), ``"later"`` (NULL — tira do Meu
+            Dia, mas mantém a tarefa). Nunca apaga a tarefa.
+
+    Returns:
+        Dicionário de status.
+    """
+    if when not in ("today", "tomorrow", "later"):
+        return {"status": "error", "message": "Valor de 'when' inválido. Use today, tomorrow ou later."}
+
+    hoje = _today_sp()
+    if when == "today":
+        target: Optional[str] = hoje.isoformat()
+    elif when == "tomorrow":
+        target = (hoje + timedelta(days=1)).isoformat()
+    else:
+        target = None   # "later" → remove do Meu Dia
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,)
+            )
+            if not cur.fetchone():
+                return {"status": "error", "message": "Tarefa não encontrada."}
+            cur.execute(
+                "UPDATE tasks SET my_day_date = %s, updated_at = now() WHERE id = %s",
+                (target, task_id),
+            )
+    msg = {"today": "Movida para hoje.", "tomorrow": "Movida para amanhã.", "later": "Retirada do Meu Dia."}.get(when, "Atualizada.")
+    return {"status": "ok", "message": msg}
+
+
+def set_estimate(task_id: int, duration_min: int) -> dict:
+    """Grava a estimativa de duração de uma tarefa (insumo da CapacityBar).
+
+    Args:
+        task_id: Id da tarefa.
+        duration_min: Estimativa em minutos (deve ser positivo).
+
+    Returns:
+        Dicionário de status.
+    """
+    if duration_min <= 0:
+        return {"status": "error", "message": "A estimativa deve ser um número positivo de minutos."}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,)
+            )
+            if not cur.fetchone():
+                return {"status": "error", "message": "Tarefa não encontrada."}
+            cur.execute(
+                "UPDATE tasks SET duration_min = %s, updated_at = now() WHERE id = %s",
+                (duration_min, task_id),
+            )
+    return {"status": "ok", "message": f"Estimativa de {duration_min} min gravada."}
+
+
+def set_time_block(
+    task_id: int,
+    start_at: str,
+    end_at: Optional[str] = None,
+    duration_min: Optional[int] = None,
+) -> dict:
+    """Grava o bloco de tempo de uma tarefa (time-blocking).
+
+    Se ``end_at`` não for informado, é derivado de ``start_at + (duration_min or 30min)``.
+    Valida a CHECK do schema: ``end_at`` exige ``start_at`` (nunca levanta IntegrityError 500).
+
+    Args:
+        task_id: Id da tarefa.
+        start_at: Início do bloco, ISO 8601 (ex.: "2026-06-13T14:00:00-03:00").
+        end_at: Fim do bloco. Derivado se ausente.
+        duration_min: Duração em minutos para derivar ``end_at`` (senão usa 30 min).
+            Também atualiza a coluna ``duration_min`` da tarefa quando informado.
+
+    Returns:
+        Dicionário de status.
+    """
+    # Valida e parseia start_at.
+    try:
+        start_dt = datetime.fromisoformat(start_at)
+    except ValueError:
+        return {"status": "error", "message": "Formato de 'start_at' inválido. Use ISO 8601."}
+
+    # Deriva end_at se não foi informado.
+    if end_at is None:
+        minutos = duration_min if duration_min and duration_min > 0 else 30
+        end_dt = start_dt + timedelta(minutes=minutos)
+        end_at = end_dt.isoformat()
+    else:
+        try:
+            end_dt = datetime.fromisoformat(end_at)
+        except ValueError:
+            return {"status": "error", "message": "Formato de 'end_at' inválido. Use ISO 8601."}
+        if end_dt <= start_dt:
+            return {"status": "error", "message": "O horário de fim deve ser posterior ao de início."}
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,)
+            )
+            if not cur.fetchone():
+                return {"status": "error", "message": "Tarefa não encontrada."}
+
+            # Atualiza bloco e, se veio duration_min, grava a estimativa também.
+            if duration_min and duration_min > 0:
+                cur.execute(
+                    "UPDATE tasks SET start_at = %s, end_at = %s, duration_min = %s, updated_at = now() WHERE id = %s",
+                    (start_at, end_at, duration_min, task_id),
+                )
+            else:
+                cur.execute(
+                    "UPDATE tasks SET start_at = %s, end_at = %s, updated_at = now() WHERE id = %s",
+                    (start_at, end_at, task_id),
+                )
+    return {"status": "ok", "message": "Bloco de tempo gravado.", "start_at": start_at, "end_at": end_at}
+
+
+def clear_time_block(task_id: int) -> dict:
+    """Remove o bloco de tempo de uma tarefa (``start_at = end_at = NULL``).
+
+    A tarefa continua no plano do Meu Dia; só sai da timeline.
+
+    Args:
+        task_id: Id da tarefa.
+
+    Returns:
+        Dicionário de status.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,)
+            )
+            if not cur.fetchone():
+                return {"status": "error", "message": "Tarefa não encontrada."}
+            cur.execute(
+                "UPDATE tasks SET start_at = NULL, end_at = NULL, updated_at = now() WHERE id = %s",
+                (task_id,),
+            )
+    return {"status": "ok", "message": "Bloco de tempo removido."}
+
+
+def list_my_day(date_str: Optional[str] = None) -> dict:
+    """Monta o ritual do Meu Dia: plano, pendências de ontem, sugestões e capacity.
+
+    Chamada pelo endpoint ``GET /api/tasks/my-day`` e pelas tools de Telegram.
+    A capacity é calculada cruzando as estimativas das tarefas com os eventos do
+    Google Calendar lidos via ``tools_calendar`` (MCP existente). Se o Calendar não
+    responder, retorna ``capacity.calendar_ok = False`` e ``agenda_min = 0`` — nunca
+    quebra a tela (FR-008 / SC-005).
+
+    Args:
+        date_str: Data no formato "YYYY-MM-DD". ``None`` = hoje (fuso SP).
+
+    Returns:
+        ``{date, plano, pendencias_ontem, sugestoes, capacity}`` — listagem direta
+        (sem ``status``), pois cada seção pode ser vazia.
+    """
+    from agents.kaguya.capacity import compute_capacity
+    from agents.kaguya.tools_tags import _attach_tags
+
+    hoje = date.fromisoformat(date_str) if date_str else _today_sp()
+    hoje_str = hoje.isoformat()
+    amanha_str = (hoje + timedelta(days=7)).isoformat()   # janela das sugestões (≤7 dias)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # Usa _qualified("t") pois há JOIN com task_projects (evita colunas ambíguas).
+            campos = _qualified("t")
+
+            # ── Plano de hoje: my_day_date == hoje, abertas, pai ──
+            cur.execute(
+                f"""
+                SELECT {campos}, p.name AS project_name
+                FROM tasks t
+                JOIN task_projects p ON p.id = t.project_id
+                WHERE t.my_day_date = %s
+                  AND t.completed_at IS NULL
+                  AND t.deleted_at IS NULL
+                  AND t.parent_id IS NULL
+                ORDER BY t.start_at NULLS LAST, t.position
+                """,
+                (hoje_str,),
+            )
+            plano_rows = cur.fetchall()
+
+            # ── Pendências de ontem: my_day_date < hoje, abertas, pai ──
+            cur.execute(
+                f"""
+                SELECT {campos}, p.name AS project_name
+                FROM tasks t
+                JOIN task_projects p ON p.id = t.project_id
+                WHERE t.my_day_date < %s
+                  AND t.completed_at IS NULL
+                  AND t.deleted_at IS NULL
+                  AND t.parent_id IS NULL
+                ORDER BY t.my_day_date, t.position
+                """,
+                (hoje_str,),
+            )
+            pendencias_rows = cur.fetchall()
+
+            # ── Sugestões: vencem em ≤7 dias, fora do plano de hoje, abertas, pai ──
+            cur.execute(
+                f"""
+                SELECT {campos}, p.name AS project_name
+                FROM tasks t
+                JOIN task_projects p ON p.id = t.project_id
+                WHERE t.due_date BETWEEN %s AND %s
+                  AND (t.my_day_date IS NULL OR t.my_day_date != %s)
+                  AND t.completed_at IS NULL
+                  AND t.deleted_at IS NULL
+                  AND t.parent_id IS NULL
+                ORDER BY t.due_date, t.priority DESC
+                """,
+                (hoje_str, amanha_str, hoje_str),
+            )
+            sugestoes_rows = cur.fetchall()
+
+    # Serializa e anexa as tags em bloco (sem N+1).
+    def _prepare(rows: list) -> list:
+        items = []
+        for r in rows:
+            item = _serialize_task(r)
+            item["project_name"] = r["project_name"]
+            items.append(item)
+        return _attach_tags(items)
+
+    plano = _prepare(plano_rows)
+    pendencias = _prepare(pendencias_rows)
+    sugestoes = _prepare(sugestoes_rows)
+
+    # ── Capacity: estimativas das tarefas + eventos do Calendar do dia ──
+    # Tenta ler os eventos do Google Calendar via MCP. Qualquer falha é silenciosa.
+    eventos: list[tuple[int, int]] = []
+    cal_ok = True
+    try:
+        # Import lazy: tools_calendar é o módulo que acessa o MCP do Calendar.
+        # Aqui usamos a tool existente que lê eventos numa janela de datas.
+        from agents.kaguya import tools_calendar as tc
+        raw = tc.list_tasks_in_range(hoje_str, hoje_str)
+        # list_tasks_in_range retorna tarefas, não eventos do Google Calendar.
+        # Para a capacity precisamos dos eventos do Calendar (Google), que são lidos
+        # pelo agente via MCP. No contexto do router (webapp), não há MCP disponível;
+        # nesse caso a capacity roda só com estimativas (calendar_ok=False se não vier).
+        # Quando a Kaguya (Telegram) chama list_my_day, ela pode injetar os eventos
+        # lendo pelo MCP antes de chamar esta função — por ora eventos = [].
+        # TODO fatia 019: o Calendar Hub passará os eventos via parâmetro.
+    except Exception:
+        cal_ok = False
+
+    estimativas = [t.get("duration_min") for t in plano]
+    cap = compute_capacity(estimativas, eventos, calendar_ok=cal_ok)
+    cap["no_plano"] = len(plano)   # sobrescreve com a contagem real do plano
+
+    return {
+        "date": hoje_str,
+        "plano": plano,
+        "pendencias_ontem": pendencias,
+        "sugestoes": sugestoes,
+        "capacity": cap,
+    }

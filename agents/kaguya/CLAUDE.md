@@ -28,6 +28,7 @@ agents/kaguya/
 ├── recurrence.py         # motor puro RRULE (next_occurrence, project_occurrences, build/describe)
 ├── habit_strength.py     # motor PURO (sem banco): fórmula da força do hábito (Loop) — fatia 014
 ├── tools_habits.py       # camada de lógica: hábitos + check-ins + histórico — fatia 014
+├── capacity.py           # motor PURO (sem banco): compute_capacity() — janela 8h–22h — fatia 016
 ├── tools.py              # FACHADA: re-exporta a lógica + wrappers + cross-agent (Nami)
 ├── agent.py              # create_kaguya_agent() — factory (só o McpToolset do Calendar)
 └── CLAUDE.md             # este arquivo
@@ -180,6 +181,11 @@ recalculado), `remove_check_in`, `get_habit_history(year)` (esparso, para o heat
 | `create_project`, `update_project`, `delete_project` | listas |
 | **`complete_payment_task`** | cross-agent (Kaguya + Nami) — atômico |
 | **`create_expense_reminder`** | cross-agent — cria lembrete no Postgres |
+| `plan_my_day()` | Meu Dia completo (plano + pendências + sugestões + capacity) — fatia 016 |
+| `my_day_status()` | resumo textual do plano + capacity (briefing Telegram) — fatia 016 |
+| `add_to_my_day_by_name(task, date?)` | adiciona ao Meu Dia por id ou nome — fatia 016 |
+| `remove_from_my_day_by_name(task)` | retira do Meu Dia por id ou nome — fatia 016 |
+| `set_estimate_by_name(task, minutes)` | grava estimativa de duração por id ou nome — fatia 016 |
 | (Calendar) | `list_events_today`, `create_event`, ... via MCP |
 
 ### Cross-agent: pagamento atômico

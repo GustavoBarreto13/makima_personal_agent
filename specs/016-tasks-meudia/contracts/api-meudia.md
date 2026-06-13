@@ -17,7 +17,7 @@ direto). Chama `list_my_day(date)`.
   "date": "2026-06-13",
   "plano": [ Task, ... ],            // my_day_date == date, abertas, ordenadas por start_at depois position
   "pendencias_ontem": [ Task, ... ], // my_day_date < date, abertas
-  "sugestoes": [ Task, ... ],        // vencem em ≤2 dias, fora do plano
+  "sugestoes": [ Task, ... ],        // vencem em ≤7 dias, fora do plano
   "capacity": {
     "no_plano": 5,
     "estimado_min": 180,

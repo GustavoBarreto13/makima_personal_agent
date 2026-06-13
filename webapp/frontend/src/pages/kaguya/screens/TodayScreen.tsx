@@ -1,13 +1,22 @@
-// TodayScreen — versão "Hoje" simples do MVP (guia §4.6): tarefas de hoje +
-// vencidas, agrupadas. O hero/capacity/timeline do ritual "Meu Dia" são da Fase 3;
-// o QuickAdd com ParseMirror entra na US4.
+// TodayScreen — Meu Dia (Fase 3 / fatia 016).
+// Substitui a versão MVP simples ("Hoje + Vencidas").
+// Ritual: hero → pendências de ontem → plano de hoje → sugestões | capacity + timeline.
 
 import { useEffect, useState, useCallback } from 'react'
-import type { Task, Project } from '../types'
+import type { Task, Project, MyDayResponse } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
-import { TaskRow } from '../components/TaskRow'
 import { QuickAdd } from '../components/QuickAdd'
-import { Icon } from '../ui/Icons'
+import { DayHero } from '../components/DayHero'
+import { ReviewCard } from '../components/ReviewCard'
+import { PlanCard } from '../components/PlanCard'
+import { CapacityBar } from '../components/CapacityBar'
+import { DayTimeline } from '../components/DayTimeline'
+
+// Capacity vazia para o estado inicial (antes do fetch).
+const EMPTY_CAP = {
+  no_plano: 0, estimado_min: 0, agenda_min: 0,
+  livre_min: 840, folga_min: 840, excedeu: false, calendar_ok: true,
+}
 
 interface TodayScreenProps {
   projects: Project[]
@@ -18,72 +27,109 @@ interface TodayScreenProps {
 }
 
 export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast }: TodayScreenProps) {
-  const [overdue, setOverdue] = useState<Task[]>([])
-  const [today, setToday] = useState<Task[]>([])
+  const [data, setData] = useState<MyDayResponse | null>(null)
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await kaguyaApi.today()
-      setOverdue(r.overdue); setToday(r.today)
-    } catch { toast('Falha ao carregar o dia.', 'err') }
-    finally { setLoading(false) }
+      const r = await kaguyaApi.myDay()
+      setData(r)
+    } catch {
+      toast('Falha ao carregar o Meu Dia.', 'err')
+    } finally {
+      setLoading(false)
+    }
   }, [toast])
 
   useEffect(() => { load() }, [load, reloadKey])
 
-  const toggle = async (task: Task) => {
-    try {
-      if (task.completed_at) await kaguyaApi.reopen(task.id)
-      else {
-        const r = await kaguyaApi.complete(task.id)
-        if (r.needs_cascade) {
-          if (!window.confirm(`Concluir ${r.open_subtasks} subtarefa(s) também?`)) return
-          await kaguyaApi.complete(task.id, true)
-        }
-      }
-      await load(); onChanged()
-    } catch { toast('Não foi possível atualizar.', 'err') }
-  }
+  if (loading) return <div className="kg-page"><div className="kg-empty">Carregando…</div></div>
 
-  const rename = async (task: Task, title: string) => {
-    try { await kaguyaApi.updateTask(task.id, { title }); await load() } catch { toast('Falha ao renomear.', 'err') }
-  }
-
-  const dateLabel = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+  const plano = data?.plano ?? []
+  const pendencias = data?.pendencias_ontem ?? []
+  const sugestoes = data?.sugestoes ?? []
+  const capacity = data?.capacity ?? EMPTY_CAP
 
   return (
     <div className="kg-page">
-      <h1 className="kg-page-title"><Icon name="sun" size={24} /> Meu Dia</h1>
-      <div className="kg-page-sub">{dateLabel}</div>
+      {/* Hero: saudação + data + 3 stats + retrato */}
+      <DayHero capacity={capacity} />
 
-      {/* Captura rápida (parser @lista + !prioridade) */}
-      <QuickAdd projects={projects} onCreated={() => { load(); onChanged() }} toast={toast} />
-
-      {loading ? (
-        <div className="kg-empty">Carregando…</div>
-      ) : overdue.length === 0 && today.length === 0 ? (
-        <div className="kg-empty"><div className="kg-empty-title">Dia tranquilo</div>Nada vence hoje. ...Como esperado.</div>
-      ) : (
-        <>
-          {overdue.length > 0 && (
-            <div className="kg-today-section">
-              <div className="kg-today-head overdue"><Icon name="clock" size={13} /> Vencidas ({overdue.length})</div>
-              <div className="kg-list">
-                {overdue.map((t) => <TaskRow key={t.id} task={t} showProject onToggle={toggle} onOpen={onOpenTask} onRename={rename} />)}
+      {/* Layout de duas colunas */}
+      <div className="kg-day-grid">
+        {/* ── Coluna esquerda: ritual ── */}
+        <div>
+          {/* Pendências de ontem (só se houver) */}
+          {pendencias.length > 0 && (
+            <div className="kg-day-section">
+              <div className="kg-day-section-head pending">
+                ↩ Pendências de ontem ({pendencias.length})
               </div>
+              {pendencias.map(t => (
+                <ReviewCard key={t.id} task={t} onDone={load} toast={toast} />
+              ))}
             </div>
           )}
-          <div className="kg-today-section">
-            <div className="kg-today-head"><Icon name="sun" size={13} /> Hoje ({today.length})</div>
-            <div className="kg-list">
-              {today.length === 0 ? <div className="kg-empty" style={{ padding: 24 }}>Nada marcado para hoje.</div>
-                : today.map((t) => <TaskRow key={t.id} task={t} showProject onToggle={toggle} onOpen={onOpenTask} onRename={rename} />)}
+
+          {/* Quick-add direto no Meu Dia */}
+          <QuickAdd
+            projects={projects}
+            onCreated={async (id) => {
+              // Adiciona automaticamente ao Meu Dia após criar.
+              if (id) { try { await kaguyaApi.addToMyDay(id) } catch { /* silencioso */ } }
+              load(); onChanged()
+            }}
+            toast={toast}
+            placeholder="Adicionar ao dia…"
+          />
+
+          {/* Plano de hoje */}
+          <div className="kg-day-section" style={{ marginTop: 16 }}>
+            <div className="kg-day-section-head">
+              📋 No plano de hoje ({plano.length})
             </div>
+            {plano.length === 0 ? (
+              <div className="kg-day-empty">Nada planejado ainda. Arraste sugestões ou adicione acima.</div>
+            ) : (
+              plano.map(t => (
+                <PlanCard
+                  key={t.id}
+                  task={t}
+                  onChanged={load}
+                  onOpen={onOpenTask}
+                  toast={toast}
+                />
+              ))
+            )}
           </div>
-        </>
-      )}
+
+          {/* Sugestões (vence em ≤7 dias, fora do plano) */}
+          {sugestoes.length > 0 && (
+            <div className="kg-day-section">
+              <div className="kg-day-section-head">
+                💡 Sugestões — vence em breve
+              </div>
+              {sugestoes.map(t => (
+                <PlanCard
+                  key={t.id}
+                  task={t}
+                  isSuggestion
+                  onChanged={load}
+                  onOpen={onOpenTask}
+                  toast={toast}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Coluna direita: capacity + timeline (sticky) ── */}
+        <div>
+          <CapacityBar capacity={capacity} />
+          <DayTimeline plano={plano} onChanged={load} onOpen={onOpenTask} toast={toast} />
+        </div>
+      </div>
     </div>
   )
 }

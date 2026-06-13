@@ -103,9 +103,10 @@ makima_personal_agent/
 │   ├── kaguya/          # agente de tarefas + agenda — Fase 2 ✅ (motor próprio em PostgreSQL)
 │   │   ├── __init__.py
 │   │   ├── schema_tasks_pg.sql # schema do sistema de tarefas (spec 011)
-│   │   ├── tools_tasks.py      # camada de lógica: CRUD de tarefas/subtarefas, posições
+│   │   ├── tools_tasks.py      # camada de lógica: CRUD de tarefas/subtarefas, posições + Meu Dia
 │   │   ├── tools_projects.py   # camada de lógica: listas, grupos, colunas (Kanban)
-│   │   ├── tools.py            # fachada: re-exporta a lógica + cross-agent atômico (Nami)
+│   │   ├── capacity.py         # motor PURO (sem banco): compute_capacity() — fatia 016
+│   │   ├── tools.py            # fachada: re-exporta a lógica + cross-agent atômico (Nami) + Meu Dia
 │   │   ├── agent.py     # create_kaguya_agent() — factory (só o McpToolset do Calendar)
 │   │   └── CLAUDE.md    # camada de lógica, tools, cross-agent atômico, Calendar, personalidade
 │   ├── kurisu/          # agente de knowledge base — Fase 3 🔧 (pendente corpus Vertex AI)

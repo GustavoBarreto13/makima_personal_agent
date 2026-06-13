@@ -25,6 +25,7 @@ import { TrashScreen } from './screens/TrashScreen'
 import { FilterScreen } from './screens/FilterScreen'
 import { CalendarScreen } from './screens/CalendarScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
+import { EisenhowerScreen } from './screens/EisenhowerScreen'
 import { Icon } from './ui/Icons'
 
 // Tweaks padrão (acento azul, claro, confortável, traço, animações ligadas).
@@ -163,11 +164,19 @@ export function KaguyaShell() {
         toast={showToast}
       />
     )
+    if (view === 'eisenhower') return (
+      <EisenhowerScreen
+        projects={sidebar?.projects ?? []}
+        reloadKey={reloadKey}
+        onChanged={() => { loadSidebar(); bump() }}
+        onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
+        toast={showToast}
+      />
+    )
     // Views ainda não construídas (fases futuras)
     return (
       <div className="kg-page"><div className="kg-empty">
         <div className="kg-empty-title">Em breve</div>
-        {view === 'eisenhower' && 'A matriz de Eisenhower chega numa fase futura.'}
       </div></div>
     )
   }
