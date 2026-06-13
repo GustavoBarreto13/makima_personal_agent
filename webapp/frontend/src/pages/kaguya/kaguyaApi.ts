@@ -173,8 +173,9 @@ export const kaguyaApi = {
 
   // ── Calendar Hub — fatia 019 ──────────────────────────────────────────────
   // Fontes registradas no hub (Kaguya, Nami, Frieren, Violet, Akane, gcal)
+  // Backend retorna lista direta (não envolvida em { sources: [...] })
   calendarSources: () =>
-    api.get<{ sources: Calendar[] }>(`${BASE}/calendar/sources`),
+    api.get<Calendar[]>(`${BASE}/calendar/sources`),
 
   // Agregação fan-out: itens de todas as fontes visíveis num intervalo
   calendarAggregate: (start: string, end: string, sources?: string[]) => {
@@ -184,8 +185,9 @@ export const kaguyaApi = {
   },
 
   // Preferências de visibilidade + cor por calendário
+  // Backend retorna lista direta (não envolvida em { prefs: [...] })
   calendarPrefs: () =>
-    api.get<{ prefs: CalendarPref[] }>(`${BASE}/calendar/prefs`),
+    api.get<CalendarPref[]>(`${BASE}/calendar/prefs`),
   setCalendarPref: (calId: string, patch: Partial<CalendarPref>) =>
     api.patch<MutationResult>(`${BASE}/calendar/prefs/${encodeURIComponent(calId)}`, patch),
 

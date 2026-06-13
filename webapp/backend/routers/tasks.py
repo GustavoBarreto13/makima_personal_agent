@@ -46,6 +46,9 @@ from agents.kaguya.tools_filters import (
     list_builtin_filters, list_tasks_by_builtin,
 )
 from agents.kaguya.tools_calendar import list_tasks_in_range
+# Calendar Hub — fatia 019 (US2): providers cross-agent + prefs de exibição
+from agents.kaguya.calendar_hub import list_sources, aggregate
+from agents.kaguya.calendar_prefs import get_calendar_prefs, set_calendar_pref
 # Hábitos — fatia 014 / Fase 4. CRUD + check-ins + histórico (força calculada na leitura).
 from agents.kaguya.tools_habits import (
     list_habits, get_habit, create_habit, update_habit,
@@ -556,6 +559,75 @@ def calendar_route(
 ) -> list[dict]:
     """Tarefas datadas + ocorrências virtuais das recorrentes na janela (sem materializar)."""
     return list_tasks_in_range(start, end, project_id)  # listagem
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Calendar Hub — fatia 019 (US2): providers cross-agent + prefs de exibição
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CalendarPrefBody(BaseModel):
+    """Body do PATCH de preferência de calendário (todos os campos opcionais)."""
+    visible: Optional[bool] = None
+    color: Optional[str] = None
+    position: Optional[int] = None
+
+
+@router.get("/calendar/sources")
+def calendar_sources_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Lista todas as fontes de calendário registradas no hub, com prefs do usuário.
+
+    Retorna kaguya, nami, frieren, violet, akane e o Google Calendar como fontes
+    disponíveis, mesclando as preferências de visibilidade e cor salvas na tabela
+    ``calendar_prefs``.
+    """
+    # with_prefs=True mescla as prefs do banco (cor/visibilidade) sobre os metadados base
+    return list_sources(with_prefs=True)
+
+
+@router.get("/calendar/aggregate")
+def calendar_aggregate_route(
+    start: str = Query(..., description="Início da janela (AAAA-MM-DD)"),
+    end: str = Query(..., description="Fim da janela (AAAA-MM-DD)"),
+    sources: Optional[str] = Query(None, description="Source IDs separados por vírgula para filtrar"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Agrega eventos de todos os provedores (ou dos filtrados) em um feed único.
+
+    O parâmetro ``sources`` aceita uma lista separada por vírgula de source IDs
+    (ex.: ``nami,frieren``). Quando omitido, usa todas as fontes visíveis.
+    Provedores com erro vão para ``result["errors"]`` sem interromper os demais.
+    """
+    # Converte a string de query param em lista de IDs ou None (para "todas as fontes")
+    sources_list = [s.strip() for s in sources.split(",")] if sources else None
+    # aggregate retorna {"sources": [...], "items": [...], "errors": [...]}
+    return aggregate(start, end, sources=sources_list)
+
+
+@router.get("/calendar/prefs")
+def calendar_prefs_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Retorna as preferências de exibição de todos os calendários salvas no banco."""
+    return get_calendar_prefs()  # listagem — sem _check_result
+
+
+@router.patch("/calendar/prefs/{calendar_id}")
+def set_calendar_pref_route(
+    calendar_id: str,
+    body: CalendarPrefBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Atualiza as preferências de um calendário (upsert parcial).
+
+    Apenas os campos não-None do body são atualizados — campos ausentes preservam
+    o valor atual (ou usam o padrão ao inserir pela primeira vez).
+    """
+    return _check_result(
+        set_calendar_pref(
+            calendar_id,
+            visible=body.visible,
+            color=body.color,
+            position=body.position,
+        )
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
