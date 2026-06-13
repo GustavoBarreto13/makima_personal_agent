@@ -104,10 +104,10 @@ def test_aggregate_dois_providers_concatena_itens():
     calendar_hub.register(_make_source("src_a"), lambda s, e: [item_a])
     calendar_hub.register(_make_source("src_b"), lambda s, e: [item_b])
 
-    # Chama aggregate sem filtro de sources — deve consultar todos os providers visíveis
-    # (incluindo src_a e src_b recém-registrados; com_prefs=True internamente, mas
-    # sem pref no banco → visible=True por padrão)
-    result = calendar_hub.aggregate("2026-06-01", "2026-06-07")
+    # Chama aggregate restringindo a src_a e src_b — evita que nami/frieren/violet
+    # (providers reais) tentem abrir o banco durante os testes (sem DATABASE_URL).
+    # O cenário validado é o fan-out entre os dois providers de teste.
+    result = calendar_hub.aggregate("2026-06-01", "2026-06-07", sources=["src_a", "src_b"])
 
     # Ambos os itens devem estar na lista unificada
     titles = [i["title"] for i in result["items"]]
