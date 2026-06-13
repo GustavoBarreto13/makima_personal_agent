@@ -150,8 +150,9 @@ id   name   color(oklch)   icon   group_id(FK task_project_groups, nullable)
 ### Habit (`habits`) + Checkin (`habit_checkins`)
 ```
 habit:   id, name, icon, color, freq_num/freq_den (ex 5/7), type(sim-não | mensurável), target_value, unit
-checkin: habit_id, date, value(>0 = cumprido; número p/ mensurável)
+checkin: habit_id, date, value   # sim-não: cumprido = há check-in; mensurável: cumprido = value >= target_value
 ```
+> A **força** (consistência/tendência/recente) é **derivada na leitura** dos check-ins (ver §9), nunca uma coluna.
 
 ### Event (Google Calendar via MCP)
 Leitura do Calendar (`{day, start, end, title}`) para capacity/time-blocking. Tasks `type='event'`/`'birthday'` são tarefas próprias — distintas dos eventos do Google.
@@ -232,7 +233,7 @@ Padrão do repo: mutações retornam `{status:"ok"|"error", ...}`; listagens ret
 - Drag entre quadrantes **ajusta os campos derivados** (mover p/ importante sobe prioridade; mover p/ não-urgente empurra a data). A matriz é uma view, não um campo novo.
 
 ### 6.6 Hábitos (ref. Loop) — `screens-habits.jsx`
-- Card com **anel de força** (não streak), check-in num toque (sim/não) ou **stepper de valor** (mensurável), dots da semana, **heatmap anual** (padrão Frieren) e rodapé (força %, sequência, semana x/y).
+- Card com **anel de consistência** (0–100, não streak — ver §9), check-in num toque (sim/não) ou **stepper de valor** (mensurável), dots da semana, **heatmap anual** (padrão Frieren) e rodapé com as **3 dimensões** da spec 014: **consistência %**, **tendência** (📈/📉/➡️) e **recente** (cumpridos nas últimas 2 semanas, ex.: 5/6).
 
 ### 6.7 Command Palette (⌘K, ref. Todoist+Linear) — `components.jsx`
 - Campo único que **cria, busca e navega**. Parsing pt-BR com highlight ao vivo. ↑↓ navegam, ↵ executa, esc fecha.
@@ -263,14 +264,28 @@ O frontend **nunca** implementa a regra de recorrência: ao completar uma recorr
 
 ---
 
-## 9. Força do hábito — fórmula Loop (perdoa falhas)
-`habitStrength()` em `data.js`: decaimento suave com meia-vida ~13 dias, **normalizado pela meta de frequência** (não é streak que zera). Um hábito com ~80% de aderência permanece alto após uma falha isolada.
+## 9. Força do hábito — modelo "caixa d'água" (perdoa falhas)
+> **Verdade canônica: a spec 014.** O protótipo `data.js` esboçou uma fórmula estilo Loop (meia-vida
+> ~13 dias), mas a implementação real (`agents/kaguya/habit_strength.py`, spec
+> `specs/014-tasks-habitos/`) adotou o modelo **"caixa d'água"** descrito abaixo. Ao reimplementar,
+> seguir a 014, não o esboço do protótipo.
+
+Motor **puro** (sem banco), **calculado na leitura** a partir de `habit_checkins` — nunca persistido.
+Uma **média móvel exponencial (EMA) de peso fixo** reescalada pela meta de frequência, em vez de um
+streak que zera. Um hábito com bom histórico **não cai** após uma falha isolada.
 ```
-mult = 0.5^(1/13)            # decai por dia
-actual = Σ decay(check_no_dia)
-ideal  = Σ decay(meta freq_num/freq_den)
-força  = clamp(actual / ideal, 0..1)
+peso = 0.1                                  # histórico pesa 90%
+score_hoje = peso·(fez?1:0) + (1-peso)·score_ontem     # EMA por dia
+esperado   = min(meta_semanal/7, 1)         # régua reescalada pela frequência alvo
+consistência = clamp(score / esperado, 0..1) · 100      # 0–100 (a "nota")
 ```
+Expõe **3 dimensões** (não um único número):
+- **consistência** (0–100) — a nota; cumprir 3 de 3 num hábito 3x/semana ≈ 100 (igual a 7 de 7 num diário);
+- **tendência** — `subindo` / `caindo` / `estável` (📈/📉/➡️), via duas EMAs (rápida vs. lenta);
+- **recente** — cumpridos nas últimas 2 semanas (ex.: "5/6").
+
+Mensurável conta como cumprido quando `value >= target_value`. (Detalhes e edge cases:
+`specs/014-tasks-habitos/spec.md`.)
 
 ---
 
