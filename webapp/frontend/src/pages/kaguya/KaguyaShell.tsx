@@ -26,7 +26,9 @@ import { FilterScreen } from './screens/FilterScreen'
 import { CalendarScreen } from './screens/CalendarScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
 import { EisenhowerScreen } from './screens/EisenhowerScreen'
+import { CommandPalette } from './components/CommandPalette'
 import { Icon } from './ui/Icons'
+import { taskFromParse } from '../../lib/parseTask'
 
 // Tweaks padrão (acento azul, claro, confortável, traço, animações ligadas).
 const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'blue', density: 'confortavel', pmark: 'bar', anim: 'on' }
@@ -64,6 +66,7 @@ export function KaguyaShell() {
   const [groupModal, setGroupModal] = useState<{ mode: 'create' | 'edit'; group?: import('./types').Group } | null>(null)
   const [filterModal, setFilterModal] = useState<{ mode: 'create' | 'edit'; filter?: Filter } | null>(null)
   const [habitModal, setHabitModal] = useState<{ mode: 'create' | 'edit'; habit?: Habit } | null>(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
   const [toast, setToast] = useState<{ msg: string; kind?: 'ok' | 'err' } | null>(null)
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState<Task[] | null>(null)
@@ -86,11 +89,21 @@ export function KaguyaShell() {
     setView(v); setParam(p)
   }
 
-  // Atalho de teclado: C = nova tarefa (foco fora de inputs).
+  // Atalhos globais de teclado (fatia 018):
+  //   ⌘K / Ctrl+K  → abre a Command Palette (sempre, mesmo dentro de input)
+  //   C             → nova tarefa (só fora de inputs — SC-003)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // ⌘K / Ctrl+K — abre a palette em qualquer contexto (preventDefault evita conflito com browser).
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        setPaletteOpen(true)
+        return
+      }
+      // Atalhos de letra só fora de campos de texto (SC-003).
       const tag = (e.target as HTMLElement)?.tagName
-      if ((tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT')) return
+      const editable = (e.target as HTMLElement)?.isContentEditable
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || editable) return
       if (e.key === 'c' || e.key === 'C') { e.preventDefault(); openNewTask() }
     }
     window.addEventListener('keydown', onKey)
@@ -291,6 +304,29 @@ export function KaguyaShell() {
           toast={showToast}
         />
       )}
+
+      {/* Command Palette ⌘K (fatia 018) */}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        projects={sidebar?.projects ?? []}
+        onNavigate={(v, p) => { setPaletteOpen(false); navigate(v, p ?? null) }}
+        onCreateTask={async (parsed) => {
+          // Resolve @projectToken e cria via o mesmo helper do QuickAdd (FR-007).
+          if (!parsed.title) return
+          const projs = sidebar?.projects ?? []
+          const params = taskFromParse(parsed, projs)
+          // Avisa quando a lista não foi encontrada (mesmo comportamento do QuickAdd).
+          if (parsed.projectToken && !params.project_id) {
+            showToast(`Lista "@${parsed.projectToken}" não encontrada — fui pro Inbox.`, 'err')
+          }
+          await kaguyaApi.createTask(params)
+          afterSave()
+          showToast('Tarefa criada.')
+        }}
+        onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
+        toast={showToast}
+      />
 
       {/* Toast */}
       {toast && <Toast message={toast.msg} kind={toast.kind} onDone={() => setToast(null)} />}

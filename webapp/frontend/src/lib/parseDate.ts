@@ -13,7 +13,8 @@ export interface DateParseResult {
 }
 
 // Nome do dia da semana → número do JS (Date.getDay(): 0=domingo .. 6=sábado).
-const WEEKDAY: Record<string, number> = {
+// Exportado para o parseTask reutilizar ao montar RRULEs de recorrência.
+export const WEEKDAY: Record<string, number> = {
   domingo: 0, dom: 0,
   segunda: 1, seg: 1,
   terca: 2, 'terça': 2, ter: 2,
@@ -24,14 +25,16 @@ const WEEKDAY: Record<string, number> = {
 }
 
 // Data de hoje à meia-noite local (o usuário está em America/Sao_Paulo ≈ hora local).
-function midnight(): Date {
+// Exportada para o parseTask derivar âncoras de recorrência.
+export function midnight(): Date {
   const d = new Date()
   d.setHours(0, 0, 0, 0)
   return d
 }
 
 // Formata um Date como "YYYY-MM-DD" usando os componentes LOCAIS (não UTC).
-function iso(d: Date): string {
+// Exportada para o parseTask formatar datas de âncora.
+export function iso(d: Date): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
@@ -39,7 +42,7 @@ function iso(d: Date): string {
 }
 
 // Soma `n` dias a uma data (sem mutar a original).
-function addDays(d: Date, n: number): Date {
+export function addDays(d: Date, n: number): Date {
   const r = new Date(d)
   r.setDate(r.getDate() + n)
   return r
@@ -47,7 +50,8 @@ function addDays(d: Date, n: number): Date {
 
 // Próxima ocorrência futura de um dia da semana. Hoje sendo esse dia → semana seguinte
 // (sempre futuro). `extraWeek` ("próxima <dia>") empurra mais uma semana.
-function nextWeekday(target: number, extraWeek = false): Date {
+// Exportada para o parseTask derivar âncoras de "toda sexta", "toda segunda", etc.
+export function nextWeekday(target: number, extraWeek = false): Date {
   const base = midnight()
   let delta = ((target - base.getDay()) + 7) % 7
   if (delta === 0) delta = 7        // hoje é esse dia → a próxima ocorrência é futura
