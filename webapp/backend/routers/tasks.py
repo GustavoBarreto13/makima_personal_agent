@@ -709,9 +709,18 @@ def list_gcal_events_route(
 
     Exclui automaticamente "Kaguya — Tarefas" e "TickTick" para evitar
     duplicatas com as tarefas já renderizadas pelo sistema (anti-duplicação D6).
+    Retorna lista vazia (não 500) em caso de falha de autenticação ou indisponibilidade
+    do Google Calendar — o frontend já tem catch() que trata lista vazia graciosamente.
     """
+    import logging
     from agents.kaguya import gcal
-    return gcal.list_events(start, end)
+    try:
+        return gcal.list_events(start, end)
+    except Exception as exc:
+        # Não propaga 500 para o frontend — GCal offline/auth inválido não deve
+        # quebrar o calendário todo. O log preserva o rastreio para diagnóstico.
+        logging.getLogger(__name__).error("gcal.list_events falhou: %s", exc, exc_info=True)
+        return []
 
 
 @router.post("/calendar/events", status_code=201)
