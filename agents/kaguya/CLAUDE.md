@@ -29,7 +29,11 @@ agents/kaguya/
 ├── habit_strength.py     # motor PURO (sem banco): fórmula da força do hábito (Loop) — fatia 014
 ├── tools_habits.py       # camada de lógica: hábitos + check-ins + histórico — fatia 014
 ├── capacity.py           # motor PURO (sem banco): compute_capacity() — janela 8h–22h — fatia 016
-├── tools.py              # FACHADA: re-exporta a lógica + wrappers + cross-agent (Nami)
+├── gcal.py               # cliente Google Calendar compartilhado (read all / write main) — fatia 019
+├── gcal_sync.py          # espelho best-effort: push/remove tarefas no GCal "Kaguya — Tarefas" — fatia 019
+├── calendar_prefs.py     # CRUD da tabela calendar_prefs (visibilidade + cor por fonte) — fatia 019
+├── calendar_hub.py       # agregador: register/list_sources/aggregate fan-out best-effort — fatia 019
+├── tools.py              # FACHADA: re-exporta a lógica + wrappers + cross-agent (Nami + Calendar Hub)
 ├── agent.py              # create_kaguya_agent() — factory (só o McpToolset do Calendar)
 └── CLAUDE.md             # este arquivo
 
@@ -174,7 +178,8 @@ recalculado), `remove_check_in`, `get_habit_history(year)` (esparso, para o heat
 | `list_tasks_by_tag(name)` | tarefas abertas com uma tag (case-insensitive) |
 | `list_filters`, `create_filter(name, rules)`, `update_filter`, `delete_filter` | smart-lists (fatia 013 · DSL de regras) |
 | `list_tasks_by_filter_name(name)` / `list_today_overdue()` | abrir smart-list por nome / built-in Hoje+Vencidas |
-| `list_tasks_in_range(start_date, end_date)` | consulta por intervalo (calendário no Telegram) |
+| `list_tasks_in_range(start_date, end_date)` | consulta por intervalo — só tarefas Kaguya |
+| `list_week_with_hub(start_date, end_date)` | visão integrada: tarefas + Nami + Frieren + Violet — fatia 019 |
 | `list_habits`, `create_habit`, `update_habit`, `archive_habit` | hábitos (fatia 014) |
 | `check_in_habit(habit, value?)` | check-in de hoje por id **ou** nome; ecoa o score recalculado (consistência/tendência) |
 | `remove_check_in(habit_id)` / `habit_status(habit?)` | desfaz o check-in / score em 3 dimensões (um ou todos) |
@@ -197,6 +202,93 @@ confirmar valor/categoria/conta **antes** de chamar — sem defaults financeiros
 
 `create_expense_reminder(title, due_date, project_name="Finanças", amount=0, description="")`:
 cria a tarefa de lembrete (prioridade alta) no banco; **não** lança despesa.
+
+---
+
+## Calendar Hub (fatia 019) — visão integrada de calendários
+
+### Arquitetura
+
+O Calendar Hub é um agregador de eventos de múltiplos agentes no mesmo feed de calendário.
+Cada agente publica um **provedor** (função `list_calendar_events(start, end) -> list[CalendarItem]`)
+e o hub faz fan-out para todos os provedores visíveis nas prefs do usuário.
+
+```
+calendar_hub.py
+├── CalendarItem (TypedDict)  — formato unificado de item de calendário
+├── register(source, fn)      — registra uma fonte + provedor
+├── list_sources(with_prefs)  — lista fontes com prefs mescladas
+└── aggregate(start, end)     — fan-out best-effort → {sources, items, errors}
+
+calendar_prefs.py
+└── get/set_calendar_prefs    — CRUD da tabela calendar_prefs (visible + color + position)
+```
+
+### Protocolo CalendarItem
+
+Cada item retornado por um provedor deve seguir o TypedDict `CalendarItem`:
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `cal` | str | ID da fonte: `"nami"`, `"frieren"`, `"violet"`, `"akane"`, `"gcal"` |
+| `date` | str | `"YYYY-MM-DD"` — dia canônico do item |
+| `start` | str \| None | ISO 8601 com hora — `None` se dia inteiro |
+| `end` | str \| None | ISO 8601 de término — `None` se dia inteiro |
+| `all_day` | bool | `True` se o item ocupa o dia inteiro sem horário |
+| `title` | str | Texto de exibição |
+| `kind` | str | Tipo semântico: `"expense"`, `"book-session"`, `"journal-entry"`, `"task"` |
+| `ref_id` | str \| None | ID do registro na fonte (para deep link) |
+| `deep_link` | str \| None | Caminho URL: `/nami/...`, `/books/...`, etc. |
+| `color` | str \| None | Cor OKLCH sobrepõe a cor padrão da fonte |
+| `loc` | str \| None | Localização (eventos com endereço) |
+
+### Fontes registradas
+
+| ID | Agente | Arquivo | Cor padrão |
+|---|---|---|---|
+| `kaguya` | Tarefas | stub (`[]`) — as tarefas vêm de `list_tasks_in_range` | azul |
+| `nami` | Finanças | `agents/nami/calendar_provider.py` | laranja |
+| `frieren` | Livros | `agents/frieren/calendar_provider.py` | verde-azulado |
+| `violet` | Diário | `agents/journal/calendar_provider.py` | roxo-magenta |
+| `akane` | Filmes | stub (`[]`) — `agents/media/` ainda não implementado | vermelho |
+
+### gcal.py — cliente Google Calendar compartilhado
+
+`agents/kaguya/gcal.py` encapsula toda a interação com a Google Calendar API v3.
+Usa as mesmas credenciais OAuth do MCP Calendar (`GOOGLE_CALENDAR_*`).
+
+Funções principais:
+- `list_calendars()` — todos os calendários da conta (filtra "Kaguya — Tarefas" e "TickTick")
+- `list_events(start, end, calendar_id?)` — eventos num intervalo
+- `create_event(summary, start, end, ...)` — cria no calendário principal
+- `update_event(event_id, ...)` — atualiza
+- `delete_event(event_id)` — remove
+- `ensure_kaguya_calendar()` — garante que "Kaguya — Tarefas" existe (idempotente)
+
+### gcal_sync.py — espelho best-effort de tarefas no GCal
+
+`agents/kaguya/gcal_sync.py` mantém um espelho das tarefas Kaguya no Google Calendar
+"Kaguya — Tarefas". Opera de forma **best-effort** — nunca levanta exceção; falha no Google
+não aborta a operação principal.
+
+Funções:
+- `push_task(task_id)` — cria ou atualiza o evento espelho. Tarefa concluída ganha prefixo "✓ ".
+- `remove_task_event(task_id)` — remove o evento espelho (usado em soft-delete).
+
+**Gatilhos em `tools_tasks.py`:** todas as mutações de tarefa chamam `push_task` ou
+`remove_task_event` (lazy import dentro de `try/except`) **após** a transação PostgreSQL —
+o Google Calendar nunca participa da transação.
+
+**Feature flag:** `GCAL_SYNC_ENABLED=false` desativa todos os gatilhos sem alterar o CRUD.
+Padrão: `true`.
+
+### Variáveis de ambiente necessárias
+
+As mesmas do MCP Calendar, mais:
+
+| Variável | Descrição |
+|---|---|
+| `GCAL_SYNC_ENABLED` | `"true"` (padrão) \| `"false"` — desativa o espelho sem desativar o CRUD |
 
 ---
 

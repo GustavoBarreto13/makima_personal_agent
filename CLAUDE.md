@@ -21,7 +21,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | Agente | Domínio | Status | Documentação |
 |---|---|---|---|
 | `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1 | `agents/nami/CLAUDE.md` |
-| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) | ✅ Fase 2 | `agents/kaguya/CLAUDE.md` |
+| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (fatia 019) | ✅ Fase 2 + 019 | `agents/kaguya/CLAUDE.md` |
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG) | 🔧 Fase 3 | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) | ✅ Fase 5a | `agents/frieren/CLAUDE.md` |
 | `agents/lucy/` | Email (Gmail IMAP) | — Fase 4 | — |
@@ -100,15 +100,19 @@ makima_personal_agent/
 │   │   ├── agent.py     # nami_agent
 │   │   ├── schema_pg.sql # schema das tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, categorias, formatação, personalidade
-│   ├── kaguya/          # agente de tarefas + agenda — Fase 2 ✅ (motor próprio em PostgreSQL)
+│   ├── kaguya/          # agente de tarefas + agenda + Calendar Hub — Fase 2 ✅ + Fase 019 ✅
 │   │   ├── __init__.py
-│   │   ├── schema_tasks_pg.sql # schema do sistema de tarefas (spec 011)
+│   │   ├── schema_tasks_pg.sql # schema do sistema de tarefas (spec 011) + calendar_prefs
 │   │   ├── tools_tasks.py      # camada de lógica: CRUD de tarefas/subtarefas, posições + Meu Dia
 │   │   ├── tools_projects.py   # camada de lógica: listas, grupos, colunas (Kanban)
 │   │   ├── capacity.py         # motor PURO (sem banco): compute_capacity() — fatia 016
-│   │   ├── tools.py            # fachada: re-exporta a lógica + cross-agent atômico (Nami) + Meu Dia
+│   │   ├── gcal.py             # cliente Google Calendar (read all / write main) — fatia 019
+│   │   ├── gcal_sync.py        # espelho best-effort de tarefas → GCal "Kaguya — Tarefas" — fatia 019
+│   │   ├── calendar_prefs.py   # CRUD da tabela calendar_prefs — fatia 019
+│   │   ├── calendar_hub.py     # agregador fan-out: register/list_sources/aggregate — fatia 019
+│   │   ├── tools.py            # fachada: re-exporta a lógica + cross-agent (Nami) + Calendar Hub
 │   │   ├── agent.py     # create_kaguya_agent() — factory (só o McpToolset do Calendar)
-│   │   └── CLAUDE.md    # camada de lógica, tools, cross-agent atômico, Calendar, personalidade
+│   │   └── CLAUDE.md    # camada de lógica, tools, Calendar Hub, gcal_sync, personalidade
 │   ├── kurisu/          # agente de knowledge base — Fase 3 🔧 (pendente corpus Vertex AI)
 │   │   ├── __init__.py
 │   │   ├── agent.py     # kurisu_agent — singleton com VertexAiRagRetrieval
@@ -195,6 +199,11 @@ python -m venv .venv
 # variáveis mínimas necessárias (ver coordinator/CLAUDE.md para lista completa):
 # TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, GCP_CREDENTIALS_JSON, GCP_PROJECT_ID
 # DATABASE_URL (PostgreSQL)
+# Calendar Hub (fatia 019) — necessário no container makima-web (gcal.py + gcal_sync.py):
+# GOOGLE_CALENDAR_CLIENT_ID, GOOGLE_CALENDAR_CLIENT_SECRET
+# GOOGLE_CALENDAR_ACCESS_TOKEN, GOOGLE_CALENDAR_REFRESH_TOKEN, GOOGLE_CALENDAR_TOKEN_EXPIRY
+# GOOGLE_CALENDAR_MAIN_CALENDAR_ID
+# GCAL_SYNC_ENABLED=true  (default; "false" desativa o espelho sem desativar o CRUD)
 
 python -m coordinator.main
 ```
