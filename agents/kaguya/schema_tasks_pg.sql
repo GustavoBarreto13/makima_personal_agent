@@ -133,6 +133,19 @@ CREATE INDEX IF NOT EXISTS idx_tasks_my_day    ON tasks (my_day_date) WHERE my_d
 
 
 -- ----------------------------------------------------------------------------
+-- Migrações idempotentes — bancos pré-existentes
+-- ----------------------------------------------------------------------------
+-- ATENÇÃO: CREATE TABLE IF NOT EXISTS é no-op numa tabela que já existe.
+-- Qualquer coluna acrescentada DEPOIS da criação original do banco precisa de
+-- um ALTER TABLE ... ADD COLUMN IF NOT EXISTS próprio para ser adicionada em
+-- produção. A declaração dentro do CREATE TABLE cobre apenas bancos novos.
+-- Padrão: toda coluna nova → entra no CREATE TABLE (banco novo) E aqui (banco existente).
+
+-- fatia 019: id do evento espelho no Google Calendar "Kaguya — Tarefas"
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS google_event_id TEXT;
+
+
+-- ----------------------------------------------------------------------------
 -- task_recurrences — regra de recorrência (1:1 com a tarefa viva da série)
 -- ----------------------------------------------------------------------------
 -- Tabela criada agora, mas só ganha lógica/UI na Fase 2 (012). Adormecida no MVP.

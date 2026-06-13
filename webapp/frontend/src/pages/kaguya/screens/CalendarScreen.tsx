@@ -193,6 +193,8 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast }: Ca
   // ── Mapeamento Task → CalEvent ────────────────────────────────────────────
 
   function taskToCalEvent(t: Task): CalEvent | null {
+    // Caso 1: tarefa com bloco de tempo (time-blocking via start_at/end_at).
+    // É o caso mais específico — ocupa um intervalo definido no grid.
     if (t.start_at) {
       return {
         id: String(t.id),
@@ -207,6 +209,31 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast }: Ca
         taskId: t.id,
       }
     }
+
+    // Caso 2: tarefa com data de vencimento E hora de vencimento (due_date + due_time),
+    // mas sem bloco de tempo (start_at é null).
+    // due_time é a hora limite de entrega, não um bloco — a tarefa não "ocupa" tempo,
+    // mas deve aparecer no horário correto do grid (não na faixa all-day do topo).
+    // Montamos um ISO datetime combinando date + time para que o TimeGrid posicione
+    // o evento na célula de hora certa. end fica null (ponto no tempo, sem duração).
+    if (t.due_date && t.due_time) {
+      const startISO = `${t.due_date}T${t.due_time}`
+      return {
+        id: String(t.id),
+        cal: 'kaguya',
+        day: t.due_date,
+        start: startISO,
+        end: null,
+        allDay: false,
+        color: null,
+        kind: 'task',
+        title: t.title,
+        taskId: t.id,
+      }
+    }
+
+    // Caso 3: tarefa com apenas data de vencimento (sem hora).
+    // Vai para a faixa de "dia inteiro" no topo do grid — sem horário específico.
     if (t.due_date) {
       return {
         id: String(t.id),
@@ -221,6 +248,8 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast }: Ca
         taskId: t.id,
       }
     }
+
+    // Tarefa sem data alguma — não aparece no calendário.
     return null
   }
 
