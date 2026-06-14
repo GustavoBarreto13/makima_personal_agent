@@ -192,7 +192,9 @@ export function MarinShell() {
       <aside className="mr-side">
         {/* Identidade da Marin */}
         <div className="mr-side-identity">
-          <div className="mr-side-avatar">🎀</div>
+          <div className="mr-side-avatar">
+            <img src="/marin.png" alt="Marin" />
+          </div>
           <div>
             <p className="mr-side-name">Marin</p>
             <p className="mr-side-sub">Catálogo de Animes</p>
