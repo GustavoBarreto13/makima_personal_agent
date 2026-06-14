@@ -1,13 +1,15 @@
 """Enriquecimento em lote dos animes importados via MAL sync — agente Marin.
 
-O sync MAL (`sync_mal`) importa animes com dados mínimos: título, status,
-episódios assistidos e nota. Este script complementa esse processo buscando
-metadados completos (poster, sinopse, estúdio, gêneros, banner, episódios)
-via Jikan + AniList + ARM para todos os animes sem `poster_url`.
+O sync MAL (`sync_mal`) importa animes com `source = 'mal_sync'` e dados
+mínimos: título, status, episódios assistidos e nota. Este script complementa
+esse processo buscando metadados completos (poster, sinopse, estúdio, gêneros,
+banner, episódios) via Jikan + AniList + ARM.
 
-Critério de seleção:
-    Animes com `poster_url IS NULL` e `mal_id IS NOT NULL` e `deleted = FALSE`.
-    Use --force para re-enriquecer todos, independente de já terem poster.
+Critério de seleção e idempotência:
+    Seleciona animes com `source = 'mal_sync'` — exatamente os que vieram do
+    sync e ainda não foram enriquecidos. Ao enriquecer, seta `source = 'jikan'`,
+    então se o script parar no meio, a próxima rodada continua de onde parou
+    sem reprocessar os que já foram concluídos (mesmo que não tenham poster).
 
 Rate limiting:
     Cada chamada a `enrich_anime` já inclui os delays internos do metadata.py
@@ -17,10 +19,10 @@ Rate limiting:
     ~12 min base + ~10 min de episódios = ~22 min total.
 
 Usage:
-    # Enriquece apenas os sem poster (padrão)
+    # Enriquece apenas os que vieram do sync MAL (padrão — idempotente)
     python scripts/enrich_marin.py
 
-    # Re-enriquece todos, mesmo os que já têm poster
+    # Re-enriquece todos, mesmo os já enriquecidos (source = 'jikan')
     python scripts/enrich_marin.py --force
 
     # Processa apenas os 50 primeiros (útil para testar)
@@ -75,15 +77,17 @@ def _buscar_candidatos(force: bool, limite: int | None) -> list[dict]:
     """Retorna animes do catálogo que precisam de enriquecimento.
 
     Args:
-        force: Se True, retorna todos os animes (mesmo com poster).
-               Se False, retorna apenas os sem poster_url.
+        force: Se True, retorna todos os animes (ignora o source).
+               Se False, retorna apenas os com source = 'mal_sync' (ainda não enriquecidos).
         limite: Número máximo de animes a retornar. None = sem limite.
 
     Returns:
         Lista de dicts com {id, mal_id, title} em ordem de criação.
     """
-    # Filtra por poster_url IS NULL quando não for --force
-    filtro_poster = "" if force else "AND poster_url IS NULL"
+    # Sem --force: seleciona só os que vieram do sync MAL e ainda não foram enriquecidos.
+    # O UPDATE em _aplicar_enriquecimento seta source = 'jikan', então animes já
+    # processados (com ou sem poster) não aparecem mais nesta query — idempotente.
+    filtro_source = "" if force else "AND source = 'mal_sync'"
 
     # Limita o resultado quando --limit for fornecido
     clausula_limit = f"LIMIT {limite}" if limite else ""
@@ -93,7 +97,7 @@ def _buscar_candidatos(force: bool, limite: int | None) -> list[dict]:
           FROM anime
          WHERE deleted = FALSE
            AND mal_id IS NOT NULL
-           {filtro_poster}
+           {filtro_source}
          ORDER BY created_at ASC
          {clausula_limit}
     """
@@ -286,11 +290,11 @@ def main() -> None:
     candidatos = _buscar_candidatos(force=args.force, limite=args.limit)
 
     if not candidatos:
-        log.info("Nenhum anime para enriquecer. Use --force para re-enriquecer todos.")
+        log.info("Nenhum anime pendente (source = 'mal_sync'). Use --force para re-enriquecer todos.")
         return
 
     total = len(candidatos)
-    modo = "full (--force)" if args.force else "sem poster"
+    modo = "full (--force)" if args.force else "source = 'mal_sync' (pendentes)"
     log.info("Encontrados %d animes para enriquecer [modo: %s]", total, modo)
 
     # Estimativa de tempo: cada enrich_anime leva ~3–4s base (Jikan + AniList + ARM)
@@ -369,7 +373,7 @@ def main() -> None:
     if erros:
         log.warning(
             "%d animes falharam. Rode novamente — os que já foram enriquecidos "
-            "não serão reprocessados (já têm poster_url).",
+            "não serão reprocessados (source já é 'jikan').",
             erros,
         )
 
