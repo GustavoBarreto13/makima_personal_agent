@@ -20,6 +20,8 @@ import { VioletShell } from './pages/violet/VioletShell'     // Shell do diário
 import { NamiShell }   from './pages/nami/NamiShell'         // Shell completo da seção de finanças (redesign)
 import { KaguyaShell } from './pages/kaguya/KaguyaShell'      // Shell de tarefas (sistema próprio, spec 011)
 import { AkaneShell }  from './pages/akane/AkaneShell'         // Shell de filmes (cinemateca pessoal, spec 015)
+import { MarinShell }  from './pages/marin/MarinShell'         // Shell de animes (catálogo Marin, spec 021)
+import { MaiShell }   from './pages/mai/MaiShell'              // Shell de séries de TV (Mai Sakurajima, spec 022)
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
@@ -99,6 +101,14 @@ function App() {
         {/* Akane · Filmes — cinemateca pessoal estilo Letterboxd (spec 015).
             Antes do catch-all /* para o shell assumir as sub-rotas de /movies. */}
         <Route path="/movies/*" element={<AkaneShell />} />
+
+        {/* Marin · Animes — catálogo de animes com sync MAL e diário de episódios (spec 021).
+            Antes do catch-all /* para o shell assumir as sub-rotas de /animes. */}
+        <Route path="/animes/*" element={<MarinShell />} />
+
+        {/* Mai · Séries de TV — catálogo com TMDB e diário de episódios (spec 022).
+            Antes do catch-all /* para o shell assumir as sub-rotas de /series. */}
+        <Route path="/series/*" element={<MaiShell />} />
 
         {/* Todas as outras rotas usam o Layout principal com sidebar Makima */}
         <Route path="/*" element={

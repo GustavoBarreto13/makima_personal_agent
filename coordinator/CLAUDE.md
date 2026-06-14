@@ -81,6 +81,8 @@ Para evitar que o histórico de todas as conversas se acumule em uma única sess
 | `<chat_id>_tarefas` | Conversas com a Kaguya (tarefas + agenda) |
 | `<chat_id>_knowledge` | Conversas com a Kurisu (knowledge base) |
 | `<chat_id>_filmes` | Conversas com a Akane (filmes, cinemateca) |
+| `<chat_id>_animes` | Conversas com a Marin (animes, episódios, MAL sync) |
+| `<chat_id>_series` | Conversas com a Mai (séries de TV, episódios, TMDB) |
 | `<chat_id>_geral` | Tudo que não se encaixa nos domínios acima |
 
 A função `_classify_domain(text)` em `coordinator/main.py` faz a classificação por palavras-chave, sem custo de LLM. O `user_id` continua sendo o `chat_id` puro — o domínio só altera o `session_id`.

@@ -65,7 +65,7 @@ _sessions: set[str] = set()
 _pending_action: dict[str, dict] = {}
 
 # Domínios válidos — usados para classificação, validação no /limpar e rótulos no /tokens
-_DOMAINS = ("financas", "livros", "tarefas", "knowledge", "filmes", "geral")
+_DOMAINS = ("financas", "livros", "tarefas", "knowledge", "filmes", "animes", "series", "geral")
 
 # Acumula tokens consumidos por session_id neste processo (reseta ao reiniciar o container).
 # Chave: session_id completo (ex.: "987654321_financas"); Valor: total de tokens acumulados
@@ -527,6 +527,16 @@ def _classify_domain(text: str) -> str:
     # Knowledge base: notas do Obsidian e estudos via Kurisu
     if any(w in t for w in ["nota", "vault", "obsidian", "anotação", "estudo", "kurisu"]):
         return "knowledge"
+    # Séries de TV: catálogo via Mai — episódios de série, temporadas, schedule de lançamentos
+    if any(w in t for w in ["série", "series", "seriado", "netflix", "hbo", "amazon prime",
+                              "temporada de", "episode", "mai sakurajima", "mai"]):
+        return "series"
+    # Animes: catálogo de animes via Marin — episódios, watchlist, MAL sync, schedule
+    if any(w in t for w in ["anime", "animes", "episódio", "episodio", "temporada",
+                              "mal", "anilist", "jikan", "marin", "simulcast",
+                              "opening", "ending", "fansub", "op", "ed",
+                              "assistindo", "watchei", "watched"]):
+        return "animes"
     # Filmes: cinemateca pessoal via Akane — logar sessões, watchlist, diário de filmes
     if any(w in t for w in ["filme", "assistir", "assisti", "cinema", "diretor",
                               "letterboxd", "watchlist", "tmdb", "akane", "animação",

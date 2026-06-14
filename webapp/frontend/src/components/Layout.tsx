@@ -78,6 +78,15 @@ const DOMAINS: NavDomain[] = [
     color:       'var(--c-akane)',
     colorDim:    'var(--c-akane-dim)',
   },
+  {
+    // Mai · Séries — catálogo de séries de TV com TMDB e diário de episódios (spec 022)
+    character:   'Mai',
+    label:       'Séries',
+    mainPath:    '/series',
+    activePaths: ['/series'],
+    color:       'var(--c-mai)',
+    colorDim:    'var(--c-mai-dim)',
+  },
 ]
 
 // ── Componente principal ───────────────────────────────────────────────────────────────────────

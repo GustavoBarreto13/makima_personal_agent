@@ -23,6 +23,8 @@ from webapp.backend.routers import books as books_router
 from webapp.backend.routers import journal as journal_router
 from webapp.backend.routers import tasks as tasks_router
 from webapp.backend.routers import movies as movies_router  # Akane — catálogo de filmes (spec 015)
+from webapp.backend.routers import animes as animes_router  # Marin — catálogo de animes (spec 021)
+from webapp.backend.routers import series as series_router  # Mai — catálogo de séries de TV (spec 022)
 from webapp.backend.config import SESSION_SECRET
 
 # Cria a instância principal da aplicação FastAPI.
@@ -64,6 +66,16 @@ app.include_router(tasks_router.router, prefix="/api/tasks", tags=["tasks"])
 # Registra todos os endpoints do catálogo de filmes sob /api/movies (spec 015)
 # Ex.: GET /api/movies, POST /api/movies, POST /api/movies/{id}/watch, etc.
 app.include_router(movies_router.router, prefix="/api/movies", tags=["movies"])
+
+# --- Router de animes (Marin) ---
+# Registra todos os endpoints do catálogo de animes sob /api/animes (spec 021)
+# Ex.: GET /api/animes, POST /api/animes, POST /api/animes/{id}/log, POST /api/animes/sync, etc.
+app.include_router(animes_router.router, prefix="/api/animes", tags=["animes"])
+
+# --- Router de séries de TV (Mai) ---
+# Registra todos os endpoints do catálogo de séries sob /api/series (spec 022)
+# Ex.: GET /api/series, POST /api/series, POST /api/series/{id}/log, GET /api/series/upcoming, etc.
+app.include_router(series_router.router, prefix="/api/series", tags=["series"])
 
 # --- CORS (Cross-Origin Resource Sharing) ---
 # O navegador bloqueia requisições entre origens diferentes por segurança.

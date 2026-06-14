@@ -25,8 +25,9 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG) | 🔧 Fase 3 | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) | ✅ Fase 5a | `agents/frieren/CLAUDE.md` |
 | `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015 | `agents/akane/CLAUDE.md` |
+| `agents/marin/` | Animes (PostgreSQL + Jikan/AniList + MAL OAuth) | ✅ Fase 021 | `agents/marin/CLAUDE.md` |
+| `agents/mai/` | Séries de TV (PostgreSQL + TMDB API v4) | ✅ Fase 022 | `agents/mai/CLAUDE.md` |
 | `agents/lucy/` | Email (Gmail IMAP) | — Fase 4 | — |
-| `agents/media/` | Séries + anime (Notion) | — Fase 5b | — |
 
 ### Como o coordinator importa
 
@@ -37,8 +38,9 @@ from agents.kaguya.agent import create_kaguya_agent   # factory (só o McpToolse
 from agents.frieren.agent import frieren_agent
 from agents.kurisu.agent import kurisu_agent
 from agents.akane.agent import akane_agent            # cinemateca de filmes (spec 015)
+from agents.marin.agent import marin_agent            # catálogo de animes (spec 021)
+from agents.mai.agent import mai_agent                # catálogo de séries de TV (spec 022)
 # from agents.lucy.agent import lucy_agent
-# from agents.media.agent import media_agent
 ```
 
 Imports locais — nada de `PYTHONPATH` apontando para outro repo.
@@ -59,8 +61,9 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── kurisu_agent    → Vertex AI RAG (vault Obsidian)             [agents/kurisu]   (estrutura criada, pendente corpus)
     ├── frieren_agent   → PostgreSQL (livros)                        [agents/frieren]
     ├── akane_agent     → PostgreSQL (filmes) + TMDB + Letterboxd    [agents/akane]
-    ├── lucy_agent      → Gmail IMAP                                 [agents/lucy]     (ainda não ativada)
-    └── media_agent     → Notion (séries + filmes + anime)           [agents/media]    (ainda não ativada)
+    ├── marin_agent     → PostgreSQL (animes) + Jikan + AniList + MAL [agents/marin]
+    ├── mai_agent       → PostgreSQL (séries) + TMDB API v4          [agents/mai]
+    └── lucy_agent      → Gmail IMAP                                 [agents/lucy]     (ainda não ativada)
 ```
 
 **Makima não tem tools próprias** — ela só delega. Toda lógica de acesso a APIs fica nas tools dos agents especialistas em `agents/`.
@@ -120,12 +123,19 @@ makima_personal_agent/
 │   │   ├── __init__.py
 │   │   ├── agent.py     # kurisu_agent — singleton com VertexAiRagRetrieval
 │   │   └── CLAUDE.md    # arquitetura RAG, setup Vertex AI, checklist de ativação
-│   └── frieren/         # agente de livros — Fase 5a ✅
+│   ├── frieren/         # agente de livros — Fase 5a ✅
+│   │   ├── __init__.py
+│   │   ├── tools.py     # PostgreSQL + Google Books API
+│   │   ├── agent.py     # frieren_agent
+│   │   ├── schema_pg.sql # schema das tabelas PostgreSQL
+│   │   └── CLAUDE.md    # tools, schema PostgreSQL, menu interativo, personalidade
+│   └── mai/             # agente de séries de TV — Fase 022 ✅
 │       ├── __init__.py
-│       ├── tools.py     # PostgreSQL + Google Books API
-│       ├── agent.py     # frieren_agent
-│       ├── schema_pg.sql # schema das tabelas PostgreSQL
-│       └── CLAUDE.md    # tools, schema PostgreSQL, menu interativo, personalidade
+│       ├── tools.py     # PostgreSQL (series, seasons, episodes, watch_logs)
+│       ├── metadata.py  # TMDB API v4 Bearer + retry + skip-logic incremental
+│       ├── agent.py     # mai_agent — singleton
+│       ├── schema_pg.sql # schema das 4 tabelas PostgreSQL
+│       └── CLAUDE.md    # tools, schema, TMDB Bearer, personalidade
 ├── mcp_servers/
 │   ├── __init__.py
 │   └── calendar/
@@ -173,9 +183,10 @@ Ambiente local: `.venv` própria do makima.
 | **3** | Kurisu (knowledge base): Vertex AI RAG sobre vault Obsidian. Estrutura criada, pendente setup do corpus no GCP. | `agents/kurisu/` + GCP Console | 🔧 |
 | **4** | Lucy (email): tools IMAP/Gmail + agent. | `agents/lucy/` (ref.: `n8n-python-scripts/lucy_email_agent/`) | — |
 | **5a** | Frieren (livros): PostgreSQL + Google Books API + log de leitura por páginas. | `agents/frieren/` | ✅ |
-| **5b** | Media (séries+filmes+anime). | `agents/media/` | — |
+| **022** | Mai (séries de TV): PostgreSQL (4 tabelas) + TMDB API v4 + shell React `/series/*`. | `agents/mai/` | ✅ |
+| **5b** | Lucy (email): tools IMAP/Gmail. | `agents/lucy/` | — |
 
-**Fase atual: 3 🔧** — Kurisu com estrutura criada. Próximo passo: criar o Data Store no Vertex AI Agent Builder e configurar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/CLAUDE.md`).
+**Fase atual: 022 ✅** — Mai implementada (backend + frontend). Próximo passo disponível: fase 3 (Kurisu) ou Lucy.
 
 ---
 

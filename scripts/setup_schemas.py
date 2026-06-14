@@ -25,6 +25,12 @@ SCHEMA_FILES = [
     # Catálogo de filmes da Akane (spec 015). 7 tabelas: movies, diary_entries,
     # movie_lists, movie_list_items, movie_vault_items, movie_people, movie_favorites.
     "agents/akane/schema_pg.sql",
+    # Catálogo de animes da Marin (spec 021). 4 tabelas: anime, watch_logs,
+    # episodes (cache de metadados), mal_sync_state (singleton de tokens OAuth MAL).
+    "agents/marin/schema_pg.sql",
+    # Catálogo de séries de TV da Mai (spec 022). 4 tabelas: series, seasons,
+    # episodes (cache de temporadas+eps), watch_logs (diário de sessões).
+    "agents/mai/schema_pg.sql",
 ]
 
 

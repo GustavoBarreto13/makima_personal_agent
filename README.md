@@ -21,6 +21,9 @@ Envie mensagens pelo Telegram. Makima identifica o domínio e roteia automaticam
 | "o que é machine learning?" | Kurisu 🧠 | Busca no vault Obsidian via RAG |
 | "adiciona o livro Duna" | Frieren 📚 | Busca metadados e adiciona ao catálogo |
 | "li até a página 120" | Frieren 📚 | Registra sessão de leitura |
+| "adiciona Dungeon Meshi na minha lista de animes" | Marin 📺 | Busca no MAL e adiciona ao catálogo |
+| "assisti os eps 1 a 4 de Frieren" | Marin 📺 | Registra sessão no diário de episódios |
+| "sincroniza meu MAL" | Marin 📺 | Puxa toda a lista do MyAnimeList via OAuth |
 
 ---
 
@@ -45,6 +48,7 @@ Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na
 | Livros | Sub-app completa (Frieren): 9 telas — Início com hero e heatmap anual, Biblioteca com grade filtrável, detalhe de livro, Quero Ler, Wishlist com link de loja, Estantes (CRUD), Atividade agrupada por data, Resenhas e Estatísticas do ano |
 | Diário | Bullet journal com timestamp por bullet, heatmap anual, `@pessoas`, `#tags` e busca full-text — sidebar direita com Insights (filtro por ano), Pessoas, Tags e Busca — tela Write com **registro emocional TCC** (situação → emoção → pensamento automático → resposta adaptativa → reavaliação) e aba Emoções nos Insights |
 | Filmes | Sub-app completa (Akane): catálogo estilo Letterboxd — grid de pôsteres TMDB + fallback tipográfico, diário de sessões com rewatch, watchlist, notas e reviews, histograma de notas, Rewind anual, listas/coleções, nuvem de etiquetas, Cofre de conteúdos, vitrine de favoritos (4 slots) e sync RSS/CSV do Letterboxd |
+| Animes | Sub-app completa (Marin): catálogo de animes com sync OAuth MAL — grid de pôsteres com 12 paletas tipográficas, diário de episódios (log de ep_start/ep_end), watchlist, schedule JST/BRT dos próximos lançamentos, estatísticas anuais com heatmap, vitrine de favoritos (4 slots, localStorage) |
 
 **Stack:** FastAPI (backend) + React 19 + TypeScript + Tailwind CSS (frontend) — servidos pelo mesmo container.
 
@@ -63,6 +67,7 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── Kurisu     → Vertex AI RAG (vault Obsidian)             🔧 estrutura criada, pendente corpus
     ├── Frieren    → PostgreSQL + Google Books API (livros)     ✅ ativo
     ├── Akane      → PostgreSQL + TMDB + Letterboxd (filmes)   ✅ ativo
+    ├── Marin      → PostgreSQL + Jikan/AniList + MAL OAuth (animes) ✅ ativo
     ├── Violet     → PostgreSQL (diário)                        🔧 ativo na web, agente Telegram pendente
     └── Lucy       → Gmail API v1                               ⏳ planejado
 ```
@@ -117,6 +122,22 @@ Inspirada na Kurisu Makise de Steins;Gate. Neurocientista prodígio, direta e le
 Opera em dois modos detectados automaticamente:
 - **Tutora** — notas de estudo e técnicas: tom rigoroso, referencia fontes do vault, sarcasmo saudável
 - **Amiga** — notas pessoais e diário: tom caloroso, linguagem natural, sem estrutura formal
+
+### Marin — animes
+Inspirada na Marin Kitagawa de *Sua Conduta Foi Adorável* — gyaru apaixonada por animes e cosplay. Gerencia o catálogo pessoal de animes com integração nativa ao MyAnimeList via OAuth2 PKCE.
+
+**Funcionalidades:**
+- Catálogo de animes com 5 status: `assistindo`, `completo`, `quero_assistir`, `pausado`, `abandonado`
+- Busca de animes no MAL via Jikan (sem limite de requisições para busca)
+- Enriquecimento automático de metadados via Jikan (pôster, sinopse, estúdio, gêneros) + AniList (banner) + ARM (ID bridging)
+- Diário de episódios: registro por intervalo (ep_start → ep_end), data, nota e notas textuais
+- Notas na escala MAL (0–10, passo 0.5) — diferente da escala Letterboxd da Akane (0.5–5.0)
+- Sync com MAL via OAuth2 PKCE (tokens armazenados em PostgreSQL — nunca em arquivo)
+- Cache de episódios com datas de exibição JST para schedule de lançamentos
+- Pôster tipográfico fallback determinístico (12 paletas OKLCH)
+- Estatísticas anuais: total de animes, episódios, horas, nota média, top gêneros/estúdios, heatmap
+
+**Armazenamento:** PostgreSQL — tabelas `anime`, `watch_logs`, `episodes`, `mal_sync_state`.
 
 ### Akane — filmes
 Inspirada na Akane Kurokawa de *Oshi no Ko* — atriz analítica e perfeccionista. Gerencia a cinemateca pessoal com catálogo estilo Letterboxd, enriquecido automaticamente via TMDB API (pôster, diretor, gênero, runtime) e sincronizado com a conta do Letterboxd via RSS automático e importação de CSV histórico.
@@ -211,6 +232,13 @@ makima_personal_agent/
 │   │   ├── tools.py         # PostgreSQL + TMDB API + lógica de negócio (FR-016)
 │   │   ├── agent.py         # akane_agent (singleton, sem MCP)
 │   │   └── schema_pg.sql    # schema PostgreSQL (7 tabelas: movies, diary_entries, listas, cofre, pessoas, favoritos)
+│   ├── marin/
+│   │   ├── tools.py         # PostgreSQL + Jikan/AniList/ARM + MAL OAuth (14 tools)
+│   │   ├── agent.py         # marin_agent (singleton, sem MCP)
+│   │   ├── metadata.py      # search_anime() + enrich_anime() — Jikan/AniList/ARM/TMDB
+│   │   ├── mal_auth.py      # MALAuth: PKCE OAuth2, refresh automático de token
+│   │   ├── mal_sync.py      # sync_mal(): pull delta/full do MAL para PostgreSQL
+│   │   └── schema_pg.sql    # schema PostgreSQL (4 tabelas: anime, watch_logs, episodes, mal_sync_state)
 │   └── journal/
 │       ├── tools.py         # PostgreSQL (pages, bullets, mentions, emoções)
 │       └── schema_pg.sql    # schema PostgreSQL do diário
@@ -228,7 +256,8 @@ makima_personal_agent/
 │   │       ├── books.py     # /api/books/*   — tools da Frieren
 │   │       ├── journal.py   # /api/journal/* — tools do Journal (Violet)
 │   │       ├── tasks.py     # /api/tasks/*   — tools da Kaguya
-│       └── movies.py   # /api/movies/*  — tools da Akane
+│       ├── movies.py    # /api/movies/*  — tools da Akane
+│       └── animes.py   # /api/animes/*  — tools da Marin
 │   ├── frontend/
 │   │   └── src/
 │   │       ├── App.tsx          # roteamento + verificação de sessão
