@@ -90,7 +90,7 @@ export function DiaryScreen({ onSelectAnime, onLog }: DiaryScreenProps) {
 
                 {/* Mini pôster */}
                 <PosterCard
-                  title={log.anime_title}
+                  title={log.anime_title ?? ''}
                   posterUrl={log.poster_url}
                   posterKey={log.poster_key}
                   onClick={() => onSelectAnime(log.anime_id)}

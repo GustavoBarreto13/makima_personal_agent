@@ -137,7 +137,7 @@ export function AddAnimeModal({ onAdded, onClose, onToast }: AddAnimeModalProps)
                       {r.type && <span>{r.type.toUpperCase()}</span>}
                       {r.season && <span> · {r.season}</span>}
                       {r.score && <span> · ⭐ {r.score}</span>}
-                      {r.episodes && <span> · {r.episodes} eps</span>}
+                      {r.episodes_total && <span> · {r.episodes_total} eps</span>}
                     </p>
                   </div>
 

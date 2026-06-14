@@ -71,7 +71,7 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
 
   // Muda o status do anime
   function handleStatusChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const newStatus = e.target.value
+    const newStatus = e.target.value as import('./types').Status
     marinApi.updateStatus(animeId, { status: newStatus })
       .then(() => {
         setLocalStatus(newStatus)

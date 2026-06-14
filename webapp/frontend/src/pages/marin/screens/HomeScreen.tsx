@@ -23,7 +23,7 @@ interface HomeScreenProps {
  * HomeScreen — dashboard principal da Marin.
  * Um único fetch de /api/animes/home preenche todos os blocos.
  */
-export function HomeScreen({ tweaks, onSelectAnime, onLog, onToast }: HomeScreenProps) {
+export function HomeScreen({ onSelectAnime, onLog, onToast }: HomeScreenProps) {
   const [data, setData] = useState<HomeData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -91,14 +91,14 @@ export function HomeScreen({ tweaks, onSelectAnime, onLog, onToast }: HomeScreen
               title={last_session.anime?.title ?? ''}
               posterUrl={last_session.anime?.poster_url}
               posterKey={last_session.anime?.poster_key}
-              onClick={() => onSelectAnime(last_session.anime.anime_id)}
+              onClick={() => onSelectAnime(last_session.anime.id)}
               className="mr-home-hero-poster"
             />
 
             <div className="mr-home-hero-info">
               <p className="mr-home-hero-label">Continue assistindo</p>
               <h2 className="mr-home-hero-title">
-                {last_session.anime?.title ?? last_session.anime?.anime_title}
+                {last_session.anime?.title}
               </h2>
 
               {last_session.next_episode && (
@@ -120,7 +120,7 @@ export function HomeScreen({ tweaks, onSelectAnime, onLog, onToast }: HomeScreen
               <button
                 className="mr-btn mr-btn--primary"
                 onClick={() =>
-                  onLog(last_session.anime.anime_id, last_session.next_episode?.number)
+                  onLog(last_session.anime.id, last_session.next_episode?.number)
                 }
               >
                 {last_session.next_episode
@@ -269,7 +269,7 @@ export function HomeScreen({ tweaks, onSelectAnime, onLog, onToast }: HomeScreen
                 onKeyDown={e => { if (e.key === 'Enter') onSelectAnime(log.anime_id) }}
               >
                 <PosterCard
-                  title={log.anime_title}
+                  title={log.anime_title ?? ''}
                   posterUrl={log.poster_url}
                   posterKey={log.poster_key}
                   className="mr-recent-poster"

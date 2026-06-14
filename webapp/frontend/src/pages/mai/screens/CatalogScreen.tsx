@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import type { Series, MaiStatus } from '../types'
 import { maiApi } from '../maiApi'
 import { PosterCard } from '../components/PosterCard'
-import { StatusChip, STATUS_LABELS } from '../components/StatusChip'
+import { STATUS_LABELS } from '../components/StatusChip'
 import { Stars } from '../components/Stars'
 
 const STATUS_CHIPS: { id: MaiStatus | 'all'; label: string }[] = [

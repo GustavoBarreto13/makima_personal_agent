@@ -12,7 +12,6 @@ import { api } from '../../lib/api'
 // Importa os tipos TypeScript que espelham os contratos do backend
 import type {
   Series,
-  Season,
   Episode,
   WatchLog,
   SeriesDetail,

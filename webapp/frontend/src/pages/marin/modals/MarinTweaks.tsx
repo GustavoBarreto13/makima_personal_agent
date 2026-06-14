@@ -16,14 +16,6 @@ const ACENTOS = ['Neon', 'Rosa-Magenta', 'Sakura', 'Gold'] as const
 const DENSIDADES = ['Grande', 'Médio', 'Compacto'] as const
 const ORDENACOES = ['Atualizado', 'Adicionado', 'Nota', 'Título'] as const
 
-// Mapa de acento → valor do data-accent (usado pelo CSS)
-const ACCENT_VALUES: Record<string, string> = {
-  'Neon':         'neon',
-  'Rosa-Magenta': 'magenta',
-  'Sakura':       'sakura',
-  'Gold':         'gold',
-}
-
 // Preview visual de cada acento (cor OKLCH aproximada)
 const ACCENT_COLORS: Record<string, string> = {
   'Neon':         'oklch(0.77 0.20 200)',   // cyan

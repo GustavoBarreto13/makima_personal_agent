@@ -13,8 +13,8 @@ interface Props {
 // Opções de acento com labels e cor de preview
 const ACCENTS: { value: Accent; label: string; preview: string }[] = [
   { value: 'periwinkle', label: 'Periwinkle',   preview: 'oklch(0.66 0.17 270)' },
-  { value: 'rosa',       label: 'Rosa',          preview: 'oklch(0.70 0.18 340)' },
-  { value: 'ouro',       label: 'Dourado',       preview: 'oklch(0.78 0.16  80)' },
+  { value: 'rose',       label: 'Rosa',          preview: 'oklch(0.70 0.18 340)' },
+  { value: 'amber',      label: 'Dourado',       preview: 'oklch(0.78 0.16  80)' },
   { value: 'noir',       label: 'Noir',          preview: 'oklch(0.55 0     0)'   },
 ]
 
@@ -24,7 +24,7 @@ const THEMES: { value: ThemeMode; label: string; icon: string }[] = [
 ]
 
 const DENSITIES: { value: Density; label: string; icon: string; desc: string }[] = [
-  { value: 'large',   label: 'Grande',   icon: '⬜', desc: 'Pôsteres 180px' },
+  { value: 'cozy',    label: 'Grande',   icon: '⬜', desc: 'Pôsteres 180px' },
   { value: 'medium',  label: 'Médio',    icon: '▫️', desc: 'Pôsteres 136px' },
   { value: 'compact', label: 'Compacto', icon: '▪️', desc: 'Pôsteres 96px'  },
 ]

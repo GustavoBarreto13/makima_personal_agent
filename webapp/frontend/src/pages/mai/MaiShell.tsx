@@ -99,14 +99,16 @@ export function MaiShell() {
   }, [])
 
   // Navega para uma view e parâmetro
-  function go(view: MaiView, param?: string) {
-    setNav({ view, param: param ?? null })
+  // Aceita string genérico e converte para MaiView internamente
+  function go(view: string, param?: string) {
+    setNav({ view: view as MaiView, param: param ?? null })
   }
 
   // Abre modal de log com série pré-selecionada
-  function openLog(seriesId: string, title: string) {
-    setLogPreId(seriesId)
-    setLogPreTitle(title)
+  // Parâmetros opcionais para compatibilidade com as screens que chamam sem args
+  function openLog(seriesId?: string, title?: string) {
+    setLogPreId(seriesId ?? null)
+    setLogPreTitle(title ?? null)
     setShowLog(true)
   }
 
@@ -123,18 +125,16 @@ export function MaiShell() {
           <HomeScreen
             onNav={go}
             onOpenLog={openLog}
-            onOpenAdd={() => setShowAdd(true)}
           />
         )
       case 'catalog':
         return (
           <CatalogScreen
             onNav={go}
-            onOpenAdd={() => setShowAdd(true)}
           />
         )
       case 'diary':
-        return <DiaryScreen onNav={go} />
+        return <DiaryScreen onNav={go} onOpenLog={openLog} />
       case 'watchlist':
         return (
           <WatchlistScreen
@@ -246,7 +246,7 @@ export function MaiShell() {
         <Toast
           key={toast.key}
           message={toast.msg}
-          onDone={() => setToast(null)}
+          onDismiss={() => setToast(null)}
         />
       )}
 

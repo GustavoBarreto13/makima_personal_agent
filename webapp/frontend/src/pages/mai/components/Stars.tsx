@@ -2,7 +2,7 @@
 // RateInput — 5 estrelas clicáveis com suporte a meia-estrela (click esquerdo = 0.5).
 // Cor de estrela FIXA: --star / --star-empty (não segue acento de cor).
 
-import { useState } from 'react'
+import { useState, type JSX } from 'react'
 import { IconStarFill } from './MaiIcons'
 
 interface StarsProps {

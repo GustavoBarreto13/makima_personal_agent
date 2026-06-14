@@ -6,7 +6,6 @@ import { useState, useEffect } from 'react'
 import { marinApi } from '../marinApi'
 import type { Stats } from '../types'
 import { Heatmap } from '../components/Heatmap'
-import { Spark }   from '../components/Spark'
 
 interface StatsScreenProps {}
 

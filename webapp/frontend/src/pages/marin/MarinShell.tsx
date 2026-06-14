@@ -277,7 +277,7 @@ export function MarinShell() {
 
           {/* Link de volta à Makima */}
           <a href="/" className="mr-side-action mr-side-back" title="Voltar à Makima">
-            <Icon name="arrowLeft" />
+            <Icon name="arrow-left" />
             <span>Makima</span>
           </a>
         </div>
