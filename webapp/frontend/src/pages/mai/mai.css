@@ -94,14 +94,14 @@
 }
 
 /* ─── Acentos alternativos (tweak "Cor de acento") ──────────────────────── */
-.mai-shell[data-accent='rosa'] {
+.mai-shell[data-accent='rose'] {
   --mai: oklch(0.71 0.19 350); --mai-deep: oklch(0.82 0.15 352); --mai-bright: oklch(0.86 0.13 350);
   --mai-tint: oklch(0.71 0.19 350 / 0.16); --mai-tint-2: oklch(0.71 0.19 350 / 0.30);
   --heat-1: oklch(0.40 0.10 350); --heat-2: oklch(0.52 0.15 350);
   --heat-3: oklch(0.64 0.19 350); --heat-4: oklch(0.76 0.20 350);
   --accent-h: 350;
 }
-.mai-shell[data-accent='ouro'] {
+.mai-shell[data-accent='amber'] {
   --mai: oklch(0.78 0.14 80); --mai-deep: oklch(0.86 0.12 82); --mai-bright: oklch(0.89 0.11 82);
   --mai-tint: oklch(0.78 0.14 80 / 0.16); --mai-tint-2: oklch(0.78 0.14 80 / 0.30);
   --heat-1: oklch(0.44 0.08 80); --heat-2: oklch(0.56 0.11 80);
@@ -153,11 +153,11 @@
   --shadow-poster: 0 6px 18px oklch(0.3 0.03 285 / 0.18);
 }
 /* Acentos no tema claro */
-.mai-shell[data-theme='light'][data-accent='rosa'] {
+.mai-shell[data-theme='light'][data-accent='rose'] {
   --mai: oklch(0.58 0.20 352); --mai-deep: oklch(0.50 0.20 354); --mai-bright: oklch(0.66 0.20 352);
   --mai-tint: oklch(0.58 0.20 352 / 0.10); --mai-tint-2: oklch(0.58 0.20 352 / 0.20);
 }
-.mai-shell[data-theme='light'][data-accent='ouro'] {
+.mai-shell[data-theme='light'][data-accent='amber'] {
   --mai: oklch(0.62 0.14 78); --mai-deep: oklch(0.54 0.14 74); --mai-bright: oklch(0.70 0.14 80);
   --mai-tint: oklch(0.62 0.14 78 / 0.12); --mai-tint-2: oklch(0.62 0.14 78 / 0.22);
 }
@@ -391,7 +391,7 @@
 .pm-sub .sc { color: var(--star-deep); display: inline-flex; align-items: center; gap: 3px; }
 
 /* Density tweaks */
-.mai-shell[data-density='large']   { --poster-w: 180px; }
+.mai-shell[data-density='cozy']    { --poster-w: 180px; }
 .mai-shell[data-density='medium']  { --poster-w: 136px; }
 .mai-shell[data-density='compact'] { --poster-w: 96px; }
 .mai-shell[data-density='compact'] .poster-grid { gap: 22px 16px; }
@@ -739,6 +739,29 @@
 .modal-foot .grow { flex: 1; }
 .modal-foot .hint { font-size: 11.5px; color: var(--ink-4); }
 .modal-foot .hint kbd { font-family: var(--mono); font-size: 10px; background: var(--card-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+
+/* ─── TweaksModal ────────────────────────────────────────────────────── */
+.tw-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.tw-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 12px 16px; border-radius: var(--r-md); border: 1px solid var(--line);
+  background: var(--card); color: var(--ink-2); cursor: pointer;
+  font-family: var(--sans); font-size: 12px; font-weight: 600; flex: 1;
+  transition: all 0.12s; text-align: center;
+}
+.tw-btn:hover { border-color: var(--mai-tint-2); color: var(--ink); }
+.tw-btn.active { border-color: var(--mai); color: var(--mai-deep); background: var(--mai-tint); }
+.tw-ico { font-size: 20px; line-height: 1; }
+.tw-accent-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 10px 12px; border-radius: var(--r-md); border: 1.5px solid var(--line);
+  background: var(--card); cursor: pointer; flex: 1; transition: all 0.12s;
+}
+.tw-accent-btn:hover { border-color: var(--mai-tint-2); }
+.tw-accent-btn.active { border-color: var(--mai); box-shadow: 0 0 0 2px var(--mai-tint); }
+.tw-swatch { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; }
+.tw-accent-label { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+.tw-check { font-size: 11px; color: var(--mai-deep); font-weight: 700; }
 
 /* ─── Toast ──────────────────────────────────────────────────────────── */
 .mai-toast { position: fixed; bottom: 92px; right: 24px; z-index: 200; background: linear-gradient(135deg, var(--mai), var(--mai-deep)); color: oklch(0.99 0.01 285); padding: 13px 22px; border-radius: 999px; font-size: 13.5px; font-weight: 700; display: flex; align-items: center; gap: 9px; box-shadow: var(--shadow-lg); animation: toast-in 0.3s cubic-bezier(.2,.8,.3,1); }

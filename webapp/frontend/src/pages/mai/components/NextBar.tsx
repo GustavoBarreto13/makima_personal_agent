@@ -24,9 +24,9 @@ export function NextBar({ next, onClick }: Props) {
   if (!next) {
     // Footbar vazio quando não há próximo episódio agendado
     return (
-      <div className="footbar footbar-empty">
-        <div className="fb-placeholder">
-          <IconTv style={{ opacity: 0.35 }} />
+      <div className="footbar">
+        <div className="fb-label">
+          <IconTv style={{ width: 14, height: 14, opacity: 0.5 }} />
           <span>Nenhum episódio agendado</span>
         </div>
       </div>
@@ -38,11 +38,17 @@ export function NextBar({ next, onClick }: Props) {
 
   return (
     <div
-      className={`footbar${isToday ? ' footbar-today' : ''}`}
+      className="footbar"
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       style={{ cursor: onClick ? 'pointer' : 'default' }}
     >
+      {/* Label "PRÓXIMO" */}
+      <div className="fb-label">
+        <IconCalendar style={{ width: 13, height: 13 }} />
+        <span>PRÓXIMO</span>
+      </div>
+
       {/* Thumbnail still ou ícone */}
       <div className="fb-still">
         {next.still_url ? (
@@ -52,27 +58,25 @@ export function NextBar({ next, onClick }: Props) {
             style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 6 }}
           />
         ) : (
-          <div className="fb-still-fallback"><IconTv /></div>
+          <span className="fbs-ico">📺</span>
         )}
       </div>
 
       {/* Info do episódio */}
-      <div className="fb-info">
-        <div className="fb-series">{next.series_title}</div>
-        <div className="fb-ep">
+      <div className="footbar-info">
+        <div className="footbar-title">{next.series_title}</div>
+        <div className="footbar-sub">
           T{next.season_number} E{String(next.episode_number).padStart(2, '0')}
           {next.title && ` · ${next.title}`}
+          {' · '}
+          <span style={isToday ? { color: 'var(--warm)', fontWeight: 700 } : {}}>
+            {dateLabel}
+          </span>
         </div>
       </div>
 
-      {/* Data */}
-      <div className="fb-date">
-        <IconCalendar style={{ opacity: 0.6, width: 14, height: 14 }} />
-        <span className={isToday ? 'fb-date-today' : ''}>{dateLabel}</span>
-      </div>
-
-      {/* Badge "HOJE" */}
-      {isToday && <div className="fb-today-badge">HOJE</div>}
+      {/* Badge "HOJE" quando o episódio é hoje */}
+      {isToday && <div className="sched-badge">HOJE</div>}
     </div>
   )
 }

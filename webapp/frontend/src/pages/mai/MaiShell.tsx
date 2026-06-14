@@ -2,7 +2,7 @@
 // Controla: navegação interna, modais globais, tweaks visuais e NextBar.
 
 import { useState, useEffect, useCallback } from 'react'
-import type { NavState, MaiView, Tweaks, UpcomingEpisode } from './types'
+import type { NavState, MaiView, Tweaks, UpcomingEpisode, MaiStatus } from './types'
 import { maiApi } from './maiApi'
 
 // Telas
@@ -131,6 +131,7 @@ export function MaiShell() {
         return (
           <CatalogScreen
             onNav={go}
+            initialStatus={nav.param as MaiStatus | undefined}
           />
         )
       case 'diary':
@@ -168,44 +169,63 @@ export function MaiShell() {
       data-density={tweaks.density}
     >
       {/* ── Sidebar ──────────────────────────────────────────────────── */}
-      <aside className="sidebar">
-        {/* Logo / nome */}
-        <div className="sb-logo" onClick={() => go('home')}>
-          <span className="sb-ico">📺</span>
-          <span className="sb-name">Mai</span>
+      <aside className="mai-side">
+        {/* Brand — clicável para ir ao Início */}
+        <div className="side-brand" onClick={() => go('home')} style={{ cursor: 'pointer' }}>
+          <div className="brand-mark" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: 22 }}>📺</span>
+          </div>
+          <div className="brand-text">
+            <div className="brand-name">Mai <span className="bunny">🐰</span></div>
+            <div className="brand-role">Séries · TV</div>
+          </div>
         </div>
 
+        {/* CTA principal — abre modal de registro de sessão */}
+        <button className="side-log-btn" onClick={() => openLog()}>
+          <span>📺</span>
+          <span>Registrar sessão</span>
+        </button>
+
         {/* Itens de navegação */}
-        <nav className="sb-nav">
+        <nav className="side-nav">
           {NAV_ITEMS.map(item => (
             <button
               key={item.view}
-              className={`sb-item${nav.view === item.view ? ' active' : ''}`}
+              className={`nav-item${nav.view === item.view ? ' active' : ''}`}
               onClick={() => go(item.view)}
               title={item.label}
             >
-              <span className="sb-item-ico">{item.icon}</span>
-              <span className="sb-item-label">{item.label}</span>
+              <span className="nav-emoji">{item.icon}</span>
+              {item.label}
             </button>
           ))}
         </nav>
 
-        {/* Rodapé da sidebar: adicionar + tweaks */}
-        <div className="sb-foot">
+        {/* Rodapé da sidebar */}
+        <div className="side-foot">
+          <div className="side-quote">
+            <span className="q-mark">"</span>
+            Série boa a gente revê.
+            <span className="q-mark">"</span>
+          </div>
           <button
-            className="sb-add-btn"
+            className="btn btn-ghost"
+            style={{ fontSize: 12, width: '100%', justifyContent: 'center' }}
             onClick={() => setShowAdd(true)}
             title="Adicionar série"
           >
-            <IconPlus />
-            <span>Adicionar</span>
+            <IconPlus style={{ width: 14, height: 14 }} />
+            Adicionar série
           </button>
           <button
-            className="sb-icon-btn"
+            className="btn btn-ghost"
+            style={{ fontSize: 12, width: '100%', justifyContent: 'center' }}
             onClick={() => setShowTweaks(true)}
             title="Aparência"
           >
-            <IconSettings />
+            <IconSettings style={{ width: 14, height: 14 }} />
+            Aparência
           </button>
         </div>
       </aside>
@@ -213,24 +233,22 @@ export function MaiShell() {
       {/* ── Área principal ──────────────────────────────────────────── */}
       <div className="mai-main">
         {/* Topbar */}
-        <header className="topbar">
+        <header className="mai-topbar">
           <div className="topbar-title">
             {NAV_ITEMS.find(i => i.view === nav.view)?.label ?? 'Série'}
           </div>
-          <div className="topbar-actions">
-            <button
-              className="btn btn-primary"
-              style={{ padding: '8px 14px', fontSize: 13 }}
-              onClick={() => setShowAdd(true)}
-            >
-              <IconPlus style={{ width: 14, height: 14 }} />
-              Adicionar
-            </button>
-          </div>
+          <div className="topbar-spacer" />
+          <button
+            className="topbar-add"
+            onClick={() => setShowAdd(true)}
+            title="Adicionar série"
+          >
+            <IconPlus />
+          </button>
         </header>
 
-        {/* Conteúdo da tela */}
-        <div className="mai-content">
+        {/* Conteúdo da tela com scroll */}
+        <div className="mai-scroll">
           {renderScreen()}
         </div>
       </div>
