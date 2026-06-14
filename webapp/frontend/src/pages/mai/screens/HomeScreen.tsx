@@ -53,7 +53,10 @@ export function HomeScreen({ onNav, onOpenLog }: Props) {
           }} />
         </div>
         <div className="hero-warmlight" />
-        <div className="hero-portrait" style={{ display: 'none' }} /> {/* placeholder – imagem opcional */}
+        <div className="hero-portrait">
+          <div className="halo" />
+          <img src="/mai.png" alt="Mai Sakurajima" />
+        </div>
         <div className="hero-inner">
           <div className="hero-eyebrow">
             <span>🐰</span> Mai Sakurajima

@@ -172,8 +172,8 @@ export function MaiShell() {
       <aside className="mai-side">
         {/* Brand — clicável para ir ao Início */}
         <div className="side-brand" onClick={() => go('home')} style={{ cursor: 'pointer' }}>
-          <div className="brand-mark" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ fontSize: 22 }}>📺</span>
+          <div className="brand-mark">
+            <img src="/mai.png" alt="Mai" />
           </div>
           <div className="brand-text">
             <div className="brand-name">Mai <span className="bunny">🐰</span></div>
