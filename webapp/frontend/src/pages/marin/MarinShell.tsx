@@ -314,6 +314,7 @@ export function MarinShell() {
               tweaks={tweaks}
               onSelectAnime={id => navigateTo('detalhe', id)}
               onLog={(animeId, ep) => openLogModal(animeId, ep)}
+              onNav={screen => navigateTo(screen as MarinView)}
               onToast={showToast}
             />
           )}

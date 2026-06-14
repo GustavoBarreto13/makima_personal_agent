@@ -15,7 +15,8 @@ import { Score }            from '../components/Score'
 interface HomeScreenProps {
   tweaks: Tweaks
   onSelectAnime: (id: string) => void
-  onLog: (animeId: string, epNumber?: number) => void
+  onLog: (animeId?: string, epNumber?: number) => void
+  onNav: (screen: string) => void
   onToast: (msg: string) => void
 }
 
@@ -23,7 +24,7 @@ interface HomeScreenProps {
  * HomeScreen — dashboard principal da Marin.
  * Um único fetch de /api/animes/home preenche todos os blocos.
  */
-export function HomeScreen({ onSelectAnime, onLog, onToast }: HomeScreenProps) {
+export function HomeScreen({ onSelectAnime, onLog, onNav, onToast }: HomeScreenProps) {
   const [data, setData] = useState<HomeData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -70,7 +71,48 @@ export function HomeScreen({ onSelectAnime, onLog, onToast }: HomeScreenProps) {
   return (
     <div className="mr-home">
 
-      {/* ── Hero: último anime assistido ───────────────────────────────────── */}
+      {/* ── Hero estático — portrait da Marin + stats ─────────────────────── */}
+      <section className="mr-hero">
+        {/* Fundo com gradiente temático */}
+        <div className="mr-hero-bg" />
+        {/* Brilho quente posicionado no canto superior direito */}
+        <div className="mr-hero-warmlight" />
+        {/* Portrait da Marin com halo de brilho */}
+        <div className="mr-hero-portrait">
+          <div className="mr-hero-halo" />
+          <img src="/marin.png" alt="Marin Kitagawa" />
+        </div>
+        {/* Conteúdo textual à esquerda */}
+        <div className="mr-hero-inner">
+          <div className="mr-hero-eyebrow">
+            <span>🎀</span> Marin Kitagawa
+          </div>
+          <h1 className="mr-hero-title">
+            Seu catálogo<br />de animes
+          </h1>
+          <div className="mr-hero-line">
+            <span><b>{totalAnimes}</b> animes</span>
+            <span>·</span>
+            <span><b>{counts.assistindo ?? 0}</b> em andamento</span>
+            {avg_score_year != null && (
+              <>
+                <span>·</span>
+                <span>Média <b>{avg_score_year.toFixed(1)} ⭐</b></span>
+              </>
+            )}
+          </div>
+          <div className="mr-hero-cta">
+            <button className="mr-btn mr-btn--primary" onClick={() => onLog()}>
+              📺 Logar ep
+            </button>
+            <button className="mr-btn mr-btn-ghost" onClick={() => onNav('catalogo')}>
+              Ver catálogo
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Hero dinâmico: último anime assistido ──────────────────────────── */}
       {last_session && (
         <section className="mr-home-hero">
           {/* Banner do último anime */}

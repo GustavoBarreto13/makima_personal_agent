@@ -788,6 +788,71 @@
 
 .mr-home { max-width: 1180px; margin: 0 auto; padding: 0 28px 96px; }
 
+/* ── Hero estático — portrait da Marin ──────────────────────────────────── */
+.mr-hero {
+  position: relative; overflow: hidden; border-radius: var(--r-xl); margin-top: 28px;
+  min-height: 280px; display: flex; align-items: flex-end;
+  border: 1px solid var(--marin-tint-2); box-shadow: var(--shadow-md);
+}
+.mr-hero-bg {
+  position: absolute; inset: 0; z-index: 0;
+  background: linear-gradient(135deg, var(--card-2), var(--card));
+}
+/* Gradiente escuro da esquerda cobrindo o texto */
+.mr-hero-bg::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(95deg, oklch(0.09 0.025 25 / 0.95) 14%, oklch(0.09 0.025 25 / 0.55) 56%, transparent 100%);
+}
+/* Modo claro */
+[data-theme='light'] .mr-hero-bg::after {
+  background: linear-gradient(95deg, oklch(0.97 0.01 25 / 0.97) 14%, oklch(0.97 0.01 25 / 0.60) 56%, transparent 100%);
+}
+/* Brilho quente no canto superior direito (acento coral/neon) */
+.mr-hero-warmlight {
+  position: absolute; inset: 0; z-index: 1;
+  background: radial-gradient(110% 75% at 95% 8%, var(--marin-tint), transparent 46%);
+  mix-blend-mode: screen; opacity: 0.85;
+}
+/* Portrait posicionado à direita, ancorado na base */
+.mr-hero-portrait {
+  position: absolute; z-index: 1; right: 28px; bottom: 0; width: 252px; pointer-events: none;
+}
+.mr-hero-halo {
+  position: absolute; left: 50%; top: 44%;
+  transform: translate(-50%, -50%);
+  width: 128%; aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle, var(--marin-tint-2), var(--marin-tint) 44%, transparent 68%);
+  filter: blur(8px);
+}
+.mr-hero-portrait img {
+  position: relative; width: 100%; display: block;
+  filter: drop-shadow(0 16px 30px oklch(0 0 0 / 0.55));
+}
+/* Texto à esquerda */
+.mr-hero-inner {
+  position: relative; z-index: 3; padding: 38px 40px;
+  display: flex; flex-direction: column; gap: 14px; max-width: 62%;
+}
+.mr-hero-eyebrow {
+  font-family: var(--mono); font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: 0.22em; color: var(--marin-deep);
+  display: flex; align-items: center; gap: 7px;
+}
+.mr-hero-title {
+  font-family: var(--display); font-size: clamp(30px, 3.6vw, 44px);
+  font-weight: 600; letter-spacing: -0.02em; line-height: 1.04;
+  color: var(--ink); text-wrap: balance;
+}
+.mr-hero-line {
+  font-size: 14.5px; color: var(--ink-2);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.mr-hero-cta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+/* Oculta o portrait em telas estreitas */
+@media (max-width: 820px) { .mr-hero-portrait { display: none; } }
+@media (max-width: 720px) { .mr-hero-inner { max-width: 100%; } }
+
 .mr-home-hero {
   position: relative; overflow: hidden; border-radius: var(--r-xl); margin-top: 24px;
   min-height: 240px; display: flex; align-items: flex-end;
