@@ -44,6 +44,7 @@ Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na
 | Tarefas | Sub-app completa (Kaguya): listas/projetos, colunas Kanban, Meu Dia, tags, smart-lists (filtros salvos), calendário (mês/semana com ocorrências recorrentes) e hábitos (heatmap + força) |
 | Livros | Sub-app completa (Frieren): 9 telas — Início com hero e heatmap anual, Biblioteca com grade filtrável, detalhe de livro, Quero Ler, Wishlist com link de loja, Estantes (CRUD), Atividade agrupada por data, Resenhas e Estatísticas do ano |
 | Diário | Bullet journal com timestamp por bullet, heatmap anual, `@pessoas`, `#tags` e busca full-text — sidebar direita com Insights (filtro por ano), Pessoas, Tags e Busca — tela Write com **registro emocional TCC** (situação → emoção → pensamento automático → resposta adaptativa → reavaliação) e aba Emoções nos Insights |
+| Filmes | Sub-app completa (Akane): catálogo estilo Letterboxd — grid de pôsteres TMDB + fallback tipográfico, diário de sessões com rewatch, watchlist, notas e reviews, histograma de notas, Rewind anual, listas/coleções, nuvem de etiquetas, Cofre de conteúdos, vitrine de favoritos (4 slots) e sync RSS/CSV do Letterboxd |
 
 **Stack:** FastAPI (backend) + React 19 + TypeScript + Tailwind CSS (frontend) — servidos pelo mesmo container.
 
@@ -61,9 +62,9 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── Kaguya     → PostgreSQL próprio (tarefas) + Calendar MCP ✅ ativo
     ├── Kurisu     → Vertex AI RAG (vault Obsidian)             🔧 estrutura criada, pendente corpus
     ├── Frieren    → PostgreSQL + Google Books API (livros)     ✅ ativo
+    ├── Akane      → PostgreSQL + TMDB + Letterboxd (filmes)   ✅ ativo
     ├── Violet     → PostgreSQL (diário)                        🔧 ativo na web, agente Telegram pendente
-    ├── Lucy       → Gmail API v1                               ⏳ planejado
-    └── Akane      → PostgreSQL + TMDB/Letterboxd (filmes)      ⏳ planejado
+    └── Lucy       → Gmail API v1                               ⏳ planejado
 ```
 
 Makima não executa nenhuma ação diretamente — ela apenas roteia para o agente correto. Toda lógica de acesso a APIs fica nos agentes especialistas.
@@ -116,6 +117,24 @@ Inspirada na Kurisu Makise de Steins;Gate. Neurocientista prodígio, direta e le
 Opera em dois modos detectados automaticamente:
 - **Tutora** — notas de estudo e técnicas: tom rigoroso, referencia fontes do vault, sarcasmo saudável
 - **Amiga** — notas pessoais e diário: tom caloroso, linguagem natural, sem estrutura formal
+
+### Akane — filmes
+Inspirada na Akane Kurokawa de *Oshi no Ko* — atriz analítica e perfeccionista. Gerencia a cinemateca pessoal com catálogo estilo Letterboxd, enriquecido automaticamente via TMDB API (pôster, diretor, gênero, runtime) e sincronizado com a conta do Letterboxd via RSS automático e importação de CSV histórico.
+
+**Funcionalidades:**
+- Catálogo com dois status: `watchlist` e `watched`
+- Registro de sessões com data, nota (0.5–5.0), review, tags e rewatch automático
+- Enriquecimento TMDB (pôster, backdrop, sinopse, diretor, gêneros, runtime)
+- Pôster tipográfico fallback determinístico (14 paletas, sem dependência de rede)
+- Sync Letterboxd: RSS automático diário + importação de CSV histórico (diary/reviews/watchlist/ratings)
+- Listas/coleções temáticas com suporte a ordenação ranked
+- Etiquetas de filmes e pessoas (via `movie_people`) com nuvem interativa
+- Cofre de conteúdos por filme (vídeos, artigos, essays, reviews)
+- Rewind anual: totais, gráfico mensal, top diretores/gêneros/pessoas, histograma de notas
+- Vitrine de favoritos (até 4 filmes, persistidos no servidor)
+- Cross-agent: `create_movie_reminder(movie_query, when)` → cria tarefa na Kaguya
+
+**Armazenamento:** PostgreSQL — tabelas `movies`, `diary_entries`, `movie_lists`, `movie_list_items`, `movie_vault_items`, `movie_people`, `movie_favorites`.
 
 ### Frieren — livros
 Inspirada em Frieren de *Frieren: Beyond Journey's End* — elfa maga milenar, contemplativa, paciente.
@@ -188,6 +207,10 @@ makima_personal_agent/
 │   │   ├── tools.py         # PostgreSQL (catálogo + logs) + Google Books API
 │   │   ├── agent.py         # frieren_agent (singleton)
 │   │   └── schema_pg.sql    # schema PostgreSQL (books, reading_logs)
+│   ├── akane/
+│   │   ├── tools.py         # PostgreSQL + TMDB API + lógica de negócio (FR-016)
+│   │   ├── agent.py         # akane_agent (singleton, sem MCP)
+│   │   └── schema_pg.sql    # schema PostgreSQL (7 tabelas: movies, diary_entries, listas, cofre, pessoas, favoritos)
 │   └── journal/
 │       ├── tools.py         # PostgreSQL (pages, bullets, mentions, emoções)
 │       └── schema_pg.sql    # schema PostgreSQL do diário
@@ -204,7 +227,8 @@ makima_personal_agent/
 │   │       ├── finances.py  # /api/finances/* — tools da Nami
 │   │       ├── books.py     # /api/books/*   — tools da Frieren
 │   │       ├── journal.py   # /api/journal/* — tools do Journal (Violet)
-│   │       └── tasks.py     # /api/tasks/*   — tools da Kaguya
+│   │       ├── tasks.py     # /api/tasks/*   — tools da Kaguya
+│       └── movies.py   # /api/movies/*  — tools da Akane
 │   ├── frontend/
 │   │   └── src/
 │   │       ├── App.tsx          # roteamento + verificação de sessão
@@ -214,6 +238,7 @@ makima_personal_agent/
 │   │       │                    # Budgets, Subscriptions
 │   │       │                    # kaguya/   — sub-app de tarefas (KaguyaShell)
 │   │       │                    # frieren/  — sub-app de livros (FrierenShell + 9 screens)
+│   │       │                    # akane/    — sub-app de filmes (AkaneShell + 8 screens)
 │   │       │                    # violet/   — sub-app de diário (VioletShell)
 │   │       └── lib/api.ts       # wrapper de fetch com cookie de sessão automático
 │   └── Dockerfile               # multi-stage: Node 20 (build React) → Python 3.12 (uvicorn)
@@ -311,6 +336,10 @@ GOOGLE_CALENDAR_MAIN_CALENDAR_ID=  # geralmente o email Gmail
 # Sem a chave o limite é ~1.000 req/dia; com ela sobe para 10.000 req/dia
 GOOGLE_BOOKS_API_KEY=
 
+# Akane — TMDB e Letterboxd
+TMDB_TOKEN=                    # Bearer token da API v4 do TMDB (Settings → API → Read Access Token)
+LETTERBOXD_USERNAME=           # username do Letterboxd (ex: gustavobarreto) para sync do RSS
+
 # Kurisu — Vertex AI RAG (fase 3)
 VERTEX_RAG_CORPUS=             # projects/{PROJECT_ID}/locations/us-central1/ragCorpora/{ID}
 
@@ -404,10 +433,10 @@ npm install && npm run dev   # dev server em localhost:5173
 | — | Webapp (FastAPI + React) + diário Violet na web | ✅ |
 | 016–019 | Kaguya — Meu Dia/time-blocking, Eisenhower, Command Palette ⌘K, Calendar Hub | ⏳ |
 | 014 | Komi — Pessoas (identidade canônica cross-agent) | ⏳ |
-| 015 | Akane — Filmes (Letterboxd-style, PostgreSQL + TMDB/Letterboxd) | ⏳ |
+| 015 | Akane — Filmes (Letterboxd-style, PostgreSQL + TMDB/Letterboxd) | ✅ |
 | 4 | Lucy (email): tools Gmail API v1 + agente | ⏳ |
 
-**Pendência atual:** Kurisu 🔧 — falta criar o Data Store no Vertex AI Agent Builder e setar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/CLAUDE.md`). Em paralelo: ligar o diário Violet como agente Telegram e implementar as fatias de tarefas 016–019.
+**Pendência atual:** Kurisu 🔧 — falta criar o Data Store no Vertex AI Agent Builder e setar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/CLAUDE.md`). Fatia 015 (Akane — filmes) entregue ✅. Em paralelo: ligar o diário Violet como agente Telegram e implementar as fatias de tarefas 016–019.
 
 ---
 

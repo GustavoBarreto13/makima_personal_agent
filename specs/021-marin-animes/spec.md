@@ -39,12 +39,17 @@ seu próprio brilho."
 | Wiring no coordinator | `coordinator/agent.py`, `coordinator/main.py`, `scripts/setup_schemas.py` | FR-017 |
 | Docs raiz atualizados | `CLAUDE.md` (raiz), `coordinator/CLAUDE.md` | FR-017 |
 
-### 🎨 Fora do escopo desta fatia (Claude Design / fatia futura)
+### 🎨 Fora do escopo desta fatia (implementação futura)
 
 | O quê | Observação |
 |---|---|
-| Protótipo hi-fi (`design_handoff_marin_animes/`) | Criado pelo **Claude Design** usando `design-guide.md` como referência — não implementar aqui |
-| Shell React + router FastAPI `/api/animes/*` | Fatia futura, após o agente Telegram estar funcional |
+| Protótipo hi-fi | ✅ **Criado** em `design_handoff_marin_animes/` — abre `Marin - Animes.html` para ver o visual final |
+| Shell React + router FastAPI `/api/animes/*` | Fatia futura — `design-guide.md` e o handoff são a fonte de verdade |
+
+> O `design-guide.md` foi **atualizado** (2026-06-13) com todos os detalhes do handoff:
+> acento padrão Neon, tokens `--st-{status}`, dimensões reais (sidebar 244px, topbar 56px,
+> NextBar 70px), hero com `profile-split`/`home-split`/carrossel, componentes `NextBar` +
+> `FavoriteAnimes`/`AnimePicker` + `MalStats`, interações de hover/animação e breakpoints responsivos.
 
 ---
 

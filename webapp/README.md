@@ -16,6 +16,7 @@ Domínios disponíveis hoje:
 | Finanças | `/nami/*` | Nami | ✅ |
 | Livros | `/books/*` | Frieren | ✅ |
 | Diário pessoal | `/journal/*` | Violet | ✅ |
+| Filmes (cinemateca Akane) | `/movies/*` | Akane | ✅ |
 | Tarefas/Agenda (Kaguya) | — | Kaguya | não construído |
 | Painel de chat (Makima/ADK) | — | Makima | não construído |
 
