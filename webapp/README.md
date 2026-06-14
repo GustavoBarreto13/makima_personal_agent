@@ -17,7 +17,9 @@ Domínios disponíveis hoje:
 | Livros | `/books/*` | Frieren | ✅ |
 | Diário pessoal | `/journal/*` | Violet | ✅ |
 | Filmes (cinemateca Akane) | `/movies/*` | Akane | ✅ |
-| Tarefas/Agenda (Kaguya) | — | Kaguya | não construído |
+| Animes (catálogo Marin) | `/animes/*` | Marin | ✅ |
+| Tarefas/Agenda (Kaguya) | `/tasks/*` | Kaguya | ✅ |
+| Séries de TV (Mai) | `/series/*` | Mai | ⏳ em desenvolvimento |
 | Painel de chat (Makima/ADK) | — | Makima | não construído |
 
 ## Rodar localmente

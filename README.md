@@ -1,4 +1,4 @@
-# Makima Personal Agent
+﻿# Makima Personal Agent
 
 Bot Telegram multi-agente construído com **Google ADK**. Recebe mensagens em linguagem natural e delega para agentes especialistas conforme o domínio — finanças, tarefas, agenda, livros, diário e base de conhecimento pessoal.
 
@@ -268,6 +268,7 @@ makima_personal_agent/
 │   │       │                    # kaguya/   — sub-app de tarefas (KaguyaShell)
 │   │       │                    # frieren/  — sub-app de livros (FrierenShell + 9 screens)
 │   │       │                    # akane/    — sub-app de filmes (AkaneShell + 8 screens)
+│                       │                    # marin/    — sub-app de animes (MarinShell + 6 screens)
 │   │       │                    # violet/   — sub-app de diário (VioletShell)
 │   │       └── lib/api.ts       # wrapper de fetch com cookie de sessão automático
 │   └── Dockerfile               # multi-stage: Node 20 (build React) → Python 3.12 (uvicorn)
@@ -300,6 +301,7 @@ makima_personal_agent/
 | `/limpar livros` | Reseta só o contexto de livros (Frieren) |
 | `/limpar tarefas` | Reseta só o contexto de tarefas/agenda (Kaguya) |
 | `/limpar knowledge` | Reseta só o contexto de knowledge base (Kurisu) |
+| `/limpar animes` | Reseta só o contexto de animes (Marin) |
 | `/tokens` | Exibe o total de tokens consumidos por domínio nesta sessão do container |
 
 > O bot avisa automaticamente quando o contexto de um domínio está ficando grande e sugere o `/limpar <dominio>`.
@@ -368,6 +370,12 @@ GOOGLE_BOOKS_API_KEY=
 # Akane — TMDB e Letterboxd
 TMDB_TOKEN=                    # Bearer token da API v4 do TMDB (Settings → API → Read Access Token)
 LETTERBOXD_USERNAME=           # username do Letterboxd (ex: gustavobarreto) para sync do RSS
+
+# Marin — MyAnimeList OAuth2
+MAL_CLIENT_ID=                 # App ID do MAL (myanimelist.net → Account → API → Create Application)
+MAL_CLIENT_SECRET=             # Client Secret do mesmo app MAL
+# Tokens MAL são persistidos no PostgreSQL (mal_sync_state) — nunca colocar aqui
+# Gerar com: python scripts/authorize_mal.py (interativo, roda uma vez)
 
 # Kurisu — Vertex AI RAG (fase 3)
 VERTEX_RAG_CORPUS=             # projects/{PROJECT_ID}/locations/us-central1/ragCorpora/{ID}
@@ -463,9 +471,11 @@ npm install && npm run dev   # dev server em localhost:5173
 | 016–019 | Kaguya — Meu Dia/time-blocking, Eisenhower, Command Palette ⌘K, Calendar Hub | ⏳ |
 | 014 | Komi — Pessoas (identidade canônica cross-agent) | ⏳ |
 | 015 | Akane — Filmes (Letterboxd-style, PostgreSQL + TMDB/Letterboxd) | ✅ |
+| 021 | Marin — Animes (PostgreSQL + Jikan/AniList/ARM + MAL OAuth2 PKCE) | ✅ |
+| 022 | Mai — Séries de TV (PostgreSQL + TMDB + IMDB) | ⏳ specs criadas, código pendente |
 | 4 | Lucy (email): tools Gmail API v1 + agente | ⏳ |
 
-**Pendência atual:** Kurisu 🔧 — falta criar o Data Store no Vertex AI Agent Builder e setar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/CLAUDE.md`). Fatia 015 (Akane — filmes) entregue ✅. Em paralelo: ligar o diário Violet como agente Telegram e implementar as fatias de tarefas 016–019.
+**Pendência atual:** Kurisu 🔧 — falta criar o Data Store no Vertex AI Agent Builder e setar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/CLAUDE.md`). Fatias 015 (Akane) e 021 (Marin) entregues ✅. Em paralelo: ligar o diário Violet como agente Telegram, implementar fatia 022 (Mai — séries) e fatias de tarefas 016–019.
 
 ---
 
