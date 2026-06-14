@@ -43,6 +43,8 @@
   --c-makima-dim:  #3d1a1a;
   --c-akane-dim:   #1a3230;   /* Akane dim — teal escuro para background de badge */
   --c-mai-dim:     #221f40;   /* Mai dim — violeta profundo para background de badge */
+  --c-marin:       #e8a87c;   /* Marin — coral rosado (animes, spec 021) */
+  --c-marin-dim:   #3b2318;   /* Marin dim — marrom escuro para background de badge */
 }
 
 /* ── Scrollbar customizado — fino e quente ── */

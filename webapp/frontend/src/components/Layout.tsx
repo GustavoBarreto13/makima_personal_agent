@@ -87,6 +87,15 @@ const DOMAINS: NavDomain[] = [
     color:       'var(--c-mai)',
     colorDim:    'var(--c-mai-dim)',
   },
+  {
+    // Marin · Animes — catálogo de animes com sync MAL e diário de episódios (spec 021)
+    character:   'Marin',
+    label:       'Animes',
+    mainPath:    '/animes',
+    activePaths: ['/animes'],
+    color:       'var(--c-marin)',
+    colorDim:    'var(--c-marin-dim)',
+  },
 ]
 
 // ── Componente principal ───────────────────────────────────────────────────────────────────────
