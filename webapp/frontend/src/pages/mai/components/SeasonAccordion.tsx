@@ -3,21 +3,18 @@
 // Abertura exclusiva: abrir uma temporada fecha as outras.
 // Animação: max-height + opacity definidos no mai.css.
 //
-// Novidades (marcação cumulativa + toggle de temporada):
+// Comportamentos ativos:
 //   - Marcar ep N → marca todos os eps ≤ N da mesma temporada (lançados)
 //   - Desmarcar ep N → desmarca todos os eps ≥ N da mesma temporada
 //   - Botão "Marcar temporada" / "Desmarcar": toggle da temporada inteira
+//   - Todos os episódios são renderizados de uma vez; o painel interno
+//     tem altura máxima com overflow-y: auto (rola em temporadas longas).
 
 import { useState, useEffect } from 'react'
 import type { Season, Episode } from '../types'
 import { maiApi } from '../maiApi'
 import { IconChevR, IconCheck } from './MaiIcons'
 import { EpisodeLine } from './EpisodeLine'
-
-// Quantos episódios mostrar inicialmente por temporada
-const EP_PAGE = 5
-// Quantos episódios carregar a mais ao clicar "ver mais"
-const EP_MORE = 8
 
 interface Props {
   seriesId: string
@@ -56,8 +53,6 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
   const [epCache, setEpCache] = useState<Record<number, Episode[]>>({})
   // Estado de carregamento por temporada
   const [loading, setLoading] = useState<Record<number, boolean>>({})
-  // Número de episódios exibidos por temporada (paginação)
-  const [epLimit, setEpLimit] = useState<Record<number, number>>({})
   // Episódios/temporadas que estão sendo processados (para desabilitar durante a chamada)
   // Chaves: "sn-en" para episódio individual, "season-sn" para a temporada inteira
   const [busy, setBusy]       = useState<Set<string>>(new Set())
@@ -72,8 +67,8 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
 
     maiApi.episodes(seriesId, open)
       .then(res => {
+        // Armazena todos os episódios no cache — renderizados de uma vez com rolagem interna
         setEpCache(prev => ({ ...prev, [open]: res.episodes }))
-        setEpLimit(prev => ({ ...prev, [open]: EP_PAGE }))
       })
       .catch(() => {
         // Falha silenciosa — acordeão mostra lista vazia
@@ -87,14 +82,6 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
   /** Abre ou fecha uma temporada (abertura exclusiva: fecha as demais). */
   function toggle(seasonNumber: number) {
     setOpen(prev => prev === seasonNumber ? null : seasonNumber)
-  }
-
-  /** Carrega mais episódios na paginação da temporada. */
-  function showMore(seasonNumber: number, total: number) {
-    setEpLimit(prev => ({
-      ...prev,
-      [seasonNumber]: Math.min((prev[seasonNumber] ?? EP_PAGE) + EP_MORE, total),
-    }))
   }
 
   /**
@@ -230,7 +217,6 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
       {seasons.map(season => {
         const isOpen  = open === season.season_number
         const eps     = epCache[season.season_number] ?? []
-        const limit   = epLimit[season.season_number] ?? EP_PAGE
         const isLoad  = loading[season.season_number] ?? false
 
         // Progresso da temporada (vem do servidor via watched_count)
@@ -323,7 +309,10 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
                   </div>
                 )}
 
-                {!isLoad && eps.slice(0, limit).map(ep => {
+                {/* Todos os episódios são renderizados de uma vez.
+                    O scroll interno do .season-body-inner (mai.css) cuida da rolagem
+                    quando a temporada tem muitos episódios. */}
+                {!isLoad && eps.map(ep => {
                   // Chave de busy para este episódio individual
                   const key = `${ep.season_number}-${ep.episode_number}`
                   return (
@@ -335,15 +324,6 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
                     />
                   )
                 })}
-
-                {/* Botão "ver mais" quando há mais episódios do que o limite */}
-                {!isLoad && eps.length > limit && (
-                  <div className="epi-more">
-                    <button onClick={() => showMore(season.season_number, eps.length)}>
-                      +{eps.length - limit} episódios
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
           </div>
