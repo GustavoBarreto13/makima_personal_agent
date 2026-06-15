@@ -86,29 +86,6 @@ function loadTweaks(): Tweaks {
 }
 
 /**
- * Formata uma data futura de forma legível em pt-BR.
- * Retorna "Hoje", "Amanhã", "Ontem" ou "Dia, DD Mês" para datas mais distantes.
- *
- * @param dateStr - Data no formato "YYYY-MM-DD"
- * @returns String legível em pt-BR (ex.: "Qua, 18 Jun")
- */
-function relFuture(dateStr: string): string {
-  // Cria a data às 12h para evitar problemas com fuso horário ao comparar dias
-  const d = new Date(dateStr + 'T12:00:00')
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  // Diferença em dias (positivo = futuro, negativo = passado)
-  const diff = Math.round((d.getTime() - today.getTime()) / 86400000)
-  if (diff === 0)  return 'Hoje'
-  if (diff === 1)  return 'Amanhã'
-  if (diff === -1) return 'Ontem'
-  // Para datas mais longes: "Dia, DD Mês" (ex.: "Qua, 18 Jun")
-  const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
-  const month = d.toLocaleString('pt-BR', { month: 'short' }).replace('.', '')
-  return `${days[d.getDay()]}, ${d.getDate()} ${month}`
-}
-
-/**
  * MarinShell — root shell da Marin.
  * Toda navegação é via estado (view + animeId).
  * Modais abertos via flags de estado (logModal, addOpen, tweaksOpen).
