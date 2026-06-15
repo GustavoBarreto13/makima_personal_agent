@@ -10,7 +10,7 @@ analisa arcos de personagem, estrutura de temporada, ritmo.
 Responsabilidades:
 - Gerenciar catálogo pessoal de séries (watchlist + diário de assistência)
 - Registrar sessões por temporada e intervalo de episódios
-- Enriquecer metadados via TMDB API v4 Bearer (pôsteres, elenco, episódios, still frames)
+- Enriquecer metadados via TMDB API v3 (pôsteres, elenco, episódios, still frames)
 - Manter cache incremental de temporadas e episódios (`seasons` + `series_episodes`)
 - Gerar estatísticas, próximos episódios e resumo do que está assistindo agora
 - Soft delete com histórico preservado nos `series_watch_logs`
@@ -26,7 +26,7 @@ Makima (coordinator)
     ↓
 mai_agent (Agent ADK — singleton, sem MCP)
     ├── tools.py      → PostgreSQL (catálogo, seasons, episodes, watch_logs)
-    └── metadata.py   → TMDB API v4 Bearer (metadados, episódios, skip-logic)
+    └── metadata.py   → TMDB API v3 api_key (metadados, episódios, skip-logic)
 
 Webapp (/series/*)
     ↓
@@ -165,8 +165,8 @@ Implementadas em `agents/mai/tools.py`. Todas retornam `{"status": "ok"|"error",
 Acesso à TMDB API com retry exponencial.
 
 ```python
-# Auth: Bearer v4 — NÃO usar query-param v3
-headers = {"Authorization": f"Bearer {TMDB_TOKEN}", "Accept": "application/json"}
+# Auth: api_key v3 via query param — ?api_key={TMDB_API_KEY}
+params = {"api_key": TMDB_API_KEY, "language": "pt-BR", ...}
 
 # Retry: 3x, delays [2, 4, 8] segundos
 # 404 → None imediatamente (não retenta)
@@ -202,7 +202,7 @@ Trata séries como performances de longo curso.
 
 | Variável | Obrigatório | Descrição |
 |---|---|---|
-| `TMDB_TOKEN` | sim | Bearer token v4 do TMDB (reusa o mesmo da Akane) |
+| `TMDB_API_KEY` | sim | API key v3 do TMDB (obtida em themoviedb.org/settings/api) |
 | `DATABASE_URL` | sim | PostgreSQL compartilhado |
 
 ---

@@ -1,10 +1,10 @@
 """Cliente TMDB para séries de TV — fatia 022 (Mai Sakurajima).
 
-Encapsula todos os acessos à API TMDB v4 (Bearer auth) para séries:
+Encapsula todos os acessos à API TMDB v3 (api_key query param) para séries:
 busca, detalhes de show, temporadas e episódios.
 
 Regras críticas:
-- Autenticação: Bearer v4 (`Authorization: Bearer {TMDB_TOKEN}`), NÃO query-param v3.
+- Autenticação: api_key v3 via query param (`?api_key={TMDB_API_KEY}`).
 - Temporada 0 (Specials): NUNCA é inserida no banco.
 - Skip-logic incremental: episódio existente com air_date + still_url + já no passado → pular upsert.
 - Retry: 3 tentativas com backoff 2s → 4s → 8s em 429, 5xx e erros de rede.
@@ -17,7 +17,7 @@ Usage:
     seasons = sync_seasons(conn, series_id, tmdb_id, seasons_count)
 """
 
-import os               # Lê variáveis de ambiente (TMDB_TOKEN)
+import os               # Lê variáveis de ambiente (TMDB_API_KEY)
 import time             # sleep() para o backoff exponencial do retry
 import uuid             # Gera IDs únicos para linhas no banco
 import logging          # Registra avisos e erros sem travar o programa
@@ -44,24 +44,19 @@ _IMG_BASE = "https://image.tmdb.org/t/p"
 _LANG = "pt-BR"
 
 
-def _tmdb_headers() -> dict:
-    """Monta os cabeçalhos de autorização TMDB Bearer v4.
+def _tmdb_api_key() -> str:
+    """Retorna a API key v3 do TMDB lida do ambiente.
 
     Returns:
-        Dict com Authorization e Accept para uso em requests.
+        String com a API key.
 
     Raises:
-        RuntimeError: Quando TMDB_TOKEN não está definido no ambiente.
+        RuntimeError: Quando TMDB_API_KEY não está definido no ambiente.
     """
-    # O token precisa estar configurado antes de qualquer chamada à API
-    token = os.environ.get("TMDB_TOKEN")
-    if not token:
-        raise RuntimeError("TMDB_TOKEN não configurado no ambiente")
-    return {
-        # Autenticação Bearer v4 — diferente do api_key v3 via query-param
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-    }
+    key = os.environ.get("TMDB_API_KEY")
+    if not key:
+        raise RuntimeError("TMDB_API_KEY não configurado no ambiente")
+    return key
 
 
 def _img(path: Optional[str], size: str = "w500") -> Optional[str]:
@@ -110,10 +105,12 @@ def _tmdb_get(url: str, params: Optional[dict] = None) -> Optional[dict]:
 
     for attempt, delay in enumerate(delays, start=1):
         try:
+            # Injeta a api_key em todos os requests (autenticação v3)
+            all_params = {"api_key": _tmdb_api_key(), **(params or {})}
             resp = requests.get(
                 url,
-                headers=_tmdb_headers(),
-                params=params or {},
+                headers={"Accept": "application/json"},
+                params=all_params,
                 timeout=15,  # Evita travar indefinidamente
             )
 
@@ -215,9 +212,11 @@ def get_show(tmdb_id: int) -> Optional[dict]:
     Returns:
         Dict normalizado ou None se o show não existir no TMDB.
     """
+    # append_to_response=external_ids inclui o bloco external_ids (imdb_id, etc.)
+    # na mesma chamada — evita um segundo request separado
     data = _tmdb_get(
         f"{_TMDB_BASE}/tv/{tmdb_id}",
-        params={"language": _LANG},
+        params={"language": _LANG, "append_to_response": "external_ids"},
     )
     if not data:
         return None
