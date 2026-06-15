@@ -37,6 +37,7 @@ from agents.mai.tools import (
     delete_series,
     sync_metadata,
     get_episodes_for_season,
+    set_episode_watched,  # toggle de episódio individual (checkbox da DetailScreen)
 )
 
 
@@ -103,6 +104,15 @@ class RateSeriesBody(BaseModel):
 class SetNotesBody(BaseModel):
     """Body para salvar anotações livres do usuário."""
     notes: str  # Texto das anotações (pode ser '' para limpar)
+
+
+class ToggleEpisodeBody(BaseModel):
+    """Body para marcar/desmarcar um episódio individual como assistido.
+
+    Usado pelo checkbox da linha de episódio no SeasonAccordion (DetailScreen).
+    Não cria entrada no Diário — apenas atualiza series_episodes.watched.
+    """
+    watched: bool  # True = marcar como assistido; False = desmarcar
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -389,6 +399,42 @@ def delete_series_endpoint(
         Dict com 'series_id' e 'title' da série removida.
     """
     return _check_result(delete_series(series_id=series_id))
+
+
+@router.patch("/{series_id}/episodes/{season_number}/{episode_number}")
+def toggle_episode_endpoint(
+    series_id: str,
+    season_number: int,
+    episode_number: int,
+    body: ToggleEpisodeBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Marcar ou desmarcar um episódio individual como assistido.
+
+    Atualiza series_episodes.watched e ajusta series.episodes_watched.
+    Idempotente: chamar duas vezes com o mesmo estado não altera nada no banco.
+
+    Diferente do log_watch, este endpoint NÃO cria entrada no Diário.
+    Serve exclusivamente para o checkbox de progresso na DetailScreen.
+
+    Args:
+        series_id: UUID da série.
+        season_number: Número da temporada.
+        episode_number: Número do episódio.
+        body: Novo estado watched (true/false).
+        user: Usuário autenticado.
+
+    Returns:
+        Dict com watched, episodes_watched (novo total da série) e changed (bool).
+    """
+    return _check_result(
+        set_episode_watched(
+            series_id=series_id,
+            season_number=season_number,
+            episode_number=episode_number,
+            watched=body.watched,
+        )
+    )
 
 
 @router.get("/{series_id}/seasons/{season_number}/episodes")

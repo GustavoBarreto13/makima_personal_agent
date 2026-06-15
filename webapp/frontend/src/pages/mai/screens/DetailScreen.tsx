@@ -1,5 +1,10 @@
 // DetailScreen — tela de detalhe de uma série.
 // Layout: banner (backdrop + poster + info) + progress card + acordeão de temporadas + logs.
+//
+// Novidades:
+//   - StatusChip clicável no banner (abre menu de 5 status sem precisar do painel Editar)
+//   - Data do próximo episódio exibida no cartão de progresso
+//   - SeasonAccordion com onProgressChange={load} para atualizar progresso após checkbox
 
 import { useState, useEffect, useCallback } from 'react'
 import type { SeriesDetail, MaiStatus } from '../types'
@@ -9,14 +14,6 @@ import { StatusChip } from '../components/StatusChip'
 import { Stars, RateInput } from '../components/Stars'
 import { SeasonAccordion } from '../components/SeasonAccordion'
 import { IconArrowL, IconEdit, IconRefresh, IconTrash, IconCheck } from '../components/MaiIcons'
-
-const STATUS_OPTIONS: { value: MaiStatus; label: string }[] = [
-  { value: 'quero_assistir', label: 'Quero assistir' },
-  { value: 'assistindo',     label: 'Assistindo' },
-  { value: 'concluida',      label: 'Concluída' },
-  { value: 'pausada',        label: 'Pausada' },
-  { value: 'abandonada',     label: 'Abandonada' },
-]
 
 interface Props {
   seriesId: string
@@ -29,8 +26,14 @@ interface Props {
 export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props) {
   const [detail,  setDetail]  = useState<SeriesDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  // Painel de edição inline (exibe apenas a avaliação — status agora vive no chip)
   const [editing, setEditing] = useState(false)
 
+  /**
+   * Recarrega os dados completos da série do backend.
+   * Chamado no mount, após sync de metadados e após cada toggle de episódio
+   * (via onProgressChange no SeasonAccordion) para manter a barra e watched_count atualizados.
+   */
   const load = useCallback(() => {
     setLoading(true)
     maiApi.detail(seriesId)
@@ -41,13 +44,20 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
 
   useEffect(() => { load() }, [load])
 
+  /**
+   * Altera o status da série via API.
+   * Chamado pelo StatusChip interativo no banner (modo: chip clicável com menu).
+   * Também atualiza o state local otimisticamente para resposta imediata.
+   */
   async function handleStatusChange(status: MaiStatus) {
     if (!detail) return
     await maiApi.updateStatus(seriesId, { status })
+    // Atualiza o estado local sem refetch completo (a barra de progresso não muda com status)
     setDetail(d => d ? { ...d, series: { ...d.series, status } } : d)
-    onShowToast(`Status atualizado: ${status.replace('_', ' ')}`)
+    onShowToast(`Status: ${status.replace(/_/g, ' ')}`)
   }
 
+  /** Atualiza a nota da série e reflete localmente. */
   async function handleRate(rating: number | null) {
     if (!detail) return
     await maiApi.rate(seriesId, { rating })
@@ -55,6 +65,7 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
     onShowToast(rating ? `Nota: ${rating.toFixed(1)} ⭐` : 'Nota removida')
   }
 
+  /** Aciona sincronização de metadados via TMDB e recarrega os dados. */
   async function handleSync() {
     onShowToast('Sincronizando metadados…')
     await maiApi.syncMetadata(seriesId)
@@ -62,6 +73,7 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
     onShowToast('Metadados atualizados! 🐰')
   }
 
+  /** Remove a série do catálogo com soft delete. */
   async function handleDelete() {
     if (!detail) return
     if (!window.confirm(`Remover "${detail.series.title}" do catálogo?`)) return
@@ -87,14 +99,21 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
   }
 
   const s = detail.series
-  const year = s.first_air_date ? new Date(s.first_air_date + 'T00:00:00').getFullYear() : null
-  const endYear = s.last_air_date ? new Date(s.last_air_date + 'T00:00:00').getFullYear() : null
+  const year    = s.first_air_date ? new Date(s.first_air_date + 'T00:00:00').getFullYear() : null
+  const endYear = s.last_air_date  ? new Date(s.last_air_date  + 'T00:00:00').getFullYear() : null
   const yearRange = endYear && endYear !== year ? `${year}–${endYear}` : String(year ?? '')
 
-  // Progresso de episódios
-  const epTotal   = s.episodes_count ?? 0
+  // Cálculo de progresso para a barra de episódios
+  const epTotal   = s.episodes_count   ?? 0
   const epWatched = s.episodes_watched ?? 0
   const progress  = epTotal > 0 ? Math.min(1, epWatched / epTotal) : 0
+
+  // Data do próximo episódio formatada — exibida no cartão de progresso
+  const nextEpDate = detail.next_episode?.air_date
+    ? new Date(detail.next_episode.air_date + 'T00:00:00').toLocaleDateString('pt-BR', {
+        day: 'numeric', month: 'short',
+      })
+    : null
 
   return (
     <div className="page">
@@ -114,12 +133,12 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
         </div>
         <div className="detail-warmlight" />
         <div className="detail-hero">
-          {/* Poster */}
+          {/* Pôster */}
           <div className="detail-poster-wrap">
             <PosterCard series={s} />
           </div>
 
-          {/* Info */}
+          {/* Info: gêneros, título, rede/ano, status (clicável) + nota */}
           <div className="detail-info">
             {s.genres && s.genres.length > 0 && (
               <div className="detail-genre">{s.genres.slice(0, 2).join(' · ')}</div>
@@ -136,9 +155,10 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
               )}
             </div>
 
-            {/* Status + rating */}
+            {/* Status (chip clicável — abre menu) + nota */}
             <div className="detail-rating-row">
-              <StatusChip status={s.status} size="md" />
+              {/* StatusChip em modo interativo: onSelect dispara handleStatusChange */}
+              <StatusChip status={s.status} size="md" onSelect={handleStatusChange} />
               {s.rating && <Stars rating={s.rating} size="md" showNum />}
             </div>
           </div>
@@ -147,7 +167,7 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
 
       {/* ── Corpo ────────────────────────────────────────────────────────── */}
       <div className="detail-body">
-        {/* Ações */}
+        {/* ── Ações rápidas ──────────────────────────────────────────────── */}
         <div className="detail-actions">
           <button
             className="btn btn-primary"
@@ -155,35 +175,26 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
           >
             📺 Registrar sessão
           </button>
+          {/* Botão Editar: abre painel com a avaliação (status agora fica no chip) */}
           <button className="btn btn-ghost icon-toggle" onClick={() => setEditing(e => !e)}>
             <IconEdit /> Editar
           </button>
           <button className="btn btn-ghost icon-toggle" onClick={handleSync} title="Sincronizar TMDB">
             <IconRefresh />
           </button>
-          <button className="btn btn-ghost icon-toggle" onClick={handleDelete} style={{ marginLeft: 'auto', color: 'var(--st-abandonada)' }}>
+          <button
+            className="btn btn-ghost icon-toggle"
+            onClick={handleDelete}
+            style={{ marginLeft: 'auto', color: 'var(--st-abandonada)' }}
+          >
             <IconTrash />
           </button>
         </div>
 
-        {/* Painel de edição inline */}
+        {/* Painel de edição inline — agora só contém avaliação (status foi para o chip) */}
         {editing && (
           <div className="detail-progress-card" style={{ marginTop: 16 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {/* Alterar status */}
-              <div>
-                <label className="modal-label">Status</label>
-                <select
-                  className="select-input"
-                  value={s.status}
-                  onChange={e => handleStatusChange(e.target.value as MaiStatus)}
-                >
-                  {STATUS_OPTIONS.map(o => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-              {/* Avaliação */}
               <div>
                 <label className="modal-label">Avaliação</label>
                 <RateInput value={s.rating ?? null} onChange={handleRate} />
@@ -192,16 +203,19 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
           </div>
         )}
 
-        {/* Progresso de episódios */}
+        {/* ── Cartão de progresso de episódios ─────────────────────────── */}
         {epTotal > 0 && (
           <div className="detail-progress-card">
             <div className="dpc-head">
               <span className="t">Progresso</span>
               {detail.next_episode && (
+                // Exibe: "● Próximo: T1 E5 · Título · 20 jun" (data agora incluída)
                 <span className="dpc-next">
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--warm)', display: 'inline-block' }} />
                   Próximo: T{detail.next_episode.season_number} E{detail.next_episode.episode_number}
                   {detail.next_episode.title && <b> · {detail.next_episode.title}</b>}
+                  {/* Data de lançamento do próximo episódio — novo */}
+                  {nextEpDate && <span className="dpc-next-date"> · {nextEpDate}</span>}
                 </span>
               )}
             </div>
@@ -226,7 +240,7 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
           </div>
         )}
 
-        {/* Grid: sinopse + meta */}
+        {/* ── Grid: sinopse + metadados ─────────────────────────────────── */}
         <div className="detail-grid">
           {/* Sinopse + notas */}
           <div>
@@ -247,21 +261,21 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
             )}
           </div>
 
-          {/* Metadados */}
+          {/* Metadados da série */}
           <div>
             <div className="detail-section-title">
               Informações <span className="st-line" />
             </div>
             <div className="detail-meta-grid">
-              {s.network       && <div className="dm-cell"><div className="k">Rede</div><div className="v">{s.network}</div></div>}
-              {yearRange       && <div className="dm-cell"><div className="k">Anos</div><div className="v">{yearRange}</div></div>}
-              {s.seasons_count && <div className="dm-cell"><div className="k">Temporadas</div><div className="v">{s.seasons_count}</div></div>}
+              {s.network        && <div className="dm-cell"><div className="k">Rede</div><div className="v">{s.network}</div></div>}
+              {yearRange        && <div className="dm-cell"><div className="k">Anos</div><div className="v">{yearRange}</div></div>}
+              {s.seasons_count  && <div className="dm-cell"><div className="k">Temporadas</div><div className="v">{s.seasons_count}</div></div>}
               {s.episodes_count && <div className="dm-cell"><div className="k">Episódios</div><div className="v">{s.episodes_count}</div></div>}
-              {s.date_started  && <div className="dm-cell"><div className="k">Início</div><div className="v">{new Date(s.date_started + 'T00:00:00').toLocaleDateString('pt-BR')}</div></div>}
-              {s.date_finished && <div className="dm-cell"><div className="k">Conclusão</div><div className="v">{new Date(s.date_finished + 'T00:00:00').toLocaleDateString('pt-BR')}</div></div>}
+              {s.date_started   && <div className="dm-cell"><div className="k">Início</div><div className="v">{new Date(s.date_started + 'T00:00:00').toLocaleDateString('pt-BR')}</div></div>}
+              {s.date_finished  && <div className="dm-cell"><div className="k">Conclusão</div><div className="v">{new Date(s.date_finished + 'T00:00:00').toLocaleDateString('pt-BR')}</div></div>}
             </div>
 
-            {/* Gêneros */}
+            {/* Tags de gênero */}
             {s.genres && s.genres.length > 0 && (
               <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {s.genres.map(g => (
@@ -281,6 +295,17 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
             <SeasonAccordion
               seriesId={seriesId}
               seasons={detail.seasons}
+              /**
+               * Após marcar/desmarcar um episódio pelo checkbox, o accordion
+               * dispara onProgressChange para recarregar o detalhe completo:
+               * barra de progresso, watched_count das temporadas e next_episode.
+               */
+              onProgressChange={load}
+              /**
+               * Mantido para compatibilidade: o botão "Registrar sessão" ainda
+               * pode ser acessado via clique no episódio (legado — hoje o clique
+               * expande a sinopse; o log rico é feito pelo botão "Registrar sessão").
+               */
               onEpisodeToggle={() => onOpenLog(seriesId, s.title)}
             />
           </div>
@@ -297,7 +322,7 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
                 let epsLabel = ''
                 if (log.season_number && log.ep_start) {
                   const end = log.ep_end && log.ep_end !== log.ep_start ? `–E${log.ep_end}` : ''
-                  epsLabel = `T${log.season_number} E${String(log.ep_start).padStart(2,'0')}${end}`
+                  epsLabel = `T${log.season_number} E${String(log.ep_start).padStart(2, '0')}${end}`
                 } else if (log.episodes_count) {
                   epsLabel = `${log.episodes_count} eps`
                 }

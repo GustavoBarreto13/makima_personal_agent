@@ -175,6 +175,29 @@ export const maiApi = {
       `/api/series/${seriesId}/seasons/${seasonNumber}/episodes`
     ),
 
+  /**
+   * Marca ou desmarca um episódio individual como assistido (checkbox de progresso).
+   *
+   * Diferente do logWatch, este método NÃO cria entrada no Diário.
+   * Atualiza apenas series_episodes.watched + series.episodes_watched.
+   * Operação idempotente: chamar com o mesmo estado não altera nada.
+   *
+   * @param seriesId - UUID da série no catálogo.
+   * @param seasonNumber - Número da temporada (1-based).
+   * @param episodeNumber - Número do episódio dentro da temporada.
+   * @param watched - true = marcar assistido; false = desmarcar.
+   */
+  setEpisodeWatched: (
+    seriesId: string,
+    seasonNumber: number,
+    episodeNumber: number,
+    watched: boolean,
+  ) =>
+    api.patch<OkResponse>(
+      `/api/series/${seriesId}/episodes/${seasonNumber}/${episodeNumber}`,
+      { watched },
+    ),
+
   // ── Diário e logs ────────────────────────────────────────────────────────
 
   /**

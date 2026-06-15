@@ -1019,6 +1019,115 @@ def sync_metadata(series_id: str) -> dict:
     return _ok(series_id=series_id, **stats)
 
 
+def set_episode_watched(
+    series_id: str,
+    season_number: int,
+    episode_number: int,
+    watched: bool,
+) -> dict:
+    """Marcar ou desmarcar um episódio individual como assistido.
+
+    Atualiza series_episodes.watched e ajusta o contador episodes_watched
+    da série. Operação idempotente: se o episódio já está no estado
+    desejado, retorna ok sem alterar o banco.
+
+    Não cria entrada no Diário — use log_watch para sessões com nota/review.
+
+    Args:
+        series_id: UUID da série.
+        season_number: Número da temporada (>= 1).
+        episode_number: Número do episódio dentro da temporada.
+        watched: True para marcar como assistido, False para desmarcar.
+
+    Returns:
+        dict com status='ok', watched, episodes_watched (novo valor do contador)
+        e changed (bool indicando se o estado foi alterado).
+    """
+    # Valida que a série existe e não está deletada
+    series_rows = run_select(
+        "SELECT id, status, episodes_watched FROM series WHERE id = %s AND deleted = FALSE",
+        (series_id,),
+    )
+    if not series_rows:
+        return _err(f"Série '{series_id}' não encontrada")
+
+    series_data = series_rows[0]
+
+    # Busca o episódio específico pelo identificador único (series_id, season, episode)
+    ep_rows = run_select(
+        """
+        SELECT watched FROM series_episodes
+        WHERE series_id = %s AND season_number = %s AND episode_number = %s
+        """,
+        (series_id, season_number, episode_number),
+    )
+    if not ep_rows:
+        return _err(f"Episódio T{season_number}E{episode_number} não encontrado no cache — execute sync_metadata primeiro")
+
+    # Idempotência: se já está no estado desejado, não faz nada no banco
+    current_watched = bool(ep_rows[0]["watched"])
+    if current_watched == watched:
+        return _ok(
+            series_id=series_id,
+            season_number=season_number,
+            episode_number=episode_number,
+            watched=watched,
+            episodes_watched=int(series_data["episodes_watched"] or 0),
+            changed=False,  # nenhuma alteração foi feita
+        )
+
+    # Atualiza watched + watched_date no episódio:
+    #   - marcar: preenche watched_date com a data de hoje
+    #   - desmarcar: limpa watched_date (NULL)
+    run_dml(
+        """
+        UPDATE series_episodes
+        SET watched = %s,
+            watched_date = CASE WHEN %s THEN CURRENT_DATE ELSE NULL END
+        WHERE series_id = %s AND season_number = %s AND episode_number = %s
+        """,
+        (watched, watched, series_id, season_number, episode_number),
+    )
+
+    # Ajusta o contador de episódios assistidos na série
+    if watched:
+        # Marcar como assistido → incrementa o contador
+        run_dml(
+            "UPDATE series SET episodes_watched = episodes_watched + 1, updated_at = NOW() WHERE id = %s",
+            (series_id,),
+        )
+    else:
+        # Desmarcar → decrementa, mas GREATEST garante que não vai abaixo de zero
+        run_dml(
+            "UPDATE series SET episodes_watched = GREATEST(episodes_watched - 1, 0), updated_at = NOW() WHERE id = %s",
+            (series_id,),
+        )
+
+    # Se marcou como assistido e a série ainda era 'quero_assistir', avança para 'assistindo'
+    # automaticamente (mesma lógica do log_watch)
+    if watched and series_data["status"] == "quero_assistir":
+        run_dml(
+            "UPDATE series SET status = 'assistindo', date_started = CURRENT_DATE, updated_at = NOW() WHERE id = %s",
+            (series_id,),
+        )
+
+    # Busca o novo valor do contador para retornar ao frontend (para atualizar a barra de progresso)
+    updated = run_select(
+        "SELECT episodes_watched FROM series WHERE id = %s",
+        (series_id,),
+    )
+    new_count = int(updated[0]["episodes_watched"]) if updated and updated[0]["episodes_watched"] is not None else 0
+
+    return _ok(
+        series_id=series_id,
+        season_number=season_number,
+        episode_number=episode_number,
+        watched=watched,
+        episodes_watched=new_count,
+        changed=True,  # o estado foi alterado
+    )
+
+
 def get_episodes_for_season(series_id: str, season_number: int) -> dict:
     """Retornar episódios de uma temporada, sincronizando do TMDB se necessário.
 
