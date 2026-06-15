@@ -1368,6 +1368,96 @@
 .mr-diary-eps { font-family: var(--mono); font-size: 11px; color: var(--marin-deep); margin-top: 4px; }
 .mr-diary-notes { font-size: 13px; color: var(--ink-2); margin-top: 5px; line-height: 1.5; font-style: italic; text-wrap: pretty; }
 
+/* Fase 5 — Diário: agrupamento por mês com cabeçalho DM Serif Display -------- */
+
+/* Seção mensal: espaço inferior entre grupos de meses */
+.mr-diary-month { margin-bottom: 28px; }
+
+/* Cabeçalho "junho / 2026 · 5" — DM Serif para destaque tipográfico */
+.mr-diary-month-title {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+
+/* Container das entradas do mês — sem gap (usa border-bottom em cada entrada) */
+.mr-diary-list { display: flex; flex-direction: column; gap: 0; }
+
+/* Grade da entrada: data | poster | info | score | delete
+   Fase 5: layout revisado com coluna de poster separada */
+.mr-diary-entry {
+  /* 5 colunas: data(52px) + poster(46px) + info(flex) + score(auto) + delete(auto) */
+  display: grid;
+  grid-template-columns: 52px 46px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-faint, var(--line));
+  /* Sobrescreve o cursor pointer que vinha do hover genérico */
+  cursor: default;
+  /* Remove o background hover da versão anterior */
+  border-radius: 0;
+  transition: none;
+}
+/* Remove a borda da última entrada do mês */
+.mr-diary-entry:last-child { border-bottom: none; }
+/* Remove hover genérico herdado — cada elemento clicável tem cursor próprio */
+.mr-diary-entry:hover { background: transparent; }
+
+/* Coluna de data: dia grande acima + dia da semana abreviado abaixo */
+.mr-diary-date-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+/* Número do dia em DM Serif grande */
+.mr-diary-day { font-family: var(--display); font-size: 24px; font-weight: 700; color: var(--ink); line-height: 1; }
+/* Dia da semana em mono caps (ex.: "seg") */
+.mr-diary-weekday { font-family: var(--mono); font-size: 11px; color: var(--ink-4); text-transform: uppercase; }
+
+/* Coluna do poster (46×64 — o PosterCard preenche o wrapper) */
+.mr-diary-poster-col { /* sizing vem do wrapper inline */ }
+
+/* Coluna de informações: título, intervalo de eps, notas */
+.mr-diary-info-col { min-width: 0; }
+.mr-diary-anime-title { font-family: var(--sans); font-size: 14px; font-weight: 500; color: var(--ink); line-height: 1.3; }
+/* Sobrescreve mr-diary-anime-title quando usado como link clicável */
+.mr-diary-info-col p.mr-diary-anime-title { margin: 0; }
+.mr-diary-ep-range { font-family: var(--mono); font-size: 13px; color: var(--ink-3); margin-top: 2px; }
+.mr-diary-note { font-style: italic; font-size: 13px; color: var(--ink-3); margin-top: 3px; }
+
+/* Coluna de score: mínima para não comprimir a info */
+.mr-diary-score-col { min-width: 40px; }
+
+/* Botão remover — aparece apenas no hover da entrada */
+.mr-diary-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-4);
+  padding: 4px;
+  /* Invisível até hover da entrada */
+  opacity: 0;
+  transition: opacity 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+}
+/* Aparece quando o usuário passa o mouse sobre a entrada */
+.mr-diary-entry:hover .mr-diary-delete { opacity: 1; }
+.mr-diary-delete:hover { color: oklch(0.65 0.22 18); }
+
+/* Responsivo: oculta o poster em telas menores (fica muito comprimido) */
+@media (max-width: 720px) {
+  .mr-diary-entry { grid-template-columns: 52px 1fr auto auto; }
+  .mr-diary-poster-col { display: none; }
+}
+
 .mr-fab {
   position: fixed; bottom: 84px; right: 24px; z-index: 30;
   width: 54px; height: 54px; border-radius: 50%;
@@ -1394,6 +1484,44 @@
 .mr-watchlist-studio { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
 .mr-watchlist-season { font-family: var(--mono); font-size: 10px; color: var(--marin-deep); }
 
+/* Fase 5 — Watchlist: header com subtítulo, chips de gênero e botão cyan ---- */
+
+/* Header: título DM Serif + subtítulo "N animes · ~X eps na fila" */
+.mr-wl-header { margin-bottom: 20px; }
+.mr-wl-title {
+  /* DM Serif Display — mesmo tipo do CatalogScreen e hero */
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.mr-wl-sub {
+  /* Subtítulo muted com contagem e estimativa de episódios */
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+/* Botão cyan — "▶ Começar" na watchlist */
+.mr-btn-cyan {
+  background: var(--cyan);
+  /* Texto escuro sobre fundo cyan para contraste suficiente */
+  color: oklch(0.1 0.02 200);
+  border-color: var(--cyan);
+}
+.mr-btn-cyan:hover { filter: brightness(1.1); }
+.mr-btn-cyan:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+
+/* Container de chips de gênero dentro de cada card da watchlist */
+.mr-wl-genres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* SCHEDULE SCREEN                                                              */
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -1418,6 +1546,68 @@
 .mr-schedule-time--jst { color: var(--ink-3); }
 .mr-schedule-time--brt { color: var(--cyan); }
 .mr-schedule-new-badge { flex-shrink: 0; font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; padding: 4px 10px; border-radius: 999px; background: var(--cyan-tint); color: var(--cyan); }
+
+/* Fase 5 — Schedule: agrupamento por dia com relFuture + card revisado -------- */
+
+/* Seção de um dia: espaço inferior entre grupos */
+.mr-sched-day { margin-bottom: 24px; }
+
+/* Cabeçalho "Hoje 3 ep" / "Amanhã 1 ep" */
+.mr-sched-day-label {
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* Contagem de episódios do dia: pill muted */
+.mr-sched-day-count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-4);
+  background: var(--card-2);
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+
+/* Card de episódio: poster + info + badge */
+.mr-sched-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-faint, var(--line));
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+.mr-sched-card:last-child { border-bottom: none; }
+.mr-sched-card:hover { opacity: 0.85; }
+
+/* Informações do episódio */
+.mr-sched-info { flex: 1; min-width: 0; }
+.mr-sched-anime-title { font-family: var(--sans); font-size: 14px; font-weight: 500; color: var(--ink); line-height: 1.3; }
+.mr-sched-ep { font-family: var(--mono); font-size: 13px; color: var(--ink-3); margin-top: 2px; }
+.mr-sched-times { font-family: var(--mono); font-size: 12px; color: var(--ink-4); margin-top: 2px; }
+
+/* Badge "NOVO EP" em cyan com borda — destaque quando episódio vai ao ar hoje */
+.mr-sched-badge {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--cyan);
+  border: 1.5px solid var(--cyan);
+  border-radius: 4px;
+  padding: 2px 7px;
+  flex-shrink: 0;
+  /* Pulso suave para chamar atenção */
+  animation: mr-pulse 2.2s infinite;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* STATS SCREEN                                                                 */
