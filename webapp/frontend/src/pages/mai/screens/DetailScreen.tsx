@@ -31,15 +31,22 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
 
   /**
    * Recarrega os dados completos da série do backend.
-   * Chamado no mount, após sync de metadados e após cada toggle de episódio
-   * (via onProgressChange no SeasonAccordion) para manter a barra e watched_count atualizados.
+   *
+   * @param silent - Se true, atualiza os dados SEM mostrar o "Carregando…" de página inteira.
+   *   Usado pelo onProgressChange do SeasonAccordion: o optimistic update já marcou os checks
+   *   visualmente; só precisamos atualizar os contadores (barra de progresso + watched_count das
+   *   temporadas) no lugar, sem desmontar a página e perder a posição do scroll.
+   *   Se false (padrão), exibe o spinner completo — usado na carga inicial e no sync do TMDB.
    */
-  const load = useCallback(() => {
-    setLoading(true)
+  const load = useCallback((silent = false) => {
+    // Só aciona o estado de carregamento (e o early-return que desmonta a página)
+    // quando o parâmetro silent NÃO estiver ativo
+    if (!silent) setLoading(true)
     maiApi.detail(seriesId)
       .then(res => setDetail(res as unknown as SeriesDetail))
       .catch(() => setDetail(null))
-      .finally(() => setLoading(false))
+      // Só limpa o loading quando ele foi ativado (evita setLoading(false) no modo silencioso)
+      .finally(() => { if (!silent) setLoading(false) })
   }, [seriesId])
 
   useEffect(() => { load() }, [load])
@@ -296,11 +303,12 @@ export function DetailScreen({ seriesId, onBack, onOpenLog, onShowToast }: Props
               seriesId={seriesId}
               seasons={detail.seasons}
               /**
-               * Após marcar/desmarcar um episódio pelo checkbox, o accordion
-               * dispara onProgressChange para recarregar o detalhe completo:
-               * barra de progresso, watched_count das temporadas e next_episode.
+               * Refresh silencioso: ao marcar/desmarcar um ep ou uma temporada inteira,
+               * recarrega os contadores (barra de progresso + watched_count das temporadas)
+               * sem desmontar a página — load(true) pula o setLoading(true), então o
+               * early-return do spinner nunca dispara e a posição do scroll é preservada.
                */
-              onProgressChange={load}
+              onProgressChange={() => load(true)}
               /**
                * Mantido para compatibilidade: o botão "Registrar sessão" ainda
                * pode ser acessado via clique no episódio (legado — hoje o clique
