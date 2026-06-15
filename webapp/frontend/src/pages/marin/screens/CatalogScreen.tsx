@@ -12,6 +12,9 @@ import { Score }       from '../components/Score'
 interface CatalogScreenProps {
   tweaks: Tweaks
   onSelectAnime: (id: string) => void
+  // Query externa passada pela topbar do shell (quando o usuário digita na busca global).
+  // Se fornecida, sobrescreve a busca interna da tela (sem request adicional).
+  externalQuery?: string
 }
 
 // Filtros disponíveis na chip-bar
@@ -34,14 +37,23 @@ const SORT_MAP: Record<string, string> = {
 
 /**
  * CatalogScreen — grid filtrado e ordenado do catálogo de animes.
+ *
+ * Aceita `externalQuery` passada pelo shell (topbar de busca global) para
+ * sincronizar a busca sem request adicional. A busca interna do próprio campo
+ * da tela continua funcionando quando externalQuery está vazia.
  */
-export function CatalogScreen({ tweaks, onSelectAnime }: CatalogScreenProps) {
+export function CatalogScreen({ tweaks, onSelectAnime, externalQuery = '' }: CatalogScreenProps) {
   const [animes, setAnimes] = useState<Anime[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<string>('')  // status filter
-  const [query, setQuery] = useState('')             // busca local rápida
+  const [filter, setFilter] = useState<string>('')  // filtro de status
+  const [query, setQuery] = useState('')             // busca interna (campo da tela)
 
   const sort = SORT_MAP[tweaks.ordenacao] || 'updated'
+
+  // Quando o shell injeta uma query externa, limpa a busca interna para evitar conflito
+  useEffect(() => {
+    if (externalQuery.trim()) setQuery('')
+  }, [externalQuery])
 
   // Rebusca quando filtro ou ordenação mudam
   useEffect(() => {
@@ -52,21 +64,31 @@ export function CatalogScreen({ tweaks, onSelectAnime }: CatalogScreenProps) {
       .finally(() => setLoading(false))
   }, [filter, sort])
 
-  // Filtro de busca local (sem request adicional)
-  const displayed = query.trim()
-    ? animes.filter(a => a.title.toLowerCase().includes(query.toLowerCase()))
+  // Determina qual query usar: externa (topbar do shell) tem prioridade sobre a interna.
+  // Isso permite que a busca global da topbar filtre o catálogo sem request adicional.
+  const activeQuery = externalQuery.trim() || query.trim()
+
+  // Filtro de busca local (sem request adicional) — aplica a query ativa
+  const displayed = activeQuery
+    ? animes.filter(a =>
+        a.title.toLowerCase().includes(activeQuery.toLowerCase()) ||
+        (a.studio && a.studio.toLowerCase().includes(activeQuery.toLowerCase())) ||
+        (a.genres && a.genres.some(g => g.toLowerCase().includes(activeQuery.toLowerCase())))
+      )
     : animes
 
   return (
     <div className="mr-catalog">
       {/* ── Busca + chips de filtro ─────────────────────────────────────────── */}
       <div className="mr-catalog-header">
+        {/* Campo de busca interno — mostra a query ativa (interna ou da topbar global) */}
         <input
           type="search"
           className="mr-search-input"
           placeholder="Buscar no catálogo..."
-          value={query}
+          value={externalQuery.trim() ? externalQuery : query}
           onChange={e => setQuery(e.target.value)}
+          readOnly={!!externalQuery.trim()}  // Somente-leitura quando topbar controla a busca
           aria-label="Buscar anime"
         />
 

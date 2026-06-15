@@ -551,11 +551,65 @@
 .mr-side-back { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-3); text-decoration: none; transition: color 0.12s; font-family: var(--sans); }
 .mr-side-back:hover { color: var(--ink); }
 
+/* Ponto vermelho no "Voltar à Makima" — indicador visual de saída (fiel ao protótipo) */
+.mr-side-back-dot {
+  width: 8px;
+  height: 8px;
+  background: oklch(0.65 0.22 18);  /* vermelho coral — cor de alerta/saída */
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* TOPBAR                                                                       */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-.mr-topbar-title { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; flex: 1; white-space: nowrap; display: flex; align-items: center; gap: 9px; }
+/* Título da view com emoji — flex: 0 para não encolher com a busca */
+.mr-topbar-title {
+  font-size: 18px; font-weight: 700; letter-spacing: -0.01em;
+  flex-shrink: 0; white-space: nowrap; display: flex; align-items: center; gap: 9px;
+}
+
+/* Campo de busca global na topbar — pill com ícone embutido via padding */
+.mr-topbar-search {
+  flex: 1;
+  max-width: 320px;
+  height: 34px;
+  padding: 0 12px 0 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.mr-topbar-search::placeholder { color: var(--ink-4); }
+.mr-topbar-search:focus {
+  outline: none;
+  border-color: var(--marin);
+  box-shadow: 0 0 0 3px var(--marin-tint);
+}
+
+/* Botão "+" redondo na topbar — substitui o antigo "+ Anime" (fiel ao protótipo) */
+.mr-topbar-add {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--marin), var(--marin-deep));
+  border: none;
+  color: oklch(0.99 0.01 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: filter 0.14s, transform 0.12s;
+  box-shadow: 0 2px 6px var(--marin-tint);
+}
+.mr-topbar-add:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.mr-topbar-add:active { transform: none; }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* BOTÕES                                                                       */
@@ -763,15 +817,47 @@
 /* NEXT BAR — sub-elementos                                                     */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
+/* Informações do episódio (centro da NextBar) */
 .mr-next-bar-info { flex: 1; min-width: 0; }
-.mr-next-bar-ep { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--cyan); flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
-.mr-next-bar-title { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.mr-next-bar-date { font-family: var(--mono); font-size: 10.5px; color: var(--cyan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Label "● PRÓXIMO EP" em caps monoespaçado com ponto pulsante cyan */
+.mr-next-bar-ep {
+  font-family: var(--mono); font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: 0.16em; color: var(--cyan); flex-shrink: 0;
+  display: flex; align-items: center; gap: 6px;
+}
+/* Título do anime clicável — navega para o detalhe */
+.mr-next-bar-title {
+  font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer; color: var(--ink);
+  transition: color 0.12s;
+}
+.mr-next-bar-title:hover { color: var(--marin-deep); }
+/* "Ep N · título do ep" em mono muted */
+.mr-next-bar-date {
+  font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px;
+}
+/* Container das ações (chevrons + "Já vi") */
 .mr-next-bar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.mr-next-bar-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.12s; }
+/* Botões redondos de chevron ‹ e › */
+.mr-next-bar-btn {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--ink-2); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+}
 .mr-next-bar-btn:hover { color: var(--ink); border-color: var(--ink-4); }
 .mr-next-bar-btn svg { width: 14px; height: 14px; }
-.mr-next-bar-btn--primary { background: linear-gradient(135deg, var(--marin), var(--marin-deep)); border-color: transparent; color: oklch(0.99 0.01 0); padding: 0 16px; width: auto; border-radius: var(--r-md); font-family: var(--sans); font-size: 13px; font-weight: 700; }
+/* Botão "✓ Já vi" — pill primário com acento */
+.mr-next-bar-btn--primary {
+  background: linear-gradient(135deg, var(--marin), var(--marin-deep));
+  border-color: transparent; color: oklch(0.99 0.01 0);
+  padding: 0 16px; width: auto; border-radius: var(--r-md);
+  font-family: var(--sans); font-size: 13px; font-weight: 700;
+  gap: 6px;
+}
 .mr-next-bar-btn--primary:hover { filter: brightness(1.08); }
 
 /* ─────────────────────────────────────────────────────────────────────────── */

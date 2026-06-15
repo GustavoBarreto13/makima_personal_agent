@@ -13,7 +13,9 @@ interface IconProps {
     | 'eye'        // 👁 assistindo
     | 'plus'       // + adicionar
     | 'sync'       // ↺ sync MAL
-    | 'chevron'    // › seta de navegação
+    | 'chevron'       // › seta de navegação (para a direita)
+    | 'chevron-left'  // ‹ seta de navegação (para a esquerda)
+    | 'search'        // 🔍 buscar
     | 'calendar'   // 📅 schedule
     | 'stats'      // ◎ estatísticas
     | 'home'       // ⊞ início
@@ -100,6 +102,7 @@ export function Icon({ name, size = 16, className, style }: IconProps) {
       />
     ),
     'chevron': (
+      // Seta apontando para a direita (›)
       <polyline
         points="5,2 11,8 5,14"
         fill="none"
@@ -108,6 +111,24 @@ export function Icon({ name, size = 16, className, style }: IconProps) {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    ),
+    'chevron-left': (
+      // Seta apontando para a esquerda (‹) — espelho do chevron direito
+      <polyline
+        points="11,2 5,8 11,14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+    'search': (
+      // Lupa de busca — círculo + cabo diagonal
+      <>
+        <circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        <line x1="10" y1="10" x2="14" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </>
     ),
     'calendar': (
       <>
