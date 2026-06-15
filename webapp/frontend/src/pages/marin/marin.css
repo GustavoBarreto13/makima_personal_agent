@@ -1513,6 +1513,292 @@
 .mr-detail-log-rating { font-family: var(--mono); font-size: 11px; color: var(--star); margin-top: 2px; }
 .mr-detail-log-notes { font-size: 13px; color: var(--ink-2); margin-top: 5px; line-height: 1.55; font-style: italic; }
 
+/* ── AnimeDetail Fase 4 — banner overlay + hero rewrite ─────────────────────
+   Novos elementos adicionados no rewrite pixel-perfect: overlay do banner,
+   pôster flutuante com badge de favorito, rating row com Stars+coração,
+   grid 2 colunas, ficha técnica, caderno da Marin e histórico de sessões. */
+
+/* Overlay: gradiente escuro da esquerda para dar legibilidade ao texto sobre o banner */
+.mr-detail-banner-overlay {
+  position: absolute;
+  inset: 0;
+  /* Escuro intenso à esquerda (onde fica o texto) → transparente à direita */
+  background: linear-gradient(to right, oklch(0.1 0.02 300 / 0.85) 40%, transparent 100%);
+  pointer-events: none; /* não bloqueia cliques */
+  z-index: 1;
+}
+
+/* Hero do banner: grid pôster + info, posicionado acima do overlay */
+.mr-detail-hero {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  /* pôster fixo 150px + info flexível */
+  grid-template-columns: 150px 1fr;
+  gap: 24px;
+  padding: 24px 28px;
+  width: 100%;
+  align-items: end;
+}
+
+/* Barra de gêneros acima do pôster (caps monoespaçado, translúcido) */
+.mr-detail-genres-bar {
+  /* Ocupa toda a largura do grid (colspan 2) */
+  grid-column: 1 / -1;
+  font: 11px var(--mono);
+  color: oklch(1 0 0 / 0.7);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  align-self: end;
+}
+
+/* Wrap do pôster com badge de coração */
+.mr-detail-poster-wrap {
+  width: 150px;
+  box-shadow: var(--shadow-lg);
+  position: relative;
+}
+
+/* Badge de coração sobreposto ao pôster (canto superior direito) */
+.mr-detail-fav-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: oklch(0.1 0.02 300 / 0.60);
+  backdrop-filter: blur(4px);
+  border: 1px solid oklch(1 0 0 / 0.14);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, transform 0.12s;
+}
+.mr-detail-fav-badge:hover { background: oklch(0.2 0.10 10 / 0.75); transform: scale(1.1); }
+
+/* Área de informações do anime (à direita do pôster) */
+.mr-detail-info {
+  min-width: 0;
+  padding-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Título principal do anime */
+.mr-detail-title {
+  font-size: clamp(22px, 3.8vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.06;
+  text-wrap: balance;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* Subtítulo: título japonês · estúdio · temporada · tipo */
+.mr-detail-subtitle {
+  font-size: 13px;
+  color: oklch(0.85 0.01 300);
+  line-height: 1.4;
+}
+
+/* Linha de rating: Stars + nota numérica + coração + StatusChip */
+.mr-detail-rating-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  flex-wrap: wrap;
+}
+
+/* Nota numérica (ex.: "7.5 / 10") em fonte mono */
+.mr-detail-score-num {
+  font: 500 15px var(--mono);
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+/* Botão de coração inline na rating row */
+.mr-detail-heart {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  color: var(--heart);
+  transition: transform 0.12s;
+}
+.mr-detail-heart:hover { transform: scale(1.2); }
+
+/* Select de status compacto sob a rating row */
+.mr-detail-status-select {
+  margin-top: 4px;
+  font-size: 13px;
+  max-width: 200px;
+  height: 36px;
+}
+
+/* Barra de ações: logar + favoritar + remover */
+.mr-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+/* Botão de favoritar — ativo quando já favoritado */
+.mr-detail-fav-btn { border: 1px solid var(--line); background: var(--card); color: var(--ink-2); }
+.mr-detail-fav-btn:hover { border-color: var(--heart); color: var(--heart); }
+.mr-detail-fav-btn.active { color: var(--heart); border-color: var(--heart); background: oklch(0.70 0.22 8 / 0.10); }
+
+/* Botão de remover */
+.mr-detail-delete-btn { color: var(--ink-3); border-color: var(--line); background: var(--card); }
+.mr-detail-delete-btn:hover { color: oklch(0.65 0.22 18); border-color: oklch(0.65 0.22 18); }
+
+/* Caixa de confirmação de exclusão (inline, borda vermelha suave) */
+.mr-detail-delete-confirm {
+  margin-top: 10px;
+  padding: 14px 18px;
+  background: var(--card-2);
+  border-radius: var(--r-md);
+  border: 1px solid oklch(0.65 0.22 18 / 0.4);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+/* Card de progresso de episódios */
+.mr-detail-progress-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px 20px;
+  margin-top: 16px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Linha "Próximo: Ep N · título" */
+.mr-detail-next-ep {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--cyan);
+  letter-spacing: 0.02em;
+}
+
+/* Grid de 2 colunas para o corpo do detalhe */
+.mr-detail-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 20px;
+  align-items: start;
+  margin-top: 20px;
+}
+
+/* Ficha técnica: 6 células em grade 2×3 */
+.mr-detail-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 20px;
+}
+
+/* Célula da ficha: label acima + value abaixo */
+.mr-meta-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Label da ficha (caps mono muted) */
+.mr-meta-label {
+  font: 10.5px var(--mono);
+  color: var(--ink-4);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Valor da ficha */
+.mr-meta-value {
+  font: 500 14px var(--sans);
+  color: var(--ink);
+}
+
+/* Caderno da Marin — bloco de notas com borda acento esquerda */
+.mr-notes-block {
+  background: var(--card-2);
+  border-left: 3px solid var(--marin);
+  /* Sobrescreve a borda completa da .mr-detail-section */
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+}
+
+/* Texto do caderno (itálico, cor secundária) */
+.mr-detail-notes {
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-2);
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+/* Chips de gênero no painel direito */
+.mr-detail-genres-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Chip de favorito: borda e cor do coração */
+.mr-tag-fav { border-color: var(--heart) !important; color: var(--heart) !important; }
+
+/* Histórico de sessões: lista vertical */
+.mr-sess-log { display: flex; flex-direction: column; gap: 14px; }
+
+/* Item de sessão: data + eps + nota dispostos horizontalmente com wrap */
+.mr-sess-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-2);
+}
+.mr-sess-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+/* Data da sessão (mono, muted, largura mínima) */
+.mr-sess-date {
+  font: 11.5px var(--mono);
+  color: var(--ink-4);
+  min-width: 72px;
+  flex-shrink: 0;
+}
+
+/* Episódios da sessão (ex.: "Ep 3–5") */
+.mr-sess-eps {
+  font: 500 13px var(--sans);
+  color: var(--marin-deep);
+  flex-shrink: 0;
+}
+
+/* Observação da sessão (nova linha, itálico) */
+.mr-sess-note {
+  font-style: italic;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  width: 100%; /* força nova linha */
+  margin: 2px 0 0;
+  line-height: 1.5;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* MODAIS — estrutura comum                                                     */
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -1602,13 +1888,112 @@
   .mr-home-profile-split { grid-template-columns: 1fr; }
   .mr-stats-totals { grid-template-columns: repeat(2, 1fr); }
   .mr-stats-highlight { grid-template-columns: 1fr; }
+  /* Hero do detalhe vira 1 coluna em telas estreitas */
   .mr-detail-hero { grid-template-columns: 120px 1fr; gap: 18px; }
-  .mr-detail-poster { width: 120px; }
-  .mr-detail-body { grid-template-columns: 1fr; }
+  /* Grade de 2 colunas do detalhe vira 1 coluna */
+  .mr-detail-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
   .mr-home-hero-content { max-width: 100%; }
   .mr-diary-entry { grid-template-columns: 44px 40px 1fr; }
   .mr-stats-monthly-bars { height: 100px; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* CATÁLOGO — header DM Serif + result count + meta abaixo do pôster           */
+/* Fase 3: CatalogScreen atualizado fiel ao protótipo screens-a.jsx            */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/* Header do catálogo: título grande em DM Serif Display + subtítulo de totais */
+.mr-cat-header { margin-bottom: 20px; }
+.mr-cat-title {
+  /* DM Serif Display — mesmo tipo do hero e dos números de stat */
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.mr-cat-sub {
+  /* Subtítulo muted: "N no acervo · M completos" */
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+/* Linha de contagem de resultados + sort ativo — fica após os chips na toolbar */
+.mr-result-count {
+  /* Ocupa toda a largura da toolbar — alinhado à esquerda */
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-4);
+  padding-top: 4px;
+  /* Exemplo: "24 animes · por atualizado" */
+}
+
+/* Container clicável de cada card no grid — substitui mr-catalog-item */
+.mr-poster-link {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  cursor: pointer;
+  /* Remove estilo padrão de link/botão */
+  text-decoration: none;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+}
+.mr-poster-link:focus-visible {
+  outline: 2px solid var(--marin);
+  border-radius: var(--r-lg);
+}
+/* Hover no link → eleva o poster-card filho */
+.mr-poster-link:hover .mr-poster-card {
+  transform: translateY(-5px) scale(1.015);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Barra de progresso fina (3px) colada na base do pôster */
+.mr-poster-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  /* background é inline (JS calcula o % de preenchimento via var(--marin)) */
+  pointer-events: none;
+}
+
+/* Meta abaixo do pôster: título + nota + contador de episódios */
+.mr-poster-meta { padding: 6px 2px 0; }
+.mr-poster-meta-title {
+  /* Título com até 2 linhas + ellipsis — igual ao mr-catalog-title original */
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.3;
+  margin-bottom: 3px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mr-poster-meta-row {
+  /* Linha horizontal: Score (estrela + número) e contagem de eps lado a lado */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mr-poster-meta-eps {
+  /* "X/Y" em mono muted — indica progresso sem repetir a barra visual */
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-4);
 }
