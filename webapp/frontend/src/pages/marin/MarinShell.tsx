@@ -8,7 +8,7 @@
 
 import './marin.css'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Tweaks, ScheduleItem } from './types'
+import type { Tweaks, ScheduleItem, Status } from './types'
 
 // Telas
 import { HomeScreen }     from './screens/HomeScreen'
@@ -144,6 +144,10 @@ export function MarinShell() {
     catalogo?: number
   }>({})
 
+  // Contagens brutas por status (Record<Status, number>) — passadas ao CatalogScreen
+  // para exibir totais no header sem fazer request adicional
+  const [homeCounts, setHomeCounts] = useState<Record<Status, number> | undefined>(undefined)
+
   // Schedule de próximos episódios — alimenta a NextBar
   const [schedule, setSchedule] = useState<ScheduleItem[]>([])
   // Índice atual na paginação da NextBar (‹ ›)
@@ -177,6 +181,8 @@ export function MarinShell() {
             watchlist:  res.counts.quero_assistir ?? 0,
             catalogo:   total,
           })
+          // Guarda as contagens brutas por status — repassadas ao CatalogScreen
+          setHomeCounts(res.counts as Record<Status, number>)
         }
       })
       .catch(() => {})
@@ -416,6 +422,7 @@ export function MarinShell() {
               tweaks={tweaks}
               onSelectAnime={id => navigateTo('detalhe', id)}
               externalQuery={topbarQuery}
+              externalCounts={homeCounts}
             />
           )}
 

@@ -14,7 +14,7 @@ interface MarinTweaksProps {
 const TEMAS = ['Escuro', 'Claro'] as const
 const ACENTOS = ['Neon', 'Rosa-Magenta', 'Sakura', 'Gold'] as const
 const DENSIDADES = ['Grande', 'Médio', 'Compacto'] as const
-const ORDENACOES = ['Atualizado', 'Adicionado', 'Nota', 'Título'] as const
+const ORDENACOES = ['Atualizado', 'Adicionado', 'Nota', 'Título', 'Progresso'] as const
 
 // Preview visual de cada acento (cor OKLCH aproximada)
 const ACCENT_COLORS: Record<string, string> = {
