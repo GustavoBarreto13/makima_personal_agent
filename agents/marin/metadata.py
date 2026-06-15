@@ -12,7 +12,7 @@ APIs utilizadas:
     - Jikan:  https://api.jikan.moe/v4  (sem auth)
     - AniList: https://graphql.anilist.co  (GraphQL, sem auth)
     - ARM:    https://arm.haglund.dev/api/v2/ids  (bridge MAL→TMDB, sem auth)
-    - TMDB:   https://api.themoviedb.org/3  (auth: TMDB_TOKEN no env)
+    - TMDB:   https://api.themoviedb.org/3  (auth: TMDB_API_KEY no env)
 
 Usage:
     from agents.marin.metadata import search_anime, enrich_anime
@@ -25,7 +25,7 @@ Usage:
 """
 
 import logging        # Registra erros sem interromper o fluxo do agente
-import os             # Lê variáveis de ambiente (TMDB_TOKEN)
+import os             # Lê variáveis de ambiente (TMDB_API_KEY)
 import time           # Delays de rate limiting entre chamadas às APIs
 from datetime import datetime, timezone  # Conversão de timestamps Unix para datas ISO
 
@@ -56,7 +56,7 @@ ANILIST_URL = "https://graphql.anilist.co"
 # Usado pelo Taiga, MAL-Sync e outras ferramentas de anime.
 ARM_URL = "https://arm.haglund.dev/api/v2/ids"
 
-# TMDB: base de metadados com thumbnails de episódios (autenticação via TMDB_TOKEN).
+# TMDB: base de metadados com thumbnails de episódios (autenticação via TMDB_API_KEY).
 TMDB_BASE = "https://api.themoviedb.org/3"
 
 # Prefixo de URL para imagens do TMDB no tamanho w780 (stills de episódio).
@@ -283,34 +283,23 @@ def _http_post_json(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _tmdb_auth() -> tuple[dict | None, dict | None]:
-    """Resolve os headers e params de autenticação do TMDB.
-
-    O TMDB suporta dois tipos de autenticação:
-    - v3 API key (32 chars): passada como query param `?api_key=...`
-    - v4 Bearer token (mais longo): passado como `Authorization: Bearer ...`
-
-    Detecta automaticamente qual formato está em TMDB_TOKEN e retorna
-    (headers, params) apropriados para cada caso.
+    """Resolve os headers e params de autenticação do TMDB (v3 api_key).
 
     Returns:
-        Tupla (headers, params) onde apenas um dos dois terá o token.
-        Retorna (None, None) se TMDB_TOKEN não estiver configurado.
+        Tupla (headers, params). headers é sempre {} (sem auth no header);
+        params contém {"api_key": key} quando configurado.
+        Retorna (None, None) se TMDB_API_KEY não estiver configurado —
+        TMDB é opcional para a Marin (thumbnails ficam None sem erro).
     """
-    # Lê o token da variável de ambiente — retorna None se não configurado
-    token = os.environ.get("TMDB_TOKEN", "").strip()
+    # Lê a API key v3 do ambiente — retorna None se não configurado
+    key = os.environ.get("TMDB_API_KEY", "").strip()
 
-    # Sem token configurado: TMDB desabilitado — retornamos None para ambos
-    if not token:
+    # Sem key configurada: TMDB desabilitado — thumbnails ficam NULL, sem erro
+    if not key:
         return None, None
 
-    # Token com exatamente 32 caracteres → é uma v3 API key
-    # Passa como query param ?api_key=...
-    if len(token) == 32:
-        return {}, {"api_key": token}
-
-    # Caso contrário → é um Bearer token v4
-    # Passa no header Authorization como "Bearer <token>"
-    return {"Authorization": f"Bearer {token}"}, {}
+    # Autentica via query param ?api_key=... (padrão v3)
+    return {}, {"api_key": key}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -752,7 +741,7 @@ def tmdb_get_episode_thumbnail(
     temporada (season_num) corresponde ao anime, usando a data de estreia
     como referência. Só então buscamos o thumbnail do episódio.
 
-    Esta função só opera se `TMDB_TOKEN` estiver configurado no ambiente.
+    Esta função só opera se `TMDB_API_KEY` estiver configurado no ambiente.
     Sem o token, retorna None imediatamente sem logar erro (comportamento
     esperado para instalações sem conta TMDB).
 
@@ -775,7 +764,7 @@ def tmdb_get_episode_thumbnail(
     # Verifica autenticação — sem token, TMDB está desabilitado
     tmdb_headers, tmdb_params = _tmdb_auth()
     if tmdb_headers is None:
-        # Comportamento esperado quando TMDB_TOKEN não está configurado.
+        # Comportamento esperado quando TMDB_API_KEY não está configurado.
         # Não loga erro — é uma feature opcional.
         return None
 

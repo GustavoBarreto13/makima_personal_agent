@@ -40,7 +40,7 @@ GOOGLE_CALENDAR_TOKEN_EXPIRY    # ISO 8601 — data de expiração do access tok
 GOOGLE_CALENDAR_MAIN_CALENDAR_ID # ID do calendário principal (geralmente o email Gmail)
 VERTEX_RAG_CORPUS               # ID do corpus Vertex AI RAG (após ativar Kurisu)
 GOOGLE_BOOKS_API_KEY            # (opcional) chave da Google Books API — aumenta cota de 1000 para 10.000 req/dia
-TMDB_TOKEN                      # Bearer token v4 do TMDB — metadados e pôsteres para a Akane (spec 015)
+TMDB_API_KEY                    # API key v3 do TMDB — Akane (filmes), Mai (séries), Marin (thumbnails)
 LETTERBOXD_USERNAME             # username público do Letterboxd — sync RSS automático da Akane
 DATABASE_URL                    # connection string do PostgreSQL separado no Dokploy
                                 # formato: postgresql://user:pass@host:5432/db

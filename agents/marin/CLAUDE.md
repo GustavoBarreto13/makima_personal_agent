@@ -155,7 +155,7 @@ Singleton que armazena tokens OAuth MAL e estado do último sync.
 ### AniList + ARM
 - **AniList**: GraphQL `https://graphql.anilist.co` — sinopse PT-BR, anilist_id
 - **ARM**: `https://arm.haelapi.com` — bridging MAL ID → AniList ID + TMDB ID
-- **TMDB**: Bearer v4 token (`TMDB_TOKEN`) — banner/backdrop
+- **TMDB**: api_key v3 (`TMDB_API_KEY`) — banner/backdrop
 
 ### MAL API v2
 - **Base URL**: `https://api.myanimelist.net/v2`
@@ -223,7 +223,7 @@ Quando `poster_url = NULL`, o frontend usa uma paleta OKLCH determinística por 
 | `DATABASE_URL` | sim | PostgreSQL compartilhado — todas as tools |
 | `MAL_CLIENT_ID` | sim | Client ID do app MAL (criar em myanimelist.net/apiconfig) |
 | `MAL_CLIENT_SECRET` | sim | Client Secret do app MAL |
-| `TMDB_TOKEN` | não (fallback gracioso) | Bearer token v4 — banner/backdrop |
+| `TMDB_API_KEY` | não (fallback gracioso) | API key v3 — banner/backdrop |
 
 ---
 

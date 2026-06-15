@@ -126,7 +126,7 @@ ON diary_entries(letterboxd_uri, watched_date) WHERE letterboxd_uri IS NOT NULL;
 ## TMDB API
 
 - **Base URL**: `https://api.themoviedb.org/3`
-- **Auth**: Bearer v4 token (`TMDB_TOKEN` — variável de ambiente)
+- **Auth**: api_key v3 (`TMDB_API_KEY` — variável de ambiente)
 - **Endpoints usados**: `/search/movie`, `/movie/{id}`, `/movie/{id}/credits`
 - **Imagens**: `https://image.tmdb.org/t/p/w500` (pôster) e `/w1280` (backdrop)
 - **Retry**: 3 tentativas com backoff exponencial (2s, 4s, 8s)
@@ -287,7 +287,7 @@ docker exec makima-web sh -c "cd /app && python -m scripts.import_letterboxd_csv
 | Variável | Obrigatório | Descrição |
 |---|---|---|
 | `DATABASE_URL` | sim | PostgreSQL compartilhado — todas as tools |
-| `TMDB_TOKEN` | sim | Bearer token v4 do TMDB (sem `Bearer ` prefix; tools adicionam) |
+| `TMDB_API_KEY` | sim | API key v3 do TMDB (obtida em themoviedb.org/settings/api) |
 | `LETTERBOXD_USERNAME` | sim (sync RSS) | Username público do Letterboxd |
 
 ---

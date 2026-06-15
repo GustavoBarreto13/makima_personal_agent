@@ -4,7 +4,7 @@ Busca o feed RSS público do usuário e ingere as entradas no catálogo de filme
 da Akane (PostgreSQL), usando `upsert_movie_from_letterboxd` em tools.py.
 
 Dedup garantido: mesma URI + mesma data → skipped (SC-003).
-TMDB opcional: enriquece metadados quando TMDB_TOKEN está definido; se a API
+TMDB opcional: enriquece metadados quando TMDB_API_KEY está definido; se a API
 estiver fora, cria o filme só com os dados do Letterboxd (SC-005).
 
 Usage:

@@ -7,14 +7,14 @@ daqui (FR-016).
 
 Integrações:
     - PostgreSQL via agents.db (run_select, run_dml, get_conn)
-    - TMDB API (Bearer v4, TMDB_TOKEN) — metadados e pôsteres com fallback gracioso
+    - TMDB API (v3 api_key, TMDB_API_KEY) — metadados e pôsteres com fallback gracioso
     - Letterboxd RSS/CSV — ingestão (via scripts de sync)
 
 Usage:
     from agents.akane.tools import add_movie, log_watch, get_stats
 """
 
-import os           # Lê variáveis de ambiente (TMDB_TOKEN, etc.)
+import os           # Lê variáveis de ambiente (TMDB_API_KEY, etc.)
 import re           # Remove pontuação na normalização de strings
 import time         # Backoff exponencial nas chamadas ao TMDB
 import unicodedata  # Remove acentos na normalização fuzzy
@@ -36,7 +36,7 @@ from agents.db import get_conn, run_select, run_dml
 # Usado em _today() para garantir datas corretas perto da meia-noite.
 _TZ = ZoneInfo("America/Sao_Paulo")
 
-# URL base da TMDB API v3. Auth = Bearer token v4 em TMDB_TOKEN.
+# URL base da TMDB API v3. Auth = api_key v3 em TMDB_API_KEY.
 _TMDB_BASE = "https://api.themoviedb.org/3"
 
 # Prefixos de URL para imagens do TMDB.
@@ -189,20 +189,14 @@ def _validate_rating(rating: float | int | None) -> str | None:
 # CLIENTE TMDB — com retry/backoff e fallback gracioso
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _tmdb_headers() -> dict:
-    """Retorna os headers HTTP para autenticação na TMDB API.
-
-    Lê TMDB_TOKEN do ambiente. Se não estiver setado, retorna headers
-    sem autenticação — as chamadas falharão graciosamente.
+def _tmdb_api_key() -> str:
+    """Retorna a API key v3 do TMDB lida do ambiente.
 
     Returns:
-        Dict de headers com Authorization Bearer e Accept JSON.
+        String com a API key, ou string vazia se não configurada
+        (as chamadas falharão graciosamente — fallback SC-005).
     """
-    token = os.environ.get("TMDB_TOKEN", "")
-    return {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-    }
+    return os.environ.get("TMDB_API_KEY", "")
 
 
 def _tmdb_get(path: str, params: dict | None = None, retries: int = 3) -> dict | None:
@@ -220,10 +214,12 @@ def _tmdb_get(path: str, params: dict | None = None, retries: int = 3) -> dict |
         Dict com a resposta JSON, ou None em caso de falha.
     """
     url = f"{_TMDB_BASE}{path}"
+    # Injeta api_key em todos os requests (autenticação v3)
+    all_params = {"api_key": _tmdb_api_key(), **(params or {})}
     for attempt in range(retries):
         try:
             # Timeout de 10s para não travar o fluxo em caso de lentidão
-            resp = requests.get(url, headers=_tmdb_headers(), params=params or {}, timeout=10)
+            resp = requests.get(url, headers={"Accept": "application/json"}, params=all_params, timeout=10)
             if resp.status_code == 200:
                 return resp.json()
             # Qualquer status não-200 é tratado como falha suave

@@ -34,7 +34,7 @@ Usage:
 
 import argparse    # Lê os argumentos de linha de comando (--force, --limit)
 import logging     # Exibe progresso e erros durante o processamento
-import os          # Lê variáveis de ambiente (DATABASE_URL, TMDB_TOKEN)
+import os          # Lê variáveis de ambiente (DATABASE_URL, TMDB_API_KEY)
 import sys         # sys.path e sys.exit()
 import uuid        # Gera IDs únicos para episódios inseridos
 

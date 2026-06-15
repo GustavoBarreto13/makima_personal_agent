@@ -119,8 +119,7 @@ lista/dict direto — **não** usar `_check_result` neles.
 
 | Variável | Obrigatório | Descrição |
 |---|---|---|
-| `TMDB_TOKEN` | sim (Akane) | Bearer token v4 do TMDB — metadados e pôsteres de filmes |
-| `TMDB_API_KEY` | sim (Mai) | API key v3 do TMDB — metadados e episódios de séries |
+| `TMDB_API_KEY` | sim (Akane, Mai, Marin) | API key v3 do TMDB — metadados, pôsteres e thumbnails |
 | `LETTERBOXD_USERNAME` | sim (sync RSS Akane) | Username público do Letterboxd para sync RSS automático |
 | `SESSION_SECRET` | sim | Chave para assinar cookies (gerar com `secrets.token_hex(32)`) |
 | `ALLOWED_EMAIL` | sim | Único email autorizado (ex.: `gustavobarreto1304@gmail.com`) |
