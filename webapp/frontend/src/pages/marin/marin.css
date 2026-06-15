@@ -10,7 +10,16 @@
  *
  * Acento padrão de fábrica: Neon (cyan) aplicado via data-accent='neon'.
  * Tema padrão: Escuro.
+ *
+ * Fontes: três DM fonts carregadas do Google Fonts.
+ *   --display → DM Serif Display (títulos do hero, números de stat, poster title)
+ *   --sans    → DM Sans          (corpo, UI, labels)
+ *   --mono    → DM Mono          (números, metadados, timestamps)
  */
+
+/* Carrega as três DM fonts em um único request do Google Fonts.
+   Deve vir ANTES de qualquer regra que use var(--display), var(--sans) ou var(--mono). */
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap');
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* SUPERFÍCIES, TINTA, LINHAS — Tema Escuro Base                              */
@@ -260,16 +269,6 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
-/* PÔSTERES TIPOGRÁFICOS (gradientes kawaii)                                   */
-/* ─────────────────────────────────────────────────────────────────────────── */
-
-/* Hover global em todos os pôsteres da Marin — elevação + escala kawaii */
-.marin-shell .poster:hover {
-  transform: translateY(-5px) scale(1.015);
-  box-shadow: var(--shadow-poster);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────── */
 /* NEXT BAR — barra inferior fixa (próximo episódio)                           */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
@@ -340,38 +339,10 @@
 /* CLASSES UTILITÁRIAS DO SHELL                                                 */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-/* Scrim (overlay escuro) — aparece atrás de modais */
-.mr-scrim {
-  position: fixed;
-  inset: 0;
-  background: oklch(0 0 0 / 0.55);
-  z-index: 40;
-  animation: mr-scrim-in 0.18s ease forwards;
-}
-
-/* Container de modal — centralizado na viewport */
-.mr-modal {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-  padding: 24px;
-}
-
-/* Caixa do modal */
-.mr-modal-box {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
-  animation: mr-modal-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-  max-height: 90dvh;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
-}
+/* NOTA: .mr-scrim e .mr-modal-box foram REMOVIDOS — são CSS morto.
+   Os modais usam .mr-modal-scrim (definido mais abaixo, seção MODAIS)
+   que inclui o scrim e o centering layer em um único seletor.
+   A caixa interna usa .mr-modal reposicionada dentro de .mr-modal-scrim. */
 
 /* Toast — notificação temporária no topo */
 .mr-toast {
@@ -396,7 +367,16 @@
 /* RESPONSIVO                                                                   */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-/* ≤ 900px — sidebar colapsa para 64px (só emojis, labels/counts somem) */
+/* ≤ 900px — sidebar colapsa para 64px (só ícones, labels/counts somem).
+   ATENÇÃO: os nomes das classes devem bater exatamente com o JSX do MarinShell.tsx.
+   Classes usadas no JSX:
+     .mr-side-label       → label do item de nav (ex.: "Catálogo", "Início")
+     .mr-side-badge       → contador de itens (ex.: "3" na Watchlist)
+     .mr-side-sub         → subtítulo "Catálogo de Animes" sob o avatar
+     .mr-side-group-label → títulos de grupo "Acervo" / "Analisar"
+     .mr-side-footer span → textos dos botões de rodapé (Sync MAL, Adicionar, etc.)
+   O CTA "Logar ep" não tem span wrapper com classe própria — ocultamos o texto
+   via :not([class]) para preservar o ícone. */
 @media (max-width: 900px) {
   .marin-shell {
     grid-template-columns: 64px 1fr;
@@ -406,16 +386,30 @@
     left: 64px;
   }
 
-  /* Labels de navegação somem no modo compacto */
-  .mr-nav-label,
-  .mr-nav-count,
-  .mr-brand-text,
-  .mr-sync-label {
+  /* Labels e contadores de nav somem — sidebar vira rail de ícones */
+  .mr-side-label,
+  .mr-side-badge {
     display: none;
   }
 
-  /* CTA "Logar episódio" — só ícone */
-  .mr-cta-label {
+  /* Subtítulo "Catálogo de Animes" sob o avatar — some no modo compacto */
+  .mr-side-sub {
+    display: none;
+  }
+
+  /* Títulos de seção "Acervo" / "Analisar" — sem espaço para texto no rail */
+  .mr-side-group-label {
+    display: none;
+  }
+
+  /* Textos dos botões de rodapé (Sync MAL, Adicionar, Configurações, Makima) */
+  .mr-side-footer span {
+    display: none;
+  }
+
+  /* Textos dos botões de ação do rodapé — spans sem classe específica */
+  .mr-side-action span,
+  .mr-side-back span {
     display: none;
   }
 }
@@ -452,6 +446,11 @@
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 .marin-shell {
+  /* Tokens das três DM fonts — usadas em toda a UI da Marin.
+     --display: títulos grandes (hero, nomes no detalhe, números de stat)
+     --sans:    corpo de texto, botões, labels, chips
+     --mono:    números, timestamps, metadados, eyebrows */
+  --display: 'DM Serif Display', 'Georgia', serif;
   --mono: 'DM Mono', ui-monospace, 'SF Mono', monospace;
   --sans: 'DM Sans', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -634,19 +633,12 @@
 .mr-typo-poster { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 14px; pointer-events: none; }
 .mr-poster-overlay { position: absolute; inset: 0; z-index: 3; pointer-events: none; display: flex; flex-direction: column; }
 
-.mr-poster-card[data-palette='sakura']    { --pb: oklch(0.20 0.12 355); --pk: oklch(0.94 0.05 352); --pa: oklch(0.70 0.18 350); }
-.mr-poster-card[data-palette='neon']      { --pb: oklch(0.16 0.10 210); --pk: oklch(0.90 0.06 206); --pa: oklch(0.74 0.15 210); }
-.mr-poster-card[data-palette='akihabara'] { --pb: oklch(0.18 0.12 280); --pk: oklch(0.90 0.05 276); --pa: oklch(0.68 0.17 274); }
-.mr-poster-card[data-palette='gold']      { --pb: oklch(0.20 0.10 72);  --pk: oklch(0.94 0.05 74);  --pa: oklch(0.78 0.14 74); }
-.mr-poster-card[data-palette='midnight']  { --pb: oklch(0.14 0.022 300);--pk: oklch(0.90 0.005 300);--pa: oklch(0.55 0.01 300); }
-.mr-poster-card[data-palette='rose']      { --pb: oklch(0.20 0.10 10);  --pk: oklch(0.93 0.04 10);  --pa: oklch(0.68 0.18 8); }
-.mr-poster-card[data-palette='teal']      { --pb: oklch(0.18 0.08 188); --pk: oklch(0.90 0.05 185); --pa: oklch(0.62 0.15 186); }
-.mr-poster-card[data-palette='indigo']    { --pb: oklch(0.18 0.12 258); --pk: oklch(0.90 0.05 255); --pa: oklch(0.60 0.16 258); }
-.mr-poster-card[data-palette='plum']      { --pb: oklch(0.18 0.12 320); --pk: oklch(0.90 0.05 318); --pa: oklch(0.62 0.16 320); }
-.mr-poster-card[data-palette='moss']      { --pb: oklch(0.18 0.07 140); --pk: oklch(0.90 0.04 138); --pa: oklch(0.60 0.14 140); }
-.mr-poster-card[data-palette='sand']      { --pb: oklch(0.22 0.05 80);  --pk: oklch(0.90 0.04 78);  --pa: oklch(0.70 0.10 76); }
-.mr-poster-card[data-palette='wine']      { --pb: oklch(0.18 0.10 18);  --pk: oklch(0.92 0.04 20);  --pa: oklch(0.60 0.18 20); }
-.mr-poster-card[data-palette] { background: var(--pb); color: var(--pk); }
+/* NOTA: os pôsteres tipográficos usam paletas via inline style (JavaScript),
+   NÃO via atributo data-palette no CSS. O PosterCard.tsx aplica diretamente
+   as 12 paletas (magenta, violet, cyan, emerald, amber, sunset, indigo, rose,
+   teal, lime, plum, sky) como propriedade CSS inline (background/color).
+   Os blocos [data-palette='sakura'], [data-palette='neon'], etc. que existiam
+   aqui foram REMOVIDOS — eram CSS morto com nomes diferentes das paletas reais. */
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* GRADE DE PÔSTERES E CHIPS DE FILTRO                                         */
@@ -1048,9 +1040,9 @@
 .mr-detail-back svg { width: 15px; height: 15px; }
 
 .mr-detail-banner { position: relative; margin-top: 16px; border-radius: var(--r-xl); overflow: hidden; min-height: 260px; display: flex; align-items: flex-end; box-shadow: var(--shadow-md); }
-.mr-detail-banner-bg { position: absolute; inset: 0; z-index: 0; }
-.mr-detail-banner-bg img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.mr-detail-banner-bg::after { content: ''; position: absolute; inset: 0; background: linear-gradient(0deg, oklch(0.14 0.018 300 / 0.96), oklch(0.14 0.018 300 / 0.45) 70%, oklch(0.14 0.018 300 / 0.3)); }
+/* NOTA: .mr-detail-banner-bg foi REMOVIDO — CSS morto.
+   AnimeDetail.tsx aplica o banner via inline style (backgroundImage) diretamente
+   no elemento .mr-detail-banner, não usando um elemento filho .mr-detail-banner-bg. */
 
 .mr-detail-hero { position: relative; z-index: 2; display: grid; grid-template-columns: 150px 1fr; gap: 24px; padding: 24px 28px; width: 100%; align-items: end; }
 .mr-detail-poster { width: 150px; box-shadow: var(--shadow-lg); }

@@ -41,10 +41,13 @@ const DEFAULT_TWEAKS: Tweaks = {
   ordenacao: 'Atualizado',
 }
 
-// Mapa acento → valor do data-accent no DOM
+// Mapa acento → valor do data-accent no DOM.
+// O CSS define: [data-accent='neon'], [data-accent='sakura'], [data-accent='gold'].
+// Rosa-Magenta é o acento BASE (sem data-accent ou data-accent='') — NÃO existe
+// [data-accent='magenta'] no CSS, então usar string vazia para cair no base.
 const ACCENT_MAP: Record<string, string> = {
   'Neon':         'neon',
-  'Rosa-Magenta': 'magenta',
+  'Rosa-Magenta': '',       // base: rosa-magenta é o padrão sem atributo
   'Sakura':       'sakura',
   'Gold':         'gold',
 }
