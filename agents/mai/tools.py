@@ -235,6 +235,22 @@ def add_series(
         ),
     )
 
+    # ── Sincroniza temporadas + episódios automaticamente ─────────────────
+    # Evita que o usuário precise apertar "Sync" para ver os episódios logo após
+    # adicionar a série. Falha silenciosa: se o TMDB estiver indisponível, a série
+    # já está salva e o usuário pode sincronizar manualmente depois.
+    seasons_count = meta.get("seasons_count") or 0
+    if tmdb_id and seasons_count > 0:
+        try:
+            with get_conn() as conn:
+                tmdb.sync_seasons(conn, series_id, tmdb_id, seasons_count)
+                conn.commit()
+        except Exception as exc:
+            logger.warning(
+                "Sync automático de temporadas falhou ao adicionar série %s (tmdb_id=%s): %s",
+                series_id, tmdb_id, exc,
+            )
+
     return _ok(series_id=series_id, title=display_title)
 
 
