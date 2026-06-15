@@ -1,7 +1,7 @@
 -- =============================================================
 -- Schema: Mai Sakurajima — Séries de TV (fatia 022)
 -- Aplicar via: python -m scripts.setup_schemas
--- 4 tabelas: series / seasons / episodes / watch_logs
+-- 4 tabelas: series / seasons / series_episodes / series_watch_logs
 -- =============================================================
 
 -- ─────────────────────────────────────────────────────────────
@@ -154,11 +154,12 @@ CREATE INDEX IF NOT EXISTS idx_seasons_air    ON seasons (air_date);
 
 
 -- ─────────────────────────────────────────────────────────────
--- Tabela: episodes
+-- Tabela: series_episodes
 -- Cache best-effort de metadados de episódios.
 -- Alimentada via GET /tv/{id}/season/{n} no TMDB.
+-- Renomeada de "episodes" para evitar colisão com a tabela de mesmo nome da Marin.
 -- ─────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS episodes (
+CREATE TABLE IF NOT EXISTS series_episodes (
     id              TEXT PRIMARY KEY,
 
     -- FK para a série. ON DELETE CASCADE garante limpeza se a série for fisicamente deletada.
@@ -200,21 +201,22 @@ CREATE TABLE IF NOT EXISTS episodes (
 );
 
 -- Índice para buscar todos os episódios de uma série (JOIN frequente).
-CREATE INDEX IF NOT EXISTS idx_eps_series  ON episodes (series_id);
+CREATE INDEX IF NOT EXISTS idx_eps_series  ON series_episodes (series_id);
 
 -- Índice composto para schedule de lançamentos (UpcomingScreen).
-CREATE INDEX IF NOT EXISTS idx_eps_air     ON episodes (air_date, airing_status);
+CREATE INDEX IF NOT EXISTS idx_eps_air     ON series_episodes (air_date, airing_status);
 
 -- Índice para encontrar o próximo episódio não assistido de uma temporada.
-CREATE INDEX IF NOT EXISTS idx_eps_watched ON episodes (series_id, season_number, watched);
+CREATE INDEX IF NOT EXISTS idx_eps_watched ON series_episodes (series_id, season_number, watched);
 
 
 -- ─────────────────────────────────────────────────────────────
--- Tabela: watch_logs
+-- Tabela: series_watch_logs
 -- Diário de sessões de episódios assistidos (uma linha por sessão).
 -- Suporta rewatches (sem índice único).
+-- Renomeada de "watch_logs" para evitar colisão com a tabela de mesmo nome da Marin.
 -- ─────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS watch_logs (
+CREATE TABLE IF NOT EXISTS series_watch_logs (
     id              TEXT PRIMARY KEY,
 
     -- FK para a série.
@@ -253,7 +255,7 @@ CREATE TABLE IF NOT EXISTS watch_logs (
 );
 
 -- Índice para listar o histórico de sessões de uma série.
-CREATE INDEX IF NOT EXISTS idx_wlogs_series ON watch_logs (series_id);
+CREATE INDEX IF NOT EXISTS idx_wlogs_series ON series_watch_logs (series_id);
 
 -- Índice para ordenação cronológica do diário.
-CREATE INDEX IF NOT EXISTS idx_wlogs_date   ON watch_logs (watched_date);
+CREATE INDEX IF NOT EXISTS idx_wlogs_date   ON series_watch_logs (watched_date);

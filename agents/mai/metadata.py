@@ -361,7 +361,7 @@ def sync_seasons(
         cur.execute(
             """
             SELECT season_number, episode_number, air_date, still_url
-            FROM episodes
+            FROM series_episodes
             WHERE series_id = %s
             """,
             (series_id,),
@@ -431,7 +431,7 @@ def sync_seasons(
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO episodes (id, series_id, season_number, episode_number,
+                    INSERT INTO series_episodes (id, series_id, season_number, episode_number,
                                          title, air_date, overview, still_url, airing_status)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (series_id, season_number, episode_number) DO UPDATE SET

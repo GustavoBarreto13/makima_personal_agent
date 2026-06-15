@@ -11,9 +11,9 @@ Responsabilidades:
 - Gerenciar catálogo pessoal de séries (watchlist + diário de assistência)
 - Registrar sessões por temporada e intervalo de episódios
 - Enriquecer metadados via TMDB API v4 Bearer (pôsteres, elenco, episódios, still frames)
-- Manter cache incremental de temporadas e episódios (`seasons` + `episodes`)
+- Manter cache incremental de temporadas e episódios (`seasons` + `series_episodes`)
 - Gerar estatísticas, próximos episódios e resumo do que está assistindo agora
-- Soft delete com histórico preservado nos `watch_logs`
+- Soft delete com histórico preservado nos `series_watch_logs`
 
 ---
 
@@ -95,7 +95,7 @@ Cache de metadados de temporadas (skip se season_number = 0 "Specials").
 | `poster_url` | TEXT | Pôster da temporada |
 | UNIQUE | — | `(series_id, season_number)` |
 
-### Tabela `episodes`
+### Tabela `series_episodes`
 
 Cache best-effort de episódios. Skip-logic incremental:
 `EXISTS AND air_date IS NOT NULL AND still_url IS NOT NULL AND air_date < hoje` → não sobrescreve.
@@ -114,7 +114,7 @@ Cache best-effort de episódios. Skip-logic incremental:
 | `watched_date` | DATE | Quando foi marcado como assistido |
 | UNIQUE | — | `(series_id, season_number, episode_number)` |
 
-### Tabela `watch_logs`
+### Tabela `series_watch_logs`
 
 Diário de sessões. Sem índice UNIQUE — permite rewatch.
 

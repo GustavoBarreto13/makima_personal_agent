@@ -300,7 +300,7 @@ def log_watch(
     log_id = str(uuid.uuid4())
     run_dml(
         """
-        INSERT INTO watch_logs (
+        INSERT INTO series_watch_logs (
             id, series_id, series_title, watched_date,
             season_number, ep_start, ep_end, episodes_count,
             rating, review, source
@@ -325,7 +325,7 @@ def log_watch(
         ep_end_mark = ep_end if ep_end is not None else ep_start
         run_dml(
             """
-            UPDATE episodes
+            UPDATE series_episodes
             SET watched = TRUE, watched_date = %s
             WHERE series_id = %s
               AND season_number = %s
@@ -522,7 +522,7 @@ def get_series_detail(series_id: str) -> dict:
         SELECT s.*,
                COUNT(e.id) FILTER (WHERE e.watched = TRUE) AS watched_count
         FROM seasons s
-        LEFT JOIN episodes e ON e.series_id = s.series_id
+        LEFT JOIN series_episodes e ON e.series_id = s.series_id
                             AND e.season_number = s.season_number
         WHERE s.series_id = %s
         GROUP BY s.id
@@ -540,7 +540,7 @@ def get_series_detail(series_id: str) -> dict:
     # ── Próximo episódio não assistido ────────────────────────────────────
     next_ep_rows = run_select(
         """
-        SELECT * FROM episodes
+        SELECT * FROM series_episodes
         WHERE series_id = %s AND watched = FALSE
         ORDER BY season_number, episode_number
         LIMIT 1
@@ -559,7 +559,7 @@ def get_series_detail(series_id: str) -> dict:
     # ── Logs recentes (10 últimas sessões) ────────────────────────────────
     log_rows = run_select(
         """
-        SELECT * FROM watch_logs
+        SELECT * FROM series_watch_logs
         WHERE series_id = %s
         ORDER BY watched_date DESC, created_at DESC
         LIMIT 10
@@ -638,7 +638,7 @@ def get_currently_watching() -> dict:
         ne_rows = run_select(
             """
             SELECT season_number, episode_number, title, air_date, still_url, airing_status
-            FROM episodes
+            FROM series_episodes
             WHERE series_id = %s AND watched = FALSE
             ORDER BY season_number, episode_number
             LIMIT 1
@@ -672,7 +672,7 @@ def get_diary(limit: int = 50) -> dict:
         """
         SELECT wl.*,
                s.poster_url, s.status AS series_status
-        FROM watch_logs wl
+        FROM series_watch_logs wl
         JOIN series s ON s.id = wl.series_id
         WHERE s.deleted = FALSE
         ORDER BY wl.watched_date DESC, wl.created_at DESC
@@ -707,7 +707,7 @@ def get_upcoming() -> dict:
         SELECT e.series_id, s.title AS series_title, s.poster_url,
                e.season_number, e.episode_number, e.title,
                e.air_date, e.still_url
-        FROM episodes e
+        FROM series_episodes e
         JOIN series s ON s.id = e.series_id
         WHERE s.status = 'assistindo'
           AND s.deleted = FALSE
@@ -746,7 +746,7 @@ def get_stats(year: Optional[int] = None) -> dict:
     series_count = run_select(
         """
         SELECT COUNT(DISTINCT series_id) AS cnt
-        FROM watch_logs
+        FROM series_watch_logs
         WHERE EXTRACT(YEAR FROM watched_date) = %s
         """,
         (target_year,),
@@ -757,7 +757,7 @@ def get_stats(year: Optional[int] = None) -> dict:
     ep_count = run_select(
         """
         SELECT COALESCE(SUM(episodes_count), 0) AS cnt
-        FROM watch_logs
+        FROM series_watch_logs
         WHERE EXTRACT(YEAR FROM watched_date) = %s
         """,
         (target_year,),
@@ -768,7 +768,7 @@ def get_stats(year: Optional[int] = None) -> dict:
     avg_rows = run_select(
         """
         SELECT ROUND(AVG(rating)::numeric, 2) AS avg
-        FROM watch_logs
+        FROM series_watch_logs
         WHERE EXTRACT(YEAR FROM watched_date) = %s AND rating IS NOT NULL
         """,
         (target_year,),
@@ -781,7 +781,7 @@ def get_stats(year: Optional[int] = None) -> dict:
         SELECT g AS genre, COUNT(*) AS cnt
         FROM (
             SELECT DISTINCT wl.series_id
-            FROM watch_logs wl
+            FROM series_watch_logs wl
             WHERE EXTRACT(YEAR FROM wl.watched_date) = %s
         ) ld
         JOIN series s ON s.id = ld.series_id
@@ -800,7 +800,7 @@ def get_stats(year: Optional[int] = None) -> dict:
         SELECT s.network, COUNT(*) AS cnt
         FROM (
             SELECT DISTINCT wl.series_id
-            FROM watch_logs wl
+            FROM series_watch_logs wl
             WHERE EXTRACT(YEAR FROM wl.watched_date) = %s
         ) ld
         JOIN series s ON s.id = ld.series_id
@@ -825,7 +825,7 @@ def get_stats(year: Optional[int] = None) -> dict:
         """
         SELECT EXTRACT(MONTH FROM watched_date) AS month,
                COALESCE(SUM(episodes_count), 0) AS cnt
-        FROM watch_logs
+        FROM series_watch_logs
         WHERE EXTRACT(YEAR FROM watched_date) = %s
         GROUP BY month
         ORDER BY month
@@ -844,7 +844,7 @@ def get_stats(year: Optional[int] = None) -> dict:
     daily_rows = run_select(
         """
         SELECT watched_date, COUNT(*) AS cnt
-        FROM watch_logs
+        FROM series_watch_logs
         WHERE EXTRACT(YEAR FROM watched_date) = %s
         GROUP BY watched_date
         ORDER BY watched_date
@@ -872,7 +872,7 @@ def get_stats(year: Optional[int] = None) -> dict:
         SELECT s.id, s.title, s.poster_url, s.rating, s.network,
                COALESCE(SUM(wl.episodes_count), 0) AS episodes_year,
                COUNT(wl.id)                          AS sessions_year
-        FROM watch_logs wl
+        FROM series_watch_logs wl
         JOIN series s ON s.id = wl.series_id
         WHERE EXTRACT(YEAR FROM wl.watched_date) = %s
           AND s.deleted = FALSE
@@ -1048,7 +1048,7 @@ def get_episodes_for_season(series_id: str, season_number: int) -> dict:
     # Busca episódios do cache local
     ep_rows = run_select(
         """
-        SELECT * FROM episodes
+        SELECT * FROM series_episodes
         WHERE series_id = %s AND season_number = %s
         ORDER BY episode_number
         """,
@@ -1089,7 +1089,7 @@ def get_episodes_for_season(series_id: str, season_number: int) -> dict:
                                 continue
                             cur.execute(
                                 """
-                                INSERT INTO episodes (id, series_id, season_number, episode_number,
+                                INSERT INTO series_episodes (id, series_id, season_number, episode_number,
                                                      title, air_date, overview, still_url, airing_status)
                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                                 ON CONFLICT (series_id, season_number, episode_number) DO NOTHING
@@ -1106,7 +1106,7 @@ def get_episodes_for_season(series_id: str, season_number: int) -> dict:
 
         # Busca novamente do banco após sync
         ep_rows = run_select(
-            "SELECT * FROM episodes WHERE series_id = %s AND season_number = %s ORDER BY episode_number",
+            "SELECT * FROM series_episodes WHERE series_id = %s AND season_number = %s ORDER BY episode_number",
             (series_id, season_number),
         )
 

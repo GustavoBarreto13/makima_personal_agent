@@ -131,7 +131,7 @@ makima_personal_agent/
 │   │   └── CLAUDE.md    # tools, schema PostgreSQL, menu interativo, personalidade
 │   └── mai/             # agente de séries de TV — Fase 022 ✅
 │       ├── __init__.py
-│       ├── tools.py     # PostgreSQL (series, seasons, episodes, watch_logs)
+│       ├── tools.py     # PostgreSQL (series, seasons, series_episodes, series_watch_logs)
 │       ├── metadata.py  # TMDB API v4 Bearer + retry + skip-logic incremental
 │       ├── agent.py     # mai_agent — singleton
 │       ├── schema_pg.sql # schema das 4 tabelas PostgreSQL
