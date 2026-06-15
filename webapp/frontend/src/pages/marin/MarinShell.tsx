@@ -8,7 +8,7 @@
 
 import './marin.css'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Tweaks, ScheduleItem, Status } from './types'
+import type { Tweaks, ScheduleItem, Status, SyncResult } from './types'
 
 // Telas
 import { HomeScreen }     from './screens/HomeScreen'
@@ -239,10 +239,11 @@ export function MarinShell() {
     setSyncing(true)
     try {
       const res = await marinApi.syncMal(false)
-      const r = res as any
+      // O backend retorna SyncResult com campos 'created' e 'updated' (não 'added')
+      const r = res as SyncResult
       showToast(
-        r?.added > 0 || r?.updated > 0
-          ? `MAL sync: ${r.added ?? 0} adicionado(s), ${r.updated ?? 0} atualizado(s)`
+        (r?.created ?? 0) > 0 || (r?.updated ?? 0) > 0
+          ? `Sync completo: ${r.created ?? 0} criados, ${r.updated ?? 0} atualizados`
           : 'MAL sync: nada de novo'
       )
     } catch {
