@@ -276,6 +276,12 @@ export interface Stats {
   total_hours: number
   /** Nota média do ano (null se sem notas) */
   avg_score: number | null
+  /** Total de sessões no ano (soma do array monthly) — exibido no year switch */
+  total_sessions?: number
+  /** Quantidade de animes com status='completo' no catálogo */
+  completed?: number
+  /** Máximo de episódios assistidos num único dia no ano */
+  max_marathon_day?: number
   /** Top gêneros (nome + contagem de animes) */
   top_genres: Array<{ genre: string; count: number }>
   /** Top estúdios (nome + contagem de animes) */
@@ -291,7 +297,14 @@ export interface Stats {
     anime_id: string
     title: string
     score: number | null
+    /** URL do pôster (pode ser null → usa paleta tipográfica) */
     poster_url?: string | null
+    /** Paleta tipográfica de fallback (sempre presente) */
+    poster_key?: string
+    /** Estúdio de animação principal */
+    studio?: string | null
+    /** Temporada de estreia (ex.: "Inverno 2024") */
+    season?: string | null
     episodes_watched?: number
   } | null
 }

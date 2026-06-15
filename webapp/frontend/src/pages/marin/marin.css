@@ -1614,14 +1614,91 @@
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 .mr-stats { max-width: 1100px; margin: 0 auto; padding: 0 28px 96px; }
-.mr-stats-year-switch { display: flex; align-items: center; gap: 12px; margin-top: 28px; }
+
+/* ── Year switch com chevrons (substitui os botões de ano individuais) ───────
+   Layout: [‹] [ano + subtítulo] [›] em flex com justify-content: space-between */
+.mr-stats-year-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 28px;
+  margin-bottom: 24px;
+}
+/* Botão chevron: borda fina, sem preenchimento, hover em --marin */
+.mr-stats-yr-btn {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  padding: 6px;
+  color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.mr-stats-yr-btn:hover:not(:disabled) { color: var(--marin); border-color: var(--marin); }
+.mr-stats-yr-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+/* Centro: ano grande + subtítulo em mono */
+.mr-stats-yr-center { text-align: center; }
+.mr-stats-yr-label {
+  /* Ano em DM Serif Display grande e negrito */
+  font: 700 28px var(--display);
+  color: var(--ink);
+  display: block;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.mr-stats-yr-sub {
+  /* "N sessões · X eps · Yh" em DM Mono pequeno */
+  font: 13px var(--mono);
+  color: var(--ink-4);
+  margin-top: 4px;
+  display: block;
+}
+
+/* ── 4 totais grandes em DM Serif (Completos / Eps / Horas / Nota média) ─────
+   Grid 4 colunas no desktop, 2×2 em tablets, mantendo proporção nos cards */
+.mr-stats-totals {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+/* Card individual de cada total */
+.mr-stat-big {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 12px;
+  background: var(--card-2);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+}
+/* Número grande: DM Serif Display 36px, cor principal */
+.mr-stat-big-num {
+  font: 700 36px var(--display);
+  color: var(--ink);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+/* Label em caps mono muted pequeno */
+.mr-stat-big-label {
+  font: 12px var(--mono);
+  color: var(--ink-4);
+  margin-top: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Mantém as classes antigas para não quebrar outros usos (fallback) */
 .mr-year-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.12s; }
 .mr-year-btn:hover { border-color: var(--marin); color: var(--marin-deep); }
 .mr-year-btn--active { border-color: var(--marin); color: var(--marin-deep); background: var(--marin-tint); }
 .mr-year-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .mr-year-btn svg { width: 14px; height: 14px; }
-
-.mr-stats-totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 22px; }
 .mr-total-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 20px 16px; text-align: center; box-shadow: var(--shadow-sm); }
 .mr-total-value { font-size: 38px; font-weight: 700; line-height: 1; color: var(--marin-deep); font-variant-numeric: tabular-nums; }
 .mr-total-label { font-size: 12px; color: var(--ink-2); margin-top: 10px; }
@@ -1645,6 +1722,42 @@
 .mr-stats-bar-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--marin), var(--marin-bright)); border-radius: 999px; }
 .mr-stats-bar-count { font-family: var(--mono); font-size: 11px; color: var(--ink-3); width: 20px; text-align: right; flex-shrink: 0; }
 
+/* ── Destaque do ano — card com pôster + informações do anime ────────────────
+   Layout: [pôster 64px] | [título + estrelas + meta + maratona] */
+.mr-stats-highlight-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  background: var(--card-2);
+  border-radius: var(--r-md);
+  padding: 16px;
+  border: 1px solid var(--line);
+}
+/* Área de informações à direita do pôster */
+.mr-stats-highlight-info { flex: 1; min-width: 0; }
+/* Título do anime destaque */
+.mr-stats-highlight-title {
+  font: 600 16px var(--sans);
+  color: var(--ink);
+  margin: 0 0 6px;
+  line-height: 1.3;
+}
+/* Estúdio · Temporada em mono muted */
+.mr-stats-highlight-meta {
+  font: 13px var(--mono);
+  color: var(--ink-3);
+  margin-top: 4px;
+}
+/* Linha de maratona: "🏃 Maior maratona: N eps num dia" */
+.mr-stats-marathon {
+  font: 13px var(--sans);
+  color: var(--ink-3);
+  margin-top: 6px;
+}
+/* Número da maratona em acento --marin para destaque */
+.mr-stats-marathon strong { color: var(--marin); }
+
+/* Mantém classes antigas do highlight para compatibilidade */
 .mr-stats-highlight { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .mr-highlight-card { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); cursor: pointer; transition: border-color 0.14s; }
 .mr-highlight-card:hover { border-color: var(--marin-tint-2); }

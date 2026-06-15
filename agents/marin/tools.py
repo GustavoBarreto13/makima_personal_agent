@@ -1142,15 +1142,22 @@ def get_stats(year: int | None = None) -> dict:
     )
     heatmap: dict[str, int] = {r["dt"]: int(r["count"]) for r in heatmap_rows}
 
-    # ── Anime destaque do ano (mais episódios ou maior nota) ──────────────────
+    # ── Anime destaque do ano (maior nota, desempate por episódios assistidos) ──
+    # Inclui poster_key, poster_url, studio e season para exibição no frontend.
     highlight_rows = run_select(
         """
-        SELECT a.id AS anime_id, a.title, a.score
+        SELECT
+            a.id        AS anime_id,
+            a.title,
+            a.score,
+            a.poster_url,
+            a.studio,
+            a.season
         FROM watch_logs w
         JOIN anime a ON a.id = w.anime_id
         WHERE EXTRACT(YEAR FROM w.watched_date) = %(year)s
           AND a.deleted = FALSE
-        GROUP BY a.id, a.title, a.score
+        GROUP BY a.id, a.title, a.score, a.poster_url, a.studio, a.season
         ORDER BY a.score DESC NULLS LAST, SUM(COALESCE(w.episodes_count, 0)) DESC
         LIMIT 1
         """,
@@ -1158,11 +1165,55 @@ def get_stats(year: int | None = None) -> dict:
     )
     highlight = highlight_rows[0] if highlight_rows else None
     if highlight:
+        # Calcula o poster_key determinístico para o anime destaque
+        # (mesmo algoritmo usado nos cards do catálogo)
+        poster_key = _poster_key(highlight["title"])
         highlight = {
-            "anime_id": highlight["anime_id"],
-            "title":    highlight["title"],
-            "score":    float(highlight["score"]) if highlight.get("score") else None,
+            "anime_id":  highlight["anime_id"],
+            "title":     highlight["title"],
+            "score":     float(highlight["score"]) if highlight.get("score") else None,
+            "poster_url": highlight.get("poster_url"),   # pode ser None (pôster tipográfico)
+            "poster_key": poster_key,                    # paleta de fallback sempre presente
+            "studio":    highlight.get("studio"),
+            "season":    highlight.get("season"),
         }
+
+    # ── Maior maratona: máximo de episódios assistidos num único dia ───────────
+    # Conta a soma de episodes_count por dia e retorna o maior valor do ano.
+    marathon_rows = run_select(
+        """
+        SELECT COALESCE(MAX(daily_eps), 0)::int AS max_marathon
+        FROM (
+            SELECT
+                w.watched_date,
+                SUM(COALESCE(w.episodes_count, 1)) AS daily_eps
+            FROM watch_logs w
+            JOIN anime a ON a.id = w.anime_id
+            WHERE EXTRACT(YEAR FROM w.watched_date) = %(year)s
+              AND a.deleted = FALSE
+            GROUP BY w.watched_date
+        ) sub
+        """,
+        {"year": year},
+    )
+    # COALESCE garante que retorna 0 mesmo sem sessões no ano
+    max_marathon_day = int((marathon_rows[0].get("max_marathon") or 0) if marathon_rows else 0)
+
+    # ── Quantidade de animes com status='completo' no catálogo ────────────────
+    # Usado no card "Completos" dos 4 totais grandes da tela de stats.
+    completed_rows = run_select(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM anime
+        WHERE status = 'completo'
+          AND deleted = FALSE
+        """,
+    )
+    completed = int((completed_rows[0].get("cnt") or 0) if completed_rows else 0)
+
+    # ── Total de sessões no ano (soma das entradas do diário) ─────────────────
+    # Exibido no year switch: "N sessões · X eps · Yh"
+    total_sessions = sum(monthly)
 
     return _ok(
         year=year,
@@ -1170,6 +1221,9 @@ def get_stats(year: int | None = None) -> dict:
         total_episodes=total_eps,
         total_hours=total_horas,
         avg_score=avg_score,
+        completed=completed,
+        max_marathon_day=max_marathon_day,
+        total_sessions=total_sessions,
         top_genres=[{"genre": r["genre"], "count": int(r["count"])} for r in top_genres],
         top_studios=[{"studio": r["studio"], "count": int(r["count"])} for r in top_studios],
         monthly=monthly,
