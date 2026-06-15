@@ -2,6 +2,11 @@
 // Lista de temporadas em acordeão com lazy-load de episódios.
 // Abertura exclusiva: abrir uma temporada fecha as outras.
 // Animação: max-height + opacity definidos no mai.css.
+//
+// Novidades (marcação cumulativa + toggle de temporada):
+//   - Marcar ep N → marca todos os eps ≤ N da mesma temporada (lançados)
+//   - Desmarcar ep N → desmarca todos os eps ≥ N da mesma temporada
+//   - Botão "Marcar temporada" / "Desmarcar": toggle da temporada inteira
 
 import { useState, useEffect } from 'react'
 import type { Season, Episode } from '../types'
@@ -18,7 +23,7 @@ interface Props {
   seriesId: string
   seasons: (Season & { watched_count: number })[]
   /**
-   * Chamado quando o usuário marca/desmarca um episódio pelo checkbox.
+   * Chamado quando o usuário marca/desmarca um episódio ou uma temporada.
    * A DetailScreen usa este callback para re-buscar os dados da série
    * e atualizar a barra de progresso + watched_count das temporadas.
    */
@@ -38,8 +43,10 @@ interface Props {
  * Cache local: episódios já carregados não são re-buscados ao fechar/abrir.
  * Exclusivo: abrir uma temporada fecha automaticamente as demais.
  *
- * Checkbox: marcar/desmarcar um episódio atualiza o cache local imediatamente
- * (resposta otimista) e depois chama a API. Em caso de erro, reverte o estado.
+ * Marcação cumulativa:
+ *   - Checkbox ep N (marcar): eps 1…N ficam ✓ (só lançados)
+ *   - Checkbox ep N (desmarcar): eps N…último perdem ✓
+ *   - Botão temporada: toggle — marca/desmarca a temporada inteira
  */
 // onEpisodeToggle é recebido mas não usado internamente (fica disponível para uso futuro via prop)
 export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) {
@@ -51,7 +58,8 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
   const [loading, setLoading] = useState<Record<number, boolean>>({})
   // Número de episódios exibidos por temporada (paginação)
   const [epLimit, setEpLimit] = useState<Record<number, number>>({})
-  // Episódios que estão sendo processados (para desabilitar checkbox durante a chamada)
+  // Episódios/temporadas que estão sendo processados (para desabilitar durante a chamada)
+  // Chaves: "sn-en" para episódio individual, "season-sn" para a temporada inteira
   const [busy, setBusy]       = useState<Set<string>>(new Set())
 
   // Quando uma temporada é aberta e não tem cache, busca os episódios
@@ -68,7 +76,7 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
         setEpLimit(prev => ({ ...prev, [open]: EP_PAGE }))
       })
       .catch(() => {
-        // Falha silenciosa — accordeão mostra lista vazia
+        // Falha silenciosa — acordeão mostra lista vazia
         setEpCache(prev => ({ ...prev, [open]: [] }))
       })
       .finally(() => {
@@ -90,14 +98,17 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
   }
 
   /**
-   * Toggle de checkbox de um episódio: marca/desmarca como assistido.
+   * Toggle de checkbox de um episódio: marca/desmarca com lógica cumulativa.
    *
    * Estratégia "optimistic update":
-   *   1. Atualiza o cache local imediatamente (o usuário vê a mudança na hora)
+   *   1. Atualiza o cache local imediatamente (cumulativo: ≤ N ao marcar, ≥ N ao desmarcar)
    *   2. Chama a API em segundo plano
    *   3. Em caso de erro, reverte para o estado anterior
    *   4. Após sucesso, dispara onProgressChange para a DetailScreen recarregar
-   *      os watched_count das temporadas e a barra de progresso
+   *
+   * Regras de negócio espelhadas do backend:
+   *   - Marcar ep N: todos os eps da mesma temporada com number ≤ N E airing_status != 'agendado'
+   *   - Desmarcar ep N: todos os eps da mesma temporada com number ≥ N (inclusive futuros)
    */
   async function handleToggleWatched(episode: Episode, nextWatched: boolean) {
     const { season_number: sn, episode_number: en } = episode
@@ -111,32 +122,101 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
     // Salva o estado atual para reverter em caso de erro
     const prevCache = epCache[sn] ?? []
 
-    // ── Atualização otimista do cache local ──────────────────────────────────
-    // Atualiza o episódio no cache imediatamente, sem esperar a API
+    // ── Atualização otimista do cache local (cumulativa) ─────────────────────
     setEpCache(prev => ({
       ...prev,
-      [sn]: (prev[sn] ?? []).map(ep =>
-        ep.episode_number === en
-          ? { ...ep, watched: nextWatched, watched_date: nextWatched ? new Date().toISOString().slice(0, 10) : null }
-          : ep
-      ),
+      [sn]: (prev[sn] ?? []).map(ep => {
+        if (nextWatched) {
+          // Marcar: afeta eps ≤ N que já foram lançados
+          if (ep.episode_number <= en && ep.airing_status !== 'agendado') {
+            return {
+              ...ep,
+              watched: true,
+              // Preserva watched_date original; define hoje se ainda estava vazio
+              watched_date: ep.watched_date ?? new Date().toISOString().slice(0, 10),
+            }
+          }
+        } else {
+          // Desmarcar: afeta eps ≥ N (inclusive futuros que possam estar marcados)
+          if (ep.episode_number >= en) {
+            return { ...ep, watched: false, watched_date: null }
+          }
+        }
+        return ep
+      }),
     }))
 
     // Marca este episódio como "busy" para desabilitar o checkbox durante a chamada
     setBusy(prev => new Set(prev).add(key))
 
     try {
-      // Chama o endpoint de toggle de episódio individual
+      // Chama o endpoint cumulativo no backend
       await maiApi.setEpisodeWatched(seriesId, sn, en, nextWatched)
 
       // Sucesso: dispara callback para a DetailScreen recarregar o progresso geral
-      // (barra de progresso, watched_count das temporadas, next_episode)
       onProgressChange?.()
     } catch {
-      // Erro: reverte o cache para o estado anterior (desfaz o optimistic update)
+      // Erro: reverte o cache para o estado anterior
       setEpCache(prev => ({ ...prev, [sn]: prevCache }))
     } finally {
       // Remove o estado "busy" independente do resultado
+      setBusy(prev => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+    }
+  }
+
+  /**
+   * Toggle da temporada inteira: marca ou desmarca todos os episódios.
+   *
+   * Se a temporada está completa (done=true) → desmarca tudo.
+   * Se não está completa → marca tudo (apenas episódios lançados).
+   *
+   * Usa chave "season-sn" no Set de busy para desabilitar o botão durante a chamada.
+   */
+  async function handleToggleSeason(seasonNumber: number, nextWatched: boolean) {
+    // Chave de busy para a temporada inteira (diferente das chaves de episódios individuais)
+    const key = `season-${seasonNumber}`
+    if (busy.has(key)) return
+
+    // Salva snapshot do cache para rollback em caso de erro
+    const prevCache = epCache[seasonNumber] ?? []
+
+    // ── Atualização otimista do cache: espelha a lógica do backend ──────────
+    if (epCache[seasonNumber]) {
+      setEpCache(prev => ({
+        ...prev,
+        [seasonNumber]: (prev[seasonNumber] ?? []).map(ep => {
+          if (nextWatched) {
+            // Marcar: só eps lançados (equivalente ao IS DISTINCT FROM 'agendado' do SQL)
+            if (ep.airing_status !== 'agendado') {
+              return {
+                ...ep,
+                watched: true,
+                watched_date: ep.watched_date ?? new Date().toISOString().slice(0, 10),
+              }
+            }
+          } else {
+            // Desmarcar: todos os eps da temporada, inclusive agendados
+            return { ...ep, watched: false, watched_date: null }
+          }
+          return ep
+        }),
+      }))
+    }
+
+    setBusy(prev => new Set(prev).add(key))
+
+    try {
+      await maiApi.setSeasonWatched(seriesId, seasonNumber, nextWatched)
+      // Recarrega dados da série para atualizar watched_count e barra de progresso
+      onProgressChange?.()
+    } catch {
+      // Reverte o cache em caso de erro de rede ou do backend
+      setEpCache(prev => ({ ...prev, [seasonNumber]: prevCache }))
+    } finally {
       setBusy(prev => {
         const next = new Set(prev)
         next.delete(key)
@@ -158,6 +238,10 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
         const watched = season.watched_count ?? 0
         const pct     = total > 0 ? (watched / total) : 0
         const done    = total > 0 && watched >= total
+
+        // Chave de busy para o botão de marcar a temporada inteira
+        const seasonBusyKey = `season-${season.season_number}`
+        const seasonBusy    = busy.has(seasonBusyKey)
 
         return (
           <div
@@ -185,6 +269,26 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
                   )}
                 </div>
               </div>
+
+              {/*
+                Botão de toggle de temporada inteira.
+                e.stopPropagation() impede que o clique no botão abra/feche o acordeão.
+                Rótulo dinâmico: "Desmarcar" se completa, "Marcar temporada" se não.
+              */}
+              {total > 0 && (
+                <button
+                  className={`season-markall${seasonBusy ? ' busy' : ''}`}
+                  disabled={seasonBusy}
+                  onClick={e => {
+                    e.stopPropagation()
+                    handleToggleSeason(season.season_number, !done)
+                  }}
+                  title={done ? 'Desmarcar temporada inteira' : 'Marcar todos os episódios como assistidos'}
+                  type="button"
+                >
+                  {done ? 'Desmarcar' : 'Marcar temporada'}
+                </button>
+              )}
 
               {/* Mini barra de progresso + contagem à direita */}
               <div className="season-prog-compact">
@@ -220,7 +324,7 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) 
                 )}
 
                 {!isLoad && eps.slice(0, limit).map(ep => {
-                  // Chave de busy para este episódio
+                  // Chave de busy para este episódio individual
                   const key = `${ep.season_number}-${ep.episode_number}`
                   return (
                     <EpisodeLine

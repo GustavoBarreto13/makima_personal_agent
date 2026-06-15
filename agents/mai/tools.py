@@ -1019,29 +1019,68 @@ def sync_metadata(series_id: str) -> dict:
     return _ok(series_id=series_id, **stats)
 
 
+def _recompute_episodes_watched(series_id: str) -> int:
+    """Recomputa o contador episodes_watched via COUNT(*) e grava no banco.
+
+    Usar sempre em vez de incrementar/decrementar com +1/-1, pois operações
+    em lote (cumulativas ou de temporada inteira) poderiam causar drift no
+    contador se usassem somas parciais.
+
+    Args:
+        series_id: UUID da série a atualizar.
+
+    Returns:
+        Novo valor do contador (int) após a atualização.
+    """
+    # Conta todos os episódios marcados como assistidos na série (todas as temporadas)
+    run_dml(
+        """
+        UPDATE series
+        SET episodes_watched = (
+            SELECT COUNT(*)
+            FROM series_episodes
+            WHERE series_id = %s AND watched = TRUE
+        ),
+        updated_at = NOW()
+        WHERE id = %s
+        """,
+        (series_id, series_id),  # %s aparece duas vezes: subquery + WHERE
+    )
+
+    # Busca o novo valor para retornar ao chamador
+    updated = run_select(
+        "SELECT episodes_watched FROM series WHERE id = %s",
+        (series_id,),
+    )
+    return int(updated[0]["episodes_watched"]) if updated and updated[0]["episodes_watched"] is not None else 0
+
+
 def set_episode_watched(
     series_id: str,
     season_number: int,
     episode_number: int,
     watched: bool,
 ) -> dict:
-    """Marcar ou desmarcar um episódio individual como assistido.
+    """Marcar ou desmarcar um episódio individual como assistido, com marcação cumulativa.
 
-    Atualiza series_episodes.watched e ajusta o contador episodes_watched
-    da série. Operação idempotente: se o episódio já está no estado
-    desejado, retorna ok sem alterar o banco.
+    Comportamento cumulativo (dentro da mesma temporada):
+      - Marcar episódio N → marca também todos os eps 1…N-1 da mesma temporada
+        que já foram lançados (airing_status != 'agendado').
+      - Desmarcar episódio N → desmarca também todos os eps N+1, N+2… da mesma
+        temporada ("parei aqui, não assisti daqui pra frente").
 
     Não cria entrada no Diário — use log_watch para sessões com nota/review.
+    O contador episodes_watched é recomputado via COUNT(*) para evitar drift.
 
     Args:
         series_id: UUID da série.
         season_number: Número da temporada (>= 1).
         episode_number: Número do episódio dentro da temporada.
-        watched: True para marcar como assistido, False para desmarcar.
+        watched: True para marcar (cumulativo ≤ N), False para desmarcar (cumulativo ≥ N).
 
     Returns:
-        dict com status='ok', watched, episodes_watched (novo valor do contador)
-        e changed (bool indicando se o estado foi alterado).
+        dict com status='ok', watched, episodes_watched (novo valor do contador via COUNT)
+        e changed (bool — True se ao menos um episódio mudou de estado).
     """
     # Valida que a série existe e não está deletada
     series_rows = run_select(
@@ -1053,7 +1092,7 @@ def set_episode_watched(
 
     series_data = series_rows[0]
 
-    # Busca o episódio específico pelo identificador único (series_id, season, episode)
+    # Valida que o episódio clicado existe no cache local (garante que o sync já foi feito)
     ep_rows = run_select(
         """
         SELECT watched FROM series_episodes
@@ -1062,61 +1101,54 @@ def set_episode_watched(
         (series_id, season_number, episode_number),
     )
     if not ep_rows:
-        return _err(f"Episódio T{season_number}E{episode_number} não encontrado no cache — execute sync_metadata primeiro")
-
-    # Idempotência: se já está no estado desejado, não faz nada no banco
-    current_watched = bool(ep_rows[0]["watched"])
-    if current_watched == watched:
-        return _ok(
-            series_id=series_id,
-            season_number=season_number,
-            episode_number=episode_number,
-            watched=watched,
-            episodes_watched=int(series_data["episodes_watched"] or 0),
-            changed=False,  # nenhuma alteração foi feita
+        return _err(
+            f"Episódio T{season_number}E{episode_number} não encontrado no cache "
+            "— execute sync_metadata primeiro"
         )
 
-    # Atualiza watched + watched_date no episódio:
-    #   - marcar: preenche watched_date com a data de hoje
-    #   - desmarcar: limpa watched_date (NULL)
-    run_dml(
-        """
-        UPDATE series_episodes
-        SET watched = %s,
-            watched_date = CASE WHEN %s THEN CURRENT_DATE ELSE NULL END
-        WHERE series_id = %s AND season_number = %s AND episode_number = %s
-        """,
-        (watched, watched, series_id, season_number, episode_number),
-    )
+    # Salva o contador atual para detectar se houve mudança real
+    old_count = int(series_data["episodes_watched"] or 0)
 
-    # Ajusta o contador de episódios assistidos na série
     if watched:
-        # Marcar como assistido → incrementa o contador
+        # ── Marcação cumulativa: marca todos os eps ≤ N já lançados ────────
+        # COALESCE preserva a data original de eps que já estavam marcados.
+        # IS DISTINCT FROM 'agendado' cobre tanto 'agendado' quanto NULL (ep sem status).
         run_dml(
-            "UPDATE series SET episodes_watched = episodes_watched + 1, updated_at = NOW() WHERE id = %s",
-            (series_id,),
+            """
+            UPDATE series_episodes
+            SET watched      = TRUE,
+                watched_date = COALESCE(watched_date, CURRENT_DATE)
+            WHERE series_id     = %s
+              AND season_number  = %s
+              AND episode_number <= %s
+              AND airing_status IS DISTINCT FROM 'agendado'
+            """,
+            (series_id, season_number, episode_number),
         )
     else:
-        # Desmarcar → decrementa, mas GREATEST garante que não vai abaixo de zero
+        # ── Desmarcação simétrica: desmarca todos os eps ≥ N ────────────────
+        # "Parei aqui" — os episódios depois do N também não foram vistos.
         run_dml(
-            "UPDATE series SET episodes_watched = GREATEST(episodes_watched - 1, 0), updated_at = NOW() WHERE id = %s",
-            (series_id,),
+            """
+            UPDATE series_episodes
+            SET watched      = FALSE,
+                watched_date = NULL
+            WHERE series_id     = %s
+              AND season_number  = %s
+              AND episode_number >= %s
+            """,
+            (series_id, season_number, episode_number),
         )
 
+    # Recomputa o contador via COUNT para evitar drift com operações em lote
+    new_count = _recompute_episodes_watched(series_id)
+
     # Se marcou como assistido e a série ainda era 'quero_assistir', avança para 'assistindo'
-    # automaticamente (mesma lógica do log_watch)
     if watched and series_data["status"] == "quero_assistir":
         run_dml(
             "UPDATE series SET status = 'assistindo', date_started = CURRENT_DATE, updated_at = NOW() WHERE id = %s",
             (series_id,),
         )
-
-    # Busca o novo valor do contador para retornar ao frontend (para atualizar a barra de progresso)
-    updated = run_select(
-        "SELECT episodes_watched FROM series WHERE id = %s",
-        (series_id,),
-    )
-    new_count = int(updated[0]["episodes_watched"]) if updated and updated[0]["episodes_watched"] is not None else 0
 
     return _ok(
         series_id=series_id,
@@ -1124,7 +1156,85 @@ def set_episode_watched(
         episode_number=episode_number,
         watched=watched,
         episodes_watched=new_count,
-        changed=True,  # o estado foi alterado
+        changed=(old_count != new_count),  # True se ao menos um episódio mudou de estado
+    )
+
+
+def set_season_watched(
+    series_id: str,
+    season_number: int,
+    watched: bool,
+) -> dict:
+    """Marcar ou desmarcar a temporada inteira como assistida (toggle de temporada).
+
+    Marcar: atualiza todos os episódios já lançados da temporada (airing_status
+    IS DISTINCT FROM 'agendado') — episódios futuros são ignorados.
+    Desmarcar: zera watched em todos os episódios da temporada (incluindo futuros
+    que pudessem ter sido marcados manualmente).
+
+    Não cria entrada no Diário — operação de progresso puro.
+    O contador episodes_watched é recomputado via COUNT(*) para evitar drift.
+
+    Args:
+        series_id: UUID da série.
+        season_number: Número da temporada (>= 1).
+        watched: True para marcar a temporada inteira, False para desmarcar tudo.
+
+    Returns:
+        dict com status='ok', season_number, watched e episodes_watched (novo valor via COUNT).
+    """
+    # Valida que a série existe e não está deletada
+    series_rows = run_select(
+        "SELECT id, status FROM series WHERE id = %s AND deleted = FALSE",
+        (series_id,),
+    )
+    if not series_rows:
+        return _err(f"Série '{series_id}' não encontrada")
+
+    series_data = series_rows[0]
+
+    if watched:
+        # ── Marca todos os episódios lançados da temporada ──────────────────
+        # COALESCE preserva watched_date de eps que já estavam marcados antes.
+        run_dml(
+            """
+            UPDATE series_episodes
+            SET watched      = TRUE,
+                watched_date = COALESCE(watched_date, CURRENT_DATE)
+            WHERE series_id    = %s
+              AND season_number = %s
+              AND airing_status IS DISTINCT FROM 'agendado'
+            """,
+            (series_id, season_number),
+        )
+    else:
+        # ── Desmarca todos os episódios da temporada (inclusive futuros) ────
+        run_dml(
+            """
+            UPDATE series_episodes
+            SET watched      = FALSE,
+                watched_date = NULL
+            WHERE series_id    = %s
+              AND season_number = %s
+            """,
+            (series_id, season_number),
+        )
+
+    # Recomputa o contador total de episódios assistidos (todas as temporadas)
+    new_count = _recompute_episodes_watched(series_id)
+
+    # Promoção automática de status ao marcar a primeira temporada
+    if watched and series_data["status"] == "quero_assistir":
+        run_dml(
+            "UPDATE series SET status = 'assistindo', date_started = CURRENT_DATE, updated_at = NOW() WHERE id = %s",
+            (series_id,),
+        )
+
+    return _ok(
+        series_id=series_id,
+        season_number=season_number,
+        watched=watched,
+        episodes_watched=new_count,
     )
 
 

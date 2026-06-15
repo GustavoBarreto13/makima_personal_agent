@@ -37,7 +37,8 @@ from agents.mai.tools import (
     delete_series,
     sync_metadata,
     get_episodes_for_season,
-    set_episode_watched,  # toggle de episódio individual (checkbox da DetailScreen)
+    set_episode_watched,   # toggle cumulativo de episódio individual (checkbox da DetailScreen)
+    set_season_watched,    # toggle de temporada inteira (botão "Marcar temporada")
 )
 
 
@@ -111,8 +112,21 @@ class ToggleEpisodeBody(BaseModel):
 
     Usado pelo checkbox da linha de episódio no SeasonAccordion (DetailScreen).
     Não cria entrada no Diário — apenas atualiza series_episodes.watched.
+    A marcação é cumulativa: marcar o ep N marca todos os eps ≤ N na mesma
+    temporada; desmarcar o ep N desmarca todos os eps ≥ N.
     """
-    watched: bool  # True = marcar como assistido; False = desmarcar
+    watched: bool  # True = marcar (cumulativo ≤ N); False = desmarcar (cumulativo ≥ N)
+
+
+class ToggleSeasonBody(BaseModel):
+    """Body para marcar/desmarcar a temporada inteira como assistida.
+
+    Usado pelo botão "Marcar temporada" / "Desmarcar" no SeasonAccordion.
+    Não cria entrada no Diário.
+    Ao marcar: marca apenas episódios lançados (airing_status != 'agendado').
+    Ao desmarcar: zera watched em todos os episódios da temporada.
+    """
+    watched: bool  # True = marcar a temporada toda; False = desmarcar tudo
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -432,6 +446,39 @@ def toggle_episode_endpoint(
             series_id=series_id,
             season_number=season_number,
             episode_number=episode_number,
+            watched=body.watched,
+        )
+    )
+
+
+@router.patch("/{series_id}/seasons/{season_number}/watched")
+def toggle_season_endpoint(
+    series_id: str,
+    season_number: int,
+    body: ToggleSeasonBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Marcar ou desmarcar a temporada inteira como assistida.
+
+    Toggle de temporada: se watched=True, marca todos os episódios lançados
+    (airing_status != 'agendado'). Se watched=False, desmarca todos.
+
+    Não cria entrada no Diário — operação de progresso puro.
+    O contador episodes_watched é recomputado via COUNT para evitar drift.
+
+    Args:
+        series_id: UUID da série.
+        season_number: Número da temporada.
+        body: watched (true = marcar tudo; false = desmarcar tudo).
+        user: Usuário autenticado.
+
+    Returns:
+        Dict com series_id, season_number, watched e episodes_watched (novo total).
+    """
+    return _check_result(
+        set_season_watched(
+            series_id=series_id,
+            season_number=season_number,
             watched=body.watched,
         )
     )

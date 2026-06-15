@@ -463,7 +463,12 @@
 .season-acc { display: flex; flex-direction: column; gap: 12px; }
 .season-row { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--card); overflow: hidden; transition: border-color 0.16s, box-shadow 0.16s; }
 .season-row.open { border-color: var(--mai-tint-2); box-shadow: var(--shadow-sm); }
-.season-head { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 16px; padding: 16px 18px; cursor: pointer; user-select: none; }
+/* 4 colunas: chevron | nome/sub | botão de temporada | barra de progresso */
+.season-head { display: grid; grid-template-columns: 22px 1fr auto auto; align-items: center; gap: 16px; padding: 16px 18px; cursor: pointer; user-select: none; }
+/* Botão "Marcar temporada" / "Desmarcar" — compacto, fica entre o nome e a barra */
+.season-markall { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.03em; color: var(--ink-3); background: transparent; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 3px 9px; cursor: pointer; white-space: nowrap; transition: color 0.14s, border-color 0.14s, background 0.14s; flex-shrink: 0; }
+.season-markall:hover { color: var(--mai-deep); border-color: var(--mai); background: var(--mai-tint-1); }
+.season-markall:disabled, .season-markall.busy { opacity: 0.45; cursor: default; pointer-events: none; }
 /* Chevron: rotaciona 90° quando aberto */
 .season-chev { color: var(--ink-3); display: inline-flex; transition: transform 0.2s ease, color 0.16s; }
 .season-row.open .season-chev { transform: rotate(90deg); color: var(--mai-deep); }
@@ -967,8 +972,10 @@
   .footbar-info { display: none; }
   .diary-row { grid-template-columns: 44px 40px 1fr; }
   .dr-marks { display: none; }
+  /* No mobile o botão de temporada e a barra de progresso ficam ocultos para não apertar */
   .season-head { grid-template-columns: 20px 1fr; }
   .season-prog-compact { display: none; }
+  .season-markall { display: none; }
   .epi-line { grid-template-columns: 16px 1fr auto; }
   .epi-still { display: none; }
   .detail-grid { grid-template-columns: 1fr; }

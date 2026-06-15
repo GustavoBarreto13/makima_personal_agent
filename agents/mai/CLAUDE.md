@@ -157,6 +157,61 @@ Implementadas em `agents/mai/tools.py`. Todas retornam `{"status": "ok"|"error",
 | `delete_series` | Soft delete (deleted=TRUE; watch_logs preservados) |
 | `sync_metadata` | Atualiza TMDB + temporadas + episódios (skip-logic) |
 | `get_episodes_for_season` | Lista episódios de uma temporada específica |
+| `set_episode_watched` | Marca/desmarca episódio **cumulativo** (≤ N ao marcar, ≥ N ao desmarcar) |
+| `set_season_watched` | Toggle de temporada inteira (marcar todos lançados / desmarcar todos) |
+
+---
+
+## Padrão: marcação cumulativa de episódios
+
+> **Reutilizável em outros agentes de mídia episódica** (ex.: Marin/animes).
+> Marin também tem `series_episodes` / `seasons` com estrutura semelhante.
+
+### As duas tools
+
+**`set_episode_watched(series_id, season_number, episode_number, watched)`**
+- **Marcar ep N (`watched=True`):** marca todos os eps `episode_number <= N` da mesma temporada
+  que já foram lançados (`airing_status IS DISTINCT FROM 'agendado'`).
+  Usa `COALESCE(watched_date, CURRENT_DATE)` — preserva datas de eps já marcados.
+- **Desmarcar ep N (`watched=False`):** desmarca todos os eps `episode_number >= N` da mesma
+  temporada ("parei aqui, os posteriores também não foram vistos").
+- Retorna `changed=True` se ao menos um episódio mudou de estado.
+
+**`set_season_watched(series_id, season_number, watched)`**
+- **Marcar:** UPDATE WHERE `season_number = N AND airing_status IS DISTINCT FROM 'agendado'`.
+- **Desmarcar:** UPDATE WHERE `season_number = N` (todos, inclusive futuros).
+- Não cria entrada no Diário — operação de progresso puro.
+
+### As 3 regras de negócio
+
+1. **Cumulativo é só na mesma temporada.** Marcar T2E5 marca T2E1–E4, mas **não** mexe na T1.
+2. **Desmarcar é simétrico.** Desmarcar T1E2 desmarca E2, E3, E4… (>`= N`).
+3. **Toggle de temporada respeita `airing_status`.** Ao marcar, episódios com
+   `airing_status = 'agendado'` (futuros) são ignorados; ao desmarcar, todos são zerados.
+
+### ⚠️ Contador via COUNT — nunca `+1`/`-1`
+
+O campo `series.episodes_watched` é recomputado após **cada** operação via:
+```sql
+UPDATE series SET episodes_watched =
+  (SELECT COUNT(*) FROM series_episodes WHERE series_id = %s AND watched = TRUE),
+  updated_at = NOW()
+WHERE id = %s
+```
+
+**Motivo:** com operações em lote (cumulativo/temporada inteira), somas incrementais acumulam
+erro (drift). O helper `_recompute_episodes_watched(series_id)` em `tools.py` centraliza esse
+padrão — **copiar esse helper ao replicar em outro agente**, nunca usar `episodes_watched + 1`.
+
+### Espelhamento backend ↔ cache otimista do frontend
+
+`SeasonAccordion.tsx` replica a mesma lógica no cache local (optimistic update):
+- Marcar: `ep.episode_number <= en && ep.airing_status !== 'agendado'` → `watched: true`
+- Desmarcar: `ep.episode_number >= en` → `watched: false, watched_date: null`
+- Chave de busy separada por episódio (`"sn-en"`) e por temporada (`"season-sn"`)
+
+Em caso de erro, o cache reverte ao snapshot salvo antes da chamada; `onProgressChange?.()` é
+chamado após sucesso para re-buscar `watched_count` das temporadas e a barra de progresso.
 
 ---
 

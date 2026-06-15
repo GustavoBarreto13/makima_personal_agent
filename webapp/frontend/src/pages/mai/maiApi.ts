@@ -178,14 +178,16 @@ export const maiApi = {
   /**
    * Marca ou desmarca um episódio individual como assistido (checkbox de progresso).
    *
-   * Diferente do logWatch, este método NÃO cria entrada no Diário.
-   * Atualiza apenas series_episodes.watched + series.episodes_watched.
-   * Operação idempotente: chamar com o mesmo estado não altera nada.
+   * Comportamento cumulativo (backend + cache local seguem a mesma lógica):
+   *   - Marcar ep N → marca todos os eps ≤ N da mesma temporada (lançados).
+   *   - Desmarcar ep N → desmarca todos os eps ≥ N da mesma temporada.
+   *
+   * Não cria entrada no Diário — apenas atualiza watched + counter.
    *
    * @param seriesId - UUID da série no catálogo.
    * @param seasonNumber - Número da temporada (1-based).
    * @param episodeNumber - Número do episódio dentro da temporada.
-   * @param watched - true = marcar assistido; false = desmarcar.
+   * @param watched - true = marcar (cumulativo ≤ N); false = desmarcar (cumulativo ≥ N).
    */
   setEpisodeWatched: (
     seriesId: string,
@@ -195,6 +197,27 @@ export const maiApi = {
   ) =>
     api.patch<OkResponse>(
       `/api/series/${seriesId}/episodes/${seasonNumber}/${episodeNumber}`,
+      { watched },
+    ),
+
+  /**
+   * Marca ou desmarca a temporada inteira como assistida (toggle de temporada).
+   *
+   * Ao marcar: atualiza apenas episódios já lançados (airing_status != 'agendado').
+   * Ao desmarcar: zera watched em todos os episódios da temporada.
+   * Não cria entrada no Diário.
+   *
+   * @param seriesId - UUID da série no catálogo.
+   * @param seasonNumber - Número da temporada (1-based).
+   * @param watched - true = marcar a temporada inteira; false = desmarcar tudo.
+   */
+  setSeasonWatched: (
+    seriesId: string,
+    seasonNumber: number,
+    watched: boolean,
+  ) =>
+    api.patch<OkResponse>(
+      `/api/series/${seriesId}/seasons/${seasonNumber}/watched`,
       { watched },
     ),
 
