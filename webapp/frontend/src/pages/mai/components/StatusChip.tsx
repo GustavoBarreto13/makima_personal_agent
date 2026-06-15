@@ -117,7 +117,8 @@ export function StatusChip({ status, size = 'sm', onPoster = false, onSelect }: 
    */
   function handleSelect(newStatus: MaiStatus) {
     setMenuOpen(false)
-    onSelect(newStatus)
+    // onSelect é garantidamente definido aqui pois este código só executa quando onSelect foi passado
+    onSelect?.(newStatus)
   }
 
   return (

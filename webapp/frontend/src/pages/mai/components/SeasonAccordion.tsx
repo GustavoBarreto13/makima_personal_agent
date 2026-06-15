@@ -41,7 +41,8 @@ interface Props {
  * Checkbox: marcar/desmarcar um episódio atualiza o cache local imediatamente
  * (resposta otimista) e depois chama a API. Em caso de erro, reverte o estado.
  */
-export function SeasonAccordion({ seriesId, seasons, onProgressChange, onEpisodeToggle }: Props) {
+// onEpisodeToggle é recebido mas não usado internamente (fica disponível para uso futuro via prop)
+export function SeasonAccordion({ seriesId, seasons, onProgressChange }: Props) {
   // Temporada aberta no momento (null = nenhuma)
   const [open, setOpen]       = useState<number | null>(null)
   // Cache de episódios por número de temporada
@@ -116,7 +117,7 @@ export function SeasonAccordion({ seriesId, seasons, onProgressChange, onEpisode
       ...prev,
       [sn]: (prev[sn] ?? []).map(ep =>
         ep.episode_number === en
-          ? { ...ep, watched: nextWatched, watched_date: nextWatched ? new Date().toISOString().slice(0, 10) : undefined }
+          ? { ...ep, watched: nextWatched, watched_date: nextWatched ? new Date().toISOString().slice(0, 10) : null }
           : ep
       ),
     }))
