@@ -427,16 +427,16 @@
 .status-chip.on-poster { backdrop-filter: blur(6px); }
 
 /* ── StatusChip modo interativo ─────────────────────────────────────────────── */
-/* Wrapper relativo para ancorar o menu de status ao chip */
-.status-chip-wrap { position: relative; display: inline-flex; }
+/* Wrapper do chip interativo — sem position:relative pois o menu usa fixed */
+.status-chip-wrap { display: inline-flex; }
 /* Botão que replica o visual do chip mas é clicável */
 .status-chip.interactive { appearance: none; -webkit-appearance: none; border: none; cursor: pointer; transition: filter 0.14s; }
 .status-chip.interactive:hover { filter: brightness(1.12); }
 /* Seta indicativa de interatividade */
 .sc-arrow { font-size: 9px; opacity: 0.7; margin-left: 2px; }
 
-/* Menu flutuante de status — popover ancorado ao chip */
-.status-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 200; min-width: 172px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 5px; box-shadow: var(--shadow-md); display: flex; flex-direction: column; gap: 2px; }
+/* Menu flutuante de status — usa position:fixed (via inline style) para escapar de overflow:hidden */
+.status-menu { z-index: 9999; min-width: 172px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 5px; box-shadow: var(--shadow-md); display: flex; flex-direction: column; gap: 2px; }
 /* Item do menu */
 .status-menu-item { appearance: none; -webkit-appearance: none; border: none; background: transparent; width: 100%; display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: var(--r-md); cursor: pointer; font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--ink-2); transition: background 0.1s, color 0.1s; text-align: left; }
 .status-menu-item:hover { background: var(--card-2); color: var(--ink); }

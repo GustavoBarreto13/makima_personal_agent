@@ -4,6 +4,9 @@
 // Modo interativo: quando recebe onSelect, vira um botão que abre um menu
 //   com os 5 status disponíveis para o usuário escolher.
 // O modo interativo é usado na DetailScreen; o display é usado em cards/pôsteres.
+//
+// O menu usa position: fixed com coordenadas calculadas via getBoundingClientRect()
+// para escapar do overflow: hidden do .detail-banner sem precisar de portal.
 
 import { useState, useRef, useEffect } from 'react'
 import type { MaiStatus } from '../types'
@@ -51,34 +54,56 @@ interface Props {
   onSelect?: (status: MaiStatus) => void
 }
 
+/** Coordenadas do menu fixo calculadas a partir do botão. */
+interface MenuPos {
+  top: number
+  left: number
+}
+
 /**
  * StatusChip — badge do status da série.
  *
  * Em modo display (sem onSelect): <span> colorido, não clicável.
  * Em modo interativo (com onSelect): <button> que abre um popover com os 5 status.
- * Fechar o menu: clicar em um item, clicar fora ou pressionar Esc.
+ *
+ * O menu usa position:fixed para escapar do overflow:hidden do banner.
+ * Fechar: clicar em um item, clicar fora ou pressionar Esc.
  */
 export function StatusChip({ status, size = 'sm', onPoster = false, onSelect }: Props) {
   const color = COLORS[status]
 
-  // Controla se o menu de status está aberto
+  // Controla se o menu está aberto
   const [menuOpen, setMenuOpen] = useState(false)
+  // Posição absoluta em viewport para o menu (position:fixed)
+  const [menuPos, setMenuPos] = useState<MenuPos>({ top: 0, left: 0 })
 
-  // Ref para detectar cliques fora do menu e fechá-lo
-  const containerRef = useRef<HTMLDivElement>(null)
+  // Ref para o botão — usado para calcular a posição do menu
+  const btnRef = useRef<HTMLButtonElement>(null)
 
-  // Fecha o menu quando o usuário clica fora do container
+  // Ao abrir o menu, calcula a posição do botão na viewport
+  function openMenu() {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      // Posiciona o menu abaixo do botão com 6px de espaço
+      setMenuPos({ top: rect.bottom + 6, left: rect.left })
+    }
+    setMenuOpen(true)
+  }
+
+  // Fecha o menu ao clicar fora dele
   useEffect(() => {
     if (!menuOpen) return
 
     function handlePointerDown(e: PointerEvent) {
-      // Se o clique foi fora do container, fecha o menu
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      // Verifica se o clique foi fora do botão E fora do menu
+      const clickedBtn  = btnRef.current?.contains(target)
+      const clickedMenu = document.getElementById('sc-status-menu')?.contains(target)
+      if (!clickedBtn && !clickedMenu) {
         setMenuOpen(false)
       }
     }
 
-    // Listener de pointerdown para capturar clique antes do click event
     document.addEventListener('pointerdown', handlePointerDown)
     return () => document.removeEventListener('pointerdown', handlePointerDown)
   }, [menuOpen])
@@ -108,28 +133,22 @@ export function StatusChip({ status, size = 'sm', onPoster = false, onSelect }: 
     )
   }
 
-  // ── Modo interativo (com onSelect) — botão com popover ───────────────────
+  // ── Modo interativo (com onSelect) ────────────────────────────────────────
 
-  /**
-   * Ao escolher um status do menu:
-   *   1. Fecha o menu
-   *   2. Chama onSelect com o novo status
-   */
   function handleSelect(newStatus: MaiStatus) {
     setMenuOpen(false)
-    // onSelect é garantidamente definido aqui pois este código só executa quando onSelect foi passado
     onSelect?.(newStatus)
   }
 
   return (
-    // Container relativo para ancorar o menu ao chip
-    <div ref={containerRef} className="status-chip-wrap">
-      {/* Botão que replica o visual do chip mas é clicável */}
+    <>
+      {/* Botão que replica o visual do chip */}
       <button
+        ref={btnRef}
         type="button"
         className={`status-chip interactive${size === 'md' ? ' md' : ''}${onPoster ? ' on-poster' : ''}`}
         style={{ color, background: `${color}22` }}
-        onClick={() => setMenuOpen(prev => !prev)}
+        onClick={() => (menuOpen ? setMenuOpen(false) : openMenu())}
         title="Alterar status"
         aria-haspopup="listbox"
         aria-expanded={menuOpen}
@@ -140,9 +159,18 @@ export function StatusChip({ status, size = 'sm', onPoster = false, onSelect }: 
         <span className="sc-arrow" aria-hidden>▾</span>
       </button>
 
-      {/* Menu de status — posicionado absolutamente abaixo do chip */}
+      {/*
+        Menu de status com position:fixed ancorado às coordenadas do botão.
+        Fica fora do fluxo normal do DOM, escapando do overflow:hidden do banner.
+      */}
       {menuOpen && (
-        <div className="status-menu" role="listbox" aria-label="Selecionar status">
+        <div
+          id="sc-status-menu"
+          className="status-menu"
+          role="listbox"
+          aria-label="Selecionar status"
+          style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}
+        >
           {ALL_STATUSES.map(opt => (
             <button
               key={opt}
@@ -152,16 +180,16 @@ export function StatusChip({ status, size = 'sm', onPoster = false, onSelect }: 
               className={`status-menu-item${opt === status ? ' active' : ''}`}
               onClick={() => handleSelect(opt)}
             >
-              {/* Ponto de cor para identificar o status visualmente */}
+              {/* Ponto de cor identificador */}
               <span className="smi-dot" style={{ background: COLORS[opt] }} />
               {LABELS[opt]}
-              {/* Checkmark no item atualmente selecionado */}
+              {/* Checkmark no item ativo */}
               {opt === status && <span className="smi-check">✓</span>}
             </button>
           ))}
         </div>
       )}
-    </div>
+    </>
   )
 }
 
