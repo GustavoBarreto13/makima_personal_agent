@@ -1,31 +1,32 @@
 // Tela de estatísticas — análise do histórico de animes por ano.
-// Layout: year switch + 4 totais + barras mensais + barras por status +
-//         top gêneros + top estúdios + Heatmap + Destaque do ano.
+// Layout: year switch com chevrons + 4 totais DM Serif + barras mensais +
+//         barras por status + top gêneros + top estúdios + Destaque do ano + Heatmap.
 
 import { useState, useEffect } from 'react'
 import { marinApi } from '../marinApi'
 import type { Stats } from '../types'
 import { Heatmap } from '../components/Heatmap'
+import { PosterCard } from '../components/PosterCard'
+import { Stars } from '../components/Stars'
+import { Icon } from '../components/Icon'
 
 interface StatsScreenProps {}
 
 /**
  * StatsScreen — painel de estatísticas anual.
- * Year switch permite ver qualquer ano; undefined = todos os tempos.
+ * Year switch com chevrons permite navegar entre anos.
+ * Todos os dados vêm do endpoint GET /api/animes/stats?year=N.
  */
 export function StatsScreen(_: StatsScreenProps) {
-  // Ano selecionado (null = todos os tempos)
+  // Ano selecionado — começa no ano atual
   const [year, setYear] = useState<number>(new Date().getFullYear())
   const [data, setData] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Gera lista de anos disponíveis (ano atual até 2020)
+  // Ano máximo: não permite navegar para o futuro além do ano atual
   const currentYear = new Date().getFullYear()
-  const years = Array.from(
-    { length: currentYear - 2019 },
-    (_, i) => currentYear - i
-  )
 
+  // Recarrega os dados sempre que o ano muda
   useEffect(() => {
     setLoading(true)
     marinApi.stats(year)
@@ -34,10 +35,12 @@ export function StatsScreen(_: StatsScreenProps) {
       .finally(() => setLoading(false))
   }, [year])
 
+  // Tela de carregamento — spinner centralizado
   if (loading) {
     return <div className="mr-stats-loading"><div className="mr-spinner" /></div>
   }
 
+  // Tela de estado vazio quando a API retorna null (erro de rede ou sem dados)
   if (!data) {
     return (
       <div className="mr-stats-empty">
@@ -47,10 +50,12 @@ export function StatsScreen(_: StatsScreenProps) {
   }
 
   const {
-    total_animes,
     total_episodes,
     total_hours,
     avg_score,
+    completed,
+    max_marathon_day,
+    total_sessions,
     top_genres,
     top_studios,
     monthly,
@@ -59,62 +64,80 @@ export function StatsScreen(_: StatsScreenProps) {
     highlight,
   } = data
 
-  // monthly é number[] (índice 0=janeiro..11=dezembro) — usa direto
+  // monthly é number[] (índice 0=janeiro..11=dezembro)
   const monthlyValues = monthly ?? []
+  // Valor máximo das barras mensais para normalizar a altura
   const monthlyMax = Math.max(...monthlyValues, 1)
 
-  // Meses abreviados para os labels do gráfico mensal
+  // Meses abreviados para os labels do gráfico de barras mensal
   const MONTHS_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
-  // Máximo para normalizar barras de status e gênero
+  // Valor máximo para normalizar as barras de status
   const statusValues = Object.values(by_status ?? {}) as number[]
   const statusMax = Math.max(...statusValues, 1)
 
+  // Valor máximo para normalizar as barras de gênero e estúdio
   const topGenreMax = top_genres?.[0]?.count ?? 1
   const topStudioMax = top_studios?.[0]?.count ?? 1
 
   return (
     <div className="mr-stats">
-      {/* ── Seletor de ano ─────────────────────────────────────────────────── */}
+
+      {/* ── Year switch com chevrons ─────────────────────────────────────────── */}
+      {/* Substitui os botões de ano individuais por seletor compacto com ‹ › */}
       <div className="mr-stats-year-switch">
-        {years.map(y => (
-          <button
-            key={y}
-            className={`mr-year-btn${year === y ? ' mr-year-btn--active' : ''}`}
-            onClick={() => setYear(y)}
-          >
-            {y}
-          </button>
+        {/* Botão de ano anterior — sempre habilitado (sem limite mínimo) */}
+        <button
+          className="mr-stats-yr-btn"
+          onClick={() => setYear(y => y - 1)}
+          aria-label="Ano anterior"
+        >
+          <Icon name="chevron-left" size={16} />
+        </button>
+
+        {/* Centro: ano em DM Serif grande + subtítulo em mono com totais */}
+        <div className="mr-stats-yr-center">
+          <span className="mr-stats-yr-label">{year}</span>
+          <span className="mr-stats-yr-sub">
+            {total_sessions ?? 0} sessões · {total_episodes ?? 0} eps · {Math.round(total_hours ?? 0)}h
+          </span>
+        </div>
+
+        {/* Botão de próximo ano — desabilitado se já está no ano atual */}
+        <button
+          className="mr-stats-yr-btn"
+          onClick={() => setYear(y => y + 1)}
+          disabled={year >= currentYear}
+          aria-label="Próximo ano"
+        >
+          <Icon name="chevron" size={16} />
+        </button>
+      </div>
+
+      {/* ── 4 totais grandes em DM Serif ─────────────────────────────────────── */}
+      {/* Grade de 4 colunas (2×2 em mobile) com números em DM Serif Display */}
+      <div className="mr-stats-totals">
+        {[
+          { label: 'Completos',  value: completed ?? 0,                         unit: ''   },
+          { label: 'Eps vistos', value: total_episodes ?? 0,                    unit: ''   },
+          { label: 'Horas',      value: Math.round(total_hours ?? 0),           unit: 'h'  },
+          { label: 'Nota média', value: avg_score ? avg_score.toFixed(1) : '—', unit: avg_score ? '/10' : '' },
+        ].map(({ label, value, unit }) => (
+          <div key={label} className="mr-stat-big">
+            {/* Número grande em DM Serif Display */}
+            <span className="mr-stat-big-num">{value}{unit}</span>
+            {/* Label em mono caps muted */}
+            <span className="mr-stat-big-label">{label}</span>
+          </div>
         ))}
       </div>
 
-      {/* ── 4 totais em grade 2×2 ─────────────────────────────────────────── */}
-      <section className="mr-stats-totals">
-        <div className="mr-total-card">
-          <div className="mr-total-value">{total_animes ?? 0}</div>
-          <div className="mr-total-label">Animes</div>
-        </div>
-        <div className="mr-total-card">
-          <div className="mr-total-value">{total_episodes ?? 0}</div>
-          <div className="mr-total-label">Episódios</div>
-        </div>
-        <div className="mr-total-card">
-          <div className="mr-total-value">{total_hours ? Math.round(total_hours) : 0}h</div>
-          <div className="mr-total-label">Assistidos</div>
-        </div>
-        <div className="mr-total-card">
-          <div className="mr-total-value" style={{ color: 'var(--star)' }}>
-            {avg_score ? avg_score.toFixed(1) : '—'}
-          </div>
-          <div className="mr-total-label">Nota média</div>
-        </div>
-      </section>
-
-      {/* ── Gráfico mensal (Spark + eixo de meses) ───────────────────────── */}
+      {/* ── Gráfico mensal de episódios ───────────────────────────────────────── */}
       {monthlyValues.length > 0 && (
         <section className="mr-stats-section">
           <h3 className="mr-stats-section-title">Episódios por mês</h3>
           <div className="mr-stats-monthly">
+            {/* Barras: altura proporcional ao máximo do mês */}
             <div className="mr-stats-monthly-bars">
               {monthlyValues.map((val, i) => (
                 <div key={i} className="mr-stats-monthly-bar-col">
@@ -127,7 +150,7 @@ export function StatsScreen(_: StatsScreenProps) {
                 </div>
               ))}
             </div>
-            {/* Legenda total anual */}
+            {/* Total anual abaixo das barras */}
             <p className="mr-stats-monthly-total">
               {monthlyValues.reduce((a, b) => a + b, 0)} eps em {year}
             </p>
@@ -135,13 +158,14 @@ export function StatsScreen(_: StatsScreenProps) {
         </section>
       )}
 
-      {/* ── Por status ────────────────────────────────────────────────────── */}
+      {/* ── Por status ───────────────────────────────────────────────────────── */}
       {by_status && Object.keys(by_status).length > 0 && (
         <section className="mr-stats-section">
           <h3 className="mr-stats-section-title">Por status</h3>
           <div className="mr-stats-bars">
             {Object.entries(by_status).map(([status, count]) => (
               <div key={status} className="mr-stats-bar-row">
+                {/* Nome do status na cor correspondente ao --st-{status} */}
                 <span className="mr-stats-bar-label" style={{ color: `var(--st-${status})` }}>
                   {status.replace('_', ' ')}
                 </span>
@@ -161,7 +185,7 @@ export function StatsScreen(_: StatsScreenProps) {
         </section>
       )}
 
-      {/* ── Top gêneros ───────────────────────────────────────────────────── */}
+      {/* ── Top gêneros ──────────────────────────────────────────────────────── */}
       {top_genres && top_genres.length > 0 && (
         <section className="mr-stats-section">
           <h3 className="mr-stats-section-title">Top gêneros</h3>
@@ -185,7 +209,7 @@ export function StatsScreen(_: StatsScreenProps) {
         </section>
       )}
 
-      {/* ── Top estúdios ──────────────────────────────────────────────────── */}
+      {/* ── Top estúdios ─────────────────────────────────────────────────────── */}
       {top_studios && top_studios.length > 0 && (
         <section className="mr-stats-section">
           <h3 className="mr-stats-section-title">Top estúdios</h3>
@@ -209,30 +233,40 @@ export function StatsScreen(_: StatsScreenProps) {
         </section>
       )}
 
-      {/* ── Destaque do ano ───────────────────────────────────────────────── */}
+      {/* ── Destaque do ano ──────────────────────────────────────────────────── */}
+      {/* Exibe o anime com maior nota + mais episódios, com pôster e maratona */}
       {highlight && (
-        <section className="mr-stats-section mr-stats-highlight">
-          <h3 className="mr-stats-section-title">Destaque de {year}</h3>
-          <div className="mr-highlight-card">
-            {highlight.poster_url && (
-              <img
-                src={highlight.poster_url}
-                alt={highlight.title}
-                className="mr-highlight-poster"
-                loading="lazy"
+        <section className="mr-stats-section">
+          <h3 className="mr-stats-section-title">Destaque do ano</h3>
+          <div className="mr-stats-highlight-card">
+            {/* Pôster do anime destaque (64px de largura, usa paleta tipográfica se sem URL) */}
+            <div style={{ width: 64, flexShrink: 0 }}>
+              <PosterCard
+                title={highlight.title}
+                posterUrl={highlight.poster_url}
+                posterKey={highlight.poster_key ?? 'magenta'}
               />
-            )}
-            <div className="mr-highlight-info">
-              <p className="mr-highlight-label">Anime do ano</p>
-              <p className="mr-highlight-title">{highlight.title}</p>
-              {highlight.score && (
-                <p className="mr-highlight-score">
-                  ⭐ {highlight.score.toFixed(1)} / 10
+            </div>
+
+            {/* Informações do anime destaque */}
+            <div className="mr-stats-highlight-info">
+              {/* Título em sans semi-bold */}
+              <p className="mr-stats-highlight-title">{highlight.title}</p>
+
+              {/* Nota em estrelas MAL (escala 0–10) */}
+              <Stars score={highlight.score ?? 0} size={14} />
+
+              {/* Estúdio · Temporada em mono muted */}
+              {(highlight.studio || highlight.season) && (
+                <p className="mr-stats-highlight-meta">
+                  {[highlight.studio, highlight.season].filter(Boolean).join(' · ')}
                 </p>
               )}
-              {highlight.episodes_watched && (
-                <p className="mr-highlight-eps">
-                  {highlight.episodes_watched} eps assistidos
+
+              {/* Maior maratona: exibido só quando há dados e > 0 */}
+              {max_marathon_day != null && max_marathon_day > 0 && (
+                <p className="mr-stats-marathon">
+                  🏃 Maior maratona: <strong>{max_marathon_day}</strong> eps num dia
                 </p>
               )}
             </div>
@@ -240,7 +274,7 @@ export function StatsScreen(_: StatsScreenProps) {
         </section>
       )}
 
-      {/* ── Heatmap de atividade ──────────────────────────────────────────── */}
+      {/* ── Heatmap de atividade ─────────────────────────────────────────────── */}
       {heatmap && Object.keys(heatmap).length > 0 && (
         <section className="mr-stats-section">
           <h3 className="mr-stats-section-title">Atividade em {year}</h3>

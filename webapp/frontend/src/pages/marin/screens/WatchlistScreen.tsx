@@ -1,5 +1,6 @@
 // Tela de watchlist — animes com status "quero_assistir", em lista vertical.
 // Ação principal: botão "▶ Começar" → muda status para "assistindo" + abre modal de log ep1.
+// Fase 5: header com subtítulo, chips de gênero por card, botão "Começar" em cyan.
 
 import { useState, useEffect } from 'react'
 import { marinApi } from '../marinApi'
@@ -16,6 +17,7 @@ interface WatchlistScreenProps {
 /**
  * WatchlistScreen — lista de animes na fila de espera.
  * "▶ Começar" muda status → assistindo e abre modal de log para o ep 1.
+ * Header com contagem de animes e estimativa de episódios na fila.
  */
 export function WatchlistScreen({ onSelectAnime, onStartAnime, onToast }: WatchlistScreenProps) {
   const [animes, setAnimes] = useState<Anime[]>([])
@@ -66,11 +68,19 @@ export function WatchlistScreen({ onSelectAnime, onStartAnime, onToast }: Watchl
     )
   }
 
+  // Calcula o total de episódios na fila.
+  // Animes sem episodes_total (em exibição/indefinido) assumem 12 eps como fallback.
+  const totalEps = animes.reduce((acc, a) => acc + (a.episodes_total ?? 12), 0)
+
   return (
     <div className="mr-watchlist">
-      <p className="mr-watchlist-count">
-        {animes.length} {animes.length === 1 ? 'anime' : 'animes'} na fila
-      </p>
+      {/* Header com contagem e estimativa de episódios — Fase 5 */}
+      <div className="mr-wl-header">
+        <h1 className="mr-wl-title">Quero assistir</h1>
+        <p className="mr-wl-sub">
+          {animes.length} anime{animes.length !== 1 ? 's' : ''} · ~{totalEps} episódios na fila
+        </p>
+      </div>
 
       <div className="mr-watchlist-list">
         {animes.map(anime => (
@@ -91,6 +101,8 @@ export function WatchlistScreen({ onSelectAnime, onStartAnime, onToast }: Watchl
               style={{ cursor: 'pointer', flex: 1 }}
             >
               <p className="mr-watchlist-title">{anime.title}</p>
+
+              {/* Linha de metadados: estúdio · temporada · formato */}
               {anime.studio && (
                 <p className="mr-watchlist-studio">{anime.studio}</p>
               )}
@@ -103,11 +115,20 @@ export function WatchlistScreen({ onSelectAnime, onStartAnime, onToast }: Watchl
               {anime.season && (
                 <p className="mr-watchlist-season">{anime.season}</p>
               )}
+
+              {/* Chips de gênero — até 3, Fase 5 */}
+              {(anime.genres ?? []).length > 0 && (
+                <div className="mr-wl-genres">
+                  {(anime.genres ?? []).slice(0, 3).map(g => (
+                    <span key={g} className="mr-tag">{g}</span>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Ação: botão de começar */}
+            {/* Ação: botão cyan "▶ Começar" — Fase 5 */}
             <button
-              className="mr-btn mr-btn--primary"
+              className="mr-btn mr-btn-cyan"
               onClick={() => handleStart(anime.id, anime.title)}
               disabled={starting.has(anime.id)}
               aria-label={`Começar ${anime.title}`}

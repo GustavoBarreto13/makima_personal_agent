@@ -10,7 +10,16 @@
  *
  * Acento padrão de fábrica: Neon (cyan) aplicado via data-accent='neon'.
  * Tema padrão: Escuro.
+ *
+ * Fontes: três DM fonts carregadas do Google Fonts.
+ *   --display → DM Serif Display (títulos do hero, números de stat, poster title)
+ *   --sans    → DM Sans          (corpo, UI, labels)
+ *   --mono    → DM Mono          (números, metadados, timestamps)
  */
+
+/* Carrega as três DM fonts em um único request do Google Fonts.
+   Deve vir ANTES de qualquer regra que use var(--display), var(--sans) ou var(--mono). */
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap');
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* SUPERFÍCIES, TINTA, LINHAS — Tema Escuro Base                              */
@@ -260,16 +269,6 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
-/* PÔSTERES TIPOGRÁFICOS (gradientes kawaii)                                   */
-/* ─────────────────────────────────────────────────────────────────────────── */
-
-/* Hover global em todos os pôsteres da Marin — elevação + escala kawaii */
-.marin-shell .poster:hover {
-  transform: translateY(-5px) scale(1.015);
-  box-shadow: var(--shadow-poster);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────── */
 /* NEXT BAR — barra inferior fixa (próximo episódio)                           */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
@@ -340,38 +339,10 @@
 /* CLASSES UTILITÁRIAS DO SHELL                                                 */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-/* Scrim (overlay escuro) — aparece atrás de modais */
-.mr-scrim {
-  position: fixed;
-  inset: 0;
-  background: oklch(0 0 0 / 0.55);
-  z-index: 40;
-  animation: mr-scrim-in 0.18s ease forwards;
-}
-
-/* Container de modal — centralizado na viewport */
-.mr-modal {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-  padding: 24px;
-}
-
-/* Caixa do modal */
-.mr-modal-box {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
-  animation: mr-modal-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-  max-height: 90dvh;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
-}
+/* NOTA: .mr-scrim e .mr-modal-box foram REMOVIDOS — são CSS morto.
+   Os modais usam .mr-modal-scrim (definido mais abaixo, seção MODAIS)
+   que inclui o scrim e o centering layer em um único seletor.
+   A caixa interna usa .mr-modal reposicionada dentro de .mr-modal-scrim. */
 
 /* Toast — notificação temporária no topo */
 .mr-toast {
@@ -396,7 +367,16 @@
 /* RESPONSIVO                                                                   */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-/* ≤ 900px — sidebar colapsa para 64px (só emojis, labels/counts somem) */
+/* ≤ 900px — sidebar colapsa para 64px (só ícones, labels/counts somem).
+   ATENÇÃO: os nomes das classes devem bater exatamente com o JSX do MarinShell.tsx.
+   Classes usadas no JSX:
+     .mr-side-label       → label do item de nav (ex.: "Catálogo", "Início")
+     .mr-side-badge       → contador de itens (ex.: "3" na Watchlist)
+     .mr-side-sub         → subtítulo "Catálogo de Animes" sob o avatar
+     .mr-side-group-label → títulos de grupo "Acervo" / "Analisar"
+     .mr-side-footer span → textos dos botões de rodapé (Sync MAL, Adicionar, etc.)
+   O CTA "Logar ep" não tem span wrapper com classe própria — ocultamos o texto
+   via :not([class]) para preservar o ícone. */
 @media (max-width: 900px) {
   .marin-shell {
     grid-template-columns: 64px 1fr;
@@ -406,16 +386,30 @@
     left: 64px;
   }
 
-  /* Labels de navegação somem no modo compacto */
-  .mr-nav-label,
-  .mr-nav-count,
-  .mr-brand-text,
-  .mr-sync-label {
+  /* Labels e contadores de nav somem — sidebar vira rail de ícones */
+  .mr-side-label,
+  .mr-side-badge {
     display: none;
   }
 
-  /* CTA "Logar episódio" — só ícone */
-  .mr-cta-label {
+  /* Subtítulo "Catálogo de Animes" sob o avatar — some no modo compacto */
+  .mr-side-sub {
+    display: none;
+  }
+
+  /* Títulos de seção "Acervo" / "Analisar" — sem espaço para texto no rail */
+  .mr-side-group-label {
+    display: none;
+  }
+
+  /* Textos dos botões de rodapé (Sync MAL, Adicionar, Configurações, Makima) */
+  .mr-side-footer span {
+    display: none;
+  }
+
+  /* Textos dos botões de ação do rodapé — spans sem classe específica */
+  .mr-side-action span,
+  .mr-side-back span {
     display: none;
   }
 }
@@ -452,6 +446,11 @@
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 .marin-shell {
+  /* Tokens das três DM fonts — usadas em toda a UI da Marin.
+     --display: títulos grandes (hero, nomes no detalhe, números de stat)
+     --sans:    corpo de texto, botões, labels, chips
+     --mono:    números, timestamps, metadados, eyebrows */
+  --display: 'DM Serif Display', 'Georgia', serif;
   --mono: 'DM Mono', ui-monospace, 'SF Mono', monospace;
   --sans: 'DM Sans', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -552,11 +551,65 @@
 .mr-side-back { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-3); text-decoration: none; transition: color 0.12s; font-family: var(--sans); }
 .mr-side-back:hover { color: var(--ink); }
 
+/* Ponto vermelho no "Voltar à Makima" — indicador visual de saída (fiel ao protótipo) */
+.mr-side-back-dot {
+  width: 8px;
+  height: 8px;
+  background: oklch(0.65 0.22 18);  /* vermelho coral — cor de alerta/saída */
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* TOPBAR                                                                       */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-.mr-topbar-title { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; flex: 1; white-space: nowrap; display: flex; align-items: center; gap: 9px; }
+/* Título da view com emoji — flex: 0 para não encolher com a busca */
+.mr-topbar-title {
+  font-size: 18px; font-weight: 700; letter-spacing: -0.01em;
+  flex-shrink: 0; white-space: nowrap; display: flex; align-items: center; gap: 9px;
+}
+
+/* Campo de busca global na topbar — pill com ícone embutido via padding */
+.mr-topbar-search {
+  flex: 1;
+  max-width: 320px;
+  height: 34px;
+  padding: 0 12px 0 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.mr-topbar-search::placeholder { color: var(--ink-4); }
+.mr-topbar-search:focus {
+  outline: none;
+  border-color: var(--marin);
+  box-shadow: 0 0 0 3px var(--marin-tint);
+}
+
+/* Botão "+" redondo na topbar — substitui o antigo "+ Anime" (fiel ao protótipo) */
+.mr-topbar-add {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--marin), var(--marin-deep));
+  border: none;
+  color: oklch(0.99 0.01 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: filter 0.14s, transform 0.12s;
+  box-shadow: 0 2px 6px var(--marin-tint);
+}
+.mr-topbar-add:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.mr-topbar-add:active { transform: none; }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* BOTÕES                                                                       */
@@ -634,19 +687,12 @@
 .mr-typo-poster { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 14px; pointer-events: none; }
 .mr-poster-overlay { position: absolute; inset: 0; z-index: 3; pointer-events: none; display: flex; flex-direction: column; }
 
-.mr-poster-card[data-palette='sakura']    { --pb: oklch(0.20 0.12 355); --pk: oklch(0.94 0.05 352); --pa: oklch(0.70 0.18 350); }
-.mr-poster-card[data-palette='neon']      { --pb: oklch(0.16 0.10 210); --pk: oklch(0.90 0.06 206); --pa: oklch(0.74 0.15 210); }
-.mr-poster-card[data-palette='akihabara'] { --pb: oklch(0.18 0.12 280); --pk: oklch(0.90 0.05 276); --pa: oklch(0.68 0.17 274); }
-.mr-poster-card[data-palette='gold']      { --pb: oklch(0.20 0.10 72);  --pk: oklch(0.94 0.05 74);  --pa: oklch(0.78 0.14 74); }
-.mr-poster-card[data-palette='midnight']  { --pb: oklch(0.14 0.022 300);--pk: oklch(0.90 0.005 300);--pa: oklch(0.55 0.01 300); }
-.mr-poster-card[data-palette='rose']      { --pb: oklch(0.20 0.10 10);  --pk: oklch(0.93 0.04 10);  --pa: oklch(0.68 0.18 8); }
-.mr-poster-card[data-palette='teal']      { --pb: oklch(0.18 0.08 188); --pk: oklch(0.90 0.05 185); --pa: oklch(0.62 0.15 186); }
-.mr-poster-card[data-palette='indigo']    { --pb: oklch(0.18 0.12 258); --pk: oklch(0.90 0.05 255); --pa: oklch(0.60 0.16 258); }
-.mr-poster-card[data-palette='plum']      { --pb: oklch(0.18 0.12 320); --pk: oklch(0.90 0.05 318); --pa: oklch(0.62 0.16 320); }
-.mr-poster-card[data-palette='moss']      { --pb: oklch(0.18 0.07 140); --pk: oklch(0.90 0.04 138); --pa: oklch(0.60 0.14 140); }
-.mr-poster-card[data-palette='sand']      { --pb: oklch(0.22 0.05 80);  --pk: oklch(0.90 0.04 78);  --pa: oklch(0.70 0.10 76); }
-.mr-poster-card[data-palette='wine']      { --pb: oklch(0.18 0.10 18);  --pk: oklch(0.92 0.04 20);  --pa: oklch(0.60 0.18 20); }
-.mr-poster-card[data-palette] { background: var(--pb); color: var(--pk); }
+/* NOTA: os pôsteres tipográficos usam paletas via inline style (JavaScript),
+   NÃO via atributo data-palette no CSS. O PosterCard.tsx aplica diretamente
+   as 12 paletas (magenta, violet, cyan, emerald, amber, sunset, indigo, rose,
+   teal, lime, plum, sky) como propriedade CSS inline (background/color).
+   Os blocos [data-palette='sakura'], [data-palette='neon'], etc. que existiam
+   aqui foram REMOVIDOS — eram CSS morto com nomes diferentes das paletas reais. */
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* GRADE DE PÔSTERES E CHIPS DE FILTRO                                         */
@@ -771,15 +817,47 @@
 /* NEXT BAR — sub-elementos                                                     */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
+/* Informações do episódio (centro da NextBar) */
 .mr-next-bar-info { flex: 1; min-width: 0; }
-.mr-next-bar-ep { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--cyan); flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
-.mr-next-bar-title { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.mr-next-bar-date { font-family: var(--mono); font-size: 10.5px; color: var(--cyan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Label "● PRÓXIMO EP" em caps monoespaçado com ponto pulsante cyan */
+.mr-next-bar-ep {
+  font-family: var(--mono); font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: 0.16em; color: var(--cyan); flex-shrink: 0;
+  display: flex; align-items: center; gap: 6px;
+}
+/* Título do anime clicável — navega para o detalhe */
+.mr-next-bar-title {
+  font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer; color: var(--ink);
+  transition: color 0.12s;
+}
+.mr-next-bar-title:hover { color: var(--marin-deep); }
+/* "Ep N · título do ep" em mono muted */
+.mr-next-bar-date {
+  font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px;
+}
+/* Container das ações (chevrons + "Já vi") */
 .mr-next-bar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.mr-next-bar-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.12s; }
+/* Botões redondos de chevron ‹ e › */
+.mr-next-bar-btn {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--ink-2); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+}
 .mr-next-bar-btn:hover { color: var(--ink); border-color: var(--ink-4); }
 .mr-next-bar-btn svg { width: 14px; height: 14px; }
-.mr-next-bar-btn--primary { background: linear-gradient(135deg, var(--marin), var(--marin-deep)); border-color: transparent; color: oklch(0.99 0.01 0); padding: 0 16px; width: auto; border-radius: var(--r-md); font-family: var(--sans); font-size: 13px; font-weight: 700; }
+/* Botão "✓ Já vi" — pill primário com acento */
+.mr-next-bar-btn--primary {
+  background: linear-gradient(135deg, var(--marin), var(--marin-deep));
+  border-color: transparent; color: oklch(0.99 0.01 0);
+  padding: 0 16px; width: auto; border-radius: var(--r-md);
+  font-family: var(--sans); font-size: 13px; font-weight: 700;
+  gap: 6px;
+}
 .mr-next-bar-btn--primary:hover { filter: brightness(1.08); }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -879,10 +957,12 @@
   background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg);
   padding: 18px 20px 16px; position: relative; overflow: hidden; box-shadow: var(--shadow-sm);
 }
-.mr-stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--marin); opacity: 0.85; }
-.mr-stat-label { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.13em; color: var(--ink-3); }
-.mr-stat-value { font-size: 36px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; color: var(--ink); margin-top: 10px; font-variant-numeric: tabular-nums; }
+.mr-stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent-bar, var(--marin)); opacity: 0.85; }
+.mr-stat-label { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.13em; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
+.mr-stat-value { font-family: var(--display); font-size: 42px; line-height: 1; letter-spacing: -0.02em; color: var(--ink); margin-top: 12px; font-variant-numeric: tabular-nums; }
+.mr-stat-unit { font-family: var(--sans); font-size: 13px; color: var(--ink-3); font-weight: 600; margin-left: 6px; }
 .mr-stat-sub { font-size: 11px; color: var(--ink-3); margin-top: 6px; }
+.mr-stat-foot { font-size: 11.5px; color: var(--ink-3); margin-top: 8px; }
 
 .mr-home-profile-split { display: grid; grid-template-columns: 1.3fr 1fr; gap: 20px; margin-top: 36px; align-items: start; }
 .mr-home-profile-col { display: flex; flex-direction: column; gap: 16px; }
@@ -922,6 +1002,353 @@
 .mr-recent-date { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); flex-shrink: 0; }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
+/* HOME SCREEN — FASE 2: hero dinâmico, stat row, profile/home split           */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/* Stat row — 3 cards em grid automático */
+.mr-stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+
+/* Hero — spark: padrão de pontos brilhantes sobre o gradiente */
+.mr-hero-spark {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  /* Pontos brancos semitransparentes — mix-blend-mode overlay para suavizar */
+  background-image: radial-gradient(circle, oklch(1 0 0 / 0.25) 1px, transparent 1px);
+  background-size: 18px 18px;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/* Hero — meta line extra (Ep X / Y) */
+.mr-hero-meta {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+/* Portrait wrap — contém o halo + a imagem, ancorado à direita na base */
+.mr-hero-portrait-wrap {
+  position: absolute;
+  z-index: 1;
+  right: 30px;
+  bottom: 0;
+  width: 250px;
+  pointer-events: none;
+}
+
+/* Halo de néon atrás do portrait — círculo radial desfocado */
+.mr-halo {
+  position: absolute;
+  /* Cobre a área inteira do portrait wrap + margem extra */
+  inset: -24px;
+  background: radial-gradient(circle at center, var(--marin) 0%, var(--cyan) 35%, transparent 70%);
+  filter: blur(6px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Portrait img — dentro do wrap */
+.mr-hero-portrait {
+  position: relative;
+  width: 100%;
+  display: block;
+  filter: drop-shadow(0 14px 26px oklch(0 0 0 / 0.5));
+}
+
+/* ── Profile Split: Favoritos | MAL stats ───────────────────────────────────
+   Usa grid 2 colunas que colapsa em 1 em telas estreitas (≤980px). */
+.mr-profile-split {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 22px;
+  margin-top: 44px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .mr-profile-split { grid-template-columns: 1fr; }
+}
+
+/* Cada coluna do profile-split */
+.mr-profile-col { display: flex; flex-direction: column; }
+
+/* ── Cabeçalho de seção (sec-head) — linha com título + regra + link ────────
+   Usado em: Profile Split, Home Split, carrossel watchlist. */
+.mr-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.mr-sec-title {
+  /* Mono caps — eyebrow de seção fiel ao protótipo */
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--marin-deep);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+/* Regra horizontal que separa título do link */
+.mr-sec-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+/* Link "Ver tudo →" / "Catálogo →" no canto direito */
+.mr-sec-link {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--marin-deep);
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0;
+  transition: text-decoration 0.12s;
+}
+.mr-sec-link:hover { text-decoration: underline; }
+/* Contagem numérica no canto direito do painel (ex.: "5" sessões recentes) */
+.mr-sec-count {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+/* ── Home Split: "Assistindo agora" | painel lateral ───────────────────────
+   Grade 2 colunas, a esquerda mais larga (1.5 : 1). */
+.mr-home-split {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 22px;
+  margin-top: 44px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .mr-home-split { grid-template-columns: 1fr; }
+}
+
+/* Coluna esquerda do home-split */
+.mr-home-main { display: flex; flex-direction: column; min-width: 0; }
+
+/* Coluna direita: painel escuro com atividade + próximos eps */
+.mr-side-panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+/* Bloco dentro do painel (atividade recente ou próximos eps) */
+.mr-mp-block { padding: 16px 18px; }
+.mr-mp-block + .mr-mp-block { border-top: 1px solid var(--line); }
+
+/* Cabeçalho do bloco de painel (título + contagem) */
+.mr-mp-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  /* Sobreescrevemos o gap padrão do mr-sec-head */
+  gap: 8px;
+}
+.mr-mp-head-title {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  flex: 1;
+}
+.mr-mp-head-count {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-4);
+  flex-shrink: 0;
+}
+
+/* ── Watch Grid — grade de pôsteres "Assistindo agora" ──────────────────── */
+.mr-watch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 18px;
+}
+/* Card individual de anime em andamento */
+.mr-watch-card {
+  cursor: pointer;
+  min-width: 0;
+}
+.mr-watch-card:focus-visible { outline: 2px solid var(--marin); border-radius: var(--r-md); }
+/* Pôster ocupa toda a largura do card */
+.mr-watch-poster { width: 100%; }
+/* Título com 1 linha + ellipsis */
+.mr-wm-title {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-top: 9px;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Hover no watch-card: eleva o poster */
+.mr-watch-card:hover .mr-poster-card {
+  transform: translateY(-5px) scale(1.015);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ── Atividade recente — linhas compactas com miniatura ─────────────────── */
+.mr-act-row {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  cursor: pointer;
+  align-items: center;
+}
+.mr-act-row + .mr-act-row { border-top: 1px solid var(--line-2); }
+/* Miniatura do poster: 34px de largura, proporção 2:3 */
+.mr-act-poster { width: 34px; flex-shrink: 0; border-radius: 7px; overflow: hidden; }
+/* Texto da atividade */
+.mr-act-info { flex: 1; min-width: 0; }
+.mr-act-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mr-act-row:hover .mr-act-title { color: var(--marin-deep); }
+.mr-act-eps {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-4);
+  margin-top: 3px;
+}
+.mr-act-score {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--star);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* ── Próximos episódios — linhas com mini-calendário ─────────────────────── */
+.mr-up-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  align-items: center;
+  cursor: pointer;
+}
+.mr-up-row + .mr-up-row { border-top: 1px solid var(--line-2); }
+/* Calendário mini (44px de largura) */
+.mr-up-date {
+  width: 44px;
+  flex-shrink: 0;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+/* Dia em display serif grande */
+.mr-up-day {
+  display: block;
+  font-family: var(--display);
+  font-size: 18px;
+  line-height: 1;
+  padding: 5px 0 2px;
+  color: var(--ink);
+}
+/* Mês em mono caps com fundo card-2 */
+.mr-up-month {
+  display: block;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  background: var(--card-2);
+  color: var(--cyan);
+  padding: 2px 0 3px;
+}
+/* Texto do próximo ep */
+.mr-up-info { flex: 1; min-width: 0; }
+.mr-up-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mr-up-row:hover .mr-up-title { color: var(--cyan); }
+.mr-up-ep {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-4);
+  margin-top: 3px;
+}
+
+/* ── Seção genérica + carrossel "Esperando na fila" ─────────────────────── */
+.mr-section { margin-top: 44px; }
+
+/* Scroll horizontal sem scrollbar — para o carrossel watchlist */
+.mr-row-scroll {
+  display: flex;
+  gap: 18px;
+  overflow-x: auto;
+  padding: 4px 2px 10px;
+  scrollbar-width: none;
+}
+.mr-row-scroll::-webkit-scrollbar { display: none; }
+
+/* Card do carrossel (132px de largura fixa) */
+.mr-want-card {
+  flex-shrink: 0;
+  width: 132px;
+  cursor: pointer;
+}
+.mr-want-card:focus-visible { outline: 2px solid var(--marin); border-radius: var(--r-md); }
+/* Pôster ocupa a largura do card */
+.mr-want-poster { width: 132px; }
+/* Título com 2 linhas + ellipsis */
+.mr-want-title {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 9px;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mr-want-card:hover .mr-poster-card {
+  transform: translateY(-5px) scale(1.015);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 /* DIARY SCREEN                                                                 */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
@@ -940,6 +1367,96 @@
 .mr-diary-anime-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
 .mr-diary-eps { font-family: var(--mono); font-size: 11px; color: var(--marin-deep); margin-top: 4px; }
 .mr-diary-notes { font-size: 13px; color: var(--ink-2); margin-top: 5px; line-height: 1.5; font-style: italic; text-wrap: pretty; }
+
+/* Fase 5 — Diário: agrupamento por mês com cabeçalho DM Serif Display -------- */
+
+/* Seção mensal: espaço inferior entre grupos de meses */
+.mr-diary-month { margin-bottom: 28px; }
+
+/* Cabeçalho "junho / 2026 · 5" — DM Serif para destaque tipográfico */
+.mr-diary-month-title {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+
+/* Container das entradas do mês — sem gap (usa border-bottom em cada entrada) */
+.mr-diary-list { display: flex; flex-direction: column; gap: 0; }
+
+/* Grade da entrada: data | poster | info | score | delete
+   Fase 5: layout revisado com coluna de poster separada */
+.mr-diary-entry {
+  /* 5 colunas: data(52px) + poster(46px) + info(flex) + score(auto) + delete(auto) */
+  display: grid;
+  grid-template-columns: 52px 46px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-faint, var(--line));
+  /* Sobrescreve o cursor pointer que vinha do hover genérico */
+  cursor: default;
+  /* Remove o background hover da versão anterior */
+  border-radius: 0;
+  transition: none;
+}
+/* Remove a borda da última entrada do mês */
+.mr-diary-entry:last-child { border-bottom: none; }
+/* Remove hover genérico herdado — cada elemento clicável tem cursor próprio */
+.mr-diary-entry:hover { background: transparent; }
+
+/* Coluna de data: dia grande acima + dia da semana abreviado abaixo */
+.mr-diary-date-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+/* Número do dia em DM Serif grande */
+.mr-diary-day { font-family: var(--display); font-size: 24px; font-weight: 700; color: var(--ink); line-height: 1; }
+/* Dia da semana em mono caps (ex.: "seg") */
+.mr-diary-weekday { font-family: var(--mono); font-size: 11px; color: var(--ink-4); text-transform: uppercase; }
+
+/* Coluna do poster (46×64 — o PosterCard preenche o wrapper) */
+.mr-diary-poster-col { /* sizing vem do wrapper inline */ }
+
+/* Coluna de informações: título, intervalo de eps, notas */
+.mr-diary-info-col { min-width: 0; }
+.mr-diary-anime-title { font-family: var(--sans); font-size: 14px; font-weight: 500; color: var(--ink); line-height: 1.3; }
+/* Sobrescreve mr-diary-anime-title quando usado como link clicável */
+.mr-diary-info-col p.mr-diary-anime-title { margin: 0; }
+.mr-diary-ep-range { font-family: var(--mono); font-size: 13px; color: var(--ink-3); margin-top: 2px; }
+.mr-diary-note { font-style: italic; font-size: 13px; color: var(--ink-3); margin-top: 3px; }
+
+/* Coluna de score: mínima para não comprimir a info */
+.mr-diary-score-col { min-width: 40px; }
+
+/* Botão remover — aparece apenas no hover da entrada */
+.mr-diary-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-4);
+  padding: 4px;
+  /* Invisível até hover da entrada */
+  opacity: 0;
+  transition: opacity 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+}
+/* Aparece quando o usuário passa o mouse sobre a entrada */
+.mr-diary-entry:hover .mr-diary-delete { opacity: 1; }
+.mr-diary-delete:hover { color: oklch(0.65 0.22 18); }
+
+/* Responsivo: oculta o poster em telas menores (fica muito comprimido) */
+@media (max-width: 720px) {
+  .mr-diary-entry { grid-template-columns: 52px 1fr auto auto; }
+  .mr-diary-poster-col { display: none; }
+}
 
 .mr-fab {
   position: fixed; bottom: 84px; right: 24px; z-index: 30;
@@ -967,6 +1484,44 @@
 .mr-watchlist-studio { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
 .mr-watchlist-season { font-family: var(--mono); font-size: 10px; color: var(--marin-deep); }
 
+/* Fase 5 — Watchlist: header com subtítulo, chips de gênero e botão cyan ---- */
+
+/* Header: título DM Serif + subtítulo "N animes · ~X eps na fila" */
+.mr-wl-header { margin-bottom: 20px; }
+.mr-wl-title {
+  /* DM Serif Display — mesmo tipo do CatalogScreen e hero */
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.mr-wl-sub {
+  /* Subtítulo muted com contagem e estimativa de episódios */
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+/* Botão cyan — "▶ Começar" na watchlist */
+.mr-btn-cyan {
+  background: var(--cyan);
+  /* Texto escuro sobre fundo cyan para contraste suficiente */
+  color: oklch(0.1 0.02 200);
+  border-color: var(--cyan);
+}
+.mr-btn-cyan:hover { filter: brightness(1.1); }
+.mr-btn-cyan:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
+
+/* Container de chips de gênero dentro de cada card da watchlist */
+.mr-wl-genres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* SCHEDULE SCREEN                                                              */
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -992,19 +1547,158 @@
 .mr-schedule-time--brt { color: var(--cyan); }
 .mr-schedule-new-badge { flex-shrink: 0; font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; padding: 4px 10px; border-radius: 999px; background: var(--cyan-tint); color: var(--cyan); }
 
+/* Fase 5 — Schedule: agrupamento por dia com relFuture + card revisado -------- */
+
+/* Seção de um dia: espaço inferior entre grupos */
+.mr-sched-day { margin-bottom: 24px; }
+
+/* Cabeçalho "Hoje 3 ep" / "Amanhã 1 ep" */
+.mr-sched-day-label {
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* Contagem de episódios do dia: pill muted */
+.mr-sched-day-count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-4);
+  background: var(--card-2);
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+
+/* Card de episódio: poster + info + badge */
+.mr-sched-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-faint, var(--line));
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+.mr-sched-card:last-child { border-bottom: none; }
+.mr-sched-card:hover { opacity: 0.85; }
+
+/* Informações do episódio */
+.mr-sched-info { flex: 1; min-width: 0; }
+.mr-sched-anime-title { font-family: var(--sans); font-size: 14px; font-weight: 500; color: var(--ink); line-height: 1.3; }
+.mr-sched-ep { font-family: var(--mono); font-size: 13px; color: var(--ink-3); margin-top: 2px; }
+.mr-sched-times { font-family: var(--mono); font-size: 12px; color: var(--ink-4); margin-top: 2px; }
+
+/* Badge "NOVO EP" em cyan com borda — destaque quando episódio vai ao ar hoje */
+.mr-sched-badge {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--cyan);
+  border: 1.5px solid var(--cyan);
+  border-radius: 4px;
+  padding: 2px 7px;
+  flex-shrink: 0;
+  /* Pulso suave para chamar atenção */
+  animation: mr-pulse 2.2s infinite;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* STATS SCREEN                                                                 */
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 .mr-stats { max-width: 1100px; margin: 0 auto; padding: 0 28px 96px; }
-.mr-stats-year-switch { display: flex; align-items: center; gap: 12px; margin-top: 28px; }
+
+/* ── Year switch com chevrons (substitui os botões de ano individuais) ───────
+   Layout: [‹] [ano + subtítulo] [›] em flex com justify-content: space-between */
+.mr-stats-year-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 28px;
+  margin-bottom: 24px;
+}
+/* Botão chevron: borda fina, sem preenchimento, hover em --marin */
+.mr-stats-yr-btn {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  padding: 6px;
+  color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.mr-stats-yr-btn:hover:not(:disabled) { color: var(--marin); border-color: var(--marin); }
+.mr-stats-yr-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+/* Centro: ano grande + subtítulo em mono */
+.mr-stats-yr-center { text-align: center; }
+.mr-stats-yr-label {
+  /* Ano em DM Serif Display grande e negrito */
+  font: 700 28px var(--display);
+  color: var(--ink);
+  display: block;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.mr-stats-yr-sub {
+  /* "N sessões · X eps · Yh" em DM Mono pequeno */
+  font: 13px var(--mono);
+  color: var(--ink-4);
+  margin-top: 4px;
+  display: block;
+}
+
+/* ── 4 totais grandes em DM Serif (Completos / Eps / Horas / Nota média) ─────
+   Grid 4 colunas no desktop, 2×2 em tablets, mantendo proporção nos cards */
+.mr-stats-totals {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+/* Card individual de cada total */
+.mr-stat-big {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 12px;
+  background: var(--card-2);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+}
+/* Número grande: DM Serif Display 36px, cor principal */
+.mr-stat-big-num {
+  font: 700 36px var(--display);
+  color: var(--ink);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+/* Label em caps mono muted pequeno */
+.mr-stat-big-label {
+  font: 12px var(--mono);
+  color: var(--ink-4);
+  margin-top: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Mantém as classes antigas para não quebrar outros usos (fallback) */
 .mr-year-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.12s; }
 .mr-year-btn:hover { border-color: var(--marin); color: var(--marin-deep); }
 .mr-year-btn--active { border-color: var(--marin); color: var(--marin-deep); background: var(--marin-tint); }
 .mr-year-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .mr-year-btn svg { width: 14px; height: 14px; }
-
-.mr-stats-totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 22px; }
 .mr-total-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 20px 16px; text-align: center; box-shadow: var(--shadow-sm); }
 .mr-total-value { font-size: 38px; font-weight: 700; line-height: 1; color: var(--marin-deep); font-variant-numeric: tabular-nums; }
 .mr-total-label { font-size: 12px; color: var(--ink-2); margin-top: 10px; }
@@ -1028,6 +1722,42 @@
 .mr-stats-bar-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--marin), var(--marin-bright)); border-radius: 999px; }
 .mr-stats-bar-count { font-family: var(--mono); font-size: 11px; color: var(--ink-3); width: 20px; text-align: right; flex-shrink: 0; }
 
+/* ── Destaque do ano — card com pôster + informações do anime ────────────────
+   Layout: [pôster 64px] | [título + estrelas + meta + maratona] */
+.mr-stats-highlight-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  background: var(--card-2);
+  border-radius: var(--r-md);
+  padding: 16px;
+  border: 1px solid var(--line);
+}
+/* Área de informações à direita do pôster */
+.mr-stats-highlight-info { flex: 1; min-width: 0; }
+/* Título do anime destaque */
+.mr-stats-highlight-title {
+  font: 600 16px var(--sans);
+  color: var(--ink);
+  margin: 0 0 6px;
+  line-height: 1.3;
+}
+/* Estúdio · Temporada em mono muted */
+.mr-stats-highlight-meta {
+  font: 13px var(--mono);
+  color: var(--ink-3);
+  margin-top: 4px;
+}
+/* Linha de maratona: "🏃 Maior maratona: N eps num dia" */
+.mr-stats-marathon {
+  font: 13px var(--sans);
+  color: var(--ink-3);
+  margin-top: 6px;
+}
+/* Número da maratona em acento --marin para destaque */
+.mr-stats-marathon strong { color: var(--marin); }
+
+/* Mantém classes antigas do highlight para compatibilidade */
 .mr-stats-highlight { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .mr-highlight-card { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); cursor: pointer; transition: border-color 0.14s; }
 .mr-highlight-card:hover { border-color: var(--marin-tint-2); }
@@ -1048,9 +1778,9 @@
 .mr-detail-back svg { width: 15px; height: 15px; }
 
 .mr-detail-banner { position: relative; margin-top: 16px; border-radius: var(--r-xl); overflow: hidden; min-height: 260px; display: flex; align-items: flex-end; box-shadow: var(--shadow-md); }
-.mr-detail-banner-bg { position: absolute; inset: 0; z-index: 0; }
-.mr-detail-banner-bg img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.mr-detail-banner-bg::after { content: ''; position: absolute; inset: 0; background: linear-gradient(0deg, oklch(0.14 0.018 300 / 0.96), oklch(0.14 0.018 300 / 0.45) 70%, oklch(0.14 0.018 300 / 0.3)); }
+/* NOTA: .mr-detail-banner-bg foi REMOVIDO — CSS morto.
+   AnimeDetail.tsx aplica o banner via inline style (backgroundImage) diretamente
+   no elemento .mr-detail-banner, não usando um elemento filho .mr-detail-banner-bg. */
 
 .mr-detail-hero { position: relative; z-index: 2; display: grid; grid-template-columns: 150px 1fr; gap: 24px; padding: 24px 28px; width: 100%; align-items: end; }
 .mr-detail-poster { width: 150px; box-shadow: var(--shadow-lg); }
@@ -1085,6 +1815,291 @@
 .mr-detail-log-eps { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--marin-deep); margin-top: 4px; }
 .mr-detail-log-rating { font-family: var(--mono); font-size: 11px; color: var(--star); margin-top: 2px; }
 .mr-detail-log-notes { font-size: 13px; color: var(--ink-2); margin-top: 5px; line-height: 1.55; font-style: italic; }
+
+/* ── AnimeDetail Fase 4 — banner overlay + hero rewrite ─────────────────────
+   Novos elementos adicionados no rewrite pixel-perfect: overlay do banner,
+   pôster flutuante com badge de favorito, rating row com Stars+coração,
+   grid 2 colunas, ficha técnica, caderno da Marin e histórico de sessões. */
+
+/* Overlay: gradiente escuro da esquerda para dar legibilidade ao texto sobre o banner */
+.mr-detail-banner-overlay {
+  position: absolute;
+  inset: 0;
+  /* Escuro intenso à esquerda (onde fica o texto) → transparente à direita */
+  background: linear-gradient(to right, oklch(0.1 0.02 300 / 0.85) 40%, transparent 100%);
+  pointer-events: none; /* não bloqueia cliques */
+  z-index: 1;
+}
+
+/* Hero do banner: grid pôster + info, posicionado acima do overlay */
+.mr-detail-hero {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  /* pôster fixo 150px + info flexível */
+  grid-template-columns: 150px 1fr;
+  gap: 24px;
+  padding: 24px 28px;
+  width: 100%;
+  align-items: end;
+}
+
+/* Barra de gêneros dentro da coluna de info (caps monoespaçado, translúcido) */
+.mr-detail-genres-bar {
+  /* Fica dentro de .mr-detail-info — não precisa mais de grid-column span */
+  font: 11px var(--mono);
+  color: oklch(1 0 0 / 0.7);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  margin: 0 0 4px 0;
+}
+
+/* Wrap do pôster com badge de coração */
+.mr-detail-poster-wrap {
+  width: 150px;
+  box-shadow: var(--shadow-lg);
+  position: relative;
+}
+
+/* Badge de coração sobreposto ao pôster (canto superior direito) */
+.mr-detail-fav-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: oklch(0.1 0.02 300 / 0.60);
+  backdrop-filter: blur(4px);
+  border: 1px solid oklch(1 0 0 / 0.14);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, transform 0.12s;
+}
+.mr-detail-fav-badge:hover { background: oklch(0.2 0.10 10 / 0.75); transform: scale(1.1); }
+
+/* Área de informações do anime (à direita do pôster) */
+.mr-detail-info {
+  min-width: 0;
+  padding-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Título principal do anime — usa DM Serif Display para destaque tipográfico */
+.mr-detail-title {
+  font-family: var(--display);
+  font-size: clamp(22px, 3.8vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.06;
+  text-wrap: balance;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* Subtítulo: título japonês · estúdio · temporada · tipo */
+.mr-detail-subtitle {
+  font-size: 13px;
+  color: oklch(0.85 0.01 300);
+  line-height: 1.4;
+}
+
+/* Linha de rating: Stars + nota numérica + coração + StatusChip */
+.mr-detail-rating-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  flex-wrap: wrap;
+}
+
+/* Nota numérica (ex.: "7.5 / 10") em fonte mono */
+.mr-detail-score-num {
+  font: 500 15px var(--mono);
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+/* Botão de coração inline na rating row */
+.mr-detail-heart {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  color: var(--heart);
+  transition: transform 0.12s;
+}
+.mr-detail-heart:hover { transform: scale(1.2); }
+
+/* Select de status compacto sob a rating row */
+.mr-detail-status-select {
+  margin-top: 4px;
+  font-size: 13px;
+  max-width: 200px;
+  height: 36px;
+}
+
+/* Barra de ações: logar + favoritar + remover */
+.mr-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+/* Botão de favoritar — ativo quando já favoritado */
+.mr-detail-fav-btn { border: 1px solid var(--line); background: var(--card); color: var(--ink-2); }
+.mr-detail-fav-btn:hover { border-color: var(--heart); color: var(--heart); }
+.mr-detail-fav-btn.active { color: var(--heart); border-color: var(--heart); background: oklch(0.70 0.22 8 / 0.10); }
+
+/* Botão de remover */
+.mr-detail-delete-btn { color: var(--ink-3); border-color: var(--line); background: var(--card); }
+.mr-detail-delete-btn:hover { color: oklch(0.65 0.22 18); border-color: oklch(0.65 0.22 18); }
+
+/* Caixa de confirmação de exclusão (inline, borda vermelha suave) */
+.mr-detail-delete-confirm {
+  margin-top: 10px;
+  padding: 14px 18px;
+  background: var(--card-2);
+  border-radius: var(--r-md);
+  border: 1px solid oklch(0.65 0.22 18 / 0.4);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+/* Card de progresso de episódios */
+.mr-detail-progress-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px 20px;
+  margin-top: 16px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Linha "Próximo: Ep N · título" */
+.mr-detail-next-ep {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--cyan);
+  letter-spacing: 0.02em;
+}
+
+/* Grid de 2 colunas para o corpo do detalhe */
+.mr-detail-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 20px;
+  align-items: start;
+  margin-top: 20px;
+}
+
+/* Ficha técnica: 6 células em grade 2×3 */
+.mr-detail-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 20px;
+}
+
+/* Célula da ficha: label acima + value abaixo */
+.mr-meta-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Label da ficha (caps mono muted) */
+.mr-meta-label {
+  font: 10.5px var(--mono);
+  color: var(--ink-4);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Valor da ficha */
+.mr-meta-value {
+  font: 500 14px var(--sans);
+  color: var(--ink);
+}
+
+/* Caderno da Marin — bloco de notas com borda acento esquerda */
+.mr-notes-block {
+  background: var(--card-2);
+  border-left: 3px solid var(--marin);
+  /* Sobrescreve a borda completa da .mr-detail-section */
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+}
+
+/* Texto do caderno (itálico, cor secundária) */
+.mr-detail-notes {
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-2);
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+/* Chips de gênero no painel direito */
+.mr-detail-genres-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Chip de favorito: borda e cor do coração */
+.mr-tag-fav { border-color: var(--heart) !important; color: var(--heart) !important; }
+
+/* Histórico de sessões: lista vertical */
+.mr-sess-log { display: flex; flex-direction: column; gap: 14px; }
+
+/* Item de sessão: data + eps + nota dispostos horizontalmente com wrap */
+.mr-sess-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-2);
+}
+.mr-sess-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+/* Data da sessão (mono, muted, largura mínima) */
+.mr-sess-date {
+  font: 11.5px var(--mono);
+  color: var(--ink-4);
+  min-width: 72px;
+  flex-shrink: 0;
+}
+
+/* Episódios da sessão (ex.: "Ep 3–5") */
+.mr-sess-eps {
+  font: 500 13px var(--sans);
+  color: var(--marin-deep);
+  flex-shrink: 0;
+}
+
+/* Observação da sessão (nova linha, itálico) */
+.mr-sess-note {
+  font-style: italic;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  width: 100%; /* força nova linha */
+  margin: 2px 0 0;
+  line-height: 1.5;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* MODAIS — estrutura comum                                                     */
@@ -1175,13 +2190,112 @@
   .mr-home-profile-split { grid-template-columns: 1fr; }
   .mr-stats-totals { grid-template-columns: repeat(2, 1fr); }
   .mr-stats-highlight { grid-template-columns: 1fr; }
+  /* Hero do detalhe vira 1 coluna em telas estreitas */
   .mr-detail-hero { grid-template-columns: 120px 1fr; gap: 18px; }
-  .mr-detail-poster { width: 120px; }
-  .mr-detail-body { grid-template-columns: 1fr; }
+  /* Grade de 2 colunas do detalhe vira 1 coluna */
+  .mr-detail-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
   .mr-home-hero-content { max-width: 100%; }
   .mr-diary-entry { grid-template-columns: 44px 40px 1fr; }
   .mr-stats-monthly-bars { height: 100px; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* CATÁLOGO — header DM Serif + result count + meta abaixo do pôster           */
+/* Fase 3: CatalogScreen atualizado fiel ao protótipo screens-a.jsx            */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+/* Header do catálogo: título grande em DM Serif Display + subtítulo de totais */
+.mr-cat-header { margin-bottom: 20px; }
+.mr-cat-title {
+  /* DM Serif Display — mesmo tipo do hero e dos números de stat */
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.mr-cat-sub {
+  /* Subtítulo muted: "N no acervo · M completos" */
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+/* Linha de contagem de resultados + sort ativo — fica após os chips na toolbar */
+.mr-result-count {
+  /* Ocupa toda a largura da toolbar — alinhado à esquerda */
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-4);
+  padding-top: 4px;
+  /* Exemplo: "24 animes · por atualizado" */
+}
+
+/* Container clicável de cada card no grid — substitui mr-catalog-item */
+.mr-poster-link {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  cursor: pointer;
+  /* Remove estilo padrão de link/botão */
+  text-decoration: none;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+}
+.mr-poster-link:focus-visible {
+  outline: 2px solid var(--marin);
+  border-radius: var(--r-lg);
+}
+/* Hover no link → eleva o poster-card filho */
+.mr-poster-link:hover .mr-poster-card {
+  transform: translateY(-5px) scale(1.015);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Barra de progresso fina (3px) colada na base do pôster */
+.mr-poster-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  /* background é inline (JS calcula o % de preenchimento via var(--marin)) */
+  pointer-events: none;
+}
+
+/* Meta abaixo do pôster: título + nota + contador de episódios */
+.mr-poster-meta { padding: 6px 2px 0; }
+.mr-poster-meta-title {
+  /* Título com até 2 linhas + ellipsis — igual ao mr-catalog-title original */
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.3;
+  margin-bottom: 3px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mr-poster-meta-row {
+  /* Linha horizontal: Score (estrela + número) e contagem de eps lado a lado */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mr-poster-meta-eps {
+  /* "X/Y" em mono muted — indica progresso sem repetir a barra visual */
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-4);
 }

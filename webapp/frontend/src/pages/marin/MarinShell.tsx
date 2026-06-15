@@ -1,13 +1,14 @@
 // Shell raiz da Marin — cinemateca de animes.
 // Gerencia: sidebar, navegação interna por estado (sem React Router interno),
 //           tweaks (tema/acento/densidade/ordenação), modais (log, add, tweaks),
-//           toast, sincronização com MAL.
+//           toast, sincronização com MAL, NextBar (schedule de próximos eps),
+//           busca global na topbar.
 //
 // Importa marin.css para aplicar os tokens OKLCH dentro de .marin-shell.
 
 import './marin.css'
-import { useState, useEffect, useCallback } from 'react'
-import type { Tweaks } from './types'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import type { Tweaks, ScheduleItem, Status, SyncResult } from './types'
 
 // Telas
 import { HomeScreen }     from './screens/HomeScreen'
@@ -24,8 +25,9 @@ import { AddAnimeModal } from './modals/AddAnimeModal'
 import { MarinTweaks }   from './modals/MarinTweaks'
 
 // Componentes
-import { Toast } from './components/Toast'
-import { Icon }  from './components/Icon'
+import { Toast }    from './components/Toast'
+import { Icon }     from './components/Icon'
+import { NextBar }  from './components/NextBar'
 
 // API
 import { marinApi } from './marinApi'
@@ -41,10 +43,13 @@ const DEFAULT_TWEAKS: Tweaks = {
   ordenacao: 'Atualizado',
 }
 
-// Mapa acento → valor do data-accent no DOM
+// Mapa acento → valor do data-accent no DOM.
+// O CSS define: [data-accent='neon'], [data-accent='sakura'], [data-accent='gold'].
+// Rosa-Magenta é o acento BASE (sem data-accent ou data-accent='') — NÃO existe
+// [data-accent='magenta'] no CSS, então usar string vazia para cair no base.
 const ACCENT_MAP: Record<string, string> = {
   'Neon':         'neon',
-  'Rosa-Magenta': 'magenta',
+  'Rosa-Magenta': '',       // base: rosa-magenta é o padrão sem atributo
   'Sakura':       'sakura',
   'Gold':         'gold',
 }
@@ -54,6 +59,17 @@ const DENSITY_MAP: Record<string, string> = {
   'Grande':   'large',
   'Médio':    'medium',
   'Compacto': 'compact',
+}
+
+// Mapa de view → título com emoji para a topbar (fiel ao protótipo app.jsx)
+const TITLES: Record<MarinView, string> = {
+  home:        '📺 Início',
+  catalogo:    '🎌 Catálogo',
+  diario:      '📖 Diário',
+  watchlist:   '⭐ Quero assistir',
+  lancamentos: '📅 Lançamentos',
+  stats:       '📊 Estatísticas',
+  detalhe:     '🎞️ Anime',
 }
 
 /**
@@ -70,9 +86,33 @@ function loadTweaks(): Tweaks {
 }
 
 /**
+ * Formata uma data futura de forma legível em pt-BR.
+ * Retorna "Hoje", "Amanhã", "Ontem" ou "Dia, DD Mês" para datas mais distantes.
+ *
+ * @param dateStr - Data no formato "YYYY-MM-DD"
+ * @returns String legível em pt-BR (ex.: "Qua, 18 Jun")
+ */
+function relFuture(dateStr: string): string {
+  // Cria a data às 12h para evitar problemas com fuso horário ao comparar dias
+  const d = new Date(dateStr + 'T12:00:00')
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  // Diferença em dias (positivo = futuro, negativo = passado)
+  const diff = Math.round((d.getTime() - today.getTime()) / 86400000)
+  if (diff === 0)  return 'Hoje'
+  if (diff === 1)  return 'Amanhã'
+  if (diff === -1) return 'Ontem'
+  // Para datas mais longes: "Dia, DD Mês" (ex.: "Qua, 18 Jun")
+  const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+  const month = d.toLocaleString('pt-BR', { month: 'short' }).replace('.', '')
+  return `${days[d.getDay()]}, ${d.getDate()} ${month}`
+}
+
+/**
  * MarinShell — root shell da Marin.
  * Toda navegação é via estado (view + animeId).
  * Modais abertos via flags de estado (logModal, addOpen, tweaksOpen).
+ * NextBar exibe o próximo episódio do schedule, com paginação ‹ ›.
  */
 export function MarinShell() {
   // Estado de navegação
@@ -101,7 +141,23 @@ export function MarinShell() {
   const [navCounts, setNavCounts] = useState<{
     assistindo?: number
     watchlist?: number
+    catalogo?: number
   }>({})
+
+  // Contagens brutas por status (Record<Status, number>) — passadas ao CatalogScreen
+  // para exibir totais no header sem fazer request adicional
+  const [homeCounts, setHomeCounts] = useState<Record<Status, number> | undefined>(undefined)
+
+  // Schedule de próximos episódios — alimenta a NextBar
+  const [schedule, setSchedule] = useState<ScheduleItem[]>([])
+  // Índice atual na paginação da NextBar (‹ ›)
+  const [scheduleIdx, setScheduleIdx] = useState(0)
+
+  // Query de busca global da topbar
+  const [topbarQuery, setTopbarQuery] = useState('')
+
+  // Ref para o container de scroll (para reset ao navegar)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   // Aplica tweaks como data-attrs no elemento do shell (CSS seleciona via data-*)
   useEffect(() => {
@@ -117,10 +173,28 @@ export function MarinShell() {
     marinApi.home()
       .then((res: any) => {
         if (res?.counts) {
+          // Calcula total do catálogo como soma de todos os status
+          const total = Object.values(res.counts as Record<string, number>)
+            .reduce((acc: number, n) => acc + (n as number), 0)
           setNavCounts({
             assistindo: res.counts.assistindo ?? 0,
             watchlist:  res.counts.quero_assistir ?? 0,
+            catalogo:   total,
           })
+          // Guarda as contagens brutas por status — repassadas ao CatalogScreen
+          setHomeCounts(res.counts as Record<Status, number>)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  // Busca o schedule dos próximos 14 dias para alimentar a NextBar
+  useEffect(() => {
+    marinApi.schedule(14)
+      .then(r => {
+        if (r.schedule && r.schedule.length > 0) {
+          setSchedule(r.schedule)
+          setScheduleIdx(0)  // reseta o índice ao carregar
         }
       })
       .catch(() => {})
@@ -137,14 +211,23 @@ export function MarinShell() {
     return () => window.removeEventListener('keydown', handleGlobalKey)
   }, [handleGlobalKey])
 
+  /**
+   * Navega para uma nova view.
+   * Limpa a busca da topbar ao sair do catálogo.
+   * Reseta o scroll do container principal.
+   */
   function navigateTo(v: MarinView, id?: string) {
     setView(v)
     if (id) setAnimeId(id)
     else if (v !== 'detalhe') setAnimeId(null)
+    // Limpa a busca da topbar ao sair do catálogo
+    if (v !== 'catalogo') setTopbarQuery('')
+    // Reseta o scroll para o topo (fiel ao design: cada página começa do início)
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
   }
 
-  function openLogModal(animeId?: string, ep?: number) {
-    setLogModal({ open: true, animeId, ep })
+  function openLogModal(animeIdArg?: string, ep?: number) {
+    setLogModal({ open: true, animeId: animeIdArg, ep })
   }
 
   function showToast(msg: string) {
@@ -156,10 +239,11 @@ export function MarinShell() {
     setSyncing(true)
     try {
       const res = await marinApi.syncMal(false)
-      const r = res as any
+      // O backend retorna SyncResult com campos 'created' e 'updated' (não 'added')
+      const r = res as SyncResult
       showToast(
-        r?.added > 0 || r?.updated > 0
-          ? `MAL sync: ${r.added ?? 0} adicionado(s), ${r.updated ?? 0} atualizado(s)`
+        (r?.created ?? 0) > 0 || (r?.updated ?? 0) > 0
+          ? `Sync completo: ${r.created ?? 0} criados, ${r.updated ?? 0} atualizados`
           : 'MAL sync: nada de novo'
       )
     } catch {
@@ -169,17 +253,21 @@ export function MarinShell() {
     }
   }
 
-  // Items do nav — grupos "Acervo" e "Descobrir"
+  // O nav "Acervo" agrupa as 4 views de catálogo pessoal (fiel ao design do protótipo)
   const navAcervo: { id: MarinView; label: string; icon: string; count?: number }[] = [
-    { id: 'home',      label: 'Início',     icon: 'home'     },
-    { id: 'catalogo',  label: 'Catálogo',   icon: 'list'     },
-    { id: 'diario',    label: 'Diário',     icon: 'book'     },
-    { id: 'watchlist', label: 'Watchlist',  icon: 'clock',   count: navCounts.watchlist },
-    { id: 'lancamentos', label: 'Lançamentos', icon: 'calendar' },
+    { id: 'home',      label: 'Início',         icon: 'home'     },
+    { id: 'catalogo',  label: 'Catálogo',        icon: 'list',    count: navCounts.catalogo },
+    { id: 'diario',    label: 'Diário',          icon: 'book'     },
+    { id: 'watchlist', label: 'Quero assistir',  icon: 'clock',   count: navCounts.watchlist },
   ]
-  const navDescobrir: { id: MarinView; label: string; icon: string }[] = [
-    { id: 'stats', label: 'Estatísticas', icon: 'stats' },
+  // O nav "Descobrir" agrupa lançamentos e stats (fiel ao design do protótipo)
+  const navDescobrir: { id: MarinView; label: string; icon: string; count?: number }[] = [
+    { id: 'lancamentos', label: 'Lançamentos',  icon: 'calendar', count: schedule.length || undefined },
+    { id: 'stats',       label: 'Estatísticas', icon: 'stats'     },
   ]
+
+  // Item do schedule atualmente exibido na NextBar
+  const currentScheduleItem = schedule[scheduleIdx]
 
   return (
     <div
@@ -190,29 +278,51 @@ export function MarinShell() {
     >
       {/* ── Sidebar ───────────────────────────────────────────────────────── */}
       <aside className="mr-side">
-        {/* Identidade da Marin */}
+        {/* Identidade da Marin: avatar redondo com anel de acento + nome */}
         <div className="mr-side-identity">
           <div className="mr-side-avatar">
             <img src="/marin.png" alt="Marin" />
           </div>
-          <div>
+          <div className="mr-brand-text">
             <p className="mr-side-name">Marin</p>
-            <p className="mr-side-sub">Catálogo de Animes</p>
+            {/* "ANIMES" em caps monoespaçado — fiel ao protótipo */}
+            <p className="mr-side-sub">ANIMES</p>
           </div>
         </div>
 
-        {/* CTA: logar episódio */}
+        {/* CTA: "+ Logar episódio" — botão principal destacado */}
         <button
           className="mr-btn mr-btn--primary mr-side-cta"
           onClick={() => openLogModal()}
         >
-          <Icon name="play" /> Logar ep
+          <Icon name="plus" />
+          <span className="mr-cta-label">Logar episódio</span>
         </button>
 
-        {/* Grupo: Acervo */}
+        {/* Grupo: Acervo — início, catálogo, diário, watchlist */}
         <nav className="mr-side-nav" aria-label="Acervo">
           <p className="mr-side-group-label">Acervo</p>
           {navAcervo.map(item => (
+            <button
+              key={item.id}
+              className={`mr-side-item${view === item.id || (item.id === 'catalogo' && view === 'detalhe') ? ' mr-side-item--active' : ''}`}
+              onClick={() => navigateTo(item.id)}
+              aria-current={view === item.id ? 'page' : undefined}
+            >
+              <Icon name={item.icon as any} className="mr-side-icon" />
+              <span className="mr-side-label">{item.label}</span>
+              {/* Contagem de itens — exibe só quando > 0 */}
+              {item.count != null && item.count > 0 && (
+                <span className="mr-side-badge">{item.count}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* Grupo: Descobrir — lançamentos e estatísticas */}
+        <nav className="mr-side-nav" aria-label="Descobrir">
+          <p className="mr-side-group-label">Descobrir</p>
+          {navDescobrir.map(item => (
             <button
               key={item.id}
               className={`mr-side-item${view === item.id ? ' mr-side-item--active' : ''}`}
@@ -228,25 +338,9 @@ export function MarinShell() {
           ))}
         </nav>
 
-        {/* Grupo: Descobrir */}
-        <nav className="mr-side-nav" aria-label="Descobrir">
-          <p className="mr-side-group-label">Analisar</p>
-          {navDescobrir.map(item => (
-            <button
-              key={item.id}
-              className={`mr-side-item${view === item.id ? ' mr-side-item--active' : ''}`}
-              onClick={() => navigateTo(item.id)}
-              aria-current={view === item.id ? 'page' : undefined}
-            >
-              <Icon name={item.icon as any} className="mr-side-icon" />
-              <span className="mr-side-label">{item.label}</span>
-            </button>
-          ))}
-        </nav>
-
-        {/* Ações do rodapé da sidebar */}
+        {/* Rodapé da sidebar: Sync MAL + Voltar à Makima (com ponto vermelho) */}
         <div className="mr-side-footer">
-          {/* Sync MAL */}
+          {/* Sync MAL — ícone gira enquanto syncing=true */}
           <button
             className="mr-side-action"
             onClick={handleSyncMal}
@@ -254,66 +348,71 @@ export function MarinShell() {
             title="Sincronizar com MyAnimeList"
           >
             <Icon name="sync" className={syncing ? 'mr-spinning' : ''} />
-            <span>{syncing ? 'Sincronizando...' : 'Sync MAL'}</span>
+            <span className="mr-sync-label">{syncing ? 'Sincronizando...' : 'Sync MAL'}</span>
           </button>
 
-          {/* Adicionar anime */}
-          <button
-            className="mr-side-action"
-            onClick={() => setAddOpen(true)}
-            title="Adicionar anime (a)"
-          >
-            <Icon name="plus" />
-            <span>Adicionar</span>
-          </button>
-
-          {/* Configurações */}
+          {/* Configurações — ícone de stats como engrenagem (icon disponível) */}
           <button
             className="mr-side-action"
             onClick={() => setTweaksOpen(true)}
-            title="Configurações"
+            title="Configurações (tweaks)"
           >
             <Icon name="stats" />
             <span>Configurações</span>
           </button>
 
-          {/* Link de volta à Makima */}
+          {/* Voltar à Makima — ponto vermelho + ícone + texto (fiel ao protótipo) */}
           <a href="/" className="mr-side-action mr-side-back" title="Voltar à Makima">
+            {/* Ponto vermelho indicador — presente no design do protótipo */}
+            <span className="mr-side-back-dot" aria-hidden="true" />
             <Icon name="arrow-left" />
-            <span>Makima</span>
+            <span>Voltar à Makima</span>
           </a>
         </div>
       </aside>
 
       {/* ── Área principal ────────────────────────────────────────────────── */}
       <main className="mr-main">
-        {/* Topbar com título da view atual + botão de adicionar */}
+        {/* Topbar: título com emoji + busca global + botão "+" redondo */}
         <div className="mr-topbar">
+          {/* Título da view atual com emoji (fiel ao protótipo) */}
           <h1 className="mr-topbar-title">
-            {view === 'home'        ? 'Início'       :
-             view === 'catalogo'    ? 'Catálogo'     :
-             view === 'diario'      ? 'Diário'       :
-             view === 'watchlist'   ? 'Watchlist'    :
-             view === 'lancamentos' ? 'Lançamentos'  :
-             view === 'stats'       ? 'Estatísticas' :
-             view === 'detalhe'     ? 'Detalhe'      : ''}
+            {TITLES[view] ?? TITLES.home}
           </h1>
+
+          {/* Campo de busca global — navega para catálogo ao digitar */}
+          <input
+            className="mr-topbar-search"
+            type="search"
+            placeholder="Buscar anime, estúdio ou gênero…"
+            value={topbarQuery}
+            onChange={e => {
+              const val = e.target.value
+              setTopbarQuery(val)
+              // Redireciona para o catálogo ao começar a digitar em outra tela
+              if (val && view !== 'catalogo') navigateTo('catalogo')
+            }}
+            aria-label="Buscar anime, estúdio ou gênero"
+          />
+
+          {/* Botão "+" redondo — abre modal de adicionar anime (fiel ao protótipo) */}
           <button
-            className="mr-btn mr-btn--primary"
+            className="mr-topbar-add"
             onClick={() => setAddOpen(true)}
-            title="Adicionar anime"
+            title="Adicionar anime (a)"
+            aria-label="Adicionar anime"
           >
-            + Anime
+            <Icon name="plus" />
           </button>
         </div>
 
-        {/* Conteúdo da view ativa */}
-        <div className="mr-scroll">
+        {/* Conteúdo da view ativa — scroll independente do header */}
+        <div className="mr-scroll" ref={scrollRef}>
           {view === 'home' && (
             <HomeScreen
               tweaks={tweaks}
               onSelectAnime={id => navigateTo('detalhe', id)}
-              onLog={(animeId, ep) => openLogModal(animeId, ep)}
+              onLog={(aid, ep) => openLogModal(aid, ep)}
               onNav={screen => navigateTo(screen as MarinView)}
               onToast={showToast}
             />
@@ -323,6 +422,8 @@ export function MarinShell() {
             <CatalogScreen
               tweaks={tweaks}
               onSelectAnime={id => navigateTo('detalhe', id)}
+              externalQuery={topbarQuery}
+              externalCounts={homeCounts}
             />
           )}
 
@@ -361,6 +462,24 @@ export function MarinShell() {
           )}
         </div>
       </main>
+
+      {/* ── NextBar — barra fixa de próximo episódio ──────────────────────── */}
+      {/* Montada fora do <main> pois é position:fixed (não afeta o layout) */}
+      {schedule.length > 0 && currentScheduleItem && (
+        <NextBar
+          episode={currentScheduleItem}
+          animeTitle={currentScheduleItem.anime_title}
+          animeId={currentScheduleItem.anime_id}
+          animeKey={currentScheduleItem.poster_key}
+          animeUrl={currentScheduleItem.poster_url}
+          onLog={(id, ep) => openLogModal(id, ep)}
+          onNavigate={id => navigateTo('detalhe', id)}
+          hasNext={scheduleIdx < schedule.length - 1}
+          hasPrev={scheduleIdx > 0}
+          onNext={() => setScheduleIdx(i => Math.min(i + 1, schedule.length - 1))}
+          onPrev={() => setScheduleIdx(i => Math.max(i - 1, 0))}
+        />
+      )}
 
       {/* ── Modais ────────────────────────────────────────────────────────── */}
       {logModal.open && (
