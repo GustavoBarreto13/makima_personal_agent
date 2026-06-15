@@ -103,12 +103,17 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
 
   // Busca os dados do detalhe + primeiros 12 episódios ao montar
   useEffect(() => {
+    // Flag para evitar atualizar o estado se o componente for desmontado
+    // ou se animeId mudar antes da resposta chegar (corrida de requisições)
+    let ignorar = false
+
     setLoading(true)
     // Verifica se o anime já está nos favoritos do localStorage
     setIsFavorite(readFavorites().includes(animeId))
 
     marinApi.detail(animeId)
       .then(d => {
+        if (ignorar) return  // Descarta resposta se componente já desmontou ou animeId mudou
         setDetail(d)
         // Inicializa o status e nota locais com os valores do banco
         setLocalStatus(d.anime?.status ?? null)
@@ -119,8 +124,17 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
         setHasMoreEps((d.episodes ?? []).length < (d.episodes_total_cached ?? 0))
         setEpPage(1)
       })
-      .catch(() => onToast('Erro ao carregar o anime.'))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        if (ignorar) return  // Descarta erro se componente já desmontou
+        onToast('Erro ao carregar o anime.')
+      })
+      .finally(() => {
+        // Só atualiza o loading se o efeito ainda for válido
+        if (!ignorar) setLoading(false)
+      })
+
+    // Função de cleanup: marca como ignorar quando o efeito é reexecutado ou componente desmonta
+    return () => { ignorar = true }
   }, [animeId])
 
   // Carrega a próxima página de episódios e acumula no estado
@@ -128,11 +142,16 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
     const nextPage = epPage + 1
     marinApi.episodes(animeId, nextPage)
       .then(res => {
-        // Acumula os novos episódios ao final da lista existente
-        setEpisodes(prev => [...prev, ...res.episodes])
+        // Usa o updater funcional do setEpisodes para obter o array atual
+        // e calcula hasMoreEps a partir do resultado real, não da closure
+        setEpisodes(prev => {
+          // Concatena os episódios novos com os já carregados
+          const atualizado = [...prev, ...res.episodes]
+          // Atualiza hasMoreEps aqui, após ter o array correto
+          setHasMoreEps(atualizado.length < res.total)
+          return atualizado
+        })
         setEpPage(nextPage)
-        // Verifica se ainda há mais após esta página (12 eps por página)
-        setHasMoreEps(episodes.length + res.episodes.length < res.total)
       })
       .catch(() => onToast('Erro ao carregar episódios.'))
   }
