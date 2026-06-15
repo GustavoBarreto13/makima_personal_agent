@@ -1541,16 +1541,14 @@
   align-items: end;
 }
 
-/* Barra de gêneros acima do pôster (caps monoespaçado, translúcido) */
+/* Barra de gêneros dentro da coluna de info (caps monoespaçado, translúcido) */
 .mr-detail-genres-bar {
-  /* Ocupa toda a largura do grid (colspan 2) */
-  grid-column: 1 / -1;
+  /* Fica dentro de .mr-detail-info — não precisa mais de grid-column span */
   font: 11px var(--mono);
   color: oklch(1 0 0 / 0.7);
   letter-spacing: 0.10em;
   text-transform: uppercase;
-  margin-bottom: 4px;
-  align-self: end;
+  margin: 0 0 4px 0;
 }
 
 /* Wrap do pôster com badge de coração */
@@ -1589,8 +1587,9 @@
   gap: 6px;
 }
 
-/* Título principal do anime */
+/* Título principal do anime — usa DM Serif Display para destaque tipográfico */
 .mr-detail-title {
+  font-family: var(--display);
   font-size: clamp(22px, 3.8vw, 40px);
   font-weight: 700;
   letter-spacing: -0.02em;

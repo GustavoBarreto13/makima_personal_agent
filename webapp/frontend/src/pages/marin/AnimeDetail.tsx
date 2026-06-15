@@ -230,13 +230,6 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
         {/* Hero: pôster flutuante + info do anime à direita */}
         <div className="mr-detail-hero">
 
-          {/* Barra de gêneros acima do pôster */}
-          {(anime.genres ?? []).length > 0 && (
-            <p className="mr-detail-genres-bar">
-              {anime.genres.slice(0, 3).map(g => g.toUpperCase()).join(' · ')}
-            </p>
-          )}
-
           {/* Pôster flutuante com badge de favorito */}
           <div className="mr-detail-poster-wrap">
             <PosterCard
@@ -265,8 +258,14 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
             </PosterCard>
           </div>
 
-          {/* Informações do anime: título, subtítulo, rating, status */}
+          {/* Informações do anime: barra de gêneros, título, subtítulo, rating, status */}
           <div className="mr-detail-info">
+            {/* Barra de gêneros — dentro da coluna de info, acima do título */}
+            {(anime.genres ?? []).length > 0 && (
+              <p className="mr-detail-genres-bar">
+                {anime.genres.slice(0, 3).map(g => g.toUpperCase()).join(' · ')}
+              </p>
+            )}
             <h1 className="mr-detail-title">{anime.title}</h1>
 
             {/* Subtítulo: título japonês · estúdio · temporada · tipo de mídia */}
