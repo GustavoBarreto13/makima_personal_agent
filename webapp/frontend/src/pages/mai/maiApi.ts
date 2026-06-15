@@ -96,6 +96,7 @@ export interface TMDBSearchResult {
   first_air_date: string | null
   overview: string | null
   poster_url: string | null
+  network: string | null    // canal ou plataforma de streaming principal
   genres: string[]
   in_catalog: boolean       // true se já está no catálogo do usuário
   catalog_id: string | null // series.id se in_catalog=true
