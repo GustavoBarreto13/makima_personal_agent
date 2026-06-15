@@ -227,7 +227,38 @@ Router em `webapp/backend/routers/series.py`. Segue o padrão dos outros routers
 Shell em `webapp/frontend/src/pages/mai/MaiShell.tsx`.
 CSS OKLCH em `mai.css`, escopado em `.mai-shell`.
 
-Telas: Home, Catálogo, Diário, Watchlist, Próximos, Stats, Detail (com SeasonAccordion exclusivo).
+**Telas (7):** Home, Catálogo, Diário, Watchlist, Próximos, Stats, Detail (com SeasonAccordion exclusivo).
+
+**Componentes (12):**
+
+| Arquivo | O que faz |
+|---|---|
+| `SeasonAccordion.tsx` | Acordeão de temporadas com lazy-load de episódios via TMDB |
+| `Stars.tsx` + `RateInput` | Estrelas 0.5–5.0 (meia via clip-path) + input interativo |
+| `NextBar.tsx` | Footbar com próximo episódio agendado |
+| `PosterCard.tsx` | Pôster 2:3 — imagem TMDB ou fallback tipográfico Fraunces |
+| `EpisodeLine.tsx` | Linha de episódio no SeasonAccordion |
+| `StatusChip.tsx` | Badge colorido de status (assistindo/concluída/etc.) |
+| `MaiIcons.tsx` | Ícones SVG inline (sem dependência externa) |
+| `Toast.tsx` | Toast de feedback efêmero |
+| `Spark.tsx` | Sparkline de barras para stat-cards (últimos N dias) |
+| `Heatmap.tsx` | Grade mensal de 52 semanas com intensidade de sessões |
+| `ListStats.tsx` | "Meu acervo" — barra empilhada de status + tabela de totais |
+| `FavoriteSeries.tsx` | 4 slots de favoritas editáveis (localStorage `mai.favorites`) + SeriesPicker embutido |
+
+**HomeScreen** (`screens/HomeScreen.tsx`) — paridade total com design handoff:
+- Carrega em paralelo: `maiApi.list()` + `maiApi.stats()` + `maiApi.upcoming()` + `maiApi.diary(21)`
+- Hero com a última série logada (gradient, StatusChip, CTAs)
+- stat-row: 3 cards (Séries acompanhadas / Episódios 7 dias + Spark / Nota média)
+- profile-split: `FavoriteSeries` (esq.) + `ListStats` (dir.)
+- "Assistindo agora" — carrossel `.row-scroll`
+- home-split: watch-grid + painel lateral (atividade recente + próximos episódios)
+- "Esperando na fila" — carrossel de `quero_assistir`
+
+**StatsScreen** (`screens/StatsScreen.tsx`) — com Destaque do ano + Heatmap:
+- year-switch → `get_stats(year)` → `daily` + `highlight` (adicionados na Parte A)
+- `.yr-highlight` card: pôster + título + rede + estrelas + métricas do ano
+- `<Heatmap data={stats.daily} />` em largura cheia (oculto se sem dados)
 
 Rota registrada em `App.tsx` ANTES do catch-all `/*`:
 ```tsx

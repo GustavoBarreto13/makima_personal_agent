@@ -172,6 +172,17 @@ export interface UpcomingEpisode {
 
 // ── Estatísticas ───────────────────────────────────────────────────────────
 
+/** Série destaque do ano (returnada dentro de Stats). */
+export interface StatsHighlight {
+  id: string
+  title: string
+  poster_url: string | null
+  rating: number | null       // 0.5–5.0
+  network: string | null
+  episodes_year: number       // episódios assistidos no ano
+  sessions_year: number       // nº de sessões no ano
+}
+
 /** Retorno de GET /api/series/stats?year=N */
 export interface Stats {
   status: 'ok'
@@ -184,6 +195,10 @@ export interface Stats {
   top_networks: { network: string; count: number }[]
   by_status: Record<MaiStatus, number>
   monthly: number[]             // 12 valores, jan→dez (episódios por mês)
+  /** Contagem de sessões por dia — array contíguo de 1º/jan até hoje (ou 31/dez). */
+  daily: { date: string; count: number }[]
+  /** Série destaque do ano (mais bem avaliada com logs), ou null se não houver dados. */
+  highlight: StatsHighlight | null
 }
 
 // ── Configurações salvas em localStorage ─────────────────────────────────

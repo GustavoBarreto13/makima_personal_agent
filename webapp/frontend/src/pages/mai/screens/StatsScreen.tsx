@@ -1,10 +1,14 @@
 // StatsScreen — estatísticas anuais (ano selecionável).
-// Layout: seletor de ano + 4 big stats + top gêneros + barras mensais.
+// Layout: seletor de ano + 4 big stats + Destaque do ano + barras mensais
+//         + top gêneros/redes + por status + Heatmap de sessões.
 
 import { useState, useEffect } from 'react'
 import type { Stats } from '../types'
 import { maiApi } from '../maiApi'
 import { IconChevL, IconChevR } from '../components/MaiIcons'
+import { Heatmap } from '../components/Heatmap'
+import { Stars } from '../components/Stars'
+import { PosterCard } from '../components/PosterCard'
 
 /** StatsScreen — métricas anuais de séries assistidas. */
 export function StatsScreen() {
@@ -13,6 +17,7 @@ export function StatsScreen() {
   const [stats,   setStats]   = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Recarrega stats toda vez que o ano muda
   useEffect(() => {
     setLoading(true)
     maiApi.stats(year)
@@ -21,14 +26,16 @@ export function StatsScreen() {
       .finally(() => setLoading(false))
   }, [year])
 
-  // Valor máximo dos meses para escala das barras
+  // Valor máximo dos meses para escala das barras mensais
   const maxMonth = stats ? Math.max(...stats.monthly, 1) : 1
 
+  // Abreviações dos meses em pt-BR para o eixo X das barras
   const MONTH_LABELS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
   return (
     <div className="page" style={{ paddingTop: 28 }}>
-      {/* ── Seletor de ano ────────────────────────────────────────────────── */}
+
+      {/* ── Seletor de ano ──────────────────────────────────────────────────── */}
       <div className="year-switch">
         <button
           onClick={() => setYear(y => y - 1)}
@@ -54,7 +61,7 @@ export function StatsScreen() {
 
       {!loading && stats && (
         <>
-          {/* ── 4 Big Stats ─────────────────────────────────────────────── */}
+          {/* ── 4 Big Stats ───────────────────────────────────────────────── */}
           <div className="big-stat-row" style={{ marginTop: 26 }}>
             <div className="big-stat">
               <div className="n">{stats.total_series}</div>
@@ -76,7 +83,54 @@ export function StatsScreen() {
             </div>
           </div>
 
-          {/* ── Barras mensais + Top gêneros ────────────────────────────── */}
+          {/* ── Destaque do ano ───────────────────────────────────────────── */}
+          {/* Exibido apenas quando há dados — série com maior rating e sessões no ano */}
+          {stats.highlight && (
+            <div className="yr-highlight" style={{ marginTop: 26 }}>
+              {/* Pôster à esquerda */}
+              <div className="yh-poster">
+                <PosterCard series={{
+                  title: stats.highlight.title,
+                  title_original: null,
+                  poster_url: stats.highlight.poster_url,
+                  first_air_date: null,
+                  network: stats.highlight.network,
+                  episodes_watched: stats.highlight.episodes_year,
+                  episodes_count: null,
+                  rating: stats.highlight.rating,
+                  status: 'concluida',
+                }} />
+              </div>
+
+              {/* Info à direita */}
+              <div className="yh-body">
+                <div className="yh-eyebrow">⭐ Destaque de {year}</div>
+                <div className="yh-title">{stats.highlight.title}</div>
+                {stats.highlight.network && (
+                  <div className="yh-net">{stats.highlight.network}</div>
+                )}
+
+                {/* Nota em estrelas */}
+                {stats.highlight.rating && (
+                  <Stars rating={stats.highlight.rating} size="sm" showNum />
+                )}
+
+                {/* Métricas do ano: episódios e sessões */}
+                <div className="yh-stats">
+                  <div className="yh-stat">
+                    <span className="k">Episódios no ano</span>
+                    <span className="v">{stats.highlight.episodes_year}</span>
+                  </div>
+                  <div className="yh-stat">
+                    <span className="k">Sessões</span>
+                    <span className="v">{stats.highlight.sessions_year}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Barras mensais + Top gêneros ──────────────────────────────── */}
           <div className="stats-grid" style={{ marginTop: 18 }}>
             {/* Barras mensais */}
             <div className="stat-panel">
@@ -97,7 +151,7 @@ export function StatsScreen() {
               </div>
             </div>
 
-            {/* Top gêneros */}
+            {/* Top gêneros + plataformas */}
             <div className="stat-panel">
               <div className="stat-panel-head">
                 <span className="t">Top gêneros</span>
@@ -105,20 +159,18 @@ export function StatsScreen() {
               {stats.top_genres.length === 0 ? (
                 <div style={{ color: 'var(--ink-4)', fontSize: 13, fontStyle: 'italic' }}>Sem dados</div>
               ) : (
-                <>
-                  {stats.top_genres.map((g, i) => (
-                    <div key={i} className="rank-row">
-                      <span className="rk-name">{g.genre}</span>
-                      <div className="rk-track">
-                        <i style={{ width: `${(g.count / stats.top_genres[0].count) * 100}%` }} />
-                      </div>
-                      <span className="rk-n">{g.count}</span>
+                stats.top_genres.map((g, i) => (
+                  <div key={i} className="rank-row">
+                    <span className="rk-name">{g.genre}</span>
+                    <div className="rk-track">
+                      <i style={{ width: `${(g.count / stats.top_genres[0].count) * 100}%` }} />
                     </div>
-                  ))}
-                </>
+                    <span className="rk-n">{g.count}</span>
+                  </div>
+                ))
               )}
 
-              {/* Top redes */}
+              {/* Top plataformas/redes */}
               {stats.top_networks.length > 0 && (
                 <>
                   <div className="detail-section-title" style={{ marginTop: 22 }}>
@@ -139,7 +191,7 @@ export function StatsScreen() {
             </div>
           </div>
 
-          {/* ── Distribuição por status ──────────────────────────────────── */}
+          {/* ── Distribuição por status ────────────────────────────────────── */}
           {stats.by_status && Object.keys(stats.by_status).length > 0 && (
             <div className="stat-panel" style={{ marginTop: 18 }}>
               <div className="stat-panel-head">
@@ -149,11 +201,22 @@ export function StatsScreen() {
                 {Object.entries(stats.by_status).map(([status, count]) => (
                   <div key={status} className="ps-row">
                     <span className="ps-dot" style={{ background: `var(--st-${status})` }} />
-                    <span className="ps-label">{status.replace('_', ' ')}</span>
+                    <span className="ps-label">{status.replace(/_/g, ' ')}</span>
                     <span className="ps-n">{count}</span>
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* ── Heatmap de sessões ─────────────────────────────────────────── */}
+          {/* Só exibe se houver dados diários (proteção para anos sem sessões) */}
+          {stats.daily && stats.daily.length > 0 && (
+            <div className="heat-card" style={{ marginTop: 26 }}>
+              <div className="stat-panel-head" style={{ marginBottom: 16 }}>
+                <span className="t">Sessões · {year}</span>
+              </div>
+              <Heatmap data={stats.daily} />
             </div>
           )}
         </>

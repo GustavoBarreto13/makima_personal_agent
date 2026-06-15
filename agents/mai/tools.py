@@ -839,6 +839,63 @@ def get_stats(year: Optional[int] = None) -> dict:
     # Estimativa de horas: ~50 minutos por episódio
     total_hours = round(int(total_episodes) * 50 / 60, 1)
 
+    # ── Sessões por dia (heatmap) — contagem de logs por data no ano ──────────
+    # Retorna somente os dias COM sessão; dias vazios são preenchidos em Python.
+    daily_rows = run_select(
+        """
+        SELECT watched_date, COUNT(*) AS cnt
+        FROM watch_logs
+        WHERE EXTRACT(YEAR FROM watched_date) = %s
+        GROUP BY watched_date
+        ORDER BY watched_date
+        """,
+        (target_year,),
+    )
+    # Mapa data_iso → contagem (apenas os dias que têm sessão)
+    daily_map = {str(r["watched_date"]): int(r["cnt"]) for r in daily_rows}
+
+    # Gera array contíguo de 1º/jan até 31/dez (ou até hoje no ano corrente)
+    from datetime import timedelta  # import local — evita poluir o topo do módulo
+    start_date = date(target_year, 1, 1)
+    end_date = min(date(target_year, 12, 31), date.today())
+    daily: list[dict] = []
+    cursor = start_date
+    while cursor <= end_date:
+        iso = str(cursor)
+        daily.append({"date": iso, "count": daily_map.get(iso, 0)})
+        cursor += timedelta(days=1)
+
+    # ── Destaque do ano — série mais bem avaliada com logs no ano ────────────
+    # Critério primário: rating DESC; critério secundário: episódios assistidos no ano DESC.
+    highlight_rows = run_select(
+        """
+        SELECT s.id, s.title, s.poster_url, s.rating, s.network,
+               COALESCE(SUM(wl.episodes_count), 0) AS episodes_year,
+               COUNT(wl.id)                          AS sessions_year
+        FROM watch_logs wl
+        JOIN series s ON s.id = wl.series_id
+        WHERE EXTRACT(YEAR FROM wl.watched_date) = %s
+          AND s.deleted = FALSE
+        GROUP BY s.id, s.title, s.poster_url, s.rating, s.network
+        ORDER BY s.rating DESC NULLS LAST,
+                 SUM(wl.episodes_count) DESC
+        LIMIT 1
+        """,
+        (target_year,),
+    )
+    highlight = None
+    if highlight_rows:
+        r = highlight_rows[0]
+        highlight = {
+            "id":            r["id"],
+            "title":         r["title"],
+            "poster_url":    r["poster_url"],
+            "rating":        float(r["rating"]) if r["rating"] is not None else None,
+            "network":       r["network"],
+            "episodes_year": int(r["episodes_year"]),
+            "sessions_year": int(r["sessions_year"]),
+        }
+
     return _ok(
         year=target_year,
         total_series=int(total_series),
@@ -849,6 +906,8 @@ def get_stats(year: Optional[int] = None) -> dict:
         top_networks=top_networks,
         by_status=by_status,
         monthly=monthly,
+        daily=daily,
+        highlight=highlight,
     )
 
 
