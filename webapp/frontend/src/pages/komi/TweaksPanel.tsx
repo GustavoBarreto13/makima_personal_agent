@@ -3,7 +3,7 @@
 // Desliza da direita; fecha ao clicar no scrim ou no X.
 // Persistido em localStorage (chave 'km-tweaks').
 
-import React, { useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Icon } from './icons'
 import { KM_PALETTES } from './lib'
 

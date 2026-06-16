@@ -14,7 +14,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Icon } from '../icons'
 import { Avatar } from '../icons'
-import { normalize } from '../lib'
 import { komiApi } from '../komiApi'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────

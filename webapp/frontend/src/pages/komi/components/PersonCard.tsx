@@ -25,12 +25,6 @@ export function PersonCard({ p, onOpen }: PersonCardProps) {
   // O overview já traz todas as datas cadastradas para a pessoa
   const bday = (p.dates || []).find(d => /anivers/i.test(d.label))
 
-  // Próxima data que está chegando (< 60 dias) além do aniversário
-  const nextDate = (p.dates || [])
-    .map(d => ({ ...d, days: daysUntil(d.date, d.recurring) }))
-    .filter(d => d.days >= 0 && d.days <= 60 && !(/anivers/i.test(d.label)))
-    .sort((a, b) => a.days - b.days)[0]
-
   // Indica se há saldo financeiro pendente (te devem ou você deve)
   const hasFinance = p.finance_net !== 0
 

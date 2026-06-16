@@ -11,7 +11,7 @@
 import './komi.css'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Icon } from './icons'
-import { TweaksPanel, loadTweaks, saveTweaks, TWEAK_DEFAULTS } from './TweaksPanel'
+import { TweaksPanel, loadTweaks, saveTweaks } from './TweaksPanel'
 import type { KomiTweaks } from './TweaksPanel'
 import { Home }          from './screens/Home'
 import { Directory }     from './screens/Directory'
@@ -156,15 +156,6 @@ export function KomiShell() {
     setCurrentId(id)
     setView('person')
     if (scrollRef.current) scrollRef.current.scrollTop = 0
-  }
-
-  // ── Tweaks ────────────────────────────────────────────────────────
-
-  /** Atualiza um tweak, persiste no localStorage e aplica os efeitos. */
-  function changeTweak<K extends keyof KomiTweaks>(key: K, value: KomiTweaks[K]) {
-    const next = { ...tweaks, [key]: value }
-    setTweaksState(next)
-    saveTweaks(next)
   }
 
   // ── Callbacks do modal ────────────────────────────────────────────
@@ -388,7 +379,6 @@ export function KomiShell() {
               onOpen={openPerson}
               onNew={() => setModal('new')}
               goView={(v) => goView(v as KomiView)}
-              setFilter={(f) => { setFilter(f); goGrid() }}
             />
           )}
 

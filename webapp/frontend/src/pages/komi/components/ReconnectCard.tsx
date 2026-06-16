@@ -4,7 +4,7 @@
 
 import { Icon } from '../icons'
 import { Avatar } from '../icons'
-import { REL_CATS, daysSince, humanGap, contactCTA, reconnectPrompt } from '../lib'
+import { daysSince, humanGap, reconnectPrompt } from '../lib'
 import type { OverviewPerson } from '../types'
 
 interface ReconnectCardProps {
@@ -26,18 +26,8 @@ interface ReconnectCardProps {
  * última conversa e CTAs de contato (Telegram > WhatsApp > Instagram).
  */
 export function ReconnectCard({ p, last, onOpen }: ReconnectCardProps) {
-  // Categoria para estilo visual (cor do dot)
-  const cat = REL_CATS[p.category] || REL_CATS.outros
-
   // Quantos dias se passaram desde a última interação
   const days = daysSince(last.date)
-
-  // CTA de contato mais direto disponível (Telegram > WhatsApp > Instagram)
-  const cta = contactCTA({
-    telegram:  p.telegram,
-    phone:     p.phone,
-    instagram: p.instagram,
-  })
 
   // O badge de "tempo" fica laranja ("warm") quando >= 14 dias
   const gapClass = 'rc-gap' + (days !== null && days >= 14 ? ' warm' : '')
@@ -64,20 +54,14 @@ export function ReconnectCard({ p, last, onOpen }: ReconnectCardProps) {
       {/* Mensagem de incentivo baseada no número de dias sem contato */}
       <div className="rc-prompt">{reconnectPrompt(days ?? 0)}</div>
 
-      {/* Ações: CTA de contato e botão de abrir perfil */}
+      {/* Ações: botão de abrir perfil */}
       {/* e.stopPropagation() evita que o clique nos botões abra o perfil também */}
+      {/* overview não traz dados de contato (telegram/phone/instagram) —
+          CTA de canal direto só aparece no PersonPage quando summary() é carregado */}
       <div className="rc-actions" onClick={(e) => e.stopPropagation()}>
-        {cta ? (
-          // Link externo para o canal de comunicação (Telegram/WhatsApp/Instagram)
-          <a className="rc-cta primary" href={cta.href} target="_blank" rel="noreferrer">
-            <Icon name={cta.icon} />{cta.label}
-          </a>
-        ) : (
-          // Sem canal configurado: botão para abrir o perfil
-          <button className="rc-cta primary" onClick={() => onOpen(p.id)}>
-            <Icon name="user" />Ver perfil
-          </button>
-        )}
+        <button className="rc-cta primary" onClick={() => onOpen(p.id)}>
+          <Icon name="user" />Ver perfil
+        </button>
         {/* Botão secundário sempre presente para abrir o perfil */}
         <button className="rc-cta ghost" onClick={() => onOpen(p.id)}>Abrir</button>
       </div>

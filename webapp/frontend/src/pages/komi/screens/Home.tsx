@@ -10,7 +10,7 @@ import { useMemo } from 'react'
 import { Icon } from '../icons'
 import { Avatar } from '../icons'
 import { ReconnectCard } from '../components/ReconnectCard'
-import { REL_CATS, daysUntil, fmtDayMonth, brl, daysSince, greeting } from '../lib'
+import { daysUntil, fmtDayMonth, brl, daysSince, greeting } from '../lib'
 import type { OverviewPerson } from '../types'
 
 interface HomeProps {
@@ -22,8 +22,6 @@ interface HomeProps {
   onNew: () => void
   /** Navega para outra view (ex.: 'dates'). */
   goView: (v: string) => void
-  /** Define o filtro de categoria e navega para o diretório. */
-  setFilter: (f: string) => void
 }
 
 /**
@@ -33,7 +31,7 @@ interface HomeProps {
  * 2. Próximas datas — eventos nos próximos 60 dias (top 5)
  * 3. A acertar — saldos financeiros pendentes (top 5)
  */
-export function Home({ overview, onOpen, onNew, goView, setFilter }: HomeProps) {
+export function Home({ overview, onOpen, onNew, goView }: HomeProps) {
   // ── Estatísticas globais ────────────────────────────────────────────────
 
   // Número de datas no próximo mês (para o hero sub)
