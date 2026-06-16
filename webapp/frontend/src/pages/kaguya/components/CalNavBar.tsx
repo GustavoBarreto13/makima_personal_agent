@@ -1,38 +1,58 @@
 // CalNavBar — barra de navegação do Calendar Hub (fatia 019, T010).
-// Exibe: título com mês/ano + label "SEMANA N" (ISO week), botões de navegação
-// ‹ / Hoje / › e o controle segmentado Dia/Semana/Mês.
-// É um componente puro: não tem estado próprio, tudo vem de props.
+// Exibe: título (mês/ano ou dia completo) + label "SEMANA N" (view semana),
+// botões ‹ / Hoje / › e segmentado Dia/Semana/Mês.
+// Componente puro: sem estado próprio, tudo via props.
+//
+// Classes do handoff (spec 019):
+//   .cal-bar         → container da barra (backdrop blur)
+//   .cal-title       → wrapper do título + sublabel
+//   .cal-month       → rótulo principal (22px/800; capitalize via CSS)
+//   .cal-week-lbl    → sublabel "SEMANA N" (mono 11px uppercase; só na view semana)
+//   .cal-spacer      → flex:1, empurra controles para a direita
+//   .cal-nav         → grupo de botões de navegação
+//   .cal-iconbtn     → botão ícone 30×30
+//   .cal-today       → botão "Hoje" 32px
+//   .cal-seg         → segmented control Dia/Semana/Mês
+//   .cal-seg button.on → botão ativo do segmented
 
 import { Icon } from '../ui/Icons'
 
 // ── Helpers de data ─────────────────────────────────────────────────────────
 
-// Formata um Date como "AAAA-MM-DD" usando a data LOCAL (sem converter para UTC).
-function toISO(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+// Avança n dias a partir de d (imutável — retorna novo Date)
+function addDays(d: Date, n: number): Date {
+  const r = new Date(d)
+  r.setDate(r.getDate() + n)
+  return r
 }
 
-// Retorna o número da semana ISO 8601.
-// A semana ISO começa na segunda-feira; a semana que contém a primeira quinta-feira
-// do ano é a semana 1. Seguindo o algoritmo padrão.
+// Retorna o número da semana ISO 8601 de um Date.
+// A semana começa na segunda-feira; a primeira semana do ano é aquela que contém
+// a primeira quinta-feira do ano.
 function isoWeek(d: Date): number {
-  // Cria uma cópia em UTC para não ter surpresas de fuso horário
+  // Usamos UTC para evitar surpresas de fuso horário
   const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
-  // 0=Dom → 7, 1=Seg → 1, …, 6=Sáb → 6
-  const day = tmp.getUTCDay() || 7
-  // Avança para a quinta-feira da mesma semana ISO
+  const day = tmp.getUTCDay() || 7    // 0=Dom→7, 1=Seg→1 … 6=Sáb→6
+  // Avança até a quinta-feira da mesma semana ISO (def. ISO 8601)
   tmp.setUTCDate(tmp.getUTCDate() + 4 - day)
-  // Primeiro dia do ano em UTC
   const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1))
-  // Número da semana = ceil( (dias desde 1º jan + 1) / 7 )
   return Math.ceil((((tmp.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
 }
 
-// Nomes dos meses em pt-BR para montar o label "junho de 2026".
+// Nomes completos dos meses em pt-BR (para o rótulo semana/mês)
 const MONTHS_PT = [
   'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
   'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
 ]
+
+// Abreviaturas de mês em pt-BR (para o rótulo da view dia)
+const MONTHS_SHORT = [
+  'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
+  'jul', 'ago', 'set', 'out', 'nov', 'dez',
+]
+
+// Abreviaturas de dia da semana em pt-BR (para a view dia — capitalize via CSS)
+const DAYS_PT = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -52,56 +72,48 @@ interface CalNavBarProps {
 // ── Componente ───────────────────────────────────────────────────────────────
 
 export function CalNavBar({ view, refDate, onViewChange, onNav, onToday }: CalNavBarProps) {
-  // Rótulo "junho de 2026" — capitalizado via CSS (capitalize)
-  const monthLabel = `${MONTHS_PT[refDate.getMonth()]} de ${refDate.getFullYear()}`
+  // ── Rótulo principal (capitalize automático via CSS) ──────────────────────
+  // View semana/mês → "junho 2026"
+  // View dia → "seg, 15 jun" → CSS capitaliza para "Seg, 15 Jun"
+  let monthLabel: string
+  if (view === 'day') {
+    const dow = DAYS_PT[refDate.getDay()]
+    const d   = refDate.getDate()
+    const mon = MONTHS_SHORT[refDate.getMonth()]
+    monthLabel = `${dow}, ${d} ${mon}`
+  } else {
+    monthLabel = `${MONTHS_PT[refDate.getMonth()]} ${refDate.getFullYear()}`
+  }
 
-  // Para o label SEMANA N, o CalNavBar exibe:
-  // - na view dia/semana: a semana ISO de refDate
-  // - na view mês: a semana ISO do primeiro dia do mês (primeira linha da grade)
-  //   (o criador da grade monta a partir de domingo da semana do dia 1, mas o label
-  //    mostra a semana do dia 1 em si, que é mais intuitivo)
-  const firstOfMonth = new Date(refDate.getFullYear(), refDate.getMonth(), 1)
-  const weekNum = view === 'month' ? isoWeek(firstOfMonth) : isoWeek(refDate)
-
-  // Não expõe toISO para fora, mas é usado acima em future helpers se necessário
-  void toISO // evita aviso "unused"
+  // ── Número da semana ISO (calculado pela quinta-feira da semana visível) ──
+  // A "semana visível" na view semana começa no domingo anterior a refDate.
+  // ISO 8601 define a semana pelo dia da quinta-feira — usamos domingo+4.
+  // Isso é mais preciso do que usar refDate diretamente (que pode ser sáb/dom
+  // e estar na semana ISO seguinte/anterior à que o usuário está vendo).
+  const sunday   = addDays(refDate, -refDate.getDay())   // domingo da semana visível
+  const thursday = addDays(sunday, 4)                    // quinta-feira da mesma semana
+  const weekNum  = isoWeek(thursday)
 
   return (
     <div className="cal-bar">
-      {/* ── Título: mês/ano + label de semana ── */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1 }}>
-        {/* Mês e ano principal — 22px/800 por padrão; a variante editorial sobrescreve para serif 27px */}
-        <span
-          style={{
-            fontFamily: 'var(--display)',
-            fontSize: 22,
-            fontWeight: 800,
-            color: 'var(--ink)',
-            textTransform: 'capitalize',
-            lineHeight: 1.15,
-          }}
-        >
-          {monthLabel}
-        </span>
-        {/* Label de semana ISO — mono 11px uppercase */}
-        <span
-          style={{
-            fontFamily: 'var(--mono)',
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '0.07em',
-            color: 'var(--ink-4)',
-          }}
-        >
-          SEMANA {weekNum}
-        </span>
+      {/* ── Título: rótulo principal + (só semana) sublabel SEMANA N ── */}
+      <div className="cal-title">
+        {/* Rótulo principal: mês+ano ou dia-da-semana+data */}
+        <span className="cal-month">{monthLabel}</span>
+        {/* Sublabel mono: "SEMANA N" exibido apenas na view semana */}
+        {view === 'week' && (
+          <span className="cal-week-lbl">SEMANA {weekNum}</span>
+        )}
       </div>
 
+      {/* Espaçador flexível: empurra os controles de navegação para a direita */}
+      <div className="cal-spacer" />
+
       {/* ── Controles de navegação: ‹ | Hoje | › ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        {/* Botão retroceder (‹ = seta para esquerda) */}
+      <div className="cal-nav">
+        {/* Botão retroceder */}
         <button
-          className="kg-icon-btn"
+          className="cal-iconbtn"
           onClick={() => onNav(-1)}
           aria-label="Anterior"
           title="Período anterior"
@@ -110,13 +122,13 @@ export function CalNavBar({ view, refDate, onViewChange, onNav, onToday }: CalNa
         </button>
 
         {/* Botão "Hoje": volta ao período que contém a data atual */}
-        <button className="kg-btn kg-btn-ghost" onClick={onToday} style={{ fontSize: 13 }}>
+        <button className="cal-today" onClick={onToday}>
           Hoje
         </button>
 
-        {/* Botão avançar (› = seta para direita / chevron) */}
+        {/* Botão avançar */}
         <button
-          className="kg-icon-btn"
+          className="cal-iconbtn"
           onClick={() => onNav(1)}
           aria-label="Próximo"
           title="Próximo período"
@@ -126,14 +138,14 @@ export function CalNavBar({ view, refDate, onViewChange, onNav, onToday }: CalNa
       </div>
 
       {/* ── Segmented control: Dia / Semana / Mês ── */}
+      {/* Classe ativa: 'on' (não 'active') — alinhado com o CSS do handoff */}
       <div className="cal-seg">
         {(['day', 'week', 'month'] as const).map((v) => {
-          // Mapeia a key interna para o label em pt-BR
           const labels: Record<typeof v, string> = { day: 'Dia', week: 'Semana', month: 'Mês' }
           return (
             <button
               key={v}
-              className={view === v ? 'active' : ''}
+              className={view === v ? 'on' : ''}
               onClick={() => onViewChange(v)}
             >
               {labels[v]}

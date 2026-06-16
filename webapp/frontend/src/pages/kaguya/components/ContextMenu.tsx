@@ -1,31 +1,35 @@
 // ContextMenu — menu de contexto do Calendar Hub (fatia 019, T026).
-// Abre com clique-direito num evento. Permite: recolorir o evento, duplicar, excluir.
-// Fontes cross-agent não editáveis mostram apenas "Abrir em <fonte>".
-// Animação cpop-in definida em kaguya.css.
+// Estrutura do handoff (spec 019):
+//   .cal-pop-scrim → overlay transparente; clique = fecha
+//   .cal-ctx       → container com style {--cc, left, top}
+//     .cal-ctx-item  → item de menu (hover: fundo kg-tint)
+//     .cal-ctx-item.danger → item destructivo (texto vermelho no hover)
+//     .cal-ctx-sep   → separador horizontal
+//     .cal-ctx-row   → linha horizontal de .cal-sw (swatches de cor)
+//
+// Fontes editáveis (kaguya/gcal): duplicar, recolorir (gcal), excluir.
+// Fontes cross-agent: apenas deep-link.
 
 import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { CalEvent, Calendar } from '../types'
+import { Icon } from '../ui/Icons'
 import { kaguyaApi, CAL_SWATCHES } from '../kaguyaApi'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface ContextMenuProps {
-  // Evento sobre o qual o menu foi aberto
   ev: CalEvent
-  // Fontes para mostrar o nome do calendário de origem
   cals: Calendar[]
-  // Posição do clique-direito em px (ajustada em viewport)
   pos: { x: number; y: number }
-  // Fecha o menu
   onClose: () => void
-  // Chamado depois de uma operação bem-sucedida para atualizar o grid
   onRefresh?: () => void
 }
 
-// Fontes editáveis pelo menu de contexto.
+// Fontes que o menu pode modificar.
 const EDITABLE_SOURCES = new Set(['kaguya', 'gcal'])
 
-// Clamp numérico.
+// Clamp numérico dentro de [min, max].
 function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v))
 }
@@ -40,32 +44,26 @@ export function ContextMenu({ ev, cals, pos, onClose, onRefresh }: ContextMenuPr
   const isEditable = EDITABLE_SOURCES.has(ev.cal)
   const cal = cals.find((c) => c.id === ev.cal)
   const calName = cal?.name ?? ev.cal
+  // --cc: cor do evento ou do calendário (para a linha de swatches usar var(--cc) como indicador)
+  const calColor = ev.color || cal?.color || 'var(--kg)'
 
-  // ── Fecha ao pressionar Escape ou clicar fora ─────────────────────────────
+  // ── Fecha ao pressionar Escape ────────────────────────────────────────────
   useEffect(() => {
     const keyHandler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    const clickHandler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose()
-    }
     document.addEventListener('keydown', keyHandler)
-    const t = setTimeout(() => document.addEventListener('mousedown', clickHandler), 50)
-    return () => {
-      document.removeEventListener('keydown', keyHandler)
-      clearTimeout(t)
-      document.removeEventListener('mousedown', clickHandler)
-    }
+    return () => document.removeEventListener('keydown', keyHandler)
   }, [onClose])
 
   // ── Posição clamped à viewport ────────────────────────────────────────────
-  const PAD = 8
+  const PAD    = 8
   const MENU_W = 220
-  const MENU_H = 180   // estimativa
+  const MENU_H = 180
   const left = clamp(pos.x, PAD, window.innerWidth - MENU_W - PAD)
-  const top = clamp(pos.y, PAD, window.innerHeight - MENU_H - PAD)
+  const top  = clamp(pos.y, PAD, window.innerHeight - MENU_H - PAD)
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
-  // Aplica uma cor customizada ao evento (sobrepõe a cor da fonte).
+  // Aplica cor customizada ao evento (gcal) ou reset (null = cor do calendário)
   async function applyColor(color: string | null) {
     onClose()
     if (!isEditable) return
@@ -74,18 +72,17 @@ export function ContextMenu({ ev, cals, pos, onClose, onRefresh }: ContextMenuPr
         await kaguyaApi.updateCalendarEvent(ev.id, { color })
         onRefresh?.()
       }
-      // Para kaguya: sem suporte de cor por evento por enquanto
+      // kaguya: sem suporte de cor por evento por ora
     } catch { /* ignora */ }
   }
 
-  // Duplica o evento (cria cópia com mesmo título + horário).
+  // Duplica o evento (cria cópia com mesmo título + datas)
   async function handleDuplicate() {
     onClose()
     if (!isEditable) return
     setSaving(true)
     try {
       if (ev.cal === 'kaguya' && ev.taskId) {
-        // Cria nova tarefa com os mesmos dados (título + datas)
         await kaguyaApi.createTask({
           title: `${ev.title} (cópia)`,
           due_date: ev.day,
@@ -105,7 +102,7 @@ export function ContextMenu({ ev, cals, pos, onClose, onRefresh }: ContextMenuPr
     finally { setSaving(false) }
   }
 
-  // Deleta o evento (com confirmação no segundo clique).
+  // Deleta o evento (requer dois cliques para confirmar)
   async function handleDelete() {
     if (!confirmDelete) { setConfirmDelete(true); return }
     setSaving(true)
@@ -124,107 +121,111 @@ export function ContextMenu({ ev, cals, pos, onClose, onRefresh }: ContextMenuPr
     }
   }
 
-  // ── Estilo de item de menu ────────────────────────────────────────────────
-
-  const itemStyle: React.CSSProperties = {
-    padding: '7px 12px',
-    fontSize: 13,
-    cursor: 'pointer',
-    color: 'var(--ink-1)',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    background: 'none',
-    border: 'none',
-    width: '100%',
-    textAlign: 'left',
-    borderRadius: 6,
-  }
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div
-      ref={menuRef}
-      className="cal-ctx-menu"
-      style={{
-        position: 'fixed',
-        left,
-        top,
-        zIndex: 1100,
-        animation: 'cpop-in 120ms ease both',
-      }}
-      role="menu"
-      aria-label={`Menu do evento ${ev.title}`}
-    >
-      {/* Cabeçalho: nome do evento (truncado) */}
-      <div style={{ padding: '6px 12px 4px', fontSize: 11, color: 'var(--ink-4)', borderBottom: '1px solid var(--line-1)', marginBottom: 4 }}>
-        {calName} · {ev.title.length > 28 ? ev.title.slice(0, 28) + '…' : ev.title}
-      </div>
+    <>
+      {/* Scrim: cobre toda a tela. Clique fecha o menu sem ação. */}
+      <div
+        className="cal-pop-scrim"
+        onClick={onClose}
+        aria-hidden="true"
+      />
 
-      {/* Paleta de cores (só para eventos editáveis — por ora só gcal tem cor por evento) */}
-      {isEditable && ev.cal === 'gcal' && (
-        <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--line-1)', marginBottom: 4 }}>
-          {/* Linha de swatches */}
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 4 }}>
-            {CAL_SWATCHES.map((s) => (
-              <button
-                key={s}
-                role="menuitem"
-                onClick={() => applyColor(s)}
-                style={{
-                  width: 16, height: 16, borderRadius: '50%', background: s,
-                  border: ev.color === s ? '2px solid var(--ink-1)' : '2px solid transparent',
-                  cursor: 'pointer', padding: 0,
-                }}
-                title={s}
-              />
-            ))}
-          </div>
-          {/* Botão "cor do calendário" (reset) */}
-          <button
-            role="menuitem"
-            onClick={() => applyColor(null)}
-            style={{ ...itemStyle, padding: '3px 0', fontSize: 11, color: 'var(--ink-4)' }}
-          >
-            ⟲ Cor do calendário
-          </button>
+      {/* Menu de contexto */}
+      <div
+        ref={menuRef}
+        className="cal-ctx"
+        style={{ '--cc': calColor, left, top } as CSSProperties}
+        role="menu"
+        aria-label={`Menu do evento ${ev.title}`}
+      >
+        {/* Cabeçalho: nome do calendário + título truncado do evento */}
+        <div className="cal-ctx-item" style={{ cursor: 'default', opacity: 0.6, fontSize: 11 }}>
+          {calName} · {ev.title.length > 28 ? ev.title.slice(0, 28) + '…' : ev.title}
         </div>
-      )}
 
-      {/* Ações: duplicar */}
-      {isEditable && (
-        <button role="menuitem" onClick={handleDuplicate} disabled={saving} style={itemStyle}>
-          📋 Duplicar
-        </button>
-      )}
+        <div className="cal-ctx-sep" />
 
-      {/* Deep-link para cross-agent */}
-      {!isEditable && ev.deepLink && (
-        <button
-          role="menuitem"
-          onClick={() => { onClose(); window.location.href = ev.deepLink! }}
-          style={itemStyle}
-        >
-          🔗 Abrir em {calName}
-        </button>
-      )}
+        {/* Linha de swatches para recolorir (só gcal suporta cor por evento) */}
+        {isEditable && ev.cal === 'gcal' && (
+          <>
+            <div className="cal-ctx-row">
+              {/* Exibe os 8 primeiros swatches (slice do handoff) */}
+              {CAL_SWATCHES.slice(0, 8).map((s) => (
+                <button
+                  key={s}
+                  className={`cal-sw${ev.color === s ? ' on' : ''}`}
+                  style={{ '--cc': s } as CSSProperties}
+                  role="menuitem"
+                  onClick={() => applyColor(s)}
+                  title={s}
+                />
+              ))}
+            </div>
+            {/* Reset de cor: volta para a cor do calendário */}
+            <button
+              className="cal-ctx-item"
+              role="menuitem"
+              onClick={() => applyColor(null)}
+              style={{ fontSize: 12 }}
+            >
+              <Icon name="loop" size={13} />
+              Cor do calendário
+            </button>
+            <div className="cal-ctx-sep" />
+          </>
+        )}
 
-      {/* Excluir (só editáveis) */}
-      {isEditable && (
-        <button
-          role="menuitem"
-          onClick={handleDelete}
-          disabled={saving}
-          style={{
-            ...itemStyle,
-            color: confirmDelete ? '#ef4444' : 'var(--ink-1)',
-            fontWeight: confirmDelete ? 600 : undefined,
-          }}
-        >
-          🗑 {confirmDelete ? 'Clique para confirmar' : 'Excluir'}
-        </button>
-      )}
-    </div>
+        {/* Duplicar — só para fontes editáveis */}
+        {isEditable && (
+          <button
+            className="cal-ctx-item"
+            role="menuitem"
+            onClick={handleDuplicate}
+            disabled={saving}
+          >
+            <Icon name="copy" size={13} />
+            Duplicar
+          </button>
+        )}
+
+        {/* Deep-link — só para fontes cross-agent */}
+        {!isEditable && ev.deepLink && (
+          <button
+            className="cal-ctx-item"
+            role="menuitem"
+            onClick={() => { onClose(); window.location.href = ev.deepLink! }}
+          >
+            <Icon name="link" size={13} />
+            Abrir em {calName}
+          </button>
+        )}
+
+        {/* Indicador de recorrência (somente leitura) */}
+        {ev.kind === 'task' && isEditable && (
+          <button className="cal-ctx-item" role="menuitem" onClick={onClose} disabled style={{ opacity: 0.5 }}>
+            <Icon name="loop" size={13} />
+            Ver série
+          </button>
+        )}
+
+        {/* Separador antes do delete */}
+        {isEditable && <div className="cal-ctx-sep" />}
+
+        {/* Excluir — só para fontes editáveis; vermelho na confirmação */}
+        {isEditable && (
+          <button
+            className={`cal-ctx-item${confirmDelete ? ' danger' : ''}`}
+            role="menuitem"
+            onClick={handleDelete}
+            disabled={saving}
+          >
+            <Icon name="trash" size={13} />
+            {confirmDelete ? 'Clique para confirmar' : 'Excluir'}
+          </button>
+        )}
+      </div>
+    </>
   )
 }

@@ -30,6 +30,40 @@ const PATHS: Record<string, ReactNode> = {
   zap: <><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></>,
   timer: <><path d="M10 2h4M12 14l3-3" /><circle cx="12" cy="14" r="8" /></>,
   flame: <><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z" /></>,
+
+  // Ícones do Calendário (fatia 019) — adicionados para CalendarsAside, EventPopover e ContextMenu
+  // Olho aberto — mostra/esconde um calendário na sidebar
+  eye: <><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></>,
+  // Olho riscado — calendário oculto
+  eyeOff: (
+    <>
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+      <path d="m1 1 22 22" />
+      <path d="M9.53 9.53a3 3 0 0 0 4.24 4.24" />
+    </>
+  ),
+  // Pincel/paleta — recolorir evento ou calendário
+  paint: (
+    <>
+      <path d="M18.37 2.63 14 7l-1.59-1.59a2 2 0 0 0-2.82 0L8 7l9 9 1.59-1.59a2 2 0 0 0 0-2.82L17 10l4.37-4.37a2.12 2.12 0 1 0-3-3z" />
+      <path d="M9 8c-2 3-4 3.5-7 4l8 10c2-1 6-5 6-7" />
+    </>
+  ),
+  // Corrente — deep-link para tarefa associada ao evento
+  link: (
+    <>
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </>
+  ),
+  // Dois arquivos — duplicar evento ou tarefa
+  copy: (
+    <>
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </>
+  ),
 }
 
 interface IconProps {

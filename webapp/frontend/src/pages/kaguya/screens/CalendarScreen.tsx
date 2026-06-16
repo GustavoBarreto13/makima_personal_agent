@@ -24,11 +24,13 @@ import { ContextMenu } from '../components/ContextMenu'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
-// Interface idêntica à CalendarScreen anterior — KaguyaShell não precisa mudar.
+// Interface: `variant` é a variante visual do calendário ('agora' | 'helvetico' | 'editorial').
+// Passada pelo KaguyaShell via tweaks.calVariant. Determina data-variant no .calx.
 interface CalendarProProps {
   reloadKey: number
   onOpenTask: (task: Task) => void
   toast: (msg: string, kind?: 'ok' | 'err') => void
+  variant?: string   // variante visual — padrão 'agora'
 }
 
 // ── Helpers de data ──────────────────────────────────────────────────────────
@@ -68,7 +70,7 @@ function hubToCalEvent(item: CalendarItem): CalEvent {
 
 // ── Componente ───────────────────────────────────────────────────────────────
 
-export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast }: CalendarProProps) {
+export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast, variant = 'agora' }: CalendarProProps) {
   const [view, setView] = useState<'day' | 'week' | 'month'>('week')
   const [refDate, setRefDate] = useState<Date>(() => new Date())
   const [tasks, setTasks] = useState<Task[]>([])
@@ -261,6 +263,18 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast }: Ca
     return [...taskEvents, ...hubEvents, ...gcalItems]
   }, [tasks, hubItems, gcalItems])
 
+  // Tarefas "sem horário": têm due_date na janela visível mas sem start_at nem due_time.
+  // São passadas para a CalendarsAside para exibir a bandeja "Sem horário" arrastável.
+  const unscheduled = useMemo(() =>
+    tasks.filter((t) =>
+      t.due_date &&
+      days.includes(t.due_date) &&
+      !t.start_at &&
+      !t.due_time
+    ),
+    [tasks, days]
+  )
+
   // ── Navegação ─────────────────────────────────────────────────────────────
 
   const handleNav = (delta: 1 | -1) => {
@@ -333,9 +347,17 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast }: Ca
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  return (
-    <div className="calx" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+  // data-col: 'helvetico' coloca a aside à esquerda ('left'), as demais variantes à direita.
+  // Reflete o CSS: .calx[data-col='left'] .cal-body { flex-direction: row-reverse }
+  const colAttr = variant === 'helvetico' ? 'left' : 'right'
 
+  return (
+    <div
+      className="calx"
+      data-variant={variant}
+      data-col={colAttr}
+    >
+      {/* Barra de navegação: fica fora do .cal-body para ocupar toda a largura */}
       <CalNavBar
         view={view}
         refDate={refDate}
@@ -344,11 +366,11 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast }: Ca
         onToday={handleToday}
       />
 
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+      {/* .cal-body: linha horizontal com .cal-stage (grid) + CalendarsAside (sidebar) */}
+      <div className="cal-body">
 
-        {/* Coluna do grid principal */}
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-
+        {/* .cal-stage: área principal — grid de horas / grid de mês + hint */}
+        <div className="cal-stage">
           {loading && (
             <div style={{ padding: 16, color: 'var(--ink-4)', fontSize: 13 }}>
               Carregando…
@@ -380,23 +402,23 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast }: Ca
               />
             )
           )}
+
+          {/* Dica de uso: aparece ao entrar na tela e desaparece após 4,2 s */}
+          <div className={`cal-hint${hintVisible ? ' show' : ''}`}>
+            Clique em um horário vazio para criar • Arraste para mover
+          </div>
         </div>
 
-        {/* Sidebar: mini-mês + lista de fontes com toggle/recolor */}
+        {/* Sidebar: mini-mês + lista de fontes com toggle/recolor + bandeja sem horário */}
         <CalendarsAside
           refDate={refDate}
           selectedDate={toISO(refDate)}
           onDayClick={(d) => {
             setRefDate(new Date(d + 'T12:00:00'))
           }}
-          // Quando o usuário altera prefs: incrementa sourcesKey para forçar re-fetch
           onSourcesChanged={() => setSourcesKey((k) => k + 1)}
+          unscheduled={unscheduled}
         />
-      </div>
-
-      {/* Dica de uso: desaparece após 4,2 s */}
-      <div className={`cal-hint${hintVisible ? ' visible' : ''}`}>
-        Clique em um horário vazio para criar • Arraste para mover
       </div>
 
       {/* EventPopover: abre ao clicar num evento */}

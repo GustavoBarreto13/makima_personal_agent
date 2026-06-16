@@ -223,16 +223,18 @@ export const kaguyaApi = {
 
 export type { MutationResult }
 
-// Paleta de 10 cores OKLCH para recolorir calendários (usada em CalendarsAside e ContextMenu)
+// Paleta de 10 cores OKLCH para recolorir calendários (usada em CalendarsAside e ContextMenu).
+// Ordem exata do handoff (spec 019) — o menu de contexto exibe slice(0,8), a paleta completa.
+// Mapeamento de referência: Kaguya=0, GCal=1, Violet=2, rosa=3, Akane=4, Nami=5, lima=6, verde=7, Frieren=8, cinza=9
 export const CAL_SWATCHES = [
-  'oklch(0.70 0.17 52)',    // laranja dourado
-  'oklch(0.70 0.18 15)',    // vermelho-rosado
-  'oklch(0.68 0.18 330)',   // magenta
-  'oklch(0.62 0.18 290)',   // roxo
-  'oklch(0.65 0.20 250)',   // azul médio
-  'oklch(0.65 0.18 210)',   // azul-celeste
-  'oklch(0.72 0.10 184)',   // verde-azulado
-  'oklch(0.70 0.14 158)',   // verde
-  'oklch(0.72 0.12 90)',    // amarelo-lima
-  'oklch(0.58 0.04 0)',     // cinza
+  'oklch(0.56 0.13 252)',   // Kaguya — azul índigo (cor padrão)
+  'oklch(0.58 0.13 250)',   // GCal — azul-cobalto suave
+  'oklch(0.58 0.16 300)',   // Violet — lilás
+  'oklch(0.64 0.18 350)',   // rosa-cereja
+  'oklch(0.60 0.20 18)',    // Akane — vermelho-tijolo
+  'oklch(0.70 0.17 52)',    // Nami — laranja dourado
+  'oklch(0.72 0.135 80)',   // amarelo-lima
+  'oklch(0.60 0.15 150)',   // verde-esmeralda
+  'oklch(0.72 0.10 184)',   // Frieren — verde-azulado
+  'oklch(0.62 0.05 280)',   // cinza neutro
 ] as const

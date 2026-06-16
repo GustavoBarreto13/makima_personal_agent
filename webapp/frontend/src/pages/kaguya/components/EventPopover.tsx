@@ -1,32 +1,38 @@
-// EventPopover — popover de evento para o Calendar Hub (fatia 019, T025).
-// Abre ao clicar num evento editável (kaguya ou gcal); mostra info com título editável.
-// Para fontes cross-agent (nami/frieren/violet): variante read-only com deep-link.
-// Animação cpop-in (opacity + translateY + scale) definida em kaguya.css.
+// EventPopover — popover de evento do Calendar Hub (fatia 019, T025).
+// Estrutura do handoff (spec 019):
+//   .cal-pop-scrim  → overlay transparente; clique = fecha
+//   .cal-pop        → container com style {--cc, left, top}
+//     .cal-pop-bar  → barra de cor de 3px no topo (usa var(--cc) via CSS)
+//     .cal-pop-body → corpo scrollável
+//       .cpop-title-row  → .cpop-swatch + input.cpop-title (ou span para read-only)
+//       .cal-colors      → paleta inline (se showColors=true; só gcal)
+//       .cpop-meta       → linha de metadados (clock + data/hora)
+//       .cpop-cal        → calendário de origem (.pc-dot + nome)
+//       .cpop-actions    → botões de ação (.cpop-btn / .cpop-btn.danger)
+//
+// Fontes editáveis (kaguya/gcal): título editável, delete, recolor.
+// Fontes cross-agent: read-only com deep-link.
 
 import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { CalEvent, Calendar } from '../types'
+import { Icon } from '../ui/Icons'
 import { kaguyaApi, CAL_SWATCHES } from '../kaguyaApi'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface EventPopoverProps {
-  // Evento a exibir
   ev: CalEvent
-  // Lista de fontes para mostrar nome/cor do calendário de origem
   cals: Calendar[]
-  // Posição do popover em px (posição do clique, ajustada em viewport)
   pos: { x: number; y: number }
-  // Fecha o popover
   onClose: () => void
-  // Chamado depois de uma edição bem-sucedida para atualizar o grid
   onRefresh?: () => void
 }
 
-// Fontes editáveis: kaguya e gcal permitem editar/mover/deletar.
-// Fontes cross-agent são read-only (deep-link).
+// Fontes editáveis: kaguya e gcal permitem editar/deletar.
 const EDITABLE_SOURCES = new Set(['kaguya', 'gcal'])
 
-// Formata minutos desde meia-noite como "HH:MM".
+// Formata minutos como "HH:MM".
 function minToLabel(min: number): string {
   const h = Math.floor(min / 60)
   const m = min % 60
@@ -49,20 +55,17 @@ function clamp(v: number, min: number, max: number): number {
 // ── Componente ───────────────────────────────────────────────────────────────
 
 export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopoverProps) {
-  // Título editável — inicializado com o título do evento
   const [title, setTitle] = useState(ev.title)
-  // Indica se a operação de salvar ou deletar está em curso
   const [saving, setSaving] = useState(false)
-  // Mostra a paleta de cores para recolorir o evento individualmente
   const [showColors, setShowColors] = useState(false)
-  // Confirmação de exclusão (dois cliques para não deletar acidentalmente)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const popRef = useRef<HTMLDivElement | null>(null)
 
   const isEditable = EDITABLE_SOURCES.has(ev.cal)
   const cal = cals.find((c) => c.id === ev.cal)
-  const calColor = ev.color || cal?.color || 'var(--ink-3)'
+  // calColor: cor própria do evento > cor do calendário > fallback azul Kaguya
+  const calColor = ev.color || cal?.color || 'var(--kg)'
   const calName = cal?.name ?? ev.cal
 
   // ── Fecha ao pressionar Escape ────────────────────────────────────────────
@@ -72,27 +75,17 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
     return () => document.removeEventListener('keydown', handler)
   }, [onClose])
 
-  // ── Fecha ao clicar fora ──────────────────────────────────────────────────
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose()
-    }
-    // Delay para não fechar imediatamente o mesmo clique que abriu
-    const t = setTimeout(() => document.addEventListener('mousedown', handler), 100)
-    return () => { clearTimeout(t); document.removeEventListener('mousedown', handler) }
-  }, [onClose])
-
   // ── Posição clamped à viewport ────────────────────────────────────────────
-  // O popover tem ~280px de largura e ~200px de altura (estimativa)
-  const PAD = 12
+  // .cal-pop tem ~280px de largura e ~220px de altura estimados
+  const PAD   = 12
   const POP_W = 280
-  const POP_H = 200
+  const POP_H = 220
   const left = clamp(pos.x, PAD, window.innerWidth - POP_W - PAD)
-  const top = clamp(pos.y, PAD, window.innerHeight - POP_H - PAD)
+  const top  = clamp(pos.y, PAD, window.innerHeight - POP_H - PAD)
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
-  // Salva o título ao sair do campo de texto (onBlur)
+  // Salva o título editado (disparado pelo onBlur do input)
   async function saveTitle() {
     if (title === ev.title || !isEditable) return
     setSaving(true)
@@ -104,14 +97,13 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
       }
       onRefresh?.()
     } catch {
-      // Em caso de erro, restaura o título original
-      setTitle(ev.title)
+      setTitle(ev.title)  // restaura título em caso de erro
     } finally {
       setSaving(false)
     }
   }
 
-  // Deleta o evento (após confirmação no segundo clique)
+  // Deleta o evento (requer dois cliques para confirmar)
   async function handleDelete() {
     if (!confirmDelete) { setConfirmDelete(true); return }
     setSaving(true)
@@ -130,22 +122,19 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
     }
   }
 
-  // Aplica uma cor customizada ao evento (sobrepõe a cor do calendário)
+  // Aplica cor customizada ao evento (só gcal suporta cor por evento atualmente)
   async function applyColor(color: string | null) {
     setShowColors(false)
     if (!isEditable) return
     try {
-      if (ev.cal === 'kaguya' && ev.taskId) {
-        // Tarefas não têm campo de cor diretamente — guardamos via description ou ignoramos
-        // Por ora: salva como metadado (T031 adicionará suporte completo via gcal)
-      } else if (ev.cal === 'gcal') {
+      if (ev.cal === 'gcal') {
         await kaguyaApi.updateCalendarEvent(ev.id, { color })
         onRefresh?.()
       }
     } catch { /* ignora erro de cor */ }
   }
 
-  // Formata o intervalo de horário para exibição
+  // Label de horário: "Dia inteiro" ou "HH:MM – HH:MM"
   const timeLabel = ev.allDay
     ? 'Dia inteiro'
     : `${minToLabel(timeToMin(ev.start))} – ${minToLabel(timeToMin(ev.end))}`
@@ -153,148 +142,153 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div
-      ref={popRef}
-      className="cal-popover"
-      style={{
-        position: 'fixed',
-        left,
-        top,
-        zIndex: 1000,
-        animation: 'cpop-in 140ms ease both',
-      }}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Evento: ${ev.title}`}
-    >
-      {/* Barra de cor do calendário de origem no topo */}
+    <>
+      {/* Scrim: cobre o restante da tela. Clique fora do popover = fecha.
+          z-index inferior ao .cal-pop (998 vs 999) para não bloquear o popover. */}
       <div
-        style={{
-          height: 4,
-          background: calColor,
-          borderRadius: '8px 8px 0 0',
-          margin: '-12px -14px 8px',
-        }}
+        className="cal-pop-scrim"
+        onClick={onClose}
+        aria-hidden="true"
       />
 
-      {/* Título — editável para kaguya/gcal; read-only para cross-agent */}
-      {isEditable
-        ? (
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={saveTitle}
-            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-            disabled={saving}
-            style={{
-              fontSize: 15,
-              fontWeight: 600,
-              border: 'none',
-              borderBottom: '1px solid var(--line-1)',
-              background: 'transparent',
-              width: '100%',
-              outline: 'none',
-              marginBottom: 8,
-              padding: '0 0 4px',
-              color: 'var(--ink-1)',
-            }}
-            aria-label="Título do evento"
-          />
-        )
-        : (
-          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8, color: 'var(--ink-1)' }}>
-            {ev.title}
+      {/* Popover principal */}
+      <div
+        ref={popRef}
+        className="cal-pop"
+        style={{ '--cc': calColor, left, top } as CSSProperties}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Evento: ${ev.title}`}
+      >
+        {/* Barra de cor de 3px no topo — usa var(--cc) via CSS */}
+        <div className="cal-pop-bar" />
+
+        <div className="cal-pop-body">
+          {/* Linha de título: swatch colorido + título editável (ou texto para read-only) */}
+          <div className="cpop-title-row">
+            {/* Swatch: círculo pequeno com a cor do evento/calendário */}
+            <span className="cpop-swatch" />
+
+            {isEditable
+              ? (
+                <input
+                  className="cpop-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onBlur={saveTitle}
+                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                  disabled={saving}
+                  aria-label="Título do evento"
+                />
+              )
+              : (
+                <span className="cpop-title">{ev.title}</span>
+              )
+            }
           </div>
-        )
-      }
 
-      {/* Horário e dia */}
-      <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>
-        📅 {ev.day} · {timeLabel}
-      </div>
-
-      {/* Localização (quando disponível) */}
-      {ev.loc && (
-        <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>
-          📍 {ev.loc}
-        </div>
-      )}
-
-      {/* Calendário de origem */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-        <span style={{ width: 8, height: 8, borderRadius: '50%', background: calColor, flexShrink: 0, display: 'inline-block' }} />
-        <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{calName}</span>
-      </div>
-
-      {/* Deep-link para fontes cross-agent */}
-      {!isEditable && ev.deepLink && (
-        <a
-          href={ev.deepLink}
-          style={{ fontSize: 13, color: 'var(--accent-1)', display: 'block', marginBottom: 8 }}
-        >
-          Abrir em {calName} →
-        </a>
-      )}
-
-      {/* Paleta de cores do evento (gcal) */}
-      {showColors && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
-          {CAL_SWATCHES.map((s) => (
-            <button
-              key={s}
-              onClick={() => applyColor(s)}
-              style={{
-                width: 16, height: 16, borderRadius: '50%', background: s,
-                border: ev.color === s ? '2px solid var(--ink-1)' : '2px solid transparent',
-                cursor: 'pointer', padding: 0,
-              }}
-              title={s}
-            />
-          ))}
-          <button
-            onClick={() => applyColor(null)}
-            style={{ fontSize: 10, color: 'var(--ink-3)', background: 'none', border: 'none', cursor: 'pointer' }}
-            title="Cor do calendário"
-          >
-            ⟲
-          </button>
-        </div>
-      )}
-
-      {/* Ações — só para fontes editáveis */}
-      {isEditable && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-          {ev.cal === 'gcal' && (
-            <button
-              onClick={() => setShowColors((v) => !v)}
-              style={{ fontSize: 12, background: 'none', border: '1px solid var(--line-1)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', color: 'var(--ink-3)' }}
-            >
-              🎨
-            </button>
+          {/* Paleta de cores inline — só para gcal, aparece ao clicar em "pincel" */}
+          {showColors && (
+            <div className="cal-colors">
+              {CAL_SWATCHES.map((s) => (
+                <button
+                  key={s}
+                  className={`cal-sw${ev.color === s ? ' on' : ''}`}
+                  style={{ '--cc': s } as CSSProperties}
+                  onClick={() => applyColor(s)}
+                  title={s}
+                />
+              ))}
+              {/* Botão de reset: volta para a cor do calendário */}
+              <button
+                className="cpop-btn"
+                onClick={() => applyColor(null)}
+                title="Cor do calendário"
+                style={{ marginLeft: 4 }}
+              >
+                <Icon name="loop" size={12} />
+              </button>
+            </div>
           )}
-          <button
-            onClick={handleDelete}
-            disabled={saving}
-            style={{
-              fontSize: 12,
-              background: confirmDelete ? 'var(--danger, #ef4444)' : 'none',
-              color: confirmDelete ? 'white' : 'var(--ink-3)',
-              border: '1px solid var(--line-1)',
-              borderRadius: 4,
-              padding: '3px 8px',
-              cursor: 'pointer',
-            }}
-          >
-            {confirmDelete ? 'Confirmar exclusão' : '🗑 Excluir'}
-          </button>
-          <button
-            onClick={onClose}
-            style={{ fontSize: 12, background: 'none', border: '1px solid var(--line-1)', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', color: 'var(--ink-3)', marginLeft: 'auto' }}
-          >
-            ✕
-          </button>
+
+          {/* Metadados: data e horário */}
+          <div className="cpop-meta">
+            <Icon name="clock" size={13} />
+            <span>{ev.day} · {timeLabel}</span>
+          </div>
+
+          {/* Localização (quando disponível) */}
+          {ev.loc && (
+            <div className="cpop-meta">
+              <span>{ev.loc}</span>
+            </div>
+          )}
+
+          {/* Calendário de origem */}
+          <div className="cpop-cal">
+            {/* Ponto colorido identificando o calendário */}
+            <span className="pc-dot" />
+            <span>{calName}</span>
+          </div>
+
+          {/* Deep-link para fontes cross-agent (nami, frieren, violet…) */}
+          {!isEditable && ev.deepLink && (
+            <a
+              href={ev.deepLink}
+              className="cpop-btn"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+            >
+              <Icon name="link" size={13} />
+              Abrir em {calName}
+            </a>
+          )}
+
+          {/* Ações — só para fontes editáveis (kaguya / gcal) */}
+          {isEditable && (
+            <div className="cpop-actions">
+              {/* Botão de recolorir: só gcal suporta cor por evento */}
+              {ev.cal === 'gcal' && (
+                <button
+                  className="cpop-btn"
+                  onClick={() => setShowColors((v) => !v)}
+                  title="Recolorir evento"
+                  aria-pressed={showColors}
+                >
+                  <Icon name="paint" size={13} />
+                </button>
+              )}
+
+              {/* Botão de excluir: fica vermelho no segundo clique (confirm) */}
+              <button
+                className={`cpop-btn${confirmDelete ? ' danger' : ''}`}
+                onClick={handleDelete}
+                disabled={saving}
+                title={confirmDelete ? 'Clique para confirmar exclusão' : 'Excluir evento'}
+              >
+                <Icon name="trash" size={13} />
+                {confirmDelete ? 'Confirmar' : 'Excluir'}
+              </button>
+
+              {/* Indicador de recorrência (sem ação; apenas visual) */}
+              {ev.kind === 'task' && (
+                // A recorrência é lida pelo 'recurrence' de CalEvent — mas CalEvent não tem esse campo.
+                // Por ora, omitir o ícone de loop (pode ser adicionado futuramente via `ev.recurrence`).
+                null
+              )}
+
+              {/* Botão de fechar */}
+              <button
+                className="cpop-btn"
+                onClick={onClose}
+                title="Fechar"
+                style={{ marginLeft: 'auto' }}
+              >
+                <Icon name="x" size={13} />
+              </button>
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    </>
   )
 }
