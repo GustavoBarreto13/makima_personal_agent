@@ -96,6 +96,15 @@ const DOMAINS: NavDomain[] = [
     color:       'var(--c-marin)',
     colorDim:    'var(--c-marin-dim)',
   },
+  {
+    // Komi · Pessoas — identidade canônica de pessoas e contatos (spec 014)
+    character:   'Komi',
+    label:       'Pessoas',
+    mainPath:    '/people',
+    activePaths: ['/people'],
+    color:       'var(--c-komi)',
+    colorDim:    'var(--c-komi-dim)',
+  },
 ]
 
 // ── Componente principal ───────────────────────────────────────────────────────────────────────
