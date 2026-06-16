@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { CalEvent, Calendar } from '../types'
 import { Icon } from '../ui/Icons'
-import { kaguyaApi, CAL_SWATCHES } from '../kaguyaApi'
+import { kaguyaApi, CAL_SWATCHES, isGcal, gcalCalendarId } from '../kaguyaApi'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -28,9 +28,6 @@ interface EventPopoverProps {
   onClose: () => void
   onRefresh?: () => void
 }
-
-// Fontes editáveis: kaguya e gcal permitem editar/deletar.
-const EDITABLE_SOURCES = new Set(['kaguya', 'gcal'])
 
 // Formata minutos como "HH:MM".
 function minToLabel(min: number): string {
@@ -62,8 +59,9 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
 
   const popRef = useRef<HTMLDivElement | null>(null)
 
-  const isEditable = EDITABLE_SOURCES.has(ev.cal)
   const cal = cals.find((c) => c.id === ev.cal)
+  // Editável: tarefas Kaguya sempre; eventos Google apenas se o calendário for owner/writer
+  const isEditable = ev.cal === 'kaguya' || (isGcal(ev.cal) && !!cal?.writable)
   // calColor: cor própria do evento > cor do calendário > fallback azul Kaguya
   const calColor = ev.color || cal?.color || 'var(--kg)'
   const calName = cal?.name ?? ev.cal
@@ -92,8 +90,8 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
     try {
       if (ev.cal === 'kaguya' && ev.taskId) {
         await kaguyaApi.updateTask(ev.taskId, { title })
-      } else if (ev.cal === 'gcal') {
-        await kaguyaApi.updateCalendarEvent(ev.id, { title })
+      } else if (isGcal(ev.cal)) {
+        await kaguyaApi.updateCalendarEvent(ev.id, { title, calendar_id: gcalCalendarId(ev.cal) })
       }
       onRefresh?.()
     } catch {
@@ -110,8 +108,8 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
     try {
       if (ev.cal === 'kaguya' && ev.taskId) {
         await kaguyaApi.remove(ev.taskId)
-      } else if (ev.cal === 'gcal') {
-        await kaguyaApi.deleteCalendarEvent(ev.id)
+      } else if (isGcal(ev.cal)) {
+        await kaguyaApi.deleteCalendarEvent(ev.id, gcalCalendarId(ev.cal))
       }
       onClose()
       onRefresh?.()
@@ -127,8 +125,8 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
     setShowColors(false)
     if (!isEditable) return
     try {
-      if (ev.cal === 'gcal') {
-        await kaguyaApi.updateCalendarEvent(ev.id, { color })
+      if (isGcal(ev.cal)) {
+        await kaguyaApi.updateCalendarEvent(ev.id, { color, calendar_id: gcalCalendarId(ev.cal) })
         onRefresh?.()
       }
     } catch { /* ignora erro de cor */ }
@@ -247,7 +245,7 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
           {isEditable && (
             <div className="cpop-actions">
               {/* Botão de recolorir: só gcal suporta cor por evento */}
-              {ev.cal === 'gcal' && (
+              {isGcal(ev.cal) && (
                 <button
                   className="cpop-btn"
                   onClick={() => setShowColors((v) => !v)}

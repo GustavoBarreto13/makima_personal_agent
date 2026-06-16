@@ -587,29 +587,50 @@ def calendar_sources_route(user: dict = Depends(require_user)) -> list[dict]:
     # with_prefs=True mescla as prefs do banco (cor/visibilidade) sobre os metadados base
     sources = list_sources(with_prefs=True)
 
-    # Injeta a fonte "gcal" (Agenda pessoal do Google) quando as credenciais OAuth estão
-    # configuradas. Sem o refresh_token a integração não funciona — melhor não exibir.
+    # Injeta um item por calendário Google quando as credenciais OAuth estão configuradas.
+    # Sem o refresh_token a integração não funciona — melhor não exibir nada.
     import os
     if os.environ.get("GOOGLE_CALENDAR_REFRESH_TOKEN"):
-        # Carrega as prefs salvas pelo usuário para a fonte gcal (cor e visibilidade)
+        # Carrega as prefs salvas para todos os calendários Google (chave: "gcal:<cal_id>")
         try:
             from agents.kaguya.calendar_prefs import get_calendar_prefs
             prefs_by_id = {p["calendar_id"]: p for p in get_calendar_prefs()}
         except Exception:
             prefs_by_id = {}
 
-        pref = prefs_by_id.get("gcal", {})
-        sources.append({
-            "id": "gcal",
-            # Conta separada na sidebar para distinguir da suíte Makima
-            "account": "Google",
-            "kind": "integration",
-            "name": "Agenda pessoal",
-            # Azul Google — compatível com withAlpha() do TimeGrid (hex)
-            "color": pref.get("color") or "#4285F4",
-            "visible": pref.get("visible", True),
-            "position": pref.get("position", 99),
-        })
+        # Busca os calendários reais da conta Google.
+        # Se o Google estiver offline, silencia o erro e continua sem fontes gcal.
+        try:
+            from agents.kaguya import gcal as gcal_mod
+            gcal_calendars = gcal_mod.list_calendars()
+        except Exception:
+            gcal_calendars = []
+
+        # Calendários a pular: espelho de tarefas (já representado por "kaguya") e TickTick
+        _SKIP_NAMES = {"TickTick"}
+
+        for idx, c in enumerate(gcal_calendars):
+            if c.get("is_kaguya"):
+                continue
+            if c.get("name") in _SKIP_NAMES:
+                continue
+
+            # Cada calendário Google vira uma fonte "gcal:<id>" — chave única
+            source_id = f"gcal:{c['id']}"
+            pref = prefs_by_id.get(source_id, {})
+            sources.append({
+                "id": source_id,
+                # Conta separada na sidebar para distinguir da suíte Makima
+                "account": "Google",
+                "kind": "integration",
+                "name": c["name"],
+                # Prioridade: pref do usuário > cor nativa do Google > azul Google padrão
+                "color": pref.get("color") or c.get("bg_color") or "#4285F4",
+                "visible": pref.get("visible", True),
+                "position": pref.get("position", 90 + idx),
+                # Indica se o usuário tem permissão de escrita (owner/writer) neste calendário
+                "writable": c.get("writable", False),
+            })
 
     return sources
 
@@ -686,6 +707,7 @@ class GCalEventPatchBody(BaseModel):
     description: Optional[str] = None
     location: Optional[str] = None
     color: Optional[str] = None       # cor customizada por evento (exibida no overlay)
+    calendar_id: Optional[str] = None # ID do calendário Google de origem (para editar o correto)
 
 
 @router.get("/calendar/calendars")
@@ -798,27 +820,31 @@ def update_gcal_event_route(
     """
     import os
     from agents.kaguya import gcal
-    cal_id = os.environ.get("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", "primary")
+    # Usa o calendário informado pelo frontend (para calendários secundários) ou o principal
+    cal_id = body.calendar_id or os.environ.get("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", "primary")
     patch = body.model_dump(exclude_none=True)
-    # Exclui "color" do patch do gcal.update_event (campo não suportado na API v3 diretamente)
+    # Remove campos que não são passados para gcal.update_event
     patch.pop("color", None)
+    patch.pop("calendar_id", None)
     return gcal.update_event(calendar_id=cal_id, event_id=event_id, **patch)
 
 
 @router.delete("/calendar/events/{event_id}")
 def delete_gcal_event_route(
     event_id: str,
+    calendar_id: Optional[str] = Query(None, description="ID do calendário Google de origem"),
     user: dict = Depends(require_user),
 ) -> dict:
     """Remove um evento Google Calendar (irreversível).
 
-    Usa o calendário principal configurado em GOOGLE_CALENDAR_MAIN_CALENDAR_ID.
+    Usa ``calendar_id`` quando informado (para calendários secundários) ou o principal
+    configurado em GOOGLE_CALENDAR_MAIN_CALENDAR_ID.
     Para remover do espelho de tarefas, usar ``delete_task`` — o gcal_sync
     remove o evento automaticamente.
     """
     import os
     from agents.kaguya import gcal
-    cal_id = os.environ.get("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", "primary")
+    cal_id = calendar_id or os.environ.get("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", "primary")
     return _check_result(gcal.delete_event(calendar_id=cal_id, event_id=event_id))
 
 

@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Task, CalEvent, Calendar, CalendarItem } from '../types'
-import { kaguyaApi } from '../kaguyaApi'
+import { kaguyaApi, isGcal } from '../kaguyaApi'
 import { CalNavBar } from '../components/CalNavBar'
 import { TimeGrid } from '../components/TimeGrid'
 import { MonthGrid } from '../components/MonthGrid'
@@ -149,12 +149,16 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast, vari
   }, [sourcesKey])
 
   // ── Carregamento da Agenda pessoal Google (eventos gcal diretos) ─────────────
-  // Carrega apenas quando o calendário "gcal" está visível nas prefs.
+  // Carrega quando há pelo menos um calendário Google visível nas prefs.
   // Exclui automaticamente "Kaguya — Tarefas" e "TickTick" (feito no backend).
+  // Filtra no mapeamento: só inclui eventos cujo "gcal:<calendar_id>" está visível.
 
   useEffect(() => {
-    const gcalVisible = cals.some((c) => c.id === 'gcal' && c.visible !== false)
-    if (!gcalVisible) {
+    // Conjunto de source ids gcal visíveis (ex.: "gcal:abc123@group.calendar.google.com")
+    const visibleGcal = new Set(
+      cals.filter((c) => isGcal(c.id) && c.visible !== false).map((c) => c.id)
+    )
+    if (visibleGcal.size === 0) {
       setGcalItems([])
       return
     }
@@ -162,22 +166,27 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast, vari
     kaguyaApi.calendarEvents(windowStart, windowEnd)
       .then((events) => {
         if (cancelled) return
-        // Mapeia os eventos Google para o formato CalEvent normalizado (cal="gcal")
-        const mapped: CalEvent[] = events.map((ev) => {
-          const isAllDay = !ev.start.includes('T')
-          return {
-            id: `gcal-${ev.id}`,
-            cal: 'gcal',
-            day: ev.start.slice(0, 10),
-            start: isAllDay ? null : ev.start,
-            end: isAllDay ? null : ev.end,
-            allDay: isAllDay,
-            color: null,
-            kind: 'event' as const,
-            title: ev.summary,
-            loc: ev.location || undefined,
-          }
-        })
+        // Mapeia e filtra: cada evento herda o source id "gcal:<calendar_id>"
+        const mapped: CalEvent[] = events
+          .map((ev) => {
+            const sourceId = `gcal:${ev.calendar_id}`
+            const isAllDay = !ev.start.includes('T')
+            return {
+              id: `gcal-${ev.id}`,
+              // Source id por calendário, para que resolveColor encontre a cor certa
+              cal: sourceId,
+              day: ev.start.slice(0, 10),
+              start: isAllDay ? null : ev.start,
+              end: isAllDay ? null : ev.end,
+              allDay: isAllDay,
+              color: null,
+              kind: 'event' as const,
+              title: ev.summary,
+              loc: ev.location || undefined,
+            }
+          })
+          // Descarta eventos de calendários que o usuário desligou (sem nova chamada)
+          .filter((ev) => visibleGcal.has(ev.cal))
         setGcalItems(mapped)
       })
       .catch(() => { if (!cancelled) setGcalItems([]) })

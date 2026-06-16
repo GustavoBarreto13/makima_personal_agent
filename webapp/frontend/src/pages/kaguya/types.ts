@@ -246,12 +246,13 @@ export interface Calendar {
   visible: boolean        // vem das prefs; padrão true
   primary?: boolean       // calendário "padrão" da conta (ex.: Kaguya Tarefas)
   position?: number       // ordem na sidebar (das prefs)
+  writable?: boolean      // true quando o usuário tem permissão owner/writer no Google
 }
 
 // CalEvent: item normalizado para o grid (tarefas, eventos gcal, itens cross-agent)
 export interface CalEvent {
   id: string
-  cal: string             // source id: "kaguya" | "gcal" | "nami" | "frieren" | "violet" | "akane"
+  cal: string             // source id: "kaguya" | "gcal:<google_id>" | "nami" | "frieren" | "violet" | "akane"
   day: string             // YYYY-MM-DD
   start: string | null    // ISO datetime; null = all-day
   end: string | null

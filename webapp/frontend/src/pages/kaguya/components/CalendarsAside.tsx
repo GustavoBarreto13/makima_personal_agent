@@ -18,7 +18,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { CSSProperties } from 'react'
 import { Icon } from '../ui/Icons'
-import { kaguyaApi, CAL_SWATCHES } from '../kaguyaApi'
+import { kaguyaApi, CAL_SWATCHES, isGcal } from '../kaguyaApi'
 import type { Calendar, Task } from '../types'
 
 // ── Helpers de data ─────────────────────────────────────────────────────────
@@ -102,8 +102,8 @@ export function CalendarsAside({
     kaguyaApi.calendarSources()
       .then((srcs) => {
         setSources(srcs)
-        // Verifica autenticação do Google Calendar se a fonte gcal estiver presente
-        if (srcs.some((s) => s.id === 'gcal')) {
+        // Verifica autenticação do Google Calendar se houver qualquer fonte gcal
+        if (srcs.some((s) => isGcal(s.id))) {
           kaguyaApi.gcalStatus()
             .then(setGcalStatus)
             .catch(() => setGcalStatus({ connected: false, reason: 'Erro ao verificar autenticação' }))
@@ -181,6 +181,9 @@ export function CalendarsAside({
     acc[key].push(s)
     return acc
   }, {})
+
+  // ID do primeiro calendário Google da lista — o aviso ⚠️ de desconexão aparece só nele
+  const firstGcalId = sources.find((s) => isGcal(s.id))?.id
 
   const hasTray = (unscheduled?.length ?? 0) > 0
 
@@ -292,7 +295,7 @@ export function CalendarsAside({
                 {/* ci-name: nome do calendário + aviso gcal se desconectado */}
                 <span className="ci-name">
                   {cal.name}
-                  {cal.id === 'gcal' && gcalStatus !== null && !gcalStatus.connected && (
+                  {cal.id === firstGcalId && gcalStatus !== null && !gcalStatus.connected && (
                     <span
                       title={gcalStatus.reason ?? 'Google desconectado — reautorize'}
                       style={{ marginLeft: 4, fontSize: 10, color: 'oklch(0.65 0.20 30)', cursor: 'help', userSelect: 'none' }}

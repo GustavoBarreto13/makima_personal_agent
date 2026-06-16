@@ -215,6 +215,10 @@ def list_calendars() -> list[dict]:
             "is_main": cal["id"] == main_id,
             # True se este for o espelho de tarefas do Kaguya
             "is_kaguya": cal.get("summary", "") == _KAGUYA_CALENDAR_NAME,
+            # Cor de fundo nativa do Google Calendar (hex, ex.: "#4285F4")
+            "bg_color": cal.get("backgroundColor"),
+            # True se o usuário tem permissão de escrita (owner ou writer)
+            "writable": cal.get("accessRole") in ("owner", "writer"),
         }
         for cal in calendars
     ]

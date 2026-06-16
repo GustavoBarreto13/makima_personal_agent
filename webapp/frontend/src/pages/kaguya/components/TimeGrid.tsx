@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { CalEvent, Calendar } from '../types'
-import { kaguyaApi } from '../kaguyaApi'
+import { kaguyaApi, isGcal, gcalCalendarId } from '../kaguyaApi'
 
 // ── Helpers de data ─────────────────────────────────────────────────────────
 
@@ -56,8 +56,15 @@ const WEEKDAY_ABBR: Record<number, string> = {
   0: 'Dom', 1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb',
 }
 
-// Fontes editáveis: só kaguya e gcal permitem mover/resize/criar.
-const EDITABLE = new Set(['kaguya', 'gcal'])
+// Verifica se um evento pode ser movido/redimensionado.
+// Kaguya: sempre. Google: apenas se o calendário for owner/writer (writable=true).
+function isEventEditable(ev: CalEvent, cals: Calendar[]): boolean {
+  if (ev.cal === 'kaguya') return true
+  if (isGcal(ev.cal)) {
+    return !!cals.find((c) => c.id === ev.cal)?.writable
+  }
+  return false
+}
 
 // ── Algoritmo de lane (sobreposição) ────────────────────────────────────────
 
@@ -224,7 +231,7 @@ export function TimeGrid({
     day: string,
   ) => {
     // Só editáveis podem ser movidos/redimensionados
-    if (!EDITABLE.has(ev.cal)) return
+    if (!isEventEditable(ev, cals)) return
 
     e.preventDefault()
     e.stopPropagation()
@@ -331,11 +338,13 @@ export function TimeGrid({
         }
         // Grava o bloco de tempo via endpoint dedicado
         await kaguyaApi.setTimeBlock(d.ev.taskId, { start_at: newStartISO, end_at: newEndISO })
-      } else if (d.ev.cal === 'gcal') {
+      } else if (isGcal(d.ev.cal)) {
         await kaguyaApi.updateCalendarEvent(d.ev.id, {
           start: newStartISO,
           end: newEndISO,
           day: targetDay,
+          // Garante que a atualização vai para o calendário correto (não só o principal)
+          calendar_id: gcalCalendarId(d.ev.cal),
         })
       }
       onRefresh?.()
@@ -585,7 +594,7 @@ export function TimeGrid({
                 const heightPct = Math.max((duration / 1440) * 100, 2)
                 const leftPct = (lane / totalLanes) * 100
                 const widthCalc = `calc(${100 / totalLanes}% - 2px)`
-                const isEditable = EDITABLE.has(ev.cal)
+                const isEditable = isEventEditable(ev, cals)
                 // "tiny" = evento com ≤ 30 min de duração (layout compacto via CSS)
                 const isTiny = duration <= 30
 

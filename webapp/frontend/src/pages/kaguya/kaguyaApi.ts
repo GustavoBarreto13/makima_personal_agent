@@ -2,6 +2,19 @@
 // Componentes NUNCA fazem fetch direto: usam este objeto (cookie de sessão e
 // tratamento de erro já resolvidos por lib/api.ts).
 
+// Verifica se um source id pertence a um calendário Google (prefixo "gcal").
+// Cobre tanto o id raiz "gcal" (legado) quanto "gcal:<calendar_id>" (por-calendário).
+export function isGcal(cal: string): boolean {
+  return cal.startsWith('gcal')
+}
+
+// Extrai o ID do calendário Google a partir de um source id "gcal:<id>".
+// Retorna "primary" como fallback (calendário principal) quando não há sufixo.
+export function gcalCalendarId(cal: string): string {
+  const prefix = 'gcal:'
+  return cal.startsWith(prefix) ? cal.slice(prefix.length) : 'primary'
+}
+
 import { api } from '../../lib/api'
 import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse } from './types'
 
@@ -212,13 +225,15 @@ export const kaguyaApi = {
   gcalStatus: () =>
     api.get<{ connected: boolean; reason: string | null }>(`${BASE}/calendar/gcal-status`),
 
-  // CRUD de eventos da Agenda pessoal (só cal="gcal")
+  // CRUD de eventos dos calendários Google (cal="gcal:<id>")
   createCalendarEvent: (body: Partial<CalEvent>) =>
     api.post<MutationResult>(`${BASE}/calendar/events`, body),
-  updateCalendarEvent: (id: string, body: Partial<CalEvent>) =>
+  updateCalendarEvent: (id: string, body: Partial<CalEvent> & { calendar_id?: string }) =>
     api.patch<MutationResult>(`${BASE}/calendar/events/${id}`, body),
-  deleteCalendarEvent: (id: string) =>
-    api.del<MutationResult>(`${BASE}/calendar/events/${id}`),
+  deleteCalendarEvent: (id: string, calendarId?: string) => {
+    const qs = calendarId ? `?calendar_id=${encodeURIComponent(calendarId)}` : ''
+    return api.del<MutationResult>(`${BASE}/calendar/events/${id}${qs}`)
+  },
 }
 
 export type { MutationResult }

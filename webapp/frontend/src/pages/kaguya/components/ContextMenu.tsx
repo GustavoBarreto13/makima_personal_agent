@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { CalEvent, Calendar } from '../types'
 import { Icon } from '../ui/Icons'
-import { kaguyaApi, CAL_SWATCHES } from '../kaguyaApi'
+import { kaguyaApi, CAL_SWATCHES, isGcal, gcalCalendarId } from '../kaguyaApi'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -25,9 +25,6 @@ interface ContextMenuProps {
   onClose: () => void
   onRefresh?: () => void
 }
-
-// Fontes que o menu pode modificar.
-const EDITABLE_SOURCES = new Set(['kaguya', 'gcal'])
 
 // Clamp numérico dentro de [min, max].
 function clamp(v: number, min: number, max: number): number {
@@ -41,8 +38,9 @@ export function ContextMenu({ ev, cals, pos, onClose, onRefresh }: ContextMenuPr
   const [confirmDelete, setConfirmDelete] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
-  const isEditable = EDITABLE_SOURCES.has(ev.cal)
   const cal = cals.find((c) => c.id === ev.cal)
+  // Editável: tarefas Kaguya sempre; eventos Google apenas se o calendário for owner/writer
+  const isEditable = ev.cal === 'kaguya' || (isGcal(ev.cal) && !!cal?.writable)
   const calName = cal?.name ?? ev.cal
   // --cc: cor do evento ou do calendário (para a linha de swatches usar var(--cc) como indicador)
   const calColor = ev.color || cal?.color || 'var(--kg)'
@@ -68,8 +66,8 @@ export function ContextMenu({ ev, cals, pos, onClose, onRefresh }: ContextMenuPr
     onClose()
     if (!isEditable) return
     try {
-      if (ev.cal === 'gcal') {
-        await kaguyaApi.updateCalendarEvent(ev.id, { color })
+      if (isGcal(ev.cal)) {
+        await kaguyaApi.updateCalendarEvent(ev.id, { color, calendar_id: gcalCalendarId(ev.cal) })
         onRefresh?.()
       }
       // kaguya: sem suporte de cor por evento por ora
@@ -88,7 +86,7 @@ export function ContextMenu({ ev, cals, pos, onClose, onRefresh }: ContextMenuPr
           due_date: ev.day,
         })
         onRefresh?.()
-      } else if (ev.cal === 'gcal') {
+      } else if (isGcal(ev.cal)) {
         await kaguyaApi.createCalendarEvent({
           title: `${ev.title} (cópia)`,
           day: ev.day,
@@ -109,8 +107,8 @@ export function ContextMenu({ ev, cals, pos, onClose, onRefresh }: ContextMenuPr
     try {
       if (ev.cal === 'kaguya' && ev.taskId) {
         await kaguyaApi.remove(ev.taskId)
-      } else if (ev.cal === 'gcal') {
-        await kaguyaApi.deleteCalendarEvent(ev.id)
+      } else if (isGcal(ev.cal)) {
+        await kaguyaApi.deleteCalendarEvent(ev.id, gcalCalendarId(ev.cal))
       }
       onClose()
       onRefresh?.()
@@ -148,7 +146,7 @@ export function ContextMenu({ ev, cals, pos, onClose, onRefresh }: ContextMenuPr
         <div className="cal-ctx-sep" />
 
         {/* Linha de swatches para recolorir (só gcal suporta cor por evento) */}
-        {isEditable && ev.cal === 'gcal' && (
+        {isEditable && isGcal(ev.cal) && (
           <>
             <div className="cal-ctx-row">
               {/* Exibe os 8 primeiros swatches (slice do handoff) */}
