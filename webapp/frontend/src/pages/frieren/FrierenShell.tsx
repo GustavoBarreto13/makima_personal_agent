@@ -223,23 +223,10 @@ export function FrierenShell() {
       .finally(() => setLoading(false))
   }, [])
 
-  // ── Efeito de densidade — aplica data-density no container principal ───────
-  useEffect(() => {
-    // O CSS usa o atributo data-density para ajustar tamanhos de grade e espaçamentos
-    document.querySelector('.fr-app')?.setAttribute(
-      'data-density',
-      DENSITY_MAP[tweaks.densidade] ?? 'medio',
-    )
-  }, [tweaks.densidade])
-
-  // ── Efeito de tema — aplica data-theme no container .fr-app ──────────────
-  useEffect(() => {
-    // data-theme="dark" ativa as variáveis CSS do modo escuro no design system
-    const frApp = document.querySelector('.fr-app')
-    if (frApp) {
-      frApp.setAttribute('data-theme', tweaks.tema === 'Escuro' ? 'dark' : 'light')
-    }
-  }, [tweaks.tema])
+  // ── Tema e densidade são agora aplicados via props React no wrapper .frieren-shell ──
+  // (os atributos data-theme e data-density vivem no elemento raiz, não no .fr-app)
+  const activeTheme = tweaks.tema === 'Escuro' ? 'dark' : 'light'
+  const activeDensity = DENSITY_MAP[tweaks.densidade] ?? 'medio'
 
   // ── Toast: auto-some após 2,6 s ──────────────────────────────────────────
   useEffect(() => {
@@ -594,17 +581,20 @@ export function FrierenShell() {
   // ── Tela de carregamento ──────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="fr-app" data-density="medio">
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          height: '100vh', color: 'var(--ink-3)',
-        }}>
-          {/* Spinner simples enquanto carrega os dados */}
+      // Wrapper de escopo: garante que os tokens OKLCH da Frieren resolvam mesmo durante o load
+      <div className="frieren-shell" data-theme={activeTheme} data-density={activeDensity}>
+        <div className="fr-app">
           <div style={{
-            width: 32, height: 32, border: '2px solid var(--line)',
-            borderTopColor: 'var(--teal)', borderRadius: '50%',
-            animation: 'spin 0.8s linear infinite',
-          }} />
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            height: '100%', color: 'var(--ink-3)',
+          }}>
+            {/* Spinner simples enquanto carrega os dados */}
+            <div style={{
+              width: 32, height: 32, border: '2px solid var(--line)',
+              borderTopColor: 'var(--teal)', borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite',
+            }} />
+          </div>
         </div>
       </div>
     )
@@ -612,8 +602,10 @@ export function FrierenShell() {
 
   // ── Render principal ──────────────────────────────────────────────────────
   return (
-    // Container raiz — data-density e data-theme são controlados pelos efeitos acima
-    <div className="fr-app" data-density={DENSITY_MAP[tweaks.densidade] ?? 'medio'}>
+    // Wrapper de escopo — isola os tokens OKLCH da Frieren do resto da app.
+    // data-theme e data-density vivem aqui, como prop React (não via querySelector).
+    <div className="frieren-shell" data-theme={activeTheme} data-density={activeDensity}>
+    <div className="fr-app">
 
       {/* ── Sidebar de navegação ── */}
       <aside className="fr-side">
@@ -759,6 +751,7 @@ export function FrierenShell() {
 
       {/* ── Painel de tweaks visuais ── */}
       <TweaksPanel tweaks={tweaks} setTweak={setTweak} />
+    </div>
     </div>
   )
 }
