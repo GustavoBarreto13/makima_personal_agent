@@ -27,6 +27,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015 | `agents/akane/CLAUDE.md` |
 | `agents/marin/` | Animes (PostgreSQL + Jikan/AniList + MAL OAuth) | ✅ Fase 021 | `agents/marin/CLAUDE.md` |
 | `agents/mai/` | Séries de TV (PostgreSQL + TMDB API v4) | ✅ Fase 022 | `agents/mai/CLAUDE.md` |
+| `agents/komi/` | Pessoas e contatos (PostgreSQL) | ✅ Fase 014 | `agents/komi/CLAUDE.md` |
 | `agents/lucy/` | Email (Gmail IMAP) | — Fase 4 | — |
 
 ### Como o coordinator importa
@@ -40,6 +41,7 @@ from agents.kurisu.agent import kurisu_agent
 from agents.akane.agent import akane_agent            # cinemateca de filmes (spec 015)
 from agents.marin.agent import marin_agent            # catálogo de animes (spec 021)
 from agents.mai.agent import mai_agent                # catálogo de séries de TV (spec 022)
+from agents.komi.agent import komi_agent              # identidade de pessoas (spec 014)
 # from agents.lucy.agent import lucy_agent
 ```
 
@@ -63,6 +65,7 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── akane_agent     → PostgreSQL (filmes) + TMDB + Letterboxd    [agents/akane]
     ├── marin_agent     → PostgreSQL (animes) + Jikan + AniList + MAL [agents/marin]
     ├── mai_agent       → PostgreSQL (séries) + TMDB API v4          [agents/mai]
+    ├── komi_agent      → PostgreSQL (pessoas + vínculos)            [agents/komi]
     └── lucy_agent      → Gmail IMAP                                 [agents/lucy]     (ainda não ativada)
 ```
 
@@ -86,6 +89,40 @@ Makima conhece os fluxos duplos e roteia corretamente:
 - Usuário pagou algo com tarefa → Kaguya (`complete_payment_task`)
 - Despesa futura com data → Nami (lança) + Kaguya (lembrete)
 - Morning briefing → Nami (resumo financeiro) + Kaguya (tarefas do dia)
+
+---
+
+## Integração cross-agent: Komi — vínculo de pessoas (spec 014)
+
+**Komi** gerencia a identidade canônica de pessoas. Qualquer agente pode vincular uma pessoa
+a um item criado, usando `link_person_on_cursor` na **mesma transação** — atomicidade tudo-ou-nada.
+
+### `link_person_on_cursor(cur, person_id, entity_type, entity_id)`
+
+Import lazy (dentro da função) para evitar ciclos:
+
+```python
+from agents.komi.tools import link_person_on_cursor  # lazy — evita ciclo
+```
+
+Idempotente: `INSERT … ON CONFLICT (person_id, entity_type, entity_id) DO NOTHING`.
+`entity_id` é sempre coercido para `str` (UUIDs e SERIALs ficam como TEXT na tabela).
+
+### Agentes com suporte a `person_ids`
+
+| Agente | Função | entity_type |
+|---|---|---|
+| Nami | `create_transaction` / `create_transaction_on_cursor` | `"transaction"` |
+| Kaguya | `create_task` | `"task"` |
+| Frieren | `add_book` | `"book"` |
+| Journal | `upsert_bullet` | `"journal_bullet"` (+ auto-link @menções único) |
+
+### Regra de smart-match antes de vincular
+
+Antes de passar `person_ids`, o agente deve chamar `find_people(query)`:
+- 0 matches → oferecer cadastro (`create_person`)
+- 1 match → usar diretamente; confirmar: "encontrei [Nome]"
+- 2+ matches → pedir disambiguação; NUNCA vincular sem confirmação
 
 ---
 
@@ -129,6 +166,12 @@ makima_personal_agent/
 │   │   ├── agent.py     # frieren_agent
 │   │   ├── schema_pg.sql # schema das tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, schema PostgreSQL, menu interativo, personalidade
+│   ├── komi/            # agente de pessoas e contatos — Fase 014 ✅
+│   │   ├── __init__.py
+│   │   ├── tools.py     # PostgreSQL (people, aliases, dates, links) + smart-match + hub
+│   │   ├── agent.py     # komi_agent — singleton
+│   │   ├── schema_pg.sql # schema das 4 tabelas PostgreSQL
+│   │   └── CLAUDE.md    # tools, schema, cross-agent, personalidade
 │   └── mai/             # agente de séries de TV — Fase 022 ✅
 │       ├── __init__.py
 │       ├── tools.py     # PostgreSQL (series, seasons, series_episodes, series_watch_logs)
@@ -184,9 +227,10 @@ Ambiente local: `.venv` própria do makima.
 | **4** | Lucy (email): tools IMAP/Gmail + agent. | `agents/lucy/` (ref.: `n8n-python-scripts/lucy_email_agent/`) | — |
 | **5a** | Frieren (livros): PostgreSQL + Google Books API + log de leitura por páginas. | `agents/frieren/` | ✅ |
 | **022** | Mai (séries de TV): PostgreSQL (4 tabelas) + TMDB API v4 + shell React `/series/*`. | `agents/mai/` | ✅ |
+| **014** | Komi (pessoas): PostgreSQL (4 tabelas) + vínculos cross-agent + router `/api/people/*`. Frontend pendente. | `agents/komi/` | ✅ backend |
 | **5b** | Lucy (email): tools IMAP/Gmail. | `agents/lucy/` | — |
 
-**Fase atual: 022 ✅** — Mai implementada (backend + frontend). Próximo passo disponível: fase 3 (Kurisu) ou Lucy.
+**Fase atual: 014 ✅ (backend)** — Komi implementada (schema + tools + agent + coordinator + REST router + testes). Frontend pendente. Próximo passo: fase 3 (Kurisu) ou frontend da Komi.
 
 ---
 

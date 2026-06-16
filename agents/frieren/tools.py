@@ -13,7 +13,7 @@ import re                           # Para remover pontuação na normalização
 import requests                    # Cliente HTTP para chamar a Google Books API
 
 # Importa os helpers PostgreSQL compartilhados — substituem o BigQuery _run_select/_run_dml
-from agents.db import run_select, run_dml
+from agents.db import run_select, run_dml, get_conn
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -405,10 +405,19 @@ def add_book(
     google_books_id: str | None = None,
     author: str | None = None,
     total_pages: int | None = None,
+    person_ids: list[str] | None = None,
 ) -> str:
-    """
-    Adiciona um livro ao catálogo. Enriquece metadados via Google Books API automaticamente.
+    """Adiciona um livro ao catálogo. Enriquece metadados via Google Books API automaticamente.
+
     Se google_books_id for fornecido, busca aquele volume específico.
+
+    Args:
+        title: Título do livro.
+        status: Estado de leitura (padrão: ``quero_ler``).
+        google_books_id: ID Google Books para busca direta (opcional).
+        author: Autor manual — sobrescreve o retornado pela API.
+        total_pages: Total de páginas manual — sobrescreve o da API.
+        person_ids: Lista de UUIDs de pessoas a vincular ao livro (spec 014 / FR-009).
     """
     # ── 1. Valida o status informado ──────────────────────────────────────────
     if status not in VALID_STATUSES:
@@ -549,8 +558,15 @@ def add_book(
         "updated_at":      agora,
     }
 
-    # Executa o INSERT — run_dml aguarda a conclusão
-    run_dml(sql, params)
+    # Executa o INSERT e grava vínculos de pessoas na mesma transação (spec 014 / FR-009).
+    # Usa get_conn em vez de run_dml para poder compartilhar o cursor com link_person_on_cursor.
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            if person_ids:
+                from agents.komi.tools import link_person_on_cursor  # noqa: PLC0415
+                for pid in person_ids:
+                    link_person_on_cursor(cur, pid, "book", book_id)
 
     # ── 8. Monta a mensagem de confirmação ────────────────────────────────────
     titulo_final = meta.get("title", title)

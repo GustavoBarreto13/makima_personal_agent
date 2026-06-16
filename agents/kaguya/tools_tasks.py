@@ -554,6 +554,7 @@ def create_task(
     recurrence: Optional[dict] = None,
     column_id: Optional[int] = None,
     tags: Optional[list] = None,
+    person_ids: Optional[list] = None,
 ) -> dict:
     """Cria uma tarefa (ou subtarefa) e a posiciona no fim da sua lista/escopo.
 
@@ -582,6 +583,7 @@ def create_task(
             omitido e a lista tiver board, usa a primeira coluna automaticamente.
         tags: Lista de nomes de tag a vincular (opcional). Tags inexistentes são criadas
             na hora; o nome é único ignorando caixa (``Mercado`` == ``mercado``).
+        person_ids: Lista de UUIDs de pessoas a vincular à tarefa (spec 014 / FR-009). Opcional.
 
     Returns:
         ``{"status": "ok", "id": <int>, "project_id": <int>}`` ou erro em português.
@@ -686,6 +688,13 @@ def create_task(
             # Tags: grava o conjunto de etiquetas na MESMA transação (criando as que faltarem).
             if tags is not None:
                 _set_task_tags(cur, new_id, tags)
+
+            # Vínculos de pessoas — mesma transação (spec 014 / FR-009). Import lazy para
+            # evitar ciclo agents.kaguya → agents.komi → agents.kaguya.
+            if person_ids:
+                from agents.komi.tools import link_person_on_cursor  # noqa: PLC0415
+                for pid in person_ids:
+                    link_person_on_cursor(cur, pid, "task", new_id)
 
     result = {"status": "ok", "id": new_id, "project_id": resolved_project, "message": f"Tarefa '{title.strip()}' criada."}
     # Espelha no Google Calendar fora da transação (best-effort; nunca bloqueia o CRUD)

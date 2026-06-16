@@ -671,7 +671,7 @@ def get_available_years() -> list:
     return list(range(current, first - 1, -1))
 
 
-def upsert_bullet(page_id: int, position: int, content: str, kind: str = 'bullet') -> dict:
+def upsert_bullet(page_id: int, position: int, content: str, kind: str = 'bullet', person_ids: list[str] | None = None) -> dict:
     """Inserir ou atualizar um bullet em uma posição específica da página.
 
     Se já existir um bullet com (page_id, position), atualiza o content.
@@ -681,11 +681,16 @@ def upsert_bullet(page_id: int, position: int, content: str, kind: str = 'bullet
     conteúdo e as substitui na tabela journal_mentions (delete + insert),
     garantindo que as menções estejam sempre sincronizadas com o texto atual.
 
+    Vínculos de pessoas (spec 014 / FR-009): se ``person_ids`` for fornecido, grava
+    os vínculos em ``person_links`` na mesma transação. Adicionalmente, @menções com
+    match único em ``people`` são auto-linkadas (best-effort, nunca falham o bullet).
+
     Args:
         page_id: ID da página onde o bullet pertence.
         position: Posição (linha) do bullet na página (esparso ×1000).
         content: Texto do bullet.
         kind: Tipo do bullet — bullet, highlight, dream, idea, wisdom, note. Default 'bullet'.
+        person_ids: UUIDs de pessoas a vincular explicitamente (spec 014).
 
     Returns:
         Dicionário com:
@@ -739,6 +744,30 @@ def upsert_bullet(page_id: int, position: int, content: str, kind: str = 'bullet
                     INSERT INTO journal_mentions (bullet_id, kind, value)
                     VALUES (%s, %s, %s)
                 """, (bullet_id, kind, value))
+
+            # Vínculos de pessoas — mesma transação (spec 014 / FR-009).
+            # Import lazy para evitar ciclo agents.journal → agents.komi → agents.journal.
+            try:
+                from agents.komi.tools import link_person_on_cursor, find_people  # noqa: PLC0415
+
+                # 1. Vínculos explícitos passados pelo chamador
+                if person_ids:
+                    for pid in person_ids:
+                        link_person_on_cursor(cur, pid, "journal_bullet", bullet_id)
+
+                # 2. Auto-link de @menções com match único na tabela people (best-effort)
+                person_mentions = [v for (k, v) in mentions if k == "person"]
+                for mention_name in person_mentions:
+                    try:
+                        result = find_people(mention_name)
+                        if result.get("status") == "ok" and len(result.get("people", [])) == 1:
+                            link_person_on_cursor(cur, result["people"][0]["id"], "journal_bullet", bullet_id)
+                    except Exception:
+                        # Auto-link é best-effort — nunca falha o bullet por não encontrar @menção
+                        pass
+            except Exception:
+                # Se komi não estiver disponível, continua sem vincular (graceful degradation)
+                pass
 
         conn.commit()
         return {"status": "ok", "bullet": bullet}

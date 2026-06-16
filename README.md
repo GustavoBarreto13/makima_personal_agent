@@ -24,6 +24,9 @@ Envie mensagens pelo Telegram. Makima identifica o domínio e roteia automaticam
 | "adiciona Dungeon Meshi na minha lista de animes" | Marin 📺 | Busca no MAL e adiciona ao catálogo |
 | "assisti os eps 1 a 4 de Frieren" | Marin 📺 | Registra sessão no diário de episódios |
 | "sincroniza meu MAL" | Marin 📺 | Puxa toda a lista do MyAnimeList via OAuth |
+| "quem é a Ana?" | Komi 👤 | Busca a pessoa no cadastro e retorna o perfil completo |
+| "adiciona o João, amigo, aniversário 12/03" | Komi 👤 | Cadastra pessoa com data importante |
+| "o que tenho com a Ana?" | Komi 👤 | Resumo: finanças, tarefas, livros e diário ligados a ela |
 
 ---
 
@@ -68,6 +71,7 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── Frieren    → PostgreSQL + Google Books API (livros)     ✅ ativo
     ├── Akane      → PostgreSQL + TMDB + Letterboxd (filmes)   ✅ ativo
     ├── Marin      → PostgreSQL + Jikan/AniList + MAL OAuth (animes) ✅ ativo
+    ├── Komi       → PostgreSQL (pessoas + vínculos cross-agent) ✅ ativo
     ├── Violet     → PostgreSQL (diário)                        🔧 ativo na web, agente Telegram pendente
     └── Lucy       → Gmail API v1                               ⏳ planejado
 ```
@@ -173,6 +177,22 @@ Gerencia o catálogo pessoal de livros e rastreia o progresso de leitura por pá
 
 **Armazenamento:** PostgreSQL — tabelas `books` e `reading_logs`.
 
+### Komi — pessoas e contatos
+Inspirada em Komi-san wa Comyushou desu — tímida, mas extremamente cuidadosa com cada detalhe das pessoas ao seu redor. Gerencia o cadastro canônico de pessoas e os vínculos com todos os outros domínios do sistema.
+
+**Funcionalidades:**
+- Cadastro de pessoas com nome, relacionamento, contatos (telefone, email, Instagram, Telegram), cidade e notas
+- Apelidos globais únicos (`alias`) — um apelido pertence a exatamente uma pessoa
+- Datas importantes (aniversários, formaturas, casamentos...) com suporte a recorrência anual
+- Smart-match (`find_people`): busca por nome ou apelido, insensível a maiúsculas e acentos
+- Soft delete — pessoa removida preserva todos os vínculos históricos
+- Resumo cross-agent (`get_person_summary`): consolida finanças, tarefas, livros e diário ligados à pessoa
+- Integração com outros agentes: `create_transaction`, `create_task`, `add_book` e `upsert_bullet` aceitam `person_ids` e gravam vínculos na mesma transação PostgreSQL (tudo-ou-nada)
+
+**Armazenamento:** PostgreSQL — tabelas `people`, `person_aliases`, `person_dates`, `person_links`.
+
+---
+
 ### Violet — diário pessoal (Journal)
 Diário bullet journal com extração automática de menções (`@pessoa`, `#tag`) e busca full-text. **Já é totalmente usável via webapp** (`/api/journal/*`, shell `violet/`); como agente Telegram ainda está pendente (existem as tools, falta o `agent.py` e o wiring no coordinator).
 
@@ -239,6 +259,10 @@ makima_personal_agent/
 │   │   ├── mal_auth.py      # MALAuth: PKCE OAuth2, refresh automático de token
 │   │   ├── mal_sync.py      # sync_mal(): pull delta/full do MAL para PostgreSQL
 │   │   └── schema_pg.sql    # schema PostgreSQL (4 tabelas: anime, watch_logs, episodes, mal_sync_state)
+│   ├── komi/
+│   │   ├── tools.py         # PostgreSQL (people, aliases, dates, links) + smart-match + hub
+│   │   ├── agent.py         # komi_agent (singleton)
+│   │   └── schema_pg.sql    # schema PostgreSQL (4 tabelas: people, aliases, dates, links)
 │   └── journal/
 │       ├── tools.py         # PostgreSQL (pages, bullets, mentions, emoções)
 │       └── schema_pg.sql    # schema PostgreSQL do diário
@@ -257,7 +281,9 @@ makima_personal_agent/
 │   │       ├── journal.py   # /api/journal/* — tools do Journal (Violet)
 │   │       ├── tasks.py     # /api/tasks/*   — tools da Kaguya
 │       ├── movies.py    # /api/movies/*  — tools da Akane
-│       └── animes.py   # /api/animes/*  — tools da Marin
+│       ├── animes.py    # /api/animes/*  — tools da Marin
+│       ├── series.py    # /api/series/*  — tools da Mai
+│       └── pessoas.py   # /api/people/*  — tools da Komi
 │   ├── frontend/
 │   │   └── src/
 │   │       ├── App.tsx          # roteamento + verificação de sessão
@@ -302,6 +328,8 @@ makima_personal_agent/
 | `/limpar tarefas` | Reseta só o contexto de tarefas/agenda (Kaguya) |
 | `/limpar knowledge` | Reseta só o contexto de knowledge base (Kurisu) |
 | `/limpar animes` | Reseta só o contexto de animes (Marin) |
+| `/limpar series` | Reseta só o contexto de séries de TV (Mai) |
+| `/limpar pessoas` | Reseta só o contexto de pessoas e contatos (Komi) |
 | `/tokens` | Exibe o total de tokens consumidos por domínio nesta sessão do container |
 
 > O bot avisa automaticamente quando o contexto de um domínio está ficando grande e sugere o `/limpar <dominio>`.
@@ -469,13 +497,13 @@ npm install && npm run dev   # dev server em localhost:5173
 | 5a | Frieren (livros): PostgreSQL + Google Books API + menu interativo Telegram | ✅ |
 | — | Webapp (FastAPI + React) + diário Violet na web | ✅ |
 | 016–019 | Kaguya — Meu Dia/time-blocking, Eisenhower, Command Palette ⌘K, Calendar Hub | ⏳ |
-| 014 | Komi — Pessoas (identidade canônica cross-agent) | ⏳ |
+| 014 | Komi — Pessoas (identidade canônica + vínculos cross-agent + REST `/api/people/*`) | ✅ backend |
 | 015 | Akane — Filmes (Letterboxd-style, PostgreSQL + TMDB/Letterboxd) | ✅ |
 | 021 | Marin — Animes (PostgreSQL + Jikan/AniList/ARM + MAL OAuth2 PKCE) | ✅ |
-| 022 | Mai — Séries de TV (PostgreSQL + TMDB + IMDB) | ⏳ specs criadas, código pendente |
+| 022 | Mai — Séries de TV (PostgreSQL + TMDB API v4) | ✅ |
 | 4 | Lucy (email): tools Gmail API v1 + agente | ⏳ |
 
-**Pendência atual:** Kurisu 🔧 — falta criar o Data Store no Vertex AI Agent Builder e setar `VERTEX_RAG_CORPUS` (ver `agents/kurisu/CLAUDE.md`). Fatias 015 (Akane) e 021 (Marin) entregues ✅. Em paralelo: ligar o diário Violet como agente Telegram, implementar fatia 022 (Mai — séries) e fatias de tarefas 016–019.
+**Status atual:** Komi (spec 014) ✅ backend — schema, tools, agente, coordinator, router REST e testes entregues. Frontend pendente. Kurisu 🔧 — pendente corpus Vertex AI (ver `agents/kurisu/CLAUDE.md`).
 
 ---
 

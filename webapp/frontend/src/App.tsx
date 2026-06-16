@@ -22,6 +22,7 @@ import { KaguyaShell } from './pages/kaguya/KaguyaShell'      // Shell de tarefa
 import { AkaneShell }  from './pages/akane/AkaneShell'         // Shell de filmes (cinemateca pessoal, spec 015)
 import { MarinShell }  from './pages/marin/MarinShell'         // Shell de animes (catálogo Marin, spec 021)
 import { MaiShell }   from './pages/mai/MaiShell'              // Shell de séries de TV (Mai Sakurajima, spec 022)
+import { KomiShell }  from './pages/komi/KomiShell'            // Shell de pessoas e contatos (Komi, spec 014)
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
@@ -109,6 +110,10 @@ function App() {
         {/* Mai · Séries de TV — catálogo com TMDB e diário de episódios (spec 022).
             Antes do catch-all /* para o shell assumir as sub-rotas de /series. */}
         <Route path="/series/*" element={<MaiShell />} />
+
+        {/* Komi · Pessoas — identidade canônica de pessoas e contatos (spec 014).
+            Antes do catch-all /* para o shell assumir as sub-rotas de /people. */}
+        <Route path="/people/*" element={<KomiShell />} />
 
         {/* Todas as outras rotas usam o Layout principal com sidebar Makima */}
         <Route path="/*" element={

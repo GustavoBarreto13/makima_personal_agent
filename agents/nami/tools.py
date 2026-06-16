@@ -198,12 +198,16 @@ def create_transaction_on_cursor(
     subscription_id: str = "",
     card_id: str = "",
     source: str = "telegram",
+    person_ids: list[str] | None = None,
 ) -> dict:
     """Insere uma transação usando um cursor já aberto (sem abrir conexão própria).
 
     Mesma validação e SQL de ``create_transaction``, mas operando no ``cur`` recebido.
     Permite que a Kaguya lance a despesa **na mesma transação** em que completa a tarefa
     de pagamento (atomicidade tudo-ou-nada — FR-014). NÃO faz commit: quem chama controla.
+
+    Aceita ``person_ids`` opcional: lista de UUIDs de pessoas (spec 014). Quando fornecida,
+    grava os vínculos em ``person_links`` no mesmo cursor — tudo-ou-nada.
 
     Args:
         cur: Cursor psycopg2 ativo (dentro de uma transação do chamador).
@@ -217,6 +221,7 @@ def create_transaction_on_cursor(
         subscription_id: Assinatura vinculada (opcional).
         card_id: Cartão de crédito (opcional; quando dado, account_id fica NULL).
         source: Origem do registro (ex.: "telegram", "kaguya").
+        person_ids: Lista de UUIDs de pessoas a vincular à transação (opcional).
 
     Returns:
         ``{"status": "ok", "id": <uuid>}`` ou ``{"status": "error", "message": ...}``.
@@ -255,6 +260,14 @@ def create_transaction_on_cursor(
     }
     # Executa no cursor recebido — quem chama decide commit/rollback.
     cur.execute(sql, params)
+
+    # Grava vínculos de pessoas na mesma transação — tudo-ou-nada (spec 014 / FR-009).
+    # Import lazy para evitar ciclo agents.nami → agents.komi → agents.nami.
+    if person_ids:
+        from agents.komi.tools import link_person_on_cursor  # noqa: PLC0415
+        for pid in person_ids:
+            link_person_on_cursor(cur, pid, "transaction", tx_id)
+
     return {"status": "ok", "id": tx_id, "message": f"Transação criada: {name} R${float(valor):.2f} ({cat})"}
 
 
@@ -268,6 +281,7 @@ def create_transaction(
     notes: str = "",
     subscription_id: str = "",
     card_id: str = "",
+    person_ids: list[str] | None = None,
 ) -> dict:
     """Cria uma nova transação financeira (despesa ou receita) no PostgreSQL.
 
@@ -283,6 +297,7 @@ def create_transaction(
         card_id       — ID do cartão de crédito (opcional). Quando fornecido,
                         account_id fica NULL — a transação pertence ao cartão,
                         não a uma conta bancária.
+        person_ids    — Lista de UUIDs de pessoas a vincular (spec 014 / FR-009).
 
     Retorna um dicionário com "status": "ok" e o ID gerado, ou "status": "error"
     com uma mensagem descritiva se algo for inválido.
@@ -297,6 +312,7 @@ def create_transaction(
                     cur, name=name, valor=valor, tipo=tipo, categoria=categoria,
                     conta=conta, data=data, notes=notes,
                     subscription_id=subscription_id, card_id=card_id,
+                    person_ids=person_ids,
                 )
                 # Se a validação falhou, aborta a transação (não persiste nada).
                 if result.get("status") == "error":

@@ -31,6 +31,9 @@ SCHEMA_FILES = [
     # Catálogo de séries de TV da Mai (spec 022). 4 tabelas: series, seasons,
     # episodes (cache de temporadas+eps), watch_logs (diário de sessões).
     "agents/mai/schema_pg.sql",
+    # Identidade canônica de pessoas da Komi (spec 014). 4 tabelas: people,
+    # person_aliases, person_dates, person_links (vínculo polimórfico N:N).
+    "agents/komi/schema_pg.sql",
 ]
 
 

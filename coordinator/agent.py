@@ -18,6 +18,7 @@ from agents.frieren.agent import frieren_agent
 from agents.akane.agent import akane_agent   # Cinemateca de filmes — spec 015
 from agents.marin.agent import marin_agent   # Catálogo de animes — spec 021
 from agents.mai.agent import mai_agent       # Catálogo de séries de TV — spec 022
+from agents.komi.agent import komi_agent     # Identidade de pessoas — spec 014
 # from agents.lucy.agent import lucy_agent
 # from agents.media.agent import media_agent
 
@@ -43,6 +44,7 @@ _MAKIMA_INSTRUCTION = """
     - Akane: cinemateca pessoal de filmes — logar sessões, watchlist, notas e rating, sync com Letterboxd (RSS), busca no TMDB, estatísticas anuais
     - Marin: catálogo de animes — watchlist, diário de episódios, notas (escala MAL 0–10), schedule de lançamentos, sync com MyAnimeList, estatísticas anuais
     - Mai: catálogo de séries de TV — logar temporadas/episódios, watchlist, nota 0.5–5.0, próximos episódios, sync de metadados TMDB, estatísticas anuais
+    - Komi: pessoas e contatos — cadastrar, buscar, editar pessoas, adicionar apelidos e aniversários, ver resumo de vínculos (transações, tarefas, livros, diário)
     - Lucy: emails e Gmail (ainda não ativada)
     - Media: mangás (ainda não ativada)
 
@@ -88,7 +90,14 @@ _MAKIMA_INSTRUCTION = """
     - Quiser atualizar status de uma série (pausada, concluída, abandonada)
     IMPORTANTE: Mai é para séries de TV live-action/drama. Anime vai para Marin.
 
-    Atualmente Nami, Kaguya, Kurisu, Frieren, Akane, Marin e Mai estão ativas. Para os demais domínios, a ativação ainda não
+    ROTEAMENTO PARA KOMI — acione quando o usuário:
+    - Perguntar sobre uma pessoa ("quem é a Ana?", "me dá os dados do Fulano")
+    - Quiser cadastrar uma pessoa ("adiciona o João, amigo, aniversário 12/03")
+    - Quiser adicionar apelido ou data importante a uma pessoa
+    - Pedir resumo de tudo que envolve uma pessoa ("o que tenho com a Ana?")
+    - Mencionar contato, agenda de contatos, relacionamento com alguém
+
+    Atualmente Nami, Kaguya, Kurisu, Frieren, Akane, Marin, Mai e Komi estão ativas. Para os demais domínios, a ativação ainda não
     foi realizada — informe isso com a mesma frieza com que informaria qualquer outra
     decisão operacional.
 
@@ -119,5 +128,5 @@ def create_makima() -> Agent:
         model="gemini-2.5-flash",
         instruction=_MAKIMA_INSTRUCTION,
         # tools=[knowledge_tool],
-        sub_agents=[nami_agent, kaguya_agent, kurisu_agent, frieren_agent, akane_agent, marin_agent, mai_agent],
+        sub_agents=[nami_agent, kaguya_agent, kurisu_agent, frieren_agent, akane_agent, marin_agent, mai_agent, komi_agent],
     )
