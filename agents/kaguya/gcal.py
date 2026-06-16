@@ -22,8 +22,12 @@ Usage:
 """
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+
+# Fuso horário de Brasília (UTC-3). Usado para normalizar todos os datetimes
+# retornados pela Google Calendar API antes de enviá-los ao frontend.
+_BRT = timezone(timedelta(hours=-3))
 
 # Biblioteca oficial do Google para autenticação OAuth2
 from google.oauth2.credentials import Credentials
@@ -495,6 +499,42 @@ def delete_event(calendar_id: str, event_id: str) -> dict:
 # Função auxiliar privada
 # ---------------------------------------------------------------------------
 
+def _to_brt(dt_str: str) -> str:
+    """Converte uma string ISO 8601 dateTime para UTC-3 (horário de Brasília).
+
+    O Google Calendar pode retornar datetimes em vários formatos:
+    - "2026-06-15T13:00:00Z"          → UTC (sufixo "Z")
+    - "2026-06-15T10:00:00-03:00"     → já em BRT
+    - "2026-06-15T12:00:00+00:00"     → UTC com offset explícito
+
+    O frontend extrai hora:minuto diretamente da string (split por ":"),
+    então é essencial que todos os datetimes cheguem normalizados para UTC-3.
+
+    Args:
+        dt_str: String ISO 8601 com hora e offset. Strings sem "T" (datas de
+                dia inteiro no formato YYYY-MM-DD) são devolvidas sem modificação.
+
+    Returns:
+        String ISO 8601 com offset "-03:00", ou a string original se for
+        uma data sem hora ou se houver erro de parse.
+    """
+    # Datas de dia inteiro (formato "YYYY-MM-DD") não têm fuso — não converter
+    if not dt_str or "T" not in dt_str:
+        return dt_str
+    try:
+        # O sufixo "Z" é UTC puro; fromisoformat aceita "+00:00" mas não "Z" no Python 3.10-
+        s = dt_str.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        # Se por algum motivo o datetime vier sem fuso, assume UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        # Converte para BRT (UTC-3) e retorna como string ISO com offset
+        return dt.astimezone(_BRT).isoformat()
+    except ValueError:
+        # Em caso de formato inesperado, devolve original sem quebrar
+        return dt_str
+
+
 def _format_event(event: dict) -> dict:
     """Normaliza um evento bruto da Google Calendar API para o formato padrão do projeto.
 
@@ -518,9 +558,9 @@ def _format_event(event: dict) -> dict:
     return {
         "id": event.get("id", ""),
         "summary": event.get("summary", "(sem título)"),
-        # Prefere dateTime (com hora) sobre date (dia inteiro)
-        "start": start.get("dateTime", start.get("date", "")),
-        "end": end.get("dateTime", end.get("date", "")),
+        # Prefere dateTime (com hora) sobre date (dia inteiro); normaliza para UTC-3
+        "start": _to_brt(start.get("dateTime", start.get("date", ""))),
+        "end": _to_brt(end.get("dateTime", end.get("date", ""))),
         "description": event.get("description", ""),
         "location": event.get("location", ""),
         # Lista de e-mails dos convidados (pode ser vazia)
