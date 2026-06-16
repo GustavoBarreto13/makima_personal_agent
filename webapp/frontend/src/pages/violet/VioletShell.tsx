@@ -289,6 +289,18 @@ export function VioletShell() {
               if (action === 'today')  navigate('write', null)
               if (action === 'list')   navigate('journal')
             }}
+            // Data atualmente exibida — o picker do calendário abre posicionado nela
+            currentDate={route.param ?? entryDates[entryDates.length - 1] ?? new Date().toISOString().slice(0,10)}
+            onPickDate={(date) => {
+              // Navega para a data escolhida (cria a entrada sob demanda via get_or_create_page)
+              navigate('write', date)
+              // Recarrega a lista de datas para incluir a nova entrada na navegação ‹ ›.
+              // Sem esse reload, a data recém-criada não aparece em entryDates até F5.
+              violetApi.entries().then((list: unknown[]) => {
+                const dates = (list as Array<{ date: string }>).map(e => e.date).reverse()
+                setEntryDates(dates)
+              }).catch(() => {})
+            }}
           />
         )}
       </main>
