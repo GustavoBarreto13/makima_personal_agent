@@ -317,6 +317,21 @@
     linear-gradient(150deg, var(--mist), var(--card) 60%);
   border: 1px solid oklch(0.565 0.082 196 / 0.16);
   margin-top: 28px;
+
+  /* ── Defesa contra vazamento de CSS de outro shell ──────────────────────
+     PROBLEMA: o shell da Mai define `.hero` SEM escopo (mai/mai.css) com
+       `display: flex; align-items: flex-end; min-height: 280px; box-shadow`.
+     Como o Vite junta o CSS de TODOS os shells num bundle global, esse `.hero`
+     global vaza para cá. A regra daqui (`.frieren-shell .hero`, especificidade
+     0,2,0) ganha do `.hero` global (0,1,0) só nas propriedades que ela declara;
+     as demais (display/min-height/box-shadow) passariam e quebrariam o banner —
+     o `display: flex` transforma o `.hero-inner` (que aqui é um grid) num
+     flex-item alinhado embaixo. Por isso redeclaramos explicitamente os valores
+     corretos da Frieren para neutralizar o vazamento.
+     (`display: block` é o comportamento original: quem é grid é o `.hero-inner`.) */
+  display: block;     /* anula o `display: flex` vazado da Mai */
+  min-height: 0;      /* anula o `min-height: 280px` vazado da Mai */
+  box-shadow: none;   /* anula o `box-shadow` vazado da Mai */
 }
 .frieren-shell .hero-grain { position: absolute; inset: 0; opacity: 0.4; pointer-events: none;
   background-image: radial-gradient(oklch(0.565 0.082 196 / 0.14) 0.5px, transparent 0.6px);
@@ -949,6 +964,27 @@
 /* ─── painel de tweaks ──────────────────────────────────────────────────── */
 .frieren-shell .tweaks-panel {
   position: fixed; right: 16px; bottom: 80px; z-index: 300;
+
+  /* ── Defesa contra vazamento de CSS de outro shell ──────────────────────
+     PROBLEMA: o diário Violet define `.tweaks-panel` SEM escopo (violet/violet.css)
+       como um painel lateral cheio: `top: 0; right: 0; bottom: 0; width: 320px;
+       border-left: 1px solid; background; padding; display: flex; box-shadow`.
+     Esse `.tweaks-panel` global vaza para cá pelo bundle único do Vite. Aqui o
+     painel de tweaks é só um BOTÃO FLUTUANTE no canto inferior direito — mas as
+     propriedades vazadas (top:0 + width:320px + border-left) o transformavam num
+     painel alto colado na direita com uma borda esquerda visível: era a "barra na
+     direita que não deveria existir". O Violet é 100% global (não tem wrapper
+     `.violet-shell`), então não dá pra corrigir na fonte sem refatorá-lo todo;
+     neutralizamos o vazamento aqui, resetando cada propriedade herdada. */
+  top: auto;          /* anula o `top: 0` (não estica até o topo da tela) */
+  width: auto;        /* anula o `width: 320px` */
+  height: auto;       /* garante altura pelo conteúdo, não 100% */
+  background: none;   /* anula o `background` do painel do Violet */
+  border: none;       /* anula o `border-left` — ESTA era a barra visível */
+  box-shadow: none;   /* anula o `box-shadow` do painel do Violet */
+  padding: 0;         /* anula o `padding: 28px 24px` */
+  overflow: visible;  /* anula o `overflow-y: auto` */
+  display: block;     /* anula o `display: flex` (o posicionamento interno é próprio) */
 }
 .frieren-shell .tp-toggle {
   width: 40px; height: 40px; border-radius: 50%;
