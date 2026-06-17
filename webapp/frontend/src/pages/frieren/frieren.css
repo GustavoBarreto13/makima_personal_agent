@@ -336,10 +336,25 @@
 .frieren-shell .hero-grain { position: absolute; inset: 0; opacity: 0.4; pointer-events: none;
   background-image: radial-gradient(oklch(0.565 0.082 196 / 0.14) 0.5px, transparent 0.6px);
   background-size: 7px 7px; mix-blend-mode: multiply; }
-.frieren-shell .hero-inner { position: relative; display: grid; align-items: center; }
+.frieren-shell .hero-inner {
+  position: relative; display: grid; align-items: center;
+  /* ── Defesa contra vazamento de CSS de outro shell ──────────────────────
+     PROBLEMA: mai/mai.css define `.hero-inner` SEM escopo com
+       `display: flex; flex-direction: column; padding: 38px 40px; max-width: 62%`.
+     O `max-width: 62%` espreme a grade da Frieren para menos da metade da
+     largura disponível, quebrando o layout de 2 colunas. O `display: flex`
+     conflita com o `display: grid` definido pela Frieren — mas como a regra
+     escopada já declara `display: grid`, ela ganha essa propriedade. O
+     `max-width` não era declarado aqui, então vazava livremente.
+     Redeclaramos `max-width: none` para neutralizar o vazamento. */
+  max-width: none;  /* anula o `max-width: 62%` vazado da Mai — grid deve ser 100% */
+}
 .frieren-shell .hero-eyebrow {
   font-family: var(--mono); font-size: 10.5px; text-transform: uppercase;
   letter-spacing: 0.18em; color: var(--teal-deep); margin-bottom: 14px;
+  /* ── Defesa: mai/mai.css define `.hero-eyebrow` com `display: flex; align-items: center`
+     sem escopo. Na Frieren o eyebrow é texto simples (block), não um flex container. */
+  display: block;  /* anula o `display: flex` vazado da Mai */
 }
 .frieren-shell .hero-greet {
   font-family: var(--serif); font-weight: 400; letter-spacing: -0.02em;
@@ -356,9 +371,41 @@
   font-family: var(--serif); font-style: italic; color: var(--ink-2);
   border-left: 2px solid var(--teal); padding-left: 14px; max-width: 44ch;
 }
-.frieren-shell .hero-cta { display: flex; gap: 10px; flex-wrap: wrap; }
+.frieren-shell .hero-cta {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  /* ── Defesa: mai/mai.css define `.hero-cta` com `margin-top: 6px` sem escopo.
+     Na Frieren o espaçamento vertical entre os elementos do copy é controlado
+     pelo `gap` do flex container pai (`.hero-copy`), não por margin direta. */
+  margin-top: 0;  /* anula o `margin-top: 6px` vazado da Mai */
+}
 
-.frieren-shell .hero-portrait { position: relative; }
+/* ── Defesa contra vazamento de CSS de outro shell — hero-copy base ──────────
+   PROBLEMA: komi/komi.css define `.hero-copy` SEM escopo com `max-width: 64%`.
+   Nas variações Cinemático e Editorial da Frieren, o `.hero-copy` NÃO declara
+   max-width (o design do handoff assume 100% da coluna de texto). O `max-width:64%`
+   vazado do Komi espreme o bloco de texto mesmo dentro de uma coluna já estreita.
+   A variação Galeria declara explicitamente `max-width: 62%` (intencional) e por
+   ter especificidade maior (`.frieren-shell .hero[data-layout='galeria'] .hero-copy`)
+   não é afetada por esta regra base. */
+.frieren-shell .hero-copy {
+  max-width: none;  /* anula o `max-width: 64%` vazado do Komi no Cinemático/Editorial */
+}
+
+.frieren-shell .hero-portrait {
+  position: relative;
+  /* ── Defesa contra vazamento de CSS de outro shell ──────────────────────
+     PROBLEMA: mai/mai.css define `.hero-portrait` SEM escopo com
+       `position: absolute; right: 26px; bottom: 0; width: 252px`.
+     Na Frieren o retrato é um item normal do grid (position: relative,
+     sem coordenadas fixas e sem largura fixa — a largura vem da coluna do grid).
+     O `position: absolute` + `right/bottom/width` vazados tiram o retrato do
+     fluxo do grid e o colam no canto inferior direito com 252px, quebrando
+     o layout de todas as variações Cinemático e Editorial.
+     Redeclaramos os valores padrão para neutralizar o vazamento. */
+  right: auto;    /* anula o `right: 26px` vazado da Mai */
+  bottom: auto;   /* anula o `bottom: 0` vazado da Mai */
+  width: auto;    /* anula o `width: 252px` vazado da Mai — largura vem do grid */
+}
 .frieren-shell .hero-portrait .halo {
   position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%);
   width: 118%; aspect-ratio: 1; border-radius: 50%;
