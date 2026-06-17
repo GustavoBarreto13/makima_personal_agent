@@ -8,7 +8,6 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'  // Roteamento d
 
 import Login         from './pages/Login'               // Tela de login com botão "Entrar com Google"
 import Layout        from './components/Layout'         // Layout com sidebar de navegação
-import Dashboard     from './pages/Dashboard'           // Página inicial com resumo financeiro
 import Transactions  from './pages/Transactions'        // CRUD de transações
 import Accounts      from './pages/Accounts'            // Listagem e criação de contas
 import Cards         from './pages/Cards'               // Cartões de crédito com progress bar
@@ -23,6 +22,7 @@ import { AkaneShell }  from './pages/akane/AkaneShell'         // Shell de filme
 import { MarinShell }  from './pages/marin/MarinShell'         // Shell de animes (catálogo Marin, spec 021)
 import { MaiShell }   from './pages/mai/MaiShell'              // Shell de séries de TV (Mai Sakurajima, spec 022)
 import { KomiShell }  from './pages/komi/KomiShell'            // Shell de pessoas e contatos (Komi, spec 014)
+import { MakimaShell } from './pages/makima/MakimaShell'        // Hub central da Makima — rota / em tela cheia (spec 023)
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
@@ -115,12 +115,17 @@ function App() {
             Antes do catch-all /* para o shell assumir as sub-rotas de /people. */}
         <Route path="/people/*" element={<KomiShell />} />
 
+        {/* Makima · Hub — Centro de Controle em tela cheia (spec 023).
+            Rota exata `/`, renderizada SEM o Layout/sidebar global. Deve vir
+            antes do catch-all /* para não ser capturada por ele. */}
+        <Route path="/" element={<MakimaShell />} />
+
         {/* Todas as outras rotas usam o Layout principal com sidebar Makima */}
         <Route path="/*" element={
           <Layout>
             <Routes>
-              {/* Página inicial com resumo financeiro */}
-              <Route path="/" element={<Dashboard />} />
+              {/* A rota `/` agora é o Hub da Makima (renderizado fora do Layout,
+                  acima). O Dashboard de finanças deixou de ser a home. */}
 
               {/* CRUD de transações financeiras */}
               <Route path="/transactions" element={<Transactions />} />
