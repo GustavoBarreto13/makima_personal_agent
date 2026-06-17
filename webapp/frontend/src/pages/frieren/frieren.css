@@ -317,14 +317,44 @@
     linear-gradient(150deg, var(--mist), var(--card) 60%);
   border: 1px solid oklch(0.565 0.082 196 / 0.16);
   margin-top: 28px;
+
+  /* ── Defesa contra vazamento de CSS de outro shell ──────────────────────
+     PROBLEMA: o shell da Mai define `.hero` SEM escopo (mai/mai.css) com
+       `display: flex; align-items: flex-end; min-height: 280px; box-shadow`.
+     Como o Vite junta o CSS de TODOS os shells num bundle global, esse `.hero`
+     global vaza para cá. A regra daqui (`.frieren-shell .hero`, especificidade
+     0,2,0) ganha do `.hero` global (0,1,0) só nas propriedades que ela declara;
+     as demais (display/min-height/box-shadow) passariam e quebrariam o banner —
+     o `display: flex` transforma o `.hero-inner` (que aqui é um grid) num
+     flex-item alinhado embaixo. Por isso redeclaramos explicitamente os valores
+     corretos da Frieren para neutralizar o vazamento.
+     (`display: block` é o comportamento original: quem é grid é o `.hero-inner`.) */
+  display: block;     /* anula o `display: flex` vazado da Mai */
+  min-height: 0;      /* anula o `min-height: 280px` vazado da Mai */
+  box-shadow: none;   /* anula o `box-shadow` vazado da Mai */
 }
 .frieren-shell .hero-grain { position: absolute; inset: 0; opacity: 0.4; pointer-events: none;
   background-image: radial-gradient(oklch(0.565 0.082 196 / 0.14) 0.5px, transparent 0.6px);
   background-size: 7px 7px; mix-blend-mode: multiply; }
-.frieren-shell .hero-inner { position: relative; display: grid; align-items: center; }
+.frieren-shell .hero-inner {
+  position: relative; display: grid; align-items: center;
+  /* ── Defesa contra vazamento de CSS de outro shell ──────────────────────
+     PROBLEMA: mai/mai.css define `.hero-inner` SEM escopo com
+       `display: flex; flex-direction: column; padding: 38px 40px; max-width: 62%`.
+     O `max-width: 62%` espreme a grade da Frieren para menos da metade da
+     largura disponível, quebrando o layout de 2 colunas. O `display: flex`
+     conflita com o `display: grid` definido pela Frieren — mas como a regra
+     escopada já declara `display: grid`, ela ganha essa propriedade. O
+     `max-width` não era declarado aqui, então vazava livremente.
+     Redeclaramos `max-width: none` para neutralizar o vazamento. */
+  max-width: none;  /* anula o `max-width: 62%` vazado da Mai — grid deve ser 100% */
+}
 .frieren-shell .hero-eyebrow {
   font-family: var(--mono); font-size: 10.5px; text-transform: uppercase;
   letter-spacing: 0.18em; color: var(--teal-deep); margin-bottom: 14px;
+  /* ── Defesa: mai/mai.css define `.hero-eyebrow` com `display: flex; align-items: center`
+     sem escopo. Na Frieren o eyebrow é texto simples (block), não um flex container. */
+  display: block;  /* anula o `display: flex` vazado da Mai */
 }
 .frieren-shell .hero-greet {
   font-family: var(--serif); font-weight: 400; letter-spacing: -0.02em;
@@ -341,9 +371,41 @@
   font-family: var(--serif); font-style: italic; color: var(--ink-2);
   border-left: 2px solid var(--teal); padding-left: 14px; max-width: 44ch;
 }
-.frieren-shell .hero-cta { display: flex; gap: 10px; flex-wrap: wrap; }
+.frieren-shell .hero-cta {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  /* ── Defesa: mai/mai.css define `.hero-cta` com `margin-top: 6px` sem escopo.
+     Na Frieren o espaçamento vertical entre os elementos do copy é controlado
+     pelo `gap` do flex container pai (`.hero-copy`), não por margin direta. */
+  margin-top: 0;  /* anula o `margin-top: 6px` vazado da Mai */
+}
 
-.frieren-shell .hero-portrait { position: relative; }
+/* ── Defesa contra vazamento de CSS de outro shell — hero-copy base ──────────
+   PROBLEMA: komi/komi.css define `.hero-copy` SEM escopo com `max-width: 64%`.
+   Nas variações Cinemático e Editorial da Frieren, o `.hero-copy` NÃO declara
+   max-width (o design do handoff assume 100% da coluna de texto). O `max-width:64%`
+   vazado do Komi espreme o bloco de texto mesmo dentro de uma coluna já estreita.
+   A variação Galeria declara explicitamente `max-width: 62%` (intencional) e por
+   ter especificidade maior (`.frieren-shell .hero[data-layout='galeria'] .hero-copy`)
+   não é afetada por esta regra base. */
+.frieren-shell .hero-copy {
+  max-width: none;  /* anula o `max-width: 64%` vazado do Komi no Cinemático/Editorial */
+}
+
+.frieren-shell .hero-portrait {
+  position: relative;
+  /* ── Defesa contra vazamento de CSS de outro shell ──────────────────────
+     PROBLEMA: mai/mai.css define `.hero-portrait` SEM escopo com
+       `position: absolute; right: 26px; bottom: 0; width: 252px`.
+     Na Frieren o retrato é um item normal do grid (position: relative,
+     sem coordenadas fixas e sem largura fixa — a largura vem da coluna do grid).
+     O `position: absolute` + `right/bottom/width` vazados tiram o retrato do
+     fluxo do grid e o colam no canto inferior direito com 252px, quebrando
+     o layout de todas as variações Cinemático e Editorial.
+     Redeclaramos os valores padrão para neutralizar o vazamento. */
+  right: auto;    /* anula o `right: 26px` vazado da Mai */
+  bottom: auto;   /* anula o `bottom: 0` vazado da Mai */
+  width: auto;    /* anula o `width: 252px` vazado da Mai — largura vem do grid */
+}
 .frieren-shell .hero-portrait .halo {
   position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%);
   width: 118%; aspect-ratio: 1; border-radius: 50%;
@@ -949,6 +1011,27 @@
 /* ─── painel de tweaks ──────────────────────────────────────────────────── */
 .frieren-shell .tweaks-panel {
   position: fixed; right: 16px; bottom: 80px; z-index: 300;
+
+  /* ── Defesa contra vazamento de CSS de outro shell ──────────────────────
+     PROBLEMA: o diário Violet define `.tweaks-panel` SEM escopo (violet/violet.css)
+       como um painel lateral cheio: `top: 0; right: 0; bottom: 0; width: 320px;
+       border-left: 1px solid; background; padding; display: flex; box-shadow`.
+     Esse `.tweaks-panel` global vaza para cá pelo bundle único do Vite. Aqui o
+     painel de tweaks é só um BOTÃO FLUTUANTE no canto inferior direito — mas as
+     propriedades vazadas (top:0 + width:320px + border-left) o transformavam num
+     painel alto colado na direita com uma borda esquerda visível: era a "barra na
+     direita que não deveria existir". O Violet é 100% global (não tem wrapper
+     `.violet-shell`), então não dá pra corrigir na fonte sem refatorá-lo todo;
+     neutralizamos o vazamento aqui, resetando cada propriedade herdada. */
+  top: auto;          /* anula o `top: 0` (não estica até o topo da tela) */
+  width: auto;        /* anula o `width: 320px` */
+  height: auto;       /* garante altura pelo conteúdo, não 100% */
+  background: none;   /* anula o `background` do painel do Violet */
+  border: none;       /* anula o `border-left` — ESTA era a barra visível */
+  box-shadow: none;   /* anula o `box-shadow` do painel do Violet */
+  padding: 0;         /* anula o `padding: 28px 24px` */
+  overflow: visible;  /* anula o `overflow-y: auto` */
+  display: block;     /* anula o `display: flex` (o posicionamento interno é próprio) */
 }
 .frieren-shell .tp-toggle {
   width: 40px; height: 40px; border-radius: 50%;
