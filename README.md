@@ -47,7 +47,7 @@ Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na
 | Empréstimos | Saldo devedor, parcelas restantes, registrar pagamento |
 | Orçamentos | Envelopes por categoria com barra de progresso, definir novo limite |
 | Assinaturas | Lista de assinaturas recorrentes com custo mensal total |
-| Tarefas | Sub-app completa (Kaguya): listas/projetos, colunas Kanban, Meu Dia, tags, smart-lists (filtros salvos), calendário (mês/semana com ocorrências recorrentes) e hábitos (heatmap + força) |
+| Tarefas | Sub-app completa (Kaguya): listas/projetos, **Kanban "Vidro"** (board em vidro fosco com views configuráveis — adornos, métricas e filtro por view), Meu Dia, tags, smart-lists (filtros salvos), calendário (mês/semana com ocorrências recorrentes) e hábitos (heatmap + força) |
 | Livros | Sub-app completa (Frieren): 9 telas — Início com hero e heatmap anual, Biblioteca com grade filtrável, detalhe de livro, Quero Ler, Wishlist com link de loja, Estantes (CRUD), Atividade agrupada por data, Resenhas e Estatísticas do ano |
 | Diário | Bullet journal com timestamp por bullet, heatmap anual, `@pessoas`, `#tags` e busca full-text — sidebar direita com Insights (filtro por ano), Pessoas, Tags e Busca — tela Write com **registro emocional TCC** (situação → emoção → pensamento automático → resposta adaptativa → reavaliação) e aba Emoções nos Insights |
 | Filmes | Sub-app completa (Akane): catálogo estilo Letterboxd — grid de pôsteres TMDB + fallback tipográfico, diário de sessões com rewatch, watchlist, notas e reviews, histograma de notas, Rewind anual, listas/coleções, nuvem de etiquetas, Cofre de conteúdos, vitrine de favoritos (4 slots) e sync RSS/CSV do Letterboxd |
@@ -249,6 +249,7 @@ makima_personal_agent/
 │   │   ├── tools_projects.py    # listas, grupos, colunas (Kanban)
 │   │   ├── tools_tags.py        # tags N:N (fatia 013)
 │   │   ├── tools_filters.py     # smart-lists via DSL (fatia 013)
+│   │   ├── tools_kanban_views.py # views de Kanban configuráveis (spec 024)
 │   │   ├── tools_calendar.py    # consultas por intervalo + ocorrências recorrentes (013)
 │   │   ├── tools_habits.py      # hábitos + check-ins (fatia 014)
 │   │   ├── recurrence.py        # motor puro de recorrência (RRULE, fatia 012)
@@ -518,9 +519,10 @@ npm install && npm run dev   # dev server em localhost:5173
 | 015 | Akane — Filmes (Letterboxd-style, PostgreSQL + TMDB/Letterboxd) | ✅ |
 | 021 | Marin — Animes (PostgreSQL + Jikan/AniList/ARM + MAL OAuth2 PKCE) | ✅ |
 | 022 | Mai — Séries de TV (PostgreSQL + TMDB API v4) | ✅ |
+| 024 | Kaguya — Kanban "Vidro" (reskin glass do board, perf `@dnd-kit` preservada) + **views configuráveis** (adornos + métricas do rodapé + filtro `FilterRules`, salvas no backend `kanban_views`) | ✅ |
 | 4 | Lucy (email): tools Gmail API v1 + agente | ⏳ |
 
-**Status atual:** Kanban da Kaguya reescrito com @dnd-kit (drag fluido, optimistic update, reordenação dentro de colunas). Komi (spec 014) ✅ backend — schema, tools, agente, coordinator, router REST e testes entregues; frontend pendente. Kurisu 🔧 — pendente corpus Vertex AI (ver `agents/kurisu/CLAUDE.md`).
+**Status atual:** Kanban da Kaguya redesenhado no visual "Vidro" (vidro fosco/OKLCH, capacity meter, anel de subtarefas, rodapé-resumo) mantendo as otimizações de `@dnd-kit` (optimistic update, reordenação, sem repaint no drag), com **views de board configuráveis** salvas (spec 024). Komi (spec 014) ✅ backend — schema, tools, agente, coordinator, router REST e testes entregues; frontend pendente. Kurisu 🔧 — pendente corpus Vertex AI (ver `agents/kurisu/CLAUDE.md`).
 
 ---
 
