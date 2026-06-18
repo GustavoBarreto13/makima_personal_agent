@@ -52,6 +52,7 @@ Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na
 | Diário | Bullet journal com timestamp por bullet, heatmap anual, `@pessoas`, `#tags` e busca full-text — sidebar direita com Insights (filtro por ano), Pessoas, Tags e Busca — tela Write com **registro emocional TCC** (situação → emoção → pensamento automático → resposta adaptativa → reavaliação) e aba Emoções nos Insights |
 | Filmes | Sub-app completa (Akane): catálogo estilo Letterboxd — grid de pôsteres TMDB + fallback tipográfico, diário de sessões com rewatch, watchlist, notas e reviews, histograma de notas, Rewind anual, listas/coleções, nuvem de etiquetas, Cofre de conteúdos, vitrine de favoritos (4 slots) e sync RSS/CSV do Letterboxd |
 | Animes | Sub-app completa (Marin): catálogo de animes com sync OAuth MAL — grid de pôsteres com 12 paletas tipográficas, diário de episódios (log de ep_start/ep_end), watchlist, schedule JST/BRT dos próximos lançamentos, estatísticas anuais com heatmap, vitrine de favoritos (4 slots, localStorage) |
+| Séries | Sub-app completa (Mai): catálogo de séries via TMDB API v4 — seasons/episodes sincronizados, log de watch com nota (0.5–5.0), status por temporada, shell React `/series/*` |
 
 **Stack:** FastAPI (backend) + React 19 + TypeScript + Tailwind CSS (frontend) — servidos pelo mesmo container.
 
@@ -71,6 +72,7 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── Frieren    → PostgreSQL + Google Books API (livros)     ✅ ativo
     ├── Akane      → PostgreSQL + TMDB + Letterboxd (filmes)   ✅ ativo
     ├── Marin      → PostgreSQL + Jikan/AniList + MAL OAuth (animes) ✅ ativo
+    ├── Mai        → PostgreSQL + TMDB API v4 (séries de TV)   ✅ ativo
     ├── Komi       → PostgreSQL (pessoas + vínculos cross-agent) ✅ ativo
     ├── Violet     → PostgreSQL (diário)                        🔧 ativo na web, agente Telegram pendente
     └── Lucy       → Gmail API v1                               ⏳ planejado
@@ -160,6 +162,18 @@ Inspirada na Akane Kurokawa de *Oshi no Ko* — atriz analítica e perfeccionist
 - Cross-agent: `create_movie_reminder(movie_query, when)` → cria tarefa na Kaguya
 
 **Armazenamento:** PostgreSQL — tabelas `movies`, `diary_entries`, `movie_lists`, `movie_list_items`, `movie_vault_items`, `movie_people`, `movie_favorites`.
+
+### Mai — séries de TV
+Inspirada em Mai Sakurajima de *Rascal Does Not Dream of Bunny Girl Senpai* — direta, autoconfiante e sem paciência para devaneio. Gerencia o catálogo pessoal de séries de TV com metadados da TMDB API v4.
+
+**Funcionalidades:**
+- Catálogo de séries com status: `assistindo`, `completo`, `quero_assistir`, `pausado`, `abandonado`
+- Sincronização automática de seasons e episodes via TMDB API v4 (Bearer token)
+- Diário de episódios: log de `ep_start → ep_end` por temporada, data, nota (0.5–5.0) e comentários
+- Notas por episódio/temporada, resumo por série
+- Shell React `/series/*` com grid de pôsteres TMDB e tela de detalhe por série
+
+**Armazenamento:** PostgreSQL — tabelas `series`, `seasons`, `series_episodes`, `series_watch_logs`.
 
 ### Frieren — livros
 Inspirada em Frieren de *Frieren: Beyond Journey's End* — elfa maga milenar, contemplativa, paciente.
@@ -496,14 +510,17 @@ npm install && npm run dev   # dev server em localhost:5173
 | 3 | Kurisu (knowledge base): Vertex AI RAG sobre vault Obsidian — estrutura criada, pendente corpus GCP | 🔧 |
 | 5a | Frieren (livros): PostgreSQL + Google Books API + menu interativo Telegram | ✅ |
 | — | Webapp (FastAPI + React) + diário Violet na web | ✅ |
-| 016–019 | Kaguya — Meu Dia/time-blocking, Eisenhower, Command Palette ⌘K, Calendar Hub | ⏳ |
+| 016 | Kaguya — Meu Dia + time-blocking (capacity bar, blocos de tempo, sugestões) | ✅ |
+| 017 | Kaguya — Matriz de Eisenhower (drag-and-drop 2×2 derivada de prioridade×urgência) | ✅ |
+| 018 | Kaguya — Command Palette ⌘K + atalhos de teclado + recorrência no quick-add | ✅ |
+| 019 | Kaguya — Calendar Hub (fan-out multi-fonte: tarefas + Nami + Frieren + GCal) | ✅ |
 | 014 | Komi — Pessoas (identidade canônica + vínculos cross-agent + REST `/api/people/*`) | ✅ backend |
 | 015 | Akane — Filmes (Letterboxd-style, PostgreSQL + TMDB/Letterboxd) | ✅ |
 | 021 | Marin — Animes (PostgreSQL + Jikan/AniList/ARM + MAL OAuth2 PKCE) | ✅ |
 | 022 | Mai — Séries de TV (PostgreSQL + TMDB API v4) | ✅ |
 | 4 | Lucy (email): tools Gmail API v1 + agente | ⏳ |
 
-**Status atual:** Komi (spec 014) ✅ backend — schema, tools, agente, coordinator, router REST e testes entregues. Frontend pendente. Kurisu 🔧 — pendente corpus Vertex AI (ver `agents/kurisu/CLAUDE.md`).
+**Status atual:** Kanban da Kaguya reescrito com @dnd-kit (drag fluido, optimistic update, reordenação dentro de colunas). Komi (spec 014) ✅ backend — schema, tools, agente, coordinator, router REST e testes entregues; frontend pendente. Kurisu 🔧 — pendente corpus Vertex AI (ver `agents/kurisu/CLAUDE.md`).
 
 ---
 
