@@ -201,6 +201,34 @@ def test_move_between_projects_applies_column_rule(inbox_id):
     assert moved["column_id"] == first_col
 
 
+def test_update_same_project_preserves_column(inbox_id):
+    """Editar campo (ex.: prioridade) com project_id IGUAL ao atual NÃO reseta a coluna.
+
+    Regressão: o TaskModal sempre manda project_id; antes, qualquer edição jogava o card
+    de volta para a 1ª coluna. Mover de lista de verdade ainda deve resetar.
+    """
+    board = P.create_project("Board")["id"]
+    P.create_column(board, "A fazer")
+    P.create_column(board, "Fazendo")
+    cols = sorted(P.list_columns(board), key=lambda c: c["position"])
+    first_col, second_col = cols[0]["id"], cols[1]["id"]
+
+    t = T.create_task("card", project_id=board, column_id=second_col)["id"]
+    # Edita a prioridade mandando o MESMO project_id (como o TaskModal faz), sem column_id.
+    T.update_task(t, priority=3, project_id=board)
+    row = next(x for x in T.list_tasks(board) if x["id"] == t)
+    assert row["column_id"] == second_col   # permaneceu na coluna — não voltou pra 1ª
+    assert row["priority"] == 3
+
+    # Mover para OUTRA lista (project_id diferente) ainda aplica a regra da 1ª coluna.
+    other = P.create_project("Outra")["id"]
+    P.create_column(other, "Inicial")
+    other_first = sorted(P.list_columns(other), key=lambda c: c["position"])[0]["id"]
+    T.update_task(t, project_id=other)
+    moved = next(x for x in T.list_tasks(other) if x["id"] == t)
+    assert moved["column_id"] == other_first
+
+
 def test_create_lands_in_first_column_when_board_exists(inbox_id):
     """Criar tarefa numa lista com board cai na 1ª coluna (sem isso, o Kanban fica vazio)."""
     board = P.create_project("Board")["id"]

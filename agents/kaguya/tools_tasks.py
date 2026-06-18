@@ -751,10 +751,11 @@ def update_task(
 
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT due_date FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,))
+            cur.execute("SELECT due_date, project_id FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,))
             existing = cur.fetchone()
             if not existing:
                 return {"status": "error", "message": "Tarefa não encontrada."}
+            current_project_id = existing[1]   # lista atual — base para detectar troca real de lista
 
             sets, params = [], {"id": task_id}
             if title is not None:
@@ -781,8 +782,11 @@ def update_task(
                 sets.append("due_time = %(due_time)s")
                 params["due_time"] = due_time
 
-            # Mover de lista: aplica a regra da coluna do destino (se column_id não foi forçado).
-            if project_id is not None:
+            # Mover de lista: só aplica a regra da coluna quando o project_id MUDA de verdade.
+            # (Antes, qualquer PATCH com project_id — mesmo igual ao atual, como o TaskModal
+            # sempre envia — resetava a coluna para a primeira; por isso editar a prioridade
+            # jogava o card de volta pra 1ª coluna.)
+            if project_id is not None and project_id != current_project_id:
                 cur.execute("SELECT 1 FROM task_projects WHERE id = %s AND archived_at IS NULL", (project_id,))
                 if not cur.fetchone():
                     return {"status": "error", "message": "Lista de destino não encontrada."}
