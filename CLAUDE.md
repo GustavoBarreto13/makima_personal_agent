@@ -8,6 +8,27 @@ O design completo — arquitetura, fases, schemas PostgreSQL, custos — está e
 
 ---
 
+## Convenções globais
+
+### Fuso horário — tudo em UTC-3 (America/Sao_Paulo)
+
+O usuário está em **UTC-3**. Qualquer cálculo de data ou hora deve usar o horário local, nunca UTC puro.
+
+**Frontend (TypeScript/React):**
+- Nunca usar `new Date().toISOString().slice(0,10)` para obter "hoje" — `toISOString()` retorna UTC e após as 21h local já aponta para o dia seguinte.
+- Usar sempre `getFullYear() / getMonth() / getDate()` (partes locais do navegador).
+- O helper canônico está em `webapp/frontend/src/pages/violet/dateUtils.ts` → `todayLocalISO()`. Reutilizá-lo em vez de reinventar.
+
+**Backend (Python/PostgreSQL):**
+- Timestamps armazenados como `TIMESTAMPTZ` (correto — guarda o instante absoluto).
+- Para derivar a **data local** de um timestamp, sempre converter: `created_at AT TIME ZONE 'America/Sao_Paulo'`.
+- Nunca usar `CURRENT_DATE`, `datetime.date.today()` ou `NOW()::date` em contexto de UI/relatório — esses retornam a data do servidor (UTC no container). Usar `(NOW() AT TIME ZONE 'America/Sao_Paulo')::date`.
+- Em queries de estatísticas que agrupam por hora do dia, usar `EXTRACT(HOUR FROM col AT TIME ZONE 'America/Sao_Paulo')`.
+
+**Histórico:** o bug foi descoberto na Violet (diário) em jun/2026 — bullets escritos após as 21h caíam no dia seguinte porque o frontend usava `toISOString()`. Corrigido em `fix(violet): corrige fuso horário UTC vs UTC-3`. Script de migração dos dados antigos: `scripts/fix_journal_bullet_timezone.py`.
+
+---
+
 ## Relação com n8n-python-scripts
 
 Os dois repositórios são **independentes**. O `makima_personal_agent` é self-contained: não importa nada do [`n8n-python-scripts`](https://github.com/Gusstavo42/n8n-python-scripts) (local: `C:\Users\gusta\Documents\GitHub\n8n-python-scripts`) em runtime.
