@@ -14,6 +14,7 @@ import type { Task, Column } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { TaskCard } from '../components/TaskCard'
 import { SortableTaskCard } from '../components/SortableTaskCard'
+import { SummaryFooter } from '../components/SummaryFooter'
 import { Icon } from '../ui/Icons'
 import {
   DndContext,
@@ -47,46 +48,72 @@ interface KanbanScreenProps {
 // Extraído para componente separado porque useSortable/useDroppable são hooks
 // e precisam ser chamados dentro de um componente React.
 
+// Estimativa formatada (min → "20min"/"1.5h"/"3h") para a sub-linha + capacity meter.
+function fmtEst(min: number): string {
+  if (min < 60) return `${min}min`
+  const h = min / 60
+  return Number.isInteger(h) ? `${h}h` : `${h.toFixed(1)}h`
+}
+
 interface KanbanColumnProps {
   col: Column
   cards: Task[]            // já filtrados + ordenados por position
   activeId: number | null  // id do card sendo arrastado (para opacidade do slot)
   isOver: boolean          // true quando o cursor está sobre esta coluna durante drag
+  projectName: string      // nome da lista (chip de projeto dos cards)
   onOpen: (task: Task) => void
   onAddTask: (col: Column) => void
   onToggleDone: (col: Column) => void
 }
 
-function KanbanColumn({ col, cards, activeId, isOver, onOpen, onAddTask, onToggleDone }: KanbanColumnProps) {
+function KanbanColumn({ col, cards, activeId, isOver, projectName, onOpen, onAddTask, onToggleDone }: KanbanColumnProps) {
   // useDroppable torna o corpo da coluna uma área de drop para o dnd-kit.
   // Captura drops em colunas vazias (sem cards) e abaixo de todos os cards.
   // O id no formato "col:<id>" diferencia a coluna de um id de card.
   const { setNodeRef } = useDroppable({ id: `col:${col.id}` })
 
-  return (
-    <div className={`kg-col${isOver ? ' is-over' : ''}`}>
+  // Soma das estimativas (duration_min) dos cards — insumo da sub-linha e do capacity meter.
+  const colEst = cards.reduce((s, t) => s + (t.duration_min ?? 0), 0)
+  // Segmentos "ligados": 240min (4h) preenche os 5 (R6). Oculto na coluna concluído.
+  const segOn = col.is_done_column ? 0 : Math.round(Math.min(colEst / 240, 1) * 5)
+  // Cor do dot/segmentos: coluna concluído = esmeralda; demais = accent ativo (Q-B/R-6).
+  const accent = col.is_done_column ? 'var(--done)' : 'var(--kg)'
 
-      {/* Cabeçalho: nome da coluna, contador e botão de concluído */}
-      <div className="kg-col-head">
-        {col.is_done_column && (
-          <Icon name="check" size={14} style={{ color: 'var(--done)' }} />
+  return (
+    <div
+      className={`kcol${isOver ? ' is-over' : ''}`}
+      style={{ '--kc-color': accent } as React.CSSProperties}
+    >
+      {/* Cabeçalho "Vidro": numeral grande, nome + sub-linha, toggle de concluído, capacity meter */}
+      <div className="kcol-head">
+        <div className="kc-row1">
+          <span className="kc-num">{cards.length}</span>
+          <div className="kc-namewrap">
+            <span className="kc-name">
+              <span className="kc-dot" style={{ background: accent }} />{col.name}
+            </span>
+            <span className="kc-sub">
+              {col.is_done_column ? 'concluídas' : colEst > 0 ? `Σ ${fmtEst(colEst)}` : 'sem estimativa'}
+            </span>
+          </div>
+          {/* Toggle "coluna concluído" (feature do board por-lista; ocupa o lugar do WIP do handoff) */}
+          <button
+            className="kc-done-toggle"
+            title={col.is_done_column ? 'É a coluna concluído' : 'Marcar como coluna concluído'}
+            onClick={() => onToggleDone(col)}
+          >
+            <Icon name="check" size={14} style={{ color: 'var(--done)', opacity: col.is_done_column ? 1 : 0.32 }} />
+          </button>
+        </div>
+        {!col.is_done_column && (
+          <div className="kcol-cap">
+            {[0, 1, 2, 3, 4].map(i => <i key={i} className={i < segOn ? 'on' : ''} />)}
+          </div>
         )}
-        {col.name}
-        <span className="kg-nav-count">{cards.length}</span>
-        <button
-          className="kg-icon-btn"
-          style={{ border: 'none', padding: 3 }}
-          title={col.is_done_column ? 'É a coluna concluído' : 'Marcar como concluído'}
-          onClick={() => onToggleDone(col)}
-        >
-          <Icon name="check" size={13} style={{ opacity: col.is_done_column ? 1 : 0.35 }} />
-        </button>
       </div>
 
-      {/* Corpo: droppable + cards sortáveis */}
-      <div ref={setNodeRef} className="kg-col-body">
-        {/* SortableContext informa ao dnd-kit quais ids compõem esta coluna e em
-            que ordem, permitindo calcular os transforms de animação de espaço. */}
+      {/* Corpo: droppable + cards sortáveis (@dnd-kit) */}
+      <div ref={setNodeRef} className="kcol-body">
         <SortableContext items={cards.map(t => t.id)} strategy={verticalListSortingStrategy}>
           {cards.map(t => (
             <SortableTaskCard
@@ -94,15 +121,18 @@ function KanbanColumn({ col, cards, activeId, isOver, onOpen, onAddTask, onToggl
               task={t}
               onOpen={onOpen}
               isBeingDragged={activeId === t.id}
+              projectName={projectName}
             />
           ))}
         </SortableContext>
-
-        {/* Botão "+ tarefa" no rodapé de cada coluna */}
-        <button className="kg-col-add" onClick={() => onAddTask(col)}>
-          <Icon name="plus" size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />tarefa
-        </button>
       </div>
+
+      {/* Botão "+ Adicionar tarefa" (irmão do corpo, como no handoff); oculto na coluna concluído */}
+      {!col.is_done_column && (
+        <button className="kcol-add" onClick={() => onAddTask(col)}>
+          <Icon name="plus" size={13} /> Adicionar tarefa
+        </button>
+      )}
     </div>
   )
 }
@@ -401,7 +431,7 @@ export function KanbanScreen({
   return (
     <div className="kg-page" style={{ maxWidth: 1320 }}>
       <h1 className="kg-page-title"><Icon name="board" size={22} /> {projectName}</h1>
-      <div className="kg-page-sub">Arraste os cards entre as colunas</div>
+      <div className="kg-page-sub">arraste entre colunas · soltar em Concluído completa</div>
 
       <DndContext
         sensors={sensors}
@@ -410,47 +440,55 @@ export function KanbanScreen({
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
+        {/* Board "Vidro": container com gradiente, fileira de colunas e rodapé-resumo */}
         <div className="kg-board">
-          {columns.map((col, idx) => {
-            // Cards desta coluna, ordenados por position para exibição correta.
-            // A 1ª coluna também acolhe tarefas órfãs (column_id null) para que
-            // nenhuma tarefa suma do board ao trocar de coluna ou ao abrir o Kanban
-            // em uma lista que já tinha tarefas sem coluna.
-            const isFirst = idx === 0
-            const cards = tasks
-              .filter(t => t.column_id === col.id || (isFirst && t.column_id == null))
-              .sort((a, b) => a.position - b.position)
+          <div className="kcols">
+            {columns.map((col, idx) => {
+              // Cards desta coluna, ordenados por position para exibição correta.
+              // A 1ª coluna também acolhe tarefas órfãs (column_id null) para que
+              // nenhuma tarefa suma do board ao trocar de coluna ou ao abrir o Kanban
+              // em uma lista que já tinha tarefas sem coluna.
+              const isFirst = idx === 0
+              const cards = tasks
+                .filter(t => t.column_id === col.id || (isFirst && t.column_id == null))
+                .sort((a, b) => a.position - b.position)
 
-            return (
-              <KanbanColumn
-                key={col.id}
-                col={col}
-                cards={cards}
-                activeId={activeId}
-                isOver={overColId === col.id}
-                onOpen={onOpenTask}
-                onAddTask={addTask}
-                onToggleDone={toggleDone}
-              />
-            )
-          })}
+              return (
+                <KanbanColumn
+                  key={col.id}
+                  col={col}
+                  cards={cards}
+                  activeId={activeId}
+                  isOver={overColId === col.id}
+                  projectName={projectName}
+                  onOpen={onOpenTask}
+                  onAddTask={addTask}
+                  onToggleDone={toggleDone}
+                />
+              )
+            })}
 
-          {/* Botão para adicionar nova coluna ao board */}
-          <button
-            className="kg-btn"
-            style={{ height: 44, flexShrink: 0 }}
-            onClick={addColumn}
-          >
-            <Icon name="plus" size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Coluna
-          </button>
+            {/* Botão para adicionar nova coluna ao board (feature do board por-lista) */}
+            <button
+              className="kg-btn"
+              style={{ height: 44, flexShrink: 0, alignSelf: 'flex-start', marginTop: 22 }}
+              onClick={addColumn}
+            >
+              <Icon name="plus" size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Coluna
+            </button>
+          </div>
+
+          {/* Rodapé-resumo (slots default da view "Completa" no US1) */}
+          <SummaryFooter tasks={tasks} columns={columns} />
         </div>
 
         {/* DragOverlay: card "levantado" que segue o cursor durante o drag.
-            Renderizado num portal no topo do DOM — não sofre clipping da coluna. */}
+            Renderizado num portal no topo do DOM — não sofre clipping da coluna.
+            Sem backdrop-filter (perf R20): o blur fica só nas colunas estáticas. */}
         <DragOverlay dropAnimation={null}>
           {activeTask ? (
             <div className="kg-drag-overlay">
-              <TaskCard task={activeTask} onOpen={() => {}} />
+              <TaskCard task={activeTask} onOpen={() => {}} projectName={projectName} />
             </div>
           ) : null}
         </DragOverlay>

@@ -284,30 +284,91 @@
 .kg-toast.err { background: var(--p-high); color: white; }
 @keyframes kg-toast-in { from { opacity: 0; transform: translate(-50%, 10px); } }
 
-/* ═══ Kanban (US3) — @dnd-kit ═══ */
-.kg-board { display: flex; gap: 14px; align-items: flex-start; padding: 4px; overflow-x: auto; }
-/* Coluna: largura aumentada para 280px, transição suave de borda/sombra */
-.kg-col { background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--kg-r-md); width: 280px; flex-shrink: 0; display: flex; flex-direction: column; max-height: calc(100vh - 160px); transition: border-color .15s, box-shadow .15s; }
-/* Destaque da coluna alvo durante o drag (set via estado overColId, sem onDragOver nativo) */
-.kg-col.is-over { border-color: var(--kg); box-shadow: 0 0 0 3px var(--kg-tint); }
-/* Compatibilidade com o nome antigo caso algum código externo ainda use drop-target */
-.kg-col.drop-target { border-color: var(--kg); box-shadow: 0 0 0 3px var(--kg-tint); }
-.kg-col-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; font-weight: 600; font-size: 13px; border-bottom: 1px solid var(--line-2); }
-.kg-col-head .kg-nav-count { margin-left: auto; }
-/* Corpo da coluna: flex:1 garante que a área de drop abranja todo o espaço vazio */
-.kg-col-body { padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; min-height: 60px; }
-/* Card: transições suaves de sombra; user-select:none evita seleção de texto ao arrastar */
-.kg-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-sm); padding: 10px; box-shadow: var(--shadow-sm); cursor: grab; display: flex; gap: 8px; transition: box-shadow .12s, border-color .12s; user-select: none; }
-.kg-card:hover { box-shadow: var(--shadow-md); border-color: var(--line-2); }
-.kg-card:active { cursor: grabbing; }
-.kg-card.done .kg-card-title { color: var(--ink-4); text-decoration: line-through; }
-.kg-card-title { font-size: 13px; }
-/* Overlay: card "levantado" que segue o cursor. scale + rotate suave dá a
-   sensação física de ter "pego" o card na mão. */
-.kg-drag-overlay { transform: scale(1.03) rotate(1.5deg); box-shadow: var(--shadow-lg); border-radius: var(--kg-r-sm); opacity: 0.96; pointer-events: none; }
-/* botão discreto "+ tarefa" no rodapé de cada coluna do Kanban */
-.kg-col-add { display: flex; align-items: center; justify-content: center; padding: 7px; font-size: 12px; color: var(--ink-4); background: transparent; border: 1px dashed var(--line-2); border-radius: var(--kg-r-sm); cursor: pointer; transition: color .12s, border-color .12s, background .12s; }
-.kg-col-add:hover { color: var(--kg); border-color: var(--kg); background: var(--kg-tint); }
+/* ═══ Kanban "Vidro" (spec 024) — colunas em vidro fosco sobre gradiente ═══
+   Portado fielmente do handoff design_handoff_kaguya_kanban/source/styles.css.
+   DnD continua via @dnd-kit; classes do handoff (.board/.kcol/.kcard/.ksummary). */
+.kg-board { position: relative; border-radius: var(--kg-r-lg); overflow: hidden; min-height: 62vh;
+  display: flex; flex-direction: column;
+  background:
+    radial-gradient(120% 90% at 12% 0%, oklch(0.56 0.13 252 / 0.10), transparent 46%),
+    radial-gradient(120% 90% at 92% 8%, oklch(0.62 0.15 330 / 0.09), transparent 44%),
+    linear-gradient(160deg, var(--mist), var(--paper) 60%);
+  border: 1px solid var(--line); }
+.kg-app[data-theme='dark'] .kg-board { border-color: oklch(1 0 0 / 0.06); }
+.kcols { display: flex; gap: 16px; align-items: flex-start; padding: 22px 22px 16px; overflow-x: auto; flex: 1; }
+.kcols::-webkit-scrollbar { height: 10px; }
+.kcols::-webkit-scrollbar-thumb { background: oklch(0.4 0.04 350 / 0.18); border-radius: 6px; border: 3px solid transparent; background-clip: padding-box; }
+
+.kcol { flex: 1 1 0; min-width: 270px; max-width: 360px;
+  background: oklch(1 0.002 350 / 0.62); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid oklch(1 0 0 / 0.6); border-radius: 20px;
+  box-shadow: 0 1px 0 oklch(1 0 0 / 0.7) inset, 0 10px 34px oklch(0.32 0.05 348 / 0.10);
+  display: flex; flex-direction: column; max-height: calc(100vh - 230px);
+  contain: paint; /* perf (R20): isola o repaint da coluna durante o drag */ }
+.kg-app[data-theme='dark'] .kcol { background: oklch(0.32 0.02 348 / 0.42); border-color: oklch(1 0 0 / 0.08);
+  box-shadow: 0 1px 0 oklch(1 0 0 / 0.06) inset, 0 10px 34px oklch(0 0 0 / 0.28); }
+.kcol.is-over, .kcol.drop-target { border-color: var(--kg); box-shadow: 0 0 0 2px var(--kg-tint), 0 10px 34px oklch(0.32 0.05 348 / 0.12); }
+.kcol-head { padding: 17px 17px 14px; }
+.kcol-head .kc-row1 { display: flex; align-items: flex-start; gap: 11px; }
+.kcol-head .kc-num { font-family: var(--display); font-size: 30px; font-weight: 800; line-height: 0.9; letter-spacing: -0.03em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.kcol-head .kc-namewrap { display: flex; flex-direction: column; gap: 3px; padding-top: 2px; min-width: 0; }
+.kcol-head .kc-name { display: inline-flex; align-items: center; gap: 7px; font-family: var(--sans); font-size: 13px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); white-space: nowrap; }
+.kcol-head .kc-name .kc-dot { width: 8px; height: 8px; border-radius: 3px; flex-shrink: 0; }
+.kcol-head .kc-sub { font-family: var(--mono); font-size: 10px; color: var(--ink-4); white-space: nowrap; }
+.kcol-head .kc-done-toggle { margin-left: auto; background: none; border: none; cursor: pointer; padding: 3px; display: inline-flex; align-items: center; flex-shrink: 0; }
+.kcol-cap { display: flex; gap: 3px; margin-top: 13px; }
+.kcol-cap i { height: 4px; border-radius: 2px; flex: 1; background: var(--kc-color, var(--kg)); opacity: 0.2; transition: opacity .3s; }
+.kcol-cap i.on { opacity: 0.7; }
+.kcol-body { padding: 4px 12px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; min-height: 40px; scrollbar-width: thin; flex: 1; }
+.kcol-add { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px; margin: 0 12px 14px; border: 1px dashed oklch(0.4 0.04 350 / 0.22); border-radius: 12px;
+  font-family: var(--sans); font-size: 12px; color: var(--ink-4); cursor: pointer; background: oklch(1 0 0 / 0.25); transition: all .12s; }
+.kcol-add:hover { border-color: var(--kg); color: var(--kg-deep); background: var(--kg-tint); }
+.kcol-add svg { width: 13px; height: 13px; }
+
+.kcard { position: relative; display: flex; gap: 11px; align-items: flex-start;
+  background: oklch(1 0.002 350 / 0.78); border: 1px solid oklch(1 0 0 / 0.7); border-radius: 14px;
+  padding: 13px 14px; box-shadow: 0 2px 10px oklch(0.32 0.05 348 / 0.07); cursor: grab; transition: box-shadow 0.14s, border-color .14s; user-select: none; }
+.kg-app[data-theme='dark'] .kcard { background: oklch(0.36 0.02 348 / 0.55); border-color: oklch(1 0 0 / 0.08); }
+.kcard:hover { box-shadow: 0 4px 16px oklch(0.32 0.05 348 / 0.13); border-color: oklch(1 0 0 / 0.9); }
+.kcard::before { content: ''; position: absolute; left: 13px; right: 13px; top: 0; height: 2px; border-radius: 2px; background: var(--pr-color, transparent); }
+/* marca de prioridade — respeita o tweak data-pmark (bar padrão / dot / fill) */
+.kcard-prio-dot { display: none; }
+.kg-app[data-pmark='dot'] .kcard::before { display: none; }
+.kg-app[data-pmark='dot'] .kcard-prio-dot { display: block; position: absolute; top: 13px; left: 13px; width: 7px; height: 7px; border-radius: 50%; background: var(--pr-color, var(--line)); }
+.kg-app[data-pmark='fill'] .kcard::before { display: none; }
+.kg-app[data-pmark='fill'] .kcard[data-prio]:not([data-prio='0']) { background: var(--pr-tint, oklch(1 0.002 350 / 0.78)); }
+.kcard-body { flex: 1; min-width: 0; }
+.kcard-title { font-size: 13.5px; color: var(--ink); letter-spacing: -0.005em; line-height: 1.4; text-wrap: pretty; }
+.kcard-meta { display: flex; align-items: center; gap: 11px; margin-top: 10px; flex-wrap: wrap; }
+.kcard-est { font-family: var(--mono); font-size: 11px; color: var(--ink-4); white-space: nowrap; }
+.kcard-proj { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-3); min-width: 0; }
+.kcard-proj i { width: 7px; height: 7px; border-radius: 2.5px; flex-shrink: 0; }
+.kcard-proj span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kcard-date { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+.kcard-date svg { width: 11px; height: 11px; }
+.kcard-date.today { color: var(--kg-deep); font-weight: 600; }
+.kcard-date.overdue { color: var(--p-high); font-weight: 600; }
+.kcard-date.soon { color: var(--p-med); }
+.kcard-ring { flex-shrink: 0; position: relative; width: 30px; height: 30px; }
+.kcard-ring .kr-lbl { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 8.5px; color: var(--ink-3); }
+.kcard-done { width: 18px; height: 18px; border-radius: 50%; background: var(--done); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.kcard-done svg { width: 11px; height: 11px; color: #fff; }
+.kcard.done { background: oklch(1 0.002 350 / 0.5); }
+.kcard.done .kcard-title { text-decoration: line-through; color: var(--ink-3); }
+
+/* DragOverlay: card levantado SEM backdrop-filter (perf R20) + fundo sólido */
+.kg-drag-overlay { pointer-events: none; }
+.kg-drag-overlay .kcard { background: var(--card); box-shadow: var(--shadow-lg); transform: rotate(1.5deg); cursor: grabbing; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.kg-app[data-theme='dark'] .kg-drag-overlay .kcard { background: var(--card); }
+
+/* rodapé-resumo do board */
+.ksummary { display: flex; align-items: center; gap: 26px; padding: 13px 30px; flex-wrap: wrap;
+  border-top: 1px solid oklch(1 0 0 / 0.55); background: oklch(1 0 0 / 0.4); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.kg-app[data-theme='dark'] .ksummary { border-top-color: oklch(1 0 0 / 0.06); background: oklch(0.3 0.02 348 / 0.4); }
+.ksummary .ks-stat { display: flex; align-items: baseline; gap: 7px; }
+.ksummary .ks-v { font-family: var(--display); font-size: 19px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.ksummary .ks-k { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-4); }
+.ksummary .ks-sep { width: 1px; height: 22px; background: oklch(0.4 0.04 350 / 0.12); }
 
 /* ═══ Quick-add + ParseMirror (US4) ═══ */
 .kg-quickadd { position: relative; margin-bottom: 18px; }

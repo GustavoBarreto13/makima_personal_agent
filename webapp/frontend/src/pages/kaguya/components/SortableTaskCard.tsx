@@ -14,9 +14,13 @@ interface SortableTaskCardProps {
   // Quando este card está sendo arrastado, o slot original fica transparente
   // para indicar visualmente "este card está no cursor agora".
   isBeingDragged: boolean
+  // Nome da lista (chip de projeto do card glass) + toggles de adornos da view ativa.
+  projectName?: string
+  showChips?: boolean
+  showRing?: boolean
 }
 
-export function SortableTaskCard({ task, onOpen, isBeingDragged }: SortableTaskCardProps) {
+export function SortableTaskCard({ task, onOpen, isBeingDragged, projectName, showChips, showRing }: SortableTaskCardProps) {
   // useSortable fornece:
   //   attributes — aria-* para acessibilidade (role, tabIndex, etc.)
   //   listeners   — os event handlers do DnD (pointerdown, etc.) que iniciam o drag
@@ -44,7 +48,7 @@ export function SortableTaskCard({ task, onOpen, isBeingDragged }: SortableTaskC
     // O div externo recebe os atributos e listeners do dnd-kit.
     // O TaskCard interno é puramente visual (não tem draggable nem onDragStart).
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard task={task} onOpen={onOpen} />
+      <TaskCard task={task} onOpen={onOpen} projectName={projectName} showChips={showChips} showRing={showRing} />
     </div>
   )
 }
