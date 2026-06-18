@@ -1,12 +1,38 @@
-// KanbanScreen — board de uma "Lista" (guia §4.2). Colunas configuráveis, cards
-// arrastáveis entre colunas; soltar na coluna "concluído" completa a tarefa
-// (mesma ação do checkbox na lista). Lista e Kanban nunca divergem (mesma fonte).
+// KanbanScreen — board de uma "Lista" (guia §4.2). Colunas configuráveis,
+// cards arrastáveis entre colunas e reordenáveis dentro delas.
+//
+// DnD via @dnd-kit (não HTML5 nativo):
+//   • Sem onDragOver com setState — o principal causador de re-render a cada pixel.
+//   • Overlay suave que segue o cursor (DragOverlay).
+//   • Animação de abertura de espaço (SortableContext + verticalListSortingStrategy).
+//   • Optimistic update: o card se move na tela imediatamente, antes da resposta da API.
+//   • Reordenação dentro da coluna: usa o endpoint /position (antes sem uso).
+//   • Sem spinner a cada drop: spinner só no carregamento inicial.
 
 import { useEffect, useState, useCallback } from 'react'
 import type { Task, Column } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { TaskCard } from '../components/TaskCard'
+import { SortableTaskCard } from '../components/SortableTaskCard'
 import { Icon } from '../ui/Icons'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCorners,
+  useDroppable,
+  type DragStartEvent,
+  type DragOverEvent,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+
+// ── Props ────────────────────────────────────────────────────────────────────
 
 interface KanbanScreenProps {
   projectId: number
@@ -17,74 +43,341 @@ interface KanbanScreenProps {
   toast: (msg: string, kind?: 'ok' | 'err') => void
 }
 
-export function KanbanScreen({ projectId, projectName, reloadKey, onOpenTask, onChanged, toast }: KanbanScreenProps) {
-  const [columns, setColumns] = useState<Column[]>([])
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [loading, setLoading] = useState(true)
-  const [dragId, setDragId] = useState<number | null>(null)
-  const [hoverCol, setHoverCol] = useState<number | null>(null)
+// ── Componente de coluna ──────────────────────────────────────────────────────
+// Extraído para componente separado porque useSortable/useDroppable são hooks
+// e precisam ser chamados dentro de um componente React.
 
+interface KanbanColumnProps {
+  col: Column
+  cards: Task[]            // já filtrados + ordenados por position
+  activeId: number | null  // id do card sendo arrastado (para opacidade do slot)
+  isOver: boolean          // true quando o cursor está sobre esta coluna durante drag
+  onOpen: (task: Task) => void
+  onAddTask: (col: Column) => void
+  onToggleDone: (col: Column) => void
+}
+
+function KanbanColumn({ col, cards, activeId, isOver, onOpen, onAddTask, onToggleDone }: KanbanColumnProps) {
+  // useDroppable torna o corpo da coluna uma área de drop para o dnd-kit.
+  // Captura drops em colunas vazias (sem cards) e abaixo de todos os cards.
+  // O id no formato "col:<id>" diferencia a coluna de um id de card.
+  const { setNodeRef } = useDroppable({ id: `col:${col.id}` })
+
+  return (
+    <div className={`kg-col${isOver ? ' is-over' : ''}`}>
+
+      {/* Cabeçalho: nome da coluna, contador e botão de concluído */}
+      <div className="kg-col-head">
+        {col.is_done_column && (
+          <Icon name="check" size={14} style={{ color: 'var(--done)' }} />
+        )}
+        {col.name}
+        <span className="kg-nav-count">{cards.length}</span>
+        <button
+          className="kg-icon-btn"
+          style={{ border: 'none', padding: 3 }}
+          title={col.is_done_column ? 'É a coluna concluído' : 'Marcar como concluído'}
+          onClick={() => onToggleDone(col)}
+        >
+          <Icon name="check" size={13} style={{ opacity: col.is_done_column ? 1 : 0.35 }} />
+        </button>
+      </div>
+
+      {/* Corpo: droppable + cards sortáveis */}
+      <div ref={setNodeRef} className="kg-col-body">
+        {/* SortableContext informa ao dnd-kit quais ids compõem esta coluna e em
+            que ordem, permitindo calcular os transforms de animação de espaço. */}
+        <SortableContext items={cards.map(t => t.id)} strategy={verticalListSortingStrategy}>
+          {cards.map(t => (
+            <SortableTaskCard
+              key={t.id}
+              task={t}
+              onOpen={onOpen}
+              isBeingDragged={activeId === t.id}
+            />
+          ))}
+        </SortableContext>
+
+        {/* Botão "+ tarefa" no rodapé de cada coluna */}
+        <button className="kg-col-add" onClick={() => onAddTask(col)}>
+          <Icon name="plus" size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />tarefa
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Tela principal ────────────────────────────────────────────────────────────
+
+export function KanbanScreen({
+  projectId,
+  projectName,
+  reloadKey,
+  onOpenTask,
+  onChanged,
+  toast,
+}: KanbanScreenProps) {
+  const [columns, setColumns]   = useState<Column[]>([])
+  const [tasks, setTasks]       = useState<Task[]>([])
+  // firstLoad: true = mostra o spinner. Fica false após o primeiro load bem-sucedido
+  // e nunca volta para true — drops e reloads silenciosos não mostram o spinner.
+  const [firstLoad, setFirstLoad] = useState(true)
+
+  // activeId: id do card sendo arrastado (alimenta o DragOverlay e o slot transparente).
+  const [activeId, setActiveId]   = useState<number | null>(null)
+  // overColId: coluna atualmente sob o cursor durante drag (para realce visual).
+  // Atualizado pelo onDragOver do DndContext (dispara só quando o alvo muda, não
+  // a cada pixel — muito mais eficiente que o setHoverCol nativo anterior).
+  const [overColId, setOverColId] = useState<number | null>(null)
+
+  // ── Carregamento ─────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
-    setLoading(true)
     try {
-      const [cols, ts] = await Promise.all([kaguyaApi.listColumns(projectId), kaguyaApi.listTasks(projectId, false)])
+      // Busca colunas e tarefas em paralelo para minimizar latência.
+      const [cols, ts] = await Promise.all([
+        kaguyaApi.listColumns(projectId),
+        kaguyaApi.listTasks(projectId, false),
+      ])
       setColumns(cols.sort((a, b) => a.position - b.position))
       setTasks(ts)
-    } catch { toast('Falha ao carregar o board.', 'err') }
-    finally { setLoading(false) }
+    } catch {
+      toast('Falha ao carregar o board.', 'err')
+    } finally {
+      // Após a primeira carga, firstLoad vira false e fica assim.
+      // Chamadas subsequentes (drops, addTask, etc.) não tocam em firstLoad,
+      // então o board nunca pisca "Carregando…" em mutações.
+      setFirstLoad(false)
+    }
   }, [projectId, toast])
 
-  useEffect(() => { load() }, [load, reloadKey])
+  // Recarrega quando o projeto ou o reloadKey externo muda.
+  // Reseta firstLoad para exibir o spinner ao trocar de projeto.
+  useEffect(() => {
+    setFirstLoad(true)
+    load()
+  }, [load, reloadKey])
 
-  // Cria a primeira coluna (ativa o Kanban) ou mais uma.
+  // ── Sensores @dnd-kit ─────────────────────────────────────────────────────────
+  // PointerSensor com distância mínima de ativação de 5px:
+  //   - Clique curto (< 5px de deslocamento) → onOpen do TaskCard ainda dispara.
+  //   - Arraste real (≥ 5px)                → ativa o DnD.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  )
+
+  // ── Handlers de drag ──────────────────────────────────────────────────────────
+
+  // Início do drag: registra qual card está sendo arrastado.
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as number)
+  }, [])
+
+  // Durante o drag: atualiza qual coluna está realçada.
+  // O dnd-kit dispara onDragOver apenas quando o ALVO muda (não a cada pixel
+  // como o evento nativo), então isso é eficiente — sem re-render cascata.
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const { over } = event
+    if (!over) {
+      setOverColId(null)
+      return
+    }
+    // Se o alvo é o droppable de uma coluna vazia ("col:<id>"), extrai o id.
+    // Senão, é um card — busca a coluna desse card.
+    if (typeof over.id === 'string' && over.id.startsWith('col:')) {
+      setOverColId(parseInt(over.id.replace('col:', ''), 10))
+    } else {
+      const overTask = tasks.find(t => t.id === (over.id as number))
+      setOverColId(overTask?.column_id ?? null)
+    }
+  }, [tasks])
+
+  // Fim do drag: calcula onde o card foi solto, aplica optimistic update
+  // e comita as mudanças via API em background.
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event
+    // Limpa estado visual de drag (overlay some, realce da coluna some).
+    setActiveId(null)
+    setOverColId(null)
+
+    // Sem destino válido → cancela o drag sem alterar nada.
+    if (!over) return
+
+    const taskId = active.id as number
+    const task   = tasks.find(t => t.id === taskId)
+    if (!task) return
+
+    // ── 1. Determinar coluna de destino ─────────────────────────────────────
+    // "col:<n>" = droppable da coluna (coluna vazia ou abaixo dos cards).
+    // Número = id de um card — usa a coluna desse card.
+    let targetColId: number
+    if (typeof over.id === 'string' && over.id.startsWith('col:')) {
+      targetColId = parseInt(over.id.replace('col:', ''), 10)
+    } else {
+      const overTask = tasks.find(t => t.id === (over.id as number))
+      if (!overTask) return
+      // Tarefas órfãs (column_id null) estão na 1ª coluna; usa o id dela como destino.
+      targetColId = overTask.column_id ?? (columns[0]?.id ?? 0)
+    }
+
+    const targetCol = columns.find(c => c.id === targetColId)
+    if (!targetCol) return
+
+    // ── 2. Calcular vizinhos after_id / before_id para reorder ──────────────
+    // Cards da coluna alvo (excluindo o arrastado), ordenados por position.
+    const overCardId: number | null = typeof over.id === 'number' ? (over.id as number) : null
+
+    const targetCards = tasks
+      .filter(t => t.id !== taskId && t.column_id === targetColId)
+      .sort((a, b) => a.position - b.position)
+
+    let afterId:  number | undefined
+    let beforeId: number | undefined
+
+    if (overCardId !== null && overCardId !== taskId) {
+      // Solto sobre um card: determina inserção antes ou depois pelo centro vertical.
+      // Compara o centro do card arrastado com o centro do card de destino.
+      // - activeCenter < overCenter → ainda está na metade superior → inserir ANTES
+      // - activeCenter ≥ overCenter → já passou da metade → inserir DEPOIS
+      const activeRect = event.active.rect.current.translated
+      const overRect   = over.rect
+      const activeCenter = (activeRect?.top ?? 0) + (activeRect?.height ?? 0) / 2
+      const overCenter   = overRect.top + overRect.height / 2
+      const insertBefore = activeCenter < overCenter
+
+      const overIdx = targetCards.findIndex(t => t.id === overCardId)
+      if (overIdx >= 0) {
+        if (insertBefore) {
+          // Inserir antes do overCard: afterId = card anterior, beforeId = overCard.
+          afterId  = overIdx > 0 ? targetCards[overIdx - 1].id : undefined
+          beforeId = targetCards[overIdx].id
+        } else {
+          // Inserir depois do overCard: afterId = overCard, beforeId = próximo.
+          afterId  = targetCards[overIdx].id
+          beforeId = overIdx + 1 < targetCards.length ? targetCards[overIdx + 1].id : undefined
+        }
+      } else {
+        // overCard não encontrado na lista → solta no fim da coluna.
+        afterId = targetCards[targetCards.length - 1]?.id
+      }
+    } else {
+      // Solto no droppable da coluna (sem card específico) → fim da coluna.
+      afterId = targetCards[targetCards.length - 1]?.id
+    }
+
+    // ── 3. Snapshot para rollback em caso de erro da API ────────────────────
+    const snapshot = [...tasks]
+
+    // ── 4. Optimistic update: move o card no estado imediatamente ───────────
+    // O card aparece no destino sem esperar a rede, dando sensação de
+    // responsividade instantânea. A position local é uma estimativa — o backend
+    // confirma a position real no reload silencioso após o sucesso da API.
+    const afterCard  = afterId  ? tasks.find(t => t.id === afterId)  : null
+    const beforeCard = beforeId ? tasks.find(t => t.id === beforeId) : null
+    const localPos   = midPosition(afterCard, beforeCard)
+
+    setTasks(prev =>
+      prev.map(t => t.id === taskId ? { ...t, column_id: targetColId, position: localPos } : t)
+    )
+
+    // ── 5. Chamadas de rede (background) ────────────────────────────────────
+    try {
+      if (targetCol.is_done_column) {
+        // Solto na coluna "concluído" → completa a tarefa.
+        // Se houver subtarefas abertas, o backend informa (needs_cascade) e
+        // pedimos confirmação antes de completar em cascata.
+        const r = await kaguyaApi.complete(taskId)
+        if (r.needs_cascade) {
+          if (!window.confirm(`Concluir ${r.open_subtasks} subtarefa(s) também?`)) {
+            // Usuário cancelou a cascata → reverte o card para a posição original.
+            setTasks(snapshot)
+            return
+          }
+          await kaguyaApi.complete(taskId, true)
+        }
+      } else {
+        // Solto em coluna comum:
+        // a) Se mudou de coluna, atualiza o column_id via PATCH.
+        if (task.column_id !== targetColId) {
+          await kaguyaApi.updateTask(taskId, { column_id: targetColId })
+        }
+        // b) Reordena na posição correta dentro da coluna de destino.
+        //    Este endpoint existia mas não era chamado pelo Kanban — agora sim.
+        await kaguyaApi.reorder(taskId, { after_id: afterId, before_id: beforeId })
+      }
+
+      // Reload silencioso (sem spinner) para sincronizar as positions reais
+      // que o backend calculou (o optimistic usou estimativas locais).
+      const [cols, ts] = await Promise.all([
+        kaguyaApi.listColumns(projectId),
+        kaguyaApi.listTasks(projectId, false),
+      ])
+      setColumns(cols.sort((a, b) => a.position - b.position))
+      setTasks(ts)
+      onChanged() // atualiza a sidebar (contadores de tarefas, etc.)
+    } catch {
+      // Erro de rede: reverte para o estado antes do drag.
+      setTasks(snapshot)
+      toast('Falha ao mover o card.', 'err')
+    }
+  }, [tasks, columns, projectId, onChanged, toast])
+
+  // ── Ações de coluna ───────────────────────────────────────────────────────────
+
   const addColumn = async () => {
     const name = window.prompt('Nome da coluna:')
     if (!name?.trim()) return
-    try { await kaguyaApi.createColumn({ project_id: projectId, name: name.trim() }); await load() }
-    catch { toast('Falha ao criar coluna.', 'err') }
+    try {
+      await kaguyaApi.createColumn({ project_id: projectId, name: name.trim() })
+      await load()
+    } catch {
+      toast('Falha ao criar coluna.', 'err')
+    }
   }
 
-  // Cria uma tarefa diretamente numa coluna (captura rápida por prompt, como o addColumn).
-  // O backend posiciona o card já na coluna escolhida — por isso ele aparece no board.
+  // Cria uma tarefa diretamente numa coluna via prompt rápido.
   const addTask = async (col: Column) => {
     const title = window.prompt(`Nova tarefa em "${col.name}":`)
     if (!title?.trim()) return
     try {
-      const r = await kaguyaApi.createTask({ title: title.trim(), project_id: projectId, column_id: col.id })
-      if (r.status === 'error') { toast(r.message ?? 'Falha ao criar tarefa.', 'err'); return }
-      await load(); onChanged()
-    } catch { toast('Falha ao criar tarefa.', 'err') }
+      const r = await kaguyaApi.createTask({
+        title:      title.trim(),
+        project_id: projectId,
+        column_id:  col.id,
+      })
+      if (r.status === 'error') {
+        toast(r.message ?? 'Falha ao criar tarefa.', 'err')
+        return
+      }
+      await load()
+      onChanged()
+    } catch {
+      toast('Falha ao criar tarefa.', 'err')
+    }
   }
 
-  // Marca/desmarca a coluna como "concluído" (única por lista).
+  // Alterna qual coluna é a "concluído" (máximo de uma por lista).
   const toggleDone = async (col: Column) => {
     try {
       const r = await kaguyaApi.updateColumn(col.id, { is_done_column: !col.is_done_column })
-      if (r.status === 'error') { toast(r.message ?? 'Já há uma coluna concluído.', 'err'); return }
-      await load()
-    } catch { toast('Falha ao atualizar coluna.', 'err') }
-  }
-
-  // Solta um card numa coluna: done → completa; senão → muda a coluna.
-  const drop = async (col: Column) => {
-    setHoverCol(null)
-    if (dragId == null) return
-    try {
-      if (col.is_done_column) {
-        const r = await kaguyaApi.complete(dragId)
-        if (r.needs_cascade) {
-          if (!window.confirm(`Concluir ${r.open_subtasks} subtarefa(s) também?`)) { setDragId(null); return }
-          await kaguyaApi.complete(dragId, true)
-        }
-      } else {
-        await kaguyaApi.updateTask(dragId, { column_id: col.id })
+      if (r.status === 'error') {
+        toast(r.message ?? 'Já há uma coluna concluído.', 'err')
+        return
       }
-      await load(); onChanged()
-    } catch { toast('Falha ao mover o card.', 'err') }
-    finally { setDragId(null) }
+      await load()
+    } catch {
+      toast('Falha ao atualizar coluna.', 'err')
+    }
   }
 
-  if (loading) return <div className="kg-page"><div className="kg-empty">Carregando…</div></div>
+  // ── Renderização ──────────────────────────────────────────────────────────────
+
+  // Spinner apenas no carregamento inicial (firstLoad = true).
+  // Mutações e reloads silenciosos não acionam este estado.
+  if (firstLoad) return (
+    <div className="kg-page">
+      <div className="kg-empty">Carregando…</div>
+    </div>
+  )
 
   // Sem colunas → convite para criar a primeira (ativa o Kanban).
   if (columns.length === 0) {
@@ -94,54 +387,89 @@ export function KanbanScreen({ projectId, projectName, reloadKey, onOpenTask, on
         <div className="kg-empty">
           <div className="kg-empty-title">Sem board ainda</div>
           Crie a primeira coluna para ativar o Kanban desta lista.
-          <div style={{ marginTop: 14 }}><button className="kg-btn kg-btn-primary" onClick={addColumn}>+ Criar coluna</button></div>
+          <div style={{ marginTop: 14 }}>
+            <button className="kg-btn kg-btn-primary" onClick={addColumn}>+ Criar coluna</button>
+          </div>
         </div>
       </div>
     )
   }
+
+  // Card ativo: usado pelo DragOverlay para renderizar o "fantasma" que segue o cursor.
+  const activeTask = tasks.find(t => t.id === activeId)
 
   return (
     <div className="kg-page" style={{ maxWidth: 1320 }}>
       <h1 className="kg-page-title"><Icon name="board" size={22} /> {projectName}</h1>
       <div className="kg-page-sub">Arraste os cards entre as colunas</div>
 
-      <div className="kg-board">
-        {columns.map((col, idx) => {
-          // Cards desta coluna. A 1ª coluna também acolhe tarefas órfãs (column_id null) —
-          // criadas antes deste fix ou ao apagar a coluna onde estavam — para nenhuma sumir.
-          const isFirst = idx === 0
-          const cards = tasks.filter((t) => t.column_id === col.id || (isFirst && t.column_id == null))
-          return (
-            <div
-              key={col.id}
-              className={`kg-col${hoverCol === col.id ? ' drop-target' : ''}`}
-              onDragOver={(e) => { e.preventDefault(); setHoverCol(col.id) }}
-              onDragLeave={() => setHoverCol((h) => (h === col.id ? null : h))}
-              onDrop={() => drop(col)}
-            >
-              <div className="kg-col-head">
-                {col.is_done_column && <Icon name="check" size={14} style={{ color: 'var(--done)' }} />}
-                {col.name}
-                <span className="kg-nav-count">{cards.length}</span>
-                <button className="kg-icon-btn" style={{ border: 'none', padding: 3 }} title={col.is_done_column ? 'É a coluna concluído' : 'Marcar como concluído'} onClick={() => toggleDone(col)}>
-                  <Icon name="check" size={13} style={{ opacity: col.is_done_column ? 1 : 0.35 }} />
-                </button>
-              </div>
-              <div className="kg-col-body">
-                {cards.map((t) => <TaskCard key={t.id} task={t} onDragStart={setDragId} onOpen={onOpenTask} />)}
-                {/* adicionar tarefa direto nesta coluna */}
-                <button className="kg-col-add" onClick={() => addTask(col)}>
-                  <Icon name="plus" size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />tarefa
-                </button>
-              </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="kg-board">
+          {columns.map((col, idx) => {
+            // Cards desta coluna, ordenados por position para exibição correta.
+            // A 1ª coluna também acolhe tarefas órfãs (column_id null) para que
+            // nenhuma tarefa suma do board ao trocar de coluna ou ao abrir o Kanban
+            // em uma lista que já tinha tarefas sem coluna.
+            const isFirst = idx === 0
+            const cards = tasks
+              .filter(t => t.column_id === col.id || (isFirst && t.column_id == null))
+              .sort((a, b) => a.position - b.position)
+
+            return (
+              <KanbanColumn
+                key={col.id}
+                col={col}
+                cards={cards}
+                activeId={activeId}
+                isOver={overColId === col.id}
+                onOpen={onOpenTask}
+                onAddTask={addTask}
+                onToggleDone={toggleDone}
+              />
+            )
+          })}
+
+          {/* Botão para adicionar nova coluna ao board */}
+          <button
+            className="kg-btn"
+            style={{ height: 44, flexShrink: 0 }}
+            onClick={addColumn}
+          >
+            <Icon name="plus" size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Coluna
+          </button>
+        </div>
+
+        {/* DragOverlay: card "levantado" que segue o cursor durante o drag.
+            Renderizado num portal no topo do DOM — não sofre clipping da coluna. */}
+        <DragOverlay dropAnimation={null}>
+          {activeTask ? (
+            <div className="kg-drag-overlay">
+              <TaskCard task={activeTask} onOpen={() => {}} />
             </div>
-          )
-        })}
-        {/* coluna fantasma: adicionar nova coluna */}
-        <button className="kg-btn" style={{ height: 44, flexShrink: 0 }} onClick={addColumn}>
-          <Icon name="plus" size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Coluna
-        </button>
-      </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
     </div>
   )
+}
+
+// ── Utilitários ───────────────────────────────────────────────────────────────
+
+// Calcula uma position local temporária para o optimistic update.
+// A posição fica entre after e before; o backend vai corrigir com a position
+// real após o reload silencioso. Usa aritmética de ponto médio (inteiro).
+function midPosition(
+  after:  Task | null | undefined,
+  before: Task | null | undefined,
+): number {
+  if (!after && !before) return 1000                          // coluna vazia
+  if (!after)            return Math.floor(before!.position / 2)      // antes do primeiro
+  if (!before)           return after.position + 1000        // após o último
+  return Math.floor((after.position + before.position) / 2) // entre dois cards
 }

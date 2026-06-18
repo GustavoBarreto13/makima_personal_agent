@@ -284,17 +284,27 @@
 .kg-toast.err { background: var(--p-high); color: white; }
 @keyframes kg-toast-in { from { opacity: 0; transform: translate(-50%, 10px); } }
 
-/* ═══ Kanban (US3) ═══ */
+/* ═══ Kanban (US3) — @dnd-kit ═══ */
 .kg-board { display: flex; gap: 14px; align-items: flex-start; padding: 4px; overflow-x: auto; }
-.kg-col { background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--kg-r-md); width: 270px; flex-shrink: 0; display: flex; flex-direction: column; max-height: calc(100vh - 160px); }
+/* Coluna: largura aumentada para 280px, transição suave de borda/sombra */
+.kg-col { background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--kg-r-md); width: 280px; flex-shrink: 0; display: flex; flex-direction: column; max-height: calc(100vh - 160px); transition: border-color .15s, box-shadow .15s; }
+/* Destaque da coluna alvo durante o drag (set via estado overColId, sem onDragOver nativo) */
+.kg-col.is-over { border-color: var(--kg); box-shadow: 0 0 0 3px var(--kg-tint); }
+/* Compatibilidade com o nome antigo caso algum código externo ainda use drop-target */
 .kg-col.drop-target { border-color: var(--kg); box-shadow: 0 0 0 3px var(--kg-tint); }
 .kg-col-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; font-weight: 600; font-size: 13px; border-bottom: 1px solid var(--line-2); }
 .kg-col-head .kg-nav-count { margin-left: auto; }
-.kg-col-body { padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
-.kg-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-sm); padding: 10px; box-shadow: var(--shadow-sm); cursor: grab; display: flex; gap: 8px; }
+/* Corpo da coluna: flex:1 garante que a área de drop abranja todo o espaço vazio */
+.kg-col-body { padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; min-height: 60px; }
+/* Card: transições suaves de sombra; user-select:none evita seleção de texto ao arrastar */
+.kg-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-sm); padding: 10px; box-shadow: var(--shadow-sm); cursor: grab; display: flex; gap: 8px; transition: box-shadow .12s, border-color .12s; user-select: none; }
+.kg-card:hover { box-shadow: var(--shadow-md); border-color: var(--line-2); }
 .kg-card:active { cursor: grabbing; }
 .kg-card.done .kg-card-title { color: var(--ink-4); text-decoration: line-through; }
 .kg-card-title { font-size: 13px; }
+/* Overlay: card "levantado" que segue o cursor. scale + rotate suave dá a
+   sensação física de ter "pego" o card na mão. */
+.kg-drag-overlay { transform: scale(1.03) rotate(1.5deg); box-shadow: var(--shadow-lg); border-radius: var(--kg-r-sm); opacity: 0.96; pointer-events: none; }
 /* botão discreto "+ tarefa" no rodapé de cada coluna do Kanban */
 .kg-col-add { display: flex; align-items: center; justify-content: center; padding: 7px; font-size: 12px; color: var(--ink-4); background: transparent; border: 1px dashed var(--line-2); border-radius: var(--kg-r-sm); cursor: pointer; transition: color .12s, border-color .12s, background .12s; }
 .kg-col-add:hover { color: var(--kg); border-color: var(--kg); background: var(--kg-tint); }
