@@ -41,15 +41,15 @@ Nenhuma tarefa bloqueante-para-todas além do Setup: **US1 é totalmente indepen
 **Goal**: views salvas/nomeadas globais, persistidas; troca pela UI; memória por lista.
 **Independent test**: criar/editar/deletar view persiste; built-in "Completa" rejeita PATCH/DELETE; trocar de view muda adornos/slots sem alterar colunas; reabrir lista restaura a última view (A8–A10).
 
-- [ ] T009 [US2] Adicionar a tabela `kanban_views` (colunas/constraints da `data-model.md`) + seed idempotente da view built-in **"Completa"** (`is_builtin=true`) em `agents/kaguya/schema_tasks_pg.sql`
-- [ ] T010 [US2] Criar a camada de lógica `agents/kaguya/tools_kanban_views.py`: `list_views`, `create_view`, `update_view`, `delete_view` — validação de `display` (3 slots válidos, chaves de adornos conhecidas), `_validate_rules` no `filter`, **proteção da built-in** (erro em update/delete de `is_builtin`), posição esparsa ×1000 (R8/R21/R22)
-- [ ] T011 [US2] Teste de gate `tests/agents/test_kaguya_kanban_views.py`: CRUD, rejeição de built-in, validação de `display`/`slots` — depende de T010
-- [ ] T012 [US2] Adicionar as rotas `/api/tasks/kanban-views` (GET/POST) e `/{id}` (PATCH/DELETE) em `webapp/backend/routers/tasks.py` conforme `contracts/kanban-views.md` (`require_user`, modelos Pydantic, `_check_result`) — depende de T010
-- [ ] T013 [P] [US2] Adicionar os tipos `KanbanView`, `KanbanViewDisplay`, `SummaryMetric` em `webapp/frontend/src/pages/kaguya/types.ts`
-- [ ] T014 [P] [US2] Adicionar `kanbanViews.{list,create,update,delete}` ao `webapp/frontend/src/pages/kaguya/kaguyaApi.ts` — depende de T013
-- [ ] T015 [US2] Criar `webapp/frontend/src/pages/kaguya/components/KanbanViewModal.tsx` (criar/editar: toggles dos 4 adornos + escolha das 3 métricas dos slots) — depende de T013
-- [ ] T016 [US2] Seletor de views no cabeçalho do `KanbanScreen.tsx` + tornar `SummaryFooter` e a renderização dos adornos **data-driven pela view ativa** (substitui o default fixo da T005) — depende de T006, T014, T015
-- [ ] T017 [US2] Persistir a view ativa por lista em localStorage (`kaguya:kanban:active-view:<project_id>`); ao abrir, restaurar ou cair na "Completa" — em `KanbanScreen.tsx` (R7/R25)
+- [X] T009 [US2] Tabela `kanban_views` + índice parcial `uq_kanban_views_builtin` + seed idempotente da built-in **"Completa"** em `schema_tasks_pg.sql`. ⚠️ Migração precisa rodar no container `makima-web` (VPS) — não aplicada localmente.
+- [X] T010 [US2] `agents/kaguya/tools_kanban_views.py`: `list_views/create_view/update_view/delete_view` + `_validate_display` + reuso de `_validate_rules` no filtro + proteção da built-in + posição esparsa (R8/R21/R22). `py_compile` ✓
+- [X] T011 [US2] `tests/agents/test_kaguya_kanban_views.py`: seed idempotente, CRUD, built-in protegida, validação de display, filtro opcional. ⚠️ **Não executado** — exige `DATABASE_URL` (Postgres real), indisponível local.
+- [X] T012 [US2] Rotas `/api/tasks/kanban-views` (GET/POST) + `/{id}` (PATCH/DELETE) em `routers/tasks.py` (`require_user`, Pydantic, `_check_result`, built-in → 400). `py_compile` ✓
+- [X] T013 [P] [US2] Tipos `KanbanView`/`KanbanViewDisplay`/`SummaryMetric` em `types.ts` (SummaryFooter importa de lá)
+- [X] T014 [P] [US2] `kanbanViews` métodos em `kaguyaApi.ts`
+- [X] T015 [US2] `components/KanbanViewModal.tsx` — toggles dos 4 adornos + 3 selects de métrica + excluir (não-builtin). Filtro fica para US3.
+- [X] T016 [US2] Seletor de views no `KanbanScreen.tsx` + adornos/rodapé **data-driven** pela view ativa. `tsc` ✓
+- [X] T017 [US2] View ativa persistida por lista em `localStorage`; fallback "Completa" para id órfão (R7/R25)
 
 ---
 
@@ -58,21 +58,21 @@ Nenhuma tarefa bloqueante-para-todas além do Setup: **US1 é totalmente indepen
 **Goal**: filtro `FilterRules` da view aplicado ao board reusando o DSL.
 **Independent test**: view com filtro oculta cards que não casam; contadores/capacity/slots refletem o conjunto filtrado; semântica idêntica à smart-list equivalente (A11).
 
-- [ ] T018 [US3] Refatorar `_build_where_from_rules` em `agents/kaguya/tools_filters.py` para aceitar `default_open: bool = True` (base parametrizável), sem alterar o comportamento das smart-lists (research R-2)
-- [ ] T019 [US3] Implementar `list_board_tasks(project_id, rules=None)` em `agents/kaguya/tools_kanban_views.py` — escopa por `project_id` e aplica os fragmentos do DSL com `default_open=False` (research R-1) — depende de T018, T010
-- [ ] T020 [US3] Expor a carga filtrada do board (parâmetro opcional na listagem de tarefas da lista **ou** rota dedicada) em `webapp/backend/routers/tasks.py` + método correspondente em `kaguyaApi.ts` — depende de T019
-- [ ] T021 [US3] Teste de gate em `tests/agents/test_kaguya_kanban_views.py`: filtro com semântica de board (inclui concluídas na done; escopo do projeto; mesma semântica do DSL) — depende de T019
-- [ ] T022 [US3] Adicionar o construtor de filtro ao `KanbanViewModal.tsx` reusando o padrão do `FilterModal` das smart-lists — depende de T015
-- [ ] T023 [US3] No `KanbanScreen.tsx`: quando a view ativa tem filtro, carregar pelo caminho filtrado e recalcular contadores de coluna, capacity meter e slots do rodapé sobre o conjunto filtrado (A11) — depende de T016, T020, T022
+- [X] T018 [US3] `_build_where_from_rules(rules, default_open=True)` — base parametrizável em `tools_filters.py`; smart-lists inalteradas (research R-2). `py_compile` ✓
+- [X] T019 [US3] `list_board_tasks(project_id, rules=None)` + `list_board_for_view(view_id, project_id)` em `tools_kanban_views.py` — reusa `list_tasks` (subtarefas/tags) + DSL via interseção de ids, `default_open=False` (research R-1)
+- [X] T020 [US3] Rota `GET /api/tasks/kanban-views/{view_id}/board?project_id=` em `tasks.py` + `kaguyaApi.kanbanViewBoard`. `py_compile` ✓
+- [X] T021 [US3] Testes em `test_kaguya_kanban_views.py`: board sem/com filtro, `list_board_for_view`, subtarefas preservadas. ⚠️ não executado (sem `DATABASE_URL`).
+- [X] T022 [US3] Construtor de filtro no `KanbanViewModal.tsx` (toggle + combinador + condições, mesmo DSL/UX do `FilterModal`). `tsc` ✓
+- [X] T023 [US3] `KanbanScreen.tsx`: view com filtro carrega via `kanbanViewBoard` (load inicial, troca de view e reload pós-drag); contadores/capacity/slots recalculam sobre o conjunto filtrado (A11). `tsc` ✓
 
 ---
 
 ## Phase 6 — Polish & Cross-Cutting
 
-- [ ] T024 [P] Documentar a feature em `agents/kaguya/CLAUDE.md` (nova seção "Views de Kanban": tabela, tools, proteção da built-in)
-- [ ] T025 [P] Atualizar `webapp/CLAUDE.md` (tabela de fatias: + 024) e o `README` do repo
-- [ ] T026 Rodar o roteiro de `quickstart.md` (7 cenários) e confirmar ~60fps com ≥30 cards (sem regressão DnD)
-- [ ] T027 [P] Estados vazios/edge: coluna sem cards, board só com a built-in, `view_id` órfão no localStorage → fallback "Completa" — em `KanbanScreen.tsx`
+- [X] T024 [P] Seção "Views de Kanban (spec 024)" em `agents/kaguya/CLAUDE.md` (tabela, tools, proteção da built-in, `list_board_tasks`) + entrada no file-tree
+- [X] T025 [P] `webapp/CLAUDE.md` — nova linha 024 na tabela de fatias
+- [ ] T026 Rodar o roteiro de `quickstart.md` (7 cenários) + ~60fps com ≥30 cards. ⏳ **Pendente** — requer app rodando (dev server / container) e a migração aplicada; verificação visual ainda não feita.
+- [X] T027 [P] Edge: `view_id` órfão no localStorage → fallback "Completa" (em `loadViews`); falha de carga das views → board no default "tudo ligado"; estados vazios herdam `kg-empty`
 
 ---
 

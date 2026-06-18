@@ -24,6 +24,7 @@ agents/kaguya/
 ├── tools_projects.py     # camada de lógica: listas, grupos, colunas (Kanban), sidebar
 ├── tools_tags.py         # camada de lógica: etiquetas (tags) N:N — fatia 013 / P1
 ├── tools_filters.py      # camada de lógica: smart-lists (filtros salvos) — fatia 013 / P2
+├── tools_kanban_views.py # camada de lógica: views de Kanban configuráveis — spec 024
 ├── tools_calendar.py     # camada de lógica: consulta por intervalo + projeção virtual — fatia 013 / P3
 ├── recurrence.py         # motor puro RRULE (next_occurrence, project_occurrences, build/describe)
 ├── habit_strength.py     # motor PURO (sem banco): fórmula da força do hábito (Loop) — fatia 014
@@ -121,6 +122,19 @@ built-in `list_today_overdue` ("Hoje + Vencidas", **não** persistida).
 `RESERVED_TAGS = {#aguardando, #algum-dia}`. Mapeamento: Listas = Áreas · Tags = Contextos ·
 Smart-lists = listas de ação. No webapp são ids-sentinela negativos na sidebar; no Telegram
 resolvem por nome (`list_tasks_by_filter_name`).
+
+### `tools_kanban_views.py` — views de Kanban configuráveis — spec 024
+
+Views de board **globais** (tabela `kanban_views`, sem `project_id`) salvas/nomeadas. Cada
+view guarda `display` (adornos visíveis + 3 métricas do rodapé) e um `filter` opcional
+(`FilterRules` inline, **mesmo DSL** das smart-lists). `list_views`/`create_view`/`update_view`/
+`delete_view` — `_validate_display` checa 3 slots + adornos conhecidos; o filtro reusa
+`_validate_rules`. A view built-in **"Completa"** (`is_builtin`, semeada pelo schema com
+índice parcial `uq_kanban_views_builtin`) é **imutável** (update/delete → erro → HTTP 400).
+`list_board_tasks(project_id, rules)` carrega o board reusando `list_tasks` (subtarefas/tags)
+e o motor `_build_where_from_rules(default_open=False)` por **interseção de ids** — sem
+reimplementar a semântica do filtro. A view ativa por lista é estado de UI (localStorage do
+webapp), não vive no banco. Router: `/api/tasks/kanban-views/*` + `/{id}/board`.
 
 ### `tools_calendar.py` — calendário / consulta por intervalo — fatia 013 / P3
 
