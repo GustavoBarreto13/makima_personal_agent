@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { violetApi } from '../../../lib/api'
+// Helper de data local: evita o bug de UTC onde "hoje" muda às 21h no UTC-3
+import { todayLocalISO } from '../dateUtils'
 import type { EntryListItem } from '../types'
 import { RichText } from '../ui/RichText'
 
@@ -16,7 +18,8 @@ const DAYS_SHORT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
 
 // Converte uma data YYYY-MM-DD em uma descrição relativa: "Hoje", "Ontem", "N dias atrás"
 function relativeDate(dateStr: string): string {
-  const today = new Date().toISOString().slice(0, 10)
+  // todayLocalISO() usa o fuso do navegador — sem isso, "Hoje" viraria "Ontem" após as 21h
+  const today = todayLocalISO()
   const diff = Math.round((new Date(today).getTime() - new Date(dateStr).getTime()) / 86400000)
   if (diff === 0) return 'Hoje'
   if (diff === 1) return 'Ontem'

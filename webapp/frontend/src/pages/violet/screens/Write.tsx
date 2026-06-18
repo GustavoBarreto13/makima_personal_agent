@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { violetApi } from '../../../lib/api'
+// Helper de data local: evita o bug de UTC onde bullets após 21h ficam no dia seguinte
+import { todayLocalISO } from '../dateUtils'
 import type { Bullet, BulletKind, Entry } from '../types'
 import { Icon } from '../ui/Icon'
 import { RichText } from '../ui/RichText'
@@ -41,7 +43,10 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
   const [newText, setNewText] = useState('')
   const addRef = useRef<HTMLTextAreaElement>(null)
 
-  const today = new Date().toISOString().slice(0,10)
+  // Usa todayLocalISO() para obter a data de hoje no fuso do navegador (UTC-3).
+  // new Date().toISOString().slice(0,10) retornaria UTC e mudaria de dia às 21h,
+  // fazendo bullets noturnos caírem no dia seguinte — o bug que isso corrige.
+  const today = todayLocalISO()
   const effectiveDate = date || today
 
   useEffect(() => {

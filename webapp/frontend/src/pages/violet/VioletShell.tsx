@@ -5,6 +5,8 @@
 import { useState, useEffect, useRef } from 'react'
 import './violet.css'
 import { violetApi } from '../../lib/api'
+// Helper de data local: evita o bug de UTC onde bullets após 21h ficam no dia seguinte
+import { todayLocalISO } from './dateUtils'
 import type { VioletPrefs, VioletRoute } from './types'
 import { DEFAULT_PREFS } from './types'
 import { Icon } from './ui/Icon'
@@ -146,7 +148,7 @@ export function VioletShell() {
       case 'write':
         return (
           <Write
-            date={route.param ?? entryDates[entryDates.length - 1] ?? new Date().toISOString().slice(0,10)}
+            date={route.param ?? entryDates[entryDates.length - 1] ?? todayLocalISO()}
             entryIdx={entryIdx}
             navigate={navigate}
           />
@@ -290,7 +292,7 @@ export function VioletShell() {
               if (action === 'list')   navigate('journal')
             }}
             // Data atualmente exibida — o picker do calendário abre posicionado nela
-            currentDate={route.param ?? entryDates[entryDates.length - 1] ?? new Date().toISOString().slice(0,10)}
+            currentDate={route.param ?? entryDates[entryDates.length - 1] ?? todayLocalISO()}
             onPickDate={(date) => {
               // Navega para a data escolhida (cria a entrada sob demanda via get_or_create_page)
               navigate('write', date)

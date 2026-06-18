@@ -3,6 +3,8 @@
 
 import { useEffect, useState } from 'react'
 import { violetApi } from '../../../lib/api'
+// Helper de data local: evita o bug de UTC onde "hoje" muda às 21h no UTC-3
+import { todayLocalISO } from '../dateUtils'
 import type { Stats, HeatmapData, EmotionStats } from '../types'
 import { HeatmapRow } from '../ui/HeatmapRow'
 import { AreaChart } from '../ui/AreaChart'
@@ -77,11 +79,13 @@ function calcStreaks(heatmap: HeatmapData): { current: number; longest: number }
     }
   }
 
-  // Sequência atual: conta para trás a partir de hoje (data real, não do ano selecionado)
-  const today = new Date().toISOString().slice(0, 10)
+  // Sequência atual: conta para trás a partir de hoje (data real, no fuso local)
+  const today = todayLocalISO()
   let currentStreak = 0
   let d = new Date(today)
   while (true) {
+    // Itera regressivamente: a cada passo subtrai 1 dia e verifica se há escrita
+    // todayLocalISO() garante que "hoje" é a data local — não UTC — evitando quebra de streak às 21h
     const ds = d.toISOString().slice(0, 10)
     if ((heatmap[ds] ?? 0) > 0) {
       currentStreak++
