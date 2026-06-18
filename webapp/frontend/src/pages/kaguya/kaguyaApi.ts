@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -134,6 +134,17 @@ export const kaguyaApi = {
   todayOverdue: () => api.get<Task[]>(`${BASE}/filters/today-overdue`),
   // Built-ins GTD adicionais (não persistidos): abre um pela chave (next-actions, waiting…).
   builtinTasks: (key: string) => api.get<Task[]>(`${BASE}/filters/builtin/${encodeURIComponent(key)}/tasks`),
+
+  // ── Views de Kanban configuráveis — spec 024 ────────────────────────────────
+  listKanbanViews: () => api.get<KanbanView[]>(`${BASE}/kanban-views`),
+  createKanbanView: (body: { name: string; display: KanbanViewDisplay; filter?: FilterRules | null }) =>
+    api.post<MutationResult>(`${BASE}/kanban-views`, body),
+  updateKanbanView: (id: number, body: Partial<{ name: string; display: KanbanViewDisplay; filter: FilterRules | null; clear_filter: boolean; position: number }>) =>
+    api.patch<MutationResult>(`${BASE}/kanban-views/${id}`, body),
+  deleteKanbanView: (id: number) => api.del<MutationResult>(`${BASE}/kanban-views/${id}`),
+  // Tarefas do board com o filtro da view aplicado (US3).
+  kanbanViewBoard: (viewId: number, projectId: number) =>
+    api.get<Task[]>(`${BASE}/kanban-views/${viewId}/board?project_id=${projectId}`),
 
   // ── Calendário (consulta por intervalo) — fatia 013 / P3 ────────────────────
   // Tarefas datadas + ocorrências virtuais das recorrentes na janela [start, end].

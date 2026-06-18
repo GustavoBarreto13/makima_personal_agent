@@ -167,6 +167,36 @@ export interface Column {
   is_done_column: boolean
 }
 
+// ── Views de Kanban configuráveis (spec 024) ───────────────────────────────────
+// Métricas disponíveis para os 3 slots do rodapé-resumo (catálogo da R15).
+export type SummaryMetric =
+  | 'abertas'
+  | 'tempo_estimado'
+  | 'concluidas'
+  | 'concluidas_hoje'
+  | 'em_andamento'
+
+// Configuração de exibição de uma view: quais adornos aparecem + métricas dos slots.
+export interface KanbanViewDisplay {
+  adornos: {
+    capacity_meter: boolean   // barra de 5 segmentos por coluna (R6)
+    subtask_ring: boolean     // anel de progresso no card (R12)
+    summary_footer: boolean   // rodapé-resumo (R14/R15)
+    card_chips: boolean       // chips data/estimativa/projeto no card (R11)
+  }
+  slots: SummaryMetric[]      // exatamente 3 chaves
+}
+
+// Uma view de Kanban salva (global, reutilizável). `filter` reusa o DSL das smart-lists.
+export interface KanbanView {
+  id: number
+  name: string
+  is_builtin: boolean         // true = view de sistema "Completa" (imutável)
+  display: KanbanViewDisplay
+  filter: FilterRules | null  // FilterRules inline ou null (sem filtro)
+  position: number
+}
+
 // Tendência do hábito (modelo caixa d'água): média rápida vs lenta.
 export type HabitTrend = 'up' | 'down' | 'flat'
 

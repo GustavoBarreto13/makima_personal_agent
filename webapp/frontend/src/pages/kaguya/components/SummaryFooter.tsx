@@ -3,17 +3,10 @@
 // default é ['abertas','tempo_estimado','em_andamento'] (a view built-in "Completa").
 // Todas as métricas recalculam sobre o conjunto de tarefas recebido (já filtrado).
 
-import type { Task, Column } from '../types'
+import type { Task, Column, SummaryMetric } from '../types'
 import { todayLocalISO } from '../../violet/dateUtils'
 
-// Catálogo de métricas (R15). Mantido como union para a view (US2) escolher os slots.
-export type SummaryMetric =
-  | 'abertas'
-  | 'tempo_estimado'
-  | 'concluidas'
-  | 'concluidas_hoje'
-  | 'em_andamento'
-
+// Rótulos pt-BR das métricas do catálogo (R15). O tipo vive em types.ts.
 const METRIC_LABEL: Record<SummaryMetric, string> = {
   abertas: 'tarefas abertas',
   tempo_estimado: 'tempo estimado',

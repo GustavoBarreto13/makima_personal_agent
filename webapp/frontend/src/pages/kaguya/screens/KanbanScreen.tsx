@@ -10,11 +10,12 @@
 //   • Sem spinner a cada drop: spinner só no carregamento inicial.
 
 import { useEffect, useState, useCallback } from 'react'
-import type { Task, Column } from '../types'
+import type { Task, Column, KanbanView, KanbanViewDisplay } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { TaskCard } from '../components/TaskCard'
 import { SortableTaskCard } from '../components/SortableTaskCard'
 import { SummaryFooter } from '../components/SummaryFooter'
+import { KanbanViewModal } from '../components/KanbanViewModal'
 import { Icon } from '../ui/Icons'
 import {
   DndContext,
@@ -61,12 +62,15 @@ interface KanbanColumnProps {
   activeId: number | null  // id do card sendo arrastado (para opacidade do slot)
   isOver: boolean          // true quando o cursor está sobre esta coluna durante drag
   projectName: string      // nome da lista (chip de projeto dos cards)
+  showCapacity: boolean    // adorno da view ativa: capacity meter (R6)
+  showChips: boolean       // adorno da view ativa: chips no card (R11)
+  showRing: boolean        // adorno da view ativa: anel de subtarefas (R12)
   onOpen: (task: Task) => void
   onAddTask: (col: Column) => void
   onToggleDone: (col: Column) => void
 }
 
-function KanbanColumn({ col, cards, activeId, isOver, projectName, onOpen, onAddTask, onToggleDone }: KanbanColumnProps) {
+function KanbanColumn({ col, cards, activeId, isOver, projectName, showCapacity, showChips, showRing, onOpen, onAddTask, onToggleDone }: KanbanColumnProps) {
   // useDroppable torna o corpo da coluna uma área de drop para o dnd-kit.
   // Captura drops em colunas vazias (sem cards) e abaixo de todos os cards.
   // O id no formato "col:<id>" diferencia a coluna de um id de card.
@@ -105,7 +109,7 @@ function KanbanColumn({ col, cards, activeId, isOver, projectName, onOpen, onAdd
             <Icon name="check" size={14} style={{ color: 'var(--done)', opacity: col.is_done_column ? 1 : 0.32 }} />
           </button>
         </div>
-        {!col.is_done_column && (
+        {!col.is_done_column && showCapacity && (
           <div className="kcol-cap">
             {[0, 1, 2, 3, 4].map(i => <i key={i} className={i < segOn ? 'on' : ''} />)}
           </div>
@@ -122,6 +126,8 @@ function KanbanColumn({ col, cards, activeId, isOver, projectName, onOpen, onAdd
               onOpen={onOpen}
               isBeingDragged={activeId === t.id}
               projectName={projectName}
+              showChips={showChips}
+              showRing={showRing}
             />
           ))}
         </SortableContext>
@@ -159,6 +165,61 @@ export function KanbanScreen({
   // Atualizado pelo onDragOver do DndContext (dispara só quando o alvo muda, não
   // a cada pixel — muito mais eficiente que o setHoverCol nativo anterior).
   const [overColId, setOverColId] = useState<number | null>(null)
+
+  // ── Views de Kanban (spec 024) ────────────────────────────────────────────────
+  // views: catálogo global; activeViewId: view ativa nesta lista (lembrada em localStorage);
+  // viewModal: criar/editar uma view.
+  const [views, setViews] = useState<KanbanView[]>([])
+  const [activeViewId, setActiveViewId] = useState<number | null>(null)
+  const [viewModal, setViewModal] = useState<{ mode: 'create' | 'edit'; view?: KanbanView } | null>(null)
+
+  // Chave de persistência da view ativa POR LISTA (R7/R25): cada board reabre na última.
+  const lsKey = `kaguya:kanban:active-view:${projectId}`
+
+  // Carrega o catálogo de views (global) e resolve a ativa desta lista:
+  // localStorage > built-in "Completa" > primeira. View órfã no localStorage cai na "Completa".
+  const loadViews = useCallback(async () => {
+    try {
+      const vs = await kaguyaApi.listKanbanViews()
+      setViews(vs)
+      const stored = Number(localStorage.getItem(`kaguya:kanban:active-view:${projectId}`))
+      const found = vs.find(v => v.id === stored)
+      const builtin = vs.find(v => v.is_builtin)
+      setActiveViewId(found ? stored : (builtin?.id ?? vs[0]?.id ?? null))
+    } catch {
+      // Views são opcionais: se falhar, o board renderiza no default "tudo ligado".
+      setViews([])
+      setActiveViewId(null)
+    }
+  }, [projectId])
+
+  useEffect(() => { loadViews() }, [loadViews])
+
+  // Troca a view ativa e persiste a escolha para esta lista.
+  const selectView = (id: number) => {
+    setActiveViewId(id)
+    localStorage.setItem(lsKey, String(id))
+  }
+
+  // Quando a view ativa muda (após o load inicial), recarrega as tarefas aplicando o
+  // filtro da view (ou sem filtro). Silencioso — sem spinner. Os contadores de coluna,
+  // capacity meter e slots do rodapé recalculam sobre este conjunto (A11).
+  useEffect(() => {
+    if (firstLoad) return
+    let cancelled = false
+    ;(async () => {
+      const v = views.find(x => x.id === activeViewId)
+      try {
+        const ts = v?.filter
+          ? await kaguyaApi.kanbanViewBoard(v.id, projectId)
+          : await kaguyaApi.listTasks(projectId, false)
+        if (!cancelled) setTasks(ts)
+      } catch {
+        // Mantém o conjunto atual se a carga filtrada falhar.
+      }
+    })()
+    return () => { cancelled = true }
+  }, [activeViewId, views, projectId, firstLoad])
 
   // ── Carregamento ─────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -337,9 +398,13 @@ export function KanbanScreen({
 
       // Reload silencioso (sem spinner) para sincronizar as positions reais
       // que o backend calculou (o optimistic usou estimativas locais).
+      // Carga das tarefas respeita a view ativa (filtrada se a view tiver filtro).
+      const activeView = views.find(x => x.id === activeViewId)
       const [cols, ts] = await Promise.all([
         kaguyaApi.listColumns(projectId),
-        kaguyaApi.listTasks(projectId, false),
+        activeView?.filter
+          ? kaguyaApi.kanbanViewBoard(activeView.id, projectId)
+          : kaguyaApi.listTasks(projectId, false),
       ])
       setColumns(cols.sort((a, b) => a.position - b.position))
       setTasks(ts)
@@ -349,7 +414,7 @@ export function KanbanScreen({
       setTasks(snapshot)
       toast('Falha ao mover o card.', 'err')
     }
-  }, [tasks, columns, projectId, onChanged, toast])
+  }, [tasks, columns, projectId, onChanged, toast, views, activeViewId])
 
   // ── Ações de coluna ───────────────────────────────────────────────────────────
 
@@ -428,10 +493,44 @@ export function KanbanScreen({
   // Card ativo: usado pelo DragOverlay para renderizar o "fantasma" que segue o cursor.
   const activeTask = tasks.find(t => t.id === activeId)
 
+  // View ativa → configuração de exibição. Sem view (ou falha ao carregar) cai no
+  // default "tudo ligado" (equivale à built-in "Completa") — o board nunca quebra.
+  const activeView = views.find(v => v.id === activeViewId) ?? null
+  const display: KanbanViewDisplay = activeView?.display ?? {
+    adornos: { capacity_meter: true, subtask_ring: true, summary_footer: true, card_chips: true },
+    slots: ['abertas', 'tempo_estimado', 'em_andamento'],
+  }
+
   return (
     <div className="kg-page" style={{ maxWidth: 1320 }}>
       <h1 className="kg-page-title"><Icon name="board" size={22} /> {projectName}</h1>
       <div className="kg-page-sub">arraste entre colunas · soltar em Concluído completa</div>
+
+      {/* Seletor de views (spec 024): troca adornos/slots; a escolha é lembrada por lista */}
+      {views.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0' }}>
+          <span className="kg-field-label" style={{ marginRight: 2 }}>View</span>
+          <select
+            className="kg-select"
+            style={{ width: 'auto', minWidth: 150 }}
+            value={activeViewId ?? ''}
+            onChange={e => selectView(Number(e.target.value))}
+          >
+            {views.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
+          <button
+            className="kg-btn kg-btn-ghost"
+            disabled={!activeView || activeView.is_builtin}
+            title={activeView?.is_builtin ? 'A view "Completa" é fixa' : 'Editar view'}
+            onClick={() => activeView && !activeView.is_builtin && setViewModal({ mode: 'edit', view: activeView })}
+          >
+            <Icon name="settings" size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} />Editar
+          </button>
+          <button className="kg-btn kg-btn-ghost" onClick={() => setViewModal({ mode: 'create' })}>
+            <Icon name="plus" size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} />View
+          </button>
+        </div>
+      )}
 
       <DndContext
         sensors={sensors}
@@ -461,6 +560,9 @@ export function KanbanScreen({
                   activeId={activeId}
                   isOver={overColId === col.id}
                   projectName={projectName}
+                  showCapacity={display.adornos.capacity_meter}
+                  showChips={display.adornos.card_chips}
+                  showRing={display.adornos.subtask_ring}
                   onOpen={onOpenTask}
                   onAddTask={addTask}
                   onToggleDone={toggleDone}
@@ -478,8 +580,10 @@ export function KanbanScreen({
             </button>
           </div>
 
-          {/* Rodapé-resumo (slots default da view "Completa" no US1) */}
-          <SummaryFooter tasks={tasks} columns={columns} />
+          {/* Rodapé-resumo (adorno + métricas dos slots vêm da view ativa) */}
+          {display.adornos.summary_footer && (
+            <SummaryFooter tasks={tasks} columns={columns} slots={display.slots} />
+          )}
         </div>
 
         {/* DragOverlay: card "levantado" que segue o cursor durante o drag.
@@ -493,6 +597,17 @@ export function KanbanScreen({
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {/* Modal de criar/editar view (spec 024) */}
+      {viewModal && (
+        <KanbanViewModal
+          mode={viewModal.mode}
+          view={viewModal.view}
+          onClose={() => setViewModal(null)}
+          onSaved={loadViews}
+          toast={toast}
+        />
+      )}
     </div>
   )
 }
