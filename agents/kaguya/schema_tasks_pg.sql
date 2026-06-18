@@ -201,6 +201,31 @@ CREATE TABLE IF NOT EXISTS task_filters (
 
 
 -- ----------------------------------------------------------------------------
+-- kanban_views — views de board configuráveis (spec 024)
+-- ----------------------------------------------------------------------------
+-- Views salvas e nomeadas, GLOBAIS (sem project_id) e reutilizáveis em qualquer
+-- board. Cada view captura: (a) configuração de exibição (adornos visíveis +
+-- métricas dos 3 slots do rodapé) e (b) um filtro opcional (FilterRules inline,
+-- mesmo DSL das smart-lists — avaliado por tools_filters._build_where_from_rules).
+-- A view ativa por lista é estado de UI (localStorage), não vive aqui.
+CREATE TABLE IF NOT EXISTS kanban_views (
+    id          SERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    -- Built-in "Completa": semente de sistema, não deletável nem renomeável.
+    is_builtin  BOOLEAN NOT NULL DEFAULT FALSE,
+    display     JSONB NOT NULL,                 -- {adornos:{...}, slots:[m1,m2,m3]}
+    filter      JSONB,                          -- FilterRules ou NULL (sem filtro)
+    position    BIGINT NOT NULL DEFAULT 0,      -- ordem no seletor (esparsa ×1000)
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- No máximo UMA view built-in (mesma ideia do índice parcial do Inbox/done).
+-- Permite o seed idempotente da "Completa" via ON CONFLICT DO NOTHING.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_kanban_views_builtin
+    ON kanban_views (is_builtin) WHERE is_builtin;
+
+
+-- ----------------------------------------------------------------------------
 -- habits + habit_checkins — módulo de hábitos
 -- ----------------------------------------------------------------------------
 -- Criados agora; lógica/UI de hábitos é da Fase 4 (014). Adormecidos no MVP.
@@ -252,4 +277,19 @@ CREATE TABLE IF NOT EXISTS calendar_prefs (
 -- que rodar o schema de novo não cria um segundo Inbox.
 INSERT INTO task_projects (name, is_inbox, icon)
 VALUES ('Inbox', TRUE, '📥')
+ON CONFLICT DO NOTHING;
+
+
+-- ----------------------------------------------------------------------------
+-- SEED — view de Kanban built-in "Completa" (spec 024)
+-- ----------------------------------------------------------------------------
+-- Todos os adornos ligados + slots default. É a view default de qualquer board
+-- sem seleção prévia e o baseline de fidelidade visual (A1/A8). ON CONFLICT DO
+-- NOTHING + uq_kanban_views_builtin garantem que rodar de novo não duplica.
+INSERT INTO kanban_views (name, is_builtin, display, filter, position)
+VALUES (
+    'Completa', TRUE,
+    '{"adornos":{"capacity_meter":true,"subtask_ring":true,"summary_footer":true,"card_chips":true},"slots":["abertas","tempo_estimado","em_andamento"]}'::jsonb,
+    NULL, 1000
+)
 ON CONFLICT DO NOTHING;

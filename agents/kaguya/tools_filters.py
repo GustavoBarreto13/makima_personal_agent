@@ -128,7 +128,7 @@ def _existing_project_ids(ids: list) -> set:
 # ─────────────────────────────────────────────────────────────────────────────
 # Tradução da DSL → WHERE parametrizado (o coração — SC-003)
 # ─────────────────────────────────────────────────────────────────────────────
-def _build_where_from_rules(rules: dict):
+def _build_where_from_rules(rules: dict, default_open: bool = True):
     """Traduz a DSL de regras num fragmento ``WHERE`` parametrizado + lista de órfãs.
 
     Monta um fragmento SQL por condição usando placeholders ``%(cN)s`` (N crescente) e
@@ -137,10 +137,13 @@ def _build_where_from_rules(rules: dict):
     (tag/projeto inexistente) e as devolve em ``orphans`` para a UI sinalizar (FR-011).
 
     Sempre aplica a base ``deleted_at IS NULL AND parent_id IS NULL`` (tarefas-pai vivas).
-    Se nenhuma condição mexer em ``state``, filtra só **abertas** por padrão.
 
     Args:
         rules: O objeto da DSL ``{"combinator": "and"|"or", "conditions": [...]}``.
+        default_open: Quando ``True`` (smart-lists), filtra só **abertas** se nenhuma
+            condição mexer em ``state``. Quando ``False`` (board do Kanban — spec 024), a
+            base NÃO força "só abertas": quem decide open/done é o consumidor (o board já
+            restringe via ``list_tasks``), não o filtro.
 
     Returns:
         Tupla ``(where_sql, params, orphans)`` — ``where_sql`` já inclui a base e as
@@ -222,9 +225,10 @@ def _build_where_from_rules(rules: dict):
             params[key] = f"%{value}%"
             fragments.append(f"(t.title ILIKE %({key})s OR t.description ILIKE %({key})s)")
 
-    # Base: tarefas-pai vivas. Default "só abertas" quando o usuário não filtrou por state.
+    # Base: tarefas-pai vivas. Default "só abertas" quando o usuário não filtrou por state
+    # — desligável (default_open=False) para o board do Kanban, que gere open/done por coluna.
     base = "t.deleted_at IS NULL AND t.parent_id IS NULL"
-    if not has_state:
+    if default_open and not has_state:
         base += " AND t.completed_at IS NULL"
 
     if fragments:

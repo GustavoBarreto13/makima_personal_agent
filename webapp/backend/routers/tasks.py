@@ -45,6 +45,9 @@ from agents.kaguya.tools_filters import (
     list_tasks_by_filter, list_today_overdue,
     list_builtin_filters, list_tasks_by_builtin,
 )
+from agents.kaguya.tools_kanban_views import (
+    list_views, create_view, update_view, delete_view, list_board_for_view,
+)
 from agents.kaguya.tools_calendar import list_tasks_in_range
 # Calendar Hub — fatia 019 (US2): providers cross-agent + prefs de exibição
 from agents.kaguya.calendar_hub import list_sources, aggregate
@@ -230,6 +233,31 @@ class UpdateFilterBody(BaseModel):
     rules: Optional[dict] = None
     default_view: Optional[str] = None
     icon: Optional[str] = None
+    position: Optional[int] = None
+
+
+class CreateKanbanViewBody(BaseModel):
+    """Body de criação de view de Kanban (spec 024).
+
+    ``display`` = ``{adornos:{...}, slots:[m1,m2,m3]}``; ``filter`` = ``FilterRules``
+    opcional (mesmo DSL das smart-lists) ou ``None``. Aceitamos ``dict`` cru porque são
+    estruturas de dados — a camada de lógica valida o shape e parametriza o filtro.
+    """
+    name: str
+    display: dict
+    filter: Optional[dict] = None
+
+
+class UpdateKanbanViewBody(BaseModel):
+    """Body de edição de view de Kanban (PATCH parcial — só campos enviados).
+
+    ``clear_filter=True`` remove o filtro (seta NULL); enviar ``filter`` o substitui.
+    A view built-in "Completa" é imutável (a camada de lógica rejeita com 400).
+    """
+    name: Optional[str] = None
+    display: Optional[dict] = None
+    filter: Optional[dict] = None
+    clear_filter: Optional[bool] = None
     position: Optional[int] = None
 
 
@@ -545,6 +573,45 @@ def delete_filter_route(filter_id: int, user: dict = Depends(require_user)) -> d
 def filter_tasks_route(filter_id: int, user: dict = Depends(require_user)) -> dict:
     """Abre uma smart-list: ``{tasks, orphans}`` (referências órfãs sinalizadas, sem erro)."""
     return list_tasks_by_filter(filter_id)  # listagem
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Views de Kanban configuráveis — spec 024
+# ─────────────────────────────────────────────────────────────────────────────
+# ``/kanban-views`` é um caminho LITERAL: o conversor int de ``/{task_id}`` rejeita
+# "kanban-views", então não há ambiguidade de rota (mesma garantia de /filters).
+@router.get("/kanban-views")
+def list_kanban_views_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Lista as views de Kanban (sempre inclui a built-in "Completa")."""
+    return list_views()  # listagem — sem _check_result
+
+
+@router.post("/kanban-views", status_code=201)
+def create_kanban_view_route(body: CreateKanbanViewBody, user: dict = Depends(require_user)) -> dict:
+    """Cria uma view customizada (valida display/slots e o filtro opcional)."""
+    return _check_result(create_view(**body.model_dump(exclude_unset=True)))
+
+
+@router.patch("/kanban-views/{view_id}")
+def update_kanban_view_route(view_id: int, body: UpdateKanbanViewBody, user: dict = Depends(require_user)) -> dict:
+    """Edita uma view; a built-in "Completa" é imutável (rejeitada com 400)."""
+    return _check_result(update_view(view_id, **body.model_dump(exclude_unset=True)))
+
+
+@router.delete("/kanban-views/{view_id}")
+def delete_kanban_view_route(view_id: int, user: dict = Depends(require_user)) -> dict:
+    """Exclui uma view customizada; a built-in "Completa" não pode ser excluída."""
+    return _check_result(delete_view(view_id))
+
+
+@router.get("/kanban-views/{view_id}/board")
+def kanban_view_board_route(
+    view_id: int,
+    project_id: int = Query(..., description="Lista (board) a carregar"),
+    user: dict = Depends(require_user),
+) -> list[dict]:
+    """Tarefas do board de uma lista com o filtro da view aplicado (US3). Listagem."""
+    return list_board_for_view(view_id, project_id)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
