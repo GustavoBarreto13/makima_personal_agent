@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kaguya — Kanban · 3 direções</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="kaguya/board-explore.css" />
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <style>
+    html, body { height: 100%; margin: 0; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="kaguya/data.js"></script>
+  <script type="text/babel" src="kaguya/ui.jsx"></script>
+  <script type="text/babel" src="design-canvas.jsx"></script>
+
+  <script type="text/babel">
+    /* ── seleção e cálculos comuns ─────────────────────────────────────── */
+    const ALL = TASKS;
+    const tasksFor = (col) => col.isDone
+      ? ALL.filter(t => t.done)
+      : ALL.filter(t => t.col === col.id && !t.done);
+    const sumEst = (arr) => arr.reduce((s, t) => s + (t.est || 0), 0);
+    const SHOW = 5;            // itens visíveis por coluna (o contador mostra o total real)
+    const CAP_REF = 240;       // 4h de referência para a barra de capacidade
+
+    function Ring({ pct, color = 'var(--done)', size = 30 }) {
+      const sw = 3, r = (size - sw) / 2, c = 2 * Math.PI * r, dash = pct * c;
+      return (
+        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--line-2)" strokeWidth={sw} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={sw}
+                  strokeDasharray={`${dash} ${c - dash}`} strokeLinecap="round" />
+        </svg>
+      );
+    }
+    const Due = ({ t, done }) => t.due
+      ? <span className={'kb-due ' + dueClass(t.due, done)}><Icon name="calendar" />{dueLabel(t.due)}{t.time ? ' · ' + fmtTime(t.time) : ''}</span>
+      : null;
+
+    /* ═══ A · SERENO ══════════════════════════════════════════════════════ */
+    function CardA({ t, done }) {
+      const subs = t.subtasks || [], sd = subs.filter(s => s.done).length, p = projById(t.project);
+      return (
+        <article className={'kb-card' + (done ? ' done' : '')} data-p={t.prio}>
+          <div className="top">
+            <span className="prio">{done && <Icon name="check" />}</span>
+            <div className="title">{t.title}</div>
+          </div>
+          {subs.length > 0 && !done && <div className="prog"><span style={{ width: (sd / subs.length * 100) + '%' }} /></div>}
+          <div className="meta">
+            <Due t={t} done={done} />
+            {t.est && !done && <span className="kb-est">{fmtEst(t.est)}</span>}
+            {subs.length > 0 && !done && <span className="subc">{sd}/{subs.length}</span>}
+            <span className="kb-proj"><i style={{ background: p.color }} />{p.name}</span>
+          </div>
+        </article>
+      );
+    }
+    function BoardA() {
+      return (
+        <div className="kgb dir-a"><div className="kb-board">
+          {COLUMNS.map(col => {
+            const all = tasksFor(col);
+            return (
+              <section className="kb-col" key={col.id}>
+                <header className="kb-head">
+                  <span className="dot" style={{ background: col.color }} />
+                  <span className="name">{col.name}</span>
+                  <span className="count">{all.length}</span>
+                  {col.id === 'doing' && <span className="foco">em foco</span>}
+                </header>
+                <div className="kb-cards">
+                  {all.slice(0, SHOW).map(t => <CardA key={t.id} t={t} done={col.isDone} />)}
+                </div>
+              </section>
+            );
+          })}
+        </div></div>
+      );
+    }
+
+    /* ═══ B · CARTÃO ══════════════════════════════════════════════════════ */
+    function CardB({ t, done }) {
+      const subs = t.subtasks || [], sd = subs.filter(s => s.done).length, p = projById(t.project);
+      return (
+        <article className={'kb-card' + (done ? ' done' : '')} data-p={t.prio}>
+          <div className="title">{t.title}</div>
+          {subs.length > 0 && !done && (
+            <div className="checklist">
+              <div className="bar"><span style={{ width: (sd / subs.length * 100) + '%' }} /></div>
+              <span className="n">{sd}/{subs.length}</span>
+            </div>
+          )}
+          <div className="chips">
+            <Due t={t} done={done} />
+            {t.est && !done && <span className="est-pill"><Icon name="clock" />{fmtEst(t.est)}</span>}
+            {(t.tags || []).slice(0, 1).map(tag => <span className="kb-tag" key={tag}>{tag}</span>)}
+          </div>
+          <div className="foot">
+            <span className="kb-proj"><i style={{ background: p.color }} />{p.name}</span>
+            {t.prio > 0 && <span className="flag"><PrioFlag level={t.prio} /></span>}
+          </div>
+        </article>
+      );
+    }
+    function BoardB() {
+      return (
+        <div className="kgb dir-b"><div className="kb-board">
+          {COLUMNS.map(col => {
+            const all = tasksFor(col), est = sumEst(all);
+            return (
+              <section className="kb-col" key={col.id} style={{ '--col-c': col.color }}>
+                <header className="kb-head">
+                  <div className="row1">
+                    <span className="dot" style={{ background: col.color }} />
+                    <span className="name">{col.name}</span>
+                    <span className="count">{all.length}</span>
+                    {est > 0 && <span className="sigma">Σ {fmtEst(est)}</span>}
+                  </div>
+                  {!col.isDone && <div className="cap"><span style={{ width: Math.min(est / CAP_REF, 1) * 100 + '%' }} /></div>}
+                </header>
+                <div className="kb-cards">
+                  {all.slice(0, SHOW).map(t => <CardB key={t.id} t={t} done={col.isDone} />)}
+                </div>
+                {!col.isDone && <div className="kb-add"><Icon name="plus" /> Adicionar</div>}
+              </section>
+            );
+          })}
+        </div></div>
+      );
+    }
+
+    /* ═══ C · VIDRO ═══════════════════════════════════════════════════════ */
+    function CardC({ t, done }) {
+      const subs = t.subtasks || [], sd = subs.filter(s => s.done).length, p = projById(t.project);
+      return (
+        <article className={'kb-card' + (done ? ' done' : '')} data-p={t.prio}>
+          <div className="body">
+            <div className="title">{t.title}</div>
+            <div className="meta">
+              <Due t={t} done={done} />
+              {t.est && !done && <span className="kb-est">{fmtEst(t.est)}</span>}
+              <span className="kb-proj"><i style={{ background: p.color }} />{p.name}</span>
+            </div>
+          </div>
+          {done
+            ? <span className="donecheck"><Icon name="check" /></span>
+            : subs.length > 0
+              ? <div className="ring"><Ring pct={sd / subs.length} /><span className="lbl">{sd}/{subs.length}</span></div>
+              : null}
+        </article>
+      );
+    }
+    function BoardC() {
+      const open = ALL.filter(t => !t.done);
+      const doing = ALL.filter(t => t.col === 'doing' && !t.done);
+      return (
+        <div className="kgb dir-c"><div className="kb-board">
+          <div className="kb-cols">
+            {COLUMNS.map(col => {
+              const all = tasksFor(col), est = sumEst(all);
+              const segOn = col.isDone ? 0 : Math.round(Math.min(est / CAP_REF, 1) * 5);
+              return (
+                <section className="kb-col" key={col.id} style={{ '--col-c': col.color }}>
+                  <header className="kb-head">
+                    <div className="row1">
+                      <span className="num">{all.length}</span>
+                      <div className="namewrap">
+                        <span className="name"><span className="dot" style={{ background: col.color }} />{col.name}</span>
+                        <span className="sub">{col.isDone ? 'concluídas' : est > 0 ? 'Σ ' + fmtEst(est) : 'sem estimativa'}</span>
+                      </div>
+                      {col.id === 'doing' && <span className={'wip' + (all.length > 3 ? ' over' : '')}>WIP {all.length}/3</span>}
+                    </div>
+                    {!col.isDone && <div className="cap">{[0, 1, 2, 3, 4].map(i => <i key={i} className={i < segOn ? 'on' : ''} />)}</div>}
+                  </header>
+                  <div className="kb-cards">
+                    {all.slice(0, SHOW).map(t => <CardC key={t.id} t={t} done={col.isDone} />)}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+          <div className="kb-foot">
+            <div className="stat"><span className="v">{open.length}</span><span className="k">tarefas abertas</span></div>
+            <div className="sep" />
+            <div className="stat"><span className="v">{fmtEst(sumEst(open))}</span><span className="k">tempo estimado</span></div>
+            <div className="sep" />
+            <div className="stat"><span className="v">{doing.length}</span><span className="k">em foco agora</span></div>
+          </div>
+        </div></div>
+      );
+    }
+
+    /* ── canvas ────────────────────────────────────────────────────────── */
+    function Explore() {
+      return (
+        <DesignCanvas>
+          <DCSection id="a" title="A · Sereno" subtitle="Sem caixas. Hairlines, prioridade em ponto, máximo de ar — iOS Lembretes.">
+            <DCArtboard id="a1" label="Sereno" width={1240} height={620}><BoardA /></DCArtboard>
+          </DCSection>
+          <DCSection id="b" title="B · Cartão" subtitle="Cards ricos, Σ tempo por coluna + barra de capacidade, checklist e tags — Things.">
+            <DCArtboard id="b1" label="Cartão" width={1240} height={830}><BoardB /></DCArtboard>
+          </DCSection>
+          <DCSection id="c" title="C · Vidro" subtitle="Colunas em vidro fosco, contagem grande, anel de subtarefas, WIP e rodapé-resumo — visionOS.">
+            <DCArtboard id="c1" label="Vidro" width={1240} height={760}><BoardC /></DCArtboard>
+          </DCSection>
+        </DesignCanvas>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<Explore />);
+  </script>
+</body>
+</html>
