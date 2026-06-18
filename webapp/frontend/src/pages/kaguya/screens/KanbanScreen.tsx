@@ -16,6 +16,8 @@ import { TaskCard } from '../components/TaskCard'
 import { SortableTaskCard } from '../components/SortableTaskCard'
 import { SummaryFooter } from '../components/SummaryFooter'
 import { KanbanViewModal } from '../components/KanbanViewModal'
+import { ColumnModal } from '../modals/ColumnModal'
+import { AddTaskModal } from '../modals/AddTaskModal'
 import { Icon } from '../ui/Icons'
 import {
   DndContext,
@@ -67,10 +69,10 @@ interface KanbanColumnProps {
   showRing: boolean        // adorno da view ativa: anel de subtarefas (R12)
   onOpen: (task: Task) => void
   onAddTask: (col: Column) => void
-  onToggleDone: (col: Column) => void
+  onEditColumn: (col: Column) => void
 }
 
-function KanbanColumn({ col, cards, activeId, isOver, projectName, showCapacity, showChips, showRing, onOpen, onAddTask, onToggleDone }: KanbanColumnProps) {
+function KanbanColumn({ col, cards, activeId, isOver, projectName, showCapacity, showChips, showRing, onOpen, onAddTask, onEditColumn }: KanbanColumnProps) {
   // useDroppable torna o corpo da coluna uma área de drop para o dnd-kit.
   // Captura drops em colunas vazias (sem cards) e abaixo de todos os cards.
   // O id no formato "col:<id>" diferencia a coluna de um id de card.
@@ -100,13 +102,13 @@ function KanbanColumn({ col, cards, activeId, isOver, projectName, showCapacity,
               {col.is_done_column ? 'concluídas' : colEst > 0 ? `Σ ${fmtEst(colEst)}` : 'sem estimativa'}
             </span>
           </div>
-          {/* Toggle "coluna concluído" (feature do board por-lista; ocupa o lugar do WIP do handoff) */}
+          {/* Engrenagem: abre o modal de editar coluna (renomear + concluído + excluir) */}
           <button
-            className="kc-done-toggle"
-            title={col.is_done_column ? 'É a coluna concluído' : 'Marcar como coluna concluído'}
-            onClick={() => onToggleDone(col)}
+            className="kc-settings"
+            title="Editar coluna"
+            onClick={() => onEditColumn(col)}
           >
-            <Icon name="check" size={14} style={{ color: 'var(--done)', opacity: col.is_done_column ? 1 : 0.32 }} />
+            <Icon name="settings" size={14} />
           </button>
         </div>
         {!col.is_done_column && showCapacity && (
@@ -172,6 +174,10 @@ export function KanbanScreen({
   const [views, setViews] = useState<KanbanView[]>([])
   const [activeViewId, setActiveViewId] = useState<number | null>(null)
   const [viewModal, setViewModal] = useState<{ mode: 'create' | 'edit'; view?: KanbanView } | null>(null)
+
+  // Modais de coluna (criar/editar/excluir) e de adicionar tarefa — substituem os window.prompt.
+  const [columnModal, setColumnModal] = useState<{ mode: 'create' | 'edit'; column?: Column } | null>(null)
+  const [addTaskCol, setAddTaskCol] = useState<Column | null>(null)
 
   // Chave de persistência da view ativa POR LISTA (R7/R25): cada board reabre na última.
   const lsKey = `kaguya:kanban:active-view:${projectId}`
@@ -418,51 +424,11 @@ export function KanbanScreen({
 
   // ── Ações de coluna ───────────────────────────────────────────────────────────
 
-  const addColumn = async () => {
-    const name = window.prompt('Nome da coluna:')
-    if (!name?.trim()) return
-    try {
-      await kaguyaApi.createColumn({ project_id: projectId, name: name.trim() })
-      await load()
-    } catch {
-      toast('Falha ao criar coluna.', 'err')
-    }
-  }
+  // Abre o modal de criar coluna (substitui o window.prompt).
+  const addColumn = () => setColumnModal({ mode: 'create' })
 
-  // Cria uma tarefa diretamente numa coluna via prompt rápido.
-  const addTask = async (col: Column) => {
-    const title = window.prompt(`Nova tarefa em "${col.name}":`)
-    if (!title?.trim()) return
-    try {
-      const r = await kaguyaApi.createTask({
-        title:      title.trim(),
-        project_id: projectId,
-        column_id:  col.id,
-      })
-      if (r.status === 'error') {
-        toast(r.message ?? 'Falha ao criar tarefa.', 'err')
-        return
-      }
-      await load()
-      onChanged()
-    } catch {
-      toast('Falha ao criar tarefa.', 'err')
-    }
-  }
-
-  // Alterna qual coluna é a "concluído" (máximo de uma por lista).
-  const toggleDone = async (col: Column) => {
-    try {
-      const r = await kaguyaApi.updateColumn(col.id, { is_done_column: !col.is_done_column })
-      if (r.status === 'error') {
-        toast(r.message ?? 'Já há uma coluna concluído.', 'err')
-        return
-      }
-      await load()
-    } catch {
-      toast('Falha ao atualizar coluna.', 'err')
-    }
-  }
+  // Abre o modal leve de adicionar tarefa numa coluna (substitui o window.prompt).
+  const addTask = (col: Column) => setAddTaskCol(col)
 
   // ── Renderização ──────────────────────────────────────────────────────────────
 
@@ -565,7 +531,7 @@ export function KanbanScreen({
                   showRing={display.adornos.subtask_ring}
                   onOpen={onOpenTask}
                   onAddTask={addTask}
-                  onToggleDone={toggleDone}
+                  onEditColumn={(c) => setColumnModal({ mode: 'edit', column: c })}
                 />
               )
             })}
@@ -605,6 +571,29 @@ export function KanbanScreen({
           view={viewModal.view}
           onClose={() => setViewModal(null)}
           onSaved={loadViews}
+          toast={toast}
+        />
+      )}
+
+      {/* Modal de criar/editar/excluir coluna */}
+      {columnModal && (
+        <ColumnModal
+          mode={columnModal.mode}
+          column={columnModal.column}
+          projectId={projectId}
+          onClose={() => setColumnModal(null)}
+          onSaved={load}
+          toast={toast}
+        />
+      )}
+
+      {/* Modal leve de adicionar tarefa na coluna */}
+      {addTaskCol && (
+        <AddTaskModal
+          column={addTaskCol}
+          projectId={projectId}
+          onClose={() => setAddTaskCol(null)}
+          onCreated={() => { load(); onChanged() }}
           toast={toast}
         />
       )}

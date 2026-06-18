@@ -315,7 +315,8 @@
 .kcol-head .kc-name { display: inline-flex; align-items: center; gap: 7px; font-family: var(--sans); font-size: 13px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); white-space: nowrap; }
 .kcol-head .kc-name .kc-dot { width: 8px; height: 8px; border-radius: 3px; flex-shrink: 0; }
 .kcol-head .kc-sub { font-family: var(--mono); font-size: 10px; color: var(--ink-4); white-space: nowrap; }
-.kcol-head .kc-done-toggle { margin-left: auto; background: none; border: none; cursor: pointer; padding: 3px; display: inline-flex; align-items: center; flex-shrink: 0; }
+.kcol-head .kc-settings { margin-left: auto; background: none; border: none; cursor: pointer; padding: 3px; display: inline-flex; align-items: center; flex-shrink: 0; color: var(--ink-4); transition: color .12s; }
+.kcol-head .kc-settings:hover { color: var(--kg-deep); }
 .kcol-cap { display: flex; gap: 3px; margin-top: 13px; }
 .kcol-cap i { height: 4px; border-radius: 2px; flex: 1; background: var(--kc-color, var(--kg)); opacity: 0.2; transition: opacity .3s; }
 .kcol-cap i.on { opacity: 0.7; }
