@@ -108,11 +108,11 @@ def test_crud_create_list_update_delete(builtin_id):
 # ─────────────────────────────────────────────────────────────────────────────
 # Proteção da built-in (R8/R22)
 # ─────────────────────────────────────────────────────────────────────────────
-def test_builtin_cannot_be_updated(builtin_id):
-    """A view built-in "Completa" não pode ser editada (erro, sem mudar nada)."""
-    r = KV.update_view(builtin_id, name="Renomeada")
-    assert r["status"] == "error"
-    assert next(v for v in KV.list_views() if v["id"] == builtin_id)["name"] == "Completa"
+def test_builtin_is_editable(builtin_id):
+    """A view built-in "Completa" PODE ser editada (renomear/adornos/filtro) — só não é deletável."""
+    r = KV.update_view(builtin_id, name="Padrão")
+    assert r["status"] == "ok"
+    assert next(v for v in KV.list_views() if v["id"] == builtin_id)["name"] == "Padrão"
 
 
 def test_builtin_cannot_be_deleted(builtin_id):

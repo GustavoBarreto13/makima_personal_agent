@@ -137,7 +137,8 @@ def update_view(
     clear_filter: bool = False,
     position: Optional[int] = None,
 ) -> dict:
-    """Edita uma view (PATCH parcial). A built-in "Completa" é imutável.
+    """Edita uma view (PATCH parcial). A built-in "Completa" pode ser editada (renomear,
+    adornos, métricas, filtro) — só não pode ser EXCLUÍDA (ver ``delete_view``).
 
     Args:
         view_id: Id da view.
@@ -148,13 +149,10 @@ def update_view(
         position: Nova posição no seletor (opcional).
 
     Returns:
-        Dicionário de status. Erro se a view não existir, for built-in, ou nada mudar.
+        Dicionário de status. Erro se a view não existir ou nada mudar.
     """
-    builtin = _is_builtin(view_id)
-    if builtin is None:
+    if _is_builtin(view_id) is None:
         return {"status": "error", "message": "View não encontrada."}
-    if builtin:
-        return {"status": "error", "message": "A view 'Completa' não pode ser editada."}
 
     sets, params = [], {"id": view_id}
     if name is not None:
