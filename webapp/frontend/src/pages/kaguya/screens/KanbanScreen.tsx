@@ -9,7 +9,7 @@
 //   • Reordenação dentro da coluna: usa o endpoint /position (antes sem uso).
 //   • Sem spinner a cada drop: spinner só no carregamento inicial.
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import type { Task, Column, KanbanView, KanbanViewDisplay } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { TaskCard } from '../components/TaskCard'
@@ -247,12 +247,39 @@ export function KanbanScreen({
     }
   }, [projectId, toast])
 
-  // Recarrega quando o projeto ou o reloadKey externo muda.
-  // Reseta firstLoad para exibir o spinner ao trocar de projeto.
+  // Carga inicial + troca de lista: `load` é recriado quando projectId muda, então este
+  // efeito dispara no mount e ao trocar de lista — aí sim mostra o spinner.
   useEffect(() => {
     setFirstLoad(true)
     load()
-  }, [load, reloadKey])
+  }, [load])
+
+  // reloadKey muda quando uma tarefa é editada no modal/shell (afterSave → bump). Aqui
+  // recarregamos o board de forma SILENCIOSA (sem mexer em firstLoad → sem flash
+  // "Carregando…"), respeitando o filtro da view ativa. Pula o mount (o efeito acima
+  // já fez a 1ª carga); não reage a projectId (gatilho exclusivo: reloadKey).
+  const didMountRef = useRef(false)
+  useEffect(() => {
+    if (!didMountRef.current) { didMountRef.current = true; return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const v = views.find(x => x.id === activeViewId)
+        const [cols, ts] = await Promise.all([
+          kaguyaApi.listColumns(projectId),
+          v?.filter ? kaguyaApi.kanbanViewBoard(v.id, projectId) : kaguyaApi.listTasks(projectId, false),
+        ])
+        if (!cancelled) {
+          setColumns(cols.sort((a, b) => a.position - b.position))
+          setTasks(ts)
+        }
+      } catch {
+        // Silencioso: mantém o board atual se a recarga falhar.
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- gatilho exclusivo: reloadKey
+  }, [reloadKey])
 
   // ── Sensores @dnd-kit ─────────────────────────────────────────────────────────
   // PointerSensor com distância mínima de ativação de 5px:
@@ -486,9 +513,9 @@ export function KanbanScreen({
           </select>
           <button
             className="kg-btn kg-btn-ghost"
-            disabled={!activeView || activeView.is_builtin}
-            title={activeView?.is_builtin ? 'A view "Completa" é fixa' : 'Editar view'}
-            onClick={() => activeView && !activeView.is_builtin && setViewModal({ mode: 'edit', view: activeView })}
+            disabled={!activeView}
+            title="Editar view"
+            onClick={() => activeView && setViewModal({ mode: 'edit', view: activeView })}
           >
             <Icon name="settings" size={14} style={{ verticalAlign: 'middle', marginRight: 5 }} />Editar
           </button>
