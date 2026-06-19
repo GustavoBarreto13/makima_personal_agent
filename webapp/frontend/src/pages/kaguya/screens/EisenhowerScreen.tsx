@@ -9,7 +9,7 @@
 //   • Optimistic update: o card pula de quadrante IMEDIATAMENTE (sem esperar a rede).
 //   • Sem spinner ao soltar: o "Carregando…" só aparece no primeiro carregamento.
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Task, Project } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { QUADS, getQuadrant, buildDragPatch, type QuadId } from '../lib/eisenhower'
@@ -161,10 +161,14 @@ export function EisenhowerScreen({ projects, reloadKey, onChanged, onOpenTask, t
   // Sensor centralizado: PointerSensor com 5px de ativação.
   const sensors = useDndSensors()
 
+  // firstLoad: verdadeiro apenas no mount. Controla se o load mostra o spinner.
+  // Usando ref (não state) para não causar re-render ao setar.
+  const firstLoad = useRef(true)
+
   // Carrega (ou recarrega) as tarefas da Eisenhower.
-  // O parâmetro `silent` evita piscar o "Carregando…" após um drop:
-  //   - false (padrão): mostra o spinner (1º carregamento ou reloadKey).
-  //   - true           : re-busca em background, sem alterar `loading`.
+  // O parâmetro `silent` evita piscar o "Carregando…":
+  //   - false: mostra o spinner (só no mount).
+  //   - true : re-busca em background (após drag, modal salvo, reloadKey bump).
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
@@ -177,8 +181,13 @@ export function EisenhowerScreen({ projects, reloadKey, onChanged, onOpenTask, t
     }
   }, [toast])
 
-  // Re-busca quando o reloadKey muda (modal salvo, etc.).
-  useEffect(() => { load() }, [load, reloadKey])
+  // Spinner só no mount; bumps de reloadKey (incluindo os vindos do onChanged após
+  // um drop) são sempre silenciosos — nunca piscam o "Carregando…" na tela.
+  useEffect(() => {
+    const silent = !firstLoad.current
+    firstLoad.current = false
+    load(silent)
+  }, [load, reloadKey])
 
   // Agrupa as tarefas pelo quadrante derivado (isUrgent × isImportant).
   const byQuad = (qid: QuadId) =>

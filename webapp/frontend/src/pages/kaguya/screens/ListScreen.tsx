@@ -56,10 +56,14 @@ export function ListScreen({ projectId, projectName, reloadKey, onOpenTask, onNe
   // Sensor centralizado: PointerSensor com 5px de ativação.
   const sensors = useDndSensors()
 
+  // firstLoad: verdadeiro apenas no mount (ou quando a lista muda via projectId).
+  // Garante spinner só no carregamento inicial, nunca após reordenação ou modal.
+  const firstLoad = useRef(true)
+
   // Busca as tarefas da lista (inclui concluídas para a seção colapsável).
-  // O parâmetro `silent` evita piscar o "Carregando…" após reordenação:
-  //   - false (padrão): mostra o spinner (1º carregamento ou reloadKey).
-  //   - true           : re-busca em background, sem alterar `loading`.
+  // O parâmetro `silent` evita piscar o "Carregando…":
+  //   - false: mostra o spinner (só no mount ou troca de lista).
+  //   - true : re-busca em background (após reordenação ou modal).
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
@@ -71,8 +75,12 @@ export function ListScreen({ projectId, projectName, reloadKey, onOpenTask, onNe
     }
   }, [projectId, toast])
 
-  // Re-busca quando a lista muda ou quando o shell sinaliza (reloadKey).
-  useEffect(() => { load() }, [load, reloadKey])
+  // Spinner só no mount e na troca de lista; bumps de reloadKey são silenciosos.
+  useEffect(() => {
+    const silent = !firstLoad.current
+    firstLoad.current = false
+    load(silent)
+  }, [load, reloadKey])
 
   // Conclui/reabre uma tarefa. Em pai com subtarefas abertas, confirma a cascata.
   const toggle = async (task: Task) => {

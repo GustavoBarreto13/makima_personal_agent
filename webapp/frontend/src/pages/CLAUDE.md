@@ -73,6 +73,34 @@ fetch('/api/journal/heatmap?year=2026', { credentials: 'include' })
 
 ---
 
+### DnD: padrão de carregamento silencioso (obrigatório)
+
+Telas com drag-and-drop que recebem um `reloadKey` do shell **nunca devem piscar o spinner "Carregando…" ao soltar um card**. O padrão obrigatório usa `useRef` para distinguir o mount dos bumps posteriores:
+
+```tsx
+const firstLoad = useRef(true)
+
+const load = useCallback(async (silent = false) => {
+  if (!silent) setLoading(true)
+  // ... fetch
+  if (!silent) setLoading(false)
+}, [deps])
+
+// Spinner só no mount; reloadKey bumps (incluindo os vindos de onChanged após drops)
+// são sempre silenciosos.
+useEffect(() => {
+  const silent = !firstLoad.current
+  firstLoad.current = false
+  load(silent)
+}, [load, reloadKey])
+```
+
+**Por que:** `onChanged()` nas telas DnD chama `bump()` no shell (incrementa `reloadKey`), o que dispara o `useEffect`. Sem o `firstLoad` ref, o spinner acende a cada drop, mesmo com optimistic update já aplicado — experiência péssima.
+
+**Onde aplicado:** `EisenhowerScreen`, `ListScreen`, `TodayScreen`. Replicar em qualquer nova tela com DnD + `reloadKey`.
+
+---
+
 ### O que NÃO fazer aqui
 
 - **Não criar arquivo de rota na raiz de `pages/` para Shells** — a Route está em `App.tsx` e os Shells usam wildcard (`/journal/*`); criar `Journal.tsx` na raiz criaria conflito

@@ -11,7 +11,7 @@
 //     passado ao PlanCard (o dataTransfer ficava vazio). Com @dnd-kit, active.id
 //     resolve o id diretamente, sem prop extra.
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Task, Project, MyDayResponse } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { QuickAdd } from '../components/QuickAdd'
@@ -54,10 +54,14 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
   // Sensor centralizado: PointerSensor com 5px de ativação.
   const sensors = useDndSensors()
 
+  // firstLoad: verdadeiro apenas no mount. Controla se o load mostra o spinner.
+  // Usando ref (não state) para não causar re-render ao setar.
+  const firstLoad = useRef(true)
+
   // Carrega (ou recarrega) o Meu Dia.
-  // O parâmetro `silent` evita piscar o "Carregando…" após um drop:
-  //   - false (padrão): mostra o spinner (1º carregamento ou reloadKey).
-  //   - true           : re-busca em background, sem alterar `loading`.
+  // O parâmetro `silent` evita piscar o "Carregando…":
+  //   - false: mostra o spinner (só no mount).
+  //   - true : re-busca em background (após drag, modal salvo, reloadKey bump).
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
@@ -70,7 +74,13 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
     }
   }, [toast])
 
-  useEffect(() => { load() }, [load, reloadKey])
+  // Spinner só no mount; bumps de reloadKey (incluindo os vindos do onChanged após
+  // um drop) são sempre silenciosos — nunca piscam o "Carregando…" na tela.
+  useEffect(() => {
+    const silent = !firstLoad.current
+    firstLoad.current = false
+    load(silent)
+  }, [load, reloadKey])
 
   // ── Handlers de DnD ──────────────────────────────────────────────────────────
   // IMPORTANTE: todos os hooks (useCallback) precisam ser declarados ANTES de qualquer
