@@ -1415,61 +1415,60 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     hoje_str = hoje.isoformat()
     amanha_str = (hoje + timedelta(days=7)).isoformat()   # janela das sugestões (≤7 dias)
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            # Usa _qualified("t") pois há JOIN com task_projects (evita colunas ambíguas).
-            campos = _qualified("t")
+    # Usa _qualified("t") pois há JOIN com task_projects (evita colunas ambíguas).
+    # run_select() retorna dicts via RealDictCursor — indispensável para que _serialize_task
+    # e o acesso a r["project_name"] funcionem. Abrir conn.cursor() sem factory retornaria
+    # tuplas e causaria TypeError nos acessos por nome (era o bug do HTTP 500 no Meu Dia).
+    campos = _qualified("t")
 
-            # ── Plano de hoje: my_day_date == hoje, abertas, pai ──
-            cur.execute(
-                f"""
-                SELECT {campos}, p.name AS project_name
-                FROM tasks t
-                JOIN task_projects p ON p.id = t.project_id
-                WHERE t.my_day_date = %s
-                  AND t.completed_at IS NULL
-                  AND t.deleted_at IS NULL
-                  AND t.parent_id IS NULL
-                ORDER BY t.start_at NULLS LAST, t.position
-                """,
-                (hoje_str,),
-            )
-            plano_rows = cur.fetchall()
+    # ── Plano de hoje: my_day_date == hoje, abertas, pai ──
+    plano_rows = run_select(
+        f"""
+        SELECT {campos}, p.name AS project_name
+        FROM tasks t
+        JOIN task_projects p ON p.id = t.project_id
+        WHERE t.my_day_date = %(hoje)s
+          AND t.completed_at IS NULL
+          AND t.deleted_at IS NULL
+          AND t.parent_id IS NULL
+        ORDER BY t.start_at NULLS LAST, t.position
+        """,
+        {"hoje": hoje_str},
+    )
 
-            # ── Pendências de ontem: my_day_date < hoje, abertas, pai ──
-            cur.execute(
-                f"""
-                SELECT {campos}, p.name AS project_name
-                FROM tasks t
-                JOIN task_projects p ON p.id = t.project_id
-                WHERE t.my_day_date < %s
-                  AND t.completed_at IS NULL
-                  AND t.deleted_at IS NULL
-                  AND t.parent_id IS NULL
-                ORDER BY t.my_day_date, t.position
-                """,
-                (hoje_str,),
-            )
-            pendencias_rows = cur.fetchall()
+    # ── Pendências de ontem: my_day_date < hoje, abertas, pai ──
+    pendencias_rows = run_select(
+        f"""
+        SELECT {campos}, p.name AS project_name
+        FROM tasks t
+        JOIN task_projects p ON p.id = t.project_id
+        WHERE t.my_day_date < %(hoje)s
+          AND t.completed_at IS NULL
+          AND t.deleted_at IS NULL
+          AND t.parent_id IS NULL
+        ORDER BY t.my_day_date, t.position
+        """,
+        {"hoje": hoje_str},
+    )
 
-            # ── Sugestões: vencem em ≤7 dias, fora do plano de hoje, abertas, pai ──
-            cur.execute(
-                f"""
-                SELECT {campos}, p.name AS project_name
-                FROM tasks t
-                JOIN task_projects p ON p.id = t.project_id
-                WHERE t.due_date BETWEEN %s AND %s
-                  AND (t.my_day_date IS NULL OR t.my_day_date != %s)
-                  AND t.completed_at IS NULL
-                  AND t.deleted_at IS NULL
-                  AND t.parent_id IS NULL
-                ORDER BY t.due_date, t.priority DESC
-                """,
-                (hoje_str, amanha_str, hoje_str),
-            )
-            sugestoes_rows = cur.fetchall()
+    # ── Sugestões: vencem em ≤7 dias, fora do plano de hoje, abertas, pai ──
+    sugestoes_rows = run_select(
+        f"""
+        SELECT {campos}, p.name AS project_name
+        FROM tasks t
+        JOIN task_projects p ON p.id = t.project_id
+        WHERE t.due_date BETWEEN %(hoje)s AND %(amanha)s
+          AND (t.my_day_date IS NULL OR t.my_day_date != %(hoje)s)
+          AND t.completed_at IS NULL
+          AND t.deleted_at IS NULL
+          AND t.parent_id IS NULL
+        ORDER BY t.due_date, t.priority DESC
+        """,
+        {"hoje": hoje_str, "amanha": amanha_str},
+    )
 
     # Serializa e anexa as tags em bloco (sem N+1).
+    # run_select já devolveu dicts — _serialize_task e r["project_name"] funcionam normalmente.
     def _prepare(rows: list) -> list:
         items = []
         for r in rows:
