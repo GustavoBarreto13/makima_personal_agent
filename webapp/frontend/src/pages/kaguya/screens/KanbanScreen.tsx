@@ -468,6 +468,9 @@ export function KanbanScreen({
   )
 
   // Sem colunas → convite para criar a primeira (ativa o Kanban).
+  // ATENÇÃO: o ColumnModal PRECISA ser renderizado aqui também — este ramo faz early return,
+  // então o modal do return principal jamais é montado. Sem isso, clicar em "+ Criar coluna"
+  // atualiza o estado mas o modal nunca aparece.
   if (columns.length === 0) {
     return (
       <div className="kg-page">
@@ -479,6 +482,19 @@ export function KanbanScreen({
             <button className="kg-btn kg-btn-primary" onClick={addColumn}>+ Criar coluna</button>
           </div>
         </div>
+
+        {/* Modal de criar coluna — necessário aqui porque este early return nunca
+            alcança o ColumnModal do return principal abaixo. */}
+        {columnModal && (
+          <ColumnModal
+            mode={columnModal.mode}
+            column={columnModal.column}
+            projectId={projectId}
+            onClose={() => setColumnModal(null)}
+            onSaved={load}
+            toast={toast}
+          />
+        )}
       </div>
     )
   }
