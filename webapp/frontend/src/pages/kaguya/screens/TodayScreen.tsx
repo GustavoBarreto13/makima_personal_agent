@@ -72,18 +72,10 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
 
   useEffect(() => { load() }, [load, reloadKey])
 
-  // Spinner apenas no 1º carregamento.
-  if (loading) return <div className="kg-page"><div className="kg-empty">Carregando…</div></div>
-
-  const plano      = data?.plano ?? []
-  const pendencias = data?.pendencias_ontem ?? []
-  const sugestoes  = data?.sugestoes ?? []
-  const capacity   = data?.capacity ?? EMPTY_CAP
-
-  // Tarefa ativa no drag (para o DragOverlay seguir o cursor).
-  const activeTask = activeId != null ? plano.find(t => t.id === activeId) ?? null : null
-
   // ── Handlers de DnD ──────────────────────────────────────────────────────────
+  // IMPORTANTE: todos os hooks (useCallback) precisam ser declarados ANTES de qualquer
+  // early return, ou o React lança "Rendered more hooks than during the previous render"
+  // (Rules of Hooks: sempre o mesmo número e ordem de hooks por render).
 
   // Início do drag: registra qual PlanCard está no cursor.
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -91,6 +83,8 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
   }, [])
 
   // Fim do drag: constrói start_at, aplica optimistic update e persiste via API.
+  // Acessa `data` via closure — o useCallback captura o valor mais recente de `data`
+  // porque `data` está listado nas dependências.
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event
 
@@ -100,12 +94,13 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
     // Sem destino válido (solto fora de qualquer HourSlot) → cancela.
     if (!over) return
 
-    const taskId = active.id as number
-    const task   = plano.find(t => t.id === taskId)
+    const taskId  = active.id as number
+    // Lê o plano atual do `data` (não da variável `plano` que só existe após o early return).
+    const planoAtual = data?.plano ?? []
+    const task    = planoAtual.find(t => t.id === taskId)
     if (!task) return
 
     // O id do droppable tem o formato "hour:<h>" (definido em DayTimeline → HourSlot).
-    // Extraímos a hora alvo.
     if (typeof over.id !== 'string' || !over.id.startsWith('hour:')) return
     const hour = parseInt(over.id.replace('hour:', ''), 10)
     if (isNaN(hour)) return
@@ -116,17 +111,15 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
     // após as 21h local (bug de fuso documentado no CLAUDE.md do projeto).
     const today = new Date()
     today.setHours(hour, 0, 0, 0)
-    // Calcula o offset do fuso em minutos (ex.: UTC-3 → -180) e formata como "+HH:MM".
     const offset = -today.getTimezoneOffset()
     const sign   = offset >= 0 ? '+' : '-'
     const hh     = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')
     const mm     = String(Math.abs(offset) % 60).padStart(2, '0')
-    // Monta start_at no formato "YYYY-MM-DDTHH:mm:00+HH:MM" (sem converter para UTC).
     const startAt = today.toISOString().slice(0, 16) + `:00${sign}${hh}:${mm}`
 
     // ── Optimistic update ───────────────────────────────────────────────────
     // 1. Salva snapshot para rollback em caso de erro de rede.
-    const snapshot = data ? { ...data, plano: [...plano] } : null
+    const snapshot = data ? { ...data, plano: [...planoAtual] } : null
 
     // 2. Aplica o start_at localmente: o bloco aparece na timeline IMEDIATAMENTE.
     setData(prev => {
@@ -146,15 +139,25 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
         duration_min: task.duration_min || 30,
       })
       toast(`${task.title.slice(0, 30)} bloqueada às ${hour}h.`)
-      // 4. Reload silencioso: sincroniza com o estado real do servidor
-      //    sem piscar o "Carregando…" de tela cheia.
+      // 4. Reload silencioso: sincroniza com o estado real sem piscar o spinner.
       load(true)
     } catch {
       // 5. Rollback: restaura o estado anterior ao drag.
       if (snapshot) setData(snapshot)
       toast('Não foi possível bloquear o horário.', 'err')
     }
-  }, [data, plano, load, toast])
+  }, [data, load, toast])
+
+  // Spinner apenas no 1º carregamento — early return DEPOIS de todos os hooks.
+  if (loading) return <div className="kg-page"><div className="kg-empty">Carregando…</div></div>
+
+  const plano      = data?.plano ?? []
+  const pendencias = data?.pendencias_ontem ?? []
+  const sugestoes  = data?.sugestoes ?? []
+  const capacity   = data?.capacity ?? EMPTY_CAP
+
+  // Tarefa ativa no drag (para o DragOverlay seguir o cursor).
+  const activeTask = activeId != null ? plano.find(t => t.id === activeId) ?? null : null
 
   return (
     // DndContext: cobre TODA a tela (colunas esquerda e direita).
