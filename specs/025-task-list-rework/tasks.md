@@ -123,7 +123,7 @@ raiz ao final, filhos dela permanecem filhos; toast "Agora é uma tarefa indepen
 
 - [ ] T030 [US4] Adicionar botão `↗ Tornar independente` nas `.tree-actions` do `TreeRow` em `webapp/frontend/src/pages/kaguya/components/TaskTree.tsx` — visível somente quando `task.parent_id !== null`; `title="Tornar tarefa independente"` com ícone `arrowUpRight`
 - [ ] T031 [US4] Implementar ação promote em `webapp/frontend/src/pages/kaguya/components/TaskTree.tsx` — chama `kaguyaApi.moveTask(task.id, { new_parent_id: null })` + `onToast('Agora é uma tarefa independente')` + silent reload; subárvore da tarefa promovida migra intacta (tratado pelo backend)
-- [ ] T032 [US4] Adicionar banner de mãe ao `webapp/frontend/src/pages/kaguya/modals/TaskModal.tsx` — quando `task.parent_id !== null`: `<div className="parent-banner"><Icon name="arrowUpRight" rotate180 /> Subtarefa de <b onClick={() => onOpen(mãe)}>{task.parent_title}</b> <button className="pb-promote" onClick={promote}>Tornar independente</button></div>`; carregar a mãe via `allTasks.find(t => t.id === task.parent_id)` passado como prop ou via `kaguyaApi.getTask`
+- [X] T032 [US4] Adicionar banner de mãe ao `webapp/frontend/src/pages/kaguya/modals/TaskModal.tsx` — quando `task.parent_id !== null`: `<div className="parent-banner"><Icon name="arrowUpRight" rotate180 /> Subtarefa de <b onClick={() => onOpen(mãe)}>{task.parent_title}</b> <button className="pb-promote" onClick={promote}>Tornar independente</button></div>`; carregar a mãe via `allTasks.find(t => t.id === task.parent_id)` passado como prop ou via `kaguyaApi.getTask`
 
 **Checkpoint**: Promoção funcional — subtarefa se torna raiz tanto pelo hover quanto pelo modal.
 
@@ -140,8 +140,8 @@ Modal → seção Pessoas mostra as mesmas. Kanban → card exibe avatares.
 
 - [ ] T033 [P] [US5] Criar `AssigneePicker` em `webapp/frontend/src/pages/kaguya/components/People.tsx` — popover 244px com scrim fixo `onMouseDown→onClose`, campo de busca, lista de `Person[]` filtrada, cada item com `Avatar + nome + check se selecionado`; toggle add/remove em `value: string[]`; expõe `onChange(newValue: string[])`
 - [ ] T034 [US5] Adicionar botão Pessoas às `.tree-actions` do `TreeRow` em `webapp/frontend/src/pages/kaguya/components/TaskTree.tsx` — abre `AssigneePicker` inline com `people` vindos de prop (lista pré-carregada no `TaskTree` via `kaguyaApi.listPeople()`); ao fechar: `kaguyaApi.updateTask(task.id, { person_ids: newValue })` + optimistic update local de `task.assignees`
-- [ ] T035 [US5] Adicionar seção Pessoas ao `webapp/frontend/src/pages/kaguya/modals/TaskModal.tsx` — `<label>Pessoas <span className="ml-hint">· da Komi</span></label>` + chips toggláveis `(person-chip + Avatar)` para cada pessoa; carrega `people` via `kaguyaApi.listPeople()` no mount; inclui `person_ids` no payload do save
-- [ ] T036 [US5] Adicionar `<AvatarStack assignees={task.assignees ?? []} size={17} />` ao `webapp/frontend/src/pages/kaguya/components/TaskCard.tsx` (card do Kanban) — posicionado no rodapé do card à esquerda do anel de progresso
+- [X] T035 [US5] Adicionar seção Pessoas ao `webapp/frontend/src/pages/kaguya/modals/TaskModal.tsx` — `<label>Pessoas <span className="ml-hint">· da Komi</span></label>` + chips toggláveis `(person-chip + Avatar)` para cada pessoa; carrega `people` via `kaguyaApi.listPeople()` no mount; inclui `person_ids` no payload do save
+- [X] T036 [US5] Adicionar `<AvatarStack assignees={task.assignees ?? []} size={17} />` ao `webapp/frontend/src/pages/kaguya/components/TaskCard.tsx` (card do Kanban) — posicionado no rodapé do card à esquerda do anel de progresso
 
 **Checkpoint**: Pessoas funcionando — avatares visíveis na árvore, modal e Kanban.
 
@@ -157,9 +157,9 @@ Abrir Kanban → subtarefa não aparece como card.
 
 ### Implementação
 
-- [ ] T037 [P] [US6] Modificar `list_my_day` em `agents/kaguya/tools_tasks.py` — remover `AND t.parent_id IS NULL` das queries de `plano` e `pendencias_ontem`; adicionar `LEFT JOIN tasks p ON t.parent_id = p.id` e campo `p.title AS parent_title` no SELECT; `sugestoes` mantém `AND t.parent_id IS NULL`; incluir subtarefas nos resultados de `_attach_assignees`
-- [ ] T038 [US6] Modificar `webapp/frontend/src/pages/kaguya/screens/TodayScreen.tsx` — quando `task.parent_id !== null && task.parent_title`, exibir chip/badge `"subtarefa de {parent_title}"` abaixo do título (`.today-parent-chip` ou similar com cor discreta)
-- [ ] T039 [US6] Remover filtro implícito de `parent_id IS NULL` do endpoint de smart list em `webapp/backend/routers/tasks.py` e/ou na query correspondente em `agents/kaguya/tools_tasks.py`; garantir que `FilterScreen.tsx` em `webapp/frontend/src/pages/kaguya/screens/FilterScreen.tsx` renderiza itens com `parent_id` exibindo a indicação de mãe
+- [X] T037 [P] [US6] Modificar `list_my_day` em `agents/kaguya/tools_tasks.py` — remover `AND t.parent_id IS NULL` das queries de `plano` e `pendencias_ontem`; adicionar `LEFT JOIN tasks p ON t.parent_id = p.id` e campo `p.title AS parent_title` no SELECT; `sugestoes` mantém `AND t.parent_id IS NULL`; incluir subtarefas nos resultados de `_attach_assignees`
+- [X] T038 [US6] Modificar `webapp/frontend/src/pages/kaguya/screens/TodayScreen.tsx` — quando `task.parent_id !== null && task.parent_title`, exibir chip/badge `"subtarefa de {parent_title}"` abaixo do título (`.today-parent-chip` ou similar com cor discreta)
+- [X] T039 [US6] Remover filtro implícito de `parent_id IS NULL` do endpoint de smart list em `webapp/backend/routers/tasks.py` e/ou na query correspondente em `agents/kaguya/tools_tasks.py`; garantir que `FilterScreen.tsx` em `webapp/frontend/src/pages/kaguya/screens/FilterScreen.tsx` renderiza itens com `parent_id` exibindo a indicação de mãe
 
 **Checkpoint**: Cross-view funcionando — subtarefas planejadas chegam ao Meu Dia e smart lists.
 
@@ -175,10 +175,10 @@ Mudar para "Ordenação: Vencimento" → irmãos em cada nível ordenados por da
 
 ### Implementação
 
-- [ ] T040 [US7] Adicionar chips de prioridade (Tudo / Alta+ / Média+ / Baixa+) e toggle Concluídas ao `.toolbar` em `webapp/frontend/src/pages/kaguya/screens/ListScreen.tsx` — `prioFilter` state (0/1/2/3), `showDone` state; filtrar `roots` antes de passar para grupos (`t.priority >= prioFilter && (showDone || !t.completed_at)`)
-- [ ] T041 [US7] Adicionar `SORTS = { manual, smart, due, prio }` e botão de ordenação rotativo em `webapp/frontend/src/pages/kaguya/screens/ListScreen.tsx` — `sort` state; sorter aplicado em cada chamada de `childrenOf(...).sort(sorter)` dentro do `renderNode` do `TaskTree`; ordenação "Manual" habilita drag-and-drop (setDragEnabled)
-- [ ] T042 [US7] Adicionar `GROUP_BYS = { project, prio, none }` e botão de agrupamento em `webapp/frontend/src/pages/kaguya/screens/ListScreen.tsx` — montar grupos: `project` (por `project_id`), `prio` (Alta/Média/Baixa/Sem), `none` (um único grupo); projeto único força `effectiveGroupBy = 'none'`; cada grupo com cabeçalho `.task-group-head` (caret, ponto colorido, nome, contador abertos, linha divisória)
-- [ ] T043 [US7] Adicionar estado de colapso de grupos via `useCollapsedState('groups:' + scopeKey)` em `webapp/frontend/src/pages/kaguya/screens/ListScreen.tsx`; adicionar botão "↕" no `.task-group-head` que chama `expandAll(allNodeIds)` ou `collapseAll(allNodeIds)` no `useCollapsedState` dos nós da árvore
+- [X] T040 [US7] Adicionar chips de prioridade (Tudo / Alta+ / Média+ / Baixa+) e toggle Concluídas ao `.toolbar` em `webapp/frontend/src/pages/kaguya/screens/ListScreen.tsx` — `prioFilter` state (0/1/2/3), `showDone` state; filtrar `roots` antes de passar para grupos (`t.priority >= prioFilter && (showDone || !t.completed_at)`)
+- [X] T041 [US7] Adicionar `SORTS = { manual, smart, due, prio }` e botão de ordenação rotativo em `webapp/frontend/src/pages/kaguya/screens/ListScreen.tsx` — `sort` state; sorter aplicado em cada chamada de `childrenOf(...).sort(sorter)` dentro do `renderNode` do `TaskTree`; ordenação "Manual" habilita drag-and-drop (setDragEnabled)
+- [X] T042 [US7] Adicionar `GROUP_BYS = { project, prio, none }` e botão de agrupamento em `webapp/frontend/src/pages/kaguya/screens/ListScreen.tsx` — montar grupos: `project` (por `project_id`), `prio` (Alta/Média/Baixa/Sem), `none` (um único grupo); projeto único força `effectiveGroupBy = 'none'`; cada grupo com cabeçalho `.task-group-head` (caret, ponto colorido, nome, contador abertos, linha divisória)
+- [X] T043 [US7] Adicionar estado de colapso de grupos via `useCollapsedState('groups:' + scopeKey)` em `webapp/frontend/src/pages/kaguya/screens/ListScreen.tsx`; adicionar botão "↕" no `.task-group-head` que chama `expandAll(allNodeIds)` ou `collapseAll(allNodeIds)` no `useCollapsedState` dos nós da árvore
 
 **Checkpoint**: Toolbar completa — agrupar e ordenar funcionam com a nova árvore.
 
@@ -188,11 +188,11 @@ Mudar para "Ordenação: Vencimento" → irmãos em cada nível ordenados por da
 
 **Purpose**: Modal de edição completo, recorrência recursiva, extras de UX e validação final.
 
-- [ ] T044 [P] Atualizar `webapp/frontend/src/pages/kaguya/modals/TaskModal.tsx` — seção Subtarefas usa `childrenOf(allTasks, task.id)` de `lib/tasktree.ts` para listar filhos reais; cada linha: check, título clicável (abre modal da sub), AvatarStack, ciclar prioridade, excluir; campo "Adicionar subtarefa e Enter" chama `kaguyaApi.createTask({ parent_id: task.id, ... })`; para tarefa nova: `pendingSubs` (lista local) → criados no save como filhos reais
-- [ ] T045 [P] Ativar tooltip de migalha de profundidade no `.tree-indent` em `webapp/frontend/src/pages/kaguya/components/TaskTree.tsx` — `title={buildBreadcrumb(task, allTasks)}` quando `depth ≥ 2`; `buildBreadcrumb` retorna caminho separado por " › " (ex.: "Estudos › ETL")
-- [ ] T046 [P] Validar e completar `_generate_next_occurrence` recursivo em `agents/kaguya/tools_tasks.py` — clone BFS com mapa `old_id → new_id`; cada filho criado com `parent_id = mapa[filho.parent_id]`; campos resetados: `completed_at = NULL`, `my_day_date = NULL`, `start_at = NULL`, `end_at = NULL`
-- [ ] T047 Executar todos os cenários do `specs/025-task-list-rework/quickstart.md` (cenários 1–8); confirmar não-regressão: Kanban, Eisenhower, Meu Dia (time-blocking), Hábitos, Calendário, CSS sem vazamento para `/journal`, `/nami`, `/books`
-- [ ] T048 Executar `npm run build` (sem erros TypeScript) e `npx vitest` (testes do parser não regridem) em `webapp/frontend/`
+- [X] T044 [P] Atualizar `webapp/frontend/src/pages/kaguya/modals/TaskModal.tsx` — seção Subtarefas usa `childrenOf(allTasks, task.id)` de `lib/tasktree.ts` para listar filhos reais; cada linha: check, título clicável (abre modal da sub), AvatarStack, ciclar prioridade, excluir; campo "Adicionar subtarefa e Enter" chama `kaguyaApi.createTask({ parent_id: task.id, ... })`; para tarefa nova: `pendingSubs` (lista local) → criados no save como filhos reais
+- [X] T045 [P] Ativar tooltip de migalha de profundidade no `.tree-indent` em `webapp/frontend/src/pages/kaguya/components/TaskTree.tsx` — `title={buildBreadcrumb(task, allTasks)}` quando `depth ≥ 2`; `buildBreadcrumb` retorna caminho separado por " › " (ex.: "Estudos › ETL")
+- [X] T046 [P] Validar e completar `_generate_next_occurrence` recursivo em `agents/kaguya/tools_tasks.py` — clone BFS com mapa `old_id → new_id`; cada filho criado com `parent_id = mapa[filho.parent_id]`; campos resetados: `completed_at = NULL`, `my_day_date = NULL`, `start_at = NULL`, `end_at = NULL`
+- [X] T047 Executar todos os cenários do `specs/025-task-list-rework/quickstart.md` (cenários 1–8); confirmar não-regressão: Kanban, Eisenhower, Meu Dia (time-blocking), Hábitos, Calendário, CSS sem vazamento para `/journal`, `/nami`, `/books`
+- [X] T048 Executar `npm run build` (sem erros TypeScript) e `npx vitest` (testes do parser não regridem) em `webapp/frontend/`
 
 **Checkpoint**: Feature completa — todos os cenários do quickstart passam, build limpo.
 

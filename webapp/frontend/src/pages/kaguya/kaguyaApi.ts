@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -85,6 +85,7 @@ export const kaguyaApi = {
     column_id?: number                  // coluna do Kanban (criar direto numa coluna)
     recurrence?: RecurrenceInput        // recorrência opcional na criação
     tags?: string[]                     // nomes das tags (criadas se não existirem)
+    person_ids?: string[]               // responsáveis Komi (fatia 025)
   }) => api.post<MutationResult>(BASE, body),
 
   updateTask: (id: number, body: Partial<{
@@ -93,7 +94,15 @@ export const kaguyaApi = {
     recurrence: RecurrenceInput; clear_recurrence: boolean   // anexar/editar/remover regra
     tags: string[]                                           // substitui o conjunto de tags
     duration_min: number | null                              // estimativa de duração (Meu Dia)
+    person_ids: string[]                                     // substitui responsáveis (fatia 025)
   }>) => api.patch<MutationResult>(`${BASE}/${id}`, body),
+
+  // Mover tarefa para novo pai/posição com semântica 3 zonas (fatia 025)
+  moveTask: (id: number, body: {
+    new_parent_id: number | null
+    after_id?: number | null
+    before_id?: number | null
+  }) => api.post<MutationResult>(`${BASE}/${id}/move`, body),
 
   // cascade conclui subtarefas; endSeries encerra a série recorrente (não gera a próxima).
   complete: (id: number, cascade = false, endSeries = false) =>
@@ -194,6 +203,10 @@ export const kaguyaApi = {
   // Histórico anual (esparso) para o heatmap.
   habitHistory: (id: number, year: number) =>
     api.get<HabitHeatDay[]>(`${BASE}/habits/${id}/history?year=${year}`),
+
+  // ── Pessoas (Komi) — fatia 025 ────────────────────────────────────────────
+  // Lista todos os contatos da Komi para o AssigneePicker
+  listPeople: () => api.get<Person[]>('/api/people/'),
 
   // ── Calendar Hub — fatia 019 ──────────────────────────────────────────────
   // Fontes registradas no hub (Kaguya, Nami, Frieren, Violet, Akane, gcal)

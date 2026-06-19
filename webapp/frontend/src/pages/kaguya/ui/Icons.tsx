@@ -64,6 +64,39 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
     </>
   ),
+
+  // ── Fatia 025: árvore de tarefas ─────────────────────────────────────────────
+
+  // Alça de drag (6 pontos 2×3) — handle da linha arrastável na árvore
+  grip: (
+    <>
+      <circle cx="9" cy="7" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="7" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="17" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="17" r="1.2" fill="currentColor" stroke="none" />
+    </>
+  ),
+
+  // Seta diagonal para cima-direita — "Tornar independente" / promoção de subtarefa
+  arrowUpRight: <path d="M7 17 17 7M7 7h10v10" />,
+
+  // Ordenação — botão de sort na toolbar da lista
+  sort: (
+    <>
+      <path d="M3 6h18M7 12h10M11 18h2" />
+    </>
+  ),
+
+  // Grupo de pessoas — seção de responsáveis (Komi) em tarefas
+  users: (
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </>
+  ),
 }
 
 interface IconProps {

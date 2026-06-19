@@ -3,9 +3,10 @@
 // (cada uma com prioridade + descrição próprias).
 
 import { useState, useEffect } from 'react'
-import type { Task, Project, TaskType, RecurrenceMode, Tag } from '../types'
+import type { Task, Project, TaskType, RecurrenceMode, Tag, Person } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
+import { Avatar, AvatarStack } from '../components/People'
 
 // Presets de recorrência expostos na UI (mapeiam para RRULE no buildRRule).
 type RecurFreq = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
@@ -44,6 +45,11 @@ interface TaskModalProps {
   onClose: () => void
   onSaved: () => void         // pai re-busca os dados
   toast: (msg: string, kind?: 'ok' | 'err') => void
+  // Callback opcional para promover subtarefa a tarefa independente (fatia 025).
+  // Quando não fornecido, o botão "Tornar independente" não aparece.
+  onPromote?: (task: Task) => Promise<void>
+  // Callback opcional para abrir uma subtarefa em seu próprio modal (T044).
+  onOpenTask?: (task: Task) => void
 }
 
 const PRIORITIES = [
@@ -66,7 +72,7 @@ const TAG_COLORS = [
   'oklch(0.64 0.21 350)',   // rosa
 ]
 
-export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onSaved, toast }: TaskModalProps) {
+export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onSaved, toast, onPromote, onOpenTask }: TaskModalProps) {
   // Estado do formulário, inicializado da tarefa (edição) ou dos defaults (criação).
   const [title, setTitle] = useState(task?.title ?? '')
   const [description, setDescription] = useState(task?.description ?? '')
@@ -91,6 +97,12 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
   const [subtasks, setSubtasks] = useState<Task[]>(task?.subtasks ?? [])
   const [newSub, setNewSub] = useState('')
   const [saving, setSaving] = useState(false)
+  // Responsáveis da Komi (fatia 025) — IDs selecionados para esta tarefa.
+  const [personIds, setPersonIds] = useState<string[]>(
+    task?.assignees?.map(a => a.id) ?? []
+  )
+  // Catálogo completo de pessoas da Komi (carregado lazy no mount).
+  const [people, setPeople] = useState<Person[]>([])
   const [askDelete, setAskDelete] = useState(false)   // confirmação de exclusão (escopo na recorrente)
   // Aniversário repete todo ano automaticamente no backend — escondemos o controle manual.
   const isRecurring = task?.recurrence?.active === true
@@ -99,6 +111,8 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
   // seguimos só com as tags da tarefa: o pior caso é o chip aparecer sem cor própria.
   useEffect(() => {
     kaguyaApi.listTags().then(setTagCatalog).catch(() => { /* silencioso */ })
+    // Carrega pessoas da Komi — usado na seção de responsáveis (fatia 025).
+    kaguyaApi.listPeople().then(setPeople).catch(() => { /* silencioso */ })
   }, [])
 
   // Salva a tarefa principal (cria ou edita), incluindo a recorrência.
@@ -126,12 +140,18 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
           ...base,
           project_id: projectId ?? undefined,
           tags,                                    // etiquetas escolhidas (pode ser vazia)
+          person_ids: personIds.length > 0 ? personIds : undefined,
           ...(rrule ? { recurrence: { rrule, mode: recurMode } } : {}),
         })
         toast('Tarefa criada.')
       } else if (task) {
-        // tags sempre enviado na edição → permite REMOVER todas (set vazio persiste).
-        const upd: Parameters<typeof kaguyaApi.updateTask>[1] = { ...base, project_id: projectId ?? undefined, tags }
+        // tags e person_ids sempre enviados na edição → permite REMOVER todos (set vazio persiste).
+        const upd: Parameters<typeof kaguyaApi.updateTask>[1] = {
+          ...base,
+          project_id: projectId ?? undefined,
+          tags,
+          person_ids: personIds,
+        }
         if (rrule) upd.recurrence = { rrule, mode: recurMode }
         // Tinha regra e o usuário escolheu "não repete" → remove (sem mexer em aniversário).
         else if (task.recurrence && type !== 'birthday') upd.clear_recurrence = true
@@ -236,6 +256,27 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
         </div>
 
         <div className="kg-modal-body">
+          {/* Banner de mãe (fatia 025) — aparece quando a tarefa é subtarefa de outra. */}
+          {mode === 'edit' && task && task.parent_id !== null && (
+            <div className="parent-banner">
+              <Icon name="arrowUpRight" size={13} />
+              <span>
+                Subtarefa de{' '}
+                {/* parent_title vem do backend (fatia 025); fallback para #id. */}
+                <b>{task.parent_title ?? `#${task.parent_id}`}</b>
+              </span>
+              {onPromote && (
+                <button
+                  type="button"
+                  className="pb-promote"
+                  onClick={async () => { await onPromote(task); onClose() }}
+                >
+                  Tornar independente
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="kg-field">
             <span className="kg-field-label">Título</span>
             <input className="kg-input" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="O que precisa ser feito?" />
@@ -364,26 +405,89 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
             </div>
           </div>
 
-          {/* Subtarefas ricas — só quando a tarefa-pai já existe */}
+          {/* Pessoas (Komi, fatia 025) — chips togláveis com avatar */}
+          {people.length > 0 && (
+            <div className="kg-field">
+              <span className="kg-field-label">Responsáveis</span>
+              <div className="people-pick">
+                {people.map((p) => {
+                  const selected = personIds.includes(p.id)
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      // Chip com avatar + nome; borda destacada quando selecionado (classe .on).
+                      className={`person-chip${selected ? ' on' : ''}`}
+                      onClick={() =>
+                        setPersonIds(selected
+                          ? personIds.filter((x) => x !== p.id)
+                          : [...personIds, p.id]
+                        )
+                      }
+                    >
+                      <Avatar name={p.name} avatarUrl={p.avatar_url} size={18} />
+                      {p.name}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Subtarefas ricas — só quando a tarefa-pai já existe (fatia 025: T044) */}
+          {/* Cada linha: check, título clicável (abre sub-modal), avatares, ciclar prio, excluir */}
           {mode === 'edit' && task && (
             <div className="kg-field">
               <span className="kg-field-label">Subtarefas</span>
-              {subtasks.map((s) => (
-                <div key={s.id} className="kg-subedit">
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <input className="kg-input" value={s.title} onChange={(e) => setSubtasks(subtasks.map((x) => x.id === s.id ? { ...x, title: e.target.value } : x))} onBlur={(e) => patchSub(s.id, { title: e.target.value })} />
-                    <div className="kg-segment">
-                      {PRIORITIES.map((p) => (
-                        <button key={p.v} className={`kg-seg-opt ${p.cls}${s.priority === p.v ? ' active' : ''}`} onClick={() => patchSub(s.id, { priority: p.v })}>{p.label}</button>
-                      ))}
-                    </div>
-                    <input className="kg-input" placeholder="Descrição da subtarefa…" defaultValue={s.description ?? ''} onBlur={(e) => patchSub(s.id, { description: e.target.value || null })} />
+              {subtasks.map((s) => {
+                const PRIO_CYCLE = [0, 1, 2, 3]
+                const nextPrio = PRIO_CYCLE[(PRIO_CYCLE.indexOf(s.priority ?? 0) + 1) % PRIO_CYCLE.length]
+                const PRIO_DOT_COLOR = ['transparent', 'var(--p-low)', 'var(--p-med)', 'var(--p-high)']
+                return (
+                  <div key={s.id} className="kg-subedit subtask-card">
+                    {/* Check: conclui/reabre a subtarefa */}
+                    <button
+                      className={`kg-check${s.completed_at ? ' done' : ''}`}
+                      style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0 }}
+                      onClick={() => patchSub(s.id, { completed_at: s.completed_at ? null : new Date().toISOString() })}
+                      aria-label={s.completed_at ? 'Reabrir' : 'Concluir'}
+                    >
+                      {s.completed_at && <Icon name="check" size={10} />}
+                    </button>
+
+                    {/* Título: clicável para abrir sub-modal (quando onOpenTask disponível) */}
+                    <span
+                      className={`sub-title${s.completed_at ? ' done-text' : ''}`}
+                      onClick={() => onOpenTask ? (onClose(), onOpenTask(s)) : undefined}
+                    >
+                      {s.title}
+                    </span>
+
+                    {/* Avatares dos responsáveis da subtarefa */}
+                    {(s.assignees ?? []).length > 0 && (
+                      <AvatarStack assignees={s.assignees ?? []} size={16} max={2} />
+                    )}
+
+                    {/* Ciclar prioridade: 0→1→2→3→0 (dot colorido) */}
+                    <button
+                      className="kg-icon-btn"
+                      title={`Prioridade: ${PRIORITIES[s.priority ?? 0]?.label}`}
+                      style={{ border: 'none', padding: 4 }}
+                      onClick={() => patchSub(s.id, { priority: nextPrio })}
+                      aria-label="Ciclar prioridade"
+                    >
+                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: PRIO_DOT_COLOR[s.priority ?? 0] ?? 'var(--line)', border: '1px solid var(--line)' }} />
+                    </button>
+
+                    {/* Excluir subtarefa */}
+                    <button className="kg-icon-btn" onClick={() => removeSub(s.id)} aria-label="Excluir subtarefa">
+                      <Icon name="trash" size={13} />
+                    </button>
                   </div>
-                  <button className="kg-icon-btn" onClick={() => removeSub(s.id)} aria-label="Excluir subtarefa"><Icon name="trash" size={14} /></button>
-                </div>
-              ))}
+                )
+              })}
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <input className="kg-input" placeholder="Adicionar subtarefa…" value={newSub} onChange={(e) => setNewSub(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addSub() }} />
+                <input className="kg-input" placeholder="Adicionar subtarefa + Enter…" value={newSub} onChange={(e) => setNewSub(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addSub() }} />
                 <button className="kg-btn" onClick={addSub}><Icon name="plus" size={14} /></button>
               </div>
             </div>

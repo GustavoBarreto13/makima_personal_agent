@@ -112,6 +112,13 @@ export function PlanCard({ task, isSuggestion, isBeingDragged, onChanged, onOpen
           {task.title}
         </div>
 
+        {/* Badge de subtarefa (fatia 025) — visível quando a tarefa tem mãe. */}
+        {task.parent_id !== null && task.parent_title && (
+          <div className="today-parent-chip">
+            ↳ {task.parent_title}
+          </div>
+        )}
+
         {/* Chips: bloco de tempo + projeto */}
         <div className="kg-plan-card-chips">
           {task.start_at && (

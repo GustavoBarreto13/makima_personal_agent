@@ -236,6 +236,19 @@
 .kg-tag-palette-none { background: var(--card-2); color: var(--ink-3); font-size: 13px; line-height: 1; }
 
 .kg-section-toggle { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-4); background: none; border: none; cursor: pointer; padding: 14px 4px 6px; }
+/* Toolbar de filtros/ordenação da lista (fatia 025 / US7). */
+.kg-app .kg-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 4px; flex-wrap: wrap; }
+.kg-app .kg-toolbar-group { display: flex; gap: 4px; }
+.kg-app .kg-toolbar-sep { width: 1px; height: 18px; background: var(--line-2); margin: 0 4px; }
+.kg-app .kg-toolbar-chip {
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink-3); font-family: var(--sans);
+  font-size: 12px; cursor: pointer; transition: all 0.12s;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.kg-app .kg-toolbar-chip:hover { border-color: var(--ink-4); color: var(--ink-2); }
+.kg-app .kg-toolbar-chip.active { border-color: var(--kg); background: var(--kg-tint); color: var(--kg-deep); font-weight: 600; }
+.kg-app .kg-toolbar-sort { margin-left: auto; }
 .kg-empty { text-align: center; color: var(--ink-3); padding: 60px 20px; }
 .kg-empty-title { font-family: var(--display); font-weight: 700; font-size: 17px; color: var(--ink-2); margin-bottom: 6px; }
 
@@ -352,6 +365,7 @@
 .kcard-date.soon { color: var(--p-med); }
 .kcard-ring { flex-shrink: 0; position: relative; width: 30px; height: 30px; }
 .kcard-ring .kr-lbl { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 8.5px; color: var(--ink-3); }
+.kcard-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .kcard-done { width: 18px; height: 18px; border-radius: 50%; background: var(--done); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .kcard-done svg { width: 11px; height: 11px; color: #fff; }
 .kcard.done { background: oklch(1 0.002 350 / 0.5); }
@@ -601,6 +615,8 @@
 .kg-plan-card[data-prio='1'] { border-left-color: var(--p-low); }
 .kg-plan-card.no-drag { cursor: default; }
 .kg-plan-card-title { font-size: 14px; color: var(--ink); font-weight: 500; line-height: 1.3; flex: 1; min-width: 0; }
+/* Badge "↳ tarefa mãe" em subtarefas no plano do dia (fatia 025). */
+.kg-app .today-parent-chip { font-size: 11px; color: var(--ink-4); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .kg-plan-card-chips { display: flex; gap: 6px; margin-top: 5px; align-items: center; flex-wrap: wrap; }
 .kg-plan-card-est { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
 .kg-plan-pull-btn {
@@ -1187,3 +1203,304 @@
 /* Linha levemente realçada quando está em foco pelo teclado (acessível: não depende só de cor). */
 .kg-list-row--focused { outline: 2px solid var(--kg-tint-2); outline-offset: -2px; border-radius: var(--kg-r-sm); }
 .kg-app[data-theme="dark"] .cal-aside { background: var(--paper); }
+
+/* ═══ Árvore de tarefas — fatia 025 ════════════════════════════════════════
+   Todos os seletores escopados em .kg-app para não vazar para outros shells.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Contêiner principal da árvore (coluna vertical de linhas). */
+.kg-app .tree { display: flex; flex-direction: column; position: relative; }
+
+/* Linha da tarefa — flex horizontal com todos os elementos de UI. */
+.kg-app .tree-row {
+  position: relative; display: flex; align-items: center; gap: 9px;
+  padding: var(--row-pad) 12px var(--row-pad) 14px; margin-bottom: var(--row-gap);
+  border-radius: var(--kg-r-sm); cursor: pointer; transition: background 0.1s;
+}
+/* Barra lateral de prioridade (3px colorida) — modo padrão "bar". */
+.kg-app .tree-row::before {
+  content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 3px; height: calc(100% - 10px); border-radius: 3px;
+  background: var(--pr-color, transparent);
+}
+.kg-app .tree-row:hover { background: var(--card-2); }
+.kg-app .tree-row .tk-body { min-width: 132px; }
+.kg-app .tree-row .tk-meta { padding-right: 2px; }
+/* Modos "dot" e "fill" desativam a barra lateral. */
+.kg-app[data-pmark='dot'] .tree-row::before { display: none; }
+.kg-app[data-pmark='fill'] .tree-row::before { display: none; }
+.kg-app[data-pmark='fill'] .tree-row[data-prio]:not([data-prio='0']) { background: var(--pr-tint, transparent); }
+/* Linha fantasma durante o arraste (40% opaca para indicar origem). */
+.kg-app .tree-row.dragging { opacity: 0.4; }
+
+/* Guias de indentação verticais — linhas 1px mostrando a hierarquia. */
+.kg-app .tree-guides { position: absolute; left: 0; top: 0; bottom: 0; pointer-events: none; }
+.kg-app .tree-guides i { position: absolute; top: -1px; bottom: -1px; width: 1px; background: var(--line); }
+/* Espaçador de indentação — largura = depth × 22px, computado inline. */
+.kg-app .tree-indent { flex-shrink: 0; align-self: stretch; }
+
+/* Alça de arraste (grip 6-pontos) — visível só no hover. */
+.kg-app .tree-grip {
+  flex-shrink: 0; width: 14px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ink-4); cursor: grab; opacity: 0; transition: opacity 0.12s; margin-left: -4px;
+}
+.kg-app .tree-grip svg { width: 14px; height: 14px; }
+.kg-app .tree-row:hover .tree-grip { opacity: 0.7; }
+.kg-app .tree-grip:active { cursor: grabbing; }
+
+/* Botão de colapso (caret) — roda 90° quando colapsado. */
+.kg-app .tree-caret {
+  flex-shrink: 0; width: 18px; height: 18px; border: none; background: transparent;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ink-3); border-radius: 5px; padding: 0;
+}
+.kg-app .tree-caret:hover { background: var(--line-2); color: var(--ink); }
+.kg-app .tree-caret svg { width: 14px; height: 14px; transition: transform 0.16s; }
+.kg-app .tree-caret.collapsed svg { transform: rotate(-90deg); }
+/* ghost = sem filhos, apenas espaçador invisível para alinhar. */
+.kg-app .tree-caret.ghost { pointer-events: none; }
+
+/* Contador de subtarefas "done/total" — clicável para colapsar. */
+.kg-app .tree-count {
+  font-family: var(--mono); font-size: 10px; color: var(--ink-4); cursor: pointer;
+  padding: 1px 6px; border-radius: 999px; background: var(--card-2);
+  border: 1px solid var(--line-2); flex-shrink: 0;
+}
+.kg-app .tree-count:hover { color: var(--ink-2); }
+
+/* Título sem texto (nova linha ainda não digitada). */
+.kg-app .tk-untitled { color: var(--ink-4); font-style: italic; }
+/* Mini bandeira de prioridade inline na linha. */
+.kg-app .tk-flagmini { display: inline-flex; align-items: center; color: var(--ink-4); flex-shrink: 0; }
+.kg-app .tk-flagmini svg { width: 12px; height: 12px; }
+.kg-app .tk-flagmini.sub { font-size: 12px; }
+
+/* Ações de hover (botões à direita) — aparecem com overlay gradiente. */
+.kg-app .tree-actions {
+  display: flex; align-items: center; gap: 2px; flex-shrink: 0;
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 3;
+  padding-left: 16px; border-radius: var(--kg-r-sm);
+  background: var(--card-2);
+  box-shadow: -12px 0 12px -4px var(--card-2);
+}
+.kg-app .tree-row:hover .tree-actions { opacity: 1; pointer-events: auto; }
+/* Botão de ação individual (26×26, fundo transparente, hover tintado). */
+.kg-app .tree-act {
+  width: 26px; height: 26px; border: none; background: transparent;
+  color: var(--ink-3); cursor: pointer; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.kg-app .tree-act svg { width: 15px; height: 15px; }
+.kg-app .tree-act:hover { background: var(--kg-tint); color: var(--kg-deep); }
+
+/* Indicadores de drop — linhas 2px no topo/base e ring no meio. */
+.kg-app .tree-row.drop-before::after,
+.kg-app .tree-row.drop-after::after {
+  content: ''; position: absolute; left: 8px; right: 8px;
+  height: 2px; background: var(--kg); border-radius: 2px; z-index: 2;
+}
+.kg-app .tree-row.drop-before::after { top: -1px; }
+.kg-app .tree-row.drop-after::after { bottom: -1px; }
+/* Zona "child" (soltar como filho) — ring + fundo tintado. */
+.kg-app .tree-row.drop-child {
+  box-shadow: inset 0 0 0 1.5px var(--kg);
+  background: var(--kg-tint); border-radius: var(--kg-r-sm);
+}
+
+/* Botão "Adicionar tarefa" no rodapé do grupo. */
+.kg-app .tree-addroot {
+  display: flex; align-items: center; gap: 9px; padding: 8px 14px; margin-top: 2px;
+  color: var(--ink-4); font-family: var(--sans); font-size: 13px;
+  cursor: pointer; border-radius: var(--kg-r-sm);
+}
+.kg-app .tree-addroot svg { width: 15px; height: 15px; }
+.kg-app .tree-addroot:hover { color: var(--kg-deep); background: var(--card-2); }
+
+/* ── Grupos de tarefas (agrupamento por projeto/prioridade) ──────────────── */
+.kg-app .task-group { margin-bottom: 12px; }
+.kg-app .task-group-head {
+  display: flex; align-items: center; gap: 10px; padding: 6px 14px;
+  cursor: pointer; border-radius: var(--kg-r-sm);
+}
+.kg-app .task-group-head:hover { background: var(--card-2); }
+.kg-app .task-group-head .tgh-label {
+  font-family: var(--sans); font-size: 12px; font-weight: 700;
+  color: var(--ink-2); letter-spacing: 0.01em;
+}
+.kg-app .task-group-head .tgh-count {
+  font-family: var(--mono); font-size: 10px; color: var(--ink-4);
+}
+.kg-app .task-group-head .tgh-actions { margin-left: auto; display: flex; gap: 4px; }
+
+/* ── Avatares de pessoas (Komi) ──────────────────────────────────────────── */
+/* Círculo do avatar — foto ou iniciais coloridas. */
+.kg-app .kg-av {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  border-radius: 50%; color: oklch(0.99 0.01 90);
+  font-family: var(--sans); font-weight: 700; letter-spacing: -0.02em;
+  box-shadow: 0 0 0 1.5px var(--card);
+}
+/* Avatar do tipo "+N" (excedente de responsáveis). */
+.kg-app .kg-av.more { background: var(--line) !important; color: var(--ink-3); }
+/* Pilha de avatares sobrepostos (-6px entre cada um). */
+.kg-app .kg-avstack { display: inline-flex; align-items: center; flex-shrink: 0; }
+.kg-app .kg-avstack > * { margin-left: -6px; }
+.kg-app .kg-avstack > *:first-child { margin-left: 0; }
+
+/* ── Popover de seleção de pessoas (AssigneePicker) ──────────────────────── */
+/* Scrim clicável para fechar o popover. */
+.kg-app .kg-pop-scrim { position: fixed; inset: 0; z-index: 60; }
+/* Caixa do popover — 244px, ancorada ao elemento pai (relative necessário). */
+.kg-app .kg-pop {
+  position: absolute; top: calc(100% + 6px); z-index: 61; width: 244px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-md);
+  box-shadow: var(--shadow-lg, 0 12px 32px oklch(0.4 0.04 350 / 0.18)); overflow: hidden;
+}
+.kg-app .kg-pop.right { right: 0; }
+.kg-app .kg-pop.left { left: 0; }
+/* Campo de busca dentro do popover. */
+.kg-app .kg-pop-search {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 11px; border-bottom: 1px solid var(--line-2);
+}
+.kg-app .kg-pop-search svg { width: 14px; height: 14px; color: var(--ink-4); }
+.kg-app .kg-pop-search input {
+  border: none; outline: none; background: transparent;
+  font-family: var(--sans); font-size: 13px; color: var(--ink); width: 100%;
+}
+/* Lista rolável de pessoas (máx 248px). */
+.kg-app .kg-pop-list { max-height: 248px; overflow-y: auto; padding: 5px; }
+/* Item da lista — hover cinza, selecionado tintado. */
+.kg-app .kg-pop-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 9px; border-radius: var(--kg-r-sm); cursor: pointer;
+}
+.kg-app .kg-pop-item:hover { background: var(--card-2); }
+.kg-app .kg-pop-item.on { background: var(--kg-tint); }
+.kg-app .kg-pop-item .pop-name { font-size: 13px; color: var(--ink); flex: 1; }
+.kg-app .kg-pop-item .pop-check { width: 15px; height: 15px; color: var(--kg-deep); }
+/* Mensagem "nenhum resultado". */
+.kg-app .kg-pop-empty { padding: 14px; text-align: center; color: var(--ink-4); font-size: 12.5px; }
+
+/* ── Modal: banner de mãe + seção de pessoas + subtarefas ───────────────── */
+/* Legenda leve para rótulos do modal. */
+.kg-app .ml-hint { font-weight: 400; color: var(--ink-4); font-size: 11px; }
+
+/* Banner "Subtarefa de «Nome da Mãe»" + botão "Tornar independente". */
+.kg-app .parent-banner {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px; margin-bottom: 14px;
+  background: var(--card-2); border: 1px solid var(--line-2); border-radius: var(--kg-r-sm);
+  font-size: 12.5px; color: var(--ink-2);
+}
+.kg-app .parent-banner svg { color: var(--ink-4); flex-shrink: 0; }
+.kg-app .parent-banner b { color: var(--ink); cursor: pointer; }
+.kg-app .parent-banner b:hover { color: var(--kg-deep); text-decoration: underline; }
+/* Botão "Tornar independente" (promote). */
+.kg-app .pb-promote {
+  border: 1px solid var(--line); background: var(--card); color: var(--ink-2);
+  font-family: var(--sans); font-size: 11.5px; font-weight: 600;
+  padding: 5px 10px; border-radius: 999px; cursor: pointer; flex-shrink: 0;
+}
+.kg-app .pb-promote:hover { border-color: var(--kg); color: var(--kg-deep); }
+
+/* Área de chips de responsáveis (seção Pessoas no modal). */
+.kg-app .people-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Chip de pessoa selecionável — pill com avatar + nome. */
+.kg-app .person-chip {
+  display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px 4px 5px;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--card);
+  color: var(--ink-2); font-family: var(--sans); font-size: 12px;
+  cursor: pointer; transition: all 0.12s;
+}
+.kg-app .person-chip:hover { border-color: var(--ink-4); }
+/* Chip selecionado (responsável já atribuído). */
+.kg-app .person-chip.on { border-color: var(--kg); background: var(--kg-tint); color: var(--kg-deep); }
+
+/* Subtarefas reais no modal — título clicável, botão abrir. */
+.kg-app .subtask-card .sub-title {
+  flex: 1; font-family: var(--sans); font-size: 13px; color: var(--ink); cursor: pointer;
+}
+.kg-app .subtask-card .sub-title:hover { color: var(--kg-deep); }
+.kg-app .subtask-card .sub-title.done-text { color: var(--ink-4); text-decoration: line-through; }
+/* Botão "abrir em modal" de uma subtarefa. */
+.kg-app .sub-open {
+  width: 26px; height: 26px; border-radius: 7px; border: none; background: transparent;
+  color: var(--ink-4); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.kg-app .sub-open:hover { background: var(--card); color: var(--kg-deep); }
+/* Nota somente-leitura de uma subtarefa (abaixo do título). */
+.kg-app .subtask-notes-ro { font-size: 11.5px; color: var(--ink-3); padding: 0 6px 4px 34px; }
+/* Linha para adicionar nova subtarefa (borda pontilhada). */
+.kg-app .subtask-add-row {
+  display: flex; align-items: center; gap: 9px; padding: 7px 6px;
+  border: 1px dashed var(--line); border-radius: var(--kg-r-sm); margin-top: 2px;
+}
+.kg-app .subtask-add-row svg { width: 15px; height: 15px; color: var(--ink-4); flex-shrink: 0; }
+.kg-app .subtask-add-row input {
+  flex: 1; border: none; outline: none; background: transparent;
+  font-family: var(--sans); font-size: 13px; color: var(--ink);
+}
+
+/* ═══ Cabeçalho da ListScreen (fatia 025) ══════════════════════════════════ */
+.kg-app .kg-list-header {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+/* Chip colorido do projeto (bolinha + nome). */
+.kg-app .kg-proj-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px 2px 5px; border-radius: 14px;
+  font-size: 12px; font-weight: 600; color: var(--ink-2);
+}
+.kg-app .kg-proj-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+/* Legenda "N abertas · arraste para aninhar..." */
+.kg-app .kg-list-subtitle {
+  font-size: 12px; color: var(--ink-4);
+}
+
+/* ═══ Checkbox de linha da árvore (tree-check) ════════════════════════════ */
+/* Ação secundária do kg-check adaptada ao tamanho menor da árvore (17×17). */
+.kg-app .tree-check {
+  flex-shrink: 0; border: 1.5px solid var(--line);
+  border-radius: 5px; cursor: pointer; background: transparent;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+}
+.kg-app .tree-check:hover { border-color: var(--kg); }
+.kg-app .tree-check.done { background: var(--kg); border-color: var(--kg); }
+.kg-app .tree-check.done svg { color: white; }
+.kg-app .tree-check.popping { transform: scale(1.28); }
+
+/* ═══ Botão expandir/recolher tudo (árvore) ══════════════════════════════ */
+.kg-app .tree-expand-toggle {
+  display: flex; justify-content: flex-end; padding: 0 12px 4px;
+}
+.kg-app .tree-act-flat {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--ink-4); cursor: pointer;
+  background: transparent; border: none; padding: 2px 4px;
+  border-radius: 4px; transition: background 0.1s, color 0.1s;
+}
+.kg-app .tree-act-flat:hover { background: var(--card-2); color: var(--ink-2); }
+
+/* ═══ Chips de meta de linha da árvore ══════════════════════════════════ */
+.kg-app .tk-tag-chip {
+  display: inline-flex; align-items: center; padding: 1px 6px;
+  border-radius: 8px; font-size: 10px; font-weight: 500;
+  background: var(--card-2); color: var(--ink-2);
+}
+.kg-app .tk-date-chip {
+  font-size: 11px; color: var(--ink-4); white-space: nowrap;
+}
+.kg-app .tk-date-chip.overdue { color: oklch(0.57 0.21 22); }
+.kg-app .tk-prio-flag {
+  display: inline-flex; align-items: center;
+}
+
+/* ═══ Grupo done na ListScreen ════════════════════════════════════════════ */
+.kg-app .done-group .tree-row { opacity: 0.6; }
+.kg-app .done-group .tree-row .tk-title { text-decoration: line-through; }

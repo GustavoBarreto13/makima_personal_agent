@@ -66,6 +66,11 @@ export function TaskRow({ task, depth = 0, showProject = false, onToggle, onOpen
           </button>
         </div>
 
+        {/* Badge de mãe (fatia 025) — quando a tarefa é subtarefa em lista flat. */}
+        {depth === 0 && task.parent_id !== null && task.parent_title && (
+          <div className="today-parent-chip">↳ {task.parent_title}</div>
+        )}
+
         {/* descrição da subtarefa (subtarefas são ricas) */}
         {depth > 0 && task.description && <div className="kg-sub-desc">{task.description}</div>}
 

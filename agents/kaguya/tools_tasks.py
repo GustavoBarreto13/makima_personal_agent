@@ -74,6 +74,9 @@ def _serialize_task(row: dict) -> dict:
         O mesmo dicionário com campos de data/hora/timestamp como strings (ou None).
     """
     out = dict(row)
+    # Garante shape estável: campos da fatia 025 com defaults para não quebrar consumidores.
+    out.setdefault("assignees", [])
+    out.setdefault("parent_title", None)
     # Datas simples → "YYYY-MM-DD"
     for f in ("due_date", "my_day_date"):
         if out.get(f) is not None:
@@ -115,36 +118,110 @@ def _first_column_id(cur, project_id: int) -> Optional[int]:
 
 
 def _attach_subtasks(parents: list[dict]) -> list[dict]:
-    """Anexa as subtarefas (vivas) a cada tarefa-pai, sob a chave ``subtasks``.
+    """Anexa toda a subárvore (N níveis) de subtarefas vivas a cada tarefa-pai.
 
-    Faz uma única query extra (todas as subtarefas dos pais de uma vez) para evitar
-    N+1 — uma query por listagem, como o plano exige.
+    Usa uma única query ``WITH RECURSIVE`` para carregar todos os descendentes das
+    raízes de uma vez — sem N+1, sem múltiplas roundtrips. O resultado é aninhado
+    recursivamente: cada tarefa recebe ``subtasks`` com seus filhos diretos; cada
+    filho recebe os próprios filhos, e assim por diante.
 
     Args:
-        parents: Lista de tarefas-pai já serializadas.
+        parents: Lista de tarefas-pai (``parent_id IS NULL``) já serializadas.
 
     Returns:
-        A mesma lista, com ``subtasks`` preenchido em cada item.
+        A mesma lista com ``subtasks`` preenchido em profundidade arbitrária.
     """
-    parent_ids = [p["id"] for p in parents]
-    # Inicializa a chave em todos (mesmo os sem filhos) para um shape consistente.
+    root_ids = [p["id"] for p in parents]
+    # Inicializa a chave em todos os nós raiz (mesmo os sem filhos) para shape estável.
     for p in parents:
         p["subtasks"] = []
-    if not parent_ids:
+    if not root_ids:
         return parents
-    subs = run_select(
+
+    # CTE recursiva: começa nas raízes e desce até não haver mais filhos vivos.
+    # A coluna ``depth`` serve como proteção de loop (cap 12) e para ordenar o build.
+    all_descendants = run_select(
         f"""
-        SELECT {_TASK_COLUMNS} FROM tasks
-        WHERE parent_id = ANY(%(ids)s) AND deleted_at IS NULL
-        ORDER BY position, id
+        WITH RECURSIVE subtree AS (
+            -- âncoras: filhos diretos dos nós raiz passados
+            SELECT {_TASK_COLUMNS}, 1 AS depth
+            FROM tasks
+            WHERE parent_id = ANY(%(root_ids)s) AND deleted_at IS NULL
+            UNION ALL
+            -- passo recursivo: filhos dos nós já encontrados (profundidade < 12)
+            SELECT {", ".join(f"t.{f}" for f in _TASK_FIELDS)}, st.depth + 1
+            FROM tasks t
+            JOIN subtree st ON t.parent_id = st.id
+            WHERE t.deleted_at IS NULL AND st.depth < 12
+        )
+        SELECT * FROM subtree
+        ORDER BY depth, position, id
         """,
-        {"ids": parent_ids},
+        {"root_ids": root_ids},
     )
-    # Indexa os pais por id para distribuir as subtarefas em O(n).
-    by_id = {p["id"]: p for p in parents}
-    for s in subs:
-        by_id[s["parent_id"]]["subtasks"].append(_serialize_task(s))
+
+    # Monta um índice único de TODOS os nós conhecidos (raízes + descendentes).
+    # Depois percorre os descendentes em ordem de profundidade (âncoras primeiro)
+    # para aninhar sob o pai correto em O(n).
+    node_map: dict[int, dict] = {p["id"]: p for p in parents}
+
+    for row in all_descendants:
+        node = _serialize_task(row)
+        node["subtasks"] = []
+        node_map[node["id"]] = node
+
+    # Segunda passagem: encosta cada descendente no "subtasks" do pai.
+    for row in all_descendants:
+        child_id = row["id"]
+        parent_id = row["parent_id"]
+        child_node = node_map.get(child_id)
+        parent_node = node_map.get(parent_id)
+        if child_node is not None and parent_node is not None:
+            parent_node["subtasks"].append(child_node)
+
     return parents
+
+
+def _attach_assignees(tasks: list[dict]) -> list[dict]:
+    """Anexa os responsáveis (da Komi) a cada tarefa, sob a chave ``assignees``.
+
+    Faz uma única query batch em ``person_links JOIN people`` para evitar N+1.
+    Funciona para qualquer lista plana de tarefas (raízes, subtarefas, buscas, etc.).
+
+    Args:
+        tasks: Lista de tarefas já serializadas (com campo ``id``).
+
+    Returns:
+        A mesma lista com ``assignees`` preenchido em cada item (lista vazia se ninguém).
+    """
+    # Inicializa a chave em todos para um shape sempre consistente.
+    for t in tasks:
+        t["assignees"] = []
+    if not tasks:
+        return tasks
+
+    task_ids = [t["id"] for t in tasks]
+    # entity_id é TEXT na tabela, então fazemos cast explícito ao comparar.
+    rows = run_select(
+        """
+        SELECT pl.entity_id::int AS task_id, p.id, p.name, p.avatar_url
+        FROM person_links pl
+        JOIN people p ON p.id = pl.person_id
+        WHERE pl.entity_type = 'task'
+          AND pl.entity_id = ANY(%(ids)s::text[])
+          AND p.deleted = FALSE
+        ORDER BY p.name
+        """,
+        {"ids": [str(tid) for tid in task_ids]},
+    )
+
+    # Distribui os responsáveis pela tarefa correspondente em O(n).
+    by_task: dict[int, list] = {t["id"]: t["assignees"] for t in tasks}
+    for r in rows:
+        assignee = {"id": r["id"], "name": r["name"], "avatar_url": r["avatar_url"]}
+        by_task.get(r["task_id"], []).append(assignee)
+
+    return tasks
 
 
 def _serialize_recurrence(row: dict) -> dict:
@@ -336,20 +413,29 @@ def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
     # Move a regra para a nova linha viva (UNIQUE(task_id) continua válido).
     cur.execute("UPDATE task_recurrences SET task_id = %s WHERE id = %s", (new_id, rec_id))
 
-    # Reset de subtarefas: copia as subtarefas vivas da antiga como ABERTAS na nova (edge 6).
-    cur.execute(
-        "SELECT title, description, type, priority, position FROM tasks "
-        "WHERE parent_id = %s AND deleted_at IS NULL ORDER BY position, id",
-        (task_id,),
-    )
-    for s_title, s_desc, s_type, s_prio, s_pos in cur.fetchall():
+    # Reset de subárvore (BFS): clona toda a hierarquia de subtarefas da ocorrência consumida
+    # como ABERTAS na nova ocorrência (edge case 6). Mantém o mapeamento old_id → new_id
+    # para aninhar corretamente ao descer para filhos de filhos.
+    queue = [(task_id, new_id)]   # fila BFS: (id_original, id_novo_pai)
+    while queue:
+        old_parent, new_parent = queue.pop(0)
         cur.execute(
-            """
-            INSERT INTO tasks (project_id, parent_id, title, description, type, priority, position)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (project_id, new_id, s_title, s_desc, s_type, s_prio, s_pos),
+            "SELECT id, title, description, type, priority, position FROM tasks "
+            "WHERE parent_id = %s AND deleted_at IS NULL ORDER BY position, id",
+            (old_parent,),
         )
+        for old_id, s_title, s_desc, s_type, s_prio, s_pos in cur.fetchall():
+            cur.execute(
+                """
+                INSERT INTO tasks (project_id, parent_id, title, description, type, priority, position)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (project_id, new_parent, s_title, s_desc, s_type, s_prio, s_pos),
+            )
+            new_child_id = cur.fetchone()[0]
+            # Enfileira para clonar os filhos deste nó no próximo nível.
+            queue.append((old_id, new_child_id))
 
     return {"generated_task_id": new_id, "next_due_date": nxt.isoformat()}
 
@@ -417,10 +503,20 @@ def list_tasks(project_id: int, include_completed: bool = False) -> list[dict]:
         {"pid": project_id},
     )
     parents = [_serialize_task(p) for p in parents]
-    parents = _attach_subtasks(parents)
+    parents = _attach_subtasks(parents)   # árvore N-níveis recursiva (fatia 025)
     parents = _attach_recurrence(parents)
     # Anexa as tags (etiquetas) de cada tarefa-pai para a TaskRow mostrar os chips.
-    return _attach_tags(parents)
+    parents = _attach_tags(parents)
+    # Achata raízes + subtarefas em um único array flat para o batch de assignees (Komi).
+    flat: list[dict] = []
+    def _collect(nodes: list[dict]) -> None:
+        for n in nodes:
+            flat.append(n)
+            if n.get("subtasks"):
+                _collect(n["subtasks"])
+    _collect(parents)
+    _attach_assignees(flat)
+    return parents
 
 
 def list_tasks_today() -> dict:
@@ -612,7 +708,7 @@ def create_task(
 
     with get_conn() as conn:
         with conn.cursor() as cur:
-            # ── Subtarefa: valida o pai (existe, vivo, 1 nível, não concluído) ──
+            # ── Subtarefa: valida o pai (existe, vivo, profundidade ≤ 12, não concluído) ──
             if parent_id is not None:
                 cur.execute(
                     "SELECT project_id, parent_id, completed_at, deleted_at FROM tasks WHERE id = %s",
@@ -621,10 +717,26 @@ def create_task(
                 parent = cur.fetchone()
                 if not parent or parent[3] is not None:  # inexistente ou na lixeira
                     return {"status": "error", "message": "Tarefa-pai não encontrada."}
-                if parent[1] is not None:  # o pai já é subtarefa → 2 níveis, proibido
-                    return {"status": "error", "message": "Não é possível criar subtarefa de uma subtarefa (só 1 nível)."}
                 if parent[2] is not None:  # pai concluído
                     return {"status": "error", "message": "A tarefa-pai está concluída — reabra-a antes de adicionar subtarefas."}
+                # Verifica o limite de profundidade (12 níveis) subindo a árvore via CTE.
+                cur.execute(
+                    """
+                    WITH RECURSIVE ancestors AS (
+                        SELECT id, parent_id, 1 AS depth
+                        FROM tasks WHERE id = %s
+                        UNION ALL
+                        SELECT t.id, t.parent_id, a.depth + 1
+                        FROM tasks t JOIN ancestors a ON t.id = a.parent_id
+                        WHERE a.depth < 14
+                    )
+                    SELECT COALESCE(MAX(depth), 0) FROM ancestors
+                    """,
+                    (parent_id,),
+                )
+                depth_of_parent = cur.fetchone()[0]
+                if depth_of_parent >= 12:
+                    return {"status": "error", "message": "Profundidade máxima de 12 níveis atingida."}
                 # Subtarefa herda a lista do pai e nasce sem coluna.
                 resolved_project = parent[0]
                 resolved_column = None
@@ -723,6 +835,7 @@ def update_task(
     clear_recurrence: bool = False,
     tags: Optional[list] = None,
     duration_min: Optional[int] = None,
+    person_ids: Optional[list] = None,
 ) -> dict:
     """Edita campos de uma tarefa; mover de lista aplica a regra da coluna do destino.
 
@@ -739,6 +852,8 @@ def update_task(
         tags: Se informado (lista de nomes), substitui o conjunto de tags da tarefa
             (lista vazia = remover todas). ``None`` = não mexe nas tags.
         duration_min: Estimativa de duração em minutos (insumo da CapacityBar do Meu Dia).
+        person_ids: Se informado (lista de UUIDs), **substitui** o conjunto de responsáveis
+            (fatia 025). Lista vazia = remover todos. ``None`` = não mexe.
 
     Returns:
         Dicionário de status.
@@ -815,9 +930,9 @@ def update_task(
                 sets.append("duration_min = %(duration_min)s")
                 params["duration_min"] = duration_min
 
-            # Há algo a fazer? campos OU recorrência (definir/limpar/auto-aniversário) OU tags.
+            # Há algo a fazer? campos OU recorrência OU tags OU responsáveis (fatia 025).
             if (not sets and recurrence is None and not clear_recurrence
-                    and type != "birthday" and tags is None):
+                    and type != "birthday" and tags is None and person_ids is None):
                 return {"status": "error", "message": "Nada para atualizar."}
 
             # Aplica as mudanças de campo (se houver) antes de mexer na recorrência.
@@ -828,6 +943,14 @@ def update_task(
             # Tags: aplica o conjunto exato de etiquetas (lista vazia = remover todas).
             if tags is not None:
                 _set_task_tags(cur, task_id, tags)
+
+            # Responsáveis (Komi) — semântica de substituição: apaga os antigos e insere os novos.
+            # Import lazy dentro da transação para evitar ciclo circular entre módulos.
+            if person_ids is not None:
+                from agents.komi.tools import unlink_people_on_cursor, link_person_on_cursor  # noqa: PLC0415
+                unlink_people_on_cursor(cur, "task", task_id)
+                for pid in person_ids:
+                    link_person_on_cursor(cur, pid, "task", task_id)
 
             # ── Recorrência: limpar, definir, ou garantir a anual ao virar aniversário ──
             rec_result = None
@@ -1004,6 +1127,189 @@ def reopen_task(task_id: int) -> dict:
     except Exception:
         pass
     return {"status": "ok", "message": "Tarefa reaberta."}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Mover / re-parentear (fatia 025) — DnD 3 zonas + indent/outdent/promote
+# ─────────────────────────────────────────────────────────────────────────────
+def move_task(
+    task_id: int,
+    new_parent_id: Optional[int],
+    after_id: Optional[int] = None,
+    before_id: Optional[int] = None,
+) -> dict:
+    """Move uma tarefa para um novo pai (re-parentear) e posiciona entre vizinhos.
+
+    Cobre os 3 casos do drag-and-drop de árvore:
+    - ``before`` / ``after`` (same parent): muda apenas posição no mesmo escopo
+    - ``child`` (novo pai): muda ``parent_id`` + ``project_id`` + calcula nova posição
+
+    Validações:
+    - Anti-ciclo: ``new_parent_id`` não pode ser a própria tarefa nem nenhum descendente.
+    - Profundidade: a subárvore movida não pode ultrapassar 12 níveis.
+    - Mãe concluída: não pode receber subtarefas.
+
+    Args:
+        task_id: Tarefa a mover.
+        new_parent_id: Novo pai (``None`` para promover a tarefa-raiz).
+        after_id: Vizinho que deve ficar **antes** no destino (opcional).
+        before_id: Vizinho que deve ficar **depois** no destino (opcional).
+
+    Returns:
+        ``{"status": "ok", "position": <int>}`` ou erro.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # Carrega estado atual da tarefa.
+            cur.execute(
+                "SELECT project_id, parent_id, deleted_at FROM tasks WHERE id = %s",
+                (task_id,),
+            )
+            row = cur.fetchone()
+            if not row or row[2] is not None:
+                return {"status": "error", "message": "Tarefa não encontrada."}
+            current_project_id, current_parent_id = row[0], row[1]
+
+            # ── Anti-ciclo: proíbe tornar um descendente o novo pai ──
+            if new_parent_id is not None:
+                if new_parent_id == task_id:
+                    return {"status": "error", "message": "Uma tarefa não pode ser seu próprio pai."}
+                # Busca todos os descendentes da tarefa movida (CTE recursiva).
+                cur.execute(
+                    """
+                    WITH RECURSIVE desc_tree AS (
+                        SELECT id FROM tasks WHERE parent_id = %s AND deleted_at IS NULL
+                        UNION ALL
+                        SELECT t.id FROM tasks t
+                        JOIN desc_tree d ON t.parent_id = d.id
+                        WHERE t.deleted_at IS NULL
+                    )
+                    SELECT id FROM desc_tree WHERE id = %s
+                    """,
+                    (task_id, new_parent_id),
+                )
+                if cur.fetchone():
+                    return {"status": "error", "message": "Não é possível mover uma tarefa para dentro de um de seus descendentes."}
+
+                # Valida o novo pai (existe, não concluído, sem lixeira).
+                cur.execute(
+                    "SELECT project_id, completed_at, deleted_at FROM tasks WHERE id = %s",
+                    (new_parent_id,),
+                )
+                new_parent_row = cur.fetchone()
+                if not new_parent_row or new_parent_row[2] is not None:
+                    return {"status": "error", "message": "Tarefa-pai de destino não encontrada."}
+                if new_parent_row[1] is not None:
+                    return {"status": "error", "message": "A tarefa-pai de destino está concluída."}
+
+                # Verifica profundidade: o pai de destino não pode estar a ≥ 11 níveis
+                # (deixa espaço para a subárvore movida atingir 12 no total).
+                cur.execute(
+                    """
+                    WITH RECURSIVE ancestors AS (
+                        SELECT id, parent_id, 1 AS depth
+                        FROM tasks WHERE id = %s
+                        UNION ALL
+                        SELECT t.id, t.parent_id, a.depth + 1
+                        FROM tasks t JOIN ancestors a ON t.id = a.parent_id
+                        WHERE a.depth < 14
+                    )
+                    SELECT COALESCE(MAX(depth), 0) FROM ancestors
+                    """,
+                    (new_parent_id,),
+                )
+                dest_depth = cur.fetchone()[0]
+                if dest_depth >= 11:
+                    return {"status": "error", "message": "Profundidade máxima de 12 níveis atingida no destino."}
+
+                resolved_project = new_parent_row[0]
+            else:
+                # Promovendo a tarefa-raiz: mantém o project_id atual.
+                resolved_project = current_project_id
+
+            # ── Calcula nova posição (ponto médio entre vizinhos no novo escopo) ──
+            scope_cond = "project_id = %s AND parent_id IS NOT DISTINCT FROM %s"
+            scope_params = (resolved_project, new_parent_id)
+
+            cur.execute(
+                f"""
+                SELECT id, position FROM tasks
+                WHERE {scope_cond}
+                  AND deleted_at IS NULL AND id <> %s
+                ORDER BY position, id
+                """,
+                (*scope_params, task_id),
+            )
+            scope_rows = cur.fetchall()
+            order = [r[0] for r in scope_rows]
+            pos_by_id = {r[0]: r[1] for r in scope_rows}
+
+            def _mid_pos() -> int:
+                """Calcula posição de destino pelo ponto médio entre after_id e before_id."""
+                if after_id and after_id in pos_by_id:
+                    lo = pos_by_id[after_id]
+                    idx = order.index(after_id)
+                    hi = pos_by_id[order[idx + 1]] if idx + 1 < len(order) else None
+                    if hi is None:
+                        return lo + _POSITION_STEP
+                    mid = (lo + hi) // 2
+                    return mid if mid > lo else None  # type: ignore[return-value]
+                if before_id and before_id in pos_by_id:
+                    hi = pos_by_id[before_id]
+                    idx = order.index(before_id)
+                    lo = pos_by_id[order[idx - 1]] if idx > 0 else None
+                    if lo is None:
+                        mid = hi // 2
+                        return mid if mid < hi else None  # type: ignore[return-value]
+                    mid = (lo + hi) // 2
+                    return mid if mid > lo else None  # type: ignore[return-value]
+                # Sem vizinhos: fim do escopo.
+                return (pos_by_id[order[-1]] + _POSITION_STEP) if order else _POSITION_STEP
+
+            target = _mid_pos()
+            # Se o ponto médio colidiu (sem inteiro livre), renormaliza o escopo e tenta de novo.
+            if target is None:
+                for rank, tid in enumerate(order, start=1):
+                    cur.execute("UPDATE tasks SET position = %s WHERE id = %s", (rank * _POSITION_STEP, tid))
+                pos_by_id = {tid: (i + 1) * _POSITION_STEP for i, tid in enumerate(order)}
+                target = _mid_pos() or (_POSITION_STEP * (len(order) + 1))
+
+            # ── Aplica o move atômico ──
+            cur.execute(
+                """
+                UPDATE tasks
+                SET parent_id = %s, project_id = %s, position = %s, column_id = NULL,
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (new_parent_id, resolved_project, target, task_id),
+            )
+
+            # Re-parenteia os descendentes: herdam o novo project_id para ficarem
+            # no mesmo grupo visual (mantém a coesão da subárvore).
+            if resolved_project != current_project_id:
+                cur.execute(
+                    """
+                    WITH RECURSIVE moved_sub AS (
+                        SELECT id FROM tasks WHERE parent_id = %s AND deleted_at IS NULL
+                        UNION ALL
+                        SELECT t.id FROM tasks t
+                        JOIN moved_sub m ON t.parent_id = m.id
+                        WHERE t.deleted_at IS NULL
+                    )
+                    UPDATE tasks SET project_id = %s, column_id = NULL, updated_at = now()
+                    WHERE id IN (SELECT id FROM moved_sub)
+                    """,
+                    (task_id, resolved_project),
+                )
+
+    # Espelha no GCal fora da transação (best-effort).
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        _gs.push_task(task_id)
+    except Exception:
+        pass
+    return {"status": "ok", "position": target, "message": "Tarefa movida."}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1432,40 +1738,44 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     # tuplas e causaria TypeError nos acessos por nome (era o bug do HTTP 500 no Meu Dia).
     campos = _qualified("t")
 
-    # ── Plano de hoje: my_day_date == hoje, abertas, pai ──
+    # ── Plano de hoje: my_day_date == hoje, abertas (qualquer nível — fatia 025) ──
+    # LEFT JOIN tasks mae: traz o título da tarefa-mãe para subtarefas mostrarem o badge.
+    # Removido o filtro parent_id IS NULL: subtarefas explicitamente adicionadas ao Meu Dia
+    # agora aparecem aqui. Sugestões mantém o filtro (evita poluição com sub-itens).
     plano_rows = run_select(
         f"""
-        SELECT {campos}, p.name AS project_name
+        SELECT {campos}, p.name AS project_name, mae.title AS parent_title
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
+        LEFT JOIN tasks mae ON mae.id = t.parent_id
         WHERE t.my_day_date = %(hoje)s
           AND t.completed_at IS NULL
           AND t.deleted_at IS NULL
-          AND t.parent_id IS NULL
         ORDER BY t.start_at NULLS LAST, t.position
         """,
         {"hoje": hoje_str},
     )
 
-    # ── Pendências de ontem: my_day_date < hoje, abertas, pai ──
+    # ── Pendências de ontem: my_day_date < hoje, abertas (qualquer nível — fatia 025) ──
     pendencias_rows = run_select(
         f"""
-        SELECT {campos}, p.name AS project_name
+        SELECT {campos}, p.name AS project_name, mae.title AS parent_title
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
+        LEFT JOIN tasks mae ON mae.id = t.parent_id
         WHERE t.my_day_date < %(hoje)s
           AND t.completed_at IS NULL
           AND t.deleted_at IS NULL
-          AND t.parent_id IS NULL
         ORDER BY t.my_day_date, t.position
         """,
         {"hoje": hoje_str},
     )
 
-    # ── Sugestões: vencem em ≤7 dias, fora do plano de hoje, abertas, pai ──
+    # ── Sugestões: vencem em ≤7 dias, fora do plano de hoje, abertas, pai APENAS ──
+    # Sugestões ficam root-only para evitar poluição com sub-itens (decisão do spec 025).
     sugestoes_rows = run_select(
         f"""
-        SELECT {campos}, p.name AS project_name
+        SELECT {campos}, p.name AS project_name, NULL::text AS parent_title
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
         WHERE t.due_date BETWEEN %(hoje)s AND %(amanha)s
@@ -1478,15 +1788,21 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         {"hoje": hoje_str, "amanha": amanha_str},
     )
 
-    # Serializa e anexa as tags em bloco (sem N+1).
+    # Serializa, anexa tags e assignees em bloco (sem N+1).
     # run_select já devolveu dicts — _serialize_task e r["project_name"] funcionam normalmente.
+    # parent_title (novo) é injetado diretamente na tarefa serializada para o frontend.
     def _prepare(rows: list) -> list:
         items = []
         for r in rows:
             item = _serialize_task(r)
             item["project_name"] = r["project_name"]
+            # parent_title: None para tarefas raízes, título da mãe para subtarefas.
+            item["parent_title"] = r.get("parent_title")
             items.append(item)
-        return _attach_tags(items)
+        # Anexa tags e responsáveis em batch para evitar N+1.
+        _attach_tags(items)
+        _attach_assignees(items)
+        return items
 
     plano = _prepare(plano_rows)
     pendencias = _prepare(pendencias_rows)

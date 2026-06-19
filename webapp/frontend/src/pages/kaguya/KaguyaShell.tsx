@@ -175,7 +175,7 @@ export function KaguyaShell() {
       )
     }
     if (view === 'today') return <TodayScreen projects={sidebar?.projects ?? []} reloadKey={reloadKey} onChanged={loadSidebar} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} toast={showToast} />
-    if (view === 'list' && param != null) return <ListScreen projectId={param} projectName={titleMap.list} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onNewTask={(pid) => setTaskModal({ mode: 'create', projectId: pid })} toast={showToast} />
+    if (view === 'list' && param != null) return <ListScreen projectId={param} projectName={titleMap.list} projectColor={project?.color} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onNewTask={(pid) => setTaskModal({ mode: 'create', projectId: pid })} toast={showToast} />
     if (view === 'kanban' && param != null) return <KanbanScreen projectId={param} projectName={titleMap.kanban} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onChanged={loadSidebar} toast={showToast} />
     if (view === 'calendar') return <CalendarScreen reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} toast={showToast} variant={tweaks.calVariant} />
     if (view === 'filter' && param != null) return (
@@ -304,6 +304,14 @@ export function KaguyaShell() {
           onClose={() => setTaskModal(null)}
           onSaved={afterSave}
           toast={showToast}
+          // Promove subtarefa a tarefa independente (fatia 025): move para parent_id = null.
+          onPromote={async (task) => {
+            await kaguyaApi.moveTask(task.id, { new_parent_id: null })
+            showToast('Agora é uma tarefa independente.', 'ok')
+            afterSave()
+          }}
+          // Abre uma subtarefa em seu próprio modal (T044).
+          onOpenTask={(subTask) => setTaskModal({ mode: 'edit', task: subTask })}
         />
       )}
       {projectModal && (

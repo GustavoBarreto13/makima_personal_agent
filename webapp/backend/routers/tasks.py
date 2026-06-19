@@ -32,6 +32,7 @@ from agents.kaguya.tools_tasks import (
     create_task, update_task, complete_task, reopen_task,
     reorder_task, delete_task, restore_task,
     set_recurrence, clear_recurrence,
+    move_task,  # re-parentear / DnD 3 zonas — fatia 025
     # Meu Dia — fatia 016
     add_to_my_day, remove_from_my_day, reschedule_pending,
     set_estimate, set_time_block, clear_time_block, list_my_day,
@@ -144,6 +145,7 @@ class CreateTaskBody(BaseModel):
     column_id: Optional[int] = None              # coluna do Kanban (criar direto numa coluna)
     recurrence: Optional[RecurrenceBody] = None  # nested → model_dump vira dict para a tool
     tags: Optional[list[str]] = None             # nomes das tags (criadas se não existirem)
+    person_ids: Optional[list[str]] = None       # responsáveis Komi (fatia 025)
 
 
 class UpdateTaskBody(BaseModel):
@@ -160,6 +162,14 @@ class UpdateTaskBody(BaseModel):
     clear_recurrence: bool = False               # remover a regra
     tags: Optional[list[str]] = None             # substitui o conjunto de tags (vazio = remover todas)
     duration_min: Optional[int] = None           # estimativa de duração (Meu Dia — fatia 016)
+    person_ids: Optional[list[str]] = None       # substitui responsáveis Komi (fatia 025)
+
+
+class MoveTaskBody(BaseModel):
+    """Body de re-parentear por drag-and-drop 3 zonas (fatia 025)."""
+    new_parent_id: Optional[int] = None  # None = promover a tarefa-raiz
+    after_id: Optional[int] = None      # vizinho que fica antes no destino
+    before_id: Optional[int] = None     # vizinho que fica depois no destino
 
 
 # ── Meu Dia — fatia 016 ───────────────────────────────────────────────────────
@@ -444,6 +454,18 @@ def reopen_task_route(task_id: int, user: dict = Depends(require_user)) -> dict:
 def reorder_task_route(task_id: int, body: ReorderBody, user: dict = Depends(require_user)) -> dict:
     """Reordena uma tarefa entre dois vizinhos (posição esparsa)."""
     return _check_result(reorder_task(task_id, body.after_id, body.before_id))
+
+
+@router.post("/{task_id}/move")
+def move_task_route(task_id: int, body: MoveTaskBody, user: dict = Depends(require_user)) -> dict:
+    """Re-parentear uma tarefa por DnD 3 zonas (before/child/after) — fatia 025.
+
+    ``new_parent_id=None`` promove a tarefa a tarefa-raiz independente.
+    Anti-ciclo e cap de profundidade (12) são validados na tool.
+    """
+    return _check_result(
+        move_task(task_id, body.new_parent_id, body.after_id, body.before_id)
+    )
 
 
 @router.delete("/{task_id}")

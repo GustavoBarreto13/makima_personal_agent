@@ -225,9 +225,11 @@ def _build_where_from_rules(rules: dict, default_open: bool = True):
             params[key] = f"%{value}%"
             fragments.append(f"(t.title ILIKE %({key})s OR t.description ILIKE %({key})s)")
 
-    # Base: tarefas-pai vivas. Default "só abertas" quando o usuário não filtrou por state
+    # Base: tarefas vivas (qualquer nível — fatia 025 removeu o filtro parent_id IS NULL).
+    # O Kanban mantém o filtro root-only na sua própria query (list_board_tasks), não aqui.
+    # Default "só abertas" quando o usuário não filtrou por state
     # — desligável (default_open=False) para o board do Kanban, que gere open/done por coluna.
-    base = "t.deleted_at IS NULL AND t.parent_id IS NULL"
+    base = "t.deleted_at IS NULL"
     if default_open and not has_state:
         base += " AND t.completed_at IS NULL"
 
@@ -259,9 +261,10 @@ def _run_filter_rules(rules: dict) -> dict:
     where_sql, params, orphans = _build_where_from_rules(rules)
     rows = run_select(
         f"""
-        SELECT {_qualified("t")}, p.name AS project_name
+        SELECT {_qualified("t")}, p.name AS project_name, mae.title AS parent_title
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
+        LEFT JOIN tasks mae ON mae.id = t.parent_id
         WHERE {where_sql}
         ORDER BY t.due_date NULLS LAST, t.priority DESC, t.position
         """,
@@ -271,6 +274,8 @@ def _run_filter_rules(rules: dict) -> dict:
     for r in rows:
         item = _serialize_task(r)
         item["project_name"] = r["project_name"]
+        # parent_title: None para raízes, título da mãe para subtarefas (fatia 025).
+        item["parent_title"] = r.get("parent_title")
         out.append(item)
     return {"tasks": _attach_tags(out), "orphans": orphans}
 

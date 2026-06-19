@@ -28,5 +28,8 @@ webapp/frontend/node_modules/
 # Superpowers
 .superpowers/
 
-# Claude Code (machine-specific paths)
-.claude/
+# Claude Code — ignora os conteúdos diretos (.claude/*) mas NÃO o diretório
+# em si; isso permite que negações abaixo funcionem (padrão com /* ≠ com /)
+.claude/*
+# Slash-skills do Spec Kit devem ser versionados para sobreviver a re-clone
+!.claude/skills/

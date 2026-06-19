@@ -22,6 +22,20 @@ export interface Recurrence {
   active: boolean             // false = série encerrada
 }
 
+// Responsável de uma tarefa — person_id da Komi + nome + avatar.
+export interface Assignee {
+  id: string          // person_id (slug) da Komi, ex.: "p-lucas"
+  name: string        // nome completo
+  avatar_url: string | null  // null → exibir iniciais coloridas
+}
+
+// Pessoa do catálogo Komi para o AssigneePicker.
+export interface Person {
+  id: string
+  name: string
+  avatar_url: string | null
+}
+
 // Uma tarefa (ou subtarefa). Campos temporais chegam como string ISO do backend.
 export interface Task {
   id: number
@@ -49,8 +63,12 @@ export interface Task {
   recurrence_text?: string | null
   // Tags (etiquetas) da tarefa — anexadas nas listagens (sempre presente, pode ser vazia):
   tags?: Tag[]
-  // Subtarefas aninhadas (só nas tarefas-pai retornadas por list_tasks):
+  // Subtarefas aninhadas (profundidade N-níveis, retornadas por list_tasks):
   subtasks?: Task[]
+  // Responsáveis da Komi (fatia 025) — presente em todas as respostas:
+  assignees?: Assignee[]
+  // Título da tarefa-mãe (fatia 025) — enviado quando parent_id IS NOT NULL:
+  parent_title?: string
   // Calendário (fatia 013 / P3): ocorrência projetada (virtual) de uma recorrente.
   // `is_virtual` = true → não tem linha própria; `series_task_id` aponta a tarefa viva da série.
   // Calendar Hub — fatia 019: id do evento espelho no Google Calendar "Kaguya — Tarefas"

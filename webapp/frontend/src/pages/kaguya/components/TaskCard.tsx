@@ -8,6 +8,7 @@
 import type { Task } from '../types'
 import { Icon } from '../ui/Icons'
 import { ProgressRing } from './ProgressRing'
+import { AvatarStack } from './People'
 import { todayLocalISO } from '../../violet/dateUtils'
 
 interface TaskCardProps {
@@ -116,15 +117,23 @@ export function TaskCard({
         )}
       </div>
 
-      {/* Indicador à direita (mutuamente exclusivo): check concluído OU anel de subtarefas. */}
-      {done ? (
-        <span className="kcard-done"><Icon name="check" size={11} /></span>
-      ) : showRing && subs.length > 0 ? (
-        <div className="kcard-ring">
-          <ProgressRing pct={subDone / subs.length} />
-          <span className="kr-lbl">{subDone}/{subs.length}</span>
-        </div>
-      ) : null}
+      {/* Rodapé direito do card: avatares + indicador de progresso ou check concluído. */}
+      <div className="kcard-right">
+        {/* Avatares dos responsáveis (fatia 025) — visíveis à esquerda do indicador */}
+        {task.assignees && task.assignees.length > 0 && (
+          <AvatarStack assignees={task.assignees} size={17} max={2} />
+        )}
+
+        {/* Indicador (mutuamente exclusivo): check concluído OU anel de subtarefas. */}
+        {done ? (
+          <span className="kcard-done"><Icon name="check" size={11} /></span>
+        ) : showRing && subs.length > 0 ? (
+          <div className="kcard-ring">
+            <ProgressRing pct={subDone / subs.length} />
+            <span className="kr-lbl">{subDone}/{subs.length}</span>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

@@ -1,73 +1,60 @@
-// ListScreen — a view lista de uma "Lista" (guia §4.1). Tarefas por posição,
-// subtarefas aninhadas, conclusão (com confirmação de cascata), edição inline,
-// drag-and-drop para reordenar e seção colapsável de concluídas.
-// Fatia 018: atalhos de teclado (Space/X = completa, Enter = edita inline) com
-// focusIdx local (sem estado global — regra de pages/CLAUDE.md).
-//
-// DnD via @dnd-kit (migrado do HTML5 nativo):
-//   • SortableTaskRow: cada linha da lista é sortable (animação de deslize).
-//   • DragOverlay suave que segue o cursor.
-//   • Optimistic update: a linha reordena IMEDIATAMENTE, sem esperar a API.
-//   • Sem spinner ao reordenar: setLoading(true) só no 1º carregamento.
+// ListScreen — visão de lista como árvore hierárquica (fatia 025).
+// Substitui o flat-list + @dnd-kit sortable pelo TaskTree com DnD 3 zonas.
+// Silent-reload: spinner só no mount/troca de lista; re-fetch após mutações é silencioso.
+// Subtarefas podem ter N níveis de profundidade via parent_id recursivo (cap 12).
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import type { Task } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
-import { TaskRow } from '../components/TaskRow'
-import { SortableTaskRow } from '../components/SortableTaskRow'
+import { TaskTree, type TaskTreeAPI, type DropZone } from '../components/TaskTree'
+import { flattenTree } from '../lib/tasktree'
 import { Icon } from '../ui/Icons'
-import {
-  DndContext,
-  DragOverlay,
-  closestCenter,
-  type DragStartEvent,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable'
-// Sensor e helper de posição centralizados (PointerSensor 5px, midPosition).
-import { useDndSensors, midPosition } from '../lib/dnd'
 
 interface ListScreenProps {
   projectId: number
   projectName: string
-  reloadKey: number              // muda → força re-fetch (após salvar no modal)
+  projectColor?: string | null
+  reloadKey: number              // incrementa no shell após salvar modal → re-fetch silencioso
   onOpenTask: (task: Task) => void
   onNewTask: (projectId: number) => void
   toast: (msg: string, kind?: 'ok' | 'err') => void
 }
 
-export function ListScreen({ projectId, projectName, reloadKey, onOpenTask, onNewTask, toast }: ListScreenProps) {
+export function ListScreen({
+  projectId, projectName, projectColor, reloadKey,
+  onOpenTask, onNewTask, toast,
+}: ListScreenProps) {
+  // `tasks` guarda as raízes (parent_id = null) com subtasks já aninhadas.
+  // O backend retorna a árvore via WITH RECURSIVE em list_tasks.
   const [tasks, setTasks] = useState<Task[]>([])
-  // loading: só true no 1º carregamento. Reordenar NÃO ativa o spinner.
+  // loading: true apenas no 1º carregamento ou troca de lista.
   const [loading, setLoading] = useState(true)
+  // showCompleted: mostra/esconde a seção de tarefas concluídas.
   const [showCompleted, setShowCompleted] = useState(false)
-  // focusIdx: índice da tarefa aberta em foco (navegável por ↑↓, atalhos Space/X/Enter).
-  // Estado LOCAL — sem estado global (regra de pages/CLAUDE.md — fatia 018).
-  const [focusIdx, setFocusIdx] = useState<number | null>(null)
-  // activeId: id da linha em arraste (null = nenhum drag ativo).
-  const [activeId, setActiveId] = useState<number | null>(null)
-  // Ref para o container da lista (para não propagar atalhos além desta tela).
-  const listContainerRef = useRef<HTMLDivElement>(null)
-
-  // Sensor centralizado: PointerSensor com 5px de ativação.
-  const sensors = useDndSensors()
-
-  // firstLoad: verdadeiro apenas no mount (ou quando a lista muda via projectId).
-  // Garante spinner só no carregamento inicial, nunca após reordenação ou modal.
+  // firstLoad ref: garante spinner só no mount; bumps de reloadKey são silenciosos.
   const firstLoad = useRef(true)
 
-  // Busca as tarefas da lista (inclui concluídas para a seção colapsável).
-  // O parâmetro `silent` evita piscar o "Carregando…":
-  //   - false: mostra o spinner (só no mount ou troca de lista).
-  //   - true : re-busca em background (após reordenação ou modal).
+  // ── Toolbar (US7) ──────────────────────────────────────────────────────────
+  // prioFilter: nível mínimo de prioridade exibido (0 = todos, 1 = Baixa+, 2 = Média+, 3 = Alta).
+  const [prioFilter, setPrioFilter] = useState(0)
+  // sortMode: ordenação aplicada em cada nível da árvore.
+  type SortMode = 'manual' | 'due' | 'prio'
+  const SORT_LABELS: Record<SortMode, string> = { manual: 'Manual', due: 'Vencimento', prio: 'Prioridade' }
+  const SORT_CYCLE: SortMode[] = ['manual', 'due', 'prio']
+  const [sortMode, setSortMode] = useState<SortMode>('manual')
+
+  // flatTasks: array de TODOS os nós (raízes + subs em qualquer profundidade).
+  // Usado para lookup por id (indent/outdent/buildBreadcrumb).
+  const flatTasks = useMemo(() => flattenTree(tasks), [tasks])
+
+  // Busca a árvore completa de tarefas da lista.
+  // `silent = true` → não pisca spinner (usado após mutações).
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      setTasks(await kaguyaApi.listTasks(projectId, true))
+      // include_completed=true para poder exibir a seção de concluídas sem re-fetch.
+      const roots = await kaguyaApi.listTasks(projectId, true)
+      setTasks(roots)
     } catch {
       toast('Falha ao carregar as tarefas.', 'err')
     } finally {
@@ -82,217 +69,328 @@ export function ListScreen({ projectId, projectName, reloadKey, onOpenTask, onNe
     load(silent)
   }, [load, reloadKey])
 
-  // Conclui/reabre uma tarefa. Em pai com subtarefas abertas, confirma a cascata.
-  const toggle = async (task: Task) => {
-    try {
-      if (task.completed_at) {
-        await kaguyaApi.reopen(task.id)
+  // Reseta o firstLoad ao trocar de lista (próximo mount será "primeiro carregamento").
+  useEffect(() => {
+    firstLoad.current = true
+  }, [projectId])
+
+  // ── Raízes abertas e concluídas ──────────────────────────────────────────────
+  // Filtro de prioridade: só mostra tarefas com prioridade >= prioFilter.
+  const openRoots = tasks.filter(t => !t.completed_at && (t.priority ?? 0) >= prioFilter)
+  const doneRoots = tasks.filter(t => !!t.completed_at)
+
+  // ── Sorter para a árvore (Manual = undefined = ordem do servidor) ──────────
+  const sorter = useMemo<((a: Task, b: Task) => number) | undefined>(() => {
+    if (sortMode === 'due') {
+      // Tarefas sem data vão para o final.
+      return (a, b) => {
+        if (!a.due_date && !b.due_date) return 0
+        if (!a.due_date) return 1
+        if (!b.due_date) return -1
+        return a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0
+      }
+    }
+    if (sortMode === 'prio') {
+      // Maior prioridade primeiro (3→2→1→0).
+      return (a, b) => (b.priority ?? 0) - (a.priority ?? 0)
+    }
+    // 'manual': preserva a ordem do servidor (position).
+    return undefined
+  }, [sortMode])
+
+  // ── Encontra uma tarefa pelo id no flat array ─────────────────────────────────
+  const findTask = useCallback((id: number) => flatTasks.find(t => t.id === id), [flatTasks])
+
+  // ── Encontra os irmãos de uma tarefa (mesmo parent_id no mesmo nível) ──────────
+  const findSiblings = useCallback((task: Task): Task[] => {
+    if (task.parent_id === null) return openRoots
+    const parent = findTask(task.parent_id)
+    return parent?.subtasks ?? []
+  }, [openRoots, findTask])
+
+  // ── TaskTreeAPI — callbacks passados para o TaskTree ────────────────────────
+
+  const api = useMemo<TaskTreeAPI>(() => ({
+
+    // Salva o novo título de uma tarefa.
+    rename: async (task: Task, title: string) => {
+      if (!title.trim()) return
+      try {
+        await kaguyaApi.updateTask(task.id, { title })
+        load(true)
+      } catch { toast('Falha ao renomear.', 'err') }
+    },
+
+    // Marca como concluída ou reabre; lida com o pedido de cascata para subtarefas.
+    complete: async (task: Task, done: boolean) => {
+      try {
+        if (!done) {
+          await kaguyaApi.reopen(task.id)
+        } else {
+          const r = await kaguyaApi.complete(task.id)
+          if (r.needs_cascade) {
+            const ok = window.confirm(
+              `Esta tarefa tem ${r.open_subtasks} subtarefa(s) aberta(s). Concluir todas?`
+            )
+            if (!ok) return
+            await kaguyaApi.complete(task.id, true)
+          }
+        }
+        load(true)
+      } catch { toast('Não foi possível atualizar a tarefa.', 'err') }
+    },
+
+    // Drag-and-drop: move a tarefa para nova posição (3 zonas).
+    move: async (dragId: number, targetId: number, zone: DropZone) => {
+      const target = findTask(targetId)
+      if (!target) return
+
+      // Calcula new_parent_id, after_id e before_id conforme a zona.
+      let new_parent_id: number | null
+      let after_id: number | undefined
+      let before_id: number | undefined
+
+      if (zone === 'child') {
+        // Zona "child": torna-se último filho do alvo.
+        new_parent_id = target.id
+        const lastChild = (target.subtasks ?? []).slice(-1)[0]
+        after_id = lastChild?.id
       } else {
-        const r = await kaguyaApi.complete(task.id)
-        if (r.needs_cascade) {
-          const ok = window.confirm(`Esta tarefa tem ${r.open_subtasks} subtarefa(s) aberta(s). Concluir todas?`)
-          if (!ok) return
-          await kaguyaApi.complete(task.id, true)
+        // Zonas "before" / "after": mesmo nível do alvo.
+        new_parent_id = target.parent_id
+        const siblings = findSiblings(target)
+        const idx = siblings.findIndex(t => t.id === target.id)
+        if (zone === 'before') {
+          before_id = target.id
+          after_id = siblings[idx - 1]?.id
+        } else {
+          after_id = target.id
+          before_id = siblings[idx + 1]?.id
         }
       }
-      await load()
-    } catch { toast('Não foi possível atualizar a tarefa.', 'err') }
-  }
 
-  const rename = async (task: Task, title: string) => {
-    try { await kaguyaApi.updateTask(task.id, { title }); await load() }
-    catch { toast('Falha ao renomear.', 'err') }
-  }
+      try {
+        await kaguyaApi.moveTask(dragId, { new_parent_id, after_id, before_id })
+        load(true)
+      } catch { toast('Não foi possível mover a tarefa.', 'err') }
+    },
 
-  // Reseta o foco ao trocar de lista (projectId muda).
-  useEffect(() => { setFocusIdx(null) }, [projectId])
+    // Promove uma subtarefa para tarefa-raiz independente.
+    promote: async (task: Task) => {
+      try {
+        await kaguyaApi.moveTask(task.id, { new_parent_id: null })
+        toast('Agora é uma tarefa independente.', 'ok')
+        load(true)
+      } catch { toast('Não foi possível promover a tarefa.', 'err') }
+    },
 
-  // ── Atalhos de teclado locais (fatia 018 — SC-003) ───────────────────────
-  // Space / X  → completa ou reabre a tarefa em foco.
-  // Enter      → abre o TaskModal da tarefa em foco.
-  // ↑ / ↓      → move o foco entre as tarefas abertas.
-  // Guarda: não dispara quando o foco está num input/textarea/contenteditable.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Guarda SC-003: atalhos de letra não disparam dentro de campos de texto.
-      const el = e.target as HTMLElement
-      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) return
-      // ⌘K/Ctrl+K gerenciado pelo KaguyaShell — não tratar aqui.
-      if ((e.metaKey || e.ctrlKey)) return
+    // Atualiza o conjunto de responsáveis (substitui — não adiciona).
+    setAssignees: async (task: Task, personIds: string[]) => {
+      try {
+        await kaguyaApi.updateTask(task.id, { person_ids: personIds })
+        load(true)
+      } catch { toast('Falha ao atualizar responsáveis.', 'err') }
+    },
 
-      const open = tasks.filter(t => !t.completed_at)
-      if (open.length === 0) return
+    // Cria uma irmã imediatamente abaixo da tarefa e começa a editar.
+    addSibling: async (task: Task, onCreated: (id: number) => void) => {
+      try {
+        // Descobre a próxima irmã para posicionar a nova tarefa entre elas via reorder.
+        const siblings = findSiblings(task)
+        const idx = siblings.findIndex(t => t.id === task.id)
+        const nextSibling = siblings[idx + 1] ?? null
 
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        setFocusIdx(i => i == null ? 0 : Math.min(open.length - 1, i + 1))
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        setFocusIdx(i => i == null ? 0 : Math.max(0, i - 1))
-      } else if ((e.key === ' ' || e.key === 'x' || e.key === 'X') && focusIdx != null) {
-        e.preventDefault()
-        toggle(open[focusIdx])
-      } else if (e.key === 'Enter' && focusIdx != null) {
-        e.preventDefault()
-        onOpenTask(open[focusIdx])
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, focusIdx])
+        const result = await kaguyaApi.createTask({
+          title: '',
+          project_id: task.project_id,
+          parent_id: task.parent_id ?? undefined,
+        })
+        // Posiciona a nova tarefa logo após a atual (antes da próxima irmã).
+        if (result.id) {
+          await kaguyaApi.reorder(result.id, {
+            after_id: task.id,
+            ...(nextSibling ? { before_id: nextSibling.id } : {}),
+          })
+        }
+        if (result.id) {
+          await load(true)
+          onCreated(result.id)
+        }
+      } catch { toast('Não foi possível criar tarefa.', 'err') }
+    },
 
-  // Divide tarefas em abertas (arrastáveis) e concluídas (lista estática).
-  const open = tasks.filter((t) => !t.completed_at)
-  const done = tasks.filter((t) => t.completed_at)
+    // Cria um filho da tarefa, expande a mãe e começa a editar o filho.
+    addChild: async (task: Task, onCreated: (id: number) => void, expandParent: () => void) => {
+      try {
+        const result = await kaguyaApi.createTask({
+          title: '',
+          project_id: task.project_id,
+          parent_id: task.id,
+        })
+        if (result.id) {
+          expandParent()
+          await load(true)
+          onCreated(result.id)
+        }
+      } catch { toast('Não foi possível criar subtarefa.', 'err') }
+    },
 
-  // Tarefa ativa no drag (para o DragOverlay seguir o cursor).
-  const activeTask = activeId != null ? open.find(t => t.id === activeId) ?? null : null
+    // Indenta: torna a tarefa filha do irmão imediatamente acima.
+    indent: async (task: Task) => {
+      const siblings = findSiblings(task)
+      const idx = siblings.findIndex(t => t.id === task.id)
+      const prevSibling = idx > 0 ? siblings[idx - 1] : null
+      if (!prevSibling) return  // não há irmão acima — não pode indentar
+      try {
+        await kaguyaApi.moveTask(task.id, { new_parent_id: prevSibling.id })
+        load(true)
+      } catch { toast('Não foi possível indentar.', 'err') }
+    },
 
-  // ── Handlers de DnD ──────────────────────────────────────────────────────────
+    // Desindenta: sobe a tarefa um nível, ficando irmã do seu pai.
+    outdent: async (task: Task) => {
+      if (task.parent_id === null) return  // já é raiz — não há nível acima
+      const parent = findTask(task.parent_id)
+      if (!parent) return
+      try {
+        // Posiciona após o pai na lista do avô
+        await kaguyaApi.moveTask(task.id, {
+          new_parent_id: parent.parent_id,
+          after_id: parent.id,
+        })
+        load(true)
+      } catch { toast('Não foi possível desindentar.', 'err') }
+    },
 
-  // Início do drag: registra qual linha está no cursor.
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(event.active.id as number)
-  }, [])
+    // Abre o modal de detalhes.
+    openTask: (task: Task) => onOpenTask(task),
 
-  // Fim do drag: aplica o optimistic update de posição e persiste via API.
-  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
-    const { active, over } = event
+  }), [findTask, findSiblings, load, onOpenTask, toast])
 
-    // Limpa o estado de drag.
-    setActiveId(null)
+  // ── Cor do chip do projeto ──────────────────────────────────────────────────
+  const chipBg = projectColor
+    ? `${projectColor}29`  // cor com 16% de opacidade (hex 29 ≈ 16%)
+    : 'color-mix(in oklch, var(--kg) 16%, transparent)'
 
-    // Sem destino (solto fora da lista) ou sem movimento → cancela.
-    if (!over || active.id === over.id) return
-
-    const draggedId = active.id as number
-    const overId    = over.id    as number
-
-    // Índices atual e destino dentro das tarefas abertas.
-    const oldIndex = open.findIndex(t => t.id === draggedId)
-    const newIndex = open.findIndex(t => t.id === overId)
-    if (oldIndex === -1 || newIndex === -1) return
-
-    // ── Optimistic update ───────────────────────────────────────────────────
-    // 1. Salva snapshot para rollback em caso de erro de rede.
-    const snapshot = [...tasks]
-
-    // 2. Reordena as tarefas abertas localmente via arrayMove do @dnd-kit/sortable.
-    //    arrayMove retorna um novo array com o item movido para o newIndex.
-    const reordered = arrayMove([...open], oldIndex, newIndex)
-
-    // 3. Calcula a position local temporária para a UI (usa midPosition de lib/dnd.ts).
-    //    A position real será gravada pelo backend após o reload silencioso.
-    const afterCard  = reordered[newIndex - 1] ?? null   // item imediatamente acima
-    const beforeCard = reordered[newIndex + 1] ?? null   // item imediatamente abaixo
-    const localPos   = midPosition(afterCard, beforeCard)
-
-    // 4. Monta o novo array de tarefas: abertas reordenadas + concluídas intactas.
-    //    Aplica a position local na tarefa movida para que a UI reflita a ordem.
-    const newTasks = [
-      ...reordered.map(t => t.id === draggedId ? { ...t, position: localPos } : t),
-      ...done,
-    ]
-    setTasks(newTasks)
-
-    // 5. Determina after_id e before_id para o endpoint /position do backend.
-    //    Passar os dois vizinhos é mais preciso que só o before_id (comportamento anterior).
-    const afterId  = reordered[newIndex - 1]?.id
-    const beforeId = reordered[newIndex + 1]?.id
-
-    try {
-      // 6. Persiste no backend (POST /api/tasks/{id}/position).
-      await kaguyaApi.reorder(draggedId, { after_id: afterId, before_id: beforeId })
-      // 7. Reload silencioso: sincroniza com o estado real (posições normalizadas)
-      //    sem piscar o "Carregando…" de tela cheia.
-      load(true)
-    } catch {
-      // 8. Rollback: restaura o estado anterior ao drag caso a API falhe.
-      setTasks(snapshot)
-      toast('Falha ao reordenar.', 'err')
-    }
-  }, [tasks, open, done, load, toast])
+  // ── Chave de escopo para useCollapsedState dentro de TaskTree ──────────────
+  const scopeKey = `list-${projectId}`
 
   return (
-    <div className="kg-page" ref={listContainerRef}>
-      <h1 className="kg-page-title">{projectName}</h1>
-      <div className="kg-page-sub">{open.length} aberta(s)</div>
+    <div className="kg-page">
+      {/* Cabeçalho: chip do projeto + contagem de abertas */}
+      <div className="kg-list-header">
+        <span className="kg-proj-chip" style={{ background: chipBg }}>
+          <span className="kg-proj-dot" style={{ background: projectColor ?? 'var(--kg)' }} />
+          {projectName}
+        </span>
+        <span className="kg-list-subtitle">
+          {openRoots.length} aberta{openRoots.length !== 1 ? 's' : ''} · arraste para aninhar ou reordenar
+        </span>
 
-      <button className="kg-btn kg-btn-primary" style={{ marginBottom: 16 }} onClick={() => onNewTask(projectId)}>
-        <Icon name="plus" size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Nova tarefa
-      </button>
+        {/* Botão Nova Tarefa */}
+        <button
+          type="button"
+          className="kg-btn kg-btn-ghost"
+          style={{ marginLeft: 'auto' }}
+          onClick={() => onNewTask(projectId)}
+          title="Nova tarefa (C)"
+        >
+          <Icon name="plus" size={14} />
+          Nova tarefa
+        </button>
+      </div>
+
+      {/* Toolbar — filtros de prioridade, toggle Concluídas, ordenação */}
+      <div className="kg-toolbar">
+        {/* Chips de prioridade: Tudo / Baixa+ / Média+ / Alta */}
+        <div className="kg-toolbar-group">
+          {[
+            { v: 0, label: 'Tudo' },
+            { v: 1, label: 'Baixa+' },
+            { v: 2, label: 'Média+' },
+            { v: 3, label: 'Alta' },
+          ].map(({ v, label }) => (
+            <button
+              key={v}
+              type="button"
+              className={`kg-toolbar-chip${prioFilter === v ? ' active' : ''}`}
+              onClick={() => setPrioFilter(v)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Separador */}
+        <div className="kg-toolbar-sep" />
+
+        {/* Toggle: mostrar/ocultar concluídas */}
+        <button
+          type="button"
+          className={`kg-toolbar-chip${showCompleted ? ' active' : ''}`}
+          onClick={() => setShowCompleted(v => !v)}
+        >
+          {showCompleted ? 'Ocultar concluídas' : 'Mostrar concluídas'}
+        </button>
+
+        {/* Botão de ordenação: cicla entre Manual / Vencimento / Prioridade */}
+        <button
+          type="button"
+          className="kg-toolbar-chip kg-toolbar-sort"
+          title={`Ordenação: ${SORT_LABELS[sortMode]}`}
+          onClick={() => {
+            const idx = SORT_CYCLE.indexOf(sortMode)
+            setSortMode(SORT_CYCLE[(idx + 1) % SORT_CYCLE.length])
+          }}
+        >
+          <Icon name="sort" size={13} />
+          {SORT_LABELS[sortMode]}
+        </button>
+      </div>
 
       {loading ? (
-        // Spinner de carregamento inicial — nunca aparece após uma reordenação.
+        // Spinner: só no 1º carregamento ou troca de lista
         <div className="kg-empty">Carregando…</div>
-      ) : open.length === 0 && done.length === 0 ? (
+      ) : openRoots.length === 0 && doneRoots.length === 0 ? (
         <div className="kg-empty">
           <div className="kg-empty-title">Lista vazia</div>
           Crie a primeira tarefa para começar.
         </div>
       ) : (
-        // DndContext: contexto de DnD para a lista de tarefas abertas.
-        //   closestCenter: detecta qual item está mais próximo do centro do cursor.
-        //   onDragStart / onDragEnd: handlers acima.
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          {/* SortableContext: lista os ids arrastáveis e define a animação de deslize. */}
-          <SortableContext
-            items={open.map(t => t.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="kg-list">
-              {open.map((t, i) => (
-                // SortableTaskRow: wrapper que adiciona drag handle @dnd-kit ao TaskRow.
-                // Preserva a classe de foco, o onClick e o TaskRow original.
-                <SortableTaskRow
-                  key={t.id}
-                  task={t}
-                  focusIdx={i}
-                  isFocused={focusIdx === i}
-                  onFocus={setFocusIdx}
-                  onToggle={toggle}
-                  onOpen={onOpenTask}
-                  onRename={rename}
-                  isBeingDragged={activeId === t.id}
-                />
-              ))}
-            </div>
-          </SortableContext>
-
-          {/* DragOverlay: cópia da linha que segue o cursor durante o drag.
-              dropAnimation={null} = sem animação de "retorno" ao soltar. */}
-          <DragOverlay dropAnimation={null}>
-            {activeTask ? (
-              <div className="kg-drag-overlay">
-                <TaskRow
-                  task={activeTask}
-                  onToggle={toggle}
-                  onOpen={onOpenTask}
-                  onRename={rename}
-                />
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-      )}
-
-      {/* Seção colapsável de concluídas (sem arraste — comportamento atual) */}
-      {done.length > 0 && (
         <>
-          <button className="kg-section-toggle" onClick={() => setShowCompleted((v) => !v)}>
-            <Icon name={showCompleted ? 'chevronDown' : 'chevron'} size={13} />
-            Concluídas ({done.length})
-          </button>
-          {showCompleted && (
-            <div className="kg-list">
-              {done.map((t) => <TaskRow key={t.id} task={t} onToggle={toggle} onOpen={onOpenTask} onRename={rename} />)}
-            </div>
+          {/* Grupo principal — árvore de tarefas abertas */}
+          <div className="task-group">
+            <TaskTree
+              roots={openRoots}
+              api={api}
+              scopeKey={scopeKey}
+              sorter={sorter}
+              showAddRoot
+              onAddRoot={() => onNewTask(projectId)}
+            />
+          </div>
+
+          {/* Seção de concluídas — colapsável, sem drag */}
+          {doneRoots.length > 0 && (
+            <>
+              <button
+                type="button"
+                className="kg-section-toggle"
+                onClick={() => setShowCompleted(v => !v)}
+              >
+                <Icon name={showCompleted ? 'chevDown' : 'chevron'} size={13} />
+                Concluídas ({doneRoots.length})
+              </button>
+              {showCompleted && (
+                <div className="task-group done-group">
+                  <TaskTree
+                    roots={doneRoots}
+                    api={api}
+                    scopeKey={`${scopeKey}-done`}
+                  />
+                </div>
+              )}
+            </>
           )}
         </>
       )}

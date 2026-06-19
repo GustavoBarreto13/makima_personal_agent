@@ -517,6 +517,41 @@ def link_person_on_cursor(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Helper transacional — remover todos os vínculos de uma entidade (fatia 025)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def unlink_people_on_cursor(
+    cur,
+    entity_type: str,
+    entity_id: str | int,
+) -> None:
+    """Remove todos os vínculos pessoa↔item de um dado item usando o cursor do chamador.
+
+    Usado pela semântica de substituição em ``update_task(person_ids=[...])`` — antes
+    de inserir os novos vínculos, apaga os existentes para garantir que o conjunto final
+    seja exatamente o enviado (não uma adição ao anterior).
+
+    Idempotente: não falha se não houver vínculos. O commit/rollback é do chamador.
+
+    Args:
+        cur: Cursor psycopg2 ativo (dentro de uma transação do chamador).
+        entity_type: Tipo do item — ``"task"``, ``"transaction"``, ``"book"`` etc.
+        entity_id: ID do item (UUID como str ou SERIAL int — coagido para str).
+
+    Example:
+        >>> # Dentro de uma transação de update_task
+        >>> unlink_people_on_cursor(cur, "task", task_id)
+        >>> for pid in new_person_ids:
+        ...     link_person_on_cursor(cur, pid, "task", task_id)
+    """
+    # entity_id é sempre TEXT na tabela (absorve UUID e int SERIAL)
+    cur.execute(
+        "DELETE FROM person_links WHERE entity_type = %s AND entity_id = %s",
+        (entity_type, str(entity_id)),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Hub de agregação — Onda 3 / US3 (T014)
 # ─────────────────────────────────────────────────────────────────────────────
 
