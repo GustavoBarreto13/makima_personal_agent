@@ -1,6 +1,14 @@
 // PlanCard — card de tarefa no plano do dia (e nas sugestões).
-// Versão "plano": draggable para a timeline. Versão "sugestão": botão "+ Puxar".
+// Versão "plano": arrastável para a timeline (via @dnd-kit, gerenciado pelo TodayScreen).
+// Versão "sugestão": botão "+ Puxar" (não-arrastável).
+//
+// Por que @dnd-kit aqui?
+// Antes, o card usava `draggable` nativo do HTML5 e dependia de `onDragStart`
+// passado via props. O TodayScreen não passava esse callback, então o arrasto
+// simplesmente não funcionava. Com @dnd-kit, o id da tarefa vai via `active.id`
+// (context do DndContext do TodayScreen), sem precisar de prop extra.
 
+import { useDraggable } from '@dnd-kit/core'
 import type { Task } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 
@@ -19,13 +27,25 @@ function fmtTime(iso: string): string {
 interface PlanCardProps {
   task: Task
   isSuggestion?: boolean           // true = sem drag, com botão "+ Puxar"
+  // Se este card está sendo arrastado no momento (slot original fica semi-transparente).
+  isBeingDragged?: boolean
   onChanged: () => void            // recarrega a tela
   onOpen: (task: Task) => void     // abre o TaskModal
-  onDragStart?: (taskId: number) => void
   toast: (msg: string, kind?: 'ok' | 'err') => void
 }
 
-export function PlanCard({ task, isSuggestion, onChanged, onOpen, onDragStart, toast }: PlanCardProps) {
+export function PlanCard({ task, isSuggestion, isBeingDragged, onChanged, onOpen, toast }: PlanCardProps) {
+  // useDraggable: torna este card uma fonte de arraste do @dnd-kit.
+  //   id         — identificador que aparece em active.id no onDragEnd do TodayScreen.
+  //   attributes — aria-* de acessibilidade.
+  //   listeners  — pointerdown etc. que iniciam o drag (ativa após 5px de movimento).
+  //   setNodeRef — diz ao dnd-kit qual elemento DOM é este card.
+  // disabled: sugestões NÃO são arrastáveis (o botão "+ Puxar" é o mecanismo delas).
+  const { attributes, listeners, setNodeRef } = useDraggable({
+    id: task.id,
+    disabled: !!isSuggestion,
+  })
+
   const pull = async () => {
     try {
       await kaguyaApi.addToMyDay(task.id)
@@ -59,17 +79,22 @@ export function PlanCard({ task, isSuggestion, onChanged, onOpen, onDragStart, t
 
   return (
     <div
+      // setNodeRef: registra este elemento no dnd-kit como a âncora do drag.
+      ref={setNodeRef}
       className={`kg-plan-card${isSuggestion ? ' no-drag' : ''}`}
       data-prio={task.priority}
-      draggable={!isSuggestion}
-      onDragStart={!isSuggestion && onDragStart
-        ? (e) => { e.dataTransfer.setData('text/plain', String(task.id)); onDragStart(task.id) }
-        : undefined
-      }
+      // Slot original fica semi-transparente enquanto o card segue o cursor.
+      style={{ opacity: isBeingDragged ? 0.35 : 1 }}
+      // onClick abre o TaskModal (< 5px de movimento = clique, não arraste).
       onClick={() => onOpen(task)}
       title={task.title}
+      // attributes e listeners são espalhados no elemento raiz:
+      //   - Sugestões: listeners desativados (disabled=true no useDraggable).
+      //   - Plano: listeners ativos, iniciam o drag após 5px de movimento.
+      {...attributes}
+      {...listeners}
     >
-      {/* Checkbox */}
+      {/* Checkbox — stopPropagation para não abrir o TaskModal ao clicar */}
       <button
         onClick={toggle}
         style={{
@@ -113,7 +138,7 @@ export function PlanCard({ task, isSuggestion, onChanged, onOpen, onDragStart, t
         <span className="kg-plan-card-est">{fmtMin(task.duration_min)}</span>
       )}
 
-      {/* Botão "+ Puxar" nas sugestões */}
+      {/* Botão "+ Puxar" nas sugestões (adiciona ao plano do dia) */}
       {isSuggestion && (
         <button className="kg-plan-pull-btn" onClick={(e) => { e.stopPropagation(); pull() }}>
           + Puxar

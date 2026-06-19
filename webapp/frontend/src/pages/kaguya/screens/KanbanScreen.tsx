@@ -22,9 +22,6 @@ import { Icon } from '../ui/Icons'
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
   closestCorners,
   useDroppable,
   type DragStartEvent,
@@ -35,6 +32,8 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
+// Sensor e helper de posição centralizados — evita duplicar em cada tela de DnD.
+import { useDndSensors, midPosition } from '../lib/dnd'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -282,12 +281,9 @@ export function KanbanScreen({
   }, [reloadKey])
 
   // ── Sensores @dnd-kit ─────────────────────────────────────────────────────────
-  // PointerSensor com distância mínima de ativação de 5px:
-  //   - Clique curto (< 5px de deslocamento) → onOpen do TaskCard ainda dispara.
-  //   - Arraste real (≥ 5px)                → ativa o DnD.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  )
+  // Reutiliza o hook centralizado de lib/dnd.ts (PointerSensor, 5px de ativação).
+  // Clique curto (< 5px) → dispara onOpen; arraste (≥ 5px) → inicia DnD.
+  const sensors = useDndSensors()
 
   // ── Handlers de drag ──────────────────────────────────────────────────────────
 
@@ -658,16 +654,5 @@ export function KanbanScreen({
 }
 
 // ── Utilitários ───────────────────────────────────────────────────────────────
-
-// Calcula uma position local temporária para o optimistic update.
-// A posição fica entre after e before; o backend vai corrigir com a position
-// real após o reload silencioso. Usa aritmética de ponto médio (inteiro).
-function midPosition(
-  after:  Task | null | undefined,
-  before: Task | null | undefined,
-): number {
-  if (!after && !before) return 1000                          // coluna vazia
-  if (!after)            return Math.floor(before!.position / 2)      // antes do primeiro
-  if (!before)           return after.position + 1000        // após o último
-  return Math.floor((after.position + before.position) / 2) // entre dois cards
-}
+// midPosition foi centralizado em lib/dnd.ts (compartilhado com Lista e Eisenhower).
+// O import está no topo do arquivo.
