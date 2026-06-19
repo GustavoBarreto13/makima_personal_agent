@@ -796,6 +796,17 @@ def update_task(
                     params["column_id"] = _first_column_id(cur, project_id)
                     sets.append("column_id = %(column_id)s")
             if column_id is not None:
+                # Valida que a coluna pertence à lista efetiva da tarefa (após eventual troca
+                # de lista feita acima). Sem essa checagem, um column_id de outra lista seria
+                # gravado e o card ficaria invisível no board desta lista.
+                # Nota: create_task já faz essa validação em ~linha 647; aqui espelhamos.
+                effective_project = params.get("project_id", current_project_id)
+                cur.execute(
+                    "SELECT 1 FROM task_columns WHERE id = %s AND project_id = %s",
+                    (column_id, effective_project),
+                )
+                if not cur.fetchone():
+                    return {"status": "error", "message": "Coluna não pertence à lista da tarefa."}
                 sets.append("column_id = %(column_id)s")
                 params["column_id"] = column_id
 

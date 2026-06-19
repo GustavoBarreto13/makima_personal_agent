@@ -494,6 +494,11 @@ export function KanbanScreen({
     slots: ['abertas', 'tempo_estimado', 'em_andamento'],
   }
 
+  // Conjunto de ids das colunas que EXISTEM neste board — usado no filtro de cards abaixo.
+  // Garante que cards com column_id "órfão por divergência" (não-nulo mas sem coluna
+  // correspondente nesta lista) apareçam na 1ª coluna em vez de ficarem invisíveis.
+  const colIds = new Set(columns.map(c => c.id))
+
   return (
     <div className="kg-page" style={{ maxWidth: 1320 }}>
       <h1 className="kg-page-title"><Icon name="board" size={22} /> {projectName}</h1>
@@ -542,7 +547,15 @@ export function KanbanScreen({
               // em uma lista que já tinha tarefas sem coluna.
               const isFirst = idx === 0
               const cards = tasks
-                .filter(t => t.column_id === col.id || (isFirst && t.column_id == null))
+                .filter(t =>
+                  // Pertence normalmente a esta coluna.
+                  t.column_id === col.id ||
+                  // 1ª coluna captura dois tipos de órfãos:
+                  //   • column_id null  → tarefa criada numa lista sem board
+                  //   • column_id com id que não existe neste board → card de outra lista
+                  //     ou coluna deletada que ficou com id stale no estado local
+                  (isFirst && (t.column_id == null || !colIds.has(t.column_id)))
+                )
                 .sort((a, b) => a.position - b.position)
 
               return (

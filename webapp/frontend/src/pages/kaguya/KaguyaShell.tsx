@@ -82,10 +82,22 @@ export function KaguyaShell() {
 
   const inboxId = sidebar?.projects.find((p) => p.is_inbox)?.id ?? null
 
-  // Navegação: views que precisam de uma lista caem no Inbox quando sem param.
+  // Navegação: views que precisam de uma lista usam o Inbox por padrão quando sem param.
+  // Exceção: o Kanban tenta primeiro restaurar a última lista visitada (persistida em
+  // localStorage pela chave 'kaguya:kanban:last-list'). Se a lista salva não existir mais
+  // na sidebar (lista excluída/arquivada), cai no Inbox como fallback.
   const navigate = (v: KaguyaView, p: number | null = null) => {
     setSearchResults(null)
-    if ((v === 'list' || v === 'kanban') && p == null) p = inboxId
+    if (v === 'kanban' && p == null) {
+      // Lê a última lista usada no Kanban pelo menu global.
+      const stored = Number(localStorage.getItem('kaguya:kanban:last-list'))
+      const projs = sidebar?.projects ?? []
+      // Só usa se a lista ainda existir (evita abrir board de lista excluída).
+      p = (stored && projs.some(pr => pr.id === stored)) ? stored : inboxId
+    } else if (v === 'list' && p == null) {
+      // Lista sem param explícito → Inbox (comportamento original).
+      p = inboxId
+    }
     setView(v); setParam(p)
   }
 
@@ -113,6 +125,14 @@ export function KaguyaShell() {
 
   const openNewTask = () => setTaskModal({ mode: 'create', projectId: view === 'list' ? param : null })
   const afterSave = () => { loadSidebar(); bump() }
+
+  // Persiste a última lista visitada no Kanban global (menu "Kanban" da sidebar).
+  // Isso faz o menu reabrir no mesmo board da última vez, em vez de sempre cair no Inbox.
+  useEffect(() => {
+    if (view === 'kanban' && param != null) {
+      localStorage.setItem('kaguya:kanban:last-list', String(param))
+    }
+  }, [view, param])
 
   const runSearch = async () => {
     if (!search.trim()) { setSearchResults(null); return }
@@ -222,6 +242,28 @@ export function KaguyaShell() {
           <div className="kg-topbar">
             <span className="kg-topbar-title">{titleMap[view]}</span>
 
+            {/* Seletor de lista do Kanban global: permite trocar qual board está em exibição
+                sem precisar navegar pela sidebar. Só aparece quando a view é Kanban.
+                onChange dispara navigate('kanban', id) → KanbanScreen recarrega para o novo
+                projectId automaticamente (o load dela depende de projectId). */}
+            {view === 'kanban' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="kg-field-label">Lista</span>
+                <select
+                  className="kg-select"
+                  style={{ width: 'auto', minWidth: 140 }}
+                  value={param ?? ''}
+                  onChange={e => navigate('kanban', Number(e.target.value))}
+                >
+                  {/* Exibe todas as listas disponíveis (Inbox primeiro, como vem da sidebar) */}
+                  {(sidebar?.projects ?? []).map(proj => (
+                    <option key={proj.id} value={proj.id}>
+                      {proj.icon ? `${proj.icon} ` : ''}{proj.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {/* alternador Lista ⇄ Kanban quando se está numa lista */}
             {(view === 'list' || view === 'kanban') && param != null && (
               <div className="kg-segment" style={{ width: 180 }}>
