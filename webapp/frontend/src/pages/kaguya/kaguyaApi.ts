@@ -205,8 +205,11 @@ export const kaguyaApi = {
     api.get<HabitHeatDay[]>(`${BASE}/habits/${id}/history?year=${year}`),
 
   // ── Pessoas (Komi) — fatia 025 ────────────────────────────────────────────
-  // Lista todos os contatos da Komi para o AssigneePicker
-  listPeople: () => api.get<Person[]>('/api/people/'),
+  // Lista todos os contatos da Komi para o AssigneePicker.
+  // O endpoint /api/people/ retorna {"status":"ok","people":[...]} (embrulhado),
+  // então desembrulhamos .people aqui para que os consumidores recebam Person[] diretamente.
+  listPeople: () =>
+    api.get<{ status: string; people: Person[] }>('/api/people/').then(r => r.people),
 
   // ── Calendar Hub — fatia 019 ──────────────────────────────────────────────
   // Fontes registradas no hub (Kaguya, Nami, Frieren, Violet, Akane, gcal)
