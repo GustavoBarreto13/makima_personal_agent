@@ -651,6 +651,7 @@ def create_task(
     column_id: Optional[int] = None,
     tags: Optional[list] = None,
     person_ids: Optional[list] = None,
+    allow_empty_title: bool = False,
 ) -> dict:
     """Cria uma tarefa (ou subtarefa) e a posiciona no fim da sua lista/escopo.
 
@@ -663,10 +664,11 @@ def create_task(
     nunca divergem. Listas sem board continuam com a tarefa sem coluna (Kanban é opcional).
 
     Args:
-        title: Título (obrigatório, não-vazio).
+        title: Título da tarefa. Normalmente não-vazio; mas o webapp pode criar uma linha
+            placeholder vazia para edição inline — nesses casos passa ``allow_empty_title=True``.
         project_id: Id da lista (webapp envia isto).
         project_name: Nome da lista (agente envia isto; resolvido por prefixo).
-        parent_id: Se informado, cria subtarefa (1 nível) sob essa tarefa-pai.
+        parent_id: Se informado, cria subtarefa (N níveis) sob essa tarefa-pai.
         priority: 0..3 (nenhuma/baixa/média/alta).
         type: ``task`` | ``event`` | ``birthday``.
         due_date: "YYYY-MM-DD" (opcional).
@@ -680,12 +682,22 @@ def create_task(
         tags: Lista de nomes de tag a vincular (opcional). Tags inexistentes são criadas
             na hora; o nome é único ignorando caixa (``Mercado`` == ``mercado``).
         person_ids: Lista de UUIDs de pessoas a vincular à tarefa (spec 014 / FR-009). Opcional.
+        allow_empty_title: Se ``True``, permite criar a tarefa com título vazio (string vazia
+            ``""``). Usado exclusivamente pelo router do webapp para criação inline na árvore
+            de tarefas — o agente Telegram nunca passa ``True`` e continua recebendo erro
+            amigável se tentar criar uma tarefa sem título.
 
     Returns:
         ``{"status": "ok", "id": <int>, "project_id": <int>}`` ou erro em português.
     """
+    # Normaliza o título: aceita None ou ausente do body — trata como string vazia.
+    # Isso evita AttributeError em title.strip() quando o webapp omite o campo.
+    title = title or ""
+
     # ── Validações de entrada (mensagens amigáveis antes dos CHECKs do banco) ──
-    if not title or not title.strip():
+    # Título vazio é bloqueado para o agente Telegram (allow_empty_title=False por padrão).
+    # O webapp passa allow_empty_title=True para criar linhas-placeholder da edição inline.
+    if not allow_empty_title and not title.strip():
         return {"status": "error", "message": "O título não pode ser vazio."}
     if priority not in _VALID_PRIORITIES:
         return {"status": "error", "message": "Prioridade inválida (use 0, 1, 2 ou 3)."}

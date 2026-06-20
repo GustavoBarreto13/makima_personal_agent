@@ -219,6 +219,16 @@ export function ListScreen({
       } catch { toast('Não foi possível criar tarefa.', 'err') }
     },
 
+    // Remove (soft-delete) uma tarefa — usado para apagar linha-placeholder vazia abandonada.
+    // Chamado pelo commit() do TreeRow quando o usuário sai da edição sem digitar nada numa
+    // linha recém-criada.
+    remove: async (task: Task) => {
+      try {
+        await kaguyaApi.remove(task.id)
+        load(true)
+      } catch { toast('Não foi possível remover a tarefa.', 'err') }
+    },
+
     // Cria um filho da tarefa, expande a mãe e começa a editar o filho.
     addChild: async (task: Task, onCreated: (id: number) => void, expandParent: () => void) => {
       try {

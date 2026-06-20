@@ -37,6 +37,8 @@ export interface TaskTreeAPI {
   addSibling(task: Task, onCreated: (id: number) => void): void
   // Cria um filho de `task`, chama `onCreated(newId)` e `expandParent()` para garantir visibilidade.
   addChild(task: Task, onCreated: (id: number) => void, expandParent: () => void): void
+  // Remove (soft-delete) uma tarefa. Usado para apagar linha-placeholder vazia abandonada.
+  remove(task: Task): void
   // Indenta (faz filha do irmão anterior — se existir).
   indent(task: Task): void
   // Desindenta (sobe um nível — se tiver pai).
@@ -85,14 +87,19 @@ function TreeRow({
   // Animação do checkbox: "pop" ao completar
   const [popping, setPopping] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Guard contra commit duplo: o onBlur dispara quando o input é desmontado ao sair da
+  // edição, o que faria api.remove() ser chamado duas vezes (e a segunda chamada erraria
+  // com "Tarefa não encontrada"). O ref é resetado para false ao entrar em modo de edição.
+  const committedRef = useRef(false)
   const editing = editingId === task.id
   const done = task.completed_at !== null
   const pr = PRIO_COLORS[task.priority] ?? PRIO_COLORS[0]
   const prog = subProgress(task)
 
-  // Foca o input ao entrar em modo de edição
+  // Foca o input ao entrar em modo de edição e reseta o guard de commit duplo
   useEffect(() => {
     if (editing && inputRef.current) {
+      committedRef.current = false  // reseta o guard ao começar uma nova edição
       inputRef.current.focus()
       inputRef.current.select()
     }
@@ -101,26 +108,40 @@ function TreeRow({
   // Sincroniza o valor local quando o título da tarefa muda (ex: reload silencioso)
   useEffect(() => { setVal(task.title) }, [task.title])
 
-  // Salva o título e sai do modo de edição
-  const commit = useCallback(() => {
+  // Salva o título e sai do modo de edição.
+  // Retorna o valor que foi digitado (para uso no onKey do Enter).
+  const commit = useCallback((): string => {
+    // Guard: evita disparar duas vezes (onBlur + desmontagem do input ao trocar editingId)
+    if (committedRef.current) return ''
+    committedRef.current = true
+
     const v = val.trim()
-    // Linha nova vazia → cancela e remove se não havia título original
     if (!v) {
-      if (!task.title) api.rename(task, '')  // backend vai ignorar ou apagar
+      // Linha-placeholder nova sem conteúdo: apaga a tarefa silenciosamente.
+      // Se task.title não estiver vazio, o usuário apagou o texto de uma tarefa existente
+      // — nesse caso não faz nada (não apaga a tarefa; o título antigo fica no banco).
+      if (!task.title) api.remove(task)
       setEditingId(null)
-      return
+      return ''
     }
     if (v !== task.title) api.rename(task, v)
     setEditingId(null)
+    return v
   }, [val, task, api, setEditingId])
 
   // Teclado dentro do input de edição
   const onKey = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault()
+      // Salva o título atual e obtém o valor confirmado.
+      // Ao apertar Enter com texto: cria uma tarefa correspondente logo abaixo, no mesmo
+      // nível (irmã), e a coloca em modo de edição — permite digitar várias tarefas em
+      // sequência sem usar o mouse.
+      // Ao apertar Enter com linha vazia: a linha-placeholder é apagada (via commit) e
+      // não cria nova tarefa (para evitar ciclo infinito de placeholders).
+      const v = val.trim()
       commit()
-      // Cria irmão abaixo e começa a editar
-      api.addSibling(task, id => setEditingId(id))
+      if (v) api.addSibling(task, id => setEditingId(id))
     } else if (e.key === 'Escape') {
       e.preventDefault()
       setVal(task.title)

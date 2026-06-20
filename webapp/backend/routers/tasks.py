@@ -418,8 +418,13 @@ def list_trash_route(
 
 @router.post("", status_code=201)
 def create_task_route(body: CreateTaskBody, user: dict = Depends(require_user)) -> dict:
-    """Cria uma tarefa (ou subtarefa)."""
-    return _check_result(create_task(**body.model_dump(exclude_unset=True)))
+    """Cria uma tarefa (ou subtarefa).
+
+    O webapp cria tarefas com título vazio (linha-placeholder para edição inline na árvore),
+    por isso passamos allow_empty_title=True. O agente Telegram chama create_task() diretamente
+    sem essa flag e continua recebendo erro amigável para títulos em branco.
+    """
+    return _check_result(create_task(allow_empty_title=True, **body.model_dump(exclude_unset=True)))
 
 
 @router.patch("/{task_id}")
