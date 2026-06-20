@@ -7,6 +7,10 @@ import type { Task, Project, TaskType, RecurrenceMode, Tag, Person } from '../ty
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 import { Avatar, AvatarStack } from '../components/People'
+// Pickers customizados no tema — substituem <input type="date"> e type="time">
+// nativos, que ignoram os tokens OKLCH e mostram o pop-up do sistema operacional.
+import { DatePicker } from '../components/DatePicker'
+import { TimePicker } from '../components/TimePicker'
 
 // Presets de recorrência expostos na UI (mapeiam para RRULE no buildRRule).
 type RecurFreq = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
@@ -311,13 +315,25 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
           </div>
 
           <div className="kg-field-row">
+            {/* DatePicker: seletor de data no tema, substitui <input type="date"> */}
             <div className="kg-field">
               <span className="kg-field-label">Vencimento</span>
-              <input className="kg-input" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <DatePicker
+                value={dueDate}
+                onChange={setDueDate}
+                placeholder="Sem data"
+              />
             </div>
+            {/* TimePicker: seletor de hora no tema, substitui <input type="time">.
+                Fica desabilitado enquanto não há data selecionada. */}
             <div className="kg-field">
               <span className="kg-field-label">Hora (opcional)</span>
-              <input className="kg-input" type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} disabled={!dueDate} />
+              <TimePicker
+                value={dueTime}
+                onChange={setDueTime}
+                disabled={!dueDate}
+                placeholder="Sem hora"
+              />
             </div>
           </div>
 

@@ -46,10 +46,11 @@ export function TaskRow({ task, depth = 0, showProject = false, onToggle, onOpen
       <div className="kg-row-main">
         <div className="kg-row-titleline">
           <TypeGlyph type={task.type} />
+          {/* kg-input-sm: variante compacta de .kg-input — padding reduzido (kaguya.css).
+              Elimina os overrides inline que sobrescreviam o padrão antes. */}
           {editing ? (
             <input
-              className="kg-input"
-              style={{ padding: '2px 4px', fontSize: '13.5px' }}
+              className="kg-input kg-input-sm"
               autoFocus
               value={draft}
               onChange={(e) => setDraft(e.target.value)}

@@ -7,6 +7,10 @@ import { useState } from 'react'
 import type { Project, Filter, FilterField, FilterCondition, FilterCombinator } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
+// todayISO() respeita o fuso UTC-3: usa partes locais, nunca toISOString()
+import { todayISO } from '../lib/dateUtils'
+// DatePicker no tema substitui <input type="date"> que ignora os tokens OKLCH
+import { DatePicker } from '../components/DatePicker'
 
 interface FilterModalProps {
   mode: 'create' | 'edit'
@@ -45,7 +49,9 @@ const OPS: Record<FilterField, { op: string; label: string }[]> = {
 const ICONS = ['🔎', '⭐', '🔥', '⏰', '🎯', '🛒', '🏠', '💼', '🧠', '⚡']
 
 // Data de hoje em "AAAA-MM-DD" (default dos operadores de data com valor).
-const today = () => new Date().toISOString().slice(0, 10)
+// Alias local para manter a compatibilidade com as chamadas abaixo.
+// todayISO() vem de dateUtils e usa partes locais — nunca toISOString().
+const today = todayISO
 
 // Primeiro operador de um campo (usado ao trocar o campo).
 const firstOp = (field: FilterField) => OPS[field][0].op
@@ -120,7 +126,8 @@ export function FilterModal({ mode, filter, projects, onClose, onSaved, toast }:
           </span>
         )
       }
-      return <input className="kg-input" type="date" value={String(c.value ?? today())} onChange={(e) => patchCond(i, { value: e.target.value })} />
+      // DatePicker no tema substitui <input type="date"> nativo (ignora OKLCH)
+      return <DatePicker value={String(c.value ?? today())} onChange={(iso) => patchCond(i, { value: iso })} />
     }
     if (c.field === 'project_id') {
       const current = Array.isArray(c.value) && c.value.length ? Number(c.value[0]) : ''

@@ -106,6 +106,9 @@
   --done: oklch(0.74 0.125 158);
   --shadow-md: 0 4px 16px oklch(0 0 0 / 0.4);
   --shadow-lg: 0 14px 40px oklch(0 0 0 / 0.55);
+  /* Informa ao navegador que o shell está no modo escuro — afeta
+     scrollbars e qualquer controle nativo (como scrollbars, spinners). */
+  color-scheme: dark;
 }
 
 /* densidade compacta encolhe o padding das linhas */
@@ -116,6 +119,16 @@
 @media (prefers-reduced-motion: reduce) { .kg-app * { transition: none !important; animation: none !important; } }
 
 .kg-app *, .kg-app *::before, .kg-app *::after { box-sizing: border-box; }
+
+/* Reset global de tipografia — garante que inputs/selects herdem a fonte do
+   shell em vez de usar a fonte padrão do navegador (geralmente Times/Arial).
+   Espelha o padrão já adotado em nami.css:143-145. */
+.kg-app input, .kg-app textarea, .kg-app select { font: inherit; }
+
+/* color-scheme — informa ao navegador se o shell é claro ou escuro.
+   Afeta a aparência de scrollbars e qualquer controle nativo remanescente.
+   O override 'dark' é aplicado junto com os tokens do tema escuro abaixo. */
+.kg-app { color-scheme: light; }
 
 /* ═══ Shell: sidebar + main ═══ */
 .kg-shell { display: grid; grid-template-columns: 248px 1fr; height: 100vh; overflow: hidden; }
@@ -277,6 +290,110 @@
 .kg-textarea { min-height: 70px; resize: vertical; }
 .kg-field-row { display: flex; gap: 10px; }
 .kg-field-row > * { flex: 1; }
+
+/* Variante compacta do .kg-input para edição inline em linhas de lista.
+   Sobrescreve só o padding; mantém fonte, cor e foco do padrão. */
+.kg-input.kg-input-sm { padding: 2px 4px; }
+
+/* ═══ DatePicker — seletor de data no tema ═══
+   Substitui <input type="date"> nativo. O botão-gatilho (.kg-datefield)
+   imita visualmente o .kg-input (borda, fundo, foco). O popover
+   (.kg-datefield-pop) flutua abaixo com a grade MiniCalendar + rodapé. */
+
+/* Wrapper relativo — ancora o popover absolutamente */
+.kg-datefield-wrap { position: relative; }
+
+/* Botão-gatilho: visual idêntico a .kg-input */
+.kg-datefield {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-family: var(--sans); font-size: 13.5px;
+  color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line); border-radius: var(--kg-r-sm);
+  padding: 9px 11px; outline: none; width: 100%;
+  cursor: pointer; text-align: left;
+}
+.kg-datefield:hover { border-color: var(--line); background: var(--card); }
+/* Estado aberto (popover visível): mesmo anel de foco que .kg-input:focus */
+.kg-datefield.open { border-color: var(--kg); box-shadow: 0 0 0 3px var(--kg-tint); }
+/* Estado desabilitado: idêntico a input[disabled] */
+.kg-datefield.disabled, .kg-datefield:disabled {
+  opacity: 0.5; cursor: not-allowed; background: var(--card-2);
+}
+/* Rótulo da data: flex-1 para empurrar o ícone para a direita */
+.kg-datefield-label { flex: 1; }
+/* Placeholder apagado quando não há data */
+.kg-datefield-label.placeholder { color: var(--ink-4); }
+/* Ícone de calendário à direita */
+.kg-datefield svg { flex-shrink: 0; color: var(--ink-4); }
+
+/* Popover flutuante do calendário */
+.kg-datefield-pop {
+  position: absolute; top: calc(100% + 5px); left: 0; z-index: 70;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--kg-r-md); box-shadow: var(--shadow-md);
+  padding: 12px; min-width: 220px;
+}
+
+/* Rodapé do popover: botões "Hoje" e "Limpar" */
+.kg-pop-foot {
+  display: flex; gap: 6px; padding-top: 10px;
+  border-top: 1px solid var(--line-2); margin-top: 10px;
+}
+.kg-pop-foot-btn {
+  flex: 1; padding: 6px 8px; border: 1px solid var(--line);
+  border-radius: var(--kg-r-sm); background: var(--card-2);
+  font-family: var(--sans); font-size: 12px; color: var(--ink-2);
+  cursor: pointer; transition: background .12s;
+}
+.kg-pop-foot-btn:hover { background: var(--kg-tint); color: var(--kg-deep); border-color: var(--kg); }
+/* "Limpar": vermelho discreto */
+.kg-pop-foot-btn.danger { color: var(--p-high); }
+.kg-pop-foot-btn.danger:hover { background: oklch(0.575 0.195 22 / 0.12); border-color: var(--p-high); }
+
+/* ═══ TimePicker — seletor de hora no tema ═══
+   Substitui <input type="time"> nativo. Mesmo padrão visual do DatePicker,
+   mas o popover é um dropdown rolável com 96 slots de 15 em 15 minutos. */
+
+.kg-timefield-wrap { position: relative; }
+
+/* Botão-gatilho: mesma aparência do .kg-datefield */
+.kg-timefield {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-family: var(--sans); font-size: 13.5px;
+  color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line); border-radius: var(--kg-r-sm);
+  padding: 9px 11px; outline: none; width: 100%;
+  cursor: pointer; text-align: left;
+}
+.kg-timefield:hover { background: var(--card); }
+.kg-timefield.open { border-color: var(--kg); box-shadow: 0 0 0 3px var(--kg-tint); }
+.kg-timefield.disabled, .kg-timefield:disabled {
+  opacity: 0.5; cursor: not-allowed; background: var(--card-2);
+}
+.kg-timefield-label { flex: 1; }
+.kg-timefield-label.placeholder { color: var(--ink-4); }
+.kg-timefield svg { flex-shrink: 0; color: var(--ink-4); }
+
+/* Dropdown rolável de horários */
+.kg-time-pop {
+  position: absolute; top: calc(100% + 5px); left: 0; z-index: 70;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--kg-r-md); box-shadow: var(--shadow-md);
+  /* Altura máxima de ~6 itens visíveis antes do scroll */
+  max-height: 220px; overflow-y: auto; padding: 4px;
+  min-width: 120px;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+/* Cada opção de horário */
+.kg-time-opt {
+  display: block; width: 100%; text-align: left;
+  padding: 7px 12px; border: none; background: transparent;
+  font-family: var(--mono); font-size: 13px; color: var(--ink-2);
+  border-radius: var(--kg-r-sm); cursor: pointer;
+}
+.kg-time-opt:hover { background: var(--card-2); color: var(--ink); }
+/* Opção selecionada: fundo tintado + texto no acento */
+.kg-time-opt.active { background: var(--kg-tint); color: var(--kg-deep); font-weight: 600; }
 
 /* segmented control (prioridade / tipo / tweaks) */
 .kg-segment { display: flex; gap: 4px; background: var(--card-2); padding: 3px; border-radius: var(--kg-r-sm); border: 1px solid var(--line-2); }
@@ -1275,6 +1392,38 @@
 .kg-app .tk-flagmini { display: inline-flex; align-items: center; color: var(--ink-4); flex-shrink: 0; }
 .kg-app .tk-flagmini svg { width: 12px; height: 12px; }
 .kg-app .tk-flagmini.sub { font-size: 12px; }
+
+/* ── Input de edição inline do título da tarefa ──────────────────────────────
+   Aparece no lugar do span .tk-title quando o usuário ativa a edição.
+   Quando inativo (blur): fundo transparente, sem borda — funde com a linha.
+   Quando ativo (focus): recebe borda + anel de foco no acento --kg.           */
+.kg-app .tk-title-input {
+  /* Herda a fonte e cor do shell em vez de usar o padrão do navegador */
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  /* Fundo transparente: parece ser parte do texto da linha */
+  background: transparent;
+  /* Sem borda padrão (funde com o layout) */
+  border: 1px solid transparent;
+  border-radius: var(--kg-r-sm);
+  /* Espaço interno mínimo para não deslocar o layout */
+  padding: 1px 4px;
+  /* Expande para preencher o espaço disponível na linha */
+  flex: 1;
+  min-width: 0;
+  outline: none;
+  /* Suaviza a transição de borda ao entrar e sair do foco */
+  transition: background .1s, border-color .1s, box-shadow .1s;
+}
+/* Estado de foco: acende o anel de foco padrão do sistema Kaguya */
+.kg-app .tk-title-input:focus {
+  background: var(--card);
+  border-color: var(--kg);
+  box-shadow: 0 0 0 3px var(--kg-tint);
+}
+/* Placeholder "Nova tarefa…" apagado quando o input está vazio */
+.kg-app .tk-title-input::placeholder { color: var(--ink-4); }
 
 /* Ações de hover (botões à direita) — aparecem com overlay gradiente. */
 .kg-app .tree-actions {

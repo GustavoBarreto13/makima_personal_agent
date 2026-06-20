@@ -8,6 +8,10 @@ import { useState } from 'react'
 import type { KanbanView, KanbanViewDisplay, SummaryMetric, FilterField, FilterCondition, FilterCombinator } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
+// todayISO() usa partes locais (fuso UTC-3), nunca toISOString()
+import { todayISO } from '../lib/dateUtils'
+// DatePicker no tema substitui <input type="date"> que ignora os tokens OKLCH
+import { DatePicker } from './DatePicker'
 
 // Campos e operadores do filtro — mesmo DSL das smart-lists (espelha _FIELD_OPS do backend).
 const FILTER_FIELDS: { field: FilterField; label: string }[] = [
@@ -29,10 +33,8 @@ const FILTER_OPS: Record<FilterField, { op: string; label: string }[]> = {
   state: [{ op: 'eq', label: 'é' }],
   text: [{ op: 'contains', label: 'contém' }],
 }
-const todayISO = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+// todayISO() agora vem do import acima (lib/dateUtils) — usa partes locais
+// e nunca toISOString(). O alias local foi removido.
 // Valor inicial coerente para um par (campo, operador).
 function defaultFilterValue(field: FilterField, op: string): unknown {
   if (field === 'priority') return 2
@@ -116,7 +118,8 @@ export function KanbanViewModal({ mode, view, onClose, onSaved, toast }: KanbanV
         const days = Number(String(c.value ?? '7d').replace('d', '')) || 7
         return <input className="kg-input" type="number" min={0} style={{ width: 70 }} value={days} onChange={e => patchCond(i, { value: `${Number(e.target.value) || 0}d` })} />
       }
-      return <input className="kg-input" type="date" value={String(c.value ?? todayISO())} onChange={e => patchCond(i, { value: e.target.value })} />
+      // DatePicker no tema substitui <input type="date"> nativo (ignora OKLCH)
+      return <DatePicker value={String(c.value ?? todayISO())} onChange={(iso) => patchCond(i, { value: iso })} />
     }
     if (c.field === 'state') return (
       <select className="kg-select" value={String(c.value)} onChange={e => patchCond(i, { value: e.target.value })}>

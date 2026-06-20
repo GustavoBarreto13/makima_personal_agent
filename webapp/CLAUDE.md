@@ -155,6 +155,43 @@ Em desenvolvimento o CORS libera `localhost:5173`. Em produção (container), o 
 
 ### Padrões do frontend
 
+#### Inputs, data e hora — padrão obrigatório (Kaguya)
+
+Aplica-se a todos os campos de formulário dentro do shell Kaguya (`pages/kaguya/`).
+
+**Campos de texto/seleção**
+- Sempre usar `.kg-input`, `.kg-textarea` ou `.kg-select` — nunca um `<input>` cru nem overrides inline de estilo.
+- Variante compacta (para edição inline em linhas de lista): adicionar a classe `.kg-input-sm` ao lado de `.kg-input`.
+
+**Seletor de data — `DatePicker`**
+- **Nunca** usar `<input type="date">` nativo — o popup do sistema ignora os tokens OKLCH e varia por OS/browser.
+- Usar o componente `DatePicker` em `pages/kaguya/components/DatePicker.tsx`.
+- Internamente usa `<MiniCalendar>` (`components/MiniCalendar.tsx`) + popover tematizado com `.mini-*`.
+
+**Seletor de hora — `TimePicker`**
+- **Nunca** usar `<input type="time">` nativo — mesmo motivo do date.
+- Usar o componente `TimePicker` em `pages/kaguya/components/TimePicker.tsx`.
+- Dropdown rolável com slots de 15 em 15 minutos (96 opções: 00:00 a 23:45).
+
+**Helpers de data — `lib/dateUtils.ts`**
+- Fonte canônica de todos os helpers de data: `toISO`, `todayISO`, `addDays`, `fmtDateLabel`, `MONTHS_PT`, `WEEKDAY_1`.
+- Respeita o fuso UTC-3: usa `getFullYear/getMonth/getDate`, **nunca** `toISOString().slice(0,10)`.
+- Importar de `../lib/dateUtils` (ou `./lib/dateUtils` conforme a profundidade do arquivo).
+
+**Popovers de campo**
+- Fechar ao clicar fora: listener `mousedown` + `ref.contains(e.target)`, padrão do `CalendarsAside`.
+- Fechar no `Escape`: listener `keydown` separado.
+- `z-index: 70` para ficar acima do conteúdo dos modais (`z-index` dos modais = 50).
+
+**`color-scheme`**
+- O `kg-app` declara `color-scheme: light`; o bloco `[data-theme='dark']` declara `color-scheme: dark`.
+- Afeta scrollbars e qualquer controle nativo remanescente — não remover.
+
+> Os tokens acima (`.mini-*`, `--kg-tint`, `--kg-r-*`, etc.) são específicos do shell Kaguya.
+> Se outro domínio adotar o mesmo padrão, extrair os componentes para `src/components/`.
+
+---
+
 #### Roteamento — Shell pattern
 
 Cada domínio com UI própria é um **Shell**: componente raiz com sidebar/navegação interna, desacoplado do `Layout` global. O roteamento usa wildcard para o Shell assumir o controle total das sub-rotas.
