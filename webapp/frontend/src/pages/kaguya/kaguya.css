@@ -1033,11 +1033,18 @@
 .cal-allday::-webkit-scrollbar { width: 7px; }
 .cal-allday::-webkit-scrollbar-thumb { background: var(--line); border-radius: 5px; }
 .cad-label { font-family: var(--mono); font-size: 8.5px; text-transform: uppercase; color: var(--ink-4); text-align: right; padding: 7px 7px 0 0; }
-.cad-col { border-left: 1px solid var(--line-2); padding: 5px 4px; display: flex; flex-direction: column; gap: 3px; min-height: 30px; }
+.cad-col { border-left: 1px solid var(--line-2); padding: 5px 4px; display: flex; flex-direction: column; gap: 3px; min-height: 30px; min-width: 0; }
 /* pill all-day — cor tonal via --cc */
+/* min-width:0 no .cad-col permite que o track 1fr encolha ao seu tamanho justo; */
+/* sem isso o track não encolhe abaixo do conteúdo mais largo e invade colunas vizinhas. */
 .cad-pill {
   font-size: 11px; line-height: 1.25; padding: 3px 7px; border-radius: 6px; cursor: pointer;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* white-space: normal permite quebra de linha para títulos longos */
+  white-space: normal; overflow: hidden;
+  /* overflow-wrap: anywhere força quebra até dentro de palavras longas sem espaço */
+  overflow-wrap: anywhere;
+  /* clamp de até 3 linhas — o tooltip title={ev.title} já mostra o texto completo */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
   background: color-mix(in oklab, var(--cc) 20%, var(--card)); color: var(--cc);
   border: 1px solid color-mix(in oklab, var(--cc) 30%, transparent); font-weight: 600;
 }
