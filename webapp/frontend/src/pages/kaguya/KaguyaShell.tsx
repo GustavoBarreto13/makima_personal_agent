@@ -249,25 +249,47 @@ export function KaguyaShell() {
           <div className="kg-topbar">
             <span className="kg-topbar-title">{titleMap[view]}</span>
 
-            {/* Seletor de lista do Kanban global: permite trocar qual board está em exibição
-                sem precisar navegar pela sidebar. Só aparece quando a view é Kanban.
-                onChange dispara navigate('kanban', id) → KanbanScreen recarrega para o novo
-                projectId automaticamente (o load dela depende de projectId). */}
-            {view === 'kanban' && (
+            {/* Seletor de board: aparece no Kanban (por-lista) e no board de Grupo.
+                Valores com prefixo: "l:<id>" = lista, "g:<id>" = grupo.
+                Listas sem grupo aparecem no topo; grupos usam <optgroup> com uma
+                opção "📋 Board do grupo" + as listas filhas abaixo. */}
+            {(view === 'kanban' || view === 'group') && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="kg-field-label">Lista</span>
+                <span className="kg-field-label">Board</span>
                 <select
                   className="kg-select"
-                  style={{ width: 'auto', minWidth: 140 }}
-                  value={param ?? ''}
-                  onChange={e => navigate('kanban', Number(e.target.value))}
+                  style={{ width: 'auto', minWidth: 160 }}
+                  value={view === 'group' ? `g:${param}` : `l:${param ?? ''}`}
+                  onChange={e => {
+                    const v = e.target.value
+                    // Prefixo "g:" → board do grupo; "l:" → kanban da lista.
+                    if (v.startsWith('g:')) navigate('group', Number(v.slice(2)))
+                    else navigate('kanban', Number(v.slice(2)))
+                  }}
                 >
-                  {/* Exibe todas as listas disponíveis (Inbox primeiro, como vem da sidebar) */}
-                  {(sidebar?.projects ?? []).map(proj => (
-                    <option key={proj.id} value={proj.id}>
-                      {proj.icon ? `${proj.icon} ` : ''}{proj.name}
-                    </option>
-                  ))}
+                  {/* Inbox e listas sem grupo (sem <optgroup>) */}
+                  {(sidebar?.projects ?? [])
+                    .filter(p => p.group_id == null)
+                    .map(proj => (
+                      <option key={`l:${proj.id}`} value={`l:${proj.id}`}>
+                        {proj.icon ? `${proj.icon} ` : ''}{proj.name}
+                      </option>
+                    ))}
+                  {/* Grupos: cada um vira um <optgroup> com o board do grupo + listas */}
+                  {(sidebar?.groups ?? []).map(g => {
+                    const inGroup = (sidebar?.projects ?? []).filter(p => p.group_id === g.id)
+                    return (
+                      <optgroup key={g.id} label={g.name}>
+                        {/* Opção para abrir o board agregado do grupo */}
+                        <option value={`g:${g.id}`}>📋 Board do grupo</option>
+                        {inGroup.map(proj => (
+                          <option key={`l:${proj.id}`} value={`l:${proj.id}`}>
+                            {proj.icon ? `${proj.icon} ` : ''}{proj.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )
+                  })}
                 </select>
               </div>
             )}
