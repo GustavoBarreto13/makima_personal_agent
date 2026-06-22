@@ -22,6 +22,7 @@ Usage:
 """
 
 import os
+import time as _time             # aliasado para evitar colisão com variáveis locais chamadas 'time'
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -56,6 +57,32 @@ _kaguya_calendar_id: Optional[str] = None
 
 # Nome fixo do calendário dedicado ao espelho de tarefas do Kaguya
 _KAGUYA_CALENDAR_NAME = "Kaguya — Tarefas"
+
+
+# ---------------------------------------------------------------------------
+# Cache de listagem de calendários e eventos
+# ---------------------------------------------------------------------------
+# Estratégia: armazenamos os resultados em variáveis de módulo com TTL (tempo de vida).
+# Enquanto o cache for válido, as funções devolvem os dados sem bater na API do Google.
+# Quando expira, buscamos dados frescos e atualizamos o cache.
+#
+# Por que aqui (módulo) e não no Redis/banco?
+# Porque o processo do webapp já fica em memória — é o lugar mais rápido e sem dependência
+# de infra extra. O cache é local ao processo; um restart do container limpa tudo (aceitável).
+# ---------------------------------------------------------------------------
+
+# Guarda a lista de calendários retornada pela última chamada bem-sucedida à API.
+# Reutilizada enquanto não expirar — ou se a API falhar (serve-stale-on-error, veja abaixo).
+_calendars_cache: list[dict] = []
+_calendars_cache_ts: float = 0.0      # timestamp monotônico da última atualização
+_CALENDARS_TTL: float = 300.0         # 5 minutos — calendários mudam raramente
+
+# Cache de eventos por janela de datas.
+# Chave: tupla (date_from, date_to) → valor: (lista_de_eventos, timestamp)
+# TTL de 60s: defasagem máxima de ~1 minuto para mudanças feitas FORA do app.
+# Mudanças feitas DENTRO do app chamam invalidate_events_cache() para zerar o cache na hora.
+_events_cache: dict[tuple[str, str], tuple[list[dict], float]] = {}
+_EVENTS_TTL: float = 60.0
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +212,15 @@ def ensure_kaguya_calendar() -> str:
 def list_calendars() -> list[dict]:
     """Lista todos os calendários disponíveis na conta Google do usuário.
 
+    Resultados são cacheados por 5 minutos (TTL 300s) — calendários mudam raramente,
+    então ir à API do Google a cada requisição seria desperdício. O cache persiste
+    na memória do processo enquanto o container estiver ativo.
+
+    Serve-stale-on-error: se a chamada ao Google falhar (hiccup temporário, expiração
+    de token, etc.) mas houver um cache anterior (mesmo expirado), devolve os dados
+    antigos em vez de propagar o erro. Isso evita que a sidebar do calendário fique
+    em branco por uma falha transitória da API.
+
     Enriquece cada entrada com flags `is_main` e `is_kaguya` para facilitar
     a identificação no webapp e no gcal_sync.
 
@@ -196,36 +232,60 @@ def list_calendars() -> list[dict]:
             - is_main (bool): True se for o calendário principal configurado
               em GOOGLE_CALENDAR_MAIN_CALENDAR_ID.
             - is_kaguya (bool): True se for o calendário "Kaguya — Tarefas".
+            - bg_color (str | None): Cor de fundo no Google Calendar (hex).
+            - writable (bool): True se o usuário tem permissão de escrita.
 
     Example:
         >>> cals = list_calendars()
         >>> [c["name"] for c in cals]
         ['Gustavo', 'Kaguya — Tarefas', 'Feriados no Brasil']
     """
-    service = _get_service()
+    global _calendars_cache, _calendars_cache_ts
+
+    # Verifica se o cache ainda está dentro do TTL (5 minutos)
+    agora = _time.monotonic()
+    if _calendars_cache and (agora - _calendars_cache_ts) < _CALENDARS_TTL:
+        # Cache válido — retorna sem chamar a API do Google
+        return _calendars_cache
 
     # ID do calendário principal — definido via env var no deploy
     main_id = os.environ.get("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", "")
 
-    result = service.calendarList().list().execute()
-    calendars = result.get("items", [])
+    try:
+        service = _get_service()
+        result = service.calendarList().list().execute()
+        calendars = result.get("items", [])
 
-    return [
-        {
-            "id": cal["id"],
-            "name": cal.get("summary", ""),
-            "role": cal.get("accessRole", ""),
-            # True se este for o calendário marcado como "principal" nas env vars
-            "is_main": cal["id"] == main_id,
-            # True se este for o espelho de tarefas do Kaguya
-            "is_kaguya": cal.get("summary", "") == _KAGUYA_CALENDAR_NAME,
-            # Cor de fundo nativa do Google Calendar (hex, ex.: "#4285F4")
-            "bg_color": cal.get("backgroundColor"),
-            # True se o usuário tem permissão de escrita (owner ou writer)
-            "writable": cal.get("accessRole") in ("owner", "writer"),
-        }
-        for cal in calendars
-    ]
+        # Monta a lista normalizada com os campos que o webapp e o gcal_sync consomem
+        fresh = [
+            {
+                "id": cal["id"],
+                "name": cal.get("summary", ""),
+                "role": cal.get("accessRole", ""),
+                # True se este for o calendário marcado como "principal" nas env vars
+                "is_main": cal["id"] == main_id,
+                # True se este for o espelho de tarefas do Kaguya
+                "is_kaguya": cal.get("summary", "") == _KAGUYA_CALENDAR_NAME,
+                # Cor de fundo nativa do Google Calendar (hex, ex.: "#4285F4")
+                "bg_color": cal.get("backgroundColor"),
+                # True se o usuário tem permissão de escrita (owner ou writer)
+                "writable": cal.get("accessRole") in ("owner", "writer"),
+            }
+            for cal in calendars
+        ]
+
+        # Atualiza o cache somente em caso de sucesso (dados frescos)
+        _calendars_cache = fresh
+        _calendars_cache_ts = agora
+        return _calendars_cache
+
+    except Exception:
+        # Serve-stale-on-error: se houver cache anterior (mesmo expirado), devolve
+        # em vez de propagar o erro. Evita que a sidebar esvazie num hiccup do Google.
+        if _calendars_cache:
+            return _calendars_cache
+        # Sem nenhum cache — propaga o erro para que o chamador possa tratá-lo
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -239,9 +299,13 @@ def list_events(
 ) -> list[dict]:
     """Lista eventos de TODOS os calendários do usuário num intervalo de datas.
 
-    Faz um fan-out paralelo-sequencial: busca em cada calendário individualmente
-    e agrega os resultados. Calendários com erro são ignorados silenciosamente
-    (best-effort) — um calendário sem permissão não deve quebrar os demais.
+    Resultados são cacheados por 60s (TTL 60s): mudanças feitas FORA do app levam
+    no máximo ~1 minuto para aparecer; mudanças feitas DENTRO do app invalidam o
+    cache imediatamente via ``invalidate_events_cache()``.
+
+    Reutiliza ``list_calendars()`` (que também tem cache próprio de 5 min) em vez
+    de chamar ``calendarList().list()`` separadamente — elimina a chamada duplicada
+    que existia na implementação anterior.
 
     Calendários listados em `exclude` são pulados para evitar duplicatas:
     - "Kaguya — Tarefas": já está representado nas tarefas do sistema
@@ -264,6 +328,18 @@ def list_events(
         >>> [e["summary"] for e in eventos]
         ['Reunião de equipe', 'Almoço com João']
     """
+    global _events_cache
+
+    # Verifica se há resultado cacheado dentro do TTL (60s)
+    cache_key = (date_from, date_to)
+    agora = _time.monotonic()
+    cached = _events_cache.get(cache_key)
+    if cached is not None:
+        eventos_cache, ts = cached
+        if (agora - ts) < _EVENTS_TTL:
+            # Cache válido — retorna sem chamar a API do Google
+            return eventos_cache
+
     service = _get_service()
 
     # Delimita o intervalo em horário local de São Paulo (UTC-3)
@@ -271,15 +347,17 @@ def list_events(
     time_min = f"{date_from}T00:00:00-03:00"
     time_max = f"{date_to}T23:59:59-03:00"
 
-    # Busca a lista completa de calendários do usuário
-    cal_result = service.calendarList().list().execute()
-    calendars = cal_result.get("items", [])
+    # Reutiliza list_calendars() em vez de chamar calendarList().list() de novo.
+    # Isso aproveita o cache de calendários (TTL 300s) e elimina a chamada duplicada
+    # que havia na implementação anterior (uma em /sources, outra aqui dentro).
+    calendarios = list_calendars()
 
     all_events: list[dict] = []
 
-    for cal in calendars:
+    for cal in calendarios:
+        # list_calendars() já retorna dicts normalizados com campos "id" e "name"
         cal_id = cal["id"]
-        cal_name = cal.get("summary", cal_id)
+        cal_name = cal["name"]
 
         # Pula calendários na lista de exclusão — anti-duplicação
         if cal_name in exclude:
@@ -308,7 +386,24 @@ def list_events(
             # ignora silenciosamente para não quebrar os demais resultados
             pass
 
+    # Armazena no cache — somente em caso de sucesso (mesmo lista vazia é armazenada)
+    _events_cache[cache_key] = (all_events, agora)
     return all_events
+
+
+def invalidate_events_cache() -> None:
+    """Limpa o cache de eventos, forçando dados frescos na próxima chamada.
+
+    Deve ser chamada sempre que um evento for criado, editado ou excluído DENTRO
+    do app, para que a mudança apareça imediatamente no próximo carregamento.
+    Não afeta o cache de calendários (list_calendars), que tem TTL próprio.
+
+    Example:
+        >>> invalidate_events_cache()  # chamado pelas rotas POST/PATCH/DELETE de eventos
+    """
+    global _events_cache
+    # Apaga todas as entradas — a próxima chamada a list_events() buscará dados frescos
+    _events_cache.clear()
 
 
 # ---------------------------------------------------------------------------

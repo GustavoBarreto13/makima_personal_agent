@@ -140,58 +140,63 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast, vari
   // ── Carregamento da lista de fontes (com prefs de cor) ────────────────────
 
   // Recarrega quando o usuário altera prefs (sourcesKey) para refletir a nova cor.
+  // Em caso de erro, mantemos a lista anterior em vez de limpar — evita que um hiccup
+  // temporário da API faça todos os calendários sumirem da sidebar.
   useEffect(() => {
     let cancelled = false
     kaguyaApi.calendarSources()
       .then((srcs) => { if (!cancelled) setCals(srcs) })
-      .catch(() => { if (!cancelled) setCals([]) })
+      .catch(() => { /* manter estado anterior — não limpar cals */ })
     return () => { cancelled = true }
   }, [sourcesKey])
 
   // ── Carregamento da Agenda pessoal Google (eventos gcal diretos) ─────────────
-  // Carrega quando há pelo menos um calendário Google visível nas prefs.
-  // Exclui automaticamente "Kaguya — Tarefas" e "TickTick" (feito no backend).
-  // Filtra no mapeamento: só inclui eventos cujo "gcal:<calendar_id>" está visível.
+  // Busca TODOS os eventos Google da janela visível e armazena em gcalItems SEM filtrar
+  // por visibilidade — o filtro é feito em calEvents (useMemo abaixo), que recalcula
+  // instantaneamente sempre que `cals` muda (inclusive pelo update otimista do toggleVisible).
+  //
+  // Por que remover `cals` das dependências?
+  // Antes, `cals` estava nas deps → ocultar/mostrar um calendário re-disparava este
+  // useEffect → nova chamada à API do Google. Se a chamada falhasse, setGcalItems([])
+  // limpava tudo. Com o filtro em useMemo, o toggle é client-side (zero rede) e reversível.
+  //
+  // Em caso de erro, mantemos os eventos anteriores — evita o grid ficar em branco
+  // por um hiccup temporário do Google.
 
   useEffect(() => {
-    // Conjunto de source ids gcal visíveis (ex.: "gcal:abc123@group.calendar.google.com")
-    const visibleGcal = new Set(
-      cals.filter((c) => isGcal(c.id) && c.visible !== false).map((c) => c.id)
-    )
-    if (visibleGcal.size === 0) {
-      setGcalItems([])
-      return
-    }
     let cancelled = false
     kaguyaApi.calendarEvents(windowStart, windowEnd)
       .then((events) => {
         if (cancelled) return
-        // Mapeia e filtra: cada evento herda o source id "gcal:<calendar_id>"
-        const mapped: CalEvent[] = events
-          .map((ev) => {
-            const sourceId = `gcal:${ev.calendar_id}`
-            const isAllDay = !ev.start.includes('T')
-            return {
-              id: `gcal-${ev.id}`,
-              // Source id por calendário, para que resolveColor encontre a cor certa
-              cal: sourceId,
-              day: ev.start.slice(0, 10),
-              start: isAllDay ? null : ev.start,
-              end: isAllDay ? null : ev.end,
-              allDay: isAllDay,
-              color: null,
-              kind: 'event' as const,
-              title: ev.summary,
-              loc: ev.location || undefined,
-            }
-          })
-          // Descarta eventos de calendários que o usuário desligou (sem nova chamada)
-          .filter((ev) => visibleGcal.has(ev.cal))
+        // Mapeia cada evento para CalEvent — sem filtrar por visibilidade aqui
+        const mapped: CalEvent[] = events.map((ev) => {
+          const sourceId = `gcal:${ev.calendar_id}`
+          const isAllDay = !ev.start.includes('T')
+          return {
+            id: `gcal-${ev.id}`,
+            // Source id por calendário, para que resolveColor encontre a cor certa
+            cal: sourceId,
+            day: ev.start.slice(0, 10),
+            start: isAllDay ? null : ev.start,
+            end: isAllDay ? null : ev.end,
+            allDay: isAllDay,
+            color: null,
+            kind: 'event' as const,
+            title: ev.summary,
+            loc: ev.location || undefined,
+          }
+        })
         setGcalItems(mapped)
       })
-      .catch(() => { if (!cancelled) setGcalItems([]) })
+      .catch(() => {
+        // Em caso de erro de rede/API, mantemos os eventos anteriores — não chamamos
+        // setGcalItems([]) para evitar que o grid fique em branco num erro transitório
+      })
     return () => { cancelled = true }
-  }, [windowStart, windowEnd, reloadKey, sourcesKey, cals])
+  // Nota: `cals` foi removido intencionalmente das deps. A filtragem por visibilidade
+  // acontece no calEvents useMemo, que já depende de `cals`.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [windowStart, windowEnd, reloadKey, sourcesKey])
 
   // ── Dica de uso ───────────────────────────────────────────────────────────
 
@@ -266,11 +271,23 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast, vari
 
   // Eventos combinados: tarefas Kaguya + hub cross-agent + Agenda pessoal Google.
   // Os feeds são concatenados — o grid os ordena por horário internamente.
+  //
+  // O filtro de visibilidade dos calendários Google é feito AQUI (client-side) em vez
+  // de dentro do useEffect dos eventos gcal. Isso torna o toggle de visibilidade
+  // instantâneo (useMemo recalcula na hora quando cals muda, sem nova chamada à rede)
+  // e reversível (os eventos ficam em gcalItems — esconder não os descarta).
   const calEvents: CalEvent[] = useMemo(() => {
     const taskEvents = tasks.flatMap((t) => { const e = taskToCalEvent(t); return e ? [e] : [] })
     const hubEvents = hubItems.map(hubToCalEvent)
-    return [...taskEvents, ...hubEvents, ...gcalItems]
-  }, [tasks, hubItems, gcalItems])
+    // Monta o conjunto de ids gcal visíveis a partir de cals (atualizado de forma otimista
+    // pelo toggleVisible da CalendarsAside) — se c.visible é undefined, trata como visível
+    const visibleGcal = new Set(
+      cals.filter((c) => isGcal(c.id) && c.visible !== false).map((c) => c.id)
+    )
+    // Filtra: só inclui eventos cujo calendário (gcal:<id>) está visível
+    const filteredGcal = gcalItems.filter((ev) => visibleGcal.has(ev.cal))
+    return [...taskEvents, ...hubEvents, ...filteredGcal]
+  }, [tasks, hubItems, gcalItems, cals])
 
   // Tarefas "sem horário": têm due_date na janela visível mas sem start_at nem due_time.
   // São passadas para a CalendarsAside para exibir a bandeja "Sem horário" arrastável.

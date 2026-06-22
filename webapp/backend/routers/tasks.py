@@ -897,6 +897,9 @@ def create_gcal_event_route(
         description=body.description or "",
         location=body.location or "",
     )
+    # Invalida o cache de eventos para que a nova criação apareça imediatamente
+    # na próxima chamada a list_events() — sem esperar o TTL de 60s expirar.
+    gcal.invalidate_events_cache()
     return result
 
 
@@ -920,7 +923,10 @@ def update_gcal_event_route(
     # Remove campos que não são passados para gcal.update_event
     patch.pop("color", None)
     patch.pop("calendar_id", None)
-    return gcal.update_event(calendar_id=cal_id, event_id=event_id, **patch)
+    result = gcal.update_event(calendar_id=cal_id, event_id=event_id, **patch)
+    # Invalida o cache de eventos para que a edição apareça imediatamente
+    gcal.invalidate_events_cache()
+    return result
 
 
 @router.delete("/calendar/events/{event_id}")
@@ -939,7 +945,10 @@ def delete_gcal_event_route(
     import os
     from agents.kaguya import gcal
     cal_id = calendar_id or os.environ.get("GOOGLE_CALENDAR_MAIN_CALENDAR_ID", "primary")
-    return _check_result(gcal.delete_event(calendar_id=cal_id, event_id=event_id))
+    result = _check_result(gcal.delete_event(calendar_id=cal_id, event_id=event_id))
+    # Invalida o cache de eventos para que a exclusão apareça imediatamente
+    gcal.invalidate_events_cache()
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────

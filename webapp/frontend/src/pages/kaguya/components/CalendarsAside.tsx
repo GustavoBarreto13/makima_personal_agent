@@ -102,12 +102,18 @@ export function CalendarsAside({
     kaguyaApi.calendarSources()
       .then((srcs) => {
         setSources(srcs)
-        // Verifica autenticação do Google Calendar se houver qualquer fonte gcal
-        if (srcs.some((s) => isGcal(s.id))) {
-          kaguyaApi.gcalStatus()
-            .then(setGcalStatus)
-            .catch(() => setGcalStatus({ connected: false, reason: 'Erro ao verificar autenticação' }))
-        }
+        // Sempre verifica a autenticação do Google Calendar, independentemente de
+        // haver fontes gcal visíveis na lista. Quando o token OAuth expira, a API
+        // de fontes falha internamente (/calendar/sources) e não injeta nenhuma
+        // entrada "gcal:*" — ou seja, o antigo gate `if (srcs.some(isGcal))`
+        // bloqueava o check exatamente quando ele era mais necessário, fazendo a
+        // integração sumir em silêncio. Agora sempre consultamos o status.
+        // Nota: o endpoint retorna reason "GOOGLE_CALENDAR_REFRESH_TOKEN não
+        // configurado" quando a integração nunca foi ativada — essa mensagem é
+        // filtrada na renderização para não alarmar usuários que não configuram o GCal.
+        kaguyaApi.gcalStatus()
+          .then(setGcalStatus)
+          .catch(() => setGcalStatus({ connected: false, reason: 'Erro ao verificar autenticação' }))
       })
       .catch(() => setSources([]))
   }, [])
@@ -356,6 +362,43 @@ export function CalendarsAside({
             ))}
           </section>
         ))}
+
+        {/* ── Aviso standalone: Google Calendar desconectado sem fontes gcal ──
+            Quando o token OAuth expira, /calendar/sources não injeta entradas
+            "gcal:*" porque list_calendars() falha antes de popular a lista.
+            Resultado: 0 fontes gcal → nenhuma linha na sidebar → aviso inline
+            abaixo (linha ~firstGcalId) nunca renderiza → integração some muda.
+            Este bloco detecta o caso específico: token configurado mas inválido,
+            e não há nenhuma fonte gcal visível para ancorar o aviso original.
+            A condição `reason !== 'GOOGLE_CALENDAR_REFRESH_TOKEN não configurado'`
+            evita alarmar usuários que nunca ativaram a integração Google. */}
+        {!sources.some((s) => isGcal(s.id)) &&
+          gcalStatus !== null &&
+          !gcalStatus.connected &&
+          gcalStatus.reason !== 'GOOGLE_CALENDAR_REFRESH_TOKEN não configurado' && (
+          <section className="cal-aside-sec">
+            {/* Mesmo rótulo de conta que aparece quando há fontes gcal ativas */}
+            <div className="cal-aside-head">Google</div>
+            {/* Mensagem de aviso — role="alert" sinaliza o estado ao leitor de tela */}
+            <div
+              role="alert"
+              style={{
+                padding: '6px 12px 8px',
+                fontSize: 11,
+                // Vermelho-alaranjado: mesmo tom do ⚠️ inline no ci-name (linha ~300)
+                color: 'oklch(0.62 0.18 30)',
+                lineHeight: 1.5,
+                cursor: 'help',
+                userSelect: 'none',
+              }}
+              // O tooltip mostra o motivo técnico completo ao passar o mouse
+              title={gcalStatus.reason ?? 'Google desconectado — reautorize'}
+              aria-label={`Google Calendar desconectado: ${gcalStatus.reason ?? ''}`}
+            >
+              ⚠️ {gcalStatus.reason ?? 'Google Calendar desconectado — reautorize'}
+            </div>
+          </section>
+        )}
 
         {/* ── Bandeja "Sem horário" ─────────────────────────────────────────── */}
         {/* Mostra tarefas da janela visível que têm due_date mas sem start_at/due_time.
