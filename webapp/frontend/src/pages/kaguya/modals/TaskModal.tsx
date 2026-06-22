@@ -11,6 +11,8 @@ import { Avatar, AvatarStack } from '../components/People'
 // nativos, que ignoram os tokens OKLCH e mostram o pop-up do sistema operacional.
 import { DatePicker } from '../components/DatePicker'
 import { TimePicker } from '../components/TimePicker'
+// Editor de notas em Markdown com autocomplete de @pessoa e [[task]]
+import { MarkdownNotesEditor } from '../components/MarkdownNotesEditor'
 
 // Presets de recorrência expostos na UI (mapeiam para RRULE no buildRRule).
 type RecurFreq = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
@@ -110,6 +112,23 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
   const [askDelete, setAskDelete] = useState(false)   // confirmação de exclusão (escopo na recorrente)
   // Aniversário repete todo ano automaticamente no backend — escondemos o controle manual.
   const isRecurring = task?.recurrence?.active === true
+
+  // Abre a tarefa referenciada por um chip [[id|Título]] nas notas.
+  // Busca a task pelo id, fecha este modal e abre o da task mencionada via onOpenTask.
+  const openMentionedTask = async (id: number) => {
+    try {
+      const fetched = await kaguyaApi.getTask(id)
+      // getTask retorna {status, ...taskFields} — verifica se encontrou
+      if (fetched && onOpenTask) {
+        // Fecha o modal atual primeiro para não empilhar
+        onClose()
+        // Reabre o mecanismo de edição com a task buscada
+        onOpenTask(fetched as Task)
+      }
+    } catch {
+      toast('Não foi possível abrir a tarefa referenciada.', 'err')
+    }
+  }
 
   // Carrega o catálogo completo de tags ao abrir o modal (id + cor de cada nome). Se falhar,
   // seguimos só com as tags da tarefa: o pior caso é o chip aparecer sem cor própria.
@@ -253,12 +272,17 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
 
   return (
     <div className="kg-scrim" onClick={onClose}>
-      <div className="kg-modal" onClick={(e) => e.stopPropagation()}>
+      {/* kg-modal-wide: versão expandida do modal com duas colunas (config + notas) */}
+      <div className="kg-modal kg-modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="kg-modal-head">
           <h3>{mode === 'create' ? 'Nova tarefa' : 'Editar tarefa'}</h3>
           <button className="kg-icon-btn" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
         </div>
 
+        {/* kg-modal-split: flex row que divide formulário (esq.) e editor de notas (dir.) */}
+        <div className="kg-modal-split">
+
+        {/* Coluna esquerda: formulário de configuração da tarefa */}
         <div className="kg-modal-body">
           {/* Banner de mãe (fatia 025) — aparece quando a tarefa é subtarefa de outra. */}
           {mode === 'edit' && task && task.parent_id !== null && (
@@ -360,11 +384,6 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
               )}
             </div>
           )}
-
-          <div className="kg-field">
-            <span className="kg-field-label">Notas</span>
-            <textarea className="kg-textarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Detalhes, links, contexto…" />
-          </div>
 
           {/* Tags (etiquetas) — chips removíveis + input que adiciona por Enter (cria on-the-fly) */}
           <div className="kg-field">
@@ -508,7 +527,18 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
               </div>
             </div>
           )}
+        </div>{/* fim .kg-modal-body (coluna esquerda) */}
+
+        {/* Coluna direita: editor de notas em Markdown com @menções e [[tasks]] */}
+        <div className="kg-note-pane">
+          <MarkdownNotesEditor
+            value={description}
+            onChange={setDescription}
+            onOpenTask={openMentionedTask}
+          />
         </div>
+
+        </div>{/* fim .kg-modal-split */}
 
         <div className="kg-modal-foot">
           {/* Excluir (edição): numa recorrente, pergunta o escopo só esta / série inteira */}

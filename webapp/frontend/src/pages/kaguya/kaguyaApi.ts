@@ -88,6 +88,9 @@ export const kaguyaApi = {
     person_ids?: string[]               // responsáveis Komi (fatia 025)
   }) => api.post<MutationResult>(BASE, body),
 
+  // Busca uma tarefa específica pelo id — usado pelo chip de menção [[task]] no editor de notas.
+  getTask: (id: number) => api.get<Task>(`${BASE}/${id}`),
+
   updateTask: (id: number, body: Partial<{
     title: string; description: string | null; priority: number; type: string
     due_date: string | null; due_time: string | null; project_id: number; column_id: number | null

@@ -29,6 +29,7 @@ from agents.kaguya.tools_projects import (
 )
 from agents.kaguya.tools_tasks import (
     list_tasks, list_tasks_today, search_tasks, list_trash, list_eisenhower_tasks,
+    get_task,   # leitura pontual de uma tarefa pelo id (usado pelo editor de notas Markdown)
     create_task, update_task, complete_task, reopen_task,
     reorder_task, delete_task, restore_task,
     set_recurrence, clear_recurrence,
@@ -425,6 +426,16 @@ def create_task_route(body: CreateTaskBody, user: dict = Depends(require_user)) 
     sem essa flag e continua recebendo erro amigável para títulos em branco.
     """
     return _check_result(create_task(allow_empty_title=True, **body.model_dump(exclude_unset=True)))
+
+
+@router.get("/{task_id}")
+def get_task_route(task_id: int, user: dict = Depends(require_user)) -> dict:
+    """Busca uma tarefa específica pelo id (com subtarefas, recorrência, tags e responsáveis).
+
+    Usado pelo editor de notas Markdown do frontend para reabrir a tarefa
+    mencionada num chip [[id|Título]]. Retorna status=error se não encontrada.
+    """
+    return _check_result(get_task(task_id))
 
 
 @router.patch("/{task_id}")

@@ -614,6 +614,56 @@ def search_tasks(query: str) -> list[dict]:
     return _attach_tags(out)
 
 
+def get_task(task_id: int) -> dict:
+    """Busca uma tarefa específica pelo id, com subtarefas, recorrência, tags e responsáveis.
+
+    Usado principalmente pelo frontend para reabrir uma tarefa mencionada em notas
+    (chips [[id|Título]] no editor Markdown). Retorna o mesmo shape de list_tasks,
+    mas para uma única tarefa pelo seu id.
+
+    Args:
+        task_id: Id numérico da tarefa a buscar.
+
+    Returns:
+        A tarefa serializada com subtasks/recurrence/tags/assignees se encontrada,
+        ou ``{"status": "error", "message": "..."}`` se não existir ou estiver deletada.
+
+    Example:
+        >>> result = get_task(42)
+        >>> result["title"]
+        'Revisar proposta'
+    """
+    # Busca a tarefa pelo id, excluindo soft-deletes (deleted_at IS NOT NULL)
+    rows = run_select(
+        f"""
+        SELECT {_qualified("t")}, p.name AS project_name
+        FROM tasks t
+        JOIN task_projects p ON p.id = t.project_id
+        WHERE t.id = %(tid)s AND t.deleted_at IS NULL
+        """,
+        {"tid": task_id},
+    )
+    if not rows:
+        # Tarefa não encontrada ou soft-deletada
+        return {"status": "error", "message": f"Tarefa #{task_id} não encontrada."}
+
+    # Serializa o resultado — converte datas/timestamps para strings ISO
+    task = _serialize_task(rows[0])
+    # Adiciona project_name para o frontend exibir o contexto da tarefa
+    task["project_name"] = rows[0]["project_name"]
+
+    # Agrupa num array de um elemento para usar os helpers de batch
+    # (todos os helpers operam sobre listas para evitar N+1 queries)
+    batch = [task]
+    _attach_subtasks(batch)    # subtarefas aninhadas (árvore N-níveis)
+    _attach_recurrence(batch)  # regra de recorrência ativa, se houver
+    _attach_tags(batch)        # etiquetas (N:N via task_tags/task_tag_links)
+    _attach_assignees(batch)   # responsáveis da Komi (person_links)
+
+    # Retorna a tarefa única (fora do array) com status de sucesso
+    return {"status": "ok", **batch[0]}
+
+
 def list_trash(project_id: Optional[int] = None) -> list[dict]:
     """Lista as tarefas na lixeira (soft delete), opcionalmente de uma lista só.
 

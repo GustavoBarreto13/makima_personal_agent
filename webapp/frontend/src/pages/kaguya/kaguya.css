@@ -295,6 +295,230 @@
    Sobrescreve só o padding; mantém fonte, cor e foco do padrão. */
 .kg-input.kg-input-sm { padding: 2px 4px; }
 
+/* ─── Modal largo (duas colunas: configuração + editor de notas) ─────────────
+   .kg-modal-wide: versão expandida do modal para a tela de edição de tarefa.
+   .kg-modal-split: flex-row que divide config (esq.) e notas (dir.).
+   .kg-note-pane: coluna direita com o editor de Markdown. */
+
+/* Modal expandido: aumenta a largura máxima para acomodar as duas colunas */
+.kg-modal.kg-modal-wide { max-width: 900px; }
+
+/* Flex row: esq. (formulário) + dir. (notas). min-height: 0 evita que o flex
+   item cresça além do max-height do pai (evita overflow invisível). */
+.kg-modal-split {
+  display: flex;
+  flex-direction: row;
+  flex: 1;          /* ocupa o espaço vertical entre o head e o foot */
+  min-height: 0;    /* necessário para que overflow-y funcione nos filhos */
+  overflow: hidden;
+}
+
+/* Coluna esquerda (formulário de configuração): largura fixa, rola verticalmente */
+.kg-modal-split > .kg-modal-body {
+  flex: 0 0 360px;   /* largura fixa de 360px — cabe confortavelmente no modal */
+  overflow-y: auto;  /* rola quando o formulário é longo */
+  border-right: 1px solid var(--line-2); /* divisor visual entre as colunas */
+}
+
+/* Coluna direita (editor de notas): ocupa o resto e nunca estoura o container */
+.kg-note-pane {
+  flex: 1;
+  min-width: 0;      /* permite encolher sem overflow */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;  /* editor e preview rolam internamente */
+}
+
+/* Em telas estreitas (<700px), empilha as colunas verticalmente */
+@media (max-width: 700px) {
+  .kg-modal-split { flex-direction: column; }
+  .kg-modal-split > .kg-modal-body { flex: none; border-right: none; border-bottom: 1px solid var(--line-2); }
+  .kg-note-pane { flex: none; min-height: 260px; }
+}
+
+/* ─── Editor de notas Markdown ────────────────────────────────────────────── */
+
+/* Container principal do painel de notas (ocupa toda a coluna direita) */
+.kg-note-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;    /* preenche o .kg-note-pane inteiro */
+  overflow: hidden;
+}
+
+/* Barra superior: label "NOTAS" + toggle Escrever/Visualizar */
+.kg-note-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--line-2);
+  flex-shrink: 0;  /* não encolhe: sempre visível mesmo com conteúdo longo */
+}
+
+/* Toggle de aba menor: .kg-note-toggle sobrescreve o tamanho padrão do .kg-segment */
+.kg-note-toggle .kg-seg-opt { padding: 3px 10px; font-size: 11.5px; }
+
+/* Área de conteúdo do editor: expande para preencher o restante da coluna */
+.kg-note-content {
+  flex: 1;
+  overflow: hidden;  /* o filho (textarea ou preview) define seu próprio scroll */
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── MentionTextarea ─────────────────────────────────────────────────────── */
+
+/* Wrapper relativo para posicionar o dropdown de menção absolutamente */
+.kg-mention-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Textarea do editor de notas: sem borda própria (a borda é do painel),
+   cresce para preencher o espaço disponível, resize desabilitado */
+.kg-note-textarea {
+  flex: 1;
+  resize: none;       /* resize manual quebraria o layout de duas colunas */
+  height: 100%;
+  min-height: 0;
+  border: none;       /* remove borda padrão do .kg-textarea */
+  border-radius: 0;   /* sem arredondamento interno (o modal já tem) */
+  padding: 14px 16px;
+  outline: none;
+  box-shadow: none !important;  /* sobrescreve o glow de foco (redundante aqui) */
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Dropdown de menção: flutua abaixo da posição do cursor no textarea */
+.kg-mention-drop {
+  position: absolute;
+  top: 100%;       /* logo abaixo do textarea — pode sobrescrever com JS se necessário */
+  left: 0;
+  right: 0;
+  z-index: 70;     /* acima do conteúdo do modal (modais = 50, popovers = 70) */
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* ─── MarkdownPreview — estilos do Markdown renderizado ──────────────────── */
+
+/* Container do preview: rola verticalmente quando o conteúdo é longo */
+.kg-md {
+  padding: 14px 16px;
+  overflow-y: auto;
+  flex: 1;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--ink);
+}
+
+/* Títulos (h1-h3): usa a fonte display do tema */
+.kg-md h1, .kg-md h2, .kg-md h3 {
+  font-family: var(--display);
+  font-weight: 700;
+  color: var(--ink);
+  margin-top: 1em;
+  margin-bottom: .35em;
+}
+.kg-md h1 { font-size: 17px; }
+.kg-md h2 { font-size: 15px; }
+.kg-md h3 { font-size: 13.5px; }
+
+/* Parágrafos e espaçamento */
+.kg-md p { margin: 0 0 .6em; }
+.kg-md p:last-child { margin-bottom: 0; }
+
+/* Listas (ordenadas e não-ordenadas) */
+.kg-md ul, .kg-md ol { padding-left: 1.3em; margin: 0 0 .6em; }
+.kg-md li { margin-bottom: .2em; }
+
+/* Checklist GFM (- [ ] item, - [x] concluído) */
+.kg-md input[type="checkbox"] { accent-color: var(--kg); margin-right: 5px; }
+
+/* Código inline */
+.kg-md code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* Bloco de código */
+.kg-md pre {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 0 0 .8em;
+}
+.kg-md pre code { background: none; border: none; padding: 0; font-size: 11.5px; }
+
+/* Citação (blockquote) */
+.kg-md blockquote {
+  border-left: 3px solid var(--kg);
+  margin: 0 0 .6em;
+  padding: 4px 12px;
+  color: var(--ink-3);
+  font-style: italic;
+}
+
+/* Divisor horizontal */
+.kg-md hr { border: none; border-top: 1px solid var(--line-2); margin: .8em 0; }
+
+/* Tabelas GFM */
+.kg-md table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 0 0 .6em; }
+.kg-md th, .kg-md td { padding: 5px 10px; border: 1px solid var(--line); text-align: left; }
+.kg-md th { background: var(--paper); font-weight: 600; }
+
+/* Link externo comum (não-menção) */
+.kg-md-link { color: var(--kg); text-decoration: underline; }
+
+/* ─── Chips de menção (@pessoa e [[task]]) ────────────────────────────────── */
+
+/* Base comum dos dois tipos de menção */
+.kg-note-mention {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: 100px;   /* pill arredondado */
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .1s;
+}
+.kg-note-mention:hover { opacity: .8; }
+
+/* Chip de pessoa: cor verde-suave (remete à Komi — oklch(0.70 0.13 150)) */
+.kg-note-mention.person {
+  background: color-mix(in oklab, oklch(0.70 0.13 150) 18%, var(--card));
+  color: oklch(0.70 0.13 150);
+  border: 1px solid color-mix(in oklab, oklch(0.70 0.13 150) 30%, transparent);
+}
+
+/* Chip de task: cor azul-índigo do tema Kaguya */
+.kg-note-mention.task {
+  background: color-mix(in oklab, var(--kg) 18%, var(--card));
+  color: var(--kg);
+  border: 1px solid color-mix(in oklab, var(--kg) 30%, transparent);
+}
+
+/* Placeholder do preview quando as notas estão vazias */
+.kg-note-empty {
+  padding: 14px 16px;
+  color: var(--ink-4);
+  font-size: 13px;
+  font-style: italic;
+}
+
 /* ═══ DatePicker — seletor de data no tema ═══
    Substitui <input type="date"> nativo. O botão-gatilho (.kg-datefield)
    imita visualmente o .kg-input (borda, fundo, foco). O popover
