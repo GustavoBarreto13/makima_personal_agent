@@ -371,8 +371,8 @@ export function GroupBoardScreen({ groupId, reloadKey, onOpenTask, onChanged, to
           ))}
         </div>
 
-        {/* Board: scroll horizontal + colunas em flex-row */}
-        <div className="kb-board">
+        {/* Board: scroll horizontal + colunas em flex-row (mesmo .kcols do KanbanScreen) */}
+        <div className="kcols">
           {board.columns.map(col => {
             // Cards desta coluna: tarefas-pai cujo column_id está nos members da coluna.
             const memberIds = new Set(col.members.map(m => m.column_id))
