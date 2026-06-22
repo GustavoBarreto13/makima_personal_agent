@@ -34,6 +34,11 @@ import {
 } from '@dnd-kit/sortable'
 // Sensor e helper de posição centralizados — evita duplicar em cada tela de DnD.
 import { useDndSensors, midPosition } from '../lib/dnd'
+// Toolbar de filtro/ordenação compartilhada com o GroupBoardScreen.
+import { KanbanToolbar } from '../components/KanbanToolbar'
+// Lógica pura de filtro: filtra por prioridade mínima + ordena os cards.
+import { applyKanbanFilters, KANBAN_DEFAULTS } from '../lib/kanbanFilter'
+import type { KanbanFilters } from '../lib/kanbanFilter'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -177,6 +182,10 @@ export function KanbanScreen({
   const [views, setViews] = useState<KanbanView[]>([])
   const [activeViewId, setActiveViewId] = useState<number | null>(null)
   const [viewModal, setViewModal] = useState<{ mode: 'create' | 'edit'; view?: KanbanView } | null>(null)
+
+  // filters: estado da barra de filtro/ordenação — compartilhada com o GroupBoardScreen.
+  // Reseta ao trocar de lista (projectId muda, o componente remonta → KANBAN_DEFAULTS).
+  const [filters, setFilters] = useState<KanbanFilters>(KANBAN_DEFAULTS)
 
   // Estados para a ação "copiar colunas de outro board" (visível no estado vazio).
   // copySource: id da lista-fonte selecionada no seletor; copying: feedback de loading.
@@ -597,6 +606,11 @@ export function KanbanScreen({
         </div>
       )}
 
+      {/* Barra de filtro/ordenação — idêntica à do GroupBoardScreen.
+          Fica abaixo do seletor de Views (os dois são complementares: Views definem
+          o conjunto-base de tarefas; esta barra filtra/ordena por cima). */}
+      <KanbanToolbar filters={filters} onChange={setFilters} />
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -608,22 +622,25 @@ export function KanbanScreen({
         <div className="kg-board">
           <div className="kcols">
             {columns.map((col, idx) => {
-              // Cards desta coluna, ordenados por position para exibição correta.
+              // Cards desta coluna, com filtros de prioridade e ordenação aplicados.
               // A 1ª coluna também acolhe tarefas órfãs (column_id null) para que
               // nenhuma tarefa suma do board ao trocar de coluna ou ao abrir o Kanban
               // em uma lista que já tinha tarefas sem coluna.
               const isFirst = idx === 0
-              const cards = tasks
-                .filter(t =>
-                  // Pertence normalmente a esta coluna.
-                  t.column_id === col.id ||
-                  // 1ª coluna captura dois tipos de órfãos:
-                  //   • column_id null  → tarefa criada numa lista sem board
-                  //   • column_id com id que não existe neste board → card de outra lista
-                  //     ou coluna deletada que ficou com id stale no estado local
-                  (isFirst && (t.column_id == null || !colIds.has(t.column_id)))
-                )
-                .sort((a, b) => a.position - b.position)
+              // 1. Coleta os cards brutos desta coluna (sem filtrar ainda).
+              const rawCards = tasks.filter(t =>
+                // Pertence normalmente a esta coluna.
+                t.column_id === col.id ||
+                // 1ª coluna captura dois tipos de órfãos:
+                //   • column_id null  → tarefa criada numa lista sem board
+                //   • column_id com id que não existe neste board → card de outra lista
+                //     ou coluna deletada que ficou com id stale no estado local
+                (isFirst && (t.column_id == null || !colIds.has(t.column_id)))
+              )
+              // 2. Aplica o filtro de prioridade e a ordenação escolhida na toolbar.
+              //    'manual' ordena por position (substitui o .sort anterior);
+              //    'due'/'prio' reordenam os cards sem alterar o estado do servidor.
+              const cards = applyKanbanFilters(rawCards, filters)
 
               return (
                 <KanbanColumn

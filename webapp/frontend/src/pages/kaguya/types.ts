@@ -273,8 +273,9 @@ export interface Tweaks {
 
 // View ativa do shell. 'list' usa o param como id da lista; 'filter' usa o param como
 // id da smart-list (ou BUILTIN_TODAY_OVERDUE para a built-in). 'group' usa o param como
-// id do grupo (task_project_groups) e abre o board agregado do grupo.
-export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'trash' | 'filter' | 'group'
+// id do grupo (task_project_groups) e abre o board Kanban agregado do grupo.
+// 'group-list' usa o param como id do grupo e exibe as tarefas em seções por lista.
+export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'trash' | 'filter' | 'group' | 'group-list'
 
 // ── Board de Grupo — Kanban agregado por status unificado ─────────────────────
 // Um membro de coluna unificada: indica qual column_id desta lista compõe a coluna.

@@ -25,6 +25,11 @@ import { kaguyaApi } from '../kaguyaApi'
 import { TaskCard } from '../components/TaskCard'
 import { SortableTaskCard } from '../components/SortableTaskCard'
 import { Icon } from '../ui/Icons'
+// Toolbar de filtro/ordenação compartilhada com o KanbanScreen.
+import { KanbanToolbar } from '../components/KanbanToolbar'
+// Lógica pura de filtro: filtra por prioridade mínima + ordena os cards.
+import { applyKanbanFilters, KANBAN_DEFAULTS } from '../lib/kanbanFilter'
+import type { KanbanFilters } from '../lib/kanbanFilter'
 import {
   DndContext,
   DragOverlay,
@@ -134,6 +139,10 @@ export function GroupBoardScreen({ groupId, reloadKey, onOpenTask, onChanged, to
 
   // overColKey: chave da coluna unificada atualmente sob o cursor durante o drag.
   const [overColKey, setOverColKey] = useState<string | null>(null)
+
+  // filters: estado da barra de filtro/ordenação — compartilhada com o KanbanScreen.
+  // Reseta automaticamente ao trocar de grupo (groupId muda → KANBAN_DEFAULTS).
+  const [filters, setFilters] = useState<KanbanFilters>(KANBAN_DEFAULTS)
 
   // Sensor centralizado: PointerSensor com 5px de ativação (anti-click-acidental).
   const sensors = useDndSensors()
@@ -363,7 +372,7 @@ export function GroupBoardScreen({ groupId, reloadKey, onOpenTask, onChanged, to
           <Icon name="board" size={22} /> {board.group.name}
         </h1>
         {/* Sub-linha: lista das listas que compõem o board */}
-        <div className="kg-page-sub" style={{ marginBottom: 16 }}>
+        <div className="kg-page-sub" style={{ marginBottom: 8 }}>
           {board.lists.map((l, i) => (
             <span key={l.id}>
               {l.icon ? `${l.icon} ` : ''}{l.name}{i < board.lists.length - 1 ? ' · ' : ''}
@@ -371,54 +380,68 @@ export function GroupBoardScreen({ groupId, reloadKey, onOpenTask, onChanged, to
           ))}
         </div>
 
-        {/* Board: scroll horizontal + colunas em flex-row (mesmo .kcols do KanbanScreen) */}
-        <div className="kcols">
-          {board.columns.map(col => {
-            // Cards desta coluna: tarefas-pai cujo column_id está nos members da coluna.
-            const memberIds = new Set(col.members.map(m => m.column_id))
-            const cards = board.tasks.filter(
-              t => t.parent_id == null && t.column_id != null && memberIds.has(t.column_id)
-            )
-            return (
-              <GroupColumn
-                key={col.key}
-                col={col}
-                cards={cards}
-                activeId={activeId}
-                isOver={overColKey === col.key}
-                listName={listName}
-                onOpen={onOpenTask}
-              />
-            )
-          })}
+        {/* Barra de filtro/ordenação — idêntica à do KanbanScreen de lista.
+            Chips de prioridade + ciclo de ordenação (Manual/Vencimento/Prioridade). */}
+        <KanbanToolbar filters={filters} onChange={setFilters} />
 
-          {/* Balde "Sem coluna": tarefas de listas sem board — apenas leitura */}
-          {tasksWithoutColumn.length > 0 && (
-            <div className="kcol" style={{ opacity: 0.6 }}>
-              <div className="kcol-head">
-                <div className="kc-row1">
-                  <span className="kc-num">{tasksWithoutColumn.length}</span>
-                  <div className="kc-namewrap">
-                    <span className="kc-name">Sem coluna</span>
-                    <span className="kc-sub">listas sem board Kanban</span>
+        {/* Board: mesma moldura "vidro" (.kg-board) do KanbanScreen — garante
+            responsividade idêntica: scroll horizontal aparece apenas quando as
+            colunas não cabem na tela. */}
+        <div className="kg-board">
+          <div className="kcols">
+            {board.columns.map(col => {
+              // Cards desta coluna: tarefas-pai cujo column_id está nos members.
+              // applyKanbanFilters filtra por prioridade e ordena conforme `filters`.
+              const memberIds = new Set(col.members.map(m => m.column_id))
+              const rawCards = board.tasks.filter(
+                t => t.parent_id == null && t.column_id != null && memberIds.has(t.column_id)
+              )
+              const cards = applyKanbanFilters(rawCards, filters)
+              return (
+                <GroupColumn
+                  key={col.key}
+                  col={col}
+                  cards={cards}
+                  activeId={activeId}
+                  isOver={overColKey === col.key}
+                  listName={listName}
+                  onOpen={onOpenTask}
+                />
+              )
+            })}
+
+            {/* Balde "Sem coluna": tarefas de listas sem board — apenas leitura.
+                Também aplica filtro de prioridade para consistência com as colunas. */}
+            {(() => {
+              const filteredWithout = applyKanbanFilters(tasksWithoutColumn, filters)
+              return filteredWithout.length > 0 ? (
+                <div className="kcol" style={{ opacity: 0.6 }}>
+                  <div className="kcol-head">
+                    <div className="kc-row1">
+                      <span className="kc-num">{filteredWithout.length}</span>
+                      <div className="kc-namewrap">
+                        <span className="kc-name">Sem coluna</span>
+                        <span className="kc-sub">listas sem board Kanban</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Não droppable: não usa useDroppable; é somente leitura */}
+                  <div className="kcol-body">
+                    {filteredWithout.map(t => (
+                      <TaskCard
+                        key={t.id}
+                        task={t}
+                        onOpen={onOpenTask}
+                        projectName={listName(t.project_id)}
+                        showChips={true}
+                        showRing={true}
+                      />
+                    ))}
                   </div>
                 </div>
-              </div>
-              {/* Não droppable: não usa useDroppable; é somente leitura */}
-              <div className="kcol-body">
-                {tasksWithoutColumn.map(t => (
-                  <TaskCard
-                    key={t.id}
-                    task={t}
-                    onOpen={onOpenTask}
-                    projectName={listName(t.project_id)}
-                    showChips={true}
-                    showRing={true}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+              ) : null
+            })()}
+          </div>
         </div>
       </div>
 

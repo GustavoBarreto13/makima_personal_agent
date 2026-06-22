@@ -27,6 +27,7 @@ import { CalendarScreen } from './screens/CalendarScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
 import { EisenhowerScreen } from './screens/EisenhowerScreen'
 import { GroupBoardScreen } from './screens/GroupBoardScreen'
+import { GroupListScreen } from './screens/GroupListScreen'
 import { CommandPalette } from './components/CommandPalette'
 import { Icon } from './ui/Icons'
 import { taskFromParse } from '../../lib/parseTask'
@@ -150,15 +151,17 @@ export function KaguyaShell() {
   const filterName = param === BUILTIN_TODAY_OVERDUE
     ? 'Hoje + Vencidas'
     : (gtdBuiltin?.name ?? currentFilter?.name ?? 'Smart list')
-  // Nome do grupo ativo (para view='group'): busca nos grupos da sidebar.
-  const currentGroup = view === 'group' && param != null
+  // Nome do grupo ativo (para view='group' e 'group-list'): busca nos grupos da sidebar.
+  const currentGroup = (view === 'group' || view === 'group-list') && param != null
     ? sidebar?.groups.find(g => g.id === param) : undefined
   const titleMap: Record<KaguyaView, string> = {
     today: 'Meu Dia', kanban: project?.name ?? 'Kanban', list: project?.name ?? 'Lista',
     calendar: 'Calendário', eisenhower: 'Eisenhower', habits: 'Hábitos', trash: 'Lixeira',
     filter: filterName,
-    // 'group': nome do grupo, com fallback caso a sidebar ainda esteja carregando.
+    // 'group': nome do grupo no Kanban agregado.
     group: currentGroup?.name ?? 'Grupo',
+    // 'group-list': mesmo nome do grupo mas na visão de Lista em seções.
+    'group-list': currentGroup?.name ?? 'Grupo',
   }
 
   // Estilo do root: data-attrs (tema/densidade/pmark/anim) + acento via PALETTE_MAP.
@@ -184,6 +187,21 @@ export function KaguyaShell() {
     if (view === 'list' && param != null) return <ListScreen projectId={param} projectName={titleMap.list} projectColor={project?.color} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onNewTask={(pid) => setTaskModal({ mode: 'create', projectId: pid })} toast={showToast} />
     if (view === 'kanban' && param != null) return <KanbanScreen projectId={param} projectName={titleMap.kanban} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onChanged={loadSidebar} toast={showToast} boards={(sidebar?.projects ?? []).filter(p => p.has_board && p.id !== param).map(p => ({ id: p.id, name: p.name, icon: p.icon }))} />
     if (view === 'group' && param != null) return <GroupBoardScreen groupId={param} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onChanged={loadSidebar} toast={showToast} />
+    // Visão de Lista do grupo: seções empilhadas, uma por lista-filha.
+    // `lists` é filtrado do sidebar para apenas as listas que pertencem ao grupo.
+    if (view === 'group-list' && param != null) return (
+      <GroupListScreen
+        groupId={param}
+        groupName={currentGroup?.name ?? 'Grupo'}
+        lists={(sidebar?.projects ?? [])
+          .filter(p => p.group_id === param)
+          .map(p => ({ id: p.id, name: p.name, color: p.color, icon: p.icon }))}
+        reloadKey={reloadKey}
+        onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
+        onNewTask={(pid) => setTaskModal({ mode: 'create', projectId: pid })}
+        toast={showToast}
+      />
+    )
     if (view === 'calendar') return <CalendarScreen reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} toast={showToast} variant={tweaks.calVariant} />
     if (view === 'filter' && param != null) return (
       <FilterScreen
@@ -249,17 +267,17 @@ export function KaguyaShell() {
           <div className="kg-topbar">
             <span className="kg-topbar-title">{titleMap[view]}</span>
 
-            {/* Seletor de board: aparece no Kanban (por-lista) e no board de Grupo.
+            {/* Seletor de board: aparece no Kanban (por-lista), board de Grupo e Lista do grupo.
                 Valores com prefixo: "l:<id>" = lista, "g:<id>" = grupo.
                 Listas sem grupo aparecem no topo; grupos usam <optgroup> com uma
                 opção "📋 Board do grupo" + as listas filhas abaixo. */}
-            {(view === 'kanban' || view === 'group') && (
+            {(view === 'kanban' || view === 'group' || view === 'group-list') && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span className="kg-field-label">Board</span>
                 <select
                   className="kg-select"
                   style={{ width: 'auto', minWidth: 160 }}
-                  value={view === 'group' ? `g:${param}` : `l:${param ?? ''}`}
+                  value={(view === 'group' || view === 'group-list') ? `g:${param}` : `l:${param ?? ''}`}
                   onChange={e => {
                     const v = e.target.value
                     // Prefixo "g:" → board do grupo; "l:" → kanban da lista.
@@ -293,11 +311,24 @@ export function KaguyaShell() {
                 </select>
               </div>
             )}
-            {/* alternador Lista ⇄ Kanban quando se está numa lista */}
+            {/* alternador Lista ⇄ Kanban quando se está numa lista individual */}
             {(view === 'list' || view === 'kanban') && param != null && (
               <div className="kg-segment" style={{ width: 180 }}>
                 <button className={`kg-seg-opt${view === 'list' ? ' active' : ''}`} onClick={() => navigate('list', param)}>Lista</button>
                 <button className={`kg-seg-opt${view === 'kanban' ? ' active' : ''}`} onClick={() => navigate('kanban', param)}>Kanban</button>
+              </div>
+            )}
+            {/* alternador Lista ⇄ Kanban quando se está num grupo (board ou lista-de-grupo) */}
+            {(view === 'group' || view === 'group-list') && param != null && (
+              <div className="kg-segment" style={{ width: 180 }}>
+                <button
+                  className={`kg-seg-opt${view === 'group-list' ? ' active' : ''}`}
+                  onClick={() => navigate('group-list', param)}
+                >Lista</button>
+                <button
+                  className={`kg-seg-opt${view === 'group' ? ' active' : ''}`}
+                  onClick={() => navigate('group', param)}
+                >Kanban</button>
               </div>
             )}
             {/* editar a lista atual */}
