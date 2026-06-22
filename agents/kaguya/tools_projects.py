@@ -425,6 +425,74 @@ def create_column(project_id: int, name: str, is_done_column: bool = False) -> d
     return {"status": "ok", "id": new_id, "message": f"Coluna '{name.strip()}' criada."}
 
 
+def copy_columns(source_project_id: int, target_project_id: int) -> dict:
+    """Copia a estrutura de colunas de um board para outro (sem tarefas).
+
+    Operação transacional: todas as colunas são inseridas de uma vez ou
+    nenhuma é (tudo-ou-nada). Preserva nomes, ordem e o flag is_done_column.
+
+    Args:
+        source_project_id: Id da lista cujas colunas serão copiadas (origem).
+        target_project_id: Id da lista de destino (deve estar sem board).
+
+    Returns:
+        ``{"status": "ok", "count": <n>, "message": "..."}`` ou erro.
+
+    Example:
+        >>> copy_columns(3, 7)
+        {"status": "ok", "count": 3, "message": "3 colunas copiadas."}
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # Valida que ambas as listas existem antes de qualquer operação.
+            cur.execute(
+                "SELECT id FROM task_projects WHERE id = ANY(%s)",
+                ([source_project_id, target_project_id],),
+            )
+            found_ids = {row[0] for row in cur.fetchall()}
+            if source_project_id not in found_ids or target_project_id not in found_ids:
+                return {"status": "error", "message": "Lista não encontrada."}
+
+            # Garante que o destino ainda não tem board (sem colunas).
+            cur.execute(
+                "SELECT 1 FROM task_columns WHERE project_id = %s LIMIT 1",
+                (target_project_id,),
+            )
+            if cur.fetchone():
+                return {"status": "error", "message": "Esta lista já tem um board."}
+
+            # Lê as colunas da origem ordenadas por posição (reproduz a ordem visual).
+            cur.execute(
+                """
+                SELECT name, is_done_column
+                FROM task_columns
+                WHERE project_id = %s
+                ORDER BY position, id
+                """,
+                (source_project_id,),
+            )
+            source_cols = cur.fetchall()
+
+            if not source_cols:
+                return {"status": "error", "message": "O board de origem não tem colunas."}
+
+            # Insere cada coluna no destino preservando nome, flag done e a ordem.
+            # Usa posições sequenciais simples (1, 2, 3, …) — o destino está vazio,
+            # então não há colisão com posições existentes.
+            for i, (col_name, col_is_done) in enumerate(source_cols, start=1):
+                cur.execute(
+                    """
+                    INSERT INTO task_columns (project_id, name, is_done_column, position)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (target_project_id, col_name, col_is_done, i),
+                )
+
+    # Retorna o número de colunas copiadas para feedback na UI.
+    n = len(source_cols)
+    return {"status": "ok", "count": n, "message": f"{n} colunas copiadas."}
+
+
 def update_column(
     column_id: int,
     name: Optional[str] = None,

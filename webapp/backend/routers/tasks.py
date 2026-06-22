@@ -26,6 +26,7 @@ from agents.kaguya.tools_projects import (
     create_project, update_project, delete_project,
     create_group, update_group, delete_group,
     list_columns, create_column, update_column, delete_column,
+    copy_columns,    # copia estrutura de colunas de um board para outro (sem tarefas)
     get_group_board,  # board agregado de grupo (colunas unificadas por nome)
 )
 from agents.kaguya.tools_tasks import (
@@ -126,6 +127,11 @@ class UpdateColumnBody(BaseModel):
     name: Optional[str] = None
     position: Optional[int] = None
     is_done_column: Optional[bool] = None
+
+
+class CopyColumnsBody(BaseModel):
+    """Body para copiar a estrutura de colunas de outro board."""
+    source_project_id: int  # id da lista cujas colunas serão copiadas
 
 
 class RecurrenceBody(BaseModel):
@@ -377,6 +383,20 @@ def update_column_route(column_id: int, body: UpdateColumnBody, user: dict = Dep
 def delete_column_route(column_id: int, user: dict = Depends(require_user)) -> dict:
     """Exclui uma coluna (as tarefas dela ficam sem coluna)."""
     return _check_result(delete_column(column_id))
+
+
+@router.post("/projects/{project_id}/copy-columns", status_code=201)
+def copy_columns_route(
+    project_id: int,
+    body: CopyColumnsBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Copia a estrutura de colunas de outro board para esta lista (sem tarefas).
+
+    Só funciona se a lista de destino ainda não tiver board (sem colunas).
+    Preserva nomes, ordem e o flag is_done_column. Operação transacional.
+    """
+    return _check_result(copy_columns(body.source_project_id, project_id))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

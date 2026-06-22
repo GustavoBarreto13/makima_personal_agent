@@ -63,6 +63,9 @@ export const kaguyaApi = {
   updateColumn: (id: number, body: Partial<{ name: string; position: number; is_done_column: boolean }>) =>
     api.patch<MutationResult>(`${BASE}/columns/${id}`, body),
   deleteColumn: (id: number) => api.del<MutationResult>(`${BASE}/columns/${id}`),
+  // Copia a estrutura de colunas de sourceId para targetId (sem tarefas — só nomes+ordem+flag done).
+  copyColumns: (targetId: number, sourceId: number) =>
+    api.post<MutationResult>(`${BASE}/projects/${targetId}/copy-columns`, { source_project_id: sourceId }),
 
   // ── Tarefas ───────────────────────────────────────────────────────────────
   listTasks: (projectId: number, includeCompleted = false) =>

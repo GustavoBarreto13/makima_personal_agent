@@ -44,6 +44,9 @@ interface KanbanScreenProps {
   onOpenTask: (task: Task) => void
   onChanged: () => void
   toast: (msg: string, kind?: 'ok' | 'err') => void
+  // Outras listas que já têm board — usadas no seletor "copiar de outro board"
+  // do estado vazio. Lista vazia = opção de cópia não aparece.
+  boards: { id: number; name: string; icon: string | null }[]
 }
 
 // ── Componente de coluna ──────────────────────────────────────────────────────
@@ -153,6 +156,7 @@ export function KanbanScreen({
   onOpenTask,
   onChanged,
   toast,
+  boards,
 }: KanbanScreenProps) {
   const [columns, setColumns]   = useState<Column[]>([])
   const [tasks, setTasks]       = useState<Task[]>([])
@@ -173,6 +177,11 @@ export function KanbanScreen({
   const [views, setViews] = useState<KanbanView[]>([])
   const [activeViewId, setActiveViewId] = useState<number | null>(null)
   const [viewModal, setViewModal] = useState<{ mode: 'create' | 'edit'; view?: KanbanView } | null>(null)
+
+  // Estados para a ação "copiar colunas de outro board" (visível no estado vazio).
+  // copySource: id da lista-fonte selecionada no seletor; copying: feedback de loading.
+  const [copySource, setCopySource] = useState<number | null>(null)
+  const [copying, setCopying] = useState(false)
 
   // Modais de coluna (criar/editar/excluir) e de adicionar tarefa — substituem os window.prompt.
   const [columnModal, setColumnModal] = useState<{ mode: 'create' | 'edit'; column?: Column } | null>(null)
@@ -447,6 +456,23 @@ export function KanbanScreen({
 
   // ── Ações de coluna ───────────────────────────────────────────────────────────
 
+  // Copia as colunas de outro board para esta lista (operação no estado vazio).
+  // Após sucesso, recarrega o board (agora terá colunas) e avisa o shell via onChanged.
+  const copyFrom = async (sourceId: number) => {
+    setCopying(true)
+    try {
+      const r = await kaguyaApi.copyColumns(projectId, sourceId)
+      if (r.status === 'error') { toast(r.message ?? 'Não foi possível copiar as colunas.', 'err'); return }
+      toast('Colunas copiadas.')
+      onChanged()   // atualiza has_board na sidebar
+      load()        // recarrega o board com as novas colunas
+    } catch {
+      toast('Não foi possível copiar as colunas.', 'err')
+    } finally {
+      setCopying(false)
+    }
+  }
+
   // Abre o modal de criar coluna (substitui o window.prompt).
   const addColumn = () => setColumnModal({ mode: 'create' })
 
@@ -474,9 +500,38 @@ export function KanbanScreen({
         <div className="kg-empty">
           <div className="kg-empty-title">Sem board ainda</div>
           Crie a primeira coluna para ativar o Kanban desta lista.
+          {/* Botão principal: criar colunas do zero, uma a uma */}
           <div style={{ marginTop: 14 }}>
-            <button className="kg-btn kg-btn-primary" onClick={addColumn}>+ Criar coluna</button>
+            <button className="kg-btn kg-btn-primary" onClick={addColumn}>+ Criar coluna do zero</button>
           </div>
+          {/* Opção de cópia: só aparece se existir pelo menos outro board na instância */}
+          {boards.length > 0 && (
+            <div style={{ marginTop: 12, display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="kg-field-label">ou copiar de</span>
+              <select
+                className="kg-select"
+                style={{ width: 'auto', minWidth: 160 }}
+                value={copySource ?? ''}
+                disabled={copying}
+                onChange={e => setCopySource(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">Escolher board…</option>
+                {/* Lista todos os outros boards disponíveis (filtragem feita pelo shell) */}
+                {boards.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.icon ? `${b.icon} ` : ''}{b.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="kg-btn"
+                disabled={copySource == null || copying}
+                onClick={() => copySource != null && copyFrom(copySource)}
+              >
+                {copying ? 'Copiando…' : 'Copiar'}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Modal de criar coluna — necessário aqui porque este early return nunca
