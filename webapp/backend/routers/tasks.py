@@ -428,16 +428,6 @@ def create_task_route(body: CreateTaskBody, user: dict = Depends(require_user)) 
     return _check_result(create_task(allow_empty_title=True, **body.model_dump(exclude_unset=True)))
 
 
-@router.get("/{task_id}")
-def get_task_route(task_id: int, user: dict = Depends(require_user)) -> dict:
-    """Busca uma tarefa específica pelo id (com subtarefas, recorrência, tags e responsáveis).
-
-    Usado pelo editor de notas Markdown do frontend para reabrir a tarefa
-    mencionada num chip [[id|Título]]. Retorna status=error se não encontrada.
-    """
-    return _check_result(get_task(task_id))
-
-
 @router.patch("/{task_id}")
 def update_task_route(task_id: int, body: UpdateTaskBody, user: dict = Depends(require_user)) -> dict:
     """Edita uma tarefa (mover de lista aplica a regra da coluna)."""
@@ -1074,3 +1064,17 @@ def set_time_block_route(task_id: int, body: TimeBlockBody, user: dict = Depends
 def clear_time_block_route(task_id: int, user: dict = Depends(require_user)) -> dict:
     """Remove o bloco de tempo (``start_at = end_at = NULL``); mantém a tarefa no plano."""
     return _check_result(clear_time_block(task_id))
+
+
+# IMPORTANTE: este GET /{task_id} deve ficar no FINAL do arquivo, depois de TODAS as
+# rotas estáticas (my-day, kanban-views, tags, calendar, habits, etc.).
+# Se estiver antes delas, o FastAPI captura "/my-day" como task_id="my-day",
+# falha ao converter para int e devolve 422 para todas essas rotas.
+@router.get("/{task_id}")
+def get_task_route(task_id: int, user: dict = Depends(require_user)) -> dict:
+    """Busca uma tarefa específica pelo id (com subtarefas, recorrência, tags e responsáveis).
+
+    Usado pelo editor de notas Markdown do frontend para reabrir a tarefa
+    mencionada num chip [[id|Título]]. Retorna status=error se não encontrada.
+    """
+    return _check_result(get_task(task_id))
