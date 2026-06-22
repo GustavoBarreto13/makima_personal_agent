@@ -576,7 +576,7 @@ export function KanbanScreen({
   const colIds = new Set(columns.map(c => c.id))
 
   return (
-    <div className="kg-page" style={{ maxWidth: 1320 }}>
+    <div className="kg-page" style={{ maxWidth: 'none' }}>
       <h1 className="kg-page-title"><Icon name="board" size={22} /> {projectName}</h1>
       <div className="kg-page-sub">arraste entre colunas · soltar em Concluído completa</div>
 

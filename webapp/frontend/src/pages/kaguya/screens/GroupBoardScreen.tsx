@@ -366,7 +366,7 @@ export function GroupBoardScreen({ groupId, reloadKey, onOpenTask, onChanged, to
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
     >
-      <div className="kg-page">
+      <div className="kg-page" style={{ maxWidth: 'none' }}>
         {/* Cabeçalho: ícone de board + nome do grupo */}
         <h1 className="kg-page-title">
           <Icon name="board" size={22} /> {board.group.name}
