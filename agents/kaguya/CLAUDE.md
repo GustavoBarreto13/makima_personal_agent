@@ -150,6 +150,22 @@ Serve a view de calendário do webapp e a consulta "o que tenho essa semana" do 
 `update_group`, `delete_group`, `list_columns`, `create_column`, `update_column`,
 `delete_column`, `resolve_project_id_by_name`.
 
+**Funções adicionadas (spec 025):**
+
+- **`copy_columns(source_project_id, target_project_id)`** — copia estrutura de colunas
+  (nomes + ordem + `is_done_column`) de um board para outro em uma única transação
+  (tudo-ou-nada). Só funciona se o destino ainda não tiver board. Não copia tarefas.
+  Exposto via `POST /api/tasks/projects/{id}/copy-columns`. Permite que o usuário reaproveite
+  um board existente ao ativar o Kanban de uma lista nova.
+
+- **`get_group_board(group_id)`** — agrega o board de um grupo inteiro: valida o grupo,
+  busca todas as listas filhas (não arquivadas), reúne suas colunas e as **unifica por nome**
+  (`LOWER(TRIM(name))`) — colunas de mesmo nome de listas diferentes viram uma coluna só,
+  com `members: [{project_id, column_id}]`. `is_done=True` se qualquer membro for done;
+  `position=min` dos membros. Chama `list_tasks` por lista e concatena. Retorna
+  `{group, lists, columns (unificadas), tasks}`.
+  Exposto via `GET /api/tasks/groups/{id}/board`.
+
 **Regras de negócio** (validadas aqui): Inbox indelével/inarquivável; no máximo uma coluna
 `is_done_column` por lista; captura órfã → Inbox; mover entre listas → primeira coluna do
 destino (ou sem coluna); posições esparsas com renormalização transparente.
