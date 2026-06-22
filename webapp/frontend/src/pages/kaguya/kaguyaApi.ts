@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -157,6 +157,12 @@ export const kaguyaApi = {
   // Tarefas do board com o filtro da view aplicado (US3).
   kanbanViewBoard: (viewId: number, projectId: number) =>
     api.get<Task[]>(`${BASE}/kanban-views/${viewId}/board?project_id=${projectId}`),
+
+  // ── Board de Grupo — Kanban agregado por status unificado ────────────────────
+  // Retorna {group, lists, columns (unificadas), tasks} para renderizar o board do grupo.
+  // Colunas de mesmo nome (case-insensitive) de listas diferentes são mescladas.
+  groupBoard: (groupId: number) =>
+    api.get<GroupBoard>(`${BASE}/groups/${groupId}/board`),
 
   // ── Calendário (consulta por intervalo) — fatia 013 / P3 ────────────────────
   // Tarefas datadas + ocorrências virtuais das recorrentes na janela [start, end].

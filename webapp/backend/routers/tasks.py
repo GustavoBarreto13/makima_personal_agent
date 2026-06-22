@@ -26,6 +26,7 @@ from agents.kaguya.tools_projects import (
     create_project, update_project, delete_project,
     create_group, update_group, delete_group,
     list_columns, create_column, update_column, delete_column,
+    get_group_board,  # board agregado de grupo (colunas unificadas por nome)
 )
 from agents.kaguya.tools_tasks import (
     list_tasks, list_tasks_today, search_tasks, list_trash, list_eisenhower_tasks,
@@ -640,6 +641,29 @@ def kanban_view_board_route(
 ) -> list[dict]:
     """Tarefas do board de uma lista com o filtro da view aplicado (US3). Listagem."""
     return list_board_for_view(view_id, project_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Board de Grupo — Kanban agregado por status unificado
+# ─────────────────────────────────────────────────────────────────────────────
+# NOTA DE ROTA: o prefixo literal "/groups/" garante que esta rota nunca seja
+# capturada pelo conversor int do GET /{task_id} (que fica no final do arquivo).
+# Registrada aqui, junto dos outros endpoints estáticos, antes do /{task_id} final.
+@router.get("/groups/{group_id}/board")
+def group_board_route(group_id: int, user: dict = Depends(require_user)) -> dict:
+    """Board agregado de um grupo: listas + colunas unificadas + tarefas.
+
+    As colunas de mesmo nome (case-insensitive) de listas diferentes são mescladas
+    numa coluna única. Cada tarefa retornada traz ``project_id`` e ``column_id`` para
+    que o frontend consiga resolver qual coluna-membro usar ao arrastar.
+
+    Listagem — o payload de sucesso NÃO tem campo ``status``, portanto não passa por
+    ``_check_result``. Grupo inexistente retorna status=error → 400.
+    """
+    # get_group_board devolve {"status":"error"} se o grupo não existir
+    # ou o payload completo {group, lists, columns, tasks} quando tudo certo.
+    # _check_result trata o caso de erro e deixa o sucesso passar intacto.
+    return _check_result(get_group_board(group_id))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -88,13 +88,30 @@ export function SidebarNav({ sidebar, view, param, onNavigate, onNewTask, onNewP
       {ungrouped.map(projectItem)}
       {groups.map((g) => {
         // Mostra TODO grupo (mesmo vazio) — senão criar um grupo parece não fazer nada.
-        // O cabeçalho é clicável: abre o modal para renomear/excluir o grupo.
+        // Clicar no NOME abre o board do grupo (Kanban agregado).
+        // O ícone ⚙ (visível no hover) abre o modal de renomear/excluir o grupo.
         const inGroup = projects.filter((p) => p.group_id === g.id)
         return (
           <div key={g.id}>
-            <button className="kg-group-label" onClick={() => onEditGroup(g)} title="Editar grupo">
-              {g.name}
-            </button>
+            {/* Linha do grupo: nome clicável (board) + botão ⚙ (editar) */}
+            <div className="kg-group-row">
+              <button
+                className={`kg-group-label${view === 'group' && param === g.id ? ' active' : ''}`}
+                onClick={() => onNavigate('group', g.id)}
+                title="Abrir Kanban do grupo"
+              >
+                {g.name}
+              </button>
+              {/* Botão de editar: aparece no hover via CSS (kg-group-row:hover .kg-group-edit) */}
+              <button
+                className="kg-group-edit"
+                onClick={() => onEditGroup(g)}
+                aria-label="Editar grupo"
+                title="Editar grupo"
+              >
+                <Icon name="settings" size={12} />
+              </button>
+            </div>
             {inGroup.map(projectItem)}
           </div>
         )

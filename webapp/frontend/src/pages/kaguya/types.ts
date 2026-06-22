@@ -272,8 +272,43 @@ export interface Tweaks {
 }
 
 // View ativa do shell. 'list' usa o param como id da lista; 'filter' usa o param como
-// id da smart-list (ou BUILTIN_TODAY_OVERDUE para a built-in).
-export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'trash' | 'filter'
+// id da smart-list (ou BUILTIN_TODAY_OVERDUE para a built-in). 'group' usa o param como
+// id do grupo (task_project_groups) e abre o board agregado do grupo.
+export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'trash' | 'filter' | 'group'
+
+// ── Board de Grupo — Kanban agregado por status unificado ─────────────────────
+// Um membro de coluna unificada: indica qual column_id desta lista compõe a coluna.
+export interface GroupBoardMember {
+  project_id: number  // id da lista dona desta coluna
+  column_id: number   // id da coluna naquela lista
+}
+
+// Coluna unificada do board de grupo: agrupa colunas de mesmo nome de listas diferentes.
+// `key` = nome normalizado (lower+trim); `is_done` = verdadeiro se QUALQUER membro for done;
+// `position` = menor posição entre os membros (define a ordem das colunas no board).
+export interface GroupBoardColumn {
+  key: string
+  name: string
+  is_done: boolean
+  position: number
+  members: GroupBoardMember[]
+}
+
+// Metadados de uma lista no payload do board de grupo (subconjunto de Project).
+export interface GroupBoardList {
+  id: number
+  name: string
+  color: string | null
+  icon: string | null
+}
+
+// Payload completo retornado por GET /api/tasks/groups/{id}/board.
+export interface GroupBoard {
+  group: { id: number; name: string }
+  lists: GroupBoardList[]
+  columns: GroupBoardColumn[]
+  tasks: Task[]
+}
 
 // ── Calendar Hub — fatia 019 ───────────────────────────────────────────────────
 // CalAccount: conta Google ou Makima que agrupa calendários

@@ -493,3 +493,143 @@ def delete_column(column_id: int) -> dict:
     if affected == 0:
         return {"status": "error", "message": "Coluna não encontrada."}
     return {"status": "ok", "message": "Coluna excluída; as tarefas dela ficaram sem coluna."}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Board de Grupo — Kanban agregado por status unificado
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_group_board(group_id: int) -> dict:
+    """Monta o payload do Kanban de um grupo: colunas unificadas + tarefas de todas as listas.
+
+    O board de grupo agrega as tarefas de TODAS as listas do grupo sob "colunas
+    unificadas" — colunas de mesmo nome (case-insensitive) de listas diferentes
+    são tratadas como a mesma coluna de status. O frontend usa esse payload para
+    renderizar um board onde arrastar um card entre colunas muda o status (a coluna
+    dentro da lista da própria tarefa), sem mover a tarefa de lista.
+
+    A visão é somente-leitura no sentido de que não altera nenhum dado — as mutações
+    (arrastar, concluir) acontecem no frontend via as rotas normais de PATCH/POST.
+
+    Args:
+        group_id: Id do grupo cujo board será carregado.
+
+    Returns:
+        Dicionário com as chaves:
+            - ``group``: ``{id, name}`` do grupo.
+            - ``lists``: lista de ``{id, name, color, icon}`` das listas do grupo (ordenadas).
+            - ``columns``: colunas unificadas, cada uma com
+              ``{key, name, is_done, position, members: [{project_id, column_id}]}``.
+              ``key`` é o nome normalizado (``lower().strip()``); ``is_done`` é True se QUALQUER
+              membro da coluna for marcado como ``is_done_column``; ``position`` é o mínimo dos
+              membros.
+            - ``tasks``: todas as tarefas-pai abertas das listas do grupo (mesmo formato de
+              ``list_tasks`` — com subtarefas, tags, responsáveis e recorrência).
+
+        Erro (grupo inexistente):
+            ``{"status": "error", "message": "Grupo não encontrado."}``
+
+    Example:
+        >>> result = get_group_board(3)
+        >>> result["group"]["name"]
+        'Crescimento'
+    """
+    # Import lazy: evita dependência circular entre tools_projects e tools_tasks no topo.
+    # tools_tasks importa tools_projects (para _get_inbox_id); se importarmos no topo,
+    # o Python levantaria ImportError por ciclo durante a carga do pacote.
+    from agents.kaguya.tools_tasks import list_tasks
+
+    # ── 1. Valida existência do grupo ─────────────────────────────────────────
+    grupos = run_select(
+        "SELECT id, name FROM task_project_groups WHERE id = %(gid)s",
+        {"gid": group_id},
+    )
+    if not grupos:
+        # Grupo não existe: retorna erro no formato-padrão das mutações para que
+        # o router (_check_result) converta em HTTP 400.
+        return {"status": "error", "message": "Grupo não encontrado."}
+    grupo = grupos[0]
+
+    # ── 2. Listas ativas do grupo (não arquivadas) ────────────────────────────
+    listas = run_select(
+        """
+        SELECT id, name, color, icon
+        FROM task_projects
+        WHERE group_id = %(gid)s AND archived_at IS NULL
+        ORDER BY position, id
+        """,
+        {"gid": group_id},
+    )
+    # Sem listas no grupo: retorna payload vazio (não é erro — grupo pode estar vazio).
+    if not listas:
+        return {
+            "group": {"id": grupo["id"], "name": grupo["name"]},
+            "lists": [],
+            "columns": [],
+            "tasks": [],
+        }
+
+    # Ids das listas (usados nas queries seguintes).
+    list_ids = [lst["id"] for lst in listas]
+
+    # ── 3. Colunas de todas as listas do grupo ────────────────────────────────
+    # Carrega todas as colunas das listas do grupo em uma única query.
+    # O ANY(%(ids)s::int[]) evita N queries separadas (uma por lista).
+    colunas_raw = run_select(
+        """
+        SELECT id, project_id, name, position, is_done_column
+        FROM task_columns
+        WHERE project_id = ANY(%(ids)s)
+        ORDER BY position, id
+        """,
+        {"ids": list_ids},
+    )
+
+    # ── 4. Mescla colunas pelo nome (case-insensitive) ────────────────────────
+    # Agrupa por nome normalizado: colunas de listas diferentes com o mesmo nome
+    # (ex.: "A fazer" e "a fazer") viram uma única coluna unificada no board.
+    # Preservamos a primeira grafia vista como nome canônico da coluna.
+    unified: dict[str, dict] = {}  # key → coluna unificada
+    for col in colunas_raw:
+        # Chave de normalização: minúsculas sem espaços extras.
+        key = col["name"].lower().strip()
+        if key not in unified:
+            # Primeira vez que vemos esse nome: cria a entrada com os dados do 1º membro.
+            unified[key] = {
+                "key": key,
+                "name": col["name"],            # 1ª grafia preservada como canônica
+                "is_done": col["is_done_column"],
+                "position": col["position"],    # posição mínima (atualizada abaixo)
+                "members": [],                  # lista de {project_id, column_id}
+            }
+        else:
+            # Nome já visto: atualiza is_done (True se QUALQUER membro for done)
+            # e position (usa o menor valor entre os membros — define a ordem).
+            unified[key]["is_done"] = unified[key]["is_done"] or col["is_done_column"]
+            unified[key]["position"] = min(unified[key]["position"], col["position"])
+
+        # Registra este membro: permite ao frontend resolver qual column_id usar
+        # ao arrastar um card de uma lista específica para esta coluna unificada.
+        unified[key]["members"].append({
+            "project_id": col["project_id"],
+            "column_id": col["id"],
+        })
+
+    # Ordena as colunas unificadas por (position, name) para ordem previsível.
+    colunas_unificadas = sorted(unified.values(), key=lambda c: (c["position"], c["name"]))
+
+    # ── 5. Tarefas de todas as listas ─────────────────────────────────────────
+    # Reutiliza list_tasks() que já anexa subtarefas, tags, responsáveis e recorrência.
+    # Só tarefas-pai abertas (include_completed=False) — subtarefas vêm aninhadas.
+    todas_tarefas: list[dict] = []
+    for lst in listas:
+        # list_tasks já lida com listas sem tarefas (retorna lista vazia sem erro).
+        tarefas_lista = list_tasks(lst["id"], include_completed=False)
+        todas_tarefas.extend(tarefas_lista)
+
+    return {
+        "group": {"id": grupo["id"], "name": grupo["name"]},
+        "lists": list(listas),
+        "columns": colunas_unificadas,
+        "tasks": todas_tarefas,
+    }

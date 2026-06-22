@@ -26,6 +26,7 @@ import { FilterScreen } from './screens/FilterScreen'
 import { CalendarScreen } from './screens/CalendarScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
 import { EisenhowerScreen } from './screens/EisenhowerScreen'
+import { GroupBoardScreen } from './screens/GroupBoardScreen'
 import { CommandPalette } from './components/CommandPalette'
 import { Icon } from './ui/Icons'
 import { taskFromParse } from '../../lib/parseTask'
@@ -149,10 +150,15 @@ export function KaguyaShell() {
   const filterName = param === BUILTIN_TODAY_OVERDUE
     ? 'Hoje + Vencidas'
     : (gtdBuiltin?.name ?? currentFilter?.name ?? 'Smart list')
+  // Nome do grupo ativo (para view='group'): busca nos grupos da sidebar.
+  const currentGroup = view === 'group' && param != null
+    ? sidebar?.groups.find(g => g.id === param) : undefined
   const titleMap: Record<KaguyaView, string> = {
     today: 'Meu Dia', kanban: project?.name ?? 'Kanban', list: project?.name ?? 'Lista',
     calendar: 'Calendário', eisenhower: 'Eisenhower', habits: 'Hábitos', trash: 'Lixeira',
     filter: filterName,
+    // 'group': nome do grupo, com fallback caso a sidebar ainda esteja carregando.
+    group: currentGroup?.name ?? 'Grupo',
   }
 
   // Estilo do root: data-attrs (tema/densidade/pmark/anim) + acento via PALETTE_MAP.
@@ -177,6 +183,7 @@ export function KaguyaShell() {
     if (view === 'today') return <TodayScreen projects={sidebar?.projects ?? []} reloadKey={reloadKey} onChanged={loadSidebar} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} toast={showToast} />
     if (view === 'list' && param != null) return <ListScreen projectId={param} projectName={titleMap.list} projectColor={project?.color} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onNewTask={(pid) => setTaskModal({ mode: 'create', projectId: pid })} toast={showToast} />
     if (view === 'kanban' && param != null) return <KanbanScreen projectId={param} projectName={titleMap.kanban} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onChanged={loadSidebar} toast={showToast} />
+    if (view === 'group' && param != null) return <GroupBoardScreen groupId={param} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onChanged={loadSidebar} toast={showToast} />
     if (view === 'calendar') return <CalendarScreen reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} toast={showToast} variant={tweaks.calVariant} />
     if (view === 'filter' && param != null) return (
       <FilterScreen
