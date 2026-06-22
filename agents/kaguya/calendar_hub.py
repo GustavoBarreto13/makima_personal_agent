@@ -228,6 +228,64 @@ register(
     lambda start_date, end_date: [],  # stub: agents/media/ ainda não implementado
 )
 
+# 6. Marin — Animes
+# Importa o provedor real de agents/marin/calendar_provider.py.
+# Exibe episódios futuros/recentes, sessões assistidas e marcos de início/fim
+# de anime no calendário. Cor rosa — marca registrada da Marin Kitagawa.
+_marin_provider = _try_import_provider(
+    "agents.marin.calendar_provider", "list_calendar_events"
+)
+register(
+    {
+        "id": "marin",
+        "account": "makima",
+        "kind": "base",
+        "name": "Marin · Animes",
+        # Rosa vibrante — associado ao estilo gyaru da Marin
+        "color": "oklch(0.72 0.16 350)",
+    },
+    _marin_provider,
+)
+
+# 7. Mai — Séries de TV
+# Importa o provedor real de agents/mai/calendar_provider.py.
+# Exibe episódios agendados, sessões assistidas e marcos de início/fim
+# de série. Cor roxo-azulado — elegante como a Mai Sakurajima.
+_mai_provider = _try_import_provider(
+    "agents.mai.calendar_provider", "list_calendar_events"
+)
+register(
+    {
+        "id": "mai",
+        "account": "makima",
+        "kind": "base",
+        "name": "Mai · Séries",
+        # Roxo-azulado — associado à serenidade e elegância da Mai
+        "color": "oklch(0.55 0.16 285)",
+    },
+    _mai_provider,
+)
+
+# 8. Komi — Pessoas
+# Importa o provedor real de agents/komi/calendar_provider.py.
+# Exibe datas importantes de pessoas (aniversários, formaturas, etc.).
+# Datas recorrentes (recurring=TRUE) são projetadas anualmente.
+# Cor verde suave — associado a cuidado e laços afetivos.
+_komi_provider = _try_import_provider(
+    "agents.komi.calendar_provider", "list_calendar_events"
+)
+register(
+    {
+        "id": "komi",
+        "account": "makima",
+        "kind": "base",
+        "name": "Komi · Pessoas",
+        # Verde suave — associado a proximidade e cuidado com as pessoas
+        "color": "oklch(0.70 0.13 150)",
+    },
+    _komi_provider,
+)
+
 
 # ---------------------------------------------------------------------------
 # Consultas públicas
