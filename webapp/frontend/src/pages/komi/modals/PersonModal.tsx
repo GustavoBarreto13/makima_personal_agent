@@ -10,7 +10,7 @@ import { Icon } from '../icons'
 import { Avatar } from '../icons'
 import { REL_CATS, normalize, fmtDayMonth } from '../lib'
 import { komiApi } from '../komiApi'
-import type { PersonDetail, ImportantDate } from '../types'
+import type { PersonDetail } from '../types'
 
 // ─── Opções de categoria / relacionamento ─────────────────────────────────────
 
@@ -72,9 +72,10 @@ export function PersonModal({ person, onClose, onSaved, onDeleted }: PersonModal
   const [newAliases, setNewAliases] = useState<string[]>([])
   const [aliasDraft,  setAliasDraft] = useState('')
 
-  // Datas: lista atual (ao editar, só exibe) + novas (adicionadas no modal)
+  // Datas: lista atual (ao editar, só exibe) + novas (adicionadas no modal).
+  // newDates usa DateDraft (sem id/is_synced) — são rascunhos antes de serem persistidos.
   const existingDates = person?.datas || []
-  const [newDates, setNewDates] = useState<ImportantDate[]>([])
+  const [newDates, setNewDates] = useState<DateDraft[]>([])
   const [dateDraft, setDateDraft] = useState<DateDraft>({ label: '', date: '', recurring: true })
 
   // Estados de carregamento/upload/erro
