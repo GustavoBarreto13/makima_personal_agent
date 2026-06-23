@@ -226,18 +226,15 @@ def update_person(person_id: str, **campos) -> dict:
         campos["normalizado"] = _norm(campos["name"])
 
     # Monta o SET dinâmico com apenas os campos fornecidos
-    campos["updated_at"] = "NOW()"
-    updates = ", ".join(
-        f"{k} = NOW()" if v == "NOW()" else f"{k} = %({k})s"
-        for k, v in campos.items()
-    )
+    # updated_at entra uma única vez, no literal do SQL — não via campos (evita coluna duplicada)
+    updates = ", ".join(f"{k} = %({k})s" for k in campos)
 
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     f"UPDATE people SET {updates}, updated_at = NOW() WHERE id = %(person_id)s AND deleted = FALSE",
-                    {**{k: v for k, v in campos.items() if v != "NOW()"}, "person_id": person_id},
+                    {**campos, "person_id": person_id},
                 )
                 if cur.rowcount == 0:
                     return {"status": "error", "message": "Pessoa não encontrada ou já excluída."}
