@@ -15,6 +15,34 @@
 import type { Emotion, EmotionLog, EmotionStats } from '../pages/violet/types'
 
 /**
+ * Extrai a mensagem de erro de uma resposta HTTP malsucedida.
+ *
+ * O backend (FastAPI) devolve erros como JSON {"detail": "mensagem"}. Esta
+ * função lê esse `detail` para que o usuário veja a mensagem amigável do
+ * servidor (ex.: "Data inválida. Use MM-DD..."), em vez de um genérico
+ * "HTTP 400". Cai para "HTTP <status>" se o corpo não for o JSON esperado.
+ *
+ * @param res - Resposta fetch com res.ok === false
+ * @returns Error com a mensagem mais informativa disponível
+ */
+async function errorFromResponse(res: Response): Promise<Error> {
+  try {
+    const data: any = await res.json()
+    // FastAPI usa a chave "detail"; aceita também um corpo string direto
+    const msg =
+      typeof data?.detail === 'string'
+        ? data.detail
+        : typeof data === 'string'
+          ? data
+          : null
+    if (msg) return new Error(msg)
+  } catch {
+    // corpo vazio ou não-JSON — usa o fallback genérico abaixo
+  }
+  return new Error(`HTTP ${res.status}`)
+}
+
+/**
  * Objeto principal de chamadas à API.
  * Encapsula `fetch` com configurações padrão de autenticação via cookie.
  */
@@ -33,7 +61,7 @@ export const api = {
     const res = await fetch(path, { credentials: 'include' })
 
     // Se o servidor retornou um erro (4xx, 5xx), lança uma exceção com o código HTTP
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await errorFromResponse(res)
 
     // Deserializa e retorna o JSON da resposta como o tipo T informado
     return res.json() as Promise<T>
@@ -61,7 +89,7 @@ export const api = {
     })
 
     // Se o servidor retornou um erro (4xx, 5xx), lança uma exceção com o código HTTP
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await errorFromResponse(res)
 
     // Deserializa e retorna o JSON da resposta como o tipo T informado
     return res.json() as Promise<T>
@@ -90,7 +118,7 @@ export const api = {
     })
 
     // Se o servidor retornou um erro (4xx, 5xx), lança uma exceção com o código HTTP
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await errorFromResponse(res)
 
     // Deserializa e retorna o JSON da resposta como o tipo T informado
     return res.json() as Promise<T>
@@ -112,7 +140,7 @@ export const api = {
       credentials: 'include',
       body: JSON.stringify(body),
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await errorFromResponse(res)
     return res.json() as Promise<T>
   },
 
@@ -125,7 +153,7 @@ export const api = {
     })
 
     // Se o servidor retornou um erro (4xx, 5xx), lança uma exceção com o código HTTP
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await errorFromResponse(res)
 
     // 204 No Content: o servidor confirmou a deleção mas não retorna corpo JSON.
     // Tentar chamar res.json() aqui causaria erro de parse; retornamos objeto vazio.

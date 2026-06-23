@@ -43,6 +43,31 @@ interface DateDraft {
 }
 
 /**
+ * Valida uma data importante no MESMO contrato do backend Komi: "MM-DD"
+ * (mês-dia, sem ano) ou "AAAA-MM-DD" (ISO). Rejeita datas impossíveis (ex.:
+ * "02-30") construindo um Date real e conferindo se nenhum campo "rolou" para
+ * outro dia. No caso MM-DD usa o ano-sentinela bissexto 2000 (igual ao backend),
+ * para que "02-29" seja aceito.
+ *
+ * Importante: o mês vem PRIMEIRO (MM-DD). "15-05" é inválido (não existe mês 15).
+ *
+ * @param s - String digitada pelo usuário
+ * @returns true se for um MM-DD ou AAAA-MM-DD de calendário válido
+ */
+function isValidImportantDate(s: string): boolean {
+  // Regex: ano opcional (4 dígitos) + mês (1-2) + dia (1-2), separados por '-'
+  const m = s.trim().match(/^(?:(\d{4})-)?(\d{1,2})-(\d{1,2})$/)
+  if (!m) return false
+  const year = m[1] ? parseInt(m[1], 10) : 2000  // ano-sentinela bissexto (igual ao backend)
+  const month = parseInt(m[2], 10)
+  const day = parseInt(m[3], 10)
+  // Date usa mês 0-indexado (month - 1). Se algum campo for impossível, o JS
+  // "rola" a data (ex.: 02-30 vira 03-02) e os getters deixam de bater → inválido.
+  const d = new Date(year, month - 1, day)
+  return d.getFullYear() === year && d.getMonth() === month - 1 && d.getDate() === day
+}
+
+/**
  * Modal de criação e edição de pessoa.
  * Em modo criação (person=null): salva com create() e chama onSaved com isNew=true.
  * Em modo edição: atualiza campos com update(), apelidos com addAlias() e
@@ -129,10 +154,22 @@ export function PersonModal({ person, onClose, onSaved, onDeleted }: PersonModal
 
   // ── Datas importantes ─────────────────────────────────────────────────
 
-  /** Adiciona o rascunho de data à lista de novas datas. */
+  /** Adiciona o rascunho de data à lista de novas datas (valida o formato antes). */
   function addDate() {
-    if (!dateDraft.label.trim() || !dateDraft.date.trim()) return
-    setNewDates(prev => [...prev, { ...dateDraft }])
+    const label = dateDraft.label.trim()
+    const dateStr = dateDraft.date.trim()
+    // Precisa de rótulo e data preenchidos
+    if (!label || !dateStr) return
+    // Valida o formato AQUI, no momento de adicionar. Antes, uma data inválida
+    // entrava no rascunho e falhava silenciosamente no save (o backend devolvia
+    // 400 e a tela engolia o erro — "não acontecia nada"). Agora o usuário vê o
+    // motivo na hora e a data inválida nem é adicionada.
+    if (!isValidImportantDate(dateStr)) {
+      setError('Data inválida. Use MM-DD (ex.: 05-15, mês primeiro) ou AAAA-MM-DD (ex.: 1998-05-15).')
+      return
+    }
+    setError(null)  // limpa erro anterior ao adicionar uma data válida
+    setNewDates(prev => [...prev, { label, date: dateStr, recurring: dateDraft.recurring }])
     // Reseta o rascunho mantendo o toggle de recorrente
     setDateDraft({ label: '', date: '', recurring: dateDraft.recurring })
   }
