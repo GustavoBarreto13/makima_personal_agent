@@ -1,6 +1,6 @@
 // Tela Write — entrada diária do bullet journal com bullets tipados e sonho.
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useLayoutEffect } from 'react'
 import { violetApi } from '../../../lib/api'
 // Helper de data local: evita o bug de UTC onde bullets após 21h ficam no dia seguinte
 import { todayLocalISO } from '../dateUtils'
@@ -41,7 +41,24 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
   const [editText, setEditText] = useState('')
   const [adding, setAdding]  = useState<BulletKind | null>(null)
   const [newText, setNewText] = useState('')
-  const addRef = useRef<HTMLTextAreaElement>(null)
+  const addRef  = useRef<HTMLTextAreaElement>(null)
+  const dreamRef = useRef<HTMLTextAreaElement>(null)
+  const editRef  = useRef<HTMLTextAreaElement>(null)
+
+  // Redimensiona o textarea para caber todo o conteúdo sem barra de rolagem.
+  // Define height='auto' primeiro para encolher o elemento antes de medir o scrollHeight,
+  // evitando que o tamanho só cresça mas nunca encolha ao apagar texto.
+  function autoResize(el: HTMLTextAreaElement | null) {
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }
+
+  // Redimensiona o campo de sonho quando o valor carrega da API (vem assíncrono)
+  useLayoutEffect(() => { autoResize(dreamRef.current) }, [dream])
+
+  // Redimensiona o campo de edição quando um bullet entra em modo de edição
+  useLayoutEffect(() => { autoResize(editRef.current) }, [editing, editText])
 
   // Usa todayLocalISO() para obter a data de hoje no fuso do navegador (UTC-3).
   // new Date().toISOString().slice(0,10) retornaria UTC e mudaria de dia às 21h,
@@ -147,11 +164,12 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
         <span className="p-icon"><Icon name="moon" size={15} /></span>
         <textarea
           id="vl-dream"
+          ref={dreamRef}
           className="p-text"
-          style={{ border:'none', outline:'none', background:'transparent', resize:'none', width:'100%', fontFamily:'inherit', fontStyle:'inherit', fontSize:'inherit', color:'inherit' }}
+          style={{ border:'none', outline:'none', background:'transparent', resize:'none', overflow:'hidden', width:'100%', fontFamily:'inherit', fontStyle:'inherit', fontSize:'inherit', color:'inherit' }}
           placeholder="O que você sonhou?"
           value={dream}
-          onChange={e => setDream(e.target.value)}
+          onChange={e => { setDream(e.target.value); autoResize(e.target) }}
           onBlur={saveDream}
           rows={1}
         />
@@ -182,10 +200,11 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
             <div className="b-lines">
               {editing === b.position ? (
                 <textarea
+                  ref={editRef}
                   className="bline"
-                  style={{ border:'none', outline:'none', background:'transparent', resize:'none', width:'100%', fontFamily:'inherit', fontSize:'15.5px', color:'var(--ink)' }}
+                  style={{ border:'none', outline:'none', background:'transparent', resize:'none', overflow:'hidden', width:'100%', fontFamily:'inherit', fontSize:'15.5px', color:'var(--ink)' }}
                   value={editText}
-                  onChange={e => setEditText(e.target.value)}
+                  onChange={e => { setEditText(e.target.value); autoResize(e.target) }}
                   onBlur={() => saveBullet(b, editText)}
                   onKeyDown={e => { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); saveBullet(b, editText) } if(e.key==='Escape') setEditing(null) }}
                   autoFocus
@@ -210,10 +229,10 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
               <textarea
                 ref={addRef}
                 className="bline"
-                style={{ border:'none', outline:'none', background:'transparent', resize:'none', width:'100%', fontFamily:'inherit', fontSize:'15.5px', color:'var(--ink)' }}
+                style={{ border:'none', outline:'none', background:'transparent', resize:'none', overflow:'hidden', width:'100%', fontFamily:'inherit', fontSize:'15.5px', color:'var(--ink)' }}
                 placeholder="Registrar um momento..."
                 value={newText}
-                onChange={e => setNewText(e.target.value)}
+                onChange={e => { setNewText(e.target.value); autoResize(e.target) }}
                 onBlur={() => addBullet(adding, newText)}
                 onKeyDown={e => { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); addBullet(adding, newText) } if(e.key==='Escape') { setAdding(null); setNewText('') } }}
               />
