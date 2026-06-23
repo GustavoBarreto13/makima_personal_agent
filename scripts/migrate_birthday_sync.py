@@ -67,22 +67,30 @@ def main() -> None:
     from agents.db import run_select
     from agents.kaguya import komi_sync
 
-    # Busca todos os person_dates com label ILIKE '%anivers%' que ainda não têm link.
+    # Busca todos os person_dates com label tipo "aniversário" que ainda não têm link.
     # LEFT JOIN birthday_sync_links + WHERE bsl.person_date_id IS NULL:
     #   - inclui person_dates sem linha correspondente no birthday_sync_links
     #   - exclui os que já têm link (idempotência)
     # Filtra people.deleted = FALSE para não migrar aniversários de pessoas excluídas.
+    #
+    # IMPORTANTE — o padrão de busca ('%anivers%') vai como PARÂMETRO, não escrito
+    # direto no SQL. O run_select sempre passa os parâmetros ao psycopg2, e o
+    # psycopg2 trata o caractere '%' do SQL como marcador de substituição. Um '%'
+    # literal dentro do texto da query (ex.: ILIKE '%anivers%') é interpretado como
+    # placeholder inválido e quebra com "dict is not a sequence". A forma correta —
+    # e o padrão usado no resto do projeto (ver tools_tasks.py, akane/tools.py) — é
+    # colocar os curingas '%' no VALOR do parâmetro e usar %(nome)s no SQL.
     rows = run_select(
         """
         SELECT pd.id, pd.label, pd.date::text, pd.person_id, p.name
         FROM person_dates pd
         JOIN people p ON p.id = pd.person_id AND p.deleted = FALSE
         LEFT JOIN birthday_sync_links bsl ON bsl.person_date_id = pd.id
-        WHERE pd.label ILIKE '%anivers%'
+        WHERE pd.label ILIKE %(padrao_aniversario)s
           AND bsl.person_date_id IS NULL
         ORDER BY pd.id
         """,
-        {},
+        {"padrao_aniversario": "%anivers%"},
     )
 
     total = len(rows)

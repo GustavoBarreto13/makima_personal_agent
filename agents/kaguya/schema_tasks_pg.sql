@@ -59,10 +59,14 @@ CREATE TABLE IF NOT EXISTS task_projects (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_task_projects_inbox
     ON task_projects (is_inbox) WHERE is_inbox;
 
--- Garante que só pode existir UMA lista "Aniversários" no sistema (fase 026).
--- Mesmo padrão do Inbox — índice único parcial WHERE is_birthdays.
-CREATE UNIQUE INDEX IF NOT EXISTS uq_task_projects_birthdays
-    ON task_projects (is_birthdays) WHERE is_birthdays;
+-- NOTA (fase 026): o índice único de is_birthdays (uq_task_projects_birthdays)
+-- NÃO fica aqui — ele foi movido para a seção de migrações, logo APÓS o
+-- "ALTER TABLE task_projects ADD COLUMN ... is_birthdays".
+-- Motivo: o índice depende da coluna is_birthdays. Em um banco PRÉ-EXISTENTE,
+-- o "CREATE TABLE IF NOT EXISTS" acima é no-op (a tabela já existe sem a coluna),
+-- então a coluna só passa a existir depois do ALTER lá embaixo. Criar o índice
+-- aqui quebrava o setup_schemas em produção com "column is_birthdays does not exist".
+-- (O índice de is_inbox acima funciona porque is_inbox é coluna ANTIGA, já presente.)
 
 
 -- ----------------------------------------------------------------------------
@@ -154,6 +158,15 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS google_event_id TEXT;
 
 -- fase 026: lista "Aniversários" — gerenciada pelo sync Komi↔Kaguya
 ALTER TABLE task_projects ADD COLUMN IF NOT EXISTS is_birthdays BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Índice único parcial da lista "Aniversários" (fase 026).
+-- DEVE vir DEPOIS do ALTER acima: em bancos pré-existentes a coluna is_birthdays
+-- só nasce naquele ALTER, então criar o índice antes falharia com
+-- "column is_birthdays does not exist". Em bancos novos a coluna já vem do
+-- CREATE TABLE, então a ordem aqui também funciona.
+-- Garante (igual ao Inbox) que só pode existir UMA lista is_birthdays no sistema.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_task_projects_birthdays
+    ON task_projects (is_birthdays) WHERE is_birthdays;
 
 
 -- ----------------------------------------------------------------------------
