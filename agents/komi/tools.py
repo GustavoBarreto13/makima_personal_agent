@@ -327,6 +327,9 @@ def add_important_date(
 ) -> dict:
     """Adicionar uma data importante a uma pessoa.
 
+    A partir da fase 026, o INSERT usa RETURNING id para que o hook de sync
+    Komi→Kaguya saiba qual person_date_id foi gerado sem precisar de query adicional.
+
     Args:
         person_id: UUID da pessoa.
         label: Descrição da data (ex.: "aniversário", "formatura").
@@ -334,7 +337,8 @@ def add_important_date(
         recurring: Se True, a data repete todo ano (útil para aniversários).
 
     Returns:
-        {"status": "ok", "message": "..."} ou {"status": "error", "message": ...}.
+        {"status": "ok", "id": int, "message": "..."} ou {"status": "error", "message": ...}.
+        O campo "id" contém o ID gerado do person_date — necessário para gravar birthday_sync_links.
     """
     if not label or not label.strip():
         return {"status": "error", "message": "O label não pode ser vazio."}
@@ -348,11 +352,145 @@ def add_important_date(
                 if not cur.fetchone():
                     return {"status": "error", "message": "Pessoa não encontrada."}
 
+                # RETURNING id: permite ao hook de sync saber o id criado sem query extra
                 cur.execute(
-                    "INSERT INTO person_dates (person_id, label, date, recurring) VALUES (%s, %s, %s, %s)",
+                    "INSERT INTO person_dates (person_id, label, date, recurring) "
+                    "VALUES (%s, %s, %s, %s) RETURNING id",
                     (person_id, label.strip(), date, recurring),
                 )
-        return {"status": "ok", "message": f"Data '{label}' ({date}) adicionada com sucesso."}
+                date_id = cur.fetchone()[0]  # id do registro recém-criado
+
+        # Hook best-effort Komi→Kaguya: propaga aniversário para a Kaguya como tarefa type=birthday.
+        # Fica FORA do bloco with get_conn() para não abortar o CRUD principal se o sync falhar.
+        # O date_id foi obtido pelo RETURNING id acima — disponível aqui.
+        try:
+            from agents.kaguya import komi_sync as _ks
+            _ks.push_person_date(date_id)
+        except Exception:
+            pass
+
+        return {"status": "ok", "id": date_id, "message": f"Data '{label}' ({date}) adicionada com sucesso."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def update_important_date(
+    date_id: int,
+    *,
+    date: str | None = None,
+    label: str | None = None,
+    recurring: bool | None = None,
+) -> dict:
+    """Atualizar campos de uma data importante por ID (UPDATE parcial).
+
+    Só altera os campos keyword-only passados. Permite editar label, data ou
+    flag de recorrência de forma independente, sem sobrescrever os demais.
+    Após a atualização, o hook Komi→Kaguya propaga a mudança para a tarefa
+    correspondente (se existir link em birthday_sync_links).
+
+    Args:
+        date_id: ID numérico da person_date a atualizar.
+        date: Nova data no formato YYYY-MM-DD (opcional).
+        label: Novo label/descrição da data (opcional).
+        recurring: Novo valor do flag de recorrência anual (opcional).
+
+    Returns:
+        {"status": "ok", "message": "Data atualizada."} ou {"status": "error", "message": ...}.
+
+    Example:
+        >>> update_important_date(42, date="2026-07-10")
+        {"status": "ok", "message": "Data atualizada."}
+        >>> update_important_date(42, label="aniversário de namoro", recurring=True)
+        {"status": "ok", "message": "Data atualizada."}
+    """
+    # Exige pelo menos um campo — sem payload = erro claro (não UPDATE sem SET)
+    if date is None and label is None and recurring is None:
+        return {"status": "error", "message": "Nenhum campo para atualizar."}
+
+    # Monta UPDATE parcial dinamicamente — apenas os campos passados entram no SET
+    sets = []
+    values: list = []
+    if date is not None:
+        sets.append("date = %s")
+        values.append(date)
+    if label is not None:
+        sets.append("label = %s")
+        values.append(label)
+    if recurring is not None:
+        sets.append("recurring = %s")
+        values.append(recurring)
+
+    # date_id no final dos parâmetros (para o WHERE id = %s)
+    values.append(date_id)
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"UPDATE person_dates SET {', '.join(sets)} WHERE id = %s",
+                    values,
+                )
+                if cur.rowcount == 0:
+                    # Nenhuma linha afetada = date_id não existe
+                    return {"status": "error", "message": "Data não encontrada."}
+
+        # Hook best-effort Komi→Kaguya: propaga a mudança para a tarefa correspondente.
+        # O komi_sync.push_person_date compara o valor atual com o salvo — no-op se idêntico (anti-loop).
+        try:
+            from agents.kaguya import komi_sync as _ks
+            _ks.push_person_date(date_id)
+        except Exception:
+            pass
+
+        return {"status": "ok", "message": "Data atualizada."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def delete_important_date(date_id: int) -> dict:
+    """Remover uma data importante por ID (DELETE físico).
+
+    Remove a linha de person_dates permanentemente. O banco apaga o link em
+    birthday_sync_links automaticamente via ON DELETE CASCADE (sem DELETE explícito aqui).
+
+    O task_id é lido ANTES do DELETE porque o CASCADE remove o link junto com a
+    person_date — após o commit, o link já não existe e não seria possível lê-lo.
+
+    Args:
+        date_id: ID numérico da person_date a remover.
+
+    Returns:
+        {"status": "ok", "message": "Data removida."} ou {"status": "error", "message": ...}.
+    """
+    from agents.db import run_select  # importado aqui para não duplicar no topo
+
+    # Lê o task_id do link ANTES do DELETE (o CASCADE vai apagá-lo junto)
+    # Caso não haja link (data sem aniversário), linked_task_id fica None
+    link_rows = run_select(
+        "SELECT task_id FROM birthday_sync_links WHERE person_date_id = %s", (date_id,)
+    )
+    linked_task_id = link_rows[0]["task_id"] if link_rows else None
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM person_dates WHERE id = %s", (date_id,))
+                if cur.rowcount == 0:
+                    return {"status": "error", "message": "Data não encontrada."}
+                # Nota: birthday_sync_links com person_date_id = date_id é removido
+                # automaticamente pelo ON DELETE CASCADE definido na tabela.
+
+        # Hook best-effort Komi→Kaguya: soft-deleta a tarefa correspondente (scope='series').
+        # remove_person_date recebe task_id (não date_id) para poder chamar delete_task.
+        # O task_id foi lido ANTES do DELETE porque o CASCADE apaga o link junto com a date.
+        if linked_task_id:
+            try:
+                from agents.kaguya import komi_sync as _ks
+                _ks.remove_person_date(linked_task_id)
+            except Exception:
+                pass
+
+        return {"status": "ok", "message": "Data removida."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -464,9 +602,22 @@ def get_person(person_id: str) -> dict:
             {"id": person_id},
         )
 
-        # Próximas datas: ordena pela diferença em relação a hoje (ano ignorado nos recorrentes)
+        # Próximas datas: ordena pela diferença em relação a hoje (ano ignorado nos recorrentes).
+        # fase 026: inclui id (para PATCH/DELETE) e is_synced (True = tem tarefa Kaguya correspondente).
+        # LEFT JOIN birthday_sync_links: se o link existir, is_synced = TRUE; senão = FALSE.
         datas = run_select(
-            "SELECT label, date::text, recurring FROM person_dates WHERE person_id = %(id)s ORDER BY date",
+            """
+            SELECT
+                pd.id,
+                pd.label,
+                pd.date::text,
+                pd.recurring,
+                CASE WHEN bsl.person_date_id IS NOT NULL THEN TRUE ELSE FALSE END AS is_synced
+            FROM person_dates pd
+            LEFT JOIN birthday_sync_links bsl ON bsl.person_date_id = pd.id
+            WHERE pd.person_id = %(id)s
+            ORDER BY pd.date
+            """,
             {"id": person_id},
         )
 

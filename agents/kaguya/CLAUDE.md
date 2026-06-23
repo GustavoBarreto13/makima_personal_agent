@@ -295,6 +295,32 @@ Funções principais:
 - `delete_event(event_id)` — remove
 - `ensure_kaguya_calendar()` — garante que "Kaguya — Tarefas" existe (idempotente)
 
+### komi_sync.py — sync bidirecional de aniversários Komi ↔ Kaguya (fase 026)
+
+`agents/kaguya/komi_sync.py` sincroniza person_dates com label ILIKE '%anivers%' da Komi
+como tarefas `type=birthday` na lista "Aniversários" da Kaguya. Opera de forma **best-effort**
+— nunca levanta exceção; falha no sync não aborta o CRUD principal.
+
+**Direção Komi → Kaguya:**
+- `push_person_date(date_id)` — chamado por `add_important_date` e `update_important_date` na Komi.
+  Cria ou atualiza a tarefa correspondente; anti-loop por convergência de valor.
+- `remove_person_date(task_id)` — chamado por `delete_important_date` na Komi. Soft-delete da tarefa.
+
+**Direção Kaguya → Komi:**
+- `push_birthday(task_id)` — chamado por `create_task`/`update_task` quando `type='birthday'`.
+  Cria ou atualiza o person_date "aniversário" na Komi.
+- `remove_birthday(task_id)` — chamado por `delete_task` com `scope='series'` e `type='birthday'`.
+  Apaga o person_date correspondente.
+
+**Tabela de ponte:** `birthday_sync_links` em `schema_tasks_pg.sql` (1:1 por person_date).
+
+**Feature flag:** `KOMI_SYNC_ENABLED=false` desabilita todas as propagações sem afetar o CRUD.
+Padrão: `true`.
+
+**Lista "Aniversários":** criada sob demanda por `_get_birthdays_list_id(cur)` em `tools_tasks.py`
+(análogo a `_get_inbox_id`, com `is_birthdays=TRUE`). Nunca semeada pelo schema — só existe se
+o sync já criou pelo menos um aniversário.
+
 ### gcal_sync.py — espelho best-effort de tarefas no GCal
 
 `agents/kaguya/gcal_sync.py` mantém um espelho das tarefas Kaguya no Google Calendar

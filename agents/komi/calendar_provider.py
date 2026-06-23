@@ -62,6 +62,12 @@ def list_calendar_events(start: str, end: str) -> list[dict]:
     # mês/dia original para serem projetadas no ano correto — se filtrássemos
     # por date BETWEEN ... perderíamos aniversários de anos anteriores que
     # caem dentro da janela atual.
+    #
+    # Dedup (fase 026): person_dates que têm correspondência em birthday_sync_links
+    # são OMITIDOS desta listagem — eles já aparecem como tarefa type=birthday da Kaguya
+    # na visão de calendário unificada. Exibi-los aqui também causaria duplicata.
+    # Datas sem link (label não-aniversário, ou aniversários ainda não sincronizados)
+    # continuam aparecendo normalmente.
     sql = """
     SELECT
         pd.id,
@@ -72,6 +78,8 @@ def list_calendar_events(start: str, end: str) -> list[dict]:
         p.id AS person_id
     FROM person_dates pd
     JOIN people p ON p.id = pd.person_id AND p.deleted = FALSE
+    LEFT JOIN birthday_sync_links bsl ON bsl.person_date_id = pd.id
+    WHERE bsl.person_date_id IS NULL
     ORDER BY pd.date
     """
     rows = run_select(sql, {})

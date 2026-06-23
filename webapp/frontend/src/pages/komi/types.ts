@@ -25,9 +25,11 @@ export interface Person {
 
 /** Uma data importante (aniversário, casamento, formatura…). */
 export interface ImportantDate {
+  id: number         // ID numérico (person_dates.id) — necessário para PATCH/DELETE (fase 026)
   label: string
   date: string       // "YYYY-MM-DD" ou "MM-DD" (recorrente)
   recurring: boolean
+  is_synced: boolean // TRUE = tem tarefa Kaguya correspondente via birthday_sync_links (fase 026)
 }
 
 // ─── Pessoa detalhe (perfil completo) ─────────────────────────────────────

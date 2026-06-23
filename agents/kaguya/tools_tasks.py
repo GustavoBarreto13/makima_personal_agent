@@ -103,6 +103,39 @@ def _get_inbox_id(cur) -> int:
     return row[0]
 
 
+def _get_birthdays_list_id(cur) -> int:
+    """Retorna o id da lista "Aniversários", criando-a sob demanda na primeira chamada.
+
+    Análogo a _get_inbox_id, mas para a lista especial de aniversários do sync
+    Komi↔Kaguya (fase 026). A lista não é semeada pelo schema/seed — é criada
+    aqui ao primeiro uso para não existir em instâncias sem o sync ativado.
+
+    Args:
+        cur: Cursor psycopg2 ativo (dentro de uma transação do chamador).
+
+    Returns:
+        ID (int) da lista "Aniversários" — criada se não existir.
+
+    Example:
+        >>> with get_conn() as conn:
+        ...     with conn.cursor() as cur:
+        ...         list_id = _get_birthdays_list_id(cur)
+    """
+    # Tenta encontrar a lista já existente (idempotência)
+    cur.execute("SELECT id FROM task_projects WHERE is_birthdays LIMIT 1")
+    row = cur.fetchone()
+    if row:
+        return row[0]
+
+    # Primeira chamada: cria a lista "Aniversários" com ícone e cor padrão
+    cur.execute(
+        "INSERT INTO task_projects (name, icon, color, is_birthdays) "
+        "VALUES (%s, %s, %s, TRUE) RETURNING id",
+        ("Aniversários", "🎂", "#FF6B6B"),
+    )
+    return cur.fetchone()[0]
+
+
 def _first_column_id(cur, project_id: int) -> Optional[int]:
     """Retorna a primeira coluna (menor ``position``) do board de uma lista, ou None.
 
@@ -877,6 +910,14 @@ def create_task(
         _gs.push_task(new_id)
     except Exception:
         pass
+    # Hook Kaguya→Komi: cria person_date na Komi quando a tarefa é de aniversário (fase 026).
+    # Lazy import dentro do try/except evita ciclo agents.kaguya → agents.komi → agents.kaguya.
+    if type == "birthday":
+        try:
+            from agents.kaguya import komi_sync as _ks
+            _ks.push_birthday(new_id)
+        except Exception:
+            pass
     return result
 
 
@@ -1039,6 +1080,17 @@ def update_task(
     try:
         from agents.kaguya import gcal_sync as _gs
         _gs.push_task(task_id)
+    except Exception:
+        pass
+    # Hook Kaguya→Komi: propaga para Komi se a tarefa é (ou virou) aniversário (fase 026).
+    # O SELECT do type ocorre APÓS o commit para pegar o valor atualizado.
+    # O komi_sync.push_birthday compara due_date atual — no-op se já sincronizado (anti-loop).
+    try:
+        from agents.db import run_select as _rs
+        _type_rows = _rs("SELECT type FROM tasks WHERE id = %(tid)s", {"tid": task_id})
+        if _type_rows and _type_rows[0]["type"] == "birthday":
+            from agents.kaguya import komi_sync as _ks
+            _ks.push_birthday(task_id)
     except Exception:
         pass
     return {"status": "ok", "message": "Tarefa atualizada."}
@@ -1517,6 +1569,20 @@ def delete_task(task_id: int, scope: str = "this") -> dict:
         _gs.remove_task_event(task_id)
     except Exception:
         pass
+    # Hook Kaguya→Komi: remove o person_date correspondente SOMENTE quando scope='series'
+    # (encerra a série inteira). scope='this' apaga apenas a ocorrência — a série continua,
+    # então o person_date é preservado.
+    # A tarefa já está soft-deleted quando este hook roda (deleted_at IS NOT NULL), mas o
+    # birthday_sync_links ainda existe porque soft-delete NÃO dispara ON DELETE CASCADE.
+    if scope == "series":
+        try:
+            from agents.db import run_select as _rs
+            _type_rows = _rs("SELECT type FROM tasks WHERE id = %(tid)s", {"tid": task_id})
+            if _type_rows and _type_rows[0]["type"] == "birthday":
+                from agents.kaguya import komi_sync as _ks
+                _ks.remove_birthday(task_id)
+        except Exception:
+            pass
     result = {"status": "ok", "message": "Tarefa enviada para a lixeira."}
     if generated:
         result["generated_task_id"] = generated["generated_task_id"]

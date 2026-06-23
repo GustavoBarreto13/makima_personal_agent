@@ -34,6 +34,8 @@ from agents.komi.tools import (
     delete_person,
     add_alias,
     add_important_date,
+    update_important_date,
+    delete_important_date,
     list_people,
     find_people,
     get_person,
@@ -127,6 +129,17 @@ class AddImportantDateBody(BaseModel):
     label: str                             # Nome da data (ex.: "aniversário")
     date: str                              # YYYY-MM-DD
     recurring: bool = True                 # True = repete todo ano
+
+
+class UpdateImportantDateBody(BaseModel):
+    """Body para atualizar uma data importante (PATCH parcial — fase 026).
+
+    Todos os campos são opcionais — só os enviados são alterados.
+    Após a atualização, o hook Komi→Kaguya propaga para a tarefa correspondente.
+    """
+    label: Optional[str] = None            # Novo label/descrição (ex.: "aniversário de namoro")
+    date: Optional[str] = None             # Nova data YYYY-MM-DD
+    recurring: Optional[bool] = None       # Novo valor do flag de recorrência anual
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -337,8 +350,62 @@ def add_person_date(
         body: {label, date, recurring}
 
     Returns:
-        {"status": "ok", ...}
+        {"status": "ok", "id": int, ...}
     """
     return _check_result(
         add_important_date(person_id, body.label, body.date, body.recurring)
     )
+
+
+@router.patch("/{person_id}/dates/{date_id}")
+def update_person_date(
+    person_id: str,
+    date_id: int,
+    body: UpdateImportantDateBody,
+    user: dict = Depends(require_user),
+):
+    """Atualiza campos de uma data importante (PATCH parcial — fase 026).
+
+    O hook Komi→Kaguya propaga automaticamente para a tarefa de aniversário
+    correspondente (se existir link em birthday_sync_links).
+
+    Args:
+        person_id: UUID da pessoa (para contexto; a validação real é via date_id).
+        date_id: ID numérico da person_date a atualizar.
+        body: Campos a alterar — todos opcionais (label, date, recurring).
+
+    Returns:
+        {"status": "ok", "message": "Data atualizada."}
+
+    Raises:
+        HTTPException 400: Se date_id não existe ou nenhum campo foi enviado.
+    """
+    # model_dump(exclude_unset=True) passa apenas os campos enviados (PATCH parcial)
+    campos = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    return _check_result(update_important_date(date_id, **campos))
+
+
+@router.delete("/{person_id}/dates/{date_id}", status_code=204)
+def delete_person_date(
+    person_id: str,
+    date_id: int,
+    user: dict = Depends(require_user),
+):
+    """Remove uma data importante (DELETE físico — fase 026).
+
+    O hook Komi→Kaguya soft-deleta a tarefa de aniversário correspondente
+    (se existir link em birthday_sync_links) com scope='series'.
+
+    Args:
+        person_id: UUID da pessoa (para contexto; a validação real é via date_id).
+        date_id: ID numérico da person_date a remover.
+
+    Returns:
+        204 No Content (sem body).
+
+    Raises:
+        HTTPException 400: Se date_id não existe.
+    """
+    result = delete_important_date(date_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message", "Erro ao deletar data."))

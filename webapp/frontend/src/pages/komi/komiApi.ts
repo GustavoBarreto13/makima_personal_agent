@@ -144,9 +144,38 @@ export const komiApi = {
   addAlias: (id: string, alias: string) =>
     api.post<{ status: string }>(`/api/people/${id}/aliases`, { alias }),
 
-  /** Adiciona uma data importante a uma pessoa. */
+  /** Adiciona uma data importante a uma pessoa. Retorna o id gerado (fase 026). */
   addDate: (id: string, date: { label: string; date: string; recurring: boolean }) =>
-    api.post<{ status: string }>(`/api/people/${id}/dates`, date),
+    api.post<{ status: string; id: number }>(`/api/people/${id}/dates`, date),
+
+  /**
+   * Atualiza campos de uma data importante (PATCH parcial — fase 026).
+   * Só os campos enviados são alterados. O hook Komi→Kaguya propaga automaticamente.
+   *
+   * @param personId - UUID da pessoa
+   * @param dateId   - ID numérico do person_date
+   * @param campos   - Campos a alterar: label?, date?, recurring?
+   */
+  updateDate: (personId: string, dateId: number, campos: Partial<{
+    label: string
+    date: string
+    recurring: boolean
+  }>) =>
+    api.patch<{ status: string; message: string }>(
+      `/api/people/${personId}/dates/${dateId}`,
+      campos
+    ),
+
+  /**
+   * Remove uma data importante (DELETE físico — fase 026).
+   * O hook Komi→Kaguya soft-deleta a tarefa correspondente (scope='series').
+   *
+   * @param personId - UUID da pessoa
+   * @param dateId   - ID numérico do person_date
+   * @returns 204 No Content (void)
+   */
+  deleteDate: (personId: string, dateId: number) =>
+    api.del<void>(`/api/people/${personId}/dates/${dateId}`),
 
   // ── Upload de avatar ──────────────────────────────────────────────────────
 

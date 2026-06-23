@@ -112,7 +112,9 @@ necessário (tasks, journal_bullets).
 | `update_person(person_id, **campos)` | só campos enviados são alterados, inclui `category` | PATCH parcial; recalcula `normalizado` se `name` muda |
 | `delete_person(person_id)` | — | Soft delete (`deleted=TRUE`); vínculos preservados |
 | `add_alias(person_id, alias)` | — | Apelido único global; erro claro se já pertence a outro |
-| `add_important_date(person_id, label, date, recurring)` | date em YYYY-MM-DD | Persiste data importante |
+| `add_important_date(person_id, label, date, recurring)` | date em YYYY-MM-DD | Persiste data importante; retorna `{"status","id","message"}` — o campo `id` é o person_date_id (usado pelo hook de sync) |
+| `update_important_date(date_id, *, date?, label?, recurring?)` | date_id: int; keyword args opcionais | UPDATE parcial de um person_date por ID; hook Komi→Kaguya propaga a mudança |
+| `delete_important_date(date_id)` | date_id: int | DELETE físico; CASCADE remove o birthday_sync_links; hook Komi→Kaguya soft-deleta a tarefa (scope='series') |
 | `list_people()` | — | Retorna pessoas vivas com `link_count` + `category` via LEFT JOIN |
 | `find_people(query)` | — | Smart-match: UNION de pessoas + aliases; 0/1/N resultados |
 | `get_person(person_id)` | — | Perfil + aliases + dates (sem vínculos cross-agent) |
@@ -249,18 +251,72 @@ Exposto em `webapp/backend/routers/pessoas.py`, registrado em `main.py` com pref
 | GET | `/api/people/search?q=...` | `find_people` |
 | GET | `/api/people/overview` | `get_people_overview` — agregação cross-pessoa para a Home |
 | POST | `/api/people/` | `create_person` |
-| GET | `/api/people/{id}` | `get_person` |
+| GET | `/api/people/{id}` | `get_person` — inclui `id` e `is_synced` por data (fase 026) |
 | GET | `/api/people/{id}/summary` | `get_person_summary` |
 | PATCH | `/api/people/{id}` | `update_person` |
 | DELETE | `/api/people/{id}` | `delete_person` (soft) |
 | POST | `/api/people/{id}/aliases` | `add_alias` |
-| POST | `/api/people/{id}/dates` | `add_important_date` |
+| POST | `/api/people/{id}/dates` | `add_important_date` — retorna `{"status","id","message"}` |
+| PATCH | `/api/people/{id}/dates/{date_id}` | `update_important_date` (fase 026) — PATCH parcial; propaga para Kaguya |
+| DELETE | `/api/people/{id}/dates/{date_id}` | `delete_important_date` (fase 026) — DELETE físico; CASCADE + hook Kaguya |
 | POST | `/api/people/uploads/avatar` | Upload de foto (multipart/form-data) → `{"url": "/uploads/icons/<filename>"}` |
 
 Todas as rotas requerem `Depends(require_user)`.
 
 **Atenção:** `/overview`, `/search` e `/uploads/avatar` devem ser registrados ANTES de `/{person_id}`
 no router para não serem capturadas pela rota de parâmetro dinâmico.
+
+---
+
+---
+
+## Sync Komi ↔ Kaguya (fase 026)
+
+Todo `person_date` com `label ILIKE '%anivers%'` é espelhado como tarefa `type=birthday`
+na lista "Aniversários" da Kaguya. O sync é bidirecional e best-effort.
+
+### Tabela de ponte
+
+`birthday_sync_links` (em `schema_tasks_pg.sql` da Kaguya):
+
+```sql
+person_date_id  INT NOT NULL UNIQUE REFERENCES person_dates(id) ON DELETE CASCADE
+task_id         INT NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE CASCADE
+komi_label      TEXT  -- cópia do label para diagnóstico
+```
+
+1:1 por person_date (não por pessoa — uma pessoa pode ter múltiplos aniversários).
+
+### Módulo de sync
+
+`agents/kaguya/komi_sync.py` — nunca importar no topo de `agents.komi.tools` (ciclo!).
+Todas as chamadas são **lazy** e dentro de `try/except`.
+
+| Função | Disparada por | Ação |
+|---|---|---|
+| `push_person_date(date_id)` | `add_important_date` e `update_important_date` | Cria/atualiza tarefa birthday na Kaguya |
+| `remove_person_date(task_id)` | `delete_important_date` | Soft-delete da tarefa (scope='series') |
+| `push_birthday(task_id)` | `create_task`/`update_task` type=birthday | Cria/atualiza person_date na Komi |
+| `remove_birthday(task_id)` | `delete_task` scope='series' type=birthday | Apaga o person_date correspondente |
+
+### Anti-loop por convergência de valor
+
+Antes de escrever, cada função compara o valor atual no banco com o valor recebido.
+Se idênticos → no-op. Isso evita propagação em cascata (A→B→A→B…).
+
+### Feature flag
+
+`KOMI_SYNC_ENABLED=false` desativa todas as propagações sem afetar o CRUD.
+
+### Dedup na agenda
+
+`calendar_provider.py` faz `LEFT JOIN birthday_sync_links WHERE bsl.person_date_id IS NULL`:
+aniversários com link são omitidos da listagem da Komi (já aparecem como tarefa Kaguya).
+
+### Migração retroativa
+
+`scripts/migrate_birthday_sync.py` — cria links para aniversários existentes sem link.
+Executar de dentro do container: `docker exec makima-web python -m scripts.migrate_birthday_sync`.
 
 ---
 

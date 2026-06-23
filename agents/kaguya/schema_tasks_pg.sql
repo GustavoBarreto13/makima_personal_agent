@@ -45,7 +45,10 @@ CREATE TABLE IF NOT EXISTS task_projects (
     color       TEXT,                           -- cor de exibição (hex ou oklch)
     icon        TEXT,                           -- emoji ou nome de ícone
     -- Inbox: lista-semente indelével que recebe toda captura sem lista definida.
-    is_inbox    BOOLEAN NOT NULL DEFAULT FALSE,
+    is_inbox      BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Aniversários: lista gerenciada pelo sync Komi↔Kaguya (fase 026).
+    -- Criada dinamicamente pelo helper _get_birthdays_list_id() — nunca no SEED.
+    is_birthdays  BOOLEAN NOT NULL DEFAULT FALSE,
     position    BIGINT NOT NULL DEFAULT 0,      -- ordem manual na sidebar (esparsa ×1000)
     archived_at TIMESTAMPTZ,                    -- lista arquivada some das views, preserva dados
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -55,6 +58,11 @@ CREATE TABLE IF NOT EXISTS task_projects (
 -- Índice único parcial: só vale para linhas onde is_inbox = TRUE.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_task_projects_inbox
     ON task_projects (is_inbox) WHERE is_inbox;
+
+-- Garante que só pode existir UMA lista "Aniversários" no sistema (fase 026).
+-- Mesmo padrão do Inbox — índice único parcial WHERE is_birthdays.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_task_projects_birthdays
+    ON task_projects (is_birthdays) WHERE is_birthdays;
 
 
 -- ----------------------------------------------------------------------------
@@ -143,6 +151,9 @@ CREATE INDEX IF NOT EXISTS idx_tasks_my_day    ON tasks (my_day_date) WHERE my_d
 
 -- fatia 019: id do evento espelho no Google Calendar "Kaguya — Tarefas"
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS google_event_id TEXT;
+
+-- fase 026: lista "Aniversários" — gerenciada pelo sync Komi↔Kaguya
+ALTER TABLE task_projects ADD COLUMN IF NOT EXISTS is_birthdays BOOLEAN NOT NULL DEFAULT FALSE;
 
 
 -- ----------------------------------------------------------------------------
@@ -268,6 +279,29 @@ CREATE TABLE IF NOT EXISTS calendar_prefs (
     color        TEXT,                        -- cor OKLCH sobrescrita (NULL = cor padrão do cal.)
     position     INT  NOT NULL DEFAULT 0      -- ordem na coluna lateral
 );
+
+
+-- ----------------------------------------------------------------------------
+-- birthday_sync_links — ponte 1:1 entre person_dates (Komi) e tasks type=birthday (Kaguya)
+-- Criada na fase 026 para o sync bidirecional de aniversários.
+-- ----------------------------------------------------------------------------
+-- Cada linha mapeia exatamente um person_date a uma task de aniversário.
+-- FKs:
+--   person_date_id → person_dates(id): CASCADE — apagar o person_date remove o link
+--   task_id → tasks(id): CASCADE — apagar a task (hard delete) remove o link
+--     (soft delete em tasks NÃO dispara cascade — o link persiste para que o sync
+--      saiba que a tarefa foi soft-deletada e não tente criar uma nova)
+-- komi_label: cópia do label original para o log/diagnóstico.
+CREATE TABLE IF NOT EXISTS birthday_sync_links (
+    person_date_id  INT NOT NULL UNIQUE REFERENCES person_dates(id) ON DELETE CASCADE,
+    task_id         INT NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE CASCADE,
+    komi_label      TEXT NOT NULL DEFAULT 'aniversário',  -- cópia do label (para diagnóstico)
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+
+-- Índice no task_id para acelerar a consulta Kaguya→Komi (push_birthday lê por task_id).
+-- person_date_id já tem índice implícito pelo UNIQUE.
+CREATE INDEX IF NOT EXISTS idx_bsl_task ON birthday_sync_links (task_id);
 
 
 -- ----------------------------------------------------------------------------

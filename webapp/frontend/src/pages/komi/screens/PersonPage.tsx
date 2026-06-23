@@ -6,13 +6,14 @@
 //   - Profile hero: avatar grande, categoria, apelidos, contatos, notas, datas
 //   - Dom-grid 2×2: FinanceCard | TaskCard | DiaryCard | BookCard
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Icon } from '../icons'
 import { Avatar } from '../icons'
 import { FinanceCard, TaskCard, DiaryCard, BookCard } from '../components/DomainCards'
 import { REL_CATS, daysUntil, fmtDayMonth } from '../lib'
 import { komiApi, toLinks } from '../komiApi'
-import type { PersonDetail, PersonLinks } from '../types'
+import type { PersonDetail, PersonLinks, ImportantDate } from '../types'
+import { DatePicker } from '../../../components/DatePicker'
 
 interface PersonPageProps {
   /** ID da pessoa cujo perfil deve ser exibido. */
@@ -37,21 +38,43 @@ export function PersonPage({ personId, partialName, onEdit }: PersonPageProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Carrega os dados ao montar ou quando o personId muda
-  useEffect(() => {
-    let cancelled = false  // flag para ignorar resposta se o componente desmontar antes
+  // ── Estado do modal de edição de data (fase 026) ──────────────────────
+  // null = modal fechado; objeto = data sendo editada
+  const [editingDate, setEditingDate] = useState<ImportantDate | null>(null)
+  // Campos do formulário de edição
+  const [editLabel, setEditLabel] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [editRecurring, setEditRecurring] = useState(true)
+  // Estado de submissão do modal
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
 
+  // Carrega os dados ao montar ou quando o personId muda
+  const loadProfile = useCallback(async () => {
     setLoading(true)
     setError(null)
     setPerfil(null)
     setLinks(null)
 
-    // Uma única chamada ao summary() retorna perfil + todos os 4 domínios
+    try {
+      const summary = await komiApi.summary(personId)
+      setPerfil(summary.perfil)
+      setLinks(toLinks(summary))
+    } catch {
+      setError('Não foi possível carregar o perfil.')
+    } finally {
+      setLoading(false)
+    }
+  }, [personId])
+
+  useEffect(() => {
+    let cancelled = false
+
     komiApi.summary(personId)
       .then(summary => {
-        if (cancelled) return  // evita setState após desmontagem
+        if (cancelled) return
         setPerfil(summary.perfil)
-        setLinks(toLinks(summary))  // adapta o shape do backend para o shape do design
+        setLinks(toLinks(summary))
       })
       .catch(() => {
         if (cancelled) return
@@ -62,9 +85,65 @@ export function PersonPage({ personId, partialName, onEdit }: PersonPageProps) {
         setLoading(false)
       })
 
-    // Cleanup: marca como cancelado quando o componente desmonta
     return () => { cancelled = true }
-  }, [personId])  // re-executa quando a pessoa muda
+  }, [personId])
+
+  // ── Handlers do modal de edição de data ──────────────────────────────────
+
+  /** Abre o modal preenchido com os dados da data selecionada. */
+  function handleOpenEditDate(d: ImportantDate) {
+    setEditingDate(d)
+    setEditLabel(d.label)
+    setEditDate(d.date)
+    setEditRecurring(d.recurring)
+    setEditError(null)
+  }
+
+  /** Fecha o modal sem salvar. */
+  function handleCloseEditDate() {
+    setEditingDate(null)
+    setEditError(null)
+  }
+
+  /** Salva a edição da data via PATCH. */
+  async function handleSaveDate() {
+    if (!editingDate || !perfil) return
+    setEditSaving(true)
+    setEditError(null)
+
+    try {
+      await komiApi.updateDate(perfil.id, editingDate.id, {
+        label: editLabel,
+        date: editDate,
+        recurring: editRecurring,
+      })
+      setEditingDate(null)
+      // Recarrega o perfil para refletir as alterações (inclusive is_synced atualizado)
+      await loadProfile()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao salvar.'
+      setEditError(msg)
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  /** Remove a data após confirmação. */
+  async function handleDeleteDate(d: ImportantDate) {
+    if (!perfil) return
+    const confirmMsg = d.is_synced
+      ? `Remover "${d.label}"? A tarefa de aniversário na Kaguya também será removida.`
+      : `Remover "${d.label}"?`
+    if (!confirm(confirmMsg)) return
+
+    try {
+      await komiApi.deleteDate(perfil.id, d.id)
+      await loadProfile()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao remover data.'
+      alert(msg)
+    }
+  }
 
   // ── Estado de carregamento ────────────────────────────────────────────
   if (loading) {
@@ -164,7 +243,7 @@ export function PersonPage({ personId, partialName, onEdit }: PersonPageProps) {
             <div className="ph-notes">"{perfil.notes}"</div>
           )}
 
-          {/* Faixa de datas importantes (pills horizontais) */}
+          {/* Faixa de datas importantes (pills horizontais) — fase 026: + ✏/🗑 e badge sync */}
           {upcomingDates.length > 0 && (
             <div className="dates-strip">
               {upcomingDates.map((d, i) => (
@@ -173,13 +252,45 @@ export function PersonPage({ personId, partialName, onEdit }: PersonPageProps) {
                   <div className="dp-icon">
                     <Icon name={/anivers/i.test(d.label) ? 'cake' : 'calendar'} />
                   </div>
-                  <div>
-                    <div className="dp-label">{d.label}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="dp-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {d.label}
+                      {/* Badge de sincronização: indica que a tarefa Kaguya existe */}
+                      {d.is_synced && (
+                        <span
+                          title="Sincronizado com Kaguya — tarefa de aniversário ativa"
+                          style={{ fontSize: 12, opacity: 0.8, cursor: 'default' }}
+                        >
+                          🎂
+                        </span>
+                      )}
+                    </div>
                     {/* Data com alerta de proximidade: "em Xd" quando falta ≤ 30 dias */}
                     <div className={'dp-when' + (d.days >= 0 && d.days <= 30 ? ' dp-soon' : '')}>
                       {fmtDayMonth(d.date)}
                       {d.days === 0 ? ' · hoje!' : d.days >= 0 && d.days <= 30 ? ` · em ${d.days}d` : ''}
                     </div>
+                  </div>
+                  {/* Botões de edição e remoção — fase 026 */}
+                  <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      title="Editar data"
+                      onClick={() => handleOpenEditDate(d)}
+                      style={{ padding: '2px 4px', opacity: 0.6 }}
+                    >
+                      ✏
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      title="Remover data"
+                      onClick={() => handleDeleteDate(d)}
+                      style={{ padding: '2px 4px', opacity: 0.6, color: 'var(--danger, #e44)' }}
+                    >
+                      🗑
+                    </button>
                   </div>
                 </div>
               ))}
@@ -204,6 +315,119 @@ export function PersonPage({ personId, partialName, onEdit }: PersonPageProps) {
         <DiaryCard   data={links?.journal} />
         <BookCard    data={links?.books} />
       </div>
+
+      {/* ── Modal de edição de data (fase 026) ───────────────────────── */}
+      {/* Abre ao clicar ✏ em qualquer date-pill; fecha ao salvar, cancelar ou Escape */}
+      {editingDate && (
+        <div
+          className="km-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Editar data"
+          onClick={(e) => { if (e.target === e.currentTarget) handleCloseEditDate() }}
+          style={{ zIndex: 60 }}
+        >
+          <div className="km-modal" style={{ maxWidth: 360, padding: '24px 20px' }}>
+
+            {/* Cabeçalho do modal */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Editar data</h3>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={handleCloseEditDate}
+                aria-label="Fechar"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Formulário de edição */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+              {/* Label da data (ex.: "aniversário", "formatura") */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, opacity: 0.7, marginBottom: 4 }}>
+                  Descrição
+                </label>
+                <input
+                  className="kg-input"
+                  type="text"
+                  value={editLabel}
+                  onChange={(e) => setEditLabel(e.target.value)}
+                  placeholder="Ex.: aniversário, formatura..."
+                  disabled={editSaving}
+                  autoFocus
+                />
+              </div>
+
+              {/* Seletor de data — usa o DatePicker cross-shell (fase 026) */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, opacity: 0.7, marginBottom: 4 }}>
+                  Data
+                </label>
+                <DatePicker
+                  value={editDate}
+                  onChange={setEditDate}
+                  disabled={editSaving}
+                  placeholder="Selecionar data..."
+                />
+              </div>
+
+              {/* Flag de recorrência anual */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={editRecurring}
+                  onChange={(e) => setEditRecurring(e.target.checked)}
+                  disabled={editSaving}
+                />
+                <span style={{ fontSize: 13 }}>Repete todo ano</span>
+              </label>
+
+              {/* Badge informativo quando a data está sincronizada com a Kaguya */}
+              {editingDate.is_synced && (
+                <div
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    fontSize: 12, color: 'var(--success, #2a7)', opacity: 0.9,
+                    padding: '6px 8px', background: 'rgba(0,180,100,0.1)', borderRadius: 6,
+                  }}
+                >
+                  🎂 <span>Esta data está sincronizada com uma tarefa de aniversário na Kaguya. Alterações propagam automaticamente.</span>
+                </div>
+              )}
+
+              {/* Mensagem de erro (se houver) */}
+              {editError && (
+                <div style={{ color: 'var(--danger, #e44)', fontSize: 12 }}>
+                  ❌ {editError}
+                </div>
+              )}
+            </div>
+
+            {/* Ações do modal */}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={handleCloseEditDate}
+                disabled={editSaving}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={handleSaveDate}
+                disabled={editSaving || !editLabel.trim() || !editDate}
+              >
+                {editSaving ? 'Salvando…' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
