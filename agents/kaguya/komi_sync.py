@@ -38,12 +38,60 @@ Usage:
     >>> komi_sync.push_birthday(task_id=99)
 """
 
+import contextvars
+import functools
 import logging
 import os
 
 from agents.db import get_conn, run_select, run_dml  # noqa: F401 — run_dml usado internamente
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Guarda de reentrância — impede a recursão mútua Komi <-> Kaguya
+# ---------------------------------------------------------------------------
+# As duas direções do sync chamam uma à outra: push_person_date cria a tarefa
+# (create_task), e create_task chama push_birthday no final; push_birthday cria
+# o person_date (add_important_date), que chama push_person_date de novo. Na
+# CRIAÇÃO o link ainda não existe, então a checagem "anti-loop por convergência
+# de valor" não tem o que comparar — cada lado cria um registro novo e re-dispara
+# o outro lado → recursão infinita (foi o que gerou centenas de duplicatas).
+#
+# Esta flag (isolada por contexto/thread via contextvars) marca "já estou dentro
+# de um sync". Qualquer chamada de sync ANINHADA vira no-op e o ciclo se quebra;
+# o lado que iniciou segue normalmente e grava o seu próprio link.
+_sync_em_andamento = contextvars.ContextVar("komi_kaguya_sync_em_andamento", default=False)
+
+
+def _guarda_reentrancia(func):
+    """Decorar uma função de sync para que ela não recursa em si mesma/no par.
+
+    Se já houver um sync Komi↔Kaguya em andamento nesta pilha de chamadas, a
+    função decorada retorna imediatamente (no-op). Caso contrário, marca a flag,
+    executa a função e desmarca no fim (mesmo se houver exceção).
+
+    Args:
+        func: Função de sync a proteger (push_person_date, push_birthday, etc.).
+
+    Returns:
+        A função embrulhada com a guarda de reentrância.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Já estamos dentro de um sync? Então esta é uma chamada aninhada — aborta
+        # para não entrar no ciclo Komi→Kaguya→Komi→...
+        if _sync_em_andamento.get():
+            return None
+        # Marca o início do sync e garante a desmarcação no finally (token do
+        # contextvars permite restaurar o valor anterior com segurança)
+        token = _sync_em_andamento.set(True)
+        try:
+            return func(*args, **kwargs)
+        finally:
+            _sync_em_andamento.reset(token)
+
+    return wrapper
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +150,7 @@ def _derive_task_title(person_name: str, label: str) -> str:
 # Komi → Kaguya: push de person_date (criar ou atualizar a tarefa birthday)
 # ---------------------------------------------------------------------------
 
+@_guarda_reentrancia
 def push_person_date(date_id: int) -> None:
     """Criar ou atualizar a tarefa type=birthday correspondente a um person_date.
 
@@ -231,6 +280,7 @@ def push_person_date(date_id: int) -> None:
 # Komi → Kaguya: remoção de person_date (soft-delete da tarefa birthday)
 # ---------------------------------------------------------------------------
 
+@_guarda_reentrancia
 def remove_person_date(task_id: int) -> None:
     """Soft-delete a tarefa type=birthday correspondente ao person_date excluído.
 
@@ -265,6 +315,7 @@ def remove_person_date(task_id: int) -> None:
 # Kaguya → Komi: push de task birthday (criar ou atualizar o person_date)
 # ---------------------------------------------------------------------------
 
+@_guarda_reentrancia
 def push_birthday(task_id: int) -> None:
     """Criar ou atualizar o person_date "aniversário" correspondente a uma task type=birthday.
 
@@ -388,6 +439,7 @@ def push_birthday(task_id: int) -> None:
 # Kaguya → Komi: remoção de task birthday (apagar o person_date correspondente)
 # ---------------------------------------------------------------------------
 
+@_guarda_reentrancia
 def remove_birthday(task_id: int) -> None:
     """Apagar o person_date correspondente à task type=birthday soft-deletada com scope='series'.
 

@@ -316,6 +316,70 @@ def add_alias(person_id: str, alias: str) -> dict:
         return {"status": "error", "message": msg}
 
 
+# Ano-sentinela para datas informadas apenas como MM-DD (mês-dia, sem ano).
+# É um ano BISSEXTO de propósito: assim 02-29 (29 de fevereiro) continua válido.
+# Para aniversário o ano não importa — a recorrência é anual e a exibição troca o
+# ano (ver komi/calendar_provider.py) — então 2000 é só uma âncora interna, nunca
+# mostrada como "ano de nascimento".
+_SENTINEL_YEAR = 2000
+
+
+def _normalize_important_date(date_str: str) -> str:
+    """Normalizar uma data de entrada para o formato AAAA-MM-DD do Postgres.
+
+    Aceita os dois formatos que a interface oferece (placeholder do campo:
+    "MM-DD ou AAAA-MM-DD"):
+      - "AAAA-MM-DD": ano-mês-dia completo (ISO) — validado e devolvido igual.
+      - "MM-DD": mês-dia sem ano — recebe o ano-sentinela bissexto (2000), já
+        que para aniversário o ano não é necessário.
+
+    Sem esta normalização o valor cru ia direto para a coluna DATE do Postgres;
+    um "MM-DD" então estourava com "invalid input syntax for type date", que
+    virava um HTTP 400 silencioso na tela (a UI engole o erro do save).
+
+    Args:
+        date_str: Data crua vinda do formulário ou do agente.
+
+    Returns:
+        A data normalizada no formato "AAAA-MM-DD" (sempre com zero à esquerda).
+
+    Raises:
+        ValueError: Se a string não casar com MM-DD nem AAAA-MM-DD, ou não for
+            uma data de calendário válida (ex.: "02-30").
+
+    Example:
+        >>> _normalize_important_date("05-15")
+        '2000-05-15'
+        >>> _normalize_important_date("1998-5-9")
+        '1998-05-09'
+    """
+    # Tira espaços nas pontas (tolera " 05-15 " digitado sem querer)
+    texto = (date_str or "").strip()
+    # Quebra pelos hifens para saber se veio com ano (3 partes) ou sem (2 partes)
+    partes = texto.split("-")
+
+    try:
+        if len(partes) == 3:
+            # AAAA-MM-DD: ano, mês e dia explícitos
+            ano, mes, dia = (int(p) for p in partes)
+        elif len(partes) == 2:
+            # MM-DD: sem ano → usa o ano-sentinela bissexto
+            mes, dia = (int(p) for p in partes)
+            ano = _SENTINEL_YEAR
+        else:
+            # Qualquer outra forma (ex.: "15/05/2000") é inválida aqui
+            raise ValueError
+        # _date (datetime.date) valida o intervalo de mês/dia, rejeita datas
+        # impossíveis como 02-30, e o isoformat() garante o zero-padding final.
+        return _date(ano, mes, dia).isoformat()
+    except (ValueError, TypeError):
+        # Troca o erro técnico do Postgres por uma mensagem que o usuário entende
+        raise ValueError(
+            f"Data inválida: '{date_str}'. Use MM-DD (ex.: 05-15) "
+            f"ou AAAA-MM-DD (ex.: 1998-05-15)."
+        )
+
+
 def add_important_date(
     person_id: str,
     label: str,
@@ -340,7 +404,15 @@ def add_important_date(
     if not label or not label.strip():
         return {"status": "error", "message": "O label não pode ser vazio."}
     if not date:
-        return {"status": "error", "message": "A data é obrigatória no formato YYYY-MM-DD."}
+        return {"status": "error", "message": "A data é obrigatória (MM-DD ou AAAA-MM-DD)."}
+
+    # Aceita MM-DD (sem ano) e AAAA-MM-DD — como o campo da UI promete — e
+    # converte para o AAAA-MM-DD que o Postgres exige. Sem isto, um MM-DD vira
+    # erro cru do banco → HTTP 400 engolido pela tela ("não salva nada").
+    try:
+        date = _normalize_important_date(date)
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
 
     try:
         with get_conn() as conn:
@@ -403,6 +475,14 @@ def update_important_date(
     # Exige pelo menos um campo — sem payload = erro claro (não UPDATE sem SET)
     if date is None and label is None and recurring is None:
         return {"status": "error", "message": "Nenhum campo para atualizar."}
+
+    # Normaliza a data (MM-DD ou AAAA-MM-DD) antes de montar o UPDATE — mesma
+    # regra do add_important_date, evita o erro cru do Postgres num PATCH.
+    if date is not None:
+        try:
+            date = _normalize_important_date(date)
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}
 
     # Monta UPDATE parcial dinamicamente — apenas os campos passados entram no SET
     sets = []
