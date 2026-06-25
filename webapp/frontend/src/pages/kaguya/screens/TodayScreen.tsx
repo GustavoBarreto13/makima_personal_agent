@@ -12,7 +12,7 @@
 //     resolve o id diretamente, sem prop extra.
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import type { Task, Project, MyDayResponse } from '../types'
+import type { Task, Project, MyDayResponse, Calendar } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { QuickAdd } from '../components/QuickAdd'
 import { DayHero } from '../components/DayHero'
@@ -50,6 +50,9 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
   const [loading, setLoading] = useState(true)
   // activeId: id do card de plano em arraste (null = nenhum drag ativo).
   const [activeId, setActiveId] = useState<number | null>(null)
+  // gcalSources: fontes do Google Calendar (gcal:*) com visibilidade/cor do usuário.
+  // Compartilham calendar_prefs com a tela de Calendário — toggle aqui reflete lá.
+  const [gcalSources, setGcalSources] = useState<Calendar[]>([])
 
   // Sensor centralizado: PointerSensor com 5px de ativação.
   const sensors = useDndSensors()
@@ -57,6 +60,16 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
   // firstLoad: verdadeiro apenas no mount. Controla se o load mostra o spinner.
   // Usando ref (não state) para não causar re-render ao setar.
   const firstLoad = useRef(true)
+
+  // Carrega as fontes do Google Calendar no mount para popular o toggle da timeline.
+  // Silencioso em caso de falha (Google pode não estar configurado).
+  useEffect(() => {
+    kaguyaApi.calendarSources()
+      .then((sources) => {
+        setGcalSources(sources.filter((s) => s.id.startsWith('gcal:')))
+      })
+      .catch(() => { /* sem credencial gcal — lista vazia, toggle não aparece */ })
+  }, [])
 
   // Carrega (ou recarrega) o Meu Dia.
   // O parâmetro `silent` evita piscar o "Carregando…":
@@ -81,6 +94,26 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
     firstLoad.current = false
     load(silent)
   }, [load, reloadKey])
+
+  // ── Handler de toggle de calendário na timeline ──────────────────────────────
+  // Liga/desliga a visibilidade de um calendário Google na timeline do Meu Dia.
+  // Usa as mesmas calendar_prefs da CalendarScreen — toggle aqui reflete lá e vice-versa.
+  const handleToggleCalendar = useCallback(async (sourceId: string, visible: boolean) => {
+    // Optimistic update: reflete imediatamente no toggle sem esperar o servidor
+    setGcalSources((prev) =>
+      prev.map((s) => s.id === sourceId ? { ...s, visible } : s)
+    )
+    try {
+      await kaguyaApi.setCalendarPref(sourceId, { visible })
+      // Reload silencioso: backend recomputa eventos + capacity com a nova pref
+      load(true)
+    } catch {
+      // Rollback em caso de erro de rede
+      setGcalSources((prev) =>
+        prev.map((s) => s.id === sourceId ? { ...s, visible: !visible } : s)
+      )
+    }
+  }, [load])
 
   // ── Handlers de DnD ──────────────────────────────────────────────────────────
   // IMPORTANTE: todos os hooks (useCallback) precisam ser declarados ANTES de qualquer
@@ -256,8 +289,18 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
           {/* ── Coluna direita: capacity + timeline (sticky) ── */}
           <div>
             <CapacityBar capacity={capacity} />
-            {/* DayTimeline usa HourSlots droppables; lógica de drop está no onDragEnd acima. */}
-            <DayTimeline plano={plano} onChanged={load} onOpen={onOpenTask} toast={toast} />
+            {/* DayTimeline usa HourSlots droppables; lógica de drop está no onDragEnd acima.
+                eventos + sources: Google Calendar do dia, já filtrados por visibilidade.
+                onToggleCalendar: persiste pref e dispara reload silencioso (via handleToggleCalendar). */}
+            <DayTimeline
+              plano={plano}
+              eventos={data?.eventos ?? []}
+              sources={gcalSources}
+              onToggleCalendar={handleToggleCalendar}
+              onChanged={load}
+              onOpen={onOpenTask}
+              toast={toast}
+            />
           </div>
         </div>
       </div>

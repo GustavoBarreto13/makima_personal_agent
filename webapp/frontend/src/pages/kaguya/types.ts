@@ -90,6 +90,19 @@ export interface CapacityStats {
   calendar_ok: boolean    // false quando o Calendar não respondeu (agenda_min = 0)
 }
 
+// Evento do Google Calendar serializado pelo backend para a timeline do Meu Dia.
+// Produzido por _gcal_events_for_day em tools_tasks.py, já filtrado por visibilidade.
+export interface TimelineEvent {
+  id: string
+  title: string
+  start: string | null       // ISO 8601 "-03:00" (timed) ou null (all_day)
+  end: string | null         // ISO 8601 "-03:00" (timed) ou null (all_day)
+  all_day: boolean
+  calendar_id: string        // ID do calendário no Google
+  calendar_name: string      // Nome legível (ex.: "Gustavo Barreto")
+  color: string | null       // Cor do usuário (calendar_prefs) ou null para default
+}
+
 // Resposta do endpoint GET /api/tasks/my-day.
 export interface MyDayResponse {
   date: string              // "YYYY-MM-DD" do plano
@@ -97,6 +110,7 @@ export interface MyDayResponse {
   pendencias_ontem: Task[]  // abertas de dias anteriores (my_day_date < date)
   sugestoes: Task[]         // vencem em ≤7 dias, fora do plano
   capacity: CapacityStats
+  eventos: TimelineEvent[]  // eventos do Google Calendar do dia (filtrados por visibilidade)
 }
 
 // Uma lista (na UI "Lista"; no modelo "project").

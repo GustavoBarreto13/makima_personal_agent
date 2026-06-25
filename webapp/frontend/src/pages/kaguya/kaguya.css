@@ -997,7 +997,44 @@
 
 /* DayTimeline */
 .kg-timeline { position: sticky; top: calc(16px + var(--cap-h, 120px)); }
-.kg-timeline-title { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-4); margin-bottom: 8px; }
+/* Cabeçalho: título + toggle de calendários lado a lado */
+.kg-tl-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.kg-timeline-title { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-4); }
+/* Toggle de calendários Google */
+.kg-tl-cal-toggle { position: relative; }
+.kg-tl-cal-btn {
+  display: flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 10px; color: var(--ink-4);
+  background: none; border: 1px solid var(--line-2); border-radius: 5px;
+  padding: 2px 7px; cursor: pointer; transition: color .15s, border-color .15s;
+}
+.kg-tl-cal-btn:hover { color: var(--ink); border-color: var(--line-1); }
+.kg-tl-cal-dots { display: flex; gap: 3px; }
+.kg-tl-cal-dot { width: 7px; height: 7px; border-radius: 50%; }
+/* Popover de seleção de calendários */
+.kg-tl-cal-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 70;
+  background: var(--card); border: 1px solid var(--line-2); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); padding: 6px 0; min-width: 200px;
+}
+.kg-tl-cal-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 12px; cursor: pointer; font-size: 12.5px; color: var(--ink);
+}
+.kg-tl-cal-item:hover { background: var(--kg-tint); }
+.kg-tl-cal-item input[type="checkbox"] { cursor: pointer; accent-color: var(--kg); }
+.kg-tl-cal-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.kg-tl-cal-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Faixa de eventos de dia inteiro (acima da régua) */
+.kg-tl-allday {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;
+}
+.kg-tl-allday-chip {
+  font-size: 11px; color: var(--ink); background: var(--card-2);
+  border-left: 3px solid var(--ink-4); border-radius: 4px;
+  padding: 2px 7px; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 140px;
+}
 .kg-tl-body { position: relative; }
 .kg-tl-hour {
   height: 44px; border-top: 1px solid var(--line-2);
@@ -1006,13 +1043,13 @@
 .kg-tl-hour-label { font-family: var(--mono); font-size: 10px; color: var(--ink-4); padding: 2px 4px 0 0; min-width: 32px; }
 .kg-tl-hour.drop-ok { background: var(--kg-tint); }
 .kg-tl-slot {
-  position: absolute; left: 36px; right: 4px;
+  position: absolute;
   border-radius: 6px; padding: 3px 7px; overflow: hidden;
   font-size: 12px; color: var(--ink); cursor: pointer;
   display: flex; flex-direction: column; justify-content: center;
 }
 .kg-tl-slot.task { background: color-mix(in oklch, var(--kg) 18%, var(--card)); border-left: 3px solid var(--kg); }
-.kg-tl-slot.event { background: var(--card-2); border-left: 3px solid var(--ink-4); }
+.kg-tl-slot.event { background: var(--card-2); border-left: 3px solid var(--ink-4); cursor: default; }
 .kg-tl-slot-time { font-family: var(--mono); font-size: 9.5px; color: var(--ink-4); }
 
 /* Estado vazio acolhedor */

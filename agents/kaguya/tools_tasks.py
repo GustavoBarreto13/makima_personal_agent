@@ -1837,6 +1837,90 @@ def clear_time_block(task_id: int) -> dict:
     return {"status": "ok", "message": "Bloco de tempo removido."}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Integração gcal para o Meu Dia
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _gcal_events_for_day(day_str: str) -> tuple[list[dict], list[tuple[int, int]], bool]:
+    """Busca os eventos do Google Calendar para um dia, aplica preferências de visibilidade
+    e calcula as tuplas de minutos (início, fim) para alimentar o compute_capacity.
+
+    Nunca levanta — qualquer falha (Google offline, sem credencial, sem prefs) retorna
+    ``([], [], False)`` sinalizando ``calendar_ok=False`` na capacity.
+
+    Args:
+        day_str: Data no formato "YYYY-MM-DD".
+
+    Returns:
+        Tupla de três valores:
+            - eventos_serial: lista de dicts prontos para serialização JSON.
+              Cada item: {id, title, start, end, all_day, calendar_id,
+              calendar_name, color}.
+            - eventos_tuplas: lista de (inicio_min, fim_min) em minutos desde
+              a meia-noite BRT, apenas para eventos com hora (all_day=False).
+              Usados por compute_capacity.
+            - cal_ok: True quando o Google respondeu com sucesso.
+    """
+    try:
+        from agents.kaguya import gcal as _gcal
+        from agents.kaguya.calendar_prefs import get_calendar_prefs
+
+        # Lê prefs salvas — dict keyed por calendar_id ("gcal:<cal_id>")
+        prefs_list = get_calendar_prefs()
+        prefs: dict[str, dict] = {p["calendar_id"]: p for p in prefs_list}
+
+        # Busca os eventos do Google (exclui espelho Kaguya e TickTick por padrão)
+        raw_events = _gcal.list_events(day_str, day_str)
+
+        eventos_serial: list[dict] = []
+        eventos_tuplas: list[tuple[int, int]] = []
+
+        for ev in raw_events:
+            # Chave de pref: "gcal:<id_do_calendário>"
+            pref_key = f"gcal:{ev.get('calendar_id', '')}"
+            pref = prefs.get(pref_key, {})
+
+            # Calendários invisíveis são pulados
+            if not pref.get("visible", True):
+                continue
+
+            start: str = ev.get("start", "")
+            end: str   = ev.get("end", "")
+            all_day    = "T" not in start  # data sem "T" = dia inteiro
+
+            item: dict = {
+                "id":            ev.get("id", ""),
+                "title":         ev.get("summary", "(sem título)"),
+                "start":         start if not all_day else None,
+                "end":           end   if not all_day else None,
+                "all_day":       all_day,
+                "calendar_id":   ev.get("calendar_id", ""),
+                "calendar_name": ev.get("calendar_name", ""),
+                "color":         pref.get("color"),  # None → usa cor padrão no frontend
+            }
+            eventos_serial.append(item)
+
+            # Tupla de minutos para capacity — só para eventos com hora
+            if not all_day and start and end:
+                try:
+                    # _to_brt já normalizou para -03:00; extrair H e M diretamente
+                    # é suficiente pois o offset é sempre -03:00 (horário de Brasília)
+                    from datetime import datetime
+                    dt_ini = datetime.fromisoformat(start)
+                    dt_fim = datetime.fromisoformat(end)
+                    ini_min = dt_ini.hour * 60 + dt_ini.minute
+                    fim_min = dt_fim.hour * 60 + dt_fim.minute
+                    if fim_min > ini_min:  # eventos mal formados (duração negativa) são pulados
+                        eventos_tuplas.append((ini_min, fim_min))
+                except (ValueError, AttributeError):
+                    pass  # evento com datetime inválido — pula, não quebra
+
+        return eventos_serial, eventos_tuplas, True
+
+    except Exception:
+        return [], [], False
+
+
 def list_my_day(date_str: Optional[str] = None) -> dict:
     """Monta o ritual do Meu Dia: plano, pendências de ontem, sugestões e capacity.
 
@@ -1936,27 +2020,13 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     pendencias = _prepare(pendencias_rows)
     sugestoes = _prepare(sugestoes_rows)
 
-    # ── Capacity: estimativas das tarefas + eventos do Calendar do dia ──
-    # Tenta ler os eventos do Google Calendar via MCP. Qualquer falha é silenciosa.
-    eventos: list[tuple[int, int]] = []
-    cal_ok = True
-    try:
-        # Import lazy: tools_calendar é o módulo que acessa o MCP do Calendar.
-        # Aqui usamos a tool existente que lê eventos numa janela de datas.
-        from agents.kaguya import tools_calendar as tc
-        raw = tc.list_tasks_in_range(hoje_str, hoje_str)
-        # list_tasks_in_range retorna tarefas, não eventos do Google Calendar.
-        # Para a capacity precisamos dos eventos do Calendar (Google), que são lidos
-        # pelo agente via MCP. No contexto do router (webapp), não há MCP disponível;
-        # nesse caso a capacity roda só com estimativas (calendar_ok=False se não vier).
-        # Quando a Kaguya (Telegram) chama list_my_day, ela pode injetar os eventos
-        # lendo pelo MCP antes de chamar esta função — por ora eventos = [].
-        # TODO fatia 019: o Calendar Hub passará os eventos via parâmetro.
-    except Exception:
-        cal_ok = False
+    # ── Capacity: estimativas das tarefas + eventos do Google Calendar do dia ──
+    # _gcal_events_for_day aplica as prefs de visibilidade salvas e calcula as tuplas
+    # de minutos para o compute_capacity. Nunca levanta — falha → cal_ok=False.
+    eventos_serial, eventos_tuplas, cal_ok = _gcal_events_for_day(hoje_str)
 
     estimativas = [t.get("duration_min") for t in plano]
-    cap = compute_capacity(estimativas, eventos, calendar_ok=cal_ok)
+    cap = compute_capacity(estimativas, eventos_tuplas, calendar_ok=cal_ok)
     cap["no_plano"] = len(plano)   # sobrescreve com a contagem real do plano
 
     return {
@@ -1965,4 +2035,7 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         "pendencias_ontem": pendencias,
         "sugestoes": sugestoes,
         "capacity": cap,
+        # Eventos do Google Calendar do dia (já filtrados por visibilidade).
+        # Usados pela timeline do Meu Dia. Lista vazia quando o Google não responde.
+        "eventos": eventos_serial,
     }
