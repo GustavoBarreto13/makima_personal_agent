@@ -287,13 +287,25 @@ Cada item retornado por um provedor deve seguir o TypedDict `CalendarItem`:
 `agents/kaguya/gcal.py` encapsula toda a interação com a Google Calendar API v3.
 Usa as mesmas credenciais OAuth do MCP Calendar (`GOOGLE_CALENDAR_*`).
 
+**Thread-safety:** `_get_service()` é thread-safe. Credenciais compartilhadas sob `_auth_lock`;
+o cliente Resource (baseado em `httplib2.Http`, não thread-safe) fica em `threading.local()` — um
+por thread. Isso permite que `gcal_sync.py` dispare push num worker thread e que `list_events()`
+faça fan-out paralelo sem corrida de dados.
+
 Funções principais:
-- `list_calendars()` — todos os calendários da conta (filtra "Kaguya — Tarefas" e "TickTick")
-- `list_events(start, end, calendar_id?)` — eventos num intervalo
-- `create_event(summary, start, end, ...)` — cria no calendário principal
-- `update_event(event_id, ...)` — atualiza
-- `delete_event(event_id)` — remove
-- `ensure_kaguya_calendar()` — garante que "Kaguya — Tarefas" existe (idempotente)
+- `list_calendars()` — todos os calendários da conta; cache 5 min; serve-stale-on-error
+- `list_events(start, end, exclude?)` — eventos num intervalo; **fan-out paralelo** (ThreadPoolExecutor
+  com até 8 workers, um por calendário); preserva a ordem dos calendários; cache 60s
+- `_fetch_cal_events(cal, time_min, time_max)` — helper interno do fan-out; cada worker chama
+  `_get_service()` (thread-local) e faz o `events().list()` individualmente
+- `create_event(calendar_id, summary, start, end, all_day, ...)` — cria evento com hora ou dia inteiro
+- `update_event(calendar_id, event_id, **fields)` — atualiza via `events().patch()`.
+  **Fast-path** quando `all_day` é passado explicitamente (sem GET prévio, 1 round-trip);
+  **fallback** quando `all_day` está ausente (GET para descobrir o tipo, depois patch).
+  O `gcal_sync` sempre passa `all_day`, portanto o push nunca faz o GET desnecessário.
+- `delete_event(calendar_id, event_id)` — remove
+- `ensure_kaguya_calendar()` — garante que "Kaguya — Tarefas" existe (idempotente; cacheado no módulo)
+- `invalidate_events_cache()` — limpa o cache de eventos (chamado pelas rotas POST/PATCH/DELETE do webapp)
 
 ### komi_sync.py — sync bidirecional de aniversários Komi ↔ Kaguya (fase 026)
 
@@ -324,19 +336,28 @@ o sync já criou pelo menos um aniversário.
 ### gcal_sync.py — espelho best-effort de tarefas no GCal
 
 `agents/kaguya/gcal_sync.py` mantém um espelho das tarefas Kaguya no Google Calendar
-"Kaguya — Tarefas". Opera de forma **best-effort** — nunca levanta exceção; falha no Google
-não aborta a operação principal.
+"Kaguya — Tarefas". Opera de forma **best-effort** — falhas do Google são logadas como
+`warning` (logger `kaguya.gcal_sync`) mas não abortam a operação principal.
 
-Funções:
-- `push_task(task_id)` — cria ou atualiza o evento espelho. Tarefa concluída ganha prefixo "✓ ".
-- `remove_task_event(task_id)` — remove o evento espelho (usado em soft-delete).
+**Fire-and-forget (assíncrono):** as funções públicas submetem o trabalho a um worker thread
+de background (`ThreadPoolExecutor(max_workers=1, thread_name_prefix="gcal-sync")`) e retornam
+imediatamente — o save de tarefa não espera pelo round-trip ao Google. O único worker serializa
+as escritas (preserva a ordem das mutações da mesma tarefa e evita martelar a API).
+
+Funções públicas (fire-and-forget):
+- `push_task(task_id)` — agenda criação/atualização do evento espelho. Tarefa concluída ganha prefixo "✓ ".
+- `remove_task_event(task_id)` — agenda remoção do evento espelho (usado em soft-delete).
+
+Funções internas síncronas (executadas no worker, testáveis diretamente):
+- `_push_task_sync(task_id)` — implementação real do push; nunca levanta exceção.
+- `_remove_task_event_sync(task_id)` — implementação real do remove; nunca levanta exceção.
 
 **Gatilhos em `tools_tasks.py`:** todas as mutações de tarefa chamam `push_task` ou
 `remove_task_event` (lazy import dentro de `try/except`) **após** a transação PostgreSQL —
 o Google Calendar nunca participa da transação.
 
-**Feature flag:** `GCAL_SYNC_ENABLED=false` desativa todos os gatilhos sem alterar o CRUD.
-Padrão: `true`.
+**Feature flag:** `GCAL_SYNC_ENABLED=false` desativa todos os gatilhos (sem submit ao executor)
+sem alterar o CRUD. Padrão: `true`.
 
 ### Variáveis de ambiente necessárias
 

@@ -12,8 +12,17 @@ funções Python puras, importáveis de qualquer lugar no projeto:
 - `webapp/` (backend FastAPI) — para exibir e criar eventos via API REST
 - `agents/kaguya/gcal_sync.py` — para espelhar tarefas no calendário "Kaguya — Tarefas"
 
-O padrão de autenticação (`_get_service`) é idêntico ao do servidor MCP,
-reaproveitando as mesmas variáveis de ambiente.
+Thread-safety
+-------------
+`_get_service()` é **thread-safe**:
+
+- As credenciais OAuth2 (`_cached_creds`) são compartilhadas entre threads e acessadas
+  somente sob `_auth_lock` quando há mutação (inicialização ou refresh).
+- O cliente da API (`Resource`) é armazenado em `_local` (threading.local) — um por thread —
+  porque `httplib2.Http` não é thread-safe. Cada thread constrói o seu de forma lazy.
+
+Isso permite que `gcal_sync.py` dispare o push em um worker thread sem corrida de dados,
+e que `list_events()` faça fan-out paralelo em múltiplas threads.
 
 Usage:
     >>> from agents.kaguya.gcal import list_events, create_event
@@ -22,7 +31,9 @@ Usage:
 """
 
 import os
+import threading
 import time as _time             # aliasado para evitar colisão com variáveis locais chamadas 'time'
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -46,10 +57,19 @@ from googleapiclient.discovery import build
 # Escopo OAuth: leitura + escrita (necessário para criar o calendário Kaguya)
 _SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-# Cache do cliente da Google Calendar API (objeto de sessão HTTP reutilizável)
-_service = None
+# Thread-local: armazena um cliente Resource por thread.
+# httplib2.Http (usado internamente pelo googleapiclient) não é thread-safe;
+# um cliente por thread evita corridas de dados quando list_events() faz
+# fan-out paralelo ou quando gcal_sync dispara push em background.
+_local = threading.local()
 
-# Cache das credenciais OAuth2 (token de acesso + refresh token)
+# Lock que protege a inicialização e o refresh das credenciais OAuth2.
+# O refresh modifica _cached_creds — o lock impede que duas threads refrequem
+# simultaneamente e corrompam o objeto de credenciais.
+_auth_lock = threading.Lock()
+
+# Cache das credenciais OAuth2 (token de acesso + refresh token).
+# Compartilhado entre threads; acessado somente sob _auth_lock quando há mutação.
 _cached_creds: Optional[Credentials] = None
 
 # Cache do ID do calendário "Kaguya — Tarefas" — evita buscar na API toda vez
@@ -92,62 +112,67 @@ _EVENTS_TTL: float = 60.0
 def _get_service():
     """Retorna o cliente da Google Calendar API, renovando o token se necessário.
 
-    Usa o padrão de credenciais via variáveis de ambiente (sem arquivo JSON),
-    idêntico ao servidor MCP em `mcp_servers/calendar/server.py`.
+    Thread-safe: credenciais são compartilhadas e protegidas por ``_auth_lock``;
+    o cliente (Resource) é armazenado em ``_local`` (threading.local) — um por thread.
+    Isso permite chamadas concorrentes a partir de worker threads sem corrida de dados.
 
     Returns:
         O cliente (Resource) da Google Calendar API v3 pronto para uso.
     """
-    global _service, _cached_creds
+    global _cached_creds
 
-    # Inicializa as credenciais apenas na primeira chamada (lazy init)
-    if _cached_creds is None:
-        # Lê todas as variáveis de ambiente necessárias para autenticação OAuth2
-        access_token = os.environ.get("GOOGLE_CALENDAR_ACCESS_TOKEN", "")
-        refresh_token = os.environ.get("GOOGLE_CALENDAR_REFRESH_TOKEN", "")
-        client_id = os.environ.get("GOOGLE_CALENDAR_CLIENT_ID", "")
-        client_secret = os.environ.get("GOOGLE_CALENDAR_CLIENT_SECRET", "")
-        token_expiry_str = os.environ.get("GOOGLE_CALENDAR_TOKEN_EXPIRY", "")
+    # Seção crítica: inicialização e refresh das credenciais compartilhadas.
+    # Duas threads nunca entram aqui ao mesmo tempo, evitando double-refresh.
+    with _auth_lock:
+        if _cached_creds is None:
+            # Lê todas as variáveis de ambiente necessárias para autenticação OAuth2
+            access_token = os.environ.get("GOOGLE_CALENDAR_ACCESS_TOKEN", "")
+            refresh_token = os.environ.get("GOOGLE_CALENDAR_REFRESH_TOKEN", "")
+            client_id = os.environ.get("GOOGLE_CALENDAR_CLIENT_ID", "")
+            client_secret = os.environ.get("GOOGLE_CALENDAR_CLIENT_SECRET", "")
+            token_expiry_str = os.environ.get("GOOGLE_CALENDAR_TOKEN_EXPIRY", "")
 
-        # Converte a string de expiração para datetime naive UTC.
-        # google-auth compara internamente com datetime.utcnow() (offset-naive),
-        # então passar um datetime aware causaria "can't compare offset-naive and
-        # offset-aware datetimes". Por isso convertemos para UTC e removemos o tzinfo.
-        token_expiry = None
-        if token_expiry_str:
-            try:
-                token_expiry = datetime.fromisoformat(token_expiry_str)
-                if token_expiry.tzinfo is not None:
-                    # Converte para UTC e remove o timezone (torna naive)
-                    token_expiry = token_expiry.astimezone(timezone.utc).replace(tzinfo=None)
-            except ValueError:
-                # Ignora string de expiração inválida — o token será renovado naturalmente
-                pass
+            # Converte a string de expiração para datetime naive UTC.
+            # google-auth compara internamente com datetime.utcnow() (offset-naive),
+            # então passar um datetime aware causaria "can't compare offset-naive and
+            # offset-aware datetimes". Por isso convertemos para UTC e removemos o tzinfo.
+            token_expiry = None
+            if token_expiry_str:
+                try:
+                    token_expiry = datetime.fromisoformat(token_expiry_str)
+                    if token_expiry.tzinfo is not None:
+                        # Converte para UTC e remove o timezone (torna naive)
+                        token_expiry = token_expiry.astimezone(timezone.utc).replace(tzinfo=None)
+                except ValueError:
+                    # Ignora string de expiração inválida — o token será renovado naturalmente
+                    pass
 
-        # Monta o objeto de credenciais com todos os campos necessários para o refresh
-        _cached_creds = Credentials(
-            token=access_token,
-            refresh_token=refresh_token,
-            client_id=client_id,
-            client_secret=client_secret,
-            token_uri="https://oauth2.googleapis.com/token",
-            scopes=_SCOPES,
-            expiry=token_expiry,
-        )
+            # Monta o objeto de credenciais com todos os campos necessários para o refresh
+            _cached_creds = Credentials(
+                token=access_token,
+                refresh_token=refresh_token,
+                client_id=client_id,
+                client_secret=client_secret,
+                token_uri="https://oauth2.googleapis.com/token",
+                scopes=_SCOPES,
+                expiry=token_expiry,
+            )
 
-    # Renova o access token se estiver expirado ou inválido
-    # (google-auth verifica a expiração automaticamente em _cached_creds.valid)
-    if not _cached_creds.valid:
-        _cached_creds.refresh(Request())
-        # Invalida o cliente atual — ele foi construído com o token antigo
-        _service = None
+        # Renova o access token se estiver expirado ou inválido.
+        # A renovação modifica _cached_creds — feita sob o lock para evitar corridas.
+        # Após o refresh, os clientes de outras threads que já existem referenciam o mesmo
+        # _cached_creds e usarão o token novo automaticamente na próxima requisição HTTP.
+        if not _cached_creds.valid:
+            _cached_creds.refresh(Request())
+            # Invalida o cliente desta thread para forçar rebuild com token fresco.
+            _local.service = None
 
-    # Constrói o cliente da API apenas se ainda não existe ou foi invalidado
-    if _service is None:
-        # cache_discovery=False evita warning de arquivo deprecado em versões recentes
-        _service = build("calendar", "v3", credentials=_cached_creds, cache_discovery=False)
+    # Constrói o cliente desta thread se ainda não existe ou foi invalidado.
+    # build() com cache_discovery=False não faz chamada de rede — custo desprezível.
+    if not getattr(_local, "service", None):
+        _local.service = build("calendar", "v3", credentials=_cached_creds, cache_discovery=False)
 
-    return _service
+    return _local.service
 
 
 # ---------------------------------------------------------------------------
@@ -289,8 +314,47 @@ def list_calendars() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Listagem de eventos (fan-out em todos os calendários)
+# Listagem de eventos (fan-out paralelo em todos os calendários)
 # ---------------------------------------------------------------------------
+
+def _fetch_cal_events(cal: dict, time_min: str, time_max: str) -> list[dict]:
+    """Busca eventos de um calendário individual (executado em worker thread).
+
+    Cada worker chama `_get_service()` para obter o cliente thread-local, evitando
+    corrida de dados no httplib2.Http subjacente.
+
+    Args:
+        cal: Dict normalizado retornado por `list_calendars()` (campos "id" e "name").
+        time_min: Limite inferior da janela em RFC3339 com offset de fuso.
+        time_max: Limite superior da janela em RFC3339 com offset de fuso.
+
+    Returns:
+        Lista de eventos normalizados (via `_format_event`) com campos adicionais
+        calendar_id e calendar_name. Lista vazia em caso de erro (ex.: sem permissão).
+    """
+    try:
+        svc = _get_service()  # thread-local — seguro chamar concorrentemente
+        result = svc.events().list(
+            calendarId=cal["id"],
+            timeMin=time_min,
+            timeMax=time_max,
+            maxResults=250,      # valor alto para não perder eventos em dias cheios
+            singleEvents=True,   # expande eventos recorrentes em instâncias individuais
+            orderBy="startTime",
+        ).execute()
+        items = result.get("items", [])
+        out = []
+        for event in items:
+            formatted = _format_event(event)
+            formatted["calendar_id"] = cal["id"]
+            formatted["calendar_name"] = cal["name"]
+            out.append(formatted)
+        return out
+    except Exception:
+        # Calendário sem permissão de leitura ou com erro temporário —
+        # ignora silenciosamente para não quebrar os demais resultados
+        return []
+
 
 def list_events(
     date_from: str,
@@ -302,6 +366,11 @@ def list_events(
     Resultados são cacheados por 60s (TTL 60s): mudanças feitas FORA do app levam
     no máximo ~1 minuto para aparecer; mudanças feitas DENTRO do app invalidam o
     cache imediatamente via ``invalidate_events_cache()``.
+
+    Fan-out paralelo: em vez de chamar a API de cada calendário em série, dispara
+    todas as requisições ao mesmo tempo usando ``ThreadPoolExecutor``. Isso reduz o
+    tempo de carregamento de O(N × latência_Google) para ~O(latência_Google) quando o
+    cache expira. A ordem dos calendários é preservada (``pool.map`` mantém a ordem).
 
     Reutiliza ``list_calendars()`` (que também tem cache próprio de 5 min) em vez
     de chamar ``calendarList().list()`` separadamente — elimina a chamada duplicada
@@ -321,7 +390,7 @@ def list_events(
         Lista de dicts normalizados (via `_format_event`) com campos adicionais:
             - calendar_id (str): ID do calendário de origem.
             - calendar_name (str): Nome do calendário de origem.
-        Ordenada por calendário (ordem retornada pela API).
+        Ordenada por calendário (ordem retornada por list_calendars).
 
     Example:
         >>> eventos = list_events("2026-06-13", "2026-06-13")
@@ -340,51 +409,32 @@ def list_events(
             # Cache válido — retorna sem chamar a API do Google
             return eventos_cache
 
-    service = _get_service()
-
     # Delimita o intervalo em horário local de São Paulo (UTC-3)
     # A API aceita RFC3339 com offset de fuso horário
     time_min = f"{date_from}T00:00:00-03:00"
     time_max = f"{date_to}T23:59:59-03:00"
 
     # Reutiliza list_calendars() em vez de chamar calendarList().list() de novo.
-    # Isso aproveita o cache de calendários (TTL 300s) e elimina a chamada duplicada
-    # que havia na implementação anterior (uma em /sources, outra aqui dentro).
+    # Isso aproveita o cache de calendários (TTL 300s).
     calendarios = list_calendars()
 
-    all_events: list[dict] = []
+    # Filtra os calendários excluídos antecipadamente (antes do fan-out)
+    active_cals = [c for c in calendarios if c["name"] not in exclude]
 
-    for cal in calendarios:
-        # list_calendars() já retorna dicts normalizados com campos "id" e "name"
-        cal_id = cal["id"]
-        cal_name = cal["name"]
+    if not active_cals:
+        _events_cache[cache_key] = ([], agora)
+        return []
 
-        # Pula calendários na lista de exclusão — anti-duplicação
-        if cal_name in exclude:
-            continue
+    # Fan-out paralelo: dispara todas as leituras simultaneamente.
+    # pool.map preserva a ordem dos calendários nos resultados.
+    # max_workers=min(N, 8) evita saturar a API em contas com muitos calendários.
+    with ThreadPoolExecutor(max_workers=min(len(active_cals), 8)) as pool:
+        per_cal: list[list[dict]] = list(
+            pool.map(lambda cal: _fetch_cal_events(cal, time_min, time_max), active_cals)
+        )
 
-        try:
-            result = service.events().list(
-                calendarId=cal_id,
-                timeMin=time_min,
-                timeMax=time_max,
-                maxResults=250,      # valor alto para não perder eventos em dias cheios
-                singleEvents=True,   # expande eventos recorrentes em instâncias individuais
-                orderBy="startTime",
-            ).execute()
-
-            events = result.get("items", [])
-            for event in events:
-                # Normaliza o evento e adiciona identificação do calendário de origem
-                formatted = _format_event(event)
-                formatted["calendar_id"] = cal_id
-                formatted["calendar_name"] = cal_name
-                all_events.append(formatted)
-
-        except Exception:
-            # Calendário sem permissão de leitura ou com erro temporário —
-            # ignora silenciosamente para não quebrar os demais resultados
-            pass
+    # Achata a lista de listas preservando a ordem dos calendários
+    all_events: list[dict] = [ev for group in per_cal for ev in group]
 
     # Armazena no cache — somente em caso de sucesso (mesmo lista vazia é armazenada)
     _events_cache[cache_key] = (all_events, agora)
@@ -494,8 +544,15 @@ def update_event(
 ) -> dict:
     """Atualiza campos de um evento existente num calendário específico.
 
-    Busca o evento atual, aplica apenas os campos fornecidos e envia de volta
-    (update completo, não patch — garante consistência com campos derivados).
+    Fast-path (sem GET): quando `all_day` é passado explicitamente em `fields`,
+    o tipo do evento é conhecido e usamos ``events().patch()`` direto — metade dos
+    round-trips em relação ao ``update()`` completo anterior. O `gcal_sync` sempre
+    passa `all_day`, então o push de tarefa nunca faz o GET desnecessário.
+
+    Fallback (com GET): quando `all_day` não é passado (ex.: webapp edita só o
+    título sem saber o tipo), buscamos o evento atual para descobrir o tipo correto,
+    depois aplicamos ``patch()``. Ainda um round-trip a menos que o ``update()``
+    completo anterior (que fazia GET + update do corpo inteiro).
 
     Args:
         calendar_id: ID do calendário que contém o evento.
@@ -518,47 +575,49 @@ def update_event(
         ...     summary="Reunião remarcada",
         ...     start="2026-06-14T10:00:00",
         ...     end="2026-06-14T11:00:00",
+        ...     all_day=False,
         ... )
     """
     service = _get_service()
 
-    # Busca o estado atual do evento antes de aplicar as mudanças.
-    # Isso é necessário porque a API update() exige o corpo completo do evento
-    # (diferente do patch() que aceita apenas os campos alterados).
-    existing = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+    # Determina o tipo do evento (com ou sem hora).
+    # Fast-path: all_day passado explicitamente → sem GET extra.
+    # Fallback: all_day ausente → GET para descobrir o tipo atual do evento.
+    if "all_day" in fields:
+        all_day = fields["all_day"]
+    else:
+        existing = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+        all_day = "date" in existing.get("start", {})
 
-    # Determina se o evento resultante será de dia inteiro
-    # (pode vir de `fields` ou do estado atual do evento)
-    all_day = fields.get("all_day", "date" in existing.get("start", {}))
+    # Monta o body de patch apenas com os campos informados.
+    # events().patch() aceita body parcial — só os campos presentes são alterados.
+    patch_body: dict = {}
 
-    # Aplica os campos informados — campos ausentes mantêm o valor atual
     if "summary" in fields and fields["summary"] is not None:
-        existing["summary"] = fields["summary"]
+        patch_body["summary"] = fields["summary"]
 
     if "description" in fields and fields["description"] is not None:
-        existing["description"] = fields["description"]
+        patch_body["description"] = fields["description"]
 
     if "location" in fields and fields["location"] is not None:
-        existing["location"] = fields["location"]
+        patch_body["location"] = fields["location"]
 
-    # Atualiza start se informado, respeitando o tipo de evento (com/sem hora)
     if "start" in fields and fields["start"] is not None:
         if all_day:
-            existing["start"] = {"date": fields["start"][:10]}
+            patch_body["start"] = {"date": fields["start"][:10]}
         else:
-            existing["start"] = {"dateTime": fields["start"], "timeZone": "America/Sao_Paulo"}
+            patch_body["start"] = {"dateTime": fields["start"], "timeZone": "America/Sao_Paulo"}
 
-    # Atualiza end se informado, respeitando o tipo de evento
     if "end" in fields and fields["end"] is not None:
         if all_day:
-            existing["end"] = {"date": fields["end"][:10]}
+            patch_body["end"] = {"date": fields["end"][:10]}
         else:
-            existing["end"] = {"dateTime": fields["end"], "timeZone": "America/Sao_Paulo"}
+            patch_body["end"] = {"dateTime": fields["end"], "timeZone": "America/Sao_Paulo"}
 
-    updated = service.events().update(
+    updated = service.events().patch(
         calendarId=calendar_id,
         eventId=event_id,
-        body=existing,
+        body=patch_body,
     ).execute()
 
     return _format_event(updated)
@@ -644,7 +703,8 @@ def _format_event(event: dict) -> dict:
         Dict normalizado com os campos: id, summary, start, end,
         description, location, attendees, link.
         Os campos calendar_id e calendar_name são adicionados pelo chamador
-        (list_events) porque o evento em si não carrega essa informação de forma confiável.
+        (list_events / _fetch_cal_events) porque o evento em si não carrega
+        essa informação de forma confiável.
     """
     # Os campos start/end podem ter "dateTime" (evento com hora) ou "date" (dia inteiro)
     start = event.get("start", {})
