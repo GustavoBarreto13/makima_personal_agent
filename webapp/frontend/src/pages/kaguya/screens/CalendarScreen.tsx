@@ -12,7 +12,7 @@
 //   7. onEventClick → abre EventPopover ; onEventContextMenu → abre ContextMenu
 //   8. onCreateSlot → createTask ; onTimeDrop → updateTask (time-blocking)
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Task, CalEvent, Calendar, CalendarItem } from '../types'
 import { kaguyaApi, isGcal } from '../kaguyaApi'
 import { CalNavBar } from '../components/CalNavBar'
@@ -91,6 +91,10 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, onCreateAt,
   // Força o re-fetch das tarefas Kaguya sem depender do reloadKey do shell.
   const [tasksKey, setTasksKey] = useState(0)
 
+  // Flag que indica que o próximo load de tarefas deve ser silencioso (sem spinner).
+  // Setada antes de incrementar tasksKey; o useEffect a lê e zera ao entrar.
+  const silentTasksLoadRef = useRef(false)
+
   // Popover e context-menu: null = fechado; { ev, pos } = aberto.
   const [popover, setPopover] = useState<{ ev: CalEvent; pos: { x: number; y: number } } | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{ ev: CalEvent; pos: { x: number; y: number } } | null>(null)
@@ -116,16 +120,21 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, onCreateAt,
   // ── Carregamento das tarefas Kaguya ──────────────────────────────────────
 
   useEffect(() => {
+    // Refresh pós-drag/edição: silencioso (sem spinner) para não piscar o grid.
+    // Navegação e reloadKey do shell: exibe o spinner normalmente.
+    const silent = silentTasksLoadRef.current
+    silentTasksLoadRef.current = false
+
     let cancelled = false
     const load = async () => {
-      setLoading(true)
+      if (!silent) setLoading(true)
       try {
         const result = await kaguyaApi.calendar(windowStart, windowEnd)
         if (!cancelled) setTasks(result)
       } catch {
         if (!cancelled) toast('Falha ao carregar tarefas.', 'err')
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled && !silent) setLoading(false)
       }
     }
     load()
@@ -333,6 +342,8 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, onCreateAt,
   const handleRefresh = useCallback(() => {
     setPopover(null)
     setCtxMenu(null)
+    // Marca o próximo load de tarefas como silencioso (sem spinner) antes de bumpar.
+    silentTasksLoadRef.current = true
     // tasksKey: força re-fetch das tarefas Kaguya (move/resize no calendário, edição no popover).
     // sourcesKey: força re-fetch do hub cross-agent + eventos gcal.
     setTasksKey((k) => k + 1)
