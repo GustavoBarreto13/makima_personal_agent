@@ -21,8 +21,6 @@ import { MonthGrid } from '../components/MonthGrid'
 import { CalendarsAside } from '../components/CalendarsAside'
 import { EventPopover } from '../components/EventPopover'
 import { ContextMenu } from '../components/ContextMenu'
-// toISO: data "AAAA-MM-DD" em fuso local — necessário para derivar o dia de um start_at UTC.
-import { toISO } from '../lib/dateUtils'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
