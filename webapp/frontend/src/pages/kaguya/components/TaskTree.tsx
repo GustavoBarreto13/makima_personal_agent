@@ -433,6 +433,10 @@ export interface TaskTreeProps {
   // Ordenação opcional aplicada em cada nível da árvore (fatia 025 / US7).
   // undefined = manual (preserva a ordem do servidor por position).
   sorter?: (a: Task, b: Task) => number
+  // Quando true, esconde itens concluídos em TODOS os níveis da árvore (raízes e subtarefas).
+  // Recebe !showCompleted do pai (ListSection) para suprimir subtarefas concluídas
+  // que pertencem a uma tarefa-pai ainda aberta.
+  hideCompleted?: boolean
   // API de mutações (definida pelo ListScreen)
   api: TaskTreeAPI
   // Chave de escopo para persistência do colapso em localStorage (ex: "list-42")
@@ -443,7 +447,7 @@ export interface TaskTreeProps {
   onAddRoot?: () => void
 }
 
-export function TaskTree({ roots, api, scopeKey, showAddRoot, onAddRoot, sorter }: TaskTreeProps) {
+export function TaskTree({ roots, api, scopeKey, showAddRoot, onAddRoot, sorter, hideCompleted }: TaskTreeProps) {
   // Array flat de todos os nós (para buildBreadcrumb no tooltip — T045).
   // Recalculado quando roots muda (useMemo garante sem re-renders extras).
   const allTasks = useMemo(() => flattenTree(roots), [roots])
@@ -524,10 +528,14 @@ export function TaskTree({ roots, api, scopeKey, showAddRoot, onAddRoot, sorter 
 
   // Renderiza um nó e seus filhos recursivamente.
   // Quando `sorter` está definido, re-ordena os filhos antes de renderizar.
+  // Quando `hideCompleted` está ativo, filtra os filhos concluídos antes de exibir.
   const renderNode = useCallback((t: Task, depth: number): React.ReactNode => {
     const rawKids = t.subtasks ?? []
     // Aplica ordenação se fornecida; caso contrário mantém a ordem do servidor (position).
-    const kids = sorter ? [...rawKids].sort(sorter) : rawKids
+    const sortedKids = sorter ? [...rawKids].sort(sorter) : rawKids
+    // Esconde subtarefas concluídas quando o pai está com "mostrar concluídas" desligado.
+    const kids = hideCompleted ? sortedKids.filter(k => !k.completed_at) : sortedKids
+    // hasKids usa a lista JÁ filtrada: o chevron de colapso só aparece se houver filhos visíveis.
     const hasKids = kids.length > 0
     const isCollapsed = collapsed.has(t.id)
 
@@ -552,7 +560,7 @@ export function TaskTree({ roots, api, scopeKey, showAddRoot, onAddRoot, sorter 
         {hasKids && !isCollapsed && kids.map(k => renderNode(k, depth + 1))}
       </Fragment>
     )
-  }, [collapsed, toggleCollapse, api, allTasks, editingId, dragId, drop, sorter])
+  }, [collapsed, toggleCollapse, api, allTasks, editingId, dragId, drop, sorter, hideCompleted])
 
   const parentIds = collectParentIds(roots)
   const allCollapsed = parentIds.length > 0 && parentIds.every(id => collapsed.has(id))
@@ -573,8 +581,17 @@ export function TaskTree({ roots, api, scopeKey, showAddRoot, onAddRoot, sorter 
         </div>
       )}
 
-      {/* Nós da árvore */}
-      {roots.map(r => renderNode(r, 0))}
+      {/* Nós da árvore — ordenados e filtrados pelo mesmo critério dos filhos.
+          Antes as raízes eram renderizadas cruas (sem sorter, sem filtro), o que
+          fazia o "Ordenar" não ter efeito visível no nível de topo. */}
+      {(() => {
+        // Ordena as raízes com o mesmo comparador que já era aplicado aos filhos.
+        const sortedRoots = sorter ? [...roots].sort(sorter) : roots
+        // Defensivo: esconde raízes concluídas se hideCompleted estiver ativo
+        // (o pai (ListSection) já manda só abertas no tree principal, mas mantém coerência).
+        const visibleRoots = hideCompleted ? sortedRoots.filter(r => !r.completed_at) : sortedRoots
+        return visibleRoots.map(r => renderNode(r, 0))
+      })()}
 
       {/* Botão "+ Adicionar tarefa" no final do grupo */}
       {showAddRoot && (

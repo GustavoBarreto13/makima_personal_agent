@@ -348,13 +348,16 @@ export function ListSection({
         </div>
       ) : (
         <>
-          {/* Árvore de tarefas abertas com DnD (3 zonas: before/after/child) */}
+          {/* Árvore de tarefas abertas com DnD (3 zonas: before/after/child).
+              hideCompleted=!showCompleted: subtarefas concluídas ficam ocultas quando o
+              toggle "mostrar concluídas" está desligado (antes elas sempre apareciam). */}
           <div className="task-group">
             <TaskTree
               roots={openRoots}
               api={api}
               scopeKey={scopeKey}
               sorter={sorter}
+              hideCompleted={!showCompleted}
               showAddRoot
               onAddRoot={() => onNewTask(projectId)}
             />
@@ -374,10 +377,12 @@ export function ListSection({
               </div>
               {showCompleted && (
                 <div className="task-group done-group">
+                  {/* sorter: seção de concluídas agora também obedece o critério de ordenação. */}
                   <TaskTree
                     roots={doneRoots}
                     api={api}
                     scopeKey={`${scopeKey}-done`}
+                    sorter={sorter}
                   />
                 </div>
               )}
