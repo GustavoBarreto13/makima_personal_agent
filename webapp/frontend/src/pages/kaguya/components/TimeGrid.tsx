@@ -17,6 +17,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { CalEvent, Calendar } from '../types'
 import { kaguyaApi, isGcal, gcalCalendarId } from '../kaguyaApi'
+// localISO: monta ISO 8601 com offset local sem toISOString() (nunca UTC naked).
+import { localISO } from '../lib/dateUtils'
 
 // ── Helpers de data ─────────────────────────────────────────────────────────
 
@@ -24,9 +26,27 @@ function toISO(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// Converte string ISO datetime (ou "HH:MM") em minutos desde meia-noite.
+// Converte string ISO datetime (ou "HH:MM") em minutos desde meia-noite, no fuso LOCAL.
+//
+// Por que usar new Date() e não split literal:
+//   O backend devolve start_at/end_at como UTC ("...17:00:00+00:00") para uma task de
+//   14:00 BRT. Fatiar o "HH:MM" literal retornaria 17 → 3h à frente. new Date() aplica
+//   o offset automaticamente → getHours() retorna 14 (correto).
+//
+// Casos cobertos:
+//   "2026-06-26T17:00:00+00:00" (backend UTC) → 840 (14:00 local) ✅
+//   "2026-06-26T14:00:00-03:00" (offset local) → 840 (14:00 local) ✅
+//   "2026-06-26T14:00:00"        (naive, sem offset) → interpretado como LOCAL pelo JS ✅
+//   "14:30"                      (só hora, e.g. due_time) → split literal ✅
 function timeToMin(t: string | null | undefined): number {
   if (!t) return 0
+  // Datetime completo (com "T"): usa new Date() para respeitar o offset.
+  // new Date("AAAA-MM-DDTHH:MM") sem offset é tratado como LOCAL pelo JS — não UTC.
+  if (t.includes('T')) {
+    const d = new Date(t)
+    if (!isNaN(d.getTime())) return d.getHours() * 60 + d.getMinutes()
+  }
+  // Fallback: string pura "HH:MM" (due_time, sem data) — split literal continua correto.
   const part = t.includes('T') ? t.split('T')[1] : t
   const [h, m] = part.split(':').map(Number)
   return (h ?? 0) * 60 + (m ?? 0)
@@ -45,10 +65,11 @@ function snapTo15(min: number): number {
 }
 
 // Monta uma string ISO datetime a partir de um dia (YYYY-MM-DD) e minutos.
+// Redireciona para localISO (lib/dateUtils) que inclui o offset local no resultado.
+// Antes emitia string naive ("AAAA-MM-DDTHH:MM:00" sem offset): o Postgres interpretava
+// como UTC, gravando 3h antes do pretendido. Com offset incluído, o round-trip é correto.
 function buildISO(day: string, min: number): string {
-  const h = Math.floor(min / 60)
-  const m = min % 60
-  return `${day}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`
+  return localISO(day, min)   // "AAAA-MM-DDTHH:MM:00-03:00" (offset local, nunca naked)
 }
 
 // Abreviações de dia da semana em pt-BR.

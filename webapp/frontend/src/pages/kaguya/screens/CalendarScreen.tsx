@@ -21,6 +21,8 @@ import { MonthGrid } from '../components/MonthGrid'
 import { CalendarsAside } from '../components/CalendarsAside'
 import { EventPopover } from '../components/EventPopover'
 import { ContextMenu } from '../components/ContextMenu'
+// toISO: data "AAAA-MM-DD" em fuso local — necessário para derivar o dia de um start_at UTC.
+import { toISO } from '../lib/dateUtils'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -215,7 +217,11 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast, vari
       return {
         id: String(t.id),
         cal: 'kaguya',
-        day: t.start_at.slice(0, 10),
+        // Usa toISO(new Date(...)) para derivar o DIA no fuso local do navegador.
+        // O backend devolve start_at em UTC ("+00:00"): slice(0,10) literalmente
+        // retornaria o dia UTC, que pode ser o dia SEGUINTE para tasks de fim de tarde
+        // (ex.: 22:00 BRT = 01:00 UTC do próximo dia → coluna errada).
+        day: toISO(new Date(t.start_at)),
         start: t.start_at,
         end: t.end_at ?? null,
         allDay: false,

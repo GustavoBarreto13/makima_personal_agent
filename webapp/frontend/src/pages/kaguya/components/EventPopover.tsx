@@ -39,9 +39,17 @@ function minToLabel(min: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
-// Converte string ISO datetime em minutos desde meia-noite.
+// Converte string ISO datetime em minutos desde meia-noite, no fuso LOCAL.
+// Idêntico ao timeToMin do TimeGrid — usa new Date() para respeitar o offset do backend
+// (que devolve strings UTC "+00:00"). Split literal ignoraria o offset → +3h de erro.
 function timeToMin(t: string | null | undefined): number {
   if (!t) return 0
+  // Datetime completo (com "T"): new Date() converte offset → hora local.
+  if (t.includes('T')) {
+    const d = new Date(t)
+    if (!isNaN(d.getTime())) return d.getHours() * 60 + d.getMinutes()
+  }
+  // Fallback: string pura "HH:MM" — split literal.
   const part = t.includes('T') ? t.split('T')[1] : t
   const [h, m] = part.split(':').map(Number)
   return (h ?? 0) * 60 + (m ?? 0)
