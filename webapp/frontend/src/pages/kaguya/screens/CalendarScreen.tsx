@@ -87,6 +87,10 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, onCreateAt,
   // Força o re-fetch do aggregate e da lista de fontes.
   const [sourcesKey, setSourcesKey] = useState(0)
 
+  // Incrementado pelo handleRefresh (pós mover/redimensionar evento).
+  // Força o re-fetch das tarefas Kaguya sem depender do reloadKey do shell.
+  const [tasksKey, setTasksKey] = useState(0)
+
   // Popover e context-menu: null = fechado; { ev, pos } = aberto.
   const [popover, setPopover] = useState<{ ev: CalEvent; pos: { x: number; y: number } } | null>(null)
   const [ctxMenu, setCtxMenu] = useState<{ ev: CalEvent; pos: { x: number; y: number } } | null>(null)
@@ -126,7 +130,7 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, onCreateAt,
     }
     load()
     return () => { cancelled = true }
-  }, [windowStart, windowEnd, reloadKey, toast])
+  }, [windowStart, windowEnd, reloadKey, tasksKey, toast])
 
   // ── Carregamento do aggregate cross-agent ─────────────────────────────────
 
@@ -329,9 +333,9 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, onCreateAt,
   const handleRefresh = useCallback(() => {
     setPopover(null)
     setCtxMenu(null)
-    // Força re-fetch: bump sourcesKey não recarrega tarefas diretamente,
-    // então fazemos o equivalente ao reloadKey via setTasks([]) seguido de load.
-    setTasks((prev) => [...prev])
+    // tasksKey: força re-fetch das tarefas Kaguya (move/resize no calendário, edição no popover).
+    // sourcesKey: força re-fetch do hub cross-agent + eventos gcal.
+    setTasksKey((k) => k + 1)
     setSourcesKey((k) => k + 1)
   }, [])
 
