@@ -11,6 +11,10 @@ import { Avatar, AvatarStack } from '../components/People'
 // nativos, que ignoram os tokens OKLCH e mostram o pop-up do sistema operacional.
 import { DatePicker } from '../components/DatePicker'
 import { TimePicker } from '../components/TimePicker'
+// Opções de duração compartilhadas com o EventPopover.
+import { DURATIONS, snapDuration } from '../lib/durations'
+// Helper de ISO local — monta "AAAA-MM-DDTHH:MM:00±HH:MM" sem usar toISOString() (fuso UTC-3).
+import { localISO } from '../lib/dateUtils'
 // Editor de notas em Markdown com autocomplete de @pessoa e [[task]]
 import { MarkdownNotesEditor } from '../components/MarkdownNotesEditor'
 
@@ -103,6 +107,9 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
   const [subtasks, setSubtasks] = useState<Task[]>(task?.subtasks ?? [])
   const [newSub, setNewSub] = useState('')
   const [saving, setSaving] = useState(false)
+  // Duração em minutos — alimenta a estimativa (capacity bar) e, se houver hora, o time-block.
+  // snapDuration aproxima um valor arbitrário para a opção mais próxima da lista.
+  const [duration, setDuration] = useState<number>(snapDuration(task?.duration_min ?? 0))
   // Responsáveis da Komi (fatia 025) — IDs selecionados para esta tarefa.
   const [personIds, setPersonIds] = useState<string[]>(
     task?.assignees?.map(a => a.id) ?? []
@@ -138,7 +145,7 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
     kaguyaApi.listPeople().then(setPeople).catch(() => { /* silencioso */ })
   }, [])
 
-  // Salva a tarefa principal (cria ou edita), incluindo a recorrência.
+  // Salva a tarefa principal (cria ou edita), incluindo a recorrência e a duração.
   const save = async () => {
     if (!title.trim()) { toast('O título não pode ser vazio.', 'err'); return }
     // Recorrência (exceto aniversário, que é automático) precisa de uma data-âncora.
@@ -158,22 +165,29 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
       // Monta a regra a partir do preset (só fora de aniversário, que o backend faz sozinho).
       const rrule = type !== 'birthday' && recurFreq !== 'none' ? buildRRule(recurFreq, dueDate) : null
 
+      let taskId: number | undefined
+
       if (mode === 'create') {
-        await kaguyaApi.createTask({
+        // Captura o id retornado para poder persistir a duração logo abaixo.
+        const r = await kaguyaApi.createTask({
           ...base,
           project_id: projectId ?? undefined,
           tags,                                    // etiquetas escolhidas (pode ser vazia)
           person_ids: personIds.length > 0 ? personIds : undefined,
           ...(rrule ? { recurrence: { rrule, mode: recurMode } } : {}),
         })
+        taskId = r.id
         toast('Tarefa criada.')
       } else if (task) {
+        taskId = task.id
         // tags e person_ids sempre enviados na edição → permite REMOVER todos (set vazio persiste).
         const upd: Parameters<typeof kaguyaApi.updateTask>[1] = {
           ...base,
           project_id: projectId ?? undefined,
           tags,
           person_ids: personIds,
+          // Inclui duration_min diretamente na atualização (null remove a estimativa).
+          duration_min: duration > 0 ? duration : null,
         }
         if (rrule) upd.recurrence = { rrule, mode: recurMode }
         // Tinha regra e o usuário escolheu "não repete" → remove (sem mexer em aniversário).
@@ -181,6 +195,35 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
         await kaguyaApi.updateTask(task.id, upd)
         toast('Tarefa atualizada.')
       }
+
+      // ── Persistência da duração ─────────────────────────────────────────────
+      // Feita após o save principal para ter certeza que a task existe (create).
+      if (taskId) {
+        try {
+          if (duration > 0 && dueDate && dueTime) {
+            // Tem data + hora + duração → cria/atualiza o time-block completo.
+            // Converte "HH:MM" para minuto do dia (ex.: "14:30" → 870).
+            const [hStr, mStr] = dueTime.split(':')
+            const startMin = (Number(hStr) * 60) + Number(mStr)
+            const endMin   = startMin + duration
+            // localISO: fuso local sem toISOString() (evita bug UTC-3).
+            const startAt = localISO(dueDate, startMin)
+            const endAt   = localISO(dueDate, endMin)
+            await kaguyaApi.setTimeBlock(taskId, { start_at: startAt, end_at: endAt, duration_min: duration })
+          } else if (duration > 0 && mode === 'create') {
+            // Só estimativa (sem hora) na criação: persiste duration_min separado.
+            // Na edição já foi incluído no updateTask acima.
+            await kaguyaApi.setEstimate(taskId, duration)
+          } else if (duration === 0 && task?.start_at) {
+            // Duração removida e task tinha time-block → limpa o bloco.
+            await kaguyaApi.clearTimeBlock(taskId)
+          }
+        } catch {
+          // A duração não é crítica: avisa mas não desfaz o save do título/data etc.
+          toast('Duração não foi salva (o restante foi salvo).', 'err')
+        }
+      }
+
       onSaved()
       onClose()
     } catch {
@@ -359,6 +402,22 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
                 placeholder="Sem hora"
               />
             </div>
+          </div>
+
+          {/* Duração — estimativa de quanto tempo a tarefa vai levar.
+              Com data + hora: cria um bloco de tempo (time-block) no calendário e no
+              timeline do Meu Dia. Sem hora: alimenta só a barra de capacidade do Meu Dia. */}
+          <div className="kg-field">
+            <span className="kg-field-label">Duração</span>
+            <select
+              className="kg-select"
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+            >
+              {DURATIONS.map((d) => (
+                <option key={d.v} value={d.v}>{d.label}</option>
+              ))}
+            </select>
           </div>
 
           {/* Recorrência — aniversário é automático (todo ano), então só mostramos a dica */}

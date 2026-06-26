@@ -69,6 +69,40 @@ export const MONTHS_PT = [
  */
 export const WEEKDAY_1 = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
 
+// ─── Datetime com fuso local ──────────────────────────────────────────────────
+
+/**
+ * Monta uma string ISO 8601 com offset local a partir de uma data e um minuto do dia.
+ *
+ * Exemplo: localISO("2026-06-26", 870) → "2026-06-26T14:30:00-03:00"
+ *
+ * Por que não usar `new Date(...).toISOString()`:
+ *   toISOString() retorna UTC — ao colar o offset local depois, o horário ficaria
+ *   errado (offset aplicado duas vezes). Aqui montamos o wall-clock local diretamente
+ *   e o etiquetamos com o offset correto, sem passar por UTC.
+ *
+ * @param dateISO - Data no formato "AAAA-MM-DD" (já deve estar em fuso local).
+ * @param minuteOfDay - Minuto absoluto do dia: 0 = 00:00, 870 = 14:30, 1439 = 23:59.
+ * @returns String ISO 8601 com offset local: "AAAA-MM-DDTHH:MM:00±HH:MM".
+ */
+export function localISO(dateISO: string, minuteOfDay: number): string {
+  // Hora e minuto a partir do minuto absoluto do dia
+  const h = Math.floor(minuteOfDay / 60)
+  const m = minuteOfDay % 60
+  const hh = String(h).padStart(2, '0')
+  const mm = String(m).padStart(2, '0')
+
+  // Offset do fuso local em minutos (ex.: BRT = UTC-3 → getTimezoneOffset() = 180)
+  // Negamos para ter a convenção "+HH:MM" / "-HH:MM" do ISO 8601.
+  const off     = -new Date().getTimezoneOffset()   // ex.: -180 para BRT
+  const sign    = off >= 0 ? '+' : '-'
+  const offH    = String(Math.floor(Math.abs(off) / 60)).padStart(2, '0')  // '03'
+  const offM    = String(Math.abs(off) % 60).padStart(2, '0')              // '00'
+
+  // Monta o resultado sem toISOString() (que devolveria UTC)
+  return `${dateISO}T${hh}:${mm}:00${sign}${offH}:${offM}`
+}
+
 // ─── Formatação para exibição ─────────────────────────────────────────────────
 
 /**

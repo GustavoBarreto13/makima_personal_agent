@@ -12,9 +12,13 @@
 //     ficou no TodayScreen (onDragEnd), que é quem tem o DndContext.
 //   • isOver (via useDroppable) aciona a classe .drop-ok sem manipular o DOM diretamente.
 
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import type { Task, TimelineEvent, Calendar } from '../types'
+import { kaguyaApi } from '../kaguyaApi'
+// localISO: monta ISO 8601 com offset local sem usar toISOString() (fuso UTC-3).
+// toISO: data "AAAA-MM-DD" em fuso local (extraída do start_at da task).
+import { localISO, toISO } from '../lib/dateUtils'
 
 // ── Constantes do protótipo (design-guide.md §Constantes) ────────────────────
 const DAY_START = 7   // 7h
@@ -82,13 +86,19 @@ interface DayTimelineProps {
   toast: (msg: string, kind?: 'ok' | 'err') => void
 }
 
-export function DayTimeline({ plano, eventos, sources, onToggleCalendar, onOpen }: DayTimelineProps) {
+export function DayTimeline({ plano, eventos, sources, onToggleCalendar, onOpen, onChanged, toast }: DayTimelineProps) {
   // Tarefas com bloco de tempo posicionadas na timeline.
   const blocked = plano.filter(t => t.start_at)
   // Eventos timed (com hora) posicionados na timeline.
   const timedEvents = eventos.filter(e => !e.all_day && e.start)
   // Eventos de dia inteiro mostrados acima da régua.
   const allDayEvents = eventos.filter(e => e.all_day)
+
+  // Ref para o elemento .kg-tl-body (usado para converter posição Y em minuto do dia).
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  // Estado de resize ativo: qual task está sendo redimensionada e a posição atual.
+  const [resize, setResize] = useState<{ id: number; startMin: number; endMin: number } | null>(null)
 
   // Popover de toggle de calendários
   const [showCalPop, setShowCalPop] = useState(false)
@@ -112,6 +122,70 @@ export function DayTimeline({ plano, eventos, sources, onToggleCalendar, onOpen 
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [showCalPop])
+
+  // ── Lógica de resize da alça inferior dos blocos de tarefa ──────────────────
+
+  // Converte a posição Y do ponteiro em minuto do dia dentro do .kg-tl-body,
+  // com snap de 15 min. A altura do body é HOURS.length * 44px (fixo em CSS).
+  const yToMin = useCallback((clientY: number): number => {
+    const el = bodyRef.current
+    if (!el) return DAY_START * 60
+    const rect = el.getBoundingClientRect()
+    // Proporção vertical dentro do body (0 = topo = DAY_START, 1 = base = DAY_END)
+    const ratio = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
+    const rawMin = DAY_START * 60 + ratio * TOTAL_MIN
+    // Snap de 15 min: arredonda para o múltiplo de 15 mais próximo
+    return Math.round(rawMin / 15) * 15
+  }, [])
+
+  // Iniciado na alça: armazena a tarefa e o endMin atual.
+  // O pointer capture garante que onPointerMove/Up chegam à alça mesmo fora dos limites.
+  const handleResizeStart = useCallback((
+    e: React.PointerEvent<HTMLDivElement>,
+    task: Task,
+    startMin: number,
+    endMin: number,
+  ) => {
+    e.stopPropagation()  // evita disparar o onClick do bloco (que abre o modal)
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    setResize({ id: task.id, startMin, endMin })
+  }, [])
+
+  // Move: atualiza o endMin ao vivo com mínimo de startMin + 15 min.
+  const handleResizeMove = useCallback((
+    e: React.PointerEvent<HTMLDivElement>,
+    startMin: number,
+  ) => {
+    if (!resize) return
+    const raw = yToMin(e.clientY)
+    const newEnd = Math.max(startMin + 15, raw)
+    setResize(prev => prev ? { ...prev, endMin: newEnd } : null)
+  }, [resize, yToMin])
+
+  // Up: persiste o novo end_at via API, recarrega o Meu Dia.
+  const handleResizeEnd = useCallback(async (
+    e: React.PointerEvent<HTMLDivElement>,
+    task: Task,
+    startMin: number,
+  ) => {
+    if (!resize) return
+    const raw = yToMin(e.clientY)
+    const newEnd = Math.max(startMin + 15, raw)
+    setResize(null)
+    if (!task.start_at) return
+
+    // Extrai a data local do start_at existente (evita mudar o dia ao persistir).
+    // "2026-06-26T14:00:00-03:00" → new Date(...).getDate() etc. → toISO → "2026-06-26"
+    const startDate = toISO(new Date(task.start_at))
+    const endAt = localISO(startDate, newEnd)
+
+    try {
+      await kaguyaApi.setTimeBlock(task.id, { start_at: task.start_at, end_at: endAt })
+      onChanged()
+    } catch {
+      toast?.('Não foi possível salvar a duração.', 'err')
+    }
+  }, [resize, yToMin, onChanged, toast])
 
   return (
     <div className="kg-timeline">
@@ -179,7 +253,7 @@ export function DayTimeline({ plano, eventos, sources, onToggleCalendar, onOpen 
       )}
 
       {/* Régua de horas */}
-      <div className="kg-tl-body" style={{ height: `${HOURS.length * 44}px` }}>
+      <div className="kg-tl-body" ref={bodyRef} style={{ height: `${HOURS.length * 44}px` }}>
 
         {/* Faixas de hora — cada uma é um HourSlot droppable */}
         {HOURS.map(h => (
@@ -222,7 +296,9 @@ export function DayTimeline({ plano, eventos, sources, onToggleCalendar, onOpen 
         {blocked.map(task => {
           if (!task.start_at) return null
           const startMin = minuteOfDay(task.start_at)
-          const endMin   = task.end_at ? minuteOfDay(task.end_at) : startMin + (task.duration_min || 30)
+          // Se esta tarefa está sendo redimensionada, usa o endMin ao vivo (feedback imediato).
+          const liveEnd  = resize?.id === task.id ? resize.endMin : null
+          const endMin   = liveEnd ?? (task.end_at ? minuteOfDay(task.end_at) : startMin + (task.duration_min || 30))
           const durMin   = endMin - startMin
           return (
             <div
@@ -245,6 +321,14 @@ export function DayTimeline({ plano, eventos, sources, onToggleCalendar, onOpen 
               <div className="kg-tl-slot-time">
                 {fmtTime(task.start_at)}{task.end_at ? `–${fmtTime(task.end_at)}` : ''}
               </div>
+
+              {/* Alça de resize — arrastar para ajustar a duração do bloco */}
+              <div
+                className="kg-tl-resize"
+                onPointerDown={(e) => handleResizeStart(e, task, startMin, endMin)}
+                onPointerMove={(e) => handleResizeMove(e, startMin)}
+                onPointerUp={(e) => handleResizeEnd(e, task, startMin)}
+              />
             </div>
           )
         })}

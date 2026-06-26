@@ -29,8 +29,8 @@ import {
 } from '@dnd-kit/core'
 // Sensor centralizado (PointerSensor 5px) compartilhado com Kanban, Eisenhower e Lista.
 import { useDndSensors } from '../lib/dnd'
-// Helper canônico de data: devolve "AAAA-MM-DD" usando partes locais (nunca toISOString).
-import { toISO } from '../lib/dateUtils'
+// Helpers canônicos de data (nunca toISOString — usa partes locais do navegador).
+import { toISO, localISO } from '../lib/dateUtils'
 
 // Capacity vazia para o estado inicial (antes do fetch).
 const EMPTY_CAP = {
@@ -151,22 +151,10 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
     if (isNaN(hour)) return
 
     // ── Construção do start_at no fuso local ────────────────────────────────
-    // Usamos as partes locais da data de hoje para montar o horário correto em UTC-3.
-    // Nunca usamos toISOString() para a parte do horário — ela retorna UTC e aplicaria
-    // o offset duas vezes (ex.: drop nas 14h BRT → corpo "17:00" UTC + sufixo "-03:00"
-    // → armazenaria "17:00-03:00" = 20h UTC em vez de "14:00-03:00" = 17h UTC).
-    //
-    // Solução: montamos o wall-clock local diretamente com toISO() + a hora escolhida,
-    // e então etiquetamos com o offset local (sinal + horas + minutos).
+    // `localISO` (lib/dateUtils) monta a string sem passar por toISOString() — ver
+    // comentário no helper para entender por que isso é necessário (fuso UTC-3).
     const today = new Date()
-    const offset = -today.getTimezoneOffset()  // ex.: UTC-3 → getTimezoneOffset()=180 → offset=-180 → negativo
-    const sign   = offset >= 0 ? '+' : '-'    // UTC-3 → '-'
-    const hh     = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')  // '03'
-    const mm     = String(Math.abs(offset) % 60).padStart(2, '0')              // '00'
-    const hourStr = String(hour).padStart(2, '0')  // ex.: 14 → '14'
-    // toISO(today) retorna "AAAA-MM-DD" em fuso local (nunca toISOString).
-    // Resultado: "2026-06-26T14:00:00-03:00" — hora LOCAL etiquetada com offset LOCAL.
-    const startAt = `${toISO(today)}T${hourStr}:00:00${sign}${hh}:${mm}`
+    const startAt = localISO(toISO(today), hour * 60)  // hour * 60 = minuto do dia
 
     // ── Optimistic update ───────────────────────────────────────────────────
     // 1. Salva snapshot para rollback em caso de erro de rede.

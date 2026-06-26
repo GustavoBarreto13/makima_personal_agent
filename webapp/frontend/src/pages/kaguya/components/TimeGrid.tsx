@@ -173,6 +173,10 @@ export function TimeGrid({
   const scrollRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
+  // Flag que impede o onClick do evento de reabrir o popover logo após um drag.
+  // Setada para `true` no onGridPointerUp (quando houve drag real); limpa num setTimeout(0)
+  // após o evento de click sintético ser despachado pelo browser.
+  const justDraggedRef = useRef(false)
 
   // Estado de ghost visível (mínimo para forçar re-render ao iniciar/parar drag)
   const [ghostInfo, setGhostInfo] = useState<{
@@ -306,6 +310,12 @@ export function TimeGrid({
       // Foi um clique simples — o onClick do evento tratará
       return
     }
+
+    // Marca que houve um drag real. O onClick do .cg-event é disparado pelo browser
+    // logo após o pointerup e, sem esse guard, reabre o popover depois de todo move/resize.
+    // O setTimeout(0) limpa a flag após o event loop processar o click sintético.
+    justDraggedRef.current = true
+    setTimeout(() => { justDraggedRef.current = false }, 0)
 
     if (!d.ev) return
 
@@ -616,8 +626,11 @@ export function TimeGrid({
                       cursor: isEditable ? 'grab' : 'default',
                     } as CSSProperties}
                     onClick={(e) => {
-                      // Só dispara onClick se não houve drag (dragRef já nulificado)
-                      if (!dragRef.current?.dragging) {
+                      // Só abre o popover se não houve drag logo antes.
+                      // `dragRef.current?.dragging` cobre o drag ainda em progresso;
+                      // `justDraggedRef.current` cobre o click sintético disparado
+                      // pelo browser imediatamente após o pointerup de um drag concluído.
+                      if (!dragRef.current?.dragging && !justDraggedRef.current) {
                         onEventClick(ev, { x: e.clientX, y: e.clientY })
                       }
                     }}

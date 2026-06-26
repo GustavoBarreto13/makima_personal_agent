@@ -18,6 +18,9 @@ import type { CSSProperties } from 'react'
 import type { CalEvent, Calendar } from '../types'
 import { Icon } from '../ui/Icons'
 import { kaguyaApi, CAL_SWATCHES, isGcal, gcalCalendarId } from '../kaguyaApi'
+import { DURATIONS, snapDuration } from '../lib/durations'
+// localISO: monta ISO 8601 com offset local sem toISOString() (fuso UTC-3).
+import { localISO } from '../lib/dateUtils'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -56,6 +59,16 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
   const [saving, setSaving] = useState(false)
   const [showColors, setShowColors] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  // Duração inicial: derivada de end - start (em minutos), aproximada para a lista.
+  // Só relevante para eventos com horário (start presente).
+  // Guardada em const fora do estado para usar no rollback do handleDurationChange.
+  const initialDuration = ev.start && ev.end
+    ? snapDuration(timeToMin(ev.end) - timeToMin(ev.start))
+    : 0
+  const [duration, setDuration] = useState<number>(initialDuration)
+  // ref para o initialDuration: disponível no closure dos handlers sem re-render.
+  const initialDurationRef = useRef(initialDuration)
 
   const popRef = useRef<HTMLDivElement | null>(null)
 
@@ -115,6 +128,39 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
       onRefresh?.()
     } catch {
       setConfirmDelete(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Atualiza a duração do evento/tarefa e persiste via API.
+  // Recalcula end_at a partir de start + nova duração; mantém start_at intacto.
+  async function handleDurationChange(newDuration: number) {
+    setDuration(newDuration)
+    if (!ev.start || !isEditable || newDuration <= 0) return
+    const startMin = timeToMin(ev.start)
+    const newEndMin = startMin + newDuration
+    // ev.day: "AAAA-MM-DD" (já local — vem do CalendarScreen.taskToCalEvent)
+    const newStart = localISO(ev.day, startMin)
+    const newEnd   = localISO(ev.day, newEndMin)
+    setSaving(true)
+    try {
+      if (ev.cal === 'kaguya' && ev.taskId) {
+        // Task Kaguya: atualiza o time-block (start_at + end_at).
+        await kaguyaApi.setTimeBlock(ev.taskId, { start_at: newStart, end_at: newEnd })
+      } else if (isGcal(ev.cal)) {
+        // Evento Google Calendar: atualiza start + end no calendário correto.
+        await kaguyaApi.updateCalendarEvent(ev.id, {
+          start: newStart,
+          end: newEnd,
+          day: ev.day,
+          calendar_id: gcalCalendarId(ev.cal),
+        })
+      }
+      onRefresh?.()
+    } catch {
+      // Em caso de erro, volta para a duração anterior (não altera o estado de UI).
+      setDuration(initialDurationRef.current)
     } finally {
       setSaving(false)
     }
@@ -214,6 +260,25 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
             <Icon name="clock" size={13} />
             <span>{ev.day} · {timeLabel}</span>
           </div>
+
+          {/* Duração — seletor compacto apenas para eventos editáveis com horário.
+              Ao mudar, recalcula end_at e persiste via API (sem fechar o popover). */}
+          {isEditable && !ev.allDay && ev.start && (
+            <div className="cpop-meta" style={{ gap: 6 }}>
+              <Icon name="clock" size={13} />
+              <select
+                className="cpop-dur-select"
+                value={duration}
+                onChange={(e) => handleDurationChange(Number(e.target.value))}
+                disabled={saving}
+                title="Duração do evento"
+              >
+                {DURATIONS.filter(d => d.v > 0).map(d => (
+                  <option key={d.v} value={d.v}>{d.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Localização (quando disponível) */}
           {ev.loc && (
