@@ -262,10 +262,7 @@ export function TimeGrid({
     e.stopPropagation()
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
 
-    // Coluna de origem: deriva do próprio elemento via closest('.cg-col').
-    // Antes vinha de colFromX(e.clientX), que podia retornar null e abortar o gesto
-    // silenciosamente — a causa raiz do "nada acontece" ao arrastar tarefas.
-    // closest() sempre encontra o .cg-col ancestral enquanto o evento existir no grid.
+    // Coluna de origem via DOM do próprio elemento — nunca retorna null.
     const colEl = (e.currentTarget as HTMLElement).closest('.cg-col') as HTMLElement | null
     if (!colEl) return
 
@@ -277,128 +274,127 @@ export function TimeGrid({
       originMin: startMin,
       originDay: day,
       colEl,
-      // Para "move": preserva o offset entre o topo do evento e onde o usuário clicou.
-      // Garante que o bloco não "pule" para alinhar o topo ao cursor ao iniciar o drag.
+      // Preserva o offset entre o topo do evento e onde o usuário clicou,
+      // para que o bloco não "pule" ao iniciar o drag.
       offsetMin: mode === 'move' ? (yToMin(e.clientY, colEl) - startMin) : 0,
       dragging: false,
     }
-  }, [yToMin, cals])
 
-  // Pointer move: atualiza o fantasma enquanto o usuário arrasta.
-  // Handler React no próprio .cg-event (mover) ou .cg-resize bubbleando até .cg-event (resize).
-  // Esse padrão — captura + handler React no mesmo elemento — é o mesmo usado pelo caminho de
-  // criar (.cg-col) e pelo DayTimeline, e é o que funciona de forma confiável no React 19.
-  const onEventDragMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const d = dragRef.current
-    if (!d || d.mode === 'create') return
+    // Listeners nativos na window, criados por gesto e destruídos no pointerup.
+    // Este padrão é mais robusto do que onPointerMove/Up como props React: o React 19
+    // delega eventos na raiz do app, e eventos de pointer capturados em elementos filho
+    // podem não disparar os handlers React em tempo real (o commit funciona, mas o ghost
+    // não aparece durante o drag). Listeners nativos na window nunca têm esse problema.
+    const handleMove = (me: PointerEvent) => {
+      const d = dragRef.current
+      if (!d || d.mode === 'create') return
 
-    // Inicia o drag após mover ≥ 4px para distinguir de clique simples
-    const moved = Math.abs(e.clientY - d.startY) + Math.abs(e.clientX - d.startX)
-    if (!d.dragging && moved < 4) return
-    d.dragging = true
+      // Inicia o drag após mover ≥ 4px para distinguir de clique simples
+      const moved = Math.abs(me.clientY - d.startY) + Math.abs(me.clientX - d.startX)
+      if (!d.dragging && moved < 4) return
+      d.dragging = true
 
-    // Hora calculada sempre pela coluna de ORIGEM (d.colEl).
-    // Todas as colunas têm a mesma extensão vertical, então a hora é correta
-    // independente de qual coluna o cursor esteja — sem depender de colFromX.
-    const rawMin = yToMin(e.clientY, d.colEl)
-    const duration = d.mode === 'move'
-      ? ((d.ev?.end ? timeToMin(d.ev.end) : d.originMin + 30) - d.originMin)
-      : 0
+      // Hora calculada sempre pela coluna de ORIGEM (d.colEl).
+      // Todas as colunas têm a mesma extensão vertical — hora é correta em qualquer coluna.
+      const rawMin = yToMin(me.clientY, d.colEl)
+      const duration = d.mode === 'move'
+        ? ((d.ev?.end ? timeToMin(d.ev.end) : d.originMin + 30) - d.originMin)
+        : 0
 
-    let snapMin: number
-    if (d.mode === 'move') {
-      snapMin = snapTo15(rawMin - d.offsetMin)
-    } else {
-      snapMin = d.originMin   // startMin fica fixo no resize
-    }
-
-    const endMin = d.mode === 'move'
-      ? snapMin + duration
-      : Math.max(d.originMin + 15, snapTo15(rawMin))   // mínimo 15min
-
-    // Dia target: best-effort via colFromX.
-    // Se o cursor sair da grade, usa o dia de origem — o fantasma SEMPRE desenha.
-    const colInfo = colFromX(e.clientX)
-    const targetDay = colInfo?.day ?? d.originDay
-    const colIdx = days.indexOf(targetDay)
-    const leftPct = (colIdx / ncols) * 100
-    const widthPct = 100 / ncols
-
-    setGhostInfo({
-      day: targetDay,
-      startMin: d.mode === 'move' ? snapMin : d.originMin,
-      endMin,
-      left: `calc(var(--gutter) + ${leftPct}%)`,
-      width: `${widthPct}%`,
-    })
-  }, [colFromX, yToMin, days, ncols])
-
-  // Pointer up: commita a mudança após soltar o arraste.
-  // Handler React no próprio .cg-event (mover) ou bubbleando de .cg-resize (resize).
-  const onEventDragUp = useCallback(async (e: React.PointerEvent<HTMLDivElement>) => {
-    const d = dragRef.current
-    // Anti-duplo-commit: zera no topo antes de qualquer await.
-    // Se o handler disparar duas vezes (ex.: .cg-resize bubbleia até .cg-event),
-    // a segunda chamada vê null e sai sem chamar a API novamente.
-    dragRef.current = null
-    setGhostInfo(null)
-
-    if (!d || d.mode === 'create' || !d.dragging) {
-      // Clique simples ou gesto de criação — o onClick / onColPointerUp tratarão.
-      return
-    }
-
-    // Marca que houve um drag real. O onClick do .cg-event é disparado pelo browser
-    // logo após o pointerup e, sem esse guard, reabre o popover depois de todo move/resize.
-    // O setTimeout(0) limpa a flag após o event loop processar o click sintético.
-    justDraggedRef.current = true
-    setTimeout(() => { justDraggedRef.current = false }, 0)
-
-    if (!d.ev) return
-
-    // Hora: sempre da coluna de origem (mesma extensão vertical em todas as colunas).
-    // Dia: best-effort — usa o dia sob o cursor; se não houver, mantém o original.
-    const rawMin = yToMin(e.clientY, d.colEl)
-    const colInfo = colFromX(e.clientX)
-    const targetDay = colInfo?.day ?? d.originDay
-
-    const duration = (d.ev.end ? timeToMin(d.ev.end) : d.originMin + 30) - d.originMin
-
-    let newStartMin: number
-    let newEndMin: number
-
-    if (d.mode === 'move') {
-      newStartMin = snapTo15(rawMin - d.offsetMin)
-      newEndMin = newStartMin + duration
-    } else {
-      // resize: só o fim muda; o início permanece fixo
-      newStartMin = d.originMin
-      newEndMin = Math.max(newStartMin + 15, snapTo15(rawMin))
-    }
-
-    const newStartISO = buildISO(targetDay, newStartMin)
-    const newEndISO = buildISO(targetDay, newEndMin)
-
-    try {
-      if (d.ev.cal === 'kaguya' && d.ev.taskId) {
-        // Se o dia mudou (view Semana, troca de coluna), atualiza due_date separadamente
-        if (targetDay !== d.originDay) {
-          await kaguyaApi.updateTask(d.ev.taskId, { due_date: targetDay })
-        }
-        // Grava o bloco de tempo via endpoint dedicado
-        await kaguyaApi.setTimeBlock(d.ev.taskId, { start_at: newStartISO, end_at: newEndISO })
-      } else if (isGcal(d.ev.cal)) {
-        await kaguyaApi.updateCalendarEvent(d.ev.id, {
-          start: newStartISO,
-          end: newEndISO,
-          day: targetDay,
-          // Garante que a atualização vai para o calendário correto (não só o principal)
-          calendar_id: gcalCalendarId(d.ev.cal),
-        })
+      let snapMin: number
+      if (d.mode === 'move') {
+        snapMin = snapTo15(rawMin - d.offsetMin)
+      } else {
+        snapMin = d.originMin   // startMin fica fixo no resize
       }
-      onRefresh?.()
-    } catch { /* evento volta à posição original — o grid não re-renderiza */ }
-  }, [colFromX, yToMin, onRefresh])
+
+      const endMin = d.mode === 'move'
+        ? snapMin + duration
+        : Math.max(d.originMin + 15, snapTo15(rawMin))   // mínimo 15min
+
+      // Dia: best-effort via colFromX. Se o cursor sair da grade, usa o dia de origem.
+      // O fantasma SEMPRE desenha — nunca interrompe por colFromX nulo.
+      const colInfo = colFromX(me.clientX)
+      const targetDay = colInfo?.day ?? d.originDay
+      const colIdx = days.indexOf(targetDay)
+      const leftPct = (colIdx / ncols) * 100
+      const widthPct = 100 / ncols
+
+      setGhostInfo({
+        day: targetDay,
+        startMin: d.mode === 'move' ? snapMin : d.originMin,
+        endMin,
+        left: `calc(var(--gutter) + ${leftPct}%)`,
+        width: `${widthPct}%`,
+      })
+    }
+
+    const handleUp = async (ue: PointerEvent) => {
+      // Remove os listeners imediatamente para não processar eventos extras
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+
+      const d = dragRef.current
+      dragRef.current = null
+      setGhostInfo(null)
+
+      if (!d || d.mode === 'create' || !d.dragging) {
+        // Clique simples — o onClick do .cg-event cuidará da abertura do popover
+        return
+      }
+
+      // Bloqueia o onClick sintético que o browser dispara logo após o pointerup,
+      // que sem essa flag reabriria o popover do evento após o drag.
+      justDraggedRef.current = true
+      setTimeout(() => { justDraggedRef.current = false }, 0)
+
+      if (!d.ev) return
+
+      // Hora da coluna de origem; dia best-effort do cursor
+      const rawMin = yToMin(ue.clientY, d.colEl)
+      const colInfo = colFromX(ue.clientX)
+      const targetDay = colInfo?.day ?? d.originDay
+
+      const duration = (d.ev.end ? timeToMin(d.ev.end) : d.originMin + 30) - d.originMin
+
+      let newStartMin: number
+      let newEndMin: number
+
+      if (d.mode === 'move') {
+        newStartMin = snapTo15(rawMin - d.offsetMin)
+        newEndMin = newStartMin + duration
+      } else {
+        // resize: só o fim muda; o início permanece fixo
+        newStartMin = d.originMin
+        newEndMin = Math.max(newStartMin + 15, snapTo15(rawMin))
+      }
+
+      const newStartISO = buildISO(targetDay, newStartMin)
+      const newEndISO = buildISO(targetDay, newEndMin)
+
+      try {
+        if (d.ev.cal === 'kaguya' && d.ev.taskId) {
+          // Se o dia mudou (view Semana, troca de coluna), atualiza due_date separadamente
+          if (targetDay !== d.originDay) {
+            await kaguyaApi.updateTask(d.ev.taskId, { due_date: targetDay })
+          }
+          // Grava o bloco de tempo via endpoint dedicado
+          await kaguyaApi.setTimeBlock(d.ev.taskId, { start_at: newStartISO, end_at: newEndISO })
+        } else if (isGcal(d.ev.cal)) {
+          await kaguyaApi.updateCalendarEvent(d.ev.id, {
+            start: newStartISO,
+            end: newEndISO,
+            day: targetDay,
+            calendar_id: gcalCalendarId(d.ev.cal),
+          })
+        }
+        onRefresh?.()
+      } catch { /* evento volta à posição original — o grid não re-renderiza */ }
+    }
+
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+  }, [yToMin, cals, colFromX, days, ncols, onRefresh])
 
   // ── Pointer events para criar arrastando área vazia ───────────────────────
 
@@ -665,16 +661,13 @@ export function TimeGrid({
                       e.preventDefault()
                       onEventContextMenu?.(ev, { x: e.clientX, y: e.clientY })
                     }}
-                    // Inicia, move e commita o drag de mover/redimensionar.
-                    // Padrão: captura no onPointerDown + handlers React no MESMO elemento.
-                    // Para resize: o pointer é capturado pelo .cg-resize (filho) e os eventos
-                    // de move/up borbulham até cá — sem precisar de handlers extras no resize.
+                    // Inicia o drag de mover. Move/up são tratados por listeners nativos
+                    // na window registrados dentro de onEventPointerDown — mais confiáveis
+                    // do que onPointerMove/Up como props React com pointer capture.
                     onPointerDown={isEditable
                       ? (e) => onEventPointerDown(e, ev, 'move', startMin, endMin, iso)
                       : undefined
                     }
-                    onPointerMove={isEditable ? onEventDragMove : undefined}
-                    onPointerUp={isEditable ? onEventDragUp : undefined}
                     title={`${minToLabel(startMin)}–${minToLabel(endMin)} · ${ev.title}`}
                   >
                     {/* Título do evento — truncado por CSS (.ce-title) */}
