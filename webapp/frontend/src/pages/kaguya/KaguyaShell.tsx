@@ -63,7 +63,14 @@ export function KaguyaShell() {
 
   // ── UI ──
   const [tweaksOpen, setTweaksOpen] = useState(false)
-  const [taskModal, setTaskModal] = useState<{ mode: 'create' | 'edit'; task?: Task; projectId?: number | null } | null>(null)
+  // taskModal carrega o estado do TaskModal compartilhado. O campo `defaults` é usado ao abrir
+  // em modo criar a partir do calendário: pré-preenche data, hora e duração do slot arrastado.
+  const [taskModal, setTaskModal] = useState<{
+    mode: 'create' | 'edit'
+    task?: Task
+    projectId?: number | null
+    defaults?: { dueDate?: string; dueTime?: string; duration?: number }
+  } | null>(null)
   const [projectModal, setProjectModal] = useState<{ mode: 'create' | 'edit'; project?: import('./types').Project } | null>(null)
   const [groupModal, setGroupModal] = useState<{ mode: 'create' | 'edit'; group?: import('./types').Group } | null>(null)
   const [filterModal, setFilterModal] = useState<{ mode: 'create' | 'edit'; filter?: Filter } | null>(null)
@@ -202,7 +209,18 @@ export function KaguyaShell() {
         toast={showToast}
       />
     )
-    if (view === 'calendar') return <CalendarScreen reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} toast={showToast} variant={tweaks.calVariant} />
+    if (view === 'calendar') return (
+      <CalendarScreen
+        reloadKey={reloadKey}
+        onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
+        // Arrasto em espaço vazio → abre o modal de criação pré-preenchido com o slot.
+        // O TaskModal usa dueDate+dueTime+duration para montar o time-block no save().
+        onCreateAt={(dueDate, dueTime, duration) =>
+          setTaskModal({ mode: 'create', defaults: { dueDate, dueTime, duration } })}
+        toast={showToast}
+        variant={tweaks.calVariant}
+      />
+    )
     if (view === 'filter' && param != null) return (
       <FilterScreen
         filterId={param}
@@ -361,6 +379,8 @@ export function KaguyaShell() {
           task={taskModal.task}
           projects={sidebar?.projects ?? []}
           defaultProjectId={taskModal.projectId}
+          // Pré-preenchimento de slot (usado ao criar a partir de arrasto no calendário).
+          defaults={taskModal.defaults}
           onClose={() => setTaskModal(null)}
           onSaved={afterSave}
           toast={showToast}

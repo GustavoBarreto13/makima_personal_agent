@@ -52,6 +52,9 @@ interface TaskModalProps {
   task?: Task                 // presente em 'edit'
   projects: Project[]
   defaultProjectId?: number | null
+  // Pré-preenchimento opcional do modo criar (ex.: arrasto no calendário define o slot).
+  // Ignorado quando `task` está presente (edição usa os valores da própria tarefa).
+  defaults?: { dueDate?: string; dueTime?: string; duration?: number }
   onClose: () => void
   onSaved: () => void         // pai re-busca os dados
   toast: (msg: string, kind?: 'ok' | 'err') => void
@@ -82,15 +85,17 @@ const TAG_COLORS = [
   'oklch(0.64 0.21 350)',   // rosa
 ]
 
-export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onSaved, toast, onPromote, onOpenTask }: TaskModalProps) {
+export function TaskModal({ mode, task, projects, defaultProjectId, defaults, onClose, onSaved, toast, onPromote, onOpenTask }: TaskModalProps) {
   // Estado do formulário, inicializado da tarefa (edição) ou dos defaults (criação).
   const [title, setTitle] = useState(task?.title ?? '')
   const [description, setDescription] = useState(task?.description ?? '')
   const [projectId, setProjectId] = useState<number | null>(task?.project_id ?? defaultProjectId ?? null)
   const [priority, setPriority] = useState(task?.priority ?? 0)
   const [type, setType] = useState<TaskType>(task?.type ?? 'task')
-  const [dueDate, setDueDate] = useState(task?.due_date ?? '')
-  const [dueTime, setDueTime] = useState(task?.due_time ?? '')
+  // Se estamos criando e o calendário forneceu um slot (defaults), usa como segundo fallback.
+  // Em modo edição `task` sempre tem precedência; defaults é ignorado.
+  const [dueDate, setDueDate] = useState(task?.due_date ?? defaults?.dueDate ?? '')
+  const [dueTime, setDueTime] = useState(task?.due_time ?? defaults?.dueTime ?? '')
   // Recorrência: preset + modo, derivados da regra existente (edição).
   const [recurFreq, setRecurFreq] = useState<RecurFreq>(rruleToFreq(task?.recurrence?.rrule))
   const [recurMode, setRecurMode] = useState<RecurrenceMode>(task?.recurrence?.mode ?? 'fixed')
@@ -109,7 +114,9 @@ export function TaskModal({ mode, task, projects, defaultProjectId, onClose, onS
   const [saving, setSaving] = useState(false)
   // Duração em minutos — alimenta a estimativa (capacity bar) e, se houver hora, o time-block.
   // snapDuration aproxima um valor arbitrário para a opção mais próxima da lista.
-  const [duration, setDuration] = useState<number>(snapDuration(task?.duration_min ?? 0))
+  // Se criando a partir de um arrasto no calendário (defaults.duration), pré-preenche com o
+  // intervalo arrastado (já é múltiplo de 15 ≥ 30, então snapDuration não perde precisão).
+  const [duration, setDuration] = useState<number>(snapDuration(task?.duration_min ?? defaults?.duration ?? 0))
   // Responsáveis da Komi (fatia 025) — IDs selecionados para esta tarefa.
   const [personIds, setPersonIds] = useState<string[]>(
     task?.assignees?.map(a => a.id) ?? []

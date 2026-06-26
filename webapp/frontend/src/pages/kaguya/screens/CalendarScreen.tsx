@@ -29,6 +29,9 @@ import { ContextMenu } from '../components/ContextMenu'
 interface CalendarProProps {
   reloadKey: number
   onOpenTask: (task: Task) => void
+  // Abre o TaskModal de criação pré-preenchido com o slot arrastado pelo usuário.
+  // Recebe o dia (AAAA-MM-DD), a hora de início ("HH:MM") e a duração em minutos.
+  onCreateAt: (dueDate: string, dueTime: string, durationMin: number) => void
   toast: (msg: string, kind?: 'ok' | 'err') => void
   variant?: string   // variante visual — padrão 'agora'
 }
@@ -70,7 +73,7 @@ function hubToCalEvent(item: CalendarItem): CalEvent {
 
 // ── Componente ───────────────────────────────────────────────────────────────
 
-export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast, variant = 'agora' }: CalendarProProps) {
+export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, onCreateAt, toast, variant = 'agora' }: CalendarProProps) {
   const [view, setView] = useState<'day' | 'week' | 'month'>('week')
   const [refDate, setRefDate] = useState<Date>(() => new Date())
   const [tasks, setTasks] = useState<Task[]>([])
@@ -346,21 +349,25 @@ export function CalendarScreen({ reloadKey, onOpenTask: _onOpenTask, toast, vari
     setCtxMenu({ ev, pos })
   }, [])
 
-  // ── Criar slot arrastando área vazia → createTask ─────────────────────────
-
-  const handleCreateSlot = useCallback(async (day: string, startISO: string, endISO: string) => {
-    try {
-      // createTask não aceita start_at/end_at — criamos a tarefa primeiro, depois gravamos o bloco.
-      const result = await kaguyaApi.createTask({ title: 'Nova tarefa', due_date: day })
-      if (result.id) {
-        await kaguyaApi.setTimeBlock(result.id, { start_at: startISO, end_at: endISO })
-      }
-      handleRefresh()
-      toast('Tarefa criada', 'ok')
-    } catch {
-      toast('Falha ao criar tarefa', 'err')
-    }
-  }, [toast, handleRefresh])
+  // ── Criar slot arrastando área vazia → abre TaskModal pré-preenchido ────────
+  //
+  // Antes, este handler criava uma tarefa "Nova tarefa" silenciosamente via API.
+  // Agora delega ao KaguyaShell (via onCreateAt) para abrir o modal de criação já
+  // com o dia, a hora de início e a duração do intervalo arrastado.
+  //
+  // startISO/endISO vêm de localISO em TimeGrid.buildISO ("...THH:MM:00-03:00").
+  // new Date() respeita o offset → horas locais corretas mesmo que o sistema esteja em UTC.
+  const handleCreateSlot = useCallback((_day: string, startISO: string, endISO: string) => {
+    const s = new Date(startISO)
+    const e = new Date(endISO)
+    // Converte a hora do Date para "HH:MM" no fuso local.
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const dueTime = `${pad(s.getHours())}:${pad(s.getMinutes())}`
+    // Duração em minutos = diferença entre fim e início (ambos em minutos do dia).
+    const durationMin = (e.getHours() * 60 + e.getMinutes()) - (s.getHours() * 60 + s.getMinutes())
+    // Usa o dia já derivado pelo TimeGrid (AAAA-MM-DD local) — não relemos startISO.
+    onCreateAt(_day, dueTime, durationMin)
+  }, [onCreateAt])
 
   // ── Time-blocking via drop de TrayCard ────────────────────────────────────
 
