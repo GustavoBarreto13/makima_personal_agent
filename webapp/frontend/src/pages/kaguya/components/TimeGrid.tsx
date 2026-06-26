@@ -195,7 +195,7 @@ export function TimeGrid({
   const gridRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
   // Flag que impede o onClick do evento de reabrir o popover logo após um drag.
-  // Setada para `true` no onGridPointerUp (quando houve drag real); limpa num setTimeout(0)
+  // Setada para `true` no onEventDragUp (quando houve drag real); limpa num setTimeout(0)
   // após o evento de click sintético ser despachado pelo browser.
   const justDraggedRef = useRef(false)
 
@@ -262,8 +262,12 @@ export function TimeGrid({
     e.stopPropagation()
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
 
-    const colInfo = colFromX(e.clientX)
-    if (!colInfo) return
+    // Coluna de origem: deriva do próprio elemento via closest('.cg-col').
+    // Antes vinha de colFromX(e.clientX), que podia retornar null e abortar o gesto
+    // silenciosamente — a causa raiz do "nada acontece" ao arrastar tarefas.
+    // closest() sempre encontra o .cg-col ancestral enquanto o evento existir no grid.
+    const colEl = (e.currentTarget as HTMLElement).closest('.cg-col') as HTMLElement | null
+    if (!colEl) return
 
     dragRef.current = {
       mode,
@@ -272,27 +276,31 @@ export function TimeGrid({
       startX: e.clientX,
       originMin: startMin,
       originDay: day,
-      colEl: colInfo.colEl,
-      // Para "move": preserva o offset entre o topo do evento e onde o usuário clicou
-      offsetMin: mode === 'move' ? (yToMin(e.clientY, colInfo.colEl) - startMin) : 0,
+      colEl,
+      // Para "move": preserva o offset entre o topo do evento e onde o usuário clicou.
+      // Garante que o bloco não "pule" para alinhar o topo ao cursor ao iniciar o drag.
+      offsetMin: mode === 'move' ? (yToMin(e.clientY, colEl) - startMin) : 0,
       dragging: false,
     }
-  }, [colFromX, yToMin])
+  }, [yToMin, cals])
 
-  // Pointer move: atualiza o fantasma
-  const onGridPointerMove = useCallback((e: PointerEvent) => {
+  // Pointer move: atualiza o fantasma enquanto o usuário arrasta.
+  // Handler React no próprio .cg-event (mover) ou .cg-resize bubbleando até .cg-event (resize).
+  // Esse padrão — captura + handler React no mesmo elemento — é o mesmo usado pelo caminho de
+  // criar (.cg-col) e pelo DayTimeline, e é o que funciona de forma confiável no React 19.
+  const onEventDragMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const d = dragRef.current
     if (!d || d.mode === 'create') return
 
-    // Inicia o drag após mover ≥ 4px para distinguir de clique
+    // Inicia o drag após mover ≥ 4px para distinguir de clique simples
     const moved = Math.abs(e.clientY - d.startY) + Math.abs(e.clientX - d.startX)
     if (!d.dragging && moved < 4) return
     d.dragging = true
 
-    const colInfo = colFromX(e.clientX)
-    if (!colInfo) return
-
-    const rawMin = yToMin(e.clientY, colInfo.colEl)
+    // Hora calculada sempre pela coluna de ORIGEM (d.colEl).
+    // Todas as colunas têm a mesma extensão vertical, então a hora é correta
+    // independente de qual coluna o cursor esteja — sem depender de colFromX.
+    const rawMin = yToMin(e.clientY, d.colEl)
     const duration = d.mode === 'move'
       ? ((d.ev?.end ? timeToMin(d.ev.end) : d.originMin + 30) - d.originMin)
       : 0
@@ -308,12 +316,16 @@ export function TimeGrid({
       ? snapMin + duration
       : Math.max(d.originMin + 15, snapTo15(rawMin))   // mínimo 15min
 
-    const colIdx = days.indexOf(colInfo.day)
+    // Dia target: best-effort via colFromX.
+    // Se o cursor sair da grade, usa o dia de origem — o fantasma SEMPRE desenha.
+    const colInfo = colFromX(e.clientX)
+    const targetDay = colInfo?.day ?? d.originDay
+    const colIdx = days.indexOf(targetDay)
     const leftPct = (colIdx / ncols) * 100
     const widthPct = 100 / ncols
 
     setGhostInfo({
-      day: colInfo.day,
+      day: targetDay,
       startMin: d.mode === 'move' ? snapMin : d.originMin,
       endMin,
       left: `calc(var(--gutter) + ${leftPct}%)`,
@@ -321,19 +333,18 @@ export function TimeGrid({
     })
   }, [colFromX, yToMin, days, ncols])
 
-  // Pointer up: commita a mudança
-  const onGridPointerUp = useCallback(async (e: PointerEvent) => {
+  // Pointer up: commita a mudança após soltar o arraste.
+  // Handler React no próprio .cg-event (mover) ou bubbleando de .cg-resize (resize).
+  const onEventDragUp = useCallback(async (e: React.PointerEvent<HTMLDivElement>) => {
     const d = dragRef.current
-    // Modo 'create' é tratado pelo onColPointerUp da própria coluna. Este listener é nativo no
-    // gridRef (ancestral) e dispara ANTES do handler React da coluna no mesmo pointerup; se ele
-    // zerar o dragRef aqui, o onColPointerUp encontra null e o onCreateSlot nunca roda. Por isso
-    // saímos sem tocar no dragRef — espelhando a guarda que o onGridPointerMove já tem (linha 285).
-    if (d?.mode === 'create') return
+    // Anti-duplo-commit: zera no topo antes de qualquer await.
+    // Se o handler disparar duas vezes (ex.: .cg-resize bubbleia até .cg-event),
+    // a segunda chamada vê null e sai sem chamar a API novamente.
     dragRef.current = null
     setGhostInfo(null)
 
-    if (!d || !d.dragging) {
-      // Foi um clique simples — o onClick do evento tratará
+    if (!d || d.mode === 'create' || !d.dragging) {
+      // Clique simples ou gesto de criação — o onClick / onColPointerUp tratarão.
       return
     }
 
@@ -345,9 +356,11 @@ export function TimeGrid({
 
     if (!d.ev) return
 
+    // Hora: sempre da coluna de origem (mesma extensão vertical em todas as colunas).
+    // Dia: best-effort — usa o dia sob o cursor; se não houver, mantém o original.
+    const rawMin = yToMin(e.clientY, d.colEl)
     const colInfo = colFromX(e.clientX)
     const targetDay = colInfo?.day ?? d.originDay
-    const rawMin = colInfo ? yToMin(e.clientY, colInfo.colEl) : d.originMin
 
     const duration = (d.ev.end ? timeToMin(d.ev.end) : d.originMin + 30) - d.originMin
 
@@ -358,7 +371,7 @@ export function TimeGrid({
       newStartMin = snapTo15(rawMin - d.offsetMin)
       newEndMin = newStartMin + duration
     } else {
-      // resize: só o fim muda
+      // resize: só o fim muda; o início permanece fixo
       newStartMin = d.originMin
       newEndMin = Math.max(newStartMin + 15, snapTo15(rawMin))
     }
@@ -368,7 +381,7 @@ export function TimeGrid({
 
     try {
       if (d.ev.cal === 'kaguya' && d.ev.taskId) {
-        // Se o dia mudou, atualiza due_date separadamente
+        // Se o dia mudou (view Semana, troca de coluna), atualiza due_date separadamente
         if (targetDay !== d.originDay) {
           await kaguyaApi.updateTask(d.ev.taskId, { due_date: targetDay })
         }
@@ -386,18 +399,6 @@ export function TimeGrid({
       onRefresh?.()
     } catch { /* evento volta à posição original — o grid não re-renderiza */ }
   }, [colFromX, yToMin, onRefresh])
-
-  // Registra os listeners globais de pointer (para capturar fora da coluna)
-  useEffect(() => {
-    const el = gridRef.current
-    if (!el) return
-    el.addEventListener('pointermove', onGridPointerMove)
-    el.addEventListener('pointerup', onGridPointerUp)
-    return () => {
-      el.removeEventListener('pointermove', onGridPointerMove)
-      el.removeEventListener('pointerup', onGridPointerUp)
-    }
-  }, [onGridPointerMove, onGridPointerUp])
 
   // ── Pointer events para criar arrastando área vazia ───────────────────────
 
@@ -664,11 +665,16 @@ export function TimeGrid({
                       e.preventDefault()
                       onEventContextMenu?.(ev, { x: e.clientX, y: e.clientY })
                     }}
-                    // Inicia drag de mover (só para fontes editáveis)
+                    // Inicia, move e commita o drag de mover/redimensionar.
+                    // Padrão: captura no onPointerDown + handlers React no MESMO elemento.
+                    // Para resize: o pointer é capturado pelo .cg-resize (filho) e os eventos
+                    // de move/up borbulham até cá — sem precisar de handlers extras no resize.
                     onPointerDown={isEditable
                       ? (e) => onEventPointerDown(e, ev, 'move', startMin, endMin, iso)
                       : undefined
                     }
+                    onPointerMove={isEditable ? onEventDragMove : undefined}
+                    onPointerUp={isEditable ? onEventDragUp : undefined}
                     title={`${minToLabel(startMin)}–${minToLabel(endMin)} · ${ev.title}`}
                   >
                     {/* Título do evento — truncado por CSS (.ce-title) */}
