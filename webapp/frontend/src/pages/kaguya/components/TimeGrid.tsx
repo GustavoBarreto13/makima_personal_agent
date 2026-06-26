@@ -324,6 +324,11 @@ export function TimeGrid({
   // Pointer up: commita a mudança
   const onGridPointerUp = useCallback(async (e: PointerEvent) => {
     const d = dragRef.current
+    // Modo 'create' é tratado pelo onColPointerUp da própria coluna. Este listener é nativo no
+    // gridRef (ancestral) e dispara ANTES do handler React da coluna no mesmo pointerup; se ele
+    // zerar o dragRef aqui, o onColPointerUp encontra null e o onCreateSlot nunca roda. Por isso
+    // saímos sem tocar no dragRef — espelhando a guarda que o onGridPointerMove já tem (linha 285).
+    if (d?.mode === 'create') return
     dragRef.current = null
     setGhostInfo(null)
 
