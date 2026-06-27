@@ -279,6 +279,8 @@ export function KaguyaShell() {
           onEditGroup={(group) => setGroupModal({ mode: 'edit', group })}
           onNewFilter={() => setFilterModal({ mode: 'create' })}
           onOpenTweaks={() => setTweaksOpen(true)}
+          onReordered={loadSidebar}
+          toast={showToast}
         />
 
         <div className="kg-main">

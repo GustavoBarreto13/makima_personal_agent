@@ -176,6 +176,28 @@
 /* cluster de atalhos no cabeçalho "Listas" (novo grupo + nova lista); fica num <div> p/ sobreviver ao modo estreito */
 .kg-nav-acts { display: flex; align-items: center; gap: 2px; }
 .kg-act-grp { font-size: 9px; padding: 2px 5px !important; white-space: nowrap; }
+
+/* Botão global de recolher/expandir todos os grupos da sidebar */
+.kg-act-collapse { background: none; border: none; color: var(--ink-4); cursor: pointer; padding: 2px; border-radius: 4px; display: flex; align-items: center; }
+.kg-act-collapse:hover { color: var(--kg); background: var(--kg-tint); }
+
+/* Seta de colapso individual por grupo: aparece no hover da linha */
+.kg-group-caret { flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: 2px; background: none; border: none; cursor: pointer; border-radius: 4px; color: var(--ink-4); opacity: 0; transition: opacity 0.15s; }
+.kg-group-row:hover .kg-group-caret { opacity: 1; }
+.kg-group-caret:hover { color: var(--kg); background: var(--card-2); }
+
+/* Alça de arrasto (grip) — revelada no hover do grupo ou do item de lista */
+.kg-drag-grip { flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: 2px; cursor: grab; color: var(--ink-4); opacity: 0; transition: opacity 0.15s; border-radius: 4px; }
+.kg-drag-grip:hover { color: var(--kg); background: var(--card-2); }
+.kg-drag-grip:active { cursor: grabbing; }
+.kg-group-row:hover .kg-drag-grip { opacity: 1; }
+.kg-nav-item-row:hover .kg-drag-grip { opacity: 1; }
+
+/* Wrapper flex para o item de lista arrastável (grip + botão de navegação) */
+.kg-nav-item-row { display: flex; align-items: center; gap: 1px; }
+/* O botão de navegação dentro do wrapper ocupa o espaço restante */
+.kg-nav-item-row .kg-nav-item { flex: 1; }
+
 .kg-back { margin-top: auto; padding: 10px 8px; font-size: 12.5px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer; border-top: 1px solid var(--line-2); }
 .kg-back:hover { color: var(--kg); }
 

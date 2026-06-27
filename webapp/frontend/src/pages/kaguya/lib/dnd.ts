@@ -7,7 +7,10 @@
 // (ex.: mudar o limiar de ativação) valha em todas as telas de uma vez.
 
 import { useSensors, useSensor, PointerSensor } from '@dnd-kit/core'
-import type { Task } from '../types'
+
+// Tipo estrutural mínimo para midPosition: só lê `.position`.
+// Compatível com Task, Project e Group — todos têm o campo position.
+type Positioned = { position: number }
 
 // ─── useDndSensors ────────────────────────────────────────────────────────────
 // Hook que configura o sensor padrão do @dnd-kit para toda a app Kaguya.
@@ -47,8 +50,8 @@ export function useDndSensors() {
 //   midPosition(A, null)      → A.position + 1000            (depois do último)
 //   midPosition(A, B)         → Math.floor((A.position + B.position) / 2)
 export function midPosition(
-  after:  Task | null | undefined,
-  before: Task | null | undefined,
+  after:  Positioned | null | undefined,
+  before: Positioned | null | undefined,
 ): number {
   // Coluna (ou lista) vazia: usa posição inicial padrão.
   if (!after && !before) return 1000
