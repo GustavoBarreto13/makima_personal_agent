@@ -35,6 +35,10 @@ _POSITION_STEP = 1000
 _VALID_PRIORITIES = {0, 1, 2, 3}
 _VALID_TYPES = {"task", "event", "birthday"}
 
+# Sentinela para distinguir "parâmetro não enviado" de "enviado como None (limpar)".
+# Usado em update_task para que due_date=None signifique "limpar a data" e não "ignorar".
+_UNSET = object()
+
 # Colunas da tarefa que viajam nas respostas (ordem estável; nested subtasks à parte).
 _TASK_FIELDS = [
     "id", "project_id", "column_id", "parent_id", "title", "description", "type", "priority",
@@ -930,8 +934,8 @@ def update_task(
     description: Optional[str] = None,
     priority: Optional[int] = None,
     type: Optional[str] = None,
-    due_date: Optional[str] = None,
-    due_time: Optional[str] = None,
+    due_date: Optional[str] = _UNSET,
+    due_time: Optional[str] = _UNSET,
     project_id: Optional[int] = None,
     column_id: Optional[int] = None,
     recurrence: Optional[dict] = None,
@@ -948,8 +952,14 @@ def update_task(
 
     Args:
         task_id: Id da tarefa.
-        title/description/priority/type/due_date/due_time/project_id/column_id:
+        title/description/priority/type/project_id/column_id:
             Campos a atualizar (todos opcionais; PATCH parcial).
+        due_date: Data de vencimento (``YYYY-MM-DD``). Omitido = não mexe;
+            ``None`` = limpa a data (grava NULL — e arrasta due_time junto);
+            string = grava a data.
+        due_time: Hora de vencimento (``HH:MM``). Omitido = não mexe;
+            ``None`` = limpa só a hora; string = grava a hora (exige data já existente
+            ou due_date enviado junto). Ignorado se due_date=None (hora cai junto).
         recurrence: ``{"rrule", "mode"}`` para anexar/editar a regra (mantém a âncora — edge 8).
         clear_recurrence: Se True, remove a regra (tarefa volta a ser simples).
         tags: Se informado (lista de nomes), substitui o conjunto de tags da tarefa
@@ -990,15 +1000,26 @@ def update_task(
             if type is not None:
                 sets.append("type = %(type)s")
                 params["type"] = type
-            if due_date is not None:
+            # due_date: _UNSET = não mexe · None = limpa (grava NULL) · string = grava.
+            if due_date is not _UNSET:
                 sets.append("due_date = %(due_date)s")
-                params["due_date"] = due_date
-            if due_time is not None:
-                # Hora exige data: ou a nova data veio junto, ou a tarefa já tinha data.
-                if not due_date and existing[0] is None:
-                    return {"status": "error", "message": "Hora de vencimento exige uma data."}
+                params["due_date"] = due_date   # None → SQL NULL; string → grava a data
+
+            # Hora sem data é inválida. Se a data foi explicitamente apagada (due_date=None),
+            # a hora cai junto automaticamente — evita hora órfã e erro de validação.
+            if due_date is None:
+                # Cascatear: a data foi limpa, então a hora também some.
                 sets.append("due_time = %(due_time)s")
-                params["due_time"] = due_time
+                params["due_time"] = None
+            elif due_time is not _UNSET:
+                # due_time: _UNSET = não mexe · None = limpa só a hora · string = grava.
+                if due_time is not None:
+                    # Setar uma hora exige uma data: a nova (se enviada) ou a já existente.
+                    effective_date = due_date if due_date is not _UNSET else existing[0]
+                    if not effective_date:
+                        return {"status": "error", "message": "Hora de vencimento exige uma data."}
+                sets.append("due_time = %(due_time)s")
+                params["due_time"] = due_time   # None → limpa só a hora; string → grava
 
             # Mover de lista: só aplica a regra da coluna quando o project_id MUDA de verdade.
             # (Antes, qualquer PATCH com project_id — mesmo igual ao atual, como o TaskModal
