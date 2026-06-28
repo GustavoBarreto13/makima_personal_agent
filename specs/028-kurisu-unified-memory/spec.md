@@ -11,9 +11,10 @@
 > **Decisões confirmadas com o usuário (2026-06-26):**
 > 1. **Fonte:** todos os domínios da Makima no Postgres (tarefas, diário, finanças, leituras, filmes,
 >    animes, séries, pessoas) viram conteúdo da memória da Kurisu — além da wiki da spec 027.
-> 2. **Backend:** **Vertex AI RAG Engine** (a mesma abordagem de corpus da 027); embeddings
->    gerenciados pelo Vertex. O usuário **aceita** que os dados (inclusive diário/finanças) sejam
->    indexados na nuvem do Google (decisão revista em 2026-06-28).
+> 2. **Backend:** **Vertex AI RAG Engine** em **Serverless mode** (mesma fundação da 027), mas num
+>    **corpus separado** só para os dados operacionais; embeddings multilíngues gerenciados. A busca
+>    (`buscar_na_base`) consulta os dois corpora. O usuário **aceita** que os dados (inclusive
+>    diário/finanças) sejam indexados na nuvem do Google (decisão revista em 2026-06-28).
 > 3. **Sync:** **job automático agendado** (noturno), incremental.
 > 4. **Representação:** **mista por domínio** — resumos datados para atividade/finanças; itens
 >    individuais para bullets de diário e itens de mídia.
@@ -27,9 +28,15 @@
 - Q: Como manter a memória atualizada? → A: Job agendado (noturno), incremental.
 - Q: Como representar os dados estruturados? → A: Misto — resumos datados (atividade/finanças) e itens individuais (bullets de diário, itens de mídia).
 
-> **Dependência:** esta spec assume a fundação da **027** (corpus Vertex AI RAG + embeddings
-> gerenciados + a tool `VertexAiRagRetrieval`). A 028 acrescenta *fontes* (os domínios do Postgres)
-> e o *sync agendado*; não reimplementa o motor de busca.
+### Session 2026-06-28
+
+- Q: Dado que a 027 recria o corpus inteiro a cada atualização da wiki (`--recreate`, ID novo), onde a 028 guarda os dados do Postgres? → A: **Corpus separado** — um segundo corpus só para os dados operacionais, isolando os ciclos de vida (recriar a wiki nunca toca os dados do Postgres).
+- Q: Com wiki e dados operacionais em corpora separados, como a Kurisu busca a cada pergunta? → A: **Buscar nos dois sempre** — a tool `buscar_na_base` consulta ambos os corpora; o reranker + peso de recência decidem a relevância (busca unânime, FR-009).
+
+> **Dependência:** esta spec assume a fundação da **027** (Vertex AI RAG em **Serverless mode** +
+> embeddings multilíngues gerenciados + a FunctionTool **`buscar_na_base`** com reranker). A 028
+> acrescenta um **corpus operacional separado**, as *fontes* (os domínios do Postgres) e o *sync
+> agendado*, e **estende `buscar_na_base` para consultar os dois corpora**; não reimplementa o motor de busca.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -121,8 +128,8 @@ consultável; depois apagar o item na origem, rodar o sync, e verificar que ele 
   dias) e ser explícita sobre o intervalo que usou.
 - **Domínio vazio/esparso**: se não houve atividade no período, responder "nada registrado nesse
   período" em vez de inventar.
-- **Dado sensível**: finanças/diário são indexados no corpus do Vertex (tradeoff aceito); o corpus
-  é privado ao projeto GCP e acessível só pela service account — nunca público.
+- **Dado sensível**: finanças/diário são indexados no corpus operacional do Vertex (tradeoff
+  aceito); o corpus é privado ao projeto GCP e acessível só pela service account — nunca público.
 - **Fuso horário**: datas derivadas de `TIMESTAMPTZ` devem usar `America/Sao_Paulo` (UTC-3), nunca a
   data UTC do container (ver CLAUDE.md — bug histórico da Violet).
 - **Item editado na origem**: a versão nova substitui a antiga na memória no próximo sync (incremental
@@ -136,7 +143,7 @@ consultável; depois apagar o item na origem, rodar o sync, e verificar que ele 
   finanças (Nami), tarefas (Kaguya), diário (Violet), pessoas (Komi), livros (Frieren), filmes
   (Akane), animes (Marin) e séries (Mai).
 - **FR-002**: A ingestão MUST ser **somente leitura** sobre as tabelas de origem — nunca alterar os
-  dados dos agentes; escreve apenas no corpus Vertex AI RAG da Kurisu.
+  dados dos agentes; escreve apenas no corpus operacional (separado) da Kurisu.
 - **FR-003**: A representação MUST ser **mista por domínio**: resumos datados para atividade (tarefas
   concluídas) e finanças; itens individuais para bullets de diário e itens de mídia; uma entrada por
   pessoa para os contatos (Komi).
@@ -149,13 +156,15 @@ consultável; depois apagar o item na origem, rodar o sync, e verificar que ele 
 - **FR-007**: O sync MUST remover da memória os documentos cujas linhas de origem foram apagadas,
   **exceto** quando a remoção atingiria >50% dos documentos de um domínio num único passe — nesse
   caso MUST abortar a remoção e registrar alerta (trava anti-catástrofe).
-- **FR-008**: O corpus do Vertex que recebe o conteúdo dos domínios (inclusive diário/finanças)
-  MUST ser privado ao projeto GCP do usuário — acessível somente pela service account do projeto,
-  nunca público nem compartilhado. (A indexação na nuvem do Google é um tradeoff aceito pelo
-  usuário; o controle de acesso é a contrapartida obrigatória.)
-- **FR-009**: A memória unificada MUST usar o mesmo corpus Vertex AI RAG e a mesma tool de busca
-  (`VertexAiRagRetrieval`) da 027 — a Kurisu responde de forma unânime sobre wiki + dados
-  operacionais.
+- **FR-008**: O corpus operacional do Vertex que recebe o conteúdo dos domínios (inclusive
+  diário/finanças) MUST ser privado ao projeto GCP do usuário — acessível somente pela service
+  account do projeto, nunca público nem compartilhado. (A indexação na nuvem do Google é um tradeoff
+  aceito pelo usuário; o controle de acesso é a contrapartida obrigatória.)
+- **FR-009**: A memória unificada MUST viver num **corpus Vertex AI RAG separado** (distinto do
+  corpus da wiki da 027, para isolar o ciclo de vida do refresh). A tool **`buscar_na_base`** da 027
+  (FunctionTool com reranker — **não** a `VertexAiRagRetrieval`) MUST ser estendida para consultar
+  **ambos** os corpora (wiki + operacional) em toda pergunta, de modo que a Kurisu responda de forma
+  unânime sobre wiki + dados operacionais.
 - **FR-010**: Datas MUST ser derivadas e exibidas em `America/Sao_Paulo` (UTC-3), nunca na data UTC
   do servidor.
 - **FR-011**: A Kurisu MUST citar a origem operacional de forma legível (ex.: "tarefa concluída em
@@ -171,9 +180,10 @@ consultável; depois apagar o item na origem, rodar o sync, e verificar que ele 
   `source_ref` próprios.
 - **Watermark de sync**: por domínio, o marcador (timestamp/hash) do último item sincronizado, usado
   para a ingestão incremental.
-- **Corpus Vertex AI RAG**: o mesmo corpus compartilhado com a 027 (ver Restrições Técnicas da
-  027). A 028 só acrescenta documentos com `source_type`/`domain` operacionais (cada um com
-  `doc_date`, `source_ref` no metadado para citação e recência).
+- **Corpus operacional Vertex AI RAG**: um corpus **separado** do corpus da wiki da 027 (mesmo
+  Serverless mode e mesmo embedding multilíngue), dedicado aos documentos operacionais — cada um com
+  `source_type`/`domain`, `doc_date`, `source_ref` e `content_hash` no metadado (citação, recência,
+  sync incremental). A tool `buscar_na_base` consulta este corpus **e** o da wiki.
 
 ## Success Criteria *(mandatory)*
 
@@ -195,8 +205,9 @@ consultável; depois apagar o item na origem, rodar o sync, e verificar que ele 
 
 ## Assumptions
 
-- A fundação da **027** (corpus Vertex AI RAG, embeddings gerenciados, tool de busca) está
-  implementada — a 028 depende dela.
+- A fundação da **027** (Vertex AI RAG em Serverless mode, ingester, tool `buscar_na_base` com
+  reranker) está implementada — a 028 depende dela e a estende (corpus operacional separado + busca
+  multi-corpus).
 - As tabelas de cada agente são legíveis a partir do container `makima-web` (mesmo `DATABASE_URL`),
   onde o job de sync roda (lê o Postgres e sobe os documentos para o Vertex).
 - Usuário único (Gustavo); interação em português via Telegram; datas em UTC-3.
@@ -208,23 +219,30 @@ consultável; depois apagar o item na origem, rodar o sync, e verificar que ele 
 - **Write-back**: a Kurisu não escreve de volta nos domínios (não cria tarefas, não edita o diário) —
   é memória somente leitura. (Sugerir ação cross-agent fica para futuro.)
 - **Frescor em tempo real**: a memória é atualizada por ciclo de sync, não instantaneamente.
-- **A wiki**: a ingestão da camada `wiki/` é a **027** (mesmo corpus, fonte diferente).
+- **A wiki**: a ingestão da camada `wiki/` é a **027** (corpus separado, fonte diferente).
 - **Indexar a camada `raw/`** da wiki.
 - Tornar o corpus público ou compartilhá-lo fora do projeto GCP do usuário (ver FR-008/SC-004).
 
 ## Restrições Técnicas (decididas)
 
-- **Corpus**: o mesmo corpus Vertex AI RAG da 027; a 028 só adiciona documentos com
-  `source_type`/`domain` dos domínios operacionais. `doc_date`, `source_ref` e `content_hash` vão no
-  metadado de cada arquivo/documento importado.
-- **Embeddings**: gerenciados pelo Vertex (a mesma pipeline da 027) — o conteúdo (inclusive
-  diário/finanças) é enviado ao Vertex/GCS; o corpus é privado ao projeto (FR-008).
+- **Corpus**: um corpus Vertex AI RAG **separado** do corpus da wiki da 027 (mesma fundação:
+  **Serverless mode**, vector DB `RagManagedVertexVectorSearch`, embedding `text-multilingual-embedding-002`).
+  Corpus separado porque a 027 atualiza a wiki via `--recreate` (recria o corpus do zero, ID novo) —
+  compartilhar destruiria os dados operacionais a cada refresh da wiki. `doc_date`, `source_ref` e
+  `content_hash` vão no metadado de cada documento importado. A env var do corpus operacional é
+  distinta da `VERTEX_RAG_CORPUS` da wiki (ex.: `VERTEX_RAG_CORPUS_OPERACIONAL`).
+- **Embeddings**: gerenciados pelo Vertex (mesma pipeline da 027: `text-multilingual-embedding-002`
+  via `embedding_model_config`, Serverless mode) — o conteúdo (inclusive diário/finanças) é enviado
+  ao Vertex/GCS; o corpus operacional é privado ao projeto (FR-008).
 - **Exporters por domínio**: leitura **somente leitura** das tabelas dos agentes; cada exporter
   renderiza para texto seguindo a representação mista (resumo vs. individual) e sobe os documentos
   para o corpus.
 - **Sync**: job agendado rodando **no container** `makima-web` (onde o `DATABASE_URL` resolve para
   ler as tabelas); incremental por watermark/hash por domínio; prune com trava ≤50%. O destino da
-  escrita é o corpus Vertex (via GCS + `rag.import_files` / delete-file), não o Postgres.
+  escrita é o **corpus operacional separado** (via GCS + `rag.import_files` para novos/alterados e
+  `rag.delete_file` para removidos), não o Postgres. Como é um corpus distinto da wiki, o delete-file
+  granular do sync **não** colide com o `--recreate` da 027. Item editado: `delete_file` + reimport
+  (o Vertex de-dup por URI, então só reimportar com o mesmo nome não atualiza o chunk antigo).
 - **Recência**: o Vertex RAG não aplica decaimento por data nativamente. O peso de recência
   (FR-005/SC-006) MUST ser aplicado **pós-recuperação** — a Kurisu reordena por `doc_date` (do
   metadado) os candidatos retornados, ou filtra por janela temporal quando a pergunta é por período
@@ -234,5 +252,7 @@ consultável; depois apagar o item na origem, rodar o sync, e verificar que ele 
 
 ## Dependencies
 
-- **Spec 027** (Kurisu — base de conhecimento): fornece o corpus Vertex AI RAG, os embeddings
-  gerenciados e a tool `VertexAiRagRetrieval`. A 028 não pode ser implementada antes da 027.
+- **Spec 027** (Kurisu — base de conhecimento): fornece a fundação Vertex AI RAG em **Serverless
+  mode**, o ingester e a FunctionTool **`buscar_na_base`** (com reranker). A 028 cria um **corpus
+  operacional separado**, estende `buscar_na_base` para consultar os dois corpora, e adiciona os
+  exporters + o sync agendado. A 028 não pode ser implementada antes da 027.
