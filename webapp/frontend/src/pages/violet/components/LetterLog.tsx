@@ -12,13 +12,14 @@
 // Uma carta pode ser vinculada (opcionalmente) a pessoas cadastradas na Komi,
 // reutilizando o componente PersonPicker (smart-match 0/1/N) de lá.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { violetApi } from '../../../lib/api'
 import type { Letter, LetterPerson } from '../types'
 import { Icon } from '../ui/Icon'
-// PersonPicker é da Komi, mas foi feito para ser plugado por qualquer shell.
-// Reusá-lo evita reescrever toda a lógica de busca + smart-match de pessoas.
-import { PersonPicker } from '../../komi/components/PersonPicker'
+// komiApi: busca de pessoas (smart-match) para vincular a carta a alguém.
+// Importamos só o objeto de API — a UI de busca abaixo é própria (tematizada com
+// os tokens do Violet), evitando depender do CSS do shell da Komi.
+import { komiApi } from '../../komi/komiApi'
 
 // Props da seção: precisa apenas do id da página (dia) onde as cartas ficam.
 interface LetterSectionProps {
@@ -218,13 +219,9 @@ export function LetterSection({ pageId }: LetterSectionProps) {
             onChange={e => setForm({ ...form, recipient: e.target.value })}
           />
 
-          {/* 2. Vincular pessoa (opcional) — reusa o PersonPicker da Komi */}
+          {/* 2. Vincular pessoa (opcional) — busca de pessoas da Komi */}
           <label className="lt-field-label">Vincular pessoa (opcional)</label>
-          <PersonPicker
-            onSelect={addPerson}
-            placeholder="Buscar pessoa cadastrada…"
-            compact
-          />
+          <PersonSearch onSelect={addPerson} />
           {/* Chips das pessoas já vinculadas, com × para remover */}
           {form.people.length > 0 && (
             <div className="lt-people">
@@ -334,6 +331,94 @@ function LetterCard({ letter, onEdit, onSeal, onDelete }: LetterCardProps) {
         {open ? 'ocultar carta' : 'ler carta'}
       </button>
       {open && <div className="lt-body">{letter.body}</div>}
+    </div>
+  )
+}
+
+// ── Busca de pessoas (Komi) para vincular à carta ─────────────────────────────
+
+// Resultado de busca da Komi: id + nome + relacionamento (para desambiguar).
+interface PersonMatch {
+  id: string
+  name: string
+  relationship: string
+}
+
+interface PersonSearchProps {
+  // Chamado quando o usuário escolhe uma pessoa na lista de resultados.
+  onSelect: (id: string, name: string) => void
+}
+
+// Combobox simples e tematizado (tokens .lt-*) que busca pessoas via komiApi com
+// debounce. Substitui o PersonPicker da Komi (cujo CSS .pp-* não existe e ficava
+// sem estilo dentro do shell do Violet — o ícone de lupa estourava de tamanho).
+function PersonSearch({ onSelect }: PersonSearchProps) {
+  const [query, setQuery] = useState('')               // texto digitado
+  const [results, setResults] = useState<PersonMatch[]>([])  // resultados da busca
+  const [loading, setLoading] = useState(false)        // busca em andamento
+  // Ref do timer de debounce — evita disparar uma busca a cada tecla
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Debounce: só busca 300ms depois que o usuário para de digitar.
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    const q = query.trim()
+    // Campo vazio: limpa os resultados e não busca
+    if (!q) { setResults([]); return }
+
+    timerRef.current = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const data = await komiApi.search(q)
+        setResults(data.matches || [])
+      } catch {
+        // Erro de rede/API — silencioso (padrão do Violet); só não mostra resultados
+        setResults([])
+      } finally {
+        setLoading(false)
+      }
+    }, 300)
+
+    // Limpa o timer ao desmontar ou quando query muda novamente
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [query])
+
+  // Escolhe uma pessoa: notifica o pai e limpa o campo/resultados.
+  function pick(p: PersonMatch) {
+    onSelect(p.id, p.name)
+    setQuery('')
+    setResults([])
+  }
+
+  // Só mostramos o dropdown quando há algo relevante (resultados, carregando, ou
+  // uma busca com 2+ caracteres que não achou nada).
+  const showDropdown = loading || results.length > 0 || query.trim().length > 1
+
+  return (
+    <div className="lt-pp">
+      <input
+        className="lt-input"
+        placeholder="Buscar pessoa cadastrada…"
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        // Esc limpa o campo
+        onKeyDown={e => { if (e.key === 'Escape') { setQuery(''); setResults([]) } }}
+        autoComplete="off"
+      />
+      {showDropdown && (
+        <div className="lt-pp-dropdown">
+          {loading && <div className="lt-pp-empty">buscando…</div>}
+          {!loading && results.map(p => (
+            <button type="button" key={p.id} className="lt-pp-item" onClick={() => pick(p)}>
+              <span className="lt-pp-name">{p.name}</span>
+              {p.relationship && <span className="lt-pp-rel">{p.relationship}</span>}
+            </button>
+          ))}
+          {!loading && results.length === 0 && query.trim().length > 1 && (
+            <div className="lt-pp-empty">Nenhuma pessoa encontrada</div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

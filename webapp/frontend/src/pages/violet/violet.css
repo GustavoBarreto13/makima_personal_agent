@@ -1112,6 +1112,29 @@
 .lt-input:focus, .lt-textarea:focus { border-color: var(--accent); }
 .lt-input.lt-invalid, .lt-textarea.lt-invalid { border-color: var(--garnet); }
 
+/* Busca de pessoas (vincular à carta) — combobox com dropdown sobreposto */
+.lt-pp { position: relative; }
+.lt-pp-dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); overflow: hidden; max-height: 220px; overflow-y: auto;
+}
+.lt-pp-item {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left;
+  padding: 8px 11px; background: none; border: none; cursor: pointer;
+  border-bottom: 1px solid var(--line);
+}
+.lt-pp-item:last-child { border-bottom: none; }
+.lt-pp-item:hover { background: var(--accent-tint); }
+.lt-pp-name { font-size: 14px; font-weight: 600; color: var(--ink); }
+.lt-pp-rel {
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--ink-4); margin-left: auto;
+}
+.lt-pp-empty {
+  padding: 9px 11px; font-size: 13px; color: var(--ink-4); font-style: italic;
+}
+
 /* Ações do formulário */
 .lt-form-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .lt-save {
