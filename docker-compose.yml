@@ -78,6 +78,30 @@ services:
     networks:
       - dokploy-network
 
+  # Serviço de sync da memória unificada da Kurisu (spec 028).
+  # Lê as tabelas dos agentes (read-only) e popula o corpus operacional do Vertex AI RAG,
+  # de forma incremental (add/remove/edit por hash-manifest). Roda 1x/dia.
+  #
+  # REUSA a imagem do `web` (mesmo build: webapp/backend/Dockerfile) — ela já traz todo o
+  # código (agents/, scripts/) e as deps Python (vertexai, psycopg2, google-cloud-storage).
+  # Só trocamos o `command` pelo loop do sync (mesmo padrão do `backup`: loop + sleep 24h,
+  # NÃO é cron). O `|| echo` evita derrubar o container se um ciclo falhar.
+  #
+  # Pré-requisito: VERTEX_RAG_CORPUS_OPERACIONAL no Environment (criado na 1ª execução do
+  # sync, se ausente). Roda na dokploy-network para o DATABASE_URL resolver.
+  kurisu-sync:
+    build:
+      # Mesmo build do `web` → o Docker reaproveita a imagem já construída (sem build extra).
+      context: .
+      dockerfile: webapp/backend/Dockerfile
+    container_name: makima-kurisu-sync
+    restart: unless-stopped
+    env_file: .env
+    # Loop: roda o sync e dorme 24h. Cada redeploy reinicia o relógio e dispara um sync.
+    command: ["sh", "-c", "while true; do python -m scripts.sync_kurisu_memory || echo 'Sync Kurisu falhou (ver erro acima)'; echo 'Proximo sync em 24h'; sleep 86400; done"]
+    networks:
+      - dokploy-network
+
 # Declara a rede do Dokploy como externa — já existe, não criamos aqui
 networks:
   dokploy-network:
