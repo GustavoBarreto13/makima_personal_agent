@@ -10,12 +10,15 @@ Disparado por `scripts/sync_kurisu_memory.py` (job agendado — padrão `backup_
 PILOTO (fatia incremental): só o domínio "diario" está ligado no registro `EXPORTERS`.
 Os outros 7 entram replicando o padrão (um exporter + uma entrada no registro).
 
-Estratégia v1 (simples e correta para ADIÇÃO e REMOÇÃO):
-- O sync compara as URIs esperadas (da origem, export full) com as que já estão no corpus.
-- Importa as que faltam; remove (com trava) as que sumiram.
-- EDIÇÃO de um item (mesmo URI, conteúdo novo) ainda **não** é propagada automaticamente
-  (o Vertex de-dup por URI). É um TODO: `delete_file` + reimport quando o `content_hash`
-  difere. Por ora, edições entram num rebuild do corpus operacional. Ver R3 da spec.
+Estratégia v1 (ADIÇÃO, REMOÇÃO e EDIÇÃO):
+- Export full do domínio → URIs esperadas (cada doc traz seu `content_hash`).
+- Um **manifesto** no GCS (`_state/{domain}_manifest.json`: uri→hash) guarda o que foi
+  indexado no último sync. O diff classifica cada doc:
+  - **novo** (URI ainda não está no corpus) → import;
+  - **editado** (hash difere do manifesto) → `delete_file` + reimport (o Vertex de-dup por
+    URI, então só reimportar não atualizaria);
+  - **inalterado** → nada.
+- **Removidos** da origem → `delete_file`, com **trava ≤50%** por domínio (R3/R5 da spec).
 """
 
 import json
@@ -72,6 +75,31 @@ def _gravar_watermark(bucket, domain: str, doc_count: int) -> None:
         "doc_count": doc_count,
     }
     blob.upload_from_string(json.dumps(payload), content_type="application/json")
+
+
+def _manifesto_blob(bucket, domain: str):
+    """Blob GCS do manifesto de hashes (uri → content_hash) de um domínio."""
+    return bucket.blob(f"{PREFIXO_OPERACIONAL}/_state/{domain}_manifest.json")
+
+
+def _ler_manifesto(bucket, domain: str) -> dict:
+    """Lê o manifesto uri→content_hash do último sync (dict vazio na 1ª vez)."""
+    blob = _manifesto_blob(bucket, domain)
+    if not blob.exists():
+        return {}
+    try:
+        return json.loads(blob.download_as_text())
+    except (ValueError, OSError):
+        # Manifesto corrompido/inacessível: trata como vazio (pior caso = reprocessa tudo).
+        logger.warning("[%s] manifesto ilegível — tratando como vazio", domain)
+        return {}
+
+
+def _gravar_manifesto(bucket, domain: str, manifesto: dict) -> None:
+    """Grava o manifesto uri→content_hash atual (base do diff do próximo sync)."""
+    _manifesto_blob(bucket, domain).upload_from_string(
+        json.dumps(manifesto), content_type="application/json"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -138,16 +166,30 @@ def sync_domain(cur, bucket, corpus_name: str, domain: str, exporter, dry_run: b
     if dry_run:
         return {"domain": domain, "origem": len(docs), "dry_run": True}
 
-    # 2. Sobe todos ao GCS (sobrescreve — barato; garante o conteúdo atual no espelho).
+    # 2. Estado anterior: o que está no corpus (uri→ragfile) e os hashes do último sync.
+    no_corpus = _files_por_uri(corpus_name, domain)   # uri -> resource name do RagFile
+    manifesto = _ler_manifesto(bucket, domain)        # uri -> content_hash do último sync
+
+    # 3. Classifica cada doc esperado e prepara o que (re)importar.
+    a_importar: list = []
+    editados = 0
     for uri, doc in esperadas.items():
+        # Sobe sempre ao GCS (espelha o conteúdo atual antes do import).
         bucket.blob(f"{PREFIXO_OPERACIONAL}/{doc.gcs_relpath()}").upload_from_string(
             doc.texto, content_type="text/markdown"
         )
+        if uri not in no_corpus:
+            # Novo: ainda não está no corpus.
+            a_importar.append(uri)
+        elif manifesto.get(uri) != doc.content_hash:
+            # Editado: o hash mudou desde o último sync. O Vertex de-dup por URI, então
+            # removemos a versão antiga e reimportamos para a nova entrar de fato.
+            rag.delete_file(name=no_corpus[uri])
+            a_importar.append(uri)
+            editados += 1
+        # senão: inalterado (mesmo hash) — nada a fazer.
 
-    # 3. Diff contra o corpus: o que já está lá vs. o que falta importar.
-    no_corpus = _files_por_uri(corpus_name, domain)
-    novas = [u for u in esperadas if u not in no_corpus]
-    importados = _import_em_lotes(corpus_name, novas) if novas else 0
+    importados = _import_em_lotes(corpus_name, a_importar) if a_importar else 0
 
     # 4. Prune: URIs no corpus que sumiram da origem — com TRAVA anti-catástrofe ≤50%.
     removiveis = [u for u in no_corpus if u not in esperadas]
@@ -163,13 +205,16 @@ def sync_domain(cur, bucket, corpus_name: str, domain: str, exporter, dry_run: b
     for uri in removiveis:
         rag.delete_file(name=no_corpus[uri])
 
-    # 5. Watermark informativo.
+    # 5. Grava o novo manifesto (hashes atuais) e o watermark.
+    novo_manifesto = {uri: doc.content_hash for uri, doc in esperadas.items()}
+    _gravar_manifesto(bucket, domain, novo_manifesto)
     _gravar_watermark(bucket, domain, len(esperadas))
 
     resumo = {
         "domain": domain,
         "origem": len(esperadas),
         "importados": importados,
+        "editados": editados,
         "removidos": len(removiveis),
         "trava_acionada": travado,
     }
