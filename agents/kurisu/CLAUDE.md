@@ -1,137 +1,156 @@
-# Plano: Agente Kurisu (Knowledge Base + Tutora Pessoal)
+# Kurisu — Assistente da Base de Conhecimento
 
-## Contexto
+## O que é
 
-A Makima já tem Nami (finanças) e Kaguya (tarefas + agenda). A próxima especialista é **Kurisu Makise** de Steins;Gate — cientista brilhante, direta, levemente sarcástica, mas genuinamente comprometida com o crescimento de quem ela tutora.
+**Kurisu Makise** (de Steins;Gate) é a especialista de **conhecimento/estudo** da Makima.
+Ela consulta a base de conhecimento curada do usuário — a wiki pessoal **"Knowledge Base
+Karpathy"** (mantida via skill `obsidian-wiki`) — e responde perguntas ancoradas nela.
 
-O Obsidian vault do Gustavo já está sincronizado com o Google Drive. O plano original (Fase 5) previa VertexAiRagRetrieval para indexar esse vault. Aqui expandimos esse plano com a camada de personalidade e os dois modos de uso (tutora técnica vs. amiga pessoal).
+Persona **única** no v1: direta, rigorosa, levemente sarcástica, mas dedicada ao
+crescimento intelectual do usuário. Opera em **modo somente leitura** — recupera e
+responde, nunca cria nem edita notas.
+
+> A spec completa é a **027** (`specs/027-kurisu-knowledge-base/spec.md`). A **028**
+> (`specs/028-kurisu-unified-memory/`) estende a memória da Kurisu para os dados do
+> Postgres (diário, tarefas, finanças, mídia, pessoas) — **ainda não implementada**.
 
 ---
 
 ## Arquitetura
 
-### Abordagem: `VertexAiRagRetrieval` como knowledge_tool de Kurisu
-
-Ao invés de adicionar `knowledge_tool` diretamente ao coordinator (como estava planejado no PLAN.md), **Kurisu encapsula o acesso ao RAG**. Isso mantém a separação de domínios: Makima roteia para Kurisu quando o assunto é conhecimento, estudo, notas ou memória pessoal.
-
 ```
 Usuário → Makima → kurisu_agent
-                      └── VertexAiRagRetrieval (Vertex AI Search)
-                              └── Corpus: Obsidian Vault (via Google Drive)
+                      └── buscar_na_base (FunctionTool — agents/kurisu/tools.py)
+                              └── rag.retrieval_query + reranker (RankService)
+                                      └── Corpus Vertex AI RAG (Serverless mode):
+                                          camada wiki/ da Knowledge Base Karpathy
 ```
 
-### Por que Kurisu encapsula o RAG (e não Makima diretamente)
+- **Backend de recuperação:** Vertex AI RAG Engine (Google Cloud) em **Serverless mode**.
+  Reusa a service account e o projeto GCP já usados pelo resto do projeto (BigQuery/backup).
+- **Modo do RAG Engine:** **Serverless** (não Spanner). Projetos novos do GCP estão bloqueados
+  do Spanner mode em `us-central1` por capacidade; o ingester troca o engine para Serverless
+  automaticamente. Em Serverless o vector DB é o `RagManagedVertexVectorSearch` gerenciado.
+- **APIs necessárias (além de aiplatform/storage):** `vectorsearch.googleapis.com` (vector DB
+  do serverless) e `discoveryengine.googleapis.com` (reranker RankService). O ingester habilita
+  a Vector Search API; a Discovery Engine API foi habilitada na ativação.
+- **Embeddings:** modelo multilíngue gerenciado do Vertex (`text-multilingual-embedding-002`),
+  porque a wiki é PT/EN/JA.
+- **LLM:** `gemini-2.5-flash`.
+- **Singleton:** Kurisu não usa McpToolset (sem processo filho). A tool `buscar_na_base` é uma
+  FunctionTool comum; o `vertexai.init` é lazy-singleton dentro de `tools.py`.
 
-- Kurisu pode pré-processar a query antes de buscar (clarificar, expandir)
-- Kurisu pode pós-processar o resultado com seu estilo e contexto
-- Mantém coerência arquitetural: cada agente especialista é dono de seu domínio
-- Makima fica enxuta, sem tools próprias
+### Por que Kurisu encapsula o RAG (e não a Makima diretamente)
 
-### Dois modos de interação
-
-| Modo | Trigger | Comportamento |
-|------|---------|---------------|
-| **Tutora** | Notas de estudo, conceitos técnicos, projetos de aprendizado | Tom didático, rigoroso, referencia fontes do vault |
-| **Amiga** | Notas pessoais, diário, reflexões | Tom de amiga próxima, calorosa mas honesta |
-
-Kurisu detecta o modo pelo **tipo de nota** (`tipo` no frontmatter YAML) e pelo **tom da pergunta**.
+- Pode pré-processar a query (clarificar) e pós-processar o resultado com seu estilo.
+- Mantém a separação de domínios: cada especialista é dono do seu. A Makima fica enxuta.
 
 ---
 
-## Sugestões de melhoria (em relação ao PLAN.md original)
+## A tool: `buscar_na_base`
 
-### 1. Kurisu como agente, não tool direta
-O PLAN.md colocava `knowledge_tool` direto no coordinator. Extrair para um agente especialista é melhor: permite instrução rica, comportamento condicional, e formatação consistente com os outros agentes.
+FunctionTool em [tools.py](tools.py) — substitui a `VertexAiRagRetrieval` nativa do ADK
+(que não expõe o reranker). Chama `rag.retrieval_query` direto com `RagRetrievalConfig`.
+Implementa o padrão **retrieve-wide → rerank-narrow** (FR-016).
 
-### 2. Detecção de contexto por frontmatter
-As notas do vault devem ter `tipo: estudo | pessoal | projeto | referencia`. Kurisu usa isso para calibrar o tom. Isso exige uma convenção mínima nas notas — não é uma constraint pesada, mas precisa existir.
+- Lê o corpus de `VERTEX_RAG_CORPUS` (vazio ⇒ `status: "indisponivel"`, estado válido — FR-009).
+- `top_k` largo (`KURISU_TOP_K_WIDE`, default 10): candidatos da busca vetorial densa.
+- Reranker `RankService("semantic-ranker-default-004")` reordena por relevância.
+- `top_n` final (`KURISU_TOP_N_NARROW`, default 5): trechos retornados ao agente.
+- Limiar `KURISU_RELEVANCE_THRESHOLD` (default 0.0): trechos abaixo viram `status: "vazio"`.
 
-### 3. Fallback quando o RAG não encontra
-Kurisu deve responder com conhecimento próprio (Gemini base) quando o vault não tem resultado relevante, mas ser **explícita** sobre isso: "Não encontrei nada no seu vault sobre isso, mas com base no que sei..."
+Retorna `dict` `{status, trechos, mensagem}` — ver [contrato](../../specs/027-kurisu-knowledge-base/contracts/buscar_na_base.md).
+Cada trecho tem `texto`, `fonte`, `uri`, `score`.
 
-### 4. Integração futura com Kaguya
-Kurisu pode sugerir criar uma tarefa de estudo no TickTick quando identifica um gap de conhecimento. Isso é cross-agent, igual ao `create_expense_reminder` da Kaguya. Planejar o hook desde já (sem implementar ainda).
+> **Citação (`fonte`):** em Serverless mode o `source_display_name` vem **vazio** no retorno
+> do retrieval. A tool deriva a `fonte` do `source_uri` (basename do arquivo, ex.: `ansiedade.md`)
+> via `_derivar_fonte()` — assim a citação resolve para o arquivo real (SC-009).
 
-### 5. Instância singleton vs. factory
-Kurisu não usa McpToolset (usa VertexAiRagRetrieval, que é uma tool ADK nativa). Logo, pode ser **singleton** como a Nami — sem processo filho para gerenciar.
+### Limitação conhecida — termo exato (spec 027: FR-017/018, SC-008)
 
----
-
-## Implementação
-
-### Pré-requisito: Vertex AI Setup (único passo manual)
-
-1. Google Cloud Console → projeto `projetos-448301` → APIs e Serviços → habilitar **Vertex AI API** e **Vertex AI Agent Builder API**
-2. Agent Builder → Data Stores → Create → Google Drive → selecionar pasta do vault do Obsidian
-3. Aguardar indexação (pode levar 15–30 min na primeira vez)
-4. Copiar o **corpus resource name**: `projects/projetos-448301/locations/us-central1/ragCorpora/XXXXXXXX`
-5. Adicionar ao `.env` e Dokploy: `VERTEX_RAG_CORPUS=projects/projetos-448301/locations/us-central1/ragCorpora/XXXXXXXX`
-
-### Estrutura de arquivos criados
-
-```
-agents/
-└── kurisu/
-    ├── __init__.py        # pacote vazio
-    ├── agent.py           # kurisu_agent (singleton, usa VertexAiRagRetrieval)
-    └── PLAN.md            # este arquivo
-```
-
-Kurisu não tem `tools.py` — o RAG é a tool. Se no futuro houver cross-agent (sugerir tarefa de estudo), isso vai para `tools.py`.
-
-Não há MCP server — VertexAiRagRetrieval é nativa do ADK.
-
-### Mudanças pendentes em `coordinator/agent.py`
-
-```python
-# Adicionar import
-from agents.kurisu.agent import kurisu_agent
-
-# Adicionar ao sub_agents de Makima
-sub_agents=[nami_agent, kaguya_agent, kurisu_agent]
-
-# Atualizar _MAKIMA_INSTRUCTION: adicionar Kurisu como especialista em:
-# - perguntas sobre conteúdo do vault de notas
-# - dúvidas de estudo ou conceitos
-# - memória pessoal ("o que eu anotei sobre X?")
-# - reflexões e notas de diário
-```
-
-### Mudanças em `requirements.txt`
-
-Nenhuma nova dependência — `google-adk` já inclui `VertexAiRagRetrieval`. Vertex AI é acessado via `GOOGLE_APPLICATION_CREDENTIALS` (service account do BigQuery, já configurado).
-
-### Mudanças em `.env` e Dokploy
-
-```
-VERTEX_RAG_CORPUS=projects/projetos-448301/locations/us-central1/ragCorpora/XXXXXXXX
-```
+A busca é **densa + reranker** (não hybrid). Recall de **termo literal raro** (ex.: "BM25",
+"Present Perfect") pode falhar — a busca semântica retorna páginas tematicamente próximas, não
+a que contém o token exato. É o esperado no v1 (SC-008 alvo ≥80%). **Fase 2** (sob gatilho de
+uso): backend Weaviate para hybrid search real (denso + esparso/BM25) → SC-008 ≥95%.
 
 ---
 
-## Verificação
+## Comportamento (regras da persona)
 
-### Testes a rodar após implementação completa
+| Situação | Comportamento (spec) |
+|---|---|
+| Base tem material | Sintetiza e **cita** ≥1 página real da wiki por título; menciona a fonte `raw/` quando ajuda a rastrear (FR-002/FR-003) |
+| Base não tem | Diz **explicitamente** "não encontrei na base" antes de qualquer conhecimento geral; nunca passa conhecimento geral como se fosse da base (FR-004) |
+| Tema espalhado | Cruza e conecta **múltiplas páginas** numa resposta coerente (FR-007) |
+| Pedido de quiz | Gera perguntas só do conteúdo da base; recusa se não há material suficiente (FR-008) |
+| Pergunta vaga | Pede reformulação curta em vez de adivinhar (FR-010) |
+| Base indisponível | Avisa que a base não está pronta, sem travar nem alucinar (FR-009) |
+| Pedido de escrita | Explica que só consulta — somente leitura (FR-005) |
 
-1. **Teste de roteamento**: Enviar no Telegram "O que eu anotei sobre React hooks?" → deve rotear para Kurisu, que busca no vault
-2. **Teste de fallback**: "Explique termodinâmica" (sem notas no vault) → Kurisu responde com aviso de que não encontrou no vault
-3. **Teste modo amiga**: "Como eu me sentia sobre minha carreira no ano passado?" → Tom muda para amiga, busca notas pessoais
-4. **Teste quiz**: "Me faz um quiz sobre as notas de Python que tenho" → Kurisu lê e gera perguntas
-5. **Teste de cross-referência**: "O que eu tenho sobre arquitetura de software?" → Kurisu cruza notas de diferentes áreas
-
-### Verificação de logs
-
-- Vertex AI Search queries aparecem no Cloud Console em "API & Services > Activity"
-- Erros de corpus (ID errado, permissão negada) aparecem no log do container como `VertexAiRagRetrieval error`
+**Formatação:** HTML do Telegram (`<b>`, `<i>`, `<code>`, `<pre>`), **nunca** markdown —
+o Telegram do projeto renderiza HTML (ver `coordinator/CLAUDE.md`). Sempre em português.
 
 ---
 
-## Ordem de execução
+## Ingestão da base: `scripts/setup_kurisu_rag.py`
 
-1. [x] Criar `agents/kurisu/__init__.py` e `agents/kurisu/agent.py`
-2. [ ] Setup manual do Vertex AI (Data Store + corpus — único passo fora do código)
-3. [x] Atualizar `coordinator/agent.py` (import + sub_agents + instrução Makima)
-4. [ ] Atualizar `.env` com `VERTEX_RAG_CORPUS`
-5. [ ] Testar localmente com `python -m coordinator.main`
-6. [ ] Deploy no Dokploy (adicionar env var + redeploy)
-7. [ ] Testar via Telegram os 5 cenários acima
+Sobe a camada `wiki/` (≈386 páginas sintetizadas) + `index.md` para o corpus do Vertex.
+O `raw/` (fontes brutas) **não** é indexado — cada página já guarda `source_path: raw/...`
+no frontmatter, então o raw é citável sem ser embeddado (FR-011).
+
+```bash
+# 1ª vez — cria o corpus e importa tudo:
+python -m scripts.setup_kurisu_rag
+
+# Rebuild limpo (recria o corpus — gera NOVO id, atualize VERTEX_RAG_CORPUS):
+python -m scripts.setup_kurisu_rag --recreate
+
+# Só listar o que seria enviado:
+python -m scripts.setup_kurisu_rag --dry-run
+```
+
+> **Refresh:** o Vertex RAG de-duplica por URI da fonte — re-importar um arquivo cujo
+> conteúdo mudou (mesmo nome) **não** atualiza o chunk antigo sozinho. Para refletir edições
+> da wiki (FR-013/SC-007), use `--recreate` (rebuild limpo) ou re-import por arquivo
+> (delete-file + import). O ingester atual usa `--recreate`.
+>
+> **Onde roda:** a ingestão lê arquivos locais (Google Drive, `G:\...`) e fala direto com
+> Vertex/GCS pela internet — não depende do Postgres do VPS.
+
+---
+
+## Setup (uma vez)
+
+1. Service account com `roles/aiplatform.user` + `roles/storage.admin` +
+   `roles/serviceusage.serviceUsageAdmin` (habilitar APIs do Serverless mode).
+2. APIs habilitadas no projeto: `aiplatform`, `storage`, **`vectorsearch.googleapis.com`**
+   (vector DB do serverless) e **`discoveryengine.googleapis.com`** (reranker). O ingester
+   habilita a Vector Search API e troca o engine para Serverless mode automaticamente; a
+   Discovery Engine API foi habilitada na ativação (reranker).
+3. Rodar `python -m scripts.setup_kurisu_rag` — ao final ele imprime o `corpus resource name`.
+4. Configurar a env var (e redeploy no Dokploy):
+   `VERTEX_RAG_CORPUS=projects/{PROJECT_ID}/locations/us-central1/ragCorpora/{ID}`
+
+Env vars já usadas pelo resto do projeto: `GCP_CREDENTIALS_JSON`, `GCP_PROJECT_ID`.
+
+> **Corpus atual (ativação 2026-06-28):**
+> `projects/191286448915/locations/us-central1/ragCorpora/6199890982331219968`
+> (345 de 410 páginas importadas).
+
+---
+
+## Roteamento pela Makima
+
+A Makima envia para a Kurisu quando o assunto é **conhecimento, estudo, conceitos ou
+memória das notas** ("o que eu sei/anotei sobre X?"). Perguntas fora desse domínio
+(ex.: "lança uma despesa") vão para outro agente (Nami) — a Kurisu só atua quando recebe.
+
+---
+
+## Escopo v1 (o que **não** faz)
+
+- Sem os modos Tutora/Amiga (cortados — persona única no v1).
+- Sem escrita de qualquer tipo (somente leitura).
+- Sem indexar o vault Obsidian geral nem a camada `raw/` — só a `wiki/` curada.
+- Sem os dados do Postgres (diário/finanças/mídia) — isso é a **spec 028**.
+- Cross-agent com a Kaguya (sugerir tarefa de estudo ao detectar gap) — gancho futuro.
