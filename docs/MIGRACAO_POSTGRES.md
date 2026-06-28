@@ -76,19 +76,11 @@ for t in ['transactions','subscriptions','accounts','credit_cards','loans','budg
 
 ## Passo 4 — Criar o bucket GCS para backups (uma vez só)
 
-```bash
-# Substituir SEU_PROJECT pelo GCP project ID
-gcloud storage buckets create gs://makima-backups \
-  --project=SEU_PROJECT \
-  --location=southamerica-east1 \
-  --uniform-bucket-level-access
+> ✅ **Já feito em 2026-06-28** — o bucket `gs://makima-backups` existe em `southamerica-east1` com lifecycle de 30 dias. Esta seção fica só como referência.
 
-# Configurar deleção automática após 30 dias
-gcloud storage buckets update gs://makima-backups \
-  --lifecycle-file=- <<'EOF'
-{"lifecycle":{"rule":[{"action":{"type":"Delete"},"condition":{"age":30}}]}}
-EOF
-```
+O VPS **não tem `gcloud`** instalado, então o bucket foi criado via Python de dentro do container `makima-web` (que já tem as credenciais GCP). O passo a passo completo de backup — incluindo verificação e restauração — está em [`docs/BACKUP_POSTGRES.md`](BACKUP_POSTGRES.md).
+
+Caso precise recriar o bucket no futuro, use o snippet de criação documentado em `docs/BACKUP_POSTGRES.md` (lembrando que o lifecycle exige o escopo `devstorage.full_control`, não o `read_write`).
 
 ---
 
@@ -133,19 +125,23 @@ Não deve aparecer nenhum `ImportError` de BigQuery nem erro de conexão Postgre
 
 ## Passo 8 — Testar o backup manualmente
 
+O `pg_dump` só existe dentro do container de backup (não no host nem no `makima-web`), então rode de lá:
+
 ```bash
-python scripts/backup_postgres.py
+docker exec makima-backup python scripts/backup_postgres.py
 ```
 
 Saída esperada:
 ```
-Iniciando backup: backup_20260606_030000.sql.gz
-Dump gerado: 42.3 KB
-✓ Backup enviado: gs://makima-backups/backups/backup_20260606_030000.sql.gz
+Iniciando backup: backup_20260628_150157.sql
+Dump gerado: 701.8 KB
+✓ Backup enviado: gs://makima-backups/backups/backup_20260628_150157.sql.gz
 
 Últimos backups no GCS:
-  backups/backup_20260606_030000.sql.gz (42.3 KB) — 2026-06-06 03:00
+  backups/backup_20260628_150157.sql.gz (701.8 KB) — 2026-06-28 15:01
 ```
+
+> Documentação completa do backup (como roda sozinho, como verificar e como **restaurar**): [`docs/BACKUP_POSTGRES.md`](BACKUP_POSTGRES.md).
 
 ---
 

@@ -211,9 +211,11 @@ makima_personal_agent/
 │   ├── setup_schemas.py       # cria tabelas PostgreSQL de Nami e Frieren (rodar uma vez no VPS)
 │   ├── migrate_bq_to_pg.py    # migração one-time: BigQuery → PostgreSQL
 │   ├── backup_postgres.py     # pg_dump → Google Cloud Storage (roda diariamente via Docker)
+│   ├── Dockerfile.backup      # imagem do serviço de backup (Python + postgresql-client + gzip)
 │   └── .gitignore             # exclui client_secret.json do git
 ├── docs/
-│   └── MIGRACAO_POSTGRES.md  # checklist de deploy da migração BigQuery → PostgreSQL
+│   ├── MIGRACAO_POSTGRES.md  # checklist de deploy da migração BigQuery → PostgreSQL
+│   └── BACKUP_POSTGRES.md    # backup do Postgres: como roda sozinho, verificar e restaurar
 ├── requirements.txt
 ├── PLAN.md              # design completo, fases, schemas, custos
 └── CLAUDE.md            # este arquivo — visão geral e guia de navegação
