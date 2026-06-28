@@ -57,26 +57,24 @@ services:
       ADMINER_DEFAULT_SERVER: ${DB_HOST:-localhost}
 
   # Serviço de backup: executa pg_dump diariamente e envia para Google Cloud Storage.
-  # O arquivo comprimido fica disponível por 30 dias (configurar lifecycle no GCS).
-  # Pré-requisito: criar o bucket GCS uma vez com:
-  #   gcloud storage buckets create gs://makima-backups --project=SEU_PROJECT --location=southamerica-east1
+  # O arquivo comprimido fica disponível por 30 dias (lifecycle configurado no bucket GCS).
+  #
+  # Em vez de usar a imagem genérica python:3.11-slim + bind mount (frágil no Dokploy),
+  # construímos uma imagem própria (scripts/Dockerfile.backup) que já traz o pg_dump e o
+  # código assado dentro dela. Ver os comentários do Dockerfile para o porquê detalhado.
+  #
+  # Pré-requisito (uma vez só): criar o bucket GCS `makima-backups` — feito via Python
+  # dentro do makima-web, pois o host do VPS não tem o gcloud instalado.
   backup:
-    image: python:3.11-slim
+    build:
+      # Contexto = raiz do repo (para o COPY scripts/ enxergar a pasta scripts/).
+      context: .
+      dockerfile: scripts/Dockerfile.backup
     container_name: makima-backup
     restart: unless-stopped
+    # Injeta as variáveis (DATABASE_URL, GCP_CREDENTIALS_JSON, GCP_PROJECT_ID,
+    # GCS_BACKUP_BUCKET) em runtime. No Dokploy elas vêm do painel de Environment.
     env_file: .env
-    volumes:
-      # Monta o repo inteiro para que o script backup_postgres.py seja acessível
-      - .:/app
-    working_dir: /app
-    # Instala dependências mínimas e entra em loop de 24h
-    command: >
-      sh -c "pip install -q psycopg2-binary google-cloud-storage &&
-             while true; do
-               python scripts/backup_postgres.py;
-               echo 'Próximo backup em 24h';
-               sleep 86400;
-             done"
     networks:
       - dokploy-network
 

@@ -1,0 +1,44 @@
+# Imagem dedicada ao serviço de backup do PostgreSQL da Makima.
+#
+# POR QUÊ uma imagem própria (e não o python:3.11-slim que era usado antes)?
+# A versão antiga falhava por DOIS motivos, e esta imagem corrige os dois:
+#
+#   1) Faltava o binário `pg_dump`. O script backup_postgres.py chama `pg_dump`
+#      via subprocess, mas a imagem python:3.11-slim não traz esse binário e o
+#      antigo `command` só fazia `pip install` — então todo backup quebrava com
+#      "FileNotFoundError: 'pg_dump'". Aqui instalamos o postgresql-client.
+#
+#   2) O código vinha de um bind mount (`.:/app`). No Dokploy esse diretório do
+#      host é recriado a cada redeploy, o que deixa o mount do container "stale"
+#      (erro "working directory is outside container mount namespace") e o script
+#      some de dentro do container. Aqui assamos o código na imagem com COPY,
+#      então o backup não depende mais de nenhum diretório do host.
+
+# Base enxuta do Python. Hoje o python:3.12-slim é baseado no Debian 13 ("trixie"),
+# que traz o postgresql-client na VERSÃO 17. O servidor é postgres:15.18 — e isso é
+# seguro: a regra do pg_dump é "o cliente deve ser >= a versão do servidor". Um cliente
+# mais novo (17) dumpa um servidor mais antigo (15) sem problema; o que NÃO funciona é
+# o contrário (cliente mais velho que o servidor). Verificado: o dump roda e gera o .sql.
+FROM python:3.12-slim
+
+# Instala o pg_dump (pacote postgresql-client) e o gzip (para comprimir o dump).
+# --no-install-recommends evita pacotes extras desnecessários (imagem menor).
+# Ao final apagamos o cache do apt para não inflar a imagem.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client gzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Diretório de trabalho dentro do container.
+WORKDIR /app
+
+# Única dependência Python do script: o cliente do Google Cloud Storage
+# (o backup_postgres.py usa pg_dump via subprocess, então NÃO precisa de psycopg2).
+RUN pip install --no-cache-dir google-cloud-storage
+
+# Assa apenas a pasta scripts/ na imagem — não dependemos mais de bind mount.
+# (As credenciais NÃO entram na imagem: vêm por variável de ambiente em runtime.)
+COPY scripts/ ./scripts/
+
+# Loop principal: roda o backup e dorme 24h. Se o backup falhar, registra a falha
+# e segue o loop para tentar de novo no próximo ciclo (não derruba o container).
+CMD ["sh", "-c", "while true; do python scripts/backup_postgres.py || echo 'Backup falhou (ver erro acima)'; echo 'Proximo backup em 24h'; sleep 86400; done"]
