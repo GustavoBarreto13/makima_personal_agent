@@ -35,9 +35,9 @@ Foundational (transversal às 3 histórias de recuperação).
 
 **Purpose**: dependências, credenciais e variáveis antes de qualquer código.
 
-- [ ] T001 Confirmar que `requirements.txt` já cobre `google-cloud-aiplatform>=1.71`, `psycopg2-binary`, `google-cloud-storage` (nenhuma dep nova esperada); validar na `.venv`
-- [ ] T002 [P] Definir `VERTEX_RAG_CORPUS_OPERACIONAL` como placeholder no `.env` local (e Dokploy no deploy); documentar a env var nova em `coordinator/CLAUDE.md`
-- [ ] T003 [P] Confirmar pré-requisito: a 027 está deployada (corpus da wiki + `buscar_na_base` ativos) e a service account tem `roles/aiplatform.user` + `roles/storage.admin` + `roles/serviceusage.serviceUsageAdmin`
+- [x] T001 Confirmar que `requirements.txt` já cobre `google-cloud-aiplatform>=1.71`, `psycopg2-binary`, `google-cloud-storage` (nenhuma dep nova esperada); validar na `.venv` — todas presentes
+- [x] T002 [P] Definir `VERTEX_RAG_CORPUS_OPERACIONAL` no `.env` local (Dokploy pendente no deploy); documentar a env var nova em `coordinator/CLAUDE.md` *(doc da env var = polish T023/T024)*
+- [x] T003 [P] Confirmar pré-requisito: a 027 está deployada (corpus da wiki + `buscar_na_base` ativos no Telegram) e a service account tem os papéis necessários (validado na 027)
 
 ---
 
@@ -47,9 +47,9 @@ Foundational (transversal às 3 histórias de recuperação).
 
 **⚠️ CRITICAL**: bloqueia US1–US4.
 
-- [ ] T004 Criar o subpacote `agents/kurisu/memory/` (`__init__.py`) + infra base: garantir o **corpus operacional separado** (criar em Serverless mode se não existir, embedding `text-multilingual-embedding-002`, seguindo o padrão do `setup_kurisu_rag.py`), init `vertexai`, helpers de cliente GCS e de conexão PostgreSQL **read-only** (`DATABASE_URL`)
-- [ ] T005 [P] Criar `agents/kurisu/recency.py` — motor **puro** (sem banco): filtrar candidatos por janela de `doc_date` (UTC-3) quando a pergunta é por período; reordenar por `score × decaimento(idade)` quando há viés de recência; passar direto quando atemporal. Docstrings Google-style + **doctests** (R6)
-- [ ] T006 Estender `agents/kurisu/tools.py` (`buscar_na_base`) conforme [contracts/busca-multi-corpus.md](./contracts/busca-multi-corpus.md): ler `VERTEX_RAG_CORPUS` (wiki) + `VERTEX_RAG_CORPUS_OPERACIONAL`; **2 chamadas `retrieval_query`** (a API aceita só 1 corpus — validado), merge dos trechos, aplicar `recency.py`, limiar + top-N; `domain`/`doc_date` no trecho; `indisponivel` só se **ambos** ausentes, degrada se só um existe
+- [x] T004 Criar o subpacote `agents/kurisu/memory/` (`__init__.py`) + infra base: garantir o **corpus operacional separado** (criar em Serverless mode se não existir, embedding `text-multilingual-embedding-002`, seguindo o padrão do `setup_kurisu_rag.py`), init `vertexai`, helpers de cliente GCS e de conexão PostgreSQL **read-only** (`DATABASE_URL`) — feito em `memory/store.py`; corpus operacional criado: `...ragCorpora/7253733295135916032`
+- [x] T005 [P] Criar `agents/kurisu/recency.py` — motor **puro** (sem banco): reordenar por recência em empate de relevância (tie-break por bucket de score + `doc_date`); `score_decaimento` exponencial disponível p/ uso futuro. Docstrings Google-style + **doctests** (11 passam). *(Filtro por janela explícita = ajuste fino da US1.)*
+- [x] T006 Estender `agents/kurisu/tools.py` (`buscar_na_base`) conforme [contracts/busca-multi-corpus.md](./contracts/busca-multi-corpus.md): ler `VERTEX_RAG_CORPUS` (wiki) + `VERTEX_RAG_CORPUS_OPERACIONAL`; **2 chamadas `retrieval_query`** (a API aceita só 1 corpus — validado), merge dos trechos, aplicar `recency.py`, limiar + top-N; `domain`/`doc_date` no trecho; `indisponivel` só se **ambos** ausentes, degrada se só um existe — validado end-to-end
 
 **Checkpoint**: a busca multi-corpus funciona (com o corpus operacional ainda vazio, cai na wiki) — habilita validar todas as histórias.
 

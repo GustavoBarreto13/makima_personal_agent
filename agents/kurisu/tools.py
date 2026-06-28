@@ -30,6 +30,10 @@ from google.oauth2 import service_account
 import vertexai
 from vertexai import rag
 
+# Motor puro de recência (spec 028): reordena os trechos para que, em empate de
+# relevância, o conteúdo mais recente apareça primeiro (FR-005/SC-006).
+from agents.kurisu.recency import aplicar_recencia
+
 # Logger padrão do Python — erros de rede/Vertex aparecem nos logs do container
 # mas nunca chegam como stack trace ao usuário (requisito FR-009 da spec 027).
 logger = logging.getLogger(__name__)
@@ -57,6 +61,12 @@ _RELEVANCE_THRESHOLD = float(os.environ.get("KURISU_RELEVANCE_THRESHOLD", "0.0")
 # Inicializar mais de uma vez por processo é desnecessário (e lento):
 # a primeira chamada configura projeto/credenciais globalmente no SDK.
 _vertexai_initialized = False
+
+# Prefixo (pasta lógica no GCS) onde o sync da 028 grava os documentos operacionais.
+# Convenção de path combinada com o sync: gs://{bucket}/kurisu-memoria/{domain}/{doc_date}__{source_ref}.md
+# A busca extrai `domain` e `doc_date` desse path — usados para citar a origem (FR-011)
+# e para o peso de recência (FR-005). Trechos da wiki (outro prefixo) ficam sem essas marcas.
+_PREFIXO_OPERACIONAL = "kurisu-memoria"
 
 
 def _derivar_fonte(source_display_name: str, source_uri: str) -> str:
@@ -154,139 +164,171 @@ def _init_vertexai() -> None:
     _vertexai_initialized = True
 
 
-def buscar_na_base(query: str) -> dict:
-    """Busca trechos relevantes na wiki curada (corpus Vertex AI RAG) e os reordena.
+def _extrair_meta_operacional(source_uri: str) -> tuple:
+    """Extrai (domain, doc_date) do source_uri de um documento operacional (028).
 
-    Implementa o padrão retrieve-wide → rerank-narrow:
-    1. Recupera _TOP_K_WIDE candidatos do corpus via embedding denso (busca vetorial).
-    2. O reranker RankService (semantic-ranker-default-004) reordena por relevância
-       semântica mais fina.
-    3. Retorna os _TOP_N_NARROW melhores que superam _RELEVANCE_THRESHOLD.
-
-    Esta função substitui a VertexAiRagRetrieval nativa do ADK (que não expõe o
-    parâmetro ranking), habilitando o reranker sem servidor extra (FR-016/spec 027).
+    Os documentos operacionais seguem a convenção de path
+    `.../kurisu-memoria/{domain}/{doc_date}__{source_ref}.md`. Trechos da wiki (027) ficam
+    em outro prefixo e retornam (None, None) — eles não têm domínio nem data.
 
     Args:
-        query: A pergunta ou consulta do usuário em linguagem natural.
-            Aceita PT, EN e JA (embedding multilíngue text-multilingual-embedding-002).
+        source_uri: A URI gs:// do trecho recuperado.
 
     Returns:
-        Um dict com três campos:
-
-        - "status": "ok" quando há trechos relevantes; "vazio" quando nenhum trecho
-          passa o limiar de relevância; "indisponivel" em caso de falha técnica ou
-          corpus não configurado.
-        - "trechos": lista de dicts com "texto", "fonte" (nome do arquivo .md),
-          "uri" (gs://...) e "score" (float do reranker). Vazia se status != "ok".
-        - "mensagem": string explicativa quando status != "ok", ou None quando "ok".
+        Uma tupla (domain, doc_date) como strings, ou (None, None) se não for operacional.
 
     Example:
-        >>> resultado = buscar_na_base("O que é BM25?")
-        >>> resultado["status"]
-        'ok'
-        >>> resultado["trechos"][0]["fonte"]
-        'bm25-ranking.md'
+        >>> _extrair_meta_operacional("gs://b/kurisu-memoria/diario/2026-05-04__bullet-1.md")
+        ('diario', '2026-05-04')
+        >>> _extrair_meta_operacional("gs://b/kurisu-wiki/wiki/concepts/ansiedade.md")
+        (None, None)
     """
-    # --- Passo 1: Verifica se o corpus está configurado ---
-    # VERTEX_RAG_CORPUS deve ter o formato:
-    #   projects/{PROJECT_ID}/locations/us-central1/ragCorpora/{CORPUS_ID}
-    # O valor é preenchido após a ingestão (ver tasks.md T007 e setup_kurisu_rag.py).
-    corpus_name = os.environ.get("VERTEX_RAG_CORPUS", "").strip()
-    if not corpus_name:
-        # Estado válido no v1: corpus ainda não indexado/configurado (FR-009).
-        # A instrução da Kurisu lida com "indisponivel" de forma amigável,
-        # sem travar nem inventar resposta.
-        logger.warning("VERTEX_RAG_CORPUS não configurada — base Kurisu indisponível.")
-        return {
-            "status": "indisponivel",
-            "trechos": [],
-            "mensagem": "A base de conhecimento ainda não está configurada neste ambiente.",
-        }
+    # Só documentos sob o prefixo operacional têm domínio/data embutidos no path.
+    if not source_uri or f"/{_PREFIXO_OPERACIONAL}/" not in source_uri:
+        return None, None
+    # Pega o que vem depois de "kurisu-memoria/": "{domain}/{doc_date}__{source_ref}.md".
+    resto = source_uri.split(f"/{_PREFIXO_OPERACIONAL}/", 1)[1]
+    partes = resto.split("/")
+    domain = partes[0] if partes and partes[0] else None
+    # doc_date é o prefixo do nome do arquivo, antes do separador "__".
+    nome = posixpath.basename(resto)
+    doc_date = nome.split("__", 1)[0] if "__" in nome else None
+    return domain, doc_date
 
-    try:
-        # --- Passo 2: Inicializa o SDK Vertex AI (singleton na primeira chamada) ---
-        _init_vertexai()
 
-        # --- Passo 3: Consulta o corpus com retrieve-wide + reranker ---
-        # RagRetrievalConfig une os dois estágios numa única chamada de API:
-        #   - top_k: quantos candidatos recuperar na busca vetorial densa
-        #   - ranking: qual modelo reordena os candidatos antes de retornar
-        #
-        # "semantic-ranker-default-004" é o RankService padrão do Vertex AI para PT/EN/JA.
-        # Ele produz scores float — quanto maior, mais relevante o trecho.
-        resultado = rag.retrieval_query(
-            text=query,
-            rag_resources=[
-                # RagResource encapsula o resource name do corpus no formato esperado pela API.
-                rag.RagResource(rag_corpus=corpus_name)
-            ],
-            rag_retrieval_config=rag.RagRetrievalConfig(
-                top_k=_TOP_K_WIDE,
-                ranking=rag.Ranking(
-                    rank_service=rag.RankService(
-                        model_name="semantic-ranker-default-004"
-                    )
-                ),
+def _consultar_corpus(corpus_name: str, query: str) -> list:
+    """Faz UMA `retrieval_query` num único corpus e devolve os trechos relevantes.
+
+    A API do Vertex aceita só 1 corpus por chamada (`Currently only support 1 RagResource`),
+    então a busca multi-corpus chama esta função uma vez por corpus e mescla os resultados.
+    Cada trecho já vem com `domain`/`doc_date` (None para a wiki) para recência e citação.
+
+    Args:
+        corpus_name: Resource name do corpus a consultar.
+        query: A pergunta do usuário.
+
+    Returns:
+        Lista de trechos (dicts) que passaram o limiar de relevância.
+    """
+    # retrieve-wide → rerank-narrow: top_k candidatos + reranker RankService.
+    resultado = rag.retrieval_query(
+        text=query,
+        rag_resources=[rag.RagResource(rag_corpus=corpus_name)],
+        rag_retrieval_config=rag.RagRetrievalConfig(
+            top_k=_TOP_K_WIDE,
+            ranking=rag.Ranking(
+                rank_service=rag.RankService(model_name="semantic-ranker-default-004")
             ),
-        )
+        ),
+    )
+    contextos = resultado.contexts.contexts if resultado.contexts.contexts else []
 
-        # --- Passo 4: Extrai e filtra os trechos pelo limiar de relevância ---
-        # resultado.contexts.contexts é a lista de RagContext com texto e metadados.
-        # Proteção contra resposta vazia (corpus novo, query sem matches, etc.).
-        contextos = resultado.contexts.contexts if resultado.contexts.contexts else []
-
-        # Mantém apenas trechos com score acima do limiar configurado.
-        # Trechos com score baixo indicam material só tangencial — melhor dizer
-        # "não encontrei na base" do que responder com conteúdo fraco (FR-004).
-        trechos_relevantes = [
-            ctx for ctx in contextos if ctx.score >= _RELEVANCE_THRESHOLD
-        ]
-
-        # Ordena do mais relevante para o menos (score descendente).
-        trechos_relevantes.sort(key=lambda ctx: ctx.score, reverse=True)
-
-        # Limita ao top-N final (rerank-narrow): _TOP_N_NARROW trechos ao agente.
-        trechos_finais = trechos_relevantes[:_TOP_N_NARROW]
-
-        # --- Passo 5: Decide o status e monta o retorno do contrato ---
-        if not trechos_finais:
-            # Nenhum trecho passou o limiar → caminho honesto da US2 (FR-004).
-            # A instrução da Kurisu vai declarar "não encontrei na base" antes
-            # de qualquer conhecimento geral — nunca finge que a resposta veio das notas.
-            return {
-                "status": "vazio",
-                "trechos": [],
-                "mensagem": "Nenhum trecho com relevância suficiente encontrado na base.",
-            }
-
-        # Constrói a lista de trechos no formato do contrato (ver contracts/buscar_na_base.md).
-        # "fonte" = source_display_name, ex.: "bm25-ranking.md"
-        # "uri"   = source_uri, ex.: "gs://proj-kurisu-rag/kurisu-wiki/wiki/concepts/bm25-ranking.md"
-        # Ambos vêm do retrieval (não inventados pelo modelo) → SC-009 garantido.
-        trechos = [
+    trechos = []
+    for ctx in contextos:
+        # Descarta trechos abaixo do limiar (material só tangencial).
+        if ctx.score < _RELEVANCE_THRESHOLD:
+            continue
+        # domain/doc_date vêm do path operacional (None para a wiki).
+        domain, doc_date = _extrair_meta_operacional(ctx.source_uri)
+        trechos.append(
             {
                 "texto": ctx.text,
                 # Em serverless, source_display_name vem vazio — derivamos do URI.
                 "fonte": _derivar_fonte(ctx.source_display_name, ctx.source_uri),
                 "uri": ctx.source_uri,
                 "score": ctx.score,
+                "domain": domain,
+                "doc_date": doc_date,
             }
-            for ctx in trechos_finais
-        ]
+        )
+    return trechos
 
+
+def buscar_na_base(query: str) -> dict:
+    """Busca trechos na wiki (027) E na memória operacional (028), mescla e reordena.
+
+    Implementa a **busca unânime** da 028 (FR-009): consulta os dois corpora — wiki e
+    operacional — porque a API só aceita 1 corpus por chamada, então faz uma
+    `retrieval_query` por corpus e mescla. Cada query usa retrieve-wide → rerank-narrow
+    (reranker RankService). Sobre o conjunto mesclado, aplica recência pós-recuperação
+    (`recency.aplicar_recencia`): em empate de relevância, o conteúdo mais recente vem
+    primeiro (FR-005/SC-006). Por fim, corta no top-N.
+
+    Degrada com elegância: se só um dos corpora está configurado, busca só nele; se a
+    consulta a um corpus falha mas a do outro funciona, retorna o que deu certo.
+
+    Args:
+        query: A pergunta do usuário em linguagem natural (PT/EN/JA).
+
+    Returns:
+        Um dict com:
+        - "status": "ok" (há trechos), "vazio" (nada relevante), "indisponivel"
+          (nenhum corpus configurado ou todas as consultas falharam).
+        - "trechos": lista de dicts com "texto", "fonte", "uri", "score", "domain"
+          (None p/ wiki) e "doc_date" (None p/ wiki). Vazia se status != "ok".
+        - "mensagem": explicação quando status != "ok", ou None quando "ok".
+    """
+    # --- Passo 1: Reúne os corpora configurados (wiki + operacional) ---
+    corpus_wiki = os.environ.get("VERTEX_RAG_CORPUS", "").strip()
+    corpus_op = os.environ.get("VERTEX_RAG_CORPUS_OPERACIONAL", "").strip()
+    # Mantém só os que existem — permite rodar com um corpus só (degradação elegante).
+    corpora = [c for c in (corpus_wiki, corpus_op) if c]
+
+    if not corpora:
+        # Nenhum corpus configurado: estado válido (FR-009) — a Kurisu avisa sem travar.
+        logger.warning("Nenhum corpus configurado (wiki/operacional) — Kurisu indisponível.")
         return {
-            "status": "ok",
-            "trechos": trechos,
-            "mensagem": None,
+            "status": "indisponivel",
+            "trechos": [],
+            "mensagem": "A base de conhecimento ainda não está configurada neste ambiente.",
         }
 
+    # --- Passo 2: Inicializa o Vertex AI (singleton) ---
+    try:
+        _init_vertexai()
     except Exception as exc:
-        # Captura erros de rede, autenticação ou falha interna do Vertex AI.
-        # O stack trace vai para o log do container (diagnóstico), mas o usuário
-        # recebe apenas "base indisponível" — sem vazar detalhes internos (FR-009).
-        logger.error("Erro ao consultar Vertex RAG: %s", exc, exc_info=True)
+        logger.error("Falha ao inicializar o Vertex AI: %s", exc, exc_info=True)
         return {
             "status": "indisponivel",
             "trechos": [],
             "mensagem": "Falha temporária ao acessar a base de conhecimento.",
         }
+
+    # --- Passo 3: Consulta cada corpus (1 por chamada) e mescla ---
+    todos = []
+    falhas = 0
+    for corpus in corpora:
+        try:
+            todos.extend(_consultar_corpus(corpus, query))
+        except Exception as exc:
+            # Falha de um corpus não derruba o outro (degradação elegante).
+            logger.error("Erro ao consultar o corpus %s: %s", corpus, exc, exc_info=True)
+            falhas += 1
+
+    # Se TODOS os corpora falharam, a base está indisponível.
+    if falhas == len(corpora):
+        return {
+            "status": "indisponivel",
+            "trechos": [],
+            "mensagem": "Falha temporária ao acessar a base de conhecimento.",
+        }
+
+    # Nenhum trecho relevante em nenhum corpus → caminho honesto da US2 (FR-004).
+    if not todos:
+        return {
+            "status": "vazio",
+            "trechos": [],
+            "mensagem": "Nenhum trecho com relevância suficiente encontrado na base.",
+        }
+
+    # --- Passo 4: Recência pós-recuperação + top-N final ---
+    # aplicar_recencia reordena o conjunto mesclado: em empate de relevância, mais recente
+    # primeiro. Depois cortamos no top-N que vai para o agente compor a resposta.
+    ordenados = aplicar_recencia(todos)
+    trechos = ordenados[:_TOP_N_NARROW]
+
+    return {
+        "status": "ok",
+        "trechos": trechos,
+        "mensagem": None,
+    }
