@@ -30,11 +30,18 @@ journal_emotion_logs   id, page_id→journal_pages (CASCADE), emotion_id→journ
                        intensity (0–10), situation, automatic_thought,
                        adaptive_response, reappraised_intensity (0–10, nullable),
                        created_at                              [Feature 006]
+
+journal_letters        id, page_id→journal_pages (CASCADE), recipient, title (nullable),
+                       body, status CHECK('draft','sealed'), sealed_at (nullable),
+                       created_at, updated_at                  [Cartas]
+                       → vínculo com pessoas via person_links (entity_type 'journal_letter')
 ```
 
 O campo `search_vec` é **gerado pelo banco** a partir de `content` — não inserir nem atualizar manualmente.
 
 **Registros emocionais são ortogonais aos bullets.** `journal_emotion_logs` NÃO conta como bullet — não afeta contagem de palavras, heatmap, coleções nem busca full-text. Não cruzar essas queries com a tabela de emoções.
+
+**Cartas também são ortogonais aos bullets.** `journal_letters` NÃO conta como bullet (mesma regra das emoções). Uma carta lacrada (`status='sealed'`) é imutável — `update_letter` recusa editá-la; `seal_letter` só lacra rascunhos. A constraint CHECK de `person_links.entity_type` foi ampliada (em `komi/schema_pg.sql` e, idempotente, no `_ensure_tables` do journal) para aceitar `'journal_letter'`; sem isso o INSERT do vínculo derrubaria a transação inteira da carta. `person_links` não tem FK para `journal_letters` (entity_id é polimórfico/TEXT), então `delete_letter` remove os vínculos explicitamente — não há CASCADE.
 
 ---
 
@@ -58,9 +65,14 @@ O campo `search_vec` é **gerado pelo banco** a partir de `content` — não ins
 | `get_emotion_stats(year)` | `{total, avg_intensity, top_emotion, by_emotion:[...], by_month:[12]}` |
 | `set_favorite(bullet_id, favorite)` | `{"status":"ok","favorite":bool}` — define favorito de um bullet por id (Feature 007) |
 | `list_favorite_days(year)` | `["YYYY-MM-DD", ...]` — datas com ao menos um bullet favorito no ano (Feature 007) |
+| `list_letters(page_id)` | `[{id, page_id, recipient, title, body, status, sealed_at, created_at, updated_at, people:[{id,name}]}, ...]` |
+| `create_letter(page_id, recipient, body, title=None, status='draft', person_ids=None)` | `{"status":"ok","letter":{...}}` |
+| `update_letter(letter_id, person_ids=None, **campos)` | `{"status":"ok","letter":{...}}` — só rascunhos; recusa carta lacrada |
+| `seal_letter(letter_id)` | `{"status":"ok","letter":{...}}` — lacra (só rascunho) |
+| `delete_letter(letter_id)` | `{"status":"ok"}` ou `{"status":"error", ...}` — remove vínculos juntos |
 
-#### `_check_result` não se aplica em 3 tools de emoção
-`list_emotions`, `list_emotion_logs` e `get_emotion_stats` retornam dados direto (lista/dict), **sem** campo `"status"` — não passar para `_check_result`.
+#### `_check_result` não se aplica em algumas tools
+`list_emotions`, `list_emotion_logs`, `get_emotion_stats` e `list_letters` retornam dados direto (lista/dict), **sem** campo `"status"` — não passar para `_check_result`.
 
 #### `created_at` nos bullets
 `journal_bullets.created_at` é `TIMESTAMPTZ DEFAULT NOW()`. As tools já convertem para string ISO antes de retornar — o frontend recebe string, não objeto `datetime`.

@@ -252,6 +252,73 @@ def _ensure_tables() -> None:
                 ON journal_emotion_logs (page_id)
             """)
 
+            # ── Tabela de cartas (Cartas) ─────────────────────────────────────
+            # Cada linha é uma "carta" escrita pelo usuário num dia (page_id):
+            # uma carta para alguém, algo ou qualquer coisa. É um registro
+            # expressivo livre (diferente do Registro Emocional, que é
+            # estruturado pela TCC). Assim como as emoções, as cartas são
+            # ORTOGONAIS aos bullets — não contam palavras nem afetam
+            # heatmap/coleções/busca.
+            #
+            # Campos:
+            #   recipient  → "para quem/o quê" (texto livre; obrigatório)
+            #   title      → título opcional da carta
+            #   body       → corpo da carta (obrigatório)
+            #   status     → 'draft' (rascunho, editável) ou 'sealed' (lacrada,
+            #                imutável — fica como registro fechado)
+            #   sealed_at  → momento em que foi lacrada (NULL enquanto rascunho)
+            # ON DELETE CASCADE: apagar a página (dia) apaga suas cartas.
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS journal_letters (
+                    id         SERIAL PRIMARY KEY,
+                    page_id    INT REFERENCES journal_pages(id) ON DELETE CASCADE,
+                    recipient  TEXT NOT NULL,
+                    title      TEXT,
+                    body       TEXT NOT NULL,
+                    status     TEXT NOT NULL DEFAULT 'draft'
+                               CHECK (status IN ('draft','sealed')),
+                    sealed_at  TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+
+            # Índice por page_id — acelera "cartas deste dia", consultada toda
+            # vez que a tela Escrever abre uma página.
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_letters_page
+                ON journal_letters (page_id)
+            """)
+
+            # ── Migração: liberar 'journal_letter' no CHECK de person_links ────
+            # As cartas podem ser vinculadas a pessoas da Komi (entity_type
+            # 'journal_letter'). A tabela person_links é da Komi e tem um CHECK
+            # que lista os entity_type permitidos; sem 'journal_letter' lá, o
+            # INSERT do vínculo seria rejeitado e derrubaria a transação inteira
+            # da carta. Aqui ampliamos o CHECK de forma idempotente (drop + add),
+            # rodando no import deste módulo (no startup da webapp) — assim o
+            # recurso funciona após um simples redeploy, sem re-rodar manualmente
+            # o setup_schemas.py. Guardado por uma checagem de existência da
+            # tabela: se a Komi ainda não foi instalada, simplesmente pulamos.
+            cur.execute("""
+                SELECT 1 FROM information_schema.tables
+                WHERE table_name = 'person_links'
+            """)
+            if cur.fetchone():
+                # DROP IF EXISTS torna o bloco re-executável sem erro; o nome
+                # 'person_links_entity_type_check' é o que o PostgreSQL gera
+                # automaticamente para um CHECK inline na coluna entity_type.
+                cur.execute(
+                    "ALTER TABLE person_links "
+                    "DROP CONSTRAINT IF EXISTS person_links_entity_type_check"
+                )
+                cur.execute("""
+                    ALTER TABLE person_links
+                    ADD CONSTRAINT person_links_entity_type_check
+                    CHECK (entity_type IN
+                        ('transaction','task','book','journal_bullet','journal_letter'))
+                """)
+
         # Commita todas as operações DDL acima de uma vez
         conn.commit()
     finally:
@@ -1464,6 +1531,355 @@ def get_emotion_stats(year: int) -> dict:
             "by_emotion": by_emotion,
             "by_month": by_month,
         }
+    finally:
+        conn.close()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CARTAS (Cartas)
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# Uma "carta" é um texto expressivo livre que o usuário escreve para alguém, algo
+# ou qualquer coisa, ancorado a um dia (page_id) — diferente do Registro Emocional,
+# que é estruturado pela TCC. Cartas são ORTOGONAIS aos bullets (não contam
+# palavras, não afetam heatmap/coleções/busca).
+#
+# Estados (campo status):
+#   'draft'  → rascunho: pode ser editado livremente.
+#   'sealed' → lacrada: vira registro imutável (não pode mais ser editada).
+#
+# Vínculo com pessoas (Komi): uma carta pode ser vinculada a pessoas cadastradas
+# na Komi (entity_type 'journal_letter' em person_links), permitindo, por
+# exemplo, ver "cartas que escrevi para Fulano".
+
+# Campos textuais da carta que update_letter aceita atualizar (status/sealed_at
+# são controlados por seal_letter, não por update_letter).
+_LETTER_TEXT_FIELDS = ("recipient", "title", "body")
+
+
+def _serialize_letter(row: dict) -> dict:
+    """Converter uma linha de carta em dict pronto para JSON.
+
+    Transforma os campos de data (created_at, updated_at, sealed_at), que vêm do
+    banco como objetos datetime, em strings ISO — o JSON do FastAPI não serializa
+    datetime no formato que o frontend espera.
+
+    Args:
+        row: Linha retornada pelo cursor (já como dict via RealDictCursor).
+
+    Returns:
+        Mesmo dict, com os três campos de data convertidos para string ISO (ou None).
+    """
+    letter = dict(row)
+    # Percorre os três timestamps e converte cada um que estiver preenchido
+    for field in ("created_at", "updated_at", "sealed_at"):
+        if letter.get(field):
+            letter[field] = letter[field].isoformat()
+    return letter
+
+
+def _fetch_letter_people(letter_id: int) -> list:
+    """Buscar as pessoas (Komi) vinculadas a uma carta, em conexão própria.
+
+    Usado após criar/atualizar uma carta para devolver os chips de pessoas no
+    mesmo shape do list_letters. É best-effort: se a tabela person_links/people
+    não existir (Komi não instalada) ou a query falhar, retorna lista vazia em
+    vez de derrubar a operação principal (a carta já foi salva e commitada).
+
+    Args:
+        letter_id: ID da carta cujos vínculos queremos.
+
+    Returns:
+        Lista de dicts [{"id": str, "name": str}, ...] (vazia em caso de erro).
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT pe.id, pe.name
+                FROM person_links pl
+                JOIN people pe ON pe.id = pl.person_id
+                WHERE pl.entity_type = 'journal_letter'
+                  AND pl.entity_id = %s
+                  AND pe.deleted = FALSE
+                ORDER BY pe.name
+            """, (str(letter_id),))
+            return [dict(r) for r in cur.fetchall()]
+    except Exception:  # noqa: BLE001
+        # Komi ausente ou erro de leitura — vínculos são opcionais, nunca falham a carta
+        return []
+    finally:
+        conn.close()
+
+
+def list_letters(page_id: int) -> list:
+    """Listar as cartas de um dia (página), com as pessoas vinculadas.
+
+    Usa LEFT JOIN com person_links + people para já trazer, em uma única query,
+    as pessoas (Komi) vinculadas a cada carta agregadas como JSON. Cartas sem
+    vínculo retornam `people: []`. Ordena por created_at ASC (ordem de escrita).
+
+    Args:
+        page_id: ID da página (dia) cujas cartas queremos.
+
+    Returns:
+        Lista de dicts: cada carta com todos os campos + `people: [{id, name}]`.
+        Os timestamps já vêm como strings ISO.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # json_agg + FILTER monta o array de pessoas; COALESCE garante '[]'
+            # quando a carta não tem nenhum vínculo (senão json_agg traria [null]).
+            # entity_id é TEXT em person_links, por isso o cast l.id::text.
+            cur.execute("""
+                SELECT l.id, l.page_id, l.recipient, l.title, l.body,
+                       l.status, l.sealed_at, l.created_at, l.updated_at,
+                       COALESCE(
+                         json_agg(json_build_object('id', pe.id, 'name', pe.name))
+                         FILTER (WHERE pe.id IS NOT NULL),
+                         '[]'
+                       ) AS people
+                FROM journal_letters l
+                LEFT JOIN person_links pl
+                       ON pl.entity_type = 'journal_letter'
+                      AND pl.entity_id = l.id::text
+                LEFT JOIN people pe
+                       ON pe.id = pl.person_id AND pe.deleted = FALSE
+                WHERE l.page_id = %s
+                GROUP BY l.id
+                ORDER BY l.created_at ASC
+            """, (page_id,))
+            rows = cur.fetchall()
+        return [_serialize_letter(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def create_letter(
+    page_id: int,
+    recipient: str,
+    body: str,
+    title: str | None = None,
+    status: str = "draft",
+    person_ids: list[str] | None = None,
+) -> dict:
+    """Criar uma carta num dia (página), opcionalmente já lacrada e vinculada.
+
+    Apenas page_id, recipient e body são obrigatórios. Se `status='sealed'`, a
+    carta já nasce lacrada (sealed_at = NOW()). Se `person_ids` for fornecido, os
+    vínculos com pessoas da Komi são gravados na MESMA transação (atômico).
+
+    Args:
+        page_id: ID da página (dia) onde a carta fica ancorada.
+        recipient: "Para quem/o quê" (texto livre).
+        body: Corpo da carta.
+        title: Título opcional da carta.
+        status: 'draft' (rascunho) ou 'sealed' (lacrada). Default 'draft'.
+        person_ids: UUIDs de pessoas da Komi a vincular (opcional).
+
+    Returns:
+        {"status": "ok", "letter": {...}} com a carta criada (people incluído),
+        ou {"status": "error", "message": str} se status for inválido ou page_id
+        não existir.
+    """
+    # Validação defensiva do status (o CHECK do banco também protege, mas damos
+    # uma mensagem amigável em vez de deixar estourar um erro de constraint)
+    if status not in ("draft", "sealed"):
+        return {"status": "error", "message": "status deve ser 'draft' ou 'sealed'"}
+
+    # Carta lacrada na criação já recebe o carimbo de quando foi lacrada
+    sealed_sql = "NOW()" if status == "sealed" else "NULL"
+
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # INSERT com RETURNING traz a carta completa recém-criada numa só query.
+            # sealed_at é injetado como literal SQL (NOW()/NULL), nunca como dado do usuário.
+            cur.execute(f"""
+                INSERT INTO journal_letters
+                    (page_id, recipient, title, body, status, sealed_at)
+                VALUES (%s, %s, %s, %s, %s, {sealed_sql})
+                RETURNING id, page_id, recipient, title, body,
+                          status, sealed_at, created_at, updated_at
+            """, (page_id, recipient, title, body, status))
+            row = cur.fetchone()
+            letter_id = row["id"]
+
+            # Vínculos com pessoas da Komi — mesma transação (atômico).
+            # Import lazy para evitar ciclo agents.journal → agents.komi → agents.journal.
+            if person_ids:
+                from agents.komi.tools import link_person_on_cursor  # noqa: PLC0415
+                for pid in person_ids:
+                    link_person_on_cursor(cur, pid, "journal_letter", letter_id)
+        conn.commit()
+        letter = _serialize_letter(row)
+        # people é lido após o commit (conexão própria) — não falha a carta se a Komi sumir
+        letter["people"] = _fetch_letter_people(letter_id)
+        return {"status": "ok", "letter": letter}
+    except psycopg2.errors.ForeignKeyViolation:
+        # page_id não existe — erro amigável em vez de HTTP 500
+        conn.rollback()
+        return {"status": "error", "message": "page_id não encontrado"}
+    finally:
+        conn.close()
+
+
+def update_letter(letter_id: int, person_ids: list[str] | None = None, **fields) -> dict:
+    """Atualizar os campos textuais de uma carta (atualização parcial).
+
+    Só pode atualizar cartas em rascunho — uma carta lacrada ('sealed') é
+    imutável e qualquer tentativa de editá-la retorna erro. Apenas os campos
+    textuais passados em **fields (recipient, title, body) são atualizados; os
+    demais permanecem. Atualiza updated_at = NOW().
+
+    Se `person_ids` for fornecido (mesmo que lista vazia), os vínculos com
+    pessoas são REGRAVADOS na mesma transação (remove todos os antigos e insere
+    os novos) — assim a edição reflete exatamente a seleção atual da interface.
+    Se `person_ids` for None, os vínculos existentes são preservados.
+
+    Args:
+        letter_id: ID da carta a atualizar.
+        person_ids: Nova lista de UUIDs de pessoas (None = não mexer nos vínculos).
+        **fields: Campos textuais a atualizar (subconjunto de recipient/title/body).
+
+    Returns:
+        {"status": "ok", "letter": {...}} com a carta atualizada, ou
+        {"status": "error", "message": str} se a carta não existir, estiver
+        lacrada, ou se nada de válido for enviado.
+    """
+    # Filtra apenas os campos textuais permitidos que vieram na chamada
+    updates = {k: v for k, v in fields.items() if k in _LETTER_TEXT_FIELDS}
+
+    # Sem campos de texto E sem person_ids = nada a fazer
+    if not updates and person_ids is None:
+        return {"status": "error", "message": "nenhum campo válido para atualizar"}
+
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # Trava a linha e confere o status atual antes de qualquer escrita.
+            # FOR UPDATE evita corrida com um seal_letter concorrente.
+            cur.execute(
+                "SELECT status FROM journal_letters WHERE id = %s FOR UPDATE",
+                (letter_id,),
+            )
+            current = cur.fetchone()
+            if current is None:
+                conn.rollback()
+                return {"status": "error", "message": "carta não encontrada"}
+            if current["status"] == "sealed":
+                conn.rollback()
+                return {"status": "error", "message": "carta lacrada não pode ser editada"}
+
+            # Atualiza os campos textuais (se houver) + updated_at.
+            # Se vierem só person_ids, ainda assim tocamos updated_at para refletir a edição.
+            set_parts = [f"{col} = %s" for col in updates]
+            set_parts.append("updated_at = NOW()")
+            values = list(updates.values())
+            values.append(letter_id)  # WHERE id = %s
+            cur.execute(f"""
+                UPDATE journal_letters
+                SET {", ".join(set_parts)}
+                WHERE id = %s
+                RETURNING id, page_id, recipient, title, body,
+                          status, sealed_at, created_at, updated_at
+            """, values)
+            row = cur.fetchone()
+
+            # Regrava vínculos se person_ids foi explicitamente fornecido.
+            # Import lazy para evitar ciclo de import com a Komi.
+            if person_ids is not None:
+                from agents.komi.tools import (  # noqa: PLC0415
+                    link_person_on_cursor,
+                    unlink_people_on_cursor,
+                )
+                # Remove todos os vínculos atuais da carta e insere os novos —
+                # mesmo padrão "delete + insert" usado nas menções dos bullets.
+                unlink_people_on_cursor(cur, "journal_letter", letter_id)
+                for pid in person_ids:
+                    link_person_on_cursor(cur, pid, "journal_letter", letter_id)
+        conn.commit()
+        letter = _serialize_letter(row)
+        letter["people"] = _fetch_letter_people(letter_id)
+        return {"status": "ok", "letter": letter}
+    finally:
+        conn.close()
+
+
+def seal_letter(letter_id: int) -> dict:
+    """Lacrar uma carta (rascunho → lacrada): torna-a um registro imutável.
+
+    Só lacra cartas que ainda estão em rascunho. A condição status='draft' no
+    WHERE garante idempotência segura: tentar lacrar uma carta já lacrada (ou
+    inexistente) não altera nada e retorna erro.
+
+    Args:
+        letter_id: ID da carta a lacrar.
+
+    Returns:
+        {"status": "ok", "letter": {...}} com a carta lacrada (status='sealed',
+        sealed_at preenchido), ou {"status": "error", "message": str} se a carta
+        não existir ou já estiver lacrada.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                UPDATE journal_letters
+                SET status = 'sealed', sealed_at = NOW(), updated_at = NOW()
+                WHERE id = %s AND status = 'draft'
+                RETURNING id, page_id, recipient, title, body,
+                          status, sealed_at, created_at, updated_at
+            """, (letter_id,))
+            row = cur.fetchone()
+            if row is None:
+                # Nenhuma linha afetada — id inexistente ou já lacrada
+                conn.rollback()
+                return {"status": "error", "message": "carta não encontrada ou já lacrada"}
+        conn.commit()
+        letter = _serialize_letter(row)
+        letter["people"] = _fetch_letter_people(letter_id)
+        return {"status": "ok", "letter": letter}
+    finally:
+        conn.close()
+
+
+def delete_letter(letter_id: int) -> dict:
+    """Deletar uma carta pelo ID (permitido mesmo lacrada — "rasgar a carta").
+
+    Os vínculos com pessoas (person_links) NÃO têm FK para journal_letters — a
+    coluna entity_id é polimórfica (TEXT), sem chave estrangeira — então não há
+    CASCADE automático. Por isso removemos os vínculos explicitamente na mesma
+    transação, evitando linhas órfãs em person_links. A interface exige
+    confirmação antes de chamar esta função.
+
+    Args:
+        letter_id: ID da carta a remover.
+
+    Returns:
+        {"status": "ok"} se removeu, ou {"status": "error", "message": str}
+        se a carta não existia.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM journal_letters WHERE id = %s", (letter_id,))
+            # rowcount == 0 significa que nenhuma carta tinha esse id
+            if cur.rowcount == 0:
+                conn.rollback()
+                return {"status": "error", "message": "carta não encontrada"}
+
+            # Remove os vínculos pessoa↔carta na mesma transação (best-effort:
+            # se a Komi não estiver instalada, simplesmente não há o que limpar).
+            try:
+                from agents.komi.tools import unlink_people_on_cursor  # noqa: PLC0415
+                unlink_people_on_cursor(cur, "journal_letter", letter_id)
+            except Exception:  # noqa: BLE001
+                # Komi ausente — sem vínculos para remover; não falha a exclusão
+                pass
+        conn.commit()
+        return {"status": "ok"}
     finally:
         conn.close()
 

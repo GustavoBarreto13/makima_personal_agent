@@ -12,7 +12,7 @@
 
 // Tipos do domínio Violet usados pelos métodos de emoção do violetApi.
 // types.ts contém só interfaces (sem runtime) — import seguro, sem ciclo.
-import type { Emotion, EmotionLog, EmotionStats } from '../pages/violet/types'
+import type { Emotion, EmotionLog, EmotionStats, Letter } from '../pages/violet/types'
 
 /**
  * Extrai a mensagem de erro de uma resposta HTTP malsucedida.
@@ -308,6 +308,43 @@ export const violetApi = {
   /** Estatísticas de emoções do ano (aba Emoções dos Insights) */
   emotionStats: (year: number) =>
     api.get<EmotionStats>(`/api/journal/emotion-stats?year=${year}`),
+
+  // ── Cartas ────────────────────────────────────────────────────────────────
+
+  /** Lista as cartas de um dia (página), com as pessoas vinculadas */
+  letters: (pageId: number) =>
+    api.get<Letter[]>(`/api/journal/letters?page_id=${pageId}`),
+
+  /** Cria uma carta (rascunho ou já lacrada), opcionalmente vinculada a pessoas */
+  createLetter: (body: {
+    page_id: number
+    recipient: string
+    body: string
+    title?: string | null
+    status?: 'draft' | 'sealed'
+    person_ids?: string[]
+  }) =>
+    api.post<{ status: string; letter: Letter }>('/api/journal/letters', body),
+
+  /** Atualiza parcialmente uma carta em rascunho (person_ids regrava vínculos) */
+  updateLetter: (
+    id: number,
+    body: Partial<{
+      recipient: string
+      body: string
+      title: string | null
+      person_ids: string[]
+    }>,
+  ) =>
+    api.patch<{ status: string; letter: Letter }>(`/api/journal/letters/${id}`, body),
+
+  /** Lacra uma carta (rascunho → lacrada, registro imutável) */
+  sealLetter: (id: number) =>
+    api.post<{ status: string; letter: Letter }>(`/api/journal/letters/${id}/seal`, {}),
+
+  /** Deleta uma carta pelo ID */
+  deleteLetter: (id: number) =>
+    api.del<{ status: string }>(`/api/journal/letters/${id}`),
 
   // ── Favoritos (Feature 007 — Favoritar Bullet pelo Próprio Ícone) ─────────
 

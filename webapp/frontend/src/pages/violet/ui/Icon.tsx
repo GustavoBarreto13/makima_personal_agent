@@ -18,6 +18,7 @@ export type IconName =
   | 'pin'
   | 'search'
   | 'sliders'
+  | 'envelope'
   | 'chevron-left'
   | 'arrow-left'
 
@@ -146,6 +147,20 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <line x1="1" y1="14" x2="7" y2="14" strokeWidth={1.8} strokeLinecap="round" stroke="currentColor" />
       <line x1="9" y1="8" x2="15" y2="8" strokeWidth={1.8} strokeLinecap="round" stroke="currentColor" />
       <line x1="17" y1="16" x2="23" y2="16" strokeWidth={1.8} strokeLinecap="round" stroke="currentColor" />
+    </>
+  ),
+  // Envelope — seção de Cartas (retângulo + aba "V" da dobra do envelope)
+  envelope: (
+    <>
+      <rect
+        x="2.5" y="5" width="19" height="14" rx="2"
+        strokeWidth={1.8} fill="none" stroke="currentColor"
+      />
+      <path
+        strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"
+        fill="none" stroke="currentColor"
+        d="M3 6.5l9 6 9-6"
+      />
     </>
   ),
   // Chevron esquerdo — navegar anterior

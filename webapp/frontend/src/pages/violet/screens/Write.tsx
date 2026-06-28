@@ -8,6 +8,7 @@ import type { Bullet, BulletKind, Entry } from '../types'
 import { Icon } from '../ui/Icon'
 import { RichText } from '../ui/RichText'
 import { EmotionSection } from '../components/EmotionLog'
+import { LetterSection } from '../components/LetterLog'
 
 interface WriteProps {
   date: string
@@ -179,6 +180,10 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
           Fica entre o prompt de sonho e os bullets; é ortogonal aos bullets
           (não conta palavras nem afeta heatmap/coleções). */}
       <EmotionSection pageId={page?.id ?? null} />
+
+      {/* Seção de Cartas — logo abaixo do Registro Emocional.
+          Também ancorada ao dia (page_id) e ortogonal aos bullets. */}
+      <LetterSection pageId={page?.id ?? null} />
 
       {/* Lista de bullets */}
       <div className="bullets">

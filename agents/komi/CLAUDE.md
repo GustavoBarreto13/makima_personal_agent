@@ -89,7 +89,7 @@ um alias só pode pertencer a uma pessoa no sistema inteiro.
 |---|---|---|
 | `id` | SERIAL PK | Autoincrement |
 | `person_id` | TEXT FK → people(id) CASCADE DELETE | Pessoa vinculada |
-| `entity_type` | TEXT CHECK IN ('transaction','task','book','journal_bullet') | Tipo da entidade |
+| `entity_type` | TEXT CHECK IN ('transaction','task','book','journal_bullet','journal_letter') | Tipo da entidade |
 | `entity_id` | TEXT NOT NULL | ID da entidade (sempre string — UUIDs e SERIALs ficam como str) |
 | `created_at` | TIMESTAMPTZ | Quando o vínculo foi criado |
 

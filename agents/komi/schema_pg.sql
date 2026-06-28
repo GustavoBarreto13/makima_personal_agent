@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS person_links (
     id          SERIAL      PRIMARY KEY,
     person_id   TEXT        NOT NULL REFERENCES people(id) ON DELETE CASCADE,
     entity_type TEXT        NOT NULL                -- tipo do item vinculado
-        CHECK (entity_type IN ('transaction', 'task', 'book', 'journal_bullet')),
+        CHECK (entity_type IN ('transaction', 'task', 'book', 'journal_bullet', 'journal_letter')),
     entity_id   TEXT        NOT NULL,               -- ID do item (TEXT absorve UUID e SERIAL int)
     created_at  TIMESTAMPTZ DEFAULT NOW(),
 
@@ -101,6 +101,16 @@ CREATE TABLE IF NOT EXISTS person_links (
     -- Escrita idempotente via INSERT ... ON CONFLICT (person_id, entity_type, entity_id) DO NOTHING.
     CONSTRAINT uq_person_link UNIQUE (person_id, entity_type, entity_id)
 );
+
+-- Migração idempotente para bancos que já existem com o CHECK antigo (sem
+-- 'journal_letter'). O CREATE TABLE acima só vale para bancos novos; em bancos
+-- existentes o CHECK não é alterado por CREATE TABLE IF NOT EXISTS. Drop + add
+-- amplia o conjunto de entity_type permitidos para incluir as cartas do diário
+-- (Cartas, entity_type 'journal_letter'). O nome 'person_links_entity_type_check'
+-- é o que o PostgreSQL gera para um CHECK inline na coluna entity_type.
+ALTER TABLE person_links DROP CONSTRAINT IF EXISTS person_links_entity_type_check;
+ALTER TABLE person_links ADD CONSTRAINT person_links_entity_type_check
+    CHECK (entity_type IN ('transaction', 'task', 'book', 'journal_bullet', 'journal_letter'));
 
 -- Índice para a query "que pessoas estão vinculadas a este item?" (usado na exclusão do item-pai).
 CREATE INDEX IF NOT EXISTS idx_links_entity ON person_links (entity_type, entity_id);

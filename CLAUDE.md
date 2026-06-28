@@ -137,6 +137,7 @@ Idempotente: `INSERT … ON CONFLICT (person_id, entity_type, entity_id) DO NOTH
 | Kaguya | `create_task` | `"task"` |
 | Frieren | `add_book` | `"book"` |
 | Journal | `upsert_bullet` | `"journal_bullet"` (+ auto-link @menções único) |
+| Journal | `create_letter` / `update_letter` | `"journal_letter"` (cartas da Violet) |
 
 ### Regra de smart-match antes de vincular
 

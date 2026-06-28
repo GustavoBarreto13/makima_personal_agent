@@ -42,6 +42,12 @@ from agents.journal.tools import (
     # Feature 007 — Favoritar Bullet
     set_favorite,
     list_favorite_days,
+    # Cartas — registro expressivo livre ancorado ao dia
+    list_letters,
+    create_letter,
+    update_letter,
+    seal_letter,
+    delete_letter,
 )
 
 
@@ -134,6 +140,37 @@ class SetFavoriteBody(BaseModel):
     """
     # True para favoritar, False para desfavoritar — estado-alvo, não toggle
     favorite: bool
+
+
+# ─── Modelos das Cartas ───────────────────────────────────────────────────────
+
+class CreateLetterBody(BaseModel):
+    """Corpo da requisição para criar uma carta.
+
+    page_id, recipient e body são obrigatórios. `status` define se a carta nasce
+    como rascunho ('draft') ou já lacrada ('sealed'). `person_ids` vincula a carta
+    a pessoas da Komi (opcional).
+    """
+    page_id: int
+    recipient: str          # "para quem/o quê" — texto livre
+    body: str               # corpo da carta
+    title: Optional[str] = None
+    status: Literal["draft", "sealed"] = "draft"
+    person_ids: Optional[list[str]] = None
+
+
+class UpdateLetterBody(BaseModel):
+    """Corpo da requisição para atualizar uma carta (atualização parcial).
+
+    Todos os campos são opcionais — só os enviados são atualizados. `person_ids`,
+    se enviado (mesmo lista vazia), regrava os vínculos com pessoas; se omitido,
+    os vínculos existentes são preservados. Só rascunhos podem ser editados — a
+    tool rejeita a edição de cartas lacradas.
+    """
+    recipient: Optional[str] = None
+    body: Optional[str] = None
+    title: Optional[str] = None
+    person_ids: Optional[list[str]] = None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -596,3 +633,119 @@ def emotion_stats_endpoint(
     """
     # Retorna o dict direto — sem _check_result (a tool não tem campo "status")
     return get_emotion_stats(year=year)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENDPOINTS DAS CARTAS
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.get("/letters")
+def list_letters_endpoint(
+    page_id: int = Query(..., description="ID da página (dia) cujas cartas queremos"),
+    user: dict = Depends(require_user),
+) -> list:
+    """Listar as cartas de um dia (página), com as pessoas vinculadas.
+
+    Args:
+        page_id: ID da página.
+
+    Returns:
+        [{id, page_id, recipient, title, body, status, sealed_at, created_at,
+          updated_at, people:[{id, name}]}, ...] ordenado por created_at ASC.
+    """
+    # Retorna a lista direto — sem _check_result (a tool não tem campo "status")
+    return list_letters(page_id=page_id)
+
+
+@router.post("/letters", status_code=201)
+def create_letter_endpoint(
+    body: CreateLetterBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Criar uma carta (rascunho ou já lacrada), opcionalmente vinculada a pessoas.
+
+    Args:
+        body: {page_id, recipient, body, title?, status?, person_ids?}
+
+    Returns:
+        {"status": "ok", "letter": {...}}
+
+    Raises:
+        HTTPException: 400 se page_id não existir ou status for inválido.
+    """
+    return _check_result(create_letter(
+        page_id=body.page_id,
+        recipient=body.recipient,
+        body=body.body,
+        title=body.title,
+        status=body.status,
+        person_ids=body.person_ids,
+    ))
+
+
+@router.patch("/letters/{letter_id}")
+def update_letter_endpoint(
+    letter_id: int,
+    body: UpdateLetterBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Atualizar uma carta em rascunho (atualização parcial dos campos enviados).
+
+    Args:
+        letter_id: ID da carta.
+        body: Campos a atualizar (todos opcionais). person_ids regrava vínculos.
+
+    Returns:
+        {"status": "ok", "letter": {...}}
+
+    Raises:
+        HTTPException: 400 se a carta não existir, estiver lacrada, ou nada válido
+            for enviado.
+    """
+    # exclude_unset=True: só inclui os campos que o cliente realmente enviou.
+    # person_ids é tratado à parte (None = não mexer; lista = regravar vínculos),
+    # por isso é extraído e passado como argumento nomeado em vez de via **fields.
+    updates = body.model_dump(exclude_unset=True)
+    person_ids = updates.pop("person_ids", None)
+    return _check_result(update_letter(letter_id, person_ids=person_ids, **updates))
+
+
+@router.post("/letters/{letter_id}/seal")
+def seal_letter_endpoint(
+    letter_id: int,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Lacrar uma carta (rascunho → lacrada): torna-a um registro imutável.
+
+    Args:
+        letter_id: ID da carta.
+
+    Returns:
+        {"status": "ok", "letter": {...}} com status='sealed' e sealed_at preenchido.
+
+    Raises:
+        HTTPException: 400 se a carta não existir ou já estiver lacrada.
+    """
+    return _check_result(seal_letter(letter_id=letter_id))
+
+
+@router.delete("/letters/{letter_id}")
+def delete_letter_endpoint(
+    letter_id: int,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Deletar uma carta pelo ID (permitido mesmo lacrada).
+
+    Args:
+        letter_id: ID da carta.
+
+    Returns:
+        {"status": "ok"}
+
+    Raises:
+        HTTPException: 404 se a carta não for encontrada.
+    """
+    result = delete_letter(letter_id=letter_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result.get("message", "carta não encontrada"))
+    return result

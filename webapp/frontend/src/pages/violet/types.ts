@@ -115,6 +115,30 @@ export interface EmotionLog {
   created_at: string                    // ISO timestamp
 }
 
+// ── Cartas ─────────────────────────────────────────────────────────────────
+
+// Uma pessoa (Komi) vinculada a uma carta — só id + nome, o suficiente para o chip
+export interface LetterPerson {
+  id: string
+  name: string
+}
+
+// Uma carta: um texto expressivo livre escrito para alguém, algo ou qualquer
+// coisa, ancorado num dia. status 'draft' = rascunho editável; 'sealed' = lacrada
+// (registro imutável). Pode estar vinculada a pessoas cadastradas na Komi.
+export interface Letter {
+  id: number
+  page_id: number
+  recipient: string                 // "para quem/o quê" (texto livre)
+  title: string | null             // título opcional
+  body: string                      // corpo da carta
+  status: 'draft' | 'sealed'        // rascunho ou lacrada
+  sealed_at: string | null          // ISO timestamp de quando foi lacrada (null se rascunho)
+  created_at: string                // ISO timestamp
+  updated_at: string | null         // ISO timestamp da última edição
+  people: LetterPerson[]            // pessoas (Komi) vinculadas
+}
+
 // Estatísticas agregadas de emoções de um ano (aba "Emoções" dos Insights)
 export interface EmotionStats {
   total: number                         // total de registros do ano

@@ -102,12 +102,24 @@ Todos os domínios (finanças, livros e journal) usam o mesmo PostgreSQL compart
 | `/api/journal/emotion-stats?year=2026` | GET | Agregações para a aba Emoções dos Insights |
 | `/api/journal/bullets/{id}/favorite` | PATCH | Define favorito de um bullet `{favorite: bool}` (Feature 007) |
 | `/api/journal/favorite-days?year=N` | GET | Lista datas do ano com ao menos um bullet favorito (Feature 007) |
+| `/api/journal/letters?page_id=N` | GET | Cartas de um dia, com pessoas vinculadas (`people:[{id,name}]`) |
+| `/api/journal/letters` | POST | Cria carta `{page_id, recipient, body, title?, status?, person_ids?}` |
+| `/api/journal/letters/{id}` | PATCH | Atualiza parcial (só rascunhos; `person_ids` regrava vínculos) |
+| `/api/journal/letters/{id}/seal` | POST | Lacra a carta (rascunho → lacrada, imutável) |
+| `/api/journal/letters/{id}` | DELETE | Remove a carta (permitido mesmo lacrada) |
 
 **Registro Emocional (TCC) — Feature 006.** Tabelas `journal_emotions` + `journal_emotion_logs`.
 Os registros são **ortogonais aos bullets** (não contam palavras nem afetam heatmap/coleções).
 Regra de negócio validada no router: `reappraised_intensity` só é aceita com `adaptive_response`
 não-vazia (senão HTTP 400). `list_emotions`, `list_emotion_logs` e `emotion-stats` retornam
 lista/dict direto — **não** usar `_check_result` neles.
+
+**Cartas.** Tabela `journal_letters` — texto expressivo livre ancorado ao dia (page_id),
+também **ortogonal aos bullets**. `status` é `'draft'` (rascunho editável) ou `'sealed'`
+(lacrada, imutável); `update_letter` rejeita editar carta lacrada (HTTP 400). Cartas podem ser
+vinculadas a pessoas da Komi (`entity_type='journal_letter'` em `person_links`) — o CHECK de
+`person_links` foi ampliado para aceitar esse tipo. `list_letters` retorna lista direto — **não**
+usar `_check_result` nele. Aparece na tela Escrever, logo abaixo do Registro Emocional.
 
 **Diferença na validação de resultado:**
 `list_heatmap`, `list_mentions`, `get_bullets_by_mention` e `search_bullets` retornam listas/dicts diretamente — **sem** campo `"status"`, então **não** usar `_check_result` neles.
