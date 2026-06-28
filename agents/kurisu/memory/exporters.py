@@ -13,6 +13,7 @@ implementado — é o **padrão a replicar** nos outros 7 domínios (tarefas, fi
 pessoas, livros, filmes, animes, séries).
 """
 
+from collections import defaultdict
 from datetime import datetime
 
 from agents.kurisu.memory.render import MemoryDoc
@@ -68,12 +69,62 @@ def export_diario(cur, since: "datetime | None") -> list:
     return docs
 
 
+def export_tarefas(cur, since: "datetime | None") -> list:
+    """Exporta as tarefas concluídas (Kaguya) como resumos datados (1 doc por dia).
+
+    Cada dia em que houve conclusões vira um `MemoryDoc` de **resumo** (`source_type="resumo"`)
+    listando os títulos das tarefas concluídas naquele dia. É o domínio da US1 ("o que fiz
+    esta semana?"). Quando uma nova tarefa é concluída num dia, o texto do resumo muda → o
+    `content_hash` muda → o sync reimporta aquele dia.
+
+    Args:
+        cur: Cursor psycopg2 **read-only**.
+        since: Ignorado no v1 — o resumo precisa do dia **inteiro**, então o exporter sempre
+            varre todas as conclusões (o sync já faz o diff por hash). Mantido na assinatura
+            por consistência com os demais exporters.
+
+    Returns:
+        Lista de `MemoryDoc` do domínio "tarefas" (um por dia de conclusão).
+    """
+    # Tarefas concluídas (completed_at não nulo) e vivas (deleted_at nulo).
+    # A data do dia vem de completed_at convertido para UTC-3 (nunca a data UTC do servidor).
+    cur.execute(
+        """
+        SELECT (t.completed_at AT TIME ZONE 'America/Sao_Paulo')::date AS dia, t.title
+        FROM tasks t
+        WHERE t.completed_at IS NOT NULL
+          AND t.deleted_at IS NULL
+        ORDER BY dia, t.title
+        """
+    )
+
+    # Agrupa os títulos por dia de conclusão.
+    por_dia: dict = defaultdict(list)
+    for dia, title in cur.fetchall():
+        por_dia[dia].append(title)
+
+    docs: list = []
+    for dia, titulos in por_dia.items():
+        # Texto do resumo: cabeçalho com a data + bullets das tarefas do dia.
+        linhas = "\n".join(f"• {t}" for t in titulos)
+        texto = f"Tarefas concluídas em {dia.isoformat()}:\n{linhas}"
+        docs.append(
+            MemoryDoc(
+                texto=texto,
+                domain="tarefas",
+                doc_date=dia,
+                source_ref=f"tarefas-dia:{dia.isoformat()}",
+                source_type="resumo",
+            )
+        )
+    return docs
+
+
 # --- Padrão a replicar nos demais domínios (US4) ---------------------------------------
-# Cada um segue a mesma forma de export_diario: SELECT read-only + render para MemoryDoc.
-# Resumos datados (tarefas concluídas, finanças) usam source_type="resumo" e agregam por
-# período; itens individuais (mídia, pessoas) usam source_type="individual".
+# Cada um segue a mesma forma dos exporters acima: SELECT read-only + render para MemoryDoc.
+# Resumos datados (finanças) usam source_type="resumo" e agregam por período;
+# itens individuais (mídia, pessoas) usam source_type="individual".
 #
-# def export_tarefas(cur, since): ...    # Kaguya — resumo datado de tarefas concluídas
 # def export_financas(cur, since): ...   # Nami   — resumo datado de gastos
 # def export_pessoas(cur, since): ...    # Komi   — 1 doc individual por pessoa
 # def export_livros(cur, since): ...     # Frieren

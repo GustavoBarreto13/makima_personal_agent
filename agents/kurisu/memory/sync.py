@@ -30,7 +30,7 @@ from vertexai.preview import rag
 
 from agents.kurisu.memory import store
 from agents.kurisu.memory.render import PREFIXO_OPERACIONAL
-from agents.kurisu.memory.exporters import export_diario
+from agents.kurisu.memory.exporters import export_diario, export_tarefas
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +48,14 @@ _CHUNK_OVERLAP = 100
 # medida que os exporters de exporters.py forem implementados (US4).
 EXPORTERS = {
     "diario": export_diario,
-    # "tarefas": export_tarefas,
-    # "financas": export_financas,
-    # "pessoas": export_pessoas,
-    # "livros": export_livros,
-    # "filmes": export_filmes,
-    # "animes": export_animes,
-    # "series": export_series,
+    "tarefas": export_tarefas,
+    # TODO (US4) — replicar o padrão dos exporters acima nos domínios restantes:
+    # "financas": export_financas,   # Nami    — resumo datado de gastos
+    # "pessoas": export_pessoas,     # Komi    — 1 doc individual por pessoa
+    # "livros": export_livros,       # Frieren
+    # "filmes": export_filmes,       # Akane
+    # "animes": export_animes,       # Marin
+    # "series": export_series,       # Mai
 }
 
 
