@@ -9,6 +9,7 @@ mantendo uma sessão de memória por chat_id.
 import json as _json
 import logging
 import os
+import re
 from datetime import date
 
 from dotenv import load_dotenv
@@ -45,6 +46,59 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 APP_NAME = "makima"
+
+
+# ---------------------------------------------------------------------------
+# Sanitização de HTML para o Telegram
+# ---------------------------------------------------------------------------
+# O Telegram, no parse_mode="HTML", suporta só um conjunto LIMITADO de tags. Tags
+# como <ul>, <li>, <ol>, <p>, <h1> NÃO são suportadas e fazem o envio falhar inteiro
+# (a mensagem some). Como o modelo (LLM) às vezes gera essas tags apesar da instrução,
+# nós sanitizamos a resposta ANTES de enviar: listas viram bullets de texto e tags
+# fora da whitelist são removidas (mantendo o conteúdo). Assim <b>/<i> continuam
+# renderizando e <ul>/<li> viram bullets legíveis, em vez de tags cruas na tela.
+
+# Tags que o Telegram efetivamente renderiza no modo HTML.
+_TELEGRAM_OK_TAGS = {
+    "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+    "code", "pre", "a", "blockquote", "tg-spoiler",
+}
+
+
+def _sanitize_telegram_html(text: str) -> str:
+    """Converte HTML genérico em HTML que o Telegram aceita.
+
+    Listas viram bullets de texto; tags fora da whitelist são removidas (o conteúdo
+    interno é preservado). Tags suportadas (<b>, <i>, <a>, ...) passam intactas.
+
+    Args:
+        text: A resposta do agente, possivelmente com tags não suportadas.
+
+    Returns:
+        Texto pronto para enviar com parse_mode="HTML" sem quebrar o parser.
+    """
+    # 1. Itens de lista viram bullets; as tags <ul>/<ol> de abertura/fechamento somem.
+    text = re.sub(r"<\s*li\s*>", "• ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<\s*/\s*li\s*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<\s*/?\s*(ul|ol)\s*>", "", text, flags=re.IGNORECASE)
+    # 2. Parágrafos e <br> viram quebras de linha.
+    text = re.sub(r"<\s*br\s*/?\s*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<\s*/?\s*p\s*>", "\n", text, flags=re.IGNORECASE)
+
+    # 3. Remove qualquer outra tag fora da whitelist (mantém o conteúdo interno).
+    def _keep_or_strip(match: "re.Match[str]") -> str:
+        nome_tag = match.group(1).lower()
+        return match.group(0) if nome_tag in _TELEGRAM_OK_TAGS else ""
+
+    text = re.sub(r"</?\s*([a-zA-Z0-9-]+)[^>]*>", _keep_or_strip, text)
+    # 4. Colapsa 3+ quebras de linha seguidas em no máximo 2 (evita buracos grandes).
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _strip_all_tags(text: str) -> str:
+    """Remove TODAS as tags HTML (último recurso se até o HTML sanitizado falhar)."""
+    return re.sub(r"<[^>]+>", "", text)
 
 # Conecta ao PostgreSQL externo (gerenciado pelo Dokploy) para persistir sessões entre reinícios
 # O Dokploy gera a URL com prefixo "postgresql://", mas o ADK exige "postgresql+asyncpg://"
@@ -869,15 +923,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         # Envio normal: divide em partes caso o agente tenha gerado múltiplos blocos
         for part in final_parts:
+            # Sanitiza ANTES de enviar: converte <ul>/<li> em bullets e remove as tags
+            # que o Telegram não suporta, mantendo <b>/<i>/etc. — evita tanto a falha
+            # de parser quanto as tags cruas aparecendo na tela.
+            part_html = _sanitize_telegram_html(part)
             try:
                 # Tenta enviar com formatação HTML (o padrão dos agentes).
-                await update.message.reply_text(part, parse_mode="HTML")
+                await update.message.reply_text(part_html, parse_mode="HTML")
             except BadRequest:
-                # Rede de segurança: o modelo às vezes gera tags que o Telegram NÃO
-                # suporta (ex.: <ul>, <li>, <p>) — isso faz o parser HTML rejeitar a
-                # mensagem INTEIRA. Em vez de perder a resposta, reenviamos como texto
-                # puro (sem parse_mode): chega sem formatação, mas chega.
-                await update.message.reply_text(part)
+                # Último recurso: se mesmo o HTML sanitizado falhar, remove TODAS as
+                # tags e envia texto puro — chega sem formatação, mas chega (e sem
+                # tags cruas visíveis).
+                await update.message.reply_text(_strip_all_tags(part))
     else:
         await update.message.reply_text("(sem resposta)", parse_mode="HTML")
 

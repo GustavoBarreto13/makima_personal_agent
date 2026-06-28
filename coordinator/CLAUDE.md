@@ -153,9 +153,11 @@ Processo filho stdio iniciado pelo ADK via `McpToolset` da Kaguya. Veja `agents/
 
 ## Notas técnicas do coordinator
 
-### Telegram parse_mode
+### Telegram parse_mode + sanitização de HTML
 
-Não use `parse_mode` no `reply_text`. Os agentes geram texto com emojis e caracteres especiais (!, ?, R$) que quebram o parser do Telegram. As respostas são enviadas como texto plano — o HTML formatado pelos agentes é exibido corretamente pelo Telegram sem parse_mode.
+As respostas são enviadas com `parse_mode="HTML"`. **Antes** do envio, `_sanitize_telegram_html()` em `main.py` converte as tags que o Telegram **não** suporta (`<ul>`, `<li>`, `<ol>`, `<p>`, `<h1>`…) em bullets de texto (`•`) / quebras de linha, e remove o resto — mantendo as tags válidas (`<b>`, `<i>`, `<u>`, `<s>`, `<code>`, `<pre>`, `<a>`, `<blockquote>`, `<tg-spoiler>`).
+
+Por que existe: o LLM às vezes gera `<ul>/<li>` apesar da instrução. Sem sanitizar, o Telegram rejeita a mensagem inteira (`BadRequest: unsupported start tag "ul"`) e ela **some**; um fallback antigo enviava texto puro, mas aí as tags `<b>` apareciam **cruas** na tela. A sanitização resolve os dois: lista vira bullet, negrito é renderizado. Se mesmo o HTML sanitizado falhar, o fallback (`_strip_all_tags`) envia texto puro — a mensagem nunca se perde.
 
 ### sub_agents vs AgentTool
 
