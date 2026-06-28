@@ -13,6 +13,7 @@ from datetime import date
 
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest  # erro do Telegram quando o HTML tem tag não suportada
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -868,7 +869,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         # Envio normal: divide em partes caso o agente tenha gerado múltiplos blocos
         for part in final_parts:
-            await update.message.reply_text(part, parse_mode="HTML")
+            try:
+                # Tenta enviar com formatação HTML (o padrão dos agentes).
+                await update.message.reply_text(part, parse_mode="HTML")
+            except BadRequest:
+                # Rede de segurança: o modelo às vezes gera tags que o Telegram NÃO
+                # suporta (ex.: <ul>, <li>, <p>) — isso faz o parser HTML rejeitar a
+                # mensagem INTEIRA. Em vez de perder a resposta, reenviamos como texto
+                # puro (sem parse_mode): chega sem formatação, mas chega.
+                await update.message.reply_text(part)
     else:
         await update.message.reply_text("(sem resposta)", parse_mode="HTML")
 
