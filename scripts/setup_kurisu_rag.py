@@ -119,6 +119,11 @@ DEFAULT_PREFIX = "kurisu-wiki"
 DEFAULT_CHUNK_SIZE = 512
 DEFAULT_CHUNK_OVERLAP = 100
 
+# Limite do Vertex AI RAG: import_files aceita no máximo 25 URIs individuais por chamada
+# ("GCS URIs cannot be specified more than 25 times"). A verificação pós-import completa
+# os arquivos faltantes respeitando esse teto, em lotes de 25.
+_MAX_URIS_PER_IMPORT = 25
+
 # Escopo OAuth necessário para falar com Vertex AI e GCS com a service account.
 _CLOUD_SCOPE = ["https://www.googleapis.com/auth/cloud-platform"]
 
@@ -458,6 +463,94 @@ def _import_files(corpus_name: str, gcs_uri: str, chunk_size: int, chunk_overlap
     return resposta.imported_rag_files_count
 
 
+def _corpus_uris(corpus_name: str) -> set[str]:
+    """Retorna o conjunto de URIs gs:// já presentes no corpus.
+
+    Usamos a URI completa (não o nome do arquivo) para comparar com precisão — assim
+    arquivos de mesmo nome em pastas diferentes nunca são confundidos.
+
+    Args:
+        corpus_name: Resource name do corpus.
+
+    Returns:
+        Conjunto das URIs gs:// de cada RagFile já indexado.
+    """
+    uris: set[str] = set()
+    for f in rag.list_files(corpus_name=corpus_name):
+        # gcs_source.uris é a lista de URIs de origem do RagFile (geralmente uma só).
+        fonte = getattr(f, "gcs_source", None)
+        if fonte and fonte.uris:
+            uris.update(fonte.uris)
+    return uris
+
+
+def _import_missing_in_batches(
+    corpus_name: str,
+    bucket_name: str,
+    prefix: str,
+    arquivos: list[tuple[Path, str]],
+    chunk_size: int,
+    chunk_overlap: int,
+    max_rounds: int = 4,
+) -> int:
+    """Completa, em lotes de <=25 URIs, os arquivos que o import por prefixo deixou de fora.
+
+    O `import_files` de um prefixo grande pode **truncar** (deixa a cauda alfabética sem
+    importar). Esta função compara o corpus com a lista esperada e importa os faltantes
+    diretamente, respeitando o teto de 25 URIs por chamada. Repete por algumas rodadas
+    porque cada chamada também pode importar menos do que o pedido.
+
+    Args:
+        corpus_name: Resource name do corpus de destino.
+        bucket_name: Nome do bucket GCS onde a wiki foi espelhada.
+        prefix: Prefixo (pasta lógica) dentro do bucket.
+        arquivos: Lista (caminho_local, caminho_relativo) esperada no corpus.
+        chunk_size: Nº de tokens por chunk.
+        chunk_overlap: Nº de tokens de sobreposição.
+        max_rounds: Máximo de rodadas de verificação+completar.
+
+    Returns:
+        Quantidade total de arquivos importados por esta função.
+    """
+    total = 0
+    # Monta a URI esperada de cada arquivo (mesma convenção do espelho no GCS).
+    esperadas = [(rel, f"gs://{bucket_name}/{prefix}/{rel}") for _, rel in arquivos]
+
+    for rodada in range(1, max_rounds + 1):
+        # Quais URIs já estão no corpus agora.
+        ja_no_corpus = _corpus_uris(corpus_name)
+        faltantes = [uri for _, uri in esperadas if uri not in ja_no_corpus]
+
+        if not faltantes:
+            print(f"  • Verificação OK: {len(arquivos)} arquivo(s) no corpus (completo).")
+            return total
+
+        print(
+            f"  • Rodada {rodada}: {len(faltantes)} faltando — importando em lotes "
+            f"de {_MAX_URIS_PER_IMPORT} ..."
+        )
+        # Importa em lotes de no máximo 25 URIs (limite do import_files).
+        for i in range(0, len(faltantes), _MAX_URIS_PER_IMPORT):
+            lote = faltantes[i:i + _MAX_URIS_PER_IMPORT]
+            resposta = rag.import_files(
+                corpus_name=corpus_name,
+                paths=lote,
+                transformation_config=rag.TransformationConfig(
+                    rag.ChunkingConfig(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+                ),
+                max_embedding_requests_per_min=900,
+            )
+            total += resposta.imported_rag_files_count
+
+    # Se ainda faltar após todas as rodadas, avisa (sem derrubar o script).
+    restantes = [uri for _, uri in esperadas if uri not in _corpus_uris(corpus_name)]
+    if restantes:
+        print(f"  ⚠ Ainda faltam {len(restantes)} arquivo(s) após {max_rounds} rodadas.")
+        for uri in restantes[:5]:
+            print(f"      {uri}")
+    return total
+
+
 # ---------------------------------------------------------------------------
 # Orquestração principal
 # ---------------------------------------------------------------------------
@@ -572,6 +665,15 @@ def main() -> int:
     # --- Importa os arquivos (chunking + embeddings no Vertex) ---
     print("→ Importando para o corpus ...")
     n = _import_files(corpus.name, gcs_uri, args.chunk_size, args.chunk_overlap)
+
+    # --- Verificação anti-truncamento ---
+    # O import por prefixo pode TRUNCAR numa operação grande (deixa a cauda alfabética
+    # de fora — foi o que causou o gap 356/410 na 1ª ingestão). Comparamos o corpus com
+    # a lista esperada e completamos os faltantes em lotes de <=25 URIs, até ficar completo.
+    print("→ Verificando completude e importando faltantes (lotes de 25) ...")
+    n += _import_missing_in_batches(
+        corpus.name, bucket_name, args.prefix, arquivos, args.chunk_size, args.chunk_overlap
+    )
 
     # --- Resumo final ---
     print("\n✅ Ingestão concluída.")

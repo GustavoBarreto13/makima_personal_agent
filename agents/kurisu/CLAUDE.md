@@ -116,6 +116,12 @@ python -m scripts.setup_kurisu_rag --dry-run
 >
 > **Onde roda:** a ingestão lê arquivos locais (Google Drive, `G:\...`) e fala direto com
 > Vertex/GCS pela internet — não depende do Postgres do VPS.
+>
+> **Anti-truncamento:** o `import_files` por prefixo **trunca** numa operação grande (a 1ª
+> ingestão pegou só 356/410 — a cauda alfabética de `sources/` ficou de fora). Por isso o
+> ingester faz uma **verificação pós-import**: compara o corpus com a lista esperada e completa
+> os faltantes em **lotes de ≤25 URIs** (`import_files` aceita no máx. 25 URIs por chamada),
+> repetindo até ficar completo. Idempotente — se já está 410/410, não faz nada.
 
 ---
 
