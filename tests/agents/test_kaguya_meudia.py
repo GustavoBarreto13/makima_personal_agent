@@ -205,6 +205,21 @@ def test_list_my_day_separa_plano_e_pendencias():
         delete_task(r_ontem["id"])
 
 
+def test_list_my_day_subtarefa_datada_sugere_com_parent_title():
+    """Subtarefa com due_date em ≤7 dias (sem my_day_date) entra em sugestoes com o título da mãe (spec 028)."""
+    pai = create_task(title="Projeto sugestão", due_date=_AMANHA_STR)
+    sub = create_task(title="Etapa sugestão", parent_id=pai["id"], due_date=_AMANHA_STR)
+    try:
+        resposta = list_my_day(_HOJE_STR)
+        sugestoes = {t["id"]: t for t in resposta["sugestoes"]}
+        # A subtarefa datada está nas sugestões, carregando o título da mãe para o badge ↳.
+        assert sub["id"] in sugestoes
+        assert sugestoes[sub["id"]]["parent_title"] == "Projeto sugestão"
+    finally:
+        delete_task(sub["id"])
+        delete_task(pai["id"])
+
+
 def test_list_my_day_capacity_estrutura():
     """O objeto capacity tem as chaves do data-model."""
     r = list_my_day(_HOJE_STR)

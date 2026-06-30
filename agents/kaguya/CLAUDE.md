@@ -143,6 +143,9 @@ webapp), não vive no banco. Router: `/api/tasks/kanban-views/*` + `/{id}/board`
 `recurrence.project_occurrences`, marcadas `is_virtual=True` + `series_task_id`). **Nada é
 materializado** — o invariante "uma ocorrência viva por série" da 012 é preservado (SC-005).
 Serve a view de calendário do webapp e a consulta "o que tenho essa semana" do Telegram (FR-017).
+**Spec 028**: inclui tarefas de **qualquer nível** — pais e **subtarefas datadas** (filtro
+`parent_id IS NULL` removido); subtarefas trazem `parent_title` (LEFT JOIN com a mãe) para o
+badge ↳. A projeção virtual continua só nas raízes (recorrência é 1:1 com a tarefa raiz).
 
 ### `tools_projects.py` — listas, grupos, colunas
 
@@ -216,7 +219,7 @@ recalculado), `remove_check_in`, `get_habit_history(year)` (esparso, para o heat
 | `create_project`, `update_project`, `delete_project` | listas |
 | **`complete_payment_task`** | cross-agent (Kaguya + Nami) — atômico |
 | **`create_expense_reminder`** | cross-agent — cria lembrete no Postgres |
-| `plan_my_day()` | Meu Dia completo (plano + pendências + sugestões + capacity) — fatia 016 |
+| `plan_my_day()` | Meu Dia completo (plano + pendências + sugestões + capacity) — fatia 016. Plano/pendências/sugestões incluem **subtarefas datadas** (spec 028); sub-itens trazem `parent_title` para o badge ↳ |
 | `my_day_status()` | resumo textual do plano + capacity (briefing Telegram) — fatia 016 |
 | `add_to_my_day_by_name(task, date?)` | adiciona ao Meu Dia por id ou nome — fatia 016 |
 | `remove_from_my_day_by_name(task)` | retira do Meu Dia por id ou nome — fatia 016 |

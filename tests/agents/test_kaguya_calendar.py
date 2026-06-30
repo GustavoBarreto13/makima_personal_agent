@@ -72,6 +72,22 @@ def test_dated_tasks_in_range_only(inbox_id):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Subtarefas datadas entram no calendário com o título da mãe (spec 028)
+# ─────────────────────────────────────────────────────────────────────────────
+def test_dated_subtask_appears_with_parent_title(inbox_id):
+    """Subtarefa com due_date própria aparece no grid junto da mãe, com parent_title."""
+    pai = T.create_task("projeto", due_date="2026-06-10")["id"]
+    T.create_task("etapa", parent_id=pai, due_date="2026-06-12")
+    itens = C.list_tasks_in_range(JUN_START.isoformat(), JUN_END.isoformat())
+    por_titulo = {t["title"]: t for t in itens}
+    # Pai e subtarefa datada estão ambos no calendário.
+    assert {"projeto", "etapa"} <= set(por_titulo)
+    # A mãe não tem parent_title; a subtarefa carrega o título da mãe para o badge ↳.
+    assert por_titulo["projeto"]["parent_title"] is None
+    assert por_titulo["etapa"]["parent_title"] == "projeto"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Projeção virtual das recorrentes SEM materializar (SC-005)
 # ─────────────────────────────────────────────────────────────────────────────
 def test_recurring_projects_virtual_without_materializing(inbox_id):

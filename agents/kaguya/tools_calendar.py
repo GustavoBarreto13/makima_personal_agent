@@ -25,9 +25,10 @@ def list_tasks_in_range(start_date: str, end_date: str, project_id: Optional[int
     """Lista as tarefas (reais + ocorrências virtuais) com data dentro de ``[start, end]``.
 
     Combina duas fontes:
-        1. **Tarefas reais**: linhas vivas (não na lixeira), tarefas-pai, com ``due_date``
-           dentro da janela. Entram abertas e concluídas (o calendário mostra o que está/foi
-           agendado); tarefas sem ``due_date`` ficam de fora do grid.
+        1. **Tarefas reais**: linhas vivas (não na lixeira), de qualquer nível — tarefas-pai
+           **e subtarefas datadas** —, com ``due_date`` dentro da janela. Entram abertas e
+           concluídas (o calendário mostra o que está/foi agendado); tarefas sem ``due_date``
+           ficam de fora do grid. Subtarefas trazem ``parent_title`` para contexto visual.
         2. **Ocorrências virtuais**: para cada recorrência ativa cuja tarefa viva tem data,
            projeta as próximas ocorrências na janela (via ``project_occurrences``), **sem
            gravar nada** — preservando o invariante "uma ocorrência viva por série" (SC-005).
@@ -49,14 +50,15 @@ def list_tasks_in_range(start_date: str, end_date: str, project_id: Optional[int
     proj_clause = "AND t.project_id = %(pid)s" if project_id is not None else ""
     params = {"start": start_date, "end": end_date, "pid": project_id}
 
-    # ── 1) Tarefas reais datadas na janela ──
+    # ── 1) Tarefas reais datadas na janela (pais E subtarefas — spec 028) ──
+    # LEFT JOIN tasks mae: traz o título da tarefa-mãe para subtarefas mostrarem o badge.
     real_rows = run_select(
         f"""
-        SELECT {_qualified("t")}, p.name AS project_name
+        SELECT {_qualified("t")}, p.name AS project_name, mae.title AS parent_title
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
+        LEFT JOIN tasks mae ON mae.id = t.parent_id
         WHERE t.deleted_at IS NULL
-          AND t.parent_id IS NULL
           AND t.due_date BETWEEN %(start)s AND %(end)s
           {proj_clause}
         ORDER BY t.due_date, t.due_time NULLS LAST, t.priority DESC, t.position
@@ -67,6 +69,8 @@ def list_tasks_in_range(start_date: str, end_date: str, project_id: Optional[int
     for r in real_rows:
         item = _serialize_task(r)
         item["project_name"] = r["project_name"]
+        # parent_title: None para tarefas raízes, título da mãe para subtarefas datadas.
+        item["parent_title"] = r.get("parent_title")
         item["is_virtual"] = False  # linha real
         reais.append(item)
     reais = _attach_tags(reais)

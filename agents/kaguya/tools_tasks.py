@@ -1974,7 +1974,7 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     # ── Plano de hoje: my_day_date == hoje, abertas (qualquer nível — fatia 025) ──
     # LEFT JOIN tasks mae: traz o título da tarefa-mãe para subtarefas mostrarem o badge.
     # Removido o filtro parent_id IS NULL: subtarefas explicitamente adicionadas ao Meu Dia
-    # agora aparecem aqui. Sugestões mantém o filtro (evita poluição com sub-itens).
+    # agora aparecem aqui. As sugestões também incluem subtarefas datadas (spec 028).
     plano_rows = run_select(
         f"""
         SELECT {campos}, p.name AS project_name, mae.title AS parent_title
@@ -2004,18 +2004,19 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         {"hoje": hoje_str},
     )
 
-    # ── Sugestões: vencem em ≤7 dias, fora do plano de hoje, abertas, pai APENAS ──
-    # Sugestões ficam root-only para evitar poluição com sub-itens (decisão do spec 025).
+    # ── Sugestões: vencem em ≤7 dias, fora do plano de hoje, abertas (qualquer nível) ──
+    # spec 028: subtarefas datadas também sugerem aqui. LEFT JOIN tasks mae traz o
+    # título da mãe para a subtarefa mostrar o badge ↳ (igual ao plano/pendências).
     sugestoes_rows = run_select(
         f"""
-        SELECT {campos}, p.name AS project_name, NULL::text AS parent_title
+        SELECT {campos}, p.name AS project_name, mae.title AS parent_title
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
+        LEFT JOIN tasks mae ON mae.id = t.parent_id
         WHERE t.due_date BETWEEN %(hoje)s AND %(amanha)s
           AND (t.my_day_date IS NULL OR t.my_day_date != %(hoje)s)
           AND t.completed_at IS NULL
           AND t.deleted_at IS NULL
-          AND t.parent_id IS NULL
         ORDER BY t.due_date, t.priority DESC
         """,
         {"hoje": hoje_str, "amanha": amanha_str},
