@@ -320,5 +320,5 @@ Use a skill `obsidian-vault` para consultar os caminhos corretos e atualizar a d
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/028-kurisu-unified-memory/plan.md`.
+at `specs/029-tasks-tiny-experiments/plan.md`.
 <!-- SPECKIT END -->
