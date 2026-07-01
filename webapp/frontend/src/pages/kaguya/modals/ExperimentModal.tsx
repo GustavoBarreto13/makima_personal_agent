@@ -13,6 +13,8 @@ import { todayISO, addDays, toISO } from '../lib/dateUtils'
 interface ExperimentModalProps {
   mode: 'create' | 'edit'
   experiment?: Experiment
+  // Metas (spec 030, FR-011): quando presente no modo criar, o experimento nasce vinculado a esta meta.
+  goalId?: number
   onClose: () => void
   onSaved: () => void
   // Chamado após excluir — permite ao shell sair da tela de detalhe do experimento apagado.
@@ -26,7 +28,7 @@ const CADENCES: { value: ExperimentCadence; label: string }[] = [
   { value: 'weekly', label: 'Semanal' },
 ]
 
-export function ExperimentModal({ mode, experiment, onClose, onSaved, onDeleted, toast }: ExperimentModalProps) {
+export function ExperimentModal({ mode, experiment, goalId, onClose, onSaved, onDeleted, toast }: ExperimentModalProps) {
   const [title, setTitle] = useState(experiment?.title ?? '')
   const [why, setWhy] = useState(experiment?.why ?? '')
   const [hypothesis, setHypothesis] = useState(experiment?.hypothesis ?? '')
@@ -45,10 +47,15 @@ export function ExperimentModal({ mode, experiment, onClose, onSaved, onDeleted,
     setSaving(true)
     try {
       if (mode === 'create') {
-        await kaguyaApi.experiments.create({
+        const res = await kaguyaApi.experiments.create({
           title: title.trim(), start_date: startDate, end_date: endDate,
           why: why.trim() || null, hypothesis: hypothesis.trim() || null, cadence,
         })
+        // FR-011: criado a partir do contexto de uma meta → já nasce vinculado.
+        if (goalId != null && res.id != null) {
+          try { await kaguyaApi.goals.link(goalId, 'experiment', res.id) }
+          catch { toast('Experimento criado, mas não foi possível vincular à meta.', 'err') }
+        }
         toast('Experimento criado.')
       } else if (experiment) {
         await kaguyaApi.experiments.update(experiment.id, {

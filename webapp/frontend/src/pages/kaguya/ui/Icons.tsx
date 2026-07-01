@@ -32,6 +32,8 @@ const PATHS: Record<string, ReactNode> = {
   flame: <><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z" /></>,
   // Frasco/erlenmeyer — Tiny Experiments (spec 029), estilo Lucide, viewBox 24×24.
   flask: <><path d="M9 3h6M10 3v6.5L4.6 18a2 2 0 0 0 1.7 3h11.4a2 2 0 0 0 1.7-3L14 9.5V3" /><path d="M7 14h10" /></>,
+  // Alvo — Metas (spec 030), estilo Lucide, viewBox 24×24.
+  target: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></>,
 
   // Ícones do Calendário (fatia 019) — adicionados para CalendarsAside, EventPopover e ContextMenu
   // Olho aberto — mostra/esconde um calendário na sidebar

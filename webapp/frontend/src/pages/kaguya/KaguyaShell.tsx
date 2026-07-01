@@ -5,7 +5,7 @@
 import { useEffect, useState, useCallback, type CSSProperties } from 'react'
 import './kaguya.css'
 
-import type { Sidebar, Task, Tweaks, KaguyaView, Filter, Habit, Experiment } from './types'
+import type { Sidebar, Task, Tweaks, KaguyaView, Filter, Habit, Experiment, Goal } from './types'
 import { BUILTIN_TODAY_OVERDUE, GTD_BUILTINS } from './types'
 import { kaguyaApi } from './kaguyaApi'
 
@@ -19,6 +19,7 @@ import { GroupModal } from './modals/GroupModal'
 import { FilterModal } from './modals/FilterModal'
 import { HabitModal } from './modals/HabitModal'
 import { ExperimentModal } from './modals/ExperimentModal'
+import { GoalModal } from './modals/GoalModal'
 import { TodayScreen } from './screens/TodayScreen'
 import { ListScreen } from './screens/ListScreen'
 import { KanbanScreen } from './screens/KanbanScreen'
@@ -28,6 +29,8 @@ import { CalendarScreen } from './screens/CalendarScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
 import { ExperimentsScreen } from './screens/ExperimentsScreen'
 import { ExperimentDetailScreen } from './screens/ExperimentDetailScreen'
+import { GoalsScreen } from './screens/GoalsScreen'
+import { GoalDetailScreen } from './screens/GoalDetailScreen'
 import { EisenhowerScreen } from './screens/EisenhowerScreen'
 import { GroupBoardScreen } from './screens/GroupBoardScreen'
 import { GroupListScreen } from './screens/GroupListScreen'
@@ -78,7 +81,8 @@ export function KaguyaShell() {
   const [groupModal, setGroupModal] = useState<{ mode: 'create' | 'edit'; group?: import('./types').Group } | null>(null)
   const [filterModal, setFilterModal] = useState<{ mode: 'create' | 'edit'; filter?: Filter } | null>(null)
   const [habitModal, setHabitModal] = useState<{ mode: 'create' | 'edit'; habit?: Habit } | null>(null)
-  const [experimentModal, setExperimentModal] = useState<{ mode: 'create' | 'edit'; experiment?: Experiment } | null>(null)
+  const [experimentModal, setExperimentModal] = useState<{ mode: 'create' | 'edit'; experiment?: Experiment; goalId?: number } | null>(null)
+  const [goalModal, setGoalModal] = useState<{ mode: 'create' | 'edit'; goal?: Goal } | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toast, setToast] = useState<{ msg: string; kind?: 'ok' | 'err' } | null>(null)
   const [search, setSearch] = useState('')
@@ -168,7 +172,7 @@ export function KaguyaShell() {
   const titleMap: Record<KaguyaView, string> = {
     today: 'Meu Dia', kanban: project?.name ?? 'Kanban', list: project?.name ?? 'Lista',
     calendar: 'Calendário', eisenhower: 'Eisenhower', habits: 'Hábitos',
-    experiments: 'Experimentos', trash: 'Lixeira',
+    experiments: 'Experimentos', goals: 'Metas', trash: 'Lixeira',
     filter: filterName,
     // 'group': nome do grupo no Kanban agregado.
     group: currentGroup?.name ?? 'Grupo',
@@ -260,6 +264,26 @@ export function KaguyaShell() {
         reloadKey={reloadKey}
         onBack={() => navigate('experiments')}
         onEdit={(exp) => setExperimentModal({ mode: 'edit', experiment: exp })}
+        toast={showToast}
+      />
+    )
+    // Metas: sem param → lista; com param → detalhe da meta (spec 030).
+    if (view === 'goals' && param == null) return (
+      <GoalsScreen
+        reloadKey={reloadKey}
+        onNew={() => setGoalModal({ mode: 'create' })}
+        onOpenDetail={(id) => navigate('goals', id)}
+        toast={showToast}
+      />
+    )
+    if (view === 'goals' && param != null) return (
+      <GoalDetailScreen
+        goalId={param}
+        reloadKey={reloadKey}
+        onBack={() => navigate('goals')}
+        onEdit={(g) => setGoalModal({ mode: 'edit', goal: g })}
+        // FR-011: cria um experimento já vinculado a esta meta.
+        onNewLinkedExperiment={(goalId) => setExperimentModal({ mode: 'create', goalId })}
         toast={showToast}
       />
     )
@@ -464,11 +488,25 @@ export function KaguyaShell() {
         <ExperimentModal
           mode={experimentModal.mode}
           experiment={experimentModal.experiment}
+          // Quando aberto a partir de uma meta (FR-011), o novo experimento nasce vinculado.
+          goalId={experimentModal.goalId}
           onClose={() => setExperimentModal(null)}
           // Após salvar/excluir, só faz bump (lista e detalhe recarregam pela reloadKey).
           onSaved={bump}
           // Se o experimento aberto no detalhe foi excluído, volta para a lista.
           onDeleted={() => navigate('experiments')}
+          toast={showToast}
+        />
+      )}
+      {goalModal && (
+        <GoalModal
+          mode={goalModal.mode}
+          goal={goalModal.goal}
+          onClose={() => setGoalModal(null)}
+          // Após salvar/excluir, só faz bump (lista e detalhe recarregam pela reloadKey).
+          onSaved={bump}
+          // Se a meta aberta no detalhe foi excluída, volta para a lista.
+          onDeleted={() => navigate('goals')}
           toast={showToast}
         />
       )}

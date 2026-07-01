@@ -2032,3 +2032,76 @@
 }
 .kg-exp-due-title { flex: 1 1 auto; min-width: 0; font-size: 13.5px; color: var(--ink); }
 .kg-exp-due-cadence { font-size: 11px; color: var(--ink-4); }
+
+
+/* ═══ Metas (spec 030) ════════════════════════════════════════════════════ */
+/* Reusa os tokens --kg* / --ink-* / --line / --done / --p-high.               */
+
+.kg-goal-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.kg-goal-area { margin-top: 20px; }
+.kg-goal-area-head { display: flex; align-items: baseline; gap: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-4); margin-bottom: 8px; }
+.kg-goal-area-count { font-family: var(--mono); color: var(--ink-3); }
+.kg-goal-list { display: flex; flex-direction: column; gap: 12px; }
+
+.kg-goal-card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--kg-r-md); box-shadow: var(--shadow-sm); padding: 14px 16px;
+}
+.kg-goal-card.closed { opacity: 0.62; }
+
+.kg-goal-head { display: flex; align-items: flex-start; gap: 10px; }
+.kg-goal-title {
+  flex: 1 1 auto; min-width: 0; background: none; border: none; cursor: pointer;
+  font-size: 15.5px; font-weight: 600; color: var(--ink); padding: 0; text-align: left;
+}
+.kg-goal-title:hover { color: var(--kg); }
+.kg-goal-why { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; }
+.kg-goal-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; font-size: 12px; color: var(--ink-4); }
+
+.kg-goal-badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px;
+  border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: var(--card-2); color: var(--ink-2); border: 1px solid var(--line);
+}
+.kg-goal-badge.overdue { color: var(--p-high); border-color: var(--p-high); }
+.kg-goal-badge.achieved { color: var(--done); border-color: var(--done); }
+.kg-goal-badge.missed { color: var(--p-high); border-color: var(--p-high); }
+.kg-goal-badge.revise { color: var(--ink-2); }
+
+/* Barra de progresso combinada (mesmo visual da aderência dos experimentos). */
+.kg-goal-prog { margin-top: 12px; }
+.kg-goal-prog-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-3); margin-bottom: 5px; }
+.kg-goal-prog-pct { font-weight: 700; color: var(--kg-deep, var(--kg)); }
+.kg-goal-prog-bar { height: 8px; border-radius: 999px; background: var(--kg-tint); overflow: hidden; }
+.kg-goal-prog-fill { --pct: 0; height: 100%; width: calc(var(--pct) * 1%); background: var(--kg); border-radius: 999px; transition: width .3s; }
+
+/* Detalhe: métrica + marcos + movimentos. */
+.kg-goal-section { margin-top: 22px; }
+.kg-goal-metric-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+
+/* Lista de marcos. */
+.kg-goal-ms { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.kg-goal-ms-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-sm); }
+.kg-goal-ms-title { flex: 1 1 auto; min-width: 0; font-size: 13.5px; color: var(--ink); }
+.kg-goal-ms-row.done .kg-goal-ms-title { color: var(--ink-4); text-decoration: line-through; }
+
+/* Movimentos: grupos por tipo. */
+.kg-goal-mv-group { margin-top: 10px; }
+.kg-goal-mv-group-title { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-4); margin-bottom: 4px; }
+.kg-goal-mv-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-sm); margin-bottom: 6px; }
+.kg-goal-mv-title { flex: 1 1 auto; min-width: 0; font-size: 13.5px; color: var(--ink); }
+.kg-goal-mv-status { font-size: 11px; color: var(--ink-4); }
+
+/* Seletor de vínculo. */
+.kg-goal-link { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.kg-goal-link-warn { font-size: 11px; color: var(--p-high); }
+
+/* Formulário de revisão (encerramento). */
+.kg-goal-review { margin-top: 20px; border-top: 1px solid var(--line-2); padding-top: 14px; }
+.kg-goal-outcomes { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.kg-goal-outcome {
+  flex: 1 1 auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--kg-r-sm);
+  background: var(--card-2); color: var(--ink-2); cursor: pointer; font-size: 13px; font-weight: 600;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.kg-goal-outcome.active { background: var(--kg-tint); border-color: var(--kg); color: var(--kg-deep, var(--kg)); }

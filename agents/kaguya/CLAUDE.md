@@ -31,6 +31,8 @@ agents/kaguya/
 ├── tools_habits.py       # camada de lógica: hábitos + check-ins + histórico — fatia 014
 ├── experiment_adherence.py # motor PURO (sem banco): aderência de experimento (razão simples) — spec 029
 ├── tools_experiments.py  # camada de lógica: Tiny Experiments (CRUD + check-in + pausa + review) — spec 029
+├── goal_progress.py      # motor PURO (sem banco): progresso de meta (métrica + marcos) — spec 030
+├── tools_goals.py        # camada de lógica: Metas (CRUD + marcos + vínculo de movimentos + review) — spec 030
 ├── capacity.py           # motor PURO (sem banco): compute_capacity() — janela 8h–22h — fatia 016
 ├── gcal.py               # cliente Google Calendar compartilhado (read all / write main) — fatia 019
 ├── gcal_sync.py          # espelho best-effort: push/remove tarefas no GCal "Kaguya — Tarefas" — fatia 019
@@ -225,6 +227,33 @@ ativos cuja cadência cai hoje e sem check-in no período). "Hoje" sempre em **U
 Persistência: 2 tabelas em `schema_tasks_pg.sql` (`tiny_experiments`, `tiny_experiment_logs`) +
 índice parcial `idx_tiny_experiments_open`. `goal_id` (vínculo com Metas) **não** existe aqui —
 será adicionado pela spec 030 (D5).
+
+### Metas (spec 030) — `goal_progress.py` + `tools_goals.py`
+
+Uma **meta** é a camada de **direção** com prazo à qual os experimentos/tarefas/hábitos (os
+"movimentos") se vinculam. O progresso combina uma **métrica-alvo** (atual/alvo) e **marcos**
+(concluídos/total), encerra com uma **revisão** (desfecho `achieved`/`missed`/`revise` +
+aprendizado). **Webapp-first**: sem tool no ADK nesta fatia (D8) — `tools.py` só re-exporta.
+
+Motor **puro** (`goal_progress.py`, sem banco): `progress(metric_target, metric_current,
+milestones_done, milestones_total)` devolve `metric_pct`/`milestones_pct`/`progress_pct` (média das
+dimensões presentes; `None` se nenhuma — meta direcional); `metric_pct` **satura em 100** quando o
+valor passa do alvo; `deadline_status(deadline, status, today)` dá `days_remaining`/`is_overdue`.
+Calculado na leitura, nada persistido (gate puro em `tests/agents/test_kaguya_goal_progress.py`).
+
+Camada de lógica (`tools_goals.py`): `create_goal`, `list_goals(include_completed)`, `get_goal`
+(com `milestones` + `movements`), `update_goal` (sentinela `_UNSET`; inclui `metric_current`),
+`delete_goal` (**hard delete** — marcos por CASCADE, itens por SET NULL), `add_milestone`/
+`update_milestone`/`delete_milestone`, `list_goal_areas` (contagem de ativas por área — SC-006),
+`link_movement`/`unlink_movement`/`list_linkable_items` (vínculo de movimentos) e `review_goal`
+(encerra). "Hoje" sempre em **UTC-3**.
+
+**Vínculo (D1)**: coluna `goal_id` (FK `ON DELETE SET NULL`) em `tiny_experiments`, `tasks` e
+`habits` — cardinalidade "um item ↔ no máximo uma meta". Excluir a meta **desvincula**, nunca
+apaga os itens (FR-010/SC-005). `get_goal.movements` agrega os três tipos por `goal_id`, reusando
+`get_experiment`/`get_habit` para o status derivado. Persistência: 2 tabelas em `schema_tasks_pg.sql`
+(`goals`, `goal_milestones`) + as 3 colunas `goal_id` (migração idempotente — a de `tiny_experiments`
+é o gancho D5 que a 029 reservou). A 029 **não muda** (só ganha a coluna).
 
 ---
 

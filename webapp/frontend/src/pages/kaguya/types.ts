@@ -313,6 +313,71 @@ export interface ExperimentDue {
   cadence: ExperimentCadence
 }
 
+// ── Metas (spec 030) ───────────────────────────────────────────────────────────
+export type GoalStatus = 'active' | 'closed'
+// Desfecho da revisão (US3): atingida / não atingida / revisar.
+export type GoalOutcome = 'achieved' | 'missed' | 'revise'
+// Tipo de um item de execução vinculável (movimento).
+export type MovementType = 'experiment' | 'task' | 'habit'
+
+// Um marco de uma meta (passo nomeado, concluído/pendente).
+export interface Milestone {
+  id: number
+  title: string
+  done: boolean
+}
+
+// Itens vinculados a uma meta, agrupados por tipo, cada um com status mínimo (FR-009).
+export interface GoalMovements {
+  experiments: { id: number; title: string; status: string; adherence_pct: number }[]
+  tasks: { id: number; title: string; completed: boolean }[]
+  habits: { id: number; name: string; consistency: number }[]
+}
+
+// Uma meta. As métricas de progresso são DERIVADAS (calculadas na leitura no backend). `metric_*`
+// ausentes => sem métrica numérica; o progresso vem só dos marcos (ou é qualitativo).
+export interface Goal {
+  id: number
+  title: string
+  why: string | null
+  life_area: string | null
+  metric_target: number | null
+  metric_unit: string | null
+  metric_current: number | null
+  deadline: string             // "YYYY-MM-DD"
+  anti_goals: string | null
+  accountability: string | null
+  status: GoalStatus
+  outcome: GoalOutcome | null   // preenchido na revisão
+  review: string | null         // aprendizado ao encerrar
+  // Derivados (na resposta, não no banco):
+  metric_pct: number | null     // % da métrica (null = sem métrica)
+  milestones_total: number
+  milestones_done: number
+  milestones_pct: number | null // % dos marcos (null = sem marcos)
+  progress_pct: number | null   // progresso combinado (null = meta direcional)
+  days_remaining: number        // deadline - hoje (negativo = atrasada)
+  is_overdue: boolean           // ativa e prazo vencido
+  created_at: string
+  updated_at: string
+  // Presente só no detalhe (GET /goals/{id}):
+  milestones?: Milestone[]
+  movements?: GoalMovements
+}
+
+// Contagem de metas ativas por área da vida (SC-006). `life_area` null = "sem área".
+export interface GoalAreaCount {
+  life_area: string | null
+  active_count: number
+}
+
+// Item vinculável no seletor de vínculo (US2). `linked_goal_id` != null => já pertence a outra meta.
+export interface LinkableItem {
+  id: number
+  label: string
+  linked_goal_id: number | null
+}
+
 // Payload único da sidebar.
 export interface Sidebar {
   groups: Group[]
@@ -341,7 +406,7 @@ export interface Tweaks {
 // id da smart-list (ou BUILTIN_TODAY_OVERDUE para a built-in). 'group' usa o param como
 // id do grupo (task_project_groups) e abre o board Kanban agregado do grupo.
 // 'group-list' usa o param como id do grupo e exibe as tarefas em seções por lista.
-export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'experiments' | 'trash' | 'filter' | 'group' | 'group-list'
+export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'experiments' | 'goals' | 'trash' | 'filter' | 'group' | 'group-list'
 
 // ── Board de Grupo — Kanban agregado por status unificado ─────────────────────
 // Um membro de coluna unificada: indica qual column_id desta lista compõe a coluna.

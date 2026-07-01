@@ -373,6 +373,65 @@ CREATE TABLE IF NOT EXISTS tiny_experiment_logs (
 
 
 -- ----------------------------------------------------------------------------
+-- goals + goal_milestones — Metas (spec 030)
+-- ----------------------------------------------------------------------------
+-- Uma "meta" é a camada de DIREÇÃO com prazo à qual os experimentos/tarefas/hábitos
+-- (os "movimentos") se vinculam. O progresso combina uma métrica-alvo (atual/alvo) e
+-- marcos (concluídos/total), calculado na leitura pelo motor puro goal_progress.py —
+-- nunca persistido. Encerra com uma revisão (desfecho + aprendizado). Ver
+-- specs/030-tasks-metas/data-model.md.
+CREATE TABLE IF NOT EXISTS goals (
+    id              SERIAL PRIMARY KEY,
+    title           TEXT NOT NULL,                  -- título específico (FR-001)
+    why             TEXT,                           -- porquê/motivação/valor (opcional, FR-002)
+    life_area       TEXT,                           -- área da vida (etiqueta livre opcional, FR-003)
+    -- Métrica-alvo (opcional): NULL = meta sem métrica numérica (progresso só por marcos/desfecho).
+    metric_target   NUMERIC,
+    metric_unit     TEXT,                           -- unidade da métrica (ex.: "livros")
+    metric_current  NUMERIC NOT NULL DEFAULT 0,     -- valor atual da métrica (FR-005)
+    deadline        DATE NOT NULL,                  -- prazo (FR-001)
+    anti_goals      TEXT,                           -- o que evitar no caminho (opcional, FR-006)
+    accountability  TEXT,                           -- nota de responsabilização (opcional, FR-006)
+    -- Ciclo de vida: ativa → encerrada (terminal). Ver data-model.md.
+    status          TEXT NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('active', 'closed')),
+    -- Revisão de encerramento (FR-013): desfecho + aprendizado.
+    outcome         TEXT CHECK (outcome IN ('achieved', 'missed', 'revise')),
+    review          TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Índice parcial da lista de ativas (a listagem padrão exclui as encerradas).
+CREATE INDEX IF NOT EXISTS idx_goals_active
+    ON goals (status) WHERE status = 'active';
+
+-- Um marco nomeado dentro de uma meta (contribui para o progresso por marcos).
+CREATE TABLE IF NOT EXISTS goal_milestones (
+    id          SERIAL PRIMARY KEY,
+    goal_id     INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,  -- some com a meta (D4)
+    title       TEXT NOT NULL,                      -- nome do marco (FR-004)
+    done        BOOLEAN NOT NULL DEFAULT FALSE,     -- concluído/pendente (FR-005)
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()  -- ordena a lista (ASC)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_milestones_goal ON goal_milestones (goal_id);
+
+-- Vínculo Meta↔Movimento (D1): uma coluna goal_id nullable em cada tabela de execução da
+-- Kaguya. Cardinalidade "um item ↔ no máximo uma meta" imposta pela coluna única. FK
+-- ON DELETE SET NULL ⇒ excluir a meta DESVINCULA sem apagar o item (FR-010/SC-005).
+-- Idempotente (bancos pré-existentes). As tabelas goals/goal_milestones acima já existem
+-- neste ponto, então as FKs abaixo resolvem. tiny_experiments é a coluna reservada pela 029 (D5).
+ALTER TABLE tiny_experiments ADD COLUMN IF NOT EXISTS goal_id INTEGER REFERENCES goals(id) ON DELETE SET NULL;
+ALTER TABLE tasks            ADD COLUMN IF NOT EXISTS goal_id INTEGER REFERENCES goals(id) ON DELETE SET NULL;
+ALTER TABLE habits           ADD COLUMN IF NOT EXISTS goal_id INTEGER REFERENCES goals(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_tiny_experiments_goal ON tiny_experiments (goal_id) WHERE goal_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_goal            ON tasks (goal_id)            WHERE goal_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_habits_goal           ON habits (goal_id)           WHERE goal_id IS NOT NULL;
+
+
+-- ----------------------------------------------------------------------------
 -- SEED — Inbox indelével (a única lista que nasce com o sistema)
 -- ----------------------------------------------------------------------------
 -- ON CONFLICT DO NOTHING + índice único parcial uq_task_projects_inbox garantem

@@ -56,6 +56,15 @@ from agents.kaguya.tools_experiments import (  # noqa: F401
     delete_experiment, log_experiment, remove_log, pause_experiment,
     resume_experiment, review_experiment, list_experiments_due_today,
 )
+# Metas — spec 030. Webapp-first: re-exportadas para o router REST (/api/tasks/goals/*), mas
+# nesta fatia NÃO registradas no agente ADK em ``agent.py`` (research D8). A lógica nasce agnóstica
+# de canal — a fatia futura do Telegram só adiciona estes nomes à lista de tools + instruções, sem
+# refatorar. ↓↓↓ ponto de extensão futuro (expor ao agente): ↓↓↓
+from agents.kaguya.tools_goals import (  # noqa: F401
+    create_goal, list_goals, get_goal, update_goal, delete_goal,
+    add_milestone, update_milestone, delete_milestone, list_goal_areas,
+    link_movement, unlink_movement, list_linkable_items, review_goal,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

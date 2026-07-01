@@ -67,6 +67,12 @@ from agents.kaguya.tools_experiments import (
     delete_experiment, log_experiment, remove_log, pause_experiment,
     resume_experiment, review_experiment, list_experiments_due_today,
 )
+# Metas — spec 030 (camada de lógica em agents/kaguya/tools_goals.py).
+from agents.kaguya.tools_goals import (
+    create_goal, list_goals, get_goal, update_goal, delete_goal,
+    add_milestone, update_milestone, delete_milestone, list_goal_areas,
+    link_movement, unlink_movement, list_linkable_items, review_goal,
+)
 
 router = APIRouter()
 
@@ -350,6 +356,55 @@ class LogExperimentBody(BaseModel):
 class ReviewExperimentBody(BaseModel):
     """Body da revisão de encerramento: veredicto + aprendizado (US2)."""
     verdict: Literal["persist", "pause", "pivot"]
+    review: str
+
+
+# ── Metas — spec 030 ──────────────────────────────────────────────────────────
+class CreateGoalBody(BaseModel):
+    """Body de criação de meta (título + prazo obrigatórios; o resto é opcional)."""
+    title: str
+    deadline: str                                       # AAAA-MM-DD
+    why: Optional[str] = None
+    life_area: Optional[str] = None
+    metric_target: Optional[float] = None
+    metric_unit: Optional[str] = None
+    anti_goals: Optional[str] = None
+    accountability: Optional[str] = None
+
+
+class UpdateGoalBody(BaseModel):
+    """Body de edição de meta (PATCH parcial — só campos enviados são aplicados)."""
+    title: Optional[str] = None
+    why: Optional[str] = None
+    life_area: Optional[str] = None
+    metric_target: Optional[float] = None
+    metric_unit: Optional[str] = None
+    metric_current: Optional[float] = None              # atualizar o valor atual (FR-005)
+    deadline: Optional[str] = None
+    anti_goals: Optional[str] = None
+    accountability: Optional[str] = None
+
+
+class AddMilestoneBody(BaseModel):
+    """Body de criação de marco."""
+    title: str
+
+
+class UpdateMilestoneBody(BaseModel):
+    """Body de edição de marco (renomear e/ou concluir/reabrir)."""
+    title: Optional[str] = None
+    done: Optional[bool] = None
+
+
+class LinkMovementBody(BaseModel):
+    """Body de vínculo/desvínculo de um movimento (item de execução) a uma meta."""
+    item_type: Literal["experiment", "task", "habit"]
+    item_id: int
+
+
+class ReviewGoalBody(BaseModel):
+    """Body da revisão de encerramento de meta: desfecho + aprendizado (US3)."""
+    outcome: Literal["achieved", "missed", "revise"]
     review: str
 
 
@@ -1188,6 +1243,100 @@ def review_experiment_route(
 ) -> dict:
     """Encerra um experimento com a revisão (veredicto + aprendizado)."""
     return _check_result(review_experiment(experiment_id, body.verdict, body.review))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Metas — spec 030
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPORTANTE (contrato): as rotas ESTÁTICAS (/goals, /goals/areas, /goals/linkable) são
+# declaradas ANTES da paramétrica /goals/{goal_id} — senão o FastAPI capturaria "areas"/
+# "linkable" como {goal_id}. O progresso vem calculado na leitura pela camada de lógica.
+@router.get("/goals")
+def list_goals_route(
+    include_completed: bool = Query(False, description="Inclui as metas encerradas"),
+    user: dict = Depends(require_user),
+) -> list[dict]:
+    """Lista as metas (ativas; encerradas se ``include_completed``)."""
+    return list_goals(include_completed)  # listagem — sem _check_result
+
+
+@router.get("/goals/areas")
+def goal_areas_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Contagem de metas ativas por área da vida (SC-006)."""
+    return list_goal_areas()  # listagem — sem _check_result
+
+
+@router.get("/goals/linkable")
+def goal_linkable_route(
+    item_type: str = Query(..., description="experiment | task | habit"),
+    user: dict = Depends(require_user),
+) -> list[dict]:
+    """Itens de um tipo que podem ser vinculados a uma meta (com ``linked_goal_id``)."""
+    return list_linkable_items(item_type)  # listagem — sem _check_result
+
+
+@router.post("/goals", status_code=201)
+def create_goal_route(body: CreateGoalBody, user: dict = Depends(require_user)) -> dict:
+    """Cria uma meta (400 se o prazo for inválido; 422 se faltar título/prazo)."""
+    return _check_result(create_goal(**body.model_dump(exclude_unset=True)))
+
+
+@router.get("/goals/{goal_id}")
+def get_goal_route(goal_id: int, user: dict = Depends(require_user)) -> dict:
+    """Detalhe de uma meta (com ``milestones``, ``movements`` e progresso)."""
+    result = get_goal(goal_id)
+    # get_goal devolve {"status": "error"} quando não encontra → vira 400 via _check_result.
+    return _check_result(result) if result.get("status") == "error" else result
+
+
+@router.patch("/goals/{goal_id}")
+def update_goal_route(goal_id: int, body: UpdateGoalBody, user: dict = Depends(require_user)) -> dict:
+    """Edita uma meta (título, métrica, prazo, área, etc.; inclui ``metric_current``)."""
+    return _check_result(update_goal(goal_id, **body.model_dump(exclude_unset=True)))
+
+
+@router.delete("/goals/{goal_id}")
+def delete_goal_route(goal_id: int, user: dict = Depends(require_user)) -> dict:
+    """Exclui uma meta (hard delete; itens vinculados são desvinculados, nunca apagados)."""
+    return _check_result(delete_goal(goal_id))
+
+
+@router.post("/goals/{goal_id}/milestones", status_code=201)
+def add_milestone_route(goal_id: int, body: AddMilestoneBody, user: dict = Depends(require_user)) -> dict:
+    """Adiciona um marco a uma meta."""
+    return _check_result(add_milestone(goal_id, body.title))
+
+
+@router.patch("/goals/{goal_id}/milestones/{milestone_id}")
+def update_milestone_route(
+    goal_id: int, milestone_id: int, body: UpdateMilestoneBody, user: dict = Depends(require_user)
+) -> dict:
+    """Edita um marco (renomear e/ou concluir/reabrir)."""
+    return _check_result(update_milestone(milestone_id, **body.model_dump(exclude_unset=True)))
+
+
+@router.delete("/goals/{goal_id}/milestones/{milestone_id}")
+def delete_milestone_route(goal_id: int, milestone_id: int, user: dict = Depends(require_user)) -> dict:
+    """Remove um marco."""
+    return _check_result(delete_milestone(milestone_id))
+
+
+@router.post("/goals/{goal_id}/link")
+def link_movement_route(goal_id: int, body: LinkMovementBody, user: dict = Depends(require_user)) -> dict:
+    """Vincula um item (experimento/tarefa/hábito) à meta."""
+    return _check_result(link_movement(goal_id, body.item_type, body.item_id))
+
+
+@router.post("/goals/{goal_id}/unlink")
+def unlink_movement_route(goal_id: int, body: LinkMovementBody, user: dict = Depends(require_user)) -> dict:
+    """Desvincula um item da meta (o item permanece na sua seção)."""
+    return _check_result(unlink_movement(body.item_type, body.item_id))
+
+
+@router.post("/goals/{goal_id}/review")
+def review_goal_route(goal_id: int, body: ReviewGoalBody, user: dict = Depends(require_user)) -> dict:
+    """Encerra uma meta com a revisão (desfecho + aprendizado)."""
+    return _check_result(review_goal(goal_id, body.outcome, body.review))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

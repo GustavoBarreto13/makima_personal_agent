@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -244,6 +244,46 @@ export const kaguyaApi = {
     // Revisão de encerramento: veredicto + aprendizado (US2).
     review: (id: number, body: { verdict: ExperimentVerdict; review: string }) =>
       api.post<MutationResult>(`${BASE}/experiments/${id}/review`, body),
+  },
+
+  // ── Metas — spec 030 ────────────────────────────────────────────────────────
+  // CRUD + marcos + vínculo de movimentos + revisão. O progresso vem calculado na leitura.
+  goals: {
+    list: (includeCompleted = false) =>
+      api.get<Goal[]>(`${BASE}/goals?include_completed=${includeCompleted}`),
+    // Contagem de metas ativas por área da vida (SC-006).
+    areas: () => api.get<GoalAreaCount[]>(`${BASE}/goals/areas`),
+    // Itens vinculáveis de um tipo (com linked_goal_id para avisar reatribuição).
+    linkable: (itemType: MovementType) =>
+      api.get<LinkableItem[]>(`${BASE}/goals/linkable?item_type=${itemType}`),
+    get: (id: number) => api.get<Goal>(`${BASE}/goals/${id}`),
+    create: (body: {
+      title: string; deadline: string
+      why?: string | null; life_area?: string | null
+      metric_target?: number | null; metric_unit?: string | null
+      anti_goals?: string | null; accountability?: string | null
+    }) => api.post<MutationResult>(`${BASE}/goals`, body),
+    update: (id: number, body: Partial<{
+      title: string; why: string | null; life_area: string | null
+      metric_target: number | null; metric_unit: string | null; metric_current: number | null
+      deadline: string; anti_goals: string | null; accountability: string | null
+    }>) => api.patch<MutationResult>(`${BASE}/goals/${id}`, body),
+    del: (id: number) => api.del<MutationResult>(`${BASE}/goals/${id}`),
+    // Marcos.
+    addMilestone: (goalId: number, title: string) =>
+      api.post<MutationResult>(`${BASE}/goals/${goalId}/milestones`, { title }),
+    updateMilestone: (goalId: number, milestoneId: number, body: Partial<{ title: string; done: boolean }>) =>
+      api.patch<MutationResult>(`${BASE}/goals/${goalId}/milestones/${milestoneId}`, body),
+    delMilestone: (goalId: number, milestoneId: number) =>
+      api.del<MutationResult>(`${BASE}/goals/${goalId}/milestones/${milestoneId}`),
+    // Vínculo de movimentos (US2).
+    link: (goalId: number, itemType: MovementType, itemId: number) =>
+      api.post<MutationResult>(`${BASE}/goals/${goalId}/link`, { item_type: itemType, item_id: itemId }),
+    unlink: (goalId: number, itemType: MovementType, itemId: number) =>
+      api.post<MutationResult>(`${BASE}/goals/${goalId}/unlink`, { item_type: itemType, item_id: itemId }),
+    // Revisão de encerramento (US3).
+    review: (id: number, body: { outcome: GoalOutcome; review: string }) =>
+      api.post<MutationResult>(`${BASE}/goals/${id}/review`, body),
   },
 
   // ── Pessoas (Komi) — fatia 025 ────────────────────────────────────────────
