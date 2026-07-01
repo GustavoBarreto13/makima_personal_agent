@@ -42,6 +42,7 @@ const FIXED_VIEWS: { view: KaguyaView; icon: IconName; label: string }[] = [
   { view: 'calendar',    icon: 'calendar', label: 'Calendário'   },
   { view: 'eisenhower',  icon: 'grid',     label: 'Eisenhower'   },
   { view: 'habits',      icon: 'flame',    label: 'Hábitos'      },
+  { view: 'experiments', icon: 'flask',    label: 'Experimentos' },
 ]
 
 // ── Props ─────────────────────────────────────────────────────────────────────

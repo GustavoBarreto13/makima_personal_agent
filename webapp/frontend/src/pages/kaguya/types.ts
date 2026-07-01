@@ -261,6 +261,58 @@ export interface HabitHeatDay {
   done: boolean         // cumpriu a meta naquele dia
 }
 
+// ── Tiny Experiments (spec 029) ────────────────────────────────────────────────
+// Cadência do check-in: diária (um por dia) ou semanal (um por semana de calendário).
+export type ExperimentCadence = 'daily' | 'weekly'
+
+// Ciclo de vida do experimento: ativo ⇄ pausado → concluído (terminal).
+export type ExperimentStatus = 'active' | 'paused' | 'completed'
+
+// Veredicto da revisão de encerramento (US2): persistir / pausar / pivotar.
+export type ExperimentVerdict = 'persist' | 'pause' | 'pivot'
+
+// Um check-in de um período (o "tracker"). Datas como string ISO do backend.
+export interface ExperimentLog {
+  id: number
+  period_date: string          // "YYYY-MM-DD" (dia, ou segunda da semana na cadência semanal)
+  done: boolean                // fez?
+  feeling: number | null       // sensação 1–5 (opcional)
+  note: string | null          // nota livre (opcional)
+}
+
+// Um experimento testável com prazo. As métricas (aderência etc.) são DERIVADAS — calculadas
+// na leitura no backend pelo motor puro (razão simples que perdoa falhas), nunca persistidas.
+export interface Experiment {
+  id: number
+  title: string                // a fórmula "Vou [ação] por [duração]"
+  why: string | null           // porquê/motivação (opcional)
+  hypothesis: string | null    // "talvez se eu __, então __" (opcional)
+  cadence: ExperimentCadence
+  start_date: string           // "YYYY-MM-DD"
+  end_date: string             // "YYYY-MM-DD"
+  status: ExperimentStatus
+  verdict: ExperimentVerdict | null   // preenchido na revisão
+  review: string | null               // aprendizado registrado ao concluir
+  // Derivados (na resposta, não no banco):
+  periods_done: number         // check-ins com done=true
+  periods_expected: number     // períodos decorridos menos os pausados
+  adherence_pct: number        // 0–100, razão simples capada
+  logged_current: boolean      // já há check-in para o período corrente?
+  days_remaining: number       // end_date - hoje (negativo = atrasado)
+  is_overdue: boolean          // ativo e passou do fim
+  created_at: string
+  updated_at: string
+  // Presente só no detalhe (GET /experiments/{id}): check-ins ordenados por período.
+  logs?: ExperimentLog[]
+}
+
+// Item mínimo de "experimentos de hoje" (US3, GET /experiments/due-today).
+export interface ExperimentDue {
+  id: number
+  title: string
+  cadence: ExperimentCadence
+}
+
 // Payload único da sidebar.
 export interface Sidebar {
   groups: Group[]
@@ -289,7 +341,7 @@ export interface Tweaks {
 // id da smart-list (ou BUILTIN_TODAY_OVERDUE para a built-in). 'group' usa o param como
 // id do grupo (task_project_groups) e abre o board Kanban agregado do grupo.
 // 'group-list' usa o param como id do grupo e exibe as tarefas em seções por lista.
-export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'trash' | 'filter' | 'group' | 'group-list'
+export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'experiments' | 'trash' | 'filter' | 'group' | 'group-list'
 
 // ── Board de Grupo — Kanban agregado por status unificado ─────────────────────
 // Um membro de coluna unificada: indica qual column_id desta lista compõe a coluna.

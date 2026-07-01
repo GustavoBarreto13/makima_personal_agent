@@ -5,7 +5,7 @@
 import { useEffect, useState, useCallback, type CSSProperties } from 'react'
 import './kaguya.css'
 
-import type { Sidebar, Task, Tweaks, KaguyaView, Filter, Habit } from './types'
+import type { Sidebar, Task, Tweaks, KaguyaView, Filter, Habit, Experiment } from './types'
 import { BUILTIN_TODAY_OVERDUE, GTD_BUILTINS } from './types'
 import { kaguyaApi } from './kaguyaApi'
 
@@ -18,6 +18,7 @@ import { ProjectModal } from './modals/ProjectModal'
 import { GroupModal } from './modals/GroupModal'
 import { FilterModal } from './modals/FilterModal'
 import { HabitModal } from './modals/HabitModal'
+import { ExperimentModal } from './modals/ExperimentModal'
 import { TodayScreen } from './screens/TodayScreen'
 import { ListScreen } from './screens/ListScreen'
 import { KanbanScreen } from './screens/KanbanScreen'
@@ -25,6 +26,8 @@ import { TrashScreen } from './screens/TrashScreen'
 import { FilterScreen } from './screens/FilterScreen'
 import { CalendarScreen } from './screens/CalendarScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
+import { ExperimentsScreen } from './screens/ExperimentsScreen'
+import { ExperimentDetailScreen } from './screens/ExperimentDetailScreen'
 import { EisenhowerScreen } from './screens/EisenhowerScreen'
 import { GroupBoardScreen } from './screens/GroupBoardScreen'
 import { GroupListScreen } from './screens/GroupListScreen'
@@ -75,6 +78,7 @@ export function KaguyaShell() {
   const [groupModal, setGroupModal] = useState<{ mode: 'create' | 'edit'; group?: import('./types').Group } | null>(null)
   const [filterModal, setFilterModal] = useState<{ mode: 'create' | 'edit'; filter?: Filter } | null>(null)
   const [habitModal, setHabitModal] = useState<{ mode: 'create' | 'edit'; habit?: Habit } | null>(null)
+  const [experimentModal, setExperimentModal] = useState<{ mode: 'create' | 'edit'; experiment?: Experiment } | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toast, setToast] = useState<{ msg: string; kind?: 'ok' | 'err' } | null>(null)
   const [search, setSearch] = useState('')
@@ -163,7 +167,8 @@ export function KaguyaShell() {
     ? sidebar?.groups.find(g => g.id === param) : undefined
   const titleMap: Record<KaguyaView, string> = {
     today: 'Meu Dia', kanban: project?.name ?? 'Kanban', list: project?.name ?? 'Lista',
-    calendar: 'Calendário', eisenhower: 'Eisenhower', habits: 'Hábitos', trash: 'Lixeira',
+    calendar: 'Calendário', eisenhower: 'Eisenhower', habits: 'Hábitos',
+    experiments: 'Experimentos', trash: 'Lixeira',
     filter: filterName,
     // 'group': nome do grupo no Kanban agregado.
     group: currentGroup?.name ?? 'Grupo',
@@ -237,6 +242,24 @@ export function KaguyaShell() {
         reloadKey={reloadKey}
         onNewHabit={() => setHabitModal({ mode: 'create' })}
         onEditHabit={(h) => setHabitModal({ mode: 'edit', habit: h })}
+        toast={showToast}
+      />
+    )
+    // Experimentos: sem param → lista; com param → detalhe do experimento (spec 029).
+    if (view === 'experiments' && param == null) return (
+      <ExperimentsScreen
+        reloadKey={reloadKey}
+        onNew={() => setExperimentModal({ mode: 'create' })}
+        onOpenDetail={(id) => navigate('experiments', id)}
+        toast={showToast}
+      />
+    )
+    if (view === 'experiments' && param != null) return (
+      <ExperimentDetailScreen
+        experimentId={param}
+        reloadKey={reloadKey}
+        onBack={() => navigate('experiments')}
+        onEdit={(exp) => setExperimentModal({ mode: 'edit', experiment: exp })}
         toast={showToast}
       />
     )
@@ -434,6 +457,18 @@ export function KaguyaShell() {
           onClose={() => setHabitModal(null)}
           // Após salvar/arquivar, só faz bump (a tela de hábitos recarrega pela reloadKey).
           onSaved={bump}
+          toast={showToast}
+        />
+      )}
+      {experimentModal && (
+        <ExperimentModal
+          mode={experimentModal.mode}
+          experiment={experimentModal.experiment}
+          onClose={() => setExperimentModal(null)}
+          // Após salvar/excluir, só faz bump (lista e detalhe recarregam pela reloadKey).
+          onSaved={bump}
+          // Se o experimento aberto no detalhe foi excluído, volta para a lista.
+          onDeleted={() => navigate('experiments')}
           toast={showToast}
         />
       )}

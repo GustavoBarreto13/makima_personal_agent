@@ -318,6 +318,61 @@ CREATE INDEX IF NOT EXISTS idx_bsl_task ON birthday_sync_links (task_id);
 
 
 -- ----------------------------------------------------------------------------
+-- tiny_experiments + tiny_experiment_logs — Tiny Experiments (spec 029)
+-- ----------------------------------------------------------------------------
+-- Um "experimento" é uma prática testável COM PRAZO ("Vou [ação] por [duração]"),
+-- com check-ins periódicos (fez? / sensação / nota) cuja aderência PERDOA falhas
+-- (razão simples cumpridos/esperados, calculada na leitura pelo motor puro
+-- experiment_adherence.py — nunca persistida). Difere do hábito (contínuo, sem fim):
+-- o experimento é curto, tem início/fim e encerra com uma revisão (veredicto +
+-- aprendizado). Ver specs/029-tasks-tiny-experiments/data-model.md.
+CREATE TABLE IF NOT EXISTS tiny_experiments (
+    id                  SERIAL PRIMARY KEY,
+    title               TEXT NOT NULL,                  -- a fórmula "Vou [ação] por [duração]" (FR-001)
+    why                 TEXT,                           -- porquê/motivação (opcional, FR-002)
+    hypothesis          TEXT,                           -- "talvez se eu __, então __" (opcional, FR-002)
+    -- Cadência do check-in: diária (um por dia) ou semanal (um por semana de calendário).
+    cadence             TEXT NOT NULL DEFAULT 'daily'
+                        CHECK (cadence IN ('daily', 'weekly')),
+    start_date          DATE NOT NULL,                  -- início (FR-001)
+    end_date            DATE NOT NULL,                  -- fim (FR-001)
+    -- Ciclo de vida: ativo → pausado ⇄ ativo → concluído (terminal). Ver data-model.md.
+    status              TEXT NOT NULL DEFAULT 'active'
+                        CHECK (status IN ('active', 'paused', 'completed')),
+    -- Pausa (D4): data em que entrou em pausa (NULL quando ativo/concluído) + acumulador
+    -- de dias já pausados. Juntos descontam os períodos pausados da aderência (FR-017).
+    paused_at           DATE,
+    paused_period_days  INTEGER NOT NULL DEFAULT 0,
+    -- Revisão de encerramento (FR-010): veredicto + aprendizado.
+    verdict             TEXT CHECK (verdict IN ('persist', 'pause', 'pivot')),
+    review              TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- O fim nunca pode ser antes do início (edge case da spec).
+    CHECK (end_date >= start_date)
+);
+
+-- Índice parcial da lista de ativos/pausados (a listagem padrão exclui concluídos).
+CREATE INDEX IF NOT EXISTS idx_tiny_experiments_open
+    ON tiny_experiments (status) WHERE status <> 'completed';
+
+-- Um check-in por período de um experimento (o "tracker").
+CREATE TABLE IF NOT EXISTS tiny_experiment_logs (
+    id            SERIAL PRIMARY KEY,
+    experiment_id INTEGER NOT NULL REFERENCES tiny_experiments(id) ON DELETE CASCADE,  -- hard delete (D3)
+    -- O dia (cadência diária) ou a SEGUNDA-FEIRA da semana (cadência semanal, D2).
+    period_date   DATE NOT NULL,
+    done          BOOLEAN NOT NULL,                     -- fez? (obrigatório, FR-005)
+    feeling       SMALLINT CHECK (feeling BETWEEN 1 AND 5),  -- sensação 1–5 (opcional, FR-005)
+    note          TEXT,                                 -- nota livre (opcional, FR-005)
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Um único check-in por período (FR-006) — habilita o upsert ON CONFLICT.
+    UNIQUE (experiment_id, period_date)
+);
+
+
+-- ----------------------------------------------------------------------------
 -- SEED — Inbox indelével (a única lista que nasce com o sistema)
 -- ----------------------------------------------------------------------------
 -- ON CONFLICT DO NOTHING + índice único parcial uq_task_projects_inbox garantem

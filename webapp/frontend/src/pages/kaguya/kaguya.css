@@ -1960,3 +1960,75 @@
 /* ═══ Grupo done na ListScreen ════════════════════════════════════════════ */
 .kg-app .done-group .tree-row { opacity: 0.6; }
 .kg-app .done-group .tree-row .tk-title { text-decoration: line-through; }
+
+
+/* ═══ Tiny Experiments (spec 029) ═════════════════════════════════════════ */
+/* Reusa os tokens --kg* / --ink-* / --line / --done / --p-high já definidos.  */
+
+.kg-exp-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.kg-exp-list { display: flex; flex-direction: column; gap: 12px; }
+
+.kg-exp-card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--kg-r-md); box-shadow: var(--shadow-sm);
+  padding: 14px 16px;
+}
+.kg-exp-card.paused { opacity: 0.72; }
+.kg-exp-card.completed { opacity: 0.6; }
+
+.kg-exp-head { display: flex; align-items: flex-start; gap: 10px; }
+.kg-exp-title {
+  flex: 1 1 auto; min-width: 0; background: none; border: none; cursor: pointer;
+  font-size: 15.5px; font-weight: 600; color: var(--ink); padding: 0; text-align: left;
+}
+.kg-exp-title:hover { color: var(--kg); }
+.kg-exp-why { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; }
+.kg-exp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; font-size: 12px; color: var(--ink-4); }
+
+/* Badge de estado / prazo (pausado, atrasado, veredicto). */
+.kg-exp-badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px;
+  border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: var(--card-2); color: var(--ink-2); border: 1px solid var(--line);
+}
+.kg-exp-badge.paused { color: var(--ink-2); }
+.kg-exp-badge.overdue { color: var(--p-high); border-color: var(--p-high); }
+.kg-exp-badge.done { color: var(--done); border-color: var(--done); }
+
+/* Barra de aderência: trilho claro + preenchimento no azul do acento até --pct%. */
+.kg-exp-adh { margin-top: 12px; }
+.kg-exp-adh-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-3); margin-bottom: 5px; }
+.kg-exp-adh-pct { font-weight: 700; color: var(--kg-deep, var(--kg)); }
+.kg-exp-adh-bar { height: 8px; border-radius: 999px; background: var(--kg-tint); overflow: hidden; }
+.kg-exp-adh-fill { --pct: 0; height: 100%; width: calc(var(--pct) * 1%); background: var(--kg); border-radius: 999px; transition: width .3s; }
+
+.kg-exp-card-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+
+/* ── Tracker (tabela de check-ins por período) ── */
+.kg-exp-tracker { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.kg-exp-tracker th, .kg-exp-tracker td {
+  text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line-2); font-size: 13px;
+}
+.kg-exp-tracker th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-4); font-weight: 600; }
+.kg-exp-tracker td.center, .kg-exp-tracker th.center { text-align: center; }
+.kg-exp-feeling { color: var(--kg); letter-spacing: 1px; }
+.kg-exp-note { color: var(--ink-3); }
+
+/* ── Formulário de revisão (encerramento) ── */
+.kg-exp-review { margin-top: 16px; border-top: 1px solid var(--line-2); padding-top: 14px; }
+.kg-exp-verdicts { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.kg-exp-verdict {
+  flex: 1 1 auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--kg-r-sm);
+  background: var(--card-2); color: var(--ink-2); cursor: pointer; font-size: 13px; font-weight: 600;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.kg-exp-verdict.active { background: var(--kg-tint); border-color: var(--kg); color: var(--kg-deep, var(--kg)); }
+
+/* ── Seção "Experimentos de hoje" no Meu Dia (US3) ── */
+.kg-exp-due-list { display: flex; flex-direction: column; gap: 8px; }
+.kg-exp-due-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-sm);
+}
+.kg-exp-due-title { flex: 1 1 auto; min-width: 0; font-size: 13.5px; color: var(--ink); }
+.kg-exp-due-cadence { font-size: 11px; color: var(--ink-4); }

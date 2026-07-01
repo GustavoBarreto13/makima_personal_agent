@@ -12,7 +12,7 @@
 //     resolve o id diretamente, sem prop extra.
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import type { Task, Project, MyDayResponse, Calendar } from '../types'
+import type { Task, Project, MyDayResponse, Calendar, ExperimentDue } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { QuickAdd } from '../components/QuickAdd'
 import { DayHero } from '../components/DayHero'
@@ -30,7 +30,8 @@ import {
 // Sensor centralizado (PointerSensor 5px) compartilhado com Kanban, Eisenhower e Lista.
 import { useDndSensors } from '../lib/dnd'
 // Helpers canônicos de data (nunca toISOString — usa partes locais do navegador).
-import { toISO, localISO } from '../lib/dateUtils'
+import { toISO, localISO, todayISO } from '../lib/dateUtils'
+import { Icon } from '../ui/Icons'
 
 // Capacity vazia para o estado inicial (antes do fetch).
 const EMPTY_CAP = {
@@ -55,9 +56,28 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
   // gcalSources: fontes do Google Calendar (gcal:*) com visibilidade/cor do usuário.
   // Compartilham calendar_prefs com a tela de Calendário — toggle aqui reflete lá.
   const [gcalSources, setGcalSources] = useState<Calendar[]>([])
+  // dueExperiments: experimentos ativos do dia sem check-in (US3, spec 029). Seção desacoplada
+  // — não passa pelo motor de capacity/plan_my_day; some da lista após o check-in de 1 toque.
+  const [dueExperiments, setDueExperiments] = useState<ExperimentDue[]>([])
 
   // Sensor centralizado: PointerSensor com 5px de ativação.
   const sensors = useDndSensors()
+
+  // Carrega os "experimentos de hoje" no mount e a cada bump do reloadKey. Silencioso em falha.
+  const loadDue = useCallback(async () => {
+    try { setDueExperiments(await kaguyaApi.experiments.dueToday()) }
+    catch { /* sem experimentos ou falha — seção some */ setDueExperiments([]) }
+  }, [])
+  useEffect(() => { loadDue() }, [loadDue, reloadKey])
+
+  // Check-in de 1 toque de um experimento (fez = sim, hoje). Some da seção ao registrar.
+  const checkinExperiment = async (id: number) => {
+    try {
+      await kaguyaApi.experiments.log(id, { period_date: todayISO(), done: true })
+      toast('Experimento registrado.')
+      loadDue()
+    } catch { toast('Não foi possível registrar o experimento.', 'err') }
+  }
 
   // firstLoad: verdadeiro apenas no mount. Controla se o load mostra o spinner.
   // Usando ref (não state) para não causar re-render ao setar.
@@ -225,6 +245,26 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
                 {pendencias.map(t => (
                   <ReviewCard key={t.id} task={t} onDone={load} toast={toast} />
                 ))}
+              </div>
+            )}
+
+            {/* Experimentos de hoje (US3 — só se houver algum ativo pendente no período) */}
+            {dueExperiments.length > 0 && (
+              <div className="kg-day-section">
+                <div className="kg-day-section-head">
+                  🧪 Experimentos de hoje ({dueExperiments.length})
+                </div>
+                <div className="kg-exp-due-list">
+                  {dueExperiments.map((exp) => (
+                    <div key={exp.id} className="kg-exp-due-row">
+                      <span className="kg-exp-due-title">{exp.title}</span>
+                      <span className="kg-exp-due-cadence">{exp.cadence === 'weekly' ? 'semanal' : 'diário'}</span>
+                      <button className="kg-checkbtn" onClick={() => checkinExperiment(exp.id)}>
+                        <Icon name="check" size={15} /> Fiz
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

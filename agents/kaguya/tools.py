@@ -46,6 +46,16 @@ from agents.kaguya.tools_habits import (  # noqa: F401
     list_habits, create_habit, update_habit, archive_habit,
     remove_check_in, get_habit, get_habit_history, resolve_habit_id_by_name,
 )
+# Tiny Experiments — spec 029. Webapp-first: as funções são re-exportadas aqui para o router
+# REST (/api/tasks/experiments/*), mas nesta fatia NÃO são registradas no agente ADK em
+# ``agent.py`` (research D6). A lógica nasce agnóstica de canal — quando a fatia do Telegram
+# vier, basta adicionar estes nomes à lista de tools do agente + instruções no _INSTRUCTION,
+# sem refatorar. ↓↓↓ ponto de extensão futuro (expor ao agente): ↓↓↓
+from agents.kaguya.tools_experiments import (  # noqa: F401
+    create_experiment, list_experiments, get_experiment, update_experiment,
+    delete_experiment, log_experiment, remove_log, pause_experiment,
+    resume_experiment, review_experiment, list_experiments_due_today,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

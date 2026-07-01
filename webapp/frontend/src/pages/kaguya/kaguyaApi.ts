@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -215,6 +215,36 @@ export const kaguyaApi = {
   // Histórico anual (esparso) para o heatmap.
   habitHistory: (id: number, year: number) =>
     api.get<HabitHeatDay[]>(`${BASE}/habits/${id}/history?year=${year}`),
+
+  // ── Tiny Experiments — spec 029 ────────────────────────────────────────────
+  // CRUD + check-in + pausa/retoma + revisão. As métricas (aderência etc.) vêm calculadas
+  // na leitura no backend. Sub-objeto para agrupar os endpoints /api/tasks/experiments/*.
+  experiments: {
+    list: (includeCompleted = false) =>
+      api.get<Experiment[]>(`${BASE}/experiments?include_completed=${includeCompleted}`),
+    // Experimentos ativos do dia sem check-in (para a seção "Experimentos de hoje" no Meu Dia).
+    dueToday: () => api.get<ExperimentDue[]>(`${BASE}/experiments/due-today`),
+    get: (id: number) => api.get<Experiment>(`${BASE}/experiments/${id}`),
+    create: (body: {
+      title: string; start_date: string; end_date: string
+      why?: string | null; hypothesis?: string | null; cadence?: ExperimentCadence
+    }) => api.post<MutationResult>(`${BASE}/experiments`, body),
+    update: (id: number, body: Partial<{
+      title: string; why: string | null; hypothesis: string | null
+      cadence: ExperimentCadence; start_date: string; end_date: string
+    }>) => api.patch<MutationResult>(`${BASE}/experiments/${id}`, body),
+    del: (id: number) => api.del<MutationResult>(`${BASE}/experiments/${id}`),
+    // Check-in de um período (upsert; backfill dentro do intervalo).
+    log: (id: number, body: { period_date: string; done: boolean; feeling?: number | null; note?: string | null }) =>
+      api.post<MutationResult>(`${BASE}/experiments/${id}/log`, body),
+    removeLog: (id: number, periodDate: string) =>
+      api.del<MutationResult>(`${BASE}/experiments/${id}/log?period_date=${periodDate}`),
+    pause: (id: number) => api.post<MutationResult>(`${BASE}/experiments/${id}/pause`, {}),
+    resume: (id: number) => api.post<MutationResult>(`${BASE}/experiments/${id}/resume`, {}),
+    // Revisão de encerramento: veredicto + aprendizado (US2).
+    review: (id: number, body: { verdict: ExperimentVerdict; review: string }) =>
+      api.post<MutationResult>(`${BASE}/experiments/${id}/review`, body),
+  },
 
   // ── Pessoas (Komi) — fatia 025 ────────────────────────────────────────────
   // Lista todos os contatos da Komi para o AssigneePicker.

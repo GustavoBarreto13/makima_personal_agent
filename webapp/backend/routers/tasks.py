@@ -13,7 +13,7 @@ Registrado em ``webapp/backend/main.py`` sob o prefixo ``/api/tasks``.
 Contrato: ``specs/011-tasks-mvp/contracts/api-tasks.md``.
 """
 
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -60,6 +60,12 @@ from agents.kaguya.calendar_prefs import get_calendar_prefs, set_calendar_pref
 from agents.kaguya.tools_habits import (
     list_habits, get_habit, create_habit, update_habit,
     archive_habit, check_in, remove_check_in, get_habit_history,
+)
+# Tiny Experiments — spec 029 (camada de lógica em agents/kaguya/tools_experiments.py).
+from agents.kaguya.tools_experiments import (
+    create_experiment, list_experiments, get_experiment, update_experiment,
+    delete_experiment, log_experiment, remove_log, pause_experiment,
+    resume_experiment, review_experiment, list_experiments_due_today,
 )
 
 router = APIRouter()
@@ -310,6 +316,41 @@ class CheckInBody(BaseModel):
     """Body de check-in de um hábito (``date`` opcional = hoje; ``value`` para mensurável)."""
     date: Optional[str] = None   # AAAA-MM-DD; None = hoje
     value: Optional[float] = None
+
+
+# ── Tiny Experiments — spec 029 ────────────────────────────────────────────────
+class CreateExperimentBody(BaseModel):
+    """Body de criação de experimento (a fórmula "Vou [ação] por [duração]" + prazo + cadência)."""
+    title: str                                          # obrigatório
+    start_date: str                                     # AAAA-MM-DD
+    end_date: str                                       # AAAA-MM-DD (>= start_date)
+    why: Optional[str] = None
+    hypothesis: Optional[str] = None
+    cadence: Literal["daily", "weekly"] = "daily"
+
+
+class UpdateExperimentBody(BaseModel):
+    """Body de edição de experimento (PATCH parcial — só campos enviados são aplicados)."""
+    title: Optional[str] = None
+    why: Optional[str] = None
+    hypothesis: Optional[str] = None
+    cadence: Optional[Literal["daily", "weekly"]] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
+class LogExperimentBody(BaseModel):
+    """Body de check-in de um experimento (upsert por período; backfill dentro do intervalo)."""
+    period_date: str                                    # AAAA-MM-DD (corrente ou passado)
+    done: bool                                          # obrigatório
+    feeling: Optional[int] = None                       # 1..5
+    note: Optional[str] = None
+
+
+class ReviewExperimentBody(BaseModel):
+    """Body da revisão de encerramento: veredicto + aprendizado (US2)."""
+    verdict: Literal["persist", "pause", "pivot"]
+    review: str
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1058,6 +1099,95 @@ def remove_check_in_route(
 ) -> dict:
     """Remove o check-in de um dia (desfaz o cumprimento)."""
     return _check_result(remove_check_in(habit_id, date))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tiny Experiments — spec 029
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPORTANTE (contrato): as rotas ESTÁTICAS (/experiments e /experiments/due-today) são
+# declaradas ANTES da paramétrica /experiments/{id} — senão o FastAPI capturaria "due-today"
+# como {id}. As métricas de aderência vêm calculadas na leitura pela camada de lógica.
+@router.get("/experiments")
+def list_experiments_route(
+    include_completed: bool = Query(False, description="Inclui os concluídos"),
+    user: dict = Depends(require_user),
+) -> list[dict]:
+    """Lista os experimentos (ativos/pausados; concluídos se ``include_completed``)."""
+    return list_experiments(include_completed)  # listagem — sem _check_result
+
+
+@router.get("/experiments/due-today")
+def experiments_due_today_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Experimentos ativos cuja cadência cai hoje e ainda sem check-in (para o Meu Dia)."""
+    return list_experiments_due_today()  # listagem — sem _check_result
+
+
+@router.post("/experiments", status_code=201)
+def create_experiment_route(body: CreateExperimentBody, user: dict = Depends(require_user)) -> dict:
+    """Cria um experimento (400 se ``end_date < start_date`` ou cadência inválida)."""
+    return _check_result(create_experiment(**body.model_dump(exclude_unset=True)))
+
+
+@router.get("/experiments/{experiment_id}")
+def get_experiment_route(experiment_id: int, user: dict = Depends(require_user)) -> dict:
+    """Detalhe de um experimento (com ``logs`` e métricas derivadas)."""
+    result = get_experiment(experiment_id)
+    # get_experiment devolve {"status": "error"} quando não encontra → vira 400 via _check_result.
+    return _check_result(result) if result.get("status") == "error" else result
+
+
+@router.patch("/experiments/{experiment_id}")
+def update_experiment_route(
+    experiment_id: int, body: UpdateExperimentBody, user: dict = Depends(require_user)
+) -> dict:
+    """Edita um experimento (fórmula, why/hipótese, cadência, datas)."""
+    return _check_result(update_experiment(experiment_id, **body.model_dump(exclude_unset=True)))
+
+
+@router.delete("/experiments/{experiment_id}")
+def delete_experiment_route(experiment_id: int, user: dict = Depends(require_user)) -> dict:
+    """Exclui um experimento (hard delete — os check-ins vão junto por CASCADE)."""
+    return _check_result(delete_experiment(experiment_id))
+
+
+@router.post("/experiments/{experiment_id}/log")
+def log_experiment_route(
+    experiment_id: int, body: LogExperimentBody, user: dict = Depends(require_user)
+) -> dict:
+    """Registra/atualiza o check-in de um período (upsert; backfill dentro do intervalo)."""
+    return _check_result(log_experiment(
+        experiment_id, body.period_date, body.done, body.feeling, body.note
+    ))
+
+
+@router.delete("/experiments/{experiment_id}/log")
+def remove_log_route(
+    experiment_id: int,
+    period_date: str = Query(..., description="Período do check-in (AAAA-MM-DD)"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remove o check-in de um período."""
+    return _check_result(remove_log(experiment_id, period_date))
+
+
+@router.post("/experiments/{experiment_id}/pause")
+def pause_experiment_route(experiment_id: int, user: dict = Depends(require_user)) -> dict:
+    """Pausa um experimento ativo."""
+    return _check_result(pause_experiment(experiment_id))
+
+
+@router.post("/experiments/{experiment_id}/resume")
+def resume_experiment_route(experiment_id: int, user: dict = Depends(require_user)) -> dict:
+    """Retoma um experimento pausado."""
+    return _check_result(resume_experiment(experiment_id))
+
+
+@router.post("/experiments/{experiment_id}/review")
+def review_experiment_route(
+    experiment_id: int, body: ReviewExperimentBody, user: dict = Depends(require_user)
+) -> dict:
+    """Encerra um experimento com a revisão (veredicto + aprendizado)."""
+    return _check_result(review_experiment(experiment_id, body.verdict, body.review))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

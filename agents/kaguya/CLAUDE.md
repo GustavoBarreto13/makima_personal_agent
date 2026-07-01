@@ -29,6 +29,8 @@ agents/kaguya/
 ├── recurrence.py         # motor puro RRULE (next_occurrence, project_occurrences, build/describe)
 ├── habit_strength.py     # motor PURO (sem banco): fórmula da força do hábito (Loop) — fatia 014
 ├── tools_habits.py       # camada de lógica: hábitos + check-ins + histórico — fatia 014
+├── experiment_adherence.py # motor PURO (sem banco): aderência de experimento (razão simples) — spec 029
+├── tools_experiments.py  # camada de lógica: Tiny Experiments (CRUD + check-in + pausa + review) — spec 029
 ├── capacity.py           # motor PURO (sem banco): compute_capacity() — janela 8h–22h — fatia 016
 ├── gcal.py               # cliente Google Calendar compartilhado (read all / write main) — fatia 019
 ├── gcal_sync.py          # espelho best-effort: push/remove tarefas no GCal "Kaguya — Tarefas" — fatia 019
@@ -194,6 +196,35 @@ vezes/semana), `create_habit`, `update_habit`, `archive_habit`/`unarchive_habit`
 recalculado), `remove_check_in`, `get_habit_history(year)` (esparso, para o heatmap) e
 `resolve_habit_id_by_name` (Telegram fala por nome). Mensurável conta como cumprido quando
 `value >= target_value`.
+
+### Tiny Experiments (spec 029) — `experiment_adherence.py` + `tools_experiments.py`
+
+Um **experimento** é uma prática testável COM PRAZO ("Vou [ação] por [duração]"), com check-ins
+periódicos (fez? / sensação 1–5 / nota) cuja **aderência perdoa falhas**. Difere do hábito
+(contínuo, sem fim): tem início/fim, pode ser **pausado/retomado** e encerra com uma **revisão**
+(veredicto `persist`/`pause`/`pivot` + aprendizado). **Webapp-first**: nesta fatia NENHUMA função
+é registrada no agente ADK (research D6) — `tools.py` só re-exporta, marcando o ponto de extensão.
+
+Motor **puro** (`experiment_adherence.py`, sem banco): `summary(start_date, end_date, cadence,
+status, paused_at, paused_period_days, logs, today)` devolve os derivados
+(`periods_done`/`periods_expected`/`adherence_pct`/`logged_current`/`days_remaining`/`is_overdue`).
+Aderência = **razão simples** `cumpridos / esperados` capada em 100 (uma falha isolada **não zera**
+— SC). "Período": diária = o dia; semanal = a **segunda-feira** da semana (via `monday_of`).
+Períodos pausados saem de `periods_expected` (D4/FR-017). Tudo calculado na leitura, nada
+persistido (gate puro em `tests/agents/test_kaguya_experiment_adherence.py`).
+
+Camada de lógica (`tools_experiments.py`): `create_experiment`, `list_experiments(include_completed)`,
+`get_experiment` (com `logs`), `update_experiment` (sentinela `_UNSET`), `delete_experiment`
+(**hard delete** — CASCADE nos check-ins, D3), `log_experiment` (**upsert** por
+`(experiment_id, period_date)`; backfill dentro de `[start,end]`; normaliza p/ segunda na semanal),
+`remove_log`, `pause_experiment`/`resume_experiment` (transições `active ⇄ paused`; acumula
+`paused_period_days` no resume), `review_experiment(verdict, review)` (fecha em `completed`;
+fecha a pausa aberta antes da aderência final) e `list_experiments_due_today()` (para o Meu Dia —
+ativos cuja cadência cai hoje e sem check-in no período). "Hoje" sempre em **UTC-3**.
+
+Persistência: 2 tabelas em `schema_tasks_pg.sql` (`tiny_experiments`, `tiny_experiment_logs`) +
+índice parcial `idx_tiny_experiments_open`. `goal_id` (vínculo com Metas) **não** existe aqui —
+será adicionado pela spec 030 (D5).
 
 ---
 
