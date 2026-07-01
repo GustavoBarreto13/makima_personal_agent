@@ -156,6 +156,7 @@ export function ExperimentDetailScreen({ experimentId, reloadKey, onBack, onEdit
         {exp.status === 'paused' && <span className="kg-exp-badge paused">⏸ Pausado</span>}
         {exp.is_overdue && <span className="kg-exp-badge overdue">⚠ Atrasado</span>}
         {isCompleted && <span className="kg-exp-badge done">Concluído</span>}
+        {exp.goal_id != null && <span className="kg-exp-goal">🎯 {exp.goal_title}</span>}
       </div>
 
       {(exp.why || exp.hypothesis) && (

@@ -96,6 +96,7 @@ export function ExperimentsScreen({ reloadKey, onNew, onOpenDetail, toast }: Exp
                   <span>{cadenceLabel(exp.cadence)}</span>
                   <span>·</span>
                   <span>{deadlineText(exp)}</span>
+                  {exp.goal_id != null && <span className="kg-exp-goal">🎯 {exp.goal_title}</span>}
                 </div>
 
                 {/* Barra de aderência */}
@@ -142,6 +143,7 @@ export function ExperimentsScreen({ reloadKey, onNew, onOpenDetail, toast }: Exp
                       <span>Aderência final {exp.adherence_pct}%</span>
                       <span>·</span>
                       <span>{cadenceLabel(exp.cadence)}</span>
+                      {exp.goal_id != null && <span className="kg-exp-goal">🎯 {exp.goal_title}</span>}
                     </div>
                     {exp.review && <div className="kg-exp-why" style={{ marginTop: 8 }}>“{exp.review}”</div>}
                   </div>

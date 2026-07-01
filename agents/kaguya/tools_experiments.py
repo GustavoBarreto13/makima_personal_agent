@@ -44,9 +44,12 @@ _VALID_VERDICTS = {"persist", "pause", "pivot"}
 _EXP_FIELDS = [
     "id", "title", "why", "hypothesis", "cadence", "start_date", "end_date",
     "status", "paused_at", "paused_period_days", "verdict", "review",
-    "created_at", "updated_at",
+    "goal_id", "created_at", "updated_at",
 ]
 _EXP_COLUMNS = ", ".join(_EXP_FIELDS)
+# Versão qualificada com alias `te` — usada nas queries que fazem LEFT JOIN em `goals`
+# (Metas, spec 030), onde vários nomes de coluna colidem (id, title, why, status, review…).
+_EXP_COLUMNS_Q = ", ".join(f"te.{f}" for f in _EXP_FIELDS)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -103,6 +106,9 @@ def _serialize_experiment(row: dict, logs: Optional[list] = None, *, today: Opti
         "status": row["status"],
         "verdict": row.get("verdict"),
         "review": row.get("review"),
+        # Vínculo com uma Meta (spec 030) — opcional; `goal_title` vem do LEFT JOIN na leitura.
+        "goal_id": row.get("goal_id"),
+        "goal_title": row.get("goal_title"),
         # Derivados (não persistidos):
         "periods_done": derived["periods_done"],
         "periods_expected": derived["periods_expected"],
@@ -209,12 +215,14 @@ def list_experiments(include_completed: bool = False) -> list:
     Returns:
         Lista de dicionários de experimento (ver :func:`_serialize_experiment`). É uma **listagem**.
     """
-    where = "" if include_completed else "WHERE status <> 'completed'"
+    where = "" if include_completed else "WHERE te.status <> 'completed'"
     exps = run_select(
         f"""
-        SELECT {_EXP_COLUMNS} FROM tiny_experiments
+        SELECT {_EXP_COLUMNS_Q}, g.title AS goal_title
+        FROM tiny_experiments te
+        LEFT JOIN goals g ON g.id = te.goal_id
         {where}
-        ORDER BY (status = 'completed'), start_date DESC, id DESC
+        ORDER BY (te.status = 'completed'), te.start_date DESC, te.id DESC
         """
     )
     if not exps:
@@ -257,7 +265,13 @@ def get_experiment(experiment_id: int) -> dict:
         ``{"status": "error", ...}`` se não existir (o router converte em 400).
     """
     rows = run_select(
-        f"SELECT {_EXP_COLUMNS} FROM tiny_experiments WHERE id = %(id)s", {"id": experiment_id}
+        f"""
+        SELECT {_EXP_COLUMNS_Q}, g.title AS goal_title
+        FROM tiny_experiments te
+        LEFT JOIN goals g ON g.id = te.goal_id
+        WHERE te.id = %(id)s
+        """,
+        {"id": experiment_id},
     )
     if not rows:
         return {"status": "error", "message": "Experimento não encontrado."}

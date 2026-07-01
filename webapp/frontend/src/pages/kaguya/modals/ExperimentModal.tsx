@@ -3,8 +3,8 @@
 // (diária/semanal) e o prazo (início + fim, via DatePicker). Em edição oferece EXCLUIR
 // (hard delete — os check-ins vão junto), com confirmação. Espelha o padrão do HabitModal.
 
-import { useState } from 'react'
-import type { Experiment, ExperimentCadence } from '../types'
+import { useEffect, useState } from 'react'
+import type { Experiment, ExperimentCadence, Goal } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 import { DatePicker } from '../components/DatePicker'
@@ -13,7 +13,8 @@ import { todayISO, addDays, toISO } from '../lib/dateUtils'
 interface ExperimentModalProps {
   mode: 'create' | 'edit'
   experiment?: Experiment
-  // Metas (spec 030, FR-011): quando presente no modo criar, o experimento nasce vinculado a esta meta.
+  // Metas (spec 030, FR-011): quando presente no modo criar (fluxo "+ Novo experimento" a partir
+  // da meta), pré-seleciona esta meta no seletor. O seletor continua editável.
   goalId?: number
   onClose: () => void
   onSaved: () => void
@@ -39,6 +40,14 @@ export function ExperimentModal({ mode, experiment, goalId, onClose, onSaved, on
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  // Vínculo com uma Meta (spec 030) — opcional. Carrega as metas ativas para o seletor e começa
+  // pré-selecionado: prop `goalId` (fluxo a partir da meta) > goal_id atual (edição) > nenhuma.
+  const [goals, setGoals] = useState<Goal[]>([])
+  const [selectedGoal, setSelectedGoal] = useState<number | null>(goalId ?? experiment?.goal_id ?? null)
+  useEffect(() => {
+    kaguyaApi.goals.list(false).then(setGoals).catch(() => setGoals([]))
+  }, [])
+
   const save = async () => {
     if (!title.trim()) { toast('A fórmula não pode ser vazia.', 'err'); return }
     if (!startDate || !endDate) { toast('Informe o início e o fim.', 'err'); return }
@@ -51,9 +60,9 @@ export function ExperimentModal({ mode, experiment, goalId, onClose, onSaved, on
           title: title.trim(), start_date: startDate, end_date: endDate,
           why: why.trim() || null, hypothesis: hypothesis.trim() || null, cadence,
         })
-        // FR-011: criado a partir do contexto de uma meta → já nasce vinculado.
-        if (goalId != null && res.id != null) {
-          try { await kaguyaApi.goals.link(goalId, 'experiment', res.id) }
+        // Nasce vinculado se uma meta estiver selecionada (FR-011 e seletor manual).
+        if (selectedGoal != null && res.id != null) {
+          try { await kaguyaApi.goals.link(selectedGoal, 'experiment', res.id) }
           catch { toast('Experimento criado, mas não foi possível vincular à meta.', 'err') }
         }
         toast('Experimento criado.')
@@ -62,6 +71,14 @@ export function ExperimentModal({ mode, experiment, goalId, onClose, onSaved, on
           title: title.trim(), start_date: startDate, end_date: endDate,
           why: why.trim() || null, hypothesis: hypothesis.trim() || null, cadence,
         })
+        // Reconcilia o vínculo com a meta se ele mudou (vincular à nova, ou desvincular).
+        const original = experiment.goal_id ?? null
+        if (selectedGoal !== original) {
+          try {
+            if (selectedGoal != null) await kaguyaApi.goals.link(selectedGoal, 'experiment', experiment.id)
+            else await kaguyaApi.goals.unlink(original!, 'experiment', experiment.id)
+          } catch { toast('Experimento salvo, mas não foi possível atualizar a meta.', 'err') }
+        }
         toast('Experimento atualizado.')
       }
       onSaved(); onClose()
@@ -126,6 +143,21 @@ export function ExperimentModal({ mode, experiment, goalId, onClose, onSaved, on
               <span className="kg-field-label">Fim</span>
               <DatePicker value={endDate} onChange={setEndDate} />
             </div>
+          </div>
+
+          {/* Vínculo com uma Meta (opcional) — spec 030 */}
+          <div className="kg-field">
+            <span className="kg-field-label">Meta (opcional)</span>
+            <select
+              className="kg-input"
+              value={selectedGoal ?? ''}
+              onChange={(e) => setSelectedGoal(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">Nenhuma meta</option>
+              {goals.map((g) => (
+                <option key={g.id} value={g.id}>{g.title}</option>
+              ))}
+            </select>
           </div>
 
           {/* Excluir (só na edição) */}

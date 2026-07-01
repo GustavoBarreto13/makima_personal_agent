@@ -293,6 +293,9 @@ export interface Experiment {
   status: ExperimentStatus
   verdict: ExperimentVerdict | null   // preenchido na revisão
   review: string | null               // aprendizado registrado ao concluir
+  // Vínculo com uma Meta (spec 030) — opcional; goal_title vem do JOIN na leitura.
+  goal_id: number | null
+  goal_title: string | null
   // Derivados (na resposta, não no banco):
   periods_done: number         // check-ins com done=true
   periods_expected: number     // períodos decorridos menos os pausados
