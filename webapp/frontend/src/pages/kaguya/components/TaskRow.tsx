@@ -1,6 +1,7 @@
 // TaskRow — uma linha de tarefa (guia §4.1/§10). Checkbox com pop, traço de
 // prioridade (PrioFlag), título editável inline, chips e subtarefas ricas
-// expandidas por padrão (cada uma com sua prioridade e descrição).
+// expandidas por padrão. Descrição não aparece como texto: quando há nota, a
+// linha exibe apenas o ícone "note" (abre o modal), tanto no pai quanto na sub.
 
 import { useState } from 'react'
 import type { Task } from '../types'
@@ -61,6 +62,19 @@ export function TaskRow({ task, depth = 0, showProject = false, onToggle, onOpen
             // Clique no texto edita; clique no resto da linha abre o modal.
             <span className="kg-row-title" onClick={() => setEditing(true)}>{task.title}</span>
           )}
+          {/* Indicador de descrição: só um ícone (nunca o texto), pai ou subtarefa.
+              Clicar abre o modal onde a nota vive. */}
+          {task.description && task.description.trim() && (
+            <button
+              className="kg-icon-btn kg-note-flag"
+              style={{ border: 'none', padding: 4 }}
+              onClick={() => onOpen(task)}
+              aria-label="Tem descrição"
+              title="Tem descrição"
+            >
+              <Icon name="note" size={13} />
+            </button>
+          )}
           {/* botão discreto para abrir o modal completo */}
           <button className="kg-icon-btn" style={{ marginLeft: 'auto', border: 'none', padding: 4 }} onClick={() => onOpen(task)} aria-label="Detalhes">
             <Icon name="dots" size={15} />
@@ -71,9 +85,6 @@ export function TaskRow({ task, depth = 0, showProject = false, onToggle, onOpen
         {depth === 0 && task.parent_id !== null && task.parent_title && (
           <div className="today-parent-chip">↳ {task.parent_title}</div>
         )}
-
-        {/* descrição da subtarefa (subtarefas são ricas) */}
-        {depth > 0 && task.description && <div className="kg-sub-desc">{task.description}</div>}
 
         {(task.due_date || task.recurrence_text || (showProject && task.project_name) || (task.tags && task.tags.length > 0)) && (
           <div className="kg-row-chips">

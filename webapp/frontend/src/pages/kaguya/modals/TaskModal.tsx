@@ -127,6 +127,46 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
   // Aniversário repete todo ano automaticamente no backend — escondemos o controle manual.
   const isRecurring = task?.recurrence?.active === true
 
+  // ── Layout do editor de notas (preferência global, lembrada entre tarefas) ─────
+  // Limites de largura do editor (px) — clamp de sanidade ao ler o localStorage e no drag.
+  const NOTE_MIN = 300, NOTE_MAX = 720, NOTE_DEFAULT = 420
+  // Estado inicial lido do localStorage (try/catch: SSR/quota/valor inválido caem no default).
+  const [notesCollapsed, setNotesCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('kg:notes:collapsed') === '1' } catch { return false }
+  })
+  const [noteWidth, setNoteWidth] = useState<number>(() => {
+    try {
+      const raw = Number(localStorage.getItem('kg:notes:width'))
+      if (Number.isFinite(raw) && raw > 0) return Math.min(NOTE_MAX, Math.max(NOTE_MIN, raw))
+    } catch { /* ignore */ }
+    return NOTE_DEFAULT
+  })
+  // Persiste as preferências ao mudar.
+  useEffect(() => {
+    try { localStorage.setItem('kg:notes:collapsed', notesCollapsed ? '1' : '0') } catch { /* ignore */ }
+  }, [notesCollapsed])
+  useEffect(() => {
+    try { localStorage.setItem('kg:notes:width', String(noteWidth)) } catch { /* ignore */ }
+  }, [noteWidth])
+
+  // Arrastar o divisor entre formulário e notas. Reaproveita o padrão de
+  // mousedown→mousemove→mouseup do DayTimeline: registra listeners na window e
+  // limpa no mouseup. Arrastar para a ESQUERDA aumenta o editor (base + Δ negativo).
+  const startResize = (startX: number, baseWidth: number) => {
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.min(NOTE_MAX, Math.max(NOTE_MIN, baseWidth + (startX - ev.clientX)))
+      setNoteWidth(next)
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.style.userSelect = ''
+    }
+    document.body.style.userSelect = 'none'   // evita seleção de texto durante o drag
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
   // Abre a tarefa referenciada por um chip [[id|Título]] nas notas.
   // Busca a task pelo id, fecha este modal e abre o da task mencionada via onOpenTask.
   const openMentionedTask = async (id: number) => {
@@ -322,10 +362,22 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
 
   return (
     <div className="kg-scrim" onClick={onClose}>
-      {/* kg-modal-wide: versão expandida do modal com duas colunas (config + notas) */}
-      <div className="kg-modal kg-modal-wide" onClick={(e) => e.stopPropagation()}>
+      {/* kg-modal-wide: duas colunas (config + notas). Colapsado → só o formulário. */}
+      <div className={`kg-modal kg-modal-wide${notesCollapsed ? ' kg-notes-collapsed' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="kg-modal-head">
           <h3>{mode === 'create' ? 'Nova tarefa' : 'Editar tarefa'}</h3>
+          {/* Reabrir o editor de notas quando colapsado. Acento quando há nota escondida. */}
+          {notesCollapsed && (
+            <button
+              className={`kg-icon-btn kg-notes-reopen${description.trim() ? ' has-note' : ''}`}
+              style={{ marginLeft: 'auto' }}
+              onClick={() => setNotesCollapsed(false)}
+              aria-label="Mostrar notas"
+              title="Mostrar notas"
+            >
+              <Icon name="note" />
+            </button>
+          )}
           <button className="kg-icon-btn" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
         </div>
 
@@ -595,14 +647,28 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
           )}
         </div>{/* fim .kg-modal-body (coluna esquerda) */}
 
-        {/* Coluna direita: editor de notas em Markdown com @menções e [[tasks]] */}
-        <div className="kg-note-pane">
-          <MarkdownNotesEditor
-            value={description}
-            onChange={setDescription}
-            onOpenTask={openMentionedTask}
-          />
-        </div>
+        {/* Divisor arrastável + coluna de notas — escondidos quando colapsado.
+            Arrastar redistribui a largura entre o formulário e o editor. */}
+        {!notesCollapsed && (
+          <>
+            <div
+              className="kg-split-resize"
+              onMouseDown={(e) => { e.preventDefault(); startResize(e.clientX, noteWidth) }}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Redimensionar notas"
+            />
+            {/* Coluna direita: editor de notas Markdown com @menções e [[tasks]] */}
+            <div className="kg-note-pane" style={{ flex: `0 0 ${noteWidth}px` }}>
+              <MarkdownNotesEditor
+                value={description}
+                onChange={setDescription}
+                onOpenTask={openMentionedTask}
+                onCollapse={() => setNotesCollapsed(true)}
+              />
+            </div>
+          </>
+        )}
 
         </div>{/* fim .kg-modal-split */}
 

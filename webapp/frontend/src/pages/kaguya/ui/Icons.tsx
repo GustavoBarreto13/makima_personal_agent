@@ -34,6 +34,8 @@ const PATHS: Record<string, ReactNode> = {
   flask: <><path d="M9 3h6M10 3v6.5L4.6 18a2 2 0 0 0 1.7 3h11.4a2 2 0 0 0 1.7-3L14 9.5V3" /><path d="M7 14h10" /></>,
   // Alvo — Metas (spec 030), estilo Lucide, viewBox 24×24.
   target: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></>,
+  // Documento com linhas ("file-text") — indica que a tarefa tem descrição/nota.
+  note: <><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /><path d="M9 9h1M9 13h6M9 17h6" /></>,
 
   // Ícones do Calendário (fatia 019) — adicionados para CalendarsAside, EventPopover e ContextMenu
   // Olho aberto — mostra/esconde um calendário na sidebar

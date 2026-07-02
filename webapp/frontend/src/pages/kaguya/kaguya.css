@@ -254,7 +254,10 @@
 
 /* subtarefas ricas (expandidas por padrão) */
 .kg-subtasks { margin: 4px 0 2px 28px; border-left: 2px solid var(--line); padding-left: 10px; }
-.kg-sub-desc { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+
+/* Indicador discreto de "tem descrição" na linha da tarefa (só ícone, sem texto) */
+.kg-note-flag { color: var(--ink-3); }
+.kg-note-flag:hover { color: var(--ink); }
 
 /* chips */
 .kg-chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); background: var(--card-2); border: 1px solid var(--line-2); border-radius: 6px; padding: 1px 6px; }
@@ -330,8 +333,13 @@
    .kg-modal-split: flex-row que divide config (esq.) e notas (dir.).
    .kg-note-pane: coluna direita com o editor de Markdown. */
 
-/* Modal expandido: aumenta a largura máxima para acomodar as duas colunas */
-.kg-modal.kg-modal-wide { max-width: 900px; }
+/* Modal expandido: largura máxima com folga para o editor de notas crescer.
+   Colapsado (só formulário): encolhe para não deixar um vão vazio à direita. */
+.kg-modal.kg-modal-wide { max-width: min(1040px, 96vw); }
+.kg-modal.kg-modal-wide.kg-notes-collapsed { max-width: 600px; }
+
+/* Botão de reabrir notas no cabeçalho (só no estado colapsado); acento se há nota escondida */
+.kg-notes-reopen.has-note { color: var(--kg); }
 
 /* Flex row: esq. (formulário) + dir. (notas). min-height: 0 evita que o flex
    item cresça além do max-height do pai (evita overflow invisível). */
@@ -343,27 +351,39 @@
   overflow: hidden;
 }
 
-/* Coluna esquerda (formulário de configuração): largura fixa, rola verticalmente */
+/* Coluna esquerda (formulário): ocupa o espaço restante; a coluna de notas é a
+   dimensão controlada (flex-basis via style inline), então arrastar redistribui. */
 .kg-modal-split > .kg-modal-body {
-  flex: 0 0 360px;   /* largura fixa de 360px — cabe confortavelmente no modal */
+  flex: 1 1 auto;
+  min-width: 320px;  /* nunca fica estreita demais para o formulário */
   overflow-y: auto;  /* rola quando o formulário é longo */
-  border-right: 1px solid var(--line-2); /* divisor visual entre as colunas */
 }
 
-/* Coluna direita (editor de notas): ocupa o resto e nunca estoura o container */
+/* Divisor arrastável entre as colunas (substitui a antiga border-right) */
+.kg-split-resize {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  background: var(--line-2);
+  transition: background .12s;
+}
+.kg-split-resize:hover { background: var(--kg); }
+
+/* Coluna direita (editor de notas): largura definida por flex-basis inline (noteWidth) */
 .kg-note-pane {
-  flex: 1;
   min-width: 0;      /* permite encolher sem overflow */
   display: flex;
   flex-direction: column;
   overflow: hidden;  /* editor e preview rolam internamente */
 }
 
-/* Em telas estreitas (<700px), empilha as colunas verticalmente */
+/* Em telas estreitas (<700px), empilha as colunas verticalmente e desabilita o
+   redimensionamento por largura (a alça vira um divisor horizontal fino). */
 @media (max-width: 700px) {
   .kg-modal-split { flex-direction: column; }
-  .kg-modal-split > .kg-modal-body { flex: none; border-right: none; border-bottom: 1px solid var(--line-2); }
-  .kg-note-pane { flex: none; min-height: 260px; }
+  .kg-modal-split > .kg-modal-body { flex: none; border-bottom: 1px solid var(--line-2); }
+  .kg-split-resize { display: none; }
+  /* anula o flex-basis inline (largura) quando empilhado */
+  .kg-note-pane { flex: none !important; min-height: 260px; border-top: 1px solid var(--line-2); }
 }
 
 /* ─── Editor de notas Markdown ────────────────────────────────────────────── */
@@ -385,6 +405,9 @@
   border-bottom: 1px solid var(--line-2);
   flex-shrink: 0;  /* não encolhe: sempre visível mesmo com conteúdo longo */
 }
+
+/* Grupo direito da toolbar de notas: toggle + botão de fechar, alinhados */
+.kg-note-actions { display: flex; align-items: center; gap: 8px; }
 
 /* Toggle de aba menor: .kg-note-toggle sobrescreve o tamanho padrão do .kg-segment */
 .kg-note-toggle .kg-seg-opt { padding: 3px 10px; font-size: 11.5px; }

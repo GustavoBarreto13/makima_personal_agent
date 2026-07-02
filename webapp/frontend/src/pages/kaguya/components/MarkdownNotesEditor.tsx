@@ -10,6 +10,7 @@
 import { useState } from 'react'
 import { MentionTextarea } from './MentionTextarea'
 import { MarkdownPreview } from './MarkdownPreview'
+import { Icon } from '../ui/Icons'
 
 // ── Tipos de aba disponíveis no editor ────────────────────────────────────────
 
@@ -24,11 +25,13 @@ interface MarkdownNotesEditorProps {
   onChange: (v: string) => void
   // Callback chamado quando o usuário clica num chip de task para reabrir a tarefa referenciada
   onOpenTask?: (id: number) => void
+  // Callback opcional para fechar/colapsar o painel de notas (mostra o "x" no cabeçalho)
+  onCollapse?: () => void
 }
 
 // ── Componente ─────────────────────────────────────────────────────────────────
 
-export function MarkdownNotesEditor({ value, onChange, onOpenTask }: MarkdownNotesEditorProps) {
+export function MarkdownNotesEditor({ value, onChange, onOpenTask, onCollapse }: MarkdownNotesEditorProps) {
   // Aba ativa: "write" (edição) ou "preview" (visualização renderizada)
   const [tab, setTab] = useState<NoteTab>('write')
 
@@ -42,25 +45,41 @@ export function MarkdownNotesEditor({ value, onChange, onOpenTask }: MarkdownNot
         {/* Label "NOTAS" no estilo dos outros campos do modal */}
         <span className="kg-field-label">Notas</span>
 
-        {/* Toggle segmentado Escrever / Visualizar */}
-        {/* Reusa .kg-segment e .kg-seg-opt que já existem no kaguya.css */}
-        <div className="kg-segment kg-note-toggle">
-          <button
-            type="button"
-            className={`kg-seg-opt${tab === 'write' ? ' active' : ''}`}
-            onClick={() => setTab('write')}
-            aria-pressed={tab === 'write'}
-          >
-            Escrever
-          </button>
-          <button
-            type="button"
-            className={`kg-seg-opt${tab === 'preview' ? ' active' : ''}`}
-            onClick={() => setTab('preview')}
-            aria-pressed={tab === 'preview'}
-          >
-            Visualizar
-          </button>
+        {/* Grupo direito: toggle Escrever/Visualizar + botão de fechar o painel */}
+        <div className="kg-note-actions">
+          {/* Toggle segmentado Escrever / Visualizar */}
+          {/* Reusa .kg-segment e .kg-seg-opt que já existem no kaguya.css */}
+          <div className="kg-segment kg-note-toggle">
+            <button
+              type="button"
+              className={`kg-seg-opt${tab === 'write' ? ' active' : ''}`}
+              onClick={() => setTab('write')}
+              aria-pressed={tab === 'write'}
+            >
+              Escrever
+            </button>
+            <button
+              type="button"
+              className={`kg-seg-opt${tab === 'preview' ? ' active' : ''}`}
+              onClick={() => setTab('preview')}
+              aria-pressed={tab === 'preview'}
+            >
+              Visualizar
+            </button>
+          </div>
+
+          {/* Fechar o painel de notas (mostra o modal só com o formulário) */}
+          {onCollapse && (
+            <button
+              type="button"
+              className="kg-icon-btn"
+              onClick={onCollapse}
+              aria-label="Fechar notas"
+              title="Fechar notas"
+            >
+              <Icon name="x" size={15} />
+            </button>
+          )}
         </div>
       </div>
 

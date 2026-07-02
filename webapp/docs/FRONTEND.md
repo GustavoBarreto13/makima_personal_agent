@@ -248,7 +248,11 @@ do app: sidebar própria com listas/grupos, smart-lists, Command Palette (⌘K) 
 - **Inputs custom obrigatórios:** `DatePicker`/`TimePicker`/`MiniCalendar` no lugar dos nativos
   (ver "Padrões do frontend" em `webapp/CLAUDE.md`).
 - **Notas Markdown** por tarefa (`MarkdownNotesEditor` + `react-markdown`/`remark-gfm`), com
-  chips `[[id|Título]]` que reabrem tarefas mencionadas.
+  chips `[[id|Título]]` que reabrem tarefas mencionadas. No `TaskModal` o editor é
+  **redimensionável** (divisor arrastável entre formulário e notas) e **colapsável**
+  (fechar → modal só de formulário; reabrir pelo ícone de nota no cabeçalho) — largura e
+  estado ficam em `localStorage` (`kg:notes:width`, `kg:notes:collapsed`). Na lista, a
+  descrição **não** aparece como texto: a linha mostra só o ícone `note` (abre o modal).
 - **Preferências** em `localStorage`: `kg-tweaks` (tema etc.) e `kaguya:kanban:last-list`
   (última lista aberta no Kanban).
 - API: `kaguyaApi.ts` — todos os `/api/tasks/*`.
