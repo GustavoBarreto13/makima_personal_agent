@@ -26,12 +26,22 @@ const SORT_LABELS: Record<SortMode, string> = {
 
 const SORT_CYCLE: SortMode[] = ['manual', 'due', 'prio']
 
-// Ordenação lembrada POR GRUPO (uma preferência para o board de lista do grupo inteiro).
+// Preferências lembradas POR GRUPO (uma por board de lista do grupo inteiro).
+// Chaves: kg:grouplist:{sort,prio,done}:<groupId>.
 const readSort = (groupId: number): SortMode => {
   try {
     const v = localStorage.getItem(`kg:grouplist:sort:${groupId}`)
     return (SORT_CYCLE as string[]).includes(v ?? '') ? (v as SortMode) : 'manual'
   } catch { return 'manual' }
+}
+const readPrio = (groupId: number): number => {
+  try {
+    const v = Number(localStorage.getItem(`kg:grouplist:prio:${groupId}`))
+    return v >= 0 && v <= 3 ? v : 0
+  } catch { return 0 }
+}
+const readDone = (groupId: number): boolean => {
+  try { return localStorage.getItem(`kg:grouplist:done:${groupId}`) === '1' } catch { return false }
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -64,18 +74,31 @@ export function GroupListScreen({
   // ── Estado da toolbar (único para todas as seções) ────────────────────────
 
   // prioFilter: nível mínimo de prioridade (0=tudo, 1=Baixa+, 2=Média+, 3=Alta).
-  const [prioFilter, setPrioFilter] = useState(0)
+  const [prioFilter, setPrioFilterState] = useState<number>(() => readPrio(groupId))
 
   // showCompleted: visibilidade da seção de concluídas em TODAS as listas.
-  const [showCompleted, setShowCompleted] = useState(false)
+  const [showCompleted, setShowCompletedState] = useState<boolean>(() => readDone(groupId))
 
   // sortMode: ordenação aplicada em TODAS as listas — lembrada por grupo.
   const [sortMode, setSortMode] = useState<SortMode>(() => readSort(groupId))
 
-  // Ao trocar de grupo (groupId muda sem remontar), relê a ordenação salva daquele grupo.
-  useEffect(() => { setSortMode(readSort(groupId)) }, [groupId])
+  // Ao trocar de grupo (groupId muda sem remontar), relê as preferências salvas daquele grupo.
+  useEffect(() => {
+    setPrioFilterState(readPrio(groupId))
+    setShowCompletedState(readDone(groupId))
+    setSortMode(readSort(groupId))
+  }, [groupId])
 
-  // Cicla a ordenação e persiste a escolha na chave do grupo atual.
+  // Setters que persistem a escolha na chave do grupo atual.
+  const setPrioFilter = (v: number) => {
+    setPrioFilterState(v)
+    try { localStorage.setItem(`kg:grouplist:prio:${groupId}`, String(v)) } catch { /* ignore */ }
+  }
+  const toggleShowCompleted = () => {
+    const next = !showCompleted
+    setShowCompletedState(next)
+    try { localStorage.setItem(`kg:grouplist:done:${groupId}`, next ? '1' : '0') } catch { /* ignore */ }
+  }
   const cycleSort = () => {
     const next = SORT_CYCLE[(SORT_CYCLE.indexOf(sortMode) + 1) % SORT_CYCLE.length]
     setSortMode(next)
@@ -147,7 +170,7 @@ export function GroupListScreen({
         <button
           type="button"
           className={`kg-toolbar-chip${showCompleted ? ' active' : ''}`}
-          onClick={() => setShowCompleted(v => !v)}
+          onClick={toggleShowCompleted}
         >
           {showCompleted ? 'Ocultar concluídas' : 'Mostrar concluídas'}
         </button>

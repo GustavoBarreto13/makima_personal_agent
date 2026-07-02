@@ -23,13 +23,23 @@ const SORT_LABELS: Record<SortMode, string> = {
 
 const SORT_CYCLE: SortMode[] = ['manual', 'due', 'prio']
 
-// Ordenação é lembrada POR LISTA em localStorage (o shell não remonta a ListScreen
-// ao trocar de lista, só muda o prop projectId — por isso há também um useEffect).
+// Preferências da toolbar são lembradas POR LISTA em localStorage (o shell não remonta
+// a ListScreen ao trocar de lista, só muda o prop projectId — por isso há um useEffect
+// que relê tudo ao trocar). Chaves: kg:list:{sort,prio,done}:<projectId>.
 const readSort = (projectId: number): SortMode => {
   try {
     const v = localStorage.getItem(`kg:list:sort:${projectId}`)
     return (SORT_CYCLE as string[]).includes(v ?? '') ? (v as SortMode) : 'manual'
   } catch { return 'manual' }
+}
+const readPrio = (projectId: number): number => {
+  try {
+    const v = Number(localStorage.getItem(`kg:list:prio:${projectId}`))
+    return v >= 0 && v <= 3 ? v : 0
+  } catch { return 0 }
+}
+const readDone = (projectId: number): boolean => {
+  try { return localStorage.getItem(`kg:list:done:${projectId}`) === '1' } catch { return false }
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -54,18 +64,31 @@ export function ListScreen({
   // ── Estado da toolbar ─────────────────────────────────────────────────────
 
   // prioFilter: nível mínimo de prioridade exibido (0 = todos, 1 = Baixa+, 2 = Média+, 3 = Alta).
-  const [prioFilter, setPrioFilter] = useState(0)
+  const [prioFilter, setPrioFilterState] = useState<number>(() => readPrio(projectId))
 
   // showCompleted: controla a visibilidade da seção de concluídas na árvore.
-  const [showCompleted, setShowCompleted] = useState(false)
+  const [showCompleted, setShowCompletedState] = useState<boolean>(() => readDone(projectId))
 
   // sortMode: ordenação aplicada em cada nível da árvore — lembrada por lista.
   const [sortMode, setSortMode] = useState<SortMode>(() => readSort(projectId))
 
-  // Ao trocar de lista (projectId muda sem remontar), relê a ordenação salva daquela lista.
-  useEffect(() => { setSortMode(readSort(projectId)) }, [projectId])
+  // Ao trocar de lista (projectId muda sem remontar), relê as preferências salvas daquela lista.
+  useEffect(() => {
+    setPrioFilterState(readPrio(projectId))
+    setShowCompletedState(readDone(projectId))
+    setSortMode(readSort(projectId))
+  }, [projectId])
 
-  // Cicla a ordenação e persiste a escolha na chave da lista atual.
+  // Setters que persistem a escolha na chave da lista atual.
+  const setPrioFilter = (v: number) => {
+    setPrioFilterState(v)
+    try { localStorage.setItem(`kg:list:prio:${projectId}`, String(v)) } catch { /* ignore */ }
+  }
+  const toggleShowCompleted = () => {
+    const next = !showCompleted
+    setShowCompletedState(next)
+    try { localStorage.setItem(`kg:list:done:${projectId}`, next ? '1' : '0') } catch { /* ignore */ }
+  }
   const cycleSort = () => {
     const next = SORT_CYCLE[(SORT_CYCLE.indexOf(sortMode) + 1) % SORT_CYCLE.length]
     setSortMode(next)
@@ -106,7 +129,7 @@ export function ListScreen({
         <button
           type="button"
           className={`kg-toolbar-chip${showCompleted ? ' active' : ''}`}
-          onClick={() => setShowCompleted(v => !v)}
+          onClick={toggleShowCompleted}
         >
           {showCompleted ? 'Ocultar concluídas' : 'Mostrar concluídas'}
         </button>
