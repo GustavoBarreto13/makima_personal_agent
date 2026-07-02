@@ -6,7 +6,7 @@
 // Refatorado para permitir reutilização por GroupListScreen (que precisa de uma
 // única toolbar para N ListSections). O comportamento visível é idêntico ao anterior.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { Task } from '../types'
 import { Icon } from '../ui/Icons'
 import { ListSection } from '../components/ListSection'
@@ -22,6 +22,15 @@ const SORT_LABELS: Record<SortMode, string> = {
 }
 
 const SORT_CYCLE: SortMode[] = ['manual', 'due', 'prio']
+
+// Ordenação é lembrada POR LISTA em localStorage (o shell não remonta a ListScreen
+// ao trocar de lista, só muda o prop projectId — por isso há também um useEffect).
+const readSort = (projectId: number): SortMode => {
+  try {
+    const v = localStorage.getItem(`kg:list:sort:${projectId}`)
+    return (SORT_CYCLE as string[]).includes(v ?? '') ? (v as SortMode) : 'manual'
+  } catch { return 'manual' }
+}
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -50,8 +59,18 @@ export function ListScreen({
   // showCompleted: controla a visibilidade da seção de concluídas na árvore.
   const [showCompleted, setShowCompleted] = useState(false)
 
-  // sortMode: ordenação aplicada em cada nível da árvore.
-  const [sortMode, setSortMode] = useState<SortMode>('manual')
+  // sortMode: ordenação aplicada em cada nível da árvore — lembrada por lista.
+  const [sortMode, setSortMode] = useState<SortMode>(() => readSort(projectId))
+
+  // Ao trocar de lista (projectId muda sem remontar), relê a ordenação salva daquela lista.
+  useEffect(() => { setSortMode(readSort(projectId)) }, [projectId])
+
+  // Cicla a ordenação e persiste a escolha na chave da lista atual.
+  const cycleSort = () => {
+    const next = SORT_CYCLE[(SORT_CYCLE.indexOf(sortMode) + 1) % SORT_CYCLE.length]
+    setSortMode(next)
+    try { localStorage.setItem(`kg:list:sort:${projectId}`, next) } catch { /* ignore */ }
+  }
 
   // ── Renderização ──────────────────────────────────────────────────────────
 
@@ -97,10 +116,7 @@ export function ListScreen({
           type="button"
           className="kg-toolbar-chip kg-toolbar-sort"
           title={`Ordenação: ${SORT_LABELS[sortMode]}`}
-          onClick={() => {
-            const idx = SORT_CYCLE.indexOf(sortMode)
-            setSortMode(SORT_CYCLE[(idx + 1) % SORT_CYCLE.length])
-          }}
+          onClick={cycleSort}
         >
           <Icon name="sort" size={13} />
           {SORT_LABELS[sortMode]}

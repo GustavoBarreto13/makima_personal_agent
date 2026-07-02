@@ -9,7 +9,7 @@
 // dentro de cada lista (igual à ListScreen individual), porque o `TaskTreeAPI`
 // de cada `ListSection` envia o `project_id` correto ao chamar moveTask/reorder.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { Task } from '../types'
 import { Icon } from '../ui/Icons'
 import { ListSection } from '../components/ListSection'
@@ -25,6 +25,14 @@ const SORT_LABELS: Record<SortMode, string> = {
 }
 
 const SORT_CYCLE: SortMode[] = ['manual', 'due', 'prio']
+
+// Ordenação lembrada POR GRUPO (uma preferência para o board de lista do grupo inteiro).
+const readSort = (groupId: number): SortMode => {
+  try {
+    const v = localStorage.getItem(`kg:grouplist:sort:${groupId}`)
+    return (SORT_CYCLE as string[]).includes(v ?? '') ? (v as SortMode) : 'manual'
+  } catch { return 'manual' }
+}
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -49,7 +57,7 @@ export interface GroupListScreenProps {
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export function GroupListScreen({
-  groupName, lists,
+  groupId, groupName, lists,
   reloadKey, onOpenTask, onNewTask, toast,
 }: GroupListScreenProps) {
 
@@ -61,8 +69,18 @@ export function GroupListScreen({
   // showCompleted: visibilidade da seção de concluídas em TODAS as listas.
   const [showCompleted, setShowCompleted] = useState(false)
 
-  // sortMode: ordenação aplicada em TODAS as listas.
-  const [sortMode, setSortMode] = useState<SortMode>('manual')
+  // sortMode: ordenação aplicada em TODAS as listas — lembrada por grupo.
+  const [sortMode, setSortMode] = useState<SortMode>(() => readSort(groupId))
+
+  // Ao trocar de grupo (groupId muda sem remontar), relê a ordenação salva daquele grupo.
+  useEffect(() => { setSortMode(readSort(groupId)) }, [groupId])
+
+  // Cicla a ordenação e persiste a escolha na chave do grupo atual.
+  const cycleSort = () => {
+    const next = SORT_CYCLE[(SORT_CYCLE.indexOf(sortMode) + 1) % SORT_CYCLE.length]
+    setSortMode(next)
+    try { localStorage.setItem(`kg:grouplist:sort:${groupId}`, next) } catch { /* ignore */ }
+  }
 
   // ── Estado vazio: grupo sem listas ────────────────────────────────────────
 
@@ -139,10 +157,7 @@ export function GroupListScreen({
           type="button"
           className="kg-toolbar-chip kg-toolbar-sort"
           title={`Ordenação: ${SORT_LABELS[sortMode]}`}
-          onClick={() => {
-            const idx = SORT_CYCLE.indexOf(sortMode)
-            setSortMode(SORT_CYCLE[(idx + 1) % SORT_CYCLE.length])
-          }}
+          onClick={cycleSort}
         >
           <Icon name="sort" size={13} />
           {SORT_LABELS[sortMode]}
