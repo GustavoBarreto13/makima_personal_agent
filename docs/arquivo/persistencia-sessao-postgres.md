@@ -1,5 +1,7 @@
 # Plano: Persistência de Sessão com PostgreSQL
 
+> ✅ **IMPLEMENTADO.** Este plano já foi executado: o coordinator usa `DatabaseSessionService` persistido no PostgreSQL (uma sessão por `chat_id` + domínio) — o histórico sobrevive a reinícios do container. O texto abaixo é mantido como registro histórico do plano original.
+
 ## Contexto
 
 Atualmente o Makima usa `InMemoryRunner` do Google ADK — todas as sessões (histórico de conversa e memória de longo prazo) são perdidas quando o container reinicia. O objetivo é substituir o runner por `DatabaseSessionService` apontando para um PostgreSQL externo, adicionado ao `docker-compose.yml` como serviço separado.

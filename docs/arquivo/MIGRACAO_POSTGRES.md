@@ -78,9 +78,9 @@ for t in ['transactions','subscriptions','accounts','credit_cards','loans','budg
 
 > ✅ **Já feito em 2026-06-28** — o bucket `gs://makima-backups` existe em `southamerica-east1` com lifecycle de 30 dias. Esta seção fica só como referência.
 
-O VPS **não tem `gcloud`** instalado, então o bucket foi criado via Python de dentro do container `makima-web` (que já tem as credenciais GCP). O passo a passo completo de backup — incluindo verificação e restauração — está em [`docs/BACKUP_POSTGRES.md`](BACKUP_POSTGRES.md).
+O VPS **não tem `gcloud`** instalado, então o bucket foi criado via Python de dentro do container `makima-web` (que já tem as credenciais GCP). O passo a passo completo de backup — incluindo verificação e restauração — está em [`docs/referencia/BACKUP_POSTGRES.md`](../referencia/BACKUP_POSTGRES.md).
 
-Caso precise recriar o bucket no futuro, use o snippet de criação documentado em `docs/BACKUP_POSTGRES.md` (lembrando que o lifecycle exige o escopo `devstorage.full_control`, não o `read_write`).
+Caso precise recriar o bucket no futuro, use o snippet de criação documentado em `docs/referencia/BACKUP_POSTGRES.md` (lembrando que o lifecycle exige o escopo `devstorage.full_control`, não o `read_write`).
 
 ---
 
@@ -141,7 +141,7 @@ Dump gerado: 701.8 KB
   backups/backup_20260628_150157.sql.gz (701.8 KB) — 2026-06-28 15:01
 ```
 
-> Documentação completa do backup (como roda sozinho, como verificar e como **restaurar**): [`docs/BACKUP_POSTGRES.md`](BACKUP_POSTGRES.md).
+> Documentação completa do backup (como roda sozinho, como verificar e como **restaurar**): [`docs/referencia/BACKUP_POSTGRES.md`](../referencia/BACKUP_POSTGRES.md).
 
 ---
 

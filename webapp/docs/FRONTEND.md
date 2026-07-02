@@ -8,12 +8,15 @@
 | TypeScript | ~5.8 (strict) | Tipagem estática |
 | Vite | 6 | Bundler / dev server |
 | react-router-dom | 7 | Roteamento client-side |
-| Tailwind CSS | 3 | Utilitários CSS (nas páginas legadas e shell Makima) |
+| Tailwind CSS | 3 | Utilitários CSS (nas páginas legadas e no `Layout` global) |
 | PostCSS + autoprefixer | — | Processamento do Tailwind |
+| @dnd-kit (core/sortable/utilities) | 6/10/3 | Drag-and-drop (shell Kaguya: listas, Kanban, Eisenhower) |
+| react-markdown + remark-gfm | 10/4 | Renderização das notas Markdown de tarefas (shell Kaguya) |
+| Vitest | 4 | Testes unitários (`npm run test` — ex.: parser de quick-add da Kaguya) |
 
 **Sem bibliotecas de chart ou de data.** Todos os gráficos (donut, sparkline, barras, área, heatmap,
 estrelas) são SVG/CSS escritos à mão. Todas as datas usam `Intl` / `toLocaleDateString('pt-BR', …)`
-nativos do browser.
+nativos do browser (ou os helpers próprios de cada shell, como `kaguya/lib/dateUtils.ts`).
 
 **Sem Redux, Zustand ou React Query.** Estado local por `useState` + `useEffect`. Cada shell carrega
 seus dados no mount e passa para os filhos via props; mutações refazem a carga local.
@@ -39,12 +42,23 @@ webapp/frontend/
     │   ├── nami/             # shell de finanças (Nami)
     │   ├── violet/           # shell de diário (Violet)
     │   ├── frieren/          # shell de livros (Frieren)
-    │   └── *.tsx             # páginas legadas de finanças (Dashboard, Transactions, etc.)
+    │   ├── kaguya/           # shell de tarefas/agenda (Kaguya)
+    │   ├── akane/            # shell de filmes (Akane)
+    │   ├── marin/            # shell de animes (Marin)
+    │   ├── mai/              # shell de séries de TV (Mai)
+    │   ├── komi/             # shell de pessoas (Komi)
+    │   ├── makima/           # shell do Hub — rota / em tela cheia (Makima)
+    │   └── *.tsx             # páginas legadas de finanças (Transactions, Accounts, etc.)
     └── public/               # imagens copiadas para dist/ pelo Vite
-        ├── nami.jpg
-        ├── nami-hero.png
+        ├── nami.jpg / nami.png / nami-hero.png
         ├── violet.png
-        └── frieren.png
+        ├── frieren.png
+        ├── kaguya.jpg
+        ├── akane.png
+        ├── marin.png
+        ├── mai.png
+        ├── komi.png
+        └── makima.png
 ```
 
 ## Inicialização e autenticação
@@ -68,11 +82,18 @@ return <BrowserRouter>...</BrowserRouter>;
 
 ## Rotas
 
+Na ordem de registro do `App.tsx` (os shells vêm **antes** do catch-all `/*`):
+
 ```
-/nami/*          → NamiShell      (finanças — canônico)
-/journal/*       → VioletShell    (diário pessoal)
 /books/*         → FrierenShell   (livros)
-/                → Dashboard      (legado — não linkado na sidebar)
+/journal/*       → VioletShell    (diário pessoal)
+/nami/*          → NamiShell      (finanças — canônico)
+/tasks/*         → KaguyaShell    (tarefas + agenda)
+/movies/*        → AkaneShell     (filmes)
+/animes/*        → MarinShell     (animes)
+/series/*        → MaiShell       (séries de TV)
+/people/*        → KomiShell      (pessoas e contatos)
+/                → MakimaShell    (Hub — tela cheia, SEM Layout global)
 /transactions    → Transactions   (legado — não linkado na sidebar)
 /accounts        → Accounts       (legado — não linkado na sidebar)
 /cards           → Cards          (legado — não linkado na sidebar)
@@ -81,16 +102,18 @@ return <BrowserRouter>...</BrowserRouter>;
 /subscriptions   → Subscriptions  (legado — não linkado na sidebar)
 ```
 
-> **Páginas legadas:** as rotas `/`, `/transactions`, `/accounts`, `/cards`, `/loans`, `/budgets`
-> e `/subscriptions` ainda existem no React Router mas **não aparecem na sidebar** do app.
-> A sidebar Makima (`components/Layout.tsx`) aponta para `/nami` (e hash sub-rotas), `/books` e
-> `/journal`. O shell Nami (`pages/nami/`) é a implementação canônica e atual das finanças.
+> **Páginas legadas:** as rotas `/transactions`, `/accounts`, `/cards`, `/loans`, `/budgets`
+> e `/subscriptions` ainda existem no React Router (dentro do `Layout` global) mas **não
+> aparecem na sidebar** do app. A rota `/` deixou de ser o Dashboard de finanças — hoje ela
+> renderiza o `MakimaShell` (Hub). `Dashboard.tsx` ainda existe em `pages/` mas não está
+> mais roteado. O shell Nami (`pages/nami/`) é a implementação canônica e atual das finanças.
 
-## Os três shells
+## Os nove shells
 
 Cada domínio implementado tem um "shell": um componente raiz que cuida da navegação interna,
 carregamento de dados, theming e modais. Eles **não usam React Router internamente** — o roteamento
-dentro de cada shell é por estado interno ou hash de URL.
+dentro de cada shell é por estado interno ou hash de URL (exceção: o `MakimaShell` é uma tela
+única, sem navegação interna).
 
 ---
 
@@ -196,6 +219,144 @@ wrapper typed não suporta `multipart/form-data`.
 | `Stars.tsx` | Avaliação em estrelas fracionárias via clip SVG |
 | `Icons.tsx` | Set de ícones SVG inline |
 
+---
+
+### KaguyaShell — Tarefas e agenda (`src/pages/kaguya/`)
+
+**Roteamento:** estado interno `{view, param}` (tipo `KaguyaView` em `types.ts`). O maior shell
+do app: sidebar própria com listas/grupos, smart-lists, Command Palette (⌘K) e TweaksPanel.
+
+**Telas (screens/):**
+
+| View | Tela | O que mostra |
+|---|---|---|
+| `today` | TodayScreen | Meu Dia — plano do dia, pendências de ontem, sugestões, capacity bar e time-blocking |
+| `list` | ListScreen | Tarefas da lista em árvore (subtarefas, quick-add com datas/recorrência/#tags, atalhos de teclado) |
+| `group-list` | GroupListScreen | Tarefas de todas as listas de um grupo, em visão de lista |
+| `kanban` | KanbanScreen | Board Kanban da lista, com views configuráveis (spec 024) |
+| `group` | GroupBoardScreen | Board agregado do grupo — colunas de mesmo nome unificadas (spec 025) |
+| `calendar` | CalendarScreen | Calendário mês/semana: tarefas datadas, ocorrências virtuais e eventos Google (Calendar Hub) |
+| `eisenhower` | EisenhowerScreen | Matriz 2×2 urgência × prioridade com drag-and-drop |
+| `habits` | HabitsScreen | Hábitos com anel de consistência, check-in de hoje e heatmap anual |
+| `experiments` | ExperimentsScreen / ExperimentDetailScreen | Tiny Experiments (spec 029): aderência, check-ins, pausa/retomada e revisão |
+| `goals` | GoalsScreen / GoalDetailScreen | Metas (spec 030): agrupadas por área da vida, métrica, marcos e movimentos vinculados |
+| `filter` | FilterScreen | Smart-list salva (filtros), com aviso de referência órfã |
+| `trash` | TrashScreen | Lixeira — restaurar tarefas soft-deletadas |
+
+**Particularidades:**
+- **DnD** com `@dnd-kit` (única dependência de drag-and-drop do app) — árvore de tarefas, Kanban e Eisenhower.
+- **Inputs custom obrigatórios:** `DatePicker`/`TimePicker`/`MiniCalendar` no lugar dos nativos
+  (ver "Padrões do frontend" em `webapp/CLAUDE.md`).
+- **Notas Markdown** por tarefa (`MarkdownNotesEditor` + `react-markdown`/`remark-gfm`), com
+  chips `[[id|Título]]` que reabrem tarefas mencionadas.
+- **Preferências** em `localStorage`: `kg-tweaks` (tema etc.) e `kaguya:kanban:last-list`
+  (última lista aberta no Kanban).
+- API: `kaguyaApi.ts` — todos os `/api/tasks/*`.
+
+---
+
+### AkaneShell — Filmes (`src/pages/akane/`)
+
+**Roteamento:** estado interno `{view, param}` (tipo `AkaneView` em `types.ts`).
+
+**Telas (screens/):**
+
+| View | Tela | O que mostra |
+|---|---|---|
+| `home` | HomeScreen | Blocos do início: favoritos, atividade recente, destaque da watchlist, histograma de notas |
+| `films` | FilmsScreen | Catálogo de filmes com filtros (status, gênero, etiqueta) e ordenações |
+| `diary` | DiaryScreen | Diário de sessões de visualização |
+| `watchlist` | WatchlistScreen | Filmes a assistir |
+| `lists` / `list` | ListsScreen | Listas/coleções de filmes (grade e detalhe de uma lista) |
+| `tags` | TagsScreen | Nuvem de etiquetas com contagem |
+| `rewind` | RewindScreen | Retrospectiva do ano (year-in-review) |
+| `stats` | StatsScreen | Estatísticas anuais |
+| `detail` | MovieDetailScreen | Detalhe do filme: nota, curtir, status, Cofre e diário |
+
+**Particularidades:** busca de filmes no TMDB no modal de adição (`/api/movies/tmdb/search`);
+botão de sync com o Letterboxd (`POST /api/movies/sync-letterboxd`); preferências em
+`localStorage` (`akane-tweaks`). API: `akaneApi.ts` — todos os `/api/movies/*`.
+
+---
+
+### MarinShell — Animes (`src/pages/marin/`)
+
+**Roteamento:** estado interno `{view, param}` (tipo `MarinView` no próprio `MarinShell.tsx`).
+
+**Telas (screens/ + raiz):**
+
+| View | Tela | O que mostra |
+|---|---|---|
+| `home` | HomeScreen | Blocos agregados: última sessão, assistindo agora, próximos episódios, watchlist |
+| `catalogo` | CatalogScreen | Catálogo de animes com filtros e ordenação |
+| `diario` | DiaryScreen | Histórico de sessões de episódios |
+| `watchlist` | WatchlistScreen | Fila "quero assistir" |
+| `lancamentos` | ScheduleScreen | Schedule de episódios futuros dos animes em progresso |
+| `stats` | StatsScreen | Estatísticas do ano |
+| `detalhe` | AnimeDetail.tsx | Detalhe do anime: episódios paginados, log de sessão, nota (escala MAL 0–10) |
+
+**Particularidades:** sync com o MyAnimeList (`POST /api/animes/sync`, delta ou full); metadados
+via Jikan/AniList; preferências em `localStorage` (`mr-tweaks`) com `data-theme` claro/escuro.
+API: `marinApi.ts` — todos os `/api/animes/*`.
+
+---
+
+### MaiShell — Séries de TV (`src/pages/mai/`)
+
+**Roteamento:** estado interno `{view, param}` (tipo `MaiView` em `types.ts`).
+
+**Telas (screens/):**
+
+| View | Tela | O que mostra |
+|---|---|---|
+| `home` | HomeScreen | Blocos do início: assistindo agora, próximos episódios, favoritas |
+| `catalog` | CatalogScreen | Catálogo de séries com filtros e pôsteres |
+| `diary` | DiaryScreen | Diário de sessões |
+| `watchlist` | WatchlistScreen | Séries "quero assistir" |
+| `upcoming` | UpcomingScreen | Próximos episódios das séries em andamento |
+| `stats` | StatsScreen | Estatísticas anuais |
+| `detail` | DetailScreen | Detalhe da série: temporadas em acordeão (`SeasonAccordion`) com toggle de episódio/temporada |
+| `search` | — (AddSeriesModal) | Busca no TMDB para adicionar série |
+
+**Particularidades:** metadados via TMDB API v4 (Bearer); re-sync de metadados por série
+(`POST /api/series/{id}/sync-metadata`); preferências em `localStorage` (`mai-tweaks`, com
+densidade `compact|medium|cozy`). API: `maiApi.ts` — todos os `/api/series/*`.
+
+---
+
+### KomiShell — Pessoas (`src/pages/komi/`)
+
+**Roteamento:** estado interno `{view, param}` (tipo `KomiView` no próprio `KomiShell.tsx`).
+
+**Telas (screens/):**
+
+| View | Tela | O que mostra |
+|---|---|---|
+| `home` | Home | Visão geral (`/api/people/overview`): cards por domínio, sugestões de reconexão, datas próximas |
+| `grid` | Directory | Diretório de todas as pessoas (cards com avatar e contagem de vínculos) |
+| `dates` | UpcomingDates | Datas importantes próximas (aniversários etc.) |
+| `person` | PersonPage | Perfil da pessoa: apelidos, datas e vínculos cross-agent (finanças, tarefas, livros, diário) |
+
+**Particularidades:** upload de avatar (`POST /api/people/uploads/avatar`, multipart);
+`PersonModal` de criação/edição; preferências em `localStorage` (`km-tweaks`) com `data-theme`.
+API: `komiApi.ts` — todos os `/api/people/*`.
+
+---
+
+### MakimaShell — Hub (`src/pages/makima/`)
+
+**Roteamento:** nenhum — é uma tela única na rota exata `/`, renderizada em **tela cheia,
+sem o `Layout` global** (spec 023).
+
+**O que mostra:** hero editorial + 8 cards de agente (Nami, Frieren, Komi, Violet, Kaguya,
+Mai, Marin, Akane), cada um com 2 stats reais vindos de `GET /api/hub/summary` (uma única
+chamada no mount). Stat ausente/carregando/falho vira "—" (fallback gracioso). Os cards
+navegam para as rotas dos shells via `<Link>` (SPA, sem reload).
+
+**Particularidades:** tema dark/light persistido em `localStorage` (`makima-hub-theme`,
+default dark); todo o CSS vive sob a classe raiz `.mkA` (zero vazamento); dados estáticos
+do roster em `data.ts`. API: `makimaApi.ts` — só o `/api/hub/summary`.
+
 ## Cliente de API
 
 Todos os domínios compartilham o mesmo mecanismo base em `src/lib/api.ts`:
@@ -222,6 +383,12 @@ Em erros HTTP (`!response.ok`), o wrapper lança `Error("HTTP <status>")`.
 | `violetApi` | `lib/api.ts` | todos os `/api/journal/*` |
 | `booksApi` | `lib/api.ts` | todos os `/api/books/*` |
 | `namiApi` | `pages/nami/namiApi.ts` | todos os `/api/finances/*` |
+| `kaguyaApi` | `pages/kaguya/kaguyaApi.ts` | todos os `/api/tasks/*` |
+| `akaneApi` | `pages/akane/akaneApi.ts` | todos os `/api/movies/*` |
+| `marinApi` | `pages/marin/marinApi.ts` | todos os `/api/animes/*` |
+| `maiApi` | `pages/mai/maiApi.ts` | todos os `/api/series/*` |
+| `komiApi` | `pages/komi/komiApi.ts` | todos os `/api/people/*` |
+| `makimaApi` | `pages/makima/makimaApi.ts` | `/api/hub/summary` |
 
 **`uploadIcon`** em `namiApi.ts` usa `fetch` cru com `FormData` (o wrapper não suporta multipart).
 
@@ -233,7 +400,13 @@ Cada shell tem identidade visual própria baseada num personagem de anime:
 |---|---|---|---|---|
 | NamiShell | Nami (One Piece) | `nami.jpg`, `nami-hero.png` | `nami.css` | `.nami-app` |
 | VioletShell | Violet Evergarden | `violet.png` | `violet.css` | `.vl-app` |
-| FrierenShell | Frieren Beyond Journey's End | `frieren.png` | `frieren.css` | `.fr-app` |
+| FrierenShell | Frieren Beyond Journey's End | `frieren.png` | `frieren.css` | `.frieren-shell` (+ `.fr-app` interno) |
+| KaguyaShell | Kaguya (Kaguya-sama: Love is War) | `kaguya.jpg` | `kaguya.css` | `.kg-app` |
+| AkaneShell | Akane Kurokawa (Oshi no Ko) | `akane.png` | `akane.css` | `.akane-shell` (+ `.ak-app` interno) |
+| MarinShell | Marin Kitagawa (Sono Bisque Doll) | `marin.png` | `marin.css` | `.marin-shell` |
+| MaiShell | Mai Sakurajima (Seishun Buta Yarou) | `mai.png` | `mai.css` | `.mai-shell` |
+| KomiShell | Komi Shouko (Komi-san) | `komi.png` | `komi.css` | `.km-app` |
+| MakimaShell | Makima (Chainsaw Man) | `makima.png` | `makima.css` | `.mkA` |
 
 **Como o theming funciona:**
 1. Cada CSS de personagem define tokens OKLCH ou variáveis CSS sob a classe raiz.
@@ -243,11 +416,16 @@ Cada shell tem identidade visual própria baseada num personagem de anime:
    - VioletShell: `data-theme`, `data-acento` (sapphire/gold/emerald/garnet como variáveis OKLCH
      injetadas por JS), `modo-foco`, `modo-amplo`, `tipo-tecnica`.
    - FrierenShell: `data-theme`, `data-density`.
-3. Preferências são persistidas em `localStorage` (chaves `nami:*`, `vl-tweaks`, `fr-tweaks`).
+   - Shells novos (Kaguya, Akane, Marin, Mai, Komi, Makima): `data-theme` dark/light aplicado
+     na classe raiz; densidade onde houver (ex.: Mai).
+3. Preferências são persistidas em `localStorage` (chaves `nami:*`, `vl-tweaks`, `fr-tweaks`,
+   `kg-tweaks`, `akane-tweaks`, `mr-tweaks`, `mai-tweaks`, `km-tweaks`, `makima-hub-theme`).
 
 **Tokens Tailwind para cores de personagem** (`tailwind.config.js`):
 `c-makima`, `c-nami`, `c-frieren`, `c-kaguya`, `c-kurisu`, `c-journal`.
-Os tokens `c-kaguya` e `c-kurisu` existem mas os shells desses domínios ainda não foram construídos.
+São usados nas páginas legadas e no `Layout` global; os shells modernos usam os tokens OKLCH
+dos seus próprios arquivos CSS. O token `c-kurisu` existe mas o shell desse domínio ainda não
+foi construído.
 
 ## Build e desenvolvimento
 

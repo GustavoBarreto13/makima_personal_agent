@@ -359,21 +359,34 @@ def find_free_slots(
                 datetime.fromisoformat(period["end"].replace("Z", "+00:00")),
             ))
 
-    # Ordena e mescla os períodos ocupados sobrepostos
+    # Junta períodos ocupados que se sobrepõem num só, para não contar o mesmo
+    # tempo duas vezes. Ex.: se um calendário está ocupado 10h–11h e outro 10h30–12h,
+    # o resultado deve ser um único bloco ocupado 10h–12h.
+    #
+    # Passo 1: ordena todos os blocos ocupados pela hora de início (do mais cedo ao mais tarde).
     busy_periods.sort(key=lambda x: x[0])
+    # Passo 2: percorre os blocos em ordem, "colando" os que se encostam ou se sobrepõem.
     merged_busy = []
     for start, end in busy_periods:
+        # Se já existe um bloco na lista E o bloco atual começa antes (ou junto) do fim
+        # do último bloco guardado, os dois se sobrepõem → estende o fim do último até
+        # o maior dos dois fins (o bloco atual vira parte do anterior).
         if merged_busy and start <= merged_busy[-1][1]:
             merged_busy[-1] = (merged_busy[-1][0], max(merged_busy[-1][1], end))
         else:
+            # Não sobrepõe nada → começa um novo bloco ocupado independente.
             merged_busy.append((start, end))
 
-    # Encontra os slots livres entre os períodos ocupados
+    # Agora varremos a linha do tempo procurando os "buracos" livres entre os blocos ocupados.
     free_slots = []
+    # 'current' é o ponteiro que caminha pela linha do tempo; começa no início da janela útil.
     current = datetime.fromisoformat(time_min.replace("Z", "+00:00"))
     end_boundary = datetime.fromisoformat(time_max.replace("Z", "+00:00"))
+    # Duração mínima que um buraco precisa ter para ser considerado um slot livre útil.
     min_duration = timedelta(minutes=duration_minutes)
 
+    # Para cada bloco ocupado (já em ordem), o espaço entre o ponteiro atual e o início
+    # do bloco é um horário livre — desde que seja longo o suficiente.
     for busy_start, busy_end in merged_busy:
         if current < busy_start and (busy_start - current) >= min_duration:
             free_slots.append({
@@ -381,9 +394,11 @@ def find_free_slots(
                 "end": busy_start.isoformat(),
                 "duration_minutes": int((busy_start - current).total_seconds() / 60),
             })
+        # Avança o ponteiro para depois deste bloco ocupado. O max() protege contra
+        # blocos "engolidos" por outro maior (o ponteiro nunca anda para trás).
         current = max(current, busy_end)
 
-    # Verifica o slot após o último período ocupado
+    # Depois do último bloco ocupado ainda pode sobrar espaço livre até o fim da janela.
     if current < end_boundary and (end_boundary - current) >= min_duration:
         free_slots.append({
             "start": current.isoformat(),

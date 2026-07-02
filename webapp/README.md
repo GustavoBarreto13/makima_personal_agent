@@ -19,14 +19,28 @@ Domínios disponíveis hoje:
 | Filmes (cinemateca Akane) | `/movies/*` | Akane | ✅ |
 | Animes (catálogo Marin) | `/animes/*` | Marin | ✅ |
 | Tarefas/Agenda (Kaguya) | `/tasks/*` | Kaguya | ✅ |
-| Séries de TV (Mai) | `/series/*` | Mai | ⏳ em desenvolvimento |
+| Séries de TV (Mai) | `/series/*` | Mai | ✅ |
+| Pessoas e contatos (Komi) | `/people/*` | Komi | ✅ |
+| Hub — Centro de Controle | `/` | Makima | ✅ |
 | Painel de chat (Makima/ADK) | — | Makima | não construído |
+
+### Shells vs. páginas legadas
+
+Cada domínio da tabela acima é um **shell**: um mini-app React com sidebar própria, navegação
+interna e um arquivo CSS isolado por classe raiz (ex.: `.nami-app`, `.kg-app`) — os estilos de
+um domínio não vazam para o outro. Além dos shells, ainda existem **páginas legadas** de
+finanças (`/transactions`, `/accounts`, `/cards`, etc.) renderizadas dentro do `Layout` global
+com Tailwind; elas continuam roteadas, mas não aparecem na navegação — o shell da Nami é a
+interface canônica de finanças.
 
 ## Rodar localmente
 
 ```bash
-# 1. Na raiz do repositório — inicia o backend FastAPI na porta 8080
-uvicorn webapp.backend.main:app --reload --port 8080
+# 1. Na raiz do repositório — inicia o backend FastAPI na porta 8000.
+#    ATENÇÃO à porta: o proxy do Vite (webapp/frontend/vite.config.ts) repassa
+#    /api e /auth para http://localhost:8000 — então, no fluxo de dev com o
+#    Vite, o backend PRECISA subir na 8000 (não na 8080).
+uvicorn webapp.backend.main:app --reload --port 8000
 
 # 2. Em outra aba, dentro de webapp/frontend/ — inicia o dev server do React na porta 5173
 cd webapp/frontend
@@ -34,9 +48,13 @@ npm install        # só na primeira vez
 npm run dev
 ```
 
-Abra `http://localhost:5173` no navegador. O Vite faz proxy de `/api` e `/auth` para o backend.
+Abra `http://localhost:5173` no navegador. O Vite faz proxy de `/api` e `/auth` para o backend
+na porta **8000**.
 
-> **Atenção:** há uma inconsistência nas portas — veja [Problemas conhecidos](#problemas-conhecidos).
+> **Sobre 8000 vs 8080:** a porta 8080 é a do **container de produção** (o uvicorn sobe na 8080
+> e serve o `dist/` direto, sem Vite). Em dev, ou você sobe o backend na 8000 (como acima), ou
+> ajusta o alvo do proxy em `vite.config.ts`. Se subir o backend na 8080 e abrir o `:5173`, as
+> chamadas de API falham silenciosamente (proxy apontando para uma porta sem servidor).
 
 ## Build de produção
 
@@ -74,7 +92,7 @@ Para detalhes e como configurar no Dokploy, veja [docs/DEPLOY.md](docs/DEPLOY.md
 
 | Problema | Onde está documentado |
 |---|---|
-| Proxy do Vite aponta para porta **8000** mas o backend roda na **8080** | [docs/DEPLOY.md § Rodar localmente](docs/DEPLOY.md#rodar-localmente) |
+| Proxy do Vite aponta para porta **8000**; produção usa **8080** — em dev, subir o backend na 8000 | [Rodar localmente](#rodar-localmente) e [docs/DEPLOY.md § Rodar localmente](docs/DEPLOY.md#rodar-localmente) |
 | Docstrings de `finances.py`/`books.py` ainda citam "BigQuery" (storage real é PostgreSQL) | [docs/ARCHITECTURE.md § Camada de dados](docs/ARCHITECTURE.md#camada-de-dados) |
 | `webapp/PLAN.md` descreve BigQuery e um `/api/chat` que não existe — é histórico | [docs/ARCHITECTURE.md § Nota sobre PLAN.md](docs/ARCHITECTURE.md#nota-sobre-planmd) |
 | Páginas de finanças legadas (`/`, `/transactions`, `/accounts`…) estão roteadas mas não linkadas na sidebar | [docs/FRONTEND.md § Rotas](docs/FRONTEND.md#rotas) |

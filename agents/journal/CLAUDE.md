@@ -2,6 +2,8 @@
 
 Gerencia o diário pessoal em bullet journal. Acesso direto ao PostgreSQL via psycopg2 síncrono — mesmo padrão das tools da Nami e Frieren.
 
+> **Não é um sub-agente ADK**: este pacote não tem `agent.py` e não é importado pelo coordinator — as tools são consumidas apenas pelo webapp via `webapp/backend/routers/journal.py`. A personalidade "Violet" e o rename `agents/journal → agents/violet` estão planejados em `docs/planos/PLANO_VIOLET_EVERGARDEN.md` (não executado). As tabelas são criadas sob demanda por `_ensure_tables()` em `tools.py` (não há `schema_pg.sql` aqui).
+
 ---
 
 ### Schema PostgreSQL

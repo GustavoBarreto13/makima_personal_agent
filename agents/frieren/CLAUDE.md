@@ -22,8 +22,7 @@ Telegram (usuário)
 Makima (coordinator)
     ↓
 frieren_agent (Agent ADK — singleton)
-    ├── tools.py         → BigQuery (leitura/escrita)
-    └── tools.py         → Google Books API (metadados)
+    └── tools.py         → PostgreSQL (leitura/escrita via agents/db.py) + Google Books API (metadados)
 ```
 
 **Frieren é singleton** — não usa `McpToolset`, então não precisa de factory function.
@@ -31,9 +30,9 @@ Instância global `frieren_agent` em `agent.py`, importada diretamente em `coord
 
 ---
 
-## Banco de dados BigQuery
+## Banco de dados PostgreSQL
 
-Dataset: `frieren_books_agent`
+Banco compartilhado do projeto — schema em `agents/frieren/schema_pg.sql` (o `schema.sql` do BigQuery é legado da migração de jun/2026). Tabelas: `books`, `reading_logs`, `shelves`, `book_shelves`.
 
 ### Tabela `books`
 
@@ -95,23 +94,25 @@ Registro imutável de sessões de leitura. Cada linha é uma sessão: quanto foi
 | `session_notes` | STRING | Anotações opcionais da sessão |
 | `created_at` | TIMESTAMP | Quando o log foi inserido |
 
-**Particionamento**: `date`
-**Clustering**: `book_id`
-
 **Por que desnormalizar `book_title`?**
-BigQuery é orientado a colunas — JOINs desnecessários entre tabelas grandes adicionam custo. Duplicar o título nos logs permite consultas históricas sem JOIN.
+Herança do design original em BigQuery. Duplicar o título nos logs permite consultas históricas sem JOIN — mantido após a migração para PostgreSQL.
+
+### Tabelas `shelves` e `book_shelves` — estantes (coleções)
+
+Agrupam livros em coleções temáticas (feature usada pela tela "Estantes" do webapp; migração one-time em `scripts/migrate_frieren_shelves.py`).
+
+| Tabela | Propósito |
+|---|---|
+| `shelves` | Estante: `id`, `name`, `description`, `accent` (cor OKLCH), timestamps |
+| `book_shelves` | Vínculo N:N livro ↔ estante (`book_id`, `shelf_id`) |
 
 ---
 
-## Como criar o dataset e as tabelas
+## Como criar as tabelas
 
 ```bash
-# 1. Criar o dataset
-bq mk --dataset <GCP_PROJECT_ID>:frieren_books_agent
-
-# 2. Rodar o schema — substituir {project} pelo ID real antes de executar
-# (o schema.sql usa {project} como placeholder)
-bq query --use_legacy_sql=false < agents/frieren/schema.sql
+# roda o setup de schemas do projeto (idempotente — CREATE TABLE IF NOT EXISTS)
+DATABASE_URL=... python scripts/setup_schemas.py
 ```
 
 ---
@@ -235,6 +236,11 @@ Retorna **apenas** o JSON — sem texto adicional. O coordinator detecta o campo
 
 ---
 
+### `delete_reading_log(log_id)`
+Apaga um log de leitura registrado errado (também exposta ao agente).
+
+---
+
 ## Funções auxiliares (não expostas ao agente)
 
 ### `get_book_by_id(book_id)` e `update_book_by_id(...)`
@@ -243,6 +249,17 @@ Usadas diretamente pelo coordinator (`main.py`) para processar callbacks dos bot
 
 `update_book_by_id` usa SET dinâmico: só inclui no SQL os campos que não forem `None`.
 Para `notes`, usa `CONCAT` para appendar ao invés de sobrescrever.
+
+### Funções consumidas só pelo webapp (`/api/books/*`)
+Não são tools do agente Telegram — o router `webapp/backend/routers/books.py` as chama direto:
+
+| Função | O que faz |
+|---|---|
+| `get_shelves()` / `create_shelf(...)` / `delete_shelf(shelf_id)` | CRUD de estantes (coleções) |
+| `add_book_to_shelf(book_id, shelf_id)` / `remove_book_from_shelf(...)` | Vínculo N:N livro ↔ estante |
+| `update_book_metadata_by_id(...)` | Edição de metadados do livro pela UI |
+| `get_activity_feed(limit)` | Feed de atividade agrupado por data (tela Atividade) |
+| `get_heatmap_data(year)` | Dados do heatmap anual de páginas lidas |
 
 ---
 
@@ -287,11 +304,8 @@ converter entre os dois tipos na edição.
 
 ## Infraestrutura e dependências
 
-### Autenticação BigQuery
-Segue o padrão da Nami — **sem arquivo de credencial montado em container**:
-- `GCP_CREDENTIALS_JSON`: conteúdo completo do JSON do service account como string
-- `_client()` usa `service_account.Credentials.from_service_account_info(json.loads(...))`
-- Singleton: `_bq_client` global evita criar múltiplas conexões entre chamadas de tool
+### Conexão PostgreSQL
+Segue o padrão da Nami: `agents/db.py` (`run_select` / `run_dml` / `get_conn`), conexão via variável de ambiente `DATABASE_URL`. Não há mais cliente BigQuery — a migração foi concluída em jun/2026 (ver `docs/arquivo/MIGRACAO_POSTGRES.md`).
 
 ### Google Books API
 - Endpoint: `https://www.googleapis.com/books/v1/volumes`

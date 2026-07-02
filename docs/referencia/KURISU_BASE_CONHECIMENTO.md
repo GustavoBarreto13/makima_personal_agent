@@ -265,9 +265,15 @@ conteúdo mas tem o mesmo nome**, ela **ignora** e mantém a versão antiga. Ent
 
 ## 8. O que funciona, o que ainda falta
 
-### ✅ O que já está funcionando (testado)
+> 📌 **Atualização (jul/2026):** a Kurisu **já está no ar** — o deploy foi feito, ela
+> responde pelo Telegram e a biblioteca está completa com **410 de 410 páginas** (as
+> páginas que tinham ficado de fora na primeira tentativa foram recuperadas com uma
+> correção no importador, que agora detecta e completa importações truncadas).
 
-- A biblioteca foi criada na nuvem com **345 das 400+ páginas** das suas anotações.
+### ✅ O que já está funcionando
+
+- A biblioteca está na nuvem, **completa (410/410 páginas)**, e a Kurisu responde pelo
+  Telegram em produção.
 - A Kurisu **encontra e cita** as páginas certas. Exemplos reais testados:
   - "ansiedade" → achou as páginas `ansiedade.md` e `filosofia-ansiedade-ludoviajante.md`
   - "álcool e cérebro" → achou a página `cortex-prefrontal.md`
@@ -276,19 +282,14 @@ conteúdo mas tem o mesmo nome**, ela **ignora** e mantém a versão antiga. Ent
 
 ### 🔧 O que ainda falta
 
-1. **Colocar no ar (deploy):** o que foi testado funciona no computador local. Falta
-   configurar o endereço da biblioteca no servidor (o painel chamado *Dokploy*) e
-   reiniciar, para a Kurisu responder também pelo Telegram "de verdade".
-2. **Testar a conversa completa pelo Telegram:** confirmar que, ponta a ponta, a resposta
-   sai bem formatada e no estilo da Kurisu.
-3. **Investigar as ~65 páginas que ficaram de fora:** entraram 345 de 400+. As que
-   faltaram podem estar vazias, duplicadas ou com algum problema de formatação. Vale uma
-   olhada depois.
-4. **Melhorar a busca por termos exatos:** hoje, se você procura um termo bem específico
+1. **Melhorar a busca por termos exatos:** hoje, se você procura um termo bem específico
    e raro (tipo a sigla "BM25"), a busca por significado pode trazer páginas só
    parecidas, não a exata. Isso é uma limitação conhecida desta primeira versão. Uma
    melhoria futura ("fase 2") resolveria isso com uma técnica de busca mista, mas só será
    feita se na prática isso virar um incômodo real.
+2. **Memória unificada (spec 028):** expandir a biblioteca para incluir também os dados
+   dos outros domínios (diário, tarefas, finanças…) via "exporters". A fundação e 2 dos
+   8 exporters já estão prontos localmente; o deploy dessa parte ainda está pendente.
 
 ---
 

@@ -1,6 +1,6 @@
 ## Módulo: webapp/frontend/src/pages
 
-Três Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
+Nove Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
 
 ---
 
@@ -11,7 +11,13 @@ Três Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
 | `violet/` | `VioletShell.tsx` | `violetApi` em `lib/api.ts` | `violet.css` | `/journal/*` |
 | `nami/` | `NamiShell.tsx` | `namiApi` em `nami/namiApi.ts` | `nami.css` | `/nami/*` |
 | `frieren/` | `FrierenShell.tsx` | `booksApi` em `lib/api.ts` | `frieren.css` | `/books/*` |
-| raiz (`pages/*.tsx`) | — (layout global) | `api.*` de `lib/api.ts` | global CSS | `/`, `/login`, etc. |
+| `kaguya/` | `KaguyaShell.tsx` | `kaguyaApi` em `kaguya/kaguyaApi.ts` | `kaguya.css` | `/tasks/*` |
+| `akane/` | `AkaneShell.tsx` | `akaneApi` em `akane/akaneApi.ts` | `akane.css` | `/movies/*` |
+| `marin/` | `MarinShell.tsx` | `marinApi` em `marin/marinApi.ts` | `marin.css` | `/animes/*` |
+| `mai/` | `MaiShell.tsx` | `maiApi` em `mai/maiApi.ts` | `mai.css` | `/series/*` |
+| `komi/` | `KomiShell.tsx` | `komiApi` em `komi/komiApi.ts` | `komi.css` | `/people/*` |
+| `makima/` | `MakimaShell.tsx` | `makimaApi` em `makima/makimaApi.ts` | `makima.css` | `/` (exata, tela cheia) |
+| raiz (`pages/*.tsx`) | — (layout global) | `api.*` de `lib/api.ts` | global CSS | `/transactions`, `/accounts`, etc. (legado) |
 
 ---
 
@@ -25,7 +31,11 @@ Nunca misturar: código de Shell não chama componentes do `Layout`; páginas da
 
 ### CSS: isolamento por domínio
 
-Cada Shell tem seu próprio arquivo CSS com tokens OKLCH (`--garnet`, `--sapphire`, etc.) declarados dentro de um seletor de escopo (`.violet-shell` / `.nami-shell` / `.frieren-shell`). Tokens de um domínio **não são visíveis** no outro.
+Cada Shell tem seu próprio arquivo CSS com tokens OKLCH (`--garnet`, `--sapphire`, etc.) declarados dentro de um seletor de escopo — a classe raiz do Shell (`.vl-app`, `.nami-app`, `.frieren-shell`, `.kg-app`, `.akane-shell`, `.marin-shell`, `.mai-shell`, `.km-app`, `.mkA`). Tokens de um domínio **não são visíveis** no outro.
+
+> **Atenção (vazamento conhecido):** `violet.css` tem regras globais (não escopadas) e `mai.css`
+> tem classes genéricas (`.hero`, `.page`) que vazam entre shells no bundle único do Vite.
+> Correções de vazamento devem ser escopadas na classe raiz do shell afetado, com resets explícitos.
 
 - Usar somente os tokens declarados no CSS do próprio domínio.
 - Não importar `nami.css` dentro de `violet/`, nem o inverso.
@@ -69,7 +79,7 @@ fetch('/api/journal/heatmap?year=2026', { credentials: 'include' })
 └── ui/                  # primitivos visuais (charts, icons, etc.)
 ```
 
-`namiApi.ts` fica em `nami/` por ser mais volumoso; `violetApi` e `booksApi` ficam em `lib/api.ts` por serem menores.
+`violetApi` e `booksApi` ficam em `lib/api.ts` por serem menores; todos os outros domínios têm arquivo de API próprio dentro da sua pasta (`nami/namiApi.ts`, `kaguya/kaguyaApi.ts`, `akane/akaneApi.ts`, `marin/marinApi.ts`, `mai/maiApi.ts`, `komi/komiApi.ts`, `makima/makimaApi.ts`).
 
 ---
 

@@ -4,7 +4,7 @@
 
 **Makima** é um coordinator multi-agente construído com Google ADK. Roda como bot Telegram autônomo no VPS, recebendo mensagens e delegando para agentes especialistas conforme o domínio do pedido.
 
-O design completo — arquitetura, fases, schemas PostgreSQL, custos — está em `PLAN.md`.
+O status das fases vive no **`ROADMAP.md`** (fonte única da verdade). O design original — arquitetura, fases iniciais, schemas, custos — está arquivado em `docs/arquivo/PLAN.md` (**documento histórico**: bom para entender o porquê das decisões, não para status). O mapa da pasta de documentação está em `docs/README.md`.
 
 ---
 
@@ -42,14 +42,15 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | Agente | Domínio | Status | Documentação |
 |---|---|---|---|
 | `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1 | `agents/nami/CLAUDE.md` |
-| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (fatia 019) | ✅ Fase 2 + 019 | `agents/kaguya/CLAUDE.md` |
-| `agents/kurisu/` | Knowledge base (Vertex AI RAG) | 🔧 Fase 3 | `agents/kurisu/CLAUDE.md` |
+| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) | ✅ Fases 2, 011–020, 024–026, 029–030 | `agents/kaguya/CLAUDE.md` |
+| `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada | ✅ Fase 027 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) | ✅ Fase 5a | `agents/frieren/CLAUDE.md` |
 | `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015 | `agents/akane/CLAUDE.md` |
 | `agents/marin/` | Animes (PostgreSQL + Jikan/AniList + MAL OAuth) | ✅ Fase 021 | `agents/marin/CLAUDE.md` |
-| `agents/mai/` | Séries de TV (PostgreSQL + TMDB API v4) | ✅ Fase 022 | `agents/mai/CLAUDE.md` |
+| `agents/mai/` | Séries de TV (PostgreSQL + TMDB API v3) | ✅ Fase 022 | `agents/mai/CLAUDE.md` |
 | `agents/komi/` | Pessoas e contatos (PostgreSQL) | ✅ Fase 014 | `agents/komi/CLAUDE.md` |
-| `agents/lucy/` | Email (Gmail IMAP) | — Fase 4 | — |
+| `agents/journal/` | Diário (Violet) — **módulo de tools, não é sub-agente ADK**: sem `agent.py`, consumido só pelo router `/api/journal/*` do webapp | ✅ web | `agents/journal/CLAUDE.md` |
+| `agents/lucy/` | Email (Gmail) — diretório ainda não existe | ⏳ Fase 4 | — |
 
 ### Como o coordinator importa
 
@@ -81,16 +82,18 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── nami_agent      → PostgreSQL (finanças)                      [agents/nami]
     ├── kaguya_agent    → PostgreSQL (tarefas) + /api/tasks/*        [agents/kaguya + webapp]
     │                  → Google Calendar via MCP stdio               [mcp_servers/calendar]
-    ├── kurisu_agent    → Vertex AI RAG (vault Obsidian)             [agents/kurisu]   (estrutura criada, pendente corpus)
+    ├── kurisu_agent    → Vertex AI RAG (vault Obsidian)             [agents/kurisu]   (corpus ativo — spec 027)
     ├── frieren_agent   → PostgreSQL (livros)                        [agents/frieren]
     ├── akane_agent     → PostgreSQL (filmes) + TMDB + Letterboxd    [agents/akane]
     ├── marin_agent     → PostgreSQL (animes) + Jikan + AniList + MAL [agents/marin]
-    ├── mai_agent       → PostgreSQL (séries) + TMDB API v4          [agents/mai]
+    ├── mai_agent       → PostgreSQL (séries) + TMDB API v3          [agents/mai]
     ├── komi_agent      → PostgreSQL (pessoas + vínculos)            [agents/komi]
-    └── lucy_agent      → Gmail IMAP                                 [agents/lucy]     (ainda não ativada)
+    └── lucy_agent      → Gmail                                      [agents/lucy]     (planejada — ainda não existe)
 ```
 
 **Makima não tem tools próprias** — ela só delega. Toda lógica de acesso a APIs fica nas tools dos agents especialistas em `agents/`.
+
+> O diário (Violet) **não aparece no diagrama de propósito**: `agents/journal/` é um módulo de tools sem `agent.py`, consumido apenas pelo webapp (`/api/journal/*`). A personalidade Violet e o rename `journal → violet` estão planejados em `docs/planos/PLANO_VIOLET_EVERGARDEN.md`.
 
 Para detalhes do coordinator (infraestrutura, sessões, env vars, parse_mode), ver `coordinator/CLAUDE.md`.
 
@@ -165,12 +168,24 @@ makima_personal_agent/
 │   │   ├── agent.py     # nami_agent
 │   │   ├── schema_pg.sql # schema das tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, categorias, formatação, personalidade
-│   ├── kaguya/          # agente de tarefas + agenda + Calendar Hub — Fase 2 ✅ + Fase 019 ✅
+│   ├── kaguya/          # agente de tarefas + agenda — Fases 2, 011–020, 024–026, 029–030 ✅
 │   │   ├── __init__.py
-│   │   ├── schema_tasks_pg.sql # schema do sistema de tarefas (spec 011) + calendar_prefs
+│   │   ├── schema_tasks_pg.sql # schema do sistema de tarefas (spec 011+) + calendar_prefs
 │   │   ├── tools_tasks.py      # camada de lógica: CRUD de tarefas/subtarefas, posições + Meu Dia
 │   │   ├── tools_projects.py   # camada de lógica: listas, grupos, colunas (Kanban)
+│   │   ├── tools_tags.py       # tags N:N — fatia 013
+│   │   ├── tools_filters.py    # smart-lists (filtros salvos via DSL) — fatia 013
+│   │   ├── tools_calendar.py   # consultas por intervalo + ocorrências recorrentes — fatia 013
+│   │   ├── tools_habits.py     # hábitos + check-ins — fatia 014
+│   │   ├── tools_kanban_views.py # views configuráveis do Kanban — spec 024
+│   │   ├── tools_experiments.py  # Tiny Experiments (CRUD + log + pausa + revisão) — spec 029
+│   │   ├── tools_goals.py      # Metas (áreas, marcos, vínculos, progresso) — spec 030
+│   │   ├── recurrence.py       # motor PURO de recorrência (RRULE) — fatia 012
+│   │   ├── habit_strength.py   # motor PURO da "força" do hábito (EMA) — fatia 014
 │   │   ├── capacity.py         # motor PURO (sem banco): compute_capacity() — fatia 016
+│   │   ├── experiment_adherence.py # motor PURO de aderência dos experimentos — spec 029
+│   │   ├── goal_progress.py    # motor PURO de progresso das metas — spec 030
+│   │   ├── komi_sync.py        # sync bidirecional de aniversários com a Komi — spec 026
 │   │   ├── gcal.py             # cliente Google Calendar (read all / write main) — fatia 019
 │   │   ├── gcal_sync.py        # espelho best-effort de tarefas → GCal "Kaguya — Tarefas" — fatia 019
 │   │   ├── calendar_prefs.py   # CRUD da tabela calendar_prefs — fatia 019
@@ -178,9 +193,12 @@ makima_personal_agent/
 │   │   ├── tools.py            # fachada: re-exporta a lógica + cross-agent (Nami) + Calendar Hub
 │   │   ├── agent.py     # create_kaguya_agent() — factory (só o McpToolset do Calendar)
 │   │   └── CLAUDE.md    # camada de lógica, tools, Calendar Hub, gcal_sync, personalidade
-│   ├── kurisu/          # agente de knowledge base — Fase 3 🔧 (pendente corpus Vertex AI)
+│   ├── kurisu/          # agente de knowledge base — Fase 027 ✅ (corpus ativo) + 028 🔧 parcial
 │   │   ├── __init__.py
-│   │   ├── agent.py     # kurisu_agent — singleton com VertexAiRagRetrieval
+│   │   ├── agent.py     # kurisu_agent — singleton
+│   │   ├── tools.py     # buscar_na_base() — busca no corpus Vertex AI RAG
+│   │   ├── recency.py   # ponderação por recência dos resultados
+│   │   ├── memory/      # memória unificada (spec 028): exporters.py, render.py, store.py, sync.py
 │   │   └── CLAUDE.md    # arquitetura RAG, setup Vertex AI, checklist de ativação
 │   ├── frieren/         # agente de livros — Fase 5a ✅
 │   │   ├── __init__.py
@@ -194,13 +212,32 @@ makima_personal_agent/
 │   │   ├── agent.py     # komi_agent — singleton
 │   │   ├── schema_pg.sql # schema das 4 tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, schema, cross-agent, personalidade
-│   └── mai/             # agente de séries de TV — Fase 022 ✅
+│   ├── akane/           # agente de filmes — Fase 015 ✅
+│   │   ├── __init__.py
+│   │   ├── tools.py     # PostgreSQL + TMDB + sync Letterboxd (RSS/CSV)
+│   │   ├── agent.py     # akane_agent — singleton
+│   │   ├── schema_pg.sql # schema das 7 tabelas PostgreSQL
+│   │   └── CLAUDE.md    # tools, schema, TMDB/Letterboxd, personalidade
+│   ├── marin/           # agente de animes — Fase 021 ✅
+│   │   ├── __init__.py
+│   │   ├── tools.py     # PostgreSQL (anime, watch_logs, episodes, mal_sync_state)
+│   │   ├── metadata.py  # search/enrich via Jikan + AniList + ARM
+│   │   ├── mal_auth.py  # OAuth2 PKCE do MyAnimeList (refresh automático)
+│   │   ├── mal_sync.py  # pull delta/full do MAL para o PostgreSQL
+│   │   ├── agent.py     # marin_agent — singleton
+│   │   ├── schema_pg.sql # schema das 4 tabelas PostgreSQL
+│   │   └── CLAUDE.md    # tools, schema, MAL OAuth, personalidade
+│   ├── mai/             # agente de séries de TV — Fase 022 ✅
+│   │   ├── __init__.py
+│   │   ├── tools.py     # PostgreSQL (series, seasons, series_episodes, series_watch_logs)
+│   │   ├── metadata.py  # TMDB API v3 (api_key) + retry + skip-logic incremental
+│   │   ├── agent.py     # mai_agent — singleton
+│   │   ├── schema_pg.sql # schema das 4 tabelas PostgreSQL
+│   │   └── CLAUDE.md    # tools, schema, TMDB Bearer, personalidade
+│   └── journal/         # diário (Violet) — módulo de tools, SEM agent.py (só webapp)
 │       ├── __init__.py
-│       ├── tools.py     # PostgreSQL (series, seasons, series_episodes, series_watch_logs)
-│       ├── metadata.py  # TMDB API v4 Bearer + retry + skip-logic incremental
-│       ├── agent.py     # mai_agent — singleton
-│       ├── schema_pg.sql # schema das 4 tabelas PostgreSQL
-│       └── CLAUDE.md    # tools, schema, TMDB Bearer, personalidade
+│       ├── tools.py     # PostgreSQL (pages, bullets, mentions, emoções) — cria tabelas sob demanda
+│       └── CLAUDE.md    # tools, schema, integração com o webapp
 ├── mcp_servers/
 │   ├── __init__.py
 │   └── calendar/
@@ -208,16 +245,24 @@ makima_personal_agent/
 │       └── server.py    # servidor MCP FastMCP — Google Calendar (leitura todos, escrita só principal)
 ├── scripts/
 │   ├── authorize_calendar.py  # gera credenciais OAuth do Google Calendar (rodar uma vez)
-│   ├── setup_schemas.py       # cria tabelas PostgreSQL de Nami e Frieren (rodar uma vez no VPS)
-│   ├── migrate_bq_to_pg.py    # migração one-time: BigQuery → PostgreSQL
+│   ├── authorize_mal.py       # gera tokens OAuth do MyAnimeList (rodar uma vez)
+│   ├── setup_schemas.py       # cria tabelas PostgreSQL de todos os agentes (rodar uma vez no VPS)
+│   ├── setup_kurisu_rag.py    # cria o corpus Vertex AI RAG e ingere o vault — spec 027
+│   ├── sync_kurisu_memory.py  # sync incremental da memória unificada — spec 028
+│   ├── sync_letterboxd.py     # sync RSS do Letterboxd (Akane)
+│   ├── import_letterboxd_csv.py # importação one-time do CSV histórico do Letterboxd
 │   ├── backup_postgres.py     # pg_dump → Google Cloud Storage (roda diariamente via Docker)
 │   ├── Dockerfile.backup      # imagem do serviço de backup (Python + postgresql-client + gzip)
+│   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)
 │   └── .gitignore             # exclui client_secret.json do git
-├── docs/
-│   ├── MIGRACAO_POSTGRES.md  # checklist de deploy da migração BigQuery → PostgreSQL
-│   └── BACKUP_POSTGRES.md    # backup do Postgres: como roda sozinho, verificar e restaurar
+├── docs/                    # organizada por tipo — ver docs/README.md (mapa completo)
+│   ├── README.md            # índice: o que é vivo, o que é plano, o que é histórico
+│   ├── referencia/          # docs VIVAS: POSTGRES.md (54 tabelas), BACKUP_POSTGRES.md, KURISU_BASE_CONHECIMENTO.md (leiga)
+│   ├── planos/              # planos FUTUROS: PLANO_VIOLET_EVERGARDEN.md, PLANO_INTEGRACAO_VIOLET_KOMI.md
+│   ├── arquivo/             # HISTÓRICO: PLAN.md original, MIGRACAO_POSTGRES.md, persistencia-sessao, setup-hook, superpowers/
+│   └── claude_design/       # design handoffs (HTML/CSS de referência) dos shells
 ├── requirements.txt
-├── PLAN.md              # design completo, fases, schemas, custos
+├── ROADMAP.md           # fonte única da verdade: fases, status atual e pendências
 └── CLAUDE.md            # este arquivo — visão geral e guia de navegação
 ```
 
@@ -243,18 +288,57 @@ Ambiente local: `.venv` própria do makima.
 
 ## Fases de implementação
 
-| Fase | O que fazer | Onde | Status |
-|---|---|---|---|
-| **1** | Nami (finanças): tools PostgreSQL + agent. | `agents/nami/` | ✅ |
-| **2** | Kaguya (tarefas): sistema próprio em PostgreSQL (camada de lógica + router `/api/tasks/*` + shell webapp) + Calendar via MCP + cross-agent atômico Kaguya+Nami. TickTick aposentado (spec 011). | `agents/kaguya/` + `webapp/` | ✅ |
-| **3** | Kurisu (knowledge base): Vertex AI RAG sobre vault Obsidian. Estrutura criada, pendente setup do corpus no GCP. | `agents/kurisu/` + GCP Console | 🔧 |
-| **4** | Lucy (email): tools IMAP/Gmail + agent. | `agents/lucy/` (ref.: `n8n-python-scripts/lucy_email_agent/`) | — |
-| **5a** | Frieren (livros): PostgreSQL + Google Books API + log de leitura por páginas. | `agents/frieren/` | ✅ |
-| **022** | Mai (séries de TV): PostgreSQL (4 tabelas) + TMDB API v4 + shell React `/series/*`. | `agents/mai/` | ✅ |
-| **014** | Komi (pessoas): PostgreSQL (4 tabelas) + vínculos cross-agent + router `/api/people/*`. Frontend pendente. | `agents/komi/` | ✅ backend |
-| **5b** | Lucy (email): tools IMAP/Gmail. | `agents/lucy/` | — |
+**A fonte única da verdade para fases e status é o [`ROADMAP.md`](ROADMAP.md)** — ao entregar
+uma fase, atualize lá (não duplique tabelas de status aqui nem no README).
 
-**Fase atual: 014 ✅ (backend)** — Komi implementada (schema + tools + agent + coordinator + REST router + testes). Frontend pendente. Próximo passo: fase 3 (Kurisu) ou frontend da Komi.
+Resumo: fases 001–027, 029 e 030 entregues; 028 (memória unificada da Kurisu) parcial;
+Lucy (fase 4) planejada.
+
+---
+
+## Como manter a documentação (guia da estrutura)
+
+A estrutura foi reorganizada em jul/2026 para eliminar duplicação — a regra geral é:
+**cada informação vive em UM lugar; os outros apontam**. Doc desatualizada é pior que ausente.
+
+### Onde cada coisa vive
+
+| Informação | Único lugar onde é mantida | Quem aponta para lá |
+|---|---|---|
+| Status de fases / roadmap / pendências | `ROADMAP.md` | README.md e este arquivo (só resumo de 1 linha) |
+| Árvore de arquivos detalhada | este `CLAUDE.md` | README.md (só o mapa de topo) |
+| Schema do banco (tabelas coluna a coluna) | `docs/referencia/POSTGRES.md` | CLAUDE.md dos agentes (só nomes de tabelas) |
+| Tools e regras de cada agente | `agents/<nome>/CLAUDE.md` | tabela de agentes deste arquivo |
+| Rotas da API do webapp | `webapp/docs/API.md` | webapp/CLAUDE.md |
+| Shells do frontend | `webapp/docs/FRONTEND.md` | webapp/frontend/src/pages/CLAUDE.md |
+| Visão geral leiga do projeto | `README.md` | — |
+
+### Onde criar um doc novo (`docs/`)
+
+- **Descreve o sistema como ele É hoje** → `docs/referencia/` (e manter atualizado junto com o código)
+- **Plano aprovado mas NÃO executado** → `docs/planos/` (com linha `Status: planejado, não executado` no topo)
+- **Registro do passado** (plano executado, checklist concluído, doc obsoleta) → `docs/arquivo/`
+- Sempre adicionar a linha correspondente no índice `docs/README.md`
+
+### Checklist ao entregar uma fase nova
+
+1. Atualizar a linha da fase no `ROADMAP.md` (status + seção "Status atual"/"Pendências")
+2. Se criou/alterou tabelas: atualizar `docs/referencia/POSTGRES.md` (formato coluna a coluna)
+3. Se criou/alterou tools de agente: atualizar o `agents/<nome>/CLAUDE.md`
+4. Se criou rotas ou telas: atualizar `webapp/docs/API.md` e/ou `webapp/docs/FRONTEND.md`
+5. Se criou módulos novos: adicioná-los à árvore de arquivos deste `CLAUDE.md`
+6. Se a feature aparece para o usuário: 1 linha na tabela de páginas/funcionalidades do `README.md`
+
+### Ciclo de vida de um doc
+
+- Plano em `docs/planos/` foi **executado**? → mover para `docs/arquivo/` (`git mv`, preserva histórico) + banner `✅ IMPLEMENTADO` no topo + atualizar `docs/README.md`
+- Doc ficou **obsoleta** (feature aposentada)? → mover para `docs/arquivo/` + banner `⚠️ OBSOLETO` explicando o porquê — **não deletar** (o arquivo é o registro)
+- Nunca documentar comportamento que o código ainda não implementa
+
+### O que NÃO tocar
+
+- `specs/` — artefatos do Spec Kit, imutáveis após gerados (mudança de escopo = editar o SPEC e re-rodar o fluxo)
+- `docs/arquivo/` — conteúdo congelado; só se adiciona banner/nota, não se reescreve
 
 ---
 

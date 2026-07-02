@@ -47,12 +47,14 @@ Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na
 | Empréstimos | Saldo devedor, parcelas restantes, registrar pagamento |
 | Orçamentos | Envelopes por categoria com barra de progresso, definir novo limite |
 | Assinaturas | Lista de assinaturas recorrentes com custo mensal total |
-| Tarefas | Sub-app completa (Kaguya): listas/projetos, **Kanban "Vidro"** (board em vidro fosco com views configuráveis — adornos, métricas e filtro por view), Meu Dia, tags, smart-lists (filtros salvos), calendário (mês/semana com ocorrências recorrentes) e hábitos (heatmap + força) |
+| Tarefas | Sub-app completa (Kaguya): listas/projetos, **Kanban "Vidro"** (board em vidro fosco com views configuráveis — adornos, métricas e filtro por view), Meu Dia com time-blocking, Matriz de Eisenhower, tags, smart-lists (filtros salvos), calendário (mês/semana com ocorrências recorrentes), hábitos (heatmap + força), **Tiny Experiments** (mini-experimentos com log de aderência, pausa e revisão) e **Metas** (metas por área da vida com marcos, vínculo a projetos/hábitos/experimentos e progresso) |
 | Livros | Sub-app completa (Frieren): 9 telas — Início com hero e heatmap anual, Biblioteca com grade filtrável, detalhe de livro, Quero Ler, Wishlist com link de loja, Estantes (CRUD), Atividade agrupada por data, Resenhas e Estatísticas do ano |
 | Diário | Bullet journal com timestamp por bullet, heatmap anual, `@pessoas`, `#tags` e busca full-text — sidebar direita com Insights (filtro por ano), Pessoas, Tags e Busca — tela Write com **registro emocional TCC** (situação → emoção → pensamento automático → resposta adaptativa → reavaliação) e aba Emoções nos Insights |
 | Filmes | Sub-app completa (Akane): catálogo estilo Letterboxd — grid de pôsteres TMDB + fallback tipográfico, diário de sessões com rewatch, watchlist, notas e reviews, histograma de notas, Rewind anual, listas/coleções, nuvem de etiquetas, Cofre de conteúdos, vitrine de favoritos (4 slots) e sync RSS/CSV do Letterboxd |
 | Animes | Sub-app completa (Marin): catálogo de animes com sync OAuth MAL — grid de pôsteres com 12 paletas tipográficas, diário de episódios (log de ep_start/ep_end), watchlist, schedule JST/BRT dos próximos lançamentos, estatísticas anuais com heatmap, vitrine de favoritos (4 slots, localStorage) |
-| Séries | Sub-app completa (Mai): catálogo de séries via TMDB API v4 — seasons/episodes sincronizados, log de watch com nota (0.5–5.0), status por temporada, shell React `/series/*` |
+| Séries | Sub-app completa (Mai): catálogo de séries via TMDB API v3 — seasons/episodes sincronizados, log de watch com nota (0.5–5.0), status por temporada, shell React `/series/*` |
+| Pessoas | Sub-app (Komi): cadastro de pessoas com busca, apelidos, datas importantes e visão geral dos vínculos cross-agent (`/people/*`) |
+| Hub | Página inicial (Makima): agregador com resumo de todos os domínios em um só lugar (`/api/hub/summary`) |
 
 **Stack:** FastAPI (backend) + React 19 + TypeScript + Tailwind CSS (frontend) — servidos pelo mesmo container.
 
@@ -68,11 +70,11 @@ coordinator/main.py  (python-telegram-bot)
 coordinator/agent.py  (Makima — Agent ADK)
     ├── Nami       → PostgreSQL (finanças)                      ✅ ativo
     ├── Kaguya     → PostgreSQL próprio (tarefas) + Calendar MCP ✅ ativo
-    ├── Kurisu     → Vertex AI RAG (vault Obsidian)             🔧 estrutura criada, pendente corpus
+    ├── Kurisu     → Vertex AI RAG (vault Obsidian)             ✅ ativo (corpus no ar, spec 027)
     ├── Frieren    → PostgreSQL + Google Books API (livros)     ✅ ativo
     ├── Akane      → PostgreSQL + TMDB + Letterboxd (filmes)   ✅ ativo
     ├── Marin      → PostgreSQL + Jikan/AniList + MAL OAuth (animes) ✅ ativo
-    ├── Mai        → PostgreSQL + TMDB API v4 (séries de TV)   ✅ ativo
+    ├── Mai        → PostgreSQL + TMDB API v3 (séries de TV)   ✅ ativo
     ├── Komi       → PostgreSQL (pessoas + vínculos cross-agent) ✅ ativo
     ├── Violet     → PostgreSQL (diário)                        🔧 ativo na web, agente Telegram pendente
     └── Lucy       → Gmail API v1                               ⏳ planejado
@@ -112,6 +114,10 @@ Inspirada na Kaguya Shinomiya de Kaguya-sama. Aristocrática e organizada. Geren
 - Tags N:N e smart-lists (filtros salvos via DSL)
 - Calendário (mês/semana) com projeção virtual das ocorrências de tarefas recorrentes
 - Hábitos com check-ins, heatmap anual e "força" (modelo caixa d'água / EMA)
+- Meu Dia com time-blocking e barra de capacidade (fatia 016)
+- Tiny Experiments — mini-experimentos com duração definida, log diário e revisão (spec 029)
+- Metas por área da vida com marcos e vínculo a projetos, hábitos e experimentos (spec 030)
+- Sync de aniversários com a Komi — datas importantes viram tarefas recorrentes (spec 026)
 
 Possui tools cross-agent que integram com a Nami numa **única transação PostgreSQL** (tudo-ou-nada):
 
@@ -164,11 +170,11 @@ Inspirada na Akane Kurokawa de *Oshi no Ko* — atriz analítica e perfeccionist
 **Armazenamento:** PostgreSQL — tabelas `movies`, `diary_entries`, `movie_lists`, `movie_list_items`, `movie_vault_items`, `movie_people`, `movie_favorites`.
 
 ### Mai — séries de TV
-Inspirada em Mai Sakurajima de *Rascal Does Not Dream of Bunny Girl Senpai* — direta, autoconfiante e sem paciência para devaneio. Gerencia o catálogo pessoal de séries de TV com metadados da TMDB API v4.
+Inspirada em Mai Sakurajima de *Rascal Does Not Dream of Bunny Girl Senpai* — direta, autoconfiante e sem paciência para devaneio. Gerencia o catálogo pessoal de séries de TV com metadados da TMDB API v3.
 
 **Funcionalidades:**
 - Catálogo de séries com status: `assistindo`, `completo`, `quero_assistir`, `pausado`, `abandonado`
-- Sincronização automática de seasons e episodes via TMDB API v4 (Bearer token)
+- Sincronização automática de seasons e episodes via TMDB API v3 (`TMDB_API_KEY`)
 - Diário de episódios: log de `ep_start → ep_end` por temporada, data, nota (0.5–5.0) e comentários
 - Notas por episódio/temporada, resumo por série
 - Shell React `/series/*` com grid de pôsteres TMDB e tela de detalhe por série
@@ -228,108 +234,19 @@ Diário bullet journal com extração automática de menções (`@pessoa`, `#tag
 
 ```
 makima_personal_agent/
-├── coordinator/
-│   ├── main.py              # Telegram bot loop + sessões ADK + menu interativo
-│   ├── agent.py             # Makima (Agent ADK) + sub_agents
-│   └── Dockerfile
-├── agents/
-│   ├── db.py                # módulo compartilhado de conexão PostgreSQL (run_select/run_dml)
-│   ├── nami/
-│   │   ├── tools.py             # transações, assinaturas
-│   │   ├── tools_accounts.py    # contas financeiras
-│   │   ├── tools_installments.py # compras parceladas
-│   │   ├── tools_credit_cards.py # cartões de crédito
-│   │   ├── tools_loans.py       # empréstimos (PRICE/SAC)
-│   │   ├── tools_budgets.py     # orçamento por categoria
-│   │   ├── tools_health.py      # score de saúde financeira
-│   │   ├── agent.py             # nami_agent (singleton)
-│   │   └── schema_pg.sql        # schema PostgreSQL das tabelas financeiras
-│   ├── kaguya/
-│   │   ├── tools_tasks.py       # CRUD de tarefas/subtarefas + posições
-│   │   ├── tools_projects.py    # listas, grupos, colunas (Kanban)
-│   │   ├── tools_tags.py        # tags N:N (fatia 013)
-│   │   ├── tools_filters.py     # smart-lists via DSL (fatia 013)
-│   │   ├── tools_kanban_views.py # views de Kanban configuráveis (spec 024)
-│   │   ├── tools_calendar.py    # consultas por intervalo + ocorrências recorrentes (013)
-│   │   ├── tools_habits.py      # hábitos + check-ins (fatia 014)
-│   │   ├── recurrence.py        # motor puro de recorrência (RRULE, fatia 012)
-│   │   ├── habit_strength.py    # cálculo puro da "força" do hábito (EMA)
-│   │   ├── tools.py             # fachada + cross-agent atômico (Kaguya+Nami)
-│   │   ├── agent.py             # create_kaguya_agent() — factory com McpToolset do Calendar
-│   │   └── schema_tasks_pg.sql  # schema PostgreSQL do sistema de tarefas
-│   ├── kurisu/
-│   │   └── agent.py         # kurisu_agent (singleton, VertexAiRagRetrieval)
-│   ├── frieren/
-│   │   ├── tools.py         # PostgreSQL (catálogo + logs) + Google Books API
-│   │   ├── agent.py         # frieren_agent (singleton)
-│   │   └── schema_pg.sql    # schema PostgreSQL (books, reading_logs)
-│   ├── akane/
-│   │   ├── tools.py         # PostgreSQL + TMDB API + lógica de negócio (FR-016)
-│   │   ├── agent.py         # akane_agent (singleton, sem MCP)
-│   │   └── schema_pg.sql    # schema PostgreSQL (7 tabelas: movies, diary_entries, listas, cofre, pessoas, favoritos)
-│   ├── marin/
-│   │   ├── tools.py         # PostgreSQL + Jikan/AniList/ARM + MAL OAuth (14 tools)
-│   │   ├── agent.py         # marin_agent (singleton, sem MCP)
-│   │   ├── metadata.py      # search_anime() + enrich_anime() — Jikan/AniList/ARM/TMDB
-│   │   ├── mal_auth.py      # MALAuth: PKCE OAuth2, refresh automático de token
-│   │   ├── mal_sync.py      # sync_mal(): pull delta/full do MAL para PostgreSQL
-│   │   └── schema_pg.sql    # schema PostgreSQL (4 tabelas: anime, watch_logs, episodes, mal_sync_state)
-│   ├── komi/
-│   │   ├── tools.py         # PostgreSQL (people, aliases, dates, links) + smart-match + hub
-│   │   ├── agent.py         # komi_agent (singleton)
-│   │   └── schema_pg.sql    # schema PostgreSQL (4 tabelas: people, aliases, dates, links)
-│   └── journal/
-│       ├── tools.py         # PostgreSQL (pages, bullets, mentions, emoções)
-│       └── schema_pg.sql    # schema PostgreSQL do diário
-├── mcp_servers/
-│   └── calendar/
-│       └── server.py        # servidor MCP — Google Calendar (TickTick aposentado)
-├── webapp/
-│   ├── backend/
-│   │   ├── main.py          # FastAPI app — monta routers e serve o build do React
-│   │   ├── config.py        # variáveis de ambiente (OAuth, sessão)
-│   │   ├── deps.py          # dependência FastAPI que valida o cookie de sessão
-│   │   └── routers/
-│   │       ├── auth.py      # Google OAuth (callback, /auth/me, logout)
-│   │       ├── finances.py  # /api/finances/* — tools da Nami
-│   │       ├── books.py     # /api/books/*   — tools da Frieren
-│   │       ├── journal.py   # /api/journal/* — tools do Journal (Violet)
-│   │       ├── tasks.py     # /api/tasks/*   — tools da Kaguya
-│       ├── movies.py    # /api/movies/*  — tools da Akane
-│       ├── animes.py    # /api/animes/*  — tools da Marin
-│       ├── series.py    # /api/series/*  — tools da Mai
-│       └── pessoas.py   # /api/people/*  — tools da Komi
-│   ├── frontend/
-│   │   └── src/
-│   │       ├── App.tsx          # roteamento + verificação de sessão
-│   │       ├── components/
-│   │       │   └── Layout.tsx   # sidebar de navegação
-│   │       ├── pages/           # Dashboard, Transactions, Accounts, Cards, Loans,
-│   │       │                    # Budgets, Subscriptions
-│   │       │                    # kaguya/   — sub-app de tarefas (KaguyaShell)
-│   │       │                    # frieren/  — sub-app de livros (FrierenShell + 9 screens)
-│   │       │                    # akane/    — sub-app de filmes (AkaneShell + 8 screens)
-│                       │                    # marin/    — sub-app de animes (MarinShell + 6 screens)
-│   │       │                    # violet/   — sub-app de diário (VioletShell)
-│   │       └── lib/api.ts       # wrapper de fetch com cookie de sessão automático
-│   └── Dockerfile               # multi-stage: Node 20 (build React) → Python 3.12 (uvicorn)
-├── scripts/
-│   ├── authorize_calendar.py    # gera credenciais OAuth do Google Calendar (rodar uma vez)
-│   ├── setup_schemas.py         # cria tabelas PostgreSQL de todos os agentes
-│   ├── migrate_bq_to_pg.py      # migração one-time: BigQuery → PostgreSQL
-│   ├── migrate_nami_webapp.py   # adiciona colunas visuais + tabelas personal_loans/financings
-│   └── backup_postgres.py       # pg_dump → Google Cloud Storage (roda diariamente via Docker)
-├── specs/                       # specs por fatia (Spec Kit): 001..019
-│   ├── 002-nami-financas/       # sub-app Nami (design handoff)
-│   ├── 003-violet-diario/       # sub-app de diário (Violet)
-│   ├── 011-tasks-mvp/ … 014-tasks-habitos/   # motor de tarefas próprio (Kaguya)
-│   ├── 016-tasks-meudia/ … 019-tasks-calendar-hub/  # fatias planejadas de tarefas
-│   ├── 014-pessoas/             # identidade canônica de pessoas (Komi) — planejado
-│   └── 015-akane-filmes/        # agente de filmes (Akane) — planejado
-├── requirements.txt
-├── PLAN.md                  # design completo, fases, schemas, custos
-└── CLAUDE.md                # instruções do projeto para o Claude Code
+├── coordinator/     # bot Telegram + Makima (Agent ADK) — ver coordinator/CLAUDE.md
+├── agents/          # um pacote por especialista (nami, kaguya, kurisu, frieren,
+│                    # akane, marin, mai, komi, journal) — cada um com CLAUDE.md próprio
+├── mcp_servers/     # servidor MCP do Google Calendar
+├── webapp/          # FastAPI + React: 10 routers e 9 shells — ver webapp/CLAUDE.md e webapp/docs/
+├── scripts/         # setup de schemas, OAuth (Calendar/MAL), syncs e migrações one-time
+├── specs/           # specs por fatia (Spec Kit, 001..030) — artefatos históricos imutáveis
+├── docs/            # documentação por tipo: referencia/ · planos/ · arquivo/ — ver docs/README.md
+├── ROADMAP.md       # fonte única da verdade: fases, status atual e pendências
+└── CLAUDE.md        # guia do repo para desenvolvimento (inclui a árvore de arquivos detalhada)
 ```
+
+> A árvore detalhada, arquivo a arquivo, vive no [CLAUDE.md](CLAUDE.md) — aqui fica só o mapa de topo, para não manter duas árvores grandes em sincronia.
 
 ---
 
@@ -342,6 +259,7 @@ makima_personal_agent/
 | `/limpar livros` | Reseta só o contexto de livros (Frieren) |
 | `/limpar tarefas` | Reseta só o contexto de tarefas/agenda (Kaguya) |
 | `/limpar knowledge` | Reseta só o contexto de knowledge base (Kurisu) |
+| `/limpar filmes` | Reseta só o contexto de filmes (Akane) |
 | `/limpar animes` | Reseta só o contexto de animes (Marin) |
 | `/limpar series` | Reseta só o contexto de séries de TV (Mai) |
 | `/limpar pessoas` | Reseta só o contexto de pessoas e contatos (Komi) |
@@ -410,9 +328,9 @@ GOOGLE_CALENDAR_MAIN_CALENDAR_ID=  # geralmente o email Gmail
 # Sem a chave o limite é ~1.000 req/dia; com ela sobe para 10.000 req/dia
 GOOGLE_BOOKS_API_KEY=
 
-# Akane — TMDB e Letterboxd
-TMDB_TOKEN=                    # Bearer token da API v4 do TMDB (Settings → API → Read Access Token)
-LETTERBOXD_USERNAME=           # username do Letterboxd (ex: gustavobarreto) para sync do RSS
+# Akane e Mai — TMDB (filmes e séries)
+TMDB_API_KEY=                  # API key v3 do TMDB (themoviedb.org → Settings → API), usada por filmes E séries
+LETTERBOXD_USERNAME=           # username do Letterboxd (ex: gustavobarreto) para sync do RSS (Akane)
 
 # Marin — MyAnimeList OAuth2
 MAL_CLIENT_ID=                 # App ID do MAL (myanimelist.net → Account → API → Create Application)
@@ -503,26 +421,9 @@ npm install && npm run dev   # dev server em localhost:5173
 
 ## Fases de implementação
 
-| Fase | Descrição | Status |
-|---|---|---|
-| 1 | Nami (finanças): tools PostgreSQL + agente | ✅ |
-| 2 | Kaguya (tarefas + agenda): motor próprio PostgreSQL + MCP Calendar + tools cross-agent | ✅ |
-| 2.x | Kaguya — fatias 012 (recorrência), 013 (tags/smart-lists/calendário), 014 (hábitos) | ✅ |
-| 3 | Kurisu (knowledge base): Vertex AI RAG sobre vault Obsidian — estrutura criada, pendente corpus GCP | 🔧 |
-| 5a | Frieren (livros): PostgreSQL + Google Books API + menu interativo Telegram | ✅ |
-| — | Webapp (FastAPI + React) + diário Violet na web | ✅ |
-| 016 | Kaguya — Meu Dia + time-blocking (capacity bar, blocos de tempo, sugestões) | ✅ |
-| 017 | Kaguya — Matriz de Eisenhower (drag-and-drop 2×2 derivada de prioridade×urgência) | ✅ |
-| 018 | Kaguya — Command Palette ⌘K + atalhos de teclado + recorrência no quick-add | ✅ |
-| 019 | Kaguya — Calendar Hub (fan-out multi-fonte: tarefas + Nami + Frieren + GCal) | ✅ |
-| 014 | Komi — Pessoas (identidade canônica + vínculos cross-agent + REST `/api/people/*`) | ✅ backend |
-| 015 | Akane — Filmes (Letterboxd-style, PostgreSQL + TMDB/Letterboxd) | ✅ |
-| 021 | Marin — Animes (PostgreSQL + Jikan/AniList/ARM + MAL OAuth2 PKCE) | ✅ |
-| 022 | Mai — Séries de TV (PostgreSQL + TMDB API v4) | ✅ |
-| 024 | Kaguya — Kanban "Vidro" (reskin glass do board, perf `@dnd-kit` preservada) + **views configuráveis** (adornos + métricas do rodapé + filtro `FilterRules`, salvas no backend `kanban_views`) | ✅ |
-| 4 | Lucy (email): tools Gmail API v1 + agente | ⏳ |
+O histórico completo de fases e o status atual vivem no **[ROADMAP.md](ROADMAP.md)** — fonte única da verdade.
 
-**Status atual:** Kanban da Kaguya redesenhado no visual "Vidro" (vidro fosco/OKLCH, capacity meter, anel de subtarefas, rodapé-resumo) mantendo as otimizações de `@dnd-kit` (optimistic update, reordenação, sem repaint no drag), com **views de board configuráveis** salvas (spec 024). Komi (spec 014) ✅ backend — schema, tools, agente, coordinator, router REST e testes entregues; frontend pendente. Kurisu 🔧 — pendente corpus Vertex AI (ver `agents/kurisu/CLAUDE.md`).
+Resumo (jul/2026): fases 001–027, 029 e 030 entregues; 028 (memória unificada da Kurisu) parcial; Lucy (email, fase 4) planejada.
 
 ---
 

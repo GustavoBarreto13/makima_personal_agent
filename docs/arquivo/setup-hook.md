@@ -1,5 +1,7 @@
 # Configurar Hook SessionStart — TickTick Status
 
+> ⚠️ **OBSOLETO.** O TickTick foi aposentado na spec 011 (o sistema de tarefas agora é próprio, da Kaguya) e o script `scripts/ticktick_status.py` referenciado abaixo não existe mais no repo. Documento mantido apenas como registro histórico — não seguir estes passos.
+
 Este hook injeta o estado atual da tarefa "Makima - Personal Agent" do TickTick
 no contexto de cada sessão Claude Code.
 

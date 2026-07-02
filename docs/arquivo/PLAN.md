@@ -1,5 +1,7 @@
 # Design: Makima — Personal Assistant com Google ADK
 
+> ⚠️ **Documento histórico (congelado em ~jun/2026).** Ótimo para entender o *porquê* das decisões de arquitetura (batch vs agente, PostgreSQL único, ADK), mas o roadmap e os status daqui **não refletem mais o estado atual** — as fases 015–030 (Akane, Marin, Mai, Komi, Hub, Kanban, Kurisu ativa, Experiments, Metas) foram entregues depois. A fonte da verdade atual é a tabela "Fases de implementação" do `CLAUDE.md` e do `README.md`.
+
 > **Legenda de status:** ✅ ativo · 🔧 estrutura pronta, pendência aberta · ⏳ planejado (spec/design feito, sem código) · 🗄️ legado (substituído, mantido só por histórico)
 
 ## Contexto

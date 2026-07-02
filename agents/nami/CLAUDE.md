@@ -5,7 +5,7 @@
 **Nami** é o agente especialista em finanças pessoais. Inspirada na Nami de One Piece — navegadora e tesoureira obcecada por dinheiro. 🍊💰
 
 Responsabilidades:
-- Registrar e consultar transações (gastos e receitas) no BigQuery
+- Registrar e consultar transações (gastos e receitas) no PostgreSQL
 - Gerenciar assinaturas recorrentes, compras parceladas e cartões de crédito
 - Controlar empréstimos e financiamentos (PRICE e SAC)
 - Monitorar orçamento por categoria e calcular score de saúde financeira
@@ -21,15 +21,16 @@ Telegram (usuário)
 Makima (coordinator)
     ↓
 nami_agent (Agent ADK — singleton)
-    ├── tools.py              → transações, assinaturas, helpers BigQuery
+    ├── tools.py              → transações, assinaturas, resolução de contas/cartões
     ├── tools_accounts.py     → contas financeiras
     ├── tools_installments.py → compras parceladas
     ├── tools_credit_cards.py → cartões de crédito
     ├── tools_loans.py        → empréstimos e financiamentos
     ├── tools_budgets.py      → orçamento por categoria
-    └── tools_health.py       → score de saúde financeira
+    ├── tools_health.py       → score de saúde financeira
+    └── tools_rag.py          → consult_financial_knowledge() — stub de integração com a Kurisu (RAG)
         ↓ (todos)
-    BigQuery (dataset nami_finance_agent)
+    PostgreSQL (banco compartilhado — helpers em agents/db.py: run_select/run_dml)
 ```
 
 **Nami é singleton** — não usa `McpToolset`, não precisa de factory function.
@@ -41,9 +42,9 @@ from agents.nami.agent import nami_agent
 
 ---
 
-## Banco de dados BigQuery
+## Banco de dados PostgreSQL
 
-Dataset: `nami_finance_agent` (schema completo em `agents/nami/schema.sql`)
+Banco compartilhado do projeto (schema completo em `agents/nami/schema_pg.sql`; o antigo `schema.sql` do BigQuery é legado). Acesso via helpers de `agents/db.py` (`run_select` / `run_dml` / `get_conn`).
 
 **Tabelas:**
 
@@ -57,10 +58,10 @@ Dataset: `nami_finance_agent` (schema completo em `agents/nami/schema.sql`)
 | `budgets` | Orçamento mensal por categoria |
 | `accounts` | Contas financeiras (fonte canônica) |
 
-### Autenticação
+### Conexão
 
-Segue o padrão do repositório — ver `coordinator/CLAUDE.md` seção "Autenticação BigQuery".
-Função canônica: `_client()` em `agents/nami/tools.py`.
+A conexão vem da variável de ambiente `DATABASE_URL` (PostgreSQL), lida por `agents/db.py`.
+Não há mais cliente BigQuery — a migração para PostgreSQL foi concluída em jun/2026 (ver `docs/arquivo/MIGRACAO_POSTGRES.md`).
 
 ### Resolução de contas (`_resolve_account`)
 
@@ -75,7 +76,7 @@ def _resolve_account(name: str) -> dict | None:
 ```
 
 - Aceita correspondência exata ou por prefixo (case-insensitive, sem acentos)
-- Cache em memória — recarrega do BQ na primeira chamada ou após `_invalidate_accounts_cache()`
+- Cache em memória — recarrega do banco na primeira chamada ou após `_invalidate_accounts_cache()`
 - Todo INSERT de transação de **conta** deve escrever AMBOS: `conta` (nome display) e `account_id` (FK); `card_id` fica NULL
 
 ### Resolução de cartões (`_resolve_credit_card`)
@@ -107,7 +108,12 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 
 ---
 
-## Tools públicas (32 total)
+## Tools públicas (45 no total)
+
+> As tabelas abaixo listam as principais. Além delas, cada módulo tem o CRUD complementar
+> (`update_*` / `delete_*` de contas, cartões, empréstimos, parcelamentos, orçamentos e
+> assinaturas) e existe `consult_financial_knowledge(query)` em `tools_rag.py` — hoje um
+> **stub** que responde "pendente"; será substituído por um cross-agent call à Kurisu.
 
 ### Contas — `tools_accounts.py`
 

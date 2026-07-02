@@ -125,6 +125,35 @@ export const api = {
   },
 
   /**
+   * Faz uma requisição PUT autenticada com corpo JSON.
+   * Usado para substituir/atualizar um recurso existente por inteiro (ex: salvar um formulário completo).
+   *
+   * @param path - Caminho da rota no backend (ex: '/api/tasks/goals/123')
+   * @param body - Objeto que será convertido para JSON e enviado no corpo
+   * @returns Promise com o corpo da resposta deserializado como tipo T
+   * @throws Error se a resposta HTTP não for 2xx
+   */
+  put: async <T>(path: string, body: unknown): Promise<T> => {
+    const res = await fetch(path, {
+      method: 'PUT',
+      headers: {
+        // Informa ao servidor que o corpo da requisição é JSON
+        'Content-Type': 'application/json',
+      },
+      // Envia o cookie de sessão junto com a requisição
+      credentials: 'include',
+      // Converte o objeto JavaScript em string JSON para o corpo HTTP
+      body: JSON.stringify(body),
+    })
+
+    // Se o servidor retornou um erro (4xx, 5xx), lança uma exceção com o código HTTP
+    if (!res.ok) throw await errorFromResponse(res)
+
+    // Deserializa e retorna o JSON da resposta como o tipo T informado
+    return res.json() as Promise<T>
+  },
+
+  /**
    * Faz uma requisição DELETE autenticada.
    * Usado para remover recursos no backend (ex: deletar uma transação).
    * Não envia corpo — apenas o identificador do recurso fica na URL.
@@ -133,17 +162,6 @@ export const api = {
    * @returns Promise com o corpo da resposta deserializado como tipo T
    * @throws Error se a resposta HTTP não for 2xx
    */
-  put: async <T>(path: string, body: unknown): Promise<T> => {
-    const res = await fetch(path, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) throw await errorFromResponse(res)
-    return res.json() as Promise<T>
-  },
-
   del: async <T>(path: string): Promise<T> => {
     const res = await fetch(path, {
       method: 'DELETE',

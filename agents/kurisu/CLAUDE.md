@@ -12,7 +12,12 @@ responde, nunca cria nem edita notas.
 
 > A spec completa é a **027** (`specs/027-kurisu-knowledge-base/spec.md`). A **028**
 > (`specs/028-kurisu-unified-memory/`) estende a memória da Kurisu para os dados do
-> Postgres (diário, tarefas, finanças, mídia, pessoas) — **ainda não implementada**.
+> Postgres (diário, tarefas, finanças, mídia, pessoas) — **parcialmente implementada**:
+> a fundação vive em `agents/kurisu/memory/` (`exporters.py`, `render.py`, `store.py`,
+> `sync.py` — sync incremental via hash-manifest, rodado por `scripts/sync_kurisu_memory.py`)
+> e o motor puro de recência em `agents/kurisu/recency.py` (`aplicar_recencia` — reordena
+> trechos por `doc_date` após o rerank). 2 dos 8 exporters (diário, tarefas) prontos
+> localmente; deploy no VPS e os 6 exporters restantes pendentes.
 
 ---
 

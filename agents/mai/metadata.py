@@ -98,7 +98,9 @@ def _tmdb_get(url: str, params: Optional[dict] = None) -> Optional[dict]:
     Raises:
         RuntimeError: Quando todas as tentativas falham.
     """
-    import requests  # Importado aqui para evitar dependência circular no topo
+    # Import tardio ("lazy"): a biblioteca 'requests' (cliente HTTP) só é carregada
+    # quando esta função é de fato chamada, não quando o módulo é importado.
+    import requests
 
     # Backoff exponencial: 2s, 4s, 8s entre as tentativas
     delays = [2, 4, 8]

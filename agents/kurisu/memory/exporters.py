@@ -120,14 +120,11 @@ def export_tarefas(cur, since: "datetime | None") -> list:
     return docs
 
 
-# --- Padrão a replicar nos demais domínios (US4) ---------------------------------------
-# Cada um segue a mesma forma dos exporters acima: SELECT read-only + render para MemoryDoc.
-# Resumos datados (finanças) usam source_type="resumo" e agregam por período;
-# itens individuais (mídia, pessoas) usam source_type="individual".
-#
-# def export_financas(cur, since): ...   # Nami   — resumo datado de gastos
-# def export_pessoas(cur, since): ...    # Komi   — 1 doc individual por pessoa
-# def export_livros(cur, since): ...     # Frieren
-# def export_filmes(cur, since): ...     # Akane
-# def export_animes(cur, since): ...     # Marin
-# def export_series(cur, since): ...     # Mai
+# --- Próximos exporters a implementar (fase 028 / US4) ---------------------------------
+# Ainda faltam 6 dos 8 domínios. Cada novo exporter segue a mesma forma dos acima:
+# uma consulta SELECT só de leitura + a montagem de objetos MemoryDoc.
+# Duas variações de formato, conforme o dado:
+#   - Resumos datados (ex.: finanças): agregam por período e usam source_type="resumo".
+#   - Itens individuais (ex.: mídia, pessoas): 1 documento por item, source_type="individual".
+# Domínios pendentes: finanças (Nami — resumo datado de gastos), pessoas (Komi — 1 doc por
+# pessoa), livros (Frieren), filmes (Akane), animes (Marin) e séries (Mai).

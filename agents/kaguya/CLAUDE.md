@@ -8,7 +8,7 @@ de Nami/Frieren/Journal) — o TickTick foi aposentado. A agenda continua vindo 
 Calendar via MCP**.
 
 Princípio central: **paridade de canais**. Toda capacidade nasce como função na camada de
-lógica (`tools_tasks.py` / `tools_projects.py`); o canal Telegram (este agente) e o canal
+lógica (os módulos `tools_*.py`); o canal Telegram (este agente) e o canal
 webapp (router `/api/tasks/*`) são fachadas finas e paritárias sobre ela. O app é 100%
 utilizável sem o bot e vice-versa.
 
@@ -38,6 +38,7 @@ agents/kaguya/
 ├── gcal_sync.py          # espelho best-effort: push/remove tarefas no GCal "Kaguya — Tarefas" — fatia 019
 ├── calendar_prefs.py     # CRUD da tabela calendar_prefs (visibilidade + cor por fonte) — fatia 019
 ├── calendar_hub.py       # agregador: register/list_sources/aggregate fan-out best-effort — fatia 019
+├── komi_sync.py          # sync bidirecional best-effort de aniversários Komi ↔ Kaguya — fase 026
 ├── tools.py              # FACHADA: re-exporta a lógica + wrappers + cross-agent (Nami + Calendar Hub)
 ├── agent.py              # create_kaguya_agent() — factory (só o McpToolset do Calendar)
 └── CLAUDE.md             # este arquivo
@@ -83,6 +84,10 @@ As tools de tarefas são **funções Python** registradas direto (não MCP).
 | `reorder_task(task_id, after_id?, before_id?)` | posição esparsa ×1000 + renormalização |
 | `delete_task(task_id, scope="this")` / `restore_task` | soft delete / restaura; recorrente: `scope=this` (gera próxima) \| `series` (desativa a regra) |
 | `set_recurrence(task_id, rrule, mode)` / `clear_recurrence(task_id)` | anexa/remove a regra (exige `due_date`) |
+| `get_task(task_id)` | detalhe de uma tarefa (subtarefas, recorrência, tags) — usado pelos chips `[[id\|Título]]` do editor |
+| `move_task(task_id, new_parent_id, after_id?, before_id?)` | drag-and-drop de árvore: re-parenteia e posiciona (anti-ciclo; profundidade máx. 12) — spec 025 |
+| `list_eisenhower_tasks()` | tarefas abertas com os campos da classificação Eisenhower — fatia 017 |
+| `add_to_my_day` / `remove_from_my_day` / `reschedule_pending` / `set_estimate` / `set_time_block` / `clear_time_block` / `list_my_day` | Meu Dia + time-blocking — fatia 016 (servem `GET /api/tasks/my-day` e os wrappers do agente) |
 
 `_complete_task_on_cursor(cur, ...)` é a versão transacional reusada pelo pagamento atômico
 (pagamentos recorrentes também regeneram a próxima ocorrência atomicamente).
@@ -137,7 +142,9 @@ view guarda `display` (adornos visíveis + 3 métricas do rodapé) e um `filter`
 índice parcial `uq_kanban_views_builtin`) é **imutável** (update/delete → erro → HTTP 400).
 `list_board_tasks(project_id, rules)` carrega o board reusando `list_tasks` (subtarefas/tags)
 e o motor `_build_where_from_rules(default_open=False)` por **interseção de ids** — sem
-reimplementar a semântica do filtro. A view ativa por lista é estado de UI (localStorage do
+reimplementar a semântica do filtro. `list_board_for_view(view_id, project_id)` resolve o
+filtro salvo da view e delega a `list_board_tasks` (é o que o endpoint `/{id}/board` chama).
+A view ativa por lista é estado de UI (localStorage do
 webapp), não vive no banco. Router: `/api/tasks/kanban-views/*` + `/{id}/board`.
 
 ### `tools_calendar.py` — calendário / consulta por intervalo — fatia 013 / P3
@@ -284,7 +291,12 @@ apaga os itens (FR-010/SC-005). `get_goal.movements` agrega os três tipos por `
 | `add_to_my_day_by_name(task, date?)` | adiciona ao Meu Dia por id ou nome — fatia 016 |
 | `remove_from_my_day_by_name(task)` | retira do Meu Dia por id ou nome — fatia 016 |
 | `set_estimate_by_name(task, minutes)` | grava estimativa de duração por id ou nome — fatia 016 |
+| `eisenhower_status()` | relato textual dos 4 quadrantes da matriz de Eisenhower — fatia 017 |
 | (Calendar) | `list_events_today`, `create_event`, ... via MCP |
+
+> **Webapp-first (sem tool no agente):** views de Kanban (spec 024), Tiny Experiments (spec 029)
+> e Metas (spec 030) não registram nenhuma função no ADK nesta fatia — existem só na camada de
+> lógica + router REST. `tools.py` re-exporta os nomes marcando o ponto de extensão futuro.
 
 ### Cross-agent: pagamento atômico
 
