@@ -49,6 +49,22 @@ const PALETTE_MAP: Record<Tweaks['accent'], Record<string, string> | null> = {
   gold: { '--kg': 'oklch(0.74 0.13 85)', '--kg-deep': 'oklch(0.64 0.13 82)', '--kg-bright': 'oklch(0.82 0.12 88)', '--kg-tint': 'oklch(0.74 0.13 85 / 0.14)', '--kg-tint-2': 'oklch(0.74 0.13 85 / 0.24)' },
 }
 
+// ── Memória de visão por lista/grupo (Lista × Kanban) ────────────────────────
+// Ao abrir uma lista/grupo pela sidebar, respeitamos a última visão deixada nela.
+// Guardamos 'list' | 'kanban' por id. Para listas: 'list'→view 'list', 'kanban'→'kanban'.
+// Para grupos: 'kanban'→board do grupo (view 'group'), 'list'→seções (view 'group-list').
+// Default (sem memória): lista abre em 'list'; grupo abre em 'group' (Kanban) — igual ao atual.
+type ViewMode = 'list' | 'kanban'
+const readViewMode = (kind: 'list' | 'group', id: number, dflt: ViewMode): ViewMode => {
+  try {
+    const v = localStorage.getItem(`kg:${kind}:view:${id}`)
+    return v === 'list' || v === 'kanban' ? v : dflt
+  } catch { return dflt }
+}
+const writeViewMode = (kind: 'list' | 'group', id: number, mode: ViewMode) => {
+  try { localStorage.setItem(`kg:${kind}:view:${id}`, mode) } catch { /* ignore */ }
+}
+
 export function KaguyaShell() {
   // ── Tweaks (carregados do localStorage) ──
   const [tweaks, setTweaks] = useState<Tweaks>(() => {
@@ -118,6 +134,19 @@ export function KaguyaShell() {
     setView(v); setParam(p)
   }
 
+  // Abertura pela sidebar: respeita a última visão (Lista × Kanban) deixada na lista/grupo.
+  // Só intercepta cliques em lista/grupo; demais views (hoje, filtros, lixeira…) passam direto.
+  // Os toggles do topbar continuam chamando navigate() direto (escolha explícita do usuário).
+  const openFromSidebar = (v: KaguyaView, p: number | null = null) => {
+    if (v === 'list' && p != null) {
+      navigate(readViewMode('list', p, 'list') === 'kanban' ? 'kanban' : 'list', p)
+    } else if (v === 'group' && p != null) {
+      navigate(readViewMode('group', p, 'kanban') === 'list' ? 'group-list' : 'group', p)
+    } else {
+      navigate(v, p)
+    }
+  }
+
   // Atalhos globais de teclado (fatia 018):
   //   ⌘K / Ctrl+K  → abre a Command Palette (sempre, mesmo dentro de input)
   //   C             → nova tarefa (só fora de inputs — SC-003)
@@ -149,6 +178,15 @@ export function KaguyaShell() {
     if (view === 'kanban' && param != null) {
       localStorage.setItem('kaguya:kanban:last-list', String(param))
     }
+  }, [view, param])
+
+  // Lembra a última visão (Lista × Kanban) de cada lista/grupo, para a sidebar reabrir nela.
+  useEffect(() => {
+    if (param == null) return
+    if (view === 'list') writeViewMode('list', param, 'list')
+    else if (view === 'kanban') writeViewMode('list', param, 'kanban')
+    else if (view === 'group') writeViewMode('group', param, 'kanban')
+    else if (view === 'group-list') writeViewMode('group', param, 'list')
   }, [view, param])
 
   const runSearch = async () => {
@@ -319,7 +357,7 @@ export function KaguyaShell() {
           sidebar={sidebar}
           view={view}
           param={param}
-          onNavigate={navigate}
+          onNavigate={openFromSidebar}
           onNewTask={openNewTask}
           onNewProject={() => setProjectModal({ mode: 'create' })}
           onNewGroup={() => setGroupModal({ mode: 'create' })}
