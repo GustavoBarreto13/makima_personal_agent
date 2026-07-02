@@ -332,14 +332,14 @@ function TreeRow({
               <Icon name="loop" size={12} />
             </span>
           )}
-        </div>
 
-        {/* Subnota (description primeiro parágrafo) */}
-        {task.description && (
-          <span className="tk-subnote">
-            {task.description.split('\n')[0].slice(0, 80)}
-          </span>
-        )}
+          {/* Indicador de descrição: só o ícone, nunca o texto (abrir o modal mostra a nota) */}
+          {task.description && task.description.trim() && (
+            <span className="tk-flagmini" title="Tem descrição">
+              <Icon name="note" size={12} />
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Meta: avatares, 1ª tag, data de vencimento, flag de prioridade */}
