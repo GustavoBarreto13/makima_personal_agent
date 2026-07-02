@@ -19,6 +19,11 @@ const PATHS: Record<string, ReactNode> = {
   search: <><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></>,
   chevron: <><path d="m9 18 6-6-6-6" /></>,
   chevronDown: <><path d="m6 9 6 6 6-6" /></>,
+  // Aliases curtos usados em TaskTree/ListSection (evita ícones vazios/transparentes).
+  chevDown: <><path d="m6 9 6 6 6-6" /></>,   // = chevronDown (toggle de subtarefas, colapsar)
+  chevUp: <><path d="m18 15-6-6-6 6" /></>,   // chevron para cima (colapsar-tudo alternado)
+  cal: <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>, // = calendar (glyph de evento)
+  edit: <><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></>, // lápis (editar na árvore)
   x: <><path d="M18 6 6 18M6 6l12 12" /></>,
   dots: <><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></>,
   loop: <><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></>,
