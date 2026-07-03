@@ -21,6 +21,8 @@ export type IconName =
   | 'envelope'
   | 'chevron-left'
   | 'arrow-left'
+  | 'sparkles'
+  | 'graduation'
 
 interface IconProps {
   // Nome do ícone a renderizar
@@ -177,6 +179,22 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <line x1="19" y1="12" x2="5" y2="12" strokeWidth={1.8} strokeLinecap="round" stroke="currentColor" />
       <polyline points="12 19 5 12 12 5" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" fill="none" stroke="currentColor" />
     </>
+  ),
+  // Estrelas/faísca — botão discreto de análise do Tutor (spec 031)
+  sparkles: (
+    <path
+      strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"
+      fill="none" stroke="currentColor"
+      d="M12 3l1.4 3.6L17 8l-3.6 1.4L12 13l-1.4-3.6L7 8l3.6-1.4L12 3zM5 15l.8 2.2L8 18l-2.2.8L5 21l-.8-2.2L2 18l2.2-.8L5 15zM19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"
+    />
+  ),
+  // Capelo de formatura — tela Tutor (spec 031)
+  graduation: (
+    <path
+      strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"
+      fill="none" stroke="currentColor"
+      d="M22 10L12 5 2 10l10 5 10-5zM6 12.5V17c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5M22 10v6"
+    />
   ),
 }
 

@@ -21,6 +21,7 @@ import { Tags } from './screens/Tags'
 import { People } from './screens/People'
 import { Insights } from './screens/Insights'
 import { Reflect } from './screens/Reflect'
+import { Tutor } from './screens/Tutor'
 
 // ── Paletas de acento (5 vars CSS por tema) ──────────────────────────────────
 const ACCENT_PALETTES: Record<string, Record<string, string>> = {
@@ -157,6 +158,8 @@ export function VioletShell() {
         return <JournalScreen query={query} navigate={navigate} />
       case 'reflect':
         return <Reflect navigate={navigate} />
+      case 'tutor':
+        return <Tutor />
       case 'insights':
         // Feature 009: Insights agora recebe navigate para poder abrir dias no Write
         return <Insights navigate={navigate} />
@@ -184,6 +187,7 @@ export function VioletShell() {
     write: 'Escrever', journal: 'Arquivo', reflect: 'Refletir',
     insights: 'Insights', dreams: 'Sonhos', highlights: 'Destaques',
     ideas: 'Ideias', wisdom: 'Sabedoria', notes: 'Notas', tags: 'Tags', people: 'Pessoas',
+    tutor: 'Tutor',
   }
 
   return (
@@ -208,10 +212,11 @@ export function VioletShell() {
         <nav className="side-nav">
           {/* Grupo 1: navegação principal */}
           {([
-            { view: 'write',    icon: 'write',    label: 'Escrever' },
-            { view: 'journal',  icon: 'journal',  label: 'Arquivo' },
-            { view: 'reflect',  icon: 'reflect',  label: 'Refletir' },
-            { view: 'insights', icon: 'insights', label: 'Insights' },
+            { view: 'write',    icon: 'write',      label: 'Escrever' },
+            { view: 'journal',  icon: 'journal',    label: 'Arquivo' },
+            { view: 'reflect',  icon: 'reflect',    label: 'Refletir' },
+            { view: 'insights', icon: 'insights',   label: 'Insights' },
+            { view: 'tutor',    icon: 'graduation', label: 'Tutor' },
           ] as const).map(item => (
             <button
               key={item.view}

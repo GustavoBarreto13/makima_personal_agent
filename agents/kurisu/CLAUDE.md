@@ -17,7 +17,82 @@ responde, nunca cria nem edita notas.
 > `sync.py` — sync incremental via hash-manifest, rodado por `scripts/sync_kurisu_memory.py`)
 > e o motor puro de recência em `agents/kurisu/recency.py` (`aplicar_recencia` — reordena
 > trechos por `doc_date` após o rerank). 2 dos 8 exporters (diário, tarefas) prontos
-> localmente; deploy no VPS e os 6 exporters restantes pendentes.
+> localmente; deploy no VPS e os 6 exporters restantes pendentes. A **031**
+> (`specs/031-violet-tutor-idiomas/`) adiciona o **Tutor de Idiomas** — ver seção própria
+> abaixo — persona Kurisu aplicada a um domínio novo (correção de escrita na Violet),
+> **✅ implementada**.
+
+---
+
+## Tutor de Idiomas na Violet (spec 031) — `tutor_mastery.py` + `tutor.py`
+
+Um botão discreto em cada bullet do diário (Violet) pede uma análise de escrita em
+inglês. A Kurisu analisa via **Gemini one-shot** (`google-genai`, não ADK — o webapp
+nunca instancia ADK) e devolve correção gramatical mínima, reescrita natural/idiomática,
+erros por conceito gramatical (com explicação em PT-BR), um resumo na voz dela e uma
+nota 0–100. O resultado alimenta um **toggle no próprio bullet** (original ↔ corrigido,
+o original nunca é sobrescrito) e um **perfil de maestria por conceito** que evolui ao
+longo do tempo, exibido numa tela de progresso própria (`/journal` → aba "Tutor").
+
+### Por que aqui e não em `agents/journal/`
+
+O tutor **é** a Kurisu (persona + gancho futuro com a memória unificada — spec 028).
+Isso cria um acoplamento cross-domain aceito e documentado: as tabelas
+`journal_tutor_*` têm FK para `journal_bullets(id)` (ON DELETE CASCADE), mas
+`agents/journal/` continua **sem** nenhuma dependência da Kurisu — quem conhece os
+dois ao mesmo tempo é só o **router do webapp** (`webapp/backend/routers/journal.py`),
+que importa `agents.kurisu.tutor` e compõe o campo `tutor` no payload de `GET /page`.
+
+### Motor puro — `tutor_mastery.py`
+
+Espelha `agents/kaguya/habit_strength.py` (EMA, sem banco, testável isolado), mas com
+sinal por **análise em que o conceito apareceu** (não por dia — sem escrita, sem sinal;
+**não há decaimento por ausência**, diferente do modelo de hábitos):
+
+- `mastery(signals, weight=0.3)` — EMA cronológica (0–1); peso maior que o dos hábitos
+  (0.1) porque a escrita melhora mais rápido e há menos amostras.
+- `trend(signals)` — 2 EMAs (rápida/lenta); `None` com <3 sinais ("poucos dados").
+- `summarize(signals)` — `{mastery, mastery_pct, trend, samples, correct}`.
+- `estimate_cefr(recent_scores)` — nível A1–C2 pela média das notas recentes;
+  `preliminary=True` com <5 análises. Derivado na leitura, **sem** chamada extra ao Gemini.
+- `pick_next_focus(skills, guide_targets)` — sugestão determinística de próximo foco:
+  prioriza os alvos do guia de estudo ativo (menor maestria entre eles); sem guia (ou
+  sem dados nos alvos), cai para o conceito de menor maestria com `samples >= 3`.
+
+Gate: `tests/agents/test_kurisu_tutor_mastery.py`.
+
+### Lógica + Gemini — `tutor.py`
+
+- `CONCEPTS_EN` — vocabulário canônico (~27 slugs + rótulo PT-BR: `verb-to-be`,
+  `articles`, `past-simple`, `prepositions`, `phrasal-verbs`, ...). Injetado no prompt
+  para manter os slugs estáveis entre análises; qualquer slug fora da lista vira
+  `"outros"` (`_normalize_slug`). Rótulos são sempre derivados server-side (nunca
+  confiamos no rótulo que o modelo eventualmente devolvesse).
+- `_ensure_tutor_tables()` — cria as 4 tabelas `journal_tutor_{analyses,events,skills,guides}`
+  (idempotente, chamada na importação — mesmo padrão de `agents/journal/tools.py`).
+- `_build_prompt` + `_call_gemini` — chamada one-shot (`genai.Client(...).models.generate_content`,
+  `response_schema` força JSON estruturado); autentica com `GEMINI_API_KEY`. Quando há um
+  guia de estudo ativo, o prompt ganha um bloco extra de ênfase nos conceitos-alvo.
+- `analisar_escrita(bullet_id, language='en')` — a tool principal (US1): chamada ao
+  Gemini acontece **fora** da transação de escrita; falha → `{status:'error'}` sem
+  gravar nada (FR-010). Sucesso: insere 1 `analyses`, N `events` (1 por conceito tocado)
+  e recomputa (`UPSERT`) a `skills` de cada conceito a partir do histórico completo de
+  events daquele `(language, concept_slug)`.
+- `get_bullet_analysis` / `get_bullets_tutor_meta` — leitura para o toggle (US2); a
+  segunda é 1 query agregada (`DISTINCT ON`) para compor o campo `tutor` de vários
+  bullets de uma vez (evita N+1 no `GET /page`).
+- `list_skills` / `list_analyses` / `get_progress` — tela de progresso (US3): `get_progress`
+  junta skills + `estimate_cefr` + `pick_next_focus` + guia ativo num único payload.
+- `get_active_guide` / `set_active_guide` / `deactivate_guide` — guia de estudo (US4):
+  no máximo um ativo por idioma (índice único parcial); trocar de guia desativa o
+  anterior na mesma transação; editar/remover só afeta análises **futuras**.
+
+### Tabelas (`journal_tutor_*`)
+
+`analyses` (1 por análise pedida) → `events` (1 por conceito tocado, fonte da verdade
+do progresso) → `skills` (cache materializado por conceito, recomputável dos events) +
+`guides` (guia de estudo, no máx. 1 ativo por idioma). Coluna a coluna:
+`docs/referencia/POSTGRES.md`.
 
 ---
 

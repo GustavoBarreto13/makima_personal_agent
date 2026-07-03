@@ -227,6 +227,27 @@ Todos os endpoints exigem autenticação. Chamam as tools do Journal (`agents/jo
 | `GET` | `/api/journal/dreams` | Todas as entradas que têm o campo `dream` preenchido. | — |
 | `GET` | `/api/journal/stats` | Insights agregados do ano (total de palavras, dias ativos, etc.). | `?year=YYYY` (obrigatório) |
 
+### Tutor de Idiomas (spec 031 — persona Kurisu)
+
+Chamam a lógica de `agents/kurisu/tutor.py` (cross-domain intencional — ver
+`agents/kurisu/CLAUDE.md`). Detalhes campo a campo em
+`specs/031-violet-tutor-idiomas/contracts/api.md`.
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `POST` | `/api/journal/bullets/{bullet_id}/tutor` | Analisa a escrita do bullet via Gemini (US1); falha da IA não grava nada. | Body: `AnalyzeTutorBody` `{language}` |
+| `GET` | `/api/journal/bullets/{bullet_id}/tutor` | Última análise do bullet — serve o toggle original↔corrigido (US2). | — |
+| `GET` | `/api/journal/tutor/progress` | Skills por conceito + nível CEFR + próximo foco + guia ativo (US3/US4). | `?language=en` |
+| `GET` | `/api/journal/tutor/analyses` | Histórico de análises recentes. | `?language=en&limit=20` |
+| `GET` | `/api/journal/tutor/concepts` | Lista canônica de conceitos gramaticais (popula o seletor do guia). | — |
+| `GET` | `/api/journal/tutor/guide` | Guia de estudo ativo do idioma, se houver. | `?language=en` |
+| `PUT` | `/api/journal/tutor/guide` | Cria/substitui o guia ativo (desativa o anterior na mesma transação). | Body: `SaveTutorGuideBody` |
+| `DELETE` | `/api/journal/tutor/guide` | Remove (desativa) o guia ativo — não afeta análises já salvas. | `?language=en` |
+
+> `GET /api/journal/page` também ganha um campo `tutor` (nullable) em cada bullet —
+> `{analysis_id, has_correction, error_count}` — composto **no router** via
+> `get_bullets_tutor_meta` (1 query agregada), sem alterar `agents/journal/get_or_create_page`.
+
 ---
 
 ## Tarefas (`/api/tasks/*`)

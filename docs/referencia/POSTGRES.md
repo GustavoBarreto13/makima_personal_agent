@@ -39,7 +39,7 @@ diferentes.
   Todos os schemas do repo são **idempotentes** (`CREATE TABLE IF NOT EXISTS`,
   `CREATE INDEX IF NOT EXISTS`), então rodar de novo não dá erro nem duplica dados.
 
-### Os oito domínios (54 tabelas no total)
+### Os nove domínios (58 tabelas no total)
 
 | Domínio | Onde | Tabelas |
 |---|---|---|
@@ -51,6 +51,7 @@ diferentes.
 | **Séries de TV** | Agente Mai | `series`, `seasons`, `series_episodes`, `series_watch_logs` |
 | **Pessoas** | Agente Komi | `people`, `person_aliases`, `person_dates`, `person_links` |
 | **Diário** (webapp-only) | `agents/journal` | `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_emotions`, `journal_emotion_logs`, `journal_letters` |
+| **Tutor de Idiomas** (cross-domain — FK p/ `journal_bullets`) | Agente Kurisu | `journal_tutor_analyses`, `journal_tutor_events`, `journal_tutor_skills`, `journal_tutor_guides` |
 
 ---
 
@@ -1267,6 +1268,87 @@ vinculadas a pessoas da Komi (`person_links` com `entity_type = 'journal_letter'
 > Ao criar suas tabelas, o módulo do Journal também **amplia o CHECK** de `person_links` (Komi)
 > para aceitar `entity_type = 'journal_letter'` — de forma idempotente, e só se a tabela da Komi
 > já existir.
+
+### Tutor de Idiomas — `journal_tutor_*` (dono: agente **Kurisu**, spec 031)
+
+Cross-domain **intencional**: o tutor é a persona da Kurisu aplicada à escrita da Violet, então
+as tabelas têm FK para `journal_bullets` mas são **criadas e mantidas por `agents/kurisu/tutor.py`**
+(não pelo Journal). Quem compõe os dois domínios é o router do webapp — ver `agents/kurisu/CLAUDE.md`.
+
+#### `journal_tutor_analyses`
+
+Uma linha por análise de escrita pedida.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `bullet_id` | INT | NÃO | — | **FK** → `journal_bullets(id)` `ON DELETE CASCADE`. |
+| `language` | TEXT | NÃO | — | Idioma-alvo (ex.: `'en'`). |
+| `original_text` | TEXT | NÃO | — | Instantâneo do texto analisado (não muda se o bullet for editado depois). |
+| `corrected_text` | TEXT | NÃO | — | Correção gramatical mínima — alimenta o toggle do bullet. |
+| `natural_rewrite` | TEXT | SIM | — | Reescrita natural/idiomática — só exibida no painel de análise. |
+| `errors_json` | JSONB | NÃO | `'[]'` | `[{concept_slug, concept_label, wrong, right, explanation, severity}]`. |
+| `summary` | TEXT | NÃO | — | Resumo do aprendizado, voz Kurisu, PT-BR. |
+| `score` | INT | NÃO | — | Nota 0–100. |
+| `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação. |
+
+**Índices:** `idx_tutor_analyses_bullet` em `(bullet_id)`; `idx_tutor_analyses_lang_created` em
+`(language, created_at DESC)`.
+
+#### `journal_tutor_events`
+
+Fonte da verdade do progresso — 1 linha por (análise × conceito tocado).
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `analysis_id` | INT | NÃO | — | **FK** → `journal_tutor_analyses(id)` `ON DELETE CASCADE`. |
+| `language` | TEXT | NÃO | — | Denormalizado para consulta por idioma. |
+| `concept_slug` | TEXT | NÃO | — | Slug da lista canônica (`CONCEPTS_EN`) ou `'outros'`. |
+| `concept_label` | TEXT | NÃO | — | Rótulo PT-BR. |
+| `correct` | BOOLEAN | NÃO | — | `TRUE` = usado corretamente · `FALSE` = erro. |
+| `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Herda o momento da análise. |
+
+**Índices:** `idx_tutor_events_series` em `(language, concept_slug, created_at)` — a série
+temporal usada pelo motor puro `tutor_mastery.py`.
+
+#### `journal_tutor_skills`
+
+Cache materializado por conceito — recomputado a cada análise, sempre recomputável a partir
+dos `events`.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `language` | TEXT | NÃO | — | Idioma. |
+| `concept_slug` | TEXT | NÃO | — | Slug do conceito. |
+| `concept_label` | TEXT | NÃO | — | Rótulo PT-BR. |
+| `mastery` | REAL | NÃO | `0` | Maestria 0–1 (EMA). |
+| `prev_mastery` | REAL | NÃO | `0` | Valor anterior (frase de evolução). |
+| `trend` | TEXT | NÃO | `'flat'` | `up` \| `down` \| `flat` — só significativo com `samples >= 3`. |
+| `samples` | INT | NÃO | `0` | Total de sinais registrados. |
+| `correct` | INT | NÃO | `0` | Quantos foram corretos. |
+| `last_seen` | TIMESTAMPTZ | SIM | — | Último aparecimento numa análise. |
+| `updated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Auditoria. |
+
+**Constraints:** `UNIQUE(language, concept_slug)`.
+
+#### `journal_tutor_guides`
+
+Guia de estudo direcionável (US4) — no máximo um ativo por idioma.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `language` | TEXT | NÃO | — | Idioma. |
+| `description` | TEXT | NÃO | — | Foco livre (livro/método/tópico). |
+| `target_concepts` | JSONB | NÃO | `'[]'` | Slugs-alvo da lista canônica. |
+| `active` | BOOLEAN | NÃO | `TRUE` | Só um ativo por idioma. |
+| `created_at` / `updated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Auditoria. |
+
+**Índices:** `uq_tutor_guides_active` — único parcial em `(language) WHERE active`, garante
+no máximo um guia ativo por idioma. Trocar de guia = desativar o anterior + inserir o novo,
+na mesma transação.
 
 ---
 

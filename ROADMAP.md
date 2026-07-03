@@ -35,10 +35,11 @@
 | 028 | Kurisu — memória unificada (multi-corpus + exporters + sync incremental) | 🔧 parcial |
 | 029 | Kaguya — Tiny Experiments (mini-experimentos com log, pausa, revisão e aderência) | ✅ |
 | 030 | Kaguya — Metas (áreas da vida, marcos, vínculos, progresso) | ✅ |
+| 031 | Violet — Tutor de Idiomas (persona Kurisu): análise de escrita via Gemini, toggle original/corrigido, maestria por conceito (EMA), nível CEFR estimado, guia de estudo direcionável | ✅ |
 
 ## Status atual (jul/2026)
 
-Fases 001–027, 029 e 030 entregues. A **028** (memória unificada da Kurisu) está parcial:
+Fases 001–027, 029, 030 e 031 entregues. A **028** (memória unificada da Kurisu) está parcial:
 fundação (`agents/kurisu/memory/`) + sync incremental + 2 dos 8 exporters (diário, tarefas)
 prontos localmente; deploy no VPS e os 6 exporters restantes pendentes.
 

@@ -12,7 +12,10 @@
 
 // Tipos do domínio Violet usados pelos métodos de emoção do violetApi.
 // types.ts contém só interfaces (sem runtime) — import seguro, sem ciclo.
-import type { Emotion, EmotionLog, EmotionStats, Letter } from '../pages/violet/types'
+import type {
+  Emotion, EmotionLog, EmotionStats, Letter,
+  TutorAnalysis, TutorAnalysisSummary, TutorConcept, TutorProgress, TutorGuide,
+} from '../pages/violet/types'
 
 /**
  * Extrai a mensagem de erro de uma resposta HTTP malsucedida.
@@ -384,6 +387,46 @@ export const violetApi = {
    */
   favoriteDays: (year: number) =>
     api.get<string[]>(`/api/journal/favorite-days?year=${year}`),
+
+  // ── Tutor de Idiomas (spec 031 — persona Kurisu) ─────────────────────────
+
+  /** Analisa a escrita de um bullet via Gemini (US1) — persiste a análise. */
+  analyzeTutor: (bulletId: number, language = 'en') =>
+    api.post<{ status: string; analysis: TutorAnalysis; skills_touched: string[] }>(
+      `/api/journal/bullets/${bulletId}/tutor`,
+      { language },
+    ),
+
+  /** Última análise de um bullet (serve o toggle original↔corrigido — US2). */
+  bulletAnalysis: (bulletId: number) =>
+    api.get<{ analysis: TutorAnalysis | null }>(`/api/journal/bullets/${bulletId}/tutor`),
+
+  /** Dados da tela de progresso: skills + nível CEFR + próximo foco + guia ativo (US3/US4). */
+  tutorProgress: (language = 'en') =>
+    api.get<TutorProgress>(`/api/journal/tutor/progress?language=${language}`),
+
+  /** Histórico de análises recentes de um idioma (US3). */
+  tutorAnalyses: (language = 'en', limit = 20) =>
+    api.get<TutorAnalysisSummary[]>(`/api/journal/tutor/analyses?language=${language}&limit=${limit}`),
+
+  /** Lista canônica de conceitos gramaticais — popula o seletor de alvos do guia (US4). */
+  tutorConcepts: (language = 'en') =>
+    api.get<TutorConcept[]>(`/api/journal/tutor/concepts?language=${language}`),
+
+  /** Guia de estudo ativo do idioma, se houver (US4). */
+  getTutorGuide: (language = 'en') =>
+    api.get<{ guide: TutorGuide | null }>(`/api/journal/tutor/guide?language=${language}`),
+
+  /** Cria/atualiza o guia de estudo ativo (US4). */
+  saveTutorGuide: (body: { language?: string; description: string; target_concepts?: string[] }) =>
+    api.put<{ status: string; guide: TutorGuide }>('/api/journal/tutor/guide', {
+      language: 'en',
+      ...body,
+    }),
+
+  /** Remove (desativa) o guia de estudo ativo — não afeta análises já salvas. */
+  deleteTutorGuide: (language = 'en') =>
+    api.del<{ status: string }>(`/api/journal/tutor/guide?language=${language}`),
 }
 
 // ── Tipos da seção Frieren ─────────────────────────────────────────────────

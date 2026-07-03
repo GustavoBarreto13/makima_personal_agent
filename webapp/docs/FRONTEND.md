@@ -177,6 +177,17 @@ wrapper typed não suporta `multipart/form-data`.
 | `notes` | Notes | Coleção de bullets do tipo `note` |
 | `tags` | Tags | Nuvem de `#tags` por frequência |
 | `people` | People | Grid de `@pessoas` mencionadas com avatar de iniciais |
+| `tutor` | Tutor | Progresso do Tutor de Idiomas (spec 031): skills por conceito, nível CEFR, próximo foco e guia de estudo |
+
+**Tutor de Idiomas (spec 031 — persona Kurisu):** botão discreto (`.tt-icon-btn`, ícone
+`sparkles`) em cada bullet do `Write.tsx` pede uma análise de escrita via
+`violetApi.analyzeTutor`; o resultado abre em `components/TutorModal.tsx` (correção,
+reescrita natural, erros por conceito, resumo e nota). Bullets já analisados ganham um
+toggle inline (`.tt-toggle-btn`) para alternar entre o texto original (nunca sobrescrito)
+e a versão corrigida, buscada sob demanda via `violetApi.bulletAnalysis`. A tela `Tutor`
+(sidebar, ícone `graduation`) mostra a barra de maestria + glyph de tendência (📈/📉/➡️)
+por conceito, o nível CEFR estimado, a sugestão de próximo foco e o formulário do guia
+de estudo (US4) — todos os endpoints em `violetApi.tutor*`/`*TutorGuide`.
 
 **Componentes de UI (violet/ui/):**
 

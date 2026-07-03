@@ -1152,4 +1152,167 @@
   padding: 7px 16px; border: 1px solid var(--line); border-radius: 8px;
   background: transparent; color: var(--ink-3); cursor: pointer; font-size: 14px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Tutor de Idiomas (spec 031) — persona Kurisu
+   .tt-actions/.tt-icon-btn/.tt-toggle-btn: ações discretas no bullet.
+   .tt-overlay/.tt-modal: modal de resultado da análise.
+   .tt-progress-*: tela Tutor (skills, nível, guia).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Ações discretas no bullet (botão de análise + toggle) ─────────────────── */
+.tt-actions {
+  display: flex; align-items: center; gap: 6px; margin-top: 3px;
+  opacity: 0; transition: opacity 0.12s ease;
+}
+.bgroup:hover .tt-actions, .bgroup:focus-within .tt-actions { opacity: 1; }
+.tt-icon-btn, .tt-toggle-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink-3); font-family: var(--sans);
+  font-size: 11px; cursor: pointer; transition: all 0.12s;
+}
+.tt-icon-btn:hover, .tt-toggle-btn:hover { border-color: var(--accent); color: var(--accent-deep); }
+.tt-icon-btn svg { color: var(--accent); flex-shrink: 0; }
+.tt-icon-btn:disabled { opacity: 0.5; cursor: default; }
+.tt-toggle-btn { font-weight: 500; }
+.tt-error-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px;
+  background: var(--garnet-tint); color: var(--garnet); font-size: 9.5px; font-weight: 600;
+}
+
+/* Banner de erro amigável (falha da IA — nada é salvo, FR-010) */
+.tt-error-banner {
+  margin-top: 14px; padding: 10px 14px; border-radius: var(--r-md);
+  background: var(--garnet-tint); color: var(--garnet); font-size: 13px; cursor: pointer;
+}
+.tt-dismiss { opacity: 0.7; font-size: 11.5px; }
+
+/* ── Modal de resultado da análise ──────────────────────────────────────────── */
+.tt-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: oklch(0.2 0.02 258 / 0.42); backdrop-filter: blur(3px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 6vh 16px; overflow-y: auto;
+}
+.tt-modal {
+  width: 100%; max-width: 560px; background: var(--card); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg); border: 1px solid var(--line);
+}
+.tt-modal-head {
+  display: flex; align-items: center; gap: 8px; padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.tt-modal-icon { color: var(--accent); display: flex; }
+.tt-modal-title { font-family: var(--serif); font-size: 17px; font-weight: 600; color: var(--ink); }
+.tt-score {
+  margin-left: auto; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 34px; height: 26px; padding: 0 8px; border-radius: 999px;
+  background: var(--accent-tint); color: var(--accent-deep); font-weight: 700; font-size: 13px;
+}
+.tt-close {
+  border: none; background: transparent; color: var(--ink-3); font-size: 22px;
+  line-height: 1; cursor: pointer; padding: 0 2px;
+}
+.tt-close:hover { color: var(--ink); }
+
+.tt-modal-body { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 16px; max-height: 70vh; overflow-y: auto; }
+.tt-block-title {
+  margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--ink-4);
+}
+.tt-text { margin: 0; font-size: 15px; line-height: 1.6; color: var(--ink); }
+.tt-text.tt-natural { font-family: var(--serif); font-style: italic; color: var(--ink-2); }
+
+.tt-errors { display: flex; flex-direction: column; gap: 10px; }
+.tt-error {
+  padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--line);
+  border-left: 3px solid var(--ink-4); background: var(--card-2);
+}
+.tt-error.tt-sev-high   { border-left-color: var(--garnet); }
+.tt-error.tt-sev-medium { border-left-color: var(--gold-deep); }
+.tt-error.tt-sev-low    { border-left-color: var(--ink-4); }
+.tt-error-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.tt-concept-chip {
+  font-size: 11.5px; font-weight: 600; color: var(--accent-deep);
+  background: var(--accent-tint); padding: 2px 8px; border-radius: 999px;
+}
+.tt-sev-label { font-size: 10.5px; color: var(--ink-4); text-transform: uppercase; letter-spacing: 0.04em; }
+.tt-error-diff { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 13px; margin-bottom: 6px; flex-wrap: wrap; }
+.tt-wrong { color: var(--garnet); text-decoration: line-through; }
+.tt-arrow { color: var(--ink-4); }
+.tt-right { color: var(--emerald); font-weight: 600; }
+.tt-explanation { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
+.tt-perfect { font-family: var(--serif); font-style: italic; color: var(--ink-3); margin: 0; }
+
+.tt-summary-block { padding-top: 4px; border-top: 1px dashed var(--line); }
+.tt-summary { margin: 0; font-family: var(--serif); font-style: italic; font-size: 15px; line-height: 1.6; color: var(--ink-2); }
+
+/* ── Tela de progresso (Tutor.tsx) ──────────────────────────────────────────── */
+.tt-page { max-width: var(--read-max); margin: 0 auto; padding: 8px 0 60px; display: flex; flex-direction: column; gap: 22px; }
+.tt-empty { font-family: var(--serif); font-style: italic; color: var(--ink-3); text-align: center; padding: 40px 0; }
+
+.tt-level-card {
+  display: flex; align-items: center; gap: 14px; padding: 16px 18px;
+  border-radius: var(--r-lg); background: var(--card); border: 1px solid var(--line);
+}
+.tt-level-badge {
+  font-family: var(--serif); font-size: 28px; font-weight: 700; color: var(--accent-deep);
+  min-width: 52px; text-align: center;
+}
+.tt-level-info { display: flex; flex-direction: column; gap: 2px; }
+.tt-level-label { font-size: 12px; color: var(--ink-4); text-transform: uppercase; letter-spacing: 0.06em; }
+.tt-level-preliminary { font-size: 11.5px; color: var(--gold-deep); }
+
+.tt-focus-card {
+  padding: 14px 16px; border-radius: var(--r-md);
+  background: linear-gradient(90deg, var(--accent-tint), transparent 80%);
+  border: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px;
+}
+.tt-focus-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-deep); }
+.tt-focus-concept { font-family: var(--serif); font-size: 17px; font-weight: 600; color: var(--ink); }
+.tt-focus-reason { font-size: 12.5px; color: var(--ink-3); }
+
+.tt-section-title { margin: 0; font-family: var(--serif); font-size: 16px; font-weight: 600; color: var(--ink); }
+
+.tt-skills { display: flex; flex-direction: column; gap: 10px; }
+.tt-skill {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-radius: var(--r-md); background: var(--card); border: 1px solid var(--line);
+}
+.tt-skill.is-target { border-color: var(--accent); background: var(--accent-tint); }
+.tt-skill-name { flex: 0 0 150px; font-size: 13.5px; color: var(--ink); font-weight: 500; }
+.tt-skill-bar-wrap { flex: 1; height: 7px; border-radius: 999px; background: var(--mist); overflow: hidden; }
+.tt-skill-bar { height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.3s ease; }
+.tt-skill-pct { flex: 0 0 34px; text-align: right; font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.tt-skill-trend { flex: 0 0 18px; text-align: center; font-size: 13px; }
+.tt-skill-badge { flex-shrink: 0; font-size: 9.5px; color: var(--ink-4); background: var(--mist); padding: 2px 6px; border-radius: 999px; }
+
+.tt-history { display: flex; flex-direction: column; gap: 8px; }
+.tt-history-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border-radius: var(--r-sm); border: 1px solid var(--line-2);
+}
+.tt-history-score {
+  flex: 0 0 30px; font-family: var(--mono); font-weight: 700; font-size: 13px; color: var(--accent-deep);
+}
+.tt-history-summary { flex: 1; font-size: 12.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-history-date { flex-shrink: 0; font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); }
+
+/* ── Guia de estudo (US4) ────────────────────────────────────────────────────── */
+.tt-guide-card {
+  padding: 14px 16px; border-radius: var(--r-md); background: var(--card);
+  border: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px;
+}
+.tt-guide-desc { font-size: 14px; color: var(--ink); }
+.tt-guide-targets { display: flex; gap: 6px; flex-wrap: wrap; }
+.tt-guide-actions { display: flex; gap: 8px; }
+.tt-guide-form { display: flex; flex-direction: column; gap: 8px; }
+.tt-guide-concepts { display: flex; gap: 6px; flex-wrap: wrap; max-height: 130px; overflow-y: auto; padding: 2px; }
+.tt-concept-toggle {
+  font-size: 11.5px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card-2); color: var(--ink-3);
+}
+.tt-concept-toggle.selected { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-deep); font-weight: 600; }
 .lt-cancel:hover { color: var(--ink); border-color: var(--ink-4); }

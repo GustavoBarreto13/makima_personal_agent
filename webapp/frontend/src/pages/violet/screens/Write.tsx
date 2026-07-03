@@ -4,11 +4,12 @@ import { useEffect, useState, useRef, useLayoutEffect } from 'react'
 import { violetApi } from '../../../lib/api'
 // Helper de data local: evita o bug de UTC onde bullets após 21h ficam no dia seguinte
 import { todayLocalISO } from '../dateUtils'
-import type { Bullet, BulletKind, Entry } from '../types'
+import type { Bullet, BulletKind, Entry, TutorAnalysis } from '../types'
 import { Icon } from '../ui/Icon'
 import { RichText } from '../ui/RichText'
 import { EmotionSection } from '../components/EmotionLog'
 import { LetterSection } from '../components/LetterLog'
+import { TutorModal } from '../components/TutorModal'
 
 interface WriteProps {
   date: string
@@ -45,6 +46,17 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
   const addRef  = useRef<HTMLTextAreaElement>(null)
   const dreamRef = useRef<HTMLTextAreaElement>(null)
   const editRef  = useRef<HTMLTextAreaElement>(null)
+
+  // ── Tutor de Idiomas (spec 031 — persona Kurisu) ──────────────────────────
+  // Cache local das análises já buscadas (por bullet.id) — evita refetch a cada toggle.
+  const [analysisCache, setAnalysisCache] = useState<Record<number, TutorAnalysis>>({})
+  // Bullets atualmente exibindo a versão corrigida em vez do texto original.
+  const [showCorrected, setShowCorrected] = useState<Set<number>>(new Set())
+  // Bullet cuja análise está em andamento (mostra spinner no botão) — só um por vez.
+  const [analyzingId, setAnalyzingId] = useState<number | null>(null)
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null)
+  // Análise aberta no modal de resultado (null = modal fechado)
+  const [modalAnalysis, setModalAnalysis] = useState<TutorAnalysis | null>(null)
 
   // Redimensiona o textarea para caber todo o conteúdo sem barra de rolagem.
   // Define height='auto' primeiro para encolher o elemento antes de medir o scrollHeight,
@@ -145,6 +157,56 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
     }
   }
 
+  // ── Tutor de Idiomas (spec 031) ────────────────────────────────────────────
+
+  // Busca a análise mais recente do bullet, usando o cache local quando disponível.
+  async function ensureAnalysisLoaded(b: Bullet): Promise<TutorAnalysis | null> {
+    const cached = analysisCache[b.id]
+    if (cached) return cached
+    const res = await violetApi.bulletAnalysis(b.id).catch(() => null)
+    if (res?.analysis) {
+      setAnalysisCache(prev => ({ ...prev, [b.id]: res.analysis as TutorAnalysis }))
+      return res.analysis
+    }
+    return null
+  }
+
+  // Aciona a análise via Gemini (US1) — abre o modal de resultado ao concluir e
+  // atualiza o metadado leve do bullet (para o toggle aparecer sem recarregar a página).
+  async function analyzeBullet(b: Bullet) {
+    setAnalyzingId(b.id)
+    setAnalyzeError(null)
+    try {
+      const res = await violetApi.analyzeTutor(b.id, 'en')
+      setAnalysisCache(prev => ({ ...prev, [b.id]: res.analysis }))
+      setBullets(prev => prev.map(x => x.id === b.id
+        ? { ...x, tutor: { analysis_id: res.analysis.id, has_correction: true, error_count: res.analysis.errors.length } }
+        : x))
+      setModalAnalysis(res.analysis)
+    } catch (err) {
+      setAnalyzeError(err instanceof Error ? err.message : 'Não consegui analisar agora.')
+    } finally {
+      setAnalyzingId(null)
+    }
+  }
+
+  // Alterna a exibição do bullet entre o texto original (fonte da verdade, nunca
+  // sobrescrita) e a versão corrigida (US2) — busca a análise sob demanda se preciso.
+  async function toggleCorrected(b: Bullet) {
+    if (showCorrected.has(b.id)) {
+      setShowCorrected(prev => { const next = new Set(prev); next.delete(b.id); return next })
+      return
+    }
+    const analysis = await ensureAnalysisLoaded(b)
+    if (analysis) setShowCorrected(prev => new Set(prev).add(b.id))
+  }
+
+  // Reabre o modal com a análise completa de um bullet já analisado.
+  async function reopenAnalysis(b: Bullet) {
+    const analysis = await ensureAnalysisLoaded(b)
+    if (analysis) setModalAnalysis(analysis)
+  }
+
   return (
     <div className="write-wrap">
       <div className="w-datehead">
@@ -217,9 +279,52 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
               ) : (
                 <div className="bline lead" onDoubleClick={() => { setEditing(b.position); setEditText(b.content) }}>
                   <span className="b-text">
-                    <RichText content={b.content} onMentionClick={(kind, _val) => navigate(kind === 'person' ? 'people' : 'tags')} />
+                    <RichText
+                      content={showCorrected.has(b.id) ? (analysisCache[b.id]?.corrected_text ?? b.content) : b.content}
+                      onMentionClick={(kind, _val) => navigate(kind === 'person' ? 'people' : 'tags')}
+                    />
                   </span>
                   <span className="b-time">{fmtTime(b.created_at)}</span>
+                </div>
+              )}
+
+              {/* Tutor de Idiomas (spec 031) — ações discretas, reveladas no hover do bullet */}
+              {editing !== b.position && (
+                <div className="tt-actions">
+                  {!b.tutor?.has_correction ? (
+                    <button
+                      type="button"
+                      className="tt-icon-btn"
+                      title="Pedir análise de escrita (Tutor)"
+                      aria-label="Pedir análise de escrita"
+                      disabled={analyzingId === b.id}
+                      onClick={() => analyzeBullet(b)}
+                    >
+                      <Icon name="sparkles" size={13} />
+                      <span>{analyzingId === b.id ? 'Analisando…' : 'Tutor'}</span>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="tt-toggle-btn"
+                        title={showCorrected.has(b.id) ? 'Ver texto original' : 'Ver versão corrigida'}
+                        onClick={() => toggleCorrected(b)}
+                      >
+                        {showCorrected.has(b.id) ? '✓ corrigido' : 'ver corrigido'}
+                      </button>
+                      <button
+                        type="button"
+                        className="tt-icon-btn"
+                        title="Ver análise completa"
+                        aria-label="Ver análise completa"
+                        onClick={() => reopenAnalysis(b)}
+                      >
+                        <Icon name="sparkles" size={13} />
+                        {b.tutor.error_count > 0 && <span className="tt-error-count">{b.tutor.error_count}</span>}
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -260,6 +365,18 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
           </button>
         ))}
       </div>
+
+      {/* Tutor de Idiomas — erro amigável (falha da IA nunca grava nada — FR-010) */}
+      {analyzeError && (
+        <div className="tt-error-banner" onClick={() => setAnalyzeError(null)}>
+          {analyzeError} <span className="tt-dismiss">(clique para dispensar)</span>
+        </div>
+      )}
+
+      {/* Modal de resultado da análise (US1) */}
+      {modalAnalysis && (
+        <TutorModal analysis={modalAnalysis} onClose={() => setModalAnalysis(null)} />
+      )}
     </div>
   )
 }

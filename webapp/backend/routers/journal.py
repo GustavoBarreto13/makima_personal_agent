@@ -50,6 +50,23 @@ from agents.journal.tools import (
     delete_letter,
 )
 
+# Tutor de Idiomas (spec 031) — persona Kurisu; a lógica mora em agents/kurisu/tutor.py
+# (cross-domain intencional, ver Constitution Check do plan.md da 031). Este router é o
+# único ponto que conhece os dois agentes ao mesmo tempo — agents/journal/ continua sem
+# depender da Kurisu.
+from agents.kurisu.tutor import (
+    analisar_escrita,
+    get_bullet_analysis,
+    get_bullets_tutor_meta,
+    list_skills,
+    list_analyses,
+    list_concepts,
+    get_progress,
+    get_active_guide,
+    set_active_guide,
+    deactivate_guide,
+)
+
 
 # ─── Helper interno ───────────────────────────────────────────────────────────
 
@@ -159,6 +176,20 @@ class CreateLetterBody(BaseModel):
     person_ids: Optional[list[str]] = None
 
 
+# ─── Modelos do Tutor de Idiomas (spec 031) ───────────────────────────────────
+
+class AnalyzeTutorBody(BaseModel):
+    """Corpo da requisição para analisar a escrita de um bullet."""
+    language: str = 'en'  # idioma-alvo da análise (default inglês)
+
+
+class SaveTutorGuideBody(BaseModel):
+    """Corpo da requisição para criar/atualizar o guia de estudo ativo."""
+    language: str = 'en'
+    description: str                              # foco livre (livro/método/tópico)
+    target_concepts: Optional[list[str]] = None    # slugs da lista canônica
+
+
 class UpdateLetterBody(BaseModel):
     """Corpo da requisição para atualizar uma carta (atualização parcial).
 
@@ -201,6 +232,16 @@ def page_endpoint(
     result = get_or_create_page(date=date, type_id=type_id)
     if result.get("error"):
         raise HTTPException(status_code=400, detail=result["error"])
+
+    # Tutor de Idiomas (spec 031, US2): compõe o campo `tutor` (nullable) de cada bullet
+    # AQUI no router — não em agents/journal/ — via 1 query agregada. Mantém
+    # agents/journal/ sem depender da Kurisu (research.md R8).
+    bullets = result.get("bullets") or []
+    if bullets:
+        meta = get_bullets_tutor_meta([b["id"] for b in bullets])
+        for b in bullets:
+            b["tutor"] = meta.get(b["id"])
+
     return _check_result(result)
 
 
@@ -749,3 +790,131 @@ def delete_letter_endpoint(
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result.get("message", "carta não encontrada"))
     return result
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENDPOINTS DO TUTOR DE IDIOMAS (spec 031 — persona Kurisu)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.post("/bullets/{bullet_id}/tutor")
+def analyze_tutor_endpoint(
+    bullet_id: int,
+    body: AnalyzeTutorBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Analisar a escrita de um bullet via Gemini (US1).
+
+    Args:
+        bullet_id: ID do bullet a analisar.
+        body: {language} — idioma-alvo da análise.
+
+    Returns:
+        {"status": "ok", "analysis": {...}, "skills_touched": [...]}
+
+    Raises:
+        HTTPException: 400 se o bullet não existir, estiver vazio, ou a IA falhar
+            (nesse caso nada é salvo — FR-010).
+    """
+    return _check_result(analisar_escrita(bullet_id=bullet_id, language=body.language))
+
+
+@router.get("/bullets/{bullet_id}/tutor")
+def bullet_tutor_analysis_endpoint(
+    bullet_id: int,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Última análise de um bullet — serve o toggle original↔corrigido (US2).
+
+    Returns:
+        {"analysis": {...} | None}
+    """
+    return {"analysis": get_bullet_analysis(bullet_id=bullet_id)}
+
+
+@router.get("/tutor/progress")
+def tutor_progress_endpoint(
+    language: str = Query(default='en', description="Idioma-alvo"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Dados da tela de progresso: skills + nível CEFR + próximo foco + guia ativo (US3/US4).
+
+    Returns:
+        {language, level, next_focus, active_guide, skills: [...]}
+    """
+    # Retorna o dict direto — sem _check_result (a tool não tem campo "status")
+    return get_progress(language=language)
+
+
+@router.get("/tutor/analyses")
+def tutor_analyses_endpoint(
+    language: str = Query(default='en', description="Idioma-alvo"),
+    limit: int = Query(default=20, description="Máximo de análises a retornar"),
+    user: dict = Depends(require_user),
+) -> list:
+    """Histórico de análises recentes de um idioma (US3).
+
+    Returns:
+        [{id, bullet_id, score, error_count, summary, created_at}, ...]
+    """
+    return list_analyses(language=language, limit=limit)
+
+
+@router.get("/tutor/concepts")
+def tutor_concepts_endpoint(
+    user: dict = Depends(require_user),
+) -> list:
+    """Lista canônica de conceitos gramaticais — popula o seletor de alvos do guia (US4).
+
+    Returns:
+        [{"slug": str, "label": str}, ...]
+    """
+    return list_concepts()
+
+
+@router.get("/tutor/guide")
+def get_tutor_guide_endpoint(
+    language: str = Query(default='en', description="Idioma-alvo"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Guia de estudo ativo do idioma, se houver (US4).
+
+    Returns:
+        {"guide": {...} | None}
+    """
+    return {"guide": get_active_guide(language=language)}
+
+
+@router.put("/tutor/guide")
+def save_tutor_guide_endpoint(
+    body: SaveTutorGuideBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Criar/substituir o guia de estudo ativo (US4, FR-015).
+
+    Args:
+        body: {language, description, target_concepts?}
+
+    Returns:
+        {"status": "ok", "guide": {...}}
+
+    Raises:
+        HTTPException: 400 se a descrição for vazia ou algum conceito-alvo for inválido.
+    """
+    return _check_result(set_active_guide(
+        language=body.language,
+        description=body.description,
+        target_concepts=body.target_concepts,
+    ))
+
+
+@router.delete("/tutor/guide")
+def delete_tutor_guide_endpoint(
+    language: str = Query(default='en', description="Idioma-alvo"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remover (desativar) o guia de estudo ativo — não afeta análises já salvas (FR-018).
+
+    Returns:
+        {"status": "ok"}
+    """
+    return _check_result(deactivate_guide(language=language))
