@@ -1176,6 +1176,10 @@
 .tt-icon-btn svg { color: var(--accent); flex-shrink: 0; }
 .tt-icon-btn:disabled { opacity: 0.5; cursor: default; }
 .tt-toggle-btn { font-weight: 500; }
+/* Correção desatualizada: tom âmbar de "precisa re-checar" */
+.tt-icon-btn.tt-stale { border-color: var(--amber); color: var(--gold-deep); }
+.tt-icon-btn.tt-stale svg { color: var(--amber); }
+.tt-icon-btn.tt-stale:hover { border-color: var(--gold-deep); color: var(--gold-deep); }
 .tt-error-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px;

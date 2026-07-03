@@ -204,6 +204,9 @@ export interface BulletTutorMeta {
   analysis_id: number
   has_correction: boolean
   error_count: number
+  // Só no cliente: marcado quando o bullet é editado após a análise — a correção
+  // salva não corresponde mais ao texto atual, então oferecemos re-analisar.
+  stale?: boolean
 }
 
 // Um erro apontado pela análise — conceito + explicação em PT-BR

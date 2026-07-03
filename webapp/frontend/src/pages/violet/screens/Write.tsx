@@ -110,8 +110,26 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
 
   async function saveBullet(bullet: Bullet, text: string) {
     if (!page) return
+    // O texto realmente mudou? Só então a correção salva vira "desatualizada".
+    const changed = text.trim() !== bullet.content.trim()
     const res: any = await violetApi.upsertBullet({ page_id: page.id, position: bullet.position, content: text, kind: bullet.kind }).catch(() => null)
-    if (res?.bullet) setBullets(prev => prev.map(b => b.position === bullet.position ? res.bullet as Bullet : b))
+    if (res?.bullet) {
+      // O upsert_bullet do backend NÃO devolve o campo `tutor` (composto só no
+      // GET /page). Preservamos o metadado do bullet antigo — senão o toggle/estado
+      // do Tutor sumiria a cada edição. Se o texto mudou, marcamos como desatualizado.
+      const preservedTutor = bullet.tutor
+        ? { ...bullet.tutor, stale: changed ? true : bullet.tutor.stale }
+        : undefined
+      setBullets(prev => prev.map(b =>
+        b.position === bullet.position ? { ...(res.bullet as Bullet), tutor: preservedTutor } : b))
+
+      if (changed) {
+        // A correção salva não corresponde mais ao texto — esconde o toggle e
+        // descarta a análise em cache para não exibir a versão corrigida antiga.
+        setShowCorrected(prev => { const next = new Set(prev); next.delete(bullet.id); return next })
+        setAnalysisCache(prev => { const c = { ...prev }; delete c[bullet.id]; return c })
+      }
+    }
     setEditing(null)
   }
 
@@ -277,7 +295,16 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
                   autoFocus
                 />
               ) : (
-                <div className="bline lead" onDoubleClick={() => { setEditing(b.position); setEditText(b.content) }}>
+                <div
+                  className="bline lead"
+                  onDoubleClick={() => {
+                    // Editamos sempre o texto ORIGINAL (fonte da verdade, nunca a versão
+                    // corrigida) — então saímos da visão "corrigido" ao entrar na edição.
+                    setShowCorrected(prev => { const next = new Set(prev); next.delete(b.id); return next })
+                    setEditing(b.position)
+                    setEditText(b.content)
+                  }}
+                >
                   <span className="b-text">
                     <RichText
                       content={showCorrected.has(b.id) ? (analysisCache[b.id]?.corrected_text ?? b.content) : b.content}
@@ -302,6 +329,20 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
                     >
                       <Icon name="sparkles" size={13} />
                       <span>{analyzingId === b.id ? 'Analisando…' : 'Tutor'}</span>
+                    </button>
+                  ) : b.tutor.stale ? (
+                    // Correção desatualizada: o bullet foi editado depois da análise —
+                    // oferece re-analisar o texto atual (o backend gera uma análise nova).
+                    <button
+                      type="button"
+                      className="tt-icon-btn tt-stale"
+                      title="O texto mudou desde a última análise — analisar de novo"
+                      aria-label="Re-analisar o texto atual"
+                      disabled={analyzingId === b.id}
+                      onClick={() => analyzeBullet(b)}
+                    >
+                      <Icon name="sparkles" size={13} />
+                      <span>{analyzingId === b.id ? 'Analisando…' : 're-analisar'}</span>
                     </button>
                   ) : (
                     <>
