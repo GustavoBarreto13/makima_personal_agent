@@ -82,6 +82,13 @@ Fluxo: `GET /auth/login` → Google OIDC → `GET /auth/callback` → cookie `ma
 
 Router: `routers/journal.py` · Tools: `agents/journal/tools.py` · Storage: **PostgreSQL** (não BigQuery)
 
+**Tutor de Idiomas (spec 031) — único cross-domain do router:** os endpoints `/api/journal/tutor/*`
+e `/api/journal/bullets/{id}/tutor` chamam `agents.kurisu.tutor` (não `agents/journal/`) — o tutor
+é a persona da Kurisu aplicada à escrita da Violet. `routers/journal.py` é o único ponto que importa
+os dois agentes ao mesmo tempo; `GET /api/journal/page` compõe o campo `tutor` de cada bullet via
+`get_bullets_tutor_meta` **no router**, sem alterar `agents/journal/get_or_create_page`. Detalhes em
+`agents/kurisu/CLAUDE.md`.
+
 Todos os domínios (finanças, livros e journal) usam o mesmo PostgreSQL compartilhado com o ADK.
 
 **Modelo de dados:**
@@ -114,6 +121,12 @@ Todos os domínios (finanças, livros e journal) usam o mesmo PostgreSQL compart
 | `/api/journal/letters/{id}` | PATCH | Atualiza parcial (só rascunhos; `person_ids` regrava vínculos) |
 | `/api/journal/letters/{id}/seal` | POST | Lacra a carta (rascunho → lacrada, imutável) |
 | `/api/journal/letters/{id}` | DELETE | Remove a carta (permitido mesmo lacrada) |
+| `/api/journal/bullets/{id}/tutor` | POST | Analisa a escrita do bullet via Gemini (spec 031, persona Kurisu) `{language}` |
+| `/api/journal/bullets/{id}/tutor` | GET | Última análise do bullet (serve o toggle original↔corrigido) |
+| `/api/journal/tutor/progress?language=en` | GET | Skills por conceito + nível CEFR + próximo foco + guia ativo |
+| `/api/journal/tutor/analyses?language=en` | GET | Histórico de análises recentes |
+| `/api/journal/tutor/concepts` | GET | Lista canônica de conceitos gramaticais (seletor do guia) |
+| `/api/journal/tutor/guide` | GET/PUT/DELETE | CRUD do guia de estudo ativo (no máx. 1 por idioma) |
 
 **Registro Emocional (TCC) — Feature 006.** Tabelas `journal_emotions` + `journal_emotion_logs`.
 Os registros são **ortogonais aos bullets** (não contam palavras nem afetam heatmap/coleções).

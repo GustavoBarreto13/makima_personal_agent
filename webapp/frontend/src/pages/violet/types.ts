@@ -16,6 +16,8 @@ export interface Bullet {
   created_at: string  // ISO timestamp
   // Feature 007: estado de favorito — false por default (bullets antigos recebem false do banco)
   favorite: boolean
+  // Tutor de Idiomas (spec 031): metadado leve composto pelo router — null se nunca analisado
+  tutor?: BulletTutorMeta | null
 }
 
 // ── Entry (página do diário) ──────────────────────────────────────────────
@@ -193,4 +195,99 @@ export interface EntryListItem {
   bullet_count: number
   has_highlight: boolean
   has_dream: boolean
+}
+
+// ── Tutor de Idiomas (spec 031 — persona Kurisu) ──────────────────────────
+
+// Metadado leve de análise composto pelo router em cada bullet de GET /page
+export interface BulletTutorMeta {
+  analysis_id: number
+  has_correction: boolean
+  error_count: number
+}
+
+// Um erro apontado pela análise — conceito + explicação em PT-BR
+export interface TutorError {
+  concept_slug: string
+  concept_label: string
+  wrong: string
+  right: string
+  explanation: string
+  severity: 'low' | 'medium' | 'high'
+}
+
+// Resultado completo de uma análise de escrita (POST/GET .../tutor)
+export interface TutorAnalysis {
+  id: number
+  bullet_id: number
+  language: string
+  original_text: string
+  corrected_text: string
+  natural_rewrite: string
+  errors: TutorError[]
+  concepts_used_correctly: string[]
+  summary: string
+  score: number
+  created_at: string
+}
+
+// Item do histórico de análises (GET /tutor/analyses) — versão resumida
+export interface TutorAnalysisSummary {
+  id: number
+  bullet_id: number
+  score: number
+  error_count: number
+  summary: string
+  created_at: string
+}
+
+// Um conceito gramatical da lista canônica (GET /tutor/concepts)
+export interface TutorConcept {
+  slug: string
+  label: string
+}
+
+// Skill (maestria por conceito) — item da lista da tela de progresso
+export interface TutorSkill {
+  concept_slug: string
+  concept_label: string
+  mastery_pct: number
+  trend: 'up' | 'down' | 'flat' | null   // null = poucos dados (<3 amostras)
+  samples: number
+  correct: number
+  enough_data: boolean
+  is_target: boolean                     // true se está entre os alvos do guia ativo
+  last_seen: string | null
+}
+
+// Nível CEFR estimado (derivado na leitura, sem chamada extra ao Gemini)
+export interface TutorLevel {
+  level: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2' | null
+  preliminary: boolean
+}
+
+// Sugestão determinística de próximo foco de estudo
+export interface TutorNextFocus {
+  concept_slug: string
+  concept_label: string
+  reason: string
+}
+
+// Guia de estudo ativo (US4)
+export interface TutorGuide {
+  id: number
+  language: string
+  description: string
+  target_concepts: string[]
+  created_at: string
+  updated_at: string
+}
+
+// Payload completo da tela de progresso (GET /tutor/progress)
+export interface TutorProgress {
+  language: string
+  level: TutorLevel
+  next_focus: TutorNextFocus | null
+  active_guide: TutorGuide | null
+  skills: TutorSkill[]
 }
