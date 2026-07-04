@@ -6,40 +6,35 @@ Backup automático diário do banco PostgreSQL da Makima: um `pg_dump` comprimid
 
 ## Como roda automaticamente
 
-O backup **não é um cron job**. É um container Docker (`makima-backup`) que fica **ligado para sempre** rodando um loop. Dois mecanismos garantem a automação:
+Desde jul/2026 o backup é **um job do agendador** (pacote `scheduler/`, container
+`makima-scheduler`), e não mais um container de loop próprio. O agendador usa o
+[APScheduler](https://apscheduler.readthedocs.io/) e dispara o backup **todo dia às 03:00 (horário
+de São Paulo)** — horário **fixo**, que não flutua mais com o redeploy.
 
-### 1. O loop infinito dentro do container
+O job está registrado em [`scheduler/registry.py`](../scheduler/registry.py):
 
-O `CMD` da imagem (em [`scripts/Dockerfile.backup`](../scripts/Dockerfile.backup)) é, em essência:
-
-```sh
-while true; do                                  # repete para sempre
-  python scripts/backup_postgres.py || echo 'Backup falhou (ver erro acima)'
-  echo 'Proximo backup em 24h'
-  sleep 86400                                   # dorme 24 horas (86400 segundos)
-done
+```python
+ScheduledJob("backup_postgres", run_backup, daily_at(3, 0), "pg_dump do PostgreSQL → GCS"),
 ```
 
-Ou seja, o processo principal do container **nunca termina**: faz um backup, dorme 1 dia, faz outro, dorme 1 dia... É daí que vem a periodicidade diária. Se um backup falhar, o `|| echo` evita derrubar o loop — ele apenas registra a falha e tenta de novo no próximo ciclo.
+A cada execução, o agendador grava uma linha na tabela **`scheduler_runs`** (início, fim, status,
+duração) e, **se o backup falhar, manda um alerta no Telegram** (`TELEGRAM_ALERT_CHAT_ID`). Isso
+resolve o problema histórico da falha silenciosa. O container tem `restart: unless-stopped`, então
+volta sozinho se cair e sobe no boot do VPS.
 
-### 2. `restart: unless-stopped` mantém o container vivo
-
-No [`docker-compose.yml`](../docker-compose.yml) o serviço `backup` tem `restart: unless-stopped`. Isso faz o container:
-
-- **voltar sozinho** se o processo cair, e
-- **subir junto no boot** do VPS, se a máquina reiniciar.
-
-> ⚠️ **O horário "flutua".** Como o intervalo é `sleep 24h` contado a partir de quando o container subiu, não existe um horário fixo (tipo "03:00"). Se você redeployar às 14h, os backups passam a acontecer ~14h todo dia. **Cada redeploy reinicia esse relógio e dispara um backup na hora.**
+> Detalhes do padrão de agendamento (como adicionar outros jobs, comandos, env vars) em
+> [`scheduler/CLAUDE.md`](../scheduler/CLAUDE.md).
 
 ---
 
 ## Arquitetura / fluxo
 
 ```
-container makima-backup (loop 24h, restart unless-stopped)
+container makima-scheduler (APScheduler, restart unless-stopped)
+        ↓  job "backup_postgres" dispara todo dia 03:00 (BRT)
         ↓  scripts/backup_postgres.py
-   pg_dump  →  gzip  →  upload
-        ↓
+   pg_dump  →  gzip  →  upload           + grava linha em scheduler_runs
+        ↓                                  (e alerta no Telegram se falhar)
 gs://makima-backups/backups/backup_AAAAMMDD_HHMMSS.sql.gz
         ↓
 lifecycle do bucket apaga objetos com mais de 30 dias
@@ -47,13 +42,14 @@ lifecycle do bucket apaga objetos com mais de 30 dias
 
 | Item | Valor |
 |---|---|
-| Imagem do container | construída de [`scripts/Dockerfile.backup`](../scripts/Dockerfile.backup) (Python + `postgresql-client` + `gzip`) |
+| Container | `makima-scheduler`, imagem de [`scheduler/Dockerfile`](../scheduler/Dockerfile) (Python + deps + `postgresql-client` + `gzip`) |
+| Agendamento | job `backup_postgres` em [`scheduler/registry.py`](../scheduler/registry.py) — `daily_at(3, 0)` |
 | Script | [`scripts/backup_postgres.py`](../scripts/backup_postgres.py) |
 | Formato do dump | `pg_dump --format=plain --no-owner --no-privileges`, comprimido com `gzip -6` |
 | Bucket | `gs://makima-backups` · região `southamerica-east1` |
 | Caminho dos objetos | `backups/backup_AAAAMMDD_HHMMSS.sql.gz` |
 | Retenção | 30 dias (lifecycle do bucket apaga automaticamente) |
-| Periodicidade | a cada 24h enquanto o container estiver no ar |
+| Periodicidade | todo dia às 03:00 (BRT) |
 
 ### Variáveis de ambiente necessárias (no container)
 
@@ -73,18 +69,24 @@ Acesso ao VPS: `ssh root@n8n.gusstavo42-vps.cloud`.
 ### 1. O container está no ar?
 
 ```bash
-docker ps --filter "name=makima-backup" --format "{{.Names}} | {{.Image}} | {{.Status}}"
+docker ps --filter "name=makima-scheduler" --format "{{.Names}} | {{.Image}} | {{.Status}}"
 ```
-
-A imagem **não** deve ser `python:3.11-slim` (essa era a versão quebrada antiga) — deve ser a imagem buildada do `Dockerfile.backup`.
 
 ### 2. Os logs mostram sucesso?
 
 ```bash
-docker logs --tail=40 makima-backup
+docker logs --tail=40 makima-scheduler
 ```
 
-Esperado: linhas `Iniciando backup: ...`, `Dump gerado: ... KB`, `✓ Backup enviado: gs://makima-backups/backups/...`. **Não** deve aparecer `FileNotFoundError: 'pg_dump'` nem `can't open file 'scripts/backup_postgres.py'`.
+No startup o agendador lista os jobs e o próximo disparo de cada um. Quando o backup roda, aparecem
+as linhas `▶ Iniciando job 'backup_postgres'`, `Iniciando backup: ...`, `Dump gerado: ... KB`,
+`✓ Backup enviado: gs://makima-backups/backups/...` e `■ Job 'backup_postgres' terminou: success`.
+
+Alternativamente, consulte o histórico direto na tabela `scheduler_runs`:
+
+```bash
+docker exec makima-web sh -c "cd /app && python -c \"from agents.db import run_select; import json; print(json.dumps(run_select(\\\"SELECT job_name, status, started_at AT TIME ZONE 'America/Sao_Paulo' AS inicio, duration_ms FROM scheduler_runs ORDER BY id DESC LIMIT 5\\\"), default=str, ensure_ascii=False, indent=2))\""
+```
 
 ### 3. Há backups recentes no bucket?
 
@@ -113,13 +115,13 @@ Confirme que existe um arquivo com timestamp das últimas 24h e tamanho coerente
 
 ## Backup manual (ad-hoc)
 
-Útil antes de uma migração arriscada. Importante: o `makima-web` **não** tem o binário `pg_dump`, então rode de dentro de um container que tenha (o `makima-backup`):
+Útil antes de uma migração arriscada. Importante: o `makima-web` **não** tem o binário `pg_dump`, então rode de dentro do `makima-scheduler` (que tem o `pg_dump` e roda o backup pela mesma casca de log/alerta):
 
 ```bash
-docker exec makima-backup python scripts/backup_postgres.py
+docker exec makima-scheduler python -m scheduler.main --run backup_postgres
 ```
 
-Ele gera um backup imediato no bucket e, ao final, lista os 5 mais recentes.
+Ele gera um backup imediato no bucket, grava a linha em `scheduler_runs` e, ao final, lista os 5 mais recentes.
 
 ---
 
@@ -127,11 +129,11 @@ Ele gera um backup imediato no bucket e, ao final, lista os 5 mais recentes.
 
 > ⚠️ **Restaurar sobrescreve dados.** Sempre teste primeiro em um banco descartável antes de restaurar no banco de produção. Valide o procedimento abaixo antes de depender dele numa emergência.
 
-O dump é SQL puro (`--format=plain`), então a restauração é um `psql` simples. O `makima-backup` tem tanto o `psql` quanto a rede para alcançar o banco.
+O dump é SQL puro (`--format=plain`), então a restauração é um `psql` simples. O `makima-scheduler` tem tanto o `psql` quanto a rede para alcançar o banco.
 
 ```bash
 # 1. Baixar o backup desejado do GCS para dentro do container (via Python, que tem as credenciais)
-docker exec -i makima-backup python - <<'PY'
+docker exec -i makima-scheduler python - <<'PY'
 import os, json
 from google.cloud import storage
 from google.oauth2 import service_account
@@ -146,7 +148,7 @@ print("baixado em /tmp/restore.sql.gz")
 PY
 
 # 2. Descomprimir e restaurar (psql lê a DATABASE_URL do ambiente do container)
-docker exec makima-backup sh -c "gunzip -f /tmp/restore.sql.gz && psql \"\$DATABASE_URL\" < /tmp/restore.sql"
+docker exec makima-scheduler sh -c "gunzip -f /tmp/restore.sql.gz && psql \"\$DATABASE_URL\" < /tmp/restore.sql"
 ```
 
 Para restaurar em um banco **vazio de teste** em vez do de produção, troque `$DATABASE_URL` pela URL do banco descartável no comando `psql`.
@@ -162,3 +164,8 @@ Até 2026-06-28 o backup **nunca havia funcionado** — havia zero backups. Trê
 3. **Bucket GCS inexistente** — `gs://makima-backups` nunca havia sido criado. Criado em `southamerica-east1` com lifecycle de 30 dias.
 
 Detalhes do diagnóstico e da decisão de arquitetura estão no commit `fix(backup): conserta backup do Postgres que nunca funcionou`.
+
+> **Atualização (jul/2026):** o antigo container de loop `makima-backup` (e o
+> `scripts/Dockerfile.backup`) foram **aposentados**. O backup virou o job `backup_postgres` do
+> agendador (`scheduler/`, container `makima-scheduler`) — mesmo `pg_dump`/bucket de antes, agora com
+> horário fixo (03:00 BRT), log em `scheduler_runs` e alerta no Telegram em falha.

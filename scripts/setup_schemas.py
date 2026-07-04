@@ -34,6 +34,9 @@ SCHEMA_FILES = [
     # Identidade canônica de pessoas da Komi (spec 014). 4 tabelas: people,
     # person_aliases, person_dates, person_links (vínculo polimórfico N:N).
     "agents/komi/schema_pg.sql",
+    # Histórico de execuções do agendador de jobs (scheduler/). 1 tabela:
+    # scheduler_runs (job, início, fim, status, erro, duração).
+    "scheduler/schema_pg.sql",
 ]
 
 

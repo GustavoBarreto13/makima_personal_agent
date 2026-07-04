@@ -36,10 +36,11 @@
 | 029 | Kaguya — Tiny Experiments (mini-experimentos com log, pausa, revisão e aderência) | ✅ |
 | 030 | Kaguya — Metas (áreas da vida, marcos, vínculos, progresso) | ✅ |
 | 031 | Violet — Tutor de Idiomas (persona Kurisu): análise de escrita via Gemini, toggle original/corrigido, maestria por conceito (EMA), nível CEFR estimado, guia de estudo direcionável | ✅ |
+| 032 | Scheduler de jobs recorrentes (`scheduler/`): APScheduler num container dedicado (`makima-scheduler`), registro declarativo de jobs (cron/intervalo, fuso São Paulo), log em `scheduler_runs` + alerta no Telegram em falha. Consolida backup + sync-Kurisu (loops aposentados) | ✅ |
 
 ## Status atual (jul/2026)
 
-Fases 001–027, 029, 030 e 031 entregues. A **028** (memória unificada da Kurisu) está parcial:
+Fases 001–027, 029, 030, 031 e 032 entregues. A **028** (memória unificada da Kurisu) está parcial:
 fundação (`agents/kurisu/memory/`) + sync incremental + 2 dos 8 exporters (diário, tarefas)
 prontos localmente; deploy no VPS e os 6 exporters restantes pendentes.
 

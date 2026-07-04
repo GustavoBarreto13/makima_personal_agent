@@ -14,6 +14,7 @@ asyncpg             # driver async para PostgreSQL (exigido pelo DatabaseSession
 sqlalchemy          # ORM usado internamente pelo ADK para criar e acessar as tabelas
 psycopg2-binary     # driver síncrono para PostgreSQL (usado pelas tools do journal)
 python-dateutil     # aritmética de recorrência RRULE (RFC 5545) — motor da Kaguya (Fase 2)
+apscheduler         # agendador de jobs recorrentes (container makima-scheduler) — ver scheduler/
 
 # Web interface (webapp/)
 fastapi              # Framework web ASGI — define rotas e serialização JSON

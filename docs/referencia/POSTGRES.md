@@ -25,11 +25,12 @@ diferentes.
     (`+asyncpg`) na URL; o `_get_dsn()` remove esse sufixo porque as tools usam psycopg2 **síncrono**.
 
 - **Criação das tabelas:** há **duas formas** de as tabelas nascerem:
-  - O script `scripts/setup_schemas.py` aplica **sete** arquivos `.sql`, nesta ordem:
+  - O script `scripts/setup_schemas.py` aplica **oito** arquivos `.sql`, nesta ordem:
     `agents/nami/schema_pg.sql` (finanças) → `agents/frieren/schema_pg.sql` (livros) →
     `agents/kaguya/schema_tasks_pg.sql` (tarefas/hábitos/experimentos/metas) →
     `agents/akane/schema_pg.sql` (filmes) → `agents/marin/schema_pg.sql` (animes) →
-    `agents/mai/schema_pg.sql` (séries de TV) → `agents/komi/schema_pg.sql` (pessoas).
+    `agents/mai/schema_pg.sql` (séries de TV) → `agents/komi/schema_pg.sql` (pessoas) →
+    `scheduler/schema_pg.sql` (agendador de jobs).
   - O domínio **Journal** (diário) **não** está no `setup_schemas.py`: suas tabelas são criadas **sob
     demanda** por `agents/journal/tools.py` (`_ensure_tables()`), executado na importação do módulo.
   - As tabelas de **sessão do ADK** (histórico de conversa do Telegram) são criadas e gerenciadas
@@ -39,7 +40,7 @@ diferentes.
   Todos os schemas do repo são **idempotentes** (`CREATE TABLE IF NOT EXISTS`,
   `CREATE INDEX IF NOT EXISTS`), então rodar de novo não dá erro nem duplica dados.
 
-### Os nove domínios (58 tabelas no total)
+### Os dez domínios (59 tabelas no total)
 
 | Domínio | Onde | Tabelas |
 |---|---|---|
@@ -52,6 +53,7 @@ diferentes.
 | **Pessoas** | Agente Komi | `people`, `person_aliases`, `person_dates`, `person_links` |
 | **Diário** (webapp-only) | `agents/journal` | `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_emotions`, `journal_emotion_logs`, `journal_letters` |
 | **Tutor de Idiomas** (cross-domain — FK p/ `journal_bullets`) | Agente Kurisu | `journal_tutor_analyses`, `journal_tutor_events`, `journal_tutor_skills`, `journal_tutor_guides` |
+| **Infraestrutura** (agendador de jobs) | `scheduler/` | `scheduler_runs` |
 
 ---
 
@@ -1416,16 +1418,41 @@ Pontos que confundem quem olha o repositório pela primeira vez:
 
 ---
 
+## 12.5. Infraestrutura — `scheduler_runs`
+
+Histórico de execuções do **agendador de jobs** (pacote `scheduler/`, container
+`makima-scheduler`). Cada vez que um job agendado roda (backup, sync da Kurisu, sync do
+Letterboxd, …), grava-se aqui uma linha: começa como `running` e termina como `success` ou
+`error`. Serve para inspecionar quando cada job rodou e diagnosticar falhas (o padrão antigo de
+loop não deixava rastro — foi assim que o backup ficou meses quebrado sem ninguém notar).
+
+| Coluna | Tipo | Regras / propósito |
+|---|---|---|
+| `id` | `BIGSERIAL` | PK. Inteiro crescente gerado pelo banco. |
+| `job_name` | `TEXT NOT NULL` | Nome do job (ex.: `backup_postgres`) — o mesmo `name` do `scheduler/registry.py`. |
+| `started_at` | `TIMESTAMPTZ NOT NULL` | `DEFAULT NOW()`. Início da execução. Para a hora local: `started_at AT TIME ZONE 'America/Sao_Paulo'`. |
+| `finished_at` | `TIMESTAMPTZ` | Término. `NULL` enquanto o job ainda roda. |
+| `status` | `TEXT NOT NULL` | `DEFAULT 'running'`. Um de: `running`, `success`, `error`. |
+| `error` | `TEXT` | Traceback quando `status='error'`; `NULL` em sucesso. |
+| `duration_ms` | `INTEGER` | Duração da execução em milissegundos. |
+
+**Índices:** `idx_scheduler_runs_job (job_name, started_at DESC)` — busca rápida das últimas
+execuções de um job.
+
+Sem FKs (tabela de infraestrutura, independente dos domínios de negócio).
+
+---
+
 ## 13. Como (re)criar o banco
 
 ```bash
 python scripts/setup_schemas.py
 ```
 
-Isso aplica os sete `*_pg.sql` na ordem do script (Nami → Frieren → Kaguya → Akane → Marin →
-Mai → Komi). É idempotente — pode rodar quantas vezes quiser. As tabelas do **Journal** não saem
-daqui: nascem sozinhas quando a webapp importa `agents/journal/tools.py` (que chama
-`_ensure_tables()`).
+Isso aplica os oito `*_pg.sql` na ordem do script (Nami → Frieren → Kaguya → Akane → Marin →
+Mai → Komi → scheduler). É idempotente — pode rodar quantas vezes quiser. As tabelas do
+**Journal** não saem daqui: nascem sozinhas quando a webapp importa `agents/journal/tools.py`
+(que chama `_ensure_tables()`).
 
 **No VPS:** o hostname do PostgreSQL (`personal-agent-makimadb-k3bxg9`) é um nome de serviço Docker
 Swarm e **não resolve na shell do host**. Rode os scripts **de dentro do container `makima-web`**:

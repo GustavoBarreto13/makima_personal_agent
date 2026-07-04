@@ -243,6 +243,16 @@ makima_personal_agent/
 │   └── calendar/
 │       ├── __init__.py
 │       └── server.py    # servidor MCP FastMCP — Google Calendar (leitura todos, escrita só principal)
+├── scheduler/           # agendador de jobs recorrentes (container makima-scheduler) — APScheduler
+│   ├── __init__.py
+│   ├── registry.py      # lista declarativa JOBS + ScheduledJob + helpers daily_at()/every()
+│   ├── jobs.py          # wrappers dos scripts (backup, kurisu-sync, letterboxd)
+│   ├── runner.py        # execute_with_logging(): cronometra, grava scheduler_runs, alerta em falha
+│   ├── notify.py        # send_telegram_alert() — POST na Bot API do Telegram
+│   ├── main.py          # entrypoint: BlockingScheduler + modos --run / --list
+│   ├── schema_pg.sql    # tabela scheduler_runs (histórico de execuções)
+│   ├── Dockerfile       # base do webapp + postgresql-client + gzip (backup precisa de pg_dump)
+│   └── CLAUDE.md        # o padrão + passo a passo "como adicionar um job novo"
 ├── scripts/
 │   ├── authorize_calendar.py  # gera credenciais OAuth do Google Calendar (rodar uma vez)
 │   ├── authorize_mal.py       # gera tokens OAuth do MyAnimeList (rodar uma vez)
@@ -251,8 +261,7 @@ makima_personal_agent/
 │   ├── sync_kurisu_memory.py  # sync incremental da memória unificada — spec 028
 │   ├── sync_letterboxd.py     # sync RSS do Letterboxd (Akane)
 │   ├── import_letterboxd_csv.py # importação one-time do CSV histórico do Letterboxd
-│   ├── backup_postgres.py     # pg_dump → Google Cloud Storage (roda diariamente via Docker)
-│   ├── Dockerfile.backup      # imagem do serviço de backup (Python + postgresql-client + gzip)
+│   ├── backup_postgres.py     # pg_dump → Google Cloud Storage (agendado pelo scheduler/ — job diário)
 │   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)
 │   └── .gitignore             # exclui client_secret.json do git
 ├── docs/                    # organizada por tipo — ver docs/README.md (mapa completo)

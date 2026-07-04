@@ -56,49 +56,28 @@ services:
       # Pré-seleciona o host do banco na tela de login do Adminer
       ADMINER_DEFAULT_SERVER: ${DB_HOST:-localhost}
 
-  # Serviço de backup: executa pg_dump diariamente e envia para Google Cloud Storage.
-  # O arquivo comprimido fica disponível por 30 dias (lifecycle configurado no bucket GCS).
+  # Serviço de agendamento: roda TODOS os jobs recorrentes (backup, sync da Kurisu,
+  # sync do Letterboxd, etc.) num único container, com horários fixos via APScheduler.
   #
-  # Em vez de usar a imagem genérica python:3.11-slim + bind mount (frágil no Dokploy),
-  # construímos uma imagem própria (scripts/Dockerfile.backup) que já traz o pg_dump e o
-  # código assado dentro dela. Ver os comentários do Dockerfile para o porquê detalhado.
+  # Substitui os dois antigos serviços de loop (`backup` e `kurisu-sync`, cada um com
+  # `while true; sleep 86400`). Vantagens: horário FIXO (não flutua com o redeploy),
+  # adicionar job novo = 1 linha em scheduler/registry.py (não um serviço novo aqui),
+  # e observabilidade (tabela scheduler_runs + alerta no Telegram em falha).
   #
-  # Pré-requisito (uma vez só): criar o bucket GCS `makima-backups` — feito via Python
-  # dentro do makima-web, pois o host do VPS não tem o gcloud instalado.
-  backup:
+  # Usa uma imagem própria (scheduler/Dockerfile) porque o job de backup precisa do
+  # binário pg_dump, que a imagem do webapp não traz. Ver scheduler/CLAUDE.md.
+  #
+  # Pré-requisitos no Environment: DATABASE_URL, GCP_* / GCS_BACKUP_BUCKET (backup),
+  # VERTEX_RAG_CORPUS_OPERACIONAL (Kurisu), LETTERBOXD_USERNAME (Akane),
+  # TELEGRAM_BOT_TOKEN + TELEGRAM_ALERT_CHAT_ID (alertas de falha).
+  scheduler:
     build:
-      # Contexto = raiz do repo (para o COPY scripts/ enxergar a pasta scripts/).
+      # Contexto = raiz do repo (para o COPY . . pegar agents/, scripts/, scheduler/).
       context: .
-      dockerfile: scripts/Dockerfile.backup
-    container_name: makima-backup
-    restart: unless-stopped
-    # Injeta as variáveis (DATABASE_URL, GCP_CREDENTIALS_JSON, GCP_PROJECT_ID,
-    # GCS_BACKUP_BUCKET) em runtime. No Dokploy elas vêm do painel de Environment.
-    env_file: .env
-    networks:
-      - dokploy-network
-
-  # Serviço de sync da memória unificada da Kurisu (spec 028).
-  # Lê as tabelas dos agentes (read-only) e popula o corpus operacional do Vertex AI RAG,
-  # de forma incremental (add/remove/edit por hash-manifest). Roda 1x/dia.
-  #
-  # REUSA a imagem do `web` (mesmo build: webapp/backend/Dockerfile) — ela já traz todo o
-  # código (agents/, scripts/) e as deps Python (vertexai, psycopg2, google-cloud-storage).
-  # Só trocamos o `command` pelo loop do sync (mesmo padrão do `backup`: loop + sleep 24h,
-  # NÃO é cron). O `|| echo` evita derrubar o container se um ciclo falhar.
-  #
-  # Pré-requisito: VERTEX_RAG_CORPUS_OPERACIONAL no Environment (criado na 1ª execução do
-  # sync, se ausente). Roda na dokploy-network para o DATABASE_URL resolver.
-  kurisu-sync:
-    build:
-      # Mesmo build do `web` → o Docker reaproveita a imagem já construída (sem build extra).
-      context: .
-      dockerfile: webapp/backend/Dockerfile
-    container_name: makima-kurisu-sync
+      dockerfile: scheduler/Dockerfile
+    container_name: makima-scheduler
     restart: unless-stopped
     env_file: .env
-    # Loop: roda o sync e dorme 24h. Cada redeploy reinicia o relógio e dispara um sync.
-    command: ["sh", "-c", "while true; do python -m scripts.sync_kurisu_memory || echo 'Sync Kurisu falhou (ver erro acima)'; echo 'Proximo sync em 24h'; sleep 86400; done"]
     networks:
       - dokploy-network
 
