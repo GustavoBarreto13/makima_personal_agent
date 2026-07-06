@@ -209,22 +209,40 @@ de estudo (US4) — todos os endpoints em `violetApi.tutor*`/`*TutorGuide`.
 | View | Tela | O que mostra |
 |---|---|---|
 | `home` | Home | Hero com stats + heatmap de páginas + "agora lendo" + atividade recente |
-| `catalogo` | Catálogo (Biblioteca) | Lista de todos os livros com filtros e ordenação |
-| `lendo` | Lendo | Livros em leitura agora |
+| `catalogo` | Biblioteca | **Todos** os livros **agrupados por status** (Lendo → Quero ler → Wishlist → Lidos, cada grupo com contagem), com filtro por status **lembrado entre sessões** e seletor de ordenação na toolbar |
 | `querler` | Quero ler | Lista to-read |
 | `wishlist` | Wishlist | Lista de desejos com links para lojas |
-| `listas` | Estantes | Estantes personalizadas do usuário |
+| `listas` / `estante` | Estantes | Grade de estantes + estante aberta. **Criar/editar/excluir** estante e **adicionar/remover** livros pela UI |
 | `atividade` | Atividade | Diário de leitura por data |
 | `resenhas` | Resenhas | Avaliações dos livros lidos |
 | `stats` | Stats | "Ano em revisão" — estatísticas anuais de leitura |
-| `detalhe` | Detalhe | Página individual do livro (log, histórico, estantes) |
+| `detalhe` | Detalhe | Página do livro: edição completa (modal), **resenha inline** (editor estilo Violet), **marcações coloridas**, registro/histórico de leitura e estantes |
+
+> A aba **"Lendo agora"** foi removida (era redundante com a Biblioteca); a NowBar do rodapé
+> ("agora lendo") permanece.
+
+**Ordenação (toolbar da Biblioteca + TweaksPanel):** fonte única `SORT_OPTIONS` em `types.ts` —
+Adicionado recentemente (usa `created_at`), Atividade recente, Avaliação, Título, Autor, Progresso,
+Nº de páginas. O filtro e a ordenação escolhidos são persistidos nos tweaks (`statusFilter`,
+`ordenacao`) via `localStorage` (`fr-tweaks`).
+
+**Modais e edição inline:**
+
+| Arquivo | O que faz |
+|---|---|
+| `AddBookModal.tsx` | Adicionar livro (busca Google Books) |
+| `LogModal.tsx` / `EditLogModal.tsx` | Registrar / editar uma sessão de leitura |
+| `EditBookModal.tsx` | Edição completa do livro — todos os campos (capa por URL, título, autor, gênero, ano, páginas, ISBN, idioma, descrição, status, nota, datas, resenha, loja, preço) |
+| `ShelfModal.tsx` | Criar/editar estante (nome, descrição, seletor de cor) |
+| `ReviewEditor` (em `screens/BookDetail.tsx`) | Editor de resenha inline (textarea serif transparente com auto-resize, estilo do editor da Violet; ⌘/Ctrl+Enter salva, Esc cancela) |
+| `BookMarks` (em `screens/BookDetail.tsx`) | Seção "Minhas marcações" — bullets coloridos (rosa/amarelo/verde/azul/laranja) com página opcional |
 
 **Componentes de UI (frieren/ui/):**
 
 | Arquivo | O que faz |
 |---|---|
 | `Cover.tsx` | Capa do livro: fotográfica (se houver URL) ou tipográfica (paleta determinística) |
-| `Heatmap.tsx` | Heatmap de páginas lidas por dia, organizado por mês em grid 7×N |
+| `Heatmap.tsx` | Heatmap de páginas lidas por dia — meses em **linha única com scroll horizontal** (padrão do heatmap da Violet), cobrindo **o ano inteiro** (meses futuros aparecem apagados) |
 | `ProgressBar.tsx` | Barra de progresso de leitura |
 | `Spark.tsx` | Sparkline de barras verticais |
 | `Stars.tsx` | Avaliação em estrelas fracionárias via clip SVG |

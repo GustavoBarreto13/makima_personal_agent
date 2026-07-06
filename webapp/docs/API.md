@@ -156,7 +156,7 @@ Todos os endpoints exigem autenticação. Chamam as tools da Frieren (`agents/fr
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/books` | Lista todos os livros com a página atual de leitura. | — |
+| `GET` | `/api/books` | Lista todos os livros com a página atual de leitura (inclui `created_at`, usado na ordenação "Adicionado recentemente"). | — |
 | `POST` | `/api/books` | Adiciona livro à biblioteca (enriquece metadados pelo Google Books). | Body: `AddBookBody` |
 | `GET` | `/api/books/stats` | Estatísticas de leitura do ano. | `?year=YYYY` |
 | `GET` | `/api/books/heatmap` | Páginas lidas por dia (para o heatmap). | `?year=YYYY` |
