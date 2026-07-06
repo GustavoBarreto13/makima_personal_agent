@@ -1271,3 +1271,41 @@
   background: var(--card-2); border: 1px solid var(--line);
   border-radius: 999px; padding: 1px 8px; font-variant-numeric: tabular-nums;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Editor de resenha inline (identidade visual do editor da Violet)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Linha do cabeçalho da seção: título à esquerda + botão editar à direita */
+.frieren-shell .detail-section-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 32px 0 12px; }
+
+/* Botão discreto "Editar"/"Escrever" */
+.frieren-shell .review-edit-btn {
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--teal-deep); background: none; border: none; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px; padding: 0; transition: color 0.12s;
+}
+.frieren-shell .review-edit-btn:hover { text-decoration: underline; }
+.frieren-shell .review-edit-btn svg { width: 12px; height: 12px; }
+
+/* Estado vazio — prompt clicável em serif itálico */
+.frieren-shell .review-empty {
+  font-family: var(--serif); font-style: italic; font-size: 16px; color: var(--ink-3);
+  cursor: text; transition: color 0.12s;
+}
+.frieren-shell .review-empty:hover { color: var(--ink-2); }
+
+/* Container do editor — mesma âncora visual do .detail-review (borda dourada) */
+.frieren-shell .review-editor { border-left: 2px solid var(--gold); padding-left: 18px; }
+
+/* Superfície de escrita — transparente, serif, auto-resize (estilo Violet) */
+.frieren-shell .review-textarea {
+  width: 100%; border: none; outline: none; background: transparent; resize: none; overflow: hidden;
+  font-family: var(--serif); font-size: 18px; line-height: 1.62; color: var(--ink);
+  min-height: 60px; padding: 0;
+}
+.frieren-shell .review-textarea::placeholder { color: var(--ink-4); font-style: italic; }
+
+/* Rodapé do editor — dica à esquerda, botões à direita */
+.frieren-shell .review-foot { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.frieren-shell .review-hint { font-family: var(--mono); font-size: 11px; color: var(--ink-4); margin-right: auto; }

@@ -383,6 +383,12 @@ export function FrierenShell() {
     setToast('Livro atualizado.')
   }, [refreshAll])
 
+  // Chamado pelo editor de resenha inline (BookDetail) após salvar
+  const onReviewSaved = useCallback(async () => {
+    await refreshAll()
+    setToast('Resenha salva.')
+  }, [refreshAll])
+
   // ── Estantes: mutações ────────────────────────────────────────────────────
   // Re-busca só as estantes (usado após criar/editar/excluir).
   const reloadShelves = useCallback(async () => {
@@ -606,6 +612,7 @@ export function FrierenShell() {
             navigate={navigate}
             openLog={openLog}
             onEdit={openEditBook}
+            onReviewSaved={onReviewSaved}
             onDelete={deleteBook}
             onEditLog={editLog}
             onDeleteLog={deleteLog}

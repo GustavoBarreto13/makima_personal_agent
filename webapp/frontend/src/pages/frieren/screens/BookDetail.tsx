@@ -2,7 +2,7 @@
 // capa, metadados, resenha, estantes e diário de leitura específico deste livro.
 // Layout em duas colunas: capa fixa à esquerda, informações scrolláveis à direita.
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Book, ActivityEntry, Shelf, BulletColor } from '../types'
 import { BULLET_COLOR_META } from '../types'
 import { Icon } from '../ui/Icons'
@@ -25,6 +25,8 @@ interface BookDetailProps {
   openLog: (bookId?: string | null) => void
   // Abre o modal de edição completa do livro (chama o shell)
   onEdit: (bookId: string) => void
+  // Re-sincroniza os dados no shell após salvar a resenha inline
+  onReviewSaved: () => Promise<void>
   // Remove o livro do catálogo (chama o backend e re-sincroniza no shell)
   onDelete: (bookId: string) => Promise<void>
   // Abre o modal de edição para uma entrada específica do diário
@@ -54,7 +56,7 @@ function relDate(iso: string): string {
 }
 
 // Componente principal do detalhe do livro
-export function BookDetail({ bookId, books, activity, shelves, navigate, openLog, onEdit, onDelete, onEditLog, onDeleteLog }: BookDetailProps) {
+export function BookDetail({ bookId, books, activity, shelves, navigate, openLog, onEdit, onReviewSaved, onDelete, onEditLog, onDeleteLog }: BookDetailProps) {
   // Controla a confirmação inline de remoção (dois passos: mostrar → confirmar)
   const [confirmando, setConfirmando] = useState(false)
   // Spinner durante a chamada de remoção ao backend
@@ -272,19 +274,8 @@ export function BookDetail({ bookId, books, activity, shelves, navigate, openLog
             )}
           </div>
 
-          {/* ── RESENHA PESSOAL ── */}
-          <div className="detail-section-title">Sua resenha</div>
-          {book.review ? (
-            // Texto da resenha em itálico e fonte serif
-            <p className="detail-review">{book.review}</p>
-          ) : (
-            // Estado vazio — mensagem contextual por status
-            <p className="detail-empty-review">
-              {book.status === 'wishlist'
-                ? 'Ele te espera na wishlist.'
-                : 'Você ainda não escreveu sobre este livro. Registre uma leitura para começar.'}
-            </p>
-          )}
+          {/* ── RESENHA PESSOAL (editor inline) ── */}
+          <ReviewEditor book={book} onSaved={onReviewSaved} />
 
           {/* ── MINHAS MARCAÇÕES ── */}
           <BookMarks bookId={book.id} />
@@ -372,6 +363,103 @@ export function BookDetail({ bookId, books, activity, shelves, navigate, openLog
         </div>
       </div>
     </div>
+  )
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Seção "Sua resenha" — editor inline (identidade visual do editor da Violet)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Ajusta a altura de um textarea ao conteúdo (auto-resize, como no editor da Violet)
+function autoResize(el: HTMLTextAreaElement | null) {
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = el.scrollHeight + 'px'
+}
+
+// Editor de resenha: leitura + edição inline. Escreve a qualquer momento no campo
+// `notes` do livro via booksApi.updateMetadata; o shell re-sincroniza em onSaved.
+function ReviewEditor({ book, onSaved }: { book: Book; onSaved: () => Promise<void> }) {
+  const [editing, setEditing] = useState(false)
+  const [draft,   setDraft]   = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const ref = useRef<HTMLTextAreaElement>(null)
+
+  // Ao entrar em edição, pré-preenche com a resenha atual e ajusta a altura
+  const startEdit = useCallback(() => {
+    setDraft(book.review ?? '')
+    setEditing(true)
+  }, [book.review])
+
+  // Foca e dimensiona o textarea quando o editor abre
+  useEffect(() => {
+    if (editing && ref.current) {
+      ref.current.focus()
+      autoResize(ref.current)
+    }
+  }, [editing])
+
+  // Salva a resenha (draft vazio limpa o campo) e re-sincroniza no shell
+  const save = useCallback(async () => {
+    setSaving(true)
+    try {
+      await booksApi.updateMetadata(book.id, { notes: draft.trim() })
+      await onSaved()
+      setEditing(false)
+    } catch {
+      // Silencioso — mantém o editor aberto para tentar de novo
+    } finally {
+      setSaving(false)
+    }
+  }, [book.id, draft, onSaved])
+
+  return (
+    <>
+      {/* Cabeçalho: título + botão editar/escrever (some durante a edição) */}
+      <div className="detail-section-row">
+        <span className="detail-section-title" style={{ margin: 0 }}>Sua resenha</span>
+        {!editing && (
+          <button className="review-edit-btn" onClick={startEdit}>
+            <Icon name="pencil" /> {book.review ? 'Editar' : 'Escrever'}
+          </button>
+        )}
+      </div>
+
+      {editing ? (
+        // ── MODO EDIÇÃO — superfície serif estilo Violet ──
+        <div className="review-editor">
+          <textarea
+            ref={ref}
+            className="review-textarea"
+            value={draft}
+            placeholder="Escreva o que achou deste livro…"
+            disabled={saving}
+            onChange={e => { setDraft(e.target.value); autoResize(e.target) }}
+            onKeyDown={e => {
+              // Ctrl/⌘+Enter salva; Esc cancela. Enter comum quebra linha.
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save() }
+              if (e.key === 'Escape') setEditing(false)
+            }}
+          />
+          <div className="review-foot">
+            <span className="review-hint">⌘/Ctrl+Enter salva · Esc cancela</span>
+            <button className="btn btn-ghost" onClick={() => setEditing(false)} disabled={saving}>Cancelar</button>
+            <button className="btn btn-primary" onClick={save} disabled={saving}>
+              {saving ? 'Salvando…' : 'Salvar'}
+            </button>
+          </div>
+        </div>
+      ) : book.review ? (
+        // Resenha existente — clicar no texto também abre a edição
+        <p className="detail-review" style={{ cursor: 'text' }} onClick={startEdit}>{book.review}</p>
+      ) : (
+        // Estado vazio — prompt clicável (entra em edição)
+        <p className="review-empty" onClick={startEdit}>
+          Escreva o que achou deste livro…
+        </p>
+      )}
+    </>
   )
 }
 
