@@ -47,7 +47,11 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
     if (categories.length === 0) {
       namiApi.getCategories()
         .then(cats => setCategories(cats))
-        .catch(() => setCategories([]))
+        .catch(() => {
+          setCategories([])
+          // Feedback visível — sem categorias o grid fica vazio e o save falharia
+          setError('Erro ao carregar categorias — recarregue a página')
+        })
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

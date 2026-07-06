@@ -45,6 +45,12 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 );
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
 
+-- Colunas adicionadas na reforma da Nami (spec 040) — idempotentes para bancos existentes.
+-- account_id/card_id seguem a regra de transactions: mutuamente exclusivos
+-- (assinatura debitada em conta OU cobrada no cartão, nunca os dois).
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS account_id TEXT;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS card_id    TEXT;
+
 -- Tabela de grupos de parcelamento (compras divididas em X vezes)
 CREATE TABLE IF NOT EXISTS installment_groups (
     id            TEXT PRIMARY KEY,

@@ -4,6 +4,7 @@
 //         grid-2 (contas+próximos vencimentos) → preview orçamentos → transações recentes.
 
 import { useState, useEffect, useMemo } from 'react'
+import { api } from '../../../lib/api'
 import { namiApi } from '../namiApi'
 import type { StatsResponse, Account, Card, Subscription, Category } from '../types'
 import { QuickAdd } from '../components/QuickAdd'
@@ -39,12 +40,22 @@ export function Dashboard({
   const [recentTxs, setRecentTxs]   = useState<ReturnType<typeof normalizeTx>[]>([])
   const [deletingId, setDeletingId]  = useState<string | null>(null)
   const [loadingTxs, setLoadingTxs]  = useState(true)
+  // Primeiro nome do usuário autenticado (vem do cookie de sessão via /auth/me)
+  const [userName, setUserName]      = useState('')
 
   // Carrega categorias uma vez
   useEffect(() => {
     namiApi.getCategories()
       .then(cats => setCategories(cats))
-      .catch(() => {})
+      .catch(() => onToast('Erro ao carregar categorias'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Nome de quem está logado — nada de hardcode; falha vira saudação sem nome
+  useEffect(() => {
+    api.get<{ email: string; name?: string }>('/auth/me')
+      .then(u => setUserName((u.name ?? '').split(' ')[0]))
+      .catch(() => setUserName(''))
   }, [])
 
   // Carrega transações recentes para o preview (últimas 5)
@@ -122,7 +133,7 @@ export function Dashboard({
       <div className="hero">
         <div className="hero-copy">
           <div className="hero-eyebrow">Visão geral do mês</div>
-          <div className="hero-greet">{greet()}, Gustavo!</div>
+          <div className="hero-greet">{greet()}{userName ? `, ${userName}` : ''}!</div>
 
           {/* Valor líquido do mês em destaque */}
           <div className="hero-net">

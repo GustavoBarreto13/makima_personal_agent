@@ -193,7 +193,9 @@ def check_category_budget(categoria: str, valor: float) -> dict:
     Returns:
         Dicionário com envelope_status ("ok", "alerta", "estourado", "sem_envelope").
     """
-    month = date.today().strftime("%Y-%m")
+    # Mês atual no fuso de São Paulo — date.today() seria a data UTC do servidor
+    from agents.nami.tools import _today_date
+    month = _today_date().strftime("%Y-%m")
     status = get_budget_status(month)
 
     if status["status"] != "ok":

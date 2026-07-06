@@ -46,7 +46,8 @@ export function Transactions({
   useEffect(() => {
     namiApi.getCategories()
       .then(cats => setCategories(cats))
-      .catch(() => {})
+      .catch(() => onToast('Erro ao carregar categorias'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Recarrega transações quando o mês muda

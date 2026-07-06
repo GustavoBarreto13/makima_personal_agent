@@ -11,7 +11,7 @@ from datetime import datetime
 
 # Importa os helpers PostgreSQL compartilhados
 from agents.db import run_select, run_dml
-from agents.nami.tools import _invalidate_accounts_cache
+from agents.nami.tools import _TZ, _invalidate_accounts_cache
 
 # Tipos de conta bancária aceitos. Cartões de crédito são gerenciados
 # separadamente em credit_cards e NÃO são contas — não estão aqui.
@@ -51,8 +51,8 @@ def create_account(
         }
 
     account_id = str(uuid.uuid4())
-    # Timestamp atual para o campo created_at — registra quando a conta foi criada
-    now = datetime.utcnow().isoformat()
+    # Timestamp atual no fuso de São Paulo (UTC-3) — nunca UTC do servidor
+    now = datetime.now(_TZ).isoformat()
 
     sql = """
         INSERT INTO accounts

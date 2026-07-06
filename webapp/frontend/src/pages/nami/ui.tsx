@@ -12,6 +12,7 @@
  */
 
 import { Icon, lucideToKey } from './icons'
+import { daysAgo, parseLocalDate } from './dateUtils'
 import type { Category, CategoryStat, MonthlyEntry } from './types'
 
 // ── Formatadores monetários ───────────────────────────────────────────────────
@@ -404,8 +405,8 @@ export function CashflowBars({ cashflow, currentMonth }: CashflowBarsProps) {
  *   String de data legível em português.
  */
 export function fmtDay(iso: string): string {
-  // Adiciona T12:00 para evitar problema de fuso (UTC vs local)
-  const d = new Date(iso + 'T12:00')
+  // Parse explícito por partes locais — nunca new Date(string ISO), que seria UTC
+  const d = parseLocalDate(iso)
   return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '')
 }
 
@@ -420,9 +421,9 @@ export function fmtDay(iso: string): string {
  *   String relativa em português.
  */
 export function relDay(iso: string): string {
-  const today = new Date()
-  const d = new Date(iso + 'T12:00')
-  const diff = Math.round((today.setHours(12,0,0,0) - d.getTime()) / 86_400_000)
+  // Aritmética por partes locais (dateUtils) — evita o off-by-one do antigo
+  // cálculo com setHours/getTime misturando fuso e mutação de Date
+  const diff = daysAgo(iso)
   if (diff === 0) return 'hoje'
   if (diff === 1) return 'ontem'
   if (diff === -1) return 'amanhã'

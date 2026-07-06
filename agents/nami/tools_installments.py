@@ -168,8 +168,8 @@ def list_installments(status: str = "ativo") -> dict:
         SELECT
             ig.id, ig.name, ig.total_valor, ig.num_parcelas, ig.valor_parcela,
             ig.conta, ig.categoria, ig.first_due::text AS first_due, ig.notes,
-            COUNT(t.id) FILTER (WHERE t.data <= CURRENT_DATE AND t.deleted = FALSE) AS parcelas_pagas,
-            COUNT(t.id) FILTER (WHERE t.data > CURRENT_DATE AND t.deleted = FALSE) AS parcelas_pendentes
+            COUNT(t.id) FILTER (WHERE t.data <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date AND t.deleted = FALSE) AS parcelas_pagas,
+            COUNT(t.id) FILTER (WHERE t.data > (NOW() AT TIME ZONE 'America/Sao_Paulo')::date AND t.deleted = FALSE) AS parcelas_pendentes
         FROM installment_groups ig
         LEFT JOIN transactions t ON t.installment_group_id = ig.id
         WHERE {where_clause}
@@ -342,7 +342,7 @@ def cancel_installment_group(id: str) -> dict:
         UPDATE transactions
         SET deleted = TRUE, updated_at = NOW()
         WHERE installment_group_id = %(id)s
-          AND data > CURRENT_DATE
+          AND data > (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
           AND deleted = FALSE
     """
 

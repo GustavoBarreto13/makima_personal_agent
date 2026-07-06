@@ -29,7 +29,8 @@ export function Budgets({ month, onToast }: BudgetsProps) {
   useEffect(() => {
     namiApi.getCategories()
       .then(cats => setCategories(cats))
-      .catch(() => {})
+      .catch(() => onToast('Erro ao carregar categorias'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Recarrega orçamentos quando o mês muda

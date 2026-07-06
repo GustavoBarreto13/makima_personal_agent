@@ -42,7 +42,9 @@ def _billing_cycle(closing_day: int) -> tuple:
     Returns:
         Tupla (start_date, end_date) no formato "AAAA-MM-DD".
     """
-    today = date.today()
+    # Hoje no fuso de São Paulo — date.today() seria a data UTC do servidor
+    from agents.nami.tools import _today_date
+    today = _today_date()
 
     if today.day <= closing_day:
         prev_month = today.month - 1 if today.month > 1 else 12

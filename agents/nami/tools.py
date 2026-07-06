@@ -10,7 +10,7 @@ Usage:
 """
 
 import uuid     # Para gerar IDs únicos para cada transação/assinatura
-from datetime import date          # Para obter a data de hoje
+from datetime import date, datetime  # Para obter a data de hoje no fuso local
 from zoneinfo import ZoneInfo      # Para trabalhar com fuso horário (horário de Brasília)
 
 # Importa os helpers PostgreSQL compartilhados — substituem o BigQuery _run_select/_run_dml.
@@ -141,9 +141,18 @@ def _norm(s: str) -> str:
     return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode().lower()
 
 
+def _today_date() -> date:
+    """Retorna a data de hoje no fuso de São Paulo (UTC-3).
+
+    date.today() retornaria a data do servidor (UTC no container), que após
+    as 21h locais já aponta para o dia seguinte — regra mandatória do projeto.
+    """
+    return datetime.now(_TZ).date()
+
+
 def _today() -> str:
     """Retorna a data de hoje no formato 'AAAA-MM-DD' (padrão aceito pelo PostgreSQL)."""
-    return date.today().strftime("%Y-%m-%d")
+    return _today_date().strftime("%Y-%m-%d")
 
 
 def _month_start() -> str:
@@ -152,7 +161,7 @@ def _month_start() -> str:
     Usado como data de início padrão em consultas mensais.
     """
     # replace(day=1) troca apenas o dia para 1, mantendo mês e ano atuais
-    return date.today().replace(day=1).strftime("%Y-%m-%d")
+    return _today_date().replace(day=1).strftime("%Y-%m-%d")
 
 
 def _match_category(name: str) -> str | None:
@@ -495,11 +504,14 @@ def get_spending_summary(period: str = "month", group_by: str = "categoria") -> 
     import calendar
     from datetime import timedelta
 
-    # Valida o campo de agrupamento — apenas esses três são colunas reais no banco
-    if group_by not in ("categoria", "conta", "tipo"):
+    # Mapa fechado de agrupamentos válidos — a coluna usada no SQL sai SEMPRE
+    # deste dicionário, nunca do input do usuário (elimina injeção no GROUP BY)
+    group_cols = {"categoria": "categoria", "conta": "conta", "tipo": "tipo"}
+    group_col = group_cols.get(group_by)
+    if group_col is None:
         return {"status": "error", "message": "group_by deve ser 'categoria', 'conta' ou 'tipo'"}
 
-    today = date.today()
+    today = _today_date()
 
     # Determina o intervalo de datas com base no período solicitado
     if period == "month":
@@ -530,13 +542,13 @@ def get_spending_summary(period: str = "month", group_by: str = "categoria") -> 
         return {"status": "error", "message": "period inválido. Use 'month', 'week', 'year' ou 'YYYY-MM'"}
 
     # Query que soma os valores agrupados pelo campo escolhido
-    # O nome da coluna (group_by) é inserido diretamente porque já foi validado acima
+    # group_col vem do dicionário group_cols acima — nunca do input direto
     sql = f"""
-        SELECT {group_by}, SUM(valor) AS total
+        SELECT {group_col}, SUM(valor) AS total
         FROM transactions
         WHERE data BETWEEN %(start)s AND %(end)s
           AND deleted = FALSE
-        GROUP BY {group_by}
+        GROUP BY {group_col}
         ORDER BY total DESC
     """
 
@@ -574,7 +586,7 @@ def get_spending_trend(months: int = 3) -> dict:
     import calendar
     from datetime import timedelta
 
-    today = date.today()
+    today = _today_date()
 
     # Calcula o primeiro dia do período: volta `months` meses antes do mês atual
     # A lógica: começa do dia 1 do mês atual e vai subtraindo meses um a um
@@ -670,7 +682,7 @@ def create_subscription(
         valor        — Valor da cobrança (ex.: 55.90)
         ciclo        — Frequência: "mensal" ou "anual"
         next_billing — Próxima data de cobrança no formato AAAA-MM-DD
-        conta        — Conta usada para pagamento (deve estar em ACCOUNTS)
+        conta        — Conta ou cartão usado para pagamento (resolvido dinamicamente)
         categoria    — Categoria da assinatura (deve estar em CATEGORIES)
         notes        — Observações opcionais
 
@@ -680,10 +692,27 @@ def create_subscription(
     if ciclo not in ("mensal", "anual"):
         return {"status": "error", "message": "ciclo deve ser 'mensal' ou 'anual'"}
 
-    # Valida e normaliza a conta informada
-    acc = _match_account(conta)
-    if acc is None:
-        return {"status": "error", "message": f"Conta inválida: '{conta}'. Opções: {', '.join(ACCOUNTS)}"}
+    # Valida o formato da data antes de mandar ao banco — erro amigável em vez
+    # de exceção do PostgreSQL (ex.: "2026-13-45" seria rejeitado só no INSERT)
+    try:
+        date.fromisoformat(next_billing)
+    except (ValueError, TypeError):
+        return {"status": "error", "message": f"next_billing inválido: '{next_billing}'. Use o formato AAAA-MM-DD."}
+
+    # Resolve o pagador: primeiro tenta conta bancária, depois cartão de crédito.
+    # Mesma regra de transactions: account_id e card_id são mutuamente exclusivos.
+    account_id = None
+    card_id = None
+    acc = _resolve_account(conta)
+    if acc is not None:
+        conta_display = acc["name"]
+        account_id = acc["id"]
+    else:
+        card = _resolve_credit_card(conta)
+        if card is None:
+            return {"status": "error", "message": f"Conta ou cartão não encontrado: '{conta}'. Cadastre com create_account ou register_credit_card."}
+        conta_display = card["name"]
+        card_id = card["id"]
 
     # Valida e normaliza a categoria informada
     cat = _match_category(categoria)
@@ -696,8 +725,8 @@ def create_subscription(
     # Monta a query de inserção na tabela de assinaturas
     # status 'ativa' é o valor inicial — pode ser alterado depois via update_subscription
     sql = """
-        INSERT INTO subscriptions (id, name, valor, ciclo, next_billing, conta, categoria, status, notes, created_at)
-        VALUES (%(id)s, %(name)s, %(valor)s, %(ciclo)s, %(next_billing)s, %(conta)s, %(categoria)s, 'ativa', %(notes)s, NOW())
+        INSERT INTO subscriptions (id, name, valor, ciclo, next_billing, conta, account_id, card_id, categoria, status, notes, created_at)
+        VALUES (%(id)s, %(name)s, %(valor)s, %(ciclo)s, %(next_billing)s, %(conta)s, %(account_id)s, %(card_id)s, %(categoria)s, 'ativa', %(notes)s, NOW())
     """
 
     params = {
@@ -706,7 +735,9 @@ def create_subscription(
         "valor":        float(valor),
         "ciclo":        ciclo,
         "next_billing": next_billing,
-        "conta":        acc,
+        "conta":        conta_display,
+        "account_id":   account_id,
+        "card_id":      card_id,
         "categoria":    cat,
         "notes":        notes or None,  # None = NULL no banco
     }
