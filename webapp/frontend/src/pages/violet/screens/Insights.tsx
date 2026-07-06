@@ -27,18 +27,10 @@ function buildHeatmapDays(
   // Começa em 1º de janeiro do ano
   const cur = new Date(year, 0, 1)
 
-  // Ano corrente: termina hoje para não mostrar meses futuros sem dados.
-  // Ano anterior: termina em 31/dez para cobrir o calendário completo (FR-005).
-  const currentYear = new Date().getFullYear()
-  const isCurrentYear = year === currentYear
-  let end: Date
-  if (isCurrentYear) {
-    end = new Date()
-    end.setHours(0, 0, 0, 0)
-  } else {
-    // 31 de dezembro do ano selecionado
-    end = new Date(year, 11, 31)
-  }
+  // Sempre cobre o calendário completo (1º/jan → 31/dez do ano), inclusive no ano
+  // corrente: os dias futuros ficam com words=0 e são renderizados apagados (--heat-0),
+  // deixando os meses seguintes visíveis em vez de cortar no "year to date".
+  const end = new Date(year, 11, 31)
 
   while (cur <= end) {
     // Monta a string "YYYY-MM-DD" a partir de partes locais para não sofrer com UTC

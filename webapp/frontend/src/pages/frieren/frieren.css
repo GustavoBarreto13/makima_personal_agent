@@ -510,15 +510,16 @@
 .frieren-shell .heat-sw i { width: 10px; height: 10px; border-radius: 2px; }
 .frieren-shell .heat-months { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-4); margin-bottom: 6px; }
 
-/* heatmap em blocos por mês (menor) */
-.frieren-shell .heat-months-wrap { display: flex; gap: 18px; flex-wrap: wrap; }
-.frieren-shell .heat-month { display: flex; flex-direction: column; }
-.frieren-shell .hm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
-.frieren-shell .hm-name { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-3); }
-.frieren-shell .hm-sum { font-family: var(--mono); font-size: 9px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
+/* Heatmap: linha única de meses com scroll horizontal (igual ao da Violet).
+   Antes usava flex-wrap:wrap + gap grande, o que "quebrava" os meses em blocos
+   separados em várias linhas — origem dos bugs visuais de separação. */
+.frieren-shell .heat-months-wrap { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
+.frieren-shell .heat-months-wrap::-webkit-scrollbar { display: none; }
+.frieren-shell .heat-month { display: flex; flex-direction: column; flex-shrink: 0; }
+.frieren-shell .hm-name { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-4); margin-bottom: 7px; text-align: center; }
 .frieren-shell .hm-cells { display: grid; grid-template-rows: repeat(7, 9px); grid-auto-flow: column; gap: 3px; }
 .frieren-shell .hm-cell { width: 9px; height: 9px; border-radius: 2px; transition: transform 0.1s; }
-.frieren-shell .hm-cell:hover { transform: scale(1.35); }
+.frieren-shell .hm-cell:hover { transform: scale(1.4); }
 
 /* ─── Capa tipográfica ─────────────────────────────────────────────────── */
 .frieren-shell .cover {

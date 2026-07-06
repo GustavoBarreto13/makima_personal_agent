@@ -33,7 +33,8 @@ function heatLevel(pages: number): number {
 }
 
 // Transforma o array esparso recebido do backend em um array DENSO que cobre
-// todos os dias de 1º/jan até hoje. Dias sem leitura recebem pages: 0.
+// todos os dias de 1º/jan até 31/dez do ano. Dias sem leitura (inclusive os
+// futuros) recebem pages: 0 e são exibidos apagados (--heat-0).
 //
 // Por que denso? O componente calcula o alinhamento da primeira célula de cada mês
 // usando g.days[0] — que deve ser sempre o dia 1 do mês. Com dados esparsos,
@@ -57,13 +58,14 @@ function densify(sparse: HeatmapDay[]): HeatmapDay[] {
   // Início: 1º de janeiro do ano
   const cur = new Date(year, 0, 1)
 
-  // Fim: hoje (sem horário — comparação só de datas)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  // Fim: 31 de dezembro do ano — cobre o calendário completo. Os dias futuros
+  // ficam com pages=0 e são renderizados apagados (--heat-0), deixando os meses
+  // seguintes visíveis em vez de parar no "year to date".
+  const end = new Date(year, 11, 31)
 
   // Itera dia a dia do início ao fim, criando uma entrada para cada dia
   const dense: HeatmapDay[] = []
-  while (cur <= today) {
+  while (cur <= end) {
     // Monta a string "YYYY-MM-DD" a partir de partes locais para não sofrer com UTC
     const y = cur.getFullYear()
     const mo = String(cur.getMonth() + 1).padStart(2, '0')
@@ -142,17 +144,10 @@ export function Heatmap({ data }: HeatmapProps) {
             cells.push(null)
           }
 
-          // Soma total de páginas lidas no mês — exibida no cabeçalho em formato "Xk"
-          const sum = g.days.reduce((a, d) => a + d.pages, 0)
-
           return (
             <div className="heat-month" key={g.m}>
-              {/* Cabeçalho do mês: nome abreviado + total de páginas em formato compacto */}
-              <div className="hm-head">
-                <span className="hm-name">{MONTH_NAMES[g.m]}</span>
-                {/* Divide por 1000 para exibir "1.2k" em vez de "1200" — mais legível */}
-                <span className="hm-sum">{(sum / 1000).toFixed(1)}k</span>
-              </div>
+              {/* Rótulo do mês centralizado — mesmo estilo do heatmap da Violet */}
+              <div className="hm-name">{MONTH_NAMES[g.m]}</div>
 
               {/* Grade de células do mês — layout em CSS grid de 7 colunas (uma por dia da semana) */}
               <div className="hm-cells">
