@@ -3,6 +3,24 @@
 // Status possíveis de um livro na biblioteca
 export type BookStatus = 'reading' | 'read' | 'owned' | 'wishlist'
 
+// Filtro de status da Biblioteca (inclui "todos") — persistido nos tweaks
+export type BookFilter = 'todos' | BookStatus
+
+// Critérios de ordenação da Biblioteca. Cada opção tem uma direção fixa e sensata.
+export type SortKey =
+  | 'Adicionado' | 'Recentes' | 'Avaliação' | 'Título' | 'Autor' | 'Progresso' | 'Páginas'
+
+// Fonte única das opções de ordenação — usada pela toolbar da Biblioteca e pelo TweaksPanel.
+export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'Adicionado', label: 'Adicionado recentemente' },
+  { value: 'Recentes',   label: 'Atividade recente' },
+  { value: 'Avaliação',  label: 'Avaliação' },
+  { value: 'Título',     label: 'Título' },
+  { value: 'Autor',      label: 'Autor' },
+  { value: 'Progresso',  label: 'Progresso' },
+  { value: 'Páginas',    label: 'Nº de páginas' },
+]
+
 // Paletas de cor disponíveis para capas tipográficas
 export type CoverKey =
   | 'sand' | 'teal' | 'slate' | 'sage' | 'rose'
@@ -21,6 +39,7 @@ export interface Book {
   page: number | null          // página atual
   started: string | null       // ISO date YYYY-MM-DD
   finished: string | null      // ISO date YYYY-MM-DD
+  addedAt: string | null       // created_at (timestamp de cadastro) — ordenação "Adicionado"
   rating: number | null        // 0–5 em passos de 0.5
   review: string | null
   shelves: string[]            // ids das estantes
@@ -84,5 +103,7 @@ export interface Tweaks {
   tema: 'Claro' | 'Escuro'
   layoutInicio: 'Cinemático' | 'Editorial' | 'Galeria'
   densidade: 'Grande' | 'Médio' | 'Compacto'
-  ordenacao: 'Recentes' | 'Avaliação' | 'Título' | 'Autor' | 'Progresso'
+  ordenacao: SortKey
+  // Último filtro de status escolhido na Biblioteca — lembrado entre sessões
+  statusFilter: BookFilter
 }

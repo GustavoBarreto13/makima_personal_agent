@@ -320,13 +320,14 @@ def list_books(
             b.isbn,
             b.published_year,
             b.updated_at,
+            b.created_at,
             MAX(rl.page_end) AS current_page
         FROM books b
         LEFT JOIN reading_logs rl ON rl.book_id = b.id
         WHERE b.deleted = FALSE
         GROUP BY b.id, b.title, b.author, b.total_pages, b.status,
                  b.cover_url, b.date_started, b.date_finished, b.rating,
-                 b.genre, b.isbn, b.published_year, b.updated_at
+                 b.genre, b.isbn, b.published_year, b.updated_at, b.created_at
         ORDER BY
             CASE b.status
                 WHEN 'lendo'      THEN 0

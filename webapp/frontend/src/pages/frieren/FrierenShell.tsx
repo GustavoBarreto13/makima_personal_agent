@@ -73,6 +73,7 @@ function toBook(b: ApiBook): Book {
     page:      b.current_page,
     started:   b.date_started,
     finished:  b.date_finished,
+    addedAt:   b.created_at ?? null,
     rating:    b.rating,
     review:    b.notes ?? null,
     shelves:   b.shelves ?? [],
@@ -112,7 +113,6 @@ function toActivity(a: ApiActivityEntry): ActivityEntry {
 const TITLES: Record<string, string> = {
   home:      'Início',
   catalogo:  'Biblioteca',
-  lendo:     'Lendo agora',
   querler:   'Quero ler',
   wishlist:  'Wishlist',
   listas:    'Estantes',
@@ -132,10 +132,11 @@ const DENSITY_MAP: Record<Tweaks['densidade'], string> = {
 
 // ── Tweaks default e persistência ────────────────────────────────────────────
 const TWEAK_DEFAULTS: Tweaks = {
-  tema:        'Claro',
-  layoutInicio:'Cinemático',
-  densidade:   'Médio',
-  ordenacao:   'Recentes',
+  tema:         'Claro',
+  layoutInicio: 'Cinemático',
+  densidade:    'Médio',
+  ordenacao:    'Adicionado',
+  statusFilter: 'todos',
 }
 
 // Chave do localStorage onde as preferências são salvas
@@ -254,7 +255,7 @@ export function FrierenShell() {
     // Rola o conteúdo de volta ao topo ao trocar de seção
     if (scrollRef.current) scrollRef.current.scrollTop = 0
     // Limpa a busca ao sair das views que suportam busca
-    if (!['catalogo', 'lendo', 'wishlist', 'querler'].includes(view)) {
+    if (!['catalogo', 'wishlist', 'querler'].includes(view)) {
       setQuery('')
     }
   }, [])
@@ -468,7 +469,7 @@ export function FrierenShell() {
 
   // ── Deriva nav ativa a partir da view atual ───────────────────────────────
   const activeNav =
-    ['lendo', 'wishlist', 'querler', 'catalogo'].includes(route.view) ? route.view
+    ['wishlist', 'querler', 'catalogo'].includes(route.view) ? route.view
     : route.view === 'estante' ? 'listas'
     : route.view === 'detalhe' ? 'catalogo'
     : route.view
@@ -496,26 +497,17 @@ export function FrierenShell() {
           />
         )
 
-      // Catálogo completo com filtros e ordenação
+      // Biblioteca — todos os livros agrupados por status, com filtro e ordenação
       case 'catalogo':
         return (
           <Catalog
             books={books}
             navigate={navigate}
-            sort={tweaks.ordenacao}
             query={query}
-          />
-        )
-
-      // Catálogo filtrado para livros em leitura ativa
-      case 'lendo':
-        return (
-          <Catalog
-            books={books}
-            navigate={navigate}
+            filter={tweaks.statusFilter}
+            onFilterChange={(f) => setTweak('statusFilter', f)}
             sort={tweaks.ordenacao}
-            query={query}
-            initialFilter="reading"
+            onSortChange={(s) => setTweak('ordenacao', s)}
           />
         )
 
@@ -641,10 +633,6 @@ export function FrierenShell() {
     {
       id: 'catalogo', view: 'catalogo', label: 'Biblioteca',  icon: 'catalogo',
       count: books.length,
-    },
-    {
-      id: 'lendo',    view: 'lendo',    label: 'Lendo agora', icon: 'lendo',
-      count: readingBooks.length,
     },
     {
       id: 'querler',  view: 'querler',  label: 'Quero ler',   icon: 'wishlist',
@@ -794,7 +782,7 @@ export function FrierenShell() {
                 // Redireciona para Biblioteca ao iniciar busca em outra view
                 if (
                   e.target.value &&
-                  !['catalogo', 'lendo', 'wishlist', 'querler'].includes(route.view)
+                  !['catalogo', 'wishlist', 'querler'].includes(route.view)
                 ) {
                   navigate('catalogo')
                 }

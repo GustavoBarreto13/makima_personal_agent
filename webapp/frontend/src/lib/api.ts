@@ -449,6 +449,7 @@ export interface ApiBook {
   shelves: string[]
   notes: string | null         // só presente no endpoint de detalhe do livro
   store_url: string | null     // só presente no endpoint de detalhe do livro
+  created_at: string | null    // timestamp de cadastro — usado na ordenação "Adicionado"
 }
 
 // Cores válidas de uma marcação (espelha o CHECK do banco e BULLET_COLORS da tool)

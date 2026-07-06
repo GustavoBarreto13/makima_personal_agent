@@ -4,6 +4,7 @@
 
 import { useState } from 'react'
 import type { Tweaks } from './types'
+import { SORT_OPTIONS } from './types'
 import { Icon } from './ui/Icons'
 
 // Props do painel de tweaks
@@ -26,7 +27,7 @@ interface TweakRadioProps<T extends string> {
 interface TweakSelectProps<T extends string> {
   label: string
   value: T
-  options: T[]
+  options: { value: T; label: string }[]
   onChange: (v: T) => void
 }
 
@@ -66,7 +67,7 @@ function TweakSelect<T extends string>({ label, value, options, onChange }: Twea
         onChange={e => onChange(e.target.value as T)}
       >
         {options.map(opt => (
-          <option key={opt} value={opt}>{opt}</option>
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
         ))}
       </select>
     </div>
@@ -136,7 +137,7 @@ export function TweaksPanel({ tweaks, setTweak }: TweaksPanelProps) {
           <TweakSelect
             label="Ordenação"
             value={tweaks.ordenacao}
-            options={['Recentes', 'Avaliação', 'Título', 'Autor', 'Progresso'] as Tweaks['ordenacao'][]}
+            options={SORT_OPTIONS}
             onChange={v => setTweak('ordenacao', v)}
           />
         </div>
