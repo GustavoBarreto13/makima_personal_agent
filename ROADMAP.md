@@ -53,9 +53,9 @@ prontos localmente; deploy no VPS e os 6 exporters restantes pendentes.
 | Concluir a 028 (6 exporters + deploy VPS) | `specs/028-kurisu-unified-memory/` |
 | Personalidade Violet + rename `agents/journal → agents/violet` | `docs/planos/PLANO_VIOLET_EVERGARDEN.md` |
 | Integração Violet ↔ Komi (autocomplete `@menção` no diário) | `docs/planos/PLANO_INTEGRACAO_VIOLET_KOMI.md` |
-| ⏳ 034 — Kaguya GTD core: status GTD real + processamento do inbox + contextos + smart lists padrão de mercado | `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md` |
-| ⏳ 035 — Kaguya revisão semanal guiada (depende da 034) | `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md` |
-| ⏳ 036 — Metas/Hábitos ↔ outros agentes (Frieren, Violet; registry extensível) | `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md` |
-| ⏳ 037 — Kaguya pomodoro/foco (timer por tarefa + stats) | `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md` |
-| ⏳ 038 — Meu Dia com contexto Trabalho vs Pessoal (duas capacities) | `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md` |
-| ⏳ 039 — QoL: arquivar listas + localização nos eventos | `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md` |
+| ⏳ 034 — Kaguya GTD core: status GTD real + processamento do inbox + contextos + smart lists padrão de mercado | `specs/034-tasks-gtd-core/` (roadmap: `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md`) |
+| ⏳ 035 — Kaguya revisão semanal guiada (depende da 034) | `specs/035-tasks-weekly-review/` (roadmap: `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md`) |
+| ⏳ 036 — Metas/Hábitos ↔ outros agentes (Frieren, Violet; registry extensível) | `specs/036-goal-habit-links/` (roadmap: `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md`) |
+| ⏳ 037 — Kaguya pomodoro/foco (timer por tarefa + stats) | `specs/037-tasks-focus-pomodoro/` (roadmap: `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md`) |
+| ⏳ 038 — Meu Dia com contexto Trabalho vs Pessoal (duas capacities) | `specs/038-meudia-work-context/` (roadmap: `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md`) |
+| ⏳ 039 — QoL: arquivar listas + localização nos eventos | `specs/039-tasks-qol/` (roadmap: `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md`) |
