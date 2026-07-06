@@ -45,7 +45,7 @@ diferentes.
 | Domínio | Onde | Tabelas |
 |---|---|---|
 | **Finanças** | Agente Nami | `transactions`, `subscriptions`, `installment_groups`, `accounts`, `credit_cards`, `loans`, `budgets` |
-| **Livros** | Agente Frieren | `books`, `reading_logs`, `shelves`, `book_shelves` |
+| **Livros** | Agente Frieren | `books`, `reading_logs`, `shelves`, `book_shelves`, `book_bullets` |
 | **Tarefas / hábitos / experimentos / metas** | Agente Kaguya | `task_project_groups`, `task_projects`, `task_columns`, `tasks`, `task_recurrences`, `task_tags`, `task_tag_links`, `task_filters`, `kanban_views`, `habits`, `habit_checkins`, `calendar_prefs`, `birthday_sync_links`, `tiny_experiments`, `tiny_experiment_logs`, `goals`, `goal_milestones` |
 | **Filmes** | Agente Akane | `movies`, `diary_entries`, `movie_lists`, `movie_list_items`, `movie_vault_items`, `movie_people`, `movie_favorites` |
 | **Animes** | Agente Marin | `anime`, `watch_logs`, `episodes`, `mal_sync_state` |
@@ -374,6 +374,24 @@ Tabela de ligação N:N entre livros e estantes (um livro pode estar em várias 
 **Chave primária:** `(book_id, shelf_id)` — evita o mesmo livro duplicado na mesma estante.
 **Índices:** `idx_book_shelves_shelf` (shelf_id).
 **FKs:** ambas com `ON DELETE CASCADE` — apagar o livro ou a estante remove o vínculo automaticamente.
+
+### `book_bullets`
+
+Marcações coloridas que o leitor salva na página de cada livro (trechos, citações,
+anotações). Consumida apenas pelo webapp (`/api/books/{id}/bullets`), não é tool do agente.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | TEXT | PK | — | UUID gerado na tool. |
+| `book_id` | TEXT | NÃO | — | **FK** → `books(id)` `ON DELETE CASCADE`. |
+| `content` | TEXT | NÃO | — | Texto da marcação. |
+| `color` | TEXT | NÃO | — | Cor: `rosa` \| `amarelo` \| `verde` \| `azul` \| `laranja` (CHECK). |
+| `page_number` | INTEGER | SIM | — | Página de referência (opcional). |
+| `position` | INTEGER | NÃO | `0` | Ordenação estável (MAX+1 no insert). |
+| `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação. |
+| `updated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Última atualização. |
+
+**Índices:** `idx_book_bullets_book` (book_id).
 
 ---
 

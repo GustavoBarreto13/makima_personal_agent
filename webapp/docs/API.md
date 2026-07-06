@@ -172,7 +172,7 @@ Todos os endpoints exigem autenticação. Chamam as tools da Frieren (`agents/fr
 | `POST` | `/api/books/{book_id}/log` | Registra sessão de leitura (devolve 201). | Body: `LogReadingBody` |
 | `POST` | `/api/books/{book_id}/finish` | Marca livro como lido. | Body: `FinishBookBody` |
 | `PATCH` | `/api/books/{book_id}/status` | Atualiza status do livro. | Body: `UpdateStatusBody` |
-| `PATCH` | `/api/books/{book_id}/metadata` | Atualiza metadados (título, autor, capa…). | Body: `UpdateBookMetadataBody` |
+| `PATCH` | `/api/books/{book_id}/metadata` | Atualiza metadados (título, autor, capa, nota, datas, resenha, preço…). | Body: `UpdateBookMetadataBody` |
 | `PATCH` | `/api/books/{book_id}/pages` | Atualiza total de páginas. | Body: `UpdatePagesBody` |
 | `DELETE` | `/api/books/{book_id}` | Soft-delete do livro. | — |
 | `DELETE` | `/api/books/{book_id}/logs/{log_id}` | Remove uma sessão de leitura. | — |
@@ -187,6 +187,17 @@ Todos os endpoints exigem autenticação. Chamam as tools da Frieren (`agents/fr
 | `DELETE` | `/api/books/shelves/{shelf_id}` | Remove estante. | — |
 | `POST` | `/api/books/shelves/{shelf_id}/books/{book_id}` | Adiciona livro à estante (devolve 201). | — |
 | `DELETE` | `/api/books/shelves/{shelf_id}/books/{book_id}` | Remove livro da estante. | — |
+
+### Marcações coloridas (book_bullets)
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/books/{book_id}/bullets` | Lista as marcações do livro (ordenadas por posição). | — |
+| `POST` | `/api/books/{book_id}/bullets` | Cria marcação colorida (devolve 201). | Body: `CreateBulletBody` `{content, color, page_number?}` |
+| `PATCH` | `/api/books/bullets/{bullet_id}` | Edita marcação (só campos enviados). | Body: `UpdateBulletBody` |
+| `DELETE` | `/api/books/bullets/{bullet_id}` | Remove marcação. | — |
+
+> `color` ∈ `rosa` \| `amarelo` \| `verde` \| `azul` \| `laranja`.
 
 ---
 

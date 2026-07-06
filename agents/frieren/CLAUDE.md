@@ -32,7 +32,7 @@ Instância global `frieren_agent` em `agent.py`, importada diretamente em `coord
 
 ## Banco de dados PostgreSQL
 
-Banco compartilhado do projeto — schema em `agents/frieren/schema_pg.sql` (o `schema.sql` do BigQuery é legado da migração de jun/2026). Tabelas: `books`, `reading_logs`, `shelves`, `book_shelves`.
+Banco compartilhado do projeto — schema em `agents/frieren/schema_pg.sql` (o `schema.sql` do BigQuery é legado da migração de jun/2026). Tabelas: `books`, `reading_logs`, `shelves`, `book_shelves`, `book_bullets`.
 
 ### Tabela `books`
 
@@ -257,7 +257,8 @@ Não são tools do agente Telegram — o router `webapp/backend/routers/books.py
 |---|---|
 | `get_shelves()` / `create_shelf(...)` / `delete_shelf(shelf_id)` | CRUD de estantes (coleções) |
 | `add_book_to_shelf(book_id, shelf_id)` / `remove_book_from_shelf(...)` | Vínculo N:N livro ↔ estante |
-| `update_book_metadata_by_id(...)` | Edição de metadados do livro pela UI |
+| `update_book_metadata_by_id(...)` | Edição de metadados do livro pela UI. Além dos campos bibliográficos + `notes`, aceita `store_url`, `price`, `rating` (valida 1.0–5.0), `date_started` e `date_finished` — usado pelo modal "Editar livro" do webapp |
+| `list_book_bullets(book_id)` / `create_book_bullet(...)` / `update_book_bullet(...)` / `delete_book_bullet(bullet_id)` | Marcações coloridas por livro (tabela `book_bullets`). Cor ∈ rosa/amarelo/verde/azul/laranja; `page_number` opcional |
 | `get_activity_feed(limit)` | Feed de atividade agrupado por data (tela Atividade) |
 | `get_heatmap_data(year)` | Dados do heatmap anual de páginas lidas |
 

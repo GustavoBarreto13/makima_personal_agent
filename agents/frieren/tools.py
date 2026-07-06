@@ -1420,6 +1420,11 @@ def update_book_metadata_by_id(
     language: str | None = None,
     description: str | None = None,
     notes: str | None = None,
+    store_url: str | None = None,
+    price: float | None = None,
+    rating: float | None = None,
+    date_started: str | None = None,
+    date_finished: str | None = None,
 ) -> str:
     """Atualiza campos de metadados de um livro pelo ID exato.
 
@@ -1443,6 +1448,11 @@ def update_book_metadata_by_id(
         language: Código do idioma (ex.: "pt", "en").
         description: Sinopse do livro (recomendado truncar em 500 chars).
         notes: Anotações pessoais / resenha (sobrescreve o valor anterior).
+        store_url: URL do anúncio na loja (Amazon, Estante Virtual, etc.).
+        price: Preço visto na loja (principalmente wishlist).
+        rating: Avaliação pessoal de 1.0 a 5.0.
+        date_started: Data de início da leitura no formato YYYY-MM-DD.
+        date_finished: Data de conclusão no formato YYYY-MM-DD.
 
     Returns:
         Mensagem de confirmação em caso de sucesso, ou mensagem de erro
@@ -1506,6 +1516,29 @@ def update_book_metadata_by_id(
         # Sobrescreve por completo o valor anterior (diferente de update_book_by_id que appenda)
         sets.append("notes = %(notes)s")
         params["notes"] = notes
+
+    if store_url is not None:
+        sets.append("store_url = %(store_url)s")
+        params["store_url"] = store_url
+
+    if price is not None:
+        sets.append("price = %(price)s")
+        params["price"] = price
+
+    if rating is not None:
+        # Valida o intervalo antes de gravar (mesmo critério de finish_book)
+        if not (1.0 <= rating <= 5.0):
+            return "A avaliação deve ser um valor entre <b>1.0</b> e <b>5.0</b>."
+        sets.append("rating = %(rating)s")
+        params["rating"] = rating
+
+    if date_started is not None:
+        sets.append("date_started = %(date_started)s")
+        params["date_started"] = date_started
+
+    if date_finished is not None:
+        sets.append("date_finished = %(date_finished)s")
+        params["date_finished"] = date_finished
 
     # Se nenhum campo foi fornecido, não há nada a atualizar — retorna feedback claro
     if not sets:
@@ -1651,6 +1684,148 @@ def remove_book_from_shelf(book_id: str, shelf_id: str) -> dict:
         [book_id, shelf_id]
     )
     return {"status": "ok", "message": "Livro removido da estante."}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Marcações coloridas por livro (book_bullets)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Cores válidas para uma marcação. Qualquer valor fora dessa lista é rejeitado
+# (o CHECK do banco também protege, mas validamos antes para dar erro amigável).
+BULLET_COLORS = ["rosa", "amarelo", "verde", "azul", "laranja"]
+
+
+def list_book_bullets(book_id: str) -> dict:
+    """Lista todas as marcações de um livro, ordenadas por posição.
+
+    Args:
+        book_id: UUID do livro.
+
+    Returns:
+        dict com status e lista de marcações (id, content, color, page_number, position).
+    """
+    rows = run_select("""
+        SELECT id, book_id, content, color, page_number, position,
+               created_at::text AS created_at
+        FROM book_bullets
+        WHERE book_id = %s
+        ORDER BY position ASC, created_at ASC
+    """, [book_id])
+    return {"status": "ok", "bullets": rows}
+
+
+def create_book_bullet(
+    book_id: str,
+    content: str,
+    color: str,
+    page_number: int | None = None,
+) -> dict:
+    """Cria uma marcação para um livro.
+
+    Args:
+        book_id: UUID do livro.
+        content: Texto da marcação (não pode ser vazio).
+        color: Uma das cores válidas (rosa, amarelo, verde, azul, laranja).
+        page_number: Número da página de referência (opcional).
+
+    Returns:
+        dict com status e a marcação criada (ou mensagem de erro).
+    """
+    # Valida o conteúdo — marcação vazia não faz sentido
+    if not content or not content.strip():
+        return {"status": "error", "message": "A marcação não pode ser vazia."}
+
+    # Valida a cor contra a lista permitida (espelha o CHECK do banco)
+    if color not in BULLET_COLORS:
+        return {"status": "error", "message": f"Cor inválida. Use uma de: {', '.join(BULLET_COLORS)}."}
+
+    # Confirma que o livro existe e não foi removido antes de anexar a marcação
+    book = run_select("SELECT id FROM books WHERE id = %s AND deleted = FALSE", [book_id])
+    if not book:
+        return {"status": "error", "message": f"Livro com ID '{book_id}' não encontrado."}
+
+    bullet_id = str(uuid.uuid4())
+    # position = MAX+1 do livro (0 se for a primeira marcação) — ordenação estável
+    pos_row = run_select(
+        "SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM book_bullets WHERE book_id = %s",
+        [book_id],
+    )
+    next_pos = pos_row[0]["next_pos"]
+
+    rows = run_select("""
+        INSERT INTO book_bullets(id, book_id, content, color, page_number, position)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING id, book_id, content, color, page_number, position,
+                  created_at::text AS created_at
+    """, [bullet_id, book_id, content.strip(), color, page_number, next_pos])
+    return {"status": "ok", "bullet": rows[0]}
+
+
+def update_book_bullet(
+    bullet_id: str,
+    content: str | None = None,
+    color: str | None = None,
+    page_number: int | None = None,
+) -> dict:
+    """Atualiza uma marcação existente (só os campos informados).
+
+    Args:
+        bullet_id: UUID da marcação.
+        content: Novo texto (opcional).
+        color: Nova cor (opcional; deve ser válida).
+        page_number: Novo número de página (opcional).
+
+    Returns:
+        dict com status e a marcação atualizada (ou mensagem de erro).
+    """
+    updates = []
+    params = []
+
+    if content is not None:
+        if not content.strip():
+            return {"status": "error", "message": "A marcação não pode ser vazia."}
+        updates.append("content = %s")
+        params.append(content.strip())
+
+    if color is not None:
+        if color not in BULLET_COLORS:
+            return {"status": "error", "message": f"Cor inválida. Use uma de: {', '.join(BULLET_COLORS)}."}
+        updates.append("color = %s")
+        params.append(color)
+
+    if page_number is not None:
+        updates.append("page_number = %s")
+        params.append(page_number)
+
+    if not updates:
+        return {"status": "error", "message": "Nenhum campo fornecido para atualizar."}
+
+    # Sempre atualiza updated_at; bullet_id vai por último para o WHERE
+    updates.append("updated_at = NOW()")
+    params.append(bullet_id)
+
+    rows = run_select(f"""
+        UPDATE book_bullets SET {', '.join(updates)}
+        WHERE id = %s
+        RETURNING id, book_id, content, color, page_number, position,
+                  created_at::text AS created_at
+    """, params)
+    if not rows:
+        return {"status": "error", "message": f"Marcação com ID '{bullet_id}' não encontrada."}
+    return {"status": "ok", "bullet": rows[0]}
+
+
+def delete_book_bullet(bullet_id: str) -> dict:
+    """Remove uma marcação pelo ID.
+
+    Args:
+        bullet_id: UUID da marcação.
+
+    Returns:
+        dict com status e mensagem.
+    """
+    run_dml("DELETE FROM book_bullets WHERE id = %s", [bullet_id])
+    return {"status": "ok", "message": "Marcação removida."}
 
 
 # ═══════════════════════════════════════════════════════════════════════════

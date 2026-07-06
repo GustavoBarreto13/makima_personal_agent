@@ -2,14 +2,17 @@
 // capa, metadados, resenha, estantes e diário de leitura específico deste livro.
 // Layout em duas colunas: capa fixa à esquerda, informações scrolláveis à direita.
 
-import { useState } from 'react'
-import type { Book, ActivityEntry, Shelf } from '../types'
+import { useState, useEffect, useCallback } from 'react'
+import type { Book, ActivityEntry, Shelf, BulletColor } from '../types'
+import { BULLET_COLOR_META } from '../types'
 import { Icon } from '../ui/Icons'
 import { Cover } from '../ui/Cover'
 import { Stars } from '../ui/Stars'
 import { ProgressBar } from '../ui/ProgressBar'
 // Componente de botões editar/apagar para cada entrada do diário
 import { LogActions } from '../ui/LogActions'
+import { booksApi } from '../../../lib/api'
+import type { ApiBookBullet } from '../../../lib/api'
 
 // Props recebidas da FrierenShell
 interface BookDetailProps {
@@ -20,6 +23,8 @@ interface BookDetailProps {
   shelves: Shelf[]
   navigate: (view: string, param?: string | null) => void
   openLog: (bookId?: string | null) => void
+  // Abre o modal de edição completa do livro (chama o shell)
+  onEdit: (bookId: string) => void
   // Remove o livro do catálogo (chama o backend e re-sincroniza no shell)
   onDelete: (bookId: string) => Promise<void>
   // Abre o modal de edição para uma entrada específica do diário
@@ -49,7 +54,7 @@ function relDate(iso: string): string {
 }
 
 // Componente principal do detalhe do livro
-export function BookDetail({ bookId, books, activity, shelves, navigate, openLog, onDelete, onEditLog, onDeleteLog }: BookDetailProps) {
+export function BookDetail({ bookId, books, activity, shelves, navigate, openLog, onEdit, onDelete, onEditLog, onDeleteLog }: BookDetailProps) {
   // Controla a confirmação inline de remoção (dois passos: mostrar → confirmar)
   const [confirmando, setConfirmando] = useState(false)
   // Spinner durante a chamada de remoção ao backend
@@ -124,6 +129,15 @@ export function BookDetail({ bookId, books, activity, shelves, navigate, openLog
             onClick={() => openLog(book.id)}
           >
             <Icon name="plus" /> Registrar leitura
+          </button>
+
+          {/* Edição completa do livro — abre o modal com todos os campos */}
+          <button
+            className="btn btn-ghost"
+            style={{ justifyContent: 'center' }}
+            onClick={() => onEdit(book.id)}
+          >
+            <Icon name="pencil" /> Editar livro
           </button>
 
           {/* Remoção do livro — confirmação inline em dois passos */}
@@ -238,6 +252,12 @@ export function BookDetail({ bookId, books, activity, shelves, navigate, openLog
                 <div className="v" style={{ fontSize: 13 }}>{book.genre}</div>
               </div>
             )}
+            {book.started && (
+              <div className="dm-cell">
+                <div className="k">Início</div>
+                <div className="v" style={{ fontSize: 13 }}>{fmtDate(book.started)}</div>
+              </div>
+            )}
             {book.finished && (
               <div className="dm-cell">
                 <div className="k">Terminado</div>
@@ -265,6 +285,9 @@ export function BookDetail({ bookId, books, activity, shelves, navigate, openLog
                 : 'Você ainda não escreveu sobre este livro. Registre uma leitura para começar.'}
             </p>
           )}
+
+          {/* ── MINHAS MARCAÇÕES ── */}
+          <BookMarks bookId={book.id} />
 
           {/* ── ESTANTES ── */}
           {/* Só exibe se o livro pertencer a pelo menos uma estante */}
@@ -349,5 +372,220 @@ export function BookDetail({ bookId, books, activity, shelves, navigate, openLog
         </div>
       </div>
     </div>
+  )
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Seção "Minhas marcações" — bullets coloridos ancorados a um livro
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Componente autônomo: carrega as marcações do livro no mount (por bookId),
+// permite adicionar (texto + cor + página opcional), editar e apagar.
+function BookMarks({ bookId }: { bookId: string }) {
+  // Lista de marcações carregadas do backend
+  const [bullets, setBullets] = useState<ApiBookBullet[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // ── Estado do formulário de nova marcação ────────────────────────────────
+  const [newText,  setNewText]  = useState('')
+  const [newColor, setNewColor] = useState<BulletColor>('rosa')
+  const [newPage,  setNewPage]  = useState('')       // string p/ o input; '' = sem página
+  const [adding,   setAdding]   = useState(false)
+
+  // ── Estado de edição inline de uma marcação existente ────────────────────
+  const [editId,    setEditId]    = useState<string | null>(null)
+  const [editText,  setEditText]  = useState('')
+  const [editColor, setEditColor] = useState<BulletColor>('rosa')
+  const [editPage,  setEditPage]  = useState('')
+
+  // Carrega as marcações sempre que o livro muda
+  useEffect(() => {
+    let cancelado = false
+    setLoading(true)
+    booksApi.listBullets(bookId)
+      .then(res => { if (!cancelado) setBullets(res.bullets ?? []) })
+      .catch(() => { if (!cancelado) setBullets([]) })
+      .finally(() => { if (!cancelado) setLoading(false) })
+    return () => { cancelado = true }
+  }, [bookId])
+
+  // Converte a string do input de página para número|null
+  const pageValue = (s: string): number | null => {
+    const t = s.trim()
+    if (t === '') return null
+    const n = Number(t)
+    return Number.isFinite(n) ? n : null
+  }
+
+  // ── Adicionar marcação ───────────────────────────────────────────────────
+  const addBullet = useCallback(async () => {
+    const content = newText.trim()
+    if (!content) return
+    setAdding(true)
+    try {
+      const res = await booksApi.createBullet(bookId, {
+        content,
+        color: newColor,
+        page_number: pageValue(newPage),
+      })
+      // Anexa a marcação retornada e limpa o formulário
+      setBullets(prev => [...prev, res.bullet])
+      setNewText('')
+      setNewPage('')
+    } catch {
+      // Silencioso — mantém o texto digitado para o usuário tentar de novo
+    } finally {
+      setAdding(false)
+    }
+  }, [bookId, newText, newColor, newPage])
+
+  // ── Abrir edição de uma marcação ─────────────────────────────────────────
+  const startEdit = (b: ApiBookBullet) => {
+    setEditId(b.id)
+    setEditText(b.content)
+    setEditColor(b.color)
+    setEditPage(b.page_number != null ? String(b.page_number) : '')
+  }
+
+  // ── Salvar edição ────────────────────────────────────────────────────────
+  const saveEdit = useCallback(async () => {
+    if (!editId) return
+    const content = editText.trim()
+    if (!content) return
+    try {
+      const res = await booksApi.updateBullet(editId, {
+        content,
+        color: editColor,
+        page_number: pageValue(editPage),
+      })
+      setBullets(prev => prev.map(b => (b.id === editId ? res.bullet : b)))
+      setEditId(null)
+    } catch {
+      // Mantém o editor aberto em caso de falha
+    }
+  }, [editId, editText, editColor, editPage])
+
+  // ── Apagar marcação (otimista com rollback) ──────────────────────────────
+  const removeBullet = useCallback(async (id: string) => {
+    const anterior = bullets
+    setBullets(prev => prev.filter(b => b.id !== id))
+    try {
+      await booksApi.deleteBullet(id)
+    } catch {
+      setBullets(anterior)   // desfaz se o backend falhar
+    }
+  }, [bullets])
+
+  // Seletor de cores reutilizável (usado no form de adicionar e no de editar)
+  const ColorSwatches = ({ value, onPick }: { value: BulletColor; onPick: (c: BulletColor) => void }) => (
+    <div className="mk-swatches">
+      {BULLET_COLOR_META.map(c => (
+        <button
+          key={c.key}
+          type="button"
+          className={'mk-swatch mk-swatch--' + c.key + (value === c.key ? ' sel' : '')}
+          title={c.label}
+          aria-label={c.label}
+          onClick={() => onPick(c.key)}
+        />
+      ))}
+    </div>
+  )
+
+  return (
+    <>
+      <div className="detail-section-title">Minhas marcações</div>
+
+      {/* Lista de marcações existentes */}
+      {!loading && bullets.length > 0 && (
+        <div className="mk-list">
+          {bullets.map(b => (
+            editId === b.id ? (
+              // ── Modo edição ──
+              <div key={b.id} className="mk-edit">
+                <textarea
+                  className="note-input"
+                  value={editText}
+                  onChange={e => setEditText(e.target.value)}
+                  autoFocus
+                />
+                <div className="mk-edit-row">
+                  <ColorSwatches value={editColor} onPick={setEditColor} />
+                  <input
+                    className="mk-page-input"
+                    type="number"
+                    min={0}
+                    placeholder="pág."
+                    value={editPage}
+                    onChange={e => setEditPage(e.target.value)}
+                  />
+                  <div className="mk-edit-actions">
+                    <button className="btn btn-ghost" onClick={() => setEditId(null)}>Cancelar</button>
+                    <button className="btn btn-primary" onClick={saveEdit}>Salvar</button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              // ── Modo leitura ──
+              <div key={b.id} className={'mk-item mk-item--' + b.color}>
+                <div className="mk-item-body">
+                  <span className="mk-text">{b.content}</span>
+                  {b.page_number != null && <span className="mk-page">p. {b.page_number}</span>}
+                </div>
+                <div className="mk-item-actions">
+                  <button className="mk-act" title="Editar" onClick={() => startEdit(b)}>
+                    <Icon name="pencil" />
+                  </button>
+                  <button className="mk-act" title="Apagar" onClick={() => removeBullet(b.id)}>
+                    <Icon name="trash" />
+                  </button>
+                </div>
+              </div>
+            )
+          ))}
+        </div>
+      )}
+
+      {/* Estado vazio */}
+      {!loading && bullets.length === 0 && (
+        <p className="detail-empty-review" style={{ marginBottom: 4 }}>
+          Nenhuma marcação ainda. Salve seus trechos e anotações abaixo.
+        </p>
+      )}
+
+      {/* Formulário de nova marcação */}
+      <div className="mk-add">
+        <textarea
+          className="note-input"
+          placeholder="Escreva uma marcação, citação ou anotação…"
+          value={newText}
+          onChange={e => setNewText(e.target.value)}
+          onKeyDown={e => {
+            // Ctrl/Cmd+Enter adiciona rapidamente
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addBullet()
+          }}
+        />
+        <div className="mk-add-row">
+          <ColorSwatches value={newColor} onPick={setNewColor} />
+          <input
+            className="mk-page-input"
+            type="number"
+            min={0}
+            placeholder="pág."
+            value={newPage}
+            onChange={e => setNewPage(e.target.value)}
+          />
+          <button
+            className="btn btn-primary"
+            style={{ marginLeft: 'auto' }}
+            onClick={addBullet}
+            disabled={adding || !newText.trim()}
+          >
+            <Icon name="plus" /> {adding ? 'Salvando…' : 'Adicionar'}
+          </button>
+        </div>
+      </div>
+    </>
   )
 }

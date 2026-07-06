@@ -38,10 +38,11 @@
 | 031 | Violet — Tutor de Idiomas (persona Kurisu): análise de escrita via Gemini, toggle original/corrigido, maestria por conceito (EMA), nível CEFR estimado, guia de estudo direcionável | ✅ |
 | 032 | Scheduler de jobs recorrentes (`scheduler/`): APScheduler num container dedicado (`makima-scheduler`), registro declarativo de jobs (cron/intervalo, fuso São Paulo), log em `scheduler_runs` + alerta no Telegram em falha. Consolida backup + sync-Kurisu (loops aposentados) | ✅ |
 | 032 (lucy) | Lucy (email/Gmail): agente interativo somente-leitura (IMAP) + digest matinal agendado (classificação Gemini + labels/arquivamento + Telegram) + histórico idempotente (`lucy_emails`). Aposenta o script externo do n8n | ✅ |
+| 033 | Frieren — página do livro editável: modal "Editar livro" (todos os campos: capa por URL, título, autor, gênero, ano, páginas, ISBN, idioma, descrição, status, nota, datas, resenha, loja, preço) via `PATCH /metadata` estendido (+rating/datas/store_url/price) + seção "Minhas marcações" (bullets coloridos rosa/amarelo/verde/azul/laranja com página opcional — tabela `book_bullets`) | ✅ |
 
 ## Status atual (jul/2026)
 
-Fases 001–027, 029, 030, 031, 032 e 032 (lucy) entregues. A **028** (memória unificada da Kurisu) está parcial:
+Fases 001–027, 029, 030, 031, 032, 032 (lucy) e 033 entregues. A **028** (memória unificada da Kurisu) está parcial:
 fundação (`agents/kurisu/memory/`) + sync incremental + 2 dos 8 exporters (diário, tarefas)
 prontos localmente; deploy no VPS e os 6 exporters restantes pendentes.
 

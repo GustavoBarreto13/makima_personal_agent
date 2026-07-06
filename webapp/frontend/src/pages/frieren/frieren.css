@@ -1081,3 +1081,116 @@
   color: var(--ink); cursor: pointer; outline: none; width: 100%;
 }
 .frieren-shell .tp-select:focus { border-color: var(--teal); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Marcações coloridas (book_bullets) + modal de edição completa do livro
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Tokens das 5 cores de marcação (claro) ── */
+.frieren-shell {
+  --mk-rosa:    oklch(0.64 0.170 350);
+  --mk-amarelo: oklch(0.78 0.135 92);
+  --mk-verde:   oklch(0.62 0.130 155);
+  --mk-azul:    oklch(0.60 0.130 245);
+  --mk-laranja: oklch(0.68 0.150 55);
+  --mk-rosa-tint:    oklch(0.64 0.170 350 / 0.12);
+  --mk-amarelo-tint: oklch(0.78 0.135 92  / 0.16);
+  --mk-verde-tint:   oklch(0.62 0.130 155 / 0.12);
+  --mk-azul-tint:    oklch(0.60 0.130 245 / 0.12);
+  --mk-laranja-tint: oklch(0.68 0.150 55  / 0.13);
+}
+/* No tema escuro, clareia um pouco os sólidos e reforça os tints */
+.frieren-shell[data-theme='dark'] {
+  --mk-rosa:    oklch(0.72 0.160 350);
+  --mk-amarelo: oklch(0.82 0.130 92);
+  --mk-verde:   oklch(0.72 0.120 155);
+  --mk-azul:    oklch(0.72 0.120 245);
+  --mk-laranja: oklch(0.76 0.140 55);
+  --mk-rosa-tint:    oklch(0.72 0.160 350 / 0.18);
+  --mk-amarelo-tint: oklch(0.82 0.130 92  / 0.20);
+  --mk-verde-tint:   oklch(0.72 0.120 155 / 0.18);
+  --mk-azul-tint:    oklch(0.72 0.120 245 / 0.18);
+  --mk-laranja-tint: oklch(0.76 0.140 55  / 0.20);
+}
+
+/* ── Lista de marcações ── */
+.frieren-shell .mk-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+
+.frieren-shell .mk-item {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border-radius: var(--r-md);
+  border-left: 3px solid var(--mk-color, var(--line));
+  background: var(--mk-tint, var(--card-2));
+}
+.frieren-shell .mk-item--rosa    { --mk-color: var(--mk-rosa);    --mk-tint: var(--mk-rosa-tint); }
+.frieren-shell .mk-item--amarelo { --mk-color: var(--mk-amarelo); --mk-tint: var(--mk-amarelo-tint); }
+.frieren-shell .mk-item--verde   { --mk-color: var(--mk-verde);   --mk-tint: var(--mk-verde-tint); }
+.frieren-shell .mk-item--azul    { --mk-color: var(--mk-azul);    --mk-tint: var(--mk-azul-tint); }
+.frieren-shell .mk-item--laranja { --mk-color: var(--mk-laranja); --mk-tint: var(--mk-laranja-tint); }
+
+.frieren-shell .mk-item-body { flex: 1; min-width: 0; }
+.frieren-shell .mk-text { font-size: 14px; line-height: 1.55; color: var(--ink); white-space: pre-wrap; }
+.frieren-shell .mk-page {
+  font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+  margin-left: 8px; white-space: nowrap;
+}
+.frieren-shell .mk-item-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+.frieren-shell .mk-item:hover .mk-item-actions { opacity: 1; }
+.frieren-shell .mk-act {
+  background: none; border: none; cursor: pointer; color: var(--ink-4);
+  padding: 4px; border-radius: 5px; display: inline-flex; transition: all .12s;
+}
+.frieren-shell .mk-act:hover { color: var(--ink); background: var(--card); }
+.frieren-shell .mk-act svg { width: 15px; height: 15px; }
+
+/* ── Seletor de cores (swatches) ── */
+.frieren-shell .mk-swatches { display: flex; gap: 8px; }
+.frieren-shell .mk-swatch {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent;
+  cursor: pointer; padding: 0; transition: transform .1s;
+}
+.frieren-shell .mk-swatch:hover { transform: scale(1.12); }
+.frieren-shell .mk-swatch.sel { border-color: var(--ink); }
+.frieren-shell .mk-swatch--rosa    { background: var(--mk-rosa); }
+.frieren-shell .mk-swatch--amarelo { background: var(--mk-amarelo); }
+.frieren-shell .mk-swatch--verde   { background: var(--mk-verde); }
+.frieren-shell .mk-swatch--azul    { background: var(--mk-azul); }
+.frieren-shell .mk-swatch--laranja { background: var(--mk-laranja); }
+
+/* ── Formulário de adicionar / editar marcação ── */
+.frieren-shell .mk-add { margin-top: 12px; }
+.frieren-shell .mk-add-row,
+.frieren-shell .mk-edit-row { display: flex; align-items: center; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
+.frieren-shell .mk-page-input {
+  width: 74px; height: 34px; border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--card); padding: 0 10px; font-family: var(--mono); font-size: 13px;
+  color: var(--ink); outline: none; transition: border-color .15s, box-shadow .15s; box-sizing: border-box;
+}
+.frieren-shell .mk-page-input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var(--teal-tint); }
+.frieren-shell .mk-edit {
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card);
+}
+.frieren-shell .mk-edit-actions { display: flex; gap: 8px; margin-left: auto; }
+
+/* ═══ Modal de edição completa do livro ═══ */
+.frieren-shell .modal-edit { max-width: 560px; }
+.frieren-shell .modal-edit-body { max-height: min(72vh, 660px); overflow-y: auto; }
+
+/* Duas colunas para pares de campos (gênero/ano, páginas/isbn, etc.) */
+.frieren-shell .edit-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+/* Select reutiliza o estilo do .book-search; garante altura e cursor coerentes */
+.frieren-shell select.book-search { height: 36px; cursor: pointer; }
+
+/* Linha de edição da capa: preview + campo de URL */
+.frieren-shell .edit-cover-row { display: flex; gap: 12px; align-items: flex-start; }
+.frieren-shell .edit-cover-row .book-search { flex: 1; margin-bottom: 0; }
+.frieren-shell .edit-cover-preview {
+  width: 54px; height: 80px; object-fit: cover; border-radius: 6px;
+  box-shadow: var(--shadow-cover); flex-shrink: 0; background: var(--card-2);
+}
+.frieren-shell .edit-cover-empty {
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9px; color: var(--ink-4); text-align: center;
+  border: 1px dashed var(--line);
+}

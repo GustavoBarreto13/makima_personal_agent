@@ -28,6 +28,7 @@ import { TweaksPanel } from './TweaksPanel'
 import { Home } from './screens/Home'
 import { Catalog } from './screens/Catalog'
 import { BookDetail } from './screens/BookDetail'
+import { EditBookModal } from './EditBookModal'
 import { ToRead } from './screens/ToRead'
 import { Wishlist } from './screens/Wishlist'
 import { Shelves } from './screens/Shelves'
@@ -188,6 +189,10 @@ export function FrierenShell() {
   // ── Modal de edição de sessão existente ──────────────────────────────────
   // null = modal fechado; ActivityEntry = entrada sendo editada
   const [editingLog, setEditingLog] = useState<ActivityEntry | null>(null)
+
+  // ── Modal de edição completa de um livro ─────────────────────────────────
+  // null = modal fechado; string = id do livro sendo editado
+  const [editingBookId, setEditingBookId] = useState<string | null>(null)
 
   // ── Toast de feedback ──────────────────────────────────────────────────────
   const [toast, setToast] = useState('')
@@ -357,6 +362,18 @@ export function FrierenShell() {
     setEditingLog(entry)
   }, [])
 
+  // ── Edição completa de um livro ───────────────────────────────────────────
+  // Abre o modal (chamado pelo botão "Editar" do BookDetail)
+  const openEditBook = useCallback((bookId: string) => {
+    setEditingBookId(bookId)
+  }, [])
+
+  // Chamado pelo EditBookModal após salvar — re-sincroniza tudo e avisa o usuário
+  const onBookSaved = useCallback(async () => {
+    await refreshAll()
+    setToast('Livro atualizado.')
+  }, [refreshAll])
+
   // ── Salva as edições de uma sessão de leitura ─────────────────────────────
   // Envia o payload ao backend, re-sincroniza todos os dados e fecha o modal
   const saveLogEdit = useCallback(async (payload: EditLogPayload) => {
@@ -517,6 +534,7 @@ export function FrierenShell() {
             shelves={shelves}
             navigate={navigate}
             openLog={openLog}
+            onEdit={openEditBook}
             onDelete={deleteBook}
             onEditLog={editLog}
             onDeleteLog={deleteLog}
@@ -744,6 +762,14 @@ export function FrierenShell() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onAdd={addBook}
+      />
+
+      {/* ── Modal de edição completa do livro ── */}
+      {/* Controlado por editingBookId: null = fechado, string = aberto no livro */}
+      <EditBookModal
+        bookId={editingBookId}
+        onClose={() => setEditingBookId(null)}
+        onSaved={onBookSaved}
       />
 
       {/* ── Notificação toast de feedback ── */}

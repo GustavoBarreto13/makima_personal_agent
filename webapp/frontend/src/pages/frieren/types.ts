@@ -29,6 +29,30 @@ export interface Book {
   coverKey: CoverKey           // chave da paleta tipográfica (derivada do ID)
 }
 
+// ── Marcações coloridas ───────────────────────────────────────────────────────
+
+// Cores válidas de uma marcação (espelha o CHECK do banco)
+export type BulletColor = 'rosa' | 'amarelo' | 'verde' | 'azul' | 'laranja'
+
+// Marcação colorida de um livro (espelha ApiBookBullet do backend)
+export interface BookBullet {
+  id: string
+  content: string
+  color: BulletColor
+  page: number | null          // page_number do backend
+  position: number
+}
+
+// Ordem e rótulos pt-BR das cores — usados no seletor de cores do BookDetail.
+// A cor visual em si vem das CSS vars --mk-<cor> definidas em frieren.css.
+export const BULLET_COLOR_META: { key: BulletColor; label: string }[] = [
+  { key: 'rosa',    label: 'Rosa' },
+  { key: 'amarelo', label: 'Amarelo' },
+  { key: 'verde',   label: 'Verde' },
+  { key: 'azul',    label: 'Azul' },
+  { key: 'laranja', label: 'Laranja' },
+]
+
 // Estante de livros
 export interface Shelf {
   id: string

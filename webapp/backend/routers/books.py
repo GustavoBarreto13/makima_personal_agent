@@ -58,6 +58,11 @@ from agents.frieren.tools import (
     get_activity_feed, get_heatmap_data,
 )
 
+# Tools de marcações coloridas por livro (book_bullets) — retornam dicts com status
+from agents.frieren.tools import (
+    list_book_bullets, create_book_bullet, update_book_bullet, delete_book_bullet,
+)
+
 # _fetch_google_books: busca metadados de livros na Google Books API
 from agents.frieren.tools import _fetch_google_books
 
@@ -217,6 +222,23 @@ class UpdateBookMetadataBody(BaseModel):
     notes: Optional[str] = None           # Anotações pessoais / resenha do leitor
     store_url: Optional[str] = None       # URL do anúncio na loja (Amazon, Estante Virtual, etc.)
     price: Optional[float] = None         # Preço visto na loja (wishlist)
+    rating: Optional[float] = None        # Avaliação pessoal de 1.0 a 5.0
+    date_started: Optional[str] = None    # Data de início da leitura (YYYY-MM-DD)
+    date_finished: Optional[str] = None   # Data de conclusão da leitura (YYYY-MM-DD)
+
+
+class CreateBulletBody(BaseModel):
+    """Corpo da requisição para criar uma marcação colorida em um livro."""
+    content: str                          # Texto da marcação (obrigatório, não-vazio)
+    color: str                            # rosa | amarelo | verde | azul | laranja
+    page_number: Optional[int] = None     # Página de referência (opcional)
+
+
+class UpdateBulletBody(BaseModel):
+    """Corpo da requisição para editar uma marcação existente (campos opcionais)."""
+    content: Optional[str] = None         # Novo texto da marcação
+    color: Optional[str] = None           # Nova cor (deve ser válida)
+    page_number: Optional[int] = None     # Novo número de página
 
 
 class UpdateLogBody(BaseModel):
@@ -1082,3 +1104,102 @@ def update_log_endpoint(
     run_dml(sql, params)
 
     return {"status": "ok", "message": "Sessão de leitura atualizada."}
+
+
+# ─── Marcações coloridas por livro (book_bullets) ────────────────────────────
+
+@router.get("/{book_id}/bullets")
+def list_bullets_endpoint(
+    book_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Listar as marcações coloridas de um livro, ordenadas por posição.
+
+    Args:
+        book_id: ID único do livro.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e a lista de marcações.
+    """
+    # list_book_bullets retorna {"status":"ok","bullets":[...]} — sem padrão de erro
+    return list_book_bullets(book_id)
+
+
+@router.post("/{book_id}/bullets", status_code=201)
+def create_bullet_endpoint(
+    book_id: str,
+    body: CreateBulletBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Criar uma marcação colorida para um livro.
+
+    Args:
+        book_id: ID único do livro.
+        body: Texto, cor e (opcional) página da marcação.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e a marcação criada.
+
+    Raises:
+        HTTPException: 400 se a cor for inválida, o texto vazio ou o livro não existir.
+    """
+    result = create_book_bullet(
+        book_id=book_id,
+        content=body.content,
+        color=body.color,
+        page_number=body.page_number,
+    )
+    # A tool retorna dict com status "ok"|"error" — converte "error" em HTTP 400
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
+@router.patch("/bullets/{bullet_id}")
+def update_bullet_endpoint(
+    bullet_id: str,
+    body: UpdateBulletBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Editar uma marcação existente (apenas os campos enviados).
+
+    Args:
+        bullet_id: ID único da marcação.
+        body: Campos a atualizar (todos opcionais).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e a marcação atualizada.
+
+    Raises:
+        HTTPException: 400 se a cor for inválida, o texto vazio, o body vazio
+                       ou a marcação não existir.
+    """
+    result = update_book_bullet(
+        bullet_id=bullet_id,
+        content=body.content,
+        color=body.color,
+        page_number=body.page_number,
+    )
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
+@router.delete("/bullets/{bullet_id}", status_code=200)
+def delete_bullet_endpoint(
+    bullet_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remover uma marcação pelo ID.
+
+    Args:
+        bullet_id: ID único da marcação.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+    """
+    return delete_book_bullet(bullet_id)

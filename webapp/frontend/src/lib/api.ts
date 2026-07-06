@@ -451,6 +451,44 @@ export interface ApiBook {
   store_url: string | null     // só presente no endpoint de detalhe do livro
 }
 
+// Cores válidas de uma marcação (espelha o CHECK do banco e BULLET_COLORS da tool)
+export type BulletColor = 'rosa' | 'amarelo' | 'verde' | 'azul' | 'laranja'
+
+// Marcação colorida de um livro (GET /api/books/{id}/bullets)
+export interface ApiBookBullet {
+  id: string
+  book_id: string
+  content: string
+  color: BulletColor
+  page_number: number | null
+  position: number
+  created_at: string
+}
+
+// Detalhe completo de um livro (GET /api/books/{id} → SELECT * + current_page + shelves).
+// Traz campos que a listagem não retorna (description, language, price), usados no modal de edição.
+export interface ApiBookDetail {
+  id: string
+  title: string
+  author: string | null
+  total_pages: number | null
+  isbn: string | null
+  cover_url: string | null
+  description: string | null
+  genre: string | null
+  language: string | null
+  published_year: number | null
+  status: string
+  date_started: string | null
+  date_finished: string | null
+  rating: number | null
+  notes: string | null
+  store_url: string | null
+  price: number | null
+  current_page: number | null
+  shelves: string[]
+}
+
 // Formato de uma estante retornada pelo backend
 export interface ApiShelf {
   id: string
@@ -560,9 +598,56 @@ export const booksApi = {
   updateStatus: (bookId: string, status: string) =>
     api.patch<{ status: string; message: string }>(`/api/books/${bookId}/status`, { status }),
 
-  /** Atualiza metadados pessoais: URL da loja, notas e avaliação */
-  updateMetadata: (bookId: string, data: Partial<{ store_url: string; notes: string; rating: number }>) =>
+  /** Atualiza metadados do livro. Todos os campos são opcionais — só os enviados são gravados. */
+  updateMetadata: (
+    bookId: string,
+    data: Partial<{
+      title: string
+      author: string
+      cover_url: string
+      total_pages: number
+      genre: string
+      published_year: number
+      isbn: string
+      language: string
+      description: string
+      notes: string
+      store_url: string
+      price: number
+      rating: number
+      date_started: string
+      date_finished: string
+    }>,
+  ) =>
     api.patch<{ status: string; message: string }>(`/api/books/${bookId}/metadata`, data),
+
+  /** Detalhe completo de um livro (todos os campos do banco) — usado pelo modal de edição */
+  getDetail: (bookId: string) =>
+    api.get<{ status: string; book: ApiBookDetail }>(`/api/books/${bookId}`),
+
+  // ── Marcações coloridas por livro (book_bullets) ────────────────────────────
+
+  /** Lista as marcações de um livro, ordenadas por posição */
+  listBullets: (bookId: string) =>
+    api.get<{ status: string; bullets: ApiBookBullet[] }>(`/api/books/${bookId}/bullets`),
+
+  /** Cria uma marcação (content + color obrigatórios; page_number opcional) */
+  createBullet: (
+    bookId: string,
+    body: { content: string; color: BulletColor; page_number?: number | null },
+  ) =>
+    api.post<{ status: string; bullet: ApiBookBullet }>(`/api/books/${bookId}/bullets`, body),
+
+  /** Edita uma marcação existente (só os campos enviados) */
+  updateBullet: (
+    bulletId: string,
+    body: Partial<{ content: string; color: BulletColor; page_number: number | null }>,
+  ) =>
+    api.patch<{ status: string; bullet: ApiBookBullet }>(`/api/books/bullets/${bulletId}`, body),
+
+  /** Remove uma marcação pelo ID */
+  deleteBullet: (bulletId: string) =>
+    api.del<{ status: string; message: string }>(`/api/books/bullets/${bulletId}`),
 
   /** Busca livros na Google Books API por título, autor ou ISBN (até 8 resultados) */
   searchGoogle: (q: string) =>

@@ -63,3 +63,18 @@ CREATE TABLE IF NOT EXISTS book_shelves (
 );
 
 CREATE INDEX IF NOT EXISTS idx_book_shelves_shelf ON book_shelves(shelf_id);
+
+-- ── Marcações coloridas por livro ───────────────────────────────────────────
+-- Anotações/trechos que o leitor salva na página do livro. Cada marcação recebe
+-- uma das 5 cores e, opcionalmente, o número da página de referência.
+CREATE TABLE IF NOT EXISTS book_bullets (
+    id           TEXT PRIMARY KEY,                    -- UUID gerado na tool
+    book_id      TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    content      TEXT NOT NULL,
+    color        TEXT NOT NULL CHECK (color IN ('rosa','amarelo','verde','azul','laranja')),
+    page_number  INTEGER,                             -- referência opcional (nº da página)
+    position     INTEGER NOT NULL DEFAULT 0,          -- ordenação estável (MAX+1 no insert)
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_book_bullets_book ON book_bullets(book_id);
