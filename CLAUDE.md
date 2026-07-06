@@ -413,5 +413,5 @@ Use a skill `obsidian-vault` para consultar os caminhos corretos e atualizar a d
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/031-violet-tutor-idiomas/plan.md`.
+at `specs/032-lucy-gmail/plan.md`.
 <!-- SPECKIT END -->
