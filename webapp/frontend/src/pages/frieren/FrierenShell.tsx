@@ -29,6 +29,7 @@ import { Home } from './screens/Home'
 import { Catalog } from './screens/Catalog'
 import { BookDetail } from './screens/BookDetail'
 import { EditBookModal } from './EditBookModal'
+import { ShelfModal } from './ShelfModal'
 import { ToRead } from './screens/ToRead'
 import { Wishlist } from './screens/Wishlist'
 import { Shelves } from './screens/Shelves'
@@ -193,6 +194,13 @@ export function FrierenShell() {
   // ── Modal de edição completa de um livro ─────────────────────────────────
   // null = modal fechado; string = id do livro sendo editado
   const [editingBookId, setEditingBookId] = useState<string | null>(null)
+
+  // ── Modal de criação/edição de estante ───────────────────────────────────
+  // open controla a visibilidade; editing = estante em edição (null = criar nova)
+  const [shelfModal, setShelfModal] = useState<{ open: boolean; editing: Shelf | null }>({
+    open: false,
+    editing: null,
+  })
 
   // ── Toast de feedback ──────────────────────────────────────────────────────
   const [toast, setToast] = useState('')
@@ -374,6 +382,67 @@ export function FrierenShell() {
     setToast('Livro atualizado.')
   }, [refreshAll])
 
+  // ── Estantes: mutações ────────────────────────────────────────────────────
+  // Re-busca só as estantes (usado após criar/editar/excluir).
+  const reloadShelves = useCallback(async () => {
+    const res = await booksApi.shelves()
+    setShelves(res.shelves.map(toShelf))
+  }, [])
+
+  // Re-busca livros + estantes juntos (usado ao (des)vincular livro a estante —
+  // muda tanto book.shelves quanto a contagem exibida no card).
+  const reloadBooksAndShelves = useCallback(async () => {
+    const [booksRes, shelvesRes] = await Promise.all([
+      booksApi.list(),
+      booksApi.shelves(),
+    ])
+    setBooks(booksRes.books.map(toBook))
+    setShelves(shelvesRes.shelves.map(toShelf))
+  }, [])
+
+  // Abre o modal para criar uma nova estante
+  const openCreateShelf = useCallback(() => {
+    setShelfModal({ open: true, editing: null })
+  }, [])
+
+  // Abre o modal para editar uma estante existente
+  const openEditShelf = useCallback((shelf: Shelf) => {
+    setShelfModal({ open: true, editing: shelf })
+  }, [])
+
+  // Submete o modal: cria ou edita conforme shelfModal.editing. O modal captura
+  // erros (mensagem inline), então aqui deixamos a exceção propagar.
+  const submitShelf = useCallback(async (name: string, description: string, accent: string) => {
+    if (shelfModal.editing) {
+      await booksApi.updateShelf(shelfModal.editing.id, { name, description, accent })
+      setToast('Estante atualizada.')
+    } else {
+      await booksApi.createShelf({ name, description, accent })
+      setToast('Estante criada.')
+    }
+    await reloadShelves()
+  }, [shelfModal.editing, reloadShelves])
+
+  // Exclui uma estante e, se o usuário estiver vendo justamente ela, volta à grade
+  const deleteShelf = useCallback(async (shelfId: string) => {
+    await booksApi.deleteShelf(shelfId)
+    await reloadShelves()
+    setRoute(r => (r.view === 'estante' && r.param === shelfId ? { view: 'listas', param: null } : r))
+    setToast('Estante removida.')
+  }, [reloadShelves])
+
+  // Vincula um livro a uma estante (idempotente no backend)
+  const addBookToShelf = useCallback(async (bookId: string, shelfId: string) => {
+    await booksApi.addToShelf(shelfId, bookId)
+    await reloadBooksAndShelves()
+  }, [reloadBooksAndShelves])
+
+  // Desvincula um livro de uma estante
+  const removeBookFromShelf = useCallback(async (bookId: string, shelfId: string) => {
+    await booksApi.removeFromShelf(shelfId, bookId)
+    await reloadBooksAndShelves()
+  }, [reloadBooksAndShelves])
+
   // ── Salva as edições de uma sessão de leitura ─────────────────────────────
   // Envia o payload ao backend, re-sincroniza todos os dados e fecha o modal
   const saveLogEdit = useCallback(async (payload: EditLogPayload) => {
@@ -479,6 +548,11 @@ export function FrierenShell() {
             shelves={shelves}
             navigate={navigate}
             shelfParam={null}
+            onCreate={openCreateShelf}
+            onEdit={openEditShelf}
+            onDelete={deleteShelf}
+            onAddBook={addBookToShelf}
+            onRemoveBook={removeBookFromShelf}
           />
         )
 
@@ -490,6 +564,11 @@ export function FrierenShell() {
             shelves={shelves}
             navigate={navigate}
             shelfParam={route.param}
+            onCreate={openCreateShelf}
+            onEdit={openEditShelf}
+            onDelete={deleteShelf}
+            onAddBook={addBookToShelf}
+            onRemoveBook={removeBookFromShelf}
           />
         )
 
@@ -770,6 +849,15 @@ export function FrierenShell() {
         bookId={editingBookId}
         onClose={() => setEditingBookId(null)}
         onSaved={onBookSaved}
+      />
+
+      {/* ── Modal de criação/edição de estante ── */}
+      <ShelfModal
+        mode={shelfModal.editing ? 'edit' : 'create'}
+        shelf={shelfModal.editing}
+        open={shelfModal.open}
+        onClose={() => setShelfModal({ open: false, editing: null })}
+        onSubmit={submitShelf}
       />
 
       {/* ── Notificação toast de feedback ── */}
