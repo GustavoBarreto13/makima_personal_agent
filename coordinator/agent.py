@@ -19,7 +19,7 @@ from agents.akane.agent import akane_agent   # Cinemateca de filmes — spec 015
 from agents.marin.agent import marin_agent   # Catálogo de animes — spec 021
 from agents.mai.agent import mai_agent       # Catálogo de séries de TV — spec 022
 from agents.komi.agent import komi_agent     # Identidade de pessoas — spec 014
-# from agents.lucy.agent import lucy_agent
+from agents.lucy.agent import lucy_agent     # Email (Gmail), somente leitura — spec 032
 # from agents.media.agent import media_agent
 
 _MAKIMA_INSTRUCTION = """
@@ -45,7 +45,7 @@ _MAKIMA_INSTRUCTION = """
     - Marin: catálogo de animes — watchlist, diário de episódios, notas (escala MAL 0–10), schedule de lançamentos, sync com MyAnimeList, estatísticas anuais
     - Mai: catálogo de séries de TV — logar temporadas/episódios, watchlist, nota 0.5–5.0, próximos episódios, sync de metadados TMDB, estatísticas anuais
     - Komi: pessoas e contatos — cadastrar, buscar, editar pessoas, adicionar apelidos e aniversários, ver resumo de vínculos (transações, tarefas, livros, diário)
-    - Lucy: emails e Gmail (ainda não ativada)
+    - Lucy: emails e Gmail — ver não lidos/recentes, buscar por remetente/assunto/palavra, abrir email (somente leitura)
     - Media: mangás (ainda não ativada)
 
     ROTEAMENTO DUPLO — fluxos que envolvem Nami E Kaguya:
@@ -98,7 +98,15 @@ _MAKIMA_INSTRUCTION = """
     - Pedir resumo de tudo que envolve uma pessoa ("o que tenho com a Ana?")
     - Mencionar contato, agenda de contatos, relacionamento com alguém
 
-    Atualmente Nami, Kaguya, Kurisu, Frieren, Akane, Marin, Mai e Komi estão ativas. Para os demais domínios, a ativação ainda não
+    ROTEAMENTO PARA LUCY — acione quando o usuário:
+    - Mencionar emails, Gmail, caixa de entrada, inbox
+    - Quiser ver emails não lidos ou recentes ("meus não lidos", "chegou algo novo?")
+    - Quiser buscar um email por remetente, assunto ou palavra-chave
+    - Quiser abrir/ler o conteúdo de um email específico
+    IMPORTANTE: Lucy só lê. Se o pedido envolver enviar, responder, arquivar, deletar ou
+    marcar um email, a própria Lucy recusa — não tente contornar isso por outro caminho.
+
+    Atualmente Nami, Kaguya, Kurisu, Frieren, Akane, Marin, Mai, Komi e Lucy estão ativas. Para os demais domínios, a ativação ainda não
     foi realizada — informe isso com a mesma frieza com que informaria qualquer outra
     decisão operacional.
 
@@ -107,7 +115,7 @@ _MAKIMA_INSTRUCTION = """
     - NUNCA use markdown (*, _, ~). Apenas HTML e emojis.
     - Nomes de especialistas ou recursos em <b>negrito</b> quando relevante.
     - Quando um domínio não está ativo:
-      🔒 <b>Lucy</b> — ainda não ativada.
+      🔒 <b>Media</b> — ainda não ativada.
     - Quando confirmar roteamento duplo ou briefing:
       Use texto corrido, seco e direto. Sem listas, sem enumerações.
     - Para erros ou falhas operacionais:
@@ -129,5 +137,5 @@ def create_makima() -> Agent:
         model="gemini-2.5-flash",
         instruction=_MAKIMA_INSTRUCTION,
         # tools=[knowledge_tool],
-        sub_agents=[nami_agent, kaguya_agent, kurisu_agent, frieren_agent, akane_agent, marin_agent, mai_agent, komi_agent],
+        sub_agents=[nami_agent, kaguya_agent, kurisu_agent, frieren_agent, akane_agent, marin_agent, mai_agent, komi_agent, lucy_agent],
     )

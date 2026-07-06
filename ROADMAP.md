@@ -16,7 +16,7 @@
 | 013 | Kaguya — tags N:N, smart-lists (DSL) e calendário | ✅ |
 | 014 (tasks) | Kaguya — hábitos com check-ins, heatmap e "força" (EMA) | ✅ |
 | 3 / 027 | Kurisu (knowledge base): Vertex AI RAG sobre o vault Obsidian — corpus no ar (410/410 páginas), agente ativo no Telegram | ✅ |
-| 4 | Lucy (email): tools Gmail + agente | ⏳ |
+| 4 | Lucy (email): tools Gmail + agente | ✅ |
 | 5a | Frieren (livros): PostgreSQL + Google Books API + log de leitura + estantes | ✅ |
 | — | Webapp (FastAPI + React) + diário Violet na web | ✅ |
 | 014 | Komi (pessoas): identidade canônica + vínculos cross-agent + REST `/api/people/*` + shell `/people/*` | ✅ |
@@ -37,10 +37,11 @@
 | 030 | Kaguya — Metas (áreas da vida, marcos, vínculos, progresso) | ✅ |
 | 031 | Violet — Tutor de Idiomas (persona Kurisu): análise de escrita via Gemini, toggle original/corrigido, maestria por conceito (EMA), nível CEFR estimado, guia de estudo direcionável | ✅ |
 | 032 | Scheduler de jobs recorrentes (`scheduler/`): APScheduler num container dedicado (`makima-scheduler`), registro declarativo de jobs (cron/intervalo, fuso São Paulo), log em `scheduler_runs` + alerta no Telegram em falha. Consolida backup + sync-Kurisu (loops aposentados) | ✅ |
+| 032 (lucy) | Lucy (email/Gmail): agente interativo somente-leitura (IMAP) + digest matinal agendado (classificação Gemini + labels/arquivamento + Telegram) + histórico idempotente (`lucy_emails`). Aposenta o script externo do n8n | ✅ |
 
 ## Status atual (jul/2026)
 
-Fases 001–027, 029, 030, 031 e 032 entregues. A **028** (memória unificada da Kurisu) está parcial:
+Fases 001–027, 029, 030, 031, 032 e 032 (lucy) entregues. A **028** (memória unificada da Kurisu) está parcial:
 fundação (`agents/kurisu/memory/`) + sync incremental + 2 dos 8 exporters (diário, tarefas)
 prontos localmente; deploy no VPS e os 6 exporters restantes pendentes.
 
@@ -49,6 +50,5 @@ prontos localmente; deploy no VPS e os 6 exporters restantes pendentes.
 | Pendência | Onde está o plano |
 |---|---|
 | Concluir a 028 (6 exporters + deploy VPS) | `specs/028-kurisu-unified-memory/` |
-| Lucy (email, fase 4) | `PLAN.md` histórico (`docs/arquivo/PLAN.md`) |
 | Personalidade Violet + rename `agents/journal → agents/violet` | `docs/planos/PLANO_VIOLET_EVERGARDEN.md` |
 | Integração Violet ↔ Komi (autocomplete `@menção` no diário) | `docs/planos/PLANO_INTEGRACAO_VIOLET_KOMI.md` |

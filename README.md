@@ -27,6 +27,7 @@ Envie mensagens pelo Telegram. Makima identifica o domínio e roteia automaticam
 | "quem é a Ana?" | Komi 👤 | Busca a pessoa no cadastro e retorna o perfil completo |
 | "adiciona o João, amigo, aniversário 12/03" | Komi 👤 | Cadastra pessoa com data importante |
 | "o que tenho com a Ana?" | Komi 👤 | Resumo: finanças, tarefas, livros e diário ligados a ela |
+| "Lucy, meus emails não lidos" | Lucy 📧 | Lista emails ao vivo via IMAP (somente leitura) |
 
 ---
 
@@ -77,7 +78,7 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── Mai        → PostgreSQL + TMDB API v3 (séries de TV)   ✅ ativo
     ├── Komi       → PostgreSQL (pessoas + vínculos cross-agent) ✅ ativo
     ├── Violet     → PostgreSQL (diário)                        🔧 ativo na web, agente Telegram pendente
-    └── Lucy       → Gmail API v1                               ⏳ planejado
+    └── Lucy       → Gmail via IMAP (somente leitura) + digest agendado ✅ ativo
 ```
 
 Makima não executa nenhuma ação diretamente — ela apenas roteia para o agente correto. Toda lógica de acesso a APIs fica nos agentes especialistas.
@@ -341,6 +342,12 @@ MAL_CLIENT_SECRET=             # Client Secret do mesmo app MAL
 # Kurisu — Vertex AI RAG (fase 3)
 VERTEX_RAG_CORPUS=             # projects/{PROJECT_ID}/locations/us-central1/ragCorpora/{ID}
 
+# Lucy — Gmail via IMAP (fase 4 / spec 032)
+GMAIL_USERNAME=                # endereço Gmail (login IMAP)
+GMAIL_APP_PASSWORD=            # senha de app do Gmail (não a senha normal — requer 2FA)
+TELEGRAM_ALERT_CHAT_ID=        # chat que recebe o digest matinal e os alertas do scheduler
+# GEMINI_MODEL=gemini-2.5-flash  # opcional — modelo usado na classificação do digest
+
 # Webapp (interface web)
 ALLOWED_EMAIL=                     # e-mail Google autorizado a logar na webapp
 SESSION_SECRET=                    # segredo para assinar cookies (gerar: python -c "import secrets; print(secrets.token_hex(32))")
@@ -423,7 +430,7 @@ npm install && npm run dev   # dev server em localhost:5173
 
 O histórico completo de fases e o status atual vivem no **[ROADMAP.md](ROADMAP.md)** — fonte única da verdade.
 
-Resumo (jul/2026): fases 001–027, 029 e 030 entregues; 028 (memória unificada da Kurisu) parcial; Lucy (email, fase 4) planejada.
+Resumo (jul/2026): fases 001–027, 029, 030, 031 e 032 (Lucy/email, scheduler) entregues; 028 (memória unificada da Kurisu) parcial.
 
 ---
 

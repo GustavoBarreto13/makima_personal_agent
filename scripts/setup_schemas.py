@@ -37,6 +37,9 @@ SCHEMA_FILES = [
     # Histórico de execuções do agendador de jobs (scheduler/). 1 tabela:
     # scheduler_runs (job, início, fim, status, erro, duração).
     "scheduler/schema_pg.sql",
+    # Histórico de emails classificados da Lucy (spec 032). 1 tabela:
+    # lucy_emails (upsert idempotente por gmail_uid/X-GM-MSGID).
+    "agents/lucy/schema_pg.sql",
 ]
 
 

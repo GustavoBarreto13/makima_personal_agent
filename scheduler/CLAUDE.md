@@ -72,7 +72,8 @@ docker logs -f makima-scheduler
 ## Variáveis de ambiente
 
 Além das que cada job já usa (`DATABASE_URL`, `GCP_*`, `GCS_BACKUP_BUCKET`,
-`VERTEX_RAG_CORPUS_OPERACIONAL`, `LETTERBOXD_USERNAME`, `TMDB_API_KEY`):
+`VERTEX_RAG_CORPUS_OPERACIONAL`, `LETTERBOXD_USERNAME`, `TMDB_API_KEY`,
+`GMAIL_USERNAME`, `GMAIL_APP_PASSWORD`, `GEMINI_API_KEY`):
 
 | Variável | Para quê |
 |---|---|
@@ -86,3 +87,4 @@ Além das que cada job já usa (`DATABASE_URL`, `GCP_*`, `GCS_BACKUP_BUCKET`,
 | `backup_postgres` | Todo dia 03:00 | `pg_dump` → Google Cloud Storage (`scripts/backup_postgres.py`) |
 | `sync_kurisu` | Todo dia 04:00 | Memória unificada da Kurisu: Postgres → Vertex RAG (`agents/kurisu/memory/sync.py`) |
 | `sync_letterboxd` | A cada 6h | Diário do Letterboxd (RSS) → catálogo da Akane (`scripts/sync_letterboxd.py`) |
+| `lucy_digest` | Todo dia 08:00 | Digest matinal de emails (Lucy): classificação Gemini + labels/arquivo no Gmail + Telegram + histórico (`scripts/send_lucy_digest.py`) |

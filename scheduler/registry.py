@@ -23,7 +23,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 # Importa as funções que fazem o trabalho de cada job.
-from scheduler.jobs import run_backup, run_kurisu_sync, run_letterboxd
+from scheduler.jobs import run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest
 
 # Fuso horário do usuário. Todos os horários dos jobs são interpretados nele —
 # "03:00" quer dizer 03:00 em São Paulo, não 03:00 UTC (regra do CLAUDE.md).
@@ -111,5 +111,13 @@ JOBS: list[ScheduledJob] = [
         func=run_letterboxd,
         trigger=every(hours=6),
         description="Sync do Letterboxd (RSS → catálogo da Akane)",
+    ),
+    # Digest matinal de emails (Lucy) → Telegram + histórico em lucy_emails.
+    # 08:00 (America/Sao_Paulo) — spec 032.
+    ScheduledJob(
+        name="lucy_digest",
+        func=run_lucy_digest,
+        trigger=daily_at(8, 0),
+        description="Digest diário de emails (Lucy) → Telegram",
     ),
 ]

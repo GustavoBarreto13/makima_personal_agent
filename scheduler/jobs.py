@@ -97,3 +97,30 @@ def run_letterboxd() -> None:
             f"sync_letterboxd terminou com {resultado['errors']} erro(s) — "
             f"ver o log acima para detalhes."
         )
+
+
+def run_lucy_digest() -> None:
+    """Executa o digest diário de emails (Lucy) → Telegram + histórico.
+
+    Roda `scripts/send_lucy_digest.py` num subprocesso separado (mesmo motivo do
+    backup: o script usa `sys.exit(1)` em falha estrutural, e rodar como
+    subprocesso transforma isso num código de retorno que o runner detecta).
+
+    Raises:
+        RuntimeError: Se o digest falhar (código de saída ≠ 0). A mensagem
+            inclui o stderr do processo para facilitar o diagnóstico e o alerta.
+    """
+    resultado = subprocess.run(
+        [sys.executable, "-m", "scripts.send_lucy_digest"],
+        capture_output=True,
+        text=True,
+    )
+
+    if resultado.stdout:
+        print(resultado.stdout, end="")
+
+    if resultado.returncode != 0:
+        raise RuntimeError(
+            f"send_lucy_digest saiu com código {resultado.returncode}.\n"
+            f"stderr:\n{resultado.stderr}"
+        )

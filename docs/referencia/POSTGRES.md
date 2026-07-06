@@ -1443,14 +1443,44 @@ Sem FKs (tabela de infraestrutura, independente dos domínios de negócio).
 
 ---
 
+## 12.6. Domínio Lucy — Email (spec 032)
+
+### `lucy_emails`
+
+Histórico de cada email processado pelo digest matinal e sua classificação (Gemini).
+Autocontida — sem FKs para outras tabelas do repo (Princípio III). É a única novidade
+de storage em relação ao script base do n8n (que era stateless).
+
+| Coluna | Tipo | Regras / propósito |
+|---|---|---|
+| `id` | `TEXT PRIMARY KEY` | UUID (`str(uuid.uuid4())`) gerado em Python. |
+| `gmail_uid` | `TEXT UNIQUE NOT NULL` | **X-GM-MSGID** (id permanente do Gmail) — chave natural do upsert idempotente. |
+| `from_name` / `from_addr` | `TEXT` | Remetente (nome decodificado RFC2047 / endereço). |
+| `subject` | `TEXT` | Assunto decodificado. |
+| `category` | `TEXT NOT NULL` | Uma das 10 categorias fixas (`Art / Hobbies`, `Finance`, `Knowledge`, `Shopping`, `Personal`, `Health`, `Security`, `Work`, `Junk`, `Other`). |
+| `priority` | `TEXT` | `high` \| `medium` \| `low`. |
+| `summary` | `TEXT` | Resumo de 1 linha gerado pela IA. |
+| `action` | `TEXT` | `arquivar` \| `responder` \| `ler` \| `agir` \| `ignorar`. |
+| `received_date` | `DATE` | Data local (`America/Sao_Paulo`) de recebimento. |
+| `classified_at` | `TIMESTAMPTZ NOT NULL` | `DEFAULT NOW()`. Momento da classificação; atualizado no upsert. |
+
+**Índice:** `idx_lucy_emails_cat_date (category, received_date DESC)` — consulta por
+categoria/período (base para tela futura).
+
+**Upsert:** `INSERT ... ON CONFLICT (gmail_uid) DO UPDATE SET ...` — reexecutar o digest
+para o mesmo dia sobrescreve o registro existente (Clarification 2026-07-05), nunca
+duplica linhas.
+
+---
+
 ## 13. Como (re)criar o banco
 
 ```bash
 python scripts/setup_schemas.py
 ```
 
-Isso aplica os oito `*_pg.sql` na ordem do script (Nami → Frieren → Kaguya → Akane → Marin →
-Mai → Komi → scheduler). É idempotente — pode rodar quantas vezes quiser. As tabelas do
+Isso aplica os nove `*_pg.sql` na ordem do script (Nami → Frieren → Kaguya → Akane → Marin →
+Mai → Komi → scheduler → Lucy). É idempotente — pode rodar quantas vezes quiser. As tabelas do
 **Journal** não saem daqui: nascem sozinhas quando a webapp importa `agents/journal/tools.py`
 (que chama `_ensure_tables()`).
 

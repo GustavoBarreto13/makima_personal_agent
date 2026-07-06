@@ -25,8 +25,8 @@ manualmente via [quickstart.md](quickstart.md), não em unit tests.
 
 **Purpose**: Esqueleto do pacote e dependências.
 
-- [ ] T001 Criar o pacote `agents/lucy/` com `agents/lucy/__init__.py` (docstring do pacote: domínio email, submódulos `gmail_imap`/`tools`/`agent`)
-- [ ] T002 [P] Confirmar `google-genai` fixado em `requirements.txt` (adicionar a linha se ausente — foi fixado na spec 031; não duplicar)
+- [X] T001 Criar o pacote `agents/lucy/` com `agents/lucy/__init__.py` (docstring do pacote: domínio email, submódulos `gmail_imap`/`tools`/`agent`)
+- [X] T002 [P] Confirmar `google-genai` fixado em `requirements.txt` (adicionar a linha se ausente — foi fixado na spec 031; não duplicar)
 
 ---
 
@@ -36,10 +36,10 @@ manualmente via [quickstart.md](quickstart.md), não em unit tests.
 
 **⚠️ CRITICAL**: US1 e US2 dependem desta fase.
 
-- [ ] T003 Implementar `agents/lucy/gmail_imap.py`: `_connect()` (IMAP4_SSL + login por `GMAIL_USERNAME`/`GMAIL_APP_PASSWORD`) e `_decode(header)` (RFC2047), portados do base `main.py`
-- [ ] T004 Adicionar em `agents/lucy/gmail_imap.py` a extração de corpo/snippet (~500 chars, texto puro com fallback para HTML com tags removidas) e `fetch_emails(criteria, limit)` — usa `mail.uid('SEARCH'...)` + `mail.uid('FETCH', uid, '(X-GM-MSGID RFC822)')`, retornando `{imap_uid, gmail_msgid, from_name, from_addr, subject, date, snippet}` (R2)
-- [ ] T005 Adicionar em `agents/lucy/gmail_imap.py`: `get_email_full(uid)` (conteúdo completo) e as ops de escrita `apply_label(uid, label)` / `archive(uid)` (STORE ±X-GM-LABELS) — usadas só pelo digest, **não** expostas como tool (R7)
-- [ ] T006 [P] Teste `tests/agents/test_lucy_parse.py`: decodificação de headers RFC2047, extração de snippet e fallback HTML (funções puras de `gmail_imap.py`)
+- [X] T003 Implementar `agents/lucy/gmail_imap.py`: `_connect()` (IMAP4_SSL + login por `GMAIL_USERNAME`/`GMAIL_APP_PASSWORD`) e `_decode(header)` (RFC2047), portados do base `main.py`
+- [X] T004 Adicionar em `agents/lucy/gmail_imap.py` a extração de corpo/snippet (~500 chars, texto puro com fallback para HTML com tags removidas) e `fetch_emails(criteria, limit)` — usa `mail.uid('SEARCH'...)` + `mail.uid('FETCH', uid, '(X-GM-MSGID RFC822)')`, retornando `{imap_uid, gmail_msgid, from_name, from_addr, subject, date, snippet}` (R2)
+- [X] T005 Adicionar em `agents/lucy/gmail_imap.py`: `get_email_full(uid)` (conteúdo completo) e as ops de escrita `apply_label(uid, label)` / `archive(uid)` (STORE ±X-GM-LABELS) — usadas só pelo digest, **não** expostas como tool (R7)
+- [X] T006 [P] Teste `tests/agents/test_lucy_parse.py`: decodificação de headers RFC2047, extração de snippet e fallback HTML (funções puras de `gmail_imap.py`)
 
 **Checkpoint**: camada IMAP pronta e parseável — US1 e US2 podem começar.
 
@@ -53,12 +53,12 @@ formato do base). Entrega o valor central mesmo sem US2/US3.
 **Independent Test**: `python -m scripts.send_lucy_digest` → digest chega no Telegram no formato antigo;
 labels aplicadas e Junk arquivados no Gmail. (Sem depender do agente nem da persistência.)
 
-- [ ] T007 [US1] Implementar `classify_emails(emails)` em `agents/lucy/tools.py`: `google.genai` one-shot com `response_schema` (contrato C), **system prompt + 10 diretrizes copiados verbatim do base**, modelo `GEMINI_MODEL` (default `gemini-2.5-flash`), retry/backoff, normalização de enum inválido, coleta de `usage_metadata` (tokens) (R3)
-- [ ] T008 [US1] Implementar `build_telegram_digest(classified, usage)` em `agents/lucy/tools.py`: layout do base (overview + INTEL BRIEFING de `Knowledge` + AÇÃO IMEDIATA + grupos por categoria com 🔴/🟡/🟢, **Junk oculto**, rodapé tokens/custo/hora) e caso "sem emails" (FR-011)
-- [ ] T009 [P] [US1] Teste `tests/agents/test_lucy_digest.py`: `build_telegram_digest` — agrupamento por categoria, ocultação de Junk, cores por prioridade, caminho sem emails
-- [ ] T010 [US1] Implementar `scripts/send_lucy_digest.py`: buscar emails de ontem (UTC-3, `SINCE/BEFORE`, cap 50) via `gmail_imap` → `classify_emails` → por item aplicar label + arquivar Junk em `try/except` (FR-015) → montar digest → `POST` Telegram (`parse_mode=HTML`, `TELEGRAM_BOT_TOKEN`/`TELEGRAM_ALERT_CHAT_ID`) → resumo em stdout; `sys.exit(1)` em falha estrutural (R4/R6/R9)
-- [ ] T011 [US1] Adicionar `run_lucy_digest()` em `scheduler/jobs.py` (subprocess `python -m scripts.send_lucy_digest`, `RuntimeError` se `returncode != 0`)
-- [ ] T012 [US1] Registrar `ScheduledJob(name="lucy_digest", func=run_lucy_digest, trigger=daily_at(8,0), description=...)` na lista `JOBS` de `scheduler/registry.py` (importar `run_lucy_digest`)
+- [X] T007 [US1] Implementar `classify_emails(emails)` em `agents/lucy/tools.py`: `google.genai` one-shot com `response_schema` (contrato C), **system prompt + 10 diretrizes copiados verbatim do base**, modelo `GEMINI_MODEL` (default `gemini-2.5-flash`), retry/backoff, normalização de enum inválido, coleta de `usage_metadata` (tokens) (R3)
+- [X] T008 [US1] Implementar `build_telegram_digest(classified, usage)` em `agents/lucy/tools.py`: layout do base (overview + INTEL BRIEFING de `Knowledge` + AÇÃO IMEDIATA + grupos por categoria com 🔴/🟡/🟢, **Junk oculto**, rodapé tokens/custo/hora) e caso "sem emails" (FR-011)
+- [X] T009 [P] [US1] Teste `tests/agents/test_lucy_digest.py`: `build_telegram_digest` — agrupamento por categoria, ocultação de Junk, cores por prioridade, caminho sem emails
+- [X] T010 [US1] Implementar `scripts/send_lucy_digest.py`: buscar emails de ontem (UTC-3, `SINCE/BEFORE`, cap 50) via `gmail_imap` → `classify_emails` → por item aplicar label + arquivar Junk em `try/except` (FR-015) → montar digest → `POST` Telegram (`parse_mode=HTML`, `TELEGRAM_BOT_TOKEN`/`TELEGRAM_ALERT_CHAT_ID`) → resumo em stdout; `sys.exit(1)` em falha estrutural (R4/R6/R9)
+- [X] T011 [US1] Adicionar `run_lucy_digest()` em `scheduler/jobs.py` (subprocess `python -m scripts.send_lucy_digest`, `RuntimeError` se `returncode != 0`)
+- [X] T012 [US1] Registrar `ScheduledJob(name="lucy_digest", func=run_lucy_digest, trigger=daily_at(8,0), description=...)` na lista `JOBS` de `scheduler/registry.py` (importar `run_lucy_digest`)
 
 **Checkpoint**: Digest funcional e agendado — MVP entregável (sem persistência ainda).
 
@@ -71,9 +71,9 @@ labels aplicadas e Junk arquivados no Gmail. (Sem depender do agente nem da pers
 **Independent Test**: no Telegram, "Lucy, meus não lidos" e "busca email do Nubank" retornam ao vivo;
 pedir para arquivar → ela recusa (só leitura), caixa intacta.
 
-- [ ] T013 [US2] Implementar as 3 tools read-only em `agents/lucy/tools.py` (contrato A): `fetch_recent_emails(limit=10, unread_only=False)`, `search_emails(query, limit=10)`, `get_email(uid)` — wrappers sobre `gmail_imap`, retorno `{"status":"ok"/"error", ...}`, nunca levantam exceção; **nenhuma tool de escrita** (R7)
-- [ ] T014 [US2] Criar `agents/lucy/agent.py`: `lucy_agent` singleton (`gemini-2.5-flash`, persona Lucy/Cyberpunk, respostas PT-BR/HTML começando com "Lucy:", `description` para roteamento, `tools=[fetch_recent_emails, search_emails, get_email]`)
-- [ ] T015 [US2] Ativar no `coordinator/agent.py`: descomentar `from agents.lucy.agent import lucy_agent`, adicionar a `sub_agents`, remover "(ainda não ativada)" e acrescentar o bloco `ROTEAMENTO PARA LUCY` (emails/Gmail/não lidos/buscar — sem enviar/gerenciar)
+- [X] T013 [US2] Implementar as 3 tools read-only em `agents/lucy/tools.py` (contrato A): `fetch_recent_emails(limit=10, unread_only=False)`, `search_emails(query, limit=10)`, `get_email(uid)` — wrappers sobre `gmail_imap`, retorno `{"status":"ok"/"error", ...}`, nunca levantam exceção; **nenhuma tool de escrita** (R7)
+- [X] T014 [US2] Criar `agents/lucy/agent.py`: `lucy_agent` singleton (`gemini-2.5-flash`, persona Lucy/Cyberpunk, respostas PT-BR/HTML começando com "Lucy:", `description` para roteamento, `tools=[fetch_recent_emails, search_emails, get_email]`)
+- [X] T015 [US2] Ativar no `coordinator/agent.py`: descomentar `from agents.lucy.agent import lucy_agent`, adicionar a `sub_agents`, remover "(ainda não ativada)" e acrescentar o bloco `ROTEAMENTO PARA LUCY` (emails/Gmail/não lidos/buscar — sem enviar/gerenciar)
 
 **Checkpoint**: US1 e US2 funcionam de forma independente.
 
@@ -87,11 +87,11 @@ gravar histórico.
 **Independent Test**: rodar o digest 2x para o mesmo dia → mesma contagem de linhas em `lucy_emails`,
 `classified_at` atualizado.
 
-- [ ] T016 [P] [US3] Criar `agents/lucy/schema_pg.sql`: tabela `lucy_emails` + índice `idx_lucy_emails_cat_date` (conforme [data-model.md](data-model.md))
-- [ ] T017 [US3] Adicionar `_ensure_tables()` (CREATE TABLE IF NOT EXISTS) em `agents/lucy/tools.py`, chamado na carga do módulo (padrão `agents/journal/tools.py`)
-- [ ] T018 [US3] Implementar `persist_classified(records)` em `agents/lucy/tools.py`: upsert `INSERT ... ON CONFLICT (gmail_uid) DO UPDATE` via `agents.db` (`id` = `str(uuid.uuid4())`, `gmail_uid` = X-GM-MSGID, `received_date` local UTC-3) — sobrescrita (Clarification 2026-07-05)
-- [ ] T019 [P] [US3] Registrar `"agents/lucy/schema_pg.sql"` na lista `SCHEMA_FILES` de `scripts/setup_schemas.py`
-- [ ] T020 [US3] Chamar `persist_classified(...)` ao final de `scripts/send_lucy_digest.py`, mapeando cada classificação → registro (inclui `gmail_msgid` e `received_date`)
+- [X] T016 [P] [US3] Criar `agents/lucy/schema_pg.sql`: tabela `lucy_emails` + índice `idx_lucy_emails_cat_date` (conforme [data-model.md](data-model.md))
+- [X] T017 [US3] Adicionar `_ensure_tables()` (CREATE TABLE IF NOT EXISTS) em `agents/lucy/tools.py`, chamado na carga do módulo (padrão `agents/journal/tools.py`)
+- [X] T018 [US3] Implementar `persist_classified(records)` em `agents/lucy/tools.py`: upsert `INSERT ... ON CONFLICT (gmail_uid) DO UPDATE` via `agents.db` (`id` = `str(uuid.uuid4())`, `gmail_uid` = X-GM-MSGID, `received_date` local UTC-3) — sobrescrita (Clarification 2026-07-05)
+- [X] T019 [P] [US3] Registrar `"agents/lucy/schema_pg.sql"` na lista `SCHEMA_FILES` de `scripts/setup_schemas.py`
+- [X] T020 [US3] Chamar `persist_classified(...)` ao final de `scripts/send_lucy_digest.py`, mapeando cada classificação → registro (inclui `gmail_msgid` e `received_date`)
 
 **Checkpoint**: histórico persistido e idempotente; todas as user stories funcionais.
 
@@ -101,10 +101,10 @@ gravar histórico.
 
 **Purpose**: Documentação e validação final (checklist de entrega do CLAUDE.md do projeto).
 
-- [ ] T021 [P] Criar `agents/lucy/CLAUDE.md` (tools, schema `lucy_emails`, personalidade Lucy, decisões locais IMAP/genai/HTML)
-- [ ] T022 [P] Atualizar docs: `ROADMAP.md` (Fase 4/Lucy ✅), `docs/referencia/POSTGRES.md` (tabela `lucy_emails` coluna a coluna), `CLAUDE.md` raiz (árvore de arquivos + linha da Lucy na tabela de agentes ⏳→✅), `coordinator/CLAUDE.md` (env vars `GMAIL_*` + Lucy ativa), `scheduler/CLAUDE.md` (job `lucy_digest`), `README.md` (1 linha)
-- [ ] T023 [P] Refletir a mudança no vault do Obsidian (skill `obsidian-vault`)
-- [ ] T024 Rodar a validação end-to-end do [quickstart.md](quickstart.md) (7 passos) e confirmar SC-001..SC-008
+- [X] T021 [P] Criar `agents/lucy/CLAUDE.md` (tools, schema `lucy_emails`, personalidade Lucy, decisões locais IMAP/genai/HTML)
+- [X] T022 [P] Atualizar docs: `ROADMAP.md` (Fase 4/Lucy ✅), `docs/referencia/POSTGRES.md` (tabela `lucy_emails` coluna a coluna), `CLAUDE.md` raiz (árvore de arquivos + linha da Lucy na tabela de agentes ⏳→✅), `coordinator/CLAUDE.md` (env vars `GMAIL_*` + Lucy ativa), `scheduler/CLAUDE.md` (job `lucy_digest`), `README.md` (1 linha)
+- [ ] T023 [P] Refletir a mudança no vault do Obsidian (skill `obsidian-vault`) — **bloqueado**: vault (`G:\Meu Drive\Backups\Obsidian\Knowledge Base Karpathy`) não está acessível nesta sessão/máquina (Google Drive montado não contém a pasta); pendente para rodar num ambiente com o vault disponível.
+- [ ] T024 Rodar a validação end-to-end do [quickstart.md](quickstart.md) (7 passos) e confirmar SC-001..SC-008 — **parcial**: passo 2 (pytest das partes puras) verde; passos 1/3-7 exigem infra viva (Postgres, IMAP Gmail, Gemini, Telegram) e `.venv` com `google-adk`/`google-genai` instalados, indisponíveis nesta sessão (sem `.venv` local, sem credenciais). Pendente para rodar localmente/no VPS.
 
 ---
 

@@ -24,7 +24,7 @@ Inspirada na Makima de Chainsaw Man — calma, autoritária, cordial mas levemen
 ```
 TELEGRAM_BOT_TOKEN              # token do bot da Makima
 GEMINI_API_KEY                  # chave do Google AI Studio (modelo Gemini dos agentes)
-NOTION_TOKEN                    # token da integração Notion (uso futuro — Lucy/media/books)
+NOTION_TOKEN                    # token da integração Notion (uso futuro — media/books)
 GCP_CREDENTIALS_JSON            # conteúdo JSON do service account GCP como string (BigQuery + Vertex AI)
 GCP_PROJECT_ID                  # projeto GCP (mesmo do BigQuery)
 TICKTICK_ACCESS_TOKEN           # token OAuth do TickTick
@@ -42,6 +42,8 @@ VERTEX_RAG_CORPUS               # ID do corpus Vertex AI RAG (após ativar Kuris
 GOOGLE_BOOKS_API_KEY            # (opcional) chave da Google Books API — aumenta cota de 1000 para 10.000 req/dia
 TMDB_API_KEY                    # API key v3 do TMDB — Akane (filmes), Mai (séries), Marin (thumbnails)
 LETTERBOXD_USERNAME             # username público do Letterboxd — sync RSS automático da Akane
+GMAIL_USERNAME                   # endereço Gmail — login IMAP da Lucy (agente + digest, spec 032)
+GMAIL_APP_PASSWORD               # senha de app do Gmail (IMAP + 2FA) — Lucy
 DATABASE_URL                    # connection string do PostgreSQL separado no Dokploy
                                 # formato: postgresql://user:pass@host:5432/db
                                 # o código adiciona +asyncpg automaticamente

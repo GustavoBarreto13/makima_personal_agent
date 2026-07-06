@@ -50,7 +50,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | `agents/mai/` | Séries de TV (PostgreSQL + TMDB API v3) | ✅ Fase 022 | `agents/mai/CLAUDE.md` |
 | `agents/komi/` | Pessoas e contatos (PostgreSQL) | ✅ Fase 014 | `agents/komi/CLAUDE.md` |
 | `agents/journal/` | Diário (Violet) — **módulo de tools, não é sub-agente ADK**: sem `agent.py`, consumido só pelo router `/api/journal/*` do webapp | ✅ web | `agents/journal/CLAUDE.md` |
-| `agents/lucy/` | Email (Gmail) — diretório ainda não existe | ⏳ Fase 4 | — |
+| `agents/lucy/` | Email (Gmail) — agente somente leitura (IMAP) + digest matinal agendado | ✅ Fase 4 / 032 | `agents/lucy/CLAUDE.md` |
 
 ### Como o coordinator importa
 
@@ -64,7 +64,7 @@ from agents.akane.agent import akane_agent            # cinemateca de filmes (sp
 from agents.marin.agent import marin_agent            # catálogo de animes (spec 021)
 from agents.mai.agent import mai_agent                # catálogo de séries de TV (spec 022)
 from agents.komi.agent import komi_agent              # identidade de pessoas (spec 014)
-# from agents.lucy.agent import lucy_agent
+from agents.lucy.agent import lucy_agent              # email (Gmail), somente leitura (spec 032)
 ```
 
 Imports locais — nada de `PYTHONPATH` apontando para outro repo.
@@ -88,7 +88,10 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── marin_agent     → PostgreSQL (animes) + Jikan + AniList + MAL [agents/marin]
     ├── mai_agent       → PostgreSQL (séries) + TMDB API v3          [agents/mai]
     ├── komi_agent      → PostgreSQL (pessoas + vínculos)            [agents/komi]
-    └── lucy_agent      → Gmail                                      [agents/lucy]     (planejada — ainda não existe)
+    └── lucy_agent      → Gmail via IMAP, somente leitura            [agents/lucy]
+
+scheduler/  (makima-scheduler — jobs agendados)
+    └── lucy_digest     → digest matinal 08:00 (classificação Gemini + labels/arquivo + Telegram + histórico) [agents/lucy + scripts/send_lucy_digest.py]
 ```
 
 **Makima não tem tools próprias** — ela só delega. Toda lógica de acesso a APIs fica nas tools dos agents especialistas em `agents/`.
@@ -227,6 +230,13 @@ makima_personal_agent/
 │   │   ├── agent.py     # marin_agent — singleton
 │   │   ├── schema_pg.sql # schema das 4 tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, schema, MAL OAuth, personalidade
+│   ├── lucy/            # agente de email (Gmail) — Fase 4 / 032 ✅
+│   │   ├── __init__.py
+│   │   ├── gmail_imap.py # camada IMAP pura: connect/fetch/parse/label/archive
+│   │   ├── tools.py     # 3 tools read-only + classify_emails() (Gemini) + persist_classified()
+│   │   ├── agent.py     # lucy_agent — singleton, somente leitura
+│   │   ├── schema_pg.sql # schema da tabela lucy_emails
+│   │   └── CLAUDE.md    # tools, schema, digest, personalidade
 │   ├── mai/             # agente de séries de TV — Fase 022 ✅
 │   │   ├── __init__.py
 │   │   ├── tools.py     # PostgreSQL (series, seasons, series_episodes, series_watch_logs)
@@ -246,7 +256,7 @@ makima_personal_agent/
 ├── scheduler/           # agendador de jobs recorrentes (container makima-scheduler) — APScheduler
 │   ├── __init__.py
 │   ├── registry.py      # lista declarativa JOBS + ScheduledJob + helpers daily_at()/every()
-│   ├── jobs.py          # wrappers dos scripts (backup, kurisu-sync, letterboxd)
+│   ├── jobs.py          # wrappers dos scripts (backup, kurisu-sync, letterboxd, lucy_digest)
 │   ├── runner.py        # execute_with_logging(): cronometra, grava scheduler_runs, alerta em falha
 │   ├── notify.py        # send_telegram_alert() — POST na Bot API do Telegram
 │   ├── main.py          # entrypoint: BlockingScheduler + modos --run / --list
@@ -262,6 +272,7 @@ makima_personal_agent/
 │   ├── sync_letterboxd.py     # sync RSS do Letterboxd (Akane)
 │   ├── import_letterboxd_csv.py # importação one-time do CSV histórico do Letterboxd
 │   ├── backup_postgres.py     # pg_dump → Google Cloud Storage (agendado pelo scheduler/ — job diário)
+│   ├── send_lucy_digest.py    # digest matinal de emails (Lucy) — agendado pelo scheduler/ (spec 032)
 │   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)
 │   └── .gitignore             # exclui client_secret.json do git
 ├── docs/                    # organizada por tipo — ver docs/README.md (mapa completo)
@@ -300,8 +311,8 @@ Ambiente local: `.venv` própria do makima.
 **A fonte única da verdade para fases e status é o [`ROADMAP.md`](ROADMAP.md)** — ao entregar
 uma fase, atualize lá (não duplique tabelas de status aqui nem no README).
 
-Resumo: fases 001–027, 029 e 030 entregues; 028 (memória unificada da Kurisu) parcial;
-Lucy (fase 4) planejada.
+Resumo: fases 001–027, 029, 030, 031 e 032 (Lucy/email, scheduler) entregues; 028
+(memória unificada da Kurisu) parcial.
 
 ---
 
