@@ -24,6 +24,7 @@ o que é intenção futura e o que é só registro do passado:
 
 - [`planos/PLANO_VIOLET_EVERGARDEN.md`](planos/PLANO_VIOLET_EVERGARDEN.md) — personalidade Violet + rename `agents/journal → agents/violet`
 - [`planos/PLANO_INTEGRACAO_VIOLET_KOMI.md`](planos/PLANO_INTEGRACAO_VIOLET_KOMI.md) — autocomplete `@menção` no diário usando a Komi
+- [`planos/PLANO_KAGUYA_MELHORIAS_2026H2.md`](planos/PLANO_KAGUYA_MELHORIAS_2026H2.md) — roadmap das 6 melhorias da Kaguya (specs 034–039: GTD core, weekly review, vínculos cross-agent, pomodoro, work/pessoal no Meu Dia, QoL)
 
 ## Arquivo (histórico)
 
