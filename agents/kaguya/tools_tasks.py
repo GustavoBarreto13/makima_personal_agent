@@ -931,7 +931,7 @@ def create_task(
 def update_task(
     task_id: int,
     title: Optional[str] = None,
-    description: Optional[str] = None,
+    description: Optional[str] = _UNSET,
     priority: Optional[int] = None,
     type: Optional[str] = None,
     due_date: Optional[str] = _UNSET,
@@ -952,8 +952,10 @@ def update_task(
 
     Args:
         task_id: Id da tarefa.
-        title/description/priority/type/project_id/column_id:
+        title/priority/type/project_id/column_id:
             Campos a atualizar (todos opcionais; PATCH parcial).
+        description: Notas. Omitido (``_UNSET``) = não mexe; ``None`` = limpa
+            (grava NULL); string = grava — mesma semântica de ``due_date``.
         due_date: Data de vencimento (``YYYY-MM-DD``). Omitido = não mexe;
             ``None`` = limpa a data (grava NULL — e arrasta due_time junto);
             string = grava a data.
@@ -991,9 +993,10 @@ def update_task(
                     return {"status": "error", "message": "O título não pode ser vazio."}
                 sets.append("title = %(title)s")
                 params["title"] = title.strip()
-            if description is not None:
+            # description: _UNSET = não mexe · None = limpa (grava NULL) · string = grava.
+            if description is not _UNSET:
                 sets.append("description = %(description)s")
-                params["description"] = description
+                params["description"] = description   # None → SQL NULL; string → grava
             if priority is not None:
                 sets.append("priority = %(priority)s")
                 params["priority"] = priority

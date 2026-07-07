@@ -86,6 +86,27 @@ def test_invalid_priority_and_type_and_time(inbox_id):
     assert T.create_task("x", due_time="10:00")["status"] == "error"
 
 
+def test_update_task_clears_description_with_none(inbox_id):
+    """description=None limpa as Notas (grava NULL); omitir não mexe.
+
+    Regressão: antes, apagar a descrição no webapp (que envia null) era ignorado
+    porque a guarda usava ``is not None`` — a descrição antiga sobrevivia.
+    Agora ``description`` usa o sentinela _UNSET (omitir vs. limpar), como due_date.
+    """
+    tid = T.create_task("com notas", project_id=inbox_id, description="rascunho")["id"]
+    assert T.get_task(tid)["description"] == "rascunho"
+
+    # None = limpa de verdade → grava NULL.
+    assert T.update_task(tid, description=None)["status"] == "ok"
+    assert T.get_task(tid)["description"] is None
+
+    # Omitir description (editando outro campo) NÃO mexe nas Notas existentes.
+    T.update_task(tid, description="voltou")
+    assert T.update_task(tid, priority=3)["status"] == "ok"
+    row = T.get_task(tid)
+    assert row["description"] == "voltou" and row["priority"] == 3
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Subtarefas (1 nível, ricas)
 # ─────────────────────────────────────────────────────────────────────────────
