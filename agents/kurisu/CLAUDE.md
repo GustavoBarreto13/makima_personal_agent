@@ -163,7 +163,10 @@ campo `tutor` em `GET /page`). Isso também evita colidir com o plano pendente d
    não retornou nenhum trecho, uma frase honesta é prefixada ao `mirror`
    deterministicamente (FR-009), independente do que o modelo tenha escrito.
 7. **Persistência**: `INSERT ... ON CONFLICT (page_id) DO UPDATE` — uma linha por dia;
-   regenerar preserva `task_id` de ações já convertidas (casamento por texto).
+   regenerar preserva `task_id` de ações já convertidas (casamento por texto). `tokens_in`/
+   `tokens_out` gravam a soma de `usage_metadata` de todas as chamadas Gemini do conselho
+   (temas + web opcional + síntese), acumulada em `_novo_usage_acc`/`_acumular_usage` —
+   best-effort, nunca quebra a geração se a SDK não devolver a metadata.
 
 ### Tabela (`journal_counsel`)
 

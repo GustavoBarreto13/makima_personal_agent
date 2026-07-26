@@ -298,7 +298,7 @@ Telas disponíveis: `Write` (editor de bullets), `Journal` (arquivo), `Reflect` 
 
 O diário usa bullets com parsing de `@pessoa` e `#tag`. O componente `RichText.tsx` faz o highlight visual. A API é `violetApi` em `lib/api.ts`.
 
-**Conselho do Dia (spec 061):** `components/CounselSection.tsx`, no topo da tela `Write` (acima do Registro Emocional/Cartas/bullets). Sob demanda, chama `violetApi.generateCounsel`/`getCounsel` e renderiza 3 blocos (espelho, ferramentas e curadoria da base — cada item com `porque`/`como`/`exemplo_hoje`/`lembrete`, ações); ações podem virar tarefa via `kaguyaApi.createTask` + `violetApi.markActionAsTask`. CSS com prefixo `.cs-*` no fim de `violet.css`.
+**Conselho do Dia (spec 061):** `components/CounselSection.tsx`, no topo da tela `Write` (acima do Registro Emocional/Cartas/bullets). Sob demanda, chama `violetApi.generateCounsel`/`getCounsel` e renderiza 3 blocos (espelho, ferramentas e curadoria da base — cada item com `porque`/`como`/`exemplo_hoje`/`lembrete`, ações); ações podem virar tarefa via `kaguyaApi.createTask` + `violetApi.markActionAsTask`. O card tem um toggle de fechar/expandir no cabeçalho (`cs-collapse-btn`, estado só de UI, não persiste) e um rodapé com a contagem de tokens (`tokens_in`/`tokens_out`) usados na geração. CSS com prefixo `.cs-*` no fim de `violet.css`.
 
 ---
 

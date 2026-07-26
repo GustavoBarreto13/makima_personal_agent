@@ -20,6 +20,7 @@ export type IconName =
   | 'sliders'
   | 'envelope'
   | 'chevron-left'
+  | 'chevron-down'
   | 'arrow-left'
   | 'sparkles'
   | 'graduation'
@@ -169,6 +170,14 @@ const PATHS: Record<IconName, React.ReactNode> = {
   'chevron-left': (
     <polyline
       points="15 18 9 12 15 6"
+      strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"
+      fill="none" stroke="currentColor"
+    />
+  ),
+  // Chevron para baixo — expandir/colapsar (Conselho do Dia, spec 061)
+  'chevron-down': (
+    <polyline
+      points="6 9 12 15 18 9"
       strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"
       fill="none" stroke="currentColor"
     />

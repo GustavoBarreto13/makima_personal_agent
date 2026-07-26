@@ -1337,6 +1337,23 @@
   text-transform: uppercase; color: var(--ink-4);
 }
 
+/* Toggle fechar/expandir — empurrado para a direita do cabeçalho */
+.cs-collapse-btn {
+  margin-left: auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 6px; border: none; background: transparent;
+  color: var(--ink-4); cursor: pointer; transition: background .12s, color .12s;
+}
+.cs-collapse-btn:hover { background: var(--accent-tint); color: var(--accent-deep); }
+.cs-collapse-btn svg { transition: transform .15s; }
+.cs-collapse-icon-closed { transform: rotate(-90deg); }
+
+/* Prévia de uma linha quando o card está fechado — clicável para reabrir */
+.cs-collapsed-hint {
+  margin: 0; font-size: 13px; color: var(--ink-4); cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cs-collapsed-hint:hover { color: var(--ink-3); }
+
 /* Convite para pedir o conselho (estado vazio) — mesmo estilo do .lt-add-trigger */
 .cs-add-trigger {
   display: flex; align-items: center; gap: 8px; width: 100%;
@@ -1424,13 +1441,21 @@
 .cs-action-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-deep); }
 .cs-action-btn:disabled { opacity: 0.6; cursor: default; }
 
-/* Botão "Regerar" */
+/* Rodapé: botão "Regerar" + contagem de tokens usados na geração */
+.cs-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
 .cs-regen {
   align-self: flex-start; padding: 5px 12px; border-radius: 999px;
   border: 1px solid var(--line); background: var(--card); color: var(--ink-3);
   font-family: var(--sans); font-size: 12px; cursor: pointer; transition: all 0.12s;
 }
 .cs-regen:hover { border-color: var(--accent); color: var(--accent-deep); }
+
+/* Contagem de tokens (in/out) da geração — informativo, discreto */
+.cs-tokens {
+  font-family: var(--mono); font-size: 10.5px; color: var(--ink-5, var(--ink-4));
+  white-space: nowrap;
+}
 
 /* Banner de erro (falha da IA — nada é salvo, FR-015) */
 .cs-error-banner {

@@ -1,13 +1,17 @@
 // Seção "Conselho do Dia" da tela Escrever (spec 061).
 //
 // Sob demanda (um clique), a Violet lê o dia — bullets, registros emocionais, cartas — e
-// cruza com a base de conhecimento pessoal (RAG da Kurisu) para devolver 4 blocos fixos:
-// espelho do dia, ferramentas da base (com citação real), pergunta de reflexão e ações
-// sugeridas. Uma análise por dia (o backend faz UPSERT); "Regerar" sobrescreve.
+// cruza com a base de conhecimento pessoal (RAG da Kurisu) para devolver 3 blocos fixos:
+// espelho do dia, ferramentas e curadoria da base (com citação real) e ações sugeridas.
+// Uma análise por dia (o backend faz UPSERT); "Regerar" sobrescreve.
 //
 // A chamada é longa (até ~60s — SC-007 da spec 061), por isso o estado "gerando" é bem
 // explícito (texto + botão desabilitado), diferente do resto do Violet que é quase tudo
 // instantâneo.
+//
+// O card pode ser fechado (recolhido) sem perder o conselho gerado — só esconde a UI para
+// não ocupar espaço na tela; o toggle fica no cabeçalho e é lembrado só nesta sessão do
+// componente (reabre expandido ao trocar de dia).
 
 import { useEffect, useState } from 'react'
 import { violetApi } from '../../../lib/api'
@@ -29,11 +33,14 @@ export function CounselSection({ pageId, date }: CounselSectionProps) {
   const [error, setError] = useState<string | null>(null)
   // Índices de ações já convertidas nesta sessão (evita clique duplo antes do reload do counsel)
   const [convertingIdx, setConvertingIdx] = useState<number | null>(null)
+  // Fechar/expandir o card sem descartar o conselho — só um toggle de UI (não persiste)
+  const [collapsed, setCollapsed] = useState(false)
 
   // (Re)carrega o conselho já existente sempre que o dia muda.
   useEffect(() => {
     setCounsel(null)
     setError(null)
+    setCollapsed(false)
     if (pageId == null) return
     setLoading(true)
     violetApi.getCounsel(date)
@@ -83,6 +90,17 @@ export function CounselSection({ pageId, date }: CounselSectionProps) {
       <div className="cs-head">
         <span className="cs-head-icon"><Icon name="sparkles" size={15} /></span>
         <span className="cs-head-title">Conselho da Violet</span>
+        {counsel && !generating && (
+          <button
+            type="button"
+            className="cs-collapse-btn"
+            onClick={() => setCollapsed(c => !c)}
+            aria-label={collapsed ? 'Expandir conselho' : 'Fechar conselho'}
+            title={collapsed ? 'Expandir' : 'Fechar'}
+          >
+            <Icon name="chevron-down" size={13} className={collapsed ? 'cs-collapse-icon-closed' : ''} />
+          </button>
+        )}
       </div>
 
       {!counsel && !generating && (
@@ -99,7 +117,11 @@ export function CounselSection({ pageId, date }: CounselSectionProps) {
         </div>
       )}
 
-      {counsel && !generating && (
+      {counsel && !generating && collapsed && (
+        <p className="cs-collapsed-hint" onClick={() => setCollapsed(false)}>{counsel.mirror}</p>
+      )}
+
+      {counsel && !generating && !collapsed && (
         <div className="cs-card">
           <div className="cs-block">
             <div className="cs-block-title">Espelho do dia</div>
@@ -166,9 +188,16 @@ export function CounselSection({ pageId, date }: CounselSectionProps) {
             </div>
           )}
 
-          <button type="button" className="cs-regen" onClick={handleGenerate}>
-            Regerar
-          </button>
+          <div className="cs-footer">
+            <button type="button" className="cs-regen" onClick={handleGenerate}>
+              Regerar
+            </button>
+            {(counsel.tokens_in != null || counsel.tokens_out != null) && (
+              <span className="cs-tokens">
+                {counsel.tokens_in ?? 0} tokens de entrada · {counsel.tokens_out ?? 0} de saída
+              </span>
+            )}
+          </div>
         </div>
       )}
 

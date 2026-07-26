@@ -1388,7 +1388,7 @@ Kurisu. "Regerar" faz `UPSERT` (`ON CONFLICT (page_id) DO UPDATE`), nunca acumul
 | `signals_json` | JSONB | NÃO | `'{}'` | Snapshot leve do que foi lido na coleta (auditoria/depuração). |
 | `used_web` | BOOLEAN | NÃO | `FALSE` | Atalho: `TRUE` se algum item do toolkit veio da busca web complementar. |
 | `model` | TEXT | SIM | — | Nome do modelo Gemini usado na síntese. |
-| `tokens_in` / `tokens_out` | INT | SIM | — | Uso de tokens da chamada de síntese, quando disponível. |
+| `tokens_in` / `tokens_out` | INT | SIM | — | Soma de `usage_metadata` de **todas** as chamadas Gemini do conselho (temas + busca web opcional + síntese), quando a SDK devolve a metadata. Exibido pequeno no rodapé do card. |
 | `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | 1ª geração — preservado nas regenerações. |
 | `updated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Atualizado a cada regeneração. |
 

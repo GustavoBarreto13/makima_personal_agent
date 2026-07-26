@@ -332,8 +332,31 @@ _SINTESE_SCHEMA = {
 }
 
 
-def _call_gemini_json(prompt: str, schema: dict) -> dict:
+def _novo_usage_acc() -> dict:
+    """Acumulador mutável de tokens (in/out) somados ao longo das várias chamadas
+    Gemini de um único `gerar_conselho` (temas + busca web opcional + síntese)."""
+    return {"in": 0, "out": 0}
+
+
+def _acumular_usage(usage_acc: Optional[dict], resp) -> None:
+    """Somar `resp.usage_metadata` no acumulador, se disponível — best-effort: SDKs/
+    modelos que não devolvem a metadata simplesmente não contribuem em nada (nunca
+    quebra a geração do conselho por causa de contagem de tokens)."""
+    if usage_acc is None:
+        return
+    usage = getattr(resp, "usage_metadata", None)
+    if not usage:
+        return
+    usage_acc["in"] += getattr(usage, "prompt_token_count", 0) or 0
+    usage_acc["out"] += getattr(usage, "candidates_token_count", 0) or 0
+
+
+def _call_gemini_json(prompt: str, schema: dict, usage_acc: Optional[dict] = None) -> dict:
     """Chamar o Gemini one-shot e devolver o JSON validado contra `schema`.
+
+    Args:
+        usage_acc: acumulador de tokens (ver `_novo_usage_acc`) — recebe o uso desta
+            chamada somado ao que já tinha, se informado.
 
     Raises:
         _CounselError: falha de rede/API ou resposta que não valida como JSON.
@@ -354,6 +377,7 @@ def _call_gemini_json(prompt: str, schema: dict) -> dict:
                 "response_schema": schema,
             },
         )
+        _acumular_usage(usage_acc, resp)
         return json.loads(resp.text)
     except _CounselError:
         raise
@@ -364,7 +388,7 @@ def _call_gemini_json(prompt: str, schema: dict) -> dict:
         ) from exc
 
 
-def _call_gemini_web(prompt: str) -> Optional[str]:
+def _call_gemini_web(prompt: str, usage_acc: Optional[dict] = None) -> Optional[str]:
     """Chamar o Gemini com busca web habilitada, SEM `response_schema` (research.md R2 —
     `google_search` e `response_schema` são mutuamente exclusivos na mesma chamada).
 
@@ -384,13 +408,14 @@ def _call_gemini_web(prompt: str) -> Optional[str]:
             contents=prompt,
             config={"tools": [{"google_search": {}}]},
         )
+        _acumular_usage(usage_acc, resp)
         return resp.text
     except Exception as exc:  # noqa: BLE001 — busca web é complementar, nunca crítica
         logger.warning("counsel: falha na busca web complementar: %s", exc)
         return None
 
 
-def _extrair_temas(dia: dict) -> dict:
+def _extrair_temas(dia: dict, usage_acc: Optional[dict] = None) -> dict:
     """Extrair de 2 a 4 consultas de busca + a carga emocional do dia (etapa A)."""
     texto_dia = _resumir_dia_para_prompt(dia)
     prompt = f"""Leia o resumo de um dia de diário pessoal abaixo e extraia:
@@ -405,7 +430,7 @@ DIA:
 \"\"\"{texto_dia}\"\"\"
 
 Responda SOMENTE no JSON estruturado pedido."""
-    return _call_gemini_json(prompt, _TEMAS_SCHEMA)
+    return _call_gemini_json(prompt, _TEMAS_SCHEMA, usage_acc)
 
 
 def _selecionar_queries(temas: dict) -> list:
@@ -476,7 +501,7 @@ def _precisa_busca_web(rag_trechos: list) -> bool:
     return len(rag_trechos) < 2
 
 
-def _buscar_web(temas: dict) -> Optional[str]:
+def _buscar_web(temas: dict, usage_acc: Optional[dict] = None) -> Optional[str]:
     """Buscar informação complementar na web quando a base não cobre (etapa C, US3)."""
     if not _WEB_ENABLED:
         return None
@@ -486,7 +511,7 @@ def _buscar_web(temas: dict) -> Optional[str]:
     prompt = f"""Busque informação confiável e prática (técnicas reconhecidas, modelos
 mentais, abordagens conhecidas) sobre: {queries}. Responda em português, de forma objetiva
 e resumida (até 6 frases), citando a fonte quando possível."""
-    return _call_gemini_web(prompt)
+    return _call_gemini_web(prompt, usage_acc)
 
 
 def _sintetizar(
@@ -496,8 +521,9 @@ def _sintetizar(
     kaguya: dict,
     rag_trechos: list,
     web_texto: Optional[str],
+    usage_acc: Optional[dict] = None,
 ) -> dict:
-    """Produzir os 4 blocos do conselho na voz da Violet (etapa D)."""
+    """Produzir os 3 blocos do conselho na voz da Violet (etapa D)."""
     texto_dia = _resumir_dia_para_prompt(dia)
 
     bloco_janela = "\n".join(
@@ -587,7 +613,7 @@ TRECHOS DA BASE DE CONHECIMENTO PESSOAL:
 
 Responda SOMENTE no JSON estruturado pedido."""
 
-    return _call_gemini_json(prompt, _SINTESE_SCHEMA)
+    return _call_gemini_json(prompt, _SINTESE_SCHEMA, usage_acc)
 
 
 def _normalize_toolkit(raw_items: list, rag_trechos: list) -> list:
@@ -653,6 +679,8 @@ def _serialize_counsel_row(row: dict, date: str) -> dict:
         "toolkit": toolkit,
         "actions": actions,
         "used_web": row["used_web"],
+        "tokens_in": row.get("tokens_in"),
+        "tokens_out": row.get("tokens_out"),
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
     }
@@ -687,8 +715,12 @@ def gerar_conselho(date: str, type_id: int = 1) -> dict:
     conselhos_anteriores = _conselhos_anteriores(date, limit=3)
     kaguya = _kaguya_do_dia()
 
+    # Acumula tokens (in/out) de TODAS as chamadas Gemini deste conselho (temas + busca
+    # web opcional + síntese) — exibido pequeno no rodapé do card no frontend.
+    usage_acc = _novo_usage_acc()
+
     try:
-        temas = _extrair_temas(dia)
+        temas = _extrair_temas(dia, usage_acc)
     except _CounselError as exc:
         return {"status": "error", "message": str(exc)}
 
@@ -696,10 +728,12 @@ def gerar_conselho(date: str, type_id: int = 1) -> dict:
 
     web_texto = None
     if _precisa_busca_web(rag_trechos):
-        web_texto = _buscar_web(temas)  # best-effort — None em qualquer falha
+        web_texto = _buscar_web(temas, usage_acc)  # best-effort — None em qualquer falha
 
     try:
-        sintese = _sintetizar(dia, janela_7d, conselhos_anteriores, kaguya, rag_trechos, web_texto)
+        sintese = _sintetizar(
+            dia, janela_7d, conselhos_anteriores, kaguya, rag_trechos, web_texto, usage_acc,
+        )
     except _CounselError as exc:
         return {"status": "error", "message": str(exc)}
 
@@ -752,8 +786,8 @@ def gerar_conselho(date: str, type_id: int = 1) -> dict:
             cur.execute("""
                 INSERT INTO journal_counsel
                     (page_id, mirror, toolkit_json, actions_json, signals_json,
-                     used_web, model)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                     used_web, model, tokens_in, tokens_out)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (page_id) DO UPDATE SET
                     mirror = EXCLUDED.mirror,
                     toolkit_json = EXCLUDED.toolkit_json,
@@ -761,12 +795,15 @@ def gerar_conselho(date: str, type_id: int = 1) -> dict:
                     signals_json = EXCLUDED.signals_json,
                     used_web = EXCLUDED.used_web,
                     model = EXCLUDED.model,
+                    tokens_in = EXCLUDED.tokens_in,
+                    tokens_out = EXCLUDED.tokens_out,
                     updated_at = NOW()
                 RETURNING id, page_id, mirror, toolkit_json, actions_json,
-                          used_web, model, created_at, updated_at
+                          used_web, model, tokens_in, tokens_out, created_at, updated_at
             """, (
                 page_id, mirror, json.dumps(toolkit), json.dumps(actions),
                 json.dumps(signals), used_web, _MODEL_NAME,
+                usage_acc["in"], usage_acc["out"],
             ))
             row = cur.fetchone()
         conn.commit()
@@ -792,7 +829,7 @@ def get_conselho(date: str, type_id: int = 1) -> Optional[dict]:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("""
                 SELECT c.id, c.page_id, c.mirror, c.toolkit_json, c.actions_json,
-                       c.used_web, c.model, c.created_at, c.updated_at
+                       c.used_web, c.model, c.tokens_in, c.tokens_out, c.created_at, c.updated_at
                 FROM journal_counsel c
                 JOIN journal_pages p ON p.id = c.page_id
                 WHERE p.type_id = %s AND p.date = %s
@@ -856,7 +893,7 @@ def marcar_acao_como_tarefa(page_id: int, action_index: int, task_id: int) -> di
                 UPDATE journal_counsel SET actions_json = %s, updated_at = NOW()
                 WHERE id = %s
                 RETURNING id, page_id, mirror, toolkit_json, actions_json,
-                          used_web, model, created_at, updated_at
+                          used_web, model, tokens_in, tokens_out, created_at, updated_at
             """, (json.dumps(actions), row["id"]))
             updated = cur.fetchone()
             date_str = row["date"]

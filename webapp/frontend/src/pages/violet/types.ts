@@ -328,6 +328,8 @@ export interface Counsel {
   toolkit: CounselToolkitItem[]  // Da sua base: ferramentas e curadoria
   actions: CounselAction[]  // Ações sugeridas
   used_web: boolean         // atalho: true se algum item do toolkit veio da web
+  tokens_in: number | null   // tokens de entrada somados de todas as chamadas Gemini
+  tokens_out: number | null  // tokens de saída somados de todas as chamadas Gemini
   created_at: string
   updated_at: string
 }

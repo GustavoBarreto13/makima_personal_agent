@@ -177,6 +177,39 @@ def test_normalize_toolkit_indice_nao_inteiro_vira_web():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# _acumular_usage — soma tokens de várias chamadas Gemini num único acumulador
+# ──────────────────────────────────────────────────────────────────────────────
+class _FakeUsage:
+    def __init__(self, prompt_token_count, candidates_token_count):
+        self.prompt_token_count = prompt_token_count
+        self.candidates_token_count = candidates_token_count
+
+
+class _FakeResp:
+    def __init__(self, usage_metadata=None):
+        self.usage_metadata = usage_metadata
+
+
+def test_acumular_usage_soma_varias_chamadas():
+    acc = C._novo_usage_acc()
+    C._acumular_usage(acc, _FakeResp(_FakeUsage(100, 20)))
+    C._acumular_usage(acc, _FakeResp(_FakeUsage(50, 10)))
+    assert acc == {"in": 150, "out": 30}
+
+
+def test_acumular_usage_ignora_resp_sem_metadata():
+    """Resposta sem usage_metadata (SDK antigo, mock em teste) não quebra nem some valores."""
+    acc = C._novo_usage_acc()
+    C._acumular_usage(acc, _FakeResp(None))
+    assert acc == {"in": 0, "out": 0}
+
+
+def test_acumular_usage_com_acc_none_nao_faz_nada():
+    """Quando não há acumulador (usage_acc=None), a função é um no-op silencioso."""
+    C._acumular_usage(None, _FakeResp(_FakeUsage(100, 20)))  # não deve lançar
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # _serialize_counsel_row — round-trip de serialização (leitura)
 # ──────────────────────────────────────────────────────────────────────────────
 def test_serialize_counsel_row_round_trip():
@@ -189,6 +222,8 @@ def test_serialize_counsel_row_round_trip():
         }],
         "actions_json": [{"texto": "Descansar", "motivo": "Você mencionou cansaço", "task_id": None}],
         "used_web": False,
+        "tokens_in": 1234,
+        "tokens_out": 321,
         "created_at": datetime(2026, 7, 26, 10, 0, 0),
         "updated_at": datetime(2026, 7, 26, 10, 0, 0),
     }
@@ -198,6 +233,8 @@ def test_serialize_counsel_row_round_trip():
     assert result["toolkit"][0]["origem"] == "base"
     assert "question" not in result
     assert result["actions"][0]["task_id"] is None
+    assert result["tokens_in"] == 1234
+    assert result["tokens_out"] == 321
     assert result["created_at"] == "2026-07-26T10:00:00"
 
 
@@ -217,3 +254,5 @@ def test_serialize_counsel_row_aceita_json_como_string():
     assert result["toolkit"] == []
     assert result["actions"] == []
     assert result["created_at"] is None
+    assert result["tokens_in"] is None
+    assert result["tokens_out"] is None
