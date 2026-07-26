@@ -32,6 +32,10 @@ const FILTER_OPS: Record<FilterField, { op: string; label: string }[]> = {
   project_id: [{ op: 'in', label: 'é' }, { op: 'not_in', label: 'não é' }],
   state: [{ op: 'eq', label: 'é' }],
   text: [{ op: 'contains', label: 'contém' }],
+  // gtd_status/context_id (spec 034): não expostos em FILTER_FIELDS (fora do escopo do
+  // Kanban view builder) — entradas aqui só satisfazem o tipo Record<FilterField, ...>.
+  gtd_status: [{ op: 'eq', label: 'é' }, { op: 'none', label: 'não classificada' }],
+  context_id: [{ op: 'eq', label: 'é' }, { op: 'none', label: 'sem contexto' }],
 }
 // todayISO() agora vem do import acima (lib/dateUtils) — usa partes locais
 // e nunca toISOString(). O alias local foi removido.
