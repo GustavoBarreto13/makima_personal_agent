@@ -53,6 +53,16 @@ _WEB_ENABLED = os.environ.get("VIOLET_COUNSEL_WEB_ENABLED", "true").strip().lowe
 # Teto de consultas à base por conselho (research.md R3 — orçamento de latência p/ SC-007).
 _MAX_RAG_QUERIES = 4
 
+# Abaixo deste número de trechos vindos SÓ da wiki, complementa com a busca combinada
+# (wiki + memória operacional) — a wiki nunca é descartada, só complementada quando
+# insuficiente (achado de produção: a memória operacional, por ter sempre doc_date
+# recente, expulsava a wiki do corte final se as duas competessem em pé de igualdade).
+_MIN_TRECHOS_WIKI = 2
+
+# Teto de consultas na etapa de complemento (menor que _MAX_RAG_QUERIES para conter o
+# orçamento de latência total no caso em que a wiki não cobre nada).
+_MAX_FALLBACK_QUERIES = 2
+
 
 # ─── Conexão ────────────────────────────────────────────────────────────────────
 
@@ -275,10 +285,16 @@ _SINTESE_SCHEMA = {
                     "titulo": {"type": "STRING"},
                     "porque": {"type": "STRING"},
                     "como": {"type": "STRING"},
-                    "fonte": {"type": "STRING"},
-                    "uri": {"type": "STRING"},
+                    # Índice (1-based) do trecho em "TRECHOS DA BASE" de onde a sugestão
+                    # vem, ou 0 se não vier de nenhum trecho listado. Um inteiro pequeno é
+                    # muito mais confiável para o modelo acertar do que copiar uma uri
+                    # inteira (research.md — causa raiz do "só aparece fonte externa").
+                    "trecho_index": {"type": "INTEGER"},
+                    # Só usado quando trecho_index=0: nome curto de onde veio a sugestão
+                    # externa (ex.: "busca na web"). Ignorado quando trecho_index>0.
+                    "fonte_web": {"type": "STRING"},
                 },
-                "required": ["titulo", "porque", "como", "fonte", "uri"],
+                "required": ["titulo", "porque", "como", "trecho_index", "fonte_web"],
             },
         },
         "question": {"type": "STRING"},
@@ -396,20 +412,45 @@ def _merge_dedup_trechos(varias_listas: list) -> list:
     return trechos
 
 
-def _consultar_rag(temas: dict) -> list:
-    """Consultar `buscar_na_base` para cada tema (≤4) e deduplicar por `uri` (etapa B)."""
-    from agents.kurisu.tools import buscar_na_base
-
-    listas_por_query = []
-    for q in _selecionar_queries(temas):
+def _consultar_varios(fn, queries: list) -> list:
+    """Chamar `fn(query)` (uma função no formato de `buscar_na_wiki`/`buscar_na_base`)
+    para cada query, coletando as listas de trechos com status "ok". Uma falha isolada
+    não derruba as outras consultas.
+    """
+    listas = []
+    for q in queries:
         try:
-            resultado = buscar_na_base(q)
-        except Exception as exc:  # noqa: BLE001 — uma consulta falhar não derruba as outras
-            logger.warning("counsel: falha ao consultar a base para '%s': %s", q, exc)
+            resultado = fn(q)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("counsel: falha ao consultar '%s' via %s: %s", q, fn.__name__, exc)
             continue
         if resultado.get("status") == "ok":
-            listas_por_query.append(resultado.get("trechos") or [])
-    return _merge_dedup_trechos(listas_por_query)
+            listas.append(resultado.get("trechos") or [])
+    return listas
+
+
+def _consultar_rag(temas: dict) -> list:
+    """Consultar a base priorizando a wiki curada, complementando com a memória
+    operacional só quando a wiki não for suficiente (etapa B).
+
+    A wiki é a curadoria que a feature existe para resurfaçar — a memória operacional
+    (bullets/tarefas antigos) nunca deve expulsá-la do resultado, então ela é buscada
+    primeiro e isoladamente (`buscar_na_wiki`, sem a competição de recência que
+    `buscar_na_base` aplicaria). Só entra a busca combinada se a wiki sozinha render
+    menos de `_MIN_TRECHOS_WIKI` trechos.
+    """
+    from agents.kurisu.tools import buscar_na_wiki, buscar_na_base
+
+    queries = _selecionar_queries(temas)
+
+    trechos_wiki = _merge_dedup_trechos(_consultar_varios(buscar_na_wiki, queries))
+    if len(trechos_wiki) >= _MIN_TRECHOS_WIKI:
+        return trechos_wiki
+
+    trechos_combinados = _merge_dedup_trechos(
+        _consultar_varios(buscar_na_base, queries[:_MAX_FALLBACK_QUERIES])
+    )
+    return _merge_dedup_trechos([trechos_wiki, trechos_combinados])
 
 
 def _precisa_busca_web(rag_trechos: list) -> bool:
@@ -486,11 +527,13 @@ que salvou). Gere um conselho com 4 blocos:
 
 1. mirror: um resumo curto e empático (3 a 5 frases) do que você leu no dia — temas, humor,
    o que pesou.
-2. toolkit: de 1 a 3 sugestões de ferramentas/técnicas/materiais. REGRA DE OURO: só inclua
-   um item com fonte/uri de um trecho da lista "TRECHOS DA BASE" abaixo se ele realmente
-   vier de lá — copie fonte e uri EXATAMENTE como aparecem. Se usar a informação
-   complementar da web, deixe fonte como um nome curto da fonte e uri como string vazia
-   (""). NUNCA invente uma fonte que não esteja nos trechos fornecidos.
+2. toolkit: de 1 a 3 sugestões de ferramentas/técnicas/materiais. Cada item tem
+   trecho_index: o NÚMERO (o "[N]") do trecho da lista "TRECHOS DA BASE" abaixo de onde
+   a sugestão realmente vem — só se ela vier genuinamente de lá. Se a sugestão não vier de
+   nenhum trecho listado (ex.: veio da informação complementar da web, ou é algo que você
+   sabe mas não está nos trechos), use trecho_index = 0 e preencha fonte_web com um nome
+   curto da origem (ex.: "busca na web"). NUNCA use um trecho_index só porque parece
+   relacionado — só se a sugestão vier mesmo do conteúdo daquele trecho específico.
 3. question: 1 a 2 perguntas socráticas para reflexão, baseadas no que foi escrito.
 4. actions: de 1 a 3 próximos passos concretos e pequenos.
 
@@ -515,26 +558,48 @@ Responda SOMENTE no JSON estruturado pedido."""
     return _call_gemini_json(prompt, _SINTESE_SCHEMA)
 
 
-def _normalize_toolkit(raw_items: list, rag_uris: set) -> list:
-    """Decidir `origem` de cada item do toolkit no SERVIDOR, por checagem de `uri`.
+def _normalize_toolkit(raw_items: list, rag_trechos: list) -> list:
+    """Decidir `origem`/`fonte`/`uri` de cada item do toolkit no SERVIDOR, por índice.
 
-    Nunca confia na auto-declaração do modelo (mesmo espírito de `_normalize_slug` no
-    Tutor de Idiomas): um item só é "base" se sua `uri` bater com um trecho realmente
-    recuperado nesta chamada. Qualquer outra coisa vira "web" — mais seguro para a
-    honestidade (FR-011/FR-012) do que confiar no rótulo que o modelo eventualmente desse.
+    Nunca confia em texto livre que o modelo devolvesse para fonte/uri (mesmo espírito de
+    `_normalize_slug` no Tutor de Idiomas) — só um inteiro pequeno (`trecho_index`), que é
+    muito mais fácil do modelo acertar do que copiar uma uri inteira. `fonte`/`uri` do item
+    "base" vêm sempre dos nossos próprios `rag_trechos`, nunca do texto do modelo.
+
+    Args:
+        raw_items: Itens do toolkit como o Gemini devolveu (`{titulo, porque, como,
+            trecho_index, fonte_web}`).
+        rag_trechos: A lista de trechos realmente recuperada (mesma ordem/numeração
+            `[1..N]` usada no prompt de `_sintetizar`).
+
+    Returns:
+        Lista de `{titulo, porque, como, fonte, uri, origem}` prontos para persistir.
     """
     normalizado = []
     for item in raw_items:
-        uri = (item.get("uri") or "").strip()
-        origem = "base" if uri and uri in rag_uris else "web"
-        normalizado.append({
-            "titulo": item.get("titulo", ""),
-            "porque": item.get("porque", ""),
-            "como": item.get("como", ""),
-            "fonte": item.get("fonte", ""),
-            "uri": uri,
-            "origem": origem,
-        })
+        idx = item.get("trecho_index")
+        trecho = None
+        if isinstance(idx, int) and 1 <= idx <= len(rag_trechos):
+            trecho = rag_trechos[idx - 1]
+
+        if trecho:
+            normalizado.append({
+                "titulo": item.get("titulo", ""),
+                "porque": item.get("porque", ""),
+                "como": item.get("como", ""),
+                "fonte": trecho.get("fonte", ""),
+                "uri": trecho.get("uri", ""),
+                "origem": "base",
+            })
+        else:
+            normalizado.append({
+                "titulo": item.get("titulo", ""),
+                "porque": item.get("porque", ""),
+                "como": item.get("como", ""),
+                "fonte": item.get("fonte_web", "") or "busca na web",
+                "uri": "",
+                "origem": "web",
+            })
     return normalizado
 
 
@@ -602,8 +667,7 @@ def gerar_conselho(date: str, type_id: int = 1) -> dict:
     except _CounselError as exc:
         return {"status": "error", "message": str(exc)}
 
-    rag_uris = {t["uri"] for t in rag_trechos if t.get("uri")}
-    toolkit = _normalize_toolkit(sintese.get("toolkit") or [], rag_uris)
+    toolkit = _normalize_toolkit(sintese.get("toolkit") or [], rag_trechos)
     used_web = any(item["origem"] == "web" for item in toolkit)
 
     # Honestidade determinística (FR-009): quando a base não retornou NADA, a frase

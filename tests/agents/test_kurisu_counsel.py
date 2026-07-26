@@ -88,6 +88,25 @@ def test_merge_dedup_trechos_sem_uri_nao_deduplica():
     assert len(trechos) == 2
 
 
+def test_consultar_varios_ignora_falhas_isoladas():
+    """Uma query que lança exceção não impede as demais de contribuir trechos."""
+    def fn(q):
+        if q == "quebra":
+            raise RuntimeError("boom")
+        return {"status": "ok", "trechos": [{"uri": f"gs://{q}"}]}
+
+    listas = C._consultar_varios(fn, ["ok1", "quebra", "ok2"])
+    assert len(listas) == 2
+
+
+def test_consultar_varios_ignora_status_nao_ok():
+    def fn(q):
+        return {"status": "vazio", "trechos": []}
+
+    listas = C._consultar_varios(fn, ["q1", "q2"])
+    assert listas == []
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # _precisa_busca_web — gate da User Story 3 (research.md R3)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -104,28 +123,41 @@ def test_nao_precisa_busca_web_com_dois_trechos_ou_mais():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# _normalize_toolkit — origem decidida no servidor, nunca confiando no modelo (FR-011/012)
+# _normalize_toolkit — origem/fonte/uri decididas no servidor por índice, nunca
+# confiando em texto livre do modelo (FR-011/012)
 # ──────────────────────────────────────────────────────────────────────────────
-def test_normalize_toolkit_marca_base_quando_uri_bate():
-    rag_uris = {"gs://b/ansiedade.md"}
-    raw = [{"titulo": "T", "porque": "P", "como": "C", "fonte": "ansiedade.md", "uri": "gs://b/ansiedade.md"}]
-    resultado = C._normalize_toolkit(raw, rag_uris)
+def test_normalize_toolkit_marca_base_quando_indice_valido():
+    rag_trechos = [{"fonte": "ansiedade.md", "uri": "gs://b/ansiedade.md"}]
+    raw = [{"titulo": "T", "porque": "P", "como": "C", "trecho_index": 1, "fonte_web": ""}]
+    resultado = C._normalize_toolkit(raw, rag_trechos)
     assert resultado[0]["origem"] == "base"
+    assert resultado[0]["fonte"] == "ansiedade.md"
+    assert resultado[0]["uri"] == "gs://b/ansiedade.md"
 
 
-def test_normalize_toolkit_marca_web_quando_uri_nao_bate():
-    rag_uris = {"gs://b/ansiedade.md"}
-    raw = [{"titulo": "T", "porque": "P", "como": "C", "fonte": "algum blog", "uri": ""}]
-    resultado = C._normalize_toolkit(raw, rag_uris)
+def test_normalize_toolkit_marca_web_quando_indice_zero():
+    rag_trechos = [{"fonte": "ansiedade.md", "uri": "gs://b/ansiedade.md"}]
+    raw = [{"titulo": "T", "porque": "P", "como": "C", "trecho_index": 0, "fonte_web": "algum blog"}]
+    resultado = C._normalize_toolkit(raw, rag_trechos)
+    assert resultado[0]["origem"] == "web"
+    assert resultado[0]["fonte"] == "algum blog"
+    assert resultado[0]["uri"] == ""
+
+
+def test_normalize_toolkit_ignora_indice_fora_do_intervalo():
+    """Se o modelo "inventar" um índice fora do range (ex.: 1 trecho na lista mas pediu
+    o [5]), o item vira "web" — nunca confiamos num índice que não corresponda a um
+    trecho real."""
+    rag_trechos = [{"fonte": "real.md", "uri": "gs://b/real.md"}]
+    raw = [{"titulo": "T", "porque": "P", "como": "C", "trecho_index": 5, "fonte_web": "inventado"}]
+    resultado = C._normalize_toolkit(raw, rag_trechos)
     assert resultado[0]["origem"] == "web"
 
 
-def test_normalize_toolkit_ignora_alegacao_do_modelo_se_uri_nao_e_real():
-    """Mesmo que o modelo tenha inventado uma uri, se ela não está no conjunto
-    realmente recuperado, o item vira "web" — nunca confiamos na palavra do modelo."""
-    rag_uris = {"gs://b/real.md"}
-    raw = [{"titulo": "T", "porque": "P", "como": "C", "fonte": "inventado.md", "uri": "gs://b/nao-existe.md"}]
-    resultado = C._normalize_toolkit(raw, rag_uris)
+def test_normalize_toolkit_indice_nao_inteiro_vira_web():
+    rag_trechos = [{"fonte": "real.md", "uri": "gs://b/real.md"}]
+    raw = [{"titulo": "T", "porque": "P", "como": "C", "trecho_index": "1", "fonte_web": ""}]
+    resultado = C._normalize_toolkit(raw, rag_trechos)
     assert resultado[0]["origem"] == "web"
 
 

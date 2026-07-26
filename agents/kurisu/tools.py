@@ -244,6 +244,66 @@ def _consultar_corpus(corpus_name: str, query: str) -> list:
     return trechos
 
 
+def buscar_na_wiki(query: str) -> dict:
+    """Busca trechos SOMENTE na wiki curada (027) — sem mesclar com a memória operacional.
+
+    Existe porque `buscar_na_base` mescla wiki + memória operacional (028) e a
+    reordenação por recência (`aplicar_recencia`) favorece sistematicamente a memória
+    operacional em caso de empate de score: ela sempre tem `doc_date` (recente), enquanto
+    páginas da wiki têm `doc_date=None`. Na prática isso expulsa a wiki do corte final do
+    top-N mesmo quando ela tem material claramente relevante (achado da spec 061 — o
+    "Conselho do Dia" da Violet só citava bullets antigos do próprio usuário, nunca a
+    curadoria real da wiki). Usado quando o chamador precisa garantir que o resultado vem
+    da curadoria pessoal do usuário, não de uma reflexão do próprio diário.
+
+    Mesmo padrão retrieve-wide → rerank-narrow de `buscar_na_base`, mas com 1 corpus só —
+    não há disputa de recência entre fontes de natureza diferente.
+
+    Args:
+        query: A pergunta do usuário em linguagem natural (PT/EN/JA).
+
+    Returns:
+        Mesmo formato de `buscar_na_base`: `{status, trechos, mensagem}`.
+    """
+    corpus_wiki = os.environ.get("VERTEX_RAG_CORPUS", "").strip()
+    if not corpus_wiki:
+        return {
+            "status": "indisponivel",
+            "trechos": [],
+            "mensagem": "A base de conhecimento (wiki) ainda não está configurada neste ambiente.",
+        }
+
+    try:
+        _init_vertexai()
+    except Exception as exc:
+        logger.error("Falha ao inicializar o Vertex AI: %s", exc, exc_info=True)
+        return {
+            "status": "indisponivel",
+            "trechos": [],
+            "mensagem": "Falha temporária ao acessar a base de conhecimento.",
+        }
+
+    try:
+        trechos = _consultar_corpus(corpus_wiki, query)
+    except Exception as exc:
+        logger.error("Erro ao consultar o corpus da wiki: %s", exc, exc_info=True)
+        return {
+            "status": "indisponivel",
+            "trechos": [],
+            "mensagem": "Falha temporária ao acessar a base de conhecimento.",
+        }
+
+    if not trechos:
+        return {
+            "status": "vazio",
+            "trechos": [],
+            "mensagem": "Nenhum trecho com relevância suficiente encontrado na base.",
+        }
+
+    ordenados = aplicar_recencia(trechos)[:_TOP_N_NARROW]
+    return {"status": "ok", "trechos": ordenados, "mensagem": None}
+
+
 def buscar_na_base(query: str) -> dict:
     """Busca trechos na wiki (027) E na memória operacional (028), mescla e reordena.
 

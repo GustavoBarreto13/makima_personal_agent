@@ -117,3 +117,46 @@ validada contra o schema esperado.
 **Rationale**: mesmo padrão de `agents/kurisu/tutor.py::analisar_escrita` (FR-010 da spec 031)
 — replicado aqui para FR-015 desta spec. Evita qualquer estado parcial/corrompido em caso de
 falha de rede, quota ou JSON malformado.
+
+## R9 — Correção pós-produção: wiki era expulsa pela memória operacional, e citação por
+URI falhava (achado em produção, 2026-07-27)
+
+**Sintoma reportado**: em todo teste real do usuário, o bloco "Da sua base" só mostrava itens
+marcados como vindos da web — nunca da wiki curada, mesmo com material claramente relevante
+disponível (confirmado consultando a wiki isoladamente).
+
+**Causa raiz #1 — recência favorece sistematicamente a memória operacional.**
+`buscar_na_base` (usada originalmente por `_consultar_rag`) mescla a wiki (027) com a memória
+operacional (028, principalmente bullets antigos do diário) e reordena por
+`recency.aplicar_recencia`: em empate de score, o conteúdo mais recente vence. Páginas da wiki
+têm `doc_date = None` (`date.min` no desempate); bullets antigos sempre têm uma data real
+recente. Na prática, isso empurra a wiki para fora do corte de `_TOP_N_NARROW` (5) **dentro**
+de `buscar_na_base`, antes mesmo do resultado chegar em `counsel.py` — nenhuma reordenação
+posterior recupera o que já foi cortado.
+
+**Decisão**: nova função `buscar_na_wiki(query)` em `agents/kurisu/tools.py` — consulta **só**
+o corpus da wiki (sem merge, sem a disputa de recência entre fontes de natureza diferente).
+`_consultar_rag` passa a chamá-la primeiro; só recorre à `buscar_na_base` (wiki + operacional)
+como complemento se a wiki sozinha render menos de `_MIN_TRECHOS_WIKI = 2` trechos — e mesmo
+assim sem descartar o que a wiki já trouxe. Confirmado com o usuário: a wiki curada deve ser
+priorizada, não apenas empatada com a memória operacional.
+
+**Causa raiz #2 — copiar uma uri inteira é frágil para o modelo.** Mesmo quando a wiki
+sobrevivia ao corte, o Gemini às vezes falhava em ecoar a `uri` do trecho exatamente (medido
+em teste: ~33% de falha em 6 tentativas) — e a checagem de honestidade, corretamente,
+reclassificava esses itens como "web" por não conseguir confirmar a fonte.
+
+**Decisão**: o schema de síntese não pede mais `fonte`/`uri` como texto livre — pede
+`trecho_index` (inteiro, o número `[N]` já usado na numeração do prompt) e, só quando
+`trecho_index = 0` (não veio de nenhum trecho listado), um `fonte_web` curto. `fonte`/`uri` do
+item final vêm **sempre** de `rag_trechos[trecho_index - 1]` no servidor — nunca do texto do
+modelo. Um inteiro pequeno é muito mais fácil do modelo acertar do que uma uri de 70+
+caracteres; testado de novo após a mudança: 8/8 itens corretamente atribuídos à base, contra
+4/6 antes.
+
+**Alternatives considered**: aumentar `_TOP_N_NARROW` ou o limiar de relevância em
+`recency.py` para dar mais espaço à wiki — rejeitado por afetar globalmente `buscar_na_base`
+(usada também pela Kurisu no Telegram e pela spec 028), quando o problema é específico de como
+o Conselho do Dia usa o resultado. Fuzzy-matching de uri (similaridade de string em vez de
+igualdade exata) — rejeitado: mais uma fonte de falso positivo, contra o espírito de honestidade
+da feature; o índice numérico resolve a causa raiz sem introduzir ambiguidade nova.

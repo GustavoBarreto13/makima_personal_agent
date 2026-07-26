@@ -129,22 +129,34 @@ campo `tutor` em `GET /page`). Isso também evita colidir com o plano pendente d
    `list_habits` da Kaguya. Dia sem nenhum sinal → `{"status": "error"}` sem gerar nada.
 2. **Temas** (`_extrair_temas`): Gemini one-shot (`response_schema`) extrai de 2 a 4
    consultas de busca + a carga emocional do dia — evita jogar o resumo cru no RAG.
-3. **RAG** (`_consultar_rag`): chama `buscar_na_base` uma vez por tema (teto de
-   `_MAX_RAG_QUERIES = 4` — orçamento de latência para SC-007 ≤60s), deduplicado por `uri`
-   via as duas funções **puras** `_selecionar_queries`/`_merge_dedup_trechos` (gate de
-   `tests/agents/test_kurisu_counsel.py`, sem precisar mockar o Vertex).
+3. **RAG** (`_consultar_rag`): prioriza a **wiki curada** — `buscar_na_wiki` (só o corpus
+   027, sem a memória operacional) uma vez por tema (teto `_MAX_RAG_QUERIES = 4`). Só
+   recorre à `buscar_na_base` (wiki + memória operacional, complementar) se a wiki sozinha
+   render menos de `_MIN_TRECHOS_WIKI = 2` trechos, com um teto menor
+   (`_MAX_FALLBACK_QUERIES = 2`) para conter a latência. Deduplicado por `uri` via as
+   funções **puras** `_selecionar_queries`/`_consultar_varios`/`_merge_dedup_trechos`
+   (gate de `tests/agents/test_kurisu_counsel.py`, sem precisar mockar o Vertex).
+   > **Por que priorizar a wiki** (achado em produção, ver `research.md` R9): a mescla de
+   > `buscar_na_base` reordena por recência, e páginas da wiki (`doc_date=None`) sempre
+   > perdem esse desempate para bullets antigos do diário (que têm `doc_date` recente) —
+   > na prática a wiki nunca sobrevivia ao corte de `_TOP_N_NARROW`. `buscar_na_wiki`
+   > (novo em `tools.py`) existe para não competir com isso.
 4. **Web complementar** (US3): `_precisa_busca_web` (puro: `< 2 trechos relevantes`)
    decide se dispara `_buscar_web` — chamada Gemini **separada**, com a tool
    `google_search` habilitada e **sem** `response_schema` (as duas coisas são mutuamente
    exclusivas na mesma chamada — restrição real da API, não escolha de design).
 5. **Síntese** (`_sintetizar`): Gemini one-shot (`response_schema`) produz os 4 blocos na
-   voz da Violet, instruído a nunca inventar fonte/uri fora dos trechos fornecidos.
-6. **Honestidade server-side** (`_normalize_toolkit`): a `origem` ("base"/"web") de cada
-   item do toolkit é decidida **no servidor**, comparando a `uri` contra o conjunto
-   realmente recuperado — nunca confiamos na auto-declaração do modelo (mesmo espírito do
-   `_normalize_slug` do Tutor). Quando a base não retornou nenhum trecho, uma frase
-   honesta é prefixada ao `mirror` deterministicamente (FR-009), independente do que o
-   modelo tenha escrito.
+   voz da Violet. Cada item do toolkit carrega `trecho_index` (o número `[N]` do trecho
+   na lista numerada do prompt) em vez de copiar `fonte`/`uri` como texto livre — copiar
+   uma uri inteira é frágil para o modelo (medido: ~33% de falha); um índice pequeno é
+   muito mais confiável (ver `research.md` R9).
+6. **Honestidade server-side** (`_normalize_toolkit`): `fonte`/`uri`/`origem` de cada item
+   do toolkit vêm **sempre** de `rag_trechos[trecho_index - 1]` no servidor — nunca do
+   texto do modelo. `trecho_index` inválido, fora do intervalo, ou `0` (o modelo sinaliza
+   "não veio de nenhum trecho listado") vira `origem: "web"` (mesmo espírito do
+   `_normalize_slug` do Tutor: nunca confiar na auto-declaração do modelo). Quando a base
+   não retornou nenhum trecho, uma frase honesta é prefixada ao `mirror`
+   deterministicamente (FR-009), independente do que o modelo tenha escrito.
 7. **Persistência**: `INSERT ... ON CONFLICT (page_id) DO UPDATE` — uma linha por dia;
    regenerar preserva `task_id` de ações já convertidas (casamento por texto).
 
@@ -209,6 +221,12 @@ Implementa o padrão **retrieve-wide → rerank-narrow** (FR-016).
 
 Retorna `dict` `{status, trechos, mensagem}` — ver [contrato](../../specs/027-kurisu-knowledge-base/contracts/buscar_na_base.md).
 Cada trecho tem `texto`, `fonte`, `uri`, `score`.
+
+> **`buscar_na_wiki(query)`** (spec 061): variante que consulta **só** o corpus da wiki
+> (sem mesclar com a memória operacional). Mesmo formato de retorno. Existe porque a
+> mescla de `buscar_na_base` reordena por recência e a memória operacional (sempre com
+> `doc_date` recente) expulsa sistematicamente a wiki (`doc_date=None`) do corte — ver
+> "Conselho do Dia" acima e `specs/061-violet-conselho-diario/research.md` R9.
 
 > **Citação (`fonte`):** em Serverless mode o `source_display_name` vem **vazio** no retorno
 > do retrieval. A tool deriva a `fonte` do `source_uri` (basename do arquivo, ex.: `ansiedade.md`)
