@@ -40,6 +40,7 @@ from coordinator.agent import create_makima  # noqa: E402 — import após load_
 from agents.frieren.tools import get_book_by_id, update_book_by_id, delete_book  # noqa: E402
 from agents.nami.tools_accounts import create_account, list_accounts  # noqa: E402
 from agents.nami.tools_credit_cards import register_credit_card  # noqa: E402
+from agents.kaguya.tools_tasks import list_inbox_queue, process_inbox_item  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -215,6 +216,84 @@ async def _edit_menu_message(query, texto: str, keyboard: InlineKeyboardMarkup) 
         await query.edit_message_text(texto, reply_markup=keyboard, parse_mode="HTML")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Processamento do inbox (GTD) — spec 034 (US5)
+# ─────────────────────────────────────────────────────────────────────────────
+# Mesmo padrão de wizard dos fluxos /criar_conta e /criar_cartao: estado em
+# _pending_action[chat_id], botões inline com callback_data prefixado ("ibx_"),
+# dispatch central em handle_callback. A decisão "híbrida" da clarificação da spec
+# (botões OU texto livre) é resolvida aqui: os botões chamam process_inbox_item
+# direto; o texto livre é interpretado por _guess_inbox_decision contra o MESMO
+# vocabulário fixo de 6 decisões (research.md R9) — nenhuma regra de negócio nova,
+# só o mapeamento de linguagem natural para a chamada de process_inbox_item.
+def _ibx_keyboard(task_id: int) -> InlineKeyboardMarkup:
+    """Monta o teclado com as 6 decisões do processamento guiado do inbox."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⚡ Próxima ação", callback_data=f"ibx_next_action:{task_id}"),
+         InlineKeyboardButton("⏳ Aguardando",   callback_data=f"ibx_waiting:{task_id}")],
+        [InlineKeyboardButton("📥 Algum dia",    callback_data=f"ibx_someday:{task_id}"),
+         InlineKeyboardButton("📅 Agendar",      callback_data=f"ibx_schedule:{task_id}")],
+        [InlineKeyboardButton("✅ Feito agora",  callback_data=f"ibx_done:{task_id}"),
+         InlineKeyboardButton("🗑 Lixo",         callback_data=f"ibx_trash:{task_id}")],
+    ])
+
+
+def _guess_inbox_decision(text: str) -> str | None:
+    """Interpreta uma resposta em texto livre contra o vocabulário fixo de 6 decisões.
+
+    Usado só quando o usuário responde por texto em vez de clicar num botão
+    (decisão híbrida da clarificação da spec 034). Sem IA — palavras-chave simples,
+    suficiente para o vocabulário fechado de 6 opções.
+    """
+    t = text.strip().lower()
+    if any(k in t for k in ("aguard", "espera", "delega")):
+        return "waiting"
+    if any(k in t for k in ("algum dia", "algum-dia", "talvez", "incubar")):
+        return "someday"
+    if any(k in t for k in ("agend", "marcar", "data")):
+        return "schedule"
+    if any(k in t for k in ("feito", "pronto", "já fiz", "ja fiz", "conclu", "2 min")):
+        return "done"
+    if any(k in t for k in ("lixo", "descart", "apag", "delet", "exclu")):
+        return "trash"
+    if any(k in t for k in ("próxima ação", "proxima acao", "next action", "fazer")):
+        return "next_action"
+    return None
+
+
+async def _send_next_inbox_item(chat_id: str, send) -> None:
+    """Envia o próximo item da fila (ou encerra o wizard se ela acabou).
+
+    Args:
+        chat_id: Chat do Telegram (chave de ``_pending_action``).
+        send: ``update.message.reply_text`` (assíncrono) — injetado para funcionar
+            tanto a partir de uma mensagem quanto de um callback de botão.
+    """
+    pending = _pending_action.get(chat_id)
+    if not pending or pending.get("action") != "inbox_process":
+        return
+    queue = pending["queue"]
+    idx = pending["index"]
+    if idx >= len(queue):
+        _pending_action.pop(chat_id, None)
+        await send(f"Kaguya: Fila esvaziada — {len(queue)} item(ns) processado(s). ...Nem precisou de esforço.")
+        return
+    item = queue[idx]
+    texto = f"📋 <b>{item['title']}</b>\n\n{idx + 1} de {len(queue)}"
+    await send(texto, parse_mode="HTML", reply_markup=_ibx_keyboard(item["id"]))
+
+
+async def handle_processar_inbox(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Comando ``/processar_inbox`` — inicia o processamento guiado do Inbox (spec 034)."""
+    chat_id = str(update.message.chat_id)
+    queue = list_inbox_queue()["items"]
+    if not queue:
+        await update.message.reply_text("Kaguya: O Inbox não tem itens pendentes de processamento. ...Nada a fazer aqui.")
+        return
+    _pending_action[chat_id] = {"action": "inbox_process", "queue": queue, "index": 0}
+    await _send_next_inbox_item(chat_id, update.message.reply_text)
+
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handler para todos os cliques nos botões inline do menu de livros (fm_*).
@@ -226,6 +305,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # Responde ao Telegram imediatamente para remover o "spinner" no botão
     await query.answer()
+
+    # ── ibx_<decision>:<task_id> — processamento guiado do inbox (spec 034) ──
+    if data_str.startswith("ibx_"):
+        body = data_str[len("ibx_"):]
+        decision, _, task_id_str = body.rpartition(":")
+        task_id = int(task_id_str)
+        pending = _pending_action.get(chat_id)
+
+        if decision == "schedule":
+            # Telegram não tem seletor de data nativo — pede a data em texto livre.
+            if pending and pending.get("action") == "inbox_process":
+                pending["awaiting_schedule_for"] = task_id
+            await query.edit_message_reply_markup(reply_markup=None)
+            await query.message.reply_text("📅 Para quando? <i>(AAAA-MM-DD)</i>", parse_mode="HTML")
+            return
+
+        result = process_inbox_item(task_id, decision)
+        if result.get("status") == "error":
+            await query.message.reply_text(f"❌ {result.get('message', 'Houve um problema.')}")
+            return
+        if pending and pending.get("action") == "inbox_process":
+            pending["index"] += 1
+            await _send_next_inbox_item(chat_id, query.message.reply_text)
+        return
 
     # ── fm_rate:<id> — exibe teclado de estrelas (1 a 5) ─────────────────────
     if data_str.startswith("fm_rate:"):
@@ -652,6 +755,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text("📝 Nota salva.")
             return
 
+        # ── Processamento do inbox (GTD) — spec 034 (decisão híbrida: texto livre) ──
+        if action == "inbox_process":
+            queue = pending["queue"]
+            idx = pending["index"]
+            if idx >= len(queue):
+                _pending_action.pop(chat_id, None)
+                return
+            task_id = queue[idx]["id"]
+
+            # Já pediu a data (veio de "agendar", botão ou texto) — este texto É a data.
+            if pending.get("awaiting_schedule_for") == task_id:
+                try:
+                    date.fromisoformat(text.strip())
+                except ValueError:
+                    await update.message.reply_text("❌ Data inválida. Use o formato AAAA-MM-DD.")
+                    return
+                result = process_inbox_item(task_id, "schedule", due_date=text.strip())
+                pending.pop("awaiting_schedule_for", None)
+            else:
+                decision = _guess_inbox_decision(text)
+                if decision is None:
+                    await update.message.reply_text(
+                        "Kaguya: Não entendi a decisão. ...Tente \"aguardando\", \"algum dia\", "
+                        "\"agendar\", \"feito\" ou \"lixo\" — ou use os botões."
+                    )
+                    return
+                if decision == "schedule":
+                    pending["awaiting_schedule_for"] = task_id
+                    await update.message.reply_text("📅 Para quando? <i>(AAAA-MM-DD)</i>", parse_mode="HTML")
+                    return
+                result = process_inbox_item(task_id, decision)
+
+            if result.get("status") == "error":
+                await update.message.reply_text(f"❌ {result.get('message', 'Houve um problema.')}")
+                return
+            pending["index"] += 1
+            await _send_next_inbox_item(chat_id, update.message.reply_text)
+            return
+
         # ── Wizard /criar-conta ───────────────────────────────────────────────
         if action == "criar_conta":
             step = pending["step"]
@@ -1056,6 +1198,7 @@ def main() -> None:
     app.add_handler(CommandHandler("limpar", handle_limpar))
     app.add_handler(CommandHandler("criar_conta", handle_criar_conta))
     app.add_handler(CommandHandler("criar_cartao", handle_criar_cartao))
+    app.add_handler(CommandHandler("processar_inbox", handle_processar_inbox))
     # CallbackQueryHandler ANTES do MessageHandler para que cliques em botões
     # não sejam engolidos pelo handler de texto
     app.add_handler(CallbackQueryHandler(handle_callback))

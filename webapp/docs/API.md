@@ -316,6 +316,41 @@ estão nos contratos das specs: `specs/011-tasks-mvp/contracts/`,
 | `POST` | `/api/tasks/{task_id}/recurrence` | Anexa/substitui a regra de recorrência (exige `due_date`). |
 | `DELETE` | `/api/tasks/{task_id}/recurrence` | Remove a recorrência (a tarefa volta a ser simples). |
 
+> **spec 034**: `PATCH /api/tasks/{task_id}` ganhou os campos `gtd_status`
+> (`next_action`\|`waiting`\|`someday`\|`null`), `waiting_note` e `context_id` — ver
+> "Processamento do inbox" e "Contextos" abaixo.
+
+### Processamento do inbox (GTD clarify) — spec 034
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/tasks/inbox/queue` | Itens do Inbox ainda não processados (`{items, total}`), ordenados por captura. |
+| `POST` | `/api/tasks/inbox/{task_id}/process` | Aplica uma decisão (`next_action`\|`waiting`\|`someday`\|`schedule`\|`done`\|`trash`). |
+
+### Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034
+
+Bloco fixo no topo da sidebar (FR-006) — não editável pelo usuário, sem linha em banco.
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/tasks/views/counts` | Contadores das 5 views, para os badges da sidebar. |
+| `GET` | `/api/tasks/views/all` | Todas as tarefas abertas, independente de lista ou data. |
+| `GET` | `/api/tasks/views/today` | Vencem hoje + atrasadas (mesma regra de "Hoje + Vencidas"). |
+| `GET` | `/api/tasks/views/tomorrow` | Vencem amanhã. |
+| `GET` | `/api/tasks/views/next7` | Vencem nos próximos 7 dias corridos (inclui hoje). |
+| `GET` | `/api/tasks/views/inbox` | Tarefas-pai abertas do Inbox. |
+
+### Contextos de execução — spec 034
+
+Campo dedicado (não tag) — no máximo um contexto por tarefa.
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/tasks/contexts` | Lista os contextos (ordem da sidebar). |
+| `POST` | `/api/tasks/contexts` | Cria um contexto (400 se já existir com o mesmo nome, ignorando caixa). |
+| `PATCH` | `/api/tasks/contexts/{context_id}` | Renomeia/reordena/reicona um contexto. |
+| `DELETE` | `/api/tasks/contexts/{context_id}` | Exclui um contexto (as tarefas ficam sem contexto, nunca são apagadas). |
+
 ### Tags
 
 | Método | Rota | O que faz |

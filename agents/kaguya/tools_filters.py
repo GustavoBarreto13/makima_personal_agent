@@ -46,6 +46,9 @@ _FIELD_OPS = {
     "tag": {"has", "not_has"},
     "state": {"eq"},
     "text": {"contains"},
+    # spec 034: status GTD real (não mais tag heurística) e contexto de execução.
+    "gtd_status": {"eq", "none"},
+    "context_id": {"eq", "none"},
 }
 
 
@@ -64,9 +67,10 @@ def _today() -> date:
 def _resolve_relative_date(value) -> Optional[date]:
     """Traduz um valor de data da DSL (ISO, atalho relativo ou nulo) numa ``date``.
 
-    Aceita três formas:
+    Aceita quatro formas:
         - ``"AAAA-MM-DD"`` → a própria data;
         - ``"today"`` → hoje;
+        - ``"tomorrow"`` → amanhã (spec 034 — view fixa "Amanhã");
         - ``"Nd"`` (ex.: ``"7d"``) → hoje + N dias;
         - ``None`` → ``None`` (usado pelo operador ``none``).
 
@@ -81,6 +85,8 @@ def _resolve_relative_date(value) -> Optional[date]:
     texto = str(value).strip().lower()
     if texto == "today":
         return _today()
+    if texto == "tomorrow":
+        return _today() + timedelta(days=1)
     # Atalho "Nd" (N dias a partir de hoje): tira o "d" do fim e soma os dias.
     if texto.endswith("d") and texto[:-1].isdigit():
         return _today() + timedelta(days=int(texto[:-1]))
@@ -225,6 +231,21 @@ def _build_where_from_rules(rules: dict, default_open: bool = True):
             params[key] = f"%{value}%"
             fragments.append(f"(t.title ILIKE %({key})s OR t.description ILIKE %({key})s)")
 
+        elif field == "gtd_status":
+            # "none" = não classificada (gtd_status IS NULL); "eq" = valor exato.
+            if op == "none":
+                fragments.append("t.gtd_status IS NULL")
+            else:
+                params[key] = value
+                fragments.append(f"t.gtd_status = %({key})s")
+
+        elif field == "context_id":
+            if op == "none":
+                fragments.append("t.context_id IS NULL")
+            else:
+                params[key] = int(value)
+                fragments.append(f"t.context_id = %({key})s")
+
     # Base: tarefas vivas (qualquer nível — fatia 025 removeu o filtro parent_id IS NULL).
     # O Kanban mantém o filtro root-only na sua própria query (list_board_tasks), não aqui.
     # Default "só abertas" quando o usuário não filtrou por state
@@ -308,9 +329,11 @@ def list_today_overdue() -> list:
 # critérios de **engajar** (Rápidas / Alta energia). Mapeamento: Listas = Áreas de Foco ·
 # Tags = Contextos · Smart-lists = listas de ação. Detalhe em specs/013…/P2-CONTEXT.md.
 #
-# As listas de estado usam tags RESERVADAS: marcar uma tarefa com #aguardando ou #algum-dia
-# a tira das "Próximas Ações" e a põe na lista correspondente — sem schema novo.
-RESERVED_TAGS = {"aguardando", "algum-dia"}
+# spec 034: as 3 listas de estado agora consultam o status GTD REAL (coluna
+# tasks.gtd_status) em vez das tags reservadas heurísticas — a migração embutida no
+# schema converte e remove #aguardando/#algum-dia (data-model.md). As chaves do dict
+# ("next-actions"/"waiting"/"someday") continuam as mesmas — o contrato com o frontend
+# (GTD_BUILTINS em types.ts) não muda, só o que a consulta representa por baixo.
 
 # Cada built-in é identificado por uma CHAVE string estável. A mesma DSL das smart-lists
 # salvas é reusada (paridade interna de semântica). Ordem = ordem na sidebar.
@@ -318,29 +341,28 @@ BUILTIN_FILTERS: dict[str, dict] = {
     "next-actions": {
         "name": "Próximas Ações",
         "icon": "zap",
-        # O "fazer agora": aberto e NÃO adiado para aguardando/algum-dia.
+        # O "fazer agora": aberto e status GTD = próxima ação.
         "rules": {"combinator": "and", "conditions": [
             {"field": "state", "op": "eq", "value": "open"},
-            {"field": "tag", "op": "not_has", "value": "aguardando"},
-            {"field": "tag", "op": "not_has", "value": "algum-dia"},
+            {"field": "gtd_status", "op": "eq", "value": "next_action"},
         ]},
     },
     "waiting": {
         "name": "Aguardando",
         "icon": "clock",
-        # Delegado/bloqueado: aberto e marcado com #aguardando.
+        # Delegado/bloqueado: aberto e status GTD = aguardando.
         "rules": {"combinator": "and", "conditions": [
             {"field": "state", "op": "eq", "value": "open"},
-            {"field": "tag", "op": "has", "value": "aguardando"},
+            {"field": "gtd_status", "op": "eq", "value": "waiting"},
         ]},
     },
     "someday": {
         "name": "Algum dia",
         "icon": "inbox",
-        # Incubar: aberto e marcado com #algum-dia (revisar depois).
+        # Incubar: aberto e status GTD = algum dia (revisar depois).
         "rules": {"combinator": "and", "conditions": [
             {"field": "state", "op": "eq", "value": "open"},
-            {"field": "tag", "op": "has", "value": "algum-dia"},
+            {"field": "gtd_status", "op": "eq", "value": "someday"},
         ]},
     },
     "quick": {

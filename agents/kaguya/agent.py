@@ -41,6 +41,8 @@ from agents.kaguya.tools import (
     eisenhower_status,
     # Calendar Hub (fatia 019)
     list_week_with_hub,
+    # GTD core: processamento do inbox + views fixas de mercado (spec 034)
+    process_inbox_item, resolve_view_by_name,
 )
 
 # Instrução completa da Kaguya — personalidade e regras de comportamento.
@@ -154,9 +156,28 @@ _INSTRUCTION = """
     - BUILT-INS GTD (filtros fixos, também consultáveis por nome com list_tasks_by_filter_name):
       "Próximas Ações" (o fazer-agora), "Aguardando" (delegado/bloqueado), "Algum dia" (incubar),
       "Rápidas (5 min)" e "Alta energia". Ex.: "me mostra as Próximas Ações" →
-      list_tasks_by_filter_name("Próximas Ações"). ESTADO GTD por tag: marque #aguardando ou
-      #algum-dia numa tarefa (add_task_tag) para tirá-la das "Próximas Ações" e pô-la na lista
-      correspondente.
+      list_tasks_by_filter_name("Próximas Ações"). O status GTD real é um campo da tarefa
+      (gtd_status via update_task) — as tags reservadas antigas (#aguardando/#algum-dia)
+      foram aposentadas (spec 034).
+
+    PROCESSAMENTO DO INBOX (GTD clarify — spec 034):
+    - "vamos processar o inbox" / "processar o inbox" → apresente um item por vez do Inbox
+      (chame list_projects()/list_tasks_by_project("Inbox") para achar os pendentes, ou peça
+      um por vez ao usuário) e, para cada um, aplique a decisão dele com
+      process_inbox_item(task_id, decision, ...):
+        · "é uma próxima ação" → decision="next_action" (context_id/project_id opcionais)
+        · "estou aguardando alguém/algo" → decision="waiting" (waiting_note opcional)
+        · "algum dia/talvez" → decision="someday"
+        · "agendar" → decision="schedule" (due_date obrigatória)
+        · "faço agora" (regra dos 2 minutos) → decision="done"
+        · "lixo" → decision="trash"
+    - Um contador de progresso ajuda ("3 de 12"). Item já processado nunca volta à fila.
+
+    VIEWS FIXAS DE MERCADO (spec 034 — paridade com a sidebar do webapp):
+    - "todas as tarefas" / "amanhã" / "próximos 7 dias" / "hoje" / "inbox" →
+      resolve_view_by_name(nome). Ex.: resolve_view_by_name("amanhã"),
+      resolve_view_by_name("próximos 7 dias"). "Hoje" já é servido por list_tasks_today()
+      (prefira essa se o usuário perguntar especificamente por hoje/vencidas).
     - CRIAR/EDITAR uma smart-list → create_filter(name, rules) / update_filter(id, rules=...).
       O parâmetro "rules" é um objeto com "combinator" ("and"/"or") e uma lista "conditions",
       cada uma {field, op, value}. Campos e operadores:
@@ -345,6 +366,8 @@ def create_kaguya_agent() -> Agent:
             eisenhower_status,
             # Cross-agent (Kaguya + Nami)
             complete_payment_task, create_expense_reminder,
+            # GTD core: processamento do inbox + views fixas de mercado (spec 034)
+            process_inbox_item, resolve_view_by_name,
             # Agenda (Google Calendar via MCP)
             mcp_calendar,
         ],

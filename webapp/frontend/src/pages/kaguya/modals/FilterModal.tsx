@@ -3,8 +3,8 @@
 // O valor muda de tipo conforme o campo (prioridade, data, tag, lista, estado, texto).
 // Ao salvar, as linhas viram o objeto `rules` da DSL que o backend traduz em WHERE.
 
-import { useState } from 'react'
-import type { Project, Filter, FilterField, FilterCondition, FilterCombinator } from '../types'
+import { useState, useEffect } from 'react'
+import type { Project, Filter, FilterField, FilterCondition, FilterCombinator, TaskContext } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 // todayISO() respeita o fuso UTC-3: usa partes locais, nunca toISOString()
@@ -29,6 +29,9 @@ const FIELDS: { field: FilterField; label: string }[] = [
   { field: 'project_id', label: 'Lista' },
   { field: 'state', label: 'Estado' },
   { field: 'text', label: 'Texto' },
+  // spec 034: status GTD real e contexto de execução.
+  { field: 'gtd_status', label: 'Status GTD' },
+  { field: 'context_id', label: 'Contexto' },
 ]
 
 // Operadores por campo (valor técnico → rótulo).
@@ -43,6 +46,8 @@ const OPS: Record<FilterField, { op: string; label: string }[]> = {
   project_id: [{ op: 'in', label: 'é' }, { op: 'not_in', label: 'não é' }],
   state: [{ op: 'eq', label: 'é' }],
   text: [{ op: 'contains', label: 'contém' }],
+  gtd_status: [{ op: 'eq', label: 'é' }, { op: 'none', label: 'não classificada' }],
+  context_id: [{ op: 'eq', label: 'é' }, { op: 'none', label: 'sem contexto' }],
 }
 
 // Emojis sugeridos para a smart-list (atalho; pode digitar outro).
@@ -69,6 +74,8 @@ function defaultValue(field: FilterField, op: string, projects: Project[]): unkn
     return first ? [first.id] : []
   }
   if (field === 'state') return 'open'
+  if (field === 'gtd_status') return 'next_action'
+  if (field === 'context_id') return null
   return ''  // tag, text
 }
 
@@ -82,6 +89,8 @@ export function FilterModal({ mode, filter, projects, onClose, onSaved, toast }:
   )
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [contexts, setContexts] = useState<TaskContext[]>([])
+  useEffect(() => { kaguyaApi.listContexts().then(setContexts).catch(() => { /* silencioso */ }) }, [])
 
   // Atualiza uma condição pelo índice (patch parcial dos campos da linha).
   const patchCond = (i: number, patch: Partial<FilterCondition>) =>
@@ -142,6 +151,25 @@ export function FilterModal({ mode, filter, projects, onClose, onSaved, toast }:
         <select className="kg-select" value={String(c.value)} onChange={(e) => patchCond(i, { value: e.target.value })}>
           <option value="open">Aberta</option>
           <option value="completed">Concluída</option>
+        </select>
+      )
+    }
+    if (c.field === 'gtd_status') {
+      if (c.op === 'none') return <span className="kg-cond-novalue">—</span>
+      return (
+        <select className="kg-select" value={String(c.value)} onChange={(e) => patchCond(i, { value: e.target.value })}>
+          <option value="next_action">Próxima ação</option>
+          <option value="waiting">Aguardando</option>
+          <option value="someday">Algum dia</option>
+        </select>
+      )
+    }
+    if (c.field === 'context_id') {
+      if (c.op === 'none') return <span className="kg-cond-novalue">—</span>
+      return (
+        <select className="kg-select" value={c.value != null ? Number(c.value) : ''} onChange={(e) => patchCond(i, { value: e.target.value ? Number(e.target.value) : null })}>
+          <option value="">Selecione…</option>
+          {contexts.map((ctx) => <option key={ctx.id} value={ctx.id}>{ctx.name}</option>)}
         </select>
       )
     }

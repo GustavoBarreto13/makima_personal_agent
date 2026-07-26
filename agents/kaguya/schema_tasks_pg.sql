@@ -120,6 +120,12 @@ CREATE TABLE IF NOT EXISTS tasks (
     my_day_date     DATE,                               -- selecionada para "Meu Dia" desta data (Fase 3)
     google_event_id TEXT,                               -- id do evento espelho no calendário "Kaguya — Tarefas" (fatia 019)
 
+    -- GTD real (spec 034): NULL = não classificada. waiting_since é gerido pela
+    -- transição para 'waiting' (reseta a cada nova entrada em espera — nunca setado à mão).
+    gtd_status      TEXT CHECK (gtd_status IN ('next_action', 'waiting', 'someday')),
+    waiting_note    TEXT,                                -- por quem/o quê espera (só usado com gtd_status='waiting')
+    waiting_since   TIMESTAMPTZ,                         -- desde quando está aguardando
+
     -- Ordenação manual: posições esparsas ×1000 (padrão validado no Journal).
     -- Inserir entre 1000 e 2000 vira 1500, sem renumerar a lista inteira.
     position        BIGINT NOT NULL DEFAULT 0,
@@ -143,6 +149,13 @@ CREATE INDEX IF NOT EXISTS idx_tasks_parent    ON tasks (parent_id)   WHERE pare
 CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks (completed_at) WHERE completed_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_my_day    ON tasks (my_day_date) WHERE my_day_date IS NOT NULL;
 
+-- spec 034: status GTD real (próxima ação / aguardando / algum dia).
+-- NULL = não classificada (default). Ver specs/034-tasks-gtd-core/data-model.md.
+-- (o índice de context_id nasce mais abaixo, junto da tabela task_contexts — a coluna
+-- só existe depois do ALTER TABLE que segue a criação de task_contexts.)
+CREATE INDEX IF NOT EXISTS idx_tasks_gtd_status ON tasks (gtd_status)
+    WHERE deleted_at IS NULL AND completed_at IS NULL;
+
 
 -- ----------------------------------------------------------------------------
 -- Migrações idempotentes — bancos pré-existentes
@@ -155,6 +168,23 @@ CREATE INDEX IF NOT EXISTS idx_tasks_my_day    ON tasks (my_day_date) WHERE my_d
 
 -- fatia 019: id do evento espelho no Google Calendar "Kaguya — Tarefas"
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS google_event_id TEXT;
+
+-- spec 034: status GTD real + campos de espera (colunas novas em banco pré-existente).
+-- O CHECK não pode vir no ADD COLUMN de forma IF NOT EXISTS; adiciona a coluna solta aqui
+-- e a constraint em bloco condicional separado (idempotente via pg_constraint).
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS gtd_status TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS waiting_note TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS waiting_since TIMESTAMPTZ;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'tasks_gtd_status_check'
+    ) THEN
+        ALTER TABLE tasks ADD CONSTRAINT tasks_gtd_status_check
+            CHECK (gtd_status IN ('next_action', 'waiting', 'someday'));
+    END IF;
+END $$;
 
 -- fase 026: lista "Aniversários" — gerenciada pelo sync Komi↔Kaguya
 ALTER TABLE task_projects ADD COLUMN IF NOT EXISTS is_birthdays BOOLEAN NOT NULL DEFAULT FALSE;
@@ -429,6 +459,59 @@ ALTER TABLE habits           ADD COLUMN IF NOT EXISTS goal_id INTEGER REFERENCES
 CREATE INDEX IF NOT EXISTS idx_tiny_experiments_goal ON tiny_experiments (goal_id) WHERE goal_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_goal            ON tasks (goal_id)            WHERE goal_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_habits_goal           ON habits (goal_id)           WHERE goal_id IS NOT NULL;
+
+
+-- ----------------------------------------------------------------------------
+-- task_contexts — contextos de execução dedicados (spec 034)
+-- ----------------------------------------------------------------------------
+-- Etiqueta de execução gerenciável (nome, ícone opcional, ordem) — NÃO é tag (N:N);
+-- é campo dedicado, no máximo um contexto por tarefa. Sem SEED: o usuário começa com
+-- zero contextos e cria os seus pela UI (clarificação da spec). Criada aqui (depois de
+-- `tasks`) para que a FK de `tasks.context_id` abaixo resolva.
+CREATE TABLE IF NOT EXISTS task_contexts (
+    id          SERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    icon        TEXT,
+    position    BIGINT NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Nome único ignorando caixa (mesmo padrão de task_tags / journal_emotions).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_task_contexts_name ON task_contexts (LOWER(name));
+
+-- Coluna em `tasks` (idempotente — banco novo ou pré-existente). ON DELETE SET NULL:
+-- excluir um contexto apenas desassocia as tarefas, nunca as apaga.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS context_id INT REFERENCES task_contexts(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_tasks_context ON tasks (context_id)
+    WHERE context_id IS NOT NULL;
+
+
+-- ----------------------------------------------------------------------------
+-- Migração — tags reservadas (#aguardando/#algum-dia) → gtd_status real (spec 034)
+-- ----------------------------------------------------------------------------
+-- Idempotente: o "WHERE t.gtd_status IS NULL" garante que rodar de novo não sobrescreve
+-- nem duplica — na 2ª execução as tags já foram removidas pelos DELETEs abaixo, então os
+-- UPDATEs não casam mais nada. Ver specs/034-tasks-gtd-core/data-model.md.
+--
+-- "desde quando" (waiting_since) usa o timestamp desta migração (fallback) — o schema
+-- NUNCA guardou quando uma tag foi vinculada a uma tarefa (task_tag_links não tem
+-- created_at), então o timestamp real de quando a tag foi adicionada não é rastreável
+-- (research.md R3). Instrumentar isso agora só serviria a esta migração one-shot, para
+-- um dado que deixa de existir quando as tags somem logo abaixo.
+UPDATE tasks t SET gtd_status = 'waiting', waiting_since = now()
+FROM task_tag_links l JOIN task_tags g ON g.id = l.tag_id
+WHERE l.task_id = t.id AND LOWER(g.name) = 'aguardando' AND t.gtd_status IS NULL;
+
+UPDATE tasks t SET gtd_status = 'someday'
+FROM task_tag_links l JOIN task_tags g ON g.id = l.tag_id
+WHERE l.task_id = t.id AND LOWER(g.name) = 'algum-dia' AND t.gtd_status IS NULL;
+
+-- Remove os vínculos e as próprias tags reservadas (FR-010 — "MUST remover" após a conversão).
+DELETE FROM task_tag_links WHERE tag_id IN (
+    SELECT id FROM task_tags WHERE LOWER(name) IN ('aguardando', 'algum-dia')
+);
+DELETE FROM task_tags WHERE LOWER(name) IN ('aguardando', 'algum-dia');
 
 
 -- ----------------------------------------------------------------------------

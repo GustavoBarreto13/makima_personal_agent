@@ -24,6 +24,8 @@ agents/kaguya/
 ├── tools_projects.py     # camada de lógica: listas, grupos, colunas (Kanban), sidebar
 ├── tools_tags.py         # camada de lógica: etiquetas (tags) N:N — fatia 013 / P1
 ├── tools_filters.py      # camada de lógica: smart-lists (filtros salvos) — fatia 013 / P2
+├── tools_views.py        # camada de lógica: views fixas de mercado (Todas/Hoje/Amanhã/Próx.7d/Inbox) — spec 034
+├── tools_contexts.py     # camada de lógica: contextos de execução dedicados (CRUD) — spec 034
 ├── tools_kanban_views.py # camada de lógica: views de Kanban configuráveis — spec 024
 ├── tools_calendar.py     # camada de lógica: consulta por intervalo + projeção virtual — fatia 013 / P3
 ├── recurrence.py         # motor puro RRULE (next_occurrence, project_occurrences, build/describe)
@@ -127,10 +129,42 @@ built-in `list_today_overdue` ("Hoje + Vencidas", **não** persistida).
 **Built-ins GTD** (`BUILTIN_FILTERS`, também fixos no código — *Getting Things Done*): além de
 "Hoje + Vencidas", o `list_builtin_filters` expõe **Próximas Ações** (`next-actions`), **Aguardando**
 (`waiting`), **Algum dia** (`someday`), **Rápidas (5 min)** (`quick`) e **Alta energia** (`energy`);
-`list_tasks_by_builtin(key)` abre cada um. As listas de **estado** usam tags reservadas
-`RESERVED_TAGS = {#aguardando, #algum-dia}`. Mapeamento: Listas = Áreas · Tags = Contextos ·
-Smart-lists = listas de ação. No webapp são ids-sentinela negativos na sidebar; no Telegram
-resolvem por nome (`list_tasks_by_filter_name`).
+`list_tasks_by_builtin(key)` abre cada um. **Spec 034**: as 3 listas de estado consultam o
+**status GTD real** (`tasks.gtd_status`) — as tags reservadas `#aguardando`/`#algum-dia` foram
+migradas e aposentadas (schema roda a conversão idempotente). Mapeamento: Listas = Áreas · Tags =
+Contextos leves (não confundir com `task_contexts`, o campo dedicado) · Smart-lists = listas de
+ação. No webapp são ids-sentinela negativos na sidebar; no Telegram resolvem por nome
+(`list_tasks_by_filter_name`). DSL ganhou os campos `gtd_status` (eq/none) e `context_id`
+(eq/none), e o atalho de data `"tomorrow"` em `_resolve_relative_date`.
+
+### `tools_views.py` — views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034
+
+Bloco fixo no TOPO da sidebar (FR-006), **não editável** — sem linha em `task_filters`, puro
+código reusando `_build_where_from_rules`/`_run_filter_rules` de `tools_filters.py`.
+`list_view_all/today/tomorrow/next7/inbox()` + `get_view_counts()` (badges da sidebar).
+"Próximos 7 Dias" inclui hoje (decisão de produto — research.md R7).
+
+### `tools_contexts.py` — contextos de execução dedicados — spec 034
+
+CRUD simples (`list_contexts`/`create_context`/`update_context`/`delete_context`) sobre a
+tabela `task_contexts` — **campo dedicado**, não tag N:N: no máximo **um** contexto por tarefa
+(`tasks.context_id`, `ON DELETE SET NULL` — excluir o contexto só desassocia, nunca apaga
+tarefas). Nome único ignorando caixa. Sem SEED — o usuário começa com zero contextos.
+
+### Processamento do inbox (GTD clarify) — spec 034
+
+`process_inbox_item(task_id, decision, ...)` em `tools_tasks.py` aplica uma das 6 decisões do
+wizard (`next_action`/`waiting`/`someday`/`schedule`/`done`/`trash`) reusando
+`update_task`/`complete_task`/`delete_task` — nenhuma regra de negócio duplicada. A fila
+(`list_inbox_queue()`) é **100% derivada** (sem coluna de "processado"): tarefas-pai do Inbox,
+vivas, abertas, com `gtd_status IS NULL` e `due_date IS NULL`. Cada decisão tira o item da fila
+via uma coluna já existente — `gtd_status` (status), `due_date` (agendar), `completed_at`
+(concluir) ou `deleted_at` (lixo). `tasks.gtd_status`/`waiting_note`/`waiting_since` são
+geridos por `update_task`: entrar em `waiting` reseta `waiting_since = now()`; sair de
+`waiting` limpa `waiting_since` (mas preserva `waiting_note`); setar `due_date` numa tarefa
+`someday` limpa o status (FR-012 — datas e "algum dia" são contraditórios). Ao gerar a próxima
+ocorrência de uma recorrente, `gtd_status`/`context_id`/`waiting_note` são herdados (uma nova
+entrada em "waiting" ganha `waiting_since` fresco).
 
 ### `tools_kanban_views.py` — views de Kanban configuráveis — spec 024
 
@@ -292,7 +326,17 @@ apaga os itens (FR-010/SC-005). `get_goal.movements` agrega os três tipos por `
 | `remove_from_my_day_by_name(task)` | retira do Meu Dia por id ou nome — fatia 016 |
 | `set_estimate_by_name(task, minutes)` | grava estimativa de duração por id ou nome — fatia 016 |
 | `eisenhower_status()` | relato textual dos 4 quadrantes da matriz de Eisenhower — fatia 017 |
+| `process_inbox_item(task_id, decision, ...)` | aplica uma das 6 decisões do processamento guiado do inbox — spec 034 |
+| `resolve_view_by_name(name)` | resolve "todas"/"hoje"/"amanhã"/"próximos 7 dias"/"inbox" (paridade FR-014) — spec 034 |
 | (Calendar) | `list_events_today`, `create_event`, ... via MCP |
+
+**Telegram — processamento do inbox (spec 034 / US5):** o comando `/processar_inbox`
+(`coordinator/main.py`) inicia um wizard de botões inline (`ibx_*`), reusando o mesmo padrão de
+`_pending_action` + `CallbackQueryHandler` já usado pelos fluxos `/criar_conta`/`/criar_cartao`
+(research.md R9) — não é um novo framework de conversação. Resposta em **texto livre** também
+funciona (decisão híbrida da clarificação): `_guess_inbox_decision()` interpreta a frase contra
+o mesmo vocabulário fixo de 6 decisões e chama a mesma `process_inbox_item`. "Agendar" sempre
+pede a data em texto livre (Telegram não tem seletor nativo).
 
 > **Webapp-first (sem tool no agente):** views de Kanban (spec 024), Tiny Experiments (spec 029)
 > e Metas (spec 030) não registram nenhuma função no ADK nesta fatia — existem só na camada de

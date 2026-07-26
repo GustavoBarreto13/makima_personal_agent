@@ -23,6 +23,16 @@ GTD** real (próxima ação, aguardando alguém, algum dia/talvez), o inbox ganh
 views padrão de mercado: **Todas, Hoje, Amanhã, Próximos 7 Dias, Inbox** — com contadores.
 As tags reservadas antigas são migradas para os status reais e aposentadas.
 
+## Clarifications
+
+### Session 2026-07-11
+
+- Q: Ao migrar a tag `#aguardando` para o status real, qual timestamp deve preencher "desde quando"? → A: usar o timestamp de quando a tag `#aguardando` foi adicionada à tarefa (se rastreável).
+- Q: Se uma tarefa sai de "aguardando" e depois volta a ficar "aguardando", o campo "desde quando" deve resetar ou manter o valor original? → A: resetar "desde quando" para o momento atual sempre que o status voltar a ser "aguardando".
+- Q: Nomes de contexto devem ser únicos e há limite de quantidade? → A: nomes MUST ser únicos (case-insensitive); sem limite de quantidade.
+- Q: A migração deve semear contextos padrão (@casa, @computador, @rua) ou o usuário começa sem nenhum? → A: começa com zero contextos; o usuário cria os seus pela UI.
+- Q: No Telegram, como a Kaguya deve interpretar a decisão do usuário para cada item do inbox? → A: híbrido — oferece botões inline com as mesmas 6 decisões do wizard web, mas também aceita resposta em texto livre interpretada contra esse mesmo vocabulário fixo.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Processar o inbox item a item (Priority: P1)
@@ -196,7 +206,8 @@ valor principal primeiro.
 - **FR-001**: O sistema MUST suportar um **status GTD** por tarefa entre: próxima ação,
   aguardando, algum dia/talvez — além do estado "não classificada".
 - **FR-002**: Tarefas aguardando MUST registrar opcionalmente **por quem/o quê** esperam e
-  MUST registrar **desde quando**.
+  MUST registrar **desde quando**. Cada vez que o status voltar a ser "aguardando" (após ter
+  saído desse estado), "desde quando" MUST resetar para o momento da nova marcação.
 - **FR-003**: O sistema MUST oferecer um **processamento do inbox** item a item com as
   decisões: próxima ação, aguardando, algum dia, agendar, concluir agora (regra dos 2
   minutos) e excluir — com contador de progresso e retomada.
@@ -204,7 +215,8 @@ valor principal primeiro.
   wizard ou por edição direta) e MUST sair da fila.
 - **FR-005**: O sistema MUST manter uma lista gerenciável de **contextos** (criar, renomear,
   reordenar, excluir) e permitir no máximo **um contexto por tarefa**; excluir um contexto
-  MUST apenas desassociá-lo das tarefas.
+  MUST apenas desassociá-lo das tarefas. Nomes de contexto MUST ser únicos (case-insensitive);
+  não há limite de quantidade de contextos.
 - **FR-006**: A sidebar MUST exibir o bloco fixo de views, nesta ordem: **Todas, Hoje,
   Amanhã, Próximos 7 Dias, Inbox**, cada uma com **contador**.
 - **FR-007**: "Hoje" MUST incluir as tarefas vencidas (atrasadas); "Próximos 7 Dias" MUST
@@ -215,7 +227,10 @@ valor principal primeiro.
   além dos critérios já existentes; o vocabulário de datas MUST ganhar o atalho "amanhã".
 - **FR-010**: A migração MUST converter as tags reservadas `#aguardando`/`#algum-dia` nos
   status equivalentes, MUST remover essas tags após a conversão e MUST ser idempotente
-  (rodar duas vezes não duplica nem corrompe).
+  (rodar duas vezes não duplica nem corrompe). Para tarefas migradas para "aguardando", o
+  campo "desde quando" MUST usar o timestamp de quando a tag `#aguardando` foi adicionada à
+  tarefa (registro de histórico da tag), com fallback para o timestamp da migração caso esse
+  histórico não seja rastreável.
 - **FR-011**: Os built-ins "Rápidas (5 min)" e "Alta energia" MUST ser convertidos em
   smart-lists salvas editáveis do usuário, preservando seu comportamento atual.
 - **FR-012**: Agendar uma tarefa "algum dia" MUST limpar esse estado; concluir uma ocorrência
@@ -223,7 +238,10 @@ valor principal primeiro.
 - **FR-013**: Subtarefas MUST poder ter status GTD próprio e MUST ficar fora da fila do
   processamento do inbox.
 - **FR-014**: O Telegram MUST oferecer o processamento conversacional do inbox e MUST
-  resolver os novos nomes de views ("todas", "amanhã", "próximos 7 dias").
+  resolver os novos nomes de views ("todas", "amanhã", "próximos 7 dias"). O processamento
+  MUST oferecer botões inline com as mesmas 6 decisões do wizard web (próxima ação,
+  aguardando, algum dia, agendar, concluir agora, excluir) e MUST também aceitar resposta em
+  texto livre, interpretada contra esse mesmo vocabulário fixo de 6 decisões.
 - **FR-015**: Todo cálculo de "hoje/amanhã/próximos dias" MUST usar o fuso
   America/Sao_Paulo (UTC-3).
 
@@ -232,8 +250,9 @@ valor principal primeiro.
 - **Status GTD da tarefa**: classificação de fluxo (próxima ação / aguardando / algum dia /
   não classificada), com anotação de espera (por quem/o quê, desde quando) quando aguardando,
   e marca de processamento (quando o item foi clarificado).
-- **Contexto**: etiqueta de execução gerenciável (nome, ícone opcional, ordem), associável a
-  no máximo uma por tarefa; existe independentemente das tarefas.
+- **Contexto**: etiqueta de execução gerenciável (nome único case-insensitive, ícone opcional,
+  ordem), associável a no máximo uma por tarefa; existe independentemente das tarefas; sem
+  limite de quantidade.
 - **View fixa (smart list de mercado)**: consulta padronizada por data/escopo (Todas, Hoje,
   Amanhã, Próximos 7 Dias, Inbox) com contador; não é editável pelo usuário.
 
@@ -270,6 +289,7 @@ valor principal primeiro.
   `today`/`Nd`/`overdue`/`none`/`within` — "Amanhã" exige adicionar o atalho `tomorrow`; os
   built-ins atuais vivem em `agents/kaguya/tools_filters.py` (`BUILTIN_FILTERS`).
 - **Migração**: roda embutida no schema (padrão das specs 026/030), validada localmente antes
-  do VPS; no VPS, executada de dentro do container `makima-web`.
+  do VPS; no VPS, executada de dentro do container `makima-web`. A migração NÃO semeia
+  contextos padrão — o usuário começa com zero contextos e cria os seus pela UI.
 - **Dependente desta spec**: a revisão semanal guiada (spec 035) consome os status GTD e a
   fila de processamento definidos aqui.

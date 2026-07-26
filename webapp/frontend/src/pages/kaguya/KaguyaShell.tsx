@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback, type CSSProperties } from 'react'
 import './kaguya.css'
 
 import type { Sidebar, Task, Tweaks, KaguyaView, Filter, Habit, Experiment, Goal } from './types'
-import { BUILTIN_TODAY_OVERDUE, GTD_BUILTINS } from './types'
+import { BUILTIN_TODAY_OVERDUE, GTD_BUILTINS, DATE_VIEWS, DATE_VIEW_IDS } from './types'
 import { kaguyaApi } from './kaguyaApi'
 
 import { SidebarNav } from './components/SidebarNav'
@@ -17,6 +17,9 @@ import { TaskModal } from './modals/TaskModal'
 import { ProjectModal } from './modals/ProjectModal'
 import { GroupModal } from './modals/GroupModal'
 import { FilterModal } from './modals/FilterModal'
+import { InboxProcessModal } from './modals/InboxProcessModal'
+import { ContextsModal } from './modals/ContextsModal'
+import type { TaskContext } from './types'
 import { HabitModal } from './modals/HabitModal'
 import { ExperimentModal } from './modals/ExperimentModal'
 import { GoalModal } from './modals/GoalModal'
@@ -25,6 +28,7 @@ import { ListScreen } from './screens/ListScreen'
 import { KanbanScreen } from './screens/KanbanScreen'
 import { TrashScreen } from './screens/TrashScreen'
 import { FilterScreen } from './screens/FilterScreen'
+import { DateViewScreen } from './screens/DateViewScreen'
 import { CalendarScreen } from './screens/CalendarScreen'
 import { HabitsScreen } from './screens/HabitsScreen'
 import { ExperimentsScreen } from './screens/ExperimentsScreen'
@@ -99,6 +103,13 @@ export function KaguyaShell() {
   const [habitModal, setHabitModal] = useState<{ mode: 'create' | 'edit'; habit?: Habit } | null>(null)
   const [experimentModal, setExperimentModal] = useState<{ mode: 'create' | 'edit'; experiment?: Experiment; goalId?: number } | null>(null)
   const [goalModal, setGoalModal] = useState<{ mode: 'create' | 'edit'; goal?: Goal } | null>(null)
+  const [inboxProcessOpen, setInboxProcessOpen] = useState(false)  // wizard de clarify do inbox — spec 034
+  const [contextsModalOpen, setContextsModalOpen] = useState(false)  // CRUD de contextos — spec 034
+  const [contexts, setContexts] = useState<TaskContext[]>([])         // p/ o seletor no InboxProcessModal
+  const loadContexts = useCallback(async () => {
+    try { setContexts(await kaguyaApi.listContexts()) } catch { /* silencioso */ }
+  }, [])
+  useEffect(() => { loadContexts() }, [loadContexts])
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toast, setToast] = useState<{ msg: string; kind?: 'ok' | 'err' } | null>(null)
   const [search, setSearch] = useState('')
@@ -207,6 +218,10 @@ export function KaguyaShell() {
   // Nome do grupo ativo (para view='group' e 'group-list'): busca nos grupos da sidebar.
   const currentGroup = (view === 'group' || view === 'group-list') && param != null
     ? sidebar?.groups.find(g => g.id === param) : undefined
+  // Views fixas de mercado (spec 034): resolve o nome pelo sentinel numérico do param.
+  const dateViewKey = view === 'date'
+    ? (Object.entries(DATE_VIEW_IDS).find(([, id]) => id === param)?.[0])
+    : undefined
   const titleMap: Record<KaguyaView, string> = {
     today: 'Meu Dia', kanban: project?.name ?? 'Kanban', list: project?.name ?? 'Lista',
     calendar: 'Calendário', eisenhower: 'Eisenhower', habits: 'Hábitos',
@@ -216,6 +231,7 @@ export function KaguyaShell() {
     group: currentGroup?.name ?? 'Grupo',
     // 'group-list': mesmo nome do grupo mas na visão de Lista em seções.
     'group-list': currentGroup?.name ?? 'Grupo',
+    date: DATE_VIEWS.find((v) => v.key === dateViewKey)?.name ?? 'View',
   }
 
   // Estilo do root: data-attrs (tema/densidade/pmark/anim) + acento via PALETTE_MAP.
@@ -266,6 +282,14 @@ export function KaguyaShell() {
           setTaskModal({ mode: 'create', defaults: { dueDate, dueTime, duration } })}
         toast={showToast}
         variant={tweaks.calVariant}
+      />
+    )
+    if (view === 'date' && param != null) return (
+      <DateViewScreen
+        viewId={param}
+        reloadKey={reloadKey}
+        onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
+        toast={showToast}
       />
     )
     if (view === 'filter' && param != null) return (
@@ -363,6 +387,8 @@ export function KaguyaShell() {
           onNewGroup={() => setGroupModal({ mode: 'create' })}
           onEditGroup={(group) => setGroupModal({ mode: 'edit', group })}
           onNewFilter={() => setFilterModal({ mode: 'create' })}
+          onProcessInbox={() => setInboxProcessOpen(true)}
+          onManageContexts={() => setContextsModalOpen(true)}
           onOpenTweaks={() => setTweaksOpen(true)}
           onReordered={loadSidebar}
           toast={showToast}
@@ -509,6 +535,21 @@ export function KaguyaShell() {
           // Após salvar/excluir, recarrega a sidebar (e as views). Se a smart-list aberta
           // foi excluída, volta para "Meu Dia" para não ficar numa view órfã.
           onSaved={() => { afterSave(); if (filterModal.mode === 'edit') navigate('today') }}
+          toast={showToast}
+        />
+      )}
+      {inboxProcessOpen && (
+        <InboxProcessModal
+          onClose={() => setInboxProcessOpen(false)}
+          onChanged={bump}
+          toast={showToast}
+          contexts={contexts}
+        />
+      )}
+      {contextsModalOpen && (
+        <ContextsModal
+          onClose={() => setContextsModalOpen(false)}
+          onChanged={loadContexts}
           toast={showToast}
         />
       )}

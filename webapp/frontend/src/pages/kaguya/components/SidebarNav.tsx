@@ -24,8 +24,8 @@ import {
   arrayMove,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import type { Sidebar, KaguyaView, Group, Project } from '../types'
-import { BUILTIN_TODAY_OVERDUE, GTD_BUILTINS } from '../types'
+import type { Sidebar, KaguyaView, Group, Project, DateViewCounts } from '../types'
+import { BUILTIN_TODAY_OVERDUE, GTD_BUILTINS, DATE_VIEWS, DATE_VIEW_IDS } from '../types'
 import { Icon } from '../ui/Icons'
 import type { IconName } from '../ui/Icons'
 import { kaguyaApi } from '../kaguyaApi'
@@ -58,6 +58,8 @@ interface SidebarNavProps {
   onNewGroup: () => void          // abre o modal de criar grupo
   onEditGroup: (group: Group) => void  // abre o modal de renomear/excluir grupo
   onNewFilter: () => void         // abre o modal de criar smart-list (fatia 013)
+  onProcessInbox: () => void      // abre o wizard de processamento guiado do inbox (spec 034)
+  onManageContexts: () => void    // abre o CRUD de contextos de execução (spec 034)
   onOpenTweaks: () => void
   // Re-busca a sidebar no shell após um reorder bem-sucedido
   onReordered: () => void
@@ -69,7 +71,8 @@ interface SidebarNavProps {
 
 export function SidebarNav({
   sidebar, view, param,
-  onNavigate, onNewTask, onNewProject, onNewGroup, onEditGroup, onNewFilter, onOpenTweaks,
+  onNavigate, onNewTask, onNewProject, onNewGroup, onEditGroup, onNewFilter, onProcessInbox,
+  onManageContexts, onOpenTweaks,
   onReordered, toast,
 }: SidebarNavProps) {
 
@@ -109,6 +112,11 @@ export function SidebarNav({
 
   // Filtros de smart-list (não reordenáveis nesta fatia — vêm direto do prop)
   const filters = sidebar?.filters ?? []
+
+  // Contadores das views fixas de mercado (spec 034) — re-busca quando a sidebar muda
+  // (mesmo gatilho dos contadores de lista, já que ambos refletem o estado das tarefas).
+  const [dateCounts, setDateCounts] = useState<DateViewCounts | null>(null)
+  useEffect(() => { kaguyaApi.viewCounts().then(setDateCounts).catch(() => {}) }, [sidebar])
 
   // ── Sensores DnD ─────────────────────────────────────────────────────────────
   // PointerSensor com 5px de ativação: < 5px = clique, ≥ 5px = arrasto.
@@ -257,7 +265,55 @@ export function SidebarNav({
         <kbd>C</kbd>
       </button>
 
-      {/* ── Views fixas ──────────────────────────────────────────────────────── */}
+      {/* ── Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034 ── */}
+      {/* Bloco fixo no TOPO da sidebar, não editável pelo usuário (FR-006). O item "Inbox"
+          reusa a lista Inbox de verdade (view='list') — mesmo conteúdo do botão antigo,
+          agora dentro deste bloco (evita duplicar tela); os demais abrem view='date'
+          com o sentinel de DATE_VIEW_IDS. */}
+      <div className="kg-nav-label"><span>Navegação</span></div>
+      {DATE_VIEWS.map((v) => {
+        if (v.key === 'inbox') {
+          if (!inbox) return null
+          return (
+            <div key="date-inbox" className="kg-nav-item" style={{ display: 'flex', alignItems: 'center', paddingRight: 4 }}>
+              <button
+                className={view === 'list' && param === inbox.id ? 'active' : ''}
+                style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none' }}
+                onClick={() => onNavigate('list', inbox.id)}
+              >
+                <span className="kg-nav-emoji"><Icon name="inbox" size={16} /></span>
+                <span>{v.name}</span>
+                {(dateCounts?.inbox ?? inbox.open_count) > 0 && (
+                  <span className="kg-nav-count">{dateCounts?.inbox ?? inbox.open_count}</span>
+                )}
+              </button>
+              {/* Processamento guiado do inbox (GTD clarify) — spec 034 */}
+              <button
+                className="kg-icon-btn"
+                onClick={(e) => { e.stopPropagation(); onProcessInbox() }}
+                aria-label="Processar inbox"
+                title="Processar inbox"
+              >
+                <Icon name="zap" size={13} />
+              </button>
+            </div>
+          )
+        }
+        const id = DATE_VIEW_IDS[v.key as Exclude<typeof v.key, 'inbox'>]
+        return (
+          <button
+            key={v.key}
+            className={`kg-nav-item${view === 'date' && param === id ? ' active' : ''}`}
+            onClick={() => onNavigate('date', id)}
+          >
+            <span className="kg-nav-emoji"><Icon name={v.icon as IconName} size={16} /></span>
+            <span>{v.name}</span>
+            {dateCounts && dateCounts[v.key] > 0 && <span className="kg-nav-count">{dateCounts[v.key]}</span>}
+          </button>
+        )
+      })}
+
+      {/* ── Views (telas do shell: Meu Dia/Kanban/Calendário/...) ────────────────── */}
       <div className="kg-nav-label"><span>Views</span></div>
       {FIXED_VIEWS.map((v) => (
         <button key={v.view} className={`kg-nav-item${view === v.view ? ' active' : ''}`} onClick={() => onNavigate(v.view)}>
@@ -297,17 +353,7 @@ export function SidebarNav({
           O Inbox fica FORA dos SortableContexts para nunca ser arrastável. */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
 
-        {/* Inbox: fixo no topo, nunca arrastável (fora de qualquer SortableContext) */}
-        {inbox && (
-          <button
-            className={`kg-nav-item${view === 'list' && param === inbox.id ? ' active' : ''}`}
-            onClick={() => onNavigate('list', inbox.id)}
-          >
-            <span className="kg-nav-emoji">{inbox.icon ?? '•'}</span>
-            <span>{inbox.name}</span>
-            {inbox.open_count > 0 && <span className="kg-nav-count">{inbox.open_count}</span>}
-          </button>
-        )}
+        {/* Inbox agora vive no bloco fixo "Navegação" acima (spec 034) — não repetido aqui. */}
 
         {/* Listas sem grupo: SortableContext próprio, arrastáveis entre si.
             Nunca se misturam com listas de grupos (guarda no onDragEnd). */}
@@ -379,6 +425,8 @@ export function SidebarNav({
       <div className="kg-nav-label">
         <span>Smart lists</span>
         <div className="kg-nav-acts">
+          {/* Gerenciar contextos de execução (spec 034) — @casa, @computador, @rua... */}
+          <button onClick={onManageContexts} aria-label="Gerenciar contextos" title="Gerenciar contextos"><Icon name="settings" size={13} /></button>
           <button onClick={onNewFilter} aria-label="Nova smart-list" title="Nova smart-list"><Icon name="plus" size={13} /></button>
         </div>
       </div>

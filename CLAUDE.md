@@ -424,5 +424,5 @@ Use a skill `obsidian-vault` para consultar os caminhos corretos e atualizar a d
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/032-lucy-gmail/plan.md`.
+at `specs/034-tasks-gtd-core/plan.md`.
 <!-- SPECKIT END -->

@@ -34,6 +34,8 @@ _POSITION_STEP = 1000
 # Conjuntos válidos para validação amigável antes de bater no CHECK do banco.
 _VALID_PRIORITIES = {0, 1, 2, 3}
 _VALID_TYPES = {"task", "event", "birthday"}
+# Status GTD real (spec 034) — None é o quarto valor implícito ("não classificada").
+_VALID_GTD_STATUSES = {"next_action", "waiting", "someday"}
 
 # Sentinela para distinguir "parâmetro não enviado" de "enviado como None (limpar)".
 # Usado em update_task para que due_date=None signifique "limpar a data" e não "ignorar".
@@ -46,6 +48,8 @@ _TASK_FIELDS = [
     # Incluído na fatia 019 (T015): id do evento Google Calendar vinculado a esta tarefa.
     # Viaja em TODAS as responses de tarefa (incluindo list_tasks_in_range usado pelo calendário).
     "google_event_id",
+    # spec 034: status GTD real + campos de espera + contexto de execução.
+    "gtd_status", "waiting_note", "waiting_since", "context_id",
     "position", "completed_at", "deleted_at", "created_at", "updated_at",
 ]
 # Lista simples (sem alias) — para queries sem JOIN.
@@ -89,7 +93,7 @@ def _serialize_task(row: dict) -> dict:
     if out.get("due_time") is not None:
         out["due_time"] = out["due_time"].strftime("%H:%M")
     # Timestamps com timezone → ISO 8601 completo
-    for f in ("start_at", "end_at", "completed_at", "deleted_at", "created_at", "updated_at"):
+    for f in ("start_at", "end_at", "completed_at", "deleted_at", "created_at", "updated_at", "waiting_since"):
         if out.get(f) is not None:
             out[f] = out[f].isoformat()
     return out
@@ -413,12 +417,14 @@ def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
         return None  # não é recorrente (ou série já encerrada)
     rec_id, rrule, mode, anchor_date = rule
 
-    # Campos da ocorrência consumida (herdados pela próxima).
+    # Campos da ocorrência consumida (herdados pela próxima — inclui GTD/contexto, spec 034/R10).
     cur.execute(
-        "SELECT project_id, title, description, type, priority, due_date, due_time FROM tasks WHERE id = %s",
+        "SELECT project_id, title, description, type, priority, due_date, due_time, "
+        "gtd_status, context_id, waiting_note FROM tasks WHERE id = %s",
         (task_id,),
     )
-    project_id, title, description, ttype, priority, due_date, due_time = cur.fetchone()
+    (project_id, title, description, ttype, priority, due_date, due_time,
+     gtd_status, context_id, waiting_note) = cur.fetchone()
 
     # Calcula a próxima data pela semântica do motor puro (research.md §3).
     nxt = rec_engine.next_occurrence(
@@ -439,13 +445,20 @@ def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
     cur.execute(
         """
         INSERT INTO tasks
-            (project_id, column_id, parent_id, title, description, type, priority, due_date, due_time, position)
-        VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s)
+            (project_id, column_id, parent_id, title, description, type, priority, due_date, due_time,
+             position, gtd_status, context_id, waiting_note)
+        VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
-        (project_id, new_column, title, description, ttype, priority, nxt, due_time, position),
+        (project_id, new_column, title, description, ttype, priority, nxt, due_time, position,
+         gtd_status, context_id, waiting_note),
     )
     new_id = cur.fetchone()[0]
+
+    # Se o status herdado é "waiting", esta é uma NOVA espera (R10/clarificação) — o
+    # timestamp reseta para agora, nunca herda o waiting_since da ocorrência anterior.
+    if gtd_status == "waiting":
+        cur.execute("UPDATE tasks SET waiting_since = now() WHERE id = %s", (new_id,))
 
     # Move a regra para a nova linha viva (UNIQUE(task_id) continua válido).
     cur.execute("UPDATE task_recurrences SET task_id = %s WHERE id = %s", (new_id, rec_id))
@@ -722,6 +735,90 @@ def list_trash(project_id: Optional[int] = None) -> list[dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Processamento do inbox (GTD) — spec 034
+# ─────────────────────────────────────────────────────────────────────────────
+# As 6 decisões do wizard (FR-003). Cada uma delas move a tarefa para fora da fila
+# via uma coluna JÁ existente (gtd_status, due_date, completed_at, deleted_at) —
+# nenhuma coluna de "processado" é necessária (research.md R2).
+_INBOX_DECISIONS = {"next_action", "waiting", "someday", "schedule", "done", "trash"}
+
+
+def list_inbox_queue() -> dict:
+    """Lista os itens do Inbox ainda não processados (a fila do clarify — FR-003/FR-004).
+
+    Um item "processado" é, por definição, qualquer tarefa-pai do Inbox que já ganhou um
+    ``gtd_status`` ou uma ``due_date`` (ou foi concluída/excluída — e aí nem aparece mais,
+    porque a base já filtra tarefas vivas e abertas). A fila é 100% derivada: não existe
+    coluna própria de "processado" (research.md R2).
+
+    Returns:
+        ``{"items": [...], "total": <int>}`` — tarefas-pai do Inbox, vivas, abertas, sem
+        ``gtd_status`` e sem ``due_date``, ordenadas pela mais antiga primeiro (a ordem de
+        captura). **Listagem**.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            inbox_id = _get_inbox_id(cur)
+    rows = run_select(
+        f"""
+        SELECT {_TASK_COLUMNS} FROM tasks
+        WHERE project_id = %(inbox_id)s AND parent_id IS NULL AND deleted_at IS NULL
+          AND completed_at IS NULL AND gtd_status IS NULL AND due_date IS NULL
+        ORDER BY created_at, id
+        """,
+        {"inbox_id": inbox_id},
+    )
+    items = [_serialize_task(r) for r in rows]
+    return {"items": items, "total": len(items)}
+
+
+def process_inbox_item(
+    task_id: int,
+    decision: str,
+    context_id: Optional[int] = None,
+    project_id: Optional[int] = None,
+    waiting_note: Optional[str] = None,
+    due_date: Optional[str] = None,
+) -> dict:
+    """Aplica uma das 6 decisões do processamento guiado do inbox a um item (FR-003).
+
+    Reusa integralmente ``update_task``/``complete_task``/``delete_task`` — nenhuma regra de
+    negócio nova é criada aqui, só o dispatch da decisão (paridade de canal: a mesma função
+    serve os botões do Telegram e o texto livre — research.md R9).
+
+    Args:
+        task_id: Id da tarefa (item da fila).
+        decision: Uma de ``"next_action"``, ``"waiting"``, ``"someday"``, ``"schedule"``,
+            ``"done"``, ``"trash"``.
+        context_id: Contexto opcional (só usado com ``decision="next_action"``).
+        project_id: Lista de destino opcional (só usado com ``decision="next_action"``) —
+            se omitido, a tarefa permanece no Inbox, só com o status GTD definido.
+        waiting_note: Anotação de "por quem/o quê" (só usado com ``decision="waiting"``).
+        due_date: Data (``YYYY-MM-DD``, obrigatória com ``decision="schedule"``).
+
+    Returns:
+        Dicionário de status (mesmo shape de ``update_task``/``complete_task``/``delete_task``).
+    """
+    if decision not in _INBOX_DECISIONS:
+        return {"status": "error", "message": "Decisão inválida (use next_action, waiting, someday, schedule, done ou trash)."}
+
+    if decision == "next_action":
+        return update_task(task_id, gtd_status="next_action", context_id=context_id, project_id=project_id)
+    if decision == "waiting":
+        return update_task(task_id, gtd_status="waiting", waiting_note=waiting_note)
+    if decision == "someday":
+        return update_task(task_id, gtd_status="someday")
+    if decision == "schedule":
+        if not due_date:
+            return {"status": "error", "message": "Informe a data para agendar (decision='schedule')."}
+        return update_task(task_id, due_date=due_date)
+    if decision == "done":
+        return complete_task(task_id)
+    # decision == "trash"
+    return delete_task(task_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Criação
 # ─────────────────────────────────────────────────────────────────────────────
 def create_task(
@@ -943,6 +1040,9 @@ def update_task(
     tags: Optional[list] = None,
     duration_min: Optional[int] = None,
     person_ids: Optional[list] = None,
+    gtd_status: Optional[str] = _UNSET,
+    waiting_note: Optional[str] = _UNSET,
+    context_id: Optional[int] = _UNSET,
 ) -> dict:
     """Edita campos de uma tarefa; mover de lista aplica a regra da coluna do destino.
 
@@ -969,6 +1069,14 @@ def update_task(
         duration_min: Estimativa de duração em minutos (insumo da CapacityBar do Meu Dia).
         person_ids: Se informado (lista de UUIDs), **substitui** o conjunto de responsáveis
             (fatia 025). Lista vazia = remover todos. ``None`` = não mexe.
+        gtd_status: Status GTD real (spec 034). Omitido (``_UNSET``) = não mexe; ``None`` =
+            limpa (volta a "não classificada"); ``"next_action"``/``"waiting"``/``"someday"``
+            = grava. Entrar em ``"waiting"`` grava ``waiting_since = now()``; sair de
+            ``"waiting"`` limpa ``waiting_since`` (mantém ``waiting_note``).
+        waiting_note: Anotação de "por quem/o quê" espera. Omitido = não mexe; ``None`` =
+            limpa; string = grava. Só tem efeito visível quando ``gtd_status = "waiting"``.
+        context_id: Contexto de execução (spec 034). Omitido = não mexe; ``None`` =
+            desassocia; int = associa (no máximo um contexto por tarefa).
 
     Returns:
         Dicionário de status.
@@ -978,14 +1086,20 @@ def update_task(
         return {"status": "error", "message": "Prioridade inválida (use 0, 1, 2 ou 3)."}
     if type is not None and type not in _VALID_TYPES:
         return {"status": "error", "message": "Tipo inválido (use task, event ou birthday)."}
+    if gtd_status is not _UNSET and gtd_status is not None and gtd_status not in _VALID_GTD_STATUSES:
+        return {"status": "error", "message": "Status GTD inválido (use next_action, waiting ou someday)."}
 
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT due_date, project_id FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,))
+            cur.execute(
+                "SELECT due_date, project_id, gtd_status FROM tasks WHERE id = %s AND deleted_at IS NULL",
+                (task_id,),
+            )
             existing = cur.fetchone()
             if not existing:
                 return {"status": "error", "message": "Tarefa não encontrada."}
             current_project_id = existing[1]   # lista atual — base para detectar troca real de lista
+            current_gtd_status = existing[2]   # status GTD atual — base das regras de transição (spec 034)
 
             sets, params = [], {"id": task_id}
             if title is not None:
@@ -1056,6 +1170,40 @@ def update_task(
             if duration_min is not None:
                 sets.append("duration_min = %(duration_min)s")
                 params["duration_min"] = duration_min
+
+            # ── Status GTD real (spec 034) — regras de transição ──
+            # gtd_status: _UNSET = não mexe · None = limpa (volta a "não classificada") · valor = grava.
+            resulting_gtd_status = gtd_status if gtd_status is not _UNSET else current_gtd_status
+            if gtd_status is not _UNSET:
+                sets.append("gtd_status = %(gtd_status)s")
+                params["gtd_status"] = gtd_status
+                # Entrar em "waiting" (de qualquer outro valor) reseta a contagem de espera;
+                # sair de "waiting" limpa — mas preserva waiting_note (fica "mudo" até a próxima vez).
+                if gtd_status == "waiting" and current_gtd_status != "waiting":
+                    sets.append("waiting_since = now()")
+                elif current_gtd_status == "waiting" and gtd_status != "waiting":
+                    sets.append("waiting_since = NULL")
+
+            # waiting_note: _UNSET = não mexe · None = limpa · string = grava.
+            if waiting_note is not _UNSET:
+                sets.append("waiting_note = %(waiting_note)s")
+                params["waiting_note"] = waiting_note
+
+            # context_id: _UNSET = não mexe · None = desassocia · int = associa.
+            if context_id is not _UNSET:
+                sets.append("context_id = %(context_id)s")
+                params["context_id"] = context_id
+
+            # FR-012: agendar (devolver uma due_date real) limpa "algum dia" — os dois estados
+            # são contraditórios pela própria definição do GTD ("algum dia" = ainda sem data).
+            # Recalcula a data final (a nova, se enviada; senão a que já existia) e força
+            # gtd_status=NULL se o resultado ainda seria "someday".
+            final_due_date = due_date if due_date is not _UNSET else existing[0]
+            if final_due_date is not None and resulting_gtd_status == "someday":
+                if "gtd_status = %(gtd_status)s" not in sets:
+                    sets.append("gtd_status = %(gtd_status)s")
+                params["gtd_status"] = None
+                # someday nunca seta waiting_since — nada a limpar aqui.
 
             # Há algo a fazer? campos OU recorrência OU tags OU responsáveis (fatia 025).
             if (not sets and recurrence is None and not clear_recurrence

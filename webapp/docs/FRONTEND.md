@@ -270,7 +270,18 @@ do app: sidebar própria com listas/grupos, smart-lists, Command Palette (⌘K) 
 | `experiments` | ExperimentsScreen / ExperimentDetailScreen | Tiny Experiments (spec 029): aderência, check-ins, pausa/retomada e revisão |
 | `goals` | GoalsScreen / GoalDetailScreen | Metas (spec 030): agrupadas por área da vida, métrica, marcos e movimentos vinculados |
 | `filter` | FilterScreen | Smart-list salva (filtros), com aviso de referência órfã |
+| `date` | DateViewScreen | View fixa de mercado (spec 034): Todas/Hoje/Amanhã/Próximos 7 Dias — resolve a chave pelo sentinel numérico de `DATE_VIEW_IDS` |
 | `trash` | TrashScreen | Lixeira — restaurar tarefas soft-deletadas |
+
+**GTD core (spec 034):** a sidebar ganhou um bloco fixo no topo ("Navegação" —
+`SidebarNav.tsx`) com as 5 views de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox, com
+contadores via `GET /views/counts`); o item "Inbox" reusa a lista de verdade (`view='list'`)
+em vez de duplicar tela, e leva um botão ⚡ que abre o `InboxProcessModal` (wizard item-a-item
+do processamento guiado do inbox — 6 decisões, contador de progresso, resumível). O
+`TaskModal` ganhou os campos **Status GTD** (seletor + nota de espera + "há X dias") e
+**Contexto** (seletor, no máximo um). O `FilterModal` ganhou os campos `gtd_status` e
+`context_id` na DSL de condições. Novo modal `ContextsModal` (CRUD de contextos — criar,
+renomear, reordenar subir/descer, excluir).
 
 **Particularidades:**
 - **DnD** com `@dnd-kit` (única dependência de drag-and-drop do app) — árvore de tarefas, Kanban e Eisenhower.

@@ -6,8 +6,9 @@ Dois blocos:
    estáticos — valida-se que os 5 built-ins GTD existem, têm metadados e que suas regras são
    válidas e traduzíveis (parametrizadas), sem tocar no banco.
 2. **Integração** (pula sem ``DATABASE_URL``): contra um PostgreSQL real, confirma que cada
-   built-in casa as tarefas certas pelas tags reservadas e que o canal Telegram resolve um
-   built-in pelo nome (paridade — FR-012).
+   built-in casa as tarefas certas pelo status GTD real (``gtd_status`` — spec 034, as tags
+   reservadas ``#aguardando``/``#algum-dia`` foram aposentadas) e que o canal Telegram resolve
+   um built-in pelo nome (paridade — FR-012).
 
 Como rodar (bloco de integração):
     export DATABASE_URL="postgresql://postgres:test@127.0.0.1:55432/makima_test"
@@ -39,11 +40,6 @@ def test_list_builtin_filters_metadata():
     assert all(b["name"] and b["icon"] for b in listed)
 
 
-def test_reserved_tags():
-    """As tags de estado GTD reservadas são #aguardando e #algum-dia."""
-    assert F.RESERVED_TAGS == {"aguardando", "algum-dia"}
-
-
 def test_all_builtins_validate():
     """Toda built-in GTD tem regras válidas (≥1 condição, campos/ops conhecidos)."""
     for key, meta in F.BUILTIN_FILTERS.items():
@@ -68,7 +64,7 @@ if HAS_DB:
         "agents", "kaguya", "schema_tasks_pg.sql",
     )
     _TASK_TABLES = (
-        "habit_checkins habits task_filters task_tag_links task_tags "
+        "habit_checkins habits task_filters task_tag_links task_tags task_contexts "
         "task_recurrences tasks task_columns task_projects task_project_groups"
     )
 
@@ -88,24 +84,29 @@ def inbox_id() -> int:
 
 @requires_db
 def test_waiting_and_next_actions(inbox_id):
-    """'Aguardando' casa #aguardando; 'Próximas Ações' exclui aguardando/algum-dia."""
-    T.create_task("fazer agora")
-    T.create_task("esperando fulano", tags=["aguardando"])
-    T.create_task("talvez um dia", tags=["algum-dia"])
+    """'Aguardando' casa gtd_status=waiting; 'Próximas Ações' casa gtd_status=next_action."""
+    r1 = T.create_task("fazer agora")
+    r2 = T.create_task("esperando fulano")
+    r3 = T.create_task("talvez um dia")
+    T.update_task(r1["id"], gtd_status="next_action")
+    T.update_task(r2["id"], gtd_status="waiting", waiting_note="fulano")
+    T.update_task(r3["id"], gtd_status="someday")
 
     waiting = {t["title"] for t in F.list_tasks_by_builtin("waiting")}
     next_actions = {t["title"] for t in F.list_tasks_by_builtin("next-actions")}
+    someday = {t["title"] for t in F.list_tasks_by_builtin("someday")}
     assert waiting == {"esperando fulano"}
     assert next_actions == {"fazer agora"}
+    assert someday == {"talvez um dia"}
 
 
 @requires_db
 def test_builtin_translation_is_parametrized(inbox_id):
-    """A tradução das built-ins é parametrizada — valores de tag não tocam o SQL (SC-003)."""
+    """A tradução das built-ins é parametrizada — valores não tocam o SQL cru (SC-003)."""
     for key, meta in F.BUILTIN_FILTERS.items():
         where_sql, _params, _orphans = F._build_where_from_rules(meta["rules"])
         assert where_sql.strip(), f"built-in {key} gerou WHERE vazio"
-        assert "alta-energia" not in where_sql and "aguardando" not in where_sql
+        assert "next_action" not in where_sql and "waiting" not in where_sql and "someday" not in where_sql
 
 
 @requires_db
@@ -120,7 +121,8 @@ def test_quick_and_energy(inbox_id):
 @requires_db
 def test_telegram_resolves_builtin_by_name(inbox_id):
     """O canal Telegram resolve um built-in pelo nome (paridade com a sidebar — FR-012)."""
-    T.create_task("delegada", tags=["aguardando"])
+    r = T.create_task("delegada")
+    T.update_task(r["id"], gtd_status="waiting")
     r = F.list_tasks_by_filter_name("Aguardando")
     assert [t["title"] for t in r["tasks"]] == ["delegada"]
     # Prefixo também resolve ("próx" → "Próximas Ações").

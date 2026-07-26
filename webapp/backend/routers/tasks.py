@@ -39,6 +39,8 @@ from agents.kaguya.tools_tasks import (
     # Meu Dia — fatia 016
     add_to_my_day, remove_from_my_day, reschedule_pending,
     set_estimate, set_time_block, clear_time_block, list_my_day,
+    # Processamento do inbox (GTD) — spec 034
+    list_inbox_queue, process_inbox_item,
 )
 from agents.kaguya.tools_tags import (
     list_tags, create_tag, update_tag, delete_tag, list_tasks_by_tag,
@@ -53,6 +55,15 @@ from agents.kaguya.tools_kanban_views import (
     list_views, create_view, update_view, delete_view, list_board_for_view,
 )
 from agents.kaguya.tools_calendar import list_tasks_in_range
+# Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034.
+from agents.kaguya.tools_views import (
+    list_view_all, list_view_today, list_view_tomorrow, list_view_next7,
+    list_view_inbox, get_view_counts,
+)
+# Contextos de execução dedicados — spec 034.
+from agents.kaguya.tools_contexts import (
+    list_contexts, create_context, update_context, delete_context,
+)
 # Calendar Hub — fatia 019 (US2): providers cross-agent + prefs de exibição
 from agents.kaguya.calendar_hub import list_sources, aggregate
 from agents.kaguya.calendar_prefs import get_calendar_prefs, set_calendar_pref
@@ -183,6 +194,10 @@ class UpdateTaskBody(BaseModel):
     tags: Optional[list[str]] = None             # substitui o conjunto de tags (vazio = remover todas)
     duration_min: Optional[int] = None           # estimativa de duração (Meu Dia — fatia 016)
     person_ids: Optional[list[str]] = None       # substitui responsáveis Komi (fatia 025)
+    # spec 034: status GTD real + contexto de execução (semântica _UNSET igual a due_date/description).
+    gtd_status: Optional[str] = None             # next_action | waiting | someday | None (limpa)
+    waiting_note: Optional[str] = None           # por quem/o quê espera (só com gtd_status='waiting')
+    context_id: Optional[int] = None             # None = desassocia contexto
 
 
 class MoveTaskBody(BaseModel):
@@ -190,6 +205,28 @@ class MoveTaskBody(BaseModel):
     new_parent_id: Optional[int] = None  # None = promover a tarefa-raiz
     after_id: Optional[int] = None      # vizinho que fica antes no destino
     before_id: Optional[int] = None     # vizinho que fica depois no destino
+
+
+class CreateContextBody(BaseModel):
+    """Body de criação de contexto de execução — spec 034."""
+    name: str
+    icon: Optional[str] = None
+
+
+class UpdateContextBody(BaseModel):
+    """Body de edição de contexto (PATCH parcial) — spec 034."""
+    name: Optional[str] = None
+    icon: Optional[str] = None
+    position: Optional[int] = None
+
+
+class ProcessInboxItemBody(BaseModel):
+    """Body de uma decisão do processamento guiado do inbox — spec 034."""
+    decision: str  # next_action | waiting | someday | schedule | done | trash
+    context_id: Optional[int] = None    # só usado com decision="next_action"
+    project_id: Optional[int] = None    # só usado com decision="next_action" (lista de destino)
+    waiting_note: Optional[str] = None  # só usado com decision="waiting"
+    due_date: Optional[str] = None      # obrigatório com decision="schedule"
 
 
 # ── Meu Dia — fatia 016 ───────────────────────────────────────────────────────
@@ -534,6 +571,65 @@ def list_trash_route(
     return list_trash(project_id)  # listagem
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Processamento do inbox (GTD) — spec 034
+# ─────────────────────────────────────────────────────────────────────────────
+# "/inbox" é caminho LITERAL: o conversor int de "/{task_id}" rejeita "inbox" (mesma
+# garantia de /tags, /filters, /kanban-views — sem ambiguidade de rota).
+@router.get("/inbox/queue")
+def inbox_queue_route(user: dict = Depends(require_user)) -> dict:
+    """Fila do processamento do inbox — itens ainda não processados (FR-003/FR-004)."""
+    return list_inbox_queue()  # listagem — sem _check_result
+
+
+@router.post("/inbox/{task_id}/process")
+def process_inbox_item_route(
+    task_id: int, body: ProcessInboxItemBody, user: dict = Depends(require_user)
+) -> dict:
+    """Aplica uma decisão do wizard a um item da fila (next_action/waiting/someday/schedule/done/trash)."""
+    return _check_result(process_inbox_item(task_id, **body.model_dump(exclude_unset=True)))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034
+# ─────────────────────────────────────────────────────────────────────────────
+# "/views" é caminho LITERAL — mesma garantia de /inbox/tags/filters/kanban-views.
+@router.get("/views/counts")
+def view_counts_route(user: dict = Depends(require_user)) -> dict:
+    """Contadores das 5 views fixas, para os badges da sidebar."""
+    return get_view_counts()  # listagem — sem _check_result
+
+
+@router.get("/views/all")
+def view_all_route(user: dict = Depends(require_user)) -> list[dict]:
+    """View fixa "Todas" — todas as tarefas abertas, independente de lista ou data."""
+    return list_view_all()  # listagem
+
+
+@router.get("/views/today")
+def view_today_route(user: dict = Depends(require_user)) -> list[dict]:
+    """View fixa "Hoje" — vencem hoje + atrasadas."""
+    return list_view_today()  # listagem
+
+
+@router.get("/views/tomorrow")
+def view_tomorrow_route(user: dict = Depends(require_user)) -> list[dict]:
+    """View fixa "Amanhã"."""
+    return list_view_tomorrow()  # listagem
+
+
+@router.get("/views/next7")
+def view_next7_route(user: dict = Depends(require_user)) -> list[dict]:
+    """View fixa "Próximos 7 Dias" (inclui hoje)."""
+    return list_view_next7()  # listagem
+
+
+@router.get("/views/inbox")
+def view_inbox_route(user: dict = Depends(require_user)) -> list[dict]:
+    """View fixa "Inbox"."""
+    return list_view_inbox()  # listagem
+
+
 @router.post("", status_code=201)
 def create_task_route(body: CreateTaskBody, user: dict = Depends(require_user)) -> dict:
     """Cria uma tarefa (ou subtarefa).
@@ -656,6 +752,30 @@ def update_tag_route(tag_id: int, body: UpdateTagBody, user: dict = Depends(requ
 def delete_tag_route(tag_id: int, user: dict = Depends(require_user)) -> dict:
     """Exclui uma tag (os vínculos somem; as tarefas permanecem)."""
     return _check_result(delete_tag(tag_id))
+
+
+@router.get("/contexts")
+def list_contexts_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Lista os contextos de execução (ordem da sidebar)."""
+    return list_contexts()  # listagem — sem _check_result
+
+
+@router.post("/contexts", status_code=201)
+def create_context_route(body: CreateContextBody, user: dict = Depends(require_user)) -> dict:
+    """Cria um contexto (erro 400 se já existir um com o mesmo nome ignorando caixa)."""
+    return _check_result(create_context(**body.model_dump(exclude_unset=True)))
+
+
+@router.patch("/contexts/{context_id}")
+def update_context_route(context_id: int, body: UpdateContextBody, user: dict = Depends(require_user)) -> dict:
+    """Renomeia/reordena/reicona um contexto."""
+    return _check_result(update_context(context_id, **body.model_dump(exclude_unset=True)))
+
+
+@router.delete("/contexts/{context_id}")
+def delete_context_route(context_id: int, user: dict = Depends(require_user)) -> dict:
+    """Exclui um contexto (as tarefas que o usavam ficam sem contexto, nunca são apagadas)."""
+    return _check_result(delete_context(context_id))
 
 
 @router.get("/by-tag")

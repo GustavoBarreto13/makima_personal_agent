@@ -3,7 +3,7 @@
 // (cada uma com prioridade + descrição próprias).
 
 import { useState, useEffect } from 'react'
-import type { Task, Project, TaskType, RecurrenceMode, Tag, Person } from '../types'
+import type { Task, Project, TaskType, RecurrenceMode, Tag, Person, GtdStatus, TaskContext } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 import { Avatar, AvatarStack } from '../components/People'
@@ -92,6 +92,12 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
   const [projectId, setProjectId] = useState<number | null>(task?.project_id ?? defaultProjectId ?? null)
   const [priority, setPriority] = useState(task?.priority ?? 0)
   const [type, setType] = useState<TaskType>(task?.type ?? 'task')
+  // Status GTD real (spec 034) — só editável em tarefas existentes (create_task não aceita
+  // gtd_status; o status nasce pelo processamento do inbox ou por esta edição manual).
+  const [gtdStatus, setGtdStatus] = useState<GtdStatus | null>(task?.gtd_status ?? null)
+  const [waitingNote, setWaitingNote] = useState(task?.waiting_note ?? '')
+  const [contextId, setContextId] = useState<number | null>(task?.context_id ?? null)
+  const [contexts, setContexts] = useState<TaskContext[]>([])
   // Se estamos criando e o calendário forneceu um slot (defaults), usa como segundo fallback.
   // Em modo edição `task` sempre tem precedência; defaults é ignorado.
   const [dueDate, setDueDate] = useState(task?.due_date ?? defaults?.dueDate ?? '')
@@ -190,6 +196,8 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
     kaguyaApi.listTags().then(setTagCatalog).catch(() => { /* silencioso */ })
     // Carrega pessoas da Komi — usado na seção de responsáveis (fatia 025).
     kaguyaApi.listPeople().then(setPeople).catch(() => { /* silencioso */ })
+    // Carrega contextos de execução — spec 034.
+    kaguyaApi.listContexts().then(setContexts).catch(() => { /* silencioso */ })
   }, [])
 
   // Salva a tarefa principal (cria ou edita), incluindo a recorrência e a duração.
@@ -235,6 +243,13 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
           person_ids: personIds,
           // Inclui duration_min diretamente na atualização (null remove a estimativa).
           duration_min: duration > 0 ? duration : null,
+          // Status GTD real (spec 034) — null = "não classificada".
+          gtd_status: gtdStatus,
+          // waiting_note só é enviado (e portanto só é tocado) quando o status é "waiting" —
+          // omitir a chave nos demais casos preserva a anotação no backend (data-model.md:
+          // "fica muda até a próxima vez"), em vez de apagá-la ao trocar de status.
+          ...(gtdStatus === 'waiting' ? { waiting_note: waitingNote || null } : {}),
+          context_id: contextId,
         }
         if (rrule) upd.recurrence = { rrule, mode: recurMode }
         // Tinha regra e o usuário escolheu "não repete" → remove (sem mexer em aniversário).
@@ -439,6 +454,50 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
               ))}
             </div>
           </div>
+
+          {/* Status GTD real (spec 034) — só em tarefas existentes (create_task não aceita
+              gtd_status; o status nasce pelo processamento do inbox ou por esta edição). */}
+          {mode === 'edit' && (
+            <div className="kg-field">
+              <span className="kg-field-label">Status GTD</span>
+              <div className="kg-segment">
+                <button className={`kg-seg-opt${gtdStatus === null ? ' active' : ''}`} onClick={() => setGtdStatus(null)}>Não classificada</button>
+                <button className={`kg-seg-opt${gtdStatus === 'next_action' ? ' active' : ''}`} onClick={() => setGtdStatus('next_action')}>Próxima ação</button>
+                <button className={`kg-seg-opt${gtdStatus === 'waiting' ? ' active' : ''}`} onClick={() => setGtdStatus('waiting')}>Aguardando</button>
+                <button className={`kg-seg-opt${gtdStatus === 'someday' ? ' active' : ''}`} onClick={() => setGtdStatus('someday')}>Algum dia</button>
+              </div>
+              {gtdStatus === 'waiting' && (
+                <div style={{ marginTop: 8 }}>
+                  <input
+                    className="kg-input"
+                    value={waitingNote}
+                    onChange={(e) => setWaitingNote(e.target.value)}
+                    placeholder="Por quem/o quê espera (opcional)"
+                  />
+                  {task?.waiting_since && (
+                    <p className="kg-muted" style={{ marginTop: 4 }}>
+                      Aguardando desde {new Date(task.waiting_since).toLocaleDateString('pt-BR')}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Contexto de execução (spec 034) — no máximo um por tarefa. */}
+          {mode === 'edit' && (
+            <div className="kg-field">
+              <span className="kg-field-label">Contexto</span>
+              <select
+                className="kg-select"
+                value={contextId ?? ''}
+                onChange={(e) => setContextId(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">Sem contexto</option>
+                {contexts.map((c) => <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ''}{c.name}</option>)}
+              </select>
+            </div>
+          )}
 
           <div className="kg-field-row">
             {/* DatePicker: seletor de data no tema, substitui <input type="date"> */}

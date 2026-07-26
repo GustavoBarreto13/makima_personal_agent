@@ -6,6 +6,8 @@ import type { CSSProperties, ReactNode } from 'react'
 // Mapa nome → conteúdo do <svg> (paths). Todos desenhados num viewBox 24×24.
 const PATHS: Record<string, ReactNode> = {
   sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>,
+  // Nascer do sol — view fixa "Amanhã" (spec 034), estilo Lucide, viewBox 24×24.
+  sunrise: <><path d="M12 2v5M4.2 10.2 5.6 11.6M19.8 10.2 18.4 11.6M2 18h2M20 18h2M12 18a5 5 0 0 0-5-5H8a5 5 0 0 0 4 8h0a5 5 0 0 0 4-8h-1a5 5 0 0 0-3 5z" /><path d="M2 22h20" /></>,
   board: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18M15 3v18" /></>,
   list: <><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></>,
   calendar: <><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></>,

@@ -75,6 +75,22 @@ export interface Task {
   google_event_id?: string | null
   is_virtual?: boolean
   series_task_id?: number | null
+  // GTD real (spec 034): null = não classificada.
+  gtd_status?: GtdStatus | null
+  waiting_note?: string | null    // por quem/o quê espera (só com gtd_status === 'waiting')
+  waiting_since?: string | null   // ISO 8601 — desde quando está aguardando
+  context_id?: number | null      // contexto de execução (no máximo um por tarefa)
+}
+
+// Status GTD real de uma tarefa (spec 034) — substitui as tags reservadas #aguardando/#algum-dia.
+export type GtdStatus = 'next_action' | 'waiting' | 'someday'
+
+// Um contexto de execução (spec 034) — nome único (case-insensitive), no máximo um por tarefa.
+export interface TaskContext {
+  id: number
+  name: string
+  icon: string | null
+  position: number
 }
 
 // ── Meu Dia — fatia 016 ───────────────────────────────────────────────────────
@@ -135,7 +151,7 @@ export interface Group {
 
 // ── Smart-lists (filtros salvos) — fatia 013 / P2 ──────────────────────────────
 // Campos e operadores aceitos pela DSL (espelham agents/kaguya/tools_filters.py).
-export type FilterField = 'project_id' | 'priority' | 'due_date' | 'tag' | 'state' | 'text'
+export type FilterField = 'project_id' | 'priority' | 'due_date' | 'tag' | 'state' | 'text' | 'gtd_status' | 'context_id'
 export type FilterCombinator = 'and' | 'or'
 
 // Uma condição da regra: {campo, operador, valor}. O valor varia por campo (ver DSL).
@@ -182,6 +198,38 @@ export const GTD_BUILTINS: GtdBuiltin[] = [
   { id: -5, key: 'quick', name: 'Rápidas (5 min)', icon: 'timer' },
   { id: -6, key: 'energy', name: 'Alta energia', icon: 'flame' },
 ]
+
+// ── Processamento do inbox (GTD) — spec 034 ────────────────────────────────────
+// As 6 decisões do wizard (FR-003) — mesmo vocabulário do backend (process_inbox_item).
+export type InboxDecision = 'next_action' | 'waiting' | 'someday' | 'schedule' | 'done' | 'trash'
+
+export interface InboxQueueResponse {
+  items: Task[]
+  total: number
+}
+
+// ── Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034 ────
+// Bloco fixo no TOPO da sidebar, nesta ordem; não editável pelo usuário (research.md R7).
+// Nome "DATE_VIEWS" (não "FIXED_VIEWS") para não colidir com a const local de mesmo nome
+// em SidebarNav.tsx (as views de ROTA: Meu Dia/Kanban/Calendário/...) — módulos distintos,
+// mas ambos acabam importados no mesmo arquivo.
+export type DateViewKey = 'all' | 'today' | 'tomorrow' | 'next7' | 'inbox'
+
+export interface DateViewMeta {
+  key: DateViewKey
+  name: string
+  icon: string
+}
+
+export const DATE_VIEWS: DateViewMeta[] = [
+  { key: 'all', name: 'Todas', icon: 'list' },
+  { key: 'today', name: 'Hoje', icon: 'sun' },
+  { key: 'tomorrow', name: 'Amanhã', icon: 'sunrise' },
+  { key: 'next7', name: 'Próximos 7 Dias', icon: 'calendar' },
+  { key: 'inbox', name: 'Inbox', icon: 'inbox' },
+]
+
+export type DateViewCounts = Record<DateViewKey, number>
 
 // Resposta de "abrir uma smart-list": tarefas + referências órfãs (tag/lista excluída).
 export interface FilterTasksResponse {
@@ -409,7 +457,15 @@ export interface Tweaks {
 // id da smart-list (ou BUILTIN_TODAY_OVERDUE para a built-in). 'group' usa o param como
 // id do grupo (task_project_groups) e abre o board Kanban agregado do grupo.
 // 'group-list' usa o param como id do grupo e exibe as tarefas em seções por lista.
-export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'experiments' | 'goals' | 'trash' | 'filter' | 'group' | 'group-list'
+// 'date' abre uma das views fixas de mercado (spec 034) — o `param` é o sentinel
+// negativo de DATE_VIEW_IDS (mesmo truque de BUILTIN_TODAY_OVERDUE/GTD_BUILTINS).
+export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'experiments' | 'goals' | 'trash' | 'filter' | 'group' | 'group-list' | 'date'
+
+// Sentinelas negativos para as 4 views fixas que abrem a tela 'date' (a 5ª, "inbox",
+// reusa a lista Inbox de verdade via view='list' — mesmo conteúdo, sem duplicar tela).
+export const DATE_VIEW_IDS: Record<Exclude<DateViewKey, 'inbox'>, number> = {
+  all: -10, today: -11, tomorrow: -12, next7: -13,
+}
 
 // ── Board de Grupo — Kanban agregado por status unificado ─────────────────────
 // Um membro de coluna unificada: indica qual column_id desta lista compõe a coluna.

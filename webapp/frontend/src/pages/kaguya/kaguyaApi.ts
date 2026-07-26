@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -101,6 +101,9 @@ export const kaguyaApi = {
     tags: string[]                                           // substitui o conjunto de tags
     duration_min: number | null                              // estimativa de duração (Meu Dia)
     person_ids: string[]                                     // substitui responsáveis (fatia 025)
+    gtd_status: GtdStatus | null                              // status GTD real (spec 034)
+    waiting_note: string | null                               // por quem/o quê espera
+    context_id: number | null                                 // contexto de execução
   }>) => api.patch<MutationResult>(`${BASE}/${id}`, body),
 
   // Mover tarefa para novo pai/posição com semântica 3 zonas (fatia 025)
@@ -149,6 +152,28 @@ export const kaguyaApi = {
   todayOverdue: () => api.get<Task[]>(`${BASE}/filters/today-overdue`),
   // Built-ins GTD adicionais (não persistidos): abre um pela chave (next-actions, waiting…).
   builtinTasks: (key: string) => api.get<Task[]>(`${BASE}/filters/builtin/${encodeURIComponent(key)}/tasks`),
+
+  // ── Processamento do inbox (GTD) — spec 034 ─────────────────────────────────
+  inboxQueue: () => api.get<InboxQueueResponse>(`${BASE}/inbox/queue`),
+  processInboxItem: (id: number, body: {
+    decision: InboxDecision
+    context_id?: number | null
+    project_id?: number | null
+    waiting_note?: string | null
+    due_date?: string | null
+  }) => api.post<MutationResult>(`${BASE}/inbox/${id}/process`, body),
+
+  // ── Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034 ──
+  viewTasks: (key: DateViewKey) => api.get<Task[]>(`${BASE}/views/${key}`),
+  viewCounts: () => api.get<DateViewCounts>(`${BASE}/views/counts`),
+
+  // ── Contextos de execução — spec 034 ────────────────────────────────────────
+  listContexts: () => api.get<TaskContext[]>(`${BASE}/contexts`),
+  createContext: (body: { name: string; icon?: string | null }) =>
+    api.post<MutationResult>(`${BASE}/contexts`, body),
+  updateContext: (id: number, body: Partial<{ name: string; icon: string | null; position: number }>) =>
+    api.patch<MutationResult>(`${BASE}/contexts/${id}`, body),
+  deleteContext: (id: number) => api.del<MutationResult>(`${BASE}/contexts/${id}`),
 
   // ── Views de Kanban configuráveis — spec 024 ────────────────────────────────
   listKanbanViews: () => api.get<KanbanView[]>(`${BASE}/kanban-views`),

@@ -22,6 +22,7 @@ from agents.db import get_conn
 from agents.kaguya.tools_tasks import (  # noqa: F401
     list_tasks, list_tasks_today, search_tasks, create_task, update_task,
     complete_task, reopen_task, delete_task, restore_task, clear_recurrence,
+    list_inbox_queue, process_inbox_item,
 )
 from agents.kaguya.tools_projects import (  # noqa: F401
     get_sidebar, create_project, update_project, delete_project,
@@ -40,6 +41,15 @@ from agents.kaguya.tools_filters import (  # noqa: F401
 # Calendário — fatia 013 / P3. Consulta por intervalo de datas ("o que tenho essa semana"),
 # o equivalente Telegram da view de calendário do webapp (FR-017).
 from agents.kaguya.tools_calendar import list_tasks_in_range  # noqa: F401
+# Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034.
+from agents.kaguya.tools_views import (  # noqa: F401
+    list_view_all, list_view_today, list_view_tomorrow, list_view_next7,
+    list_view_inbox, get_view_counts,
+)
+# Contextos de execução dedicados — spec 034.
+from agents.kaguya.tools_contexts import (  # noqa: F401
+    list_contexts, create_context, update_context, delete_context,
+)
 # Hábitos — fatia 014 / Fase 4. CRUD + check-in + histórico; a força é calculada na leitura
 # pelo motor puro. O agente cria hábito, faz check-in e consulta a força (paridade com o webapp).
 from agents.kaguya.tools_habits import (  # noqa: F401
@@ -100,6 +110,35 @@ def list_tasks_by_project(project: Union[int, str], include_completed: bool = Fa
     if pid is None:
         return {"status": "error", "message": f"Lista '{project}' não encontrada."}
     return list_tasks(pid, include_completed)
+
+
+def resolve_view_by_name(name: str) -> Union[list, dict]:
+    """Resolve uma das 5 views fixas de mercado pelo nome falado (Telegram — spec 034/FR-014).
+
+    Casamento tolerante (igual a ``list_tasks_by_filter_name``): exato ignorando caixa
+    primeiro, depois por prefixo/sinônimo comum.
+
+    Args:
+        name: Nome da view como o usuário falou (ex.: "amanhã", "próximos 7 dias", "todas").
+
+    Returns:
+        Lista de tarefas serializadas, ou ``{"status": "error", ...}`` se não casar nenhuma.
+    """
+    if not name or not name.strip():
+        return {"status": "error", "message": "Diga qual view: todas, hoje, amanhã, próximos 7 dias ou inbox."}
+    termo = name.strip().lower()
+
+    if termo in ("todas", "tudo"):
+        return list_view_all()
+    if termo in ("hoje", "hoje + vencidas", "hoje e vencidas"):
+        return list_view_today()
+    if termo in ("amanhã", "amanha"):
+        return list_view_tomorrow()
+    if termo in ("próximos 7 dias", "proximos 7 dias", "próximos 7 dia", "7 dias", "semana"):
+        return list_view_next7()
+    if termo in ("inbox", "caixa de entrada"):
+        return list_view_inbox()
+    return {"status": "error", "message": f"Não reconheci a view '{name}'."}
 
 
 def set_task_recurrence(
