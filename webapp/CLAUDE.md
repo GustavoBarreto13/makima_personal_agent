@@ -298,7 +298,7 @@ Telas disponíveis: `Write` (editor de bullets), `Journal` (arquivo), `Reflect` 
 
 O diário usa bullets com parsing de `@pessoa` e `#tag`. O componente `RichText.tsx` faz o highlight visual. A API é `violetApi` em `lib/api.ts`.
 
-**Conselho do Dia (spec 061):** `components/CounselSection.tsx`, no topo da tela `Write` (acima do Registro Emocional/Cartas/bullets). Sob demanda, chama `violetApi.generateCounsel`/`getCounsel` e renderiza os 4 blocos (espelho, ferramentas da base, pergunta, ações); ações podem virar tarefa via `kaguyaApi.createTask` + `violetApi.markActionAsTask`. CSS com prefixo `.cs-*` no fim de `violet.css`.
+**Conselho do Dia (spec 061):** `components/CounselSection.tsx`, no topo da tela `Write` (acima do Registro Emocional/Cartas/bullets). Sob demanda, chama `violetApi.generateCounsel`/`getCounsel` e renderiza 3 blocos (espelho, ferramentas e curadoria da base — cada item com `porque`/`como`/`exemplo_hoje`/`lembrete`, ações); ações podem virar tarefa via `kaguyaApi.createTask` + `violetApi.markActionAsTask`. CSS com prefixo `.cs-*` no fim de `violet.css`.
 
 ---
 

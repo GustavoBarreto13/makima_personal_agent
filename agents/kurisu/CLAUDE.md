@@ -103,10 +103,12 @@ do progresso) → `skills` (cache materializado por conceito, recomputável dos 
 Uma seção no topo da tela Escrever (acima dos bullets) onde, sob demanda (um clique), a
 **Violet** lê o dia — bullets, registros emocionais (TCC), cartas — cruza com a **base de
 conhecimento pessoal do usuário** (mesmo RAG da Kurisu, via `buscar_na_base`) e devolve
-4 blocos fixos: **espelho do dia** (resumo empático), **da sua base** (ferramentas/técnicas
-com citação real da fonte), **pergunta para refletir** e **ações sugeridas** (podem virar
-tarefa na Kaguya em um clique). Uma análise por dia (`UNIQUE page_id`); "Regerar"
-sobrescreve. Objetivo do produto: lembrar o usuário, na hora em que precisa, da curadoria
+3 blocos fixos: **espelho do dia** (resumo empático), **da sua base: ferramentas e
+curadoria** (o bloco central — cada item traz `porque`/`como`/`exemplo_hoje`/`lembrete`,
+com citação real da fonte) e **ações sugeridas** (podem virar tarefa na Kaguya em um
+clique). O bloco "Pergunta para refletir" existiu na v1 e foi removido — o produto ficou
+mais forte concentrando a profundidade no toolkit. Uma análise por dia (`UNIQUE page_id`);
+"Regerar" sobrescreve. Objetivo do produto: lembrar o usuário, na hora em que precisa, da curadoria
 que ele mesmo já fez (ex.: um vídeo salvo sobre dias tristes).
 
 ### Por que aqui e não em `agents/journal/`
@@ -145,9 +147,12 @@ campo `tutor` em `GET /page`). Isso também evita colidir com o plano pendente d
    decide se dispara `_buscar_web` — chamada Gemini **separada**, com a tool
    `google_search` habilitada e **sem** `response_schema` (as duas coisas são mutuamente
    exclusivas na mesma chamada — restrição real da API, não escolha de design).
-5. **Síntese** (`_sintetizar`): Gemini one-shot (`response_schema`) produz os 4 blocos na
-   voz da Violet. Cada item do toolkit carrega `trecho_index` (o número `[N]` do trecho
-   na lista numerada do prompt) em vez de copiar `fonte`/`uri` como texto livre — copiar
+5. **Síntese** (`_sintetizar`): Gemini one-shot (`response_schema`) produz os 3 blocos na
+   voz da Violet. Cada item do toolkit traz `titulo`, `porque` (o princípio por trás),
+   `como` (passo a passo prático), `exemplo_hoje` (ligado ao que a pessoa escreveu
+   especificamente hoje — nunca genérico) e `lembrete` (por que vale não esquecer disso
+   agora), além de `trecho_index` (o número `[N]` do trecho na lista numerada do prompt)
+   em vez de copiar `fonte`/`uri` como texto livre — copiar
    uma uri inteira é frágil para o modelo (medido: ~33% de falha); um índice pequeno é
    muito mais confiável (ver `research.md` R9).
 6. **Honestidade server-side** (`_normalize_toolkit`): `fonte`/`uri`/`origem` de cada item
@@ -163,7 +168,7 @@ campo `tutor` em `GET /page`). Isso também evita colidir com o plano pendente d
 ### Tabela (`journal_counsel`)
 
 Uma linha por `page_id` (`UNIQUE`, FK `journal_pages(id) ON DELETE CASCADE`): `mirror`,
-`toolkit_json` (`[{titulo, porque, como, fonte, uri, origem}]`), `question`,
+`toolkit_json` (`[{titulo, porque, como, exemplo_hoje, lembrete, fonte, uri, origem}]`),
 `actions_json` (`[{texto, motivo, task_id}]`), `signals_json` (auditoria), `used_web`,
 `model`. Coluna a coluna: `docs/referencia/POSTGRES.md`.
 

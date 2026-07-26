@@ -121,17 +121,24 @@ export function CounselSection({ pageId, date }: CounselSectionProps) {
                       )}
                     </div>
                     {item.porque && <p className="cs-toolkit-text">{item.porque}</p>}
-                    {item.como && <p className="cs-toolkit-text cs-toolkit-como">{item.como}</p>}
+                    {item.como && (
+                      <p className="cs-toolkit-text cs-toolkit-como">
+                        <span className="cs-toolkit-label">Como aplicar:</span> {item.como}
+                      </p>
+                    )}
+                    {item.exemplo_hoje && (
+                      <p className="cs-toolkit-text cs-toolkit-exemplo">
+                        <span className="cs-toolkit-label">No seu dia de hoje:</span> {item.exemplo_hoje}
+                      </p>
+                    )}
+                    {item.lembrete && (
+                      <p className="cs-toolkit-text cs-toolkit-lembrete">
+                        <span className="cs-toolkit-label">Por que vale lembrar:</span> {item.lembrete}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-
-          {counsel.question && (
-            <div className="cs-block">
-              <div className="cs-block-title">Pergunta para refletir</div>
-              <p className="cs-question">"{counsel.question}"</p>
             </div>
           )}
 

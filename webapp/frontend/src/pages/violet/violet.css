@@ -1393,12 +1393,19 @@
   white-space: nowrap;
 }
 .cs-toolkit-text { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
+.cs-toolkit-label {
+  font-weight: 600; color: var(--ink-4); font-size: 11.5px;
+  text-transform: uppercase; letter-spacing: 0.03em; margin-right: 2px;
+}
 .cs-toolkit-como { color: var(--ink-3); }
-
-/* Pergunta de reflexão — mesmo tratamento itálico do Reflect.tsx */
-.cs-question {
-  margin: 0; font-family: var(--serif); font-style: italic; font-size: 15.5px;
-  line-height: 1.6; color: var(--ink-2);
+/* Exemplo ligado ao dia real da pessoa — leve destaque para diferenciar do "como" genérico */
+.cs-toolkit-exemplo {
+  color: var(--ink-2); background: var(--accent-tint); border-radius: 6px;
+  padding: 6px 8px; margin-top: 2px;
+}
+/* Lembrete — o motivo central da feature (resurfaçar curadoria esquecida), tom itálico */
+.cs-toolkit-lembrete {
+  color: var(--ink-3); font-family: var(--serif); font-style: italic;
 }
 
 /* Ações sugeridas */

@@ -302,8 +302,10 @@ export interface TutorProgress {
 // complementar, marcada visivelmente como vinda de fora (FR-011).
 export interface CounselToolkitItem {
   titulo: string
-  porque: string
-  como: string
+  porque: string         // por que a ferramenta/técnica importa (o princípio por trás)
+  como: string            // passo a passo prático de como aplicar
+  exemplo_hoje: string    // exemplo concreto ligado ao que a pessoa escreveu hoje
+  lembrete: string        // por que vale a pena não esquecer disso agora
   fonte: string
   uri: string
   origem: 'base' | 'web'
@@ -324,7 +326,6 @@ export interface Counsel {
   date: string             // YYYY-MM-DD
   mirror: string            // Espelho do dia
   toolkit: CounselToolkitItem[]  // Da sua base: ferramentas e curadoria
-  question: string | null   // Pergunta para refletir
   actions: CounselAction[]  // Ações sugeridas
   used_web: boolean         // atalho: true se algum item do toolkit veio da web
   created_at: string

@@ -2,10 +2,12 @@
 
 Um botão na tela Escrever pede, sob demanda, uma leitura do dia (bullets, registros
 emocionais, cartas), da janela dos 7 dias anteriores, do estado de tarefas/hábitos da
-Kaguya e dos até 3 conselhos anteriores — e devolve 4 blocos fixos (espelho do dia,
-ferramentas da base, pergunta de reflexão, ações sugeridas) na voz da Violet, ancorados na
-base de conhecimento pessoal do usuário (RAG da Kurisu) e, só como complemento quando a
-base não cobre, numa busca na web.
+Kaguya e dos até 3 conselhos anteriores — e devolve 3 blocos fixos (espelho do dia,
+ferramentas e curadoria da base, ações sugeridas) na voz da Violet, ancorados na base de
+conhecimento pessoal do usuário (RAG da Kurisu) e, só como complemento quando a base não
+cobre, numa busca na web. O bloco "Da sua base" é o centro do produto: cada item traz o
+porquê da técnica, como aplicá-la, um exemplo concreto ligado ao dia real da pessoa e um
+lembrete de por que vale a pena não esquecer dela.
 
 Mesmo padrão arquitetural do Tutor de Idiomas (spec 031, ``agents/kurisu/tutor.py``): a
 lógica mora aqui porque a Kurisu é a dona do domínio RAG (Constitution, Princípio I) — a
@@ -90,7 +92,6 @@ def _ensure_counsel_tables() -> None:
                     page_id       INT NOT NULL UNIQUE REFERENCES journal_pages(id) ON DELETE CASCADE,
                     mirror        TEXT NOT NULL,
                     toolkit_json  JSONB NOT NULL DEFAULT '[]',
-                    question      TEXT,
                     actions_json  JSONB NOT NULL DEFAULT '[]',
                     signals_json  JSONB NOT NULL DEFAULT '{}',
                     used_web      BOOLEAN NOT NULL DEFAULT FALSE,
@@ -105,6 +106,11 @@ def _ensure_counsel_tables() -> None:
                 CREATE INDEX IF NOT EXISTS idx_counsel_created
                 ON journal_counsel (created_at DESC)
             """)
+            # O bloco "Pergunta para refletir" foi removido do produto (o "Da sua base"
+            # ficou mais completo/descritivo em troca) — dropar a coluna em bancos que já
+            # tinham a tabela criada antes dessa mudança (idempotente, mesmo padrão de
+            # migração usado para outras colunas neste repo).
+            cur.execute("ALTER TABLE journal_counsel DROP COLUMN IF EXISTS question")
         conn.commit()
     finally:
         conn.close()
@@ -201,7 +207,7 @@ def _conselhos_anteriores(date: str, limit: int = 3) -> list:
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("""
-                SELECT c.mirror, c.question, c.actions_json
+                SELECT c.mirror, c.actions_json
                 FROM journal_counsel c
                 JOIN journal_pages p ON p.id = c.page_id
                 WHERE p.date < %s
@@ -214,7 +220,6 @@ def _conselhos_anteriores(date: str, limit: int = 3) -> list:
             actions = r["actions_json"] if isinstance(r["actions_json"], list) else json.loads(r["actions_json"])
             resultado.append({
                 "mirror": r["mirror"],
-                "question": r["question"],
                 "actions": [a.get("texto", "") for a in actions],
             })
         return resultado
@@ -283,8 +288,19 @@ _SINTESE_SCHEMA = {
                 "type": "OBJECT",
                 "properties": {
                     "titulo": {"type": "STRING"},
+                    # Por que essa ferramenta/técnica importa em geral — o princípio por
+                    # trás dela, não apenas uma definição de dicionário.
                     "porque": {"type": "STRING"},
+                    # Passo a passo prático de como aplicar.
                     "como": {"type": "STRING"},
+                    # Exemplo CONCRETO ligado ao que a pessoa escreveu HOJE — mostra
+                    # exatamente onde a ferramenta se encaixa na situação atual dela, não
+                    # um exemplo genérico de manual.
+                    "exemplo_hoje": {"type": "STRING"},
+                    # Lembrete curto de por que isso importa / por que é fácil esquecer
+                    # disso justamente nos dias em que mais se precisa dele (o motivo de a
+                    # feature existir — resurfaçar curadoria esquecida).
+                    "lembrete": {"type": "STRING"},
                     # Índice (1-based) do trecho em "TRECHOS DA BASE" de onde a sugestão
                     # vem, ou 0 se não vier de nenhum trecho listado. Um inteiro pequeno é
                     # muito mais confiável para o modelo acertar do que copiar uma uri
@@ -294,10 +310,12 @@ _SINTESE_SCHEMA = {
                     # externa (ex.: "busca na web"). Ignorado quando trecho_index>0.
                     "fonte_web": {"type": "STRING"},
                 },
-                "required": ["titulo", "porque", "como", "trecho_index", "fonte_web"],
+                "required": [
+                    "titulo", "porque", "como", "exemplo_hoje", "lembrete",
+                    "trecho_index", "fonte_web",
+                ],
             },
         },
-        "question": {"type": "STRING"},
         "actions": {
             "type": "ARRAY",
             "items": {
@@ -310,7 +328,7 @@ _SINTESE_SCHEMA = {
             },
         },
     },
-    "required": ["mirror", "toolkit", "question", "actions"],
+    "required": ["mirror", "toolkit", "actions"],
 }
 
 
@@ -489,7 +507,7 @@ def _sintetizar(
     ) or "(sem registros nos últimos 7 dias)"
 
     bloco_anteriores = "\n".join(
-        f"- {c['mirror']} (perguntou: \"{c['question']}\"; sugeriu: {', '.join(c['actions']) or 'nada'})"
+        f"- {c['mirror']} (sugeriu: {', '.join(c['actions']) or 'nada'})"
         for c in conselhos_anteriores
     ) or "(nenhum conselho anterior)"
 
@@ -523,19 +541,33 @@ pessoa sente antes de sugerir algo.
 Leia o dia de hoje, o contexto dos últimos 7 dias, os conselhos anteriores (para dar
 continuidade — não repita como se fosse inédito) e os trechos recuperados da base de
 conhecimento pessoal do usuário (curadoria que ELE MESMO já fez — vídeos, textos, técnicas
-que salvou). Gere um conselho com 4 blocos:
+que salvou). Gere um conselho com 3 blocos:
 
 1. mirror: um resumo curto e empático (3 a 5 frases) do que você leu no dia — temas, humor,
    o que pesou.
-2. toolkit: de 1 a 3 sugestões de ferramentas/técnicas/materiais. Cada item tem
-   trecho_index: o NÚMERO (o "[N]") do trecho da lista "TRECHOS DA BASE" abaixo de onde
-   a sugestão realmente vem — só se ela vier genuinamente de lá. Se a sugestão não vier de
-   nenhum trecho listado (ex.: veio da informação complementar da web, ou é algo que você
-   sabe mas não está nos trechos), use trecho_index = 0 e preencha fonte_web com um nome
-   curto da origem (ex.: "busca na web"). NUNCA use um trecho_index só porque parece
-   relacionado — só se a sugestão vier mesmo do conteúdo daquele trecho específico.
-3. question: 1 a 2 perguntas socráticas para reflexão, baseadas no que foi escrito.
-4. actions: de 1 a 3 próximos passos concretos e pequenos.
+2. toolkit: de 2 a 4 sugestões de ferramentas/técnicas/materiais — este é o bloco central
+   do conselho ("Da sua base: ferramentas e curadoria"), então capriche na profundidade e
+   na conexão com o dia real da pessoa, não em generalidades de manual. Para cada item:
+   - titulo: nome curto da ferramenta/técnica/material.
+   - porque: por que ela importa DE VERDADE — o princípio por trás, não uma definição de
+     dicionário. Ajude a pessoa a entender o mecanismo, não só o nome.
+   - como: passo a passo prático e concreto de como aplicar — algo que dá para fazer hoje
+     mesmo, não uma ideia abstrata.
+   - exemplo_hoje: um exemplo CONCRETO ligado ao que a pessoa escreveu especificamente
+     hoje — mostre exatamente onde e como essa ferramenta se encaixaria na situação real
+     dela (ex.: "você mencionou X às 22h — é exatamente o tipo de situação em que Y
+     funciona, porque..."). Nunca um exemplo genérico desconectado do dia.
+   - lembrete: uma frase que reforce por que vale a pena lembrar disso agora — em especial
+     se for algo que a pessoa já estudou/salvou antes mas é fácil esquecer justamente nos
+     dias em que mais precisaria dele. Esse é o propósito central da feature: resurfaçar
+     curadoria esquecida no momento certo.
+   - trecho_index: o NÚMERO (o "[N]") do trecho da lista "TRECHOS DA BASE" abaixo de onde
+     a sugestão realmente vem — só se ela vier genuinamente de lá. Se a sugestão não vier
+     de nenhum trecho listado (ex.: veio da informação complementar da web, ou é algo que
+     você sabe mas não está nos trechos), use trecho_index = 0 e preencha fonte_web com um
+     nome curto da origem (ex.: "busca na web"). NUNCA use um trecho_index só porque parece
+     relacionado — só se a sugestão vier mesmo do conteúdo daquele trecho específico.
+3. actions: de 1 a 3 próximos passos concretos e pequenos.
 
 DIA DE HOJE:
 \"\"\"{texto_dia}\"\"\"
@@ -568,12 +600,13 @@ def _normalize_toolkit(raw_items: list, rag_trechos: list) -> list:
 
     Args:
         raw_items: Itens do toolkit como o Gemini devolveu (`{titulo, porque, como,
-            trecho_index, fonte_web}`).
+            exemplo_hoje, lembrete, trecho_index, fonte_web}`).
         rag_trechos: A lista de trechos realmente recuperada (mesma ordem/numeração
             `[1..N]` usada no prompt de `_sintetizar`).
 
     Returns:
-        Lista de `{titulo, porque, como, fonte, uri, origem}` prontos para persistir.
+        Lista de `{titulo, porque, como, exemplo_hoje, lembrete, fonte, uri, origem}`
+        prontos para persistir.
     """
     normalizado = []
     for item in raw_items:
@@ -582,20 +615,24 @@ def _normalize_toolkit(raw_items: list, rag_trechos: list) -> list:
         if isinstance(idx, int) and 1 <= idx <= len(rag_trechos):
             trecho = rag_trechos[idx - 1]
 
+        base_item = {
+            "titulo": item.get("titulo", ""),
+            "porque": item.get("porque", ""),
+            "como": item.get("como", ""),
+            "exemplo_hoje": item.get("exemplo_hoje", ""),
+            "lembrete": item.get("lembrete", ""),
+        }
+
         if trecho:
             normalizado.append({
-                "titulo": item.get("titulo", ""),
-                "porque": item.get("porque", ""),
-                "como": item.get("como", ""),
+                **base_item,
                 "fonte": trecho.get("fonte", ""),
                 "uri": trecho.get("uri", ""),
                 "origem": "base",
             })
         else:
             normalizado.append({
-                "titulo": item.get("titulo", ""),
-                "porque": item.get("porque", ""),
-                "como": item.get("como", ""),
+                **base_item,
                 "fonte": item.get("fonte_web", "") or "busca na web",
                 "uri": "",
                 "origem": "web",
@@ -614,7 +651,6 @@ def _serialize_counsel_row(row: dict, date: str) -> dict:
         "date": date,
         "mirror": row["mirror"],
         "toolkit": toolkit,
-        "question": row["question"],
         "actions": actions,
         "used_web": row["used_web"],
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
@@ -677,7 +713,6 @@ def gerar_conselho(date: str, type_id: int = 1) -> dict:
         prefixo = "Não encontrei nada equivalente na sua base de conhecimento para o que você escreveu hoje."
         mirror = f"{prefixo} {mirror}".strip()
 
-    question = sintese.get("question", "")
     signals = {
         "bullets": len(dia["bullets"]),
         "emotion_logs": len(dia["emotion_logs"]),
@@ -716,22 +751,21 @@ def gerar_conselho(date: str, type_id: int = 1) -> dict:
 
             cur.execute("""
                 INSERT INTO journal_counsel
-                    (page_id, mirror, toolkit_json, question, actions_json, signals_json,
+                    (page_id, mirror, toolkit_json, actions_json, signals_json,
                      used_web, model)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (page_id) DO UPDATE SET
                     mirror = EXCLUDED.mirror,
                     toolkit_json = EXCLUDED.toolkit_json,
-                    question = EXCLUDED.question,
                     actions_json = EXCLUDED.actions_json,
                     signals_json = EXCLUDED.signals_json,
                     used_web = EXCLUDED.used_web,
                     model = EXCLUDED.model,
                     updated_at = NOW()
-                RETURNING id, page_id, mirror, toolkit_json, question, actions_json,
+                RETURNING id, page_id, mirror, toolkit_json, actions_json,
                           used_web, model, created_at, updated_at
             """, (
-                page_id, mirror, json.dumps(toolkit), question, json.dumps(actions),
+                page_id, mirror, json.dumps(toolkit), json.dumps(actions),
                 json.dumps(signals), used_web, _MODEL_NAME,
             ))
             row = cur.fetchone()
@@ -757,7 +791,7 @@ def get_conselho(date: str, type_id: int = 1) -> Optional[dict]:
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("""
-                SELECT c.id, c.page_id, c.mirror, c.toolkit_json, c.question, c.actions_json,
+                SELECT c.id, c.page_id, c.mirror, c.toolkit_json, c.actions_json,
                        c.used_web, c.model, c.created_at, c.updated_at
                 FROM journal_counsel c
                 JOIN journal_pages p ON p.id = c.page_id
@@ -821,7 +855,7 @@ def marcar_acao_como_tarefa(page_id: int, action_index: int, task_id: int) -> di
             cur.execute("""
                 UPDATE journal_counsel SET actions_json = %s, updated_at = NOW()
                 WHERE id = %s
-                RETURNING id, page_id, mirror, toolkit_json, question, actions_json,
+                RETURNING id, page_id, mirror, toolkit_json, actions_json,
                           used_web, model, created_at, updated_at
             """, (json.dumps(actions), row["id"]))
             updated = cur.fetchone()

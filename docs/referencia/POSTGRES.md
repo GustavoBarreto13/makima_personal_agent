@@ -1383,8 +1383,7 @@ Kurisu. "Regerar" faz `UPSERT` (`ON CONFLICT (page_id) DO UPDATE`), nunca acumul
 | `id` | SERIAL | PK | — | ID interno. |
 | `page_id` | INT | NÃO | — | FK `journal_pages(id) ON DELETE CASCADE`, **UNIQUE** — garante uma análise por dia. |
 | `mirror` | TEXT | NÃO | — | Bloco "Espelho do dia" — resumo empático do que foi lido. |
-| `toolkit_json` | JSONB | NÃO | `'[]'` | Bloco "Da sua base": `[{titulo, porque, como, fonte, uri, origem}]`. `origem ∈ {"base","web"}`, decidida no servidor. |
-| `question` | TEXT | SIM | — | Bloco "Pergunta para refletir". |
+| `toolkit_json` | JSONB | NÃO | `'[]'` | Bloco "Da sua base: ferramentas e curadoria" (o centro do produto): `[{titulo, porque, como, exemplo_hoje, lembrete, fonte, uri, origem}]`. `origem ∈ {"base","web"}`, decidida no servidor. |
 | `actions_json` | JSONB | NÃO | `'[]'` | Bloco "Ações sugeridas": `[{texto, motivo, task_id}]`. `task_id` começa `null`; preenchido ao converter em tarefa. |
 | `signals_json` | JSONB | NÃO | `'{}'` | Snapshot leve do que foi lido na coleta (auditoria/depuração). |
 | `used_web` | BOOLEAN | NÃO | `FALSE` | Atalho: `TRUE` se algum item do toolkit veio da busca web complementar. |
@@ -1398,6 +1397,11 @@ dos 3 conselhos anteriores usados para continuidade.
 
 **Sem FK para `tasks`/`habits` (Kaguya)** — lidos por consulta simples, não por relação
 declarada (Kaguya não sabe que o conselho existe — Self-Contained Agents).
+
+**Coluna `question` removida (2026-07-27).** O bloco "Pergunta para refletir" foi retirado
+do produto — a profundidade foi redirecionada para o toolkit (`exemplo_hoje`/`lembrete`
+novos). `_ensure_counsel_tables()` roda `ALTER TABLE ... DROP COLUMN IF EXISTS question`
+idempotente para bancos que já tinham a coluna.
 
 ---
 

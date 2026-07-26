@@ -128,20 +128,29 @@ def test_nao_precisa_busca_web_com_dois_trechos_ou_mais():
 # ──────────────────────────────────────────────────────────────────────────────
 def test_normalize_toolkit_marca_base_quando_indice_valido():
     rag_trechos = [{"fonte": "ansiedade.md", "uri": "gs://b/ansiedade.md"}]
-    raw = [{"titulo": "T", "porque": "P", "como": "C", "trecho_index": 1, "fonte_web": ""}]
+    raw = [{
+        "titulo": "T", "porque": "P", "como": "C", "exemplo_hoje": "E", "lembrete": "L",
+        "trecho_index": 1, "fonte_web": "",
+    }]
     resultado = C._normalize_toolkit(raw, rag_trechos)
     assert resultado[0]["origem"] == "base"
     assert resultado[0]["fonte"] == "ansiedade.md"
     assert resultado[0]["uri"] == "gs://b/ansiedade.md"
+    assert resultado[0]["exemplo_hoje"] == "E"
+    assert resultado[0]["lembrete"] == "L"
 
 
 def test_normalize_toolkit_marca_web_quando_indice_zero():
     rag_trechos = [{"fonte": "ansiedade.md", "uri": "gs://b/ansiedade.md"}]
-    raw = [{"titulo": "T", "porque": "P", "como": "C", "trecho_index": 0, "fonte_web": "algum blog"}]
+    raw = [{
+        "titulo": "T", "porque": "P", "como": "C", "exemplo_hoje": "E", "lembrete": "L",
+        "trecho_index": 0, "fonte_web": "algum blog",
+    }]
     resultado = C._normalize_toolkit(raw, rag_trechos)
     assert resultado[0]["origem"] == "web"
     assert resultado[0]["fonte"] == "algum blog"
     assert resultado[0]["uri"] == ""
+    assert resultado[0]["exemplo_hoje"] == "E"
 
 
 def test_normalize_toolkit_ignora_indice_fora_do_intervalo():
@@ -149,14 +158,20 @@ def test_normalize_toolkit_ignora_indice_fora_do_intervalo():
     o [5]), o item vira "web" — nunca confiamos num índice que não corresponda a um
     trecho real."""
     rag_trechos = [{"fonte": "real.md", "uri": "gs://b/real.md"}]
-    raw = [{"titulo": "T", "porque": "P", "como": "C", "trecho_index": 5, "fonte_web": "inventado"}]
+    raw = [{
+        "titulo": "T", "porque": "P", "como": "C", "exemplo_hoje": "E", "lembrete": "L",
+        "trecho_index": 5, "fonte_web": "inventado",
+    }]
     resultado = C._normalize_toolkit(raw, rag_trechos)
     assert resultado[0]["origem"] == "web"
 
 
 def test_normalize_toolkit_indice_nao_inteiro_vira_web():
     rag_trechos = [{"fonte": "real.md", "uri": "gs://b/real.md"}]
-    raw = [{"titulo": "T", "porque": "P", "como": "C", "trecho_index": "1", "fonte_web": ""}]
+    raw = [{
+        "titulo": "T", "porque": "P", "como": "C", "exemplo_hoje": "E", "lembrete": "L",
+        "trecho_index": "1", "fonte_web": "",
+    }]
     resultado = C._normalize_toolkit(raw, rag_trechos)
     assert resultado[0]["origem"] == "web"
 
@@ -168,8 +183,10 @@ def test_serialize_counsel_row_round_trip():
     row = {
         "page_id": 42,
         "mirror": "Foi um dia de altos e baixos.",
-        "toolkit_json": [{"titulo": "X", "porque": "Y", "como": "Z", "fonte": "f.md", "uri": "gs://f.md", "origem": "base"}],
-        "question": "O que pesou mais hoje?",
+        "toolkit_json": [{
+            "titulo": "X", "porque": "Y", "como": "Z", "exemplo_hoje": "E", "lembrete": "L",
+            "fonte": "f.md", "uri": "gs://f.md", "origem": "base",
+        }],
         "actions_json": [{"texto": "Descansar", "motivo": "Você mencionou cansaço", "task_id": None}],
         "used_web": False,
         "created_at": datetime(2026, 7, 26, 10, 0, 0),
@@ -179,6 +196,7 @@ def test_serialize_counsel_row_round_trip():
     assert result["page_id"] == 42
     assert result["date"] == "2026-07-26"
     assert result["toolkit"][0]["origem"] == "base"
+    assert "question" not in result
     assert result["actions"][0]["task_id"] is None
     assert result["created_at"] == "2026-07-26T10:00:00"
 
@@ -190,7 +208,6 @@ def test_serialize_counsel_row_aceita_json_como_string():
         "page_id": 1,
         "mirror": "m",
         "toolkit_json": "[]",
-        "question": None,
         "actions_json": "[]",
         "used_web": False,
         "created_at": None,
