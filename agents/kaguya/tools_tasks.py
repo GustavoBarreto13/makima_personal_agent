@@ -55,6 +55,42 @@ _TASK_FIELDS = [
 # Lista simples (sem alias) — para queries sem JOIN.
 _TASK_COLUMNS = ", ".join(_TASK_FIELDS)
 
+# Fuso horário de São Paulo (UTC-3 / UTC-2 no horário de verão).
+# Usado para interpretar strings de horário naive (sem offset) enviadas pelo usuário,
+# que sempre se referem ao horário local do Gustavo — nunca a UTC.
+_SP_TZ = ZoneInfo("America/Sao_Paulo")
+
+
+def _normalize_dt_to_sp(dt_str: str) -> datetime:
+    """Parseia uma string ISO 8601 e garante que o resultado seja timezone-aware em SP.
+
+    Se a string já tiver offset explícito (ex.: "2026-06-15T14:00:00-03:00"),
+    ele é preservado — a hora já está correta.
+    Se a string for naive (sem offset, ex.: "2026-06-15T14:00:00"), assume-se
+    que o horário é local de São Paulo (America/Sao_Paulo).
+    Isso evita que "14:00" naive seja interpretado como "14:00 UTC" pelo PostgreSQL,
+    o que resultaria em "11:00" no horário de Brasília — 3 horas adiantado.
+
+    Args:
+        dt_str: String no formato ISO 8601 com ou sem offset de fuso horário.
+
+    Returns:
+        Objeto datetime sempre com tzinfo preenchido (aware).
+
+    Raises:
+        ValueError: Se a string não for um formato ISO 8601 válido.
+    """
+    # Parseia a string para objeto datetime (pode ser naive ou aware)
+    dt = datetime.fromisoformat(dt_str)
+
+    if dt.tzinfo is None:
+        # Sem offset explícito: o usuário informou horário local de São Paulo.
+        # Associa o fuso SP ao datetime — NÃO converte a hora (14:00 continua 14:00 SP).
+        dt = dt.replace(tzinfo=_SP_TZ)
+
+    # Retorna o datetime já aware (com fuso) — psycopg2 converte para UTC ao salvar no banco
+    return dt
+
 
 def _qualified(alias: str) -> str:
     """Retorna a lista de colunas de tasks com prefixo de alias (ex.: ``t.id, t.title, ...``).
@@ -1934,19 +1970,24 @@ def set_time_block(
         Dicionário de status.
     """
     # Valida e parseia start_at.
+    # CRÍTICO: usa _normalize_dt_to_sp para que strings naive (ex.: "2026-06-15T14:00:00")
+    # sejam interpretadas como horário de São Paulo, não como UTC.
+    # Se passarmos a string raw para o PostgreSQL (timestamptz), o banco interpreta como UTC
+    # e armazena "14:00 UTC" — o que representa "11:00 SP", 3 horas antes do desejado.
     try:
-        start_dt = datetime.fromisoformat(start_at)
+        start_dt = _normalize_dt_to_sp(start_at)
     except ValueError:
         return {"status": "error", "message": "Formato de 'start_at' inválido. Use ISO 8601."}
 
-    # Deriva end_at se não foi informado.
+    # Deriva end_dt se end_at não foi informado.
     if end_at is None:
+        # Usa duration_min se válido; caso contrário assume bloco padrão de 30 minutos.
         minutos = duration_min if duration_min and duration_min > 0 else 30
         end_dt = start_dt + timedelta(minutes=minutos)
-        end_at = end_dt.isoformat()
     else:
+        # Normaliza end_at da mesma forma: string naive → assume fuso SP.
         try:
-            end_dt = datetime.fromisoformat(end_at)
+            end_dt = _normalize_dt_to_sp(end_at)
         except ValueError:
             return {"status": "error", "message": "Formato de 'end_at' inválido. Use ISO 8601."}
         if end_dt <= start_dt:
@@ -1960,23 +2001,27 @@ def set_time_block(
             if not cur.fetchone():
                 return {"status": "error", "message": "Tarefa não encontrada."}
 
-            # Atualiza bloco e, se veio duration_min, grava a estimativa também.
+            # CRÍTICO: passa os objetos datetime (aware) para o psycopg2 — NÃO as strings.
+            # O psycopg2 converte datetime aware para UTC ao gravar em colunas timestamptz,
+            # preservando o instante correto. Passar a string raw quebraria isso (banco
+            # assume UTC para strings sem offset).
             if duration_min and duration_min > 0:
                 cur.execute(
                     "UPDATE tasks SET start_at = %s, end_at = %s, duration_min = %s, updated_at = now() WHERE id = %s",
-                    (start_at, end_at, duration_min, task_id),
+                    (start_dt, end_dt, duration_min, task_id),
                 )
             else:
                 cur.execute(
                     "UPDATE tasks SET start_at = %s, end_at = %s, updated_at = now() WHERE id = %s",
-                    (start_at, end_at, task_id),
+                    (start_dt, end_dt, task_id),
                 )
     try:
         from agents.kaguya import gcal_sync as _gs
         _gs.push_task(task_id)
     except Exception:
         pass
-    return {"status": "ok", "message": "Bloco de tempo gravado.", "start_at": start_at, "end_at": end_at}
+    # Retorna strings ISO para o agente; usa isoformat() dos objetos aware (inclui offset).
+    return {"status": "ok", "message": "Bloco de tempo gravado.", "start_at": start_dt.isoformat(), "end_at": end_dt.isoformat()}
 
 
 def clear_time_block(task_id: int) -> dict:

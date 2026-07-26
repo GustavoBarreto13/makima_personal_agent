@@ -33,7 +33,8 @@ Usage:
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 # Importa o cliente Google Calendar compartilhado
 from agents.kaguya import gcal
@@ -41,6 +42,43 @@ from agents.kaguya import gcal
 from agents.db import run_select, run_dml
 
 _log = logging.getLogger("kaguya.gcal_sync")
+
+# Fuso horário de São Paulo — horários dos eventos devem sempre ser exibidos neste fuso.
+# Quando o Google recebe um dateTime com offset +00:00, ele ignora o campo timeZone
+# e posiciona o evento em UTC, resultando em -3h no calendário do usuário.
+# A solução é sempre enviar o offset -03:00 (ou -02:00 em horário de verão) explícito.
+_SP_TZ = ZoneInfo("America/Sao_Paulo")
+
+
+def _to_sp_iso(val) -> str:
+    """Converte um datetime ou string ISO para string ISO 8601 com offset de São Paulo.
+
+    Aceita tanto objetos datetime quanto strings. Strings naive (sem offset) são
+    tratadas como UTC (convenção do banco PostgreSQL: timestamptz armazena em UTC).
+    O resultado final sempre tem o offset de São Paulo (ex.: "2026-06-15T14:00:00-03:00").
+    Isso garante que o Google Calendar posicione o evento no horário correto — quando
+    o dateTime tem offset explícito, o campo timeZone é ignorado pelo Google.
+
+    Args:
+        val: Objeto datetime (aware ou naive) ou string ISO 8601.
+
+    Returns:
+        String ISO 8601 com offset de São Paulo (ex.: "2026-06-15T14:00:00-03:00").
+    """
+    if isinstance(val, str):
+        # Parseia a string para objeto datetime
+        dt = datetime.fromisoformat(val)
+    else:
+        # Já é um objeto datetime — usa diretamente
+        dt = val
+
+    if dt.tzinfo is None:
+        # Datetime naive (sem fuso) vindo do banco = UTC (padrão do PostgreSQL)
+        # Associa UTC explicitamente antes de converter
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    # Converte para São Paulo e retorna a string com o offset correto (-03:00 ou -02:00)
+    return dt.astimezone(_SP_TZ).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -123,25 +161,24 @@ def _build_event_payload(task: dict) -> dict:
 
     # Determina o tipo de evento: com hora ou dia inteiro
     if task.get("start_at"):
-        # Tarefa com time-blocking: usar o bloco de tempo como horário do evento
-        start_str = task["start_at"]
-        # Se start_at for um datetime object, converte para ISO string
-        if hasattr(start_str, "isoformat"):
-            start_str = start_str.isoformat()
+        # Tarefa com time-blocking: usar o bloco de tempo como horário do evento.
+        # CRÍTICO: _to_sp_iso converte para offset de São Paulo (-03:00 ou -02:00).
+        # Se enviássemos +00:00 (UTC), o Google ignoraria o campo timeZone e
+        # posicionaria o evento 3h antes do horário desejado.
+        start_str = _to_sp_iso(task["start_at"])
 
-        # Usa end_at se disponível; senão deriva 30 min após start_at
+        # Usa end_at se disponível; senão deriva 30 min após start_at (já em SP).
         if task.get("end_at"):
-            end_str = task["end_at"]
-            if hasattr(end_str, "isoformat"):
-                end_str = end_str.isoformat()
+            # Mesma conversão para end_at
+            end_str = _to_sp_iso(task["end_at"])
         else:
-            # Deriva end_at = start_at + 30 min
-            from datetime import datetime
+            # Deriva end_at = start_at + 30 min a partir do datetime já convertido para SP
             try:
-                start_dt = datetime.fromisoformat(start_str)
-                end_str = (start_dt + timedelta(minutes=30)).isoformat()
+                # _to_sp_iso já retornou a string; parseia de volta para somar o delta
+                start_dt_sp = datetime.fromisoformat(start_str)
+                end_str = (start_dt_sp + timedelta(minutes=30)).isoformat()
             except ValueError:
-                # Fallback: repete o start_at (evento de duração zero — raro)
+                # Fallback improvável: repete o start (evento de duração zero)
                 end_str = start_str
 
         return {

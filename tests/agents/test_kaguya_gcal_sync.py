@@ -17,6 +17,7 @@ Todos os testes mockam `gcal.create_event`, `gcal.update_event`,
 import sys
 import types
 import pytest
+from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock, call
 
 # Stub das bibliotecas Google ausentes no ambiente de testes (sem google-auth instalado).
@@ -69,13 +70,15 @@ from agents.kaguya import gcal_sync
 KAGUYA_CAL_ID = "kaguya-cal-999@group.calendar.google.com"
 GOOGLE_EVENT_ID = "google-evt-abc123"
 
-# Tarefa timed (com time-blocking — start_at presente)
+# Tarefa timed (com time-blocking — start_at presente).
+# start_at/end_at são TIMESTAMPTZ — psycopg2 sempre devolve datetime aware (UTC) para
+# essa coluna, nunca string naive. 17:00/18:00 UTC = 14:00/15:00 São Paulo.
 TASK_TIMED = {
     "id": 1,
     "title": "Reunião importante",
     "due_date": "2026-06-15",
-    "start_at": "2026-06-15T14:00:00",
-    "end_at": "2026-06-15T15:00:00",
+    "start_at": datetime(2026, 6, 15, 17, 0, 0, tzinfo=timezone.utc),
+    "end_at": datetime(2026, 6, 15, 18, 0, 0, tzinfo=timezone.utc),
     "completed_at": None,
     "google_event_id": None,
     "deleted_at": None,
@@ -182,7 +185,8 @@ def test_push_task_sync_timed_cria_evento_com_hora():
         mock_create.assert_called_once()
         kwargs = mock_create.call_args.kwargs
         assert kwargs["all_day"] is False
-        assert "14:00" in kwargs["start"]   # horário preservado
+        assert "14:00" in kwargs["start"]   # 17:00 UTC → 14:00 São Paulo
+        assert "-03:00" in kwargs["start"]  # offset explícito de SP, não +00:00
 
         # update_event NÃO deve ser chamado (evento novo)
         mock_update.assert_not_called()
@@ -467,3 +471,72 @@ def test_remove_task_event_disabled_nao_submete(monkeypatch):
     gcal_sync.remove_task_event(9)
 
     mock_executor.submit.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# T028-SC13: Correção de fuso — start_at UTC deve virar -03:00 no payload
+# ---------------------------------------------------------------------------
+
+def test_build_event_payload_start_at_utc_converte_para_sp():
+    """_build_event_payload converte start_at UTC para offset -03:00 (São Paulo).
+
+    Cenário do bug: psycopg2 retorna datetime(2026,6,15,17,0,0,tzinfo=UTC) para
+    uma tarefa marcada às 14:00 SP. O Google deveria receber "14:00:00-03:00",
+    não "17:00:00+00:00" (que apareceria como 17:00 no calendário, não 14:00).
+    """
+    # Simula o que o psycopg2 devolve: 17:00 UTC = 14:00 São Paulo
+    start_utc = datetime(2026, 6, 15, 17, 0, 0, tzinfo=timezone.utc)
+    end_utc = datetime(2026, 6, 15, 18, 0, 0, tzinfo=timezone.utc)
+
+    # Monta a tarefa como o banco retornaria (objetos datetime com tzinfo=UTC)
+    task = {
+        "id": 10,
+        "title": "Reunião SP",
+        "due_date": "2026-06-15",
+        "start_at": start_utc,
+        "end_at": end_utc,
+        "completed_at": None,
+        "google_event_id": None,
+        "deleted_at": None,
+    }
+
+    # Chama _build_event_payload diretamente (sem mock de rede necessário)
+    payload = gcal_sync._build_event_payload(task)
+
+    # O payload deve ter start e end com offset -03:00 (São Paulo), não +00:00 (UTC)
+    assert payload["all_day"] is False, "Deve ser evento com hora (não dia inteiro)"
+    assert "+00:00" not in payload["start"], "Offset UTC não deve aparecer no start"
+    assert "-03:00" in payload["start"], "Offset de SP (-03:00) deve aparecer no start"
+    assert "+00:00" not in payload["end"], "Offset UTC não deve aparecer no end"
+    assert "-03:00" in payload["end"], "Offset de SP (-03:00) deve aparecer no end"
+
+    # Verifica que o horário local está correto: 17:00 UTC → 14:00 SP
+    assert "14:00:00" in payload["start"], "Horário local SP (14:00) deve aparecer no start"
+    assert "15:00:00" in payload["end"], "Horário local SP (15:00) deve aparecer no end"
+
+
+def test_build_event_payload_start_at_string_naive_converte_para_sp():
+    """_build_event_payload converte string naive de start_at para offset -03:00.
+
+    String naive (sem offset) vinda de testes ou fontes antigas é tratada como UTC
+    pelo helper _to_sp_iso, e deve ser exibida no horário SP correto.
+    """
+    # String sem offset: PostgreSQL armazenaria "2026-06-15T17:00:00" como 17:00 UTC
+    task = {
+        "id": 11,
+        "title": "Tarefa naive",
+        "due_date": "2026-06-15",
+        "start_at": "2026-06-15T17:00:00+00:00",  # UTC explícito = 14:00 SP
+        "end_at": None,  # sem end_at → deve derivar +30 min
+        "completed_at": None,
+        "google_event_id": None,
+        "deleted_at": None,
+    }
+
+    payload = gcal_sync._build_event_payload(task)
+
+    # Horário local SP: 14:00
+    assert "-03:00" in payload["start"], "Offset SP deve estar no start"
+    assert "14:00:00" in payload["start"], "Hora local SP (14:00) deve aparecer no start"
+    # end derivado = start + 30 min = 14:30 SP
+    assert "14:30:00" in payload["end"], "end derivado deve ser 30 min após start (14:30 SP)"
