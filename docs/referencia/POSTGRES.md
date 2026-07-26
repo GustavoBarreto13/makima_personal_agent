@@ -53,6 +53,7 @@ diferentes.
 | **Pessoas** | Agente Komi | `people`, `person_aliases`, `person_dates`, `person_links` |
 | **Diário** (webapp-only) | `agents/journal` | `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_emotions`, `journal_emotion_logs`, `journal_letters` |
 | **Tutor de Idiomas** (cross-domain — FK p/ `journal_bullets`) | Agente Kurisu | `journal_tutor_analyses`, `journal_tutor_events`, `journal_tutor_skills`, `journal_tutor_guides` |
+| **Conselho do Dia** (cross-domain — FK p/ `journal_pages`) | Agente Kurisu | `journal_counsel` |
 | **Infraestrutura** (agendador de jobs) | `scheduler/` | `scheduler_runs` |
 
 ---
@@ -1369,6 +1370,34 @@ Guia de estudo direcionável (US4) — no máximo um ativo por idioma.
 **Índices:** `uq_tutor_guides_active` — único parcial em `(language) WHERE active`, garante
 no máximo um guia ativo por idioma. Trocar de guia = desativar o anterior + inserir o novo,
 na mesma transação.
+
+---
+
+### `journal_counsel` (spec 061 — Conselho do Dia, cross-domain FK p/ `journal_pages`)
+
+Uma linha por dia (`UNIQUE page_id`) — o conselho gerado pela Violet a partir do RAG da
+Kurisu. "Regerar" faz `UPSERT` (`ON CONFLICT (page_id) DO UPDATE`), nunca acumula versões.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID interno. |
+| `page_id` | INT | NÃO | — | FK `journal_pages(id) ON DELETE CASCADE`, **UNIQUE** — garante uma análise por dia. |
+| `mirror` | TEXT | NÃO | — | Bloco "Espelho do dia" — resumo empático do que foi lido. |
+| `toolkit_json` | JSONB | NÃO | `'[]'` | Bloco "Da sua base": `[{titulo, porque, como, fonte, uri, origem}]`. `origem ∈ {"base","web"}`, decidida no servidor. |
+| `question` | TEXT | SIM | — | Bloco "Pergunta para refletir". |
+| `actions_json` | JSONB | NÃO | `'[]'` | Bloco "Ações sugeridas": `[{texto, motivo, task_id}]`. `task_id` começa `null`; preenchido ao converter em tarefa. |
+| `signals_json` | JSONB | NÃO | `'{}'` | Snapshot leve do que foi lido na coleta (auditoria/depuração). |
+| `used_web` | BOOLEAN | NÃO | `FALSE` | Atalho: `TRUE` se algum item do toolkit veio da busca web complementar. |
+| `model` | TEXT | SIM | — | Nome do modelo Gemini usado na síntese. |
+| `tokens_in` / `tokens_out` | INT | SIM | — | Uso de tokens da chamada de síntese, quando disponível. |
+| `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | 1ª geração — preservado nas regenerações. |
+| `updated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Atualizado a cada regeneração. |
+
+**Índices:** `idx_counsel_created` em `(created_at DESC)` — serve o histórico e a leitura
+dos 3 conselhos anteriores usados para continuidade.
+
+**Sem FK para `tasks`/`habits` (Kaguya)** — lidos por consulta simples, não por relação
+declarada (Kaguya não sabe que o conselho existe — Self-Contained Agents).
 
 ---
 

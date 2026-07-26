@@ -82,12 +82,13 @@ Fluxo: `GET /auth/login` → Google OIDC → `GET /auth/callback` → cookie `ma
 
 Router: `routers/journal.py` · Tools: `agents/journal/tools.py` · Storage: **PostgreSQL** (não BigQuery)
 
-**Tutor de Idiomas (spec 031) — único cross-domain do router:** os endpoints `/api/journal/tutor/*`
-e `/api/journal/bullets/{id}/tutor` chamam `agents.kurisu.tutor` (não `agents/journal/`) — o tutor
-é a persona da Kurisu aplicada à escrita da Violet. `routers/journal.py` é o único ponto que importa
-os dois agentes ao mesmo tempo; `GET /api/journal/page` compõe o campo `tutor` de cada bullet via
-`get_bullets_tutor_meta` **no router**, sem alterar `agents/journal/get_or_create_page`. Detalhes em
-`agents/kurisu/CLAUDE.md`.
+**Tutor de Idiomas (spec 031) e Conselho do Dia (spec 061) — cross-domain do router:** os
+endpoints `/api/journal/tutor/*`, `/api/journal/bullets/{id}/tutor` e `/api/journal/counsel*`
+chamam `agents.kurisu.tutor`/`agents.kurisu.counsel` (não `agents/journal/`) — as duas features
+são personas da Kurisu (dona do RAG) aplicadas à Violet. `routers/journal.py` é o único ponto que
+importa os dois agentes ao mesmo tempo; `GET /api/journal/page` compõe o campo `tutor` de cada
+bullet via `get_bullets_tutor_meta` **no router**, sem alterar `agents/journal/get_or_create_page`.
+Detalhes em `agents/kurisu/CLAUDE.md`.
 
 Todos os domínios (finanças, livros e journal) usam o mesmo PostgreSQL compartilhado com o ADK.
 
@@ -127,6 +128,10 @@ Todos os domínios (finanças, livros e journal) usam o mesmo PostgreSQL compart
 | `/api/journal/tutor/analyses?language=en` | GET | Histórico de análises recentes |
 | `/api/journal/tutor/concepts` | GET | Lista canônica de conceitos gramaticais (seletor do guia) |
 | `/api/journal/tutor/guide` | GET/PUT/DELETE | CRUD do guia de estudo ativo (no máx. 1 por idioma) |
+| `/api/journal/counsel` | POST | Gera/regenera o conselho do dia (spec 061, persona Violet) `{date, type_id?}` — chamada longa, até ~60s |
+| `/api/journal/counsel` | GET | Conselho já gerado da data (leitura pura, não cria nada) `?date=&type_id=` |
+| `/api/journal/counsel/history` | GET | Histórico dos conselhos mais recentes `?limit=` |
+| `/api/journal/counsel/actions` | PATCH | Marca uma ação sugerida como já convertida em tarefa `{page_id, action_index, task_id}` |
 
 **Registro Emocional (TCC) — Feature 006.** Tabelas `journal_emotions` + `journal_emotion_logs`.
 Os registros são **ortogonais aos bullets** (não contam palavras nem afetam heatmap/coleções).
@@ -292,6 +297,8 @@ Shell: `pages/violet/VioletShell.tsx` · Rota: `/journal/*`
 Telas disponíveis: `Write` (editor de bullets), `Journal` (arquivo), `Reflect` (heatmap + insights), `People`, `Tags`, `Collection`, `Insights`.
 
 O diário usa bullets com parsing de `@pessoa` e `#tag`. O componente `RichText.tsx` faz o highlight visual. A API é `violetApi` em `lib/api.ts`.
+
+**Conselho do Dia (spec 061):** `components/CounselSection.tsx`, no topo da tela `Write` (acima do Registro Emocional/Cartas/bullets). Sob demanda, chama `violetApi.generateCounsel`/`getCounsel` e renderiza os 4 blocos (espelho, ferramentas da base, pergunta, ações); ações podem virar tarefa via `kaguyaApi.createTask` + `violetApi.markActionAsTask`. CSS com prefixo `.cs-*` no fim de `violet.css`.
 
 ---
 

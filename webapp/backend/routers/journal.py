@@ -67,6 +67,16 @@ from agents.kurisu.tutor import (
     deactivate_guide,
 )
 
+# Conselho do Dia (spec 061) — persona Violet, lógica na Kurisu (dona do domínio RAG).
+# Mesmo desenho cross-domain do Tutor de Idiomas: este router é o único ponto que
+# conhece Journal + Kurisu ao mesmo tempo (ver research.md R1 da spec 061).
+from agents.kurisu.counsel import (
+    gerar_conselho,
+    get_conselho,
+    list_conselhos,
+    marcar_acao_como_tarefa,
+)
+
 
 # ─── Helper interno ───────────────────────────────────────────────────────────
 
@@ -188,6 +198,19 @@ class SaveTutorGuideBody(BaseModel):
     language: str = 'en'
     description: str                              # foco livre (livro/método/tópico)
     target_concepts: Optional[list[str]] = None    # slugs da lista canônica
+
+
+class GenerateCounselBody(BaseModel):
+    """Corpo da requisição para gerar (ou regerar) o conselho do dia (spec 061)."""
+    date: str  # YYYY-MM-DD — validado por regex no endpoint, mesmo padrão do GET /page
+    type_id: int = 1
+
+
+class MarkCounselActionBody(BaseModel):
+    """Corpo da requisição para marcar uma ação sugerida como já convertida em tarefa."""
+    page_id: int
+    action_index: int
+    task_id: int
 
 
 class UpdateLetterBody(BaseModel):
@@ -918,3 +941,91 @@ def delete_tutor_guide_endpoint(
         {"status": "ok"}
     """
     return _check_result(deactivate_guide(language=language))
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENDPOINTS DO CONSELHO DO DIA (spec 061 — persona Violet, lógica na Kurisu)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.post("/counsel")
+def generate_counsel_endpoint(
+    body: GenerateCounselBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Gerar (ou regenerar) o conselho do dia (US1).
+
+    A chamada é longa (até ~60s — SC-007 da spec 061): lê o dia, consulta a base de
+    conhecimento, e sintetiza os 4 blocos via Gemini. Falha em qualquer etapa não grava
+    nada (FR-015).
+
+    Args:
+        body: {date, type_id?}
+
+    Returns:
+        {"status": "ok", "counsel": {...}}
+
+    Raises:
+        HTTPException: 400 se a data for inválida, o dia estiver vazio, ou a IA falhar.
+    """
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', body.date):
+        raise HTTPException(status_code=400, detail="Formato de data inválido. Use YYYY-MM-DD.")
+    return _check_result(gerar_conselho(date=body.date, type_id=body.type_id))
+
+
+@router.get("/counsel")
+def get_counsel_endpoint(
+    date: str = Query(..., description="Data no formato YYYY-MM-DD"),
+    type_id: int = Query(default=1, description="ID do tipo de diário"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Devolver o conselho já gerado de uma data, sem gerar nada novo (leitura pura).
+
+    Returns:
+        {"counsel": {...} | None}
+    """
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
+        raise HTTPException(status_code=400, detail="Formato de data inválido. Use YYYY-MM-DD.")
+    return {"counsel": get_conselho(date=date, type_id=type_id)}
+
+
+@router.get("/counsel/history")
+def counsel_history_endpoint(
+    limit: int = Query(default=20, description="Máximo de conselhos a retornar"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Listar os conselhos mais recentes (qualquer data).
+
+    Returns:
+        {"items": [{page_id, date, mirror, used_web, created_at}, ...]}
+    """
+    return {"items": list_conselhos(limit=limit)}
+
+
+@router.patch("/counsel/actions")
+def mark_counsel_action_endpoint(
+    body: MarkCounselActionBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Marcar uma ação sugerida como já convertida em tarefa (US2, FR-014).
+
+    Este endpoint NÃO cria a tarefa — o frontend cria a tarefa via `/api/tasks` primeiro
+    e só depois registra aqui que aquela ação específica já foi convertida.
+
+    Args:
+        body: {page_id, action_index, task_id}
+
+    Returns:
+        {"status": "ok", "counsel": {...}}
+
+    Raises:
+        HTTPException: 404 se não houver conselho para o `page_id`, ou o índice estiver
+            fora do intervalo de ações.
+    """
+    result = marcar_acao_como_tarefa(
+        page_id=body.page_id,
+        action_index=body.action_index,
+        task_id=body.task_id,
+    )
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result.get("message", "conselho não encontrado"))
+    return result

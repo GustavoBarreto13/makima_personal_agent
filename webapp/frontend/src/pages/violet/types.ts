@@ -294,3 +294,48 @@ export interface TutorProgress {
   active_guide: TutorGuide | null
   skills: TutorSkill[]
 }
+
+// ── Conselho do Dia (spec 061 — persona Violet, lógica na Kurisu) ────────────
+
+// Um item de sugestão do bloco "Da sua base" — origem decidida no SERVIDOR (nunca
+// confiar em auto-declaração do modelo): "base" = citação real do vault; "web" = busca
+// complementar, marcada visivelmente como vinda de fora (FR-011).
+export interface CounselToolkitItem {
+  titulo: string
+  porque: string
+  como: string
+  fonte: string
+  uri: string
+  origem: 'base' | 'web'
+}
+
+// Uma ação sugerida — pode virar tarefa na Kaguya em um clique (task_id preenchido
+// depois de convertida; null enquanto ainda não foi).
+export interface CounselAction {
+  texto: string
+  motivo: string
+  task_id: number | null
+}
+
+// O conselho do dia completo — no máximo um por page_id (UNIQUE no banco); "Regerar"
+// sobrescreve (created_at preserva a 1ª geração, updated_at muda a cada regeneração).
+export interface Counsel {
+  page_id: number
+  date: string             // YYYY-MM-DD
+  mirror: string            // Espelho do dia
+  toolkit: CounselToolkitItem[]  // Da sua base: ferramentas e curadoria
+  question: string | null   // Pergunta para refletir
+  actions: CounselAction[]  // Ações sugeridas
+  used_web: boolean         // atalho: true se algum item do toolkit veio da web
+  created_at: string
+  updated_at: string
+}
+
+// Item resumido do histórico de conselhos (GET /counsel/history)
+export interface CounselHistoryItem {
+  page_id: number
+  date: string
+  mirror: string
+  used_web: boolean
+  created_at: string
+}

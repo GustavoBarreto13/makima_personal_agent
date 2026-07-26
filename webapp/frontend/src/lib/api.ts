@@ -15,6 +15,7 @@
 import type {
   Emotion, EmotionLog, EmotionStats, Letter,
   TutorAnalysis, TutorAnalysisSummary, TutorConcept, TutorProgress, TutorGuide,
+  Counsel, CounselHistoryItem,
 } from '../pages/violet/types'
 
 /**
@@ -427,6 +428,26 @@ export const violetApi = {
   /** Remove (desativa) o guia de estudo ativo — não afeta análises já salvas. */
   deleteTutorGuide: (language = 'en') =>
     api.del<{ status: string }>(`/api/journal/tutor/guide?language=${language}`),
+
+  // ── Conselho do Dia (spec 061 — persona Violet, lógica na Kurisu) ────────
+
+  /** Gera (ou regenera) o conselho do dia — chamada longa (até ~60s, SC-007). */
+  generateCounsel: (date: string, type_id = 1) =>
+    api.post<{ status: string; counsel: Counsel }>('/api/journal/counsel', { date, type_id }),
+
+  /** Devolve o conselho já gerado da data, sem gerar nada novo (leitura pura). */
+  getCounsel: (date: string, type_id = 1) =>
+    api.get<{ counsel: Counsel | null }>(`/api/journal/counsel?date=${date}&type_id=${type_id}`),
+
+  /** Histórico dos conselhos mais recentes (qualquer data). */
+  counselHistory: (limit = 20) =>
+    api.get<{ items: CounselHistoryItem[] }>(`/api/journal/counsel/history?limit=${limit}`),
+
+  /** Marca uma ação sugerida como já convertida em tarefa (não cria a tarefa). */
+  markActionAsTask: (page_id: number, action_index: number, task_id: number) =>
+    api.patch<{ status: string; counsel: Counsel }>('/api/journal/counsel/actions', {
+      page_id, action_index, task_id,
+    }),
 }
 
 // ── Tipos da seção Frieren ─────────────────────────────────────────────────

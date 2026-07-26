@@ -196,13 +196,15 @@ makima_personal_agent/
 │   │   ├── tools.py            # fachada: re-exporta a lógica + cross-agent (Nami) + Calendar Hub
 │   │   ├── agent.py     # create_kaguya_agent() — factory (só o McpToolset do Calendar)
 │   │   └── CLAUDE.md    # camada de lógica, tools, Calendar Hub, gcal_sync, personalidade
-│   ├── kurisu/          # agente de knowledge base — Fase 027 ✅ (corpus ativo) + 028 🔧 parcial
+│   ├── kurisu/          # agente de knowledge base — Fase 027 ✅ (corpus ativo) + 028 🔧 parcial + 031/061 ✅
 │   │   ├── __init__.py
 │   │   ├── agent.py     # kurisu_agent — singleton
 │   │   ├── tools.py     # buscar_na_base() — busca no corpus Vertex AI RAG
 │   │   ├── recency.py   # ponderação por recência dos resultados
+│   │   ├── tutor.py     # Tutor de Idiomas (spec 031) — análise de escrita via Gemini
+│   │   ├── counsel.py   # Conselho do Dia (spec 061) — persona Violet, RAG + Gemini
 │   │   ├── memory/      # memória unificada (spec 028): exporters.py, render.py, store.py, sync.py
-│   │   └── CLAUDE.md    # arquitetura RAG, setup Vertex AI, checklist de ativação
+│   │   └── CLAUDE.md    # arquitetura RAG, setup Vertex AI, checklist de ativação, Tutor, Conselho do Dia
 │   ├── frieren/         # agente de livros — Fase 5a ✅
 │   │   ├── __init__.py
 │   │   ├── tools.py     # PostgreSQL + Google Books API
@@ -311,7 +313,7 @@ Ambiente local: `.venv` própria do makima.
 **A fonte única da verdade para fases e status é o [`ROADMAP.md`](ROADMAP.md)** — ao entregar
 uma fase, atualize lá (não duplique tabelas de status aqui nem no README).
 
-Resumo: fases 001–027, 029, 030, 031 e 032 (Lucy/email, scheduler) entregues; 028
+Resumo: fases 001–027, 029, 030, 031, 032 (Lucy/email, scheduler) e 061 entregues; 028
 (memória unificada da Kurisu) parcial.
 
 ---
@@ -424,5 +426,5 @@ Use a skill `obsidian-vault` para consultar os caminhos corretos e atualizar a d
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/034-tasks-gtd-core/plan.md`.
+at `specs/061-violet-conselho-diario/plan.md`.
 <!-- SPECKIT END -->

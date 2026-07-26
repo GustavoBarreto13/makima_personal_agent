@@ -9,6 +9,7 @@ import { Icon } from '../ui/Icon'
 import { RichText } from '../ui/RichText'
 import { EmotionSection } from '../components/EmotionLog'
 import { LetterSection } from '../components/LetterLog'
+import { CounselSection } from '../components/CounselSection'
 import { TutorModal } from '../components/TutorModal'
 
 interface WriteProps {
@@ -255,6 +256,11 @@ export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entry
           rows={1}
         />
       </div>
+
+      {/* Conselho do Dia (spec 061) — sob demanda, a Violet lê o dia e cruza com a base
+          de conhecimento pessoal (RAG da Kurisu). Fica no topo, acima do Registro
+          Emocional/Cartas/bullets, para chamar atenção antes da escrita do dia. */}
+      <CounselSection pageId={page?.id ?? null} date={effectiveDate} />
 
       {/* Seção de registro emocional (TCC) — Feature 006.
           Fica entre o prompt de sonho e os bullets; é ortogonal aos bullets

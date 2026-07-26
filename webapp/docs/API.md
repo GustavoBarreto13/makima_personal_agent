@@ -259,6 +259,23 @@ Chamam a lógica de `agents/kurisu/tutor.py` (cross-domain intencional — ver
 > `{analysis_id, has_correction, error_count}` — composto **no router** via
 > `get_bullets_tutor_meta` (1 query agregada), sem alterar `agents/journal/get_or_create_page`.
 
+### Conselho do Dia (spec 061 — persona Violet, lógica na Kurisu)
+
+Chamam a lógica de `agents/kurisu/counsel.py` (cross-domain intencional — mesmo desenho do
+Tutor de Idiomas, ver `agents/kurisu/CLAUDE.md`). Detalhes campo a campo em
+`specs/061-violet-conselho-diario/contracts/rest-api.md`.
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `POST` | `/api/journal/counsel` | Gera (ou regenera) o conselho do dia — leitura do dia + RAG + síntese Gemini; até ~60s. Falha em qualquer etapa não grava nada. | Body: `GenerateCounselBody` `{date, type_id?}` |
+| `GET` | `/api/journal/counsel` | Conselho já gerado da data, sem gerar nada novo (leitura pura). | `?date=YYYY-MM-DD&type_id=1` |
+| `GET` | `/api/journal/counsel/history` | Histórico dos conselhos mais recentes (qualquer data). | `?limit=20` |
+| `PATCH` | `/api/journal/counsel/actions` | Marca uma ação sugerida como já convertida em tarefa (não cria a tarefa — só registra o vínculo). | Body: `MarkCounselActionBody` `{page_id, action_index, task_id}` |
+
+> A `origem` ("base"/"web") de cada item do bloco de ferramentas é decidida **no
+> servidor**, por checagem de `uri` contra os trechos realmente recuperados na base — nunca
+> confia na auto-declaração do modelo.
+
 ---
 
 ## Tarefas (`/api/tasks/*`)

@@ -20,7 +20,9 @@ responde, nunca cria nem edita notas.
 > localmente; deploy no VPS e os 6 exporters restantes pendentes. A **031**
 > (`specs/031-violet-tutor-idiomas/`) adiciona o **Tutor de Idiomas** — ver seção própria
 > abaixo — persona Kurisu aplicada a um domínio novo (correção de escrita na Violet),
-> **✅ implementada**.
+> **✅ implementada**. A **061** (`specs/061-violet-conselho-diario/`) adiciona o
+> **Conselho do Dia** — ver seção própria abaixo — outra persona aplicada a um domínio
+> novo da Violet (análise diária ancorada no RAG), **✅ implementada**.
 
 ---
 
@@ -93,6 +95,72 @@ Gate: `tests/agents/test_kurisu_tutor_mastery.py`.
 do progresso) → `skills` (cache materializado por conceito, recomputável dos events) +
 `guides` (guia de estudo, no máx. 1 ativo por idioma). Coluna a coluna:
 `docs/referencia/POSTGRES.md`.
+
+---
+
+## Conselho do Dia na Violet (spec 061) — `counsel.py`
+
+Uma seção no topo da tela Escrever (acima dos bullets) onde, sob demanda (um clique), a
+**Violet** lê o dia — bullets, registros emocionais (TCC), cartas — cruza com a **base de
+conhecimento pessoal do usuário** (mesmo RAG da Kurisu, via `buscar_na_base`) e devolve
+4 blocos fixos: **espelho do dia** (resumo empático), **da sua base** (ferramentas/técnicas
+com citação real da fonte), **pergunta para refletir** e **ações sugeridas** (podem virar
+tarefa na Kaguya em um clique). Uma análise por dia (`UNIQUE page_id`); "Regerar"
+sobrescreve. Objetivo do produto: lembrar o usuário, na hora em que precisa, da curadoria
+que ele mesmo já fez (ex.: um vídeo salvo sobre dias tristes).
+
+### Por que aqui e não em `agents/journal/`
+
+Mesma decisão do Tutor de Idiomas: a *voz* que aparece na tela é da Violet (persona no
+prompt de síntese), mas o *conhecimento e a lógica de recuperação* são da Kurisu — dona do
+domínio RAG (Constitution, Princípio I). `agents/journal/` continua sem depender da
+Kurisu; `webapp/backend/routers/journal.py` é o único ponto que importa os dois agentes ao
+mesmo tempo (agora com **3** integrações cross-domain: Tutor, Conselho e a composição do
+campo `tutor` em `GET /page`). Isso também evita colidir com o plano pendente de rename
+`agents/journal → agents/violet` (`docs/planos/PLANO_VIOLET_EVERGARDEN.md`), que declara
+"sem novas tools em `tools.py`" para aquele pacote.
+
+### Pipeline — `gerar_conselho(date, type_id=1)`
+
+1. **Coleta** (`_coletar_dia`): bullets, `journal_emotion_logs`, `journal_letters` e
+   `dream` do dia; `_janela_7_dias` resume os 7 dias anteriores; `_conselhos_anteriores`
+   traz os 3 conselhos mais recentes (só `mirror`/`question`/textos de `actions`, para
+   continuidade); `_kaguya_do_dia` lê (best-effort, import lazy) `list_tasks_today` e
+   `list_habits` da Kaguya. Dia sem nenhum sinal → `{"status": "error"}` sem gerar nada.
+2. **Temas** (`_extrair_temas`): Gemini one-shot (`response_schema`) extrai de 2 a 4
+   consultas de busca + a carga emocional do dia — evita jogar o resumo cru no RAG.
+3. **RAG** (`_consultar_rag`): chama `buscar_na_base` uma vez por tema (teto de
+   `_MAX_RAG_QUERIES = 4` — orçamento de latência para SC-007 ≤60s), deduplicado por `uri`
+   via as duas funções **puras** `_selecionar_queries`/`_merge_dedup_trechos` (gate de
+   `tests/agents/test_kurisu_counsel.py`, sem precisar mockar o Vertex).
+4. **Web complementar** (US3): `_precisa_busca_web` (puro: `< 2 trechos relevantes`)
+   decide se dispara `_buscar_web` — chamada Gemini **separada**, com a tool
+   `google_search` habilitada e **sem** `response_schema` (as duas coisas são mutuamente
+   exclusivas na mesma chamada — restrição real da API, não escolha de design).
+5. **Síntese** (`_sintetizar`): Gemini one-shot (`response_schema`) produz os 4 blocos na
+   voz da Violet, instruído a nunca inventar fonte/uri fora dos trechos fornecidos.
+6. **Honestidade server-side** (`_normalize_toolkit`): a `origem` ("base"/"web") de cada
+   item do toolkit é decidida **no servidor**, comparando a `uri` contra o conjunto
+   realmente recuperado — nunca confiamos na auto-declaração do modelo (mesmo espírito do
+   `_normalize_slug` do Tutor). Quando a base não retornou nenhum trecho, uma frase
+   honesta é prefixada ao `mirror` deterministicamente (FR-009), independente do que o
+   modelo tenha escrito.
+7. **Persistência**: `INSERT ... ON CONFLICT (page_id) DO UPDATE` — uma linha por dia;
+   regenerar preserva `task_id` de ações já convertidas (casamento por texto).
+
+### Tabela (`journal_counsel`)
+
+Uma linha por `page_id` (`UNIQUE`, FK `journal_pages(id) ON DELETE CASCADE`): `mirror`,
+`toolkit_json` (`[{titulo, porque, como, fonte, uri, origem}]`), `question`,
+`actions_json` (`[{texto, motivo, task_id}]`), `signals_json` (auditoria), `used_web`,
+`model`. Coluna a coluna: `docs/referencia/POSTGRES.md`.
+
+### Endpoints (`webapp/backend/routers/journal.py`)
+
+`POST/GET /api/journal/counsel`, `GET /api/journal/counsel/history`,
+`PATCH /api/journal/counsel/actions` — o `PATCH` só registra o vínculo; quem cria a
+tarefa é o frontend, chamando `kaguyaApi.createTask` primeiro (nenhum endpoint novo de
+tarefas).
 
 ---
 
