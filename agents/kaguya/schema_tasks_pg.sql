@@ -149,12 +149,9 @@ CREATE INDEX IF NOT EXISTS idx_tasks_parent    ON tasks (parent_id)   WHERE pare
 CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks (completed_at) WHERE completed_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_my_day    ON tasks (my_day_date) WHERE my_day_date IS NOT NULL;
 
--- spec 034: status GTD real (próxima ação / aguardando / algum dia).
--- NULL = não classificada (default). Ver specs/034-tasks-gtd-core/data-model.md.
--- (o índice de context_id nasce mais abaixo, junto da tabela task_contexts — a coluna
--- só existe depois do ALTER TABLE que segue a criação de task_contexts.)
-CREATE INDEX IF NOT EXISTS idx_tasks_gtd_status ON tasks (gtd_status)
-    WHERE deleted_at IS NULL AND completed_at IS NULL;
+-- (o índice de gtd_status nasce mais abaixo, junto do ALTER TABLE que segue a migração —
+-- mesmo motivo do context_id: em bancos pré-existentes a coluna só nasce naquele ALTER,
+-- então criar o índice aqui falharia com "column gtd_status does not exist".)
 
 
 -- ----------------------------------------------------------------------------
@@ -185,6 +182,13 @@ BEGIN
             CHECK (gtd_status IN ('next_action', 'waiting', 'someday'));
     END IF;
 END $$;
+
+-- Índice de gtd_status — DEVE vir DEPOIS do ALTER acima: em bancos pré-existentes a
+-- coluna só nasce naquele ALTER, então criar o índice antes falharia com "column
+-- gtd_status does not exist" (mesmo bug já corrigido para is_birthdays logo abaixo).
+-- Em bancos novos a coluna já vem do CREATE TABLE, então a ordem aqui também funciona.
+CREATE INDEX IF NOT EXISTS idx_tasks_gtd_status ON tasks (gtd_status)
+    WHERE deleted_at IS NULL AND completed_at IS NULL;
 
 -- fase 026: lista "Aniversários" — gerenciada pelo sync Komi↔Kaguya
 ALTER TABLE task_projects ADD COLUMN IF NOT EXISTS is_birthdays BOOLEAN NOT NULL DEFAULT FALSE;
