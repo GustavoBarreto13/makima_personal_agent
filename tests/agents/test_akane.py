@@ -17,6 +17,8 @@ Scenarios cobertos:
     SC-006: get_stats com ano sem dados → retorna zeros sem crash
     SC-007: soft delete — delete_movie deixa diary_entries intactas
     SC-008: validação de rating — nota fora do intervalo retorna error
+    get_home: banco vazio (SC-006 aplicado ao Início) e com 1 sessão avaliada
+        (regressão do bug 42702 "column reference rating is ambiguous")
 """
 
 import os
@@ -44,6 +46,7 @@ from agents.akane.tools import (  # noqa: E402
     delete_diary_entry,
     get_movie_detail,
     get_stats,
+    get_home,
     get_diary,
     get_watchlist,
     list_movies,
@@ -212,6 +215,47 @@ def test_sc006_stats_empty_year():
     # Histograma deve existir e estar zerado (nunca None)
     assert isinstance(result["rating_histogram"], dict)
     assert all(v == 0 for v in result["rating_histogram"].values())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_home: banco vazio e com dados — regressão do bug "rating is ambiguous"
+# ─────────────────────────────────────────────────────────────────────────────
+# get_home() e get_stats() fazem JOIN entre diary_entries e movies, e as duas
+# tabelas têm coluna "rating". Sem qualificar o alias (d.rating), o PostgreSQL
+# recusa a query inteira com o erro 42702 — e como run_select() não captura
+# exceções, isso derrubava a tela Início inteira com 500. Estes dois testes
+# exercitam as 7 queries de get_home() de ponta a ponta contra um banco real.
+
+def test_get_home_banco_vazio():
+    """get_home() num banco recém-criado não pode levantar exceção (vazio-seguro)."""
+    result = get_home()
+
+    assert result["status"] == "ok"
+    assert result["favorites"] == []
+    assert result["recent_activity"] == []
+    assert result["watchlist_highlight"] == []
+    assert result["last_session"] is None
+    assert result["sessions_7d"] == 0
+    # Histograma com as 10 chaves "0.5".."5.0", todas zeradas
+    assert isinstance(result["rating_histogram"], dict)
+    assert all(v == 0 for v in result["rating_histogram"].values())
+
+
+def test_get_home_com_sessao_avaliada():
+    """get_home() com 1 sessão avaliada preenche o histograma na chave certa.
+
+    Antes do fix, esta chamada levantava psycopg2.errors.AmbiguousColumn
+    ("column reference \"rating\" is ambiguous") por causa do JOIN sem alias.
+    """
+    movie_id = _add_mock_movie(title="Perfect Blue", year=1997)
+    log_result = log_watch(movie_id=movie_id, rating=4.0)
+    assert log_result["status"] == "ok", f"log_watch falhou: {log_result}"
+
+    result = get_home()
+
+    assert result["status"] == "ok"
+    assert result["rating_histogram"]["4.0"] == 1
+    assert result["counts"]["diary"] == 1
 
 
 # ─────────────────────────────────────────────────────────────────────────────

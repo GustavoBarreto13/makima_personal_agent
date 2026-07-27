@@ -192,6 +192,11 @@ O campo `poster_palette` em `movies` armazena a paleta calculada na inserção.
   para notas inteiras (`str(r / 2)` em Python é sempre `float`); o frontend procurava
   `'1'`..`'5'` sem o `.0` — corrigido nos dois `screens/*Screen.tsx` (o array `keys` agora
   casa com o formato do backend, igual já era em `StatsScreen.tsx`).
+- **Histograma de notas ambíguo em `get_home()`/`get_stats()`**: as duas queries faziam
+  `JOIN diary_entries d ... movies m` e referenciavam `rating` sem qualificar o alias —
+  como **as duas tabelas** têm coluna `rating`, o PostgreSQL recusava a query inteira com
+  `42702 column reference "rating" is ambiguous`, derrubando a tela Início e Estatísticas
+  com 500. Corrigido para `d.rating` (a nota é da sessão, não do filme).
 - **Sync RSS do Letterboxd** (`scripts/sync_letterboxd.py`): a nota do feed passa por
   `_parse_rating` (reusada de `import_letterboxd_csv.py` — clamp `0.5..5.0`); a data de
   fallback (quando falta `watchedDate`) usa `email.utils.parsedate_to_datetime(pubDate)`

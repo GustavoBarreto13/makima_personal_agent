@@ -1046,16 +1046,20 @@ def get_stats(year: int | None = None) -> dict:
 
     # ── Histograma de notas (0.5 a 5.0) ──────────────────────────────────────
     # Inicializa todos os buckets com 0 (garante que a UI não quebre)
+    # "rating" existe nas DUAS tabelas do JOIN (movies e diary_entries), então
+    # precisa do alias "d." — sem ele o PostgreSQL recusa a query inteira com
+    # o erro 42702 ("column reference is ambiguous"). Contamos a nota da SESSÃO
+    # (diary_entries), não a nota final do filme.
     hist: dict = {str(r / 2): 0 for r in range(1, 11)}
     hist_rows = run_select(
         """
-        SELECT CAST(rating AS TEXT) AS rating, COUNT(*) AS count
+        SELECT CAST(d.rating AS TEXT) AS rating, COUNT(*) AS count
         FROM diary_entries d
         JOIN movies m ON m.id = d.movie_id
         WHERE EXTRACT(YEAR FROM d.watched_date) = %(year)s
           AND d.rating IS NOT NULL
           AND m.deleted = FALSE
-        GROUP BY rating
+        GROUP BY d.rating
         """,
         {"year": year},
     )
@@ -1254,15 +1258,19 @@ def get_home() -> dict:
     )
 
     # ── Histograma de notas (ano atual) ──────────────────────────────────────
+    # "rating" existe nas DUAS tabelas do JOIN (movies e diary_entries), então
+    # precisa do alias "d." — sem ele o PostgreSQL recusa a query inteira com
+    # o erro 42702 ("column reference is ambiguous"). Contamos a nota da SESSÃO
+    # (diary_entries), não a nota final do filme.
     hist: dict = {str(r / 2): 0 for r in range(1, 11)}
     hist_rows = run_select(
         """
-        SELECT CAST(rating AS TEXT) AS rating, COUNT(*) AS count
+        SELECT CAST(d.rating AS TEXT) AS rating, COUNT(*) AS count
         FROM diary_entries d
         JOIN movies m ON m.id = d.movie_id
         WHERE d.rating IS NOT NULL AND m.deleted = FALSE
           AND EXTRACT(YEAR FROM d.watched_date) = %(year)s
-        GROUP BY rating
+        GROUP BY d.rating
         """,
         {"year": today.year},
     )
