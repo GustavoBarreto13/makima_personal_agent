@@ -175,6 +175,34 @@ O campo `poster_palette` em `movies` armazena a paleta calculada na inserção.
 
 ---
 
+## Correções de bugs conhecidos (spec 049)
+
+- **`search_movie(q)`**: além de buscar no TMDB, agora consulta `movies` em lote por
+  `tmdb_id` e inclui `local_id`/`in_catalog` em cada resultado — permite ao frontend
+  ("Logar filme") registrar uma reassistida em vez de tentar recriar um filme já
+  catalogado (que sempre falhava por violar o dedup de `add_movie`).
+- **`_poster_palette(title)`**: usa `hashlib.md5` (não o `hash()` nativo do Python, que é
+  salgado por processo via `PYTHONHASHSEED` e mudava a cada reinício do servidor).
+- **`get_home()`**: `recent_activity` lê `liked` de `movies` (`m.liked`), não de
+  `diary_entries` — a coluna não existe lá. O sparkline de 7 dias (`s7`/`s7_prev`) agora
+  faz `JOIN movies` e exclui filmes soft-deletados (`m.deleted = FALSE`).
+- **`get_rewind(year)`**: `top_people` exibe `p.name` (nome de exibição), não
+  `p.normalizado` (forma de busca, minúscula e sem acento).
+- **Histograma de notas** (Início e Rewind): o backend já produzia chaves `"1.0"`..`"5.0"`
+  para notas inteiras (`str(r / 2)` em Python é sempre `float`); o frontend procurava
+  `'1'`..`'5'` sem o `.0` — corrigido nos dois `screens/*Screen.tsx` (o array `keys` agora
+  casa com o formato do backend, igual já era em `StatsScreen.tsx`).
+- **Sync RSS do Letterboxd** (`scripts/sync_letterboxd.py`): a nota do feed passa por
+  `_parse_rating` (reusada de `import_letterboxd_csv.py` — clamp `0.5..5.0`); a data de
+  fallback (quando falta `watchedDate`) usa `email.utils.parsedate_to_datetime(pubDate)`
+  (RFC-822, não ISO-8601 — o `pub_date_text[:10]` antigo nunca produzia uma data válida e a
+  entrada era sempre descartada); indisponibilidade real do feed levanta
+  `LetterboxdFetchError` (distinto de "feed OK, zero itens novos"), fazendo `run_sync`
+  retornar `errors=1` — que já aciona o `raise` existente em
+  `scheduler/jobs.py::run_letterboxd` e, com ele, o alerta padrão do scheduler no Telegram.
+
+---
+
 ## Tools públicas
 
 ### Wave 1 — Núcleo

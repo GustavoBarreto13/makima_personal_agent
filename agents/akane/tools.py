@@ -14,6 +14,7 @@ Usage:
     from agents.akane.tools import add_movie, log_watch, get_stats
 """
 
+import hashlib      # Hash determinístico (estável entre processos) da paleta de pôster
 import os           # Lê variáveis de ambiente (TMDB_API_KEY, etc.)
 import re           # Remove pontuação na normalização de strings
 import time         # Backoff exponencial nas chamadas ao TMDB
@@ -118,8 +119,11 @@ def _norm(s: str) -> str:
 def _poster_palette(title: str) -> str:
     """Retorna uma paleta de pôster tipográfico determinística baseada no título.
 
-    O índice é calculado pelo hash do título normalizado, garantindo que o mesmo
-    filme sempre receba a mesma paleta — sem precisar de sortear na primeira vez.
+    O índice é calculado pelo hash MD5 do título normalizado, garantindo que o
+    mesmo filme sempre receba a mesma paleta — em qualquer execução do
+    processo. Importante usar `hashlib.md5` (e não o `hash()` nativo do
+    Python): `hash()` de string é salgado por processo via `PYTHONHASHSEED`
+    e muda a cada reinício do servidor, quebrando a determinística prometida.
 
     Args:
         title: Título do filme.
@@ -131,8 +135,9 @@ def _poster_palette(title: str) -> str:
         >>> _poster_palette("Perfect Blue")
         'teal'
     """
-    # Usa o hash da string normalizada para mapear a uma das 14 paletas
-    return _POSTER_PALETTES[hash(_norm(title)) % len(_POSTER_PALETTES)]
+    # hashlib.md5 é estável entre processos/reinícios, diferente de hash() nativo
+    digest = hashlib.md5(_norm(title).encode()).hexdigest()
+    return _POSTER_PALETTES[int(digest, 16) % len(_POSTER_PALETTES)]
 
 
 def _ok(data: dict | None = None, **kwargs) -> dict:
@@ -405,10 +410,25 @@ def search_movie(q: str) -> list[dict]:
         q: Texto de busca (título ou parte dele).
 
     Returns:
-        Lista de até 6 resultados TMDB com tmdb_id, title, year, poster_url, director.
+        Lista de até 6 resultados TMDB com tmdb_id, title, year, poster_url,
+        director, local_id (id em `movies` se o filme já estiver catalogado,
+        senão None) e in_catalog (atalho booleano equivalente a local_id is
+        not None) — permite ao caller oferecer "registrar reassistida" em vez
+        de tentar recriar o filme (FR-006).
     """
     # Busca no TMDB e transforma para o shape esperado pela UI
     results = _tmdb_search(q)
+
+    # Consulta em lote (evita N+1) quais desses tmdb_ids já estão no catálogo
+    tmdb_ids = [r["id"] for r in results if r.get("id") is not None]
+    existing_by_tmdb_id: dict[int, str] = {}
+    if tmdb_ids:
+        existing_rows = run_select(
+            "SELECT id, tmdb_id FROM movies WHERE tmdb_id = ANY(%(ids)s) AND deleted = FALSE",
+            {"ids": tmdb_ids},
+        )
+        existing_by_tmdb_id = {row["tmdb_id"]: row["id"] for row in existing_rows}
+
     formatted = []
     for r in results:
         # Extrai o ano do campo release_date
@@ -423,6 +443,8 @@ def search_movie(q: str) -> list[dict]:
         # URL do pôster (None se não houver)
         poster_url = f"{_TMDB_IMG_POSTER}{r['poster_path']}" if r.get("poster_path") else None
 
+        local_id = existing_by_tmdb_id.get(r.get("id"))
+
         formatted.append({
             "tmdb_id":    r.get("id"),
             "title":      r.get("title", ""),
@@ -431,6 +453,8 @@ def search_movie(q: str) -> list[dict]:
             # O diretor não vem na busca — seria necessária uma chamada extra por ID
             # Para manter a busca rápida, retornamos lista vazia (preenchida no detalhe)
             "director":   [],
+            "local_id":   local_id,
+            "in_catalog": local_id is not None,
         })
     return formatted
 
@@ -1205,10 +1229,11 @@ def get_home() -> dict:
     )
 
     # ── Atividade recente (últimas 4 sessões) ──────────────────────────────────
+    # "liked" é coluna de movies (m), não de diary_entries (d) — usar o alias certo.
     recent_activity = run_select(
         """
         SELECT d.id, d.movie_id, d.movie_title, m.poster_url, m.poster_palette,
-               d.watched_date, d.rating, d.rewatch, d.liked, d.review
+               d.watched_date, d.rating, d.rewatch, m.liked, d.review
         FROM diary_entries d
         JOIN movies m ON m.id = d.movie_id
         WHERE m.deleted = FALSE
@@ -1216,10 +1241,6 @@ def get_home() -> dict:
         LIMIT 4
         """,
     )
-    # Adiciona liked do filme à entrada de atividade recente
-    for entry in recent_activity:
-        if "liked" not in entry:
-            entry["liked"] = False
 
     # ── Watchlist em destaque (carrossel) ─────────────────────────────────────
     watchlist_highlight = run_select(
@@ -1256,14 +1277,23 @@ def get_home() -> dict:
     prev_start = today - timedelta(days=13)
     prev_end   = today - timedelta(days=7)
 
+    # Exclui sessões de filmes soft-deletados da contagem (FR-002)
     s7_rows = run_select(
-        "SELECT COUNT(*) AS cnt FROM diary_entries WHERE watched_date >= %(s)s AND watched_date <= %(e)s",
+        """
+        SELECT COUNT(*) AS cnt FROM diary_entries d
+        JOIN movies m ON m.id = d.movie_id
+        WHERE d.watched_date >= %(s)s AND d.watched_date <= %(e)s AND m.deleted = FALSE
+        """,
         {"s": week_start, "e": today},
     )
     s7 = int(s7_rows[0]["cnt"]) if s7_rows else 0
 
     s7p_rows = run_select(
-        "SELECT COUNT(*) AS cnt FROM diary_entries WHERE watched_date >= %(s)s AND watched_date <= %(e)s",
+        """
+        SELECT COUNT(*) AS cnt FROM diary_entries d
+        JOIN movies m ON m.id = d.movie_id
+        WHERE d.watched_date >= %(s)s AND d.watched_date <= %(e)s AND m.deleted = FALSE
+        """,
         {"s": prev_start, "e": prev_end},
     )
     s7_prev = int(s7p_rows[0]["cnt"]) if s7p_rows else 0
@@ -1365,15 +1395,16 @@ def get_rewind(year: int | None = None) -> dict:
     liked_count = int(liked_rows[0]["liked_count"]) if liked_rows else 0
 
     # ── Top pessoas (direção + elenco + equipe) ───────────────────────────────
+    # Exibe o nome original (com acentos/capitalização), não o normalizado de busca
     top_people = run_select(
         """
-        SELECT p.normalizado AS name, COUNT(DISTINCT d.movie_id) AS count,
+        SELECT p.name AS name, COUNT(DISTINCT d.movie_id) AS count,
                ARRAY_AGG(DISTINCT p.role) AS roles
         FROM diary_entries d
         JOIN movies m ON m.id = d.movie_id
         JOIN movie_people p ON p.movie_id = m.id
         WHERE EXTRACT(YEAR FROM d.watched_date) = %(year)s AND m.deleted = FALSE
-        GROUP BY p.normalizado
+        GROUP BY p.name
         ORDER BY count DESC
         LIMIT 5
         """,

@@ -19,6 +19,7 @@ Usage:
 """
 
 import argparse          # Argumentos de linha de comando (--yesterday, -v)
+import email.utils       # Parseia data RFC-822 do <pubDate> do RSS (fallback de watchedDate)
 import logging           # Sistema de logs estruturado
 import os                # Variáveis de ambiente (LETTERBOXD_USERNAME)
 import sys               # sys.stderr para logs, sys.exit para saída com erro
@@ -32,6 +33,10 @@ import requests          # HTTP — já no requirements.txt
 # Importa a função de upsert da camada de lógica da Akane.
 # O script é um script de manutenção; a lógica de negócio fica em tools.py (FR-016).
 from agents.akane.tools import upsert_movie_from_letterboxd
+
+# Reusa a mesma validação de nota do import de histórico (CSV) — mesma escala
+# (0.5 a 5.0, passo 0.5) já aplicada lá, para não duplicar a regra (FR-009).
+from scripts.import_letterboxd_csv import _parse_rating
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTES
@@ -62,6 +67,15 @@ _TZ = ZoneInfo("America/Sao_Paulo")
 
 # Logger do módulo — mensagens vão para stderr para não poluir stdout
 log = logging.getLogger("sync_letterboxd")
+
+
+class LetterboxdFetchError(Exception):
+    """Levantada quando o feed RSS do Letterboxd está indisponível.
+
+    Distingue "todas as tentativas de rede falharam / XML malformado" (uma
+    falha real) de "feed OK, mas zero itens novos desde a última vez" (uma
+    lista vazia legítima) — só o primeiro caso deve gerar alerta (FR-010).
+    """
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -102,7 +116,13 @@ def _fetch_rss(username: str) -> list[dict]:
 
     Returns:
         Lista de dicts com keys: title, year, url, rating, watched_date, review.
-        Lista vazia se o feed não puder ser obtido.
+        Lista vazia (não exceção) quando o feed responde mas genuinamente não
+        tem itens de filme.
+
+    Raises:
+        LetterboxdFetchError: Quando todas as tentativas de rede falham ou o
+            XML retornado está malformado — indisponibilidade real do feed,
+            distinta de "zero itens novos" (FR-010).
     """
     # Monta a URL do RSS com o username configurado
     url = _LETTERBOXD_RSS.format(username=username)
@@ -127,17 +147,18 @@ def _fetch_rss(username: str) -> list[dict]:
             time.sleep(wait)
             raw_resp = None
 
-    # Se todas as tentativas falharam, retorna lista vazia (gracioso — SC-005 style)
+    # Se todas as tentativas falharam, é indisponibilidade real do feed — levanta
+    # para que o chamador distinga isso de "zero itens novos" (FR-010).
     if raw_resp is None:
         log.error("Falha definitiva ao buscar RSS do Letterboxd — sync cancelado")
-        return []
+        raise LetterboxdFetchError("Todas as tentativas de buscar o RSS falharam")
 
     # Parseia o XML do feed RSS
     try:
         root = ET.fromstring(raw_resp.content)
     except ET.ParseError as exc:
         log.error(f"Erro ao parsear XML do RSS: {exc}")
-        return []
+        raise LetterboxdFetchError(f"XML do RSS malformado: {exc}") from exc
 
     # Extrai itens do feed (limita a _RSS_LIMIT para não sobrecarregar)
     items = root.findall(".//item")[:_RSS_LIMIT]
@@ -156,22 +177,32 @@ def _fetch_rss(username: str) -> list[dict]:
         # Converte ano para int, ou None se não estiver presente
         year: int | None = int(year_text) if year_text and year_text.isdigit() else None
 
-        # memberRating é None quando o usuário assistiu sem dar nota
+        # memberRating é None quando o usuário assistiu sem dar nota.
+        # Reusa _parse_rating (mesma validação/clamp do import CSV) em vez de
+        # aceitar qualquer valor cru do feed (FR-009).
         rating_text = item.findtext("letterboxd:memberRating", namespaces=_LETTERBOXD_NS)
-        rating: float | None = float(rating_text) if rating_text else None
+        rating: float | None = _parse_rating(rating_text)
 
         watched_date_text = item.findtext("letterboxd:watchedDate", namespaces=_LETTERBOXD_NS)
-        if not watched_date_text:
-            # Se não tem data de assistência, usa a data de publicação do item
+        if watched_date_text:
+            # Tenta converter a data de "assistido em" (já ISO-8601)
+            try:
+                watched_date = date.fromisoformat(watched_date_text[:10])
+            except ValueError:
+                log.warning(f"Data inválida '{watched_date_text}' em '{film_title}' — pulando")
+                continue
+        else:
+            # Sem data de assistência — usa a data de publicação do item como
+            # aproximação (FR-008). <pubDate> é RFC-822 (ex.: "Wed, 02 Oct 2024
+            # 08:00:00 GMT"), não ISO-8601 — precisa do parser certo, senão
+            # cai sempre no fallback abaixo e a entrada é descartada.
             pub_date_text = item.findtext("pubDate") or ""
-            watched_date_text = pub_date_text[:10]  # "YYYY-MM-DD"
-
-        # Tenta converter a data em objeto date
-        try:
-            watched_date = date.fromisoformat(watched_date_text[:10])
-        except ValueError:
-            log.warning(f"Data inválida '{watched_date_text}' em '{film_title}' — pulando")
-            continue
+            try:
+                parsed_dt = email.utils.parsedate_to_datetime(pub_date_text)
+                watched_date = parsed_dt.date()
+            except (TypeError, ValueError):
+                log.warning(f"pubDate inválido '{pub_date_text}' em '{film_title}' — pulando")
+                continue
 
         # A <description> do RSS contém HTML com poster + review — extrai só texto
         description = item.findtext("description") or ""
@@ -219,8 +250,16 @@ def run_sync(yesterday_only: bool = False, enrich_tmdb: bool = True) -> dict:
         log.error("LETTERBOXD_USERNAME não configurada — defina a variável de ambiente")
         return {"created": 0, "updated": 0, "skipped": 0, "errors": 1}
 
-    # Busca e parseia o RSS
-    entradas = _fetch_rss(username)
+    # Busca e parseia o RSS. Indisponibilidade real do feed levanta
+    # LetterboxdFetchError — distinto de "zero itens novos" genuíno (FR-010).
+    # `errors=1` aqui já é suficiente para o wrapper `jobs.py::run_letterboxd`
+    # levantar e o scheduler alertar no Telegram (mesmo mecanismo dos outros jobs).
+    try:
+        entradas = _fetch_rss(username)
+    except LetterboxdFetchError as exc:
+        log.error(f"Indisponibilidade do feed do Letterboxd: {exc}")
+        return {"created": 0, "updated": 0, "skipped": 0, "errors": 1}
+
     if not entradas:
         log.warning("Nenhuma entrada retornada do RSS — sync encerrado sem erros")
         return {"created": 0, "updated": 0, "skipped": 0, "errors": 0}

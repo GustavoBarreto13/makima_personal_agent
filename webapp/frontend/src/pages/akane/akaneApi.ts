@@ -28,7 +28,7 @@ interface ListsResult      { status: 'ok'; lists: MovieList[] }
 interface TagsResult       { status: 'ok'; tags: Tag[] }
 interface VaultResult      { status: 'ok'; items: VaultItem[] }
 interface PeopleResult     { status: 'ok'; people: Array<{ name: string; count: number; roles: string[] }> }
-interface TmdbSearchResult { status: 'ok'; results: Array<{ tmdb_id: number; title: string; year: number | null; poster_url: string | null; director: string[] }> }
+interface TmdbSearchResult { status: 'ok'; results: Array<{ tmdb_id: number; title: string; year: number | null; poster_url: string | null; director: string[]; local_id: string | null; in_catalog: boolean }> }
 interface OkResult         { status: 'ok'; message?: string; [k: string]: unknown }
 
 // ── API pública ──────────────────────────────────────────────────────────────

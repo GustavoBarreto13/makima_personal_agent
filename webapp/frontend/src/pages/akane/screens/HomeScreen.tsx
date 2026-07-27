@@ -421,7 +421,7 @@ interface RatingHistogramProps {
 
 function RatingHistogram({ histogram }: RatingHistogramProps) {
   // Ordena as notas de 0.5 a 5.0 em passos de 0.5
-  const keys = ['0.5', '1', '1.5', '2', '2.5', '3', '3.5', '4', '4.5', '5']
+  const keys = ['0.5', '1.0', '1.5', '2.0', '2.5', '3.0', '3.5', '4.0', '4.5', '5.0']
   const values = keys.map(k => histogram[k] ?? 0)
   const maxVal = Math.max(...values, 1)  // Evita divisão por zero
 

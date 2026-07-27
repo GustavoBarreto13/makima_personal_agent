@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { akaneApi } from '../akaneApi'
+import { todayLocalISO } from '../dateUtils'
 
 // ── Tipos internos do modal ───────────────────────────────────────────────────
 
@@ -46,8 +47,8 @@ export function LogModal({ prefilledMovieId, prefilledTitle, onClose, onSuccess 
 
   // ── Campos do formulário ───────────────────────────────────────────────────
   const [watchedDate, setWatchedDate] = useState(() => {
-    // Data padrão = hoje (formato YYYY-MM-DD)
-    return new Date().toISOString().slice(0, 10)
+    // Data padrão = hoje no fuso LOCAL (nunca toISOString(), que é UTC — ver dateUtils.ts)
+    return todayLocalISO()
   })
   const [rating, setRating] = useState<number | null>(null)
   const [review, setReview] = useState('')
@@ -69,11 +70,12 @@ export function LogModal({ prefilledMovieId, prefilledTitle, onClose, onSuccess 
         const res = await akaneApi.tmdbSearch(query)
         setResults(
           res.results.map(r => ({
+            localId:   r.local_id ?? undefined,   // Já catalogado — permite logar rewatch direto
             tmdbId:    r.tmdb_id,
             title:     r.title,
             year:      r.year,
             posterUrl: r.poster_url,
-            inCatalog: false,   // A busca TMDB não sabe se está no catálogo; assumimos que não
+            inCatalog: r.in_catalog,
           }))
         )
       } catch {

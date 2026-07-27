@@ -563,7 +563,7 @@ metadados do TMDB e sincronização opcional com o Letterboxd (RSS). Contrato de
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/movies/tmdb/search` | Busca filmes no TMDB por título (não grava nada). | `?q=termo` (obrigatório) |
+| `GET` | `/api/movies/tmdb/search` | Busca filmes no TMDB por título (não grava nada). Cada resultado inclui `local_id`/`in_catalog` (spec 049) — permite logar reassistida de um filme já catalogado em vez de recriar. | `?q=termo` (obrigatório) |
 | `GET` | `/api/movies` | Lista o catálogo com filtros e ordenação. | `?status=&sort=&genre=&tag=&filter=` |
 | `POST` | `/api/movies` | Adiciona filme ao catálogo (metadados do TMDB se houver `tmdb_id`). | Body: `AddMovieBody` |
 | `GET` | `/api/movies/watchlist` | Filmes na watchlist (`status='watchlist'`). | — |
