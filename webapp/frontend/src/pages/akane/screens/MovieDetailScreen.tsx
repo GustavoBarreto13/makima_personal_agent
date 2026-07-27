@@ -4,8 +4,9 @@
 
 import { useState, useEffect } from 'react'
 import { akaneApi } from '../akaneApi'
-import type { MovieDetail } from '../types'
+import type { MovieDetail, VaultType } from '../types'
 import { Stars } from '../components/Stars'
+import { AddToListModal } from '../modals/AddToListModal'
 
 interface MovieDetailScreenProps {
   movieId: string
@@ -23,6 +24,13 @@ interface MovieDetailScreenProps {
 export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDetailScreenProps) {
   const [data, setData] = useState<MovieDetail | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // Modal "Adicionar a lista" (US1)
+  const [showAddToList, setShowAddToList] = useState(false)
+
+  // Confirmação de exclusão do filme (US5) — duas etapas, mesmo padrão de ListDetailView
+  const [confirmDeleteMovie, setConfirmDeleteMovie] = useState(false)
+  const [deletingMovie, setDeletingMovie] = useState(false)
 
   // Busca o detalhe na montagem (ou ao trocar movieId)
   useEffect(() => {
@@ -143,7 +151,59 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
           onToast={onToast}
           onToggle={(s) => setData(d => d ? { ...d, movie: { ...d.movie, status: s } } : d)}
         />
+        <button
+          className="ak-btn"
+          onClick={() => setShowAddToList(true)}
+        >
+          + Adicionar a lista
+        </button>
+
+        {/* Excluir filme — confirmação em duas etapas (spec 051, US5) */}
+        {!confirmDeleteMovie ? (
+          <button
+            className="ak-btn"
+            onClick={() => setConfirmDeleteMovie(true)}
+            style={{ color: 'var(--heart)', marginLeft: 'auto' }}
+          >
+            Excluir filme
+          </button>
+        ) : (
+          <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+            <button className="ak-btn" onClick={() => setConfirmDeleteMovie(false)} disabled={deletingMovie}>
+              Cancelar
+            </button>
+            <button
+              onClick={async () => {
+                setDeletingMovie(true)
+                try {
+                  await akaneApi.delete(movie.id)
+                  onToast('Filme excluído.')
+                  onBack()
+                } catch {
+                  onToast('Erro ao excluir o filme.')
+                  setDeletingMovie(false)
+                }
+              }}
+              disabled={deletingMovie}
+              style={{
+                all: 'unset', cursor: 'pointer', fontSize: 13, padding: '6px 14px',
+                background: 'var(--heart)', color: '#fff', borderRadius: 8,
+              }}
+            >
+              {deletingMovie ? 'Excluindo…' : 'Confirmar exclusão'}
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Modal "Adicionar a lista" */}
+      {showAddToList && (
+        <AddToListModal
+          movieId={movie.id}
+          onClose={() => setShowAddToList(false)}
+          onToast={onToast}
+        />
+      )}
 
       {/* ── Sinopse ───────────────────────────────────────────────────── */}
       {movie.overview && (
@@ -174,81 +234,24 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
           <SectionTitle>Histórico ({diary.length})</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {diary.map(entry => (
-              <div
+              <DiaryEntryRow
                 key={entry.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '8px 12px',
-                  background: 'var(--card)',
-                  borderRadius: 'var(--r-sm)',
-                  border: '1px solid var(--line-2)',
-                }}
-              >
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink-4)' }}>
-                  {entry.watched_date}
-                </span>
-                {entry.rewatch && <span className="ak-rewatch-badge">Revisão</span>}
-                <Stars rating={entry.rating} size={11} />
-                {entry.review && (
-                  <span style={{
-                    fontFamily: 'var(--serif)', fontStyle: 'italic',
-                    fontSize: 12, color: 'var(--ink-3)',
-                    flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {entry.review}
-                  </span>
-                )}
-              </div>
+                entry={entry}
+                onToast={onToast}
+                onDeleted={(id) => setData(d => d ? { ...d, diary: d.diary.filter(e => e.id !== id) } : d)}
+              />
             ))}
           </div>
         </div>
       )}
 
       {/* ── Cofre de conteúdos ────────────────────────────────────────── */}
-      {vault.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <SectionTitle>Cofre ({vault.length})</SectionTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {vault.map(item => (
-              <div
-                key={item.id}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '8px 12px',
-                  background: 'var(--card)', borderRadius: 'var(--r-sm)',
-                  border: '1px solid var(--line-2)',
-                }}
-              >
-                {/* Tipo com ícone em texto */}
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--rose)', textTransform: 'uppercase' }}>
-                  {item.type}
-                </span>
-                {item.url ? (
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--ink)', textDecoration: 'none', flex: 1 }}
-                  >
-                    {item.title}
-                  </a>
-                ) : (
-                  <span style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--ink)', flex: 1 }}>
-                    {item.title}
-                  </span>
-                )}
-                {item.source && (
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)' }}>
-                    {item.source}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <VaultSection
+        movieId={movie.id}
+        vault={vault}
+        onToast={onToast}
+        onChange={(newVault) => setData(d => d ? { ...d, vault: newVault } : d)}
+      />
 
       {/* ── Pessoas ───────────────────────────────────────────────────── */}
       {people.length > 0 && (
@@ -428,6 +431,245 @@ function NotesEditor({ movieId, initialNotes, onToast }: {
           {notes}
         </p>
       ) : null}
+    </div>
+  )
+}
+
+/** Linha do histórico de sessões — com exclusão de sessão (spec 051, US5). */
+function DiaryEntryRow({ entry, onToast, onDeleted }: {
+  entry: MovieDetail['diary'][number]
+  onToast: (msg: string) => void
+  onDeleted: (id: string) => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const doDelete = async () => {
+    setDeleting(true)
+    try {
+      await akaneApi.deleteDiary(entry.id)
+      onDeleted(entry.id)
+      onToast('Sessão excluída.')
+    } catch {
+      onToast('Erro ao excluir a sessão.')
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '8px 12px',
+        background: 'var(--card)',
+        borderRadius: 'var(--r-sm)',
+        border: '1px solid var(--line-2)',
+      }}
+    >
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink-4)' }}>
+        {entry.watched_date}
+      </span>
+      {entry.rewatch && <span className="ak-rewatch-badge">Revisão</span>}
+      <Stars rating={entry.rating} size={11} />
+      {entry.review && (
+        <span style={{
+          fontFamily: 'var(--serif)', fontStyle: 'italic',
+          fontSize: 12, color: 'var(--ink-3)',
+          flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {entry.review}
+        </span>
+      )}
+      {/* Exclusão em duas etapas para evitar clique acidental */}
+      {!confirming ? (
+        <button
+          onClick={() => setConfirming(true)}
+          title="Excluir sessão"
+          style={{
+            all: 'unset', cursor: 'pointer', fontSize: 12, color: 'var(--ink-4)',
+            marginLeft: 'auto', flexShrink: 0, padding: '2px 6px',
+          }}
+        >
+          ✕
+        </button>
+      ) : (
+        <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
+          <button
+            onClick={() => setConfirming(false)}
+            style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--ink-4)', padding: '2px 6px' }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={doDelete}
+            disabled={deleting}
+            style={{
+              all: 'unset', cursor: 'pointer', fontSize: 11, padding: '2px 8px',
+              background: 'var(--heart)', color: '#fff', borderRadius: 5,
+            }}
+          >
+            {deleting ? '…' : 'Confirmar'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Seção do Cofre — adiciona e remove itens sem sair do detalhe (spec 051, US2). */
+function VaultSection({ movieId, vault, onToast, onChange }: {
+  movieId: string
+  vault: MovieDetail['vault']
+  onToast: (msg: string) => void
+  onChange: (newVault: MovieDetail['vault']) => void
+}) {
+  const [adding, setAdding] = useState(false)
+  const [type, setType] = useState<VaultType>('video')
+  const [title, setTitle] = useState('')
+  const [url, setUrl] = useState('')
+  const [source, setSource] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [removingId, setRemovingId] = useState<string | null>(null)
+
+  const save = async () => {
+    if (!title.trim()) return
+    setBusy(true)
+    try {
+      const res = await akaneApi.addVault(movieId, {
+        type,
+        title: title.trim(),
+        url: url.trim() || undefined,
+        source: source.trim() || undefined,
+      })
+      const newId = (res as { id?: string }).id
+      onChange([...vault, { id: newId ?? crypto.randomUUID(), type, title: title.trim(), url: url.trim() || null, source: source.trim() || null }])
+      onToast('Item adicionado ao Cofre.')
+      setTitle(''); setUrl(''); setSource(''); setAdding(false)
+    } catch {
+      onToast('Erro ao adicionar ao Cofre.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (id: string) => {
+    setRemovingId(id)
+    try {
+      await akaneApi.deleteVault(id)
+      onChange(vault.filter(v => v.id !== id))
+      onToast('Item removido do Cofre.')
+    } catch {
+      onToast('Erro ao remover do Cofre.')
+    } finally {
+      setRemovingId(null)
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <SectionTitle>Cofre ({vault.length})</SectionTitle>
+        {!adding && (
+          <button
+            className="ak-btn"
+            style={{ fontSize: 11, padding: '3px 8px', marginTop: -6 }}
+            onClick={() => setAdding(true)}
+          >
+            + Adicionar
+          </button>
+        )}
+      </div>
+
+      {vault.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: adding ? 10 : 0 }}>
+          {vault.map(item => (
+            <div
+              key={item.id}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 12px',
+                background: 'var(--card)', borderRadius: 'var(--r-sm)',
+                border: '1px solid var(--line-2)',
+              }}
+            >
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--rose)', textTransform: 'uppercase' }}>
+                {item.type}
+              </span>
+              {item.url ? (
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--ink)', textDecoration: 'none', flex: 1 }}
+                >
+                  {item.title}
+                </a>
+              ) : (
+                <span style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--ink)', flex: 1 }}>
+                  {item.title}
+                </span>
+              )}
+              {item.source && (
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)' }}>
+                  {item.source}
+                </span>
+              )}
+              <button
+                onClick={() => remove(item.id)}
+                disabled={removingId === item.id}
+                title="Remover do Cofre"
+                style={{ all: 'unset', cursor: 'pointer', fontSize: 12, color: 'var(--ink-4)', flexShrink: 0, padding: '2px 6px' }}
+              >
+                {removingId === item.id ? '…' : '✕'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {adding && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px', background: 'var(--card)', borderRadius: 'var(--r-sm)', border: '1px solid var(--line-2)' }}>
+          <select
+            className="ak-input"
+            value={type}
+            onChange={e => setType(e.target.value as VaultType)}
+          >
+            <option value="video">Vídeo</option>
+            <option value="article">Artigo</option>
+            <option value="essay">Ensaio</option>
+            <option value="review">Review</option>
+          </select>
+          <input
+            className="ak-input"
+            placeholder="Título"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            autoFocus
+          />
+          <input
+            className="ak-input"
+            placeholder="URL (opcional)"
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+          />
+          <input
+            className="ak-input"
+            placeholder="Fonte (opcional, ex.: youtube.com)"
+            value={source}
+            onChange={e => setSource(e.target.value)}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="ak-btn ak-btn-primary" onClick={save} disabled={busy || !title.trim()}>
+              {busy ? 'Salvando…' : 'Salvar'}
+            </button>
+            <button className="ak-btn" onClick={() => { setAdding(false); setTitle(''); setUrl(''); setSource('') }}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

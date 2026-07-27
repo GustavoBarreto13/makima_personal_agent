@@ -25,6 +25,10 @@ export function HomeScreen({ tweaks: _tweaks, onSelectMovie, onLog: _onLog, onTo
   // Estado principal: dados do Início
   const [home, setHome] = useState<HomeData | null>(null)
   const [loading, setLoading] = useState(true)
+  // get_home() é vazio-seguro (SC-006) — sempre retorna um HomeData, mesmo para um
+  // usuário sem nenhum filme. Por isso `home === null` só acontece em falha de
+  // rede/servidor, nunca em "genuinamente sem dados" (spec 051, FR-009).
+  const [loadError, setLoadError] = useState(false)
 
   // Estado de edição de favoritos
   const [editingFavs, setEditingFavs] = useState(false)
@@ -32,15 +36,16 @@ export function HomeScreen({ tweaks: _tweaks, onSelectMovie, onLog: _onLog, onTo
   // Busca os dados do Início no mount
   const loadHome = useCallback(() => {
     setLoading(true)
+    setLoadError(false)
     akaneApi.home()
       .then(data => setHome(data))
-      .catch(() => {})  // Erros de rede são silenciosos — exibe loading eterno
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => { loadHome() }, [loadHome])
 
-  // ── Loading e vazio ─────────────────────────────────────────────────────────
+  // ── Loading, erro e vazio ────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -51,12 +56,15 @@ export function HomeScreen({ tweaks: _tweaks, onSelectMovie, onLog: _onLog, onTo
     )
   }
 
-  if (!home) {
+  if (loadError || !home) {
     return (
       <div className="ak-empty">
-        <span className="ak-empty-icon">◈</span>
-        <p className="ak-empty-title">Bem-vinda à sua cinemateca</p>
-        <p className="ak-empty-sub">Adicione e logue filmes para ver o resumo aqui.</p>
+        <span className="ak-empty-icon">⚠</span>
+        <p className="ak-empty-title">Não foi possível carregar o Início</p>
+        <p className="ak-empty-sub">Verifique sua conexão e tente novamente.</p>
+        <button className="ak-btn" onClick={loadHome} style={{ marginTop: 10 }}>
+          Tentar novamente
+        </button>
       </div>
     )
   }

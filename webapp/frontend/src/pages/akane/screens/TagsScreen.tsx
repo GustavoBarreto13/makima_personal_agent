@@ -18,19 +18,38 @@ interface TagsScreenProps {
 export function TagsScreen({ onSelectTag }: TagsScreenProps) {
   const [tags, setTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
+  // Distingue falha de rede de "genuinamente sem etiquetas ainda" (spec 051, FR-009)
+  const [loadError, setLoadError] = useState(false)
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true)
+    setLoadError(false)
     akaneApi.tags()
       .then(r => setTags(r.tags))
-      .catch(() => {})
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false))
-  }, [])
+  }
+
+  useEffect(load, [])
 
   if (loading) {
     return (
       <div className="ak-empty">
         <span className="ak-empty-icon">⊕</span>
         <p className="ak-empty-title">Carregando etiquetas…</p>
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="ak-empty">
+        <span className="ak-empty-icon">⚠</span>
+        <p className="ak-empty-title">Não foi possível carregar as etiquetas</p>
+        <p className="ak-empty-sub">Verifique sua conexão e tente novamente.</p>
+        <button className="ak-btn" onClick={load} style={{ marginTop: 10 }}>
+          Tentar novamente
+        </button>
       </div>
     )
   }

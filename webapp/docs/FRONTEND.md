@@ -377,8 +377,23 @@ link, ex.: Google Meet).
 | `detail` | MovieDetailScreen | Detalhe do filme: nota, curtir, status, Cofre e diário |
 
 **Particularidades:** busca de filmes no TMDB no modal de adição (`/api/movies/tmdb/search`);
-botão de sync com o Letterboxd (`POST /api/movies/sync-letterboxd`); preferências em
+botão de sync manual com o Letterboxd na sidebar (`POST /api/movies/sync-letterboxd`, spec
+051 — toast com o resumo criados/atualizados/pulados ou erro); preferências em
 `localStorage` (`akane-tweaks`). API: `akaneApi.ts` — todos os `/api/movies/*`.
+
+**Gaps de UI fechados (spec 051)** — backend já existia para todos, só faltava a UI:
+- `MovieDetailScreen`: botão "+ Adicionar a lista" (`AddToListModal`, idempotente — reusa
+  `add_to_list` do backend, seguro clicar 2×); Cofre editável (form inline + remover);
+  "Excluir filme" e exclusão por sessão do histórico, ambos com confirmação em 2 etapas.
+- `ListsScreen`: `CreateListModal` ganhou modo edição (nome/descrição/cor de destaque via
+  swatches OKLCH) + botão "Editar" na visão de detalhe da lista.
+- `RewindScreen`: bloco "Pessoas mais assistidas" (`top_people`, dado já fluía desde a spec
+  049) + heatmap de atividade do ano (`components/Heatmap.tsx`, porta de
+  `frieren/ui/Heatmap.tsx` trocando `pages` por `count`).
+- `HomeScreen`/`TagsScreen`/`ListsScreen`: erro de rede agora tem estado visual distinto
+  ("Não foi possível carregar" + botão de retry) do estado "genuinamente sem dados ainda".
+- `WatchlistScreen`: copy do estado vazio corrigida (referenciava um botão "+ Watchlist"
+  que não existe — orienta agora para "Logar filme" + fechar sem confirmar a sessão).
 
 ---
 

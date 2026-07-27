@@ -20,18 +20,24 @@ interface ListsScreenProps {
 export function ListsScreen({ onSelectMovie }: ListsScreenProps) {
   const [lists, setLists] = useState<MovieList[]>([])
   const [loading, setLoading] = useState(true)
+  // Distingue falha de rede de "genuinamente sem listas ainda" (spec 051, FR-009)
+  const [loadError, setLoadError] = useState(false)
 
   // Detalhe da lista selecionada (null = exibe a grade de listas)
   const [selectedList, setSelectedList] = useState<MovieListDetail | null>(null)
 
-  // Estado do modal de criação/edição de lista
+  // Estado do modal de criação de lista
   const [showCreate, setShowCreate] = useState(false)
+
+  // Estado do modal de edição de lista (spec 051, US1) — guarda a lista sendo editada
+  const [editingList, setEditingList] = useState<MovieListDetail['list'] | null>(null)
 
   const loadLists = useCallback(() => {
     setLoading(true)
+    setLoadError(false)
     akaneApi.lists()
       .then(r => setLists(r.lists))
-      .catch(() => {})
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false))
   }, [])
 
@@ -54,19 +60,33 @@ export function ListsScreen({ onSelectMovie }: ListsScreenProps) {
 
   if (selectedList) {
     return (
-      <ListDetailView
-        list={selectedList}
-        onBack={closeDetail}
-        onSelectMovie={onSelectMovie}
-        onDelete={async (id) => {
-          await akaneApi.deleteList(id)
-          closeDetail()
-        }}
-        onRemoveMovie={async (listId, movieId) => {
-          await akaneApi.removeFromList(listId, movieId)
-          openList(listId)  // Recarrega o detalhe da lista
-        }}
-      />
+      <>
+        <ListDetailView
+          list={selectedList}
+          onBack={closeDetail}
+          onSelectMovie={onSelectMovie}
+          onDelete={async (id) => {
+            await akaneApi.deleteList(id)
+            closeDetail()
+          }}
+          onRemoveMovie={async (listId, movieId) => {
+            await akaneApi.removeFromList(listId, movieId)
+            openList(listId)  // Recarrega o detalhe da lista
+          }}
+          onEdit={(list) => setEditingList(list)}
+        />
+        {editingList && (
+          <CreateListModal
+            initial={editingList}
+            onClose={() => setEditingList(null)}
+            onSave={async (name, description, ranked, accent) => {
+              await akaneApi.updateList(editingList.id, { name, description, ranked, accent })
+              setEditingList(null)
+              openList(editingList.id)  // Recarrega o detalhe com os novos metadados
+            }}
+          />
+        )}
+      </>
     )
   }
 
@@ -97,8 +117,20 @@ export function ListsScreen({ onSelectMovie }: ListsScreenProps) {
         </div>
       )}
 
-      {/* Grade vazia */}
-      {!loading && lists.length === 0 && (
+      {/* Erro de rede — distinto do estado "sem listas ainda" (spec 051, FR-009) */}
+      {!loading && loadError && (
+        <div className="ak-empty">
+          <span className="ak-empty-icon">⚠</span>
+          <p className="ak-empty-title">Não foi possível carregar as listas</p>
+          <p className="ak-empty-sub">Verifique sua conexão e tente novamente.</p>
+          <button className="ak-btn" onClick={loadLists} style={{ marginTop: 10 }}>
+            Tentar novamente
+          </button>
+        </div>
+      )}
+
+      {/* Grade vazia (genuinamente sem listas) */}
+      {!loading && !loadError && lists.length === 0 && (
         <div className="ak-empty">
           <span className="ak-empty-icon">⊟</span>
           <p className="ak-empty-title">Nenhuma lista ainda</p>
@@ -107,7 +139,7 @@ export function ListsScreen({ onSelectMovie }: ListsScreenProps) {
       )}
 
       {/* Grade de listas */}
-      {!loading && lists.length > 0 && (
+      {!loading && !loadError && lists.length > 0 && (
         <div className="ak-grid">
           {lists.map(list => (
             <ListCard
@@ -123,8 +155,8 @@ export function ListsScreen({ onSelectMovie }: ListsScreenProps) {
       {showCreate && (
         <CreateListModal
           onClose={() => setShowCreate(false)}
-          onSave={async (name, description, ranked) => {
-            await akaneApi.createList({ name, description, ranked })
+          onSave={async (name, description, ranked, accent) => {
+            await akaneApi.createList({ name, description, ranked, accent })
             setShowCreate(false)
             loadLists()
           }}
@@ -229,9 +261,10 @@ interface ListDetailViewProps {
   onSelectMovie: (id: string) => void
   onDelete: (id: string) => void
   onRemoveMovie: (listId: string, movieId: string) => void
+  onEdit: (list: MovieListDetail['list']) => void
 }
 
-function ListDetailView({ list: detail, onBack, onSelectMovie, onDelete, onRemoveMovie }: ListDetailViewProps) {
+function ListDetailView({ list: detail, onBack, onSelectMovie, onDelete, onRemoveMovie, onEdit }: ListDetailViewProps) {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   // MovieListDetail tem forma aninhada: { list: {id, name, description, accent, ranked}, films: [...] }
@@ -262,6 +295,16 @@ function ListDetailView({ list: detail, onBack, onSelectMovie, onDelete, onRemov
             {films.length} {films.length === 1 ? 'filme' : 'filmes'}
           </p>
         </div>
+        {/* Botão de editar a lista (spec 051, US1) */}
+        {!confirmDelete && (
+          <button
+            className="ak-btn"
+            onClick={() => onEdit(meta)}
+            style={{ fontSize: 11 }}
+          >
+            Editar
+          </button>
+        )}
         {/* Botão de deletar a lista */}
         {!confirmDelete ? (
           <button
@@ -366,21 +409,35 @@ function ListDetailView({ list: detail, onBack, onSelectMovie, onDelete, onRemov
 }
 
 
-// ── Modal de criação de lista ────────────────────────────────────────────────
+// ── Paleta fixa de acentos para listas (spec 051, US1) ────────────────────────
+// Mesmo padrão de swatches OKLCH já usado no seletor de acento do AkaneShell.
+const LIST_ACCENTS = [
+  'oklch(0.655 0.205 357)',  // rosa (padrão do domínio)
+  'oklch(0.66 0.115 196)',   // teal
+  'oklch(0.605 0.215 22)',   // carmim
+  'oklch(0.74 0.155 66)',    // âmbar
+  'oklch(0.65 0.15 145)',    // verde
+  'oklch(0.6 0.18 280)',     // roxo
+]
+
+// ── Modal de criação/edição de lista ──────────────────────────────────────────
 
 interface CreateListModalProps {
   onClose: () => void
-  onSave: (name: string, description: string, ranked: boolean) => void
+  onSave: (name: string, description: string, ranked: boolean, accent?: string) => void
+  /** Quando presente, o modal abre em modo edição pré-preenchido (spec 051, US1). */
+  initial?: MovieListDetail['list']
 }
 
-function CreateListModal({ onClose, onSave }: CreateListModalProps) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [ranked, setRanked] = useState(false)
+function CreateListModal({ onClose, onSave, initial }: CreateListModalProps) {
+  const [name, setName] = useState(initial?.name ?? '')
+  const [description, setDescription] = useState(initial?.description ?? '')
+  const [ranked, setRanked] = useState(initial?.ranked ?? false)
+  const [accent, setAccent] = useState<string | null>(initial?.accent ?? null)
 
   function handleSave() {
     if (!name.trim()) return
-    onSave(name.trim(), description.trim(), ranked)
+    onSave(name.trim(), description.trim(), ranked, accent ?? undefined)
   }
 
   return (
@@ -406,7 +463,7 @@ function CreateListModal({ onClose, onSave }: CreateListModalProps) {
         }}
       >
         <h3 style={{ margin: 0, fontFamily: 'var(--serif)', fontSize: 18, color: 'var(--ink)' }}>
-          Nova lista
+          {initial ? 'Editar lista' : 'Nova lista'}
         </h3>
 
         {/* Campo nome */}
@@ -437,6 +494,28 @@ function CreateListModal({ onClose, onSave }: CreateListModalProps) {
           />
         </div>
 
+        {/* Seletor de cor de acento (spec 051, US1/FR-002) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: 1 }}>
+            Cor de destaque
+          </label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {LIST_ACCENTS.map(color => (
+              <button
+                key={color}
+                onClick={() => setAccent(color)}
+                title={color}
+                style={{
+                  width: 22, height: 22, borderRadius: '50%',
+                  background: color,
+                  border: accent === color ? '2px solid var(--ink)' : '2px solid transparent',
+                  cursor: 'pointer', padding: 0,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+
         {/* Toggle de lista rankeada */}
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)' }}>
           <input
@@ -456,7 +535,7 @@ function CreateListModal({ onClose, onSave }: CreateListModalProps) {
             onClick={handleSave}
             disabled={!name.trim()}
           >
-            Criar lista
+            {initial ? 'Salvar' : 'Criar lista'}
           </button>
         </div>
       </div>

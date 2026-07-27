@@ -5,7 +5,8 @@
 
 import { useState, useEffect } from 'react'
 import { akaneApi } from '../akaneApi'
-import type { Rewind } from '../types'
+import type { Rewind, HeatmapDay } from '../types'
+import { Heatmap } from '../components/Heatmap'
 // Stars não é usado no RewindScreen — notas aparecem como número, não ícones
 
 // ── Utilitário de meses ──────────────────────────────────────────────────────
@@ -21,6 +22,9 @@ export function RewindScreen() {
   const [data, setData] = useState<Rewind | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Dados do heatmap de atividade do ano (spec 051, US4)
+  const [heatmapDays, setHeatmapDays] = useState<HeatmapDay[]>([])
+
   // Recarrega os dados quando o ano muda
   useEffect(() => {
     setLoading(true)
@@ -28,6 +32,9 @@ export function RewindScreen() {
       .then((d) => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false))
+    akaneApi.heatmap(year)
+      .then((r) => setHeatmapDays(r.days))
+      .catch(() => setHeatmapDays([]))
   }, [year])
 
   // ── Seletor de ano ──────────────────────────────────────────────────────────
@@ -90,6 +97,24 @@ export function RewindScreen() {
           {/* ── HISTOGRAMA DE NOTAS ───────────────────────────────────────── */}
           {data.rating_histogram && Object.keys(data.rating_histogram).length > 0 && (
             <HistogramaNotas histogram={data.rating_histogram} />
+          )}
+
+          {/* ── MAPA DE CALOR DE ATIVIDADE (spec 051, US4) ───────────────── */}
+          {heatmapDays.length > 0 && (
+            <section>
+              <p style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12, margin: '0 0 12px' }}>
+                Atividade do ano
+              </p>
+              <Heatmap data={heatmapDays} />
+            </section>
+          )}
+
+          {/* ── PESSOAS MAIS ASSISTIDAS (spec 051 — dado já fluía, faltava exibir) */}
+          {data.top_people && data.top_people.length > 0 && (
+            <TopLista
+              titulo="Pessoas mais assistidas"
+              lista={data.top_people}
+            />
           )}
 
           {/* ── TOP DIRETORES / PESSOAS ───────────────────────────────────── */}

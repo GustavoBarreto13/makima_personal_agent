@@ -120,6 +120,22 @@ export function AkaneShell() {
     setTimeout(() => setToast(null), 2500)
   }, [])
 
+  // ── Sincronização manual com o Letterboxd (spec 051, US3) ─────────────────
+  const [syncing, setSyncing] = useState(false)
+
+  const syncLetterboxd = useCallback(async () => {
+    if (syncing) return
+    setSyncing(true)
+    try {
+      const r = await akaneApi.syncLetterboxd()
+      showToast(`Sincronizado: ${r.created} novos, ${r.updated} atualizados, ${r.skipped} sem mudança.`)
+    } catch {
+      showToast('Falha ao sincronizar com o Letterboxd.')
+    } finally {
+      setSyncing(false)
+    }
+  }, [syncing, showToast])
+
   // ── Contadores da sidebar (watchlist) ─────────────────────────────────────
   const [watchlistCount, setWatchlistCount] = useState<number | null>(null)
 
@@ -246,6 +262,18 @@ export function AkaneShell() {
           >
             <span>▶</span>
             <span>Logar filme</span>
+          </button>
+
+          {/* Botão de sincronização manual com o Letterboxd (spec 051, US3) */}
+          <button
+            className="ak-btn"
+            onClick={syncLetterboxd}
+            disabled={syncing}
+            aria-label="Sincronizar com o Letterboxd"
+            style={{ fontSize: 12, marginTop: 8, width: '100%' }}
+          >
+            <span>{syncing ? '…' : '⟳'}</span>{' '}
+            <span>{syncing ? 'Sincronizando…' : 'Sincronizar Letterboxd'}</span>
           </button>
 
           {/* Navegação */}

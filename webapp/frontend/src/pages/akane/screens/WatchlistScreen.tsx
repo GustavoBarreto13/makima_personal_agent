@@ -46,7 +46,7 @@ export function WatchlistScreen({ onSelectMovie, onLogFilm }: WatchlistScreenPro
       <div className="ak-empty">
         <span className="ak-empty-icon">📋</span>
         <p className="ak-empty-title">Watchlist vazia</p>
-        <p className="ak-empty-sub">Adicione filmes que quer assistir usando o botão "+ Watchlist".</p>
+        <p className="ak-empty-sub">Use "Logar filme" na barra lateral, busque um título e feche o modal — o filme já entra na sua watchlist.</p>
       </div>
     )
   }

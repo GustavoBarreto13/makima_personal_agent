@@ -426,5 +426,5 @@ Use a skill `obsidian-vault` para consultar os caminhos corretos e atualizar a d
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/049-akane-bugfixes/plan.md`.
+at `specs/051-akane-ui-gaps/plan.md`.
 <!-- SPECKIT END -->
