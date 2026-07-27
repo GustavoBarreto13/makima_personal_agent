@@ -40,11 +40,12 @@
 | 032 (lucy) | Lucy (email/Gmail): agente interativo somente-leitura (IMAP) + digest matinal agendado (classificação Gemini + labels/arquivamento + Telegram) + histórico idempotente (`lucy_emails`). Aposenta o script externo do n8n | ✅ |
 | 033 | **Frieren — reforma da webapp de livros** (só webapp, sem bot): (a) **página do livro editável** — modal "Editar livro" com todos os campos (capa por URL, título, autor, gênero, ano, páginas, ISBN, idioma, descrição, status, nota, datas, resenha, loja, preço) via `PATCH /metadata` estendido (+rating/datas/store_url/price); (b) **marcações coloridas** — seção "Minhas marcações" com bullets rosa/amarelo/verde/azul/laranja + página opcional (tabela `book_bullets` + tools/rotas); (c) **resenha inline** — editor estilo Violet na seção "Sua resenha" (escreve a qualquer momento; campo `notes`); (d) **gerenciamento de estantes** — criar/editar/excluir estante (`ShelfModal`) + adicionar/remover livros pela UI (backend já existia, faltava a UI); (e) **Biblioteca unificada** — agrupada por status (Lendo→Quero ler→Wishlist→Lidos), filtro lembrado + ordenação na toolbar (`created_at` exposto no `GET /api/books`), aba "Lendo agora" removida; (f) **heatmap** — meses em linha única com scroll (padrão Violet) cobrindo o ano inteiro (Frieren + Violet) | ✅ |
 | 034 | **Kaguya — GTD core**: status GTD real (próxima ação/aguardando/algum dia — aposenta as tags heurísticas `#aguardando`/`#algum-dia`), contextos de execução dedicados (`task_contexts`, CRUD), processamento guiado do inbox (`process_inbox_item`, 6 decisões, web + Telegram `/processar_inbox`) e bloco fixo de views padrão de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) | ✅ |
+| 035 | **Kaguya — revisão semanal guiada**: wizard de 6 passos (inbox zero, próximas ações, aguardando, listas/projetos, calendário, algum dia/talvez) reusando a lógica da 034, registro leve (`task_weekly_reviews`) com retomada de revisão aberta (no máximo uma por vez, garantida por índice único parcial), lembrete no Telegram todo domingo 20h quando a semana termina sem revisão concluída (job `weekly_review_reminder` no scheduler) e indicador "última revisão há N dias" no painel. Webapp-only (sem tool ADK) | ✅ |
 | 061 | **Violet — Conselho do Dia** (persona Violet, lógica na Kurisu): seção no topo da tela Escrever que, sob demanda, lê o dia (bullets + registros emocionais + cartas) + janela de 7 dias + tarefas/hábitos da Kaguya + os 3 conselhos anteriores, cruza com o RAG da Kurisu (`buscar_na_base`) e devolve 4 blocos (espelho do dia, ferramentas da base com citação real, pergunta de reflexão, ações — podem virar tarefa). Busca web só como complemento quando a base não cobre; origem ("base"/"web") decidida no servidor por checagem de `uri`, nunca por auto-declaração do modelo. Uma análise por dia (`journal_counsel`, `UNIQUE page_id`) | ✅ |
 
 ## Status atual (jul/2026)
 
-Fases 001–027, 029, 030, 031, 032, 032 (lucy), 033, 034 e 061 entregues. A **028** (memória unificada da Kurisu) está parcial:
+Fases 001–027, 029, 030, 031, 032, 032 (lucy), 033, 034, 035 e 061 entregues. A **028** (memória unificada da Kurisu) está parcial:
 fundação (`agents/kurisu/memory/`) + sync incremental + 2 dos 8 exporters (diário, tarefas)
 prontos localmente; deploy no VPS e os 6 exporters restantes pendentes.
 
@@ -55,7 +56,6 @@ prontos localmente; deploy no VPS e os 6 exporters restantes pendentes.
 | Concluir a 028 (6 exporters + deploy VPS) | `specs/028-kurisu-unified-memory/` |
 | Personalidade Violet + rename `agents/journal → agents/violet` | `docs/planos/PLANO_VIOLET_EVERGARDEN.md` |
 | Integração Violet ↔ Komi (autocomplete `@menção` no diário) | `docs/planos/PLANO_INTEGRACAO_VIOLET_KOMI.md` |
-| ⏳ 035 — Kaguya revisão semanal guiada (depende da 034) | `specs/035-tasks-weekly-review/` (roadmap: `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md`) |
 | ⏳ 036 — Metas/Hábitos ↔ outros agentes (Frieren, Violet; registry extensível) | `specs/036-goal-habit-links/` (roadmap: `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md`) |
 | ⏳ 037 — Kaguya pomodoro/foco (timer por tarefa + stats) | `specs/037-tasks-focus-pomodoro/` (roadmap: `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md`) |
 | ⏳ 038 — Meu Dia com contexto Trabalho vs Pessoal (duas capacities) | `specs/038-meudia-work-context/` (roadmap: `docs/planos/PLANO_KAGUYA_MELHORIAS_2026H2.md`) |
