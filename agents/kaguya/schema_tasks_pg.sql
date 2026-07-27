@@ -519,6 +519,35 @@ DELETE FROM task_tags WHERE LOWER(name) IN ('aguardando', 'algum-dia');
 
 
 -- ----------------------------------------------------------------------------
+-- task_weekly_reviews — revisão semanal guiada (spec 035)
+-- ----------------------------------------------------------------------------
+-- Registro leve de UM ritual: início, fim (NULL enquanto aberta), passos já vistos
+-- (subconjunto de _ALL_STEPS em tools_review.py) e uma nota final opcional. Os DADOS
+-- exibidos em cada passo NUNCA são snapshotados aqui — são sempre consultados ao vivo
+-- (data-model.md § "Consultas derivadas dos passos").
+CREATE TABLE IF NOT EXISTS task_weekly_reviews (
+    id           SERIAL PRIMARY KEY,
+    started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ,
+    steps_seen   TEXT[] NOT NULL DEFAULT '{}',
+    note         TEXT
+);
+
+-- No máximo UMA revisão aberta por vez (FR-005) — garantia de SCHEMA, não só de
+-- aplicação: iniciar uma revisão com outra aberta sempre retoma (nunca faz um 2º INSERT).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_task_weekly_reviews_open
+    ON task_weekly_reviews ((true)) WHERE completed_at IS NULL;
+
+-- Histórico ordenado por conclusão — serve o indicador "última revisão há N dias" (US4).
+CREATE INDEX IF NOT EXISTS idx_task_weekly_reviews_completed_at
+    ON task_weekly_reviews (completed_at DESC) WHERE completed_at IS NOT NULL;
+
+-- Marca de "última revisão" por LISTA (passo 4 do ritual) — propriedade da lista, não da
+-- revisão (pode ser marcada revisada fora do wizard também). Idempotente em bancos existentes.
+ALTER TABLE task_projects ADD COLUMN IF NOT EXISTS last_reviewed_at TIMESTAMPTZ;
+
+
+-- ----------------------------------------------------------------------------
 -- SEED — Inbox indelével (a única lista que nasce com o sistema)
 -- ----------------------------------------------------------------------------
 -- ON CONFLICT DO NOTHING + índice único parcial uq_task_projects_inbox garantem

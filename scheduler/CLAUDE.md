@@ -22,8 +22,9 @@ que o backup ficou meses quebrado — ver `docs/referencia/BACKUP_POSTGRES.md`).
    ```python
    ScheduledJob("meu_job", run_meu_job, daily_at(9, 30), "descrição curta"),
    ```
-   Use `daily_at(hora, minuto)` para horário fixo ou `every(hours=..., minutes=...)` para
-   intervalo. Ambos já ficam no fuso de São Paulo.
+   Use `daily_at(hora, minuto)` para horário fixo, `every(hours=..., minutes=...)` para
+   intervalo, ou `weekly_at(dia_da_semana, hora, minuto)` para um dia fixo da semana
+   (ex.: `weekly_at("sun", 20, 0)` — todo domingo às 20:00). Todos já ficam no fuso de São Paulo.
 4. **Redeploy** do container `makima-scheduler` (o build já traz o novo código).
 
 Pronto — o job ganha log em `scheduler_runs` e alerta no Telegram em falha automaticamente.
@@ -32,7 +33,7 @@ Pronto — o job ganha log em `scheduler_runs` e alerta no Telegram em falha aut
 
 | Arquivo | Papel |
 |---|---|
-| `registry.py` | Lista declarativa `JOBS` + `ScheduledJob` + helpers `daily_at()`/`every()` |
+| `registry.py` | Lista declarativa `JOBS` + `ScheduledJob` + helpers `daily_at()`/`every()`/`weekly_at()` |
 | `jobs.py` | Funções que embrulham os scripts existentes (backup, kurisu, letterboxd) |
 | `runner.py` | `execute_with_logging(job)`: cronometra, grava `scheduler_runs`, alerta em falha |
 | `notify.py` | `send_telegram_alert()` — POST na Bot API do Telegram (melhor esforço) |
@@ -88,3 +89,4 @@ Além das que cada job já usa (`DATABASE_URL`, `GCP_*`, `GCS_BACKUP_BUCKET`,
 | `sync_kurisu` | Todo dia 04:00 | Memória unificada da Kurisu: Postgres → Vertex RAG (`agents/kurisu/memory/sync.py`) |
 | `sync_letterboxd` | A cada 6h | Diário do Letterboxd (RSS) → catálogo da Akane (`scripts/sync_letterboxd.py`) |
 | `lucy_digest` | Todo dia 08:00 | Digest matinal de emails (Lucy): classificação Gemini + labels/arquivo no Gmail + Telegram + histórico (`scripts/send_lucy_digest.py`) |
+| `weekly_review_reminder` | Todo domingo 20:00 | Lembrete da revisão semanal do GTD (Kaguya) → Telegram, **somente se** nenhuma revisão foi concluída nos últimos 7 dias (`scripts/send_weekly_review_reminder.py`, spec 035) |

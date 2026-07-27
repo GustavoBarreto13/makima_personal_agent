@@ -140,6 +140,7 @@ export interface Project {
   position: number
   has_board: boolean   // tem ao menos uma coluna de Kanban
   open_count: number   // tarefas-pai abertas
+  last_reviewed_at?: string | null   // passo 4 da revisão semanal (spec 035)
 }
 
 // Um grupo de listas (pasta da sidebar).
@@ -206,6 +207,53 @@ export type InboxDecision = 'next_action' | 'waiting' | 'someday' | 'schedule' |
 export interface InboxQueueResponse {
   items: Task[]
   total: number
+}
+
+// ── Revisão semanal guiada — spec 035 ──────────────────────────────────────────
+// Os 6 passos fixos do ritual, na ordem de exibição (mesmo vocabulário do backend).
+export type ReviewStep = 'inbox' | 'next_actions' | 'waiting' | 'lists' | 'calendar' | 'someday'
+
+export const REVIEW_STEPS: { key: ReviewStep; name: string; icon: string }[] = [
+  { key: 'inbox', name: 'Inbox zero', icon: 'inbox' },
+  { key: 'next_actions', name: 'Próximas ações', icon: 'zap' },
+  { key: 'waiting', name: 'Aguardando', icon: 'clock' },
+  { key: 'lists', name: 'Listas/projetos', icon: 'list' },
+  { key: 'calendar', name: 'Calendário', icon: 'calendar' },
+  { key: 'someday', name: 'Algum dia/talvez', icon: 'inbox' },
+]
+
+// Estado da revisão (aberta ou recém-iniciada/retomada) — GET .../current e POST .../start.
+export interface WeeklyReview {
+  id: number
+  started_at: string
+  completed_at: string | null
+  steps_seen: ReviewStep[]
+  note: string | null
+  resumed?: boolean   // só em POST /reviews/start — indica se retomou uma já aberta (US2)
+}
+
+// Indicador "última revisão há N dias" (US4) — GET /reviews/last.
+export interface LastReview {
+  completed_at: string
+  note: string | null
+}
+
+// Item do passo 3 (Aguardando), ordenado pelos mais antigos — GET /reviews/waiting-ordered.
+export interface WaitingReviewItem {
+  id: number
+  title: string
+  waiting_note: string | null
+  waiting_since: string | null
+  days_waiting: number | null
+}
+
+// Resposta de POST /reviews/{id}/complete quando faltam passos (não é erro — 200 c/ sinal).
+export interface CompleteReviewResult {
+  status: string
+  id?: number
+  completed_at?: string
+  error?: 'steps_pending'
+  missing?: ReviewStep[]
 }
 
 // ── Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034 ────

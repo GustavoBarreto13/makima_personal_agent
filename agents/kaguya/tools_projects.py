@@ -131,6 +131,7 @@ def get_sidebar() -> dict:
         """
         SELECT
             p.id, p.name, p.group_id, p.color, p.icon, p.is_inbox, p.position,
+            p.last_reviewed_at,   -- passo 4 da revisão semanal (spec 035)
             EXISTS (SELECT 1 FROM task_columns c WHERE c.project_id = p.id) AS has_board,
             (
                 SELECT COUNT(*) FROM tasks t

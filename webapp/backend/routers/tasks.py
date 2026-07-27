@@ -84,6 +84,12 @@ from agents.kaguya.tools_goals import (
     add_milestone, update_milestone, delete_milestone, list_goal_areas,
     link_movement, unlink_movement, list_linkable_items, review_goal,
 )
+# Revisão semanal guiada — spec 035 (camada de lógica em agents/kaguya/tools_review.py).
+from agents.kaguya.tools_review import (
+    get_open_review, start_or_resume_review, mark_step_seen, complete_review,
+    get_last_completed_review, list_review_history, list_waiting_ordered,
+    mark_project_reviewed,
+)
 
 router = APIRouter()
 
@@ -445,6 +451,16 @@ class ReviewGoalBody(BaseModel):
     review: str
 
 
+class MarkStepSeenBody(BaseModel):
+    """Body de marcação de passo visto na revisão semanal (spec 035)."""
+    step: Literal["inbox", "next_actions", "waiting", "lists", "calendar", "someday"]
+
+
+class CompleteReviewBody(BaseModel):
+    """Body de conclusão da revisão semanal — nota final opcional (spec 035)."""
+    note: Optional[str] = None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidebar / listas / grupos / colunas
 # ─────────────────────────────────────────────────────────────────────────────
@@ -530,6 +546,15 @@ def copy_columns_route(
     Preserva nomes, ordem e o flag is_done_column. Operação transacional.
     """
     return _check_result(copy_columns(body.source_project_id, project_id))
+
+
+@router.post("/projects/{project_id}/mark-reviewed")
+def mark_project_reviewed_route(project_id: int, user: dict = Depends(require_user)) -> dict:
+    """Marca a lista como revisada agora — passo 4 da revisão semanal (spec 035).
+
+    Propriedade da LISTA, não da revisão: pode ser chamada fora do wizard também.
+    """
+    return _check_result(mark_project_reviewed(project_id))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1507,6 +1532,63 @@ def set_time_block_route(task_id: int, body: TimeBlockBody, user: dict = Depends
 def clear_time_block_route(task_id: int, user: dict = Depends(require_user)) -> dict:
     """Remove o bloco de tempo (``start_at = end_at = NULL``); mantém a tarefa no plano."""
     return _check_result(clear_time_block(task_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Revisão semanal guiada — spec 035
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/reviews/current")
+def get_open_review_route(user: dict = Depends(require_user)) -> Optional[dict]:
+    """Revisão aberta (ou ``null``) — leitura pura, não cria nada."""
+    return get_open_review()  # listagem — sem _check_result
+
+
+@router.post("/reviews/start")
+def start_review_route(user: dict = Depends(require_user)) -> dict:
+    """Inicia uma revisão nova, ou retoma a aberta (FR-005 — no máximo uma)."""
+    return start_or_resume_review()  # sempre "sucesso" (cria ou retoma) — sem _check_result
+
+
+@router.patch("/reviews/{review_id}/step")
+def mark_step_seen_route(
+    review_id: int, body: MarkStepSeenBody, user: dict = Depends(require_user)
+) -> dict:
+    """Marca um dos 6 passos como visto na revisão aberta (idempotente)."""
+    return _check_result(mark_step_seen(review_id, body.step))
+
+
+@router.post("/reviews/{review_id}/complete")
+def complete_review_route(
+    review_id: int, body: CompleteReviewBody, user: dict = Depends(require_user)
+) -> dict:
+    """Conclui a revisão — exige os 6 passos vistos (FR-006).
+
+    ``steps_pending`` (passos faltando) **não** é erro de validação — é 200 com a lista de
+    passos que faltam, para o front sinalizar quais faltam (mesmo padrão de ``needs_cascade``
+    em ``complete_task_route``). Erro real (revisão inexistente/já concluída) vira 400.
+    """
+    result = complete_review(review_id, body.note)
+    if result.get("error") == "steps_pending":
+        return result  # 200 — front mostra os passos faltando
+    return _check_result(result)
+
+
+@router.get("/reviews/last")
+def get_last_completed_review_route(user: dict = Depends(require_user)) -> Optional[dict]:
+    """Revisão concluída mais recente (indicador do painel — US4), ou ``null``."""
+    return get_last_completed_review()  # listagem
+
+
+@router.get("/reviews/history")
+def list_review_history_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Histórico de revisões concluídas, mais recente primeiro (FR-004)."""
+    return list_review_history()  # listagem
+
+
+@router.get("/reviews/waiting-ordered")
+def list_waiting_ordered_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Itens 'aguardando', mais antigos primeiro (FR-003) — passo 3 do ritual."""
+    return list_waiting_ordered()  # listagem
 
 
 # IMPORTANTE: este GET /{task_id} deve ficar no FINAL do arquivo, depois de TODAS as

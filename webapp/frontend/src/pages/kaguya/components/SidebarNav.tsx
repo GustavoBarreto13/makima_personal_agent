@@ -60,6 +60,7 @@ interface SidebarNavProps {
   onNewFilter: () => void         // abre o modal de criar smart-list (fatia 013)
   onProcessInbox: () => void      // abre o wizard de processamento guiado do inbox (spec 034)
   onManageContexts: () => void    // abre o CRUD de contextos de execução (spec 034)
+  onOpenWeeklyReview: () => void  // abre o wizard da revisão semanal guiada (spec 035)
   onOpenTweaks: () => void
   // Re-busca a sidebar no shell após um reorder bem-sucedido
   onReordered: () => void
@@ -72,7 +73,7 @@ interface SidebarNavProps {
 export function SidebarNav({
   sidebar, view, param,
   onNavigate, onNewTask, onNewProject, onNewGroup, onEditGroup, onNewFilter, onProcessInbox,
-  onManageContexts, onOpenTweaks,
+  onManageContexts, onOpenTweaks, onOpenWeeklyReview,
   onReordered, toast,
 }: SidebarNavProps) {
 
@@ -117,6 +118,22 @@ export function SidebarNav({
   // (mesmo gatilho dos contadores de lista, já que ambos refletem o estado das tarefas).
   const [dateCounts, setDateCounts] = useState<DateViewCounts | null>(null)
   useEffect(() => { kaguyaApi.viewCounts().then(setDateCounts).catch(() => {}) }, [sidebar])
+
+  // Indicador "última revisão há N dias" (US4, spec 035) — refeita sempre que a sidebar
+  // muda (ex.: após concluir uma revisão, o shell recarrega e este efeito refaz a busca).
+  const [lastReview, setLastReview] = useState<{ completed_at: string } | null | undefined>(undefined)
+  useEffect(() => { kaguyaApi.reviewLast().then(setLastReview).catch(() => setLastReview(null)) }, [sidebar])
+
+  // "Há N dias" calculado no CLIENTE a partir das partes locais do navegador (nunca
+  // toISOString().slice(0,10) — regra global do fuso UTC-3 do CLAUDE.md raiz).
+  const daysSinceLastReview = (() => {
+    if (!lastReview) return null
+    const completed = new Date(lastReview.completed_at)
+    const a = new Date(completed.getFullYear(), completed.getMonth(), completed.getDate())
+    const now = new Date()
+    const b = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    return Math.round((b.getTime() - a.getTime()) / 86400000)
+  })()
 
   // ── Sensores DnD ─────────────────────────────────────────────────────────────
   // PointerSensor com 5px de ativação: < 5px = clique, ≥ 5px = arrasto.
@@ -312,6 +329,24 @@ export function SidebarNav({
           </button>
         )
       })}
+
+      {/* Revisão semanal guiada — spec 035. O texto secundário é o nudge do US4:
+          "última revisão há N dias" (ou "nunca"), calculado no cliente (fuso local). */}
+      <button className="kg-nav-item" onClick={onOpenWeeklyReview} title="Iniciar ou retomar a revisão semanal">
+        <span className="kg-nav-emoji"><Icon name="check" size={16} /></span>
+        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+          <span>Revisão semanal</span>
+          {lastReview !== undefined && (
+            <span className="kg-muted" style={{ fontSize: 11 }}>
+              {daysSinceLastReview === null
+                ? 'nunca revisado'
+                : daysSinceLastReview === 0
+                  ? 'última: hoje'
+                  : `última: há ${daysSinceLastReview} dia(s)`}
+            </span>
+          )}
+        </span>
+      </button>
 
       {/* ── Views (telas do shell: Meu Dia/Kanban/Calendário/...) ────────────────── */}
       <div className="kg-nav-label"><span>Views</span></div>

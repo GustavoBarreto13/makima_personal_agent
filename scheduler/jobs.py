@@ -99,6 +99,34 @@ def run_letterboxd() -> None:
         )
 
 
+def run_weekly_review_reminder() -> None:
+    """Executa o lembrete de domingo da revisão semanal do GTD (Kaguya) → Telegram.
+
+    Roda `scripts/send_weekly_review_reminder.py` num subprocesso separado (mesmo motivo do
+    backup/digest: o script usa `sys.exit(1)` em falha estrutural, e rodar como subprocesso
+    transforma essa saída de erro num código de retorno que o runner detecta). Não enviar
+    (revisão já concluída na semana) é sucesso, não falha — o script sai com 0 nesse caso.
+
+    Raises:
+        RuntimeError: Se o job falhar (código de saída ≠ 0). A mensagem inclui o stderr do
+            processo para facilitar o diagnóstico e o alerta.
+    """
+    resultado = subprocess.run(
+        [sys.executable, "-m", "scripts.send_weekly_review_reminder"],
+        capture_output=True,
+        text=True,
+    )
+
+    if resultado.stdout:
+        print(resultado.stdout, end="")
+
+    if resultado.returncode != 0:
+        raise RuntimeError(
+            f"send_weekly_review_reminder saiu com código {resultado.returncode}.\n"
+            f"stderr:\n{resultado.stderr}"
+        )
+
+
 def run_lucy_digest() -> None:
     """Executa o digest diário de emails (Lucy) → Telegram + histórico.
 

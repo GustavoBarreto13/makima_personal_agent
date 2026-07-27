@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -166,6 +166,19 @@ export const kaguyaApi = {
   // ── Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034 ──
   viewTasks: (key: DateViewKey) => api.get<Task[]>(`${BASE}/views/${key}`),
   viewCounts: () => api.get<DateViewCounts>(`${BASE}/views/counts`),
+
+  // ── Revisão semanal guiada — spec 035 ───────────────────────────────────────
+  reviewCurrent: () => api.get<WeeklyReview | null>(`${BASE}/reviews/current`),
+  reviewStart: () => api.post<WeeklyReview>(`${BASE}/reviews/start`, {}),
+  reviewMarkStep: (id: number, step: ReviewStep) =>
+    api.patch<MutationResult & { steps_seen?: ReviewStep[] }>(`${BASE}/reviews/${id}/step`, { step }),
+  reviewComplete: (id: number, note?: string | null) =>
+    api.post<CompleteReviewResult>(`${BASE}/reviews/${id}/complete`, { note: note ?? null }),
+  reviewLast: () => api.get<LastReview | null>(`${BASE}/reviews/last`),
+  reviewHistory: () => api.get<WeeklyReview[]>(`${BASE}/reviews/history`),
+  reviewWaitingOrdered: () => api.get<WaitingReviewItem[]>(`${BASE}/reviews/waiting-ordered`),
+  markProjectReviewed: (projectId: number) =>
+    api.post<MutationResult>(`${BASE}/projects/${projectId}/mark-reviewed`, {}),
 
   // ── Contextos de execução — spec 034 ────────────────────────────────────────
   listContexts: () => api.get<TaskContext[]>(`${BASE}/contexts`),

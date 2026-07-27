@@ -26,6 +26,7 @@ agents/kaguya/
 ├── tools_filters.py      # camada de lógica: smart-lists (filtros salvos) — fatia 013 / P2
 ├── tools_views.py        # camada de lógica: views fixas de mercado (Todas/Hoje/Amanhã/Próx.7d/Inbox) — spec 034
 ├── tools_contexts.py     # camada de lógica: contextos de execução dedicados (CRUD) — spec 034
+├── tools_review.py       # camada de lógica: revisão semanal guiada (6 passos) — spec 035, webapp-only
 ├── tools_kanban_views.py # camada de lógica: views de Kanban configuráveis — spec 024
 ├── tools_calendar.py     # camada de lógica: consulta por intervalo + projeção virtual — fatia 013 / P3
 ├── recurrence.py         # motor puro RRULE (next_occurrence, project_occurrences, build/describe)
@@ -165,6 +166,42 @@ geridos por `update_task`: entrar em `waiting` reseta `waiting_since = now()`; s
 `someday` limpa o status (FR-012 — datas e "algum dia" são contraditórios). Ao gerar a próxima
 ocorrência de uma recorrente, `gtd_status`/`context_id`/`waiting_note` são herdados (uma nova
 entrada em "waiting" ganha `waiting_since` fresco).
+
+### Revisão semanal guiada (`tools_review.py`) — spec 035
+
+Fecha o bloco GTD aberto pela spec 034 com um ritual de **6 passos fixos**
+(`_ALL_STEPS = ["inbox", "next_actions", "waiting", "lists", "calendar", "someday"]`), cada um
+mostrando dados **ao vivo** (nenhum passo tem snapshot — o dado exibido é sempre a consulta
+atual, mesmo numa revisão retomada semanas depois). **Webapp-only**: nenhuma função aqui é
+registrada como tool no agente ADK — pelo Telegram só o lembrete de domingo chega (abaixo), o
+wizard em si é `webapp/frontend/src/pages/kaguya/modals/WeeklyReviewModal.tsx`.
+
+Tabela `task_weekly_reviews` (`id`, `started_at`, `completed_at`, `steps_seen TEXT[]`, `note`):
+`start_or_resume_review()` retoma a aberta (`completed_at IS NULL`) ou cria uma nova — o índice
+único parcial `uq_task_weekly_reviews_open` garante no máximo uma aberta **no schema**, não só
+na aplicação. `mark_step_seen(review_id, step)` é idempotente (`array_append` condicional).
+`complete_review(review_id, note)` exige `steps_seen ⊇ _ALL_STEPS`, senão devolve
+`{"status": "error", "error": "steps_pending", "missing": [...]}` — tratado como um "pedido de
+confirmação" (200), não erro de validação (mesmo padrão de `needs_cascade` em `complete_task`).
+
+Cada passo reusa integralmente uma função já existente — nenhuma lógica de negócio duplicada:
+
+| Passo | Fonte |
+|---|---|
+| 1. Inbox zero | `list_inbox_queue()` + `process_inbox_item()` (spec 034) |
+| 2. Próximas ações | `BUILTIN_FILTERS["next-actions"]` (spec 034) |
+| 3. Aguardando | `list_waiting_ordered()` (nova — mesmas condições do built-in `waiting`, mas com `ORDER BY waiting_since ASC NULLS LAST`, pois a DSL genérica de smart-lists não tem `order_by`) |
+| 4. Listas/projetos | `get_sidebar()` (agora com `task_projects.last_reviewed_at`) + `mark_project_reviewed(project_id)` (nova) |
+| 5. Calendário | `calendar_hub.aggregate()` + `list_tasks_in_range()`, chamados 2× (semana passada/semana que vem) — leitura pura |
+| 6. Algum dia/talvez | `BUILTIN_FILTERS["someday"]` (spec 034) |
+
+`get_last_completed_review()`/`list_review_history()` alimentam o indicador "última revisão há
+N dias" do painel (US4) — o "há N dias" é calculado no FRONTEND a partir do `completed_at` ISO,
+nunca no backend com `CURRENT_DATE` puro (regra global do fuso). `get_reminder_summary()` é
+usado só pelo job agendado `weekly_review_reminder` (`scripts/send_weekly_review_reminder.py` →
+`scheduler/jobs.py::run_weekly_review_reminder` → `scheduler/registry.py`, domingo 20:00
+America/Sao_Paulo) — dispara **somente se** nenhuma revisão foi concluída nos últimos 7 dias
+corridos; ver `scheduler/CLAUDE.md`.
 
 ### `tools_kanban_views.py` — views de Kanban configuráveis — spec 024
 

@@ -75,6 +75,13 @@ from agents.kaguya.tools_goals import (  # noqa: F401
     add_milestone, update_milestone, delete_milestone, list_goal_areas,
     link_movement, unlink_movement, list_linkable_items, review_goal,
 )
+# Revisão semanal guiada — spec 035. Webapp-only (research.md R10): o wizard de 6 passos vive
+# só no router REST (/api/tasks/reviews/*); nenhuma destas funções é registrada no agente ADK.
+from agents.kaguya.tools_review import (  # noqa: F401
+    get_open_review, start_or_resume_review, mark_step_seen, complete_review,
+    get_last_completed_review, list_review_history, list_waiting_ordered,
+    mark_project_reviewed, get_reminder_summary,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

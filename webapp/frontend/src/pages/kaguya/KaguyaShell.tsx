@@ -18,6 +18,7 @@ import { ProjectModal } from './modals/ProjectModal'
 import { GroupModal } from './modals/GroupModal'
 import { FilterModal } from './modals/FilterModal'
 import { InboxProcessModal } from './modals/InboxProcessModal'
+import { WeeklyReviewModal } from './modals/WeeklyReviewModal'
 import { ContextsModal } from './modals/ContextsModal'
 import type { TaskContext } from './types'
 import { HabitModal } from './modals/HabitModal'
@@ -105,6 +106,7 @@ export function KaguyaShell() {
   const [goalModal, setGoalModal] = useState<{ mode: 'create' | 'edit'; goal?: Goal } | null>(null)
   const [inboxProcessOpen, setInboxProcessOpen] = useState(false)  // wizard de clarify do inbox — spec 034
   const [contextsModalOpen, setContextsModalOpen] = useState(false)  // CRUD de contextos — spec 034
+  const [weeklyReviewOpen, setWeeklyReviewOpen] = useState(false)  // wizard da revisão semanal — spec 035
   const [contexts, setContexts] = useState<TaskContext[]>([])         // p/ o seletor no InboxProcessModal
   const loadContexts = useCallback(async () => {
     try { setContexts(await kaguyaApi.listContexts()) } catch { /* silencioso */ }
@@ -389,6 +391,7 @@ export function KaguyaShell() {
           onNewFilter={() => setFilterModal({ mode: 'create' })}
           onProcessInbox={() => setInboxProcessOpen(true)}
           onManageContexts={() => setContextsModalOpen(true)}
+          onOpenWeeklyReview={() => setWeeklyReviewOpen(true)}
           onOpenTweaks={() => setTweaksOpen(true)}
           onReordered={loadSidebar}
           toast={showToast}
@@ -550,6 +553,13 @@ export function KaguyaShell() {
         <ContextsModal
           onClose={() => setContextsModalOpen(false)}
           onChanged={loadContexts}
+          toast={showToast}
+        />
+      )}
+      {weeklyReviewOpen && (
+        <WeeklyReviewModal
+          onClose={() => setWeeklyReviewOpen(false)}
+          onChanged={bump}
           toast={showToast}
         />
       )}

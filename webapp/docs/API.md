@@ -476,6 +476,26 @@ Campo dedicado (não tag) — no máximo um contexto por tarefa.
 | `POST` | `/api/tasks/{task_id}/time-block` | Grava o bloco de tempo (`end_at` é derivado se ausente). |
 | `DELETE` | `/api/tasks/{task_id}/time-block` | Remove o bloco de tempo (mantém a tarefa no plano). |
 
+### Revisão semanal guiada (spec 035)
+
+Passos individuais reusam rotas já existentes (`/inbox/queue`, `/inbox/{id}/process`,
+`/filters/builtin/{key}/tasks`, `/projects`, `/calendar/aggregate`) — as rotas abaixo cobrem só
+o **estado da revisão em si**.
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/tasks/reviews/current` | Revisão aberta (ou `null`) — leitura pura. |
+| `POST` | `/api/tasks/reviews/start` | Inicia uma revisão nova, ou retoma a aberta (`resumed: bool` na resposta). |
+| `PATCH` | `/api/tasks/reviews/{review_id}/step` | Marca um dos 6 passos como visto (idempotente). |
+| `POST` | `/api/tasks/reviews/{review_id}/complete` | Conclui a revisão (`note` opcional). Passos faltando → 200 com `{"error": "steps_pending", "missing": [...]}`. |
+| `GET` | `/api/tasks/reviews/last` | Revisão concluída mais recente (indicador do painel), ou `null`. |
+| `GET` | `/api/tasks/reviews/history` | Histórico de revisões concluídas, mais recente primeiro. |
+| `GET` | `/api/tasks/reviews/waiting-ordered` | Itens "aguardando" ordenados pelos mais antigos primeiro (passo 3). |
+| `POST` | `/api/tasks/projects/{project_id}/mark-reviewed` | Marca a lista como revisada agora (passo 4). |
+
+O lembrete de domingo (US3) não tem rota REST — é enviado direto ao Telegram pelo job agendado
+`weekly_review_reminder` (ver `scheduler/CLAUDE.md`).
+
 ---
 
 ## Filmes (`/api/movies/*`)

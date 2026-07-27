@@ -426,5 +426,5 @@ Use a skill `obsidian-vault` para consultar os caminhos corretos e atualizar a d
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/061-violet-conselho-diario/plan.md`.
+at `specs/035-tasks-weekly-review/plan.md`.
 <!-- SPECKIT END -->

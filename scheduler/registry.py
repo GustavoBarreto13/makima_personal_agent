@@ -23,7 +23,9 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 # Importa as funções que fazem o trabalho de cada job.
-from scheduler.jobs import run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest
+from scheduler.jobs import (
+    run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest, run_weekly_review_reminder,
+)
 
 # Fuso horário do usuário. Todos os horários dos jobs são interpretados nele —
 # "03:00" quer dizer 03:00 em São Paulo, não 03:00 UTC (regra do CLAUDE.md).
@@ -85,6 +87,24 @@ def every(hours: int = 0, minutes: int = 0) -> IntervalTrigger:
     return IntervalTrigger(hours=hours, minutes=minutes, timezone=TZ)
 
 
+def weekly_at(day_of_week: str, hour: int, minute: int = 0) -> CronTrigger:
+    """Cria um gatilho que dispara uma vez por semana, num dia e horário fixos (fuso São Paulo).
+
+    Args:
+        day_of_week: Dia da semana no formato do APScheduler — "mon".."sun" (ex.: "sun").
+        hour: Hora do dia (0–23).
+        minute: Minuto da hora (0–59). Padrão 0.
+
+    Returns:
+        Um CronTrigger configurado para o dia/horário/fuso corretos.
+
+    Example:
+        >>> t = weekly_at("sun", 20, 0)  # todo domingo às 20:00 (fuso São Paulo)
+    """
+    # timezone=TZ garante que o horário seja o de São Paulo, não o do servidor.
+    return CronTrigger(day_of_week=day_of_week, hour=hour, minute=minute, timezone=TZ)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # LISTA DE JOBS — edite AQUI para adicionar/remover jobs agendados.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -119,5 +139,13 @@ JOBS: list[ScheduledJob] = [
         func=run_lucy_digest,
         trigger=daily_at(8, 0),
         description="Digest diário de emails (Lucy) → Telegram",
+    ),
+    # Lembrete da revisão semanal do GTD (Kaguya) — só dispara se a semana terminar sem
+    # nenhuma revisão concluída (spec 035, US3). Domingo 20:00 (America/Sao_Paulo).
+    ScheduledJob(
+        name="weekly_review_reminder",
+        func=run_weekly_review_reminder,
+        trigger=weekly_at("sun", 20, 0),
+        description="Lembrete de revisão semanal (Kaguya) → Telegram, se a semana ficou sem revisão",
     ),
 ]

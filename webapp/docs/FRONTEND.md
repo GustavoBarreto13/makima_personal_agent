@@ -283,6 +283,18 @@ do processamento guiado do inbox — 6 decisões, contador de progresso, resumí
 `context_id` na DSL de condições. Novo modal `ContextsModal` (CRUD de contextos — criar,
 renomear, reordenar subir/descer, excluir).
 
+**Revisão semanal guiada (spec 035):** novo modal `WeeklyReviewModal` — wizard de 6 passos
+(Inbox zero, Próximas ações, Aguardando, Listas/projetos, Calendário, Algum dia/talvez) com
+chips de progresso clicáveis (navegação livre), cada passo buscando dados ao vivo e aplicando
+ações com efeito imediato (reusa `InboxProcessModal`'s `processInboxItem`, `complete`,
+`updateTask`, `remove`, e a agregação do Calendar Hub — nenhuma lógica duplicada). Ao abrir,
+sempre chama `POST /reviews/start`; se a resposta vier com `resumed: true`, pula direto para o
+primeiro passo ainda não visto (US2) e mostra "revisão em andamento desde…" no cabeçalho. O
+rodapé tem a nota final e o botão "Concluir revisão" (bloqueado com a lista de passos faltando
+se algum não foi visto). A `SidebarNav` ganhou o item "Revisão semanal" (abaixo do bloco fixo
+de views), com o nudge "última: há N dias"/"nunca" (US4) calculado no CLIENTE a partir de
+`GET /reviews/last` — nunca com `CURRENT_DATE` no backend (regra global do fuso UTC-3).
+
 **Particularidades:**
 - **DnD** com `@dnd-kit` (única dependência de drag-and-drop do app) — árvore de tarefas, Kanban e Eisenhower.
 - **Inputs custom obrigatórios:** `DatePicker`/`TimePicker`/`MiniCalendar` no lugar dos nativos
