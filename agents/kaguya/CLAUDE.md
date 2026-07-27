@@ -36,6 +36,8 @@ agents/kaguya/
 ├── tools_experiments.py  # camada de lógica: Tiny Experiments (CRUD + check-in + pausa + review) — spec 029
 ├── goal_progress.py      # motor PURO (sem banco): progresso de meta (métrica + marcos) — spec 030
 ├── tools_goals.py        # camada de lógica: Metas (CRUD + marcos + vínculo de movimentos + review) — spec 030
+├── goal_link_providers.py    # registry: vínculo de meta com outro agente (search/resolve) — spec 036
+├── habit_source_providers.py # registry: fonte automática de hábito (get_activity) — spec 036
 ├── capacity.py           # motor PURO (sem banco): compute_capacity() — janela 8h–22h — fatia 016
 ├── gcal.py               # cliente Google Calendar compartilhado (read all / write main) — fatia 019
 ├── gcal_sync.py          # espelho best-effort: push/remove tarefas no GCal "Kaguya — Tarefas" — fatia 019
@@ -332,6 +334,61 @@ apaga os itens (FR-010/SC-005). `get_goal.movements` agrega os três tipos por `
 `get_experiment`/`get_habit` para o status derivado. Persistência: 2 tabelas em `schema_tasks_pg.sql`
 (`goals`, `goal_milestones`) + as 3 colunas `goal_id` (migração idempotente — a de `tiny_experiments`
 é o gancho D5 que a 029 reservou). A 029 **não muda** (só ganha a coluna).
+
+### Metas e Hábitos cross-agent (spec 036) — `goal_link_providers.py` + `habit_source_providers.py`
+
+Uma meta pode ter **movimentos externos** (itens de outro agente, ex.: livros da Frieren) cujo
+estado alimenta o **progresso automático** da métrica; um hábito pode ter uma **fonte automática**
+de check-in (ex.: diário da Violet, leitura da Frieren). Fase 1: Frieren (livros + leitura) e
+Violet (diário). Extensível — um agente novo só precisa publicar um módulo `goal_provider.py`
+e/ou `habit_provider.py` no seu próprio pacote e registrar-se (FR-010); nenhuma mudança no modelo
+de dados nem nas telas genéricas. **Webapp-only**: sem tool ADK nova (mesma decisão da 024/029/030/035).
+
+Dois **registries** pequenos (não um genérico "gordo"), espelhando o padrão de registro +
+importação dinâmica com fallback gracioso do `calendar_hub.py`:
+
+- **`goal_link_providers.py`** — `register(id, name, search_fn, resolve_fn)`. Contrato:
+  `search_items(query) -> [{id, label, sublabel, cover_url}]` (buscar itens vinculáveis) e
+  `resolve_items(ids) -> [{id, label, sublabel, cover_url, done, deep_link}]` (estado ATUAL dos
+  já vinculados — nunca cacheado; `done: True` é o sinal genérico que conta para o progresso
+  automático). Ids inexistentes somem da resposta (FR-009). Provedor da fase 1:
+  `frieren_books` → `agents/frieren/goal_provider.py`.
+- **`habit_source_providers.py`** — `register(id, name, fn)`. Contrato:
+  `get_activity(start_date, end_date) -> {"AAAA-MM-DD": valor}` (série esparsa; presença = dia
+  cumprido no hábito binário, valor comparado com `target_value` no mensurável). Provedores da
+  fase 1: `violet_diary` → `agents/journal/habit_provider.py` (1.0 nos dias com bullet não-vazio);
+  `frieren_reading` → `agents/frieren/habit_provider.py` (soma de `reading_logs.pages_read`/dia).
+
+Ambos os registries **degradam sozinhos** (best-effort, FR-008): provedor não registrado ou que
+lança exceção devolve `None`/`{}` (nunca propaga a exceção) — o chamador decide como exibir a
+degradação (`unavailable: true` no grupo da meta; hábito sem fonte se comporta como sempre foi).
+
+**Metas (`tools_goals.py`)**: `goals.metric_mode` ∈ `manual`/`auto`. Em `auto`, `metric_current`
+armazenado é **ignorado na leitura** — o valor é `COUNT(done=True)` agregando `resolve_items` de
+TODOS os provedores vinculados à meta (não um único "provider dono"), calculado a cada consulta
+(`_resolve_external_movements` + `_auto_metric_value`). `update_goal` **bloqueia** editar
+`metric_current` em modo `auto` (FR-003). `set_metric_mode(goal_id, mode)` faz a transição:
+`auto → manual` congela o último valor calculado em `metric_current` antes de trocar (edge case).
+Vínculo: tabela `goal_external_links` (`goal_id`, `provider_id`, `entity_id`, `UNIQUE` nos três) —
+**não exclusivo** (o mesmo item pode contar para duas metas, diferente do vínculo 1:1 de
+movimentos internos da 030). `ON DELETE CASCADE` em `goal_id`: excluir a meta desvincula, nunca
+toca a entidade de origem (FR-011). Novas tools: `list_goal_link_providers`,
+`search_goal_link_items`, `link_external_item`, `unlink_external_item`, `set_metric_mode`.
+`get_goal().movements.external` traz os grupos por provedor (`provider_name`, `unavailable`, `items`).
+
+**Hábitos (`tools_habits.py`)**: `habits.source_provider_id` (nullable) aponta para uma chave do
+registry. **Nada da fonte automática é persistido** em `habit_checkins` — a cada leitura,
+`_auto_done_map` consulta `habit_source_providers.get_activity` na janela de
+`_ACTIVITY_WINDOW_DAYS` (70 dias, margem sobre a janela de 60 dias do `habit_strength`) e faz a
+**união** com os check-ins manuais antes de chamar o motor de força (`HS.summary`) — um dia
+cumprido por qualquer uma das duas fontes conta uma vez (FR-007). `done_today_source`
+(`manual`/`auto`/`both`/`None`) identifica a origem do dia. `get_habit_history(year)` faz a mesma
+mescla no ano inteiro, com `source` por dia esparso. `create_habit`/`update_habit` aceitam
+`source_provider_id` (`clear_source=True` remove a fonte no update). Nova tool:
+`list_habit_source_providers`.
+
+Persistência: 1 tabela nova (`goal_external_links`) + 2 colunas (`goals.metric_mode`,
+`habits.source_provider_id`) em `schema_tasks_pg.sql`. Ver `specs/036-goal-habit-links/data-model.md`.
 
 ---
 

@@ -144,6 +144,10 @@ export function HabitsScreen({ reloadKey, onNewHabit, onEditHabit, toast }: Habi
                     <div className="kg-habit-score">
                       <span className={`kg-trend kg-trend-${h.trend}`}>{trend.icon} {trend.label}</span>
                       <span className="kg-habit-recent">{h.recent_done}/{h.recent_total} nas últimas 2 semanas</span>
+                      {/* Origem do cumprimento de hoje (spec 036) — badge só quando veio da fonte automática. */}
+                      {h.done_today && (h.done_today_source === 'auto' || h.done_today_source === 'both') && (
+                        <span className="kg-goal-badge" title="Check-in de hoje veio da fonte automática">🔗 auto</span>
+                      )}
                     </div>
                   </div>
 

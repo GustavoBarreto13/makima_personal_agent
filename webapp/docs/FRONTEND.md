@@ -295,6 +295,16 @@ se algum não foi visto). A `SidebarNav` ganhou o item "Revisão semanal" (abaix
 de views), com o nudge "última: há N dias"/"nunca" (US4) calculado no CLIENTE a partir de
 `GET /reviews/last` — nunca com `CURRENT_DATE` no backend (regra global do fuso UTC-3).
 
+**Metas e Hábitos cross-agent (spec 036):** `GoalDetailScreen` ganhou o toggle "🔗 Automática" /
+"✍️ Manual" ao lado do label "Métrica" (chama `setMetricMode`; em modo automático o input vira
+texto — "Valor calculado a partir dos itens vinculados"), e a seção de Movimentos ganhou um grupo
+por provedor externo (`movements.external`, capa/título/status, aviso "indisponível agora" se o
+provedor falhar) com um picker (select de provedor → busca → "Vincular") logo abaixo dos grupos.
+`HabitModal` ganhou o campo "Fonte automática" (select carregado de
+`listHabitSourceProviders()`; vazio = hábito manual). `HabitsScreen` mostra um badge "🔗 auto" ao
+lado da tendência quando `done_today_source` é `auto`/`both`. `HabitHeatmap`/`HabitHeatDay` ganhou
+`source?` opcional (ausente em dias vazios, presente — `manual`/`auto`/`both` — em dias com dado).
+
 **Particularidades:**
 - **DnD** com `@dnd-kit` (única dependência de drag-and-drop do app) — árvore de tarefas, Kanban e Eisenhower.
 - **Inputs custom obrigatórios:** `DatePicker`/`TimePicker`/`MiniCalendar` no lugar dos nativos

@@ -21,11 +21,16 @@ Dependência só de ``agents.db`` e do motor puro ``habit_strength`` (sem banco)
 circular: nenhum outro módulo de tools importa deste.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from agents.db import get_conn, run_select, run_dml
 from agents.kaguya import habit_strength as HS
+from agents.kaguya import habit_source_providers as HSP
+
+# Margem sobre a janela de 60 dias do motor de força (habit_strength._DEFAULT_WINDOW) — usada
+# para buscar a atividade automática só do período que o score realmente enxerga (spec 036).
+_ACTIVITY_WINDOW_DAYS = 70
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -70,12 +75,42 @@ def _weekly_target(freq_num: int, freq_den: int) -> float:
     return freq_num / freq_den * 7.0
 
 
+def _auto_done_map(source_provider_id: Optional[str], target_value: Optional[float], ref: date) -> dict:
+    """Consulta a fonte automática do hábito (se houver) e converte em mapa ``data -> cumpriu``.
+
+    Busca só a janela que o motor de força realmente enxerga (:data:`_ACTIVITY_WINDOW_DAYS`) —
+    nada é persistido, a fonte é consultada ao vivo a cada chamada (spec 036, R4).
+
+    Args:
+        source_provider_id: Chave do provedor (``habit_source_providers``), ou ``None``/vazio
+            se o hábito não tem fonte automática.
+        target_value: Meta numérica do hábito (``None`` = sim/não).
+        ref: Data de referência (fim da janela).
+
+    Returns:
+        Mapa ``{datetime.date: bool}`` — vazio se não há fonte configurada.
+    """
+    if not source_provider_id:
+        return {}
+    start = (ref - timedelta(days=_ACTIVITY_WINDOW_DAYS)).isoformat()
+    activity = HSP.get_activity(source_provider_id, start, ref.isoformat())
+    return {
+        date.fromisoformat(d): HS.met_target(v, target_value)
+        for d, v in activity.items()
+    }
+
+
 def _serialize_habit(row: dict, checkins: list, *, today: Optional[date] = None) -> dict:
     """Monta o dicionário de um hábito para a resposta, com o score "caixa d'água" e o estado de hoje.
 
     O score vem do motor puro :func:`habit_strength.summary` em **três dimensões**:
     consistência (0–100), tendência (subindo/caindo/estável) e recente (cumpridos nas últimas
     2 semanas). Tudo calculado na leitura — nada persistido.
+
+    Quando o hábito tem ``source_provider_id`` (spec 036), a atividade automática é mesclada ao
+    mapa de check-ins manuais ANTES de chamar o motor de força — um dia cumprido por qualquer uma
+    das duas fontes conta uma vez (união dos conjuntos, FR-007). Nada da fonte automática é
+    persistido em ``habit_checkins``.
 
     Args:
         row: Linha da tabela ``habits``.
@@ -84,16 +119,30 @@ def _serialize_habit(row: dict, checkins: list, *, today: Optional[date] = None)
 
     Returns:
         Dicionário do hábito com ``consistency`` (0–100), ``trend`` (up/down/flat),
-        ``recent_done``/``recent_total`` e ``done_today``.
+        ``recent_done``/``recent_total``, ``done_today`` e ``done_today_source``
+        (``"manual"|"auto"|"both"|None``).
     """
     ref = today or date.today()
     target = row.get("target_value")
-    done = _done_map(checkins, target)
+    source_id = row.get("source_provider_id")
+    manual_done = _done_map(checkins, target)
+    auto_done = _auto_done_map(source_id, target, ref)
+
+    # União dos dois conjuntos — um dia cumprido por qualquer uma das fontes conta uma vez.
+    done = dict(manual_done)
+    for dia, ok in auto_done.items():
+        done[dia] = done.get(dia, False) or ok
 
     # O motor trabalha com o CONJUNTO de datas cumpridas (não o mapa) e a meta SEMANAL.
     datas_feitas = {dia for dia, ok in done.items() if ok}
     meta_semanal = _weekly_target(row["freq_num"], row["freq_den"])
     score = HS.summary(datas_feitas, meta_semanal, today=ref)
+
+    done_today = done.get(ref, False)
+    done_today_source = None
+    if done_today:
+        m, a = manual_done.get(ref, False), auto_done.get(ref, False)
+        done_today_source = "both" if (m and a) else ("auto" if a else "manual")
 
     return {
         "id": row["id"],
@@ -104,12 +153,14 @@ def _serialize_habit(row: dict, checkins: list, *, today: Optional[date] = None)
         "freq_den": row["freq_den"],
         "target_value": target,
         "unit": row.get("unit"),
+        "source_provider_id": source_id,
         # Métricas derivadas (não persistidas) — modelo caixa d'água:
         "consistency": score["consistency"],     # 0–100: a "nota" do hábito (nível da caixa)
         "trend": score["trend"],                  # "up" | "down" | "flat"
         "recent_done": score["recent_done"],      # cumpridos nos últimos 14 dias
         "recent_total": score["recent_total"],    # quanto a meta esperava em 2 semanas
-        "done_today": done.get(ref, False),       # se o hábito já foi cumprido hoje
+        "done_today": done_today,                 # se o hábito já foi cumprido hoje
+        "done_today_source": done_today_source,   # "manual" | "auto" | "both" | None
     }
 
 
@@ -128,7 +179,7 @@ def list_habits() -> list:
     # Hábitos ativos, em ordem de criação (os mais antigos primeiro — rotina estabelecida no topo).
     habits = run_select(
         """
-        SELECT id, name, icon, color, freq_num, freq_den, target_value, unit
+        SELECT id, name, icon, color, freq_num, freq_den, target_value, unit, source_provider_id
         FROM habits
         WHERE archived_at IS NULL
         ORDER BY created_at, id
@@ -168,7 +219,7 @@ def get_habit(habit_id: int) -> dict:
     """
     rows = run_select(
         """
-        SELECT id, name, icon, color, freq_num, freq_den, target_value, unit
+        SELECT id, name, icon, color, freq_num, freq_den, target_value, unit, source_provider_id
         FROM habits WHERE id = %(id)s
         """,
         {"id": habit_id},
@@ -190,6 +241,7 @@ def create_habit(
     unit: Optional[str] = None,
     icon: Optional[str] = None,
     color: Optional[str] = None,
+    source_provider_id: Optional[str] = None,
 ) -> dict:
     """Cria um hábito novo.
 
@@ -204,6 +256,8 @@ def create_habit(
         unit: Unidade da meta (ex.: "páginas", "min"), só faz sentido com ``target_value``.
         icon: Emoji/ícone de exibição (opcional).
         color: Cor de destaque (opcional).
+        source_provider_id: Chave de uma fonte automática de check-in (ex.: ``"violet_diary"``,
+            ``"frieren_reading"`` — spec 036), ou ``None`` para hábito manual (padrão).
 
     Returns:
         ``{"status": "ok", "id": <int>}`` ou ``{"status": "error", "message": ...}``.
@@ -218,13 +272,14 @@ def create_habit(
 
     rows = run_select(
         """
-        INSERT INTO habits (name, icon, color, freq_num, freq_den, target_value, unit)
-        VALUES (%(name)s, %(icon)s, %(color)s, %(fn)s, %(fd)s, %(tv)s, %(unit)s)
+        INSERT INTO habits (name, icon, color, freq_num, freq_den, target_value, unit, source_provider_id)
+        VALUES (%(name)s, %(icon)s, %(color)s, %(fn)s, %(fd)s, %(tv)s, %(unit)s, %(src)s)
         RETURNING id
         """,
         {
             "name": nome, "icon": icon, "color": color,
             "fn": freq_num, "fd": freq_den, "tv": target_value, "unit": unit,
+            "src": source_provider_id,
         },
     )
     return {"status": "ok", "id": rows[0]["id"], "message": f"Hábito '{nome}' criado."}
@@ -240,6 +295,8 @@ def update_habit(
     icon: Optional[str] = None,
     color: Optional[str] = None,
     clear_target: bool = False,
+    source_provider_id: Optional[str] = None,
+    clear_source: bool = False,
 ) -> dict:
     """Edita um hábito (PATCH parcial — só os campos enviados são aplicados).
 
@@ -257,6 +314,9 @@ def update_habit(
         icon: Novo ícone (opcional).
         color: Nova cor (opcional).
         clear_target: Se ``True``, remove a meta (volta a ser sim/não) e ignora ``target_value``.
+        source_provider_id: Nova fonte automática de check-in (spec 036) — ``None`` (padrão)
+            significa "não enviado", não "remover"; use ``clear_source=True`` para remover.
+        clear_source: Se ``True``, remove a fonte automática (hábito volta a ser 100% manual).
 
     Returns:
         Dicionário de status. Erro se nada mudar, a frequência for inválida ou o hábito não existir.
@@ -295,6 +355,10 @@ def update_habit(
         sets.append("icon = %(icon)s"); params["icon"] = icon
     if color is not None:
         sets.append("color = %(color)s"); params["color"] = color
+    if clear_source:
+        sets.append("source_provider_id = NULL")
+    elif source_provider_id is not None:
+        sets.append("source_provider_id = %(src)s"); params["src"] = source_provider_id
 
     if not sets:
         return {"status": "error", "message": "Nada para atualizar."}
@@ -449,22 +513,28 @@ def resolve_habit_id_by_name(name: str) -> Optional[int]:
 def get_habit_history(habit_id: int, year: int) -> list:
     """Lista os check-ins de um hábito num ano, já com o flag de cumprimento (para o heatmap).
 
-    Devolve um array **esparso** (só os dias com check-in); o frontend densifica para desenhar
-    a grade anual contínua (mesmo padrão do heatmap de leitura da Frieren).
+    Devolve um array **esparso** (só os dias com check-in manual e/ou atividade automática); o
+    frontend densifica para desenhar a grade anual contínua (mesmo padrão do heatmap de leitura
+    da Frieren). Quando o hábito tem ``source_provider_id`` (spec 036), mescla a atividade da
+    fonte automática no mesmo ano — cada dia ganha ``source`` (``"manual"|"auto"|"both"``).
 
     Args:
         habit_id: Id do hábito.
         year: Ano (ex.: 2026).
 
     Returns:
-        Lista ``[{date: "AAAA-MM-DD", value: float|None, done: bool}]`` ordenada por data.
-        É uma **listagem**.
+        Lista ``[{date: "AAAA-MM-DD", value: float|None, done: bool, source: str}]`` ordenada
+        por data. É uma **listagem**.
     """
-    # Busca a meta do hábito uma vez para resolver `done` (sim/não vs mensurável).
-    meta = run_select("SELECT target_value FROM habits WHERE id = %(id)s", {"id": habit_id})
+    # Busca a meta e a fonte do hábito uma vez para resolver `done`/mesclagem.
+    meta = run_select(
+        "SELECT target_value, source_provider_id FROM habits WHERE id = %(id)s", {"id": habit_id}
+    )
     if not meta:
         return []
     target = meta[0].get("target_value")
+    source_id = meta[0].get("source_provider_id")
+    start, end = f"{year}-01-01", f"{year + 1}-01-01"
 
     # Filtra os check-ins do ano pedido (intervalo fechado no início, aberto no próximo ano).
     rows = run_select(
@@ -475,13 +545,36 @@ def get_habit_history(habit_id: int, year: int) -> list:
           AND date >= %(start)s AND date < %(end)s
         ORDER BY date
         """,
-        {"id": habit_id, "start": f"{year}-01-01", "end": f"{year + 1}-01-01"},
+        {"id": habit_id, "start": start, "end": end},
     )
+    manual_by_date = {r["date"]: r.get("value") for r in rows}
+
+    # Atividade automática do mesmo ano (vazio se o hábito não tem fonte — R8 degrada sozinho).
+    auto_activity = HSP.get_activity(source_id, start, (date(year, 12, 31)).isoformat()) if source_id else {}
+    auto_by_date = {date.fromisoformat(d): v for d, v in auto_activity.items()}
+
+    all_dates = set(manual_by_date) | set(auto_by_date)
     out = []
-    for r in rows:
+    for dia in sorted(all_dates):
+        has_manual = dia in manual_by_date
+        has_auto = dia in auto_by_date
+        source = "both" if (has_manual and has_auto) else ("auto" if has_auto else "manual")
+        # Em dias com as duas fontes, o valor manual prevalece na exibição (é o que o usuário
+        # digitou); só automático usa o valor da fonte.
+        value = manual_by_date.get(dia) if has_manual else auto_by_date.get(dia)
         out.append({
-            "date": r["date"].isoformat(),
-            "value": r.get("value"),
-            "done": HS.met_target(r.get("value"), target),
+            "date": dia.isoformat(),
+            "value": value,
+            "done": HS.met_target(value, target),
+            "source": source,
         })
     return out
+
+
+def list_habit_source_providers() -> list:
+    """Lista as fontes automáticas de hábito registradas (ex.: diário da Violet — spec 036).
+
+    Returns:
+        Lista ``[{"id", "name"}, ...]``. É uma **listagem**.
+    """
+    return HSP.list_providers()

@@ -47,6 +47,14 @@ O campo `search_vec` é **gerado pelo banco** a partir de `content` — não ins
 
 ---
 
+### Provedor cross-agent para a Kaguya (spec 036)
+
+`habit_provider.py` — consumido **de fora**, via `importlib`, pelo registry
+`agents/kaguya/habit_source_providers.py` (registrado como `violet_diary`); nunca importado
+dentro de `agents/journal`. `get_activity(start, end)` devolve `1.0` nos dias com ao menos um
+`journal_bullets.content` não-vazio no intervalo — usado para o check-in automático do hábito
+binário "escrever no diário". Ver `agents/kaguya/CLAUDE.md` para o contrato completo.
+
 ### Tools disponíveis
 
 | Função | Retorno |

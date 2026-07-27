@@ -71,6 +71,7 @@ from agents.kaguya.calendar_prefs import get_calendar_prefs, set_calendar_pref
 from agents.kaguya.tools_habits import (
     list_habits, get_habit, create_habit, update_habit,
     archive_habit, check_in, remove_check_in, get_habit_history,
+    list_habit_source_providers,
 )
 # Tiny Experiments — spec 029 (camada de lógica em agents/kaguya/tools_experiments.py).
 from agents.kaguya.tools_experiments import (
@@ -83,6 +84,9 @@ from agents.kaguya.tools_goals import (
     create_goal, list_goals, get_goal, update_goal, delete_goal,
     add_milestone, update_milestone, delete_milestone, list_goal_areas,
     link_movement, unlink_movement, list_linkable_items, review_goal,
+    # Vínculo externo (cross-agent) + métrica automática — spec 036
+    list_goal_link_providers, search_goal_link_items,
+    link_external_item, unlink_external_item, set_metric_mode,
 )
 # Revisão semanal guiada — spec 035 (camada de lógica em agents/kaguya/tools_review.py).
 from agents.kaguya.tools_review import (
@@ -347,6 +351,7 @@ class CreateHabitBody(BaseModel):
     unit: Optional[str] = None
     icon: Optional[str] = None
     color: Optional[str] = None
+    source_provider_id: Optional[str] = None  # fonte automática de check-in (spec 036)
 
 
 class UpdateHabitBody(BaseModel):
@@ -359,6 +364,8 @@ class UpdateHabitBody(BaseModel):
     icon: Optional[str] = None
     color: Optional[str] = None
     clear_target: bool = False   # True = remove a meta (volta a ser sim/não)
+    source_provider_id: Optional[str] = None  # nova fonte automática (spec 036)
+    clear_source: bool = False   # True = remove a fonte automática (volta a ser 100% manual)
 
 
 class CheckInBody(BaseModel):
@@ -443,6 +450,17 @@ class LinkMovementBody(BaseModel):
     """Body de vínculo/desvínculo de um movimento (item de execução) a uma meta."""
     item_type: Literal["experiment", "task", "habit"]
     item_id: int
+
+
+class LinkExternalItemBody(BaseModel):
+    """Body de vínculo/desvínculo de um item de outro agente a uma meta (spec 036)."""
+    provider_id: str
+    entity_id: str
+
+
+class SetMetricModeBody(BaseModel):
+    """Body de alternância do modo da métrica de uma meta (spec 036)."""
+    mode: Literal["manual", "auto"]
 
 
 class ReviewGoalBody(BaseModel):
@@ -1255,6 +1273,14 @@ def create_habit_route(body: CreateHabitBody, user: dict = Depends(require_user)
     return _check_result(create_habit(**body.model_dump(exclude_unset=True)))
 
 
+# Estático — declarado ANTES de /habits/{habit_id} (mesma regra das outras rotas literais
+# desta seção). Lista as fontes automáticas registradas (spec 036).
+@router.get("/habits/source-providers")
+def list_habit_source_providers_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Lista as fontes automáticas de hábito disponíveis (ex.: diário da Violet)."""
+    return list_habit_source_providers()  # listagem — sem _check_result
+
+
 @router.get("/habits/{habit_id}")
 def get_habit_route(habit_id: int, user: dict = Depends(require_user)) -> dict:
     """Detalhe de um hábito (com força/aderência)."""
@@ -1420,6 +1446,23 @@ def goal_linkable_route(
     return list_linkable_items(item_type)  # listagem — sem _check_result
 
 
+# Vínculo externo (cross-agent) — spec 036. Estáticas, também antes de /goals/{goal_id}.
+@router.get("/goals/link-providers")
+def goal_link_providers_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Lista os provedores de vínculo de meta registrados (ex.: livros da Frieren)."""
+    return list_goal_link_providers()  # listagem — sem _check_result
+
+
+@router.get("/goals/link-providers/{provider_id}/search")
+def goal_link_search_route(
+    provider_id: str,
+    q: str = Query("", description="Texto de busca"),
+    user: dict = Depends(require_user),
+) -> list[dict]:
+    """Busca itens vinculáveis num provedor (best-effort — lista vazia se o provedor falhar)."""
+    return search_goal_link_items(provider_id, q)  # listagem — sem _check_result
+
+
 @router.post("/goals", status_code=201)
 def create_goal_route(body: CreateGoalBody, user: dict = Depends(require_user)) -> dict:
     """Cria uma meta (400 se o prazo for inválido; 422 se faltar título/prazo)."""
@@ -1476,6 +1519,30 @@ def link_movement_route(goal_id: int, body: LinkMovementBody, user: dict = Depen
 def unlink_movement_route(goal_id: int, body: LinkMovementBody, user: dict = Depends(require_user)) -> dict:
     """Desvincula um item da meta (o item permanece na sua seção)."""
     return _check_result(unlink_movement(body.item_type, body.item_id))
+
+
+@router.post("/goals/{goal_id}/links")
+def link_external_item_route(
+    goal_id: int, body: LinkExternalItemBody, user: dict = Depends(require_user)
+) -> dict:
+    """Vincula um item de outro agente (ex.: livro da Frieren) à meta — spec 036."""
+    return _check_result(link_external_item(goal_id, body.provider_id, body.entity_id))
+
+
+@router.delete("/goals/{goal_id}/links/{provider_id}/{entity_id}")
+def unlink_external_item_route(
+    goal_id: int, provider_id: str, entity_id: str, user: dict = Depends(require_user)
+) -> dict:
+    """Desvincula um item externo da meta (o item de origem nunca é tocado) — spec 036."""
+    return _check_result(unlink_external_item(goal_id, provider_id, entity_id))
+
+
+@router.patch("/goals/{goal_id}/metric-mode")
+def set_goal_metric_mode_route(
+    goal_id: int, body: SetMetricModeBody, user: dict = Depends(require_user)
+) -> dict:
+    """Alterna o modo da métrica entre manual e automático (spec 036)."""
+    return _check_result(set_metric_mode(goal_id, body.mode))
 
 
 @router.post("/goals/{goal_id}/review")

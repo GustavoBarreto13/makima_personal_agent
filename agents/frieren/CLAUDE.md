@@ -250,6 +250,17 @@ Usadas diretamente pelo coordinator (`main.py`) para processar callbacks dos bot
 `update_book_by_id` usa SET dinâmico: só inclui no SQL os campos que não forem `None`.
 Para `notes`, usa `CONCAT` para appendar ao invés de sobrescrever.
 
+### Provedores cross-agent para a Kaguya (spec 036)
+
+Dois módulos consumidos **de fora**, via `importlib`, pelos registries da Kaguya
+(`agents/kaguya/goal_link_providers.py` e `habit_source_providers.py`) — nunca importados dentro
+de `agents/frieren`. Ver `agents/kaguya/CLAUDE.md` para o contrato completo.
+
+| Módulo | Registrado como | Função |
+|---|---|---|
+| `goal_provider.py` | `frieren_books` | `search_items(query)`/`resolve_items(ids)` — livros vinculáveis a uma Meta; `done` = `status == "lido"` |
+| `habit_provider.py` | `frieren_reading` | `get_activity(start, end)` — soma de `reading_logs.pages_read` por dia, para hábitos mensuráveis de leitura |
+
 ### Funções consumidas só pelo webapp (`/api/books/*`)
 Não são tools do agente Telegram — o router `webapp/backend/routers/books.py` as chama direto:
 

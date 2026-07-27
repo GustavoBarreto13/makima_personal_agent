@@ -466,6 +466,46 @@ CREATE INDEX IF NOT EXISTS idx_habits_goal           ON habits (goal_id)        
 
 
 -- ----------------------------------------------------------------------------
+-- goal_external_links + metric_mode + habits.source_provider_id — spec 036
+-- ----------------------------------------------------------------------------
+-- Vínculo Meta↔item de OUTRO agente (ex.: livro da Frieren) e fonte automática de
+-- check-in de hábito (ex.: diário da Violet). Nada aqui referencia tabelas de outros
+-- agentes por FK — o dono do dado (Frieren/Journal) é resolvido em runtime por um
+-- registry de provedores (agents/kaguya/goal_link_providers.py e
+-- habit_source_providers.py), nunca por SQL direto entre agentes (Constitution I/III).
+-- Ver specs/036-goal-habit-links/data-model.md.
+
+-- Modo da métrica de uma meta: 'manual' (comportamento atual, editável) ou 'auto'
+-- (valor calculado na leitura a partir dos vínculos externos — nunca persistido).
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS metric_mode TEXT NOT NULL DEFAULT 'manual'
+    CHECK (metric_mode IN ('manual', 'auto'));
+
+-- Vínculo genérico meta ↔ entidade externa. NÃO exclusivo (o mesmo item pode contar
+-- para mais de uma meta — diferente do vínculo de movimentos internos da 030, que é
+-- 1:1 via coluna goal_id). provider_id é a chave do registry (ex.: 'frieren_books');
+-- entity_id é sempre TEXT para absorver UUID e SERIAL (mesmo padrão de person_links
+-- da Komi). ON DELETE CASCADE: excluir a meta remove os vínculos, nunca a entidade de
+-- origem (FR-011).
+CREATE TABLE IF NOT EXISTS goal_external_links (
+    id          SERIAL PRIMARY KEY,
+    goal_id     INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+    provider_id TEXT NOT NULL,
+    entity_id   TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (goal_id, provider_id, entity_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_external_links_goal ON goal_external_links (goal_id);
+
+-- Fonte automática de check-in de um hábito: chave do registry de
+-- habit_source_providers (ex.: 'violet_diary', 'frieren_reading'), ou NULL (hábito
+-- manual, comportamento atual). Sem FK/CHECK contra o registry — um provedor removido
+-- degrada para "sem atividade" (best-effort), nunca erro. Check-ins automáticos NUNCA
+-- são gravados em habit_checkins (calculados na leitura, mesclados em memória).
+ALTER TABLE habits ADD COLUMN IF NOT EXISTS source_provider_id TEXT;
+
+
+-- ----------------------------------------------------------------------------
 -- task_contexts — contextos de execução dedicados (spec 034)
 -- ----------------------------------------------------------------------------
 -- Etiqueta de execução gerenciável (nome, ícone opcional, ordem) — NÃO é tag (N:N);

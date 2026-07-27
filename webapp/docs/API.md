@@ -430,6 +430,7 @@ Campo dedicado (não tag) — no máximo um contexto por tarefa.
 | `GET` | `/api/tasks/habits/{habit_id}/history` | Check-ins de um ano (esparso) para o heatmap anual (`?year=`). |
 | `POST` | `/api/tasks/habits/{habit_id}/checkin` | Registra/atualiza o check-in de um dia (um por dia). |
 | `DELETE` | `/api/tasks/habits/{habit_id}/checkin` | Remove o check-in de um dia (`?date=`; vazio = hoje). |
+| `GET` | `/api/tasks/habits/source-providers` | Lista as fontes automáticas de check-in registradas (spec 036 — ex.: diário da Violet, leitura da Frieren). |
 
 ### Tiny Experiments (spec 029)
 
@@ -464,6 +465,21 @@ Campo dedicado (não tag) — no máximo um contexto por tarefa.
 | `POST` | `/api/tasks/goals/{goal_id}/link` | Vincula um item (experimento/tarefa/hábito) à meta. |
 | `POST` | `/api/tasks/goals/{goal_id}/unlink` | Desvincula um item (ele permanece na sua seção). |
 | `POST` | `/api/tasks/goals/{goal_id}/review` | Encerra a meta com a revisão (desfecho + aprendizado). |
+
+### Metas e Hábitos cross-agent (spec 036)
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/tasks/goals/link-providers` | Lista os provedores de vínculo de meta registrados (ex.: livros da Frieren). |
+| `GET` | `/api/tasks/goals/link-providers/{provider_id}/search` | Busca itens vinculáveis num provedor (`?q=`; lista vazia se o provedor falhar). |
+| `POST` | `/api/tasks/goals/{goal_id}/links` | Vincula um item de outro agente à meta (`{provider_id, entity_id}`). |
+| `DELETE` | `/api/tasks/goals/{goal_id}/links/{provider_id}/{entity_id}` | Desvincula (o item de origem nunca é tocado). |
+| `PATCH` | `/api/tasks/goals/{goal_id}/metric-mode` | Alterna a métrica entre `manual` e `auto` (`{mode}`). |
+
+`GET /api/tasks/goals/{goal_id}` ganha `metric_mode` na meta e `movements.external` (grupos por
+`provider_id`, cada um com `provider_name`, `unavailable` e `items`). `GET /api/tasks/habits/*`
+ganham `source_provider_id`/`done_today_source` no hábito e `source` em cada dia do histórico
+(`manual`/`auto`/`both`). Ver `specs/036-goal-habit-links/contracts/rest-api.md`.
 
 ### Meu Dia e time-blocking (fatia 016)
 

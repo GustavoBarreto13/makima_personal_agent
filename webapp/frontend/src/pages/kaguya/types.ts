@@ -347,6 +347,9 @@ export interface Habit {
   recent_done: number   // cumpridos nos últimos 14 dias (dado cru)
   recent_total: number  // quanto a meta esperava em 2 semanas (meta_semanal × 2)
   done_today: boolean   // se já houve check-in cumprido hoje
+  // Fonte automática de check-in (spec 036) — null = hábito 100% manual (comportamento atual).
+  source_provider_id: string | null
+  done_today_source: 'manual' | 'auto' | 'both' | null  // origem do cumprimento de hoje
 }
 
 // Um dia do histórico de check-ins (para o heatmap anual). Array esparso vindo do backend
@@ -355,6 +358,13 @@ export interface HabitHeatDay {
   date: string          // "YYYY-MM-DD"
   value: number | null  // valor medido (mensurável) ou null (sim/não)
   done: boolean         // cumpriu a meta naquele dia
+  source?: 'manual' | 'auto' | 'both'  // origem do dia (spec 036) — ausente em dias vazios (sem check-in)
+}
+
+// Fonte automática de hábito registrada (spec 036) — ex.: diário da Violet, leitura da Frieren.
+export interface HabitSourceProvider {
+  id: string
+  name: string
 }
 
 // ── Tiny Experiments (spec 029) ────────────────────────────────────────────────
@@ -426,12 +436,38 @@ export interface Milestone {
   done: boolean
 }
 
+// Um item externo vinculado a uma meta (spec 036) — resolvido AO VIVO pelo provedor dono.
+export interface GoalExternalItem {
+  id: string
+  label: string
+  sublabel: string | null
+  cover_url: string | null
+  done: boolean
+  deep_link: string | null
+}
+
+// Grupo de itens externos de um mesmo provedor (spec 036).
+export interface GoalExternalGroup {
+  provider_name: string
+  unavailable: boolean          // true = o provedor falhou nesta consulta (FR-008)
+  items: GoalExternalItem[]
+}
+
 // Itens vinculados a uma meta, agrupados por tipo, cada um com status mínimo (FR-009).
 export interface GoalMovements {
   experiments: { id: number; title: string; status: string; adherence_pct: number }[]
   tasks: { id: number; title: string; completed: boolean }[]
   habits: { id: number; name: string; consistency: number }[]
+  external?: Record<string, GoalExternalGroup>  // chave = provider_id (spec 036)
 }
+
+// Provedor de vínculo de meta registrado (spec 036) — ex.: livros da Frieren.
+export interface GoalLinkProvider {
+  id: string
+  name: string
+}
+
+export type GoalMetricMode = 'manual' | 'auto'
 
 // Uma meta. As métricas de progresso são DERIVADAS (calculadas na leitura no backend). `metric_*`
 // ausentes => sem métrica numérica; o progresso vem só dos marcos (ou é qualitativo).
@@ -443,6 +479,7 @@ export interface Goal {
   metric_target: number | null
   metric_unit: string | null
   metric_current: number | null
+  metric_mode: GoalMetricMode   // 'auto' = valor calculado ao vivo dos vínculos externos (spec 036)
   deadline: string             // "YYYY-MM-DD"
   anti_goals: string | null
   accountability: string | null

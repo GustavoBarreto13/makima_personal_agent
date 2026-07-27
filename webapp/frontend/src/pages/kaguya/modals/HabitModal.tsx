@@ -3,8 +3,8 @@
 // sim/não vs MENSURÁVEL (meta numérica + unidade). Em edição, oferece arquivar (soft delete)
 // com confirmação. Espelha o padrão do ProjectModal.
 
-import { useState } from 'react'
-import type { Habit } from '../types'
+import { useEffect, useState } from 'react'
+import type { Habit, HabitSourceProvider } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 
@@ -38,6 +38,13 @@ export function HabitModal({ mode, habit, onClose, onSaved, toast }: HabitModalP
   const [unit, setUnit] = useState(habit?.unit ?? '')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [saving, setSaving] = useState(false)
+  // Fonte automática de check-in (spec 036) — '' = hábito 100% manual.
+  const [sourceProviders, setSourceProviders] = useState<HabitSourceProvider[]>([])
+  const [sourceProviderId, setSourceProviderId] = useState(habit?.source_provider_id ?? '')
+
+  useEffect(() => {
+    kaguyaApi.listHabitSourceProviders().then(setSourceProviders).catch(() => setSourceProviders([]))
+  }, [])
 
   const save = async () => {
     if (!name.trim()) { toast('O nome não pode ser vazio.', 'err'); return }
@@ -58,16 +65,19 @@ export function HabitModal({ mode, habit, onClose, onSaved, toast }: HabitModalP
           name: name.trim(), freq_num: freqNum, freq_den: freqDen,
           target_value: tv, unit: measurable ? (unit.trim() || null) : null,
           icon: icon || null,
+          source_provider_id: sourceProviderId || null,
         })
         toast('Hábito criado.')
       } else if (habit) {
         // clear_target zera a meta quando o usuário desligou o "mensurável" na edição.
+        // clear_source remove a fonte automática quando o usuário volta para "nenhuma".
         await kaguyaApi.updateHabit(habit.id, {
           name: name.trim(), freq_num: freqNum, freq_den: freqDen,
           icon: icon || null,
           ...(measurable
             ? { target_value: tv, unit: unit.trim() || null }
             : { clear_target: true }),
+          ...(sourceProviderId ? { source_provider_id: sourceProviderId } : { clear_source: true }),
         })
         toast('Hábito atualizado.')
       }
@@ -145,6 +155,15 @@ export function HabitModal({ mode, habit, onClose, onSaved, toast }: HabitModalP
                 <input className="kg-input" style={{ width: 120 }} value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="páginas, min…" />
               </div>
             )}
+          </div>
+
+          {/* Fonte automática de check-in (spec 036) */}
+          <div className="kg-field">
+            <span className="kg-field-label">Fonte automática</span>
+            <select className="kg-select" value={sourceProviderId} onChange={(e) => setSourceProviderId(e.target.value)}>
+              <option value="">Nenhuma (check-in manual)</option>
+              {sourceProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
           </div>
 
           {/* Arquivar (só na edição) */}

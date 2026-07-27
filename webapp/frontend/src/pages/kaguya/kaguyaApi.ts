@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -237,11 +237,12 @@ export const kaguyaApi = {
   createHabit: (body: {
     name: string; freq_num?: number; freq_den?: number
     target_value?: number | null; unit?: string | null; icon?: string | null; color?: string | null
+    source_provider_id?: string | null
   }) => api.post<MutationResult>(`${BASE}/habits`, body),
   updateHabit: (id: number, body: Partial<{
     name: string; freq_num: number; freq_den: number
     target_value: number | null; unit: string | null; icon: string | null; color: string | null
-    clear_target: boolean
+    clear_target: boolean; source_provider_id: string | null; clear_source: boolean
   }>) => api.patch<MutationResult>(`${BASE}/habits/${id}`, body),
   // Excluir = arquivar (soft delete; o histórico fica).
   deleteHabit: (id: number) => api.del<MutationResult>(`${BASE}/habits/${id}`),
@@ -253,6 +254,8 @@ export const kaguyaApi = {
   // Histórico anual (esparso) para o heatmap.
   habitHistory: (id: number, year: number) =>
     api.get<HabitHeatDay[]>(`${BASE}/habits/${id}/history?year=${year}`),
+  // Fontes automáticas de hábito registradas (spec 036) — ex.: diário da Violet, leitura da Frieren.
+  listHabitSourceProviders: () => api.get<HabitSourceProvider[]>(`${BASE}/habits/source-providers`),
 
   // ── Tiny Experiments — spec 029 ────────────────────────────────────────────
   // CRUD + check-in + pausa/retoma + revisão. As métricas (aderência etc.) vêm calculadas
@@ -322,6 +325,16 @@ export const kaguyaApi = {
     // Revisão de encerramento (US3).
     review: (id: number, body: { outcome: GoalOutcome; review: string }) =>
       api.post<MutationResult>(`${BASE}/goals/${id}/review`, body),
+    // Vínculo externo (cross-agent) + métrica automática — spec 036.
+    linkProviders: () => api.get<GoalLinkProvider[]>(`${BASE}/goals/link-providers`),
+    searchLinkItems: (providerId: string, q: string) =>
+      api.get<GoalExternalItem[]>(`${BASE}/goals/link-providers/${providerId}/search?q=${encodeURIComponent(q)}`),
+    linkExternal: (goalId: number, providerId: string, entityId: string) =>
+      api.post<MutationResult>(`${BASE}/goals/${goalId}/links`, { provider_id: providerId, entity_id: entityId }),
+    unlinkExternal: (goalId: number, providerId: string, entityId: string) =>
+      api.del<MutationResult>(`${BASE}/goals/${goalId}/links/${providerId}/${entityId}`),
+    setMetricMode: (goalId: number, mode: GoalMetricMode) =>
+      api.patch<MutationResult>(`${BASE}/goals/${goalId}/metric-mode`, { mode }),
   },
 
   // ── Pessoas (Komi) — fatia 025 ────────────────────────────────────────────

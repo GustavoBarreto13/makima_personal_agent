@@ -5,7 +5,7 @@
 // Segue o padrão de carregamento silencioso (firstLoad ref) por receber reloadKey do shell.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Goal, GoalOutcome, MovementType, LinkableItem } from '../types'
+import type { Goal, GoalOutcome, MovementType, LinkableItem, GoalLinkProvider, GoalExternalItem } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 import { fmtDateLabel } from '../lib/dateUtils'
@@ -49,6 +49,12 @@ export function GoalDetailScreen({ goalId, reloadKey, onBack, onEdit, onNewLinke
   const [outcome, setOutcome] = useState<GoalOutcome | null>(null)
   const [review, setReview] = useState('')
   const [reviewing, setReviewing] = useState(false)
+  // Vínculo externo (cross-agent) + métrica automática — spec 036.
+  const [linkProviders, setLinkProviders] = useState<GoalLinkProvider[]>([])
+  const [extProviderId, setExtProviderId] = useState('')
+  const [extQuery, setExtQuery] = useState('')
+  const [extResults, setExtResults] = useState<GoalExternalItem[]>([])
+  const [extSearching, setExtSearching] = useState(false)
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -76,11 +82,44 @@ export function GoalDetailScreen({ goalId, reloadKey, onBack, onEdit, onNewLinke
   }, [])
   useEffect(() => { loadLinkables(linkType) }, [linkType, loadLinkables, reloadKey])
 
+  // Provedores de vínculo externo (spec 036) — carregados uma vez.
+  useEffect(() => {
+    kaguyaApi.goals.linkProviders()
+      .then((ps) => { setLinkProviders(ps); if (ps.length > 0) setExtProviderId((cur) => cur || ps[0].id) })
+      .catch(() => setLinkProviders([]))
+  }, [])
+
   const saveMetric = async () => {
     const v = metricInput.trim() === '' ? 0 : Number(metricInput)
     if (isNaN(v)) { toast('Valor inválido.', 'err'); return }
     try { await kaguyaApi.goals.update(goalId, { metric_current: v }); toast('Métrica atualizada.'); load(true) }
     catch { toast('Não foi possível atualizar a métrica.', 'err') }
+  }
+
+  const toggleMetricMode = async () => {
+    const next = goal?.metric_mode === 'auto' ? 'manual' : 'auto'
+    try { await kaguyaApi.goals.setMetricMode(goalId, next); toast(next === 'auto' ? 'Métrica automática ativada.' : 'Métrica voltou a ser manual.'); load(true) }
+    catch { toast('Não foi possível alternar o modo da métrica.', 'err') }
+  }
+
+  const searchExternal = async () => {
+    if (!extProviderId) return
+    setExtSearching(true)
+    try { setExtResults(await kaguyaApi.goals.searchLinkItems(extProviderId, extQuery)) }
+    catch { setExtResults([]); toast('Não foi possível buscar.', 'err') }
+    finally { setExtSearching(false) }
+  }
+
+  const linkExternal = async (entityId: string) => {
+    try {
+      await kaguyaApi.goals.linkExternal(goalId, extProviderId, entityId)
+      toast('Item vinculado.'); load(true)
+    } catch { toast('Não foi possível vincular.', 'err') }
+  }
+
+  const unlinkExternal = async (providerId: string, entityId: string) => {
+    try { await kaguyaApi.goals.unlinkExternal(goalId, providerId, entityId); toast('Item desvinculado.'); load(true) }
+    catch { toast('Não foi possível desvincular.', 'err') }
   }
 
   const addMilestone = async () => {
@@ -164,14 +203,25 @@ export function GoalDetailScreen({ goalId, reloadKey, onBack, onEdit, onNewLinke
       {/* Métrica (só quando há métrica-alvo) */}
       {goal.metric_target != null && !closed && (
         <div className="kg-goal-section">
-          <div className="kg-page-sub">Métrica</div>
-          <div className="kg-goal-metric-row">
-            <div className="kg-field" style={{ margin: 0 }}>
-              <span className="kg-field-label">Valor atual (de {goal.metric_target}{goal.metric_unit ? ' ' + goal.metric_unit : ''})</span>
-              <input className="kg-input" type="number" style={{ width: 120 }} value={metricInput} onChange={(e) => setMetricInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveMetric() }} />
-            </div>
-            <button className="kg-btn kg-btn-primary" onClick={saveMetric}>Salvar</button>
+          <div className="kg-page-sub" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Métrica</span>
+            <button className="kg-btn kg-btn-ghost" onClick={toggleMetricMode} title="Alternar entre valor manual e calculado a partir dos itens vinculados">
+              {goal.metric_mode === 'auto' ? '🔗 Automática' : '✍️ Manual'}
+            </button>
           </div>
+          {goal.metric_mode === 'auto' ? (
+            <div className="kg-goal-why">
+              Valor calculado a partir dos itens vinculados: <b>{goal.metric_current}</b> de {goal.metric_target}{goal.metric_unit ? ' ' + goal.metric_unit : ''}.
+            </div>
+          ) : (
+            <div className="kg-goal-metric-row">
+              <div className="kg-field" style={{ margin: 0 }}>
+                <span className="kg-field-label">Valor atual (de {goal.metric_target}{goal.metric_unit ? ' ' + goal.metric_unit : ''})</span>
+                <input className="kg-input" type="number" style={{ width: 120 }} value={metricInput} onChange={(e) => setMetricInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveMetric() }} />
+              </div>
+              <button className="kg-btn kg-btn-primary" onClick={saveMetric}>Salvar</button>
+            </div>
+          )}
         </div>
       )}
 
@@ -235,8 +285,52 @@ export function GoalDetailScreen({ goalId, reloadKey, onBack, onEdit, onNewLinke
             ))}
           </div>
         )}
-        {mv.experiments.length === 0 && mv.tasks.length === 0 && mv.habits.length === 0 && (
+        {/* Movimentos externos (cross-agent) — spec 036 */}
+        {Object.entries(mv.external ?? {}).map(([providerId, group]) => (
+          <div key={providerId} className="kg-goal-mv-group">
+            <div className="kg-goal-mv-group-title">
+              🔗 {group.provider_name}
+              {group.unavailable && <span className="kg-goal-badge overdue" style={{ marginLeft: 6 }}>indisponível agora</span>}
+            </div>
+            {group.items.map((item) => (
+              <div key={item.id} className="kg-goal-mv-row">
+                {item.cover_url && <img src={item.cover_url} alt="" style={{ width: 24, height: 34, objectFit: 'cover', borderRadius: 3, marginRight: 6 }} />}
+                <span className="kg-goal-mv-title">{item.label}{item.sublabel ? ` — ${item.sublabel}` : ''}</span>
+                <span className="kg-goal-mv-status">{item.done ? 'concluído' : 'em andamento'}</span>
+                {!closed && <button className="kg-icon-btn" onClick={() => unlinkExternal(providerId, item.id)} aria-label="Desvincular"><Icon name="x" size={13} /></button>}
+              </div>
+            ))}
+          </div>
+        ))}
+
+        {mv.experiments.length === 0 && mv.tasks.length === 0 && mv.habits.length === 0
+          && Object.keys(mv.external ?? {}).length === 0 && (
           <div className="kg-goal-why">Nenhum movimento vinculado ainda.</div>
+        )}
+
+        {/* Picker de vínculo externo (cross-agent) — spec 036 */}
+        {!closed && linkProviders.length > 0 && (
+          <div className="kg-goal-link" style={{ marginTop: 10 }}>
+            <select className="kg-select" style={{ width: 'auto' }} value={extProviderId} onChange={(e) => setExtProviderId(e.target.value)}>
+              {linkProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <input
+              className="kg-input" style={{ width: 180 }} placeholder="Buscar…" value={extQuery}
+              onChange={(e) => setExtQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') searchExternal() }}
+            />
+            <button className="kg-btn" onClick={searchExternal} disabled={extSearching}>{extSearching ? 'Buscando…' : 'Buscar'}</button>
+            {extResults.length > 0 && (
+              <div className="kg-goal-link-warn" style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
+                {extResults.map((r) => (
+                  <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>{r.label}{r.sublabel ? ` — ${r.sublabel}` : ''}</span>
+                    <button className="kg-btn kg-btn-primary" style={{ marginLeft: 'auto' }} onClick={() => linkExternal(r.id)}>Vincular</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Seletor de vínculo (só quando ativa) */}
