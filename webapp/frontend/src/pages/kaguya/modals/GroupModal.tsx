@@ -78,6 +78,35 @@ export function GroupModal({ mode, group, onClose, onSaved, toast }: GroupModalP
             />
           </div>
 
+          {/* Contexto em massa (spec 038, FR-003) — só em edição, aplica a TODAS as listas do grupo. */}
+          {mode === 'edit' && group && (
+            <div className="kg-field" style={{ borderTop: '1px solid var(--line-2)', paddingTop: 12 }}>
+              <span className="kg-field-label">Marcar todas as listas do grupo como</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="kg-btn"
+                  onClick={async () => {
+                    try {
+                      const r = await kaguyaApi.setGroupContext(group.id, 'personal')
+                      toast(`${r.updated} lista(s) marcada(s) como Pessoal.`)
+                      onSaved()
+                    } catch { toast('Não foi possível atualizar as listas do grupo.', 'err') }
+                  }}
+                >Pessoal</button>
+                <button
+                  className="kg-btn"
+                  onClick={async () => {
+                    try {
+                      const r = await kaguyaApi.setGroupContext(group.id, 'work')
+                      toast(`${r.updated} lista(s) marcada(s) como Trabalho.`)
+                      onSaved()
+                    } catch { toast('Não foi possível atualizar as listas do grupo.', 'err') }
+                  }}
+                >Trabalho</button>
+              </div>
+            </div>
+          )}
+
           {/* Exclusão (só em edição) — com passo de confirmação e aviso sobre as listas */}
           {mode === 'edit' && group && (
             <div className="kg-field" style={{ borderTop: '1px solid var(--line-2)', paddingTop: 12 }}>

@@ -151,6 +151,19 @@ export function CalendarsAside({
     }
   }
 
+  // Alterna o contexto (Pessoal/Trabalho, spec 038) de um calendário Google conectado.
+  async function toggleContext(cal: Calendar) {
+    const next: 'personal' | 'work' = cal.context === 'work' ? 'personal' : 'work'
+    const updated = sources.map((s) => s.id === cal.id ? { ...s, context: next } : s)
+    setSources(updated)   // otimista: não espera a API para não piscar
+    try {
+      await kaguyaApi.setCalendarPref(cal.id, { context: next })
+      onSourcesChanged?.()
+    } catch {
+      setSources(sources)  // reverte em caso de falha
+    }
+  }
+
   // Aplica uma nova cor a um calendário com atualização otimista
   async function applyColor(cal: Calendar, color: string) {
     setColorPickerId(null)  // fecha a paleta imediatamente
@@ -314,6 +327,19 @@ export function CalendarsAside({
 
                 {/* ci-tag: badge "padrão" para o calendário principal da Kaguya */}
                 {cal.id === 'kaguya' && <span className="ci-tag">padrão</span>}
+
+                {/* Contexto Trabalho/Pessoal (spec 038) — só para calendários Google conectados;
+                    decide contra qual capacity do Meu Dia os eventos deste calendário contam. */}
+                {isGcal(cal.id) && (
+                  <button
+                    className="ci-eye"
+                    onClick={() => toggleContext(cal)}
+                    title={cal.context === 'work' ? 'Trabalho — clique para marcar Pessoal' : 'Pessoal — clique para marcar Trabalho'}
+                    aria-label={cal.context === 'work' ? 'Contexto: Trabalho' : 'Contexto: Pessoal'}
+                  >
+                    <Icon name={cal.context === 'work' ? 'briefcase' : 'home'} size={13} />
+                  </button>
+                )}
 
                 {/* ci-eye: botão paleta — abre o color picker (visível no hover) */}
                 <button

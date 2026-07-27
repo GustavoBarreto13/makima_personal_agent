@@ -130,7 +130,7 @@ class TestGcalEventsForDay:
         with patch("agents.kaguya.gcal.list_events", return_value=[ev]) as mock_gcal, \
              patch("agents.kaguya.calendar_prefs.get_calendar_prefs", return_value=[]):
             fn = _import_target()
-            serial, tuplas, cal_ok = fn("2026-06-25")
+            serial, tuplas, tuplas_work, tuplas_personal, cal_ok = fn("2026-06-25")
 
         assert cal_ok is True
         assert len(serial) == 1
@@ -150,7 +150,7 @@ class TestGcalEventsForDay:
         with patch("agents.kaguya.gcal.list_events", return_value=[ev]), \
              patch("agents.kaguya.calendar_prefs.get_calendar_prefs", return_value=[]):
             fn = _import_target()
-            serial, tuplas, cal_ok = fn("2026-06-25")
+            serial, tuplas, tuplas_work, tuplas_personal, cal_ok = fn("2026-06-25")
 
         assert cal_ok is True
         assert len(serial) == 1
@@ -166,7 +166,7 @@ class TestGcalEventsForDay:
         with patch("agents.kaguya.gcal.list_events", return_value=[ev]), \
              patch("agents.kaguya.calendar_prefs.get_calendar_prefs", return_value=prefs):
             fn = _import_target()
-            serial, tuplas, cal_ok = fn("2026-06-25")
+            serial, tuplas, tuplas_work, tuplas_personal, cal_ok = fn("2026-06-25")
 
         assert cal_ok is True
         assert serial == []
@@ -179,7 +179,7 @@ class TestGcalEventsForDay:
         with patch("agents.kaguya.gcal.list_events", return_value=[ev]), \
              patch("agents.kaguya.calendar_prefs.get_calendar_prefs", return_value=prefs):
             fn = _import_target()
-            serial, tuplas, cal_ok = fn("2026-06-25")
+            serial, tuplas, tuplas_work, tuplas_personal, cal_ok = fn("2026-06-25")
 
         assert len(serial) == 1
         assert serial[0]["color"] == "#FF0000"   # cor do usuário aplicada
@@ -190,28 +190,28 @@ class TestGcalEventsForDay:
         with patch("agents.kaguya.gcal.list_events", return_value=[ev]), \
              patch("agents.kaguya.calendar_prefs.get_calendar_prefs", return_value=[]):
             fn = _import_target()
-            serial, tuplas, cal_ok = fn("2026-06-25")
+            serial, tuplas, tuplas_work, tuplas_personal, cal_ok = fn("2026-06-25")
 
         assert len(serial) == 1   # sem pref → visible=True por padrão
 
     def test_gcal_levanta_retorna_vazio_e_cal_ok_false(self, monkeypatch):
-        """gcal.list_events levanta → ([], [], False)."""
+        """gcal.list_events levanta → ([], [], [], [], False)."""
         with patch("agents.kaguya.gcal.list_events", side_effect=Exception("timeout")), \
              patch("agents.kaguya.calendar_prefs.get_calendar_prefs", return_value=[]):
             fn = _import_target()
-            serial, tuplas, cal_ok = fn("2026-06-25")
+            serial, tuplas, tuplas_work, tuplas_personal, cal_ok = fn("2026-06-25")
 
         assert serial == []
         assert tuplas == []
         assert cal_ok is False
 
     def test_get_calendar_prefs_levanta_retorna_vazio_e_cal_ok_false(self, monkeypatch):
-        """get_calendar_prefs levanta → ([], [], False)."""
+        """get_calendar_prefs levanta → ([], [], [], [], False)."""
         ev = _make_event()
         with patch("agents.kaguya.gcal.list_events", return_value=[ev]), \
              patch("agents.kaguya.calendar_prefs.get_calendar_prefs", side_effect=Exception("db")):
             fn = _import_target()
-            serial, tuplas, cal_ok = fn("2026-06-25")
+            serial, tuplas, tuplas_work, tuplas_personal, cal_ok = fn("2026-06-25")
 
         assert serial == []
         assert tuplas == []
@@ -223,7 +223,7 @@ class TestGcalEventsForDay:
         with patch("agents.kaguya.gcal.list_events", return_value=[ev]), \
              patch("agents.kaguya.calendar_prefs.get_calendar_prefs", return_value=[]):
             fn = _import_target()
-            serial, tuplas, cal_ok = fn("2026-06-25")
+            serial, tuplas, tuplas_work, tuplas_personal, cal_ok = fn("2026-06-25")
 
         # Evento aparece no serial (all_day=False porque não tem 'T')
         assert len(serial) == 1
@@ -238,7 +238,7 @@ class TestGcalEventsForDay:
         with patch("agents.kaguya.gcal.list_events", return_value=[ev_timed, ev_allday]), \
              patch("agents.kaguya.calendar_prefs.get_calendar_prefs", return_value=[]):
             fn = _import_target()
-            serial, tuplas, cal_ok = fn("2026-06-25")
+            serial, tuplas, tuplas_work, tuplas_personal, cal_ok = fn("2026-06-25")
 
         assert cal_ok is True
         assert len(serial) == 2
@@ -257,8 +257,35 @@ class TestGcalEventsForDay:
         with patch("agents.kaguya.gcal.list_events", return_value=[ev]), \
              patch("agents.kaguya.calendar_prefs.get_calendar_prefs", return_value=[]):
             fn = _import_target()
-            _, tuplas, cal_ok = fn("2026-06-25")
+            _, tuplas, _tw, _tp, cal_ok = fn("2026-06-25")
 
         assert cal_ok is True
         assert len(tuplas) == 1
         assert tuplas[0] == (870, 945)   # 14*60+30=870, 15*60+45=945
+
+    def test_evento_de_calendario_work_vai_para_tuplas_work(self, monkeypatch):
+        """Calendário com context='work' (spec 038) → tupla só em tuplas_work, não em personal."""
+        ev = _make_event()
+        prefs = [{"calendar_id": "gcal:cal_primary", "visible": True, "color": None, "context": "work"}]
+        with patch("agents.kaguya.gcal.list_events", return_value=[ev]), \
+             patch("agents.kaguya.calendar_prefs.get_calendar_prefs", return_value=prefs):
+            fn = _import_target()
+            serial, tuplas, tuplas_work, tuplas_personal, cal_ok = fn("2026-06-25")
+
+        assert cal_ok is True
+        assert serial[0]["context"] == "work"
+        assert len(tuplas) == 1
+        assert tuplas_work == [(540, 600)]
+        assert tuplas_personal == []
+
+    def test_evento_sem_context_na_pref_assume_personal(self, monkeypatch):
+        """Calendário sem context salvo (ou sem pref alguma) → default 'personal'."""
+        ev = _make_event()
+        with patch("agents.kaguya.gcal.list_events", return_value=[ev]), \
+             patch("agents.kaguya.calendar_prefs.get_calendar_prefs", return_value=[]):
+            fn = _import_target()
+            serial, tuplas, tuplas_work, tuplas_personal, cal_ok = fn("2026-06-25")
+
+        assert serial[0]["context"] == "personal"
+        assert tuplas_personal == [(540, 600)]
+        assert tuplas_work == []

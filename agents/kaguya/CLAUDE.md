@@ -43,7 +43,7 @@ agents/kaguya/
 ├── capacity.py           # motor PURO (sem banco): compute_capacity() — janela 8h–22h — fatia 016
 ├── gcal.py               # cliente Google Calendar compartilhado (read all / write main) — fatia 019
 ├── gcal_sync.py          # espelho best-effort: push/remove tarefas no GCal "Kaguya — Tarefas" — fatia 019
-├── calendar_prefs.py     # CRUD da tabela calendar_prefs (visibilidade + cor por fonte) — fatia 019
+├── calendar_prefs.py     # CRUD da tabela calendar_prefs (visibilidade + cor + contexto Trabalho/Pessoal) — fatia 019 / spec 038
 ├── calendar_hub.py       # agregador: register/list_sources/aggregate fan-out best-effort — fatia 019
 ├── komi_sync.py          # sync bidirecional best-effort de aniversários Komi ↔ Kaguya — fase 026
 ├── tools.py              # FACHADA: re-exporta a lógica + wrappers + cross-agent (Nami + Calendar Hub)
@@ -425,6 +425,50 @@ não entram, só concluídas (e a ativa, parcialmente, no dia de hoje).
 Persistência: 2 tabelas em `schema_tasks_pg.sql` (`focus_sessions`, `focus_prefs`). Ver
 `specs/037-tasks-focus-pomodoro/data-model.md`.
 
+### Meu Dia — contexto Trabalho/Pessoal (spec 038)
+
+O Meu Dia ganha duas seções com capacity própria: **Trabalho** e **Pessoal**. O contexto é
+propriedade da **lista** (`task_projects.context`, `'personal'` padrão ou `'work'`) e do
+**calendário conectado** (`calendar_prefs.context`, mesmo domínio) — **nunca** da tarefa.
+Não existe coluna `context` em `tasks`: o contexto de uma tarefa é sempre resolvido por
+**JOIN** com a lista atual (`list_my_day` já faz `JOIN task_projects p`, só passou a incluir
+`p.context` na SELECT) — mover uma tarefa de lista muda seu contexto automaticamente, sem
+trigger nem risco de divergência (FR-002).
+
+**Motor de capacity intocado**: `compute_capacity` (`capacity.py`) não mudou uma linha —
+`list_my_day` só chama a mesma função 3× com insumos filtrados (total, work, personal).
+`_gcal_events_for_day` foi estendido para também particionar as tuplas de minutos dos
+eventos por `calendar_prefs.context`, devolvendo `eventos_tuplas_work`/`eventos_tuplas_personal`
+além da tupla total (assinatura passou de 3 para 5 valores — único chamador é `list_my_day`).
+
+**Semântica da soma (FR-006/SC-002)**: `estimado_min`/`agenda_min`/`no_plano` de
+`capacity_work` + `capacity_personal` somam exatamente os valores de `capacity` (visão única)
+— são somas diretas dos insumos brutos particionados. `livre_min`/`folga_min`/`excedeu`
+**não** são somáveis entre si: cada capacity de contexto é calculada contra a MESMA janela
+cheia (8h–22h, sem "horário comercial" separado na v1), então cada barra responde
+independentemente "esse contexto sozinho cabe no dia inteiro?" — nunca "quanto sobra depois
+do outro contexto". Ver `specs/038-meudia-work-context/research.md` R6.
+
+**Inbox é sempre Pessoal** — garantido no schema (`CHECK (NOT is_inbox OR context =
+'personal')`), não só na aplicação; `update_project`/`create_project` também validam antes
+do UPDATE para devolver 400 amigável em vez do erro cru do Postgres.
+
+**Ação em massa por grupo** (FR-003): `set_group_context(group_id, context)` — um único
+`UPDATE ... WHERE group_id = ... AND NOT is_inbox`, não um loop por lista.
+
+**Toggle visão única/dividida** (FR-008, US3): preferência de **UI pura** em `localStorage`
+(chave `kg:myday:view`, frontend `TodayScreen.tsx`) — mesmo padrão já usado em
+`KaguyaShell.tsx` para lembrar Lista×Kanban por lista/grupo. Nenhuma tabela nova para isso
+(diferente da decisão R4 da spec 037, onde a preferência alimentava um valor que precisa ser
+consistente entre abas — aqui é puramente de exibição).
+
+`my_day_status()` (resumo do Telegram) acrescenta os dois blocos ("trabalho: X de Y; pessoal:
+Z de W" — estimado de livre em cada contexto) quando há algo planejado em algum lado (FR-009).
+
+Persistência: 2 colunas novas em tabelas já existentes (`task_projects.context`,
+`calendar_prefs.context`) — nenhuma tabela nova. Ver
+`specs/038-meudia-work-context/data-model.md`.
+
 ---
 
 ## Tools expostas ao agente (`tools.py`)
@@ -449,8 +493,8 @@ Persistência: 2 tabelas em `schema_tasks_pg.sql` (`focus_sessions`, `focus_pref
 | `create_project`, `update_project`, `delete_project` | listas |
 | **`complete_payment_task`** | cross-agent (Kaguya + Nami) — atômico |
 | **`create_expense_reminder`** | cross-agent — cria lembrete no Postgres |
-| `plan_my_day()` | Meu Dia completo (plano + pendências + sugestões + capacity) — fatia 016. Plano/pendências/sugestões incluem **subtarefas datadas** (spec 028); sub-itens trazem `parent_title` para o badge ↳ |
-| `my_day_status()` | resumo textual do plano + capacity (briefing Telegram) — fatia 016 |
+| `plan_my_day()` | Meu Dia completo (plano + pendências + sugestões + capacity, total e por contexto Trabalho/Pessoal) — fatia 016 + spec 038. Plano/pendências/sugestões incluem **subtarefas datadas** (spec 028); sub-itens trazem `parent_title` para o badge ↳ |
+| `my_day_status()` | resumo textual do plano + capacity, com os dois blocos Trabalho/Pessoal quando há algo planejado (briefing Telegram) — fatia 016 + spec 038 |
 | `add_to_my_day_by_name(task, date?)` | adiciona ao Meu Dia por id ou nome — fatia 016 |
 | `remove_from_my_day_by_name(task)` | retira do Meu Dia por id ou nome — fatia 016 |
 | `set_estimate_by_name(task, minutes)` | grava estimativa de duração por id ou nome — fatia 016 |

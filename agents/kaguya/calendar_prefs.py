@@ -8,6 +8,8 @@ Estados persistidos:
     - visible: bool — calendário aparece na agregação (padrão: True)
     - color: str|None — cor de exibição (padrão: None, usar cor padrão do provider)
     - position: int — ordem de exibição na sidebar (padrão: 0, esparso)
+    - context: str — "personal" (padrão) ou "work" (spec 038): decide contra qual
+      capacity do Meu Dia os eventos deste calendário contam
 
 Usadas por:
     - `calendar_hub.py` — lê prefs ao renderizar calendários no Meu Dia
@@ -36,7 +38,7 @@ def get_calendar_prefs() -> list[dict]:
     """
     # Consulta todos os registros da tabela calendar_prefs, mantendo a ordem de posição
     sql = """
-    SELECT calendar_id, visible, color, position
+    SELECT calendar_id, visible, color, position, context
     FROM calendar_prefs
     ORDER BY position, calendar_id
     """
@@ -49,6 +51,7 @@ def set_calendar_pref(
     visible: bool | None = None,
     color: str | None = None,
     position: int | None = None,
+    context: str | None = None,
 ) -> dict:
     """Atualiza ou insere preferências de um calendário (upsert parcial).
 
@@ -61,6 +64,8 @@ def set_calendar_pref(
         visible: Booleano para controlar exibição. Se None, não altera (preserva ou usa padrão True).
         color: String de cor (ex: "#FF5733"). Se None, não altera (preserva ou usa padrão None).
         position: Inteiro para ordenação na sidebar. Se None, não altera (preserva ou usa padrão 0).
+        context: "personal" ou "work" (spec 038) — decide contra qual capacity do Meu Dia
+            os eventos deste calendário contam. Se None, não altera (preserva ou usa padrão "personal").
 
     Returns:
         Dicionário de status: {"status": "ok"} em sucesso,
@@ -75,6 +80,9 @@ def set_calendar_pref(
     try:
         # Monta dinamicamente as colunas a atualizar (apenas as que não são None)
         # Isso permite upsert seletivo: colunas omitidas preservam seu valor ou usam padrão
+        if context is not None and context not in ("personal", "work"):
+            return {"status": "error", "message": "Contexto inválido (use 'personal' ou 'work')."}
+
         updates = {}
         if visible is not None:
             updates["visible"] = visible
@@ -82,6 +90,8 @@ def set_calendar_pref(
             updates["color"] = color
         if position is not None:
             updates["position"] = position
+        if context is not None:
+            updates["context"] = context
 
         # Constrói a lista de SET dinamicamente (UPDATE SET visible=..., color=..., etc.)
         # Se nenhum campo for atualizado, o SQL será INSERT sem UPDATE (preserva valores atuais na linha)
@@ -94,6 +104,7 @@ def set_calendar_pref(
             "visible": visible if visible is not None else True,  # padrão no INSERT
             "color": color,  # padrão no INSERT (NULL)
             "position": position if position is not None else 0,  # padrão no INSERT
+            "context": context if context is not None else "personal",  # padrão no INSERT
         }
 
         # Monta os valores para a parte SET do UPDATE (apenas as colunas mudáveis)
@@ -101,11 +112,6 @@ def set_calendar_pref(
 
         if set_clauses:
             # Há campos a atualizar — usa INSERT ... ON CONFLICT DO UPDATE
-            sql = f"""
-            INSERT INTO calendar_prefs (calendar_id, visible, color, position)
-            VALUES (%(calendar_id)s, %(visible)s, %(color)s, %(position)s)
-            ON CONFLICT (calendar_id) DO UPDATE SET {set_clauses}
-            """
             # Prepara os parâmetros na ordem correta: INSERT + UPDATE
             full_params = params.copy()
             for i, col in enumerate(updates.keys()):
@@ -114,8 +120,8 @@ def set_calendar_pref(
             # Ajusta os placeholders do SET para usar os nomes únicos
             set_clauses_fixed = ", ".join(f"{col} = %(upd_{col})s" for col in updates.keys())
             sql = f"""
-            INSERT INTO calendar_prefs (calendar_id, visible, color, position)
-            VALUES (%(calendar_id)s, %(visible)s, %(color)s, %(position)s)
+            INSERT INTO calendar_prefs (calendar_id, visible, color, position, context)
+            VALUES (%(calendar_id)s, %(visible)s, %(color)s, %(position)s, %(context)s)
             ON CONFLICT (calendar_id) DO UPDATE SET {set_clauses_fixed}
             """
             run_dml(sql, full_params)
@@ -123,8 +129,8 @@ def set_calendar_pref(
             # Nenhum campo para atualizar — insert puro (linha nova, ou nada faz na linha existente)
             # Usa a sintaxe simples INSERT ... ON CONFLICT DO NOTHING
             sql = """
-            INSERT INTO calendar_prefs (calendar_id, visible, color, position)
-            VALUES (%(calendar_id)s, %(visible)s, %(color)s, %(position)s)
+            INSERT INTO calendar_prefs (calendar_id, visible, color, position, context)
+            VALUES (%(calendar_id)s, %(visible)s, %(color)s, %(position)s, %(context)s)
             ON CONFLICT (calendar_id) DO NOTHING
             """
             run_dml(sql, params)

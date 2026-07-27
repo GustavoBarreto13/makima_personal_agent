@@ -237,5 +237,38 @@ def test_list_my_day_calendar_offline():
     # Se o Calendar offline, agenda_min deve ser 0.
     if not cap["calendar_ok"]:
         assert cap["agenda_min"] == 0
+
+
+# ── Contexto Trabalho/Pessoal (spec 038) ───────────────────────────────────────
+
+def test_list_my_day_traz_campos_por_contexto():
+    """list_my_day sempre devolve os campos particionados por contexto (spec 038)."""
+    r = list_my_day(_HOJE_STR)
+    for chave in (
+        "plano_work", "plano_personal",
+        "pendencias_ontem_work", "pendencias_ontem_personal",
+        "sugestoes_work", "sugestoes_personal",
+        "capacity_work", "capacity_personal",
+    ):
+        assert chave in r, f"Chave ausente em list_my_day: {chave}"
+    for cap in (r["capacity_work"], r["capacity_personal"]):
+        for chave in ("no_plano", "estimado_min", "agenda_min", "livre_min", "folga_min", "excedeu", "calendar_ok"):
+            assert chave in cap
+
+
+def test_list_my_day_soma_estimado_e_agenda_bate_com_total():
+    """SC-002/FR-006: estimado_min/agenda_min/no_plano de work+personal somam o total
+    (livre_min/folga_min NÃO são somáveis — cada um usa a janela cheia, ver research.md R6)."""
+    r_hoje = create_task(title="Tarefa pessoal Meu Dia")
+    try:
+        add_to_my_day(r_hoje["id"], _HOJE_STR)
+        set_estimate(r_hoje["id"], 30)
+        r = list_my_day(_HOJE_STR)
+        cap, cap_w, cap_p = r["capacity"], r["capacity_work"], r["capacity_personal"]
+        assert cap_w["estimado_min"] + cap_p["estimado_min"] == cap["estimado_min"]
+        assert cap_w["agenda_min"] + cap_p["agenda_min"] == cap["agenda_min"]
+        assert cap_w["no_plano"] + cap_p["no_plano"] == cap["no_plano"]
+    finally:
+        delete_task(r_hoje["id"])
     # Em todo caso, a função retornou sem exceção.
     assert "plano" in r

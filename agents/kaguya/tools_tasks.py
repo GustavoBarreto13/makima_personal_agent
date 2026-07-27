@@ -2058,24 +2058,29 @@ def clear_time_block(task_id: int) -> dict:
 # Integração gcal para o Meu Dia
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _gcal_events_for_day(day_str: str) -> tuple[list[dict], list[tuple[int, int]], bool]:
+def _gcal_events_for_day(day_str: str) -> tuple[list[dict], list[tuple[int, int]], list[tuple[int, int]], list[tuple[int, int]], bool]:
     """Busca os eventos do Google Calendar para um dia, aplica preferências de visibilidade
-    e calcula as tuplas de minutos (início, fim) para alimentar o compute_capacity.
+    e calcula as tuplas de minutos (início, fim) para alimentar o compute_capacity — total
+    e particionadas por contexto (Trabalho/Pessoal, spec 038).
 
     Nunca levanta — qualquer falha (Google offline, sem credencial, sem prefs) retorna
-    ``([], [], False)`` sinalizando ``calendar_ok=False`` na capacity.
+    ``([], [], [], [], False)`` sinalizando ``calendar_ok=False`` na capacity.
 
     Args:
         day_str: Data no formato "YYYY-MM-DD".
 
     Returns:
-        Tupla de três valores:
+        Tupla de cinco valores:
             - eventos_serial: lista de dicts prontos para serialização JSON.
               Cada item: {id, title, start, end, all_day, calendar_id,
-              calendar_name, color}.
+              calendar_name, color, context}.
             - eventos_tuplas: lista de (inicio_min, fim_min) em minutos desde
               a meia-noite BRT, apenas para eventos com hora (all_day=False).
-              Usados por compute_capacity.
+              Usados por compute_capacity (capacity total, visão única).
+            - eventos_tuplas_work: mesma coisa, só os eventos de calendários com
+              ``context == "work"``.
+            - eventos_tuplas_personal: mesma coisa, só os eventos de calendários
+              sem contexto de trabalho (default "personal").
             - cal_ok: True quando o Google respondeu com sucesso.
     """
     try:
@@ -2091,6 +2096,8 @@ def _gcal_events_for_day(day_str: str) -> tuple[list[dict], list[tuple[int, int]
 
         eventos_serial: list[dict] = []
         eventos_tuplas: list[tuple[int, int]] = []
+        eventos_tuplas_work: list[tuple[int, int]] = []
+        eventos_tuplas_personal: list[tuple[int, int]] = []
 
         for ev in raw_events:
             # Chave de pref: "gcal:<id_do_calendário>"
@@ -2104,6 +2111,7 @@ def _gcal_events_for_day(day_str: str) -> tuple[list[dict], list[tuple[int, int]
             start: str = ev.get("start", "")
             end: str   = ev.get("end", "")
             all_day    = "T" not in start  # data sem "T" = dia inteiro
+            context    = pref.get("context") or "personal"  # spec 038 — default Pessoal
 
             item: dict = {
                 "id":            ev.get("id", ""),
@@ -2114,6 +2122,7 @@ def _gcal_events_for_day(day_str: str) -> tuple[list[dict], list[tuple[int, int]
                 "calendar_id":   ev.get("calendar_id", ""),
                 "calendar_name": ev.get("calendar_name", ""),
                 "color":         pref.get("color"),  # None → usa cor padrão no frontend
+                "context":       context,
             }
             eventos_serial.append(item)
 
@@ -2128,14 +2137,19 @@ def _gcal_events_for_day(day_str: str) -> tuple[list[dict], list[tuple[int, int]
                     ini_min = dt_ini.hour * 60 + dt_ini.minute
                     fim_min = dt_fim.hour * 60 + dt_fim.minute
                     if fim_min > ini_min:  # eventos mal formados (duração negativa) são pulados
-                        eventos_tuplas.append((ini_min, fim_min))
+                        tupla = (ini_min, fim_min)
+                        eventos_tuplas.append(tupla)
+                        if context == "work":
+                            eventos_tuplas_work.append(tupla)
+                        else:
+                            eventos_tuplas_personal.append(tupla)
                 except (ValueError, AttributeError):
                     pass  # evento com datetime inválido — pula, não quebra
 
-        return eventos_serial, eventos_tuplas, True
+        return eventos_serial, eventos_tuplas, eventos_tuplas_work, eventos_tuplas_personal, True
 
     except Exception:
-        return [], [], False
+        return [], [], [], [], False
 
 
 def list_my_day(date_str: Optional[str] = None) -> dict:
@@ -2151,8 +2165,12 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         date_str: Data no formato "YYYY-MM-DD". ``None`` = hoje (fuso SP).
 
     Returns:
-        ``{date, plano, pendencias_ontem, sugestoes, capacity}`` — listagem direta
-        (sem ``status``), pois cada seção pode ser vazia.
+        ``{date, plano, pendencias_ontem, sugestoes, capacity, plano_work, plano_personal,
+        pendencias_ontem_work, pendencias_ontem_personal, sugestoes_work, sugestoes_personal,
+        capacity_work, capacity_personal, eventos}`` — listagem direta (sem ``status``), pois
+        cada seção pode ser vazia. Os campos ``_work``/``_personal`` são a divisão por
+        contexto (spec 038); os campos sem sufixo (``plano``, ``capacity``, ...) continuam
+        existindo intocados para a visão única (FR-010).
     """
     from agents.kaguya.capacity import compute_capacity
     from agents.kaguya.tools_tags import _attach_tags
@@ -2171,9 +2189,10 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     # LEFT JOIN tasks mae: traz o título da tarefa-mãe para subtarefas mostrarem o badge.
     # Removido o filtro parent_id IS NULL: subtarefas explicitamente adicionadas ao Meu Dia
     # agora aparecem aqui. As sugestões também incluem subtarefas datadas (spec 028).
+    # p.context (spec 038): herança do contexto Trabalho/Pessoal — nunca copiado em `tasks`.
     plano_rows = run_select(
         f"""
-        SELECT {campos}, p.name AS project_name, mae.title AS parent_title
+        SELECT {campos}, p.name AS project_name, p.context, mae.title AS parent_title
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
         LEFT JOIN tasks mae ON mae.id = t.parent_id
@@ -2188,7 +2207,7 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     # ── Pendências de ontem: my_day_date < hoje, abertas (qualquer nível — fatia 025) ──
     pendencias_rows = run_select(
         f"""
-        SELECT {campos}, p.name AS project_name, mae.title AS parent_title
+        SELECT {campos}, p.name AS project_name, p.context, mae.title AS parent_title
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
         LEFT JOIN tasks mae ON mae.id = t.parent_id
@@ -2205,7 +2224,7 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     # título da mãe para a subtarefa mostrar o badge ↳ (igual ao plano/pendências).
     sugestoes_rows = run_select(
         f"""
-        SELECT {campos}, p.name AS project_name, mae.title AS parent_title
+        SELECT {campos}, p.name AS project_name, p.context, mae.title AS parent_title
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
         LEFT JOIN tasks mae ON mae.id = t.parent_id
@@ -2226,6 +2245,8 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         for r in rows:
             item = _serialize_task(r)
             item["project_name"] = r["project_name"]
+            # context (spec 038): herdado da lista atual — nunca persistido em `tasks`.
+            item["context"] = r.get("context") or "personal"
             # parent_title: None para tarefas raízes, título da mãe para subtarefas.
             item["parent_title"] = r.get("parent_title")
             items.append(item)
@@ -2238,14 +2259,38 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     pendencias = _prepare(pendencias_rows)
     sugestoes = _prepare(sugestoes_rows)
 
+    # Partição por contexto (spec 038, US2) — pura filtragem em memória, sem query extra.
+    def _split(items: list) -> tuple[list, list]:
+        work = [t for t in items if t["context"] == "work"]
+        personal = [t for t in items if t["context"] != "work"]
+        return work, personal
+
+    plano_work, plano_personal = _split(plano)
+    pendencias_work, pendencias_personal = _split(pendencias)
+    sugestoes_work, sugestoes_personal = _split(sugestoes)
+
     # ── Capacity: estimativas das tarefas + eventos do Google Calendar do dia ──
     # _gcal_events_for_day aplica as prefs de visibilidade salvas e calcula as tuplas
-    # de minutos para o compute_capacity. Nunca levanta — falha → cal_ok=False.
-    eventos_serial, eventos_tuplas, cal_ok = _gcal_events_for_day(hoje_str)
+    # de minutos para o compute_capacity (total e por contexto). Nunca levanta — falha
+    # → cal_ok=False.
+    eventos_serial, eventos_tuplas, eventos_tuplas_work, eventos_tuplas_personal, cal_ok = (
+        _gcal_events_for_day(hoje_str)
+    )
 
     estimativas = [t.get("duration_min") for t in plano]
     cap = compute_capacity(estimativas, eventos_tuplas, calendar_ok=cal_ok)
     cap["no_plano"] = len(plano)   # sobrescreve com a contagem real do plano
+
+    # Capacities por contexto: MESMO motor, MESMA janela padrão, só os insumos mudam
+    # (research.md R6 — a soma de estimado_min/agenda_min/no_plano bate com o total;
+    # livre_min/folga_min/excedeu são recalculados cada um contra a janela cheia).
+    estimativas_work = [t.get("duration_min") for t in plano_work]
+    cap_work = compute_capacity(estimativas_work, eventos_tuplas_work, calendar_ok=cal_ok)
+    cap_work["no_plano"] = len(plano_work)
+
+    estimativas_personal = [t.get("duration_min") for t in plano_personal]
+    cap_personal = compute_capacity(estimativas_personal, eventos_tuplas_personal, calendar_ok=cal_ok)
+    cap_personal["no_plano"] = len(plano_personal)
 
     return {
         "date": hoje_str,
@@ -2253,6 +2298,15 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         "pendencias_ontem": pendencias,
         "sugestoes": sugestoes,
         "capacity": cap,
+        # Divisão por contexto (spec 038, US2) — sempre presentes, podem ser listas vazias.
+        "plano_work": plano_work,
+        "plano_personal": plano_personal,
+        "pendencias_ontem_work": pendencias_work,
+        "pendencias_ontem_personal": pendencias_personal,
+        "sugestoes_work": sugestoes_work,
+        "sugestoes_personal": sugestoes_personal,
+        "capacity_work": cap_work,
+        "capacity_personal": cap_personal,
         # Eventos do Google Calendar do dia (já filtrados por visibilidade).
         # Usados pela timeline do Meu Dia. Lista vazia quando o Google não responde.
         "eventos": eventos_serial,

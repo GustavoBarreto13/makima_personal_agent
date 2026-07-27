@@ -28,6 +28,7 @@ from agents.kaguya.tools_projects import (
     list_columns, create_column, update_column, delete_column,
     copy_columns,    # copia estrutura de colunas de um board para outro (sem tarefas)
     get_group_board,  # board agregado de grupo (colunas unificadas por nome)
+    set_group_context,  # ação em massa de contexto Trabalho/Pessoal — spec 038
 )
 from agents.kaguya.tools_tasks import (
     list_tasks, list_tasks_today, search_tasks, list_trash, list_eisenhower_tasks,
@@ -131,6 +132,7 @@ class CreateProjectBody(BaseModel):
     group_id: Optional[int] = None
     color: Optional[str] = None
     icon: Optional[str] = None
+    context: Literal["personal", "work"] = "personal"  # spec 038 — definível já na criação
 
 
 class UpdateProjectBody(BaseModel):
@@ -140,6 +142,12 @@ class UpdateProjectBody(BaseModel):
     color: Optional[str] = None
     icon: Optional[str] = None
     position: Optional[int] = None
+    context: Optional[Literal["personal", "work"]] = None  # spec 038 — Inbox recusa "work"
+
+
+class SetGroupContextBody(BaseModel):
+    """Body da ação em massa: contexto de todas as listas de um grupo (spec 038)."""
+    context: Literal["personal", "work"]
 
 
 class CreateGroupBody(BaseModel):
@@ -525,6 +533,12 @@ def create_group_route(body: CreateGroupBody, user: dict = Depends(require_user)
 def update_group_route(group_id: int, body: UpdateGroupBody, user: dict = Depends(require_user)) -> dict:
     """Renomeia/reordena um grupo."""
     return _check_result(update_group(group_id, **body.model_dump(exclude_unset=True)))
+
+
+@router.post("/groups/{group_id}/context")
+def set_group_context_route(group_id: int, body: SetGroupContextBody, user: dict = Depends(require_user)) -> dict:
+    """Define o contexto (Pessoal/Trabalho) de todas as listas do grupo de uma vez (spec 038, FR-003)."""
+    return _check_result(set_group_context(group_id, body.context))
 
 
 @router.delete("/groups/{group_id}")
@@ -973,6 +987,7 @@ class CalendarPrefBody(BaseModel):
     visible: Optional[bool] = None
     color: Optional[str] = None
     position: Optional[int] = None
+    context: Optional[Literal["personal", "work"]] = None  # spec 038
 
 
 @router.get("/calendar/sources")
@@ -1033,6 +1048,8 @@ def calendar_sources_route(user: dict = Depends(require_user)) -> list[dict]:
                 "position": pref.get("position", 90 + idx),
                 # Indica se o usuário tem permissão de escrita (owner/writer) neste calendário
                 "writable": c.get("writable", False),
+                # Trabalho/Pessoal (spec 038) — decide contra qual capacity do Meu Dia conta.
+                "context": pref.get("context") or "personal",
             })
 
     return sources
@@ -1080,6 +1097,7 @@ def set_calendar_pref_route(
             visible=body.visible,
             color=body.color,
             position=body.position,
+            context=body.context,
         )
     )
 

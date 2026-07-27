@@ -300,12 +300,13 @@ estão nos contratos das specs: `specs/011-tasks-mvp/contracts/`,
 | Método | Rota | O que faz |
 |---|---|---|
 | `GET` | `/api/tasks/sidebar` | Payload único da sidebar (grupos + listas com contagem e flag de board). |
-| `POST` | `/api/tasks/projects` | Cria uma lista. |
-| `PATCH` | `/api/tasks/projects/{project_id}` | Edita uma lista (renomear, mover de grupo, cor/ícone, reordenar). |
+| `POST` | `/api/tasks/projects` | Cria uma lista (`context` opcional — `personal` padrão ou `work`, spec 038). |
+| `PATCH` | `/api/tasks/projects/{project_id}` | Edita uma lista (renomear, mover de grupo, cor/ícone, reordenar, `context` — Inbox recusa `work`). |
 | `DELETE` | `/api/tasks/projects/{project_id}` | Exclui uma lista; `?mode=move_to_inbox\|delete_tasks` decide o destino das tarefas (Inbox → 400). |
 | `POST` | `/api/tasks/groups` | Cria um grupo de listas. |
 | `PATCH` | `/api/tasks/groups/{group_id}` | Renomeia/reordena um grupo. |
 | `DELETE` | `/api/tasks/groups/{group_id}` | Exclui um grupo (as listas dele ficam sem grupo). |
+| `POST` | `/api/tasks/groups/{group_id}/context` | Define o contexto (`personal`\|`work`) de todas as listas do grupo de uma vez (spec 038, FR-003). |
 | `GET` | `/api/tasks/projects/{project_id}/columns` | Lista as colunas do board de uma lista. |
 | `POST` | `/api/tasks/columns` | Cria uma coluna (a primeira ativa o Kanban). |
 | `PATCH` | `/api/tasks/columns/{column_id}` | Renomeia/reordena/marca "done" uma coluna. |
@@ -410,7 +411,7 @@ Campo dedicado (não tag) — no máximo um contexto por tarefa.
 | `GET` | `/api/tasks/calendar/sources` | Fontes de calendário do hub (kaguya, nami, frieren, violet, akane + calendários Google), com prefs. |
 | `GET` | `/api/tasks/calendar/aggregate` | Agrega eventos de todos os provedores num feed único (`?start=&end=&sources=`). |
 | `GET` | `/api/tasks/calendar/prefs` | Preferências de exibição (cor/visibilidade) de todos os calendários. |
-| `PATCH` | `/api/tasks/calendar/prefs/{calendar_id}` | Atualiza as preferências de um calendário (upsert parcial). |
+| `PATCH` | `/api/tasks/calendar/prefs/{calendar_id}` | Atualiza as preferências de um calendário (upsert parcial); `context` (`personal`\|`work`, spec 038) decide contra qual capacity do Meu Dia os eventos contam. |
 | `GET` | `/api/tasks/calendar/calendars` | Lista os calendários Google da conta (com `is_main`/`is_kaguya`). |
 | `GET` | `/api/tasks/calendar/events` | Eventos Google no intervalo (exclui "Kaguya — Tarefas" e "TickTick"; falha vira lista vazia). |
 | `GET` | `/api/tasks/calendar/gcal-status` | Verifica se o Google Calendar está autenticado (`{connected, reason}`). |
@@ -485,7 +486,7 @@ ganham `source_provider_id`/`done_today_source` no hábito e `source` em cada di
 
 | Método | Rota | O que faz |
 |---|---|---|
-| `GET` | `/api/tasks/my-day` | Ritual do Meu Dia: plano, pendências de ontem, sugestões e capacity (`?date=`; vazio = hoje). |
+| `GET` | `/api/tasks/my-day` | Ritual do Meu Dia: plano, pendências de ontem, sugestões e capacity (`?date=`; vazio = hoje). Inclui também `plano_work`/`plano_personal`, `pendencias_ontem_work`/`_personal`, `sugestoes_work`/`_personal` e `capacity_work`/`capacity_personal` (spec 038) — os campos sem sufixo continuam sendo a união (visão única). |
 | `POST` | `/api/tasks/{task_id}/my-day` | Marca a tarefa no Meu Dia de uma data (body opcional; ausente = hoje). |
 | `DELETE` | `/api/tasks/{task_id}/my-day` | Tira a tarefa do Meu Dia (não a apaga). |
 | `POST` | `/api/tasks/{task_id}/reschedule` | Atalho do ritual de pendências: hoje, amanhã ou fora do Meu Dia. |
@@ -528,6 +529,15 @@ qualquer sessão abandonada antes de responder (crédito no máximo o tempo de f
 | `GET` | `/api/tasks/focus/today` | Resumo do dia local: tempo total focado + número de sessões. |
 | `GET` | `/api/tasks/focus/week` | Série dos últimos 7 dias locais (hoje incluso). |
 | `GET` | `/api/tasks/focus/history` | Sessões concluídas de um dia local (`?date=`; vazio = hoje). |
+
+### Meu Dia — contexto Trabalho/Pessoal (spec 038)
+
+O contexto é propriedade da **lista** (`context` em `/projects`) e do **calendário**
+(`context` em `/calendar/prefs`) — nunca da tarefa (herdado por JOIN, nunca copiado). O motor
+de capacity não muda: `/my-day` só passa a chamar a mesma função 3× (total, trabalho,
+pessoal). Ver as rotas já listadas acima (`/projects`, `/groups/{id}/context`,
+`/calendar/prefs/{id}`, `/my-day`) — nenhuma rota nova exclusiva desta spec além de
+`/groups/{id}/context`.
 
 ---
 

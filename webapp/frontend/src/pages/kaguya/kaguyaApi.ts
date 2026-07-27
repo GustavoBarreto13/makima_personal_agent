@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry, WorkContext } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -45,9 +45,9 @@ export const kaguyaApi = {
   // ── Sidebar / listas / grupos / colunas ──────────────────────────────────
   sidebar: () => api.get<Sidebar>(`${BASE}/sidebar`),
 
-  createProject: (body: { name: string; group_id?: number; color?: string; icon?: string }) =>
+  createProject: (body: { name: string; group_id?: number; color?: string; icon?: string; context?: WorkContext }) =>
     api.post<MutationResult>(`${BASE}/projects`, body),
-  updateProject: (id: number, body: Partial<{ name: string; group_id: number; color: string; icon: string; position: number }>) =>
+  updateProject: (id: number, body: Partial<{ name: string; group_id: number; color: string; icon: string; position: number; context: WorkContext }>) =>
     api.patch<MutationResult>(`${BASE}/projects/${id}`, body),
   deleteProject: (id: number, mode: 'move_to_inbox' | 'delete_tasks') =>
     api.del<MutationResult>(`${BASE}/projects/${id}?mode=${mode}`),
@@ -56,6 +56,9 @@ export const kaguyaApi = {
   updateGroup: (id: number, body: Partial<{ name: string; position: number }>) =>
     api.patch<MutationResult>(`${BASE}/groups/${id}`, body),
   deleteGroup: (id: number) => api.del<MutationResult>(`${BASE}/groups/${id}`),
+  // Ação em massa de contexto Trabalho/Pessoal para todas as listas do grupo (spec 038).
+  setGroupContext: (id: number, context: WorkContext) =>
+    api.post<MutationResult & { updated: number }>(`${BASE}/groups/${id}/context`, { context }),
 
   listColumns: (projectId: number) => api.get<Column[]>(`${BASE}/projects/${projectId}/columns`),
   createColumn: (body: { project_id: number; name: string; is_done_column?: boolean }) =>

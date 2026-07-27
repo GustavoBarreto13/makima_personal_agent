@@ -14,9 +14,12 @@ function fmtMin(min: number): string {
 
 interface CapacityBarProps {
   capacity: CapacityStats
+  // Título alternativo (spec 038) — usado quando a barra representa só um contexto
+  // (Trabalho/Pessoal) em vez do dia inteiro. Default preserva o texto original.
+  title?: string
 }
 
-export function CapacityBar({ capacity }: CapacityBarProps) {
+export function CapacityBar({ capacity, title = 'Cabe no seu dia?' }: CapacityBarProps) {
   const { agenda_min, estimado_min, livre_min, folga_min, excedeu, calendar_ok } = capacity
 
   // Janela útil = livre + agenda (= total da janela 8h–22h = 840 min).
@@ -36,7 +39,7 @@ export function CapacityBar({ capacity }: CapacityBarProps) {
 
   return (
     <div className="kg-capacity">
-      <div className="kg-capacity-title">Cabe no seu dia?</div>
+      <div className="kg-capacity-title">{title}</div>
 
       {/* Números */}
       <div className="kg-capacity-numbers">

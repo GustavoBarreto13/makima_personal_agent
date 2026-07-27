@@ -318,6 +318,18 @@ topbar do shell (sem tarefa). `TodayScreen` (Meu Dia) ganhou a seção "🎯 Foc
 total + contagem de sessões) com uma mini-série de barras dos últimos 7 dias, só aparece se
 houver ao menos uma sessão no período.
 
+**Meu Dia — contexto Trabalho/Pessoal (spec 038):** `TodayScreen` ganha um toggle
+"Dividido/Único" (segmented control, preferência lembrada em `localStorage` — chave
+`kg:myday:view`, mesmo padrão de `readViewMode`/`writeViewMode` já usado em
+`KaguyaShell.tsx`). Em "Dividido" (default), a coluna esquerda mostra um bloco por contexto
+(💼 Trabalho / 🏠 Pessoal — pendências, plano, sugestões filtrados), recolhendo o bloco vazio;
+a coluna direita mostra duas `CapacityBar` (uma por contexto, via o novo prop opcional
+`title`). Em "Único", a tela volta ao layout anterior à spec (uma lista, uma capacity). A
+`DayTimeline` permanece única nos dois modos (FR-007). `ProjectModal` ganha o seletor
+Pessoal/Trabalho (oculto para o Inbox); `GroupModal` ganha a ação em massa "Marcar todas as
+listas do grupo como Pessoal/Trabalho" (spec 038, FR-003); `CalendarsAside` ganha um botão de
+contexto (ícones 💼/🏠) por calendário Google conectado.
+
 **Particularidades:**
 - **DnD** com `@dnd-kit` (única dependência de drag-and-drop do app) — árvore de tarefas, Kanban e Eisenhower.
 - **Inputs custom obrigatórios:** `DatePicker`/`TimePicker`/`MiniCalendar` no lugar dos nativos

@@ -44,6 +44,10 @@ const PATHS: Record<string, ReactNode> = {
   // Documento com linhas ("file-text") — indica que a tarefa tem descrição/nota.
   note: <><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /><path d="M9 9h1M9 13h6M9 17h6" /></>,
 
+  // Contexto Trabalho/Pessoal (spec 038): maleta (trabalho) e casa (pessoal).
+  briefcase: <><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></>,
+  home: <><path d="M3 9.5 12 2l9 7.5" /><path d="M9 22V12h6v10" /><path d="M5 10.5V20a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-9.5" /></>,
+
   // Ícones do Calendário (fatia 019) — adicionados para CalendarsAside, EventPopover e ContextMenu
   // Olho aberto — mostra/esconde um calendário na sidebar
   eye: <><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></>,

@@ -3,7 +3,7 @@
 // escolha mover-para-Inbox vs excluir tarefas (o Inbox não é editável aqui).
 
 import { useState } from 'react'
-import type { Project, Group } from '../types'
+import type { Project, Group, WorkContext } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 
@@ -23,6 +23,8 @@ export function ProjectModal({ mode, project, groups, onClose, onSaved, toast }:
   const [name, setName] = useState(project?.name ?? '')
   const [groupId, setGroupId] = useState<number | null>(project?.group_id ?? null)
   const [icon, setIcon] = useState(project?.icon ?? '')
+  // Trabalho/Pessoal (spec 038) — default Pessoal na criação (FR-001); Inbox nunca edita isso.
+  const [context, setContext] = useState<WorkContext>(project?.context ?? 'personal')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -30,7 +32,7 @@ export function ProjectModal({ mode, project, groups, onClose, onSaved, toast }:
     if (!name.trim()) { toast('O nome não pode ser vazio.', 'err'); return }
     setSaving(true)
     try {
-      const body = { name: name.trim(), group_id: groupId ?? undefined, icon: icon || undefined }
+      const body = { name: name.trim(), group_id: groupId ?? undefined, icon: icon || undefined, context }
       if (mode === 'create') { await kaguyaApi.createProject(body); toast('Lista criada.') }
       else if (project) { await kaguyaApi.updateProject(project.id, body); toast('Lista atualizada.') }
       onSaved(); onClose()
@@ -77,6 +79,25 @@ export function ProjectModal({ mode, project, groups, onClose, onSaved, toast }:
               ))}
             </div>
           </div>
+
+          {/* Contexto Trabalho/Pessoal (spec 038) — o Inbox é sempre Pessoal, sem seletor. */}
+          {!(mode === 'edit' && project?.is_inbox) && (
+            <div className="kg-field">
+              <span className="kg-field-label">Contexto</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className={`kg-btn${context === 'personal' ? ' kg-btn-primary' : ''}`}
+                  style={{ padding: '6px 10px' }}
+                  onClick={() => setContext('personal')}
+                >Pessoal</button>
+                <button
+                  className={`kg-btn${context === 'work' ? ' kg-btn-primary' : ''}`}
+                  style={{ padding: '6px 10px' }}
+                  onClick={() => setContext('work')}
+                >Trabalho</button>
+              </div>
+            </div>
+          )}
 
           {/* Exclusão (não disponível para o Inbox) */}
           {mode === 'edit' && project && !project.is_inbox && (

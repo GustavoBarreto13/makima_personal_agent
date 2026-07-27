@@ -47,8 +47,25 @@ interface TodayScreenProps {
   toast: (msg: string, kind?: 'ok' | 'err') => void
 }
 
+// Visão do Meu Dia: 'split' (Trabalho/Pessoal, default) ou 'single' (visão única — spec 038,
+// US3). Preferência de UI pura em localStorage — mesmo padrão de readViewMode/writeViewMode
+// já usado em KaguyaShell.tsx para lembrar a última visão de lista/grupo (research.md R5).
+type MyDayViewMode = 'split' | 'single'
+function readMyDayView(): MyDayViewMode {
+  try {
+    const v = localStorage.getItem('kg:myday:view')
+    return v === 'single' ? 'single' : 'split'
+  } catch { return 'split' }
+}
+function writeMyDayView(v: MyDayViewMode) {
+  try { localStorage.setItem('kg:myday:view', v) } catch { /* ignore */ }
+}
+
 export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast }: TodayScreenProps) {
   const [data, setData] = useState<MyDayResponse | null>(null)
+  // Visão dividida (Trabalho/Pessoal) ou única (spec 038, US3) — lembrada entre sessões.
+  const [viewMode, setViewMode] = useState<MyDayViewMode>(readMyDayView)
+  const toggleViewMode = (v: MyDayViewMode) => { setViewMode(v); writeMyDayView(v) }
   // loading: só true no 1º carregamento. Soltar um card NÃO ativa o spinner.
   const [loading, setLoading] = useState(true)
   // activeId: id do card de plano em arraste (null = nenhum drag ativo).
@@ -222,6 +239,17 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
   const sugestoes  = data?.sugestoes ?? []
   const capacity   = data?.capacity ?? EMPTY_CAP
 
+  // Divisão por contexto (spec 038, US2) — sempre presente na resposta.
+  const capacityWork     = data?.capacity_work ?? EMPTY_CAP
+  const capacityPersonal = data?.capacity_personal ?? EMPTY_CAP
+  const contextBlocks: Array<{
+    key: 'work' | 'personal'; icon: string; label: string
+    pendencias: Task[]; plano: Task[]; sugestoes: Task[]; capacity: typeof EMPTY_CAP
+  }> = [
+    { key: 'work', icon: '💼', label: 'Trabalho', pendencias: data?.pendencias_ontem_work ?? [], plano: data?.plano_work ?? [], sugestoes: data?.sugestoes_work ?? [], capacity: capacityWork },
+    { key: 'personal', icon: '🏠', label: 'Pessoal', pendencias: data?.pendencias_ontem_personal ?? [], plano: data?.plano_personal ?? [], sugestoes: data?.sugestoes_personal ?? [], capacity: capacityPersonal },
+  ]
+
   // Tarefa ativa no drag (para o DragOverlay seguir o cursor).
   const activeTask = activeId != null ? plano.find(t => t.id === activeId) ?? null : null
 
@@ -260,22 +288,18 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
           </div>
         )}
 
+        {/* Toggle visão dividida/única (spec 038, US3) — preferência lembrada em localStorage */}
+        <div className="kg-myday-viewtoggle">
+          <div className="kg-segment" style={{ width: 180 }}>
+            <button className={`kg-seg-opt${viewMode === 'split' ? ' active' : ''}`} onClick={() => toggleViewMode('split')}>Dividido</button>
+            <button className={`kg-seg-opt${viewMode === 'single' ? ' active' : ''}`} onClick={() => toggleViewMode('single')}>Único</button>
+          </div>
+        </div>
+
         {/* Layout de duas colunas */}
         <div className="kg-day-grid">
           {/* ── Coluna esquerda: ritual ── */}
           <div>
-            {/* Pendências de ontem (só se houver) */}
-            {pendencias.length > 0 && (
-              <div className="kg-day-section">
-                <div className="kg-day-section-head pending">
-                  ↩ Pendências de ontem ({pendencias.length})
-                </div>
-                {pendencias.map(t => (
-                  <ReviewCard key={t.id} task={t} onDone={load} toast={toast} />
-                ))}
-              </div>
-            )}
-
             {/* Experimentos de hoje (US3 — só se houver algum ativo pendente no período) */}
             {dueExperiments.length > 0 && (
               <div className="kg-day-section">
@@ -308,54 +332,141 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
               placeholder="Adicionar ao dia…"
             />
 
-            {/* Plano de hoje */}
-            <div className="kg-day-section" style={{ marginTop: 16 }}>
-              <div className="kg-day-section-head">
-                📋 No plano de hoje ({plano.length})
-              </div>
-              {plano.length === 0 ? (
-                <div className="kg-day-empty">Nada planejado ainda. Arraste sugestões ou adicione acima.</div>
-              ) : (
-                plano.map(t => (
-                  <PlanCard
-                    key={t.id}
-                    task={t}
-                    // isBeingDragged: este card está no cursor → slot original fica semi-transparente.
-                    isBeingDragged={activeId === t.id}
-                    onChanged={load}
-                    onOpen={onOpenTask}
-                    toast={toast}
-                  />
-                ))
-              )}
-            </div>
+            {viewMode === 'single' ? (
+              <>
+                {/* Pendências de ontem (só se houver) */}
+                {pendencias.length > 0 && (
+                  <div className="kg-day-section">
+                    <div className="kg-day-section-head pending">
+                      ↩ Pendências de ontem ({pendencias.length})
+                    </div>
+                    {pendencias.map(t => (
+                      <ReviewCard key={t.id} task={t} onDone={load} toast={toast} />
+                    ))}
+                  </div>
+                )}
 
-            {/* Sugestões (vence em ≤7 dias, fora do plano) */}
-            {sugestoes.length > 0 && (
-              <div className="kg-day-section">
-                <div className="kg-day-section-head">
-                  💡 Sugestões — vence em breve
+                {/* Plano de hoje */}
+                <div className="kg-day-section" style={{ marginTop: 16 }}>
+                  <div className="kg-day-section-head">
+                    📋 No plano de hoje ({plano.length})
+                  </div>
+                  {plano.length === 0 ? (
+                    <div className="kg-day-empty">Nada planejado ainda. Arraste sugestões ou adicione acima.</div>
+                  ) : (
+                    plano.map(t => (
+                      <PlanCard
+                        key={t.id}
+                        task={t}
+                        // isBeingDragged: este card está no cursor → slot original fica semi-transparente.
+                        isBeingDragged={activeId === t.id}
+                        onChanged={load}
+                        onOpen={onOpenTask}
+                        toast={toast}
+                      />
+                    ))
+                  )}
                 </div>
-                {sugestoes.map(t => (
-                  <PlanCard
-                    key={t.id}
-                    task={t}
-                    isSuggestion
-                    onChanged={load}
-                    onOpen={onOpenTask}
-                    toast={toast}
-                  />
-                ))}
-              </div>
+
+                {/* Sugestões (vence em ≤7 dias, fora do plano) */}
+                {sugestoes.length > 0 && (
+                  <div className="kg-day-section">
+                    <div className="kg-day-section-head">
+                      💡 Sugestões — vence em breve
+                    </div>
+                    {sugestoes.map(t => (
+                      <PlanCard
+                        key={t.id}
+                        task={t}
+                        isSuggestion
+                        onChanged={load}
+                        onOpen={onOpenTask}
+                        toast={toast}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              // Visão dividida (spec 038, US2): um bloco por contexto — seção some quando
+              // vazia (sem pendências/plano/sugestões e sem capacity), edge case do spec.md.
+              contextBlocks.map(block => {
+                const isEmpty = block.pendencias.length === 0 && block.plano.length === 0 &&
+                  block.sugestoes.length === 0 && block.capacity.no_plano === 0 &&
+                  block.capacity.estimado_min === 0 && block.capacity.agenda_min === 0
+                if (isEmpty) return null
+                return (
+                  <div key={block.key} className="kg-myday-context-block">
+                    <div className="kg-myday-context-head">{block.icon} {block.label}</div>
+
+                    {block.pendencias.length > 0 && (
+                      <div className="kg-day-section">
+                        <div className="kg-day-section-head pending">
+                          ↩ Pendências de ontem ({block.pendencias.length})
+                        </div>
+                        {block.pendencias.map(t => (
+                          <ReviewCard key={t.id} task={t} onDone={load} toast={toast} />
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="kg-day-section" style={{ marginTop: 16 }}>
+                      <div className="kg-day-section-head">
+                        📋 No plano de hoje ({block.plano.length})
+                      </div>
+                      {block.plano.length === 0 ? (
+                        <div className="kg-day-empty">Nada planejado ainda.</div>
+                      ) : (
+                        block.plano.map(t => (
+                          <PlanCard
+                            key={t.id}
+                            task={t}
+                            isBeingDragged={activeId === t.id}
+                            onChanged={load}
+                            onOpen={onOpenTask}
+                            toast={toast}
+                          />
+                        ))
+                      )}
+                    </div>
+
+                    {block.sugestoes.length > 0 && (
+                      <div className="kg-day-section">
+                        <div className="kg-day-section-head">
+                          💡 Sugestões — vence em breve
+                        </div>
+                        {block.sugestoes.map(t => (
+                          <PlanCard
+                            key={t.id}
+                            task={t}
+                            isSuggestion
+                            onChanged={load}
+                            onOpen={onOpenTask}
+                            toast={toast}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
             )}
           </div>
 
           {/* ── Coluna direita: capacity + timeline (sticky) ── */}
           <div>
-            <CapacityBar capacity={capacity} />
+            {viewMode === 'single' ? (
+              <CapacityBar capacity={capacity} />
+            ) : (
+              <>
+                <CapacityBar capacity={capacityWork} title="Cabe no seu dia de trabalho?" />
+                <CapacityBar capacity={capacityPersonal} title="Cabe no seu dia pessoal?" />
+              </>
+            )}
             {/* DayTimeline usa HourSlots droppables; lógica de drop está no onDragEnd acima.
                 eventos + sources: Google Calendar do dia, já filtrados por visibilidade.
-                onToggleCalendar: persiste pref e dispara reload silencioso (via handleToggleCalendar). */}
+                onToggleCalendar: persiste pref e dispara reload silencioso (via handleToggleCalendar).
+                A timeline permanece ÚNICA nos dois modos (FR-007) — mostra os blocos dos dois contextos juntos. */}
             <DayTimeline
               plano={plano}
               eventos={data?.eventos ?? []}

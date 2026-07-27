@@ -27,6 +27,7 @@ from agents.kaguya.tools_tasks import (  # noqa: F401
 from agents.kaguya.tools_projects import (  # noqa: F401
     get_sidebar, create_project, update_project, delete_project,
     resolve_project_id_by_name,
+    set_group_context,  # ação em massa de contexto Trabalho/Pessoal — spec 038
 )
 # Tags (etiquetas) — fatia 013. Operações incrementais (add/remove) + listar por tag.
 from agents.kaguya.tools_tags import (  # noqa: F401
@@ -276,15 +277,21 @@ def plan_my_day() -> dict:
 def my_day_status() -> str:
     """Retorna um resumo textual do plano + capacity de hoje (pt-BR).
 
+    Quando há tarefas/eventos em algum dos contextos (Trabalho/Pessoal — spec 038),
+    acrescenta os dois blocos ao final: "trabalho: <estimado> de <livre>; pessoal:
+    <estimado> de <livre>" (FR-009) — mesmos números da divisão exibida no webapp.
+
     Returns:
         String formatada para o Telegram, ex.:
-        "Plano de hoje: 5 tarefas · ~3h estimadas · folga de 1h"
+        "Plano de hoje: 5 tarefas · ~3h estimadas · folga de 1h · trabalho: 2h de 6h; pessoal: 1h de 8h"
     """
     from agents.kaguya.tools_tasks import list_my_day
     r = list_my_day()
     cap = r["capacity"]
     plano = r["plano"]
     pendencias = r["pendencias_ontem"]
+    cap_work = r["capacity_work"]
+    cap_personal = r["capacity_personal"]
 
     def fmtmin(m: int) -> str:
         h, mins = divmod(abs(m), 60)
@@ -302,6 +309,12 @@ def my_day_status() -> str:
         partes.append(f"folga de {fmtmin(cap['folga_min'])}")
     if pendencias:
         partes.append(f"{len(pendencias)} pendência(s) de ontem")
+    # Dois blocos por contexto (spec 038) — só aparece quando há algo planejado em algum lado.
+    if cap_work["no_plano"] or cap_personal["no_plano"]:
+        partes.append(
+            f"trabalho: {fmtmin(cap_work['estimado_min'])} de {fmtmin(cap_work['livre_min'])}; "
+            f"pessoal: {fmtmin(cap_personal['estimado_min'])} de {fmtmin(cap_personal['livre_min'])}"
+        )
     return " · ".join(partes)
 
 

@@ -80,7 +80,13 @@ export interface Task {
   waiting_note?: string | null    // por quem/o quê espera (só com gtd_status === 'waiting')
   waiting_since?: string | null   // ISO 8601 — desde quando está aguardando
   context_id?: number | null      // contexto de execução (no máximo um por tarefa)
+  // Trabalho/Pessoal (spec 038) — herdado da lista atual, nunca persistido na tarefa.
+  context?: WorkContext
 }
+
+// Contexto Trabalho/Pessoal (spec 038) — propriedade da LISTA (e do calendário), nunca da
+// tarefa. "personal" é o padrão retrocompatível (FR-010).
+export type WorkContext = 'personal' | 'work'
 
 // Status GTD real de uma tarefa (spec 034) — substitui as tags reservadas #aguardando/#algum-dia.
 export type GtdStatus = 'next_action' | 'waiting' | 'someday'
@@ -117,16 +123,26 @@ export interface TimelineEvent {
   calendar_id: string        // ID do calendário no Google
   calendar_name: string      // Nome legível (ex.: "Gustavo Barreto")
   color: string | null       // Cor do usuário (calendar_prefs) ou null para default
+  context: WorkContext       // Trabalho/Pessoal do calendário de origem (spec 038)
 }
 
 // Resposta do endpoint GET /api/tasks/my-day.
 export interface MyDayResponse {
   date: string              // "YYYY-MM-DD" do plano
-  plano: Task[]             // tarefas selecionadas para hoje (my_day_date == date)
-  pendencias_ontem: Task[]  // abertas de dias anteriores (my_day_date < date)
-  sugestoes: Task[]         // vencem em ≤7 dias, fora do plano
-  capacity: CapacityStats
+  plano: Task[]             // tarefas selecionadas para hoje (my_day_date == date) — união (visão única)
+  pendencias_ontem: Task[]  // abertas de dias anteriores (my_day_date < date) — união
+  sugestoes: Task[]         // vencem em ≤7 dias, fora do plano — união
+  capacity: CapacityStats   // capacity total (visão única)
   eventos: TimelineEvent[]  // eventos do Google Calendar do dia (filtrados por visibilidade)
+  // Divisão por contexto (spec 038, US2) — sempre presentes, podem ser listas vazias.
+  plano_work: Task[]
+  plano_personal: Task[]
+  pendencias_ontem_work: Task[]
+  pendencias_ontem_personal: Task[]
+  sugestoes_work: Task[]
+  sugestoes_personal: Task[]
+  capacity_work: CapacityStats
+  capacity_personal: CapacityStats
 }
 
 // Uma lista (na UI "Lista"; no modelo "project").
@@ -141,6 +157,7 @@ export interface Project {
   has_board: boolean   // tem ao menos uma coluna de Kanban
   open_count: number   // tarefas-pai abertas
   last_reviewed_at?: string | null   // passo 4 da revisão semanal (spec 035)
+  context: WorkContext // Trabalho/Pessoal (spec 038) — Inbox é sempre 'personal'
 }
 
 // Um grupo de listas (pasta da sidebar).
@@ -606,6 +623,9 @@ export interface Calendar {
   primary?: boolean       // calendário "padrão" da conta (ex.: Kaguya Tarefas)
   position?: number       // ordem na sidebar (das prefs)
   writable?: boolean      // true quando o usuário tem permissão owner/writer no Google
+  // Trabalho/Pessoal (spec 038) — só presente/relevante nos calendários "gcal:<id>";
+  // decide contra qual capacity do Meu Dia os eventos deste calendário contam.
+  context?: WorkContext
 }
 
 // CalEvent: item normalizado para o grid (tarefas, eventos gcal, itens cross-agent)
@@ -646,6 +666,7 @@ export interface CalendarPref {
   visible: boolean
   color: string | null
   position: number
+  context: WorkContext  // Trabalho/Pessoal (spec 038) — decide a capacity que os eventos afetam
 }
 
 // Resposta do endpoint GET /api/tasks/calendar/aggregate

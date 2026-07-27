@@ -131,6 +131,7 @@ def get_sidebar() -> dict:
         """
         SELECT
             p.id, p.name, p.group_id, p.color, p.icon, p.is_inbox, p.position,
+            p.context,            -- Pessoal/Trabalho (spec 038) — herdado pelas tarefas via JOIN
             p.last_reviewed_at,   -- passo 4 da revisão semanal (spec 035)
             EXISTS (SELECT 1 FROM task_columns c WHERE c.project_id = p.id) AS has_board,
             (
@@ -222,6 +223,30 @@ def delete_group(group_id: int) -> dict:
     return {"status": "ok", "message": "Grupo excluído; as listas dele ficaram sem grupo."}
 
 
+def set_group_context(group_id: int, context: str) -> dict:
+    """Define o contexto (Pessoal/Trabalho) de todas as listas de um grupo de uma vez (spec 038).
+
+    Ação em massa (FR-003) — um único ``UPDATE``, não um loop chamando ``update_project``
+    por lista. ``AND NOT is_inbox`` é uma salvaguarda defensiva: o Inbox nunca deveria
+    pertencer a um grupo, mas nada no schema impede tecnicamente, e o CHECK do banco
+    (``task_projects_inbox_personal_check``) rejeitaria a linha se ele estivesse lá dentro.
+
+    Args:
+        group_id: Id do grupo.
+        context: ``"personal"`` ou ``"work"``.
+
+    Returns:
+        ``{"status": "ok", "updated": <int>}`` — quantidade de listas afetadas.
+    """
+    if context not in ("personal", "work"):
+        return {"status": "error", "message": "Contexto inválido (use 'personal' ou 'work')."}
+    affected = run_dml(
+        "UPDATE task_projects SET context = %(context)s WHERE group_id = %(gid)s AND NOT is_inbox",
+        {"context": context, "gid": group_id},
+    )
+    return {"status": "ok", "updated": affected}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Listas (projetos)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -230,6 +255,7 @@ def create_project(
     group_id: Optional[int] = None,
     color: Optional[str] = None,
     icon: Optional[str] = None,
+    context: str = "personal",
 ) -> dict:
     """Cria uma lista (projeto).
 
@@ -238,21 +264,24 @@ def create_project(
         group_id: Grupo ao qual ela pertence (opcional).
         color: Cor de exibição (hex/oklch, opcional).
         icon: Emoji ou nome de ícone (opcional).
+        context: ``"personal"`` (padrão, FR-001) ou ``"work"`` — definível já na criação.
 
     Returns:
         ``{"status": "ok", "id": <int>}`` ou erro.
     """
     if not name or not name.strip():
         return {"status": "error", "message": "O nome da lista não pode ser vazio."}
+    if context not in ("personal", "work"):
+        return {"status": "error", "message": "Contexto inválido (use 'personal' ou 'work')."}
     with get_conn() as conn:
         with conn.cursor() as cur:
             position = _next_position(cur, "task_projects", None, None)
             cur.execute(
                 """
-                INSERT INTO task_projects (name, group_id, color, icon, position)
-                VALUES (%s, %s, %s, %s, %s) RETURNING id
+                INSERT INTO task_projects (name, group_id, color, icon, position, context)
+                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
                 """,
-                (name.strip(), group_id, color, icon, position),
+                (name.strip(), group_id, color, icon, position, context),
             )
             new_id = cur.fetchone()[0]
     return {"status": "ok", "id": new_id, "message": f"Lista '{name.strip()}' criada."}
@@ -265,8 +294,9 @@ def update_project(
     color: Optional[str] = None,
     icon: Optional[str] = None,
     position: Optional[int] = None,
+    context: Optional[str] = None,
 ) -> dict:
-    """Renomeia, move de grupo, recolore ou reordena uma lista.
+    """Renomeia, move de grupo, recolore, reordena ou muda o contexto de uma lista.
 
     Observação: passar ``group_id`` explicitamente como None não desvincula (porque o
     default já é None). Para "tirar do grupo" use a UI de mover; aqui só atualizamos o
@@ -275,6 +305,9 @@ def update_project(
     Args:
         project_id: Id da lista.
         name/group_id/color/icon/position: Campos a atualizar (todos opcionais).
+        context: ``"personal"`` ou ``"work"`` (spec 038) — o Inbox recusa ``"work"``
+            (FR-001; o CHECK do banco também garante isso, mas validamos aqui antes para
+            devolver uma mensagem amigável em vez do erro cru do Postgres).
 
     Returns:
         Dicionário de status.
@@ -294,6 +327,15 @@ def update_project(
     if icon is not None:
         sets.append("icon = %(icon)s")
         params["icon"] = icon
+    if context is not None:
+        if context not in ("personal", "work"):
+            return {"status": "error", "message": "Contexto inválido (use 'personal' ou 'work')."}
+        if context == "work":
+            row = run_select("SELECT is_inbox FROM task_projects WHERE id = %(id)s", {"id": project_id})
+            if row and row[0]["is_inbox"]:
+                return {"status": "error", "message": "O Inbox é sempre Pessoal."}
+        sets.append("context = %(context)s")
+        params["context"] = context
     if position is not None:
         sets.append("position = %(position)s")
         params["position"] = position

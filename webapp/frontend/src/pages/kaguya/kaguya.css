@@ -2155,3 +2155,8 @@
 .kg-focus-summary-main { font-size: 14px; font-weight: 600; color: var(--ink); }
 .kg-focus-summary-week { display: flex; gap: 4px; margin-left: auto; }
 .kg-focus-summary-day { width: 18px; border-radius: 3px; background: var(--kg-tint); }
+
+/* ── Meu Dia — contexto Trabalho/Pessoal (spec 038) ─────────────────────── */
+.kg-myday-viewtoggle { display: flex; justify-content: flex-end; margin: 8px 0 4px; }
+.kg-myday-context-block { margin-bottom: 24px; }
+.kg-myday-context-head { font-size: 13px; font-weight: 700; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line-2); }

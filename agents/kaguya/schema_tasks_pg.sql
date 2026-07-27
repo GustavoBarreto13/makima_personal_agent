@@ -652,3 +652,44 @@ CREATE TABLE IF NOT EXISTS focus_prefs (
 
 INSERT INTO focus_prefs (id, focus_min, break_min) VALUES (1, 25, 5)
 ON CONFLICT (id) DO NOTHING;
+
+
+-- ----------------------------------------------------------------------------
+-- task_projects.context + calendar_prefs.context — Meu Dia Trabalho/Pessoal (spec 038)
+-- ----------------------------------------------------------------------------
+-- O contexto de uma TAREFA nunca é uma coluna própria — é sempre herdado por JOIN
+-- da lista atual (task_projects.context). Isso torna "mover de lista" atualizar o
+-- contexto automaticamente, sem trigger nem risco de divergência. Ver
+-- specs/038-meudia-work-context/data-model.md.
+ALTER TABLE task_projects ADD COLUMN IF NOT EXISTS context TEXT NOT NULL DEFAULT 'personal';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'task_projects_context_check'
+    ) THEN
+        ALTER TABLE task_projects ADD CONSTRAINT task_projects_context_check
+            CHECK (context IN ('personal', 'work'));
+    END IF;
+    -- Garantia de SCHEMA (não só aplicação): o Inbox é sempre Pessoal.
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'task_projects_inbox_personal_check'
+    ) THEN
+        ALTER TABLE task_projects ADD CONSTRAINT task_projects_inbox_personal_check
+            CHECK (NOT is_inbox OR context = 'personal');
+    END IF;
+END $$;
+
+-- Contexto por calendário conectado (reaproveita a tabela de prefs da fatia 019 —
+-- mesmo lugar de visible/color/position, não uma tabela nova).
+ALTER TABLE calendar_prefs ADD COLUMN IF NOT EXISTS context TEXT NOT NULL DEFAULT 'personal';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'calendar_prefs_context_check'
+    ) THEN
+        ALTER TABLE calendar_prefs ADD CONSTRAINT calendar_prefs_context_check
+            CHECK (context IN ('personal', 'work'));
+    END IF;
+END $$;
