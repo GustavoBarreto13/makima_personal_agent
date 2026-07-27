@@ -360,6 +360,7 @@ def list_tasks_by_tag(name: str) -> list:
           AND t.parent_id IS NULL
           AND t.deleted_at IS NULL
           AND t.completed_at IS NULL
+          AND p.archived_at IS NULL
         ORDER BY t.due_date NULLS LAST, t.priority DESC, t.position
         """,
         {"name": nome},

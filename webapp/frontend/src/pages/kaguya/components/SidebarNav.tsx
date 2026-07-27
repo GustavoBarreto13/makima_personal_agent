@@ -114,6 +114,20 @@ export function SidebarNav({
   // Filtros de smart-list (não reordenáveis nesta fatia — vêm direto do prop)
   const filters = sidebar?.filters ?? []
 
+  // Arquivar uma lista (spec 039) — remoção otimista da sidebar + toast; sem confirmação
+  // (FR-001: arquivar não move nem apaga nada). Em falha, reverte via onReordered.
+  const archiveList = useCallback(async (project: Project) => {
+    setLocalProjects(prev => prev.filter(p => p.id !== project.id))
+    try {
+      await kaguyaApi.archiveProject(project.id)
+      toast?.(`Lista "${project.name}" arquivada.`)
+      onReordered()
+    } catch {
+      toast?.('Não foi possível arquivar a lista.', 'err')
+      onReordered()  // ressincroniza (desfaz a remoção otimista se o servidor recusou)
+    }
+  }, [onReordered, toast])
+
   // Contadores das views fixas de mercado (spec 034) — re-busca quando a sidebar muda
   // (mesmo gatilho dos contadores de lista, já que ambos refletem o estado das tarefas).
   const [dateCounts, setDateCounts] = useState<DateViewCounts | null>(null)
@@ -403,6 +417,7 @@ export function SidebarNav({
                 project={p}
                 isActive={view === 'list' && param === p.id}
                 onNavigate={onNavigate}
+                onArchive={archiveList}
               />
             ))}
           </SortableContext>
@@ -444,6 +459,7 @@ export function SidebarNav({
                         project={p}
                         isActive={view === 'list' && param === p.id}
                         onNavigate={onNavigate}
+                        onArchive={archiveList}
                       />
                     ))}
                   </SortableContext>
@@ -499,8 +515,12 @@ export function SidebarNav({
         </button>
       ))}
 
-      {/* ── Lixeira ─────────────────────────────────────────────────────────── */}
+      {/* ── Arquivadas / Lixeira ────────────────────────────────────────────── */}
       <div className="kg-nav-label"><span> </span></div>
+      <button className={`kg-nav-item${view === 'archived' ? ' active' : ''}`} onClick={() => onNavigate('archived')}>
+        <span className="kg-nav-emoji"><Icon name="archive" size={16} /></span>
+        <span>Arquivadas</span>
+      </button>
       <button className={`kg-nav-item${view === 'trash' ? ' active' : ''}`} onClick={() => onNavigate('trash')}>
         <span className="kg-nav-emoji"><Icon name="trash" size={16} /></span>
         <span>Lixeira</span>

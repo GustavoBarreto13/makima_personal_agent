@@ -198,6 +198,11 @@
 /* O botão de navegação dentro do wrapper ocupa o espaço restante */
 .kg-nav-item-row .kg-nav-item { flex: 1; }
 
+/* Botão de arquivar (spec 039) — revelado no hover, mesmo padrão do grip */
+.kg-nav-archive-btn { flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: 2px; cursor: pointer; color: var(--ink-4); opacity: 0; transition: opacity 0.15s; border-radius: 4px; background: none; border: none; }
+.kg-nav-archive-btn:hover { color: var(--kg); background: var(--card-2); }
+.kg-nav-item-row:hover .kg-nav-archive-btn { opacity: 1; }
+
 .kg-back { margin-top: auto; padding: 10px 8px; font-size: 12.5px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer; border-top: 1px solid var(--line-2); }
 .kg-back:hover { color: var(--kg); }
 
@@ -1096,6 +1101,18 @@
 .kg-tl-slot.task { background: color-mix(in oklch, var(--kg) 18%, var(--card)); border-left: 3px solid var(--kg); }
 .kg-tl-slot.event { background: var(--card-2); border-left: 3px solid var(--ink-4); cursor: default; }
 .kg-tl-slot-time { font-family: var(--mono); font-size: 9.5px; color: var(--ink-4); }
+/* Local do evento no bloco do Meu Dia (spec 039) — 1 linha truncada, link p/ Maps. */
+.kg-tl-slot-loc {
+  display: block;
+  font-size: 9.5px;
+  color: var(--ink-4);
+  opacity: .8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: underline;
+}
+.kg-tl-slot-loc:hover { opacity: 1; }
 
 /* Estado vazio acolhedor */
 .kg-day-empty { text-align: center; color: var(--ink-3); padding: 32px 20px; font-size: 14px; }
@@ -1612,6 +1629,8 @@
 .cmdk-item .ci-body { flex: 1; min-width: 0; }
 .cmdk-item .ci-title { font-size: 13.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cmdk-item .ci-sub { font-family: var(--mono); font-size: 10px; color: var(--ink-4); margin-top: 1px; }
+/* Badge "arquivada" nos resultados de busca (spec 039, FR-003) */
+.ci-archived-badge { color: var(--kg); }
 .cmdk-item .ci-kbd { font-family: var(--mono); font-size: 10px; color: var(--ink-4); }
 
 /* Item "Criar" (destaque diferenciado). */

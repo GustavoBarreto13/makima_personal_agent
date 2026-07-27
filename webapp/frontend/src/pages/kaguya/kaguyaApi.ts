@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry, WorkContext } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry, WorkContext, ArchivedProject } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -51,6 +51,10 @@ export const kaguyaApi = {
     api.patch<MutationResult>(`${BASE}/projects/${id}`, body),
   deleteProject: (id: number, mode: 'move_to_inbox' | 'delete_tasks') =>
     api.del<MutationResult>(`${BASE}/projects/${id}?mode=${mode}`),
+  // Arquivar/restaurar (spec 039) — distinto de excluir; não mexe em tarefas/colunas.
+  archiveProject: (id: number) => api.post<MutationResult>(`${BASE}/projects/${id}/archive`, {}),
+  restoreProject: (id: number) => api.post<MutationResult>(`${BASE}/projects/${id}/restore`, {}),
+  listArchivedProjects: () => api.get<ArchivedProject[]>(`${BASE}/projects/archived`),
 
   createGroup: (name: string) => api.post<MutationResult>(`${BASE}/groups`, { name }),
   updateGroup: (id: number, body: Partial<{ name: string; position: number }>) =>

@@ -251,6 +251,12 @@ def _build_where_from_rules(rules: dict, default_open: bool = True):
     # Default "só abertas" quando o usuário não filtrou por state
     # — desligável (default_open=False) para o board do Kanban, que gere open/done por coluna.
     base = "t.deleted_at IS NULL"
+    # p.archived_at IS NULL (spec 039): listas arquivadas somem das smart-lists/views fixas.
+    # Só quando default_open=True — é o único caso cuja query faz JOIN task_projects p
+    # (_run_filter_rules); o board do Kanban (default_open=False) não tem esse JOIN e já é
+    # escopado a um project_id que o usuário abriu diretamente.
+    if default_open:
+        base += " AND p.archived_at IS NULL"
     if default_open and not has_state:
         base += " AND t.completed_at IS NULL"
 

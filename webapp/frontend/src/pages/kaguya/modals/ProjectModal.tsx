@@ -49,6 +49,24 @@ export function ProjectModal({ mode, project, groups, onClose, onSaved, toast }:
     } catch { toast('Não foi possível excluir a lista.', 'err') }
   }
 
+  // Arquiva a lista sem tocar tarefas/colunas (spec 039) — reversível, sem confirmação extra.
+  const archive = async () => {
+    if (!project) return
+    try {
+      await kaguyaApi.archiveProject(project.id)
+      toast('Lista arquivada.'); onSaved(); onClose()
+    } catch { toast('Não foi possível arquivar a lista.', 'err') }
+  }
+
+  // Restaura uma lista arquivada (chamada a partir da tela de Arquivadas).
+  const restore = async () => {
+    if (!project) return
+    try {
+      await kaguyaApi.restoreProject(project.id)
+      toast('Lista restaurada.'); onSaved(); onClose()
+    } catch { toast('Não foi possível restaurar a lista.', 'err') }
+  }
+
   return (
     <div className="kg-scrim" onClick={onClose}>
       <div className="kg-modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
@@ -99,9 +117,18 @@ export function ProjectModal({ mode, project, groups, onClose, onSaved, toast }:
             </div>
           )}
 
-          {/* Exclusão (não disponível para o Inbox) */}
+          {/* Arquivar/restaurar (spec 039) + exclusão (não disponível para o Inbox) */}
           {mode === 'edit' && project && !project.is_inbox && (
             <div className="kg-field" style={{ borderTop: '1px solid var(--line-2)', paddingTop: 12 }}>
+              {project.archived_at ? (
+                <button className="kg-btn kg-btn-primary" onClick={restore} style={{ marginBottom: 8 }}>
+                  <Icon name="loop" size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Restaurar lista
+                </button>
+              ) : (
+                <button className="kg-btn" onClick={archive} style={{ marginBottom: 8 }}>
+                  <Icon name="archive" size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Arquivar lista
+                </button>
+              )}
               {!confirmingDelete ? (
                 <button className="kg-btn kg-btn-danger" onClick={() => setConfirmingDelete(true)}>
                   <Icon name="trash" size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />Excluir lista

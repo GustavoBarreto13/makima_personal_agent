@@ -104,6 +104,31 @@ def resolve_project_id_by_name(name: str) -> Optional[int]:
     return None
 
 
+def resolve_project_id_by_name_any(name: str) -> Optional[tuple[int, bool]]:
+    """Igual a ``resolve_project_id_by_name``, mas também acha listas arquivadas (spec 039).
+
+    Usado só no caminho de erro (FR-008): quando o resolve normal falha, tentamos aqui
+    para distinguir "não existe" de "existe mas está arquivada" e oferecer restaurar.
+
+    Args:
+        name: Nome (ou prefixo) da lista, como o usuário falou.
+
+    Returns:
+        Tupla ``(id, is_archived)`` da lista casada, ou ``None`` se nada casar.
+    """
+    if not name or not name.strip():
+        return None
+    norm = name.strip().lower()
+    rows = run_select("SELECT id, name, archived_at FROM task_projects ORDER BY position")
+    for r in rows:
+        if r["name"].lower() == norm:
+            return r["id"], r["archived_at"] is not None
+    for r in rows:
+        if r["name"].lower().startswith(norm):
+            return r["id"], r["archived_at"] is not None
+    return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidebar (listagem agregada)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -405,6 +430,81 @@ def delete_project(project_id: int, mode: str) -> dict:
             cur.execute("UPDATE task_projects SET archived_at = now() WHERE id = %s", (project_id,))
 
     return {"status": "ok", "message": f"Lista excluída ({detail})."}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Arquivar / restaurar listas (spec 039) — distinto de delete_project: aqui as
+# tarefas e as colunas do board NUNCA são tocadas, só a lista some das views.
+# ─────────────────────────────────────────────────────────────────────────────
+def archive_project(project_id: int) -> dict:
+    """Arquiva uma lista sem mover nem apagar suas tarefas (FR-001).
+
+    Reusa a mesma coluna ``archived_at`` que ``delete_project`` já gravava
+    internamente (research.md R1) — a diferença é que aqui nada mais é tocado:
+    tarefas e colunas do board continuam exatamente como estavam.
+
+    Args:
+        project_id: Id da lista a arquivar.
+
+    Returns:
+        Dicionário de status. Erro se for o Inbox, a lista não existir ou já
+        estiver arquivada.
+    """
+    row = run_select(
+        "SELECT is_inbox, archived_at FROM task_projects WHERE id = %(id)s", {"id": project_id}
+    )
+    if not row:
+        return {"status": "error", "message": "Lista não encontrada."}
+    if row[0]["is_inbox"]:
+        return {"status": "error", "message": "O Inbox não pode ser arquivado."}
+    if row[0]["archived_at"] is not None:
+        return {"status": "error", "message": "Esta lista já está arquivada."}
+
+    run_dml("UPDATE task_projects SET archived_at = now() WHERE id = %(id)s", {"id": project_id})
+    return {"status": "ok", "message": "Lista arquivada."}
+
+
+def restore_project(project_id: int) -> dict:
+    """Restaura uma lista arquivada — volta íntegra à navegação (FR-005).
+
+    Args:
+        project_id: Id da lista a restaurar.
+
+    Returns:
+        Dicionário de status. Erro se a lista não existir ou já estiver ativa.
+    """
+    row = run_select(
+        "SELECT archived_at FROM task_projects WHERE id = %(id)s", {"id": project_id}
+    )
+    if not row:
+        return {"status": "error", "message": "Lista não encontrada."}
+    if row[0]["archived_at"] is None:
+        return {"status": "error", "message": "Esta lista não está arquivada."}
+
+    run_dml("UPDATE task_projects SET archived_at = NULL WHERE id = %(id)s", {"id": project_id})
+    return {"status": "ok", "message": "Lista restaurada."}
+
+
+def list_archived_projects() -> list[dict]:
+    """Lista as listas arquivadas, com data de arquivamento e contagem de tarefas (FR-004).
+
+    Returns:
+        Lista de dicts ``{id, name, group_id, color, icon, archived_at, task_count}``,
+        ordenada da mais recentemente arquivada para a mais antiga. **Listagem**.
+    """
+    return run_select(
+        """
+        SELECT
+            p.id, p.name, p.group_id, p.color, p.icon, p.archived_at,
+            (
+                SELECT COUNT(*) FROM tasks t
+                WHERE t.project_id = p.id AND t.deleted_at IS NULL
+            ) AS task_count
+        FROM task_projects p
+        WHERE p.archived_at IS NOT NULL
+        ORDER BY p.archived_at DESC
+        """
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

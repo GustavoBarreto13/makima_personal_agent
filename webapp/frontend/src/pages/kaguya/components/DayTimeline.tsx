@@ -16,6 +16,7 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import type { Task, TimelineEvent, Calendar } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
+import { mapsLinkFor } from '../lib/maps'
 // localISO: monta ISO 8601 com offset local sem usar toISOString() (fuso UTC-3).
 // toISO: data "AAAA-MM-DD" em fuso local (extraída do start_at da task).
 import { localISO, toISO } from '../lib/dateUtils'
@@ -288,6 +289,19 @@ export function DayTimeline({ plano, eventos, sources, onToggleCalendar, onOpen,
               <div className="kg-tl-slot-time">
                 {fmtTime(ev.start)}{ev.end ? `–${fmtTime(ev.end)}` : ''}
               </div>
+              {/* Local do evento (spec 039) — link p/ Maps; stopPropagation p/ não brigar com o drag do bloco */}
+              {ev.location && (
+                <a
+                  className="kg-tl-slot-loc"
+                  href={mapsLinkFor(ev.location)}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  title={ev.location}
+                >
+                  {ev.location}
+                </a>
+              )}
             </div>
           )
         })}

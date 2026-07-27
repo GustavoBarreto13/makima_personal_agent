@@ -30,6 +30,7 @@ import { TodayScreen } from './screens/TodayScreen'
 import { ListScreen } from './screens/ListScreen'
 import { KanbanScreen } from './screens/KanbanScreen'
 import { TrashScreen } from './screens/TrashScreen'
+import { ArchivedProjectsScreen } from './screens/ArchivedProjectsScreen'
 import { FilterScreen } from './screens/FilterScreen'
 import { DateViewScreen } from './screens/DateViewScreen'
 import { CalendarScreen } from './screens/CalendarScreen'
@@ -245,7 +246,7 @@ export function KaguyaShell() {
   const titleMap: Record<KaguyaView, string> = {
     today: 'Meu Dia', kanban: project?.name ?? 'Kanban', list: project?.name ?? 'Lista',
     calendar: 'Calendário', eisenhower: 'Eisenhower', habits: 'Hábitos',
-    experiments: 'Experimentos', goals: 'Metas', trash: 'Lixeira',
+    experiments: 'Experimentos', goals: 'Metas', trash: 'Lixeira', archived: 'Arquivadas',
     filter: filterName,
     // 'group': nome do grupo no Kanban agregado.
     group: currentGroup?.name ?? 'Grupo',
@@ -323,6 +324,21 @@ export function KaguyaShell() {
       />
     )
     if (view === 'trash') return <TrashScreen toast={showToast} />
+    if (view === 'archived') return (
+      <ArchivedProjectsScreen
+        toast={showToast}
+        onEditProject={(ap) => setProjectModal({
+          mode: 'edit',
+          // ArchivedProject não tem todos os campos de Project (não vem na sidebar) —
+          // completa com defaults inertes só para o ProjectModal poder editar/excluir.
+          project: {
+            id: ap.id, name: ap.name, group_id: ap.group_id, color: ap.color, icon: ap.icon,
+            is_inbox: false, position: 0, has_board: false, open_count: ap.task_count,
+            context: 'personal', archived_at: ap.archived_at,
+          },
+        })}
+      />
+    )
     if (view === 'habits') return (
       <HabitsScreen
         reloadKey={reloadKey}

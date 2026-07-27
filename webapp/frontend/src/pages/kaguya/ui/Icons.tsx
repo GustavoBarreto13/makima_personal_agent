@@ -44,6 +44,9 @@ const PATHS: Record<string, ReactNode> = {
   // Documento com linhas ("file-text") — indica que a tarefa tem descrição/nota.
   note: <><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /><path d="M9 9h1M9 13h6M9 17h6" /></>,
 
+  // Caixa de arquivo (spec 039) — arquivar lista / tela de arquivadas.
+  archive: <><rect x="2" y="4" width="20" height="5" rx="1" /><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9" /><path d="M10 13h4" /></>,
+
   // Contexto Trabalho/Pessoal (spec 038): maleta (trabalho) e casa (pessoal).
   briefcase: <><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></>,
   home: <><path d="M3 9.5 12 2l9 7.5" /><path d="M9 22V12h6v10" /><path d="M5 10.5V20a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-9.5" /></>,

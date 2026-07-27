@@ -18,6 +18,7 @@ import type { CSSProperties } from 'react'
 import type { CalEvent, Calendar } from '../types'
 import { Icon } from '../ui/Icons'
 import { kaguyaApi, CAL_SWATCHES, isGcal, gcalCalendarId } from '../kaguyaApi'
+import { mapsLinkFor } from '../lib/maps'
 import { DURATIONS, snapDuration } from '../lib/durations'
 // localISO: monta ISO 8601 com offset local sem toISOString() (fuso UTC-3).
 import { localISO } from '../lib/dateUtils'
@@ -288,10 +289,10 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopover
             </div>
           )}
 
-          {/* Localização (quando disponível) */}
+          {/* Localização (quando disponível) — link p/ Google Maps (ou a própria URL, se for um link — spec 039) */}
           {ev.loc && (
             <div className="cpop-meta">
-              <span>{ev.loc}</span>
+              <a href={mapsLinkFor(ev.loc)} target="_blank" rel="noreferrer">{ev.loc}</a>
             </div>
           )}
 

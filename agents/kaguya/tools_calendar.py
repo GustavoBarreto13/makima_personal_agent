@@ -59,6 +59,7 @@ def list_tasks_in_range(start_date: str, end_date: str, project_id: Optional[int
         JOIN task_projects p ON p.id = t.project_id
         LEFT JOIN tasks mae ON mae.id = t.parent_id
         WHERE t.deleted_at IS NULL
+          AND p.archived_at IS NULL
           AND t.due_date BETWEEN %(start)s AND %(end)s
           {proj_clause}
         ORDER BY t.due_date, t.due_time NULLS LAST, t.priority DESC, t.position
@@ -88,6 +89,7 @@ def list_tasks_in_range(start_date: str, end_date: str, project_id: Optional[int
         JOIN task_projects p ON p.id = t.project_id
         WHERE r.active
           AND t.deleted_at IS NULL
+          AND p.archived_at IS NULL
           AND t.due_date IS NOT NULL
           {proj_clause}
         """,

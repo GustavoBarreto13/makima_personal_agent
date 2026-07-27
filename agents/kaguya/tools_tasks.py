@@ -622,6 +622,7 @@ def list_tasks_today() -> dict:
           AND t.completed_at IS NULL
           AND t.due_date IS NOT NULL
           AND t.due_date <= CURRENT_DATE
+          AND p.archived_at IS NULL
         ORDER BY t.due_date, t.priority DESC, t.position
         """
     )
@@ -659,6 +660,7 @@ def list_eisenhower_tasks() -> list[dict]:
         WHERE t.parent_id IS NULL
           AND t.completed_at IS NULL
           AND t.deleted_at IS NULL
+          AND p.archived_at IS NULL
         ORDER BY
             t.due_date ASC NULLS LAST,
             t.priority DESC,
@@ -672,17 +674,22 @@ def list_eisenhower_tasks() -> list[dict]:
 def search_tasks(query: str) -> list[dict]:
     """Busca tarefas abertas por texto no título ou na descrição (ILIKE, case-insensitive).
 
+    Única view que continua trazendo tarefas de listas arquivadas (FR-003, spec 039) — a
+    busca global "acha tudo"; cada item sinaliza a origem via ``archived``.
+
     Args:
         query: Termo de busca.
 
     Returns:
-        Lista plana de tarefas abertas que casam, com ``project_name``. **Listagem**.
+        Lista plana de tarefas abertas que casam, com ``project_name`` e ``archived``
+        (``True`` quando a lista dona está arquivada). **Listagem**.
     """
     if not query or not query.strip():
         return []
     rows = run_select(
         f"""
-        SELECT {_qualified("t")}, p.name AS project_name
+        SELECT {_qualified("t")}, p.name AS project_name,
+               p.archived_at IS NOT NULL AS project_archived
         FROM tasks t JOIN task_projects p ON p.id = t.project_id
         WHERE t.deleted_at IS NULL AND t.completed_at IS NULL
           AND (t.title ILIKE %(q)s OR t.description ILIKE %(q)s)
@@ -694,6 +701,7 @@ def search_tasks(query: str) -> list[dict]:
     for r in rows:
         item = _serialize_task(r)
         item["project_name"] = r["project_name"]
+        item["archived"] = bool(r["project_archived"])
         out.append(item)
     out = _attach_recurrence(out)
     # Anexa as tags para os resultados da busca também mostrarem os chips.
@@ -2073,7 +2081,7 @@ def _gcal_events_for_day(day_str: str) -> tuple[list[dict], list[tuple[int, int]
         Tupla de cinco valores:
             - eventos_serial: lista de dicts prontos para serialização JSON.
               Cada item: {id, title, start, end, all_day, calendar_id,
-              calendar_name, color, context}.
+              calendar_name, color, context, location}.
             - eventos_tuplas: lista de (inicio_min, fim_min) em minutos desde
               a meia-noite BRT, apenas para eventos com hora (all_day=False).
               Usados por compute_capacity (capacity total, visão única).
@@ -2123,6 +2131,9 @@ def _gcal_events_for_day(day_str: str) -> tuple[list[dict], list[tuple[int, int]
                 "calendar_name": ev.get("calendar_name", ""),
                 "color":         pref.get("color"),  # None → usa cor padrão no frontend
                 "context":       context,
+                # local do evento (spec 039) — já vinha em `ev` (gcal._format_event), só
+                # não era copiado aqui; consumido pelo bloco do Meu Dia + link do Maps.
+                "location":      ev.get("location", ""),
             }
             eventos_serial.append(item)
 
@@ -2199,6 +2210,7 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         WHERE t.my_day_date = %(hoje)s
           AND t.completed_at IS NULL
           AND t.deleted_at IS NULL
+          AND p.archived_at IS NULL
         ORDER BY t.start_at NULLS LAST, t.position
         """,
         {"hoje": hoje_str},
@@ -2214,6 +2226,7 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         WHERE t.my_day_date < %(hoje)s
           AND t.completed_at IS NULL
           AND t.deleted_at IS NULL
+          AND p.archived_at IS NULL
         ORDER BY t.my_day_date, t.position
         """,
         {"hoje": hoje_str},
@@ -2232,6 +2245,7 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
           AND (t.my_day_date IS NULL OR t.my_day_date != %(hoje)s)
           AND t.completed_at IS NULL
           AND t.deleted_at IS NULL
+          AND p.archived_at IS NULL
         ORDER BY t.due_date, t.priority DESC
         """,
         {"hoje": hoje_str, "amanha": amanha_str},

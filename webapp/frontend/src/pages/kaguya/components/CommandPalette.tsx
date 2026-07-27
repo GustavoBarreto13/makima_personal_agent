@@ -278,7 +278,10 @@ export function CommandPalette({
                 <div className="ci-body">
                   <div className="ci-title">{it.task.title}</div>
                   <div className="ci-sub">
-                    {proj?.name ?? ''}{it.task.due_date ? ` · ${it.task.due_date.slice(8)}/${it.task.due_date.slice(5, 7)}` : ''}
+                    {proj?.name ?? it.task.project_name ?? ''}
+                    {it.task.due_date ? ` · ${it.task.due_date.slice(8)}/${it.task.due_date.slice(5, 7)}` : ''}
+                    {/* Sinaliza origem arquivada (spec 039, FR-003) — a busca é a única view que continua achando essas tarefas */}
+                    {it.task.archived && <span className="ci-archived-badge"> · arquivada</span>}
                   </div>
                 </div>
               </div>

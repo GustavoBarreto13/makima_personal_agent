@@ -26,8 +26,9 @@ from agents.kaguya.tools_tasks import (  # noqa: F401
 )
 from agents.kaguya.tools_projects import (  # noqa: F401
     get_sidebar, create_project, update_project, delete_project,
-    resolve_project_id_by_name,
+    resolve_project_id_by_name, resolve_project_id_by_name_any,
     set_group_context,  # ação em massa de contexto Trabalho/Pessoal — spec 038
+    archive_project, restore_project, list_archived_projects,  # spec 039
 )
 # Tags (etiquetas) — fatia 013. Operações incrementais (add/remove) + listar por tag.
 from agents.kaguya.tools_tags import (  # noqa: F401
@@ -117,8 +118,10 @@ def list_tasks_by_project(project: Union[int, str], include_completed: bool = Fa
         include_completed: Se True, inclui também as concluídas.
 
     Returns:
-        Lista de tarefas (com subtarefas aninhadas), ou ``{"status": "error", ...}``
-        se o nome não casar nenhuma lista.
+        Lista de tarefas (com subtarefas aninhadas), ou ``{"status": "error", ...}`` se o
+        nome não casar nenhuma lista viva — se casar uma lista **arquivada**, o erro
+        informa isso e oferece restaurar em vez do genérico "não encontrada" (FR-008,
+        spec 039).
     """
     if isinstance(project, int):
         pid = project
@@ -127,6 +130,14 @@ def list_tasks_by_project(project: Union[int, str], include_completed: bool = Fa
     else:
         pid = resolve_project_id_by_name(str(project))
     if pid is None:
+        # Não achou entre as vivas — tenta entre TODAS (incl. arquivadas) para distinguir
+        # "não existe" de "existe mas está arquivada" antes de desistir.
+        found = resolve_project_id_by_name_any(str(project)) if not isinstance(project, int) else None
+        if found and found[1]:
+            return {
+                "status": "error",
+                "message": f"A lista '{project}' está arquivada. Restaure-a (id {found[0]}) antes de usar.",
+            }
         return {"status": "error", "message": f"Lista '{project}' não encontrada."}
     return list_tasks(pid, include_completed)
 

@@ -23,6 +23,7 @@ from mcp.client.stdio import get_default_environment
 # Fachada de tools da Kaguya (camada de lógica + cross-agent). Nenhuma API externa de tarefas.
 from agents.kaguya.tools import (
     list_projects, create_project, update_project, delete_project,
+    archive_project, restore_project, list_archived_projects,
     list_tasks_today, list_tasks_by_project, search_tasks,
     create_task, update_task, complete_task, reopen_task, delete_task, restore_task,
     set_task_recurrence, clear_recurrence,
@@ -218,6 +219,16 @@ _INSTRUCTION = """
       mode="move_to_inbox" (mover pro Inbox) ou mode="delete_tasks" (mandar pra lixeira).
     - Tarefas excluídas vão para a lixeira (restore_task reverte).
 
+    ARQUIVAR LISTAS (spec 039 — diferente de excluir):
+    - archive_project(id): some da navegação e de TODAS as views (Hoje, Meu Dia, matriz,
+      calendário, smart-lists) SEM mover nem apagar nenhuma tarefa — reversível a qualquer
+      momento. Não precisa de confirmação (não é destrutivo). Nunca funciona no Inbox.
+    - restore_project(id): traz a lista de volta, íntegra.
+    - list_archived_projects(): lista as arquivadas (para o usuário escolher qual restaurar).
+    - Se o usuário citar pelo nome uma lista que está arquivada (ex.: criar/listar tarefa
+      nela), list_tasks_by_project já avisa isso e sugere restore_project — ofereça
+      restaurar antes de desistir.
+
     MATRIZ DE EISENHOWER (fatia 017):
     - A Eisenhower é uma **view derivada** — não tem campo novo. Classifica as tarefas
       abertas em 4 quadrantes usando a mesma régua do webapp:
@@ -343,6 +354,8 @@ def create_kaguya_agent() -> Agent:
         tools=[
             # Listas e tarefas (camada de lógica própria)
             list_projects, create_project, update_project, delete_project,
+            # Arquivar/restaurar listas (spec 039) — distinto de excluir
+            archive_project, restore_project, list_archived_projects,
             list_tasks_today, list_tasks_by_project, search_tasks,
             create_task, update_task, complete_task, reopen_task, delete_task, restore_task,
             # Recorrência (Fase 2)

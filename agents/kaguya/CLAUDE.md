@@ -471,6 +471,45 @@ Persistência: 2 colunas novas em tabelas já existentes (`task_projects.context
 
 ---
 
+### Arquivar listas + localização nos eventos (spec 039)
+
+**Arquivar (`archive_project`/`restore_project`/`list_archived_projects`, em
+`tools_projects.py`) reusa a coluna `task_projects.archived_at` que já existia** —
+`delete_project` já a gravava internamente (some da navegação), mas nunca era exposta como
+um fluxo próprio nem tinha restauração. A diferença chave: `archive_project` **não move nem
+apaga** tarefas/colunas (diferente de `delete_project`, que sempre reaponta/soft-deleta e
+apaga o board); `restore_project` zera o campo. Nenhuma migração de schema.
+
+**Ponto único de correção**: a maioria das views operacionais (smart-lists salvas, as 5
+views fixas de `tools_views.py`, e o filtro de Kanban view) converge para
+`tools_filters._build_where_from_rules()` — um único `AND p.archived_at IS NULL` no `base`
+(condicionado a `default_open=True`, o único caso com `JOIN task_projects p`) resolve todas
+elas de uma vez. Os pontos que têm query própria (`list_tasks_in_range` no
+`tools_calendar.py`, `list_tasks_by_tag` no `tools_tags.py`, `list_tasks_today` e
+`list_eisenhower_tasks` e as 3 queries de `list_my_day` no `tools_tasks.py`) ganharam o mesmo
+filtro individualmente. A suspensão de recorrência (FR-006) é efeito colateral de
+`list_tasks_in_range` já filtrar — a tarefa-mãe da série simplesmente não entra mais na
+consulta que alimenta `project_occurrences`.
+
+**Exceção: `search_tasks`** continua trazendo tarefas de listas arquivadas (FR-003 — a busca
+"acha tudo") e acrescenta `archived: bool` no item serializado para o frontend sinalizar a
+origem.
+
+**Telegram (FR-008)**: `resolve_project_id_by_name` (usado por `create_task`/
+`list_tasks_by_project` quando o usuário fala o nome) continua só achando listas vivas.
+`resolve_project_id_by_name_any` (novo, sem o filtro) é usado só no caminho de erro de
+`list_tasks_by_project`, para distinguir "não existe" de "existe mas está arquivada" e
+sugerir `restore_project`.
+
+**Localização nos eventos**: `gcal._format_event()` já normalizava `location` de todo evento
+— chegava à agenda (`CalendarScreen`) e ao popover (`EventPopover`), mas
+`_gcal_events_for_day()` (o único caminho do Meu Dia) descartava o campo. Fix de uma linha.
+O link para o Google Maps é uma função pura no frontend
+(`lib/maps.ts::mapsLinkFor`) — usa a busca universal do Maps (sem chave de API) ou a própria
+URL quando o local já é um link (Google Meet etc.).
+
+---
+
 ## Tools expostas ao agente (`tools.py`)
 
 | Tool | Origem |
@@ -491,6 +530,7 @@ Persistência: 2 colunas novas em tabelas já existentes (`task_projects.context
 | `check_in_habit(habit, value?)` | check-in de hoje por id **ou** nome; ecoa o score recalculado (consistência/tendência) |
 | `remove_check_in(habit_id)` / `habit_status(habit?)` | desfaz o check-in / score em 3 dimensões (um ou todos) |
 | `create_project`, `update_project`, `delete_project` | listas |
+| `archive_project`, `restore_project`, `list_archived_projects` | arquivar/restaurar lista sem tocar tarefas/colunas (spec 039) |
 | **`complete_payment_task`** | cross-agent (Kaguya + Nami) — atômico |
 | **`create_expense_reminder`** | cross-agent — cria lembrete no Postgres |
 | `plan_my_day()` | Meu Dia completo (plano + pendências + sugestões + capacity, total e por contexto Trabalho/Pessoal) — fatia 016 + spec 038. Plano/pendências/sugestões incluem **subtarefas datadas** (spec 028); sub-itens trazem `parent_title` para o badge ↳ |

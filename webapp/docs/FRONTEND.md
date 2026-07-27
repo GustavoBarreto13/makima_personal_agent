@@ -330,6 +330,18 @@ Pessoal/Trabalho (oculto para o Inbox); `GroupModal` ganha a ação em massa "Ma
 listas do grupo como Pessoal/Trabalho" (spec 038, FR-003); `CalendarsAside` ganha um botão de
 contexto (ícones 💼/🏠) por calendário Google conectado.
 
+**Arquivar listas + localização nos eventos (spec 039):** `SortableListItem` ganha um botão
+de arquivar revelado no hover (ao lado do grip), 1 clique e sem confirmação (arquivar não
+move/apaga nada) — chama `archiveProject` direto. `ProjectModal` ganha "Arquivar lista" (ou
+"Restaurar lista" quando já arquivada) ao lado da exclusão. Nova tela
+`ArchivedProjectsScreen` (view `'archived'`, item "Arquivadas" na sidebar perto da Lixeira,
+mesmo padrão de `TrashScreen`) lista as arquivadas com contagem de tarefas + data, com
+Restaurar e Editar (reaproveita o `ProjectModal` para a exclusão definitiva). Resultados do
+Command Palette (busca global) mostram "· arquivada" quando a tarefa vem de uma lista
+arquivada. O local do evento (agenda, popover e agora também Meu Dia) virou link clicável
+para o Google Maps via `lib/maps.ts::mapsLinkFor` (abre a própria URL se o local já for um
+link, ex.: Google Meet).
+
 **Particularidades:**
 - **DnD** com `@dnd-kit` (única dependência de drag-and-drop do app) — árvore de tarefas, Kanban e Eisenhower.
 - **Inputs custom obrigatórios:** `DatePicker`/`TimePicker`/`MiniCalendar` no lugar dos nativos

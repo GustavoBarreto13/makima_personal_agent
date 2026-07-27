@@ -20,11 +20,13 @@ interface SortableListItemProps {
   isActive: boolean
   // Callback de navegação chamado ao clicar no botão da lista
   onNavigate: (view: KaguyaView, param?: number | null) => void
+  // Arquiva a lista direto do hover (spec 039, SC-005 — sem confirmação, sem abrir modal)
+  onArchive?: (project: Project) => void
 }
 
 // ── Componente ────────────────────────────────────────────────────────────────
 
-export function SortableListItem({ project, isActive, onNavigate }: SortableListItemProps) {
+export function SortableListItem({ project, isActive, onNavigate, onArchive }: SortableListItemProps) {
 
   // O id é prefixado com "proj:" para distinguir de ids de grupos (`group:`)
   // dentro do mesmo DndContext — evita colisão quando os números coincidem.
@@ -74,6 +76,20 @@ export function SortableListItem({ project, isActive, onNavigate }: SortableList
         <span>{project.name}</span>
         {project.open_count > 0 && <span className="kg-nav-count">{project.open_count}</span>}
       </button>
+
+      {/* Arquivar — some no hover, ao lado do grip (spec 039). Sem confirmação (FR-001):
+          arquivar não move nem apaga nada, então é seguro ser 1 clique direto. */}
+      {onArchive && (
+        <button
+          type="button"
+          className="kg-nav-archive-btn"
+          onClick={(e) => { e.stopPropagation(); onArchive(project) }}
+          aria-label="Arquivar lista"
+          title="Arquivar lista"
+        >
+          <Icon name="archive" size={13} />
+        </button>
+      )}
     </div>
   )
 }

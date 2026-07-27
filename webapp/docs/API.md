@@ -303,6 +303,9 @@ estão nos contratos das specs: `specs/011-tasks-mvp/contracts/`,
 | `POST` | `/api/tasks/projects` | Cria uma lista (`context` opcional — `personal` padrão ou `work`, spec 038). |
 | `PATCH` | `/api/tasks/projects/{project_id}` | Edita uma lista (renomear, mover de grupo, cor/ícone, reordenar, `context` — Inbox recusa `work`). |
 | `DELETE` | `/api/tasks/projects/{project_id}` | Exclui uma lista; `?mode=move_to_inbox\|delete_tasks` decide o destino das tarefas (Inbox → 400). |
+| `GET` | `/api/tasks/projects/archived` | Lista as listas arquivadas, com data de arquivamento e contagem de tarefas (spec 039). |
+| `POST` | `/api/tasks/projects/{project_id}/archive` | Arquiva uma lista sem mover/apagar tarefas nem colunas (spec 039). Inbox → 400. |
+| `POST` | `/api/tasks/projects/{project_id}/restore` | Restaura uma lista arquivada (spec 039). |
 | `POST` | `/api/tasks/groups` | Cria um grupo de listas. |
 | `PATCH` | `/api/tasks/groups/{group_id}` | Renomeia/reordena um grupo. |
 | `DELETE` | `/api/tasks/groups/{group_id}` | Exclui um grupo (as listas dele ficam sem grupo). |
@@ -320,7 +323,7 @@ estão nos contratos das specs: `specs/011-tasks-mvp/contracts/`,
 | `GET` | `/api/tasks` | Lista as tarefas de uma lista, com subtarefas aninhadas (`?project_id=&include_completed=`). |
 | `GET` | `/api/tasks/today` | Tarefas de hoje + vencidas (`{overdue, today}`). |
 | `GET` | `/api/tasks/eisenhower` | Tarefas-pai abertas para a view Eisenhower (classificação derivada no front). |
-| `GET` | `/api/tasks/search` | Busca tarefas abertas por texto (`?q=`). |
+| `GET` | `/api/tasks/search` | Busca tarefas abertas por texto (`?q=`). Única view que também traz tarefas de listas arquivadas — cada item ganha `archived: bool` (spec 039, FR-003). |
 | `GET` | `/api/tasks/trash` | Lista a lixeira (soft delete), opcionalmente por lista. |
 | `GET` | `/api/tasks/{task_id}` | Busca uma tarefa pelo id (com subtarefas, recorrência, tags e responsáveis). |
 | `POST` | `/api/tasks` | Cria uma tarefa ou subtarefa (o webapp permite título vazio para edição inline). |
@@ -486,7 +489,7 @@ ganham `source_provider_id`/`done_today_source` no hábito e `source` em cada di
 
 | Método | Rota | O que faz |
 |---|---|---|
-| `GET` | `/api/tasks/my-day` | Ritual do Meu Dia: plano, pendências de ontem, sugestões e capacity (`?date=`; vazio = hoje). Inclui também `plano_work`/`plano_personal`, `pendencias_ontem_work`/`_personal`, `sugestoes_work`/`_personal` e `capacity_work`/`capacity_personal` (spec 038) — os campos sem sufixo continuam sendo a união (visão única). |
+| `GET` | `/api/tasks/my-day` | Ritual do Meu Dia: plano, pendências de ontem, sugestões e capacity (`?date=`; vazio = hoje). Inclui também `plano_work`/`plano_personal`, `pendencias_ontem_work`/`_personal`, `sugestoes_work`/`_personal` e `capacity_work`/`capacity_personal` (spec 038) — os campos sem sufixo continuam sendo a união (visão única). Os eventos em `eventos`/`eventos_work`/`eventos_personal` trazem `location` (spec 039, pode ser `""`). |
 | `POST` | `/api/tasks/{task_id}/my-day` | Marca a tarefa no Meu Dia de uma data (body opcional; ausente = hoje). |
 | `DELETE` | `/api/tasks/{task_id}/my-day` | Tira a tarefa do Meu Dia (não a apaga). |
 | `POST` | `/api/tasks/{task_id}/reschedule` | Atalho do ritual de pendências: hoje, amanhã ou fora do Meu Dia. |
@@ -538,6 +541,15 @@ de capacity não muda: `/my-day` só passa a chamar a mesma função 3× (total,
 pessoal). Ver as rotas já listadas acima (`/projects`, `/groups/{id}/context`,
 `/calendar/prefs/{id}`, `/my-day`) — nenhuma rota nova exclusiva desta spec além de
 `/groups/{id}/context`.
+
+### Arquivar listas + localização nos eventos (spec 039)
+
+Arquivar reusa `task_projects.archived_at` (já existia, gravado internamente por
+`delete_project`) — `archive_project`/`restore_project` não tocam tarefas/colunas, diferente
+da exclusão. Todas as views operacionais (`/my-day`, `/calendar`, `/eisenhower`,
+`/filters/*`, `/views/*`, `/tags/{name}`) excluem listas arquivadas; `/search` é a única
+exceção (sinaliza com `archived: bool`). `/my-day` também passa a trazer `location` em cada
+evento (antes só chegava na agenda/popover do Calendar Hub).
 
 ---
 

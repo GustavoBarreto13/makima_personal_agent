@@ -82,6 +82,9 @@ export interface Task {
   context_id?: number | null      // contexto de execução (no máximo um por tarefa)
   // Trabalho/Pessoal (spec 038) — herdado da lista atual, nunca persistido na tarefa.
   context?: WorkContext
+  // Presente só nos resultados de busca global (spec 039) — true quando a lista dona
+  // está arquivada (a busca é a exceção que continua achando tarefas arquivadas).
+  archived?: boolean
 }
 
 // Contexto Trabalho/Pessoal (spec 038) — propriedade da LISTA (e do calendário), nunca da
@@ -124,6 +127,7 @@ export interface TimelineEvent {
   calendar_name: string      // Nome legível (ex.: "Gustavo Barreto")
   color: string | null       // Cor do usuário (calendar_prefs) ou null para default
   context: WorkContext       // Trabalho/Pessoal do calendário de origem (spec 038)
+  location?: string          // local do evento (spec 039) — pode ser "" (sem local)
 }
 
 // Resposta do endpoint GET /api/tasks/my-day.
@@ -158,6 +162,18 @@ export interface Project {
   open_count: number   // tarefas-pai abertas
   last_reviewed_at?: string | null   // passo 4 da revisão semanal (spec 035)
   context: WorkContext // Trabalho/Pessoal (spec 038) — Inbox é sempre 'personal'
+  archived_at?: string | null  // spec 039 — não-nulo quando arquivada (não vem na sidebar, só na tela de arquivadas)
+}
+
+// Uma lista arquivada (spec 039) — resposta de GET /api/tasks/projects/archived.
+export interface ArchivedProject {
+  id: number
+  name: string
+  group_id: number | null
+  color: string | null
+  icon: string | null
+  archived_at: string
+  task_count: number
 }
 
 // Um grupo de listas (pasta da sidebar).
@@ -561,7 +577,7 @@ export interface Tweaks {
 // 'group-list' usa o param como id do grupo e exibe as tarefas em seções por lista.
 // 'date' abre uma das views fixas de mercado (spec 034) — o `param` é o sentinel
 // negativo de DATE_VIEW_IDS (mesmo truque de BUILTIN_TODAY_OVERDUE/GTD_BUILTINS).
-export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'experiments' | 'goals' | 'trash' | 'filter' | 'group' | 'group-list' | 'date'
+export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'experiments' | 'goals' | 'trash' | 'archived' | 'filter' | 'group' | 'group-list' | 'date'
 
 // Sentinelas negativos para as 4 views fixas que abrem a tela 'date' (a 5ª, "inbox",
 // reusa a lista Inbox de verdade via view='list' — mesmo conteúdo, sem duplicar tela).

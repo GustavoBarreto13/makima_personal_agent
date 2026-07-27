@@ -29,6 +29,7 @@ from agents.kaguya.tools_projects import (
     copy_columns,    # copia estrutura de colunas de um board para outro (sem tarefas)
     get_group_board,  # board agregado de grupo (colunas unificadas por nome)
     set_group_context,  # ação em massa de contexto Trabalho/Pessoal — spec 038
+    archive_project, restore_project, list_archived_projects,  # spec 039
 )
 from agents.kaguya.tools_tasks import (
     list_tasks, list_tasks_today, search_tasks, list_trash, list_eisenhower_tasks,
@@ -521,6 +522,24 @@ def delete_project_route(
 ) -> dict:
     """Exclui uma lista; ``mode`` decide o destino das tarefas. Inbox → 400."""
     return _check_result(delete_project(project_id, mode))
+
+
+@router.get("/projects/archived")
+def list_archived_projects_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Lista as listas arquivadas, com data de arquivamento e contagem de tarefas (spec 039)."""
+    return list_archived_projects()  # listagem — sem _check_result
+
+
+@router.post("/projects/{project_id}/archive")
+def archive_project_route(project_id: int, user: dict = Depends(require_user)) -> dict:
+    """Arquiva uma lista sem tocar tarefas/colunas (spec 039). Inbox → 400."""
+    return _check_result(archive_project(project_id))
+
+
+@router.post("/projects/{project_id}/restore")
+def restore_project_route(project_id: int, user: dict = Depends(require_user)) -> dict:
+    """Restaura uma lista arquivada (spec 039)."""
+    return _check_result(restore_project(project_id))
 
 
 @router.post("/groups", status_code=201)
