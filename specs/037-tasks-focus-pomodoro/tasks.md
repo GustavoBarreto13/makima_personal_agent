@@ -155,8 +155,9 @@ série da semana; listar sessões do dia com tarefa/horário/duração.
       env vars dummy (mesmo procedimento das specs 035/036 — sem Postgres real no sandbox);
       `tsc -b --force` no frontend.
 - [ ] T028 Executar os 6 cenários de `quickstart.md` contra um PostgreSQL real (VPS ou dev
-      DB) — **não executável neste ambiente** (sem `DATABASE_URL` configurado); registrar
-      como pendência no `ROADMAP.md` até ser rodado.
+      DB) — migração do schema (`focus_sessions`/`focus_prefs`) já aplicada; falta rodar os
+      cenários de validação um a um (não executável neste ambiente — sem `DATABASE_URL`
+      configurado neste sandbox).
 
 ## Dependencies & Execution Order
 
