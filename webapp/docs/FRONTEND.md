@@ -305,6 +305,19 @@ provedor falhar) com um picker (select de provedor → busca → "Vincular") log
 lado da tendência quando `done_today_source` é `auto`/`both`. `HabitHeatmap`/`HabitHeatDay` ganhou
 `source?` opcional (ausente em dias vazios, presente — `manual`/`auto`/`both` — em dias com dado).
 
+**Foco / Pomodoro (spec 037):** `FocusWidget` — widget flutuante montado uma vez em
+`KaguyaShell.tsx` (fora do switch de views, mesmo nível de `Toast`), visível em **todas** as
+telas internas enquanto há sessão ativa. O countdown NUNCA é contado do zero na tela: deriva
+localmente (via `setInterval` de 1s) a partir do `started_at`/`duration_planned_min` recebidos
+do servidor em `GET /focus/active` — por isso sobrevive a reload sem perder precisão. O
+`KaguyaShell` também faz um poll de segurança a cada 30s enquanto há sessão ativa (cobre o caso
+de a sessão ter sido fechada por abandono). `FocusStartModal` — escolhe preset (25/5, 50/10) ou
+custom e inicia (confirma antes de encerrar uma sessão ativa existente); aberto a partir do
+botão "Focar" (ícone relógio) no cabeçalho do `TaskModal` (edição) ou do botão "Foco avulso" no
+topbar do shell (sem tarefa). `TodayScreen` (Meu Dia) ganhou a seção "🎯 Focado hoje" (tempo
+total + contagem de sessões) com uma mini-série de barras dos últimos 7 dias, só aparece se
+houver ao menos uma sessão no período.
+
 **Particularidades:**
 - **DnD** com `@dnd-kit` (única dependência de drag-and-drop do app) — árvore de tarefas, Kanban e Eisenhower.
 - **Inputs custom obrigatórios:** `DatePicker`/`TimePicker`/`MiniCalendar` no lugar dos nativos

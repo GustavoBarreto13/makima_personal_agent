@@ -5,7 +5,7 @@
 import { useEffect, useState, useCallback, type CSSProperties } from 'react'
 import './kaguya.css'
 
-import type { Sidebar, Task, Tweaks, KaguyaView, Filter, Habit, Experiment, Goal } from './types'
+import type { Sidebar, Task, Tweaks, KaguyaView, Filter, Habit, Experiment, Goal, FocusSession } from './types'
 import { BUILTIN_TODAY_OVERDUE, GTD_BUILTINS, DATE_VIEWS, DATE_VIEW_IDS } from './types'
 import { kaguyaApi } from './kaguyaApi'
 
@@ -24,6 +24,8 @@ import type { TaskContext } from './types'
 import { HabitModal } from './modals/HabitModal'
 import { ExperimentModal } from './modals/ExperimentModal'
 import { GoalModal } from './modals/GoalModal'
+import { FocusStartModal } from './modals/FocusStartModal'
+import { FocusWidget } from './components/FocusWidget'
 import { TodayScreen } from './screens/TodayScreen'
 import { ListScreen } from './screens/ListScreen'
 import { KanbanScreen } from './screens/KanbanScreen'
@@ -116,6 +118,22 @@ export function KaguyaShell() {
   const [toast, setToast] = useState<{ msg: string; kind?: 'ok' | 'err' } | null>(null)
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState<Task[] | null>(null)
+
+  // Foco / Pomodoro (spec 037) — activeFocus é buscado no mount e a cada início de sessão;
+  // o widget deriva o countdown localmente entre buscas (nunca conta do zero na tela).
+  const [activeFocus, setActiveFocus] = useState<FocusSession | null>(null)
+  const [focusStartTarget, setFocusStartTarget] = useState<{ task?: Task } | 'closed'>('closed')
+  const loadActiveFocus = useCallback(async () => {
+    try { setActiveFocus(await kaguyaApi.focus.active()) } catch { /* silencioso — widget só some */ }
+  }, [])
+  useEffect(() => { loadActiveFocus() }, [loadActiveFocus])
+  // Poll de segurança (R16/T016): ressincroniza a cada 30s enquanto há sessão ativa — cobre
+  // o caso de a sessão ter sido fechada por abandono (ver tools_focus._close_if_abandoned).
+  useEffect(() => {
+    if (!activeFocus) return
+    const id = setInterval(loadActiveFocus, 30000)
+    return () => clearInterval(id)
+  }, [activeFocus, loadActiveFocus])
 
   const showToast = useCallback((msg: string, kind: 'ok' | 'err' = 'ok') => setToast({ msg, kind }), [])
   const bump = () => setReloadKey((k) => k + 1)
@@ -470,6 +488,13 @@ export function KaguyaShell() {
               <button className="kg-icon-btn" onClick={() => setProjectModal({ mode: 'edit', project })} aria-label="Editar lista"><Icon name="settings" size={15} /></button>
             )}
 
+            {/* Foco avulso (spec 037) — sem tarefa vinculada. Some enquanto uma sessão já está ativa. */}
+            {!activeFocus && (
+              <button className="kg-icon-btn" onClick={() => setFocusStartTarget({})} aria-label="Foco avulso" title="Foco avulso">
+                <Icon name="clock" size={15} />
+              </button>
+            )}
+
             <div className="kg-search">
               <Icon name="search" size={15} />
               <input
@@ -508,6 +533,8 @@ export function KaguyaShell() {
           }}
           // Abre uma subtarefa em seu próprio modal (T044).
           onOpenTask={(subTask) => setTaskModal({ mode: 'edit', task: subTask })}
+          // Abre o FocusStartModal para esta tarefa (spec 037).
+          onFocus={(t) => setFocusStartTarget({ task: t })}
         />
       )}
       {projectModal && (
@@ -622,6 +649,30 @@ export function KaguyaShell() {
         onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
         toast={showToast}
       />
+
+      {/* Foco / Pomodoro (spec 037) */}
+      {focusStartTarget !== 'closed' && (
+        <FocusStartModal
+          task={focusStartTarget.task}
+          onClose={() => setFocusStartTarget('closed')}
+          onStarted={loadActiveFocus}
+          toast={showToast}
+        />
+      )}
+      {activeFocus && (
+        <FocusWidget
+          session={activeFocus}
+          onFinish={async () => {
+            await kaguyaApi.focus.finish(activeFocus.id)
+            setActiveFocus(null)
+            showToast('Sessão de foco concluída.')
+          }}
+          onCancel={async () => {
+            await kaguyaApi.focus.cancel(activeFocus.id)
+            setActiveFocus(null)
+          }}
+        />
+      )}
 
       {/* Toast */}
       {toast && <Toast message={toast.msg} kind={toast.kind} onDone={() => setToast(null)} />}

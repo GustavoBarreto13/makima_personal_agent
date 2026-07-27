@@ -610,3 +610,45 @@ VALUES (
     NULL, 1000
 )
 ON CONFLICT DO NOTHING;
+
+
+-- ----------------------------------------------------------------------------
+-- focus_sessions + focus_prefs — Foco / Pomodoro (spec 037)
+-- ----------------------------------------------------------------------------
+-- Registro atômico de uma sessão de foco. Tudo mais (tempo restante, fase,
+-- estatísticas do dia/semana) é CALCULADO NA LEITURA a partir de started_at —
+-- nunca um cronômetro persistido nem contado no cliente (mesmo princípio de
+-- "nada persistido derivado" das specs 029/030/036). Ver
+-- specs/037-tasks-focus-pomodoro/data-model.md.
+CREATE TABLE IF NOT EXISTS focus_sessions (
+    id                   SERIAL PRIMARY KEY,
+    -- Tarefa vinculada (opcional — sessão "avulsa" quando NULL). ON DELETE SET NULL:
+    -- apagar a tarefa não apaga a sessão, ela só vira avulsa (edge case do spec.md).
+    task_id              INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    started_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at             TIMESTAMPTZ,                 -- NULL = sessão ativa (aberta)
+    duration_planned_min INTEGER NOT NULL,             -- foco planejado, congelado no início
+    break_planned_min    INTEGER NOT NULL,             -- pausa planejada, congelada no início
+    completed            BOOLEAN,                      -- NULL enquanto aberta; true=concluída, false=cancelada/abandonada
+    note                 TEXT
+);
+
+-- No máximo UMA sessão aberta por vez (FR-003) — garantia de schema (mesmo padrão
+-- de uq_task_weekly_reviews_open da spec 035).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_focus_sessions_open
+    ON focus_sessions ((true)) WHERE ended_at IS NULL;
+
+-- Histórico por dia/semana (agregação usa ended_at quando existe, senão started_at).
+CREATE INDEX IF NOT EXISTS idx_focus_sessions_started_at ON focus_sessions (started_at DESC);
+
+-- Preferência de duração (foco/pausa) lembrada entre sessões — tabela de 1 linha,
+-- mesmo padrão de calendar_prefs (fatia 019), mas com uma linha fixa (id=1) em vez
+-- de uma linha por fonte, já que aqui só existe UMA preferência global.
+CREATE TABLE IF NOT EXISTS focus_prefs (
+    id        INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    focus_min INTEGER NOT NULL DEFAULT 25,
+    break_min INTEGER NOT NULL DEFAULT 5
+);
+
+INSERT INTO focus_prefs (id, focus_min, break_min) VALUES (1, 25, 5)
+ON CONFLICT (id) DO NOTHING;

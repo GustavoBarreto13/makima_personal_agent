@@ -2135,3 +2135,23 @@
   transition: background .15s, color .15s, border-color .15s;
 }
 .kg-goal-outcome.active { background: var(--kg-tint); border-color: var(--kg); color: var(--kg-deep, var(--kg)); }
+
+/* ── Foco / Pomodoro (spec 037) ─────────────────────────────────────────── */
+/* Widget flutuante persistente — fixo no canto, acima de tudo, visível em qualquer view. */
+.kg-focus-widget {
+  position: fixed; right: 20px; bottom: 20px; z-index: 80;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: var(--kg-r-md, 12px);
+  background: var(--card); border: 1px solid var(--line);
+  box-shadow: 0 6px 20px oklch(0 0 0 / 0.18);
+}
+.kg-focus-widget-phase { font-size: 12px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.kg-focus-widget-time { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--kg); }
+.kg-focus-widget-task { font-size: 12px; color: var(--ink-4); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kg-focus-widget-actions { display: flex; gap: 4px; }
+
+/* Resumo "Focado hoje" + série da semana no Meu Dia. */
+.kg-focus-summary { display: flex; align-items: center; gap: 14px; padding: 10px 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-sm); margin-bottom: 14px; }
+.kg-focus-summary-main { font-size: 14px; font-weight: 600; color: var(--ink); }
+.kg-focus-summary-week { display: flex; gap: 4px; margin-left: auto; }
+.kg-focus-summary-day { width: 18px; border-radius: 3px; background: var(--kg-tint); }

@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -393,6 +393,24 @@ export const kaguyaApi = {
   deleteCalendarEvent: (id: string, calendarId?: string) => {
     const qs = calendarId ? `?calendar_id=${encodeURIComponent(calendarId)}` : ''
     return api.del<MutationResult>(`${BASE}/calendar/events/${id}${qs}`)
+  },
+
+  // ── Foco / Pomodoro — spec 037 ───────────────────────────────────────────────
+  // Tempo restante NUNCA é contado só no cliente — active() traz started_at/duration
+  // e o widget deriva o countdown local entre polls (R1/R7 do plano).
+  focus: {
+    prefs: () => api.get<FocusPrefs>(`${BASE}/focus/prefs`),
+    active: () => api.get<FocusSession | null>(`${BASE}/focus/active`),
+    start: (body: { task_id?: number | null; focus_min: number; break_min: number; force?: boolean }) =>
+      api.post<FocusSession>(`${BASE}/focus/start`, body),
+    finish: (id: number, note?: string) =>
+      api.post<MutationResult>(`${BASE}/focus/${id}/finish`, { note }),
+    cancel: (id: number) =>
+      api.post<MutationResult>(`${BASE}/focus/${id}/cancel`, {}),
+    today: () => api.get<FocusDayStats>(`${BASE}/focus/today`),
+    week: () => api.get<FocusWeekStats>(`${BASE}/focus/week`),
+    history: (date?: string) =>
+      api.get<FocusHistoryEntry[]>(`${BASE}/focus/history${date ? `?date=${date}` : ''}`),
   },
 }
 

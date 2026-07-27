@@ -63,6 +63,9 @@ interface TaskModalProps {
   onPromote?: (task: Task) => Promise<void>
   // Callback opcional para abrir uma subtarefa em seu próprio modal (T044).
   onOpenTask?: (task: Task) => void
+  // Callback opcional para iniciar uma sessão de foco nesta tarefa (spec 037).
+  // Ausente em criação (task ainda não existe); presente em edição.
+  onFocus?: (task: Task) => void
 }
 
 const PRIORITIES = [
@@ -85,7 +88,7 @@ const TAG_COLORS = [
   'oklch(0.64 0.21 350)',   // rosa
 ]
 
-export function TaskModal({ mode, task, projects, defaultProjectId, defaults, onClose, onSaved, toast, onPromote, onOpenTask }: TaskModalProps) {
+export function TaskModal({ mode, task, projects, defaultProjectId, defaults, onClose, onSaved, toast, onPromote, onOpenTask, onFocus }: TaskModalProps) {
   // Estado do formulário, inicializado da tarefa (edição) ou dos defaults (criação).
   const [title, setTitle] = useState(task?.title ?? '')
   const [description, setDescription] = useState(task?.description ?? '')
@@ -381,6 +384,18 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
       <div className={`kg-modal kg-modal-wide${notesCollapsed ? ' kg-notes-collapsed' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="kg-modal-head">
           <h3>{mode === 'create' ? 'Nova tarefa' : 'Editar tarefa'}</h3>
+          {/* Foco / Pomodoro (spec 037) — só em edição, tarefa já existe (task_id real). */}
+          {mode === 'edit' && task && onFocus && (
+            <button
+              className="kg-icon-btn"
+              style={{ marginLeft: 'auto', border: 'none', padding: 4 }}
+              onClick={() => onFocus(task)}
+              aria-label="Focar nesta tarefa"
+              title="Focar nesta tarefa"
+            >
+              <Icon name="clock" size={15} />
+            </button>
+          )}
           {/* Reabrir o editor de notas quando colapsado. Acento quando há nota escondida. */}
           {notesCollapsed && (
             <button

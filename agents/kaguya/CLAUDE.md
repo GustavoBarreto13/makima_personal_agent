@@ -38,6 +38,8 @@ agents/kaguya/
 ├── tools_goals.py        # camada de lógica: Metas (CRUD + marcos + vínculo de movimentos + review) — spec 030
 ├── goal_link_providers.py    # registry: vínculo de meta com outro agente (search/resolve) — spec 036
 ├── habit_source_providers.py # registry: fonte automática de hábito (get_activity) — spec 036
+├── focus_stats.py        # motor PURO (sem banco): agrega sessões de foco por dia — spec 037
+├── tools_focus.py        # camada de lógica: sessões de foco (start/finish/cancel/stats/histórico) — spec 037
 ├── capacity.py           # motor PURO (sem banco): compute_capacity() — janela 8h–22h — fatia 016
 ├── gcal.py               # cliente Google Calendar compartilhado (read all / write main) — fatia 019
 ├── gcal_sync.py          # espelho best-effort: push/remove tarefas no GCal "Kaguya — Tarefas" — fatia 019
@@ -390,6 +392,39 @@ mescla no ano inteiro, com `source` por dia esparso. `create_habit`/`update_habi
 Persistência: 1 tabela nova (`goal_external_links`) + 2 colunas (`goals.metric_mode`,
 `habits.source_provider_id`) em `schema_tasks_pg.sql`. Ver `specs/036-goal-habit-links/data-model.md`.
 
+### Foco / Pomodoro (spec 037) — `focus_stats.py` + `tools_focus.py`
+
+Ciclo pomodoro: o usuário inicia uma **sessão de foco** (ligada a uma tarefa ou avulsa),
+escolhe a duração (presets 25/5, 50/10 ou custom — lembrada em `focus_prefs`, tabela de 1
+linha), e a sessão fica ativa até ser concluída, cancelada, ou fechada automaticamente por
+**abandono**. **Webapp-only**: sem tool ADK (mesma decisão de 024/029/030/035/036).
+
+**Nada persistido derivado** (mesmo princípio de `goal_progress`/`habit_strength`): o único
+dado gravado é o registro bruto (`focus_sessions` — `started_at`, `duration_planned_min`,
+`break_planned_min`, `ended_at`, `completed`, `note`). Tempo restante, fase (`foco`/`pausa`) e
+estatísticas do dia/semana são **sempre** calculados na leitura a partir de `started_at` —
+nunca um cronômetro persistido nem contado só no cliente (o widget do frontend deriva o
+countdown localmente entre polls, mas a base é sempre o timestamp do servidor).
+
+`get_active_session()` fecha automaticamente qualquer sessão **abandonada** (navegador
+fechado sem concluir) antes de responder: se o tempo decorrido já passou de
+`duration_planned_min + break_planned_min` e a sessão ainda está aberta, ela é fechada com
+`completed=False` e `ended_at = started_at + duration_planned_min` — creditando **no máximo**
+o tempo de foco planejado, nunca a pausa nem o tempo real até o usuário voltar ao painel. Sem
+job/cron: a checagem acontece na própria leitura (mesmo padrão de "nada persistido derivado").
+
+No máximo **uma** sessão ativa por vez (`ended_at IS NULL`) — garantido por índice único
+parcial (`uq_focus_sessions_open`, mesmo padrão de `uq_task_weekly_reviews_open` da spec 035).
+Iniciar outra com uma já ativa exige `force=True` (o frontend confirma com o usuário antes).
+
+Estatísticas (`get_focus_today`/`get_focus_week`/`get_focus_history`) usam
+`list_sessions_for_range` (dia local via `AT TIME ZONE 'America/Sao_Paulo'`, nunca
+`CURRENT_DATE`) agregado pelo motor puro `focus_stats.aggregate_by_day` — sessões canceladas
+não entram, só concluídas (e a ativa, parcialmente, no dia de hoje).
+
+Persistência: 2 tabelas em `schema_tasks_pg.sql` (`focus_sessions`, `focus_prefs`). Ver
+`specs/037-tasks-focus-pomodoro/data-model.md`.
+
 ---
 
 ## Tools expostas ao agente (`tools.py`)
@@ -432,9 +467,10 @@ funciona (decisão híbrida da clarificação): `_guess_inbox_decision()` interp
 o mesmo vocabulário fixo de 6 decisões e chama a mesma `process_inbox_item`. "Agendar" sempre
 pede a data em texto livre (Telegram não tem seletor nativo).
 
-> **Webapp-first (sem tool no agente):** views de Kanban (spec 024), Tiny Experiments (spec 029)
-> e Metas (spec 030) não registram nenhuma função no ADK nesta fatia — existem só na camada de
-> lógica + router REST. `tools.py` re-exporta os nomes marcando o ponto de extensão futuro.
+> **Webapp-first (sem tool no agente):** views de Kanban (spec 024), Tiny Experiments (spec 029),
+> Metas (spec 030) e Foco/Pomodoro (spec 037) não registram nenhuma função no ADK nesta fatia —
+> existem só na camada de lógica + router REST. `tools.py` re-exporta os nomes marcando o ponto
+> de extensão futuro.
 
 ### Cross-agent: pagamento atômico
 

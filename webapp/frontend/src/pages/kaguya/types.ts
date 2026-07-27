@@ -654,3 +654,52 @@ export interface AggregateResponse {
   items: CalendarItem[]
   errors: string[]        // source_ids que falharam (best-effort)
 }
+
+// ── Foco / Pomodoro (spec 037) ─────────────────────────────────────────────────
+// Fase da sessão ativa — derivada no BACKEND a partir de started_at (nunca contada
+// do zero no cliente); o widget só deriva o countdown local entre polls (R1/R7).
+export type FocusPhase = 'foco' | 'pausa'
+
+// Preferência de duração (foco/pausa), lembrada entre sessões no servidor (R4).
+export interface FocusPrefs {
+  focus_min: number
+  break_min: number
+}
+
+// Uma sessão de foco — ativa (com phase/remaining_sec) ou já fechada (histórico).
+export interface FocusSession {
+  id: number
+  task_id: number | null
+  task_title: string | null   // null = sessão avulsa
+  started_at: string          // ISO 8601 — base de toda derivação de tempo (R1)
+  ended_at: string | null     // null = sessão ainda ativa
+  duration_planned_min: number
+  break_planned_min: number
+  completed: boolean | null   // null = ativa; true = concluída; false = cancelada/abandonada
+  note: string | null
+  // Presentes só na sessão ATIVA (GET /focus/active):
+  phase?: FocusPhase
+  remaining_sec?: number
+}
+
+// Resumo agregado de um dia (GET /focus/today).
+export interface FocusDayStats {
+  date: string        // "YYYY-MM-DD"
+  total_min: number
+  sessoes: number
+}
+
+// Série dos últimos 7 dias locais (GET /focus/week).
+export interface FocusWeekStats {
+  days: FocusDayStats[]
+}
+
+// Uma entrada do histórico de um dia (GET /focus/history).
+export interface FocusHistoryEntry {
+  id: number
+  task_id: number | null
+  task_title: string | null
+  started_at: string
+  duration_focused_min: number
+  note: string | null
+}

@@ -94,6 +94,11 @@ from agents.kaguya.tools_review import (
     get_last_completed_review, list_review_history, list_waiting_ordered,
     mark_project_reviewed,
 )
+# Foco / Pomodoro — spec 037 (camada de lógica em agents/kaguya/tools_focus.py).
+from agents.kaguya.tools_focus import (
+    get_focus_prefs, get_active_session, start_session, finish_session, cancel_session,
+    get_focus_today, get_focus_week, get_focus_history,
+)
 
 router = APIRouter()
 
@@ -1599,6 +1604,83 @@ def set_time_block_route(task_id: int, body: TimeBlockBody, user: dict = Depends
 def clear_time_block_route(task_id: int, user: dict = Depends(require_user)) -> dict:
     """Remove o bloco de tempo (``start_at = end_at = NULL``); mantém a tarefa no plano."""
     return _check_result(clear_time_block(task_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Foco / Pomodoro — spec 037
+# ─────────────────────────────────────────────────────────────────────────────
+# Todas as rotas ficam sob /focus/* — nenhuma colide com /{task_id} (que é 1 segmento
+# só e exige int; /focus/... tem sempre 2+ segmentos, então nunca é ambíguo com ele).
+
+class StartFocusBody(BaseModel):
+    task_id: Optional[int] = None
+    focus_min: int
+    break_min: int
+    force: bool = False
+
+
+class FinishFocusBody(BaseModel):
+    note: Optional[str] = None
+
+
+@router.get("/focus/prefs")
+def get_focus_prefs_route(user: dict = Depends(require_user)) -> dict:
+    """Preferência atual de duração (foco/pausa), lembrada entre sessões."""
+    return get_focus_prefs()  # listagem — sem _check_result
+
+
+@router.get("/focus/active")
+def get_active_session_route(user: dict = Depends(require_user)) -> Optional[dict]:
+    """Sessão ativa (com fase/tempo restante derivados), ou ``null`` se não há nenhuma.
+
+    Fecha automaticamente qualquer sessão abandonada antes de responder (FR-008) —
+    listagem, sem ``_check_result``.
+    """
+    return get_active_session()
+
+
+@router.post("/focus/start", status_code=201)
+def start_focus_route(body: StartFocusBody, user: dict = Depends(require_user)) -> dict:
+    """Inicia uma sessão de foco (de uma tarefa ou avulsa); 409 se já existe uma ativa."""
+    result = start_session(body.task_id, body.focus_min, body.break_min, body.force)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=409, detail=result.get("message"))
+    return result
+
+
+@router.post("/focus/{session_id}/finish")
+def finish_focus_route(
+    session_id: int, body: FinishFocusBody = FinishFocusBody(), user: dict = Depends(require_user)
+) -> dict:
+    """Conclui a sessão ativa (antecipadamente ou no fim natural), com nota opcional."""
+    return _check_result(finish_session(session_id, body.note))
+
+
+@router.post("/focus/{session_id}/cancel")
+def cancel_focus_route(session_id: int, user: dict = Depends(require_user)) -> dict:
+    """Cancela a sessão ativa — não entra nas estatísticas."""
+    return _check_result(cancel_session(session_id))
+
+
+@router.get("/focus/today")
+def get_focus_today_route(user: dict = Depends(require_user)) -> dict:
+    """Resumo do dia local: tempo total focado + número de sessões."""
+    return get_focus_today()  # listagem
+
+
+@router.get("/focus/week")
+def get_focus_week_route(user: dict = Depends(require_user)) -> dict:
+    """Série dos últimos 7 dias locais (hoje incluso)."""
+    return get_focus_week()  # listagem
+
+
+@router.get("/focus/history")
+def get_focus_history_route(
+    date: Optional[str] = Query(None, description="Dia local YYYY-MM-DD (vazio = hoje)"),
+    user: dict = Depends(require_user),
+) -> list[dict]:
+    """Sessões concluídas de um dia local, com tarefa/horário/duração."""
+    return get_focus_history(date)  # listagem
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@
 //     resolve o id diretamente, sem prop extra.
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import type { Task, Project, MyDayResponse, Calendar, ExperimentDue } from '../types'
+import type { Task, Project, MyDayResponse, Calendar, ExperimentDue, FocusDayStats, FocusWeekStats } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { QuickAdd } from '../components/QuickAdd'
 import { DayHero } from '../components/DayHero'
@@ -59,6 +59,13 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
   // dueExperiments: experimentos ativos do dia sem check-in (US3, spec 029). Seção desacoplada
   // — não passa pelo motor de capacity/plan_my_day; some da lista após o check-in de 1 toque.
   const [dueExperiments, setDueExperiments] = useState<ExperimentDue[]>([])
+  // Resumo de foco (spec 037, US3): tempo total + sessões de hoje + série dos últimos 7 dias.
+  const [focusToday, setFocusToday] = useState<FocusDayStats | null>(null)
+  const [focusWeek, setFocusWeek] = useState<FocusWeekStats | null>(null)
+  useEffect(() => {
+    kaguyaApi.focus.today().then(setFocusToday).catch(() => { /* seção some se falhar */ })
+    kaguyaApi.focus.week().then(setFocusWeek).catch(() => { /* seção some se falhar */ })
+  }, [reloadKey])
 
   // Sensor centralizado: PointerSensor com 5px de ativação.
   const sensors = useDndSensors()
@@ -231,6 +238,27 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
       <div className="kg-page">
         {/* Hero: saudação + data + 3 stats + retrato */}
         <DayHero capacity={capacity} />
+
+        {/* Resumo de foco (spec 037, US3) — tempo total + sessões de hoje + série da semana */}
+        {focusToday && (focusToday.sessoes > 0 || (focusWeek?.days.some(d => d.sessoes > 0))) && (
+          <div className="kg-focus-summary">
+            <span className="kg-focus-summary-main">
+              🎯 Focado hoje: {Math.floor(focusToday.total_min / 60)}h{String(focusToday.total_min % 60).padStart(2, '0')} · {focusToday.sessoes} {focusToday.sessoes === 1 ? 'sessão' : 'sessões'}
+            </span>
+            {focusWeek && (
+              <div className="kg-focus-summary-week" title="Últimos 7 dias">
+                {focusWeek.days.map(d => (
+                  <div
+                    key={d.date}
+                    className="kg-focus-summary-day"
+                    style={{ height: Math.max(4, Math.min(28, d.total_min / 4)) }}
+                    title={`${d.date}: ${d.total_min}min`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Layout de duas colunas */}
         <div className="kg-day-grid">
