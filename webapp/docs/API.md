@@ -50,12 +50,16 @@ Todos os endpoints de finanças exigem autenticação. A maior parte chama as to
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/finances/summary` | Gasto agrupado por categoria, conta ou tipo. | `?period=YYYY-MM&group_by=categoria\|conta\|tipo` |
-| `GET` | `/api/finances/trend` | Tendência mensal de receitas e despesas. | `?months=N` |
-| `GET` | `/api/finances/health` | Score de saúde financeira (0–100). | `?month=YYYY-MM` |
+| `GET` | `/api/finances/summary` ⚠ | Gasto agrupado por categoria, conta ou tipo. | `?period=YYYY-MM&group_by=categoria\|conta\|tipo` |
+| `GET` | `/api/finances/trend` | Tendência mensal de receitas e despesas — card "Tendência de gastos" do Dashboard (spec 042). | `?months=N` |
+| `GET` | `/api/finances/health` | Score de saúde financeira (0–100) — card "Saúde financeira" do Dashboard (spec 042). | `?month=YYYY-MM` |
 | `GET` | `/api/finances/commitments/{month}` | Compromissos futuros (parcelas, assinaturas). | Path: `YYYY-MM` |
 | `GET` | `/api/finances/stats` ★ | Stats consolidados do mês (SQL agregado para o dashboard). | `?month=YYYY-MM` (obrigatório) |
 | `GET` | `/api/finances/categories` | Metadados fixos das categorias (ícone, cor, tipo). | — |
+
+⚠ `/summary` **não tem consumidor na UI** (decisão da spec 042) — é redundante com `/stats`
+(que já traz o agregado por categoria pronto para o Dashboard). Existe só para o agente
+responder no Telegram ("onde vai mais meu dinheiro?" → `get_spending_summary`).
 
 ### Contas
 

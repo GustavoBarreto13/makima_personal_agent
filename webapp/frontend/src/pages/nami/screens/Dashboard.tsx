@@ -10,7 +10,7 @@ import type { StatsResponse, Account, Card, Subscription, Category } from '../ty
 import { QuickAdd } from '../components/QuickAdd'
 import { TxList } from '../components/TxRow'
 import { Icon } from '../icons'
-import { DonutPanel, CashflowBars, BigMoney, Spark, greet, daysUntil, urgency, fmtMoney } from '../ui'
+import { DonutPanel, CashflowBars, BigMoney, Spark, greet, daysUntil, urgency, fmtMoney, Donut, AreaTrend } from '../ui'
 import { normalizeTx, buildCatMap, groupByDay } from '../lib'
 
 interface DashboardProps {
@@ -43,6 +43,13 @@ export function Dashboard({
   // Primeiro nome do usuário autenticado (vem do cookie de sessão via /auth/me)
   const [userName, setUserName]      = useState('')
 
+  // Score de saúde financeira + tendência de gastos (spec 042) — falhas isoladas
+  // uma da outra e do resto do Dashboard (FR-004)
+  const [health, setHealth]         = useState<Awaited<ReturnType<typeof namiApi.getHealth>> | null>(null)
+  const [healthError, setHealthError] = useState(false)
+  const [trend, setTrend]           = useState<Awaited<ReturnType<typeof namiApi.getTrend>> | null>(null)
+  const [trendError, setTrendError] = useState(false)
+
   // Carrega categorias uma vez
   useEffect(() => {
     namiApi.getCategories()
@@ -56,6 +63,22 @@ export function Dashboard({
     api.get<{ email: string; name?: string }>('/auth/me')
       .then(u => setUserName((u.name ?? '').split(' ')[0]))
       .catch(() => setUserName(''))
+  }, [])
+
+  // Carrega score de saúde do mês selecionado — isolado (não derruba o resto do Dashboard)
+  useEffect(() => {
+    setHealthError(false)
+    namiApi.getHealth(month)
+      .then(setHealth)
+      .catch(() => { setHealth(null); setHealthError(true) })
+  }, [month])
+
+  // Carrega tendência de gastos (últimos 6 meses) — independente do mês selecionado
+  useEffect(() => {
+    setTrendError(false)
+    namiApi.getTrend(6)
+      .then(setTrend)
+      .catch(() => { setTrend(null); setTrendError(true) })
   }, [])
 
   // Carrega transações recentes para o preview (últimas 5)
@@ -211,6 +234,75 @@ export function Dashboard({
             <span className="amount">{fmtMoney(patrimonio)}</span>
           </div>
           <div className="stat-detail">{accounts.length} conta{accounts.length !== 1 ? 's' : ''}</div>
+        </div>
+      </div>
+
+      {/* ── Grid 2: score de saúde + tendência de gastos (spec 042) ──── */}
+      <div className="grid-2">
+        {/* Score de saúde financeira — 4 dimensões (25 pts cada) */}
+        <div className="panel">
+          <div className="panel-head">
+            <span className="panel-title">Saúde financeira</span>
+          </div>
+          <div className="panel-body">
+            {healthError ? (
+              <div className="empty" style={{ padding: '24px 0' }}><p>Erro ao calcular o score</p></div>
+            ) : !health ? (
+              <div className="empty" style={{ padding: '24px 0' }}><p>Carregando…</p></div>
+            ) : (
+              <div className="donut-wrap">
+                <Donut
+                  slices={[
+                    { value: health.score, color: 'var(--accent)', name: 'score' },
+                    { value: 100 - health.score, color: 'var(--line)', name: 'restante' },
+                  ]}
+                  size={110}
+                  thickness={16}
+                  center={`${health.score}`}
+                  centerLabel="/ 100"
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0 }}>
+                  {[
+                    { label: 'Poupança',  pts: health.breakdown.taxa_poupanca },
+                    { label: 'Dívidas',   pts: health.breakdown.divida_cartao },
+                    { label: 'Orçamento', pts: health.breakdown.taxa_gasto },
+                    { label: 'Tendência', pts: health.breakdown.comprometimento_futuro },
+                  ].map(dim => (
+                    <div key={dim.label}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>
+                        <span>{dim.label}</span>
+                        <span>{dim.pts}/25</span>
+                      </div>
+                      <div className="cc-limit-track">
+                        <div className="cc-limit-fill" style={{ width: `${(dim.pts / 25) * 100}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Tendência de gastos — evolução mensal + projeção do mês corrente */}
+        <div className="panel">
+          <div className="panel-head">
+            <span className="panel-title">Tendência de gastos</span>
+          </div>
+          <div className="panel-body">
+            {trendError ? (
+              <div className="empty" style={{ padding: '24px 0' }}><p>Erro ao calcular a tendência</p></div>
+            ) : !trend ? (
+              <div className="empty" style={{ padding: '24px 0' }}><p>Carregando…</p></div>
+            ) : (
+              <>
+                <AreaTrend trend={trend.trend} projected={trend.current_month_projected} currentMonth={month} />
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
+                  No ritmo atual, o mês fecha em <strong style={{ color: 'var(--ink)' }}>{fmtMoney(trend.current_month_projected)}</strong>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

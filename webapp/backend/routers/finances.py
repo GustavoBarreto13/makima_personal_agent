@@ -42,6 +42,7 @@ from agents.nami.tools import (
     list_subscriptions,   # Lista assinaturas (ativa/encerrada/todas)
     update_subscription,  # Pausa, cancela ou atualiza assinatura
     delete_subscription,  # Soft delete de assinatura — marca deleted=TRUE
+    _today_date,           # Hoje no fuso America/Sao_Paulo (spec 040) — nunca date.today() (UTC do servidor)
 )
 
 # Contas financeiras (corrente, poupança, dinheiro, investimento)
@@ -514,9 +515,10 @@ def health_score(
         HTTPException: 400 se o formato do mês for inválido.
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    # Se o mês não foi informado, usa o mês atual no formato YYYY-MM
+    # Se o mês não foi informado, usa o mês atual no formato YYYY-MM — fuso
+    # America/Sao_Paulo (_today_date), nunca date.today() (UTC do servidor)
     if not month:
-        month = date.today().strftime("%Y-%m")
+        month = _today_date().strftime("%Y-%m")
 
     result = get_financial_health_score(month=month)
     return _check_result(result)
@@ -601,7 +603,7 @@ def create_account_endpoint(
     result = create_account(
         name=body.name,
         type=body.type,
-        data_inicio=body.data_inicio or date.today().strftime("%Y-%m-%d"),
+        data_inicio=body.data_inicio or _today_date().strftime("%Y-%m-%d"),
         balance_inicial=body.balance_inicial,
     )
     _check_result(result)
@@ -921,7 +923,7 @@ def budget_status(
     """
     # Se o mês não foi informado, usa o mês atual
     if not month:
-        month = date.today().strftime("%Y-%m")
+        month = _today_date().strftime("%Y-%m")
 
     result = get_budget_status(month=month)
     return _check_result(result)

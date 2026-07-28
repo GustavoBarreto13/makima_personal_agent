@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-06
 
-**Status**: Draft
+**Status**: ✅ Implementado (2026-07-28) — ver `plan.md` e `tasks.md` para detalhamento e verificação.
 
 **Input**: User description: "Expor no webapp da Nami as análises que o backend já calcula e ninguém consome: score de saúde financeira 0-100 com 4 dimensões (GET /health), tendência de gastos com projeção do mês (GET /trend), registro de pagamento de fatura do cartão (POST /cards/{id}/payment). GET /summary não ganha UI (redundante com /stats) — documentar como endpoint do agente."
 

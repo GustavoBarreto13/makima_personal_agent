@@ -58,6 +58,10 @@ export interface Card {
   brand?: string         // "Mastercard" | "Visa" | "Elo" | "American Express"
   last4?: string         // últimos 4 dígitos
   grad?: string          // CSS gradient string para o plástico
+  // Calculados por get_card_debt_summary (spec 042) — presentes em GET /cards:
+  divida_atual?: number     // dívida no ciclo de faturamento atual
+  utilizacao_pct?: number   // 0-100, dívida/limite
+  taxa_juros_mensal?: number
 }
 
 // ── Orçamento ────────────────────────────────────────────────────────────────

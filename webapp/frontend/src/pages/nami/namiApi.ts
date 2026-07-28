@@ -16,6 +16,21 @@ export const namiApi = {
   getStats: (month: string): Promise<StatsResponse> =>
     api.get(`/api/finances/stats?month=${month}`),
 
+  /** Score de saúde financeira 0-100 com 4 dimensões (spec 042). Mês vazio = mês atual. */
+  getHealth: (month: string = ''): Promise<{
+    score: number
+    breakdown: { taxa_gasto: number; taxa_poupanca: number; comprometimento_futuro: number; divida_cartao: number }
+    message: string
+  }> =>
+    api.get(`/api/finances/health${month ? `?month=${month}` : ''}`),
+
+  /** Evolução mensal de gastos + projeção do mês corrente (spec 042). */
+  getTrend: (months: number = 6): Promise<{
+    trend: Record<string, number>
+    current_month_projected: number
+  }> =>
+    api.get(`/api/finances/trend?months=${months}`),
+
   // ── Categorias ───────────────────────────────────────────────────────────────
 
   getCategories: (): Promise<Category[]> =>
@@ -70,6 +85,10 @@ export const namiApi = {
 
   deleteCard: (id: string): Promise<{ status: string }> =>
     api.del(`/api/finances/cards/${id}`),
+
+  /** Registra pagamento de fatura — reduz a dívida calculada em getCards (spec 042). */
+  payCardBill: (cardId: string, valor: number, data?: string): Promise<{ status: string }> =>
+    api.post(`/api/finances/cards/${cardId}/payment`, { valor, data: data || '' }),
 
   // ── Orçamentos ───────────────────────────────────────────────────────────────
 

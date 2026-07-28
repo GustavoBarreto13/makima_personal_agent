@@ -392,6 +392,76 @@ export function CashflowBars({ cashflow, currentMonth }: CashflowBarsProps) {
   )
 }
 
+// ── Gráfico de área — tendência de gastos com projeção (spec 042) ───────────
+
+interface AreaTrendProps {
+  /** Mapa {"YYYY-MM": total} já ordenado ou não — a função ordena por chave */
+  trend: Record<string, number>
+  /** Projeção do mês corrente (mesmo cálculo do agente no Telegram) */
+  projected: number
+  /** Mês atual no formato YYYY-MM — usado para destacar o rótulo em negrito */
+  currentMonth: string
+}
+
+/**
+ * Gráfico de área SVG simples (sem lib externa) para a evolução mensal de
+ * gastos. O último ponto (mês corrente) ganha uma linha tracejada até o
+ * valor projetado, destacando visualmente que aquele número ainda vai mudar.
+ *
+ * Args:
+ *   trend: série mensal {mês: total}.
+ *   projected: valor projetado do mês corrente.
+ *   currentMonth: mês corrente (YYYY-MM) para negritar o rótulo certo.
+ */
+export function AreaTrend({ trend, projected, currentMonth }: AreaTrendProps) {
+  const months = Object.keys(trend).sort()
+  if (months.length === 0) return null
+
+  const values = months.map(m => trend[m])
+  const maxVal = Math.max(...values, projected, 1)
+
+  // viewBox fixo em unidades relativas — preserveAspectRatio="none" estica
+  // para a largura real do container sem precisar medir em px
+  const W = 100
+  const H = 90
+  const padBottom = 16
+
+  const pts = months.map((_m, i) => {
+    const x = months.length > 1 ? (i / (months.length - 1)) * W : W / 2
+    const y = H - padBottom - (values[i] / maxVal) * (H - padBottom)
+    return { x, y }
+  })
+
+  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
+  const areaPath = `${linePath} L ${pts[pts.length - 1].x.toFixed(1)} ${H - padBottom} L ${pts[0].x.toFixed(1)} ${H - padBottom} Z`
+
+  // Ponto de projeção — mesma posição X do último mês, Y diferente + traço tracejado
+  const lastPt = pts[pts.length - 1]
+  const projY = H - padBottom - (projected / maxVal) * (H - padBottom)
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={140} preserveAspectRatio="none">
+        <path d={areaPath} fill="var(--accent-t)" stroke="none" />
+        <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+        {/* Linha tracejada até a projeção do mês corrente */}
+        <line
+          x1={lastPt.x} y1={lastPt.y} x2={lastPt.x} y2={projY}
+          stroke="var(--out)" strokeDasharray="2 2" strokeWidth={1.2} vectorEffect="non-scaling-stroke"
+        />
+        <circle cx={lastPt.x} cy={projY} r={2.2} fill="var(--out)" />
+      </svg>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+        {months.map(m => (
+          <span key={m} style={{ fontWeight: m === currentMonth ? 700 : 400, color: m === currentMonth ? 'var(--ink)' : 'var(--muted)' }}>
+            {monthShort(m)}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Helpers de data e texto ───────────────────────────────────────────────────
 
 /**

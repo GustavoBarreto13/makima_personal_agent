@@ -39,6 +39,10 @@ export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: 
   const [saving, setSaving]         = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
+  // Modal de pagamento de fatura (spec 042, US3)
+  const [payingCard, setPayingCard] = useState<Card | null>(null)
+  const [paySaving, setPaySaving]   = useState(false)
+
   // Parcelamentos ativos por cartão (spec 041, US3) — carregados sob demanda,
   // um mapa cardId → {installments, monthly_commitment, ends_month}
   const [cardInstallments, setCardInstallments] = useState<Record<string, {
@@ -90,6 +94,20 @@ export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: 
     finally { setDeletingId(null) }
   }
 
+  async function handlePay(values: Record<string, unknown>) {
+    if (!payingCard) return
+    setPaySaving(true)
+    try {
+      const valor = parseFloat(String(values.valor ?? '0').replace(',', '.'))
+      if (!valor || valor <= 0) throw new Error('Informe um valor válido')
+      await namiApi.payCardBill(payingCard.id, valor, String(values.data ?? '') || undefined)
+      onToast(`Pagamento de ${fmtMoney(valor)} registrado ✓`)
+      setPayingCard(null)
+      onCardsChanged()
+    } catch (err: unknown) { throw err }
+    finally { setPaySaving(false) }
+  }
+
   return (
     <>
       <div className="page-head">
@@ -122,10 +140,14 @@ export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: 
               <div className="cc-info">
                 <div className="cc-name">{card.name}</div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
-                  <span style={{ color: 'var(--muted)' }}>Limite</span>
-                  <span className="amount" style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{fmtMoney(card.limite)}</span>
+                  <span style={{ color: 'var(--muted)' }}>Dívida atual</span>
+                  <span className="amount" style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                    {fmtMoney(card.divida_atual ?? 0)} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>/ {fmtMoney(card.limite)}</span>
+                  </span>
                 </div>
-                <div className="cc-limit-track"><div className="cc-limit-fill" style={{ width: '0%' }} /></div>
+                <div className="cc-limit-track">
+                  <div className="cc-limit-fill" style={{ width: `${Math.min(card.utilizacao_pct ?? 0, 100)}%` }} />
+                </div>
                 <div className="cc-dates">
                   <span>Fecha dia <strong>{card.closing_day}</strong></span>
                   <span>Vence dia <strong>{card.due_day}</strong></span>
@@ -133,9 +155,14 @@ export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: 
               </div>
               <div className="cc-foot-row">
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>{card.status}</span>
-                <button className="acct-del" onClick={() => handleDelete(card.id)} disabled={deletingId === card.id} aria-label="Remover">
-                  <Icon name="trash" size={12} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => setPayingCard(card)}>
+                    Registrar pagamento
+                  </button>
+                  <button className="acct-del" onClick={() => handleDelete(card.id)} disabled={deletingId === card.id} aria-label="Remover">
+                    <Icon name="trash" size={12} />
+                  </button>
+                </div>
               </div>
 
               {/* Parcelamentos ativos do cartão — comprometimento mensal da fatura (spec 041) */}
@@ -187,6 +214,25 @@ export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: 
             { key: 'grad',         label: 'Gradiente do plástico',type: 'select', options: CARD_GRADS },
           ]}
         />
+      )}
+
+      {/* Modal de pagamento de fatura (spec 042) */}
+      {payingCard && (
+        <FormModal
+          title={`Registrar pagamento — ${payingCard.name}`}
+          saving={paySaving}
+          onClose={() => setPayingCard(null)}
+          onSave={handlePay}
+          saveLabel="Registrar pagamento"
+          fields={[
+            { key: 'valor', label: 'Valor pago', type: 'money', required: true },
+            { key: 'data',  label: 'Data (vazio = hoje)', type: 'date' },
+          ]}
+        >
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+            Dívida atual: {fmtMoney(payingCard.divida_atual ?? 0)}
+          </div>
+        </FormModal>
       )}
     </>
   )
