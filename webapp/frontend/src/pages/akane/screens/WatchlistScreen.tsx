@@ -56,14 +56,14 @@ export function WatchlistScreen({ onSelectMovie, onLogFilm, query }: WatchlistSc
           <div key={f.id} className="wl-item">
             <div className="wl-poster" onClick={() => onSelectMovie(f.id)}>
               <Poster title={f.title} posterUrl={f.poster_url} palette={f.poster_palette}
-                      genre={f.genres[0]} director={f.director[0]} year={f.year} />
+                      genre={f.genres?.[0]} director={f.director?.[0]} year={f.year} />
             </div>
             <div className="wl-info">
               <div className="wl-title" onClick={() => onSelectMovie(f.id)}>{f.title}</div>
               <div className="wl-sub">
-                {[f.director[0], f.year, f.runtime ? fmtRuntime(f.runtime) : null].filter(Boolean).join(' · ')}
+                {[f.director?.[0], f.year, f.runtime ? fmtRuntime(f.runtime) : null].filter(Boolean).join(' · ')}
               </div>
-              {f.genres.length > 0 && <span className="wl-genre">{f.genres.join(' · ')}</span>}
+              {(f.genres?.length ?? 0) > 0 && <span className="wl-genre">{f.genres.join(' · ')}</span>}
               {f.notes && <div className="wl-note">"{f.notes}"</div>}
             </div>
             <div className="wl-right">

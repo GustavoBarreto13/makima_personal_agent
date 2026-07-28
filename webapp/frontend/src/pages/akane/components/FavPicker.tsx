@@ -62,7 +62,7 @@ export function FavPicker({ exclude, onPick, onClose }: FavPickerProps) {
             {pool.map(f => (
               <a key={f.id} className="poster-link" onClick={() => onPick(f.id)} title={f.title}>
                 <Poster title={f.title} posterUrl={f.poster_url} palette={f.poster_palette}
-                        genre={f.genres[0]} director={f.director[0]} year={f.year} />
+                        genre={f.genres?.[0]} director={f.director?.[0]} year={f.year} />
                 <div className="poster-meta"><div className="pm-title">{f.title}</div></div>
               </a>
             ))}

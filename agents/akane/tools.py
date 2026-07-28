@@ -1123,7 +1123,7 @@ def list_movies(
 
     sql = f"""
         SELECT
-            id, title, year, poster_url, poster_palette, status,
+            id, title, year, director, genres, runtime, poster_url, poster_palette, status,
             rating, rating_source, liked, tags, times_watched, last_watched_date
         FROM movies
         WHERE {" AND ".join(conditions)}

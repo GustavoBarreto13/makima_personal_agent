@@ -19,8 +19,8 @@ interface EditMovieModalProps {
 export function EditMovieModal({ movie, onClose, onToast, onSaved }: EditMovieModalProps) {
   const [title, setTitle] = useState(movie.title)
   const [year, setYear] = useState(movie.year != null ? String(movie.year) : '')
-  const [director, setDirector] = useState(movie.director.join(', '))
-  const [genres, setGenres] = useState(movie.genres.join(', '))
+  const [director, setDirector] = useState((movie.director ?? []).join(', '))
+  const [genres, setGenres] = useState((movie.genres ?? []).join(', '))
   const [runtime, setRuntime] = useState(movie.runtime != null ? String(movie.runtime) : '')
   const [overview, setOverview] = useState(movie.overview ?? '')
   const [saving, setSaving] = useState(false)

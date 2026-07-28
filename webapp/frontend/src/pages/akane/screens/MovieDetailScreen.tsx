@@ -143,8 +143,8 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
             title={movie.title}
             posterUrl={movie.poster_url}
             palette={movie.poster_palette}
-            genre={movie.genres[0]}
-            director={movie.director[0]}
+            genre={movie.genres?.[0]}
+            director={movie.director?.[0]}
             year={movie.year}
           />
           <div className="detail-actions">
@@ -213,11 +213,11 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
 
         {/* ══ COLUNA DIREITA: informações ══ */}
         <div className="detail-info">
-          <div className="detail-genre">{movie.genres.join(' · ')}</div>
+          <div className="detail-genre">{(movie.genres ?? []).join(' · ')}</div>
           <h1 className="detail-title">{movie.title}</h1>
           <p className="detail-author">
             {movie.year && <>{movie.year} · </>}
-            dirigido por <b>{movie.director.join(', ') || '—'}</b>
+            dirigido por <b>{(movie.director ?? []).join(', ') || '—'}</b>
             {movie.runtime && <> · {fmtRuntime(movie.runtime)}</>}
           </p>
 
@@ -235,10 +235,10 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
 
           {/* Grade de metadados */}
           <div className="detail-meta-grid">
-            <div className="dm-cell"><div className="k">Direção</div><div className="v" style={{ fontSize: 13 }}>{movie.director.join(', ') || '—'}</div></div>
+            <div className="dm-cell"><div className="k">Direção</div><div className="v" style={{ fontSize: 13 }}>{(movie.director ?? []).join(', ') || '—'}</div></div>
             <div className="dm-cell"><div className="k">Ano</div><div className="v">{movie.year ?? '—'}</div></div>
             <div className="dm-cell"><div className="k">Duração</div><div className="v" style={{ fontSize: 13 }}>{fmtRuntime(movie.runtime)}</div></div>
-            <div className="dm-cell"><div className="k">Gênero</div><div className="v" style={{ fontSize: 13 }}>{movie.genres.slice(0, 2).join(' · ') || '—'}</div></div>
+            <div className="dm-cell"><div className="k">Gênero</div><div className="v" style={{ fontSize: 13 }}>{(movie.genres ?? []).slice(0, 2).join(' · ') || '—'}</div></div>
             <div className="dm-cell"><div className="k">Sessões</div><div className="v">{diary.length || '—'}</div></div>
           </div>
 
@@ -270,7 +270,7 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
           />
 
           {/* Etiquetas */}
-          {movie.tags.length > 0 && (
+          {(movie.tags?.length ?? 0) > 0 && (
             <>
               <div className="detail-section-title">Etiquetas <span className="st-line" /></div>
               <div className="chips">

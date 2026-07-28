@@ -35,15 +35,15 @@ export function NextBar({ watchlist, onOpenDetail, onLog }: NextBarProps) {
         title={f.title}
         posterUrl={f.poster_url}
         palette={f.poster_palette}
-        genre={f.genres[0] ?? null}
-        director={f.director[0] ?? null}
+        genre={f.genres?.[0] ?? null}
+        director={f.director?.[0] ?? null}
         year={f.year}
         onClick={() => onOpenDetail(f.id)}
       />
       <div className="footbar-info">
         <div className="footbar-title" onClick={() => onOpenDetail(f.id)}>{f.title}</div>
         <div className="footbar-sub">
-          {[f.director[0], f.year, f.runtime ? fmtRuntime(f.runtime) : null]
+          {[f.director?.[0], f.year, f.runtime ? fmtRuntime(f.runtime) : null]
             .filter(Boolean).join(' · ')}
         </div>
       </div>

@@ -124,8 +124,8 @@ export function FilmsScreen({ tweaks, onSelectMovie, initialTag, query }: FilmsS
                   title={f.title}
                   posterUrl={f.poster_url}
                   palette={f.poster_palette}
-                  genre={f.genres[0]}
-                  director={f.director[0]}
+                  genre={f.genres?.[0]}
+                  director={f.director?.[0]}
                   year={f.year}
                   status={f.status}
                   liked={f.liked}
@@ -133,7 +133,7 @@ export function FilmsScreen({ tweaks, onSelectMovie, initialTag, query }: FilmsS
                 />
                 <div className="poster-meta">
                   <div className="pm-title">{f.title}</div>
-                  <div className="pm-sub">{[f.director[0], f.year].filter(Boolean).join(' · ')}</div>
+                  <div className="pm-sub">{[f.director?.[0], f.year].filter(Boolean).join(' · ')}</div>
                   <div className="pm-row">
                     {f.rating
                       ? <><Stars value={f.rating} />{f.liked && <Heart filled className="heart-ico" />}</>

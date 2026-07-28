@@ -195,10 +195,10 @@ export function HomeScreen({ tweaks: _tweaks, onSelectMovie, onLog: _onLog, onTo
             {home.watchlist_highlight.map(f => (
               <div key={f.id} className="want-card" onClick={() => onSelectMovie(f.id)}>
                 <Poster title={f.title} posterUrl={f.poster_url} palette={f.poster_palette}
-                        director={f.director[0]} year={f.year} status="watchlist" badge />
+                        director={f.director?.[0]} year={f.year} status="watchlist" badge />
                 <div className="wc-title">{f.title}</div>
                 <div className="wc-sub">
-                  {[f.director[0], f.runtime ? fmtRuntime(f.runtime) : null].filter(Boolean).join(' · ')}
+                  {[f.director?.[0], f.runtime ? fmtRuntime(f.runtime) : null].filter(Boolean).join(' · ')}
                 </div>
               </div>
             ))}
