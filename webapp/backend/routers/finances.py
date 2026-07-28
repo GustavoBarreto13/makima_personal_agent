@@ -1024,7 +1024,7 @@ def create_subscription_endpoint(
         next_billing = body.next_billing
     else:
         # Avança para o primeiro dia do mês seguinte somando dias suficientes
-        today = date.today()
+        today = _today_date()
         # replace(day=1) vai ao início do mês atual; + timedelta(days=31) pula para o mês seguinte
         next_month_first = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
         next_billing = next_month_first.strftime("%Y-%m-%d")
