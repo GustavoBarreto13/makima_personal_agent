@@ -20,6 +20,7 @@ import { Dashboard }     from './screens/Dashboard'
 import { Transactions }  from './screens/Transactions'
 import { Accounts }      from './screens/Accounts'
 import { Cards }         from './screens/Cards'
+import { Installments }  from './screens/Installments'
 import { Budgets }       from './screens/Budgets'
 import { Subscriptions } from './screens/Subscriptions'
 import { Loans }         from './screens/Loans'
@@ -30,7 +31,7 @@ import { AddModal }      from './modals/AddModal'
 
 /** Identificadores das views internas da seção Nami. */
 type NamiView =
-  | 'dashboard' | 'transacoes' | 'contas' | 'cartoes'
+  | 'dashboard' | 'transacoes' | 'contas' | 'cartoes' | 'parcelamentos'
   | 'orcamentos' | 'assinaturas' | 'emprestimos' | 'financiamentos'
 
 // ── Mapeamento hash → view (deep-link) ───────────────────────────────────────
@@ -39,6 +40,7 @@ const HASH_TO_VIEW: Record<string, NamiView> = {
   '#transacoes':    'transacoes',
   '#contas':        'contas',
   '#cartoes':       'cartoes',
+  '#parcelamentos': 'parcelamentos',
   '#orcamentos':    'orcamentos',
   '#assinaturas':   'assinaturas',
   '#emprestimos':   'emprestimos',
@@ -50,6 +52,7 @@ const VIEW_TO_HASH: Record<NamiView, string> = {
   transacoes:     '#transacoes',
   contas:         '#contas',
   cartoes:        '#cartoes',
+  parcelamentos:  '#parcelamentos',
   orcamentos:     '#orcamentos',
   assinaturas:    '#assinaturas',
   emprestimos:    '#emprestimos',
@@ -61,6 +64,7 @@ const VIEW_TITLES: Record<NamiView, string> = {
   transacoes:     'Transações',
   contas:         'Contas',
   cartoes:        'Cartões',
+  parcelamentos:  'Parcelamentos',
   orcamentos:     'Orçamentos',
   assinaturas:    'Assinaturas',
   emprestimos:    'Empréstimos',
@@ -78,6 +82,7 @@ const VIEW_ICONS: Record<NamiView, string> = {
   transacoes:     'receipt',
   contas:         'bank',
   cartoes:        'card',
+  parcelamentos:  'ticket',
   orcamentos:     'target',
   assinaturas:    'repeat',
   emprestimos:    'handshake',
@@ -289,6 +294,7 @@ export function NamiShell() {
         { id: 'transacoes',  label: 'Transações' },
         { id: 'contas',      label: 'Contas',  badge: patrimonioTotal > 0 ? formatCompact(patrimonioTotal) : null },
         { id: 'cartoes',     label: 'Cartões' },
+        { id: 'parcelamentos', label: 'Parcelamentos' },
       ],
     },
     {
@@ -326,6 +332,8 @@ export function NamiShell() {
         return <Accounts {...commonProps} onAccountsChanged={loadGlobal} />
       case 'cartoes':
         return <Cards {...commonProps} onCardsChanged={loadGlobal} />
+      case 'parcelamentos':
+        return <Installments {...commonProps} />
       case 'orcamentos':
         return <Budgets {...commonProps} />
       case 'assinaturas':

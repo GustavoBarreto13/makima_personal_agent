@@ -143,10 +143,14 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 
 | Tool | Descrição |
 |---|---|
-| `create_installment` | Cria grupo + N transações com datas mensais consecutivas |
-| `list_installments` | Lista grupos com contagem de parcelas pagas/pendentes |
+| `create_installment` | Cria grupo + N transações com datas mensais consecutivas. Origem é conta OU cartão (`card_id` opcional, spec 041) — mutuamente exclusivos, mesma regra de `create_transaction` |
+| `list_installments` | Lista grupos com contagem de parcelas pagas/pendentes (inclui `account_id`/`card_id`) |
+| `get_installment_detail` | Detalhe de um grupo — cabeçalho + linha do tempo das parcelas (número, data, valor, pago/pendente) — spec 041 |
 | `get_future_commitments` | Soma parcelas + assinaturas de um mês futuro (formato `"YYYY-MM"`) |
+| `get_card_installments` | Parcelamentos ativos de um cartão + comprometimento mensal da fatura + mês final (spec 041) |
 | `cancel_installment_group` | Soft delete nas parcelas futuras do grupo |
+| `delete_installment_group_full` | Remove o grupo inteiro (passadas + futuras) — diferente do cancelamento |
+| `update_installment_group` | Atualiza nome/notas (valores financeiros são imutáveis) |
 
 ### Cartões de crédito — `tools_credit_cards.py`
 

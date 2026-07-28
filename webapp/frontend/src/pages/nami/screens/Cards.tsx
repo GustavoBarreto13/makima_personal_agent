@@ -1,20 +1,21 @@
 // Tela de Cartões de Crédito da seção Nami.
 // Portada do handoff de referência (docs/.../nami/screens-a.jsx → Cartoes).
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { namiApi } from '../namiApi'
-import type { Card, Account } from '../types'
+import type { Card, Account, CardInstallment } from '../types'
 import { FormModal } from '../modals/FormModal'
 import { Icon } from '../icons'
-import { fmtMoney } from '../ui'
+import { fmtMoney, monthShort } from '../ui'
 
 interface CardsProps {
   cards: Card[]
   accounts: Account[]
   onToast: (msg: string) => void
   onCardsChanged: () => void
+  onNavigate?: (view: string) => void
   month?: string; stats?: unknown; subscriptions?: unknown
-  onTransactionSaved?: unknown; onNavigate?: unknown; onOpenAddModal?: unknown
+  onTransactionSaved?: unknown; onOpenAddModal?: unknown
 }
 
 const BRAND_OPTIONS = [
@@ -33,10 +34,29 @@ const CARD_GRADS = [
   { value: 'linear-gradient(135deg, oklch(0.55 0.14 300), oklch(0.38 0.10 320))', label: 'Roxo' },
 ]
 
-export function Cards({ cards, accounts, onToast, onCardsChanged }: CardsProps) {
+export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: CardsProps) {
   const [showForm, setShowForm]     = useState(false)
   const [saving, setSaving]         = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  // Parcelamentos ativos por cartão (spec 041, US3) — carregados sob demanda,
+  // um mapa cardId → {installments, monthly_commitment, ends_month}
+  const [cardInstallments, setCardInstallments] = useState<Record<string, {
+    installments: CardInstallment[]; monthly_commitment: number; ends_month: string | null
+  }>>({})
+
+  useEffect(() => {
+    cards.forEach(card => {
+      namiApi.getCardInstallments(card.id)
+        .then(r => setCardInstallments(prev => ({ ...prev, [card.id]: r })))
+        .catch(() => {})
+    })
+  }, [cards])
+
+  function goToInstallment(groupId: string) {
+    sessionStorage.setItem('nami:highlight-installment', groupId)
+    onNavigate?.('parcelamentos')
+  }
 
   const accountOptions = accounts.map(a => ({ value: a.name, label: a.name }))
 
@@ -117,6 +137,33 @@ export function Cards({ cards, accounts, onToast, onCardsChanged }: CardsProps) 
                   <Icon name="trash" size={12} />
                 </button>
               </div>
+
+              {/* Parcelamentos ativos do cartão — comprometimento mensal da fatura (spec 041) */}
+              {(cardInstallments[card.id]?.installments.length ?? 0) > 0 && (
+                <div style={{ borderTop: '1px solid var(--line)', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)' }}>
+                    <span>Parcelamentos ativos</span>
+                    <span>
+                      {fmtMoney(cardInstallments[card.id]!.monthly_commitment)}/mês
+                      {cardInstallments[card.id]!.ends_month && ` até ${monthShort(cardInstallments[card.id]!.ends_month!)}`}
+                    </span>
+                  </div>
+                  {cardInstallments[card.id]!.installments.map(inst => (
+                    <button
+                      key={inst.id}
+                      onClick={() => goToInstallment(inst.id)}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', fontSize: 12,
+                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0',
+                        color: 'var(--ink)', textAlign: 'left',
+                      }}
+                    >
+                      <span>{inst.name} · {inst.parcelas_pagas}/{inst.num_parcelas}</span>
+                      <span className="amount">{fmtMoney(inst.valor_parcela)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>

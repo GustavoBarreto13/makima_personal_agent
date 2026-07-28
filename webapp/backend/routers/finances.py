@@ -84,7 +84,10 @@ from agents.nami.tools_health import (
 from agents.nami.tools_installments import (
     create_installment,           # Cria grupo + N transações parceladas
     list_installments,            # Lista grupos de parcelamentos
+    get_installment_detail,       # Detalhe do grupo + linha do tempo das parcelas (spec 041)
     get_future_commitments,       # Soma parcelas + assinaturas de um mês futuro
+    get_card_installments,        # Parcelamentos ativos de um cartão + comprometimento mensal (spec 041)
+    cancel_installment_group,     # Cancela parcelas futuras (mantém histórico)
     delete_installment_group_full, # Soft delete completo do grupo (passadas + futuras)
 )
 
@@ -271,16 +274,18 @@ class UpdateSubscriptionBody(BaseModel):
 
 
 class CreateInstallmentBody(BaseModel):
-    """Corpo da requisição para registrar uma compra parcelada."""
+    """Corpo da requisição para registrar uma compra parcelada.
+
+    A origem é uma conta OU um cartão de crédito (spec 041) — quando `card_id`
+    é informado, `conta` é ignorado e a compra é vinculada ao cartão.
+    """
     name: str                   # Nome da compra (ex.: "Notebook Dell")
     valor_total: float          # Valor total em reais
     num_parcelas: int           # Número de parcelas (mínimo 2)
-    conta: str = ""             # Conta usada (vazio = resolução automática)
+    conta: str = ""             # Nome da conta (ignorado se card_id for informado)
+    card_id: Optional[str] = None  # UUID do cartão de crédito (mutuamente exclusivo com conta)
     categoria: str = "Inbox"   # Categoria da compra
     data_inicio: str = ""       # Data da 1ª parcela (vazio = hoje)
-    # card_id não suportado ainda: create_installment() não aceita este parâmetro.
-    # Compras parceladas de cartão de crédito precisam ser registradas manualmente
-    # via create_transaction com card_id para cada parcela individualmente.
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -773,6 +778,31 @@ def card_payment_endpoint(
     return _check_result(result)
 
 
+@router.get("/cards/{card_id}/installments")
+def card_installments_endpoint(
+    card_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Listar os parcelamentos ativos de um cartão + comprometimento mensal da fatura.
+
+    Usado pela tela Cartões (spec 041, User Story 3) para mostrar, dentro de
+    cada cartão, quanto da fatura já está comprometido com compras parceladas
+    e até quando.
+
+    Args:
+        card_id: ID único do cartão.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok", lista "installments", "monthly_commitment"
+        e "ends_month".
+
+    Raises:
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(get_card_installments(card_id=card_id))
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # ENDPOINTS — EMPRÉSTIMOS (/loans)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1099,6 +1129,27 @@ def list_installments_endpoint(
     return _check_result(result)
 
 
+@router.get("/installments/{group_id}")
+def get_installment_detail_endpoint(
+    group_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Detalhar um grupo de parcelamento — drill-down com a linha do tempo das parcelas.
+
+    Args:
+        group_id: ID do grupo de parcelas.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok", os dados do grupo e a lista "parcelas".
+
+    Raises:
+        HTTPException: 400 se o grupo não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(get_installment_detail(group_id=group_id))
+
+
 @router.post("/installments", status_code=201)
 def create_installment_endpoint(
     body: CreateInstallmentBody,
@@ -1107,7 +1158,8 @@ def create_installment_endpoint(
     """Registrar uma compra parcelada, criando todas as parcelas automaticamente.
 
     Cria um grupo de parcelamento + N transações com datas mensais consecutivas
-    a partir da data informada.
+    a partir da data informada. Aceita conta OU cartão de crédito como origem
+    (spec 041) — mutuamente exclusivos.
 
     Args:
         body: Dados da compra parcelada (name, valor_total e num_parcelas são obrigatórios).
@@ -1117,7 +1169,7 @@ def create_installment_endpoint(
         Dicionário com "status": "ok", group_id e lista de transaction_ids.
 
     Raises:
-        HTTPException: 400 se a conta não existir ou o número de parcelas for < 2.
+        HTTPException: 400 se a conta/cartão não existir ou o número de parcelas for < 2.
         HTTPException: 401 se o usuário não estiver autenticado.
     """
     # Cria o grupo de parcelamento com os dados do body
@@ -1129,8 +1181,32 @@ def create_installment_endpoint(
         conta=body.conta,
         categoria=body.categoria,
         first_due=body.data_inicio,
+        card_id=body.card_id or "",
     )
     return _check_result(result)
+
+
+@router.post("/installments/{group_id}/cancel", status_code=200)
+def cancel_installment_endpoint(
+    group_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Cancelar as parcelas futuras de um grupo de parcelamento.
+
+    Diferente da exclusão total: parcelas já pagas continuam no histórico,
+    apenas as futuras (data > hoje no fuso do Brasil) são removidas.
+
+    Args:
+        group_id: ID do grupo de parcelas.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e quantidade de parcelas futuras canceladas.
+
+    Raises:
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(cancel_installment_group(id=group_id))
 
 
 # ═════════════════════════════════════════════════════════════════════════════

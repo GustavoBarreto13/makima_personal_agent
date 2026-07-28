@@ -66,6 +66,11 @@ CREATE TABLE IF NOT EXISTS installment_groups (
     deleted       BOOLEAN     DEFAULT FALSE
 );
 
+-- Colunas adicionadas na spec 041 (Parcelamentos) — idempotentes para bancos existentes.
+-- Mesma regra de transactions/subscriptions: account_id e card_id são mutuamente exclusivos.
+ALTER TABLE installment_groups ADD COLUMN IF NOT EXISTS account_id TEXT;
+ALTER TABLE installment_groups ADD COLUMN IF NOT EXISTS card_id    TEXT;
+
 -- Tabela de contas bancárias (corrente, poupança, dinheiro, investimento)
 CREATE TABLE IF NOT EXISTS accounts (
     id              TEXT PRIMARY KEY,

@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-06
 
-**Status**: Draft
+**Status**: ✅ Implementado e migrado em produção (2026-07-28) — ver `plan.md` e `tasks.md` para detalhamento e verificação.
 
 **Input**: User description: "Tela de Parcelamentos no webapp da Nami com acompanhamento individual por compra (drill-down com a linha do tempo das parcelas), suporte a compras parceladas no cartão de crédito (card_id em create_installment) e detalhamento de parcelamentos dentro de cada cartão com comprometimento mensal da fatura. Endpoints GET/POST/DELETE /installments e GET /commitments/{month} já existem; falta o detalhe por grupo e a UI."
 

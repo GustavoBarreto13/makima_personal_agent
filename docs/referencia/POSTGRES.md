@@ -208,7 +208,9 @@ Cabeçalho de uma compra parcelada. As parcelas em si são linhas em `transactio
 | `total_valor` | NUMERIC | NÃO | — | Valor total (soma das parcelas). |
 | `num_parcelas` | INTEGER | NÃO | — | Quantidade de parcelas. |
 | `valor_parcela` | NUMERIC | NÃO | — | Valor de cada parcela. |
-| `conta` | TEXT | SIM | — | Conta/cartão usado. |
+| `conta` | TEXT | SIM | — | Nome de exibição da origem (conta ou cartão). |
+| `account_id` | TEXT | SIM | — | FK lógica para `accounts.id` — origem real, se conta bancária (spec 041). Mutuamente exclusivo com `card_id`. |
+| `card_id` | TEXT | SIM | — | FK lógica para `credit_cards.id` — origem real, se cartão de crédito (spec 041). Mutuamente exclusivo com `account_id`. |
 | `categoria` | TEXT | SIM | — | Categoria. |
 | `first_due` | DATE | SIM | — | Vencimento da 1ª parcela. |
 | `notes` | TEXT | SIM | — | Anotações. |

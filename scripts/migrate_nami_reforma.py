@@ -41,6 +41,20 @@ MIGRATIONS = [
         "subscriptions: adicionar coluna 'card_id'",
         "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS card_id TEXT;",
     ),
+
+    # ── Spec 041 (Parcelamentos): grupos de parcelamento ganham origem real ────
+    # installment_groups nunca teve account_id/card_id como colunas declaradas no
+    # schema — create_installment() já gravava account_id "no escuro" (ALTER manual
+    # antigo, não idempotente); esta migração formaliza as duas colunas e adiciona
+    # card_id para as compras parceladas no cartão de crédito.
+    (
+        "installment_groups: adicionar coluna 'account_id'",
+        "ALTER TABLE installment_groups ADD COLUMN IF NOT EXISTS account_id TEXT;",
+    ),
+    (
+        "installment_groups: adicionar coluna 'card_id'",
+        "ALTER TABLE installment_groups ADD COLUMN IF NOT EXISTS card_id TEXT;",
+    ),
 ]
 
 

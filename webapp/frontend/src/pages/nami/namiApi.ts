@@ -5,6 +5,7 @@ import { api } from '../../lib/api'
 import type {
   Transaction, Account, Card, Budget, Subscription,
   PersonalLoan, Financing, StatsResponse, Category,
+  Installment, InstallmentDetail, CardInstallment,
 } from './types'
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -127,6 +128,36 @@ export const namiApi = {
 
   deleteFinancing: (id: string): Promise<{ status: string }> =>
     api.del(`/api/finances/financings/${id}`),
+
+  // ── Parcelamentos (compras parceladas) ────────────────────────────────────────
+
+  getInstallments: (status: string = 'ativo'): Promise<{ installments: Installment[] }> =>
+    api.get(`/api/finances/installments?status=${status}`),
+
+  getInstallmentDetail: (id: string): Promise<InstallmentDetail> =>
+    api.get(`/api/finances/installments/${id}`),
+
+  createInstallment: (body: {
+    name: string; valor_total: number; num_parcelas: number;
+    conta?: string; card_id?: string; categoria?: string; data_inicio?: string;
+  }): Promise<{ status: string; group_id: string }> =>
+    api.post('/api/finances/installments', body),
+
+  cancelInstallment: (id: string): Promise<{ status: string }> =>
+    api.post(`/api/finances/installments/${id}/cancel`, {}),
+
+  deleteInstallment: (id: string): Promise<{ status: string }> =>
+    api.del(`/api/finances/installments/${id}`),
+
+  getFutureCommitments: (month: string): Promise<{
+    month: string; total_parcelas: number; total_assinaturas: number; total: number
+  }> =>
+    api.get(`/api/finances/commitments/${month}`),
+
+  getCardInstallments: (cardId: string): Promise<{
+    installments: CardInstallment[]; monthly_commitment: number; ends_month: string | null
+  }> =>
+    api.get(`/api/finances/cards/${cardId}/installments`),
 
   // ── Upload de ícone ───────────────────────────────────────────────────────────
 

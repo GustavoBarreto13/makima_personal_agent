@@ -121,6 +121,53 @@ export interface Financing {
   created_at?: string
 }
 
+// ── Parcelamento (compra parcelada) — spec 041 ──────────────────────────────
+
+/** Grupo de parcelamento com progresso agregado, como listado em GET /installments. */
+export interface Installment {
+  id: string
+  name: string
+  total_valor: number
+  num_parcelas: number
+  valor_parcela: number
+  conta: string           // nome de exibição da origem (conta ou cartão)
+  account_id?: string | null
+  card_id?: string | null
+  categoria: string
+  first_due: string       // YYYY-MM-DD
+  notes?: string | null
+  parcelas_pagas: number
+  parcelas_pendentes: number
+}
+
+/** Uma parcela individual dentro do drill-down de um grupo. */
+export interface InstallmentParcela {
+  id: string
+  numero: number
+  data: string    // YYYY-MM-DD
+  valor: number
+  pago: boolean
+  mes_corrente: boolean
+}
+
+/** Resposta de GET /installments/{id} — cabeçalho do grupo + linha do tempo. */
+export interface InstallmentDetail {
+  group: Installment
+  parcelas: InstallmentParcela[]
+  parcelas_pagas: number
+  parcelas_pendentes: number
+}
+
+/** Um parcelamento ativo dentro de um cartão (GET /cards/{id}/installments). */
+export interface CardInstallment {
+  id: string
+  name: string
+  valor_parcela: number
+  num_parcelas: number
+  parcelas_pagas: number
+  parcelas_pendentes: number
+}
+
 // ── Estatísticas mensais (derivadas) ────────────────────────────────────────
 
 /** Shape do GET /api/finances/stats?month=YYYY-MM */
