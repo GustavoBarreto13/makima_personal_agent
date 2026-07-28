@@ -127,6 +127,9 @@ ON diary_entries(letterboxd_uri, watched_date) WHERE letterboxd_uri IS NOT NULL;
 
 - **Base URL**: `https://api.themoviedb.org/3`
 - **Auth**: api_key v3 (`TMDB_API_KEY` — variável de ambiente)
+- **Idioma**: `_TMDB_LANG = "en-US"` (spec 050) — todos os metadados vêm em inglês. Filmes
+  gravados antes dessa mudança continuam em português até "Buscar Dados" ser acionado neles
+  (sem migração em massa).
 - **Endpoints usados**: `/search/movie`, `/movie/{id}`, `/movie/{id}/credits`
 - **Imagens**: `https://image.tmdb.org/t/p/w500` (pôster) e `/w1280` (backdrop)
 - **Retry**: 3 tentativas com backoff exponencial (2s, 4s, 8s)
@@ -168,10 +171,19 @@ O campo `poster_palette` em `movies` armazena a paleta calculada na inserção.
 - Apenas filmes com `status='watched'` podem ser favoritos
 
 ### Idempotência (sync Letterboxd)
-- **Dedup de filme**: `letterboxd_uri` com índice parcial UNIQUE
+- **Dedup de filme**: `letterboxd_uri` com índice parcial UNIQUE; se não encontrar, cai para
+  `_resolve_movie_identity()` (spec 050, FR-010) — `tmdb_id` e, por último, título
+  normalizado + ano. Encontrar um filme por qualquer uma dessas vias **funde** (anexa o
+  `letterboxd_uri` que faltava) em vez de criar um registro novo — evita duplicar um filme
+  cadastrado manualmente que a importação/sync reencontra depois. Usada tanto por `add_movie`
+  quanto por `upsert_movie_from_letterboxd`.
 - **Dedup de sessão**: `(letterboxd_uri, watched_date)` com índice parcial UNIQUE
 - Rodar o sync 2× não cria duplicatas (SC-003)
 - Importar o mesmo CSV 2× não cria duplicatas (SC-004)
+- **Ordem no mesmo dia (spec 050, FR-011)**: `created_at` de `diary_entries` deixou de ser
+  incidental — o importador CSV grava um valor explícito e incremental por linha lida, para
+  que `ORDER BY watched_date DESC, created_at DESC` reflita a ordem real do export. A
+  interface permite reordenar via `reorder_diary_entries()` quando o export vier errado.
 
 ---
 
@@ -229,6 +241,10 @@ O campo `poster_palette` em `movies` armazena a paleta calculada na inserção.
 | `get_stats(year?)` | Estatísticas anuais (vazio-seguro — SC-006) |
 | `delete_movie(movie_id)` | Soft delete |
 | `delete_diary_entry(diary_id)` | Remove sessão e recalcula `times_watched` |
+| `refresh_movie_metadata(movie_id, tmdb_id?)` | "Buscar Dados" (spec 050) — rebusca no TMDB e sobrescreve só os campos de catálogo; nunca toca em dado pessoal |
+| `update_movie_catalog(movie_id, title?, year?, director?, genres?, runtime?, overview?)` | Edição manual dos campos de catálogo (spec 050) |
+| `update_diary_entry(diary_id, watched_date?, rating?, review?, tags?, rewatch?)` | Edição manual de uma sessão (spec 050) — recalcula `last_watched_date`/`times_watched` |
+| `reorder_diary_entries(watched_date, ordered_ids)` | Reordena sessões do mesmo dia reatribuindo `created_at` (spec 050) |
 
 ### Wave 4 — Agregações
 
@@ -267,7 +283,7 @@ O campo `poster_palette` em `movies` armazena a paleta calculada na inserção.
 
 | Função | Descrição |
 |---|---|
-| `upsert_movie_from_letterboxd(title, year, letterboxd_uri, rating, review, watched_date, source, enrich_tmdb)` | Upsert idempotente para RSS/CSV |
+| `upsert_movie_from_letterboxd(title, year, letterboxd_uri, rating, review, watched_date, source, enrich_tmdb, created_at?)` | Upsert idempotente para RSS/CSV — `created_at` explícito (spec 050) garante ordem entre sessões do mesmo dia |
 
 ---
 
@@ -305,13 +321,29 @@ python -m scripts.import_letterboxd_csv ~/Downloads/letterboxd_export
 python -m scripts.import_letterboxd_csv ~/pasta --no-tmdb
 ```
 
-Ordem de processamento: `diary.csv` → `reviews.csv` → `watchlist.csv` → `ratings.csv`.
+Ordem de processamento: `diary.csv` → `reviews.csv` → `watchlist.csv` → `ratings.csv` →
+`watched.csv` (fallback final, spec 050 FR-001 — filmes sem data confiável entram só como
+"assistido", sem sessão).
 
 **Para rodar no VPS** (banco está em container Docker):
 ```bash
 docker cp ~/Downloads/letterboxd_export makima-web:/app/letterboxd_export
-docker exec makima-web sh -c "cd /app && python -m scripts.import_letterboxd_csv letterboxd_export"
+docker exec makima-web sh -c "cd /app && python -m scripts.import_letterboxd_csv letterboxd_export -v"
 ```
+
+**Roteiro completo da carga real (spec 050, US3)** — passo a passo até confirmar sucesso:
+
+1. Copiar o export e rodar o import (comando acima). A saída final em JSON traz os
+   contadores: `criados`, `atualizados`, `pulados`, `erros`.
+2. **Confirmar a carga**: consultar `GET /api/movies/stats` (ou a tela Estatísticas do
+   webapp) e comparar a contagem de filmes com o perfil público do usuário no Letterboxd
+   (SC-004) — variação aceitável só para filmes privados/removidos do Letterboxd.
+3. **Validar idempotência**: rodar o mesmo comando uma segunda vez. A contagem final de
+   filmes e sessões MUST ser idêntica à da primeira execução (nenhum `criados` na segunda
+   rodada, fora de filmes genuinamente novos adicionados entre as duas execuções).
+4. Cenários de teste detalhados (export sintético, dedup contra filme manual, ordem no
+   mesmo dia) estão em `specs/050-akane-letterboxd-carga/quickstart.md` — rodar contra um
+   banco de teste antes da carga real, não direto em produção.
 
 ---
 

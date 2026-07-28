@@ -20,7 +20,7 @@ import re           # Remove pontuação na normalização de strings
 import time         # Backoff exponencial nas chamadas ao TMDB
 import unicodedata  # Remove acentos na normalização fuzzy
 import uuid         # Gera IDs únicos para cada filme/sessão/etc.
-from datetime import datetime, date  # Tipos de data — fuso São Paulo
+from datetime import datetime, date, timedelta  # Tipos de data — fuso São Paulo
 from zoneinfo import ZoneInfo        # Fuso horário do Brasil
 
 import requests     # Chamadas HTTP ao TMDB e Letterboxd (já no requirements.txt)
@@ -44,6 +44,10 @@ _TMDB_BASE = "https://api.themoviedb.org/3"
 # w500 = pôsteres (proporção 2:3); w1280 = backdrops (hero horizontal).
 _TMDB_IMG_POSTER   = "https://image.tmdb.org/t/p/w500"
 _TMDB_IMG_BACKDROP = "https://image.tmdb.org/t/p/w1280"
+
+# Idioma dos metadados TMDB — inglês (spec 050, FR-005). Filmes gravados antes desta
+# mudança continuam em português até "Buscar Dados" ser acionado neles (sem migração em massa).
+_TMDB_LANG = "en-US"
 
 # As 14 paletas de pôster tipográfico (fallback quando poster_url é NULL).
 # Cada paleta define bg (fundo), ink (texto) e accent (cor de destaque).
@@ -247,7 +251,7 @@ def _tmdb_search(title: str, year: int | None = None) -> list[dict]:
         Lista de resultados TMDB (dicts com id, title, release_date, poster_path, etc.),
         ou lista vazia em caso de falha.
     """
-    params = {"query": title, "language": "pt-BR"}
+    params = {"query": title, "language": _TMDB_LANG}
     if year:
         params["year"] = str(year)
 
@@ -270,7 +274,7 @@ def _tmdb_detail(tmdb_id: int) -> dict | None:
         Dict com campos combinados (details + director list), ou None em caso de falha.
     """
     # Detalhes principais (gêneros, runtime, idioma, poster, backdrop)
-    details = _tmdb_get(f"/movie/{tmdb_id}", params={"language": "pt-BR"})
+    details = _tmdb_get(f"/movie/{tmdb_id}", params={"language": _TMDB_LANG})
     if not details:
         return None
 
@@ -302,6 +306,7 @@ def _tmdb_detail(tmdb_id: int) -> dict | None:
     return {
         "tmdb_id":     details.get("id"),
         "imdb_id":     details.get("imdb_id"),
+        "title":       details.get("title"),
         "year":        release_year,
         "director":    directors,
         "genres":      [g["name"] for g in details.get("genres", [])],
@@ -343,6 +348,100 @@ def _enrich_movie_from_tmdb(title: str, year: int | None = None, tmdb_id: int | 
     first = results[0]
     detail = _tmdb_detail(first["id"])
     return detail or {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RESOLUÇÃO DE IDENTIDADE — dedup entre fontes (spec 050, FR-010)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _resolve_movie_identity(
+    letterboxd_uri: str | None,
+    tmdb_id: int | None,
+    title: str,
+    year: int | None,
+) -> str | None:
+    """Resolve se um filme já existe no catálogo, por identidade externa ou título+ano.
+
+    Ordem de resolução (spec 050, FR-010): letterboxd_uri exato → tmdb_id exato →
+    título normalizado (+ ano, quando disponível) como último recurso. Usada tanto
+    por `add_movie` (cadastro manual) quanto por `upsert_movie_from_letterboxd`
+    (sync RSS/CSV) para que o mesmo filme nunca gere dois registros, venha de
+    onde vier.
+
+    Args:
+        letterboxd_uri: URI do Letterboxd, se conhecida.
+        tmdb_id: ID do TMDB, se conhecido (informado ou já resolvido via enriquecimento).
+        title: Título do filme (usado no fallback por normalizado).
+        year: Ano de lançamento (usado no fallback, quando disponível).
+
+    Returns:
+        Id do filme já existente no catálogo, ou None se nenhum for encontrado.
+    """
+    if letterboxd_uri:
+        rows = run_select(
+            "SELECT id FROM movies WHERE letterboxd_uri = %(uri)s AND deleted = FALSE",
+            {"uri": letterboxd_uri},
+        )
+        if rows:
+            return rows[0]["id"]
+
+    if tmdb_id:
+        rows = run_select(
+            "SELECT id FROM movies WHERE tmdb_id = %(tid)s AND deleted = FALSE",
+            {"tid": tmdb_id},
+        )
+        if rows:
+            return rows[0]["id"]
+
+    # Último recurso: título normalizado (+ ano, quando disponível). Sem tmdb_id nem
+    # ano confiável, o risco de falso positivo entre remakes/homônimos é assumido
+    # (ver Edge Cases da spec 050) — melhor que duplicar silenciosamente.
+    if not title:
+        return None
+    if year is not None:
+        rows = run_select(
+            "SELECT id FROM movies WHERE normalizado = %(norm)s AND year = %(year)s AND deleted = FALSE",
+            {"norm": _norm(title), "year": year},
+        )
+    else:
+        rows = run_select(
+            "SELECT id FROM movies WHERE normalizado = %(norm)s AND deleted = FALSE",
+            {"norm": _norm(title)},
+        )
+    return rows[0]["id"] if rows else None
+
+
+def _merge_into_existing_movie(movie_id: str, letterboxd_uri: str | None, source: str) -> dict:
+    """Funde uma identidade recém-encontrada no filme já existente, em vez de duplicar.
+
+    Só preenche `letterboxd_uri`/`source` quando estavam vazios — nunca sobrescreve
+    um dado já presente no registro existente (US6).
+
+    Args:
+        movie_id: Id do filme já existente no catálogo.
+        letterboxd_uri: URI a anexar, se o registro existente ainda não tiver um.
+        source: Origem da tentativa de criação (só grava se o registro não tinha
+            letterboxd_uri, isto é, se essa é a primeira vez que ele "vem" do Letterboxd).
+
+    Returns:
+        Dict com status "merged" e o id do filme existente.
+    """
+    if letterboxd_uri:
+        run_dml(
+            """
+            UPDATE movies
+            SET letterboxd_uri = COALESCE(letterboxd_uri, %(uri)s),
+                source = CASE WHEN letterboxd_uri IS NULL THEN %(source)s ELSE source END,
+                updated_at = %(now)s
+            WHERE id = %(id)s
+            """,
+            {"id": movie_id, "uri": letterboxd_uri, "source": source, "now": _now()},
+        )
+    return {
+        "status": "merged",
+        "id": movie_id,
+        "message": "Filme já existia no catálogo — vínculo atualizado em vez de duplicado.",
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -466,6 +565,7 @@ def add_movie(
     year: int | None = None,
     letterboxd_uri: str | None = None,
     source: str = "manual",
+    enrich_tmdb: bool = True,
 ) -> dict:
     """Adiciona um filme ao catálogo (watchlist ou watched).
 
@@ -480,6 +580,8 @@ def add_movie(
         year: Ano de lançamento (opcional se tmdb_id fornecido).
         letterboxd_uri: URL do filme no Letterboxd (para dedup do RSS/CSV).
         source: Origem da entrada ('manual' | 'letterboxd_rss' | 'letterboxd_csv').
+        enrich_tmdb: Se False, não consulta o TMDB — filme criado só com os dados
+            fornecidos (spec 050, FR-003: opção "sem enriquecimento externo").
 
     Returns:
         Dict com status "ok" e id do filme criado, ou "error" se já existe.
@@ -492,32 +594,28 @@ def add_movie(
     if not title and not tmdb_id:
         return _err("Forneça ao menos o título ou o tmdb_id do filme.")
 
-    # ── Dedup por letterboxd_uri ───────────────────────────────────────────────
-    # Se já existe um filme com esse URI, retorna o existente (idempotência do sync)
-    if letterboxd_uri:
-        existing = run_select(
-            "SELECT id FROM movies WHERE letterboxd_uri = %(uri)s AND deleted = FALSE",
-            {"uri": letterboxd_uri},
-        )
-        if existing:
-            return _err(f"Filme com letterboxd_uri '{letterboxd_uri}' já existe no catálogo.")
-
-    # ── Dedup por tmdb_id ──────────────────────────────────────────────────────
-    if tmdb_id:
-        existing = run_select(
-            "SELECT id, title FROM movies WHERE tmdb_id = %(tid)s AND deleted = FALSE",
-            {"tid": tmdb_id},
-        )
-        if existing:
-            return _err(f"Filme '{existing[0]['title']}' (TMDB {tmdb_id}) já está no catálogo.")
+    # ── Resolução de identidade (spec 050, FR-010) — antes do enriquecimento ──
+    # Fast-exit: URI ou tmdb_id exatos informados pelo chamador já bastam para achar
+    # um filme existente, sem gastar uma chamada TMDB à toa. Funde em vez de duplicar.
+    if letterboxd_uri or tmdb_id:
+        existing_id = _resolve_movie_identity(letterboxd_uri, tmdb_id, title or "", year)
+        if existing_id:
+            return _merge_into_existing_movie(existing_id, letterboxd_uri, source)
 
     # ── Enriquecimento via TMDB ────────────────────────────────────────────────
-    # Falha graciosamente: se a API estiver fora, cria o filme sem metadados
-    meta = _enrich_movie_from_tmdb(title or "", year, tmdb_id)
+    # Falha graciosamente: se a API estiver fora, cria o filme sem metadados.
+    # enrich_tmdb=False (--no-tmdb) pula a chamada por completo (FR-003).
+    meta = _enrich_movie_from_tmdb(title or "", year, tmdb_id) if enrich_tmdb else {}
 
     # O tmdb_id do enriquecimento pode diferir do fornecido (se buscou por texto)
     final_tmdb_id = meta.get("tmdb_id") or tmdb_id
     final_title   = title or "Filme desconhecido"  # fallback se só tmdb_id foi passado
+
+    # ── Resolução de identidade novamente — agora com o tmdb_id resolvido pelo ──
+    # enriquecimento (ou fallback por título+ano se o TMDB não achou nada/estava fora)
+    existing_id = _resolve_movie_identity(letterboxd_uri, final_tmdb_id, final_title, meta.get("year") or year)
+    if existing_id:
+        return _merge_into_existing_movie(existing_id, letterboxd_uri, source)
 
     # ── Inserção no banco ──────────────────────────────────────────────────────
     movie_id = str(uuid.uuid4())
@@ -810,6 +908,135 @@ def set_notes(movie_id: str, notes: str) -> dict:
         {"n": notes or None, "now": _now(), "id": movie_id},
     )
     return _ok(message=f"Anotações de '{rows[0]['title']}' salvas.")
+
+
+def refresh_movie_metadata(movie_id: str, tmdb_id: int | None = None) -> dict:
+    """Rebusca metadados do TMDB e sobrescreve os campos de catálogo do filme.
+
+    Botão "Buscar Dados" no detalhe do filme (spec 050, FR-006/FR-007). Nunca toca
+    nos dados pessoais (status, rating, liked, tags, notes) nem de proveniência
+    (letterboxd_uri, source, created_at) — só os campos de catálogo mudam.
+
+    Args:
+        movie_id: ID do filme a atualizar.
+        tmdb_id: Se informado, usa esse id diretamente — fluxo de "escolher outro
+            candidato" quando o filme foi associado ao título errado. Se omitido,
+            usa o tmdb_id já salvo no filme, ou busca por título+ano.
+
+    Returns:
+        Dict com status "ok" e o filme atualizado, ou "error" se o filme não existe
+        ou a busca no TMDB falhou (nesse caso, nenhuma coluna é tocada).
+    """
+    rows = run_select("SELECT * FROM movies WHERE id = %(id)s AND deleted = FALSE", {"id": movie_id})
+    if not rows:
+        return _err("Filme não encontrado.")
+    movie = rows[0]
+
+    # Resolve o alvo: tmdb_id informado > tmdb_id já salvo > busca por título+ano
+    target_tmdb_id = tmdb_id or movie.get("tmdb_id")
+    if target_tmdb_id:
+        detail = _tmdb_detail(target_tmdb_id)
+    else:
+        results = _tmdb_search(movie["title"], movie.get("year"))
+        detail = _tmdb_detail(results[0]["id"]) if results else None
+
+    if not detail:
+        return _err("Não foi possível buscar metadados no TMDB — o filme não foi alterado.")
+
+    # Título vem do TMDB — é justamente o que corrige um match errado (FR-007);
+    # se o TMDB não trouxer título por algum motivo, mantém o atual.
+    new_title = detail.get("title") or movie["title"]
+    run_dml(
+        """
+        UPDATE movies
+        SET tmdb_id = %(tmdb_id)s, imdb_id = %(imdb_id)s, title = %(title)s,
+            normalizado = %(normalizado)s, year = %(year)s, director = %(director)s,
+            genres = %(genres)s, runtime = %(runtime)s, overview = %(overview)s,
+            poster_url = %(poster_url)s, backdrop_url = %(backdrop_url)s,
+            poster_palette = %(poster_palette)s, updated_at = %(now)s
+        WHERE id = %(id)s
+        """,
+        {
+            "id":             movie_id,
+            "tmdb_id":        detail.get("tmdb_id") or target_tmdb_id,
+            "imdb_id":        detail.get("imdb_id"),
+            "title":          new_title,
+            "normalizado":    _norm(new_title),
+            "year":           detail.get("year") or movie.get("year"),
+            "director":       detail.get("director") or [],
+            "genres":         detail.get("genres") or [],
+            "runtime":        detail.get("runtime"),
+            "overview":       detail.get("overview"),
+            "poster_url":     detail.get("poster_url"),
+            "backdrop_url":   detail.get("backdrop_url"),
+            "poster_palette": _poster_palette(new_title),
+            "now":            _now(),
+        },
+    )
+
+    updated = run_select("SELECT * FROM movies WHERE id = %(id)s", {"id": movie_id})
+    return _ok(movie=updated[0])
+
+
+def update_movie_catalog(
+    movie_id: str,
+    title: str | None = None,
+    year: int | None = None,
+    director: list[str] | None = None,
+    genres: list[str] | None = None,
+    runtime: int | None = None,
+    overview: str | None = None,
+) -> dict:
+    """Edita manualmente os campos de catálogo de um filme (spec 050, FR-008).
+
+    Atualização parcial — só os campos passados (não-None) mudam. Campos pessoais
+    (status, rating, liked, notes) continuam editáveis pelas tools já existentes
+    (`update_movie_status`, `rate_movie`, `set_like`, `set_notes`).
+
+    Args:
+        movie_id: ID do filme a editar.
+        title: Novo título, se estiver sendo corrigido (recalcula `normalizado`).
+        year: Novo ano de lançamento.
+        director: Nova lista de diretores.
+        genres: Nova lista de gêneros.
+        runtime: Nova duração em minutos.
+        overview: Nova sinopse.
+
+    Returns:
+        Dict com status "ok" e o filme atualizado, ou "error" se não encontrado.
+    """
+    rows = run_select("SELECT id FROM movies WHERE id = %(id)s AND deleted = FALSE", {"id": movie_id})
+    if not rows:
+        return _err("Filme não encontrado.")
+
+    # Monta o SET dinamicamente — só os campos informados entram na query
+    fields: dict = {}
+    if title is not None:
+        fields["title"] = title
+        fields["normalizado"] = _norm(title)
+    if year is not None:
+        fields["year"] = year
+    if director is not None:
+        fields["director"] = director
+    if genres is not None:
+        fields["genres"] = genres
+    if runtime is not None:
+        fields["runtime"] = runtime
+    if overview is not None:
+        fields["overview"] = overview
+
+    if not fields:
+        return _err("Nenhum campo informado para atualizar.")
+
+    fields["updated_at"] = _now()
+    set_clause = ", ".join(f"{col} = %({col})s" for col in fields)
+    run_dml(
+        f"UPDATE movies SET {set_clause} WHERE id = %(id)s",
+        {**fields, "id": movie_id},
+    )
+
+    updated = run_select("SELECT * FROM movies WHERE id = %(id)s", {"id": movie_id})
+    return _ok(movie=updated[0])
 
 
 def list_movies(
@@ -1140,6 +1367,139 @@ def delete_diary_entry(diary_id: str) -> dict:
             )
 
     return _ok(message="Sessão removida do diário.")
+
+
+def update_diary_entry(
+    diary_id: str,
+    watched_date: str | date | None = None,
+    rating: float | None = None,
+    review: str | None = None,
+    tags: list[str] | None = None,
+    rewatch: bool | None = None,
+) -> dict:
+    """Edita manualmente uma sessão do diário (spec 050, FR-009).
+
+    Atualização parcial — só os campos passados (não-None) mudam. Depois de
+    aplicar, recalcula `times_watched`/`last_watched_date` do filme dono da sessão
+    (mesmo padrão de `delete_diary_entry`), já que editar a data pode mudar qual é
+    a sessão mais recente.
+
+    Args:
+        diary_id: ID da sessão a editar.
+        watched_date: Nova data da sessão (string ISO ou date).
+        rating: Nova nota da sessão (0.5–5.0).
+        review: Novo texto da resenha.
+        tags: Nova lista de etiquetas da sessão.
+        rewatch: Nova flag de revisão (editável diretamente — sem recalcular a
+            partir do histórico, ao contrário do que acontece na criação).
+
+    Returns:
+        Dict com status "ok", a sessão atualizada e os agregados recalculados do
+        filme (`last_watched_date`, `times_watched`), ou "error" se não encontrada
+        ou a nota for inválida.
+    """
+    rows = run_select("SELECT movie_id FROM diary_entries WHERE id = %(id)s", {"id": diary_id})
+    if not rows:
+        return _err("Sessão não encontrada.")
+    movie_id = rows[0]["movie_id"]
+
+    if rating is not None:
+        rating_error = _validate_rating(rating)
+        if rating_error:
+            return _err(rating_error)
+
+    # Converte string ISO para date, se necessário (mesmo padrão de log_watch)
+    parsed_date = watched_date
+    if isinstance(watched_date, str):
+        parsed_date = date.fromisoformat(watched_date)
+
+    fields: dict = {}
+    if parsed_date is not None:
+        fields["watched_date"] = parsed_date
+    if rating is not None:
+        fields["rating"] = float(rating)
+    if review is not None:
+        fields["review"] = review
+    if tags is not None:
+        fields["tags"] = tags
+    if rewatch is not None:
+        fields["rewatch"] = rewatch
+
+    if not fields:
+        return _err("Nenhum campo informado para atualizar.")
+
+    set_clause = ", ".join(f"{col} = %({col})s" for col in fields)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE diary_entries SET {set_clause} WHERE id = %(id)s",
+                {**fields, "id": diary_id},
+            )
+            # Recalcula os agregados do filme — a edição pode ter mudado qual
+            # sessão é a mais recente, ou o total (embora o total não mude aqui)
+            cur.execute(
+                """
+                UPDATE movies
+                SET
+                    times_watched     = (SELECT COUNT(*) FROM diary_entries WHERE movie_id = %(mid)s),
+                    last_watched_date = (SELECT MAX(watched_date) FROM diary_entries WHERE movie_id = %(mid)s),
+                    updated_at = %(now)s
+                WHERE id = %(mid)s
+                """,
+                {"mid": movie_id, "now": _now()},
+            )
+
+    entry = run_select("SELECT * FROM diary_entries WHERE id = %(id)s", {"id": diary_id})
+    movie = run_select(
+        "SELECT last_watched_date, times_watched FROM movies WHERE id = %(id)s",
+        {"id": movie_id},
+    )
+    return _ok(entry=entry[0], movie=movie[0])
+
+
+def reorder_diary_entries(watched_date: str | date, ordered_ids: list[str]) -> dict:
+    """Reordena sessões de um mesmo dia (spec 050, FR-012).
+
+    O Letterboxd não exporta horário — a ordem dentro de um `watched_date` é
+    controlada por `created_at` (FR-011). Esta tool reatribui `created_at` para as
+    sessões informadas, espaçadas por 1 segundo a partir da meia-noite daquele dia,
+    na ordem em que aparecem em `ordered_ids` (índice 0 = mais antiga do dia).
+
+    Args:
+        watched_date: Data cujas sessões serão reordenadas.
+        ordered_ids: IDs das sessões daquele dia, na ordem desejada.
+
+    Returns:
+        Dict com status "ok", ou "error" se algum id não pertence a uma sessão
+        com essa data (operação tudo-ou-nada — nenhuma mudança é aplicada).
+    """
+    parsed_date = watched_date
+    if isinstance(watched_date, str):
+        parsed_date = date.fromisoformat(watched_date)
+
+    if not ordered_ids:
+        return _err("Nenhum id informado para reordenar.")
+
+    # Valida que todos os ids pertencem a sessões com essa data, antes de
+    # aplicar qualquer mudança (operação tudo-ou-nada)
+    rows = run_select(
+        "SELECT id FROM diary_entries WHERE watched_date = %(date)s AND id = ANY(%(ids)s)",
+        {"date": parsed_date, "ids": ordered_ids},
+    )
+    if len(rows) != len(ordered_ids):
+        return _err("Um ou mais ids não pertencem a uma sessão com essa data.")
+
+    midnight = datetime.combine(parsed_date, datetime.min.time(), tzinfo=_TZ)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for i, entry_id in enumerate(ordered_ids):
+                cur.execute(
+                    "UPDATE diary_entries SET created_at = %(ts)s WHERE id = %(id)s",
+                    {"ts": midnight + timedelta(seconds=i), "id": entry_id},
+                )
+
+    return _ok(message="Ordem das sessões atualizada.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1856,10 +2216,14 @@ def upsert_movie_from_letterboxd(
     watched_date: date,
     source: str = "letterboxd_rss",
     enrich_tmdb: bool = True,
+    created_at: datetime | None = None,
 ) -> dict:
     """Cria ou atualiza um filme + sessão vindos do Letterboxd (RSS ou CSV).
 
-    Dedup por letterboxd_uri (filme) e (letterboxd_uri, watched_date) (sessão).
+    Dedup de sessão por (letterboxd_uri, watched_date). Dedup de filme por
+    letterboxd_uri e, se não encontrar, por tmdb_id/título+ano (spec 050, FR-010) —
+    evita duplicar um filme cadastrado manualmente que a importação/sync reencontra
+    depois, anexando o letterboxd_uri ao registro existente em vez de criar outro.
     rating_source = 'letterboxd' quando a nota vem do Letterboxd.
 
     Args:
@@ -1871,9 +2235,15 @@ def upsert_movie_from_letterboxd(
         watched_date: Data em que foi assistido.
         source: 'letterboxd_rss' ou 'letterboxd_csv'.
         enrich_tmdb: Se True, tenta buscar metadados do TMDB (com fallback gracioso).
+        created_at: Timestamp explícito da sessão (spec 050, FR-011) — usado pela
+            importação em lote para garantir que, dentro do mesmo `watched_date`, a
+            ordem das sessões reflita a ordem das linhas do export. Se omitido, usa
+            o instante atual (comportamento de sempre, para o sync RSS).
 
     Returns:
-        Dict com status ('created'|'updated'|'skipped') e id do filme.
+        Dict com status ('created'|'updated'|'skipped') e id do filme — quando o
+        filme é encontrado por tmdb_id/título+ano (fusão de identidade), o retorno é
+        'updated' sobre o registro existente, não 'created'.
     """
     # ── Dedup de sessão: (letterboxd_uri, watched_date) ──────────────────────
     # Se a sessão já existe, pula (idempotência — SC-003)
@@ -1887,16 +2257,36 @@ def upsert_movie_from_letterboxd(
     if diary_exists:
         return {"status": "skipped", "id": None}
 
-    # ── Dedup de filme: letterboxd_uri ────────────────────────────────────────
+    # ── Dedup de filme: letterboxd_uri, depois tmdb_id/título+ano (FR-010) ──────
     movie_rows = run_select(
         "SELECT id, times_watched, rating FROM movies WHERE letterboxd_uri = %(uri)s",
         {"uri": letterboxd_uri},
     )
     movie_created = False
+    # Enriquecimento resolvido uma única vez — reaproveitado tanto para checar
+    # identidade via tmdb_id quanto para os campos do INSERT, se for filme novo.
+    meta: dict = _enrich_movie_from_tmdb(title, year) if (enrich_tmdb and not movie_rows) else {}
 
     if not movie_rows:
-        # Filme novo: cria no catálogo (com ou sem enriquecimento TMDB)
-        meta = _enrich_movie_from_tmdb(title, year) if enrich_tmdb else {}
+        # Não achou por letterboxd_uri — tenta achar por tmdb_id/título+ano antes de
+        # decidir que é um filme genuinamente novo (evita duplicar um cadastro manual)
+        existing_id = _resolve_movie_identity(None, meta.get("tmdb_id"), title, meta.get("year") or year)
+        if existing_id:
+            run_dml(
+                """
+                UPDATE movies
+                SET letterboxd_uri = COALESCE(letterboxd_uri, %(uri)s), updated_at = %(now)s
+                WHERE id = %(id)s
+                """,
+                {"id": existing_id, "uri": letterboxd_uri, "now": _now()},
+            )
+            movie_rows = run_select(
+                "SELECT id, times_watched, rating FROM movies WHERE id = %(id)s",
+                {"id": existing_id},
+            )
+
+    if not movie_rows:
+        # Filme genuinamente novo: cria no catálogo (com ou sem enriquecimento TMDB)
         movie_id = str(uuid.uuid4())
         now = _now()
         run_dml(
@@ -1981,21 +2371,24 @@ def upsert_movie_from_letterboxd(
             review, letterboxd_uri, source, created_at
         ) VALUES (
             %(id)s, %(mid)s, %(title)s, %(date)s, %(rating)s, %(rewatch)s,
-            %(review)s, %(uri)s, %(source)s, NOW()
+            %(review)s, %(uri)s, %(source)s, %(created_at)s
         )
         ON CONFLICT (letterboxd_uri, watched_date) WHERE letterboxd_uri IS NOT NULL
         DO NOTHING
         """,
         {
-            "id":      diary_id,
-            "mid":     movie_id,
-            "title":   title,
-            "date":    watched_date,
-            "rating":  float(rating) if rating is not None else None,
-            "rewatch": is_rewatch,
-            "review":  review,
-            "uri":     letterboxd_uri,
-            "source":  source,
+            "id":         diary_id,
+            "mid":        movie_id,
+            "title":      title,
+            "date":       watched_date,
+            "rating":     float(rating) if rating is not None else None,
+            "rewatch":    is_rewatch,
+            "review":     review,
+            "uri":        letterboxd_uri,
+            "source":     source,
+            # Explícito (spec 050, FR-011) quando a importação em lote precisa
+            # garantir ordem entre sessões do mesmo dia; senão, agora mesmo.
+            "created_at": created_at or _now(),
         },
     )
 

@@ -47,6 +47,24 @@ function groupByMonth(entries: DiaryEntry[]): Array<{ month: string; entries: Di
 }
 
 /**
+ * Sub-agrupa as entradas de um mês por dia (watched_date), preservando a ordem.
+ * Usado para saber quais linhas pertencem ao mesmo dia — só elas ganham os
+ * controles de reordenar (spec 050, US7).
+ */
+function groupByDate(entries: DiaryEntry[]): Array<{ date: string; entries: DiaryEntry[] }> {
+  const groups: Array<{ date: string; entries: DiaryEntry[] }> = []
+  for (const entry of entries) {
+    const last = groups[groups.length - 1]
+    if (last && last.date === entry.watched_date) {
+      last.entries.push(entry)
+    } else {
+      groups.push({ date: entry.watched_date, entries: [entry] })
+    }
+  }
+  return groups
+}
+
+/**
  * Diário de sessões — cronológico, agrupado por mês.
  */
 export function DiaryScreen({ onSelectMovie }: DiaryScreenProps) {
@@ -85,6 +103,28 @@ export function DiaryScreen({ onSelectMovie }: DiaryScreenProps) {
     )
   }
 
+  // Reordena as entradas de um mesmo dia (spec 050, US7) — recebe a nova ordem
+  // já calculada (top a baixo = ordem desejada) e persiste via akaneApi.
+  const reorderDate = async (date: string, newOrder: DiaryEntry[]) => {
+    // Atualização otimista: já reordena localmente antes da resposta do servidor
+    setEntries(prev => {
+      const ids = new Set(newOrder.map(e => e.id))
+      const next = [...prev]
+      // Substitui, na posição das entradas antigas desse dia, a nova ordem
+      const firstIdx = next.findIndex(e => ids.has(e.id))
+      const rest = next.filter(e => !ids.has(e.id))
+      rest.splice(firstIdx, 0, ...newOrder)
+      return rest
+    })
+    try {
+      await akaneApi.reorderDiary(date, newOrder.map(e => e.id))
+    } catch {
+      // Falha silenciosa aqui seria ruim, mas recarregar a tela inteira por uma
+      // reordenação é pior — a única consequência de erro é a ordem local não
+      // bater com o servidor até a próxima navegação para a tela.
+    }
+  }
+
   // Agrupa as entradas por mês para exibição
   const groups = groupByMonth(entries)
 
@@ -95,13 +135,27 @@ export function DiaryScreen({ onSelectMovie }: DiaryScreenProps) {
           {/* Rótulo do mês */}
           <p className="ak-diary-month-label">{group.month}</p>
 
-          {/* Entradas do mês */}
-          {group.entries.map(entry => (
-            <DiaryRow
-              key={entry.id}
-              entry={entry}
-              onClick={() => onSelectMovie(entry.movie_id)}
-            />
+          {/* Entradas do mês, sub-agrupadas por dia para os controles de reordenar */}
+          {groupByDate(group.entries).map(dateGroup => (
+            <div key={dateGroup.date}>
+              {dateGroup.entries.map((entry, i) => (
+                <DiaryRow
+                  key={entry.id}
+                  entry={entry}
+                  onClick={() => onSelectMovie(entry.movie_id)}
+                  onMoveUp={dateGroup.entries.length > 1 && i > 0 ? () => {
+                    const next = [...dateGroup.entries]
+                    ;[next[i - 1], next[i]] = [next[i], next[i - 1]]
+                    reorderDate(dateGroup.date, next)
+                  } : undefined}
+                  onMoveDown={dateGroup.entries.length > 1 && i < dateGroup.entries.length - 1 ? () => {
+                    const next = [...dateGroup.entries]
+                    ;[next[i], next[i + 1]] = [next[i + 1], next[i]]
+                    reorderDate(dateGroup.date, next)
+                  } : undefined}
+                />
+              ))}
+            </div>
           ))}
         </div>
       ))}
@@ -114,12 +168,15 @@ export function DiaryScreen({ onSelectMovie }: DiaryScreenProps) {
 interface DiaryRowProps {
   entry: DiaryEntry
   onClick: () => void
+  /** Presente só quando há >1 sessão no mesmo dia — reordena (spec 050, US7). */
+  onMoveUp?: () => void
+  onMoveDown?: () => void
 }
 
 /**
  * Uma linha do diário: data | miniaturapôster | título/meta | nota.
  */
-function DiaryRow({ entry, onClick }: DiaryRowProps) {
+function DiaryRow({ entry, onClick, onMoveUp, onMoveDown }: DiaryRowProps) {
   const [imgFailed, setImgFailed] = useState(false)
 
   return (
@@ -191,6 +248,36 @@ function DiaryRow({ entry, onClick }: DiaryRowProps) {
       <div style={{ display: 'flex', alignItems: 'center' }}>
         <Stars rating={entry.rating} size={11} />
       </div>
+
+      {/* Reordenar sessões do mesmo dia (spec 050, US7) */}
+      {(onMoveUp || onMoveDown) && (
+        <div style={{ display: 'flex', flexDirection: 'column', marginLeft: 4 }}>
+          <button
+            onClick={e => { e.stopPropagation(); onMoveUp?.() }}
+            disabled={!onMoveUp}
+            title="Mover para cima (assistido antes)"
+            style={{
+              all: 'unset', cursor: onMoveUp ? 'pointer' : 'default',
+              fontSize: 10, color: onMoveUp ? 'var(--ink-3)' : 'var(--line-2)',
+              padding: '1px 4px',
+            }}
+          >
+            ▲
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); onMoveDown?.() }}
+            disabled={!onMoveDown}
+            title="Mover para baixo (assistido depois)"
+            style={{
+              all: 'unset', cursor: onMoveDown ? 'pointer' : 'default',
+              fontSize: 10, color: onMoveDown ? 'var(--ink-3)' : 'var(--line-2)',
+              padding: '1px 4px',
+            }}
+          >
+            ▼
+          </button>
+        </div>
+      )}
     </div>
   )
 }

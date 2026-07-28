@@ -596,6 +596,8 @@ metadados do TMDB e sincronização opcional com o Letterboxd (RSS). Contrato de
 |---|---|---|---|
 | `GET` | `/api/movies/{movie_id}` | Detalhe completo: metadados + people + Cofre + diário (aceita fuzzy match). | — |
 | `POST` | `/api/movies/{movie_id}/watch` | Registra uma sessão de visualização (devolve 201). | Body: `LogWatchBody` |
+| `POST` | `/api/movies/{movie_id}/refresh-metadata` | "Buscar Dados" (spec 050) — rebusca metadados no TMDB e sobrescreve os campos de catálogo; nunca toca em dado pessoal. `tmdb_id` opcional aplica um candidato específico (troca de match). | Body: `RefreshMetadataBody` |
+| `PATCH` | `/api/movies/{movie_id}/catalog` | Edita manualmente os campos de catálogo (título, ano, diretor, gêneros, duração, sinopse) — spec 050. | Body: `UpdateMovieCatalogBody` |
 | `PATCH` | `/api/movies/{movie_id}/rating` | Define a nota atual do filme. | Body: `RatingBody` |
 | `PATCH` | `/api/movies/{movie_id}/like` | Marca/desmarca o coração (curtir). | Body: `LikeBody` |
 | `PATCH` | `/api/movies/{movie_id}/status` | Atualiza o status (watchlist ↔ watched). | Body: `StatusBody` |
@@ -604,6 +606,8 @@ metadados do TMDB e sincronização opcional com o Letterboxd (RSS). Contrato de
 | `GET` | `/api/movies/{movie_id}/vault` | Itens do Cofre do filme. | — |
 | `POST` | `/api/movies/{movie_id}/vault` | Adiciona um item ao Cofre (devolve 201). | Body: `AddVaultItemBody` |
 | `DELETE` | `/api/movies/vault/{vault_id}` | Remove um item do Cofre. | — |
+| `PATCH` | `/api/movies/diary/reorder` | Reordena sessões de um mesmo dia (spec 050) — registrada antes de `/diary/{diary_id}` para não colidir com o path param. | Body: `ReorderDiaryBody` |
+| `PATCH` | `/api/movies/diary/{diary_id}` | Edita manualmente uma sessão (data, nota, resenha, tags, revisão) — spec 050; recalcula os agregados do filme. | Body: `UpdateDiaryEntryBody` |
 | `DELETE` | `/api/movies/diary/{diary_id}` | Remove uma sessão do diário e recalcula contadores. | — |
 
 ---

@@ -30,6 +30,8 @@ interface VaultResult      { status: 'ok'; items: VaultItem[] }
 interface PeopleResult     { status: 'ok'; people: Array<{ name: string; count: number; roles: string[] }> }
 interface TmdbSearchResult { status: 'ok'; results: Array<{ tmdb_id: number; title: string; year: number | null; poster_url: string | null; director: string[]; local_id: string | null; in_catalog: boolean }> }
 interface OkResult         { status: 'ok'; message?: string; [k: string]: unknown }
+interface MovieResult      { status: 'ok'; movie: Movie }
+interface DiaryEntryResult { status: 'ok'; entry: DiaryEntry; movie: Pick<Movie, 'last_watched_date' | 'times_watched'> }
 
 // ── API pública ──────────────────────────────────────────────────────────────
 
@@ -113,6 +115,37 @@ export const akaneApi = {
 
   /** Remove uma sessão do diário. */
   deleteDiary: (diaryId: string) => api.del<OkResult>(`/api/movies/diary/${diaryId}`),
+
+  /**
+   * Rebusca metadados do filme no TMDB — botão "Buscar Dados" (spec 050).
+   * Sem `tmdbId`: usa o tmdb_id já salvo, ou busca por título+ano.
+   * Com `tmdbId`: aplica esse candidato específico (troca de match).
+   */
+  refreshMetadata: (movieId: string, tmdbId?: number) =>
+    api.post<MovieResult>(`/api/movies/${movieId}/refresh-metadata`, { tmdb_id: tmdbId ?? null }),
+
+  /** Edita campos de catálogo de um filme (título, ano, diretor, gêneros, duração, sinopse). */
+  updateCatalog: (movieId: string, body: Partial<{
+    title: string
+    year: number
+    director: string[]
+    genres: string[]
+    runtime: number
+    overview: string
+  }>) => api.patch<MovieResult>(`/api/movies/${movieId}/catalog`, body),
+
+  /** Edita uma sessão do diário (data, nota, resenha, tags, revisão). */
+  updateDiaryEntry: (diaryId: string, body: Partial<{
+    watched_date: string
+    rating: number
+    review: string
+    tags: string[]
+    rewatch: boolean
+  }>) => api.patch<DiaryEntryResult>(`/api/movies/diary/${diaryId}`, body),
+
+  /** Reordena sessões de um mesmo dia. */
+  reorderDiary: (watchedDate: string, orderedIds: string[]) =>
+    api.patch<OkResult>('/api/movies/diary/reorder', { watched_date: watchedDate, ordered_ids: orderedIds }),
 
   // ── Agregações (Onda 4) ────────────────────────────────────────────────────
   /** Dados da tela Início em uma chamada. */

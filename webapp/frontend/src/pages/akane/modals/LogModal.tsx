@@ -333,7 +333,7 @@ interface StarRateInputProps {
  * Seletor de nota interativo (5 estrelas, meia-estrela = 0.5).
  * A nota é determinada pela posição X do cursor sobre as estrelas.
  */
-function StarRateInput({ rating, onChange }: StarRateInputProps) {
+export function StarRateInput({ rating, onChange }: StarRateInputProps) {
   const [hover, setHover] = useState<number | null>(null)
 
   const display = hover ?? rating   // Exibe hover enquanto o mouse está sobre o input

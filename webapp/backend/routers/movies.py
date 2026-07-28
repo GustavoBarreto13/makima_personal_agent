@@ -45,6 +45,10 @@ from agents.akane.tools import (
     get_stats,             # Estatísticas do ano (vazio-seguro)
     delete_movie,          # Soft delete
     delete_diary_entry,    # Remove sessão e recalcula contadores
+    refresh_movie_metadata,  # Rebusca metadados no TMDB — "Buscar Dados" (spec 050)
+    update_movie_catalog,    # Edição manual dos campos de catálogo (spec 050)
+    update_diary_entry,      # Edição manual de uma sessão (spec 050)
+    reorder_diary_entries,   # Reordena sessões do mesmo dia (spec 050)
     # ── Agregações (Onda 4) ────────────────────────────────────────────────────
     get_home,              # Todos os blocos do Início numa chamada
     get_rewind,            # Year-in-review enriquecido
@@ -174,6 +178,36 @@ class AddVaultItemBody(BaseModel):
     title: str                         # Título do conteúdo
     url: Optional[str] = None          # URL do conteúdo (opcional)
     source: Optional[str] = None       # Domínio de exibição (derivado da URL se não informado)
+
+
+class RefreshMetadataBody(BaseModel):
+    """Corpo da requisição para rebuscar metadados de um filme no TMDB (spec 050)."""
+    tmdb_id: Optional[int] = None  # Se informado, aplica esse candidato (troca de match)
+
+
+class UpdateMovieCatalogBody(BaseModel):
+    """Corpo da requisição para editar campos de catálogo de um filme (spec 050)."""
+    title: Optional[str] = None
+    year: Optional[int] = None
+    director: Optional[list[str]] = None
+    genres: Optional[list[str]] = None
+    runtime: Optional[int] = None
+    overview: Optional[str] = None
+
+
+class UpdateDiaryEntryBody(BaseModel):
+    """Corpo da requisição para editar uma sessão do diário (spec 050)."""
+    watched_date: Optional[str] = None  # Data YYYY-MM-DD
+    rating: Optional[float] = None
+    review: Optional[str] = None
+    tags: Optional[list[str]] = None
+    rewatch: Optional[bool] = None
+
+
+class ReorderDiaryBody(BaseModel):
+    """Corpo da requisição para reordenar sessões de um mesmo dia (spec 050)."""
+    watched_date: str            # Data YYYY-MM-DD cujas sessões serão reordenadas
+    ordered_ids: list[str]       # IDs das sessões daquele dia, na ordem desejada
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -544,6 +578,55 @@ def delete_vault_endpoint(vault_id: str, user: dict = Depends(require_user)) -> 
 
 
 # ── Diário — diary/{diary_id} como path fixo antes de /{movie_id} ────────────
+#
+# IMPORTANTE: "/diary/reorder" precisa ser registrado ANTES de "/diary/{diary_id}"
+# para o mesmo método (PATCH) — senão o FastAPI tentaria casar "reorder" como um
+# diary_id.
+
+@router.patch("/diary/reorder")
+def reorder_diary_endpoint(body: ReorderDiaryBody, user: dict = Depends(require_user)) -> dict:
+    """Reordenar sessões de um mesmo dia (spec 050, FR-012).
+
+    Args:
+        body: Data e lista de ids de sessão na ordem desejada.
+        user: Usuário autenticado.
+
+    Raises:
+        HTTPException: 400 se algum id não pertencer a uma sessão com essa data.
+    """
+    return _check_result(reorder_diary_entries(
+        watched_date=body.watched_date,
+        ordered_ids=body.ordered_ids,
+    ))
+
+
+@router.patch("/diary/{diary_id}")
+def update_diary_endpoint(
+    diary_id: str,
+    body: UpdateDiaryEntryBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Editar manualmente uma sessão do diário (spec 050, FR-009).
+
+    Atualização parcial — só os campos enviados no body mudam.
+
+    Args:
+        diary_id: ID da sessão a editar.
+        body: Campos a atualizar (todos opcionais).
+        user: Usuário autenticado.
+
+    Returns:
+        Dict com a sessão atualizada e os agregados recalculados do filme.
+    """
+    return _check_result(update_diary_entry(
+        diary_id=diary_id,
+        watched_date=body.watched_date,
+        rating=body.rating,
+        review=body.review,
+        tags=body.tags,
+        rewatch=body.rewatch,
+    ))
+
 
 @router.delete("/diary/{diary_id}", status_code=200)
 def delete_diary_endpoint(diary_id: str, user: dict = Depends(require_user)) -> dict:
@@ -649,6 +732,59 @@ def log_watch_endpoint(
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result.get("message"))
     return result
+
+
+@router.post("/{movie_id}/refresh-metadata")
+def refresh_metadata_endpoint(
+    movie_id: str,
+    body: RefreshMetadataBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Rebuscar metadados do filme no TMDB — botão "Buscar Dados" (spec 050, FR-006/FR-007).
+
+    Sobrescreve os campos de catálogo (título, ano, diretor, gêneros, duração,
+    sinopse, pôsteres); nunca toca em dados pessoais (status, rating, liked, tags,
+    notes) nem de proveniência (letterboxd_uri, source).
+
+    Args:
+        movie_id: ID do filme.
+        body: `tmdb_id` opcional — quando informado, aplica esse candidato
+            específico (fluxo de "trocar filme" após buscar em
+            `GET /tmdb/search`); quando omitido, usa o tmdb_id já salvo ou busca
+            por título+ano.
+        user: Usuário autenticado.
+
+    Raises:
+        HTTPException: 400 se o filme não existir ou o TMDB não retornar dados
+            (nesse caso, nenhuma coluna é alterada).
+    """
+    return _check_result(refresh_movie_metadata(movie_id=movie_id, tmdb_id=body.tmdb_id))
+
+
+@router.patch("/{movie_id}/catalog")
+def update_catalog_endpoint(
+    movie_id: str,
+    body: UpdateMovieCatalogBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Editar manualmente os campos de catálogo de um filme (spec 050, FR-008).
+
+    Atualização parcial — só os campos enviados no body mudam.
+
+    Args:
+        movie_id: ID do filme.
+        body: Campos a atualizar (todos opcionais).
+        user: Usuário autenticado.
+    """
+    return _check_result(update_movie_catalog(
+        movie_id=movie_id,
+        title=body.title,
+        year=body.year,
+        director=body.director,
+        genres=body.genres,
+        runtime=body.runtime,
+        overview=body.overview,
+    ))
 
 
 @router.patch("/{movie_id}/rating")

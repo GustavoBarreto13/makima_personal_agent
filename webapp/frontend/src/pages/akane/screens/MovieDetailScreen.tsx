@@ -7,6 +7,9 @@ import { akaneApi } from '../akaneApi'
 import type { MovieDetail, VaultType } from '../types'
 import { Stars } from '../components/Stars'
 import { AddToListModal } from '../modals/AddToListModal'
+import { EditMovieModal } from '../modals/EditMovieModal'
+import { TmdbCandidatesModal } from '../modals/TmdbCandidatesModal'
+import { StarRateInput } from '../modals/LogModal'
 
 interface MovieDetailScreenProps {
   movieId: string
@@ -31,6 +34,13 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
   // Confirmação de exclusão do filme (US5) — duas etapas, mesmo padrão de ListDetailView
   const [confirmDeleteMovie, setConfirmDeleteMovie] = useState(false)
   const [deletingMovie, setDeletingMovie] = useState(false)
+
+  // "Buscar Dados" / trocar filme (spec 050, US4)
+  const [refreshingMetadata, setRefreshingMetadata] = useState(false)
+  const [showTmdbCandidates, setShowTmdbCandidates] = useState(false)
+
+  // "Editar filme" (spec 050, US5)
+  const [showEditMovie, setShowEditMovie] = useState(false)
 
   // Busca o detalhe na montagem (ou ao trocar movieId)
   useEffect(() => {
@@ -67,6 +77,21 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
   }
 
   const { movie, people, vault, diary } = data
+
+  // Rebusca metadados no TMDB — usa o tmdb_id já salvo (ou busca por título+ano)
+  const refreshMetadata = async (tmdbId?: number) => {
+    setRefreshingMetadata(true)
+    try {
+      const res = await akaneApi.refreshMetadata(movie.id, tmdbId)
+      setData(d => d ? { ...d, movie: res.movie } : d)
+      onToast('Metadados atualizados.')
+      setShowTmdbCandidates(false)
+    } catch {
+      onToast('Não foi possível buscar metadados no TMDB — o filme não foi alterado.')
+    } finally {
+      setRefreshingMetadata(false)
+    }
+  }
 
   return (
     <div>
@@ -157,6 +182,31 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
         >
           + Adicionar a lista
         </button>
+        <button
+          className="ak-btn"
+          onClick={() => setShowEditMovie(true)}
+        >
+          ✎ Editar filme
+        </button>
+
+        {/* "Buscar Dados" — rebusca metadados no TMDB (spec 050, US4) */}
+        <button
+          className="ak-btn"
+          onClick={() => refreshMetadata()}
+          disabled={refreshingMetadata}
+          title="Rebuscar metadados no TMDB — corrige idioma e dados desatualizados sem tocar em nota, coração, anotações ou sessões"
+        >
+          {refreshingMetadata ? 'Buscando…' : '🔎 Buscar Dados'}
+        </button>
+        <button
+          className="ak-btn"
+          onClick={() => setShowTmdbCandidates(true)}
+          disabled={refreshingMetadata}
+          style={{ fontSize: 11 }}
+          title="O filme foi associado ao título errado? Escolha o candidato correto."
+        >
+          Trocar filme
+        </button>
 
         {/* Excluir filme — confirmação em duas etapas (spec 051, US5) */}
         {!confirmDeleteMovie ? (
@@ -205,6 +255,25 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
         />
       )}
 
+      {/* Modal "Editar filme" (spec 050, US5) */}
+      {showEditMovie && (
+        <EditMovieModal
+          movie={movie}
+          onClose={() => setShowEditMovie(false)}
+          onToast={onToast}
+          onSaved={(updated) => setData(d => d ? { ...d, movie: updated } : d)}
+        />
+      )}
+
+      {/* Modal "Trocar filme" — candidatos do TMDB (spec 050, US4) */}
+      {showTmdbCandidates && (
+        <TmdbCandidatesModal
+          initialQuery={movie.title}
+          onClose={() => setShowTmdbCandidates(false)}
+          onSelect={(tmdbId) => refreshMetadata(tmdbId)}
+        />
+      )}
+
       {/* ── Sinopse ───────────────────────────────────────────────────── */}
       {movie.overview && (
         <div style={{ marginBottom: 24 }}>
@@ -239,6 +308,11 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
                 entry={entry}
                 onToast={onToast}
                 onDeleted={(id) => setData(d => d ? { ...d, diary: d.diary.filter(e => e.id !== id) } : d)}
+                onUpdated={(updated, movieAgg) => setData(d => d ? {
+                  ...d,
+                  diary: d.diary.map(e => e.id === updated.id ? updated : e),
+                  movie: { ...d.movie, ...movieAgg },
+                } : d)}
               />
             ))}
           </div>
@@ -435,14 +509,16 @@ function NotesEditor({ movieId, initialNotes, onToast }: {
   )
 }
 
-/** Linha do histórico de sessões — com exclusão de sessão (spec 051, US5). */
-function DiaryEntryRow({ entry, onToast, onDeleted }: {
+/** Linha do histórico de sessões — exclusão (spec 051, US5) e edição (spec 050, US5). */
+function DiaryEntryRow({ entry, onToast, onDeleted, onUpdated }: {
   entry: MovieDetail['diary'][number]
   onToast: (msg: string) => void
   onDeleted: (id: string) => void
+  onUpdated: (entry: MovieDetail['diary'][number], movieAgg: { last_watched_date: string | null; times_watched: number }) => void
 }) {
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   const doDelete = async () => {
     setDeleting(true)
@@ -454,6 +530,20 @@ function DiaryEntryRow({ entry, onToast, onDeleted }: {
       onToast('Erro ao excluir a sessão.')
       setDeleting(false)
     }
+  }
+
+  if (editing) {
+    return (
+      <DiaryEntryEditForm
+        entry={entry}
+        onCancel={() => setEditing(false)}
+        onToast={onToast}
+        onSaved={(updated, movieAgg) => {
+          onUpdated(updated, movieAgg)
+          setEditing(false)
+        }}
+      />
+    )
   }
 
   return (
@@ -482,6 +572,17 @@ function DiaryEntryRow({ entry, onToast, onDeleted }: {
           {entry.review}
         </span>
       )}
+      {/* Editar sessão (spec 050, US5) */}
+      <button
+        onClick={() => setEditing(true)}
+        title="Editar sessão"
+        style={{
+          all: 'unset', cursor: 'pointer', fontSize: 12, color: 'var(--ink-4)',
+          marginLeft: entry.review ? 0 : 'auto', flexShrink: 0, padding: '2px 6px',
+        }}
+      >
+        ✎
+      </button>
       {/* Exclusão em duas etapas para evitar clique acidental */}
       {!confirming ? (
         <button
@@ -489,13 +590,13 @@ function DiaryEntryRow({ entry, onToast, onDeleted }: {
           title="Excluir sessão"
           style={{
             all: 'unset', cursor: 'pointer', fontSize: 12, color: 'var(--ink-4)',
-            marginLeft: 'auto', flexShrink: 0, padding: '2px 6px',
+            flexShrink: 0, padding: '2px 6px',
           }}
         >
           ✕
         </button>
       ) : (
-        <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
           <button
             onClick={() => setConfirming(false)}
             style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--ink-4)', padding: '2px 6px' }}
@@ -514,6 +615,88 @@ function DiaryEntryRow({ entry, onToast, onDeleted }: {
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+/** Form inline de edição de uma sessão (spec 050, US5/FR-009). */
+function DiaryEntryEditForm({ entry, onCancel, onToast, onSaved }: {
+  entry: MovieDetail['diary'][number]
+  onCancel: () => void
+  onToast: (msg: string) => void
+  onSaved: (entry: MovieDetail['diary'][number], movieAgg: { last_watched_date: string | null; times_watched: number }) => void
+}) {
+  const [watchedDate, setWatchedDate] = useState(entry.watched_date)
+  const [rating, setRating] = useState<number | null>(entry.rating)
+  const [review, setReview] = useState(entry.review ?? '')
+  const [tags, setTags] = useState(entry.tags.join(', '))
+  const [rewatch, setRewatch] = useState(entry.rewatch)
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const res = await akaneApi.updateDiaryEntry(entry.id, {
+        watched_date: watchedDate,
+        rating: rating ?? undefined,
+        review: review.trim() || undefined,
+        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+        rewatch,
+      })
+      onSaved(res.entry, res.movie)
+      onToast('Sessão atualizada.')
+    } catch {
+      onToast('Erro ao salvar a sessão.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex', flexDirection: 'column', gap: 8,
+        padding: '10px 12px',
+        background: 'var(--card)', borderRadius: 'var(--r-sm)',
+        border: '1px solid var(--line-2)',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          className="ak-input"
+          type="date"
+          value={watchedDate}
+          onChange={e => setWatchedDate(e.target.value)}
+          style={{ width: 150 }}
+        />
+        <StarRateInput rating={rating} onChange={setRating} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--ink-3)' }}>
+          <input type="checkbox" checked={rewatch} onChange={e => setRewatch(e.target.checked)} />
+          Revisão
+        </label>
+      </div>
+      <textarea
+        className="ak-input"
+        rows={2}
+        placeholder="Resenha (opcional)"
+        value={review}
+        onChange={e => setReview(e.target.value)}
+        style={{ resize: 'vertical' }}
+      />
+      <input
+        className="ak-input"
+        placeholder="Etiquetas separadas por vírgula (opcional)"
+        value={tags}
+        onChange={e => setTags(e.target.value)}
+      />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="ak-btn ak-btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Salvando…' : 'Salvar'}
+        </button>
+        <button className="ak-btn" onClick={onCancel} disabled={saving}>
+          Cancelar
+        </button>
+      </div>
     </div>
   )
 }
