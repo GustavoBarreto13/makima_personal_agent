@@ -22,7 +22,7 @@ interface RecentActivityProps {
 export function RecentActivity({ entries, onSelectMovie, onGoDiary }: RecentActivityProps) {
   const recent = entries.slice(0, 4)
   return (
-    <div className="lb-sec">
+    <div className="ak-lb-sec">
       <div className="ak-lb-sec-head">
         <span className="ak-t">Diário recente</span>
         <span className="ak-rule" />

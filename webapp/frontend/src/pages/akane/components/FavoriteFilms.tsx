@@ -34,7 +34,7 @@ export function FavoriteFilms({ favorites, onSelectMovie, onSave }: FavoriteFilm
   }
 
   return (
-    <div className="lb-sec">
+    <div className="ak-lb-sec">
       <div className="ak-lb-sec-head">
         <span className="ak-t">Filmes favoritos</span>
         <span className="ak-rule" />

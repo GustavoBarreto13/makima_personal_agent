@@ -212,7 +212,7 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
         </div>
 
         {/* ══ COLUNA DIREITA: informações ══ */}
-        <div className="detail-info">
+        <div className="ak-detail-info">
           <div className="ak-detail-genre">{(movie.genres ?? []).join(' · ')}</div>
           <h1 className="ak-detail-title">{movie.title}</h1>
           <p className="ak-detail-author">
