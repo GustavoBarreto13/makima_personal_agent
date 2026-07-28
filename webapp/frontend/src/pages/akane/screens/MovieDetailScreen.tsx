@@ -538,7 +538,7 @@ function FilmLogItem({ entry, onToast, onDeleted, onUpdated }: {
   const [watchedDate, setWatchedDate] = useState(entry.watched_date)
   const [rating, setRating] = useState<number>(entry.rating ?? 0)
   const [review, setReview] = useState(entry.review ?? '')
-  const [tags, setTags] = useState(entry.tags.join(', '))
+  const [tags, setTags] = useState((entry.tags ?? []).join(', '))
   const [rewatch, setRewatch] = useState(entry.rewatch)
   const [saving, setSaving] = useState(false)
 
