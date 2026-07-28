@@ -36,6 +36,7 @@ const CARD_GRADS = [
 
 export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: CardsProps) {
   const [showForm, setShowForm]     = useState(false)
+  const [editingCard, setEditingCard] = useState<Card | null>(null)
   const [saving, setSaving]         = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -67,18 +68,33 @@ export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: 
   async function handleSave(values: Record<string, unknown>) {
     setSaving(true)
     try {
-      await namiApi.createCard({
-        name:         String(values.name ?? ''),
-        account_name: String(values.account_name ?? ''),
-        limite:       parseFloat(String(values.limite ?? '0').replace(',', '.')),
-        closing_day:  parseInt(String(values.closing_day ?? '1')),
-        due_day:      parseInt(String(values.due_day ?? '1')),
-        brand:        String(values.brand ?? '') || undefined,
-        last4:        String(values.last4 ?? '') || undefined,
-        grad:         String(values.grad ?? '') || undefined,
-      })
-      onToast('Cartão criado ✓')
+      if (editingCard) {
+        // Edição (spec 043) — preserva o histórico de transações vinculadas ao cartão
+        await namiApi.updateCard(editingCard.id, {
+          name:        String(values.name ?? ''),
+          limite:      parseFloat(String(values.limite ?? '0').replace(',', '.')),
+          closing_day: parseInt(String(values.closing_day ?? '1')),
+          due_day:     parseInt(String(values.due_day ?? '1')),
+          brand:       String(values.brand ?? '') || undefined,
+          last4:       String(values.last4 ?? '') || undefined,
+          grad:        String(values.grad ?? '') || undefined,
+        })
+        onToast('Cartão atualizado ✓')
+      } else {
+        await namiApi.createCard({
+          name:         String(values.name ?? ''),
+          account_name: String(values.account_name ?? ''),
+          limite:       parseFloat(String(values.limite ?? '0').replace(',', '.')),
+          closing_day:  parseInt(String(values.closing_day ?? '1')),
+          due_day:      parseInt(String(values.due_day ?? '1')),
+          brand:        String(values.brand ?? '') || undefined,
+          last4:        String(values.last4 ?? '') || undefined,
+          grad:         String(values.grad ?? '') || undefined,
+        })
+        onToast('Cartão criado ✓')
+      }
       setShowForm(false)
+      setEditingCard(null)
       onCardsChanged()
     } catch (err: unknown) { throw err }
     finally { setSaving(false) }
@@ -159,6 +175,9 @@ export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: 
                   <button className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => setPayingCard(card)}>
                     Registrar pagamento
                   </button>
+                  <button className="acct-del" onClick={() => { setEditingCard(card); setShowForm(true) }} aria-label="Editar cartão">
+                    <Icon name="edit" size={12} />
+                  </button>
                   <button className="acct-del" onClick={() => handleDelete(card.id)} disabled={deletingId === card.id} aria-label="Remover">
                     <Icon name="trash" size={12} />
                   </button>
@@ -198,14 +217,24 @@ export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: 
 
       {showForm && (
         <FormModal
-          title="Novo cartão"
+          title={editingCard ? `Editar ${editingCard.name}` : 'Novo cartão'}
           saving={saving}
-          onClose={() => setShowForm(false)}
+          onClose={() => { setShowForm(false); setEditingCard(null) }}
           onSave={handleSave}
-          saveLabel="Criar cartão"
+          saveLabel={editingCard ? 'Salvar alterações' : 'Criar cartão'}
+          initialValues={editingCard ? {
+            name: editingCard.name,
+            limite: String(editingCard.limite ?? 0),
+            closing_day: String(editingCard.closing_day ?? ''),
+            due_day: String(editingCard.due_day ?? ''),
+            brand: editingCard.brand ?? '',
+            last4: editingCard.last4 ?? '',
+            grad: editingCard.grad ?? '',
+          } : undefined}
           fields={[
             { key: 'name',         label: 'Nome do cartão',       type: 'text',   required: true, placeholder: 'Ex.: Nubank Roxinho' },
-            { key: 'account_name', label: 'Conta vinculada',      type: 'select', options: accountOptions },
+            // Conta vinculada não é editável (update_credit_card não altera o account_id) — só na criação
+            ...(editingCard ? [] : [{ key: 'account_name', label: 'Conta vinculada', type: 'select' as const, options: accountOptions }]),
             { key: 'limite',       label: 'Limite',               type: 'money',  required: true },
             { key: 'closing_day',  label: 'Dia de fechamento',    type: 'number', min: 1, max: 28, placeholder: '25' },
             { key: 'due_day',      label: 'Dia de vencimento',    type: 'number', min: 1, max: 28, placeholder: '5' },

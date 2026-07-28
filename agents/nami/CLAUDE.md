@@ -122,6 +122,7 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 | `create_account` | `name, type, data_inicio` — types: `corrente\|poupanca\|dinheiro\|investimento` (cartões não são contas) |
 | `list_accounts` | `status="ativo"` — ou `"encerrado"`, `"todos"` |
 | `get_account_balance` | `account_id` — saldo = balance_inicial + receitas − despesas |
+| `update_account` | `account_id` + campos opcionais (name/institution/notes/balance_inicial) — exposto via `PATCH /api/finances/accounts/{id}` desde a spec 043 (a tool já existia, só faltava o endpoint) |
 
 **Setup inicial obrigatório:** contas devem ser criadas antes de qualquer transação, cartão ou empréstimo.
 
@@ -130,8 +131,9 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 | Tool | Descrição |
 |---|---|
 | `create_transaction` | Registra gasto ou receita. Parâmetro `card_id` opcional: quando fornecido, `account_id` fica NULL (transação de cartão). Quando omitido, resolve conta via `_resolve_account`. |
-| `query_expenses` | Consulta lista detalhada com filtros de período/categoria/conta |
-| `update_transaction` | Corrige campo(s) de uma transação existente pelo `id` |
+| `query_expenses` | Consulta lista detalhada com filtros de período + `categoria`/`tipo`/`limit`/`offset` (spec 043) — retorna `has_more` para paginação |
+| `update_transaction` | Corrige campo(s) de uma transação existente pelo `id`. `card_id` (spec 043) tem prioridade sobre `conta` — troca a origem para cartão, zerando `account_id` (mutuamente exclusivos, mesmo bug corrigido que existia desde sempre: antes só `conta` era atualizado, nunca `account_id`/`card_id`) |
+| `create_transfer` | Transferência atômica entre 2 contas (spec 043) — par de transações `tipo='Transferencia'` vinculadas por `transfer_id`, via `get_conn()` |
 | `delete_transaction` | Soft delete — marca `deleted=TRUE` |
 | `get_spending_summary` | Agrupa gastos por `categoria`, `conta` ou `tipo` |
 | `get_spending_trend` | Evolução mensal + projeção do mês atual |
@@ -157,6 +159,7 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 | Tool | Descrição |
 |---|---|
 | `register_credit_card` | Cadastra cartão vinculado a uma conta **corrente ou poupança** (`account_name`). Dívida inicial → transação com `card_id` |
+| `update_credit_card` | `card_id` + campos opcionais (name/limite/taxa/closing_day/due_day) — exposto via `PATCH /api/finances/cards/{id}` desde a spec 043 (a tool já existia, só faltava o endpoint) |
 | `get_card_debt_summary` | Dívida atual de todos os cartões. Filtra `transactions` por `card_id = credit_cards.id` |
 | `register_card_payment` | Registra pagamento da fatura — transação Receita com `card_id` (reduz a dívida) |
 | `simulate_debt_payoff` | Simula meses para quitar dado um pagamento mensal |

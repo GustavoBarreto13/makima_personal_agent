@@ -341,6 +341,7 @@ def update_transaction(
     conta: str = "",
     data: str = "",
     notes: str = "",
+    card_id: str = "",
 ) -> dict:
     """Atualiza campos de uma transação existente no PostgreSQL.
 
@@ -349,6 +350,11 @@ def update_transaction(
 
     Parâmetros:
         id       — ID da transação a ser editada (obrigatório)
+        card_id  — Novo cartão de crédito de origem. Quando informado, tem prioridade
+                   sobre `conta`: atualiza card_id e conta (nome do cartão), zera
+                   account_id. Se omitido e `conta` for informado, resolve como conta
+                   bancária: atualiza account_id e conta, zera card_id. Mutuamente
+                   exclusivos, mesmo padrão de create_transaction_on_cursor.
         Os demais parâmetros são opcionais — só os informados serão alterados.
 
     Retorna "status": "ok" se atualizado, "status": "error" se não encontrado ou inválido.
@@ -384,13 +390,28 @@ def update_transaction(
         sets.append("categoria = %(categoria)s")
         params["categoria"] = cat
 
-    if conta:
-        # Valida e normaliza o nome da conta
-        acc = _match_account(conta)
-        if acc is None:
+    # Origem: cartão tem prioridade sobre conta (mutuamente exclusivos — mesma regra
+    # de create_transaction_on_cursor). Antes desta correção, só o campo display `conta`
+    # era atualizado — account_id/card_id ficavam presos na origem antiga.
+    if card_id:
+        card_obj = next((c for c in _load_cards() if c["id"] == card_id), None)
+        if card_obj is None:
+            return {"status": "error", "message": f"Cartão não encontrado: '{card_id}'"}
+        sets.append("conta = %(conta)s")
+        params["conta"] = card_obj["name"]
+        sets.append("card_id = %(card_id)s")
+        params["card_id"] = card_id
+        sets.append("account_id = NULL")
+    elif conta:
+        # Valida e resolve a conta — precisa do id para popular account_id corretamente
+        acc_obj = _resolve_account(conta)
+        if acc_obj is None:
             return {"status": "error", "message": f"Conta inválida: '{conta}'"}
         sets.append("conta = %(conta)s")
-        params["conta"] = acc
+        params["conta"] = acc_obj["name"]
+        sets.append("account_id = %(account_id)s")
+        params["account_id"] = acc_obj["id"]
+        sets.append("card_id = NULL")
 
     if data:
         sets.append("data = %(data)s")
@@ -448,7 +469,14 @@ def delete_transaction(id: str) -> dict:
         return {"status": "error", "message": str(e)}
 
 
-def query_expenses(start_date: str = "", end_date: str = "") -> dict:
+def query_expenses(
+    start_date: str = "",
+    end_date: str = "",
+    categoria: str = "",
+    tipo: str = "",
+    limit: int = 0,
+    offset: int = 0,
+) -> dict:
     """Busca todas as transações em um período e retorna a lista com o total.
 
     Se as datas não forem informadas, usa o mês atual (do dia 1 até hoje).
@@ -456,35 +484,157 @@ def query_expenses(start_date: str = "", end_date: str = "") -> dict:
     Parâmetros:
         start_date — Data de início no formato AAAA-MM-DD (padrão: primeiro dia do mês)
         end_date   — Data de fim no formato AAAA-MM-DD (padrão: hoje)
+        categoria  — Filtra por categoria exata (vazio = todas, spec 043)
+        tipo       — Filtra por "Despesa"/"Receita"/"Transferencia" (vazio = todos)
+        limit      — Tamanho da página (spec 043). 0 = sem paginação (retorna tudo)
+        offset     — Deslocamento da página (ignorado se limit=0)
 
-    Retorna lista de transações, quantidade e soma total dos valores.
+    Retorna lista de transações, quantidade, soma total dos valores e `has_more`
+    (True quando existem mais linhas além da página pedida).
     """
     # Define o período de busca: datas informadas ou padrão (mês atual)
     start = start_date or _month_start()
     end = end_date or _today()
 
-    # Query que busca todas as transações não-deletadas no período,
-    # ordenadas da mais recente para a mais antiga
+    where = ["data BETWEEN %(start)s AND %(end)s", "deleted = FALSE"]
+    params: dict = {"start": start, "end": end}
+
+    if categoria:
+        where.append("categoria = %(categoria)s")
+        params["categoria"] = categoria
+    if tipo:
+        where.append("tipo = %(tipo)s")
+        params["tipo"] = tipo
+
+    # account_id/card_id no SELECT — sem eles o formulário de edição não sabe
+    # se a transação é de conta ou de cartão (bug descoberto na spec 043)
     # data::text converte o campo date para string (equivalente ao CAST(data AS STRING) do BigQuery)
-    sql = """
-        SELECT id, name, valor, tipo, categoria, conta,
+    sql = f"""
+        SELECT id, name, valor, tipo, categoria, conta, account_id, card_id,
                data::text AS data, source, notes, subscription_id
         FROM transactions
-        WHERE data BETWEEN %(start)s AND %(end)s
-          AND deleted = FALSE
-        ORDER BY data DESC
+        WHERE {' AND '.join(where)}
+        ORDER BY data DESC, created_at DESC
     """
 
-    # Parâmetros de data para o filtro BETWEEN
-    params = {"start": start, "end": end}
+    # Busca 1 linha a mais que o limite pedido — se vier, sabemos que há mais
+    # páginas sem precisar de uma segunda query de COUNT
+    if limit > 0:
+        sql += " LIMIT %(limit)s OFFSET %(offset)s"
+        params["limit"] = limit + 1
+        params["offset"] = offset
 
     try:
         rows = run_select(sql, params)
 
+        has_more = False
+        if limit > 0 and len(rows) > limit:
+            has_more = True
+            rows = rows[:limit]
+
         # Soma todos os valores das transações para calcular o total do período
+        # (inclui transferências — esta é a soma bruta do extrato, não um total de
+        # receita/despesa; esses ficam nas queries que filtram tipo explicitamente)
         total = sum(r["valor"] for r in rows)
 
-        return {"status": "ok", "transactions": rows, "count": len(rows), "total": total}
+        return {
+            "status": "ok", "transactions": rows, "count": len(rows),
+            "total": total, "has_more": has_more,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def create_transfer(
+    from_account: str,
+    to_account: str,
+    valor: float,
+    data: str = "",
+    notes: str = "",
+) -> dict:
+    """Registra uma transferência entre duas contas (spec 043) — par atômico.
+
+    Cria duas transações vinculadas por `transfer_id`: uma Despesa* na conta de
+    origem e uma Receita* na conta de destino (*tipo real é "Transferencia" —
+    fora de receita/despesa nos relatórios, que filtram por tipo explicitamente).
+    Atômico via get_conn(): ou os dois lados são gravados, ou nenhum (rollback).
+
+    Args:
+        from_account: Nome da conta de origem (débito).
+        to_account: Nome da conta de destino (crédito).
+        valor: Valor transferido em reais (positivo).
+        data: Data da transferência AAAA-MM-DD (padrão: hoje).
+        notes: Observações opcionais.
+
+    Returns:
+        {"status": "ok", "transfer_id": ...} ou {"status": "error", "message": ...}.
+    """
+    if _norm(from_account) == _norm(to_account):
+        return {"status": "error", "message": "Conta de origem e destino devem ser diferentes"}
+
+    acc_from = _resolve_account(from_account)
+    if acc_from is None:
+        return {"status": "error", "message": f"Conta de origem não encontrada: '{from_account}'"}
+
+    acc_to = _resolve_account(to_account)
+    if acc_to is None:
+        return {"status": "error", "message": f"Conta de destino não encontrada: '{to_account}'"}
+
+    if valor <= 0:
+        return {"status": "error", "message": "Valor da transferência deve ser positivo"}
+
+    tx_date = data or _today()
+    transfer_id = str(uuid.uuid4())
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO transactions
+                      (id, name, valor, tipo, categoria, conta, account_id, card_id,
+                       data, source, notes, transfer_id, created_at, deleted)
+                    VALUES
+                      (%(id)s, %(name)s, %(valor)s, 'Transferencia', 'Transferencia',
+                       %(conta)s, %(account_id)s, NULL, %(data)s, 'webapp', %(notes)s,
+                       %(transfer_id)s, NOW(), FALSE)
+                    """,
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": f"Transferência para {acc_to['name']}",
+                        "valor": float(valor),
+                        "conta": acc_from["name"],
+                        "account_id": acc_from["id"],
+                        "data": tx_date,
+                        "notes": notes or None,
+                        "transfer_id": transfer_id,
+                    },
+                )
+                cur.execute(
+                    """
+                    INSERT INTO transactions
+                      (id, name, valor, tipo, categoria, conta, account_id, card_id,
+                       data, source, notes, transfer_id, created_at, deleted)
+                    VALUES
+                      (%(id)s, %(name)s, %(valor)s, 'Transferencia', 'Transferencia',
+                       %(conta)s, %(account_id)s, NULL, %(data)s, 'webapp', %(notes)s,
+                       %(transfer_id)s, NOW(), FALSE)
+                    """,
+                    {
+                        "id": str(uuid.uuid4()),
+                        "name": f"Transferência de {acc_from['name']}",
+                        "valor": float(valor),
+                        "conta": acc_to["name"],
+                        "account_id": acc_to["id"],
+                        "data": tx_date,
+                        "notes": notes or None,
+                        "transfer_id": transfer_id,
+                    },
+                )
+        return {
+            "status": "ok", "transfer_id": transfer_id,
+            "message": f"Transferência de R${valor:.2f} de {acc_from['name']} para {acc_to['name']}",
+        }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

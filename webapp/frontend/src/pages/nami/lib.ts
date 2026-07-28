@@ -29,6 +29,8 @@ export interface NormalizedTx {
   date: string
   /** Notas opcionais */
   notes?: string
+  /** Id da conta (se for transação de conta bancária) */
+  accountId?: string
   /** Id do cartão (se for transação de cartão) */
   cardId?: string
 }
@@ -62,6 +64,7 @@ export function normalizeTx(tx: Transaction): NormalizedTx {
     source:   tx.conta,
     date:     tx.data,
     notes:    tx.notes,
+    accountId: tx.account_id,
     cardId:   tx.card_id,
   }
 }

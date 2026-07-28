@@ -2,13 +2,37 @@
 // Portada do handoff de referência (docs/.../nami/screens-a.jsx → Transacoes).
 // Lista todas as transações do mês agrupadas por dia, com filtros e busca.
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { namiApi } from '../namiApi'
 import type { Account, Card, Category } from '../types'
+import type { NormalizedTx } from '../lib'
 import { QuickAdd } from '../components/QuickAdd'
 import { TxList } from '../components/TxRow'
+import { AddModal } from '../modals/AddModal'
 import { Icon } from '../icons'
 import { normalizeTx, buildCatMap, groupByDay, filterTxs } from '../lib'
+
+// Tamanho de página generoso (spec 043, FR-006) — meses comuns nunca precisam de
+// "Carregar mais"; só entra em jogo em meses com muitos lançamentos.
+const PAGE_SIZE = 300
+
+// Chave de persistência de filtros no localStorage (spec 043, FR-004)
+const FILTERS_KEY = 'nami:tx-filters'
+
+interface StoredFilters {
+  typeFilter: 'in' | 'out' | null
+  catFilter: string | null
+}
+
+function loadStoredFilters(): StoredFilters {
+  try {
+    const raw = localStorage.getItem(FILTERS_KEY)
+    if (!raw) return { typeFilter: null, catFilter: null }
+    return JSON.parse(raw)
+  } catch {
+    return { typeFilter: null, catFilter: null }
+  }
+}
 
 interface TransactionsProps {
   month: string
@@ -27,20 +51,33 @@ interface TransactionsProps {
 /**
  * Tela de lista de transações com:
  * - QuickAdd para lançamento rápido
- * - Filtros por tipo (in/out) e categoria
+ * - Filtros por tipo (in/out) e categoria (todas as categorias do sistema — spec 043)
+ * - Persistência de filtro/ordenação em localStorage (spec 043)
  * - Agrupamento por dia com saldo do dia
  * - Busca textual (recebida do NamiShell)
- * - Delete individual
+ * - Edição inline (spec 043) e delete individual
+ * - Exportação CSV (spec 043) e paginação "Carregar mais" (spec 043)
  */
 export function Transactions({
-  month, onTransactionSaved, onToast, onOpenAddModal, searchQuery,
+  month, accounts, cards, onTransactionSaved, onToast, onOpenAddModal, searchQuery,
 }: TransactionsProps) {
   const [txs, setTxs]                       = useState<ReturnType<typeof normalizeTx>[]>([])
   const [categories, setCategories]         = useState<Category[]>([])
   const [loading, setLoading]               = useState(true)
+  const [loadingMore, setLoadingMore]       = useState(false)
+  const [hasMore, setHasMore]               = useState(false)
   const [deletingId, setDeletingId]         = useState<string | null>(null)
-  const [typeFilter, setTypeFilter]         = useState<'in' | 'out' | null>(null)
-  const [catFilter, setCatFilter]           = useState<string | null>(null)
+  const [editingTx, setEditingTx]           = useState<NormalizedTx | null>(null)
+
+  // Filtros persistidos (spec 043) — carregados uma vez do localStorage
+  const stored = useMemo(loadStoredFilters, [])
+  const [typeFilter, setTypeFilter]         = useState<'in' | 'out' | null>(stored.typeFilter)
+  const [catFilter, setCatFilter]           = useState<string | null>(stored.catFilter)
+
+  // Persiste filtros a cada mudança
+  useEffect(() => {
+    localStorage.setItem(FILTERS_KEY, JSON.stringify({ typeFilter, catFilter }))
+  }, [typeFilter, catFilter])
 
   // Carrega categorias uma vez
   useEffect(() => {
@@ -50,14 +87,33 @@ export function Transactions({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Recarrega transações quando o mês muda
-  useEffect(() => {
+  // Carrega a 1ª página do mês (reseta ao trocar de mês)
+  const loadFirstPage = useCallback(() => {
     setLoading(true)
-    namiApi.getTransactions(month)
-      .then(r => setTxs((r.transactions ?? []).map(normalizeTx)))
-      .catch(() => setTxs([]))
+    namiApi.getTransactions(month, { limit: PAGE_SIZE, offset: 0 })
+      .then(r => {
+        setTxs((r.transactions ?? []).map(normalizeTx))
+        setHasMore(!!r.has_more)
+      })
+      .catch(() => { setTxs([]); setHasMore(false) })
       .finally(() => setLoading(false))
   }, [month])
+
+  useEffect(() => { loadFirstPage() }, [loadFirstPage])
+
+  // "Carregar mais" — busca a próxima página e anexa
+  async function handleLoadMore() {
+    setLoadingMore(true)
+    try {
+      const r = await namiApi.getTransactions(month, { limit: PAGE_SIZE, offset: txs.length })
+      setTxs(prev => [...prev, ...(r.transactions ?? []).map(normalizeTx)])
+      setHasMore(!!r.has_more)
+    } catch {
+      onToast('Erro ao carregar mais transações')
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   const catMap = useMemo(() => buildCatMap(categories), [categories])
 
@@ -78,11 +134,9 @@ export function Transactions({
 
   const groups = useMemo(() => groupByDay(filtered), [filtered])
 
-  // Categorias presentes nas transações do mês (para os chips de filtro)
-  const presentCats = useMemo(() => {
-    const ids = new Set(txs.map(tx => tx.catId))
-    return categories.filter(c => ids.has(c.id)).slice(0, 8)
-  }, [txs, categories])
+  // Todas as categorias do sistema para os chips de filtro (spec 043, FR-004) —
+  // antes só mostrava as presentes no mês, escondendo o filtro de categorias raras
+  const filterableCats = useMemo(() => categories.slice(0, 12), [categories])
 
   async function handleDelete(id: string) {
     setDeletingId(id)
@@ -98,23 +152,45 @@ export function Transactions({
     }
   }
 
+  async function handleEditSaved(msg?: string) {
+    setEditingTx(null)
+    await onTransactionSaved(msg)
+    loadFirstPage()
+  }
+
+  function handleExport() {
+    const url = namiApi.exportTransactionsUrl(month, {
+      categoria: catFilter ?? undefined,
+      tipo: typeFilter === 'in' ? 'Receita' : typeFilter === 'out' ? 'Despesa' : undefined,
+    })
+    // Navegação same-origin já leva o cookie de sessão — sem precisar de fetch/blob
+    window.location.href = url
+  }
+
   return (
     <>
       {/* Cabeçalho da página */}
       <div className="page-head">
         <h2>Transações</h2>
-        {!loading && (
-          <span className="page-sub">{txs.length} lançamento{txs.length !== 1 ? 's' : ''} no mês</span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {!loading && (
+            <span className="page-sub">{txs.length} lançamento{txs.length !== 1 ? 's' : ''} no mês{hasMore ? '+' : ''}</span>
+          )}
+          {!loading && txs.length > 0 && (
+            <button className="btn btn-ghost" onClick={handleExport}>
+              <Icon name="download" size={14} /> Exportar CSV
+            </button>
+          )}
+        </div>
       </div>
 
       {/* QuickAdd: lançamento rápido inline */}
       <QuickAdd
         categories={categories}
-        onSaved={async msg => { await onTransactionSaved(msg) }}
+        onSaved={async msg => { await onTransactionSaved(msg); loadFirstPage() }}
       />
 
-      {/* Barra de filtros: tipo + categorias presentes */}
+      {/* Barra de filtros: tipo + todas as categorias do sistema (spec 043) */}
       {!loading && txs.length > 0 && (
         <div className="toolbar">
           {/* Filtro por tipo */}
@@ -136,8 +212,8 @@ export function Transactions({
           {/* Separador visual */}
           <div style={{ width: 1, height: 16, background: 'var(--line)', margin: '0 4px' }} />
 
-          {/* Chips de categoria presentes no mês */}
-          {presentCats.map(cat => (
+          {/* Chips de categoria — todas do sistema, não só as presentes no mês */}
+          {filterableCats.map(cat => (
             <button
               key={cat.id}
               className={`chip${catFilter === cat.id ? ' active' : ''}`}
@@ -173,6 +249,7 @@ export function Transactions({
             groups={groups}
             catMap={catMap}
             onDelete={handleDelete}
+            onEdit={setEditingTx}
             deletingId={deletingId}
           />
           {groups.length === 0 && txs.length > 0 && (
@@ -193,8 +270,27 @@ export function Transactions({
               </button>
             </div>
           )}
+
+          {/* Carregar mais (spec 043, FR-006/US5) */}
+          {hasMore && !typeFilter && !catFilter && !searchQuery && (
+            <div style={{ textAlign: 'center', padding: '12px 0' }}>
+              <button className="btn btn-ghost" onClick={handleLoadMore} disabled={loadingMore}>
+                {loadingMore ? 'Carregando…' : 'Carregar mais'}
+              </button>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Modal de edição (spec 043) — instância própria, independente do AddModal do shell */}
+      <AddModal
+        open={!!editingTx}
+        accounts={accounts}
+        cards={cards}
+        editingTx={editingTx}
+        onClose={() => setEditingTx(null)}
+        onSaved={handleEditSaved}
+      />
     </>
   )
 }

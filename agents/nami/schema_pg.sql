@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     notes        TEXT,
     subscription_id     TEXT,
     installment_group_id TEXT,
+    transfer_id  TEXT,        -- Colunas adicionadas na spec 043 (Transferências) — vincula
+                               -- o par débito/crédito de uma transferência entre contas.
     source       TEXT,
     created_at   TIMESTAMPTZ DEFAULT NOW(),
     updated_at   TIMESTAMPTZ DEFAULT NOW(),

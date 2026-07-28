@@ -38,14 +38,33 @@ export const namiApi = {
 
   // ── Transações ───────────────────────────────────────────────────────────────
 
-  getTransactions: (month: string): Promise<{ transactions: Transaction[] }> => {
-    // Calcula o último dia real do mês para evitar datas inválidas (ex.: "2026-06-31").
-    // new Date(y, m, 0) = dia 0 do mês seguinte = último dia do mês atual.
+  /** Calcula o último dia real de um mês YYYY-MM (evita datas inválidas tipo "06-31"). */
+  _monthBounds: (month: string): { start: string; end: string } => {
     const [y, m] = month.split('-').map(Number)
     const lastDay = new Date(y, m, 0).getDate()
-    // Formata com zero à esquerda (ex.: 06-09) para compatibilidade com o backend
-    const endDate = `${month}-${String(lastDay).padStart(2, '0')}`
-    return api.get(`/api/finances/transactions?start_date=${month}-01&end_date=${endDate}`)
+    return { start: `${month}-01`, end: `${month}-${String(lastDay).padStart(2, '0')}` }
+  },
+
+  getTransactions: (
+    month: string,
+    opts?: { categoria?: string; tipo?: string; limit?: number; offset?: number },
+  ): Promise<{ transactions: Transaction[]; has_more?: boolean }> => {
+    const { start, end } = namiApi._monthBounds(month)
+    const params = new URLSearchParams({ start_date: start, end_date: end })
+    if (opts?.categoria) params.set('categoria', opts.categoria)
+    if (opts?.tipo)      params.set('tipo', opts.tipo)
+    if (opts?.limit)     params.set('limit', String(opts.limit))
+    if (opts?.offset)    params.set('offset', String(opts.offset))
+    return api.get(`/api/finances/transactions?${params.toString()}`)
+  },
+
+  /** Monta a URL de exportação CSV (spec 043) — navegação same-origin já leva o cookie de sessão. */
+  exportTransactionsUrl: (month: string, opts?: { categoria?: string; tipo?: string }): string => {
+    const { start, end } = namiApi._monthBounds(month)
+    const params = new URLSearchParams({ start_date: start, end_date: end })
+    if (opts?.categoria) params.set('categoria', opts.categoria)
+    if (opts?.tipo)      params.set('tipo', opts.tipo)
+    return `/api/finances/transactions/export?${params.toString()}`
   },
 
   createTransaction: (body: {
@@ -54,8 +73,20 @@ export const namiApi = {
   }): Promise<{ status: string; id: string }> =>
     api.post('/api/finances/transactions', body),
 
+  updateTransaction: (id: string, body: {
+    name?: string; valor?: number; tipo?: string; categoria?: string;
+    conta?: string; card_id?: string; data?: string; notes?: string;
+  }): Promise<{ status: string }> =>
+    api.patch(`/api/finances/transactions/${id}`, body),
+
   deleteTransaction: (id: string): Promise<{ status: string }> =>
     api.del(`/api/finances/transactions/${id}`),
+
+  /** Transferência atômica entre duas contas (spec 043) — exclui de receita/despesa. */
+  createTransfer: (body: {
+    from_account: string; to_account: string; valor: number; data?: string; notes?: string;
+  }): Promise<{ status: string; transfer_id: string }> =>
+    api.post('/api/finances/transfers', body),
 
   // ── Contas ───────────────────────────────────────────────────────────────────
 
@@ -67,6 +98,12 @@ export const namiApi = {
     color?: string; short?: string; icon_url?: string;
   }): Promise<{ status: string }> =>
     api.post('/api/finances/accounts', body),
+
+  updateAccount: (id: string, body: {
+    name?: string; institution?: string; notes?: string; balance_inicial?: number;
+    color?: string; short?: string; icon_url?: string;
+  }): Promise<{ status: string }> =>
+    api.patch(`/api/finances/accounts/${id}`, body),
 
   deleteAccount: (id: string): Promise<{ status: string }> =>
     api.del(`/api/finances/accounts/${id}`),
@@ -82,6 +119,13 @@ export const namiApi = {
     brand?: string; last4?: string; grad?: string;
   }): Promise<{ status: string }> =>
     api.post('/api/finances/cards', body),
+
+  updateCard: (id: string, body: {
+    name?: string; limite?: number; taxa_juros_mensal?: number;
+    closing_day?: number; due_day?: number;
+    brand?: string; last4?: string; grad?: string;
+  }): Promise<{ status: string }> =>
+    api.patch(`/api/finances/cards/${id}`, body),
 
   deleteCard: (id: string): Promise<{ status: string }> =>
     api.del(`/api/finances/cards/${id}`),
@@ -114,6 +158,13 @@ export const namiApi = {
     color?: string; icon_url?: string;
   }): Promise<{ status: string }> =>
     api.post('/api/finances/subscriptions', body),
+
+  updateSubscription: (id: string, body: {
+    name?: string; valor?: number; ciclo?: string; next_billing?: string;
+    conta?: string; status?: string; notes?: string;
+    color?: string; icon_url?: string; next_billing_day?: number;
+  }): Promise<{ status: string }> =>
+    api.patch(`/api/finances/subscriptions/${id}`, body),
 
   deleteSubscription: (id: string): Promise<{ status: string }> =>
     api.del(`/api/finances/subscriptions/${id}`),

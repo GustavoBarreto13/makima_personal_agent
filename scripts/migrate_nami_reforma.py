@@ -55,6 +55,12 @@ MIGRATIONS = [
         "installment_groups: adicionar coluna 'card_id'",
         "ALTER TABLE installment_groups ADD COLUMN IF NOT EXISTS card_id TEXT;",
     ),
+
+    # ── Spec 043 (QoL — Transferências): vincula o par débito/crédito ──────────
+    (
+        "transactions: adicionar coluna 'transfer_id'",
+        "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transfer_id TEXT;",
+    ),
 ]
 
 

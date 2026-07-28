@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { namiApi } from '../namiApi'
 import type { Account, Card, Category } from '../types'
+import type { NormalizedTx } from '../lib'
 import { Icon, lucideToKey } from '../icons'
 import { todayLocalISO } from '../dateUtils'
 
@@ -19,16 +20,31 @@ interface AddModalProps {
   onClose: () => void
   /** Chamada após salvar com sucesso */
   onSaved: (msg?: string) => Promise<void>
+  /** Transação a editar (spec 043) — presente = modo edição, ausente = modo criação */
+  editingTx?: NormalizedTx | null
 }
 
 type TipoTx = 'Despesa' | 'Receita'
 
+/** Monta o valor do seletor de fonte ("conta:Nome" ou "card:UUID") a partir de uma tx normalizada. */
+function fonteFromTx(tx: NormalizedTx): string {
+  if (tx.cardId) return `card:${tx.cardId}`
+  if (tx.source) return `conta:${tx.source}`
+  return ''
+}
+
 /**
- * Modal de criação de transação com categoria visual, campo de valor
+ * Modal de criação/edição de transação com categoria visual, campo de valor
  * em destaque e atalhos de teclado (Enter = salvar, Esc = fechar).
  * Usa as classes .modal-scrim / .modal / .type-toggle / .amt-field / .cat-grid.
+ *
+ * Modo edição (spec 043): quando `editingTx` é passado, os campos são
+ * pré-preenchidos e o submit chama `updateTransaction` em vez de criar uma
+ * nova — parcelamento não se aplica à edição (só existe na criação).
  */
-export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalProps) {
+export function AddModal({ open, accounts, cards, onClose, onSaved, editingTx }: AddModalProps) {
+  const isEdit = !!editingTx
+
   const [tipo, setTipo]           = useState<TipoTx>('Despesa')
   const [name, setName]           = useState('')
   const [valor, setValor]         = useState('')
@@ -44,6 +60,34 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
 
   // Foco automático no campo de valor ao abrir
   const valorRef = useRef<HTMLInputElement>(null)
+
+  // Pré-preenche os campos ao abrir em modo edição (ou reseta ao abrir em modo criação)
+  useEffect(() => {
+    if (!open) return
+    if (editingTx) {
+      setTipo(editingTx.type === 'in' ? 'Receita' : 'Despesa')
+      setName(editingTx.merchant)
+      setValor(String(editingTx.amount).replace('.', ','))
+      setCatId(editingTx.catId)
+      setFonte(fonteFromTx(editingTx))
+      setData(editingTx.date)
+      setNotes(editingTx.notes ?? '')
+      setParcelado(false)
+      setNumParcelas('')
+    } else {
+      setTipo('Despesa')
+      setName('')
+      setValor('')
+      setCatId('')
+      setFonte('')
+      setData('')
+      setNotes('')
+      setParcelado(false)
+      setNumParcelas('')
+    }
+    setError('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editingTx?.id])
 
   // Carrega categorias uma única vez (sem depender de reabrir o modal)
   useEffect(() => {
@@ -125,7 +169,19 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
     setError('')
 
     try {
-      if (parcelado) {
+      if (isEdit && editingTx) {
+        // Edição (spec 043): reaproveita o mesmo formulário, sem parcelamento
+        await namiApi.updateTransaction(editingTx.id, {
+          name: name.trim(),
+          valor: v,
+          tipo,
+          categoria: catId || (tipo === 'Despesa' ? 'outros' : 'receita'),
+          conta,
+          card_id,
+          data,
+          notes,
+        })
+      } else if (parcelado) {
         await namiApi.createInstallment({
           name: name.trim(),
           valor_total: v,
@@ -156,7 +212,7 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
       setParcelado(false)
       setNumParcelas('')
 
-      await onSaved(parcelado ? 'Compra parcelada criada ✓' : 'Transação salva ✓')
+      await onSaved(isEdit ? 'Transação atualizada ✓' : parcelado ? 'Compra parcelada criada ✓' : 'Transação salva ✓')
       onClose()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Erro ao salvar transação.')
@@ -182,7 +238,7 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
       <div className="modal">
         {/* Cabeçalho */}
         <div className="modal-head">
-          <span className="modal-title">Nova transação</span>
+          <span className="modal-title">{isEdit ? 'Editar transação' : 'Nova transação'}</span>
           <button className="modal-close" onClick={onClose} aria-label="Fechar">
             <Icon name="x" size={16} />
           </button>
@@ -289,8 +345,8 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
               </div>
             </div>
 
-            {/* Parcelar em N vezes — só faz sentido para Despesa (spec 041) */}
-            {tipo === 'Despesa' && (
+            {/* Parcelar em N vezes — só faz sentido para Despesa nova (spec 041); não se aplica à edição */}
+            {!isEdit && tipo === 'Despesa' && (
               <div className="field" style={{ marginTop: 12 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                   <input
@@ -351,7 +407,7 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
                 disabled={saving}
                 style={{ background: tipo === 'Despesa' ? 'var(--out)' : 'var(--in)' }}
               >
-                {saving ? 'Salvando…' : parcelado ? `Parcelar em ${numParcelas || 'N'}x` : `Lançar ${tipo}`}
+                {saving ? 'Salvando…' : isEdit ? 'Salvar alterações' : parcelado ? `Parcelar em ${numParcelas || 'N'}x` : `Lançar ${tipo}`}
               </button>
             </div>
           </div>

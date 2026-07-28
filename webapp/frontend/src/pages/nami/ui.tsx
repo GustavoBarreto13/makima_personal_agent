@@ -462,6 +462,75 @@ export function AreaTrend({ trend, projected, currentMonth }: AreaTrendProps) {
   )
 }
 
+// ── Heatmap mensal de gastos (spec 043, User Story 5) ───────────────────────
+
+interface HeatmapMonthProps {
+  /** Gastos diários do mês (já vem de stats.daily_spending) */
+  dailySpending: { day: string; expense: number }[]
+  /** Mês exibido (YYYY-MM) — usado para saber quantos dias/qual dia da semana inicial */
+  month: string
+}
+
+/**
+ * Grid de dias do mês colorido pela intensidade do gasto — SVG próprio, sem
+ * lib de gráfico externa (padrão do repo). Cada célula é um dia; a opacidade
+ * do preenchimento é proporcional ao gasto do dia sobre o gasto máximo do mês.
+ *
+ * Args:
+ *   dailySpending: array {day (YYYY-MM-DD), expense} do StatsResponse.
+ *   month: mês exibido no formato YYYY-MM.
+ */
+export function HeatmapMonth({ dailySpending, month }: HeatmapMonthProps) {
+  const [y, m] = month.split('-').map(Number)
+  const daysInMonth = new Date(y, m, 0).getDate()
+  // getDay() de 1º do mês: 0=domingo..6=sábado — usado para alinhar a 1ª semana
+  const firstWeekday = new Date(y, m - 1, 1).getDay()
+
+  const byDay: Record<number, number> = {}
+  dailySpending.forEach(d => {
+    const dayNum = parseInt(d.day.slice(8, 10), 10)
+    byDay[dayNum] = (byDay[dayNum] ?? 0) + d.expense
+  })
+  const maxExpense = Math.max(...Object.values(byDay), 1)
+
+  // Células vazias antes do dia 1 para alinhar com o dia da semana correto
+  const cells: (number | null)[] = [...Array(firstWeekday).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
+
+  const WEEKDAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 6 }}>
+        {WEEKDAYS.map((w, i) => (
+          <div key={i} style={{ textAlign: 'center', fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase' }}>{w}</div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+        {cells.map((day, i) => {
+          if (day === null) return <div key={`empty-${i}`} />
+          const expense = byDay[day] ?? 0
+          const intensity = expense > 0 ? 0.12 + (expense / maxExpense) * 0.75 : 0
+          return (
+            <div
+              key={day}
+              title={expense > 0 ? `Dia ${day}: ${fmtMoney(expense)}` : `Dia ${day}: sem gastos`}
+              style={{
+                aspectRatio: '1',
+                borderRadius: 4,
+                background: expense > 0 ? `oklch(0.62 0.16 26 / ${intensity})` : 'var(--mist)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 9, color: expense > 0 ? 'var(--ink)' : 'var(--muted)',
+              }}
+            >
+              {day}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── Helpers de data e texto ───────────────────────────────────────────────────
 
 /**

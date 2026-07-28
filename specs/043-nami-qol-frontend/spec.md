@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-06
 
-**Status**: Draft
+**Status**: ✅ Implementado (2026-07-28) — ver `plan.md` e `tasks.md` para detalhamento; migração `transactions.transfer_id` pendente no VPS.
 
 **Input**: User description: "Qualidade de vida no frontend da Nami: edição de transações (PATCH existe e está ocioso), edição de contas/cartões/assinaturas, exportação CSV das transações, heatmap de gastos por dia, filtro de categorias completo com persistência em localStorage, upload de ícone via wrapper de API padrão, paginação de /transactions, e transferências entre contas (par atômico saída/entrada)."
 

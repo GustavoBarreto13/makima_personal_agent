@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { namiApi } from '../namiApi'
 import type { Account } from '../types'
 import { FormModal } from '../modals/FormModal'
+import { TransferModal } from '../modals/TransferModal'
 import { Icon } from '../icons'
 import { fmtMoney } from '../ui'
 
@@ -34,6 +35,8 @@ const ACCOUNT_SWATCHES = [
 
 export function Accounts({ accounts, onToast, onAccountsChanged }: AccountsProps) {
   const [showForm, setShowForm] = useState(false)
+  const [editingAcc, setEditingAcc] = useState<Account | null>(null)
+  const [showTransfer, setShowTransfer] = useState(false)
   const [saving, setSaving]     = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -42,16 +45,29 @@ export function Accounts({ accounts, onToast, onAccountsChanged }: AccountsProps
   async function handleSave(values: Record<string, unknown>) {
     setSaving(true)
     try {
-      await namiApi.createAccount({
-        name:            String(values.name ?? ''),
-        type:            String(values.type ?? 'corrente'),
-        balance_inicial: parseFloat(String(values.balance ?? '0').replace(',', '.')),
-        color:           String(values.color ?? ''),
-        short:           String(values.short ?? ''),
-        icon_url:        String(values.icon_url ?? '') || undefined,
-      })
-      onToast('Conta criada ✓')
+      if (editingAcc) {
+        // Edição (spec 043) — preserva o histórico de transações vinculadas
+        await namiApi.updateAccount(editingAcc.id, {
+          name:            String(values.name ?? ''),
+          balance_inicial: parseFloat(String(values.balance ?? '0').replace(',', '.')),
+          color:           String(values.color ?? '') || undefined,
+          short:           String(values.short ?? '') || undefined,
+          icon_url:        String(values.icon_url ?? '') || undefined,
+        })
+        onToast('Conta atualizada ✓')
+      } else {
+        await namiApi.createAccount({
+          name:            String(values.name ?? ''),
+          type:            String(values.type ?? 'corrente'),
+          balance_inicial: parseFloat(String(values.balance ?? '0').replace(',', '.')),
+          color:           String(values.color ?? ''),
+          short:           String(values.short ?? ''),
+          icon_url:        String(values.icon_url ?? '') || undefined,
+        })
+        onToast('Conta criada ✓')
+      }
       setShowForm(false)
+      setEditingAcc(null)
       onAccountsChanged()
     } catch (err: unknown) {
       throw err
@@ -77,9 +93,14 @@ export function Accounts({ accounts, onToast, onAccountsChanged }: AccountsProps
     <>
       <div className="page-head">
         <h2>Contas</h2>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-          <Icon name="plus" size={14} /> Nova conta
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost" onClick={() => setShowTransfer(true)} disabled={accounts.length < 2}>
+            <Icon name="arrowsLeftRight" size={14} /> Transferir
+          </button>
+          <button className="btn btn-primary" onClick={() => { setEditingAcc(null); setShowForm(true) }}>
+            <Icon name="plus" size={14} /> Nova conta
+          </button>
+        </div>
       </div>
 
       {/* Patrimônio total */}
@@ -157,36 +178,63 @@ export function Accounts({ accounts, onToast, onAccountsChanged }: AccountsProps
 
               <div className="acct-foot">
                 <span className="acct-status">{acc.status}</span>
-                <button
-                  className="acct-del"
-                  onClick={() => handleDelete(acc.id)}
-                  disabled={deletingId === acc.id}
-                  aria-label="Remover conta"
-                >
-                  <Icon name="trash" size={12} />
-                </button>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button
+                    className="acct-del"
+                    onClick={() => { setEditingAcc(acc); setShowForm(true) }}
+                    aria-label="Editar conta"
+                  >
+                    <Icon name="edit" size={12} />
+                  </button>
+                  <button
+                    className="acct-del"
+                    onClick={() => handleDelete(acc.id)}
+                    disabled={deletingId === acc.id}
+                    aria-label="Remover conta"
+                  >
+                    <Icon name="trash" size={12} />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Modal de nova conta */}
+      {/* Modal de nova conta / edição (spec 043) */}
       {showForm && (
         <FormModal
-          title="Nova conta"
+          title={editingAcc ? `Editar ${editingAcc.name}` : 'Nova conta'}
           saving={saving}
-          onClose={() => setShowForm(false)}
+          onClose={() => { setShowForm(false); setEditingAcc(null) }}
           onSave={handleSave}
-          saveLabel="Criar conta"
+          saveLabel={editingAcc ? 'Salvar alterações' : 'Criar conta'}
+          initialValues={editingAcc ? {
+            name: editingAcc.name,
+            type: editingAcc.type,
+            balance: String(editingAcc.balance_inicial ?? 0),
+            color: editingAcc.color ?? '',
+            short: editingAcc.short ?? '',
+            icon_url: editingAcc.icon_url ?? '',
+          } : undefined}
           fields={[
             { key: 'name',    label: 'Nome',        type: 'text',   required: true, placeholder: 'Ex.: Nubank, Caixa…' },
-            { key: 'type',    label: 'Tipo',        type: 'segment', options: ACCOUNT_TYPE_OPTIONS },
+            // Tipo não é editável (update_account não altera o tipo) — só aparece na criação
+            ...(editingAcc ? [] : [{ key: 'type', label: 'Tipo', type: 'segment' as const, options: ACCOUNT_TYPE_OPTIONS }]),
             { key: 'balance', label: 'Saldo inicial', type: 'money', required: true },
             { key: 'color',   label: 'Cor de acento', type: 'color',  swatches: ACCOUNT_SWATCHES },
             { key: 'short',   label: 'Sigla (2 letras)', type: 'text', placeholder: 'Ex.: NU' },
             { key: 'icon_url',label: 'Ícone (URL)',   type: 'image' },
           ]}
+        />
+      )}
+
+      {/* Modal de transferência entre contas (spec 043) */}
+      {showTransfer && (
+        <TransferModal
+          accounts={accounts}
+          onClose={() => setShowTransfer(false)}
+          onSaved={async msg => { onToast(msg ?? 'Transferência registrada ✓'); onAccountsChanged() }}
         />
       )}
     </>

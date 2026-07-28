@@ -39,6 +39,7 @@ function fmtDays(days: number): string {
 
 export function Subscriptions({ subscriptions, onToast, onSubscriptionsChanged }: SubscriptionsProps) {
   const [showForm, setShowForm]   = useState(false)
+  const [editingSub, setEditingSub] = useState<Subscription | null>(null)
   const [saving, setSaving]       = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -70,16 +71,29 @@ export function Subscriptions({ subscriptions, onToast, onSubscriptionsChanged }
   async function handleSave(values: Record<string, unknown>) {
     setSaving(true)
     try {
-      await namiApi.createSubscription({
-        name:             String(values.name ?? ''),
-        valor:            parseFloat(String(values.valor ?? '0').replace(',', '.')),
-        ciclo:            String(values.ciclo ?? 'mensal'),
-        categoria:        String(values.categoria ?? 'Assinaturas'),
-        next_billing_day: values.dia ? parseInt(String(values.dia)) : undefined,
-        color:            String(values.color ?? '') || undefined,
-      })
-      onToast('Assinatura cadastrada ✓')
+      if (editingSub) {
+        // Edição (spec 043)
+        await namiApi.updateSubscription(editingSub.id, {
+          name:             String(values.name ?? ''),
+          valor:            parseFloat(String(values.valor ?? '0').replace(',', '.')),
+          ciclo:            String(values.ciclo ?? 'mensal'),
+          next_billing_day: values.dia ? parseInt(String(values.dia)) : undefined,
+          color:            String(values.color ?? '') || undefined,
+        })
+        onToast('Assinatura atualizada ✓')
+      } else {
+        await namiApi.createSubscription({
+          name:             String(values.name ?? ''),
+          valor:            parseFloat(String(values.valor ?? '0').replace(',', '.')),
+          ciclo:            String(values.ciclo ?? 'mensal'),
+          categoria:        String(values.categoria ?? 'Assinaturas'),
+          next_billing_day: values.dia ? parseInt(String(values.dia)) : undefined,
+          color:            String(values.color ?? '') || undefined,
+        })
+        onToast('Assinatura cadastrada ✓')
+      }
       setShowForm(false)
+      setEditingSub(null)
       await onSubscriptionsChanged()
     } catch (err: unknown) {
       throw err
@@ -193,6 +207,13 @@ export function Subscriptions({ subscriptions, onToast, onSubscriptionsChanged }
                     <div className="sub-val amount">{fmtMoney(sub.valor)}</div>
                     <button
                       className="sub-del"
+                      onClick={() => { setEditingSub(sub); setShowForm(true) }}
+                      aria-label="Editar assinatura"
+                    >
+                      <Icon name="edit" size={13} />
+                    </button>
+                    <button
+                      className="sub-del"
                       onClick={() => handleDelete(sub.id)}
                       disabled={deletingId === sub.id}
                       aria-label="Remover assinatura"
@@ -207,27 +228,35 @@ export function Subscriptions({ subscriptions, onToast, onSubscriptionsChanged }
         </div>
       )}
 
-      {/* Modal de nova assinatura */}
+      {/* Modal de nova assinatura / edição (spec 043) */}
       {showForm && (
         <FormModal
-          title="Nova assinatura"
+          title={editingSub ? `Editar ${editingSub.name}` : 'Nova assinatura'}
           saving={saving}
-          onClose={() => setShowForm(false)}
+          onClose={() => { setShowForm(false); setEditingSub(null) }}
           onSave={handleSave}
-          saveLabel="Cadastrar"
+          saveLabel={editingSub ? 'Salvar alterações' : 'Cadastrar'}
+          initialValues={editingSub ? {
+            name: editingSub.name,
+            valor: String(editingSub.valor ?? 0),
+            ciclo: editingSub.ciclo,
+            dia: String(editingSub.next_billing_day ?? ''),
+            color: editingSub.color ?? '',
+          } : undefined}
           fields={[
             { key: 'name',      label: 'Serviço',        type: 'text',    required: true, placeholder: 'Ex: Netflix, Spotify…' },
             { key: 'valor',     label: 'Valor mensal',   type: 'money',   required: true },
             { key: 'ciclo',     label: 'Ciclo',          type: 'segment', options: [{ value: 'mensal', label: 'Mensal' }, { value: 'anual', label: 'Anual' }] },
             { key: 'dia',       label: 'Dia da cobrança', type: 'number', min: 1, max: 28, placeholder: '15' },
-            { key: 'categoria', label: 'Categoria',       type: 'select', options: [
+            // Categoria não é editável (update_subscription não altera a categoria) — só na criação
+            ...(editingSub ? [] : [{ key: 'categoria', label: 'Categoria', type: 'select' as const, options: [
               { value: 'Assinaturas',    label: 'Assinaturas' },
               { value: 'Entretenimento', label: 'Entretenimento' },
               { value: 'Saude',          label: 'Saúde' },
               { value: 'Educacao',       label: 'Educação' },
               { value: 'Software',       label: 'Software' },
               { value: 'Outros',         label: 'Outros' },
-            ]},
+            ]}]),
             { key: 'color',     label: 'Cor do avatar', type: 'color',  swatches: SUB_COLORS.map(s => s.value) },
           ]}
         />

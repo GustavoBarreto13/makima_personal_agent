@@ -41,10 +41,17 @@ Todos os endpoints de finanças exigem autenticação. A maior parte chama as to
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/finances/transactions` | Lista transações de um período. | `?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` |
+| `GET` | `/api/finances/transactions` | Lista transações de um período; filtro opcional por categoria/tipo e paginação (spec 043). | `?start_date=&end_date=&categoria=&tipo=&limit=&offset=` |
 | `POST` | `/api/finances/transactions` | Cria uma transação (devolve 201). | Body: `CreateTransactionBody` |
-| `PATCH` | `/api/finances/transactions/{tx_id}` | Atualiza uma transação existente. | Body: `UpdateTransactionBody` |
+| `PATCH` | `/api/finances/transactions/{tx_id}` | Atualiza uma transação existente — `card_id` (spec 043) troca a origem para cartão, mutuamente exclusivo com `conta`. | Body: `UpdateTransactionBody` |
 | `DELETE` | `/api/finances/transactions/{tx_id}` | Soft-delete de uma transação. | — |
+| `GET` | `/api/finances/transactions/export` | Exporta as transações filtradas como CSV (`;` + BOM UTF-8, compatível com Excel pt-BR) — spec 043. | `?start_date=&end_date=&categoria=&tipo=` |
+
+### Transferências (spec 043)
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `POST` | `/api/finances/transfers` | Registra transferência atômica entre duas contas (`tipo='Transferencia'`, excluída de receita/despesa nos relatórios). | Body: `CreateTransferBody` |
 
 ### Resumo e análises
 
@@ -68,6 +75,7 @@ responder no Telegram ("onde vai mais meu dinheiro?" → `get_spending_summary`)
 | `GET` | `/api/finances/accounts` | Lista contas. | `?status=ativo\|encerrado` |
 | `POST` | `/api/finances/accounts` | Cria conta (devolve 201) e salva campos visuais (cor, ícone, abreviação). | Body: `CreateAccountBody` |
 | `GET` | `/api/finances/accounts/{account_id}/balance` | Saldo atual da conta. | — |
+| `PATCH` | `/api/finances/accounts/{account_id}` | Atualiza campos da conta (nome, instituição, saldo, campos visuais) — spec 043. Tipo não é editável. | Body: `UpdateAccountBody` |
 | `DELETE` | `/api/finances/accounts/{account_id}` | Encerra a conta. | — |
 
 ### Cartões de crédito
@@ -76,6 +84,7 @@ responder no Telegram ("onde vai mais meu dinheiro?" → `get_spending_summary`)
 |---|---|---|---|
 | `GET` | `/api/finances/cards` | Lista cartões com resumo de fatura e campos visuais. | — |
 | `POST` | `/api/finances/cards` | Registra cartão (devolve 201). | Body: `RegisterCreditCardBody` |
+| `PATCH` | `/api/finances/cards/{card_id}` | Atualiza campos do cartão (limite, taxa, dias, campos visuais) — spec 043. Conta vinculada não é editável. | Body: `UpdateCardBody` |
 | `POST` | `/api/finances/cards/{card_id}/payment` | Registra pagamento de fatura (devolve 201). | Body: `CardPaymentBody` |
 | `DELETE` | `/api/finances/cards/{card_id}` | Encerra o cartão. | — |
 
@@ -102,7 +111,7 @@ responder no Telegram ("onde vai mais meu dinheiro?" → `get_spending_summary`)
 |---|---|---|---|
 | `GET` | `/api/finances/subscriptions` | Lista assinaturas com campos visuais enriquecidos. | `?status=ativo\|pausado\|cancelado` |
 | `POST` | `/api/finances/subscriptions` | Cria assinatura (devolve 201). | Body: `CreateSubscriptionBody` |
-| `PATCH` | `/api/finances/subscriptions/{sub_id}` | Atualiza assinatura (pausar, reativar, etc.). | Body: `UpdateSubscriptionBody` |
+| `PATCH` | `/api/finances/subscriptions/{sub_id}` | Atualiza assinatura (pausar, reativar, valor, campos visuais — spec 043). Categoria não é editável. | Body: `UpdateSubscriptionBody` |
 | `DELETE` | `/api/finances/subscriptions/{sub_id}` | Soft-delete da assinatura. | — |
 
 ### Parcelamentos
@@ -110,11 +119,11 @@ responder no Telegram ("onde vai mais meu dinheiro?" → `get_spending_summary`)
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
 | `GET` | `/api/finances/installments` | Lista grupos de parcelamento. | `?status=ativo\|quitado` |
-| `POST` | `/api/finances/installments` | Cria compra parcelada (devolve 201; gera N transações). | Body: `CreateInstallmentBody` |
-| `DELETE` | `/api/finances/installments/{group_id}` | Remove todo o grupo de parcelamento. | — |
-
-> **Atenção:** `create_installment()` **não aceita `card_id`**. Compras parceladas no cartão
-> devem ser criadas individualmente com `POST /transactions` para cada parcela.
+| `GET` | `/api/finances/installments/{group_id}` | Detalhe do grupo — cabeçalho + linha do tempo das parcelas (spec 041). | — |
+| `POST` | `/api/finances/installments` | Cria compra parcelada (devolve 201; gera N transações). Aceita `conta` **ou** `card_id` (spec 041), mutuamente exclusivos. | Body: `CreateInstallmentBody` |
+| `POST` | `/api/finances/installments/{group_id}/cancel` | Cancela as parcelas futuras (mantém as já pagas) — spec 041. | — |
+| `DELETE` | `/api/finances/installments/{group_id}` | Remove todo o grupo de parcelamento (passadas + futuras). | — |
+| `GET` | `/api/finances/cards/{card_id}/installments` | Parcelamentos ativos de um cartão + comprometimento mensal (spec 041). | — |
 
 ### Upload de ícone
 

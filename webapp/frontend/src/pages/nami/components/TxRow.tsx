@@ -13,6 +13,8 @@ interface TxRowProps {
   catMap: Record<string, Category>
   /** Chamado quando o usuário clica no botão lixeira */
   onDelete: (id: string) => void
+  /** Chamado quando o usuário clica no botão de editar (spec 043) */
+  onEdit?: (tx: NormalizedTx) => void
   /** Indica se a exclusão está em progresso (desabilita o botão) */
   deleting?: boolean
 }
@@ -27,7 +29,7 @@ interface TxRowProps {
  *   onDelete: callback de exclusão.
  *   deleting: desabilita o botão durante a requisição.
  */
-export function TxRow({ tx, catMap, onDelete, deleting }: TxRowProps) {
+export function TxRow({ tx, catMap, onDelete, onEdit, deleting }: TxRowProps) {
   // Busca a categoria pelo slug; usa valores padrão se não encontrar
   const cat = catMap[tx.catId]
 
@@ -72,6 +74,17 @@ export function TxRow({ tx, catMap, onDelete, deleting }: TxRowProps) {
           {tx.type === 'in' ? '+' : '−'} R$ {fmt(tx.amount)}
         </span>
 
+        {/* Botão editar — invisível até o hover da linha, mesmo padrão da lixeira (spec 043) */}
+        {onEdit && (
+          <button
+            className="tx-del"
+            onClick={() => onEdit(tx)}
+            aria-label="Editar transação"
+          >
+            <Icon name="edit" size={13} />
+          </button>
+        )}
+
         {/* Botão lixeira — invisível até o hover da linha (CSS .tx-row:hover .tx-del) */}
         <button
           className="tx-del"
@@ -95,6 +108,8 @@ interface TxListProps {
   catMap: Record<string, Category>
   /** Callback de exclusão */
   onDelete: (id: string) => void
+  /** Callback de edição (spec 043) */
+  onEdit?: (tx: NormalizedTx) => void
   /** Id em processo de exclusão */
   deletingId?: string | null
 }
@@ -123,7 +138,7 @@ function dayNet(txs: NormalizedTx[]): number {
  * Lista de transações agrupadas por dia, com rótulo de data e saldo do dia.
  * Portada do handoff de referência (screens-a.jsx → TxList).
  */
-export function TxList({ groups, catMap, onDelete, deletingId }: TxListProps) {
+export function TxList({ groups, catMap, onDelete, onEdit, deletingId }: TxListProps) {
   if (groups.length === 0) {
     // Estado vazio com ícone
     return (
@@ -158,6 +173,7 @@ export function TxList({ groups, catMap, onDelete, deletingId }: TxListProps) {
                 tx={tx}
                 catMap={catMap}
                 onDelete={onDelete}
+                onEdit={onEdit}
                 deleting={deletingId === tx.id}
               />
             ))}

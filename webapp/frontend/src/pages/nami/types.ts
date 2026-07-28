@@ -19,11 +19,12 @@ export interface Transaction {
   id: string
   name: string        // descrição / estabelecimento
   valor: number       // valor em reais (positivo para despesa e receita)
-  tipo: string        // "Despesa" | "Receita" (padrão do backend)
+  tipo: string        // "Despesa" | "Receita" | "Transferencia" (spec 043)
   categoria: string   // id da categoria (ex.: "restaurante")
   conta: string       // nome da conta ou cartão de origem
   data: string        // YYYY-MM-DD
   notes?: string
+  account_id?: string // preenchido quando a transação é de conta bancária (spec 043)
   card_id?: string    // preenchido quando a transação é de cartão
 }
 

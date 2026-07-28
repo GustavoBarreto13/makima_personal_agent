@@ -10,7 +10,7 @@ import type { StatsResponse, Account, Card, Subscription, Category } from '../ty
 import { QuickAdd } from '../components/QuickAdd'
 import { TxList } from '../components/TxRow'
 import { Icon } from '../icons'
-import { DonutPanel, CashflowBars, BigMoney, Spark, greet, daysUntil, urgency, fmtMoney, Donut, AreaTrend } from '../ui'
+import { DonutPanel, CashflowBars, BigMoney, Spark, greet, daysUntil, urgency, fmtMoney, Donut, AreaTrend, HeatmapMonth } from '../ui'
 import { normalizeTx, buildCatMap, groupByDay } from '../lib'
 
 interface DashboardProps {
@@ -332,6 +332,20 @@ export function Dashboard({
               : <div className="empty" style={{ padding: '24px 0' }}><p>Sem gastos no período</p></div>
             }
           </div>
+        </div>
+      </div>
+
+      {/* ── Ritmo de gastos — heatmap diário do mês (spec 043, US5) ──── */}
+      <div className="panel">
+        <div className="panel-head">
+          <span className="panel-title">Ritmo de gastos</span>
+        </div>
+        <div className="panel-body">
+          {stats?.daily_spending?.length ? (
+            <HeatmapMonth dailySpending={stats.daily_spending} month={month} />
+          ) : (
+            <div className="empty" style={{ padding: '24px 0' }}><p>Sem gastos no período</p></div>
+          )}
         </div>
       </div>
 

@@ -42,6 +42,7 @@ from agents.nami.tools import (
     list_subscriptions,   # Lista assinaturas (ativa/encerrada/todas)
     update_subscription,  # Pausa, cancela ou atualiza assinatura
     delete_subscription,  # Soft delete de assinatura — marca deleted=TRUE
+    create_transfer,       # Par atômico débito/crédito entre contas (spec 043)
     _today_date,           # Hoje no fuso America/Sao_Paulo (spec 040) — nunca date.today() (UTC do servidor)
 )
 
@@ -50,6 +51,7 @@ from agents.nami.tools_accounts import (
     create_account,       # Cadastra nova conta financeira
     list_accounts,        # Lista contas por status
     get_account_balance,  # Saldo atual de uma conta específica
+    update_account,       # Atualiza campos de uma conta (spec 043 — só faltava expor)
     delete_account,       # Encerra conta — status → 'encerrado'
 )
 
@@ -58,6 +60,7 @@ from agents.nami.tools_credit_cards import (
     register_credit_card,   # Cadastra cartão vinculado a uma conta
     get_card_debt_summary,  # Resumo de dívidas em todos os cartões
     register_card_payment,  # Registra pagamento de fatura
+    update_credit_card,     # Atualiza campos de um cartão (spec 043 — só faltava expor)
     delete_credit_card,     # Encerra cartão — status → 'encerrado'
 )
 
@@ -190,6 +193,7 @@ class UpdateTransactionBody(BaseModel):
     conta: str = ""             # Nova conta (vazio = não altera)
     data: str = ""              # Nova data (vazio = não altera)
     notes: str = ""             # Novas observações (vazio = não altera)
+    card_id: str = ""           # Novo cartão de origem (spec 043) — tem prioridade sobre conta
 
 
 class CreateAccountBody(BaseModel):
@@ -202,6 +206,20 @@ class CreateAccountBody(BaseModel):
     color: Optional[str] = None     # Cor de fundo do avatar (ex.: "#3B82C4" ou "oklch(...)")
     short: Optional[str] = None     # Sigla curta para o avatar (máx 2-3 chars, ex.: "NU", "IT")
     icon_url: Optional[str] = None  # URL de ícone personalizado (upload ou URL pública)
+
+
+class UpdateAccountBody(BaseModel):
+    """Corpo da requisição para atualizar campos de uma conta existente (spec 043).
+
+    Todos os campos são opcionais — só os enviados serão alterados.
+    """
+    name: Optional[str] = None
+    institution: Optional[str] = None
+    notes: Optional[str] = None
+    balance_inicial: Optional[float] = None
+    color: Optional[str] = None
+    short: Optional[str] = None
+    icon_url: Optional[str] = None
 
 
 class RegisterCreditCardBody(BaseModel):
@@ -217,6 +235,21 @@ class RegisterCreditCardBody(BaseModel):
     brand: Optional[str] = None        # Bandeira do cartão (ex.: "Mastercard", "Visa")
     last4: Optional[str] = None        # Últimos 4 dígitos do cartão (exibidos no plástico)
     grad: Optional[str] = None         # Gradiente CSS do plástico (ex.: "linear-gradient(...)")
+
+
+class UpdateCardBody(BaseModel):
+    """Corpo da requisição para atualizar campos de um cartão existente (spec 043).
+
+    Todos os campos são opcionais — só os enviados serão alterados.
+    """
+    name: Optional[str] = None
+    limite: Optional[float] = None
+    taxa_juros_mensal: Optional[float] = None
+    closing_day: Optional[int] = None
+    due_day: Optional[int] = None
+    brand: Optional[str] = None
+    last4: Optional[str] = None
+    grad: Optional[str] = None
 
 
 class CardPaymentBody(BaseModel):
@@ -272,6 +305,20 @@ class UpdateSubscriptionBody(BaseModel):
     conta: str = ""              # Nova conta de débito (vazio = não altera)
     status: str = ""             # Novo status: "ativa" | "pausada" | "cancelada" (vazio = não altera)
     notes: str = ""              # Novas observações (vazio = não altera)
+    # Campos visuais (spec 043 — a tool update_subscription não os conhece, mesmo
+    # padrão do POST: UPDATE direto após a tool cuidar dos campos de negócio)
+    color: Optional[str] = None
+    icon_url: Optional[str] = None
+    next_billing_day: Optional[int] = None
+
+
+class CreateTransferBody(BaseModel):
+    """Corpo da requisição para registrar uma transferência entre contas (spec 043)."""
+    from_account: str    # Nome da conta de origem
+    to_account: str      # Nome da conta de destino
+    valor: float          # Valor transferido em reais
+    data: str = ""        # Data no formato YYYY-MM-DD (vazio = hoje)
+    notes: str = ""        # Observações opcionais
 
 
 class CreateInstallmentBody(BaseModel):
@@ -298,6 +345,10 @@ def list_transactions(
     # Parâmetros opcionais de filtro via query string (ex.: ?start_date=2026-06-01)
     start_date: str = Query(default="", description="Data inicial no formato YYYY-MM-DD"),
     end_date: str = Query(default="", description="Data final no formato YYYY-MM-DD"),
+    categoria: str = Query(default="", description="Filtra por categoria exata (spec 043)"),
+    tipo: str = Query(default="", description="Filtra por 'Despesa'/'Receita'/'Transferencia' (spec 043)"),
+    limit: int = Query(default=0, description="Tamanho da página — 0 = sem paginação (spec 043)"),
+    offset: int = Query(default=0, description="Deslocamento da página (spec 043)"),
     # Dependência de autenticação — retorna 401 se o cookie de sessão for inválido
     user: dict = Depends(require_user),
 ) -> dict:
@@ -306,16 +357,17 @@ def list_transactions(
     Retorna a lista de transações não deletadas no período informado.
     Sem filtros, retorna as transações do mês atual (comportamento padrão da tool).
 
-    Nota: a tool `query_expenses` filtra apenas por período. Filtros por categoria
-    e conta não são suportados pela tool atual.
-
     Args:
         start_date: Data inicial (YYYY-MM-DD). Vazio = 1º dia do mês atual.
         end_date: Data final (YYYY-MM-DD). Vazio = hoje.
+        categoria: Filtro exato de categoria (vazio = todas).
+        tipo: Filtro exato de tipo (vazio = todos).
+        limit: Tamanho da página (0 = sem paginação — retorna tudo, comportamento antigo).
+        offset: Deslocamento da página (ignorado se limit=0).
         user: Dados do usuário autenticado (injetado automaticamente pelo Depends).
 
     Returns:
-        Dicionário com "status": "ok" e a lista de transações.
+        Dicionário com "status": "ok", a lista de transações e "has_more" (paginação).
 
     Raises:
         HTTPException: 400 se os filtros forem inválidos.
@@ -325,8 +377,73 @@ def list_transactions(
     result = query_expenses(
         start_date=start_date,
         end_date=end_date,
+        categoria=categoria,
+        tipo=tipo,
+        limit=limit,
+        offset=offset,
     )
     return _check_result(result)
+
+
+@router.get("/transactions/export")
+def export_transactions(
+    start_date: str = Query(default="", description="Data inicial no formato YYYY-MM-DD"),
+    end_date: str = Query(default="", description="Data final no formato YYYY-MM-DD"),
+    categoria: str = Query(default="", description="Filtra por categoria exata"),
+    tipo: str = Query(default="", description="Filtra por 'Despesa'/'Receita'/'Transferencia'"),
+    user: dict = Depends(require_user),
+):
+    """Exportar as transações filtradas como CSV compatível com Excel em português (spec 043).
+
+    Usa `;` como separador de coluna (não `,`) porque o Excel em locale pt-BR usa
+    vírgula como separador decimal — com `,` como delimitador de coluna o Excel
+    quebraria os valores numéricos ao abrir o arquivo. O BOM UTF-8 no início do
+    arquivo garante que acentos apareçam corretos (não uma leitura Latin-1).
+
+    Args:
+        start_date: Data inicial (YYYY-MM-DD). Vazio = 1º dia do mês atual.
+        end_date: Data final (YYYY-MM-DD). Vazio = hoje.
+        categoria: Filtro exato de categoria (vazio = todas).
+        tipo: Filtro exato de tipo (vazio = todos).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Response text/csv com Content-Disposition de anexo.
+
+    Raises:
+        HTTPException: 400 se os filtros forem inválidos.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    import csv
+    import io
+    from fastapi import Response
+
+    result = _check_result(query_expenses(
+        start_date=start_date, end_date=end_date, categoria=categoria, tipo=tipo,
+    ))
+
+    # StringIO + csv.writer — mais seguro que montar strings na mão (escapa
+    # aspas/`;` dentro dos campos de texto automaticamente)
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=";")
+    writer.writerow(["Data", "Descrição", "Tipo", "Categoria", "Conta", "Valor", "Notas"])
+    for tx in result.get("transactions", []):
+        # Vírgula decimal (padrão BR) — coerente com o separador `;` de coluna
+        valor_str = f"{tx['valor']:.2f}".replace(".", ",")
+        writer.writerow([
+            tx["data"], tx["name"], tx["tipo"], tx["categoria"],
+            tx["conta"], valor_str, tx.get("notes") or "",
+        ])
+
+    # BOM UTF-8 na frente do conteúdo — sem ele o Excel abre acentos como lixo
+    csv_bytes = "﻿".encode("utf-8") + buf.getvalue().encode("utf-8")
+
+    filename = f"extrato_{start_date or 'mes'}_{end_date or 'atual'}.csv"
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/transactions", status_code=201)
@@ -406,6 +523,7 @@ def update_transaction_endpoint(
         conta=body.conta,
         data=body.data,
         notes=body.notes,
+        card_id=body.card_id,
     )
     return _check_result(result)
 
@@ -651,6 +769,88 @@ def account_balance(
     return _check_result(result)
 
 
+@router.patch("/accounts/{account_id}")
+def update_account_endpoint(
+    account_id: str,
+    body: UpdateAccountBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Atualizar campos de uma conta financeira existente (spec 043).
+
+    Preserva o histórico de transações vinculadas — edição, não recriação.
+
+    Args:
+        account_id: ID único da conta.
+        body: Campos a atualizar (todos opcionais).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+
+    Raises:
+        HTTPException: 400 se a conta não for encontrada ou nenhum campo for enviado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    result = update_account(
+        account_id=account_id,
+        name=body.name or "",
+        institution=body.institution or "",
+        notes=body.notes or "",
+        balance_inicial=body.balance_inicial,
+    )
+    _check_result(result)
+
+    # Campos visuais (color/short/icon_url) — a tool não os conhece, mesmo padrão do POST
+    if any([body.color, body.short, body.icon_url]):
+        from agents.db import run_dml as _run_dml
+        _run_dml(
+            """
+            UPDATE accounts
+               SET color    = COALESCE(%(color)s,    color),
+                   short    = COALESCE(%(short)s,    short),
+                   icon_url = COALESCE(%(icon_url)s, icon_url)
+             WHERE id = %(id)s
+            """,
+            {"color": body.color, "short": body.short,
+             "icon_url": body.icon_url, "id": account_id},
+        )
+    return result
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENDPOINTS — TRANSFERÊNCIAS (/transfers)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.post("/transfers", status_code=201)
+def create_transfer_endpoint(
+    body: CreateTransferBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Registrar uma transferência entre duas contas (spec 043, User Story 4).
+
+    Cria um par atômico débito/crédito vinculado por `transfer_id` — excluído
+    automaticamente de receita/despesa em relatórios (tipo='Transferencia').
+
+    Args:
+        body: Conta de origem, conta de destino, valor e data opcional.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e o transfer_id gerado.
+
+    Raises:
+        HTTPException: 400 se as contas forem iguais, não existirem ou o valor for inválido.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(create_transfer(
+        from_account=body.from_account,
+        to_account=body.to_account,
+        valor=body.valor,
+        data=body.data,
+        notes=body.notes,
+    ))
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # ENDPOINTS — CARTÕES (/cards)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -744,6 +944,55 @@ def register_card_endpoint(
             """,
             {"brand": body.brand, "last4": body.last4,
              "grad": body.grad, "id": result["id"]},
+        )
+    return result
+
+
+@router.patch("/cards/{card_id}")
+def update_card_endpoint(
+    card_id: str,
+    body: UpdateCardBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Atualizar campos de um cartão de crédito existente (spec 043).
+
+    Preserva o histórico de transações vinculadas ao cartão.
+
+    Args:
+        card_id: ID único do cartão.
+        body: Campos a atualizar (todos opcionais).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e mensagem de confirmação.
+
+    Raises:
+        HTTPException: 400 se o cartão não for encontrado ou nenhum campo for enviado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    result = update_credit_card(
+        card_id=card_id,
+        name=body.name or "",
+        limite=body.limite,
+        taxa_juros_mensal=body.taxa_juros_mensal,
+        closing_day=body.closing_day,
+        due_day=body.due_day,
+    )
+    _check_result(result)
+
+    # Campos visuais (brand/last4/grad) — a tool não os conhece, mesmo padrão do POST
+    if any([body.brand, body.last4, body.grad]):
+        from agents.db import run_dml as _run_dml
+        _run_dml(
+            """
+            UPDATE credit_cards
+               SET brand = COALESCE(%(brand)s, brand),
+                   last4 = COALESCE(%(last4)s, last4),
+                   grad  = COALESCE(%(grad)s,  grad)
+             WHERE id = %(id)s
+            """,
+            {"brand": body.brand, "last4": body.last4,
+             "grad": body.grad, "id": card_id},
         )
     return result
 
@@ -1102,7 +1351,23 @@ def update_subscription_endpoint(
 
     # Chama a tool de atualização com os kwargs montados acima
     result = update_subscription(**kwargs)
-    return _check_result(result)
+    _check_result(result)
+
+    # Campos visuais (spec 043) — a tool não os conhece, mesmo padrão do POST
+    if any([body.color, body.icon_url, body.next_billing_day is not None]):
+        from agents.db import run_dml as _run_dml
+        _run_dml(
+            """
+            UPDATE subscriptions
+               SET color            = COALESCE(%(color)s,            color),
+                   icon_url         = COALESCE(%(icon_url)s,         icon_url),
+                   next_billing_day = COALESCE(%(next_billing_day)s, next_billing_day)
+             WHERE id = %(id)s
+            """,
+            {"color": body.color, "icon_url": body.icon_url,
+             "next_billing_day": body.next_billing_day, "id": sub_id},
+        )
+    return result
 
 
 # ═════════════════════════════════════════════════════════════════════════════
