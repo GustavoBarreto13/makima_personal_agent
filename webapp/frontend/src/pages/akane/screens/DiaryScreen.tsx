@@ -5,10 +5,13 @@ import { useState, useEffect } from 'react'
 import { akaneApi } from '../akaneApi'
 import type { DiaryEntry } from '../types'
 import { Stars } from '../components/Stars'
+import { matches } from '../searchUtils'
 
 interface DiaryScreenProps {
   /** Callback ao clicar em uma entrada para abrir o detalhe do filme. */
   onSelectMovie: (movieId: string) => void
+  /** Query da busca contextual da topbar (spec busca Akane) — filtra client-side. */
+  query: string
 }
 
 /** Formata uma data ISO (YYYY-MM-DD) para rótulo de mês (ex.: "junho 2026"). */
@@ -67,7 +70,7 @@ function groupByDate(entries: DiaryEntry[]): Array<{ date: string; entries: Diar
 /**
  * Diário de sessões — cronológico, agrupado por mês.
  */
-export function DiaryScreen({ onSelectMovie }: DiaryScreenProps) {
+export function DiaryScreen({ onSelectMovie, query }: DiaryScreenProps) {
   const [entries, setEntries] = useState<DiaryEntry[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -125,8 +128,25 @@ export function DiaryScreen({ onSelectMovie }: DiaryScreenProps) {
     }
   }
 
+  // Filtro de busca client-side — aplicado antes do agrupamento por mês, então
+  // meses que ficam totalmente vazios simplesmente não são renderizados
+  const filteredEntries = entries.filter(e =>
+    matches(query, e.movie_title, e.review, e.tags)
+  )
+  const hasQuery = query.trim().length > 0
+
+  if (filteredEntries.length === 0 && hasQuery) {
+    return (
+      <div className="ak-empty">
+        <span className="ak-empty-icon">🔍</span>
+        <p className="ak-empty-title">Nada encontrado para «{query}»</p>
+        <p className="ak-empty-sub">Tente buscar por outro filme ou trecho da resenha.</p>
+      </div>
+    )
+  }
+
   // Agrupa as entradas por mês para exibição
-  const groups = groupByMonth(entries)
+  const groups = groupByMonth(filteredEntries)
 
   return (
     <div>
@@ -143,12 +163,14 @@ export function DiaryScreen({ onSelectMovie }: DiaryScreenProps) {
                   key={entry.id}
                   entry={entry}
                   onClick={() => onSelectMovie(entry.movie_id)}
-                  onMoveUp={dateGroup.entries.length > 1 && i > 0 ? () => {
+                  // Reordenar fica desabilitado com busca ativa — a lista está
+                  // parcial, reordenar gravaria posições erradas no servidor
+                  onMoveUp={!hasQuery && dateGroup.entries.length > 1 && i > 0 ? () => {
                     const next = [...dateGroup.entries]
                     ;[next[i - 1], next[i]] = [next[i], next[i - 1]]
                     reorderDate(dateGroup.date, next)
                   } : undefined}
-                  onMoveDown={dateGroup.entries.length > 1 && i < dateGroup.entries.length - 1 ? () => {
+                  onMoveDown={!hasQuery && dateGroup.entries.length > 1 && i < dateGroup.entries.length - 1 ? () => {
                     const next = [...dateGroup.entries]
                     ;[next[i], next[i + 1]] = [next[i + 1], next[i]]
                     reorderDate(dateGroup.date, next)

@@ -5,17 +5,20 @@
 import { useState, useEffect } from 'react'
 import { akaneApi } from '../akaneApi'
 import type { Tag } from '../types'
+import { matches } from '../searchUtils'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface TagsScreenProps {
   // Callback chamado ao clicar em uma tag — navega para FilmsScreen com filtro
   onSelectTag: (tag: string) => void
+  /** Query da busca contextual da topbar (spec busca Akane) — filtra client-side. */
+  query: string
 }
 
 // ── Componente principal ─────────────────────────────────────────────────────
 
-export function TagsScreen({ onSelectTag }: TagsScreenProps) {
+export function TagsScreen({ onSelectTag, query }: TagsScreenProps) {
   const [tags, setTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
   // Distingue falha de rede de "genuinamente sem etiquetas ainda" (spec 051, FR-009)
@@ -66,13 +69,26 @@ export function TagsScreen({ onSelectTag }: TagsScreenProps) {
     )
   }
 
+  // Filtro de busca client-side, aplicado antes de separar pessoas/comuns
+  const filteredTags = tags.filter(t => matches(query, t.name))
+
+  if (filteredTags.length === 0 && query.trim()) {
+    return (
+      <div className="ak-empty">
+        <span className="ak-empty-icon">🔍</span>
+        <p className="ak-empty-title">Nada encontrado para «{query}»</p>
+        <p className="ak-empty-sub">Tente outro nome de etiqueta.</p>
+      </div>
+    )
+  }
+
   // Encontra o count máximo para calcular o tamanho relativo de cada tag
-  const maxCount = Math.max(...tags.map(t => t.count), 1)
+  const maxCount = Math.max(...filteredTags.map(t => t.count), 1)
 
   // Separa etiquetas de pessoas (person=true) das etiquetas comuns
   // O campo no backend é "person" — ver types.ts Tag.person
-  const pessoasTags = tags.filter(t => t.person)
-  const etiquetasComuns = tags.filter(t => !t.person)
+  const pessoasTags = filteredTags.filter(t => t.person)
+  const etiquetasComuns = filteredTags.filter(t => !t.person)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>

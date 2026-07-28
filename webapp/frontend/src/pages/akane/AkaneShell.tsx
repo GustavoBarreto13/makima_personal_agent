@@ -57,6 +57,21 @@ const TITLES: Record<string, string> = {
   detail:    'Detalhes',
 }
 
+// Mapeamento de view → placeholder da caixa de busca contextual da topbar.
+// Views sem lista própria para filtrar (home/stats/rewind/detail) usam o
+// placeholder padrão — digitar nelas navega para "films" com a busca aplicada.
+const SEARCH_PLACEHOLDERS: Record<string, string> = {
+  films:     'Buscar por título, direção ou gênero…',
+  diary:     'Buscar sessão por filme ou resenha…',
+  watchlist: 'Buscar na watchlist…',
+  lists:     'Buscar coleção…',
+  tags:      'Buscar etiqueta…',
+}
+const DEFAULT_SEARCH_PLACEHOLDER = 'Buscar filme no catálogo…'
+
+// Views que têm conteúdo filtrável localmente — nas demais, digitar navega para "films"
+const FILTERABLE_VIEWS = new Set(['films', 'diary', 'watchlist', 'lists', 'tags'])
+
 // ── Helpers de tweaks (localStorage) ────────────────────────────────────────
 
 const TWEAKS_KEY = 'akane-tweaks'
@@ -91,6 +106,8 @@ export function AkaneShell() {
   const [detailId, setDetailId] = useState<string | null>(null)
   // Tag ativa (filtro de tag clicada na tela de etiquetas)
   const [activeTag, setActiveTag] = useState<string | null>(null)
+  // Query da caixa de busca da topbar — contextual à tela ativa (spec busca Akane)
+  const [query, setQuery] = useState('')
 
   // ── Tweaks (localStorage) ─────────────────────────────────────────────────
   const [tweaks, setTweaks] = useState<Tweaks>(loadTweaks)
@@ -150,12 +167,21 @@ export function AkaneShell() {
   const goToDetail = useCallback((id: string) => {
     setDetailId(id)
     setView('detail')
+    setQuery('')  // Busca é contextual à tela — não faz sentido persistir no detalhe
   }, [])
 
   /** Volta para a tela anterior ao detalhe (filmes por padrão). */
   const goBack = useCallback(() => {
     setView('films')
     setDetailId(null)
+    setQuery('')
+  }, [])
+
+  /** Navega para outra view da sidebar, sempre limpando detalhe e busca. */
+  const goToView = useCallback((v: AkaneView) => {
+    setView(v)
+    setDetailId(null)
+    setQuery('')
   }, [])
 
   // ── Tela ativa ────────────────────────────────────────────────────────────
@@ -177,15 +203,17 @@ export function AkaneShell() {
             tweaks={tweaks}
             onSelectMovie={goToDetail}
             initialTag={activeTag}
+            query={query}
           />
         )
       case 'diary':
-        return <DiaryScreen onSelectMovie={goToDetail} />
+        return <DiaryScreen onSelectMovie={goToDetail} query={query} />
       case 'watchlist':
         return (
           <WatchlistScreen
             onSelectMovie={goToDetail}
             onLogFilm={(id, title) => openLog(id, title)}
+            query={query}
           />
         )
       case 'stats':
@@ -201,7 +229,7 @@ export function AkaneShell() {
         ) : null
       case 'lists':
         // Tela de listas/coleções temáticas (Onda 5)
-        return <ListsScreen onSelectMovie={goToDetail} />
+        return <ListsScreen onSelectMovie={goToDetail} query={query} />
       case 'tags':
         // Tela de etiquetas: clicar na tag navega para FilmsScreen filtrada
         return (
@@ -209,7 +237,9 @@ export function AkaneShell() {
             onSelectTag={(tag) => {
               setActiveTag(tag)
               setView('films')
+              setQuery('')
             }}
+            query={query}
           />
         )
       case 'rewind':
@@ -285,12 +315,7 @@ export function AkaneShell() {
                 <button
                   key={item.id}
                   className={`ak-nav-item${view === item.id || (view === 'detail' && item.id === 'films') ? ' active' : ''}`}
-                  onClick={() => {
-                    setView(item.id as AkaneView)
-                    // Navegar via sidebar sempre limpa o detalhe — nenhum item da
-                    // NAV_CINEMATECA tem id='detail', então o check anterior era sempre true
-                    setDetailId(null)
-                  }}
+                  onClick={() => goToView(item.id as AkaneView)}
                   aria-current={view === item.id ? 'page' : undefined}
                 >
                   <span style={{ fontSize: 14, width: 18, textAlign: 'center' }}>{item.icon}</span>
@@ -310,7 +335,7 @@ export function AkaneShell() {
                 <button
                   key={item.id}
                   className={`ak-nav-item${view === item.id ? ' active' : ''}`}
-                  onClick={() => { setView(item.id as AkaneView); setDetailId(null) }}
+                  onClick={() => goToView(item.id as AkaneView)}
                   aria-current={view === item.id ? 'page' : undefined}
                 >
                   <span style={{ fontSize: 14, width: 18, textAlign: 'center' }}>{item.icon}</span>
@@ -375,7 +400,7 @@ export function AkaneShell() {
 
         {/* ══ ÁREA PRINCIPAL ══════════════════════════════════════════════════ */}
         <main className="ak-main">
-          {/* Topbar com título da seção atual */}
+          {/* Topbar com título da seção atual + busca contextual */}
           <div className="ak-topbar">
             <span className="ak-topbar-title">
               {view === 'detail' && detailId
@@ -383,6 +408,24 @@ export function AkaneShell() {
                 : TITLES[view] ?? 'Filmes'
               }
             </span>
+
+            {/* Caixa de busca — filtra a tela atual; nas telas sem lista própria
+                (home/stats/rewind/detail), digitar navega para "films" já filtrado */}
+            <input
+              className="ak-topbar-search"
+              type="search"
+              value={query}
+              onChange={e => {
+                const val = e.target.value
+                setQuery(val)
+                if (val && !FILTERABLE_VIEWS.has(view)) {
+                  setView('films')
+                  setDetailId(null)
+                }
+              }}
+              placeholder={SEARCH_PLACEHOLDERS[view] ?? DEFAULT_SEARCH_PLACEHOLDER}
+              aria-label="Buscar na Akane"
+            />
           </div>
 
           {/* Conteúdo com scroll */}
@@ -400,7 +443,7 @@ export function AkaneShell() {
             </span>
             <button
               className="ak-btn"
-              onClick={() => setView('watchlist')}
+              onClick={() => goToView('watchlist')}
               style={{ fontSize: 12, padding: '5px 12px', marginLeft: 'auto' }}
             >
               Ver lista →

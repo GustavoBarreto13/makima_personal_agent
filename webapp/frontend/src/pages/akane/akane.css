@@ -362,6 +362,29 @@
   flex: 1;
 }
 
+/* Caixa de busca contextual da topbar — filtra a tela ativa (client-side) */
+.ak-topbar-search {
+  flex: 1;
+  max-width: 320px;
+  height: 34px;
+  border-radius: 999px;
+  padding: 0 12px;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.ak-topbar-search::placeholder { color: var(--ink-3); }
+.ak-topbar-search:focus {
+  border-color: var(--rose);
+  box-shadow: 0 0 0 3px var(--rose-tint);
+}
+/* Remove o "x" nativo de limpeza do Webkit — destoa dos tokens do tema */
+.ak-topbar-search::-webkit-search-cancel-button { appearance: none; }
+
 /* Content scroll ─────────────────────────────────────────────────────────────── */
 .ak-content {
   flex: 1;

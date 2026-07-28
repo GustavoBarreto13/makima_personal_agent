@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react'
 import { akaneApi } from '../akaneApi'
 import type { Movie } from '../types'
+import { matches } from '../searchUtils'
 // Poster não é usado — WatchlistScreen renderiza pôsteres inline (img + ak-typo-poster)
 
 interface WatchlistScreenProps {
@@ -11,12 +12,14 @@ interface WatchlistScreenProps {
   onSelectMovie: (id: string) => void
   /** Callback ao clicar em "Logar" para abrir o LogModal com o filme pré-selecionado. */
   onLogFilm: (movieId: string, title: string) => void
+  /** Query da busca contextual da topbar (spec busca Akane) — filtra client-side. */
+  query: string
 }
 
 /**
  * Lista de filmes na watchlist.
  */
-export function WatchlistScreen({ onSelectMovie, onLogFilm }: WatchlistScreenProps) {
+export function WatchlistScreen({ onSelectMovie, onLogFilm, query }: WatchlistScreenProps) {
   const [movies, setMovies] = useState<Movie[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -51,16 +54,31 @@ export function WatchlistScreen({ onSelectMovie, onLogFilm }: WatchlistScreenPro
     )
   }
 
+  // Filtro de busca client-side
+  const filteredMovies = movies.filter(m =>
+    matches(query, m.title, m.director, m.genres, m.year)
+  )
+
+  if (filteredMovies.length === 0 && query.trim()) {
+    return (
+      <div className="ak-empty">
+        <span className="ak-empty-icon">🔍</span>
+        <p className="ak-empty-title">Nada encontrado para «{query}»</p>
+        <p className="ak-empty-sub">Tente outro título, direção ou gênero.</p>
+      </div>
+    )
+  }
+
   return (
     <div>
       {/* Contador */}
       <p style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)', marginBottom: 16 }}>
-        {movies.length} {movies.length === 1 ? 'filme' : 'filmes'} na lista
+        {filteredMovies.length} {filteredMovies.length === 1 ? 'filme' : 'filmes'} na lista
       </p>
 
       {/* Grid de cartões horizontais (mais compactos que o catálogo) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {movies.map(movie => (
+        {filteredMovies.map(movie => (
           <WatchlistRow
             key={movie.id}
             movie={movie}

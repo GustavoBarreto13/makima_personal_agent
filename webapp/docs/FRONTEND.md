@@ -381,6 +381,17 @@ botão de sync manual com o Letterboxd na sidebar (`POST /api/movies/sync-letter
 051 — toast com o resumo criados/atualizados/pulados ou erro); preferências em
 `localStorage` (`akane-tweaks`). API: `akaneApi.ts` — todos os `/api/movies/*`.
 
+**Busca contextual na topbar** (`.ak-topbar-search`, estado `query` no `AkaneShell`): uma
+única caixa, presente em todas as telas, filtra **client-side** o conteúdo da tela ativa —
+o backend não expõe busca textual em `GET /api/movies` (só `status/sort/genre/tag/filter`),
+então cada tela filtra o array que já carregou usando `matches()`/`normalize()` de
+`searchUtils.ts` (ignora acento). Placeholder muda por view (`SEARCH_PLACEHOLDERS`). Telas
+com lista própria (`films`, `diary`, `watchlist`, `lists`, `tags`) filtram in-place; nas
+demais (`home`, `stats`, `rewind`, `detail`) digitar navega para `films` com a query
+aplicada. Trocar de tela pela sidebar (`goToView`) sempre limpa a busca. No `DiaryScreen`,
+o drag de reordenar sessões do mesmo dia fica desabilitado enquanto há busca ativa (a lista
+exibida é parcial).
+
 **Gaps de UI fechados (spec 051)** — backend já existia para todos, só faltava a UI:
 - `MovieDetailScreen`: botão "+ Adicionar a lista" (`AddToListModal`, idempotente — reusa
   `add_to_list` do backend, seguro clicar 2×); Cofre editável (form inline + remover);

@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { akaneApi } from '../akaneApi'
 import type { Movie, Tweaks } from '../types'
 import { Stars } from '../components/Stars'
+import { matches } from '../searchUtils'
 // Poster não é usado nesta tela — FilmsScreen renderiza pôsteres inline
 // para controle total do onError (troca TMDB → tipográfico sem rerenders extra)
 
@@ -33,12 +34,14 @@ interface FilmsScreenProps {
   onSelectMovie: (id: string) => void
   /** Etiqueta pré-selecionada (vinda da tela de etiquetas). */
   initialTag?: string | null
+  /** Query da busca contextual da topbar (spec busca Akane) — filtra client-side. */
+  query: string
 }
 
 /**
  * Grid principal do catálogo com filtros e ordenação.
  */
-export function FilmsScreen({ tweaks, onSelectMovie, initialTag }: FilmsScreenProps) {
+export function FilmsScreen({ tweaks, onSelectMovie, initialTag, query }: FilmsScreenProps) {
   // Estado dos filmes carregados
   const [movies, setMovies] = useState<Movie[]>([])
   const [loading, setLoading] = useState(true)
@@ -64,6 +67,12 @@ export function FilmsScreen({ tweaks, onSelectMovie, initialTag }: FilmsScreenPr
       .catch(() => setMovies([]))
       .finally(() => setLoading(false))
   }, [filter, sort, activeTag])
+
+  // Filtro de busca client-side, cumulativo com chip/tag/sort já aplicados no fetch
+  // (busca por "nolan" + chip "Curtidos" ativo dá só os Nolan curtidos)
+  const filteredMovies = movies.filter(m =>
+    matches(query, m.title, m.director, m.genres, m.year, m.tags)
+  )
 
   return (
     <div>
@@ -118,6 +127,13 @@ export function FilmsScreen({ tweaks, onSelectMovie, initialTag }: FilmsScreenPr
             animation: 'spin 0.8s linear infinite',
           }} />
         </div>
+      ) : filteredMovies.length === 0 && query.trim() ? (
+        // Estado vazio por busca sem resultado — distinto do catálogo genuinamente vazio
+        <div className="ak-empty">
+          <span className="ak-empty-icon">🔍</span>
+          <p className="ak-empty-title">Nada encontrado para «{query}»</p>
+          <p className="ak-empty-sub">Tente outro título, direção ou gênero.</p>
+        </div>
       ) : movies.length === 0 ? (
         // Estado vazio
         <div className="ak-empty">
@@ -134,7 +150,7 @@ export function FilmsScreen({ tweaks, onSelectMovie, initialTag }: FilmsScreenPr
       ) : (
         // Grid com pôsteres
         <div className="ak-grid">
-          {movies.map(movie => (
+          {filteredMovies.map(movie => (
             <FilmCard
               key={movie.id}
               movie={movie}

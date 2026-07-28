@@ -8,16 +8,20 @@ import type { MovieList, MovieListDetail } from '../types'
 // Movie não é usado após refatoração — ListDetailView acessa filmes via MovieListDetail.films
 import { Poster } from '../components/Poster'
 import { Stars } from '../components/Stars'
+import { matches } from '../searchUtils'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface ListsScreenProps {
   onSelectMovie: (id: string) => void  // Abre detalhe de um filme
+  /** Query da busca contextual da topbar (spec busca Akane) — filtra client-side.
+   *  Na grade filtra as listas; dentro do detalhe filtra os filmes da lista. */
+  query: string
 }
 
 // ── Componente principal ─────────────────────────────────────────────────────
 
-export function ListsScreen({ onSelectMovie }: ListsScreenProps) {
+export function ListsScreen({ onSelectMovie, query }: ListsScreenProps) {
   const [lists, setLists] = useState<MovieList[]>([])
   const [loading, setLoading] = useState(true)
   // Distingue falha de rede de "genuinamente sem listas ainda" (spec 051, FR-009)
@@ -63,6 +67,7 @@ export function ListsScreen({ onSelectMovie }: ListsScreenProps) {
       <>
         <ListDetailView
           list={selectedList}
+          query={query}
           onBack={closeDetail}
           onSelectMovie={onSelectMovie}
           onDelete={async (id) => {
@@ -92,13 +97,16 @@ export function ListsScreen({ onSelectMovie }: ListsScreenProps) {
 
   // ── Grade de listas ─────────────────────────────────────────────────────────
 
+  // Filtro de busca client-side sobre a grade de listas
+  const filteredLists = lists.filter(l => matches(query, l.name, l.description))
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
       {/* Barra de ações */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 2 }}>
-          {lists.length} {lists.length === 1 ? 'lista' : 'listas'}
+          {filteredLists.length} {filteredLists.length === 1 ? 'lista' : 'listas'}
         </span>
         <button
           className="ak-btn-primary"
@@ -138,10 +146,19 @@ export function ListsScreen({ onSelectMovie }: ListsScreenProps) {
         </div>
       )}
 
+      {/* Grade vazia por busca sem resultado — distinto de "sem listas ainda" */}
+      {!loading && !loadError && lists.length > 0 && filteredLists.length === 0 && query.trim() && (
+        <div className="ak-empty">
+          <span className="ak-empty-icon">🔍</span>
+          <p className="ak-empty-title">Nada encontrado para «{query}»</p>
+          <p className="ak-empty-sub">Tente outro nome de coleção.</p>
+        </div>
+      )}
+
       {/* Grade de listas */}
-      {!loading && !loadError && lists.length > 0 && (
+      {!loading && !loadError && filteredLists.length > 0 && (
         <div className="ak-grid">
-          {lists.map(list => (
+          {filteredLists.map(list => (
             <ListCard
               key={list.id}
               list={list}
@@ -257,6 +274,7 @@ function ListCard({ list, onClick }: ListCardProps) {
 
 interface ListDetailViewProps {
   list: MovieListDetail
+  query: string
   onBack: () => void
   onSelectMovie: (id: string) => void
   onDelete: (id: string) => void
@@ -264,13 +282,15 @@ interface ListDetailViewProps {
   onEdit: (list: MovieListDetail['list']) => void
 }
 
-function ListDetailView({ list: detail, onBack, onSelectMovie, onDelete, onRemoveMovie, onEdit }: ListDetailViewProps) {
+function ListDetailView({ list: detail, query, onBack, onSelectMovie, onDelete, onRemoveMovie, onEdit }: ListDetailViewProps) {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   // MovieListDetail tem forma aninhada: { list: {id, name, description, accent, ranked}, films: [...] }
   // Extraímos os metadados da lista e os filmes separadamente
-  const meta  = detail.list   // Metadados: id, name, description, accent, ranked
-  const films = detail.films  // Filmes: Pick<Movie, 'id'|'title'|'year'|...>[]
+  const meta      = detail.list   // Metadados: id, name, description, accent, ranked
+  const allFilms  = detail.films  // Filmes: Pick<Movie, 'id'|'title'|'year'|...>[]
+  // Dentro do detalhe, a busca da topbar filtra os filmes desta lista por título
+  const films = allFilms.filter(m => matches(query, m.title))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -337,7 +357,13 @@ function ListDetailView({ list: detail, onBack, onSelectMovie, onDelete, onRemov
       </div>
 
       {/* Grade de filmes da lista */}
-      {films.length === 0 ? (
+      {films.length === 0 && query.trim() ? (
+        <div className="ak-empty">
+          <span className="ak-empty-icon">🔍</span>
+          <p className="ak-empty-title">Nada encontrado para «{query}»</p>
+          <p className="ak-empty-sub">Tente outro título.</p>
+        </div>
+      ) : films.length === 0 ? (
         <div className="ak-empty">
           <span className="ak-empty-icon">⊟</span>
           <p className="ak-empty-title">Lista vazia</p>
