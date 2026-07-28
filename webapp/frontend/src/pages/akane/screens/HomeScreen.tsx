@@ -7,6 +7,7 @@ import { akaneApi } from '../akaneApi'
 import type { HomeData, FavoriteFilm, DiaryEntry, Movie, Tweaks } from '../types'
 import { Poster } from '../components/Poster'
 import { Stars } from '../components/Stars'
+import { matches } from '../searchUtils'
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -247,6 +248,10 @@ function FavPicker({ currentIds, onSave, onCancel }: FavPickerProps) {
   const [watchedMovies, setWatchedMovies] = useState<Movie[]>([])
   const [loadingMovies, setLoadingMovies] = useState(true)
 
+  // Busca local dentro do modal — filtra a grade de filmes assistidos
+  // (com ~900 filmes assistidos, sem isso é inviável achar um título específico)
+  const [query, setQuery] = useState('')
+
   // Busca somente filmes com status='watched' para o picker
   useEffect(() => {
     akaneApi.list({ status: 'watched' })
@@ -268,6 +273,11 @@ function FavPicker({ currentIds, onSave, onCancel }: FavPickerProps) {
       return [...prev, id]
     })
   }
+
+  // Filtro de busca client-side sobre os filmes assistidos
+  const filteredMovies = watchedMovies.filter(m =>
+    matches(query, m.title, m.director, m.genres, m.year)
+  )
 
   return (
     // Overlay escuro que cobre a tela inteira
@@ -308,6 +318,17 @@ function FavPicker({ currentIds, onSave, onCancel }: FavPickerProps) {
           <button className="ak-btn" onClick={onCancel} style={{ fontSize: 12 }}>✕</button>
         </div>
 
+        {/* Caixa de busca — filtra a grade abaixo por título/direção/gênero */}
+        <input
+          className="ak-input"
+          type="search"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Buscar filme assistido…"
+          aria-label="Buscar filme para favoritar"
+          autoFocus
+        />
+
         {/* Grade de filmes assistidos (apenas 'watched' pode ser favorito) */}
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {loadingMovies ? (
@@ -318,9 +339,13 @@ function FavPicker({ currentIds, onSave, onCancel }: FavPickerProps) {
             <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>
               Nenhum filme assistido ainda.
             </p>
+          ) : filteredMovies.length === 0 ? (
+            <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>
+              Nada encontrado para «{query}».
+            </p>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 }}>
-              {watchedMovies.map(movie => {
+              {filteredMovies.map(movie => {
                 const isSel = selected.includes(movie.id)
                 return (
                   <button
