@@ -13,7 +13,7 @@ interface ToastProps {
 export function Toast({ message }: ToastProps) {
   return (
     // .toast tem position:fixed, animação toast-in e o visual pill no akane.css
-    <div className="toast" role="status" aria-live="polite">
+    <div className="ak-toast" role="status" aria-live="polite">
       <Icon name="check" /> {message}
     </div>
   )

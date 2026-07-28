@@ -20,10 +20,10 @@ function initials(name: string): string {
 /** Bloco chave-valor-subtítulo do card "Destaques do ano". */
 function Highlight({ k, v, s }: { k: string; v: string; s?: string }) {
   return (
-    <div className="highlight">
-      <span className="hl-k">{k}</span>
-      <span className="hl-v">{v}</span>
-      {s && <span className="hl-s">{s}</span>}
+    <div className="ak-highlight">
+      <span className="ak-hl-k">{k}</span>
+      <span className="ak-hl-v">{v}</span>
+      {s && <span className="ak-hl-s">{s}</span>}
     </div>
   )
 }
@@ -48,22 +48,22 @@ export function RewindScreen() {
   const currentYear = new Date().getFullYear()
   const yearOptions = Array.from({ length: 6 }, (_, i) => currentYear - i)
 
-  if (loading) return <p className="empty-state">Calculando o rewind…</p>
+  if (loading) return <p className="ak-empty-state">Calculando o rewind…</p>
 
   return (
-    <div className="page">
+    <div className="ak-page">
       {/* ── HERO ── */}
-      <div className="rewind-hero">
-        <div className="eyebrow">Seu ano em cinema</div>
+      <div className="ak-rewind-hero">
+        <div className="ak-eyebrow">Seu ano em cinema</div>
         <h2>
           Rewind {year}
           <select value={year} onChange={e => setYear(Number(e.target.value))}
-                  className="period-select" style={{ marginLeft: 14, fontSize: 15 }}>
+                  className="ak-period-select" style={{ marginLeft: 14, fontSize: 15 }}>
             {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </h2>
         {data && data.total_films > 0 && (
-          <p className="sub">
+          <p className="ak-sub">
             {data.total_sessions} sessões · {data.total_films} filmes ·{' '}
             {Math.round(data.total_minutes / 60)} horas no escuro
           </p>
@@ -71,37 +71,37 @@ export function RewindScreen() {
       </div>
 
       {!data || data.total_films === 0 ? (
-        <p className="empty-state">Nenhum filme em {year} — comece a logar sessões para ver o Rewind.</p>
+        <p className="ak-empty-state">Nenhum filme em {year} — comece a logar sessões para ver o Rewind.</p>
       ) : (
         <>
           {/* ── TOTAIS ── */}
-          <div className="big-stat-row">
-            <div className="big-stat"><div className="n">{data.total_films}</div><div className="l">filmes vistos</div></div>
-            <div className="big-stat"><div className="n">{data.total_sessions}</div><div className="l">sessões no diário</div></div>
-            <div className="big-stat">
-              <div className="n">{Math.round(data.total_minutes / 60)}<span style={{ fontSize: 24 }}>h</span></div>
-              <div className="l">horas assistidas</div>
+          <div className="ak-big-stat-row">
+            <div className="ak-big-stat"><div className="ak-n">{data.total_films}</div><div className="ak-l">filmes vistos</div></div>
+            <div className="ak-big-stat"><div className="ak-n">{data.total_sessions}</div><div className="ak-l">sessões no diário</div></div>
+            <div className="ak-big-stat">
+              <div className="ak-n">{Math.round(data.total_minutes / 60)}<span style={{ fontSize: 24 }}>h</span></div>
+              <div className="ak-l">horas assistidas</div>
             </div>
-            <div className="big-stat"><div className="n">{data.rewatches}</div><div className="l">revisões</div></div>
+            <div className="ak-big-stat"><div className="ak-n">{data.rewatches}</div><div className="ak-l">revisões</div></div>
           </div>
 
           {/* ── SESSÕES POR MÊS ── */}
           {data.monthly.length === 12 && (
-            <div className="section">
-              <div className="heat-card">
-                <div className="heat-head">
-                  <span className="heat-title">Sessões por mês</span>
-                  <span className="section-sub">o pulso do ano</span>
+            <div className="ak-section">
+              <div className="ak-heat-card">
+                <div className="ak-heat-head">
+                  <span className="ak-heat-title">Sessões por mês</span>
+                  <span className="ak-section-sub">o pulso do ano</span>
                 </div>
-                <div className="bars">
+                <div className="ak-bars">
                   {data.monthly.map((v, i) => {
                     const max = Math.max(...data.monthly, 1)
                     return (
-                      <div key={i} className="bar-col">
-                        <span className="bar-val">{v}</span>
-                        <div className={'bar' + (v === 0 ? ' empty' : '')}
+                      <div key={i} className="ak-bar-col">
+                        <span className="ak-bar-val">{v}</span>
+                        <div className={'ak-bar' + (v === 0 ? ' ak-empty' : '')}
                              style={{ height: `${Math.max(2, (v / max) * 100)}%` }} />
-                        <span className="bar-lbl">{MESES_CURTO[i]}</span>
+                        <span className="ak-bar-lbl">{MESES_CURTO[i]}</span>
                       </div>
                     )
                   })}
@@ -110,27 +110,27 @@ export function RewindScreen() {
             </div>
           )}
 
-          <div className="section rewind-grid">
+          <div className="ak-section ak-rewind-grid">
             {/* ── HISTOGRAMA DE NOTAS ── */}
-            <div className="heat-card">
-              <div className="heat-head"><span className="heat-title">Como você avalia</span><span className="section-sub">0,5 a 5,0</span></div>
+            <div className="ak-heat-card">
+              <div className="ak-heat-head"><span className="ak-heat-title">Como você avalia</span><span className="ak-section-sub">0,5 a 5,0</span></div>
               {(() => {
                 const distKeys: string[] = []
                 for (let v = 5; v >= 0.5; v -= 0.5) distKeys.push(v.toFixed(1))
                 const maxDist = Math.max(...distKeys.map(k => data.rating_histogram[k] ?? 0), 1)
                 return distKeys.map(k => (
-                  <div key={k} className="hist-row">
-                    <span className="hl"><Stars value={Number(k)} /><span className="n">{k}</span></span>
-                    <span className="hist-bar"><i style={{ width: `${((data.rating_histogram[k] ?? 0) / maxDist) * 100}%` }} /></span>
-                    <span className="hist-n">{data.rating_histogram[k] ?? 0}</span>
+                  <div key={k} className="ak-hist-row">
+                    <span className="ak-hl"><Stars value={Number(k)} /><span className="ak-n">{k}</span></span>
+                    <span className="ak-hist-bar"><i style={{ width: `${((data.rating_histogram[k] ?? 0) / maxDist) * 100}%` }} /></span>
+                    <span className="ak-hist-n">{data.rating_histogram[k] ?? 0}</span>
                   </div>
                 ))
               })()}
             </div>
 
             {/* ── DESTAQUES ── */}
-            <div className="heat-card">
-              <div className="heat-head"><span className="heat-title">Destaques do ano</span></div>
+            <div className="ak-heat-card">
+              <div className="ak-heat-head"><span className="ak-heat-title">Destaques do ano</span></div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 4 }}>
                 {data.favorite && (
                   <Highlight k="Filme favorito" v={data.favorite.title} s={`${data.favorite.rating.toFixed(1)}★`} />
@@ -150,18 +150,18 @@ export function RewindScreen() {
 
             {/* ── TOP GÊNEROS ── */}
             {data.top_genres.length > 0 && (
-              <div className="heat-card">
-                <div className="heat-head"><span className="heat-title">Top gêneros</span></div>
+              <div className="ak-heat-card">
+                <div className="ak-heat-head"><span className="ak-heat-title">Top gêneros</span></div>
                 {(() => {
                   const genres = data.top_genres.slice(0, 6)
                   const max = Math.max(...genres.map(g => g.count), 1)
                   return genres.map(g => (
-                    <div key={g.genre} className="rank-row">
+                    <div key={g.genre} className="ak-rank-row">
                       <div style={{ flex: '0 0 auto', minWidth: 92 }}>
-                        <div className="rk-name">{g.genre}</div>
+                        <div className="ak-rk-name">{g.genre}</div>
                       </div>
-                      <span className="rk-track"><i style={{ width: `${(g.count / max) * 100}%` }} /></span>
-                      <span className="rk-n">{g.count}</span>
+                      <span className="ak-rk-track"><i style={{ width: `${(g.count / max) * 100}%` }} /></span>
+                      <span className="ak-rk-n">{g.count}</span>
                     </div>
                   ))
                 })()}
@@ -170,19 +170,19 @@ export function RewindScreen() {
 
             {/* ── TOP DIRETORES ── */}
             {data.top_directors.length > 0 && (
-              <div className="heat-card">
-                <div className="heat-head"><span className="heat-title">Top diretores</span></div>
+              <div className="ak-heat-card">
+                <div className="ak-heat-head"><span className="ak-heat-title">Top diretores</span></div>
                 {(() => {
                   const directors = data.top_directors.slice(0, 6)
                   const max = Math.max(...directors.map(d => d.count), 1)
                   return directors.map(d => (
-                    <div key={d.director} className="rank-row">
-                      <span className="rk-av">{initials(d.director)}</span>
+                    <div key={d.director} className="ak-rank-row">
+                      <span className="ak-rk-av">{initials(d.director)}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div className="rk-name">{d.director}</div>
-                        <div className="rk-sub">{d.count} {d.count === 1 ? 'filme' : 'filmes'}</div>
+                        <div className="ak-rk-name">{d.director}</div>
+                        <div className="ak-rk-sub">{d.count} {d.count === 1 ? 'filme' : 'filmes'}</div>
                       </div>
-                      <span className="rk-track" style={{ maxWidth: 90 }}><i style={{ width: `${(d.count / max) * 100}%` }} /></span>
+                      <span className="ak-rk-track" style={{ maxWidth: 90 }}><i style={{ width: `${(d.count / max) * 100}%` }} /></span>
                     </div>
                   ))
                 })()}
@@ -192,9 +192,9 @@ export function RewindScreen() {
 
           {/* ── ATIVIDADE DO ANO (heatmap) ── */}
           {heatmapDays.length > 0 && (
-            <div className="section">
-              <div className="heat-card">
-                <div className="heat-head"><span className="heat-title">Atividade do ano</span></div>
+            <div className="ak-section">
+              <div className="ak-heat-card">
+                <div className="ak-heat-head"><span className="ak-heat-title">Atividade do ano</span></div>
                 <Heatmap data={heatmapDays} />
               </div>
             </div>
@@ -202,25 +202,25 @@ export function RewindScreen() {
 
           {/* ── PESSOAS QUE MARCARAM O ANO ── */}
           {data.top_people.length > 0 && (
-            <div className="section">
-              <div className="heat-card">
-                <div className="heat-head">
-                  <span className="heat-title">Pessoas que marcaram seu ano</span>
-                  <span className="section-sub">direção + elenco + equipe</span>
+            <div className="ak-section">
+              <div className="ak-heat-card">
+                <div className="ak-heat-head">
+                  <span className="ak-heat-title">Pessoas que marcaram seu ano</span>
+                  <span className="ak-section-sub">direção + elenco + equipe</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '4px 24px' }}>
                   {data.top_people.map(p => (
-                    <div key={p.name} className="rank-row person">
-                      <span className="rk-av">{initials(p.name)}</span>
+                    <div key={p.name} className="ak-rank-row ak-person">
+                      <span className="ak-rk-av">{initials(p.name)}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div className="rk-name">{p.name}</div>
-                        <div className="rk-sub">{p.roles.join(' · ')}</div>
+                        <div className="ak-rk-name">{p.name}</div>
+                        <div className="ak-rk-sub">{p.roles.join(' · ')}</div>
                       </div>
-                      <span className="rk-n">{p.count}</span>
+                      <span className="ak-rk-n">{p.count}</span>
                     </div>
                   ))}
                 </div>
-                <div className="people-note">
+                <div className="ak-people-note">
                   <Icon name="user" /> Em breve, cada pessoa abre um perfil próprio — conectado à base de pessoas do app.
                 </div>
               </div>

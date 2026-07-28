@@ -69,25 +69,25 @@ export function AddToListModal({ movieId, onClose, onToast }: AddToListModalProp
   }
 
   return (
-    <div className="modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" role="dialog" aria-label="Adicionar a lista">
-        <div className="modal-head">
-          <span className="modal-title">Adicionar a lista</span>
-          <button className="modal-x" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
+    <div className="ak-modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="ak-modal" role="dialog" aria-label="Adicionar a lista">
+        <div className="ak-modal-head">
+          <span className="ak-modal-title">Adicionar a lista</span>
+          <button className="ak-modal-x" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
         </div>
-        <div className="modal-body">
-          <div className="filmpick" style={{ flexDirection: 'column', maxHeight: 280, gap: 6 }}>
+        <div className="ak-modal-body">
+          <div className="ak-filmpick" style={{ flexDirection: 'column', maxHeight: 280, gap: 6 }}>
             {loading ? (
-              <p className="empty-state" style={{ padding: '12px 0' }}>Carregando…</p>
+              <p className="ak-empty-state" style={{ padding: '12px 0' }}>Carregando…</p>
             ) : lists.length === 0 ? (
-              <p className="empty-state" style={{ padding: '12px 0' }}>Nenhuma lista ainda — crie uma abaixo.</p>
+              <p className="ak-empty-state" style={{ padding: '12px 0' }}>Nenhuma lista ainda — crie uma abaixo.</p>
             ) : (
               lists.map(list => (
-                <div key={list.id} className="addlist-row">
-                  <span className="addlist-dot" style={{ background: list.accent || 'var(--rose)' }} />
-                  <span className="addlist-name">{list.name}</span>
-                  <span className="addlist-count">{list.count} {list.count === 1 ? 'filme' : 'filmes'}</span>
-                  <button className="btn btn-primary" onClick={() => addTo(list)} disabled={addingId === list.id}
+                <div key={list.id} className="ak-addlist-row">
+                  <span className="ak-addlist-dot" style={{ background: list.accent || 'var(--rose)' }} />
+                  <span className="ak-addlist-name">{list.name}</span>
+                  <span className="ak-addlist-count">{list.count} {list.count === 1 ? 'filme' : 'filmes'}</span>
+                  <button className="ak-btn ak-btn-primary" onClick={() => addTo(list)} disabled={addingId === list.id}
                           style={{ fontSize: 11, padding: '4px 10px' }}>
                     {addingId === list.id ? '…' : <><Icon name="plus" /> Adicionar</>}
                   </button>
@@ -96,11 +96,11 @@ export function AddToListModal({ movieId, onClose, onToast }: AddToListModalProp
             )}
           </div>
 
-          <div className="modal-field" style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--line-2)', paddingTop: 14, marginTop: 4 }}>
-            <input className="text-input" placeholder="Nome da nova lista…" value={newName}
+          <div className="ak-modal-field" style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--line-2)', paddingTop: 14, marginTop: 4 }}>
+            <input className="ak-text-input" placeholder="Nome da nova lista…" value={newName}
                    onChange={e => setNewName(e.target.value)}
                    onKeyDown={e => e.key === 'Enter' && createAndAdd()} />
-            <button className="btn btn-primary" onClick={createAndAdd} disabled={!newName.trim() || creating}
+            <button className="ak-btn ak-btn-primary" onClick={createAndAdd} disabled={!newName.trim() || creating}
                     style={{ flexShrink: 0 }}>
               {creating ? '…' : <><Icon name="plus" /> Nova</>}
             </button>

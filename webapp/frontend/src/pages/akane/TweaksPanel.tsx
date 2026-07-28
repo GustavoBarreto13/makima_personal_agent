@@ -52,12 +52,12 @@ function TweakRadio<T extends string>({ label, value, options, onChange }: {
   onChange: (v: T) => void
 }) {
   return (
-    <div className="tp-row">
-      <span className="tp-label">{label}</span>
-      <div className="tp-opts">
+    <div className="ak-tp-row">
+      <span className="ak-tp-label">{label}</span>
+      <div className="ak-tp-opts">
         {options.map(opt => (
           <button key={opt.value}
-                  className={'tp-opt' + (opt.value === value ? ' sel' : '')}
+                  className={'ak-tp-opt' + (opt.value === value ? ' ak-sel' : '')}
                   onClick={() => onChange(opt.value)}>
             {opt.label}
           </button>
@@ -73,35 +73,35 @@ export function TweaksPanel({ tweaks, setTweak }: TweaksPanelProps) {
   const [open, setOpen] = useState(false)
 
   return (
-    <div className="tweaks-panel" data-open={open ? 'true' : 'false'}>
-      <button className="tp-toggle" onClick={() => setOpen(o => !o)}
+    <div className="ak-tweaks-panel" data-open={open ? 'true' : 'false'}>
+      <button className="ak-tp-toggle" onClick={() => setOpen(o => !o)}
               aria-label={open ? 'Fechar tweaks' : 'Abrir tweaks'} title="Ajustes visuais">
         <Icon name="gear" />
       </button>
 
       {open && (
-        <div className="tp-body">
-          <div className="tp-head">
-            <span className="tp-title">Tweaks</span>
-            <button className="tp-close" onClick={() => setOpen(false)} aria-label="Fechar">
+        <div className="ak-tp-body">
+          <div className="ak-tp-head">
+            <span className="ak-tp-title">Tweaks</span>
+            <button className="ak-tp-close" onClick={() => setOpen(false)} aria-label="Fechar">
               <Icon name="x" />
             </button>
           </div>
 
-          <div className="tp-section">Aparência</div>
+          <div className="ak-tp-section">Aparência</div>
           <TweakRadio label="Tema" value={tweaks.theme} options={THEME_OPTS}
                       onChange={v => setTweak('theme', v)} />
           <TweakRadio label="Cor de acento" value={tweaks.accent} options={ACCENT_OPTS}
                       onChange={v => setTweak('accent', v)} />
 
-          <div className="tp-section">Grade de filmes</div>
+          <div className="ak-tp-section">Grade de filmes</div>
           <TweakRadio label="Densidade" value={tweaks.density} options={DENSITY_OPTS}
                       onChange={v => setTweak('density', v)} />
           <TweakRadio label="Estilo do pôster" value={tweaks.postyle} options={POSTYLE_OPTS}
                       onChange={v => setTweak('postyle', v)} />
-          <div className="tp-row">
-            <span className="tp-label">Ordenação</span>
-            <select className="tp-select" value={tweaks.sort}
+          <div className="ak-tp-row">
+            <span className="ak-tp-label">Ordenação</span>
+            <select className="ak-tp-select" value={tweaks.sort}
                     onChange={e => setTweak('sort', e.target.value as Tweaks['sort'])}>
               {SORT_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>

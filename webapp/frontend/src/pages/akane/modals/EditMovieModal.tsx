@@ -54,48 +54,48 @@ export function EditMovieModal({ movie, onClose, onToast, onSaved }: EditMovieMo
   }, [onClose])
 
   return (
-    <div className="modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" role="dialog" aria-label="Editar filme">
-        <div className="modal-head">
-          <span className="modal-title">Editar filme</span>
-          <button className="modal-x" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
+    <div className="ak-modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="ak-modal" role="dialog" aria-label="Editar filme">
+        <div className="ak-modal-head">
+          <span className="ak-modal-title">Editar filme</span>
+          <button className="ak-modal-x" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
         </div>
-        <div className="modal-body">
-          <div className="modal-field">
-            <label className="modal-label">Título</label>
-            <input className="text-input" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
+        <div className="ak-modal-body">
+          <div className="ak-modal-field">
+            <label className="ak-modal-label">Título</label>
+            <input className="ak-text-input" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
           </div>
 
-          <div className="modal-field" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div className="ak-modal-field" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
-              <label className="modal-label">Ano</label>
-              <input className="text-input" type="number" value={year} onChange={e => setYear(e.target.value)} />
+              <label className="ak-modal-label">Ano</label>
+              <input className="ak-text-input" type="number" value={year} onChange={e => setYear(e.target.value)} />
             </div>
             <div>
-              <label className="modal-label">Duração (min)</label>
-              <input className="text-input" type="number" value={runtime} onChange={e => setRuntime(e.target.value)} />
+              <label className="ak-modal-label">Duração (min)</label>
+              <input className="ak-text-input" type="number" value={runtime} onChange={e => setRuntime(e.target.value)} />
             </div>
           </div>
 
-          <div className="modal-field">
-            <label className="modal-label">Diretor(es) <span className="ml-hint">· separados por vírgula</span></label>
-            <input className="text-input" value={director} onChange={e => setDirector(e.target.value)} />
+          <div className="ak-modal-field">
+            <label className="ak-modal-label">Diretor(es) <span className="ak-ml-hint">· separados por vírgula</span></label>
+            <input className="ak-text-input" value={director} onChange={e => setDirector(e.target.value)} />
           </div>
 
-          <div className="modal-field">
-            <label className="modal-label">Gêneros <span className="ml-hint">· separados por vírgula</span></label>
-            <input className="text-input" value={genres} onChange={e => setGenres(e.target.value)} />
+          <div className="ak-modal-field">
+            <label className="ak-modal-label">Gêneros <span className="ak-ml-hint">· separados por vírgula</span></label>
+            <input className="ak-text-input" value={genres} onChange={e => setGenres(e.target.value)} />
           </div>
 
-          <div className="modal-field">
-            <label className="modal-label">Sinopse</label>
-            <textarea className="note-input" rows={4} value={overview} onChange={e => setOverview(e.target.value)} />
+          <div className="ak-modal-field">
+            <label className="ak-modal-label">Sinopse</label>
+            <textarea className="ak-note-input" rows={4} value={overview} onChange={e => setOverview(e.target.value)} />
           </div>
 
-          <div className="modal-foot">
-            <div className="grow" />
-            <button className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancelar</button>
-            <button className="btn btn-primary" onClick={save} disabled={saving || !title.trim()}>
+          <div className="ak-modal-foot">
+            <div className="ak-grow" />
+            <button className="ak-btn ak-btn-ghost" onClick={onClose} disabled={saving}>Cancelar</button>
+            <button className="ak-btn ak-btn-primary" onClick={save} disabled={saving || !title.trim()}>
               <Icon name="check" /> {saving ? 'Salvando…' : 'Salvar'}
             </button>
           </div>

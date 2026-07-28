@@ -66,15 +66,15 @@ export function HomeScreen({ tweaks: _tweaks, onSelectMovie, onLog: _onLog, onTo
   // ── Loading / erro ────────────────────────────────────────────────────────
 
   if (loading) {
-    return <p className="empty-state">Carregando cinemateca…</p>
+    return <p className="ak-empty-state">Carregando cinemateca…</p>
   }
 
   if (loadError || !home) {
     return (
-      <div className="page">
-        <p className="empty-state">
+      <div className="ak-page">
+        <p className="ak-empty-state">
           Não foi possível carregar o Início.{' '}
-          <button className="btn btn-ghost" onClick={load} style={{ marginLeft: 8 }}>Tentar novamente</button>
+          <button className="ak-btn ak-btn-ghost" onClick={load} style={{ marginLeft: 8 }}>Tentar novamente</button>
         </p>
       </div>
     )
@@ -103,30 +103,30 @@ export function HomeScreen({ tweaks: _tweaks, onSelectMovie, onLog: _onLog, onTo
   const year = new Date().getFullYear()
 
   return (
-    <div className="page">
+    <div className="ak-page">
       {/* ── HERO ── */}
-      <div className="hero">
-        <div className="hero-grain" />
-        <div className="hero-inner">
-          <div className="hero-copy">
-            <div className="hero-eyebrow">Cinemateca de Akane</div>
-            <h1 className="hero-greet">{saudacao()}.</h1>
+      <div className="ak-hero">
+        <div className="ak-hero-grain" />
+        <div className="ak-hero-inner">
+          <div className="ak-hero-copy">
+            <div className="ak-hero-eyebrow">Cinemateca de Akane</div>
+            <h1 className="ak-hero-greet">{saudacao()}.</h1>
             {home.last_session ? (
-              <p className="hero-now">
+              <p className="ak-hero-now">
                 Última sessão · <b>{home.last_session.title}</b>
                 {home.last_session.rating != null && <em> · {home.last_session.rating.toFixed(1)}★</em>}
               </p>
             ) : (
-              <p className="hero-now">Nenhuma sessão registrada ainda — <em>o primeiro filme te espera</em>.</p>
+              <p className="ak-hero-now">Nenhuma sessão registrada ainda — <em>o primeiro filme te espera</em>.</p>
             )}
-            <p className="hero-quote">{AKANE_QUOTE}</p>
-            <div className="hero-cta">
-              <button className="btn btn-primary" onClick={onOpenLog}><Icon name="plus" /> Logar filme</button>
-              <button className="btn btn-ghost" onClick={() => onGoToView('diary')}><Icon name="diario" /> Abrir diário</button>
+            <p className="ak-hero-quote">{AKANE_QUOTE}</p>
+            <div className="ak-hero-cta">
+              <button className="ak-btn ak-btn-primary" onClick={onOpenLog}><Icon name="plus" /> Logar filme</button>
+              <button className="ak-btn ak-btn-ghost" onClick={() => onGoToView('diary')}><Icon name="diario" /> Abrir diário</button>
             </div>
           </div>
-          <div className="hero-portrait">
-            <div className="halo" />
+          <div className="ak-hero-portrait">
+            <div className="ak-halo" />
             <img src="/akane-hero.png" alt="Akane Kurokawa"
                  onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
           </div>
@@ -134,27 +134,27 @@ export function HomeScreen({ tweaks: _tweaks, onSelectMovie, onLog: _onLog, onTo
       </div>
 
       {/* ── STAT CARDS ── */}
-      <div className="stat-row">
-        <div className="stat-card">
-          <div className="stat-label"><Icon name="filmes" style={{ width: 12, height: 12 }} /> Filmes · {year}</div>
-          <div className="stat-value">{home.counts.films_watched}<span className="unit">vistos</span></div>
-          <div className="stat-foot" style={{ marginTop: 14 }}>
+      <div className="ak-stat-row">
+        <div className="ak-stat-card">
+          <div className="ak-stat-label"><Icon name="filmes" style={{ width: 12, height: 12 }} /> Filmes · {year}</div>
+          <div className="ak-stat-value">{home.counts.films_watched}<span className="ak-unit">vistos</span></div>
+          <div className="ak-stat-foot" style={{ marginTop: 14 }}>
             Meta de {META_ANUAL} — faltam <b>{Math.max(0, META_ANUAL - home.counts.films_watched)}</b>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-label"><Icon name="diario" style={{ width: 12, height: 12 }} /> Sessões · 7 dias</div>
-          <div className="stat-value">{wk}</div>
+        <div className="ak-stat-card">
+          <div className="ak-stat-label"><Icon name="diario" style={{ width: 12, height: 12 }} /> Sessões · 7 dias</div>
+          <div className="ak-stat-value">{wk}</div>
           <Spark data={spark} />
-          <div className="stat-foot">
-            {delta >= 0 ? <span className="up">↑ {delta}%</span> : <span>↓ {Math.abs(delta)}%</span>} vs. semana anterior
+          <div className="ak-stat-foot">
+            {delta >= 0 ? <span className="ak-up">↑ {delta}%</span> : <span>↓ {Math.abs(delta)}%</span>} vs. semana anterior
           </div>
         </div>
       </div>
 
       {/* ── FAVORITOS + DIÁRIO RECENTE | PAINEL ── */}
-      <div className="home-split">
-        <div className="home-main">
+      <div className="ak-home-split">
+        <div className="ak-home-main">
           <FavoriteFilms
             favorites={home.favorites}
             onSelectMovie={onSelectMovie}
@@ -186,18 +186,18 @@ export function HomeScreen({ tweaks: _tweaks, onSelectMovie, onLog: _onLog, onTo
 
       {/* ── WATCHLIST EM DESTAQUE ── */}
       {home.watchlist_highlight.length > 0 && (
-        <div className="section">
-          <div className="section-head">
-            <h2 className="section-title">Esperando na watchlist</h2>
-            <span className="section-link" onClick={() => onGoToView('watchlist')}>Ver tudo →</span>
+        <div className="ak-section">
+          <div className="ak-section-head">
+            <h2 className="ak-section-title">Esperando na watchlist</h2>
+            <span className="ak-section-link" onClick={() => onGoToView('watchlist')}>Ver tudo →</span>
           </div>
-          <div className="row-scroll">
+          <div className="ak-row-scroll">
             {home.watchlist_highlight.map(f => (
-              <div key={f.id} className="want-card" onClick={() => onSelectMovie(f.id)}>
+              <div key={f.id} className="ak-want-card" onClick={() => onSelectMovie(f.id)}>
                 <Poster title={f.title} posterUrl={f.poster_url} palette={f.poster_palette}
                         director={f.director?.[0]} year={f.year} status="watchlist" badge />
-                <div className="wc-title">{f.title}</div>
-                <div className="wc-sub">
+                <div className="ak-wc-title">{f.title}</div>
+                <div className="ak-wc-sub">
                   {[f.director?.[0], f.runtime ? fmtRuntime(f.runtime) : null].filter(Boolean).join(' · ')}
                 </div>
               </div>

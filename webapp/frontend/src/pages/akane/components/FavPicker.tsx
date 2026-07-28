@@ -45,32 +45,32 @@ export function FavPicker({ exclude, onPick, onClose }: FavPickerProps) {
   if (q.trim()) pool = pool.filter(f => matches(q, f.title, f.director, f.genres, f.year))
 
   return (
-    <div className="modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" role="dialog" aria-label="Escolher favorito">
-        <div className="modal-head">
-          <span className="modal-title">Escolher favorito</span>
-          <button className="modal-x" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
+    <div className="ak-modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="ak-modal" role="dialog" aria-label="Escolher favorito">
+        <div className="ak-modal-head">
+          <span className="ak-modal-title">Escolher favorito</span>
+          <button className="ak-modal-x" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
         </div>
-        <div className="modal-body">
-          <div className="film-search primary" style={{ marginBottom: 16 }}>
-            <div className="film-search-bar">
+        <div className="ak-modal-body">
+          <div className="ak-film-search ak-primary" style={{ marginBottom: 16 }}>
+            <div className="ak-film-search-bar">
               <Icon name="search" />
               <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar entre os vistos…" />
             </div>
           </div>
-          <div className="fav-pick-grid">
+          <div className="ak-fav-pick-grid">
             {pool.map(f => (
-              <a key={f.id} className="poster-link" onClick={() => onPick(f.id)} title={f.title}>
+              <a key={f.id} className="ak-poster-link" onClick={() => onPick(f.id)} title={f.title}>
                 <Poster title={f.title} posterUrl={f.poster_url} palette={f.poster_palette}
                         genre={f.genres?.[0]} director={f.director?.[0]} year={f.year} />
-                <div className="poster-meta"><div className="pm-title">{f.title}</div></div>
+                <div className="ak-poster-meta"><div className="ak-pm-title">{f.title}</div></div>
               </a>
             ))}
             {!loading && pool.length === 0 && (
-              <p className="empty-state" style={{ gridColumn: '1/-1', padding: '30px 0' }}>Nenhum filme encontrado.</p>
+              <p className="ak-empty-state" style={{ gridColumn: '1/-1', padding: '30px 0' }}>Nenhum filme encontrado.</p>
             )}
             {loading && (
-              <p className="empty-state" style={{ gridColumn: '1/-1', padding: '30px 0' }}>Carregando filmes…</p>
+              <p className="ak-empty-state" style={{ gridColumn: '1/-1', padding: '30px 0' }}>Carregando filmes…</p>
             )}
           </div>
         </div>

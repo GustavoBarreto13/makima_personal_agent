@@ -175,41 +175,41 @@ export function LogModal({ prefilledMovieId, prefilledTitle, onClose, onSuccess 
   }, [onClose, doSave])
 
   return (
-    <div className="modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" role="dialog" aria-label="Logar filme">
-        <div className="modal-head">
-          <span className="modal-title">Logar filme</span>
-          <button className="modal-x" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
+    <div className="ak-modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="ak-modal" role="dialog" aria-label="Logar filme">
+        <div className="ak-modal-head">
+          <span className="ak-modal-title">Logar filme</span>
+          <button className="ak-modal-x" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
         </div>
-        <div className="modal-body">
+        <div className="ak-modal-body">
 
           {/* ── Busca (caminho principal) — só quando não há filme pré-selecionado ── */}
           {!prefilledMovieId && (
             <>
-              <label className="modal-label">Qual filme? <span className="ml-hint">· busque pelo nome, diretor ou ano</span></label>
-              <div className="film-search primary">
-                <div className="film-search-bar">
+              <label className="ak-modal-label">Qual filme? <span className="ak-ml-hint">· busque pelo nome, diretor ou ano</span></label>
+              <div className="ak-film-search ak-primary">
+                <div className="ak-film-search-bar">
                   <Icon name="search" />
                   <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
                          placeholder="Ex.: Oldboy, Wong Kar-wai, 1997…" />
-                  {searching && <span className="fs-spin" />}
+                  {searching && <span className="ak-fs-spin" />}
                 </div>
                 {query.trim() && (
-                  <div className="film-search-results">
-                    {searching && <div className="fs-status">Buscando no TMDB…</div>}
+                  <div className="ak-film-search-results">
+                    {searching && <div className="ak-fs-status">Buscando no TMDB…</div>}
                     {!searching && results.length === 0 && (
-                      <div className="fs-status">Nada encontrado para "{query.trim()}". <span className="fs-hint">Tente o título original.</span></div>
+                      <div className="ak-fs-status">Nada encontrado para "{query.trim()}". <span className="ak-fs-hint">Tente o título original.</span></div>
                     )}
                     {!searching && results.map((r, i) => (
-                      <div key={i} className="fs-result" onClick={() => addResult(r)}>
-                        <div className="fs-poster">
+                      <div key={i} className="ak-fs-result" onClick={() => addResult(r)}>
+                        <div className="ak-fs-poster">
                           <Poster title={r.title} posterUrl={r.posterUrl} palette="noir" />
                         </div>
-                        <div className="fs-meta">
-                          <div className="fs-title">{r.title} <span className="fs-year">{r.year}</span></div>
-                          {r.director.length > 0 && <div className="fs-sub">{r.director.join(', ')}</div>}
+                        <div className="ak-fs-meta">
+                          <div className="ak-fs-title">{r.title} <span className="ak-fs-year">{r.year}</span></div>
+                          {r.director.length > 0 && <div className="ak-fs-sub">{r.director.join(', ')}</div>}
                         </div>
-                        <span className="fs-add"><Icon name={r.inCatalog ? 'check' : 'plus'} /> {r.inCatalog ? 'Logar este' : 'Logar este'}</span>
+                        <span className="ak-fs-add"><Icon name={r.inCatalog ? 'check' : 'plus'} /> {r.inCatalog ? 'Logar este' : 'Logar este'}</span>
                       </div>
                     ))}
                   </div>
@@ -220,25 +220,25 @@ export function LogModal({ prefilledMovieId, prefilledTitle, onClose, onSuccess 
 
           {/* ── Alvo do log ── */}
           {selectedId && (
-            <div className="log-target">
-              <div className="lt-poster">
+            <div className="ak-log-target">
+              <div className="ak-lt-poster">
                 <Poster title={selectedTitle} posterUrl={selectedPoster} palette={selectedPalette} />
               </div>
-              <div className="lt-meta">
-                <div className="lt-title">{selectedTitle} {selectedYear && <span>{selectedYear}</span>}</div>
-                <div className="lt-sub">vai para o seu diário</div>
+              <div className="ak-lt-meta">
+                <div className="ak-lt-title">{selectedTitle} {selectedYear && <span>{selectedYear}</span>}</div>
+                <div className="ak-lt-sub">vai para o seu diário</div>
               </div>
-              <span className="lt-check"><Icon name="check" /></span>
+              <span className="ak-lt-check"><Icon name="check" /></span>
             </div>
           )}
 
           {/* ── Seletor secundário recolhível ── */}
           {!prefilledMovieId && picks.length > 0 && (
-            <details className="pick-fold">
+            <details className="ak-pick-fold">
               <summary>Ou escolha um que já está na sua base</summary>
-              <div className="filmpick">
+              <div className="ak-filmpick">
                 {picks.map(m => (
-                  <div key={m.id} className={'pick' + (m.id === selectedId ? ' sel' : '')}
+                  <div key={m.id} className={'ak-pick' + (m.id === selectedId ? ' ak-sel' : '')}
                        onClick={() => selectPick(m)} title={m.title}>
                     <Poster title={m.title} posterUrl={m.poster_url} palette={m.poster_palette} />
                   </div>
@@ -248,45 +248,45 @@ export function LogModal({ prefilledMovieId, prefilledTitle, onClose, onSuccess 
           )}
 
           {/* ── Data + nota ── */}
-          <div className="modal-field" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div className="ak-modal-field" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
-              <label className="modal-label">Quando você viu?</label>
-              <input className="date-input" type="date" value={watchedDate} max={todayLocalISO()}
+              <label className="ak-modal-label">Quando você viu?</label>
+              <input className="ak-date-input" type="date" value={watchedDate} max={todayLocalISO()}
                      onChange={e => setWatchedDate(e.target.value)} />
             </div>
             <div>
-              <label className="modal-label">Sua nota</label>
+              <label className="ak-modal-label">Sua nota</label>
               <RateInput value={rating} onChange={setRating} />
             </div>
           </div>
 
           {/* ── Marcadores ── */}
-          <div className="modal-field">
-            <label className="modal-label">Marcadores</label>
-            <div className="toggle-row">
-              <button className={'toggle-pill like' + (liked ? ' on' : '')} onClick={() => setLiked(v => !v)}>
+          <div className="ak-modal-field">
+            <label className="ak-modal-label">Marcadores</label>
+            <div className="ak-toggle-row">
+              <button className={'ak-toggle-pill ak-like' + (liked ? ' ak-on' : '')} onClick={() => setLiked(v => !v)}>
                 <Heart filled={liked} /> Curtir
               </button>
-              <button className={'toggle-pill rw' + (rewatch ? ' on' : '')} onClick={() => setRewatch(v => !v)}>
+              <button className={'ak-toggle-pill ak-rw' + (rewatch ? ' ak-on' : '')} onClick={() => setRewatch(v => !v)}>
                 <Icon name="rewatch" /> Revisão
               </button>
             </div>
           </div>
 
           {/* ── Anotação ── */}
-          <div className="modal-field">
-            <label className="modal-label">Anotação <span className="ml-hint">· opcional</span></label>
-            <textarea className="note-input" value={note} onChange={e => setNote(e.target.value)}
+          <div className="ak-modal-field">
+            <label className="ak-modal-label">Anotação <span className="ak-ml-hint">· opcional</span></label>
+            <textarea className="ak-note-input" value={note} onChange={e => setNote(e.target.value)}
                       placeholder="O que ficou desse filme?" />
           </div>
 
-          {error && <p className="detail-empty" style={{ color: 'var(--heart)' }}>{error}</p>}
+          {error && <p className="ak-detail-empty" style={{ color: 'var(--heart)' }}>{error}</p>}
 
-          <div className="modal-foot">
-            <span className="hint"><kbd>⌘</kbd> <kbd>↵</kbd> para logar</span>
-            <div className="grow" />
-            <button className="btn btn-ghost" onClick={onClose} disabled={submitting}>Cancelar</button>
-            <button className="btn btn-primary" onClick={doSave} disabled={submitting || !selectedId}>
+          <div className="ak-modal-foot">
+            <span className="ak-hint"><kbd>⌘</kbd> <kbd>↵</kbd> para logar</span>
+            <div className="ak-grow" />
+            <button className="ak-btn ak-btn-ghost" onClick={onClose} disabled={submitting}>Cancelar</button>
+            <button className="ak-btn ak-btn-primary" onClick={doSave} disabled={submitting || !selectedId}>
               <Icon name="check" /> {submitting ? 'Salvando…' : 'Logar filme'}
             </button>
           </div>

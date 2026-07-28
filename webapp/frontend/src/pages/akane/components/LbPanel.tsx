@@ -52,44 +52,44 @@ export function LbPanel({ diary, totalDiary, histogram, onSelectMovie }: LbPanel
   const ratedTotal = dist.reduce((a, n) => a + n, 0)
 
   return (
-    <div className="lb-panel">
+    <div className="ak-lb-panel">
       {/* ── Bloco Diário ── */}
-      <div className="lb-block">
-        <div className="lb-head"><span className="t">Diário</span><span className="c">{totalDiary}</span></div>
+      <div className="ak-lb-block">
+        <div className="ak-lb-head"><span className="ak-t">Diário</span><span className="ak-c">{totalDiary}</span></div>
         {limited.map(g => (
-          <div className="lb-month" key={g.key}>
-            <div className="lb-chip">
-              <div className="m">{MESES_CURTO[g.m]}</div>
-              <div className="y">'{String(g.y).slice(2)}</div>
+          <div className="ak-lb-month" key={g.key}>
+            <div className="ak-lb-chip">
+              <div className="ak-m">{MESES_CURTO[g.m]}</div>
+              <div className="ak-y">'{String(g.y).slice(2)}</div>
             </div>
-            <div className="lb-rows">
+            <div className="ak-lb-rows">
               {g.items.map(e => (
-                <div className="lb-row" key={e.id} onClick={() => onSelectMovie(e.movie_id)}>
-                  <span className="d">{new Date(e.watched_date + 'T00:00:00').getDate()}</span>
-                  <span className="ti">{e.movie_title}</span>
+                <div className="ak-lb-row" key={e.id} onClick={() => onSelectMovie(e.movie_id)}>
+                  <span className="ak-d">{new Date(e.watched_date + 'T00:00:00').getDate()}</span>
+                  <span className="ak-ti">{e.movie_title}</span>
                 </div>
               ))}
             </div>
           </div>
         ))}
         {limited.length === 0 && (
-          <p className="empty-state" style={{ padding: '14px 0' }}>Nenhuma sessão ainda.</p>
+          <p className="ak-empty-state" style={{ padding: '14px 0' }}>Nenhuma sessão ainda.</p>
         )}
       </div>
 
       {/* ── Bloco Notas (histograma verde Letterboxd) ── */}
-      <div className="lb-block">
-        <div className="lb-head"><span className="t">Notas</span><span className="c">{ratedTotal}</span></div>
-        <div className="lb-hist">
+      <div className="ak-lb-block">
+        <div className="ak-lb-head"><span className="ak-t">Notas</span><span className="ak-c">{ratedTotal}</span></div>
+        <div className="ak-lb-hist">
           {dist.map((n, i) => (
-            <div key={i} className={'col' + (n >= maxD * 0.7 && n > 0 ? ' hi' : '')}
+            <div key={i} className={'ak-col' + (n >= maxD * 0.7 && n > 0 ? ' ak-hi' : '')}
                  style={{ height: Math.max(2, (n / maxD) * 100) + '%' }}
                  title={((i + 1) / 2).toFixed(1) + '★ · ' + n} />
           ))}
         </div>
-        <div className="lb-foot">
-          <span className="lb-star"><StarShape filled /></span>
-          <span className="lb-star">{[0, 1, 2, 3, 4].map(i => <StarShape key={i} filled />)}</span>
+        <div className="ak-lb-foot">
+          <span className="ak-lb-star"><StarShape filled /></span>
+          <span className="ak-lb-star">{[0, 1, 2, 3, 4].map(i => <StarShape key={i} filled />)}</span>
         </div>
       </div>
     </div>

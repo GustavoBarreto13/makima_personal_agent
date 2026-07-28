@@ -33,7 +33,7 @@ export function WatchlistScreen({ onSelectMovie, onLogFilm, query }: WatchlistSc
   }, [])
 
   if (loading) {
-    return <p className="empty-state">Carregando watchlist…</p>
+    return <p className="ak-empty-state">Carregando watchlist…</p>
   }
 
   // Busca client-side
@@ -42,32 +42,32 @@ export function WatchlistScreen({ onSelectMovie, onLogFilm, query }: WatchlistSc
   const totalMin = want.reduce((a, f) => a + (f.runtime ?? 0), 0)
 
   return (
-    <div className="page">
-      <div className="section-head" style={{ marginTop: 32, marginBottom: 0 }}>
-        <h2 className="section-title" style={{ fontSize: 30 }}>Quero ver</h2>
-        <span className="section-sub">
+    <div className="ak-page">
+      <div className="ak-section-head" style={{ marginTop: 32, marginBottom: 0 }}>
+        <h2 className="ak-section-title" style={{ fontSize: 30 }}>Quero ver</h2>
+        <span className="ak-section-sub">
           {want.length} {want.length === 1 ? 'filme' : 'filmes'}
           {totalMin > 0 && <> · {fmtRuntime(totalMin)} de cinema esperando</>}
         </span>
       </div>
 
-      <div className="wl-list">
+      <div className="ak-wl-list">
         {want.map(f => (
-          <div key={f.id} className="wl-item">
-            <div className="wl-poster" onClick={() => onSelectMovie(f.id)}>
+          <div key={f.id} className="ak-wl-item">
+            <div className="ak-wl-poster" onClick={() => onSelectMovie(f.id)}>
               <Poster title={f.title} posterUrl={f.poster_url} palette={f.poster_palette}
                       genre={f.genres?.[0]} director={f.director?.[0]} year={f.year} />
             </div>
-            <div className="wl-info">
-              <div className="wl-title" onClick={() => onSelectMovie(f.id)}>{f.title}</div>
-              <div className="wl-sub">
+            <div className="ak-wl-info">
+              <div className="ak-wl-title" onClick={() => onSelectMovie(f.id)}>{f.title}</div>
+              <div className="ak-wl-sub">
                 {[f.director?.[0], f.year, f.runtime ? fmtRuntime(f.runtime) : null].filter(Boolean).join(' · ')}
               </div>
-              {(f.genres?.length ?? 0) > 0 && <span className="wl-genre">{f.genres.join(' · ')}</span>}
-              {f.notes && <div className="wl-note">"{f.notes}"</div>}
+              {(f.genres?.length ?? 0) > 0 && <span className="ak-wl-genre">{f.genres.join(' · ')}</span>}
+              {f.notes && <div className="ak-wl-note">"{f.notes}"</div>}
             </div>
-            <div className="wl-right">
-              <button className="btn btn-primary" style={{ fontSize: 12.5, padding: '9px 16px' }}
+            <div className="ak-wl-right">
+              <button className="ak-btn ak-btn-primary" style={{ fontSize: 12.5, padding: '9px 16px' }}
                       onClick={() => onLogFilm(f.id, f.title)}>
                 <Icon name="check" /> Já vi
               </button>
@@ -75,7 +75,7 @@ export function WatchlistScreen({ onSelectMovie, onLogFilm, query }: WatchlistSc
           </div>
         ))}
         {want.length === 0 && (
-          <p className="empty-state">
+          <p className="ak-empty-state">
             {query.trim()
               ? `Nada encontrado para "${query}".`
               : 'Watchlist vazia — busque um título em "Logar filme" para adicioná-lo.'}

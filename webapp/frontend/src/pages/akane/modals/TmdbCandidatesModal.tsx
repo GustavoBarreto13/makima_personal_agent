@@ -43,33 +43,33 @@ export function TmdbCandidatesModal({ initialQuery, onClose, onSelect }: TmdbCan
   }
 
   return (
-    <div className="modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" role="dialog" aria-label="Trocar filme">
-        <div className="modal-head">
-          <span className="modal-title">Trocar filme</span>
-          <button className="modal-x" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
+    <div className="ak-modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="ak-modal" role="dialog" aria-label="Trocar filme">
+        <div className="ak-modal-head">
+          <span className="ak-modal-title">Trocar filme</span>
+          <button className="ak-modal-x" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
         </div>
-        <div className="modal-body">
-          <div className="film-search-bar" style={{ marginBottom: 14 }}>
+        <div className="ak-modal-body">
+          <div className="ak-film-search-bar" style={{ marginBottom: 14 }}>
             <Icon name="search" />
             <input value={query} onChange={e => setQuery(e.target.value)}
                    onKeyDown={e => e.key === 'Enter' && search()}
                    placeholder="Buscar no TMDB…" autoFocus />
           </div>
-          <button className="btn btn-primary" onClick={search} disabled={loading || !query.trim()} style={{ marginBottom: 14 }}>
+          <button className="ak-btn ak-btn-primary" onClick={search} disabled={loading || !query.trim()} style={{ marginBottom: 14 }}>
             {loading ? 'Buscando…' : <><Icon name="search" /> Buscar</>}
           </button>
 
-          <div className="filmpick" style={{ flexDirection: 'column', maxHeight: 340, gap: 6 }}>
+          <div className="ak-filmpick" style={{ flexDirection: 'column', maxHeight: 340, gap: 6 }}>
             {searched && results.length === 0 && (
-              <p className="empty-state" style={{ padding: '12px 0' }}>Nenhum resultado encontrado.</p>
+              <p className="ak-empty-state" style={{ padding: '12px 0' }}>Nenhum resultado encontrado.</p>
             )}
             {results.map(r => (
-              <div key={r.tmdb_id} className="addlist-row" onClick={() => onSelect(r.tmdb_id)} style={{ cursor: 'pointer' }}>
+              <div key={r.tmdb_id} className="ak-addlist-row" onClick={() => onSelect(r.tmdb_id)} style={{ cursor: 'pointer' }}>
                 <div style={{ width: 32, flexShrink: 0 }}>
                   <Poster title={r.title} posterUrl={r.poster_url} palette="noir" />
                 </div>
-                <span className="addlist-name">
+                <span className="ak-addlist-name">
                   {r.title} {r.year && <span style={{ color: 'var(--ink-4)' }}>({r.year})</span>}
                 </span>
               </div>

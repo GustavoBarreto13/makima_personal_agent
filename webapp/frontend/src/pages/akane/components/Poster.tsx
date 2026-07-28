@@ -85,14 +85,14 @@ export function Poster({
   // Versão mini (usada nas pilhas de pôsteres dos cards de Listas)
   if (mini) {
     return (
-      <div className={'poster mini' + (hasImg ? ' has-img' : '')}
+      <div className={'ak-poster ak-mini' + (hasImg ? ' ak-has-img' : '')}
            style={{ background: p.bg, color: p.ink }} {...clickProps}>
         {hasImg && (
-          <img className="p-img" src={posterUrl!} alt={`Pôster de ${title}`}
+          <img className="ak-p-img" src={posterUrl!} alt={`Pôster de ${title}`}
                loading="lazy" onError={() => setImgFailed(true)} />
         )}
-        <div className="p-inner" />
-        <div className="p-mini-title">{title}</div>
+        <div className="ak-p-inner" />
+        <div className="ak-p-mini-title">{title}</div>
       </div>
     )
   }
@@ -103,38 +103,38 @@ export function Poster({
   const titleSize = len > 28 ? 16 : len > 18 ? 20 : len > 12 ? 25 : 30
 
   return (
-    <div className={'poster' + (hasImg ? ' has-img' : '')}
+    <div className={'ak-poster' + (hasImg ? ' ak-has-img' : '')}
          style={{ background: p.bg, color: p.ink }}
          aria-label={`Pôster de ${title}`} {...clickProps}>
       {/* Imagem real do TMDB — o CSS esconde a arte tipográfica quando presente */}
       {hasImg && (
-        <img className="p-img" src={posterUrl!} alt={`Pôster de ${title}`}
+        <img className="ak-p-img" src={posterUrl!} alt={`Pôster de ${title}`}
              loading="lazy" onError={() => setImgFailed(true)} />
       )}
 
       {/* Moldura interna do pôster tipográfico */}
-      <div className="p-inner" />
+      <div className="ak-p-inner" />
 
       {/* Badges de canto: quero ver + coração (sobre imagem OU tipográfico) */}
       {badge && (
-        <div className="p-badges">
-          {status === 'watchlist' && <div className="p-badge want"><Icon name="watchlist" /> quero ver</div>}
-          {liked && <div className="p-heart"><Heart filled /></div>}
+        <div className="ak-p-badges">
+          {status === 'watchlist' && <div className="ak-p-badge ak-want"><Icon name="watchlist" /> quero ver</div>}
+          {liked && <div className="ak-p-heart"><Heart filled /></div>}
         </div>
       )}
 
       {/* Arte tipográfica: kicker (gênero) + título + rodapé diretor/ano */}
-      <div className="p-kicker">{(genre || '').split(' · ')[0]}</div>
-      <div className="p-title" style={{ fontSize: titleSize }}>{title}</div>
-      <div className="p-foot">
-        <div className="p-rule" />
-        {director && <div className="p-dir">{director}</div>}
-        {year != null && <div className="p-year">{year}</div>}
+      <div className="ak-p-kicker">{(genre || '').split(' · ')[0]}</div>
+      <div className="ak-p-title" style={{ fontSize: titleSize }}>{title}</div>
+      <div className="ak-p-foot">
+        <div className="ak-p-rule" />
+        {director && <div className="ak-p-dir">{director}</div>}
+        {year != null && <div className="ak-p-year">{year}</div>}
       </div>
 
       {/* Faixa de nota no rodapé (gradiente escurece a base para leitura) */}
       {showRating && !!rating && (
-        <div className="p-rating"><Stars value={rating} /></div>
+        <div className="ak-p-rating"><Stars value={rating} /></div>
       )}
     </div>
   )

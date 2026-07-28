@@ -28,8 +28,8 @@ export function NextBar({ watchlist, onOpenDetail, onLog }: NextBarProps) {
   const f = watchlist[idx % watchlist.length]
 
   return (
-    <div className="footbar">
-      <span className="fb-label">Próxima sessão</span>
+    <div className="ak-footbar">
+      <span className="ak-fb-label">Próxima sessão</span>
       {/* Pôster mini (o CSS .footbar .poster fixa a largura em 40px) */}
       <Poster
         title={f.title}
@@ -40,21 +40,21 @@ export function NextBar({ watchlist, onOpenDetail, onLog }: NextBarProps) {
         year={f.year}
         onClick={() => onOpenDetail(f.id)}
       />
-      <div className="footbar-info">
-        <div className="footbar-title" onClick={() => onOpenDetail(f.id)}>{f.title}</div>
-        <div className="footbar-sub">
+      <div className="ak-footbar-info">
+        <div className="ak-footbar-title" onClick={() => onOpenDetail(f.id)}>{f.title}</div>
+        <div className="ak-footbar-sub">
           {[f.director?.[0], f.year, f.runtime ? fmtRuntime(f.runtime) : null]
             .filter(Boolean).join(' · ')}
         </div>
       </div>
       {watchlist.length > 1 && (
-        <div className="footbar-switch">
+        <div className="ak-footbar-switch">
           <button onClick={() => setIdx(i => (i - 1 + watchlist.length) % watchlist.length)} aria-label="Anterior"><Icon name="chevL" /></button>
           <button onClick={() => setIdx(i => (i + 1) % watchlist.length)} aria-label="Próximo"><Icon name="chevR" /></button>
         </div>
       )}
-      <div className="footbar-actions">
-        <button className="btn btn-primary" onClick={() => onLog(f.id, f.title)} style={{ padding: '9px 16px' }}>
+      <div className="ak-footbar-actions">
+        <button className="ak-btn ak-btn-primary" onClick={() => onLog(f.id, f.title)} style={{ padding: '9px 16px' }}>
           <Icon name="check" /> Já vi
         </button>
       </div>

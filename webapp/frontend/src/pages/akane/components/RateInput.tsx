@@ -22,26 +22,26 @@ export function RateInput({ value, onChange }: RateInputProps) {
   const shown = hover || value || 0
 
   return (
-    <div className="rate-input" onMouseLeave={() => setHover(0)}>
+    <div className="ak-rate-input" onMouseLeave={() => setHover(0)}>
       {[1, 2, 3, 4, 5].map(n => {
         const full = shown >= n              // estrela toda preenchida
         const half = !full && shown >= n - 0.5  // só a metade esquerda
         return (
-          <span key={n} className="rate-star">
+          <span key={n} className="ak-rate-star">
             {/* Estrela de fundo (cor "vazia" vem do CSS .rate-star) */}
             <StarShape filled />
             {/* Camada dourada cortada em 0% / 50% / 100% conforme a nota */}
-            <span className="fill" style={{ position: 'absolute', inset: 0, width: full ? '100%' : half ? '50%' : '0%' }}>
+            <span className="ak-fill" style={{ position: 'absolute', inset: 0, width: full ? '100%' : half ? '50%' : '0%' }}>
               <StarShape filled />
             </span>
             {/* Áreas clicáveis invisíveis: metade esquerda = .5, direita = inteira */}
-            <span className="rate-half l" onMouseEnter={() => setHover(n - 0.5)} onClick={() => onChange(n - 0.5)} />
-            <span className="rate-half r" onMouseEnter={() => setHover(n)} onClick={() => onChange(n)} />
+            <span className="ak-rate-half ak-l" onMouseEnter={() => setHover(n - 0.5)} onClick={() => onChange(n - 0.5)} />
+            <span className="ak-rate-half ak-r" onMouseEnter={() => setHover(n)} onClick={() => onChange(n)} />
           </span>
         )
       })}
-      {value > 0 && <span className="rate-val">{value.toFixed(1)}</span>}
-      {value > 0 && <button type="button" className="rate-clear" onClick={() => onChange(0)}>limpar</button>}
+      {value > 0 && <span className="ak-rate-val">{value.toFixed(1)}</span>}
+      {value > 0 && <button type="button" className="ak-rate-clear" onClick={() => onChange(0)}>limpar</button>}
     </div>
   )
 }

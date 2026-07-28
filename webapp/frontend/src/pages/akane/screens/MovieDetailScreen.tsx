@@ -63,16 +63,16 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
   }, [movieId])
 
   if (loading) {
-    return <p className="empty-state">Carregando filme…</p>
+    return <p className="ak-empty-state">Carregando filme…</p>
   }
 
   if (!data) {
     return (
-      <div className="page">
-        <button className="detail-back" onClick={onBack} style={{ paddingTop: 20 }}>
+      <div className="ak-page">
+        <button className="ak-detail-back" onClick={onBack} style={{ paddingTop: 20 }}>
           <Icon name="arrowLeft" /> Filmes
         </button>
-        <p className="empty-state">Filme não encontrado.</p>
+        <p className="ak-empty-state">Filme não encontrado.</p>
       </div>
     )
   }
@@ -133,12 +133,12 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
   }
 
   return (
-    <div className="page">
-      <button className="detail-back" onClick={onBack}><Icon name="arrowLeft" /> Filmes</button>
+    <div className="ak-page">
+      <button className="ak-detail-back" onClick={onBack}><Icon name="arrowLeft" /> Filmes</button>
 
-      <div className="detail-hero">
+      <div className="ak-detail-hero">
         {/* ══ COLUNA ESQUERDA (sticky): pôster + ações ══ */}
-        <div className="detail-poster-wrap">
+        <div className="ak-detail-poster-wrap">
           <Poster
             title={movie.title}
             posterUrl={movie.poster_url}
@@ -147,35 +147,35 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
             director={movie.director?.[0]}
             year={movie.year}
           />
-          <div className="detail-actions">
-            <button className="btn btn-primary" style={{ justifyContent: 'center' }}
+          <div className="ak-detail-actions">
+            <button className="ak-btn ak-btn-primary" style={{ justifyContent: 'center' }}
                     onClick={() => onLog(movie.id, movie.title)}>
               <Icon name="plus" /> Logar filme
             </button>
-            <div className="action-row">
-              <button className={'icon-toggle like' + (movie.liked ? ' on' : '')} onClick={toggleLike}>
+            <div className="ak-action-row">
+              <button className={'ak-icon-toggle ak-like' + (movie.liked ? ' ak-on' : '')} onClick={toggleLike}>
                 <Heart filled={movie.liked} /> {movie.liked ? 'Curtido' : 'Curtir'}
               </button>
-              <button className={'icon-toggle want' + (!seen ? ' on' : '')} onClick={toggleWant}>
+              <button className={'ak-icon-toggle ak-want' + (!seen ? ' ak-on' : '')} onClick={toggleWant}>
                 <Icon name="watchlist" /> {!seen ? 'Na lista' : 'Quero ver'}
               </button>
             </div>
 
             {/* Ações extras do app real, no mesmo ritmo visual da coluna */}
-            <button className="btn btn-ghost" style={{ justifyContent: 'center' }}
+            <button className="ak-btn ak-btn-ghost" style={{ justifyContent: 'center' }}
                     onClick={() => setShowAddToList(true)}>
               <Icon name="listas" /> Adicionar a lista
             </button>
-            <button className="btn btn-ghost" style={{ justifyContent: 'center' }}
+            <button className="ak-btn ak-btn-ghost" style={{ justifyContent: 'center' }}
                     onClick={() => setShowEditMovie(true)}>
               <Icon name="pen" /> Editar filme
             </button>
-            <div className="action-row">
-              <button className="icon-toggle" onClick={() => refreshMetadata()} disabled={refreshingMetadata}
+            <div className="ak-action-row">
+              <button className="ak-icon-toggle" onClick={() => refreshMetadata()} disabled={refreshingMetadata}
                       title="Rebusca metadados no TMDB sem tocar em nota, coração ou sessões">
                 <Icon name="sync" /> {refreshingMetadata ? 'Buscando…' : 'Buscar dados'}
               </button>
-              <button className="icon-toggle" onClick={() => setShowTmdbCandidates(true)} disabled={refreshingMetadata}
+              <button className="ak-icon-toggle" onClick={() => setShowTmdbCandidates(true)} disabled={refreshingMetadata}
                       title="Associado ao título errado? Escolha o candidato correto do TMDB.">
                 <Icon name="film" /> Trocar filme
               </button>
@@ -183,16 +183,16 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
 
             {/* Exclusão em duas etapas (evita clique acidental) */}
             {!confirmDeleteMovie ? (
-              <button className="btn btn-ghost" style={{ justifyContent: 'center', color: 'var(--heart)' }}
+              <button className="ak-btn ak-btn-ghost" style={{ justifyContent: 'center', color: 'var(--heart)' }}
                       onClick={() => setConfirmDeleteMovie(true)}>
                 <Icon name="trash" /> Excluir filme
               </button>
             ) : (
-              <div className="action-row">
-                <button className="icon-toggle" onClick={() => setConfirmDeleteMovie(false)} disabled={deletingMovie}>
+              <div className="ak-action-row">
+                <button className="ak-icon-toggle" onClick={() => setConfirmDeleteMovie(false)} disabled={deletingMovie}>
                   Cancelar
                 </button>
-                <button className="icon-toggle on like" disabled={deletingMovie}
+                <button className="ak-icon-toggle ak-on ak-like" disabled={deletingMovie}
                         onClick={async () => {
                           setDeletingMovie(true)
                           try {
@@ -213,48 +213,48 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
 
         {/* ══ COLUNA DIREITA: informações ══ */}
         <div className="detail-info">
-          <div className="detail-genre">{(movie.genres ?? []).join(' · ')}</div>
-          <h1 className="detail-title">{movie.title}</h1>
-          <p className="detail-author">
+          <div className="ak-detail-genre">{(movie.genres ?? []).join(' · ')}</div>
+          <h1 className="ak-detail-title">{movie.title}</h1>
+          <p className="ak-detail-author">
             {movie.year && <>{movie.year} · </>}
             dirigido por <b>{(movie.director ?? []).join(', ') || '—'}</b>
             {movie.runtime && <> · {fmtRuntime(movie.runtime)}</>}
           </p>
 
           {/* Linha de nota */}
-          <div className="detail-rating-row">
+          <div className="ak-detail-rating-row">
             {movie.rating != null ? (
-              <><Stars value={movie.rating} lg /><span className="rating-num" style={{ fontSize: 14 }}>{movie.rating.toFixed(1)}</span></>
-            ) : <span className="detail-empty">Ainda sem nota</span>}
-            {movie.liked && <Heart filled className="heart-ico lg" />}
+              <><Stars value={movie.rating} lg /><span className="ak-rating-num" style={{ fontSize: 14 }}>{movie.rating.toFixed(1)}</span></>
+            ) : <span className="ak-detail-empty">Ainda sem nota</span>}
+            {movie.liked && <Heart filled className="ak-heart-ico ak-lg" />}
             {movie.rating_source === 'letterboxd' && (
-              <span className="rating-source"><span className="lb" /> via Letterboxd</span>
+              <span className="ak-rating-source"><span className="ak-lb" /> via Letterboxd</span>
             )}
-            <span className={'status-pill ' + (seen ? 'seen' : 'want')}>{seen ? 'Visto' : 'Quero ver'}</span>
+            <span className={'ak-status-pill ' + (seen ? 'ak-seen' : 'ak-want')}>{seen ? 'Visto' : 'Quero ver'}</span>
           </div>
 
           {/* Grade de metadados */}
-          <div className="detail-meta-grid">
-            <div className="dm-cell"><div className="k">Direção</div><div className="v" style={{ fontSize: 13 }}>{(movie.director ?? []).join(', ') || '—'}</div></div>
-            <div className="dm-cell"><div className="k">Ano</div><div className="v">{movie.year ?? '—'}</div></div>
-            <div className="dm-cell"><div className="k">Duração</div><div className="v" style={{ fontSize: 13 }}>{fmtRuntime(movie.runtime)}</div></div>
-            <div className="dm-cell"><div className="k">Gênero</div><div className="v" style={{ fontSize: 13 }}>{(movie.genres ?? []).slice(0, 2).join(' · ') || '—'}</div></div>
-            <div className="dm-cell"><div className="k">Sessões</div><div className="v">{diary.length || '—'}</div></div>
+          <div className="ak-detail-meta-grid">
+            <div className="ak-dm-cell"><div className="ak-k">Direção</div><div className="ak-v" style={{ fontSize: 13 }}>{(movie.director ?? []).join(', ') || '—'}</div></div>
+            <div className="ak-dm-cell"><div className="ak-k">Ano</div><div className="ak-v">{movie.year ?? '—'}</div></div>
+            <div className="ak-dm-cell"><div className="ak-k">Duração</div><div className="ak-v" style={{ fontSize: 13 }}>{fmtRuntime(movie.runtime)}</div></div>
+            <div className="ak-dm-cell"><div className="ak-k">Gênero</div><div className="ak-v" style={{ fontSize: 13 }}>{(movie.genres ?? []).slice(0, 2).join(' · ') || '—'}</div></div>
+            <div className="ak-dm-cell"><div className="ak-k">Sessões</div><div className="ak-v">{diary.length || '—'}</div></div>
           </div>
 
           {/* Sinopse (extra do app real — TMDB) */}
           {movie.overview && (
             <>
-              <div className="detail-section-title">Sinopse <span className="st-line" /></div>
-              <p className="detail-synopsis">{movie.overview}</p>
+              <div className="ak-detail-section-title">Sinopse <span className="ak-st-line" /></div>
+              <p className="ak-detail-synopsis">{movie.overview}</p>
             </>
           )}
 
           {/* Sua review (a resenha da sessão mais recente) */}
-          <div className="detail-section-title">Sua review <span className="st-line" /></div>
+          <div className="ak-detail-section-title">Sua review <span className="ak-st-line" /></div>
           {latestReview
-            ? <p className="detail-review">{latestReview}</p>
-            : <p className="detail-empty">
+            ? <p className="ak-detail-review">{latestReview}</p>
+            : <p className="ak-detail-empty">
                 Você ainda não escreveu sobre este filme. {seen ? 'Registre uma sessão para começar.' : 'Ele te espera na watchlist.'}
               </p>}
 
@@ -272,13 +272,13 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
           {/* Etiquetas */}
           {(movie.tags?.length ?? 0) > 0 && (
             <>
-              <div className="detail-section-title">Etiquetas <span className="st-line" /></div>
-              <div className="chips">
+              <div className="ak-detail-section-title">Etiquetas <span className="ak-st-line" /></div>
+              <div className="ak-chips">
                 {movie.tags.map(t => (
-                  <span key={t} className={'tag-chip' + (personTagNames.has(t) ? ' person' : '')}>
+                  <span key={t} className={'ak-tag-chip' + (personTagNames.has(t) ? ' ak-person' : '')}>
                     {personTagNames.has(t)
                       ? <Icon name="user" style={{ width: 13, height: 13, color: 'var(--rose)' }} />
-                      : <span className="t-hash">#</span>}
+                      : <span className="ak-t-hash">#</span>}
                     {t}
                   </span>
                 ))}
@@ -289,13 +289,13 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
           {/* Equipe (elenco/direção — preparação para a base de pessoas) */}
           {people.length > 0 && (
             <>
-              <div className="detail-section-title">Equipe <span className="st-line" /></div>
-              <div className="chips">
+              <div className="ak-detail-section-title">Equipe <span className="ak-st-line" /></div>
+              <div className="ak-chips">
                 {people.map(p => (
-                  <span key={p.id} className={'tag-chip' + (p.is_person_tag ? ' person' : '')} title={p.role ?? undefined}>
+                  <span key={p.id} className={'ak-tag-chip' + (p.is_person_tag ? ' ak-person' : '')} title={p.role ?? undefined}>
                     <Icon name="user" style={{ width: 13, height: 13, color: p.is_person_tag ? 'var(--rose)' : 'var(--ink-4)' }} />
                     {p.name}
-                    {p.role && <span className="t-count">{p.role}</span>}
+                    {p.role && <span className="ak-t-count">{p.role}</span>}
                   </span>
                 ))}
               </div>
@@ -305,8 +305,8 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
           {/* Diário deste filme (com editar/excluir sessão) */}
           {diary.length > 0 && (
             <>
-              <div className="detail-section-title">Diário deste filme <span className="st-line" /></div>
-              <div className="film-log">
+              <div className="ak-detail-section-title">Diário deste filme <span className="ak-st-line" /></div>
+              <div className="ak-film-log">
                 {diary.map(e => (
                   <FilmLogItem
                     key={e.id}
@@ -378,32 +378,32 @@ function NotesEditor({ movieId, initialNotes, onToast }: {
 
   return (
     <>
-      <div className="detail-section-title">
+      <div className="ak-detail-section-title">
         Anotações
         {!editing && (
-          <button className="section-link" style={{ border: 'none', background: 'none', padding: 0 }}
+          <button className="ak-section-link" style={{ border: 'none', background: 'none', padding: 0 }}
                   onClick={() => setEditing(true)}>
             {saved ? 'Editar' : '＋ Adicionar'}
           </button>
         )}
-        <span className="st-line" />
+        <span className="ak-st-line" />
       </div>
 
       {editing ? (
-        <div className="modal-field" style={{ margin: '4px 0 8px' }}>
-          <textarea className="note-input" value={notes} onChange={e => setNotes(e.target.value)}
+        <div className="ak-modal-field" style={{ margin: '4px 0 8px' }}>
+          <textarea className="ak-note-input" value={notes} onChange={e => setNotes(e.target.value)}
                     placeholder="Suas reflexões soltas sobre o filme…" autoFocus />
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button className="btn btn-primary" onClick={save} disabled={busy}>
+            <button className="ak-btn ak-btn-primary" onClick={save} disabled={busy}>
               <Icon name="check" /> {busy ? 'Salvando…' : 'Salvar'}
             </button>
-            <button className="btn btn-ghost" onClick={() => { setEditing(false); setNotes(saved) }}>Cancelar</button>
+            <button className="ak-btn ak-btn-ghost" onClick={() => { setEditing(false); setNotes(saved) }}>Cancelar</button>
           </div>
         </div>
       ) : saved ? (
-        <div className="notes-block"><span className="nb-tag">caderno</span>{saved}</div>
+        <div className="ak-notes-block"><span className="ak-nb-tag">caderno</span>{saved}</div>
       ) : (
-        <p className="detail-empty">Nenhuma anotação ainda.</p>
+        <p className="ak-detail-empty">Nenhuma anotação ainda.</p>
       )}
     </>
   )
@@ -460,60 +460,60 @@ function VaultSection({ movieId, vault, onToast, onChange }: {
 
   return (
     <>
-      <div className="detail-section-title">
+      <div className="ak-detail-section-title">
         Cofre de conteúdos {vault.length > 0 && <span style={{ color: 'var(--ink-4)' }}>· {vault.length}</span>}
-        <span className="st-line" />
+        <span className="ak-st-line" />
       </div>
-      <div className="vault-grid">
+      <div className="ak-vault-grid">
         {vault.map(v => {
           const m = VAULT_META[v.type] || VAULT_META.article
           return (
-            <div key={v.id} className="vault-card">
-              <div className="vault-thumb" style={{ background: m.bg }}>
-                <span className="vt-type">{m.label}</span>
+            <div key={v.id} className="ak-vault-card">
+              <div className="ak-vault-thumb" style={{ background: m.bg }}>
+                <span className="ak-vt-type">{m.label}</span>
                 <Icon name={m.icon} />
                 {/* Remover (extra do app real — CRUD do Cofre) */}
-                <button className="vc-remove" title="Remover do Cofre"
+                <button className="ak-vc-remove" title="Remover do Cofre"
                         disabled={removingId === v.id}
                         onClick={() => remove(v.id)}>
                   {removingId === v.id ? '…' : <Icon name="x" />}
                 </button>
               </div>
-              <div className="vc-title">{v.title}</div>
-              <div className="vc-foot">
+              <div className="ak-vc-title">{v.title}</div>
+              <div className="ak-vc-foot">
                 <Icon name="link" style={{ width: 11, height: 11 }} /> {v.source ?? '—'}
                 {v.url && (
-                  <a className="open" href={v.url} target="_blank" rel="noopener noreferrer">abrir →</a>
+                  <a className="ak-open" href={v.url} target="_blank" rel="noopener noreferrer">abrir →</a>
                 )}
               </div>
             </div>
           )
         })}
         {!adding && (
-          <button className="vault-add" onClick={() => setAdding(true)}><Icon name="plus" /> Salvar conteúdo</button>
+          <button className="ak-vault-add" onClick={() => setAdding(true)}><Icon name="plus" /> Salvar conteúdo</button>
         )}
       </div>
 
       {/* Formulário de novo item (inputs no padrão do modal do handoff) */}
       {adding && (
-        <div className="modal-field" style={{ margin: '12px 0 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <select className="text-input" value={type} onChange={e => setType(e.target.value as VaultType)}>
+        <div className="ak-modal-field" style={{ margin: '12px 0 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <select className="ak-text-input" value={type} onChange={e => setType(e.target.value as VaultType)}>
             <option value="video">Vídeo</option>
             <option value="article">Artigo</option>
             <option value="essay">Ensaio</option>
             <option value="review">Review</option>
           </select>
-          <input className="text-input" placeholder="Título" value={title}
+          <input className="ak-text-input" placeholder="Título" value={title}
                  onChange={e => setTitle(e.target.value)} autoFocus />
-          <input className="text-input" placeholder="URL (opcional)" value={url}
+          <input className="ak-text-input" placeholder="URL (opcional)" value={url}
                  onChange={e => setUrl(e.target.value)} />
-          <input className="text-input" placeholder="Fonte (opcional, ex.: youtube.com)" value={source}
+          <input className="ak-text-input" placeholder="Fonte (opcional, ex.: youtube.com)" value={source}
                  onChange={e => setSource(e.target.value)} />
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary" onClick={save} disabled={busy || !title.trim()}>
+            <button className="ak-btn ak-btn-primary" onClick={save} disabled={busy || !title.trim()}>
               <Icon name="check" /> {busy ? 'Salvando…' : 'Salvar'}
             </button>
-            <button className="btn btn-ghost" onClick={() => { setAdding(false); setTitle(''); setUrl(''); setSource('') }}>
+            <button className="ak-btn ak-btn-ghost" onClick={() => { setAdding(false); setTitle(''); setUrl(''); setSource('') }}>
               Cancelar
             </button>
           </div>
@@ -576,25 +576,25 @@ function FilmLogItem({ entry, onToast, onDeleted, onUpdated }: {
 
   if (editing) {
     return (
-      <div className="fl-item">
-        <div className="modal-field" style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: 0 }}>
+      <div className="ak-fl-item">
+        <div className="ak-modal-field" style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: 0 }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <input className="date-input" type="date" value={watchedDate}
+            <input className="ak-date-input" type="date" value={watchedDate}
                    onChange={e => setWatchedDate(e.target.value)} style={{ width: 150 }} />
             <RateInput value={rating} onChange={setRating} />
-            <button className={'toggle-pill rw' + (rewatch ? ' on' : '')} onClick={() => setRewatch(v => !v)}>
+            <button className={'ak-toggle-pill ak-rw' + (rewatch ? ' ak-on' : '')} onClick={() => setRewatch(v => !v)}>
               <Icon name="rewatch" /> Revisão
             </button>
           </div>
-          <textarea className="note-input" rows={2} placeholder="Resenha (opcional)" value={review}
+          <textarea className="ak-note-input" rows={2} placeholder="Resenha (opcional)" value={review}
                     onChange={e => setReview(e.target.value)} />
-          <input className="text-input" placeholder="Etiquetas separadas por vírgula (opcional)" value={tags}
+          <input className="ak-text-input" placeholder="Etiquetas separadas por vírgula (opcional)" value={tags}
                  onChange={e => setTags(e.target.value)} />
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary" onClick={doSave} disabled={saving}>
+            <button className="ak-btn ak-btn-primary" onClick={doSave} disabled={saving}>
               <Icon name="check" /> {saving ? 'Salvando…' : 'Salvar'}
             </button>
-            <button className="btn btn-ghost" onClick={() => setEditing(false)} disabled={saving}>Cancelar</button>
+            <button className="ak-btn ak-btn-ghost" onClick={() => setEditing(false)} disabled={saving}>Cancelar</button>
           </div>
         </div>
       </div>
@@ -602,25 +602,25 @@ function FilmLogItem({ entry, onToast, onDeleted, onUpdated }: {
   }
 
   return (
-    <div className="fl-item">
-      <div className="fl-date">
+    <div className="ak-fl-item">
+      <div className="ak-fl-date">
         {fmtDate(entry.watched_date)} · {new Date(entry.watched_date + 'T00:00:00').getFullYear()}
       </div>
-      <div className="fl-row">
+      <div className="ak-fl-row">
         {entry.rating != null && <Stars value={entry.rating} />}
-        {entry.rewatch && <span className="feed-tag rw">revisão</span>}
+        {entry.rewatch && <span className="ak-feed-tag ak-rw">revisão</span>}
         {/* Ações da sessão (extras do app real): editar / excluir */}
-        <span className="fl-actions">
+        <span className="ak-fl-actions">
           <button title="Editar sessão" onClick={() => setEditing(true)}><Icon name="pen" /></button>
           {!confirming
             ? <button title="Excluir sessão" onClick={() => setConfirming(true)}><Icon name="x" /></button>
             : <>
                 <button onClick={() => setConfirming(false)}>cancelar</button>
-                <button className="danger" onClick={doDelete} disabled={deleting}>{deleting ? '…' : 'confirmar'}</button>
+                <button className="ak-danger" onClick={doDelete} disabled={deleting}>{deleting ? '…' : 'confirmar'}</button>
               </>}
         </span>
       </div>
-      {entry.review && <div className="fl-note">"{entry.review}"</div>}
+      {entry.review && <div className="ak-fl-note">"{entry.review}"</div>}
     </div>
   )
 }

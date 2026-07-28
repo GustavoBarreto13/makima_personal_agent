@@ -32,14 +32,14 @@ export function TagsScreen({ onSelectTag, query }: TagsScreenProps) {
 
   useEffect(load, [])
 
-  if (loading) return <p className="empty-state">Carregando etiquetas…</p>
+  if (loading) return <p className="ak-empty-state">Carregando etiquetas…</p>
 
   if (loadError) {
     return (
-      <div className="page">
-        <p className="empty-state">
+      <div className="ak-page">
+        <p className="ak-empty-state">
           Não foi possível carregar as etiquetas.{' '}
-          <button className="btn btn-ghost" onClick={load} style={{ marginLeft: 8 }}>Tentar novamente</button>
+          <button className="ak-btn ak-btn-ghost" onClick={load} style={{ marginLeft: 8 }}>Tentar novamente</button>
         </p>
       </div>
     )
@@ -49,32 +49,32 @@ export function TagsScreen({ onSelectTag, query }: TagsScreenProps) {
   const hasPeople = filtered.some(t => t.person)
 
   return (
-    <div className="page">
-      <div className="section-head" style={{ marginTop: 32 }}>
-        <h2 className="section-title" style={{ fontSize: 30 }}>Etiquetas</h2>
-        <span className="section-sub">{tags.length} etiquetas · organize por tema, estilo ou pessoa</span>
+    <div className="ak-page">
+      <div className="ak-section-head" style={{ marginTop: 32 }}>
+        <h2 className="ak-section-title" style={{ fontSize: 30 }}>Etiquetas</h2>
+        <span className="ak-section-sub">{tags.length} etiquetas · organize por tema, estilo ou pessoa</span>
       </div>
 
       {hasPeople && (
-        <div className="people-note" style={{ marginTop: 0, marginBottom: 18 }}>
+        <div className="ak-people-note" style={{ marginTop: 0, marginBottom: 18 }}>
           <Icon name="user" /> Etiquetas de pessoas vão se conectar à base de pessoas em breve.
         </div>
       )}
 
       {tags.length === 0 ? (
-        <p className="empty-state">Nenhuma etiqueta ainda — adicione tags ao logar uma sessão ou nos detalhes de um filme.</p>
+        <p className="ak-empty-state">Nenhuma etiqueta ainda — adicione tags ao logar uma sessão ou nos detalhes de um filme.</p>
       ) : filtered.length === 0 && query.trim() ? (
-        <p className="empty-state">Nada encontrado para "{query}".</p>
+        <p className="ak-empty-state">Nada encontrado para "{query}".</p>
       ) : (
-        <div className="chips" style={{ gap: 10 }}>
+        <div className="ak-chips" style={{ gap: 10 }}>
           {filtered.map(t => (
-            <a key={t.name} className={'tag-chip' + (t.person ? ' person' : '')}
+            <a key={t.name} className={'ak-tag-chip' + (t.person ? ' ak-person' : '')}
                onClick={() => onSelectTag(t.name)} style={{ fontSize: 13.5, padding: '8px 14px' }}>
               {t.person
                 ? <Icon name="user" style={{ width: 14, height: 14, color: 'var(--rose)' }} />
-                : <span className="t-hash">#</span>}
+                : <span className="ak-t-hash">#</span>}
               {t.name}
-              <span className="t-count">{t.count}</span>
+              <span className="ak-t-count">{t.count}</span>
             </a>
           ))}
         </div>

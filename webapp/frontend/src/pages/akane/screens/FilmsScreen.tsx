@@ -71,15 +71,15 @@ export function FilmsScreen({ tweaks, onSelectMovie, initialTag, query }: FilmsS
   const watchedCount = movies.filter(m => m.status === 'watched').length
 
   return (
-    <div className="page">
+    <div className="ak-page">
       {/* ── Cabeçalho da seção ── */}
-      <div className="section-head" style={{ marginTop: 32, marginBottom: 0 }}>
-        <h2 className="section-title" style={{ fontSize: 30 }}>
+      <div className="ak-section-head" style={{ marginTop: 32, marginBottom: 0 }}>
+        <h2 className="ak-section-title" style={{ fontSize: 30 }}>
           {activeTag
             ? <>Etiqueta <span style={{ color: 'var(--rose-deep)' }}>#{activeTag}</span></>
             : 'Filmes'}
         </h2>
-        <span className="section-sub">
+        <span className="ak-section-sub">
           {activeTag
             ? `${list.length} ${list.length === 1 ? 'filme' : 'filmes'}`
             : `${movies.length} no acervo · ${watchedCount} vistos`}
@@ -88,18 +88,18 @@ export function FilmsScreen({ tweaks, onSelectMovie, initialTag, query }: FilmsS
 
       {/* ── Toolbar de filtros (só fora do modo etiqueta) ── */}
       {!activeTag && (
-        <div className="cat-toolbar">
-          <div className="chips">
+        <div className="ak-cat-toolbar">
+          <div className="ak-chips">
             {FILTER_CHIPS.map(f => (
               <button key={f.value}
-                      className={'chip' + (filter === f.value ? ' active' : '')}
+                      className={'ak-chip' + (filter === f.value ? ' ak-active' : '')}
                       onClick={() => setFilter(f.value)}>
                 {f.label}
               </button>
             ))}
           </div>
-          <div className="toolbar-spacer" />
-          <span className="result-count">
+          <div className="ak-toolbar-spacer" />
+          <span className="ak-result-count">
             {list.length} {list.length === 1 ? 'filme' : 'filmes'} · por {SORT_LABELS[sort] ?? sort}
           </span>
         </div>
@@ -107,19 +107,19 @@ export function FilmsScreen({ tweaks, onSelectMovie, initialTag, query }: FilmsS
 
       {/* ── Modo etiqueta: botão de voltar para a nuvem ── */}
       {activeTag && (
-        <button className="detail-back" onClick={() => setActiveTag(null)} style={{ paddingTop: 14 }}>
+        <button className="ak-detail-back" onClick={() => setActiveTag(null)} style={{ paddingTop: 14 }}>
           <Icon name="arrowLeft" /> Todas as etiquetas
         </button>
       )}
 
       {/* ── Grade de pôsteres ── */}
       {loading ? (
-        <p className="empty-state">Carregando filmes…</p>
+        <p className="ak-empty-state">Carregando filmes…</p>
       ) : (
         <>
-          <div className="poster-grid">
+          <div className="ak-poster-grid">
             {list.map(f => (
-              <a key={f.id} className="poster-link" onClick={() => onSelectMovie(f.id)}>
+              <a key={f.id} className="ak-poster-link" onClick={() => onSelectMovie(f.id)}>
                 <Poster
                   title={f.title}
                   posterUrl={f.poster_url}
@@ -131,22 +131,22 @@ export function FilmsScreen({ tweaks, onSelectMovie, initialTag, query }: FilmsS
                   liked={f.liked}
                   badge
                 />
-                <div className="poster-meta">
-                  <div className="pm-title">{f.title}</div>
-                  <div className="pm-sub">{[f.director?.[0], f.year].filter(Boolean).join(' · ')}</div>
-                  <div className="pm-row">
+                <div className="ak-poster-meta">
+                  <div className="ak-pm-title">{f.title}</div>
+                  <div className="ak-pm-sub">{[f.director?.[0], f.year].filter(Boolean).join(' · ')}</div>
+                  <div className="ak-pm-row">
                     {f.rating
-                      ? <><Stars value={f.rating} />{f.liked && <Heart filled className="heart-ico" />}</>
+                      ? <><Stars value={f.rating} />{f.liked && <Heart filled className="ak-heart-ico" />}</>
                       : f.status === 'watchlist'
-                        ? <span className="result-count" style={{ color: 'var(--rose-deep)' }}>quero ver</span>
-                        : <span className="result-count">sem nota</span>}
+                        ? <span className="ak-result-count" style={{ color: 'var(--rose-deep)' }}>quero ver</span>
+                        : <span className="ak-result-count">sem nota</span>}
                   </div>
                 </div>
               </a>
             ))}
           </div>
           {list.length === 0 && (
-            <p className="empty-state">Nada encontrado{query ? ` para "${query}"` : ''}.</p>
+            <p className="ak-empty-state">Nada encontrado{query ? ` para "${query}"` : ''}.</p>
           )}
         </>
       )}

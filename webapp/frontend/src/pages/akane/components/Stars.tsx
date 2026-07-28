@@ -20,10 +20,10 @@ export function Stars({ value, lg }: StarsProps) {
   // Limita a nota ao intervalo [0, 5] e converte para porcentagem de corte
   const pct = (Math.max(0, Math.min(5, value || 0)) / 5) * 100
   return (
-    <span className={'stars' + (lg ? ' lg' : '')} title={(value || 0).toFixed(1) + ' / 5'}>
+    <span className={'ak-stars' + (lg ? ' ak-lg' : '')} title={(value || 0).toFixed(1) + ' / 5'}>
       <span style={{ position: 'relative', display: 'inline-flex' }}>
         {/* Camada de baixo: 5 estrelas na cor "vazia" (cor vem do CSS .stars .empty) */}
-        <span style={{ display: 'inline-flex', gap: '1px' }} className="empty">
+        <span style={{ display: 'inline-flex', gap: '1px' }} className="ak-empty">
           {[0, 1, 2, 3, 4].map(i => <StarShape key={i} filled />)}
         </span>
         {/* Camada de cima: 5 estrelas douradas, cortadas na largura da nota */}

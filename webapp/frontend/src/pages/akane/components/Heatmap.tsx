@@ -77,7 +77,7 @@ export function Heatmap({ data }: HeatmapProps) {
 
   return (
     <div>
-      <div className="heat-months-wrap">
+      <div className="ak-heat-months-wrap">
         {months.map(g => {
           const first = new Date(g.days[0].date + 'T00:00:00')
           const lead = first.getDay()
@@ -88,17 +88,17 @@ export function Heatmap({ data }: HeatmapProps) {
           while (cells.length % 7 !== 0) cells.push(null)
 
           return (
-            <div className="heat-month" key={g.m}>
+            <div className="ak-heat-month" key={g.m}>
               {/* Cabeçalho do mês: nome + soma de sessões (padrão hm-head do handoff) */}
-              <div className="hm-head">
-                <span className="hm-name">{MONTH_NAMES[g.m]}</span>
-                <span className="hm-sum">{g.days.reduce((a, d) => a + d.count, 0)}</span>
+              <div className="ak-hm-head">
+                <span className="ak-hm-name">{MONTH_NAMES[g.m]}</span>
+                <span className="ak-hm-sum">{g.days.reduce((a, d) => a + d.count, 0)}</span>
               </div>
-              <div className="hm-cells">
+              <div className="ak-hm-cells">
                 {cells.map((d, i) => (
                   <div
                     key={i}
-                    className="hm-cell"
+                    className="ak-hm-cell"
                     title={d ? (d.count > 0 ? `${d.date} · ${d.count} sessão${d.count !== 1 ? 'ões' : ''}` : d.date) : ''}
                     style={{
                       background: d != null ? `var(--heat-${heatLevel(d.count)})` : 'transparent',
@@ -111,9 +111,9 @@ export function Heatmap({ data }: HeatmapProps) {
         })}
       </div>
 
-      <div className="heat-legend">
+      <div className="ak-heat-legend">
         <span>menos</span>
-        <span className="heat-sw">
+        <span className="ak-heat-sw">
           {[0, 1, 2, 3, 4].map(i => (
             <i key={i} style={{ background: `var(--heat-${i})` }} />
           ))}

@@ -67,7 +67,7 @@ export function DiaryScreen({ onSelectMovie, query }: DiaryScreenProps) {
   }, [])
 
   if (loading) {
-    return <p className="empty-state">Carregando diário…</p>
+    return <p className="ak-empty-state">Carregando diário…</p>
   }
 
   // Reordena as entradas de um mesmo dia (spec 050, US7) — otimista
@@ -94,25 +94,25 @@ export function DiaryScreen({ onSelectMovie, query }: DiaryScreenProps) {
   const groups = groupByMonth(filtered)
 
   return (
-    <div className="page">
-      <div className="section-head" style={{ marginTop: 32 }}>
-        <h2 className="section-title" style={{ fontSize: 30 }}>Diário</h2>
-        <span className="section-sub">{entries.length} sessões registradas · bebe da sua lista de filmes</span>
+    <div className="ak-page">
+      <div className="ak-section-head" style={{ marginTop: 32 }}>
+        <h2 className="ak-section-title" style={{ fontSize: 30 }}>Diário</h2>
+        <span className="ak-section-sub">{entries.length} sessões registradas · bebe da sua lista de filmes</span>
       </div>
 
       {entries.length === 0 && (
-        <p className="empty-state">Diário vazio — registre sua primeira sessão em "Logar filme".</p>
+        <p className="ak-empty-state">Diário vazio — registre sua primeira sessão em "Logar filme".</p>
       )}
       {entries.length > 0 && filtered.length === 0 && hasQuery && (
-        <p className="empty-state">Nada encontrado para "{query}".</p>
+        <p className="ak-empty-state">Nada encontrado para "{query}".</p>
       )}
 
       {groups.map(g => (
-        <div className="diary-month" key={g.key}>
-          <div className="diary-month-label">
-            <span className="dm-name">{MESES[g.m].charAt(0).toUpperCase() + MESES[g.m].slice(1)}</span>
-            <span className="dm-year">{g.y}</span>
-            <span className="dm-count">{g.items.length} {g.items.length === 1 ? 'sessão' : 'sessões'}</span>
+        <div className="ak-diary-month" key={g.key}>
+          <div className="ak-diary-month-label">
+            <span className="ak-dm-name">{MESES[g.m].charAt(0).toUpperCase() + MESES[g.m].slice(1)}</span>
+            <span className="ak-dm-year">{g.y}</span>
+            <span className="ak-dm-count">{g.items.length} {g.items.length === 1 ? 'sessão' : 'sessões'}</span>
           </div>
 
           {groupByDate(g.items).map(dateGroup => (
@@ -122,24 +122,24 @@ export function DiaryScreen({ onSelectMovie, query }: DiaryScreenProps) {
               // a lista parcial gravaria posições erradas no servidor)
               const canReorder = !hasQuery && dateGroup.entries.length > 1
               return (
-                <div className="diary-row" key={e.id} onClick={() => onSelectMovie(e.movie_id)}>
-                  <div className="dr-day">
-                    <div className="d-num">{dt.getDate()}</div>
-                    <div className="d-wd">{DIAS_CURTO[dt.getDay()]}</div>
+                <div className="ak-diary-row" key={e.id} onClick={() => onSelectMovie(e.movie_id)}>
+                  <div className="ak-dr-day">
+                    <div className="ak-d-num">{dt.getDate()}</div>
+                    <div className="ak-d-wd">{DIAS_CURTO[dt.getDay()]}</div>
                   </div>
-                  <div className="dr-poster">
+                  <div className="ak-dr-poster">
                     <Poster title={e.movie_title ?? ''} posterUrl={e.poster_url} palette={e.poster_palette} />
                   </div>
-                  <div className="dr-main">
-                    <div className="dr-title">{e.movie_title}</div>
-                    {e.review && <div className="dr-note">"{e.review}"</div>}
+                  <div className="ak-dr-main">
+                    <div className="ak-dr-title">{e.movie_title}</div>
+                    {e.review && <div className="ak-dr-note">"{e.review}"</div>}
                   </div>
-                  <div className="dr-marks">
-                    {e.rating ? <Stars value={e.rating} /> : <span className="mk">—</span>}
-                    {e.rewatch && <span className="mk rw"><Icon name="rewatch" /></span>}
+                  <div className="ak-dr-marks">
+                    {e.rating ? <Stars value={e.rating} /> : <span className="ak-mk">—</span>}
+                    {e.rewatch && <span className="ak-mk ak-rw"><Icon name="rewatch" /></span>}
                   </div>
                   {canReorder && (
-                    <div className="dr-reorder" onClick={ev => ev.stopPropagation()}>
+                    <div className="ak-dr-reorder" onClick={ev => ev.stopPropagation()}>
                       <button disabled={i === 0} title="Mover para cima (assistido antes)"
                               onClick={() => {
                                 const next = [...dateGroup.entries]

@@ -277,12 +277,12 @@ export function AkaneShell() {
     return (
       <button
         key={item.id}
-        className={'nav-item' + (activeNav === item.id ? ' active' : '')}
+        className={'ak-nav-item' + (activeNav === item.id ? ' ak-active' : '')}
         onClick={() => goToView(item.id)}
         aria-current={view === item.id ? 'page' : undefined}
       >
         <Icon name={item.icon} /> <span>{item.label}</span>
-        {count != null && count > 0 && <span className="nav-count">{count}</span>}
+        {count != null && count > 0 && <span className="ak-nav-count">{count}</span>}
       </button>
     )
   }
@@ -304,38 +304,38 @@ export function AkaneShell() {
         {/* ══ SIDEBAR ════════════════════════════════════════════════════════ */}
         <aside className="ak-side">
           {/* Marca: retrato da Akane com glow do acento + nome/função */}
-          <div className="side-brand">
-            <div className="brand-mark">
+          <div className="ak-side-brand">
+            <div className="ak-brand-mark">
               <img
                 src="/akane-hero.png"
                 alt="Akane Kurokawa"
                 onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
               />
             </div>
-            <div className="brand-text">
-              <div className="brand-name">Akane</div>
-              <div className="brand-role">Filmes</div>
+            <div className="ak-brand-text">
+              <div className="ak-brand-name">Akane</div>
+              <div className="ak-brand-role">Filmes</div>
             </div>
           </div>
 
           {/* CTA principal — sempre visível */}
-          <button className="side-log-btn" onClick={() => openLog()} aria-label="Logar sessão de filme">
+          <button className="ak-side-log-btn" onClick={() => openLog()} aria-label="Logar sessão de filme">
             <Icon name="plus" /> <span>Logar filme</span>
           </button>
 
           {/* Navegação em 2 grupos (Cinemateca / Coleção) + ações */}
-          <nav className="side-nav">
-            <div className="nav-group-label">Cinemateca</div>
+          <nav className="ak-side-nav">
+            <div className="ak-nav-group-label">Cinemateca</div>
             {NAV_CINEMATECA.map(navItem)}
 
-            <div className="nav-group-label">Coleção</div>
+            <div className="ak-nav-group-label">Coleção</div>
             {NAV_COLECAO.map(navItem)}
 
             {/* Sync manual do Letterboxd — extra do app real, estilizado como
                 item da nav para não quebrar o ritmo visual da sidebar */}
-            <div className="nav-group-label">Ações</div>
+            <div className="ak-nav-group-label">Ações</div>
             <button
-              className={'nav-item' + (syncing ? ' syncing' : '')}
+              className={'ak-nav-item' + (syncing ? ' ak-syncing' : '')}
               onClick={syncLetterboxd}
               disabled={syncing}
               aria-label="Sincronizar com o Letterboxd"
@@ -346,9 +346,9 @@ export function AkaneShell() {
           </nav>
 
           {/* Rodapé: voltar ao hub */}
-          <div className="side-foot">
-            <a className="back-makima" href="/" title="Voltar à página principal">
-              <span className="dot" /> Voltar à Makima
+          <div className="ak-side-foot">
+            <a className="ak-back-makima" href="/" title="Voltar à página principal">
+              <span className="ak-dot" /> Voltar à Makima
             </a>
           </div>
         </aside>
@@ -357,9 +357,9 @@ export function AkaneShell() {
         <main className="ak-main">
           {/* Topbar: título da rota + busca pill */}
           <div className="ak-topbar">
-            <span className="topbar-title">{TITLES[view] ?? 'Akane'}</span>
-            <div className="topbar-spacer" />
-            <div className="search">
+            <span className="ak-topbar-title">{TITLES[view] ?? 'Akane'}</span>
+            <div className="ak-topbar-spacer" />
+            <div className="ak-search">
               <Icon name="search" />
               <input
                 value={query}

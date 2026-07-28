@@ -35,32 +35,32 @@ export function FavoriteFilms({ favorites, onSelectMovie, onSave }: FavoriteFilm
 
   return (
     <div className="lb-sec">
-      <div className="lb-sec-head">
-        <span className="t">Filmes favoritos</span>
-        <span className="rule" />
-        <span className="lb-sec-link" onClick={() => setEditing(v => !v)}>{editing ? 'Concluir' : 'Editar'}</span>
+      <div className="ak-lb-sec-head">
+        <span className="ak-t">Filmes favoritos</span>
+        <span className="ak-rule" />
+        <span className="ak-lb-sec-link" onClick={() => setEditing(v => !v)}>{editing ? 'Concluir' : 'Editar'}</span>
       </div>
-      <div className="fav-grid">
+      <div className="ak-fav-grid">
         {favs.map(f => (
-          <div key={f.id} className="fav-slot">
+          <div key={f.id} className="ak-fav-slot">
             {editing
               ? <>
-                  <div className="poster-static">
+                  <div className="ak-poster-static">
                     <Poster title={f.title} posterUrl={f.poster_url} palette={f.poster_palette} />
                   </div>
-                  <button className="fav-remove" title="Remover" onClick={() => removeFav(f.id)}><Icon name="x" /></button>
+                  <button className="ak-fav-remove" title="Remover" onClick={() => removeFav(f.id)}><Icon name="x" /></button>
                 </>
-              : <a className="poster-link" onClick={() => onSelectMovie(f.id)}>
+              : <a className="ak-poster-link" onClick={() => onSelectMovie(f.id)}>
                   <Poster title={f.title} posterUrl={f.poster_url} palette={f.poster_palette} />
                 </a>}
           </div>
         ))}
         {editing && favs.length < 4 && (
-          <button className="fav-add" onClick={() => setPicking(true)}><Icon name="plus" /><span>Adicionar</span></button>
+          <button className="ak-fav-add" onClick={() => setPicking(true)}><Icon name="plus" /><span>Adicionar</span></button>
         )}
         {/* Estado vazio fora do modo edição: convite para escolher */}
         {!editing && favs.length === 0 && (
-          <button className="fav-add" onClick={() => { setEditing(true); setPicking(true) }}>
+          <button className="ak-fav-add" onClick={() => { setEditing(true); setPicking(true) }}>
             <Icon name="plus" /><span>Escolher favoritos</span>
           </button>
         )}

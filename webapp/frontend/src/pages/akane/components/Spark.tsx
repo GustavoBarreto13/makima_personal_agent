@@ -13,9 +13,9 @@ export function Spark({ data }: SparkProps) {
   // max mínimo de 1 evita divisão por zero quando todos os dias são 0
   const max = Math.max(...data, 1)
   return (
-    <div className="stat-spark">
+    <div className="ak-stat-spark">
       {data.map((v, i) => (
-        <i key={i} className={v >= max * 0.7 && v > 0 ? 'hot' : ''}
+        <i key={i} className={v >= max * 0.7 && v > 0 ? 'ak-hot' : ''}
            style={{ height: Math.max(2, (v / max) * 24) + 'px' }} />
       ))}
     </div>

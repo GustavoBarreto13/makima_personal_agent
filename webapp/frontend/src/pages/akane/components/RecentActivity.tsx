@@ -23,18 +23,18 @@ export function RecentActivity({ entries, onSelectMovie, onGoDiary }: RecentActi
   const recent = entries.slice(0, 4)
   return (
     <div className="lb-sec">
-      <div className="lb-sec-head">
-        <span className="t">Diário recente</span>
-        <span className="rule" />
-        <span className="lb-sec-link" onClick={onGoDiary}>Tudo →</span>
+      <div className="ak-lb-sec-head">
+        <span className="ak-t">Diário recente</span>
+        <span className="ak-rule" />
+        <span className="ak-lb-sec-link" onClick={onGoDiary}>Tudo →</span>
       </div>
-      <div className="fav-grid">
+      <div className="ak-fav-grid">
         {recent.map(e => (
-          <div key={e.id} className="act-card" onClick={() => onSelectMovie(e.movie_id)}>
+          <div key={e.id} className="ak-act-card" onClick={() => onSelectMovie(e.movie_id)}>
             <Poster title={e.movie_title ?? ''} posterUrl={e.poster_url} palette={e.poster_palette} />
-            <div className="act-marks">
-              {e.rating ? <Stars value={e.rating} /> : <span className="act-none">—</span>}
-              {e.liked && <Heart filled className="heart-ico" />}
+            <div className="ak-act-marks">
+              {e.rating ? <Stars value={e.rating} /> : <span className="ak-act-none">—</span>}
+              {e.liked && <Heart filled className="ak-heart-ico" />}
               {e.rewatch && <Icon name="rewatch" style={{ width: 13, height: 13, color: 'var(--rose)' }} />}
               {e.review && <Icon name="listas" style={{ width: 13, height: 13, color: 'var(--ink-4)' }} />}
             </div>
