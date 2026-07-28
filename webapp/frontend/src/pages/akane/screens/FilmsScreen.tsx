@@ -1,59 +1,54 @@
-// Tela de catálogo (grid de pôsteres) com chips de filtro e ordenação.
-// Exibe todos os filmes (watched + watchlist) com filtros opcionais.
+// Tela Filmes (a LISTA do acervo) — reescrita hi-fi conforme o handoff §7.2:
+// section-head (título + contagem do acervo), cat-toolbar com chips de filtro
+// (Todos / Vistos / Curtidos / Quero ver / Com nota) + contagem de resultados,
+// e poster-grid com metadados ABAIXO de cada pôster (título serif, diretor·ano,
+// estrelas+coração ou "quero ver"). Também é a tela de etiqueta (prop tag).
 
 import { useState, useEffect } from 'react'
 import { akaneApi } from '../akaneApi'
 import type { Movie, Tweaks } from '../types'
+import { Icon } from '../ui/Icon'
+import { Heart } from '../ui/Heart'
+import { Poster } from '../components/Poster'
 import { Stars } from '../components/Stars'
 import { matches } from '../searchUtils'
-// Poster não é usado nesta tela — FilmsScreen renderiza pôsteres inline
-// para controle total do onError (troca TMDB → tipográfico sem rerenders extra)
 
-// Chips de filtro disponíveis (chip → valor do param 'filter' na API)
+// Chips de filtro (rótulos do handoff → valores do param 'filter' da API)
 const FILTER_CHIPS: Array<{ label: string; value: string }> = [
-  { label: 'Todos',       value: 'all' },
-  { label: 'Assistidos',  value: 'watched' },
-  { label: 'Curtidos',    value: 'liked' },
-  { label: 'Watchlist',   value: 'watchlist' },
-  { label: 'Avaliados',   value: 'rated' },
+  { label: 'Todos',     value: 'all' },
+  { label: 'Vistos',    value: 'watched' },
+  { label: 'Curtidos',  value: 'liked' },
+  { label: 'Quero ver', value: 'watchlist' },
+  { label: 'Com nota',  value: 'rated' },
 ]
 
-// Opções de ordenação
-const SORT_OPTIONS: Array<{ label: string; value: string }> = [
-  { label: 'Recentes',   value: 'recent' },
-  { label: 'Nota',       value: 'rating' },
-  { label: 'Título',     value: 'title' },
-  { label: 'Ano',        value: 'year' },
-  { label: 'Direção',    value: 'director' },
-  { label: 'Duração',    value: 'runtime' },
-]
+// Rótulo humano de cada ordenação (para o "· por X" da contagem)
+const SORT_LABELS: Record<string, string> = {
+  recent: 'recentes', rating: 'nota', title: 'título',
+  director: 'diretor', year: 'ano', runtime: 'duração',
+}
 
 interface FilmsScreenProps {
   tweaks: Tweaks
-  /** Callback ao clicar em um filme para abrir o detalhe. */
+  /** Abre o detalhe de um filme. */
   onSelectMovie: (id: string) => void
   /** Etiqueta pré-selecionada (vinda da tela de etiquetas). */
   initialTag?: string | null
-  /** Query da busca contextual da topbar (spec busca Akane) — filtra client-side. */
+  /** Query da busca contextual da topbar — filtra client-side. */
   query: string
 }
 
-/**
- * Grid principal do catálogo com filtros e ordenação.
- */
+/** Grid principal do catálogo com filtros, ordenação (tweak) e modo etiqueta. */
 export function FilmsScreen({ tweaks, onSelectMovie, initialTag, query }: FilmsScreenProps) {
-  // Estado dos filmes carregados
   const [movies, setMovies] = useState<Movie[]>([])
   const [loading, setLoading] = useState(true)
-
   // Chip de filtro ativo ('all' = sem filtro)
   const [filter, setFilter] = useState('all')
-
-  // Ordenação ativa (vem dos tweaks do usuário)
-  const [sort, setSort] = useState(tweaks.sort)
-
-  // Etiqueta ativa (filtro por tag via URL interna)
+  // Etiqueta ativa (modo "#tag": esconde a toolbar e mostra o header próprio)
   const [activeTag, setActiveTag] = useState<string | null>(initialTag ?? null)
+
+  // A ordenação vem do tweak (painel de tweaks), como no handoff
+  const sort = tweaks.sort
 
   // Busca os filmes sempre que filtro/sort/tag mudam
   useEffect(() => {
@@ -68,186 +63,93 @@ export function FilmsScreen({ tweaks, onSelectMovie, initialTag, query }: FilmsS
       .finally(() => setLoading(false))
   }, [filter, sort, activeTag])
 
-  // Filtro de busca client-side, cumulativo com chip/tag/sort já aplicados no fetch
-  // (busca por "nolan" + chip "Curtidos" ativo dá só os Nolan curtidos)
-  const filteredMovies = movies.filter(m =>
+  // Busca client-side cumulativa com o filtro/tag já aplicados no fetch
+  const list = movies.filter(m =>
     matches(query, m.title, m.director, m.genres, m.year, m.tags)
   )
 
-  return (
-    <div>
-      {/* ── Barra de controles: chips + sort ─────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
-        {/* Chips de filtro */}
-        <div className="ak-chips" style={{ marginBottom: 0, flex: 1 }}>
-          {FILTER_CHIPS.map(chip => (
-            <button
-              key={chip.value}
-              className={`ak-chip${filter === chip.value ? ' active' : ''}`}
-              onClick={() => { setFilter(chip.value); setActiveTag(null) }}
-            >
-              {chip.label}
-            </button>
-          ))}
-          {/* Chip de etiqueta ativa (quando vindo da tela de etiquetas) */}
-          {activeTag && (
-            <button
-              className="ak-chip active"
-              onClick={() => setActiveTag(null)}
-              title="Remover filtro de etiqueta"
-            >
-              #{activeTag} ✕
-            </button>
-          )}
-        </div>
+  const watchedCount = movies.filter(m => m.status === 'watched').length
 
-        {/* Seletor de ordenação */}
-        <select
-          value={sort}
-          onChange={e => setSort(e.target.value as typeof sort)}
-          className="ak-input"
-          style={{ width: 'auto', fontSize: 12, padding: '5px 10px' }}
-          aria-label="Ordenar por"
-        >
-          {SORT_OPTIONS.map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
+  return (
+    <div className="page">
+      {/* ── Cabeçalho da seção ── */}
+      <div className="section-head" style={{ marginTop: 32, marginBottom: 0 }}>
+        <h2 className="section-title" style={{ fontSize: 30 }}>
+          {activeTag
+            ? <>Etiqueta <span style={{ color: 'var(--rose-deep)' }}>#{activeTag}</span></>
+            : 'Filmes'}
+        </h2>
+        <span className="section-sub">
+          {activeTag
+            ? `${list.length} ${list.length === 1 ? 'filme' : 'filmes'}`
+            : `${movies.length} no acervo · ${watchedCount} vistos`}
+        </span>
       </div>
 
-      {/* ── Grid de pôsteres ─────────────────────────────────────────────── */}
-      {loading ? (
-        // Estado de carregamento: spinner centralizado
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-          <div style={{
-            width: 32, height: 32,
-            border: '2px solid var(--line)',
-            borderTopColor: 'var(--rose)',
-            borderRadius: '50%',
-            animation: 'spin 0.8s linear infinite',
-          }} />
-        </div>
-      ) : filteredMovies.length === 0 && query.trim() ? (
-        // Estado vazio por busca sem resultado — distinto do catálogo genuinamente vazio
-        <div className="ak-empty">
-          <span className="ak-empty-icon">🔍</span>
-          <p className="ak-empty-title">Nada encontrado para «{query}»</p>
-          <p className="ak-empty-sub">Tente outro título, direção ou gênero.</p>
-        </div>
-      ) : movies.length === 0 ? (
-        // Estado vazio
-        <div className="ak-empty">
-          <span className="ak-empty-icon">🎬</span>
-          <p className="ak-empty-title">Nenhum filme aqui</p>
-          <p className="ak-empty-sub">
-            {filter === 'watchlist'
-              ? 'Adicione filmes à sua lista de desejos!'
-              : filter === 'liked'
-              ? 'Curta um filme para ele aparecer aqui.'
-              : 'Comece adicionando um filme ao seu catálogo.'}
-          </p>
-        </div>
-      ) : (
-        // Grid com pôsteres
-        <div className="ak-grid">
-          {filteredMovies.map(movie => (
-            <FilmCard
-              key={movie.id}
-              movie={movie}
-              onClick={() => onSelectMovie(movie.id)}
-            />
-          ))}
+      {/* ── Toolbar de filtros (só fora do modo etiqueta) ── */}
+      {!activeTag && (
+        <div className="cat-toolbar">
+          <div className="chips">
+            {FILTER_CHIPS.map(f => (
+              <button key={f.value}
+                      className={'chip' + (filter === f.value ? ' active' : '')}
+                      onClick={() => setFilter(f.value)}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="toolbar-spacer" />
+          <span className="result-count">
+            {list.length} {list.length === 1 ? 'filme' : 'filmes'} · por {SORT_LABELS[sort] ?? sort}
+          </span>
         </div>
       )}
-    </div>
-  )
-}
 
-// ── Card individual do pôster no grid ────────────────────────────────────────
+      {/* ── Modo etiqueta: botão de voltar para a nuvem ── */}
+      {activeTag && (
+        <button className="detail-back" onClick={() => setActiveTag(null)} style={{ paddingTop: 14 }}>
+          <Icon name="arrowLeft" /> Todas as etiquetas
+        </button>
+      )}
 
-interface FilmCardProps {
-  movie: Movie
-  onClick: () => void
-}
-
-/**
- * Card de pôster com overlay hover (título + ano + nota + coração).
- */
-function FilmCard({ movie, onClick }: FilmCardProps) {
-  return (
-    // Container com aspecto 2:3 e overlay ao hover
-    <div
-      className="ak-poster-card"
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={e => { if (e.key === 'Enter') onClick() }}
-      aria-label={`${movie.title}${movie.year ? ` (${movie.year})` : ''}`}
-      title={`${movie.title}${movie.year ? ` (${movie.year})` : ''}`}
-    >
-      {/* Pôster (imagem TMDB ou tipográfico) */}
-      {movie.poster_url ? (
-        <img
-          src={movie.poster_url}
-          alt={`Pôster de ${movie.title}`}
-          loading="lazy"
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-          onError={e => {
-            // Se a imagem falhar, esconde e mostra o pôster tipográfico
-            const parent = (e.target as HTMLImageElement).parentElement
-            if (parent) {
-              ;(e.target as HTMLImageElement).style.display = 'none'
-              const typo = parent.querySelector('.ak-typo-poster') as HTMLElement
-              if (typo) typo.style.display = 'flex'
-            }
-          }}
-        />
-      ) : null}
-
-      {/* Pôster tipográfico (sempre presente no DOM; oculto se poster_url existir) */}
-      <div
-        className="ak-typo-poster"
-        data-palette={movie.poster_palette}
-        style={{ display: movie.poster_url ? 'none' : 'flex' }}
-      >
-        <p className="ak-typo-title">{movie.title}</p>
-        {movie.year && (
-          <p style={{
-            fontFamily: 'var(--mono)', fontSize: 11,
-            color: 'var(--t, oklch(0.9 0.01 330))', opacity: 0.6, marginTop: 4,
-            position: 'relative', zIndex: 1,
-          }}>{movie.year}</p>
-        )}
-      </div>
-
-      {/* Overlay com metadados (visível no hover via CSS) */}
-      <div className="ak-poster-overlay">
-        {/* Título em itálico serif */}
-        <p className="ak-poster-title">{movie.title}</p>
-
-        {/* Linha de metadados: ano + nota + coração */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {movie.year && (
-            <span className="ak-poster-year">{movie.year}</span>
+      {/* ── Grade de pôsteres ── */}
+      {loading ? (
+        <p className="empty-state">Carregando filmes…</p>
+      ) : (
+        <>
+          <div className="poster-grid">
+            {list.map(f => (
+              <a key={f.id} className="poster-link" onClick={() => onSelectMovie(f.id)}>
+                <Poster
+                  title={f.title}
+                  posterUrl={f.poster_url}
+                  palette={f.poster_palette}
+                  genre={f.genres[0]}
+                  director={f.director[0]}
+                  year={f.year}
+                  status={f.status}
+                  liked={f.liked}
+                  badge
+                />
+                <div className="poster-meta">
+                  <div className="pm-title">{f.title}</div>
+                  <div className="pm-sub">{[f.director[0], f.year].filter(Boolean).join(' · ')}</div>
+                  <div className="pm-row">
+                    {f.rating
+                      ? <><Stars value={f.rating} />{f.liked && <Heart filled className="heart-ico" />}</>
+                      : f.status === 'watchlist'
+                        ? <span className="result-count" style={{ color: 'var(--rose-deep)' }}>quero ver</span>
+                        : <span className="result-count">sem nota</span>}
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+          {list.length === 0 && (
+            <p className="empty-state">Nada encontrado{query ? ` para "${query}"` : ''}.</p>
           )}
-          {movie.rating !== null && (
-            <Stars rating={movie.rating} size={10} />
-          )}
-          {movie.liked && (
-            <span style={{ color: 'var(--heart)', fontSize: 10 }}>♥</span>
-          )}
-          {movie.status === 'watchlist' && (
-            // Indicador de watchlist (não assistido)
-            <span style={{
-              fontFamily: 'var(--mono)', fontSize: 9,
-              color: 'var(--rose)', background: 'var(--rose-tint)',
-              padding: '1px 4px', borderRadius: 99,
-            }}>
-              + Lista
-            </span>
-          )}
-        </div>
-      </div>
+        </>
+      )}
     </div>
   )
 }

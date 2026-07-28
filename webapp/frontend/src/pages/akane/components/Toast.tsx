@@ -1,16 +1,20 @@
-// Toast de feedback rápido — aparece por 2.5s e desaparece.
-// Uso: mostrar confirmação de ações (ex.: "Sessão logada!", "Adicionado à watchlist").
+// Toast de confirmação flutuante — porte do Toast do design handoff
+// (akane/logmodal.jsx): pill escura com ícone de check, some sozinha
+// (o timer de 2.5s vive no AkaneShell, que controla a mensagem).
+
+import { Icon } from '../ui/Icon'
 
 interface ToastProps {
+  /** Texto da confirmação (ex.: "Filme logado no diário"). */
   message: string
 }
 
-/** Exibe uma mensagem de feedback no canto inferior central do Shell. */
+/** Exibir a confirmação flutuante na base da tela. */
 export function Toast({ message }: ToastProps) {
   return (
-    // .ak-toast tem position:fixed, bottom e animação definidos em akane.css
-    <div className="ak-toast" role="status" aria-live="polite">
-      {message}
+    // .toast tem position:fixed, animação toast-in e o visual pill no akane.css
+    <div className="toast" role="status" aria-live="polite">
+      <Icon name="check" /> {message}
     </div>
   )
 }

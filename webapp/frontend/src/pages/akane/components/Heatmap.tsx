@@ -89,7 +89,11 @@ export function Heatmap({ data }: HeatmapProps) {
 
           return (
             <div className="heat-month" key={g.m}>
-              <div className="hm-name">{MONTH_NAMES[g.m]}</div>
+              {/* Cabeçalho do mês: nome + soma de sessões (padrão hm-head do handoff) */}
+              <div className="hm-head">
+                <span className="hm-name">{MONTH_NAMES[g.m]}</span>
+                <span className="hm-sum">{g.days.reduce((a, d) => a + d.count, 0)}</span>
+              </div>
               <div className="hm-cells">
                 {cells.map((d, i) => (
                   <div

@@ -192,14 +192,16 @@ export interface Tweaks {
   theme: 'dark' | 'light'        // Tema
   accent: 'teal' | '' | 'carmim' | 'ambar'  // Acento
   density: 'large' | 'medium' | 'compact'   // Densidade do grid
+  postyle: 'tipografico' | 'minimal'        // Estilo do pôster tipográfico (handoff §9)
   sort: 'recent' | 'rating' | 'title' | 'director' | 'year' | 'runtime'  // Ordenação padrão
 }
 
-/** Valores padrão dos tweaks (teal por padrão, escuro, médio). */
+/** Valores padrão de fábrica dos tweaks (iguais aos do design handoff §9). */
 export const TWEAK_DEFAULTS: Tweaks = {
   theme:   'dark',
-  accent:  'teal',   // padrão de fábrica definido no design guide
-  density: 'medium',
+  accent:  'teal',          // padrão de fábrica definido no design guide
+  density: 'compact',       // handoff: Compacto é o default de fábrica
+  postyle: 'tipografico',
   sort:    'recent',
 }
 

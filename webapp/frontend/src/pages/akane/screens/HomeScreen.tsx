@@ -1,591 +1,210 @@
-// Tela inicial da Akane — resumo da cinemateca pessoal.
-// Exibe: favoritos editáveis, atividade recente, histograma de notas e watchlist.
-// Todos os dados vêm de GET /api/movies/home numa única requisição (anti N+1).
+// Tela Início da Akane — reescrita hi-fi conforme o design handoff §7.1:
+//   1. Hero com eyebrow, saudação, última sessão, citação, CTAs e retrato.
+//   2. Dois stat cards: "Filmes · ano" (com meta) e "Sessões · 7 dias" (spark).
+//   3. home-split: FavoriteFilms + RecentActivity | LbPanel (Diário + Notas).
+//   4. Watchlist em destaque (carrossel horizontal).
+// Dados: GET /home + GET /heatmap + GET /diary em paralelo (erros isolados —
+// o hero e os cards funcionam mesmo se o heatmap ou o diário falharem).
 
 import { useState, useEffect, useCallback } from 'react'
 import { akaneApi } from '../akaneApi'
-import type { HomeData, FavoriteFilm, DiaryEntry, Movie, Tweaks } from '../types'
+import type { AkaneView, DiaryEntry, HeatmapDay, HomeData, Tweaks } from '../types'
+import { Icon } from '../ui/Icon'
 import { Poster } from '../components/Poster'
-import { Stars } from '../components/Stars'
-import { matches } from '../searchUtils'
+import { Spark } from '../components/Spark'
+import { FavoriteFilms } from '../components/FavoriteFilms'
+import { RecentActivity } from '../components/RecentActivity'
+import { LbPanel } from '../components/LbPanel'
+import { saudacao, todayLocalISO, fmtRuntime } from '../dateUtils'
 
-// ── Props ────────────────────────────────────────────────────────────────────
+// Citação da Akane no hero (texto do design handoff)
+const AKANE_QUOTE =
+  '"Para interpretar alguém, primeiro é preciso assistir o mundo inteiro com atenção. O cinema é onde eu treino o olhar."'
+
+// Meta anual de filmes exibida no primeiro stat card (valor do handoff)
+const META_ANUAL = 60
 
 interface HomeScreenProps {
-  tweaks: Tweaks                          // Tweaks de aparência (reservado — FilmsScreen usa, HomeScreen ainda não)
-  onSelectMovie: (id: string) => void     // Abre o detalhe de um filme
-  onLog: (movieId?: string, title?: string) => void  // Abre o modal de log de sessão
-  onToast: (msg: string) => void          // Exibe feedback via toast
+  tweaks: Tweaks                                       // Reservado (padrão das telas)
+  onSelectMovie: (id: string) => void                  // Abre o detalhe de um filme
+  onLog: (movieId?: string, title?: string) => void    // Log pré-preenchido
+  onToast: (msg: string) => void                       // Feedback via toast
+  onOpenLog: () => void                                // CTA "Logar filme" do hero
+  onGoToView: (view: AkaneView) => void                // Navegação (diário/watchlist)
 }
 
-// ── Componente principal ─────────────────────────────────────────────────────
-
-export function HomeScreen({ tweaks: _tweaks, onSelectMovie, onLog: _onLog, onToast }: HomeScreenProps) {
-  // _tweaks: reservado para futuro uso (densidade/ordenação na tela Início)
-  // _onLog: reservado — a RecentActivity pode receber o modal de re-log futuramente
-  // Estado principal: dados do Início
+/** Tela Início — perfil Letterboxd da cinemateca. */
+export function HomeScreen({ tweaks: _tweaks, onSelectMovie, onLog: _onLog, onToast, onOpenLog, onGoToView }: HomeScreenProps) {
   const [home, setHome] = useState<HomeData | null>(null)
+  const [heatmap, setHeatmap] = useState<HeatmapDay[]>([])
+  const [diary, setDiary] = useState<DiaryEntry[]>([])
   const [loading, setLoading] = useState(true)
-  // get_home() é vazio-seguro (SC-006) — sempre retorna um HomeData, mesmo para um
-  // usuário sem nenhum filme. Por isso `home === null` só acontece em falha de
-  // rede/servidor, nunca em "genuinamente sem dados" (spec 051, FR-009).
+  // /home é vazio-seguro (SC-006): null aqui significa falha de rede/servidor
   const [loadError, setLoadError] = useState(false)
 
-  // Estado de edição de favoritos
-  const [editingFavs, setEditingFavs] = useState(false)
-
-  // Busca os dados do Início no mount
-  const loadHome = useCallback(() => {
+  const load = useCallback(() => {
     setLoading(true)
     setLoadError(false)
-    akaneApi.home()
-      .then(data => setHome(data))
+    const year = new Date().getFullYear()
+    // O /home é o dado essencial; heatmap e diário só enriquecem (erro → vazio)
+    Promise.all([
+      akaneApi.home(),
+      akaneApi.heatmap(year).catch(() => ({ days: [] as HeatmapDay[] })),
+      akaneApi.diary(30).catch(() => ({ entries: [] as DiaryEntry[] })),
+    ])
+      .then(([h, hm, d]) => {
+        setHome(h)
+        setHeatmap(hm.days ?? [])
+        setDiary(d.entries ?? [])
+      })
       .catch(() => setLoadError(true))
       .finally(() => setLoading(false))
   }, [])
 
-  useEffect(() => { loadHome() }, [loadHome])
+  useEffect(() => { load() }, [load])
 
-  // ── Loading, erro e vazio ────────────────────────────────────────────────────
+  // ── Loading / erro ────────────────────────────────────────────────────────
 
   if (loading) {
-    return (
-      <div className="ak-empty">
-        <span className="ak-empty-icon">◈</span>
-        <p className="ak-empty-title">Carregando cinemateca…</p>
-      </div>
-    )
+    return <p className="empty-state">Carregando cinemateca…</p>
   }
 
   if (loadError || !home) {
     return (
-      <div className="ak-empty">
-        <span className="ak-empty-icon">⚠</span>
-        <p className="ak-empty-title">Não foi possível carregar o Início</p>
-        <p className="ak-empty-sub">Verifique sua conexão e tente novamente.</p>
-        <button className="ak-btn" onClick={loadHome} style={{ marginTop: 10 }}>
-          Tentar novamente
-        </button>
+      <div className="page">
+        <p className="empty-state">
+          Não foi possível carregar o Início.{' '}
+          <button className="btn btn-ghost" onClick={load} style={{ marginLeft: 8 }}>Tentar novamente</button>
+        </p>
       </div>
     )
   }
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+  // ── Derivados para o hero e os stat cards ─────────────────────────────────
 
-      {/* ── SEÇÃO: FAVORITOS ─────────────────────────────────────────────── */}
-      {/* Vitrine de até 4 filmes favoritos (persistem no servidor) */}
-      <FavoritesSection
-        favorites={home.favorites}
-        onSelectMovie={onSelectMovie}
-        onEdit={() => setEditingFavs(true)}
-      />
-
-      {/* Picker de favoritos (sobrepõe a tela quando editingFavs=true) */}
-      {editingFavs && (
-        <FavPicker
-          currentIds={home.favorites.map(f => f.id)}
-          onSave={async (ids) => {
-            try {
-              await akaneApi.setFavorites(ids)
-              onToast('Favoritos atualizados ✓')
-              setEditingFavs(false)
-              loadHome()  // Recarrega para refletir novos favoritos
-            } catch {
-              onToast('Erro ao salvar favoritos')
-            }
-          }}
-          onCancel={() => setEditingFavs(false)}
-        />
-      )}
-
-      {/* ── SEÇÃO: ESTATÍSTICAS RÁPIDAS ──────────────────────────────────── */}
-      {/* HomeData.counts tem {films_watched, diary, watchlist}; sessions_7d = sessões da semana */}
-      <QuickStats
-        filmsWatched={home.counts.films_watched}
-        diarySessions={home.counts.diary}
-        watchlistCount={home.counts.watchlist}
-        sessions7d={home.sessions_7d}
-      />
-
-      {/* ── SEÇÃO: HISTOGRAMA DE NOTAS ────────────────────────────────────── */}
-      {/* Exibe a distribuição de notas do catálogo (LbPanel style) */}
-      {home.rating_histogram && Object.keys(home.rating_histogram).length > 0 && (
-        <RatingHistogram histogram={home.rating_histogram} />
-      )}
-
-      {/* ── SEÇÃO: ATIVIDADE RECENTE ─────────────────────────────────────── */}
-      {/* recent_activity é DiaryEntry & { liked: boolean }[] — NÃO Movie[] */}
-      {home.recent_activity.length > 0 && (
-        <RecentActivity
-          entries={home.recent_activity}
-          onSelectMovie={onSelectMovie}
-        />
-      )}
-
-      {/* ── SEÇÃO: PRÓXIMA SESSÃO (watchlist) ────────────────────────────── */}
-      {/* home.counts.watchlist é a contagem correta — não existe home.watchlist_count */}
-      {home.counts.watchlist > 0 && (
-        <NextSessionHint count={home.counts.watchlist} />
-      )}
-
-    </div>
-  )
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SUB-COMPONENTES
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ── Favoritos ───────────────────────────────────────────────────────────────
-
-interface FavoritesSectionProps {
-  favorites: FavoriteFilm[]
-  onSelectMovie: (id: string) => void
-  onEdit: () => void
-}
-
-function FavoritesSection({ favorites, onSelectMovie, onEdit }: FavoritesSectionProps) {
-  return (
-    <section>
-      {/* Cabeçalho da seção */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 2 }}>
-          Favoritos
-        </span>
-        <button
-          className="ak-btn"
-          onClick={onEdit}
-          style={{ fontSize: 11, padding: '3px 10px' }}
-        >
-          Editar
-        </button>
-      </div>
-
-      {/* Grade de 4 pôsteres de favoritos */}
-      {favorites.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-          {favorites.map(fav => (
-            <button
-              key={fav.id}
-              onClick={() => onSelectMovie(fav.id)}
-              style={{ all: 'unset', cursor: 'pointer', borderRadius: 8, overflow: 'hidden' }}
-              title={fav.title}
-            >
-              {/* Pôster: 100% de largura, proporção 2:3.
-                  FavoriteFilm não tem campo "year" — omitimos o prop year do Poster. */}
-              <div style={{ aspectRatio: '2/3', position: 'relative' }}>
-                <Poster
-                  title={fav.title}
-                  posterUrl={fav.poster_url}
-                  palette={fav.poster_palette}
-                  className="ak-poster-card"
-                />
-                {/* Overlay com coração (fixo, pois estes são favoritos) */}
-                <div
-                  style={{
-                    position: 'absolute', bottom: 6, right: 6,
-                    fontSize: 12, color: 'var(--heart)',
-                    textShadow: '0 1px 4px rgba(0,0,0,0.8)',
-                  }}
-                >
-                  ❤️
-                </div>
-              </div>
-            </button>
-          ))}
-          {/* Espaços vazios para completar os 4 slots */}
-          {Array.from({ length: Math.max(0, 4 - favorites.length) }).map((_, i) => (
-            <div
-              key={`empty-${i}`}
-              style={{
-                aspectRatio: '2/3',
-                borderRadius: 8,
-                background: 'var(--paper-2)',
-                border: '1px dashed var(--line)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <span style={{ color: 'var(--ink-4)', fontSize: 20 }}>+</span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div
-          style={{
-            padding: '24px 16px',
-            borderRadius: 12,
-            background: 'var(--paper-2)',
-            border: '1px dashed var(--line)',
-            textAlign: 'center',
-          }}
-        >
-          <p style={{ color: 'var(--ink-3)', fontSize: 13, margin: 0 }}>
-            Nenhum favorito ainda — clique em <b>Editar</b> para escolher até 4 filmes.
-          </p>
-        </div>
-      )}
-    </section>
-  )
-}
-
-
-// ── FavPicker — seletor de favoritos ────────────────────────────────────────
-// Busca os filmes assistidos sozinho na montagem (não depende de prop Movie[]).
-
-interface FavPickerProps {
-  currentIds: string[]          // IDs já selecionados como favoritos
-  onSave: (ids: string[]) => void
-  onCancel: () => void
-}
-
-function FavPicker({ currentIds, onSave, onCancel }: FavPickerProps) {
-  // IDs selecionados como favoritos (máximo 4)
-  const [selected, setSelected] = useState<string[]>(currentIds)
-
-  // Filmes assistidos carregados da API — começa vazio, busca ao montar
-  const [watchedMovies, setWatchedMovies] = useState<Movie[]>([])
-  const [loadingMovies, setLoadingMovies] = useState(true)
-
-  // Busca local dentro do modal — filtra a grade de filmes assistidos
-  // (com ~900 filmes assistidos, sem isso é inviável achar um título específico)
-  const [query, setQuery] = useState('')
-
-  // Busca somente filmes com status='watched' para o picker
-  useEffect(() => {
-    akaneApi.list({ status: 'watched' })
-      .then(r => setWatchedMovies(r.movies))
-      .catch(() => {})
-      .finally(() => setLoadingMovies(false))
-  }, [])
-
-  function toggleFav(id: string) {
-    setSelected(prev => {
-      if (prev.includes(id)) {
-        // Remove o filme dos favoritos
-        return prev.filter(x => x !== id)
-      }
-      if (prev.length >= 4) {
-        // Já tem 4 favoritos — não adiciona
-        return prev
-      }
-      return [...prev, id]
-    })
+  // Sparkline: sessões dos últimos 21 dias (densifica o heatmap esparso)
+  const countByDate = new Map(heatmap.map(d => [d.date, d.count]))
+  const spark: number[] = []
+  const cursor = new Date(todayLocalISO() + 'T00:00:00')
+  cursor.setDate(cursor.getDate() - 20)
+  for (let i = 0; i < 21; i++) {
+    const y = cursor.getFullYear()
+    const m = String(cursor.getMonth() + 1).padStart(2, '0')
+    const dd = String(cursor.getDate()).padStart(2, '0')
+    spark.push(countByDate.get(`${y}-${m}-${dd}`) ?? 0)
+    cursor.setDate(cursor.getDate() + 1)
   }
 
-  // Filtro de busca client-side sobre os filmes assistidos
-  const filteredMovies = watchedMovies.filter(m =>
-    matches(query, m.title, m.director, m.genres, m.year)
-  )
+  // Variação percentual vs. semana anterior (regra do handoff)
+  const wk = home.sessions_7d
+  const prevWk = home.sessions_7d_prev
+  const delta = prevWk ? Math.round(((wk - prevWk) / prevWk) * 100) : (wk > 0 ? 100 : 0)
+
+  const year = new Date().getFullYear()
 
   return (
-    // Overlay escuro que cobre a tela inteira
-    <div
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.7)',
-        zIndex: 200,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}
-      onClick={onCancel}  // Fecha ao clicar fora do modal
-    >
-      {/* Modal em si — stopPropagation para não fechar ao clicar dentro */}
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: 'var(--paper)',
-          borderRadius: 16,
-          padding: 24,
-          maxWidth: 560,
-          width: '100%',
-          maxHeight: '80vh',
-          overflow: 'hidden',
-          display: 'flex', flexDirection: 'column', gap: 16,
-        }}
-      >
-        {/* Cabeçalho */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <p style={{ margin: 0, fontFamily: 'var(--serif)', fontSize: 16, color: 'var(--ink)', fontWeight: 600 }}>
-              Escolher favoritos
-            </p>
-            <p style={{ margin: 0, fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>
-              {selected.length}/4 selecionados — clique para (des)selecionar
-            </p>
-          </div>
-          <button className="ak-btn" onClick={onCancel} style={{ fontSize: 12 }}>✕</button>
-        </div>
-
-        {/* Caixa de busca — filtra a grade abaixo por título/direção/gênero */}
-        <input
-          className="ak-input"
-          type="search"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Buscar filme assistido…"
-          aria-label="Buscar filme para favoritar"
-          autoFocus
-        />
-
-        {/* Grade de filmes assistidos (apenas 'watched' pode ser favorito) */}
-        <div style={{ overflowY: 'auto', flex: 1 }}>
-          {loadingMovies ? (
-            <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>
-              Carregando filmes…
-            </p>
-          ) : watchedMovies.length === 0 ? (
-            <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>
-              Nenhum filme assistido ainda.
-            </p>
-          ) : filteredMovies.length === 0 ? (
-            <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>
-              Nada encontrado para «{query}».
-            </p>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 }}>
-              {filteredMovies.map(movie => {
-                const isSel = selected.includes(movie.id)
-                return (
-                  <button
-                    key={movie.id}
-                    onClick={() => toggleFav(movie.id)}
-                    style={{
-                      all: 'unset',
-                      cursor: 'pointer',
-                      borderRadius: 8,
-                      overflow: 'hidden',
-                      position: 'relative',
-                      outline: isSel ? '2px solid var(--rose)' : '2px solid transparent',
-                      transition: 'outline 0.1s',
-                    }}
-                    title={movie.title}
-                  >
-                    <Poster
-                      title={movie.title}
-                      posterUrl={movie.poster_url}
-                      palette={movie.poster_palette}
-                      year={movie.year}
-                    />
-                    {/* Indicador visual de seleção (número de posição) */}
-                    {isSel && (
-                      <div
-                        style={{
-                          position: 'absolute', top: 4, right: 4,
-                          width: 20, height: 20,
-                          background: 'var(--rose)',
-                          borderRadius: '50%',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 12, color: '#fff',
-                          fontWeight: 700,
-                        }}
-                      >
-                        {selected.indexOf(movie.id) + 1}
-                      </div>
-                    )}
-                  </button>
-                )
-              })}
+    <div className="page">
+      {/* ── HERO ── */}
+      <div className="hero">
+        <div className="hero-grain" />
+        <div className="hero-inner">
+          <div className="hero-copy">
+            <div className="hero-eyebrow">Cinemateca de Akane</div>
+            <h1 className="hero-greet">{saudacao()}.</h1>
+            {home.last_session ? (
+              <p className="hero-now">
+                Última sessão · <b>{home.last_session.title}</b>
+                {home.last_session.rating != null && <em> · {home.last_session.rating.toFixed(1)}★</em>}
+              </p>
+            ) : (
+              <p className="hero-now">Nenhuma sessão registrada ainda — <em>o primeiro filme te espera</em>.</p>
+            )}
+            <p className="hero-quote">{AKANE_QUOTE}</p>
+            <div className="hero-cta">
+              <button className="btn btn-primary" onClick={onOpenLog}><Icon name="plus" /> Logar filme</button>
+              <button className="btn btn-ghost" onClick={() => onGoToView('diary')}><Icon name="diario" /> Abrir diário</button>
             </div>
+          </div>
+          <div className="hero-portrait">
+            <div className="halo" />
+            <img src="/akane-hero.png" alt="Akane Kurokawa"
+                 onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+          </div>
+        </div>
+      </div>
+
+      {/* ── STAT CARDS ── */}
+      <div className="stat-row">
+        <div className="stat-card">
+          <div className="stat-label"><Icon name="filmes" style={{ width: 12, height: 12 }} /> Filmes · {year}</div>
+          <div className="stat-value">{home.counts.films_watched}<span className="unit">vistos</span></div>
+          <div className="stat-foot" style={{ marginTop: 14 }}>
+            Meta de {META_ANUAL} — faltam <b>{Math.max(0, META_ANUAL - home.counts.films_watched)}</b>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label"><Icon name="diario" style={{ width: 12, height: 12 }} /> Sessões · 7 dias</div>
+          <div className="stat-value">{wk}</div>
+          <Spark data={spark} />
+          <div className="stat-foot">
+            {delta >= 0 ? <span className="up">↑ {delta}%</span> : <span>↓ {Math.abs(delta)}%</span>} vs. semana anterior
+          </div>
+        </div>
+      </div>
+
+      {/* ── FAVORITOS + DIÁRIO RECENTE | PAINEL ── */}
+      <div className="home-split">
+        <div className="home-main">
+          <FavoriteFilms
+            favorites={home.favorites}
+            onSelectMovie={onSelectMovie}
+            onSave={async (ids) => {
+              try {
+                await akaneApi.setFavorites(ids)
+                onToast('Favoritos atualizados')
+                load()
+              } catch {
+                onToast('Erro ao salvar favoritos')
+              }
+            }}
+          />
+          {home.recent_activity.length > 0 && (
+            <RecentActivity
+              entries={home.recent_activity}
+              onSelectMovie={onSelectMovie}
+              onGoDiary={() => onGoToView('diary')}
+            />
           )}
         </div>
-
-        {/* Botões de ação */}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="ak-btn" onClick={onCancel}>Cancelar</button>
-          <button
-            className="ak-btn-primary"
-            onClick={() => onSave(selected)}
-          >
-            Salvar {selected.length > 0 ? `(${selected.length})` : ''}
-          </button>
-        </div>
+        <LbPanel
+          diary={diary}
+          totalDiary={home.counts.diary}
+          histogram={home.rating_histogram}
+          onSelectMovie={onSelectMovie}
+        />
       </div>
-    </div>
-  )
-}
 
-
-// ── Estatísticas rápidas (4 cards) ──────────────────────────────────────────
-// HomeData expõe counts.{films_watched, diary, watchlist} e sessions_7d.
-// Não há avg_rating nem rewatches no endpoint /home — esses ficam no /stats.
-
-interface QuickStatsProps {
-  filmsWatched: number    // Total de filmes assistidos (status='watched')
-  diarySessions: number   // Total de entradas no diário
-  watchlistCount: number  // Filmes na watchlist
-  sessions7d: number      // Sessões nos últimos 7 dias
-}
-
-function QuickStats({ filmsWatched, diarySessions, watchlistCount, sessions7d }: QuickStatsProps) {
-  const stats = [
-    { icon: '◈', label: 'Filmes',     value: filmsWatched.toString() },
-    { icon: '📽', label: 'Sessões',   value: diarySessions.toString() },
-    { icon: '♦',  label: 'Watchlist', value: watchlistCount.toString() },
-    { icon: '📅', label: 'Esta semana', value: sessions7d.toString() },
-  ]
-
-  return (
-    <section>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-        {stats.map(s => (
-          <div
-            key={s.label}
-            className="ak-stat-card"
-            style={{ textAlign: 'center', padding: '14px 10px' }}
-          >
-            <div style={{ fontSize: 18, marginBottom: 4 }}>{s.icon}</div>
-            <div className="ak-stat-value">{s.value}</div>
-            <div className="ak-stat-label">{s.label}</div>
+      {/* ── WATCHLIST EM DESTAQUE ── */}
+      {home.watchlist_highlight.length > 0 && (
+        <div className="section">
+          <div className="section-head">
+            <h2 className="section-title">Esperando na watchlist</h2>
+            <span className="section-link" onClick={() => onGoToView('watchlist')}>Ver tudo →</span>
           </div>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-
-// ── Histograma de notas ──────────────────────────────────────────────────────
-
-interface RatingHistogramProps {
-  histogram: Record<string, number>
-}
-
-function RatingHistogram({ histogram }: RatingHistogramProps) {
-  // Ordena as notas de 0.5 a 5.0 em passos de 0.5
-  const keys = ['0.5', '1.0', '1.5', '2.0', '2.5', '3.0', '3.5', '4.0', '4.5', '5.0']
-  const values = keys.map(k => histogram[k] ?? 0)
-  const maxVal = Math.max(...values, 1)  // Evita divisão por zero
-
-  return (
-    <section>
-      {/* Título */}
-      <p style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12, margin: '0 0 12px' }}>
-        Distribuição de notas
-      </p>
-
-      <div className="ak-histogram">
-        {keys.map((k, i) => {
-          const val = values[i]
-          const height = (val / maxVal) * 60  // Altura máxima das barras: 60px
-          return (
-            <div key={k} className="ak-histogram-col">
-              {/* Contagem acima da barra (só quando > 0) */}
-              {val > 0 && (
-                <span className="ak-histogram-count">{val}</span>
-              )}
-              {/* Barra com cor fixa --gold (verde Letterboxd, SC-006) */}
-              <div
-                className="ak-histogram-bar"
-                style={{ height: `${Math.max(height, 2)}px` }}
-              />
-              {/* Rótulo da nota abaixo */}
-              <span className="ak-histogram-label">{k}</span>
-            </div>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
-
-
-// ── Atividade recente ────────────────────────────────────────────────────────
-// recent_activity é DiaryEntry & { liked: boolean }[] — NÃO Movie[].
-// DiaryEntry tem: id, movie_id, movie_title, poster_url, poster_palette,
-//                 watched_date, rating, rewatch, review, tags.
-
-interface RecentActivityProps {
-  entries: Array<DiaryEntry & { liked: boolean }>  // Entradas do diário recentes
-  onSelectMovie: (id: string) => void
-  // onLog: reservado — futura ação "Logar novamente" em cada item
-}
-
-function RecentActivity({ entries, onSelectMovie }: RecentActivityProps) {
-  // Exibe no máximo 8 entradas na seção de recentes
-  const recent = entries.slice(0, 8)
-
-  return (
-    <section>
-      <p style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12, margin: '0 0 12px' }}>
-        Assistidos recentemente
-      </p>
-
-      {/* Scroll horizontal de pôsteres miniatura */}
-      <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
-        {recent.map(entry => (
-          <div
-            key={entry.id}
-            style={{ flexShrink: 0, width: 80, cursor: 'pointer' }}
-            onClick={() => onSelectMovie(entry.movie_id)}
-          >
-            {/* Pôster 80×120.
-                DiaryEntry não tem "year" — prop year omitido. */}
-            <div style={{ height: 120, borderRadius: 8, overflow: 'hidden', position: 'relative' }}>
-              <Poster
-                title={entry.movie_title ?? ''}
-                posterUrl={entry.poster_url}
-                palette={entry.poster_palette}
-              />
-              {/* Badge de rewatch — DiaryEntry.rewatch (boolean) */}
-              {entry.rewatch && (
-                <div
-                  style={{
-                    position: 'absolute', bottom: 3, left: 3,
-                    background: 'rgba(0,0,0,0.7)',
-                    color: 'var(--ink-3)',
-                    fontSize: 9,
-                    padding: '1px 4px',
-                    borderRadius: 4,
-                  }}
-                >
-                  🔁
+          <div className="row-scroll">
+            {home.watchlist_highlight.map(f => (
+              <div key={f.id} className="want-card" onClick={() => onSelectMovie(f.id)}>
+                <Poster title={f.title} posterUrl={f.poster_url} palette={f.poster_palette}
+                        director={f.director[0]} year={f.year} status="watchlist" badge />
+                <div className="wc-title">{f.title}</div>
+                <div className="wc-sub">
+                  {[f.director[0], f.runtime ? fmtRuntime(f.runtime) : null].filter(Boolean).join(' · ')}
                 </div>
-              )}
-            </div>
-            {/* Título truncado — movie_title é o campo desnormalizado no DiaryEntry */}
-            <p
-              style={{
-                margin: '4px 0 0',
-                fontSize: 10,
-                color: 'var(--ink-3)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {entry.movie_title}
-            </p>
-            {/* Nota em estrelas (se houver) */}
-            {entry.rating != null && (
-              <Stars rating={entry.rating} size={10} />
-            )}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-
-// ── Dica de próxima sessão (watchlist não vazia) ─────────────────────────────
-
-function NextSessionHint({ count }: { count: number }) {
-  return (
-    <div
-      style={{
-        padding: '12px 16px',
-        borderRadius: 10,
-        background: 'var(--paper-2)',
-        border: '1px solid var(--line)',
-        display: 'flex', alignItems: 'center', gap: 10,
-      }}
-    >
-      <span style={{ fontSize: 16 }}>♦</span>
-      <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-        Você tem <b>{count}</b> {count === 1 ? 'filme' : 'filmes'} na watchlist.
-      </span>
+        </div>
+      )}
     </div>
   )
 }

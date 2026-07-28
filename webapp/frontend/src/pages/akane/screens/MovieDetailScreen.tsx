@@ -1,46 +1,57 @@
-// Tela de detalhe de um filme.
-// Exibe: backdrop hero + pôster | título + meta | nota/coração/status |
-// sinopse | anotações | histórico de sessões | Cofre | Pessoas.
+// Tela de detalhe do filme — reescrita hi-fi conforme o handoff §7.4:
+// duas colunas — esquerda STICKY (pôster grande + ações) e direita com
+// gênero (kicker), título Display, linha de nota (selo "via Letterboxd",
+// status-pill), grade de metadados, "Sua review", "Anotações", Cofre,
+// Etiquetas, Equipe e "Diário deste filme".
+//
+// Todos os extras do app real foram MANTIDOS e reestilizados no padrão:
+// Adicionar a lista, Editar filme, Buscar Dados/Trocar filme (TMDB),
+// Excluir filme, sinopse, edição/exclusão de sessões e CRUD do Cofre.
 
 import { useState, useEffect } from 'react'
 import { akaneApi } from '../akaneApi'
 import type { MovieDetail, VaultType } from '../types'
+import { Icon } from '../ui/Icon'
+import { Heart } from '../ui/Heart'
+import { Poster } from '../components/Poster'
 import { Stars } from '../components/Stars'
+import { RateInput } from '../components/RateInput'
 import { AddToListModal } from '../modals/AddToListModal'
 import { EditMovieModal } from '../modals/EditMovieModal'
 import { TmdbCandidatesModal } from '../modals/TmdbCandidatesModal'
-import { StarRateInput } from '../modals/LogModal'
+import { fmtDate, fmtRuntime } from '../dateUtils'
+
+// Metadados visuais por tipo de item do Cofre (cores/ícones do handoff)
+const VAULT_META: Record<VaultType, { label: string; icon: 'play' | 'doc' | 'quote' | 'star'; bg: string }> = {
+  video:   { label: 'Vídeo',  icon: 'play',  bg: 'oklch(0.30 0.13 24)' },
+  article: { label: 'Artigo', icon: 'doc',   bg: 'oklch(0.34 0.07 235)' },
+  essay:   { label: 'Ensaio', icon: 'quote', bg: 'oklch(0.34 0.075 290)' },
+  review:  { label: 'Review', icon: 'star',  bg: 'oklch(0.40 0.085 78)' },
+}
 
 interface MovieDetailScreenProps {
   movieId: string
-  /** Callback para voltar ao catálogo/diário. */
+  /** Volta ao catálogo. */
   onBack: () => void
-  /** Callback para abrir o LogModal pré-preenchido com este filme. */
+  /** Abre o LogModal pré-preenchido com este filme. */
   onLog: (movieId: string, title: string) => void
-  /** Callback para exibir um toast. */
+  /** Exibe um toast. */
   onToast: (msg: string) => void
 }
 
-/**
- * Detalhe completo de um filme: backdrop hero + dados + sessões + cofre + pessoas.
- */
+/** Detalhe completo do filme em duas colunas (handoff §7.4). */
 export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDetailScreenProps) {
   const [data, setData] = useState<MovieDetail | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Modal "Adicionar a lista" (US1)
+  // Modais e estados das ações extras (funcionalidades do app real)
   const [showAddToList, setShowAddToList] = useState(false)
-
-  // Confirmação de exclusão do filme (US5) — duas etapas, mesmo padrão de ListDetailView
+  const [showEditMovie, setShowEditMovie] = useState(false)
+  const [showTmdbCandidates, setShowTmdbCandidates] = useState(false)
+  const [refreshingMetadata, setRefreshingMetadata] = useState(false)
   const [confirmDeleteMovie, setConfirmDeleteMovie] = useState(false)
   const [deletingMovie, setDeletingMovie] = useState(false)
-
-  // "Buscar Dados" / trocar filme (spec 050, US4)
-  const [refreshingMetadata, setRefreshingMetadata] = useState(false)
-  const [showTmdbCandidates, setShowTmdbCandidates] = useState(false)
-
-  // "Editar filme" (spec 050, US5)
-  const [showEditMovie, setShowEditMovie] = useState(false)
+  const [busyToggle, setBusyToggle] = useState(false)
 
   // Busca o detalhe na montagem (ou ao trocar movieId)
   useEffect(() => {
@@ -52,33 +63,61 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
   }, [movieId])
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
-        <div style={{
-          width: 36, height: 36,
-          border: '2px solid var(--line)',
-          borderTopColor: 'var(--rose)',
-          borderRadius: '50%',
-          animation: 'spin 0.8s linear infinite',
-        }} />
-      </div>
-    )
+    return <p className="empty-state">Carregando filme…</p>
   }
 
   if (!data) {
     return (
-      <div className="ak-empty">
-        <p className="ak-empty-title">Filme não encontrado</p>
-        <button className="ak-btn" onClick={onBack} style={{ marginTop: 12 }}>
-          ← Voltar
+      <div className="page">
+        <button className="detail-back" onClick={onBack} style={{ paddingTop: 20 }}>
+          <Icon name="arrowLeft" /> Filmes
         </button>
+        <p className="empty-state">Filme não encontrado.</p>
       </div>
     )
   }
 
   const { movie, people, vault, diary } = data
+  const seen = movie.status === 'watched'
 
-  // Rebusca metadados no TMDB — usa o tmdb_id já salvo (ou busca por título+ano)
+  // "Sua review" = a resenha da sessão mais recente que tem texto
+  const latestReview = diary.find(e => e.review)?.review ?? null
+
+  // Etiquetas que são pessoas (batem com movie_people.is_person_tag)
+  const personTagNames = new Set(people.filter(p => p.is_person_tag).map(p => p.name))
+
+  // ── Ações ────────────────────────────────────────────────────────────────
+
+  const toggleLike = async () => {
+    if (busyToggle) return
+    setBusyToggle(true)
+    try {
+      await akaneApi.like(movie.id, !movie.liked)
+      setData(d => d ? { ...d, movie: { ...d.movie, liked: !movie.liked } } : d)
+      onToast(movie.liked ? 'Coração removido.' : 'Curtido!')
+    } catch {
+      onToast('Erro ao atualizar.')
+    } finally {
+      setBusyToggle(false)
+    }
+  }
+
+  const toggleWant = async () => {
+    if (busyToggle) return
+    setBusyToggle(true)
+    const next = seen ? 'watchlist' : 'watched'
+    try {
+      await akaneApi.updateStatus(movie.id, next)
+      setData(d => d ? { ...d, movie: { ...d.movie, status: next } } : d)
+      onToast(next === 'watched' ? 'Marcado como visto.' : 'Movido para a watchlist.')
+    } catch {
+      onToast('Erro ao atualizar.')
+    } finally {
+      setBusyToggle(false)
+    }
+  }
+
+  // Rebusca metadados no TMDB (usa o tmdb_id salvo ou o candidato escolhido)
   const refreshMetadata = async (tmdbId?: number) => {
     setRefreshingMetadata(true)
     try {
@@ -94,168 +133,203 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
   }
 
   return (
-    <div>
-      {/* ── Botão voltar ─────────────────────────────────────────────── */}
-      <button
-        className="ak-btn"
-        onClick={onBack}
-        style={{ marginBottom: 16, fontSize: 12 }}
-      >
-        ← Voltar
-      </button>
+    <div className="page">
+      <button className="detail-back" onClick={onBack}><Icon name="arrowLeft" /> Filmes</button>
 
-      {/* ── Hero com backdrop ─────────────────────────────────────────── */}
-      <div className="ak-hero" style={{ borderRadius: 'var(--r-lg)', overflow: 'hidden', marginBottom: 24 }}>
-        {movie.backdrop_url ? (
-          <img
-            src={movie.backdrop_url}
-            alt={`Backdrop de ${movie.title}`}
-            className="ak-hero-img"
+      <div className="detail-hero">
+        {/* ══ COLUNA ESQUERDA (sticky): pôster + ações ══ */}
+        <div className="detail-poster-wrap">
+          <Poster
+            title={movie.title}
+            posterUrl={movie.poster_url}
+            palette={movie.poster_palette}
+            genre={movie.genres[0]}
+            director={movie.director[0]}
+            year={movie.year}
           />
-        ) : (
-          // Fallback: fundo sólido com a cor de paleta do pôster tipográfico
-          <div
-            style={{ width: '100%', height: '100%', background: 'var(--mist)' }}
-          />
-        )}
-        {/* Gradiente de baixo para cima para o conteúdo se sobrepor ao backdrop */}
-        <div className="ak-hero-gradient" />
+          <div className="detail-actions">
+            <button className="btn btn-primary" style={{ justifyContent: 'center' }}
+                    onClick={() => onLog(movie.id, movie.title)}>
+              <Icon name="plus" /> Logar filme
+            </button>
+            <div className="action-row">
+              <button className={'icon-toggle like' + (movie.liked ? ' on' : '')} onClick={toggleLike}>
+                <Heart filled={movie.liked} /> {movie.liked ? 'Curtido' : 'Curtir'}
+              </button>
+              <button className={'icon-toggle want' + (!seen ? ' on' : '')} onClick={toggleWant}>
+                <Icon name="watchlist" /> {!seen ? 'Na lista' : 'Quero ver'}
+              </button>
+            </div>
 
-        {/* Conteúdo sobreposto ao hero: pôster + título + meta */}
-        <div className="ak-hero-content">
-          {/* Pôster do detalhe (90×135px) */}
-          <div className="ak-detail-poster">
-            {movie.poster_url ? (
-              <img src={movie.poster_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            {/* Ações extras do app real, no mesmo ritmo visual da coluna */}
+            <button className="btn btn-ghost" style={{ justifyContent: 'center' }}
+                    onClick={() => setShowAddToList(true)}>
+              <Icon name="listas" /> Adicionar a lista
+            </button>
+            <button className="btn btn-ghost" style={{ justifyContent: 'center' }}
+                    onClick={() => setShowEditMovie(true)}>
+              <Icon name="pen" /> Editar filme
+            </button>
+            <div className="action-row">
+              <button className="icon-toggle" onClick={() => refreshMetadata()} disabled={refreshingMetadata}
+                      title="Rebusca metadados no TMDB sem tocar em nota, coração ou sessões">
+                <Icon name="sync" /> {refreshingMetadata ? 'Buscando…' : 'Buscar dados'}
+              </button>
+              <button className="icon-toggle" onClick={() => setShowTmdbCandidates(true)} disabled={refreshingMetadata}
+                      title="Associado ao título errado? Escolha o candidato correto do TMDB.">
+                <Icon name="film" /> Trocar filme
+              </button>
+            </div>
+
+            {/* Exclusão em duas etapas (evita clique acidental) */}
+            {!confirmDeleteMovie ? (
+              <button className="btn btn-ghost" style={{ justifyContent: 'center', color: 'var(--heart)' }}
+                      onClick={() => setConfirmDeleteMovie(true)}>
+                <Icon name="trash" /> Excluir filme
+              </button>
             ) : (
-              <div className="ak-typo-poster" data-palette={movie.poster_palette} style={{ fontSize: 10 }}>
-                <p className="ak-typo-title" style={{ fontSize: 12 }}>{movie.title}</p>
+              <div className="action-row">
+                <button className="icon-toggle" onClick={() => setConfirmDeleteMovie(false)} disabled={deletingMovie}>
+                  Cancelar
+                </button>
+                <button className="icon-toggle on like" disabled={deletingMovie}
+                        onClick={async () => {
+                          setDeletingMovie(true)
+                          try {
+                            await akaneApi.delete(movie.id)
+                            onToast('Filme excluído.')
+                            onBack()
+                          } catch {
+                            onToast('Erro ao excluir o filme.')
+                            setDeletingMovie(false)
+                          }
+                        }}>
+                  {deletingMovie ? 'Excluindo…' : 'Confirmar'}
+                </button>
               </div>
             )}
           </div>
+        </div>
 
-          {/* Informações do filme */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 className="ak-detail-title">{movie.title}</h1>
-            <div className="ak-detail-meta">
-              {movie.year && <span>{movie.year}</span>}
-              {movie.director?.[0] && <span>Dir. {movie.director.join(', ')}</span>}
-              {movie.runtime && <span>{movie.runtime} min</span>}
-              {movie.genres?.slice(0, 3).map(g => <span key={g}>{g}</span>)}
-            </div>
-            {/* Nota + coração */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-              <Stars rating={movie.rating} size={14} showNumber />
-              {movie.liked && <span style={{ color: 'var(--heart)', fontSize: 16 }}>♥</span>}
-              {/* Selo "via Letterboxd" */}
-              {movie.rating_source === 'letterboxd' && (
-                <span className="ak-lb-badge">via Letterboxd</span>
-              )}
-            </div>
+        {/* ══ COLUNA DIREITA: informações ══ */}
+        <div className="detail-info">
+          <div className="detail-genre">{movie.genres.join(' · ')}</div>
+          <h1 className="detail-title">{movie.title}</h1>
+          <p className="detail-author">
+            {movie.year && <>{movie.year} · </>}
+            dirigido por <b>{movie.director.join(', ') || '—'}</b>
+            {movie.runtime && <> · {fmtRuntime(movie.runtime)}</>}
+          </p>
+
+          {/* Linha de nota */}
+          <div className="detail-rating-row">
+            {movie.rating != null ? (
+              <><Stars value={movie.rating} lg /><span className="rating-num" style={{ fontSize: 14 }}>{movie.rating.toFixed(1)}</span></>
+            ) : <span className="detail-empty">Ainda sem nota</span>}
+            {movie.liked && <Heart filled className="heart-ico lg" />}
+            {movie.rating_source === 'letterboxd' && (
+              <span className="rating-source"><span className="lb" /> via Letterboxd</span>
+            )}
+            <span className={'status-pill ' + (seen ? 'seen' : 'want')}>{seen ? 'Visto' : 'Quero ver'}</span>
           </div>
+
+          {/* Grade de metadados */}
+          <div className="detail-meta-grid">
+            <div className="dm-cell"><div className="k">Direção</div><div className="v" style={{ fontSize: 13 }}>{movie.director.join(', ') || '—'}</div></div>
+            <div className="dm-cell"><div className="k">Ano</div><div className="v">{movie.year ?? '—'}</div></div>
+            <div className="dm-cell"><div className="k">Duração</div><div className="v" style={{ fontSize: 13 }}>{fmtRuntime(movie.runtime)}</div></div>
+            <div className="dm-cell"><div className="k">Gênero</div><div className="v" style={{ fontSize: 13 }}>{movie.genres.slice(0, 2).join(' · ') || '—'}</div></div>
+            <div className="dm-cell"><div className="k">Sessões</div><div className="v">{diary.length || '—'}</div></div>
+          </div>
+
+          {/* Sinopse (extra do app real — TMDB) */}
+          {movie.overview && (
+            <>
+              <div className="detail-section-title">Sinopse <span className="st-line" /></div>
+              <p className="detail-synopsis">{movie.overview}</p>
+            </>
+          )}
+
+          {/* Sua review (a resenha da sessão mais recente) */}
+          <div className="detail-section-title">Sua review <span className="st-line" /></div>
+          {latestReview
+            ? <p className="detail-review">{latestReview}</p>
+            : <p className="detail-empty">
+                Você ainda não escreveu sobre este filme. {seen ? 'Registre uma sessão para começar.' : 'Ele te espera na watchlist.'}
+              </p>}
+
+          {/* Anotações soltas (≠ review) — editor inline preservado */}
+          <NotesEditor movieId={movie.id} initialNotes={movie.notes} onToast={onToast} />
+
+          {/* Cofre de conteúdos (CRUD real) */}
+          <VaultSection
+            movieId={movie.id}
+            vault={vault}
+            onToast={onToast}
+            onChange={(newVault) => setData(d => d ? { ...d, vault: newVault } : d)}
+          />
+
+          {/* Etiquetas */}
+          {movie.tags.length > 0 && (
+            <>
+              <div className="detail-section-title">Etiquetas <span className="st-line" /></div>
+              <div className="chips">
+                {movie.tags.map(t => (
+                  <span key={t} className={'tag-chip' + (personTagNames.has(t) ? ' person' : '')}>
+                    {personTagNames.has(t)
+                      ? <Icon name="user" style={{ width: 13, height: 13, color: 'var(--rose)' }} />
+                      : <span className="t-hash">#</span>}
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Equipe (elenco/direção — preparação para a base de pessoas) */}
+          {people.length > 0 && (
+            <>
+              <div className="detail-section-title">Equipe <span className="st-line" /></div>
+              <div className="chips">
+                {people.map(p => (
+                  <span key={p.id} className={'tag-chip' + (p.is_person_tag ? ' person' : '')} title={p.role ?? undefined}>
+                    <Icon name="user" style={{ width: 13, height: 13, color: p.is_person_tag ? 'var(--rose)' : 'var(--ink-4)' }} />
+                    {p.name}
+                    {p.role && <span className="t-count">{p.role}</span>}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Diário deste filme (com editar/excluir sessão) */}
+          {diary.length > 0 && (
+            <>
+              <div className="detail-section-title">Diário deste filme <span className="st-line" /></div>
+              <div className="film-log">
+                {diary.map(e => (
+                  <FilmLogItem
+                    key={e.id}
+                    entry={e}
+                    onToast={onToast}
+                    onDeleted={(id) => setData(d => d ? { ...d, diary: d.diary.filter(x => x.id !== id) } : d)}
+                    onUpdated={(updated, movieAgg) => setData(d => d ? {
+                      ...d,
+                      diary: d.diary.map(x => x.id === updated.id ? updated : x),
+                      movie: { ...d.movie, ...movieAgg },
+                    } : d)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* ── Ações ─────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
-        <button
-          className="ak-btn ak-btn-primary"
-          onClick={() => onLog(movie.id, movie.title)}
-        >
-          ▶ Logar sessão
-        </button>
-        <LikeButton
-          movieId={movie.id}
-          liked={movie.liked}
-          onToast={onToast}
-          onToggle={(v) => setData(d => d ? { ...d, movie: { ...d.movie, liked: v } } : d)}
-        />
-        <StatusToggle
-          movieId={movie.id}
-          status={movie.status}
-          onToast={onToast}
-          onToggle={(s) => setData(d => d ? { ...d, movie: { ...d.movie, status: s } } : d)}
-        />
-        <button
-          className="ak-btn"
-          onClick={() => setShowAddToList(true)}
-        >
-          + Adicionar a lista
-        </button>
-        <button
-          className="ak-btn"
-          onClick={() => setShowEditMovie(true)}
-        >
-          ✎ Editar filme
-        </button>
-
-        {/* "Buscar Dados" — rebusca metadados no TMDB (spec 050, US4) */}
-        <button
-          className="ak-btn"
-          onClick={() => refreshMetadata()}
-          disabled={refreshingMetadata}
-          title="Rebuscar metadados no TMDB — corrige idioma e dados desatualizados sem tocar em nota, coração, anotações ou sessões"
-        >
-          {refreshingMetadata ? 'Buscando…' : '🔎 Buscar Dados'}
-        </button>
-        <button
-          className="ak-btn"
-          onClick={() => setShowTmdbCandidates(true)}
-          disabled={refreshingMetadata}
-          style={{ fontSize: 11 }}
-          title="O filme foi associado ao título errado? Escolha o candidato correto."
-        >
-          Trocar filme
-        </button>
-
-        {/* Excluir filme — confirmação em duas etapas (spec 051, US5) */}
-        {!confirmDeleteMovie ? (
-          <button
-            className="ak-btn"
-            onClick={() => setConfirmDeleteMovie(true)}
-            style={{ color: 'var(--heart)', marginLeft: 'auto' }}
-          >
-            Excluir filme
-          </button>
-        ) : (
-          <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-            <button className="ak-btn" onClick={() => setConfirmDeleteMovie(false)} disabled={deletingMovie}>
-              Cancelar
-            </button>
-            <button
-              onClick={async () => {
-                setDeletingMovie(true)
-                try {
-                  await akaneApi.delete(movie.id)
-                  onToast('Filme excluído.')
-                  onBack()
-                } catch {
-                  onToast('Erro ao excluir o filme.')
-                  setDeletingMovie(false)
-                }
-              }}
-              disabled={deletingMovie}
-              style={{
-                all: 'unset', cursor: 'pointer', fontSize: 13, padding: '6px 14px',
-                background: 'var(--heart)', color: '#fff', borderRadius: 8,
-              }}
-            >
-              {deletingMovie ? 'Excluindo…' : 'Confirmar exclusão'}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Modal "Adicionar a lista" */}
+      {/* ══ MODAIS ══ */}
       {showAddToList && (
-        <AddToListModal
-          movieId={movie.id}
-          onClose={() => setShowAddToList(false)}
-          onToast={onToast}
-        />
+        <AddToListModal movieId={movie.id} onClose={() => setShowAddToList(false)} onToast={onToast} />
       )}
-
-      {/* Modal "Editar filme" (spec 050, US5) */}
       {showEditMovie && (
         <EditMovieModal
           movie={movie}
@@ -264,8 +338,6 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
           onSaved={(updated) => setData(d => d ? { ...d, movie: updated } : d)}
         />
       )}
-
-      {/* Modal "Trocar filme" — candidatos do TMDB (spec 050, US4) */}
       {showTmdbCandidates && (
         <TmdbCandidatesModal
           initialQuery={movie.title}
@@ -273,179 +345,20 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
           onSelect={(tmdbId) => refreshMetadata(tmdbId)}
         />
       )}
-
-      {/* ── Sinopse ───────────────────────────────────────────────────── */}
-      {movie.overview && (
-        <div style={{ marginBottom: 24 }}>
-          <SectionTitle>Sinopse</SectionTitle>
-          <p style={{
-            fontFamily: 'var(--serif)',
-            fontStyle: 'italic',
-            fontSize: 14,
-            lineHeight: 1.65,
-            color: 'var(--ink-3)',
-          }}>
-            {movie.overview}
-          </p>
-        </div>
-      )}
-
-      {/* ── Anotações soltas ──────────────────────────────────────────── */}
-      <NotesEditor
-        movieId={movie.id}
-        initialNotes={movie.notes}
-        onToast={onToast}
-      />
-
-      {/* ── Histórico de sessões ──────────────────────────────────────── */}
-      {diary.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <SectionTitle>Histórico ({diary.length})</SectionTitle>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {diary.map(entry => (
-              <DiaryEntryRow
-                key={entry.id}
-                entry={entry}
-                onToast={onToast}
-                onDeleted={(id) => setData(d => d ? { ...d, diary: d.diary.filter(e => e.id !== id) } : d)}
-                onUpdated={(updated, movieAgg) => setData(d => d ? {
-                  ...d,
-                  diary: d.diary.map(e => e.id === updated.id ? updated : e),
-                  movie: { ...d.movie, ...movieAgg },
-                } : d)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Cofre de conteúdos ────────────────────────────────────────── */}
-      <VaultSection
-        movieId={movie.id}
-        vault={vault}
-        onToast={onToast}
-        onChange={(newVault) => setData(d => d ? { ...d, vault: newVault } : d)}
-      />
-
-      {/* ── Pessoas ───────────────────────────────────────────────────── */}
-      {people.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
-          <SectionTitle>Equipe</SectionTitle>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {people.map(p => (
-              <div
-                key={p.id}
-                style={{
-                  padding: '6px 12px',
-                  background: 'var(--card)',
-                  border: '1px solid var(--line)',
-                  borderRadius: 'var(--r-sm)',
-                }}
-              >
-                <p style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--ink)' }}>
-                  {p.name}
-                  {p.is_person_tag && (
-                    <span style={{ color: 'var(--rose)', marginLeft: 4 }}>•</span>
-                  )}
-                </p>
-                {p.role && (
-                  <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', marginTop: 2 }}>
-                    {p.role}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
-// ── Subcomponentes ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// SUB-COMPONENTES
+// ─────────────────────────────────────────────────────────────────────────────
 
-/** Título de seção padronizado. */
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <p style={{
-      fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.08em',
-      textTransform: 'uppercase', color: 'var(--ink-4)',
-      marginBottom: 10, paddingBottom: 6,
-      borderBottom: '1px solid var(--line-2)',
-    }}>
-      {children}
-    </p>
-  )
-}
-
-/** Botão de curtir (coração) com toggle imediato. */
-function LikeButton({ movieId, liked, onToast, onToggle }: {
-  movieId: string; liked: boolean
-  onToast: (msg: string) => void; onToggle: (v: boolean) => void
-}) {
-  const [busy, setBusy] = useState(false)
-
-  const toggle = async () => {
-    if (busy) return
-    setBusy(true)
-    try {
-      await akaneApi.like(movieId, !liked)
-      onToggle(!liked)
-      onToast(liked ? 'Coração removido.' : '♥ Curtido!')
-    } catch {
-      onToast('Erro ao atualizar.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <button
-      className={`ak-btn ak-heart${liked ? ' liked' : ''}`}
-      onClick={toggle}
-      disabled={busy}
-      style={{ fontSize: 18, padding: '6px 14px' }}
-      title={liked ? 'Descurtir' : 'Curtir'}
-    >
-      {liked ? '♥' : '♡'}
-    </button>
-  )
-}
-
-/** Toggle de status (watched ↔ watchlist). */
-function StatusToggle({ movieId, status, onToast, onToggle }: {
-  movieId: string; status: string
-  onToast: (msg: string) => void; onToggle: (s: 'watched' | 'watchlist') => void
-}) {
-  const [busy, setBusy] = useState(false)
-  const next = status === 'watched' ? 'watchlist' : 'watched'
-
-  const toggle = async () => {
-    if (busy) return
-    setBusy(true)
-    try {
-      await akaneApi.updateStatus(movieId, next)
-      onToggle(next)
-      onToast(next === 'watched' ? 'Marcado como assistido.' : 'Movido para watchlist.')
-    } catch {
-      onToast('Erro ao atualizar.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <button className="ak-btn" onClick={toggle} disabled={busy}>
-      {status === 'watched' ? '↩ Mover para watchlist' : '✓ Marcar como assistido'}
-    </button>
-  )
-}
-
-/** Editor inline de anotações soltas. */
+/** Editor inline de anotações soltas (bloco "caderno" do handoff). */
 function NotesEditor({ movieId, initialNotes, onToast }: {
   movieId: string; initialNotes: string | null; onToast: (msg: string) => void
 }) {
   const [notes, setNotes] = useState(initialNotes ?? '')
+  const [saved, setSaved] = useState(initialNotes ?? '')
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -453,6 +366,7 @@ function NotesEditor({ movieId, initialNotes, onToast }: {
     setBusy(true)
     try {
       await akaneApi.setNotes(movieId, notes)
+      setSaved(notes)
       setEditing(false)
       onToast('Anotações salvas.')
     } catch {
@@ -463,245 +377,39 @@ function NotesEditor({ movieId, initialNotes, onToast }: {
   }
 
   return (
-    <div style={{ marginBottom: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <SectionTitle>Anotações</SectionTitle>
+    <>
+      <div className="detail-section-title">
+        Anotações
         {!editing && (
-          <button
-            className="ak-btn"
-            style={{ fontSize: 11, padding: '3px 8px', marginTop: -6 }}
-            onClick={() => setEditing(true)}
-          >
-            {notes ? 'Editar' : '+ Adicionar'}
+          <button className="section-link" style={{ border: 'none', background: 'none', padding: 0 }}
+                  onClick={() => setEditing(true)}>
+            {saved ? 'Editar' : '＋ Adicionar'}
           </button>
         )}
+        <span className="st-line" />
       </div>
 
       {editing ? (
-        <div>
-          <textarea
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            className="ak-input"
-            rows={4}
-            placeholder="Suas reflexões sobre o filme..."
-            style={{ resize: 'vertical' }}
-          />
+        <div className="modal-field" style={{ margin: '4px 0 8px' }}>
+          <textarea className="note-input" value={notes} onChange={e => setNotes(e.target.value)}
+                    placeholder="Suas reflexões soltas sobre o filme…" autoFocus />
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button className="ak-btn ak-btn-primary" onClick={save} disabled={busy}>
-              {busy ? 'Salvando...' : 'Salvar'}
+            <button className="btn btn-primary" onClick={save} disabled={busy}>
+              <Icon name="check" /> {busy ? 'Salvando…' : 'Salvar'}
             </button>
-            <button className="ak-btn" onClick={() => { setEditing(false); setNotes(initialNotes ?? '') }}>
-              Cancelar
-            </button>
+            <button className="btn btn-ghost" onClick={() => { setEditing(false); setNotes(saved) }}>Cancelar</button>
           </div>
         </div>
-      ) : notes ? (
-        <p style={{
-          fontFamily: 'var(--serif)', fontStyle: 'italic',
-          fontSize: 13.5, lineHeight: 1.65, color: 'var(--ink-3)',
-          whiteSpace: 'pre-wrap',
-        }}>
-          {notes}
-        </p>
-      ) : null}
-    </div>
-  )
-}
-
-/** Linha do histórico de sessões — exclusão (spec 051, US5) e edição (spec 050, US5). */
-function DiaryEntryRow({ entry, onToast, onDeleted, onUpdated }: {
-  entry: MovieDetail['diary'][number]
-  onToast: (msg: string) => void
-  onDeleted: (id: string) => void
-  onUpdated: (entry: MovieDetail['diary'][number], movieAgg: { last_watched_date: string | null; times_watched: number }) => void
-}) {
-  const [confirming, setConfirming] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [editing, setEditing] = useState(false)
-
-  const doDelete = async () => {
-    setDeleting(true)
-    try {
-      await akaneApi.deleteDiary(entry.id)
-      onDeleted(entry.id)
-      onToast('Sessão excluída.')
-    } catch {
-      onToast('Erro ao excluir a sessão.')
-      setDeleting(false)
-    }
-  }
-
-  if (editing) {
-    return (
-      <DiaryEntryEditForm
-        entry={entry}
-        onCancel={() => setEditing(false)}
-        onToast={onToast}
-        onSaved={(updated, movieAgg) => {
-          onUpdated(updated, movieAgg)
-          setEditing(false)
-        }}
-      />
-    )
-  }
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '8px 12px',
-        background: 'var(--card)',
-        borderRadius: 'var(--r-sm)',
-        border: '1px solid var(--line-2)',
-      }}
-    >
-      <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink-4)' }}>
-        {entry.watched_date}
-      </span>
-      {entry.rewatch && <span className="ak-rewatch-badge">Revisão</span>}
-      <Stars rating={entry.rating} size={11} />
-      {entry.review && (
-        <span style={{
-          fontFamily: 'var(--serif)', fontStyle: 'italic',
-          fontSize: 12, color: 'var(--ink-3)',
-          flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {entry.review}
-        </span>
-      )}
-      {/* Editar sessão (spec 050, US5) */}
-      <button
-        onClick={() => setEditing(true)}
-        title="Editar sessão"
-        style={{
-          all: 'unset', cursor: 'pointer', fontSize: 12, color: 'var(--ink-4)',
-          marginLeft: entry.review ? 0 : 'auto', flexShrink: 0, padding: '2px 6px',
-        }}
-      >
-        ✎
-      </button>
-      {/* Exclusão em duas etapas para evitar clique acidental */}
-      {!confirming ? (
-        <button
-          onClick={() => setConfirming(true)}
-          title="Excluir sessão"
-          style={{
-            all: 'unset', cursor: 'pointer', fontSize: 12, color: 'var(--ink-4)',
-            flexShrink: 0, padding: '2px 6px',
-          }}
-        >
-          ✕
-        </button>
+      ) : saved ? (
+        <div className="notes-block"><span className="nb-tag">caderno</span>{saved}</div>
       ) : (
-        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          <button
-            onClick={() => setConfirming(false)}
-            style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--ink-4)', padding: '2px 6px' }}
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={doDelete}
-            disabled={deleting}
-            style={{
-              all: 'unset', cursor: 'pointer', fontSize: 11, padding: '2px 8px',
-              background: 'var(--heart)', color: '#fff', borderRadius: 5,
-            }}
-          >
-            {deleting ? '…' : 'Confirmar'}
-          </button>
-        </div>
+        <p className="detail-empty">Nenhuma anotação ainda.</p>
       )}
-    </div>
+    </>
   )
 }
 
-/** Form inline de edição de uma sessão (spec 050, US5/FR-009). */
-function DiaryEntryEditForm({ entry, onCancel, onToast, onSaved }: {
-  entry: MovieDetail['diary'][number]
-  onCancel: () => void
-  onToast: (msg: string) => void
-  onSaved: (entry: MovieDetail['diary'][number], movieAgg: { last_watched_date: string | null; times_watched: number }) => void
-}) {
-  const [watchedDate, setWatchedDate] = useState(entry.watched_date)
-  const [rating, setRating] = useState<number | null>(entry.rating)
-  const [review, setReview] = useState(entry.review ?? '')
-  const [tags, setTags] = useState(entry.tags.join(', '))
-  const [rewatch, setRewatch] = useState(entry.rewatch)
-  const [saving, setSaving] = useState(false)
-
-  const save = async () => {
-    setSaving(true)
-    try {
-      const res = await akaneApi.updateDiaryEntry(entry.id, {
-        watched_date: watchedDate,
-        rating: rating ?? undefined,
-        review: review.trim() || undefined,
-        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
-        rewatch,
-      })
-      onSaved(res.entry, res.movie)
-      onToast('Sessão atualizada.')
-    } catch {
-      onToast('Erro ao salvar a sessão.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div
-      style={{
-        display: 'flex', flexDirection: 'column', gap: 8,
-        padding: '10px 12px',
-        background: 'var(--card)', borderRadius: 'var(--r-sm)',
-        border: '1px solid var(--line-2)',
-      }}
-    >
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
-          className="ak-input"
-          type="date"
-          value={watchedDate}
-          onChange={e => setWatchedDate(e.target.value)}
-          style={{ width: 150 }}
-        />
-        <StarRateInput rating={rating} onChange={setRating} />
-        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--ink-3)' }}>
-          <input type="checkbox" checked={rewatch} onChange={e => setRewatch(e.target.checked)} />
-          Revisão
-        </label>
-      </div>
-      <textarea
-        className="ak-input"
-        rows={2}
-        placeholder="Resenha (opcional)"
-        value={review}
-        onChange={e => setReview(e.target.value)}
-        style={{ resize: 'vertical' }}
-      />
-      <input
-        className="ak-input"
-        placeholder="Etiquetas separadas por vírgula (opcional)"
-        value={tags}
-        onChange={e => setTags(e.target.value)}
-      />
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button className="ak-btn ak-btn-primary" onClick={save} disabled={saving}>
-          {saving ? 'Salvando…' : 'Salvar'}
-        </button>
-        <button className="ak-btn" onClick={onCancel} disabled={saving}>
-          Cancelar
-        </button>
-      </div>
-    </div>
-  )
-}
-
-/** Seção do Cofre — adiciona e remove itens sem sair do detalhe (spec 051, US2). */
+/** Cofre de conteúdos — galeria de cards por tipo + adicionar/remover. */
 function VaultSection({ movieId, vault, onToast, onChange }: {
   movieId: string
   vault: MovieDetail['vault']
@@ -751,108 +459,168 @@ function VaultSection({ movieId, vault, onToast, onChange }: {
   }
 
   return (
-    <div style={{ marginBottom: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <SectionTitle>Cofre ({vault.length})</SectionTitle>
+    <>
+      <div className="detail-section-title">
+        Cofre de conteúdos {vault.length > 0 && <span style={{ color: 'var(--ink-4)' }}>· {vault.length}</span>}
+        <span className="st-line" />
+      </div>
+      <div className="vault-grid">
+        {vault.map(v => {
+          const m = VAULT_META[v.type] || VAULT_META.article
+          return (
+            <div key={v.id} className="vault-card">
+              <div className="vault-thumb" style={{ background: m.bg }}>
+                <span className="vt-type">{m.label}</span>
+                <Icon name={m.icon} />
+                {/* Remover (extra do app real — CRUD do Cofre) */}
+                <button className="vc-remove" title="Remover do Cofre"
+                        disabled={removingId === v.id}
+                        onClick={() => remove(v.id)}>
+                  {removingId === v.id ? '…' : <Icon name="x" />}
+                </button>
+              </div>
+              <div className="vc-title">{v.title}</div>
+              <div className="vc-foot">
+                <Icon name="link" style={{ width: 11, height: 11 }} /> {v.source ?? '—'}
+                {v.url && (
+                  <a className="open" href={v.url} target="_blank" rel="noopener noreferrer">abrir →</a>
+                )}
+              </div>
+            </div>
+          )
+        })}
         {!adding && (
-          <button
-            className="ak-btn"
-            style={{ fontSize: 11, padding: '3px 8px', marginTop: -6 }}
-            onClick={() => setAdding(true)}
-          >
-            + Adicionar
-          </button>
+          <button className="vault-add" onClick={() => setAdding(true)}><Icon name="plus" /> Salvar conteúdo</button>
         )}
       </div>
 
-      {vault.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: adding ? 10 : 0 }}>
-          {vault.map(item => (
-            <div
-              key={item.id}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 12px',
-                background: 'var(--card)', borderRadius: 'var(--r-sm)',
-                border: '1px solid var(--line-2)',
-              }}
-            >
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--rose)', textTransform: 'uppercase' }}>
-                {item.type}
-              </span>
-              {item.url ? (
-                <a
-                  href={item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--ink)', textDecoration: 'none', flex: 1 }}
-                >
-                  {item.title}
-                </a>
-              ) : (
-                <span style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--ink)', flex: 1 }}>
-                  {item.title}
-                </span>
-              )}
-              {item.source && (
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)' }}>
-                  {item.source}
-                </span>
-              )}
-              <button
-                onClick={() => remove(item.id)}
-                disabled={removingId === item.id}
-                title="Remover do Cofre"
-                style={{ all: 'unset', cursor: 'pointer', fontSize: 12, color: 'var(--ink-4)', flexShrink: 0, padding: '2px 6px' }}
-              >
-                {removingId === item.id ? '…' : '✕'}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
+      {/* Formulário de novo item (inputs no padrão do modal do handoff) */}
       {adding && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px', background: 'var(--card)', borderRadius: 'var(--r-sm)', border: '1px solid var(--line-2)' }}>
-          <select
-            className="ak-input"
-            value={type}
-            onChange={e => setType(e.target.value as VaultType)}
-          >
+        <div className="modal-field" style={{ margin: '12px 0 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <select className="text-input" value={type} onChange={e => setType(e.target.value as VaultType)}>
             <option value="video">Vídeo</option>
             <option value="article">Artigo</option>
             <option value="essay">Ensaio</option>
             <option value="review">Review</option>
           </select>
-          <input
-            className="ak-input"
-            placeholder="Título"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            autoFocus
-          />
-          <input
-            className="ak-input"
-            placeholder="URL (opcional)"
-            value={url}
-            onChange={e => setUrl(e.target.value)}
-          />
-          <input
-            className="ak-input"
-            placeholder="Fonte (opcional, ex.: youtube.com)"
-            value={source}
-            onChange={e => setSource(e.target.value)}
-          />
+          <input className="text-input" placeholder="Título" value={title}
+                 onChange={e => setTitle(e.target.value)} autoFocus />
+          <input className="text-input" placeholder="URL (opcional)" value={url}
+                 onChange={e => setUrl(e.target.value)} />
+          <input className="text-input" placeholder="Fonte (opcional, ex.: youtube.com)" value={source}
+                 onChange={e => setSource(e.target.value)} />
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="ak-btn ak-btn-primary" onClick={save} disabled={busy || !title.trim()}>
-              {busy ? 'Salvando…' : 'Salvar'}
+            <button className="btn btn-primary" onClick={save} disabled={busy || !title.trim()}>
+              <Icon name="check" /> {busy ? 'Salvando…' : 'Salvar'}
             </button>
-            <button className="ak-btn" onClick={() => { setAdding(false); setTitle(''); setUrl(''); setSource('') }}>
+            <button className="btn btn-ghost" onClick={() => { setAdding(false); setTitle(''); setUrl(''); setSource('') }}>
               Cancelar
             </button>
           </div>
         </div>
       )}
+    </>
+  )
+}
+
+/** Item do "Diário deste filme" — timeline fl-item com editar/excluir sessão. */
+function FilmLogItem({ entry, onToast, onDeleted, onUpdated }: {
+  entry: MovieDetail['diary'][number]
+  onToast: (msg: string) => void
+  onDeleted: (id: string) => void
+  onUpdated: (entry: MovieDetail['diary'][number], movieAgg: { last_watched_date: string | null; times_watched: number }) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  // Campos do formulário de edição (inicializados da sessão)
+  const [watchedDate, setWatchedDate] = useState(entry.watched_date)
+  const [rating, setRating] = useState<number>(entry.rating ?? 0)
+  const [review, setReview] = useState(entry.review ?? '')
+  const [tags, setTags] = useState(entry.tags.join(', '))
+  const [rewatch, setRewatch] = useState(entry.rewatch)
+  const [saving, setSaving] = useState(false)
+
+  const doDelete = async () => {
+    setDeleting(true)
+    try {
+      await akaneApi.deleteDiary(entry.id)
+      onDeleted(entry.id)
+      onToast('Sessão excluída.')
+    } catch {
+      onToast('Erro ao excluir a sessão.')
+      setDeleting(false)
+    }
+  }
+
+  const doSave = async () => {
+    setSaving(true)
+    try {
+      const res = await akaneApi.updateDiaryEntry(entry.id, {
+        watched_date: watchedDate,
+        rating: rating || undefined,
+        review: review.trim() || undefined,
+        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+        rewatch,
+      })
+      onUpdated(res.entry, res.movie)
+      onToast('Sessão atualizada.')
+      setEditing(false)
+    } catch {
+      onToast('Erro ao salvar a sessão.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="fl-item">
+        <div className="modal-field" style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: 0 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input className="date-input" type="date" value={watchedDate}
+                   onChange={e => setWatchedDate(e.target.value)} style={{ width: 150 }} />
+            <RateInput value={rating} onChange={setRating} />
+            <button className={'toggle-pill rw' + (rewatch ? ' on' : '')} onClick={() => setRewatch(v => !v)}>
+              <Icon name="rewatch" /> Revisão
+            </button>
+          </div>
+          <textarea className="note-input" rows={2} placeholder="Resenha (opcional)" value={review}
+                    onChange={e => setReview(e.target.value)} />
+          <input className="text-input" placeholder="Etiquetas separadas por vírgula (opcional)" value={tags}
+                 onChange={e => setTags(e.target.value)} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary" onClick={doSave} disabled={saving}>
+              <Icon name="check" /> {saving ? 'Salvando…' : 'Salvar'}
+            </button>
+            <button className="btn btn-ghost" onClick={() => setEditing(false)} disabled={saving}>Cancelar</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fl-item">
+      <div className="fl-date">
+        {fmtDate(entry.watched_date)} · {new Date(entry.watched_date + 'T00:00:00').getFullYear()}
+      </div>
+      <div className="fl-row">
+        {entry.rating != null && <Stars value={entry.rating} />}
+        {entry.rewatch && <span className="feed-tag rw">revisão</span>}
+        {/* Ações da sessão (extras do app real): editar / excluir */}
+        <span className="fl-actions">
+          <button title="Editar sessão" onClick={() => setEditing(true)}><Icon name="pen" /></button>
+          {!confirming
+            ? <button title="Excluir sessão" onClick={() => setConfirming(true)}><Icon name="x" /></button>
+            : <>
+                <button onClick={() => setConfirming(false)}>cancelar</button>
+                <button className="danger" onClick={doDelete} disabled={deleting}>{deleting ? '…' : 'confirmar'}</button>
+              </>}
+        </span>
+      </div>
+      {entry.review && <div className="fl-note">"{entry.review}"</div>}
     </div>
   )
 }

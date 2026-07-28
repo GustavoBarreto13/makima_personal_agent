@@ -1,27 +1,24 @@
-// Tela de Etiquetas — Onda 5 (US5).
-// Exibe nuvem de etiquetas (tags de filmes e pessoas marcadas como is_person_tag).
-// Clicar em uma etiqueta navega para FilmsScreen filtrada por essa tag.
+// Tela Etiquetas — reescrita hi-fi conforme o handoff §7.7: nuvem de
+// tag-chip com contagem; etiquetas de pessoa ganham glifo de usuário e o
+// aviso people-note. Clicar filtra os Filmes por aquela etiqueta.
 
 import { useState, useEffect } from 'react'
 import { akaneApi } from '../akaneApi'
 import type { Tag } from '../types'
+import { Icon } from '../ui/Icon'
 import { matches } from '../searchUtils'
 
-// ── Props ────────────────────────────────────────────────────────────────────
-
 interface TagsScreenProps {
-  // Callback chamado ao clicar em uma tag — navega para FilmsScreen com filtro
+  /** Navega para Filmes filtrado por essa tag. */
   onSelectTag: (tag: string) => void
-  /** Query da busca contextual da topbar (spec busca Akane) — filtra client-side. */
+  /** Query da busca contextual da topbar — filtra client-side. */
   query: string
 }
 
-// ── Componente principal ─────────────────────────────────────────────────────
-
+/** Nuvem de etiquetas — pessoas ganham glifo e destaque. */
 export function TagsScreen({ onSelectTag, query }: TagsScreenProps) {
   const [tags, setTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
-  // Distingue falha de rede de "genuinamente sem etiquetas ainda" (spec 051, FR-009)
   const [loadError, setLoadError] = useState(false)
 
   const load = () => {
@@ -35,152 +32,53 @@ export function TagsScreen({ onSelectTag, query }: TagsScreenProps) {
 
   useEffect(load, [])
 
-  if (loading) {
-    return (
-      <div className="ak-empty">
-        <span className="ak-empty-icon">⊕</span>
-        <p className="ak-empty-title">Carregando etiquetas…</p>
-      </div>
-    )
-  }
+  if (loading) return <p className="empty-state">Carregando etiquetas…</p>
 
   if (loadError) {
     return (
-      <div className="ak-empty">
-        <span className="ak-empty-icon">⚠</span>
-        <p className="ak-empty-title">Não foi possível carregar as etiquetas</p>
-        <p className="ak-empty-sub">Verifique sua conexão e tente novamente.</p>
-        <button className="ak-btn" onClick={load} style={{ marginTop: 10 }}>
-          Tentar novamente
-        </button>
-      </div>
-    )
-  }
-
-  if (tags.length === 0) {
-    return (
-      <div className="ak-empty">
-        <span className="ak-empty-icon">⊕</span>
-        <p className="ak-empty-title">Nenhuma etiqueta ainda</p>
-        <p className="ak-empty-sub">
-          Adicione tags ao logar uma sessão ou nos detalhes de um filme.
+      <div className="page">
+        <p className="empty-state">
+          Não foi possível carregar as etiquetas.{' '}
+          <button className="btn btn-ghost" onClick={load} style={{ marginLeft: 8 }}>Tentar novamente</button>
         </p>
       </div>
     )
   }
 
-  // Filtro de busca client-side, aplicado antes de separar pessoas/comuns
-  const filteredTags = tags.filter(t => matches(query, t.name))
+  const filtered = tags.filter(t => matches(query, t.name))
+  const hasPeople = filtered.some(t => t.person)
 
-  if (filteredTags.length === 0 && query.trim()) {
-    return (
-      <div className="ak-empty">
-        <span className="ak-empty-icon">🔍</span>
-        <p className="ak-empty-title">Nada encontrado para «{query}»</p>
-        <p className="ak-empty-sub">Tente outro nome de etiqueta.</p>
+  return (
+    <div className="page">
+      <div className="section-head" style={{ marginTop: 32 }}>
+        <h2 className="section-title" style={{ fontSize: 30 }}>Etiquetas</h2>
+        <span className="section-sub">{tags.length} etiquetas · organize por tema, estilo ou pessoa</span>
       </div>
-    )
-  }
 
-  // Encontra o count máximo para calcular o tamanho relativo de cada tag
-  const maxCount = Math.max(...filteredTags.map(t => t.count), 1)
-
-  // Separa etiquetas de pessoas (person=true) das etiquetas comuns
-  // O campo no backend é "person" — ver types.ts Tag.person
-  const pessoasTags = filteredTags.filter(t => t.person)
-  const etiquetasComuns = filteredTags.filter(t => !t.person)
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-
-      {/* ── Etiquetas comuns ────────────────────────────────────────────── */}
-      {etiquetasComuns.length > 0 && (
-        <section>
-          <p style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 16, margin: '0 0 16px' }}>
-            Etiquetas ({etiquetasComuns.length})
-          </p>
-          <TagCloud tags={etiquetasComuns} maxCount={maxCount} onSelectTag={onSelectTag} />
-        </section>
+      {hasPeople && (
+        <div className="people-note" style={{ marginTop: 0, marginBottom: 18 }}>
+          <Icon name="user" /> Etiquetas de pessoas vão se conectar à base de pessoas em breve.
+        </div>
       )}
 
-      {/* ── Pessoas (is_person_tag=true) ────────────────────────────────── */}
-      {pessoasTags.length > 0 && (
-        <section>
-          <p style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 16, margin: '0 0 16px' }}>
-            Pessoas ({pessoasTags.length})
-          </p>
-          <TagCloud tags={pessoasTags} maxCount={maxCount} onSelectTag={onSelectTag} isPeople />
-        </section>
+      {tags.length === 0 ? (
+        <p className="empty-state">Nenhuma etiqueta ainda — adicione tags ao logar uma sessão ou nos detalhes de um filme.</p>
+      ) : filtered.length === 0 && query.trim() ? (
+        <p className="empty-state">Nada encontrado para "{query}".</p>
+      ) : (
+        <div className="chips" style={{ gap: 10 }}>
+          {filtered.map(t => (
+            <a key={t.name} className={'tag-chip' + (t.person ? ' person' : '')}
+               onClick={() => onSelectTag(t.name)} style={{ fontSize: 13.5, padding: '8px 14px' }}>
+              {t.person
+                ? <Icon name="user" style={{ width: 14, height: 14, color: 'var(--rose)' }} />
+                : <span className="t-hash">#</span>}
+              {t.name}
+              <span className="t-count">{t.count}</span>
+            </a>
+          ))}
+        </div>
       )}
-
-    </div>
-  )
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SUB-COMPONENTE: Nuvem de tags
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface TagCloudProps {
-  tags: Tag[]
-  maxCount: number
-  onSelectTag: (tag: string) => void
-  isPeople?: boolean  // Se true, usa estilo diferente (pessoas vs. etiquetas)
-}
-
-function TagCloud({ tags, maxCount, onSelectTag, isPeople = false }: TagCloudProps) {
-  // Ordena por count decrescente
-  const sorted = [...tags].sort((a, b) => b.count - a.count)
-
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-      {sorted.map(tag => {
-        // Tamanho de fonte relativo ao count (entre 12px e 22px)
-        const ratio = tag.count / maxCount
-        const fontSize = Math.round(12 + ratio * 10)
-
-        // Opacidade também varia com o count (mais frequentes = mais visíveis)
-        const opacity = 0.5 + ratio * 0.5
-
-        return (
-          <button
-            key={tag.name}
-            onClick={() => onSelectTag(tag.name)}
-            className="ak-chip"
-            style={{
-              fontSize,
-              opacity,
-              // Destaque visual para etiquetas de pessoas
-              background: isPeople
-                ? 'color-mix(in srgb, var(--rose) 12%, var(--paper-2))'
-                : 'var(--paper-2)',
-              border: isPeople
-                ? '1px solid color-mix(in srgb, var(--rose) 30%, transparent)'
-                : '1px solid var(--line)',
-              cursor: 'pointer',
-              padding: `${4 + Math.round(ratio * 2)}px ${8 + Math.round(ratio * 4)}px`,
-              lineHeight: 1.3,
-              display: 'flex', alignItems: 'center', gap: 4,
-            }}
-            title={`${tag.count} ${tag.count === 1 ? 'filme' : 'filmes'}`}
-          >
-            {/* Ícone de pessoa para is_person tags */}
-            {isPeople && <span style={{ fontSize: fontSize * 0.8 }}>👤</span>}
-            {tag.name}
-            {/* Contador discreto */}
-            <span
-              style={{
-                fontSize: Math.max(10, fontSize * 0.65),
-                color: 'var(--ink-4)',
-                fontFamily: 'var(--mono)',
-              }}
-            >
-              {tag.count}
-            </span>
-          </button>
-        )
-      })}
     </div>
   )
 }

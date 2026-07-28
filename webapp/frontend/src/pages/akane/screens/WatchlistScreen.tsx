@@ -1,24 +1,26 @@
-// Tela da watchlist — lista de filmes que o usuário quer assistir.
-// Grid compacto com pôsteres e botão para "Logar sessão" direto.
+// Tela "Quero ver" (watchlist) — reescrita hi-fi conforme o handoff §7.5:
+// lista vertical wl-list; cada item com pôster, título/diretor/ano/duração,
+// chip de gênero, anotação (se houver) e botão "Já vi" que abre o LogModal
+// pré-preenchido. O subtítulo mostra o total de horas "esperando".
 
 import { useState, useEffect } from 'react'
 import { akaneApi } from '../akaneApi'
 import type { Movie } from '../types'
+import { Icon } from '../ui/Icon'
+import { Poster } from '../components/Poster'
 import { matches } from '../searchUtils'
-// Poster não é usado — WatchlistScreen renderiza pôsteres inline (img + ak-typo-poster)
+import { fmtRuntime } from '../dateUtils'
 
 interface WatchlistScreenProps {
-  /** Callback ao clicar em um filme para abrir o detalhe. */
+  /** Abre o detalhe de um filme. */
   onSelectMovie: (id: string) => void
-  /** Callback ao clicar em "Logar" para abrir o LogModal com o filme pré-selecionado. */
+  /** Abre o LogModal com o filme pré-selecionado ("Já vi"). */
   onLogFilm: (movieId: string, title: string) => void
-  /** Query da busca contextual da topbar (spec busca Akane) — filtra client-side. */
+  /** Query da busca contextual da topbar — filtra client-side. */
   query: string
 }
 
-/**
- * Lista de filmes na watchlist.
- */
+/** Lista de filmes esperando na watchlist. */
 export function WatchlistScreen({ onSelectMovie, onLogFilm, query }: WatchlistScreenProps) {
   const [movies, setMovies] = useState<Movie[]>([])
   const [loading, setLoading] = useState(true)
@@ -31,176 +33,55 @@ export function WatchlistScreen({ onSelectMovie, onLogFilm, query }: WatchlistSc
   }, [])
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-        <div style={{
-          width: 32, height: 32,
-          border: '2px solid var(--line)',
-          borderTopColor: 'var(--rose)',
-          borderRadius: '50%',
-          animation: 'spin 0.8s linear infinite',
-        }} />
-      </div>
-    )
+    return <p className="empty-state">Carregando watchlist…</p>
   }
 
-  if (movies.length === 0) {
-    return (
-      <div className="ak-empty">
-        <span className="ak-empty-icon">📋</span>
-        <p className="ak-empty-title">Watchlist vazia</p>
-        <p className="ak-empty-sub">Use "Logar filme" na barra lateral, busque um título e feche o modal — o filme já entra na sua watchlist.</p>
-      </div>
-    )
-  }
-
-  // Filtro de busca client-side
-  const filteredMovies = movies.filter(m =>
-    matches(query, m.title, m.director, m.genres, m.year)
-  )
-
-  if (filteredMovies.length === 0 && query.trim()) {
-    return (
-      <div className="ak-empty">
-        <span className="ak-empty-icon">🔍</span>
-        <p className="ak-empty-title">Nada encontrado para «{query}»</p>
-        <p className="ak-empty-sub">Tente outro título, direção ou gênero.</p>
-      </div>
-    )
-  }
+  // Busca client-side
+  const want = movies.filter(m => matches(query, m.title, m.director, m.genres, m.year))
+  // Total de minutos de cinema esperando (só dos filmes com duração conhecida)
+  const totalMin = want.reduce((a, f) => a + (f.runtime ?? 0), 0)
 
   return (
-    <div>
-      {/* Contador */}
-      <p style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)', marginBottom: 16 }}>
-        {filteredMovies.length} {filteredMovies.length === 1 ? 'filme' : 'filmes'} na lista
-      </p>
+    <div className="page">
+      <div className="section-head" style={{ marginTop: 32, marginBottom: 0 }}>
+        <h2 className="section-title" style={{ fontSize: 30 }}>Quero ver</h2>
+        <span className="section-sub">
+          {want.length} {want.length === 1 ? 'filme' : 'filmes'}
+          {totalMin > 0 && <> · {fmtRuntime(totalMin)} de cinema esperando</>}
+        </span>
+      </div>
 
-      {/* Grid de cartões horizontais (mais compactos que o catálogo) */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {filteredMovies.map(movie => (
-          <WatchlistRow
-            key={movie.id}
-            movie={movie}
-            onDetail={() => onSelectMovie(movie.id)}
-            onLog={() => onLogFilm(movie.id, movie.title)}
-          />
+      <div className="wl-list">
+        {want.map(f => (
+          <div key={f.id} className="wl-item">
+            <div className="wl-poster" onClick={() => onSelectMovie(f.id)}>
+              <Poster title={f.title} posterUrl={f.poster_url} palette={f.poster_palette}
+                      genre={f.genres[0]} director={f.director[0]} year={f.year} />
+            </div>
+            <div className="wl-info">
+              <div className="wl-title" onClick={() => onSelectMovie(f.id)}>{f.title}</div>
+              <div className="wl-sub">
+                {[f.director[0], f.year, f.runtime ? fmtRuntime(f.runtime) : null].filter(Boolean).join(' · ')}
+              </div>
+              {f.genres.length > 0 && <span className="wl-genre">{f.genres.join(' · ')}</span>}
+              {f.notes && <div className="wl-note">"{f.notes}"</div>}
+            </div>
+            <div className="wl-right">
+              <button className="btn btn-primary" style={{ fontSize: 12.5, padding: '9px 16px' }}
+                      onClick={() => onLogFilm(f.id, f.title)}>
+                <Icon name="check" /> Já vi
+              </button>
+            </div>
+          </div>
         ))}
-      </div>
-    </div>
-  )
-}
-
-// ── Linha da watchlist ────────────────────────────────────────────────────────
-
-interface WatchlistRowProps {
-  movie: Movie
-  onDetail: () => void
-  onLog: () => void
-}
-
-/**
- * Linha horizontal da watchlist: pôster minúsculo | título + meta | botão "Logar".
- */
-function WatchlistRow({ movie, onDetail, onLog }: WatchlistRowProps) {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '54px 1fr auto',
-        gap: 12,
-        alignItems: 'center',
-        background: 'var(--card)',
-        borderRadius: 'var(--r-md)',
-        padding: '10px 14px',
-        border: '1px solid var(--line)',
-        cursor: 'pointer',
-        transition: 'background 0.12s',
-      }}
-      onClick={onDetail}
-      role="button"
-      tabIndex={0}
-      onKeyDown={e => { if (e.key === 'Enter') onDetail() }}
-    >
-      {/* Pôster miniatura (54×81px) */}
-      <div style={{
-        width: 54, height: 81,
-        borderRadius: 'var(--r-sm)',
-        overflow: 'hidden',
-        flexShrink: 0,
-        background: 'var(--card-2)',
-      }}>
-        {movie.poster_url ? (
-          <img
-            src={movie.poster_url}
-            alt={`Pôster de ${movie.title}`}
-            loading="lazy"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-        ) : (
-          <div
-            className="ak-typo-poster"
-            data-palette={movie.poster_palette}
-            style={{ fontSize: 9, padding: '6px 5px' }}
-          >
-            <p className="ak-typo-title" style={{ fontSize: 10 }}>{movie.title}</p>
-          </div>
+        {want.length === 0 && (
+          <p className="empty-state">
+            {query.trim()
+              ? `Nada encontrado para "${query}".`
+              : 'Watchlist vazia — busque um título em "Logar filme" para adicioná-lo.'}
+          </p>
         )}
       </div>
-
-      {/* Metadados */}
-      <div style={{ minWidth: 0 }}>
-        <p style={{
-          fontFamily: 'var(--serif)',
-          fontStyle: 'italic',
-          fontSize: 14,
-          color: 'var(--ink)',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}>
-          {movie.title}
-        </p>
-        <div style={{ display: 'flex', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
-          {movie.year && (
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)' }}>
-              {movie.year}
-            </span>
-          )}
-          {movie.director?.[0] && (
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)' }}>
-              {movie.director[0]}
-            </span>
-          )}
-          {movie.runtime && (
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)' }}>
-              {movie.runtime}min
-            </span>
-          )}
-        </div>
-        {/* Gêneros */}
-        {movie.genres?.length > 0 && (
-          <div style={{ display: 'flex', gap: 5, marginTop: 5 }}>
-            {movie.genres.slice(0, 3).map(g => (
-              <span key={g} style={{
-                fontFamily: 'var(--mono)', fontSize: 10,
-                color: 'var(--ink-4)', background: 'var(--line-2)',
-                padding: '1px 6px', borderRadius: 99,
-              }}>{g}</span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Botão de registrar sessão */}
-      <button
-        className="ak-btn ak-btn-primary"
-        onClick={e => { e.stopPropagation(); onLog() }}
-        title="Registrar sessão"
-        style={{ fontSize: 12, padding: '6px 12px', flexShrink: 0 }}
-      >
-        ▶ Logar
-      </button>
     </div>
   )
 }

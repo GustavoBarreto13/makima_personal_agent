@@ -1,39 +1,38 @@
-// Tela de Listas/Coleções — Onda 5 (US5).
-// Exibe a grade de coleções com pilha de mini-pôsteres e cor de acento.
-// Permite criar, editar, deletar listas e visualizar o detalhe de cada uma.
+// Tela Listas (coleções curadas) — reescrita hi-fi conforme o handoff §7.6:
+// grade de list-card com pilha de mini-pôsteres + barra de acento; ListView
+// abre a coleção como poster-grid, com números de posição para listas ranked.
+// CRUD real preservado: criar/editar/excluir lista, adicionar/remover filme.
 
 import { useState, useEffect, useCallback } from 'react'
 import { akaneApi } from '../akaneApi'
 import type { MovieList, MovieListDetail } from '../types'
-// Movie não é usado após refatoração — ListDetailView acessa filmes via MovieListDetail.films
+import { Icon } from '../ui/Icon'
 import { Poster } from '../components/Poster'
 import { Stars } from '../components/Stars'
 import { matches } from '../searchUtils'
 
-// ── Props ────────────────────────────────────────────────────────────────────
-
 interface ListsScreenProps {
-  onSelectMovie: (id: string) => void  // Abre detalhe de um filme
-  /** Query da busca contextual da topbar (spec busca Akane) — filtra client-side.
-   *  Na grade filtra as listas; dentro do detalhe filtra os filmes da lista. */
+  onSelectMovie: (id: string) => void
+  /** Busca contextual: filtra a grade de listas OU os filmes dentro do detalhe. */
   query: string
 }
 
-// ── Componente principal ─────────────────────────────────────────────────────
+/** Paleta fixa de acentos para listas (spec 051, US1). */
+const LIST_ACCENTS = [
+  'oklch(0.655 0.205 357)',  // rosa (padrão do domínio)
+  'oklch(0.66 0.115 196)',   // teal
+  'oklch(0.605 0.215 22)',   // carmim
+  'oklch(0.74 0.155 66)',    // âmbar
+  'oklch(0.65 0.15 145)',    // verde
+  'oklch(0.6 0.18 280)',     // roxo
+]
 
 export function ListsScreen({ onSelectMovie, query }: ListsScreenProps) {
   const [lists, setLists] = useState<MovieList[]>([])
   const [loading, setLoading] = useState(true)
-  // Distingue falha de rede de "genuinamente sem listas ainda" (spec 051, FR-009)
   const [loadError, setLoadError] = useState(false)
-
-  // Detalhe da lista selecionada (null = exibe a grade de listas)
   const [selectedList, setSelectedList] = useState<MovieListDetail | null>(null)
-
-  // Estado do modal de criação de lista
   const [showCreate, setShowCreate] = useState(false)
-
-  // Estado do modal de edição de lista (spec 051, US1) — guarda a lista sendo editada
   const [editingList, setEditingList] = useState<MovieListDetail['list'] | null>(null)
 
   const loadLists = useCallback(() => {
@@ -47,21 +46,16 @@ export function ListsScreen({ onSelectMovie, query }: ListsScreenProps) {
 
   useEffect(() => { loadLists() }, [loadLists])
 
-  // Abre o detalhe de uma lista (busca os filmes da lista no servidor)
   function openList(id: string) {
-    akaneApi.listDetail(id)
-      .then(r => setSelectedList(r))
-      .catch(() => {})
+    akaneApi.listDetail(id).then(r => setSelectedList(r)).catch(() => {})
   }
 
-  // Volta para a grade de listas
   function closeDetail() {
     setSelectedList(null)
-    loadLists()  // Recarrega para refletir eventuais edições
+    loadLists()
   }
 
-  // ── Detalhe de uma lista ────────────────────────────────────────────────────
-
+  // ── Detalhe de uma lista ──────────────────────────────────────────────────
   if (selectedList) {
     return (
       <>
@@ -70,13 +64,10 @@ export function ListsScreen({ onSelectMovie, query }: ListsScreenProps) {
           query={query}
           onBack={closeDetail}
           onSelectMovie={onSelectMovie}
-          onDelete={async (id) => {
-            await akaneApi.deleteList(id)
-            closeDetail()
-          }}
+          onDelete={async (id) => { await akaneApi.deleteList(id); closeDetail() }}
           onRemoveMovie={async (listId, movieId) => {
             await akaneApi.removeFromList(listId, movieId)
-            openList(listId)  // Recarrega o detalhe da lista
+            openList(listId)
           }}
           onEdit={(list) => setEditingList(list)}
         />
@@ -87,7 +78,7 @@ export function ListsScreen({ onSelectMovie, query }: ListsScreenProps) {
             onSave={async (name, description, ranked, accent) => {
               await akaneApi.updateList(editingList.id, { name, description, ranked, accent })
               setEditingList(null)
-              openList(editingList.id)  // Recarrega o detalhe com os novos metadados
+              openList(editingList.id)
             }}
           />
         )}
@@ -95,80 +86,42 @@ export function ListsScreen({ onSelectMovie, query }: ListsScreenProps) {
     )
   }
 
-  // ── Grade de listas ─────────────────────────────────────────────────────────
-
-  // Filtro de busca client-side sobre a grade de listas
+  // ── Grade de listas ────────────────────────────────────────────────────────
   const filteredLists = lists.filter(l => matches(query, l.name, l.description))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-      {/* Barra de ações */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 2 }}>
-          {filteredLists.length} {filteredLists.length === 1 ? 'lista' : 'listas'}
-        </span>
-        <button
-          className="ak-btn-primary"
-          onClick={() => setShowCreate(true)}
-          style={{ fontSize: 12, padding: '6px 14px' }}
-        >
-          + Nova lista
+    <div className="page">
+      <div className="section-head" style={{ marginTop: 32 }}>
+        <h2 className="section-title" style={{ fontSize: 30 }}>Listas</h2>
+        <span className="section-sub">coleções que você curou</span>
+        <button className="btn btn-primary" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(true)}>
+          <Icon name="plus" /> Nova lista
         </button>
       </div>
 
-      {/* Loading */}
-      {loading && (
-        <div className="ak-empty">
-          <span className="ak-empty-icon">⊟</span>
-          <p className="ak-empty-title">Carregando listas…</p>
-        </div>
-      )}
+      {loading && <p className="empty-state">Carregando listas…</p>}
 
-      {/* Erro de rede — distinto do estado "sem listas ainda" (spec 051, FR-009) */}
       {!loading && loadError && (
-        <div className="ak-empty">
-          <span className="ak-empty-icon">⚠</span>
-          <p className="ak-empty-title">Não foi possível carregar as listas</p>
-          <p className="ak-empty-sub">Verifique sua conexão e tente novamente.</p>
-          <button className="ak-btn" onClick={loadLists} style={{ marginTop: 10 }}>
-            Tentar novamente
-          </button>
-        </div>
+        <p className="empty-state">
+          Não foi possível carregar as listas.{' '}
+          <button className="btn btn-ghost" onClick={loadLists} style={{ marginLeft: 8 }}>Tentar novamente</button>
+        </p>
       )}
 
-      {/* Grade vazia (genuinamente sem listas) */}
       {!loading && !loadError && lists.length === 0 && (
-        <div className="ak-empty">
-          <span className="ak-empty-icon">⊟</span>
-          <p className="ak-empty-title">Nenhuma lista ainda</p>
-          <p className="ak-empty-sub">Crie coleções temáticas para organizar seus filmes.</p>
-        </div>
+        <p className="empty-state">Nenhuma lista ainda — crie coleções temáticas para organizar seus filmes.</p>
       )}
 
-      {/* Grade vazia por busca sem resultado — distinto de "sem listas ainda" */}
       {!loading && !loadError && lists.length > 0 && filteredLists.length === 0 && query.trim() && (
-        <div className="ak-empty">
-          <span className="ak-empty-icon">🔍</span>
-          <p className="ak-empty-title">Nada encontrado para «{query}»</p>
-          <p className="ak-empty-sub">Tente outro nome de coleção.</p>
-        </div>
+        <p className="empty-state">Nada encontrado para "{query}".</p>
       )}
 
-      {/* Grade de listas */}
       {!loading && !loadError && filteredLists.length > 0 && (
-        <div className="ak-grid">
-          {filteredLists.map(list => (
-            <ListCard
-              key={list.id}
-              list={list}
-              onClick={() => openList(list.id)}
-            />
-          ))}
+        <div className="list-grid">
+          {filteredLists.map(l => <ListCard key={l.id} list={l} onClick={() => openList(l.id)} />)}
         </div>
       )}
 
-      {/* Modal de criação de lista */}
       {showCreate && (
         <CreateListModal
           onClose={() => setShowCreate(false)}
@@ -179,100 +132,37 @@ export function ListsScreen({ onSelectMovie, query }: ListsScreenProps) {
           }}
         />
       )}
-
     </div>
   )
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SUB-COMPONENTES
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Card de lista na grade ──────────────────────────────────────────────────
-
-interface ListCardProps {
-  list: MovieList
-  onClick: () => void
-}
-
-function ListCard({ list, onClick }: ListCardProps) {
-  // Cor de acento da lista (fallback: cor base do domínio)
+/** Card de lista na grade — pilha de mini-pôsteres + barra de acento (handoff). */
+function ListCard({ list, onClick }: { list: MovieList; onClick: () => void }) {
   const accentColor = list.accent || 'var(--rose)'
-
+  // MovieList não carrega cover_movies — a pilha some quando não há capa
+  // conhecida (placeholder de ícone no lugar, sem quebrar o layout).
   return (
-    <button
-      className="ak-poster-card"
-      onClick={onClick}
-      style={{
-        all: 'unset',
-        cursor: 'pointer',
-        borderRadius: 12,
-        overflow: 'hidden',
-        background: 'var(--paper-2)',
-        border: '1px solid var(--line)',
-        display: 'flex', flexDirection: 'column',
-        transition: 'transform 0.1s, box-shadow 0.1s',
-      }}
-      onMouseEnter={e => {
-        const el = e.currentTarget as HTMLElement
-        el.style.transform = 'translateY(-2px)'
-        el.style.boxShadow = '0 8px 24px rgba(0,0,0,0.3)'
-      }}
-      onMouseLeave={e => {
-        const el = e.currentTarget as HTMLElement
-        el.style.transform = ''
-        el.style.boxShadow = ''
-      }}
-    >
-      {/* Faixa de acento no topo */}
-      <div style={{ height: 4, background: accentColor }} />
-
-      {/* Placeholder visual — cover_movies não existe em MovieList (a query de lista não
-          carrega pôsteres dos filmes; isso exigiria uma subquery por lista). Quando
-          for implementado, adicionar cover_movies?: Pick<Movie,'id'|'title'|...>[] ao tipo. */}
-      <div style={{ padding: '12px 12px 0', display: 'flex', gap: 4, height: 80 }}>
-        <div
-          style={{
-            flex: 1,
-            borderRadius: 4,
-            background: 'var(--paper-3, var(--paper))',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--ink-4)', fontSize: 20,
-          }}
-        >
-          ⊟
-        </div>
+    <div className="list-card" onClick={onClick}>
+      <div className="list-spines">
+        <div className="list-spines-placeholder"><Icon name="listas" /></div>
       </div>
-
-      {/* Informações da lista */}
-      <div style={{ padding: '10px 12px 12px' }}>
-        <p style={{ margin: 0, fontFamily: 'var(--serif)', fontSize: 14, color: 'var(--ink)', fontWeight: 600, lineHeight: 1.3 }}>
-          {list.name}
-          {list.ranked && (
-            <span style={{ marginLeft: 6, fontSize: 10, color: accentColor, fontFamily: 'var(--mono)', background: 'color-mix(in srgb, var(--rose) 15%, transparent)', padding: '1px 5px', borderRadius: 4 }}>
-              ranked
-            </span>
-          )}
-        </p>
-        {list.description && (
-          <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)', lineClamp: 2, overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}>
-            {list.description}
-          </p>
-        )}
-        {/* MovieList.count é o campo correto — não film_count (ver types.ts) */}
-        <p style={{ margin: '6px 0 0', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)' }}>
-          {list.count} {list.count === 1 ? 'filme' : 'filmes'}
-        </p>
+      <div className="list-accent-bar" style={{ background: accentColor }} />
+      <div className="list-name">
+        {list.name}
+        {list.ranked && <span className="list-ranked-badge">ranked</span>}
       </div>
-    </button>
+      {list.description && <div className="list-desc">{list.description}</div>}
+      <div className="list-count">{list.count} {list.count === 1 ? 'filme' : 'filmes'}</div>
+    </div>
   )
 }
 
-
-// ── Detalhe de uma lista ────────────────────────────────────────────────────
-
-interface ListDetailViewProps {
+/** Detalhe de uma lista — grade de pôsteres com número de posição (ranked). */
+function ListDetailView({ list: detail, query, onBack, onSelectMovie, onDelete, onRemoveMovie, onEdit }: {
   list: MovieListDetail
   query: string
   onBack: () => void
@@ -280,182 +170,80 @@ interface ListDetailViewProps {
   onDelete: (id: string) => void
   onRemoveMovie: (listId: string, movieId: string) => void
   onEdit: (list: MovieListDetail['list']) => void
-}
-
-function ListDetailView({ list: detail, query, onBack, onSelectMovie, onDelete, onRemoveMovie, onEdit }: ListDetailViewProps) {
+}) {
   const [confirmDelete, setConfirmDelete] = useState(false)
-
-  // MovieListDetail tem forma aninhada: { list: {id, name, description, accent, ranked}, films: [...] }
-  // Extraímos os metadados da lista e os filmes separadamente
-  const meta      = detail.list   // Metadados: id, name, description, accent, ranked
-  const allFilms  = detail.films  // Filmes: Pick<Movie, 'id'|'title'|'year'|...>[]
-  // Dentro do detalhe, a busca da topbar filtra os filmes desta lista por título
-  const films = allFilms.filter(m => matches(query, m.title))
+  const meta = detail.list
+  const films = detail.films.filter(m => matches(query, m.title))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="page">
+      <button className="detail-back" onClick={onBack}><Icon name="arrowLeft" /> Listas</button>
 
-      {/* Cabeçalho */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <button
-          className="ak-btn"
-          onClick={onBack}
-          style={{ fontSize: 12, flexShrink: 0 }}
-        >
-          ← Voltar
-        </button>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontFamily: 'var(--serif)', fontSize: 20, color: 'var(--ink)' }}>
-            {meta.name}
-          </h2>
-          {meta.description && (
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--ink-3)' }}>{meta.description}</p>
-          )}
-          <p style={{ margin: '4px 0 0', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)' }}>
-            {films.length} {films.length === 1 ? 'filme' : 'filmes'}
-          </p>
+      <div style={{ marginTop: 18, display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <div className="list-accent-bar" style={{ background: meta.accent || 'var(--rose)', width: 44, height: 4 }} />
+          <h1 className="detail-title" style={{ fontSize: 40, marginTop: 8 }}>{meta.name}</h1>
+          {meta.description && <p className="list-desc" style={{ fontSize: 15, maxWidth: '56ch' }}>{meta.description}</p>}
+          <div className="list-count">{films.length} {films.length === 1 ? 'filme' : 'filmes'}</div>
         </div>
-        {/* Botão de editar a lista (spec 051, US1) */}
-        {!confirmDelete && (
-          <button
-            className="ak-btn"
-            onClick={() => onEdit(meta)}
-            style={{ fontSize: 11 }}
-          >
-            Editar
-          </button>
-        )}
-        {/* Botão de deletar a lista */}
-        {!confirmDelete ? (
-          <button
-            className="ak-btn"
-            onClick={() => setConfirmDelete(true)}
-            style={{ fontSize: 11, color: 'var(--heart)' }}
-          >
-            Excluir
-          </button>
-        ) : (
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              className="ak-btn"
-              onClick={() => setConfirmDelete(false)}
-              style={{ fontSize: 11 }}
-            >
-              Cancelar
+        <div style={{ display: 'flex', gap: 8 }}>
+          {!confirmDelete && (
+            <button className="btn btn-ghost" onClick={() => onEdit(meta)}><Icon name="pen" /> Editar</button>
+          )}
+          {!confirmDelete ? (
+            <button className="btn btn-ghost" style={{ color: 'var(--heart)' }} onClick={() => setConfirmDelete(true)}>
+              <Icon name="trash" /> Excluir
             </button>
-            <button
-              onClick={() => onDelete(meta.id)}
-              style={{
-                all: 'unset', cursor: 'pointer', fontSize: 11, padding: '4px 10px',
-                background: 'var(--heart)', color: '#fff', borderRadius: 6,
-              }}
-            >
-              Confirmar exclusão
-            </button>
-          </div>
-        )}
+          ) : (
+            <>
+              <button className="btn btn-ghost" onClick={() => setConfirmDelete(false)}>Cancelar</button>
+              <button className="btn btn-primary" style={{ background: 'var(--heart)', borderColor: 'var(--heart)' }}
+                      onClick={() => onDelete(meta.id)}>
+                Confirmar exclusão
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Grade de filmes da lista */}
       {films.length === 0 && query.trim() ? (
-        <div className="ak-empty">
-          <span className="ak-empty-icon">🔍</span>
-          <p className="ak-empty-title">Nada encontrado para «{query}»</p>
-          <p className="ak-empty-sub">Tente outro título.</p>
-        </div>
+        <p className="empty-state">Nada encontrado para "{query}".</p>
       ) : films.length === 0 ? (
-        <div className="ak-empty">
-          <span className="ak-empty-icon">⊟</span>
-          <p className="ak-empty-title">Lista vazia</p>
-          <p className="ak-empty-sub">Adicione filmes a esta lista pelo detalhe do filme.</p>
-        </div>
+        <p className="empty-state">Lista vazia — adicione filmes a esta lista pelo detalhe do filme.</p>
       ) : (
-        <div className="ak-grid">
+        <div className="poster-grid" style={{ marginTop: 28 }}>
           {films.map((movie, index) => (
-            <div key={movie.id} style={{ position: 'relative' }}>
-              {/* Número da posição (para listas ranked) */}
-              {meta.ranked && (
-                <div
-                  style={{
-                    position: 'absolute', top: 6, left: 6,
-                    background: 'var(--rose)',
-                    color: '#fff',
-                    borderRadius: '50%',
-                    width: 22, height: 22,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 11, fontWeight: 700,
-                    zIndex: 10,
-                  }}
-                >
-                  {index + 1}
+            <div key={movie.id} className="list-item-wrap">
+              {meta.ranked && <div className="list-rank-badge">{index + 1}</div>}
+              <a className="poster-link" onClick={() => onSelectMovie(movie.id)}>
+                <Poster title={movie.title} posterUrl={movie.poster_url} palette={movie.poster_palette} year={movie.year} />
+                <div className="poster-meta">
+                  <div className="pm-title">{movie.title}</div>
+                  <div className="pm-row">
+                    {movie.rating != null
+                      ? <Stars value={movie.rating} />
+                      : <span className="result-count" style={{ color: 'var(--rose-deep)' }}>quero ver</span>}
+                  </div>
                 </div>
-              )}
-              <button
-                className="ak-poster-card"
-                onClick={() => onSelectMovie(movie.id)}
-                style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%' }}
-              >
-                <Poster
-                  title={movie.title}
-                  posterUrl={movie.poster_url}
-                  palette={movie.poster_palette}
-                  year={movie.year}
-                />
-                <div style={{ padding: '6px 4px' }}>
-                  <p style={{ margin: 0, fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {movie.title}
-                  </p>
-                  {movie.rating != null && <Stars rating={movie.rating} size={10} />}
-                </div>
-              </button>
-              {/* Botão de remover da lista */}
-              <button
-                onClick={() => onRemoveMovie(meta.id, movie.id)}
-                style={{
-                  position: 'absolute', top: 6, right: 6,
-                  background: 'rgba(0,0,0,0.6)',
-                  border: 'none', color: '#fff',
-                  borderRadius: '50%',
-                  width: 22, height: 22,
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-                title="Remover da lista"
-              >
-                ✕
+              </a>
+              <button className="list-item-remove" title="Remover da lista"
+                      onClick={() => onRemoveMovie(meta.id, movie.id)}>
+                <Icon name="x" />
               </button>
             </div>
           ))}
         </div>
       )}
-
     </div>
   )
 }
 
-
-// ── Paleta fixa de acentos para listas (spec 051, US1) ────────────────────────
-// Mesmo padrão de swatches OKLCH já usado no seletor de acento do AkaneShell.
-const LIST_ACCENTS = [
-  'oklch(0.655 0.205 357)',  // rosa (padrão do domínio)
-  'oklch(0.66 0.115 196)',   // teal
-  'oklch(0.605 0.215 22)',   // carmim
-  'oklch(0.74 0.155 66)',    // âmbar
-  'oklch(0.65 0.15 145)',    // verde
-  'oklch(0.6 0.18 280)',     // roxo
-]
-
-// ── Modal de criação/edição de lista ──────────────────────────────────────────
-
-interface CreateListModalProps {
+/** Modal de criação/edição de lista. */
+function CreateListModal({ onClose, onSave, initial }: {
   onClose: () => void
   onSave: (name: string, description: string, ranked: boolean, accent?: string) => void
-  /** Quando presente, o modal abre em modo edição pré-preenchido (spec 051, US1). */
   initial?: MovieListDetail['list']
-}
-
-function CreateListModal({ onClose, onSave, initial }: CreateListModalProps) {
+}) {
   const [name, setName] = useState(initial?.name ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [ranked, setRanked] = useState(initial?.ranked ?? false)
@@ -466,103 +254,57 @@ function CreateListModal({ onClose, onSave, initial }: CreateListModalProps) {
     onSave(name.trim(), description.trim(), ranked, accent ?? undefined)
   }
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.7)',
-        zIndex: 200,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: 'var(--paper)',
-          borderRadius: 16,
-          padding: 24,
-          maxWidth: 400,
-          width: '100%',
-          display: 'flex', flexDirection: 'column', gap: 14,
-        }}
-      >
-        <h3 style={{ margin: 0, fontFamily: 'var(--serif)', fontSize: 18, color: 'var(--ink)' }}>
-          {initial ? 'Editar lista' : 'Nova lista'}
-        </h3>
-
-        {/* Campo nome */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <label style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: 1 }}>
-            Nome *
-          </label>
-          <input
-            className="ak-input"
-            placeholder="Ex.: Filmes de Satoshi Kon"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            autoFocus
-            onKeyDown={e => e.key === 'Enter' && handleSave()}
-          />
+    <div className="modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" role="dialog" aria-label={initial ? 'Editar lista' : 'Nova lista'}>
+        <div className="modal-head">
+          <span className="modal-title">{initial ? 'Editar lista' : 'Nova lista'}</span>
+          <button className="modal-x" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
         </div>
-
-        {/* Campo descrição */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <label style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: 1 }}>
-            Descrição
-          </label>
-          <input
-            className="ak-input"
-            placeholder="Descrição opcional"
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-          />
-        </div>
-
-        {/* Seletor de cor de acento (spec 051, US1/FR-002) */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <label style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: 1 }}>
-            Cor de destaque
-          </label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {LIST_ACCENTS.map(color => (
-              <button
-                key={color}
-                onClick={() => setAccent(color)}
-                title={color}
-                style={{
-                  width: 22, height: 22, borderRadius: '50%',
-                  background: color,
-                  border: accent === color ? '2px solid var(--ink)' : '2px solid transparent',
-                  cursor: 'pointer', padding: 0,
-                }}
-              />
-            ))}
+        <div className="modal-body">
+          <div className="modal-field">
+            <label className="modal-label">Nome</label>
+            <input className="text-input" placeholder="Ex.: Filmes de Satoshi Kon" value={name}
+                   onChange={e => setName(e.target.value)} autoFocus
+                   onKeyDown={e => e.key === 'Enter' && handleSave()} />
           </div>
-        </div>
 
-        {/* Toggle de lista rankeada */}
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)' }}>
-          <input
-            type="checkbox"
-            checked={ranked}
-            onChange={e => setRanked(e.target.checked)}
-            style={{ accentColor: 'var(--rose)' }}
-          />
-          Lista rankeada (filmes em ordem de posição)
-        </label>
+          <div className="modal-field">
+            <label className="modal-label">Descrição <span className="ml-hint">· opcional</span></label>
+            <input className="text-input" placeholder="Descrição da coleção" value={description}
+                   onChange={e => setDescription(e.target.value)} />
+          </div>
 
-        {/* Botões */}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
-          <button className="ak-btn" onClick={onClose}>Cancelar</button>
-          <button
-            className="ak-btn-primary"
-            onClick={handleSave}
-            disabled={!name.trim()}
-          >
-            {initial ? 'Salvar' : 'Criar lista'}
-          </button>
+          <div className="modal-field">
+            <label className="modal-label">Cor de destaque</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {LIST_ACCENTS.map(color => (
+                <button key={color} onClick={() => setAccent(color)} title={color}
+                        className={'list-accent-swatch' + (accent === color ? ' sel' : '')}
+                        style={{ background: color }} />
+              ))}
+            </div>
+          </div>
+
+          <div className="modal-field">
+            <button className={'toggle-pill' + (ranked ? ' on like' : '')} onClick={() => setRanked(v => !v)}>
+              <Icon name="listas" /> Lista rankeada (ordem de posição)
+            </button>
+          </div>
+
+          <div className="modal-foot">
+            <div className="grow" />
+            <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={!name.trim()}>
+              <Icon name="check" /> {initial ? 'Salvar' : 'Criar lista'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

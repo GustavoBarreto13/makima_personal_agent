@@ -1,968 +1,914 @@
-/* ─────────────────────────────────────────────────────────────────────────
-   Akane · Filmes — Design System (portado do design_handoff_akane_filmes)
-   Todos os tokens são escopados em .akane-shell para não vazar para outros Shells.
-   ───────────────────────────────────────────────────────────────────────── */
-
-/* Fontes do Google — as mesmas das outras Shells + DM Serif Display (títulos) */
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
+/* ═══════════════════════════════════════════════════════════════════════════
+   Akane · Filmes — sistema visual (porte 1:1 do design handoff, spec 015)
+   GERADO a partir de specs/015-akane-filmes/design_handoff_akane_filmes/akane/styles.css
+   pelo script scope-akane-css.mjs — todo seletor é escopado em .akane-shell
+   para não vazar para os outros shells do webapp (e não ser vitimado por eles).
+   Edições manuais: apenas na seção "AJUSTES DO APP REAL" no fim do arquivo.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Serif+Display:ital@0;1&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&display=swap');
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   .akane-shell — escopo raiz (tema escuro é o padrão — "sala de projeção")
+   Akane · Filmes — sistema visual
+   Sala de cinema: escuro por padrão (claro no tweak). Acento rosa-de-palco
+   + ouro de estrela. Tipo: DM Serif Display (marquise) + Newsreader (crítica)
+   + DM Sans (UI) + DM Mono (dados). Estética Letterboxd ⨯ padrão Makima.
    ═══════════════════════════════════════════════════════════════════════════ */
+
+.akane-shell *, .akane-shell *::before, .akane-shell *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .akane-shell {
-  /* ── Superfícies (tema escuro) ─────────────────────────────────────────── */
-  --paper:   oklch(0.155 0.010 330);   /* fundo principal do app */
-  --paper-2: oklch(0.185 0.013 332);   /* sidebar + superfícies alternativas */
-  --card:    oklch(0.208 0.014 332);   /* cards, modais, dropdowns */
-  --card-2:  oklch(0.182 0.012 332);   /* cards secundários, fundo hero */
-  --mist:    oklch(0.255 0.030 345);   /* fundo do hero backdrop */
+  /* superfícies — ESCURO é o padrão (sala de cinema) */
+  --paper:   oklch(0.155 0.010 330);
+  --paper-2: oklch(0.185 0.013 332);
+  --card:    oklch(0.208 0.014 332);
+  --card-2:  oklch(0.182 0.012 332);
+  --mist:    oklch(0.255 0.030 345);
 
-  /* ── Tinta (texto) — escuro ─────────────────────────────────────────────── */
-  --ink:   oklch(0.955 0.008 330);   /* texto primário (quase branco rosado) */
-  --ink-2: oklch(0.78 0.018 332);    /* texto secundário */
-  --ink-3: oklch(0.62 0.016 334);    /* texto terciário / muted */
-  --ink-4: oklch(0.475 0.014 336);   /* texto muito discreto */
+  --ink:   oklch(0.95 0.008 330);
+  --ink-2: oklch(0.76 0.012 332);
+  --ink-3: oklch(0.605 0.014 334);
+  --ink-4: oklch(0.475 0.014 336);
 
-  /* ── Linhas e bordas ─────────────────────────────────────────────────────── */
-  --line:   oklch(0.305 0.022 334);  /* borda padrão */
-  --line-2: oklch(0.245 0.016 334);  /* divisórias mais sutis */
+  --line:   oklch(0.305 0.014 334);
+  --line-2: oklch(0.245 0.012 334);
 
-  /* ── Acento base (Rosa de palco — hue 357) ──────────────────────────────── */
-  /* Por padrão o app abre com data-accent='teal' (override abaixo)           */
-  --rose:        oklch(0.655 0.205 357);   /* acento principal */
-  --rose-deep:   oklch(0.76 0.195 357);    /* texto acento sobre escuro (+ claro) */
-  --rose-bright: oklch(0.76 0.22 354);     /* hover / destaque */
-  --rose-tint:   oklch(0.655 0.205 357 / 0.10);   /* fundo tint (badges, seleção) */
-  --rose-tint-2: oklch(0.655 0.205 357 / 0.18);   /* hover tint */
+  /* acento Akane — rosa de palco + ouro de estrela */
+  --rose:        oklch(0.655 0.205 357);
+  --rose-deep:   oklch(0.755 0.165 354);   /* texto-acento sobre escuro (mais claro) */
+  --rose-bright: oklch(0.72 0.20 354);
+  --rose-tint:   oklch(0.655 0.205 357 / 0.16);
+  --rose-tint-2: oklch(0.655 0.205 357 / 0.26);
+  --gold:        oklch(0.815 0.135 86);
+  --gold-deep:   oklch(0.86 0.12 88);
+  --gold-tint:   oklch(0.815 0.135 86 / 0.16);
+  --heart:       oklch(0.68 0.20 12);
 
-  /* ── Estrelas e coração (INDEPENDENTES do acento) ───────────────────────── */
-  /* As estrelas usam verde/ouro Letterboxd FIXO, não acompanham o acento     */
-  --gold:  oklch(0.815 0.135 86);    /* estrelas + histograma de notas */
-  --heart: oklch(0.68 0.20 12);      /* coração (curtir/liked) */
-
-  /* ── Heatmap (acompanha o acento) ─────────────────────────────────────────── */
+  /* heatmap de sessões (mais sessões = mais quente) */
   --heat-0: var(--line-2);
-  --heat-1: oklch(0.655 0.205 357 / 0.25);
-  --heat-2: oklch(0.655 0.205 357 / 0.50);
-  --heat-3: oklch(0.655 0.205 357 / 0.75);
-  --heat-4: oklch(0.655 0.205 357);
+  --heat-1: oklch(0.40 0.09 358);
+  --heat-2: oklch(0.52 0.14 357);
+  --heat-3: oklch(0.62 0.19 356);
+  --heat-4: oklch(0.74 0.20 354);
 
-  /* ── Tipografia ─────────────────────────────────────────────────────────── */
-  --display: 'DM Serif Display', Georgia, serif;   /* títulos grandes, pôsteres */
-  --serif: 'Newsreader', Georgia, serif;            /* reviews, notas, citações */
-  --sans:  'DM Sans', system-ui, sans-serif;        /* UI, botões, corpo */
-  --mono:  'DM Mono', ui-monospace, monospace;      /* datas, rótulos, contagens */
+  --topbar-bg: oklch(0.155 0.010 330 / 0.80);
+  --footbar-bg: oklch(0.185 0.013 332 / 0.90);
 
-  /* ── Raios e dimensões ──────────────────────────────────────────────────── */
-  --r-sm: 7px;
-  --r-md: 11px;
-  --r-lg: 18px;
-  --cover-w: 168px;         /* largura padrão do pôster no grid */
-  --poster-ratio: 2/3;      /* proporção pôster cinematográfico */
+  --serif:   'Newsreader', Georgia, serif;
+  --display: 'DM Serif Display', 'Newsreader', Georgia, serif;
+  --sans:    'DM Sans', system-ui, -apple-system, sans-serif;
+  --mono:    'DM Mono', ui-monospace, 'SF Mono', monospace;
 
-  /* ── Sombras (mais densas no escuro) ─────────────────────────────────────── */
-  --shadow-sm:     0 1px 2px oklch(0.1 0.01 330 / 0.35), 0 1px 1px oklch(0.1 0.01 330 / 0.25);
-  --shadow-md:     0 2px 8px oklch(0.1 0.01 330 / 0.45), 0 8px 28px oklch(0.1 0.01 330 / 0.4);
-  --shadow-lg:     0 12px 40px oklch(0.1 0.01 330 / 0.55);
-  --shadow-poster: 0 4px 18px oklch(0.1 0.01 330 / 0.6), 0 1px 2px oklch(0.1 0.01 330 / 0.5);
+  --r-sm: 7px; --r-md: 11px; --r-lg: 18px;
 
-  /* ── Chrome translúcido ────────────────────────────────────────────────── */
-  --topbar-bg: oklch(0.155 0.010 330 / 0.85);   /* topbar com blur */
-  --nextbar-bg: oklch(0.185 0.013 332 / 0.92);  /* barra de próxima sessão */
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.36);
+  --shadow-md: 0 2px 6px oklch(0 0 0 / 0.40), 0 10px 30px oklch(0 0 0 / 0.46);
+  --shadow-lg: 0 18px 50px oklch(0 0 0 / 0.58);
+  --shadow-poster: 0 1px 2px oklch(0 0 0 / 0.5), 0 10px 24px oklch(0 0 0 / 0.5);
 
-  font-family: var(--sans);
-  font-size: 14px;
-  background: var(--paper);
-  color: var(--ink);
-  height: 100dvh;
-  overflow: hidden;
+  --cover-w: 168px;
+  --accent-h: 357;   /* hue do acento (tweak de cor) */
 }
 
-/* ── Tema claro (override via data-theme='light') ──────────────────────────── */
+/* acentos alternativos (tweak "Cor de acento") */
+.akane-shell[data-accent='carmim'] { --rose: oklch(0.605 0.215 22);  --rose-deep: oklch(0.72 0.17 24);  --rose-bright: oklch(0.68 0.21 22);  --rose-tint: oklch(0.605 0.215 22 / 0.16);  --rose-tint-2: oklch(0.605 0.215 22 / 0.26); --heat-1: oklch(0.40 0.10 24); --heat-2: oklch(0.52 0.15 23); --heat-3: oklch(0.62 0.20 22); --heat-4: oklch(0.72 0.21 22); }
+.akane-shell[data-accent='ambar']  { --rose: oklch(0.74 0.155 66);   --rose-deep: oklch(0.83 0.13 72);  --rose-bright: oklch(0.80 0.15 70);  --rose-tint: oklch(0.74 0.155 66 / 0.16);   --rose-tint-2: oklch(0.74 0.155 66 / 0.26);  --heat-1: oklch(0.45 0.07 66); --heat-2: oklch(0.57 0.11 68); --heat-3: oklch(0.67 0.14 70); --heat-4: oklch(0.79 0.15 72); }
+.akane-shell[data-accent='teal']   { --rose: oklch(0.66 0.115 196);  --rose-deep: oklch(0.79 0.10 192); --rose-bright: oklch(0.74 0.12 194); --rose-tint: oklch(0.66 0.115 196 / 0.16);  --rose-tint-2: oklch(0.66 0.115 196 / 0.26); --heat-1: oklch(0.42 0.06 196); --heat-2: oklch(0.54 0.09 195); --heat-3: oklch(0.64 0.11 194); --heat-4: oklch(0.77 0.12 192); }
+
+/* No protótipo era html,body — aqui o container do shell assume o papel */
+.akane-shell {
+  height: 100dvh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.akane-shell ::selection { background: var(--rose-tint-2); }
+
+/* ─── Tema CLARO (toggle) ───────────────────────────────────────────────── */
 .akane-shell[data-theme='light'] {
-  --paper:   oklch(0.985 0.004 350);
-  --paper-2: oklch(0.965 0.008 350);
+  --paper:   oklch(0.985 0.004 330);
+  --paper-2: oklch(0.974 0.006 335);
   --card:    oklch(1 0 0);
-  --card-2:  oklch(0.975 0.006 350);
-  --mist:    oklch(0.940 0.018 352);
+  --card-2:  oklch(0.977 0.005 335);
+  --mist:    oklch(0.955 0.014 345);
 
-  --ink:   oklch(0.235 0.020 335);
-  --ink-2: oklch(0.42 0.018 332);
-  --ink-3: oklch(0.58 0.014 334);
-  --ink-4: oklch(0.70 0.010 336);
+  --ink:   oklch(0.235 0.014 332);
+  --ink-2: oklch(0.43 0.014 332);
+  --ink-3: oklch(0.575 0.013 332);
+  --ink-4: oklch(0.70 0.011 332);
 
-  --line:   oklch(0.895 0.012 334);
-  --line-2: oklch(0.935 0.008 334);
+  --line:   oklch(0.90 0.006 332);
+  --line-2: oklch(0.945 0.005 332);
 
-  --rose-deep: oklch(0.56 0.195 357);  /* texto acento sobre claro (mais escuro) */
-
-  --shadow-sm:     0 1px 2px oklch(0.3 0.02 330 / 0.06), 0 1px 1px oklch(0.3 0.02 330 / 0.05);
-  --shadow-md:     0 2px 6px oklch(0.3 0.02 330 / 0.08), 0 8px 28px oklch(0.3 0.02 330 / 0.08);
-  --shadow-lg:     0 12px 40px oklch(0.3 0.02 330 / 0.14);
-  --shadow-poster: 0 2px 8px oklch(0.3 0.02 330 / 0.18), 0 1px 2px oklch(0.3 0.02 330 / 0.14);
-
-  --topbar-bg:  oklch(0.985 0.004 350 / 0.85);
-  --nextbar-bg: oklch(0.965 0.008 350 / 0.92);
+  --rose:        oklch(0.555 0.21 358);
+  --rose-deep:   oklch(0.475 0.19 358);
+  --rose-bright: oklch(0.64 0.205 355);
+  --rose-tint:   oklch(0.555 0.21 358 / 0.10);
+  --rose-tint-2: oklch(0.555 0.21 358 / 0.16);
+  --gold:        oklch(0.70 0.125 80);
+  --gold-deep:   oklch(0.575 0.11 74);
+  --gold-tint:   oklch(0.70 0.125 80 / 0.14);
 
   --heat-0: var(--line-2);
-}
-
-/* ── Acentos alternativos ─────────────────────────────────────────────────── */
-
-/* Verde-água (padrão de fábrica — aplicado no boot via JS) */
-.akane-shell[data-accent='teal'] {
-  --rose:        oklch(0.66 0.115 196);
-  --rose-deep:   oklch(0.78 0.105 194);
-  --rose-bright: oklch(0.76 0.125 193);
-  --rose-tint:   oklch(0.66 0.115 196 / 0.10);
-  --rose-tint-2: oklch(0.66 0.115 196 / 0.18);
-  --heat-1: oklch(0.66 0.115 196 / 0.25);
-  --heat-2: oklch(0.66 0.115 196 / 0.50);
-  --heat-3: oklch(0.66 0.115 196 / 0.75);
-  --heat-4: oklch(0.66 0.115 196);
-}
-
-/* Carmim */
-.akane-shell[data-accent='carmim'] {
-  --rose:        oklch(0.605 0.215 22);
-  --rose-deep:   oklch(0.73 0.205 22);
-  --rose-bright: oklch(0.72 0.225 20);
-  --rose-tint:   oklch(0.605 0.215 22 / 0.10);
-  --rose-tint-2: oklch(0.605 0.215 22 / 0.18);
-  --heat-1: oklch(0.605 0.215 22 / 0.25);
-  --heat-2: oklch(0.605 0.215 22 / 0.50);
-  --heat-3: oklch(0.605 0.215 22 / 0.75);
-  --heat-4: oklch(0.605 0.215 22);
-}
-
-/* Âmbar */
-.akane-shell[data-accent='ambar'] {
-  --rose:        oklch(0.74 0.155 66);
-  --rose-deep:   oklch(0.86 0.145 64);
-  --rose-bright: oklch(0.84 0.165 62);
-  --rose-tint:   oklch(0.74 0.155 66 / 0.12);
-  --rose-tint-2: oklch(0.74 0.155 66 / 0.20);
-  --heat-1: oklch(0.74 0.155 66 / 0.25);
-  --heat-2: oklch(0.74 0.155 66 / 0.50);
-  --heat-3: oklch(0.74 0.155 66 / 0.75);
-  --heat-4: oklch(0.74 0.155 66);
-}
-
-/* ── Densidades de grid ───────────────────────────────────────────────────── */
-.akane-shell[data-density='large']   { --cover-w: 198px; }
-.akane-shell[data-density='medium']  { --cover-w: 162px; }
-.akane-shell[data-density='compact'] { --cover-w: 120px; }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Layout do Shell
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.ak-app {
-  display: grid;
-  grid-template-columns: 252px 1fr;
-  grid-template-rows: 1fr auto;
-  height: 100dvh;
-  overflow: hidden;
-}
-
-/* Sidebar ─────────────────────────────────────────────────────────────────── */
-.ak-sidebar {
-  /* Coluna fixa: sem isso, o auto-placement do grid pode empurrar a sidebar
-     para uma 3ª coluna implícita quando a .ak-nextbar (grid-column: 1/3) ocupa
-     a coluna 1 da row 2 antes da sidebar ser posicionada — bug só visível
-     quando a nextbar renderiza (watchlist com itens). */
-  grid-column: 1;
-  grid-row: 1/3;
-  background: var(--paper-2);
-  border-right: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.ak-sidebar-mark {
-  padding: 20px 20px 16px;
-  border-bottom: 1px solid var(--line-2);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-/* Círculo com imagem da Akane + glow do acento */
-.ak-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  overflow: hidden;
-  flex-shrink: 0;
-  background: var(--card);
-  box-shadow: 0 0 0 2px var(--rose-tint-2), 0 0 12px var(--rose-tint);
-}
-
-.ak-avatar img { width: 100%; height: 100%; object-fit: cover; }
-
-.ak-brand-name {
-  font-family: var(--display);
-  font-size: 20px;
-  color: var(--ink);
-  line-height: 1;
-}
-
-.ak-brand-sub {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  color: var(--rose);
-  margin-top: 2px;
-  text-transform: uppercase;
-}
-
-/* Botão "Logar filme" — CTA principal */
-.ak-log-btn {
-  margin: 14px 16px;
-  padding: 9px 14px;
-  background: var(--rose);
-  color: oklch(0.12 0.01 330);   /* texto escuro sobre acento */
-  border: none;
-  border-radius: var(--r-md);
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: background 0.15s, opacity 0.15s;
-  flex-shrink: 0;
-}
-
-.ak-log-btn:hover { opacity: 0.88; }
-
-/* Navegação ─────────────────────────────────────────────────────────────────── */
-.ak-nav { flex: 1; padding: 6px 10px; overflow-y: auto; }
-
-.ak-nav-group { margin-bottom: 18px; }
-
-.ak-nav-label {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-  padding: 0 10px 6px;
-  display: block;
-}
-
-.ak-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  font-size: 13.5px;
-  color: var(--ink-3);
-  transition: background 0.12s, color 0.12s;
-  border: none;
-  background: transparent;
-  width: 100%;
-  text-align: left;
-}
-
-.ak-nav-item:hover {
-  background: var(--rose-tint);
-  color: var(--ink-2);
-}
-
-.ak-nav-item.active {
-  background: var(--rose-tint);
-  color: var(--rose-deep);
-  font-weight: 500;
-}
-
-.ak-nav-item .ak-nav-badge {
-  margin-left: auto;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--ink-4);
-  background: var(--line-2);
-  padding: 1px 5px;
-  border-radius: 99px;
-}
-
-.ak-nav-item.active .ak-nav-badge {
-  color: var(--rose);
-  background: var(--rose-tint);
-}
-
-/* Footer da sidebar (← Voltar à Makima) */
-.ak-sidebar-footer {
-  padding: 12px 16px;
-  border-top: 1px solid var(--line-2);
-  flex-shrink: 0;
-}
-
-.ak-back-btn {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  color: var(--ink-4);
-  text-decoration: none;
-  cursor: pointer;
-  background: none;
-  border: none;
-  padding: 6px 8px;
-  border-radius: var(--r-sm);
-  width: 100%;
-  transition: color 0.12s, background 0.12s;
-}
-
-.ak-back-btn:hover {
-  color: var(--ink-3);
-  background: var(--rose-tint);
-}
-
-/* Área de conteúdo ──────────────────────────────────────────────────────────── */
-.ak-main {
-  /* Coluna/linha fixas — ver comentário em .ak-sidebar sobre o bug de
-     auto-placement que isso evita. */
-  grid-column: 2;
-  grid-row: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--paper);
-}
-
-/* Topbar ─────────────────────────────────────────────────────────────────────── */
-.ak-topbar {
-  height: 56px;
-  background: var(--topbar-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  padding: 0 24px;
-  gap: 12px;
-  flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
-.ak-topbar-title {
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 17px;
-  color: var(--ink-2);
-  flex: 1;
-}
-
-/* Caixa de busca contextual da topbar — filtra a tela ativa (client-side) */
-.ak-topbar-search {
-  flex: 1;
-  max-width: 320px;
-  height: 34px;
-  border-radius: 999px;
-  padding: 0 12px;
-  background: var(--paper-2);
-  border: 1px solid var(--line);
-  color: var(--ink);
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
-  transition: border-color 0.12s, box-shadow 0.12s;
-}
-.ak-topbar-search::placeholder { color: var(--ink-3); }
-.ak-topbar-search:focus {
-  border-color: var(--rose);
-  box-shadow: 0 0 0 3px var(--rose-tint);
-}
-/* Remove o "x" nativo de limpeza do Webkit — destoa dos tokens do tema */
-.ak-topbar-search::-webkit-search-cancel-button { appearance: none; }
-
-/* Content scroll ─────────────────────────────────────────────────────────────── */
-.ak-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px;
-}
-
-/* Nextbar (barra de próxima sessão) ─────────────────────────────────────────── */
-.ak-nextbar {
-  /* Só a coluna do conteúdo — não por baixo da sidebar (que já ocupa as
-     duas rows da coluna 1 inteira). */
-  grid-column: 2;
-  grid-row: 2;
-  background: var(--nextbar-bg);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid var(--line);
-  height: 68px;
-  display: flex;
-  align-items: center;
-  padding: 0 24px;
-  gap: 12px;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Grid de pôsteres
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.ak-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--cover-w), 1fr));
-  gap: 16px;
-}
-
-/* ── Cartão de pôster ─────────────────────────────────────────────────────── */
-.ak-poster-card {
-  position: relative;
-  cursor: pointer;
-  border-radius: var(--r-md);
-  overflow: hidden;
-  background: var(--card);
-  box-shadow: var(--shadow-poster);
-  transition: transform 0.18s, box-shadow 0.18s;
-  aspect-ratio: var(--poster-ratio);
-}
-
-.ak-poster-card:hover {
-  transform: translateY(-3px) scale(1.015);
-  box-shadow: var(--shadow-lg);
-}
-
-.ak-poster-card img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-/* Overlay hover com nota + coração */
-.ak-poster-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to top, oklch(0.1 0.01 330 / 0.85) 0%, transparent 55%);
-  opacity: 0;
-  transition: opacity 0.18s;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding: 10px;
-  gap: 4px;
-}
-
-.ak-poster-card:hover .ak-poster-overlay { opacity: 1; }
-
-.ak-poster-title {
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 12.5px;
-  line-height: 1.25;
-  color: oklch(0.96 0.005 330);
-}
-
-.ak-poster-year {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: oklch(0.75 0.01 330);
-}
-
-/* ── Pôster tipográfico (fallback quando poster_url é NULL) ──────────────── */
-.ak-typo-poster {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding: 14px 12px;
-  position: relative;
-}
-
-.ak-typo-title {
-  font-family: var(--display);
-  font-size: 16px;
-  line-height: 1.2;
-  word-break: break-word;
-  position: relative;
-  z-index: 1;
-}
-
-/* Paletas do pôster tipográfico (14 paletas) */
-.ak-typo-poster[data-palette='noir']   { background: oklch(0.18 0.02 300); --t: oklch(0.9 0.02 310); }
-.ak-typo-poster[data-palette='ember']  { background: oklch(0.20 0.06 25); --t: oklch(0.92 0.04 30); }
-.ak-typo-poster[data-palette='rose']   { background: oklch(0.22 0.08 355); --t: oklch(0.93 0.05 358); }
-.ak-typo-poster[data-palette='neon']   { background: oklch(0.16 0.04 280); --t: oklch(0.90 0.08 290); }
-.ak-typo-poster[data-palette='teal']   { background: oklch(0.19 0.04 190); --t: oklch(0.90 0.06 196); }
-.ak-typo-poster[data-palette='gold']   { background: oklch(0.22 0.06 65); --t: oklch(0.92 0.09 70); }
-.ak-typo-poster[data-palette='ink']    { background: oklch(0.12 0.01 240); --t: oklch(0.88 0.01 240); }
-.ak-typo-poster[data-palette='blood']  { background: oklch(0.18 0.12 20); --t: oklch(0.92 0.06 18); }
-.ak-typo-poster[data-palette='forest'] { background: oklch(0.20 0.06 140); --t: oklch(0.90 0.08 148); }
-.ak-typo-poster[data-palette='dusk']   { background: oklch(0.21 0.05 310); --t: oklch(0.90 0.04 318); }
-.ak-typo-poster[data-palette='bone']   { background: oklch(0.22 0.02 90); --t: oklch(0.92 0.04 85); }
-.ak-typo-poster[data-palette='slate']  { background: oklch(0.20 0.02 220); --t: oklch(0.88 0.02 225); }
-.ak-typo-poster[data-palette='wine']   { background: oklch(0.20 0.10 340); --t: oklch(0.90 0.06 348); }
-.ak-typo-poster[data-palette='sea']    { background: oklch(0.18 0.04 210); --t: oklch(0.90 0.06 212); }
-.ak-typo-title { color: var(--t, oklch(0.9 0.01 330)); }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Chips de filtro
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.ak-chips {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-}
-
-.ak-chip {
-  padding: 5px 12px;
-  border-radius: 99px;
-  font-size: 12.5px;
-  font-family: var(--mono);
-  color: var(--ink-3);
-  background: var(--card);
-  border: 1px solid var(--line);
-  cursor: pointer;
-  transition: all 0.12s;
-}
-
-.ak-chip:hover { border-color: var(--rose-tint-2); color: var(--ink-2); }
-.ak-chip.active {
-  background: var(--rose-tint);
-  border-color: var(--rose);
-  color: var(--rose-deep);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Stars (estrelas de avaliação) — cor Letterboxd FIXA (--gold)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.ak-stars {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-}
-
-.ak-star {
-  width: 12px;
-  height: 12px;
-  color: var(--gold);  /* SEMPRE verde Letterboxd — não acompanha o acento */
-}
-
-.ak-star.empty { color: var(--line); }
-.ak-star.half { color: var(--gold); }  /* SVG com clip para meia-estrela */
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Coração (liked)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.ak-heart {
-  color: var(--ink-4);
-  cursor: pointer;
-  transition: color 0.15s, transform 0.15s;
-}
-
-.ak-heart.liked { color: var(--heart); }
-.ak-heart:hover { transform: scale(1.2); }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Diário (diary entries)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.ak-diary-month { margin-bottom: 24px; }
-
-.ak-diary-month-label {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-  margin-bottom: 10px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--line-2);
-}
-
-.ak-diary-row {
-  display: grid;
-  grid-template-columns: 48px 56px 1fr auto;
-  gap: 12px;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line-2);
-  cursor: pointer;
-  transition: background 0.12s;
-  border-radius: var(--r-sm);
-}
-
-.ak-diary-row:hover { background: var(--rose-tint); padding-left: 8px; padding-right: 8px; }
-
-.ak-diary-date {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--ink-4);
-  text-align: center;
-}
-
-.ak-diary-poster {
-  width: 36px;
-  height: 54px;
-  border-radius: 4px;
-  overflow: hidden;
-  background: var(--card);
-  flex-shrink: 0;
-}
-
-.ak-diary-poster img { width: 100%; height: 100%; object-fit: cover; }
-
-.ak-diary-info { min-width: 0; }
-
-.ak-diary-title {
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 14px;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ak-diary-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 3px;
-}
-
-.ak-rewatch-badge {
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--rose);
-  background: var(--rose-tint);
-  padding: 1px 5px;
-  border-radius: 99px;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Página de detalhe do filme (backdrop hero)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.ak-hero {
-  position: relative;
-  height: 280px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.ak-hero-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  filter: brightness(0.5) saturate(0.7);
-}
-
-.ak-hero-gradient {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to bottom, transparent 0%, var(--paper) 100%);
-}
-
-.ak-hero-content {
-  position: absolute;
-  bottom: 20px;
-  left: 24px;
-  right: 24px;
-  display: flex;
-  gap: 16px;
-  align-items: flex-end;
-}
-
-.ak-detail-poster {
-  width: 90px;
-  height: 135px;
-  border-radius: var(--r-md);
-  overflow: hidden;
-  flex-shrink: 0;
-  box-shadow: var(--shadow-poster);
-}
-
-.ak-detail-poster img { width: 100%; height: 100%; object-fit: cover; }
-
-.ak-detail-title {
-  font-family: var(--display);
-  font-size: 26px;
-  line-height: 1.1;
-  color: var(--ink);
-  margin-bottom: 6px;
-}
-
-.ak-detail-meta {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--ink-3);
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Modais
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.ak-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: oklch(0.05 0.005 330 / 0.72);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.ak-modal {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  width: 480px;
-  max-width: 95vw;
-  max-height: 85dvh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: var(--shadow-lg);
-}
-
-.ak-modal-header {
-  padding: 20px 24px 14px;
-  border-bottom: 1px solid var(--line-2);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.ak-modal-title {
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 17px;
-  color: var(--ink);
-  flex: 1;
-}
-
-.ak-modal-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.ak-modal-footer {
-  padding: 14px 24px;
-  border-top: 1px solid var(--line-2);
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-/* Inputs genéricos do modal */
-.ak-input {
-  width: 100%;
-  background: var(--paper-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 8px 12px;
-  font-size: 13.5px;
-  font-family: var(--sans);
-  color: var(--ink);
-  outline: none;
-  transition: border-color 0.12s;
-}
-
-.ak-input:focus { border-color: var(--rose); }
-.ak-input::placeholder { color: var(--ink-4); }
-
-/* Botões */
-.ak-btn {
-  padding: 8px 16px;
-  border-radius: var(--r-sm);
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid var(--line);
-  background: var(--card-2);
-  color: var(--ink-2);
-  transition: all 0.12s;
-}
-
-.ak-btn:hover { background: var(--rose-tint); border-color: var(--rose-tint-2); color: var(--ink); }
-
-.ak-btn-primary {
-  background: var(--rose);
-  border-color: var(--rose);
-  color: oklch(0.12 0.01 330);
-  font-weight: 600;
-}
-
-.ak-btn-primary:hover { opacity: 0.88; background: var(--rose); }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Stats / gráficos
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.ak-stat-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.ak-stat-card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 16px 18px;
-}
-
-.ak-stat-num {
-  font-family: var(--display);
-  font-size: 32px;
-  line-height: 1;
-  color: var(--rose-deep);
-  margin-bottom: 4px;
-}
-
-.ak-stat-label {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-}
-
-/* Histograma de notas */
-.ak-histogram {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 64px;
-}
-
-.ak-hist-bar {
-  flex: 1;
-  background: var(--gold);   /* verde Letterboxd fixo */
-  border-radius: 3px 3px 0 0;
-  min-height: 2px;
-  opacity: 0.85;
-  transition: opacity 0.12s;
-}
-
-.ak-hist-bar:hover { opacity: 1; }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Toast
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.ak-toast {
-  position: fixed;
-  bottom: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--card);
+  --heat-1: oklch(0.88 0.05 356);
+  --heat-2: oklch(0.78 0.11 357);
+  --heat-3: oklch(0.66 0.17 358);
+  --heat-4: oklch(0.55 0.21 358);
+
+  --topbar-bg: oklch(0.985 0.004 330 / 0.82);
+  --footbar-bg: oklch(0.974 0.006 335 / 0.92);
+
+  --shadow-sm: 0 1px 2px oklch(0.4 0.02 330 / 0.05), 0 1px 1px oklch(0.4 0.02 330 / 0.04);
+  --shadow-md: 0 2px 6px oklch(0.4 0.02 330 / 0.06), 0 8px 28px oklch(0.4 0.02 330 / 0.08);
+  --shadow-lg: 0 12px 40px oklch(0.35 0.02 330 / 0.16);
+  --shadow-poster: 0 1px 2px oklch(0.3 0.02 330 / 0.18), 0 6px 18px oklch(0.3 0.02 330 / 0.16);
+}
+.akane-shell[data-theme='light'][data-accent='carmim'] { --rose: oklch(0.55 0.22 24); --rose-deep: oklch(0.47 0.20 24); --rose-bright: oklch(0.63 0.21 23); --rose-tint: oklch(0.55 0.22 24 / 0.10); --rose-tint-2: oklch(0.55 0.22 24 / 0.16); }
+.akane-shell[data-theme='light'][data-accent='ambar']  { --rose: oklch(0.62 0.15 64); --rose-deep: oklch(0.52 0.13 62); --rose-bright: oklch(0.70 0.15 68); --rose-tint: oklch(0.62 0.15 64 / 0.12); --rose-tint-2: oklch(0.62 0.15 64 / 0.18); }
+.akane-shell[data-theme='light'][data-accent='teal']   { --rose: oklch(0.55 0.10 198); --rose-deep: oklch(0.46 0.09 198); --rose-bright: oklch(0.64 0.11 195); --rose-tint: oklch(0.55 0.10 198 / 0.10); --rose-tint-2: oklch(0.55 0.10 198 / 0.16); }
+
+/* ─── Shell ─────────────────────────────────────────────────────────────── */
+/* height 100% (era 100vh no protótipo): o pai .akane-shell já mede 100dvh */
+.akane-shell .ak-app { display: grid; grid-template-columns: 252px 1fr; grid-template-rows: 1fr auto; height: 100%; overflow: hidden; }
+.akane-shell[data-footbar='off'] .ak-app { grid-template-rows: 1fr; }
+
+/* ─── Sidebar ───────────────────────────────────────────────────────────── */
+.akane-shell .ak-side { grid-column: 1; grid-row: 1; background: var(--paper-2); border-right: 1px solid var(--line); display: flex; flex-direction: column; overflow: hidden; }
+.akane-shell .side-brand { display: flex; align-items: center; gap: 12px; padding: 18px 18px 16px; }
+.akane-shell .brand-mark {
+  width: 44px; height: 44px; border-radius: 50%; overflow: hidden; flex-shrink: 0;
+  background: radial-gradient(circle at 50% 25%, var(--mist), var(--paper-2));
   border: 1px solid var(--rose-tint-2);
-  border-radius: var(--r-md);
-  padding: 10px 18px;
-  font-size: 13px;
-  color: var(--ink);
-  box-shadow: var(--shadow-md);
-  z-index: 200;
-  pointer-events: none;
-  animation: ak-toast-in 0.2s ease;
+  box-shadow: 0 0 0 3px var(--rose-tint), 0 0 18px var(--rose-tint);
 }
+.akane-shell .brand-mark img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 10%; display: block; }
+.akane-shell .brand-text { min-width: 0; }
+.akane-shell .brand-name { font-family: var(--display); font-size: 20px; letter-spacing: -0.01em; line-height: 1.0; color: var(--ink); }
+.akane-shell .brand-role { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--rose-deep); margin-top: 3px; }
 
-@keyframes ak-toast-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+.akane-shell .side-log-btn {
+  margin: 4px 16px 16px; display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 11px 14px; border: none; border-radius: var(--r-md);
+  background: var(--rose); color: oklch(0.99 0.01 350);
+  font-family: var(--sans); font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em;
+  cursor: pointer; transition: filter 0.15s, transform 0.12s, box-shadow 0.15s;
+  box-shadow: 0 1px 2px oklch(0.4 0.18 0 / 0.5), 0 6px 18px var(--rose-tint-2);
 }
+.akane-shell .side-log-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.akane-shell .side-log-btn:active { transform: translateY(0); }
+.akane-shell .side-log-btn svg { width: 16px; height: 16px; }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Selo "via Letterboxd"
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.ak-lb-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: oklch(0.57 0.14 159);   /* verde Letterboxd */
-  background: oklch(0.57 0.14 159 / 0.12);
-  border-radius: 99px;
-  padding: 2px 7px;
+.akane-shell .side-nav { flex: 1; overflow-y: auto; padding: 0 12px; scrollbar-width: none; }
+.akane-shell .side-nav::-webkit-scrollbar { display: none; }
+.akane-shell .nav-group-label { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--ink-4); padding: 14px 10px 6px; }
+.akane-shell .nav-item {
+  display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+  padding: 8px 10px; margin: 1px 0; border: none; background: transparent; border-radius: var(--r-sm);
+  font-family: var(--sans); font-size: 13.5px; color: var(--ink-2); cursor: pointer;
+  transition: background 0.12s, color 0.12s;
 }
+.akane-shell .nav-item svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--ink-3); transition: color 0.12s; }
+.akane-shell .nav-item:hover { background: var(--rose-tint); color: var(--ink); }
+.akane-shell .nav-item:hover svg { color: var(--ink-2); }
+.akane-shell .nav-item.active { background: var(--rose-tint); color: var(--rose-deep); font-weight: 600; }
+.akane-shell .nav-item.active svg { color: var(--rose); }
+.akane-shell .nav-count { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
+.akane-shell .nav-item.active .nav-count { color: var(--rose); }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Empty state
-   ═══════════════════════════════════════════════════════════════════════════ */
+.akane-shell .side-foot { padding: 12px 16px; border-top: 1px solid var(--line); }
+.akane-shell .back-makima { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-3); text-decoration: none; transition: color 0.12s; }
+.akane-shell .back-makima:hover { color: var(--ink); }
+.akane-shell .back-makima .dot { width: 6px; height: 6px; border-radius: 50%; background: oklch(0.66 0.145 5); }
 
-.ak-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 24px;
-  gap: 12px;
-  color: var(--ink-4);
-  text-align: center;
+/* ─── Main ──────────────────────────────────────────────────────────────── */
+.akane-shell .ak-main { grid-column: 2; grid-row: 1; overflow: hidden; display: flex; flex-direction: column; background: var(--paper); position: relative; }
+.akane-shell .ak-topbar {
+  flex-shrink: 0; height: 56px; display: flex; align-items: center; gap: 16px; padding: 0 32px;
+  border-bottom: 1px solid var(--line); background: var(--topbar-bg); backdrop-filter: blur(12px);
+  position: sticky; top: 0; z-index: 5;
 }
+.akane-shell .topbar-title { font-family: var(--display); font-size: 19px; letter-spacing: -0.01em; white-space: nowrap; }
+.akane-shell .topbar-spacer { flex: 1; }
+.akane-shell .search { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; min-width: 210px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; transition: border-color 0.15s, box-shadow 0.15s; }
+.akane-shell .search:focus-within { border-color: var(--rose); box-shadow: 0 0 0 3px var(--rose-tint); }
+.akane-shell .search svg { width: 15px; height: 15px; color: var(--ink-4); flex-shrink: 0; }
+.akane-shell .search input { border: none; background: transparent; outline: none; font-family: var(--sans); font-size: 13px; color: var(--ink); width: 100%; }
+.akane-shell .search input::placeholder { color: var(--ink-4); }
 
-.ak-empty-icon { font-size: 40px; opacity: 0.35; }
+.akane-shell .ak-scroll { flex: 1; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.akane-shell .ak-scroll::-webkit-scrollbar { width: 10px; }
+.akane-shell .ak-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; border: 3px solid var(--paper); }
+.akane-shell .ak-scroll::-webkit-scrollbar-thumb:hover { background: var(--ink-4); }
 
-.ak-empty-title {
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 18px;
-  color: var(--ink-3);
+.akane-shell .page { max-width: 1180px; margin: 0 auto; padding: 0 32px 72px; }
+.akane-shell .section { margin-top: 44px; }
+.akane-shell .section-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
+.akane-shell .section-title { font-family: var(--display); font-size: 23px; letter-spacing: -0.015em; color: var(--ink); }
+.akane-shell .section-sub { font-size: 12.5px; color: var(--ink-3); }
+.akane-shell .section-link { margin-left: auto; font-size: 12.5px; color: var(--rose-deep); text-decoration: none; font-weight: 600; cursor: pointer; }
+.akane-shell .section-link:hover { text-decoration: underline; }
+
+/* ─── HERO ──────────────────────────────────────────────────────────────── */
+.akane-shell .hero {
+  position: relative; overflow: hidden; border-radius: var(--r-lg); margin-top: 28px;
+  background:
+    radial-gradient(120% 130% at 86% 22%, var(--rose-tint-2), transparent 52%),
+    radial-gradient(90% 120% at 10% 90%, var(--gold-tint), transparent 60%),
+    linear-gradient(155deg, var(--mist), var(--card) 62%);
+  border: 1px solid var(--rose-tint-2);
 }
+.akane-shell .hero-grain { position: absolute; inset: 0; opacity: 0.5; pointer-events: none;
+  background-image: radial-gradient(oklch(1 0 0 / 0.05) 0.5px, transparent 0.6px); background-size: 7px 7px; }
+.akane-shell .hero-inner { position: relative; display: grid; grid-template-columns: 1.12fr 0.88fr; gap: 20px; align-items: stretch; min-height: 348px; }
+.akane-shell .hero-copy { padding: 42px 8px 42px 44px; display: flex; flex-direction: column; gap: 16px; align-self: center; }
+.akane-shell .hero-eyebrow { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.20em; color: var(--rose-deep); }
+.akane-shell .hero-greet { font-family: var(--display); font-size: clamp(36px, 4.2vw, 56px); letter-spacing: -0.02em; line-height: 1.0; color: var(--ink); text-wrap: balance; }
+.akane-shell .hero-greet em { font-style: italic; color: var(--rose-deep); }
+.akane-shell .hero-now { font-family: var(--serif); font-size: clamp(16px, 1.8vw, 21px); color: var(--ink-2); letter-spacing: -0.01em; line-height: 1.35; }
+.akane-shell .hero-now em { font-style: italic; color: var(--rose-deep); font-weight: 500; }
+.akane-shell .hero-now b { color: var(--ink); font-weight: 600; font-style: normal; }
+.akane-shell .hero-quote { font-family: var(--serif); font-style: italic; font-size: 15px; color: var(--ink-2); border-left: 2px solid var(--rose); padding-left: 14px; max-width: 46ch; line-height: 1.55; }
+.akane-shell .hero-cta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
 
-.ak-empty-sub { font-size: 13px; }
+/* retrato transparente, estilo Frieren — halo + drop-shadow, centralizado */
+.akane-shell .hero-portrait { position: relative; align-self: end; justify-self: center; width: 100%; max-width: 316px; padding: 0 14px; margin-right: 10px; }
+.akane-shell .hero-portrait .halo { position: absolute; left: 50%; top: 48%; transform: translate(-50%, -50%); width: 124%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, var(--rose-tint-2), var(--gold-tint) 40%, transparent 68%); filter: blur(4px); }
+.akane-shell .hero-portrait img { position: relative; width: 100%; display: block; filter: drop-shadow(0 16px 30px oklch(0 0 0 / 0.5)); }
 
-/* Responsivo básico: colapsa sidebar em telas estreitas */
-@media (max-width: 880px) {
-  .ak-app { grid-template-columns: 64px 1fr; }
-  .ak-sidebar-mark .ak-brand-name,
-  .ak-sidebar-mark .ak-brand-sub,
-  .ak-nav-item span:not(.ak-nav-badge),
-  .ak-log-btn span,
-  .ak-back-btn span,
-  .ak-nav-label { display: none; }
-  .ak-nav-item { justify-content: center; padding: 10px; }
-  .ak-log-btn { padding: 10px; justify-content: center; margin: 10px 8px; }
-  .ak-nav-badge { display: none !important; }
-}
+/* ─── Botões ───────────────────────────────────────────────────────────── */
+.akane-shell .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: var(--r-md); font-family: var(--sans); font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; border: 1px solid transparent; cursor: pointer; transition: filter 0.14s, background 0.14s, border-color 0.14s, transform 0.12s, color 0.14s; }
+.akane-shell .btn svg { width: 16px; height: 16px; }
+.akane-shell .btn-primary { background: var(--rose); color: oklch(0.99 0.01 350); box-shadow: 0 1px 2px oklch(0.3 0.16 0 / 0.4); }
+.akane-shell .btn-primary:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.akane-shell .btn-ghost { background: var(--card); border-color: var(--line); color: var(--ink); }
+.akane-shell .btn-ghost:hover { background: var(--card-2); border-color: var(--ink-4); }
 
-@media (max-width: 720px) {
-  .ak-hero { height: 200px; }
-}
+/* ─── Stat cards ───────────────────────────────────────────────────────── */
+.akane-shell .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-top: 22px; }
 
-/* ── Heatmap de atividade (spec 051, US4) — --heat-0..4 já existem acima,
-   escopados em .akane-shell e ajustados por acento/tema; só faltam as classes
-   de layout, portadas de frieren.css */
-.akane-shell .heat-months-wrap { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: none; }
-.akane-shell .heat-months-wrap::-webkit-scrollbar { display: none; }
-.akane-shell .heat-month { display: flex; flex-direction: column; flex-shrink: 0; }
-.akane-shell .hm-name { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-4); margin-bottom: 7px; text-align: center; }
+/* ─── Início: heatmap + painel Letterboxd ──────────────────────────────── */
+.akane-shell .home-split { display: grid; grid-template-columns: 1.45fr 1fr; gap: 18px; margin-top: 44px; align-items: start; }
+@media (max-width: 980px) { .akane-shell .home-split { grid-template-columns: 1fr; } }
+.akane-shell .home-main { display: flex; flex-direction: column; gap: 32px; min-width: 0; }
+.akane-shell .lb-sec-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.akane-shell .lb-sec-head .t { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--rose-deep); white-space: nowrap; }
+.akane-shell .lb-sec-head .rule { flex: 1; height: 1px; background: var(--line); }
+.akane-shell .lb-sec-link { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--rose-deep); cursor: pointer; white-space: nowrap; }
+.akane-shell .lb-sec-link:hover { text-decoration: underline; }
+.akane-shell .fav-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; }
+.akane-shell .act-card { cursor: pointer; min-width: 0; }
+.akane-shell .act-card:hover .poster { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+.akane-shell .act-marks { display: flex; align-items: center; gap: 7px; margin-top: 9px; min-height: 15px; flex-wrap: wrap; }
+.akane-shell .act-none { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+/* favoritos editáveis */
+.akane-shell .fav-slot { position: relative; min-width: 0; }
+.akane-shell .fav-slot .poster-static .poster { cursor: default; }
+.akane-shell .fav-remove { position: absolute; top: 6px; left: 6px; z-index: 5; width: 24px; height: 24px; border-radius: 50%; background: oklch(0.12 0.02 350 / 0.78); color: oklch(0.98 0.01 350); border: 1px solid oklch(1 0 0 / 0.18); cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); transition: background 0.12s; }
+.akane-shell .fav-remove:hover { background: var(--heart); }
+.akane-shell .fav-remove svg { width: 13px; height: 13px; }
+.akane-shell .fav-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; aspect-ratio: 2 / 3; border: 1.5px dashed var(--line); border-radius: 5px; color: var(--ink-4); cursor: pointer; background: none; font-family: var(--sans); font-size: 12px; font-weight: 500; transition: all 0.14s; }
+.akane-shell .fav-add svg { width: 20px; height: 20px; }
+.akane-shell .fav-add:hover { border-color: var(--rose); color: var(--rose-deep); background: var(--rose-tint); }
+.akane-shell .fav-pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 14px; max-height: 50vh; overflow-y: auto; scrollbar-width: thin; padding: 2px; }
+.akane-shell .fav-pick-grid .pm-title { font-size: 11.5px; line-height: 1.2; }
+/* painel alinhado ao primeiro pôster (abaixo do cabeçalho de seção) */
+.akane-shell .home-split .lb-panel { margin-top: 31px; }
+@media (max-width: 980px) { .akane-shell .home-split .lb-panel { margin-top: 0; } }
+.akane-shell .lb-panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-sm); overflow: hidden; }
+.akane-shell .lb-block { padding: 16px 20px 18px; }
+.akane-shell .lb-block + .lb-block { border-top: 1px solid var(--line); }
+.akane-shell .lb-head { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 9px; margin-bottom: 12px; }
+.akane-shell .lb-head .t { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.17em; text-transform: uppercase; color: var(--ink-3); }
+.akane-shell .lb-head .c { font-family: var(--mono); font-size: 11.5px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
+.akane-shell .lb-month { display: flex; gap: 13px; padding: 4px 0; }
+.akane-shell .lb-month + .lb-month { border-top: 1px solid var(--line-2); margin-top: 4px; padding-top: 10px; }
+.akane-shell .lb-chip { width: 32px; flex-shrink: 0; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; height: fit-content; text-align: center; }
+.akane-shell .lb-chip .m { font-family: var(--mono); font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; background: var(--card-2); color: var(--rose-deep); padding: 3px 0; }
+.akane-shell .lb-chip .y { font-family: var(--mono); font-size: 7.5px; color: var(--ink-4); padding: 2px 0; }
+.akane-shell .lb-rows { flex: 1; min-width: 0; }
+.akane-shell .lb-row { display: flex; gap: 11px; align-items: baseline; padding: 3px 0; cursor: pointer; }
+.akane-shell .lb-row .d { font-family: var(--mono); font-size: 11px; color: var(--ink-4); width: 16px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.akane-shell .lb-row .ti { font-size: 13px; color: var(--ink-2); line-height: 1.3; letter-spacing: -0.005em; }
+.akane-shell .lb-row:hover .ti { color: var(--rose-deep); }
+.akane-shell .lb-hist { display: flex; align-items: flex-end; gap: 3px; height: 56px; }
+.akane-shell .lb-hist .col { flex: 1; background: var(--ink-3); opacity: 0.55; border-radius: 2px 2px 0 0; min-height: 2px; transition: opacity 0.12s; }
+.akane-shell .lb-hist .col.hi { opacity: 0.92; }
+.akane-shell .lb-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 9px; }
+.akane-shell .lb-star { display: inline-flex; gap: 1px; color: oklch(0.72 0.15 150); }
+.akane-shell .lb-star svg { width: 12px; height: 12px; }
+.akane-shell .stat-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 18px 18px 16px; position: relative; overflow: hidden; box-shadow: var(--shadow-sm); }
+.akane-shell .stat-label { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.13em; color: var(--ink-3); display: flex; align-items: center; gap: 7px; }
+.akane-shell .stat-value { font-family: var(--display); font-size: 40px; line-height: 1; letter-spacing: -0.02em; color: var(--ink); margin-top: 12px; font-variant-numeric: tabular-nums; }
+.akane-shell .stat-value .unit { font-family: var(--sans); font-size: 13px; color: var(--ink-3); font-weight: 500; margin-left: 5px; }
+.akane-shell .stat-foot { font-size: 11.5px; color: var(--ink-3); margin-top: 7px; }
+.akane-shell .stat-foot .up { color: var(--rose-deep); font-weight: 600; }
+.akane-shell .stat-spark { display: flex; align-items: flex-end; gap: 2px; height: 24px; margin-top: 12px; }
+.akane-shell .stat-spark i { flex: 1; background: var(--rose-tint-2); border-radius: 1px; min-height: 2px; }
+.akane-shell .stat-spark i.hot { background: var(--rose); }
+.akane-shell .period-select { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; border: 1px solid var(--line); border-radius: 999px; background: var(--card-2); color: var(--ink-2); padding: 2px 6px 2px 8px; cursor: pointer; outline: none; }
+.akane-shell .period-select:focus { border-color: var(--rose); }
+
+/* ─── Heatmap ──────────────────────────────────────────────────────────── */
+.akane-shell .heat-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 22px 24px; box-shadow: var(--shadow-sm); }
+.akane-shell .heat-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; }
+.akane-shell .heat-title { font-family: var(--display); font-size: 18px; }
+.akane-shell .heat-months-wrap { display: flex; gap: 18px; flex-wrap: wrap; }
+.akane-shell .heat-month { display: flex; flex-direction: column; }
+.akane-shell .hm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+.akane-shell .hm-name { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-3); }
+.akane-shell .hm-sum { font-family: var(--mono); font-size: 9px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
 .akane-shell .hm-cells { display: grid; grid-template-rows: repeat(7, 9px); grid-auto-flow: column; gap: 3px; }
 .akane-shell .hm-cell { width: 9px; height: 9px; border-radius: 2px; transition: transform 0.1s; }
 .akane-shell .hm-cell:hover { transform: scale(1.4); }
-.akane-shell .heat-legend { display: flex; align-items: center; gap: 6px; justify-content: flex-end; margin-top: 12px; font-size: 10.5px; color: var(--ink-4); }
+.akane-shell .heat-legend { display: flex; align-items: center; gap: 6px; justify-content: flex-end; margin-top: 14px; font-size: 10.5px; color: var(--ink-4); }
 .akane-shell .heat-sw { display: flex; gap: 3px; }
 .akane-shell .heat-sw i { width: 10px; height: 10px; border-radius: 2px; }
+
+/* ─── Pôster cinematográfico ───────────────────────────────────────────── */
+.akane-shell .poster {
+  position: relative; aspect-ratio: 2 / 3; border-radius: 5px; overflow: hidden;
+  box-shadow: var(--shadow-poster); cursor: pointer; display: flex; flex-direction: column; flex-shrink: 0;
+  transition: transform 0.18s cubic-bezier(.3,.7,.4,1), box-shadow 0.18s;
+}
+.akane-shell .poster::before { content: ''; position: absolute; inset: 0; background: radial-gradient(120% 80% at 50% 0%, oklch(1 0 0 / 0.12), transparent 60%), linear-gradient(180deg, transparent 55%, oklch(0 0 0 / 0.34)); pointer-events: none; }
+.akane-shell .poster::after { content: ''; position: absolute; inset: 0; border-radius: 5px; box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.07); pointer-events: none; }
+.akane-shell .poster .p-inner { position: absolute; inset: 8px; border: 1px solid currentColor; opacity: 0.28; border-radius: 2px; pointer-events: none; }
+.akane-shell .poster .p-kicker { position: relative; font-family: var(--mono); font-size: 7.5px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.72; padding: 15px 14px 0; z-index: 1; }
+.akane-shell .poster .p-title { position: relative; font-family: var(--display); line-height: 1.06; letter-spacing: -0.01em; padding: 7px 13px 0; text-wrap: balance; z-index: 1; }
+.akane-shell .poster .p-foot { margin-top: auto; position: relative; z-index: 1; padding: 0 13px 14px; }
+.akane-shell .poster .p-rule { height: 1px; background: currentColor; opacity: 0.32; margin-bottom: 8px; }
+.akane-shell .poster .p-dir { font-family: var(--mono); font-size: 8px; letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.85; }
+.akane-shell .poster .p-year { font-family: var(--mono); font-size: 8px; opacity: 0.6; margin-top: 2px; }
+.akane-shell .poster-link:hover .poster { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
+
+.akane-shell .p-badges { position: absolute; top: 8px; right: 8px; z-index: 3; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.akane-shell .p-badge { font-family: var(--mono); font-size: 7.5px; text-transform: uppercase; letter-spacing: 0.08em; padding: 3px 7px; border-radius: 999px; backdrop-filter: blur(6px); background: oklch(0.1 0.02 340 / 0.6); color: oklch(0.98 0.01 350); display: flex; align-items: center; gap: 4px; }
+.akane-shell .p-badge.want { background: var(--rose); color: oklch(0.99 0.01 350); }
+.akane-shell .p-badge svg { width: 9px; height: 9px; }
+.akane-shell .p-heart { width: 22px; height: 22px; border-radius: 50%; background: oklch(0.1 0.02 340 / 0.55); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; }
+.akane-shell .p-heart svg { width: 12px; height: 12px; color: var(--heart); }
+/* faixa de nota no rodapé do pôster */
+.akane-shell .p-rating { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 16px 12px 8px; background: linear-gradient(transparent, oklch(0 0 0 / 0.5)); }
+
+/* ─── Grade de filmes ──────────────────────────────────────────────────── */
+.akane-shell .cat-toolbar { display: flex; align-items: center; gap: 10px; margin: 20px 0 8px; flex-wrap: wrap; }
+.akane-shell .chips { display: flex; gap: 7px; flex-wrap: wrap; }
+.akane-shell .chip { font-family: var(--sans); font-size: 12.5px; font-weight: 500; padding: 6px 13px; border-radius: 999px; cursor: pointer; border: 1px solid var(--line); background: var(--card); color: var(--ink-2); transition: all 0.12s; }
+.akane-shell .chip:hover { border-color: var(--ink-4); color: var(--ink); }
+.akane-shell .chip.active { background: var(--rose); color: oklch(0.99 0.01 350); border-color: var(--rose); }
+.akane-shell .toolbar-spacer { flex: 1; }
+.akane-shell .result-count { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+
+.akane-shell .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--cover-w), 1fr)); gap: 26px 22px; margin-top: 24px; }
+.akane-shell .poster-link { text-decoration: none; color: inherit; display: flex; flex-direction: column; }
+.akane-shell .poster-meta { padding-top: 10px; }
+.akane-shell .pm-title { font-family: var(--serif); font-size: 14px; font-weight: 600; color: var(--ink); line-height: 1.22; letter-spacing: -0.01em; }
+.akane-shell .pm-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+.akane-shell .pm-row { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+
+.akane-shell[data-density='large'] .ak-app   { --cover-w: 198px; }
+.akane-shell[data-density='medium'] .ak-app    { --cover-w: 162px; }
+.akane-shell[data-density='compact'] .ak-app { --cover-w: 120px; }
+.akane-shell[data-density='compact'] .ak-app .pm-sub { display: none; }
+.akane-shell[data-density='compact'] .ak-app .poster-grid { gap: 20px 16px; }
+/* pôster minimal (tweak) — esconde moldura/kicker */
+.akane-shell[data-postyle='minimal'] .ak-app .poster .p-inner,
+.akane-shell[data-postyle='minimal'] .ak-app .poster .p-kicker { display: none; }
+.akane-shell[data-postyle='minimal'] .ak-app .poster .p-title { padding-top: 16px; }
+
+/* ─── Estrelas ─────────────────────────────────────────────────────────── */
+.akane-shell .stars { display: inline-flex; gap: 1px; color: var(--gold); }
+.akane-shell .stars svg { width: 13px; height: 13px; }
+.akane-shell .stars.lg svg { width: 19px; height: 19px; }
+.akane-shell .stars .empty { color: oklch(0.55 0.02 330 / 0.5); }
+.akane-shell[data-theme='light'] .stars .empty { color: var(--line); }
+.akane-shell .rating-num { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+.akane-shell .heart-ico { width: 14px; height: 14px; color: var(--heart); flex-shrink: 0; }
+.akane-shell .heart-ico.lg { width: 18px; height: 18px; }
+
+/* ─── Carrossel ────────────────────────────────────────────────────────── */
+.akane-shell .row-scroll { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
+.akane-shell .row-scroll::-webkit-scrollbar { display: none; }
+.akane-shell .want-card { flex-shrink: 0; width: 116px; cursor: pointer; }
+.akane-shell .want-card .poster { width: 116px; }
+.akane-shell .want-card .wc-title { font-family: var(--serif); font-size: 12.5px; font-weight: 600; margin-top: 8px; line-height: 1.2; }
+.akane-shell .want-card .wc-sub { font-family: var(--mono); font-size: 9.5px; color: var(--ink-4); margin-top: 3px; }
+
+/* ─── Diário (tabela Letterboxd) ──────────────────────────────────────── */
+.akane-shell .diary-month { margin-top: 30px; }
+.akane-shell .diary-month-label { display: flex; align-items: baseline; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.akane-shell .diary-month-label .dm-name { font-family: var(--display); font-size: 22px; letter-spacing: -0.01em; }
+.akane-shell .diary-month-label .dm-year { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+.akane-shell .diary-month-label .dm-count { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); }
+.akane-shell .diary-row {
+  display: grid; grid-template-columns: 52px 44px 1fr auto; align-items: center; gap: 16px;
+  padding: 14px 8px; border-bottom: 1px solid var(--line-2); cursor: pointer; border-radius: 8px;
+  transition: background 0.12s;
+}
+.akane-shell .diary-row:hover { background: var(--card-2); }
+.akane-shell .dr-day { text-align: center; }
+.akane-shell .dr-day .d-num { font-family: var(--display); font-size: 22px; line-height: 1; color: var(--ink); }
+.akane-shell .dr-day .d-wd { font-family: var(--mono); font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-4); margin-top: 3px; }
+.akane-shell .dr-poster { width: 44px; }
+.akane-shell .dr-poster .poster { width: 44px; border-radius: 3px; }
+.akane-shell .dr-main { min-width: 0; }
+.akane-shell .dr-title { font-family: var(--serif); font-size: 16px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.15; }
+.akane-shell .dr-title .yr { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-4); margin-left: 7px; }
+.akane-shell .dr-note { font-family: var(--serif); font-style: italic; font-size: 13px; color: var(--ink-2); margin-top: 5px; line-height: 1.5; text-wrap: pretty; }
+.akane-shell .dr-marks { display: flex; align-items: center; gap: 12px; }
+.akane-shell .dr-marks .mk { display: flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; color: var(--ink-4); }
+.akane-shell .dr-marks .mk svg { width: 13px; height: 13px; }
+.akane-shell .dr-marks .mk.rw svg { color: var(--rose); }
+
+/* ─── Detalhe ──────────────────────────────────────────────────────────── */
+.akane-shell .detail-back { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); background: none; border: none; cursor: pointer; padding: 22px 0 0; font-family: var(--sans); }
+.akane-shell .detail-back:hover { color: var(--ink); }
+.akane-shell .detail-back svg { width: 15px; height: 15px; }
+.akane-shell .detail-hero { display: grid; grid-template-columns: 252px 1fr; gap: 44px; margin-top: 20px; }
+.akane-shell .detail-poster-wrap { position: sticky; top: 20px; align-self: start; display: flex; flex-direction: column; gap: 12px; }
+.akane-shell .detail-poster-wrap .poster { width: 252px; }
+.akane-shell .detail-actions { display: flex; flex-direction: column; gap: 8px; }
+.akane-shell .action-row { display: flex; gap: 8px; }
+.akane-shell .icon-toggle { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--card); color: var(--ink-2); cursor: pointer; font-family: var(--sans); font-size: 12px; font-weight: 600; transition: all 0.14s; }
+.akane-shell .icon-toggle svg { width: 15px; height: 15px; }
+.akane-shell .icon-toggle:hover { border-color: var(--ink-4); color: var(--ink); }
+.akane-shell .icon-toggle.on.like { color: var(--heart); border-color: var(--heart); background: oklch(0.68 0.2 12 / 0.10); }
+.akane-shell .icon-toggle.on.want { color: var(--rose-deep); border-color: var(--rose); background: var(--rose-tint); }
+
+.akane-shell .detail-genre { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--rose-deep); }
+.akane-shell .detail-title { font-family: var(--display); font-size: 44px; letter-spacing: -0.02em; line-height: 1.06; margin-top: 10px; text-wrap: balance; }
+.akane-shell .detail-author { font-size: 15px; color: var(--ink-2); margin-top: 10px; }
+.akane-shell .detail-author b { color: var(--ink); font-weight: 600; }
+.akane-shell .detail-rating-row { display: flex; align-items: center; gap: 14px; margin-top: 18px; flex-wrap: wrap; }
+.akane-shell .rating-source { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-4); border: 1px solid var(--line); padding: 3px 8px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; }
+.akane-shell .rating-source .lb { width: 6px; height: 6px; border-radius: 50%; background: oklch(0.7 0.14 150); }
+.akane-shell .status-pill { font-family: var(--sans); font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; }
+.akane-shell .status-pill.seen { background: var(--gold-tint); color: var(--gold-deep); }
+.akane-shell .status-pill.want { background: var(--rose-tint); color: var(--rose-deep); }
+
+.akane-shell .detail-meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 1px; margin-top: 26px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.akane-shell .dm-cell { background: var(--card); padding: 14px 16px; }
+.akane-shell .dm-cell .k { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-4); }
+.akane-shell .dm-cell .v { font-size: 14px; color: var(--ink); margin-top: 5px; font-weight: 500; }
+.akane-shell .detail-section-title { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-3); margin: 34px 0 12px; display: flex; align-items: center; gap: 10px; }
+.akane-shell .detail-section-title .st-line { flex: 1; height: 1px; background: var(--line); }
+.akane-shell .detail-review { font-family: var(--serif); font-size: 19px; line-height: 1.62; color: var(--ink); font-style: italic; border-left: 2px solid var(--gold); padding-left: 18px; text-wrap: pretty; }
+.akane-shell .detail-empty { color: var(--ink-3); font-size: 14px; font-style: italic; font-family: var(--serif); }
+
+/* notas (≠ review) — bloco de caderno */
+.akane-shell .notes-block { background: var(--card-2); border: 1px solid var(--line); border-left: 3px solid var(--rose); border-radius: var(--r-md); padding: 16px 18px; font-size: 14px; line-height: 1.6; color: var(--ink-2); position: relative; }
+.akane-shell .notes-block .nb-tag { position: absolute; top: -9px; left: 14px; font-family: var(--mono); font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--rose-deep); background: var(--paper); padding: 0 7px; }
+
+/* cofre de conteúdos */
+.akane-shell .vault-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.akane-shell .vault-card { display: flex; flex-direction: column; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px; text-decoration: none; color: inherit; transition: border-color 0.14s, transform 0.14s, box-shadow 0.14s; cursor: pointer; }
+.akane-shell .vault-card:hover { border-color: var(--rose); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.akane-shell .vault-thumb { aspect-ratio: 16/9; border-radius: 7px; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.akane-shell .vault-thumb svg { width: 30px; height: 30px; color: oklch(1 0 0 / 0.92); position: relative; z-index: 1; }
+.akane-shell .vault-thumb::after { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, oklch(0 0 0 / 0.12), oklch(0 0 0 / 0.34)); }
+.akane-shell .vt-type { position: absolute; top: 8px; left: 8px; z-index: 2; font-family: var(--mono); font-size: 7.5px; text-transform: uppercase; letter-spacing: 0.1em; color: oklch(1 0 0 / 0.95); background: oklch(0 0 0 / 0.35); padding: 2px 7px; border-radius: 999px; }
+.akane-shell .vault-card .vc-title { font-family: var(--serif); font-size: 13.5px; font-weight: 600; line-height: 1.3; color: var(--ink); }
+.akane-shell .vault-card .vc-foot { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; color: var(--ink-4); margin-top: auto; }
+.akane-shell .vault-card .vc-foot .open { margin-left: auto; color: var(--rose-deep); font-weight: 500; }
+.akane-shell .vault-add { display: flex; align-items: center; justify-content: center; gap: 7px; border: 1.5px dashed var(--line); border-radius: var(--r-md); color: var(--ink-4); font-size: 12.5px; font-weight: 500; cursor: pointer; min-height: 110px; transition: all 0.14s; background: none; font-family: var(--sans); }
+.akane-shell .vault-add:hover { border-color: var(--rose); color: var(--rose-deep); background: var(--rose-tint); }
+.akane-shell .vault-add svg { width: 15px; height: 15px; }
+
+/* tags */
+.akane-shell .tag-chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--sans); font-size: 12.5px; font-weight: 500; padding: 6px 12px; border-radius: 999px; cursor: pointer; border: 1px solid var(--line); background: var(--card); color: var(--ink-2); transition: all 0.12s; text-decoration: none; }
+.akane-shell .tag-chip:hover { border-color: var(--rose); color: var(--rose-deep); background: var(--rose-tint); }
+.akane-shell .tag-chip .t-hash { color: var(--ink-4); font-family: var(--mono); }
+.akane-shell .tag-chip.person { border-color: var(--rose-tint-2); }
+.akane-shell .tag-chip .t-person { width: 13px; height: 13px; color: var(--rose); }
+.akane-shell .tag-chip .t-count { font-family: var(--mono); font-size: 10px; color: var(--ink-4); }
+
+/* diário do filme (timeline) */
+.akane-shell .film-log { display: flex; flex-direction: column; }
+.akane-shell .fl-item { border-left: 2px solid var(--line); padding: 0 0 18px 18px; position: relative; }
+.akane-shell .fl-item::before { content: ''; position: absolute; left: -6px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--rose); border: 2px solid var(--paper); }
+.akane-shell .fl-item:last-child { padding-bottom: 0; }
+.akane-shell .fl-date { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+.akane-shell .fl-row { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
+.akane-shell .fl-note { font-family: var(--serif); font-style: italic; font-size: 13.5px; color: var(--ink-2); margin-top: 6px; line-height: 1.55; }
+
+/* ─── Feed (Início) ────────────────────────────────────────────────────── */
+.akane-shell .feed { display: flex; flex-direction: column; }
+.akane-shell .feed-item { display: flex; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--line-2); }
+.akane-shell .feed-item:last-child { border-bottom: none; }
+.akane-shell .feed-poster { width: 46px; flex-shrink: 0; cursor: pointer; }
+.akane-shell .feed-poster .poster { width: 46px; }
+.akane-shell .feed-body { flex: 1; min-width: 0; }
+.akane-shell .feed-line { font-size: 13.5px; color: var(--ink); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.akane-shell .feed-line .verb { color: var(--ink-3); }
+.akane-shell .feed-line b { font-weight: 600; cursor: pointer; }
+.akane-shell .feed-note { font-family: var(--serif); font-size: 13.5px; color: var(--ink-2); margin-top: 6px; line-height: 1.6; font-style: italic; text-wrap: pretty; }
+.akane-shell .feed-meta { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); }
+.akane-shell .feed-tag { padding: 1px 8px; border-radius: 999px; background: var(--rose-tint); color: var(--rose-deep); }
+.akane-shell .feed-tag.rw { background: var(--gold-tint); color: var(--gold-deep); }
+
+/* ─── Listas ───────────────────────────────────────────────────────────── */
+.akane-shell .list-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; margin-top: 24px; }
+.akane-shell .list-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 18px; cursor: pointer; transition: box-shadow 0.16s, transform 0.14s, border-color 0.14s; box-shadow: var(--shadow-sm); }
+.akane-shell .list-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: var(--rose-tint-2); }
+.akane-shell .list-spines { display: flex; height: 108px; margin-bottom: 16px; padding-left: 2px; }
+.akane-shell .list-spines .poster { width: 58px; box-shadow: var(--shadow-poster); margin-right: -8px; transition: transform 0.18s; border: 1px solid oklch(0 0 0 / 0.3); }
+.akane-shell .list-card:hover .list-spines .poster { transform: translateY(-4px); }
+.akane-shell .poster.mini { aspect-ratio: 2 / 3; }
+.akane-shell .poster.mini .p-inner { inset: 5px; opacity: 0.24; }
+.akane-shell .p-mini-title { position: absolute; left: 0; right: 0; bottom: 7px; z-index: 1; font-family: var(--display); font-size: 9.5px; line-height: 1.08; text-align: center; padding: 0 6px; letter-spacing: -0.01em; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.akane-shell .list-accent-bar { width: 30px; height: 3px; border-radius: 2px; margin-bottom: 12px; }
+.akane-shell .list-name { font-family: var(--display); font-size: 21px; letter-spacing: -0.01em; }
+.akane-shell .list-desc { font-size: 13px; color: var(--ink-2); margin-top: 7px; line-height: 1.55; text-wrap: pretty; }
+.akane-shell .list-count { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); margin-top: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+/* ─── Watchlist ────────────────────────────────────────────────────────── */
+.akane-shell .wl-list { display: flex; flex-direction: column; gap: 10px; margin-top: 22px; }
+.akane-shell .wl-item { display: flex; align-items: center; gap: 18px; padding: 14px 18px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-sm); transition: box-shadow 0.14s, border-color 0.14s; }
+.akane-shell .wl-item:hover { box-shadow: var(--shadow-md); border-color: var(--rose-tint-2); }
+.akane-shell .wl-item .poster { width: 54px; }
+.akane-shell .wl-poster { flex-shrink: 0; cursor: pointer; }
+.akane-shell .wl-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.akane-shell .wl-title { font-family: var(--display); font-size: 19px; letter-spacing: -0.01em; color: var(--ink); cursor: pointer; line-height: 1.12; }
+.akane-shell .wl-title:hover { color: var(--rose-deep); }
+.akane-shell .wl-sub { font-size: 12.5px; color: var(--ink-3); }
+.akane-shell .wl-genre { display: inline-block; font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.10em; color: var(--rose-deep); background: var(--rose-tint); padding: 3px 9px; border-radius: 999px; margin-top: 4px; width: fit-content; }
+.akane-shell .wl-note { font-family: var(--serif); font-style: italic; font-size: 13px; color: var(--ink-3); max-width: 52ch; }
+.akane-shell .wl-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* ─── Rewind (estatísticas) ────────────────────────────────────────────── */
+.akane-shell .rewind-hero { text-align: center; padding: 40px 0 8px; }
+.akane-shell .rewind-hero .eyebrow { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.24em; color: var(--rose-deep); }
+.akane-shell .rewind-hero h2 { font-family: var(--display); font-size: clamp(40px, 5vw, 60px); letter-spacing: -0.02em; margin-top: 12px; line-height: 1; }
+.akane-shell .rewind-hero .sub { color: var(--ink-3); margin-top: 12px; font-size: 14px; }
+.akane-shell .big-stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 34px; }
+.akane-shell .big-stat { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 24px 20px; text-align: center; box-shadow: var(--shadow-sm); }
+.akane-shell .big-stat .n { font-family: var(--display); font-size: 48px; line-height: 1; color: var(--rose-deep); font-variant-numeric: tabular-nums; }
+.akane-shell .big-stat .l { font-size: 12.5px; color: var(--ink-2); margin-top: 12px; }
+.akane-shell .rewind-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 880px){ .akane-shell .rewind-grid { grid-template-columns: 1fr; } }
+.akane-shell .bars { display: flex; align-items: flex-end; gap: 8px; height: 170px; margin-top: 20px; padding: 0 2px; }
+.akane-shell .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; justify-content: flex-end; }
+.akane-shell .bar-col .bar { width: 100%; max-width: 40px; background: linear-gradient(to top, var(--rose), var(--rose-bright)); border-radius: 4px 4px 0 0; min-height: 3px; transition: height 0.4s; }
+.akane-shell .bar-col .bar.empty { background: var(--line-2); }
+.akane-shell .bar-col .bar-lbl { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; color: var(--ink-4); }
+.akane-shell .bar-col .bar-val { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+/* histograma de notas */
+.akane-shell .hist-row { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
+.akane-shell .hist-row .hl { width: 58px; display: flex; align-items: center; gap: 3px; justify-content: flex-end; }
+.akane-shell .hist-row .hl .n { font-family: var(--mono); font-size: 10px; color: var(--ink-4); }
+.akane-shell .hist-bar { flex: 1; height: 12px; background: var(--line-2); border-radius: 999px; overflow: hidden; }
+.akane-shell .hist-bar i { display: block; height: 100%; background: var(--gold); border-radius: 999px; }
+.akane-shell .hist-n { font-family: var(--mono); font-size: 11px; color: var(--ink-3); width: 20px; text-align: right; }
+/* rank lists (gêneros, diretores, pessoas) */
+.akane-shell .rank-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line-2); }
+.akane-shell .rank-row:last-child { border-bottom: none; }
+.akane-shell .rank-row .rk-name { font-size: 13.5px; color: var(--ink); font-weight: 500; }
+.akane-shell .rank-row .rk-sub { font-family: var(--mono); font-size: 9.5px; color: var(--ink-4); margin-top: 1px; }
+.akane-shell .rank-row .rk-track { flex: 1; height: 8px; background: var(--line-2); border-radius: 999px; overflow: hidden; min-width: 40px; }
+.akane-shell .rank-row .rk-track i { display: block; height: 100%; background: linear-gradient(90deg, var(--rose), var(--rose-bright)); border-radius: 999px; }
+.akane-shell .rank-row .rk-n { font-family: var(--mono); font-size: 11px; color: var(--ink-3); width: 18px; text-align: right; }
+.akane-shell .rank-row .rk-av { width: 30px; height: 30px; border-radius: 50%; background: var(--rose-tint); color: var(--rose-deep); display: flex; align-items: center; justify-content: center; font-family: var(--display); font-size: 14px; flex-shrink: 0; }
+.akane-shell .rank-row.person .rk-av { background: var(--mist); }
+/* destaques */
+.akane-shell .highlight { display: flex; flex-direction: column; gap: 3px; padding-bottom: 14px; border-bottom: 1px solid var(--line-2); }
+.akane-shell .highlight:last-child { border-bottom: none; padding-bottom: 0; }
+.akane-shell .highlight .hl-k { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-4); }
+.akane-shell .highlight .hl-v { font-family: var(--display); font-size: 22px; color: var(--rose-deep); letter-spacing: -0.01em; line-height: 1.1; }
+.akane-shell .highlight .hl-s { font-size: 12px; color: var(--ink-3); }
+.akane-shell .people-note { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-4); margin-top: 14px; font-style: italic; font-family: var(--serif); }
+.akane-shell .people-note svg { width: 14px; height: 14px; color: var(--rose); flex-shrink: 0; }
+
+/* ─── Barra "próxima sessão" ───────────────────────────────────────────── */
+.akane-shell .footbar { grid-column: 1 / 3; grid-row: 2; height: 68px; display: flex; align-items: center; gap: 16px; padding: 0 22px 0 18px; border-top: 1px solid var(--line); background: var(--footbar-bg); backdrop-filter: blur(16px); }
+.akane-shell .footbar .fb-label { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--rose-deep); flex-shrink: 0; }
+.akane-shell .footbar .poster { width: 40px; border-radius: 3px; cursor: pointer; }
+.akane-shell .footbar-info { min-width: 0; flex: 1; }
+.akane-shell .footbar-title { font-family: var(--display); font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.akane-shell .footbar-sub { font-family: var(--mono); font-size: 10px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.akane-shell .footbar-switch { display: flex; align-items: center; gap: 7px; }
+.akane-shell .footbar-switch button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all .12s; }
+.akane-shell .footbar-switch button:hover { color: var(--ink); border-color: var(--ink-4); }
+.akane-shell .footbar-switch button svg { width: 14px; height: 14px; }
+.akane-shell .footbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* ─── Modal: registrar sessão ──────────────────────────────────────────── */
+.akane-shell .modal-scrim { position: fixed; inset: 0; z-index: 100; background: oklch(0.05 0.01 340 / 0.6); backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; padding: 24px; animation: scrim-in 0.18s ease; }
+@keyframes scrim-in { from { opacity: 0; } }
+.akane-shell .modal { width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); animation: modal-in 0.22s cubic-bezier(.2,.8,.3,1); scrollbar-width: thin; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } }
+.akane-shell .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 20px 22px 0; }
+.akane-shell .modal-title { font-family: var(--display); font-size: 22px; letter-spacing: -0.01em; }
+.akane-shell .modal-x { width: 30px; height: 30px; border-radius: 50%; border: none; background: var(--card-2); color: var(--ink-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all .12s; }
+.akane-shell .modal-x:hover { background: var(--line); color: var(--ink); }
+.akane-shell .modal-x svg { width: 15px; height: 15px; }
+.akane-shell .modal-body { padding: 18px 22px 22px; }
+.akane-shell .modal-label { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-3); margin-bottom: 9px; display: block; }
+.akane-shell .modal-field { margin-top: 20px; }
+.akane-shell .filmpick { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.akane-shell .filmpick::-webkit-scrollbar { display: none; }
+.akane-shell .filmpick .pick { flex-shrink: 0; width: 50px; cursor: pointer; border-radius: 4px; transition: transform .12s; position: relative; }
+.akane-shell .filmpick .pick .poster { width: 50px; }
+.akane-shell .filmpick .pick:hover { transform: translateY(-2px); }
+.akane-shell .filmpick .pick.sel .poster { outline: 2.5px solid var(--rose); outline-offset: 2px; }
+.akane-shell .filmpick .pick.sel::after { content: '✓'; position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--rose); color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+
+/* busca de novos filmes (API mock) */
+.akane-shell .modal-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+.akane-shell .pick-search-toggle { display: inline-flex; align-items: center; gap: 5px; font-family: var(--sans); font-size: 11.5px; font-weight: 600; color: var(--rose-deep); background: var(--rose-tint); border: 1px solid var(--rose-tint-2); border-radius: 999px; padding: 4px 11px; cursor: pointer; transition: all 0.14s; }
+.akane-shell .pick-search-toggle svg { width: 13px; height: 13px; }
+.akane-shell .pick-search-toggle:hover { filter: brightness(1.08); }
+.akane-shell .pick-search-toggle.on { color: var(--ink-2); background: var(--card-2); border-color: var(--line); }
+.akane-shell .film-search { margin-bottom: 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card-2); padding: 12px; }
+.akane-shell .film-search-bar { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-sm); transition: border-color 0.15s, box-shadow 0.15s; }
+.akane-shell .film-search-bar:focus-within { border-color: var(--rose); box-shadow: 0 0 0 3px var(--rose-tint); }
+.akane-shell .film-search-bar svg { width: 15px; height: 15px; color: var(--ink-4); flex-shrink: 0; }
+.akane-shell .film-search-bar input { flex: 1; border: none; background: transparent; outline: none; font-family: var(--sans); font-size: 13.5px; color: var(--ink); }
+.akane-shell .film-search-bar input::placeholder { color: var(--ink-4); }
+.akane-shell .fs-spin { width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--rose); animation: fs-spin 0.7s linear infinite; flex-shrink: 0; }
+@keyframes fs-spin { to { transform: rotate(360deg); } }
+.akane-shell .film-search-results { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; max-height: 264px; overflow-y: auto; scrollbar-width: thin; }
+.akane-shell .fs-status { font-size: 12.5px; color: var(--ink-3); padding: 12px 6px; font-family: var(--serif); font-style: italic; }
+.akane-shell .fs-status .fs-hint { color: var(--ink-4); font-style: normal; font-family: var(--sans); font-size: 11.5px; }
+.akane-shell .fs-result { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: var(--r-sm); cursor: pointer; transition: background 0.12s; }
+.akane-shell .fs-result:hover { background: var(--card); }
+.akane-shell .fs-poster { width: 38px; flex-shrink: 0; }
+.akane-shell .fs-poster .poster { width: 38px; border-radius: 3px; }
+.akane-shell .fs-meta { flex: 1; min-width: 0; }
+.akane-shell .fs-title { font-family: var(--serif); font-size: 14px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
+.akane-shell .fs-title .fs-year { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-4); margin-left: 5px; }
+.akane-shell .fs-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+.akane-shell .fs-genre { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--rose-deep); margin-top: 3px; }
+.akane-shell .fs-add { display: inline-flex; align-items: center; gap: 4px; font-family: var(--sans); font-size: 11.5px; font-weight: 600; color: var(--rose-deep); flex-shrink: 0; white-space: nowrap; }
+.akane-shell .fs-add svg { width: 13px; height: 13px; }
+
+/* busca como caminho principal */
+.akane-shell .ml-hint { text-transform: none; letter-spacing: 0; color: var(--ink-4); }
+.akane-shell .film-search.primary { border: none; background: none; padding: 0; margin-bottom: 0; }
+.akane-shell .film-search.primary .film-search-bar { height: 46px; border-color: var(--rose-tint-2); }
+.akane-shell .film-search.primary .film-search-bar input { font-size: 14.5px; }
+.akane-shell .film-search.primary .film-search-results { margin-top: 6px; }
+/* alvo do log (filme selecionado) */
+.akane-shell .log-target { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 9px 12px; border: 1px solid var(--rose-tint-2); background: var(--rose-tint); border-radius: var(--r-md); }
+.akane-shell .lt-poster { width: 34px; flex-shrink: 0; }
+.akane-shell .lt-poster .poster { width: 34px; border-radius: 3px; }
+.akane-shell .lt-meta { flex: 1; min-width: 0; }
+.akane-shell .lt-title { font-family: var(--serif); font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
+.akane-shell .lt-title span { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-4); margin-left: 5px; }
+.akane-shell .lt-sub { font-family: var(--mono); font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--rose-deep); margin-top: 3px; }
+.akane-shell .lt-check { margin-left: auto; color: var(--rose-deep); flex-shrink: 0; }
+.akane-shell .lt-check svg { width: 18px; height: 18px; }
+/* seletor secundário recolhível */
+.akane-shell .pick-fold { margin-top: 14px; }
+.akane-shell .pick-fold summary { font-family: var(--sans); font-size: 12.5px; color: var(--ink-3); cursor: pointer; padding: 4px 0; list-style: none; display: flex; align-items: center; gap: 7px; user-select: none; }
+.akane-shell .pick-fold summary::-webkit-details-marker { display: none; }
+.akane-shell .pick-fold summary::before { content: '▸'; color: var(--ink-4); font-size: 10px; transition: transform 0.15s; }
+.akane-shell .pick-fold[open] summary::before { transform: rotate(90deg); }
+.akane-shell .pick-fold summary:hover { color: var(--ink); }
+.akane-shell .pick-fold .filmpick { margin-top: 12px; }
+
+.akane-shell .date-input, .akane-shell .text-input, .akane-shell .note-input { width: 100%; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); color: var(--ink); outline: none; transition: border-color .15s, box-shadow .15s; font-family: var(--sans); }
+.akane-shell .date-input { height: 42px; padding: 0 14px; font-family: var(--mono); font-size: 14px; color-scheme: dark; }
+.akane-shell[data-theme='light'] .date-input { color-scheme: light; }
+.akane-shell .text-input { height: 42px; padding: 0 14px; font-size: 14px; }
+.akane-shell .note-input { min-height: 70px; resize: vertical; padding: 12px 14px; font-size: 14px; line-height: 1.5; }
+.akane-shell .date-input:focus, .akane-shell .text-input:focus, .akane-shell .note-input:focus { border-color: var(--rose); box-shadow: 0 0 0 3px var(--rose-tint); }
+.akane-shell .note-input::placeholder, .akane-shell .text-input::placeholder { color: var(--ink-4); }
+
+/* rating input com meia-estrela */
+.akane-shell .rate-input { display: inline-flex; align-items: center; gap: 3px; }
+.akane-shell .rate-star { position: relative; width: 30px; height: 30px; cursor: pointer; color: oklch(0.55 0.02 330 / 0.45); }
+.akane-shell[data-theme='light'] .rate-star { color: var(--line); }
+.akane-shell .rate-star svg { width: 30px; height: 30px; position: absolute; inset: 0; }
+.akane-shell .rate-star .fill { color: var(--gold); overflow: hidden; }
+.akane-shell .rate-half { position: absolute; top: 0; bottom: 0; width: 50%; z-index: 2; }
+.akane-shell .rate-half.l { left: 0; } .akane-shell .rate-half.r { right: 0; }
+.akane-shell .rate-clear { font-family: var(--mono); font-size: 11px; color: var(--ink-4); background: none; border: none; cursor: pointer; margin-left: 10px; }
+.akane-shell .rate-clear:hover { color: var(--ink-2); }
+.akane-shell .rate-val { font-family: var(--mono); font-size: 13px; color: var(--gold-deep); margin-left: 8px; }
+
+.akane-shell .toggle-row { display: flex; gap: 10px; margin-top: 6px; }
+.akane-shell .toggle-pill { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink-2); cursor: pointer; font-family: var(--sans); font-size: 12.5px; font-weight: 500; transition: all 0.14s; }
+.akane-shell .toggle-pill svg { width: 14px; height: 14px; }
+.akane-shell .toggle-pill.on.like { color: var(--heart); border-color: var(--heart); background: oklch(0.68 0.2 12 / 0.10); }
+.akane-shell .toggle-pill.on.rw { color: var(--rose-deep); border-color: var(--rose); background: var(--rose-tint); }
+
+.akane-shell .modal-foot { display: flex; align-items: center; gap: 12px; margin-top: 26px; }
+.akane-shell .modal-foot .grow { flex: 1; }
+.akane-shell .modal-foot .hint { font-size: 11.5px; color: var(--ink-4); }
+.akane-shell .modal-foot .hint kbd { font-family: var(--mono); font-size: 10px; background: var(--card-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+
+.akane-shell .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); z-index: 200; background: var(--ink); color: var(--paper); padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 9px; box-shadow: var(--shadow-lg); animation: toast-in 0.3s cubic-bezier(.2,.8,.3,1); }
+.akane-shell .toast svg { width: 16px; height: 16px; color: var(--rose-bright); }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 14px); } }
+
+.akane-shell .poster-grid, .akane-shell .hero { transition: gap 0.3s ease, min-height 0.3s ease; }
+.akane-shell .empty-state { color: var(--ink-4); text-align: center; padding: 60px 0; font-style: italic; font-family: var(--serif); font-size: 18px; }
+
+/* ─── responsivo ───────────────────────────────────────────────────────── */
+@media (max-width: 880px) {
+  .akane-shell .ak-app { grid-template-columns: 64px 1fr; }
+  .akane-shell .side-brand .brand-text, .akane-shell .side-nav .nav-group-label, .akane-shell .nav-item span:not(.nav-count), .akane-shell .side-foot, .akane-shell .side-log-btn span { display: none; }
+  .akane-shell .nav-count { display: none; }
+  .akane-shell .side-log-btn { margin: 4px 12px 12px; padding: 11px 0; }
+  .akane-shell .nav-item { justify-content: center; }
+  .akane-shell .detail-hero { grid-template-columns: 200px 1fr; gap: 28px; }
+  .akane-shell .detail-poster-wrap .poster { width: 200px; }
+  .akane-shell .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .akane-shell .big-stat-row { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 720px) {
+  .akane-shell .hero-inner { grid-template-columns: 1fr; }
+  .akane-shell .hero-portrait { display: none; }
+  .akane-shell .hero-copy { padding: 32px 28px; }
+  .akane-shell .footbar-info { display: none; }
+  .akane-shell .diary-row { grid-template-columns: 44px 38px 1fr; }
+  .akane-shell .dr-marks { display: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AJUSTES DO APP REAL (mantidos fora do porte automático do handoff)
+   Tudo abaixo é adição consciente para funcionalidades que o protótipo não
+   tinha — principalmente o pôster com imagem real do TMDB (decisão do
+   usuário: imagem quando existir, tipográfico como fallback).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Camada de imagem real (TMDB) dentro do pôster tipográfico.
+   A <img> cobre todo o card; a vinheta (::before), a moldura (::after),
+   os badges (.p-badges) e a faixa de nota (.p-rating) continuam por cima. */
+.akane-shell .poster .p-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; display: block;
+}
+/* Vinheta e moldura interna sobem na pilha para ficarem acima da imagem */
+.akane-shell .poster::before, .akane-shell .poster::after { z-index: 1; }
+/* Quando o pôster tem imagem, os elementos tipográficos somem
+   (a informação já está na própria arte do filme) */
+.akane-shell .poster.has-img .p-inner,
+.akane-shell .poster.has-img .p-kicker,
+.akane-shell .poster.has-img .p-title,
+.akane-shell .poster.has-img .p-foot,
+.akane-shell .poster.has-img .p-mini-title { display: none; }
+
+/* ── Painel de tweaks (flutuante, canto inferior direito) ─────────────────
+   Mesmo padrão do TweaksPanel da Frieren, adaptado aos tokens da Akane.
+   Inclui a mesma defesa contra o vazamento do `.tweaks-panel` global do
+   Violet (violet.css define um painel lateral cheio sem escopo). */
+.akane-shell .tweaks-panel {
+  position: fixed; right: 16px; bottom: 84px; z-index: 300;
+  /* resets anti-vazamento (violet.css): */
+  top: auto; width: auto; height: auto; background: none; border: none;
+  box-shadow: none; padding: 0; overflow: visible; display: block;
+}
+.akane-shell .tp-toggle {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--card); border: 1px solid var(--line);
+  color: var(--ink-2); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-md); transition: border-color .15s, color .15s;
+}
+.akane-shell .tp-toggle:hover { color: var(--ink); border-color: var(--ink-4); }
+.akane-shell .tp-toggle svg { width: 16px; height: 16px; }
+.akane-shell .tp-body {
+  position: absolute; right: 0; bottom: 48px;
+  width: 268px; background: var(--card);
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg); overflow: hidden;
+}
+.akane-shell .tp-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px 10px; border-bottom: 1px solid var(--line-2);
+}
+.akane-shell .tp-title { font-size: 12px; font-weight: 600; color: var(--ink); letter-spacing: .01em; }
+.akane-shell .tp-close {
+  width: 24px; height: 24px; border-radius: 50%; background: none;
+  border: none; color: var(--ink-3); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: background .12s;
+}
+.akane-shell .tp-close:hover { background: var(--card-2); color: var(--ink); }
+.akane-shell .tp-close svg { width: 13px; height: 13px; }
+.akane-shell .tp-section {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-4);
+  padding: 10px 14px 4px;
+}
+.akane-shell .tp-row { display: flex; flex-direction: column; gap: 5px; padding: 2px 14px 6px; }
+.akane-shell .tp-label { font-size: 12px; color: var(--ink-2); font-weight: 500; }
+.akane-shell .tp-opts { display: flex; gap: 4px; flex-wrap: wrap; }
+.akane-shell .tp-opt {
+  font-size: 11.5px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--paper);
+  color: var(--ink-2); cursor: pointer; transition: all .12s;
+}
+.akane-shell .tp-opt:hover { border-color: var(--rose); color: var(--rose-deep); }
+.akane-shell .tp-opt.sel { background: var(--rose); border-color: var(--rose); color: oklch(0.99 0.01 350); font-weight: 500; }
+.akane-shell .tp-select {
+  font-size: 12px; padding: 5px 8px; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--paper);
+  color: var(--ink); cursor: pointer; outline: none; width: 100%;
+  font-family: var(--sans);
+}
+.akane-shell .tp-select:focus { border-color: var(--rose); }
+
+/* Item da sidebar "Sincronizar Letterboxd" — gira o ícone enquanto sincroniza */
+.akane-shell .nav-item.syncing svg { animation: ak-sync-spin 1s linear infinite; }
+@keyframes ak-sync-spin { to { transform: rotate(360deg); } }
+
+/* ── Extras do detalhe do filme (funcionalidades do app real) ───────────── */
+/* Sinopse (TMDB): serif sem o filete dourado da review */
+.akane-shell .detail-synopsis {
+  font-family: var(--serif); font-size: 14.5px; line-height: 1.7;
+  color: var(--ink-2); max-width: 640px; text-wrap: pretty;
+}
+/* Botão × de remover item do Cofre (canto da thumb) */
+.akane-shell .vault-card { position: relative; }
+.akane-shell .vc-remove {
+  position: absolute; top: 6px; right: 6px; width: 22px; height: 22px;
+  border-radius: 50%; border: none; cursor: pointer;
+  background: oklch(0.1 0.02 340 / 0.55); color: oklch(0.97 0.01 350);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.12s; backdrop-filter: blur(6px);
+}
+.akane-shell .vc-remove svg { width: 11px; height: 11px; }
+.akane-shell .vault-card:hover .vc-remove { opacity: 1; }
+/* Ações (editar/excluir) das sessões no "Diário deste filme" */
+.akane-shell .fl-actions { display: inline-flex; gap: 6px; margin-left: auto; align-items: center; }
+.akane-shell .fl-actions button {
+  border: none; background: none; cursor: pointer; color: var(--ink-4);
+  font-family: var(--mono); font-size: 10px; display: inline-flex;
+  align-items: center; padding: 2px 4px; border-radius: var(--r-sm);
+  transition: color 0.12s, background 0.12s;
+}
+.akane-shell .fl-actions button:hover { color: var(--ink); background: var(--card-2); }
+.akane-shell .fl-actions button svg { width: 12px; height: 12px; }
+.akane-shell .fl-actions button.danger { color: var(--heart); }
+/* A linha fl-row precisa ocupar a largura para o fl-actions ir à direita */
+.akane-shell .fl-row { display: flex; align-items: center; gap: 8px; }
+
+/* Setas de reordenar sessões do mesmo dia no Diário (spec 050, US7) */
+.akane-shell .dr-reorder { display: flex; flex-direction: column; margin-left: 6px; flex-shrink: 0; }
+.akane-shell .dr-reorder button {
+  border: none; background: none; cursor: pointer; font-size: 9px;
+  color: var(--ink-4); padding: 1px 4px; line-height: 1.2; border-radius: 3px;
+  transition: color 0.12s;
+}
+.akane-shell .dr-reorder button:hover:not(:disabled) { color: var(--ink); }
+.akane-shell .dr-reorder button:disabled { color: var(--line-2); cursor: default; }
+
+/* ── Extras de Listas: placeholder da pilha (sem cover real), badges ────── */
+.akane-shell .list-spines-placeholder {
+  width: 100%; height: 88px; border-radius: var(--r-sm);
+  background: var(--paper); display: flex; align-items: center; justify-content: center;
+  color: var(--ink-4);
+}
+.akane-shell .list-spines-placeholder svg { width: 22px; height: 22px; }
+.akane-shell .list-ranked-badge {
+  margin-left: 6px; font-family: var(--mono); font-size: 9.5px;
+  color: var(--rose-deep); background: var(--rose-tint); padding: 1px 6px; border-radius: 999px;
+}
+.akane-shell .list-item-wrap { position: relative; }
+.akane-shell .list-rank-badge {
+  position: absolute; top: 6px; left: 6px; z-index: 3;
+  width: 22px; height: 22px; border-radius: 50%; background: var(--rose);
+  color: oklch(0.99 0.01 350); display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+}
+.akane-shell .list-item-remove {
+  position: absolute; top: 6px; right: 6px; z-index: 3;
+  width: 22px; height: 22px; border-radius: 50%; border: none; cursor: pointer;
+  background: oklch(0.1 0.02 340 / 0.6); color: oklch(0.98 0.01 350);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.12s;
+}
+.akane-shell .list-item-remove svg { width: 11px; height: 11px; }
+.akane-shell .list-item-wrap:hover .list-item-remove { opacity: 1; }
+.akane-shell .list-accent-swatch {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent;
+  cursor: pointer; padding: 0; transition: border-color 0.12s;
+}
+.akane-shell .list-accent-swatch.sel { border-color: var(--ink); }
+
+/* Botão de navegação de ano compacto (StatsScreen) — não usa .icon-toggle
+   porque ele tem flex:1 (pensado pra ficar lado a lado ocupando a largura
+   toda do detalhe, não como par de setas ao lado de um número). */
+.akane-shell .year-nav-btn {
+  width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink-2); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: border-color 0.12s, color 0.12s;
+}
+.akane-shell .year-nav-btn:hover:not(:disabled) { border-color: var(--ink-4); color: var(--ink); }
+.akane-shell .year-nav-btn:disabled { opacity: 0.4; cursor: default; }
+.akane-shell .year-nav-btn svg { width: 13px; height: 13px; }
+
+/* ── Linha de lista dentro de modal (AddToListModal / TmdbCandidatesModal) ── */
+.akane-shell .addlist-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  background: var(--card); border-radius: var(--r-sm); border: 1px solid var(--line-2);
+  transition: border-color 0.12s;
+}
+.akane-shell .addlist-row:hover { border-color: var(--ink-4); }
+.akane-shell .addlist-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.akane-shell .addlist-name { font-size: 13px; color: var(--ink); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.akane-shell .addlist-count { font-family: var(--mono); font-size: 10px; color: var(--ink-4); flex-shrink: 0; }

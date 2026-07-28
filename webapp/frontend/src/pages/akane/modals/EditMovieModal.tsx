@@ -1,10 +1,12 @@
 // Modal "Editar filme" — edição manual dos campos de catálogo (spec 050, US5/FR-008).
+// Reestilizado no padrão .modal-* do design handoff (só visual — mesma lógica).
 // Título, ano, diretor, gêneros, duração e sinopse. Campos pessoais (nota, coração,
 // status, anotações) já são editáveis por outros controles da tela e não entram aqui.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { akaneApi } from '../akaneApi'
 import type { Movie } from '../types'
+import { Icon } from '../ui/Icon'
 
 interface EditMovieModalProps {
   movie: Movie
@@ -45,83 +47,58 @@ export function EditMovieModal({ movie, onClose, onToast, onSaved }: EditMovieMo
     }
   }
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.7)',
-        zIndex: 200,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: 'var(--paper)',
-          borderRadius: 16,
-          padding: 24,
-          maxWidth: 460,
-          width: '100%',
-          maxHeight: '85vh',
-          overflowY: 'auto',
-          display: 'flex', flexDirection: 'column', gap: 12,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h3 style={{ margin: 0, fontFamily: 'var(--serif)', fontSize: 18, color: 'var(--ink)' }}>
-            Editar filme
-          </h3>
-          <button className="ak-btn" onClick={onClose} style={{ fontSize: 14, padding: '3px 8px' }}>
-            ✕
-          </button>
+    <div className="modal-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" role="dialog" aria-label="Editar filme">
+        <div className="modal-head">
+          <span className="modal-title">Editar filme</span>
+          <button className="modal-x" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
         </div>
+        <div className="modal-body">
+          <div className="modal-field">
+            <label className="modal-label">Título</label>
+            <input className="text-input" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
+          </div>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', textTransform: 'uppercase' }}>Título</span>
-          <input className="ak-input" value={title} onChange={e => setTitle(e.target.value)} autoFocus />
-        </label>
+          <div className="modal-field" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div>
+              <label className="modal-label">Ano</label>
+              <input className="text-input" type="number" value={year} onChange={e => setYear(e.target.value)} />
+            </div>
+            <div>
+              <label className="modal-label">Duração (min)</label>
+              <input className="text-input" type="number" value={runtime} onChange={e => setRuntime(e.target.value)} />
+            </div>
+          </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', textTransform: 'uppercase' }}>Ano</span>
-            <input className="ak-input" type="number" value={year} onChange={e => setYear(e.target.value)} />
-          </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', textTransform: 'uppercase' }}>Duração (min)</span>
-            <input className="ak-input" type="number" value={runtime} onChange={e => setRuntime(e.target.value)} />
-          </label>
-        </div>
+          <div className="modal-field">
+            <label className="modal-label">Diretor(es) <span className="ml-hint">· separados por vírgula</span></label>
+            <input className="text-input" value={director} onChange={e => setDirector(e.target.value)} />
+          </div>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', textTransform: 'uppercase' }}>Diretor(es) — separados por vírgula</span>
-          <input className="ak-input" value={director} onChange={e => setDirector(e.target.value)} />
-        </label>
+          <div className="modal-field">
+            <label className="modal-label">Gêneros <span className="ml-hint">· separados por vírgula</span></label>
+            <input className="text-input" value={genres} onChange={e => setGenres(e.target.value)} />
+          </div>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', textTransform: 'uppercase' }}>Gêneros — separados por vírgula</span>
-          <input className="ak-input" value={genres} onChange={e => setGenres(e.target.value)} />
-        </label>
+          <div className="modal-field">
+            <label className="modal-label">Sinopse</label>
+            <textarea className="note-input" rows={4} value={overview} onChange={e => setOverview(e.target.value)} />
+          </div>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', textTransform: 'uppercase' }}>Sinopse</span>
-          <textarea
-            className="ak-input"
-            rows={4}
-            value={overview}
-            onChange={e => setOverview(e.target.value)}
-            style={{ resize: 'vertical' }}
-          />
-        </label>
-
-        <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-          <button className="ak-btn ak-btn-primary" onClick={save} disabled={saving || !title.trim()}>
-            {saving ? 'Salvando…' : 'Salvar'}
-          </button>
-          <button className="ak-btn" onClick={onClose} disabled={saving}>
-            Cancelar
-          </button>
+          <div className="modal-foot">
+            <div className="grow" />
+            <button className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancelar</button>
+            <button className="btn btn-primary" onClick={save} disabled={saving || !title.trim()}>
+              <Icon name="check" /> {saving ? 'Salvando…' : 'Salvar'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
