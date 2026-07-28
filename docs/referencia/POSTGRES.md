@@ -184,7 +184,9 @@ Assinaturas recorrentes (Netflix, Spotify, etc.).
 | `valor` | NUMERIC | NÃO | — | Valor por ciclo. |
 | `ciclo` | TEXT | NÃO | — | `mensal` \| `anual` \| `trimestral`. |
 | `next_billing` | DATE | SIM | — | Data da próxima cobrança. |
-| `conta` | TEXT | SIM | — | Conta usada para pagar. |
+| `conta` | TEXT | SIM | — | Nome de exibição legado da conta/cartão usado para pagar. |
+| `account_id` | TEXT | SIM | — | FK lógica para `accounts.id` — pagador real, se resolvido como conta bancária (spec 040). Mutuamente exclusivo com `card_id`. |
+| `card_id` | TEXT | SIM | — | FK lógica para `credit_cards.id` — pagador real, se resolvido como cartão (spec 040). Mutuamente exclusivo com `account_id`. |
 | `categoria` | TEXT | SIM | — | Categoria do gasto. |
 | `status` | TEXT | SIM | `'ativa'` | `ativa` / pausada / cancelada. |
 | `notes` | TEXT | SIM | — | Anotações. |

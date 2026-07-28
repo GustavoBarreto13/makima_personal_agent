@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-06
 
-**Status**: Código implementado na branch `040-nami-reforma` (commit `fix(nami): timezone SP...`) — pendente: rodar a migração no VPS e validar em produção
+**Status**: ✅ Implementado, migrado e validado em produção (commit `0d771a3`, migração `scripts/migrate_nami_reforma.py` executada no VPS — colunas `account_id`/`card_id` confirmadas em `subscriptions` em 2026-07-28). Ver `plan.md` e `tasks.md` para o detalhamento retroativo e o registro de verificação.
 
 **Input**: User description: "Correções de bugs do backend e frontend da Nami (finanças): timezone America/Sao_Paulo em todas as queries e helpers, GROUP BY seguro em get_spending_summary, create_subscription com validação de next_billing e gravação de account_id/card_id, dateUtils.ts da Nami no frontend, saudação do Dashboard sem hardcode, toasts de erro nos catches silenciosos."
 
