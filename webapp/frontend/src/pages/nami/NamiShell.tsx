@@ -26,6 +26,7 @@ import { Subscriptions } from './screens/Subscriptions'
 import { FixedBills }    from './screens/FixedBills'
 import { Loans }         from './screens/Loans'
 import { Financings }    from './screens/Financings'
+import { Shopping }      from './screens/Shopping'
 import { AddModal }      from './modals/AddModal'
 
 // ── Tipos internos ────────────────────────────────────────────────────────────
@@ -33,7 +34,7 @@ import { AddModal }      from './modals/AddModal'
 /** Identificadores das views internas da seção Nami. */
 type NamiView =
   | 'dashboard' | 'transacoes' | 'contas' | 'cartoes' | 'parcelamentos'
-  | 'orcamentos' | 'assinaturas' | 'contas-fixas' | 'emprestimos' | 'financiamentos'
+  | 'orcamentos' | 'assinaturas' | 'contas-fixas' | 'lista-compras' | 'emprestimos' | 'financiamentos'
 
 // ── Mapeamento hash → view (deep-link) ───────────────────────────────────────
 const HASH_TO_VIEW: Record<string, NamiView> = {
@@ -45,6 +46,7 @@ const HASH_TO_VIEW: Record<string, NamiView> = {
   '#orcamentos':    'orcamentos',
   '#assinaturas':   'assinaturas',
   '#contas-fixas':  'contas-fixas',
+  '#lista-compras': 'lista-compras',
   '#emprestimos':   'emprestimos',
   '#financiamentos':'financiamentos',
 }
@@ -58,6 +60,7 @@ const VIEW_TO_HASH: Record<NamiView, string> = {
   orcamentos:     '#orcamentos',
   assinaturas:    '#assinaturas',
   'contas-fixas': '#contas-fixas',
+  'lista-compras':'#lista-compras',
   emprestimos:    '#emprestimos',
   financiamentos: '#financiamentos',
 }
@@ -71,6 +74,7 @@ const VIEW_TITLES: Record<NamiView, string> = {
   orcamentos:     'Orçamentos',
   assinaturas:    'Assinaturas',
   'contas-fixas': 'Contas Fixas',
+  'lista-compras':'Lista de Compras',
   emprestimos:    'Empréstimos',
   financiamentos: 'Financiamentos',
 }
@@ -90,6 +94,7 @@ const VIEW_ICONS: Record<NamiView, string> = {
   orcamentos:     'target',
   assinaturas:    'repeat',
   'contas-fixas': 'home',
+  'lista-compras':'cart',
   emprestimos:    'handshake',
   financiamentos: 'building',
 }
@@ -309,6 +314,7 @@ export function NamiShell() {
         { id: 'orcamentos',    label: 'Orçamentos' },
         { id: 'assinaturas',   label: 'Assinaturas', badge: subsTotal > 0 ? formatCompact(subsTotal) : null },
         { id: 'contas-fixas',  label: 'Contas Fixas' },
+        { id: 'lista-compras', label: 'Lista de Compras' },
         { id: 'emprestimos',   label: 'Empréstimos' },
         { id: 'financiamentos',label: 'Financiamentos' },
       ],
@@ -347,6 +353,8 @@ export function NamiShell() {
         return <Subscriptions {...commonProps} onSubscriptionsChanged={loadGlobal} />
       case 'contas-fixas':
         return <FixedBills {...commonProps} onSubscriptionsChanged={loadGlobal} />
+      case 'lista-compras':
+        return <Shopping {...commonProps} />
       case 'emprestimos':
         return <Loans onToast={setToast} />
       case 'financiamentos':

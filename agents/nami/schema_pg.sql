@@ -131,6 +131,35 @@ CREATE TABLE IF NOT EXISTS loans (
     deleted              BOOLEAN     DEFAULT FALSE
 );
 
+-- Tabela de listas de compras (spec 045) — múltiplas listas nomeadas, ativa/arquivada.
+-- transaction_id é gravado quando a lista é finalizada (vínculo com a despesa criada).
+CREATE TABLE IF NOT EXISTS shopping_lists (
+    id             TEXT PRIMARY KEY,
+    name           TEXT        NOT NULL,
+    status         TEXT        DEFAULT 'ativa',   -- 'ativa' | 'arquivada'
+    transaction_id TEXT,
+    created_at     TIMESTAMPTZ DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_shopping_lists_status ON shopping_lists(status);
+
+-- Itens de uma lista de compras (spec 045). quantidade/unidade são texto livre
+-- (o que não parsear da frase do usuário vira parte do próprio nome — ver
+-- _parse_item_text em agents/nami/tools_shopping.py). ordem é a posição de inserção.
+CREATE TABLE IF NOT EXISTS shopping_list_items (
+    id              TEXT PRIMARY KEY,
+    list_id         TEXT        NOT NULL,
+    name            TEXT        NOT NULL,
+    quantidade      TEXT,
+    unidade         TEXT,
+    preco_estimado  NUMERIC,
+    checked         BOOLEAN     DEFAULT FALSE,
+    ordem           INTEGER     DEFAULT 0,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_shopping_list_items_list_id ON shopping_list_items(list_id);
+
 -- Tabela de orçamento mensal por categoria
 CREATE TABLE IF NOT EXISTS budgets (
     id         TEXT PRIMARY KEY,

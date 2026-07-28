@@ -125,6 +125,23 @@ confirmação de valor real.
 | `POST` | `/api/finances/subscriptions/{sub_id}/pay` | Confirma o pagamento com o valor real — cria a despesa vinculada e rola o próximo vencimento (atômico). | Body: `MarkSubscriptionPaidBody` |
 | `POST` | `/api/finances/subscriptions/{sub_id}/skip` | Pula o ciclo corrente sem lançar despesa (ex.: mês sem fatura). | — |
 
+### Lista de Compras (spec 045)
+
+Duas tabelas novas: `shopping_lists` (nomeada, ativa/arquivada) e `shopping_list_items`
+(nome, quantidade/unidade texto livre, preço estimado, checked, ordem). Uso duplo — webapp
+(mobile-first) e Telegram, mesma fonte de dados.
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/finances/shopping-lists` | Lista listas de compras. | `?status=ativa\|arquivada\|todas` |
+| `POST` | `/api/finances/shopping-lists` | Cria uma lista nomeada nova (devolve 201). | Body: `CreateShoppingListBody` |
+| `GET` | `/api/finances/shopping-lists/frequent` | Itens mais recorrentes nas listas já arquivadas. | `?limit=10` |
+| `GET` | `/api/finances/shopping-lists/{list_id}` | Detalhe: itens, contadores (pendentes/no carrinho) e total estimado. | — |
+| `POST` | `/api/finances/shopping-lists/{list_id}/items` | Adiciona um ou mais itens numa frase só (devolve 201); não duplica item já pendente. | Body: `AddShoppingItemsBody` |
+| `POST` | `/api/finances/shopping-lists/{list_id}/finish` | Finaliza a compra — lança a despesa (Supermercado) + arquiva a lista + abre a próxima lista ativa (atômico, devolve 201). | Body: `FinishShoppingBody` |
+| `PATCH` | `/api/finances/shopping-items/{item_id}` | Edita nome/quantidade/unidade/preço e/ou marca/desmarca no carrinho. | Body: `UpdateShoppingItemBody` |
+| `DELETE` | `/api/finances/shopping-items/{item_id}` | Remove um item (exclusão real). | — |
+
 ### Parcelamentos
 
 | Método | Caminho | Descrição | Body / Query |

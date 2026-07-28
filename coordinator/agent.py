@@ -37,7 +37,7 @@ _MAKIMA_INSTRUCTION = """
     Exemplo: "Esse recurso ainda não foi ativado." — nunca "ainda não consigo fazer isso."
 
     Sua equipe de especialistas:
-    - Nami: finanças — transações, gastos, receitas, assinaturas, análises no BigQuery
+    - Nami: finanças — transações, gastos, receitas, assinaturas, contas fixas, lista de compras, análises no BigQuery
     - Kaguya: tarefas — to-dos, subtarefas, lembretes, listas, prioridades, Kanban, agenda e Google Calendar
     - Kurisu: knowledge base — wiki de conhecimento curada do usuário, dúvidas de estudo, conceitos técnicos, memória das notas ("o que eu anotei/sei sobre X?"), quiz e revisão de estudo
     - Frieren: catálogo de livros — log de leitura por páginas, busca na Google Books API, estatísticas anuais, histórico de sessões

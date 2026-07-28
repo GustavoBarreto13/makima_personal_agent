@@ -230,6 +230,43 @@ export interface MonthlyEntry {
   expense: number
 }
 
+// ── Lista de Compras (spec 045) ──────────────────────────────────────────────
+
+/** Uma lista de compras nomeada (ativa ou arquivada). */
+export interface ShoppingList {
+  id: string
+  name: string
+  status: 'ativa' | 'arquivada'
+  transaction_id?: string | null  // preenchido quando a lista foi finalizada
+  created_at?: string
+}
+
+/** Um item dentro de uma lista de compras. */
+export interface ShoppingItem {
+  id: string
+  name: string
+  quantidade?: string | null      // texto livre — ex.: "2kg" (não parseável vira parte do nome)
+  unidade?: string | null
+  preco_estimado?: number | null
+  checked: boolean                // true = no carrinho
+  ordem: number
+}
+
+/** Shape do GET /api/finances/shopping-lists/{id} */
+export interface ShoppingListDetail {
+  list: ShoppingList
+  items: ShoppingItem[]
+  pendentes_count: number
+  checked_count: number
+  total_estimado: number
+}
+
+/** Um item frequente derivado do histórico de listas arquivadas. */
+export interface FrequentItem {
+  name: string
+  count: number
+}
+
 // ── Tweaks (preferências visuais) ─────────────────────────────────────────────
 
 /** Preferências visuais persistidas no localStorage. */

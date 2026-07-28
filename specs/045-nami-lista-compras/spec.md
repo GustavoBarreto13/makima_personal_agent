@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-06
 
-**Status**: Draft
+**Status**: ✅ Implementado (2026-07-28) — ver `plan.md` e `tasks.md`; schema (`shopping_lists`/`shopping_list_items`) pendente de aplicação no VPS via `scripts/setup_schemas.py`.
 
 **Input**: User description: "Seção de Lista de Compras da Nami, bem completa e simples de usar. Uso duplo: webapp mobile-first (no mercado, pelo celular) e Telegram via Makima ('adiciona arroz na lista do mercado'). Itens com quantidade/unidade/preço estimado opcionais, checkbox de carrinho, múltiplas listas, itens frequentes, e 'Finalizar compra' que lança a despesa (valor total real) e arquiva a lista."
 

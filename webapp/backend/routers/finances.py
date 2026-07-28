@@ -49,6 +49,19 @@ from agents.nami.tools import (
     _today_date,           # Hoje no fuso America/Sao_Paulo (spec 040) — nunca date.today() (UTC do servidor)
 )
 
+# Lista de Compras (spec 045)
+from agents.nami.tools_shopping import (
+    create_shopping_list,   # Cria lista nomeada nova
+    list_shopping_lists,    # Lista listas por status (ativa/arquivada/todas)
+    add_shopping_items,     # Adiciona um ou mais itens (dedupe + parse de quantidade)
+    show_shopping_list,     # Itens de uma lista + contadores + total estimado
+    check_shopping_item,    # Marca/desmarca item no carrinho
+    update_shopping_item,   # Edita nome/quantidade/unidade/preço
+    remove_shopping_item,   # Remove item (exclusão real)
+    get_frequent_items,     # Itens mais recorrentes no histórico arquivado
+    finish_shopping,        # Lança despesa + arquiva a lista (atômico, spec 045)
+)
+
 # Contas financeiras (corrente, poupança, dinheiro, investimento)
 from agents.nami.tools_accounts import (
     create_account,       # Cadastra nova conta financeira
@@ -335,6 +348,32 @@ class CreateTransferBody(BaseModel):
     valor: float          # Valor transferido em reais
     data: str = ""        # Data no formato YYYY-MM-DD (vazio = hoje)
     notes: str = ""        # Observações opcionais
+
+
+class CreateShoppingListBody(BaseModel):
+    """Corpo da requisição para criar uma nova lista de compras (spec 045)."""
+    name: str    # Nome da lista (ex.: "Mercado", "Farmácia")
+
+
+class AddShoppingItemsBody(BaseModel):
+    """Corpo da requisição para adicionar itens a uma lista de compras (spec 045)."""
+    items: str    # Um ou mais itens separados por vírgula (ex.: "arroz, feijão 2kg, leite")
+
+
+class UpdateShoppingItemBody(BaseModel):
+    """Corpo da requisição para editar um item de lista de compras (spec 045)."""
+    name: str = ""
+    quantidade: str = ""
+    unidade: str = ""
+    preco_estimado: Optional[float] = None
+    checked: Optional[bool] = None    # Quando informado, marca/desmarca o item no carrinho
+
+
+class FinishShoppingBody(BaseModel):
+    """Corpo da requisição para finalizar uma compra (spec 045)."""
+    valor_total: float    # Valor total real gasto na compra
+    conta: str = ""       # Conta de pagamento (vazio = resolução automática)
+    card_id: str = ""     # Cartão de pagamento (mutuamente exclusivo com conta)
 
 
 class CreateInstallmentBody(BaseModel):
@@ -2204,3 +2243,192 @@ def delete_financing(
     if n == 0:
         raise HTTPException(status_code=400, detail="Financiamento não encontrado.")
     return {"status": "ok", "message": "Financiamento removido."}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENDPOINTS — LISTA DE COMPRAS (/shopping-lists) — spec 045
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.get("/shopping-lists")
+def list_shopping_lists_endpoint(
+    status: str = Query(default="ativa", description="'ativa', 'arquivada' ou 'todas'"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Listar listas de compras.
+
+    Args:
+        status: Filtro de status.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e a lista de listas.
+
+    Raises:
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(list_shopping_lists(status=status))
+
+
+@router.post("/shopping-lists", status_code=201)
+def create_shopping_list_endpoint(
+    body: CreateShoppingListBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Criar uma nova lista de compras nomeada.
+
+    Args:
+        body: Nome da lista.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e o ID criado.
+
+    Raises:
+        HTTPException: 400 se o nome for inválido.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(create_shopping_list(name=body.name))
+
+
+@router.get("/shopping-lists/frequent")
+def get_frequent_shopping_items_endpoint(
+    limit: int = Query(default=10, description="Quantidade máxima de itens"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Itens mais recorrentes nas listas já arquivadas (histórico).
+
+    Args:
+        limit: Quantidade máxima de itens a retornar.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e a lista de itens frequentes.
+
+    Raises:
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(get_frequent_items(limit=limit))
+
+
+@router.get("/shopping-lists/{list_id}")
+def get_shopping_list_endpoint(
+    list_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Detalhe de uma lista de compras: itens, contadores e total estimado.
+
+    Args:
+        list_id: ID da lista.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok", "list", "items", "pendentes_count",
+        "checked_count" e "total_estimado".
+
+    Raises:
+        HTTPException: 400 se a lista não for encontrada.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(show_shopping_list(list_id=list_id))
+
+
+@router.post("/shopping-lists/{list_id}/items", status_code=201)
+def add_shopping_items_endpoint(
+    list_id: str,
+    body: AddShoppingItemsBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Adicionar um ou mais itens a uma lista de compras existente.
+
+    Args:
+        list_id: ID da lista.
+        body: Texto com um ou mais itens separados por vírgula.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e os itens criados.
+
+    Raises:
+        HTTPException: 400 se nenhum item for informado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(add_shopping_items(items=body.items, list_id=list_id))
+
+
+@router.post("/shopping-lists/{list_id}/finish", status_code=201)
+def finish_shopping_endpoint(
+    list_id: str,
+    body: FinishShoppingBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Finalizar a compra: lança a despesa (Supermercado) e arquiva a lista — atômico.
+
+    Args:
+        list_id: ID da lista a finalizar.
+        body: Valor total real, e conta ou cartão de pagamento.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok", o ID da transação criada e o ID da nova
+        lista ativa (herda os itens não marcados).
+
+    Raises:
+        HTTPException: 400 se o valor for inválido ou a lista não for encontrada.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(finish_shopping(
+        valor_total=body.valor_total, conta=body.conta, card_id=body.card_id, list_id=list_id,
+    ))
+
+
+@router.patch("/shopping-items/{item_id}", status_code=200)
+def update_shopping_item_endpoint(
+    item_id: str,
+    body: UpdateShoppingItemBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Editar um item (nome/quantidade/unidade/preço) ou marcar/desmarcar no carrinho.
+
+    Args:
+        item_id: ID do item.
+        body: Campos a atualizar (todos opcionais).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok".
+
+    Raises:
+        HTTPException: 400 se o item não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    # "checked" é tratado por check_shopping_item; os demais campos por update_shopping_item.
+    if body.checked is not None:
+        _check_result(check_shopping_item(item_id=item_id, checked=body.checked))
+
+    if any([body.name, body.quantidade, body.unidade, body.preco_estimado is not None]):
+        return _check_result(update_shopping_item(
+            item_id=item_id, name=body.name, quantidade=body.quantidade,
+            unidade=body.unidade, preco_estimado=body.preco_estimado,
+        ))
+    return {"status": "ok", "message": "Item atualizado"}
+
+
+@router.delete("/shopping-items/{item_id}", status_code=200)
+def delete_shopping_item_endpoint(
+    item_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remover um item de uma lista de compras.
+
+    Args:
+        item_id: ID do item.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok".
+
+    Raises:
+        HTTPException: 400 se o item não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(remove_shopping_item(item_id=item_id))

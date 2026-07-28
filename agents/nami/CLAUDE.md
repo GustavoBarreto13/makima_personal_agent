@@ -28,6 +28,7 @@ nami_agent (Agent ADK — singleton)
     ├── tools_loans.py        → empréstimos e financiamentos
     ├── tools_budgets.py      → orçamento por categoria
     ├── tools_health.py       → score de saúde financeira
+    ├── tools_shopping.py     → lista de compras (spec 045) — listas, itens, finalizar
     └── tools_rag.py          → consult_financial_knowledge() — stub de integração com a Kurisu (RAG)
         ↓ (todos)
     PostgreSQL (banco compartilhado — helpers em agents/db.py: run_select/run_dml)
@@ -108,7 +109,7 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 
 ---
 
-## Tools públicas (45 no total)
+## Tools públicas (55 no total)
 
 > As tabelas abaixo listam as principais. Além delas, cada módulo tem o CRUD complementar
 > (`update_*` / `delete_*` de contas, cartões, empréstimos, parcelamentos, orçamentos e
@@ -195,6 +196,26 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 |---|---|
 | `get_financial_health_score` | Score 0-100 em 4 dimensões: poupança, dívidas, orçamento, tendência |
 
+### Lista de Compras — `tools_shopping.py` (spec 045)
+
+Duas tabelas novas: `shopping_lists` (nomeada, status ativa/arquivada, `transaction_id`
+vinculado quando finalizada) e `shopping_list_items` (nome, quantidade/unidade texto livre,
+preço estimado, `checked`, `ordem`). Tools aceitam `list_id` (webapp) OU `list_name`
+(Telegram, resolvido por prefixo — mesmo padrão de `_resolve_account`); sem nenhum dos dois,
+resolve a lista ativa "Mercado" (ou a única ativa existente).
+
+| Tool | Descrição |
+|---|---|
+| `create_shopping_list` | Cria uma lista nomeada nova (ex.: "Farmácia") |
+| `list_shopping_lists` | Lista listas por status (ativa/arquivada/todas) |
+| `add_shopping_items` | Adiciona itens numa frase só ("arroz, feijão 2kg, leite") — cria a lista "Mercado" sob demanda se nenhuma ativa existir; não duplica item já pendente na lista |
+| `show_shopping_list` | Itens da lista + contadores (pendentes/no carrinho) + total estimado |
+| `check_shopping_item` | Marca/desmarca item no carrinho |
+| `update_shopping_item` | Edita nome/quantidade/unidade/preço estimado |
+| `remove_shopping_item` | Remove item (exclusão real — item de lista ativa não tem valor de histórico) |
+| `get_frequent_items` | Itens mais recorrentes nas listas já arquivadas |
+| `finish_shopping` | **Atômico** — lança a despesa (categoria Supermercado) + arquiva a lista + abre a próxima lista ativa (mesmo nome), herdando os itens não marcados |
+
 ---
 
 ## Categorias válidas
@@ -232,6 +253,9 @@ Mapeamento de tipo de empréstimo → categoria em `register_loan_payment`: `vei
 | "to dentro do orçamento de lazer?" | `check_category_budget("Lazer")` |
 | "quais contas fixas tenho pendentes?" | `get_recurring_status(kind="conta_fixa")` |
 | "paguei a luz, veio 287,45" | `mark_subscription_paid(id, valor=287.45)` |
+| "adiciona arroz, feijão 2kg e leite na lista do mercado" | `add_shopping_items(items="arroz, feijão 2kg, leite", list_name="mercado")` |
+| "o que tem na lista do mercado?" | `show_shopping_list(list_name="mercado")` |
+| "finalizei a compra, deu 250 no cartão" | `finish_shopping(valor_total=250, card_id=...)` |
 
 ---
 

@@ -33,5 +33,5 @@
 
 - Detalhes técnicos (tabelas shopping_lists/shopping_list_items, tools_shopping.py,
   endpoints) no plano `docs/planos/PLANO_NAMI_REFORMA_2026H2.md` (spec 045).
-- Edge case "itens não marcados ao finalizar" tem decisão de UX em aberto de baixo
-  impacto (mover vs. arquivar) — resolver no /speckit-plan.
+- Edge case "itens não marcados ao finalizar" resolvido no plan.md (decisão 6): são
+  movidos para a nova lista ativa (mesmo nome), continuando pendentes na próxima compra.

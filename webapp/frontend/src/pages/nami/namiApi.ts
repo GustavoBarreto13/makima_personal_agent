@@ -6,7 +6,7 @@ import type {
   Transaction, Account, Card, Budget, Subscription,
   PersonalLoan, Financing, StatsResponse, Category,
   Installment, InstallmentDetail, CardInstallment,
-  RecurringStatusResponse,
+  RecurringStatusResponse, ShoppingList, ShoppingListDetail, ShoppingItem, FrequentItem,
 } from './types'
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -246,6 +246,38 @@ export const namiApi = {
     installments: CardInstallment[]; monthly_commitment: number; ends_month: string | null
   }> =>
     api.get(`/api/finances/cards/${cardId}/installments`),
+
+  // ── Lista de Compras (spec 045) ────────────────────────────────────────────
+
+  getShoppingLists: (status: string = 'ativa'): Promise<{ lists: ShoppingList[] }> =>
+    api.get(`/api/finances/shopping-lists?status=${status}`),
+
+  createShoppingList: (name: string): Promise<{ status: string; id: string }> =>
+    api.post('/api/finances/shopping-lists', { name }),
+
+  getShoppingList: (listId: string): Promise<ShoppingListDetail> =>
+    api.get(`/api/finances/shopping-lists/${listId}`),
+
+  /** Adiciona um ou mais itens numa frase só (ex.: "arroz, feijão 2kg, leite"). */
+  addShoppingItems: (listId: string, items: string): Promise<{ status: string; items: ShoppingItem[] }> =>
+    api.post(`/api/finances/shopping-lists/${listId}/items`, { items }),
+
+  updateShoppingItem: (itemId: string, body: {
+    name?: string; quantidade?: string; unidade?: string; preco_estimado?: number; checked?: boolean;
+  }): Promise<{ status: string }> =>
+    api.patch(`/api/finances/shopping-items/${itemId}`, body),
+
+  deleteShoppingItem: (itemId: string): Promise<{ status: string }> =>
+    api.del(`/api/finances/shopping-items/${itemId}`),
+
+  /** Lança a despesa (Supermercado) e arquiva a lista — atômico; abre a próxima lista ativa. */
+  finishShopping: (listId: string, body: { valor_total: number; conta?: string; card_id?: string }): Promise<{
+    status: string; transaction_id: string; new_list_id: string
+  }> =>
+    api.post(`/api/finances/shopping-lists/${listId}/finish`, body),
+
+  getFrequentItems: (limit: number = 10): Promise<{ items: FrequentItem[] }> =>
+    api.get(`/api/finances/shopping-lists/frequent?limit=${limit}`),
 
   // ── Upload de ícone ───────────────────────────────────────────────────────────
 

@@ -69,6 +69,17 @@ from agents.nami.tools_budgets import (
     delete_budget,
 )
 from agents.nami.tools_health import get_financial_health_score
+from agents.nami.tools_shopping import (
+    create_shopping_list,
+    list_shopping_lists,
+    add_shopping_items,
+    show_shopping_list,
+    check_shopping_item,
+    update_shopping_item,
+    remove_shopping_item,
+    get_frequent_items,
+    finish_shopping,
+)
 
 # Instância global do agente Nami — singleton, seguro para compartilhar entre sessões
 # porque não usa McpToolset (sem processo filho para gerenciar)
@@ -80,7 +91,7 @@ nami_agent = Agent(
                 "transações (gastos e receitas). Analisa gastos por categoria, evolução mensal "
                 "e projeções. Gerencia assinaturas recorrentes. Use para qualquer pedido sobre "
                 "dinheiro: gastos, receitas, contas, cartões, quanto foi gasto em um período, "
-                "assinaturas ativas.",
+                "assinaturas ativas, contas fixas e lista de compras do mercado.",
     # Instrução de personalidade e regras de uso das tools
     instruction="""
         Você é a Nami de One Piece — navegadora e tesoureira obcecada por dinheiro! 🍊💰
@@ -148,6 +159,26 @@ nami_agent = Agent(
         - Pular um ciclo sem lançar despesa (ex.: mês sem fatura): skip_subscription_cycle(id)
         - Remover: delete_subscription(id)
           • SEMPRE peça confirmação antes de deletar: "Tem certeza que quer remover [nome]?"
+
+        LISTA DE COMPRAS (spec 045):
+        - Adicionar item(ns) numa frase só ("adiciona arroz, feijão 2kg e leite na lista do
+          mercado"): use add_shopping_items(items="arroz, feijão 2kg, leite", list_name="mercado")
+          • Sem lista ativa ainda, cria a lista padrão "Mercado" automaticamente
+          • list_name vazio = usa a lista "Mercado" (ou a única lista ativa que existir)
+          • Nomes de lista são resolvidos por PREFIXO ("farm" → "Farmácia"); se houver
+            ambiguidade (2+ listas batendo), pergunte qual o usuário quer
+        - Consultar itens pendentes ("o que tem na lista do mercado?"): show_shopping_list(list_name=...)
+        - Criar lista nova (Farmácia, Petshop): create_shopping_list(name)
+        - Ver todas as listas: list_shopping_lists(status="ativa"|"arquivada"|"todas")
+        - Marcar/desmarcar item no carrinho: check_shopping_item(item_id, checked)
+        - Editar item (nome/quantidade/preço): update_shopping_item(item_id, ...)
+        - Remover item: remove_shopping_item(item_id)
+        - Ver itens frequentes (do histórico de compras): get_frequent_items()
+        - FINALIZAR COMPRA (lança a despesa e arquiva a lista, atômico):
+          finish_shopping(valor_total, conta ou card_id, list_name=...)
+          • SEMPRE pergunte o valor total real e o pagador antes de chamar
+          • Categoria da despesa é sempre "Supermercado"
+          • Itens não marcados continuam pendentes na próxima lista (mesmo nome)
 
         CARTÕES DE CRÉDITO:
         - Cadastrar cartão: register_credit_card
@@ -247,6 +278,19 @@ nami_agent = Agent(
         Confirmação de pagamento de conta fixa (mark_subscription_paid):
         ✅ <b>Nome</b> paga — R$XX,XX · 💳 Conta · 📅 próx. vencimento DD/MM
 
+        Itens adicionados à lista (add_shopping_items):
+        🛒 <b>N item(ns)</b> adicionados à lista <b>Nome da lista</b>
+
+        Lista de compras (show_shopping_list) — uma linha por item pendente:
+        📝 <b>Lista Nome</b> — X/N no carrinho
+
+        ☐ Item 1 (2kg)
+        ☑ Item 2
+
+        Compra finalizada (finish_shopping):
+        ✅ Compra de <b>R$XX,XX</b> finalizada · 📂 Supermercado · 💳 Conta
+           Lista <b>Nome</b> arquivada.
+
         Atualização ou deleção bem-sucedida:
         ✅ <b>Transação atualizada</b> com sucesso.
         ✅ <b>Transação removida</b> do histórico.
@@ -310,5 +354,15 @@ nami_agent = Agent(
         delete_budget,
         # Feature 5: Score de saúde financeira
         get_financial_health_score,
+        # Feature 6: Lista de Compras (spec 045)
+        create_shopping_list,
+        list_shopping_lists,
+        add_shopping_items,
+        show_shopping_list,
+        check_shopping_item,
+        update_shopping_item,
+        remove_shopping_item,
+        get_frequent_items,
+        finish_shopping,
     ],
 )

@@ -2005,6 +2005,135 @@
 .nami-app ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   LISTA DE COMPRAS (spec 045) — mobile-first: alvos de toque grandes
+   ══════════════════════════════════════════════════════════════════════════ */
+.nami-app .shop-list-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.nami-app .shop-list-select {
+  flex: 1;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--rad-sm);
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 14px;
+}
+.nami-app .shop-quickadd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--rad);
+  padding: 8px 12px;
+  margin-bottom: 14px;
+}
+.nami-app .shop-quickadd svg { color: var(--muted); flex-shrink: 0; }
+.nami-app .shop-quickadd input {
+  flex: 1;
+  height: 40px;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font-size: 15px;
+  outline: none;
+}
+.nami-app .shop-quickadd .btn { height: 40px; flex-shrink: 0; }
+
+.nami-app .shop-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.nami-app .shop-counter {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--mist);
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+.nami-app .shop-total {
+  font-size: 13px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+.nami-app .shop-spacer { flex: 1; }
+
+.nami-app .shop-items { display: flex; flex-direction: column; }
+.nami-app .shop-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.nami-app .shop-item:last-child { border-bottom: none; }
+.nami-app .shop-item.checked .shop-item-name {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+/* Checkbox grande — alvo de toque confortável (44px) mesmo em telas pequenas */
+.nami-app .shop-checkbox {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 8px;
+  border: 2px solid var(--line);
+  background: var(--card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--card);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+.nami-app .shop-item.checked .shop-checkbox {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--card);
+}
+
+.nami-app .shop-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.nami-app .shop-item-name { font-size: 14px; color: var(--ink); }
+.nami-app .shop-item-meta { font-size: 12px; color: var(--muted); margin-top: 1px; }
+
+.nami-app .shop-remove {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  flex-shrink: 0;
+}
+.nami-app .shop-remove:hover { background: var(--out-t); color: var(--out); }
+
+.nami-app .shop-freq { margin-top: 18px; }
+.nami-app .shop-freq-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.nami-app .shop-freq-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
    RESPONSIVIDADE — ajustes para telas menores
    ══════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 900px) {
