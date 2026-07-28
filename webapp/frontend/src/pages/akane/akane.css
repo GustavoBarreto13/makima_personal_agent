@@ -381,7 +381,7 @@
 
 /* ─── Estrelas ─────────────────────────────────────────────────────────── */
 .akane-shell .ak-stars { display: inline-flex; gap: 1px; color: var(--gold); }
-.akane-shell .ak-stars svg { width: 13px; height: 13px; }
+.akane-shell .ak-stars svg { width: 13px; height: 13px; flex-shrink: 0; }
 .akane-shell .ak-stars.ak-lg svg { width: 19px; height: 19px; }
 .akane-shell .ak-stars .ak-empty { color: oklch(0.55 0.02 330 / 0.5); }
 .akane-shell[data-theme='light'] .ak-stars .ak-empty { color: var(--line); }
@@ -682,7 +682,7 @@
 .akane-shell .ak-rate-input { display: inline-flex; align-items: center; gap: 3px; }
 .akane-shell .ak-rate-star { position: relative; width: 30px; height: 30px; cursor: pointer; color: oklch(0.55 0.02 330 / 0.45); }
 .akane-shell[data-theme='light'] .ak-rate-star { color: var(--line); }
-.akane-shell .ak-rate-star svg { width: 30px; height: 30px; position: absolute; inset: 0; }
+.akane-shell .ak-rate-star svg { width: 30px; height: 30px; position: absolute; inset: 0; flex-shrink: 0; }
 .akane-shell .ak-rate-star .ak-fill { color: var(--gold); overflow: hidden; }
 .akane-shell .ak-rate-half { position: absolute; top: 0; bottom: 0; width: 50%; z-index: 2; }
 .akane-shell .ak-rate-half.ak-l { left: 0; } .akane-shell .ak-rate-half.ak-r { right: 0; }
