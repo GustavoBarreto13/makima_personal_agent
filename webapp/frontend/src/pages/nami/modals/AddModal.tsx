@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import { namiApi } from '../namiApi'
 import type { Account, Card, Category } from '../types'
 import { Icon, lucideToKey } from '../icons'
+import { todayLocalISO } from '../dateUtils'
 
 interface AddModalProps {
   /** Controla visibilidade */
@@ -35,6 +36,8 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
   const [fonte, setFonte]         = useState('')   // "conta:nome" ou "card:id"
   const [data, setData]           = useState('')
   const [notes, setNotes]         = useState('')
+  const [parcelado, setParcelado] = useState(false)      // compra parcelada (spec 041)
+  const [numParcelas, setNumParcelas] = useState('')
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
   const [categories, setCategories] = useState<Category[]>([])
@@ -89,6 +92,7 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
   function changeTipo(t: TipoTx) {
     setTipo(t)
     setCatId('')   // categoria da Receita não faz sentido em Despesa e vice-versa
+    if (t === 'Receita') setParcelado(false)   // parcelamento só existe para Despesa
   }
 
   async function handleSubmit(e?: React.FormEvent) {
@@ -101,29 +105,58 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
       return
     }
 
+    const { conta, card_id } = resolveFonte()
+
+    // Compra parcelada exige origem explícita (conta OU cartão) — diferente da
+    // transação normal, create_installment não tem fallback "Genérico"
+    if (parcelado) {
+      const n = parseInt(numParcelas)
+      if (!conta && !card_id) {
+        setError('Selecione a conta ou cartão para parcelar.')
+        return
+      }
+      if (!n || n < 2) {
+        setError('Informe o número de parcelas (mínimo 2).')
+        return
+      }
+    }
+
     setSaving(true)
     setError('')
 
     try {
-      const { conta, card_id } = resolveFonte()
-      await namiApi.createTransaction({
-        name: name.trim(),
-        valor: v,
-        tipo,
-        categoria: catId || (tipo === 'Despesa' ? 'outros' : 'receita'),
-        conta,
-        card_id,
-        data,
-        notes,
-      })
+      if (parcelado) {
+        await namiApi.createInstallment({
+          name: name.trim(),
+          valor_total: v,
+          num_parcelas: parseInt(numParcelas),
+          conta: conta || undefined,
+          card_id: card_id || undefined,
+          categoria: catId || 'outros',
+          data_inicio: data || todayLocalISO(),
+        })
+      } else {
+        await namiApi.createTransaction({
+          name: name.trim(),
+          valor: v,
+          tipo,
+          categoria: catId || (tipo === 'Despesa' ? 'outros' : 'receita'),
+          conta,
+          card_id,
+          data,
+          notes,
+        })
+      }
       // Reseta o formulário para próxima entrada rápida
       setName('')
       setValor('')
       setCatId('')
       setNotes('')
       setData('')
+      setParcelado(false)
+      setNumParcelas('')
 
-      await onSaved('Transação salva ✓')
+      await onSaved(parcelado ? 'Compra parcelada criada ✓' : 'Transação salva ✓')
       onClose()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Erro ao salvar transação.')
@@ -235,9 +268,9 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
             {/* Conta/Cartão + Data (linha dupla) */}
             <div className="row-2">
               <div className="field">
-                <label>Conta / Cartão</label>
+                <label>Conta / Cartão{parcelado && ' *'}</label>
                 <select value={fonte} onChange={e => setFonte(e.target.value)}>
-                  <option value="">— Automático —</option>
+                  <option value="">{parcelado ? '— selecione —' : '— Automático —'}</option>
                   {accounts.map(a => (
                     <option key={a.id} value={`conta:${a.name}`}>{a.name}</option>
                   ))}
@@ -247,7 +280,7 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
                 </select>
               </div>
               <div className="field">
-                <label>Data</label>
+                <label>{parcelado ? '1ª parcela' : 'Data'}</label>
                 <input
                   type="date"
                   value={data}
@@ -255,6 +288,32 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
                 />
               </div>
             </div>
+
+            {/* Parcelar em N vezes — só faz sentido para Despesa (spec 041) */}
+            {tipo === 'Despesa' && (
+              <div className="field" style={{ marginTop: 12 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={parcelado}
+                    onChange={e => setParcelado(e.target.checked)}
+                    style={{ width: 'auto' }}
+                  />
+                  Parcelar esta compra
+                </label>
+                {parcelado && (
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={2}
+                    value={numParcelas}
+                    onChange={e => setNumParcelas(e.target.value)}
+                    placeholder="Número de parcelas (ex.: 12)"
+                    style={{ marginTop: 8 }}
+                  />
+                )}
+              </div>
+            )}
 
             {/* Notas opcionais */}
             <div className="field" style={{ marginBottom: 0 }}>
@@ -292,7 +351,7 @@ export function AddModal({ open, accounts, cards, onClose, onSaved }: AddModalPr
                 disabled={saving}
                 style={{ background: tipo === 'Despesa' ? 'var(--out)' : 'var(--in)' }}
               >
-                {saving ? 'Salvando…' : `Lançar ${tipo}`}
+                {saving ? 'Salvando…' : parcelado ? `Parcelar em ${numParcelas || 'N'}x` : `Lançar ${tipo}`}
               </button>
             </div>
           </div>
