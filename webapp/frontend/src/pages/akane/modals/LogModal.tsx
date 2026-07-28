@@ -101,7 +101,9 @@ export function LogModal({ prefilledMovieId, prefilledTitle, onClose, onSuccess 
       // Filme não está no catálogo — adiciona primeiro
       setSubmitting(true)
       try {
-        const added = await akaneApi.add({ tmdb_id: result.tmdbId, status: 'watchlist' })
+        // Envia o título já conhecido da busca — evita cair no fallback "Filme
+        // desconhecido" no backend caso o segundo enriquecimento TMDB falhe
+        const added = await akaneApi.add({ tmdb_id: result.tmdbId, title: result.title, status: 'watchlist' })
         setSelectedId(String((added as { id?: string }).id ?? ''))
       } catch {
         setError('Não foi possível adicionar o filme ao catálogo.')

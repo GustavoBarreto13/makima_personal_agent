@@ -629,7 +629,11 @@ def add_movie(
 
     # O tmdb_id do enriquecimento pode diferir do fornecido (se buscou por texto)
     final_tmdb_id = meta.get("tmdb_id") or tmdb_id
-    final_title   = title or "Filme desconhecido"  # fallback se só tmdb_id foi passado
+    # Preferência: título informado > título do enriquecimento TMDB > fallback.
+    # Sem o meta.get("title"), logar direto de um resultado TMDB (só tmdb_id, sem
+    # title) gravava "Filme desconhecido" mesmo quando o TMDB já tinha respondido
+    # com o título certo — ano/diretor/gêneros ficavam certos, só o título errava.
+    final_title   = title or meta.get("title") or "Filme desconhecido"
 
     # ── Resolução de identidade novamente — agora com o tmdb_id resolvido pelo ──
     # enriquecimento (ou fallback por título+ano se o TMDB não achou nada/estava fora)
