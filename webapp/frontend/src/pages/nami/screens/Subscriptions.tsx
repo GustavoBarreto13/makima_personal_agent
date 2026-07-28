@@ -37,11 +37,18 @@ function fmtDays(days: number): string {
   return `em ${days}d`
 }
 
-export function Subscriptions({ subscriptions, onToast, onSubscriptionsChanged }: SubscriptionsProps) {
+export function Subscriptions({ subscriptions: allRecurring, onToast, onSubscriptionsChanged }: SubscriptionsProps) {
   const [showForm, setShowForm]   = useState(false)
   const [editingSub, setEditingSub] = useState<Subscription | null>(null)
   const [saving, setSaving]       = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  // Tela de Assinaturas mostra só kind='assinatura' — contas fixas têm tela própria
+  // (spec 044). O array vem do shell já com ambos os kinds (uma única leitura).
+  const subscriptions = useMemo(() =>
+    allRecurring.filter(s => (s.kind ?? 'assinatura') === 'assinatura'),
+    [allRecurring]
+  )
 
   // Apenas assinaturas ativas para os cálculos de totais
   const active = useMemo(() =>
@@ -89,6 +96,7 @@ export function Subscriptions({ subscriptions, onToast, onSubscriptionsChanged }
           categoria:        String(values.categoria ?? 'Assinaturas'),
           next_billing_day: values.dia ? parseInt(String(values.dia)) : undefined,
           color:            String(values.color ?? '') || undefined,
+          kind:             'assinatura',
         })
         onToast('Assinatura cadastrada ✓')
       }

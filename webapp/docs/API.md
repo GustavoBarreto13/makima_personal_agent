@@ -109,10 +109,21 @@ responder no Telegram ("onde vai mais meu dinheiro?" → `get_spending_summary`)
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/finances/subscriptions` | Lista assinaturas com campos visuais enriquecidos. | `?status=ativo\|pausado\|cancelado` |
-| `POST` | `/api/finances/subscriptions` | Cria assinatura (devolve 201). | Body: `CreateSubscriptionBody` |
-| `PATCH` | `/api/finances/subscriptions/{sub_id}` | Atualiza assinatura (pausar, reativar, valor, campos visuais — spec 043). Categoria não é editável. | Body: `UpdateSubscriptionBody` |
-| `DELETE` | `/api/finances/subscriptions/{sub_id}` | Soft-delete da assinatura. | — |
+| `GET` | `/api/finances/subscriptions` | Lista recorrências (assinaturas e/ou contas fixas) com campos visuais enriquecidos. `kind` filtra por tipo (spec 044) — vazio traz ambos. | `?status=ativo\|pausado\|cancelado&kind=assinatura\|conta_fixa` |
+| `POST` | `/api/finances/subscriptions` | Cria assinatura ou conta fixa (devolve 201); `kind`/`auto_lancar` decidem o comportamento (spec 044). | Body: `CreateSubscriptionBody` |
+| `PATCH` | `/api/finances/subscriptions/{sub_id}` | Atualiza recorrência (pausar, reativar, valor, campos visuais — spec 043; `kind`/`auto_lancar` — spec 044). Categoria não é editável. | Body: `UpdateSubscriptionBody` |
+| `DELETE` | `/api/finances/subscriptions/{sub_id}` | Soft-delete da recorrência. | — |
+
+### Contas Fixas (spec 044)
+
+Mesma tabela `subscriptions` (`kind='conta_fixa'`) — endpoints dedicados ao fluxo de
+confirmação de valor real.
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/finances/recurring-status` | Status do ciclo corrente de cada recorrência (paga/pendente/atrasada/agendada) + custo fixo mensal total + contagem de pendências. | `?kind=assinatura\|conta_fixa` |
+| `POST` | `/api/finances/subscriptions/{sub_id}/pay` | Confirma o pagamento com o valor real — cria a despesa vinculada e rola o próximo vencimento (atômico). | Body: `MarkSubscriptionPaidBody` |
+| `POST` | `/api/finances/subscriptions/{sub_id}/skip` | Pula o ciclo corrente sem lançar despesa (ex.: mês sem fatura). | — |
 
 ### Parcelamentos
 

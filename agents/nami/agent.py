@@ -22,6 +22,9 @@ from agents.nami.tools import (
     list_subscriptions,
     update_subscription,
     delete_subscription,
+    get_recurring_status,
+    mark_subscription_paid,
+    skip_subscription_cycle,
 )
 from agents.nami.tools_installments import (
     create_installment,
@@ -124,11 +127,26 @@ nami_agent = Agent(
         - "to gastando mais que o mês passado?" → get_spending_trend(months=2)
         - "projeção do mês?" → get_spending_trend(months=1)
 
-        ASSINATURAS:
-        - Cadastrar nova: create_subscription (ciclo: "mensal" ou "anual")
-        - Ver ativas: list_subscriptions()
-        - Pausar/cancelar/atualizar valor: update_subscription com o id
-        - Remover assinatura: delete_subscription(id)
+        ASSINATURAS E CONTAS FIXAS (spec 044 — mesma estrutura, kind diferente):
+        - Ambas usam create_subscription/list_subscriptions/update_subscription/delete_subscription
+          — o parâmetro kind ("assinatura" ou "conta_fixa") decide o comportamento.
+        - CLASSIFICAÇÃO (regra obrigatória ao cadastrar):
+          • Serviço digital/recorrente de VALOR FIXO (Netflix, Spotify, academia, plano de
+            celular) → kind="assinatura" (padrão se omitido).
+          • Conta doméstica de VALOR VARIÁVEL todo mês (luz, água, gás, internet, aluguel,
+            escola, condomínio) → kind="conta_fixa".
+          • Na dúvida, pergunte: "isso é valor fixo todo mês ou varia (tipo conta de luz)?"
+        - Cadastrar nova: create_subscription(kind=..., ciclo: "mensal" ou "anual")
+          • Conta fixa: auto_lancar fica desligado por padrão (exige confirmação de valor)
+        - Ver ativas: list_subscriptions(kind="assinatura"|"conta_fixa") — kind vazio traz ambas
+        - Ver status do mês (paga/pendente/atrasada) das contas fixas: get_recurring_status(kind="conta_fixa")
+        - Pausar/cancelar/atualizar valor/reclassificar: update_subscription com o id
+        - CONFIRMAR PAGAMENTO de uma conta fixa (o valor real difere do esperado):
+          mark_subscription_paid(id, valor_real, data?) — lança a despesa vinculada E rola
+          o próximo vencimento na mesma operação (atômico). SEMPRE pergunte o valor real
+          antes de chamar, nunca assuma que é igual ao valor esperado cadastrado.
+        - Pular um ciclo sem lançar despesa (ex.: mês sem fatura): skip_subscription_cycle(id)
+        - Remover: delete_subscription(id)
           • SEMPRE peça confirmação antes de deletar: "Tem certeza que quer remover [nome]?"
 
         CARTÕES DE CRÉDITO:
@@ -223,8 +241,11 @@ nami_agent = Agent(
 
         <b>Total mensal: R$XXX,XX</b>
 
-        Cadastro de assinatura (create_subscription):
+        Cadastro de assinatura ou conta fixa (create_subscription):
         ✅ <b>Nome</b> cadastrada — R$XX,XX/ciclo · 💳 Conta
+
+        Confirmação de pagamento de conta fixa (mark_subscription_paid):
+        ✅ <b>Nome</b> paga — R$XX,XX · 💳 Conta · 📅 próx. vencimento DD/MM
 
         Atualização ou deleção bem-sucedida:
         ✅ <b>Transação atualizada</b> com sucesso.
@@ -248,11 +269,14 @@ nami_agent = Agent(
         delete_transaction,
         get_spending_summary,
         get_spending_trend,
-        # Assinaturas
+        # Assinaturas e Contas Fixas (spec 044)
         create_subscription,
         list_subscriptions,
         update_subscription,
         delete_subscription,
+        get_recurring_status,
+        mark_subscription_paid,
+        skip_subscription_cycle,
         # Feature 1: Parcelas
         create_installment,
         list_installments,

@@ -61,6 +61,16 @@ MIGRATIONS = [
         "transactions: adicionar coluna 'transfer_id'",
         "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transfer_id TEXT;",
     ),
+
+    # ── Spec 044 (Contas Fixas): reaproveita subscriptions com kind/auto_lancar ─
+    (
+        "subscriptions: adicionar coluna 'kind' (default 'assinatura')",
+        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS kind TEXT DEFAULT 'assinatura';",
+    ),
+    (
+        "subscriptions: adicionar coluna 'auto_lancar' (default TRUE)",
+        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS auto_lancar BOOLEAN DEFAULT TRUE;",
+    ),
 ]
 
 

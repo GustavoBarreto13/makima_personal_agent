@@ -23,6 +23,7 @@ import { Cards }         from './screens/Cards'
 import { Installments }  from './screens/Installments'
 import { Budgets }       from './screens/Budgets'
 import { Subscriptions } from './screens/Subscriptions'
+import { FixedBills }    from './screens/FixedBills'
 import { Loans }         from './screens/Loans'
 import { Financings }    from './screens/Financings'
 import { AddModal }      from './modals/AddModal'
@@ -32,7 +33,7 @@ import { AddModal }      from './modals/AddModal'
 /** Identificadores das views internas da seção Nami. */
 type NamiView =
   | 'dashboard' | 'transacoes' | 'contas' | 'cartoes' | 'parcelamentos'
-  | 'orcamentos' | 'assinaturas' | 'emprestimos' | 'financiamentos'
+  | 'orcamentos' | 'assinaturas' | 'contas-fixas' | 'emprestimos' | 'financiamentos'
 
 // ── Mapeamento hash → view (deep-link) ───────────────────────────────────────
 const HASH_TO_VIEW: Record<string, NamiView> = {
@@ -43,6 +44,7 @@ const HASH_TO_VIEW: Record<string, NamiView> = {
   '#parcelamentos': 'parcelamentos',
   '#orcamentos':    'orcamentos',
   '#assinaturas':   'assinaturas',
+  '#contas-fixas':  'contas-fixas',
   '#emprestimos':   'emprestimos',
   '#financiamentos':'financiamentos',
 }
@@ -55,6 +57,7 @@ const VIEW_TO_HASH: Record<NamiView, string> = {
   parcelamentos:  '#parcelamentos',
   orcamentos:     '#orcamentos',
   assinaturas:    '#assinaturas',
+  'contas-fixas': '#contas-fixas',
   emprestimos:    '#emprestimos',
   financiamentos: '#financiamentos',
 }
@@ -67,6 +70,7 @@ const VIEW_TITLES: Record<NamiView, string> = {
   parcelamentos:  'Parcelamentos',
   orcamentos:     'Orçamentos',
   assinaturas:    'Assinaturas',
+  'contas-fixas': 'Contas Fixas',
   emprestimos:    'Empréstimos',
   financiamentos: 'Financiamentos',
 }
@@ -85,6 +89,7 @@ const VIEW_ICONS: Record<NamiView, string> = {
   parcelamentos:  'ticket',
   orcamentos:     'target',
   assinaturas:    'repeat',
+  'contas-fixas': 'home',
   emprestimos:    'handshake',
   financiamentos: 'building',
 }
@@ -269,9 +274,10 @@ export function NamiShell() {
   // ── Badges da sidebar ──────────────────────────────────────────────────────
   // Patrimônio total (soma dos saldos de todas as contas)
   const patrimonioTotal = accounts.reduce((s, a) => s + (a.balance_inicial ?? 0), 0)
-  // Total mensal de assinaturas ativas
+  // Total mensal de assinaturas ativas — kind='conta_fixa' fica de fora (badge própria
+  // seria o custo fixo mensal, calculado dentro da tela via GET /recurring-status)
   const subsTotal = subscriptions
-    .filter(s => s.status === 'ativa' && s.ciclo === 'mensal')
+    .filter(s => s.status === 'ativa' && s.ciclo === 'mensal' && (s.kind ?? 'assinatura') === 'assinatura')
     .reduce((s, sub) => s + sub.valor, 0)
 
   // ── Valores da SummBar ─────────────────────────────────────────────────────
@@ -302,6 +308,7 @@ export function NamiShell() {
       items: [
         { id: 'orcamentos',    label: 'Orçamentos' },
         { id: 'assinaturas',   label: 'Assinaturas', badge: subsTotal > 0 ? formatCompact(subsTotal) : null },
+        { id: 'contas-fixas',  label: 'Contas Fixas' },
         { id: 'emprestimos',   label: 'Empréstimos' },
         { id: 'financiamentos',label: 'Financiamentos' },
       ],
@@ -338,6 +345,8 @@ export function NamiShell() {
         return <Budgets {...commonProps} />
       case 'assinaturas':
         return <Subscriptions {...commonProps} onSubscriptionsChanged={loadGlobal} />
+      case 'contas-fixas':
+        return <FixedBills {...commonProps} onSubscriptionsChanged={loadGlobal} />
       case 'emprestimos':
         return <Loans onToast={setToast} />
       case 'financiamentos':

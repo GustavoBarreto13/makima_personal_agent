@@ -824,23 +824,38 @@ def create_subscription(
     conta: str,
     categoria: str,
     notes: str = "",
+    kind: str = "assinatura",
+    auto_lancar: bool | None = None,
 ) -> dict:
-    """Cadastra uma nova assinatura recorrente (ex.: Netflix, Spotify, academia).
+    """Cadastra uma nova recorrência: assinatura OU conta fixa (spec 044).
 
     Parâmetros:
-        name         — Nome do serviço (ex.: "Netflix")
-        valor        — Valor da cobrança (ex.: 55.90)
+        name         — Nome do serviço/conta (ex.: "Netflix", "Luz")
+        valor        — Valor esperado da cobrança (ex.: 55.90) — em conta fixa é só uma
+                       estimativa, o valor real é confirmado em mark_subscription_paid
         ciclo        — Frequência: "mensal" ou "anual"
         next_billing — Próxima data de cobrança no formato AAAA-MM-DD
         conta        — Conta ou cartão usado para pagamento (resolvido dinamicamente)
         categoria    — Categoria da assinatura (deve estar em CATEGORIES)
         notes        — Observações opcionais
+        kind         — "assinatura" (padrão) ou "conta_fixa" — serviço digital de valor
+                       fixo é assinatura; conta doméstica de valor variável (luz, água,
+                       aluguel) é conta fixa.
+        auto_lancar  — Se None, usa o padrão por kind (assinatura=True, conta_fixa=False —
+                       FR-002). Contas fixas exigem confirmação manual do valor real.
 
     Retorna "status": "ok" com o ID criado, ou "status": "error" se algo for inválido.
     """
     # Valida o ciclo de cobrança — só aceita mensal ou anual
     if ciclo not in ("mensal", "anual"):
         return {"status": "error", "message": "ciclo deve ser 'mensal' ou 'anual'"}
+
+    if kind not in ("assinatura", "conta_fixa"):
+        return {"status": "error", "message": "kind deve ser 'assinatura' ou 'conta_fixa'"}
+
+    # Padrão por kind (FR-002) quando o chamador não decidiu explicitamente
+    if auto_lancar is None:
+        auto_lancar = kind == "assinatura"
 
     # Valida o formato da data antes de mandar ao banco — erro amigável em vez
     # de exceção do PostgreSQL (ex.: "2026-13-45" seria rejeitado só no INSERT)
@@ -875,8 +890,8 @@ def create_subscription(
     # Monta a query de inserção na tabela de assinaturas
     # status 'ativa' é o valor inicial — pode ser alterado depois via update_subscription
     sql = """
-        INSERT INTO subscriptions (id, name, valor, ciclo, next_billing, conta, account_id, card_id, categoria, status, notes, created_at)
-        VALUES (%(id)s, %(name)s, %(valor)s, %(ciclo)s, %(next_billing)s, %(conta)s, %(account_id)s, %(card_id)s, %(categoria)s, 'ativa', %(notes)s, NOW())
+        INSERT INTO subscriptions (id, name, valor, ciclo, next_billing, conta, account_id, card_id, categoria, status, notes, kind, auto_lancar, created_at)
+        VALUES (%(id)s, %(name)s, %(valor)s, %(ciclo)s, %(next_billing)s, %(conta)s, %(account_id)s, %(card_id)s, %(categoria)s, 'ativa', %(notes)s, %(kind)s, %(auto_lancar)s, NOW())
     """
 
     params = {
@@ -890,40 +905,49 @@ def create_subscription(
         "card_id":      card_id,
         "categoria":    cat,
         "notes":        notes or None,  # None = NULL no banco
+        "kind":         kind,
+        "auto_lancar":  auto_lancar,
     }
 
     try:
         run_dml(sql, params)
         # Retorna confirmação com um resumo legível da assinatura criada
-        return {"status": "ok", "id": sub_id, "message": f"Assinatura criada: {name} R${float(valor):.2f}/{ciclo}"}
+        label = "Conta fixa" if kind == "conta_fixa" else "Assinatura"
+        return {"status": "ok", "id": sub_id, "message": f"{label} criada: {name} R${float(valor):.2f}/{ciclo}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
-def list_subscriptions(status: str = "ativa") -> dict:
-    """Lista todas as assinaturas com o status informado.
+def list_subscriptions(status: str = "ativa", kind: str = "") -> dict:
+    """Lista todas as recorrências (assinaturas e/ou contas fixas) com o status informado.
 
-    Também calcula o custo mensal total considerando assinaturas anuais
+    Também calcula o custo mensal total considerando as anuais
     (dividindo o valor anual por 12 para obter o equivalente mensal).
 
     Parâmetros:
         status — Filtro de status: "ativa" (padrão), "pausada" ou "cancelada"
+        kind   — Filtro opcional: "assinatura" ou "conta_fixa" (spec 044). Vazio = ambos.
 
-    Retorna lista de assinaturas e o custo mensal equivalente total.
+    Retorna lista de recorrências e o custo mensal equivalente total.
     """
     # Busca as assinaturas com o status solicitado, ordenando pela próxima cobrança
     # next_billing::text converte o campo date para string (equivalente ao CAST(... AS STRING) do BigQuery)
     # Filtra deleted=FALSE para excluir assinaturas removidas via delete_subscription
-    sql = """
+    where = ["status = %(status)s", "(deleted = FALSE OR deleted IS NULL)"]
+    params: dict = {"status": status}
+    if kind:
+        where.append("kind = %(kind)s")
+        params["kind"] = kind
+
+    sql = f"""
         SELECT id, name, valor, ciclo, next_billing::text AS next_billing,
-               conta, categoria, status, notes
+               conta, categoria, status, notes,
+               COALESCE(kind, 'assinatura') AS kind,
+               COALESCE(auto_lancar, TRUE)  AS auto_lancar
         FROM subscriptions
-        WHERE status = %(status)s
-          AND (deleted = FALSE OR deleted IS NULL)
+        WHERE {' AND '.join(where)}
         ORDER BY next_billing
     """
-
-    params = {"status": status}
 
     try:
         rows = run_select(sql, params)
@@ -950,16 +974,20 @@ def update_subscription(
     conta: str = "",
     status: str = "",
     notes: str = "",
+    kind: str = "",
+    auto_lancar: bool | None = None,
 ) -> dict:
-    """Atualiza campos de uma assinatura existente.
+    """Atualiza campos de uma assinatura ou conta fixa existente.
 
     Só altera os campos que forem informados (não-vazios / não-None).
-    Permite pausar, cancelar ou reativar uma assinatura via o campo `status`.
+    Permite pausar, cancelar ou reativar via o campo `status`.
 
     Parâmetros:
-        id           — ID da assinatura a ser editada (obrigatório)
+        id           — ID da recorrência a ser editada (obrigatório)
         Os demais parâmetros são opcionais — só os informados serão alterados.
         status       — Novo status: "ativa", "pausada" ou "cancelada"
+        kind         — "assinatura" ou "conta_fixa" (spec 044) — permite reclassificar
+        auto_lancar  — Liga/desliga o lançamento automático (spec 044/048)
 
     Retorna "status": "ok" se atualizado, "status": "error" se não encontrada ou inválida.
     """
@@ -1009,6 +1037,16 @@ def update_subscription(
         sets.append("notes = %(notes)s")
         params["notes"] = notes
 
+    if kind:
+        if kind not in ("assinatura", "conta_fixa"):
+            return {"status": "error", "message": "kind deve ser 'assinatura' ou 'conta_fixa'"}
+        sets.append("kind = %(kind)s")
+        params["kind"] = kind
+
+    if auto_lancar is not None:
+        sets.append("auto_lancar = %(auto_lancar)s")
+        params["auto_lancar"] = auto_lancar
+
     # Se só o updated_at foi adicionado, não há campos reais a mudar — aborta
     if len(sets) == 1:
         return {"status": "error", "message": "Nenhum campo para atualizar"}
@@ -1024,5 +1062,247 @@ def update_subscription(
             return {"status": "error", "message": f"Assinatura não encontrada: {id}"}
 
         return {"status": "ok", "message": "Assinatura atualizada"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ─── Contas Fixas (spec 044) ──────────────────────────────────────────────────
+# Reaproveita a mesma tabela subscriptions (kind='conta_fixa') — a mecânica de
+# recorrência é idêntica; o que muda é o comportamento de confirmação de valor.
+
+def _cycle_status(sub: dict, today: date) -> str:
+    """Deriva o status do ciclo corrente de uma recorrência — função pura, sem banco.
+
+    IMPORTANTE: não usa `next_billing` como "vencimento deste ciclo" — esse campo é o
+    PRÓXIMO vencimento e já foi rolado para a frente assim que a conta é paga (ver
+    mark_subscription_paid). Em vez disso, usa `next_billing_day` (dia do mês, estável
+    entre rolagens) para calcular o vencimento do ciclo corrente a partir de `today`.
+
+    Args:
+        sub: dict com ao menos "ciclo", "next_billing" (ISO ou None),
+            "next_billing_day" (int ou None).
+        today: data de referência (sempre `_today_date()`, nunca `date.today()`).
+
+    Returns:
+        "agendada" — ciclo anual fora do mês de cobrança (edge case da spec 044).
+        "pendente" — dentro do ciclo, ainda não venceu.
+        "atrasada" — dentro do ciclo, já venceu.
+
+    Note:
+        Não verifica se já foi paga — quem chama (get_recurring_status) decide "paga"
+        checando a existência de uma transação vinculada no período; esta função só
+        cobre o caso "ainda não paga".
+    """
+    from calendar import monthrange
+
+    ciclo = sub.get("ciclo") or "mensal"
+    day = sub.get("next_billing_day")
+    if not day:
+        # Sem dia cadastrado — usa o dia do next_billing como fallback (compat. com
+        # recorrências antigas criadas antes do campo next_billing_day existir)
+        nb = sub.get("next_billing")
+        day = date.fromisoformat(nb).day if nb else 1
+
+    if ciclo == "anual":
+        # Mês de cobrança fixo: persiste entre rolagens porque rolar soma 1 ano
+        # (mês nunca muda). Fora desse mês, a conta não é urgente este mês.
+        nb = sub.get("next_billing")
+        billing_month = date.fromisoformat(nb).month if nb else today.month
+        if today.month != billing_month:
+            return "agendada"
+
+    last_day = monthrange(today.year, today.month)[1]
+    due = date(today.year, today.month, min(day, last_day))
+    return "atrasada" if today > due else "pendente"
+
+
+def get_recurring_status(kind: str = "", status: str = "ativa") -> dict:
+    """Lista recorrências (assinaturas e/ou contas fixas) com o status do ciclo corrente.
+
+    Para cada recorrência, verifica se já existe uma transação vinculada
+    (`subscription_id`) dentro do ciclo corrente — se sim, "paga"; senão, aplica
+    `_cycle_status` (pendente/atrasada/agendada).
+
+    Args:
+        kind: Filtro opcional "assinatura" ou "conta_fixa" — vazio retorna ambos.
+        status: Filtro de status da recorrência (padrão "ativa").
+
+    Returns:
+        Dict com "status": "ok", lista "items" (cada um com "cycle_status"),
+        "custo_fixo_mensal" (soma de todos, anuais proporcionalizadas) e
+        "pendentes_count" (contas fixas com status pendente/atrasada).
+    """
+    result = list_subscriptions(status=status, kind=kind)
+    if result.get("status") != "ok":
+        return result
+
+    today = _today_date()
+    ano_mes_inicio = today.replace(day=1).isoformat()
+    from calendar import monthrange
+    ano_mes_fim = today.replace(day=monthrange(today.year, today.month)[1]).isoformat()
+
+    items = []
+    pendentes_count = 0
+    custo_fixo_mensal = 0.0
+
+    for sub in result.get("subscriptions", []):
+        valor = float(sub["valor"])
+        custo_fixo_mensal += valor if sub["ciclo"] == "mensal" else valor / 12
+
+        # Verifica se já há transação vinculada a esta recorrência no mês corrente
+        paid_rows = run_select(
+            """
+            SELECT 1 FROM transactions
+             WHERE subscription_id = %(sub_id)s
+               AND deleted = FALSE
+               AND data BETWEEN %(start)s AND %(end)s
+             LIMIT 1
+            """,
+            {"sub_id": sub["id"], "start": ano_mes_inicio, "end": ano_mes_fim},
+        )
+        if paid_rows:
+            cycle_status = "paga"
+        else:
+            cycle_status = _cycle_status(sub, today)
+            if cycle_status in ("pendente", "atrasada"):
+                pendentes_count += 1
+
+        items.append({**sub, "cycle_status": cycle_status})
+
+    return {
+        "status": "ok",
+        "items": items,
+        "custo_fixo_mensal": round(custo_fixo_mensal, 2),
+        "pendentes_count": pendentes_count,
+    }
+
+
+def mark_subscription_paid(
+    id: str,
+    valor: float,
+    data: str = "",
+    conta: str = "",
+) -> dict:
+    """Confirma o pagamento de uma recorrência (spec 044, User Story 2) — atômico.
+
+    Cria a despesa vinculada (`subscription_id`) com o valor REAL informado (pode ser
+    diferente do valor esperado cadastrado — é o ponto central de "conta fixa") e rola
+    `next_billing` para o próximo ciclo. Tudo numa única transação via `get_conn()`:
+    ou os dois lados são gravados, ou nenhum (FR-005/SC-003).
+
+    Args:
+        id: ID da recorrência (subscriptions.id).
+        valor: Valor real pago em reais.
+        data: Data do pagamento AAAA-MM-DD (padrão: hoje).
+        conta: Conta/cartão de pagamento — vazio usa o pagador já cadastrado na recorrência.
+
+    Returns:
+        {"status": "ok", "transaction_id": ...} ou {"status": "error", "message": ...}.
+    """
+    if valor <= 0:
+        return {"status": "error", "message": "Valor pago deve ser positivo"}
+
+    rows = run_select(
+        "SELECT * FROM subscriptions WHERE id = %(id)s AND (deleted = FALSE OR deleted IS NULL)",
+        {"id": id},
+    )
+    if not rows:
+        return {"status": "error", "message": f"Recorrência não encontrada: {id}"}
+    sub = rows[0]
+
+    if data:
+        try:
+            date.fromisoformat(data)
+        except ValueError:
+            return {"status": "error", "message": f"Data inválida: '{data}'"}
+    tx_date = data or _today()
+
+    # Rola next_billing: mensal +1 mês, anual +1 ano — a partir do next_billing atual
+    # (não de hoje), para não perder o dia de vencimento em pagamentos adiantados
+    from datetime import timedelta
+    current_next = sub["next_billing"] if sub.get("next_billing") else _today_date()
+    if sub["ciclo"] == "anual":
+        new_next = current_next.replace(year=current_next.year + 1)
+    else:
+        new_next = (current_next.replace(day=1) + timedelta(days=32)).replace(
+            day=min(current_next.day, 28)
+        )
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                # Pagador: usa o `conta` explícito se informado (resolve como conta
+                # bancária); senão, reaproveita o pagador já cadastrado na recorrência —
+                # que pode ser conta OU cartão (account_id/card_id mutuamente exclusivos,
+                # mesma regra de transactions).
+                if conta:
+                    card_id = ""
+                    payer = conta
+                else:
+                    card_id = sub.get("card_id") or ""
+                    payer = sub.get("conta") or ""
+
+                tx = create_transaction_on_cursor(
+                    cur,
+                    name=f"{sub['name']} (pago)",
+                    valor=float(valor),
+                    tipo="Despesa",
+                    categoria=sub.get("categoria") or "Inbox",
+                    conta=payer,
+                    card_id=card_id,
+                    data=tx_date,
+                    subscription_id=id,
+                    source="webapp",
+                )
+                if tx.get("status") != "ok":
+                    raise ValueError(tx.get("message", "Erro ao lançar despesa"))
+
+                cur.execute(
+                    "UPDATE subscriptions SET next_billing = %(next_billing)s, updated_at = NOW() WHERE id = %(id)s",
+                    {"next_billing": new_next.isoformat(), "id": id},
+                )
+        return {
+            "status": "ok", "transaction_id": tx["id"],
+            "message": f"Pagamento de R${valor:.2f} confirmado para {sub['name']}",
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def skip_subscription_cycle(id: str) -> dict:
+    """Pula o ciclo corrente sem lançar despesa (edge case da spec 044).
+
+    Usado quando uma conta fixa não teve fatura no mês (ex.: isenção). Rola
+    `next_billing` do mesmo jeito que um pagamento, mas sem criar transação.
+
+    Args:
+        id: ID da recorrência.
+
+    Returns:
+        {"status": "ok"} ou {"status": "error", "message": ...}.
+    """
+    rows = run_select(
+        "SELECT ciclo, next_billing FROM subscriptions WHERE id = %(id)s AND (deleted = FALSE OR deleted IS NULL)",
+        {"id": id},
+    )
+    if not rows:
+        return {"status": "error", "message": f"Recorrência não encontrada: {id}"}
+    sub = rows[0]
+
+    from datetime import timedelta
+    current_next = sub["next_billing"] if sub.get("next_billing") else _today_date()
+    if sub["ciclo"] == "anual":
+        new_next = current_next.replace(year=current_next.year + 1)
+    else:
+        new_next = (current_next.replace(day=1) + timedelta(days=32)).replace(
+            day=min(current_next.day, 28)
+        )
+
+    try:
+        run_dml(
+            "UPDATE subscriptions SET next_billing = %(next_billing)s, updated_at = NOW() WHERE id = %(id)s",
+            {"next_billing": new_next.isoformat(), "id": id},
+        )
+        return {"status": "ok", "message": "Ciclo pulado, próximo vencimento atualizado"}
     except Exception as e:
         return {"status": "error", "message": str(e)}

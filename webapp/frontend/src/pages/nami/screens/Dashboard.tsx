@@ -50,6 +50,10 @@ export function Dashboard({
   const [trend, setTrend]           = useState<Awaited<ReturnType<typeof namiApi.getTrend>> | null>(null)
   const [trendError, setTrendError] = useState(false)
 
+  // Custo fixo mensal + pendências (spec 044, US3) — assinaturas + contas fixas
+  const [recurring, setRecurring]         = useState<Awaited<ReturnType<typeof namiApi.getRecurringStatus>> | null>(null)
+  const [recurringError, setRecurringError] = useState(false)
+
   // Carrega categorias uma vez
   useEffect(() => {
     namiApi.getCategories()
@@ -79,6 +83,14 @@ export function Dashboard({
     namiApi.getTrend(6)
       .then(setTrend)
       .catch(() => { setTrend(null); setTrendError(true) })
+  }, [])
+
+  // Carrega custo fixo mensal + pendências (spec 044) — independente do mês selecionado
+  useEffect(() => {
+    setRecurringError(false)
+    namiApi.getRecurringStatus()
+      .then(setRecurring)
+      .catch(() => { setRecurring(null); setRecurringError(true) })
   }, [])
 
   // Carrega transações recentes para o preview (últimas 5)
@@ -332,6 +344,39 @@ export function Dashboard({
               : <div className="empty" style={{ padding: '24px 0' }}><p>Sem gastos no período</p></div>
             }
           </div>
+        </div>
+      </div>
+
+      {/* ── Custo fixo mensal — assinaturas + contas fixas (spec 044, US3) ── */}
+      <div className="panel">
+        <div className="panel-head">
+          <span className="panel-title">Custo fixo mensal</span>
+          <button className="panel-action" onClick={() => onNavigate('contas-fixas')}>
+            Ver contas fixas
+          </button>
+        </div>
+        <div className="panel-body">
+          {recurringError ? (
+            <div className="empty" style={{ padding: '24px 0' }}><p>Erro ao calcular o custo fixo</p></div>
+          ) : !recurring ? (
+            <div className="empty" style={{ padding: '24px 0' }}><p>Carregando…</p></div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+              <div>
+                <div className="stat-val out"><span className="amount">{fmtMoney(recurring.custo_fixo_mensal)}</span></div>
+                <div className="stat-detail">contas fixas + assinaturas ativas</div>
+              </div>
+              {recurring.pendentes_count > 0 && (
+                <button
+                  className="chip out"
+                  style={{ fontSize: 12 }}
+                  onClick={() => onNavigate('contas-fixas')}
+                >
+                  {recurring.pendentes_count} conta{recurring.pendentes_count !== 1 ? 's' : ''} a confirmar
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

@@ -38,10 +38,13 @@ from agents.nami.tools import (
     query_expenses,       # Consulta transações com filtros
     get_spending_summary, # Agrupa gastos por categoria/conta/tipo
     get_spending_trend,   # Evolução mensal de gastos
-    create_subscription,  # Cadastra assinatura recorrente
-    list_subscriptions,   # Lista assinaturas (ativa/encerrada/todas)
-    update_subscription,  # Pausa, cancela ou atualiza assinatura
+    create_subscription,  # Cadastra assinatura ou conta fixa recorrente (kind, spec 044)
+    list_subscriptions,   # Lista recorrências (ativa/encerrada/todas), filtro opcional por kind
+    update_subscription,  # Pausa, cancela ou atualiza assinatura/conta fixa
     delete_subscription,  # Soft delete de assinatura — marca deleted=TRUE
+    get_recurring_status,  # Status do ciclo corrente (paga/pendente/atrasada) — spec 044
+    mark_subscription_paid,  # Confirma pagamento — cria despesa + rola vencimento (atômico, spec 044)
+    skip_subscription_cycle, # Pula o ciclo sem lançar despesa (spec 044)
     create_transfer,       # Par atômico débito/crédito entre contas (spec 043)
     _today_date,           # Hoje no fuso America/Sao_Paulo (spec 040) — nunca date.today() (UTC do servidor)
 )
@@ -280,9 +283,9 @@ class SetBudgetBody(BaseModel):
 
 
 class CreateSubscriptionBody(BaseModel):
-    """Corpo da requisição para cadastrar uma assinatura recorrente."""
-    name: str                         # Nome da assinatura (ex.: "Netflix", "Spotify")
-    valor: float                      # Valor mensal ou anual em reais
+    """Corpo da requisição para cadastrar uma recorrência (assinatura ou conta fixa)."""
+    name: str                         # Nome da assinatura/conta (ex.: "Netflix", "Luz")
+    valor: float                      # Valor mensal ou anual em reais (esperado, se conta fixa)
     conta: str = ""                   # Conta de débito (vazio = resolução automática)
     ciclo: str = "mensal"             # "mensal" ou "anual"
     next_billing: str = ""            # Data da próxima cobrança no formato YYYY-MM-DD (vazio = 1º do mês seguinte)
@@ -291,6 +294,9 @@ class CreateSubscriptionBody(BaseModel):
     color: Optional[str] = None          # Cor de fundo do ícone (ex.: "#E50914" para Netflix)
     icon_url: Optional[str] = None       # URL de ícone do serviço (upload ou URL pública)
     next_billing_day: Optional[int] = None  # Dia do mês de cobrança (1-28, para cálculo de dias restantes)
+    # Campos da spec 044 (Contas Fixas)
+    kind: str = "assinatura"             # "assinatura" ou "conta_fixa"
+    auto_lancar: Optional[bool] = None   # None = usa o padrão por kind (assinatura=True, conta_fixa=False)
 
 
 class UpdateSubscriptionBody(BaseModel):
@@ -310,6 +316,16 @@ class UpdateSubscriptionBody(BaseModel):
     color: Optional[str] = None
     icon_url: Optional[str] = None
     next_billing_day: Optional[int] = None
+    # Campos da spec 044 (Contas Fixas)
+    kind: str = ""                       # "assinatura" ou "conta_fixa" (vazio = não altera)
+    auto_lancar: Optional[bool] = None    # None = não altera
+
+
+class MarkSubscriptionPaidBody(BaseModel):
+    """Corpo da requisição para confirmar o pagamento de uma recorrência (spec 044)."""
+    valor: float          # Valor real pago em reais (pode diferir do valor esperado)
+    data: str = ""        # Data do pagamento YYYY-MM-DD (vazio = hoje)
+    conta: str = ""       # Conta/cartão de pagamento (vazio = usa o pagador já cadastrado)
 
 
 class CreateTransferBody(BaseModel):
@@ -1212,22 +1228,24 @@ def set_budget_endpoint(
 @router.get("/subscriptions")
 def list_subscriptions_endpoint(
     status: str = Query(default="ativa", description="Status: 'ativa', 'pausada', 'encerrada', 'todas'"),
+    kind: str = Query(default="", description="Filtro opcional: 'assinatura' ou 'conta_fixa' (spec 044)"),
     user: dict = Depends(require_user),
 ) -> dict:
-    """Listar assinaturas recorrentes cadastradas.
+    """Listar recorrências (assinaturas e/ou contas fixas) cadastradas.
 
     Args:
-        status: Filtrar por status da assinatura.
+        status: Filtrar por status da recorrência.
+        kind: Filtro opcional por tipo — vazio retorna ambos (spec 044).
         user: Dados do usuário autenticado.
 
     Returns:
-        Dicionário com "status": "ok" e lista de assinaturas com próxima cobrança.
+        Dicionário com "status": "ok" e lista de recorrências com próxima cobrança.
 
     Raises:
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    # Chama a tool de listagem com o filtro de status
-    result = list_subscriptions(status=status)
+    # Chama a tool de listagem com os filtros de status/kind
+    result = list_subscriptions(status=status, kind=kind)
     _check_result(result)
 
     # Enriquece com campos visuais (color, icon_url, next_billing_day) que a tool não retorna.
@@ -1278,7 +1296,7 @@ def create_subscription_endpoint(
         next_month_first = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
         next_billing = next_month_first.strftime("%Y-%m-%d")
 
-    # Cadastra a assinatura com os dados do body
+    # Cadastra a assinatura/conta fixa com os dados do body
     result = create_subscription(
         name=body.name,
         valor=body.valor,
@@ -1286,6 +1304,8 @@ def create_subscription_endpoint(
         next_billing=next_billing,
         conta=body.conta,
         categoria=body.categoria,
+        kind=body.kind,
+        auto_lancar=body.auto_lancar,
     )
     _check_result(result)
 
@@ -1348,6 +1368,10 @@ def update_subscription_endpoint(
         kwargs["status"] = body.status
     if body.notes:
         kwargs["notes"] = body.notes
+    if body.kind:
+        kwargs["kind"] = body.kind
+    if body.auto_lancar is not None:
+        kwargs["auto_lancar"] = body.auto_lancar
 
     # Chama a tool de atualização com os kwargs montados acima
     result = update_subscription(**kwargs)
@@ -1368,6 +1392,77 @@ def update_subscription_endpoint(
              "next_billing_day": body.next_billing_day, "id": sub_id},
         )
     return result
+
+
+@router.get("/recurring-status")
+def recurring_status_endpoint(
+    kind: str = Query(default="", description="Filtro opcional: 'assinatura' ou 'conta_fixa'"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Status do ciclo corrente de cada recorrência — paga/pendente/atrasada/agendada (spec 044).
+
+    Usado pela tela Contas Fixas e pelo card "Custo fixo mensal" do Dashboard.
+
+    Args:
+        kind: Filtro opcional por tipo — vazio retorna ambos.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "items" (cada um com "cycle_status"), "custo_fixo_mensal" e
+        "pendentes_count".
+
+    Raises:
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(get_recurring_status(kind=kind))
+
+
+@router.post("/subscriptions/{sub_id}/pay", status_code=201)
+def pay_subscription_endpoint(
+    sub_id: str,
+    body: MarkSubscriptionPaidBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Confirmar o pagamento de uma recorrência — cria a despesa e rola o vencimento (spec 044).
+
+    Operação atômica (FR-005/SC-003): ou os dois lados são gravados, ou nenhum.
+
+    Args:
+        sub_id: ID da recorrência.
+        body: Valor real pago, data opcional e conta de pagamento opcional.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e o id da despesa criada.
+
+    Raises:
+        HTTPException: 400 se a recorrência não for encontrada ou o valor for inválido.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(mark_subscription_paid(
+        id=sub_id, valor=body.valor, data=body.data, conta=body.conta,
+    ))
+
+
+@router.post("/subscriptions/{sub_id}/skip", status_code=200)
+def skip_subscription_endpoint(
+    sub_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Pular o ciclo corrente sem lançar despesa (spec 044, edge case).
+
+    Args:
+        sub_id: ID da recorrência.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok".
+
+    Raises:
+        HTTPException: 400 se a recorrência não for encontrada.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(skip_subscription_cycle(id=sub_id))
 
 
 # ═════════════════════════════════════════════════════════════════════════════

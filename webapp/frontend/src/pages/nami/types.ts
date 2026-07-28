@@ -93,6 +93,23 @@ export interface Subscription {
   color?: string
   icon_url?: string
   next_billing_day?: number  // dia do mês (1–28)
+  // Campos da spec 044 (Contas Fixas) — mesma tabela reaproveitada:
+  kind?: 'assinatura' | 'conta_fixa'   // default 'assinatura' (compat. com dados antigos)
+  auto_lancar?: boolean                 // indicador para o job de lançamento automático (spec 048, futuro)
+}
+
+// ── Status do ciclo corrente (spec 044) ─────────────────────────────────────
+
+/** Uma recorrência (assinatura ou conta fixa) enriquecida com o status do mês. */
+export interface RecurringStatusItem extends Subscription {
+  cycle_status: 'paga' | 'pendente' | 'atrasada' | 'agendada'
+}
+
+/** Shape do GET /api/finances/recurring-status */
+export interface RecurringStatusResponse {
+  items: RecurringStatusItem[]
+  custo_fixo_mensal: number
+  pendentes_count: number
 }
 
 // ── Empréstimo pessoa-a-pessoa ───────────────────────────────────────────────

@@ -6,6 +6,7 @@ import type {
   Transaction, Account, Card, Budget, Subscription,
   PersonalLoan, Financing, StatsResponse, Category,
   Installment, InstallmentDetail, CardInstallment,
+  RecurringStatusResponse,
 } from './types'
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -149,13 +150,15 @@ export const namiApi = {
 
   // ── Assinaturas ──────────────────────────────────────────────────────────────
 
-  getSubscriptions: (): Promise<{ subscriptions: Subscription[] }> =>
-    api.get('/api/finances/subscriptions'),
+  /** kind (spec 044): 'assinatura' | 'conta_fixa' — vazio/omitido traz ambos. */
+  getSubscriptions: (status: string = 'ativa', kind?: string): Promise<{ subscriptions: Subscription[] }> =>
+    api.get(`/api/finances/subscriptions?status=${status}${kind ? `&kind=${kind}` : ''}`),
 
   createSubscription: (body: {
     name: string; valor: number; ciclo: string;
     next_billing_day?: number; categoria?: string;
     color?: string; icon_url?: string;
+    kind?: 'assinatura' | 'conta_fixa'; auto_lancar?: boolean;
   }): Promise<{ status: string }> =>
     api.post('/api/finances/subscriptions', body),
 
@@ -163,11 +166,26 @@ export const namiApi = {
     name?: string; valor?: number; ciclo?: string; next_billing?: string;
     conta?: string; status?: string; notes?: string;
     color?: string; icon_url?: string; next_billing_day?: number;
+    kind?: 'assinatura' | 'conta_fixa'; auto_lancar?: boolean;
   }): Promise<{ status: string }> =>
     api.patch(`/api/finances/subscriptions/${id}`, body),
 
   deleteSubscription: (id: string): Promise<{ status: string }> =>
     api.del(`/api/finances/subscriptions/${id}`),
+
+  // ── Contas Fixas (spec 044) ────────────────────────────────────────────────
+
+  /** Status do ciclo corrente de cada recorrência (paga/pendente/atrasada/agendada). */
+  getRecurringStatus: (kind?: string): Promise<RecurringStatusResponse> =>
+    api.get(`/api/finances/recurring-status${kind ? `?kind=${kind}` : ''}`),
+
+  /** Confirma o pagamento com o valor real — lança a despesa e rola o vencimento (atômico). */
+  paySubscription: (id: string, body: { valor: number; data?: string; conta?: string }): Promise<{ status: string; transaction_id: string }> =>
+    api.post(`/api/finances/subscriptions/${id}/pay`, body),
+
+  /** Pula o ciclo corrente sem lançar despesa. */
+  skipSubscriptionCycle: (id: string): Promise<{ status: string }> =>
+    api.post(`/api/finances/subscriptions/${id}/skip`, {}),
 
   // ── Empréstimos pessoa-a-pessoa ───────────────────────────────────────────────
 

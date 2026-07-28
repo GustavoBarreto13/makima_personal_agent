@@ -137,9 +137,12 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 | `delete_transaction` | Soft delete — marca `deleted=TRUE` |
 | `get_spending_summary` | Agrupa gastos por `categoria`, `conta` ou `tipo` |
 | `get_spending_trend` | Evolução mensal + projeção do mês atual |
-| `create_subscription` | Cadastra assinatura recorrente (mensal ou anual) |
-| `list_subscriptions` | Lista assinaturas ativas com próxima cobrança |
-| `update_subscription` | Pausa, cancela ou atualiza valor de assinatura |
+| `create_subscription` | Cadastra recorrência (mensal ou anual) — `kind` decide assinatura vs conta fixa (spec 044); `auto_lancar` (padrão por kind) indica lançamento automático futuro (spec 048) |
+| `list_subscriptions` | Lista recorrências ativas com próxima cobrança; filtro opcional `kind` |
+| `update_subscription` | Pausa, cancela, atualiza valor ou reclassifica (`kind`/`auto_lancar`) |
+| `get_recurring_status` | Enriquece cada recorrência com `cycle_status` (paga/pendente/atrasada/agendada) + custo fixo mensal total + contagem de pendências (spec 044) |
+| `mark_subscription_paid` | Confirma pagamento de conta fixa com o valor REAL — cria a despesa vinculada e rola `next_billing` **atomicamente** via `get_conn()` (spec 044) |
+| `skip_subscription_cycle` | Rola `next_billing` sem lançar despesa — mês sem fatura (spec 044) |
 
 ### Parcelas — `tools_installments.py`
 
@@ -227,6 +230,8 @@ Mapeamento de tipo de empréstimo → categoria em `register_loan_payment`: `vei
 | "qual minha dívida no cartão?" | `get_card_debt_summary()` |
 | "como estão minhas finanças?" | `get_financial_health_score()` |
 | "to dentro do orçamento de lazer?" | `check_category_budget("Lazer")` |
+| "quais contas fixas tenho pendentes?" | `get_recurring_status(kind="conta_fixa")` |
+| "paguei a luz, veio 287,45" | `mark_subscription_paid(id, valor=287.45)` |
 
 ---
 

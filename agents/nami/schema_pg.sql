@@ -53,6 +53,14 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS account_id TEXT;
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS card_id    TEXT;
 
+-- Colunas adicionadas na spec 044 (Contas Fixas) — idempotentes. Reaproveita a mesma
+-- estrutura de recorrência para "conta fixa" (luz, água, aluguel): kind distingue o
+-- comportamento (conta fixa exige confirmação de valor ao pagar), auto_lancar indica se
+-- o job agendado (spec 048, futuro) pode lançar sem confirmação. Defaults preservam o
+-- comportamento das assinaturas existentes (kind='assinatura', auto_lancar=TRUE).
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS kind        TEXT    DEFAULT 'assinatura';
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS auto_lancar BOOLEAN DEFAULT TRUE;
+
 -- Tabela de grupos de parcelamento (compras divididas em X vezes)
 CREATE TABLE IF NOT EXISTS installment_groups (
     id            TEXT PRIMARY KEY,

@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-06
 
-**Status**: Draft
+**Status**: ✅ Implementado (2026-07-28) — ver `plan.md` e `tasks.md`; migração `subscriptions.kind`/`auto_lancar` pendente no VPS.
 
 **Input**: User description: "Seção de Contas Fixas a pagar (luz, água, aluguel, internet, escola) separada de Assinaturas na UI e no Telegram. Decisão de design: mesma tabela subscriptions com campo kind (assinatura|conta_fixa) e auto_lancar — a mecânica de recorrência é idêntica; o que muda é o comportamento: conta fixa tem valor geralmente variável e exige confirmação do valor real ao pagar. Ação 'Marcar como paga' cria a transação vinculada e rola a próxima cobrança."
 
