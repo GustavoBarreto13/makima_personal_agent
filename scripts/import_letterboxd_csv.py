@@ -7,11 +7,18 @@ A importação é completamente idempotente: rodar o mesmo CSV múltiplas vezes
 não cria duplicatas (SC-004). Dedup por letterboxd_uri + (letterboxd_uri, watched_date).
 
 Ordem de processamento:
-    1. diary.csv     — registro cronológico de sessões (mais completo)
-    2. reviews.csv   — enriquece sessões com o texto da review
+    1. diary.csv     — a ÚNICA fonte de sessões (diary_entries). Diário é estritamente
+                       o que vem daqui — nenhum outro arquivo cria sessão nova.
+    2. reviews.csv   — preenche review/tags nas sessões já criadas pelo diary.csv (por
+                       (letterboxd_uri, watched_date)); se não achar a sessão, não cria
+                       nada — só loga um aviso (não deveria acontecer: no Letterboxd toda
+                       review pressupõe uma sessão logada).
     3. watchlist.csv — filmes marcados como "quero ver" (status=watchlist)
-    4. ratings.csv   — fallback para notas sem sessão
-    5. watched.csv   — fallback para filmes assistidos sem data
+    4. ratings.csv   — fallback de CATÁLOGO (não de diário): filmes só avaliados, sem
+                       sessão. Preenche só a nota do filme; nunca cria diary_entries (a
+                       data de publicação da nota não é uma data de assistência real).
+    5. watched.csv   — fallback de catálogo para filmes assistidos sem nenhuma outra
+                       informação — sem sessão, sem nota.
 
 Usage:
     # Importa e chama diretamente:
@@ -35,12 +42,13 @@ from pathlib import Path  # Manipulação de caminhos de forma segura
 
 # Funções da camada de lógica da Akane — a lógica de negócio fica lá (FR-016)
 from agents.akane.tools import (
-    upsert_movie_from_letterboxd,  # Cria/atualiza filme + sessão (idempotente)
-    add_movie,                     # Adiciona filme ao catálogo (usado pela watchlist)
+    upsert_movie_from_letterboxd,  # Cria/atualiza filme + sessão (idempotente) — só diary.csv
+    add_movie,                     # Adiciona filme ao catálogo (watchlist/ratings/watched)
+    backfill_diary_review,         # Preenche review/tags numa sessão já existente
 )
 
 # Helpers de banco — importados de agents.db diretamente (não de tools.py)
-from agents.db import run_select  # Consultas SELECT ao PostgreSQL
+from agents.db import run_select, run_dml  # Consultas SELECT/UPDATE ao PostgreSQL
 
 # Logger do módulo
 log = logging.getLogger("import_letterboxd_csv")
@@ -94,6 +102,30 @@ def _parse_rating(text: str | None) -> float | None:
         return val if 0.5 <= val <= 5.0 else None
     except ValueError:
         return None
+
+
+def _parse_tags(text: str | None) -> list[str] | None:
+    """Converte a coluna "Tags" do Letterboxd (string separada por vírgula) em lista.
+
+    O `csv.DictReader` já desfaz o quoting do CSV — se o campo original tinha
+    "ação, favorito" entre aspas, aqui já chega como uma única string com vírgula
+    interna; dividir por vírgula recupera as tags individuais.
+
+    Args:
+        text: Valor bruto da coluna "Tags" ('', 'belasartes', 'ação, favorito' ou None).
+
+    Returns:
+        Lista de tags (sem espaços nas bordas, sem entradas vazias), ou None se
+        não houver nenhuma tag.
+
+    Example:
+        >>> _parse_tags("ação, favorito")
+        ['ação', 'favorito']
+    """
+    if not text or not text.strip():
+        return None
+    tags = [t.strip() for t in text.split(",") if t.strip()]
+    return tags or None
 
 
 def _read_csv(path: Path) -> list[dict]:
@@ -168,6 +200,7 @@ def _process_diary(pasta: Path, enrich_tmdb: bool, contadores: dict, ts_base: da
                 source="letterboxd_csv",
                 enrich_tmdb=enrich_tmdb,
                 created_at=ts_base + timedelta(milliseconds=next(ts_seq)),
+                tags=_parse_tags(row.get("Tags")),
             )
             _atualiza_contadores(contadores, result.get("status"), row.get("Name", ""))
         except Exception as exc:
@@ -175,49 +208,57 @@ def _process_diary(pasta: Path, enrich_tmdb: bool, contadores: dict, ts_base: da
             contadores["erros"] += 1
 
 
-def _process_reviews(pasta: Path, enrich_tmdb: bool, contadores: dict, ts_base: datetime, ts_seq: itertools.count) -> None:
-    """Processa reviews.csv — enriquece sessões com textos de reviews.
+def _process_reviews(pasta: Path, contadores: dict) -> None:
+    """Processa reviews.csv — preenche review/tags nas sessões já criadas pelo diary.csv.
 
-    Colunas esperadas: Date, Name, Year, Letterboxd URI, Rating, Review
+    Colunas esperadas: Date, Name, Year, Letterboxd URI, Rating, Rewatch, Review, Tags,
+    Watched Date
 
-    A maioria das linhas do reviews.csv já foi processada pelo diary.csv.
-    Aqui apenas garantimos que reviews sem sessão correspondente sejam importadas.
+    Nunca cria sessão nova: Diário é estritamente o que vem do diary.csv. Se uma
+    linha de reviews.csv não tiver uma sessão correspondente (mesma URI + Watched
+    Date) — no export real do Letterboxd isso não deveria acontecer, toda review
+    pressupõe uma sessão logada — é contada como erro e logada para investigação,
+    mas nada é criado.
 
     Args:
         pasta: Pasta com os arquivos CSV.
-        enrich_tmdb: Se deve enriquecer com TMDB.
         contadores: Dict de contadores atualizado in-place.
-        ts_base: Instante base da importação (spec 050, FR-011).
-        ts_seq: Contador compartilhado — ver `_process_diary`.
     """
     rows = _read_csv(pasta / "reviews.csv")
     for row in rows:
         letterboxd_uri = row.get("Letterboxd URI") or ""
+        title = row.get("Name", "?")
         if not letterboxd_uri:
             contadores["erros"] += 1
             continue
 
-        # Tenta a data do diário primeiro; usa a data de publicação como fallback
         watched_date = _parse_date(row.get("Watched Date") or row.get("Date"))
         if not watched_date:
             contadores["pulados"] += 1
             continue
 
         try:
-            result = upsert_movie_from_letterboxd(
-                title=row.get("Name", ""),
-                year=int(row["Year"]) if row.get("Year", "").isdigit() else None,
+            result = backfill_diary_review(
                 letterboxd_uri=letterboxd_uri,
-                rating=_parse_rating(row.get("Rating")),
-                review=row.get("Review") or None,
                 watched_date=watched_date,
-                source="letterboxd_csv",
-                enrich_tmdb=enrich_tmdb,
-                created_at=ts_base + timedelta(milliseconds=next(ts_seq)),
+                review=row.get("Review") or None,
+                tags=_parse_tags(row.get("Tags")),
             )
-            _atualiza_contadores(contadores, result.get("status"), row.get("Name", ""))
+            status = result.get("status")
+            if status == "updated":
+                contadores["atualizados"] += 1
+                log.info(f"↻ Review/tags preenchidos: {title}")
+            elif status == "skipped":
+                contadores["pulados"] += 1
+                log.debug(f"○ Review — sessão já tinha review/tags: {title}")
+            else:  # "no_session" — review sem sessão de diário correspondente
+                contadores["erros"] += 1
+                log.warning(
+                    f"? Review sem sessão de diário correspondente: {title} "
+                    f"({letterboxd_uri}, {watched_date})"
+                )
         except Exception as exc:
-            log.error(f"Erro ao processar '{row.get('Name', '?')}' (reviews.csv): {exc}", exc_info=True)
+            log.error(f"Erro ao processar '{title}' (reviews.csv): {exc}", exc_info=True)
             contadores["erros"] += 1
 
 
@@ -278,59 +319,71 @@ def _process_watchlist(pasta: Path, enrich_tmdb: bool, contadores: dict) -> None
             contadores["erros"] += 1
 
 
-def _process_ratings_fallback(pasta: Path, enrich_tmdb: bool, contadores: dict, ts_base: datetime, ts_seq: itertools.count) -> None:
-    """Processa ratings.csv — fallback para notas sem sessão no diário.
+def _process_ratings(pasta: Path, enrich_tmdb: bool, contadores: dict) -> None:
+    """Processa ratings.csv — fallback de CATÁLOGO para notas sem sessão no diário.
 
     Colunas esperadas: Date, Name, Year, Letterboxd URI, Rating
 
-    Só processa filmes que não foram importados pelo diary.csv (não têm URI no banco).
-    Usa a data de publicação da nota como data de assistência (aproximação).
+    O Letterboxd permite avaliar um filme sem logar uma sessão de diário (rating
+    rápido). Essa nota não implica uma data de assistência real — a coluna "Date"
+    aqui é a data em que a nota foi publicada, não quando o filme foi visto. Por
+    isso esta função NUNCA cria `diary_entries`: só grava a nota no catálogo
+    (`movies.rating`), preenchendo apenas o que ainda estava vazio (não sobrescreve
+    uma nota que já veio de uma sessão real via diary.csv).
 
     Args:
         pasta: Pasta com os arquivos CSV.
-        enrich_tmdb: Se deve enriquecer com TMDB.
+        enrich_tmdb: Se deve enriquecer com TMDB (só quando o filme ainda não existe).
         contadores: Dict de contadores atualizado in-place.
-        ts_base: Instante base da importação (spec 050, FR-011).
-        ts_seq: Contador compartilhado — ver `_process_diary`.
     """
     rows = _read_csv(pasta / "ratings.csv")
     for row in rows:
         letterboxd_uri = row.get("Letterboxd URI") or ""
-        if not letterboxd_uri:
+        title = row.get("Name", "")
+        if not letterboxd_uri or not title:
             contadores["pulados"] += 1
             continue
 
-        # Verifica se já foi importado pelo diary.csv (tem alguma sessão)
-        existing_diary = run_select(
-            "SELECT id FROM diary_entries WHERE letterboxd_uri = %(uri)s LIMIT 1",
-            {"uri": letterboxd_uri},
-        )
-        if existing_diary:
-            log.debug(f"○ Ratings fallback — já tem sessão: {row.get('Name', '?')}")
-            contadores["pulados"] += 1
-            continue
-
-        # Usa a data da nota como data aproximada de assistência
-        watched_date = _parse_date(row.get("Date"))
-        if not watched_date:
-            contadores["pulados"] += 1
-            continue
+        rating = _parse_rating(row.get("Rating"))
 
         try:
-            result = upsert_movie_from_letterboxd(
-                title=row.get("Name", ""),
+            existing = run_select(
+                "SELECT id, rating FROM movies WHERE letterboxd_uri = %(uri)s",
+                {"uri": letterboxd_uri},
+            )
+            if existing:
+                # Já catalogado por outra via (diary/reviews/watchlist) — só
+                # preenche a nota se ainda estiver vazia; nunca sobrescreve.
+                if existing[0]["rating"] is None and rating is not None:
+                    run_dml(
+                        "UPDATE movies SET rating = %(r)s, rating_source = 'letterboxd' "
+                        "WHERE id = %(id)s",
+                        {"r": rating, "id": existing[0]["id"]},
+                    )
+                    contadores["atualizados"] += 1
+                    log.info(f"↻ Nota preenchida: {title}")
+                else:
+                    contadores["pulados"] += 1
+                continue
+
+            # Filme genuinamente novo, conhecido só pela nota — sem sessão.
+            result = add_movie(
+                title=title,
                 year=int(row["Year"]) if row.get("Year", "").isdigit() else None,
+                status="watched",
                 letterboxd_uri=letterboxd_uri,
-                rating=_parse_rating(row.get("Rating")),
-                review=None,
-                watched_date=watched_date,
                 source="letterboxd_csv",
                 enrich_tmdb=enrich_tmdb,
-                created_at=ts_base + timedelta(milliseconds=next(ts_seq)),
+                rating=rating,
             )
-            _atualiza_contadores(contadores, result.get("status"), row.get("Name", ""))
+            if result.get("status") == "ok":
+                log.info(f"✓ Avaliado (sem sessão): {title}")
+                contadores["criados"] += 1
+            else:
+                log.debug(f"○ Ratings — add_movie retornou '{result.get('status')}': {title}")
+                contadores["pulados"] += 1
         except Exception as exc:
-            log.error(f"Erro ao processar '{row.get('Name', '?')}' (ratings.csv): {exc}", exc_info=True)
+            log.error(f"Erro ao processar '{title}' (ratings.csv): {exc}", exc_info=True)
             contadores["erros"] += 1
 
 
@@ -417,13 +470,16 @@ def _atualiza_contadores(contadores: dict, status: str | None, title: str) -> No
 def run_import(export_dir: str, enrich_tmdb: bool = True) -> dict:
     """Importa o histórico completo de uma exportação Letterboxd.
 
-    Processa os CSVs na ordem: diary → reviews → watchlist → ratings (fallback) →
-    watched (fallback final, sem sessão). Completamente idempotente: rodar
-    múltiplas vezes não cria duplicatas (SC-004).
+    Processa os CSVs na ordem: diary → reviews → watchlist → ratings → watched.
+    Completamente idempotente: rodar múltiplas vezes não cria duplicatas (SC-004).
 
-    Dentro do mesmo `watched_date`, as sessões criadas por diary/reviews/ratings
-    recebem `created_at` incremental na ordem em que as linhas foram lidas do
-    export (spec 050, FR-011) — não dependem do relógio da chamada ao banco.
+    `diary.csv` é a ÚNICA fonte de sessões (`diary_entries`) — `reviews.csv` só
+    enriquece as sessões já criadas (review/tags); `ratings.csv`/`watched.csv` são
+    fallbacks de catálogo (nota/status), nunca criam sessão.
+
+    Dentro do mesmo `watched_date`, as sessões criadas pelo diary.csv recebem
+    `created_at` incremental na ordem em que as linhas foram lidas do export
+    (spec 050, FR-011) — não dependem do relógio da chamada ao banco.
 
     Args:
         export_dir: Caminho para a pasta contendo os arquivos CSV exportados.
@@ -456,21 +512,21 @@ def run_import(export_dir: str, enrich_tmdb: bool = True) -> dict:
     ts_base = datetime.now()
     ts_seq = itertools.count()
 
-    # ── 1. diary.csv — sessões cronológicas (mais completo) ───────────────────
+    # ── 1. diary.csv — única fonte de sessões ──────────────────────────────────
     log.info("=== Fase 1/5: diary.csv ===")
     _process_diary(pasta, enrich_tmdb, contadores, ts_base, ts_seq)
 
-    # ── 2. reviews.csv — enriquece/complementa o diary ────────────────────────
+    # ── 2. reviews.csv — preenche review/tags nas sessões já criadas ─────────
     log.info("=== Fase 2/5: reviews.csv ===")
-    _process_reviews(pasta, enrich_tmdb, contadores, ts_base, ts_seq)
+    _process_reviews(pasta, contadores)
 
     # ── 3. watchlist.csv — filmes para assistir ───────────────────────────────
     log.info("=== Fase 3/5: watchlist.csv ===")
     _process_watchlist(pasta, enrich_tmdb, contadores)
 
-    # ── 4. ratings.csv — fallback para notas sem sessão ──────────────────────
-    log.info("=== Fase 4/5: ratings.csv (fallback) ===")
-    _process_ratings_fallback(pasta, enrich_tmdb, contadores, ts_base, ts_seq)
+    # ── 4. ratings.csv — fallback de catálogo (nota, sem sessão) ─────────────
+    log.info("=== Fase 4/5: ratings.csv (fallback de catálogo) ===")
+    _process_ratings(pasta, enrich_tmdb, contadores)
 
     # ── 5. watched.csv — fallback final, sem sessão (FR-001) ─────────────────
     log.info("=== Fase 5/5: watched.csv (fallback) ===")

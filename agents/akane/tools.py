@@ -411,31 +411,48 @@ def _resolve_movie_identity(
     return rows[0]["id"] if rows else None
 
 
-def _merge_into_existing_movie(movie_id: str, letterboxd_uri: str | None, source: str) -> dict:
+def _merge_into_existing_movie(
+    movie_id: str,
+    letterboxd_uri: str | None,
+    source: str,
+    rating: float | None = None,
+) -> dict:
     """Funde uma identidade recém-encontrada no filme já existente, em vez de duplicar.
 
-    Só preenche `letterboxd_uri`/`source` quando estavam vazios — nunca sobrescreve
-    um dado já presente no registro existente (US6).
+    Só preenche `letterboxd_uri`/`source`/`rating` quando estavam vazios — nunca
+    sobrescreve um dado já presente no registro existente (US6).
 
     Args:
         movie_id: Id do filme já existente no catálogo.
         letterboxd_uri: URI a anexar, se o registro existente ainda não tiver um.
         source: Origem da tentativa de criação (só grava se o registro não tinha
             letterboxd_uri, isto é, se essa é a primeira vez que ele "vem" do Letterboxd).
+        rating: Nota a anexar, se o registro existente ainda não tiver uma (spec 050
+            follow-up — `ratings.csv` fundindo num filme já cadastrado sem nota).
 
     Returns:
         Dict com status "merged" e o id do filme existente.
     """
-    if letterboxd_uri:
+    if letterboxd_uri or rating is not None:
         run_dml(
             """
             UPDATE movies
             SET letterboxd_uri = COALESCE(letterboxd_uri, %(uri)s),
-                source = CASE WHEN letterboxd_uri IS NULL THEN %(source)s ELSE source END,
+                source = CASE WHEN letterboxd_uri IS NULL AND %(uri)s IS NOT NULL
+                              THEN %(source)s ELSE source END,
+                rating = COALESCE(rating, %(rating)s),
+                rating_source = CASE WHEN rating IS NULL AND %(rating)s IS NOT NULL
+                                     THEN 'letterboxd' ELSE rating_source END,
                 updated_at = %(now)s
             WHERE id = %(id)s
             """,
-            {"id": movie_id, "uri": letterboxd_uri, "source": source, "now": _now()},
+            {
+                "id": movie_id,
+                "uri": letterboxd_uri,
+                "source": source,
+                "rating": rating,
+                "now": _now(),
+            },
         )
     return {
         "status": "merged",
@@ -566,6 +583,7 @@ def add_movie(
     letterboxd_uri: str | None = None,
     source: str = "manual",
     enrich_tmdb: bool = True,
+    rating: float | None = None,
 ) -> dict:
     """Adiciona um filme ao catálogo (watchlist ou watched).
 
@@ -582,6 +600,8 @@ def add_movie(
         source: Origem da entrada ('manual' | 'letterboxd_rss' | 'letterboxd_csv').
         enrich_tmdb: Se False, não consulta o TMDB — filme criado só com os dados
             fornecidos (spec 050, FR-003: opção "sem enriquecimento externo").
+        rating: Nota vinda do Letterboxd (ex.: ratings.csv sem sessão de diário
+            correspondente) — grava com `rating_source='letterboxd'`.
 
     Returns:
         Dict com status "ok" e id do filme criado, ou "error" se já existe.
@@ -600,7 +620,7 @@ def add_movie(
     if letterboxd_uri or tmdb_id:
         existing_id = _resolve_movie_identity(letterboxd_uri, tmdb_id, title or "", year)
         if existing_id:
-            return _merge_into_existing_movie(existing_id, letterboxd_uri, source)
+            return _merge_into_existing_movie(existing_id, letterboxd_uri, source, rating)
 
     # ── Enriquecimento via TMDB ────────────────────────────────────────────────
     # Falha graciosamente: se a API estiver fora, cria o filme sem metadados.
@@ -615,7 +635,7 @@ def add_movie(
     # enriquecimento (ou fallback por título+ano se o TMDB não achou nada/estava fora)
     existing_id = _resolve_movie_identity(letterboxd_uri, final_tmdb_id, final_title, meta.get("year") or year)
     if existing_id:
-        return _merge_into_existing_movie(existing_id, letterboxd_uri, source)
+        return _merge_into_existing_movie(existing_id, letterboxd_uri, source, rating)
 
     # ── Inserção no banco ──────────────────────────────────────────────────────
     movie_id = str(uuid.uuid4())
@@ -626,13 +646,13 @@ def add_movie(
         INSERT INTO movies (
             id, tmdb_id, imdb_id, letterboxd_uri, title, normalizado, year,
             director, genres, runtime, overview, poster_url, backdrop_url,
-            poster_palette, status, source, created_at, updated_at
+            poster_palette, status, rating, rating_source, source, created_at, updated_at
         ) VALUES (
             %(id)s, %(tmdb_id)s, %(imdb_id)s, %(letterboxd_uri)s,
             %(title)s, %(normalizado)s, %(year)s,
             %(director)s, %(genres)s, %(runtime)s, %(overview)s,
             %(poster_url)s, %(backdrop_url)s, %(poster_palette)s,
-            %(status)s, %(source)s, %(now)s, %(now)s
+            %(status)s, %(rating)s, %(rating_source)s, %(source)s, %(now)s, %(now)s
         )
         """,
         {
@@ -653,6 +673,8 @@ def add_movie(
             # Paleta determinística para o pôster tipográfico de fallback
             "poster_palette":  _poster_palette(final_title),
             "status":          status,
+            "rating":          rating,
+            "rating_source":   "letterboxd" if rating is not None else None,
             "source":          source,
             "now":             now,
         },
@@ -2217,6 +2239,7 @@ def upsert_movie_from_letterboxd(
     source: str = "letterboxd_rss",
     enrich_tmdb: bool = True,
     created_at: datetime | None = None,
+    tags: list[str] | None = None,
 ) -> dict:
     """Cria ou atualiza um filme + sessão vindos do Letterboxd (RSS ou CSV).
 
@@ -2239,6 +2262,7 @@ def upsert_movie_from_letterboxd(
             importação em lote para garantir que, dentro do mesmo `watched_date`, a
             ordem das sessões reflita a ordem das linhas do export. Se omitido, usa
             o instante atual (comportamento de sempre, para o sync RSS).
+        tags: Etiquetas da sessão (coluna "Tags" do diary.csv).
 
     Returns:
         Dict com status ('created'|'updated'|'skipped') e id do filme — quando o
@@ -2246,7 +2270,9 @@ def upsert_movie_from_letterboxd(
         'updated' sobre o registro existente, não 'created'.
     """
     # ── Dedup de sessão: (letterboxd_uri, watched_date) ──────────────────────
-    # Se a sessão já existe, pula (idempotência — SC-003)
+    # Se a sessão já existe, pula (idempotência — SC-003). Esta função NUNCA
+    # atualiza uma sessão já existente com review/tags — quem faz isso é
+    # `backfill_diary_review`, chamada só a partir de reviews.csv.
     diary_exists = run_select(
         """
         SELECT id FROM diary_entries
@@ -2368,10 +2394,10 @@ def upsert_movie_from_letterboxd(
         """
         INSERT INTO diary_entries (
             id, movie_id, movie_title, watched_date, rating, rewatch,
-            review, letterboxd_uri, source, created_at
+            review, tags, letterboxd_uri, source, created_at
         ) VALUES (
             %(id)s, %(mid)s, %(title)s, %(date)s, %(rating)s, %(rewatch)s,
-            %(review)s, %(uri)s, %(source)s, %(created_at)s
+            %(review)s, %(tags)s, %(uri)s, %(source)s, %(created_at)s
         )
         ON CONFLICT (letterboxd_uri, watched_date) WHERE letterboxd_uri IS NOT NULL
         DO NOTHING
@@ -2384,6 +2410,7 @@ def upsert_movie_from_letterboxd(
             "rating":     float(rating) if rating is not None else None,
             "rewatch":    is_rewatch,
             "review":     review,
+            "tags":       tags or None,
             "uri":        letterboxd_uri,
             "source":     source,
             # Explícito (spec 050, FR-011) quando a importação em lote precisa
@@ -2393,6 +2420,60 @@ def upsert_movie_from_letterboxd(
     )
 
     return {"status": "created" if movie_created else "updated", "id": movie_id}
+
+
+def backfill_diary_review(
+    letterboxd_uri: str,
+    watched_date: date,
+    review: str | None = None,
+    tags: list[str] | None = None,
+) -> dict:
+    """Preenche review/tags de uma sessão do diário já existente (reviews.csv).
+
+    Não cria sessão nova: se não encontrar `(letterboxd_uri, watched_date)` em
+    `diary_entries`, retorna `"no_session"` sem gravar nada — Diário continua sendo
+    estritamente o que veio do `diary.csv` (spec 050, follow-up). Só preenche os
+    campos que ainda estão vazios: nunca sobrescreve uma review ou tags já
+    presentes (nem as que vieram do diary.csv, nem uma edição manual do usuário
+    via `update_diary_entry`).
+
+    Args:
+        letterboxd_uri: URI do filme (parte da chave de dedup da sessão).
+        watched_date: Data da sessão a enriquecer.
+        review: Texto da review vindo de reviews.csv.
+        tags: Etiquetas da sessão vindas de reviews.csv.
+
+    Returns:
+        Dict com status "updated" (algum campo foi preenchido), "skipped" (sessão
+        existe mas já tinha os dois campos preenchidos) ou "no_session" (nenhuma
+        sessão com essa URI+data — reviews.csv sem par em diary.csv).
+    """
+    rows = run_select(
+        """
+        SELECT id, review, tags FROM diary_entries
+        WHERE letterboxd_uri = %(uri)s AND watched_date = %(date)s
+        """,
+        {"uri": letterboxd_uri, "date": watched_date},
+    )
+    if not rows:
+        return {"status": "no_session", "id": None}
+
+    existing = rows[0]
+    fields: dict = {}
+    if review and not existing.get("review"):
+        fields["review"] = review
+    if tags and not existing.get("tags"):
+        fields["tags"] = tags
+
+    if not fields:
+        return {"status": "skipped", "id": existing["id"]}
+
+    set_clause = ", ".join(f"{col} = %({col})s" for col in fields)
+    run_dml(
+        f"UPDATE diary_entries SET {set_clause} WHERE id = %(id)s",
+        {**fields, "id": existing["id"]},
+    )
+    return {"status": "updated", "id": existing["id"]}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

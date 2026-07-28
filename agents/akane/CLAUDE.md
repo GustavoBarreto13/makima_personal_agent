@@ -187,6 +187,34 @@ O campo `poster_palette` em `movies` armazena a paleta calculada na inserção.
 
 ---
 
+## Correções de bugs conhecidos (spec 050, follow-up)
+
+- **`_process_ratings_fallback` (renomeada `_process_ratings`) fabricava sessão de
+  diário**: qualquer filme presente em `ratings.csv` sem sessão em `diary.csv` virava uma
+  entrada em `diary_entries` usando a **data de publicação da nota** como se fosse a data
+  de assistência — poluía o Diário com sessões que nunca existiram, misturando dado de
+  catálogo (avaliação rápida) com dado de diário (sessão real). Corrigido: `ratings.csv`
+  sem sessão correspondente agora só grava a nota no filme (`movies.rating`, preenchendo
+  só o que estava vazio) — nunca cria `diary_entries`. Diário passou a ser estritamente o
+  que vem do `diary.csv`.
+- **`reviews.csv` era efetivamente ignorado**: `_process_reviews` chamava
+  `upsert_movie_from_letterboxd`, que faz dedup de sessão por `(letterboxd_uri,
+  watched_date)` e retornava cedo sem tocar em nada quando a sessão já existia (o caso
+  normal — toda review pressupõe uma sessão já logada pelo `diary.csv`). Corrigido: nova
+  função `backfill_diary_review()` localiza a sessão existente e preenche `review`/`tags`
+  só onde estavam vazios; se não achar sessão correspondente, não cria nada (fiel à regra
+  acima) e só loga um aviso.
+- **Tags nunca chegavam ao banco**: `diary_entries.tags TEXT[]` existe no schema desde
+  sempre, mas nem `_process_diary` lia a coluna "Tags" do CSV nem
+  `upsert_movie_from_letterboxd` aceitava/gravava um parâmetro `tags`. Corrigido nos dois
+  pontos — `diary.csv` e `reviews.csv` agora alimentam `diary_entries.tags`.
+- **Migração dos dados já importados incorretamente**: script one-time
+  `scripts/fix_letterboxd_fake_diary_sessions.py` (`--dry-run` por padrão, `--apply` remove
+  de fato com backup JSON prévio) — compara `diary_entries` contra os pares
+  `(letterboxd_uri, watched_date)` reais de `diary.csv`/`reviews.csv` e remove qualquer
+  sessão fabricada pelo bug antigo, recalculando `times_watched`/`last_watched_date` dos
+  filmes afetados.
+
 ## Correções de bugs conhecidos (spec 049)
 
 - **`search_movie(q)`**: além de buscar no TMDB, agora consulta `movies` em lote por
@@ -227,7 +255,7 @@ O campo `poster_palette` em `movies` armazena a paleta calculada na inserção.
 | Tool | Descrição |
 |---|---|
 | `search_movie(q)` | Busca no TMDB por texto — sem gravar |
-| `add_movie(title?, tmdb_id?, status, year?, letterboxd_uri?, source)` | Adiciona filme (com TMDB ou sem) |
+| `add_movie(title?, tmdb_id?, status, year?, letterboxd_uri?, source, enrich_tmdb, rating?)` | Adiciona filme (com TMDB ou sem); `rating` grava nota vinda do Letterboxd sem sessão associada |
 | `log_watch(movie_id, watched_date?, rating?, review?, tags?, rewatch?, source)` | Loga sessão + atualiza movies (transação) |
 | `rate_movie(movie_id, rating)` | Define nota (`rating_source='own'`) |
 | `set_like(movie_id, liked)` | Marca/desmarca ❤️ |
@@ -283,7 +311,8 @@ O campo `poster_palette` em `movies` armazena a paleta calculada na inserção.
 
 | Função | Descrição |
 |---|---|
-| `upsert_movie_from_letterboxd(title, year, letterboxd_uri, rating, review, watched_date, source, enrich_tmdb, created_at?)` | Upsert idempotente para RSS/CSV — `created_at` explícito (spec 050) garante ordem entre sessões do mesmo dia |
+| `upsert_movie_from_letterboxd(title, year, letterboxd_uri, rating, review, watched_date, source, enrich_tmdb, created_at?, tags?)` | Upsert idempotente para RSS/CSV — `created_at` explícito (spec 050) garante ordem entre sessões do mesmo dia; `tags` grava a etiqueta da sessão (diary.csv) |
+| `backfill_diary_review(letterboxd_uri, watched_date, review?, tags?)` | Preenche review/tags de uma sessão **já existente** (usada só por reviews.csv) — nunca cria sessão nova; só preenche o que estava vazio |
 
 ---
 
@@ -321,9 +350,24 @@ python -m scripts.import_letterboxd_csv ~/Downloads/letterboxd_export
 python -m scripts.import_letterboxd_csv ~/pasta --no-tmdb
 ```
 
-Ordem de processamento: `diary.csv` → `reviews.csv` → `watchlist.csv` → `ratings.csv` →
-`watched.csv` (fallback final, spec 050 FR-001 — filmes sem data confiável entram só como
-"assistido", sem sessão).
+Ordem de processamento: `diary.csv` (única fonte de sessão) → `reviews.csv` (preenche
+review/tags nas sessões já criadas, nunca cria sessão nova) → `watchlist.csv` →
+`ratings.csv` (fallback de catálogo: só a nota, sem sessão) → `watched.csv` (fallback
+final, spec 050 FR-001 — filmes sem data confiável entram só como "assistido", sem
+sessão).
+
+### `scripts/fix_letterboxd_fake_diary_sessions.py`
+
+Migração one-time (rodar uma vez, se a importação já foi feita antes da correção acima):
+remove sessões de `diary_entries` fabricadas pelo bug antigo do fallback de `ratings.csv`.
+
+```bash
+# Mostra o que seria removido, sem alterar nada:
+python -m scripts.fix_letterboxd_fake_diary_sessions letterboxd_export --dry-run
+
+# Remove de fato (grava backup JSON antes):
+python -m scripts.fix_letterboxd_fake_diary_sessions letterboxd_export --apply
+```
 
 **Para rodar no VPS** (banco está em container Docker):
 ```bash
