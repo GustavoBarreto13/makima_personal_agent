@@ -168,6 +168,11 @@
 
 /* Sidebar ─────────────────────────────────────────────────────────────────── */
 .ak-sidebar {
+  /* Coluna fixa: sem isso, o auto-placement do grid pode empurrar a sidebar
+     para uma 3ª coluna implícita quando a .ak-nextbar (grid-column: 1/3) ocupa
+     a coluna 1 da row 2 antes da sidebar ser posicionada — bug só visível
+     quando a nextbar renderiza (watchlist com itens). */
+  grid-column: 1;
   grid-row: 1/3;
   background: var(--paper-2);
   border-right: 1px solid var(--line);
@@ -322,6 +327,10 @@
 
 /* Área de conteúdo ──────────────────────────────────────────────────────────── */
 .ak-main {
+  /* Coluna/linha fixas — ver comentário em .ak-sidebar sobre o bug de
+     auto-placement que isso evita. */
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -362,7 +371,9 @@
 
 /* Nextbar (barra de próxima sessão) ─────────────────────────────────────────── */
 .ak-nextbar {
-  grid-column: 1/3;
+  /* Só a coluna do conteúdo — não por baixo da sidebar (que já ocupa as
+     duas rows da coluna 1 inteira). */
+  grid-column: 2;
   grid-row: 2;
   background: var(--nextbar-bg);
   backdrop-filter: blur(12px);
