@@ -647,10 +647,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_focus_sessions_open
 -- Histórico por dia/semana (agregação usa ended_at quando existe, senão started_at).
 CREATE INDEX IF NOT EXISTS idx_focus_sessions_started_at ON focus_sessions (started_at DESC);
 
--- Agregação por hábito (overview de foco + provider kaguya_focus) — spec 062.
-CREATE INDEX IF NOT EXISTS idx_focus_sessions_habit ON focus_sessions (habit_id)
-    WHERE habit_id IS NOT NULL;
-
 -- Preferência de duração (foco/pausa) lembrada entre sessões — tabela de 1 linha,
 -- mesmo padrão de calendar_prefs (fatia 019), mas com uma linha fixa (id=1) em vez
 -- de uma linha por fonte, já que aqui só existe UMA preferência global.
@@ -698,6 +694,14 @@ BEGIN
         ALTER TABLE focus_sessions DROP COLUMN completed;
     END IF;
 END $$;
+
+-- Agregação por hábito (overview de foco + provider kaguya_focus) — spec 062.
+-- DEVE vir DEPOIS do ALTER acima: em bancos pré-existentes a coluna habit_id só
+-- nasce naquele ALTER (o CREATE TABLE IF NOT EXISTS é no-op numa tabela que já
+-- existe), então criar o índice antes falharia com "column habit_id does not
+-- exist" (mesmo bug já corrigido para gtd_status/is_birthdays acima).
+CREATE INDEX IF NOT EXISTS idx_focus_sessions_habit ON focus_sessions (habit_id)
+    WHERE habit_id IS NOT NULL;
 
 
 -- ----------------------------------------------------------------------------
