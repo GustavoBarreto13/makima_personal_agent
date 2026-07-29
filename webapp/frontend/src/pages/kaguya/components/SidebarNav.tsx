@@ -44,6 +44,7 @@ const FIXED_VIEWS: { view: KaguyaView; icon: IconName; label: string }[] = [
   { view: 'habits',      icon: 'flame',    label: 'Hábitos'      },
   { view: 'experiments', icon: 'flask',    label: 'Experimentos' },
   { view: 'goals',       icon: 'target',   label: 'Metas'        },
+  { view: 'focus',       icon: 'timer',    label: 'Foco'         },
 ]
 
 // ── Props ─────────────────────────────────────────────────────────────────────

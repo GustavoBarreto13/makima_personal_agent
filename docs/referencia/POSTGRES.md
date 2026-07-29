@@ -609,6 +609,41 @@ Marcações diárias de um hábito.
 **Constraints:** `UNIQUE(habit_id, date)` — um check-in por dia por hábito.
 **Índices:** `idx_habit_checkins_date` em `(habit_id, date)`.
 
+### `focus_sessions` *(spec 037 — Foco/Pomodoro; `outcome`/`cancel_reason`/`habit_id` desde a spec 062)*
+
+Registro atômico de uma sessão de foco. Tudo mais (tempo restante, fase, streak, espécie da
+árvore, estatísticas) é **calculado na leitura** a partir de `started_at` — nada persistido
+derivado (motores puros `focus_stats.py`/`focus_achievements.py`, sem banco).
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `task_id` | INT | SIM | — | **FK** → `tasks(id)` `ON DELETE SET NULL`. Tarefa vinculada (`NULL` = avulsa ou vinculada só a um hábito). |
+| `habit_id` | INT | SIM | — | **FK** → `habits(id)` `ON DELETE SET NULL`. Hábito vinculado (spec 062) — concluir a sessão faz o check-in do hábito na mesma transação. |
+| `started_at` | TIMESTAMPTZ | NÃO | `NOW()` | Início da sessão. |
+| `ended_at` | TIMESTAMPTZ | SIM | — | `NULL` = sessão ativa (aberta). |
+| `duration_planned_min` | INT | NÃO | — | Minutos de foco planejados (congelado no início). |
+| `break_planned_min` | INT | NÃO | — | Minutos de pausa planejados (congelado no início). |
+| `outcome` | TEXT | SIM | — | `'completed'` \| `'cancelled'` \| `'abandoned'`; `NULL` enquanto aberta. **Substitui o antigo `completed` booleano (spec 062)** — distingue desistência ativa do usuário (`cancelled`, com `cancel_reason` opcional) de fechamento automático por timeout (`abandoned`, via `_close_if_abandoned`, sem job/cron). |
+| `cancel_reason` | TEXT | SIM | — | Motivo livre e opcional ("o que te tirou do foco?"), só preenchido quando `outcome='cancelled'`. |
+| `note` | TEXT | SIM | — | Nota opcional ao concluir. |
+
+**CHECK:** `outcome IN ('completed', 'cancelled', 'abandoned')`.
+**Índices:** `uq_focus_sessions_open` — único parcial `((true)) WHERE ended_at IS NULL` (no máximo
+uma sessão ativa por vez); `idx_focus_sessions_started_at` — `(started_at DESC)`;
+`idx_focus_sessions_habit` — `(habit_id) WHERE habit_id IS NOT NULL`.
+
+### `focus_prefs` *(spec 037 — Foco/Pomodoro)*
+
+Preferência de duração (foco/pausa) lembrada entre sessões — tabela de 1 linha fixa (`id=1`),
+mesmo padrão de `calendar_prefs` mas com uma única preferência global.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | INT | PK | `1` | Sempre `1` (`CHECK (id = 1)`). |
+| `focus_min` | INT | NÃO | `25` | Minutos de foco do último preset usado. |
+| `break_min` | INT | NÃO | `5` | Minutos de pausa do último preset usado. |
+
 ### `calendar_prefs` *(fatia 019 — Calendar Hub)*
 
 Preferências de exibição por fonte de calendário (visibilidade + cor), persistidas entre sessões.

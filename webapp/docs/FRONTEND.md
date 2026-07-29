@@ -314,9 +314,31 @@ do servidor em `GET /focus/active` — por isso sobrevive a reload sem perder pr
 de a sessão ter sido fechada por abandono). `FocusStartModal` — escolhe preset (25/5, 50/10) ou
 custom e inicia (confirma antes de encerrar uma sessão ativa existente); aberto a partir do
 botão "Focar" (ícone relógio) no cabeçalho do `TaskModal` (edição) ou do botão "Foco avulso" no
-topbar do shell (sem tarefa). `TodayScreen` (Meu Dia) ganhou a seção "🎯 Focado hoje" (tempo
-total + contagem de sessões) com uma mini-série de barras dos últimos 7 dias, só aparece se
-houver ao menos uma sessão no período.
+topbar do shell (sem tarefa).
+
+**Foco gameficado (spec 062) — floresta, vínculo com hábitos, overview de falhas.** Nova aba
+🔲 **Foco** (view `'focus'`, ícone `timer` — estava sem uso desde sempre) na `SidebarNav`, com
+tela própria `FocusScreen.tsx`: hero (streak · total focado · sessões · taxa de conclusão) →
+`FocusForest` (uma árvore por sessão, agrupada por dia — clicável) → `FocusHeatmap` (grade
+anual, classes `kg-fheat-*` próprias, não reusa `.kg-heat-*` dos hábitos) → `HourBars`
+("quando eu foco × quando eu largo", 24 colunas com concluído pra cima/falha pra baixo) →
+rankings por tarefa/lista/hábito → "padrão de falha" (taxa, tempo médio antes de desistir,
+motivos recentes em texto livre) → `FocusAchievements` (grid de badges com barra de progresso
+nas bloqueadas). Toggle de período (7 dias/30 dias/ano/tudo) refaz uma única chamada a
+`GET /focus/stats?start=&end=`.
+
+`ui/FocusTree.tsx` é a peça central — SVG puro, sem lib de gráfico (nenhuma existe no
+`package.json`, mesmo padrão de `nami/ui.tsx`): a espécie (broto/pequena/média/grande/murcha)
+é **derivada** da duração + do desfecho da sessão, nunca escolhida pelo usuário. `FocusWidget`
+passa a mostrar essa árvore crescendo em tempo real (`growth` 0..1, escala a copa via
+`transform: scale()`) em vez de só o `MM:SS`; o timer segue derivado de `started_at`, sem
+mudança nesse princípio. Desistir abre `FocusCancelModal` (a árvore já murchando + campo
+"o que te tirou do foco?" opcional) em vez de cancelar direto — `POST /focus/{id}/cancel` ganha
+`reason?`. `FocusStartModal` ganha um seletor de alvo (tarefa/hábito/avulso, com `<select>` de
+hábitos) quando aberto sem tarefa pré-definida; `HabitsScreen` ganha o botão "Focar neste
+hábito" por card. `TaskModal` mostra o tempo acumulado de foco (`GET /{id}/focus-summary`) ao
+lado do botão "Focar". `TodayScreen` troca a tirinha de barras cruas por árvores reais + streak
+da semana visível.
 
 **Meu Dia — contexto Trabalho/Pessoal (spec 038):** `TodayScreen` ganha um toggle
 "Dividido/Único" (segmented control, preferência lembrada em `localStorage` — chave

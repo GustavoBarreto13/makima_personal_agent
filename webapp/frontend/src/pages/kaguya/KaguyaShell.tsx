@@ -25,6 +25,7 @@ import { HabitModal } from './modals/HabitModal'
 import { ExperimentModal } from './modals/ExperimentModal'
 import { GoalModal } from './modals/GoalModal'
 import { FocusStartModal } from './modals/FocusStartModal'
+import { FocusCancelModal } from './modals/FocusCancelModal'
 import { FocusWidget } from './components/FocusWidget'
 import { TodayScreen } from './screens/TodayScreen'
 import { ListScreen } from './screens/ListScreen'
@@ -39,6 +40,7 @@ import { ExperimentsScreen } from './screens/ExperimentsScreen'
 import { ExperimentDetailScreen } from './screens/ExperimentDetailScreen'
 import { GoalsScreen } from './screens/GoalsScreen'
 import { GoalDetailScreen } from './screens/GoalDetailScreen'
+import { FocusScreen } from './screens/FocusScreen'
 import { EisenhowerScreen } from './screens/EisenhowerScreen'
 import { GroupBoardScreen } from './screens/GroupBoardScreen'
 import { GroupListScreen } from './screens/GroupListScreen'
@@ -123,7 +125,9 @@ export function KaguyaShell() {
   // Foco / Pomodoro (spec 037) — activeFocus é buscado no mount e a cada início de sessão;
   // o widget deriva o countdown localmente entre buscas (nunca conta do zero na tela).
   const [activeFocus, setActiveFocus] = useState<FocusSession | null>(null)
-  const [focusStartTarget, setFocusStartTarget] = useState<{ task?: Task } | 'closed'>('closed')
+  const [focusStartTarget, setFocusStartTarget] = useState<{ task?: Task; habitId?: number } | 'closed'>('closed')
+  // spec 062: "Desistir" no widget abre este modal (motivo opcional) em vez de cancelar direto.
+  const [focusCancelOpen, setFocusCancelOpen] = useState(false)
   const loadActiveFocus = useCallback(async () => {
     try { setActiveFocus(await kaguyaApi.focus.active()) } catch { /* silencioso — widget só some */ }
   }, [])
@@ -246,7 +250,7 @@ export function KaguyaShell() {
   const titleMap: Record<KaguyaView, string> = {
     today: 'Meu Dia', kanban: project?.name ?? 'Kanban', list: project?.name ?? 'Lista',
     calendar: 'Calendário', eisenhower: 'Eisenhower', habits: 'Hábitos',
-    experiments: 'Experimentos', goals: 'Metas', trash: 'Lixeira', archived: 'Arquivadas',
+    experiments: 'Experimentos', goals: 'Metas', focus: 'Foco', trash: 'Lixeira', archived: 'Arquivadas',
     filter: filterName,
     // 'group': nome do grupo no Kanban agregado.
     group: currentGroup?.name ?? 'Grupo',
@@ -344,6 +348,8 @@ export function KaguyaShell() {
         reloadKey={reloadKey}
         onNewHabit={() => setHabitModal({ mode: 'create' })}
         onEditHabit={(h) => setHabitModal({ mode: 'edit', habit: h })}
+        // Abre o FocusStartModal já travado neste hábito (spec 062).
+        onFocusHabit={(h) => setFocusStartTarget({ habitId: h.id })}
         toast={showToast}
       />
     )
@@ -385,6 +391,7 @@ export function KaguyaShell() {
         toast={showToast}
       />
     )
+    if (view === 'focus') return <FocusScreen reloadKey={reloadKey} toast={showToast} />
     if (view === 'eisenhower') return (
       <EisenhowerScreen
         projects={sidebar?.projects ?? []}
@@ -666,10 +673,11 @@ export function KaguyaShell() {
         toast={showToast}
       />
 
-      {/* Foco / Pomodoro (spec 037) */}
+      {/* Foco / Pomodoro gameficado (spec 037 + spec 062) */}
       {focusStartTarget !== 'closed' && (
         <FocusStartModal
           task={focusStartTarget.task}
+          habitId={focusStartTarget.habitId}
           onClose={() => setFocusStartTarget('closed')}
           onStarted={loadActiveFocus}
           toast={showToast}
@@ -679,14 +687,30 @@ export function KaguyaShell() {
         <FocusWidget
           session={activeFocus}
           onFinish={async () => {
-            await kaguyaApi.focus.finish(activeFocus.id)
+            const result = await kaguyaApi.focus.finish(activeFocus.id)
             setActiveFocus(null)
-            showToast('Sessão de foco concluída.')
+            bump() // FocusScreen/HabitsScreen abertos em outra aba do shell recarregam
+            showToast(
+              result?.session?.habit_checked_in
+                ? 'Sessão concluída — hábito marcado como feito hoje.'
+                : 'Sessão de foco concluída.',
+            )
           }}
-          onCancel={async () => {
-            await kaguyaApi.focus.cancel(activeFocus.id)
-            setActiveFocus(null)
-          }}
+          onCancel={() => setFocusCancelOpen(true)}
+        />
+      )}
+      {focusCancelOpen && activeFocus && (
+        <FocusCancelModal
+          sessionId={activeFocus.id}
+          // Minutos já decorridos até agora, nunca mais que o planejado (mesmo teto
+          // de tools_focus._duration_focused_min) — só para o preview da árvore murcha.
+          elapsedMin={Math.min(
+            activeFocus.duration_planned_min,
+            Math.max(0, Math.round((Date.now() - new Date(activeFocus.started_at).getTime()) / 60000)),
+          )}
+          onClose={() => setFocusCancelOpen(false)}
+          onCancelled={() => { setActiveFocus(null); bump() }}
+          toast={showToast}
         />
       )}
 

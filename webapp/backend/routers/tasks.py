@@ -96,12 +96,13 @@ from agents.kaguya.tools_review import (
     get_last_completed_review, list_review_history, list_waiting_ordered,
     mark_project_reviewed,
 )
-# Foco / Pomodoro — spec 037 (camada de lógica em agents/kaguya/tools_focus.py).
+# Foco / Pomodoro gameficado — spec 037 + spec 062 (camada de lógica em agents/kaguya/tools_focus.py).
 from agents.kaguya.tools import create_expense_reminder  # cross-agent (Nami) — spec 047, US4
 from agents.db import run_select  # checagem de duplicidade do lembrete (spec 047)
 from agents.kaguya.tools_focus import (
     get_focus_prefs, get_active_session, start_session, finish_session, cancel_session,
     get_focus_today, get_focus_week, get_focus_history,
+    get_focus_stats, get_focus_heatmap, get_focus_achievements, get_task_focus_summary,
 )
 
 router = APIRouter()
@@ -1646,13 +1647,16 @@ def clear_time_block_route(task_id: int, user: dict = Depends(require_user)) -> 
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Foco / Pomodoro — spec 037
+# Foco / Pomodoro gameficado — spec 037 + spec 062
 # ─────────────────────────────────────────────────────────────────────────────
 # Todas as rotas ficam sob /focus/* — nenhuma colide com /{task_id} (que é 1 segmento
 # só e exige int; /focus/... tem sempre 2+ segmentos, então nunca é ambíguo com ele).
+# A exceção é /tasks/{task_id}/focus-summary — 2 segmentos, também nunca colide com
+# /{task_id} sozinho.
 
 class StartFocusBody(BaseModel):
     task_id: Optional[int] = None
+    habit_id: Optional[int] = None  # spec 062 — "focar NO hábito X"
     focus_min: int
     break_min: int
     force: bool = False
@@ -1660,6 +1664,10 @@ class StartFocusBody(BaseModel):
 
 class FinishFocusBody(BaseModel):
     note: Optional[str] = None
+
+
+class CancelFocusBody(BaseModel):
+    reason: Optional[str] = None  # spec 062 — "o que te tirou do foco?" (pulável)
 
 
 @router.get("/focus/prefs")
@@ -1680,8 +1688,8 @@ def get_active_session_route(user: dict = Depends(require_user)) -> Optional[dic
 
 @router.post("/focus/start", status_code=201)
 def start_focus_route(body: StartFocusBody, user: dict = Depends(require_user)) -> dict:
-    """Inicia uma sessão de foco (de uma tarefa ou avulsa); 409 se já existe uma ativa."""
-    result = start_session(body.task_id, body.focus_min, body.break_min, body.force)
+    """Inicia uma sessão de foco (de uma tarefa, de um hábito, ou avulsa); 409 se já existe uma ativa."""
+    result = start_session(body.task_id, body.habit_id, body.focus_min, body.break_min, body.force)
     if result.get("status") == "error":
         raise HTTPException(status_code=409, detail=result.get("message"))
     return result
@@ -1691,14 +1699,20 @@ def start_focus_route(body: StartFocusBody, user: dict = Depends(require_user)) 
 def finish_focus_route(
     session_id: int, body: FinishFocusBody = FinishFocusBody(), user: dict = Depends(require_user)
 ) -> dict:
-    """Conclui a sessão ativa (antecipadamente ou no fim natural), com nota opcional."""
+    """Conclui a sessão ativa (antecipadamente ou no fim natural), com nota opcional.
+
+    Se a sessão tinha um hábito vinculado, o check-in é feito na mesma transação
+    (spec 062) — a resposta ecoa ``habit_checked_in`` para o frontend confirmar.
+    """
     return _check_result(finish_session(session_id, body.note))
 
 
 @router.post("/focus/{session_id}/cancel")
-def cancel_focus_route(session_id: int, user: dict = Depends(require_user)) -> dict:
-    """Cancela a sessão ativa — não entra nas estatísticas."""
-    return _check_result(cancel_session(session_id))
+def cancel_focus_route(
+    session_id: int, body: CancelFocusBody = CancelFocusBody(), user: dict = Depends(require_user)
+) -> dict:
+    """Cancela a sessão ativa — desistência ativa; motivo opcional em texto livre (spec 062)."""
+    return _check_result(cancel_session(session_id, body.reason))
 
 
 @router.get("/focus/today")
@@ -1718,8 +1732,41 @@ def get_focus_history_route(
     date: Optional[str] = Query(None, description="Dia local YYYY-MM-DD (vazio = hoje)"),
     user: dict = Depends(require_user),
 ) -> list[dict]:
-    """Sessões concluídas de um dia local, com tarefa/horário/duração."""
+    """Sessões ENCERRADAS de um dia local — inclui falhas, com ``outcome``/``cancel_reason`` (spec 062)."""
     return get_focus_history(date)  # listagem
+
+
+@router.get("/focus/stats")
+def get_focus_stats_route(
+    start: str = Query(..., description="Início do período, dia local YYYY-MM-DD"),
+    end: str = Query(..., description="Fim do período, dia local YYYY-MM-DD"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Payload único do overview de foco (spec 062) — totais, por dia/hora, desfechos,
+    streak, rankings e sessões cruas do período (para a floresta).
+    """
+    return get_focus_stats(start, end)  # listagem
+
+
+@router.get("/focus/heatmap")
+def get_focus_heatmap_route(
+    year: int = Query(..., description="Ano, ex.: 2026"),
+    user: dict = Depends(require_user),
+) -> list[dict]:
+    """Heatmap anual de minutos focados por dia (espelha ``/habits/{id}/history``)."""
+    return get_focus_heatmap(year)  # listagem
+
+
+@router.get("/focus/achievements")
+def get_focus_achievements_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Catálogo inteiro de conquistas de foco, avaliado contra o histórico completo."""
+    return get_focus_achievements()  # listagem
+
+
+@router.get("/{task_id}/focus-summary")
+def get_task_focus_summary_route(task_id: int, user: dict = Depends(require_user)) -> dict:
+    """Tempo acumulado de foco numa tarefa (cabeçalho do TaskModal)."""
+    return get_task_focus_summary(task_id)  # listagem
 
 
 # ─────────────────────────────────────────────────────────────────────────────

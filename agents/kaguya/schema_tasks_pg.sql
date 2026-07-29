@@ -625,11 +625,17 @@ CREATE TABLE IF NOT EXISTS focus_sessions (
     -- Tarefa vinculada (opcional — sessão "avulsa" quando NULL). ON DELETE SET NULL:
     -- apagar a tarefa não apaga a sessão, ela só vira avulsa (edge case do spec.md).
     task_id              INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    -- Hábito vinculado (opcional, spec 062) — "focar NO hábito X". Concluir a sessão
+    -- faz o check-in do hábito na mesma transação (ver tools_habits._check_in_on_cursor).
+    habit_id             INTEGER REFERENCES habits(id) ON DELETE SET NULL,
     started_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     ended_at             TIMESTAMPTZ,                 -- NULL = sessão ativa (aberta)
     duration_planned_min INTEGER NOT NULL,             -- foco planejado, congelado no início
     break_planned_min    INTEGER NOT NULL,             -- pausa planejada, congelada no início
-    completed            BOOLEAN,                      -- NULL enquanto aberta; true=concluída, false=cancelada/abandonada
+    -- Desfecho (spec 062, substitui o antigo `completed` booleano — distinguir desistência
+    -- de abandono é o que torna "onde falhei" visível). NULL enquanto a sessão está aberta.
+    outcome              TEXT CHECK (outcome IN ('completed', 'cancelled', 'abandoned')),
+    cancel_reason         TEXT,                        -- livre, opcional — só quando outcome='cancelled'
     note                 TEXT
 );
 
@@ -640,6 +646,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_focus_sessions_open
 
 -- Histórico por dia/semana (agregação usa ended_at quando existe, senão started_at).
 CREATE INDEX IF NOT EXISTS idx_focus_sessions_started_at ON focus_sessions (started_at DESC);
+
+-- Agregação por hábito (overview de foco + provider kaguya_focus) — spec 062.
+CREATE INDEX IF NOT EXISTS idx_focus_sessions_habit ON focus_sessions (habit_id)
+    WHERE habit_id IS NOT NULL;
 
 -- Preferência de duração (foco/pausa) lembrada entre sessões — tabela de 1 linha,
 -- mesmo padrão de calendar_prefs (fatia 019), mas com uma linha fixa (id=1) em vez
@@ -652,6 +662,42 @@ CREATE TABLE IF NOT EXISTS focus_prefs (
 
 INSERT INTO focus_prefs (id, focus_min, break_min) VALUES (1, 25, 5)
 ON CONFLICT (id) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
+-- focus_sessions.outcome/cancel_reason/habit_id — Foco gameficado (spec 062)
+-- ----------------------------------------------------------------------------
+-- Bancos pré-existentes: colunas soltas primeiro (padrão do arquivo, ver nota da
+-- linha ~160), constraint em bloco condicional, backfill, e só então remoção da
+-- coluna antiga — em qualquer ordem que essa migração rode, ela é idempotente.
+ALTER TABLE focus_sessions ADD COLUMN IF NOT EXISTS habit_id INTEGER REFERENCES habits(id) ON DELETE SET NULL;
+ALTER TABLE focus_sessions ADD COLUMN IF NOT EXISTS outcome TEXT;
+ALTER TABLE focus_sessions ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'focus_sessions_outcome_check'
+    ) THEN
+        ALTER TABLE focus_sessions ADD CONSTRAINT focus_sessions_outcome_check
+            CHECK (outcome IN ('completed', 'cancelled', 'abandoned'));
+    END IF;
+END $$;
+
+-- Backfill do antigo `completed` booleano: true -> completed, false -> cancelled.
+-- Não há como recuperar retroativamente quais eram abandonos (a distinção só passou
+-- a existir com o outcome) — sessões passadas encerradas por timeout ficam como
+-- 'cancelled', não 'abandoned'. Só roda em bancos que ainda têm a coluna antiga.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'focus_sessions' AND column_name = 'completed'
+    ) THEN
+        UPDATE focus_sessions SET outcome = 'completed' WHERE completed IS TRUE AND outcome IS NULL;
+        UPDATE focus_sessions SET outcome = 'cancelled' WHERE completed IS FALSE AND outcome IS NULL;
+        ALTER TABLE focus_sessions DROP COLUMN completed;
+    END IF;
+END $$;
 
 
 -- ----------------------------------------------------------------------------

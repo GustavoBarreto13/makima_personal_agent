@@ -3,7 +3,7 @@
 // (cada uma com prioridade + descrição próprias).
 
 import { useState, useEffect } from 'react'
-import type { Task, Project, TaskType, RecurrenceMode, Tag, Person, GtdStatus, TaskContext } from '../types'
+import type { Task, Project, TaskType, RecurrenceMode, Tag, Person, GtdStatus, TaskContext, TaskFocusSummary } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 import { Avatar, AvatarStack } from '../components/People'
@@ -133,6 +133,8 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
   // Catálogo completo de pessoas da Komi (carregado lazy no mount).
   const [people, setPeople] = useState<Person[]>([])
   const [askDelete, setAskDelete] = useState(false)   // confirmação de exclusão (escopo na recorrente)
+  // Tempo acumulado de foco nesta tarefa (spec 062) — só existe em edição (task_id real).
+  const [focusSummary, setFocusSummary] = useState<TaskFocusSummary | null>(null)
   // Aniversário repete todo ano automaticamente no backend — escondemos o controle manual.
   const isRecurring = task?.recurrence?.active === true
 
@@ -201,6 +203,11 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
     kaguyaApi.listPeople().then(setPeople).catch(() => { /* silencioso */ })
     // Carrega contextos de execução — spec 034.
     kaguyaApi.listContexts().then(setContexts).catch(() => { /* silencioso */ })
+    // Tempo acumulado de foco (spec 062) — só em edição, a tarefa já tem id real.
+    if (mode === 'edit' && task) {
+      kaguyaApi.focus.taskSummary(task.id).then(setFocusSummary).catch(() => { /* silencioso — badge só some */ })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Salva a tarefa principal (cria ou edita), incluindo a recorrência e a duração.
@@ -384,17 +391,30 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
       <div className={`kg-modal kg-modal-wide${notesCollapsed ? ' kg-notes-collapsed' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="kg-modal-head">
           <h3>{mode === 'create' ? 'Nova tarefa' : 'Editar tarefa'}</h3>
-          {/* Foco / Pomodoro (spec 037) — só em edição, tarefa já existe (task_id real). */}
+          {/* Foco / Pomodoro (spec 037 + 062) — só em edição, tarefa já existe (task_id real). */}
           {mode === 'edit' && task && onFocus && (
-            <button
-              className="kg-icon-btn"
-              style={{ marginLeft: 'auto', border: 'none', padding: 4 }}
-              onClick={() => onFocus(task)}
-              aria-label="Focar nesta tarefa"
-              title="Focar nesta tarefa"
-            >
-              <Icon name="clock" size={15} />
-            </button>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {focusSummary != null && focusSummary.sessoes > 0 && (
+                <span
+                  className="kg-page-sub"
+                  style={{ fontSize: 11 }}
+                  title={`${focusSummary.sessoes} sessão${focusSummary.sessoes === 1 ? '' : 'ões'} concluída${focusSummary.sessoes === 1 ? '' : 's'}`}
+                >
+                  ⏱ {focusSummary.total_min < 60
+                    ? `${focusSummary.total_min}min`
+                    : `${Math.floor(focusSummary.total_min / 60)}h${String(focusSummary.total_min % 60).padStart(2, '0')}`} focados
+                </span>
+              )}
+              <button
+                className="kg-icon-btn"
+                style={{ border: 'none', padding: 4 }}
+                onClick={() => onFocus(task)}
+                aria-label="Focar nesta tarefa"
+                title="Focar nesta tarefa"
+              >
+                <Icon name="clock" size={15} />
+              </button>
+            </div>
           )}
           {/* Reabrir o editor de notas quando colapsado. Acento quando há nota escondida. */}
           {notesCollapsed && (

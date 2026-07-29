@@ -88,12 +88,13 @@ from agents.kaguya.tools_review import (  # noqa: F401
     get_last_completed_review, list_review_history, list_waiting_ordered,
     mark_project_reviewed, get_reminder_summary,
 )
-# Foco / Pomodoro — spec 037. Webapp-only: nenhuma destas funções é registrada no agente
-# ADK (mesma decisão das specs 024/029/030/035/036) — o router REST (/api/tasks/focus/*)
-# consome direto daqui.
+# Foco / Pomodoro gameficado — spec 037 + spec 062. Webapp-only: nenhuma destas funções é
+# registrada no agente ADK (mesma decisão das specs 024/029/030/035/036) — o router REST
+# (/api/tasks/focus/*) consome direto daqui.
 from agents.kaguya.tools_focus import (  # noqa: F401
     get_focus_prefs, get_active_session, start_session, finish_session, cancel_session,
     get_focus_today, get_focus_week, get_focus_history,
+    get_focus_stats, get_focus_heatmap, get_focus_achievements, get_task_focus_summary,
 )
 
 

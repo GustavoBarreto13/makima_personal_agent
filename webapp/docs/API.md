@@ -567,22 +567,28 @@ o **estado da revisão em si**.
 O lembrete de domingo (US3) não tem rota REST — é enviado direto ao Telegram pelo job agendado
 `weekly_review_reminder` (ver `scheduler/CLAUDE.md`).
 
-### Foco / Pomodoro (spec 037)
+### Foco gameficado (spec 037 + spec 062)
 
 Tempo restante nunca é contado só no cliente — `/focus/active` traz `started_at`/duração e o
 widget deriva o countdown localmente entre buscas. `/focus/active` também fecha automaticamente
-qualquer sessão abandonada antes de responder (crédito no máximo o tempo de foco planejado).
+qualquer sessão abandonada antes de responder (crédito no máximo o tempo de foco planejado,
+`outcome='abandoned'`). Streak, espécie da árvore e conquistas são sempre calculados na leitura
+— nenhuma delas tem coluna própria no banco.
 
 | Método | Rota | O que faz |
 |---|---|---|
 | `GET` | `/api/tasks/focus/prefs` | Preferência atual de duração (foco/pausa), lembrada entre sessões. |
-| `GET` | `/api/tasks/focus/active` | Sessão ativa (com `phase`/`remaining_sec`), ou `null`. |
-| `POST` | `/api/tasks/focus/start` | Inicia uma sessão (`task_id?`, `focus_min`, `break_min`, `force?`); 409 se já existe uma ativa e `force` é falso. |
-| `POST` | `/api/tasks/focus/{id}/finish` | Conclui a sessão ativa (`note?` opcional); registra o tempo efetivamente focado. |
-| `POST` | `/api/tasks/focus/{id}/cancel` | Cancela a sessão ativa — não entra nas estatísticas. |
+| `GET` | `/api/tasks/focus/active` | Sessão ativa (com `phase`/`remaining_sec`/`growth`), ou `null`. |
+| `POST` | `/api/tasks/focus/start` | Inicia uma sessão (`task_id?`, `habit_id?`, `focus_min`, `break_min`, `force?`); 409 se já existe uma ativa e `force` é falso. |
+| `POST` | `/api/tasks/focus/{id}/finish` | Conclui a sessão ativa (`note?` opcional); registra `outcome='completed'` e, se houver `habit_id`, faz o check-in do hábito na mesma transação (`habit_checked_in` na resposta). |
+| `POST` | `/api/tasks/focus/{id}/cancel` | Cancela a sessão ativa (`reason?` opcional, texto livre) — `outcome='cancelled'`. |
 | `GET` | `/api/tasks/focus/today` | Resumo do dia local: tempo total focado + número de sessões. |
 | `GET` | `/api/tasks/focus/week` | Série dos últimos 7 dias locais (hoje incluso). |
-| `GET` | `/api/tasks/focus/history` | Sessões concluídas de um dia local (`?date=`; vazio = hoje). |
+| `GET` | `/api/tasks/focus/history` | Sessões **encerradas** de um dia local (`?date=`; vazio = hoje) — inclui canceladas/abandonadas, com `outcome`/`cancel_reason`. |
+| `GET` | `/api/tasks/focus/stats?start=&end=` | Payload único do overview: totais, série por dia/hora, desfechos, streak, rankings e sessões cruas do período (spec 062). |
+| `GET` | `/api/tasks/focus/heatmap?year=` | Heatmap anual de minutos focados por dia. |
+| `GET` | `/api/tasks/focus/achievements` | Catálogo inteiro de conquistas, avaliado contra o histórico completo. |
+| `GET` | `/api/tasks/{task_id}/focus-summary` | Tempo acumulado de foco numa tarefa (cabeçalho do `TaskModal`). |
 
 ### Meu Dia — contexto Trabalho/Pessoal (spec 038)
 

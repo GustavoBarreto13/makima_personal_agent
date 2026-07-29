@@ -14,6 +14,7 @@ interface HabitsScreenProps {
   reloadKey: number                       // muda → recarrega a lista (após salvar no modal)
   onNewHabit: () => void                  // abre o HabitModal em modo criar
   onEditHabit: (h: Habit) => void         // abre o HabitModal em modo editar
+  onFocusHabit: (h: Habit) => void        // abre o FocusStartModal travado neste hábito (spec 062)
   toast: (msg: string, kind?: 'ok' | 'err') => void
 }
 
@@ -32,7 +33,7 @@ function freqText(fn: number, fd: number): string {
   return `${fn}× a cada ${fd} dias`
 }
 
-export function HabitsScreen({ reloadKey, onNewHabit, onEditHabit, toast }: HabitsScreenProps) {
+export function HabitsScreen({ reloadKey, onNewHabit, onEditHabit, onFocusHabit, toast }: HabitsScreenProps) {
   const [habits, setHabits] = useState<Habit[] | null>(null)
   // Hábito mensurável com o campo de valor aberto (id → texto digitado).
   const [valueInput, setValueInput] = useState<Record<number, string>>({})
@@ -180,6 +181,10 @@ export function HabitsScreen({ reloadKey, onNewHabit, onEditHabit, toast }: Habi
                         {h.done_today ? 'Feito hoje' : 'Hoje'}
                       </button>
                     )}
+                    {/* Focar neste hábito (spec 062) — abre o FocusStartModal já travado nele. */}
+                    <button className="kg-icon-btn" onClick={() => onFocusHabit(h)} aria-label="Focar" title="Focar neste hábito">
+                      <Icon name="timer" size={16} />
+                    </button>
                     <button className="kg-icon-btn" onClick={() => toggleHeatmap(h.id)} aria-label="Histórico" title="Histórico anual">
                       <Icon name={isOpen ? 'chevronDown' : 'chevron'} size={16} />
                     </button>

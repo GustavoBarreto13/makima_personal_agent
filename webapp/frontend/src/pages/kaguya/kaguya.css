@@ -57,6 +57,10 @@
   --kg-heat-3: oklch(0.70 0.14 158);
   --kg-heat-4: oklch(0.60 0.16 158);
 
+  /* árvore murcha do Foco gameficado (spec 062) — tronco/folhas secas */
+  --kg-wilt: oklch(0.60 0.05 55);
+  --kg-fail: oklch(0.62 0.16 30);
+
   /* raios e sombras */
   --kg-r-sm: 7px;
   --kg-r-md: 12px;
@@ -100,6 +104,8 @@
   --kg-heat-2: oklch(0.52 0.10 158);
   --kg-heat-3: oklch(0.62 0.13 158);
   --kg-heat-4: oklch(0.72 0.15 158);
+  --kg-wilt: oklch(0.52 0.045 55);
+  --kg-fail: oklch(0.68 0.16 30);
   --p-high: oklch(0.70 0.185 25);
   --p-med: oklch(0.80 0.128 82);
   --p-low: oklch(0.70 0.090 248);
@@ -2155,27 +2161,145 @@
 }
 .kg-goal-outcome.active { background: var(--kg-tint); border-color: var(--kg); color: var(--kg-deep, var(--kg)); }
 
-/* ── Foco / Pomodoro (spec 037) ─────────────────────────────────────────── */
+/* ── Foco / Pomodoro gameficado (spec 037 + spec 062) ────────────────────── */
 /* Widget flutuante persistente — fixo no canto, acima de tudo, visível em qualquer view. */
 .kg-focus-widget {
   position: fixed; right: 20px; bottom: 20px; z-index: 80;
   display: flex; align-items: center; gap: 10px;
-  padding: 10px 14px; border-radius: var(--kg-r-md, 12px);
+  padding: 8px 12px; border-radius: var(--kg-r-md, 12px);
   background: var(--card); border: 1px solid var(--line);
   box-shadow: 0 6px 20px oklch(0 0 0 / 0.18);
 }
-.kg-focus-widget-phase { font-size: 12px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
-.kg-focus-widget-time { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--kg); }
-.kg-focus-widget-task { font-size: 12px; color: var(--ink-4); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kg-focus-widget-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.kg-focus-widget-phase { font-size: 11px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.kg-focus-widget-time { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--kg); line-height: 1.1; }
+.kg-focus-widget-task { font-size: 11px; color: var(--ink-4); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kg-focus-widget-actions { display: flex; gap: 4px; }
 
-/* Resumo "Focado hoje" + série da semana no Meu Dia. */
+/* Resumo "Focado hoje" + streak + árvores da semana no Meu Dia. */
 .kg-focus-summary { display: flex; align-items: center; gap: 14px; padding: 10px 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-sm); margin-bottom: 14px; }
 .kg-focus-summary-main { font-size: 14px; font-weight: 600; color: var(--ink); }
-.kg-focus-summary-week { display: flex; gap: 4px; margin-left: auto; }
-.kg-focus-summary-day { width: 18px; border-radius: 3px; background: var(--kg-tint); }
+.kg-focus-summary-week { display: flex; align-items: flex-end; gap: 4px; margin-left: auto; }
+.kg-focus-summary-day { display: flex; align-items: flex-end; justify-content: center; width: 26px; height: 26px; }
+.kg-focus-summary-empty { width: 6px; height: 6px; border-radius: 50%; background: var(--line-2); }
 
 /* ── Meu Dia — contexto Trabalho/Pessoal (spec 038) ─────────────────────── */
 .kg-myday-viewtoggle { display: flex; justify-content: flex-end; margin: 8px 0 4px; }
 .kg-myday-context-block { margin-bottom: 24px; }
 .kg-myday-context-head { font-size: 13px; font-weight: 700; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line-2); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Foco gameficado — Floresta, Heatmap, Horas, Conquistas (spec 062)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── FocusTree (ui/FocusTree.tsx) ─────────────────────────────────────────── */
+.kg-tree { flex: 0 0 auto; overflow: visible; }
+.kg-tree-murcha .kg-tree-wilted { opacity: 0.9; }
+
+/* ── FocusScreen — cabeçalho + hero ───────────────────────────────────────── */
+.kg-focus-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.kg-focus-hero {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+  margin-bottom: 28px;
+}
+.kg-focus-hero-stat {
+  display: flex; flex-direction: column; gap: 2px; padding: 14px 16px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-md);
+}
+.kg-focus-hero-value { font-family: var(--display); font-size: 22px; font-weight: 800; color: var(--ink); }
+.kg-focus-hero-label { font-size: 11px; color: var(--ink-4); text-transform: uppercase; letter-spacing: .03em; }
+
+/* ── Seções genéricas da tela ──────────────────────────────────────────────── */
+.kg-focus-section { margin-bottom: 32px; }
+.kg-focus-section-title { font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--ink-2); margin-bottom: 10px; }
+
+/* ── FocusForest (ui/FocusForest.tsx) ─────────────────────────────────────── */
+.kg-forest { display: flex; flex-direction: column; gap: 2px; }
+.kg-forest-row {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 8px 10px; border-radius: var(--kg-r-sm); border: none;
+  background: transparent; cursor: pointer; text-align: left; font: inherit; color: inherit;
+  transition: background .15s;
+}
+.kg-forest-row:hover { background: var(--card-2); }
+.kg-forest-day { display: flex; flex-direction: column; align-items: flex-start; flex: 0 0 88px; gap: 1px; }
+.kg-forest-date { font-size: 12.5px; font-weight: 600; color: var(--ink-2); text-transform: capitalize; }
+.kg-forest-min { font-size: 11px; color: var(--ink-4); }
+.kg-forest-trees { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 2px; }
+
+/* ── FocusHeatmap (ui/FocusHeatmap.tsx) — mesma estrutura de HabitHeatmap,
+   classes próprias (kg-fheat-*), NÃO reusar .kg-heat-* dos hábitos. ────────── */
+.kg-fheat { display: flex; flex-direction: column; gap: 10px; }
+.kg-fheat-months { display: flex; flex-wrap: wrap; gap: 14px; }
+.kg-fheat-month { display: flex; flex-direction: column; gap: 4px; }
+.kg-fheat-head { display: flex; align-items: baseline; gap: 6px; }
+.kg-fheat-name { font-size: 11px; font-weight: 700; color: var(--ink-2); text-transform: uppercase; }
+.kg-fheat-sum { font-size: 10px; color: var(--ink-4); }
+.kg-fheat-cells { display: grid; grid-template-columns: repeat(7, 9px); grid-auto-flow: column; gap: 2px; }
+.kg-fheat-cell { width: 9px; height: 9px; border-radius: 2px; }
+.kg-fheat-legend { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--ink-4); }
+.kg-fheat-sw { display: flex; gap: 2px; }
+.kg-fheat-sw i { display: block; width: 9px; height: 9px; border-radius: 2px; }
+
+/* ── HourBars (ui/HourBars.tsx) — concluído pra cima, falhado pra baixo ─────── */
+.kg-hourbars { display: flex; flex-direction: column; gap: 6px; }
+.kg-hourbars-grid { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; height: 120px; }
+.kg-hourbars-col { display: flex; flex-direction: column; height: 100%; }
+.kg-hourbars-up { flex: 1 1 0; display: flex; align-items: flex-end; }
+.kg-hourbars-down { flex: 1 1 0; display: flex; align-items: flex-start; }
+.kg-hourbars-axis { height: 1px; background: var(--line-2); }
+.kg-hourbars-bar { width: 100%; border-radius: 2px; min-height: 0; transition: height .2s; }
+.kg-hourbars-bar-up { background: var(--kg); }
+.kg-hourbars-bar-down { background: var(--kg-fail); }
+.kg-hourbars-labels { display: grid; grid-template-columns: repeat(24, 1fr); }
+.kg-hourbars-label { font-size: 9px; color: var(--ink-4); text-align: center; font-variant-numeric: tabular-nums; }
+.kg-hourbars-legend { display: flex; gap: 14px; font-size: 11px; color: var(--ink-4); margin-top: 2px; }
+.kg-hourbars-legend span { display: flex; align-items: center; gap: 5px; }
+.kg-hourbars-sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
+.kg-hourbars-sw-up { background: var(--kg); }
+.kg-hourbars-sw-down { background: var(--kg-fail); }
+
+/* ── Rankings "onde eu foco" ───────────────────────────────────────────────── */
+.kg-focus-rankings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.kg-focus-ranking { display: flex; flex-direction: column; gap: 6px; padding: 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-md); }
+.kg-focus-ranking-title { font-size: 11px; font-weight: 700; color: var(--ink-4); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+.kg-focus-ranking-row { display: flex; align-items: center; gap: 8px; }
+.kg-focus-ranking-label { flex: 0 0 auto; max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--ink-2); }
+.kg-focus-ranking-track { flex: 1 1 auto; height: 6px; background: var(--card-2); border-radius: 3px; overflow: hidden; }
+.kg-focus-ranking-fill { height: 100%; background: var(--kg); border-radius: 3px; }
+.kg-focus-ranking-min { flex: 0 0 auto; font-size: 11px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
+
+/* ── Padrão de falha ("onde eu falhei") ────────────────────────────────────── */
+.kg-focus-fail-stats { display: flex; gap: 14px; margin-bottom: 12px; }
+.kg-focus-fail-stat { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-sm); }
+.kg-focus-fail-value { font-size: 18px; font-weight: 700; color: var(--kg-fail); }
+.kg-focus-fail-label { font-size: 11px; color: var(--ink-4); }
+.kg-focus-reasons { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.kg-focus-reason { display: flex; gap: 10px; padding: 8px 10px; background: var(--card-2); border-radius: var(--kg-r-sm); font-size: 12.5px; }
+.kg-focus-reason-date { flex: 0 0 auto; color: var(--ink-4); text-transform: capitalize; }
+.kg-focus-reason-text { color: var(--ink-2); font-style: italic; }
+
+/* ── FocusAchievements (components/FocusAchievements.tsx) ────────────────────── */
+.kg-fach-summary { font-size: 12px; color: var(--ink-4); margin-bottom: 10px; }
+.kg-fach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.kg-fach-badge {
+  display: flex; flex-direction: column; gap: 3px; padding: 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--kg-r-md);
+}
+.kg-fach-badge.locked { opacity: 0.55; }
+.kg-fach-badge.unlocked { border-color: var(--kg-tint-2); background: var(--kg-tint); }
+.kg-fach-icon { font-size: 20px; line-height: 1; }
+.kg-fach-name { font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.kg-fach-desc { font-size: 10.5px; color: var(--ink-4); line-height: 1.3; }
+.kg-fach-progress { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.kg-fach-progress-track { flex: 1 1 auto; height: 4px; background: var(--card-2); border-radius: 2px; overflow: hidden; }
+.kg-fach-progress-fill { height: 100%; background: var(--kg); border-radius: 2px; }
+.kg-fach-progress-label { flex: 0 0 auto; font-size: 9.5px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
+
+/* ── FocusCancelModal (modals/FocusCancelModal.tsx) ──────────────────────────── */
+.kg-focus-cancel-tree { display: flex; justify-content: center; padding: 8px 0; }
+
+@media (max-width: 720px) {
+  .kg-focus-hero { grid-template-columns: repeat(2, 1fr); }
+  .kg-focus-rankings { grid-template-columns: 1fr; }
+}

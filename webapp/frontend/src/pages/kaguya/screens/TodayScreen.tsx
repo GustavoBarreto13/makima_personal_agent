@@ -32,6 +32,7 @@ import { useDndSensors } from '../lib/dnd'
 // Helpers canônicos de data (nunca toISOString — usa partes locais do navegador).
 import { toISO, localISO, todayISO } from '../lib/dateUtils'
 import { Icon } from '../ui/Icons'
+import { FocusTree } from '../ui/FocusTree'
 
 // Capacity vazia para o estado inicial (antes do fetch).
 const EMPTY_CAP = {
@@ -83,6 +84,19 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
     kaguyaApi.focus.today().then(setFocusToday).catch(() => { /* seção some se falhar */ })
     kaguyaApi.focus.week().then(setFocusWeek).catch(() => { /* seção some se falhar */ })
   }, [reloadKey])
+
+  // Sequência de dias seguidos DENTRO da janela visível de 7 dias (aproximação leve
+  // para o resumo do Meu Dia — o streak COMPLETO, sobre o histórico inteiro, vive na
+  // tela Foco/GET focus/stats; aqui não vale a pena puxar o payload inteiro só para
+  // um número no cabeçalho).
+  const weekStreak = (days: FocusDayStats[]): number => {
+    let streak = 0
+    for (let i = days.length - 1; i >= 0; i--) {
+      if (days[i].sessoes > 0) streak++
+      else break
+    }
+    return streak
+  }
 
   // Sensor centralizado: PointerSensor com 5px de ativação.
   const sensors = useDndSensors()
@@ -267,21 +281,21 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
         {/* Hero: saudação + data + 3 stats + retrato */}
         <DayHero capacity={capacity} />
 
-        {/* Resumo de foco (spec 037, US3) — tempo total + sessões de hoje + série da semana */}
+        {/* Resumo de foco gameficado (spec 062) — tempo/sessões de hoje + streak + árvores da semana */}
         {focusToday && (focusToday.sessoes > 0 || (focusWeek?.days.some(d => d.sessoes > 0))) && (
           <div className="kg-focus-summary">
             <span className="kg-focus-summary-main">
               🎯 Focado hoje: {Math.floor(focusToday.total_min / 60)}h{String(focusToday.total_min % 60).padStart(2, '0')} · {focusToday.sessoes} {focusToday.sessoes === 1 ? 'sessão' : 'sessões'}
+              {focusWeek && weekStreak(focusWeek.days) > 1 && ` · 🔥 ${weekStreak(focusWeek.days)} dias seguidos`}
             </span>
             {focusWeek && (
-              <div className="kg-focus-summary-week" title="Últimos 7 dias">
+              <div className="kg-focus-summary-week" title="Últimos 7 dias — uma árvore por dia com foco">
                 {focusWeek.days.map(d => (
-                  <div
-                    key={d.date}
-                    className="kg-focus-summary-day"
-                    style={{ height: Math.max(4, Math.min(28, d.total_min / 4)) }}
-                    title={`${d.date}: ${d.total_min}min`}
-                  />
+                  <div key={d.date} className="kg-focus-summary-day" title={`${d.date}: ${d.total_min}min`}>
+                    {d.sessoes > 0
+                      ? <FocusTree minutes={d.total_min} outcome="completed" size={24} />
+                      : <div className="kg-focus-summary-empty" />}
+                  </div>
                 ))}
               </div>
             )}

@@ -42,7 +42,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | Agente | Domínio | Status | Documentação |
 |---|---|---|---|
 | `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1 | `agents/nami/CLAUDE.md` |
-| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) | ✅ Fases 2, 011–020, 024–026, 029–030 | `agents/kaguya/CLAUDE.md` |
+| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + Foco gameficado (037/062) | ✅ Fases 2, 011–020, 024–026, 029–030, 037, 062 | `agents/kaguya/CLAUDE.md` |
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada | ✅ Fase 027 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) | ✅ Fase 5a | `agents/frieren/CLAUDE.md` |
 | `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015 | `agents/akane/CLAUDE.md` |
@@ -188,6 +188,10 @@ makima_personal_agent/
 │   │   ├── capacity.py         # motor PURO (sem banco): compute_capacity() — fatia 016
 │   │   ├── experiment_adherence.py # motor PURO de aderência dos experimentos — spec 029
 │   │   ├── goal_progress.py    # motor PURO de progresso das metas — spec 030
+│   │   ├── tools_focus.py      # sessões de foco (start/finish/cancel/stats/heatmap/achievements) — spec 037 + 062
+│   │   ├── focus_stats.py      # motor PURO de estatísticas de foco (dia/hora/desfecho/streak/ranking) — spec 037 + 062
+│   │   ├── focus_achievements.py # motor PURO: catálogo fixo de conquistas de foco — spec 062
+│   │   ├── focus_habit_provider.py # fonte automática "Foco (Kaguya)" p/ habit_source_providers — spec 062
 │   │   ├── komi_sync.py        # sync bidirecional de aniversários com a Komi — spec 026
 │   │   ├── gcal.py             # cliente Google Calendar (read all / write main) — fatia 019
 │   │   ├── gcal_sync.py        # espelho best-effort de tarefas → GCal "Kaguya — Tarefas" — fatia 019

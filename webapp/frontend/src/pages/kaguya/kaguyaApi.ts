@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry, WorkContext, ArchivedProject } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry, FocusStats, FocusHeatDay, FocusAchievement, TaskFocusSummary, FinishFocusResult, WorkContext, ArchivedProject } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -406,22 +406,30 @@ export const kaguyaApi = {
     return api.del<MutationResult>(`${BASE}/calendar/events/${id}${qs}`)
   },
 
-  // ── Foco / Pomodoro — spec 037 ───────────────────────────────────────────────
+  // ── Foco / Pomodoro gameficado — spec 037 + spec 062 ─────────────────────────
   // Tempo restante NUNCA é contado só no cliente — active() traz started_at/duration
   // e o widget deriva o countdown local entre polls (R1/R7 do plano).
   focus: {
     prefs: () => api.get<FocusPrefs>(`${BASE}/focus/prefs`),
     active: () => api.get<FocusSession | null>(`${BASE}/focus/active`),
-    start: (body: { task_id?: number | null; focus_min: number; break_min: number; force?: boolean }) =>
+    start: (body: { task_id?: number | null; habit_id?: number | null; focus_min: number; break_min: number; force?: boolean }) =>
       api.post<FocusSession>(`${BASE}/focus/start`, body),
     finish: (id: number, note?: string) =>
-      api.post<MutationResult>(`${BASE}/focus/${id}/finish`, { note }),
-    cancel: (id: number) =>
-      api.post<MutationResult>(`${BASE}/focus/${id}/cancel`, {}),
+      api.post<FinishFocusResult>(`${BASE}/focus/${id}/finish`, { note }),
+    cancel: (id: number, reason?: string) =>
+      api.post<MutationResult>(`${BASE}/focus/${id}/cancel`, { reason }),
     today: () => api.get<FocusDayStats>(`${BASE}/focus/today`),
     week: () => api.get<FocusWeekStats>(`${BASE}/focus/week`),
     history: (date?: string) =>
       api.get<FocusHistoryEntry[]>(`${BASE}/focus/history${date ? `?date=${date}` : ''}`),
+    stats: (start: string, end: string) =>
+      api.get<FocusStats>(`${BASE}/focus/stats?start=${start}&end=${end}`),
+    heatmap: (year: number) =>
+      api.get<FocusHeatDay[]>(`${BASE}/focus/heatmap?year=${year}`),
+    achievements: () =>
+      api.get<FocusAchievement[]>(`${BASE}/focus/achievements`),
+    taskSummary: (taskId: number) =>
+      api.get<TaskFocusSummary>(`${BASE}/${taskId}/focus-summary`),
   },
 }
 

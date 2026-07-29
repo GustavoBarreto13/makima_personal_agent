@@ -17,7 +17,7 @@ manuais a cada consulta (R4 do research.md) — não há job de sincronização.
 Usage:
     >>> from agents.kaguya.habit_source_providers import list_providers, get_activity
     >>> list_providers()
-    [{'id': 'violet_diary', 'name': 'Diário (Violet)'}, {'id': 'frieren_reading', 'name': 'Leitura (Frieren)'}]
+    [{'id': 'violet_diary', 'name': 'Diário (Violet)'}, {'id': 'frieren_reading', 'name': 'Leitura (Frieren)'}, {'id': 'kaguya_focus', 'name': 'Foco (Kaguya)'}]
     >>> get_activity("violet_diary", "2026-07-01", "2026-07-31")
     {'2026-07-05': 1.0}
 """
@@ -107,4 +107,11 @@ register(
 register(
     "frieren_reading", "Leitura (Frieren)",
     _try_import_provider("agents.frieren.habit_provider", "get_activity"),
+)
+register(
+    "kaguya_focus", "Foco (Kaguya)",
+    # Único provedor "interno" (o próprio domínio de foco, spec 062) — ainda assim passa
+    # pelo mesmo import dinâmico dos outros, então uma falha no módulo degrada sozinha
+    # (R8) em vez de quebrar o registro de hábitos inteiro.
+    _try_import_provider("agents.kaguya.focus_habit_provider", "get_activity"),
 )

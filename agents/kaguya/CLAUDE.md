@@ -38,8 +38,10 @@ agents/kaguya/
 ├── tools_goals.py        # camada de lógica: Metas (CRUD + marcos + vínculo de movimentos + review) — spec 030
 ├── goal_link_providers.py    # registry: vínculo de meta com outro agente (search/resolve) — spec 036
 ├── habit_source_providers.py # registry: fonte automática de hábito (get_activity) — spec 036
-├── focus_stats.py        # motor PURO (sem banco): agrega sessões de foco por dia — spec 037
-├── tools_focus.py        # camada de lógica: sessões de foco (start/finish/cancel/stats/histórico) — spec 037
+├── focus_stats.py        # motor PURO (sem banco): agrega sessões de foco (dia/hora/desfecho/streak/ranking) — spec 037 + 062
+├── focus_achievements.py # motor PURO (sem banco): catálogo fixo de conquistas de foco — spec 062
+├── focus_habit_provider.py   # provider da fonte automática "Foco (Kaguya)" p/ habit_source_providers — spec 062
+├── tools_focus.py        # camada de lógica: sessões de foco (start/finish/cancel/stats/heatmap/achievements) — spec 037 + 062
 ├── capacity.py           # motor PURO (sem banco): compute_capacity() — janela 8h–22h — fatia 016
 ├── gcal.py               # cliente Google Calendar compartilhado (read all / write main) — fatia 019
 ├── gcal_sync.py          # espelho best-effort: push/remove tarefas no GCal "Kaguya — Tarefas" — fatia 019
@@ -360,6 +362,9 @@ importação dinâmica com fallback gracioso do `calendar_hub.py`:
   cumprido no hábito binário, valor comparado com `target_value` no mensurável). Provedores da
   fase 1: `violet_diary` → `agents/journal/habit_provider.py` (1.0 nos dias com bullet não-vazio);
   `frieren_reading` → `agents/frieren/habit_provider.py` (soma de `reading_logs.pages_read`/dia).
+  Spec 062 acrescenta `kaguya_focus` → `agents/kaguya/focus_habit_provider.py` (soma de minutos
+  focados/dia, só sessões `outcome='completed'`) — o único provedor "interno" (o próprio domínio
+  de foco), mas ainda registrado pelo mesmo import dinâmico com fallback gracioso dos demais.
 
 Ambos os registries **degradam sozinhos** (best-effort, FR-008): provedor não registrado ou que
 lança exceção devolve `None`/`{}` (nunca propaga a exceção) — o chamador decide como exibir a
@@ -392,38 +397,102 @@ mescla no ano inteiro, com `source` por dia esparso. `create_habit`/`update_habi
 Persistência: 1 tabela nova (`goal_external_links`) + 2 colunas (`goals.metric_mode`,
 `habits.source_provider_id`) em `schema_tasks_pg.sql`. Ver `specs/036-goal-habit-links/data-model.md`.
 
-### Foco / Pomodoro (spec 037) — `focus_stats.py` + `tools_focus.py`
+### Foco / Pomodoro gameficado (spec 037 + spec 062) — `focus_stats.py` + `focus_achievements.py` + `focus_habit_provider.py` + `tools_focus.py`
 
-Ciclo pomodoro: o usuário inicia uma **sessão de foco** (ligada a uma tarefa ou avulsa),
-escolhe a duração (presets 25/5, 50/10 ou custom — lembrada em `focus_prefs`, tabela de 1
-linha), e a sessão fica ativa até ser concluída, cancelada, ou fechada automaticamente por
+Ciclo pomodoro: o usuário inicia uma **sessão de foco** (ligada a uma tarefa, a um hábito, ou
+avulsa), escolhe a duração (presets 25/5, 50/10 ou custom — lembrada em `focus_prefs`, tabela
+de 1 linha), e a sessão fica ativa até ser concluída, cancelada, ou fechada automaticamente por
 **abandono**. **Webapp-only**: sem tool ADK (mesma decisão de 024/029/030/035/036).
 
-**Nada persistido derivado** (mesmo princípio de `goal_progress`/`habit_strength`): o único
-dado gravado é o registro bruto (`focus_sessions` — `started_at`, `duration_planned_min`,
-`break_planned_min`, `ended_at`, `completed`, `note`). Tempo restante, fase (`foco`/`pausa`) e
-estatísticas do dia/semana são **sempre** calculados na leitura a partir de `started_at` —
-nunca um cronômetro persistido nem contado só no cliente (o widget do frontend deriva o
-countdown localmente entre polls, mas a base é sempre o timestamp do servidor).
+**Nada persistido derivado** (mesmo princípio de `goal_progress`/`habit_strength`/
+`experiment_adherence`): o único dado gravado é o registro bruto (`focus_sessions` —
+`started_at`, `duration_planned_min`, `break_planned_min`, `ended_at`, `outcome`,
+`cancel_reason`, `habit_id`, `note`). Tempo restante, fase (`foco`/`pausa`), streak, espécie da
+árvore e o catálogo de conquistas são **sempre** calculados na leitura a partir de
+`started_at`/do histórico — nunca um cronômetro persistido, nunca um contador de XP salvo (o
+widget do frontend deriva o countdown localmente entre polls, mas a base é sempre o timestamp
+do servidor).
 
-`get_active_session()` fecha automaticamente qualquer sessão **abandonada** (navegador
-fechado sem concluir) antes de responder: se o tempo decorrido já passou de
-`duration_planned_min + break_planned_min` e a sessão ainda está aberta, ela é fechada com
-`completed=False` e `ended_at = started_at + duration_planned_min` — creditando **no máximo**
-o tempo de foco planejado, nunca a pausa nem o tempo real até o usuário voltar ao painel. Sem
-job/cron: a checagem acontece na própria leitura (mesmo padrão de "nada persistido derivado").
+**Desfecho de 3 vias (`outcome`, spec 062) — substitui o antigo `completed` booleano.** Um
+booleano só distinguia "deu certo" de "não deu certo"; `outcome` distingue **desistência ativa**
+(`cancelled`, via `cancel_session(session_id, reason)` — motivo em texto livre e **opcional**,
+"o que te tirou do foco?") de **abandono por timeout** (`abandoned`, via `_close_if_abandoned`,
+sem o usuário ter voltado ao painel). É essa distinção que torna "onde eu falhei" uma pergunta
+respondível pelo overview — antes da 062, sessões falhadas eram simplesmente filtradas de toda
+estatística.
+
+`get_active_session()` fecha automaticamente qualquer sessão **abandonada** antes de responder:
+se o tempo decorrido já passou de `duration_planned_min + break_planned_min` e a sessão ainda
+está aberta, ela é fechada com `outcome='abandoned'` e `ended_at = started_at +
+duration_planned_min` — creditando **no máximo** o tempo de foco planejado, nunca a pausa nem
+o tempo real até o usuário voltar ao painel. Sem job/cron: a checagem acontece na própria
+leitura (mesmo padrão de "nada persistido derivado").
 
 No máximo **uma** sessão ativa por vez (`ended_at IS NULL`) — garantido por índice único
 parcial (`uq_focus_sessions_open`, mesmo padrão de `uq_task_weekly_reviews_open` da spec 035).
-Iniciar outra com uma já ativa exige `force=True` (o frontend confirma com o usuário antes).
+Iniciar outra com uma já ativa exige `force=True` (o frontend confirma com o usuário antes;
+a sessão substituída vira `outcome='cancelled'`, não abandonada).
 
-Estatísticas (`get_focus_today`/`get_focus_week`/`get_focus_history`) usam
-`list_sessions_for_range` (dia local via `AT TIME ZONE 'America/Sao_Paulo'`, nunca
-`CURRENT_DATE`) agregado pelo motor puro `focus_stats.aggregate_by_day` — sessões canceladas
-não entram, só concluídas (e a ativa, parcialmente, no dia de hoje).
+**Vínculo com hábitos (spec 062) — dois caminhos complementares, não excludentes:**
 
-Persistência: 2 tabelas em `schema_tasks_pg.sql` (`focus_sessions`, `focus_prefs`). Ver
-`specs/037-tasks-focus-pomodoro/data-model.md`.
+1. **`habit_id` direto na sessão** — "focar NO hábito X". `finish_session` faz o check-in do
+   hábito na **mesma transação** da conclusão (`tools_habits._check_in_on_cursor`, mesmo padrão
+   transacional de `_complete_task_on_cursor`/pagamento atômico cross-agent) — a resposta ecoa
+   `habit_checked_in` para o frontend confirmar sem uma 2ª chamada. O check-in usa o dia local
+   (America/Sao_Paulo) do fim da sessão, não `CURRENT_DATE`.
+2. **Provider `kaguya_focus` no registry da spec 036** (`focus_habit_provider.py`) — "foquei
+   hoje, em qualquer coisa". `get_activity(start, end)` soma minutos focados (só sessões
+   `completed`) por dia; um hábito mensurável "focar 60min/dia" (`target_value=60, unit="min"`)
+   marca o check-in sozinho, sem intervenção manual. Registrado junto de `violet_diary`/
+   `frieren_reading` em `habit_source_providers.py`.
+
+Os dois convivem sem conflito: `habit_checkins` tem `UNIQUE (habit_id, date)` com upsert — um
+dia cumprido por qualquer uma das duas fontes conta uma vez.
+
+**Gameficação sem tabela nova.** Árvore, streak e conquistas são todos calculados na leitura —
+zero estado de jogo persistido (sem meta diária, sem moeda, sem loja de espécies: decisão de
+produto da spec 062 para manter o princípio "nada persistido derivado" intacto):
+
+- **Árvore por sessão** — a espécie é **derivada** da duração (nunca escolhida): `<20min`
+  broto, `20–40` pequena, `40–70` média, `70+` grande; `cancelled`/`abandoned` vira árvore
+  **murcha**. Lógica no frontend (`ui/FocusTree.tsx::treeSpecies`), puramente visual — nenhum
+  campo "species" existe no backend.
+- **Streak** — `focus_stats.current_streak(day_totals, today)`: dias consecutivos com pelo
+  menos uma sessão concluída. Se hoje ainda não tem sessão, conta a partir de ontem (não quebra
+  no meio do dia, só quando o dia vira sem sessão nenhuma). `longest_streak` é o recorde
+  histórico, usado pelas conquistas de sequência (não "some" se o streak atual zerar).
+- **Conquistas** (`focus_achievements.py`, motor puro) — catálogo fixo em 8 eixos (sessões
+  concluídas, horas totais, streak, sessão longa, dia intenso, horário — madrugador/coruja,
+  resiliência — concluir e falhar no mesmo dia, fidelidade — 10h numa mesma lista).
+  `evaluate(sessions, today)` reavalia o catálogo inteiro a cada chamada; nenhum "desbloqueei"
+  é gravado — se o histórico mudar (ex.: uma sessão editada), o resultado muda junto, sempre
+  coerente.
+
+**Estatísticas e overview.** `get_focus_stats(start, end)` é o **payload único** da tela Foco —
+orquestra os motores puros sobre a mesma janela de sessões (nenhuma agregação fora deles):
+`aggregate_by_day` (zero-fill do período — a árvore/floresta não pode ter buracos),
+`aggregate_by_hour` (24 colunas zero-filled, "quando eu foco × quando eu largo"),
+`outcome_stats` (taxa de conclusão + tempo médio antes de desistir, `avg_min_before_quit`),
+`current_streak`/`longest_streak` (sempre sobre o **histórico inteiro**, não só o período
+visível — um streak não deveria sumir só porque o usuário está olhando a semana passada) e
+`top_by` (ranking por tarefa/lista/hábito/contexto). `get_focus_today`/`get_focus_week`/
+`get_focus_history`/`get_focus_heatmap(year)` continuam existindo para o Meu Dia e o heatmap
+anual — todos usam `AT TIME ZONE 'America/Sao_Paulo'`, nunca `CURRENT_DATE`. Diferente da spec
+037, a query base (`_query_sessions`) agora **inclui** canceladas/abandonadas — filtrar por
+`outcome` é responsabilidade dos motores puros, não da query (eles precisam ver os dois lados
+para calcular a taxa de falha).
+
+`get_task_focus_summary(task_id)` alimenta o cabeçalho do `TaskModal` (tempo acumulado nesta
+tarefa). `get_focus_history(date)` deixou de filtrar só concluídas — traz qualquer sessão
+**encerrada** do dia (com `outcome`/`cancel_reason`), pois o objetivo virou mostrar "onde eu
+falhei", não só "quanto eu foquei".
+
+Persistência: 2 tabelas em `schema_tasks_pg.sql` (`focus_sessions`, `focus_prefs`) + 3 colunas
+novas em `focus_sessions` (`outcome`, `cancel_reason`, `habit_id`) na spec 062, com backfill
+idempotente do `completed` booleano antigo (`true→completed`, `false→cancelled` — não há como
+recuperar retroativamente quais eram abandonos, a distinção só passou a existir com o
+`outcome`) e a coluna antiga removida após o backfill. Ver `specs/037-tasks-focus-pomodoro/
+data-model.md` (base) e o plano da spec 062 (floresta, vínculo com hábitos, overview).
 
 ### Meu Dia — contexto Trabalho/Pessoal (spec 038)
 

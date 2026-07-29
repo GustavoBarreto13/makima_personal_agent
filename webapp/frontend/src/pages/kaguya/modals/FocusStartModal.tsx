@@ -1,16 +1,21 @@
-// FocusStartModal — escolhe a duração (preset ou custom) e inicia uma sessão de foco
-// (spec 037), ligada a uma tarefa ou avulsa. Se já existe uma sessão ativa, confirma
-// antes de reenviar com force=true (FR-003).
+// FocusStartModal — escolhe o alvo (tarefa, hábito ou avulso) e a duração (preset ou
+// custom), e inicia uma sessão de foco (spec 037 + spec 062). Se já existe uma sessão
+// ativa, confirma antes de reenviar com force=true (FR-003).
+//
+// `task` e `habitId` podem vir pré-selecionados (abrir "Focar" a partir do TaskModal
+// ou do card de um hábito) — nesse caso o seletor de alvo nasce travado naquele tipo,
+// mas o usuário ainda pode trocar antes de iniciar.
 
 import { useEffect, useState } from 'react'
-import type { Task } from '../types'
+import type { Habit, Task } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 
 interface FocusStartModalProps {
-  task?: Task | null              // ausente = sessão avulsa
+  task?: Task | null       // pré-selecionado a partir do TaskModal
+  habitId?: number | null  // pré-selecionado a partir do card de um hábito
   onClose: () => void
-  onStarted: () => void           // pai busca /focus/active de novo
+  onStarted: () => void    // pai busca /focus/active de novo
   toast: (msg: string, kind?: 'ok' | 'err') => void
 }
 
@@ -20,11 +25,17 @@ const PRESETS = [
   { label: '50 / 10', focus: 50, brk: 10 },
 ]
 
-export function FocusStartModal({ task, onClose, onStarted, toast }: FocusStartModalProps) {
+type Target = 'task' | 'habit' | 'none'
+
+export function FocusStartModal({ task, habitId, onClose, onStarted, toast }: FocusStartModalProps) {
   const [focusMin, setFocusMin] = useState(25)
   const [breakMin, setBreakMin] = useState(5)
   const [custom, setCustom] = useState(false)
   const [starting, setStarting] = useState(false)
+
+  const [target, setTarget] = useState<Target>(task ? 'task' : habitId ? 'habit' : 'none')
+  const [habits, setHabits] = useState<Habit[]>([])
+  const [selectedHabitId, setSelectedHabitId] = useState<number | null>(habitId ?? null)
 
   // Sugere a última duração usada (R4 — lembrada no servidor).
   useEffect(() => {
@@ -35,10 +46,24 @@ export function FocusStartModal({ task, onClose, onStarted, toast }: FocusStartM
     }).catch(() => { /* mantém o default 25/5 se a preferência falhar ao carregar */ })
   }, [])
 
+  // Carrega a lista de hábitos só quando o seletor de alvo pode precisar dela — a
+  // tarefa já veio pronta via prop, então não faz sentido buscar hábitos se o alvo
+  // já está travado numa tarefa e o usuário nunca abre o seletor "hábito".
+  useEffect(() => {
+    if (task) return // alvo já é uma tarefa — não precisa da lista de hábitos
+    kaguyaApi.listHabits().then(setHabits).catch(() => { /* seletor de hábito só fica vazio */ })
+  }, [task])
+
   const start = async (force = false) => {
     setStarting(true)
     try {
-      await kaguyaApi.focus.start({ task_id: task?.id ?? null, focus_min: focusMin, break_min: breakMin, force })
+      await kaguyaApi.focus.start({
+        task_id: target === 'task' ? (task?.id ?? null) : null,
+        habit_id: target === 'habit' ? selectedHabitId : null,
+        focus_min: focusMin,
+        break_min: breakMin,
+        force,
+      })
       onStarted()
       onClose()
     } catch (e: any) {
@@ -65,9 +90,37 @@ export function FocusStartModal({ task, onClose, onStarted, toast }: FocusStartM
         </div>
         <div className="kg-modal-body">
           {task ? (
+            // Alvo travado numa tarefa específica (aberto a partir do TaskModal) — sem seletor.
             <div className="kg-field-label" style={{ marginBottom: 12 }}>Na tarefa: <b>{task.title}</b></div>
           ) : (
-            <div className="kg-field-label" style={{ marginBottom: 12 }}>Foco avulso (sem tarefa)</div>
+            <div className="kg-field" style={{ marginBottom: 12 }}>
+              <span className="kg-field-label">Focar em</span>
+              <div className="kg-segment">
+                <button
+                  type="button"
+                  className={`kg-seg-opt${target === 'none' ? ' active' : ''}`}
+                  onClick={() => setTarget('none')}
+                >Avulso</button>
+                <button
+                  type="button"
+                  className={`kg-seg-opt${target === 'habit' ? ' active' : ''}`}
+                  onClick={() => setTarget('habit')}
+                >Hábito</button>
+              </div>
+              {target === 'habit' && (
+                <select
+                  className="kg-select"
+                  style={{ marginTop: 8 }}
+                  value={selectedHabitId ?? ''}
+                  onChange={(e) => setSelectedHabitId(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">Selecione um hábito…</option>
+                  {habits.map((h) => (
+                    <option key={h.id} value={h.id}>{h.icon ? `${h.icon} ` : ''}{h.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
           )}
 
           <div className="kg-field">
@@ -124,7 +177,11 @@ export function FocusStartModal({ task, onClose, onStarted, toast }: FocusStartM
 
         <div className="kg-modal-foot">
           <button className="kg-btn kg-btn-ghost" onClick={onClose}>Cancelar</button>
-          <button className="kg-btn kg-btn-primary" disabled={starting} onClick={() => start(false)}>
+          <button
+            className="kg-btn kg-btn-primary"
+            disabled={starting || (target === 'habit' && selectedHabitId == null)}
+            onClick={() => start(false)}
+          >
             {starting ? 'Iniciando...' : 'Iniciar'}
           </button>
         </div>

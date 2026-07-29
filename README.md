@@ -119,6 +119,7 @@ Inspirada na Kaguya Shinomiya de Kaguya-sama. Aristocrática e organizada. Geren
 - Tiny Experiments — mini-experimentos com duração definida, log diário e revisão (spec 029)
 - Metas por área da vida com marcos e vínculo a projetos, hábitos e experimentos (spec 030)
 - Sync de aniversários com a Komi — datas importantes viram tarefas recorrentes (spec 026)
+- Foco/Pomodoro gameficado — cada sessão vira uma árvore (murcha se você desistir), floresta do período, streak, conquistas e vínculo com hábitos (specs 037/062)
 
 Possui tools cross-agent que integram com a Nami numa **única transação PostgreSQL** (tudo-ou-nada):
 

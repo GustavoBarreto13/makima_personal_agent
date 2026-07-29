@@ -411,6 +411,41 @@ def unarchive_habit(habit_id: int) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # Check-ins (o registro diário)
 # ─────────────────────────────────────────────────────────────────────────────
+def _check_in_on_cursor(cur, habit_id: int, date_iso: str, value: Optional[float] = None) -> bool:
+    """Registra/atualiza o check-in usando um cursor já aberto (mesma transação de outro agente).
+
+    Espelha :func:`check_in` mas sem abrir ``get_conn()`` própria — extraído para que
+    ``tools_focus.finish_session`` possa fazer o check-in do hábito vinculado à sessão na
+    MESMA transação da conclusão do foco (spec 062, "focar NO hábito X"), mesmo padrão de
+    ``tools_tasks._complete_task_on_cursor``. Best-effort: hábito arquivado ou inexistente
+    simplesmente não gera check-in (não é erro fatal para quem chamou).
+
+    Args:
+        cur: Cursor psycopg2 já aberto na transação corrente.
+        habit_id: Id do hábito.
+        date_iso: Dia do check-in em ``AAAA-MM-DD``.
+        value: Valor medido (hábito mensurável); ``None`` em hábito sim/não.
+
+    Returns:
+        ``True`` se o hábito existia e estava ativo (check-in gravado/atualizado);
+        ``False`` caso contrário.
+    """
+    cur.execute("SELECT 1 FROM habits WHERE id = %s AND archived_at IS NULL", (habit_id,))
+    if not cur.fetchone():
+        return False
+    # Upsert: cria o check-in; se já existir para o dia, atualiza o valor (idempotente —
+    # concluir a mesma sessão duas vezes, ou já ter feito check-in manual hoje, não duplica).
+    cur.execute(
+        """
+        INSERT INTO habit_checkins (habit_id, date, value)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (habit_id, date) DO UPDATE SET value = EXCLUDED.value
+        """,
+        (habit_id, date_iso, value),
+    )
+    return True
+
+
 def check_in(habit_id: int, date_iso: Optional[str] = None, value: Optional[float] = None) -> dict:
     """Registra (ou atualiza) o check-in de um hábito num dia.
 
@@ -430,19 +465,8 @@ def check_in(habit_id: int, date_iso: Optional[str] = None, value: Optional[floa
     dia = date_iso or date.today().isoformat()
     with get_conn() as conn:
         with conn.cursor() as cur:
-            # Confirma que o hábito existe e está ativo antes de registrar.
-            cur.execute("SELECT 1 FROM habits WHERE id = %s AND archived_at IS NULL", (habit_id,))
-            if not cur.fetchone():
+            if not _check_in_on_cursor(cur, habit_id, dia, value):
                 return {"status": "error", "message": "Hábito não encontrado ou arquivado."}
-            # Upsert: cria o check-in; se já existir para o dia, atualiza o valor.
-            cur.execute(
-                """
-                INSERT INTO habit_checkins (habit_id, date, value)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (habit_id, date) DO UPDATE SET value = EXCLUDED.value
-                """,
-                (habit_id, dia, value),
-            )
     # Recalcula o score para o canal ecoar ("consistência agora: 78/100, subindo").
     h = get_habit(habit_id)
     return {

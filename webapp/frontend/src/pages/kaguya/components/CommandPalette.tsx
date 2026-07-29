@@ -12,6 +12,9 @@ import { Icon } from '../ui/Icons'
 // Comandos de navegação — mapeados ao enum KaguyaView real.
 // O protótipo usava 'board' para kanban e 'grid2x2' para eisenhower;
 // ajustamos para os valores reais + ícones disponíveis nos Icons.tsx.
+// 'experiments'/'goals' estavam faltando aqui desde as specs 029/030 (já existiam em
+// FIXED_VIEWS da sidebar, mas nunca chegaram à paleta) — corrigido junto da spec 062,
+// que adicionou 'focus' e tocou este mesmo array.
 const NAV_COMMANDS: { view: KaguyaView; label: string; icon: string }[] = [
   { view: 'today',       label: 'Ir para Meu Dia',              icon: 'sun'      },
   { view: 'list',        label: 'Ir para Lista',                icon: 'list'     },
@@ -19,6 +22,9 @@ const NAV_COMMANDS: { view: KaguyaView; label: string; icon: string }[] = [
   { view: 'calendar',    label: 'Ir para Calendário',           icon: 'calendar' },
   { view: 'eisenhower',  label: 'Ir para Matriz de Eisenhower', icon: 'grid'     },
   { view: 'habits',      label: 'Ir para Hábitos',              icon: 'loop'     },
+  { view: 'experiments', label: 'Ir para Experimentos',         icon: 'flask'    },
+  { view: 'goals',       label: 'Ir para Metas',                icon: 'target'   },
+  { view: 'focus',       label: 'Ir para Foco',                 icon: 'timer'    },
 ]
 
 // Um item da lista de resultados (tagged union por tipo de resultado).

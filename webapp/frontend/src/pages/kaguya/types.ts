@@ -577,7 +577,7 @@ export interface Tweaks {
 // 'group-list' usa o param como id do grupo e exibe as tarefas em seções por lista.
 // 'date' abre uma das views fixas de mercado (spec 034) — o `param` é o sentinel
 // negativo de DATE_VIEW_IDS (mesmo truque de BUILTIN_TODAY_OVERDUE/GTD_BUILTINS).
-export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'experiments' | 'goals' | 'trash' | 'archived' | 'filter' | 'group' | 'group-list' | 'date'
+export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'experiments' | 'goals' | 'focus' | 'trash' | 'archived' | 'filter' | 'group' | 'group-list' | 'date'
 
 // Sentinelas negativos para as 4 views fixas que abrem a tela 'date' (a 5ª, "inbox",
 // reusa a lista Inbox de verdade via view='list' — mesmo conteúdo, sem duplicar tela).
@@ -692,10 +692,16 @@ export interface AggregateResponse {
   errors: string[]        // source_ids que falharam (best-effort)
 }
 
-// ── Foco / Pomodoro (spec 037) ─────────────────────────────────────────────────
+// ── Foco / Pomodoro gameficado (spec 037 + spec 062) ────────────────────────────
 // Fase da sessão ativa — derivada no BACKEND a partir de started_at (nunca contada
 // do zero no cliente); o widget só deriva o countdown local entre polls (R1/R7).
 export type FocusPhase = 'foco' | 'pausa'
+
+// Desfecho de uma sessão encerrada (spec 062) — substitui o antigo `completed`
+// booleano. `null` = sessão ainda ativa. `cancelled` = o usuário desistiu ativamente;
+// `abandoned` = fechou a aba/travou e o servidor encerrou por timeout (R2). É essa
+// distinção que torna "onde eu falhei" visível no overview, não só "quanto foquei".
+export type FocusOutcome = 'completed' | 'cancelled' | 'abandoned' | null
 
 // Preferência de duração (foco/pausa), lembrada entre sessões no servidor (R4).
 export interface FocusPrefs {
@@ -703,20 +709,27 @@ export interface FocusPrefs {
   break_min: number
 }
 
-// Uma sessão de foco — ativa (com phase/remaining_sec) ou já fechada (histórico).
+// Uma sessão de foco — ativa (com phase/remaining_sec/growth) ou já fechada.
 export interface FocusSession {
   id: number
   task_id: number | null
-  task_title: string | null   // null = sessão avulsa
-  started_at: string          // ISO 8601 — base de toda derivação de tempo (R1)
-  ended_at: string | null     // null = sessão ainda ativa
+  task_title: string | null       // null = sem tarefa vinculada
+  habit_id: number | null         // spec 062 — "focar NO hábito X"
+  habit_name: string | null
+  project_id: number | null       // lista da tarefa (via join) — cor/contexto da árvore
+  project_title: string | null
+  project_color: string | null
+  started_at: string              // ISO 8601 — base de toda derivação de tempo (R1)
+  ended_at: string | null         // null = sessão ainda ativa
   duration_planned_min: number
   break_planned_min: number
-  completed: boolean | null   // null = ativa; true = concluída; false = cancelada/abandonada
+  outcome: FocusOutcome
+  cancel_reason: string | null
   note: string | null
   // Presentes só na sessão ATIVA (GET /focus/active):
   phase?: FocusPhase
   remaining_sec?: number
+  growth?: number                 // 0..1 — progresso da copa da árvore (widget)
 }
 
 // Resumo agregado de um dia (GET /focus/today).
@@ -731,12 +744,128 @@ export interface FocusWeekStats {
   days: FocusDayStats[]
 }
 
-// Uma entrada do histórico de um dia (GET /focus/history).
+// Uma entrada do histórico de um dia (GET /focus/history) — inclui falhas (spec 062).
 export interface FocusHistoryEntry {
   id: number
   task_id: number | null
   task_title: string | null
+  habit_id: number | null
+  habit_name: string | null
+  project_id: number | null
+  project_title: string | null
+  project_color: string | null
   started_at: string
   duration_focused_min: number
+  outcome: FocusOutcome
+  cancel_reason: string | null
   note: string | null
+}
+
+// Uma sessão "crua" dentro do payload de /focus/stats — usada pela Floresta (uma
+// árvore por sessão) e pelos rankings.
+export interface FocusStatSession {
+  id: number
+  task_id: number | null
+  task_title: string | null
+  habit_id: number | null
+  habit_name: string | null
+  project_id: number | null
+  project_title: string | null
+  project_color: string | null
+  context: 'personal' | 'work' | null
+  started_at: string
+  ended_at: string | null
+  date_local: string
+  hour_local: number
+  duration_planned_min: number
+  duration_focused_min: number
+  outcome: FocusOutcome
+  cancel_reason: string | null
+}
+
+export interface FocusHourStats {
+  hour: number             // 0..23
+  completed_min: number
+  completed_n: number
+  failed_n: number
+}
+
+export interface FocusOutcomeStats {
+  completed: number
+  cancelled: number
+  abandoned: number
+  completion_pct: number
+  avg_min_before_quit: number | null
+}
+
+export interface FocusTopEntry {
+  label: string
+  total_min: number
+  sessoes: number
+  task_id?: number
+  project_id?: number
+  habit_id?: number
+  context?: string
+}
+
+export interface FocusRecentReason {
+  date: string
+  reason: string
+  outcome: FocusOutcome
+}
+
+// Payload único da tela de Foco (GET /focus/stats?start=&end=) — spec 062.
+export interface FocusStats {
+  totals: { total_min: number; sessoes: number }
+  by_day: FocusDayStats[]
+  by_hour: FocusHourStats[]
+  outcome: FocusOutcomeStats
+  streak: number
+  longest_streak: number
+  top_tasks: FocusTopEntry[]
+  top_projects: FocusTopEntry[]
+  top_habits: FocusTopEntry[]
+  by_context: FocusTopEntry[]
+  recent_reasons: FocusRecentReason[]
+  sessions: FocusStatSession[]
+}
+
+// Entrada esparsa do heatmap anual (GET /focus/heatmap?year=).
+export interface FocusHeatDay {
+  date: string
+  total_min: number
+  sessoes: number
+}
+
+// Uma conquista já avaliada (GET /focus/achievements) — nunca persistida no
+// backend, recalculada do zero a cada chamada (spec 062).
+export interface FocusAchievement {
+  id: string
+  name: string
+  description: string
+  icon: string
+  axis: string
+  unlocked: boolean
+  unlocked_at: string | null
+  progress: number
+  target: number
+}
+
+// Tempo acumulado de foco numa tarefa (GET /tasks/{id}/focus-summary).
+export interface TaskFocusSummary {
+  total_min: number
+  sessoes: number
+  last_session_at: string | null
+}
+
+// Resposta de POST /focus/{id}/finish — ecoa se o hábito vinculado foi marcado
+// automaticamente (spec 062), pro frontend confirmar sem precisar de uma 2ª chamada.
+export interface FinishFocusResult {
+  status: string
+  session: {
+    id: number
+    duration_focused_min: number
+    outcome: 'completed'
+    habit_checked_in: boolean
+  }
 }
