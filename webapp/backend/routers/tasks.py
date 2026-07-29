@@ -97,6 +97,8 @@ from agents.kaguya.tools_review import (
     mark_project_reviewed,
 )
 # Foco / Pomodoro — spec 037 (camada de lógica em agents/kaguya/tools_focus.py).
+from agents.kaguya.tools import create_expense_reminder  # cross-agent (Nami) — spec 047, US4
+from agents.db import run_select  # checagem de duplicidade do lembrete (spec 047)
 from agents.kaguya.tools_focus import (
     get_focus_prefs, get_active_session, start_session, finish_session, cancel_session,
     get_focus_today, get_focus_week, get_focus_history,
@@ -1775,6 +1777,66 @@ def list_review_history_route(user: dict = Depends(require_user)) -> list[dict]:
 def list_waiting_ordered_route(user: dict = Depends(require_user)) -> list[dict]:
     """Itens 'aguardando', mais antigos primeiro (FR-003) — passo 3 do ritual."""
     return list_waiting_ordered()  # listagem
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# LEMBRETE DE PAGAMENTO (cross-agent Nami → Kaguya) — spec 047, US4
+# ═════════════════════════════════════════════════════════════════════════════
+
+class CreateReminderBody(BaseModel):
+    """Corpo da requisição do botão "Lembrar-me" (Dashboard/Parcelamentos da Nami)."""
+    title: str            # Ex.: "Pagar fatura Cartão Nu"
+    due_date: str          # AAAA-MM-DD — data do vencimento exibido
+    amount: float = 0.0    # Valor de referência (opcional, vai nas notas)
+    description: str = ""  # Observação adicional (opcional)
+
+
+@router.post("/reminders", status_code=201)
+def create_expense_reminder_route(
+    body: CreateReminderBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Cria um lembrete de pagamento na lista "Finanças" a partir de um vencimento da Nami.
+
+    Protege contra duplicação (FR-005/SC-004): se já existe uma tarefa aberta com o
+    mesmo título e a mesma data de vencimento na lista Finanças, não cria de novo —
+    devolve a existente com `"duplicate": true`.
+
+    Args:
+        body: Título, data de vencimento e valor de referência do vencimento clicado.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok", o id da tarefa (nova ou já existente) e
+        "duplicate": bool.
+
+    Raises:
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    existing = run_select(
+        """
+        SELECT t.id
+          FROM tasks t
+          JOIN task_projects p ON p.id = t.project_id
+         WHERE t.title = %(title)s
+           AND t.due_date = %(due_date)s
+           AND t.deleted_at IS NULL
+           AND t.completed_at IS NULL
+           AND p.name ILIKE 'Finan%%'
+         LIMIT 1
+        """,
+        {"title": body.title, "due_date": body.due_date},
+    )
+    if existing:
+        return {"status": "ok", "id": existing[0]["id"], "duplicate": True,
+                "message": "Já existe um lembrete para este vencimento"}
+
+    result = create_expense_reminder(
+        title=body.title, due_date=body.due_date,
+        amount=body.amount, description=body.description,
+    )
+    _check_result(result)
+    return {**result, "duplicate": False}
 
 
 # IMPORTANTE: este GET /{task_id} deve ficar no FINAL do arquivo, depois de TODAS as

@@ -4,7 +4,7 @@
 // barra de progresso e botão de exclusão.
 
 import { Icon } from '../icons'
-import type { PersonalLoan, Financing } from '../types'
+import type { PersonalLoan, BankLoan } from '../types'
 
 // ── LoanCard para empréstimos pessoa-a-pessoa ─────────────────────────────────
 
@@ -13,8 +13,12 @@ interface LoanCardProps {
   loan: PersonalLoan
   /** Callback de exclusão */
   onDelete: (id: string) => void
+  /** Callback de registro de parcela paga (spec 046, US4) */
+  onPay?: (id: string) => void
   /** Indica exclusão em progresso */
   deleting?: boolean
+  /** Indica registro de pagamento em progresso */
+  paying?: boolean
 }
 
 function fmt(v: number): string {
@@ -25,7 +29,7 @@ function fmt(v: number): string {
  * Card de empréstimo informal com barra de progresso e dots de parcelas.
  * Usa as classes .loan-card / .loan-dir / .loan-person / .loan-dots / .loan-track.
  */
-export function LoanCard({ loan, onDelete, deleting }: LoanCardProps) {
+export function LoanCard({ loan, onDelete, onPay, deleting, paying }: LoanCardProps) {
   const isLent = loan.direction === 'lent'
 
   // Porcentagem de progresso (parcelas pagas / total)
@@ -103,100 +107,116 @@ export function LoanCard({ loan, onDelete, deleting }: LoanCardProps) {
           <span>vence dia <strong>{loan.next_due_day}</strong></span>
         )}
       </div>
+
+      {/* Registrar pagamento (spec 046, US4) — só avança o contador, sem juros */}
+      {onPay && loan.paid_installments < loan.installments && (
+        <div className="loan-actions">
+          <button className="btn btn-ghost" onClick={() => onPay(loan.id)} disabled={paying}>
+            Registrar pagamento
+          </button>
+        </div>
+      )}
     </div>
   )
 }
 
-// ── FinancingCard — card de financiamento estruturado ─────────────────────────
+// ── BankLoanCard — empréstimo/financiamento bancário unificado (spec 046) ────
 
-interface FinancingCardProps {
-  /** Financiamento com credor formal */
-  financing: Financing
+const TIPO_LABEL: Record<string, string> = {
+  veiculo: 'Veículo', consignado: 'Consignado', pessoal: 'Pessoal',
+  imobiliario: 'Imobiliário', outro: 'Outro',
+}
+
+interface BankLoanCardProps {
+  loan: BankLoan
   onDelete: (id: string) => void
+  onEdit: (loan: BankLoan) => void
+  onPay: (loan: BankLoan) => void
+  onSimulate: (loan: BankLoan) => void
   deleting?: boolean
 }
 
 /**
- * Card de financiamento (credor formal, taxa de juros).
- * Compartilha o mesmo layout .loan-card, mas com badge "Financiamento".
+ * Card de empréstimo/financiamento bancário (PRICE/SAC, taxa de juros, saldo
+ * devedor já calculado pelo backend — spec 046, unifica o antigo `financings`
+ * com o tracker completo que só existia no Telegram).
+ * Compartilha o layout `.loan-card` com o card de empréstimo p2p.
  */
-export function FinancingCard({ financing, onDelete, deleting }: FinancingCardProps) {
-  // Porcentagem de progresso
-  const pctPaid = financing.installments > 0
-    ? financing.paid_installments / financing.installments
-    : 0
-
-  const remaining  = financing.total_amount * (1 - pctPaid)
-  const installVal = financing.installments > 0
-    ? financing.total_amount / financing.installments
-    : 0
-
+export function BankLoanCard({ loan, onDelete, onEdit, onPay, onSimulate, deleting }: BankLoanCardProps) {
   const MAX_DOTS = 12
-  const totalDots = Math.min(financing.installments, MAX_DOTS)
+  const totalDots = Math.min(loan.num_parcelas_total, MAX_DOTS)
+  const pctPaid = loan.num_parcelas_total > 0 ? loan.parcelas_pagas / loan.num_parcelas_total : 0
+  const isQuitado = loan.status === 'quitado'
 
   return (
     <div className="loan-card">
       {/* Cabeçalho: badge + botão de exclusão */}
       <div className="loan-head">
-        <span className="loan-dir financing">Financiamento</span>
+        <span className="loan-dir financing">{TIPO_LABEL[loan.tipo] ?? loan.tipo} · {loan.sistema_amortizacao}</span>
         <button
           className="loan-del"
-          onClick={() => onDelete(financing.id)}
+          onClick={() => onDelete(loan.id)}
           disabled={deleting}
-          aria-label="Excluir financiamento"
+          aria-label="Excluir empréstimo"
         >
           <Icon name="trash" size={12} />
         </button>
       </div>
 
-      {/* Descrição e credor */}
+      {/* Nome e observações */}
       <div>
-        <div className="loan-person">{financing.description}</div>
-        {financing.lender && (
-          <div className="loan-note">{financing.lender}</div>
-        )}
-        {financing.interest_rate && (
-          <div className="loan-note">Taxa: {financing.interest_rate}</div>
-        )}
-        {financing.note && (
-          <div className="loan-note">{financing.note}</div>
-        )}
+        <div className="loan-person">{loan.name}</div>
+        <div className="loan-note">
+          Taxa: {(loan.taxa_juros_mensal * 100).toFixed(2)}%/mês
+          {loan.conta ? ` · ${loan.conta}` : ''}
+        </div>
+        {loan.notes && <div className="loan-note">{loan.notes}</div>}
       </div>
 
-      {/* Valor restante */}
-      <div className="loan-amount amount">R$ {fmt(remaining)}</div>
+      {/* Saldo devedor (já calculado pelo backend — mesmo motor do Telegram) */}
+      <div className="loan-amount amount">R$ {fmt(loan.saldo_devedor)}</div>
 
       {/* Dots de parcelas */}
       <div className="loan-dots">
         {Array.from({ length: totalDots }, (_, i) => (
           <div
             key={i}
-            className={`loan-dot ${i < financing.paid_installments ? 'paid' : ''}`}
+            className={`loan-dot ${i < loan.parcelas_pagas ? 'paid' : ''}`}
             title={`Parcela ${i + 1}`}
           />
         ))}
-        {financing.installments > MAX_DOTS && (
+        {loan.num_parcelas_total > MAX_DOTS && (
           <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
-            +{financing.installments - MAX_DOTS}
+            +{loan.num_parcelas_total - MAX_DOTS}
           </span>
         )}
       </div>
 
       {/* Barra de progresso */}
       <div className="loan-track">
-        <div
-          className="loan-fill"
-          style={{ width: `${pctPaid * 100}%` }}
-        />
+        <div className="loan-fill" style={{ width: `${pctPaid * 100}%` }} />
       </div>
 
-      {/* Meta: parcelas + valor parcela + vencimento */}
+      {/* Meta: parcelas + valor parcela */}
       <div className="loan-meta">
         <span>
-          <strong>{financing.paid_installments}/{financing.installments}</strong> parcelas · R$ {fmt(installVal)}/mês
+          <strong>{loan.parcelas_pagas}/{loan.num_parcelas_total}</strong> parcelas · R$ {fmt(loan.valor_parcela)}/mês
         </span>
-        {financing.next_due_day && (
-          <span>vence dia <strong>{financing.next_due_day}</strong></span>
+        <span>{loan.parcelas_restantes} restantes</span>
+      </div>
+
+      {/* Ações */}
+      <div className="loan-actions">
+        <button className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 8px' }} onClick={() => onEdit(loan)}>
+          Editar
+        </button>
+        <button className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 8px' }} onClick={() => onSimulate(loan)}>
+          Simular
+        </button>
+        {!isQuitado && (
+          <button className="btn btn-primary" style={{ fontSize: 11, padding: '4px 8px' }} onClick={() => onPay(loan)}>
+            Registrar parcela
+          </button>
         )}
       </div>
     </div>

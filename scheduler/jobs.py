@@ -127,6 +127,82 @@ def run_weekly_review_reminder() -> None:
         )
 
 
+def run_recurring_charges() -> None:
+    """Executa o job diário de cobranças recorrentes (Nami) — spec 048, US1+US2.
+
+    Roda `scripts/process_recurring_charges.py` num subprocesso separado (mesmo
+    motivo dos demais: o script usa `sys.exit(1)` em falha, e rodar como
+    subprocesso transforma isso num código de retorno que o runner detecta).
+
+    Raises:
+        RuntimeError: Se o job falhar (código de saída ≠ 0 — inclui erros de
+            lançamento individuais, que o script já conta e propaga).
+    """
+    resultado = subprocess.run(
+        [sys.executable, "-m", "scripts.process_recurring_charges"],
+        capture_output=True,
+        text=True,
+    )
+
+    if resultado.stdout:
+        print(resultado.stdout, end="")
+
+    if resultado.returncode != 0:
+        raise RuntimeError(
+            f"process_recurring_charges saiu com código {resultado.returncode}.\n"
+            f"stderr:\n{resultado.stderr}"
+        )
+
+
+def run_budget_alert() -> None:
+    """Executa o alerta diário de orçamento (Nami) — spec 048, US3.
+
+    Roda `scripts/send_budget_alert.py` num subprocesso separado. Não enviar
+    (tudo dentro do limite) é sucesso, não falha — o script sai com 0 nesse caso.
+
+    Raises:
+        RuntimeError: Se o job falhar (código de saída ≠ 0).
+    """
+    resultado = subprocess.run(
+        [sys.executable, "-m", "scripts.send_budget_alert"],
+        capture_output=True,
+        text=True,
+    )
+
+    if resultado.stdout:
+        print(resultado.stdout, end="")
+
+    if resultado.returncode != 0:
+        raise RuntimeError(
+            f"send_budget_alert saiu com código {resultado.returncode}.\n"
+            f"stderr:\n{resultado.stderr}"
+        )
+
+
+def run_monthly_report() -> None:
+    """Executa o relatório mensal do fechamento (Nami) — spec 048, US4.
+
+    Roda `scripts/send_monthly_report.py` num subprocesso separado.
+
+    Raises:
+        RuntimeError: Se o job falhar (código de saída ≠ 0).
+    """
+    resultado = subprocess.run(
+        [sys.executable, "-m", "scripts.send_monthly_report"],
+        capture_output=True,
+        text=True,
+    )
+
+    if resultado.stdout:
+        print(resultado.stdout, end="")
+
+    if resultado.returncode != 0:
+        raise RuntimeError(
+            f"send_monthly_report saiu com código {resultado.returncode}.\n"
+            f"stderr:\n{resultado.stderr}"
+        )
+
+
 def run_lucy_digest() -> None:
     """Executa o digest diário de emails (Lucy) → Telegram + histórico.
 

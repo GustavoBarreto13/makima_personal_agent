@@ -82,10 +82,25 @@ from agents.nami.tools_credit_cards import (
 
 # Empréstimos e financiamentos
 from agents.nami.tools_loans import (
-    register_loan,    # Cadastra empréstimo PRICE ou SAC
-    list_loans,       # Lista empréstimos por status
-    get_loan_balance, # Saldo devedor atual de um empréstimo
-    delete_loan,      # Soft delete de empréstimo — marca deleted=TRUE
+    register_loan,               # Cadastra empréstimo PRICE ou SAC
+    list_loans,                  # Lista empréstimos por status
+    get_loan_balance,            # Saldo devedor atual de um empréstimo
+    delete_loan,                 # Soft delete de empréstimo — marca deleted=TRUE
+    update_loan,                 # Edita nome/notas/status/parcelas_pagas — spec 046
+    register_loan_payment,       # Registra parcela paga + lança despesa — spec 046
+    simulate_early_payoff,       # Simulador: quitação antecipada — spec 046
+    simulate_amortization,       # Simulador: amortização extraordinária — spec 046
+    simulate_accelerated_payment, # Simulador: parcela acelerada — spec 046
+    compare_payoff_priority,     # Prioridade de quitação (avalanche, com cartões) — spec 046
+)
+
+# Empréstimos pessoa-a-pessoa (spec 046) — mesma camada de lógica usada pelo Telegram
+from agents.nami.tools_personal_loans import (
+    list_personal_loans,
+    create_personal_loan,
+    update_personal_loan,
+    register_personal_loan_payment,
+    delete_personal_loan,
 )
 
 # Orçamento por categoria
@@ -195,6 +210,7 @@ class CreateTransactionBody(BaseModel):
     data: str = ""              # Data no formato YYYY-MM-DD (vazio = hoje)
     notes: str = ""             # Observações opcionais
     card_id: str = ""           # ID do cartão (quando a transação é de cartão de crédito)
+    person_ids: list[str] = []  # UUIDs de pessoas a vincular (spec 014/047) — opcional, nunca bloqueia
 
 
 class UpdateTransactionBody(BaseModel):
@@ -286,6 +302,29 @@ class RegisterLoanBody(BaseModel):
     valor_parcela: float = 0.0   # Valor da parcela atual
     data_inicio: str = ""        # Data da 1ª parcela (vazio = hoje)
     conta: str = ""              # Conta de débito das parcelas
+
+
+class UpdateLoanBody(BaseModel):
+    """Corpo da requisição para editar um empréstimo/financiamento (spec 046)."""
+    name: str = ""
+    notes: str = ""
+    status: str = ""                        # "ativo" ou "quitado"
+    parcelas_pagas: Optional[int] = None
+
+
+class RegisterLoanPaymentBody(BaseModel):
+    """Corpo da requisição para registrar parcela paga de um empréstimo (spec 046)."""
+    data: str = ""    # Data do pagamento YYYY-MM-DD (vazio = hoje)
+
+
+class SimulateAmortizationBody(BaseModel):
+    """Corpo da requisição do simulador de amortização extraordinária (spec 046)."""
+    extra_value: float
+
+
+class SimulateAcceleratedBody(BaseModel):
+    """Corpo da requisição do simulador de parcela acelerada (spec 046)."""
+    extra_monthly: float
 
 
 class SetBudgetBody(BaseModel):
@@ -542,6 +581,7 @@ def create_transaction_endpoint(
         data=body.data,
         notes=body.notes,
         card_id=body.card_id,
+        person_ids=body.person_ids or None,
     )
     return _check_result(result)
 
@@ -1195,6 +1235,142 @@ def loan_balance(
     # Calcula e retorna o saldo devedor do empréstimo especificado
     result = get_loan_balance(loan_id=loan_id)
     return _check_result(result)
+
+
+@router.patch("/loans/{loan_id}", status_code=200)
+def update_loan_endpoint(
+    loan_id: str,
+    body: UpdateLoanBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Editar nome, notas, status ou contador de parcelas pagas de um empréstimo.
+
+    Args:
+        loan_id: ID único do empréstimo.
+        body: Campos a atualizar (todos opcionais).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok".
+
+    Raises:
+        HTTPException: 400 se o empréstimo não for encontrado ou os dados forem inválidos.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(update_loan(
+        loan_id=loan_id, name=body.name, notes=body.notes,
+        status=body.status, parcelas_pagas=body.parcelas_pagas,
+    ))
+
+
+@router.post("/loans/{loan_id}/payment", status_code=201)
+def register_loan_payment_endpoint(
+    loan_id: str,
+    body: RegisterLoanPaymentBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Registrar o pagamento da parcela do mês — avança o contador, recalcula o
+    saldo devedor e lança a despesa correspondente (spec 046, US3).
+
+    Args:
+        loan_id: ID único do empréstimo.
+        body: Data do pagamento (vazio = hoje).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok", parcelas pagas/restantes e saldo restante.
+
+    Raises:
+        HTTPException: 400 se o empréstimo não for encontrado, estiver quitado, ou inativo.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(register_loan_payment(loan_id=loan_id, data=body.data))
+
+
+@router.get("/loans/priority")
+def loan_payoff_priority(user: dict = Depends(require_user)) -> dict:
+    """Prioridade de quitação — Método Avalanche (empréstimos + cartões com dívida).
+
+    Ordena da maior para a menor taxa de juros mensal — atacar a mais cara
+    primeiro minimiza o custo total de juros (spec 046, US2).
+
+    Args:
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok", lista "priority" ordenada e "recomendacao".
+
+    Raises:
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(compare_payoff_priority())
+
+
+@router.post("/loans/{loan_id}/simulate/payoff")
+def simulate_loan_payoff_endpoint(
+    loan_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Simular a quitação antecipada do empréstimo hoje (spec 046, US2).
+
+    Args:
+        loan_id: ID único do empréstimo.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com valor de quitação, custo se continuar pagando e economia.
+
+    Raises:
+        HTTPException: 400 se o empréstimo não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(simulate_early_payoff(loan_id=loan_id))
+
+
+@router.post("/loans/{loan_id}/simulate/amortization")
+def simulate_loan_amortization_endpoint(
+    loan_id: str,
+    body: SimulateAmortizationBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Simular o impacto de uma amortização extraordinária (spec 046, US2).
+
+    Args:
+        loan_id: ID único do empréstimo.
+        body: Valor extra a amortizar hoje.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com parcelas eliminadas e economia de juros.
+
+    Raises:
+        HTTPException: 400 se o empréstimo não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(simulate_amortization(loan_id=loan_id, extra_value=body.extra_value))
+
+
+@router.post("/loans/{loan_id}/simulate/accelerated")
+def simulate_loan_accelerated_endpoint(
+    loan_id: str,
+    body: SimulateAcceleratedBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Simular nova data de quitação pagando um valor extra por mês (spec 046, US2).
+
+    Args:
+        loan_id: ID único do empréstimo.
+        body: Valor extra a pagar por mês.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com meses economizados e economia de juros.
+
+    Raises:
+        HTTPException: 400 se o empréstimo não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(simulate_accelerated_payment(loan_id=loan_id, extra_monthly=body.extra_monthly))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -2014,7 +2190,9 @@ async def upload_icon(
     return {"url": f"/uploads/icons/{filename}"}
 
 
-# ── Empréstimos pessoa-a-pessoa (personal_loans) ──────────────────────────────
+# ── Empréstimos pessoa-a-pessoa (personal_loans) — spec 046 ───────────────────
+# Passa a chamar agents.nami.tools_personal_loans em vez de SQL direto (FR-006):
+# a mesma camada de lógica agora atende webapp e Telegram.
 
 class CreatePersonalLoanBody(BaseModel):
     """Corpo da requisição para registrar empréstimo informal entre pessoas."""
@@ -2027,13 +2205,25 @@ class CreatePersonalLoanBody(BaseModel):
     note: str = ""          # Observação livre
 
 
+class UpdatePersonalLoanBody(BaseModel):
+    """Corpo da requisição para editar um empréstimo pessoa-a-pessoa (spec 046)."""
+    person_name: str = ""
+    total_amount: Optional[float] = None
+    installments: Optional[int] = None
+    paid_installments: Optional[int] = None
+    next_due_day: Optional[int] = None
+    note: str = ""
+
+
 @router.get("/personal-loans")
-def list_personal_loans(user: dict = Depends(require_user)) -> dict:
+def list_personal_loans_endpoint(
+    direction: str = Query(default="", description="Filtro opcional: 'lent' ou 'borrowed'"),
+    user: dict = Depends(require_user),
+) -> dict:
     """Listar empréstimos pessoa-a-pessoa não deletados.
 
-    Retorna todos os empréstimos da tabela personal_loans onde deleted = FALSE.
-
     Args:
+        direction: Filtro opcional por direção — vazio traz os dois.
         user: Dados do usuário autenticado.
 
     Returns:
@@ -2042,27 +2232,12 @@ def list_personal_loans(user: dict = Depends(require_user)) -> dict:
     Raises:
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    rows = run_select("""
-        SELECT id, direction, person_name, total_amount, installments,
-               paid_installments, next_due_day, note, created_at
-        FROM personal_loans
-        WHERE deleted = FALSE
-        ORDER BY created_at DESC
-    """)
-    # Converte tipos serializáveis (Decimal → float, date → string)
-    loans = [
-        {
-            **r,
-            "total_amount": float(r.get("total_amount") or 0),
-            "created_at":   str(r["created_at"]) if r.get("created_at") else None,
-        }
-        for r in rows
-    ]
-    return {"loans": loans}
+    result = _check_result(list_personal_loans(direction=direction))
+    return {"loans": result["loans"]}
 
 
 @router.post("/personal-loans", status_code=201)
-def create_personal_loan(
+def create_personal_loan_endpoint(
     body: CreatePersonalLoanBody,
     user: dict = Depends(require_user),
 ) -> dict:
@@ -2079,33 +2254,64 @@ def create_personal_loan(
         HTTPException: 400 se direction não for "lent" ou "borrowed".
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    # Valida direção antes de inserir
-    if body.direction not in ("lent", "borrowed"):
-        raise HTTPException(status_code=400, detail="direction deve ser 'lent' ou 'borrowed'.")
+    return _check_result(create_personal_loan(
+        direction=body.direction, person_name=body.person_name,
+        total_amount=body.total_amount, installments=body.installments,
+        paid_installments=body.paid_installments, next_due_day=body.next_due_day,
+        note=body.note,
+    ))
 
-    loan_id = str(uuid.uuid4())
-    run_dml("""
-        INSERT INTO personal_loans
-            (id, direction, person_name, total_amount, installments,
-             paid_installments, next_due_day, note, created_at, deleted)
-        VALUES
-            (%(id)s, %(direction)s, %(person_name)s, %(total_amount)s, %(installments)s,
-             %(paid_installments)s, %(next_due_day)s, %(note)s, NOW(), FALSE)
-    """, {
-        "id":               loan_id,
-        "direction":        body.direction,
-        "person_name":      body.person_name,
-        "total_amount":     body.total_amount,
-        "installments":     body.installments,
-        "paid_installments": body.paid_installments,
-        "next_due_day":     body.next_due_day,
-        "note":             body.note,
-    })
-    return {"status": "ok", "id": loan_id}
+
+@router.patch("/personal-loans/{loan_id}", status_code=200)
+def update_personal_loan_endpoint(
+    loan_id: str,
+    body: UpdatePersonalLoanBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Editar campos de um empréstimo pessoa-a-pessoa (spec 046).
+
+    Args:
+        loan_id: ID único do empréstimo.
+        body: Campos a atualizar (todos opcionais).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok".
+
+    Raises:
+        HTTPException: 400 se o empréstimo não for encontrado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(update_personal_loan(
+        id=loan_id, person_name=body.person_name, total_amount=body.total_amount,
+        installments=body.installments, paid_installments=body.paid_installments,
+        next_due_day=body.next_due_day, note=body.note,
+    ))
+
+
+@router.post("/personal-loans/{loan_id}/payment", status_code=201)
+def register_personal_loan_payment_endpoint(
+    loan_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Registrar que uma parcela do empréstimo p2p foi paga — avança o contador (spec 046, US4).
+
+    Args:
+        loan_id: ID único do empréstimo.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e o progresso atualizado.
+
+    Raises:
+        HTTPException: 400 se o empréstimo não for encontrado ou já estiver quitado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(register_personal_loan_payment(id=loan_id))
 
 
 @router.delete("/personal-loans/{loan_id}", status_code=200)
-def delete_personal_loan(
+def delete_personal_loan_endpoint(
     loan_id: str,
     user: dict = Depends(require_user),
 ) -> dict:
@@ -2122,127 +2328,7 @@ def delete_personal_loan(
         HTTPException: 400 se o empréstimo não for encontrado.
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    n = run_dml("""
-        UPDATE personal_loans SET deleted = TRUE
-        WHERE id = %(id)s AND deleted = FALSE
-    """, {"id": loan_id})
-
-    # run_dml retorna número de linhas afetadas — 0 = empréstimo não encontrado
-    if n == 0:
-        raise HTTPException(status_code=400, detail="Empréstimo não encontrado.")
-    return {"status": "ok", "message": "Empréstimo removido."}
-
-
-# ── Financiamentos estruturados (financings) ──────────────────────────────────
-
-class CreateFinancingBody(BaseModel):
-    """Corpo da requisição para registrar financiamento formal."""
-    description: str           # Descrição do bem financiado (ex.: "MacBook Pro")
-    lender: str = ""           # Credor (ex.: "Nubank", "Santander")
-    total_amount: float        # Valor total financiado
-    installments: int = 1      # Total de parcelas do contrato
-    paid_installments: int = 0 # Parcelas já pagas
-    next_due_day: Optional[int] = None   # Dia do mês de vencimento (1-28)
-    interest_rate: str = ""    # Taxa descritiva: "1,2% a.m." (texto livre)
-    note: str = ""             # Observação livre
-
-
-@router.get("/financings")
-def list_financings(user: dict = Depends(require_user)) -> dict:
-    """Listar financiamentos formais não deletados.
-
-    Args:
-        user: Dados do usuário autenticado.
-
-    Returns:
-        Dicionário com lista "financings".
-
-    Raises:
-        HTTPException: 401 se o usuário não estiver autenticado.
-    """
-    rows = run_select("""
-        SELECT id, description, lender, total_amount, installments,
-               paid_installments, next_due_day, interest_rate, note, created_at
-        FROM financings
-        WHERE deleted = FALSE
-        ORDER BY created_at DESC
-    """)
-    financings = [
-        {
-            **r,
-            "total_amount": float(r.get("total_amount") or 0),
-            "created_at":   str(r["created_at"]) if r.get("created_at") else None,
-        }
-        for r in rows
-    ]
-    return {"financings": financings}
-
-
-@router.post("/financings", status_code=201)
-def create_financing(
-    body: CreateFinancingBody,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Registrar um novo financiamento formal.
-
-    Args:
-        body: Dados do financiamento (description e total_amount são obrigatórios).
-        user: Dados do usuário autenticado.
-
-    Returns:
-        Dicionário com "status": "ok" e o id do registro criado.
-
-    Raises:
-        HTTPException: 401 se o usuário não estiver autenticado.
-    """
-    fin_id = str(uuid.uuid4())
-    run_dml("""
-        INSERT INTO financings
-            (id, description, lender, total_amount, installments, paid_installments,
-             next_due_day, interest_rate, note, created_at, deleted)
-        VALUES
-            (%(id)s, %(description)s, %(lender)s, %(total_amount)s, %(installments)s,
-             %(paid_installments)s, %(next_due_day)s, %(interest_rate)s, %(note)s, NOW(), FALSE)
-    """, {
-        "id":               fin_id,
-        "description":      body.description,
-        "lender":           body.lender,
-        "total_amount":     body.total_amount,
-        "installments":     body.installments,
-        "paid_installments": body.paid_installments,
-        "next_due_day":     body.next_due_day,
-        "interest_rate":    body.interest_rate,
-        "note":             body.note,
-    })
-    return {"status": "ok", "id": fin_id}
-
-
-@router.delete("/financings/{fin_id}", status_code=200)
-def delete_financing(
-    fin_id: str,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Soft delete de financiamento (marca deleted=TRUE).
-
-    Args:
-        fin_id: ID único do financiamento.
-        user: Dados do usuário autenticado.
-
-    Returns:
-        Dicionário com "status": "ok".
-
-    Raises:
-        HTTPException: 400 se o financiamento não for encontrado.
-        HTTPException: 401 se o usuário não estiver autenticado.
-    """
-    n = run_dml("""
-        UPDATE financings SET deleted = TRUE
-        WHERE id = %(id)s AND deleted = FALSE
-    """, {"id": fin_id})
-
-    if n == 0:
-        raise HTTPException(status_code=400, detail="Financiamento não encontrado.")
-    return {"status": "ok", "message": "Financiamento removido."}
+    return _check_result(delete_personal_loan(id=loan_id))
 
 
 # ═════════════════════════════════════════════════════════════════════════════

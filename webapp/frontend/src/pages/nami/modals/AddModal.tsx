@@ -8,6 +8,7 @@ import type { Account, Card, Category } from '../types'
 import type { NormalizedTx } from '../lib'
 import { Icon, lucideToKey } from '../icons'
 import { todayLocalISO } from '../dateUtils'
+import { PersonPicker } from './PersonPicker'
 
 interface AddModalProps {
   /** Controla visibilidade */
@@ -57,6 +58,8 @@ export function AddModal({ open, accounts, cards, onClose, onSaved, editingTx }:
   const [saving, setSaving]       = useState(false)
   const [error, setError]         = useState('')
   const [categories, setCategories] = useState<Category[]>([])
+  // Pessoas vinculadas (spec 047, US1) — só faz sentido na criação (não editamos vínculo aqui)
+  const [people, setPeople]       = useState<{ id: string; name: string }[]>([])
 
   // Foco automático no campo de valor ao abrir
   const valorRef = useRef<HTMLInputElement>(null)
@@ -85,6 +88,7 @@ export function AddModal({ open, accounts, cards, onClose, onSaved, editingTx }:
       setParcelado(false)
       setNumParcelas('')
     }
+    setPeople([])
     setError('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editingTx?.id])
@@ -201,6 +205,7 @@ export function AddModal({ open, accounts, cards, onClose, onSaved, editingTx }:
           card_id,
           data,
           notes,
+          person_ids: people.map(p => p.id),
         })
       }
       // Reseta o formulário para próxima entrada rápida
@@ -211,6 +216,7 @@ export function AddModal({ open, accounts, cards, onClose, onSaved, editingTx }:
       setData('')
       setParcelado(false)
       setNumParcelas('')
+      setPeople([])
 
       await onSaved(isEdit ? 'Transação atualizada ✓' : parcelado ? 'Compra parcelada criada ✓' : 'Transação salva ✓')
       onClose()
@@ -369,6 +375,11 @@ export function AddModal({ open, accounts, cards, onClose, onSaved, editingTx }:
                   />
                 )}
               </div>
+            )}
+
+            {/* Pessoas vinculadas (spec 047, US1) — só na criação de transação simples */}
+            {!isEdit && !parcelado && (
+              <PersonPicker selected={people} onChange={setPeople} />
             )}
 
             {/* Notas opcionais */}

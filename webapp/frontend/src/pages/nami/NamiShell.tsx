@@ -358,7 +358,7 @@ export function NamiShell() {
       case 'emprestimos':
         return <Loans onToast={setToast} />
       case 'financiamentos':
-        return <Financings onToast={setToast} stats={stats} />
+        return <Financings onToast={setToast} stats={stats} accounts={accounts} />
       default:
         return null
     }

@@ -69,6 +69,13 @@ from agents.nami.tools_budgets import (
     delete_budget,
 )
 from agents.nami.tools_health import get_financial_health_score
+from agents.nami.tools_personal_loans import (
+    list_personal_loans,
+    create_personal_loan,
+    update_personal_loan,
+    register_personal_loan_payment,
+    delete_personal_loan,
+)
 from agents.nami.tools_shopping import (
     create_shopping_list,
     list_shopping_lists,
@@ -91,7 +98,8 @@ nami_agent = Agent(
                 "transações (gastos e receitas). Analisa gastos por categoria, evolução mensal "
                 "e projeções. Gerencia assinaturas recorrentes. Use para qualquer pedido sobre "
                 "dinheiro: gastos, receitas, contas, cartões, quanto foi gasto em um período, "
-                "assinaturas ativas, contas fixas e lista de compras do mercado.",
+                "assinaturas ativas, contas fixas, lista de compras do mercado, "
+                "empréstimos bancários (PRICE/SAC) e empréstimos pessoa-a-pessoa.",
     # Instrução de personalidade e regras de uso das tools
     instruction="""
         Você é a Nami de One Piece — navegadora e tesoureira obcecada por dinheiro! 🍊💰
@@ -159,6 +167,18 @@ nami_agent = Agent(
         - Pular um ciclo sem lançar despesa (ex.: mês sem fatura): skip_subscription_cycle(id)
         - Remover: delete_subscription(id)
           • SEMPRE peça confirmação antes de deletar: "Tem certeza que quer remover [nome]?"
+
+        EMPRÉSTIMOS PESSOA-A-PESSOA (spec 046):
+        - Domínio separado de empréstimos bancários — sem juros, direção emprestei/peguei.
+        - Cadastrar: create_personal_loan(direction="lent"|"borrowed", person_name, total_amount, installments?)
+        - Ver todos ou por direção: list_personal_loans(direction="lent"|"borrowed"|"")
+          • "quem me deve?" → list_personal_loans(direction="lent")
+          • "eu devo pra quem?" → list_personal_loans(direction="borrowed")
+        - Registrar parcela paga: register_personal_loan_payment(id) — só avança o
+          contador, NÃO lança despesa (é informal, sem vínculo com transactions)
+        - Editar: update_personal_loan(id, ...)
+        - Remover: delete_personal_loan(id)
+          • SEMPRE peça confirmação antes: "Tem certeza que quer remover o empréstimo com [pessoa]?"
 
         LISTA DE COMPRAS (spec 045):
         - Adicionar item(ns) numa frase só ("adiciona arroz, feijão 2kg e leite na lista do
@@ -287,6 +307,12 @@ nami_agent = Agent(
         ☐ Item 1 (2kg)
         ☑ Item 2
 
+        Empréstimo pessoa-a-pessoa (list_personal_loans):
+        🤝 <b>Empréstimos</b>
+
+        Emprestei: <b>Nome</b> — R$XX,XX restante (N/M parcelas)
+        Devo: <b>Nome</b> — R$XX,XX restante (N/M parcelas)
+
         Compra finalizada (finish_shopping):
         ✅ Compra de <b>R$XX,XX</b> finalizada · 📂 Supermercado · 💳 Conta
            Lista <b>Nome</b> arquivada.
@@ -354,6 +380,12 @@ nami_agent = Agent(
         delete_budget,
         # Feature 5: Score de saúde financeira
         get_financial_health_score,
+        # Empréstimos pessoa-a-pessoa (spec 046)
+        list_personal_loans,
+        create_personal_loan,
+        update_personal_loan,
+        register_personal_loan_payment,
+        delete_personal_loan,
         # Feature 6: Lista de Compras (spec 045)
         create_shopping_list,
         list_shopping_lists,

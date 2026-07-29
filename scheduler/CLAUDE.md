@@ -90,3 +90,6 @@ Além das que cada job já usa (`DATABASE_URL`, `GCP_*`, `GCS_BACKUP_BUCKET`,
 | `sync_letterboxd` | A cada 6h | Diário do Letterboxd (RSS) → catálogo da Akane (`scripts/sync_letterboxd.py`) |
 | `lucy_digest` | Todo dia 08:00 | Digest matinal de emails (Lucy): classificação Gemini + labels/arquivo no Gmail + Telegram + histórico (`scripts/send_lucy_digest.py`) |
 | `weekly_review_reminder` | Todo domingo 20:00 | Lembrete da revisão semanal do GTD (Kaguya) → Telegram, **somente se** nenhuma revisão foi concluída nos últimos 7 dias (`scripts/send_weekly_review_reminder.py`, spec 035) |
+| `recurring_charges` | Todo dia 08:30 | Cobranças recorrentes (Nami): avisa D-3, lança automaticamente assinaturas/contas fixas com `auto_lancar=True` (via `mark_subscription_paid`, atômico) e pede confirmação das contas fixas manuais no vencimento — mensagens do dia agrupadas numa notificação só (`scripts/process_recurring_charges.py`, spec 048) |
+| `budget_alert` | Todo dia 09:00 | Alerta de orçamento (Nami): categorias ≥90% do limite ou estouradas no mês corrente → Telegram; silencioso se tudo dentro do limite (`scripts/send_budget_alert.py`, spec 048) |
+| `monthly_report` | Todo dia 1º 08:00 | Relatório do fechamento do mês anterior (Nami): top categorias, comparação com o mês anterior a esse, score de saúde financeira (`scripts/send_monthly_report.py`, spec 048) |

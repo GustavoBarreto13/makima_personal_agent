@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-06
 
-**Status**: Draft
+**Status**: ✅ Implementado (2026-07-28) — ver `plan.md` e `tasks.md`; migração de dados (`scripts/migrate_financings_to_loans.py`) e colunas novas de `loans` pendentes de execução no VPS.
 
 **Input**: User description: "Unificar os dois sistemas de dívidas paralelos: a tabela loans do agente (PRICE/SAC + 6 simuladores, só Telegram) e as tabelas personal_loans/financings criadas só para o webapp (o Telegram não as enxerga). Decisão aprovada: migrar financings → loans (loans é estritamente mais capaz); personal_loans (pessoa-a-pessoa) permanece separada mas ganha tools na Nami. Tela Financiamentos passa a usar loans com simuladores; registrar parcela paga pela UI."
 

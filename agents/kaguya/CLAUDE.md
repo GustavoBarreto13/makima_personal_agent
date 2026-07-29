@@ -566,6 +566,11 @@ confirmar valor/categoria/conta **antes** de chamar — sem defaults financeiros
 `create_expense_reminder(title, due_date, project_name="Finanças", amount=0, description="")`:
 cria a tarefa de lembrete (prioridade alta) no banco; **não** lança despesa.
 
+**Webapp (spec 047, US4)**: `POST /api/tasks/reminders` (`webapp/backend/routers/tasks.py`)
+expõe esta mesma tool para o botão "Lembrar-me" nos próximos vencimentos do Dashboard da
+Nami — com uma checagem de duplicata própria do endpoint (mesmo título + `due_date` numa
+tarefa aberta da lista Finanças não cria de novo).
+
 ---
 
 ## Calendar Hub (fatia 019) — visão integrada de calendários

@@ -160,6 +160,22 @@ CREATE TABLE IF NOT EXISTS shopping_list_items (
 );
 CREATE INDEX IF NOT EXISTS idx_shopping_list_items_list_id ON shopping_list_items(list_id);
 
+-- Colunas adicionadas na spec 046 (Unificação de dívidas) — idempotentes.
+-- account_id formaliza um drift encontrado na pesquisa: register_loan() já gravava essa
+-- coluna sem ela existir aqui (mesmo padrão de drift já visto em installment_groups antes
+-- da spec 041). financing_source_id é a chave de idempotência da migração
+-- financings→loans (scripts/migrate_financings_to_loans.py) — permite reprocessar sem
+-- duplicar.
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS account_id           TEXT;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS financing_source_id  TEXT;
+
+-- Coluna adicionada na spec 048 (Jobs financeiros agendados) — idempotente.
+-- Trava de "já avisei hoje" para o job process_recurring_charges: guarda a última data
+-- (fuso São Paulo) em que um aviso D-3 ou D0 foi enviado para esta recorrência. Como os
+-- dois avisos caem em dias de calendário diferentes, essa única coluna evita duplicar
+-- notificações em reexecuções do job no mesmo dia (FR-002).
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS last_notice_date DATE;
+
 -- Tabela de orçamento mensal por categoria
 CREATE TABLE IF NOT EXISTS budgets (
     id         TEXT PRIMARY KEY,

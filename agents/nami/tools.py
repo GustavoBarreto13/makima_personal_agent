@@ -532,6 +532,28 @@ def query_expenses(
             has_more = True
             rows = rows[:limit]
 
+        # Anexa as pessoas vinculadas a cada transação (spec 014/047) — 1 query
+        # extra em lote, nunca N+1. Nenhuma transação tem pessoas → dict vazio,
+        # não quebra nada (o vínculo é sempre opcional).
+        if rows:
+            tx_ids = [r["id"] for r in rows]
+            people_rows = run_select(
+                """
+                SELECT pl.entity_id AS tx_id, p.id AS person_id, p.name AS person_name
+                  FROM person_links pl
+                  JOIN people p ON p.id = pl.person_id
+                 WHERE pl.entity_type = 'transaction' AND pl.entity_id = ANY(%(tx_ids)s)
+                """,
+                {"tx_ids": tx_ids},
+            )
+            people_by_tx: dict[str, list[dict]] = {}
+            for pr in people_rows:
+                people_by_tx.setdefault(pr["tx_id"], []).append(
+                    {"id": pr["person_id"], "name": pr["person_name"]}
+                )
+            for r in rows:
+                r["people"] = people_by_tx.get(r["id"], [])
+
         # Soma todos os valores das transações para calcular o total do período
         # (inclui transferências — esta é a soma bruta do extrato, não um total de
         # receita/despesa; esses ficam nas queries que filtram tipo explicitamente)

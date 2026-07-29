@@ -12,6 +12,8 @@ import { TxList } from '../components/TxRow'
 import { Icon } from '../icons'
 import { DonutPanel, CashflowBars, BigMoney, Spark, greet, daysUntil, urgency, fmtMoney, Donut, AreaTrend, HeatmapMonth } from '../ui'
 import { normalizeTx, buildCatMap, groupByDay } from '../lib'
+import { todayLocalDate } from '../dateUtils'
+import { kaguyaApi } from '../../kaguya/kaguyaApi'
 
 interface DashboardProps {
   month: string
@@ -134,6 +136,34 @@ export function Dashboard({
   const byCategory   = stats?.by_category  ?? []
   const cashflow     = stats?.cashflow     ?? []
   const dailySpend   = stats?.daily_spending?.map(d => d.expense) ?? []
+
+  // Estado local do botão "Lembrar-me" (spec 047, US4) — evita cliques repetidos na
+  // mesma sessão; a proteção real contra duplicata é no backend (mesmo título+data).
+  const [remindedKeys, setRemindedKeys] = useState<Set<string>>(new Set())
+  const [remindingKey, setRemindingKey] = useState<string | null>(null)
+
+  /** Converte dias-a-partir-de-hoje numa data local YYYY-MM-DD (nunca toISOString/UTC). */
+  function dueDateFromDays(days: number): string {
+    const d = todayLocalDate()
+    d.setDate(d.getDate() + days)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  async function handleRemind(item: { name: string; amount: number; days: number; kind: string }) {
+    const dueDate = dueDateFromDays(item.days)
+    const key = `${item.kind}:${item.name}:${dueDate}`
+    setRemindingKey(key)
+    try {
+      const title = item.kind === 'card' ? `Pagar fatura ${item.name}` : `Pagar ${item.name}`
+      const r = await kaguyaApi.createReminder({ title, due_date: dueDate, amount: item.amount })
+      setRemindedKeys(prev => new Set(prev).add(key))
+      onToast(r.duplicate ? 'Já existe um lembrete para este vencimento' : 'Lembrete criado na Kaguya ✓')
+    } catch {
+      onToast('Erro ao criar lembrete')
+    } finally {
+      setRemindingKey(null)
+    }
+  }
 
   // Próximos vencimentos: cartões + assinaturas com next_billing_day / due_day
   const upcoming = useMemo(() => {
@@ -464,6 +494,9 @@ export function Dashboard({
               <div className="upcoming-list">
                 {upcoming.map((item, i) => {
                   const urg = urgency(item.days)
+                  const dueDate = dueDateFromDays(item.days)
+                  const key = `${item.kind}:${item.name}:${dueDate}`
+                  const reminded = remindedKeys.has(key)
                   return (
                     <div key={i} className="upcoming-item">
                       <Icon name={item.kind === 'card' ? 'card' : 'repeat'} size={14} />
@@ -476,6 +509,16 @@ export function Dashboard({
                           {fmtMoney(item.amount)}
                         </span>
                       )}
+                      {/* "Lembrar-me" cria tarefa na Kaguya (spec 047, US4) */}
+                      <button
+                        className="btn btn-ghost"
+                        style={{ fontSize: 10, padding: '2px 8px', marginLeft: 6 }}
+                        onClick={() => handleRemind(item)}
+                        disabled={reminded || remindingKey === key}
+                        title="Criar lembrete de pagamento na Kaguya"
+                      >
+                        {reminded ? 'Lembrete criado' : 'Lembrar-me'}
+                      </button>
                     </div>
                   )
                 })}

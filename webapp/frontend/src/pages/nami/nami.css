@@ -1348,6 +1348,15 @@
 }
 .nami-app .loan-meta strong { color: var(--ink); }
 
+/* Ações do BankLoanCard (spec 046) — editar/simular/registrar parcela */
+.nami-app .loan-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.nami-app .loan-actions .btn { flex: 1; justify-content: center; }
+
 /* ══════════════════════════════════════════════════════════════════════════
    DONUT CHART — gráfico de pizza SVG (componente Donut em ui.tsx)
    ══════════════════════════════════════════════════════════════════════════ */

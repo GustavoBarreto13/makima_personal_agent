@@ -25,7 +25,8 @@ nami_agent (Agent ADK — singleton)
     ├── tools_accounts.py     → contas financeiras
     ├── tools_installments.py → compras parceladas
     ├── tools_credit_cards.py → cartões de crédito
-    ├── tools_loans.py        → empréstimos e financiamentos
+    ├── tools_loans.py        → empréstimos e financiamentos bancários (PRICE/SAC + 6 simuladores)
+    ├── tools_personal_loans.py → empréstimos pessoa-a-pessoa (spec 046)
     ├── tools_budgets.py      → orçamento por categoria
     ├── tools_health.py       → score de saúde financeira
     ├── tools_shopping.py     → lista de compras (spec 045) — listas, itens, finalizar
@@ -109,7 +110,7 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 
 ---
 
-## Tools públicas (55 no total)
+## Tools públicas (60 no total)
 
 > As tabelas abaixo listam as principais. Além delas, cada módulo tem o CRUD complementar
 > (`update_*` / `delete_*` de contas, cartões, empréstimos, parcelamentos, orçamentos e
@@ -132,7 +133,7 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 | Tool | Descrição |
 |---|---|
 | `create_transaction` | Registra gasto ou receita. Parâmetro `card_id` opcional: quando fornecido, `account_id` fica NULL (transação de cartão). Quando omitido, resolve conta via `_resolve_account`. |
-| `query_expenses` | Consulta lista detalhada com filtros de período + `categoria`/`tipo`/`limit`/`offset` (spec 043) — retorna `has_more` para paginação |
+| `query_expenses` | Consulta lista detalhada com filtros de período + `categoria`/`tipo`/`limit`/`offset` (spec 043) — retorna `has_more` para paginação; cada transação traz `people: [{id, name}]` vinculada (spec 014/047), 1 query em lote, nunca N+1 |
 | `update_transaction` | Corrige campo(s) de uma transação existente pelo `id`. `card_id` (spec 043) tem prioridade sobre `conta` — troca a origem para cartão, zerando `account_id` (mutuamente exclusivos, mesmo bug corrigido que existia desde sempre: antes só `conta` era atualizado, nunca `account_id`/`card_id`) |
 | `create_transfer` | Transferência atômica entre 2 contas (spec 043) — par de transações `tipo='Transferencia'` vinculadas por `transfer_id`, via `get_conn()` |
 | `delete_transaction` | Soft delete — marca `deleted=TRUE` |
@@ -181,6 +182,26 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 | `simulate_accelerated_payment` | Redução de prazo com parcela maior |
 | `compare_payoff_priority` | Ordena dívidas (cartões + empréstimos) por taxa DESC — avalanche |
 | `register_loan_payment` | Incrementa `parcelas_pagas` e cria transação Despesa |
+| `update_loan` | Edita nome/notas/status/parcelas_pagas |
+| `delete_loan` | Soft delete — marca `deleted=TRUE` |
+
+Agora também exposto ao webapp via `/loans/*` (edição, registrar parcela, os 3 simuladores
+e `GET /loans/priority`) — spec 046 unificou o antigo `financings` (só webapp) nesta
+mesma tabela; a migração idempotente vive em `scripts/migrate_financings_to_loans.py`.
+
+### Empréstimos pessoa-a-pessoa — `tools_personal_loans.py` (spec 046)
+
+Domínio separado (sem juros, direção emprestei/peguei) — tabela `personal_loans`, agora
+por trás de uma única camada de lógica usada pelos dois canais (antes o webapp acessava
+SQL direto).
+
+| Tool | Descrição |
+|---|---|
+| `list_personal_loans` | Lista por direção (`lent`\|`borrowed`) ou todos |
+| `create_personal_loan` | Cadastra empréstimo informal |
+| `update_personal_loan` | Edita campos (só os informados) |
+| `register_personal_loan_payment` | Avança `paid_installments` — NÃO lança despesa |
+| `delete_personal_loan` | Soft delete |
 
 ### Orçamento — `tools_budgets.py`
 
@@ -256,8 +277,39 @@ Mapeamento de tipo de empréstimo → categoria em `register_loan_payment`: `vei
 | "adiciona arroz, feijão 2kg e leite na lista do mercado" | `add_shopping_items(items="arroz, feijão 2kg, leite", list_name="mercado")` |
 | "o que tem na lista do mercado?" | `show_shopping_list(list_name="mercado")` |
 | "finalizei a compra, deu 250 no cartão" | `finish_shopping(valor_total=250, card_id=...)` |
+| "quem me deve?" | `list_personal_loans(direction="lent")` |
+| "eu devo pra quem?" | `list_personal_loans(direction="borrowed")` |
+| "qual dívida atacar primeiro?" | `compare_payoff_priority()` |
 
 ---
+
+## Jobs agendados (spec 048)
+
+Três jobs no `makima-scheduler` (ver `scheduler/CLAUDE.md`) — nenhuma tool nova no
+agente, só scripts standalone que reusam as tools já existentes:
+
+- **`recurring_charges`** (08:30): avisa D-3, lança automaticamente (`kind='assinatura'`
+  ou `auto_lancar=True`) via `mark_subscription_paid` — atômico, mesma função da spec 044
+  — e pede confirmação das contas fixas manuais no vencimento. Idempotente: o
+  lançamento rola `next_billing` (auto-idempotente); os avisos usam a trava
+  `subscriptions.last_notice_date` (1 aviso por dia por recorrência).
+- **`budget_alert`** (09:00): `get_budget_status` do mês corrente, alerta categorias ≥90%.
+- **`monthly_report`** (dia 1º 08:00): fecha o mês anterior com
+  `get_spending_summary`/`get_financial_health_score` — zero cálculo novo.
+
+## Integração cross-agent (spec 047)
+
+- **Pessoas (Komi)**: `create_transaction`/`create_transaction_on_cursor` já aceitavam
+  `person_ids` (spec 014); o webapp ganhou a porta de entrada visual — seletor de pessoas
+  no `AddModal` (`PersonPicker.tsx`, busca via `komiApi.search`) e chips na listagem.
+- **Calendário (Kaguya)**: já funcionava desde a fatia 019 — `agents/nami/calendar_provider.py`
+  é a fonte "nami" do Calendar Hub, renderizada como somente-leitura no calendário web.
+- **Hub (Makima)**: o card da Nami na home mostra o score de saúde financeira
+  (`GET /api/hub/summary`, stat2) — mesma tool `get_financial_health_score`, sem duplicar
+  lógica.
+- **Lembretes (Kaguya)**: `POST /api/tasks/reminders` no webapp chama
+  `create_expense_reminder` (já existia, cross-agent Kaguya→Nami) a partir do botão
+  "Lembrar-me" nos próximos vencimentos do Dashboard.
 
 ## O que NÃO fazer
 

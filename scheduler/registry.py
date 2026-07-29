@@ -25,6 +25,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 # Importa as funções que fazem o trabalho de cada job.
 from scheduler.jobs import (
     run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest, run_weekly_review_reminder,
+    run_recurring_charges, run_budget_alert, run_monthly_report,
 )
 
 # Fuso horário do usuário. Todos os horários dos jobs são interpretados nele —
@@ -147,5 +148,30 @@ JOBS: list[ScheduledJob] = [
         func=run_weekly_review_reminder,
         trigger=weekly_at("sun", 20, 0),
         description="Lembrete de revisão semanal (Kaguya) → Telegram, se a semana ficou sem revisão",
+    ),
+    # Cobranças recorrentes (Nami) — avisa D-3, lança assinaturas/contas fixas automáticas
+    # no vencimento (rola next_billing), avisa contas fixas manuais para confirmar o valor.
+    # 08:30 (America/Sao_Paulo) — spec 048, US1+US2.
+    ScheduledJob(
+        name="recurring_charges",
+        func=run_recurring_charges,
+        trigger=daily_at(8, 30),
+        description="Cobranças recorrentes (Nami): avisa D-3, lança automáticas, pede confirmação de contas fixas",
+    ),
+    # Alerta de orçamento (Nami) — categorias ≥90% do limite ou estouradas.
+    # 09:00 (America/Sao_Paulo) — spec 048, US3.
+    ScheduledJob(
+        name="budget_alert",
+        func=run_budget_alert,
+        trigger=daily_at(9, 0),
+        description="Alerta de orçamento (Nami) → Telegram, categorias ≥90% ou estouradas",
+    ),
+    # Relatório mensal do fechamento (Nami) — todo dia 1º, mês anterior.
+    # 08:00 (America/Sao_Paulo) — spec 048, US4.
+    ScheduledJob(
+        name="monthly_report",
+        func=run_monthly_report,
+        trigger=CronTrigger(day=1, hour=8, minute=0, timezone=TZ),
+        description="Relatório mensal do fechamento (Nami) → Telegram, todo dia 1º",
     ),
 ]

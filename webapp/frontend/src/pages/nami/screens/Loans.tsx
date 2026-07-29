@@ -23,6 +23,7 @@ export function Loans({ onToast }: LoansProps) {
   const [showForm, setShowForm]     = useState(false)
   const [saving, setSaving]         = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [payingId, setPayingId]     = useState<string | null>(null)
 
   // Carrega empréstimos ao montar (não depende do mês)
   useEffect(() => {
@@ -87,6 +88,19 @@ export function Loans({ onToast }: LoansProps) {
     }
   }
 
+  async function handlePay(id: string) {
+    setPayingId(id)
+    try {
+      const r = await namiApi.payPersonalLoanInstallment(id)
+      setLoans(prev => prev.map(l => l.id === id ? { ...l, paid_installments: r.paid_installments } : l))
+      onToast(`Parcela ${r.paid_installments}/${r.installments} registrada ✓`)
+    } catch {
+      onToast('Erro ao registrar pagamento')
+    } finally {
+      setPayingId(null)
+    }
+  }
+
   return (
     <>
       {/* Cabeçalho da página */}
@@ -139,7 +153,9 @@ export function Loans({ onToast }: LoansProps) {
               key={loan.id}
               loan={loan}
               onDelete={handleDelete}
+              onPay={handlePay}
               deleting={deletingId === loan.id}
+              paying={payingId === loan.id}
             />
           ))}
         </div>

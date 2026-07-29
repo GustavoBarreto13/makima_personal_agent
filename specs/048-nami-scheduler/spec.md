@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-06
 
-**Status**: Draft
+**Status**: ✅ Implementado (2026-07-28) — ver `plan.md` e `tasks.md`; migração (`subscriptions.last_notice_date`) e redeploy do container `makima-scheduler` pendentes no VPS.
 
 **Input**: User description: "Primeiros jobs financeiros do scheduler (hoje não existe nenhum): alerta diário de orçamento estourado/perto do limite, cobrança recorrente automática (assinaturas lançam despesa e rolam next_billing; contas fixas avisam e aguardam confirmação — flag auto_lancar por item), e relatório mensal fechado via Telegram. Decisão aprovada: assinaturas 100% automáticas (avisa D-3 + lança no dia + rola a data)."
 

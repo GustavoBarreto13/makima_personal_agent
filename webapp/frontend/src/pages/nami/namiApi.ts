@@ -4,7 +4,7 @@
 import { api } from '../../lib/api'
 import type {
   Transaction, Account, Card, Budget, Subscription,
-  PersonalLoan, Financing, StatsResponse, Category,
+  PersonalLoan, BankLoan, PayoffPriorityItem, StatsResponse, Category,
   Installment, InstallmentDetail, CardInstallment,
   RecurringStatusResponse, ShoppingList, ShoppingListDetail, ShoppingItem, FrequentItem,
 } from './types'
@@ -71,6 +71,7 @@ export const namiApi = {
   createTransaction: (body: {
     name: string; valor: number; tipo: string; categoria: string;
     conta?: string; card_id?: string; data?: string; notes?: string;
+    person_ids?: string[];
   }): Promise<{ status: string; id: string }> =>
     api.post('/api/finances/transactions', body),
 
@@ -187,10 +188,10 @@ export const namiApi = {
   skipSubscriptionCycle: (id: string): Promise<{ status: string }> =>
     api.post(`/api/finances/subscriptions/${id}/skip`, {}),
 
-  // ── Empréstimos pessoa-a-pessoa ───────────────────────────────────────────────
+  // ── Empréstimos pessoa-a-pessoa (spec 046) ────────────────────────────────────
 
-  getPersonalLoans: (): Promise<{ loans: PersonalLoan[] }> =>
-    api.get('/api/finances/personal-loans'),
+  getPersonalLoans: (direction?: string): Promise<{ loans: PersonalLoan[] }> =>
+    api.get(`/api/finances/personal-loans${direction ? `?direction=${direction}` : ''}`),
 
   createPersonalLoan: (body: {
     direction: string; person_name: string; total_amount: number;
@@ -199,23 +200,63 @@ export const namiApi = {
   }): Promise<{ status: string; id: string }> =>
     api.post('/api/finances/personal-loans', body),
 
+  updatePersonalLoan: (id: string, body: {
+    person_name?: string; total_amount?: number; installments?: number;
+    paid_installments?: number; next_due_day?: number; note?: string;
+  }): Promise<{ status: string }> =>
+    api.patch(`/api/finances/personal-loans/${id}`, body),
+
+  /** Registra parcela paga do empréstimo p2p — só avança o contador, sem lançar despesa. */
+  payPersonalLoanInstallment: (id: string): Promise<{ status: string; paid_installments: number; installments: number }> =>
+    api.post(`/api/finances/personal-loans/${id}/payment`, {}),
+
   deletePersonalLoan: (id: string): Promise<{ status: string }> =>
     api.del(`/api/finances/personal-loans/${id}`),
 
-  // ── Financiamentos ────────────────────────────────────────────────────────────
+  // ── Empréstimos bancários / financiamentos unificados (spec 046) ─────────────
 
-  getFinancings: (): Promise<{ financings: Financing[] }> =>
-    api.get('/api/finances/financings'),
+  getLoans: (status: string = 'ativo'): Promise<{ loans: BankLoan[]; count: number }> =>
+    api.get(`/api/finances/loans?status=${status}`),
 
-  createFinancing: (body: {
-    description: string; lender?: string; total_amount: number;
-    installments: number; paid_installments?: number;
-    next_due_day?: number; interest_rate?: string; note?: string;
+  registerLoan: (body: {
+    nome: string; tipo: string; sistema?: string; valor_original: number;
+    taxa_juros_mensal: number; prazo_meses: number; parcelas_pagas?: number;
+    valor_parcela: number; data_inicio?: string; conta: string;
   }): Promise<{ status: string; id: string }> =>
-    api.post('/api/finances/financings', body),
+    api.post('/api/finances/loans', body),
 
-  deleteFinancing: (id: string): Promise<{ status: string }> =>
-    api.del(`/api/finances/financings/${id}`),
+  updateLoan: (id: string, body: {
+    name?: string; notes?: string; status?: string; parcelas_pagas?: number;
+  }): Promise<{ status: string }> =>
+    api.patch(`/api/finances/loans/${id}`, body),
+
+  deleteLoan: (id: string): Promise<{ status: string }> =>
+    api.del(`/api/finances/loans/${id}`),
+
+  /** Registra a parcela do mês — avança o contador, recalcula saldo e lança a despesa. */
+  payLoanInstallment: (id: string, data?: string): Promise<{
+    status: string; parcelas_pagas: number; parcelas_restantes: number;
+    saldo_restante: number; transaction_id: string; message: string
+  }> =>
+    api.post(`/api/finances/loans/${id}/payment`, { data: data ?? '' }),
+
+  simulatePayoff: (id: string): Promise<{
+    valor_quitacao: number; custo_continuar_pagando: number; economia_quitando_agora: number; message: string
+  }> =>
+    api.post(`/api/finances/loans/${id}/simulate/payoff`, {}),
+
+  simulateAmortization: (id: string, extra_value: number): Promise<{
+    parcelas_eliminadas: number; economia_juros: number; message: string
+  }> =>
+    api.post(`/api/finances/loans/${id}/simulate/amortization`, { extra_value }),
+
+  simulateAccelerated: (id: string, extra_monthly: number): Promise<{
+    meses_atual: number; meses_novo: number; meses_economizados: number; economia_juros: number; message: string
+  }> =>
+    api.post(`/api/finances/loans/${id}/simulate/accelerated`, { extra_monthly }),
+
+  getPayoffPriority: (): Promise<{ priority: PayoffPriorityItem[]; recomendacao: string }> =>
+    api.get('/api/finances/loans/priority'),
 
   // ── Parcelamentos (compras parceladas) ────────────────────────────────────────
 

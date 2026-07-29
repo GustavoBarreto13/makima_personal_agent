@@ -71,6 +71,23 @@ MIGRATIONS = [
         "subscriptions: adicionar coluna 'auto_lancar' (default TRUE)",
         "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS auto_lancar BOOLEAN DEFAULT TRUE;",
     ),
+
+    # ── Spec 046 (Unificação de dívidas): loans ganha account_id (drift) e
+    #    financing_source_id (idempotência da migração financings→loans) ──────
+    (
+        "loans: adicionar coluna 'account_id' (formaliza drift de produção)",
+        "ALTER TABLE loans ADD COLUMN IF NOT EXISTS account_id TEXT;",
+    ),
+    (
+        "loans: adicionar coluna 'financing_source_id' (chave de idempotência da migração)",
+        "ALTER TABLE loans ADD COLUMN IF NOT EXISTS financing_source_id TEXT;",
+    ),
+
+    # ── Spec 048 (Jobs financeiros agendados): trava de aviso diário ────────────
+    (
+        "subscriptions: adicionar coluna 'last_notice_date' (trava de aviso diário do scheduler)",
+        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS last_notice_date DATE;",
+    ),
 ]
 
 

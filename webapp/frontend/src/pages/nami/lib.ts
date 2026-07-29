@@ -33,6 +33,8 @@ export interface NormalizedTx {
   accountId?: string
   /** Id do cartão (se for transação de cartão) */
   cardId?: string
+  /** Pessoas vinculadas (spec 014/047) */
+  people?: { id: string; name: string }[]
 }
 
 /**
@@ -66,6 +68,7 @@ export function normalizeTx(tx: Transaction): NormalizedTx {
     notes:    tx.notes,
     accountId: tx.account_id,
     cardId:   tx.card_id,
+    people:   tx.people,
   }
 }
 

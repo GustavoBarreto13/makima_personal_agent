@@ -26,6 +26,7 @@ export interface Transaction {
   notes?: string
   account_id?: string // preenchido quando a transação é de conta bancária (spec 043)
   card_id?: string    // preenchido quando a transação é de cartão
+  people?: { id: string; name: string }[]  // pessoas vinculadas (spec 014/047)
 }
 
 // ── Conta ─────────────────────────────────────────────────────────────────────
@@ -127,20 +128,35 @@ export interface PersonalLoan {
   created_at?: string
 }
 
-// ── Financiamento estruturado ────────────────────────────────────────────────
+// ── Empréstimo/Financiamento bancário (PRICE/SAC) — spec 046 ────────────────
 
-/** Financiamento com credor formal e taxa de juros (entidade nova). */
-export interface Financing {
+/** Dívida bancária unificada — substitui o antigo `financings` (spec 046). */
+export interface BankLoan {
   id: string
-  description: string   // ex.: "MacBook Pro"
-  lender?: string       // ex.: "Nubank"
-  total_amount: number
-  installments: number
-  paid_installments: number
-  next_due_day?: number
-  interest_rate?: string  // descritivo: "2,1% a.m."
-  note?: string
-  created_at?: string
+  name: string
+  tipo: string                    // "veiculo" | "consignado" | "pessoal" | "imobiliario" | "outro"
+  sistema_amortizacao: 'PRICE' | 'SAC'
+  valor_original: number
+  taxa_juros_mensal: number        // fração decimal (0.0099 = 0.99%)
+  num_parcelas_total: number
+  parcelas_pagas: number
+  valor_parcela: number
+  primeiro_vencimento: string      // YYYY-MM-DD
+  conta?: string
+  desconto_folha: boolean
+  status: string                   // "ativo" | "quitado"
+  notes?: string
+  saldo_devedor: number            // calculado pelo backend
+  parcelas_restantes: number       // calculado pelo backend
+}
+
+/** Item da prioridade de quitação (GET /loans/priority) — empréstimo OU cartão. */
+export interface PayoffPriorityItem {
+  tipo: 'emprestimo' | 'cartao'
+  name: string
+  taxa_juros_mensal: number
+  taxa_juros_anual: number
+  saldo_devedor: number
 }
 
 // ── Parcelamento (compra parcelada) — spec 041 ──────────────────────────────

@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-06
 
-**Status**: Draft
+**Status**: ✅ Implementado (2026-07-28) — ver `plan.md` e `tasks.md`. Nenhuma migração pendente.
 
 **Input**: User description: "Ligar a infraestrutura cross-agent já pronta: seletor de pessoas (Komi) ao criar transação no webapp (backend já aceita person_ids), eventos financeiros da Nami no calendário da Kaguya no webapp (calendar_provider pronto, hub só agrega no Telegram), health score no card da Nami no Hub (Makima), e botão de lembrete na Kaguya a partir dos próximos vencimentos (create_expense_reminder existe)."
 

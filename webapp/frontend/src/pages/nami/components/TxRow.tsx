@@ -65,6 +65,14 @@ export function TxRow({ tx, catMap, onDelete, onEdit, deleting }: TxRowProps) {
           {cat?.name ?? tx.catId}
           {tx.source && ` · ${tx.source}`}
         </div>
+        {/* Chips de pessoas vinculadas (spec 014/047) */}
+        {tx.people && tx.people.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+            {tx.people.map(p => (
+              <span key={p.id} className="chip" style={{ fontSize: 10, padding: '1px 8px' }}>{p.name}</span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Lado direito: valor + botão lixeira */}

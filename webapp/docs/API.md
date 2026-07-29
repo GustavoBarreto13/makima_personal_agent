@@ -41,8 +41,8 @@ Todos os endpoints de finanças exigem autenticação. A maior parte chama as to
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/finances/transactions` | Lista transações de um período; filtro opcional por categoria/tipo e paginação (spec 043). | `?start_date=&end_date=&categoria=&tipo=&limit=&offset=` |
-| `POST` | `/api/finances/transactions` | Cria uma transação (devolve 201). | Body: `CreateTransactionBody` |
+| `GET` | `/api/finances/transactions` | Lista transações de um período; filtro opcional por categoria/tipo e paginação (spec 043). Cada transação traz `people: [{id, name}]` vinculada (spec 014/047). | `?start_date=&end_date=&categoria=&tipo=&limit=&offset=` |
+| `POST` | `/api/finances/transactions` | Cria uma transação (devolve 201). `person_ids` vincula pessoas do diretório da Komi (spec 047), opcional. | Body: `CreateTransactionBody` |
 | `PATCH` | `/api/finances/transactions/{tx_id}` | Atualiza uma transação existente — `card_id` (spec 043) troca a origem para cartão, mutuamente exclusivo com `conta`. | Body: `UpdateTransactionBody` |
 | `DELETE` | `/api/finances/transactions/{tx_id}` | Soft-delete de uma transação. | — |
 | `GET` | `/api/finances/transactions/export` | Exporta as transações filtradas como CSV (`;` + BOM UTF-8, compatível com Excel pt-BR) — spec 043. | `?start_date=&end_date=&categoria=&tipo=` |
@@ -88,13 +88,25 @@ responder no Telegram ("onde vai mais meu dinheiro?" → `get_spending_summary`)
 | `POST` | `/api/finances/cards/{card_id}/payment` | Registra pagamento de fatura (devolve 201). | Body: `CardPaymentBody` |
 | `DELETE` | `/api/finances/cards/{card_id}` | Encerra o cartão. | — |
 
-### Empréstimos bancários
+### Empréstimos bancários / financiamentos unificados (spec 046)
+
+Sistema único PRICE/SAC + 6 simuladores — antes só existia para o Telegram
+(`agents/nami/tools_loans.py`); o antigo `financings` (webapp-only) foi migrado para cá
+via `scripts/migrate_financings_to_loans.py` (idempotente, `financings` preservada intacta
+como backup). Saldo devedor e parcelas sempre calculados no backend — o resultado é
+idêntico ao do Telegram (SC-002).
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/finances/loans` | Lista empréstimos bancários. | `?status=ativo\|quitado` |
+| `GET` | `/api/finances/loans` | Lista empréstimos/financiamentos com saldo devedor calculado. | `?status=ativo\|quitado\|todos` |
 | `POST` | `/api/finances/loans` | Registra empréstimo (devolve 201). | Body: `RegisterLoanBody` |
 | `GET` | `/api/finances/loans/{loan_id}/balance` | Saldo devedor do empréstimo. | — |
+| `PATCH` | `/api/finances/loans/{loan_id}` | Edita nome/notas/status/parcelas_pagas. | Body: `UpdateLoanBody` |
+| `POST` | `/api/finances/loans/{loan_id}/payment` | Registra parcela paga — avança contador, recalcula saldo, lança despesa (devolve 201). | Body: `RegisterLoanPaymentBody` |
+| `GET` | `/api/finances/loans/priority` | Prioridade de quitação — Método Avalanche (empréstimos + cartões com dívida). | — |
+| `POST` | `/api/finances/loans/{loan_id}/simulate/payoff` | Simula quitação antecipada hoje. | — |
+| `POST` | `/api/finances/loans/{loan_id}/simulate/amortization` | Simula amortização extraordinária. | Body: `SimulateAmortizationBody` |
+| `POST` | `/api/finances/loans/{loan_id}/simulate/accelerated` | Simula parcela acelerada. | Body: `SimulateAcceleratedBody` |
 | `DELETE` | `/api/finances/loans/{loan_id}` | Soft-delete do empréstimo. | — |
 
 ### Orçamentos
@@ -159,25 +171,23 @@ Duas tabelas novas: `shopping_lists` (nomeada, ativa/arquivada) e `shopping_list
 |---|---|---|---|
 | `POST` | `/api/finances/uploads/icon` | Faz upload de ícone (PNG/JPEG/WebP/GIF, máx 1 MB). Retorna `{"url": "/uploads/icons/<nome>"}`. | Multipart: campo `file` |
 
-### Empréstimos pessoais (pessoa a pessoa) ★
+### Empréstimos pessoa-a-pessoa (spec 046)
 
-Tabela webapp-only: `personal_loans`.
+Domínio separado dos empréstimos bancários (sem juros, direção emprestei/peguei). Os
+endpoints agora chamam `agents/nami/tools_personal_loans.py` em vez de SQL direto (FR-006
+— mesma camada de lógica usada pelo Telegram).
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/finances/personal-loans` | Lista empréstimos pessoais. | — |
+| `GET` | `/api/finances/personal-loans` | Lista empréstimos pessoais. | `?direction=lent\|borrowed` |
 | `POST` | `/api/finances/personal-loans` | Registra empréstimo pessoal (devolve 201). | Body: `CreatePersonalLoanBody` |
+| `PATCH` | `/api/finances/personal-loans/{loan_id}` | Edita campos (só os informados). | Body: `UpdatePersonalLoanBody` |
+| `POST` | `/api/finances/personal-loans/{loan_id}/payment` | Registra parcela paga — só avança o contador, sem lançar despesa (devolve 201). | — |
 | `DELETE` | `/api/finances/personal-loans/{loan_id}` | Soft-delete. | — |
 
-### Financiamentos ★
-
-Tabela webapp-only: `financings`.
-
-| Método | Caminho | Descrição | Body / Query |
-|---|---|---|---|
-| `GET` | `/api/finances/financings` | Lista financiamentos. | — |
-| `POST` | `/api/finances/financings` | Registra financiamento (devolve 201). | Body: `CreateFinancingBody` |
-| `DELETE` | `/api/finances/financings/{fin_id}` | Soft-delete. | — |
+> **Removido (spec 046, FR-007)**: as rotas antigas `GET/POST/DELETE /financings` foram
+> desativadas — o sistema migrou para `/loans` acima. A tabela `financings` permanece no
+> banco como backup, sem rota HTTP.
 
 ---
 
@@ -592,6 +602,12 @@ da exclusão. Todas as views operacionais (`/my-day`, `/calendar`, `/eisenhower`
 exceção (sinaliza com `archived: bool`). `/my-day` também passa a trazer `location` em cada
 evento (antes só chegava na agenda/popover do Calendar Hub).
 
+### Lembrete de pagamento cross-agent (spec 047, US4)
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `POST` | `/api/tasks/reminders` | Cria lembrete de pagamento na lista "Finanças" a partir de um vencimento da Nami (Dashboard). Chama `create_expense_reminder` (cross-agent já existente); protege contra duplicata — mesmo título + mesma `due_date` numa tarefa aberta não cria de novo, devolve a existente com `duplicate: true`. | Body: `CreateReminderBody` |
+
 ---
 
 ## Filmes (`/api/movies/*`)
@@ -753,4 +769,4 @@ Exige autenticação. Só **lê** dados: SQL direto via `run_select` ou tools j�
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/hub/summary` | Agrega 2 stats reais por agente para os 8 domínios (Nami, Frieren, Komi, Violet, Kaguya, Mai, Marin, Akane). Cada agente é calculado em try/except isolado — falha vira `null` naquela chave, resposta sempre 200. Valores já vêm formatados como string. | — |
+| `GET` | `/api/hub/summary` | Agrega 2 stats reais por agente para os 8 domínios (Nami, Frieren, Komi, Violet, Kaguya, Mai, Marin, Akane). Cada agente é calculado em try/except isolado — falha vira `null` naquela chave, resposta sempre 200. Valores já vêm formatados como string. Card da Nami: stat = saldo do mês, stat2 = score de saúde financeira 0–100 (spec 047, mesma tool `get_financial_health_score` da tela — isolado em try/except próprio). | — |

@@ -42,6 +42,10 @@ interface MutationResult {
 const BASE = '/api/tasks'
 
 export const kaguyaApi = {
+  // ── Lembrete de pagamento cross-agent (Nami → Kaguya) — spec 047, US4 ────
+  createReminder: (body: { title: string; due_date: string; amount?: number; description?: string }) =>
+    api.post<{ status: string; id: number; duplicate: boolean; message?: string }>(`${BASE}/reminders`, body),
+
   // ── Sidebar / listas / grupos / colunas ──────────────────────────────────
   sidebar: () => api.get<Sidebar>(`${BASE}/sidebar`),
 

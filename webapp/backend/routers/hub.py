@@ -35,6 +35,9 @@ from webapp.backend.deps import require_user
 # run_select executa SELECT no PostgreSQL compartilhado e retorna lista de dicts.
 from agents.db import run_select
 
+# Score de saúde financeira (spec 047, US3) — mesma tool usada pela tela da Nami.
+from agents.nami.tools_health import get_financial_health_score
+
 # O prefixo "/api/hub" é adicionado em main.py quando este router é incluído.
 router = APIRouter()
 
@@ -142,12 +145,15 @@ def _fmt_brl(v: float) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _nami() -> dict:
-    """Calcular os 2 stats da Nami: saldo do mês + lançamentos na semana (REQ-12).
+    """Calcular os 2 stats da Nami: saldo do mês + score de saúde financeira.
 
     Returns:
         Dicionário de agente com:
         - stat: saldo do mês corrente (receitas − despesas) formatado em BRL.
-        - stat2: contagem de transações dos últimos 7 dias.
+        - stat2: score de saúde financeira 0-100 (spec 047, US3) — idêntico ao
+          exibido na tela da Nami, mesma tool (`get_financial_health_score`).
+          Calculado em try/except próprio: uma falha aqui não derruba o stat1
+          (saldo), mesmo princípio de isolamento do Hub, só que por stat.
     """
     # Limites do mês corrente: primeiro dia (day=1) e último dia real do mês.
     hoje = date.today()
@@ -174,17 +180,13 @@ def _nami() -> dict:
     saldo = receitas - despesas
     stat = _stat(_fmt_brl(saldo), "saldo do mês")
 
-    # Query 2 — lançamentos nos últimos 7 dias (transações não deletadas).
-    rows2 = run_select(
-        """
-        SELECT COUNT(*) AS n
-        FROM transactions
-        WHERE data >= CURRENT_DATE - 7
-          AND deleted = FALSE
-        """
-    )
-    n = int(rows2[0]["n"]) if rows2 else 0
-    stat2 = _stat(str(n), "lançamentos / semana")
+    # Score de saúde financeira do mês corrente — isolado em try/except próprio
+    # para que uma falha aqui vire "—" só neste stat, sem apagar o saldo acima.
+    try:
+        health = get_financial_health_score(hoje.strftime("%Y-%m"))
+        stat2 = _stat(f"{health['score']}", "saúde financeira")
+    except Exception:
+        stat2 = _stat("—", "saúde financeira")
 
     return _agent(stat, stat2)
 
