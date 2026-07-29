@@ -35,6 +35,7 @@ from agents.marin.tools import (
     # Catálogo
     add_anime,
     delete_anime,
+    refresh_anime_metadata,
     # Sessões de episódios
     log_watch,
     delete_watch_log,
@@ -646,6 +647,28 @@ def set_notes_endpoint(anime_id: str, body: NotesBody, user: dict = Depends(requ
         Dict com status "ok" e o texto salvo.
     """
     return _check_result(set_anime_notes(anime_id_or_query=anime_id, notes=body.notes))
+
+
+@router.post("/{anime_id}/refresh-metadata")
+def refresh_metadata_endpoint(anime_id: str, user: dict = Depends(require_user)) -> dict:
+    """Rebuscar metadados de um anime já no catálogo (Jikan+AniList+ARM+TMDB).
+
+    Botão "Atualizar Dados" no detalhe — preenche campos que ficaram faltando
+    (pôster, gêneros, estúdio, sinopse, thumbnails) sem tocar em nota, status,
+    progresso, etiquetas, listas ou histórico do diário.
+
+    Args:
+        anime_id: UUID do anime.
+        user: Usuário autenticado.
+
+    Returns:
+        Dict com "anime" (linha atualizada) em caso de sucesso.
+
+    Raises:
+        HTTPException: 400 se o anime não tiver mal_id ou se nenhuma API
+            externa responder (nesse caso, nada é alterado).
+    """
+    return _check_result(refresh_anime_metadata(anime_id_or_query=anime_id))
 
 
 @router.post("/{anime_id}/tags", status_code=201)

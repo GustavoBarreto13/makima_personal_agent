@@ -212,6 +212,7 @@ Score 0 = remover avaliação (NULL no banco).
 |---|---|
 | `search_anime(query, limit=5)` | Busca no Jikan por título — sem gravar; marca in_catalog |
 | `add_anime(mal_id)` | Enriquece (Jikan+AniList+ARM+TMDB) + upserta em `anime` + popula `episodes` |
+| `refresh_anime_metadata(query)` | Rebusca metadados de um anime já no catálogo — preenche campos faltantes (coalesce, nunca sobrescreve com vazio) sem tocar em nota/status/progresso/etiquetas/listas |
 | `log_watch(anime_id_or_query, ep_start?, ep_end?, watched_date?, rating?, notes?)` | Insere watch_log, avança episodes_watched, marca episodes.watched, infere date_started/date_finished |
 | `delete_watch_log(log_id)` | Remove sessão do diário e recalcula episodes_watched |
 | `update_anime_status(query, status)` | UPDATE anime.status |

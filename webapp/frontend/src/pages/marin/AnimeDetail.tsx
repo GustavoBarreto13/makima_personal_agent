@@ -105,6 +105,8 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   // Controle do modal "+ Adicionar a lista" (spec 054, FR-003)
   const [showAddToList, setShowAddToList] = useState(false)
+  // Controle do botão "Atualizar Dados" — true enquanto a rebusca está em andamento
+  const [refreshingMetadata, setRefreshingMetadata] = useState(false)
 
   // Busca os dados do detalhe + primeiros 12 episódios ao montar
   useEffect(() => {
@@ -202,6 +204,31 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
         onToast(newScore > 0 ? `Avaliado com ${newScore}/10.` : 'Avaliação removida.')
       })
       .catch(() => onToast('Erro ao avaliar o anime.'))
+  }
+
+  // Rebusca metadados do anime (pôster, gêneros, estúdio, sinopse, thumbnails
+  // de episódio) via Jikan+AniList+ARM+TMDB — botão "Atualizar Dados". Refaz o
+  // detalhe inteiro (não um merge cirúrgico) porque a rebusca também pode
+  // atualizar `episodes` (thumbnails/títulos), que este componente mantém
+  // como estado separado de `detail`.
+  function handleRefreshMetadata() {
+    setRefreshingMetadata(true)
+    marinApi.refreshMetadata(animeId)
+      .then(() => marinApi.detail(animeId))
+      .then(d => {
+        setDetail(d)
+        setLocalStatus(d.anime?.status ?? null)
+        setLocalScore(d.anime?.score ?? null)
+        setEpisodes(d.episodes ?? [])
+        setHasMoreEps((d.episodes ?? []).length < (d.episodes_total_cached ?? 0))
+        setEpPage(1)
+        onToast('Dados atualizados.')
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Erro ao atualizar dados.'
+        onToast(msg)
+      })
+      .finally(() => setRefreshingMetadata(false))
   }
 
   // Remove o anime do catálogo (soft delete) e volta para a tela anterior
@@ -388,6 +415,18 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
           onClick={() => setShowAddToList(true)}
         >
           <Icon name="plus" size={16} /> Adicionar a lista
+        </button>
+
+        {/* "Atualizar Dados" — rebusca metadados sem mexer em nota/status/etiquetas/listas.
+            Desabilitado para animes sem mal_id (não há de onde rebuscar). */}
+        <button
+          className="mr-btn"
+          onClick={handleRefreshMetadata}
+          disabled={refreshingMetadata || !anime.mal_id}
+          title={!anime.mal_id ? 'Anime sem vínculo com o MAL — não é possível rebuscar dados.' : undefined}
+        >
+          <Icon name="sync" size={16} className={refreshingMetadata ? 'mr-spinning' : ''} />
+          {refreshingMetadata ? 'Atualizando...' : 'Atualizar dados'}
         </button>
 
         {/* Botão de remover do catálogo */}

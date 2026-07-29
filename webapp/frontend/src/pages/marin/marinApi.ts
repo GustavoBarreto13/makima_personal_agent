@@ -140,6 +140,15 @@ export const marinApi = {
     api.post<{ id: string; message: string }>('/api/animes', body),
 
   /**
+   * Rebusca metadados de um anime já no catálogo (Jikan+AniList+ARM+TMDB).
+   * Preenche campos que ficaram faltando (pôster, gêneros, estúdio, sinopse,
+   * thumbnails) sem tocar em nota, status, progresso, etiquetas ou listas.
+   * Usada pelo botão "Atualizar Dados" no AnimeDetail.
+   */
+  refreshMetadata: (animeId: string) =>
+    api.post<{ anime: Anime; message: string }>(`/api/animes/${animeId}/refresh-metadata`, {}),
+
+  /**
    * Registra uma sessão de episódios assistidos no diário.
    * Também atualiza episodes_watched do anime e marca episódios como assistidos.
    * Usada pelo LogWatchModal.

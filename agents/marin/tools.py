@@ -470,6 +470,147 @@ def add_anime(mal_id: int) -> dict:
     )
 
 
+def refresh_anime_metadata(anime_id_or_query: str) -> dict:
+    """Rebusca metadados de um anime já no catálogo (Jikan+AniList+ARM+TMDB).
+
+    Botão "Atualizar Dados" no detalhe — corrige animes que ficaram com campos
+    faltando (pôster, gêneros, estúdio, sinopse, thumbnails de episódio) porque
+    alguma das 4 APIs externas falhou no momento do `add_anime` original.
+
+    Diferente de `add_anime`, cada campo usa "novo valor OU valor atual"
+    (nunca sobrescreve com `None`/vazio) — se uma API falhar nesta tentativa
+    mas tinha funcionado antes, o dado bom não é apagado. Nunca toca em
+    `status`, `score`, `episodes_watched`, `tags`, `notes`, `date_started`,
+    `date_finished`, `mal_updated_at`, `local_updated_at` nem em `watch_logs` —
+    só metadados de catálogo (e os campos de `episodes` que já eram
+    atualizáveis por `add_anime`: title/aired/synopsis/thumbnail_url/
+    airing_status, nunca `watched`/`watched_date`).
+
+    Args:
+        anime_id_or_query: ID local, mal_id ou título fuzzy do anime.
+
+    Returns:
+        Dict com "anime" (linha atualizada, com poster_key) em caso de
+        sucesso, ou "error" se o anime não tiver mal_id, ou se nenhuma API
+        retornou sequer o título (falha total — nada é gravado nesse caso).
+    """
+    anime = _find_anime_by_query(anime_id_or_query)
+    if not anime:
+        return _err(f"Anime '{anime_id_or_query}' não encontrado no catálogo.")
+
+    # Sem mal_id não há de onde rebuscar — é o próprio anchor de identidade
+    # usado pelo enriquecimento e pelo sync com o MAL (spec 053).
+    if not anime.get("mal_id"):
+        return _err("Anime sem vínculo com o MAL — não é possível rebuscar dados.")
+
+    try:
+        meta = _enrich_meta(anime["mal_id"])
+    except Exception:
+        meta = {}
+
+    # Guarda de falha total: se nem o título veio, nenhuma API respondeu —
+    # aborta sem tocar no banco (nunca grava um registro pior que o atual).
+    if not meta.get("title"):
+        return _err("Não foi possível buscar metadados — o anime não foi alterado.")
+
+    # Coalesce campo a campo: preserva o valor atual quando a busca não trouxe
+    # nada de novo, em vez de sobrescrever com None/[] (diferente do INSERT
+    # inicial de add_anime, que não tem "valor atual" para preservar).
+    titulo = meta.get("title") or anime["title"]
+    overview = meta.get("overview") or anime.get("overview")
+    if overview:
+        overview = overview[:2000] or None
+
+    run_dml(
+        """
+        UPDATE anime
+        SET anilist_id     = %(anilist_id)s,
+            tmdb_id        = %(tmdb_id)s,
+            title          = %(title)s,
+            title_english  = %(title_english)s,
+            title_japanese = %(title_japanese)s,
+            normalizado    = %(normalizado)s,
+            media_type     = %(media_type)s,
+            season         = %(season)s,
+            studio         = %(studio)s,
+            episodes_total = %(episodes_total)s,
+            airing_status  = %(airing_status)s,
+            overview       = %(overview)s,
+            genres         = %(genres)s,
+            poster_url     = %(poster_url)s,
+            banner_url     = %(banner_url)s,
+            updated_at     = %(now)s
+        WHERE id = %(id)s
+        """,
+        {
+            "id":              anime["id"],
+            "anilist_id":      meta.get("anilist_id") or anime.get("anilist_id"),
+            "tmdb_id":         meta.get("tmdb_id") or anime.get("tmdb_id"),
+            "title":           titulo,
+            "title_english":   meta.get("title_english") or anime.get("title_english"),
+            "title_japanese":  meta.get("title_japanese") or anime.get("title_japanese"),
+            "normalizado":     _norm(titulo),
+            "media_type":      meta.get("media_type") or anime.get("media_type"),
+            "season":          meta.get("season") or anime.get("season"),
+            "studio":          meta.get("studio") or anime.get("studio"),
+            "episodes_total":  meta.get("episodes_total") or anime.get("episodes_total"),
+            "airing_status":   meta.get("airing_status") or anime.get("airing_status"),
+            "overview":        overview,
+            "genres":          meta.get("genres") or anime.get("genres") or [],
+            "poster_url":      meta.get("poster_url") or anime.get("poster_url"),
+            "banner_url":      meta.get("banner_url") or anime.get("banner_url"),
+            "now":             _now(),
+        },
+    )
+
+    # Reaplica o mesmo upsert de episódios do add_anime — preserva watched/
+    # watched_date por construção (não fazem parte do SET/EXCLUDED aqui).
+    episodios = meta.get("jikan_episodes") or []
+    if episodios:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                for ep in episodios:
+                    numero = ep.get("number")
+                    if not numero:
+                        continue
+                    synopsis = ep.get("synopsis")
+                    if synopsis:
+                        synopsis = synopsis[:2000] or None
+                    cur.execute(
+                        """
+                        INSERT INTO episodes (
+                            id, anime_id, number, title, aired,
+                            synopsis, thumbnail_url, airing_status
+                        ) VALUES (
+                            %(id)s, %(anime_id)s, %(number)s, %(title)s, %(aired)s,
+                            %(synopsis)s, %(thumbnail_url)s, %(airing_status)s
+                        )
+                        ON CONFLICT (anime_id, number) DO UPDATE
+                            SET title         = EXCLUDED.title,
+                                aired         = EXCLUDED.aired,
+                                synopsis      = EXCLUDED.synopsis,
+                                thumbnail_url = EXCLUDED.thumbnail_url,
+                                airing_status = EXCLUDED.airing_status
+                        """,
+                        {
+                            "id":            str(uuid.uuid4()),
+                            "anime_id":      anime["id"],
+                            "number":        numero,
+                            "title":         ep.get("title"),
+                            "aired":         ep.get("aired"),
+                            "synopsis":      synopsis,
+                            "thumbnail_url": ep.get("thumbnail_url"),
+                            "airing_status": ep.get("airing_status") or "agendado",
+                        },
+                    )
+
+    atualizado = run_select("SELECT * FROM anime WHERE id = %(id)s", {"id": anime["id"]})
+    resultado = atualizado[0]
+    resultado["poster_key"] = _poster_key(resultado.get("title") or "")
+
+    return _ok(anime=resultado, message=f"Dados de '{titulo}' atualizados.")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TOOLS PÚBLICAS — DIÁRIO DE SESSÕES
 # ─────────────────────────────────────────────────────────────────────────────

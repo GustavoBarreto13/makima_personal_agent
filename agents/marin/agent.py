@@ -21,6 +21,7 @@ from agents.marin.tools import (
     # Descoberta e adição ao catálogo
     search_anime,         # Busca no Jikan (MAL) por título — sem gravar
     add_anime,            # Adiciona anime ao catálogo via mal_id
+    refresh_anime_metadata,  # Rebusca metadados de um anime já no catálogo
     # Sessões de episódios
     log_watch,            # Registra episódios assistidos + avança progresso
     delete_watch_log,     # Remove uma sessão do diário
@@ -76,6 +77,8 @@ _MARIN_INSTRUCTION = """
     - Adicionar anime ao catálogo: use add_anime(mal_id)
       • Busca metadados completos via Jikan + AniList automaticamente
       • Sempre inicia com status 'quero_assistir' — use update_anime_status para mudar
+    - Rebuscar dados de um anime que ficou incompleto: use refresh_anime_metadata(anime_id_or_query)
+      • Preenche pôster/gêneros/estúdio/sinopse/thumbnails faltantes sem mexer em nota/status/progresso
     - Registrar episódios assistidos: use log_watch(anime_id_or_query, ep_start?, ep_end?, watched_date?, rating?, notes?)
       • Palavras que indicam log_watch: "assisti", "vi", "terminei", "watchei", "finalizei"
       • ep_start e ep_end são opcionais (sessão sem rastreamento de ep)
@@ -179,6 +182,7 @@ marin_agent = Agent(
         # Descoberta e catálogo
         search_anime,
         add_anime,
+        refresh_anime_metadata,
         # Sessões de episódios
         log_watch,
         delete_watch_log,

@@ -721,6 +721,7 @@ Contrato detalhado: `specs/021-marin-animes/contracts/api-anime.md`.
 | `PATCH` | `/api/animes/{anime_id}/status` | Atualiza o status do anime na lista. | Body: `StatusBody` |
 | `PATCH` | `/api/animes/{anime_id}/score` | Define a nota pessoal (escala MAL: 0–10, passo 0.5). | Body: `ScoreBody` |
 | `PATCH` | `/api/animes/{anime_id}/notes` | Salva o Caderno da Marin — anotações soltas (spec 054). Texto vazio limpa. | Body: `NotesBody` |
+| `POST` | `/api/animes/{anime_id}/refresh-metadata` | Rebusca metadados (Jikan+AniList+ARM+TMDB) — preenche campos faltantes sem tocar em nota/status/progresso/etiquetas/listas. Erro se o anime não tiver `mal_id` ou se nenhuma API responder. | — |
 | `DELETE` | `/api/animes/{anime_id}` | Soft delete (histórico preservado; remove também os vínculos de lista, spec 054 FR-006). | — |
 | `DELETE` | `/api/animes/logs/{log_id}` | Remove uma sessão do diário e recalcula `episodes_watched`. | — |
 
