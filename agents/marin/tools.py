@@ -14,6 +14,7 @@ Usage:
     from agents.marin.tools import search_anime, add_anime, log_watch, get_stats
 """
 
+import hashlib      # md5 estável entre processos para a paleta do pôster (FR-001, spec 052)
 import re           # Remove pontuação na normalização de strings
 import unicodedata  # Remove acentos na normalização fuzzy
 import uuid         # Gera IDs únicos para cada registro
@@ -26,7 +27,10 @@ from agents.marin.metadata import enrich_anime as _enrich_meta
 from agents.marin.metadata import search_anime as _jikan_search
 
 # Sync delta com o MyAnimeList. Renomeado para não colidir com a tool sync_mal.
+# push_list_status/push_delete propagam mutações locais para o MAL (spec 053, FR-001).
 from agents.marin.mal_sync import sync_mal as _mal_sync
+from agents.marin.mal_sync import push_list_status as _push_mal_status
+from agents.marin.mal_sync import push_delete as _push_mal_delete
 
 # Helpers PostgreSQL compartilhados entre todos os agentes do projeto.
 from agents.db import get_conn, run_dml, run_select
@@ -138,10 +142,11 @@ def _poster_key(title: str) -> str:
         >>> _poster_key("Dungeon Meshi")
         'emerald'
     """
-    # hash() de string em Python é determinístico por instância,
-    # mas para garantir entre instâncias e versões, usaria hashlib.
-    # Para o caso de uso (paleta visual), hash() da string normalizada é suficiente.
-    return _POSTER_KEYS[abs(hash(_norm(title))) % len(_POSTER_KEYS)]
+    # hash() nativo do Python é salgado por processo (PYTHONHASHSEED aleatório) —
+    # a paleta mudaria a cada reinício do servidor. hashlib.md5 é estável entre
+    # processos/reinícios (mesmo padrão já usado pela Akane, spec 049).
+    digest = hashlib.md5(_norm(title).encode()).hexdigest()
+    return _POSTER_KEYS[int(digest, 16) % len(_POSTER_KEYS)]
 
 
 def _ok(data: dict | None = None, **kwargs) -> dict:
@@ -174,6 +179,33 @@ def _err(message: str) -> dict:
         Dict com "status": "error" e "message".
     """
     return {"status": "error", "message": message}
+
+
+def _push_best_effort(
+    mal_id: int | None,
+    status: str | None = None,
+    score: float | None = None,
+    num_watched_episodes: int | None = None,
+) -> None:
+    """Propaga uma mutação local para o MAL sem nunca poder falhar a operação.
+
+    Wrapper fino sobre `mal_sync.push_list_status` — a função de push já é
+    best-effort por dentro (nunca levanta), este try/except é uma segunda
+    camada de segurança para não deixar NENHUM caminho de código quebrar uma
+    ação do usuário por causa do MAL (FR-001, spec 053).
+
+    Args:
+        mal_id: ID do anime no MyAnimeList (None = sem vínculo, não faz nada).
+        status: Novo status local, se mudou.
+        score: Nova nota local, se mudou.
+        num_watched_episodes: Novo total de episódios assistidos, se mudou.
+    """
+    if not mal_id:
+        return
+    try:
+        _push_mal_status(mal_id, status=status, score=score, num_watched_episodes=num_watched_episodes)
+    except Exception:
+        pass  # best-effort — a mutação local já está confirmada
 
 
 def _validate_score(score: float | int | None) -> str | None:
@@ -357,7 +389,7 @@ def add_anime(mal_id: int) -> dict:
             %(media_type)s, %(season)s, %(studio)s, %(episodes_total)s,
             %(airing_status)s, 'quero_assistir', %(overview)s, %(genres)s,
             %(poster_url)s, %(banner_url)s,
-            'jikan', %(mal_updated_at)s, %(now)s, %(now)s
+            'jikan', NULL, %(now)s, %(now)s
         )
         """,
         {
@@ -378,7 +410,9 @@ def add_anime(mal_id: int) -> dict:
             "genres":          meta.get("genres") or [],
             "poster_url":      meta.get("poster_url"),
             "banner_url":      meta.get("banner_url"),
-            "mal_updated_at":  meta.get("mal_aired_from"),  # data de início como referência
+            # mal_updated_at fica NULL no INSERT (FR-007, spec 052) — só é preenchido
+            # pela sincronização real com o MAL (mal_sync._upsert_mal_entry), nunca
+            # com a data de estreia do anime.
             "now":             now,
         },
     )
@@ -406,15 +440,16 @@ def add_anime(mal_id: int) -> dict:
                         """
                         INSERT INTO episodes (
                             id, anime_id, number, title, aired,
-                            synopsis, airing_status
+                            synopsis, thumbnail_url, airing_status
                         ) VALUES (
                             %(id)s, %(anime_id)s, %(number)s, %(title)s, %(aired)s,
-                            %(synopsis)s, %(airing_status)s
+                            %(synopsis)s, %(thumbnail_url)s, %(airing_status)s
                         )
                         ON CONFLICT (anime_id, number) DO UPDATE
                             SET title         = EXCLUDED.title,
                                 aired         = EXCLUDED.aired,
                                 synopsis      = EXCLUDED.synopsis,
+                                thumbnail_url = EXCLUDED.thumbnail_url,
                                 airing_status = EXCLUDED.airing_status
                         """,
                         {
@@ -424,6 +459,7 @@ def add_anime(mal_id: int) -> dict:
                             "title":         ep.get("title"),
                             "aired":         ep.get("aired"),
                             "synopsis":      synopsis,
+                            "thumbnail_url": ep.get("thumbnail_url"),
                             "airing_status": ep.get("airing_status") or "agendado",
                         },
                     )
@@ -536,7 +572,9 @@ def log_watch(
             )
 
             # Atualiza episodes_watched como SUM de todos os logs do anime
-            # (mais correto que incrementar — evita drift se logs forem deletados)
+            # (mais correto que incrementar — evita drift se logs forem deletados).
+            # local_updated_at (spec 053) marca que esta é uma mutação LOCAL —
+            # usado pelo pull do MAL para resolver conflitos de convergência.
             cur.execute(
                 """
                 UPDATE anime
@@ -546,7 +584,8 @@ def log_watch(
                         WHERE anime_id = %(anime_id)s
                           AND episodes_count IS NOT NULL
                     ),
-                    updated_at = %(now)s
+                    updated_at = %(now)s,
+                    local_updated_at = %(now)s
                 WHERE id = %(anime_id)s
                 """,
                 {"anime_id": anime_id, "now": now},
@@ -604,6 +643,21 @@ def log_watch(
                     {"d": watch_date, "anime_id": anime_id, "now": now},
                 )
 
+    # ── 6. Propaga para o MAL (best-effort, spec 053 FR-001) ─────────────────
+    # Busca o estado final (episodes_watched/status podem ter mudado pela
+    # transação acima) para enviar o total real, não o que veio nos argumentos.
+    if anime.get("mal_id"):
+        atualizado = run_select(
+            "SELECT episodes_watched, status FROM anime WHERE id = %(id)s",
+            {"id": anime_id},
+        )
+        if atualizado:
+            _push_best_effort(
+                anime["mal_id"],
+                status=atualizado[0]["status"],
+                num_watched_episodes=atualizado[0]["episodes_watched"],
+            )
+
     # Monta mensagem amigável descrevendo o que foi logado
     ep_desc = ""
     if ep_start and ep_end:
@@ -621,7 +675,16 @@ def log_watch(
 
 
 def delete_watch_log(log_id: str) -> dict:
-    """Remove uma sessão do diário e recalcula episodes_watched do anime.
+    """Remove uma sessão do diário e reverte todo o estado derivado do anime.
+
+    Além de recalcular `episodes_watched`, esta função (FR-003, spec 052):
+    - Re-deriva `episodes.watched` do zero a partir das sessões restantes
+      (episódios cobertos exclusivamente pela sessão apagada ficam desmarcados;
+      episódios ainda cobertos por outra sessão continuam marcados).
+    - Reverte `status='completo'`/`date_finished` se o anime deixou de estar
+      completo após a remoção.
+    - Recalcula `date_started` como a menor `watched_date` das sessões restantes
+      (NULL se não sobrar nenhuma sessão).
 
     Args:
         log_id: UUID do registro em watch_logs.
@@ -629,21 +692,29 @@ def delete_watch_log(log_id: str) -> dict:
     Returns:
         Dict com status "ok" ou "error".
     """
-    # Busca a sessão para pegar o anime_id
+    # Busca a sessão para pegar o anime_id (e o mal_id, para o push depois)
     rows = run_select(
-        "SELECT anime_id FROM watch_logs WHERE id = %(id)s", {"id": log_id}
+        """
+        SELECT w.anime_id, a.mal_id
+        FROM watch_logs w
+        JOIN anime a ON a.id = w.anime_id
+        WHERE w.id = %(id)s
+        """,
+        {"id": log_id},
     )
     if not rows:
         return _err("Sessão não encontrada no diário.")
 
     anime_id = rows[0]["anime_id"]
+    mal_id = rows[0]["mal_id"]
 
     with get_conn() as conn:
         with conn.cursor() as cur:
             # Remove a sessão do diário
             cur.execute("DELETE FROM watch_logs WHERE id = %(id)s", {"id": log_id})
 
-            # Recalcula episodes_watched a partir dos logs restantes
+            # Recalcula episodes_watched a partir dos logs restantes.
+            # local_updated_at (spec 053) marca esta como mutação LOCAL.
             cur.execute(
                 """
                 UPDATE anime
@@ -653,10 +724,79 @@ def delete_watch_log(log_id: str) -> dict:
                         WHERE anime_id = %(mid)s
                           AND episodes_count IS NOT NULL
                     ),
-                    updated_at = NOW()
+                    date_started = (
+                        SELECT MIN(watched_date)
+                        FROM watch_logs
+                        WHERE anime_id = %(mid)s
+                    ),
+                    updated_at = NOW(),
+                    local_updated_at = NOW()
                 WHERE id = %(mid)s
                 """,
                 {"mid": anime_id},
+            )
+
+            # Re-deriva episodes.watched do zero: desmarca tudo e remarca só os
+            # números cobertos pelas sessões que sobraram (aceito pela spec —
+            # "re-derivar marcações do zero é aceitável").
+            cur.execute(
+                "UPDATE episodes SET watched = FALSE, watched_date = NULL WHERE anime_id = %(mid)s",
+                {"mid": anime_id},
+            )
+            cur.execute(
+                """
+                UPDATE episodes e
+                SET watched = TRUE,
+                    watched_date = sub.last_date
+                FROM (
+                    SELECT number, MAX(watched_date) AS last_date
+                    FROM (
+                        SELECT generate_series(ep_start, ep_end) AS number, watched_date
+                        FROM watch_logs
+                        WHERE anime_id = %(mid)s
+                          AND ep_start IS NOT NULL AND ep_end IS NOT NULL
+                    ) expanded
+                    GROUP BY number
+                ) sub
+                WHERE e.anime_id = %(mid)s AND e.number = sub.number
+                """,
+                {"mid": anime_id},
+            )
+
+            # Reverte status/completude se o anime deixou de estar completo
+            cur.execute(
+                """
+                UPDATE anime
+                SET status = CASE
+                                 WHEN status = 'completo'
+                                      AND episodes_total IS NOT NULL
+                                      AND episodes_watched < episodes_total
+                                 THEN 'assistindo'
+                                 ELSE status
+                             END,
+                    date_finished = CASE
+                                        WHEN status = 'completo'
+                                             AND episodes_total IS NOT NULL
+                                             AND episodes_watched < episodes_total
+                                        THEN NULL
+                                        ELSE date_finished
+                                    END
+                WHERE id = %(mid)s
+                """,
+                {"mid": anime_id},
+            )
+
+    # Propaga o novo total (e possível reversão de status) para o MAL (best-effort)
+    if mal_id:
+        atualizado = run_select(
+            "SELECT episodes_watched, status FROM anime WHERE id = %(id)s",
+            {"id": anime_id},
+        )
+        if atualizado:
+            _push_best_effort(
+                mal_id,
+                status=atualizado[0]["status"],
+                num_watched_episodes=atualizado[0]["episodes_watched"],
             )
 
     return _ok(message="Sessão removida do diário.")
@@ -921,9 +1061,13 @@ def update_anime_status(anime_id_or_query: str, status: str) -> dict:
 
     now = _now()
     run_dml(
-        "UPDATE anime SET status = %(s)s, updated_at = %(now)s WHERE id = %(id)s",
+        "UPDATE anime SET status = %(s)s, updated_at = %(now)s, local_updated_at = %(now)s WHERE id = %(id)s",
         {"s": status, "now": now, "id": anime["id"]},
     )
+
+    # Propaga para o MAL (best-effort, spec 053 FR-001)
+    if anime.get("mal_id"):
+        _push_best_effort(anime["mal_id"], status=status)
 
     return _ok(
         message=f"Status de '{anime['title']}' atualizado para '{status}'.",
@@ -956,11 +1100,17 @@ def rate_anime(anime_id_or_query: str, score: float) -> dict:
 
     # Score 0 = remover avaliação (NULL); qualquer outro = nota válida
     score_final = float(score) if score and float(score) > 0 else None
+    now = _now()
 
     run_dml(
-        "UPDATE anime SET score = %(s)s, updated_at = %(now)s WHERE id = %(id)s",
-        {"s": score_final, "now": _now(), "id": anime["id"]},
+        "UPDATE anime SET score = %(s)s, updated_at = %(now)s, local_updated_at = %(now)s WHERE id = %(id)s",
+        {"s": score_final, "now": now, "id": anime["id"]},
     )
+
+    # Propaga para o MAL (best-effort, spec 053 FR-001/FR-008) — score=0 no MAL
+    # é a mesma semântica local de "sem nota", então envia 0.0 quando score_final é None.
+    if anime.get("mal_id"):
+        _push_best_effort(anime["mal_id"], score=score_final if score_final is not None else 0.0)
 
     if score_final is None:
         msg = f"Avaliação de '{anime['title']}' removida."
@@ -986,11 +1136,325 @@ def delete_anime(anime_id_or_query: str) -> dict:
     if not anime:
         return _err(f"Anime '{anime_id_or_query}' não encontrado no catálogo.")
 
-    run_dml(
-        "UPDATE anime SET deleted = TRUE, updated_at = %(now)s WHERE id = %(id)s",
-        {"now": _now(), "id": anime["id"]},
-    )
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE anime SET deleted = TRUE, updated_at = %(now)s WHERE id = %(id)s",
+                {"now": _now(), "id": anime["id"]},
+            )
+            # FR-006 (spec 054): excluir o anime remove seus vínculos com listas —
+            # sem isso, a lista continuaria "contendo" um anime que sumiu do catálogo.
+            # Etiquetas não precisam de limpeza — vivem na própria linha do anime
+            # (coluna tags), que já fica soft-deletada junto.
+            cur.execute(
+                "DELETE FROM anime_list_items WHERE anime_id = %(id)s",
+                {"id": anime["id"]},
+            )
+
+    # Propaga para o MAL (best-effort, spec 053 FR-001) — remove da lista
+    if anime.get("mal_id"):
+        try:
+            _push_mal_delete(anime["mal_id"])
+        except Exception:
+            pass
+
     return _ok(message=f"'{anime['title']}' removido do catálogo. Histórico preservado.")
+
+
+def set_anime_notes(anime_id_or_query: str, notes: str) -> dict:
+    """Atualiza o Caderno da Marin — anotações soltas do usuário sobre o anime.
+
+    Diferente de watch_logs.notes (por sessão), este campo é único por anime
+    (FR-002, spec 054). Texto vazio limpa a anotação (volta a NULL).
+
+    Args:
+        anime_id_or_query: ID local, mal_id ou título fuzzy do anime.
+        notes: Texto das anotações (string vazia para limpar).
+
+    Returns:
+        Dict com status "ok" ou "error".
+    """
+    anime = _find_anime_by_query(anime_id_or_query)
+    if not anime:
+        return _err(f"Anime '{anime_id_or_query}' não encontrado no catálogo.")
+
+    run_dml(
+        "UPDATE anime SET notes = %(n)s, updated_at = %(now)s WHERE id = %(id)s",
+        {"n": notes or None, "now": _now(), "id": anime["id"]},
+    )
+    return _ok(message=f"Anotações de '{anime['title']}' salvas.", notes=notes or None)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TOOLS PÚBLICAS — LISTAS PERSONALIZADAS (spec 054, FR-003)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_lists() -> list[dict]:
+    """Retorna todas as listas com metadados e contagem de animes.
+
+    Returns:
+        Lista de coleções com id, name, description, accent, ranked, count.
+    """
+    return run_select(
+        """
+        SELECT
+            l.id::TEXT, l.name, l.description, l.accent, l.ranked,
+            COUNT(li.anime_id) AS count
+        FROM anime_lists l
+        LEFT JOIN anime_list_items li ON li.list_id = l.id
+        GROUP BY l.id
+        ORDER BY l.created_at DESC
+        """,
+    )
+
+
+def get_list(list_id: str) -> dict:
+    """Retorna os detalhes de uma lista com os animes que a compõem.
+
+    Args:
+        list_id: UUID da lista.
+
+    Returns:
+        Dict com "list" e "animes", ou "error" se não encontrada.
+    """
+    lists = run_select(
+        "SELECT id::TEXT, name, description, accent, ranked FROM anime_lists WHERE id = %(id)s",
+        {"id": list_id},
+    )
+    if not lists:
+        return _err("Lista não encontrada.")
+
+    # Animes da lista, ordenados pela posição
+    animes = run_select(
+        """
+        SELECT a.id, a.title, a.poster_url, a.status, a.score, li.position
+        FROM anime_list_items li
+        JOIN anime a ON a.id = li.anime_id
+        WHERE li.list_id = %(lid)s AND a.deleted = FALSE
+        ORDER BY li.position NULLS LAST, li.anime_id
+        """,
+        {"lid": list_id},
+    )
+    for a in animes:
+        a["poster_key"] = _poster_key(a.get("title") or "")
+
+    return _ok(list=lists[0], animes=animes)
+
+
+def create_list(name: str, description: str = "", accent: str | None = None, ranked: bool = False) -> dict:
+    """Cria uma nova lista/coleção de animes.
+
+    Args:
+        name: Nome da lista.
+        description: Descrição opcional.
+        accent: Cor de acento (chave da paleta do frontend).
+        ranked: Se a lista é ordenada (ranking).
+
+    Returns:
+        Dict com status "ok" e id da lista criada.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO anime_lists (name, description, accent, ranked)
+                VALUES (%(name)s, %(desc)s, %(accent)s, %(ranked)s)
+                RETURNING id::TEXT
+                """,
+                {"name": name, "desc": description, "accent": accent, "ranked": ranked},
+            )
+            new_id = cur.fetchone()[0]
+
+    return _ok(id=new_id, message=f"Lista '{name}' criada.")
+
+
+def update_list(list_id: str, **kwargs) -> dict:
+    """Atualiza campos de uma lista (name, description, accent, ranked).
+
+    Args:
+        list_id: UUID da lista.
+        **kwargs: Campos a atualizar.
+
+    Returns:
+        Dict com status "ok" ou "error".
+    """
+    allowed = {"name", "description", "accent", "ranked"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
+    if not fields:
+        return _err("Nenhum campo para atualizar.")
+
+    sets = ", ".join(f"{k} = %({k})s" for k in fields)
+    fields["list_id"] = list_id
+    run_dml(f"UPDATE anime_lists SET {sets} WHERE id = %(list_id)s", fields)
+    return _ok(message="Lista atualizada.")
+
+
+def delete_list(list_id: str) -> dict:
+    """Remove uma lista (e seus itens por CASCADE).
+
+    Args:
+        list_id: UUID da lista.
+
+    Returns:
+        Dict com status "ok" ou "error".
+    """
+    rows = run_select("SELECT name FROM anime_lists WHERE id = %(id)s", {"id": list_id})
+    if not rows:
+        return _err("Lista não encontrada.")
+
+    run_dml("DELETE FROM anime_lists WHERE id = %(id)s", {"id": list_id})
+    return _ok(message=f"Lista '{rows[0]['name']}' removida.")
+
+
+def add_to_list(list_id: str, anime_id: str, position: int | None = None) -> dict:
+    """Adiciona um anime a uma lista (sem duplicar — upsert por posição).
+
+    Args:
+        list_id: UUID da lista.
+        anime_id: ID do anime.
+        position: Posição na lista (opcional).
+
+    Returns:
+        Dict com status "ok" ou "error".
+    """
+    if not run_select("SELECT id FROM anime_lists WHERE id = %(id)s", {"id": list_id}):
+        return _err("Lista não encontrada.")
+    if not run_select("SELECT id FROM anime WHERE id = %(id)s AND deleted = FALSE", {"id": anime_id}):
+        return _err("Anime não encontrado.")
+
+    run_dml(
+        """
+        INSERT INTO anime_list_items (anime_id, list_id, position)
+        VALUES (%(aid)s, %(lid)s, %(pos)s)
+        ON CONFLICT (anime_id, list_id) DO UPDATE SET position = EXCLUDED.position
+        """,
+        {"aid": anime_id, "lid": list_id, "pos": position},
+    )
+    return _ok(message="Anime adicionado à lista.")
+
+
+def remove_from_list(list_id: str, anime_id: str) -> dict:
+    """Remove um anime de uma lista.
+
+    Args:
+        list_id: UUID da lista.
+        anime_id: ID do anime.
+
+    Returns:
+        Dict com status "ok" ou "error".
+    """
+    run_dml(
+        "DELETE FROM anime_list_items WHERE list_id = %(lid)s AND anime_id = %(aid)s",
+        {"lid": list_id, "aid": anime_id},
+    )
+    return _ok(message="Anime removido da lista.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TOOLS PÚBLICAS — ETIQUETAS (spec 054, FR-004)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _norm_tag(tag: str) -> str:
+    """Normaliza uma etiqueta para dedup: minúsculas + sem acentos (preserva espaços).
+
+    Mais leve que `_norm()` (que também remove pontuação e colapsa espaços) —
+    uma etiqueta como "big damn heroes" precisa manter os espaços como
+    separadores de palavra. Evita duplicatas por caixa/acentuação
+    ("Conforto" vs "conforto") sem violentar o texto da tag em si.
+
+    Args:
+        tag: Etiqueta a normalizar.
+
+    Returns:
+        Etiqueta normalizada (chave de dedup — é o que é gravado no banco).
+
+    Example:
+        >>> _norm_tag("Conforto")
+        'conforto'
+        >>> _norm_tag("Big Damn Heroes")
+        'big damn heroes'
+    """
+    s = tag.strip().lower()
+    nfd = unicodedata.normalize("NFD", s)
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+
+
+def get_tags() -> dict:
+    """Retorna a nuvem de etiquetas com contagem de animes.
+
+    Returns:
+        Dict com "tags": lista de {name, count}.
+    """
+    tag_rows = run_select(
+        """
+        SELECT tag, COUNT(*) AS count
+        FROM (
+            SELECT UNNEST(tags) AS tag
+            FROM anime
+            WHERE deleted = FALSE AND tags IS NOT NULL
+        ) t
+        GROUP BY tag
+        ORDER BY count DESC, tag ASC
+        """,
+    )
+    return _ok(tags=[{"name": r["tag"], "count": int(r["count"])} for r in tag_rows])
+
+
+def add_tag(anime_id_or_query: str, tag: str) -> dict:
+    """Adiciona uma etiqueta a um anime (normalizada, sem duplicar).
+
+    Args:
+        anime_id_or_query: ID local, mal_id ou título fuzzy do anime.
+        tag: Texto da etiqueta (será normalizado antes de gravar).
+
+    Returns:
+        Dict com status "ok" ou "error".
+    """
+    tag_norm = _norm_tag(tag)
+    if not tag_norm:
+        return _err("Etiqueta vazia.")
+
+    anime = _find_anime_by_query(anime_id_or_query)
+    if not anime:
+        return _err(f"Anime '{anime_id_or_query}' não encontrado no catálogo.")
+
+    # array_append + dedup: usa DISTINCT via array_cat com filtro, evitando
+    # duplicar caso a tag normalizada já exista no array.
+    run_dml(
+        """
+        UPDATE anime
+        SET tags = (
+                SELECT ARRAY(SELECT DISTINCT UNNEST(COALESCE(tags, ARRAY[]::TEXT[]) || ARRAY[%(tag)s]))
+            ),
+            updated_at = %(now)s
+        WHERE id = %(id)s
+        """,
+        {"tag": tag_norm, "now": _now(), "id": anime["id"]},
+    )
+    return _ok(message=f"Etiqueta '{tag_norm}' adicionada a '{anime['title']}'.")
+
+
+def remove_tag(anime_id_or_query: str, tag: str) -> dict:
+    """Remove uma etiqueta de um anime.
+
+    Args:
+        anime_id_or_query: ID local, mal_id ou título fuzzy do anime.
+        tag: Texto da etiqueta (normalizado antes de comparar).
+
+    Returns:
+        Dict com status "ok" ou "error".
+    """
+    tag_norm = _norm_tag(tag)
+
+    anime = _find_anime_by_query(anime_id_or_query)
+    if not anime:
+        return _err(f"Anime '{anime_id_or_query}' não encontrado no catálogo.")
+
+    run_dml(
+        "UPDATE anime SET tags = array_remove(tags, %(tag)s), updated_at = %(now)s WHERE id = %(id)s",
+        {"tag": tag_norm, "now": _now(), "id": anime["id"]},
+    )
+    return _ok(message=f"Etiqueta '{tag_norm}' removida de '{anime['title']}'.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1039,17 +1503,21 @@ def get_stats(year: int | None = None) -> dict:
 
     # ── Totais básicos ────────────────────────────────────────────────────────
     # COUNT(DISTINCT anime_id) = animes únicos com ao menos uma sessão no ano
+    # FR-005 (spec 052): a nota média NÃO pode exigir episodes_count IS NOT NULL —
+    # uma sessão avaliada sem contagem de episódios (ep_start/ep_end omitidos)
+    # também deve entrar na média. Por isso o filtro de episódios vira um FILTER
+    # dedicado só para SUM(episodes_count), e AVG(rating) roda sobre todas as linhas.
     totals = run_select(
         """
         SELECT
             COUNT(DISTINCT w.anime_id) AS total_animes,
-            COALESCE(SUM(w.episodes_count), 0) AS total_episodes,
-            AVG(w.rating) AS avg_score
+            COALESCE(SUM(w.episodes_count) FILTER (WHERE w.episodes_count IS NOT NULL), 0)
+                AS total_episodes,
+            AVG(w.rating) FILTER (WHERE w.rating IS NOT NULL) AS avg_score
         FROM watch_logs w
         JOIN anime a ON a.id = w.anime_id
         WHERE EXTRACT(YEAR FROM w.watched_date) = %(year)s
           AND a.deleted = FALSE
-          AND w.episodes_count IS NOT NULL
         """,
         {"year": year},
     )
@@ -1417,3 +1885,25 @@ def get_home() -> dict:
         episodes_7d_prev=episodes_7d_prev,
         avg_score_year=avg_score_year,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TOOLS PÚBLICAS — REWIND ANUAL (spec 054, FR-005)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_rewind(year: int | None = None) -> dict:
+    """Retorna a retrospectiva anual (Rewind) de animes.
+
+    `get_stats(year)` já calcula quase tudo que o Rewind precisa (totais,
+    monthly, top_studios, highlight, max_marathon_day, heatmap, completed) —
+    esta tool é uma camada fina por cima, mantendo paridade estrutural com o
+    Rewind da Akane (endpoint próprio, não o frontend reaproveitando /stats
+    direto) sem duplicar nenhum cálculo.
+
+    Args:
+        year: Ano a filtrar. Default: ano atual.
+
+    Returns:
+        Mesmo shape de get_stats(year) — ver essa função para os campos.
+    """
+    return get_stats(year)

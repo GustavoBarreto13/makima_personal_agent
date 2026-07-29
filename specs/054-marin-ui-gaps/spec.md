@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-07
 
-**Status**: Rascunho — auditoria completa em 2026-07-07, código ainda não implementado
+**Status**: ✅ Implementado (2026-07-28) — ver `plan.md` e `tasks.md`; tabelas `anime_lists`/`anime_list_items` pendentes de aplicar no VPS
 
 **Input**: User description: "Expor pela interface web da Marin funcionalidades que já têm
 suporte no backend mas nenhum acesso pela UI, e trazer para os animes as funcionalidades de

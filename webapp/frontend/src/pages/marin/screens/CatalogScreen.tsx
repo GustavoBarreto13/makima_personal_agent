@@ -18,6 +18,8 @@ interface CatalogScreenProps {
   // Contagens por status vindas do HomeData.counts (já buscadas pelo shell na home).
   // Evita um segundo request para obter os totais do header.
   externalCounts?: Record<Status, number>
+  // FR-010 (spec 052): falha de rede ao carregar o catálogo precisa de aviso visível.
+  onToast: (msg: string) => void
 }
 
 // Filtros disponíveis na chip-bar
@@ -63,6 +65,7 @@ export function CatalogScreen({
   onSelectAnime,
   externalQuery = '',
   externalCounts,
+  onToast,
 }: CatalogScreenProps) {
   const [animes, setAnimes] = useState<Anime[]>([])
   const [loading, setLoading] = useState(true)
@@ -92,7 +95,10 @@ export function CatalogScreen({
     setLoading(true)
     marinApi.list({ status: filter || undefined, sort })
       .then(res => setAnimes(res.animes ?? []))
-      .catch(() => setAnimes([]))
+      .catch(() => {
+        setAnimes([])
+        onToast('Erro ao carregar o catálogo.')
+      })
       .finally(() => setLoading(false))
   }, [filter, sort])
 
@@ -100,12 +106,15 @@ export function CatalogScreen({
   // Isso permite que a busca global da topbar filtre o catálogo sem request adicional.
   const activeQuery = externalQuery.trim() || query.trim()
 
-  // Filtro de busca local (sem request adicional) — aplica a query ativa
+  // Filtro de busca local (sem request adicional) — aplica a query ativa.
+  // Inclui `tags` (spec 054, FR-004) — permite que a TagsScreen navegue para
+  // cá com o nome da etiqueta e o catálogo filtre por ela como qualquer busca.
   const displayed = activeQuery
     ? animes.filter(a =>
         a.title.toLowerCase().includes(activeQuery.toLowerCase()) ||
         (a.studio && a.studio.toLowerCase().includes(activeQuery.toLowerCase())) ||
-        (a.genres && a.genres.some(g => g.toLowerCase().includes(activeQuery.toLowerCase())))
+        (a.genres && a.genres.some(g => g.toLowerCase().includes(activeQuery.toLowerCase()))) ||
+        (a.tags && a.tags.some(t => t.toLowerCase().includes(activeQuery.toLowerCase())))
       )
     : animes
 

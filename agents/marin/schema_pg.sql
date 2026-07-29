@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS anime (
     date_finished    DATE,                               -- Data em que episodes_watched >= episodes_total (preenchida automaticamente)
     source           TEXT,                               -- Origem do registro: 'manual' | 'mal_sync' | 'jikan'
     mal_updated_at   TIMESTAMPTZ,                        -- Timestamp list_status.updated_at do MAL — usado para delta sync (só reprocessar o que mudou)
+    local_updated_at TIMESTAMPTZ,                        -- Timestamp da última mutação LOCAL (log_watch/status/nota) — usado pelo pull para decidir quem venceu um conflito (spec 053)
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(), -- Quando o registro foi criado no banco
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(), -- Quando o registro foi atualizado pela última vez
     deleted          BOOLEAN      NOT NULL DEFAULT FALSE -- Soft delete — nunca apagamos fisicamente (preserva watch_logs do anime)
@@ -151,3 +152,28 @@ CREATE TABLE IF NOT EXISTS mal_sync_state (
 INSERT INTO mal_sync_state (id)
 VALUES (1)
 ON CONFLICT (id) DO NOTHING;
+
+
+-- ── Listas personalizadas de animes (spec 054) ───────────────────────────────
+-- Coleções nomeadas de animes (ex.: "Melhores dos anos 2000"). Mesma forma de
+-- movie_lists/movie_list_items da Akane (agents/akane/schema_pg.sql).
+CREATE TABLE IF NOT EXISTS anime_lists (
+    id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(), -- PK própria (não reusa o padrão TEXT dos animes)
+    name         TEXT         NOT NULL,               -- Nome da lista (ex.: "Isekai favoritos")
+    description  TEXT         NOT NULL DEFAULT '',     -- Descrição opcional
+    accent       TEXT,                                 -- Cor de destaque (chave da paleta OKLCH do frontend)
+    ranked       BOOLEAN      NOT NULL DEFAULT FALSE,  -- TRUE = lista ordenada (ex.: "Top 10"), exibe posição
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- Vínculo N:N anime↔lista. PK composta impede duplicata do mesmo anime na mesma lista.
+CREATE TABLE IF NOT EXISTS anime_list_items (
+    anime_id  TEXT     NOT NULL REFERENCES anime(id) ON DELETE CASCADE,
+    list_id   UUID     NOT NULL REFERENCES anime_lists(id) ON DELETE CASCADE,
+    position  INTEGER,                                 -- Posição dentro da lista (usada quando ranked=TRUE)
+    PRIMARY KEY (anime_id, list_id)
+);
+
+-- Monta uma lista (todos os animes dela, ordenados por position).
+CREATE INDEX IF NOT EXISTS idx_anime_list_items_list
+    ON anime_list_items (list_id);

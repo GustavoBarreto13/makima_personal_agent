@@ -7,6 +7,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { marinApi } from '../marinApi'
 import type { Anime } from '../types'
 import { RateInput } from '../components/RateInput'
+import { todayLocalISO } from '../dateUtils'
 
 interface LogWatchModalProps {
   // Se informado, o anime já está pré-selecionado
@@ -35,7 +36,7 @@ export function LogWatchModal({
   const [selectedAnimeTitle, setSelectedAnimeTitle] = useState<string>('')
 
   // Campos do formulário
-  const today = new Date().toISOString().slice(0, 10)  // YYYY-MM-DD
+  const today = todayLocalISO()  // YYYY-MM-DD, fuso local (FR-009, spec 052)
   const [epStart, setEpStart] = useState<number>(defaultEp ?? 1)
   const [epEnd, setEpEnd] = useState<number>(defaultEp ?? 1)
   const [watchedDate, setWatchedDate] = useState<string>(today)

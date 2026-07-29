@@ -25,7 +25,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 # Importa as funções que fazem o trabalho de cada job.
 from scheduler.jobs import (
     run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest, run_weekly_review_reminder,
-    run_recurring_charges, run_budget_alert, run_monthly_report,
+    run_recurring_charges, run_budget_alert, run_monthly_report, run_marin_mal_sync,
 )
 
 # Fuso horário do usuário. Todos os horários dos jobs são interpretados nele —
@@ -173,5 +173,13 @@ JOBS: list[ScheduledJob] = [
         func=run_monthly_report,
         trigger=CronTrigger(day=1, hour=8, minute=0, timezone=TZ),
         description="Relatório mensal do fechamento (Nami) → Telegram, todo dia 1º",
+    ),
+    # Sincronização delta com o MyAnimeList (Marin) — espelho bidirecional.
+    # Mesmo intervalo do sync do Letterboxd (Akane) — a cada 6h — spec 053, US3.
+    ScheduledJob(
+        name="marin_mal_sync",
+        func=run_marin_mal_sync,
+        trigger=every(hours=6),
+        description="Sync delta com o MyAnimeList (Marin): pull cria sessões de ajuste, coexiste com o push best-effort das mutações locais",
     ),
 ]

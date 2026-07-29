@@ -38,6 +38,21 @@ from agents.marin.tools import (
     get_home,                # Todos os blocos da HomeScreen numa chamada
     # Sincronização MAL
     sync_mal,                # Delta sync da lista do MyAnimeList
+    # Caderno da Marin (spec 054)
+    set_anime_notes,         # Salva anotações soltas sobre o anime
+    # Listas personalizadas (spec 054)
+    get_lists,               # Lista todas as coleções
+    get_list,                # Detalhe de uma coleção + animes
+    create_list,             # Cria coleção nova
+    add_to_list,             # Adiciona anime a uma coleção
+    remove_from_list,        # Remove anime de uma coleção
+    delete_list,             # Remove a coleção inteira
+    # Etiquetas (spec 054)
+    get_tags,                # Nuvem de etiquetas com contagem
+    add_tag,                 # Etiqueta um anime
+    remove_tag,              # Remove etiqueta de um anime
+    # Rewind anual (spec 054)
+    get_rewind,              # Retrospectiva do ano
 )
 
 
@@ -78,6 +93,11 @@ _MARIN_INSTRUCTION = """
     - Ver estatísticas: use get_stats(year?)
     - Sincronizar com MAL: use sync_mal(full=False)
       • full=True para reimportar tudo (1ª vez ou após gap longo)
+    - Caderno da Marin (anotações soltas): use set_anime_notes(anime_id_or_query, notes)
+    - Listas personalizadas: get_lists(), get_list(list_id), create_list(name, description?, accent?, ranked?),
+      add_to_list(list_id, anime_id, position?), remove_from_list(list_id, anime_id), delete_list(list_id)
+    - Etiquetas: get_tags(), add_tag(anime_id_or_query, tag), remove_tag(anime_id_or_query, tag)
+    - Retrospectiva do ano: use get_rewind(year?)
 
     COMO RESOLVER O ANIME:
     - Aceite UUID, mal_id numérico ou título fuzzy — todas as tools resolvem automaticamente
@@ -176,5 +196,20 @@ marin_agent = Agent(
         get_home,
         # Sincronização MAL
         sync_mal,
+        # Caderno da Marin
+        set_anime_notes,
+        # Listas personalizadas
+        get_lists,
+        get_list,
+        create_list,
+        add_to_list,
+        remove_from_list,
+        delete_list,
+        # Etiquetas
+        get_tags,
+        add_tag,
+        remove_tag,
+        # Rewind anual
+        get_rewind,
     ],
 )

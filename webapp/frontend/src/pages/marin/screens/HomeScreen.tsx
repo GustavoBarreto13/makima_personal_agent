@@ -38,6 +38,9 @@ const POSTER_PALETTES: Record<string, { a: string; b: string; ink: string }> = {
 // Props da tela — callbacks injetados pelo MarinShell
 interface HomeScreenProps {
   tweaks: Tweaks
+  // FR-011 (spec 052): incrementado pelo shell após ações que mudam dados
+  // relevantes para a home (logar episódio, sync MAL) — recarrega sem renavegar.
+  reloadKey?: number
   onSelectAnime: (id: string) => void
   onLog: (animeId?: string, ep?: number) => void
   onNav: (screen: string) => void
@@ -48,17 +51,18 @@ interface HomeScreenProps {
  * HomeScreen — dashboard principal da Marin.
  * Layout fiel ao protótipo screens-a.jsx / 01-inicio.png.
  */
-export function HomeScreen({ onSelectAnime, onLog, onNav, onToast }: HomeScreenProps) {
+export function HomeScreen({ reloadKey, onSelectAnime, onLog, onNav, onToast }: HomeScreenProps) {
   // Estado de dados e loading da tela
   const [data, setData]       = useState<HomeData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Carrega os dados agrupados da home em um único request
+  // Carrega os dados agrupados da home em um único request — refeito quando
+  // reloadKey muda (FR-011), sem exigir que o usuário renavegue até aqui.
   useEffect(() => {
     marinApi.home()
       .then(r  => { setData(r); setLoading(false) })
       .catch(() => { setLoading(false); onToast('Erro ao carregar dados da home.') })
-  }, [])
+  }, [reloadKey])
 
   // Estado de loading — spinner centralizado
   if (loading) {

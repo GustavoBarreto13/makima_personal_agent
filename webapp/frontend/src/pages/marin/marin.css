@@ -2299,3 +2299,39 @@
   font-size: 12px;
   color: var(--ink-4);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* LISTAS PERSONALIZADAS (spec 054, FR-003)                                    */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.mr-list-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px; margin-top: 22px;
+}
+.mr-list-card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg);
+  padding: 16px; cursor: pointer; box-shadow: var(--shadow-sm);
+  transition: border-color 0.14s, box-shadow 0.14s;
+}
+.mr-list-card:hover { border-color: var(--ink-4); box-shadow: var(--shadow-lg); }
+.mr-list-accent-bar { height: 4px; width: 32px; border-radius: 999px; margin-bottom: 10px; }
+.mr-list-name { font-size: 15px; font-weight: 700; color: var(--ink); display: flex; align-items: center; }
+.mr-list-desc { font-size: 12.5px; color: var(--ink-3); margin-top: 4px; }
+.mr-list-count { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); margin-top: 8px; }
+.mr-list-rank-badge {
+  position: absolute; top: 6px; left: 6px; z-index: 4; background: var(--marin);
+  color: oklch(0.99 0.01 0); font-family: var(--mono); font-size: 11px; font-weight: 700;
+  width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+}
+.mr-list-item-remove {
+  position: absolute; top: 6px; right: 6px; z-index: 4; width: 24px; height: 24px;
+  border-radius: 50%; border: none; background: oklch(0.1 0.02 300 / 0.6); color: #fff;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px;
+}
+.mr-list-item-remove:hover { background: var(--heart); }
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* ETIQUETAS (spec 054, FR-004)                                                 */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.mr-tag-removable { padding-right: 8px; }

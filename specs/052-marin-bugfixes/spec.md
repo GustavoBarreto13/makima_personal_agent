@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-07
 
-**Status**: Rascunho — auditoria completa em 2026-07-07, código ainda não implementado
+**Status**: ✅ Implementado (2026-07-28) — ver `plan.md` e `tasks.md`
 
 **Input**: User description: "Corrigir os bugs encontrados na auditoria da Marin (agente de
 animes), backend e frontend: pôster tipográfico com paleta não-determinística; thumbnails de

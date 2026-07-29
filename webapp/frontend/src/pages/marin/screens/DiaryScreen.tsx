@@ -11,6 +11,8 @@ import { Score }      from '../components/Score'
 interface DiaryScreenProps {
   onSelectAnime: (id: string) => void
   onLog?: () => void  // abre o LogModal sem pré-seleção
+  // FR-010 (spec 052): falhas de rede (carregar ou apagar sessão) precisam de aviso visível.
+  onToast: (msg: string) => void
 }
 
 interface DiaryEntryProps {
@@ -117,7 +119,7 @@ function DiaryEntry({ log, onDelete, onSelect }: DiaryEntryProps) {
  * DiaryScreen — diário cronológico de sessões de episódios.
  * Agrupado por mês/ano com cabeçalho em DM Serif Display e contagem de sessões.
  */
-export function DiaryScreen({ onSelectAnime, onLog }: DiaryScreenProps) {
+export function DiaryScreen({ onSelectAnime, onLog, onToast }: DiaryScreenProps) {
   const [logs, setLogs] = useState<WatchLog[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -125,7 +127,10 @@ export function DiaryScreen({ onSelectAnime, onLog }: DiaryScreenProps) {
   useEffect(() => {
     marinApi.diary(100)
       .then(res => setLogs(res.logs ?? []))
-      .catch(() => setLogs([]))
+      .catch(() => {
+        setLogs([])
+        onToast('Erro ao carregar o diário.')
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -140,7 +145,9 @@ export function DiaryScreen({ onSelectAnime, onLog }: DiaryScreenProps) {
       // Atualiza o estado local removendo a entrada deletada
       setLogs(prev => prev.filter(l => l.id !== logId))
     } catch {
-      // Falha silenciosa — o log permanece na lista
+      // FR-010 (spec 052): falha de rede precisa de aviso visível — a entrada
+      // permanece na lista (nada é removido do estado local).
+      onToast('Erro ao remover a sessão do diário.')
     }
   }
 

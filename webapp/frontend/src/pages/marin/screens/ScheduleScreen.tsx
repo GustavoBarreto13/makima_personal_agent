@@ -9,6 +9,8 @@ import { PosterCard } from '../components/PosterCard'
 
 interface ScheduleScreenProps {
   onSelectAnime: (id: string) => void
+  // FR-010 (spec 052): falha de rede ao carregar lançamentos precisa de aviso visível.
+  onToast: (msg: string) => void
 }
 
 /**
@@ -128,14 +130,17 @@ function ScheduleCard({
  * ScheduleScreen — agenda de novos episódios dos próximos 14 dias.
  * Agrupa por dia com label relativo (Hoje / Amanhã / dia da semana + data).
  */
-export function ScheduleScreen({ onSelectAnime }: ScheduleScreenProps) {
+export function ScheduleScreen({ onSelectAnime, onToast }: ScheduleScreenProps) {
   const [items, setItems] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     marinApi.schedule(14)
       .then(res => setItems(res.schedule ?? []))
-      .catch(() => setItems([]))
+      .catch(() => {
+        setItems([])
+        onToast('Erro ao carregar os lançamentos.')
+      })
       .finally(() => setLoading(false))
   }, [])
 

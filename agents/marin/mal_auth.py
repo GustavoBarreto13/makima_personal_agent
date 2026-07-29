@@ -296,8 +296,14 @@ class MALAuth:
             # Converte a string ISO para datetime aware (com timezone)
             if expiry_env:
                 try:
-                    # fromisoformat aceita "2026-06-15T10:00:00+00:00" no Python 3.11+
+                    # fromisoformat aceita "2026-06-15T10:00:00+00:00" no Python 3.11+,
+                    # mas também aceita "2026-06-15T10:00:00" (sem offset) retornando um
+                    # datetime NAIVE — subtrair isso de datetime.now(timezone.utc) em
+                    # _is_expired() levanta TypeError (FR-004, spec 052). Normalizamos
+                    # para UTC quando não houver timezone explícito na env var.
                     self._expires_at = datetime.fromisoformat(expiry_env)
+                    if self._expires_at.tzinfo is None:
+                        self._expires_at = self._expires_at.replace(tzinfo=timezone.utc)
                 except ValueError:
                     # Se o formato for inválido, forçamos refresh imediato na próxima chamada
                     logger.warning(

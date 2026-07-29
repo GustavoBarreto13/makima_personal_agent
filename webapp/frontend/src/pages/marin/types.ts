@@ -32,6 +32,9 @@ export type MarinView =
   | 'watchlist'   // Quero assistir — fila de animes
   | 'lancamentos' // Lançamentos — schedule de episódios futuros
   | 'stats'       // Estatísticas anuais
+  | 'listas'      // Listas personalizadas (spec 054)
+  | 'etiquetas'   // Etiquetas (spec 054)
+  | 'rewind'      // Retrospectiva anual (spec 054)
   | 'detalhe'     // Detalhe de um anime específico
 
 /**
@@ -350,6 +353,41 @@ export interface SyncResult {
   created: number
   skipped: number
   errors: Array<{ mal_id: number | null; msg: string }>
+}
+
+/**
+ * Coleção nomeada de animes (spec 054, FR-003). Espelha `anime_lists`.
+ */
+export interface AnimeList {
+  id: string
+  name: string
+  description: string
+  accent: string | null
+  ranked: boolean
+  count: number
+}
+
+/** Anime resumido dentro de uma lista (GET /animes/lists/:id). */
+export interface AnimeListItem {
+  id: string
+  title: string
+  poster_url: string | null
+  poster_key?: PosterKey
+  status: Status
+  score: number | null
+  position: number | null
+}
+
+/** Detalhe de uma lista com os animes que a compõem. */
+export interface AnimeListDetail {
+  list: AnimeList
+  animes: AnimeListItem[]
+}
+
+/** Etiqueta com contagem de animes (GET /animes/tags). */
+export interface TagEntry {
+  name: string
+  count: number
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

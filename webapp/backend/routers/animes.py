@@ -51,6 +51,22 @@ from agents.marin.tools import (
     get_home,
     # Sincronização MAL
     sync_mal,
+    # Caderno da Marin (spec 054)
+    set_anime_notes,
+    # Listas personalizadas (spec 054)
+    get_lists,
+    get_list,
+    create_list,
+    update_list,
+    delete_list,
+    add_to_list,
+    remove_from_list,
+    # Etiquetas (spec 054)
+    get_tags,
+    add_tag,
+    remove_tag,
+    # Rewind anual (spec 054)
+    get_rewind,
 )
 
 # Importação de run_select para a paginação de episódios (query thin sem lógica de domínio)
@@ -115,6 +131,38 @@ class ScoreBody(BaseModel):
 class SyncBody(BaseModel):
     """Corpo da requisição para acionar o sync MAL."""
     full: bool = False  # True = reimportar tudo; False = delta desde último sync
+
+
+class NotesBody(BaseModel):
+    """Corpo da requisição para salvar o Caderno da Marin de um anime."""
+    notes: str  # Texto livre — vazio limpa a anotação
+
+
+class CreateListBody(BaseModel):
+    """Corpo da requisição para criar uma lista personalizada."""
+    name: str
+    description: str = ""
+    accent: Optional[str] = None
+    ranked: bool = False
+
+
+class UpdateListBody(BaseModel):
+    """Corpo da requisição para atualizar campos de uma lista (todos opcionais)."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    accent: Optional[str] = None
+    ranked: Optional[bool] = None
+
+
+class AddToListBody(BaseModel):
+    """Corpo da requisição para adicionar um anime a uma lista."""
+    anime_id: str
+    position: Optional[int] = None
+
+
+class TagBody(BaseModel):
+    """Corpo da requisição para adicionar uma etiqueta a um anime."""
+    tag: str
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -186,11 +234,18 @@ def list_animes_endpoint(
         params["genre"] = genre
 
     # Define a ordenação — padrão é por data de atualização (mais recente primeiro)
+    # "progress" (FR-008, spec 052): ordena pelo % de episódios assistidos.
+    # Animes sem episodes_total conhecido (NULL ou 0) entram como 0% — nunca dividem por zero.
     order_map = {
-        "score":   "score DESC NULLS LAST, updated_at DESC",
-        "title":   "title ASC",
-        "added":   "created_at DESC",
-        "updated": "updated_at DESC",
+        "score":    "score DESC NULLS LAST, updated_at DESC",
+        "title":    "title ASC",
+        "added":    "created_at DESC",
+        "updated":  "updated_at DESC",
+        "progress": (
+            "CASE WHEN episodes_total > 0 "
+            "THEN episodes_watched::float / episodes_total ELSE 0 END DESC, "
+            "updated_at DESC"
+        ),
     }
     order_clause = order_map.get(sort or "updated", "updated_at DESC")
 
@@ -200,7 +255,7 @@ def list_animes_endpoint(
         SELECT
             id, mal_id, title, media_type, season, studio,
             episodes_total, episodes_watched, status, airing_status,
-            score, poster_url, banner_url, genres, date_started, updated_at,
+            score, poster_url, banner_url, genres, tags, date_started, updated_at,
             created_at
         FROM anime
         WHERE {where_clause}
@@ -295,6 +350,77 @@ def get_home_endpoint(user: dict = Depends(require_user)) -> dict:
         Dict com todos os blocos que a HomeScreen consome.
     """
     return get_home()
+
+
+@router.get("/rewind")
+def get_rewind_endpoint(
+    year: Optional[int] = Query(default=None, description="Ano de referência (padrão: ano atual)"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Retornar a retrospectiva anual (Rewind) de animes (spec 054, FR-005).
+
+    Args:
+        year: Ano (padrão: ano atual).
+        user: Usuário autenticado.
+
+    Returns:
+        Mesmo shape de /stats — ver get_rewind_endpoint para os campos.
+    """
+    return get_rewind(year=year)
+
+
+# ── Listas personalizadas (spec 054) — path fixo antes de /{anime_id} ────────
+
+@router.get("/lists")
+def get_lists_endpoint(user: dict = Depends(require_user)) -> dict:
+    """Listar todas as coleções personalizadas com contagem de animes."""
+    return {"status": "ok", "lists": get_lists()}
+
+
+@router.post("/lists", status_code=201)
+def create_list_endpoint(body: CreateListBody, user: dict = Depends(require_user)) -> dict:
+    """Criar uma nova lista/coleção de animes."""
+    return _check_result(create_list(
+        name=body.name, description=body.description, accent=body.accent, ranked=body.ranked,
+    ))
+
+
+@router.get("/lists/{list_id}")
+def get_list_endpoint(list_id: str, user: dict = Depends(require_user)) -> dict:
+    """Retornar o detalhe de uma lista com os animes que a compõem."""
+    return _check_result(get_list(list_id=list_id))
+
+
+@router.patch("/lists/{list_id}")
+def update_list_endpoint(list_id: str, body: UpdateListBody, user: dict = Depends(require_user)) -> dict:
+    """Atualizar campos de uma lista (só os informados)."""
+    return _check_result(update_list(list_id=list_id, **body.model_dump(exclude_none=True)))
+
+
+@router.delete("/lists/{list_id}")
+def delete_list_endpoint(list_id: str, user: dict = Depends(require_user)) -> dict:
+    """Remover uma lista (cascade nos itens)."""
+    return _check_result(delete_list(list_id=list_id))
+
+
+@router.post("/lists/{list_id}/items", status_code=201)
+def add_to_list_endpoint(list_id: str, body: AddToListBody, user: dict = Depends(require_user)) -> dict:
+    """Adicionar um anime a uma lista."""
+    return _check_result(add_to_list(list_id=list_id, anime_id=body.anime_id, position=body.position))
+
+
+@router.delete("/lists/{list_id}/items/{anime_id}")
+def remove_from_list_endpoint(list_id: str, anime_id: str, user: dict = Depends(require_user)) -> dict:
+    """Remover um anime de uma lista."""
+    return _check_result(remove_from_list(list_id=list_id, anime_id=anime_id))
+
+
+# ── Etiquetas (spec 054) — path fixo antes de /{anime_id} ────────────────────
+
+@router.get("/tags")
+def get_tags_endpoint(user: dict = Depends(require_user)) -> dict:
+    """Retornar a nuvem de etiquetas com contagem de animes."""
+    return get_tags()
 
 
 # ── Logs de sessão — path fixo antes de /{anime_id} ──────────────────────────
@@ -505,6 +631,33 @@ def rate_anime_endpoint(
         Dict com status "ok" e a nota definida.
     """
     return _check_result(rate_anime(anime_id_or_query=anime_id, score=body.score))
+
+
+@router.patch("/{anime_id}/notes")
+def set_notes_endpoint(anime_id: str, body: NotesBody, user: dict = Depends(require_user)) -> dict:
+    """Salvar o Caderno da Marin (anotações soltas) de um anime (spec 054, FR-002).
+
+    Args:
+        anime_id: UUID do anime.
+        body: {"notes": "..."} — texto vazio limpa a anotação.
+        user: Usuário autenticado.
+
+    Returns:
+        Dict com status "ok" e o texto salvo.
+    """
+    return _check_result(set_anime_notes(anime_id_or_query=anime_id, notes=body.notes))
+
+
+@router.post("/{anime_id}/tags", status_code=201)
+def add_tag_endpoint(anime_id: str, body: TagBody, user: dict = Depends(require_user)) -> dict:
+    """Adicionar uma etiqueta a um anime (spec 054, FR-004)."""
+    return _check_result(add_tag(anime_id_or_query=anime_id, tag=body.tag))
+
+
+@router.delete("/{anime_id}/tags/{tag}")
+def remove_tag_endpoint(anime_id: str, tag: str, user: dict = Depends(require_user)) -> dict:
+    """Remover uma etiqueta de um anime (spec 054, FR-004)."""
+    return _check_result(remove_tag(anime_id_or_query=anime_id, tag=tag))
 
 
 @router.delete("/{anime_id}", status_code=200)

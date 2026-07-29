@@ -15,8 +15,11 @@ import { StatusChip }          from './components/StatusChip'
 import { Score }               from './components/Score'
 import { EpisodeProgress }     from './components/EpisodeProgress'
 import { EpisodeLine }         from './components/EpisodeLine'
-import { Stars }               from './components/Stars'
+import { RateInput }           from './components/RateInput'
 import { Icon }                from './components/Icon'
+import { NotesEditor }         from './components/NotesEditor'
+import { TagEditor }           from './components/TagEditor'
+import { AddToListModal }      from './modals/AddToListModal'
 
 // ── Paletas do pôster tipográfico (12 opções, mesmas do PosterCard e HomeScreen) ──
 // Usadas para gerar o gradiente do banner quando banner_url é null.
@@ -100,6 +103,8 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
   const [isFavorite, setIsFavorite]   = useState(false)
   // Controle do diálogo de confirmação de exclusão
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  // Controle do modal "+ Adicionar a lista" (spec 054, FR-003)
+  const [showAddToList, setShowAddToList] = useState(false)
 
   // Busca os dados do detalhe + primeiros 12 episódios ao montar
   useEffect(() => {
@@ -184,6 +189,19 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
       onToast('Removido dos favoritos.')
     }
     writeFavorites(updated)
+  }
+
+  // Define a nota do anime pela tela de detalhe (FR-001, spec 054).
+  // A rota já existia sem consumidor — RateInput já é usado no LogWatchModal,
+  // faltava só ligá-lo ao cabeçalho do detalhe com o mesmo padrão optimistic
+  // de handleStatusChange.
+  function handleRateChange(newScore: number) {
+    marinApi.rate(animeId, { score: newScore })
+      .then(() => {
+        setLocalScore(newScore > 0 ? newScore : null)
+        onToast(newScore > 0 ? `Avaliado com ${newScore}/10.` : 'Avaliação removida.')
+      })
+      .catch(() => onToast('Erro ao avaliar o anime.'))
   }
 
   // Remove o anime do catálogo (soft delete) e volta para a tela anterior
@@ -297,10 +315,10 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
               ].filter(Boolean).join(' · ')}
             </p>
 
-            {/* Linha de rating: estrelas + nota numérica + coração + chip de status */}
+            {/* Linha de rating: estrelas interativas + nota numérica + coração + chip de status */}
             <div className="mr-detail-rating-row">
-              {/* 10 estrelas representando a nota MAL */}
-              <Stars score={score} size={18} />
+              {/* 10 estrelas clicáveis — FR-001 spec 054, define a nota pelo detalhe */}
+              <RateInput value={score} onChange={handleRateChange} size={18} />
               {/* Nota numérica (ex.: "7.5 / 10") */}
               <span className="mr-detail-score-num">
                 {score != null && score > 0 ? `${score} / 10` : '— / 10'}
@@ -364,6 +382,14 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
           {isFavorite ? 'Favoritado' : 'Favoritar'}
         </button>
 
+        {/* "+ Adicionar a lista" — FR-003, spec 054 */}
+        <button
+          className="mr-btn"
+          onClick={() => setShowAddToList(true)}
+        >
+          <Icon name="plus" size={16} /> Adicionar a lista
+        </button>
+
         {/* Botão de remover do catálogo */}
         <button
           className="mr-btn mr-detail-delete-btn"
@@ -372,6 +398,14 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
           <Icon name="delete" size={16} /> Remover
         </button>
       </div>
+
+      {showAddToList && (
+        <AddToListModal
+          animeId={animeId}
+          onClose={() => setShowAddToList(false)}
+          onToast={onToast}
+        />
+      )}
 
       {/* ── Confirmação de exclusão (inline) ──────────────────────────────────── */}
       {showDeleteConfirm && (
@@ -417,13 +451,8 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
             </section>
           )}
 
-          {/* Caderno da Marin — notas pessoais do usuário */}
-          {anime.notes && (
-            <section className="mr-detail-section mr-notes-block">
-              <h2 className="mr-detail-section-title">caderno da Marin ✨</h2>
-              <p className="mr-detail-notes">{anime.notes}</p>
-            </section>
-          )}
+          {/* Caderno da Marin — notas pessoais do usuário, editável (FR-002, spec 054) */}
+          <NotesEditor animeId={animeId} initialNotes={anime.notes} onToast={onToast} />
 
           {/* Lista de episódios com paginação */}
           <section className="mr-detail-section">
@@ -514,6 +543,12 @@ export function AnimeDetail({ animeId, onBack, onLog, onToast }: AnimeDetailProp
               </div>
             </section>
           )}
+
+          {/* Etiquetas — livres, editáveis (FR-004, spec 054) */}
+          <section className="mr-detail-section">
+            <h2 className="mr-detail-section-title">Etiquetas</h2>
+            <TagEditor animeId={animeId} initialTags={anime.tags ?? []} onToast={onToast} />
+          </section>
 
           {/* Histórico de sessões — lista cronológica de logs */}
           {(recent_logs ?? []).length > 0 && (

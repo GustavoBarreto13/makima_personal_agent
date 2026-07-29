@@ -683,12 +683,33 @@ Contrato detalhado: `specs/021-marin-animes/contracts/api-anime.md`.
 | `GET` | `/api/animes` | Lista o catálogo com filtros opcionais. | `?status=&sort=&genre=` |
 | `POST` | `/api/animes` | Adiciona um anime via `mal_id` (metadados Jikan + AniList; devolve 201). | Body: `AddAnimeBody` |
 | `GET` | `/api/animes/watchlist` | Animes com status `quero_assistir` (fila de espera). | — |
-| `GET` | `/api/animes/currently-watching` | Animes com status `assistindo`. | — |
+| `GET` | `/api/animes/currently-watching` | ⚠ Animes com status `assistindo`. Sem consumidor na UI — o `HomeScreen` usa `get_home()`. Existe como endpoint de integração/agente (o `marin_agent` no Telegram chama a mesma função Python como ADK tool). | — |
 | `GET` | `/api/animes/diary` | Histórico de sessões em ordem cronológica decrescente. | `?limit=N` |
 | `GET` | `/api/animes/stats` | Estatísticas de animes do ano. | `?year=YYYY` |
 | `GET` | `/api/animes/schedule` | Episódios futuros dos animes em progresso. | `?days=N` |
 | `GET` | `/api/animes/home` | Todos os blocos da HomeScreen numa única chamada. | — |
 | `POST` | `/api/animes/sync` | Sincroniza com o MyAnimeList (delta ou full; idempotente; devolve 202). | Body: `{"full": bool}` |
+| `GET` | `/api/animes/rewind` | Retrospectiva anual (spec 054) — mesmo shape de `/stats`, camada fina sobre `get_stats`. | `?year=YYYY` |
+
+### Listas personalizadas (spec 054)
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/animes/lists` | Todas as listas com contagem de animes. | — |
+| `POST` | `/api/animes/lists` | Cria uma lista/coleção. | Body: `CreateListBody` |
+| `GET` | `/api/animes/lists/{list_id}` | Detalhe de uma lista + animes que a compõem. | — |
+| `PATCH` | `/api/animes/lists/{list_id}` | Atualiza campos (só os informados). | Body: `UpdateListBody` |
+| `DELETE` | `/api/animes/lists/{list_id}` | Remove a lista (cascade nos itens). | — |
+| `POST` | `/api/animes/lists/{list_id}/items` | Adiciona um anime à lista (idempotente por posição). | Body: `AddToListBody` |
+| `DELETE` | `/api/animes/lists/{list_id}/items/{anime_id}` | Remove um anime da lista. | — |
+
+### Etiquetas (spec 054)
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/animes/tags` | Nuvem de etiquetas com contagem de animes. | — |
+| `POST` | `/api/animes/{anime_id}/tags` | Adiciona uma etiqueta (normalizada — minúsculas, sem acento). | Body: `TagBody` |
+| `DELETE` | `/api/animes/{anime_id}/tags/{tag}` | Remove uma etiqueta do anime. | — |
 
 ### Detalhe e ações por anime
 
@@ -699,7 +720,8 @@ Contrato detalhado: `specs/021-marin-animes/contracts/api-anime.md`.
 | `POST` | `/api/animes/{anime_id}/log` | Registra uma sessão de episódios assistidos (devolve 201). | Body: `LogWatchBody` |
 | `PATCH` | `/api/animes/{anime_id}/status` | Atualiza o status do anime na lista. | Body: `StatusBody` |
 | `PATCH` | `/api/animes/{anime_id}/score` | Define a nota pessoal (escala MAL: 0–10, passo 0.5). | Body: `ScoreBody` |
-| `DELETE` | `/api/animes/{anime_id}` | Soft delete (histórico preservado). | — |
+| `PATCH` | `/api/animes/{anime_id}/notes` | Salva o Caderno da Marin — anotações soltas (spec 054). Texto vazio limpa. | Body: `NotesBody` |
+| `DELETE` | `/api/animes/{anime_id}` | Soft delete (histórico preservado; remove também os vínculos de lista, spec 054 FR-006). | — |
 | `DELETE` | `/api/animes/logs/{log_id}` | Remove uma sessão do diário e recalcula `episodes_watched`. | — |
 
 ---

@@ -17,6 +17,9 @@ import { DiaryScreen }    from './screens/DiaryScreen'
 import { WatchlistScreen } from './screens/WatchlistScreen'
 import { ScheduleScreen } from './screens/ScheduleScreen'
 import { StatsScreen }    from './screens/StatsScreen'
+import { ListsScreen }    from './screens/ListsScreen'
+import { TagsScreen }     from './screens/TagsScreen'
+import { RewindScreen }   from './screens/RewindScreen'
 import { AnimeDetail }    from './AnimeDetail'
 
 // Modais
@@ -33,7 +36,7 @@ import { NextBar }  from './components/NextBar'
 import { marinApi } from './marinApi'
 
 // Tipo das views disponíveis
-type MarinView = 'home' | 'catalogo' | 'diario' | 'watchlist' | 'lancamentos' | 'stats' | 'detalhe'
+type MarinView = 'home' | 'catalogo' | 'diario' | 'watchlist' | 'lancamentos' | 'stats' | 'listas' | 'etiquetas' | 'rewind' | 'detalhe'
 
 // Defaults de tweaks (carregados do localStorage ou esses valores)
 const DEFAULT_TWEAKS: Tweaks = {
@@ -69,6 +72,9 @@ const TITLES: Record<MarinView, string> = {
   watchlist:   '⭐ Quero assistir',
   lancamentos: '📅 Lançamentos',
   stats:       '📊 Estatísticas',
+  listas:      '🗂️ Listas',
+  etiquetas:   '🏷️ Etiquetas',
+  rewind:      '🎀 Rewind',
   detalhe:     '🎞️ Anime',
 }
 
@@ -133,6 +139,13 @@ export function MarinShell() {
   // Query de busca global da topbar
   const [topbarQuery, setTopbarQuery] = useState('')
 
+  // FR-011 (spec 052): "carimbo" de recarregamento — incrementado após ações que
+  // mudam dados relevantes para blocos que já foram buscados (Home, contagens de
+  // nav, NextBar). Telas/efeitos que dependem dele voltam a rodar sem exigir
+  // renavegação, mesmo padrão de reloadKey já documentado para as telas DnD.
+  const [reloadKey, setReloadKey] = useState(0)
+  const bump = useCallback(() => setReloadKey(k => k + 1), [])
+
   // Ref para o container de scroll (para reset ao navegar)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -145,7 +158,8 @@ export function MarinShell() {
     el.setAttribute('data-density', DENSITY_MAP[tweaks.densidade] ?? 'medium')
   }, [tweaks])
 
-  // Busca contagens de nav ao montar (uma única vez)
+  // Busca contagens de nav ao montar e sempre que reloadKey muda (FR-011: refletir
+  // sync com o MAL sem precisar de reload manual da página).
   useEffect(() => {
     marinApi.home()
       .then((res: any) => {
@@ -163,9 +177,10 @@ export function MarinShell() {
         }
       })
       .catch(() => {})
-  }, [])
+  }, [reloadKey])
 
-  // Busca o schedule dos próximos 14 dias para alimentar a NextBar
+  // Busca o schedule dos próximos 14 dias para alimentar a NextBar — idem, refeito
+  // após sync com o MAL para não deixar a barra de próximos eps desatualizada.
   useEffect(() => {
     marinApi.schedule(14)
       .then(r => {
@@ -175,7 +190,7 @@ export function MarinShell() {
         }
       })
       .catch(() => {})
-  }, [])
+  }, [reloadKey])
 
   // Atalho de teclado: 'a' abre AddAnimeModal
   const handleGlobalKey = useCallback((e: KeyboardEvent) => {
@@ -223,6 +238,8 @@ export function MarinShell() {
           ? `Sync completo: ${r.created ?? 0} criados, ${r.updated ?? 0} atualizados`
           : 'MAL sync: nada de novo'
       )
+      // FR-011: contagens de nav e NextBar precisam refletir o que o sync mudou
+      bump()
     } catch {
       showToast('Erro ao sincronizar com o MAL.')
     } finally {
@@ -241,6 +258,9 @@ export function MarinShell() {
   const navDescobrir: { id: MarinView; label: string; icon: string; count?: number }[] = [
     { id: 'lancamentos', label: 'Lançamentos',  icon: 'calendar', count: schedule.length || undefined },
     { id: 'stats',       label: 'Estatísticas', icon: 'stats'     },
+    { id: 'listas',      label: 'Listas',       icon: 'list'      },
+    { id: 'etiquetas',   label: 'Etiquetas',    icon: 'search'    },
+    { id: 'rewind',      label: 'Rewind',       icon: 'star'      },
   ]
 
   // Item do schedule atualmente exibido na NextBar
@@ -388,6 +408,7 @@ export function MarinShell() {
           {view === 'home' && (
             <HomeScreen
               tweaks={tweaks}
+              reloadKey={reloadKey}
               onSelectAnime={id => navigateTo('detalhe', id)}
               onLog={(aid, ep) => openLogModal(aid, ep)}
               onNav={screen => navigateTo(screen as MarinView)}
@@ -401,6 +422,7 @@ export function MarinShell() {
               onSelectAnime={id => navigateTo('detalhe', id)}
               externalQuery={topbarQuery}
               externalCounts={homeCounts}
+              onToast={showToast}
             />
           )}
 
@@ -408,6 +430,7 @@ export function MarinShell() {
             <DiaryScreen
               onSelectAnime={id => navigateTo('detalhe', id)}
               onLog={() => openLogModal()}
+              onToast={showToast}
             />
           )}
 
@@ -422,11 +445,27 @@ export function MarinShell() {
           {view === 'lancamentos' && (
             <ScheduleScreen
               onSelectAnime={id => navigateTo('detalhe', id)}
+              onToast={showToast}
             />
           )}
 
           {view === 'stats' && (
             <StatsScreen />
+          )}
+
+          {view === 'listas' && (
+            <ListsScreen onSelectAnime={id => navigateTo('detalhe', id)} />
+          )}
+
+          {view === 'etiquetas' && (
+            <TagsScreen
+              onSelectTag={tag => { setTopbarQuery(tag); navigateTo('catalogo') }}
+              onToast={showToast}
+            />
+          )}
+
+          {view === 'rewind' && (
+            <RewindScreen onSelectAnime={id => navigateTo('detalhe', id)} />
           )}
 
           {view === 'detalhe' && animeId && (
@@ -465,7 +504,10 @@ export function MarinShell() {
           defaultEp={logModal.ep}
           onSubmit={() => {
             setLogModal({ open: false })
-            // Se está no detalhe, a tela se auto-atualiza no próximo acesso
+            // FR-011: Home/nav/NextBar precisam refletir a sessão recém-logada
+            // sem exigir renavegação. Se está no detalhe, a tela se auto-atualiza
+            // no próximo acesso (comportamento já existente, mantido).
+            bump()
           }}
           onClose={() => setLogModal({ open: false })}
           onToast={showToast}

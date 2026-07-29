@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-07
 
-**Status**: Rascunho — auditoria completa em 2026-07-07, código ainda não implementado
+**Status**: ✅ Implementado (2026-07-28) — ver `plan.md` e `tasks.md`; migração (`anime.local_updated_at`) e redeploy do container `makima-scheduler` pendentes no VPS
 
 **Input**: User description: "O diário local da Marin e a lista do MyAnimeList devem ser
 espelhos: marquei assistido em um, reflete no outro. Registrar episódios, mudar status ou dar

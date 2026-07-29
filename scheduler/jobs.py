@@ -203,6 +203,34 @@ def run_monthly_report() -> None:
         )
 
 
+def run_marin_mal_sync() -> None:
+    """Executa a sincronização delta com o MyAnimeList (Marin) — spec 053, US3.
+
+    Chama `sync_mal()` diretamente (já é uma função Python pura, sem
+    necessidade de subprocesso). Mesmo motivo do `run_letterboxd`: o retorno
+    conta erros em `errors` em vez de levantar — convertemos aqui para que o
+    runner detecte a falha e alerte no Telegram.
+
+    Raises:
+        RuntimeError: Se o sync reportar uma ou mais entradas com erro.
+    """
+    # Import lazy — só carrega o código da Marin quando este job realmente roda.
+    from agents.marin.mal_sync import sync_mal
+
+    resultado = sync_mal(full=False)
+    print(
+        f"[marin-mal-sync] buscados: {resultado['mal_entries_fetched']}, "
+        f"criados: {resultado['created']}, atualizados: {resultado['updated']}, "
+        f"pulados: {resultado['skipped']}, erros: {len(resultado['errors'])}"
+    )
+
+    if resultado["errors"]:
+        raise RuntimeError(
+            f"sync_mal (Marin) terminou com {len(resultado['errors'])} erro(s) — "
+            f"ver o log acima para detalhes."
+        )
+
+
 def run_lucy_digest() -> None:
     """Executa o digest diário de emails (Lucy) → Telegram + histórico.
 

@@ -28,6 +28,11 @@ import logging        # Registra erros sem interromper o fluxo do agente
 import os             # Lê variáveis de ambiente (TMDB_API_KEY)
 import time           # Delays de rate limiting entre chamadas às APIs
 from datetime import datetime, timezone  # Conversão de timestamps Unix para datas ISO
+from zoneinfo import ZoneInfo  # Fuso horário local (FR-006, spec 052)
+
+# Fuso do usuário — usado para decidir "lançado vs agendado" no schedule da AniList,
+# nunca UTC puro (convenção global do projeto, ver CLAUDE.md raiz).
+_TZ = ZoneInfo("America/Sao_Paulo")
 
 import requests       # Cliente HTTP para todas as APIs (já no requirements.txt)
 
@@ -647,15 +652,20 @@ def anilist_get_data(
         if not numero or not airing_at:
             continue
 
-        # Converte timestamp Unix para data ISO no fuso UTC.
-        # Usamos UTC porque o TMDB e Jikan também usam UTC para datas.
-        data_exibicao = datetime.fromtimestamp(airing_at, tz=timezone.utc).date().isoformat()
+        # Converte timestamp Unix para data ISO. Guardamos a data em UTC (mesma
+        # convenção do TMDB/Jikan para o campo `aired`), mas a DECISÃO de
+        # lançado/agendado usa o fuso local (FR-006, spec 052) — comparar contra
+        # "hoje" em UTC faz um episódio que já foi ao ar no Brasil aparecer como
+        # "agendado" por algumas horas perto da virada do dia.
+        data_exibicao_utc = datetime.fromtimestamp(airing_at, tz=timezone.utc)
+        data_exibicao = data_exibicao_utc.date().isoformat()
 
-        # Compara com a data atual para determinar o status do episódio:
-        # - Data no passado ou hoje → "lancado"
-        # - Data no futuro → "agendado"
-        hoje = datetime.now(timezone.utc).date().isoformat()
-        airing_status = "lancado" if data_exibicao <= hoje else "agendado"
+        # Compara com a data atual no fuso local para determinar o status:
+        # - Data no passado ou hoje (fuso local) → "lancado"
+        # - Data no futuro (fuso local) → "agendado"
+        data_exibicao_local = data_exibicao_utc.astimezone(_TZ).date()
+        hoje_local = datetime.now(_TZ).date()
+        airing_status = "lancado" if data_exibicao_local <= hoje_local else "agendado"
 
         schedule_episodes.append({
             "number":        numero,
@@ -969,6 +979,29 @@ def enrich_anime(mal_id: int, mal_aired_from: str | None = None) -> dict:
                     "synopsis":      None,
                     "airing_status": ep_anilist["airing_status"],
                 })
+
+    # ── Etapa 6: TMDB — thumbnails de episódio (FR-002, spec 052) ─────────────
+    # tmdb_get_episode_thumbnail já existia mas nunca era chamado — a cadeia de
+    # exibição (schema + API + frontend) estava pronta, faltava só este passo.
+    # Só faz sentido para séries de TV (tmdb_type == "tv") com tmdb_id resolvido;
+    # sem TMDB_API_KEY configurada, tmdb_get_episode_thumbnail retorna None sem
+    # custo extra (checagem de auth é feita antes de qualquer chamada HTTP).
+    if tmdb_id and tmdb_type == "tv" and jikan_episodes:
+        for ep in jikan_episodes:
+            numero = ep.get("number")
+            if not numero:
+                continue
+            try:
+                ep["thumbnail_url"] = tmdb_get_episode_thumbnail(
+                    tmdb_id, mal_aired_from, numero
+                )
+            except Exception as exc:
+                # Falha isolada num episódio não deve derrubar o enriquecimento inteiro
+                log.error(
+                    "Erro ao buscar thumbnail do episódio %d (mal_id=%d): %s",
+                    numero, mal_id, exc,
+                )
+                ep["thumbnail_url"] = None
 
     # ── Monta o dict final com todos os dados combinados ──────────────────────
     # Campos do Jikan ficam como None se jikan_data for None.

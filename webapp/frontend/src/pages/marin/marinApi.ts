@@ -14,6 +14,8 @@ import type {
   AddAnimeBody,
   Anime,
   AnimeDetail,
+  AnimeList,
+  AnimeListDetail,
   AnimeSearchResult,
   HomeData,
   LogWatchBody,
@@ -22,6 +24,7 @@ import type {
   Stats,
   StatusBody,
   SyncResult,
+  TagEntry,
   WatchLog,
 } from './types'
 
@@ -190,4 +193,61 @@ export const marinApi = {
    */
   syncMal: (full = false) =>
     api.post<SyncResult>('/api/animes/sync', { full }),
+
+  // ── Caderno da Marin (spec 054) ─────────────────────────────────────────────
+
+  /**
+   * Salva o Caderno da Marin (anotações soltas) de um anime.
+   * Texto vazio limpa a anotação. Usada pelo NotesEditor no AnimeDetail.
+   */
+  setNotes: (animeId: string, notes: string) =>
+    api.patch<{ notes: string | null }>(`/api/animes/${animeId}/notes`, { notes }),
+
+  // ── Listas personalizadas (spec 054) ────────────────────────────────────────
+
+  /** Todas as listas com contagem de animes. Usada pelo ListsScreen. */
+  getLists: () => api.get<{ lists: AnimeList[] }>('/api/animes/lists'),
+
+  /** Detalhe de uma lista com os animes que a compõem. */
+  getList: (listId: string) => api.get<AnimeListDetail>(`/api/animes/lists/${listId}`),
+
+  /** Cria uma nova lista/coleção. */
+  createList: (body: { name: string; description?: string; accent?: string; ranked?: boolean }) =>
+    api.post<{ id: string; message: string }>('/api/animes/lists', body),
+
+  /** Atualiza campos de uma lista (só os informados). */
+  updateList: (listId: string, body: { name?: string; description?: string; accent?: string; ranked?: boolean }) =>
+    api.patch<{ message: string }>(`/api/animes/lists/${listId}`, body),
+
+  /** Remove uma lista (cascade nos itens). */
+  deleteList: (listId: string) => api.del<{ message: string }>(`/api/animes/lists/${listId}`),
+
+  /** Adiciona um anime a uma lista. */
+  addToList: (listId: string, animeId: string, position?: number) =>
+    api.post<{ message: string }>(`/api/animes/lists/${listId}/items`, { anime_id: animeId, position }),
+
+  /** Remove um anime de uma lista. */
+  removeFromList: (listId: string, animeId: string) =>
+    api.del<{ message: string }>(`/api/animes/lists/${listId}/items/${animeId}`),
+
+  // ── Etiquetas (spec 054) ─────────────────────────────────────────────────────
+
+  /** Nuvem de etiquetas com contagem de animes. Usada pelo TagsScreen. */
+  getTags: () => api.get<{ tags: TagEntry[] }>('/api/animes/tags'),
+
+  /** Adiciona uma etiqueta a um anime (normalizada, sem duplicar). */
+  addTag: (animeId: string, tag: string) =>
+    api.post<{ message: string }>(`/api/animes/${animeId}/tags`, { tag }),
+
+  /** Remove uma etiqueta de um anime. */
+  removeTag: (animeId: string, tag: string) =>
+    api.del<{ message: string }>(`/api/animes/${animeId}/tags/${encodeURIComponent(tag)}`),
+
+  // ── Rewind anual (spec 054) ──────────────────────────────────────────────────
+
+  /** Retrospectiva anual — mesmo shape de stats(). Usada pelo RewindScreen. */
+  rewind: (year?: number) => {
+    const suffix = year ? `?year=${year}` : ''
+    return api.get<Stats>(`/api/animes/rewind${suffix}`)
+  },
 }
