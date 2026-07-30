@@ -711,11 +711,12 @@ export function KanbanScreen({
         />
       )}
 
-      {/* Modal leve de adicionar tarefa na coluna */}
+      {/* Modal leve de adicionar tarefa na coluna. Board de lista → destino único
+          (a própria lista), então o modal não mostra seletor de lista. */}
       {addTaskCol && (
         <AddTaskModal
-          column={addTaskCol}
-          projectId={projectId}
+          columnName={addTaskCol.name}
+          targets={[{ project_id: projectId, column_id: addTaskCol.id, listName: projectName }]}
           onClose={() => setAddTaskCol(null)}
           onCreated={() => { load(); onChanged() }}
           toast={toast}

@@ -13,6 +13,10 @@
 // Sem seletor de "View" (kanban_views continuam por-board de lista).
 // Sem modal de criação de coluna (colunas são gerenciadas em cada lista individualmente).
 //
+// "+ Adicionar tarefa" por coluna (mesmo padrão do KanbanScreen): como uma coluna
+// unificada agrega N listas, o AddTaskModal ganha um seletor de lista quando há mais
+// de um destino possível. A última lista escolhida fica em localStorage por grupo.
+//
 // DnD via @dnd-kit, mesmo padrão do KanbanScreen:
 //   • DragOverlay suave que segue o cursor.
 //   • Optimistic update: o card se move na tela imediatamente, sem aguardar a API.
@@ -25,6 +29,10 @@ import { kaguyaApi } from '../kaguyaApi'
 import { TaskCard } from '../components/TaskCard'
 import { SortableTaskCard } from '../components/SortableTaskCard'
 import { Icon } from '../ui/Icons'
+// Modal leve de criar tarefa direto numa coluna — mesmo componente do KanbanScreen,
+// generalizado (spec deste trabalho) para aceitar N destinos possíveis (seletor de lista).
+import { AddTaskModal } from '../modals/AddTaskModal'
+import type { AddTaskTarget } from '../modals/AddTaskModal'
 // Toolbar de filtro/ordenação compartilhada com o KanbanScreen.
 import { KanbanToolbar } from '../components/KanbanToolbar'
 // Lógica pura de filtro: filtra por prioridade mínima + ordena os cards.
@@ -67,9 +75,10 @@ interface GroupColumnProps {
   isOver: boolean                              // cursor está sobre esta coluna no drag
   listName: (projectId: number) => string      // resolve nome da lista pelo project_id
   onOpen: (task: Task) => void
+  onAddTask: (col: GroupBoardColumn) => void   // abre o AddTaskModal para esta coluna unificada
 }
 
-function GroupColumn({ col, cards, activeId, isOver, listName, onOpen }: GroupColumnProps) {
+function GroupColumn({ col, cards, activeId, isOver, listName, onOpen, onAddTask }: GroupColumnProps) {
   // useDroppable torna o corpo da coluna uma área de drop para o dnd-kit.
   // Usa o `key` normalizado da coluna como id (ex.: "a fazer") para não colidir
   // com ids de cards (numéricos) ou colunas por-lista.
@@ -118,8 +127,14 @@ function GroupColumn({ col, cards, activeId, isOver, listName, onOpen }: GroupCo
         </SortableContext>
       </div>
 
-      {/* Sem botão "+ Adicionar tarefa" no board de grupo: tarefas são criadas dentro
-          de cada lista individualmente (abre a lista pela sidebar). */}
+      {/* Botão "+ Adicionar tarefa" (mesmo rodapé do KanbanScreen); oculto na coluna
+          concluída — mesma regra do board de lista (criar já concluída é estranho, e
+          soltar um card na coluna done dispara complete()). */}
+      {!col.is_done && (
+        <button className="kcol-add" onClick={() => onAddTask(col)}>
+          <Icon name="plus" size={13} /> Adicionar tarefa
+        </button>
+      )}
     </div>
   )
 }
@@ -139,6 +154,9 @@ export function GroupBoardScreen({ groupId, reloadKey, onOpenTask, onChanged, to
 
   // overColKey: chave da coluna unificada atualmente sob o cursor durante o drag.
   const [overColKey, setOverColKey] = useState<string | null>(null)
+
+  // addTaskCol: coluna unificada onde o usuário clicou "+ Adicionar tarefa" (abre o modal).
+  const [addTaskCol, setAddTaskCol] = useState<GroupBoardColumn | null>(null)
 
   // filters: estado da barra de filtro/ordenação — compartilhada com o KanbanScreen.
   // Reseta automaticamente ao trocar de grupo (groupId muda → KANBAN_DEFAULTS).
@@ -406,6 +424,7 @@ export function GroupBoardScreen({ groupId, reloadKey, onOpenTask, onChanged, to
                   isOver={overColKey === col.key}
                   listName={listName}
                   onOpen={onOpenTask}
+                  onAddTask={setAddTaskCol}
                 />
               )
             })}
@@ -460,6 +479,29 @@ export function GroupBoardScreen({ groupId, reloadKey, onOpenTask, onChanged, to
           </div>
         ) : null}
       </DragOverlay>
+
+      {/* Modal leve de adicionar tarefa na coluna unificada. Como a coluna agrega N
+          listas, os "targets" são os members dela — o modal mostra um seletor quando
+          há mais de uma lista possível. A escolha fica lembrada por grupo. */}
+      {addTaskCol && (
+        <AddTaskModal
+          columnName={addTaskCol.name}
+          targets={addTaskCol.members.map((m): AddTaskTarget => ({
+            project_id: m.project_id,
+            column_id: m.column_id,
+            listName: listName(m.project_id),
+          }))}
+          defaultProjectId={Number(localStorage.getItem(`kaguya:group:add-list:${groupId}`)) || undefined}
+          onClose={() => setAddTaskCol(null)}
+          onCreated={(usedProjectId) => {
+            // Lembra a lista usada desta vez, para pré-selecionar da próxima.
+            localStorage.setItem(`kaguya:group:add-list:${groupId}`, String(usedProjectId))
+            load(true)   // reload SILENCIOSO — padrão obrigatório de pages/CLAUDE.md
+            onChanged()  // avisa o shell (atualiza contadores da sidebar)
+          }}
+          toast={toast}
+        />
+      )}
     </DndContext>
   )
 }
