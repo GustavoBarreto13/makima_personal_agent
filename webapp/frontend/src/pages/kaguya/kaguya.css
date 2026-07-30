@@ -743,6 +743,10 @@
   font-family: var(--sans); font-size: 12px; color: var(--ink-4); cursor: pointer; background: oklch(1 0 0 / 0.25); transition: all .12s; }
 .kcol-add:hover { border-color: var(--kg); color: var(--kg-deep); background: var(--kg-tint); }
 .kcol-add svg { width: 13px; height: 13px; }
+/* Modo escuro: o fundo/borda claros do light mode ficam "lavados" sobre o .kcol escuro —
+   troca por um fundo translúcido branco bem sutil e borda mais visível. */
+.kg-app[data-theme='dark'] .kcol-add { background: oklch(1 0 0 / 0.05); border-color: oklch(1 0 0 / 0.16); color: var(--ink-4); }
+.kg-app[data-theme='dark'] .kcol-add:hover { border-color: var(--kg); color: var(--kg-deep); background: var(--kg-tint); }
 
 .kcard { position: relative; display: flex; gap: 11px; align-items: flex-start;
   background: oklch(1 0.002 350 / 0.78); border: 1px solid oklch(1 0 0 / 0.7); border-radius: 14px;
