@@ -158,7 +158,7 @@ export const namiApi = {
   createSubscription: (body: {
     name: string; valor: number; ciclo: string;
     next_billing_day?: number; categoria?: string;
-    color?: string; icon_url?: string;
+    color?: string; icon_url?: string; conta?: string;
     kind?: 'assinatura' | 'conta_fixa'; auto_lancar?: boolean;
   }): Promise<{ status: string }> =>
     api.post('/api/finances/subscriptions', body),

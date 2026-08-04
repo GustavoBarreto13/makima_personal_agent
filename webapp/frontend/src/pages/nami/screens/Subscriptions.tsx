@@ -4,17 +4,19 @@
 
 import { useState, useMemo } from 'react'
 import { namiApi } from '../namiApi'
-import type { Subscription } from '../types'
+import type { Subscription, Account, Card } from '../types'
 import { FormModal } from '../modals/FormModal'
 import { Icon } from '../icons'
 import { fmtMoney, daysUntil } from '../ui'
 
 interface SubscriptionsProps {
   subscriptions: Subscription[]
+  accounts: Account[]
+  cards: Card[]
   onToast: (msg: string) => void
   onSubscriptionsChanged: () => Promise<void>
   // Props do commonProps não usadas aqui
-  month?: string; stats?: unknown; accounts?: unknown; cards?: unknown
+  month?: string; stats?: unknown
   onTransactionSaved?: unknown; onNavigate?: unknown; onOpenAddModal?: unknown
 }
 
@@ -37,11 +39,19 @@ function fmtDays(days: number): string {
   return `em ${days}d`
 }
 
-export function Subscriptions({ subscriptions: allRecurring, onToast, onSubscriptionsChanged }: SubscriptionsProps) {
+export function Subscriptions({ subscriptions: allRecurring, accounts, cards, onToast, onSubscriptionsChanged }: SubscriptionsProps) {
   const [showForm, setShowForm]   = useState(false)
   const [editingSub, setEditingSub] = useState<Subscription | null>(null)
   const [saving, setSaving]       = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  // Opções do seletor "Conta / Cartão" — o valor é o próprio nome, pois o backend
+  // resolve `conta` tentando primeiro uma conta bancária e depois um cartão de
+  // crédito (mesma regra de create_subscription/update_subscription).
+  const fonteOptions = [
+    ...accounts.map(a => ({ value: a.name, label: a.name })),
+    ...cards.map(c => ({ value: c.name, label: `⬛ ${c.name}` })),
+  ]
 
   // Tela de Assinaturas mostra só kind='assinatura' — contas fixas têm tela própria
   // (spec 044). O array vem do shell já com ambos os kinds (uma única leitura).
@@ -86,6 +96,7 @@ export function Subscriptions({ subscriptions: allRecurring, onToast, onSubscrip
           ciclo:            String(values.ciclo ?? 'mensal'),
           next_billing_day: values.dia ? parseInt(String(values.dia)) : undefined,
           color:            String(values.color ?? '') || undefined,
+          conta:            String(values.fonte ?? '') || undefined,
         })
         onToast('Assinatura atualizada ✓')
       } else {
@@ -96,6 +107,7 @@ export function Subscriptions({ subscriptions: allRecurring, onToast, onSubscrip
           categoria:        String(values.categoria ?? 'Assinaturas'),
           next_billing_day: values.dia ? parseInt(String(values.dia)) : undefined,
           color:            String(values.color ?? '') || undefined,
+          conta:            String(values.fonte ?? '') || undefined,
           kind:             'assinatura',
         })
         onToast('Assinatura cadastrada ✓')
@@ -204,6 +216,7 @@ export function Subscriptions({ subscriptions: allRecurring, onToast, onSubscrip
                     <div className="sub-ciclo">
                       {sub.categoria} · {sub.ciclo}
                       {sub.next_billing_day ? ` · dia ${sub.next_billing_day}` : ''}
+                      {sub.conta ? ` · ${sub.conta}` : ''}
                     </div>
                   </div>
 
@@ -250,12 +263,14 @@ export function Subscriptions({ subscriptions: allRecurring, onToast, onSubscrip
             ciclo: editingSub.ciclo,
             dia: String(editingSub.next_billing_day ?? ''),
             color: editingSub.color ?? '',
+            fonte: editingSub.conta ?? '',
           } : undefined}
           fields={[
             { key: 'name',      label: 'Serviço',        type: 'text',    required: true, placeholder: 'Ex: Netflix, Spotify…' },
             { key: 'valor',     label: 'Valor mensal',   type: 'money',   required: true },
             { key: 'ciclo',     label: 'Ciclo',          type: 'segment', options: [{ value: 'mensal', label: 'Mensal' }, { value: 'anual', label: 'Anual' }] },
             { key: 'dia',       label: 'Dia da cobrança', type: 'number', min: 1, max: 28, placeholder: '15' },
+            { key: 'fonte',     label: 'Conta / Cartão', type: 'select', options: fonteOptions },
             // Categoria não é editável (update_subscription não altera a categoria) — só na criação
             ...(editingSub ? [] : [{ key: 'categoria', label: 'Categoria', type: 'select' as const, options: [
               { value: 'Assinaturas',    label: 'Assinaturas' },

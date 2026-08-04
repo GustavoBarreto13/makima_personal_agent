@@ -181,16 +181,6 @@ def _match_category(name: str) -> str | None:
     return matches[0] if len(matches) == 1 else None
 
 
-def _match_account(name: str) -> str | None:
-    """Alias de compatibilidade — usa _resolve_account internamente.
-
-    Retorna o nome canônico da conta (string) ou None se não encontrar.
-    Prefira _resolve_account quando precisar do account_id.
-    """
-    result = _resolve_account(name)
-    return result["name"] if result else None
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # FERRAMENTAS PÚBLICAS — chamadas pelo agente Nami via ADK
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1041,12 +1031,27 @@ def update_subscription(
         params["next_billing"] = next_billing
 
     if conta:
-        # Valida e normaliza a conta
-        acc = _match_account(conta)
-        if acc is None:
-            return {"status": "error", "message": f"Conta inválida: '{conta}'"}
-        sets.append("conta = %(conta)s")
-        params["conta"] = acc
+        # Resolve o pagador: primeiro tenta conta bancária, depois cartão de crédito
+        # (mesma regra de create_subscription — account_id e card_id são mutuamente
+        # exclusivos). Antes desta correção, só o texto de exibição `conta` era
+        # atualizado — account_id/card_id nunca mudavam, ficando presos na origem
+        # antiga (mesmo bug já corrigido em update_transaction na spec 043).
+        acc_obj = _resolve_account(conta)
+        if acc_obj is not None:
+            sets.append("conta = %(conta)s")
+            params["conta"] = acc_obj["name"]
+            sets.append("account_id = %(account_id)s")
+            params["account_id"] = acc_obj["id"]
+            sets.append("card_id = NULL")
+        else:
+            card_obj = _resolve_credit_card(conta)
+            if card_obj is None:
+                return {"status": "error", "message": f"Conta ou cartão não encontrado: '{conta}'"}
+            sets.append("conta = %(conta)s")
+            params["conta"] = card_obj["name"]
+            sets.append("card_id = %(card_id)s")
+            params["card_id"] = card_obj["id"]
+            sets.append("account_id = NULL")
 
     if status:
         # Só aceita os três estados válidos do ciclo de vida de uma assinatura

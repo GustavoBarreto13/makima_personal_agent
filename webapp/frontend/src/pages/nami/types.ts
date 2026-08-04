@@ -90,6 +90,7 @@ export interface Subscription {
   next_billing?: string // DATE (YYYY-MM-DD) — mantido para compatibilidade com o bot
   categoria: string
   status: string
+  conta?: string        // nome da conta ou cartão de pagamento vinculado
   // Campos novos adicionados pela migração 002-nami-financas:
   color?: string
   icon_url?: string

@@ -48,9 +48,12 @@ export function FixedBills({ accounts, cards, onToast, onSubscriptionsChanged }:
   const [saving, setSaving]         = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
+  // O valor de cada opção é o próprio nome — o backend resolve `conta` tentando
+  // primeiro uma conta bancária e depois um cartão de crédito (mesma regra de
+  // create_subscription/update_subscription/mark_subscription_paid).
   const fonteOptions = [
-    ...accounts.map(a => ({ value: `conta:${a.name}`, label: a.name })),
-    ...cards.map(c => ({ value: `card:${c.id}`, label: `⬛ ${c.name}` })),
+    ...accounts.map(a => ({ value: a.name, label: a.name })),
+    ...cards.map(c => ({ value: c.name, label: `⬛ ${c.name}` })),
   ]
 
   const load = useCallback(() => {
@@ -72,16 +75,10 @@ export function FixedBills({ accounts, cards, onToast, onSubscriptionsChanged }:
     return [...items].sort((a, b) => (order[a.cycle_status] ?? 9) - (order[b.cycle_status] ?? 9))
   }, [items])
 
-  function resolveFonte(fonte: string) {
-    if (!fonte) return { conta: '', card_id: '' }
-    const [kind, value] = fonte.split(':')
-    return kind === 'card' ? { conta: '', card_id: value } : { conta: value, card_id: '' }
-  }
-
   async function handleSave(values: Record<string, unknown>) {
     setSaving(true)
     try {
-      const { conta } = resolveFonte(String(values.fonte ?? ''))
+      const conta = String(values.fonte ?? '')
       if (editingBill) {
         await namiApi.updateSubscription(editingBill.id, {
           name:  String(values.name ?? ''),
@@ -121,7 +118,7 @@ export function FixedBills({ accounts, cards, onToast, onSubscriptionsChanged }:
     try {
       const valor = parseFloat(String(values.valor ?? '0').replace(',', '.'))
       if (!valor || valor <= 0) throw new Error('Informe o valor pago')
-      const { conta } = resolveFonte(String(values.fonte ?? ''))
+      const conta = String(values.fonte ?? '')
       await namiApi.paySubscription(payingBill.id, {
         valor, data: String(values.data ?? '') || undefined, conta: conta || undefined,
       })
@@ -209,6 +206,7 @@ export function FixedBills({ accounts, cards, onToast, onSubscriptionsChanged }:
                   <div className="sub-ciclo">
                     esperado {fmtMoney(item.valor)} · {item.ciclo}
                     {item.next_billing_day ? ` · dia ${item.next_billing_day}` : ''}
+                    {item.conta ? ` · ${item.conta}` : ''}
                   </div>
                 </div>
 
@@ -253,6 +251,7 @@ export function FixedBills({ accounts, cards, onToast, onSubscriptionsChanged }:
             ciclo: editingBill.ciclo,
             dia: String(editingBill.next_billing_day ?? ''),
             color: editingBill.color ?? '',
+            fonte: editingBill.conta ?? '',
           } : undefined}
           fields={[
             { key: 'name',  label: 'Nome',           type: 'text',    required: true, placeholder: 'Ex.: Luz, Água, Aluguel…' },
