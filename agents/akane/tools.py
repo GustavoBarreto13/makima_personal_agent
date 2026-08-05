@@ -1206,6 +1206,9 @@ def get_watchlist() -> list[dict]:
         ORDER BY created_at DESC
         """,
     )
+    # `run_select` já devolve [] quando não há filmes; manter esse contrato
+    # evita que o shell da Akane receba null e deixe de renderizar.
+    return entries
 
 
 def get_diary(limit: int = 50) -> list[dict]:

@@ -160,7 +160,8 @@ export function AkaneShell() {
   /** Recarrega watchlist + contagens (chamado no mount e após cada log). */
   const refreshShellData = useCallback(() => {
     akaneApi.watchlist()
-      .then(res => setWatchlist(res.movies))
+      // Respostas antigas ou incompletas não podem quebrar a navegação inteira.
+      .then(res => setWatchlist(res.movies ?? []))
       .catch(() => setWatchlist([]))
     akaneApi.home()
       .then(h => setCounts({ films: h.counts.films_watched, diary: h.counts.diary }))

@@ -123,6 +123,11 @@ def test_watch_locations_are_normalized_and_reused():
     assert list_watch_locations()[0]["name"] == "Múbi"
 
 
+def test_watchlist_empty_is_always_a_list():
+    """Retornar lista vazia para a watchlist sem filmes."""
+    assert get_watchlist() == []
+
+
 def test_watch_context_is_per_session_and_can_be_cleared():
     """Vincular pessoas e local à sessão sem herdar o contexto em um rewatch."""
     movie_id = _add_mock_movie("Aftersun", 2022)
