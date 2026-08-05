@@ -1284,7 +1284,7 @@ def get_movie_detail(movie_id: str) -> dict:
                l.id AS watch_location_id, l.name AS watch_location_name, l.kind AS watch_location_kind
         FROM diary_entries d LEFT JOIN movie_watch_locations l ON l.id = d.watch_location_id
         WHERE movie_id = %(id)s
-        ORDER BY watched_date DESC, created_at DESC
+        ORDER BY d.watched_date DESC, d.created_at DESC
         """,
         {"id": real_id},
     )

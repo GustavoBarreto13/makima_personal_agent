@@ -146,6 +146,10 @@ def test_watch_context_is_per_session_and_can_be_cleared():
     assert by_id[second["diary_id"]]["companions"] == []
     assert by_id[second["diary_id"]]["watch_location"]["name"] == "Mubi"
 
+    detail = get_movie_detail(movie_id)
+    assert detail["status"] == "ok"
+    assert detail["diary"][0]["watch_location"]["name"] == "Mubi"
+
     updated = update_diary_entry(first["diary_id"], companion_ids=[], watch_location_id=None, set_watch_location=True)
     assert updated["status"] == "ok"
     assert updated["entry"]["companions"] == []
