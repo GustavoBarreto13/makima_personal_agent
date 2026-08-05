@@ -21,6 +21,7 @@ export const ICONS = {
   arrowLeft:'M19 12H5M12 19l-7-7 7-7',
   chevL:    'M15 18l-6-6 6-6',
   chevR:    'M9 18l6-6-6-6',
+  chevDown: 'M6 9l6 6 6-6',                                                 // seta de combobox (substitui o caractere de texto '⌄')
   check:    'M20 6 9 17l-5-5',
   play:     'M6 4l14 8-14 8z',
   cinema:   'M3 5h18v14H3zM3 9h18M7 5v14M17 5v14',
