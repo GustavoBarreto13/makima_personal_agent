@@ -631,6 +631,8 @@ metadados do TMDB e sincronização opcional com o Letterboxd (RSS). Contrato de
 | `POST` | `/api/movies` | Adiciona filme ao catálogo (metadados do TMDB se houver `tmdb_id`). | Body: `AddMovieBody` |
 | `GET` | `/api/movies/watchlist` | Filmes na watchlist (`status='watchlist'`). | — |
 | `GET` | `/api/movies/diary` | Diário de sessões em ordem cronológica decrescente. | `?limit=N` |
+| `GET` | `/api/movies/watch-locations` | Sugestões incrementais de locais, ordenadas por uso e nome. | `?q=texto` |
+| `POST` | `/api/movies/watch-locations` | Cria ou reutiliza local normalizado; `kind` é `cinema` ou `streaming`. | Body: `{name, kind}` |
 | `GET` | `/api/movies/home` | Todos os blocos da tela Início numa única chamada. | — |
 | `GET` | `/api/movies/stats` | Estatísticas de filmes do ano. | `?year=YYYY` |
 | `GET` | `/api/movies/rewind` | Year-in-review com destaques do ano. | `?year=YYYY` |
@@ -658,7 +660,7 @@ metadados do TMDB e sincronização opcional com o Letterboxd (RSS). Contrato de
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
 | `GET` | `/api/movies/{movie_id}` | Detalhe completo: metadados + people + Cofre + diário (aceita fuzzy match). | — |
-| `POST` | `/api/movies/{movie_id}/watch` | Registra uma sessão de visualização (devolve 201). | Body: `LogWatchBody` |
+| `POST` | `/api/movies/{movie_id}/watch` | Registra uma sessão de visualização (devolve 201), com `companion_ids` e `watch_location_id` opcionais. | Body: `LogWatchBody` |
 | `POST` | `/api/movies/{movie_id}/refresh-metadata` | "Buscar Dados" (spec 050) — rebusca metadados no TMDB e sobrescreve os campos de catálogo; nunca toca em dado pessoal. `tmdb_id` opcional aplica um candidato específico (troca de match). | Body: `RefreshMetadataBody` |
 | `PATCH` | `/api/movies/{movie_id}/catalog` | Edita manualmente os campos de catálogo (título, ano, diretor, gêneros, duração, sinopse) — spec 050. | Body: `UpdateMovieCatalogBody` |
 | `PATCH` | `/api/movies/{movie_id}/rating` | Define a nota atual do filme. | Body: `RatingBody` |
@@ -670,7 +672,7 @@ metadados do TMDB e sincronização opcional com o Letterboxd (RSS). Contrato de
 | `POST` | `/api/movies/{movie_id}/vault` | Adiciona um item ao Cofre (devolve 201). | Body: `AddVaultItemBody` |
 | `DELETE` | `/api/movies/vault/{vault_id}` | Remove um item do Cofre. | — |
 | `PATCH` | `/api/movies/diary/reorder` | Reordena sessões de um mesmo dia (spec 050) — registrada antes de `/diary/{diary_id}` para não colidir com o path param. | Body: `ReorderDiaryBody` |
-| `PATCH` | `/api/movies/diary/{diary_id}` | Edita manualmente uma sessão (data, nota, resenha, tags, revisão) — spec 050; recalcula os agregados do filme. | Body: `UpdateDiaryEntryBody` |
+| `PATCH` | `/api/movies/diary/{diary_id}` | Edita sessão e contexto: campo omitido preserva; `companion_ids: []` remove acompanhantes e `watch_location_id: null` remove local. | Body: `UpdateDiaryEntryBody` |
 | `DELETE` | `/api/movies/diary/{diary_id}` | Remove uma sessão do diário e recalcula contadores. | — |
 
 ---

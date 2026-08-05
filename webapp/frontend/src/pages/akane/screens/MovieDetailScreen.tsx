@@ -16,6 +16,7 @@ import { Heart } from '../ui/Heart'
 import { Poster } from '../components/Poster'
 import { Stars } from '../components/Stars'
 import { RateInput } from '../components/RateInput'
+import { SessionContextFields } from '../components/SessionContextFields'
 import { AddToListModal } from '../modals/AddToListModal'
 import { EditMovieModal } from '../modals/EditMovieModal'
 import { TmdbCandidatesModal } from '../modals/TmdbCandidatesModal'
@@ -289,7 +290,7 @@ export function MovieDetailScreen({ movieId, onBack, onLog, onToast }: MovieDeta
           {/* Equipe (elenco/direção — preparação para a base de pessoas) */}
           {people.length > 0 && (
             <>
-              <div className="ak-detail-section-title">Equipe <span className="ak-st-line" /></div>
+              <div className="ak-detail-section-title">Elenco e equipe <span className="ak-st-line" /></div>
               <div className="ak-chips">
                 {people.map(p => (
                   <span key={p.id} className={'ak-tag-chip' + (p.is_person_tag ? ' ak-person' : '')} title={p.role ?? undefined}>
@@ -540,6 +541,8 @@ function FilmLogItem({ entry, onToast, onDeleted, onUpdated }: {
   const [review, setReview] = useState(entry.review ?? '')
   const [tags, setTags] = useState((entry.tags ?? []).join(', '))
   const [rewatch, setRewatch] = useState(entry.rewatch)
+  const [companionIds, setCompanionIds] = useState(entry.companions.map(person => person.id))
+  const [watchLocationId, setWatchLocationId] = useState<string | null>(entry.watch_location?.id ?? null)
   const [saving, setSaving] = useState(false)
 
   const doDelete = async () => {
@@ -563,6 +566,8 @@ function FilmLogItem({ entry, onToast, onDeleted, onUpdated }: {
         review: review.trim() || undefined,
         tags: tags.split(',').map(t => t.trim()).filter(Boolean),
         rewatch,
+        companion_ids: companionIds,
+        watch_location_id: watchLocationId,
       })
       onUpdated(res.entry, res.movie)
       onToast('Sessão atualizada.')
@@ -590,6 +595,8 @@ function FilmLogItem({ entry, onToast, onDeleted, onUpdated }: {
                     onChange={e => setReview(e.target.value)} />
           <input className="ak-text-input" placeholder="Etiquetas separadas por vírgula (opcional)" value={tags}
                  onChange={e => setTags(e.target.value)} />
+          <SessionContextFields companionIds={companionIds} onCompanionIdsChange={setCompanionIds}
+            watchLocationId={watchLocationId} onWatchLocationIdChange={setWatchLocationId} />
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="ak-btn ak-btn-primary" onClick={doSave} disabled={saving}>
               <Icon name="check" /> {saving ? 'Salvando…' : 'Salvar'}
@@ -621,6 +628,12 @@ function FilmLogItem({ entry, onToast, onDeleted, onUpdated }: {
         </span>
       </div>
       {entry.review && <div className="ak-fl-note">"{entry.review}"</div>}
+      {(entry.companions.length > 0 || entry.watch_location) && (
+        <div className="ak-chips" style={{ marginTop: 8 }}>
+          {entry.companions.map(person => <span className="ak-tag-chip ak-person" key={person.id}><Icon name="user" />{person.name}</span>)}
+          {entry.watch_location && <span className="ak-tag-chip"><Icon name={entry.watch_location.kind === 'cinema' ? 'cinema' : 'streaming'} />{entry.watch_location.name}</span>}
+        </div>
+      )}
     </div>
   )
 }

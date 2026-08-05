@@ -63,6 +63,15 @@ export interface DiaryEntry {
   rewatch: boolean
   review: string | null
   tags: string[]
+  companions: Array<{ id: string; name: string }>
+  watch_location: WatchLocation | null
+}
+
+/** Local reutilizável onde uma sessão foi assistida. */
+export interface WatchLocation {
+  id: string
+  name: string
+  kind: 'cinema' | 'streaming'
 }
 
 // ── Pessoas (elenco/equipe) ─────────────────────────────────────────────────

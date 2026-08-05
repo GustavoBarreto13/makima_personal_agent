@@ -173,6 +173,48 @@ def _err(message: str) -> dict:
     return {"status": "error", "message": message}
 
 
+def create_watch_location(name: str, kind: str) -> dict:
+    """Criar ou reutilizar um local de sessao normalizado."""
+    normalized = _norm(name)
+    if not normalized or kind not in {"cinema", "streaming"}:
+        return _err("Informe um local e o tipo cinema ou streaming.")
+    existing = run_select("SELECT id, name, kind FROM movie_watch_locations WHERE normalizado = %(n)s", {"n": normalized})
+    if existing:
+        if existing[0]["kind"] != kind:
+            return _err("Esse local ja existe com outro tipo.")
+        return _ok(location=existing[0], created=False)
+    location = {"id": str(uuid.uuid4()), "name": name.strip(), "kind": kind}
+    run_dml("INSERT INTO movie_watch_locations (id, name, normalizado, kind) VALUES (%(id)s, %(name)s, %(n)s, %(kind)s)", {**location, "n": normalized})
+    return _ok(location=location, created=True)
+
+
+def list_watch_locations(query: str | None = None) -> list[dict]:
+    """Listar locais reutilizaveis ordenados pelo uso nas sessoes."""
+    return run_select("""SELECT l.id, l.name, l.kind FROM movie_watch_locations l
+        LEFT JOIN diary_entries d ON d.watch_location_id = l.id
+        WHERE %(q)s = '' OR l.normalizado LIKE '%%' || %(q)s || '%%'
+        GROUP BY l.id ORDER BY COUNT(d.id) DESC, l.name""", {"q": _norm(query or "")})
+
+
+def _attach_context(entries: list[dict]) -> list[dict]:
+    """Anexar acompanhantes Komi em lote as sessoes retornadas."""
+    ids = [str(entry["id"]) for entry in entries]
+    if not ids:
+        return entries
+    links = run_select("""SELECT pl.entity_id, p.id, p.name FROM person_links pl
+        JOIN people p ON p.id = pl.person_id WHERE pl.entity_type = 'movie_diary_entry' AND pl.entity_id = ANY(%(ids)s)""", {"ids": ids})
+    by_entry = {entry_id: [] for entry_id in ids}
+    for link in links:
+        by_entry[link["entity_id"]].append({"id": link["id"], "name": link["name"]})
+    for entry in entries:
+        entry["companions"] = by_entry[str(entry["id"])]
+        if entry.get("watch_location_id"):
+            entry["watch_location"] = {"id": entry.pop("watch_location_id"), "name": entry.pop("watch_location_name"), "kind": entry.pop("watch_location_kind")}
+        else:
+            entry.pop("watch_location_name", None); entry.pop("watch_location_kind", None); entry["watch_location"] = None
+    return entries
+
+
 def _validate_rating(rating: float | int | None) -> str | None:
     """Valida que a nota está no intervalo [0.5, 5.0] em passos de 0.5.
 
@@ -695,6 +737,8 @@ def log_watch(
     tags: list[str] | None = None,
     rewatch: bool | None = None,
     source: str = "manual",
+    companion_ids: list[str] | None = None,
+    watch_location_id: str | None = None,
 ) -> dict:
     """Loga uma sessão de visualização (uma vez que o filme foi assistido).
 
@@ -754,16 +798,28 @@ def log_watch(
 
     with get_conn() as conn:
         with conn.cursor() as cur:
+            # Validar antes do INSERT, na mesma transação, evita criar uma
+            # sessão parcial se uma referência da Komi ou do local for inválida.
+            if watch_location_id:
+                cur.execute("SELECT id FROM movie_watch_locations WHERE id = %s", (watch_location_id,))
+                if cur.fetchone() is None:
+                    return _err("Local de visualização não encontrado.")
+            unique_companion_ids = list(dict.fromkeys(companion_ids or []))
+            if unique_companion_ids:
+                cur.execute("SELECT id FROM people WHERE id = ANY(%s) AND deleted = FALSE", (unique_companion_ids,))
+                if len(cur.fetchall()) != len(unique_companion_ids):
+                    return _err("Uma das pessoas selecionadas não foi encontrada na Komi.")
+
             # Insere a sessão no diário
             cur.execute(
                 """
                 INSERT INTO diary_entries (
                     id, movie_id, movie_title, watched_date, rating, rewatch,
-                    review, tags, letterboxd_uri, source, created_at
+                    review, tags, letterboxd_uri, source, watch_location_id, created_at
                 ) VALUES (
                     %(id)s, %(movie_id)s, %(movie_title)s, %(watched_date)s,
                     %(rating)s, %(rewatch)s, %(review)s, %(tags)s,
-                    %(letterboxd_uri)s, %(source)s, %(now)s
+                    %(letterboxd_uri)s, %(source)s, %(watch_location_id)s, %(now)s
                 )
                 """,
                 {
@@ -778,9 +834,12 @@ def log_watch(
                     "tags":           tags or [],
                     "letterboxd_uri": movie.get("letterboxd_uri"),
                     "source":         source,
+                    "watch_location_id": watch_location_id,
                     "now":            now,
                 },
             )
+            for person_id in unique_companion_ids:
+                cur.execute("INSERT INTO person_links (person_id, entity_type, entity_id) VALUES (%s, 'movie_diary_entry', %s) ON CONFLICT DO NOTHING", (person_id, diary_id))
 
             # Atualiza o catálogo: status→watched, contagem de sessões, data e nota
             cur.execute(
@@ -1138,7 +1197,7 @@ def get_watchlist() -> list[dict]:
     Returns:
         Lista de filmes com status='watchlist'.
     """
-    return run_select(
+    entries = run_select(
         """
         SELECT id, title, year, poster_url, poster_palette, director,
                genres, runtime, overview, liked, tags
@@ -1158,20 +1217,23 @@ def get_diary(limit: int = 50) -> list[dict]:
     Returns:
         Lista de entradas do diário com poster_url do filme.
     """
-    return run_select(
+    entries = run_select(
         """
         SELECT
             d.id, d.movie_id, d.movie_title,
             m.poster_url, m.poster_palette,
-            d.watched_date, d.rating, d.rewatch, d.review, d.tags
+            d.watched_date, d.rating, d.rewatch, d.review, d.tags,
+            l.id AS watch_location_id, l.name AS watch_location_name, l.kind AS watch_location_kind
         FROM diary_entries d
         JOIN movies m ON m.id = d.movie_id
+        LEFT JOIN movie_watch_locations l ON l.id = d.watch_location_id
         WHERE m.deleted = FALSE
         ORDER BY d.watched_date DESC, d.created_at DESC
         LIMIT %(limit)s
         """,
         {"limit": limit},
     )
+    return _attach_context(entries)
 
 
 def get_movie_detail(movie_id: str) -> dict:
@@ -1215,15 +1277,16 @@ def get_movie_detail(movie_id: str) -> dict:
     # Busca histórico de sessões (mais recente primeiro)
     diary = run_select(
         """
-        SELECT id, watched_date, rating, rewatch, review, tags
-        FROM diary_entries
+        SELECT d.id, d.watched_date, d.rating, d.rewatch, d.review, d.tags,
+               l.id AS watch_location_id, l.name AS watch_location_name, l.kind AS watch_location_kind
+        FROM diary_entries d LEFT JOIN movie_watch_locations l ON l.id = d.watch_location_id
         WHERE movie_id = %(id)s
         ORDER BY watched_date DESC, created_at DESC
         """,
         {"id": real_id},
     )
 
-    return _ok(movie=movie_row, people=people, vault=vault, diary=diary)
+    return _ok(movie=movie_row, people=people, vault=vault, diary=_attach_context(diary))
 
 
 def get_stats(year: int | None = None) -> dict:
@@ -1373,6 +1436,7 @@ def delete_diary_entry(diary_id: str) -> dict:
     with get_conn() as conn:
         with conn.cursor() as cur:
             # Remove a sessão
+            cur.execute("DELETE FROM person_links WHERE entity_type = 'movie_diary_entry' AND entity_id = %s", (diary_id,))
             cur.execute("DELETE FROM diary_entries WHERE id = %(id)s", {"id": diary_id})
 
             # Recalcula times_watched e last_watched_date a partir das sessões restantes
@@ -1402,6 +1466,9 @@ def update_diary_entry(
     review: str | None = None,
     tags: list[str] | None = None,
     rewatch: bool | None = None,
+    companion_ids: list[str] | None = None,
+    watch_location_id: str | None = None,
+    set_watch_location: bool = False,
 ) -> dict:
     """Edita manualmente uma sessão do diário (spec 050, FR-009).
 
@@ -1450,18 +1517,40 @@ def update_diary_entry(
         fields["tags"] = tags
     if rewatch is not None:
         fields["rewatch"] = rewatch
+    if set_watch_location:
+        fields["watch_location_id"] = watch_location_id
 
-    if not fields:
+    if not fields and companion_ids is None:
         return _err("Nenhum campo informado para atualizar.")
-
-    set_clause = ", ".join(f"{col} = %({col})s" for col in fields)
 
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                f"UPDATE diary_entries SET {set_clause} WHERE id = %(id)s",
-                {**fields, "id": diary_id},
-            )
+            # Validar dentro da mesma transação impede que um vínculo fique
+            # parcialmente salvo se uma pessoa ou local deixar de existir.
+            if watch_location_id is not None and set_watch_location:
+                cur.execute("SELECT id FROM movie_watch_locations WHERE id = %s", (watch_location_id,))
+                if cur.fetchone() is None:
+                    return _err("Local de visualização não encontrado.")
+
+            unique_companion_ids = list(dict.fromkeys(companion_ids or []))
+            if companion_ids is not None and unique_companion_ids:
+                cur.execute(
+                    "SELECT id FROM people WHERE id = ANY(%s) AND deleted = FALSE",
+                    (unique_companion_ids,),
+                )
+                if len(cur.fetchall()) != len(unique_companion_ids):
+                    return _err("Uma das pessoas selecionadas não foi encontrada na Komi.")
+
+            if fields:
+                set_clause = ", ".join(f"{col} = %({col})s" for col in fields)
+                cur.execute(
+                    f"UPDATE diary_entries SET {set_clause} WHERE id = %(id)s",
+                    {**fields, "id": diary_id},
+                )
+            if companion_ids is not None:
+                cur.execute("DELETE FROM person_links WHERE entity_type = 'movie_diary_entry' AND entity_id = %s", (diary_id,))
+                for person_id in unique_companion_ids:
+                    cur.execute("INSERT INTO person_links (person_id, entity_type, entity_id) VALUES (%s, 'movie_diary_entry', %s) ON CONFLICT DO NOTHING", (person_id, diary_id))
             # Recalcula os agregados do filme — a edição pode ter mudado qual
             # sessão é a mais recente, ou o total (embora o total não mude aqui)
             cur.execute(
@@ -1476,7 +1565,7 @@ def update_diary_entry(
                 {"mid": movie_id, "now": _now()},
             )
 
-    entry = run_select("SELECT * FROM diary_entries WHERE id = %(id)s", {"id": diary_id})
+    entry = _attach_context(run_select("""SELECT d.*, l.id AS watch_location_id, l.name AS watch_location_name, l.kind AS watch_location_kind FROM diary_entries d LEFT JOIN movie_watch_locations l ON l.id=d.watch_location_id WHERE d.id = %(id)s""", {"id": diary_id}))
     movie = run_select(
         "SELECT last_watched_date, times_watched FROM movies WHERE id = %(id)s",
         {"id": movie_id},

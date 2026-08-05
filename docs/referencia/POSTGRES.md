@@ -781,7 +781,7 @@ NOTHING` + os índices únicos parciais correspondentes):
 ## 6. Domínio Akane — Filmes
 
 Fonte: `agents/akane/schema_pg.sql` (spec 015 — as 7 tabelas nascem de uma vez). IDs de `movies`,
-`diary_entries`, `movie_vault_items` e `movie_people` são `TEXT` (UUID gerado no código);
+`diary_entries`, `movie_vault_items`, `movie_people` e `movie_watch_locations` são `TEXT` (UUID gerado no código);
 `movie_lists` usa `UUID` gerado pelo banco (`gen_random_uuid()`), como `shelves` da Frieren.
 
 ### `movies`
@@ -844,6 +844,21 @@ Denormaliza `movie_title` para listar sem JOIN (mesmo padrão de `reading_logs` 
 **Índices:** `idx_diary_dedup` — **único parcial** em `(letterboxd_uri, watched_date) WHERE
 letterboxd_uri IS NOT NULL` (mesma URI + mesma data = mesma sessão; sessões manuais podem repetir
 o dia) · `idx_diary_movie` · `idx_diary_watched`.
+
+**Contexto da sessão:** `watch_location_id` é uma FK opcional para `movie_watch_locations(id)` com `ON DELETE SET NULL`; acompanhantes usam `person_links` da Komi com `entity_type='movie_diary_entry'`.
+
+### `movie_watch_locations`
+
+Locais reutilizáveis de sessão. O nome normalizado elimina duplicatas por caixa, acento e espaços.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | TEXT | PK | — | UUID gerado no código. |
+| `name` | TEXT | NÃO | — | Nome de exibição do local. |
+| `normalizado` | TEXT | NÃO | — | Nome sem caixa/acentos, único. |
+| `kind` | TEXT | NÃO | — | `cinema` ou `streaming` (CHECK). |
+| `created_at` | TIMESTAMPTZ | SIM | `NOW()` | Criação. |
+| `updated_at` | TIMESTAMPTZ | SIM | `NOW()` | Última atualização. |
 
 ### `movie_lists`
 

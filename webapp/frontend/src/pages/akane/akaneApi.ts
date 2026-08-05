@@ -17,6 +17,7 @@ import type {
   Tag,
   VaultItem,
   SyncResult,
+  WatchLocation,
 } from './types'
 
 // ── Shape dos resultados de listagem ────────────────────────────────────────
@@ -32,6 +33,7 @@ interface TmdbSearchResult { status: 'ok'; results: Array<{ tmdb_id: number; tit
 interface OkResult         { status: 'ok'; message?: string; [k: string]: unknown }
 interface MovieResult      { status: 'ok'; movie: Movie }
 interface DiaryEntryResult { status: 'ok'; entry: DiaryEntry; movie: Pick<Movie, 'last_watched_date' | 'times_watched'> }
+interface WatchLocationsResult { status: 'ok'; locations: WatchLocation[] }
 
 // ── API pública ──────────────────────────────────────────────────────────────
 
@@ -92,7 +94,13 @@ export const akaneApi = {
     tags?: string[]
     rewatch?: boolean | null
     source?: string
+    companion_ids?: string[]
+    watch_location_id?: string | null
   }) => api.post<OkResult>(`/api/movies/${movieId}/watch`, body),
+
+  watchLocations: (q = '') => api.get<WatchLocationsResult>(`/api/movies/watch-locations?q=${encodeURIComponent(q)}`),
+  createWatchLocation: (name: string, kind: WatchLocation['kind']) =>
+    api.post<{ status: 'ok'; location: WatchLocation; created: boolean }>('/api/movies/watch-locations', { name, kind }),
 
   /** Define a nota do filme. */
   rate: (movieId: string, rating: number) =>
@@ -141,6 +149,8 @@ export const akaneApi = {
     review: string
     tags: string[]
     rewatch: boolean
+    companion_ids: string[]
+    watch_location_id: string | null
   }>) => api.patch<DiaryEntryResult>(`/api/movies/diary/${diaryId}`, body),
 
   /** Reordena sessões de um mesmo dia. */

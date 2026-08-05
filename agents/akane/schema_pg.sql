@@ -59,6 +59,15 @@ CREATE INDEX IF NOT EXISTS idx_movies_deleted
 CREATE INDEX IF NOT EXISTS idx_movies_last_watched
     ON movies (last_watched_date);
 
+CREATE TABLE IF NOT EXISTS movie_watch_locations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    normalizado TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL CHECK (kind IN ('cinema', 'streaming')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 
 -- ── Diário de sessões (log de visualizações) ──────────────────────────────────
 -- Uma linha por VEZ que um filme foi assistido — suporta rewatch.
@@ -74,6 +83,7 @@ CREATE TABLE IF NOT EXISTS diary_entries (
     tags           TEXT[],                              -- Tags da sessão (Letterboxd permite tags por entrada)
     letterboxd_uri TEXT,                                -- URI do filme (para dedup junto com watched_date)
     source         TEXT,                                -- 'manual' | 'letterboxd_rss' | 'letterboxd_csv'
+    watch_location_id TEXT REFERENCES movie_watch_locations(id) ON DELETE SET NULL,
     created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 

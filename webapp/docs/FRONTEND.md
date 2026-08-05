@@ -399,6 +399,7 @@ link, ex.: Google Meet).
 | `detail` | MovieDetailScreen | Detalhe do filme: nota, curtir, status, Cofre e diário |
 
 **Particularidades:** busca de filmes no TMDB no modal de adição (`/api/movies/tmdb/search`);
+o formulário de sessão reutiliza `SessionContextFields` para acompanhantes da Komi e local de cinema/streaming, tanto no modal de log quanto nas edições do Diário e do detalhe;
 botão de sync manual com o Letterboxd na sidebar (`POST /api/movies/sync-letterboxd`, spec
 051 — toast com o resumo criados/atualizados/pulados ou erro); preferências em
 `localStorage` (`akane-tweaks`). API: `akaneApi.ts` — todos os `/api/movies/*`.

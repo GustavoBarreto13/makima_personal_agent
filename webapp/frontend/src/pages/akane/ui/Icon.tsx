@@ -23,6 +23,8 @@ export const ICONS = {
   chevR:    'M9 18l6-6-6-6',
   check:    'M20 6 9 17l-5-5',
   play:     'M6 4l14 8-14 8z',
+  cinema:   'M3 5h18v14H3zM3 9h18M7 5v14M17 5v14',
+  streaming:'M5 5h14v10H5zM9 21h6M12 15v6',
   doc:      'M7 3h7l4 4v14H7zM14 3v4h4',
   quote:    'M9 7H6a2 2 0 0 0-2 2v3h5V7zm9 0h-3a2 2 0 0 0-2 2v3h5V7z',
   pen:      'M4 20l4-1 11-11-3-3L5 16l-1 4zM14 5l3 3',

@@ -109,6 +109,10 @@ CREATE UNIQUE INDEX idx_diary_dedup
 ON diary_entries(letterboxd_uri, watched_date) WHERE letterboxd_uri IS NOT NULL;
 ```
 
+### Contexto da sessão (fase 063)
+
+Cada `diary_entries` pode ter `watch_location_id` opcional para `movie_watch_locations`. O local é reutilizável e classificado como `cinema` ou `streaming`; duplicatas são bloqueadas por `normalizado`. Acompanhantes não são elenco: usam `person_links` da Komi com `entity_type='movie_diary_entry'`, podendo variar em cada rewatch. `log_watch` e `update_diary_entry` validam e gravam esses vínculos na mesma transação.
+
 ---
 
 ### Tabelas auxiliares

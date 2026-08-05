@@ -11,6 +11,7 @@ import type { DiaryEntry } from '../types'
 import { Icon } from '../ui/Icon'
 import { Poster } from '../components/Poster'
 import { Stars } from '../components/Stars'
+import { SessionContextFields } from '../components/SessionContextFields'
 import { matches } from '../searchUtils'
 import { MESES, DIAS_CURTO } from '../dateUtils'
 
@@ -57,6 +58,7 @@ function groupByDate(entries: DiaryEntry[]): Array<{ date: string; entries: Diar
 export function DiaryScreen({ onSelectMovie, query }: DiaryScreenProps) {
   const [entries, setEntries] = useState<DiaryEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   // Busca as 100 sessões mais recentes na montagem
   useEffect(() => {
@@ -137,7 +139,16 @@ export function DiaryScreen({ onSelectMovie, query }: DiaryScreenProps) {
                   <div className="ak-dr-marks">
                     {e.rating ? <Stars value={e.rating} /> : <span className="ak-mk">—</span>}
                     {e.rewatch && <span className="ak-mk ak-rw"><Icon name="rewatch" /></span>}
+                    <button title="Editar contexto da sessão" onClick={event => { event.stopPropagation(); setEditingId(editingId === e.id ? null : e.id) }}><Icon name="pen" /></button>
                   </div>
+                  {(e.companions.length > 0 || e.watch_location) && <div className="ak-chips">
+                    {e.companions.map(person => <span className="ak-tag-chip ak-person" key={person.id}><Icon name="user" />{person.name}</span>)}
+                    {e.watch_location && <span className="ak-tag-chip"><Icon name={e.watch_location.kind === 'cinema' ? 'cinema' : 'streaming'} />{e.watch_location.name}</span>}
+                  </div>}
+                  {editingId === e.id && <DiaryContextEditor entry={e} onCancel={() => setEditingId(null)} onUpdated={updated => {
+                    setEntries(previous => previous.map(item => item.id === updated.id ? updated : item))
+                    setEditingId(null)
+                  }} />}
                   {canReorder && (
                     <div className="ak-dr-reorder" onClick={ev => ev.stopPropagation()}>
                       <button disabled={i === 0} title="Mover para cima (assistido antes)"
@@ -160,6 +171,41 @@ export function DiaryScreen({ onSelectMovie, query }: DiaryScreenProps) {
           ))}
         </div>
       ))}
+    </div>
+  )
+}
+
+/** Editar acompanhantes e local sem abrir o detalhe do filme. */
+function DiaryContextEditor({ entry, onCancel, onUpdated }: {
+  entry: DiaryEntry
+  onCancel: () => void
+  onUpdated: (entry: DiaryEntry) => void
+}) {
+  const [companionIds, setCompanionIds] = useState(entry.companions.map(person => person.id))
+  const [watchLocationId, setWatchLocationId] = useState<string | null>(entry.watch_location?.id ?? null)
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const result = await akaneApi.updateDiaryEntry(entry.id, {
+        companion_ids: companionIds,
+        watch_location_id: watchLocationId,
+      })
+      onUpdated(result.entry)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="ak-modal-field" onClick={event => event.stopPropagation()} style={{ gridColumn: '1 / -1' }}>
+      <SessionContextFields companionIds={companionIds} onCompanionIdsChange={setCompanionIds}
+        watchLocationId={watchLocationId} onWatchLocationIdChange={setWatchLocationId} />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="ak-btn ak-btn-primary" type="button" onClick={save} disabled={saving}><Icon name="check" /> Salvar</button>
+        <button className="ak-btn ak-btn-ghost" type="button" onClick={onCancel} disabled={saving}>Cancelar</button>
+      </div>
     </div>
   )
 }

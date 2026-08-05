@@ -70,6 +70,8 @@ from agents.akane.tools import (
     get_vault,             # Itens do Cofre de um filme
     add_vault_item,        # Adiciona item ao Cofre
     delete_vault_item,     # Remove item do Cofre
+    create_watch_location,
+    list_watch_locations,
 )
 
 
@@ -123,6 +125,15 @@ class LogWatchBody(BaseModel):
     tags: Optional[list[str]] = None         # Etiquetas da sessão (opcional)
     rewatch: Optional[bool] = None           # Se é revisão (inferido automaticamente se None)
     source: str = "manual"                   # Origem da sessão
+    companion_ids: Optional[list[str]] = None
+    watch_location_id: Optional[str] = None
+
+
+class WatchLocationBody(BaseModel):
+    """Criar um local reutilizável de sessão."""
+
+    name: str
+    kind: str
 
 
 class RatingBody(BaseModel):
@@ -202,6 +213,8 @@ class UpdateDiaryEntryBody(BaseModel):
     review: Optional[str] = None
     tags: Optional[list[str]] = None
     rewatch: Optional[bool] = None
+    companion_ids: Optional[list[str]] = None
+    watch_location_id: Optional[str] = None
 
 
 class ReorderDiaryBody(BaseModel):
@@ -219,6 +232,18 @@ class ReorderDiaryBody(BaseModel):
 # ═════════════════════════════════════════════════════════════════════════════
 
 # ── Busca TMDB (sem gravar no banco) ─────────────────────────────────────────
+
+@router.get("/watch-locations")
+def list_watch_locations_endpoint(q: str = "", user: dict = Depends(require_user)) -> dict:
+    """Listar locais incrementais de cinema e streaming."""
+    return {"status": "ok", "locations": list_watch_locations(q)}
+
+
+@router.post("/watch-locations", status_code=201)
+def create_watch_location_endpoint(body: WatchLocationBody, user: dict = Depends(require_user)) -> dict:
+    """Criar ou reutilizar um local incremental."""
+    return _check_result(create_watch_location(body.name, body.kind))
+
 
 @router.get("/tmdb/search")
 def tmdb_search(
@@ -625,6 +650,9 @@ def update_diary_endpoint(
         review=body.review,
         tags=body.tags,
         rewatch=body.rewatch,
+        companion_ids=body.companion_ids if "companion_ids" in body.model_fields_set else None,
+        watch_location_id=body.watch_location_id,
+        set_watch_location="watch_location_id" in body.model_fields_set,
     ))
 
 
@@ -728,6 +756,8 @@ def log_watch_endpoint(
         tags=body.tags,
         rewatch=body.rewatch,
         source=body.source,
+        companion_ids=body.companion_ids,
+        watch_location_id=body.watch_location_id,
     )
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result.get("message"))

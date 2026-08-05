@@ -15,6 +15,7 @@ import { Icon } from '../ui/Icon'
 import { Heart } from '../ui/Heart'
 import { Poster } from '../components/Poster'
 import { RateInput } from '../components/RateInput'
+import { SessionContextFields } from '../components/SessionContextFields'
 
 /** Resultado de busca no TMDB — já indica se o filme está no catálogo local. */
 interface SearchResult {
@@ -60,6 +61,8 @@ export function LogModal({ prefilledMovieId, prefilledTitle, onClose, onSuccess 
   const [liked, setLiked] = useState(false)
   const [rewatch, setRewatch] = useState(false)
   const [note, setNote] = useState('')
+  const [companionIds, setCompanionIds] = useState<string[]>([])
+  const [watchLocationId, setWatchLocationId] = useState<string | null>(null)
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -153,6 +156,8 @@ export function LogModal({ prefilledMovieId, prefilledTitle, onClose, onSuccess 
         review: note.trim() || null,
         rewatch,
         source: 'manual',
+        companion_ids: companionIds,
+        watch_location_id: watchLocationId,
       })
       // "Curtir" na sessão vira like no filme (o handoff trata os dois como um marcador só)
       if (liked) await akaneApi.like(selectedId, true).catch(() => {})
@@ -162,7 +167,7 @@ export function LogModal({ prefilledMovieId, prefilledTitle, onClose, onSuccess 
       setError(e instanceof Error ? e.message : 'Erro ao salvar a sessão.')
       setSubmitting(false)
     }
-  }, [selectedId, submitting, watchedDate, rating, note, rewatch, liked, selectedTitle, onSuccess, onClose])
+  }, [selectedId, submitting, watchedDate, rating, note, rewatch, liked, selectedTitle, companionIds, watchLocationId, onSuccess, onClose])
 
   // Esc fecha, ⌘↵/Ctrl+↵ salva
   useEffect(() => {
@@ -280,6 +285,8 @@ export function LogModal({ prefilledMovieId, prefilledTitle, onClose, onSuccess 
                       placeholder="O que ficou desse filme?" />
           </div>
 
+          <SessionContextFields companionIds={companionIds} onCompanionIdsChange={setCompanionIds}
+            watchLocationId={watchLocationId} onWatchLocationIdChange={setWatchLocationId} />
           {error && <p className="ak-detail-empty" style={{ color: 'var(--heart)' }}>{error}</p>}
 
           <div className="ak-modal-foot">

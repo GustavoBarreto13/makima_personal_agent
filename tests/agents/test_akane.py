@@ -50,18 +50,26 @@ from agents.akane.tools import (  # noqa: E402
     get_diary,
     get_watchlist,
     list_movies,
+    create_watch_location,
+    list_watch_locations,
+    update_diary_entry,
 )
+from agents.komi.tools import create_person  # noqa: E402
 
 # Caminho do schema da Akane
 _SCHEMA_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "agents", "akane", "schema_pg.sql",
 )
+_KOMI_SCHEMA_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "agents", "komi", "schema_pg.sql",
+)
 
 # Tabelas a dropar antes de cada teste (dependentes primeiro para respeitar FKs)
 _AKANE_TABLES = (
     "movie_favorites movie_people movie_vault_items "
-    "movie_list_items movie_lists diary_entries movies"
+    "movie_list_items movie_lists diary_entries movie_watch_locations movies"
 )
 
 
@@ -73,11 +81,15 @@ def reset_schema():
     """
     with open(_SCHEMA_PATH, encoding="utf-8") as f:
         schema_sql = f.read()
+    with open(_KOMI_SCHEMA_PATH, encoding="utf-8") as f:
+        komi_schema_sql = f.read()
 
     with get_conn() as conn:
         with conn.cursor() as cur:
             # Dropa em ordem de dependência (CASCADE para FKs)
             cur.execute(f"DROP TABLE IF EXISTS {_AKANE_TABLES.replace(' ', ', ')} CASCADE")
+            # A Akane vincula acompanhantes à identidade canônica da Komi.
+            cur.execute(komi_schema_sql)
             # Recria do zero (IF NOT EXISTS protege contra schema parcialmente existente)
             cur.execute(schema_sql)
 
@@ -95,6 +107,53 @@ def _add_mock_movie(title: str = "Duna", year: int = 2021) -> str:
         result = add_movie(title=title, year=year)
     assert result["status"] == "ok", f"add_movie falhou: {result}"
     return result["id"]
+
+
+def test_watch_locations_are_normalized_and_reused():
+    """Reutilizar local com grafia equivalente e rejeitar tipo conflitante."""
+    first = create_watch_location("Múbi", "streaming")
+    assert first["status"] == "ok"
+
+    reused = create_watch_location("  mubi  ", "streaming")
+    assert reused == {"status": "ok", "location": first["location"], "created": False}
+
+    conflict = create_watch_location("MUBI", "cinema")
+    assert conflict["status"] == "error"
+
+    assert list_watch_locations()[0]["name"] == "Múbi"
+
+
+def test_watch_context_is_per_session_and_can_be_cleared():
+    """Vincular pessoas e local à sessão sem herdar o contexto em um rewatch."""
+    movie_id = _add_mock_movie("Aftersun", 2022)
+    person = create_person("Ana", category="amigos")["person"]
+    cinema = create_watch_location("Cinemark", "cinema")["location"]
+    streaming = create_watch_location("Mubi", "streaming")["location"]
+
+    first = log_watch(movie_id, watched_date="2026-06-01", companion_ids=[person["id"]], watch_location_id=cinema["id"])
+    second = log_watch(movie_id, watched_date="2026-06-02", watch_location_id=streaming["id"])
+    assert first["status"] == second["status"] == "ok"
+
+    diary = get_diary()
+    by_id = {entry["id"]: entry for entry in diary}
+    assert by_id[first["diary_id"]]["companions"] == [{"id": person["id"], "name": "Ana"}]
+    assert by_id[first["diary_id"]]["watch_location"]["name"] == "Cinemark"
+    assert by_id[second["diary_id"]]["companions"] == []
+    assert by_id[second["diary_id"]]["watch_location"]["name"] == "Mubi"
+
+    updated = update_diary_entry(first["diary_id"], companion_ids=[], watch_location_id=None, set_watch_location=True)
+    assert updated["status"] == "ok"
+    assert updated["entry"]["companions"] == []
+    assert updated["entry"]["watch_location"] is None
+
+
+def test_watch_context_rejects_invalid_reference_without_creating_session():
+    """Recusar pessoa ou local inexistente sem deixar uma sessão parcial no banco."""
+    movie_id = _add_mock_movie("Persona", 1966)
+    invalid = log_watch(movie_id, companion_ids=["not-found"])
+    assert invalid["status"] == "error"
+    rows = run_select("SELECT COUNT(*) AS total FROM diary_entries WHERE movie_id = %(id)s", {"id": movie_id})
+    assert rows[0]["total"] == 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────

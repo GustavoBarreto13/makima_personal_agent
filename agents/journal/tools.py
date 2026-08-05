@@ -316,7 +316,7 @@ def _ensure_tables() -> None:
                     ALTER TABLE person_links
                     ADD CONSTRAINT person_links_entity_type_check
                     CHECK (entity_type IN
-                        ('transaction','task','book','journal_bullet','journal_letter'))
+                        ('transaction','task','book','journal_bullet','journal_letter','movie_diary_entry'))
                 """)
 
         # Commita todas as operações DDL acima de uma vez

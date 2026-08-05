@@ -21,6 +21,7 @@
 | — | Webapp (FastAPI + React) + diário Violet na web | ✅ |
 | 014 | Komi (pessoas): identidade canônica + vínculos cross-agent + REST `/api/people/*` + shell `/people/*` | ✅ |
 | 015 | Akane (filmes): PostgreSQL + TMDB v3 + Letterboxd + shell `/movies/*` | ✅ |
+| 063 | **Akane — contexto por sessão:** acompanhantes vinculados à Komi e local reutilizável de cinema/streaming em cada sessão; criação incremental e edição no Diário e no detalhe do filme. Migração retrocompatível pendente de execução no VPS. | ✅ código; migração pendente no VPS |
 | 016 | Kaguya — Meu Dia + time-blocking (capacity bar, blocos de tempo) | ✅ |
 | 017 | Kaguya — Matriz de Eisenhower (drag-and-drop 2×2) | ✅ |
 | 018 | Kaguya — Command Palette ⌘K + atalhos + recorrência no quick-add | ✅ |
