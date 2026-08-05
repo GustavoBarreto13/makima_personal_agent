@@ -20,6 +20,8 @@ venv/
 
 # Node (frontend)
 webapp/frontend/node_modules/
+# O Docker recompila esses arquivos a partir de src/ em cada imagem.
+webapp/frontend/dist/
 
 # IDE
 .vscode/
