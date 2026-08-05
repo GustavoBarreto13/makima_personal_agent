@@ -541,7 +541,7 @@ function FilmLogItem({ entry, onToast, onDeleted, onUpdated }: {
   const [review, setReview] = useState(entry.review ?? '')
   const [tags, setTags] = useState((entry.tags ?? []).join(', '))
   const [rewatch, setRewatch] = useState(entry.rewatch)
-  const [companionIds, setCompanionIds] = useState(entry.companions.map(person => person.id))
+  const [companionIds, setCompanionIds] = useState((entry.companions ?? []).map(person => person.id))
   const [watchLocationId, setWatchLocationId] = useState<string | null>(entry.watch_location?.id ?? null)
   const [saving, setSaving] = useState(false)
 
@@ -628,9 +628,9 @@ function FilmLogItem({ entry, onToast, onDeleted, onUpdated }: {
         </span>
       </div>
       {entry.review && <div className="ak-fl-note">"{entry.review}"</div>}
-      {(entry.companions.length > 0 || entry.watch_location) && (
+      {((entry.companions ?? []).length > 0 || entry.watch_location) && (
         <div className="ak-chips" style={{ marginTop: 8 }}>
-          {entry.companions.map(person => <span className="ak-tag-chip ak-person" key={person.id}><Icon name="user" />{person.name}</span>)}
+          {(entry.companions ?? []).map(person => <span className="ak-tag-chip ak-person" key={person.id}><Icon name="user" />{person.name}</span>)}
           {entry.watch_location && <span className="ak-tag-chip"><Icon name={entry.watch_location.kind === 'cinema' ? 'cinema' : 'streaming'} />{entry.watch_location.name}</span>}
         </div>
       )}

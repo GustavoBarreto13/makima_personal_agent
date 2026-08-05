@@ -141,8 +141,8 @@ export function DiaryScreen({ onSelectMovie, query }: DiaryScreenProps) {
                     {e.rewatch && <span className="ak-mk ak-rw"><Icon name="rewatch" /></span>}
                     <button title="Editar contexto da sessão" onClick={event => { event.stopPropagation(); setEditingId(editingId === e.id ? null : e.id) }}><Icon name="pen" /></button>
                   </div>
-                  {(e.companions.length > 0 || e.watch_location) && <div className="ak-chips">
-                    {e.companions.map(person => <span className="ak-tag-chip ak-person" key={person.id}><Icon name="user" />{person.name}</span>)}
+                  {((e.companions ?? []).length > 0 || e.watch_location) && <div className="ak-chips">
+                    {(e.companions ?? []).map(person => <span className="ak-tag-chip ak-person" key={person.id}><Icon name="user" />{person.name}</span>)}
                     {e.watch_location && <span className="ak-tag-chip"><Icon name={e.watch_location.kind === 'cinema' ? 'cinema' : 'streaming'} />{e.watch_location.name}</span>}
                   </div>}
                   {editingId === e.id && <DiaryContextEditor entry={e} onCancel={() => setEditingId(null)} onUpdated={updated => {
@@ -181,7 +181,7 @@ function DiaryContextEditor({ entry, onCancel, onUpdated }: {
   onCancel: () => void
   onUpdated: (entry: DiaryEntry) => void
 }) {
-  const [companionIds, setCompanionIds] = useState(entry.companions.map(person => person.id))
+  const [companionIds, setCompanionIds] = useState((entry.companions ?? []).map(person => person.id))
   const [watchLocationId, setWatchLocationId] = useState<string | null>(entry.watch_location?.id ?? null)
   const [saving, setSaving] = useState(false)
 
