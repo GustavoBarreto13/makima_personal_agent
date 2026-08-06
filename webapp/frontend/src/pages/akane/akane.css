@@ -422,6 +422,13 @@
 .akane-shell .ak-dr-marks .ak-mk { display: flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10px; color: var(--ink-4); }
 .akane-shell .ak-dr-marks .ak-mk svg { width: 13px; height: 13px; }
 .akane-shell .ak-dr-marks .ak-mk.ak-rw svg { color: var(--rose); }
+/* Cluster único do lado direito da linha do Diário — estrelas, chip de local/pessoa,
+   editar e reordenar viviam como filhos soltos do grid de 4 colunas e "sobravam" pra
+   uma linha implícita nova; agrupados num só filho, tudo fica sempre na mesma linha. */
+.akane-shell .ak-dr-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.akane-shell .ak-dr-pen { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border: none; background: none; cursor: pointer; color: var(--ink-4); border-radius: var(--r-sm); transition: color 0.12s, background 0.12s; }
+.akane-shell .ak-dr-pen svg { width: 13px; height: 13px; }
+.akane-shell .ak-dr-pen:hover { color: var(--ink); background: var(--card-2); }
 
 /* ─── Detalhe ──────────────────────────────────────────────────────────── */
 .akane-shell .ak-detail-back { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); background: none; border: none; cursor: pointer; padding: 22px 0 0; font-family: var(--sans); }
@@ -486,13 +493,19 @@
 .akane-shell .ak-tag-chip .ak-t-person { width: 13px; height: 13px; color: var(--rose); }
 .akane-shell .ak-tag-chip .ak-t-count { font-family: var(--mono); font-size: 10px; color: var(--ink-4); }
 
+/* Pílula compacta de local/pessoa dentro de linhas densas (Diário, Diário deste filme) —
+   mesma família visual do .ak-tag-chip, mas pequena, na escala do .ak-wl-genre/.ak-feed-tag. */
+.akane-shell .ak-meta-chip { display: inline-flex; align-items: center; gap: 5px; font-family: var(--sans); font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink-3); }
+.akane-shell .ak-meta-chip svg { width: 11px; height: 11px; }
+.akane-shell .ak-meta-chip.ak-person { border-color: var(--rose-tint-2); color: var(--rose-deep); }
+.akane-shell .ak-meta-chip.ak-person svg { color: var(--rose); }
+
 /* diário do filme (timeline) */
 .akane-shell .ak-film-log { display: flex; flex-direction: column; }
 .akane-shell .ak-fl-item { border-left: 2px solid var(--line); padding: 0 0 18px 18px; position: relative; }
 .akane-shell .ak-fl-item::before { content: ''; position: absolute; left: -6px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--rose); border: 2px solid var(--paper); }
 .akane-shell .ak-fl-item:last-child { padding-bottom: 0; }
 .akane-shell .ak-fl-date { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
-.akane-shell .ak-fl-row { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
 .akane-shell .ak-fl-note { font-family: var(--serif); font-style: italic; font-size: 13.5px; color: var(--ink-2); margin-top: 6px; line-height: 1.55; white-space: pre-wrap; }
 
 /* ─── Feed (Início) ────────────────────────────────────────────────────── */
@@ -791,7 +804,9 @@
   .akane-shell .ak-hero-copy { padding: 32px 28px; }
   .akane-shell .ak-footbar-info { display: none; }
   .akane-shell .ak-diary-row { grid-template-columns: 44px 38px 1fr; }
-  .akane-shell .ak-dr-marks { display: none; }
+  /* Antes escondia .ak-dr-marks inteiro (estrelas somem). Agora o cluster desce
+     pra uma linha própria, span completo, mas continua visível. */
+  .akane-shell .ak-dr-right { grid-column: 1 / -1; justify-content: flex-start; margin-top: 6px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -910,17 +925,22 @@
 .akane-shell .ak-fl-actions button:hover { color: var(--ink); background: var(--card-2); }
 .akane-shell .ak-fl-actions button svg { width: 12px; height: 12px; }
 .akane-shell .ak-fl-actions button.ak-danger { color: var(--heart); }
-/* A linha fl-row precisa ocupar a largura para o fl-actions ir à direita */
-.akane-shell .ak-fl-row { display: flex; align-items: center; gap: 8px; }
+/* A linha fl-row precisa ocupar a largura para o fl-actions ir à direita.
+   (Regra única — havia uma duplicata mais acima sem o fl-actions/chip em mente; consolidada aqui.) */
+.akane-shell .ak-fl-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; flex-wrap: wrap; }
 
-/* Setas de reordenar sessões do mesmo dia no Diário (spec 050, US7) */
-.akane-shell .ak-dr-reorder { display: flex; flex-direction: column; margin-left: 6px; flex-shrink: 0; }
+/* Setas de reordenar sessões do mesmo dia no Diário (spec 050, US7) — horizontais,
+   no mesmo idioma de botão-ícone do .ak-fl-actions (linha 903), em vez de glifos
+   de texto empilhados em coluna. */
+.akane-shell .ak-dr-reorder { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .akane-shell .ak-dr-reorder button {
-  border: none; background: none; cursor: pointer; font-size: 9px;
-  color: var(--ink-4); padding: 1px 4px; line-height: 1.2; border-radius: 3px;
-  transition: color 0.12s;
+  display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+  border: none; background: none; cursor: pointer;
+  color: var(--ink-4); border-radius: var(--r-sm);
+  transition: color 0.12s, background 0.12s;
 }
-.akane-shell .ak-dr-reorder button:hover:not(:disabled) { color: var(--ink); }
+.akane-shell .ak-dr-reorder button svg { width: 12px; height: 12px; }
+.akane-shell .ak-dr-reorder button:hover:not(:disabled) { color: var(--ink); background: var(--card-2); }
 .akane-shell .ak-dr-reorder button:disabled { color: var(--line-2); cursor: default; }
 
 /* ── Extras de Listas: placeholder da pilha (sem cover real), badges ────── */

@@ -22,6 +22,7 @@ export const ICONS = {
   chevL:    'M15 18l-6-6 6-6',
   chevR:    'M9 18l6-6-6-6',
   chevDown: 'M6 9l6 6 6-6',                                                 // seta de combobox (substitui o caractere de texto '⌄')
+  chevUp:   'M6 15l6-6 6 6',                                                // espelho do chevDown — setas de reordenar (substitui os glifos '▲'/'▼')
   check:    'M20 6 9 17l-5-5',
   play:     'M6 4l14 8-14 8z',
   cinema:   'M3 5h18v14H3zM3 9h18M7 5v14M17 5v14',

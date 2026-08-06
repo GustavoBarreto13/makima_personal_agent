@@ -3,7 +3,9 @@
 // dia + dia-da-semana, mini-pôster, título·ano, anotação em itálico e
 // marcadores (estrelas / loop de revisão).
 // A reordenação de sessões do mesmo dia (spec 050, US7) foi PRESERVADA,
-// com as setas ▲▼ estilizadas no padrão do sistema.
+// agora com ícones de seta (não mais glifos ▲▼) e agrupada com estrelas/chip/
+// editar num único cluster (.ak-dr-right) — evita que sobrem além das 4
+// colunas do grid e "vazem" pra uma linha implícita nova.
 
 import { useState, useEffect } from 'react'
 import { akaneApi } from '../akaneApi'
@@ -136,35 +138,41 @@ export function DiaryScreen({ onSelectMovie, query }: DiaryScreenProps) {
                     <div className="ak-dr-title">{e.movie_title}</div>
                     {e.review && <div className="ak-dr-note">"{e.review}"</div>}
                   </div>
-                  <div className="ak-dr-marks">
-                    {e.rating ? <Stars value={e.rating} /> : <span className="ak-mk">—</span>}
-                    {e.rewatch && <span className="ak-mk ak-rw"><Icon name="rewatch" /></span>}
-                    <button title="Editar contexto da sessão" onClick={event => { event.stopPropagation(); setEditingId(editingId === e.id ? null : e.id) }}><Icon name="pen" /></button>
+                  {/* Cluster único do lado direito — estrelas, chip de local/pessoa, editar e
+                      reordenar viviam como filhos soltos do grid e "sobravam" pra uma linha
+                      implícita nova (grid de 4 colunas com >4 filhos). Agrupados aqui dentro,
+                      tudo fica sempre na mesma linha. */}
+                  <div className="ak-dr-right">
+                    <div className="ak-dr-marks">
+                      {e.rating ? <Stars value={e.rating} /> : <span className="ak-mk">—</span>}
+                      {e.rewatch && <span className="ak-mk ak-rw"><Icon name="rewatch" /></span>}
+                    </div>
+                    {((e.companions ?? []).length > 0 || e.watch_location) && <div className="ak-chips">
+                      {(e.companions ?? []).map(person => <span className="ak-meta-chip ak-person" key={person.id}><Icon name="user" />{person.name}</span>)}
+                      {e.watch_location && <span className="ak-meta-chip"><Icon name={e.watch_location.kind === 'cinema' ? 'cinema' : 'streaming'} />{e.watch_location.name}</span>}
+                    </div>}
+                    <button className="ak-dr-pen" title="Editar contexto da sessão" onClick={event => { event.stopPropagation(); setEditingId(editingId === e.id ? null : e.id) }}><Icon name="pen" /></button>
+                    {canReorder && (
+                      <div className="ak-dr-reorder" onClick={ev => ev.stopPropagation()}>
+                        <button disabled={i === 0} title="Mover para cima (assistido antes)"
+                                onClick={() => {
+                                  const next = [...dateGroup.entries]
+                                  ;[next[i - 1], next[i]] = [next[i], next[i - 1]]
+                                  reorderDate(dateGroup.date, next)
+                                }}><Icon name="chevUp" /></button>
+                        <button disabled={i === dateGroup.entries.length - 1} title="Mover para baixo (assistido depois)"
+                                onClick={() => {
+                                  const next = [...dateGroup.entries]
+                                  ;[next[i], next[i + 1]] = [next[i + 1], next[i]]
+                                  reorderDate(dateGroup.date, next)
+                                }}><Icon name="chevDown" /></button>
+                      </div>
+                    )}
                   </div>
-                  {((e.companions ?? []).length > 0 || e.watch_location) && <div className="ak-chips">
-                    {(e.companions ?? []).map(person => <span className="ak-tag-chip ak-person" key={person.id}><Icon name="user" />{person.name}</span>)}
-                    {e.watch_location && <span className="ak-tag-chip"><Icon name={e.watch_location.kind === 'cinema' ? 'cinema' : 'streaming'} />{e.watch_location.name}</span>}
-                  </div>}
                   {editingId === e.id && <DiaryContextEditor entry={e} onCancel={() => setEditingId(null)} onUpdated={updated => {
                     setEntries(previous => previous.map(item => item.id === updated.id ? updated : item))
                     setEditingId(null)
                   }} />}
-                  {canReorder && (
-                    <div className="ak-dr-reorder" onClick={ev => ev.stopPropagation()}>
-                      <button disabled={i === 0} title="Mover para cima (assistido antes)"
-                              onClick={() => {
-                                const next = [...dateGroup.entries]
-                                ;[next[i - 1], next[i]] = [next[i], next[i - 1]]
-                                reorderDate(dateGroup.date, next)
-                              }}>▲</button>
-                      <button disabled={i === dateGroup.entries.length - 1} title="Mover para baixo (assistido depois)"
-                              onClick={() => {
-                                const next = [...dateGroup.entries]
-                                ;[next[i], next[i + 1]] = [next[i + 1], next[i]]
-                                reorderDate(dateGroup.date, next)
-                              }}>▼</button>
-                    </div>
-                  )}
                 </div>
               )
             })

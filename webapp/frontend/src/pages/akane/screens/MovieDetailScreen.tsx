@@ -616,6 +616,14 @@ function FilmLogItem({ entry, onToast, onDeleted, onUpdated }: {
       <div className="ak-fl-row">
         {entry.rating != null && <Stars value={entry.rating} />}
         {entry.rewatch && <span className="ak-feed-tag ak-rw">revisão</span>}
+        {/* Chip de local/pessoa — movido pra dentro do fl-row (que já é flex) em vez de
+            ficar num bloco abaixo, que "caía" pra uma linha própria. */}
+        {((entry.companions ?? []).length > 0 || entry.watch_location) && (
+          <div className="ak-chips">
+            {(entry.companions ?? []).map(person => <span className="ak-meta-chip ak-person" key={person.id}><Icon name="user" />{person.name}</span>)}
+            {entry.watch_location && <span className="ak-meta-chip"><Icon name={entry.watch_location.kind === 'cinema' ? 'cinema' : 'streaming'} />{entry.watch_location.name}</span>}
+          </div>
+        )}
         {/* Ações da sessão (extras do app real): editar / excluir */}
         <span className="ak-fl-actions">
           <button title="Editar sessão" onClick={() => setEditing(true)}><Icon name="pen" /></button>
@@ -628,12 +636,6 @@ function FilmLogItem({ entry, onToast, onDeleted, onUpdated }: {
         </span>
       </div>
       {entry.review && <div className="ak-fl-note">"{entry.review}"</div>}
-      {((entry.companions ?? []).length > 0 || entry.watch_location) && (
-        <div className="ak-chips" style={{ marginTop: 8 }}>
-          {(entry.companions ?? []).map(person => <span className="ak-tag-chip ak-person" key={person.id}><Icon name="user" />{person.name}</span>)}
-          {entry.watch_location && <span className="ak-tag-chip"><Icon name={entry.watch_location.kind === 'cinema' ? 'cinema' : 'streaming'} />{entry.watch_location.name}</span>}
-        </div>
-      )}
     </div>
   )
 }
