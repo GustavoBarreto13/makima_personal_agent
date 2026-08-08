@@ -6,7 +6,11 @@ google-cloud-storage>=2.0
 google-cloud-aiplatform>=1.71  # Vertex AI RAG Engine (vertexai.rag) — corpus/ingestão e busca da Kurisu
 google-genai>=0.3    # SDK unificado do Gemini — chamada one-shot do Tutor de Idiomas (spec 031)
 tzdata              # base de fusos horários p/ zoneinfo (imagens slim não trazem)
-mcp                 # Model Context Protocol para integração com servidores MCP
+mcp==1.29.0         # Model Context Protocol para integração com servidores MCP.
+                    # Pin exato: mcp>=2.0 reestruturou a API interna (removeu módulos
+                    # que google.adk.tools.mcp_tool.mcp_toolset importa), quebrando o
+                    # McpToolset da Kaguya com ModuleNotFoundError. google-adk instalado
+                    # exige mcp>=1.24,<2 — 1.29.0 é a última 1.x, compatível.
 google-auth         # Autenticação Google (OAuth2)
 google-auth-oauthlib # OAuth2 para Google (flow de autorização)
 google-api-python-client # Cliente Python para APIs Google (Calendar, Drive, etc.)
