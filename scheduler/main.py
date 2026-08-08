@@ -145,9 +145,16 @@ def main() -> int:
         )
 
     # Loga um resumo com o próximo horário de cada job, para conferência no boot.
+    # get_jobs() aqui roda ANTES de scheduler.start(): com o scheduler ainda parado,
+    # APScheduler devolve os jobs "pendentes" direto de _pending_jobs, sem passar por
+    # _real_add_job — nessas versões (>=3.11) o objeto Job nem chega a ganhar o atributo
+    # next_run_time (não é None, o atributo não existe), o que derrubava o container
+    # com AttributeError antes mesmo do agendador começar. getattr com fallback resolve
+    # sem depender da versão exata do APScheduler instalada.
     log.info("Agendador iniciado com %d job(s):", len(JOBS))
     for job in scheduler.get_jobs():
-        log.info("  • %-20s próximo disparo: %s", job.id, job.next_run_time)
+        next_run = getattr(job, "next_run_time", None) or "calculando no start()"
+        log.info("  • %-20s próximo disparo: %s", job.id, next_run)
 
     try:
         # .start() bloqueia o processo aqui e passa a disparar os jobs nos horários.
