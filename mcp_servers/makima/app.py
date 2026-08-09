@@ -10,12 +10,28 @@ Rodar localmente (fora de Docker):
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.routing import Mount
 
 from mcp_servers.makima.auth import BearerAuthMiddleware
 from mcp_servers.makima.registry import DOMAINS
+
+# O FastMCP do SDK liga por padrão uma proteção anti-DNS-rebinding que só aceita o
+# header Host como 127.0.0.1/localhost — rejeita com 421 qualquer outro hostname,
+# inclusive o nome de serviço do Docker Compose (ex.: "makima-mcp:8090") que o Hermes
+# usa de verdade para chegar aqui (confirmado em produção: initialize devolvia 421
+# "Invalid Host header" via http://makima-mcp:8090).
+#
+# Desligamos essa checagem neste host porque a defesa que ela oferece (impedir que uma
+# página maliciosa no navegador de alguém force requisições autenticadas a um servidor
+# interno via DNS rebinding) já é coberta por duas camadas mais fortes aqui: (1) rede —
+# makima-mcp só existe na dokploy-network, nunca tem porta publicada; (2) aplicação — o
+# BearerAuthMiddleware (auth.py) envolve TODO o app e roda antes de qualquer sub-app de
+# domínio ser alcançado, então uma requisição sem o token correto nunca chega perto do
+# código de negócio, independente do header Host. Nenhum cliente aqui é um navegador.
+_INSECURE_TRANSPORT = TransportSecuritySettings(enable_dns_rebinding_protection=False)
 
 
 def _build_domain_app(name: str, tools: list):
@@ -25,7 +41,7 @@ def _build_domain_app(name: str, tools: list):
     ``/mcp/<domínio>`` no host Starlette — sem isso, o path efetivo duplicaria "mcp"
     (``/mcp/<domínio>/mcp``).
     """
-    server = FastMCP(name, streamable_http_path="/")
+    server = FastMCP(name, streamable_http_path="/", transport_security=_INSECURE_TRANSPORT)
     for tool in tools:
         server.tool()(tool)
     return server.streamable_http_app()
@@ -40,6 +56,7 @@ def _build_calendar_app():
     from mcp_servers.calendar.server import mcp as calendar_mcp
 
     calendar_mcp.settings.streamable_http_path = "/"
+    calendar_mcp.settings.transport_security = _INSECURE_TRANSPORT
     return calendar_mcp.streamable_http_app()
 
 
@@ -55,6 +72,7 @@ def _build_legacy_app():
         return None
 
     legacy_mcp.settings.streamable_http_path = "/"
+    legacy_mcp.settings.transport_security = _INSECURE_TRANSPORT
     return legacy_mcp.streamable_http_app()
 
 

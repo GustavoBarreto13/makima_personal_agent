@@ -73,3 +73,34 @@ def test_app_mounts_one_route_per_domain_plus_calendar():
     for domain in DOMAINS:
         assert f"/mcp/{domain}" in mounted_paths
     assert "/mcp/calendar" in mounted_paths
+
+
+def test_domain_apps_disable_dns_rebinding_protection():
+    # Regressão: o FastMCP do SDK liga por padrão uma checagem de Host header que só
+    # aceita 127.0.0.1/localhost — em produção isso rejeitava (421) o hostname real do
+    # Docker Compose (makima-mcp:8090) que o Hermes usa para chegar aqui. A proteção é
+    # redundante neste host (rede interna + BearerAuthMiddleware já cobre o mesmo risco)
+    # e precisa continuar desligada em todo domínio, ou o handshake MCP quebra de novo.
+    import mcp_servers.makima.app as app_module  # noqa: F401 — garante o módulo carregado
+
+    from starlette.testclient import TestClient
+
+    # TestClient só dispara o lifespan (que inicializa o session manager do FastMCP)
+    # quando usado como context manager — fora dele, o handshake falha com
+    # "Task group is not initialized", independente do fix de Host header.
+    with TestClient(app_module.app) as client:
+        resp = client.post(
+            "/mcp/nami/",
+            headers={
+                "Host": "makima-mcp:8090",
+                "Authorization": "Bearer test-token",
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+            },
+            json={
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {"protocolVersion": "2024-11-05", "capabilities": {},
+                           "clientInfo": {"name": "test", "version": "1"}},
+            },
+        )
+    assert resp.status_code == 200, resp.text
