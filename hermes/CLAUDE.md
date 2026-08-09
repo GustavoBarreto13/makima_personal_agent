@@ -160,6 +160,41 @@ por isso essa divergência só apareceu com um teste real de mensagem, não com
 deles especificamente (só o do telegram foi lido linha a linha) — reverificar quando a
 Etapa E4 ativar esses canais.
 
+**6ª divergência — `allow_from`/pairing continuam não funcionando, mesmo depois da 5ª
+correção e do pareamento aprovado**. Mesmo com `platforms.telegram.extra.allow_from`
+correto (confirmado via `hermes config get`), `TELEGRAM_ALLOWED_USERS=352608961`
+cadastrado como env var real no Dokploy (confirmado presente e limpo dentro do container,
+sem aspas/espaço — `env | grep` + `cat -A`), e o pareamento aprovado via
+`hermes pairing approve telegram <id>` (confirmado em "Approved Users" via
+`hermes pairing list`), o bot **continuou bloqueando** (`[Telegram] Blocked unauthorized
+user 352608961`).
+
+Testei cada peça da lógica de autorização isoladamente, rodando o código real dentro do
+container (`docker exec ... python3 -c "..."`, importando os módulos de verdade):
+`_platform_gate_env("TELEGRAM_ALLOWED_USERS")` retorna `'352608961'` limpo,
+`is_multiplex_active()` é `False` (sem scoping por perfil), `_coerce_allow_set` e a
+comparação de string funcionam corretamente isoladas. Ou seja, cada peça testada
+isoladamente está certa — o bloqueio é causado por algo na **montagem do objeto de
+config em runtime** que não consegui isolar (suspeita, não confirmada: o aviso
+"Config version outdated (v0 → v33)" presente desde o primeiro boot — o mecanismo
+oficial de correção, `hermes doctor --fix`, não roda de verdade porque `config.yaml`
+está montado `:ro`, então essa migração nunca foi de fato testada/aplicada).
+
+**Workaround atual, em produção**: `GATEWAY_ALLOW_ALL_USERS=true` no Environment da app
+Hermes — bypassa toda a lógica de allow_from/pairing/env var, autoriza qualquer
+remetente. Confirmado funcionando (mensagem real processada, sem bloqueio, log limpo).
+
+⚠️ **Isso é uma lacuna de segurança real, não um detalhe cosmético** — o Hermes mexe em
+finanças e email pessoal (mesma preocupação que motivou `tools.terminal.enabled: false`).
+Enquanto `GATEWAY_ALLOW_ALL_USERS=true` estiver ligado, qualquer pessoa que descubra o
+bot no Telegram (username do bot, não o token) tem acesso completo. Risco prático baixo
+agora (bot não divulgado a ninguém), mas **não deve continuar assim indefinidamente** —
+principalmente antes de qualquer divulgação mais ampla do bot ou da Etapa E4
+(WhatsApp/Discord, superfície de ataque maior). Próximo passo pendente: descobrir a causa
+raiz de verdade (provavelmente abrir uma issue no `NousResearch/hermes-agent` com esse
+caso reproduzível, já que é comportamento do produto deles, não do nosso código) e
+desligar `GATEWAY_ALLOW_ALL_USERS` assim que `allow_from`/pairing funcionar de verdade.
+
 Também confirmado pela doc oficial: interpolação `${VAR}` funciona diretamente dentro de
 qualquer valor do `config.yaml`, inclusive `api_key` — por isso o `config.yaml` agora
 seta `api_key: "${GEMINI_API_KEY}"` explicitamente no bloco `model`, em vez de depender
@@ -229,14 +264,17 @@ próximo passo, não uma reescrita.
    do Dokploy (compartilhado por todos os serviços da stack), confirmado funcionando em
    produção (`401` sem token, `200` com token correto, e agora também confirmado
    funcionando de dentro do próprio Hermes via `hermes mcp test`).
-4. ~~`allowed_users` do Telegram ainda é placeholder~~ — **resolvido**: `config.yaml`
-   referencia `${TELEGRAM_HERMES_ALLOWED_USER_ID}`. **Falta só cadastrar essa env var no
-   Environment da app Hermes no Dokploy** (valor = seu chat_id real, `352608961`,
+4. **`allowed_users`/`allow_from`/pairing — AINDA QUEBRADO em produção, apesar de 3
+   tentativas de correção** (ver "6ª divergência" acima). chat_id real (`352608961`)
    descoberto lendo a tabela `sessions` do Postgres — `SELECT DISTINCT user_id, COUNT(*),
    MAX(update_time) FROM sessions GROUP BY user_id ORDER BY MAX(update_time) DESC;` —
-   `user_id` é o `chat_id` puro, ver `coordinator/CLAUDE.md`. Método melhor que
+   `user_id` é o `chat_id` puro, ver `coordinator/CLAUDE.md` (método melhor que
    `getUpdates`: com o `makima` fazendo long-polling o tempo todo, `getUpdates` manual
-   sempre volta vazio — o bot já consumiu o update antes de você chegar lá).
+   sempre volta vazio). Mas nem `platforms.telegram.extra.allow_from` no `config.yaml`,
+   nem `TELEGRAM_ALLOWED_USERS` como env var real, nem aprovar o pareamento
+   (`hermes pairing approve`) resolveram — bot continuava bloqueando o próprio usuário.
+   **Rodando em produção com `GATEWAY_ALLOW_ALL_USERS=true`** (bypassa toda allowlist —
+   lacuna de segurança real, ver aviso acima) até a causa raiz ser encontrada.
 5. WhatsApp: parear via QR code (`hermes whatsapp` ou `hermes gateway setup` dentro do
    container) com um número dedicado — não o número pessoal do usuário.
 6. Discord: criar o app/bot, ligar "Message Content Intent" + "Server Members Intent",
