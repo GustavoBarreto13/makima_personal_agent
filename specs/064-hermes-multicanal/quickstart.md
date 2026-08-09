@@ -38,9 +38,14 @@ curl -H "Authorization: Bearer $MAKIMA_MCP_TOKEN" -X POST \
 ## Etapa E3 — Hermes no Telegram (MVP)
 
 ```bash
-docker compose up -d mcp hermes
+docker compose up -d mcp
+docker compose -f docker-compose.hermes.yml up -d hermes
 docker exec -it makima-hermes hermes   # chat CLI — confirma modelo e MCP conectados
 ```
+
+(`hermes` vive num compose file separado — `docker-compose.hermes.yml` — e é uma
+segunda app Docker Compose no Dokploy em produção, não um profile: ver `hermes/CLAUDE.md`
+para o porquê e o runbook completo de cutover via Dokploy.)
 
 No Telegram (mesmo bot de sempre, token já movido para o Hermes):
 1. "gastei 30 no mercado" → confere transação criada no webapp (via `/mcp/nami`)
@@ -49,8 +54,10 @@ No Telegram (mesmo bot de sempre, token já movido para o Hermes):
    `MEMORY.md` sobreviveram
 4. Buscar por uma conversa antiga por conteúdo (não por rolagem) → `session_search` funciona
 
-**Rollback se algo falhar**: `docker compose up -d makima` (o `coordinator/` antigo volta a
-responder no mesmo token assim que o Hermes for parado).
+**Rollback se algo falhar**: `docker compose -f docker-compose.hermes.yml stop hermes &&
+docker compose up -d makima` (o `coordinator/` antigo volta a responder no mesmo token
+assim que o Hermes for parado; em produção isso é feito pelos botões Stop/Start das duas
+apps no Dokploy, não por esses comandos diretos).
 
 ## Etapa E4 — WhatsApp e Discord
 

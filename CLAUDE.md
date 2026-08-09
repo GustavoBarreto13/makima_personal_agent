@@ -275,7 +275,7 @@ makima_personal_agent/
 │   ├── skills/
 │   │   ├── nami-financas/SKILL.md
 │   │   └── kaguya-tarefas/SKILL.md
-│   └── CLAUDE.md          # como ativar com segurança (perfil docker compose, cutover do Telegram)
+│   └── CLAUDE.md          # como ativar com segurança (app Dokploy separada, cutover do Telegram)
 ├── scheduler/           # agendador de jobs recorrentes (container makima-scheduler) — APScheduler
 │   ├── __init__.py
 │   ├── registry.py      # lista declarativa JOBS + ScheduledJob + helpers daily_at()/every()

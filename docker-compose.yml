@@ -21,9 +21,10 @@ services:
       - dokploy-network
 
   # Servidor MCP HTTP: expõe as tools de domínio (Nami, Kaguya, Calendar, ...) para
-  # qualquer cliente MCP — hoje o Hermes (spec 064). Um FastMCP por domínio, montado
-  # sob /mcp/<domínio> num único processo Starlette/uvicorn. Só na rede interna
-  # (dokploy-network) — nenhuma porta pública. Autenticado por MAKIMA_MCP_TOKEN.
+  # qualquer cliente MCP — hoje o Hermes (spec 064, ver docker-compose.hermes.yml). Um
+  # FastMCP por domínio, montado sob /mcp/<domínio> num único processo
+  # Starlette/uvicorn. Só na rede interna (dokploy-network) — nenhuma porta pública.
+  # Autenticado por MAKIMA_MCP_TOKEN.
   mcp:
     build:
       # Contexto = raiz do repo (para COPY . . pegar agents/ e mcp_servers/).
@@ -32,38 +33,6 @@ services:
     container_name: makima-mcp
     env_file: .env
     restart: unless-stopped
-    networks:
-      - default
-      - dokploy-network
-
-  # Gateway multicanal (Telegram/WhatsApp/Discord) + memória de longo prazo — spec 064,
-  # Etapa E3/E4. Imagem oficial (nousresearch/hermes-agent) — ver hermes/CLAUDE.md para
-  # por que não há hermes/Dockerfile próprio.
-  #
-  # ATRÁS DE UM PERFIL DE OPT-IN: não inicia com `docker compose up -d` comum, só com
-  # `docker compose --profile hermes up -d hermes`. Motivo: ativar este serviço com o
-  # MESMO TELEGRAM_BOT_TOKEN que o `makima` (coordinator) ainda usa causa conflito real
-  # (dois processos disputando getUpdates da mesma API). Ver hermes/CLAUDE.md e
-  # specs/064-hermes-multicanal/quickstart.md (Etapa E3) para o roteiro de cutover
-  # seguro (parar `makima` antes de subir este serviço com o mesmo token).
-  hermes:
-    profiles: ["hermes"]
-    image: nousresearch/hermes-agent:latest
-    container_name: makima-hermes
-    command: gateway run
-    restart: unless-stopped
-    env_file: .env
-    volumes:
-      # Único volume de estado — sessões, memória (MEMORY.md/USER.md), pareamento do
-      # WhatsApp. Sobrevive a redeploy (constraint do plan.md).
-      - hermes_data:/opt/data
-      # Templates estáticos versionados neste repo, montados read-only por cima do
-      # volume — config.yaml/SOUL.md/skills continuam em git, nunca editados a mão
-      # dentro do container. Segredos (API keys) ficam no .env do próprio Hermes
-      # (dinâmico, dentro do volume — nunca versionado).
-      - ./hermes/config.yaml:/opt/data/config.yaml:ro
-      - ./hermes/SOUL.md:/opt/data/SOUL.md:ro
-      - ./hermes/skills:/opt/data/skills:ro
     networks:
       - default
       - dokploy-network
@@ -133,8 +102,3 @@ services:
 networks:
   dokploy-network:
     external: true
-
-volumes:
-  # Estado do Hermes (spec 064) — sessões, memória de longo prazo, pareamento WhatsApp.
-  # Nomeado para sobreviver a `docker compose down` (só `down -v` apaga).
-  hermes_data:

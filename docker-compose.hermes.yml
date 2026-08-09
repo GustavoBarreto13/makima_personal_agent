@@ -1,0 +1,43 @@
+# Deploy do Hermes Agent — gateway multicanal (Telegram/WhatsApp/Discord), spec 064
+# Etapa E3+. Arquivo SEPARADO de docker-compose.yml de propósito: vira uma segunda
+# aplicação "Docker Compose" no MESMO projeto Dokploy da stack principal, ligada/
+# desligada pelo botão Start/Stop do próprio Dokploy — não por um profile do Docker
+# Compose. Motivo: Dokploy não consegue injetar `--profile hermes` num deploy normal
+# (só ajusta flags que vêm DEPOIS de `up`, não antes — ver
+# github.com/Dokploy/dokploy/issues/2327 e #540); o profile antigo que vivia dentro de
+# docker-compose.yml nunca teria sido ativável pelo botão de deploy do Dokploy.
+# Detalhes e o runbook de cutover: hermes/CLAUDE.md.
+#
+# Depende da rede dokploy-network (mesma onde roda makima-mcp, ver docker-compose.yml)
+# e das env vars TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, MAKIMA_MCP_TOKEN (+ DISCORD_BOT_TOKEN
+# quando a Etapa E4 chegar). Em produção: aba Environment desta app no Dokploy (pode
+# reusar as Shared Variables do projeto). Em dev local: env_file: .env (raiz do repo).
+services:
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    container_name: makima-hermes
+    command: gateway run
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # Único volume de estado — sessões, memória (MEMORY.md/USER.md), pareamento do
+      # WhatsApp. Sobrevive a redeploy (constraint do plan.md).
+      - hermes_data:/opt/data
+      # Templates estáticos versionados neste repo, montados read-only por cima do
+      # volume — config.yaml/SOUL.md/skills continuam em git, nunca editados a mão
+      # dentro do container.
+      - ./hermes/config.yaml:/opt/data/config.yaml:ro
+      - ./hermes/SOUL.md:/opt/data/SOUL.md:ro
+      - ./hermes/skills:/opt/data/skills:ro
+    networks:
+      - dokploy-network
+
+# Rede externa do Dokploy — já existe, não criada aqui (mesma convenção de docker-compose.yml).
+networks:
+  dokploy-network:
+    external: true
+
+volumes:
+  # Estado do Hermes (spec 064) — sessões, memória de longo prazo, pareamento WhatsApp.
+  # Nomeado para sobreviver a `docker compose down` (só `down -v` apaga).
+  hermes_data:

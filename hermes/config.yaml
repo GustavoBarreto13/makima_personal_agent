@@ -2,37 +2,43 @@
 #
 # NÃO é lido automaticamente pelo Hermes: é uma referência versionada, copiada/mesclada
 # manualmente em $HERMES_HOME/config.yaml (volume "hermes_data", montado em /opt/data no
-# container makima-hermes — ver docker-compose.yml) na primeira configuração.
+# container makima-hermes — ver docker-compose.hermes.yml) na primeira configuração.
 #
-# ATENÇÃO (verificar antes de usar): o schema abaixo segue a documentação pública do
-# Hermes Agent (NousResearch/hermes-agent) no momento em que este arquivo foi escrito.
-# Como o projeto evolui rápido, confirme o schema exato da versão instalada com
-# `hermes config get` ou `hermes --help` antes do primeiro boot — não assuma que este
-# arquivo bate 100% com a versão que será instalada.
+# Schema de `model`/`mcp_servers`/`platforms` abaixo já foi confirmado contra a
+# documentação pública do Hermes Agent (hermes-agent.nousresearch.com, consultada em
+# 09/ago/2026) — ver changelog em hermes/CLAUDE.md. Ainda ficam como "verificar depois",
+# sem confirmação externa: o bloco `tools.terminal` e a chave `profile: default`, e a
+# nidificação de `whatsapp`/`discord` sob `platforms:` (inferida por convenção a partir
+# do schema confirmado do `telegram`, não checada linha a linha). Confirme com
+# `hermes config get` / `hermes --help` antes do primeiro boot.
 
 model:
   provider: custom
-  name: gemini-2.5-flash
+  model: gemini-2.5-flash
   base_url: https://generativelanguage.googleapis.com/v1beta/openai/
-  # api_key vem de OPENAI_API_KEY no .env do Hermes (= GEMINI_API_KEY) — não duplicar aqui.
+  # api_key interpolado direto de ${GEMINI_API_KEY} (já presente no .env raiz do
+  # repo/Environment do Dokploy, usado pelos outros serviços) — não precisa de um
+  # OPENAI_API_KEY separado.
+  api_key: "${GEMINI_API_KEY}"
 
-# Um bloco por domínio MCP montado em makima-mcp (mcp_servers/makima/app.py). A lista
-# cresce/encolhe em espelho de mcp_servers/makima/registry.py.DOMAINS — hoje (E1/E2):
-# nami, kaguya, calendar, legacy. Ver specs/064-hermes-multicanal/contracts/mcp-servers.md.
+# Um bloco por domínio MCP montado em makima-mcp (mcp_servers/makima/app.py), chaveado
+# por nome (dict, não lista). Cresce/encolhe em espelho de
+# mcp_servers/makima/registry.py.DOMAINS — hoje (E1/E2): nami, kaguya, calendar, legacy.
+# Ver specs/064-hermes-multicanal/contracts/mcp-servers.md.
 mcp_servers:
-  - name: nami
+  nami:
     url: "http://makima-mcp:8090/mcp/nami"
     headers:
       Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
-  - name: kaguya
+  kaguya:
     url: "http://makima-mcp:8090/mcp/kaguya"
     headers:
       Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
-  - name: calendar
+  calendar:
     url: "http://makima-mcp:8090/mcp/calendar"
     headers:
       Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
-  - name: legacy
+  legacy:
     url: "http://makima-mcp:8090/mcp/legacy"
     headers:
       Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
@@ -49,19 +55,20 @@ tools:
 # fragmentar por área da vida.
 profile: default
 
-telegram:
-  bot_token: "${TELEGRAM_BOT_TOKEN}"
-  allowed_users:
-    - "<seu chat_id do Telegram>"
+platforms:
+  telegram:
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    allowed_users:
+      - "<seu chat_id do Telegram>"
 
-whatsapp:
-  # Conector Baileys (sessão WhatsApp Web) — número dedicado, pareado via QR code
-  # (`hermes whatsapp` ou `hermes gateway setup` dentro do container). Sem config
-  # declarativa de token: a sessão pareada vive só no volume (platforms/whatsapp/session/).
-  allowed_users:
-    - "<seu número, formato internacional, ex: 5511999999999>"
+  whatsapp:
+    # Conector Baileys (sessão WhatsApp Web) — número dedicado, pareado via QR code
+    # (`hermes whatsapp` ou `hermes gateway setup` dentro do container). Sem config
+    # declarativa de token: a sessão pareada vive só no volume (platforms/whatsapp/session/).
+    allowed_users:
+      - "<seu número, formato internacional, ex: 5511999999999>"
 
-discord:
-  bot_token: "${DISCORD_BOT_TOKEN}"
-  allowed_users:
-    - "<seu user id do Discord>"
+  discord:
+    bot_token: "${DISCORD_BOT_TOKEN}"
+    allowed_users:
+      - "<seu user id do Discord>"
