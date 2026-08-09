@@ -145,55 +145,82 @@ Hermes sem allowlist é fail-closed por padrão (comentário explícito no códi
 "Fail-closed: no allowlist means deny by default... must not silently allow everyone",
 referência a um fix de bug anterior deles, #24457).
 
-**5ª divergência, achada testando de verdade no Telegram**: mesmo com `allow_from:`
-certo direto sob `telegram:`, o usuário real foi bloqueado (log em produção:
-`[Telegram] Blocked unauthorized user 352608961`). Causa: `allow_from:` precisa ficar
-**aninhado sob uma chave `extra:`**, não solto — confirmado lendo `gateway/config.py`
-dentro do container (`extra = _coerce_dict(data.get("extra", {}))`): o dict `.extra`
-que a checagem de autorização usa em runtime só é populado a partir de uma chave
-`extra:` explícita no YAML, nunca de chaves soltas direto sob o bloco da plataforma.
-`hermes config get platforms` **ecoava** `allow_from` corretamente mesmo estando no
-lugar errado (só reflete o YAML bruto, não o objeto de config processado em runtime) —
-por isso essa divergência só apareceu com um teste real de mensagem, não com
-`config get`. Schema correto: `platforms.telegram.extra.allow_from`. Aplicado também a
-`whatsapp`/`discord` por consistência, mas **não confirmado** contra o código-fonte
-deles especificamente (só o do telegram foi lido linha a linha) — reverificar quando a
-Etapa E4 ativar esses canais.
+**5ª divergência, achada testando de verdade no Telegram (⚠️ conclusão CORRIGIDA depois —
+ver abaixo)**: mesmo com `allow_from:` direto sob `telegram:`, o usuário real foi
+bloqueado. Na hora, concluí (errado) que `allow_from:` precisava ficar aninhado sob
+`extra:`. Isso não é falso — as duas formas funcionam (`gateway/config.py`,
+`_merge_platform_map`, faz o bridge automático do nível de cima pro `.extra` em
+runtime) — mas **não era a causa do bloqueio**. Deixei o `config.yaml` com
+`platforms.telegram.extra.allow_from` porque é a forma mais explícita, mas a raiz real
+do problema era outra (ver "causa raiz" abaixo).
 
-**6ª divergência — `allow_from`/pairing continuam não funcionando, mesmo depois da 5ª
-correção e do pareamento aprovado**. Mesmo com `platforms.telegram.extra.allow_from`
-correto (confirmado via `hermes config get`), `TELEGRAM_ALLOWED_USERS=352608961`
-cadastrado como env var real no Dokploy (confirmado presente e limpo dentro do container,
-sem aspas/espaço — `env | grep` + `cat -A`), e o pareamento aprovado via
-`hermes pairing approve telegram <id>` (confirmado em "Approved Users" via
-`hermes pairing list`), o bot **continuou bloqueando** (`[Telegram] Blocked unauthorized
-user 352608961`).
+**6ª divergência — investigação longa que terminou em conclusão ERRADA, corrigida depois
+de subir o dashboard web (ver seção própria mais abaixo)**. Documentei aqui, por um bom
+tempo, que `allow_from`/pairing "continuavam não funcionando" mesmo com config, env var
+e pareamento aprovado todos corretos — e cheguei a suspeitar de bug no produto
+(`NousResearch/hermes-agent`) ou de uma migração de config nunca aplicada (aviso
+"Config version outdated (v0 → v33)"). **Essa suspeita estava errada.**
 
-Testei cada peça da lógica de autorização isoladamente, rodando o código real dentro do
-container (`docker exec ... python3 -c "..."`, importando os módulos de verdade):
-`_platform_gate_env("TELEGRAM_ALLOWED_USERS")` retorna `'352608961'` limpo,
-`is_multiplex_active()` é `False` (sem scoping por perfil), `_coerce_allow_set` e a
-comparação de string funcionam corretamente isoladas. Ou seja, cada peça testada
-isoladamente está certa — o bloqueio é causado por algo na **montagem do objeto de
-config em runtime** que não consegui isolar (suspeita, não confirmada: o aviso
-"Config version outdated (v0 → v33)" presente desde o primeiro boot — o mecanismo
-oficial de correção, `hermes doctor --fix`, não roda de verdade porque `config.yaml`
-está montado `:ro`, então essa migração nunca foi de fato testada/aplicada).
+### Causa raiz real do bloqueio (confirmada)
 
-**Workaround atual, em produção**: `GATEWAY_ALLOW_ALL_USERS=true` no Environment da app
-Hermes — bypassa toda a lógica de allow_from/pairing/env var, autoriza qualquer
-remetente. Confirmado funcionando (mensagem real processada, sem bloqueio, log limpo).
+`plugins/platforms/telegram/adapter.py`, `_is_user_authorized_from_message`:
 
-⚠️ **Isso é uma lacuna de segurança real, não um detalhe cosmético** — o Hermes mexe em
-finanças e email pessoal (mesma preocupação que motivou `tools.terminal.enabled: false`).
-Enquanto `GATEWAY_ALLOW_ALL_USERS=true` estiver ligado, qualquer pessoa que descubra o
-bot no Telegram (username do bot, não o token) tem acesso completo. Risco prático baixo
-agora (bot não divulgado a ninguém), mas **não deve continuar assim indefinidamente** —
-principalmente antes de qualquer divulgação mais ampla do bot ou da Etapa E4
-(WhatsApp/Discord, superfície de ataque maior). Próximo passo pendente: descobrir a causa
-raiz de verdade (provavelmente abrir uma issue no `NousResearch/hermes-agent` com esse
-caso reproduzível, já que é comportamento do produto deles, não do nosso código) e
-desligar `GATEWAY_ALLOW_ALL_USERS` assim que `allow_from`/pairing funcionar de verdade.
+```python
+adapter_allow_from = self.config.extra.get("allow_from")
+if adapter_allow_from is not None:
+    allowed = _coerce_allow_set(adapter_allow_from)
+    authorized = user_id in allowed or "*" in allowed   # ← autoridade ÚNICA
+```
+
+Quando `allow_from` **existe** no config (não é `None`), ele é a autoridade **única** —
+o código nem chega a olhar `TELEGRAM_ALLOWED_USERS` (env var) nem o resultado do
+pareamento. Isso por si só já explica por que testar cada peça isoladamente (o que fiz
+exaustivamente, rodando `_platform_gate_env`, `_coerce_allow_set`, etc. direto no
+container) sempre dava "certo": elas nunca eram sequer consultadas.
+
+A causa raiz de verdade, achada lendo `hermes config get platforms.telegram --json` em
+produção:
+
+```json
+{"extra": {"allow_from": ["${TELEGRAM_HERMES_ALLOWED_USER_ID}"]}}
+```
+
+**`TELEGRAM_HERMES_ALLOWED_USER_ID` nunca foi cadastrada no Environment da app Hermes no
+Dokploy.** Sem a env var, `${TELEGRAM_HERMES_ALLOWED_USER_ID}` não interpola — vira uma
+string literal, que não é `None`, então `allow_from` continua sendo a autoridade única,
+mas agora contendo um valor que nunca vai bater com nenhum `user_id` real. Resultado:
+nega todo mundo, silenciosamente, incluindo o próprio dono do bot — exatamente o sintoma
+observado (`[Telegram] Blocked unauthorized user 352608961`), mesmo com
+`TELEGRAM_ALLOWED_USERS` certo e pareamento aprovado, porque nenhum dos dois chega a ser
+consultado.
+
+Confirmado com um teste direto (a variável setada manualmente no `docker exec`, não no
+Dokploy, só pra validar a interpolação):
+
+```bash
+docker exec -e TELEGRAM_HERMES_ALLOWED_USER_ID=352608961 makima-hermes \
+  hermes config get platforms.telegram --json
+# → {"extra": {"allow_from": ["352608961"]}}   ✅
+```
+
+**Fix aplicado**: `TELEGRAM_HERMES_ALLOWED_USER_ID=352608961` cadastrada no Environment
+real da app Hermes no Dokploy; `GATEWAY_ALLOW_ALL_USERS` removida. Nenhuma mudança de
+`config.yaml` foi necessária — o arquivo já estava certo, só faltava a env var que ele
+referenciava.
+
+**Lição pra não repetir**: quando um valor `${VAR}` no `config.yaml` não interpola
+porque a env var está ausente, o Hermes **não erra nem avisa** — ele segue com a string
+literal como se fosse um valor válido. Ao adicionar qualquer `${VAR}` novo em
+`config.yaml`, checar com `hermes config get <caminho> --json` que ele virou o valor
+esperado, não a string `${...}` — esse é o sintoma silencioso a procurar primeiro da
+próxima vez, antes de qualquer investigação de código.
+
+**Workaround antigo, agora desligado**: `GATEWAY_ALLOW_ALL_USERS=true` ficou em produção
+por um tempo como bypass de emergência (bypassava toda a lógica de allow_from/pairing/env
+var, autorizando qualquer remetente) enquanto a causa raiz acima não tinha sido
+encontrada — documentado então como uma lacuna de segurança real (o Hermes mexe em
+finanças e email pessoal). Removida assim que `TELEGRAM_HERMES_ALLOWED_USER_ID` foi
+cadastrada e o allowlist de verdade confirmado funcionando (ver Verificação pendente).
 
 Também confirmado pela doc oficial: interpolação `${VAR}` funciona diretamente dentro de
 qualquer valor do `config.yaml`, inclusive `api_key` — por isso o `config.yaml` agora
@@ -264,17 +291,15 @@ próximo passo, não uma reescrita.
    do Dokploy (compartilhado por todos os serviços da stack), confirmado funcionando em
    produção (`401` sem token, `200` com token correto, e agora também confirmado
    funcionando de dentro do próprio Hermes via `hermes mcp test`).
-4. **`allowed_users`/`allow_from`/pairing — AINDA QUEBRADO em produção, apesar de 3
-   tentativas de correção** (ver "6ª divergência" acima). chat_id real (`352608961`)
-   descoberto lendo a tabela `sessions` do Postgres — `SELECT DISTINCT user_id, COUNT(*),
-   MAX(update_time) FROM sessions GROUP BY user_id ORDER BY MAX(update_time) DESC;` —
-   `user_id` é o `chat_id` puro, ver `coordinator/CLAUDE.md` (método melhor que
-   `getUpdates`: com o `makima` fazendo long-polling o tempo todo, `getUpdates` manual
-   sempre volta vazio). Mas nem `platforms.telegram.extra.allow_from` no `config.yaml`,
-   nem `TELEGRAM_ALLOWED_USERS` como env var real, nem aprovar o pareamento
-   (`hermes pairing approve`) resolveram — bot continuava bloqueando o próprio usuário.
-   **Rodando em produção com `GATEWAY_ALLOW_ALL_USERS=true`** (bypassa toda allowlist —
-   lacuna de segurança real, ver aviso acima) até a causa raiz ser encontrada.
+4. ~~`allowed_users`/`allow_from`/pairing~~ — **resolvido**: causa raiz era
+   `TELEGRAM_HERMES_ALLOWED_USER_ID` ausente do Environment da app Hermes no Dokploy (ver
+   "Causa raiz real do bloqueio" acima). chat_id real (`352608961`) descoberto lendo a
+   tabela `sessions` do Postgres — `SELECT DISTINCT user_id, COUNT(*), MAX(update_time)
+   FROM sessions GROUP BY user_id ORDER BY MAX(update_time) DESC;` — `user_id` é o
+   `chat_id` puro, ver `coordinator/CLAUDE.md` (método melhor que `getUpdates`: com o
+   `makima` fazendo long-polling o tempo todo, `getUpdates` manual sempre volta vazio).
+   Fix: variável cadastrada, `GATEWAY_ALLOW_ALL_USERS` removida, confirmado com mensagem
+   real no Telegram sem bloqueio.
 5. WhatsApp: parear via QR code (`hermes whatsapp` ou `hermes gateway setup` dentro do
    container) com um número dedicado — não o número pessoal do usuário.
 6. Discord: criar o app/bot, ligar "Message Content Intent" + "Server Members Intent",
@@ -282,3 +307,43 @@ próximo passo, não uma reescrita.
 
 Ver `specs/064-hermes-multicanal/quickstart.md` (Etapas E3/E4) para o roteiro completo
 de validação manual.
+
+## Dashboard web
+
+A imagem oficial já traz um dashboard web (React, servido pelo próprio processo
+`gateway run` via um serviço s6 chamado `dashboard`, desligado por padrão). Não precisa
+de build nem de outro container — só ligar por env var.
+
+**Environment da app Hermes no Dokploy:**
+
+| Variável | Valor |
+|---|---|
+| `HERMES_DASHBOARD` | `true` |
+| `HERMES_DASHBOARD_BASIC_AUTH_USERNAME` | usuário do login |
+| `HERMES_DASHBOARD_BASIC_AUTH_PASSWORD` | senha forte — é a **única** barreira num deploy com subdomínio público, ver aviso abaixo |
+| `HERMES_DASHBOARD_BASIC_AUTH_SECRET` | 32+ bytes aleatórios — sem isso a sessão de login não sobrevive a um restart do container |
+| `HERMES_DASHBOARD_PUBLIC_URL` | `https://hermes.<domínio>` — necessário atrás de reverse proxy pro dashboard montar as URLs certas |
+
+**Acesso** — subdomínio via Traefik/Dokploy (mesmo caminho do `makima-web`, que já roda em
+`makima.<domínio>`): registro DNS tipo A `hermes` → IP da VPS **precisa propagar antes**
+do deploy, senão o Let's Encrypt falha a validação; depois, Dokploy → app Hermes → aba
+**Domains** → Container Port `9119`. `docker-compose.hermes.yml` também publica
+`127.0.0.1:9119:9119` como plano B via túnel SSH (`ssh -N -L 9119:127.0.0.1:9119 <vps>` →
+`http://127.0.0.1:9119`), útil pra isolar se um problema é do Traefik/cert ou do Hermes.
+
+⚠️ **O que expor publicamente muda**: o dashboard não é só um visualizador de log — as
+páginas **Env**, **Config**, **Sessions** e **Chat** mostram variáveis de ambiente, a
+config completa e o histórico de conversas, além de dar acesso ao agente. O gate de auth
+é fail-closed (sem usuário+senha configurados, o servidor recusa subir em bind não-
+loopback), então não tem como expor por acidente sem senha — mas senha fraca aqui
+equivale a nenhuma. O próprio código do Hermes documenta o motivo do endurecimento
+(jun/2026): dashboards públicos sem auth foram porta de entrada de uma campanha de
+persistência via config de MCP.
+
+⚠️ **`config.yaml` é bind mount `:ro`** — a página Config do dashboard mostra a config
+real, mas qualquer tentativa de salvar por lá falha (de propósito). Mudança de config
+continua sendo: editar `hermes/config.yaml` neste repo + deploy pelo Dokploy.
+
+Páginas mais úteis pra depurar problemas de canal/autorização: **Logs** (agent/errors/
+gateway, com filtro por nível e componente — o mesmo conteúdo de `hermes logs`, mas sem
+precisar de SSH), **Channels**, **Pairing**, **MCP** (status de conexão dos 4 domínios).

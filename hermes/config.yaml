@@ -69,16 +69,23 @@ platforms:
     # (user_id = chat_id puro, ver coordinator/CLAUDE.md) em vez de getUpdates — o bot
     # makima já está fazendo long-polling, então getUpdates sempre voltava vazio.
     #
-    # `allow_from` (não `allowed_users` — 1ª correção, ver changelog em hermes/CLAUDE.md)
-    # precisa ficar ANINHADO sob `extra:` — confirmado lendo gateway/config.py dentro do
-    # container: o dict `.extra` que a checagem de autorização usa em runtime
-    # (`self.config.extra.get("allow_from")`) só é populado a partir de uma chave
-    # `extra:` explícita no YAML (`extra = _coerce_dict(data.get("extra", {}))`), nunca
-    # de chaves soltas direto sob `telegram:`. Sem isso, `allow_from` solto era
-    # silenciosamente ignorado pelo loader (`hermes config get` ecoava ele igual, mas o
-    # objeto de config em runtime nunca via o valor) — resultado real observado em
-    # produção: usuário legítimo bloqueado ("[Telegram] Blocked unauthorized user
-    # 352608961"), mesmo com token e allow_from "certos" no arquivo.
+    # `allow_from` (não `allowed_users` — 1ª correção, ver changelog em hermes/CLAUDE.md).
+    # Aceito tanto solto sob `telegram:` quanto aninhado sob `extra:` — gateway/config.py
+    # (`_merge_platform_map`) faz o bridge de `allow_from` do nível de cima pro `.extra`
+    # automaticamente. O que REALMENTE importa: quando esta chave existe (não é `None`),
+    # ela vira a AUTORIDADE ÚNICA de autorização do adaptador — curto-circuita
+    # `TELEGRAM_ALLOWED_USERS` (env var) e o pareamento (`hermes pairing approve`)
+    # completamente (`plugins/platforms/telegram/adapter.py`,
+    # `_is_user_authorized_from_message`: `if adapter_allow_from is not None: ...`, sem
+    # fallback pros outros mecanismos). Confirmado em produção: com
+    # `TELEGRAM_HERMES_ALLOWED_USER_ID` ausente do Environment, `${...}` não interpola,
+    # `allow_from` vira `["${TELEGRAM_HERMES_ALLOWED_USER_ID}"]` — uma string literal que
+    # não é `None` — e nega TODO MUNDO em silêncio, inclusive o dono do bot, mesmo com
+    # env var e pareamento configurados corretamente à parte. A causa raiz real do
+    # bloqueio persistente documentado nas revisões anteriores deste arquivo era essa: a
+    # variável simplesmente não estava setada no Environment da app Hermes no Dokploy.
+    # Ou seja: `TELEGRAM_HERMES_ALLOWED_USER_ID` é OBRIGATÓRIA sempre que este bloco
+    # `allow_from` existir — sem ela, o bot fica inacessível pra qualquer um.
     extra:
       allow_from:
         - "${TELEGRAM_HERMES_ALLOWED_USER_ID}"

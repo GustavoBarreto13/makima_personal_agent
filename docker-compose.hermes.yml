@@ -19,6 +19,13 @@ services:
     command: gateway run
     restart: unless-stopped
     env_file: .env
+    ports:
+      # Dashboard web do Hermes (serviço s6 "dashboard", ligado por HERMES_DASHBOARD=true
+      # no Environment — ver hermes/CLAUDE.md § "Dashboard web"). Acesso normal é pelo
+      # subdomínio hermes.<domínio> via Traefik/Dokploy (aba Domains, container port
+      # 9119, sem precisar desse publish). Este publish é só o plano B por túnel SSH,
+      # ligado ao loopback do host pra não abrir uma segunda porta na internet.
+      - "127.0.0.1:9119:9119"
     volumes:
       # Único volume de estado — sessões, memória (MEMORY.md/USER.md), pareamento do
       # WhatsApp. Sobrevive a redeploy (constraint do plan.md).
