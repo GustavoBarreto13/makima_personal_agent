@@ -11,8 +11,13 @@ Arquivos versionados do Hermes Agent (Etapa E3/E4 da spec 064). **Nenhum destes 
 e verificado** — `tools/list` correto nos 4 domínios (`nami`/`kaguya`/`calendar`/`legacy`),
 `401` sem token, handshake `initialize` completo testado com `curl` real contra a VPS.
 Detalhes e os 3 bugs de produção achados/corrigidos no processo:
-`mcp_servers/makima/CLAUDE.md`. O que falta é só instalar o Hermes de verdade e apontar
-o `config.yaml` dele pra `http://makima-mcp:8090/mcp/<domínio>`.
+`mcp_servers/makima/CLAUDE.md`.
+
+**Etapa E3 iniciada**: o Hermes de verdade já está instalado e deployado (app própria no
+Dokploy, `docker-compose.hermes.yml`, sem `TELEGRAM_BOT_TOKEN` configurado de propósito —
+não conflita com o `makima` em produção). Conectividade MCP, tool-calling e a escolha de
+modelo já foram validados ao vivo — ver "Validação de tool-calling em produção" abaixo.
+O que falta é só o cutover real do Telegram (parar `makima`, ligar o token no Hermes).
 
 ## Desvio do plan.md original: sem `hermes/Dockerfile`
 
@@ -105,26 +110,70 @@ qualquer valor do `config.yaml`, inclusive `api_key` — por isso o `config.yaml
 seta `api_key: "${GEMINI_API_KEY}"` explicitamente no bloco `model`, em vez de depender
 de um pickup implícito via `OPENAI_API_KEY` (que era uma suposição, nunca confirmada).
 
-## ⚠️ Verificação pendente (não testável neste ambiente de desenvolvimento)
+## Validação de tool-calling em produção (09/ago/2026)
 
-Nenhum destes arquivos foi validado contra uma instância real do Hermes — este ambiente
-não tem Docker nem acesso à imagem oficial. Antes do primeiro boot em produção:
+Com a app Hermes deployada no Dokploy (sem `TELEGRAM_BOT_TOKEN` — não conflita com o
+`makima` em produção), testei ao vivo via `docker exec makima-hermes hermes chat -q "..."
+-Q` (modo não-interativo, sem tocar no Telegram real, só perguntas de leitura pra não
+arriscar gravar dado errado no Postgres de produção).
+
+**Conectividade confirmada**: `hermes mcp test nami/kaguya/calendar/legacy` — os 4
+domínios `✓ Connected`; Nami descobriu as 60 tools esperadas (mesmo número já verificado
+em `mcp_servers/makima/CLAUDE.md`). `hermes config get tools` confirma
+`tools.terminal.enabled: false` respeitado (o aviso do `hermes doctor` sobre "terminal ✓
+available" é só sobre disponibilidade técnica do módulo, não sobre estar habilitado pro
+agente — falso alarme).
+
+**Achado principal — o maior risco técnico do plano (research.md) era real**: o Hermes
+usa um sistema próprio de "tool_search" com carregamento adiado — de ~166 tools totais,
+só 28-31 "core" ficam no schema nativo de function-calling enviado ao modelo; o resto
+(todas as nossas tools MCP) fica atrás de uma tool genérica `tool_call(name, arguments)`,
+e o modelo precisa consultar (`tool_describe`) ou lembrar o schema exato em vez de ter
+validação de schema nativa forçada pela API. Com **`gemini-2.5-flash`**: tools sem
+argumento (`list_accounts`) sempre funcionaram; a única tool testada com 2 argumentos
+obrigatórios (`perguntar_makima_legado`, a ponte legada) falhou em 3 de 5 tentativas —
+1x nem tentou chamar (alucinou resposta), 2x chamou com nome de argumento errado e não
+tentou de novo mesmo o erro dizendo exatamente o que corrigir.
+
+**Comparação de modelos** (mesmas perguntas, `-m <modelo>`): `gemini-3.5-flash` foi
+**pior** nesse teste — 0 de 3 tentativas chamou a ponte legada, preferindo responder
+direto (às vezes com números batendo com uma chamada bem-sucedida anterior, sugerindo uso
+da memória persistente do Hermes em vez de reinvocar a tool). **`gemini-3.6-flash`**
+(mais novo, GA desde jul/2026) foi **consistentemente melhor**: 2 de 2 chamadas à ponte
+legada funcionaram (filmes via Akane, livros via Frieren — ambos com dado real,
+prefixados com a persona certa), e um trace verboso confirmou o motivo — antes de chamar
+`get_account_balance`, ele **consultou o schema com `tool_describe`** e **resolveu o
+nome da conta ("Itaú") via `list_accounts()` primeiro**, exatamente o comportamento
+documentado em `skills/nami-financas/SKILL.md` ("use list_accounts() para resolver
+nomes"). Resultado real do banco (`saldo_atual: 0.0`) confirmado via trace, não chute.
+
+**Decisão**: `hermes/config.yaml` usa `model.model: gemini-3.6-flash`, não
+`gemini-2.5-flash` — mais confiável nos testes acima, e evita de quebra a migração
+forçada do 2.5-flash, que **desliga em 16/out/2026** (achado à parte da pesquisa —
+afeta o projeto inteiro, não só o Hermes; migrar os agentes ADK do `coordinator/` é uma
+frente separada, fora do escopo desta spec).
+
+Amostra pequena (n=5 no pior caso) — se depois do cutover real aparecerem falhas
+recorrentes de tool-calling mesmo com `gemini-3.6-flash`, os planos B (OpenRouter, Nous
+Portal, incl. o próprio modelo "Hermes" da Nous Research — família de LLM diferente do
+"Hermes Agent", o gateway) descritos em `specs/064-hermes-multicanal/research.md` são o
+próximo passo, não uma reescrita.
+
+## ⚠️ Verificação pendente
 
 1. ~~Confirmar o schema exato de `config.yaml`~~ — **schema de `model`/`mcp_servers`/
-   `platforms` confirmado** contra a doc oficial (ver changelog acima). Ainda pendente:
-   os blocos `tools.terminal` e `profile: default` (não cobertos pela doc consultada) e
-   a nidificação de `whatsapp`/`discord` sob `platforms:` (inferida, não confirmada
-   linha a linha) — checar com `hermes config get` / `hermes --help` no primeiro boot.
-2. **Validar cedo o tool-calling do Gemini Flash através do endpoint OpenAI-compatible**
-   com a superfície completa de tools do MCP `nami`+`kaguya` (~106 tools) — research.md
-   chama isso de "o maior risco técnico do plano inteiro". Se não funcionar de forma
-   confiável, os planos B (OpenRouter, Nous Portal) descritos em
-   `specs/064-hermes-multicanal/research.md` são o próximo passo, não uma reescrita.
+   `platforms` confirmado** contra a doc oficial e validado ao vivo (ver acima). Ainda
+   pendente: os blocos `tools.terminal` e `profile: default` (não cobertos pela doc
+   consultada) e a nidificação de `whatsapp`/`discord` sob `platforms:` (inferida, não
+   testada ao vivo ainda — só `telegram`/nenhum canal foi exercitado até agora).
+2. ~~Validar cedo o tool-calling do Gemini Flash~~ — **feito, ver acima**. Resultado:
+   `gemini-2.5-flash` não é confiável o suficiente para tools com argumentos obrigatórios
+   nesta arquitetura; `gemini-3.6-flash` foi. Reavaliar se surgirem falhas recorrentes
+   após o cutover real.
 3. ~~Gerar um `MAKIMA_MCP_TOKEN` novo~~ — **feito**: gerado e cadastrado no Environment
    do Dokploy (compartilhado por todos os serviços da stack), confirmado funcionando em
-   produção (`401` sem token, `200` com token correto). O `config.yaml` deste diretório
-   já referencia `${MAKIMA_MCP_TOKEN}` — a interpolação `${VAR}` dentro do `config.yaml`
-   é suportada pela doc oficial, então só falta confirmar na prática no primeiro boot.
+   produção (`401` sem token, `200` com token correto, e agora também confirmado
+   funcionando de dentro do próprio Hermes via `hermes mcp test`).
 4. **`allowed_users` do Telegram ainda é placeholder** (`platforms.telegram.allowed_users`
    em `config.yaml`) — preencher com o chat_id real antes do cutover. Descobrir pelo
    mesmo truque já documentado em `scheduler/CLAUDE.md` para `TELEGRAM_ALERT_CHAT_ID`:

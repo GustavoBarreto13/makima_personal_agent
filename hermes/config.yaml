@@ -14,7 +14,13 @@
 
 model:
   provider: custom
-  model: gemini-2.5-flash
+  # gemini-3.6-flash, não gemini-2.5-flash — escolhido após teste real de tool-calling
+  # via a app Hermes deployada (ver changelog em hermes/CLAUDE.md): o 2.5-flash falhou
+  # ~60% das vezes em tools com argumentos obrigatórios (adivinhava nome de argumento
+  # errado ou pulava a chamada), enquanto o 3.6-flash consultou o schema (`tool_describe`)
+  # antes de chamar e acertou 100% nos mesmos testes. Também evita a migração forçada do
+  # 2.5-flash, que desliga em 16/out/2026.
+  model: gemini-3.6-flash
   base_url: https://generativelanguage.googleapis.com/v1beta/openai/
   # api_key interpolado direto de ${GEMINI_API_KEY} (já presente no .env raiz do
   # repo/Environment do Dokploy, usado pelos outros serviços) — não precisa de um
