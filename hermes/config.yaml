@@ -64,8 +64,12 @@ profile: default
 platforms:
   telegram:
     bot_token: "${TELEGRAM_BOT_TOKEN}"
+    # chat_id real via ${VAR} (não hardcoded no git — mesma convenção de
+    # TELEGRAM_ALERT_CHAT_ID). Descoberto lendo a tabela sessions do Postgres
+    # (user_id = chat_id puro, ver coordinator/CLAUDE.md) em vez de getUpdates — o bot
+    # makima já está fazendo long-polling, então getUpdates sempre voltava vazio.
     allowed_users:
-      - "<seu chat_id do Telegram>"
+      - "${TELEGRAM_HERMES_ALLOWED_USER_ID}"
 
   whatsapp:
     # Conector Baileys (sessão WhatsApp Web) — número dedicado, pareado via QR code

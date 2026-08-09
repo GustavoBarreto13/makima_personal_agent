@@ -174,10 +174,14 @@ próximo passo, não uma reescrita.
    do Dokploy (compartilhado por todos os serviços da stack), confirmado funcionando em
    produção (`401` sem token, `200` com token correto, e agora também confirmado
    funcionando de dentro do próprio Hermes via `hermes mcp test`).
-4. **`allowed_users` do Telegram ainda é placeholder** (`platforms.telegram.allowed_users`
-   em `config.yaml`) — preencher com o chat_id real antes do cutover. Descobrir pelo
-   mesmo truque já documentado em `scheduler/CLAUDE.md` para `TELEGRAM_ALERT_CHAT_ID`:
-   mandar uma mensagem ao bot e ler `https://api.telegram.org/bot<TOKEN>/getUpdates`.
+4. ~~`allowed_users` do Telegram ainda é placeholder~~ — **resolvido**: `config.yaml`
+   referencia `${TELEGRAM_HERMES_ALLOWED_USER_ID}`. **Falta só cadastrar essa env var no
+   Environment da app Hermes no Dokploy** (valor = seu chat_id real, `352608961`,
+   descoberto lendo a tabela `sessions` do Postgres — `SELECT DISTINCT user_id, COUNT(*),
+   MAX(update_time) FROM sessions GROUP BY user_id ORDER BY MAX(update_time) DESC;` —
+   `user_id` é o `chat_id` puro, ver `coordinator/CLAUDE.md`. Método melhor que
+   `getUpdates`: com o `makima` fazendo long-polling o tempo todo, `getUpdates` manual
+   sempre volta vazio — o bot já consumiu o update antes de você chegar lá).
 5. WhatsApp: parear via QR code (`hermes whatsapp` ou `hermes gateway setup` dentro do
    container) com um número dedicado — não o número pessoal do usuário.
 6. Discord: criar o app/bot, ligar "Message Content Intent" + "Server Members Intent",
