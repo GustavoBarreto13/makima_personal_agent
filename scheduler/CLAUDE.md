@@ -70,6 +70,21 @@ docker exec makima-scheduler python -m scheduler.main --list
 docker logs -f makima-scheduler
 ```
 
+## Gotcha: `job.next_run_time` antes de `scheduler.start()`
+
+O log de startup (`main.py`, resumo "Agendador iniciado com N job(s)") lê
+`scheduler.get_jobs()` **antes** de `scheduler.start()`. Com o `BlockingScheduler` ainda
+parado, o APScheduler devolve os jobs "pendentes" direto de `_pending_jobs`, sem passar
+por `_real_add_job` — em versões `>=3.11`, o objeto `Job` resultante **nem chega a
+ganhar o atributo `next_run_time`** (não é `None`; o atributo não existe). Acessá-lo
+direto derruba o container com `AttributeError: 'Job' object has no attribute
+'next_run_time'` logo no boot (foi um crash loop real de produção, corrigido em
+ago/2026 — commit `a381fc8`).
+
+Fix: `getattr(job, "next_run_time", None) or "calculando no start()"` em vez de
+`job.next_run_time` direto — funciona independente da versão do APScheduler instalada,
+já que não depende do atributo existir.
+
 ## Variáveis de ambiente
 
 Além das que cada job já usa (`DATABASE_URL`, `GCP_*`, `GCS_BACKUP_BUCKET`,

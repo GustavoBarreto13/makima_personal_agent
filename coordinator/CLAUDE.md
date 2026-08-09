@@ -168,3 +168,28 @@ Com `sub_agents`, o sub-agente gera a resposta final — Makima não tem como ad
 ### Agentes com MCP precisam de factory
 
 Agentes que usam `McpToolset` precisam de uma factory function (`create_X_agent()`) em vez de instância global, porque o `McpToolset` não pode ser reutilizado entre sessões. O coordinator chama a factory em `create_makima()`. Agentes que não usam MCP (Nami, Frieren, Kurisu) são singletons globais.
+
+### `create_makima(sub_agents=...)` e `runner_utils.py` (spec 064)
+
+`create_makima()` aceita uma lista opcional de `sub_agents` — `None` (default) preserva
+o comportamento de sempre (todos os 9 domínios, usado pelo bot Telegram). A ponte legada
+MCP (`mcp_servers/makima/legacy.py`, Etapa E2) passa uma lista **reduzida** — só os
+domínios que ainda não têm servidor MCP nativo — para não duplicar o roteamento de um
+domínio já migrado por dois caminhos diferentes.
+
+A lógica de consumo de eventos do `Runner` ADK (acumular texto por autor, fallback para
+eventos não-finais quando `sub_agents` não preenche o evento final, retry único em
+`SessionNotFoundError`) foi extraída de `handle_message` para
+`coordinator/runner_utils.py::run_and_collect_text()` — reaproveitada tanto por
+`main.py` (bot Telegram) quanto pela ponte legada. Nenhum comportamento mudou, só a
+duplicação foi removida.
+
+**Cuidado com singletons em processos combinados**: os `sub_agents` (`nami_agent`,
+`kurisu_agent`, etc.) são instâncias singleton importadas de `agents/<nome>/agent.py`. O
+ADK rejeita atribuir um segundo "pai" ao mesmo agente — se `coordinator.main` (monta a
+`Makima` completa) e `mcp_servers.makima.app`/`legacy` (monta a `Makima` reduzida) forem
+importados no MESMO processo Python, `create_makima()` da segunda chamada levanta
+`ValidationError`. Nunca acontece em produção (containers separados: `makima-bot` vs.
+`makima-mcp`), mas é por isso que `legacy.py` constrói seu `Runner` de forma lazy
+(memoizado na primeira chamada da tool, não no import do módulo) — ver
+`mcp_servers/makima/CLAUDE.md`.

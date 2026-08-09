@@ -262,12 +262,13 @@ makima_personal_agent/
 │   ├── calendar/
 │   │   ├── __init__.py
 │   │   └── server.py    # servidor MCP FastMCP — Google Calendar (leitura todos, escrita só principal)
-│   └── makima/           # NOVO — host MCP HTTP multi-domínio (makima-mcp) — spec 064 E1/E2
+│   └── makima/           # host MCP HTTP multi-domínio (makima-mcp) — spec 064 E1/E2 ✅ em produção
 │       ├── registry.py   # DOMAINS: dict[str, list[Callable]] — nami, kaguya (cresce na E6)
 │       ├── app.py        # host Starlette: um FastMCP por domínio sob /mcp/<domínio> + /mcp/calendar
 │       ├── auth.py       # middleware bearer token (MAKIMA_MCP_TOKEN)
 │       ├── legacy.py     # tool perguntar_makima_legado() — roda o Runner ADK p/ domínios não migrados
-│       └── Dockerfile
+│       ├── Dockerfile
+│       └── CLAUDE.md     # arquitetura, auth, gotchas de produção (pin do mcp, DNS-rebinding)
 ├── hermes/                # NOVO — templates versionados do Hermes Agent (spec 064 E3+)
 │   ├── SOUL.md            # persona da Makima, portada de coordinator/agent.py
 │   ├── config.yaml        # template: mcp_servers, model provider, canais

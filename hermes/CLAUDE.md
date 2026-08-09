@@ -6,6 +6,13 @@ Arquivos versionados do Hermes Agent (Etapa E3/E4 da spec 064). **Nenhum destes 
 `hermes_data`) na primeira configuração, ou montados como bind mount read-only via
 `docker-compose.yml` (ver serviço `hermes`, perfil `hermes`).
 
+**O backend que o Hermes vai consumir (Etapas E1/E2, `makima-mcp`) já está em produção
+e verificado** — `tools/list` correto nos 4 domínios (`nami`/`kaguya`/`calendar`/`legacy`),
+`401` sem token, handshake `initialize` completo testado com `curl` real contra a VPS.
+Detalhes e os 3 bugs de produção achados/corrigidos no processo:
+`mcp_servers/makima/CLAUDE.md`. O que falta é só instalar o Hermes de verdade e apontar
+o `config.yaml` dele pra `http://makima-mcp:8090/mcp/<domínio>`.
+
 ## Desvio do plan.md original: sem `hermes/Dockerfile`
 
 O `plan.md` original previa um `hermes/Dockerfile` próprio. Pesquisa feita durante a
@@ -52,8 +59,12 @@ não tem Docker nem acesso à imagem oficial. Antes do primeiro boot em produç�
    chama isso de "o maior risco técnico do plano inteiro". Se não funcionar de forma
    confiável, os planos B (OpenRouter, Nous Portal) descritos em
    `specs/064-hermes-multicanal/research.md` são o próximo passo, não uma reescrita.
-3. Gerar um `MAKIMA_MCP_TOKEN` novo (valor aleatório) e configurá-lo tanto no `.env` do
-   projeto (lido por `makima-mcp`) quanto nas env vars interpoladas em `config.yaml`.
+3. ~~Gerar um `MAKIMA_MCP_TOKEN` novo~~ — **feito**: gerado e cadastrado no Environment
+   do Dokploy (compartilhado por todos os serviços da stack), confirmado funcionando em
+   produção (`401` sem token, `200` com token correto). O `config.yaml` deste diretório
+   já referencia `${MAKIMA_MCP_TOKEN}` — só falta interpolar de verdade quando o Hermes
+   subir (verificar se o `config.yaml` do Hermes suporta essa sintaxe de env var; se
+   não, substituir pelo valor literal ao copiar o template pro volume).
 4. WhatsApp: parear via QR code (`hermes whatsapp` ou `hermes gateway setup` dentro do
    container) com um número dedicado — não o número pessoal do usuário.
 5. Discord: criar o app/bot, ligar "Message Content Intent" + "Server Members Intent",
