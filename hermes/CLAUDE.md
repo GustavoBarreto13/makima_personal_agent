@@ -133,6 +133,18 @@ entre o template original e o schema real — corrigidas no `config.yaml` deste 
    inferida por convenção a partir do schema confirmado do `telegram` — não checada
    linha a linha na doc.
 
+**4ª divergência, achada só depois do cutover** (a doc pública não bate com o código
+instalado — a própria doc do Hermes admite inconsistência nisso): o campo de allowlist
+por canal era `allowed_users:` — o código real (`plugins/platforms/telegram|discord|
+whatsapp/adapter.py` dentro do container, lido diretamente em produção) espera
+`allow_from:`. `allowed_users:` era ignorado **silenciosamente**, sem erro — só um
+WARNING genérico no boot ("No env user allowlists configured"). Consequência real: o
+Telegram ficou "✓ configured" (token certo) mas **negando todo mundo**, inclusive o
+próprio usuário, até essa correção — nunca abriu acesso indevido, porque o fallback do
+Hermes sem allowlist é fail-closed por padrão (comentário explícito no código-fonte:
+"Fail-closed: no allowlist means deny by default... must not silently allow everyone",
+referência a um fix de bug anterior deles, #24457).
+
 Também confirmado pela doc oficial: interpolação `${VAR}` funciona diretamente dentro de
 qualquer valor do `config.yaml`, inclusive `api_key` — por isso o `config.yaml` agora
 seta `api_key: "${GEMINI_API_KEY}"` explicitamente no bloco `model`, em vez de depender
