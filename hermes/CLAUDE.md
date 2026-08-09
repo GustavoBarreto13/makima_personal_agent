@@ -55,10 +55,36 @@ Continua 100% "deploy só pelo Dokploy": só muda qual botão liga o quê.
 
 Ativar o Hermes com o MESMO `TELEGRAM_BOT_TOKEN` que o bot antigo (`makima`/coordinator)
 ainda está usando causa **conflito real** (dois processos disputando `getUpdates` da
-mesma API do Telegram) — isso não mudou com a troca de profile para app separada. Siga a
-ordem do runbook abaixo: pare o `makima` (coordinator) ANTES de subir a app do Hermes com
-o mesmo token, e tenha o rollback pronto (parar Hermes, religar `makima`) caso algo
+mesma API do Telegram). Siga a ordem do runbook abaixo: pare o `makima` (coordinator)
+ANTES de subir a app do Hermes com o mesmo token, e tenha o rollback pronto caso algo
 falhe.
+
+### Desvio: comentar o serviço em vez de parar a app inteira
+
+`makima`, `mcp`, `web`, `adminer` e `scheduler` vivem no MESMO `docker-compose.yml`, ou
+seja, na MESMA aplicação Dokploy — confirmado que o Dokploy **não** tem controle de
+start/stop por serviço dentro de uma app Compose, só a app inteira. Parar essa app pra
+tirar o `makima` do ar derrubaria o `mcp` (do qual o Hermes depende o tempo todo, não só
+durante o cutover) e o `web`/`scheduler`/`adminer` sem necessidade.
+
+Fix: o bloco do serviço `makima` em `docker-compose.yml` fica **comentado** (não
+apagado) até a Etapa E7. Redeployar essa app nesse estado recria `mcp`/`web`/
+`adminer`/`scheduler` normalmente e não recria o `makima-bot` — mas **não para
+sozinho** o container que já está rodando: `docker compose up -d` (o comando padrão do
+Dokploy) só gerencia os serviços que estão no arquivo, não remove containers "órfãos" de
+serviços que saíram dele (isso só acontece com a flag `--remove-orphans`, que o Dokploy
+não adiciona por padrão). Duas formas de resolver isso depois de redeployar com o bloco
+comentado:
+
+- Adicionar `--remove-orphans` no comando de deploy dessa app, em Advanced → Custom
+  Command do Dokploy (fica permanente, resolve isso e qualquer caso futuro parecido); ou
+- Remover o container órfão manualmente uma vez (`docker stop makima-bot` /
+  `docker rm makima-bot` via SSH) — não é um "deploy", é limpeza pontual de um container
+  que o Dokploy já não gerencia mais depois do redeploy, mas ainda assim só fazer com
+  confirmação explícita antes.
+
+**Rollback**: descomentar o bloco `makima` em `docker-compose.yml` e redeployar essa
+app de novo.
 
 ## Como ativar o Hermes via Dokploy (app separada)
 
@@ -67,17 +93,19 @@ falhe.
    este repositório, com o caminho do compose file setado para
    `docker-compose.hermes.yml` (não o `docker-compose.yml` da raiz).
 2. Na aba **Environment** dessa nova app, configurar `TELEGRAM_BOT_TOKEN`,
-   `GEMINI_API_KEY`, `MAKIMA_MCP_TOKEN` (e `DISCORD_BOT_TOKEN` quando a Etapa E4
-   começar) — reusando as **Shared Variables** do projeto, se já estiverem populadas
-   para a stack principal, ou colando os valores direto.
-3. **O cutover em si** (ação em tempo real, não automatizável): no Dokploy, **parar a
-   app `makima`** (stack principal) primeiro, confirmar que parou, **só então iniciar**
-   a nova app do Hermes. Nunca os dois rodando ao mesmo tempo com o mesmo
-   `TELEGRAM_BOT_TOKEN`.
+   `GEMINI_API_KEY`, `MAKIMA_MCP_TOKEN`, `TELEGRAM_HERMES_ALLOWED_USER_ID` (e
+   `DISCORD_BOT_TOKEN` quando a Etapa E4 começar) — reusando as **Shared Variables** do
+   projeto, se já estiverem populadas para a stack principal, ou colando os valores
+   direto.
+3. **O cutover em si** (ação em tempo real, não automatizável): comentar o serviço
+   `makima` em `docker-compose.yml` (ver seção acima) e redeployar a app principal —
+   confirmar que o `makima-bot` realmente parou (incl. limpar o órfão se necessário) —
+   **só então** iniciar/redeployar a app do Hermes com `TELEGRAM_BOT_TOKEN` configurado.
+   Nunca os dois rodando ao mesmo tempo com o mesmo token.
 4. Validar seguindo os 4 passos da Etapa E3 em
    `specs/064-hermes-multicanal/quickstart.md` contra o Telegram real.
-5. **Rollback**: parar a app do Hermes, religar a app `makima` — mesmo mecanismo de
-   antes, só que pelos botões do Dokploy em vez de `docker compose up -d makima`.
+5. **Rollback**: parar a app do Hermes, descomentar o bloco `makima` em
+   `docker-compose.yml` e redeployar a app principal de novo.
 
 ## O que está aqui
 

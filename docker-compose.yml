@@ -3,22 +3,32 @@
 # A variável DATABASE_URL é configurada no painel do Dokploy → Environment.
 services:
 
-  makima:
-    build:
-      # Contexto = raiz do repo (para COPY . . pegar coordinator/ e agents/).
-      context: .
-      dockerfile: coordinator/Dockerfile
-    container_name: makima-bot
-    # Injeta variáveis do .env para desenvolvimento local.
-    # No Dokploy as vars vêm do painel de Environment, não deste arquivo.
-    env_file: .env
-    # Reinicia o bot automaticamente se cair ou no boot do host.
-    restart: unless-stopped
-    networks:
-      # Rede padrão do compose (isolamento do serviço)
-      - default
-      # Rede compartilhada do Dokploy onde o banco PostgreSQL separado roda
-      - dokploy-network
+  # COMENTADO (spec 064, cutover do Telegram pro Hermes — ver hermes/CLAUDE.md).
+  # ATENÇÃO: comentar aqui e redeployar esta app NÃO para o container makima-bot
+  # sozinho — `docker compose up -d` (o comando padrão do Dokploy) não remove
+  # containers "órfãos" de serviços que saíram do arquivo, só de propósito com
+  # `--remove-orphans`. Depois de redeployar com este bloco comentado, ou:
+  #   (a) adicionar `--remove-orphans` ao comando de deploy desta app no Dokploy
+  #       (Advanced → Custom Command), ou
+  #   (b) pedir pra eu confirmar/remover o container órfão via SSH (só leitura +
+  #       ação pontual, não é um "deploy" — mas confirme comigo antes).
+  # Rollback: descomentar este bloco e redeployar de novo.
+  # makima:
+  #   build:
+  #     # Contexto = raiz do repo (para COPY . . pegar coordinator/ e agents/).
+  #     context: .
+  #     dockerfile: coordinator/Dockerfile
+  #   container_name: makima-bot
+  #   # Injeta variáveis do .env para desenvolvimento local.
+  #   # No Dokploy as vars vêm do painel de Environment, não deste arquivo.
+  #   env_file: .env
+  #   # Reinicia o bot automaticamente se cair ou no boot do host.
+  #   restart: unless-stopped
+  #   networks:
+  #     # Rede padrão do compose (isolamento do serviço)
+  #     - default
+  #     # Rede compartilhada do Dokploy onde o banco PostgreSQL separado roda
+  #     - dokploy-network
 
   # Servidor MCP HTTP: expõe as tools de domínio (Nami, Kaguya, Calendar, ...) para
   # qualquer cliente MCP — hoje o Hermes (spec 064, ver docker-compose.hermes.yml). Um
