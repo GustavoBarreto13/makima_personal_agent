@@ -9,9 +9,12 @@
 # Detalhes e o runbook de cutover: hermes/CLAUDE.md.
 #
 # Depende da rede dokploy-network (mesma onde roda makima-mcp, ver docker-compose.yml)
-# e das env vars TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, MAKIMA_MCP_TOKEN (+ DISCORD_BOT_TOKEN
-# quando a Etapa E4 chegar). Em produção: aba Environment desta app no Dokploy (pode
-# reusar as Shared Variables do projeto). Em dev local: env_file: .env (raiz do repo).
+# e das env vars TELEGRAM_BOT_TOKEN, TELEGRAM_HERMES_ALLOWED_USER_ID, GEMINI_API_KEY,
+# MAKIMA_MCP_TOKEN, HERMES_DASHBOARD* (dashboard web — ver hermes/CLAUDE.md) e, desde a
+# Etapa E4, DISCORD_BOT_TOKEN + DISCORD_HERMES_ALLOWED_USER_ID (WhatsApp não usa token
+# declarativo — pareamento via QR code grava direto no volume, ver hermes/CLAUDE.md "Como
+# parear o WhatsApp"). Em produção: aba Environment desta app no Dokploy (pode reusar as
+# Shared Variables do projeto). Em dev local: env_file: .env (raiz do repo).
 services:
   hermes:
     image: nousresearch/hermes-agent:latest

@@ -93,10 +93,10 @@ app de novo.
    este repositório, com o caminho do compose file setado para
    `docker-compose.hermes.yml` (não o `docker-compose.yml` da raiz).
 2. Na aba **Environment** dessa nova app, configurar `TELEGRAM_BOT_TOKEN`,
-   `GEMINI_API_KEY`, `MAKIMA_MCP_TOKEN`, `TELEGRAM_HERMES_ALLOWED_USER_ID` (e
-   `DISCORD_BOT_TOKEN` quando a Etapa E4 começar) — reusando as **Shared Variables** do
-   projeto, se já estiverem populadas para a stack principal, ou colando os valores
-   direto.
+   `GEMINI_API_KEY`, `MAKIMA_MCP_TOKEN`, `TELEGRAM_HERMES_ALLOWED_USER_ID` (e, desde a
+   Etapa E4, `DISCORD_BOT_TOKEN` + `DISCORD_HERMES_ALLOWED_USER_ID` — ver seção "Etapa E4"
+   abaixo) — reusando as **Shared Variables** do projeto, se já estiverem populadas para
+   a stack principal, ou colando os valores direto.
 3. **O cutover em si** (ação em tempo real, não automatizável): comentar o serviço
    `makima` em `docker-compose.yml` (ver seção acima) e redeployar a app principal —
    confirmar que o `makima-bot` realmente parou (incl. limpar o órfão se necessário) —
@@ -300,13 +300,121 @@ próximo passo, não uma reescrita.
    `makima` fazendo long-polling o tempo todo, `getUpdates` manual sempre volta vazio).
    Fix: variável cadastrada, `GATEWAY_ALLOW_ALL_USERS` removida, confirmado com mensagem
    real no Telegram sem bloqueio.
-5. WhatsApp: parear via QR code (`hermes whatsapp` ou `hermes gateway setup` dentro do
-   container) com um número dedicado — não o número pessoal do usuário.
+5. WhatsApp: parear via QR code (`hermes whatsapp` dentro do container) com um número
+   dedicado — não o número pessoal do usuário. Ver seção "Etapa E4" abaixo.
 6. Discord: criar o app/bot, ligar "Message Content Intent" + "Server Members Intent",
-   convidar o bot, configurar `DISCORD_BOT_TOKEN` + a allowlist em `config.yaml`.
+   convidar o bot, configurar `DISCORD_BOT_TOKEN` + a allowlist. Ver seção "Etapa E4"
+   abaixo.
 
 Ver `specs/064-hermes-multicanal/quickstart.md` (Etapas E3/E4) para o roteiro completo
 de validação manual.
+
+## Etapa E4 — WhatsApp e Discord
+
+Pesquisado lendo o código real dentro do container (mesma abordagem que destravou o
+Telegram — a doc pública não é confiável). **Achado principal**: WhatsApp e Discord têm
+modelos de autorização **diferentes entre si**, e diferentes do Telegram.
+
+### WhatsApp — conector Baileys (sessão WhatsApp Web)
+
+Sem token declarativo — autenticação é uma sessão pareada por QR code, persistida em
+`$HERMES_HOME/whatsapp/session/creds.json` (dentro do volume `hermes_data`, sobrevive a
+redeploy). O bridge Node (Baileys) roda dentro do próprio container `makima-hermes` (a
+imagem já traz Node/npm); na primeira execução ele se auto-instala (`npm install` do
+`scripts/whatsapp-bridge/`), mirrorando pra `$HERMES_HOME/scripts/whatsapp-bridge` se
+`/opt/hermes` estiver read-only.
+
+**Mesmo risco de autoridade única do Telegram, confirmado no código-fonte**
+(`plugins/platforms/whatsapp/adapter.py`): `config.extra.allow_from`, quando a CHAVE
+existe (mesmo vazia), tem precedência sobre `WHATSAPP_ALLOWED_USERS` (env var) — mesmo
+comentário do próprio código, "select by key *presence*". **Decisão**: `config.yaml`
+deste repo **não declara `extra.allow_from` para o whatsapp de propósito** — evita
+repetir o lockout silencioso que aconteceu no Telegram por um `${VAR}` não interpolado.
+A allowlist do WhatsApp é definida só pelo wizard interativo (abaixo), que grava
+`WHATSAPP_ALLOWED_USERS` direto no `$HERMES_HOME/.env` do volume — nunca precisa de
+`${VAR}` no `config.yaml`, então não tem essa classe de bug pra acontecer.
+
+`dm_policy` (padrão `"pairing"`) mantém o fail-closed-com-pareamento mesmo sem allowlist
+nenhuma configurada — mesmo comportamento seguro por padrão que o Telegram tinha antes
+do `allow_from` entrar em cena.
+
+**Como parear (passo manual, interativo — requer TTY real e a câmera do celular; não dá
+pra automatizar por aqui)**:
+
+```bash
+ssh <vps>
+docker exec -it makima-hermes hermes whatsapp
+```
+
+1. Escolher modo **1 — Separate bot number** (recomendado pelo `research.md` desta spec —
+   número dedicado, nunca o pessoal do usuário; WhatsApp Business no celular do número
+   dedicado, "Aparelhos conectados" funciona igual ao WhatsApp Web comum).
+2. Informar o número autorizado a falar com o bot (o número PESSOAL do usuário, formato
+   internacional sem símbolos, ex. `5511999999999`) — grava `WHATSAPP_ALLOWED_USERS`.
+3. Instala as dependências do bridge (só na primeira vez, alguns minutos).
+4. Mostra o QR code em ASCII no terminal — escanear pelo WhatsApp do número DEDICADO
+   (Aparelhos conectados → Conectar um aparelho) dentro de ~60s antes de expirar.
+5. Confirma "WhatsApp is configured and paired!" e grava `WHATSAPP_ENABLED=true`.
+
+**Depois de parear**: `docker restart makima-hermes` — o wizard roda como um processo
+`docker exec` separado do `gateway run` principal (que já estava de pé), e o
+`gateway run` só lê `$HERMES_HOME/.env` uma vez, no próprio boot (`gateway/run.py`,
+`load_hermes_dotenv`). Sem o restart, o `WHATSAPP_ENABLED`/`WHATSAPP_ALLOWED_USERS`
+recém-gravados não são vistos pelo processo já rodando (mesma classe de "config muda,
+container não recarrega sozinho" já documentada acima para o `config.yaml`).
+
+**Verificar**: `hermes status` → `WhatsApp ✓ configured`; mandar mensagem de teste do
+número autorizado pro número do bot.
+
+### Discord — bot via API oficial
+
+Token declarativo (`DISCORD_BOT_TOKEN`), sem CLI de pareamento — a maior parte da
+configuração é externa, no Discord Developer Portal (não automatizável, ação do usuário):
+
+1. **discord.com/developers/applications** → New Application → aba **Bot** → criar o
+   bot, copiar o token (`DISCORD_BOT_TOKEN`).
+2. Nessa mesma aba **Bot** → **Privileged Gateway Intents**: ligar **Message Content
+   Intent** (obrigatório — confirmado em `plugins/platforms/discord/adapter.py`,
+   `intents.message_content = True` incondicional) e **Server Members Intent** (só
+   necessário se for usar allowlist por cargo/role em vez de user ID — opcional pro
+   uso pessoal).
+3. **OAuth2 → URL Generator**: scope `bot`, permissões mínimas (Send Messages, Read
+   Message History) → gerar o link de convite e adicionar o bot num servidor próprio
+   (ou usar DM direto com o bot, sem servidor).
+4. Descobrir o próprio Discord user ID: no cliente Discord, Configurações → Avançado →
+   Modo desenvolvedor (ligar) → clicar com o botão direito no seu nome → "Copiar ID".
+
+**Autorização — modelo DIFERENTE do Telegram/WhatsApp, mais seguro por padrão**:
+`plugins/platforms/discord/adapter.py::_is_allowed_user` usa semântica **OR**, não
+autoridade única — o pareamento (`hermes pairing approve`) é checado **primeiro e
+incondicionalmente**, antes até de olhar `allow_from`/`DISCORD_ALLOWED_USERS`. Ou seja,
+mesmo que `${DISCORD_HERMES_ALLOWED_USER_ID}` fique sem interpolar por engano, o
+pareamento continua disponível como rede de segurança — não é o mesmo risco de lockout
+total do Telegram/WhatsApp. Ainda assim, `config.yaml` já declara
+`platforms.discord.extra.allow_from: ["${DISCORD_HERMES_ALLOWED_USER_ID}"]` — cadastrar a
+variável no Environment do Dokploy é o caminho normal (evita depender só do pareamento).
+
+**Environment da app Hermes no Dokploy, a adicionar**:
+
+| Variável | Valor |
+|---|---|
+| `DISCORD_BOT_TOKEN` | token copiado no passo 1 |
+| `DISCORD_HERMES_ALLOWED_USER_ID` | seu Discord user ID (passo 4) |
+
+Depois de cadastrar e redeployar: mandar uma DM pro bot ou mencioná-lo num canal do
+servidor onde foi convidado. Se `DISCORD_HERMES_ALLOWED_USER_ID` ainda não tiver
+propagado, o pareamento intercepta e oferece o fluxo normal (`hermes pairing approve`).
+
+### Resumo do que é automatizável vs. manual
+
+| Parte | Quem faz |
+|---|---|
+| `config.yaml` (schema, comentários, decisão de não usar `allow_from` no WhatsApp) | já feito neste repo |
+| `docker-compose.hermes.yml` (nenhuma mudança extra necessária — token/allowlist são só env vars ou ficam no volume) | já feito neste repo |
+| Criar o app/bot no Discord Developer Portal, copiar token, achar o próprio user ID | manual — só o usuário tem a conta Discord |
+| Cadastrar `DISCORD_BOT_TOKEN` + `DISCORD_HERMES_ALLOWED_USER_ID` no Environment do Dokploy + redeploy | manual — mesma aba Environment já usada pro Telegram |
+| Rodar `hermes whatsapp` e escanear o QR code | manual — precisa de TTY real + câmera do celular, não dá pra automatizar por SSH sem interação em tempo real |
+| `docker restart makima-hermes` depois do pareamento do WhatsApp | pode ser feito por qualquer um dos dois, mediante confirmação (ação real, não é deploy) |
 
 ## Dashboard web
 

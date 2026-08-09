@@ -92,16 +92,31 @@ platforms:
 
   whatsapp:
     # Conector Baileys (sessão WhatsApp Web) — número dedicado, pareado via QR code
-    # (`hermes whatsapp` ou `hermes gateway setup` dentro do container). Sem config
-    # declarativa de token: a sessão pareada vive só no volume (platforms/whatsapp/session/).
-    # `allow_from` sob `extra:` — mesmo motivo do telegram acima.
-    extra:
-      allow_from:
-        - "<seu número, formato internacional, ex: 5511999999999>"
+    # (`hermes whatsapp` dentro do container). Sem config declarativa de token: a sessão
+    # pareada vive só no volume (whatsapp/session/creds.json).
+    #
+    # PROPOSITALMENTE sem `extra.allow_from` aqui — lição aprendida com o Telegram (ver
+    # comentário acima e "Causa raiz real do bloqueio" em hermes/CLAUDE.md):
+    # `plugins/platforms/whatsapp/adapter.py` usa a MESMA regra de precedência perigosa
+    # (`if "allow_from" in config.extra: ... `, "select by key *presence*" — comentário
+    # do próprio código-fonte) — se essa chave existisse aqui com um `${VAR}` e a env var
+    # não estivesse setada no Dokploy, bloquearia todo mundo em silêncio, do mesmo jeito
+    # que aconteceu no Telegram. O wizard `hermes whatsapp` já pergunta o número
+    # autorizado interativamente e grava em `WHATSAPP_ALLOWED_USERS` dentro do
+    # `$HERMES_HOME/.env` (arquivo do VOLUME, não deste repo) — a env var então vira a
+    # única fonte, sem risco de string-literal-não-interpolada. Ver "Como parear o
+    # WhatsApp" em hermes/CLAUDE.md.
 
   discord:
     bot_token: "${DISCORD_BOT_TOKEN}"
-    # `allow_from` sob `extra:` — mesmo motivo do telegram acima.
+    # Diferente do Telegram/WhatsApp: `plugins/platforms/discord/adapter.py` usa
+    # semântica OR, não autoridade única — `_is_allowed_user()` checa o pareamento
+    # (`hermes pairing approve`) PRIMEIRO e incondicionalmente, antes mesmo de olhar
+    # `allow_from`/`DISCORD_ALLOWED_USERS`. Ou seja, mesmo que `allow_from` abaixo fique
+    # com um `${VAR}` não interpolado por engano, o pareamento continua funcionando como
+    # rede de segurança — não é o mesmo risco de lockout total do Telegram. Ainda assim,
+    # `DISCORD_HERMES_ALLOWED_USER_ID` PRECISA estar no Environment do Dokploy pra esta
+    # allowlist funcionar de verdade (mesma mecânica de interpolação do Telegram).
     extra:
       allow_from:
-        - "<seu user id do Discord>"
+        - "${DISCORD_HERMES_ALLOWED_USER_ID}"
