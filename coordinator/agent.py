@@ -125,17 +125,26 @@ _MAKIMA_INSTRUCTION = """
 """
 
 
-def create_makima() -> Agent:
-    """Cria o coordinator Makima com todos os sub-agentes.
+def create_makima(sub_agents: list[Agent] | None = None) -> Agent:
+    """Cria o coordinator Makima.
+
+    Args:
+        sub_agents: lista de especialistas ativos. Default (None) = todos os 9 domínios
+            (comportamento do bot Telegram em coordinator/main.py, inalterado). A ponte
+            legada MCP (mcp_servers/makima/legacy.py, spec 064 Etapa E2) passa uma lista
+            reduzida — só os domínios ainda não migrados para MCP nativo
+            (mcp_servers/makima/registry.py) — que encolhe conforme a migração avança.
 
     Kaguya agora é síncrona — o ADK gerencia o ciclo de vida do MCP internamente.
     """
-    kaguya_agent = create_kaguya_agent()
+    if sub_agents is None:
+        kaguya_agent = create_kaguya_agent()
+        sub_agents = [nami_agent, kaguya_agent, kurisu_agent, frieren_agent, akane_agent, marin_agent, mai_agent, komi_agent, lucy_agent]
 
     return Agent(
         name="makima",
         model="gemini-2.5-flash",
         instruction=_MAKIMA_INSTRUCTION,
         # tools=[knowledge_tool],
-        sub_agents=[nami_agent, kaguya_agent, kurisu_agent, frieren_agent, akane_agent, marin_agent, mai_agent, komi_agent, lucy_agent],
+        sub_agents=sub_agents,
     )

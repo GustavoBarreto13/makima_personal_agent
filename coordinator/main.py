@@ -27,7 +27,6 @@ from telegram.ext import (
 from google.adk.runners import Runner
 from google.adk.sessions import DatabaseSessionService
 from google.adk.errors.session_not_found_error import SessionNotFoundError
-from google.genai import types
 
 # Carrega o .env antes de qualquer outra importação que leia env vars
 load_dotenv()
@@ -37,6 +36,7 @@ os.environ.setdefault("GOOGLE_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
 
 from coordinator.agent import create_makima  # noqa: E402 — import após load_dotenv
+from coordinator.runner_utils import ensure_session as _ensure_session, run_and_collect_text  # noqa: E402
 from agents.frieren.tools import get_book_by_id, update_book_by_id, delete_book  # noqa: E402
 from agents.nami.tools_accounts import create_account, list_accounts  # noqa: E402
 from agents.nami.tools_credit_cards import register_credit_card  # noqa: E402
@@ -709,28 +709,12 @@ def _classify_domain(text: str) -> str:
 
 
 async def ensure_session(chat_id: str, session_id: str) -> None:
+    """Garante que existe uma sessão ADK para este session_id (cria na primeira vez).
+
+    Fina camada sobre coordinator.runner_utils.ensure_session, fixando o runner/app_name/
+    _sessions deste processo (reaproveitada também pela ponte legada — spec 064 E2).
     """
-    Garante que existe uma sessão ADK para este session_id (cria na primeira vez).
-    O set _sessions evita chamadas repetidas ao banco durante o mesmo processo.
-    Após reinício do container o set está vazio, então verificamos no banco antes
-    de tentar criar — evita erro caso a sessão já exista no PostgreSQL.
-    """
-    if session_id not in _sessions:
-        # Verifica se a sessão já existe no banco (caso de restart do container)
-        existing = await runner.session_service.get_session(
-            app_name=APP_NAME,
-            user_id=chat_id,
-            session_id=session_id,
-        )
-        if existing is None:
-            # Sessão nova: cria no banco pela primeira vez
-            await runner.session_service.create_session(
-                app_name=APP_NAME,
-                user_id=chat_id,
-                session_id=session_id,
-            )
-        # Marca como conhecida neste processo para evitar consultas futuras ao banco
-        _sessions.add(session_id)
+    await _ensure_session(runner, APP_NAME, chat_id, session_id, _sessions)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -933,83 +917,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     logger.info(f"[{chat_id}] domínio={domain} session_id={session_id}")
 
-    await ensure_session(chat_id, session_id)
+    # Roda o Runner ADK e coleta o texto final — lógica compartilhada com a ponte legada
+    # MCP (mcp_servers/makima/legacy.py), extraída para coordinator/runner_utils.py.
+    try:
+        response_text_raw, tokens_used = await run_and_collect_text(
+            runner, APP_NAME, chat_id, session_id, text, _sessions,
+        )
+    except SessionNotFoundError:
+        # Segunda falha consecutiva (mesmo após o retry interno) — desiste e avisa o usuário
+        logger.error(f"[session] {chat_id} falhou após recriação")
+        await update.message.reply_text("❌ Erro ao iniciar sessão. Tente novamente.", parse_mode="HTML")
+        return
 
-    new_message = types.Content(role="user", parts=[types.Part(text=text)])
-
-    # Coleta texto de TODOS os eventos por autor.
-    # Com sub_agents, o texto do sub-agente pode vir em eventos não-finais —
-    # o evento final (is_final=True) é apenas o sinal de "done" e pode ter content=None.
-    # Por isso mantemos um fallback por autor para não perder a resposta.
-    final_parts: list[str] = []
-    all_agent_texts: dict[str, list[str]] = {}  # autor → lista de textos coletados
-    last_final_author: str | None = None
-
-    # Retry loop: se a sessão foi deletada externamente (ex.: /limpar ou limpeza manual),
-    # o ADK lança SessionNotFoundError. Recriamos a sessão e tentamos uma segunda vez.
-    for attempt in range(2):
-        try:
-            async for event in runner.run_async(
-                user_id=chat_id,
-                session_id=session_id,
-                new_message=new_message,
-            ):
-                is_final = event.is_final_response()
-                author = getattr(event, "author", "?")
-                parts = event.content.parts if event.content and event.content.parts else []
-
-                # Log detalhado de cada parte para facilitar diagnóstico
-                if not parts:
-                    logger.info(f"[event] author={author} is_final={is_final} no_content")
-                for part in parts:
-                    if getattr(part, "text", None):
-                        logger.info(f"[event] author={author} is_final={is_final} text={part.text[:120]!r}")
-                    elif getattr(part, "function_call", None):
-                        fc = part.function_call
-                        logger.info(f"[event] author={author} is_final={is_final} func_call={fc.name}")
-                    elif getattr(part, "function_response", None):
-                        fr = part.function_response
-                        logger.info(f"[tool] {fr.name} → {str(fr.response)[:300]}")
-
-                # Acumula texto de qualquer evento (não só final) — fallback para sub_agents
-                for part in parts:
-                    if getattr(part, "text", None) and part.text.strip():
-                        all_agent_texts.setdefault(author, []).append(part.text)
-
-                # Acumula contagem de tokens do evento (usage_metadata só vem em alguns eventos)
-                usage = getattr(event, "usage_metadata", None)
-                if usage:
-                    total_tokens = getattr(usage, "total_token_count", 0) or 0
-                    _session_tokens[session_id] = _session_tokens.get(session_id, 0) + total_tokens
-
-                if is_final:
-                    last_final_author = author
-                    # Tenta extrair texto direto do evento final
-                    text_resp = "".join(p.text or "" for p in parts if getattr(p, "text", None))
-                    if text_resp.strip():
-                        final_parts.append(text_resp)
-
-            break  # loop do runner concluído sem erro — sai do retry
-
-        except SessionNotFoundError:
-            if attempt == 0:
-                # Sessão foi deletada externamente — limpa o cache e recria para retry
-                logger.warning(f"[session] {session_id} não encontrada, recriando e tentando novamente...")
-                _sessions.discard(session_id)
-                await ensure_session(chat_id, session_id)
-            else:
-                # Segunda falha consecutiva — desiste e avisa o usuário
-                logger.error(f"[session] {chat_id} falhou após recriação")
-                await update.message.reply_text("❌ Erro ao iniciar sessão. Tente novamente.", parse_mode="HTML")
-                return
-
-    # Fallback: se o evento final veio vazio (padrão de sub_agents), usa o texto
-    # coletado nos eventos não-finais do mesmo autor
-    if not final_parts and last_final_author and last_final_author in all_agent_texts:
-        logger.info(f"[fallback] usando texto de eventos não-finais de {last_final_author!r}")
-        combined = "".join(all_agent_texts[last_final_author])
-        if combined.strip():
-            final_parts.append(combined)
+    final_parts: list[str] = [response_text_raw] if response_text_raw else []
+    _session_tokens[session_id] = _session_tokens.get(session_id, 0) + tokens_used
 
     # Avisa o usuário quando o contexto do domínio está ficando grande demais.
     # O aviso aparece logo antes da resposta do agente para ser visível.

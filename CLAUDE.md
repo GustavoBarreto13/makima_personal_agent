@@ -160,7 +160,8 @@ Antes de passar `person_ids`, o agente deve chamar `find_people(query)`:
 makima_personal_agent/
 ├── coordinator/
 │   ├── main.py          # Telegram bot loop + sessões (ADK)
-│   ├── agent.py         # Makima (Agent ADK) + sub_agents
+│   ├── agent.py         # Makima (Agent ADK) + create_makima(sub_agents=...) — spec 064
+│   ├── runner_utils.py  # consumo de eventos do Runner ADK, reaproveitado pela ponte legada — spec 064
 │   ├── Dockerfile
 │   └── CLAUDE.md        # infraestrutura, env vars, sessões, MCP Calendar, notas técnicas
 ├── agents/
@@ -168,11 +169,13 @@ makima_personal_agent/
 │   ├── nami/            # agente de finanças — Fase 1 ✅
 │   │   ├── __init__.py
 │   │   ├── tools.py     # tools de acesso ao PostgreSQL
+│   │   ├── toolset.py   # TOOLS: list[Callable] — reaproveitado por mcp_servers/makima — spec 064
 │   │   ├── agent.py     # nami_agent
 │   │   ├── schema_pg.sql # schema das tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, categorias, formatação, personalidade
 │   ├── kaguya/          # agente de tarefas + agenda — Fases 2, 011–020, 024–026, 029–030 ✅
 │   │   ├── __init__.py
+│   │   ├── toolset.py          # TOOLS: list[Callable] — reaproveitado por mcp_servers/makima — spec 064
 │   │   ├── schema_tasks_pg.sql # schema do sistema de tarefas (spec 011+) + calendar_prefs
 │   │   ├── tools_tasks.py      # camada de lógica: CRUD de tarefas/subtarefas, posições + Meu Dia
 │   │   ├── tools_projects.py   # camada de lógica: listas, grupos, colunas (Kanban)
@@ -256,9 +259,22 @@ makima_personal_agent/
 │       └── CLAUDE.md    # tools, schema, integração com o webapp
 ├── mcp_servers/
 │   ├── __init__.py
-│   └── calendar/
-│       ├── __init__.py
-│       └── server.py    # servidor MCP FastMCP — Google Calendar (leitura todos, escrita só principal)
+│   ├── calendar/
+│   │   ├── __init__.py
+│   │   └── server.py    # servidor MCP FastMCP — Google Calendar (leitura todos, escrita só principal)
+│   └── makima/           # NOVO — host MCP HTTP multi-domínio (makima-mcp) — spec 064 E1/E2
+│       ├── registry.py   # DOMAINS: dict[str, list[Callable]] — nami, kaguya (cresce na E6)
+│       ├── app.py        # host Starlette: um FastMCP por domínio sob /mcp/<domínio> + /mcp/calendar
+│       ├── auth.py       # middleware bearer token (MAKIMA_MCP_TOKEN)
+│       ├── legacy.py     # tool perguntar_makima_legado() — roda o Runner ADK p/ domínios não migrados
+│       └── Dockerfile
+├── hermes/                # NOVO — templates versionados do Hermes Agent (spec 064 E3+)
+│   ├── SOUL.md            # persona da Makima, portada de coordinator/agent.py
+│   ├── config.yaml        # template: mcp_servers, model provider, canais
+│   ├── skills/
+│   │   ├── nami-financas/SKILL.md
+│   │   └── kaguya-tarefas/SKILL.md
+│   └── CLAUDE.md          # como ativar com segurança (perfil docker compose, cutover do Telegram)
 ├── scheduler/           # agendador de jobs recorrentes (container makima-scheduler) — APScheduler
 │   ├── __init__.py
 │   ├── registry.py      # lista declarativa JOBS + ScheduledJob + helpers daily_at()/every()
@@ -302,7 +318,10 @@ python-telegram-bot      # bot Telegram
 psycopg2-binary          # driver PostgreSQL síncrono (Nami, Frieren, Journal)
 google-cloud-storage     # backup automático do PostgreSQL para GCS
 requests                 # acesso HTTP às APIs externas (Google Books, etc.) nas tools dos agentes
-mcp[cli]                 # FastMCP — servidor MCP do Google Calendar
+mcp==1.29.0              # FastMCP — servidor MCP do Google Calendar + host HTTP makima-mcp (spec 064).
+                         # Pin exato: mcp>=2.0 remove mcp.server.fastmcp.FastMCP; o google-adk
+                         # instalado exige mcp>=1.24,<2 — 1.29.0 é a última 1.x, compatível com os dois.
+starlette                # host HTTP do makima-mcp (mcp_servers/makima/app.py) — spec 064
 google-auth              # OAuth para Google Calendar
 google-auth-oauthlib     # fluxo OAuth desktop (script de autorização)
 google-api-python-client # cliente da Google Calendar API v3
@@ -318,7 +337,7 @@ Ambiente local: `.venv` própria do makima.
 uma fase, atualize lá (não duplique tabelas de status aqui nem no README).
 
 Resumo: fases 001–027, 029, 030, 031, 032 (Lucy/email, scheduler) e 061 entregues; 028
-(memória unificada da Kurisu) parcial.
+(memória unificada da Kurisu) e 064 (Hermes Agent multicanal) parciais.
 
 ---
 

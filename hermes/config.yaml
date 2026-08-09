@@ -1,0 +1,67 @@
+# Template de config.yaml do Hermes Agent (spec 064 — Etapa E3/E4).
+#
+# NÃO é lido automaticamente pelo Hermes: é uma referência versionada, copiada/mesclada
+# manualmente em $HERMES_HOME/config.yaml (volume "hermes_data", montado em /opt/data no
+# container makima-hermes — ver docker-compose.yml) na primeira configuração.
+#
+# ATENÇÃO (verificar antes de usar): o schema abaixo segue a documentação pública do
+# Hermes Agent (NousResearch/hermes-agent) no momento em que este arquivo foi escrito.
+# Como o projeto evolui rápido, confirme o schema exato da versão instalada com
+# `hermes config get` ou `hermes --help` antes do primeiro boot — não assuma que este
+# arquivo bate 100% com a versão que será instalada.
+
+model:
+  provider: custom
+  name: gemini-2.5-flash
+  base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+  # api_key vem de OPENAI_API_KEY no .env do Hermes (= GEMINI_API_KEY) — não duplicar aqui.
+
+# Um bloco por domínio MCP montado em makima-mcp (mcp_servers/makima/app.py). A lista
+# cresce/encolhe em espelho de mcp_servers/makima/registry.py.DOMAINS — hoje (E1/E2):
+# nami, kaguya, calendar, legacy. Ver specs/064-hermes-multicanal/contracts/mcp-servers.md.
+mcp_servers:
+  - name: nami
+    url: "http://makima-mcp:8090/mcp/nami"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+  - name: kaguya
+    url: "http://makima-mcp:8090/mcp/kaguya"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+  - name: calendar
+    url: "http://makima-mcp:8090/mcp/calendar"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+  - name: legacy
+    url: "http://makima-mcp:8090/mcp/legacy"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+    # Só uma tool (perguntar_makima_legado) — cobre os domínios ainda não migrados.
+    # Este bloco inteiro é removido na Etapa E7, quando registry.DOMAINS cobrir os 10.
+
+# Tools de terminal/execução de código do Hermes MUST permanecer desabilitadas — agente
+# mexe em finanças e email pessoal (Technical Context / Constraints do plan.md).
+tools:
+  terminal:
+    enabled: false
+
+# Perfil único para todos os canais e domínios (research.md #8) — memória unificada, sem
+# fragmentar por área da vida.
+profile: default
+
+telegram:
+  bot_token: "${TELEGRAM_BOT_TOKEN}"
+  allowed_users:
+    - "<seu chat_id do Telegram>"
+
+whatsapp:
+  # Conector Baileys (sessão WhatsApp Web) — número dedicado, pareado via QR code
+  # (`hermes whatsapp` ou `hermes gateway setup` dentro do container). Sem config
+  # declarativa de token: a sessão pareada vive só no volume (platforms/whatsapp/session/).
+  allowed_users:
+    - "<seu número, formato internacional, ex: 5511999999999>"
+
+discord:
+  bot_token: "${DISCORD_BOT_TOKEN}"
+  allowed_users:
+    - "<seu user id do Discord>"

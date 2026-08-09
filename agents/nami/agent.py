@@ -10,83 +10,9 @@ Usage:
 
 from google.adk.agents import Agent
 
-# Importa todas as tools financeiras — cada uma corresponde a uma ação no BigQuery
-from agents.nami.tools import (
-    create_transaction,
-    query_expenses,
-    update_transaction,
-    delete_transaction,
-    get_spending_summary,
-    get_spending_trend,
-    create_subscription,
-    list_subscriptions,
-    update_subscription,
-    delete_subscription,
-    get_recurring_status,
-    mark_subscription_paid,
-    skip_subscription_cycle,
-)
-from agents.nami.tools_installments import (
-    create_installment,
-    list_installments,
-    get_future_commitments,
-    cancel_installment_group,
-    update_installment_group,
-    delete_installment_group_full,
-)
-from agents.nami.tools_accounts import (
-    create_account,
-    list_accounts,
-    get_account_balance,
-    update_account,
-    delete_account,
-)
-from agents.nami.tools_credit_cards import (
-    register_credit_card,
-    get_card_debt_summary,
-    register_card_payment,
-    simulate_debt_payoff,
-    get_minimum_payment_cost,
-    update_credit_card,
-    delete_credit_card,
-)
-from agents.nami.tools_loans import (
-    register_loan,
-    list_loans,
-    get_loan_balance,
-    simulate_early_payoff,
-    simulate_amortization,
-    simulate_accelerated_payment,
-    compare_payoff_priority,
-    register_loan_payment,
-    update_loan,
-    delete_loan,
-)
-from agents.nami.tools_budgets import (
-    set_budget,
-    get_budget_status,
-    check_category_budget,
-    delete_budget,
-)
-from agents.nami.tools_health import get_financial_health_score
-from agents.nami.tools_personal_loans import (
-    list_personal_loans,
-    create_personal_loan,
-    update_personal_loan,
-    register_personal_loan_payment,
-    delete_personal_loan,
-)
-from agents.nami.tools_shopping import (
-    create_shopping_list,
-    list_shopping_lists,
-    add_shopping_items,
-    show_shopping_list,
-    check_shopping_item,
-    update_shopping_item,
-    remove_shopping_item,
-    get_frequent_items,
-    finish_shopping,
-)
+# Lista de tools financeiras (extraída para agents/nami/toolset.py na spec 064 —
+# reaproveitada também pelo servidor MCP mcp_servers/makima)
+from agents.nami.toolset import TOOLS as _NAMI_TOOLS
 
 # Instância global do agente Nami — singleton, seguro para compartilhar entre sessões
 # porque não usa McpToolset (sem processo filho para gerenciar)
@@ -324,77 +250,6 @@ nami_agent = Agent(
         Erros:
         ❌ Houve um problema: descrição do erro
     """,
-    # Lista de tools disponíveis para a Nami — todas acessam o PostgreSQL
-    tools=[
-        # Contas financeiras
-        create_account,
-        list_accounts,
-        get_account_balance,
-        update_account,
-        delete_account,
-        # Transações e consultas
-        create_transaction,
-        query_expenses,
-        update_transaction,
-        delete_transaction,
-        get_spending_summary,
-        get_spending_trend,
-        # Assinaturas e Contas Fixas (spec 044)
-        create_subscription,
-        list_subscriptions,
-        update_subscription,
-        delete_subscription,
-        get_recurring_status,
-        mark_subscription_paid,
-        skip_subscription_cycle,
-        # Feature 1: Parcelas
-        create_installment,
-        list_installments,
-        get_future_commitments,
-        cancel_installment_group,
-        update_installment_group,
-        delete_installment_group_full,
-        # Feature 2: Cartões de crédito
-        register_credit_card,
-        get_card_debt_summary,
-        register_card_payment,
-        simulate_debt_payoff,
-        get_minimum_payment_cost,
-        update_credit_card,
-        delete_credit_card,
-        # Feature 3: Empréstimos e financiamentos
-        register_loan,
-        list_loans,
-        get_loan_balance,
-        simulate_early_payoff,
-        simulate_amortization,
-        simulate_accelerated_payment,
-        compare_payoff_priority,
-        register_loan_payment,
-        update_loan,
-        delete_loan,
-        # Feature 4: Orçamento por categoria
-        set_budget,
-        get_budget_status,
-        check_category_budget,
-        delete_budget,
-        # Feature 5: Score de saúde financeira
-        get_financial_health_score,
-        # Empréstimos pessoa-a-pessoa (spec 046)
-        list_personal_loans,
-        create_personal_loan,
-        update_personal_loan,
-        register_personal_loan_payment,
-        delete_personal_loan,
-        # Feature 6: Lista de Compras (spec 045)
-        create_shopping_list,
-        list_shopping_lists,
-        add_shopping_items,
-        show_shopping_list,
-        check_shopping_item,
-        update_shopping_item,
-        remove_shopping_item,
-        get_frequent_items,
-        finish_shopping,
-    ],
+    # Lista de tools disponíveis para a Nami — todas acessam o PostgreSQL (agents/nami/toolset.py)
+    tools=_NAMI_TOOLS,
 )

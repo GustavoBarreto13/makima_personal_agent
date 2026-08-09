@@ -9,8 +9,12 @@ tzdata              # base de fusos horários p/ zoneinfo (imagens slim não tra
 mcp==1.29.0         # Model Context Protocol para integração com servidores MCP.
                     # Pin exato: mcp>=2.0 reestruturou a API interna (removeu módulos
                     # que google.adk.tools.mcp_tool.mcp_toolset importa), quebrando o
-                    # McpToolset da Kaguya com ModuleNotFoundError. google-adk instalado
-                    # exige mcp>=1.24,<2 — 1.29.0 é a última 1.x, compatível.
+                    # McpToolset da Kaguya com ModuleNotFoundError — foi o que derrubou
+                    # makima-bot em produção (hotfix a381fc8 na master). google-adk
+                    # instalado exige mcp>=1.24,<2 — 1.29.0 é a última 1.x, compatível,
+                    # e também validada com FastMCP.streamable_http_app() (spec 064 E1).
+starlette           # host HTTP do makima-mcp (mcp_servers/makima/app.py) — múltiplos
+                    # FastMCP montados sob /mcp/<domínio> num único processo (spec 064 E1)
 google-auth         # Autenticação Google (OAuth2)
 google-auth-oauthlib # OAuth2 para Google (flow de autorização)
 google-api-python-client # Cliente Python para APIs Google (Calendar, Drive, etc.)
