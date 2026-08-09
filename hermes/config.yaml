@@ -69,28 +69,32 @@ platforms:
     # (user_id = chat_id puro, ver coordinator/CLAUDE.md) em vez de getUpdates — o bot
     # makima já está fazendo long-polling, então getUpdates sempre voltava vazio.
     #
-    # Campo é `allow_from`, NÃO `allowed_users` — confirmado lendo o código-fonte real
-    # (plugins/platforms/telegram/adapter.py: `telegram_cfg.get("allow_from")`) dentro
-    # do container em produção, depois de reparar que `allowed_users` era ignorado
-    # silenciosamente (sem erro — só um WARNING genérico no boot). O fallback sem
-    # allowlist é fail-closed (nega todo mundo, nunca abre geral por engano — comentário
-    # explícito no código, "fixes #24457"), então o erro nunca deixou vazar acesso, só
-    # deixou o bot inutilizável até essa correção.
-    allow_from:
-      - "${TELEGRAM_HERMES_ALLOWED_USER_ID}"
+    # `allow_from` (não `allowed_users` — 1ª correção, ver changelog em hermes/CLAUDE.md)
+    # precisa ficar ANINHADO sob `extra:` — confirmado lendo gateway/config.py dentro do
+    # container: o dict `.extra` que a checagem de autorização usa em runtime
+    # (`self.config.extra.get("allow_from")`) só é populado a partir de uma chave
+    # `extra:` explícita no YAML (`extra = _coerce_dict(data.get("extra", {}))`), nunca
+    # de chaves soltas direto sob `telegram:`. Sem isso, `allow_from` solto era
+    # silenciosamente ignorado pelo loader (`hermes config get` ecoava ele igual, mas o
+    # objeto de config em runtime nunca via o valor) — resultado real observado em
+    # produção: usuário legítimo bloqueado ("[Telegram] Blocked unauthorized user
+    # 352608961"), mesmo com token e allow_from "certos" no arquivo.
+    extra:
+      allow_from:
+        - "${TELEGRAM_HERMES_ALLOWED_USER_ID}"
 
   whatsapp:
     # Conector Baileys (sessão WhatsApp Web) — número dedicado, pareado via QR code
     # (`hermes whatsapp` ou `hermes gateway setup` dentro do container). Sem config
     # declarativa de token: a sessão pareada vive só no volume (platforms/whatsapp/session/).
-    # Campo `allow_from` (mesma correção do telegram acima — confirmado em
-    # plugins/platforms/whatsapp/adapter.py).
-    allow_from:
-      - "<seu número, formato internacional, ex: 5511999999999>"
+    # `allow_from` sob `extra:` — mesmo motivo do telegram acima.
+    extra:
+      allow_from:
+        - "<seu número, formato internacional, ex: 5511999999999>"
 
   discord:
     bot_token: "${DISCORD_BOT_TOKEN}"
-    # Campo `allow_from` (mesma correção do telegram acima — confirmado em
-    # plugins/platforms/discord/adapter.py).
-    allow_from:
-      - "<seu user id do Discord>"
+    # `allow_from` sob `extra:` — mesmo motivo do telegram acima.
+    extra:
+      allow_from:
+        - "<seu user id do Discord>"

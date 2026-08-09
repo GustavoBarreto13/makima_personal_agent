@@ -145,6 +145,21 @@ Hermes sem allowlist é fail-closed por padrão (comentário explícito no códi
 "Fail-closed: no allowlist means deny by default... must not silently allow everyone",
 referência a um fix de bug anterior deles, #24457).
 
+**5ª divergência, achada testando de verdade no Telegram**: mesmo com `allow_from:`
+certo direto sob `telegram:`, o usuário real foi bloqueado (log em produção:
+`[Telegram] Blocked unauthorized user 352608961`). Causa: `allow_from:` precisa ficar
+**aninhado sob uma chave `extra:`**, não solto — confirmado lendo `gateway/config.py`
+dentro do container (`extra = _coerce_dict(data.get("extra", {}))`): o dict `.extra`
+que a checagem de autorização usa em runtime só é populado a partir de uma chave
+`extra:` explícita no YAML, nunca de chaves soltas direto sob o bloco da plataforma.
+`hermes config get platforms` **ecoava** `allow_from` corretamente mesmo estando no
+lugar errado (só reflete o YAML bruto, não o objeto de config processado em runtime) —
+por isso essa divergência só apareceu com um teste real de mensagem, não com
+`config get`. Schema correto: `platforms.telegram.extra.allow_from`. Aplicado também a
+`whatsapp`/`discord` por consistência, mas **não confirmado** contra o código-fonte
+deles especificamente (só o do telegram foi lido linha a linha) — reverificar quando a
+Etapa E4 ativar esses canais.
+
 Também confirmado pela doc oficial: interpolação `${VAR}` funciona diretamente dentro de
 qualquer valor do `config.yaml`, inclusive `api_key` — por isso o `config.yaml` agora
 seta `api_key: "${GEMINI_API_KEY}"` explicitamente no bloco `model`, em vez de depender
