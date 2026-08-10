@@ -1,6 +1,8 @@
 ﻿# Makima Personal Agent
 
-Bot Telegram multi-agente construído com **Google ADK**. Recebe mensagens em linguagem natural e delega para agentes especialistas conforme o domínio — finanças, tarefas, agenda, livros, diário e base de conhecimento pessoal.
+Agente pessoal multicanal (Telegram, WhatsApp e Discord) que recebe mensagens em linguagem natural e delega para especialistas de domínio — finanças, tarefas, agenda, livros, filmes, animes, séries, pessoas, email e diário.
+
+O gateway de conversa é o **Hermes Agent** (Nous Research), com memória de longo prazo real (resumo automático, busca por conteúdo) e um dashboard web próprio. Toda a lógica de negócio continua nos agentes especialistas construídos com **Google ADK** (pacotes em `agents/`), expostos ao Hermes via um host **MCP** (`mcp_servers/makima/`) — um servidor por domínio. Ver [Hermes Agent (multicanal)](#hermes-agent-multicanal) abaixo.
 
 ---
 
@@ -64,26 +66,58 @@ Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na
 ## Arquitetura
 
 ```
-Telegram (usuário)
+Telegram / WhatsApp / Discord (usuário)
     ↓
-coordinator/main.py  (python-telegram-bot)
-    ↓
-coordinator/agent.py  (Makima — Agent ADK)
-    ├── Nami       → PostgreSQL (finanças)                      ✅ ativo
-    ├── Kaguya     → PostgreSQL próprio (tarefas) + Calendar MCP ✅ ativo
-    ├── Kurisu     → Vertex AI RAG (vault Obsidian)             ✅ ativo (corpus no ar, spec 027)
-    ├── Frieren    → PostgreSQL + Google Books API (livros)     ✅ ativo
-    ├── Akane      → PostgreSQL + TMDB + Letterboxd (filmes)   ✅ ativo
-    ├── Marin      → PostgreSQL + Jikan/AniList + MAL OAuth (animes) ✅ ativo
-    ├── Mai        → PostgreSQL + TMDB API v3 (séries de TV)   ✅ ativo
-    ├── Komi       → PostgreSQL (pessoas + vínculos cross-agent) ✅ ativo
-    ├── Violet     → PostgreSQL (diário)                        🔧 ativo na web, agente Telegram pendente
-    └── Lucy       → Gmail via IMAP (somente leitura) + digest agendado ✅ ativo
+Hermes Agent  (gateway multicanal, Nous Research — memória de longo prazo, dashboard web)
+    ↓ MCP HTTP (bearer token)
+makima-mcp  (mcp_servers/makima/ — um servidor MCP por domínio)
+    ├── /mcp/nami      → PostgreSQL (finanças)
+    ├── /mcp/kaguya    → PostgreSQL próprio (tarefas) + Google Calendar MCP
+    ├── /mcp/kurisu    → Vertex AI RAG (base de conhecimento pessoal)
+    ├── /mcp/frieren   → PostgreSQL + Google Books API (livros)
+    ├── /mcp/akane     → PostgreSQL + TMDB + Letterboxd (filmes)
+    ├── /mcp/marin     → PostgreSQL + Jikan/AniList + MAL OAuth (animes)
+    ├── /mcp/mai       → PostgreSQL + TMDB API v3 (séries de TV)
+    ├── /mcp/komi      → PostgreSQL (pessoas + vínculos cross-agent)
+    ├── /mcp/lucy      → Gmail via IMAP (somente leitura) + digest agendado
+    ├── /mcp/journal   → PostgreSQL (diário — Violet, Auto Memory Doll)
+    └── /mcp/calendar  → Google Calendar (leitura de todos, escrita só no principal)
 ```
 
-Makima não executa nenhuma ação diretamente — ela apenas roteia para o agente correto. Toda lógica de acesso a APIs fica nos agentes especialistas.
+Cada domínio acima é um pacote independente em `agents/<nome>/` (agente Google ADK,
+com sua própria personalidade e tools) — o mesmo código é reaproveitado tanto pelo host
+MCP quanto por um bot Telegram ADK legado (`coordinator/`), mantido só como referência e
+via de rollback: em produção, o Hermes já assumiu os três canais. Toda a lógica de
+acesso a banco/APIs fica nos agentes especialistas — nem o Hermes nem a Makima (coordinator)
+executam ações diretamente, eles só roteiam.
 
-Todos os dados (finanças, livros, journal, sessões ADK) ficam no mesmo PostgreSQL gerenciado pelo Dokploy.
+Todos os dados (finanças, livros, journal, sessões) ficam no mesmo PostgreSQL gerenciado pelo Dokploy.
+
+---
+
+## Hermes Agent (multicanal)
+
+O **Hermes Agent** (Nous Research) é o gateway de conversa em produção — substituiu
+progressivamente o bot Telegram original (`coordinator/`) como interface com o usuário,
+sem mudar nenhuma lógica de negócio (as tools continuam nos agentes especialistas).
+
+**Canais ativos**, todos respondendo pelo mesmo agente e memória:
+- **Telegram** — mesmo bot de sempre, token migrado para o Hermes
+- **WhatsApp** — número dedicado pareado via QR code (Baileys/WhatsApp Web)
+- **Discord** — bot próprio, autorização por pareamento + allowlist
+
+**Por que trocar o gateway**: memória de longo prazo real — resumo/compressão
+automática de conversas antigas e busca por conteúdo (`session_search`), em vez do
+histórico bruto por sessão que o bot ADK original mantinha.
+
+**Como fala com os agentes**: o Hermes lê `hermes/config.yaml` e consulta cada domínio
+como um servidor MCP HTTP separado (`makima-mcp`, ver diagrama acima) — não reimplementa
+nenhuma tool, só chama as mesmas funções Python que os agentes já usavam.
+
+**Dashboard web**: acessível em `hermes.<domínio>` (basic auth) — logs, canais,
+sessões e configuração ao vivo, sem precisar de `docker logs`. Ver `hermes/CLAUDE.md`
+para o runbook completo (pareamento do WhatsApp, criação do bot Discord, subdomínio,
+segurança).
 
 ---
 
@@ -216,7 +250,7 @@ Inspirada em Komi-san wa Comyushou desu — tímida, mas extremamente cuidadosa 
 ---
 
 ### Violet — diário pessoal (Journal)
-Diário bullet journal com extração automática de menções (`@pessoa`, `#tag`) e busca full-text. **Já é totalmente usável via webapp** (`/api/journal/*`, shell `violet/`); como agente Telegram ainda está pendente (existem as tools, falta o `agent.py` e o wiring no coordinator).
+Inspirada em Violet Evergarden — uma Auto Memory Doll que transforma sentimentos em palavras escritas. Diário bullet journal com extração automática de menções (`@pessoa`, `#tag`) e busca full-text, além de registros emocionais (TCC) e cartas endereçadas. Usável via webapp (`/api/journal/*`, shell `violet/`) **e** como agente completo (Telegram/WhatsApp/Discord via Hermes, ver acima) — o pacote continua se chamando `agents/journal/`, só a personalidade do agente é a Violet.
 
 **Funcionalidades:**
 - Uma página por dia, criada automaticamente
@@ -227,8 +261,9 @@ Diário bullet journal com extração automática de menções (`@pessoa`, `#tag
 - **Registro emocional TCC** — formulário de Registro de Pensamentos: situação → emoção + intensidade (0–10) → pensamento automático → resposta adaptativa → reavaliação de intensidade; vocabulário de 8 emoções-base predefinidas + emoções custom criadas pelo usuário
 - **Aba Emoções nos Insights** — frequência, intensidade média e distribuição mensal das emoções registradas no ano selecionado
 - **Filtro de ano nos Insights** — seleciona qualquer ano com entradas no diário
+- **Cartas** — escrever, editar (só rascunhos) e lacrar cartas endereçadas por dia, com vínculo opcional a pessoas (Komi)
 
-**Armazenamento:** PostgreSQL — tabelas `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_emotions`, `journal_emotion_logs`.
+**Armazenamento:** PostgreSQL — tabelas `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_emotions`, `journal_emotion_logs`, `journal_letters`.
 
 ---
 
@@ -236,13 +271,18 @@ Diário bullet journal com extração automática de menções (`@pessoa`, `#tag
 
 ```
 makima_personal_agent/
-├── coordinator/     # bot Telegram + Makima (Agent ADK) — ver coordinator/CLAUDE.md
+├── coordinator/     # bot Telegram original (Agent ADK) — hoje aposentado do Telegram,
+│                    # mantido como referência/rollback — ver coordinator/CLAUDE.md
 ├── agents/          # um pacote por especialista (nami, kaguya, kurisu, frieren,
-│                    # akane, marin, mai, komi, journal) — cada um com CLAUDE.md próprio
-├── mcp_servers/     # servidor MCP do Google Calendar
-├── webapp/          # FastAPI + React: 10 routers e 9 shells — ver webapp/CLAUDE.md e webapp/docs/
+│                    # akane, marin, mai, komi, lucy, journal) — cada um com CLAUDE.md próprio
+├── mcp_servers/
+│   ├── calendar/    # servidor MCP do Google Calendar
+│   └── makima/      # host MCP HTTP multi-domínio (makima-mcp) — expõe os 10 agentes ao Hermes
+├── hermes/          # templates versionados do Hermes Agent (persona, config.yaml, skills)
+│                    # — ver hermes/CLAUDE.md para o runbook de canais/dashboard
+├── webapp/          # FastAPI + React: routers e shells — ver webapp/CLAUDE.md e webapp/docs/
 ├── scripts/         # setup de schemas, OAuth (Calendar/MAL), syncs e migrações one-time
-├── specs/           # specs por fatia (Spec Kit, 001..030) — artefatos históricos imutáveis
+├── specs/           # specs por fatia (Spec Kit) — artefatos históricos imutáveis
 ├── docs/            # documentação por tipo: referencia/ · planos/ · arquivo/ — ver docs/README.md
 ├── ROADMAP.md       # fonte única da verdade: fases, status atual e pendências
 └── CLAUDE.md        # guia do repo para desenvolvimento (inclui a árvore de arquivos detalhada)
@@ -420,9 +460,10 @@ npm install && npm run dev   # dev server em localhost:5173
 ## Deploy (VPS com Dokploy)
 
 - Host: Hostinger com Dokploy
-- Dois containers no mesmo Docker Compose: `makima` (bot Telegram) e `web` (FastAPI + React)
-- Porta interna `8080` — exposta pelo proxy reverso do Dokploy como HTTPS
-- Variáveis configuradas no painel do Dokploy
+- `docker-compose.yml`: `web` (FastAPI + React), `mcp` (host `makima-mcp`, um FastMCP por domínio) e `scheduler`; `makima` (bot Telegram original) hoje comentado — o Hermes já assumiu o Telegram
+- `docker-compose.hermes.yml`: app Docker Compose separada no mesmo projeto Dokploy — o Hermes Agent (Telegram/WhatsApp/Discord + dashboard web em `hermes.<domínio>`), ligada/desligada pelos botões nativos do Dokploy
+- Portas internas expostas pelo proxy reverso do Dokploy como HTTPS
+- Variáveis configuradas no painel do Dokploy (Environment)
 - Deploy automático via push para o GitHub
 
 ---
@@ -431,7 +472,7 @@ npm install && npm run dev   # dev server em localhost:5173
 
 O histórico completo de fases e o status atual vivem no **[ROADMAP.md](ROADMAP.md)** — fonte única da verdade.
 
-Resumo (jul/2026): fases 001–027, 029, 030, 031 e 032 (Lucy/email, scheduler) entregues; 028 (memória unificada da Kurisu) parcial.
+Resumo (ago/2026): fases 001–027, 029, 030, 031, 032 (Lucy/email, scheduler) e 061 entregues; 028 (memória unificada da Kurisu) parcial. Spec 064 (Hermes Agent multicanal) em andamento: Telegram/WhatsApp/Discord e os 10 domínios de agente já migrados para MCP nativo em produção/local; restam voz/imagem (E5) e aposentar de vez o `coordinator/` (E7).
 
 ---
 
