@@ -1,6 +1,27 @@
 # Plano — Journal vira "Violet Evergarden"
 
-> Status: **planejado, não executado.** Salvo para implementar depois.
+> Status: **executado parcialmente, com escopo ampliado** (spec 064, logo após a Etapa
+> E6 do Hermes — pedido do usuário: "e a Violet? dá pra transformar ela em um agente?").
+>
+> - **Parte B (criar `agent.py` com a personalidade)**: feita, mas **ligada de vez** —
+>   diferente da decisão original deste documento ("NÃO ligar"), o `violet_agent` entrou
+>   na lista `sub_agents` do coordinator (`coordinator/agent.py`) e ganhou domínio MCP
+>   próprio (`agents/journal/toolset.py` + `mcp_servers/makima/registry.py["journal"]` +
+>   `hermes/config.yaml::mcp_servers.journal`) — acessível pelos 3 canais do Hermes.
+> - **Parte A (rename `agents/journal` → `agents/violet`)**: **não executada,
+>   deliberadamente**. O rename tocaria dezenas de referências em `specs/*` (imutáveis
+>   por convenção deste repo) só por causa do nome da pasta, sem mudar comportamento —
+>   não valia o raio de blast. O precedente de separar "nome de exibição" de "nome de
+>   pacote" já existe no próprio código (`agents/kaguya/habit_source_providers.py`
+>   registra o provedor do diário como `"violet_diary"` apontando pra
+>   `agents.journal.habit_provider`).
+> - **Parte C/D (docs)**: feitas nos documentos vivos relevantes (`agents/journal/CLAUDE.md`,
+>   `CLAUDE.md` raiz, `mcp_servers/makima/CLAUDE.md`, `ROADMAP.md`) — não em `README.md`
+>   (não verificado nesta rodada).
+>
+> O restante deste documento é o plano ORIGINAL, mantido como registro histórico da
+> decisão — a seção "Decisões confirmadas" abaixo (escopo "só personalidade") foi
+> superada pela decisão de ligar de vez.
 
 ## Contexto
 

@@ -27,7 +27,9 @@ from google.adk.agents import Agent
 # Substitui a VertexAiRagRetrieval nativa para habilitar retrieve-wide → rerank-narrow.
 # A inicialização do Vertex AI (vertexai.init) ocorre dentro de tools.py,
 # na primeira chamada à função (padrão singleton com lazy init).
-from agents.kurisu.tools import buscar_na_base
+# Lista de tools extraída para agents/kurisu/toolset.py na spec 064 (Etapa E6) — reaproveitada
+# pelo makima-mcp (mcp_servers/makima/registry.py) sem duplicar a lista aqui.
+from agents.kurisu.toolset import TOOLS as _KURISU_TOOLS
 
 # Instrução completa da Kurisu — personalidade (persona única), regras de honestidade,
 # citação de fontes e formatação. No v1 NÃO há os modos Tutora/Amiga (cortados — spec 027).
@@ -118,5 +120,5 @@ kurisu_agent = Agent(
     ),
     instruction=_KURISU_INSTRUCTION,
     # FunctionTool customizada: retrieve-wide → rerank-narrow com RankService (spec 027 FR-016).
-    tools=[buscar_na_base],
+    tools=_KURISU_TOOLS,
 )

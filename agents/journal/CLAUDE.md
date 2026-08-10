@@ -2,7 +2,7 @@
 
 Gerencia o diário pessoal em bullet journal. Acesso direto ao PostgreSQL via psycopg2 síncrono — mesmo padrão das tools da Nami e Frieren.
 
-> **Não é um sub-agente ADK**: este pacote não tem `agent.py` e não é importado pelo coordinator — as tools são consumidas apenas pelo webapp via `webapp/backend/routers/journal.py`. A personalidade "Violet" e o rename `agents/journal → agents/violet` estão planejados em `docs/planos/PLANO_VIOLET_EVERGARDEN.md` (não executado). As tabelas são criadas sob demanda por `_ensure_tables()` em `tools.py` (não há `schema_pg.sql` aqui).
+> **Agora é um sub-agente ADK completo** (spec 064, ativação da Violet): `agent.py` define `violet_agent` — personalidade Violet Evergarden, ligada em `coordinator/agent.py::create_makima` (lista default de `sub_agents`) e exposta via `makima-mcp` em `/mcp/journal` (`mcp_servers/makima/registry.py`). O pacote continua chamado `agents/journal/` — só o `Agent` e a persona se chamam Violet; o rename da pasta pra `agents/violet/` (Parte A do `docs/planos/PLANO_VIOLET_EVERGARDEN.md`) segue **não executado**, decisão deliberada (blast radius grande nos `specs/*`, sem ganho de comportamento). `toolset.py` expõe 21 das tools abaixo ao agente (exclui `set_dream`, `list_entries`, `list_collection`, `list_dreams`, `get_stats`, `get_available_years` — helpers formatados pra telas específicas do webapp, ver `toolset.py`). O webapp continua usando `webapp/backend/routers/journal.py` → `agents.journal.tools` normalmente, sem nenhuma mudança. As tabelas são criadas sob demanda por `_ensure_tables()` em `tools.py` (não há `schema_pg.sql` aqui).
 
 ---
 

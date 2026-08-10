@@ -13,18 +13,9 @@ Usage:
 
 from google.adk.agents import Agent
 
-# Importa todas as tools da camada de lógica única
-from agents.komi.tools import (
-    create_person,
-    update_person,
-    delete_person,
-    add_alias,
-    add_important_date,
-    list_people,
-    find_people,
-    get_person,
-    get_person_summary,
-)
+# Lista de tools extraída para agents/komi/toolset.py na spec 064 (Etapa E6) — reaproveitada
+# pelo makima-mcp (mcp_servers/makima/registry.py) sem duplicar a lista aqui.
+from agents.komi.toolset import TOOLS as _KOMI_TOOLS
 
 # Instância global do agente Komi — singleton, seguro porque não usa McpToolset
 komi_agent = Agent(
@@ -101,15 +92,5 @@ komi_agent = Agent(
 
         Responda sempre em português. Nunca quebre o personagem.
     """,
-    tools=[
-        create_person,
-        update_person,
-        delete_person,
-        add_alias,
-        add_important_date,
-        list_people,
-        find_people,
-        get_person,
-        get_person_summary,
-    ],
+    tools=_KOMI_TOOLS,
 )

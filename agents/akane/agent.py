@@ -12,31 +12,9 @@ Usage:
 
 from google.adk.agents import Agent
 
-# ── Tools públicas da Akane ──────────────────────────────────────────────────
-# Importa as tools que fazem sentido serem chamadas pelo Telegram (sem listas/cofre
-# que são mais UI-oriented). Cross-agent create_movie_reminder também disponível.
-from agents.akane.tools import (
-    # Descoberta e adição
-    search_movie,       # Busca no TMDB por texto — sem gravar no banco
-    add_movie,          # Adiciona filme ao catálogo (watchlist ou watched)
-    add_to_watchlist,   # Atalho: add_movie(status='watchlist')
-    # Visualizações e avaliações
-    log_watch,          # Loga sessão de assistência + atualiza movies
-    rate_movie,         # Define nota (rating_source='own')
-    set_like,           # Marca/desmarca coração (❤️)
-    update_movie_status,# Altera status watchlist ↔ watched
-    set_notes,          # Salva anotações soltas do filme
-    # Consultas
-    list_movies,        # Grid filtrado e ordenado
-    get_watchlist,      # Filmes marcados como 'quero ver'
-    get_diary,          # Histórico de sessões cronológico
-    get_movie_detail,   # Detalhe completo: metadados + diary + people
-    get_stats,          # Estatísticas anuais (vazio-seguro)
-    get_home,           # Bloco completo do Início (agregações)
-    get_rewind,         # Year-in-review com highlights
-    # Cross-agent
-    create_movie_reminder,  # Cria lembrete de sessão via Kaguya
-)
+# Lista de tools extraída para agents/akane/toolset.py na spec 064 (Etapa E6) — reaproveitada
+# pelo makima-mcp (mcp_servers/makima/registry.py) sem duplicar a lista aqui.
+from agents.akane.toolset import TOOLS as _AKANE_TOOLS
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -145,26 +123,5 @@ akane_agent = Agent(
         "Domínio: filmes — não atende livros, tarefas ou finanças."
     ),
     instruction=_AKANE_INSTRUCTION,
-    tools=[
-        # Descoberta e catálogo
-        search_movie,
-        add_movie,
-        add_to_watchlist,
-        # Sessões
-        log_watch,
-        rate_movie,
-        set_like,
-        update_movie_status,
-        set_notes,
-        # Consultas
-        list_movies,
-        get_watchlist,
-        get_diary,
-        get_movie_detail,
-        get_stats,
-        get_home,
-        get_rewind,
-        # Cross-agent
-        create_movie_reminder,
-    ],
+    tools=_AKANE_TOOLS,
 )

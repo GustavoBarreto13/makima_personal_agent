@@ -28,8 +28,9 @@ model:
   api_key: "${GEMINI_API_KEY}"
 
 # Um bloco por domínio MCP montado em makima-mcp (mcp_servers/makima/app.py), chaveado
-# por nome (dict, não lista). Cresce/encolhe em espelho de
-# mcp_servers/makima/registry.py.DOMAINS — hoje (E1/E2): nami, kaguya, calendar, legacy.
+# por nome (dict, não lista). Espelha mcp_servers/makima/registry.py.DOMAINS — desde a
+# Etapa E6, os 9 domínios migrados (nami, kaguya + os 7 que faltavam) + calendar + legacy
+# (legacy fica vazia até a Etapa E7 remover o bloco por completo).
 # Ver specs/064-hermes-multicanal/contracts/mcp-servers.md.
 mcp_servers:
   nami:
@@ -40,6 +41,41 @@ mcp_servers:
     url: "http://makima-mcp:8090/mcp/kaguya"
     headers:
       Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+  frieren:
+    url: "http://makima-mcp:8090/mcp/frieren"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+  akane:
+    url: "http://makima-mcp:8090/mcp/akane"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+  komi:
+    url: "http://makima-mcp:8090/mcp/komi"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+  marin:
+    url: "http://makima-mcp:8090/mcp/marin"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+  mai:
+    url: "http://makima-mcp:8090/mcp/mai"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+  lucy:
+    url: "http://makima-mcp:8090/mcp/lucy"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+  kurisu:
+    url: "http://makima-mcp:8090/mcp/kurisu"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+  journal:
+    # Personalidade "Violet" (Auto Memory Doll) — o pacote continua agents/journal/ e a
+    # chave MCP continua "journal" por convenção (nome do pacote), mesmo padrão já usado
+    # pelo provedor de hábito "violet_diary" apontando pra agents.journal.habit_provider.
+    url: "http://makima-mcp:8090/mcp/journal"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
   calendar:
     url: "http://makima-mcp:8090/mcp/calendar"
     headers:
@@ -48,8 +84,8 @@ mcp_servers:
     url: "http://makima-mcp:8090/mcp/legacy"
     headers:
       Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
-    # Só uma tool (perguntar_makima_legado) — cobre os domínios ainda não migrados.
-    # Este bloco inteiro é removido na Etapa E7, quando registry.DOMAINS cobrir os 10.
+    # perguntar_makima_legado segue registrada, mas sem domínio para rotear desde a
+    # Etapa E6 (_LEGACY_DOMAIN_AGENTS vazia). Este bloco inteiro é removido na Etapa E7.
 
 # Tools de terminal/execução de código do Hermes MUST permanecer desabilitadas — agente
 # mexe em finanças e email pessoal (Technical Context / Constraints do plan.md).

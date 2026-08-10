@@ -20,6 +20,7 @@ from agents.marin.agent import marin_agent   # Catálogo de animes — spec 021
 from agents.mai.agent import mai_agent       # Catálogo de séries de TV — spec 022
 from agents.komi.agent import komi_agent     # Identidade de pessoas — spec 014
 from agents.lucy.agent import lucy_agent     # Email (Gmail), somente leitura — spec 032
+from agents.journal.agent import violet_agent  # Diário pessoal (Violet) — spec 064, ativação da Violet
 # from agents.media.agent import media_agent
 
 _MAKIMA_INSTRUCTION = """
@@ -46,6 +47,7 @@ _MAKIMA_INSTRUCTION = """
     - Mai: catálogo de séries de TV — logar temporadas/episódios, watchlist, nota 0.5–5.0, próximos episódios, sync de metadados TMDB, estatísticas anuais
     - Komi: pessoas e contatos — cadastrar, buscar, editar pessoas, adicionar apelidos e aniversários, ver resumo de vínculos (transações, tarefas, livros, diário)
     - Lucy: emails e Gmail — ver não lidos/recentes, buscar por remetente/assunto/palavra, abrir email (somente leitura)
+    - Violet: diário pessoal — registrar entradas do dia (bullets), registros emocionais (TCC: emoção, intensidade, pensamento automático), cartas endereçadas, busca por conteúdo, menções (@pessoa/#tag), heatmap de atividade
     - Media: mangás (ainda não ativada)
 
     ROTEAMENTO DUPLO — fluxos que envolvem Nami E Kaguya:
@@ -106,7 +108,7 @@ _MAKIMA_INSTRUCTION = """
     IMPORTANTE: Lucy só lê. Se o pedido envolver enviar, responder, arquivar, deletar ou
     marcar um email, a própria Lucy recusa — não tente contornar isso por outro caminho.
 
-    Atualmente Nami, Kaguya, Kurisu, Frieren, Akane, Marin, Mai, Komi e Lucy estão ativas. Para os demais domínios, a ativação ainda não
+    Atualmente Nami, Kaguya, Kurisu, Frieren, Akane, Marin, Mai, Komi, Lucy e Violet estão ativas. Para os demais domínios, a ativação ainda não
     foi realizada — informe isso com a mesma frieza com que informaria qualquer outra
     decisão operacional.
 
@@ -129,7 +131,7 @@ def create_makima(sub_agents: list[Agent] | None = None) -> Agent:
     """Cria o coordinator Makima.
 
     Args:
-        sub_agents: lista de especialistas ativos. Default (None) = todos os 9 domínios
+        sub_agents: lista de especialistas ativos. Default (None) = todos os 10 domínios
             (comportamento do bot Telegram em coordinator/main.py, inalterado). A ponte
             legada MCP (mcp_servers/makima/legacy.py, spec 064 Etapa E2) passa uma lista
             reduzida — só os domínios ainda não migrados para MCP nativo
@@ -139,7 +141,7 @@ def create_makima(sub_agents: list[Agent] | None = None) -> Agent:
     """
     if sub_agents is None:
         kaguya_agent = create_kaguya_agent()
-        sub_agents = [nami_agent, kaguya_agent, kurisu_agent, frieren_agent, akane_agent, marin_agent, mai_agent, komi_agent, lucy_agent]
+        sub_agents = [nami_agent, kaguya_agent, kurisu_agent, frieren_agent, akane_agent, marin_agent, mai_agent, komi_agent, lucy_agent, violet_agent]
 
     return Agent(
         name="makima",

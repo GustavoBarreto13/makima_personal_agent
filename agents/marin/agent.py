@@ -14,47 +14,10 @@ Usage:
 # Agent é a classe base do Google ADK para criar agentes com tools
 from google.adk.agents import Agent
 
-# ── Tools públicas da Marin ──────────────────────────────────────────────────
-# Importa todas as tools de domínio expostas ao Telegram.
-# O router FastAPI (/api/animes/*) as importa diretamente de tools.py.
-from agents.marin.tools import (
-    # Descoberta e adição ao catálogo
-    search_anime,         # Busca no Jikan (MAL) por título — sem gravar
-    add_anime,            # Adiciona anime ao catálogo via mal_id
-    refresh_anime_metadata,  # Rebusca metadados de um anime já no catálogo
-    # Sessões de episódios
-    log_watch,            # Registra episódios assistidos + avança progresso
-    delete_watch_log,     # Remove uma sessão do diário
-    # Atualização de catálogo
-    update_anime_status,  # Muda status (assistindo/completo/pausado/etc.)
-    rate_anime,           # Define nota pessoal (0–10, passo 0.5)
-    delete_anime,         # Soft-delete (preserva histórico)
-    # Consultas
-    get_currently_watching,  # Lista animes em progresso
-    get_watchlist,           # Lista fila de espera (quero_assistir)
-    get_watch_history,       # Histórico de sessões (diário)
-    get_anime_details,       # Detalhe completo: metadados + eps + logs
-    get_airing_schedule,     # Schedule de episódios futuros
-    get_stats,               # Estatísticas anuais
-    get_home,                # Todos os blocos da HomeScreen numa chamada
-    # Sincronização MAL
-    sync_mal,                # Delta sync da lista do MyAnimeList
-    # Caderno da Marin (spec 054)
-    set_anime_notes,         # Salva anotações soltas sobre o anime
-    # Listas personalizadas (spec 054)
-    get_lists,               # Lista todas as coleções
-    get_list,                # Detalhe de uma coleção + animes
-    create_list,             # Cria coleção nova
-    add_to_list,             # Adiciona anime a uma coleção
-    remove_from_list,        # Remove anime de uma coleção
-    delete_list,             # Remove a coleção inteira
-    # Etiquetas (spec 054)
-    get_tags,                # Nuvem de etiquetas com contagem
-    add_tag,                 # Etiqueta um anime
-    remove_tag,              # Remove etiqueta de um anime
-    # Rewind anual (spec 054)
-    get_rewind,              # Retrospectiva do ano
-)
+# Lista de tools extraída para agents/marin/toolset.py na spec 064 (Etapa E6) — reaproveitada
+# pelo makima-mcp (mcp_servers/makima/registry.py) sem duplicar a lista aqui.
+# O router FastAPI (/api/animes/*) continua importando direto de tools.py.
+from agents.marin.toolset import TOOLS as _MARIN_TOOLS
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -178,42 +141,5 @@ marin_agent = Agent(
         "Domínio: animes — não atende filmes, livros, tarefas ou finanças."
     ),
     instruction=_MARIN_INSTRUCTION,
-    tools=[
-        # Descoberta e catálogo
-        search_anime,
-        add_anime,
-        refresh_anime_metadata,
-        # Sessões de episódios
-        log_watch,
-        delete_watch_log,
-        # Atualização de catálogo
-        update_anime_status,
-        rate_anime,
-        delete_anime,
-        # Consultas
-        get_currently_watching,
-        get_watchlist,
-        get_watch_history,
-        get_anime_details,
-        get_airing_schedule,
-        get_stats,
-        get_home,
-        # Sincronização MAL
-        sync_mal,
-        # Caderno da Marin
-        set_anime_notes,
-        # Listas personalizadas
-        get_lists,
-        get_list,
-        create_list,
-        add_to_list,
-        remove_from_list,
-        delete_list,
-        # Etiquetas
-        get_tags,
-        add_tag,
-        remove_tag,
-        # Rewind anual
-        get_rewind,
-    ],
+    tools=_MARIN_TOOLS,
 )

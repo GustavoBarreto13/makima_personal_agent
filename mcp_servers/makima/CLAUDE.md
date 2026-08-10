@@ -2,14 +2,17 @@
 
 ## O que é
 
-**`makima-mcp`** — host HTTP único que expõe as tools de domínio (Nami, Kaguya,
-Calendar, e os domínios ainda não migrados via a ponte legada) pelo protocolo MCP, para
-qualquer cliente MCP consumir — hoje o cliente real é o `Runner` ADK interno (via a
-ponte legada); a partir da Etapa E3 da spec 064, o cliente será o Hermes Agent.
+**`makima-mcp`** — host HTTP único que expõe as tools dos 10 domínios de agente
+(Nami, Kaguya, Frieren, Akane, Komi, Marin, Mai, Lucy, Kurisu, Journal/Violet) mais
+Calendar pelo protocolo MCP, para qualquer cliente MCP consumir — o cliente real em
+produção é o Hermes Agent (`hermes/config.yaml::mcp_servers`).
 
-Status: **Etapas E1 e E2 entregues e verificadas em produção** (não só testadas
-localmente — validadas com `curl` real contra a VPS, ver "Verificação em produção"
-abaixo). Ver `ROADMAP.md` (linha da fase 064) para o estado das etapas seguintes.
+Status: **Etapas E1, E2 e E6 entregues**, mais a ativação da Violet (fora do roteiro
+original da spec 064, feita a pedido do usuário logo depois da E6) — os 10 domínios de
+agente têm `toolset.py` próprio e estão em `registry.py::DOMAINS`; `legacy.py` (ponte
+ADK, Etapa E2) segue montada mas com `_LEGACY_DOMAIN_AGENTS` vazia, sem nenhum domínio
+pra rotear — só é removida de fato na Etapa E7. Ver `ROADMAP.md` (linha da fase 064)
+para o estado das demais etapas.
 
 ---
 
@@ -17,11 +20,11 @@ abaixo). Ver `ROADMAP.md` (linha da fase 064) para o estado das etapas seguintes
 
 ```
 mcp_servers/makima/
-├── registry.py   # DOMAINS: dict[str, list[Callable]] — nami, kaguya (cresce na E6)
+├── registry.py   # DOMAINS: dict[str, list[Callable]] — os 10 domínios de agente
 ├── app.py        # host Starlette: monta um FastMCP por domínio sob /mcp/<domínio>
 ├── auth.py       # middleware bearer token (MAKIMA_MCP_TOKEN)
-├── legacy.py     # tool perguntar_makima_legado() — Etapa E2, roda o Runner ADK
-│                 # restrito aos domínios ainda não migrados
+├── legacy.py     # tool perguntar_makima_legado() — Etapa E2, _LEGACY_DOMAIN_AGENTS
+│                 # vazia desde a E6; removido de vez só na E7
 └── Dockerfile    # base Python 3.12-slim + uvicorn
 ```
 
@@ -32,9 +35,16 @@ montado como sub-app Starlette sob `/mcp/<domínio>`:
 |---|---|---|
 | `/mcp/nami` | `agents/nami/toolset.py` | E1 |
 | `/mcp/kaguya` | `agents/kaguya/toolset.py` | E1 |
+| `/mcp/frieren` | `agents/frieren/toolset.py` | E6 |
+| `/mcp/akane` | `agents/akane/toolset.py` | E6 |
+| `/mcp/komi` | `agents/komi/toolset.py` | E6 |
+| `/mcp/marin` | `agents/marin/toolset.py` | E6 |
+| `/mcp/mai` | `agents/mai/toolset.py` | E6 |
+| `/mcp/lucy` | `agents/lucy/toolset.py` | E6 |
+| `/mcp/kurisu` | `agents/kurisu/toolset.py` | E6 (só 1 tool, `buscar_na_base`) |
+| `/mcp/journal` | `agents/journal/toolset.py` (`violet_agent` — pacote continua `journal`, personalidade Violet) | Ativação da Violet, fora da E6 |
 | `/mcp/calendar` | `mcp_servers/calendar/server.py` (reaproveitado — só muda transporte, stdio→HTTP) | E1 |
-| `/mcp/legacy` | `legacy.py` — 1 tool (`perguntar_makima_legado`) | E2, some na E7 |
-| `/mcp/<domínio>` | `agents/<nome>/toolset.py`, um por vez | E6 (Frieren→Akane→Komi→Marin→Mai→Lucy→Kurisu) |
+| `/mcp/legacy` | `legacy.py` — 1 tool (`perguntar_makima_legado`), sem domínio pra rotear | E2, some na E7 |
 
 `registry.py` é o ponto único de verdade sobre quais domínios têm `toolset.py` próprio
 — `app.py` itera `DOMAINS` para montá-los; `calendar` e `legacy` são casos especiais,
@@ -72,8 +82,11 @@ forem importados no mesmo processo Python — nunca acontece em produção (cada
 seu próprio container, `makima-bot` vs. `makima-mcp`), mas a construção lazy elimina o
 risco em qualquer cenário que importe os dois módulos juntos (testes, scripts de debug).
 
-`_LEGACY_DOMAIN_AGENTS` encolhe manualmente a cada domínio migrado (Etapa E6) — remover
-uma entrada no mesmo commit em que o domínio ganha seu `toolset.py`.
+`_LEGACY_DOMAIN_AGENTS` está vazia desde a Etapa E6 — `create_makima(sub_agents=[])`
+monta uma Makima sem nenhum sub-agente (o fallback dos 9 domínios completos só entra
+quando `sub_agents` é `None`, não quando é lista vazia). `perguntar_makima_legado`
+continua registrada e responde, mas não tem mais domínio pra rotear — o módulo inteiro
+só é removido na Etapa E7.
 
 ---
 
@@ -128,11 +141,13 @@ Se algum domínio novo for montado com seu próprio `FastMCP(...)` fora de
 
 ## Testes (`tests/test_mcp_makima.py`, `tests/test_mcp_makima_legacy.py`)
 
-Cobrem: `registry.DOMAINS` (tools são callables, exclui `*_on_cursor`), `auth.py`
-(401 sem token / token errado / 200 com token certo), montagem de rotas (`app.py`), a
-proteção DNS-rebinding desligada (regressão do gotcha #2, via `TestClient` como context
-manager) e o schema da tool da ponte legada. Não testam contra Postgres/Gemini reais —
-isso é feito manualmente (ver abaixo).
+Cobrem: `registry.DOMAINS` — desde a Etapa E6, `test_registry_has_all_migrated_domains_with_callables`
+itera genericamente `DOMAINS.items()` conferindo que os 9 domínios existem, com pelo
+menos uma tool cada, todas callables (exclui `*_on_cursor`); `auth.py` (401 sem token /
+token errado / 200 com token certo); montagem de rotas (`app.py`); a proteção
+DNS-rebinding desligada (regressão do gotcha #2, via `TestClient` como context manager);
+e o schema da tool da ponte legada. Não testam contra Postgres/Gemini reais — isso é
+feito manualmente (ver abaixo).
 
 `tests/test_runner_utils.py` cobre `coordinator/runner_utils.py` (extraído de
 `coordinator/main.py::handle_message` — consumo de eventos do Runner ADK, fallback de
@@ -157,16 +172,30 @@ o teste não pode ser um `curl` simples do host):
 docker run --rm --network dokploy-network curlimages/curl \
   -H "Authorization: Bearer $MAKIMA_MCP_TOKEN" \
   -H "Accept: application/json, text/event-stream" -H "Content-Type: application/json" \
-  -X POST http://makima-mcp:8090/mcp/nami/ \
+  -X POST http://makima-mcp:8090/mcp/<domínio>/ \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}'
 ```
 
-Confirmado (ago/2026): `tools/list` retorna 60 tools em `/mcp/nami`, 46 em
+Confirmado (ago/2026, Etapa E1/E2): `tools/list` retorna 60 tools em `/mcp/nami`, 46 em
 `/mcp/kaguya`, 8 em `/mcp/calendar`, 1 em `/mcp/legacy`; 401 sem token/com token errado.
+
+**Etapa E6 (validado localmente, ainda não repetido contra a VPS)**: subindo
+`uvicorn mcp_servers.makima.app:app` localmente, o handshake `initialize` responde 200
+com `serverInfo.name` correto nos 9 domínios de agente + `calendar` (`google_calendar`)
++ `legacy` — confirma que a montagem das 7 rotas novas (Frieren, Akane, Komi, Marin,
+Mai, Lucy, Kurisu) não quebrou nada. `pytest` completo: os 9 testes de
+`tests/test_mcp_makima*.py` passam, incluindo o teste generalizado de `registry.DOMAINS`;
+as 57 falhas restantes da suíte são pré-existentes (dependem de Postgres real — mesma
+contagem já documentada na Etapa E1). Falta repetir o `curl` via container efêmero contra
+a VPS depois do deploy do `makima-mcp` com as mudanças desta etapa, como foi feito na E1.
 
 ---
 
-## Como adicionar um domínio novo (Etapa E6)
+## Como adicionar um domínio novo (histórico da Etapa E6 — os 9 já estão migrados)
+
+Passo a passo usado para migrar Nami/Kaguya (E1) e depois Frieren, Akane, Komi, Marin,
+Mai, Lucy, Kurisu (E6) — só relevante de novo se algum domínio futuro for adicionado ao
+projeto:
 
 1. Criar `agents/<nome>/toolset.py` com `TOOLS: list[Callable]` (extrair da lista de
    `agent.py`, mesmo padrão de `agents/nami/toolset.py`).

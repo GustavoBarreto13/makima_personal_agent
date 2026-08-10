@@ -13,29 +13,9 @@ Usage:
 
 from google.adk.agents import Agent
 
-# ── Tools públicas da Mai ──────────────────────────────────────────────────────
-from agents.mai.tools import (
-    # Descoberta e catálogo
-    search_series,          # Busca no TMDB por texto — sem gravar no banco
-    add_series,             # Adiciona série ao catálogo com metadados TMDB
-    update_status,          # Altera status da série
-    rate_series,            # Define nota 0.5–5.0
-    set_notes,              # Salva anotações sobre a série
-    # Sessões
-    log_watch,              # Registra sessão de episódios + incrementa episodes_watched
-    # Consultas
-    list_series,            # Grid filtrado e ordenado
-    get_series_detail,      # Detalhe: série + temporadas + próximo ep + logs
-    get_watchlist,          # Séries com status='quero_assistir'
-    get_currently_watching, # Séries com status='assistindo' + próximo ep
-    get_diary,              # Histórico de sessões cronológico
-    get_upcoming,           # Episódios futuros de séries 'assistindo'
-    get_stats,              # Estatísticas anuais (vazio-seguro)
-    # Manutenção
-    sync_metadata,          # Atualiza metadados TMDB + temporadas/episódios
-    delete_series,          # Soft delete
-    get_episodes_for_season,# Episódios de uma temporada (lazy-load)
-)
+# Lista de tools extraída para agents/mai/toolset.py na spec 064 (Etapa E6) — reaproveitada
+# pelo makima-mcp (mcp_servers/makima/registry.py) sem duplicar a lista aqui.
+from agents.mai.toolset import TOOLS as _MAI_TOOLS
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -160,26 +140,5 @@ mai_agent = Agent(
         "Domínio: séries de TV — não atende filmes, animes standalone, livros, tarefas ou finanças."
     ),
     instruction=_MAI_INSTRUCTION,
-    tools=[
-        # Descoberta e catálogo
-        search_series,
-        add_series,
-        update_status,
-        rate_series,
-        set_notes,
-        # Sessões
-        log_watch,
-        # Consultas
-        list_series,
-        get_series_detail,
-        get_watchlist,
-        get_currently_watching,
-        get_diary,
-        get_upcoming,
-        get_stats,
-        get_episodes_for_season,
-        # Manutenção
-        sync_metadata,
-        delete_series,
-    ],
+    tools=_MAI_TOOLS,
 )

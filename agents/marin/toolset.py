@@ -1,0 +1,66 @@
+"""Lista de tools públicas da Marin, para exposição via MCP (mcp_servers/makima).
+
+Extraído de agents/marin/agent.py (mesma lista passada a Agent(tools=[...])) — nenhuma
+lógica nova aqui, só o registro. Usado por mcp_servers/makima/registry.py (Etapa E6 da
+spec 064) e continua sendo importado por agent.py, que não muda de comportamento.
+"""
+
+from agents.marin.tools import (
+    search_anime,
+    add_anime,
+    refresh_anime_metadata,
+    log_watch,
+    delete_watch_log,
+    update_anime_status,
+    rate_anime,
+    delete_anime,
+    get_currently_watching,
+    get_watchlist,
+    get_watch_history,
+    get_anime_details,
+    get_airing_schedule,
+    get_stats,
+    get_home,
+    sync_mal,
+    set_anime_notes,
+    get_lists,
+    get_list,
+    create_list,
+    add_to_list,
+    remove_from_list,
+    delete_list,
+    get_tags,
+    add_tag,
+    remove_tag,
+    get_rewind,
+)
+
+TOOLS = [
+    search_anime,
+    add_anime,
+    refresh_anime_metadata,
+    log_watch,
+    delete_watch_log,
+    update_anime_status,
+    rate_anime,
+    delete_anime,
+    get_currently_watching,
+    get_watchlist,
+    get_watch_history,
+    get_anime_details,
+    get_airing_schedule,
+    get_stats,
+    get_home,
+    sync_mal,
+    set_anime_notes,
+    get_lists,
+    get_list,
+    create_list,
+    add_to_list,
+    remove_from_list,
+    delete_list,
+    get_tags,
+    add_tag,
+    remove_tag,
+    get_rewind,
+]

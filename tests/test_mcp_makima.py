@@ -29,13 +29,16 @@ def _dummy_app():
     )
 
 
-def test_registry_has_nami_and_kaguya_with_callables():
-    assert "nami" in DOMAINS
-    assert "kaguya" in DOMAINS
-    assert len(DOMAINS["nami"]) > 0
-    assert len(DOMAINS["kaguya"]) > 0
-    assert all(callable(tool) for tool in DOMAINS["nami"])
-    assert all(callable(tool) for tool in DOMAINS["kaguya"])
+def test_registry_has_all_migrated_domains_with_callables():
+    # Etapa E6 migrou os 7 domínios que faltavam além de nami/kaguya (E1) — todos devem
+    # estar em DOMAINS com pelo menos uma tool, todas callables.
+    expected_domains = {
+        "nami", "kaguya", "frieren", "akane", "komi", "marin", "mai", "lucy", "kurisu",
+    }
+    assert expected_domains <= DOMAINS.keys()
+    for name, tools in DOMAINS.items():
+        assert len(tools) > 0, f"domínio {name} sem tools"
+        assert all(callable(tool) for tool in tools), f"domínio {name} tem tool não-callable"
 
 
 def test_registry_excludes_on_cursor_variants():

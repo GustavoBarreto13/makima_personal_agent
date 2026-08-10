@@ -49,7 +49,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | `agents/marin/` | Animes (PostgreSQL + Jikan/AniList + MAL OAuth) | ✅ Fase 021 | `agents/marin/CLAUDE.md` |
 | `agents/mai/` | Séries de TV (PostgreSQL + TMDB API v3) | ✅ Fase 022 | `agents/mai/CLAUDE.md` |
 | `agents/komi/` | Pessoas e contatos (PostgreSQL) | ✅ Fase 014 | `agents/komi/CLAUDE.md` |
-| `agents/journal/` | Diário (Violet) — **módulo de tools, não é sub-agente ADK**: sem `agent.py`, consumido só pelo router `/api/journal/*` do webapp | ✅ web | `agents/journal/CLAUDE.md` |
+| `agents/journal/` | Diário (Violet) — sub-agente ADK completo (`violet_agent`, ativado na spec 064) + consumido pelo router `/api/journal/*` do webapp | ✅ Fase 003/006/007 · ✅ agente | `agents/journal/CLAUDE.md` |
 | `agents/lucy/` | Email (Gmail) — agente somente leitura (IMAP) + digest matinal agendado | ✅ Fase 4 / 032 | `agents/lucy/CLAUDE.md` |
 
 ### Como o coordinator importa
@@ -65,6 +65,7 @@ from agents.marin.agent import marin_agent            # catálogo de animes (spe
 from agents.mai.agent import mai_agent                # catálogo de séries de TV (spec 022)
 from agents.komi.agent import komi_agent              # identidade de pessoas (spec 014)
 from agents.lucy.agent import lucy_agent              # email (Gmail), somente leitura (spec 032)
+from agents.journal.agent import violet_agent         # diário pessoal, Auto Memory Doll (spec 064)
 ```
 
 Imports locais — nada de `PYTHONPATH` apontando para outro repo.
@@ -88,7 +89,8 @@ coordinator/agent.py  (Makima — Agent ADK)
     ├── marin_agent     → PostgreSQL (animes) + Jikan + AniList + MAL [agents/marin]
     ├── mai_agent       → PostgreSQL (séries) + TMDB API v3          [agents/mai]
     ├── komi_agent      → PostgreSQL (pessoas + vínculos)            [agents/komi]
-    └── lucy_agent      → Gmail via IMAP, somente leitura            [agents/lucy]
+    ├── lucy_agent      → Gmail via IMAP, somente leitura            [agents/lucy]
+    └── violet_agent    → PostgreSQL (diário, emoções, cartas)       [agents/journal]  (personalidade Violet — spec 064)
 
 scheduler/  (makima-scheduler — jobs agendados)
     └── lucy_digest     → digest matinal 08:00 (classificação Gemini + labels/arquivo + Telegram + histórico) [agents/lucy + scripts/send_lucy_digest.py]
@@ -96,7 +98,11 @@ scheduler/  (makima-scheduler — jobs agendados)
 
 **Makima não tem tools próprias** — ela só delega. Toda lógica de acesso a APIs fica nas tools dos agents especialistas em `agents/`.
 
-> O diário (Violet) **não aparece no diagrama de propósito**: `agents/journal/` é um módulo de tools sem `agent.py`, consumido apenas pelo webapp (`/api/journal/*`). A personalidade Violet e o rename `journal → violet` estão planejados em `docs/planos/PLANO_VIOLET_EVERGARDEN.md`.
+> `violet_agent` vive no pacote `agents/journal/` (nome do pacote não mudou — só a
+> personalidade do `Agent`), consumido tanto pelo coordinator/Hermes quanto pelo webapp
+> (`/api/journal/*`, direto de `agents.journal.tools`, sem passar pelo agente). O rename
+> `agents/journal → agents/violet` (Parte A do `docs/planos/PLANO_VIOLET_EVERGARDEN.md`)
+> segue não executado — decisão deliberada, ver `agents/journal/CLAUDE.md`.
 
 Para detalhes do coordinator (infraestrutura, sessões, env vars, parse_mode), ver `coordinator/CLAUDE.md`.
 
@@ -142,8 +148,8 @@ Idempotente: `INSERT … ON CONFLICT (person_id, entity_type, entity_id) DO NOTH
 | Nami | `create_transaction` / `create_transaction_on_cursor` | `"transaction"` |
 | Kaguya | `create_task` | `"task"` |
 | Frieren | `add_book` | `"book"` |
-| Journal | `upsert_bullet` | `"journal_bullet"` (+ auto-link @menções único) |
-| Journal | `create_letter` / `update_letter` | `"journal_letter"` (cartas da Violet) |
+| Violet | `upsert_bullet` | `"journal_bullet"` (+ auto-link @menções único) |
+| Violet | `create_letter` / `update_letter` | `"journal_letter"` (cartas da Violet) |
 
 ### Regra de smart-match antes de vincular
 
@@ -253,10 +259,12 @@ makima_personal_agent/
 │   │   ├── agent.py     # mai_agent — singleton
 │   │   ├── schema_pg.sql # schema das 4 tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, schema, TMDB Bearer, personalidade
-│   └── journal/         # diário (Violet) — módulo de tools, SEM agent.py (só webapp)
+│   └── journal/         # diário (Violet) — sub-agente ADK completo + webapp — spec 064 ✅
 │       ├── __init__.py
-│       ├── tools.py     # PostgreSQL (pages, bullets, mentions, emoções) — cria tabelas sob demanda
-│       └── CLAUDE.md    # tools, schema, integração com o webapp
+│       ├── tools.py     # PostgreSQL (pages, bullets, mentions, emoções, cartas) — cria tabelas sob demanda
+│       ├── toolset.py   # TOOLS: list[Callable] — reaproveitado por mcp_servers/makima — spec 064
+│       ├── agent.py     # violet_agent — singleton, personalidade Auto Memory Doll
+│       └── CLAUDE.md    # tools, schema, personalidade, integração com o webapp
 ├── mcp_servers/
 │   ├── __init__.py
 │   ├── calendar/

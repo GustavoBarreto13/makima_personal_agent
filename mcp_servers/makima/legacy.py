@@ -1,4 +1,4 @@
-"""Ponte legada MCP — mantém os domínios ainda não migrados vivos via o Runner ADK atual.
+"""Ponte legada MCP — mantinha os domínios ainda não migrados vivos via o Runner ADK atual.
 
 Etapa E2 da spec 064: expõe uma única tool, ``perguntar_makima_legado(mensagem,
 chat_id)``, que instancia a Makima (coordinator/agent.py) com uma lista REDUZIDA de
@@ -6,8 +6,11 @@ sub_agents — só os domínios que ainda não têm servidor MCP nativo em
 mcp_servers/makima/registry.py — e roda a mensagem pelo Runner ADK, devolvendo o texto
 consolidado da resposta.
 
-``_LEGACY_DOMAIN_AGENTS`` encolhe manualmente a cada domínio migrado (Etapa E6) e este
-módulo inteiro é removido na Etapa E7, quando ``registry.DOMAINS`` cobrir os 10 domínios.
+``_LEGACY_DOMAIN_AGENTS`` está vazia desde a Etapa E6 (os 7 domínios que faltavam
+ganharam ``toolset.py`` próprio) — este módulo só é removido de fato na Etapa E7.
+``perguntar_makima_legado`` continua registrada, mas não tem mais nenhum domínio para
+rotear (``create_makima(sub_agents=[])`` não cai no fallback dos 9 domínios — só entra
+nele quando ``sub_agents`` é ``None``).
 
 Rodar isolado para debug:
     python -m mcp_servers.makima.legacy
@@ -30,20 +33,11 @@ from mcp.server.fastmcp import FastMCP  # noqa: E402
 from coordinator.agent import create_makima  # noqa: E402
 from coordinator.runner_utils import run_and_collect_text  # noqa: E402
 
-# Domínios ainda não presentes em mcp_servers/makima/registry.py.DOMAINS — mesma lista
-# do coordinator, exceto Nami e Kaguya (migrados na Etapa E1). Remover uma entrada daqui
-# no mesmo commit em que o domínio ganha seu toolset.py (Etapa E6).
-from agents.kurisu.agent import kurisu_agent  # noqa: E402
-from agents.frieren.agent import frieren_agent  # noqa: E402
-from agents.akane.agent import akane_agent  # noqa: E402
-from agents.marin.agent import marin_agent  # noqa: E402
-from agents.mai.agent import mai_agent  # noqa: E402
-from agents.komi.agent import komi_agent  # noqa: E402
-from agents.lucy.agent import lucy_agent  # noqa: E402
-
-_LEGACY_DOMAIN_AGENTS = [
-    kurisu_agent, frieren_agent, akane_agent, marin_agent, mai_agent, komi_agent, lucy_agent,
-]
+# Domínios ainda não presentes em mcp_servers/makima/registry.py.DOMAINS — vazia desde a
+# Etapa E6 (os 7 domínios que faltavam ganharam toolset.py próprio: Frieren, Akane, Komi,
+# Marin, Mai, Lucy, Kurisu). Este módulo só é removido de fato na Etapa E7 — mantido por
+# ora para não quebrar nada que ainda importe perguntar_makima_legado.
+_LEGACY_DOMAIN_AGENTS: list = []
 
 APP_NAME = "makima-legacy"
 
@@ -79,9 +73,9 @@ async def perguntar_makima_legado(mensagem: str, chat_id: str) -> str:
     """Encaminha uma mensagem para os domínios ainda não migrados para MCP nativo.
 
     Roda a mensagem pelo Runner ADK da Makima (coordinator/agent.py), restrito aos
-    sub_agents que ainda não têm servidor MCP próprio (kurisu, frieren, akane, marin,
-    mai, komi, lucy — ver _LEGACY_DOMAIN_AGENTS). Cobre exatamente os domínios que
-    faltam em mcp_servers/makima/registry.py.DOMAINS.
+    sub_agents que ainda não têm servidor MCP próprio — hoje nenhum (Etapa E6 migrou
+    os 7 que faltavam), ver _LEGACY_DOMAIN_AGENTS. Mantida só até a Etapa E7 remover o
+    módulo por completo.
 
     Args:
         mensagem: texto do usuário, repassado como está para o Runner ADK.

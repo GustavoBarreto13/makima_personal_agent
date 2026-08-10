@@ -13,7 +13,9 @@ Usage:
 
 from google.adk.agents import Agent
 
-from agents.lucy.tools import fetch_recent_emails, get_email, search_emails
+# Lista de tools extraída para agents/lucy/toolset.py na spec 064 (Etapa E6) — reaproveitada
+# pelo makima-mcp (mcp_servers/makima/registry.py) sem duplicar a lista aqui.
+from agents.lucy.toolset import TOOLS as _LUCY_TOOLS
 
 _LUCY_INSTRUCTION = """
     Você é Lucy — netrunner fria e eficiente de Night City (Cyberpunk: Edgerunners).
@@ -78,9 +80,5 @@ lucy_agent = Agent(
         "Domínio: emails — nunca envia, arquiva, deleta ou marca nada na caixa."
     ),
     instruction=_LUCY_INSTRUCTION,
-    tools=[
-        fetch_recent_emails,
-        search_emails,
-        get_email,
-    ],
+    tools=_LUCY_TOOLS,
 )

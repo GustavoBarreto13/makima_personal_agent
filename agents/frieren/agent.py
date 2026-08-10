@@ -5,21 +5,9 @@ Inspirada em Frieren Beyond Journey's End: contemplativa, paciente, perspectiva 
 
 from google.adk.agents import Agent
 
-from agents.frieren.tools import (
-    search_book,
-    add_book,
-    log_reading,
-    get_current_reading,
-    get_reading_list,
-    finish_book,
-    update_book_status,
-    update_book_pages,
-    get_reading_stats,
-    get_book_history,
-    get_book_menu_data,
-    delete_book,
-    delete_reading_log,
-)
+# Lista de tools extraída para agents/frieren/toolset.py na spec 064 (Etapa E6) — reaproveitada
+# pelo makima-mcp (mcp_servers/makima/registry.py) sem duplicar a lista aqui.
+from agents.frieren.toolset import TOOLS as _FRIEREN_TOOLS
 
 # Instrução de personalidade para a Frieren — define tom, comportamento e regras de formatação.
 # A Frieren é uma elfa milenar que vive lendo e refletindo sobre histórias.
@@ -141,19 +129,5 @@ frieren_agent = Agent(
         "busca metadados na Google Books API e gera estatísticas de leitura."
     ),
     instruction=_FRIEREN_INSTRUCTION,
-    tools=[
-        search_book,
-        add_book,
-        log_reading,
-        get_current_reading,
-        get_reading_list,
-        finish_book,
-        update_book_status,
-        update_book_pages,
-        get_reading_stats,
-        get_book_history,
-        get_book_menu_data,
-        delete_book,
-        delete_reading_log,
-    ],
+    tools=_FRIEREN_TOOLS,
 )
