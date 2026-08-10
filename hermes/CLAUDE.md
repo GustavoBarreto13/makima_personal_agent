@@ -300,11 +300,19 @@ próximo passo, não uma reescrita.
    `makima` fazendo long-polling o tempo todo, `getUpdates` manual sempre volta vazio).
    Fix: variável cadastrada, `GATEWAY_ALLOW_ALL_USERS` removida, confirmado com mensagem
    real no Telegram sem bloqueio.
-5. WhatsApp: parear via QR code (`hermes whatsapp` dentro do container) com um número
-   dedicado — não o número pessoal do usuário. Ver seção "Etapa E4" abaixo.
-6. Discord: criar o app/bot, ligar "Message Content Intent" + "Server Members Intent",
-   convidar o bot, configurar `DISCORD_BOT_TOKEN` + a allowlist. Ver seção "Etapa E4"
-   abaixo.
+5. ~~WhatsApp: parear via QR code~~ — **feito e validado**: número dedicado pareado via
+   `hermes whatsapp` (modo self-chat), `creds.json` real gravado em
+   `whatsapp/session/`, `hermes status` confirmou `WhatsApp ✓ configured` após
+   `docker restart makima-hermes`. Ponta a ponta: mensagem real "Quantos filmes vi esse
+   mes" enviada às 22:07:04, respondida às 22:07:24, sem erro de autorização. Ver seção
+   "Etapa E4" abaixo.
+6. ~~Discord: criar o app/bot~~ — **feito e validado**: bot criado no Developer Portal,
+   Message Content Intent ligado, convidado a um servidor via OAuth2,
+   `DISCORD_BOT_TOKEN` e `DISCORD_HERMES_ALLOWED_USER_ID` cadastrados no Environment do
+   Dokploy. Ponta a ponta: DM real "oi" às 22:43:29, resposta de 22 caracteres enviada às 22:43:38 (log:
+   `[Discord] Connected as Hermes Agent#9849` → `inbound message: platform=discord ...
+   msg='oi'` → `response ready: platform=discord ... response=22 chars`). Ver seção
+   "Etapa E4" abaixo, incluindo o padrão de reconexão encontrado no processo.
 
 Ver `specs/064-hermes-multicanal/quickstart.md` (Etapas E3/E4) para o roteiro completo
 de validação manual.
@@ -366,6 +374,36 @@ container não recarrega sozinho" já documentada acima para o `config.yaml`).
 **Verificar**: `hermes status` → `WhatsApp ✓ configured`; mandar mensagem de teste do
 número autorizado pro número do bot.
 
+#### ⚠️ Não parear pelo dashboard web — falha estruturalmente neste deploy
+
+A página **Channels** do dashboard tem um fluxo de pareamento por QR code embutido
+(mais conveniente à primeira vista — QR aparece no navegador, sem SSH). **Não usar.**
+
+Testado ao vivo: o escaneamento em si funciona (confirmado — sessão real, `creds.json`
+com chaves genuínas do Baileys apareceu em `/opt/data/whatsapp/session/`), mas o passo
+final de "salvar" retorna `500: Failed to save WhatsApp setup` e a rotina de onboarding
+**apaga a sessão recém-pareada** em seguida (`creds.json` sumiu). Causa raiz, lida em
+`errors.log` + código-fonte dentro do container: o dashboard tenta persistir
+`platforms.whatsapp.enabled: true` **escrevendo direto em `config.yaml`**
+(`web_server.py::apply_whatsapp_onboarding` → `_write_platform_enabled("whatsapp", True)`
+→ `config.py::write_platform_config_field` → `save_config()` → `atomic_yaml_write()`),
+que falha com `OSError: [Errno 30] Read-only file system: '/opt/data/config.yaml'` — o
+mesmo bind mount `:ro` que garante que a config fica versionada no git (decisão
+deliberada, não um acidente a desfazer). `write_platform_config_field` chama
+`save_config()` **incondicionalmente**, sem checar se o valor já era `true` — não dá pra
+contornar pré-declarando `enabled: true` no `config.yaml` deste repo.
+
+O mesmo mecanismo (`_write_platform_enabled`) é genérico: usado também no onboarding do
+Telegram (`web_server.py:9331`) e num endpoint de toggle por plataforma
+(`web_server.py:9499`, cobre qualquer canal, incl. Discord). **Regra geral pra este
+deploy**: nunca usar toggles "enable/disable"/wizards de setup de canal pela UI do
+dashboard — todos vão falhar com o mesmo 500, e no caso do WhatsApp isso destrói a
+sessão pareada. O dashboard continua útil pra **ver** (Logs, Channels em modo leitura,
+Config, Sessions, MCP) — só não pra **salvar** mudança de plataforma, mesma ressalva já
+documentada pra página Config em geral. O único caminho suportado pra ligar um canal
+neste deploy é: CLI (`hermes whatsapp`, grava em `.env`) ou editar `hermes/config.yaml`
+no git + deploy (Telegram, Discord).
+
 ### Discord — bot via API oficial
 
 Token declarativo (`DISCORD_BOT_TOKEN`), sem CLI de pareamento — a maior parte da
@@ -404,6 +442,29 @@ variável no Environment do Dokploy é o caminho normal (evita depender só do p
 Depois de cadastrar e redeployar: mandar uma DM pro bot ou mencioná-lo num canal do
 servidor onde foi convidado. Se `DISCORD_HERMES_ALLOWED_USER_ID` ainda não tiver
 propagado, o pareamento intercepta e oferece o fluxo normal (`hermes pairing approve`).
+
+⚠️ **Não clicar no toggle "enable" do Discord na página Channels do dashboard** — mesmo
+código (`_write_platform_enabled`) e mesma falha (`500`, `config.yaml` `:ro`) do WhatsApp
+acima. Ligar o Discord é só cadastrar as env vars + redeploy, nunca pela UI do dashboard.
+
+**Padrão observado ao validar em produção — conexão trava, restart resolve**: nas
+primeiras tentativas (mesmo com token limpo e Message Content Intent confirmadamente
+ligado, via captura de tela do próprio Developer Portal) a conexão falhou repetidas vezes
+com `discord.errors.PrivilegedIntentsRequired` e/ou ciclos de "Shard ID None session has
+been invalidated" → "discord connect timed out after 30s". Nos logs apareceu uma conexão
+anterior não fechada (`ERROR asyncio: Unclosed connection ... client_connection:
+Connection<ConnectionKey(host='gateway.discord.gg'...)`), sugerindo uma sessão websocket
+vazada bloqueando novos handshakes (`IDENTIFY`). `docker restart makima-hermes` limpou o
+estado e a primeira tentativa de conexão do processo novo já funcionou de primeira. Se
+Discord voltar a travar em reconexão depois de uma mudança de config/token, tentar restart
+antes de assumir que é problema de intent ou de token.
+
+**Achado não crítico, sem ação pendente**: o link de convite OAuth2 usado nesta validação
+foi gerado sem nenhuma permissão de bot marcada (scope `bot`, mas checkboxes de
+"Permissões do bot" todos vazios). Isso não bloqueou o teste porque DM não depende de
+permissão de servidor — mas pode faltar "Send Messages"/"Read Message History" se o bot
+precisar operar dentro de canais de um servidor de verdade depois. Gerar um novo link com
+essas permissões marcadas só quando isso for necessário.
 
 ### Resumo do que é automatizável vs. manual
 
