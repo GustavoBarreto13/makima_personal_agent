@@ -27,6 +27,27 @@ model:
   # OPENAI_API_KEY separado.
   api_key: "${GEMINI_API_KEY}"
 
+# Etapa E5 (voz/imagem, spec 064) — STT e visão já vêm ligados por padrão no Hermes
+# (achado ao investigar: `hermes config get stt`/`hermes tools list` confirmaram os dois
+# ativos sem nenhuma config nossa). Trazemos os dois pro template versionado por dois
+# motivos: (1) deixar de depender de default implícito e não documentado; (2) corrigir
+# um achado real em produção — `stt.language` estava em `en` (provavelmente herdado de
+# um teste anterior via CLI), o que degrada a transcrição de áudio em português. `image_input_mode`
+# permanece "auto" (default) — com Gemini (suporta visão nativa), o Hermes já anexa os
+# pixels da imagem diretamente ao modelo em vez de rodar um modelo auxiliar de descrição.
+stt:
+  enabled: true
+  provider: local   # faster-whisper, roda no próprio container — grátis, sem API key
+  language: pt       # corrigido de "en" — a maioria dos áudios recebidos é em português
+  echo_transcripts: true   # ecoa a transcrição ao usuário antes do agente responder —
+                            # útil pro fluxo "bullet de diário por voz" (spec 064 E5):
+                            # o usuário confirma visualmente que a fala foi entendida
+
+agent:
+  image_input_mode: auto   # native quando o modelo suporta visão (caso do Gemini) —
+                            # pixels reais + descrição textual automática injetada no
+                            # texto da mensagem antes do turno do agente
+
 # Um bloco por domínio MCP montado em makima-mcp (mcp_servers/makima/app.py), chaveado
 # por nome (dict, não lista). Espelha mcp_servers/makima/registry.py.DOMAINS — desde a
 # Etapa E6, os 9 domínios migrados (nami, kaguya + os 7 que faltavam) + calendar + legacy

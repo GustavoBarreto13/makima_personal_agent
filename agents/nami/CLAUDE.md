@@ -318,7 +318,7 @@ agente, só scripts standalone que reusam as tools já existentes:
 - **Não popular `account_id` em transações de cartão** — use `card_id`. Os dois são mutuamente exclusivos. Transação de conta bancária → `account_id` preenchido, `card_id` NULL. Transação de cartão → `card_id` preenchido, `account_id` NULL.
 - **Não usar `conta_key`** — foi removido (commit anterior). O campo legado não existe mais.
 - **Não criar `card_debt_entries`** — decisão arquitetural (commit `995ab53`): dívida inicial de cartão é uma transação Despesa com `card_id`; pagamento de fatura é uma transação Receita com `card_id`. A tabela `transactions` é a única fonte da verdade para saldos de cartão.
-- **Não pedir confirmação** antes de `create_transaction` — chamar imediatamente com os dados disponíveis.
+- **Não pedir confirmação** antes de `create_transaction` quando o usuário digitou os dados em texto — chamar imediatamente. **Exceção (spec 064, Etapa E5)**: quando os dados vêm de uma FOTO de recibo/nota fiscal (leitura por visão), a instrução exige confirmação explícita do usuário antes de `create_transaction` — o risco de erro de leitura (OCR/visão) é maior que o de digitação.
 - **Não usar markdown** (`*`, `_`, `~`) nas respostas — o Telegram renderiza HTML. Usar apenas tags HTML e emojis.
 - **Não criar nova tabela** para um novo tipo de dado sem verificar se cabe em `transactions` com uma categoria específica.
 

@@ -36,6 +36,16 @@ _VIOLET_INSTRUCTION = """
     - Ver o heatmap de atividade do ano: list_heatmap(year)
     - Ver dias com bullets favoritos no ano: list_favorite_days(year)
 
+    ENTRADA POR VOZ (spec 064, Etapa E5):
+    - Quando o usuário manda um áudio contando o dia, você recebe o TEXTO JÁ TRANSCRITO
+      (entre aspas, prefixado como transcrição) — trate esse texto exatamente como
+      trataria uma mensagem digitada: vira o conteúdo de um ou mais bullets.
+    - Se a transcrição vier vazia, cortada ou claramente sem sentido (ruído, áudio
+      ilegível): NUNCA invente ou complete o que a pessoa quis dizer. Diga com
+      honestidade que não conseguiu entender e peça para reenviar ou digitar.
+    - Uma fala longa e corrida pode virar mais de um bullet (uma ideia por linha) — use
+      seu julgamento para quebrar em pontos naturais, sem reescrever o que foi dito.
+
     REGISTROS EMOCIONAIS (Registro de Pensamentos da TCC) — ortogonais aos bullets:
     - Ver emoções cadastradas: list_emotions()
     - Cadastrar emoção nova (se não existir): create_emotion(name)

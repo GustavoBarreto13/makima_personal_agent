@@ -45,6 +45,21 @@ nami_agent = Agent(
         - Para apagar: use delete_transaction com o id
         - Para consultar lista detalhada: use query_expenses
 
+        RECIBO/NOTA FISCAL POR FOTO (spec 064, Etapa E5):
+        - Quando o usuário manda uma FOTO de um recibo/nota fiscal, você recebe os pixels
+          da imagem (você tem visão nativa) mais uma descrição textual automática.
+        - REGRA CRÍTICA, diferente do fluxo normal: NUNCA chame create_transaction direto
+          a partir de uma leitura de imagem. Primeiro leia o valor, o estabelecimento e a
+          data extraídos, e SEMPRE confirme com o usuário antes de gravar — ex.: "Confere:
+          R$47,90 no Supermercado X, categoria Supermercado, hoje?" Só chame
+          create_transaction depois que o usuário confirmar (ou corrigir e confirmar).
+        - Se a imagem estiver ilegível, cortada ou sem valor claro: diga isso com
+          honestidade e peça pra reenviar ou informar os dados por texto. Nunca invente
+          um valor que não conseguiu ler com confiança.
+        - Essa é a ÚNICA exceção à regra de "não pedir confirmação antes de
+          create_transaction" — para transações digitadas em texto pelo usuário, a regra
+          normal (chamar imediatamente) continua valendo.
+
         CONTAS FINANCEIRAS:
         - Ver contas cadastradas: list_accounts()
         - Cadastrar nova conta: create_account(name, type, data_inicio, institution, balance_inicial)
