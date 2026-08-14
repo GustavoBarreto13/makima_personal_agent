@@ -468,6 +468,7 @@ def create_event(
     all_day: bool = False,
     description: str = "",
     location: str = "",
+    reminders: dict | None = None,
 ) -> dict:
     """Cria um novo evento num calendário específico.
 
@@ -483,6 +484,9 @@ def create_event(
         all_day: Se True, cria evento de dia inteiro (ignora a hora, usa só a data).
         description: Descrição opcional do evento.
         location: Local opcional do evento.
+        reminders: Override explícito do campo `reminders` da API (ex.:
+            ``{"useDefault": False, "overrides": [{"method": "popup", "minutes": 30}]}``).
+            Omitido (`None`) = herda o padrão do calendário (`useDefault` implícito).
 
     Returns:
         Dict com:
@@ -523,6 +527,8 @@ def create_event(
         event_body["description"] = description
     if location:
         event_body["location"] = location
+    if reminders is not None:
+        event_body["reminders"] = reminders
 
     created = service.events().insert(calendarId=calendar_id, body=event_body).execute()
 
@@ -564,6 +570,7 @@ def update_event(
             - all_day (bool): Se True, converte para evento de dia inteiro.
             - description (str): Nova descrição.
             - location (str): Novo local.
+            - reminders (dict): Override explícito do campo `reminders` da API.
 
     Returns:
         Dict normalizado do evento atualizado (via `_format_event`).
@@ -601,6 +608,9 @@ def update_event(
 
     if "location" in fields and fields["location"] is not None:
         patch_body["location"] = fields["location"]
+
+    if "reminders" in fields and fields["reminders"] is not None:
+        patch_body["reminders"] = fields["reminders"]
 
     if "start" in fields and fields["start"] is not None:
         if all_day:

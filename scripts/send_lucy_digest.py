@@ -5,7 +5,7 @@ aplica a label da categoria no Gmail, arquiva os "Junk", envia o digest ao Teleg
 (parse_mode=HTML) e persiste o histórico em `lucy_emails`.
 
 Falha por item (label/archive) é logada e não interrompe o lote (FR-015). Falha
-estrutural (IMAP/Gemini/Telegram/DB) aborta com `sys.exit(1)` — o wrapper do scheduler
+estrutural (IMAP/Gemini/envio/DB) aborta com `sys.exit(1)` — o wrapper do scheduler
 (`scheduler/jobs.py::run_lucy_digest`) converte isso em `RuntimeError`.
 
 Usage:
@@ -13,10 +13,7 @@ Usage:
 """
 
 import logging
-import os
 import sys
-
-import requests
 
 from agents.lucy import gmail_imap
 from agents.lucy.tools import (
@@ -26,31 +23,10 @@ from agents.lucy.tools import (
     persist_classified,
     yesterday_local_date,
 )
+from scheduler.notify_channels import send_notification
 
 log = logging.getLogger("lucy-digest")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s")
-
-_TELEGRAM_TIMEOUT = 30
-
-
-def _send_telegram(html: str) -> None:
-    """Enviar o digest ao Telegram via POST direto (parse_mode=HTML).
-
-    Raises:
-        RuntimeError: se as credenciais estiverem ausentes ou o envio falhar.
-    """
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_ALERT_CHAT_ID")
-    if not token or not chat_id:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN/TELEGRAM_ALERT_CHAT_ID não configurados")
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    resp = requests.post(
-        url,
-        json={"chat_id": chat_id, "text": html, "parse_mode": "HTML"},
-        timeout=_TELEGRAM_TIMEOUT,
-    )
-    resp.raise_for_status()
 
 
 def main() -> int:
@@ -65,10 +41,8 @@ def main() -> int:
     if not emails:
         log.info("Nenhum email de ontem encontrado.")
         digest_html = build_telegram_digest([], {"prompt_tokens": 0, "candidates_tokens": 0})
-        try:
-            _send_telegram(digest_html)
-        except Exception as exc:  # noqa: BLE001
-            log.error("Falha ao enviar digest (sem emails) ao Telegram: %s", exc)
+        if not send_notification(digest_html):
+            log.error("Falha ao enviar digest (sem emails): nenhum canal recebeu")
             return 1
         print("[lucy-digest] 0 emails, nada a processar")
         return 0
@@ -117,10 +91,8 @@ def main() -> int:
           "action": item["action"], "summary": item["summary"]} for item in merged],
         usage,
     )
-    try:
-        _send_telegram(digest_html)
-    except Exception as exc:  # noqa: BLE001 — falha estrutural
-        log.error("Falha ao enviar digest ao Telegram: %s", exc)
+    if not send_notification(digest_html):
+        log.error("Falha ao enviar digest: nenhum canal recebeu")
         return 1
 
     received_date = yesterday_local_date()

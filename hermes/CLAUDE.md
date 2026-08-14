@@ -477,6 +477,66 @@ essas permissões marcadas só quando isso for necessário.
 | Rodar `hermes whatsapp` e escanear o QR code | manual — precisa de TTY real + câmera do celular, não dá pra automatizar por SSH sem interação em tempo real |
 | `docker restart makima-hermes` depois do pareamento do WhatsApp | pode ser feito por qualquer um dos dois, mediante confirmação (ação real, não é deploy) |
 
+## Notificações multi-canal (spec 064, User Story 5 / FR-011+FR-012)
+
+Kaguya (e os outros jobs do `scheduler/`) não tinham NENHUMA notificação proativa fora do
+Telegram — o usuário pediu WhatsApp. Achado central (lendo o binário `hermes` ao vivo,
+`docker exec makima-hermes hermes --help`): o Hermes já tem um sistema nativo de webhooks
+que resolve isso sem reimplementar nada de envio por canal — só precisava ser LIGADO.
+
+### O mecanismo: `hermes webhook subscribe ... --deliver-only`
+
+Uma rota HTTP (`/webhooks/<nome>`) que, ao receber um POST, entrega o payload direto no
+canal configurado — **sem passar pelo LLM** (`--deliver-only`, custo zero, determinístico).
+`hermes send --list` confirmou os 3 canais já prontos como alvo de entrega: `telegram`,
+`whatsapp`, `discord`.
+
+### Ativação (feito em 14/ago/2026)
+
+1. **Environment da app Hermes no Dokploy** — 3 variáveis novas:
+   `WEBHOOK_ENABLED=true`, `WEBHOOK_PORT=8644`, `WEBHOOK_SECRET=<segredo forte>`.
+2. **`hermes/config.yaml`** — bloco `platforms.webhook` (`enabled: true`,
+   `extra.port`/`extra.secret: "${WEBHOOK_SECRET}"`). **Achado importante**: só a env var
+   NÃO bastava — o processo `gateway run` a lê e sobe o listener normalmente (log confirma
+   `[webhook] Listening on *:8644`), mas o subcomando `hermes webhook subscribe`/`list`
+   olha o `config.yaml` resolvido, não o ambiente do processo em execução — sem o bloco
+   declarado lá, o CLI recusa com "Webhook platform is not enabled" mesmo com o listener já
+   de pé. Mesma classe de "duas fontes de verdade" já documentada acima para outros canais.
+3. Redeploy da app Hermes → confirma com `docker exec makima-hermes hermes webhook list`.
+4. Criar as rotas (uma por canal — cada rota tem UM `--deliver` fixo, não dá pra escolher
+   o canal no payload):
+   ```bash
+   docker exec makima-hermes hermes webhook subscribe notify-whatsapp \
+     --prompt '{message}' --deliver whatsapp --deliver-only
+   docker exec makima-hermes hermes webhook subscribe notify-telegram \
+     --prompt '{message}' --deliver telegram --deliver-only
+   docker exec makima-hermes hermes webhook subscribe notify-discord \
+     --prompt '{message}' --deliver discord --deliver-only
+   ```
+   Sem `--secret` explícito, cada rota herda o `WEBHOOK_SECRET` global
+   (`config.extra.get("secret", self._global_secret)`, lido em
+   `gateway/platforms/webhook.py`) — um segredo só para as 3 rotas.
+
+### Esquema de assinatura (confirmado lendo `gateway/platforms/webhook.py` no container)
+
+Genérico HMAC **V2** (não o V1 legado, sem timestamp — vulnerável a replay):
+
+```
+X-Webhook-Timestamp: <unix seconds>
+X-Webhook-Signature-V2: hex(HMAC-SHA256(secret, f"{timestamp}.{body}"))
+```
+
+Janela de replay: `abs(now - timestamp) <= 300s`, senão rejeita. Payload esperado pelo
+template `--prompt '{message}'`: `{"message": "texto..."}` (dot-notation no JSON do body).
+Implementado no lado Python em `scheduler/notify_channels.py::_sign`.
+
+### Escopo ativado hoje
+
+Só **WhatsApp** está no `NOTIFY_DEFAULT_CHANNELS` (decisão do usuário — "liga só WhatsApp
+por enquanto"). As 3 rotas já existem no Hermes; ligar Telegram/Discord no futuro é só
+mudar a env var `NOTIFY_DEFAULT_CHANNELS` no Environment do `makima-scheduler` — zero
+mudança de código ou de config do Hermes. Ver `scheduler/CLAUDE.md`.
+
 ## Dashboard web
 
 A imagem oficial já traz um dashboard web (React, servido pelo próprio processo

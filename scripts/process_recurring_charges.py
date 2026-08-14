@@ -15,7 +15,7 @@ como trava — no máximo um aviso por dia por recorrência.
 
 Mensagens do dia são agrupadas numa única notificação (FR-007).
 
-Falha estrutural (DB/Telegram) aborta com `sys.exit(1)` — o wrapper do scheduler
+Falha estrutural (DB/envio) aborta com `sys.exit(1)` — o wrapper do scheduler
 (`scheduler/jobs.py::run_recurring_charges`) converte isso em `RuntimeError`.
 
 Usage:
@@ -23,40 +23,17 @@ Usage:
 """
 
 import logging
-import os
 import sys
 from datetime import date
 
-import requests
-
 from agents.db import run_select, run_dml
 from agents.nami.tools import _today_date, mark_subscription_paid
+from scheduler.notify_channels import send_notification
 
 log = logging.getLogger("recurring-charges")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s")
 
-_TELEGRAM_TIMEOUT = 30
 _WARNING_DAYS = 3
-
-
-def _send_telegram(html: str) -> None:
-    """Envia a notificação ao Telegram via POST direto (parse_mode=HTML).
-
-    Raises:
-        RuntimeError: se as credenciais estiverem ausentes ou o envio falhar.
-    """
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_ALERT_CHAT_ID")
-    if not token or not chat_id:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN/TELEGRAM_ALERT_CHAT_ID não configurados")
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    resp = requests.post(
-        url,
-        json={"chat_id": chat_id, "text": html, "parse_mode": "HTML"},
-        timeout=_TELEGRAM_TIMEOUT,
-    )
-    resp.raise_for_status()
 
 
 def _mark_notice_sent(sub_id: str, today: date) -> None:
@@ -146,10 +123,8 @@ def main() -> int:
         print("[recurring-charges] nada a lançar ou avisar hoje")
         return 0
 
-    try:
-        _send_telegram(summary["html"])
-    except Exception as exc:  # noqa: BLE001 — falha estrutural (Telegram)
-        log.error("Falha ao enviar notificação ao Telegram: %s", exc)
+    if not send_notification(summary["html"]):
+        log.error("Falha ao enviar notificação: nenhum canal recebeu")
         return 1
 
     print(

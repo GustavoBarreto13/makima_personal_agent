@@ -6,7 +6,7 @@ existentes (`get_spending_summary`, `get_financial_health_score`), formatado no 
 Nami (HTML). Executado manualmente em outro dia, reporta o último mês fechado (não o
 corrente) — mesma lógica de "mês anterior a hoje" independe de quando o script roda.
 
-Falha estrutural (DB/Telegram) aborta com `sys.exit(1)` — o wrapper do scheduler
+Falha estrutural (DB/envio) aborta com `sys.exit(1)` — o wrapper do scheduler
 (`scheduler/jobs.py::run_monthly_report`) converte isso em `RuntimeError`.
 
 Usage:
@@ -14,39 +14,15 @@ Usage:
 """
 
 import logging
-import os
 import sys
 from datetime import timedelta
 
-import requests
-
 from agents.nami.tools import _today_date, get_spending_summary
 from agents.nami.tools_health import get_financial_health_score
+from scheduler.notify_channels import send_notification
 
 log = logging.getLogger("monthly-report")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s")
-
-_TELEGRAM_TIMEOUT = 30
-
-
-def _send_telegram(html: str) -> None:
-    """Envia o relatório ao Telegram via POST direto (parse_mode=HTML).
-
-    Raises:
-        RuntimeError: se as credenciais estiverem ausentes ou o envio falhar.
-    """
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_ALERT_CHAT_ID")
-    if not token or not chat_id:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN/TELEGRAM_ALERT_CHAT_ID não configurados")
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    resp = requests.post(
-        url,
-        json={"chat_id": chat_id, "text": html, "parse_mode": "HTML"},
-        timeout=_TELEGRAM_TIMEOUT,
-    )
-    resp.raise_for_status()
 
 
 def _prev_month_str(year: int, month: int) -> str:
@@ -116,10 +92,8 @@ def main() -> int:
         log.error("Falha ao montar o relatório mensal: %s", exc)
         return 1
 
-    try:
-        _send_telegram(html)
-    except Exception as exc:  # noqa: BLE001 — falha estrutural (Telegram)
-        log.error("Falha ao enviar o relatório ao Telegram: %s", exc)
+    if not send_notification(html):
+        log.error("Falha ao enviar o relatório: nenhum canal recebeu a notificação")
         return 1
 
     print(f"[monthly-report] relatório de {_last_closed_month()} enviado")

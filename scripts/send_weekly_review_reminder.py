@@ -1,11 +1,12 @@
 """Lembrete de domingo à noite — revisão semanal do GTD (spec 035, US3).
 
 Checa se alguma revisão foi concluída nos últimos 7 dias corridos (fuso America/Sao_Paulo);
-se **não** houve nenhuma, envia um lembrete ao Telegram com um resumo curto (tamanho do
+se **não** houve nenhuma, envia um lembrete nos canais configurados
+(`scheduler/notify_channels.py` — hoje só WhatsApp) com um resumo curto (tamanho do
 inbox + itens "aguardando" antigos). Se já houve revisão na semana, não envia nada — isso
 NÃO é falha (FR-007, "somente se").
 
-Falha estrutural (DB/Telegram) aborta com `sys.exit(1)` — o wrapper do scheduler
+Falha estrutural (DB/envio) aborta com `sys.exit(1)` — o wrapper do scheduler
 (`scheduler/jobs.py::run_weekly_review_reminder`) converte isso em `RuntimeError`.
 
 Usage:
@@ -13,37 +14,13 @@ Usage:
 """
 
 import logging
-import os
 import sys
 
-import requests
-
 from agents.kaguya.tools_review import get_reminder_summary
+from scheduler.notify_channels import send_notification
 
 log = logging.getLogger("weekly-review-reminder")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s")
-
-_TELEGRAM_TIMEOUT = 30
-
-
-def _send_telegram(text: str) -> None:
-    """Envia o lembrete ao Telegram via POST direto (mesmo padrão de scheduler/notify.py).
-
-    Raises:
-        RuntimeError: se as credenciais estiverem ausentes ou o envio falhar.
-    """
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_ALERT_CHAT_ID")
-    if not token or not chat_id:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN/TELEGRAM_ALERT_CHAT_ID não configurados")
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    resp = requests.post(
-        url,
-        json={"chat_id": chat_id, "text": text},
-        timeout=_TELEGRAM_TIMEOUT,
-    )
-    resp.raise_for_status()
 
 
 def _build_message(summary: dict) -> str:
@@ -72,10 +49,8 @@ def main() -> int:
         print("[weekly-review-reminder] revisão concluída nos últimos 7 dias — nada a enviar")
         return 0
 
-    try:
-        _send_telegram(_build_message(summary))
-    except Exception as exc:  # noqa: BLE001 — falha estrutural (Telegram)
-        log.error("Falha ao enviar o lembrete ao Telegram: %s", exc)
+    if not send_notification(_build_message(summary)):
+        log.error("Falha ao enviar o lembrete: nenhum canal recebeu a notificação")
         return 1
 
     print(

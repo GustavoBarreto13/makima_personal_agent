@@ -33,7 +33,7 @@ Usage:
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 # Importa o cliente Google Calendar compartilhado
@@ -48,6 +48,12 @@ _log = logging.getLogger("kaguya.gcal_sync")
 # e posiciona o evento em UTC, resultando em -3h no calendário do usuário.
 # A solução é sempre enviar o offset -03:00 (ou -02:00 em horário de verão) explícito.
 _SP_TZ = ZoneInfo("America/Sao_Paulo")
+
+# Lembrete popup 30min antes — aplicado a todo evento COM horário (time-blocking ou
+# due_time), já que eventos de dia inteiro não disparam push por padrão no Google
+# Calendar. `useDefault: False` é necessário para o override ter efeito (senão o
+# Google ignora `overrides` e usa só o padrão do calendário "Kaguya — Tarefas").
+_POPUP_REMINDER = {"useDefault": False, "overrides": [{"method": "popup", "minutes": 30}]}
 
 
 def _to_sp_iso(val) -> str:
@@ -124,7 +130,7 @@ def _load_task(task_id: int) -> dict | None:
     """
     rows = run_select(
         """
-        SELECT id, title, due_date, start_at, end_at, completed_at,
+        SELECT id, title, due_date, due_time, start_at, end_at, completed_at,
                google_event_id, deleted_at
         FROM tasks
         WHERE id = %(task_id)s
@@ -186,10 +192,32 @@ def _build_event_payload(task: dict) -> dict:
             "start": start_str,
             "end": end_str,
             "all_day": False,
+            "reminders": _POPUP_REMINDER,
+        }
+
+    elif task.get("due_date") and task.get("due_time"):
+        # Tarefa com due_date + due_time, mas SEM time-block: também vira evento com
+        # horário (antes virava all-day e o due_time era descartado — all-day não
+        # dispara push por padrão no Google Calendar). due_date/due_time são
+        # wall-clock LOCAL (colunas DATE/TIME simples, não timestamptz) — diferente de
+        # start_at/end_at, não usar _to_sp_iso (que trataria naive como UTC e
+        # deslocaria 3h); aqui anexamos o fuso de São Paulo diretamente.
+        due_date_obj = task["due_date"]
+        if not isinstance(due_date_obj, date):
+            due_date_obj = date.fromisoformat(due_date_obj)
+        start_dt = datetime.combine(due_date_obj, task["due_time"], tzinfo=_SP_TZ)
+        end_dt = start_dt + timedelta(minutes=30)
+
+        return {
+            "summary": summary,
+            "start": start_dt.isoformat(),
+            "end": end_dt.isoformat(),
+            "all_day": False,
+            "reminders": _POPUP_REMINDER,
         }
 
     elif task.get("due_date"):
-        # Tarefa só com data: evento de dia inteiro
+        # Tarefa só com data (sem due_time): evento de dia inteiro
         # due_date pode ser um date object (psycopg2 retorna date) ou string
         due = task["due_date"]
         if hasattr(due, "isoformat"):
@@ -255,6 +283,7 @@ def _push_task_sync(task_id: int) -> None:
                 start=payload["start"],
                 end=payload["end"],
                 all_day=payload["all_day"],
+                reminders=payload.get("reminders"),
             )
         else:
             # Evento ainda não existe — cria e salva o ID retornado
@@ -264,6 +293,7 @@ def _push_task_sync(task_id: int) -> None:
                 start=payload["start"],
                 end=payload["end"],
                 all_day=payload["all_day"],
+                reminders=payload.get("reminders"),
             )
             new_event_id = result.get("id")
             if new_event_id:

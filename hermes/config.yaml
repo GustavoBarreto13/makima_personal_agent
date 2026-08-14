@@ -164,6 +164,19 @@ platforms:
     # única fonte, sem risco de string-literal-não-interpolada. Ver "Como parear o
     # WhatsApp" em hermes/CLAUDE.md.
 
+  webhook:
+    # Rotas de notificação genérica multi-canal (spec 064, User Story 5 / FR-011+FR-012)
+    # — usado pelo scheduler/ pra push determinístico (--deliver-only, sem LLM) em
+    # qualquer canal configurado. As rotas em si (notify-whatsapp/telegram/discord) são
+    # criadas via `hermes webhook subscribe` (estado dinâmico, vive no volume
+    # hermes_data — não neste arquivo estático). Alcançável só dentro da
+    # dokploy-network, sem porta pública/Traefik — mesmo isolamento do makima-mcp
+    # (ver mcp_servers/makima/CLAUDE.md). Ver scheduler/CLAUDE.md e scheduler/notify_channels.py.
+    enabled: true
+    extra:
+      port: 8644
+      secret: "${WEBHOOK_SECRET}"
+
   discord:
     bot_token: "${DISCORD_BOT_TOKEN}"
     # Diferente do Telegram/WhatsApp: `plugins/platforms/discord/adapter.py` usa

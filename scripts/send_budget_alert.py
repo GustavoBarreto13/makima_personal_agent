@@ -1,11 +1,11 @@
 """Alerta diário de orçamento (spec 048, US3).
 
-Verifica os envelopes do mês corrente (`get_budget_status`, já existente) e avisa no
-Telegram as categorias com ≥90% do limite consumido ou estouradas — distinguindo os dois
-estados. Silencioso quando tudo está dentro do limite (FR-004) — não é falha, é sucesso
-sem envio.
+Verifica os envelopes do mês corrente (`get_budget_status`, já existente) e avisa nos
+canais configurados (`scheduler/notify_channels.py` — hoje só WhatsApp) as categorias com
+≥90% do limite consumido ou estouradas — distinguindo os dois estados. Silencioso quando
+tudo está dentro do limite (FR-004) — não é falha, é sucesso sem envio.
 
-Falha estrutural (DB/Telegram) aborta com `sys.exit(1)` — o wrapper do scheduler
+Falha estrutural (DB/envio) aborta com `sys.exit(1)` — o wrapper do scheduler
 (`scheduler/jobs.py::run_budget_alert`) converte isso em `RuntimeError`.
 
 Usage:
@@ -13,39 +13,16 @@ Usage:
 """
 
 import logging
-import os
 import sys
-
-import requests
 
 from agents.nami.tools import _today_date
 from agents.nami.tools_budgets import get_budget_status
+from scheduler.notify_channels import send_notification
 
 log = logging.getLogger("budget-alert")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s")
 
-_TELEGRAM_TIMEOUT = 30
 _ALERT_THRESHOLD_PCT = 90.0
-
-
-def _send_telegram(html: str) -> None:
-    """Envia o alerta ao Telegram via POST direto (parse_mode=HTML).
-
-    Raises:
-        RuntimeError: se as credenciais estiverem ausentes ou o envio falhar.
-    """
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_ALERT_CHAT_ID")
-    if not token or not chat_id:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN/TELEGRAM_ALERT_CHAT_ID não configurados")
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    resp = requests.post(
-        url,
-        json={"chat_id": chat_id, "text": html, "parse_mode": "HTML"},
-        timeout=_TELEGRAM_TIMEOUT,
-    )
-    resp.raise_for_status()
 
 
 def _build_message(envelopes: list[dict]) -> str:
@@ -80,10 +57,8 @@ def main() -> int:
         print(f"[budget-alert] {month}: todas as categorias dentro do limite — nada a enviar")
         return 0
 
-    try:
-        _send_telegram(_build_message(envelopes_em_alerta))
-    except Exception as exc:  # noqa: BLE001 — falha estrutural (Telegram)
-        log.error("Falha ao enviar alerta ao Telegram: %s", exc)
+    if not send_notification(_build_message(envelopes_em_alerta)):
+        log.error("Falha ao enviar alerta: nenhum canal recebeu a notificação")
         return 1
 
     print(f"[budget-alert] {month}: {len(envelopes_em_alerta)} categoria(s) em alerta — enviado")

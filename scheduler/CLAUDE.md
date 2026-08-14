@@ -36,7 +36,8 @@ Pronto — o job ganha log em `scheduler_runs` e alerta no Telegram em falha aut
 | `registry.py` | Lista declarativa `JOBS` + `ScheduledJob` + helpers `daily_at()`/`every()`/`weekly_at()` |
 | `jobs.py` | Funções que embrulham os scripts existentes (backup, kurisu, letterboxd) |
 | `runner.py` | `execute_with_logging(job)`: cronometra, grava `scheduler_runs`, alerta em falha |
-| `notify.py` | `send_telegram_alert()` — POST na Bot API do Telegram (melhor esforço) |
+| `notify.py` | `send_telegram_alert()` — POST na Bot API do Telegram (melhor esforço), só para **falha de job** (FR-011) |
+| `notify_channels.py` | `send_notification()` — push multi-canal (WhatsApp/Telegram/Discord) via os webhooks `--deliver-only` do Hermes, para avisos **voltados ao usuário** (FR-012) |
 | `main.py` | Entrypoint: monta o `BlockingScheduler` e agenda os jobs; modos `--run`/`--list` |
 | `schema_pg.sql` | Tabela `scheduler_runs` (histórico de execuções) |
 | `Dockerfile` | Imagem = base do webapp + `postgresql-client` + `gzip` (o backup precisa de pg_dump) |
@@ -94,7 +95,35 @@ Além das que cada job já usa (`DATABASE_URL`, `GCP_*`, `GCS_BACKUP_BUCKET`,
 | Variável | Para quê |
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Token do bot (já existe — o mesmo do coordinator) |
-| `TELEGRAM_ALERT_CHAT_ID` | **Nova.** Chat que recebe os alertas de falha. Descubra o id mandando uma mensagem ao bot e lendo `https://api.telegram.org/bot<TOKEN>/getUpdates` |
+| `TELEGRAM_ALERT_CHAT_ID` | Chat que recebe os alertas de **falha de job** (`notify.py`, FR-011) |
+| `HERMES_WEBHOOK_BASE_URL` | Base da app Hermes na rede interna (`http://makima-hermes:8644`) — usada por `notify_channels.send_notification()` |
+| `WEBHOOK_SECRET` | Mesmo segredo HMAC cadastrado no Hermes (`hermes/config.yaml` → `platforms.webhook.extra.secret`) — assina os POSTs de notificação |
+| `NOTIFY_DEFAULT_CHANNELS` | Canais usados quando um job não passa `channels=[...]` explícito (hoje `"whatsapp"` — ligar Telegram/Discord é só acrescentar aqui, ex. `"whatsapp,telegram"`) |
+
+## Notificação para o usuário: `send_notification()` vs. `send_telegram_alert()`
+
+Dois caminhos de saída, propositalmente separados (spec 064, User Story 5 — FR-011/FR-012):
+
+- **`notify.send_telegram_alert(job_name, error_text)`** — só para **falha estrutural de
+  job** (o próprio runner chama automaticamente). Fixo em Telegram, fala direto com a API
+  (nunca passa pelo Hermes) — precisa continuar de pé mesmo se o Hermes cair.
+- **`notify_channels.send_notification(message, channels=None)`** — para **avisos voltados
+  ao usuário** (lembretes, digests, relatórios). Usa as rotas de webhook `--deliver-only`
+  do Hermes (ver `hermes/CLAUDE.md` § "Notificações multi-canal") — WhatsApp, Telegram e/ou
+  Discord, conforme `NOTIFY_DEFAULT_CHANNELS`. Todo job novo que precisa avisar o usuário
+  deve chamar esta função, não reimplementar o POST direto ao Telegram.
+
+```python
+from scheduler.notify_channels import send_notification
+
+if not send_notification("<b>Fez algo</b> que o usuário precisa saber."):
+    raise RuntimeError("nenhum canal recebeu a notificação")
+```
+
+`send_notification` nunca levanta exceção por conta própria (falha de UM canal não afeta
+os outros) — devolve `True`/`False` (pelo menos um canal recebeu?) para quem chama decidir
+se isso é falha do job. Mensagem em HTML simples (`<b>`, `<i>`, `<code>`) — convertida para
+markdown leve nos canais que não são Telegram.
 
 ## Jobs atuais
 
@@ -109,3 +138,4 @@ Além das que cada job já usa (`DATABASE_URL`, `GCP_*`, `GCS_BACKUP_BUCKET`,
 | `budget_alert` | Todo dia 09:00 | Alerta de orçamento (Nami): categorias ≥90% do limite ou estouradas no mês corrente → Telegram; silencioso se tudo dentro do limite (`scripts/send_budget_alert.py`, spec 048) |
 | `monthly_report` | Todo dia 1º 08:00 | Relatório do fechamento do mês anterior (Nami): top categorias, comparação com o mês anterior a esse, score de saúde financeira (`scripts/send_monthly_report.py`, spec 048) |
 | `marin_mal_sync` | A cada 6h | Sync delta com o MyAnimeList (Marin): pull converte progresso novo em sessões de ajuste no diário (nunca sobrescreve o contador direto), converge status/nota por timestamp mais recente conhecido, enriquece automaticamente animes novos; coexiste com o push best-effort disparado pelas mutações locais (`log_watch`/`update_anime_status`/`rate_anime`/`delete_watch_log`/`delete_anime` em `agents/marin/tools.py`) (`agents/marin/mal_sync.py`, spec 053) |
+| `kaguya_due_reminders` | A cada 4h | Lembrete de tarefas vencidas/de hoje (Kaguya): reusa `list_tasks_today()`, envia via `send_notification()` — silencioso se não há nada vencido nem para hoje (`scripts/send_kaguya_due_reminders.py`, spec 064 US5) |

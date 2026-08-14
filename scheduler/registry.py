@@ -26,6 +26,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from scheduler.jobs import (
     run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest, run_weekly_review_reminder,
     run_recurring_charges, run_budget_alert, run_monthly_report, run_marin_mal_sync,
+    run_kaguya_due_reminders,
 )
 
 # Fuso horário do usuário. Todos os horários dos jobs são interpretados nele —
@@ -181,5 +182,14 @@ JOBS: list[ScheduledJob] = [
         func=run_marin_mal_sync,
         trigger=every(hours=6),
         description="Sync delta com o MyAnimeList (Marin): pull cria sessões de ajuste, coexiste com o push best-effort das mutações locais",
+    ),
+    # Lembrete periódico de tarefas com vencimento (Kaguya) — nunca existiu notificação
+    # de tarefa nenhuma antes disso. A cada 4h; silencioso se não há nada vencido/hoje.
+    # spec 064, User Story 5 (FR-012) — envia via scheduler/notify_channels.py.
+    ScheduledJob(
+        name="kaguya_due_reminders",
+        func=run_kaguya_due_reminders,
+        trigger=every(hours=4),
+        description="Lembrete de tarefas vencidas/de hoje (Kaguya) → canais configurados, a cada 4h",
     ),
 ]

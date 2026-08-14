@@ -231,6 +231,34 @@ def run_marin_mal_sync() -> None:
         )
 
 
+def run_kaguya_due_reminders() -> None:
+    """Executa o lembrete periódico de tarefas com vencimento (Kaguya) — spec 064 US5.
+
+    Roda `scripts/send_kaguya_due_reminders.py` num subprocesso separado (mesmo motivo dos
+    demais: o script usa `sys.exit(1)` em falha, e rodar como subprocesso transforma isso
+    num código de retorno que o runner detecta). Não enviar (nada vencido nem para hoje) é
+    sucesso, não falha — o script sai com 0 nesse caso.
+
+    Raises:
+        RuntimeError: Se o job falhar (código de saída ≠ 0). A mensagem inclui o stderr do
+            processo para facilitar o diagnóstico e o alerta.
+    """
+    resultado = subprocess.run(
+        [sys.executable, "-m", "scripts.send_kaguya_due_reminders"],
+        capture_output=True,
+        text=True,
+    )
+
+    if resultado.stdout:
+        print(resultado.stdout, end="")
+
+    if resultado.returncode != 0:
+        raise RuntimeError(
+            f"send_kaguya_due_reminders saiu com código {resultado.returncode}.\n"
+            f"stderr:\n{resultado.stderr}"
+        )
+
+
 def run_lucy_digest() -> None:
     """Executa o digest diário de emails (Lucy) → Telegram + histórico.
 
