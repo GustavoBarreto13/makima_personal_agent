@@ -504,18 +504,36 @@ canal configurado — **sem passar pelo LLM** (`--deliver-only`, custo zero, det
    de pé. Mesma classe de "duas fontes de verdade" já documentada acima para outros canais.
 3. Redeploy da app Hermes → confirma com `docker exec makima-hermes hermes webhook list`.
 4. Criar as rotas (uma por canal — cada rota tem UM `--deliver` fixo, não dá pra escolher
-   o canal no payload):
+   o canal no payload). **Dois achados ao criar de verdade, não só ler o `--help`:**
+   - **`--secret` não é opcional na prática**: omitido, o CLI **gera um segredo próprio
+     por rota** (não herda `WEBHOOK_SECRET` global como o código-fonte de
+     `_validate_signature` sugeria — aquele fallback existe, mas o subcomando
+     `subscribe` não o usa por padrão). Passar `--secret "$WEBHOOK_SECRET"` explícito em
+     TODAS as rotas — um segredo só, igual ao que `scheduler/notify_channels.py` usa.
+   - **`--deliver-chat-id` também não é opcional na prática**: sem ele, a entrega falha
+     silenciosamente em background com `No chat_id or home channel for <canal>` (só
+     aparece em `errors.log`, a chamada HTTP em si responde 200/"delivered" antes disso
+     — ou falha antes, dependendo do timing; não confiar no "sucesso" do subscribe/POST
+     sem checar `hermes webhook test`). "Home channel" não é resolvido automaticamente
+     mesmo havendo 1 único contato por canal — precisa do ID explícito, achado com
+     `hermes send --list <canal> --json`.
    ```bash
+   WEBHOOK_SECRET="<mesmo valor do Environment do Dokploy>"
+
+   # IDs descobertos com: hermes send --list <canal> --json
    docker exec makima-hermes hermes webhook subscribe notify-whatsapp \
-     --prompt '{message}' --deliver whatsapp --deliver-only
+     --prompt '{message}' --deliver whatsapp \
+     --deliver-chat-id '154876722024460@lid' --deliver-only --secret "$WEBHOOK_SECRET"
    docker exec makima-hermes hermes webhook subscribe notify-telegram \
-     --prompt '{message}' --deliver telegram --deliver-only
+     --prompt '{message}' --deliver telegram \
+     --deliver-chat-id 352608961 --deliver-only --secret "$WEBHOOK_SECRET"
    docker exec makima-hermes hermes webhook subscribe notify-discord \
-     --prompt '{message}' --deliver discord --deliver-only
+     --prompt '{message}' --deliver discord \
+     --deliver-chat-id 1536142889971753060 --deliver-only --secret "$WEBHOOK_SECRET"
    ```
-   Sem `--secret` explícito, cada rota herda o `WEBHOOK_SECRET` global
-   (`config.extra.get("secret", self._global_secret)`, lido em
-   `gateway/platforms/webhook.py`) — um segredo só para as 3 rotas.
+   Validar cada rota com `hermes webhook test notify-<canal> --payload '{"message": "..."}'`
+   — só confiar na rota depois de ver `"status": "delivered"` **e** a mensagem chegar de
+   verdade no canal (as 3 confirmadas em 14/ago/2026).
 
 ### Esquema de assinatura (confirmado lendo `gateway/platforms/webhook.py` no container)
 
