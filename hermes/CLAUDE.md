@@ -117,6 +117,25 @@ app de novo.
 | `skills/kaguya-tarefas/SKILL.md` | Regras de comportamento do domínio Kaguya | Estático — versionado |
 | `MEMORY.md`, `USER.md`, `sessions.db`, `platforms/whatsapp/session/` | Memória de longo prazo, sessões, pareamento WhatsApp | **Não existem aqui** — vivem só no volume `hermes_data`, nunca versionados |
 
+## Changelog de ajustes de persona (`SOUL.md`, 14/ago/2026)
+
+Reforço direto no `SOUL.md`, não em `config.yaml` (não existe campo lá para
+verbosidade/formatação — só `SOUL.md`/`skills/*.md` controlam isso):
+
+1. **Vazamento de tool call na resposta final** — sintoma relatado pelo usuário batendo
+   com o risco já documentado em "Achado principal" abaixo (indireção
+   `tool_search`/`tool_call`): o modelo às vezes narra ou vaza a sintaxe da chamada em
+   vez de mantê-la interna. Adicionada seção "Nunca vaze detalhes de execução interna"
+   com exemplo negativo/positivo explícito.
+2. **Formatação por tipo de conteúdo** — nova seção cobrindo valores monetários
+   (negrito), listas (bullet), datas (relativo/`dd/mm`, nunca ISO na resposta) e emojis
+   (raro, no máximo 1, nunca decorativo).
+3. **Tempero por domínio na voz única** — 1 parágrafo no bloco de abertura mostrando como
+   o "sabor" de um domínio (ex. Nami dramática/gananciosa) pode colorir o tom da Makima
+   sem virar uma segunda persona. Decisão explícita do usuário: continuar com 1 voz só
+   (Makima) — subagentes com persona própria (`delegate_task`) seguem fora de escopo,
+   seção "4. Superfície de tools" do `research.md`, item Etapa E8.
+
 ## Changelog de correções de schema (`config.yaml`)
 
 Ao preparar a Etapa E3, busquei a documentação pública oficial
