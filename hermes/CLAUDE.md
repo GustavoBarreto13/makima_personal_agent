@@ -300,12 +300,12 @@ próximo passo, não uma reescrita.
    `makima` fazendo long-polling o tempo todo, `getUpdates` manual sempre volta vazio).
    Fix: variável cadastrada, `GATEWAY_ALLOW_ALL_USERS` removida, confirmado com mensagem
    real no Telegram sem bloqueio.
-5. ~~WhatsApp: parear via QR code~~ — **feito e validado**: número dedicado pareado via
-   `hermes whatsapp` (modo self-chat), `creds.json` real gravado em
-   `whatsapp/session/`, `hermes status` confirmou `WhatsApp ✓ configured` após
-   `docker restart makima-hermes`. Ponta a ponta: mensagem real "Quantos filmes vi esse
-   mes" enviada às 22:07:04, respondida às 22:07:24, sem erro de autorização. Ver seção
-   "Etapa E4" abaixo.
+5. ~~WhatsApp: parear via QR code~~ — **feito e validado**: pareamento original (09/ago)
+   foi feito em **modo self-chat**, não no modo "Separate bot number" recomendado pelo
+   runbook abaixo — divergência entre o que o runbook instruía e o que de fato ficou em
+   produção. **Corrigido em 14/ago/2026**: re-pareado em modo **bot** (`WHATSAPP_MODE=bot`)
+   com um número dedicado de verdade. Ver "Troca self-chat → Separate bot number
+   (14/ago/2026)" abaixo para o passo a passo e um bug de produção achado no processo.
 6. ~~Discord: criar o app/bot~~ — **feito e validado**: bot criado no Developer Portal,
    Message Content Intent ligado, convidado a um servidor via OAuth2,
    `DISCORD_BOT_TOKEN` e `DISCORD_HERMES_ALLOWED_USER_ID` cadastrados no Environment do
@@ -373,6 +373,59 @@ container não recarrega sozinho" já documentada acima para o `config.yaml`).
 
 **Verificar**: `hermes status` → `WhatsApp ✓ configured`; mandar mensagem de teste do
 número autorizado pro número do bot.
+
+### Troca self-chat → Separate bot number (14/ago/2026)
+
+O pareamento original (09/ago) ficou em modo self-chat por engano — só percebido ao
+tentar entender por que `hermes status` mostrava "WhatsApp ✓ configured" mas o bot
+respondia só a mensagens de si mesmo. Ao conseguir um número dedicado de verdade, a
+troca de modo em produção teve dois achados que não estavam documentados em lugar
+nenhum (nem aqui, nem em `research.md`/`quickstart.md`):
+
+**1. Não existe comando de "reset"/"unpair"** — rodar `hermes whatsapp` com uma sessão
+já pareada só oferece atualizar a allowlist (`Update allowed users? [y/N]`), não muda
+de modo. Pra forçar um pareamento do zero (modo incluso), é preciso:
+```bash
+docker exec makima-hermes rm -f /opt/data/whatsapp/session/creds.json
+docker exec makima-hermes sh -c "sed -i '/^WHATSAPP_MODE=/d;/^WHATSAPP_ENABLED=/d;/^WHATSAPP_ALLOWED_USERS=/d' /opt/data/.env"
+docker exec -it makima-hermes hermes whatsapp   # agora pergunta o modo de novo
+```
+Sem apagar `WHATSAPP_MODE`/`WHATSAPP_ENABLED` do `.env`, o wizard trata a sessão como
+"já configurada" e nunca oferece a pergunta de modo, mesmo depois de apagar o
+`creds.json`.
+
+**2. Bug real: `--mode` da ponte Baileys pode ficar preso no valor antigo mesmo com o
+`.env` já corrigido.** `bridge.js:113` lê o modo assim:
+```js
+const WHATSAPP_MODE = getArg('mode', process.env.WHATSAPP_MODE || 'self-chat');
+```
+— e o processo Node é lançado pelo gateway com `--mode` como argumento de linha de
+comando fixo, não via variável de ambiente herdada (`ps aux` mostra
+`bridge.js --port 3000 --session ... --mode self-chat` mesmo com `.env` já dizendo
+`WHATSAPP_MODE=bot`). Na prática, depois de re-parear: a ponte caiu duas vezes logo
+após o primeiro `docker restart` (`WhatsApp bridge process exited unexpectedly (code
+-15)`, visto em `docker logs`), e ao se recuperar sozinha relançou com o `--mode` ainda
+antigo — sintoma visível no log dedicado da ponte (`/opt/data/whatsapp/bridge.log`,
+separado do `docker logs` principal):
+```json
+{"event":"ignored","reason":"self_chat_mode_rejects_non_self","chatId":"...@lid","senderId":"...@lid"}
+```
+Toda mensagem de teste era silenciosamente descartada (sem erro no `docker logs`, sem
+resposta no WhatsApp) até um **segundo `docker restart makima-hermes`**, feito só depois
+de confirmar que a ponte já estava estável (`curl localhost:3000/health` dentro do
+container → `"status":"connected"` sem quedas por alguns minutos). Depois desse segundo
+restart, `ps aux` confirmou `--mode bot` e a mensagem de teste funcionou.
+
+**Lição pra próxima vez**: depois de editar `.env` e reiniciar o container, não confiar
+só no primeiro `docker restart` se os logs mostrarem qualquer crash da ponte logo depois
+— checar `ps aux | grep bridge.js` pra confirmar o `--mode` realmente aplicado antes de
+testar mensagem real. Se estiver errado, restart de novo (não precisa reparear).
+
+**`--deliver-chat-id` do webhook `notify-whatsapp` não mudou**: o ID usado
+(`154876722024460@lid`) é o LID (linked ID) da própria conta do usuário, atribuído pelo
+WhatsApp por conta, não por número de bot — o mesmo ID vale em self-chat e em bot mode.
+Confirmado com `hermes webhook test notify-whatsapp` entregando `"status": "delivered"`
+sem precisar recriar a rota.
 
 #### ⚠️ Não parear pelo dashboard web — falha estruturalmente neste deploy
 
