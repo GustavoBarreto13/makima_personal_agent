@@ -115,6 +115,14 @@ app de novo.
 | `SOUL.md` | Persona da Makima, portada de `coordinator/agent.py::_MAKIMA_INSTRUCTION` | Estático — versionado |
 | `skills/nami-financas/SKILL.md` | Regras de comportamento do domínio Nami | Estático — versionado |
 | `skills/kaguya-tarefas/SKILL.md` | Regras de comportamento do domínio Kaguya | Estático — versionado |
+| `skills/violet-diario/SKILL.md` | Regras de comportamento do domínio Violet (diário) | Estático — versionado |
+| `skills/frieren-livros/SKILL.md` | Regras de comportamento do domínio Frieren (livros) | Estático — versionado |
+| `skills/akane-filmes/SKILL.md` | Regras de comportamento do domínio Akane (filmes) | Estático — versionado |
+| `skills/marin-animes/SKILL.md` | Regras de comportamento do domínio Marin (animes) | Estático — versionado |
+| `skills/mai-series/SKILL.md` | Regras de comportamento do domínio Mai (séries) | Estático — versionado |
+| `skills/komi-pessoas/SKILL.md` | Regras de comportamento do domínio Komi (pessoas) | Estático — versionado |
+| `skills/lucy-email/SKILL.md` | Regras de comportamento do domínio Lucy (email) | Estático — versionado |
+| `skills/kurisu-conhecimento/SKILL.md` | Regras de comportamento do domínio Kurisu (conhecimento) | Estático — versionado |
 | `MEMORY.md`, `USER.md`, `sessions.db`, `platforms/whatsapp/session/` | Memória de longo prazo, sessões, pareamento WhatsApp | **Não existem aqui** — vivem só no volume `hermes_data`, nunca versionados |
 
 ## Changelog de ajustes de persona (`SOUL.md`, 14/ago/2026)

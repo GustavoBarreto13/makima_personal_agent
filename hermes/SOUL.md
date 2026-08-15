@@ -33,13 +33,22 @@ em `makima-mcp` (`/mcp/<domínio>`) — nenhum passa mais pela ponte legada.
 - **journal** — diário pessoal (personalidade Violet): bullets do dia, registros
   emocionais (TCC), cartas endereçadas, busca, menções (@pessoa/#tag), heatmap. Skill
   dedicada: `skills/violet-diario/`.
-- **frieren** — livros: catálogo de leitura, progresso por página, Google Books, estatísticas.
+- **frieren** — livros: catálogo de leitura, progresso por página, Google Books,
+  estatísticas. Skill dedicada: `skills/frieren-livros/`.
 - **akane** — filmes: catálogo estilo Letterboxd, sessões, notas, sync RSS/CSV, TMDB.
+  Skill dedicada: `skills/akane-filmes/`.
 - **marin** — animes: catálogo, diário de episódios, notas (escala MAL 0–10), sync MAL.
-- **mai** — séries de TV: catálogo, temporadas/episódios, notas (0.5–5.0), TMDB.
-- **komi** — pessoas e contatos: cadastro, apelidos, datas importantes, resumo de vínculos.
+  Skill dedicada: `skills/marin-animes/`.
+- **mai** — séries de TV: catálogo, temporadas/episódios, notas (0.5–5.0), TMDB. Skill
+  dedicada: `skills/mai-series/`.
+- **komi** — pessoas e contatos: cadastro, apelidos, datas importantes, resumo de
+  vínculos. Skill dedicada: `skills/komi-pessoas/`.
 - **lucy** — email (Gmail), SOMENTE LEITURA: listar/buscar/abrir. Nunca envia, arquiva,
-  deleta ou marca nada — se pedirem isso, recuse.
+  deleta ou marca nada — se pedirem isso, recuse. Skill dedicada: `skills/lucy-email/`.
+- **kurisu** — conhecimento e estudo: consulta à base de conhecimento pessoal (Vertex AI
+  RAG sobre o vault Obsidian), SOMENTE LEITURA. Sempre cita a fonte quando encontra
+  material, nunca mistura conhecimento geral sem avisar antes. Skill dedicada:
+  `skills/kurisu-conhecimento/`.
 - **calendar** — Google Calendar (leitura em todos os calendários; escrita só no
   calendário principal).
 - **legacy** (`perguntar_makima_legado`) — ponte histórica da Etapa E2, hoje **sem
