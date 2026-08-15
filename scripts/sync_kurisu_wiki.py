@@ -15,6 +15,11 @@ Este script faz a MESMA coisa de forma incremental:
 
 Pensado para rodar automaticamente a cada push no repo do vault (GitHub Actions —
 ver o ticket "github-actions-wiring"), mas funciona igual rodando manualmente.
+Rascunho do workflow já existe em `.github/workflows/sync-kurisu-rag.yml` no repo do
+vault (Obisidan-Knowledge-Base), mas ainda não está ativo — faltam os secrets
+GCP_CREDENTIALS_JSON, GCP_PROJECT_ID e MAKIMA_REPO_TOKEN nesse repo (ver
+agents/kurisu/CLAUDE.md, seção "Manter o corpus da wiki atualizado"). Até lá, rodar
+manualmente quando uma busca não achar conteúdo que deveria estar na wiki.
 
 Pré-requisitos (mesmos do setup_kurisu_rag.py): GCP_CREDENTIALS_JSON, GCP_PROJECT_ID.
 O corpus da wiki (`kurisu-karpathy-wiki`) precisa já existir — este script NÃO cria
@@ -45,8 +50,10 @@ import argparse
 import hashlib
 import os
 import sys
+import time
 from pathlib import Path
 
+from google.api_core.exceptions import ResourceExhausted
 from google.cloud import storage
 from vertexai.preview import rag
 
@@ -81,6 +88,42 @@ _MAX_RODADAS_IMPORT = 3
 # mesmo prefixo da wiki (kurisu-wiki/), separado por "_state/" pra não ser
 # confundido com as páginas de verdade.
 _MANIFESTO_PATH = f"{DEFAULT_PREFIX}/_state/manifest.json"
+
+# O RAG Engine em modo Serverless tem uma quota de requests/minuto relativamente
+# baixa — uma rodada de sync com list/import/delete em sequência pode estourá-la
+# (visto rodando manualmente e no GitHub Actions em 2026-08-15). Como é uma janela
+# por minuto, esperar e tentar de novo resolve sem intervenção manual.
+_QUOTA_MAX_TENTATIVAS = 3
+_QUOTA_ESPERA_SEGUNDOS = 65
+
+
+def _com_retry_quota(func, *args, **kwargs):
+    """Executa `func`, tentando de novo em caso de 429 (quota por minuto do Vertex).
+
+    Args:
+        func: Callable a executar.
+        *args: Posicionais repassados para `func`.
+        **kwargs: Nomeados repassados para `func`.
+
+    Returns:
+        O retorno de `func`, na primeira tentativa que tiver sucesso.
+
+    Raises:
+        ResourceExhausted: Se todas as tentativas esgotarem a quota.
+    """
+    for tentativa in range(1, _QUOTA_MAX_TENTATIVAS + 1):
+        try:
+            return func(*args, **kwargs)
+        except ResourceExhausted:
+            if tentativa == _QUOTA_MAX_TENTATIVAS:
+                raise
+            print(
+                f"  ⚠ Quota do Vertex AI excedida (tentativa {tentativa}/"
+                f"{_QUOTA_MAX_TENTATIVAS}) — aguardando {_QUOTA_ESPERA_SEGUNDOS}s "
+                "a janela por minuto resetar ...",
+                file=sys.stderr,
+            )
+            time.sleep(_QUOTA_ESPERA_SEGUNDOS)
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +212,8 @@ def _corpus_uris_map(corpus_name: str, prefix: str) -> dict:
     """
     mapa: dict = {}
     marcador = f"/{prefix}/"
-    for f in rag.list_files(corpus_name=corpus_name):
+    arquivos = _com_retry_quota(lambda: list(rag.list_files(corpus_name=corpus_name)))
+    for f in arquivos:
         fonte = getattr(f, "gcs_source", None)
         if fonte and fonte.uris:
             for uri in fonte.uris:
@@ -209,7 +253,8 @@ def _importar_com_retry(
         print(f"  • Import rodada {rodada}: {len(lote_uris)} arquivo(s) pendente(s)")
         for i in range(0, len(lote_uris), _MAX_URIS_PER_IMPORT):
             lote = lote_uris[i:i + _MAX_URIS_PER_IMPORT]
-            rag.import_files(
+            _com_retry_quota(
+                rag.import_files,
                 corpus_name=corpus_name,
                 paths=lote,
                 transformation_config=rag.TransformationConfig(
@@ -318,7 +363,7 @@ def sync_wiki(wiki_dir: Path, bucket_name: str, dry_run: bool = False) -> dict:
 
     # --- 6. Editados: remove o chunk antigo antes de reimportar (Vertex de-dup por URI) ---
     for uri in editados:
-        rag.delete_file(name=no_corpus[uri])
+        _com_retry_quota(rag.delete_file, name=no_corpus[uri])
 
     # --- 7. Upload ao GCS — SÓ o que muda (novo + editado). Inalterado nem é tocado. ---
     a_enviar = novos + editados
@@ -348,7 +393,7 @@ def sync_wiki(wiki_dir: Path, bucket_name: str, dry_run: bool = False) -> dict:
     else:
         for uri in removiveis:
             print(f"  • Removendo do corpus (não existe mais localmente): {uri}")
-            rag.delete_file(name=no_corpus[uri])
+            _com_retry_quota(rag.delete_file, name=no_corpus[uri])
 
     # --- 10. Manifesto final: relista o corpus e só grava hash do que está CONFIRMADO ---
     # Isso é auto-curativo: qualquer arquivo que não tenha entrado de verdade (falha

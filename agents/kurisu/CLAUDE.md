@@ -315,7 +315,35 @@ Env vars já usadas pelo resto do projeto: `GCP_CREDENTIALS_JSON`, `GCP_PROJECT_
 
 > **Corpus atual (ativação 2026-06-28):**
 > `projects/191286448915/locations/us-central1/ragCorpora/6199890982331219968`
-> (345 de 410 páginas importadas).
+> (556/556 páginas importadas — último sync incremental em 2026-08-15).
+
+### Manter o corpus da wiki atualizado
+
+A wiki **não sincroniza sozinha** — cada edição/página nova no vault Obsidian só entra
+no corpus quando alguém roda `python -m scripts.sync_kurisu_wiki` (incremental, por
+hash; não recria o corpus nem muda o ID). Isso é diferente da memória operacional
+(spec 028), que já ressincroniza automaticamente todo dia às 04:00 via o job
+`sync_kurisu` do scheduler — esse job **não toca na wiki**.
+
+Causa raiz confirmada em 2026-08-15: uma pergunta sobre uma nota recém-criada na wiki
+não achou nada via `buscar_na_base` porque 30 páginas novas + 24 editadas nunca tinham
+sido sincronizadas. Rodar o sync manualmente (de dentro do container `makima-web`, que já
+tem `GCP_CREDENTIALS_JSON`/`GCP_PROJECT_ID` no ambiente) resolveu:
+
+```bash
+docker exec -e KURISU_WIKI_DIR=<caminho do vault dentro do container> makima-web \
+  sh -c "cd /app && python -m scripts.sync_kurisu_wiki"
+```
+
+Como o vault (`Obisidan-Knowledge-Base`, repo próprio no GitHub) não está montado no
+VPS, isso exige copiar `wiki/` + `index.md` pro container antes (`docker cp`) — não é
+algo pra rodar toda vez manualmente. Existe um rascunho de automação via GitHub Actions
+(`.github/workflows/sync-kurisu-rag.yml` no repo do vault, dispara a cada push em
+`wiki/**`/`index.md` e roda este mesmo script), mas ainda **não está ativado** —
+faltam os secrets `GCP_CREDENTIALS_JSON`, `GCP_PROJECT_ID` e `MAKIMA_REPO_TOKEN`
+(PAT read-only pro checkout deste repo, que é privado) cadastrados no repo do vault.
+Até isso ser feito, repetir o sync manual periodicamente (ou sob demanda, quando uma
+busca não achar algo que deveria estar na wiki).
 
 ---
 

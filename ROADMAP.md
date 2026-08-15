@@ -15,7 +15,7 @@
 | 012 | Kaguya — recorrência via RRULE (motor próprio `recurrence.py`) | ✅ |
 | 013 | Kaguya — tags N:N, smart-lists (DSL) e calendário | ✅ |
 | 014 (tasks) | Kaguya — hábitos com check-ins, heatmap e "força" (EMA) | ✅ |
-| 3 / 027 | Kurisu (knowledge base): Vertex AI RAG sobre o vault Obsidian — corpus no ar (410/410 páginas), agente ativo no Telegram | ✅ |
+| 3 / 027 | Kurisu (knowledge base): Vertex AI RAG sobre o vault Obsidian — corpus no ar (556/556 páginas, sync incremental via `scripts/sync_kurisu_wiki.py`), agente ativo no Telegram/Hermes. Sync ainda manual — automação via GitHub Actions no repo do vault desenhada mas não ativada (`agents/kurisu/CLAUDE.md`) | 🔧 sync manual |
 | 4 | Lucy (email): tools Gmail + agente | ✅ |
 | 5a | Frieren (livros): PostgreSQL + Google Books API + log de leitura + estantes | ✅ |
 | — | Webapp (FastAPI + React) + diário Violet na web | ✅ |

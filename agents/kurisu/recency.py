@@ -145,3 +145,51 @@ def aplicar_recencia(trechos: list, granularidade: float = 0.02) -> list:
     # (mais recente) primeiro. sorted() é estável, então a ordem original é preservada
     # quando bucket e data coincidem.
     return sorted(trechos, key=chave, reverse=True)
+
+
+def garantir_slot_wiki(trechos_ordenados: list, top_n: int) -> list:
+    """Garante que o corte final tenha ao menos 1 trecho da wiki, se algum existir.
+
+    `aplicar_recencia` já ordena por relevância (o desempate por recência só entra em
+    empate de score) — mas quando a pergunta casa literalmente com um bullet do diário,
+    o reranker legitimamente dá a ele um score maior que qualquer página da wiki
+    tematicamente relevante, então a wiki nunca entra no corte (não é um empate, é
+    relevância genuinamente menor). Isso deixa `buscar_na_base` incapaz de citar a
+    curadoria pessoal do usuário sempre que há qualquer bullet competindo — achado de
+    2026-08-15, mesma raiz do achado documentado na spec 061 (`buscar_na_wiki`).
+
+    Args:
+        trechos_ordenados: Lista já ordenada por `aplicar_recencia` (mais relevante
+            primeiro). Cada trecho tem 'domain' (`None` para wiki, string para
+            memória operacional).
+        top_n: Quantos trechos entram no corte final.
+
+    Returns:
+        Os `top_n` primeiros trechos — trocando o último (menos relevante) pelo
+        melhor trecho da wiki, se nenhum trecho da wiki estivesse entre eles.
+
+    Example:
+        >>> trechos = [
+        ...   {"fonte": "diario1", "domain": "diario", "score": 0.40},
+        ...   {"fonte": "diario2", "domain": "diario", "score": 0.39},
+        ...   {"fonte": "wiki1",   "domain": None,     "score": 0.27},
+        ... ]
+        >>> [t["fonte"] for t in garantir_slot_wiki(trechos, 2)]
+        ['diario1', 'wiki1']
+
+        Se a wiki já está representada, o corte não muda:
+
+        >>> trechos = [
+        ...   {"fonte": "wiki1",   "domain": None,     "score": 0.40},
+        ...   {"fonte": "diario1", "domain": "diario", "score": 0.39},
+        ... ]
+        >>> [t["fonte"] for t in garantir_slot_wiki(trechos, 2)]
+        ['wiki1', 'diario1']
+    """
+    top = trechos_ordenados[:top_n]
+    if not top or any(t.get("domain") is None for t in top):
+        return top
+    melhor_wiki = next((t for t in trechos_ordenados if t.get("domain") is None), None)
+    if melhor_wiki is None:
+        return top
+    return top[:-1] + [melhor_wiki]

@@ -32,7 +32,7 @@ from vertexai import rag
 
 # Motor puro de recência (spec 028): reordena os trechos para que, em empate de
 # relevância, o conteúdo mais recente apareça primeiro (FR-005/SC-006).
-from agents.kurisu.recency import aplicar_recencia
+from agents.kurisu.recency import aplicar_recencia, garantir_slot_wiki
 
 # Logger padrão do Python — erros de rede/Vertex aparecem nos logs do container
 # mas nunca chegam como stack trace ao usuário (requisito FR-009 da spec 027).
@@ -381,11 +381,12 @@ def buscar_na_base(query: str) -> dict:
             "mensagem": "Nenhum trecho com relevância suficiente encontrado na base.",
         }
 
-    # --- Passo 4: Recência pós-recuperação + top-N final ---
+    # --- Passo 4: Recência pós-recuperação + top-N final (com slot garantido p/ wiki) ---
     # aplicar_recencia reordena o conjunto mesclado: em empate de relevância, mais recente
-    # primeiro. Depois cortamos no top-N que vai para o agente compor a resposta.
+    # primeiro. garantir_slot_wiki evita que a wiki fique sistematicamente de fora do
+    # corte quando o diário tem qualquer bullet com match literal (achado 2026-08-15).
     ordenados = aplicar_recencia(todos)
-    trechos = ordenados[:_TOP_N_NARROW]
+    trechos = garantir_slot_wiki(ordenados, _TOP_N_NARROW)
 
     return {
         "status": "ok",
