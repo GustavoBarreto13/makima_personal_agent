@@ -1578,6 +1578,33 @@ duplica linhas.
 
 ---
 
+## 12.7. Domínio Kaguya — Digest matinal (tarefas/agenda, WhatsApp)
+
+### `kaguya_digests`
+
+Histórico do digest matinal de tarefas/agenda (`agents/kaguya/digest.py`) e estado da
+sugestão pendente de resposta. Autocontida — sem FKs (Princípio III).
+
+| Coluna | Tipo | Regras / propósito |
+|---|---|---|
+| `id` | `SERIAL PRIMARY KEY` | |
+| `digest_date` | `DATE NOT NULL` | Data do digest. |
+| `sent_at` | `TIMESTAMPTZ NOT NULL` | `DEFAULT now()`. Momento do envio. |
+| `suggested_items` | `JSONB NOT NULL` | `[{n, type: "task"\|"habit", id, label, reason}, ...]` — a sugestão numerada gerada pelo Gemini. |
+| `status` | `TEXT NOT NULL` | `DEFAULT 'pending'`. Um de: `pending`, `resolved`, `expired`. |
+| `resolved_at` | `TIMESTAMPTZ` | Momento em que o Hermes aplicou a resposta do usuário. |
+| `resolution_summary` | `TEXT` | Texto de confirmação devolvido por `apply_kaguya_digest_selection`. |
+
+**Índice:** `idx_kaguya_digests_status_sent (status, sent_at DESC)` — achar rápido o
+digest `pending` mais recente.
+
+**Ciclo de vida:** `pending` → `resolved` (usuário respondeu, via
+`apply_kaguya_digest_selection`) **ou** `expired` (mais velho que 20h sem resposta,
+marcado sozinho na próxima leitura de `get_pending_kaguya_digest`) — nunca fica pendente
+pra sempre.
+
+---
+
 ## 13. Como (re)criar o banco
 
 ```bash

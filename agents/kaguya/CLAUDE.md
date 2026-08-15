@@ -43,6 +43,7 @@ agents/kaguya/
 ├── focus_habit_provider.py   # provider da fonte automática "Foco (Kaguya)" p/ habit_source_providers — spec 062
 ├── tools_focus.py        # camada de lógica: sessões de foco (start/finish/cancel/stats/heatmap/achievements) — spec 037 + 062
 ├── capacity.py           # motor PURO (sem banco): compute_capacity() — janela 8h–22h — fatia 016
+├── digest.py             # digest matinal (tarefas/agenda) → WhatsApp: contexto + sugestão Gemini + tools de resposta pendente
 ├── gcal.py               # cliente Google Calendar compartilhado (read all / write main) — fatia 019
 ├── gcal_sync.py          # espelho best-effort: push/remove tarefas no GCal "Kaguya — Tarefas" — fatia 019
 ├── calendar_prefs.py     # CRUD da tabela calendar_prefs (visibilidade + cor + contexto Trabalho/Pessoal) — fatia 019 / spec 038
@@ -610,6 +611,7 @@ URL quando o local já é um link (Google Meet etc.).
 | `eisenhower_status()` | relato textual dos 4 quadrantes da matriz de Eisenhower — fatia 017 |
 | `process_inbox_item(task_id, decision, ...)` | aplica uma das 6 decisões do processamento guiado do inbox — spec 034 |
 | `resolve_view_by_name(name)` | resolve "todas"/"hoje"/"amanhã"/"próximos 7 dias"/"inbox" (paridade FR-014) — spec 034 |
+| `get_pending_kaguya_digest()` / `apply_kaguya_digest_selection(accepted_ns)` | digest matinal via WhatsApp: consulta/aplica a sugestão pendente a partir da resposta do usuário (interpretada pelo Hermes, não por um parser aqui) |
 | (Calendar) | `list_events_today`, `create_event`, ... via MCP |
 
 **Telegram — processamento do inbox (spec 034 / US5):** o comando `/processar_inbox`
@@ -639,6 +641,75 @@ cria a tarefa de lembrete (prioridade alta) no banco; **não** lança despesa.
 expõe esta mesma tool para o botão "Lembrar-me" nos próximos vencimentos do Dashboard da
 Nami — com uma checagem de duplicata própria do endpoint (mesmo título + `due_date` numa
 tarefa aberta da lista Finanças não cria de novo).
+
+---
+
+## Digest matinal (tarefas/agenda) → WhatsApp — `digest.py`
+
+Todo dia às **07:00** (America/Sao_Paulo, antes do digest da Lucy às 08:00),
+`scripts/send_kaguya_digest.py` (agendado via `scheduler/registry.py`, job
+`kaguya_digest`) manda um resumo pelo WhatsApp com o que está aberto e uma **sugestão
+numerada** de plano pro dia — mesmo padrão do digest da Lucy (`agents/lucy/tools.py`),
+adaptado: envio via `scheduler/notify_channels.py::send_notification` (WhatsApp, via
+Hermes) em vez do POST direto ao Telegram, e a resposta do usuário é acionável.
+
+```
+scripts/send_kaguya_digest.py
+├── digest.build_digest_context()   → tarefas + agenda + hábitos + capacidade + diário + RAG
+├── digest.generate_suggestion()    → Gemini one-shot (response_schema, mesmo padrão de classify_emails)
+├── digest.build_whatsapp_digest()  → texto HTML (convertido pro markdown do WhatsApp no envio)
+├── send_notification()             → scheduler/notify_channels.py (Hermes, canal whatsapp)
+└── digest.persist_digest()         → kaguya_digests (status inicial 'pending')
+```
+
+**Composição do contexto** (`build_digest_context`, função pura — só chama camadas de
+lógica já existentes, nenhuma regra nova): `list_tasks_today()` (vencidas/hoje),
+`list_tasks_by_builtin("next-actions"|"quick"|"waiting")` (GTD), `gcal.list_events()`
+(agenda do dia), `list_habits()` (filtra `done_today=False`), `compute_capacity()` (janela
+19h–23h em dia útil, 9h–22h no fim de semana — heurística v1, sem calendário de
+feriados/expediente real), `agents/journal/tools.py::list_heatmap`+`get_or_create_page`+
+`list_emotion_logs` (só os últimos 3 dias que **têm** conteúdo — `list_heatmap` primeiro
+evita criar página vazia via `get_or_create_page`) e `agents/kurisu/tools.py::buscar_na_base`
+(contexto histórico de rotina/preferências, query composta com o dia da semana + títulos
+das tarefas candidatas).
+
+**Sugestão** (`generate_suggestion`): Gemini one-shot com `response_schema` (`narrative` +
+`items[]`, cada item `{type: "task"|"habit", id, label, reason}`) — mesmo padrão de
+`classify_emails` (retry com backoff, `SuggestionError` em falha estrutural). Itens
+inválidos (tipo fora do enum, sem id inteiro, sem label) são descartados na normalização;
+os válidos ganham numeração 1-based (`n`) — é esse número que o usuário usa pra responder.
+
+### Resposta do usuário — sem parser Python, delegado ao Hermes
+
+O WhatsApp deste projeto é atendido pelo Hermes (spec 064), que já tem seu próprio loop de
+LLM com tool-calling contra o domínio `kaguya` do `makima-mcp`. Em vez de reimplementar um
+parser de linguagem natural aqui, duas tools ficam expostas via `toolset.py` (chamáveis
+pelo Hermes, orientado por `hermes/skills/kaguya-tarefas/SKILL.md`):
+
+- **`get_pending_kaguya_digest()`** — devolve o digest `pending` mais recente (`None` se
+  não houver, ou se o único candidato passou de `_PENDING_WINDOW_HOURS`=20h — nesse caso
+  vira `expired` sozinho na leitura). O Hermes chama isso quando a mensagem do usuário
+  parece uma reação curta ao resumo do dia.
+- **`apply_kaguya_digest_selection(accepted_ns)`** — o Hermes já decidiu, a partir do texto
+  livre, quais números foram aceitos; esta tool só mapeia número → tarefa e chama
+  `add_to_my_day` pros aceitos (itens `type="habit"` são informativos, sem ação gravável),
+  marca `status='resolved'` + `resolution_summary`, e devolve a confirmação que o Hermes
+  repassa ao usuário.
+
+### Schema: `kaguya_digests`
+
+Tabela autocontida (sem FKs), criada sob demanda por `_ensure_tables()` na importação do
+módulo (mesmo padrão de `lucy_emails`/`journal`):
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `id` | SERIAL PK | |
+| `digest_date` | DATE NOT NULL | Data do digest |
+| `sent_at` | TIMESTAMPTZ NOT NULL | Momento do envio |
+| `suggested_items` | JSONB NOT NULL | `[{n, type, id, label, reason}, ...]` |
+| `status` | TEXT NOT NULL | `pending` \| `resolved` \| `expired` |
+| `resolved_at` | TIMESTAMPTZ | Momento da resolução (se houve) |
+| `resolution_summary` | TEXT | Texto de confirmação gravado por `apply_kaguya_digest_selection` |
 
 ---
 

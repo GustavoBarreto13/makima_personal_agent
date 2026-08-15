@@ -24,7 +24,8 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 # Importa as funções que fazem o trabalho de cada job.
 from scheduler.jobs import (
-    run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest, run_weekly_review_reminder,
+    run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest, run_kaguya_digest,
+    run_weekly_review_reminder,
     run_recurring_charges, run_budget_alert, run_monthly_report, run_marin_mal_sync,
 )
 
@@ -140,6 +141,14 @@ JOBS: list[ScheduledJob] = [
         func=run_lucy_digest,
         trigger=daily_at(8, 0),
         description="Digest diário de emails (Lucy) → Telegram",
+    ),
+    # Digest matinal de tarefas/agenda (Kaguya) → WhatsApp + histórico em kaguya_digests.
+    # Roda antes do digest da Lucy — 07:00 (America/Sao_Paulo).
+    ScheduledJob(
+        name="kaguya_digest",
+        func=run_kaguya_digest,
+        trigger=daily_at(7, 0),
+        description="Digest diário de tarefas/agenda (Kaguya) → WhatsApp, sugestão do dia via Gemini",
     ),
     # Lembrete da revisão semanal do GTD (Kaguya) — só dispara se a semana terminar sem
     # nenhuma revisão concluída (spec 035, US3). Domingo 20:00 (America/Sao_Paulo).

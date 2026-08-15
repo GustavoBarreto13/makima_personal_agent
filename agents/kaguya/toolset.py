@@ -33,6 +33,7 @@ from agents.kaguya.tools import (
     # GTD core: processamento do inbox + views fixas de mercado (spec 034)
     process_inbox_item, resolve_view_by_name,
 )
+from agents.kaguya.digest import get_pending_kaguya_digest, apply_kaguya_digest_selection
 
 TOOLS = [
     # Listas e tarefas (camada de lógica própria)
@@ -64,4 +65,6 @@ TOOLS = [
     complete_payment_task, create_expense_reminder,
     # GTD core: processamento do inbox + views fixas de mercado (spec 034)
     process_inbox_item, resolve_view_by_name,
+    # Digest matinal (tarefas/agenda) → WhatsApp: reação do Hermes a uma resposta pendente
+    get_pending_kaguya_digest, apply_kaguya_digest_selection,
 ]
