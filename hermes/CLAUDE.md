@@ -107,6 +107,40 @@ app de novo.
 5. **Rollback**: parar a app do Hermes, descomentar o bloco `makima` em
    `docker-compose.yml` e redeployar a app principal de novo.
 
+### Por que "Deploy" no Dokploy nem sempre reinicia o processo — e o fix
+
+`config.yaml`, `SOUL.md` e `skills/` são bind mounts read-only
+(`docker-compose.hermes.yml`) — o CONTEÚDO deles já atualiza sozinho no host assim que o
+Dokploy dá `git pull`, sem nenhuma ação manual. O problema é outro: o processo `gateway
+run` dentro do container só LÊ esses arquivos (e o `.env` da imagem) uma vez, no boot —
+mudança no conteúdo do bind mount só passa a valer depois que o processo reinicia. E
+`docker compose up -d` (o que o botão "Deploy" do Dokploy roda por baixo) só recria um
+container quando a DEFINIÇÃO do serviço no compose muda (imagem, env, volumes
+declarados) — como `docker-compose.hermes.yml` em si quase nunca muda (só o conteúdo dos
+arquivos montados muda, não os caminhos), o Compose considera o container "já no estado
+desejado" e não o recria. Resultado: cada push em `config.yaml`/`SOUL.md`/`skills/*`
+exigia `docker restart makima-hermes` manual por SSH depois do deploy.
+
+**Fix permanente**: configurar em Dokploy → app Hermes → **Advanced → Custom Command**
+(campo que sobrescreve o comando de deploy) para sempre recriar o container:
+
+```bash
+docker compose -f docker-compose.hermes.yml up -d --force-recreate --remove-orphans
+```
+
+Diferente do `--profile` (que precisa vir ANTES de `up` e por isso nunca foi injetável
+pelo Dokploy — ver seção acima), `--force-recreate` e `--remove-orphans` vêm DEPOIS de
+`up`, exatamente o tipo de flag que o Dokploy consegue adicionar. `--remove-orphans`
+junto resolve de quebra o container órfão do `makima` comentado (ver "Desvio: comentar o
+serviço" acima). Com isso configurado, todo clique em "Deploy" recria o container do
+zero — sem SSH manual para o caso comum (mudança em arquivo versionado neste repo).
+
+**O que isso NÃO resolve**: `.env` gravado por comandos interativos dentro do container
+(`hermes whatsapp`, wizard de pareamento) vive só no volume `hermes_data`, nunca passa
+pelo git/Dokploy — nenhum deploy, automático ou não, sabe que precisa recriar o container
+por causa disso. Esse caso é estrutural e continua exigindo `docker restart makima-hermes`
+manual por SSH (ou repetir o comando acima manualmente).
+
 ## O que está aqui
 
 | Arquivo | Papel | Estático/dinâmico |
