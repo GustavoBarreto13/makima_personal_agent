@@ -754,3 +754,19 @@ END $$;
 -- Tarefas recorrentes não precisam de reset especial: cada ocorrência já nasce como uma
 -- linha NOVA (modelo "completar-e-gerar", agents/kaguya/CLAUDE.md § Recorrência).
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_reminder_sent_at TIMESTAMPTZ;
+
+
+-- ----------------------------------------------------------------------------
+-- myday_prefs — modo férias: ocultar contexto Trabalho no Meu Dia + digest (spec 065)
+-- ----------------------------------------------------------------------------
+-- Preferência global de 1 linha (mesmo padrão de focus_prefs) — persistida no banco
+-- (não localStorage) para sobreviver entre sessões/dispositivos e ser lida também pelo
+-- digest matinal (WhatsApp, agents/kaguya/digest.py). Quando hide_work=true, list_my_day()
+-- e build_digest_context() excluem itens com contexto 'work' (tarefas + eventos).
+CREATE TABLE IF NOT EXISTS myday_prefs (
+    id        INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    hide_work BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+INSERT INTO myday_prefs (id, hide_work) VALUES (1, FALSE)
+ON CONFLICT (id) DO NOTHING;

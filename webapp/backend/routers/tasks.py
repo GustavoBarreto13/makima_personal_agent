@@ -41,6 +41,8 @@ from agents.kaguya.tools_tasks import (
     # Meu Dia — fatia 016
     add_to_my_day, remove_from_my_day, reschedule_pending,
     set_estimate, set_time_block, clear_time_block, list_my_day,
+    # Modo férias — ocultar Trabalho no Meu Dia + digest (spec 065)
+    get_myday_prefs, set_myday_prefs,
     # Processamento do inbox (GTD) — spec 034
     list_inbox_queue, process_inbox_item,
 )
@@ -261,6 +263,11 @@ class ProcessInboxItemBody(BaseModel):
 class AddToMyDayBody(BaseModel):
     """Body opcional de ``POST /{id}/my-day``. Sem body = usa hoje."""
     date: Optional[str] = None   # "YYYY-MM-DD"; ausente = hoje (fuso SP)
+
+
+class MyDayPrefsBody(BaseModel):
+    """Body de ``PATCH /my-day/prefs`` — modo férias (spec 065)."""
+    hide_work: bool
 
 
 class RescheduleBody(BaseModel):
@@ -1599,6 +1606,18 @@ def review_goal_route(goal_id: int, body: ReviewGoalBody, user: dict = Depends(r
 # ─────────────────────────────────────────────────────────────────────────────
 # Meu Dia — fatia 016
 # ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/my-day/prefs")
+def get_myday_prefs_route(user: dict = Depends(require_user)) -> dict:
+    """Preferência do modo férias (spec 065). Listagem — retorna dado direto."""
+    return get_myday_prefs()
+
+
+@router.patch("/my-day/prefs")
+def set_myday_prefs_route(body: MyDayPrefsBody, user: dict = Depends(require_user)) -> dict:
+    """Liga/desliga o modo férias — esconde o contexto Trabalho no Meu Dia e no digest."""
+    return _check_result(set_myday_prefs(body.hide_work))
+
 
 @router.get("/my-day")
 def my_day_route(

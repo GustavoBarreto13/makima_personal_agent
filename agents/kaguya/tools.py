@@ -321,8 +321,9 @@ def my_day_status() -> str:
         partes.append(f"folga de {fmtmin(cap['folga_min'])}")
     if pendencias:
         partes.append(f"{len(pendencias)} pendência(s) de ontem")
-    # Dois blocos por contexto (spec 038) — só aparece quando há algo planejado em algum lado.
-    if cap_work["no_plano"] or cap_personal["no_plano"]:
+    # Dois blocos por contexto (spec 038) — só aparece quando há algo planejado em algum lado
+    # e o modo férias (spec 065) não está escondendo o Trabalho.
+    if not r.get("hide_work") and (cap_work["no_plano"] or cap_personal["no_plano"]):
         partes.append(
             f"trabalho: {fmtmin(cap_work['estimado_min'])} de {fmtmin(cap_work['livre_min'])}; "
             f"pessoal: {fmtmin(cap_personal['estimado_min'])} de {fmtmin(cap_personal['livre_min'])}"

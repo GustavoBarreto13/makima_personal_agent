@@ -2188,9 +2188,13 @@
 .kg-focus-summary-empty { width: 6px; height: 6px; border-radius: 50%; background: var(--line-2); }
 
 /* ── Meu Dia — contexto Trabalho/Pessoal (spec 038) ─────────────────────── */
-.kg-myday-viewtoggle { display: flex; justify-content: flex-end; margin: 8px 0 4px; }
+.kg-myday-viewtoggle { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 8px 0 4px; }
 .kg-myday-context-block { margin-bottom: 24px; }
 .kg-myday-context-head { font-size: 13px; font-weight: 700; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line-2); }
+
+/* ── Modo férias — esconder Trabalho no Meu Dia (spec 065) ───────────────── */
+.kg-myday-vacation { background: var(--card-2); border: 1px solid var(--line-2); border-radius: var(--kg-r-sm); padding: 6px 12px; }
+.kg-myday-vacation.active { background: var(--card); color: var(--ink); box-shadow: var(--shadow-sm); font-weight: 600; border-color: var(--sapphire, var(--line-2)); }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Foco gameficado — Floresta, Heatmap, Horas, Conquistas (spec 062)

@@ -644,6 +644,18 @@ mesmo padrão de `calendar_prefs` mas com uma única preferência global.
 | `focus_min` | INT | NÃO | `25` | Minutos de foco do último preset usado. |
 | `break_min` | INT | NÃO | `5` | Minutos de pausa do último preset usado. |
 
+### `myday_prefs` *(spec 065 — Modo férias)*
+
+Preferência global de 1 linha (mesmo padrão de `focus_prefs`): liga/desliga o modo férias,
+que esconde tudo com contexto Trabalho (spec 038) no Meu Dia e no digest matinal por
+WhatsApp. Lida por `list_my_day()`/`my_day_status()` (`agents/kaguya/tools_tasks.py` +
+`tools.py`) e por `digest.py::build_digest_context()`. Detalhes em `agents/kaguya/CLAUDE.md`.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | INT | PK | `1` | Sempre `1` (`CHECK (id = 1)`). |
+| `hide_work` | BOOL | NÃO | `FALSE` | `TRUE` = esconde tarefas/eventos de contexto Trabalho no Meu Dia e no digest. |
+
 ### `calendar_prefs` *(fatia 019 — Calendar Hub)*
 
 Preferências de exibição por fonte de calendário (visibilidade + cor), persistidas entre sessões.

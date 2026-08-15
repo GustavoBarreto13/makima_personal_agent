@@ -539,6 +539,48 @@ Persistência: 2 colunas novas em tabelas já existentes (`task_projects.context
 `calendar_prefs.context`) — nenhuma tabela nova. Ver
 `specs/038-meudia-work-context/data-model.md`.
 
+### Modo férias — ocultar Trabalho no Meu Dia + digest (spec 065)
+
+Diferente do toggle de visão (acima, puramente de exibição em `localStorage`), o **modo
+férias** esconde de fato o conteúdo com contexto Trabalho — pensado para períodos (ex.:
+férias) em que o usuário não quer ver nada do trabalho em lugar nenhum, nem no webapp nem
+no digest matinal por WhatsApp. Precisa **persistir no banco** (não localStorage) porque é
+lido também pelo processo do digest (`digest.py`), que não tem acesso ao navegador.
+
+**`myday_prefs`** — tabela singleton de 1 linha (mesmo padrão de `focus_prefs`), com a
+única coluna `hide_work BOOLEAN`. `get_myday_prefs()`/`set_myday_prefs(hide_work)` em
+`tools_tasks.py` fazem a leitura/gravação.
+
+**`list_my_day()`** lê o pref no fim da função: com `hide_work=true`, a visão "única"
+(`plano`/`pendencias_ontem`/`sugestoes`/`capacity`) passa a ser, na prática, só a fatia
+Pessoal (mesmo cálculo que já existia para `plano_personal`/`capacity_personal`, só
+promovido para os campos sem sufixo) — `plano_work`/`pendencias_ontem_work`/
+`sugestoes_work` voltam vazios e `capacity_work` zerado, mantendo a mesma forma de
+resposta (o frontend não precisa tratar chaves ausentes). `eventos` também é filtrado,
+removendo os do calendário com `calendar_prefs.context == 'work'`. A resposta ganha
+`hide_work: bool` — sinal explícito para a UI decidir o que desenhar, em vez de inferir
+de listas vazias. `my_day_status()` (`tools.py`) usa o mesmo campo para omitir o bloco
+"trabalho: X de Y; pessoal: Z de W" quando ligado.
+
+**Digest matinal (`digest.py::build_digest_context`)**: mesmo pref, filtro equivalente
+aplicado às 5 fontes que compõem o digest (`overdue`/`today_tasks` de `list_tasks_today()`,
+`next_actions`/`quick`/`waiting` de `list_tasks_by_builtin()`, e os eventos do Google
+Calendar). Isso exigiu expor `context` (herdado da lista, spec 038) nos retornos de
+`list_tasks_today()` e `_run_filter_rules()` — antes só `list_my_day()` selecionava
+`p.context`. Hábitos não têm contexto (fora do escopo da 038) — não são afetados pelo
+modo férias.
+
+**Webapp**: `GET`/`PATCH /api/tasks/my-day/prefs` (`get_myday_prefs`/`set_myday_prefs`).
+`TodayScreen.tsx` carrega o pref no mount, mostra um botão "✈️ Modo férias" ao lado do
+toggle Dividido/Único (que some quando `hideWork` está ligado — não faz sentido dividir
+Trabalho/Pessoal se o Trabalho está escondido).
+
+Fora do Meu Dia e do digest, tarefas/listas/calendários de contexto Trabalho continuam
+normais em todo o resto do app (listas, Kanban, calendário, busca) — o modo férias é
+puramente de visibilidade nesses dois pontos, não arquiva nem esconde nada globalmente.
+
+Persistência: 1 tabela nova de 1 linha (`myday_prefs`). Nenhuma migração de dados.
+
 ---
 
 ### Arquivar listas + localização nos eventos (spec 039)

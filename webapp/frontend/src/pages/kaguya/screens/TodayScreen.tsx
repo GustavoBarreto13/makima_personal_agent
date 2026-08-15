@@ -67,6 +67,15 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
   // Visão dividida (Trabalho/Pessoal) ou única (spec 038, US3) — lembrada entre sessões.
   const [viewMode, setViewMode] = useState<MyDayViewMode>(readMyDayView)
   const toggleViewMode = (v: MyDayViewMode) => { setViewMode(v); writeMyDayView(v) }
+  // Modo férias (spec 065): esconde tudo com contexto Trabalho no Meu Dia + digest matinal.
+  // Persistido no banco (myday_prefs) — não localStorage, para valer entre dias/dispositivos
+  // e ser lido também pelo digest do WhatsApp.
+  const [hideWork, setHideWork] = useState(false)
+  useEffect(() => {
+    kaguyaApi.getMyDayPrefs()
+      .then((p) => setHideWork(p.hide_work))
+      .catch(() => { /* sem pref ainda — assume desligado */ })
+  }, [])
   // loading: só true no 1º carregamento. Soltar um card NÃO ativa o spinner.
   const [loading, setLoading] = useState(true)
   // activeId: id do card de plano em arraste (null = nenhum drag ativo).
@@ -174,6 +183,20 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
       )
     }
   }, [load])
+
+  // Liga/desliga o modo férias (spec 065). Optimistic update + reload silencioso —
+  // o backend já devolve o Meu Dia filtrado (list_my_day) na próxima leitura.
+  const toggleHideWork = useCallback(async () => {
+    const next = !hideWork
+    setHideWork(next)
+    try {
+      await kaguyaApi.setMyDayPrefs(next)
+      load(true)
+    } catch {
+      setHideWork(!next)   // rollback
+      toast('Não foi possível alterar o modo férias.', 'err')
+    }
+  }, [hideWork, load, toast])
 
   // ── Handlers de DnD ──────────────────────────────────────────────────────────
   // IMPORTANTE: todos os hooks (useCallback) precisam ser declarados ANTES de qualquer
@@ -302,12 +325,22 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
           </div>
         )}
 
-        {/* Toggle visão dividida/única (spec 038, US3) — preferência lembrada em localStorage */}
+        {/* Toggle visão dividida/única (spec 038, US3) + modo férias (spec 065) */}
         <div className="kg-myday-viewtoggle">
-          <div className="kg-segment" style={{ width: 180 }}>
-            <button className={`kg-seg-opt${viewMode === 'split' ? ' active' : ''}`} onClick={() => toggleViewMode('split')}>Dividido</button>
-            <button className={`kg-seg-opt${viewMode === 'single' ? ' active' : ''}`} onClick={() => toggleViewMode('single')}>Único</button>
-          </div>
+          {/* Só faz sentido dividir Trabalho/Pessoal quando o Trabalho não está escondido. */}
+          {!hideWork && (
+            <div className="kg-segment" style={{ width: 180 }}>
+              <button className={`kg-seg-opt${viewMode === 'split' ? ' active' : ''}`} onClick={() => toggleViewMode('split')}>Dividido</button>
+              <button className={`kg-seg-opt${viewMode === 'single' ? ' active' : ''}`} onClick={() => toggleViewMode('single')}>Único</button>
+            </div>
+          )}
+          <button
+            className={`kg-seg-opt kg-myday-vacation${hideWork ? ' active' : ''}`}
+            onClick={toggleHideWork}
+            title="Esconde tudo com contexto Trabalho no Meu Dia e no digest matinal do WhatsApp"
+          >
+            ✈️ Modo férias
+          </button>
         </div>
 
         {/* Layout de duas colunas */}

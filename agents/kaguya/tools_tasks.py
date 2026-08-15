@@ -611,11 +611,12 @@ def list_tasks_today() -> dict:
     Returns:
         ``{"overdue": [...], "today": [...]}`` — tarefas-pai abertas com ``due_date``
         anterior a hoje (overdue) ou igual a hoje (today). Cada item traz
-        ``project_name`` para o consumidor agrupar. **Listagem**.
+        ``project_name`` e ``context`` (herdado da lista, spec 038) para o consumidor
+        agrupar/filtrar. **Listagem**.
     """
     rows = run_select(
         f"""
-        SELECT {_qualified("t")}, p.name AS project_name
+        SELECT {_qualified("t")}, p.name AS project_name, p.context
         FROM tasks t JOIN task_projects p ON p.id = t.project_id
         WHERE t.parent_id IS NULL
           AND t.deleted_at IS NULL
@@ -631,6 +632,7 @@ def list_tasks_today() -> dict:
     for r in rows:
         item = _serialize_task(r)
         item["project_name"] = r["project_name"]
+        item["context"] = r.get("context") or "personal"
         # due_date já é string ISO aqui; compara como texto (ISO ordena cronologicamente).
         (due_today if item["due_date"] == today else overdue).append(item)
     # Anexa a recorrência ativa (glyph/eco) e as tags às tarefas das duas seções.
@@ -2126,6 +2128,37 @@ def clear_time_block(task_id: int) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Modo férias — ocultar contexto Trabalho no Meu Dia + digest (spec 065)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_myday_prefs() -> dict:
+    """Lê a preferência global do modo férias (linha única de ``myday_prefs``).
+
+    Returns:
+        ``{"hide_work": bool}``.
+    """
+    rows = run_select("SELECT hide_work FROM myday_prefs WHERE id = 1")
+    return {"hide_work": bool(rows[0]["hide_work"])} if rows else {"hide_work": False}
+
+
+def set_myday_prefs(hide_work: bool) -> dict:
+    """Liga/desliga o modo férias (ocultar contexto Trabalho no Meu Dia e no digest).
+
+    Args:
+        hide_work: ``True`` esconde tudo com contexto ``work``; ``False`` volta ao normal.
+
+    Returns:
+        Dicionário de status com a preferência já gravada.
+    """
+    run_dml(
+        "INSERT INTO myday_prefs (id, hide_work) VALUES (1, %(hide_work)s) "
+        "ON CONFLICT (id) DO UPDATE SET hide_work = %(hide_work)s",
+        {"hide_work": hide_work},
+    )
+    return {"status": "ok", "hide_work": hide_work}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Integração gcal para o Meu Dia
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -2369,6 +2402,31 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     cap_personal = compute_capacity(estimativas_personal, eventos_tuplas_personal, calendar_ok=cal_ok)
     cap_personal["no_plano"] = len(plano_personal)
 
+    # Modo férias (spec 065): com hide_work=true, a visão "única" (plano/pendencias/
+    # sugestoes/capacity/eventos) vira, de fato, só Pessoal — nunca uma mistura filtrada
+    # em outro lugar. plano_work/etc. voltam vazios (mesma forma da resposta, sem quebrar
+    # o frontend); hide_work=true é o sinal explícito para a UI não desenhar o bloco.
+    hide_work = get_myday_prefs()["hide_work"]
+    if hide_work:
+        eventos_serial = [e for e in eventos_serial if e["context"] != "work"]
+        return {
+            "date": hoje_str,
+            "plano": plano_personal,
+            "pendencias_ontem": pendencias_personal,
+            "sugestoes": sugestoes_personal,
+            "capacity": cap_personal,
+            "plano_work": [],
+            "plano_personal": plano_personal,
+            "pendencias_ontem_work": [],
+            "pendencias_ontem_personal": pendencias_personal,
+            "sugestoes_work": [],
+            "sugestoes_personal": sugestoes_personal,
+            "capacity_work": compute_capacity([], [], calendar_ok=cal_ok),
+            "capacity_personal": cap_personal,
+            "eventos": eventos_serial,
+            "hide_work": True,
+        }
+
     return {
         "date": hoje_str,
         "plano": plano,
@@ -2387,4 +2445,5 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         # Eventos do Google Calendar do dia (já filtrados por visibilidade).
         # Usados pela timeline do Meu Dia. Lista vazia quando o Google não responde.
         "eventos": eventos_serial,
+        "hide_work": False,
     }

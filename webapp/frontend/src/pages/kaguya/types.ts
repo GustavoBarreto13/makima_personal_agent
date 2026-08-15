@@ -147,6 +147,9 @@ export interface MyDayResponse {
   sugestoes_personal: Task[]
   capacity_work: CapacityStats
   capacity_personal: CapacityStats
+  // Modo férias (spec 065): true = o backend já excluiu tudo com contexto Trabalho
+  // (plano/pendencias/sugestoes/capacity acima já são só Pessoal; plano_work etc. vêm vazios).
+  hide_work: boolean
 }
 
 // Uma lista (na UI "Lista"; no modelo "project").

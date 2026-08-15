@@ -186,7 +186,9 @@ def build_digest_context(today: date | None = None) -> dict:
     Returns:
         Dict com `today`, `weekday`, `is_weekend`, `overdue`, `today_tasks`,
         `next_actions`, `quick`, `waiting`, `events`, `habits_pending`, `capacity`,
-        `journal_notes`, `rag_excerpts`.
+        `journal_notes`, `rag_excerpts`. Quando o modo férias (spec 065) está ligado,
+        tarefas/eventos com contexto Trabalho já saem excluídos daqui — o digest nunca
+        os vê.
     """
     today = today or _today_sp()
     weekday = today.weekday()  # 0=segunda ... 6=domingo
@@ -196,12 +198,26 @@ def build_digest_context(today: date | None = None) -> dict:
     from agents.kaguya.capacity import compute_capacity
     from agents.kaguya.tools_filters import list_tasks_by_builtin
     from agents.kaguya.tools_habits import list_habits
-    from agents.kaguya.tools_tasks import list_tasks_today
+    from agents.kaguya.tools_tasks import get_myday_prefs, list_tasks_today
+
+    hide_work = get_myday_prefs()["hide_work"]
 
     tasks_today = list_tasks_today()  # {"overdue": [...], "today": [...]}
     next_actions = list_tasks_by_builtin("next-actions")
     quick = list_tasks_by_builtin("quick")
     waiting = list_tasks_by_builtin("waiting")
+
+    if hide_work:
+        def _personal_only(items: list[dict]) -> list[dict]:
+            return [t for t in items if t.get("context", "personal") != "work"]
+
+        tasks_today = {
+            "overdue": _personal_only(tasks_today["overdue"]),
+            "today": _personal_only(tasks_today["today"]),
+        }
+        next_actions = _personal_only(next_actions)
+        quick = _personal_only(quick)
+        waiting = _personal_only(waiting)
 
     try:
         events = gcal.list_events(today.isoformat(), today.isoformat())
@@ -210,6 +226,17 @@ def build_digest_context(today: date | None = None) -> dict:
         logger.warning("Falha ao buscar a agenda do Google Calendar: %s", exc)
         events = []
         calendar_ok = False
+
+    if hide_work and events:
+        try:
+            from agents.kaguya.calendar_prefs import get_calendar_prefs
+            prefs = {p["calendar_id"]: p for p in get_calendar_prefs()}
+            events = [
+                e for e in events
+                if (prefs.get(f"gcal:{e.get('calendar_id', '')}", {}).get("context") or "personal") != "work"
+            ]
+        except Exception as exc:  # noqa: BLE001 — melhor esforço, nunca derruba o digest
+            logger.warning("Falha ao filtrar eventos de trabalho do digest: %s", exc)
 
     habits = list_habits()
     habits_pending = [h for h in habits if not h.get("done_today")]

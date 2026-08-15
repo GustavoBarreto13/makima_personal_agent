@@ -288,7 +288,7 @@ def _run_filter_rules(rules: dict) -> dict:
     where_sql, params, orphans = _build_where_from_rules(rules)
     rows = run_select(
         f"""
-        SELECT {_qualified("t")}, p.name AS project_name, mae.title AS parent_title
+        SELECT {_qualified("t")}, p.name AS project_name, p.context, mae.title AS parent_title
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
         LEFT JOIN tasks mae ON mae.id = t.parent_id
@@ -301,6 +301,9 @@ def _run_filter_rules(rules: dict) -> dict:
     for r in rows:
         item = _serialize_task(r)
         item["project_name"] = r["project_name"]
+        # context (spec 038): herdado da lista — usado pelo modo férias (spec 065) para
+        # filtrar o digest matinal sem duplicar a query.
+        item["context"] = r.get("context") or "personal"
         # parent_title: None para raízes, título da mãe para subtarefas (fatia 025).
         item["parent_title"] = r.get("parent_title")
         out.append(item)

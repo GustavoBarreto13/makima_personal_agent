@@ -241,6 +241,10 @@ export const kaguyaApi = {
     api.post<MutationResult>(`${BASE}/${id}/time-block`, body),
   clearTimeBlock: (id: number) =>
     api.del<MutationResult>(`${BASE}/${id}/time-block`),
+  // Modo férias (spec 065): esconde tudo com contexto Trabalho no Meu Dia + digest matinal.
+  getMyDayPrefs: () => api.get<{ hide_work: boolean }>(`${BASE}/my-day/prefs`),
+  setMyDayPrefs: (hide_work: boolean) =>
+    api.patch<MutationResult>(`${BASE}/my-day/prefs`, { hide_work }),
 
   // ── Hábitos (Fase 4 / fatia 014) ────────────────────────────────────────────
   listHabits: () => api.get<Habit[]>(`${BASE}/habits`),
