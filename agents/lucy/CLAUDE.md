@@ -11,8 +11,9 @@ Duas metades independentes (spec 032):
    IMAP: ver não lidos/recentes, buscar no inbox, abrir um email. Zero mutação da caixa.
 2. **Script agendado `scripts/send_lucy_digest.py`** — roda diário às 08:00
    (America/Sao_Paulo) via `scheduler/`: busca os emails de ontem (cap 50), classifica
-   cada um com o Gemini, aplica labels + arquiva os "Junk" no Gmail, envia o digest no
-   Telegram, e persiste o histórico na tabela `lucy_emails`.
+   cada um com o Gemini, aplica labels no Gmail (não arquiva — decisão do usuário,
+   2026-08-15), envia o digest no Telegram, e persiste o histórico na tabela
+   `lucy_emails`.
 
 Aposenta o script externo `n8n-python-scripts/lucy_email_agent/main.py`.
 
@@ -34,7 +35,7 @@ scheduler (makima-scheduler, 08:00 America/Sao_Paulo)
 scripts/send_lucy_digest.py
     ├── gmail_imap.fetch_emails()      → busca emails de ontem
     ├── tools.classify_emails()        → Gemini one-shot (google-genai)
-    ├── gmail_imap.apply_label/archive → labels + arquivamento (Junk)
+    ├── gmail_imap.apply_label()        → só labels, não arquiva
     ├── tools.build_telegram_digest()  → HTML do digest
     ├── POST Telegram (parse_mode=HTML)
     └── tools.persist_classified()     → upsert em lucy_emails
@@ -108,8 +109,12 @@ global à conta Gmail — chave estável para o histórico entre execuções.
 | `Health` | ⚕️ | grupo normal |
 | `Security` | 🔒 | grupo normal + alimenta AÇÃO IMEDIATA |
 | `Work` | 💼 | grupo normal |
-| `Junk` | 🗑️ | **oculto** no digest; label aplicada + arquivado (fora da inbox) |
+| `Junk` | 🗑️ | **oculto** no digest; só label aplicada, **não arquiva** (decisão do usuário, 2026-08-15) |
 | `Other` | 🗂️ | grupo normal; fallback de categoria inválida |
+
+**Não arquiva nada** — o job diário só aplica labels; o email continua na inbox
+independente da categoria. Arquivamento em massa é feito à parte, sob demanda, via
+`scripts/clean_inbox_once.py`.
 
 **Pré-requisito operacional**: as 10 labels precisam existir na conta Gmail antes do
 primeiro digest — o script não as cria.
@@ -190,7 +195,7 @@ python -m scripts.send_lucy_digest
 
 1. Busca emails de ontem (UTC-3, `SINCE/BEFORE`, cap 50) via `gmail_imap.fetch_emails`.
 2. Classifica com `classify_emails` (falha estrutural → `sys.exit(1)`).
-3. Para cada email: aplica label + arquiva se `Junk`, em `try/except` por item — falha
+3. Para cada email: aplica label (não arquiva), em `try/except` por item — falha
    individual é logada e não derruba o lote (FR-015).
 4. Monta e envia o digest ao Telegram (`TELEGRAM_BOT_TOKEN`/`TELEGRAM_ALERT_CHAT_ID`).
 5. Persiste o histórico via `persist_classified`.

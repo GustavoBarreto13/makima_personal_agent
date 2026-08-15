@@ -1,10 +1,10 @@
 """Digest matinal de emails (Lucy) — job diário agendado (spec 032, US1).
 
 Busca os emails de ontem (America/Sao_Paulo, cap 50), classifica cada um via Gemini,
-aplica a label da categoria no Gmail, arquiva os "Junk", envia o digest ao Telegram
-(parse_mode=HTML) e persiste o histórico em `lucy_emails`.
+aplica a label da categoria no Gmail (sem arquivar — decisão do usuário, 2026-08-15),
+envia o digest ao Telegram (parse_mode=HTML) e persiste o histórico em `lucy_emails`.
 
-Falha por item (label/archive) é logada e não interrompe o lote (FR-015). Falha
+Falha por item (label) é logada e não interrompe o lote (FR-015). Falha
 estrutural (IMAP/Gemini/envio/DB) aborta com `sys.exit(1)` — o wrapper do scheduler
 (`scheduler/jobs.py::run_lucy_digest`) converte isso em `RuntimeError`.
 
@@ -64,12 +64,12 @@ def main() -> int:
             continue
         merged.append({**e, **c})
 
-    # Aplica label/archive por item — falha individual não derruba o lote (FR-015/R9).
+    # Aplica só a label por item — não arquiva (FR-015/R9: falha individual não derruba o lote).
     junk_count = 0
     try:
         mail = gmail_imap.open_connection()
     except Exception as exc:  # noqa: BLE001 — falha estrutural (conexão IMAP)
-        log.error("Falha ao reconectar no IMAP para labelar/arquivar: %s", exc)
+        log.error("Falha ao reconectar no IMAP para labelar: %s", exc)
         return 1
 
     try:
@@ -79,10 +79,9 @@ def main() -> int:
             try:
                 gmail_imap.apply_label(mail, uid, category)
                 if category == "Junk":
-                    gmail_imap.archive(mail, uid)
                     junk_count += 1
             except Exception as exc:  # noqa: BLE001 — falha por item, não derruba o lote
-                log.warning("Falha ao labelar/arquivar uid=%s: %s", uid, exc)
+                log.warning("Falha ao labelar uid=%s: %s", uid, exc)
     finally:
         mail.logout()
 
@@ -116,7 +115,7 @@ def main() -> int:
         log.error("Falha ao persistir histórico em lucy_emails: %s", exc)
         return 1
 
-    print(f"[lucy-digest] {len(merged)} emails, {junk_count} junk arquivados")
+    print(f"[lucy-digest] {len(merged)} emails, {junk_count} categorizados como junk")
     return 0
 
 

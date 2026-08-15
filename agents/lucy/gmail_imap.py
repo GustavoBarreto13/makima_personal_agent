@@ -279,13 +279,23 @@ def apply_label(mail: imaplib.IMAP4_SSL, uid: str, label: str) -> None:
 
 
 def archive(mail: imaplib.IMAP4_SSL, uid: str) -> None:
-    """Arquivar um email (remover da inbox) via STORE -X-GM-LABELS \\Inbox.
+    """Arquivar um email (remover da inbox) via +FLAGS \\Deleted + EXPUNGE.
+
+    No Gmail, EXPUNGE fora da pasta Lixeira não apaga a mensagem — apenas
+    remove o label \\Inbox (comportamento documentado do Gmail); a mensagem
+    continua acessível em "Todos os e-mails" e por qualquer label aplicada.
+    A abordagem `STORE -X-GM-LABELS \\Inbox` (sugerida por vários tutoriais)
+    é um no-op silencioso nesta conta — \\Inbox nunca aparece no FETCH
+    X-GM-LABELS, então removê-lo não tem efeito algum (confirmado em
+    produção 2026-08-15: STORE retornava OK mas a contagem da inbox não
+    mudava).
 
     Args:
         mail: conexão IMAP já autenticada.
         uid: IMAP UID do email.
     """
-    mail.uid("STORE", uid.encode("utf-8"), "-X-GM-LABELS", "\\Inbox")
+    mail.uid("STORE", uid.encode("utf-8"), "+FLAGS", r"(\Deleted)")
+    mail.expunge()
 
 
 def open_connection() -> imaplib.IMAP4_SSL:
