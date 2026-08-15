@@ -12,6 +12,14 @@
 # do schema confirmado do `telegram`, não checada linha a linha). Confirme com
 # `hermes config get` / `hermes --help` antes do primeiro boot.
 
+# Fuso horário do usuário — lido por hermes_time.py (prioridade 2, atrás só de
+# HERMES_TIMEZONE) e usado por agent/system_prompt.py pra injetar "a data/hora de agora"
+# no system prompt a cada turno. Sem isso, o Hermes usa o relógio do container (UTC) —
+# achado em produção em 15/ago/2026: às 23h de Brasília, perguntar "hoje" já respondia
+# como se fosse o dia seguinte (23h BRT = ~02h UTC). run.py faz a ponte sozinho no boot
+# (config.yaml → env var HERMES_TIMEZONE), não precisa setar nada no Environment do Dokploy.
+timezone: America/Sao_Paulo
+
 model:
   provider: custom
   # gemini-3.6-flash, não gemini-2.5-flash — escolhido após teste real de tool-calling

@@ -591,6 +591,28 @@ essas permissões marcadas só quando isso for necessário.
 | Rodar `hermes whatsapp` e escanear o QR code | manual — precisa de TTY real + câmera do celular, não dá pra automatizar por SSH sem interação em tempo real |
 | `docker restart makima-hermes` depois do pareamento do WhatsApp | pode ser feito por qualquer um dos dois, mediante confirmação (ação real, não é deploy) |
 
+## Fuso horário (America/Sao_Paulo)
+
+O container roda com o relógio do sistema em UTC (`/etc/localtime → Etc/UTC`, imagem
+oficial não muda isso). Achado em produção em 15/ago/2026: às 23h de Brasília, perguntar
+"hoje" ao Hermes já respondia como se fosse o dia seguinte.
+
+Causa raiz (lida direto no código-fonte dentro do container, mesma técnica das outras
+seções): `/opt/hermes/agent/system_prompt.py:543` importa `hermes_time.now()` — é essa
+chamada que injeta "a data/hora de agora" no system prompt a cada turno, a fonte real do
+"hoje" do modelo. `/opt/hermes/hermes_time.py` resolve o fuso nesta ordem: (1) env var
+`HERMES_TIMEZONE`, (2) chave `timezone` no `config.yaml`, (3) fallback pro relógio local
+do servidor (UTC, daí o bug). `/opt/hermes/gateway/run.py:2265-2268` já faz a ponte
+`config.yaml → env var` sozinho no boot — não precisa setar nada no Environment do
+Dokploy, só declarar no `config.yaml` (versionado, git):
+
+```yaml
+timezone: America/Sao_Paulo
+```
+
+Confirmar depois do redeploy: `docker exec makima-hermes hermes config get timezone`
+deve devolver `"America/Sao_Paulo"`.
+
 ## Notificações multi-canal (spec 064, User Story 5 / FR-011+FR-012)
 
 Kaguya (e os outros jobs do `scheduler/`) não tinham NENHUMA notificação proativa fora do
