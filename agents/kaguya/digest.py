@@ -301,8 +301,9 @@ def generate_suggestion(context: dict) -> dict:
         context: O dict devolvido por `build_digest_context()`.
 
     Returns:
-        `{"narrative": str, "items": [{n, type, id, label, reason}, ...]}` — `n` é a
-        numeração 1-based que o usuário usa pra responder ("só a 1 e 3").
+        `{"narrative": str, "items": [{n, type, id, label, reason}, ...],
+        "usage": {"model": str, "prompt_tokens": int, "candidates_tokens": int}}` — `n` é
+        a numeração 1-based que o usuário usa pra responder ("só a 1 e 3").
 
     Raises:
         SuggestionError: se a chamada ao Gemini falhar após todas as tentativas.
@@ -361,7 +362,20 @@ def generate_suggestion(context: dict) -> dict:
                 and item.get("label")
             ]
             numbered = [{"n": i + 1, **item} for i, item in enumerate(valid_items)]
-            return {"narrative": parsed.get("narrative", ""), "items": numbered}
+
+            usage = getattr(resp, "usage_metadata", None)
+            prompt_tokens = getattr(usage, "prompt_token_count", 0) or 0
+            candidates_tokens = getattr(usage, "candidates_token_count", 0) or 0
+
+            return {
+                "narrative": parsed.get("narrative", ""),
+                "items": numbered,
+                "usage": {
+                    "model": model,
+                    "prompt_tokens": prompt_tokens,
+                    "candidates_tokens": candidates_tokens,
+                },
+            }
         except Exception as exc:  # noqa: BLE001 — rede, quota, JSON malformado
             last_exc = exc
             logger.warning("generate_suggestion tentativa %d/%d falhou: %s", attempt, _MAX_RETRIES, exc)
@@ -454,6 +468,16 @@ def build_whatsapp_digest(context: dict, suggestion: dict) -> str:
         lines.append("<i>Sem sugestões pra hoje — parece que está tudo sob controle.</i>")
 
     lines.append("━━━━━━━━━━━━━━━━━━")
+
+    usage = suggestion.get("usage") or {}
+    in_tokens = usage.get("prompt_tokens", 0)
+    out_tokens = usage.get("candidates_tokens", 0)
+    cost = (in_tokens / 1_000_000) * 0.10 + (out_tokens / 1_000_000) * 0.40
+
+    lines.append(f"🤖 Modelo: {usage.get('model', '?')}")
+    lines.append(f"🧠 Tokens: {in_tokens:,} in | {out_tokens:,} out")
+    lines.append(f"💸 Custo: ~${cost:.5f}")
+
     hora_atual = datetime.now(_TZ).strftime("%H:%M")
     lines.append(f"🕗 {hora_atual}")
 

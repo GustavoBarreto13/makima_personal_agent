@@ -678,6 +678,9 @@ das tarefas candidatas).
 `classify_emails` (retry com backoff, `SuggestionError` em falha estrutural). Itens
 inválidos (tipo fora do enum, sem id inteiro, sem label) são descartados na normalização;
 os válidos ganham numeração 1-based (`n`) — é esse número que o usuário usa pra responder.
+`usage_metadata` da resposta + o modelo usado (`GEMINI_MODEL`, default `gemini-2.5-flash`)
+alimentam o rodapé do digest (modelo, tokens in/out, custo estimado — mesmo cálculo de
+`agents/lucy/tools.py::build_telegram_digest`).
 
 ### Resposta do usuário — sem parser Python, delegado ao Hermes
 
