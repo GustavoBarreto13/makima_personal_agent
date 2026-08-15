@@ -21,7 +21,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from agents.db import get_conn, run_select
+from agents.db import get_conn, run_select, run_dml
 from agents.kaguya import recurrence as rec_engine
 from agents.kaguya.tools_projects import resolve_project_id_by_name
 # Helpers de tags (etiquetas N:N). Import no topo é seguro: ``tools_tags`` só importa de
@@ -641,6 +641,64 @@ def list_tasks_today() -> dict:
     return {"overdue": overdue, "today": due_today}
 
 
+def list_tasks_due_for_reminder() -> list[dict]:
+    """Lista tarefas-pai abertas cujo vencimento chegou e que ainda não foram avisadas.
+
+    Usado pelo job pontual ``kaguya_due_reminders`` (scheduler/, a cada 5min — spec 064
+    notificações): diferente de `list_tasks_today`, que sempre traz TUDO que é hoje/vencido
+    (bom para consulta sob demanda), esta função só traz o que ainda não gerou aviso
+    (`due_reminder_sent_at IS NULL`) — o alarme dispara uma vez por ocorrência, não repete
+    a cada rodada. Vencimento "chegou" = `due_date` antes de hoje, OU `due_date` de hoje com
+    `due_time` nulo (dia inteiro, considerado vencido assim que o dia começa) ou já passado.
+
+    Returns:
+        Tarefas-pai (com `project_name`) que acabaram de vencer e ainda não notificaram.
+        Quem chama deve marcar como notificadas via `mark_due_reminder_sent` após o envio.
+    """
+    rows = run_select(
+        f"""
+        SELECT {_qualified("t")}, p.name AS project_name
+        FROM tasks t JOIN task_projects p ON p.id = t.project_id
+        WHERE t.parent_id IS NULL
+          AND t.deleted_at IS NULL
+          AND t.completed_at IS NULL
+          AND t.due_reminder_sent_at IS NULL
+          AND t.due_date IS NOT NULL
+          AND p.archived_at IS NULL
+          AND (
+              t.due_date < (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+              OR (
+                  t.due_date = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+                  AND (t.due_time IS NULL OR t.due_time <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::time)
+              )
+          )
+        ORDER BY t.due_date, t.due_time NULLS FIRST, t.priority DESC, t.position
+        """
+    )
+    items = []
+    for r in rows:
+        item = _serialize_task(r)
+        item["project_name"] = r["project_name"]
+        items.append(item)
+    _attach_recurrence(items)
+    _attach_tags(items)
+    return items
+
+
+def mark_due_reminder_sent(task_ids: list[int]) -> None:
+    """Marca as tarefas como notificadas pelo lembrete pontual (rearma só ao reagendar).
+
+    Args:
+        task_ids: Ids das tarefas cujo aviso acabou de ser enviado com sucesso.
+    """
+    if not task_ids:
+        return
+    run_dml(
+        "UPDATE tasks SET due_reminder_sent_at = NOW() WHERE id = ANY(%(ids)s)",
+        {"ids": task_ids},
+    )
+
+
 def list_eisenhower_tasks() -> list[dict]:
     """Lista todas as tarefas-pai abertas para a view Eisenhower.
 
@@ -1181,6 +1239,11 @@ def update_task(
                         return {"status": "error", "message": "Hora de vencimento exige uma data."}
                 sets.append("due_time = %(due_time)s")
                 params["due_time"] = due_time   # None → limpa só a hora; string → grava
+
+            # due_date/due_time mudaram de verdade → rearma o alarme do lembrete pontual
+            # (kaguya_due_reminders, scheduler/): reagendar deve poder notificar de novo.
+            if due_date is not _UNSET or due_time is not _UNSET:
+                sets.append("due_reminder_sent_at = NULL")
 
             # Mover de lista: só aplica a regra da coluna quando o project_id MUDA de verdade.
             # (Antes, qualquer PATCH com project_id — mesmo igual ao atual, como o TaskModal

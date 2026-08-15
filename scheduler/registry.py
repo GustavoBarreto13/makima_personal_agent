@@ -183,13 +183,14 @@ JOBS: list[ScheduledJob] = [
         trigger=every(hours=6),
         description="Sync delta com o MyAnimeList (Marin): pull cria sessões de ajuste, coexiste com o push best-effort das mutações locais",
     ),
-    # Lembrete periódico de tarefas com vencimento (Kaguya) — nunca existiu notificação
-    # de tarefa nenhuma antes disso. A cada 4h; silencioso se não há nada vencido/hoje.
-    # spec 064, User Story 5 (FR-012) — envia via scheduler/notify_channels.py.
+    # Lembrete PONTUAL de tarefas com vencimento (Kaguya) — nunca existiu notificação de
+    # tarefa nenhuma antes disso. A cada 5min: avisa cada tarefa uma vez, assim que o
+    # due_date/due_time chega (trava em tasks.due_reminder_sent_at); silencioso se nada
+    # venceu desde a última rodada. spec 064, User Story 5 (FR-012).
     ScheduledJob(
         name="kaguya_due_reminders",
         func=run_kaguya_due_reminders,
-        trigger=every(hours=4),
-        description="Lembrete de tarefas vencidas/de hoje (Kaguya) → canais configurados, a cada 4h",
+        trigger=every(minutes=5),
+        description="Lembrete pontual de tarefas vencendo (Kaguya) → canais configurados, a cada 5min",
     ),
 ]

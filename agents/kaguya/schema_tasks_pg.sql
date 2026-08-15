@@ -743,3 +743,14 @@ BEGIN
             CHECK (context IN ('personal', 'work'));
     END IF;
 END $$;
+
+
+-- ----------------------------------------------------------------------------
+-- tasks.due_reminder_sent_at — lembrete pontual de vencimento (spec 064, notificações)
+-- ----------------------------------------------------------------------------
+-- Trava de "já notifiquei esta ocorrência" para o job kaguya_due_reminders (scheduler/,
+-- a cada 5 min): NULL = ainda não avisou; timestamp = já avisou, não repete. Reagendar
+-- (due_date/due_time mudam em update_task) zera de volta pra NULL — rearma o alarme.
+-- Tarefas recorrentes não precisam de reset especial: cada ocorrência já nasce como uma
+-- linha NOVA (modelo "completar-e-gerar", agents/kaguya/CLAUDE.md § Recorrência).
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_reminder_sent_at TIMESTAMPTZ;
