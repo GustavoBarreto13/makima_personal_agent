@@ -26,7 +26,6 @@ from apscheduler.triggers.interval import IntervalTrigger
 from scheduler.jobs import (
     run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest, run_weekly_review_reminder,
     run_recurring_charges, run_budget_alert, run_monthly_report, run_marin_mal_sync,
-    run_kaguya_due_reminders,
 )
 
 # Fuso horário do usuário. Todos os horários dos jobs são interpretados nele —
@@ -183,14 +182,11 @@ JOBS: list[ScheduledJob] = [
         trigger=every(hours=6),
         description="Sync delta com o MyAnimeList (Marin): pull cria sessões de ajuste, coexiste com o push best-effort das mutações locais",
     ),
-    # Lembrete PONTUAL de tarefas com vencimento (Kaguya) — nunca existiu notificação de
-    # tarefa nenhuma antes disso. A cada 5min: avisa cada tarefa uma vez, assim que o
-    # due_date/due_time chega (trava em tasks.due_reminder_sent_at); silencioso se nada
-    # venceu desde a última rodada. spec 064, User Story 5 (FR-012).
-    ScheduledJob(
-        name="kaguya_due_reminders",
-        func=run_kaguya_due_reminders,
-        trigger=every(minutes=5),
-        description="Lembrete pontual de tarefas vencendo (Kaguya) → canais configurados, a cada 5min",
-    ),
+    # kaguya_due_reminders (lembrete pontual de tarefas via WhatsApp) — DESATIVADO a
+    # pedido do usuário logo depois de testado em produção ("não gostei, deixa só pelo
+    # Calendar, vamos fazer de outra forma depois"). Código mantido (jobs.py::
+    # run_kaguya_due_reminders, scripts/send_kaguya_due_reminders.py,
+    # tools_tasks.py::list_tasks_due_for_reminder/mark_due_reminder_sent, coluna
+    # tasks.due_reminder_sent_at) para reaproveitar quando o novo desenho for definido —
+    # só não está registrado aqui, então não roda. Ver ROADMAP.md (spec 064).
 ]
