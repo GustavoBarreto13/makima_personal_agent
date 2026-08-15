@@ -571,9 +571,9 @@ Calendar). Isso exigiu expor `context` (herdado da lista, spec 038) nos retornos
 modo férias.
 
 **Webapp**: `GET`/`PATCH /api/tasks/my-day/prefs` (`get_myday_prefs`/`set_myday_prefs`).
-`TodayScreen.tsx` carrega o pref no mount, mostra um botão "✈️ Modo férias" ao lado do
-toggle Dividido/Único (que some quando `hideWork` está ligado — não faz sentido dividir
-Trabalho/Pessoal se o Trabalho está escondido).
+`TodayScreen.tsx` carrega o pref no mount e mostra "✈️ Férias" como uma terceira opção no
+**mesmo** segmented control do toggle Dividido/Único (spec 038) — deliberadamente discreto,
+sem estilo de botão próprio, para não competir visualmente com o resto da tela.
 
 Fora do Meu Dia e do digest, tarefas/listas/calendários de contexto Trabalho continuam
 normais em todo o resto do app (listas, Kanban, calendário, busca) — o modo férias é

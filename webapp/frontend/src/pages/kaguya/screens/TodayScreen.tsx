@@ -325,22 +325,20 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
           </div>
         )}
 
-        {/* Toggle visão dividida/única (spec 038, US3) + modo férias (spec 065) */}
+        {/* Toggle visão dividida/única (spec 038, US3) + modo férias (spec 065) — mesmo
+            segmented control, discreto, sem destaque visual próprio. */}
         <div className="kg-myday-viewtoggle">
-          {/* Só faz sentido dividir Trabalho/Pessoal quando o Trabalho não está escondido. */}
-          {!hideWork && (
-            <div className="kg-segment" style={{ width: 180 }}>
-              <button className={`kg-seg-opt${viewMode === 'split' ? ' active' : ''}`} onClick={() => toggleViewMode('split')}>Dividido</button>
-              <button className={`kg-seg-opt${viewMode === 'single' ? ' active' : ''}`} onClick={() => toggleViewMode('single')}>Único</button>
-            </div>
-          )}
-          <button
-            className={`kg-seg-opt kg-myday-vacation${hideWork ? ' active' : ''}`}
-            onClick={toggleHideWork}
-            title="Esconde tudo com contexto Trabalho no Meu Dia e no digest matinal do WhatsApp"
-          >
-            ✈️ Modo férias
-          </button>
+          <div className="kg-segment" style={{ width: 260 }}>
+            <button className={`kg-seg-opt${!hideWork && viewMode === 'split' ? ' active' : ''}`} onClick={() => toggleViewMode('split')}>Dividido</button>
+            <button className={`kg-seg-opt${!hideWork && viewMode === 'single' ? ' active' : ''}`} onClick={() => toggleViewMode('single')}>Único</button>
+            <button
+              className={`kg-seg-opt${hideWork ? ' active' : ''}`}
+              onClick={toggleHideWork}
+              title="Esconde tudo com contexto Trabalho no Meu Dia e no digest matinal do WhatsApp"
+            >
+              ✈️ Férias
+            </button>
+          </div>
         </div>
 
         {/* Layout de duas colunas */}
