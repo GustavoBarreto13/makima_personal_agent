@@ -2,7 +2,7 @@
 
 ## O que é este repo
 
-**Makima** é um coordinator multi-agente construído com Google ADK. Roda como bot Telegram autônomo no VPS, recebendo mensagens e delegando para agentes especialistas conforme o domínio do pedido.
+**Makima** é o conjunto de agentes especialistas multi-domínio deste repo. Em produção, quem atende Telegram/WhatsApp/Discord é o **Hermes Agent** (`hermes/`), que fala com os agentes via MCP HTTP (`mcp_servers/makima/`) — ver spec 064. O `coordinator/` (Google ADK, bot Telegram próprio) é o caminho legado: continua funcional para rodar localmente/dev e é a origem dos `toolset.py` que o host MCP reaproveita, mas está desligado no VPS (`makima` comentado em `docker-compose.yml`) desde o cutover do Telegram para o Hermes.
 
 O status das fases vive no **`ROADMAP.md`** (fonte única da verdade). O design original — arquitetura, fases iniciais, schemas, custos — está arquivado em `docs/arquivo/PLAN.md` (**documento histórico**: bom para entender o porquê das decisões, não para status). O mapa da pasta de documentação está em `docs/README.md`.
 
@@ -41,9 +41,9 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 
 | Agente | Domínio | Status | Documentação |
 |---|---|---|---|
-| `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1 | `agents/nami/CLAUDE.md` |
-| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + Foco gameficado (037/062) | ✅ Fases 2, 011–020, 024–026, 029–030, 037, 062 | `agents/kaguya/CLAUDE.md` |
-| `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada | ✅ Fase 027 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
+| `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1, 040–048 | `agents/nami/CLAUDE.md` |
+| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + GTD/revisão semanal (034/035) + Foco gameficado (037/062) + modo férias (065) | ✅ Fases 2, 011–020, 024–026, 029–030, 034–039, 062, 065 | `agents/kaguya/CLAUDE.md` |
+| `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada + Tutor de Idiomas (031) + Conselho do Dia (061) | ✅ Fases 027, 031, 061 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) | ✅ Fase 5a | `agents/frieren/CLAUDE.md` |
 | `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015 | `agents/akane/CLAUDE.md` |
 | `agents/marin/` | Animes (PostgreSQL + Jikan/AniList + MAL OAuth) | ✅ Fase 021 | `agents/marin/CLAUDE.md` |
@@ -74,27 +74,45 @@ Imports locais — nada de `PYTHONPATH` apontando para outro repo.
 
 ## Arquitetura
 
+### Produção (Hermes — spec 064, E1–E6 no ar)
+
+```
+Telegram / WhatsApp / Discord (usuário)
+    ↓
+Hermes Agent  (hermes/ — config.yaml, SOUL.md, skills/)
+    ↓  MCP HTTP (bearer token)
+mcp_servers/makima/  (host Starlette — um FastMCP por domínio, ver mcp_servers/makima/CLAUDE.md)
+    ├── /mcp/nami, /mcp/kaguya, /mcp/kurisu, /mcp/frieren, /mcp/akane,
+    │   /mcp/marin, /mcp/mai, /mcp/komi, /mcp/lucy, /mcp/journal   → TOOLS de agents/<domínio>/toolset.py
+    └── /mcp/calendar                                              → mcp_servers/calendar (Google Calendar)
+
+scheduler/  (makima-scheduler — jobs agendados)
+    ├── lucy_digest           → digest matinal de emails (agents/lucy)
+    ├── kaguya_digest         → digest matinal de tarefas/agenda via WhatsApp (agents/kaguya)
+    └── notify_channels.py    → envio multi-canal centralizado (Telegram/WhatsApp/Discord)
+```
+
+Os 10 domínios de agente têm `toolset.py` próprio (`TOOLS: list[Callable]`) — extraído dos
+`Agent(tools=[...])` originais, sem duplicar lógica. A ponte legada ADK (`mcp_servers/makima/legacy.py`,
+`_LEGACY_DOMAIN_AGENTS`) está vazia desde a Etapa E6: nenhum domínio depende mais dela hoje, o
+módulo só segue existindo até a Etapa E7 removê-lo de vez.
+
+### Legado / dev local (`coordinator/`)
+
 ```
 Telegram (usuário)
     ↓
 coordinator/main.py  (python-telegram-bot, sessões por domínio)
     ↓
 coordinator/agent.py  (Makima — Agent ADK)
-    ├── nami_agent      → PostgreSQL (finanças)                      [agents/nami]
-    ├── kaguya_agent    → PostgreSQL (tarefas) + /api/tasks/*        [agents/kaguya + webapp]
-    │                  → Google Calendar via MCP stdio               [mcp_servers/calendar]
-    ├── kurisu_agent    → Vertex AI RAG (vault Obsidian)             [agents/kurisu]   (corpus ativo — spec 027)
-    ├── frieren_agent   → PostgreSQL (livros)                        [agents/frieren]
-    ├── akane_agent     → PostgreSQL (filmes) + TMDB + Letterboxd    [agents/akane]
-    ├── marin_agent     → PostgreSQL (animes) + Jikan + AniList + MAL [agents/marin]
-    ├── mai_agent       → PostgreSQL (séries) + TMDB API v3          [agents/mai]
-    ├── komi_agent      → PostgreSQL (pessoas + vínculos)            [agents/komi]
-    ├── lucy_agent      → Gmail via IMAP, somente leitura            [agents/lucy]
-    └── violet_agent    → PostgreSQL (diário, emoções, cartas)       [agents/journal]  (personalidade Violet — spec 064)
-
-scheduler/  (makima-scheduler — jobs agendados)
-    └── lucy_digest     → digest matinal 08:00 (classificação Gemini + labels/arquivo + Telegram + histórico) [agents/lucy + scripts/send_lucy_digest.py]
+    ├── nami_agent, kaguya_agent, kurisu_agent, frieren_agent, akane_agent,
+    │   marin_agent, mai_agent, komi_agent, lucy_agent, violet_agent   → mesmos agentes de agents/*
+    └── kaguya_agent também fala Google Calendar via MCP stdio          [mcp_servers/calendar]
 ```
+
+Continua funcional (útil para rodar localmente sem subir o Hermes), mas o serviço `makima` está
+comentado em `docker-compose.yml` — não roda no VPS. Aposentar de vez é a Etapa E7 da spec 064,
+ainda não decidida.
 
 **Makima não tem tools próprias** — ela só delega. Toda lógica de acesso a APIs fica nas tools dos agents especialistas em `agents/`.
 
@@ -321,20 +339,12 @@ makima_personal_agent/
 
 ## Dependências
 
-```
-google-adk               # Agent, InMemoryRunner, McpToolset, VertexAiRagRetrieval
-python-telegram-bot      # bot Telegram
-psycopg2-binary          # driver PostgreSQL síncrono (Nami, Frieren, Journal)
-google-cloud-storage     # backup automático do PostgreSQL para GCS
-requests                 # acesso HTTP às APIs externas (Google Books, etc.) nas tools dos agentes
-mcp==1.29.0              # FastMCP — servidor MCP do Google Calendar + host HTTP makima-mcp (spec 064).
-                         # Pin exato: mcp>=2.0 remove mcp.server.fastmcp.FastMCP; o google-adk
-                         # instalado exige mcp>=1.24,<2 — 1.29.0 é a última 1.x, compatível com os dois.
-starlette                # host HTTP do makima-mcp (mcp_servers/makima/app.py) — spec 064
-google-auth              # OAuth para Google Calendar
-google-auth-oauthlib     # fluxo OAuth desktop (script de autorização)
-google-api-python-client # cliente da Google Calendar API v3
-```
+**A lista completa e atualizada vive em [`requirements.txt`](requirements.txt)** (nami/kaguya/kurisu/
+webapp/scheduler, cada bloco comentado) — não duplicar aqui. Um pin vale a pena lembrar porque tem
+histórico de incidente: `mcp==1.29.0` — `mcp>=2.0` remove `mcp.server.fastmcp.FastMCP` e derrubou o
+`McpToolset` da Kaguya em produção (hotfix `a381fc8`); o `google-adk` instalado exige `mcp>=1.24,<2`,
+então 1.29.0 é a última 1.x compatível com os dois usos (McpToolset do ADK e `FastMCP.streamable_http_app()`
+do `makima-mcp`, spec 064).
 
 Ambiente local: `.venv` própria do makima.
 
@@ -345,8 +355,11 @@ Ambiente local: `.venv` própria do makima.
 **A fonte única da verdade para fases e status é o [`ROADMAP.md`](ROADMAP.md)** — ao entregar
 uma fase, atualize lá (não duplique tabelas de status aqui nem no README).
 
-Resumo: fases 001–027, 029, 030, 031, 032 (Lucy/email, scheduler) e 061 entregues; 028
-(memória unificada da Kurisu) e 064 (Hermes Agent multicanal) parciais.
+Resumo: a esmagadora maioria das fases (001–054, 061, 062, 065) já está entregue — ver a seção
+"Status atual" do `ROADMAP.md` para a lista completa, que muda com frequência demais para
+duplicar aqui. Em aberto: a **028** (memória unificada da Kurisu, parcial — faltam exporters +
+deploy no VPS) e a **064** (Hermes Agent multicanal — E1/E2/E3/E4/E6 em produção; E5 voz/imagem,
+E7 aposentadoria do `coordinator/` e E8 QoL pendentes).
 
 ---
 
