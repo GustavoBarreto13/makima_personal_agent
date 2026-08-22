@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react'
 import type { Trip, ItineraryDay, Period, DossierResponse, ComfortResponse, BudgetResponse } from '../types'
 import { yatoApi } from '../yatoApi'
-import { money } from '../dateUtils'
+import { money, dayList } from '../dateUtils'
 import { PROFILE_LABEL, PROFILE_CLASS, STATUS_LABEL } from '../components/TripCard'
 import { ReadinessLine, checkedCount, pendingCount } from '../components/ReadinessMeter'
 import { DayColumn } from '../components/DayColumn'
@@ -60,7 +60,12 @@ export function TripDetailScreen({ tripId, onNav, onAddItem, onShowToast, reload
     return <div className="page"><p className="dim">Carregando viagem…</p></div>
   }
 
-  const allDays = days
+  // list_itinerary só devolve dias que já têm item — para o board sempre mostrar
+  // uma coluna por dia da viagem (mesmo vazia, com o "+ adicionar"), completa com
+  // o intervalo real [start_date, end_date] e mescla os itens vindos da API.
+  const itemsByDay = new Map(days.map(d => [d.day_date, d.items]))
+  const allDays: ItineraryDay[] = dayList(trip.start_date, trip.end_date)
+    .map(day_date => ({ day_date, items: itemsByDay.get(day_date) || [] }))
   const itemCount = allDays.reduce((a, d) => a + d.items.length, 0)
   const withTime = allDays.reduce((a, d) => a + d.items.filter(i => i.start_time).length, 0)
   const checks = dossier?.checks
