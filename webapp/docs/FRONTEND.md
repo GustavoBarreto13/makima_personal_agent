@@ -47,6 +47,7 @@ webapp/frontend/
     │   ├── marin/            # shell de animes (Marin)
     │   ├── mai/              # shell de séries de TV (Mai)
     │   ├── komi/             # shell de pessoas (Komi)
+    │   ├── yato/             # shell de viagens (Yato)
     │   ├── makima/           # shell do Hub — rota / em tela cheia (Makima)
     │   └── *.tsx             # páginas legadas de finanças (Transactions, Accounts, etc.)
     └── public/               # imagens copiadas para dist/ pelo Vite
@@ -58,6 +59,7 @@ webapp/frontend/
         ├── marin.png
         ├── mai.png
         ├── komi.png
+        ├── yato.png
         └── makima.png
 ```
 
@@ -93,6 +95,7 @@ Na ordem de registro do `App.tsx` (os shells vêm **antes** do catch-all `/*`):
 /animes/*        → MarinShell     (animes)
 /series/*        → MaiShell       (séries de TV)
 /people/*        → KomiShell      (pessoas e contatos)
+/travel/*        → YatoShell      (viagens — roteiro + dossiê de mobilidade)
 /                → MakimaShell    (Hub — tela cheia, SEM Layout global)
 /transactions    → Transactions   (legado — não linkado na sidebar)
 /accounts        → Accounts       (legado — não linkado na sidebar)
@@ -108,7 +111,7 @@ Na ordem de registro do `App.tsx` (os shells vêm **antes** do catch-all `/*`):
 > renderiza o `MakimaShell` (Hub). `Dashboard.tsx` ainda existe em `pages/` mas não está
 > mais roteado. O shell Nami (`pages/nami/`) é a implementação canônica e atual das finanças.
 
-## Os nove shells
+## Os dez shells
 
 Cada domínio implementado tem um "shell": um componente raiz que cuida da navegação interna,
 carregamento de dados, theming e modais. Eles **não usam React Router internamente** — o roteamento
@@ -495,13 +498,48 @@ API: `komiApi.ts` — todos os `/api/people/*`.
 
 ---
 
+### YatoShell — Viagens (`src/pages/yato/`)
+
+**Roteamento:** estado interno `{view, param}` (tipo `NavState` em `types.ts`) — views `home`,
+`trips`, `trip` (param = `trip_id`), `mobility`, `budget`, `checklist`.
+
+**Telas (screens/):**
+
+| View | Tela | O que mostra |
+|---|---|---|
+| `home` | HomeScreen | Hero da próxima viagem + prontidão do protocolo, 3 painéis (estratégia/orçamento/pendências), dia 1 do roteiro, outras viagens |
+| `trips` | TripsScreen | Grade ⇄ lista de viagens, filtro por status, ordenação (tweak) |
+| `trip` | TripDetailScreen | Cabeçalho com datas editáveis + 4 KPIs, board de dias (manhã/tarde/noite), `ComfortMatrix` do trecho |
+| `mobility` | MobilityScreen | `MobilityDossier` (⭐ componente-assinatura, 7 carimbos) + estratégia recomendada + apps sugeridos |
+| `budget` | BudgetScreen | 3 números grandes + `BudgetBar` por categoria + tabela de gastos (selo `→ Nami`) |
+| `checklist` | ChecklistScreen | Itens agrupados por categoria (dados reais — ver nota abaixo), "Regerar do dossiê" |
+
+**Particularidades:**
+- `MobilityDossier`/`ProtocolWizard` conduzem o protocolo de 7 passos **um passo por vez** —
+  nunca formulário único; cores de veredito (`--verdict-ok/none/unknown/pending`) são fixas,
+  independentes do acento trocável (`data-accent`).
+- `yatoApi.ts` desembrulha o `{status, trip|item: {...}}` que as tools do backend sempre devolvem
+  (o router é fachada fina, não desembrulha) — ver `agents/yato/CLAUDE.md`.
+- Datas de timestamp (`checked_at`, `last_checked_at`) usam `isoDateOnly()` (não `slice(0,10)`) para
+  não errar o dia perto da meia-noite UTC, mesma classe de bug do `todayLocalISO()`.
+- **Checklist** agrupa por categoria LIVRE dos dados (`app`/`contato`/`seguranca`/custom), não pelos
+  3 baldes temporais do design handoff — o schema real não tem essa taxonomia fixa.
+- Sem painel de "contatos locais" (do design handoff) — não existe tabela/tool para isso no schema
+  real da fatia 066.
+- Tweaks (`localStorage['yato-tweaks']`): tema, acento (4 variantes), densidade, textura de mapa,
+  ordenação da tela Viagens.
+
+API: `yatoApi.ts` — todos os `/api/travel/*`.
+
+---
+
 ### MakimaShell — Hub (`src/pages/makima/`)
 
 **Roteamento:** nenhum — é uma tela única na rota exata `/`, renderizada em **tela cheia,
 sem o `Layout` global** (spec 023).
 
-**O que mostra:** hero editorial + 8 cards de agente (Nami, Frieren, Komi, Violet, Kaguya,
-Mai, Marin, Akane), cada um com 2 stats reais vindos de `GET /api/hub/summary` (uma única
+**O que mostra:** hero editorial + cards de agente (Nami, Frieren, Komi, Violet, Kaguya,
+Mai, Marin, Akane, Yato), cada um com 2 stats reais vindos de `GET /api/hub/summary` (uma única
 chamada no mount). Stat ausente/carregando/falho vira "—" (fallback gracioso). Os cards
 navegam para as rotas dos shells via `<Link>` (SPA, sem reload).
 

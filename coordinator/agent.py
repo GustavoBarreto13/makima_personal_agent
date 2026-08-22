@@ -21,6 +21,7 @@ from agents.mai.agent import mai_agent       # Catálogo de séries de TV — sp
 from agents.komi.agent import komi_agent     # Identidade de pessoas — spec 014
 from agents.lucy.agent import lucy_agent     # Email (Gmail), somente leitura — spec 032
 from agents.journal.agent import violet_agent  # Diário pessoal (Violet) — spec 064, ativação da Violet
+from agents.yato.agent import yato_agent      # Viagens — spec 066
 # from agents.media.agent import media_agent
 
 _MAKIMA_INSTRUCTION = """
@@ -48,6 +49,7 @@ _MAKIMA_INSTRUCTION = """
     - Komi: pessoas e contatos — cadastrar, buscar, editar pessoas, adicionar apelidos e aniversários, ver resumo de vínculos (transações, tarefas, livros, diário)
     - Lucy: emails e Gmail — ver não lidos/recentes, buscar por remetente/assunto/palavra, abrir email (somente leitura)
     - Violet: diário pessoal — registrar entradas do dia (bullets), registros emocionais (TCC: emoção, intensidade, pensamento automático), cartas endereçadas, busca por conteúdo, menções (@pessoa/#tag), heatmap de atividade
+    - Yato: viagens — criar viagem e roteiro dia a dia, dossiê de mobilidade urbana do destino (protocolo de 7 passos: Uber/99/InDrive/transporte público), matriz economia × conforto de ônibus, checklist pré-viagem, orçamento com lançamento de gastos na Nami
     - Media: mangás (ainda não ativada)
 
     ROTEAMENTO DUPLO — fluxos que envolvem Nami E Kaguya:
@@ -108,9 +110,18 @@ _MAKIMA_INSTRUCTION = """
     IMPORTANTE: Lucy só lê. Se o pedido envolver enviar, responder, arquivar, deletar ou
     marcar um email, a própria Lucy recusa — não tente contornar isso por outro caminho.
 
-    Atualmente Nami, Kaguya, Kurisu, Frieren, Akane, Marin, Mai, Komi, Lucy e Violet estão ativas. Para os demais domínios, a ativação ainda não
-    foi realizada — informe isso com a mesma frieza com que informaria qualquer outra
-    decisão operacional.
+    ROTEAMENTO PARA YATO — acione quando o usuário:
+    - Quiser planejar ou registrar uma viagem (destino, datas, roteiro dia a dia)
+    - Perguntar como se locomover numa cidade sem carro ("como eu me viro em X sem carro?")
+    - Quiser saber se Uber/99/InDrive/transporte público funcionam num destino
+    - Pedir recomendação de classe de ônibus (econômica vs. conforto) para um trecho
+    - Quiser montar o checklist pré-viagem ou registrar gastos de uma viagem em curso
+    IMPORTANTE: Yato não compra passagem nem hospedagem — ele orienta e registra a
+    decisão do usuário. Nunca afirme cobertura de app/transporte sem o dossiê confirmar.
+
+    Atualmente Nami, Kaguya, Kurisu, Frieren, Akane, Marin, Mai, Komi, Lucy, Violet e Yato
+    estão ativas. Para os demais domínios, a ativação ainda não foi realizada — informe
+    isso com a mesma frieza com que informaria qualquer outra decisão operacional.
 
     FORMATAÇÃO — OBRIGATÓRIA:
     O Telegram renderiza HTML. Use HTML em todas as respostas suas (não nas dos especialistas).
@@ -141,7 +152,7 @@ def create_makima(sub_agents: list[Agent] | None = None) -> Agent:
     """
     if sub_agents is None:
         kaguya_agent = create_kaguya_agent()
-        sub_agents = [nami_agent, kaguya_agent, kurisu_agent, frieren_agent, akane_agent, marin_agent, mai_agent, komi_agent, lucy_agent, violet_agent]
+        sub_agents = [nami_agent, kaguya_agent, kurisu_agent, frieren_agent, akane_agent, marin_agent, mai_agent, komi_agent, lucy_agent, violet_agent, yato_agent]
 
     return Agent(
         name="makima",

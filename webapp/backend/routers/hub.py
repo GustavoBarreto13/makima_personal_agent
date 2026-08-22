@@ -398,6 +398,43 @@ def _marin() -> dict:
     return _agent(stat, stat2)
 
 
+def _yato() -> dict:
+    """Calcular os 2 stats do Yato: próxima viagem + prontidão do dossiê (spec 066).
+
+    Returns:
+        Dicionário de agente com:
+        - stat: "Cidade/UF · DD/MM" da próxima viagem não cancelada/concluída, ou "—".
+        - stat2: `readiness_pct` (get_trip_readiness) dessa viagem formatado "N%", ou "—".
+    """
+    rows = run_select(
+        """
+        SELECT id, city, state_uf, start_date
+        FROM trips
+        WHERE deleted = FALSE
+          AND status IN ('planejando', 'confirmada', 'em_curso')
+        ORDER BY start_date ASC
+        LIMIT 1
+        """
+    )
+    if not rows:
+        return _agent(_stat("—", "próxima viagem"), _stat("—", "prontidão"))
+
+    trip = rows[0]
+    stat = _stat(f"{_trunc(trip['city'])}/{trip['state_uf']} · {trip['start_date'].strftime('%d/%m')}", "próxima viagem")
+
+    # Prontidão isolada em try/except próprio — falha aqui não apaga o stat da
+    # próxima viagem, mesmo princípio de isolamento por stat da Nami acima.
+    try:
+        from agents.yato.tools import get_trip_readiness
+        readiness = get_trip_readiness(trip["id"])
+        pct = readiness.get("readiness_pct", 0) if readiness.get("status") == "ok" else 0
+        stat2 = _stat(f"{pct}%", "prontidão")
+    except Exception:
+        stat2 = _stat("—", "prontidão")
+
+    return _agent(stat, stat2)
+
+
 def _akane() -> dict:
     """Calcular os 2 stats da Akane: última nota + filmes vistos (REQ-14).
 
@@ -476,6 +513,7 @@ def hub_summary(user: dict = Depends(require_user)) -> dict:
         "mai": _mai,
         "marin": _marin,
         "akane": _akane,
+        "yato": _yato,
     }
 
     out: dict = {}

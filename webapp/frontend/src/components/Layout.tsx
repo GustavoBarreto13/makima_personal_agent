@@ -105,6 +105,15 @@ const DOMAINS: NavDomain[] = [
     color:       'var(--c-komi)',
     colorDim:    'var(--c-komi-dim)',
   },
+  {
+    // Yato · Viagens — roteiros solo, dossiê de mobilidade e orçamento (spec 066)
+    character:   'Yato',
+    label:       'Viagens',
+    mainPath:    '/travel',
+    activePaths: ['/travel'],
+    color:       'var(--c-yato)',
+    colorDim:    'var(--c-yato-dim)',
+  },
 ]
 
 // ── Componente principal ───────────────────────────────────────────────────────────────────────

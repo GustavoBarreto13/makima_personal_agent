@@ -21,6 +21,7 @@ from agents.mai.toolset import TOOLS as _MAI_TOOLS
 from agents.lucy.toolset import TOOLS as _LUCY_TOOLS
 from agents.kurisu.toolset import TOOLS as _KURISU_TOOLS
 from agents.journal.toolset import TOOLS as _JOURNAL_TOOLS
+from agents.yato.toolset import TOOLS as _YATO_TOOLS
 
 DOMAINS: dict[str, list[Callable]] = {
     "nami": _NAMI_TOOLS,
@@ -33,4 +34,5 @@ DOMAINS: dict[str, list[Callable]] = {
     "lucy": _LUCY_TOOLS,
     "kurisu": _KURISU_TOOLS,
     "journal": _JOURNAL_TOOLS,
+    "yato": _YATO_TOOLS,
 }

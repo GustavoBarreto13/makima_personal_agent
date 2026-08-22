@@ -47,6 +47,8 @@
   --c-marin-dim:   #3b2318;   /* Marin dim — marrom escuro para background de badge */
   --c-komi:        #5a4fcf;   /* Komi — índigo (pessoas e contatos, spec 014) */
   --c-komi-dim:    #1e1a40;   /* Komi dim — índigo profundo para background de badge */
+  --c-yato:        #4a6fa5;   /* Yato — azul-cachecol (viagens, spec 066) */
+  --c-yato-dim:    #17202f;   /* Yato dim — azul profundo para background de badge */
 }
 
 /* ── Scrollbar customizado — fino e quente ── */

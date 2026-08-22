@@ -1,0 +1,456 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Yato · Viagens — sistema visual "caderno de bordo / dossiê" (spec 066)
+   Tokens OKLCH escopados em .yato-shell. Escuro é o padrão.
+   Portado fielmente de specs/066-travel-agent/design_handoff_yato_viagens/yato/styles.css
+   ═══════════════════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+.yato-shell{
+  /* superfícies */
+  --paper:oklch(0.14 0.014 250);--paper-2:oklch(0.18 0.016 250);--card:oklch(0.21 0.014 250);--card-2:oklch(0.25 0.014 250);
+  /* tinta */
+  --ink:oklch(0.94 0.010 90);--ink-2:oklch(0.74 0.014 90);--ink-3:oklch(0.56 0.014 88);--ink-4:oklch(0.42 0.012 86);
+  /* linhas */
+  --line:oklch(0.31 0.016 250);--line-2:oklch(0.25 0.014 250);--line-dash:oklch(0.36 0.018 250);
+  --shadow-sm:0 1px 2px oklch(0 0 0 / 0.45);--shadow-md:0 3px 10px oklch(0 0 0 / 0.50);--shadow-lg:0 16px 40px oklch(0 0 0 / 0.60);
+  --topbar-bg:oklch(0.18 0.016 250 / 0.86);--footbar-bg:oklch(0.18 0.016 250 / 0.94);
+  /* kraft e mapa */
+  --kraft:oklch(0.34 0.032 68);--kraft-2:oklch(0.40 0.036 68);--kraft-ink:oklch(0.90 0.020 80);
+  --map-line:oklch(0.30 0.018 250 / 0.55);--grid-line:oklch(0.28 0.014 250 / 0.35);
+  /* vereditos — FIXOS, não acompanham o acento */
+  --verdict-ok:oklch(0.72 0.15 152);--verdict-ok-tint:oklch(0.72 0.15 152 / 0.16);
+  --verdict-none:oklch(0.62 0.10 25);--verdict-none-tint:oklch(0.62 0.10 25 / 0.16);
+  --verdict-unknown:oklch(0.78 0.13 78);--verdict-unknown-tint:oklch(0.78 0.13 78 / 0.16);
+  --verdict-pending:oklch(0.52 0.012 250);--verdict-pending-tint:oklch(0.52 0.012 250 / 0.14);
+  /* acento — azul-cachecol */
+  --yato:oklch(0.58 0.14 250);--yato-deep:oklch(0.74 0.13 250);--yato-bright:oklch(0.82 0.11 250);
+  --yato-tint:oklch(0.58 0.14 250 / 0.16);--yato-tint-2:oklch(0.58 0.14 250 / 0.30);--accent-h:250;
+  /* perfil e orçamento */
+  --profile-eco:oklch(0.70 0.13 145);--profile-mid:oklch(0.74 0.12 85);--profile-lux:oklch(0.72 0.12 300);
+  --budget-ok:oklch(0.70 0.12 152);--budget-warn:oklch(0.78 0.13 78);--budget-over:oklch(0.64 0.17 22);--budget-track:oklch(0.30 0.014 250);
+  /* tipo */
+  --display:'Bitter',Georgia,serif;--sans:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+  --r-sm:4px;--r-md:8px;--r-lg:12px;--r-pill:999px;--gap:14px;--day-col-w:300px;
+
+  font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;
+}
+.yato-shell *,.yato-shell *::before,.yato-shell *::after{box-sizing:border-box;margin:0;padding:0}
+
+.yato-shell[data-accent='ouro']{--yato:oklch(0.72 0.13 85);--yato-deep:oklch(0.82 0.12 86);--yato-bright:oklch(0.88 0.10 86);--yato-tint:oklch(0.72 0.13 85 / 0.16);--yato-tint-2:oklch(0.72 0.13 85 / 0.30);--accent-h:85}
+.yato-shell[data-accent='carmim']{--yato:oklch(0.58 0.18 22);--yato-deep:oklch(0.72 0.16 24);--yato-bright:oklch(0.80 0.14 24);--yato-tint:oklch(0.58 0.18 22 / 0.16);--yato-tint-2:oklch(0.58 0.18 22 / 0.30);--accent-h:22}
+.yato-shell[data-accent='musgo']{--yato:oklch(0.58 0.10 145);--yato-deep:oklch(0.72 0.10 146);--yato-bright:oklch(0.80 0.09 146);--yato-tint:oklch(0.58 0.10 145 / 0.16);--yato-tint-2:oklch(0.58 0.10 145 / 0.30);--accent-h:145}
+.yato-shell[data-density='compact']{--gap:9px;--day-col-w:244px}
+.yato-shell[data-density='large']{--gap:20px;--day-col-w:356px}
+
+.yato-shell[data-theme='light']{
+  --paper:oklch(0.96 0.010 85);--paper-2:oklch(0.93 0.014 82);--card:oklch(0.99 0.006 85);--card-2:oklch(0.95 0.010 84);
+  --ink:oklch(0.24 0.020 250);--ink-2:oklch(0.42 0.018 250);--ink-3:oklch(0.56 0.016 250);--ink-4:oklch(0.70 0.012 250);
+  --line:oklch(0.86 0.014 84);--line-2:oklch(0.91 0.010 84);--line-dash:oklch(0.78 0.018 84);
+  --kraft:oklch(0.86 0.045 70);--kraft-2:oklch(0.90 0.038 70);--kraft-ink:oklch(0.30 0.030 60);
+  --map-line:oklch(0.72 0.020 250 / 0.45);--grid-line:oklch(0.80 0.014 250 / 0.40);
+  --verdict-ok:oklch(0.52 0.15 152);--verdict-none:oklch(0.50 0.12 25);--verdict-unknown:oklch(0.58 0.14 72);--verdict-pending:oklch(0.62 0.010 250);
+  --budget-track:oklch(0.88 0.012 84);
+  --topbar-bg:oklch(0.93 0.014 82 / 0.86);--footbar-bg:oklch(0.93 0.014 82 / 0.94);
+  --shadow-sm:0 1px 2px oklch(0 0 0 / 0.10);--shadow-md:0 3px 10px oklch(0 0 0 / 0.12);--shadow-lg:0 16px 40px oklch(0 0 0 / 0.16);
+}
+
+/* ─── Shell ─────────────────────────────────────────────────────────── */
+.yato-shell{display:grid;grid-template-columns:220px 1fr;grid-template-rows:1fr 44px;height:100vh;overflow:hidden;background:var(--paper);color:var(--ink);position:relative}
+.yato-shell a{color:var(--yato-deep);text-decoration:none}
+.yato-shell a:hover{color:var(--yato-bright);text-decoration:underline}
+.yato-shell ::selection{background:var(--yato-tint-2)}
+
+/* textura: malha milimetrada + curvas de nível */
+.yato-tex{position:absolute;inset:0;pointer-events:none;z-index:0;opacity:0.5;
+  background-image:
+    repeating-linear-gradient(0deg,var(--grid-line) 0 1px,transparent 1px 24px),
+    repeating-linear-gradient(90deg,var(--grid-line) 0 1px,transparent 1px 24px),
+    repeating-radial-gradient(ellipse 60% 42% at 22% 18%,transparent 0 38px,var(--map-line) 38px 39px,transparent 39px 78px),
+    repeating-radial-gradient(ellipse 52% 66% at 84% 62%,transparent 0 44px,var(--map-line) 44px 45px,transparent 45px 92px),
+    repeating-radial-gradient(ellipse 70% 40% at 48% 108%,transparent 0 52px,var(--map-line) 52px 53px,transparent 53px 104px);
+}
+.yato-shell[data-theme='light'] .yato-tex{opacity:0.7}
+.yato-shell[data-texture='off'] .yato-tex{display:none}
+
+/* ─── Sidebar ───────────────────────────────────────────────────────── */
+.yato-side{grid-column:1;grid-row:1 / 3;position:relative;z-index:2;background:var(--paper-2);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden}
+.side-brand{display:flex;align-items:center;gap:10px;padding:16px 16px 12px}
+.brand-mark{width:38px;height:38px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--card-2);border:1px solid var(--yato-tint-2);box-shadow:0 0 0 3px var(--yato-tint)}
+.brand-mark img{width:100%;height:100%;object-fit:cover;object-position:center 6%;display:block}
+.brand-name{font-family:var(--display);font-size:17px;font-weight:700;letter-spacing:-0.01em;line-height:1.1}
+.brand-role{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.16em;color:var(--yato-deep);margin-top:1px}
+
+.side-trip{margin:2px 12px 10px;padding:10px 11px;border-radius:var(--r-md);background:var(--kraft);color:var(--kraft-ink);cursor:pointer;text-align:left;border:none;width:calc(100% - 24px);font-family:var(--sans)}
+.side-trip:hover{background:var(--kraft-2)}
+.side-trip .st-label{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.16em;opacity:0.7}
+.side-trip .st-city{font-family:var(--display);font-size:15px;font-weight:600;margin-top:3px}
+.side-trip .st-dates{font-family:var(--mono);font-size:11px;opacity:0.85;margin-top:2px}
+.side-trip .st-count{font-size:11.5px;margin-top:6px;font-weight:600}
+
+.side-nav{flex:1;overflow-y:auto;padding:0 10px;scrollbar-width:none}
+.side-nav::-webkit-scrollbar{display:none}
+.nav-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 10px;margin:1px 0;border:none;background:transparent;border-radius:var(--r-sm);font-family:var(--sans);font-size:13.5px;color:var(--ink-2);cursor:pointer;transition:background .12s,color .12s}
+.nav-item svg{width:17px;height:17px;flex-shrink:0;color:var(--ink-3)}
+.nav-item:hover{background:var(--card-2);color:var(--ink)}
+.nav-item.active{background:var(--yato-tint);color:var(--yato-deep);font-weight:600}
+.nav-item.active svg{color:var(--yato-deep)}
+.nav-count{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-4);font-variant-numeric:tabular-nums}
+.nav-item.active .nav-count{color:var(--yato-deep)}
+.nav-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.side-foot{padding:12px 14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.side-quote{font-family:var(--display);font-style:italic;font-size:12.5px;color:var(--ink-3);line-height:1.4;text-wrap:pretty}
+.side-new{display:flex;align-items:center;justify-content:center;gap:7px;padding:10px;border:none;border-radius:var(--r-md);background:var(--yato);color:oklch(0.99 0.01 250);font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer}
+.side-new:hover{filter:brightness(1.12)}
+.side-new svg{width:15px;height:15px}
+.back-makima{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-3)}
+.back-makima:hover{color:var(--ink);text-decoration:none}
+.back-makima .dot{width:6px;height:6px;border-radius:50%;background:oklch(0.66 0.145 5)}
+
+/* ─── Main / topbar / footbar ───────────────────────────────────────── */
+.yato-main{grid-column:2;grid-row:1;position:relative;z-index:1;min-width:0;overflow:hidden;display:flex;flex-direction:column}
+.yato-topbar{flex-shrink:0;height:56px;display:flex;align-items:center;gap:14px;padding:0 26px;border-bottom:1px solid var(--line);background:var(--topbar-bg);backdrop-filter:blur(10px);z-index:5}
+.topbar-title{font-family:var(--display);font-size:16px;font-weight:600;white-space:nowrap}
+.yato-shell .search{display:flex;align-items:center;gap:8px;height:32px;padding:0 11px;min-width:0;flex:1 1 190px;max-width:280px;background:var(--card);border:1px solid var(--line);border-radius:var(--r-pill)}
+.yato-shell .search:focus-within{border-color:var(--yato);box-shadow:0 0 0 3px var(--yato-tint)}
+.yato-shell .search svg{width:14px;height:14px;color:var(--ink-4);flex-shrink:0}
+.yato-shell .search input{border:none;background:transparent;outline:none;font-family:var(--sans);font-size:13px;color:var(--ink);width:100%}
+.yato-shell .search input::placeholder{color:var(--ink-4)}
+.trip-select{margin-left:auto;display:flex;align-items:center;gap:8px;min-width:0}
+.trip-select select{max-width:150px}
+.yato-shell .trip-select select,.yato-shell .inp,.yato-shell .sel{font-family:var(--sans);font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:var(--r-sm);padding:6px 9px;outline:none}
+.yato-shell .inp:focus,.yato-shell .sel:focus,.trip-select select:focus{border-color:var(--yato)}
+.topbar-prot{display:flex;align-items:center;gap:9px;padding:5px 10px;border:1px solid var(--line);border-radius:var(--r-pill);background:var(--card);cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--ink-2);white-space:nowrap;flex-shrink:0}
+.topbar-prot .meter{width:52px}
+.topbar-prot:hover{border-color:var(--yato)}
+
+.yato-scroll{flex:1;min-width:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.yato-scroll::-webkit-scrollbar{width:10px}
+.yato-scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px;border:3px solid transparent;background-clip:content-box}
+.yato-shell .page{max-width:1180px;margin:0 auto;padding:22px 26px 56px}
+
+.footbar{grid-column:2;grid-row:2;position:relative;z-index:2;min-width:0;display:flex;align-items:center;gap:12px;padding:0 26px;border-top:1px solid var(--line);background:var(--footbar-bg);backdrop-filter:blur(10px);font-size:12.5px;color:var(--ink-2)}
+.footbar .fb-pend{display:flex;align-items:center;gap:8px;cursor:pointer;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:none;border:none;color:inherit;font:inherit}
+.footbar .fb-pend:hover{color:var(--ink)}
+.fb-box{width:12px;height:12px;border:1.5px solid var(--ink-4);border-radius:2px;flex-shrink:0}
+.footbar .fb-right{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-3);white-space:nowrap}
+
+/* ─── primitivos ────────────────────────────────────────────────────── */
+.yato-shell .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--shadow-sm)}
+.yato-shell .section{margin-top:30px}
+.yato-shell .section-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:11px;margin-bottom:12px}
+.yato-shell .section-head>.filters{align-self:center}
+.yato-shell .section-title{font-family:var(--display);font-size:19px;font-weight:600;letter-spacing:-0.01em}
+.yato-shell .section-sub{font-size:12.5px;color:var(--ink-3)}
+.yato-shell .section-link{margin-left:auto;font-size:12.5px;color:var(--yato-deep);font-weight:500;cursor:pointer;background:none;border:none}
+.yato-shell .eyebrow{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:0.18em;color:var(--yato-deep)}
+.yato-shell .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.yato-shell .dim{color:var(--ink-3)}
+.yato-shell .btn{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--card);color:var(--ink);font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;transition:background .12s,border-color .12s}
+.yato-shell .btn svg{width:15px;height:15px}
+.yato-shell .btn:hover{background:var(--card-2);border-color:var(--ink-4)}
+.yato-shell .btn:disabled{opacity:.5;cursor:not-allowed}
+.yato-shell .btn-primary{background:var(--yato);border-color:transparent;color:oklch(0.99 0.01 250);font-weight:600}
+.yato-shell .btn-primary:hover{filter:brightness(1.12);background:var(--yato)}
+.yato-shell .btn-sm{padding:5px 10px;font-size:12px}
+.yato-shell .btn-kraft{background:var(--kraft);color:var(--kraft-ink);border-color:transparent}
+.yato-shell .btn-kraft:hover{background:var(--kraft-2)}
+.yato-shell .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:var(--r-pill);border:1px solid var(--line);background:var(--card-2);font-size:11.5px;color:var(--ink-2);cursor:pointer}
+.yato-shell .chip.on{background:var(--yato-tint);border-color:var(--yato);color:var(--yato-deep);font-weight:600}
+.yato-shell .chip-static{cursor:default}
+.yato-shell .chip-eco{border-color:var(--profile-eco);color:var(--profile-eco);background:transparent}
+.yato-shell .chip-mid{border-color:var(--profile-mid);color:var(--profile-mid);background:transparent}
+.yato-shell .chip-lux{border-color:var(--profile-lux);color:var(--profile-lux);background:transparent}
+.yato-shell .filters{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+
+/* carimbo de veredito */
+.yato-shell .vchip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:var(--r-sm);border:1.5px solid var(--vc);background:var(--vct);color:var(--vc);font-family:var(--display);font-weight:700;font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;white-space:nowrap}
+.yato-shell .vchip.md{padding:5px 11px;font-size:10.5px;transform:rotate(-1.5deg)}
+.yato-shell .vsym{font-size:11px;line-height:1}
+.yato-shell .v-ok{--vc:var(--verdict-ok);--vct:var(--verdict-ok-tint)}
+.yato-shell .v-none{--vc:var(--verdict-none);--vct:var(--verdict-none-tint)}
+.yato-shell .v-unknown{--vc:var(--verdict-unknown);--vct:var(--verdict-unknown-tint)}
+.yato-shell .v-pending{--vc:var(--verdict-pending);--vct:var(--verdict-pending-tint)}
+.yato-shell .v-na{--vc:var(--ink-4);--vct:transparent}
+
+/* medidor de prontidão: 7 segmentos */
+.yato-shell .meter{display:flex;gap:2px;align-items:stretch;width:100%}
+.yato-shell .meter i{flex:1;height:6px;border-radius:1px;background:var(--verdict-pending-tint);display:block;font-style:normal}
+.yato-shell .meter.md i{height:9px}
+.yato-shell .meter.lg i{height:16px;border-radius:2px;gap:3px}
+.yato-shell .meter.lg{gap:4px}
+.yato-shell .meter-wrap{display:flex;align-items:center;gap:9px;background:none;border:none;color:inherit;font:inherit}
+.yato-shell .meter-txt{font-family:var(--mono);font-size:11px;color:var(--ink-3);white-space:nowrap}
+
+/* tarja âmbar */
+.yato-shell .banner{display:flex;align-items:center;gap:11px;padding:9px 13px;border-radius:var(--r-sm);background:var(--verdict-unknown-tint);border:1px solid var(--verdict-unknown);color:var(--ink);font-size:12.5px}
+.yato-shell .banner .b-sym{color:var(--verdict-unknown);font-size:13px}
+.yato-shell .banner .b-acts{margin-left:auto;display:flex;gap:7px}
+.yato-shell .banner.positivo{background:var(--verdict-ok-tint);border-color:var(--verdict-ok)}
+.yato-shell .banner.positivo .b-sym{color:var(--verdict-ok)}
+
+/* ticket kraft com canhoto serrilhado */
+.yato-shell .ticket{--n:7px;position:relative;background:var(--kraft);color:var(--kraft-ink);border-radius:var(--r-md);display:grid;grid-template-columns:1fr 104px;
+  mask-image:radial-gradient(circle at left,transparent var(--n),#000 calc(var(--n) + 0.5px)),radial-gradient(circle at right,transparent var(--n),#000 calc(var(--n) + 0.5px));
+  mask-size:100% 30px;mask-repeat:repeat-y;mask-composite:intersect;-webkit-mask-composite:source-in;cursor:pointer;transition:background .14s}
+.yato-shell .ticket:hover{background:var(--kraft-2)}
+.yato-shell .ticket-body{padding:15px 16px 14px 18px;min-width:0}
+.yato-shell .ticket-stub{border-left:1.5px dashed var(--line-dash);padding:15px 14px;display:flex;flex-direction:column;gap:10px;justify-content:center}
+.yato-shell[data-theme='light'] .ticket-stub{border-left-color:oklch(0.52 0.040 60 / 0.45)}
+.yato-shell .t-city{font-family:var(--display);font-size:19px;font-weight:700;letter-spacing:-0.01em;line-height:1.15}
+.yato-shell .t-uf{opacity:0.65;font-weight:400}
+.yato-shell .t-dates{font-family:var(--mono);font-size:11.5px;opacity:0.82;margin-top:3px}
+.yato-shell .t-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+.yato-shell .t-chips .chip{background:oklch(1 0 0 / 0.10);border-color:oklch(1 0 0 / 0.22);color:var(--kraft-ink)}
+.yato-shell[data-theme='light'] .t-chips .chip{background:oklch(0 0 0 / 0.05);border-color:oklch(0 0 0 / 0.16)}
+.yato-shell .t-stub-k{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.14em;opacity:0.62}
+.yato-shell .t-stub-v{font-family:var(--display);font-size:20px;font-weight:700;line-height:1}
+.yato-shell .ticket .meter i{background:oklch(1 0 0 / 0.16)}
+.yato-shell .trip-cancel{filter:saturate(0.4)}
+.yato-shell .trip-cancel-wrap{position:relative;overflow:hidden;border-radius:var(--r-md)}
+.yato-shell .trip-cancel-tag{position:absolute;top:50%;left:-8%;width:116%;transform:translateY(-50%) rotate(-8deg);text-align:center;font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--verdict-none);background:oklch(0.14 0.014 250 / 0.62);padding:4px 0;pointer-events:none;border-top:1px solid var(--verdict-none);border-bottom:1px solid var(--verdict-none)}
+.yato-shell .trips-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:var(--gap)}
+
+/* ─── HERO ───────────────────────────────────────────────────────────── */
+.yato-shell .hero{position:relative;overflow:hidden;border-radius:var(--r-lg);border:1px solid var(--yato-tint-2);background:linear-gradient(148deg,var(--kraft) 0%,var(--card) 58%),radial-gradient(120% 130% at 86% 24%,var(--yato-tint-2),transparent 56%)}
+.yato-shell .hero-tex{position:absolute;inset:0;pointer-events:none;opacity:0.5;background-image:repeating-linear-gradient(0deg,oklch(0 0 0 / 0.10) 0 1px,transparent 1px 22px),repeating-linear-gradient(90deg,oklch(0 0 0 / 0.10) 0 1px,transparent 1px 22px),repeating-radial-gradient(ellipse 44% 62% at 26% 40%,transparent 0 30px,oklch(0 0 0 / 0.13) 30px 31px,transparent 31px 62px)}
+.yato-shell .hero-inner{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 252px;gap:22px;min-height:330px;padding:30px 22px 0 34px;align-items:stretch}
+.yato-shell .hero-copy{display:flex;flex-direction:column;gap:14px;padding-bottom:32px;justify-content:center}
+.yato-shell .hero-eyebrow{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:0.18em;color:var(--kraft-ink);opacity:0.8}
+.yato-shell .hero-city{font-family:var(--display);font-size:clamp(34px,4vw,52px);font-weight:700;letter-spacing:-0.025em;line-height:0.98;color:var(--ink)}
+.yato-shell .hero-city .hc-uf{color:var(--yato-deep);font-weight:400}
+.yato-shell .hero-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-family:var(--mono);font-size:12.5px;color:var(--ink-2)}
+.yato-shell .hero-meta .sep{width:4px;height:4px;border-radius:50%;background:var(--ink-4)}
+.yato-shell .hero-count{font-family:var(--display);font-size:15px;font-weight:600;color:var(--yato-deep)}
+.yato-shell .hero-quote{font-family:var(--display);font-style:italic;font-size:13.5px;color:var(--ink-2);border-left:2px solid var(--yato);padding-left:12px;max-width:46ch;text-wrap:pretty}
+.yato-shell .hero-cta{display:flex;gap:9px;flex-wrap:wrap}
+.yato-shell .hero-right{display:flex;flex-direction:column;gap:12px;justify-content:flex-end;align-items:stretch}
+.yato-shell .hero-ready{margin-top:4px;padding:13px 14px;border-radius:var(--r-md);background:oklch(0.14 0.014 250 / 0.66);border:1px solid var(--line);backdrop-filter:blur(8px)}
+.yato-shell[data-theme='light'] .hero-ready{background:oklch(1 0 0 / 0.86)}
+.yato-shell .hero-ready .hr-k{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.16em;color:var(--ink-3)}
+.yato-shell .hero-ready .hr-v{font-family:var(--display);font-size:24px;font-weight:700;line-height:1;margin:6px 0 8px}
+.yato-shell .hero-ready .hr-sub{font-size:11.5px;color:var(--ink-3);margin-top:8px}
+.yato-shell .hero-portrait{position:relative;width:100%;margin-bottom:-2px}
+.yato-shell .hero-portrait .halo{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:120%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,var(--yato-tint-2),transparent 66%);filter:blur(3px)}
+.yato-shell .hero-portrait img{position:relative;width:100%;display:block;filter:drop-shadow(0 16px 28px oklch(0 0 0 / 0.45))}
+
+/* ─── painéis do Início ─────────────────────────────────────────────── */
+.yato-shell .tri-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--gap);margin-top:var(--gap)}
+.yato-shell .panel{padding:16px;display:flex;flex-direction:column;gap:11px}
+.yato-shell .panel-head{display:flex;align-items:center;gap:8px}
+.yato-shell .panel-title{font-family:var(--display);font-size:14.5px;font-weight:600;text-wrap:balance}
+.yato-shell .panel-link{margin-left:auto;font-size:11.5px;color:var(--yato-deep);cursor:pointer;background:none;border:none}
+.yato-shell .strategy-big{display:flex;align-items:center;gap:10px;font-family:var(--display);font-size:17px;font-weight:600}
+.yato-shell .strategy-emoji{font-size:22px}
+.yato-shell .kv{display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:var(--ink-2)}
+.yato-shell .kv .k{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:0.12em;color:var(--ink-4)}
+.yato-shell .pend-list{display:flex;flex-direction:column;gap:7px}
+.yato-shell .pend-row{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--ink-2)}
+.yato-shell .big3{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--gap)}
+.yato-shell .big-num{padding:18px;display:flex;flex-direction:column;gap:5px}
+.yato-shell .big-num .bn-k{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.16em;color:var(--ink-3)}
+.yato-shell .big-num .bn-v{font-family:var(--display);font-size:30px;font-weight:700;letter-spacing:-0.02em}
+.yato-shell .big-num .bn-s{font-size:11.5px;color:var(--ink-3)}
+.yato-shell .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--gap)}
+.yato-shell .kpi{padding:13px 15px}
+.yato-shell .kpi .kk{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.14em;color:var(--ink-4)}
+.yato-shell .kpi .kv2{font-family:var(--display);font-size:21px;font-weight:700;margin-top:4px}
+.yato-shell .kpi .ks{font-size:11px;color:var(--ink-3)}
+
+/* ─── DOSSIÊ (componente-assinatura) ───────────────────────────────── */
+.yato-shell .dossier{overflow:hidden}
+.yato-shell .dos-head{padding:16px 18px;border-bottom:1px solid var(--line);background:var(--card-2)}
+.yato-shell .dos-head-top{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.yato-shell .dos-title{font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:-0.015em}
+.yato-shell .dos-kicker{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.16em;color:var(--yato-deep)}
+.yato-shell .dos-checked{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.yato-shell .dos-head-bot{display:flex;align-items:center;gap:14px;margin-top:11px}
+.yato-shell .dos-size{font-size:12px;color:var(--ink-2)}
+.yato-shell .dos-meter{margin-left:auto;width:190px}
+.yato-shell .dos-stale{margin:12px 18px 0;padding:7px 11px;border-radius:var(--r-sm);background:var(--verdict-unknown-tint);border:1px solid var(--verdict-unknown);font-size:12px}
+.yato-shell .dos-row{display:grid;grid-template-columns:20px minmax(0,1fr) 128px 136px;gap:12px;padding:13px 18px;border-bottom:1px solid var(--line-2);align-items:start}
+.yato-shell .dos-row:hover{background:var(--card-2)}
+.yato-shell .dos-sym{font-size:14px;line-height:1.5;text-align:center}
+.yato-shell .dos-step{font-family:var(--display);font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em}
+.yato-shell .dos-step .n{color:var(--ink-4);font-weight:400;margin-right:5px}
+.yato-shell .dos-ev{font-size:12.5px;color:var(--ink-2);margin-top:4px;text-wrap:pretty;max-width:62ch}
+.yato-shell .dos-ev.instr{color:var(--ink-2);border-left:2px solid var(--verdict-pending);padding-left:9px;font-style:italic}
+.yato-shell .dos-src{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);text-align:right;line-height:1.6}
+.yato-shell .dos-stamp{display:flex;justify-content:flex-start;padding-top:1px}
+.yato-shell .dos-collapsed{padding:12px 18px;border-bottom:1px solid var(--line-2);background:var(--card-2);display:flex;gap:12px;align-items:flex-start;font-size:12.5px;color:var(--ink-2)}
+.yato-shell .dos-foot{padding:15px 18px;background:var(--card-2);display:flex;flex-direction:column;gap:7px}
+.yato-shell .dos-foot-strat{display:flex;align-items:center;gap:10px}
+.yato-shell .dos-foot-k{font-family:var(--display);font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-3)}
+.yato-shell .dos-foot-v{font-family:var(--display);font-size:15.5px;font-weight:600}
+.yato-shell .dos-foot-note{font-size:12.5px;color:var(--ink-2);text-wrap:pretty}
+.yato-shell .dos-empty{padding:34px 26px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:13px}
+.yato-shell .dos-empty .stat-macro{font-family:var(--display);font-size:26px;font-weight:700;color:var(--yato-deep)}
+
+/* coluna direita do dossiê */
+.yato-shell .dos-layout{display:grid;grid-template-columns:1fr 320px;gap:var(--gap);align-items:start}
+.yato-shell .app-card{--n:5px;background:var(--kraft);color:var(--kraft-ink);border-radius:var(--r-sm);padding:11px 13px;
+  mask-image:radial-gradient(circle at left,transparent var(--n),#000 calc(var(--n) + 0.5px)),radial-gradient(circle at right,transparent var(--n),#000 calc(var(--n) + 0.5px));
+  mask-size:100% 22px;mask-repeat:repeat-y;mask-composite:intersect;-webkit-mask-composite:source-in}
+.yato-shell .app-name{font-family:var(--display);font-size:14px;font-weight:700;display:flex;align-items:baseline;gap:7px}
+.yato-shell .app-kind{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.12em;opacity:0.7}
+.yato-shell .app-cov{font-size:11.5px;opacity:0.9;margin-top:3px;text-wrap:pretty}
+.yato-shell .app-seal{display:flex;align-items:center;gap:6px;margin-top:9px;padding-top:8px;border-top:1px dashed var(--line-dash);font-family:var(--mono);font-size:9.5px;letter-spacing:0.04em;color:var(--verdict-unknown);text-transform:uppercase}
+.yato-shell .contact{padding:11px 13px;display:flex;flex-direction:column;gap:2px}
+.yato-shell .contact .c-name{font-size:13px;font-weight:600}
+.yato-shell .contact .c-num{font-family:var(--mono);font-size:12px;color:var(--yato-deep)}
+.yato-shell .contact .c-note{font-size:11.5px;color:var(--ink-3)}
+.yato-shell .stack{display:flex;flex-direction:column;gap:9px}
+
+/* ─── ROTEIRO: board de dias ───────────────────────────────────────── */
+.yato-shell .board{display:flex;gap:var(--gap);overflow-x:auto;padding:4px 2px 14px;scrollbar-width:thin}
+.yato-shell .day-col{flex:0 0 var(--day-col-w);width:var(--day-col-w);background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);display:flex;flex-direction:column;overflow:hidden}
+.yato-shell .day-head{padding:11px 13px;border-bottom:1px solid var(--line);background:var(--card-2);display:flex;align-items:baseline;gap:8px}
+.yato-shell .day-dow{font-family:var(--display);font-size:13.5px;font-weight:600;text-transform:capitalize}
+.yato-shell .day-date{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.yato-shell .day-cost{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--yato-deep)}
+.yato-shell .period{padding:10px 12px 12px;border-bottom:1px dashed var(--line-dash)}
+.yato-shell .period:last-child{border-bottom:none}
+.yato-shell .period-k{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:0.16em;color:var(--ink-4);margin-bottom:8px}
+.yato-shell .itin{position:relative;display:flex;gap:9px;padding:7px 0}
+.yato-shell .itin-mode{width:26px;height:26px;flex-shrink:0;border-radius:50%;background:var(--card-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:12px;z-index:1}
+.yato-shell .itin-seam{position:absolute;left:13px;top:33px;bottom:-7px;border-left:1.5px dashed var(--line-dash)}
+.yato-shell .itin-b{min-width:0;flex:1}
+.yato-shell .itin-top{display:flex;align-items:baseline;gap:7px}
+.yato-shell .itin-time{font-family:var(--mono);font-size:11px;color:var(--yato-deep);flex-shrink:0}
+.yato-shell .itin-title{font-size:13px;font-weight:500;line-height:1.3}
+.yato-shell .itin-cost{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--ink-2);flex-shrink:0}
+.yato-shell .itin-addr{font-size:11.5px;color:var(--ink-3);margin-top:2px}
+.yato-shell .period-add{width:100%;padding:6px;border:1px dashed var(--line);border-radius:var(--r-sm);background:transparent;color:var(--ink-4);font-family:var(--sans);font-size:11.5px;cursor:pointer}
+.yato-shell .period-add:hover{border-color:var(--yato);color:var(--yato-deep)}
+
+/* ─── MATRIZ DE CONFORTO (ANTT) ────────────────────────────────────── */
+.yato-shell .comfort{padding:16px 18px}
+.yato-shell .comfort-ruler{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-top:13px}
+.yato-shell .cf{padding:11px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--card-2);display:flex;flex-direction:column;gap:8px;opacity:0.55}
+.yato-shell .cf.avail{opacity:1}
+.yato-shell .cf.rec{opacity:1;border-color:var(--yato);background:var(--yato-tint);box-shadow:0 0 0 1px var(--yato)}
+.yato-shell .cf-name{font-family:var(--display);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em}
+.yato-shell .cf-ang{font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+.yato-shell .seat{height:34px;position:relative}
+.yato-shell .seat .base{position:absolute;left:6px;bottom:4px;width:26px;height:4px;border-radius:2px;background:var(--ink-4)}
+.yato-shell .seat .back{position:absolute;left:8px;bottom:6px;width:4px;height:22px;border-radius:2px;background:var(--ink-2);transform-origin:bottom left}
+.yato-shell .cf.rec .seat .back,.yato-shell .cf.rec .seat .base{background:var(--yato-deep)}
+.yato-shell .cf-balloon{margin-top:11px;padding:9px 12px;border-radius:var(--r-sm);background:var(--yato-tint);border:1px solid var(--yato-tint-2);font-size:12.5px;color:var(--ink-2);text-wrap:pretty}
+.yato-shell .roi{margin-top:13px;display:flex;flex-direction:column;gap:6px}
+.yato-shell .roi-row{display:flex;align-items:baseline;gap:9px;font-size:12.5px;color:var(--ink-2)}
+.yato-shell .roi-n{font-family:var(--mono);font-size:11px;color:var(--yato-deep);width:16px;flex-shrink:0}
+
+/* ─── ORÇAMENTO ────────────────────────────────────────────────────── */
+.yato-shell .bud-list{padding:6px 18px 16px}
+.yato-shell .bud-row{display:grid;grid-template-columns:150px minmax(0,1fr) 142px;gap:13px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line-2)}
+.yato-shell .bud-row:last-child{border-bottom:none}
+.yato-shell .bud-k{font-size:12.5px;color:var(--ink-2)}
+.yato-shell .bud-track{height:10px;border-radius:var(--r-pill);background:var(--budget-track);position:relative;overflow:visible;margin-right:8px}
+.yato-shell .bud-fill{position:absolute;left:0;top:0;bottom:0;border-radius:var(--r-pill)}
+.yato-shell .bud-over{background-image:repeating-linear-gradient(45deg,oklch(1 0 0 / 0.32) 0 3px,transparent 3px 6px)}
+.yato-shell .bud-v{font-family:var(--mono);font-size:12px;text-align:right;color:var(--ink-2)}
+.yato-shell .exp-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+.yato-shell .exp-table th{text-align:left;font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.14em;color:var(--ink-4);font-weight:400;padding:9px 12px;border-bottom:1px solid var(--line)}
+.yato-shell .exp-table td{padding:9px 12px;border-bottom:1px solid var(--line-2);color:var(--ink-2)}
+.yato-shell .exp-table tr:hover td{background:var(--card-2)}
+.yato-shell .exp-table .num{text-align:right;color:var(--ink)}
+.yato-shell .nami-seal{font-family:var(--mono);font-size:9.5px;padding:2px 6px;border-radius:var(--r-sm);border:1px solid var(--line);color:var(--ink-3)}
+
+/* ─── CHECKLIST ────────────────────────────────────────────────────── */
+.yato-shell .chk-group{margin-top:var(--gap)}
+.yato-shell .chk-glabel{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.16em;color:var(--ink-3);margin-bottom:8px}
+.yato-shell .chk-row{display:flex;align-items:center;gap:11px;padding:9px 14px;border-bottom:1px solid var(--line-2)}
+.yato-shell .chk-row:last-child{border-bottom:none}
+.yato-shell .chk-box{width:18px;height:18px;flex-shrink:0;border:1.5px solid var(--ink-4);border-radius:3px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.yato-shell .chk-box.done{border-color:var(--verdict-ok);background:var(--verdict-ok-tint);color:var(--verdict-ok);font-family:var(--display);font-size:11px;font-weight:700}
+.yato-shell .chk-label{font-size:13px}
+.yato-shell .chk-row.done .chk-label{color:var(--ink-3);text-decoration:line-through}
+.yato-shell .chk-src{margin-left:auto;font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.1em;padding:2px 7px;border-radius:var(--r-pill);border:1px solid var(--line);color:var(--ink-3)}
+.yato-shell .chk-src.dos{border-color:var(--yato);color:var(--yato-deep)}
+.yato-shell .chk-add{display:flex;gap:8px;padding:10px 14px}
+.yato-shell .chk-add .inp{flex:1}
+.yato-shell .prog-wide{height:8px;border-radius:var(--r-pill);background:var(--budget-track);overflow:hidden}
+.yato-shell .prog-wide i{display:block;height:100%;background:var(--yato);border-radius:var(--r-pill)}
+
+/* lista de viagens (modo lista) */
+.yato-shell .trip-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.yato-shell .trip-table th{text-align:left;font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.14em;color:var(--ink-4);font-weight:400;padding:9px 12px;border-bottom:1px solid var(--line)}
+.yato-shell .trip-table td{padding:11px 12px;border-bottom:1px solid var(--line-2);color:var(--ink-2)}
+.yato-shell .trip-table tr{cursor:pointer}
+.yato-shell .trip-table tr:hover td{background:var(--card-2)}
+.yato-shell .trip-table .city{font-family:var(--display);font-weight:600;color:var(--ink);font-size:13.5px}
+
+/* ─── MODAIS ───────────────────────────────────────────────────────── */
+.yato-shell .ovl{position:fixed;inset:0;background:oklch(0.10 0.014 250 / 0.66);backdrop-filter:blur(3px);z-index:60;display:flex;align-items:center;justify-content:center;padding:24px}
+.yato-shell .modal{width:100%;max-width:520px;max-height:88vh;overflow-y:auto;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-lg)}
+.yato-shell .modal.wide{max-width:620px}
+.yato-shell .m-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:11px}
+.yato-shell .m-title{font-family:var(--display);font-size:17px;font-weight:700}
+.yato-shell .m-close{margin-left:auto;background:transparent;border:none;color:var(--ink-3);cursor:pointer;font-size:18px;line-height:1;padding:4px}
+.yato-shell .m-body{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+.yato-shell .m-foot{padding:14px 20px;border-top:1px solid var(--line);display:flex;align-items:center;gap:9px}
+.yato-shell .m-note{font-size:11.5px;color:var(--ink-3);text-wrap:pretty}
+.yato-shell .field{display:flex;flex-direction:column;gap:5px}
+.yato-shell .field label{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.14em;color:var(--ink-3)}
+.yato-shell .field .inp,.yato-shell .field .sel{width:100%}
+.yato-shell .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.yato-shell .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.yato-shell .seg{display:flex;gap:0;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
+.yato-shell .seg button{flex:1;padding:7px 6px;border:none;background:var(--card);color:var(--ink-2);font-family:var(--sans);font-size:12px;cursor:pointer;border-right:1px solid var(--line)}
+.yato-shell .seg button:last-child{border-right:none}
+.yato-shell .seg button.on{background:var(--yato-tint);color:var(--yato-deep);font-weight:600}
+.yato-shell .mode-pick{display:flex;flex-wrap:wrap;gap:7px}
+.yato-shell .mode-pick button{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--card-2);font-size:15px;cursor:pointer}
+.yato-shell .mode-pick button.on{border-color:var(--yato);background:var(--yato-tint);box-shadow:0 0 0 2px var(--yato-tint)}
+.yato-shell .err{font-size:11.5px;color:var(--verdict-none)}
+.yato-shell .wiz-step{font-family:var(--mono);font-size:10.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--yato-deep)}
+.yato-shell .wiz-instr{padding:13px 15px;border-radius:var(--r-sm);background:var(--kraft);color:var(--kraft-ink);font-size:13.5px;line-height:1.5;text-wrap:pretty}
+.yato-shell .wiz-instr .wi-k{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.14em;opacity:0.7;display:block;margin-bottom:5px}
+.yato-shell .wiz-verdicts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.yato-shell .wv{padding:11px 8px;border-radius:var(--r-sm);border:1.5px solid var(--vc);background:var(--vct);color:var(--vc);font-family:var(--display);font-weight:700;font-size:10.5px;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px}
+.yato-shell .wv:hover{filter:brightness(1.15)}
+.yato-shell .wv .wv-sym{font-size:15px}
+.yato-shell .wiz-nav{display:flex;align-items:center;gap:8px;margin-left:auto}
+.yato-shell .wiz-nav button{width:28px;height:28px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--card);color:var(--ink-2);cursor:pointer}
+.yato-shell .wiz-nav button:disabled{opacity:.4;cursor:not-allowed}
+.yato-shell .toast{position:fixed;right:20px;bottom:56px;z-index:80;padding:10px 16px;border-radius:var(--r-pill);background:linear-gradient(100deg,var(--yato),var(--yato-deep));color:oklch(0.99 0.01 250);font-size:12.5px;font-weight:600;box-shadow:var(--shadow-md);animation:yato-toast-in .2s ease}
+@keyframes yato-toast-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.yato-shell .empty{padding:44px 26px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:13px;color:var(--ink-2)}
+.yato-shell .empty .e-emoji{font-size:34px;opacity:0.8}
+.yato-shell .empty .e-txt{font-family:var(--display);font-size:16px;font-weight:600;color:var(--ink);text-wrap:pretty;max-width:38ch}
+
+/* ─── responsivo ───────────────────────────────────────────────────── */
+@media (max-width:1180px){
+  .yato-shell .dos-layout{grid-template-columns:1fr}
+}
+@media (max-width:1040px){
+  .yato-shell .yato-topbar{padding:0 18px;gap:10px}
+  .yato-shell .topbar-title{display:none}
+  .yato-shell .trip-select select{max-width:118px}
+  .yato-shell .footbar .fb-right{display:none}
+}
+@media (max-width:900px){
+  .yato-shell{grid-template-columns:64px 1fr}
+  .yato-shell .nav-label,.yato-shell .brand-text,.yato-shell .side-quote,.yato-shell .side-trip .st-dates,.yato-shell .side-new span{display:none}
+  .yato-shell .nav-item{justify-content:center}.yato-shell .nav-count{display:none}
+  .yato-shell .side-brand{justify-content:center;padding:14px 8px}
+  .yato-shell .side-trip{margin:2px 8px 8px;width:calc(100% - 16px);text-align:center;padding:8px 4px}
+  .yato-shell .side-foot{padding:10px 8px}
+  .yato-shell .dos-layout{grid-template-columns:1fr}
+  .yato-shell .tri-grid,.yato-shell .big3,.yato-shell .kpi-row{grid-template-columns:1fr 1fr}
+  .yato-shell .comfort-ruler{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:1000px){
+  .yato-shell .hero-inner{grid-template-columns:minmax(0,1fr) clamp(160px,22vw,252px);padding:26px 18px 0 26px}
+}
+@media (max-width:720px){
+  .yato-shell .hero-inner{grid-template-columns:1fr;padding:26px 22px}
+  .yato-shell .hero-right{display:none}
+  .yato-shell .board{flex-direction:column;overflow-x:visible}
+  .yato-shell .day-col{flex:1 1 auto;width:100%}
+  .yato-shell .dos-row{grid-template-columns:20px 1fr;gap:9px}
+  .yato-shell .dos-stamp,.yato-shell .dos-src{grid-column:2;text-align:left;justify-content:flex-start}
+  .yato-shell .tri-grid,.yato-shell .big3,.yato-shell .kpi-row,.yato-shell .row2{grid-template-columns:1fr}
+  .yato-shell .trips-grid{grid-template-columns:1fr}
+}

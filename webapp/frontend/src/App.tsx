@@ -22,6 +22,7 @@ import { AkaneShell }  from './pages/akane/AkaneShell'         // Shell de filme
 import { MarinShell }  from './pages/marin/MarinShell'         // Shell de animes (catálogo Marin, spec 021)
 import { MaiShell }   from './pages/mai/MaiShell'              // Shell de séries de TV (Mai Sakurajima, spec 022)
 import { KomiShell }  from './pages/komi/KomiShell'            // Shell de pessoas e contatos (Komi, spec 014)
+import { YatoShell }  from './pages/yato/YatoShell'            // Shell de viagens (Yato, spec 066)
 import { MakimaShell } from './pages/makima/MakimaShell'        // Hub central da Makima — rota / em tela cheia (spec 023)
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
@@ -114,6 +115,10 @@ function App() {
         {/* Komi · Pessoas — identidade canônica de pessoas e contatos (spec 014).
             Antes do catch-all /* para o shell assumir as sub-rotas de /people. */}
         <Route path="/people/*" element={<KomiShell />} />
+
+        {/* Yato · Viagens — roteiro, dossiê de mobilidade e orçamento (spec 066).
+            Antes do catch-all /* para o shell assumir as sub-rotas de /travel. */}
+        <Route path="/travel/*" element={<YatoShell />} />
 
         {/* Makima · Hub — Centro de Controle em tela cheia (spec 023).
             Rota exata `/`, renderizada SEM o Layout/sidebar global. Deve vir

@@ -105,6 +105,11 @@ mcp_servers:
     url: "http://makima-mcp:8090/mcp/journal"
     headers:
       Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
+  yato:
+    # Viagens — spec 066. Espelha DOMAINS["yato"] de registry.py (plan.md D11).
+    url: "http://makima-mcp:8090/mcp/yato"
+    headers:
+      Authorization: "Bearer ${MAKIMA_MCP_TOKEN}"
   calendar:
     url: "http://makima-mcp:8090/mcp/calendar"
     headers:

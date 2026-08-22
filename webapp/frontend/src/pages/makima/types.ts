@@ -71,7 +71,7 @@ export interface AgentSummary {
 
 /**
  * Resposta de `/api/hub/summary`: um mapa chave-de-agente → stats.
- * As chaves esperadas são: nami, frieren, komi, violet, kaguya, mai, marin, akane.
+ * As chaves esperadas são: nami, frieren, komi, violet, kaguya, mai, marin, akane, yato.
  * O valor é `null` quando aquele agente falhou no backend (REQ-15) — nesse caso
  * o card cai no fallback gracioso ("—") sem quebrar.
  */

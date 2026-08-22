@@ -28,6 +28,7 @@ const PATHS: Record<string, string> = {
   tv: 'M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM8 21h8',
   sparkle: 'M12 3l1.8 5.6L19.5 10l-5.7 1.4L12 17l-1.8-5.6L4.5 10l5.7-1.4z',
   film: 'M4 4h16v16H4zM4 9h16M4 15h16M9 4v16M15 4v16',
+  backpack: 'M8 7V5.5A4 4 0 0 1 16 5.5V7M6.5 7h11A2.5 2.5 0 0 1 20 9.5V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9.5A2.5 2.5 0 0 1 6.5 7zM9 12h6v4H9z',
   arrow: 'M5 12h14M13 6l6 6-6 6',
   arrowUR: 'M7 17 17 7M9 7h8v8',
   grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',

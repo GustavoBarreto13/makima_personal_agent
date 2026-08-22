@@ -44,8 +44,9 @@ export const MAKIMA_IMG = '/makima.png'
 // ── Os 8 agentes (cards do roster) ──────────────────────────────────────────
 
 /**
- * Os 8 cards de agente, na ordem do handoff:
- * Nami → Frieren → Komi → Violet → Kaguya → Mai → Marin → Akane.
+ * Os cards de agente, na ordem do handoff (mais Yato, spec 066, acrescentado
+ * ao final — fora da ordem original do handoff, que antecede a fatia 066):
+ * Nami → Frieren → Komi → Violet → Kaguya → Mai → Marin → Akane → Yato.
  *
  * Cada par accent/accentText usa os valores OKLCH EXATOS do SPEC (REQ-5).
  * Não alterar esses valores sem revisar o handoff — eles definem a identidade
@@ -148,5 +149,17 @@ export const AGENTS: Agent[] = [
     action: { label: 'Marcar filme', href: '/movies', icon: 'film' },
     accent: 'oklch(0.66 0.115 196)',
     accentText: 'oklch(0.79 0.10 192)',
+  },
+  // 09 · Yato — Viagens (azul-cachecol, spec 066)
+  {
+    id: 'yato',
+    name: 'Yato',
+    role: 'Viagens',
+    img: '/yato.png',
+    href: '/travel',
+    does: 'Descobre como você vai se locomover antes de você comprar a passagem.',
+    action: { label: 'Nova viagem', href: '/travel', icon: 'backpack' },
+    accent: 'oklch(0.58 0.14 250)',
+    accentText: 'oklch(0.74 0.13 250)',
   },
 ]

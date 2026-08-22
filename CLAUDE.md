@@ -50,6 +50,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | `agents/mai/` | Séries de TV (PostgreSQL + TMDB API v3) | ✅ Fase 022 | `agents/mai/CLAUDE.md` |
 | `agents/komi/` | Pessoas e contatos (PostgreSQL) | ✅ Fase 014 | `agents/komi/CLAUDE.md` |
 | `agents/journal/` | Diário (Violet) — sub-agente ADK completo (`violet_agent`, ativado na spec 064) + consumido pelo router `/api/journal/*` do webapp | ✅ Fase 003/006/007 · ✅ agente | `agents/journal/CLAUDE.md` |
+| `agents/yato/` | Viagens — roteiro dia a dia + dossiê de mobilidade urbana (protocolo de 7 passos) + matriz economia×conforto + orçamento com lançamento atômico na Nami | ✅ Fase 066 (agente + webapp) | `agents/yato/CLAUDE.md` |
 | `agents/lucy/` | Email (Gmail) — agente somente leitura (IMAP) + digest matinal agendado | ✅ Fase 4 / 032 | `agents/lucy/CLAUDE.md` |
 
 ### Como o coordinator importa
@@ -66,6 +67,7 @@ from agents.mai.agent import mai_agent                # catálogo de séries de 
 from agents.komi.agent import komi_agent              # identidade de pessoas (spec 014)
 from agents.lucy.agent import lucy_agent              # email (Gmail), somente leitura (spec 032)
 from agents.journal.agent import violet_agent         # diário pessoal, Auto Memory Doll (spec 064)
+from agents.yato.agent import yato_agent               # viagens (spec 066)
 ```
 
 Imports locais — nada de `PYTHONPATH` apontando para outro repo.
@@ -83,7 +85,7 @@ Hermes Agent  (hermes/ — config.yaml, SOUL.md, skills/)
     ↓  MCP HTTP (bearer token)
 mcp_servers/makima/  (host Starlette — um FastMCP por domínio, ver mcp_servers/makima/CLAUDE.md)
     ├── /mcp/nami, /mcp/kaguya, /mcp/kurisu, /mcp/frieren, /mcp/akane,
-    │   /mcp/marin, /mcp/mai, /mcp/komi, /mcp/lucy, /mcp/journal   → TOOLS de agents/<domínio>/toolset.py
+    │   /mcp/marin, /mcp/mai, /mcp/komi, /mcp/lucy, /mcp/journal, /mcp/yato   → TOOLS de agents/<domínio>/toolset.py
     └── /mcp/calendar                                              → mcp_servers/calendar (Google Calendar)
 
 scheduler/  (makima-scheduler — jobs agendados)
@@ -106,7 +108,7 @@ coordinator/main.py  (python-telegram-bot, sessões por domínio)
     ↓
 coordinator/agent.py  (Makima — Agent ADK)
     ├── nami_agent, kaguya_agent, kurisu_agent, frieren_agent, akane_agent,
-    │   marin_agent, mai_agent, komi_agent, lucy_agent, violet_agent   → mesmos agentes de agents/*
+    │   marin_agent, mai_agent, komi_agent, lucy_agent, violet_agent, yato_agent   → mesmos agentes de agents/*
     └── kaguya_agent também fala Google Calendar via MCP stdio          [mcp_servers/calendar]
 ```
 
@@ -277,19 +279,28 @@ makima_personal_agent/
 │   │   ├── agent.py     # mai_agent — singleton
 │   │   ├── schema_pg.sql # schema das 4 tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, schema, TMDB Bearer, personalidade
-│   └── journal/         # diário (Violet) — sub-agente ADK completo + webapp — spec 064 ✅
+│   ├── journal/         # diário (Violet) — sub-agente ADK completo + webapp — spec 064 ✅
+│   │   ├── __init__.py
+│   │   ├── tools.py     # PostgreSQL (pages, bullets, mentions, emoções, cartas) — cria tabelas sob demanda
+│   │   ├── toolset.py   # TOOLS: list[Callable] — reaproveitado por mcp_servers/makima — spec 064
+│   │   ├── agent.py     # violet_agent — singleton, personalidade Auto Memory Doll
+│   │   └── CLAUDE.md    # tools, schema, personalidade, integração com o webapp
+│   └── yato/            # agente de viagens — spec 066 ✅ backend + webapp
 │       ├── __init__.py
-│       ├── tools.py     # PostgreSQL (pages, bullets, mentions, emoções, cartas) — cria tabelas sob demanda
-│       ├── toolset.py   # TOOLS: list[Callable] — reaproveitado por mcp_servers/makima — spec 064
-│       ├── agent.py     # violet_agent — singleton, personalidade Auto Memory Doll
-│       └── CLAUDE.md    # tools, schema, personalidade, integração com o webapp
+│       ├── tools.py            # fachada: trips, roteiro, checklist, orçamento + cross-agent Nami
+│       ├── tools_mobility.py   # dossiê de mobilidade + protocolo de 7 passos + estratégia + apps
+│       ├── comfort_matrix.py   # motor PURO (sem banco): matriz ANTT + fila de ROI
+│       ├── toolset.py          # TOOLS: list[Callable] — reaproveitado por mcp_servers/makima
+│       ├── agent.py            # yato_agent — singleton, personalidade Yato (Noragami)
+│       ├── schema_pg.sql       # schema das 8 tabelas PostgreSQL
+│       └── CLAUDE.md           # tools, schema, personalidade, cross-agent Nami
 ├── mcp_servers/
 │   ├── __init__.py
 │   ├── calendar/
 │   │   ├── __init__.py
 │   │   └── server.py    # servidor MCP FastMCP — Google Calendar (leitura todos, escrita só principal)
 │   └── makima/           # host MCP HTTP multi-domínio (makima-mcp) — spec 064 E1/E2 ✅ em produção
-│       ├── registry.py   # DOMAINS: dict[str, list[Callable]] — nami, kaguya (cresce na E6)
+│       ├── registry.py   # DOMAINS: dict[str, list[Callable]] — 11 domínios (nami…yato)
 │       ├── app.py        # host Starlette: um FastMCP por domínio sob /mcp/<domínio> + /mcp/calendar
 │       ├── auth.py       # middleware bearer token (MAKIMA_MCP_TOKEN)
 │       ├── legacy.py     # tool perguntar_makima_legado() — roda o Runner ADK p/ domínios não migrados
@@ -300,7 +311,8 @@ makima_personal_agent/
 │   ├── config.yaml        # template: mcp_servers, model provider, canais
 │   ├── skills/
 │   │   ├── nami-financas/SKILL.md
-│   │   └── kaguya-tarefas/SKILL.md
+│   │   ├── kaguya-tarefas/SKILL.md
+│   │   └── yato-viagens/SKILL.md
 │   └── CLAUDE.md          # como ativar com segurança (app Dokploy separada, cutover do Telegram)
 ├── scheduler/           # agendador de jobs recorrentes (container makima-scheduler) — APScheduler
 │   ├── __init__.py
@@ -322,6 +334,7 @@ makima_personal_agent/
 │   ├── import_letterboxd_csv.py # importação one-time do CSV histórico do Letterboxd
 │   ├── backup_postgres.py     # pg_dump → Google Cloud Storage (agendado pelo scheduler/ — job diário)
 │   ├── send_lucy_digest.py    # digest matinal de emails (Lucy) — agendado pelo scheduler/ (spec 032)
+│   ├── seed_mobility_apps.py  # semeia agents/yato/mobility_apps a partir do research.md — spec 066
 │   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)
 │   └── .gitignore             # exclui client_secret.json do git
 ├── docs/                    # organizada por tipo — ver docs/README.md (mapa completo)
@@ -471,5 +484,5 @@ Use a skill `obsidian-vault` para consultar os caminhos corretos e atualizar a d
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/064-hermes-multicanal/plan.md
+at specs/066-travel-agent/plan.md
 <!-- SPECKIT END -->

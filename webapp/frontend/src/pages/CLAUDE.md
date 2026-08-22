@@ -1,6 +1,6 @@
 ## Módulo: webapp/frontend/src/pages
 
-Nove Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
+Dez Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
 
 ---
 
@@ -16,6 +16,7 @@ Nove Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
 | `marin/` | `MarinShell.tsx` | `marinApi` em `marin/marinApi.ts` | `marin.css` | `/animes/*` |
 | `mai/` | `MaiShell.tsx` | `maiApi` em `mai/maiApi.ts` | `mai.css` | `/series/*` |
 | `komi/` | `KomiShell.tsx` | `komiApi` em `komi/komiApi.ts` | `komi.css` | `/people/*` |
+| `yato/` | `YatoShell.tsx` | `yatoApi` em `yato/yatoApi.ts` | `yato.css` | `/travel/*` |
 | `makima/` | `MakimaShell.tsx` | `makimaApi` em `makima/makimaApi.ts` | `makima.css` | `/` (exata, tela cheia) |
 | raiz (`pages/*.tsx`) | — (layout global) | `api.*` de `lib/api.ts` | global CSS | `/transactions`, `/accounts`, etc. (legado) |
 
@@ -31,7 +32,7 @@ Nunca misturar: código de Shell não chama componentes do `Layout`; páginas da
 
 ### CSS: isolamento por domínio
 
-Cada Shell tem seu próprio arquivo CSS com tokens OKLCH (`--garnet`, `--sapphire`, etc.) declarados dentro de um seletor de escopo — a classe raiz do Shell (`.vl-app`, `.nami-app`, `.frieren-shell`, `.kg-app`, `.akane-shell`, `.marin-shell`, `.mai-shell`, `.km-app`, `.mkA`). Tokens de um domínio **não são visíveis** no outro.
+Cada Shell tem seu próprio arquivo CSS com tokens OKLCH (`--garnet`, `--sapphire`, etc.) declarados dentro de um seletor de escopo — a classe raiz do Shell (`.vl-app`, `.nami-app`, `.frieren-shell`, `.kg-app`, `.akane-shell`, `.marin-shell`, `.mai-shell`, `.km-app`, `.yato-shell`, `.mkA`). Tokens de um domínio **não são visíveis** no outro.
 
 > **Atenção (vazamento conhecido):** `violet.css` tem regras globais (não escopadas) e `mai.css`
 > tem classes genéricas (`.hero`, `.page`) que vazam entre shells no bundle único do Vite.
@@ -79,7 +80,7 @@ fetch('/api/journal/heatmap?year=2026', { credentials: 'include' })
 └── ui/                  # primitivos visuais (charts, icons, etc.)
 ```
 
-`violetApi` e `booksApi` ficam em `lib/api.ts` por serem menores; todos os outros domínios têm arquivo de API próprio dentro da sua pasta (`nami/namiApi.ts`, `kaguya/kaguyaApi.ts`, `akane/akaneApi.ts`, `marin/marinApi.ts`, `mai/maiApi.ts`, `komi/komiApi.ts`, `makima/makimaApi.ts`).
+`violetApi` e `booksApi` ficam em `lib/api.ts` por serem menores; todos os outros domínios têm arquivo de API próprio dentro da sua pasta (`nami/namiApi.ts`, `kaguya/kaguyaApi.ts`, `akane/akaneApi.ts`, `marin/marinApi.ts`, `mai/maiApi.ts`, `komi/komiApi.ts`, `yato/yatoApi.ts`, `makima/makimaApi.ts`).
 
 ---
 

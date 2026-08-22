@@ -40,6 +40,10 @@ SCHEMA_FILES = [
     # Histórico de emails classificados da Lucy (spec 032). 1 tabela:
     # lucy_emails (upsert idempotente por gmail_uid/X-GM-MSGID).
     "agents/lucy/schema_pg.sql",
+    # Viagens do Yato (spec 066). 8 tabelas: trips, trip_items,
+    # mobility_dossiers, mobility_checks, trip_mobility_snapshots,
+    # mobility_apps, trip_checklist_items, trip_budget_items.
+    "agents/yato/schema_pg.sql",
 ]
 
 

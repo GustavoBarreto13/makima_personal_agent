@@ -793,6 +793,58 @@ Contrato detalhado: `specs/014-pessoas/contracts/api-pessoas.md`.
 
 ---
 
+## Viagens (`/api/travel/*`)
+
+Todos os endpoints exigem autenticação. Chamam as tools do Yato (`agents/yato/tools.py` +
+`tools_mobility.py` + `comfort_matrix.py`). Rotas fixas (`/apps`, `/comfort`,
+`/dossiers/{uf}/{city}/...`) registradas antes de `/trips/{trip_id}` (padrão `series.py`).
+Contrato detalhado: `specs/066-travel-agent/contracts/api-travel.md`.
+
+### Viagens e roteiro
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/travel/trips` | Lista viagens com filtro e ordenação. | `?status=&sort=&limit=N` |
+| `POST` | `/api/travel/trips` | Cria uma viagem (status inicial `planejando`; devolve 201). | Body: `CreateTripBody` |
+| `GET` | `/api/travel/trips/{trip_id}` | Detalhe de uma viagem. | — |
+| `PATCH` | `/api/travel/trips/{trip_id}` | Atualiza campos; pode devolver `{"status": "orphans_pending", ...}` se datas mudarem com itens fora do intervalo. | Body: `UpdateTripBody` |
+| `POST` | `/api/travel/trips/{trip_id}/resolve-orphans` | Aplica mover/remover sobre os itens órfãos. | Body: `ResolveOrphansBody` |
+| `GET` | `/api/travel/trips/{trip_id}/itinerary` | Roteiro agrupado por dia, ordenado manhã→tarde→noite→posição. | — |
+| `POST` | `/api/travel/trips/{trip_id}/itinerary` | Adiciona item de roteiro (recusa data fora do intervalo; devolve 201). | Body: `AddItineraryItemBody` |
+| `PATCH` | `/api/travel/itinerary/{item_id}` | Atualiza campos de um item de roteiro. | Body: `UpdateItineraryItemBody` |
+| `DELETE` | `/api/travel/itinerary/{item_id}` | Remove um item de roteiro. | — |
+
+### Dossiê de mobilidade e apps regionais
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/travel/dossiers/{uf}/{city}` | Busca ou cria o dossiê da cidade — nunca pula pro veredito. | — |
+| `PUT` | `/api/travel/dossiers/{uf}/{city}/checks/{check_key}` | Registra o veredito de UM passo do protocolo. | Body: `UpsertCheckBody` |
+| `GET` | `/api/travel/dossiers/{uf}/{city}/strategy` | Estratégia de mobilidade consolidada a partir dos 7 checks. | — |
+| `GET` | `/api/travel/apps` | Apps de mobilidade candidatos — sempre "cobertura declarada — confirmar in-app". | `?uf=&city=` |
+
+### Checklist pré-viagem
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/travel/trips/{trip_id}/checklist` | Lista o checklist, opcionalmente filtrado por concluído. | `?done=true\|false` |
+| `POST` | `/api/travel/trips/{trip_id}/checklist` | Adiciona item manual (devolve 201). | Body: `AddChecklistItemBody` |
+| `PATCH` | `/api/travel/checklist/{item_id}` | Marca/desmarca e/ou renomeia um item. | Body: `UpdateChecklistItemBody` |
+| `POST` | `/api/travel/trips/{trip_id}/checklist/regenerate` | Gera itens a partir dos vereditos do dossiê (sem duplicar, sem contradizer). | — |
+
+### Matriz de conforto, orçamento e gastos (cross-agent Nami)
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/travel/comfort` | Recomendação de classe rodoviária ANTT — motor puro, sem persistência. | `?hours=&night=&profile=&has_ride_app=` |
+| `GET` | `/api/travel/trips/{trip_id}/budget` | Estimado, realizado e saldo por categoria + total. | — |
+| `PUT` | `/api/travel/trips/{trip_id}/budget` | Define/atualiza o estimado de uma ou mais categorias (upsert). | Body: `SetBudgetBody` |
+| `GET` | `/api/travel/trips/{trip_id}/expenses` | Lista os gastos já lançados (lê a Nami pelos `nami_transaction_ids`). | — |
+| `POST` | `/api/travel/trips/{trip_id}/expenses` | Registra um gasto e lança na Nami **na mesma transação** (devolve 201). | Body: `LogExpenseBody` |
+| `GET` | `/api/travel/trips/{trip_id}/readiness` | Atalho para a tela Início: checklist + dossiê + orçamento. | — |
+
+---
+
 ## Hub (`/api/hub/*`)
 
 Endpoint agregador da tela inicial (Makima · Hub, spec 023 — `specs/023-makima-hub/`).
@@ -800,4 +852,4 @@ Exige autenticação. Só **lê** dados: SQL direto via `run_select` ou tools j�
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/hub/summary` | Agrega 2 stats reais por agente para os 8 domínios (Nami, Frieren, Komi, Violet, Kaguya, Mai, Marin, Akane). Cada agente é calculado em try/except isolado — falha vira `null` naquela chave, resposta sempre 200. Valores já vêm formatados como string. Card da Nami: stat = saldo do mês, stat2 = score de saúde financeira 0–100 (spec 047, mesma tool `get_financial_health_score` da tela — isolado em try/except próprio). | — |
+| `GET` | `/api/hub/summary` | Agrega 2 stats reais por agente para 9 domínios (Nami, Frieren, Komi, Violet, Kaguya, Mai, Marin, Akane, Yato). Cada agente é calculado em try/except isolado — falha vira `null` naquela chave, resposta sempre 200. Valores já vêm formatados como string. Card da Nami: stat = saldo do mês, stat2 = score de saúde financeira 0–100 (spec 047, mesma tool `get_financial_health_score` da tela — isolado em try/except próprio). Card do Yato: stat = próxima viagem (Cidade/UF · DD/MM), stat2 = prontidão do dossiê (`get_trip_readiness`, spec 066). | — |

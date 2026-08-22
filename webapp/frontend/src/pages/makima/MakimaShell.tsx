@@ -7,7 +7,7 @@
  * todo o CSS do `makima.css` está escopado (zero vazamento para outros shells).
  *
  * Responsabilidades:
- *   - Renderizar o hero editorial + os 8 cards de agente (roster), fiéis ao handoff.
+ *   - Renderizar o hero editorial + os cards de agente (roster), fiéis ao handoff.
  *   - Buscar os stats reais uma única vez no mount via `makimaApi.getSummary()`.
  *   - Resolver cada stat com fallback gracioso "—" quando ausente/carregando/null.
  *   - Alternar e persistir o tema dark/light em localStorage.
@@ -98,7 +98,7 @@ export function MakimaShell() {
         <div className="top">
           <span className="b"><span className="dot" />{HERO_COPY.kicker}</span>
           <div className="topr">
-            <span>Hub · {AGENTS.length} agentes · 9 domínios</span>
+            <span>Hub · {AGENTS.length} agentes · 10 domínios</span>
             <button
               className="themetog"
               title="Alternar tema claro / escuro"

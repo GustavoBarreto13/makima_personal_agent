@@ -27,6 +27,7 @@ from webapp.backend.routers import animes as animes_router  # Marin — catálog
 from webapp.backend.routers import series as series_router  # Mai — catálogo de séries de TV (spec 022)
 from webapp.backend.routers import pessoas as pessoas_router  # Komi — identidade de pessoas (spec 014)
 from webapp.backend.routers import hub as hub_router  # Makima — hub agregador de stats (spec 023)
+from webapp.backend.routers import travel as travel_router  # Yato — viagens (spec 066)
 from webapp.backend.config import SESSION_SECRET
 
 # Cria a instância principal da aplicação FastAPI.
@@ -89,6 +90,11 @@ app.include_router(pessoas_router.router, prefix="/api/people", tags=["people"])
 # dos 8 domínios (Nami, Frieren, Komi, Violet, Kaguya, Mai, Marin, Akane) — spec 023.
 # Fica ANTES do catch-all SPA (@app.get("/{full_path:path}")) para não ser interceptado.
 app.include_router(hub_router.router, prefix="/api/hub", tags=["hub"])
+
+# --- Router de viagens (Yato) ---
+# Registra todos os endpoints do domínio de viagens sob /api/travel (spec 066)
+# Ex.: GET /api/travel/trips, GET /api/travel/dossiers/{uf}/{city}, GET /api/travel/comfort, etc.
+app.include_router(travel_router.router, prefix="/api/travel", tags=["travel"])
 
 # --- CORS (Cross-Origin Resource Sharing) ---
 # O navegador bloqueia requisições entre origens diferentes por segurança.
