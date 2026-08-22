@@ -16,16 +16,25 @@ interface BudgetScreenProps {
   trip: Trip
   onLogExpense: () => void
   reloadKey: number
+  onChanged: () => void
 }
 
-export function BudgetScreen({ trip, onLogExpense, reloadKey }: BudgetScreenProps) {
+export function BudgetScreen({ trip, onLogExpense, reloadKey, onChanged }: BudgetScreenProps) {
   const [budget, setBudget] = useState<BudgetResponse | null>(null)
   const [expenses, setExpenses] = useState<TripExpense[]>([])
 
-  useEffect(() => {
+  const load = () => {
     yatoApi.getBudget(trip.id).then(setBudget).catch(() => setBudget(null))
     yatoApi.listExpenses(trip.id).then(res => setExpenses(res.expenses)).catch(() => setExpenses([]))
-  }, [trip.id, reloadKey])
+  }
+  useEffect(load, [trip.id, reloadKey])
+
+  const handleDelete = async (e: TripExpense) => {
+    if (!window.confirm(`Remover o gasto "${e.description}" (${money(e.amount)})? A transação correspondente na Nami também será removida.`)) return
+    await yatoApi.deleteExpense(trip.id, e.nami_transaction_id)
+    onChanged()
+    load()
+  }
 
   if (!budget) return <div className="page"><p className="dim">Carregando orçamento…</p></div>
 
@@ -74,15 +83,21 @@ export function BudgetScreen({ trip, onLogExpense, reloadKey }: BudgetScreenProp
           {expenses.length === 0 && <p className="dim" style={{ padding: 16 }}>Nenhum gasto registrado ainda.</p>}
           {expenses.length > 0 && (
             <table className="exp-table">
-              <thead><tr><th>data</th><th>categoria</th><th>descrição</th><th className="num">valor</th><th></th></tr></thead>
+              <thead><tr><th>data</th><th>categoria</th><th>descrição</th><th className="num">valor</th><th></th><th></th></tr></thead>
               <tbody>
                 {expenses.map(e => (
-                  <tr key={e.id}>
+                  <tr key={e.nami_transaction_id}>
                     <td>{fmtBR(e.date)}</td>
                     <td>{CAT_LABEL[e.category]}</td>
                     <td style={{ fontFamily: 'var(--sans)' }}>{e.description}</td>
                     <td className="num">{money(e.amount)}</td>
                     <td><span className="nami-seal" title="lançada nas finanças (Nami) no ato do registro">→ Nami</span></td>
+                    <td>
+                      <button onClick={() => handleDelete(e)} title="Remover gasto"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', fontSize: 13, lineHeight: 1, padding: 0 }}>
+                        ✕
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

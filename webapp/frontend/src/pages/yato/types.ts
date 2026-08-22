@@ -165,13 +165,13 @@ export interface BudgetResponse {
 }
 
 export interface TripExpense {
-  id: string
-  trip_id?: string
+  // Sem `id` próprio — list_trip_expenses lê direto da tabela transactions da
+  // Nami; o identificador único da linha é nami_transaction_id.
   category: BudgetCategory
   amount: number
   description: string
   date: string
-  nami_transaction_id?: string | null
+  nami_transaction_id: string
 }
 
 export interface ComfortResponse {

@@ -23,9 +23,10 @@ interface TripDetailScreenProps {
   onAddItem: (tripId: string, day: string, period: Period) => void
   onShowToast: (msg: string) => void
   reloadKey: number
+  onChanged: () => void
 }
 
-export function TripDetailScreen({ tripId, onNav, onAddItem, onShowToast, reloadKey }: TripDetailScreenProps) {
+export function TripDetailScreen({ tripId, onNav, onAddItem, onShowToast, reloadKey, onChanged }: TripDetailScreenProps) {
   const [trip, setTrip] = useState<Trip | null>(null)
   const [days, setDays] = useState<ItineraryDay[]>([])
   const [dossier, setDossier] = useState<DossierResponse | null>(null)
@@ -105,10 +106,28 @@ export function TripDetailScreen({ tripId, onNav, onAddItem, onShowToast, reload
     }
   }
 
+  const handleDeleteTrip = async () => {
+    if (!window.confirm(`Excluir a viagem "${trip.title || trip.city + '/' + trip.state_uf}"? O roteiro, checklist e orçamento ficam preservados no histórico, mas a viagem some das suas listagens.`)) return
+    await yatoApi.deleteTrip(tripId)
+    onShowToast('Viagem excluída.')
+    onChanged()
+    onNav('trips')
+  }
+
+  const handleDeleteItem = async (itemId: string) => {
+    if (!window.confirm('Remover este item do roteiro?')) return
+    await yatoApi.deleteItineraryItem(itemId)
+    onChanged()
+    load()
+  }
+
   return (
     <div className="page">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
         <button className="btn btn-sm" onClick={() => onNav('trips')}><Icon name="arrowL" /> Viagens</button>
+        <button className="btn btn-sm" style={{ marginLeft: 'auto', color: 'var(--verdict-none)' }} onClick={handleDeleteTrip}>
+          <Icon name="x" /> Excluir viagem
+        </button>
       </div>
 
       {orphans && orphans.count > 0 && (
@@ -162,7 +181,9 @@ export function TripDetailScreen({ tripId, onNav, onAddItem, onShowToast, reload
         </div>
         <div className="board">
           {allDays.map(d => (
-            <DayColumn key={d.day_date} date={d.day_date} items={d.items} onAdd={(date, period) => onAddItem(tripId, date, period)} />
+            <DayColumn key={d.day_date} date={d.day_date} items={d.items}
+                       onAdd={(date, period) => onAddItem(tripId, date, period)}
+                       onDeleteItem={handleDeleteItem} />
           ))}
         </div>
       </div>

@@ -12,7 +12,7 @@ cross-agent, `log_trip_expense`, já expõe só a fachada pública) e o motor pu
 
 from agents.yato.tools import (
     # Viagens (US1)
-    create_trip, list_trips, get_trip, update_trip, resolve_trip_orphans,
+    create_trip, list_trips, get_trip, update_trip, resolve_trip_orphans, delete_trip,
     # Roteiro (US1)
     add_itinerary_item, list_itinerary, update_itinerary_item, delete_itinerary_item,
     # Dossiê de mobilidade (US2)
@@ -20,22 +20,22 @@ from agents.yato.tools import (
     suggest_mobility_apps,
     # Checklist pré-viagem (US3)
     list_checklist, add_checklist_item, set_checklist_item_done,
-    regenerate_checklist_from_dossier,
+    regenerate_checklist_from_dossier, delete_checklist_item,
     # Matriz economia × conforto (US4)
     recommend_comfort_class,
     # Orçamento e cross-agent Nami (US5)
-    set_trip_budget, get_trip_budget, log_trip_expense, get_trip_readiness,
-    list_trip_expenses,
+    set_trip_budget, get_trip_budget, log_trip_expense, delete_trip_expense,
+    get_trip_readiness, list_trip_expenses,
 )
 
 TOOLS = [
-    create_trip, list_trips, get_trip, update_trip, resolve_trip_orphans,
+    create_trip, list_trips, get_trip, update_trip, resolve_trip_orphans, delete_trip,
     add_itinerary_item, list_itinerary, update_itinerary_item, delete_itinerary_item,
     get_or_create_mobility_dossier, record_mobility_check, get_mobility_strategy,
     suggest_mobility_apps,
     list_checklist, add_checklist_item, set_checklist_item_done,
-    regenerate_checklist_from_dossier,
+    regenerate_checklist_from_dossier, delete_checklist_item,
     recommend_comfort_class,
-    set_trip_budget, get_trip_budget, log_trip_expense, get_trip_readiness,
-    list_trip_expenses,
+    set_trip_budget, get_trip_budget, log_trip_expense, delete_trip_expense,
+    get_trip_readiness, list_trip_expenses,
 ]

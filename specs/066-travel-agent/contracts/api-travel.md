@@ -100,6 +100,12 @@ novo intervalo, a resposta **não aplica a mudança de datas sozinha** — retor
 **Gatilho do snapshot** (FR-013a): se `status` for setado para `confirmada` pela primeira vez, o
 handler insere uma linha em `trip_mobility_snapshots` na mesma transação, antes de commitar.
 
+### `DELETE /api/travel/trips/{trip_id}`
+
+Remove a viagem (soft delete — `deleted=TRUE`). Roteiro, checklist e orçamento associados NÃO são
+apagados, ficam preservados para histórico (a viagem só some das listagens, `list_trips` filtra
+`deleted = FALSE`). **Response 200**: `{"status": "ok", "trip_id": "..."}`.
+
 ### `POST /api/travel/trips/{trip_id}/resolve-orphans`
 
 **Body**:
@@ -248,6 +254,10 @@ Sugestões de app por UF/cidade (FR-014, FR-015) — **nunca** veredito.
 
 **Body**: `UpdateChecklistItemBody { done: Optional[bool] = None, label: Optional[str] = None }`.
 
+### `DELETE /api/travel/checklist/{item_id}`
+
+Remove um item do checklist (hard delete). **Response 200**: `{"status": "ok", "item_id": "..."}`.
+
 ### `POST /api/travel/trips/{trip_id}/checklist/regenerate`
 
 Gera itens a partir dos vereditos do dossiê da cidade da viagem (FR-016), sem duplicar rótulo já
@@ -329,6 +339,12 @@ class LogExpenseBody(BaseModel):
 **Erros**: `400` com `conn.rollback()` no backend se a viagem não estiver com um gasto aplicável
 (Edge Cases: "gasto sem viagem em curso") ou se o lançamento na Nami falhar — **nada** é gravado
 dos dois lados (FR-021, US5 cenário 3).
+
+### `DELETE /api/travel/trips/{trip_id}/expenses/{nami_transaction_id}`
+
+Remove um gasto — reverte (soft delete) a transação na Nami **e** decrementa `actual` da
+categoria, na mesma transação PostgreSQL (simétrico ao `POST .../expenses`, mesma garantia de
+atomicidade). **Response 200**: `{"status": "ok", "trip_id": "...", "nami_transaction_id": "..."}`.
 
 ### `GET /api/travel/trips/{trip_id}/readiness`
 

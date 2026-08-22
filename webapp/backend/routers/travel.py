@@ -24,13 +24,13 @@ from pydantic import BaseModel
 from webapp.backend.deps import require_user
 
 from agents.yato.tools import (
-    create_trip, list_trips, get_trip, update_trip, resolve_trip_orphans,
+    create_trip, list_trips, get_trip, update_trip, resolve_trip_orphans, delete_trip,
     add_itinerary_item, list_itinerary, update_itinerary_item, delete_itinerary_item,
-    list_checklist, add_checklist_item, update_checklist_item,
+    list_checklist, add_checklist_item, update_checklist_item, delete_checklist_item,
     regenerate_checklist_from_dossier,
     recommend_comfort_class,
-    set_trip_budget, get_trip_budget, log_trip_expense, get_trip_readiness,
-    list_trip_expenses,
+    set_trip_budget, get_trip_budget, log_trip_expense, delete_trip_expense,
+    get_trip_readiness, list_trip_expenses,
 )
 from agents.yato.tools_mobility import (
     get_or_create_mobility_dossier, record_mobility_check, get_mobility_strategy,
@@ -256,6 +256,15 @@ def update_trip_endpoint(
     return _check_result(result)
 
 
+@router.delete("/trips/{trip_id}")
+def delete_trip_endpoint(
+    trip_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remove uma viagem (soft delete) — roteiro/checklist/orçamento ficam preservados."""
+    return _check_result(delete_trip(trip_id=trip_id))
+
+
 @router.post("/trips/{trip_id}/resolve-orphans")
 def resolve_orphans_endpoint(
     trip_id: str,
@@ -358,6 +367,15 @@ def update_checklist_item_endpoint(
     )
 
 
+@router.delete("/checklist/{item_id}")
+def delete_checklist_item_endpoint(
+    item_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remove um item do checklist."""
+    return _check_result(delete_checklist_item(item_id=item_id))
+
+
 @router.post("/trips/{trip_id}/checklist/regenerate")
 def regenerate_checklist_endpoint(
     trip_id: str,
@@ -411,6 +429,18 @@ def log_expense_endpoint(
             trip_id=trip_id, category=body.category, amount=body.amount,
             description=body.description, date=body.date,
         )
+    )
+
+
+@router.delete("/trips/{trip_id}/expenses/{nami_transaction_id}")
+def delete_expense_endpoint(
+    trip_id: str,
+    nami_transaction_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remove um gasto — reverte a transação na Nami e decrementa o realizado, atomicamente."""
+    return _check_result(
+        delete_trip_expense(trip_id=trip_id, nami_transaction_id=nami_transaction_id)
     )
 
 

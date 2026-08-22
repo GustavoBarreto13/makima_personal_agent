@@ -16,9 +16,10 @@ interface DayColumnProps {
   items: ItineraryItem[]
   onAdd: (date: string, period: Period) => void
   onItemClick?: (item: ItineraryItem) => void
+  onDeleteItem?: (itemId: string) => void
 }
 
-export function DayColumn({ date, items, onAdd, onItemClick }: DayColumnProps) {
+export function DayColumn({ date, items, onAdd, onItemClick, onDeleteItem }: DayColumnProps) {
   const d = parseLocalDate(date)
   const cost = items.reduce((a, i) => a + (i.cost_estimate || 0), 0)
 
@@ -36,7 +37,7 @@ export function DayColumn({ date, items, onAdd, onItemClick }: DayColumnProps) {
             <div className="period-k">{label}</div>
             {its.map((it, i) => (
               <div key={it.id} onClick={onItemClick ? () => onItemClick(it) : undefined} style={onItemClick ? { cursor: 'pointer' } : undefined}>
-                <ItineraryItemRow item={it} seam={i < its.length - 1} />
+                <ItineraryItemRow item={it} seam={i < its.length - 1} onDelete={onDeleteItem ? () => onDeleteItem(it.id) : undefined} />
               </div>
             ))}
             <button className="period-add" style={its.length > 0 ? { marginTop: 6 } : undefined} onClick={() => onAdd(date, k)}>

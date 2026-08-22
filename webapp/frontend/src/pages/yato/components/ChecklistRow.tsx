@@ -10,9 +10,10 @@ import type { TripChecklistItem } from '../types'
 interface ChecklistRowProps {
   item: TripChecklistItem
   onToggle: () => void
+  onDelete?: () => void
 }
 
-export function ChecklistRow({ item, onToggle }: ChecklistRowProps) {
+export function ChecklistRow({ item, onToggle, onDelete }: ChecklistRowProps) {
   return (
     <div className={'chk-row' + (item.done ? ' done' : '')}>
       <button className={'chk-box' + (item.done ? ' done' : '')} onClick={onToggle}
@@ -22,6 +23,12 @@ export function ChecklistRow({ item, onToggle }: ChecklistRowProps) {
             title={item.origin === 'dossie' ? 'item gerado por um passo do dossiê de mobilidade' : 'item criado à mão'}>
         {item.origin === 'dossie' ? 'do dossiê' : 'manual'}
       </span>
+      {onDelete && (
+        <button onClick={onDelete} title="Remover item"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', fontSize: 13, lineHeight: 1, padding: 0, marginLeft: 8 }}>
+          ✕
+        </button>
+      )}
     </div>
   )
 }

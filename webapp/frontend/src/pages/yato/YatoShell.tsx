@@ -211,6 +211,7 @@ export function YatoShell() {
             onAddItem={(tid, day, period) => setNewItem({ tripId: tid, day, period })}
             onShowToast={showToast}
             reloadKey={reloadKey}
+            onChanged={bump}
           />
         )
       }
@@ -225,7 +226,7 @@ export function YatoShell() {
         )
       case 'budget':
         return activeTrip
-          ? <BudgetScreen trip={activeTrip} onLogExpense={() => setLogExpOpen(true)} reloadKey={reloadKey} />
+          ? <BudgetScreen trip={activeTrip} onLogExpense={() => setLogExpOpen(true)} reloadKey={reloadKey} onChanged={bump} />
           : <div className="page"><p className="dim">Nenhuma viagem ativa.</p></div>
       case 'checklist':
         return activeTrip

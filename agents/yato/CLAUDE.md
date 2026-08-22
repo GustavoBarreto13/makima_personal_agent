@@ -125,6 +125,7 @@ Implementadas em `agents/yato/tools.py` (+ `tools_mobility.py`). Todas retornam
 | Tool | Descrição |
 |---|---|
 | `create_trip` / `list_trips` / `get_trip` / `update_trip` | CRUD de viagens; `update_trip` pode devolver `orphans_pending` |
+| `delete_trip` | Soft delete (`deleted=TRUE`) — roteiro/checklist/orçamento ficam preservados |
 | `resolve_trip_orphans` | Aplica mover/remover sobre itens órfãos de uma mudança de datas |
 | `add_itinerary_item` / `list_itinerary` / `update_itinerary_item` / `delete_itinerary_item` | Roteiro dia a dia |
 | `get_or_create_mobility_dossier` | Abre/retoma o dossiê da cidade — nunca pula pro veredito |
@@ -132,18 +133,25 @@ Implementadas em `agents/yato/tools.py` (+ `tools_mobility.py`). Todas retornam
 | `get_mobility_strategy` | Estratégia consolidada + passos pendentes |
 | `suggest_mobility_apps` | Apps regionais candidatos — sempre "cobertura declarada" |
 | `list_checklist` / `add_checklist_item` / `set_checklist_item_done` / `update_checklist_item` | Checklist |
+| `delete_checklist_item` | Remove um item do checklist (hard delete) |
 | `regenerate_checklist_from_dossier` | Gera itens a partir dos vereditos (sem duplicar, sem contradizer) |
 | `recommend_comfort_class` | Fachada sobre `comfort_matrix.recommend()` |
 | `set_trip_budget` / `get_trip_budget` / `list_trip_expenses` | Orçamento e histórico de gastos |
 | `log_trip_expense` | **Cross-agent** — lança na Nami atomicamente |
+| `delete_trip_expense` | **Cross-agent** — reverte a transação na Nami e decrementa `actual`, atomicamente (simétrico ao `log_trip_expense`) |
 | `get_trip_readiness` | Resumo para a tela Início |
 
 ---
 
-## Cross-agent: `log_trip_expense` (Yato → Nami)
+## Cross-agent: `log_trip_expense` / `delete_trip_expense` (Yato → Nami)
 
-Único ponto do domínio que escreve fora de suas próprias tabelas — mesmo padrão
-de `complete_payment_task` (Kaguya↔Nami):
+Únicos pontos do domínio que escrevem fora de suas próprias tabelas — mesmo padrão
+de `complete_payment_task` (Kaguya↔Nami). `delete_trip_expense` é simétrico ao
+`log_trip_expense`: em vez de chamar `create_transaction_on_cursor` (não existe
+`delete_transaction_on_cursor` na Nami), executa o mesmo `UPDATE ... SET deleted
+= TRUE` que `agents/nami/tools.py::delete_transaction` faz, direto no cursor
+compartilhado — decrementa `actual` e remove o id de `nami_transaction_ids` na
+mesma transação.
 
 ```python
 with get_conn() as conn:

@@ -62,6 +62,13 @@ export function ChecklistScreen({ trip, onShowToast, reloadKey, onChanged }: Che
     onChanged()
   }
 
+  const remove = async (item: TripChecklistItem) => {
+    if (!window.confirm(`Remover "${item.label}" do checklist?`)) return
+    setItems(prev => prev.filter(i => i.id !== item.id))
+    await yatoApi.deleteChecklistItem(item.id)
+    onChanged()
+  }
+
   const addItem = async (group: string, label: string) => {
     await yatoApi.addChecklistItem(trip.id, { label, category: group === DEFAULT_GROUP ? null : group })
     setDrafts(d => ({ ...d, [group]: '' }))
@@ -101,7 +108,7 @@ export function ChecklistScreen({ trip, onShowToast, reloadKey, onChanged }: Che
           <div className="chk-group" key={g}>
             <div className="chk-glabel">{GROUP_LABEL[g] || g}</div>
             <div className="card">
-              {groupItems.map(it => <ChecklistRow key={it.id} item={it} onToggle={() => toggle(it)} />)}
+              {groupItems.map(it => <ChecklistRow key={it.id} item={it} onToggle={() => toggle(it)} onDelete={() => remove(it)} />)}
               <div className="chk-add">
                 <input className="inp" placeholder="adicionar item…" value={drafts[g] || ''}
                        onChange={e => setDrafts(d => ({ ...d, [g]: e.target.value }))}

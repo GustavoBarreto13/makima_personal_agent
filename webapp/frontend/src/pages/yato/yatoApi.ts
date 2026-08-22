@@ -114,6 +114,9 @@ export const yatoApi = {
   resolveOrphans: (tripId: string, body: ResolveOrphansBody) =>
     api.post<OkResponse>(`/api/travel/trips/${tripId}/resolve-orphans`, body),
 
+  deleteTrip: (tripId: string) =>
+    api.del<OkResponse>(`/api/travel/trips/${tripId}`),
+
   // ── Roteiro ──────────────────────────────────────────────────────────────
   listItinerary: (tripId: string) =>
     api.get<{ days: ItineraryDay[] }>(`/api/travel/trips/${tripId}/itinerary`),
@@ -176,6 +179,9 @@ export const yatoApi = {
       `/api/travel/trips/${tripId}/checklist/regenerate`, {},
     ),
 
+  deleteChecklistItem: (itemId: string) =>
+    api.del<OkResponse>(`/api/travel/checklist/${itemId}`),
+
   // ── Orçamento e gastos ───────────────────────────────────────────────────
   getBudget: (tripId: string) =>
     api.get<BudgetResponse>(`/api/travel/trips/${tripId}/budget`),
@@ -190,6 +196,9 @@ export const yatoApi = {
     api.post<{ status: string; budget_item: { category: string; actual: number }; nami_transaction_id: string }>(
       `/api/travel/trips/${tripId}/expenses`, body,
     ),
+
+  deleteExpense: (tripId: string, namiTransactionId: string) =>
+    api.del<OkResponse>(`/api/travel/trips/${tripId}/expenses/${namiTransactionId}`),
 
   getReadiness: (tripId: string) =>
     api.get<TripReadiness>(`/api/travel/trips/${tripId}/readiness`),

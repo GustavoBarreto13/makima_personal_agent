@@ -20,9 +20,10 @@ export const MODE_ORDER: TransportMode[] = ['a_pe', 'transporte_publico', 'app_c
 interface ItineraryItemProps {
   item: ItineraryItemT
   seam?: boolean
+  onDelete?: () => void
 }
 
-export function ItineraryItemRow({ item, seam }: ItineraryItemProps) {
+export function ItineraryItemRow({ item, seam, onDelete }: ItineraryItemProps) {
   const mode = item.transport_mode || 'outro'
   return (
     <div className="itin">
@@ -33,6 +34,12 @@ export function ItineraryItemRow({ item, seam }: ItineraryItemProps) {
           {item.start_time && <span className="itin-time">{item.start_time}</span>}
           <span className="itin-title">{item.title}</span>
           {item.cost_estimate != null && <span className="itin-cost">{money(item.cost_estimate)}</span>}
+          {onDelete && (
+            <button onClick={e => { e.stopPropagation(); onDelete() }} title="Remover item"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', fontSize: 13, lineHeight: 1, padding: 0, flexShrink: 0 }}>
+              ✕
+            </button>
+          )}
         </div>
         {item.address && <div className="itin-addr">{item.address}</div>}
       </div>

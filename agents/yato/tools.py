@@ -378,6 +378,27 @@ def resolve_trip_orphans(
     return _ok(action=action, affected=len(item_ids))
 
 
+def delete_trip(trip_id: str) -> dict:
+    """Remove uma viagem (soft delete — `deleted=TRUE`).
+
+    Não apaga roteiro/checklist/orçamento associados (ficam órfãos no banco,
+    preservados para histórico/auditoria — mesmo padrão de soft delete usado
+    em `series.py`/`akane` para o catálogo). A viagem some das listagens
+    (`list_trips` filtra `deleted = FALSE`).
+
+    Args:
+        trip_id: UUID da viagem.
+
+    Returns:
+        dict com status='ok' e 'trip_id', ou status='error' se não encontrada.
+    """
+    rows = run_select("SELECT id FROM trips WHERE id = %s AND deleted = FALSE", (trip_id,))
+    if not rows:
+        return _err(f"Viagem '{trip_id}' não encontrada.")
+    run_dml("UPDATE trips SET deleted = TRUE, updated_at = NOW() WHERE id = %s", (trip_id,))
+    return _ok(trip_id=trip_id)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # Roteiro (US1)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -615,6 +636,22 @@ def update_checklist_item(
 
     item = run_select("SELECT * FROM trip_checklist_items WHERE id = %s", (item_id,))[0]
     return _ok(item=_serialize_checklist_item(item))
+
+
+def delete_checklist_item(item_id: str) -> dict:
+    """Remove um item do checklist (hard delete — sem histórico a preservar aqui).
+
+    Args:
+        item_id: UUID do item de checklist.
+
+    Returns:
+        dict com status='ok' e 'item_id', ou status='error' se não encontrado.
+    """
+    rows = run_select("SELECT id FROM trip_checklist_items WHERE id = %s", (item_id,))
+    if not rows:
+        return _err(f"Item de checklist '{item_id}' não encontrado.")
+    run_dml("DELETE FROM trip_checklist_items WHERE id = %s", (item_id,))
+    return _ok(item_id=item_id)
 
 
 def regenerate_checklist_from_dossier(trip_id: str) -> dict:
@@ -905,6 +942,63 @@ def log_trip_expense(
         budget_item={"category": category, "actual": float(budget_row["actual"])},
         nami_transaction_id=tx_id,
     )
+
+
+def delete_trip_expense(trip_id: str, nami_transaction_id: str) -> dict:
+    """Remove um gasto lançado — reverte a transação na Nami e decrementa o
+    realizado da categoria, atomicamente (mesma garantia de `log_trip_expense`:
+    se qualquer lado falhar, `conn.rollback()`, nada muda dos dois lados).
+
+    Args:
+        trip_id: UUID da viagem.
+        nami_transaction_id: ID da transação na Nami (retornado por
+            `log_trip_expense`/`list_trip_expenses`).
+
+    Returns:
+        dict com status='ok', ou status='error' se o gasto não pertence a essa
+        viagem ou já foi removido.
+    """
+    rows = run_select(
+        "SELECT category FROM trip_budget_items WHERE trip_id = %s AND %s = ANY(nami_transaction_ids)",
+        (trip_id, nami_transaction_id),
+    )
+    if not rows:
+        return _err("Gasto não encontrado nesta viagem.")
+    category = rows[0]["category"]
+
+    tx_rows = run_select(
+        "SELECT valor FROM transactions WHERE id = %s AND deleted = FALSE",
+        (nami_transaction_id,),
+    )
+    if not tx_rows:
+        return _err("Transação já havia sido removida na Nami.")
+    amount = float(tx_rows[0]["valor"])
+
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE transactions SET deleted = TRUE, updated_at = NOW() "
+                    "WHERE id = %s AND deleted = FALSE",
+                    (nami_transaction_id,),
+                )
+                if cur.rowcount == 0:
+                    conn.rollback()
+                    return _err("Transação já havia sido removida na Nami.")
+                cur.execute(
+                    """
+                    UPDATE trip_budget_items
+                    SET actual = actual - %s,
+                        nami_transaction_ids = array_remove(nami_transaction_ids, %s),
+                        updated_at = NOW()
+                    WHERE trip_id = %s AND category = %s
+                    """,
+                    (amount, nami_transaction_id, trip_id, category),
+                )
+    except Exception as exc:
+        return _err(f"Erro ao remover o gasto: {exc}")
+
+    return _ok(trip_id=trip_id, nami_transaction_id=nami_transaction_id)
 
 
 def get_trip_readiness(trip_id: str) -> dict:
