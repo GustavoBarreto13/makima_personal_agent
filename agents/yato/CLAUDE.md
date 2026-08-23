@@ -156,7 +156,7 @@ mesma transação.
 ```python
 with get_conn() as conn:
     with conn.cursor() as cur:
-        tx = create_transaction_on_cursor(cur, ..., source="yato")  # import lazy
+        tx = create_transaction_on_cursor(cur, ..., conta=account, source="yato")  # import lazy
         if tx["status"] != "ok":
             conn.rollback(); return {"status": "error", ...}
         cur.execute("UPDATE trip_budget_items SET actual = actual + ... WHERE ...")
@@ -169,6 +169,13 @@ Mapa de categoria Yato → Nami (fixo):
 | `alimentacao` | `Alimentacao` |
 | `transporte_ida` / `transporte_volta` / `mobilidade_local` | `Transporte` |
 | `hospedagem` / `passeios` / `outros` | `Viagem` |
+
+`account` é parâmetro **obrigatório** de `log_trip_expense` — sem default financeiro, mesma
+regra de `complete_payment_task` da Kaguya (agente confirma a conta com o usuário antes de
+chamar; webapp usa um seletor no `LogExpenseModal`, populado via `namiApi.getAccounts()`).
+Bug de produção corrigido: a versão original resolvia silenciosamente para uma conta fixa
+`"Generico"` que nunca existiu nas contas reais (`Itaú`/`Nubank`) — todo lançamento de gasto
+falhava. Achado ao validar `delete_trip_expense` ao vivo via MCP em produção.
 
 Falha em qualquer lado (categoria Nami inválida, conta inexistente) ⇒
 `conn.rollback()` ⇒ nada é gravado dos dois lados.

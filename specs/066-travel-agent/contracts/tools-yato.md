@@ -40,6 +40,11 @@ em vez de aplicar a mudança (FR-005) — chamador (agente ou router) decide o p
 ### `resolve_trip_orphans(trip_id: str, action: str, item_ids: list[str], new_day_date: str | None = None) -> dict`
 `action` = `"move"` (exige `new_day_date`) ou `"remove"`.
 
+### `delete_trip(trip_id: str) -> dict`
+Soft delete (`deleted=TRUE`) — roteiro/checklist/orçamento ficam preservados no banco, só saem das
+listagens (`list_trips` filtra `deleted = FALSE`). Recurso adicionado após o escopo original da
+spec (pedido do usuário: "tudo que é criado tem que ter a opção de excluir também").
+
 ---
 
 ## Roteiro
@@ -90,6 +95,9 @@ Retorna apps candidatos rotulados "cobertura declarada — confirmar in-app" (FR
 Gera itens a partir dos vereditos do dossiê da cidade da viagem, sem duplicar `label` já existente
 e sem contradizer vereditos `ausente`/`inconclusivo` (FR-016, SC-008).
 
+### `delete_checklist_item(item_id: str) -> dict`
+Hard delete — sem histórico a preservar. Recurso adicionado após o escopo original da spec.
+
 ---
 
 ## Matriz economia × conforto (motor puro)
@@ -110,21 +118,33 @@ Cada item: `{"category": ..., "estimated": ...}`. Upsert por `(trip_id, category
 ### `get_trip_budget(trip_id: str) -> dict`
 Estimado, realizado e saldo por categoria + total, com categorias estouradas destacadas (FR-022).
 
-### `log_trip_expense(trip_id: str, category: str, amount: float, description: str, date: str | None = None) -> dict`
+### `log_trip_expense(trip_id: str, category: str, amount: float, description: str, account: str, date: str | None = None) -> dict`
 **A tool cross-domain.** Internamente:
 1. Resolve a categoria Nami a partir do mapa Yato→Nami (`plan.md` D6).
 2. `with get_conn() as conn: with conn.cursor() as cur:` — abre UM cursor compartilhado.
 3. Upsert em `trip_budget_items` (incrementa `actual`, acrescenta o id da transação a
    `nami_transaction_ids`) via `_log_trip_expense_on_cursor(cur, ...)` (privada, não exportada).
 4. Chama `agents.nami.tools.create_transaction_on_cursor(cur, name=description, valor=amount,
-   tipo="Despesa", categoria=<categoria Nami mapeada>, source="yato")` — import lazy, dentro da
-   função (evita acoplar o startup do Yato à Nami).
+   tipo="Despesa", categoria=<categoria Nami mapeada>, conta=account, source="yato")` — import lazy,
+   dentro da função (evita acoplar o startup do Yato à Nami).
 5. Se qualquer uma das duas escritas falhar, `conn.rollback()` e retorna
    `{"status": "error", "message": ...}` — nada é gravado dos dois lados (FR-021, SC-006).
 6. Sucesso: `{"status": "ok", "budget_item": {...}, "nami_transaction_id": "..."}`.
 
+`account` é **obrigatório, sem default financeiro** — mesma regra de `complete_payment_task`
+(Kaguya↔Nami): quem chama (agente ou webapp) confirma a conta antes de chamar. Bug de produção
+corrigido nesta revisão: a versão original tentava resolver silenciosamente uma conta fixa
+`"Generico"` que nunca existiu de fato nas contas reais do usuário (`Itaú`/`Nubank`), quebrando
+todo lançamento de gasto de viagem — achado ao validar `delete_trip_expense` ao vivo via MCP.
+
 Este é o único ponto do domínio Yato que escreve fora de suas próprias tabelas — documentado também
 em `agents/yato/CLAUDE.md` (exigido pela Constitution, Principle I).
+
+### `delete_trip_expense(trip_id: str, nami_transaction_id: str) -> dict`
+Simétrico a `log_trip_expense` — reverte a transação na Nami (`transactions.deleted = TRUE`) e
+decrementa `trip_budget_items.actual`/remove o id de `nami_transaction_ids`, no mesmo cursor
+compartilhado. Mesma garantia de atomicidade: qualquer falha → `conn.rollback()`, nada muda dos
+dois lados. Recurso adicionado após o escopo original da spec.
 
 ### `get_trip_readiness(trip_id: str) -> dict`
 Combina checklist + dossiê + orçamento definido num resumo único para a tela Início.

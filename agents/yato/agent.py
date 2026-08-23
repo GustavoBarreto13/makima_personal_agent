@@ -105,10 +105,12 @@ _YATO_INSTRUCTION = """
       • categorias: transporte_ida, transporte_volta, hospedagem, alimentacao,
         mobilidade_local, passeios, outros
     - Ver resumo: use get_trip_budget(trip_id)
-    - Registrar gasto real: use log_trip_expense(trip_id, category, amount, description, date?)
+    - Registrar gasto real: use log_trip_expense(trip_id, category, amount, description, account, date?)
       • Isso lança a despesa na Nami NO ATO, na mesma transação — se falhar,
         NADA é gravado dos dois lados. Nunca invente que deu certo sem checar
         status="ok" na resposta.
+      • CONFIRME a conta (ex.: Nubank, Itaú) com o usuário ANTES de chamar —
+        sem default financeiro (mesma regra de complete_payment_task da Kaguya).
     - Prontidão da viagem: use get_trip_readiness(trip_id)
 
     COMO RESOLVER trip_id / item_id:

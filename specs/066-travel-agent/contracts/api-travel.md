@@ -328,6 +328,7 @@ class LogExpenseBody(BaseModel):
                             # mobilidade_local | passeios | outros
     amount: float
     description: str
+    account: str            # nome da conta Nami (ex.: "Nubank") — obrigatório, sem default
     date: Optional[str] = None   # default: hoje em America/Sao_Paulo
 ```
 

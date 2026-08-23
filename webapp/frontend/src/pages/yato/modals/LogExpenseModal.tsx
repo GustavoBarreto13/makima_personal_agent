@@ -10,11 +10,14 @@ import { Modal } from './Modal'
 import type { BudgetCategory } from '../types'
 import { CAT_LABEL } from '../components/BudgetBar'
 import { todayLocalISO } from '../dateUtils'
+import { namiApi } from '../../nami/namiApi'
+import type { Account } from '../../nami/types'
 
 export interface LogExpenseForm {
   cat: BudgetCategory
   v: string
   desc: string
+  account: string
   date: string
 }
 
@@ -29,10 +32,18 @@ interface LogExpenseModalProps {
 }
 
 export function LogExpenseModal({ open, onClose, onSave }: LogExpenseModalProps) {
-  const [f, setF] = useState<LogExpenseForm>({ cat: 'alimentacao', v: '', desc: '', date: todayLocalISO() })
-  useEffect(() => { if (open) setF({ cat: 'alimentacao', v: '', desc: '', date: todayLocalISO() }) }, [open])
+  const [f, setF] = useState<LogExpenseForm>({ cat: 'alimentacao', v: '', desc: '', account: '', date: todayLocalISO() })
+  const [accounts, setAccounts] = useState<Account[]>([])
+  useEffect(() => {
+    if (!open) return
+    setF({ cat: 'alimentacao', v: '', desc: '', account: '', date: todayLocalISO() })
+    namiApi.getAccounts().then(res => {
+      setAccounts(res.accounts)
+      if (res.accounts.length > 0) setF(p => ({ ...p, account: res.accounts[0].name }))
+    }).catch(() => setAccounts([]))
+  }, [open])
   const set = <K extends keyof LogExpenseForm>(k: K, x: LogExpenseForm[K]) => setF(p => ({ ...p, [k]: x }))
-  const ok = Number(f.v) > 0 && f.desc.trim().length > 0
+  const ok = Number(f.v) > 0 && f.desc.trim().length > 0 && f.account.trim().length > 0
 
   return (
     <Modal open={open} title="Registrar gasto" icon="cifrao" onClose={onClose}
@@ -50,8 +61,15 @@ export function LogExpenseModal({ open, onClose, onSave }: LogExpenseModalProps)
       </div>
       <div className="field"><label>descrição</label>
         <input className="inp" value={f.desc} onChange={e => set('desc', e.target.value)} placeholder="Mototáxi até a trilha" /></div>
-      <div className="field"><label>data</label>
-        <input className="inp" type="date" value={f.date} onChange={e => set('date', e.target.value)} /></div>
+      <div className="row2">
+        <div className="field"><label>conta</label>
+          <select className="sel" value={f.account} onChange={e => set('account', e.target.value)}>
+            {accounts.length === 0 && <option value="">nenhuma conta cadastrada</option>}
+            {accounts.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+          </select></div>
+        <div className="field"><label>data</label>
+          <input className="inp" type="date" value={f.date} onChange={e => set('date', e.target.value)} /></div>
+      </div>
     </Modal>
   )
 }

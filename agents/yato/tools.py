@@ -861,6 +861,7 @@ def log_trip_expense(
     category: str,
     amount: float,
     description: str,
+    account: str,
     date: Optional[str] = None,
 ) -> dict:
     """Registra um gasto realizado E lança a despesa na Nami, atomicamente (FR-021).
@@ -871,12 +872,19 @@ def log_trip_expense(
     exceção. Se qualquer lado falhar, `conn.rollback()` — nada é gravado dos
     dois lados (SC-006).
 
+    `account` é obrigatório e sem default financeiro (mesma regra de
+    `complete_payment_task` da Kaguya — nunca inventar conta silenciosamente).
+    Nomes reais vêm de `agents.nami.tools.list_accounts()`; a resolução por
+    prefixo é feita pela própria Nami (`_resolve_account`).
+
     Args:
         trip_id: UUID da viagem.
         category: transporte_ida | transporte_volta | hospedagem | alimentacao |
             mobilidade_local | passeios | outros.
         amount: Valor do gasto (> 0).
         description: Descrição do gasto — vira o nome da transação na Nami.
+        account: Nome da conta Nami usada no gasto (ex.: "Nubank"). Confirme
+            com o usuário antes de chamar — sem defaults financeiros.
         date: Data do gasto (AAAA-MM-DD). Default: hoje em America/Sao_Paulo.
 
     Returns:
@@ -890,6 +898,8 @@ def log_trip_expense(
         )
     if amount is None or amount <= 0:
         return _err("O valor do gasto deve ser maior que zero.")
+    if not account or not account.strip():
+        return _err("Informe a conta usada no gasto (ex.: Nubank, Itaú) — sem default financeiro.")
 
     trip_rows = run_select("SELECT id FROM trips WHERE id = %s AND deleted = FALSE", (trip_id,))
     if not trip_rows:
@@ -907,7 +917,7 @@ def log_trip_expense(
             with conn.cursor() as cur:
                 tx = create_transaction_on_cursor(
                     cur, name=description, valor=amount, tipo="Despesa",
-                    categoria=nami_category, data=date_val, source="yato",
+                    categoria=nami_category, conta=account, data=date_val, source="yato",
                 )
                 if tx.get("status") != "ok":
                     conn.rollback()

@@ -171,7 +171,7 @@ export function YatoShell() {
 
   const saveExpense = async (f: LogExpenseForm) => {
     if (!activeTrip) return
-    await yatoApi.logExpense(activeTrip.id, { category: f.cat, amount: Number(f.v), description: f.desc, date: f.date })
+    await yatoApi.logExpense(activeTrip.id, { category: f.cat, amount: Number(f.v), description: f.desc, account: f.account, date: f.date })
     setLogExpOpen(false)
     showToast('Gasto registrado e espelhado nas finanças.')
     bump()

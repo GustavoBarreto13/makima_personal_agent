@@ -145,6 +145,23 @@ def test_resolve_trip_orphans_move_then_apply_dates(db):
     assert applied["trip"]["end_date"] == "2026-09-13"
 
 
+def test_delete_trip_soft_deletes(db):
+    trip_id = _create_trip()["trip"]["id"]
+    r = Y.delete_trip(trip_id)
+    assert r["status"] == "ok"
+    assert r["trip_id"] == trip_id
+
+    assert trip_id not in {t["id"] for t in Y.list_trips()["trips"]}
+    # registro persiste no banco (soft delete) — não é apagado de verdade
+    row = run_select("SELECT deleted FROM trips WHERE id = %s", (trip_id,))
+    assert row[0]["deleted"] is True
+
+
+def test_delete_trip_not_found_returns_error(db):
+    r = Y.delete_trip("00000000-0000-0000-0000-000000000000")
+    assert r["status"] == "error"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # US2 — Dossiê de mobilidade
 # ─────────────────────────────────────────────────────────────────────────────
@@ -269,6 +286,23 @@ def test_checklist_progress_persists(db):
     assert items[0]["id"] == item_id
 
 
+def test_delete_checklist_item_hard_deletes(db):
+    trip_id = _create_trip()["trip"]["id"]
+    item_id = Y.add_checklist_item(trip_id, "Baixar mapa offline")["item"]["id"]
+
+    r = Y.delete_checklist_item(item_id)
+    assert r["status"] == "ok"
+    assert r["item_id"] == item_id
+    assert Y.list_checklist(trip_id)["items"] == []
+    # hard delete — nem soft-deletado, some da tabela de verdade
+    assert run_select("SELECT id FROM trip_checklist_items WHERE id = %s", (item_id,)) == []
+
+
+def test_delete_checklist_item_not_found_returns_error(db):
+    r = Y.delete_checklist_item("00000000-0000-0000-0000-000000000000")
+    assert r["status"] == "error"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # US5 — Orçamento e cross-agent Nami
 # ─────────────────────────────────────────────────────────────────────────────
@@ -285,7 +319,7 @@ def test_set_and_get_trip_budget(db):
 
 def test_log_trip_expense_happy_path_books_in_both_tables(nami_env):
     trip_id = _create_trip()["trip"]["id"]
-    r = Y.log_trip_expense(trip_id, "alimentacao", 45.0, "Almoço")
+    r = Y.log_trip_expense(trip_id, "alimentacao", 45.0, "Almoço", "Generico")
     assert r["status"] == "ok"
     assert r["budget_item"]["actual"] == 45.0
 
@@ -295,9 +329,16 @@ def test_log_trip_expense_happy_path_books_in_both_tables(nami_env):
     assert rows[0]["categoria"] == "Alimentacao"
 
 
+def test_log_trip_expense_requires_account_no_financial_default(nami_env):
+    trip_id = _create_trip()["trip"]["id"]
+    r = Y.log_trip_expense(trip_id, "alimentacao", 45.0, "Almoço", "")
+    assert r["status"] == "error"
+    assert run_select("SELECT count(*) AS c FROM transactions")[0]["c"] == 0
+
+
 def test_log_trip_expense_invalid_category_rolls_back_everything(nami_env):
     trip_id = _create_trip()["trip"]["id"]
-    r = Y.log_trip_expense(trip_id, "categoria_invalida", 45.0, "Almoço")
+    r = Y.log_trip_expense(trip_id, "categoria_invalida", 45.0, "Almoço", "Generico")
     assert r["status"] == "error"
     assert run_select("SELECT count(*) AS c FROM transactions")[0]["c"] == 0
     budget = Y.get_trip_budget(trip_id)["items"]
@@ -309,10 +350,36 @@ def test_log_trip_expense_nami_failure_rolls_back_everything(nami_env):
     nami._accounts_cache = []  # nenhuma conta resolve → create_transaction_on_cursor falha
 
     trip_id = _create_trip()["trip"]["id"]
-    r = Y.log_trip_expense(trip_id, "alimentacao", 45.0, "Almoço")
+    r = Y.log_trip_expense(trip_id, "alimentacao", 45.0, "Almoço", "Generico")
     assert r["status"] == "error"
     assert run_select("SELECT count(*) AS c FROM transactions")[0]["c"] == 0
     assert Y.get_trip_budget(trip_id)["items"] == []
+
+
+def test_delete_trip_expense_reverses_nami_and_budget(nami_env):
+    trip_id = _create_trip()["trip"]["id"]
+    logged = Y.log_trip_expense(trip_id, "alimentacao", 45.0, "Almoço", "Generico")
+    tx_id = logged["nami_transaction_id"]
+
+    r = Y.delete_trip_expense(trip_id, tx_id)
+    assert r["status"] == "ok"
+
+    # transação revertida (soft delete) na Nami — não conta mais nas somas
+    tx_row = run_select("SELECT deleted FROM transactions WHERE id = %s", (tx_id,))
+    assert tx_row[0]["deleted"] is True
+
+    # orçamento decrementado — volta ao estado anterior ao lançamento
+    budget = Y.get_trip_budget(trip_id)["items"]
+    alimentacao = next(b for b in budget if b["category"] == "alimentacao")
+    assert alimentacao["actual"] == 0.0
+    remaining_ids = {e["nami_transaction_id"] for e in Y.list_trip_expenses(trip_id)["expenses"]}
+    assert tx_id not in remaining_ids
+
+
+def test_delete_trip_expense_invalid_transaction_returns_error(nami_env):
+    trip_id = _create_trip()["trip"]["id"]
+    r = Y.delete_trip_expense(trip_id, "00000000-0000-0000-0000-000000000000")
+    assert r["status"] == "error"
 
 
 def test_get_trip_readiness_reflects_checklist_and_budget(db):

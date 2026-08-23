@@ -808,6 +808,7 @@ Contrato detalhado: `specs/066-travel-agent/contracts/api-travel.md`.
 | `POST` | `/api/travel/trips` | Cria uma viagem (status inicial `planejando`; devolve 201). | Body: `CreateTripBody` |
 | `GET` | `/api/travel/trips/{trip_id}` | Detalhe de uma viagem. | — |
 | `PATCH` | `/api/travel/trips/{trip_id}` | Atualiza campos; pode devolver `{"status": "orphans_pending", ...}` se datas mudarem com itens fora do intervalo. | Body: `UpdateTripBody` |
+| `DELETE` | `/api/travel/trips/{trip_id}` | Remove a viagem (soft delete — `deleted=TRUE`); roteiro/checklist/orçamento ficam preservados no banco. | — |
 | `POST` | `/api/travel/trips/{trip_id}/resolve-orphans` | Aplica mover/remover sobre os itens órfãos. | Body: `ResolveOrphansBody` |
 | `GET` | `/api/travel/trips/{trip_id}/itinerary` | Roteiro agrupado por dia, ordenado manhã→tarde→noite→posição. | — |
 | `POST` | `/api/travel/trips/{trip_id}/itinerary` | Adiciona item de roteiro (recusa data fora do intervalo; devolve 201). | Body: `AddItineraryItemBody` |
@@ -830,6 +831,7 @@ Contrato detalhado: `specs/066-travel-agent/contracts/api-travel.md`.
 | `GET` | `/api/travel/trips/{trip_id}/checklist` | Lista o checklist, opcionalmente filtrado por concluído. | `?done=true\|false` |
 | `POST` | `/api/travel/trips/{trip_id}/checklist` | Adiciona item manual (devolve 201). | Body: `AddChecklistItemBody` |
 | `PATCH` | `/api/travel/checklist/{item_id}` | Marca/desmarca e/ou renomeia um item. | Body: `UpdateChecklistItemBody` |
+| `DELETE` | `/api/travel/checklist/{item_id}` | Remove um item do checklist (hard delete). | — |
 | `POST` | `/api/travel/trips/{trip_id}/checklist/regenerate` | Gera itens a partir dos vereditos do dossiê (sem duplicar, sem contradizer). | — |
 
 ### Matriz de conforto, orçamento e gastos (cross-agent Nami)
@@ -841,6 +843,7 @@ Contrato detalhado: `specs/066-travel-agent/contracts/api-travel.md`.
 | `PUT` | `/api/travel/trips/{trip_id}/budget` | Define/atualiza o estimado de uma ou mais categorias (upsert). | Body: `SetBudgetBody` |
 | `GET` | `/api/travel/trips/{trip_id}/expenses` | Lista os gastos já lançados (lê a Nami pelos `nami_transaction_ids`). | — |
 | `POST` | `/api/travel/trips/{trip_id}/expenses` | Registra um gasto e lança na Nami **na mesma transação** (devolve 201). | Body: `LogExpenseBody` |
+| `DELETE` | `/api/travel/trips/{trip_id}/expenses/{nami_transaction_id}` | Remove o gasto e reverte a transação na Nami **na mesma transação** (simétrico ao registro). | — |
 | `GET` | `/api/travel/trips/{trip_id}/readiness` | Atalho para a tela Início: checklist + dossiê + orçamento. | — |
 
 ---

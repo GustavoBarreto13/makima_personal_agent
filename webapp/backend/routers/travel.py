@@ -132,6 +132,7 @@ class LogExpenseBody(BaseModel):
     category: str
     amount: float
     description: str
+    account: str
     date: Optional[str] = None
 
 
@@ -427,7 +428,7 @@ def log_expense_endpoint(
     return _check_result(
         log_trip_expense(
             trip_id=trip_id, category=body.category, amount=body.amount,
-            description=body.description, date=body.date,
+            description=body.description, account=body.account, date=body.date,
         )
     )
 

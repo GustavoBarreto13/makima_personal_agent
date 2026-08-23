@@ -80,6 +80,7 @@ export interface LogExpenseBody {
   category: BudgetCategory
   amount: number
   description: string
+  account: string
   date?: string
 }
 
