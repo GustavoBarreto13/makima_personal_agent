@@ -284,6 +284,62 @@ recalculado), `remove_check_in`, `get_habit_history(year)` (esparso, para o heat
 `resolve_habit_id_by_name` (Telegram fala por nome). Mensurável conta como cumprido quando
 `value >= target_value`.
 
+#### Alertas de hábito no Google Calendar + Meu Dia (spec 067)
+
+Duas capacidades novas, **ambas independentes do motor de força acima** — nem `schedules`
+(dias/horários do alerta) nem a duração/seleção no Meu Dia entram em `HS.summary` de forma
+alguma; a régua de consistência continua sendo só `freq_num`/`freq_den`.
+
+**Alertas** — tabela `habit_schedules` (no máximo um horário por dia da semana, por hábito;
+`weekday` é o **código iCal** `MO`..`SU`, não um índice numérico — o repo tem duas convenções
+conflitantes de índice de dia: `recurrence.py` segunda=0, `dateUtils.ts` `WEEKDAY_1`
+domingo=0). Cada linha vira um evento **recorrente semanal** no calendário dedicado
+**"Kaguya — Hábitos"** (separado de "Kaguya — Tarefas" — o usuário pode silenciar/ocultar
+hábitos no app do Google sem afetar tarefas). `time_of_day = NULL` marca o dia como evento de
+**dia inteiro** (aparece na agenda, mas o Google não dispara push nesse tipo de evento por
+padrão — trade-off aceito). `habits.reminder_lead_min` (antecedência do popup, dias com hora) e
+`habits.duration_min` (tamanho do bloco no evento; `NULL` cai num padrão de 30min só no
+evento — não afeta a capacidade do Meu Dia) completam o modelo.
+
+`tools_habits.set_habit_schedule(habit_id, schedules)` tem **semântica de set** (o conjunto
+enviado substitui o anterior por inteiro — mesmo padrão de `_set_task_tags`), mas faz um
+**diff** internamente (`_replace_schedules_on_cursor`) em vez de apagar-e-recriar: dias que
+permanecem preservam o `google_event_id` (o `gcal_sync` só faz `PATCH`, nunca recria o evento);
+só os dias que saem do conjunto disparam a exclusão do evento correspondente
+(`gcal_sync.remove_schedule_events`). `create_habit`/`update_habit` aceitam `schedules`
+opcional (mesma convenção de `source_provider_id`: em `update_habit`, `None` = "não enviado"
+preserva o conjunto atual; uma lista — mesmo vazia — **substitui**). Gatilhos best-effort
+(lazy import + `try/except Exception: pass`, sempre depois do commit, mesmo padrão de
+`gcal_sync.push_task`): `create_habit`/`update_habit`/`set_habit_schedule`/`unarchive_habit`
+chamam `gcal_sync.push_habit`; `archive_habit` chama `gcal_sync.remove_habit_events`.
+
+**Meu Dia** — `habits.my_day_date` (mesma forma/semântica de `tasks.my_day_date`) via
+`add_habit_to_my_day`/`remove_habit_from_my_day`. É a **única** forma de um hábito aparecer no
+Meu Dia — hábito não selecionado é invisível ali. `tools_tasks.list_my_day()` carrega os
+hábitos com `my_day_date = hoje` (import lazy de `tools_habits`) numa chave nova `habitos`;
+`capacity.py` não muda uma linha — a duração dos hábitos selecionados só é concatenada à lista
+de `estimativas` antes de chamar `compute_capacity` (mesma técnica que a spec 038 usou para o
+split Trabalho/Pessoal). Hábitos não têm contexto Trabalho/Pessoal: a duração entra em
+`capacity` (total) e `capacity_personal`, nunca em `capacity_work`, e o modo férias
+(`hide_work`, spec 065) não os filtra.
+
+**Fachada (`tools.py`, paridade FR-007)**: `set_habit_reminders(habit, weekdays, time="")`
+(resolve por nome/id, `weekdays` em português separado por vírgula, `time` vazio = dia
+inteiro) e `add_habit_to_my_day_by_name(habit)`.
+
+**`gcal.py`** ganhou suporte a `recurrence` em `create_event`/`update_event` (lacuna real do
+repo até a spec 067 — nada nunca setou esse campo da API; lista de strings com prefixo
+`RRULE:`, diferente da convenção interna de `recurrence.build_rrule`, que não tem o prefixo) e
+`_ensure_calendar(name, description)`, generalização de `ensure_kaguya_calendar` com cache em
+dict — `ensure_habits_calendar()` é o wrapper novo. **Crítico**: `"Kaguya — Hábitos"` entra no
+`exclude` default de `gcal.list_events()` — sem isso, os próprios alertas criados pela Kaguya
+voltariam pelo fan-out e inflariam a capacidade do Meu Dia e o digest matinal (mesmo motivo de
+`"Kaguya — Tarefas"` já estar lá).
+
+**Hábitos saíram do digest matinal** (`digest.py`, ver seção própria abaixo) — o `habits_pending`
+antigo tratava todo hábito como devido todos os dias (ignorava `freq_num`/`freq_den`); o alerta
+de hábito agora é o evento no Google Calendar, com os dias/horário certos.
+
 ### Tiny Experiments (spec 029) — `experiment_adherence.py` + `tools_experiments.py`
 
 Um **experimento** é uma prática testável COM PRAZO ("Vou [ação] por [duração]"), com check-ins
@@ -641,6 +697,8 @@ URL quando o local já é um link (Google Meet etc.).
 | `list_habits`, `create_habit`, `update_habit`, `archive_habit` | hábitos (fatia 014) |
 | `check_in_habit(habit, value?)` | check-in de hoje por id **ou** nome; ecoa o score recalculado (consistência/tendência) |
 | `remove_check_in(habit_id)` / `habit_status(habit?)` | desfaz o check-in / score em 3 dimensões (um ou todos) |
+| `set_habit_reminders(habit, weekdays, time?)` | alertas semanais no Google Calendar por id **ou** nome; `weekdays` em português ("segunda, quarta"), `time` vazio = dia inteiro — spec 067 |
+| `add_habit_to_my_day_by_name(habit)` | seleciona o hábito para o Meu Dia de hoje (só assim ele entra no plano/capacidade) — spec 067 |
 | `create_project`, `update_project`, `delete_project` | listas |
 | `archive_project`, `restore_project`, `list_archived_projects` | arquivar/restaurar lista sem tocar tarefas/colunas (spec 039) |
 | **`complete_payment_task`** | cross-agent (Kaguya + Nami) — atômico |
@@ -697,32 +755,38 @@ Hermes) em vez do POST direto ao Telegram, e a resposta do usuário é acionáve
 
 ```
 scripts/send_kaguya_digest.py
-├── digest.build_digest_context()   → tarefas + agenda + hábitos + capacidade + diário + RAG
+├── digest.build_digest_context()   → tarefas + agenda + capacidade + diário + RAG
 ├── digest.generate_suggestion()    → Gemini one-shot (response_schema, mesmo padrão de classify_emails)
 ├── digest.build_whatsapp_digest()  → texto HTML (convertido pro markdown do WhatsApp no envio)
 ├── send_notification()             → scheduler/notify_channels.py (Hermes, canal whatsapp)
 └── digest.persist_digest()         → kaguya_digests (status inicial 'pending')
 ```
 
+> **Hábitos saíram do digest (spec 067).** O `habits_pending` antigo (`list_habits()` filtrado
+> por `done_today=False`) tratava **todo** hábito como devido **todos os dias** — ignorava
+> `freq_num`/`freq_den`, então um hábito 3x/semana aparecia como pendente nos 7 dias. Removê-lo
+> apagou esse bug latente: o alerta de hábito agora é o evento no Google Calendar dedicado
+> ("Kaguya — Hábitos", ver a seção de Hábitos acima), com o dia/hora certos de cada hábito, em
+> vez de uma linha genérica aqui.
+
 **Composição do contexto** (`build_digest_context`, função pura — só chama camadas de
 lógica já existentes, nenhuma regra nova): `list_tasks_today()` (vencidas/hoje),
 `list_tasks_by_builtin("next-actions"|"quick"|"waiting")` (GTD), `gcal.list_events()`
-(agenda do dia), `list_habits()` (filtra `done_today=False`), `compute_capacity()` (janela
-19h–23h em dia útil, 9h–22h no fim de semana — heurística v1, sem calendário de
-feriados/expediente real), `agents/journal/tools.py::list_heatmap`+`get_or_create_page`+
-`list_emotion_logs` (só os últimos 3 dias que **têm** conteúdo — `list_heatmap` primeiro
-evita criar página vazia via `get_or_create_page`) e `agents/kurisu/tools.py::buscar_na_base`
-(contexto histórico de rotina/preferências, query composta com o dia da semana + títulos
-das tarefas candidatas).
+(agenda do dia), `compute_capacity()` (janela 19h–23h em dia útil, 9h–22h no fim de semana —
+heurística v1, sem calendário de feriados/expediente real),
+`agents/journal/tools.py::list_heatmap`+`get_or_create_page`+`list_emotion_logs` (só os
+últimos 3 dias que **têm** conteúdo — `list_heatmap` primeiro evita criar página vazia via
+`get_or_create_page`) e `agents/kurisu/tools.py::buscar_na_base` (contexto histórico de
+rotina/preferências, query composta com o dia da semana + títulos das tarefas candidatas).
 
 **Sugestão** (`generate_suggestion`): Gemini one-shot com `response_schema` (`narrative` +
-`items[]`, cada item `{type: "task"|"habit", id, label, reason}`) — mesmo padrão de
-`classify_emails` (retry com backoff, `SuggestionError` em falha estrutural). Itens
-inválidos (tipo fora do enum, sem id inteiro, sem label) são descartados na normalização;
-os válidos ganham numeração 1-based (`n`) — é esse número que o usuário usa pra responder.
-`usage_metadata` da resposta + o modelo usado (`GEMINI_MODEL`, default `gemini-2.5-flash`)
-alimentam o rodapé do digest (modelo, tokens in/out, custo estimado — mesmo cálculo de
-`agents/lucy/tools.py::build_telegram_digest`).
+`items[]`, cada item `{type: "task", id, label, reason}` — `type` é sempre `"task"` desde a
+spec 067) — mesmo padrão de `classify_emails` (retry com backoff, `SuggestionError` em falha
+estrutural). Itens inválidos (tipo fora do enum, sem id inteiro, sem label) são descartados na
+normalização; os válidos ganham numeração 1-based (`n`) — é esse número que o usuário usa pra
+responder. `usage_metadata` da resposta + o modelo usado (`GEMINI_MODEL`, default
+`gemini-2.5-flash`) alimentam o rodapé do digest (modelo, tokens in/out, custo estimado —
+mesmo cálculo de `agents/lucy/tools.py::build_telegram_digest`).
 
 ### Resposta do usuário — sem parser Python, delegado ao Hermes
 
@@ -737,9 +801,10 @@ pelo Hermes, orientado por `hermes/skills/kaguya-tarefas/SKILL.md`):
   parece uma reação curta ao resumo do dia.
 - **`apply_kaguya_digest_selection(accepted_ns)`** — o Hermes já decidiu, a partir do texto
   livre, quais números foram aceitos; esta tool só mapeia número → tarefa e chama
-  `add_to_my_day` pros aceitos (itens `type="habit"` são informativos, sem ação gravável),
-  marca `status='resolved'` + `resolution_summary`, e devolve a confirmação que o Hermes
-  repassa ao usuário.
+  `add_to_my_day` pros aceitos, marca `status='resolved'` + `resolution_summary`, e devolve a
+  confirmação que o Hermes repassa ao usuário. Itens `type="habit"` são ignorados (`continue`)
+  — não um caminho vivo, só compatibilidade com um digest gravado *antes* do deploy da spec
+  067 (a janela de resposta é de 20h, então há sobreposição real).
 
 ### Schema: `kaguya_digests`
 
@@ -821,13 +886,28 @@ Funções principais:
   com até 8 workers, um por calendário); preserva a ordem dos calendários; cache 60s
 - `_fetch_cal_events(cal, time_min, time_max)` — helper interno do fan-out; cada worker chama
   `_get_service()` (thread-local) e faz o `events().list()` individualmente
-- `create_event(calendar_id, summary, start, end, all_day, ...)` — cria evento com hora ou dia inteiro
+- `create_event(calendar_id, summary, start, end, all_day, ..., recurrence?)` — cria evento com
+  hora ou dia inteiro. `recurrence` (spec 067) é a lacuna que existia até então — nada no repo
+  jamais setava esse campo da API; espera lista de strings **com o prefixo `RRULE:`**
+  (`["RRULE:FREQ=WEEKLY;BYDAY=MO"]`), diferente da convenção interna
+  (`recurrence.build_rrule`, sem prefixo) — quem chama aqui (`gcal_sync`) é responsável por
+  adicioná-lo.
 - `update_event(calendar_id, event_id, **fields)` — atualiza via `events().patch()`.
   **Fast-path** quando `all_day` é passado explicitamente (sem GET prévio, 1 round-trip);
   **fallback** quando `all_day` está ausente (GET para descobrir o tipo, depois patch).
   O `gcal_sync` sempre passa `all_day`, portanto o push nunca faz o GET desnecessário.
+  Aceita `recurrence` no mesmo formato de `create_event`.
 - `delete_event(calendar_id, event_id)` — remove
-- `ensure_kaguya_calendar()` — garante que "Kaguya — Tarefas" existe (idempotente; cacheado no módulo)
+- `_ensure_calendar(name, description)` — helper genérico (spec 067) por trás dos dois
+  calendários dedicados; cache em `dict` (`_dedicated_calendar_ids`), substitui o antigo
+  escalar `_kaguya_calendar_id`.
+- `ensure_kaguya_calendar()` — garante que "Kaguya — Tarefas" existe (idempotente; wrapper fino
+  sobre `_ensure_calendar`)
+- `ensure_habits_calendar()` — garante que "Kaguya — Hábitos" existe (spec 067) — calendário
+  **separado** dos alertas de hábito, para o usuário poder silenciar/ocultar hábitos no app do
+  Google sem afetar tarefas. **Crítico**: entra no `exclude` default de `list_events()` — sem
+  isso, os próprios alertas criados pela Kaguya voltariam pelo fan-out e inflariam a capacidade
+  do Meu Dia e o digest matinal (mesmo motivo de "Kaguya — Tarefas" já estar lá).
 - `invalidate_events_cache()` — limpa o cache de eventos (chamado pelas rotas POST/PATCH/DELETE do webapp)
 
 ### komi_sync.py — sync bidirecional de aniversários Komi ↔ Kaguya (fase 026)
@@ -856,31 +936,51 @@ Padrão: `true`.
 (análogo a `_get_inbox_id`, com `is_birthdays=TRUE`). Nunca semeada pelo schema — só existe se
 o sync já criou pelo menos um aniversário.
 
-### gcal_sync.py — espelho best-effort de tarefas no GCal
+### gcal_sync.py — espelho best-effort de tarefas E hábitos no GCal
 
-`agents/kaguya/gcal_sync.py` mantém um espelho das tarefas Kaguya no Google Calendar
-"Kaguya — Tarefas". Opera de forma **best-effort** — falhas do Google são logadas como
-`warning` (logger `kaguya.gcal_sync`) mas não abortam a operação principal.
+`agents/kaguya/gcal_sync.py` mantém dois espelhos best-effort: tarefas em
+"Kaguya — Tarefas" e, desde a spec 067, alertas de hábito em "Kaguya — Hábitos". Falhas do
+Google são logadas como `warning` (logger `kaguya.gcal_sync`) mas não abortam a operação
+principal — nem de tarefas, nem de hábitos.
 
 **Fire-and-forget (assíncrono):** as funções públicas submetem o trabalho a um worker thread
 de background (`ThreadPoolExecutor(max_workers=1, thread_name_prefix="gcal-sync")`) e retornam
-imediatamente — o save de tarefa não espera pelo round-trip ao Google. O único worker serializa
-as escritas (preserva a ordem das mutações da mesma tarefa e evita martelar a API).
+imediatamente — o save de tarefa/hábito não espera pelo round-trip ao Google. O único worker
+serializa as escritas (preserva a ordem das mutações do mesmo item e evita martelar a API).
 
 Funções públicas (fire-and-forget):
 - `push_task(task_id)` — agenda criação/atualização do evento espelho. Tarefa concluída ganha prefixo "✓ ".
 - `remove_task_event(task_id)` — agenda remoção do evento espelho (usado em soft-delete).
+- `push_habit(habit_id)` — agenda a **reconciliação** de TODOS os eventos-espelho do hábito
+  (uma tarefa = um evento, mas um hábito pode ter várias linhas em `habit_schedules` — uma por
+  dia da semana, cada uma seu próprio evento recorrente). Upsert por `google_event_id` de cada
+  linha.
+- `remove_habit_events(habit_id)` — agenda a remoção de TODOS os eventos-espelho do hábito
+  (usado ao arquivar).
+- `remove_schedule_events(event_ids)` — agenda a remoção de uma lista **específica** de
+  `google_event_id` — usado por `tools_habits.set_habit_schedule` quando só alguns dias saem
+  do conjunto (o diff preserva os que ficam; só os órfãos precisam sumir do Google).
 
 Funções internas síncronas (executadas no worker, testáveis diretamente):
-- `_push_task_sync(task_id)` — implementação real do push; nunca levanta exceção.
-- `_remove_task_event_sync(task_id)` — implementação real do remove; nunca levanta exceção.
+- `_push_task_sync(task_id)` / `_remove_task_event_sync(task_id)` — tarefas; nunca levantam exceção.
+- `_push_habit_sync(habit_id)` / `_remove_habit_events_sync(habit_id)` /
+  `_remove_schedule_events_sync(event_ids)` — hábitos; nunca levantam exceção.
+- `_build_habit_event_payload(habit, schedule, *, today_sp)` — monta o payload de uma linha de
+  `habit_schedules`: **dois branches**, espelhando `_build_event_payload` (tarefas), só que a
+  chave é `time_of_day is None`. COM hora → evento cronometrado semanal
+  (`RRULE:FREQ=WEEKLY;BYDAY=<dia>`), lembrete popup `reminder_lead_min` min antes, duração
+  `duration_min` ou 30min padrão. SEM hora → evento de dia inteiro, recorrente, **sem**
+  `reminders` (o Google não dispara push em all-day por padrão — trade-off aceito). DTSTART via
+  `recurrence.next_weekday_on_or_after`.
 
 **Gatilhos em `tools_tasks.py`:** todas as mutações de tarefa chamam `push_task` ou
 `remove_task_event` (lazy import dentro de `try/except`) **após** a transação PostgreSQL —
-o Google Calendar nunca participa da transação.
+o Google Calendar nunca participa da transação. **Gatilhos em `tools_habits.py`** (mesmo padrão,
+spec 067): `create_habit`/`update_habit`/`set_habit_schedule`/`unarchive_habit` chamam
+`push_habit`; `archive_habit` chama `remove_habit_events`.
 
 **Feature flag:** `GCAL_SYNC_ENABLED=false` desativa todos os gatilhos (sem submit ao executor)
-sem alterar o CRUD. Padrão: `true`.
+sem alterar o CRUD — nem de tarefas, nem de hábitos. Padrão: `true`.
 
 ### Variáveis de ambiente necessárias
 
@@ -913,6 +1013,10 @@ As mesmas do MCP Calendar, mais:
   `check_in_habit(nome, value?)`; consultar → `habit_status(nome?)`. Score "caixa d'água" em 3
   dimensões — ecoe ex.: "Academia — 78/100, 📈 subindo, 5/6 nas últimas 2 semanas" (📈 up · 📉 down
   · ➡️ flat). "excluir" é `archive_habit` (soft, confirme antes). Hábito por nome resolve por prefixo.
+  **Alertas no Google Calendar** (spec 067) → `set_habit_reminders(nome_ou_id, weekdays, time?)`;
+  `weekdays` em português separado por vírgula, `time` vazio marca dia inteiro (sem push — avise
+  o usuário). Independente da frequência alvo. **Meu Dia** →
+  `add_habit_to_my_day_by_name(nome_ou_id)` — só assim o hábito entra no plano/capacidade do dia.
 
 ---
 

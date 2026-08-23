@@ -149,6 +149,7 @@ Inspirada na Kaguya Shinomiya de Kaguya-sama. Aristocrática e organizada. Geren
 - Tags N:N e smart-lists (filtros salvos via DSL)
 - Calendário (mês/semana) com projeção virtual das ocorrências de tarefas recorrentes
 - Hábitos com check-ins, heatmap anual e "força" (modelo caixa d'água / EMA)
+- Alertas de hábito no Google Calendar (dia da semana + horário configuráveis, calendário dedicado "Kaguya — Hábitos") e seleção para o Meu Dia (spec 067)
 - Meu Dia com time-blocking e barra de capacidade (fatia 016)
 - Tiny Experiments — mini-experimentos com duração definida, log diário e revisão (spec 029)
 - Metas por área da vida com marcos e vínculo a projetos, hábitos e experimentos (spec 030)

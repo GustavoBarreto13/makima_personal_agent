@@ -175,20 +175,25 @@ def _query_kurisu_context(weekday: int, candidate_tasks: list[dict]) -> list[dic
 
 
 def build_digest_context(today: date | None = None) -> dict:
-    """Junta tudo que o digest precisa: tarefas, agenda, hábitos, capacidade, diário, RAG.
+    """Junta tudo que o digest precisa: tarefas, agenda, capacidade, diário, RAG.
 
     Função pura de composição — cada peça vem de uma camada de lógica já existente
     (nenhuma regra de negócio nova aqui, só a junção).
+
+    Hábitos NÃO entram aqui (spec 067) — o alerta de hábito passou a ser o evento no
+    Google Calendar ("Kaguya — Hábitos", com o dia/hora certos), não mais uma linha
+    genérica no digest das 07:00. O antigo `habits_pending` tratava TODO hábito como
+    devido TODOS os dias (ignorava `freq_num`/`freq_den`) — removê-lo também apaga
+    esse bug latente, não só muda onde a notificação aparece.
 
     Args:
         today: Data de referência (padrão: hoje, fuso America/Sao_Paulo).
 
     Returns:
         Dict com `today`, `weekday`, `is_weekend`, `overdue`, `today_tasks`,
-        `next_actions`, `quick`, `waiting`, `events`, `habits_pending`, `capacity`,
-        `journal_notes`, `rag_excerpts`. Quando o modo férias (spec 065) está ligado,
-        tarefas/eventos com contexto Trabalho já saem excluídos daqui — o digest nunca
-        os vê.
+        `next_actions`, `quick`, `waiting`, `events`, `capacity`, `journal_notes`,
+        `rag_excerpts`. Quando o modo férias (spec 065) está ligado, tarefas/eventos com
+        contexto Trabalho já saem excluídos daqui — o digest nunca os vê.
     """
     today = today or _today_sp()
     weekday = today.weekday()  # 0=segunda ... 6=domingo
@@ -197,7 +202,6 @@ def build_digest_context(today: date | None = None) -> dict:
     from agents.kaguya import gcal
     from agents.kaguya.capacity import compute_capacity
     from agents.kaguya.tools_filters import list_tasks_by_builtin
-    from agents.kaguya.tools_habits import list_habits
     from agents.kaguya.tools_tasks import get_myday_prefs, list_tasks_today
 
     hide_work = get_myday_prefs()["hide_work"]
@@ -238,9 +242,6 @@ def build_digest_context(today: date | None = None) -> dict:
         except Exception as exc:  # noqa: BLE001 — melhor esforço, nunca derruba o digest
             logger.warning("Falha ao filtrar eventos de trabalho do digest: %s", exc)
 
-    habits = list_habits()
-    habits_pending = [h for h in habits if not h.get("done_today")]
-
     # Janela de capacidade — heurística v1 sem calendário de feriados/expediente real:
     # dia útil = tempo livre real depois do expediente (19h-23h); fim de semana = dia
     # inteiro (9h-22h). O usuário decide diariamente se aceita a sugestão de qualquer forma.
@@ -277,7 +278,6 @@ def build_digest_context(today: date | None = None) -> dict:
         "quick": quick,
         "waiting": waiting,
         "events": events,
-        "habits_pending": habits_pending,
         "capacity": capacity,
         "journal_notes": journal_notes,
         "rag_excerpts": rag_excerpts,
@@ -288,15 +288,15 @@ def build_digest_context(today: date | None = None) -> dict:
 
 _SYSTEM_PROMPT = (
     "Você é a Kaguya — aristocrática, organizada, levemente condescendente, mas eficaz. "
-    "Analise o dia do usuário (tarefas, agenda, hábitos, capacidade, diário recente e "
-    "contexto histórico) e monte uma sugestão REALISTA de plano para hoje, respeitando a "
+    "Analise o dia do usuário (tarefas, agenda, capacidade, diário recente e contexto "
+    "histórico) e monte uma sugestão REALISTA de plano para hoje, respeitando a "
     "capacidade (tempo livre estimado). Priorize nesta ordem: 1) tarefas vencidas, "
     "2) tarefas de hoje com horário marcado, 3) Próximas Ações do GTD, 4) tarefas rápidas "
     "se sobrar pouco tempo ou energia. Use as entradas recentes do diário (se houver) para "
     "calibrar quanto sugerir — num dia que pareceu cansativo, sugira menos e mais leve. "
     "Sugira no máximo 6 itens. Cada item DEVE referenciar um id REAL de uma das listas "
-    "fornecidas (tarefa ou hábito) — nunca invente um id. 'narrative' é um parágrafo curto "
-    "(2-3 frases) no seu tom característico, explicando o raciocínio da sugestão."
+    "fornecidas — nunca invente um id. 'narrative' é um parágrafo curto (2-3 frases) no "
+    "seu tom característico, explicando o raciocínio da sugestão."
 )
 
 _SUGGESTION_SCHEMA = {
@@ -308,7 +308,9 @@ _SUGGESTION_SCHEMA = {
             "items": {
                 "type": "OBJECT",
                 "properties": {
-                    "type": {"type": "STRING", "enum": ["task", "habit"]},
+                    # "habit" saiu do enum (spec 067) — alertas de hábito agora são o
+                    # próprio evento no Google Calendar, não mais um item do digest.
+                    "type": {"type": "STRING", "enum": ["task"]},
                     "id": {"type": "INTEGER"},
                     "label": {"type": "STRING"},
                     "reason": {"type": "STRING"},
@@ -343,9 +345,6 @@ def generate_suggestion(context: dict) -> dict:
         "hoje_tarefas": _slim_tasks(context["today_tasks"]),
         "proximas_acoes": _slim_tasks(context["next_actions"]),
         "rapidas": _slim_tasks(context["quick"]),
-        "habitos_pendentes": [
-            {"id": h["id"], "name": h.get("name")} for h in context["habits_pending"]
-        ],
         "capacidade": context["capacity"],
         "agenda": [
             {"summary": e.get("summary"), "start": e.get("start"), "end": e.get("end")}
@@ -382,9 +381,11 @@ def generate_suggestion(context: dict) -> dict:
             )
             parsed = json.loads(resp.text)
             raw_items = parsed.get("items", []) or []
+            # "habit" saiu (spec 067) — o enum do schema já bloqueia, mas o filtro em
+            # Python é a segunda linha de defesa (o Gemini pode ignorar o schema).
             valid_items = [
                 item for item in raw_items
-                if item.get("type") in ("task", "habit")
+                if item.get("type") == "task"
                 and isinstance(item.get("id"), int)
                 and item.get("label")
             ]
@@ -469,11 +470,8 @@ def build_whatsapp_digest(context: dict, suggestion: dict) -> str:
             lines.append(f"  • {t.get('title')}")
         lines.append("")
 
-    if context["habits_pending"]:
-        lines.append("🔁 <b>Hábitos pendentes</b>")
-        for h in context["habits_pending"]:
-            lines.append(f"  • {h.get('name')}")
-        lines.append("")
+    # Hábitos saíram do digest (spec 067) — o alerta virou o próprio evento no Google
+    # Calendar "Kaguya — Hábitos", no dia/hora certos, em vez de uma linha genérica aqui.
 
     cap = context["capacity"]
     estouro = " — plano estourado" if cap["excedeu"] else ""
@@ -571,8 +569,7 @@ def apply_kaguya_digest_selection(accepted_ns: list[int]) -> str:
 
     O Hermes já decidiu, a partir da resposta em texto livre do usuário, quais números
     da lista numerada foram aceitos — esta tool só mapeia número → tarefa e aplica
-    (`add_to_my_day`). Itens do tipo `habit` são informativos (sem ação gravável) e são
-    ignorados aqui.
+    (`add_to_my_day`).
 
     Args:
         accepted_ns: Números aceitos pelo usuário (vazio = nenhuma sugestão aceita).
@@ -592,7 +589,10 @@ def apply_kaguya_digest_selection(accepted_ns: list[int]) -> str:
     applied: list[str] = []
     for item in accepted_items:
         if item.get("type") != "task":
-            continue  # hábitos são informativos — sem ação gravável
+            # Compatibilidade retroativa: um digest gravado ANTES do deploy da spec 067
+            # pode ter itens type="habit" (janela de pendência de até 20h). O enum novo
+            # de `_SUGGESTION_SCHEMA` já impede digests NOVOS de gerar isso.
+            continue
         result = add_to_my_day(item["id"])
         if result.get("status") == "ok":
             applied.append(item["label"])

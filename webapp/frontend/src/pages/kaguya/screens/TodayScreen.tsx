@@ -126,6 +126,15 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
     } catch { toast('Não foi possível registrar o experimento.', 'err') }
   }
 
+  // Retira um hábito do Meu Dia (spec 067) — a seleção em si é feita na tela de Hábitos,
+  // aqui só desfaz. Reload silencioso: a duração sai da capacity sem piscar o spinner.
+  const removeHabit = async (id: number) => {
+    try {
+      await kaguyaApi.removeHabitFromMyDay(id)
+      load(true)
+    } catch { toast('Não foi possível remover o hábito do Meu Dia.', 'err') }
+  }
+
   // firstLoad: verdadeiro apenas no mount. Controla se o load mostra o spinner.
   // Usando ref (não state) para não causar re-render ao setar.
   const firstLoad = useRef(true)
@@ -275,6 +284,9 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
   const pendencias = data?.pendencias_ontem ?? []
   const sugestoes  = data?.sugestoes ?? []
   const capacity   = data?.capacity ?? EMPTY_CAP
+  // Hábitos selecionados para hoje (spec 067) — sem contexto Trabalho/Pessoal, então fica
+  // fora do split; sua duração já está somada em capacity/capacity_personal.
+  const habitos    = data?.habitos ?? []
 
   // Divisão por contexto (spec 038, US2) — sempre presente na resposta.
   const capacityWork     = data?.capacity_work ?? EMPTY_CAP
@@ -358,6 +370,29 @@ export function TodayScreen({ projects, reloadKey, onChanged, onOpenTask, toast 
                       <span className="kg-exp-due-cadence">{exp.cadence === 'weekly' ? 'semanal' : 'diário'}</span>
                       <button className="kg-checkbtn" onClick={() => checkinExperiment(exp.id)}>
                         <Icon name="check" size={15} /> Fiz
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Hábitos de hoje (spec 067) — só os selecionados via "+ Meu Dia" na tela de
+                Hábitos aparecem aqui; sem contexto Trabalho/Pessoal, fica fora do split. */}
+            {habitos.length > 0 && (
+              <div className="kg-day-section">
+                <div className="kg-day-section-head">
+                  🔁 Hábitos de hoje ({habitos.length})
+                </div>
+                <div className="kg-exp-due-list">
+                  {habitos.map((h) => (
+                    <div key={h.id} className="kg-exp-due-row">
+                      <span className="kg-exp-due-title">
+                        {h.icon ?? '🔁'} {h.name}
+                        {h.duration_min != null && ` · ${h.duration_min}min`}
+                      </span>
+                      <button className="kg-icon-btn" onClick={() => removeHabit(h.id)} aria-label="Remover do Meu Dia" title="Remover do Meu Dia">
+                        <Icon name="x" size={14} />
                       </button>
                     </div>
                   ))}

@@ -152,3 +152,188 @@ def test_consistencia_sobe_com_checkins_recentes(clean_db):
     for i in range(10):
         H.check_in(hid, date_iso=(date.today() - timedelta(days=i)).isoformat())
     assert H.get_habit(hid)["consistency"] > 0
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Alertas de hábito no Google Calendar (spec 067) — set_habit_schedule
+# ──────────────────────────────────────────────────────────────────────────────
+# gcal_sync.push_habit é chamado dentro de um try/except Exception: pass (best-effort,
+# igual ao padrão de gcal_sync.push_task em tools_tasks.py) — mesmo sem as bibliotecas
+# Google instaladas neste ambiente, a falha do import lazy é engolida e não afeta a
+# camada de lógica testada aqui.
+def test_set_habit_schedule_basico(clean_db):
+    """Define dois alertas e eles aparecem em get_habit, com o horário certo."""
+    hid = H.create_habit("Academia")["id"]
+    r = H.set_habit_schedule(hid, [
+        {"weekday": "MO", "time": "07:00"},
+        {"weekday": "WE", "time": "07:00"},
+    ])
+    assert r["status"] == "ok"
+
+    h = H.get_habit(hid)
+    schedules = {s["weekday"]: s["time"] for s in h["schedules"]}
+    assert schedules == {"MO": "07:00", "WE": "07:00"}
+
+
+def test_set_habit_schedule_sem_hora_aceito(clean_db):
+    """Item com time=None é válido — marca o dia como evento de dia inteiro, sem erro."""
+    hid = H.create_habit("Academia")["id"]
+    r = H.set_habit_schedule(hid, [{"weekday": "SA", "time": None}])
+    assert r["status"] == "ok"
+    h = H.get_habit(hid)
+    assert h["schedules"] == [{"weekday": "SA", "time": None}]
+
+
+def test_set_habit_schedule_dia_duplicado_rejeitado(clean_db):
+    """No máximo um horário por dia da semana — repetir o mesmo dia é erro (400, não 500)."""
+    hid = H.create_habit("Academia")["id"]
+    r = H.set_habit_schedule(hid, [
+        {"weekday": "MO", "time": "07:00"},
+        {"weekday": "MO", "time": "19:00"},
+    ])
+    assert r["status"] == "error"
+    # Nada foi gravado (validação corre ANTES de tocar o banco).
+    assert H.get_habit(hid)["schedules"] == []
+
+
+def test_set_habit_schedule_dia_invalido_rejeitado(clean_db):
+    """Código de dia fora de MO..SU é erro amigável, nunca um IntegrityError cru."""
+    hid = H.create_habit("Academia")["id"]
+    r = H.set_habit_schedule(hid, [{"weekday": "XX", "time": "07:00"}])
+    assert r["status"] == "error"
+
+
+def test_set_habit_schedule_horario_invalido_rejeitado(clean_db):
+    """Horário fora do formato HH:MM é erro amigável."""
+    hid = H.create_habit("Academia")["id"]
+    r = H.set_habit_schedule(hid, [{"weekday": "MO", "time": "7am"}])
+    assert r["status"] == "error"
+
+
+def test_set_habit_schedule_habito_inexistente(clean_db):
+    """Hábito inexistente devolve erro (não IntegrityError)."""
+    r = H.set_habit_schedule(999999, [{"weekday": "MO", "time": "07:00"}])
+    assert r["status"] == "error"
+
+
+def test_set_habit_schedule_substitui_conjunto(clean_db):
+    """Semântica de SET: a segunda chamada substitui a primeira por inteiro, não soma."""
+    hid = H.create_habit("Academia")["id"]
+    H.set_habit_schedule(hid, [{"weekday": "MO", "time": "07:00"}, {"weekday": "WE", "time": "07:00"}])
+    H.set_habit_schedule(hid, [{"weekday": "FR", "time": "18:00"}])
+
+    h = H.get_habit(hid)
+    assert h["schedules"] == [{"weekday": "FR", "time": "18:00"}]
+
+
+def test_set_habit_schedule_vazio_remove_todos(clean_db):
+    """Enviar uma lista vazia remove todos os alertas do hábito."""
+    hid = H.create_habit("Academia")["id"]
+    H.set_habit_schedule(hid, [{"weekday": "MO", "time": "07:00"}])
+    r = H.set_habit_schedule(hid, [])
+    assert r["status"] == "ok"
+    assert H.get_habit(hid)["schedules"] == []
+
+
+def test_archive_habit_reflete_em_get_habit(clean_db):
+    """Arquivar não apaga as schedules do histórico (soft delete) — só o CRUD de hábito muda."""
+    hid = H.create_habit("Academia")["id"]
+    H.set_habit_schedule(hid, [{"weekday": "MO", "time": "07:00"}])
+    H.archive_habit(hid)
+    h = H.get_habit(hid)
+    assert h["schedules"] == [{"weekday": "MO", "time": "07:00"}]
+
+
+def test_create_habit_com_schedules_reminder_e_duration(clean_db):
+    """create_habit aceita schedules/reminder_lead_min/duration_min de uma vez."""
+    r = H.create_habit(
+        "Academia", schedules=[{"weekday": "MO", "time": "07:00"}],
+        reminder_lead_min=15, duration_min=90,
+    )
+    assert r["status"] == "ok"
+    h = H.get_habit(r["id"])
+    assert h["schedules"] == [{"weekday": "MO", "time": "07:00"}]
+    assert h["reminder_lead_min"] == 15
+    assert h["duration_min"] == 90
+
+
+def test_update_habit_duration_e_reminder(clean_db):
+    """update_habit atualiza reminder_lead_min/duration_min; clear_duration remove a duração."""
+    hid = H.create_habit("Academia")["id"]
+    H.update_habit(hid, reminder_lead_min=20, duration_min=60)
+    h = H.get_habit(hid)
+    assert h["reminder_lead_min"] == 20
+    assert h["duration_min"] == 60
+
+    H.update_habit(hid, clear_duration=True)
+    assert H.get_habit(hid)["duration_min"] is None
+
+
+def test_update_habit_sem_schedules_preserva_conjunto_atual(clean_db):
+    """schedules=None (não enviado) em update_habit preserva o conjunto atual — não apaga."""
+    hid = H.create_habit("Academia")["id"]
+    H.set_habit_schedule(hid, [{"weekday": "MO", "time": "07:00"}])
+    H.update_habit(hid, name="Academia — segunda")   # não envia schedules
+    h = H.get_habit(hid)
+    assert h["name"] == "Academia — segunda"
+    assert h["schedules"] == [{"weekday": "MO", "time": "07:00"}]
+
+
+def test_consistency_nao_muda_com_schedules_ou_duration(clean_db):
+    """O gate da decisão de produto: schedules/duration_min são INDEPENDENTES do score.
+
+    Cria um hábito, faz check-ins, mede a consistência; adiciona alertas e duração;
+    a consistência tem que ser EXATAMENTE a mesma — só freq_num/freq_den entram no motor.
+    """
+    hid = H.create_habit("Meditar", freq_num=3, freq_den=7)["id"]
+    for i in range(6):
+        H.check_in(hid, date_iso=(date.today() - timedelta(days=i * 2)).isoformat())
+    antes = H.get_habit(hid)["consistency"]
+
+    H.set_habit_schedule(hid, [{"weekday": "MO", "time": "07:00"}, {"weekday": "SA", "time": None}])
+    H.update_habit(hid, reminder_lead_min=30, duration_min=45)
+
+    depois = H.get_habit(hid)["consistency"]
+    assert depois == antes
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Meu Dia (spec 067) — add_habit_to_my_day / remove_habit_from_my_day
+# ──────────────────────────────────────────────────────────────────────────────
+def test_add_habit_to_my_day_marca_in_my_day(clean_db):
+    """Selecionar o hábito para o Meu Dia de hoje reflete em in_my_day na leitura."""
+    hid = H.create_habit("Academia")["id"]
+    assert H.get_habit(hid)["in_my_day"] is False
+
+    r = H.add_habit_to_my_day(hid)
+    assert r["status"] == "ok"
+    assert H.get_habit(hid)["in_my_day"] is True
+
+
+def test_add_habit_to_my_day_data_futura_nao_marca_hoje(clean_db):
+    """Selecionar para uma data que NÃO é hoje não marca in_my_day (que é sempre 'hoje')."""
+    hid = H.create_habit("Academia")["id"]
+    futuro = (date.today() + timedelta(days=5)).isoformat()
+    H.add_habit_to_my_day(hid, date_str=futuro)
+    assert H.get_habit(hid)["in_my_day"] is False
+
+
+def test_remove_habit_from_my_day(clean_db):
+    """Tirar do Meu Dia zera my_day_date sem arquivar o hábito."""
+    hid = H.create_habit("Academia")["id"]
+    H.add_habit_to_my_day(hid)
+    assert H.get_habit(hid)["in_my_day"] is True
+
+    r = H.remove_habit_from_my_day(hid)
+    assert r["status"] == "ok"
+    assert H.get_habit(hid)["in_my_day"] is False
+    # Continua existindo e ativo — só saiu do Meu Dia.
+    assert len(H.list_habits()) == 1
+
+
+def test_add_habit_to_my_day_habito_arquivado_rejeitado(clean_db):
+    """Hábito arquivado não pode ser adicionado ao Meu Dia."""
+    hid = H.create_habit("Academia")["id"]
+    H.archive_habit(hid)
+    r = H.add_habit_to_my_day(hid)
+    assert r["status"] == "error"

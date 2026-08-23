@@ -271,6 +271,91 @@ def habit_status(habit: str = "") -> Union[list, dict]:
     return get_habit(hid)
 
 
+# Nomes de dia em português (completos e abreviados) → código iCal, para o agente falar
+# naturalmente ("toda segunda e quarta") em vez de exigir MO/WE crus (spec 067).
+_WEEKDAY_PT_TO_ICAL = {
+    "segunda": "MO", "seg": "MO",
+    "terça": "TU", "terca": "TU", "ter": "TU",
+    "quarta": "WE", "qua": "WE",
+    "quinta": "TH", "qui": "TH",
+    "sexta": "FR", "sex": "FR",
+    "sábado": "SA", "sabado": "SA", "sab": "SA",
+    "domingo": "SU", "dom": "SU",
+}
+
+
+def set_habit_reminders(habit: Union[int, str], weekdays: str, time: str = "") -> dict:
+    """Define os alertas semanais de um hábito no Google Calendar, por id **ou** nome (spec 067).
+
+    Cada alerta vira um evento recorrente no calendário dedicado "Kaguya — Hábitos" —
+    independente da meta de frequência (`freq_num`/`freq_den`), que continua sendo só a
+    régua da consistência.
+
+    Args:
+        habit: Id (número) ou nome do hábito (ex.: "academia").
+        weekdays: Dias da semana separados por vírgula, em português (ex.: "segunda,
+            quarta, sexta"). Aceita nomes completos ou abreviações
+            (seg/ter/qua/qui/sex/sab/dom). Vazio remove TODOS os alertas do hábito.
+        time: Horário "HH:MM" aplicado a TODOS os dias informados. Vazio (padrão) = evento
+            de dia inteiro nesses dias (aparece na agenda, mas SEM push — limitação do
+            Google Calendar para eventos de dia inteiro).
+
+    Returns:
+        ``{"status": "ok", ...}`` ou ``{"status": "error", ...}`` — hábito não encontrado,
+        nome de hábito ambíguo, ou dia da semana não reconhecido.
+    """
+    from agents.kaguya.tools_habits import set_habit_schedule
+
+    # Resolve id ou nome → id (mesma lógica de check_in_habit).
+    if isinstance(habit, int):
+        hid = habit
+    elif str(habit).strip().isdigit():
+        hid = int(str(habit).strip())
+    else:
+        hid = resolve_habit_id_by_name(str(habit))
+    if hid is None:
+        return {"status": "error", "message": f"Hábito '{habit}' não encontrado."}
+
+    dias_raw = [d.strip().lower() for d in (weekdays or "").split(",") if d.strip()]
+    schedules = []
+    for dia in dias_raw:
+        codigo = _WEEKDAY_PT_TO_ICAL.get(dia)
+        if codigo is None:
+            return {
+                "status": "error",
+                "message": f"Dia da semana não reconhecido: '{dia}'. Use segunda..domingo.",
+            }
+        schedules.append({"weekday": codigo, "time": time or None})
+
+    return set_habit_schedule(hid, schedules)
+
+
+def add_habit_to_my_day_by_name(habit: Union[int, str]) -> dict:
+    """Adiciona um hábito ao Meu Dia de hoje, aceitando o id **ou** o nome do hábito (spec 067).
+
+    É a única forma de um hábito entrar no plano/capacidade do Meu Dia — hábito não
+    selecionado é invisível ali.
+
+    Args:
+        habit: Id (número) ou nome do hábito.
+
+    Returns:
+        ``{"status": "ok", ...}`` ou ``{"status": "error", ...}`` se o nome não casar.
+    """
+    from agents.kaguya.tools_habits import add_habit_to_my_day
+
+    if isinstance(habit, int):
+        hid = habit
+    elif str(habit).strip().isdigit():
+        hid = int(str(habit).strip())
+    else:
+        hid = resolve_habit_id_by_name(str(habit))
+    if hid is None:
+        return {"status": "error", "message": f"Hábito '{habit}' não encontrado."}
+
+    return add_habit_to_my_day(hid)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Meu Dia — wrappers amigáveis ao agente (fatia 016)
 # ─────────────────────────────────────────────────────────────────────────────

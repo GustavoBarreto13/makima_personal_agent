@@ -76,6 +76,8 @@ from agents.kaguya.tools_habits import (
     list_habits, get_habit, create_habit, update_habit,
     archive_habit, check_in, remove_check_in, get_habit_history,
     list_habit_source_providers,
+    # Meu Dia (spec 067) — hábito selecionado entra no plano/capacidade do dia
+    add_habit_to_my_day, remove_habit_from_my_day,
 )
 # Tiny Experiments — spec 029 (camada de lógica em agents/kaguya/tools_experiments.py).
 from agents.kaguya.tools_experiments import (
@@ -362,11 +364,23 @@ class UpdateKanbanViewBody(BaseModel):
     position: Optional[int] = None
 
 
+class HabitScheduleBody(BaseModel):
+    """Um alerta semanal de hábito no Google Calendar (spec 067).
+
+    ``weekday`` é o código iCal (``MO``..``SU``); ``time`` é ``"HH:MM"`` ou ``None``/ausente
+    (evento de dia inteiro, sem push).
+    """
+    weekday: str
+    time: Optional[str] = None
+
+
 class CreateHabitBody(BaseModel):
     """Body de criação de hábito.
 
     Frequência alvo = ``freq_num`` vezes a cada ``freq_den`` dias (ex.: 5/7 = "5x por semana").
     ``target_value``+``unit`` tornam o hábito mensurável (ex.: 20 "páginas"); sem eles é sim/não.
+    ``schedules``/``reminder_lead_min``/``duration_min`` são os alertas no Google Calendar
+    (spec 067) — independentes da frequência alvo.
     """
     name: str
     freq_num: int = 1
@@ -376,6 +390,9 @@ class CreateHabitBody(BaseModel):
     icon: Optional[str] = None
     color: Optional[str] = None
     source_provider_id: Optional[str] = None  # fonte automática de check-in (spec 036)
+    schedules: Optional[list[HabitScheduleBody]] = None  # alertas semanais (spec 067)
+    reminder_lead_min: int = 0    # antecedência do popup, em min, p/ alertas com hora
+    duration_min: Optional[int] = None  # duração do bloco no calendário
 
 
 class UpdateHabitBody(BaseModel):
@@ -390,6 +407,12 @@ class UpdateHabitBody(BaseModel):
     clear_target: bool = False   # True = remove a meta (volta a ser sim/não)
     source_provider_id: Optional[str] = None  # nova fonte automática (spec 036)
     clear_source: bool = False   # True = remove a fonte automática (volta a ser 100% manual)
+    # Alertas no Google Calendar (spec 067) — schedules=None é "não enviado" (preserva o
+    # conjunto atual); enviar uma lista SUBSTITUI o conjunto inteiro (semântica de set).
+    schedules: Optional[list[HabitScheduleBody]] = None
+    reminder_lead_min: Optional[int] = None
+    duration_min: Optional[int] = None
+    clear_duration: bool = False  # True = remove a duração declarada
 
 
 class CheckInBody(BaseModel):
@@ -1377,6 +1400,23 @@ def remove_check_in_route(
 ) -> dict:
     """Remove o check-in de um dia (desfaz o cumprimento)."""
     return _check_result(remove_check_in(habit_id, date))
+
+
+# Meu Dia (spec 067) — hábito selecionado entra no plano/capacidade do dia (GET /my-day
+# devolve a chave `habitos`). Mesmo padrão de POST/DELETE das tarefas em `/{task_id}/my-day`
+# (mesmo body `AddToMyDayBody` — a forma é idêntica, sem motivo pra duplicar o modelo).
+@router.post("/habits/{habit_id}/my-day")
+def add_habit_to_my_day_route(
+    habit_id: int, body: AddToMyDayBody = AddToMyDayBody(), user: dict = Depends(require_user)
+) -> dict:
+    """Adiciona o hábito ao Meu Dia de uma data — sua duração entra na capacidade do dia."""
+    return _check_result(add_habit_to_my_day(habit_id, body.date))
+
+
+@router.delete("/habits/{habit_id}/my-day")
+def remove_habit_from_my_day_route(habit_id: int, user: dict = Depends(require_user)) -> dict:
+    """Tira o hábito do Meu Dia, sem arquivá-lo."""
+    return _check_result(remove_habit_from_my_day(habit_id))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

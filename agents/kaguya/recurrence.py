@@ -27,7 +27,7 @@ verão / fusos.
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Optional
 
 # rrulestr converte a string "FREQ=...;..." num objeto de regra que sabe iterar as ocorrências.
@@ -374,3 +374,41 @@ def describe_rrule(rrule: str) -> str:
 
     # Frequência desconhecida ou regra exótica → rótulo seguro.
     return "recorrente"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Alertas de hábito (spec 067) — DTSTART de um evento recorrente semanal
+# ─────────────────────────────────────────────────────────────────────────────
+def next_weekday_on_or_after(weekday_code: str, ref: date) -> date:
+    """Primeira ocorrência de um dia da semana **em ou depois de** ``ref``.
+
+    Usado como DTSTART do evento recorrente semanal que o `gcal_sync` cria para os
+    alertas de hábito (spec 067) — cada linha de `habit_schedules` vira um evento
+    ``FREQ=WEEKLY;BYDAY=<weekday_code>`` ancorado nesta data.
+
+    Args:
+        weekday_code: Código iCal do dia (``MO``..``SU`` — ver ``_WEEKDAY_CODES``).
+        ref: Data de referência (normalmente "hoje" em America/Sao_Paulo).
+
+    Returns:
+        ``ref`` se ``ref`` já cair nesse dia da semana; senão, a próxima ocorrência
+        (no máximo 6 dias depois).
+
+    Raises:
+        ValueError: Se ``weekday_code`` não for um dos 7 códigos válidos.
+
+    Example:
+        >>> from datetime import date
+        >>> next_weekday_on_or_after("MO", date(2026, 6, 15))  # segunda-feira
+        datetime.date(2026, 6, 15)
+        >>> next_weekday_on_or_after("FR", date(2026, 6, 15))  # segunda -> sexta
+        datetime.date(2026, 6, 19)
+    """
+    code = weekday_code.upper()
+    if code not in _WEEKDAY_CODES:
+        raise ValueError(f"Dia da semana inválido: {weekday_code!r} (use MO..SU).")
+
+    # _WEEKDAY_CODES já está na ordem segunda..domingo (0..6), igual a date.weekday().
+    alvo = _WEEKDAY_CODES.index(code)
+    delta = (alvo - ref.weekday()) % 7
+    return ref + timedelta(days=delta)

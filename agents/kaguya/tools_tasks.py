@@ -2274,10 +2274,14 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     Returns:
         ``{date, plano, pendencias_ontem, sugestoes, capacity, plano_work, plano_personal,
         pendencias_ontem_work, pendencias_ontem_personal, sugestoes_work, sugestoes_personal,
-        capacity_work, capacity_personal, eventos}`` — listagem direta (sem ``status``), pois
-        cada seção pode ser vazia. Os campos ``_work``/``_personal`` são a divisão por
-        contexto (spec 038); os campos sem sufixo (``plano``, ``capacity``, ...) continuam
-        existindo intocados para a visão única (FR-010).
+        capacity_work, capacity_personal, eventos, habitos}`` — listagem direta (sem
+        ``status``), pois cada seção pode ser vazia. Os campos ``_work``/``_personal`` são a
+        divisão por contexto (spec 038); os campos sem sufixo (``plano``, ``capacity``, ...)
+        continuam existindo intocados para a visão única (FR-010). ``habitos`` (spec 067) são
+        os hábitos selecionados via ``add_habit_to_my_day`` para este dia — hábito NÃO
+        selecionado é invisível aqui; sua ``duration_min`` entra em ``capacity``/
+        ``capacity_personal`` (nunca ``capacity_work`` — hábitos não têm contexto) e não é
+        afetada pelo modo férias (``hide_work``).
     """
     from agents.kaguya.capacity import compute_capacity
     from agents.kaguya.tools_tags import _attach_tags
@@ -2379,6 +2383,22 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     pendencias_work, pendencias_personal = _split(pendencias)
     sugestoes_work, sugestoes_personal = _split(sugestoes)
 
+    # ── Hábitos selecionados para o Meu Dia deste dia (spec 067) ──
+    # Hábito NÃO selecionado é invisível aqui — `add_habit_to_my_day` é a única forma de
+    # entrar. Sem contexto Trabalho/Pessoal (fora do escopo da spec 038): a duração entra
+    # em `capacity`/`capacity_personal`, nunca em `capacity_work` (ver abaixo), e o modo
+    # férias (`hide_work`) NÃO os filtra.
+    habitos = run_select(
+        """
+        SELECT id, name, icon, duration_min
+        FROM habits
+        WHERE my_day_date = %(hoje)s AND archived_at IS NULL
+        ORDER BY id
+        """,
+        {"hoje": hoje_str},
+    )
+    habitos_duracoes = [h.get("duration_min") for h in habitos]
+
     # ── Capacity: estimativas das tarefas + eventos do Google Calendar do dia ──
     # _gcal_events_for_day aplica as prefs de visibilidade salvas e calcula as tuplas
     # de minutos para o compute_capacity (total e por contexto). Nunca levanta — falha
@@ -2387,9 +2407,11 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         _gcal_events_for_day(hoje_str)
     )
 
-    estimativas = [t.get("duration_min") for t in plano]
+    # Hábitos selecionados entram na estimativa total e na de Pessoal (nunca na de
+    # Trabalho — spec 067 decisão de produto, hábitos não têm contexto).
+    estimativas = [t.get("duration_min") for t in plano] + habitos_duracoes
     cap = compute_capacity(estimativas, eventos_tuplas, calendar_ok=cal_ok)
-    cap["no_plano"] = len(plano)   # sobrescreve com a contagem real do plano
+    cap["no_plano"] = len(plano)   # sobrescreve com a contagem real do plano (tarefas só)
 
     # Capacities por contexto: MESMO motor, MESMA janela padrão, só os insumos mudam
     # (research.md R6 — a soma de estimado_min/agenda_min/no_plano bate com o total;
@@ -2398,7 +2420,7 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     cap_work = compute_capacity(estimativas_work, eventos_tuplas_work, calendar_ok=cal_ok)
     cap_work["no_plano"] = len(plano_work)
 
-    estimativas_personal = [t.get("duration_min") for t in plano_personal]
+    estimativas_personal = [t.get("duration_min") for t in plano_personal] + habitos_duracoes
     cap_personal = compute_capacity(estimativas_personal, eventos_tuplas_personal, calendar_ok=cal_ok)
     cap_personal["no_plano"] = len(plano_personal)
 
@@ -2425,6 +2447,8 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
             "capacity_personal": cap_personal,
             "eventos": eventos_serial,
             "hide_work": True,
+            # Hábitos selecionados (spec 067) — NÃO filtrados pelo modo férias (sem contexto).
+            "habitos": habitos,
         }
 
     return {
@@ -2446,4 +2470,6 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         # Usados pela timeline do Meu Dia. Lista vazia quando o Google não responde.
         "eventos": eventos_serial,
         "hide_work": False,
+        # Hábitos selecionados para o Meu Dia deste dia (spec 067) — [{id, name, icon, duration_min}].
+        "habitos": habitos,
     }

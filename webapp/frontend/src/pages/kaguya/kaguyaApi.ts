@@ -16,7 +16,7 @@ export function gcalCalendarId(cal: string): string {
 }
 
 import { api } from '../../lib/api'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry, FocusStats, FocusHeatDay, FocusAchievement, TaskFocusSummary, FinishFocusResult, WorkContext, ArchivedProject } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, HabitSchedule, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry, FocusStats, FocusHeatDay, FocusAchievement, TaskFocusSummary, FinishFocusResult, WorkContext, ArchivedProject } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -253,11 +253,17 @@ export const kaguyaApi = {
     name: string; freq_num?: number; freq_den?: number
     target_value?: number | null; unit?: string | null; icon?: string | null; color?: string | null
     source_provider_id?: string | null
+    // Alertas no Google Calendar (spec 067) — independentes da frequência alvo.
+    schedules?: HabitSchedule[]; reminder_lead_min?: number; duration_min?: number | null
   }) => api.post<MutationResult>(`${BASE}/habits`, body),
   updateHabit: (id: number, body: Partial<{
     name: string; freq_num: number; freq_den: number
     target_value: number | null; unit: string | null; icon: string | null; color: string | null
     clear_target: boolean; source_provider_id: string | null; clear_source: boolean
+    // schedules=undefined = não enviado (preserva o conjunto atual); enviar uma lista
+    // SUBSTITUI o conjunto inteiro (semântica de set) — [] remove todos os alertas.
+    schedules: HabitSchedule[]; reminder_lead_min: number
+    duration_min: number | null; clear_duration: boolean
   }>) => api.patch<MutationResult>(`${BASE}/habits/${id}`, body),
   // Excluir = arquivar (soft delete; o histórico fica).
   deleteHabit: (id: number) => api.del<MutationResult>(`${BASE}/habits/${id}`),
@@ -271,6 +277,12 @@ export const kaguyaApi = {
     api.get<HabitHeatDay[]>(`${BASE}/habits/${id}/history?year=${year}`),
   // Fontes automáticas de hábito registradas (spec 036) — ex.: diário da Violet, leitura da Frieren.
   listHabitSourceProviders: () => api.get<HabitSourceProvider[]>(`${BASE}/habits/source-providers`),
+  // Meu Dia (spec 067) — hábito selecionado entra no plano/capacidade do dia (mesmo padrão
+  // de addToMyDay/removeFromMyDay das tarefas, abaixo).
+  addHabitToMyDay: (id: number, date?: string) =>
+    api.post<MutationResult>(`${BASE}/habits/${id}/my-day`, date ? { date } : {}),
+  removeHabitFromMyDay: (id: number) =>
+    api.del<MutationResult>(`${BASE}/habits/${id}/my-day`),
 
   // ── Tiny Experiments — spec 029 ────────────────────────────────────────────
   // CRUD + check-in + pausa/retoma + revisão. As métricas (aderência etc.) vêm calculadas

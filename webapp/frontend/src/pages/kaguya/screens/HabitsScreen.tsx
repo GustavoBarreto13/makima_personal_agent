@@ -5,7 +5,7 @@
 // o HEATMAP anual de check-ins. "Novo hábito" e editar abrem o HabitModal (no shell).
 
 import { useCallback, useEffect, useState } from 'react'
-import type { Habit, HabitHeatDay, HabitTrend } from '../types'
+import type { Habit, HabitHeatDay, HabitSchedule, HabitTrend } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 import { HabitHeatmap } from '../ui/HabitHeatmap'
@@ -31,6 +31,32 @@ function freqText(fn: number, fd: number): string {
   if (fd === 7) return `${fn}× por semana`
   if (fn === 1) return `1× a cada ${fd} dias`
   return `${fn}× a cada ${fd} dias`
+}
+
+// Rótulo de 3 letras por código iCal, na ordem segunda..domingo (spec 067). Array próprio
+// (não WEEKDAY_1 de lib/dateUtils.ts, que é domingo-first e tem letras repetidas).
+const WEEKDAY_LABEL: Record<string, string> = {
+  MO: 'seg', TU: 'ter', WE: 'qua', TH: 'qui', FR: 'sex', SA: 'sáb', SU: 'dom',
+}
+const WEEKDAY_ORDER = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']
+
+// Resume os alertas do Google Calendar num texto curto, agrupando dias que compartilham o
+// mesmo horário (ex.: "seg/qua/sex 07:00, sáb dia todo") — evita virar uma parede de texto
+// quando o hábito tem vários dias marcados.
+function scheduleText(schedules: HabitSchedule[]): string {
+  if (schedules.length === 0) return ''
+  const byTime = new Map<string, string[]>()
+  for (const code of WEEKDAY_ORDER) {
+    const s = schedules.find((x) => x.weekday === code)
+    if (!s) continue
+    const key = s.time ?? ''
+    const arr = byTime.get(key) ?? []
+    arr.push(WEEKDAY_LABEL[code] ?? code)
+    byTime.set(key, arr)
+  }
+  return Array.from(byTime.entries())
+    .map(([time, days]) => (time ? `${days.join('/')} ${time}` : `${days.join('/')} dia todo`))
+    .join(', ')
 }
 
 export function HabitsScreen({ reloadKey, onNewHabit, onEditHabit, onFocusHabit, toast }: HabitsScreenProps) {
@@ -72,6 +98,15 @@ export function HabitsScreen({ reloadKey, onNewHabit, onEditHabit, onFocusHabit,
     const v = Number(raw)
     if (!raw || !(v > 0)) { toast('Informe um valor maior que zero.', 'err'); return }
     toggleToday(h, v)
+  }
+
+  // Adiciona/retira o hábito do Meu Dia de hoje (spec 067) — sua duração entra na capacidade.
+  const toggleMyDay = async (h: Habit) => {
+    try {
+      if (h.in_my_day) await kaguyaApi.removeHabitFromMyDay(h.id)
+      else await kaguyaApi.addHabitToMyDay(h.id)
+      await load()
+    } catch { toast('Não foi possível atualizar o Meu Dia.', 'err') }
   }
 
   // Carrega o histórico anual de um hábito (para o heatmap).
@@ -140,6 +175,9 @@ export function HabitsScreen({ reloadKey, onNewHabit, onEditHabit, onFocusHabit,
                     <div className="kg-habit-meta">
                       {freqText(h.freq_num, h.freq_den)}
                       {h.target_value != null && ` · meta ${h.target_value}${h.unit ? ' ' + h.unit : ''}`}
+                      {/* Alertas no Google Calendar (spec 067) — independentes da frequência acima. */}
+                      {h.schedules.length > 0 && ` · ⏰ ${scheduleText(h.schedules)}`}
+                      {h.duration_min != null && h.schedules.length > 0 && ` · ${h.duration_min}min`}
                     </div>
                     {/* Tendência + recente (o dado cru que prova o esforço). */}
                     <div className="kg-habit-score">
@@ -184,6 +222,16 @@ export function HabitsScreen({ reloadKey, onNewHabit, onEditHabit, onFocusHabit,
                     {/* Focar neste hábito (spec 062) — abre o FocusStartModal já travado nele. */}
                     <button className="kg-icon-btn" onClick={() => onFocusHabit(h)} aria-label="Focar" title="Focar neste hábito">
                       <Icon name="timer" size={16} />
+                    </button>
+                    {/* Meu Dia (spec 067) — única forma de o hábito entrar no plano/capacidade do dia. */}
+                    <button
+                      className="kg-icon-btn"
+                      onClick={() => toggleMyDay(h)}
+                      aria-pressed={h.in_my_day}
+                      aria-label="Meu Dia"
+                      title={h.in_my_day ? 'Remover do Meu Dia' : 'Adicionar ao Meu Dia'}
+                    >
+                      <Icon name="sun" size={16} />
                     </button>
                     <button className="kg-icon-btn" onClick={() => toggleHeatmap(h.id)} aria-label="Histórico" title="Histórico anual">
                       <Icon name={isOpen ? 'chevronDown' : 'chevron'} size={16} />

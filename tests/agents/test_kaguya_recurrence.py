@@ -165,6 +165,48 @@ def test_describe_rrule_pt_br():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# next_weekday_on_or_after — DTSTART dos alertas de hábito no Google Calendar (spec 067)
+# ──────────────────────────────────────────────────────────────────────────────
+def test_next_weekday_hoje_ja_e_o_dia():
+    """Se hoje já é o dia da semana pedido, devolve a própria data (não pula uma semana)."""
+    # ANCORA_SEGUNDA (2026-06-01) é segunda-feira.
+    assert R.next_weekday_on_or_after("MO", ANCORA_SEGUNDA) == ANCORA_SEGUNDA
+
+
+def test_next_weekday_mesma_semana():
+    """Segunda pedindo sexta cai na sexta da MESMA semana (não pula pra próxima)."""
+    assert R.next_weekday_on_or_after("FR", ANCORA_SEGUNDA) == date(2026, 6, 5)
+
+
+def test_next_weekday_vira_semana():
+    """Terça pedindo segunda pula para a segunda da semana SEGUINTE (não volta no tempo)."""
+    terca = date(2026, 6, 2)
+    assert R.next_weekday_on_or_after("MO", terca) == date(2026, 6, 8)
+
+
+def test_next_weekday_todos_os_7_codigos():
+    """Os 7 códigos iCal, a partir da mesma âncora (segunda 2026-06-01), caem na semana certa."""
+    esperado = {
+        "MO": date(2026, 6, 1), "TU": date(2026, 6, 2), "WE": date(2026, 6, 3),
+        "TH": date(2026, 6, 4), "FR": date(2026, 6, 5), "SA": date(2026, 6, 6),
+        "SU": date(2026, 6, 7),
+    }
+    for codigo, esperado_data in esperado.items():
+        assert R.next_weekday_on_or_after(codigo, ANCORA_SEGUNDA) == esperado_data
+
+
+def test_next_weekday_codigo_invalido_levanta():
+    """Código fora de MO..SU levanta ValueError (mesmo padrão de build_rrule)."""
+    with pytest.raises(ValueError):
+        R.next_weekday_on_or_after("XX", ANCORA_SEGUNDA)
+
+
+def test_next_weekday_case_insensitive():
+    """Aceita minúsculas — mesma tolerância de build_rrule(weekday=...)."""
+    assert R.next_weekday_on_or_after("mo", ANCORA_SEGUNDA) == ANCORA_SEGUNDA
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Projeção de ocorrências virtuais para o calendário (fatia 013 / P3 — SC-005)
 # Funções puras: projetam as próximas datas de uma série DENTRO de uma janela visível,
 # sem materializar nada no banco. Por isso rodam sempre (sem DATABASE_URL).

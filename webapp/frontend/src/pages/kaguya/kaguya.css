@@ -223,6 +223,8 @@
 .kg-search input { border: none; background: none; outline: none; font-family: var(--sans); font-size: 13px; color: var(--ink); width: 100%; }
 .kg-icon-btn { background: none; border: 1px solid var(--line); border-radius: var(--kg-r-sm); padding: 7px; color: var(--ink-2); cursor: pointer; display: grid; place-items: center; }
 .kg-icon-btn:hover { color: var(--kg); border-color: var(--kg); }
+/* Estado "ativo" (ex.: hábito já no Meu Dia — spec 067) — mesmo acento de .kg-btn-primary. */
+.kg-icon-btn[aria-pressed="true"] { color: var(--kg); border-color: var(--kg); background: color-mix(in oklab, var(--kg) 12%, transparent); }
 
 .kg-scroll { overflow-y: auto; flex: 1; }
 .kg-page { max-width: 1080px; margin: 0 auto; padding: 28px 24px 80px; }

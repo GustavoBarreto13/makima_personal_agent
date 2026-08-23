@@ -104,6 +104,15 @@ _INSTRUCTION = """
     - EDITAR → update_habit(id, ...). EXCLUIR é arquivar (soft) → archive_habit(id): confirme
       antes; o histórico é preservado.
     - O heatmap anual é só do webapp (visual); no Telegram, reporte a força e a aderência.
+    - ALERTA no Google Calendar (spec 067) → set_habit_reminders(nome_ou_id, weekdays, time?).
+      weekdays é uma lista em português separada por vírgula ("segunda, quarta, sexta");
+      time é "HH:MM" (ex.: "07:00") — omitido/vazio marca o dia como evento de DIA INTEIRO,
+      que aparece na agenda mas NÃO notifica (avise o usuário se ele não pedir hora
+      explicitamente). É INDEPENDENTE da meta de frequência (freq_num/freq_den) — os dias do
+      alerta são só o alarme, nunca mudam a nota de consistência. Cada hábito tem um
+      calendário dedicado ("Kaguya — Hábitos"), separado das tarefas.
+    - MEU DIA → add_habit_to_my_day_by_name(nome_ou_id) adiciona o hábito ao plano de hoje
+      (sua duração entra na capacidade do dia); hábito NÃO adicionado fica de fora do Meu Dia.
 
     RECORRÊNCIA (tarefas que se repetem):
     - A tarefa precisa de DATA (a âncora). Crie a tarefa com create_task(...) e, com o id

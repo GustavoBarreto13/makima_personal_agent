@@ -17,7 +17,7 @@ Todos os testes mockam `gcal.create_event`, `gcal.update_event`,
 import sys
 import types
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from unittest.mock import patch, MagicMock, call
 
 # Stub das bibliotecas Google ausentes no ambiente de testes (sem google-auth instalado).
@@ -540,3 +540,357 @@ def test_build_event_payload_start_at_string_naive_converte_para_sp():
     assert "14:00:00" in payload["start"], "Hora local SP (14:00) deve aparecer no start"
     # end derivado = start + 30 min = 14:30 SP
     assert "14:30:00" in payload["end"], "end derivado deve ser 30 min após start (14:30 SP)"
+
+
+# ===========================================================================
+# Alertas de hábito no Google Calendar (spec 067)
+# Mesma estratégia de mock de _patch_db acima, mas _load_habit_with_schedules faz
+# DUAS chamadas a run_select (hábito, depois schedules) — _patch_habit_db usa
+# side_effect para devolver as duas em sequência.
+# ===========================================================================
+
+HABITS_CAL_ID = "kaguya-habits-cal-999@group.calendar.google.com"
+
+HABIT_BASE = {
+    "id": 10, "name": "Academia", "icon": "💪",
+    "reminder_lead_min": 10, "duration_min": 90, "archived_at": None,
+}
+
+
+def _patch_habit_db(habit: dict | None, schedules: list | None = None):
+    """Patch de run_select devolvendo [habito] e depois [schedules], na mesma ordem
+    de chamadas de _load_habit_with_schedules. habit=None simula hábito inexistente."""
+    if habit is None:
+        return patch("agents.kaguya.gcal_sync.run_select", return_value=[])
+    return patch(
+        "agents.kaguya.gcal_sync.run_select",
+        side_effect=[[habit], schedules or []],
+    )
+
+
+# ---------------------------------------------------------------------------
+# _push_habit_sync — COM hora: evento cronometrado + recorrência + lembrete
+# ---------------------------------------------------------------------------
+
+def test_push_habit_sync_com_hora_cria_evento_recorrente_com_lembrete():
+    """Dia COM horário vira evento cronometrado, RRULE semanal e popup reminder_lead_min antes."""
+    schedule = {"id": 1, "weekday": "MO", "time_of_day": time(7, 0), "google_event_id": None}
+
+    with _patch_habit_db(HABIT_BASE, [schedule]), \
+         patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar", return_value=HABITS_CAL_ID), \
+         patch("agents.kaguya.gcal_sync.gcal.create_event", return_value={"id": "new-evt-id"}) as mock_create, \
+         patch("agents.kaguya.gcal_sync.gcal.update_event") as mock_update, \
+         patch("agents.kaguya.gcal_sync.run_dml") as mock_dml:
+
+        gcal_sync._push_habit_sync(10)
+
+        mock_create.assert_called_once()
+        kwargs = mock_create.call_args.kwargs
+        assert kwargs["all_day"] is False
+        assert kwargs["recurrence"] == ["RRULE:FREQ=WEEKLY;BYDAY=MO"]
+        assert kwargs["reminders"] == {
+            "useDefault": False,
+            "overrides": [{"method": "popup", "minutes": 10}],
+        }
+        assert kwargs["summary"] == "💪 Academia"
+
+        # Horário local SP (07:00), offset -03:00 explícito — NUNCA +00:00 (regressão clássica).
+        assert "+00:00" not in kwargs["start"]
+        start_dt = datetime.fromisoformat(kwargs["start"])
+        assert (start_dt.hour, start_dt.minute) == (7, 0)
+        assert start_dt.utcoffset() == timedelta(hours=-3)
+
+        # duration_min=90 → end = start + 90min
+        end_dt = datetime.fromisoformat(kwargs["end"])
+        assert end_dt - start_dt == timedelta(minutes=90)
+
+        # Evento novo → sem update; google_event_id da linha de schedule persistido.
+        mock_update.assert_not_called()
+        mock_dml.assert_called_once()
+        assert mock_dml.call_args.args[1]["sid"] == 1
+
+
+# ---------------------------------------------------------------------------
+# _push_habit_sync — SEM hora: evento de dia inteiro, sem reminders
+# ---------------------------------------------------------------------------
+
+def test_push_habit_sync_sem_hora_cria_evento_dia_inteiro_sem_reminders():
+    """Dia SEM horário vira evento de dia inteiro recorrente, sem override de reminders
+    (o Google não dispara push em all-day por padrão; herda o padrão do calendário).
+
+    O payload interno não tem a chave "reminders" nesse branch — `payload.get("reminders")`
+    devolve None, que `gcal.create_event` trata como "sem override" (`if reminders is not
+    None`). O kwarg chega como `reminders=None`, não ausente — é isso que verificamos."""
+    schedule = {"id": 2, "weekday": "SA", "time_of_day": None, "google_event_id": None}
+
+    with _patch_habit_db(HABIT_BASE, [schedule]), \
+         patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar", return_value=HABITS_CAL_ID), \
+         patch("agents.kaguya.gcal_sync.gcal.create_event", return_value={"id": "new-evt-id"}) as mock_create, \
+         patch("agents.kaguya.gcal_sync.run_dml"):
+
+        gcal_sync._push_habit_sync(10)
+
+        kwargs = mock_create.call_args.kwargs
+        assert kwargs["all_day"] is True
+        assert kwargs["start"] == kwargs["end"]   # all-day: end repete o dia (mesma convenção de tarefas)
+        assert kwargs["recurrence"] == ["RRULE:FREQ=WEEKLY;BYDAY=SA"]
+        assert kwargs["reminders"] is None
+
+
+# ---------------------------------------------------------------------------
+# _push_habit_sync — duration_min=None cai no padrão de 30min
+# ---------------------------------------------------------------------------
+
+def test_push_habit_sync_duration_none_usa_padrao_30min():
+    """Sem duration_min declarado, o bloco no evento cai no padrão de 30 minutos."""
+    habit_sem_duracao = {**HABIT_BASE, "duration_min": None}
+    schedule = {"id": 1, "weekday": "MO", "time_of_day": time(7, 0), "google_event_id": None}
+
+    with _patch_habit_db(habit_sem_duracao, [schedule]), \
+         patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar", return_value=HABITS_CAL_ID), \
+         patch("agents.kaguya.gcal_sync.gcal.create_event", return_value={"id": "x"}) as mock_create, \
+         patch("agents.kaguya.gcal_sync.run_dml"):
+
+        gcal_sync._push_habit_sync(10)
+
+        kwargs = mock_create.call_args.kwargs
+        start_dt = datetime.fromisoformat(kwargs["start"])
+        end_dt = datetime.fromisoformat(kwargs["end"])
+        assert end_dt - start_dt == timedelta(minutes=30)
+
+
+# ---------------------------------------------------------------------------
+# _push_habit_sync — upsert: google_event_id existente → update, não create
+# ---------------------------------------------------------------------------
+
+def test_push_habit_sync_com_google_event_id_atualiza():
+    """Linha de schedule já sincronizada faz PATCH (update_event), nunca recria o evento."""
+    schedule = {"id": 3, "weekday": "WE", "time_of_day": time(7, 0), "google_event_id": "evt-existing"}
+
+    with _patch_habit_db(HABIT_BASE, [schedule]), \
+         patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar", return_value=HABITS_CAL_ID), \
+         patch("agents.kaguya.gcal_sync.gcal.create_event") as mock_create, \
+         patch("agents.kaguya.gcal_sync.gcal.update_event") as mock_update, \
+         patch("agents.kaguya.gcal_sync.run_dml") as mock_dml:
+
+        gcal_sync._push_habit_sync(10)
+
+        mock_create.assert_not_called()
+        mock_update.assert_called_once()
+        assert mock_update.call_args.kwargs["event_id"] == "evt-existing"
+        assert mock_update.call_args.kwargs["calendar_id"] == HABITS_CAL_ID
+        assert mock_update.call_args.kwargs["recurrence"] == ["RRULE:FREQ=WEEKLY;BYDAY=WE"]
+        mock_dml.assert_not_called()   # id já persistido — nada novo para salvar
+
+
+# ---------------------------------------------------------------------------
+# _push_habit_sync — múltiplas linhas de schedule → múltiplos eventos
+# ---------------------------------------------------------------------------
+
+def test_push_habit_sync_multiplas_schedules_cria_um_evento_por_dia():
+    """Um hábito com vários dias marcados gera um create_event POR linha de schedule."""
+    schedules = [
+        {"id": 1, "weekday": "MO", "time_of_day": time(7, 0), "google_event_id": None},
+        {"id": 2, "weekday": "WE", "time_of_day": time(7, 0), "google_event_id": None},
+        {"id": 3, "weekday": "SA", "time_of_day": None, "google_event_id": None},
+    ]
+
+    with _patch_habit_db(HABIT_BASE, schedules), \
+         patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar", return_value=HABITS_CAL_ID), \
+         patch("agents.kaguya.gcal_sync.gcal.create_event", return_value={"id": "evt"}) as mock_create, \
+         patch("agents.kaguya.gcal_sync.run_dml"):
+
+        gcal_sync._push_habit_sync(10)
+
+        assert mock_create.call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# _push_habit_sync — hábito arquivado ou sem schedules → no-op
+# ---------------------------------------------------------------------------
+
+def test_push_habit_sync_arquivado_nao_espelha():
+    """Hábito arquivado não gera nenhuma chamada ao Google (defensivo)."""
+    habit_arquivado = {**HABIT_BASE, "archived_at": "2026-01-01T00:00:00"}
+    schedule = {"id": 1, "weekday": "MO", "time_of_day": time(7, 0), "google_event_id": None}
+
+    with _patch_habit_db(habit_arquivado, [schedule]), \
+         patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar") as mock_cal, \
+         patch("agents.kaguya.gcal_sync.gcal.create_event") as mock_create:
+
+        gcal_sync._push_habit_sync(10)
+
+        mock_cal.assert_not_called()
+        mock_create.assert_not_called()
+
+
+def test_push_habit_sync_sem_schedules_nao_espelha():
+    """Hábito sem nenhuma linha de habit_schedules não gera chamada ao Google."""
+    with _patch_habit_db(HABIT_BASE, []), \
+         patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar") as mock_cal:
+
+        gcal_sync._push_habit_sync(10)
+
+        mock_cal.assert_not_called()
+
+
+def test_push_habit_sync_habito_inexistente_nao_espelha():
+    """Hábito não encontrado no banco não gera chamada ao Google."""
+    with _patch_habit_db(None), \
+         patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar") as mock_cal:
+
+        gcal_sync._push_habit_sync(999)
+
+        mock_cal.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _push_habit_sync — falha do Google é best-effort (nunca levanta)
+# ---------------------------------------------------------------------------
+
+def test_push_habit_sync_falha_google_nao_levanta():
+    """Uma exceção do Google (rede, credenciais) é engolida — best-effort."""
+    schedule = {"id": 1, "weekday": "MO", "time_of_day": time(7, 0), "google_event_id": None}
+
+    with _patch_habit_db(HABIT_BASE, [schedule]), \
+         patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar", side_effect=Exception("Google fora do ar")):
+        gcal_sync._push_habit_sync(10)   # não deve levantar
+
+
+# ---------------------------------------------------------------------------
+# _remove_habit_events_sync — apaga todos os eventos e limpa os ids
+# ---------------------------------------------------------------------------
+
+def test_remove_habit_events_sync_deleta_todos_e_limpa_ids():
+    """Remove TODOS os eventos com google_event_id não-nulo e zera a coluna no banco."""
+    schedules_com_evento = [
+        {"id": 1, "google_event_id": "evt-1"},
+        {"id": 2, "google_event_id": "evt-2"},
+    ]
+
+    with patch("agents.kaguya.gcal_sync.run_select", return_value=schedules_com_evento), \
+         patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar", return_value=HABITS_CAL_ID), \
+         patch("agents.kaguya.gcal_sync.gcal.delete_event") as mock_delete, \
+         patch("agents.kaguya.gcal_sync.run_dml") as mock_dml:
+
+        gcal_sync._remove_habit_events_sync(10)
+
+        assert mock_delete.call_count == 2
+        mock_delete.assert_any_call(calendar_id=HABITS_CAL_ID, event_id="evt-1")
+        mock_delete.assert_any_call(calendar_id=HABITS_CAL_ID, event_id="evt-2")
+        mock_dml.assert_called_once()
+        assert "NULL" in mock_dml.call_args.args[0]
+
+
+def test_remove_habit_events_sync_sem_eventos_noop():
+    """Hábito sem nenhum google_event_id gravado não chama o Google."""
+    with patch("agents.kaguya.gcal_sync.run_select", return_value=[]), \
+         patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar") as mock_cal:
+
+        gcal_sync._remove_habit_events_sync(10)
+
+        mock_cal.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _remove_schedule_events_sync — remove só os ids passados (diff parcial)
+# ---------------------------------------------------------------------------
+
+def test_remove_schedule_events_sync_deleta_ids_especificos():
+    """Remove exatamente os event_ids recebidos, sem consultar o banco (já vêm do chamador)."""
+    with patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar", return_value=HABITS_CAL_ID), \
+         patch("agents.kaguya.gcal_sync.gcal.delete_event") as mock_delete:
+
+        gcal_sync._remove_schedule_events_sync(["evt-a", "evt-b"])
+
+        assert mock_delete.call_count == 2
+        mock_delete.assert_any_call(calendar_id=HABITS_CAL_ID, event_id="evt-a")
+        mock_delete.assert_any_call(calendar_id=HABITS_CAL_ID, event_id="evt-b")
+
+
+def test_remove_schedule_events_sync_lista_vazia_noop():
+    """Lista vazia não chama o Google."""
+    with patch("agents.kaguya.gcal_sync.gcal.ensure_habits_calendar") as mock_cal:
+        gcal_sync._remove_schedule_events_sync([])
+        mock_cal.assert_not_called()
+
+
+# ===========================================================================
+# Wrappers públicos de hábito (fire-and-forget) — mesmo padrão dos de tarefa acima
+# ===========================================================================
+
+def test_push_habit_submete_ao_executor(monkeypatch):
+    """push_habit submete _push_habit_sync ao worker de background."""
+    mock_executor = MagicMock()
+    monkeypatch.setattr(gcal_sync, "_executor", mock_executor)
+    monkeypatch.delenv("GCAL_SYNC_ENABLED", raising=False)
+
+    gcal_sync.push_habit(10)
+
+    mock_executor.submit.assert_called_once_with(gcal_sync._push_habit_sync, 10)
+
+
+def test_push_habit_disabled_nao_submete(monkeypatch):
+    """push_habit vira no-op quando GCAL_SYNC_ENABLED=false."""
+    monkeypatch.setenv("GCAL_SYNC_ENABLED", "false")
+    mock_executor = MagicMock()
+    monkeypatch.setattr(gcal_sync, "_executor", mock_executor)
+
+    gcal_sync.push_habit(10)
+
+    mock_executor.submit.assert_not_called()
+
+
+def test_remove_habit_events_submete_ao_executor(monkeypatch):
+    """remove_habit_events submete _remove_habit_events_sync ao worker de background."""
+    mock_executor = MagicMock()
+    monkeypatch.setattr(gcal_sync, "_executor", mock_executor)
+    monkeypatch.delenv("GCAL_SYNC_ENABLED", raising=False)
+
+    gcal_sync.remove_habit_events(10)
+
+    mock_executor.submit.assert_called_once_with(gcal_sync._remove_habit_events_sync, 10)
+
+
+def test_remove_habit_events_disabled_nao_submete(monkeypatch):
+    """remove_habit_events vira no-op quando GCAL_SYNC_ENABLED=false."""
+    monkeypatch.setenv("GCAL_SYNC_ENABLED", "false")
+    mock_executor = MagicMock()
+    monkeypatch.setattr(gcal_sync, "_executor", mock_executor)
+
+    gcal_sync.remove_habit_events(10)
+
+    mock_executor.submit.assert_not_called()
+
+
+def test_remove_schedule_events_submete_ao_executor(monkeypatch):
+    """remove_schedule_events submete _remove_schedule_events_sync ao worker de background."""
+    mock_executor = MagicMock()
+    monkeypatch.setattr(gcal_sync, "_executor", mock_executor)
+    monkeypatch.delenv("GCAL_SYNC_ENABLED", raising=False)
+
+    gcal_sync.remove_schedule_events(["evt-1", "evt-2"])
+
+    mock_executor.submit.assert_called_once_with(gcal_sync._remove_schedule_events_sync, ["evt-1", "evt-2"])
+
+
+def test_remove_schedule_events_lista_vazia_nao_submete(monkeypatch):
+    """Lista vazia não submete nada ao executor (mesmo com GCAL_SYNC_ENABLED=true)."""
+    mock_executor = MagicMock()
+    monkeypatch.setattr(gcal_sync, "_executor", mock_executor)
+    monkeypatch.delenv("GCAL_SYNC_ENABLED", raising=False)
+
+    gcal_sync.remove_schedule_events([])
+
+    mock_executor.submit.assert_not_called()
+
+
+def test_remove_schedule_events_disabled_nao_submete(monkeypatch):
+    """remove_schedule_events vira no-op quando GCAL_SYNC_ENABLED=false."""
+    monkeypatch.setenv("GCAL_SYNC_ENABLED", "false")
+    mock_executor = MagicMock()
+    monkeypatch.setattr(gcal_sync, "_executor", mock_executor)
+
+    gcal_sync.remove_schedule_events(["evt-1"])
+
+    mock_executor.submit.assert_not_called()

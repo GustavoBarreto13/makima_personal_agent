@@ -72,11 +72,14 @@ _auth_lock = threading.Lock()
 # Compartilhado entre threads; acessado somente sob _auth_lock quando há mutação.
 _cached_creds: Optional[Credentials] = None
 
-# Cache do ID do calendário "Kaguya — Tarefas" — evita buscar na API toda vez
-_kaguya_calendar_id: Optional[str] = None
+# Cache dos ids dos calendários dedicados — evita buscar na API toda vez.
+# Chave: nome do calendário → valor: id resolvido (ver _ensure_calendar). Substitui o
+# antigo escalar _kaguya_calendar_id (spec 067, generalizado para suportar 2 calendários).
+_dedicated_calendar_ids: dict[str, str] = {}
 
-# Nome fixo do calendário dedicado ao espelho de tarefas do Kaguya
+# Nomes fixos dos calendários dedicados da Kaguya
 _KAGUYA_CALENDAR_NAME = "Kaguya — Tarefas"
+_HABITS_CALENDAR_NAME = "Kaguya — Hábitos"   # spec 067 — alertas de hábito, separado das tarefas
 
 
 # ---------------------------------------------------------------------------
@@ -179,15 +182,62 @@ def _get_service():
 # Calendário dedicado do Kaguya
 # ---------------------------------------------------------------------------
 
+def _ensure_calendar(name: str, description: str) -> str:
+    """Garante que um calendário dedicado com este nome existe e retorna seu ID.
+
+    Busca o calendário na lista do usuário pelo nome exato. Se não existir, cria um
+    novo. O resultado é cacheado em `_dedicated_calendar_ids[name]` para evitar
+    chamadas repetidas à API durante a mesma execução do processo.
+
+    Idempotente: chamadas repetidas nunca criam duplicatas — se o cache for limpo,
+    a função re-busca na API antes de criar. Generalização de `ensure_kaguya_calendar`
+    (spec 067) para suportar múltiplos calendários dedicados (tarefas, hábitos, ...).
+
+    Args:
+        name: Nome exato do calendário (comparação case-sensitive).
+        description: Descrição usada apenas na criação (ignorada se já existir).
+
+    Returns:
+        O ID do calendário (string opaca do Google).
+    """
+    # Retorna o ID cacheado se já foi resolvido nesta sessão
+    cached = _dedicated_calendar_ids.get(name)
+    if cached is not None:
+        return cached
+
+    service = _get_service()
+
+    # Percorre a lista de calendários do usuário para encontrar o dedicado
+    result = service.calendarList().list().execute()
+    calendars = result.get("items", [])
+
+    for cal in calendars:
+        # Compara pelo nome exato — case-sensitive, conforme o nome canônico definido
+        if cal.get("summary", "") == name:
+            # Calendário encontrado — cacheia e retorna
+            _dedicated_calendar_ids[name] = cal["id"]
+            return cal["id"]
+
+    # Calendário não encontrado — cria um novo.
+    # Isso acontece apenas na primeira execução após o deploy ou se o calendário
+    # foi apagado manualmente pelo usuário.
+    new_calendar = service.calendars().insert(body={
+        "summary": name,
+        # description aparece nos detalhes do calendário no Google Calendar
+        "description": description,
+        # Fuso horário do usuário — garante que eventos "sem hora" apareçam corretamente
+        "timeZone": "America/Sao_Paulo",
+    }).execute()
+
+    _dedicated_calendar_ids[name] = new_calendar["id"]
+    return new_calendar["id"]
+
+
 def ensure_kaguya_calendar() -> str:
     """Garante que o calendário "Kaguya — Tarefas" existe e retorna seu ID.
 
-    Busca o calendário na lista do usuário. Se não existir, cria um novo.
-    O resultado é cacheado em `_kaguya_calendar_id` para evitar chamadas
-    repetidas à API durante a mesma execução do processo.
-
-    Esta função é idempotente: chamadas repetidas nunca criam duplicatas —
-    se o cache for limpo, a função re-busca na API antes de criar.
+    Wrapper fino sobre `_ensure_calendar` — mantido para não alterar os call sites
+    existentes (gcal_sync.py, webapp).
 
     Returns:
         O ID do calendário "Kaguya — Tarefas" (string opaca do Google).
@@ -196,38 +246,28 @@ def ensure_kaguya_calendar() -> str:
         >>> cal_id = ensure_kaguya_calendar()
         >>> print(cal_id)  # ex: "abc123...@group.calendar.google.com"
     """
-    global _kaguya_calendar_id
+    return _ensure_calendar(
+        _KAGUYA_CALENDAR_NAME,
+        "Espelho automático das tarefas gerenciadas pelo agente Kaguya.",
+    )
 
-    # Retorna o ID cacheado se já foi resolvido nesta sessão
-    if _kaguya_calendar_id is not None:
-        return _kaguya_calendar_id
 
-    service = _get_service()
+def ensure_habits_calendar() -> str:
+    """Garante que o calendário "Kaguya — Hábitos" existe e retorna seu ID.
 
-    # Percorre a lista de calendários do usuário para encontrar o Kaguya
-    result = service.calendarList().list().execute()
-    calendars = result.get("items", [])
+    Calendário dedicado aos alertas de hábito (spec 067) — separado de
+    "Kaguya — Tarefas" para que o usuário possa silenciar/ocultar hábitos no app do
+    Google sem afetar as tarefas. Excluído do fan-out de `list_events()` (ver
+    `_DEFAULT_EXCLUDE`) para não contaminar o Meu Dia nem o digest matinal com os
+    próprios alertas que a Kaguya criou.
 
-    for cal in calendars:
-        # Compara pelo nome exato — case-sensitive, conforme o nome canônico definido
-        if cal.get("summary", "") == _KAGUYA_CALENDAR_NAME:
-            # Calendário encontrado — cacheia e retorna
-            _kaguya_calendar_id = cal["id"]
-            return _kaguya_calendar_id
-
-    # Calendário não encontrado — cria um novo.
-    # Isso acontece apenas na primeira execução após o deploy ou se o calendário
-    # foi apagado manualmente pelo usuário.
-    new_calendar = service.calendars().insert(body={
-        "summary": _KAGUYA_CALENDAR_NAME,
-        # description aparece nos detalhes do calendário no Google Calendar
-        "description": "Espelho automático das tarefas gerenciadas pelo agente Kaguya.",
-        # Fuso horário do usuário — garante que eventos "sem hora" apareçam corretamente
-        "timeZone": "America/Sao_Paulo",
-    }).execute()
-
-    _kaguya_calendar_id = new_calendar["id"]
-    return _kaguya_calendar_id
+    Returns:
+        O ID do calendário "Kaguya — Hábitos" (string opaca do Google).
+    """
+    return _ensure_calendar(
+        _HABITS_CALENDAR_NAME,
+        "Alertas automáticos dos hábitos gerenciados pelo agente Kaguya.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +399,7 @@ def _fetch_cal_events(cal: dict, time_min: str, time_max: str) -> list[dict]:
 def list_events(
     date_from: str,
     date_to: str,
-    exclude: tuple[str, ...] = ("Kaguya — Tarefas", "TickTick"),
+    exclude: tuple[str, ...] = ("Kaguya — Tarefas", "Kaguya — Hábitos", "TickTick"),
 ) -> list[dict]:
     """Lista eventos de TODOS os calendários do usuário num intervalo de datas.
 
@@ -378,6 +418,9 @@ def list_events(
 
     Calendários listados em `exclude` são pulados para evitar duplicatas:
     - "Kaguya — Tarefas": já está representado nas tarefas do sistema
+    - "Kaguya — Hábitos": alertas de hábito (spec 067) — já representados na tela de
+      Hábitos e, se selecionados, no Meu Dia; sem isso os próprios alertas criados pela
+      Kaguya voltariam pelo fan-out e inflariam a capacidade do dia e o digest matinal
     - "TickTick": sincronização externa que duplicaria eventos do usuário
 
     Args:
@@ -469,6 +512,7 @@ def create_event(
     description: str = "",
     location: str = "",
     reminders: dict | None = None,
+    recurrence: list[str] | None = None,
 ) -> dict:
     """Cria um novo evento num calendário específico.
 
@@ -487,6 +531,12 @@ def create_event(
         reminders: Override explícito do campo `reminders` da API (ex.:
             ``{"useDefault": False, "overrides": [{"method": "popup", "minutes": 30}]}``).
             Omitido (`None`) = herda o padrão do calendário (`useDefault` implícito).
+        recurrence: Lista de regras RRULE/EXRULE/RDATE/EXDATE no formato bruto da API
+            do Google — cada string DEVE levar o prefixo ``"RRULE:"`` (ex.:
+            ``["RRULE:FREQ=WEEKLY;BYDAY=MO"]``). Note que a convenção interna deste
+            repo (``recurrence.build_rrule``) NÃO tem esse prefixo — quem chama aqui é
+            responsável por adicioná-lo (ver `agents/kaguya/gcal_sync.py`). Omitido
+            (`None`) = evento único, sem repetição (spec 067).
 
     Returns:
         Dict com:
@@ -529,6 +579,8 @@ def create_event(
         event_body["location"] = location
     if reminders is not None:
         event_body["reminders"] = reminders
+    if recurrence is not None:
+        event_body["recurrence"] = recurrence
 
     created = service.events().insert(calendarId=calendar_id, body=event_body).execute()
 
@@ -571,6 +623,8 @@ def update_event(
             - description (str): Nova descrição.
             - location (str): Novo local.
             - reminders (dict): Override explícito do campo `reminders` da API.
+            - recurrence (list[str]): Regras RRULE no formato bruto da API (prefixo
+              ``"RRULE:"`` obrigatório) — ver `create_event`.
 
     Returns:
         Dict normalizado do evento atualizado (via `_format_event`).
@@ -611,6 +665,9 @@ def update_event(
 
     if "reminders" in fields and fields["reminders"] is not None:
         patch_body["reminders"] = fields["reminders"]
+
+    if "recurrence" in fields and fields["recurrence"] is not None:
+        patch_body["recurrence"] = fields["recurrence"]
 
     if "start" in fields and fields["start"] is not None:
         if all_day:

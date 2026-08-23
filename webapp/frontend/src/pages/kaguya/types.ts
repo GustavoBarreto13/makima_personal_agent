@@ -150,6 +150,19 @@ export interface MyDayResponse {
   // Modo férias (spec 065): true = o backend já excluiu tudo com contexto Trabalho
   // (plano/pendencias/sugestoes/capacity acima já são só Pessoal; plano_work etc. vêm vazios).
   hide_work: boolean
+  // Hábitos selecionados para o Meu Dia deste dia (spec 067) — hábito NÃO selecionado é
+  // invisível aqui; sua duration_min já está somada em capacity/capacity_personal (nunca
+  // capacity_work — hábitos não têm contexto) e NÃO é afetada pelo modo férias.
+  habitos: MyDayHabit[]
+}
+
+// Um hábito selecionado para o Meu Dia (spec 067) — forma reduzida (não é o Habit completo
+// de HabitsScreen, só o necessário para o bloco do Meu Dia).
+export interface MyDayHabit {
+  id: number
+  name: string
+  icon: string | null
+  duration_min: number | null
 }
 
 // Uma lista (na UI "Lista"; no modelo "project").
@@ -364,6 +377,14 @@ export interface KanbanView {
 // Tendência do hábito (modelo caixa d'água): média rápida vs lenta.
 export type HabitTrend = 'up' | 'down' | 'flat'
 
+// Um alerta semanal de hábito no Google Calendar (spec 067). weekday é o código iCal
+// (MO..SU — NÃO confundir com WEEKDAY_1 de dateUtils.ts, que é domingo-first). time é
+// "HH:MM" ou null (evento de dia inteiro, sem push).
+export interface HabitSchedule {
+  weekday: string
+  time: string | null
+}
+
 // ── Hábitos (Fase 4 / fatia 014) ───────────────────────────────────────────────
 // Um hábito: rotina com frequência alvo (freq_num vezes a cada freq_den dias) e check-ins
 // diários. As métricas de score são DERIVADAS (calculadas na leitura no backend pelo modelo
@@ -386,6 +407,11 @@ export interface Habit {
   // Fonte automática de check-in (spec 036) — null = hábito 100% manual (comportamento atual).
   source_provider_id: string | null
   done_today_source: 'manual' | 'auto' | 'both' | null  // origem do cumprimento de hoje
+  // Alertas no Google Calendar (spec 067) — INDEPENDENTES do score (freq_num/freq_den):
+  schedules: HabitSchedule[]
+  reminder_lead_min: number      // antecedência do popup, em min (0 = na hora marcada)
+  duration_min: number | null    // duração do bloco no calendário; null = padrão de 30min
+  in_my_day: boolean             // selecionado para o Meu Dia de hoje
 }
 
 // Um dia do histórico de check-ins (para o heatmap anual). Array esparso vindo do backend

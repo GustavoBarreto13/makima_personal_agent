@@ -486,6 +486,20 @@ Campo dedicado (não tag) — no máximo um contexto por tarefa.
 | `POST` | `/api/tasks/habits/{habit_id}/checkin` | Registra/atualiza o check-in de um dia (um por dia). |
 | `DELETE` | `/api/tasks/habits/{habit_id}/checkin` | Remove o check-in de um dia (`?date=`; vazio = hoje). |
 | `GET` | `/api/tasks/habits/source-providers` | Lista as fontes automáticas de check-in registradas (spec 036 — ex.: diário da Violet, leitura da Frieren). |
+| `POST` | `/api/tasks/habits/{habit_id}/my-day` | Adiciona o hábito ao Meu Dia de uma data (spec 067; body opcional `{date}`, ausente = hoje). |
+| `DELETE` | `/api/tasks/habits/{habit_id}/my-day` | Tira o hábito do Meu Dia (spec 067), sem arquivá-lo. |
+
+`POST`/`PATCH /api/tasks/habits/*` ganharam `schedules` (`[{weekday: "MO".."SU", time: "HH:MM"|null}]`
+— alertas semanais no Google Calendar, calendário dedicado "Kaguya — Hábitos", separado de
+"Kaguya — Tarefas"), `reminder_lead_min` (antecedência do popup, em min) e `duration_min`
+(duração do bloco no evento; o `PATCH` também aceita `clear_duration`) — spec 067. Em `PATCH`,
+`schedules` ausente preserva o conjunto atual; enviar uma lista (mesmo vazia) **substitui** o
+conjunto inteiro. Independentes de `freq_num`/`freq_den` — não entram no cálculo do score.
+`GET /api/tasks/habits/*` ecoam os mesmos campos de volta, mais `in_my_day` (selecionado para o
+Meu Dia de hoje). `GET /api/tasks/my-day` ganhou a chave `habitos` (spec 067) — hábitos
+selecionados via as duas rotas acima; sua `duration_min` já entra somada em `capacity`/
+`capacity_personal` (nunca `capacity_work` — hábitos não têm contexto) e não é afetada pelo modo
+férias.
 
 ### Tiny Experiments (spec 029)
 
@@ -540,7 +554,7 @@ ganham `source_provider_id`/`done_today_source` no hábito e `source` em cada di
 
 | Método | Rota | O que faz |
 |---|---|---|
-| `GET` | `/api/tasks/my-day` | Ritual do Meu Dia: plano, pendências de ontem, sugestões e capacity (`?date=`; vazio = hoje). Inclui também `plano_work`/`plano_personal`, `pendencias_ontem_work`/`_personal`, `sugestoes_work`/`_personal` e `capacity_work`/`capacity_personal` (spec 038) — os campos sem sufixo continuam sendo a união (visão única). Os eventos em `eventos`/`eventos_work`/`eventos_personal` trazem `location` (spec 039, pode ser `""`). |
+| `GET` | `/api/tasks/my-day` | Ritual do Meu Dia: plano, pendências de ontem, sugestões e capacity (`?date=`; vazio = hoje). Inclui também `plano_work`/`plano_personal`, `pendencias_ontem_work`/`_personal`, `sugestoes_work`/`_personal` e `capacity_work`/`capacity_personal` (spec 038) — os campos sem sufixo continuam sendo a união (visão única). Os eventos em `eventos`/`eventos_work`/`eventos_personal` trazem `location` (spec 039, pode ser `""`). Ganhou `habitos` (spec 067) — hábitos selecionados via `POST /api/tasks/habits/{id}/my-day`; sua duração já está somada em `capacity`/`capacity_personal`. |
 | `POST` | `/api/tasks/{task_id}/my-day` | Marca a tarefa no Meu Dia de uma data (body opcional; ausente = hoje). |
 | `DELETE` | `/api/tasks/{task_id}/my-day` | Tira a tarefa do Meu Dia (não a apaga). |
 | `POST` | `/api/tasks/{task_id}/reschedule` | Atalho do ritual de pendências: hoje, amanhã ou fora do Meu Dia. |

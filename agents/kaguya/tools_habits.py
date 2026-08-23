@@ -21,8 +21,10 @@ Dependência só de ``agents.db`` e do motor puro ``habit_strength`` (sem banco)
 circular: nenhum outro módulo de tools importa deste.
 """
 
-from datetime import date, timedelta
+import re
+from datetime import date, datetime, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from agents.db import get_conn, run_select, run_dml
 from agents.kaguya import habit_strength as HS
@@ -31,6 +33,16 @@ from agents.kaguya import habit_source_providers as HSP
 # Margem sobre a janela de 60 dias do motor de força (habit_strength._DEFAULT_WINDOW) — usada
 # para buscar a atividade automática só do período que o score realmente enxerga (spec 036).
 _ACTIVITY_WINDOW_DAYS = 70
+
+# Códigos iCal de dia da semana aceitos em habit_schedules (spec 067) — mesmo conjunto do
+# CHECK do schema e de recurrence._WEEKDAY_CODES.
+_VALID_WEEKDAYS = {"MO", "TU", "WE", "TH", "FR", "SA", "SU"}
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _today_sp() -> date:
+    """Retorna a data de hoje no fuso America/Sao_Paulo (mesmo helper local de digest.py/tools_tasks.py)."""
+    return datetime.now(ZoneInfo("America/Sao_Paulo")).date()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -100,7 +112,9 @@ def _auto_done_map(source_provider_id: Optional[str], target_value: Optional[flo
     }
 
 
-def _serialize_habit(row: dict, checkins: list, *, today: Optional[date] = None) -> dict:
+def _serialize_habit(
+    row: dict, checkins: list, *, today: Optional[date] = None, schedules: Optional[list] = None
+) -> dict:
     """Monta o dicionário de um hábito para a resposta, com o score "caixa d'água" e o estado de hoje.
 
     O score vem do motor puro :func:`habit_strength.summary` em **três dimensões**:
@@ -112,17 +126,24 @@ def _serialize_habit(row: dict, checkins: list, *, today: Optional[date] = None)
     das duas fontes conta uma vez (união dos conjuntos, FR-007). Nada da fonte automática é
     persistido em ``habit_checkins``.
 
+    Os alertas do Google Calendar (``schedules``, spec 067) são **independentes** do score — não
+    entram em ``HS.summary`` de forma alguma, só são ecoados na resposta.
+
     Args:
         row: Linha da tabela ``habits``.
         checkins: Lista de check-ins desse hábito (``[{date, value}, ...]``).
-        today: Dia de referência (padrão: hoje). Usado para ``done_today`` e como fim do cálculo.
+        today: Dia de referência (padrão: hoje). Usado para ``done_today``/``in_my_day`` e como
+            fim do cálculo do score.
+        schedules: Linhas de ``habit_schedules`` desse hábito (``[{weekday, time_of_day}, ...]``),
+            ou ``None`` se ainda não foram carregadas (vira lista vazia na resposta).
 
     Returns:
         Dicionário do hábito com ``consistency`` (0–100), ``trend`` (up/down/flat),
-        ``recent_done``/``recent_total``, ``done_today`` e ``done_today_source``
-        (``"manual"|"auto"|"both"|None``).
+        ``recent_done``/``recent_total``, ``done_today``, ``done_today_source``
+        (``"manual"|"auto"|"both"|None``), ``schedules``, ``reminder_lead_min``,
+        ``duration_min`` e ``in_my_day``.
     """
-    ref = today or date.today()
+    ref = today or _today_sp()
     target = row.get("target_value")
     source_id = row.get("source_provider_id")
     manual_done = _done_map(checkins, target)
@@ -144,6 +165,17 @@ def _serialize_habit(row: dict, checkins: list, *, today: Optional[date] = None)
         m, a = manual_done.get(ref, False), auto_done.get(ref, False)
         done_today_source = "both" if (m and a) else ("auto" if a else "manual")
 
+    # Alertas do Google Calendar (spec 067) — puramente informativos aqui, não entram no score.
+    # time_of_day vem do psycopg2 como datetime.time (TIME do Postgres); None = dia inteiro.
+    schedules_out = [
+        {
+            "weekday": s["weekday"],
+            "time": s["time_of_day"].strftime("%H:%M") if s.get("time_of_day") else None,
+        }
+        for s in (schedules or [])
+    ]
+    my_day_date = row.get("my_day_date")
+
     return {
         "id": row["id"],
         "name": row["name"],
@@ -161,6 +193,11 @@ def _serialize_habit(row: dict, checkins: list, *, today: Optional[date] = None)
         "recent_total": score["recent_total"],    # quanto a meta esperava em 2 semanas
         "done_today": done_today,                 # se o hábito já foi cumprido hoje
         "done_today_source": done_today_source,   # "manual" | "auto" | "both" | None
+        # Alertas no Google Calendar (spec 067) — independentes do score:
+        "schedules": schedules_out,               # [{"weekday": "MO", "time": "07:00"|None}, ...]
+        "reminder_lead_min": row.get("reminder_lead_min", 0),
+        "duration_min": row.get("duration_min"),
+        "in_my_day": my_day_date == ref,           # selecionado para o Meu Dia de HOJE
     }
 
 
@@ -179,7 +216,8 @@ def list_habits() -> list:
     # Hábitos ativos, em ordem de criação (os mais antigos primeiro — rotina estabelecida no topo).
     habits = run_select(
         """
-        SELECT id, name, icon, color, freq_num, freq_den, target_value, unit, source_provider_id
+        SELECT id, name, icon, color, freq_num, freq_den, target_value, unit, source_provider_id,
+               reminder_lead_min, duration_min, my_day_date
         FROM habits
         WHERE archived_at IS NULL
         ORDER BY created_at, id
@@ -203,8 +241,25 @@ def list_habits() -> list:
     for r in rows:
         by_habit[r["habit_id"]].append({"date": r["date"], "value": r.get("value")})
 
-    # Serializa cada hábito com seus próprios check-ins.
-    return [_serialize_habit(h, by_habit[h["id"]]) for h in habits]
+    # Idem para as linhas de habit_schedules (spec 067) — mesma técnica anti-N+1.
+    sched_rows = run_select(
+        """
+        SELECT habit_id, weekday, time_of_day
+        FROM habit_schedules
+        WHERE habit_id = ANY(%(ids)s)
+        ORDER BY id
+        """,
+        {"ids": ids},
+    )
+    schedules_by_habit: dict[int, list] = {h["id"]: [] for h in habits}
+    for r in sched_rows:
+        schedules_by_habit[r["habit_id"]].append({"weekday": r["weekday"], "time_of_day": r.get("time_of_day")})
+
+    # Serializa cada hábito com seus próprios check-ins e alertas.
+    return [
+        _serialize_habit(h, by_habit[h["id"]], schedules=schedules_by_habit[h["id"]])
+        for h in habits
+    ]
 
 
 def get_habit(habit_id: int) -> dict:
@@ -219,7 +274,8 @@ def get_habit(habit_id: int) -> dict:
     """
     rows = run_select(
         """
-        SELECT id, name, icon, color, freq_num, freq_den, target_value, unit, source_provider_id
+        SELECT id, name, icon, color, freq_num, freq_den, target_value, unit, source_provider_id,
+               reminder_lead_min, duration_min, my_day_date
         FROM habits WHERE id = %(id)s
         """,
         {"id": habit_id},
@@ -230,9 +286,142 @@ def get_habit(habit_id: int) -> dict:
         "SELECT date, value FROM habit_checkins WHERE habit_id = %(id)s ORDER BY date",
         {"id": habit_id},
     )
-    return _serialize_habit(rows[0], [{"date": c["date"], "value": c.get("value")} for c in checkins])
+    schedules = run_select(
+        "SELECT weekday, time_of_day FROM habit_schedules WHERE habit_id = %(id)s ORDER BY id",
+        {"id": habit_id},
+    )
+    return _serialize_habit(
+        rows[0],
+        [{"date": c["date"], "value": c.get("value")} for c in checkins],
+        schedules=schedules,
+    )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Alertas de hábito no Google Calendar (spec 067)
+# ─────────────────────────────────────────────────────────────────────────────
+def _validate_schedules(schedules: list) -> Optional[str]:
+    """Valida uma lista de horários de alerta antes de gravar em ``habit_schedules``.
+
+    Cada item deve ser ``{"weekday": "MO".."SU", "time": "HH:MM"|None|""}``. ``time``
+    ausente/vazio é **válido** — marca o dia como evento de dia inteiro no Google
+    Calendar (sem push, decisão de produto da spec 067). No máximo um item por dia da
+    semana; validado em Python para devolver erro amigável (400), nunca um
+    ``IntegrityError`` cru do ``CHECK``/``UNIQUE`` do schema.
+
+    Args:
+        schedules: Lista de horários a validar (já normalizada em dicts).
+
+    Returns:
+        Mensagem de erro em pt-BR, ou ``None`` se tudo válido.
+    """
+    seen = set()
+    for item in schedules:
+        wd_raw = item.get("weekday") if isinstance(item, dict) else None
+        wd = (wd_raw or "").strip().upper()
+        if wd not in _VALID_WEEKDAYS:
+            return f"Dia da semana inválido: {wd_raw!r} (use MO..SU)."
+        if wd in seen:
+            return f"Dia repetido: {wd} (no máximo um horário por dia da semana)."
+        seen.add(wd)
+        hora = item.get("time") if isinstance(item, dict) else None
+        if hora and not _TIME_RE.match(hora):
+            return f"Horário inválido: {hora!r} (use HH:MM)."
+    return None
+
+
+def _replace_schedules_on_cursor(cur, habit_id: int, schedules: list) -> list[str]:
+    """Substitui o conjunto de ``habit_schedules`` de um hábito por **diff**, não por
+    apagar-e-recriar tudo.
+
+    Preserva o ``google_event_id`` dos dias que permanecem no conjunto desejado — só a
+    coluna ``time_of_day`` é atualizada, então `push_habit` faz um ``PATCH`` no evento
+    existente em vez de recriá-lo (evita duplicar eventos no Google a cada edição). Só
+    os dias que SAEM do conjunto são de fato apagados; o ``google_event_id`` deles é
+    devolvido para o chamador excluir o evento correspondente no Google
+    (``gcal_sync.remove_schedule_events``).
+
+    Args:
+        cur: Cursor psycopg2 já aberto na transação corrente (``schedules`` já validado
+            por :func:`_validate_schedules`).
+        habit_id: Id do hábito.
+        schedules: Lista desejada ``[{"weekday": ..., "time": "HH:MM"|None}, ...]``.
+
+    Returns:
+        Lista de ``google_event_id`` dos dias removidos, ficaram órfãos no Google.
+    """
+    desired = {item["weekday"].strip().upper(): (item.get("time") or None) for item in schedules}
+
+    cur.execute(
+        "SELECT weekday, google_event_id FROM habit_schedules WHERE habit_id = %s", (habit_id,)
+    )
+    current = {row[0]: row[1] for row in cur.fetchall()}
+
+    # Dias que saem do conjunto: apaga a linha e guarda o evento para excluir no Google.
+    removed_event_ids = [eid for wd, eid in current.items() if wd not in desired and eid]
+    for wd in current:
+        if wd not in desired:
+            cur.execute(
+                "DELETE FROM habit_schedules WHERE habit_id = %s AND weekday = %s", (habit_id, wd)
+            )
+
+    # Dias que ficam: só atualiza o horário (preserva google_event_id). Dias novos: insere.
+    for wd, hora in desired.items():
+        if wd in current:
+            cur.execute(
+                "UPDATE habit_schedules SET time_of_day = %s WHERE habit_id = %s AND weekday = %s",
+                (hora, habit_id, wd),
+            )
+        else:
+            cur.execute(
+                "INSERT INTO habit_schedules (habit_id, weekday, time_of_day) VALUES (%s, %s, %s)",
+                (habit_id, wd, hora),
+            )
+
+    return removed_event_ids
+
+
+def set_habit_schedule(habit_id: int, schedules: Optional[list] = None) -> dict:
+    """Substitui o conjunto de alertas semanais de um hábito (semântica de **set**).
+
+    Espelha ``_set_task_tags`` (tools_tags.py): o conjunto enviado vira o conjunto final,
+    substituindo o anterior por inteiro. Internamente faz um diff (:func:`_replace_schedules_on_cursor`)
+    em vez de apagar tudo — dias mantidos não recriam o evento no Google.
+
+    Args:
+        habit_id: Id do hábito.
+        schedules: Lista de horários ``[{"weekday": "MO".."SU", "time": "HH:MM"|None}, ...]``.
+            ``None``/``[]`` remove todos os alertas do hábito.
+
+    Returns:
+        Dicionário de status; erro (400) se algum item for inválido ou o hábito não existir.
+    """
+    schedules = schedules or []
+    erro = _validate_schedules(schedules)
+    if erro:
+        return {"status": "error", "message": erro}
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM habits WHERE id = %s", (habit_id,))
+            if not cur.fetchone():
+                return {"status": "error", "message": "Hábito não encontrado."}
+            removed_event_ids = _replace_schedules_on_cursor(cur, habit_id, schedules)
+
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        if removed_event_ids:
+            _gs.remove_schedule_events(removed_event_ids)
+        _gs.push_habit(habit_id)
+    except Exception:
+        pass
+
+    return {"status": "ok", "message": "Alertas do hábito atualizados."}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CRUD de hábitos
+# ─────────────────────────────────────────────────────────────────────────────
 def create_habit(
     name: str,
     freq_num: int = 1,
@@ -242,6 +431,9 @@ def create_habit(
     icon: Optional[str] = None,
     color: Optional[str] = None,
     source_provider_id: Optional[str] = None,
+    schedules: Optional[list] = None,
+    reminder_lead_min: int = 0,
+    duration_min: Optional[int] = None,
 ) -> dict:
     """Cria um hábito novo.
 
@@ -258,6 +450,14 @@ def create_habit(
         color: Cor de destaque (opcional).
         source_provider_id: Chave de uma fonte automática de check-in (ex.: ``"violet_diary"``,
             ``"frieren_reading"`` — spec 036), ou ``None`` para hábito manual (padrão).
+        schedules: Alertas semanais no Google Calendar (spec 067) —
+            ``[{"weekday": "MO".."SU", "time": "HH:MM"|None}, ...]``. ``time`` ausente/vazio =
+            evento de dia inteiro (sem push). ``None``/``[]`` = sem alertas (padrão).
+        reminder_lead_min: Antecedência do popup, em minutos, para os alertas COM hora
+            (0 = na hora marcada). Ignorado nos dias sem hora.
+        duration_min: Duração do bloco no calendário, em minutos, para os alertas COM
+            hora. ``None`` = usa o padrão de 30 min só no evento (não altera a capacidade
+            do Meu Dia, que só soma quando o hábito é selecionado — ver `add_habit_to_my_day`).
 
     Returns:
         ``{"status": "ok", "id": <int>}`` ou ``{"status": "error", "message": ...}``.
@@ -269,20 +469,42 @@ def create_habit(
     # não um IntegrityError cru (500).
     if not (freq_num >= 1 and freq_den >= 1 and freq_num <= freq_den):
         return {"status": "error", "message": "Frequência inválida: use freq_num entre 1 e freq_den."}
+    schedules = schedules or []
+    erro = _validate_schedules(schedules)
+    if erro:
+        return {"status": "error", "message": erro}
 
-    rows = run_select(
-        """
-        INSERT INTO habits (name, icon, color, freq_num, freq_den, target_value, unit, source_provider_id)
-        VALUES (%(name)s, %(icon)s, %(color)s, %(fn)s, %(fd)s, %(tv)s, %(unit)s, %(src)s)
-        RETURNING id
-        """,
-        {
-            "name": nome, "icon": icon, "color": color,
-            "fn": freq_num, "fd": freq_den, "tv": target_value, "unit": unit,
-            "src": source_provider_id,
-        },
-    )
-    return {"status": "ok", "id": rows[0]["id"], "message": f"Hábito '{nome}' criado."}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO habits (name, icon, color, freq_num, freq_den, target_value, unit,
+                                     source_provider_id, reminder_lead_min, duration_min)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    nome, icon, color, freq_num, freq_den, target_value, unit,
+                    source_provider_id, reminder_lead_min, duration_min,
+                ),
+            )
+            habit_id = cur.fetchone()[0]
+            for item in schedules:
+                wd = item["weekday"].strip().upper()
+                hora = item.get("time") or None
+                cur.execute(
+                    "INSERT INTO habit_schedules (habit_id, weekday, time_of_day) VALUES (%s, %s, %s)",
+                    (habit_id, wd, hora),
+                )
+
+    if schedules:
+        try:
+            from agents.kaguya import gcal_sync as _gs
+            _gs.push_habit(habit_id)
+        except Exception:
+            pass
+
+    return {"status": "ok", "id": habit_id, "message": f"Hábito '{nome}' criado."}
 
 
 def update_habit(
@@ -297,6 +519,10 @@ def update_habit(
     clear_target: bool = False,
     source_provider_id: Optional[str] = None,
     clear_source: bool = False,
+    schedules: Optional[list] = None,
+    reminder_lead_min: Optional[int] = None,
+    duration_min: Optional[int] = None,
+    clear_duration: bool = False,
 ) -> dict:
     """Edita um hábito (PATCH parcial — só os campos enviados são aplicados).
 
@@ -317,9 +543,18 @@ def update_habit(
         source_provider_id: Nova fonte automática de check-in (spec 036) — ``None`` (padrão)
             significa "não enviado", não "remover"; use ``clear_source=True`` para remover.
         clear_source: Se ``True``, remove a fonte automática (hábito volta a ser 100% manual).
+        schedules: Novo conjunto de alertas semanais (spec 067) — ``None`` (padrão) significa
+            "não enviado" (schedules atuais preservados); enviar uma lista **substitui** o
+            conjunto inteiro (semântica de set, ver :func:`set_habit_schedule`); ``[]`` remove
+            todos os alertas.
+        reminder_lead_min: Nova antecedência do popup, em minutos, para alertas COM hora.
+        duration_min: Nova duração do bloco no calendário, em minutos.
+        clear_duration: Se ``True``, remove a duração declarada (volta ao padrão de 30 min só
+            no evento) e ignora ``duration_min``.
 
     Returns:
-        Dicionário de status. Erro se nada mudar, a frequência for inválida ou o hábito não existir.
+        Dicionário de status. Erro se nada mudar, a frequência for inválida, algum item de
+        ``schedules`` for inválido ou o hábito não existir.
     """
     # Busca os valores atuais para validar a frequência final (mistura de novo + existente).
     atual = run_select(
@@ -332,6 +567,11 @@ def update_habit(
     fd = freq_den if freq_den is not None else atual[0]["freq_den"]
     if (freq_num is not None or freq_den is not None) and not (fn >= 1 and fd >= 1 and fn <= fd):
         return {"status": "error", "message": "Frequência inválida: use freq_num entre 1 e freq_den."}
+
+    if schedules is not None:
+        erro = _validate_schedules(schedules)
+        if erro:
+            return {"status": "error", "message": erro}
 
     # Monta dinamicamente só os campos enviados (não sobrescreve com NULL o que não veio).
     sets, params = [], {"id": habit_id}
@@ -359,13 +599,36 @@ def update_habit(
         sets.append("source_provider_id = NULL")
     elif source_provider_id is not None:
         sets.append("source_provider_id = %(src)s"); params["src"] = source_provider_id
+    if reminder_lead_min is not None:
+        sets.append("reminder_lead_min = %(rlm)s"); params["rlm"] = reminder_lead_min
+    if clear_duration:
+        sets.append("duration_min = NULL")
+    elif duration_min is not None:
+        sets.append("duration_min = %(dur)s"); params["dur"] = duration_min
 
-    if not sets:
+    if not sets and schedules is None:
         return {"status": "error", "message": "Nada para atualizar."}
 
-    affected = run_dml(f"UPDATE habits SET {', '.join(sets)} WHERE id = %(id)s", params)
-    if affected == 0:
-        return {"status": "error", "message": "Hábito não encontrado."}
+    if sets:
+        affected = run_dml(f"UPDATE habits SET {', '.join(sets)} WHERE id = %(id)s", params)
+        if affected == 0:
+            return {"status": "error", "message": "Hábito não encontrado."}
+
+    # Alertas do Google Calendar (spec 067) — set_habit_schedule já dispara o push_habit
+    # reconciliando com os campos recém-atualizados (reminder_lead_min/duration_min/name/icon).
+    if schedules is not None:
+        resultado_schedules = set_habit_schedule(habit_id, schedules)
+        if resultado_schedules.get("status") == "error":
+            return resultado_schedules
+    elif sets:
+        # Só campos simples mudaram (ex.: reminder_lead_min/duration_min/icon/name) — ainda
+        # assim podem afetar o payload dos eventos já existentes.
+        try:
+            from agents.kaguya import gcal_sync as _gs
+            _gs.push_habit(habit_id)
+        except Exception:
+            pass
+
     return {"status": "ok", "message": "Hábito atualizado."}
 
 
@@ -387,6 +650,13 @@ def archive_habit(habit_id: int) -> dict:
     )
     if affected == 0:
         return {"status": "error", "message": "Hábito não encontrado ou já arquivado."}
+    # Alertas do Google Calendar (spec 067) não fazem mais sentido para um hábito arquivado —
+    # o histórico de check-ins é preservado (é só um soft delete), mas os eventos somem.
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        _gs.remove_habit_events(habit_id)
+    except Exception:
+        pass
     return {"status": "ok", "message": "Hábito arquivado."}
 
 
@@ -405,6 +675,13 @@ def unarchive_habit(habit_id: int) -> dict:
     )
     if affected == 0:
         return {"status": "error", "message": "Hábito não encontrado ou já está ativo."}
+    # Recria os alertas no Google Calendar (spec 067) se o hábito tinha schedules configuradas —
+    # push_habit é no-op se não houver linhas em habit_schedules.
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        _gs.push_habit(habit_id)
+    except Exception:
+        pass
     return {"status": "ok", "message": "Hábito reativado."}
 
 
@@ -498,6 +775,53 @@ def remove_check_in(habit_id: int, date_iso: Optional[str] = None) -> dict:
     if affected == 0:
         return {"status": "error", "message": "Não havia check-in nesse dia."}
     return {"status": "ok", "message": "Check-in removido."}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Meu Dia (spec 067) — hábito selecionado entra no plano/capacidade do dia
+# ─────────────────────────────────────────────────────────────────────────────
+# Espelha add_to_my_day/remove_from_my_day de tools_tasks.py (mesma coluna, mesma
+# semântica) — mas para habits.my_day_date. Diferente de tarefa, aqui não há gatilho de
+# sync com o Google (a duração só afeta a capacidade do Meu Dia, nunca o calendário).
+def add_habit_to_my_day(habit_id: int, date_str: Optional[str] = None) -> dict:
+    """Marca um hábito como parte do Meu Dia de uma data (padrão: hoje).
+
+    Hábito **não** selecionado é invisível no Meu Dia — esta é a única forma de um
+    hábito entrar no plano/capacidade do dia (spec 067). Independente de ``schedules``:
+    um hábito sem nenhum alerta configurado pode ser selecionado do mesmo jeito.
+
+    Args:
+        habit_id: Id do hábito.
+        date_str: Data no formato "YYYY-MM-DD". ``None`` = hoje (fuso America/Sao_Paulo).
+
+    Returns:
+        Dicionário de status.
+    """
+    target = date_str if date_str else _today_sp().isoformat()
+    affected = run_dml(
+        "UPDATE habits SET my_day_date = %(d)s WHERE id = %(id)s AND archived_at IS NULL",
+        {"d": target, "id": habit_id},
+    )
+    if affected == 0:
+        return {"status": "error", "message": "Hábito não encontrado ou arquivado."}
+    return {"status": "ok", "message": f"Adicionado ao Meu Dia de {target}."}
+
+
+def remove_habit_from_my_day(habit_id: int) -> dict:
+    """Tira um hábito do Meu Dia (``my_day_date = NULL``), sem arquivá-lo.
+
+    Args:
+        habit_id: Id do hábito.
+
+    Returns:
+        Dicionário de status.
+    """
+    affected = run_dml(
+        "UPDATE habits SET my_day_date = NULL WHERE id = %(id)s", {"id": habit_id}
+    )
+    if affected == 0:
+        return {"status": "error", "message": "Hábito não encontrado."}
+    return {"status": "ok", "message": "Removido do Meu Dia."}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

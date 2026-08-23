@@ -21,6 +21,8 @@ from agents.kaguya.tools import (
     list_tasks_in_range,
     list_habits, create_habit, update_habit, archive_habit,
     check_in_habit, remove_check_in, habit_status,
+    # Alertas de hábito no Google Calendar + Meu Dia (spec 067)
+    set_habit_reminders, add_habit_to_my_day_by_name,
     complete_payment_task, create_expense_reminder,
     # Meu Dia (fatia 016)
     plan_my_day, my_day_status,
@@ -55,6 +57,8 @@ TOOLS = [
     # Hábitos (Fase 4 / fatia 014)
     list_habits, create_habit, update_habit, archive_habit,
     check_in_habit, remove_check_in, habit_status,
+    # Alertas de hábito no Google Calendar + Meu Dia (spec 067)
+    set_habit_reminders, add_habit_to_my_day_by_name,
     # Meu Dia (fatia 016)
     plan_my_day, my_day_status,
     add_to_my_day_by_name, remove_from_my_day_by_name,

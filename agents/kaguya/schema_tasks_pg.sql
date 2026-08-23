@@ -770,3 +770,34 @@ CREATE TABLE IF NOT EXISTS myday_prefs (
 
 INSERT INTO myday_prefs (id, hide_work) VALUES (1, FALSE)
 ON CONFLICT (id) DO NOTHING;
+
+
+-- ----------------------------------------------------------------------------
+-- habit_schedules + habits.reminder_lead_min/duration_min/my_day_date — spec 067
+-- ----------------------------------------------------------------------------
+-- Alertas de hábito no Google Calendar ("Kaguya — Hábitos", calendário dedicado,
+-- separado de "Kaguya — Tarefas") + seleção do hábito para o Meu Dia. Deliberadamente
+-- INDEPENDENTE de freq_num/freq_den (a régua de consistência do habit_strength) — os
+-- dias marcados aqui são só o alarme, nunca entram no cálculo da força do hábito.
+ALTER TABLE habits ADD COLUMN IF NOT EXISTS reminder_lead_min SMALLINT NOT NULL DEFAULT 0;
+ALTER TABLE habits ADD COLUMN IF NOT EXISTS duration_min      INT;   -- NULL = sem duração declarada
+ALTER TABLE habits ADD COLUMN IF NOT EXISTS my_day_date       DATE;  -- selecionado p/ o Meu Dia desta data (mesmo padrão de tasks.my_day_date)
+
+CREATE INDEX IF NOT EXISTS idx_habits_my_day ON habits (my_day_date) WHERE my_day_date IS NOT NULL;
+
+-- No máximo UM horário de alerta por dia da semana, por hábito. Cada linha vira um
+-- evento recorrente semanal no calendário "Kaguya — Hábitos" (agents/kaguya/gcal_sync.py).
+-- weekday guarda o código iCal (MO..SU), não um índice numérico — o repo tem duas
+-- convenções conflitantes de índice de dia (recurrence.py: segunda=0; dateUtils.ts
+-- WEEKDAY_1: domingo=0) e o código iCal é literalmente o valor que vai pro BYDAY da
+-- RRULE, sem conversão no caminho crítico.
+CREATE TABLE IF NOT EXISTS habit_schedules (
+    id              SERIAL PRIMARY KEY,
+    habit_id        INT  NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+    weekday         TEXT NOT NULL,          -- código iCal: MO, TU, WE, TH, FR, SA, SU
+    time_of_day     TIME,                   -- wall-clock local (America/Sao_Paulo); NULL = evento de dia inteiro
+    google_event_id TEXT,                   -- id do evento recorrente espelho (NULL = ainda não sincronizado)
+    UNIQUE (habit_id, weekday),
+    CHECK (weekday IN ('MO','TU','WE','TH','FR','SA','SU'))
+);
+CREATE INDEX IF NOT EXISTS idx_habit_schedules_habit ON habit_schedules (habit_id);

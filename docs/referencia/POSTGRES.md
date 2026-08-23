@@ -46,7 +46,7 @@ diferentes.
 |---|---|---|
 | **Finanças** | Agente Nami | `transactions`, `subscriptions`, `installment_groups`, `accounts`, `credit_cards`, `loans`, `budgets` |
 | **Livros** | Agente Frieren | `books`, `reading_logs`, `shelves`, `book_shelves`, `book_bullets` |
-| **Tarefas / hábitos / experimentos / metas** | Agente Kaguya | `task_project_groups`, `task_projects`, `task_columns`, `tasks`, `task_recurrences`, `task_tags`, `task_tag_links`, `task_filters`, `kanban_views`, `habits`, `habit_checkins`, `calendar_prefs`, `birthday_sync_links`, `tiny_experiments`, `tiny_experiment_logs`, `goals`, `goal_milestones` |
+| **Tarefas / hábitos / experimentos / metas** | Agente Kaguya | `task_project_groups`, `task_projects`, `task_columns`, `tasks`, `task_recurrences`, `task_tags`, `task_tag_links`, `task_filters`, `kanban_views`, `habits`, `habit_checkins`, `habit_schedules`, `calendar_prefs`, `birthday_sync_links`, `tiny_experiments`, `tiny_experiment_logs`, `goals`, `goal_milestones` |
 | **Filmes** | Agente Akane | `movies`, `diary_entries`, `movie_lists`, `movie_list_items`, `movie_vault_items`, `movie_people`, `movie_favorites` |
 | **Animes** | Agente Marin | `anime`, `watch_logs`, `episodes`, `mal_sync_state` |
 | **Séries de TV** | Agente Mai | `series`, `seasons`, `series_episodes`, `series_watch_logs` |
@@ -88,6 +88,7 @@ erDiagram
     tasks ||--o{ task_tag_links : "task_id (FK)"
     task_tags ||--o{ task_tag_links : "tag_id (FK)"
     habits ||--o{ habit_checkins : "habit_id (FK)"
+    habits ||--o{ habit_schedules : "habit_id (FK)"
     tiny_experiments ||--o{ tiny_experiment_logs : "experiment_id (FK)"
     goals ||--o{ goal_milestones : "goal_id (FK)"
     goals ||--o{ tiny_experiments : "goal_id (FK)"
@@ -588,11 +589,15 @@ Hábitos. Um hábito NÃO é tarefa — não tem `due_date`, vira check-in diár
 | `target_value` | NUMERIC | SIM | — | Meta numérica por check-in (NULL = hábito sim/não). |
 | `unit` | TEXT | SIM | — | Unidade da meta (ex.: "páginas", "min"). |
 | `goal_id` | INT | SIM | — | **FK** → `goals(id)` `ON DELETE SET NULL`. Meta vinculada (spec 030). |
+| `reminder_lead_min` | SMALLINT | NÃO | `0` | Antecedência do popup (min) nos alertas COM hora (spec 067). |
+| `duration_min` | INT | SIM | — | Duração do bloco no evento dos alertas COM hora (spec 067); `NULL` = 30min padrão só no evento. |
+| `my_day_date` | DATE | SIM | — | Selecionado para o Meu Dia desta data (spec 067) — mesma semântica de `tasks.my_day_date`. |
 | `archived_at` | TIMESTAMPTZ | SIM | — | *Soft delete* (arquivamento). |
 | `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação. |
 
 **CHECKs:** `freq_num >= 1 AND freq_den >= 1 AND freq_num <= freq_den`.
-**Índices:** `idx_habits_goal` — `(goal_id) WHERE goal_id IS NOT NULL`.
+**Índices:** `idx_habits_goal` — `(goal_id) WHERE goal_id IS NOT NULL`; `idx_habits_my_day` —
+`(my_day_date) WHERE my_day_date IS NOT NULL`.
 
 ### `habit_checkins` *(ativa desde a fatia 014)*
 
@@ -608,6 +613,24 @@ Marcações diárias de um hábito.
 
 **Constraints:** `UNIQUE(habit_id, date)` — um check-in por dia por hábito.
 **Índices:** `idx_habit_checkins_date` em `(habit_id, date)`.
+
+### `habit_schedules` *(spec 067)*
+
+Alertas semanais de um hábito no Google Calendar — cada linha vira um evento recorrente no
+calendário dedicado "Kaguya — Hábitos" (separado de "Kaguya — Tarefas"). Independente de
+`freq_num`/`freq_den`: os dias marcados aqui são só o alarme, nunca entram no cálculo do score.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `habit_id` | INT | NÃO | — | **FK** → `habits(id)` `ON DELETE CASCADE`. |
+| `weekday` | TEXT | NÃO | — | Código iCal do dia (`MO`..`SU`) — mesma convenção de `recurrence.py`, evita a ambiguidade entre segunda=0 (Python) e domingo=0 (JS). |
+| `time_of_day` | TIME | SIM | — | Wall-clock local (America/Sao_Paulo); `NULL` = evento de dia inteiro (sem push — limitação do Google Calendar). |
+| `google_event_id` | TEXT | SIM | — | ID do evento recorrente espelho; `NULL` = ainda não sincronizado. |
+
+**Constraints:** `UNIQUE(habit_id, weekday)` — no máximo um horário por dia da semana, por hábito.
+`CHECK (weekday IN ('MO','TU','WE','TH','FR','SA','SU'))`.
+**Índices:** `idx_habit_schedules_habit` em `(habit_id)`.
 
 ### `focus_sessions` *(spec 037 — Foco/Pomodoro; `outcome`/`cancel_reason`/`habit_id` desde a spec 062)*
 
@@ -1602,7 +1625,7 @@ sugestão pendente de resposta. Autocontida — sem FKs (Princípio III).
 | `id` | `SERIAL PRIMARY KEY` | |
 | `digest_date` | `DATE NOT NULL` | Data do digest. |
 | `sent_at` | `TIMESTAMPTZ NOT NULL` | `DEFAULT now()`. Momento do envio. |
-| `suggested_items` | `JSONB NOT NULL` | `[{n, type: "task"\|"habit", id, label, reason}, ...]` — a sugestão numerada gerada pelo Gemini. |
+| `suggested_items` | `JSONB NOT NULL` | `[{n, type: "task", id, label, reason}, ...]` — a sugestão numerada gerada pelo Gemini. `type: "habit"` só aparece em digests gravados antes da spec 067 (hábitos saíram do digest — o alerta virou o próprio evento no Google Calendar). |
 | `status` | `TEXT NOT NULL` | `DEFAULT 'pending'`. Um de: `pending`, `resolved`, `expired`. |
 | `resolved_at` | `TIMESTAMPTZ` | Momento em que o Hermes aplicou a resposta do usuário. |
 | `resolution_summary` | `TEXT` | Texto de confirmação devolvido por `apply_kaguya_digest_selection`. |
