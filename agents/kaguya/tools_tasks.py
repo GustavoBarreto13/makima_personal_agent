@@ -2195,8 +2195,14 @@ def _gcal_events_for_day(day_str: str) -> tuple[list[dict], list[tuple[int, int]
         prefs_list = get_calendar_prefs()
         prefs: dict[str, dict] = {p["calendar_id"]: p for p in prefs_list}
 
-        # Busca os eventos do Google (exclui espelho Kaguya e TickTick por padrão)
-        raw_events = _gcal.list_events(day_str, day_str)
+        # Busca os eventos do Google. exclude explícito (spec 067): além do padrão
+        # (espelho Kaguya + TickTick), esconde também "Kaguya — Hábitos" — os alertas
+        # de hábito aparecem na tela de Calendário (que usa o exclude PADRÃO, sem
+        # habitos), mas não devem inflar a capacidade nem a timeline do Meu Dia
+        # (hábito só entra aqui via seleção explícita — ver a chave "habitos").
+        raw_events = _gcal.list_events(
+            day_str, day_str, exclude=("Kaguya — Tarefas", "Kaguya — Hábitos", "TickTick")
+        )
 
         eventos_serial: list[dict] = []
         eventos_tuplas: list[tuple[int, int]] = []

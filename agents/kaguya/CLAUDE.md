@@ -331,10 +331,24 @@ inteiro) e `add_habit_to_my_day_by_name(habit)`.
 repo até a spec 067 — nada nunca setou esse campo da API; lista de strings com prefixo
 `RRULE:`, diferente da convenção interna de `recurrence.build_rrule`, que não tem o prefixo) e
 `_ensure_calendar(name, description)`, generalização de `ensure_kaguya_calendar` com cache em
-dict — `ensure_habits_calendar()` é o wrapper novo. **Crítico**: `"Kaguya — Hábitos"` entra no
-`exclude` default de `gcal.list_events()` — sem isso, os próprios alertas criados pela Kaguya
-voltariam pelo fan-out e inflariam a capacidade do Meu Dia e o digest matinal (mesmo motivo de
-`"Kaguya — Tarefas"` já estar lá).
+dict — `ensure_habits_calendar()` é o wrapper novo.
+
+**Visibilidade seletiva por consumidor, não por exclude default.** Decisão de produto (pedida
+pelo usuário depois do primeiro deploy): os alertas de hábito DEVEM aparecer na tela de
+Calendário do webapp, mas NÃO devem inflar a capacidade do Meu Dia nem poluir o digest
+matinal. `"Kaguya — Hábitos"` **não** entra no `exclude` padrão de `gcal.list_events()`
+(que continua só `("Kaguya — Tarefas", "TickTick")`) — quem não deve ver os alertas passa um
+`exclude` explícito incluindo esse nome: `tools_tasks._gcal_events_for_day` (Meu Dia) e
+`digest.build_digest_context` (WhatsApp). `GET /api/tasks/calendar/events`
+(`webapp/backend/routers/tasks.py`) usa o exclude padrão sem override, então mostra os
+alertas normalmente — inclusive como uma fonte própria e toggleável na sidebar
+(`GET /api/tasks/calendar/sources`, que só pula `is_kaguya` = "Kaguya — Tarefas", nunca
+"Kaguya — Hábitos").
+
+**Achado ao implementar isso**: a chave do cache de 60s de `list_events()` (`_events_cache`)
+não incluía `exclude` — duas chamadas para o MESMO intervalo com `exclude` diferentes
+colidiam na mesma entrada, e uma das duas recebia o resultado filtrado errado. Corrigido:
+`cache_key = (date_from, date_to, exclude)`.
 
 **Hábitos saíram do digest matinal** (`digest.py`, ver seção própria abaixo) — o `habits_pending`
 antigo tratava todo hábito como devido todos os dias (ignorava `freq_num`/`freq_den`); o alerta
@@ -883,7 +897,9 @@ faça fan-out paralelo sem corrida de dados.
 Funções principais:
 - `list_calendars()` — todos os calendários da conta; cache 5 min; serve-stale-on-error
 - `list_events(start, end, exclude?)` — eventos num intervalo; **fan-out paralelo** (ThreadPoolExecutor
-  com até 8 workers, um por calendário); preserva a ordem dos calendários; cache 60s
+  com até 8 workers, um por calendário); preserva a ordem dos calendários; cache 60s **chaveado
+  por `(start, end, exclude)`** (spec 067 — `exclude` entra na chave porque consumidores diferentes
+  pedem o mesmo intervalo com `exclude` diferente, ver a seção de Hábitos acima)
 - `_fetch_cal_events(cal, time_min, time_max)` — helper interno do fan-out; cada worker chama
   `_get_service()` (thread-local) e faz o `events().list()` individualmente
 - `create_event(calendar_id, summary, start, end, all_day, ..., recurrence?)` — cria evento com
@@ -905,9 +921,10 @@ Funções principais:
   sobre `_ensure_calendar`)
 - `ensure_habits_calendar()` — garante que "Kaguya — Hábitos" existe (spec 067) — calendário
   **separado** dos alertas de hábito, para o usuário poder silenciar/ocultar hábitos no app do
-  Google sem afetar tarefas. **Crítico**: entra no `exclude` default de `list_events()` — sem
-  isso, os próprios alertas criados pela Kaguya voltariam pelo fan-out e inflariam a capacidade
-  do Meu Dia e o digest matinal (mesmo motivo de "Kaguya — Tarefas" já estar lá).
+  Google sem afetar tarefas. **Não** entra no `exclude` padrão de `list_events()` (decisão de
+  produto: os alertas devem aparecer na tela de Calendário do webapp) — só `_gcal_events_for_day`
+  (Meu Dia) e `build_digest_context` (digest matinal) pedem `exclude` explícito para escondê-los;
+  ver a seção de Hábitos acima.
 - `invalidate_events_cache()` — limpa o cache de eventos (chamado pelas rotas POST/PATCH/DELETE do webapp)
 
 ### komi_sync.py — sync bidirecional de aniversários Komi ↔ Kaguya (fase 026)

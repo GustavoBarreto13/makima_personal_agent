@@ -1204,6 +1204,9 @@ def list_gcal_events_route(
 
     Exclui automaticamente "Kaguya — Tarefas" e "TickTick" para evitar
     duplicatas com as tarefas já renderizadas pelo sistema (anti-duplicação D6).
+    **Inclui** os alertas de hábito de "Kaguya — Hábitos" (spec 067, exclude
+    padrão de `gcal.list_events`, sem override) — diferente do Meu Dia e do
+    digest matinal, que pedem `exclude` explícito para escondê-los.
     Retorna lista vazia (não 500) em caso de falha de autenticação ou indisponibilidade
     do Google Calendar — o frontend já tem catch() que trata lista vazia graciosamente.
     """

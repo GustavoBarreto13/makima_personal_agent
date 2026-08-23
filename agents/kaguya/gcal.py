@@ -100,11 +100,13 @@ _calendars_cache: list[dict] = []
 _calendars_cache_ts: float = 0.0      # timestamp monotônico da última atualização
 _CALENDARS_TTL: float = 300.0         # 5 minutos — calendários mudam raramente
 
-# Cache de eventos por janela de datas.
-# Chave: tupla (date_from, date_to) → valor: (lista_de_eventos, timestamp)
+# Cache de eventos por janela de datas + exclude.
+# Chave: tupla (date_from, date_to, exclude) → valor: (lista_de_eventos, timestamp).
+# exclude entra na chave (spec 067) — Meu Dia/digest pedem exclude diferente da tela
+# de Calendário para o MESMO intervalo; sem isso na chave, colidiriam na mesma entrada.
 # TTL de 60s: defasagem máxima de ~1 minuto para mudanças feitas FORA do app.
 # Mudanças feitas DENTRO do app chamam invalidate_events_cache() para zerar o cache na hora.
-_events_cache: dict[tuple[str, str], tuple[list[dict], float]] = {}
+_events_cache: dict[tuple[str, str, tuple[str, ...]], tuple[list[dict], float]] = {}
 _EVENTS_TTL: float = 60.0
 
 
@@ -399,13 +401,17 @@ def _fetch_cal_events(cal: dict, time_min: str, time_max: str) -> list[dict]:
 def list_events(
     date_from: str,
     date_to: str,
-    exclude: tuple[str, ...] = ("Kaguya — Tarefas", "Kaguya — Hábitos", "TickTick"),
+    exclude: tuple[str, ...] = ("Kaguya — Tarefas", "TickTick"),
 ) -> list[dict]:
     """Lista eventos de TODOS os calendários do usuário num intervalo de datas.
 
     Resultados são cacheados por 60s (TTL 60s): mudanças feitas FORA do app levam
     no máximo ~1 minuto para aparecer; mudanças feitas DENTRO do app invalidam o
-    cache imediatamente via ``invalidate_events_cache()``.
+    cache imediatamente via ``invalidate_events_cache()``. A chave do cache inclui
+    `exclude` (spec 067) — sem isso, duas chamadas para o mesmo intervalo com
+    `exclude` diferentes (ex.: a tela de Calendário, que mostra tudo, e o Meu Dia,
+    que esconde os alertas de hábito) colidiriam na mesma entrada e uma delas
+    receberia o resultado filtrado errado.
 
     Fan-out paralelo: em vez de chamar a API de cada calendário em série, dispara
     todas as requisições ao mesmo tempo usando ``ThreadPoolExecutor``. Isso reduz o
@@ -418,10 +424,14 @@ def list_events(
 
     Calendários listados em `exclude` são pulados para evitar duplicatas:
     - "Kaguya — Tarefas": já está representado nas tarefas do sistema
-    - "Kaguya — Hábitos": alertas de hábito (spec 067) — já representados na tela de
-      Hábitos e, se selecionados, no Meu Dia; sem isso os próprios alertas criados pela
-      Kaguya voltariam pelo fan-out e inflariam a capacidade do dia e o digest matinal
     - "TickTick": sincronização externa que duplicaria eventos do usuário
+
+    **"Kaguya — Hábitos" (spec 067) NÃO entra no exclude padrão** — os alertas de
+    hábito devem aparecer na tela de Calendário do webapp, que chama esta função
+    sem override (decisão de produto). Quem NÃO deve vê-los passa `exclude`
+    explícito incluindo esse nome: `tools_tasks._gcal_events_for_day` (Meu Dia —
+    evita inflar a capacidade do dia) e `digest.build_digest_context` (digest
+    matinal do WhatsApp — hábitos saíram de lá, ver `digest.py`).
 
     Args:
         date_from: Data de início no formato YYYY-MM-DD.
@@ -442,8 +452,10 @@ def list_events(
     """
     global _events_cache
 
-    # Verifica se há resultado cacheado dentro do TTL (60s)
-    cache_key = (date_from, date_to)
+    # Verifica se há resultado cacheado dentro do TTL (60s).
+    # exclude entra na chave (spec 067) — dois exclude diferentes para o mesmo
+    # intervalo são resultados diferentes, não podem compartilhar entrada de cache.
+    cache_key = (date_from, date_to, exclude)
     agora = _time.monotonic()
     cached = _events_cache.get(cache_key)
     if cached is not None:

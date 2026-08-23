@@ -224,7 +224,14 @@ def build_digest_context(today: date | None = None) -> dict:
         waiting = _personal_only(waiting)
 
     try:
-        events = gcal.list_events(today.isoformat(), today.isoformat())
+        # exclude explícito (spec 067): além do padrão (espelho Kaguya + TickTick),
+        # esconde também "Kaguya — Hábitos" — hábitos saíram do digest (ver o aviso
+        # no topo desta função); sem isso os próprios alertas criados pela Kaguya
+        # voltariam aqui como "agenda do dia".
+        events = gcal.list_events(
+            today.isoformat(), today.isoformat(),
+            exclude=("Kaguya — Tarefas", "Kaguya — Hábitos", "TickTick"),
+        )
         calendar_ok = True
     except Exception as exc:  # noqa: BLE001 — melhor esforço, capacity trata calendar_ok=False
         logger.warning("Falha ao buscar a agenda do Google Calendar: %s", exc)

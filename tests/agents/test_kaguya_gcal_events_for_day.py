@@ -289,3 +289,24 @@ class TestGcalEventsForDay:
         assert serial[0]["context"] == "personal"
         assert tuplas_personal == [(540, 600)]
         assert tuplas_work == []
+
+    def test_exclui_kaguya_habitos_da_lista(self, monkeypatch):
+        """Meu Dia pede exclude explícito incluindo 'Kaguya — Hábitos' (spec 067).
+
+        Os alertas de hábito devem aparecer na tela de Calendário (que usa o
+        exclude PADRÃO de gcal.list_events, sem override), mas não devem inflar
+        a capacidade nem a timeline do Meu Dia — hábito só entra aqui via seleção
+        explícita ("+ Meu Dia"), nunca pelo fan-out do Google Calendar.
+        """
+        with patch("agents.kaguya.gcal.list_events", return_value=[]) as mock_gcal, \
+             patch("agents.kaguya.calendar_prefs.get_calendar_prefs", return_value=[]):
+            fn = _import_target()
+            fn("2026-06-25")
+
+        mock_gcal.assert_called_once()
+        _, kwargs = mock_gcal.call_args
+        assert "Kaguya — Hábitos" in kwargs["exclude"]
+        # Os dois excludes que já valiam antes continuam presentes — não é uma
+        # substituição, é uma ADIÇÃO ao exclude padrão de list_events.
+        assert "Kaguya — Tarefas" in kwargs["exclude"]
+        assert "TickTick" in kwargs["exclude"]
