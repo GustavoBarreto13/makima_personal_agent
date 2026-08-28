@@ -22,6 +22,8 @@ import { REL_CATS, daysUntil } from './lib'
 import { KM_PALETTES } from './lib'
 import { komiApi } from './komiApi'
 import type { OverviewPerson, PersonDetail } from './types'
+import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { AGENT_TABS } from '../../lib/agentTabs'
 
 // Views disponíveis no shell (roteamento interno por estado)
 type KomiView = 'home' | 'grid' | 'dates' | 'person'
@@ -35,6 +37,8 @@ type ModalState = null | 'new' | PersonDetail
  * Não usa React Router interno — todo o roteamento é por estado (useState).
  */
 export function KomiShell() {
+  useDocumentTitle(AGENT_TABS.komi.title, AGENT_TABS.komi.icon)
+
   // ── Estado do shell ────────────────────────────────────────────────
   const [overview,   setOverview]   = useState<OverviewPerson[]>([])  // dados de todas as pessoas
   const [loading,    setLoading]    = useState(true)    // carregamento inicial do overview

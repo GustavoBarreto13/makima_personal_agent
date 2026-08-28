@@ -47,6 +47,8 @@ import { GroupListScreen } from './screens/GroupListScreen'
 import { CommandPalette } from './components/CommandPalette'
 import { Icon } from './ui/Icons'
 import { taskFromParse } from '../../lib/parseTask'
+import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { AGENT_TABS } from '../../lib/agentTabs'
 
 // Tweaks padrão (acento azul, claro, confortável, traço, animações ligadas, variante agora).
 const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'blue', density: 'confortavel', pmark: 'bar', anim: 'on', calVariant: 'agora' }
@@ -76,6 +78,8 @@ const writeViewMode = (kind: 'list' | 'group', id: number, mode: ViewMode) => {
 }
 
 export function KaguyaShell() {
+  useDocumentTitle(AGENT_TABS.kaguya.title, AGENT_TABS.kaguya.icon)
+
   // ── Tweaks (carregados do localStorage) ──
   const [tweaks, setTweaks] = useState<Tweaks>(() => {
     try { return { ...DEFAULT_TWEAKS, ...JSON.parse(localStorage.getItem('kg-tweaks') || '{}') } }

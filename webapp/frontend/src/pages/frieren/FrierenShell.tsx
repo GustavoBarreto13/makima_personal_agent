@@ -23,6 +23,8 @@ import { AddBookModal } from './AddBookModal'
 import type { AddBookPayload } from './AddBookModal'
 import { Toast } from './Toast'
 import { TweaksPanel } from './TweaksPanel'
+import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { AGENT_TABS } from '../../lib/agentTabs'
 
 // Importações das telas da seção Frieren
 import { Home } from './screens/Home'
@@ -166,6 +168,8 @@ interface Route {
  * de leitura, notificações toast e barra "agora lendo".
  */
 export function FrierenShell() {
+  useDocumentTitle(AGENT_TABS.frieren.title, AGENT_TABS.frieren.icon)
+
   // ── Estado de dados ────────────────────────────────────────────────────────
   const [books,    setBooks]    = useState<Book[]>([])
   const [shelves,  setShelves]  = useState<Shelf[]>([])

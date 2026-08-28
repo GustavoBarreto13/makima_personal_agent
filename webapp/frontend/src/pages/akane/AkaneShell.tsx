@@ -29,6 +29,8 @@ import { Toast }    from './components/Toast'
 import { NextBar }  from './components/NextBar'
 import { TweaksPanel } from './TweaksPanel'
 import { Icon, type IconName } from './ui/Icon'
+import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { AGENT_TABS } from '../../lib/agentTabs'
 
 // ── Constantes de navegação ──────────────────────────────────────────────────
 
@@ -94,6 +96,8 @@ function saveTweaks(t: Tweaks) {
  * Renderiza sidebar, topbar, tela ativa, NextBar, LogModal, Toast e Tweaks.
  */
 export function AkaneShell() {
+  useDocumentTitle(AGENT_TABS.akane.title, AGENT_TABS.akane.icon)
+
   // ── Navegação interna (state-based, a URL não muda) ───────────────────────
   const [view, setView] = useState<AkaneView>('home')
   // ID do filme em detalhe (usado quando view='detail')

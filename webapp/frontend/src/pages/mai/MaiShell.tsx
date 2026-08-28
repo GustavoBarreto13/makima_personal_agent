@@ -29,6 +29,8 @@ import { TweaksModal }   from './modals/TweaksModal'
 
 // CSS
 import './mai.css'
+import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { AGENT_TABS } from '../../lib/agentTabs'
 
 // Chave do localStorage para persistir preferências visuais
 const TWEAKS_KEY = 'mai-tweaks'
@@ -59,6 +61,8 @@ const NAV_ITEMS: NavItem[] = [
 
 /** MaiShell — raiz do módulo de séries de TV. */
 export function MaiShell() {
+  useDocumentTitle(AGENT_TABS.mai.title, AGENT_TABS.mai.icon)
+
   // Estado de navegação: qual tela + parâmetro (ex.: series_id)
   const [nav, setNav] = useState<NavState>({ view: 'home', param: null })
 

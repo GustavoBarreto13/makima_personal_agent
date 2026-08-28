@@ -4,6 +4,8 @@
 
 import { ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { AGENT_TABS } from '../lib/agentTabs'
 
 interface LayoutProps {
   children: ReactNode
@@ -128,6 +130,9 @@ const DOMAINS: NavDomain[] = [
  *   Estrutura de dois painéis: sidebar fixa à esquerda + área principal flex-1.
  */
 export default function Layout({ children }: LayoutProps) {
+  // Layout hoje só envolve as rotas legadas de finanças (/transactions, /accounts, etc.)
+  useDocumentTitle(AGENT_TABS.nami.title, AGENT_TABS.nami.icon)
+
   // useLocation permite saber a rota atual para aplicar destaque correto
   const location = useLocation()
 

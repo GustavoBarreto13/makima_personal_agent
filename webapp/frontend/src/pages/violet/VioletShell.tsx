@@ -11,6 +11,8 @@ import type { VioletPrefs, VioletRoute } from './types'
 import { DEFAULT_PREFS } from './types'
 import { Icon } from './ui/Icon'
 import { TweaksPanel } from './TweaksPanel'
+import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { AGENT_TABS } from '../../lib/agentTabs'
 
 // Telas
 import { Write } from './screens/Write'
@@ -79,6 +81,8 @@ function applyTweaks(el: HTMLElement, prefs: VioletPrefs) {
 }
 
 export function VioletShell() {
+  useDocumentTitle(AGENT_TABS.violet.title, AGENT_TABS.violet.icon)
+
   const [route, setRoute] = useState<VioletRoute>({ view: 'write', param: null })
   const [tweaks, setTweaks] = useState<VioletPrefs>(loadTweaks)
   const [showTweaks, setShowTweaks] = useState(false)

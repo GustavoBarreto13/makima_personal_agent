@@ -27,6 +27,8 @@ import { NewTripModal, type NewTripForm } from './modals/NewTripModal'
 import { NewItemModal, type NewItemForm } from './modals/NewItemModal'
 import { LogExpenseModal, type LogExpenseForm } from './modals/LogExpenseModal'
 import { ProtocolWizard } from './modals/ProtocolWizard'
+import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { AGENT_TABS } from '../../lib/agentTabs'
 
 import './yato.css'
 
@@ -64,6 +66,8 @@ const TITLES: Record<NavState['view'], string> = {
 }
 
 export function YatoShell() {
+  useDocumentTitle(AGENT_TABS.yato.title, AGENT_TABS.yato.icon)
+
   const [tweaks, setTweaks] = useState<Tweaks>(loadTweaks)
   const [nav, setNav] = useState<NavState>({ view: 'home', param: null })
   const [trips, setTrips] = useState<Trip[]>([])

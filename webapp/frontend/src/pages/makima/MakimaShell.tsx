@@ -21,6 +21,8 @@ import { AGENTS, HERO_COPY, MAKIMA_IMG } from './data'
 import { MkIcon } from './icons'
 import { makimaApi } from './makimaApi'
 import type { HubSummary } from './types'
+import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { AGENT_TABS } from '../../lib/agentTabs'
 
 import './makima.css'
 
@@ -44,6 +46,8 @@ function loadTheme(): 'dark' | 'light' {
 
 /** MakimaShell — raiz do Hub em tela cheia. */
 export function MakimaShell() {
+  useDocumentTitle(AGENT_TABS.makima.title, AGENT_TABS.makima.icon)
+
   // Tema atual (dark por default) — controla o atributo data-theme do .mkA.
   const [theme, setTheme] = useState<'dark' | 'light'>(loadTheme)
 

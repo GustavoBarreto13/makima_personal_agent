@@ -14,6 +14,8 @@ import { Toast } from './Toast'
 import { TweaksPanel } from './TweaksPanel'
 import { Icon } from './icons'
 import { fmtMoney } from './ui'
+import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { AGENT_TABS } from '../../lib/agentTabs'
 
 // ── Importações das telas ─────────────────────────────────────────────────────
 import { Dashboard }     from './screens/Dashboard'
@@ -153,6 +155,8 @@ function formatCompact(v: number): string {
 
 /** Shell principal da seção Nami. Montado na rota /nami/*. */
 export function NamiShell() {
+  useDocumentTitle(AGENT_TABS.nami.title, AGENT_TABS.nami.icon)
+
   // ── Navegação interna ──────────────────────────────────────────────────────
   const [view, setView] = useState<NamiView>(() => {
     // Lê o hash da URL para suportar deep-link

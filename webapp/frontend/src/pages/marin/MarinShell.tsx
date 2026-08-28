@@ -34,6 +34,8 @@ import { NextBar }  from './components/NextBar'
 
 // API
 import { marinApi } from './marinApi'
+import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { AGENT_TABS } from '../../lib/agentTabs'
 
 // Tipo das views disponíveis
 type MarinView = 'home' | 'catalogo' | 'diario' | 'watchlist' | 'lancamentos' | 'stats' | 'listas' | 'etiquetas' | 'rewind' | 'detalhe'
@@ -98,6 +100,8 @@ function loadTweaks(): Tweaks {
  * NextBar exibe o próximo episódio do schedule, com paginação ‹ ›.
  */
 export function MarinShell() {
+  useDocumentTitle(AGENT_TABS.marin.title, AGENT_TABS.marin.icon)
+
   // Estado de navegação
   const [view, setView] = useState<MarinView>('home')
   const [animeId, setAnimeId] = useState<string | null>(null)  // para a view 'detalhe'
