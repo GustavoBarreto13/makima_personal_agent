@@ -110,7 +110,7 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 
 ---
 
-## Tools públicas (60 no total)
+## Tools públicas (62 no total)
 
 > As tabelas abaixo listam as principais. Além delas, cada módulo tem o CRUD complementar
 > (`update_*` / `delete_*` de contas, cartões, empréstimos, parcelamentos, orçamentos e
@@ -229,6 +229,8 @@ resolve a lista ativa "Mercado" (ou a única ativa existente).
 |---|---|
 | `create_shopping_list` | Cria uma lista nomeada nova (ex.: "Farmácia") |
 | `list_shopping_lists` | Lista listas por status (ativa/arquivada/todas) |
+| `update_shopping_list` | Renomeia e/ou muda status (ativa/arquivada) — bloqueia reabrir lista já finalizada |
+| `delete_shopping_list` | Remove a lista e seus itens — bloqueia lista já finalizada (histórico de compra) |
 | `add_shopping_items` | Adiciona itens numa frase só ("arroz, feijão 2kg, leite") — cria a lista "Mercado" sob demanda se nenhuma ativa existir; não duplica item já pendente na lista |
 | `show_shopping_list` | Itens da lista + contadores (pendentes/no carrinho) + total estimado |
 | `check_shopping_item` | Marca/desmarca item no carrinho |

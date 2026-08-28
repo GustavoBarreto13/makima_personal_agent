@@ -6,6 +6,7 @@ import { namiApi } from '../namiApi'
 import type { Account } from '../types'
 import { FormModal } from '../modals/FormModal'
 import { TransferModal } from '../modals/TransferModal'
+import { ConfirmDialog } from '../modals/ConfirmDialog'
 import { Icon } from '../icons'
 import { fmtMoney } from '../ui'
 
@@ -39,6 +40,7 @@ export function Accounts({ accounts, onToast, onAccountsChanged }: AccountsProps
   const [showTransfer, setShowTransfer] = useState(false)
   const [saving, setSaving]     = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Account | null>(null)
 
   const total = accounts.reduce((s, a) => s + (a.balance_inicial ?? 0), 0)
 
@@ -86,6 +88,7 @@ export function Accounts({ accounts, onToast, onAccountsChanged }: AccountsProps
       onToast('Erro ao remover conta')
     } finally {
       setDeletingId(null)
+      setConfirmDelete(null)
     }
   }
 
@@ -188,7 +191,7 @@ export function Accounts({ accounts, onToast, onAccountsChanged }: AccountsProps
                   </button>
                   <button
                     className="acct-del"
-                    onClick={() => handleDelete(acc.id)}
+                    onClick={() => setConfirmDelete(acc)}
                     disabled={deletingId === acc.id}
                     aria-label="Remover conta"
                   >
@@ -235,6 +238,17 @@ export function Accounts({ accounts, onToast, onAccountsChanged }: AccountsProps
           accounts={accounts}
           onClose={() => setShowTransfer(false)}
           onSaved={async msg => { onToast(msg ?? 'Transferência registrada ✓'); onAccountsChanged() }}
+        />
+      )}
+
+      {/* Confirmação de exclusão */}
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Excluir conta"
+          message={`Encerrar a conta "${confirmDelete.name}"? O histórico de transações é preservado, mas a conta some das opções de lançamento.`}
+          busy={deletingId === confirmDelete.id}
+          onConfirm={() => handleDelete(confirmDelete.id)}
+          onClose={() => setConfirmDelete(null)}
         />
       )}
     </>

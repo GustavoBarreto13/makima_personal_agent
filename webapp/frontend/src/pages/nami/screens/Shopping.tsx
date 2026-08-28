@@ -6,8 +6,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { namiApi } from '../namiApi'
-import type { Account, Card, ShoppingList, ShoppingListDetail, FrequentItem } from '../types'
+import type { Account, Card, ShoppingList, ShoppingListDetail, ShoppingItem, FrequentItem } from '../types'
 import { FormModal } from '../modals/FormModal'
+import { ConfirmDialog } from '../modals/ConfirmDialog'
 import { Icon } from '../icons'
 import { fmtMoney } from '../ui'
 
@@ -37,7 +38,10 @@ export function Shopping({ accounts, cards, onToast }: ShoppingProps) {
   const [quickAdd, setQuickAdd]     = useState('')
   const [adding, setAdding]         = useState(false)
   const [showNewList, setShowNewList] = useState(false)
+  const [showRenameList, setShowRenameList] = useState(false)
+  const [confirmDeleteList, setConfirmDeleteList] = useState(false)
   const [showFinish, setShowFinish] = useState(false)
+  const [editingItem, setEditingItem] = useState<ShoppingItem | null>(null)
   const [saving, setSaving]         = useState(false)
   const [busyItemId, setBusyItemId] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -163,6 +167,57 @@ export function Shopping({ accounts, cards, onToast }: ShoppingProps) {
     }
   }
 
+  async function handleRenameList(values: Record<string, unknown>) {
+    setSaving(true)
+    try {
+      const name = String(values.name ?? '').trim()
+      if (!name) throw new Error('Informe um nome para a lista')
+      await namiApi.updateShoppingList(activeListId, { name })
+      setShowRenameList(false)
+      await loadLists()
+      onToast('Lista renomeada ✓')
+    } catch (err: unknown) {
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDeleteList() {
+    setSaving(true)
+    try {
+      await namiApi.deleteShoppingList(activeListId)
+      setConfirmDeleteList(false)
+      onToast('Lista removida')
+      await loadLists()
+    } catch {
+      onToast('Erro ao remover lista')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleEditItem(values: Record<string, unknown>) {
+    if (!editingItem) return
+    setSaving(true)
+    try {
+      const preco = String(values.preco_estimado ?? '').trim()
+      await namiApi.updateShoppingItem(editingItem.id, {
+        name: String(values.name ?? '') || undefined,
+        quantidade: String(values.quantidade ?? '') || undefined,
+        unidade: String(values.unidade ?? '') || undefined,
+        preco_estimado: preco ? parseFloat(preco.replace(',', '.')) : undefined,
+      })
+      setEditingItem(null)
+      await loadDetail(activeListId)
+      onToast('Item atualizado ✓')
+    } catch (err: unknown) {
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
   function resolveFonte(fonte: string) {
     if (!fonte) return { conta: '', card_id: '' }
     const [kind, value] = fonte.split(':')
@@ -215,6 +270,24 @@ export function Shopping({ accounts, cards, onToast }: ShoppingProps) {
             <option key={l.id} value={l.id}>{l.name}</option>
           ))}
         </select>
+        <button
+          className="btn btn-ghost"
+          onClick={() => setShowRenameList(true)}
+          disabled={!activeListId}
+          aria-label="Renomear lista"
+          title="Renomear lista"
+        >
+          <Icon name="edit" size={14} />
+        </button>
+        <button
+          className="btn btn-ghost"
+          onClick={() => setConfirmDeleteList(true)}
+          disabled={!activeListId || lists.length < 2}
+          aria-label="Excluir lista"
+          title={lists.length < 2 ? 'Não é possível excluir a única lista' : 'Excluir lista'}
+        >
+          <Icon name="trash" size={14} />
+        </button>
         <button className="btn btn-ghost" onClick={() => setShowNewList(true)}>
           <Icon name="plus" size={14} /> Nova lista
         </button>
@@ -290,6 +363,15 @@ export function Shopping({ accounts, cards, onToast }: ShoppingProps) {
               <button
                 type="button"
                 className="shop-remove"
+                aria-label={`Editar ${item.name}`}
+                disabled={busyItemId === item.id}
+                onClick={() => setEditingItem(item)}
+              >
+                <Icon name="edit" size={14} />
+              </button>
+              <button
+                type="button"
+                className="shop-remove"
                 aria-label={`Remover ${item.name}`}
                 disabled={busyItemId === item.id}
                 onClick={() => handleRemove(item.id)}
@@ -326,6 +408,55 @@ export function Shopping({ accounts, cards, onToast }: ShoppingProps) {
           fields={[
             { key: 'name', label: 'Nome', type: 'text', required: true, placeholder: 'Ex.: Farmácia, Petshop…' },
           ]}
+        />
+      )}
+
+      {/* Modal: renomear lista */}
+      {showRenameList && (
+        <FormModal
+          title="Renomear lista"
+          saving={saving}
+          onClose={() => setShowRenameList(false)}
+          onSave={handleRenameList}
+          saveLabel="Salvar"
+          initialValues={{ name: activeList?.name ?? '' }}
+          fields={[
+            { key: 'name', label: 'Nome', type: 'text', required: true },
+          ]}
+        />
+      )}
+
+      {/* Modal: editar item */}
+      {editingItem && (
+        <FormModal
+          title={`Editar item — ${editingItem.name}`}
+          saving={saving}
+          onClose={() => setEditingItem(null)}
+          onSave={handleEditItem}
+          saveLabel="Salvar"
+          initialValues={{
+            name: editingItem.name,
+            quantidade: editingItem.quantidade ?? '',
+            unidade: editingItem.unidade ?? '',
+            preco_estimado: editingItem.preco_estimado ? String(editingItem.preco_estimado) : '',
+          }}
+          fields={[
+            { key: 'name',           label: 'Nome',           type: 'text',  required: true },
+            { key: 'quantidade',     label: 'Quantidade',     type: 'text',  placeholder: 'Ex.: 2kg' },
+            { key: 'unidade',        label: 'Unidade',        type: 'text',  placeholder: 'Ex.: un, kg, L' },
+            { key: 'preco_estimado', label: 'Preço estimado', type: 'money' },
+          ]}
+        />
+      )}
+
+      {/* Confirmação: excluir lista */}
+      {confirmDeleteList && (
+        <ConfirmDialog
+          title="Excluir lista"
+          message={`Excluir a lista "${activeList?.name ?? ''}" e todos os seus itens? Essa ação não pode ser desfeita.`}
+          busy={saving}
+          onConfirm={handleDeleteList}
+          onClose={() => setConfirmDeleteList(false)}
         />
       )}
 

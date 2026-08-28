@@ -174,6 +174,78 @@ def list_shopping_lists(status: str = "ativa") -> dict:
     return {"status": "ok", "lists": rows}
 
 
+def update_shopping_list(list_id: str, name: str = "", status: str = "") -> dict:
+    """Renomeia uma lista de compras e/ou muda seu status (ativa/arquivada).
+
+    Só altera os campos fornecidos. Não permite reabrir uma lista já
+    finalizada (com `transaction_id` vinculado) — o histórico da compra
+    finalizada é imutável, mesma regra de `delete_shopping_list`.
+
+    Args:
+        list_id: ID da lista.
+        name: Novo nome (opcional).
+        status: Novo status — "ativa" ou "arquivada" (opcional).
+
+    Returns:
+        {"status": "ok", "message": ...} ou {"status": "error", "message": ...}.
+    """
+    rows = run_select(
+        "SELECT id, name, status, transaction_id FROM shopping_lists WHERE id = %(id)s",
+        {"id": list_id},
+    )
+    if not rows:
+        return {"status": "error", "message": f"Lista não encontrada: {list_id}"}
+    lst = rows[0]
+
+    if status and status not in ("ativa", "arquivada"):
+        return {"status": "error", "message": "Status inválido — use 'ativa' ou 'arquivada'"}
+    if status == "ativa" and lst["transaction_id"]:
+        return {"status": "error", "message": "Lista já finalizada não pode ser reaberta"}
+
+    sets = []
+    params: dict = {"id": list_id}
+    if name and name.strip():
+        sets.append("name = %(name)s")
+        params["name"] = name.strip()
+    if status:
+        sets.append("status = %(status)s")
+        params["status"] = status
+
+    if not sets:
+        return {"status": "error", "message": "Nenhum campo para atualizar"}
+
+    sets.append("updated_at = NOW()")
+    run_dml(f"UPDATE shopping_lists SET {', '.join(sets)} WHERE id = %(id)s", params)
+    return {"status": "ok", "message": "Lista atualizada"}
+
+
+def delete_shopping_list(list_id: str) -> dict:
+    """Remove uma lista de compras e seus itens (exclusão real).
+
+    Bloqueia a exclusão de listas já finalizadas (com `transaction_id`
+    vinculado) — o histórico da compra é preservado; arquive em vez de excluir.
+
+    Args:
+        list_id: ID da lista.
+
+    Returns:
+        {"status": "ok", "message": ...} ou {"status": "error", "message": ...}.
+    """
+    rows = run_select(
+        "SELECT id, name, transaction_id FROM shopping_lists WHERE id = %(id)s",
+        {"id": list_id},
+    )
+    if not rows:
+        return {"status": "error", "message": f"Lista não encontrada: {list_id}"}
+    lst = rows[0]
+    if lst["transaction_id"]:
+        return {"status": "error", "message": "Lista já finalizada não pode ser excluída — é histórico de uma compra"}
+
+    run_dml("DELETE FROM shopping_list_items WHERE list_id = %(id)s", {"id": list_id})
+    run_dml("DELETE FROM shopping_lists WHERE id = %(id)s", {"id": list_id})
+    return {"status": "ok", "message": f"Lista '{lst['name']}' removida"}
+
+
 def add_shopping_items(items: str, list_id: str = "", list_name: str = "") -> dict:
     """Adiciona um ou mais itens a uma lista de compras — vários de uma vez.
 

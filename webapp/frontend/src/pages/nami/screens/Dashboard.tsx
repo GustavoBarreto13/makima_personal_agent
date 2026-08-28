@@ -3,15 +3,17 @@
 // Layout: hero → QuickAdd → stat-row (4 cards) → grid-2 (fluxo+donut) →
 //         grid-2 (contas+próximos vencimentos) → preview orçamentos → transações recentes.
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { api } from '../../../lib/api'
 import { namiApi } from '../namiApi'
 import type { StatsResponse, Account, Card, Subscription, Category } from '../types'
 import { QuickAdd } from '../components/QuickAdd'
 import { TxList } from '../components/TxRow'
+import { AddModal } from '../modals/AddModal'
 import { Icon } from '../icons'
 import { DonutPanel, CashflowBars, BigMoney, Spark, greet, daysUntil, urgency, fmtMoney, Donut, AreaTrend, HeatmapMonth } from '../ui'
 import { normalizeTx, buildCatMap, groupByDay } from '../lib'
+import type { NormalizedTx } from '../lib'
 import { todayLocalDate } from '../dateUtils'
 import { kaguyaApi } from '../../kaguya/kaguyaApi'
 
@@ -42,6 +44,7 @@ export function Dashboard({
   const [recentTxs, setRecentTxs]   = useState<ReturnType<typeof normalizeTx>[]>([])
   const [deletingId, setDeletingId]  = useState<string | null>(null)
   const [loadingTxs, setLoadingTxs]  = useState(true)
+  const [editingTx, setEditingTx]    = useState<NormalizedTx | null>(null)
   // Primeiro nome do usuário autenticado (vem do cookie de sessão via /auth/me)
   const [userName, setUserName]      = useState('')
 
@@ -96,18 +99,22 @@ export function Dashboard({
   }, [])
 
   // Carrega transações recentes para o preview (últimas 5)
-  useEffect(() => {
+  const loadRecentTxs = useCallback(async () => {
     setLoadingTxs(true)
-    namiApi.getTransactions(month)
-      .then(r => {
-        const normalized = (r.transactions ?? []).map(normalizeTx)
-        // Ordena decrescente por data e pega as 5 mais recentes
-        const sorted = normalized.sort((a, b) => b.date.localeCompare(a.date))
-        setRecentTxs(sorted.slice(0, 5))
-      })
-      .catch(() => setRecentTxs([]))
-      .finally(() => setLoadingTxs(false))
+    try {
+      const r = await namiApi.getTransactions(month)
+      const normalized = (r.transactions ?? []).map(normalizeTx)
+      // Ordena decrescente por data e pega as 5 mais recentes
+      const sorted = normalized.sort((a, b) => b.date.localeCompare(a.date))
+      setRecentTxs(sorted.slice(0, 5))
+    } catch {
+      setRecentTxs([])
+    } finally {
+      setLoadingTxs(false)
+    }
   }, [month])
+
+  useEffect(() => { loadRecentTxs() }, [loadRecentTxs])
 
   // Mapa de categorias para lookup
   const catMap = useMemo(() => buildCatMap(categories), [categories])
@@ -125,6 +132,13 @@ export function Dashboard({
     } finally {
       setDeletingId(null)
     }
+  }
+
+  // Callback após edição de transação (mesmo padrão de Transactions.tsx)
+  async function handleEditSaved(msg?: string) {
+    setEditingTx(null)
+    await onTransactionSaved(msg)
+    await loadRecentTxs()
   }
 
   // Extrai dados do stats (com defaults para o estado de carregamento)
@@ -169,11 +183,13 @@ export function Dashboard({
   const upcoming = useMemo(() => {
     const items: { name: string; amount: number; days: number; kind: string }[] = []
 
-    // Cartões — vencimento da fatura
+    // Cartões — vencimento da fatura. Bug corrigido: amount ficava hardcoded em 0,
+    // então o valor da fatura nunca aparecia na lista — usa a dívida atual do
+    // ciclo (já calculada por GET /cards, spec 042).
     cards.forEach(c => {
       if (c.due_day) {
         const d = daysUntil(c.due_day)
-        if (d >= 0 && d <= 30) items.push({ name: c.name, amount: 0, days: d, kind: 'card' })
+        if (d >= 0 && d <= 30) items.push({ name: c.name, amount: c.divida_atual ?? 0, days: d, kind: 'card' })
       }
     })
 
@@ -542,6 +558,7 @@ export function Dashboard({
               groups={recentGroups}
               catMap={catMap}
               onDelete={handleDelete}
+              onEdit={setEditingTx}
               deletingId={deletingId}
             />
           </div>
@@ -555,6 +572,18 @@ export function Dashboard({
           Carregando…
         </div>
       )}
+
+      {/* Modal de edição da transação (mesmo padrão de Transactions.tsx) —
+          bug corrigido: antes o botão de editar nunca aparecia aqui porque
+          TxList não recebia onEdit. */}
+      <AddModal
+        open={!!editingTx}
+        accounts={accounts}
+        cards={cards}
+        editingTx={editingTx}
+        onClose={() => setEditingTx(null)}
+        onSaved={handleEditSaved}
+      />
     </>
   )
 }

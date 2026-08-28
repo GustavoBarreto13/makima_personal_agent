@@ -272,6 +272,10 @@ export const namiApi = {
   }): Promise<{ status: string; group_id: string }> =>
     api.post('/api/finances/installments', body),
 
+  /** Edita nome/notas do grupo — valores financeiros são imutáveis. */
+  updateInstallment: (id: string, body: { name?: string; notes?: string }): Promise<{ status: string }> =>
+    api.patch(`/api/finances/installments/${id}`, body),
+
   cancelInstallment: (id: string): Promise<{ status: string }> =>
     api.post(`/api/finances/installments/${id}/cancel`, {}),
 
@@ -295,6 +299,14 @@ export const namiApi = {
 
   createShoppingList: (name: string): Promise<{ status: string; id: string }> =>
     api.post('/api/finances/shopping-lists', { name }),
+
+  /** Renomeia e/ou muda o status da lista (não permite reabrir uma lista já finalizada). */
+  updateShoppingList: (listId: string, body: { name?: string; status?: string }): Promise<{ status: string }> =>
+    api.patch(`/api/finances/shopping-lists/${listId}`, body),
+
+  /** Remove a lista e seus itens — bloqueado no backend se a lista já foi finalizada. */
+  deleteShoppingList: (listId: string): Promise<{ status: string }> =>
+    api.del(`/api/finances/shopping-lists/${listId}`),
 
   getShoppingList: (listId: string): Promise<ShoppingListDetail> =>
     api.get(`/api/finances/shopping-lists/${listId}`),

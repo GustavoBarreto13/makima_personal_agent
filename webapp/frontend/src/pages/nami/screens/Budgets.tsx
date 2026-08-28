@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { namiApi } from '../namiApi'
 import type { Budget, Category } from '../types'
 import { FormModal } from '../modals/FormModal'
+import { ConfirmDialog } from '../modals/ConfirmDialog'
 import { Icon, lucideToKey } from '../icons'
 import { fmtMoney } from '../ui'
 
@@ -22,8 +23,10 @@ export function Budgets({ month, onToast }: BudgetsProps) {
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading]       = useState(true)
   const [showForm, setShowForm]     = useState(false)
+  const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
   const [saving, setSaving]         = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Budget | null>(null)
 
   // Carrega categorias uma vez (para ícone e cor nos envelopes)
   useEffect(() => {
@@ -67,15 +70,20 @@ export function Budgets({ month, onToast }: BudgetsProps) {
   async function handleSave(values: Record<string, unknown>) {
     setSaving(true)
     try {
-      // Resolve o nome da categoria pelo ID selecionado no select
-      const selectedCat = categories.find(c => c.id === String(values.catId ?? ''))
+      // Modo edição: categoria já é fixa (envelope existente) — só o limite muda.
+      // `createBudget` (POST /budgets) é upsert no backend (set_budget), então
+      // reenviar a mesma categoria atualiza o limite em vez de duplicar o envelope.
+      const categoria = editingBudget
+        ? (editingBudget.categoria ?? editingBudget.category_id)
+        : (categories.find(c => c.id === String(values.catId ?? ''))?.name ?? String(values.catId ?? ''))
       await namiApi.createBudget({
         month,
-        categoria: selectedCat?.name ?? String(values.catId ?? ''),
+        categoria,
         limite: parseFloat(String(values.limite ?? '0').replace(',', '.')),
       })
-      onToast('Orçamento criado ✓')
+      onToast(editingBudget ? 'Orçamento atualizado ✓' : 'Orçamento criado ✓')
       setShowForm(false)
+      setEditingBudget(null)
       const r = await namiApi.getBudgets(month)
       setBudgets(r.budgets ?? [])
     } catch (err: unknown) {
@@ -96,6 +104,7 @@ export function Budgets({ month, onToast }: BudgetsProps) {
       onToast('Erro ao remover orçamento')
     } finally {
       setDeletingId(null)
+      setConfirmDelete(null)
     }
   }
 
@@ -105,7 +114,7 @@ export function Budgets({ month, onToast }: BudgetsProps) {
       <div className="page-head">
         <h2>Orçamentos</h2>
         {freeCats.length > 0 && (
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+          <button className="btn btn-primary" onClick={() => { setEditingBudget(null); setShowForm(true) }}>
             <Icon name="plus" size={14} /> Novo orçamento
           </button>
         )}
@@ -205,8 +214,16 @@ export function Budgets({ month, onToast }: BudgetsProps) {
                     </div>
                     <button
                       className="budget-del"
+                      title="Editar orçamento"
+                      onClick={() => { setEditingBudget(b); setShowForm(true) }}
+                      aria-label="Editar orçamento"
+                    >
+                      <Icon name="edit" size={12} />
+                    </button>
+                    <button
+                      className="budget-del"
                       title="Remover orçamento"
-                      onClick={() => handleDelete(b)}
+                      onClick={() => setConfirmDelete(b)}
                       disabled={deletingId === b.id}
                       aria-label="Remover orçamento"
                     >
@@ -222,24 +239,31 @@ export function Budgets({ month, onToast }: BudgetsProps) {
               <div className="empty">
                 <Icon name="target" size={32} />
                 <p>Nenhum orçamento definido para este mês</p>
-                <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-                  <Icon name="plus" size={14} /> Criar envelope
-                </button>
+                {/* Bug corrigido: antes aparecia mesmo com freeCats vazio, abrindo um
+                    formulário com o seletor de categoria sem nenhuma opção. */}
+                {freeCats.length > 0 && (
+                  <button className="btn btn-primary" onClick={() => { setEditingBudget(null); setShowForm(true) }}>
+                    <Icon name="plus" size={14} /> Criar envelope
+                  </button>
+                )}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Modal de novo orçamento — categorias de despesa sem envelope ainda */}
+      {/* Modal de novo orçamento / edição — categoria é fixa em modo edição */}
       {showForm && (
         <FormModal
-          title="Novo orçamento"
+          title={editingBudget ? `Editar orçamento — ${editingBudget.categoria ?? editingBudget.category_id}` : 'Novo orçamento'}
           saving={saving}
-          onClose={() => setShowForm(false)}
+          onClose={() => { setShowForm(false); setEditingBudget(null) }}
           onSave={handleSave}
-          saveLabel="Criar orçamento"
-          fields={[
+          saveLabel={editingBudget ? 'Salvar alterações' : 'Criar orçamento'}
+          initialValues={editingBudget ? { limite: String(editingBudget.limit_amount ?? 0) } : undefined}
+          fields={editingBudget ? [
+            { key: 'limite', label: 'Limite mensal', type: 'money', required: true },
+          ] : [
             {
               key: 'catId',
               label: 'Categoria',
@@ -248,6 +272,17 @@ export function Budgets({ month, onToast }: BudgetsProps) {
             },
             { key: 'limite', label: 'Limite mensal', type: 'money', required: true },
           ]}
+        />
+      )}
+
+      {/* Confirmação de exclusão */}
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Excluir orçamento"
+          message={`Remover o envelope de "${confirmDelete.categoria ?? confirmDelete.category_id}"? O limite definido para este mês será apagado.`}
+          busy={deletingId === confirmDelete.id}
+          onConfirm={() => handleDelete(confirmDelete)}
+          onClose={() => setConfirmDelete(null)}
         />
       )}
     </>

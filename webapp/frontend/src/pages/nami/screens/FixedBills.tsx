@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { namiApi } from '../namiApi'
 import type { Account, Card, RecurringStatusItem } from '../types'
 import { FormModal } from '../modals/FormModal'
+import { ConfirmDialog } from '../modals/ConfirmDialog'
 import { Icon } from '../icons'
 import { fmtMoney } from '../ui'
 
@@ -47,6 +48,8 @@ export function FixedBills({ accounts, cards, onToast, onSubscriptionsChanged }:
   const [payingBill, setPayingBill] = useState<RecurringStatusItem | null>(null)
   const [saving, setSaving]         = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<RecurringStatusItem | null>(null)
+  const [confirmSkip, setConfirmSkip]     = useState<RecurringStatusItem | null>(null)
 
   // O valor de cada opção é o próprio nome — o backend resolve `conta` tentando
   // primeiro uma conta bancária e depois um cartão de crédito (mesma regra de
@@ -139,6 +142,8 @@ export function FixedBills({ accounts, cards, onToast, onSubscriptionsChanged }:
       load()
     } catch {
       onToast('Erro ao pular ciclo')
+    } finally {
+      setConfirmSkip(null)
     }
   }
 
@@ -153,6 +158,7 @@ export function FixedBills({ accounts, cards, onToast, onSubscriptionsChanged }:
       onToast('Erro ao remover conta fixa')
     } finally {
       setDeletingId(null)
+      setConfirmDelete(null)
     }
   }
 
@@ -220,14 +226,14 @@ export function FixedBills({ accounts, cards, onToast, onSubscriptionsChanged }:
                     </button>
                   )}
                   {item.cycle_status !== 'paga' && (
-                    <button className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 8px' }} onClick={() => handleSkip(item.id)} title="Pular este ciclo sem lançar despesa">
+                    <button className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 8px' }} onClick={() => setConfirmSkip(item)} title="Pular este ciclo sem lançar despesa">
                       Pular
                     </button>
                   )}
                   <button className="sub-del" onClick={() => { setEditingBill(item); setShowForm(true) }} aria-label="Editar conta fixa">
                     <Icon name="edit" size={13} />
                   </button>
-                  <button className="sub-del" onClick={() => handleDelete(item.id)} disabled={deletingId === item.id} aria-label="Remover conta fixa">
+                  <button className="sub-del" onClick={() => setConfirmDelete(item)} disabled={deletingId === item.id} aria-label="Remover conta fixa">
                     <Icon name="trash" size={13} />
                   </button>
                 </div>
@@ -283,6 +289,28 @@ export function FixedBills({ accounts, cards, onToast, onSubscriptionsChanged }:
             Valor esperado: {fmtMoney(payingBill.valor)}
           </div>
         </FormModal>
+      )}
+
+      {/* Confirmação de exclusão */}
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Excluir conta fixa"
+          message={`Remover "${confirmDelete.name}"? Essa ação não pode ser desfeita.`}
+          busy={deletingId === confirmDelete.id}
+          onConfirm={() => handleDelete(confirmDelete.id)}
+          onClose={() => setConfirmDelete(null)}
+        />
+      )}
+
+      {/* Confirmação de pular ciclo */}
+      {confirmSkip && (
+        <ConfirmDialog
+          title="Pular ciclo"
+          message={`Pular o vencimento atual de "${confirmSkip.name}" sem lançar despesa? O próximo vencimento avança mesmo sem pagamento registrado.`}
+          confirmLabel="Pular"
+          onConfirm={() => handleSkip(confirmSkip.id)}
+          onClose={() => setConfirmSkip(null)}
+        />
       )}
     </>
   )

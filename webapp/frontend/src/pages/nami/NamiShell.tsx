@@ -202,10 +202,13 @@ export function NamiShell() {
   const loadGlobal = useCallback(async () => {
     // allSettled: mesmo que um endpoint retorne 500, os demais ainda preenchem seus estados.
     // Isso evita que um erro em /cards ou /subscriptions apague silenciosamente a lista de contas.
+    // 'todas' (não só 'ativa') — a tela de Assinaturas precisa mostrar pausadas/
+    // canceladas para permitir reativar; os badges e o Dashboard já filtram por
+    // status='ativa' localmente, então trazer todas aqui não muda o que exibem.
     const [accsR, cdsR, subsR] = await Promise.allSettled([
       namiApi.getAccounts(),
       namiApi.getCards(),
-      namiApi.getSubscriptions(),
+      namiApi.getSubscriptions('todas'),
     ])
 
     // Seta cada estado de forma independente — só atualiza se o pedido teve sucesso

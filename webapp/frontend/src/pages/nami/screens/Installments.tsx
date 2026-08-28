@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { namiApi } from '../namiApi'
 import type { Account, Card, Category, Installment, InstallmentDetail } from '../types'
 import { FormModal } from '../modals/FormModal'
+import { ConfirmDialog } from '../modals/ConfirmDialog'
 import { Icon } from '../icons'
 import { fmtMoney, fmtDay, monthShort } from '../ui'
 
@@ -31,7 +32,10 @@ export function Installments({ accounts, cards, onToast }: InstallmentsProps) {
   const [installments, setInstallments] = useState<Installment[]>([])
   const [loading, setLoading]           = useState(true)
   const [showForm, setShowForm]         = useState(false)
+  const [editingInst, setEditingInst]   = useState<Installment | null>(null)
   const [saving, setSaving]             = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState<Installment | null>(null)
+  const [confirmDeleteFull, setConfirmDeleteFull] = useState<Installment | null>(null)
 
   // Compromissos futuros (3 meses) — carregados em paralelo, um card por mês
   const [commitments, setCommitments] = useState<Record<string, number>>({})
@@ -111,8 +115,7 @@ export function Installments({ accounts, cards, onToast }: InstallmentsProps) {
     }
   }
 
-  async function handleCancelFuture(id: string, name: string) {
-    if (!window.confirm(`Cancelar as parcelas futuras de "${name}"? As já pagas continuam no histórico.`)) return
+  async function handleCancelFuture(id: string) {
     try {
       await namiApi.cancelInstallment(id)
       onToast('Parcelas futuras canceladas')
@@ -121,11 +124,12 @@ export function Installments({ accounts, cards, onToast }: InstallmentsProps) {
       await load()
     } catch {
       onToast('Erro ao cancelar parcelas futuras')
+    } finally {
+      setConfirmCancel(null)
     }
   }
 
-  async function handleDeleteFull(id: string, name: string) {
-    if (!window.confirm(`Excluir "${name}" por completo, incluindo o histórico de parcelas pagas? Esta ação não pode ser desfeita.`)) return
+  async function handleDeleteFull(id: string) {
     try {
       await namiApi.deleteInstallment(id)
       onToast('Parcelamento removido')
@@ -134,25 +138,37 @@ export function Installments({ accounts, cards, onToast }: InstallmentsProps) {
       await load()
     } catch {
       onToast('Erro ao remover parcelamento')
+    } finally {
+      setConfirmDeleteFull(null)
     }
   }
 
   async function handleSave(values: Record<string, unknown>) {
     setSaving(true)
     try {
-      const fonte = String(values.fonte ?? '')
-      const [kind, value] = fonte.split(':')
-      await namiApi.createInstallment({
-        name:         String(values.name ?? ''),
-        valor_total:  parseFloat(String(values.valor_total ?? '0').replace(',', '.')),
-        num_parcelas: parseInt(String(values.num_parcelas ?? '2')),
-        conta:        kind === 'card' ? undefined : value,
-        card_id:      kind === 'card' ? value : undefined,
-        categoria:    String(values.categoria ?? 'Inbox'),
-        data_inicio:  String(values.data_inicio ?? ''),
-      })
-      onToast('Compra parcelada criada ✓')
+      if (editingInst) {
+        // Edição (apenas nome/notas — valores financeiros são imutáveis)
+        await namiApi.updateInstallment(editingInst.id, {
+          name: String(values.name ?? ''),
+          notes: String(values.notes ?? '') || undefined,
+        })
+        onToast('Compra parcelada atualizada ✓')
+      } else {
+        const fonte = String(values.fonte ?? '')
+        const [kind, value] = fonte.split(':')
+        await namiApi.createInstallment({
+          name:         String(values.name ?? ''),
+          valor_total:  parseFloat(String(values.valor_total ?? '0').replace(',', '.')),
+          num_parcelas: parseInt(String(values.num_parcelas ?? '2')),
+          conta:        kind === 'card' ? undefined : value,
+          card_id:      kind === 'card' ? value : undefined,
+          categoria:    String(values.categoria ?? 'Inbox'),
+          data_inicio:  String(values.data_inicio ?? ''),
+        })
+        onToast('Compra parcelada criada ✓')
+      }
       setShowForm(false)
+      setEditingInst(null)
       await load()
     } catch (err: unknown) {
       throw err
@@ -171,7 +187,7 @@ export function Installments({ accounts, cards, onToast }: InstallmentsProps) {
     <>
       <div className="page-head">
         <h2>Parcelamentos</h2>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+        <button className="btn btn-primary" onClick={() => { setEditingInst(null); setShowForm(true) }}>
           <Icon name="plus" size={14} /> Nova compra parcelada
         </button>
       </div>
@@ -196,7 +212,7 @@ export function Installments({ accounts, cards, onToast }: InstallmentsProps) {
         <div className="empty">
           <Icon name="card" size={32} />
           <p>Nenhuma compra parcelada ativa</p>
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+          <button className="btn btn-primary" onClick={() => { setEditingInst(null); setShowForm(true) }}>
             <Icon name="plus" size={14} /> Nova compra parcelada
           </button>
         </div>
@@ -233,10 +249,13 @@ export function Installments({ accounts, cards, onToast }: InstallmentsProps) {
                 <div className="loan-meta">
                   <span>1ª parcela <strong>{fmtDay(inst.first_due)}</strong></span>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="acct-del" onClick={e => { e.stopPropagation(); handleCancelFuture(inst.id, inst.name) }} aria-label="Cancelar parcelas futuras" title="Cancelar parcelas futuras">
+                    <button className="acct-del" onClick={e => { e.stopPropagation(); setEditingInst(inst); setShowForm(true) }} aria-label="Editar nome/notas" title="Editar nome/notas">
+                      <Icon name="edit" size={12} />
+                    </button>
+                    <button className="acct-del" onClick={e => { e.stopPropagation(); setConfirmCancel(inst) }} aria-label="Cancelar parcelas futuras" title="Cancelar parcelas futuras">
                       <Icon name="x" size={12} />
                     </button>
-                    <button className="acct-del" onClick={e => { e.stopPropagation(); handleDeleteFull(inst.id, inst.name) }} aria-label="Excluir por completo" title="Excluir por completo">
+                    <button className="acct-del" onClick={e => { e.stopPropagation(); setConfirmDeleteFull(inst) }} aria-label="Excluir por completo" title="Excluir por completo">
                       <Icon name="trash" size={12} />
                     </button>
                   </div>
@@ -278,12 +297,19 @@ export function Installments({ accounts, cards, onToast }: InstallmentsProps) {
 
       {showForm && (
         <FormModal
-          title="Nova compra parcelada"
+          title={editingInst ? `Editar ${editingInst.name}` : 'Nova compra parcelada'}
           saving={saving}
-          onClose={() => setShowForm(false)}
+          onClose={() => { setShowForm(false); setEditingInst(null) }}
           onSave={handleSave}
-          saveLabel="Criar"
-          fields={[
+          saveLabel={editingInst ? 'Salvar alterações' : 'Criar'}
+          initialValues={editingInst ? {
+            name: editingInst.name,
+            notes: editingInst.notes ?? '',
+          } : undefined}
+          fields={editingInst ? [
+            { key: 'name',  label: 'Nome da compra', type: 'text', required: true },
+            { key: 'notes', label: 'Observações',    type: 'text' },
+          ] : [
             { key: 'name',         label: 'Nome da compra',   type: 'text',   required: true, placeholder: 'Ex.: Notebook Dell' },
             { key: 'valor_total',  label: 'Valor total',      type: 'money',  required: true },
             { key: 'num_parcelas', label: 'Número de parcelas', type: 'number', min: 2, placeholder: '12' },
@@ -291,6 +317,27 @@ export function Installments({ accounts, cards, onToast }: InstallmentsProps) {
             { key: 'categoria',    label: 'Categoria',        type: 'select', options: categoriaOptions },
             { key: 'data_inicio',  label: '1ª parcela',       type: 'date',   required: true },
           ]}
+        />
+      )}
+
+      {/* Confirmação: cancelar parcelas futuras */}
+      {confirmCancel && (
+        <ConfirmDialog
+          title="Cancelar parcelas futuras"
+          message={`Cancelar as parcelas futuras de "${confirmCancel.name}"? As já pagas continuam no histórico.`}
+          confirmLabel="Cancelar parcelas"
+          onConfirm={() => handleCancelFuture(confirmCancel.id)}
+          onClose={() => setConfirmCancel(null)}
+        />
+      )}
+
+      {/* Confirmação: excluir por completo */}
+      {confirmDeleteFull && (
+        <ConfirmDialog
+          title="Excluir por completo"
+          message={`Excluir "${confirmDeleteFull.name}" por completo, incluindo o histórico de parcelas pagas? Esta ação não pode ser desfeita.`}
+          onConfirm={() => handleDeleteFull(confirmDeleteFull.id)}
+          onClose={() => setConfirmDeleteFull(null)}
         />
       )}
     </>

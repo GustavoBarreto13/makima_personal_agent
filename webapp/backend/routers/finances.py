@@ -53,6 +53,8 @@ from agents.nami.tools import (
 from agents.nami.tools_shopping import (
     create_shopping_list,   # Cria lista nomeada nova
     list_shopping_lists,    # Lista listas por status (ativa/arquivada/todas)
+    update_shopping_list,   # Renomeia e/ou muda status da lista
+    delete_shopping_list,   # Remove a lista e seus itens (bloqueia lista já finalizada)
     add_shopping_items,     # Adiciona um ou mais itens (dedupe + parse de quantidade)
     show_shopping_list,     # Itens de uma lista + contadores + total estimado
     check_shopping_item,    # Marca/desmarca item no carrinho
@@ -123,6 +125,7 @@ from agents.nami.tools_installments import (
     get_future_commitments,       # Soma parcelas + assinaturas de um mês futuro
     get_card_installments,        # Parcelamentos ativos de um cartão + comprometimento mensal (spec 041)
     cancel_installment_group,     # Cancela parcelas futuras (mantém histórico)
+    update_installment_group,     # Atualiza nome/notas do grupo (valores financeiros são imutáveis)
     delete_installment_group_full, # Soft delete completo do grupo (passadas + futuras)
 )
 
@@ -394,6 +397,12 @@ class CreateShoppingListBody(BaseModel):
     name: str    # Nome da lista (ex.: "Mercado", "Farmácia")
 
 
+class UpdateShoppingListBody(BaseModel):
+    """Corpo da requisição para renomear/mudar status de uma lista de compras."""
+    name: str = ""
+    status: str = ""    # "ativa" ou "arquivada" (vazio = não altera)
+
+
 class AddShoppingItemsBody(BaseModel):
     """Corpo da requisição para adicionar itens a uma lista de compras (spec 045)."""
     items: str    # Um ou mais itens separados por vírgula (ex.: "arroz, feijão 2kg, leite")
@@ -428,6 +437,17 @@ class CreateInstallmentBody(BaseModel):
     card_id: Optional[str] = None  # UUID do cartão de crédito (mutuamente exclusivo com conta)
     categoria: str = "Inbox"   # Categoria da compra
     data_inicio: str = ""       # Data da 1ª parcela (vazio = hoje)
+
+
+class UpdateInstallmentBody(BaseModel):
+    """Corpo da requisição para editar um grupo de parcelamento.
+
+    Valores financeiros (total, número de parcelas, valor da parcela) são
+    imutáveis — só nome e notas podem ser corrigidos, mesma regra de
+    `update_installment_group`.
+    """
+    name: str = ""
+    notes: str = ""
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1763,6 +1783,33 @@ def create_installment_endpoint(
     return _check_result(result)
 
 
+@router.patch("/installments/{group_id}", status_code=200)
+def update_installment_endpoint(
+    group_id: str,
+    body: UpdateInstallmentBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Editar nome/notas de um grupo de parcelamento.
+
+    Valores financeiros (total, número de parcelas, valor da parcela) são
+    imutáveis — a tool `update_installment_group` já existia sem endpoint
+    HTTP correspondente.
+
+    Args:
+        group_id: ID do grupo de parcelas.
+        body: Nome e/ou notas a atualizar.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok".
+
+    Raises:
+        HTTPException: 400 se o grupo não for encontrado ou nenhum campo for informado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(update_installment_group(id=group_id, name=body.name, notes=body.notes))
+
+
 @router.post("/installments/{group_id}/cancel", status_code=200)
 def cancel_installment_endpoint(
     group_id: str,
@@ -2374,6 +2421,57 @@ def create_shopping_list_endpoint(
         HTTPException: 401 se o usuário não estiver autenticado.
     """
     return _check_result(create_shopping_list(name=body.name))
+
+
+@router.patch("/shopping-lists/{list_id}", status_code=200)
+def update_shopping_list_endpoint(
+    list_id: str,
+    body: UpdateShoppingListBody,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Renomear e/ou mudar o status de uma lista de compras.
+
+    Uma lista já finalizada (com `transaction_id` vinculado) não pode ser
+    reaberta — o histórico da compra é imutável.
+
+    Args:
+        list_id: ID da lista.
+        body: Nome e/ou status a atualizar.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok".
+
+    Raises:
+        HTTPException: 400 se a lista não for encontrada, o status for inválido,
+            ou nenhum campo for informado.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(update_shopping_list(list_id=list_id, name=body.name, status=body.status))
+
+
+@router.delete("/shopping-lists/{list_id}", status_code=200)
+def delete_shopping_list_endpoint(
+    list_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Remover uma lista de compras e seus itens.
+
+    Bloqueia listas já finalizadas (com `transaction_id` vinculado) — o
+    histórico da compra é preservado.
+
+    Args:
+        list_id: ID da lista.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok".
+
+    Raises:
+        HTTPException: 400 se a lista não for encontrada ou já estiver finalizada.
+        HTTPException: 401 se o usuário não estiver autenticado.
+    """
+    return _check_result(delete_shopping_list(list_id=list_id))
 
 
 @router.get("/shopping-lists/frequent")

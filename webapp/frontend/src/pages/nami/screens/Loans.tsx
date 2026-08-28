@@ -7,6 +7,7 @@ import { namiApi } from '../namiApi'
 import type { PersonalLoan } from '../types'
 import { LoanCard } from '../components/LoanCard'
 import { FormModal } from '../modals/FormModal'
+import { ConfirmDialog } from '../modals/ConfirmDialog'
 import { Icon } from '../icons'
 import { fmtMoney } from '../ui'
 
@@ -21,8 +22,10 @@ export function Loans({ onToast }: LoansProps) {
   const [loans, setLoans]           = useState<PersonalLoan[]>([])
   const [loading, setLoading]       = useState(true)
   const [showForm, setShowForm]     = useState(false)
+  const [editingLoan, setEditingLoan] = useState<PersonalLoan | null>(null)
   const [saving, setSaving]         = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<PersonalLoan | null>(null)
   const [payingId, setPayingId]     = useState<string | null>(null)
 
   // Carrega empréstimos ao montar (não depende do mês)
@@ -56,16 +59,28 @@ export function Loans({ onToast }: LoansProps) {
   async function handleSave(values: Record<string, unknown>) {
     setSaving(true)
     try {
-      await namiApi.createPersonalLoan({
-        direction:    String(values.dir ?? 'lent') as 'lent' | 'borrowed',
-        person_name:  String(values.person ?? ''),
-        total_amount: parseFloat(String(values.total ?? '0').replace(',', '.')),
-        installments: parseInt(String(values.installments ?? '1')),
-        next_due_day: values.nextDay ? parseInt(String(values.nextDay)) : undefined,
-        note:         String(values.note ?? '') || undefined,
-      })
-      onToast('Empréstimo registrado ✓')
+      if (editingLoan) {
+        await namiApi.updatePersonalLoan(editingLoan.id, {
+          person_name:  String(values.person ?? ''),
+          total_amount: parseFloat(String(values.total ?? '0').replace(',', '.')),
+          installments: parseInt(String(values.installments ?? '1')),
+          next_due_day: values.nextDay ? parseInt(String(values.nextDay)) : undefined,
+          note:         String(values.note ?? '') || undefined,
+        })
+        onToast('Empréstimo atualizado ✓')
+      } else {
+        await namiApi.createPersonalLoan({
+          direction:    String(values.dir ?? 'lent') as 'lent' | 'borrowed',
+          person_name:  String(values.person ?? ''),
+          total_amount: parseFloat(String(values.total ?? '0').replace(',', '.')),
+          installments: parseInt(String(values.installments ?? '1')),
+          next_due_day: values.nextDay ? parseInt(String(values.nextDay)) : undefined,
+          note:         String(values.note ?? '') || undefined,
+        })
+        onToast('Empréstimo registrado ✓')
+      }
       setShowForm(false)
+      setEditingLoan(null)
       const r = await namiApi.getPersonalLoans()
       setLoans(r.loans ?? [])
     } catch (err: unknown) {
@@ -85,6 +100,7 @@ export function Loans({ onToast }: LoansProps) {
       onToast('Erro ao remover empréstimo')
     } finally {
       setDeletingId(null)
+      setConfirmDelete(null)
     }
   }
 
@@ -106,7 +122,7 @@ export function Loans({ onToast }: LoansProps) {
       {/* Cabeçalho da página */}
       <div className="page-head">
         <h2>Empréstimos</h2>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+        <button className="btn btn-primary" onClick={() => { setEditingLoan(null); setShowForm(true) }}>
           <Icon name="plus" size={14} /> Novo empréstimo
         </button>
       </div>
@@ -142,7 +158,7 @@ export function Loans({ onToast }: LoansProps) {
         <div className="empty">
           <Icon name="handshake" size={32} />
           <p>Nenhum empréstimo registrado</p>
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+          <button className="btn btn-primary" onClick={() => { setEditingLoan(null); setShowForm(true) }}>
             <Icon name="plus" size={14} /> Registrar empréstimo
           </button>
         </div>
@@ -152,7 +168,8 @@ export function Loans({ onToast }: LoansProps) {
             <LoanCard
               key={loan.id}
               loan={loan}
-              onDelete={handleDelete}
+              onDelete={l => setConfirmDelete(l)}
+              onEdit={l => { setEditingLoan(l); setShowForm(true) }}
               onPay={handlePay}
               deleting={deletingId === loan.id}
               paying={payingId === loan.id}
@@ -161,30 +178,48 @@ export function Loans({ onToast }: LoansProps) {
         </div>
       )}
 
-      {/* Modal de novo empréstimo */}
+      {/* Modal de novo empréstimo / edição — direção não é editável (é a identidade do registro) */}
       {showForm && (
         <FormModal
-          title="Novo empréstimo"
+          title={editingLoan ? `Editar empréstimo — ${editingLoan.person_name}` : 'Novo empréstimo'}
           saving={saving}
-          onClose={() => setShowForm(false)}
+          onClose={() => { setShowForm(false); setEditingLoan(null) }}
           onSave={handleSave}
-          saveLabel="Registrar"
+          saveLabel={editingLoan ? 'Salvar alterações' : 'Registrar'}
+          initialValues={editingLoan ? {
+            person: editingLoan.person_name,
+            total: String(editingLoan.total_amount ?? 0),
+            installments: String(editingLoan.installments ?? 1),
+            nextDay: String(editingLoan.next_due_day ?? ''),
+            note: editingLoan.note ?? '',
+          } : undefined}
           fields={[
-            {
+            ...(editingLoan ? [] : [{
               key: 'dir',
               label: 'Direção',
-              type: 'segment',
+              type: 'segment' as const,
               options: [
                 { value: 'lent',     label: 'Eu emprestei' },
                 { value: 'borrowed', label: 'Peguei emprestado' },
               ],
-            },
+            }]),
             { key: 'person',       label: 'Pessoa',                type: 'text',   required: true, placeholder: 'Ex: João, Maria…' },
             { key: 'total',        label: 'Valor total',           type: 'money',  required: true },
             { key: 'installments', label: 'Parcelas',              type: 'number', min: 1, placeholder: '1' },
             { key: 'nextDay',      label: 'Dia do vencimento',     type: 'number', min: 1, max: 28, placeholder: '15' },
             { key: 'note',         label: 'Observação (opcional)', type: 'text',   placeholder: 'Sobre o que foi?' },
           ]}
+        />
+      )}
+
+      {/* Confirmação de exclusão */}
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Excluir empréstimo"
+          message={`Remover o empréstimo com "${confirmDelete.person_name}"? Essa ação não pode ser desfeita.`}
+          busy={deletingId === confirmDelete.id}
+          onConfirm={() => handleDelete(confirmDelete.id)}
+          onClose={() => setConfirmDelete(null)}
         />
       )}
     </>

@@ -76,6 +76,8 @@ from agents.nami.tools_personal_loans import (
 from agents.nami.tools_shopping import (
     create_shopping_list,
     list_shopping_lists,
+    update_shopping_list,
+    delete_shopping_list,
     add_shopping_items,
     show_shopping_list,
     check_shopping_item,
@@ -149,6 +151,8 @@ TOOLS = [
     # Lista de Compras (spec 045)
     create_shopping_list,
     list_shopping_lists,
+    update_shopping_list,
+    delete_shopping_list,
     add_shopping_items,
     show_shopping_list,
     check_shopping_item,

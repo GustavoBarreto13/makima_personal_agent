@@ -6,6 +6,7 @@ import { useState, useMemo } from 'react'
 import { namiApi } from '../namiApi'
 import type { Subscription, Account, Card } from '../types'
 import { FormModal } from '../modals/FormModal'
+import { ConfirmDialog } from '../modals/ConfirmDialog'
 import { Icon } from '../icons'
 import { fmtMoney, daysUntil } from '../ui'
 
@@ -44,6 +45,7 @@ export function Subscriptions({ subscriptions: allRecurring, accounts, cards, on
   const [editingSub, setEditingSub] = useState<Subscription | null>(null)
   const [saving, setSaving]       = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Subscription | null>(null)
 
   // Opções do seletor "Conta / Cartão" — o valor é o próprio nome, pois o backend
   // resolve `conta` tentando primeiro uma conta bancária e depois um cartão de
@@ -97,6 +99,7 @@ export function Subscriptions({ subscriptions: allRecurring, accounts, cards, on
           next_billing_day: values.dia ? parseInt(String(values.dia)) : undefined,
           color:            String(values.color ?? '') || undefined,
           conta:            String(values.fonte ?? '') || undefined,
+          status:           String(values.status ?? '') || undefined,
         })
         onToast('Assinatura atualizada ✓')
       } else {
@@ -132,6 +135,7 @@ export function Subscriptions({ subscriptions: allRecurring, accounts, cards, on
       onToast('Erro ao remover assinatura')
     } finally {
       setDeletingId(null)
+      setConfirmDelete(null)
     }
   }
 
@@ -217,6 +221,7 @@ export function Subscriptions({ subscriptions: allRecurring, accounts, cards, on
                       {sub.categoria} · {sub.ciclo}
                       {sub.next_billing_day ? ` · dia ${sub.next_billing_day}` : ''}
                       {sub.conta ? ` · ${sub.conta}` : ''}
+                      {sub.status !== 'ativa' && ` · ${sub.status === 'pausada' ? 'pausada' : 'cancelada'}`}
                     </div>
                   </div>
 
@@ -235,7 +240,7 @@ export function Subscriptions({ subscriptions: allRecurring, accounts, cards, on
                     </button>
                     <button
                       className="sub-del"
-                      onClick={() => handleDelete(sub.id)}
+                      onClick={() => setConfirmDelete(sub)}
                       disabled={deletingId === sub.id}
                       aria-label="Remover assinatura"
                     >
@@ -264,6 +269,7 @@ export function Subscriptions({ subscriptions: allRecurring, accounts, cards, on
             dia: String(editingSub.next_billing_day ?? ''),
             color: editingSub.color ?? '',
             fonte: editingSub.conta ?? '',
+            status: editingSub.status ?? 'ativa',
           } : undefined}
           fields={[
             { key: 'name',      label: 'Serviço',        type: 'text',    required: true, placeholder: 'Ex: Netflix, Spotify…' },
@@ -281,7 +287,24 @@ export function Subscriptions({ subscriptions: allRecurring, accounts, cards, on
               { value: 'Outros',         label: 'Outros' },
             ]}]),
             { key: 'color',     label: 'Cor do avatar', type: 'color',  swatches: SUB_COLORS.map(s => s.value) },
+            // Pausar/cancelar/reativar — só faz sentido em modo edição
+            ...(editingSub ? [{ key: 'status', label: 'Status', type: 'segment' as const, options: [
+              { value: 'ativa',     label: 'Ativa' },
+              { value: 'pausada',   label: 'Pausada' },
+              { value: 'cancelada', label: 'Cancelada' },
+            ]}] : []),
           ]}
+        />
+      )}
+
+      {/* Confirmação de exclusão */}
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Excluir assinatura"
+          message={`Remover "${confirmDelete.name}"? Essa ação não pode ser desfeita — para parar de cobrar sem perder o cadastro, use "Pausada" em vez de excluir.`}
+          busy={deletingId === confirmDelete.id}
+          onConfirm={() => handleDelete(confirmDelete.id)}
+          onClose={() => setConfirmDelete(null)}
         />
       )}
     </>

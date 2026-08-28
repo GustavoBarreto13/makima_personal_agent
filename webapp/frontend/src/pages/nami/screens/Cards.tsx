@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { namiApi } from '../namiApi'
 import type { Card, Account, CardInstallment } from '../types'
 import { FormModal } from '../modals/FormModal'
+import { ConfirmDialog } from '../modals/ConfirmDialog'
 import { Icon } from '../icons'
 import { fmtMoney, monthShort } from '../ui'
 
@@ -39,6 +40,7 @@ export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: 
   const [editingCard, setEditingCard] = useState<Card | null>(null)
   const [saving, setSaving]         = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Card | null>(null)
 
   // Modal de pagamento de fatura (spec 042, US3)
   const [payingCard, setPayingCard] = useState<Card | null>(null)
@@ -107,7 +109,7 @@ export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: 
       onToast('Cartão removido')
       onCardsChanged()
     } catch { onToast('Erro ao remover cartão') }
-    finally { setDeletingId(null) }
+    finally { setDeletingId(null); setConfirmDelete(null) }
   }
 
   async function handlePay(values: Record<string, unknown>) {
@@ -178,7 +180,7 @@ export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: 
                   <button className="acct-del" onClick={() => { setEditingCard(card); setShowForm(true) }} aria-label="Editar cartão">
                     <Icon name="edit" size={12} />
                   </button>
-                  <button className="acct-del" onClick={() => handleDelete(card.id)} disabled={deletingId === card.id} aria-label="Remover">
+                  <button className="acct-del" onClick={() => setConfirmDelete(card)} disabled={deletingId === card.id} aria-label="Remover">
                     <Icon name="trash" size={12} />
                   </button>
                 </div>
@@ -262,6 +264,17 @@ export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: 
             Dívida atual: {fmtMoney(payingCard.divida_atual ?? 0)}
           </div>
         </FormModal>
+      )}
+
+      {/* Confirmação de exclusão */}
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Excluir cartão"
+          message={`Encerrar o cartão "${confirmDelete.name}"? O histórico de compras é preservado, mas o cartão some das opções de lançamento.`}
+          busy={deletingId === confirmDelete.id}
+          onConfirm={() => handleDelete(confirmDelete.id)}
+          onClose={() => setConfirmDelete(null)}
+        />
       )}
     </>
   )

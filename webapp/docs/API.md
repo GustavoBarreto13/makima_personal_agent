@@ -121,7 +121,7 @@ idêntico ao do Telegram (SC-002).
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/finances/subscriptions` | Lista recorrências (assinaturas e/ou contas fixas) com campos visuais enriquecidos. `kind` filtra por tipo (spec 044) — vazio traz ambos. | `?status=ativo\|pausado\|cancelado&kind=assinatura\|conta_fixa` |
+| `GET` | `/api/finances/subscriptions` | Lista recorrências (assinaturas e/ou contas fixas) com campos visuais enriquecidos. `kind` filtra por tipo (spec 044) — vazio traz ambos. Doc corrigida: os valores de status têm gênero feminino (`ativa`/`pausada`/`cancelada`, não `ativo`/`pausado`/`cancelado`); `todas` (sem filtro de status) — bug corrigido: antes retornava lista vazia porque a tool comparava o literal `'todas'` com a coluna `status`. | `?status=ativa\|pausada\|cancelada\|todas&kind=assinatura\|conta_fixa` |
 | `POST` | `/api/finances/subscriptions` | Cria assinatura ou conta fixa (devolve 201); `kind`/`auto_lancar` decidem o comportamento (spec 044). | Body: `CreateSubscriptionBody` |
 | `PATCH` | `/api/finances/subscriptions/{sub_id}` | Atualiza recorrência (pausar, reativar, valor, campos visuais — spec 043; `kind`/`auto_lancar` — spec 044). Categoria não é editável. | Body: `UpdateSubscriptionBody` |
 | `DELETE` | `/api/finances/subscriptions/{sub_id}` | Soft-delete da recorrência. | — |
@@ -149,6 +149,8 @@ Duas tabelas novas: `shopping_lists` (nomeada, ativa/arquivada) e `shopping_list
 | `POST` | `/api/finances/shopping-lists` | Cria uma lista nomeada nova (devolve 201). | Body: `CreateShoppingListBody` |
 | `GET` | `/api/finances/shopping-lists/frequent` | Itens mais recorrentes nas listas já arquivadas. | `?limit=10` |
 | `GET` | `/api/finances/shopping-lists/{list_id}` | Detalhe: itens, contadores (pendentes/no carrinho) e total estimado. | — |
+| `PATCH` | `/api/finances/shopping-lists/{list_id}` | Renomeia e/ou muda status (ativa/arquivada) — bloqueia reabrir lista já finalizada. | Body: `UpdateShoppingListBody` |
+| `DELETE` | `/api/finances/shopping-lists/{list_id}` | Remove a lista e seus itens — bloqueia lista já finalizada (histórico de compra). | — |
 | `POST` | `/api/finances/shopping-lists/{list_id}/items` | Adiciona um ou mais itens numa frase só (devolve 201); não duplica item já pendente. | Body: `AddShoppingItemsBody` |
 | `POST` | `/api/finances/shopping-lists/{list_id}/finish` | Finaliza a compra — lança a despesa (Supermercado) + arquiva a lista + abre a próxima lista ativa (atômico, devolve 201). | Body: `FinishShoppingBody` |
 | `PATCH` | `/api/finances/shopping-items/{item_id}` | Edita nome/quantidade/unidade/preço e/ou marca/desmarca no carrinho. | Body: `UpdateShoppingItemBody` |
@@ -161,6 +163,7 @@ Duas tabelas novas: `shopping_lists` (nomeada, ativa/arquivada) e `shopping_list
 | `GET` | `/api/finances/installments` | Lista grupos de parcelamento. | `?status=ativo\|quitado` |
 | `GET` | `/api/finances/installments/{group_id}` | Detalhe do grupo — cabeçalho + linha do tempo das parcelas (spec 041). | — |
 | `POST` | `/api/finances/installments` | Cria compra parcelada (devolve 201; gera N transações). Aceita `conta` **ou** `card_id` (spec 041), mutuamente exclusivos. | Body: `CreateInstallmentBody` |
+| `PATCH` | `/api/finances/installments/{group_id}` | Edita nome/notas do grupo — valores financeiros são imutáveis. | Body: `UpdateInstallmentBody` |
 | `POST` | `/api/finances/installments/{group_id}/cancel` | Cancela as parcelas futuras (mantém as já pagas) — spec 041. | — |
 | `DELETE` | `/api/finances/installments/{group_id}` | Remove todo o grupo de parcelamento (passadas + futuras). | — |
 | `GET` | `/api/finances/cards/{card_id}/installments` | Parcelamentos ativos de um cartão + comprometimento mensal (spec 041). | — |

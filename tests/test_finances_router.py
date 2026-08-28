@@ -570,3 +570,107 @@ class TestSubscriptions:
         # O router deve converter o erro da tool em HTTP 400
         assert response.status_code == 400
         assert "status deve ser" in response.json()["detail"]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TESTES — PARCELAMENTOS (edição)
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestInstallmentUpdate:
+    """Testes do endpoint de edição de grupo de parcelamento (PATCH /installments/{id}).
+
+    A tool `update_installment_group` já existia sem endpoint HTTP correspondente
+    — este endpoint foi adicionado na revisão de CRUD da Nami.
+    """
+
+    @patch("webapp.backend.routers.finances.update_installment_group")
+    def test_patch_installment_returns_200(self, mock_update):
+        """PATCH /installments/{id} deve atualizar nome/notas e retornar 200."""
+        mock_update.return_value = {"status": "ok", "message": "Grupo de parcelas atualizado"}
+
+        response = client.patch(
+            "/api/finances/installments/inst-123",
+            json={"name": "Notebook Dell (novo)", "notes": "trocado o teclado"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+
+        mock_update.assert_called_once_with(
+            id="inst-123", name="Notebook Dell (novo)", notes="trocado o teclado",
+        )
+
+    @patch("webapp.backend.routers.finances.update_installment_group")
+    def test_patch_installment_tool_error_returns_400(self, mock_update):
+        """PATCH /installments/{id} quando a tool retorna error deve retornar 400."""
+        mock_update.return_value = {"status": "error", "message": "Nenhum campo para atualizar"}
+
+        response = client.patch("/api/finances/installments/inst-999", json={})
+
+        assert response.status_code == 400
+        assert "Nenhum campo para atualizar" in response.json()["detail"]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TESTES — LISTA DE COMPRAS (renomear / excluir lista)
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestShoppingListUpdateDelete:
+    """Testes dos endpoints de edição/exclusão de lista de compras (spec 045 QoL).
+
+    Antes desta revisão, não havia forma de renomear ou excluir uma lista de
+    compras — só criar, listar e finalizar.
+    """
+
+    @patch("webapp.backend.routers.finances.update_shopping_list")
+    def test_patch_shopping_list_returns_200(self, mock_update):
+        """PATCH /shopping-lists/{id} deve renomear a lista e retornar 200."""
+        mock_update.return_value = {"status": "ok", "message": "Lista atualizada"}
+
+        response = client.patch(
+            "/api/finances/shopping-lists/list-123",
+            json={"name": "Farmácia"},
+        )
+
+        assert response.status_code == 200
+        mock_update.assert_called_once_with(list_id="list-123", name="Farmácia", status="")
+
+    @patch("webapp.backend.routers.finances.update_shopping_list")
+    def test_patch_shopping_list_tool_error_returns_400(self, mock_update):
+        """PATCH /shopping-lists/{id} deve retornar 400 se a lista já foi finalizada."""
+        mock_update.return_value = {
+            "status": "error",
+            "message": "Lista já finalizada não pode ser reaberta",
+        }
+
+        response = client.patch(
+            "/api/finances/shopping-lists/list-999",
+            json={"status": "ativa"},
+        )
+
+        assert response.status_code == 400
+        assert "já finalizada" in response.json()["detail"]
+
+    @patch("webapp.backend.routers.finances.delete_shopping_list")
+    def test_delete_shopping_list_returns_200(self, mock_delete):
+        """DELETE /shopping-lists/{id} deve remover a lista e retornar 200."""
+        mock_delete.return_value = {"status": "ok", "message": "Lista 'Farmácia' removida"}
+
+        response = client.delete("/api/finances/shopping-lists/list-123")
+
+        assert response.status_code == 200
+        mock_delete.assert_called_once_with(list_id="list-123")
+
+    @patch("webapp.backend.routers.finances.delete_shopping_list")
+    def test_delete_shopping_list_finalized_returns_400(self, mock_delete):
+        """DELETE /shopping-lists/{id} deve retornar 400 para lista já finalizada."""
+        mock_delete.return_value = {
+            "status": "error",
+            "message": "Lista já finalizada não pode ser excluída — é histórico de uma compra",
+        }
+
+        response = client.delete("/api/finances/shopping-lists/list-999")
+
+        assert response.status_code == 400
+        assert "histórico de uma compra" in response.json()["detail"]

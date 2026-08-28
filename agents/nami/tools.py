@@ -937,7 +937,8 @@ def list_subscriptions(status: str = "ativa", kind: str = "") -> dict:
     (dividindo o valor anual por 12 para obter o equivalente mensal).
 
     Parâmetros:
-        status — Filtro de status: "ativa" (padrão), "pausada" ou "cancelada"
+        status — Filtro de status: "ativa" (padrão), "pausada", "cancelada" ou
+                 "todas" (sem filtro de status — traz os três).
         kind   — Filtro opcional: "assinatura" ou "conta_fixa" (spec 044). Vazio = ambos.
 
     Retorna lista de recorrências e o custo mensal equivalente total.
@@ -945,8 +946,14 @@ def list_subscriptions(status: str = "ativa", kind: str = "") -> dict:
     # Busca as assinaturas com o status solicitado, ordenando pela próxima cobrança
     # next_billing::text converte o campo date para string (equivalente ao CAST(... AS STRING) do BigQuery)
     # Filtra deleted=FALSE para excluir assinaturas removidas via delete_subscription
-    where = ["status = %(status)s", "(deleted = FALSE OR deleted IS NULL)"]
-    params: dict = {"status": status}
+    # "todas" pula o filtro de status — antes disso, o router já documentava esse valor
+    # (webapp/backend/routers/finances.py) mas ele nunca funcionava: comparado literalmente
+    # com a coluna, "status = 'todas'" nunca casava nenhuma linha e retornava lista vazia.
+    where = ["(deleted = FALSE OR deleted IS NULL)"]
+    params: dict = {}
+    if status and status != "todas":
+        where.append("status = %(status)s")
+        params["status"] = status
     if kind:
         where.append("kind = %(kind)s")
         params["kind"] = kind

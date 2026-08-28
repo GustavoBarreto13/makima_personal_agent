@@ -9,6 +9,7 @@ import { namiApi } from '../namiApi'
 import type { Account, BankLoan, PayoffPriorityItem } from '../types'
 import { BankLoanCard } from '../components/LoanCard'
 import { FormModal } from '../modals/FormModal'
+import { ConfirmDialog } from '../modals/ConfirmDialog'
 import { Icon } from '../icons'
 import { fmtMoney } from '../ui'
 
@@ -39,6 +40,7 @@ export function Financings({ accounts, onToast }: FinancingsProps) {
   const [simulatingLoan, setSimulatingLoan] = useState<BankLoan | null>(null)
   const [saving, setSaving]         = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<BankLoan | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -122,6 +124,7 @@ export function Financings({ accounts, onToast }: FinancingsProps) {
       onToast('Erro ao remover empréstimo')
     } finally {
       setDeletingId(null)
+      setConfirmDelete(null)
     }
   }
 
@@ -186,7 +189,7 @@ export function Financings({ accounts, onToast }: FinancingsProps) {
             <BankLoanCard
               key={loan.id}
               loan={loan}
-              onDelete={handleDelete}
+              onDelete={l => setConfirmDelete(l)}
               onEdit={l => { setEditingLoan(l); setShowForm(true) }}
               onPay={l => setPayingLoan(l)}
               onSimulate={l => setSimulatingLoan(l)}
@@ -247,6 +250,17 @@ export function Financings({ accounts, onToast }: FinancingsProps) {
       {/* Painel de simuladores */}
       {simulatingLoan && (
         <SimulatePanel loan={simulatingLoan} onClose={() => setSimulatingLoan(null)} onToast={onToast} />
+      )}
+
+      {/* Confirmação de exclusão */}
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Excluir empréstimo"
+          message={`Remover "${confirmDelete.name}"? Essa ação não pode ser desfeita.`}
+          busy={deletingId === confirmDelete.id}
+          onConfirm={() => handleDelete(confirmDelete.id)}
+          onClose={() => setConfirmDelete(null)}
+        />
       )}
     </>
   )

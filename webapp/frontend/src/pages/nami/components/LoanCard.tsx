@@ -11,8 +11,10 @@ import type { PersonalLoan, BankLoan } from '../types'
 interface LoanCardProps {
   /** Empréstimo pessoa-a-pessoa */
   loan: PersonalLoan
-  /** Callback de exclusão */
-  onDelete: (id: string) => void
+  /** Callback de exclusão (abre confirmação — a tela decide) */
+  onDelete: (loan: PersonalLoan) => void
+  /** Callback de edição */
+  onEdit?: (loan: PersonalLoan) => void
   /** Callback de registro de parcela paga (spec 046, US4) */
   onPay?: (id: string) => void
   /** Indica exclusão em progresso */
@@ -29,7 +31,7 @@ function fmt(v: number): string {
  * Card de empréstimo informal com barra de progresso e dots de parcelas.
  * Usa as classes .loan-card / .loan-dir / .loan-person / .loan-dots / .loan-track.
  */
-export function LoanCard({ loan, onDelete, onPay, deleting, paying }: LoanCardProps) {
+export function LoanCard({ loan, onDelete, onEdit, onPay, deleting, paying }: LoanCardProps) {
   const isLent = loan.direction === 'lent'
 
   // Porcentagem de progresso (parcelas pagas / total)
@@ -54,14 +56,25 @@ export function LoanCard({ loan, onDelete, onPay, deleting, paying }: LoanCardPr
         <span className={`loan-dir ${isLent ? 'lent' : 'borrowed'}`}>
           {isLent ? 'Emprestei' : 'Devo'}
         </span>
-        <button
-          className="loan-del"
-          onClick={() => onDelete(loan.id)}
-          disabled={deleting}
-          aria-label="Excluir empréstimo"
-        >
-          <Icon name="trash" size={12} />
-        </button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {onEdit && (
+            <button
+              className="loan-del"
+              onClick={() => onEdit(loan)}
+              aria-label="Editar empréstimo"
+            >
+              <Icon name="edit" size={12} />
+            </button>
+          )}
+          <button
+            className="loan-del"
+            onClick={() => onDelete(loan)}
+            disabled={deleting}
+            aria-label="Excluir empréstimo"
+          >
+            <Icon name="trash" size={12} />
+          </button>
+        </div>
       </div>
 
       {/* Nome da pessoa e anotação */}
@@ -129,7 +142,8 @@ const TIPO_LABEL: Record<string, string> = {
 
 interface BankLoanCardProps {
   loan: BankLoan
-  onDelete: (id: string) => void
+  /** Callback de exclusão (abre confirmação — a tela decide) */
+  onDelete: (loan: BankLoan) => void
   onEdit: (loan: BankLoan) => void
   onPay: (loan: BankLoan) => void
   onSimulate: (loan: BankLoan) => void
@@ -155,7 +169,7 @@ export function BankLoanCard({ loan, onDelete, onEdit, onPay, onSimulate, deleti
         <span className="loan-dir financing">{TIPO_LABEL[loan.tipo] ?? loan.tipo} · {loan.sistema_amortizacao}</span>
         <button
           className="loan-del"
-          onClick={() => onDelete(loan.id)}
+          onClick={() => onDelete(loan)}
           disabled={deleting}
           aria-label="Excluir empréstimo"
         >
