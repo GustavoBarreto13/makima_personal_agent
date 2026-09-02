@@ -224,13 +224,14 @@ def build_digest_context(today: date | None = None) -> dict:
         waiting = _personal_only(waiting)
 
     try:
-        # exclude explícito (spec 067): além do padrão (espelho Kaguya + TickTick),
-        # esconde também "Kaguya — Hábitos" — hábitos saíram do digest (ver o aviso
-        # no topo desta função); sem isso os próprios alertas criados pela Kaguya
-        # voltariam aqui como "agenda do dia".
+        # exclude explícito (spec 067/069): além do padrão (_DEFAULT_EXCLUDE —
+        # espelho Kaguya + TickTick + calendários-espelho do hub), esconde também
+        # "Kaguya — Hábitos" — hábitos saíram do digest (ver o aviso no topo desta
+        # função); sem isso os próprios alertas criados pela Kaguya voltariam aqui
+        # como "agenda do dia".
         events = gcal.list_events(
             today.isoformat(), today.isoformat(),
-            exclude=("Kaguya — Tarefas", "Kaguya — Hábitos", "TickTick"),
+            exclude=(*gcal._DEFAULT_EXCLUDE, "Kaguya — Hábitos"),
         )
         calendar_ok = True
     except Exception as exc:  # noqa: BLE001 — melhor esforço, capacity trata calendar_ok=False

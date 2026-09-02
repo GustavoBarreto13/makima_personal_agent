@@ -40,6 +40,20 @@ ACCOUNTS = ["Cartao Nu", "Cartao Itau", "Itau", "Mercado Pago", "Generico", "Din
 _accounts_cache: list[dict] | None = None
 
 
+def _touch_calendar() -> None:
+    """Reconcilia o calendário-espelho "Nami — Finanças" no Google (spec 069).
+
+    Best-effort, debounced e fora do caminho crítico — lazy import + try/except,
+    mesmo padrão de `gcal_sync.push_task`. Chamado no fim das mutações que
+    produzem item de calendário (transações, assinaturas, vencimentos de cartão).
+    """
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("nami")
+    except Exception:
+        pass
+
+
 def _load_accounts() -> list[dict]:
     """Carrega contas ativas do PostgreSQL e armazena em cache para evitar queries repetidas."""
     global _accounts_cache
@@ -316,7 +330,10 @@ def create_transaction(
                 # Se a validação falhou, aborta a transação (não persiste nada).
                 if result.get("status") == "error":
                     conn.rollback()
-                return result
+                    return result
+        # Commit OK — reconcilia o calendário-espelho (spec 069)
+        _touch_calendar()
+        return result
     except Exception as e:
         # Captura qualquer erro do banco e retorna como mensagem amigável
         return {"status": "error", "message": str(e)}
@@ -426,6 +443,7 @@ def update_transaction(
         if affected == 0:
             return {"status": "error", "message": f"Transação não encontrada: {id}"}
 
+        _touch_calendar()
         return {"status": "ok", "message": "Transação atualizada"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -454,6 +472,7 @@ def delete_transaction(id: str) -> dict:
         if affected == 0:
             return {"status": "error", "message": f"Transação não encontrada: {id}"}
 
+        _touch_calendar()
         return {"status": "ok", "message": "Transação removida"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -643,6 +662,7 @@ def create_transfer(
                         "transfer_id": transfer_id,
                     },
                 )
+        _touch_calendar()
         return {
             "status": "ok", "transfer_id": transfer_id,
             "message": f"Transferência de R${valor:.2f} de {acc_from['name']} para {acc_to['name']}",
@@ -925,6 +945,7 @@ def create_subscription(
         run_dml(sql, params)
         # Retorna confirmação com um resumo legível da assinatura criada
         label = "Conta fixa" if kind == "conta_fixa" else "Assinatura"
+        _touch_calendar()
         return {"status": "ok", "id": sub_id, "message": f"{label} criada: {name} R${float(valor):.2f}/{ciclo}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -1095,6 +1116,7 @@ def update_subscription(
         if affected == 0:
             return {"status": "error", "message": f"Assinatura não encontrada: {id}"}
 
+        _touch_calendar()
         return {"status": "ok", "message": "Assinatura atualizada"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -1295,6 +1317,7 @@ def mark_subscription_paid(
                     "UPDATE subscriptions SET next_billing = %(next_billing)s, updated_at = NOW() WHERE id = %(id)s",
                     {"next_billing": new_next.isoformat(), "id": id},
                 )
+        _touch_calendar()
         return {
             "status": "ok", "transaction_id": tx["id"],
             "message": f"Pagamento de R${valor:.2f} confirmado para {sub['name']}",
@@ -1337,6 +1360,7 @@ def skip_subscription_cycle(id: str) -> dict:
             "UPDATE subscriptions SET next_billing = %(next_billing)s, updated_at = NOW() WHERE id = %(id)s",
             {"next_billing": new_next.isoformat(), "id": id},
         )
+        _touch_calendar()
         return {"status": "ok", "message": "Ciclo pulado, próximo vencimento atualizado"}
     except Exception as e:
         return {"status": "error", "message": str(e)}

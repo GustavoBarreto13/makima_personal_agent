@@ -135,6 +135,14 @@ def register_credit_card(
         if tx.get("status") != "ok":
             return {"status": "error", "message": f"Cartão criado mas erro ao registrar dívida: {tx.get('message')}"}
 
+    # Espelho Calendar Hub → Google Calendar (spec 069): vencimento do cartão vira
+    # evento recorrente mensal em "Nami — Finanças" — reconcilia (best-effort).
+    try:
+        from agents.nami.tools import _touch_calendar as _tc
+        _tc()
+    except Exception:
+        pass
+
     return {
         "status": "ok",
         "id": card_id,
@@ -204,6 +212,12 @@ def update_credit_card(
             return {"status": "error", "message": f"Cartão não encontrado ou inativo: {card_id}"}
         # Invalida o cache para refletir o novo nome se foi alterado
         _invalidate_cards_cache()
+        # Espelho Calendar Hub → Google Calendar (spec 069) — vencimento pode ter mudado
+        try:
+            from agents.nami.tools import _touch_calendar as _tc
+            _tc()
+        except Exception:
+            pass
         return {"status": "ok", "message": "Cartão atualizado"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -235,6 +249,11 @@ def delete_credit_card(card_id: str) -> dict:
     try:
         run_dml(sql, {"id": card_id})
         _invalidate_cards_cache()
+        try:
+            from agents.nami.tools import _touch_calendar as _tc
+            _tc()
+        except Exception:
+            pass
         return {
             "status": "ok",
             "message": f"Cartão '{nome}' encerrado. Histórico de transações preservado.",

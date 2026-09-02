@@ -231,6 +231,27 @@ def run_marin_mal_sync() -> None:
         )
 
 
+def run_gcal_mirror() -> None:
+    """Reconcilia o espelho Calendar Hub → Google Calendar (spec 069).
+
+    Chama `run()` de `scripts/sync_gcal_mirror.py` diretamente (função pura, sem
+    subprocesso). O `reconcile_all` subjacente é best-effort e nunca levanta —
+    checamos o contador de fontes com erro aqui e levantamos para o runner
+    registrar a falha e alertar.
+
+    Raises:
+        RuntimeError: Se uma ou mais fontes falharam na reconciliação.
+    """
+    from scripts.sync_gcal_mirror import run
+
+    outcome = run()
+    if outcome["errors"]:
+        raise RuntimeError(
+            f"gcal_mirror: {len(outcome['errors'])} fonte(s) com erro — "
+            f"{', '.join(outcome['errors'])}. Ver o log acima."
+        )
+
+
 def run_kaguya_due_reminders() -> None:
     """Executa o lembrete periódico de tarefas com vencimento (Kaguya) — spec 064 US5.
 

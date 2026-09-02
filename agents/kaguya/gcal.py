@@ -81,6 +81,42 @@ _dedicated_calendar_ids: dict[str, str] = {}
 _KAGUYA_CALENDAR_NAME = "Kaguya — Tarefas"
 _HABITS_CALENDAR_NAME = "Kaguya — Hábitos"   # spec 067 — alertas de hábito, separado das tarefas
 
+# Espelho do Calendar Hub → Google Calendar (spec 069). Cada fonte do hub
+# (agents/*/calendar_provider.py) ganha um calendário Google dedicado, no mesmo
+# molde de "Kaguya — Tarefas"/"Kaguya — Hábitos". A chave é o `source_id` do hub
+# (calendar_hub._PROVIDERS); o valor é o nome exato do calendário no Google.
+#
+# Esta constante vive AQUI (e não em gcal_mirror.py) porque `list_events()`
+# precisa excluir esses calendários do fan-out — senão cada item apareceria duas
+# vezes na tela de Calendário do webapp (uma via calendar_hub.aggregate, outra
+# via o feed gcal) e inflaria a capacidade do Meu Dia. Importar o gcal_mirror
+# aqui criaria um ciclo (ele importa gcal).
+MIRRORED_SOURCES: dict[str, str] = {
+    "nami": "Nami — Finanças",
+    "frieren": "Frieren — Livros",
+    "violet": "Violet — Diário",
+    "akane": "Akane — Filmes",
+    "marin": "Marin — Animes",
+    "mai": "Mai — Séries",
+    "komi": "Komi — Pessoas",
+}
+
+# Descrição aplicada só na criação de cada calendário-espelho (ignorada se já existe).
+_MIRROR_CALENDAR_DESC = (
+    "Espelho automático do que o agente {agent} registra na suíte Makima. "
+    "Gerenciado pela Kaguya — editar aqui não volta para o app."
+)
+
+# Exclude padrão de list_events(): o espelho de tarefas, o TickTick (integração
+# externa que duplicaria eventos) e TODOS os calendários-espelho do hub (spec 069).
+# "Kaguya — Hábitos" continua FORA do exclude default (decisão de produto da spec
+# 067 — os alertas devem aparecer na tela de Calendário).
+_DEFAULT_EXCLUDE: tuple[str, ...] = (
+    _KAGUYA_CALENDAR_NAME,
+    "TickTick",
+    *MIRRORED_SOURCES.values(),
+)
+
 
 # ---------------------------------------------------------------------------
 # Cache de listagem de calendários e eventos
@@ -207,29 +243,30 @@ def _ensure_calendar(name: str, description: str) -> str:
     if cached is not None:
         return cached
 
-    service = _get_service()
-
-    # Percorre a lista de calendários do usuário para encontrar o dedicado
-    result = service.calendarList().list().execute()
-    calendars = result.get("items", [])
-
-    for cal in calendars:
+    # Reusa list_calendars() (cache de 5 min, dicts normalizados com "id"/"name")
+    # em vez de chamar calendarList().list() aqui de novo — num cold start com
+    # vários ensure_*(), só a primeira chamada bate na API.
+    for cal in list_calendars():
         # Compara pelo nome exato — case-sensitive, conforme o nome canônico definido
-        if cal.get("summary", "") == name:
-            # Calendário encontrado — cacheia e retorna
+        if cal.get("name", "") == name:
             _dedicated_calendar_ids[name] = cal["id"]
             return cal["id"]
 
     # Calendário não encontrado — cria um novo.
     # Isso acontece apenas na primeira execução após o deploy ou se o calendário
     # foi apagado manualmente pelo usuário.
-    new_calendar = service.calendars().insert(body={
+    new_calendar = _get_service().calendars().insert(body={
         "summary": name,
         # description aparece nos detalhes do calendário no Google Calendar
         "description": description,
         # Fuso horário do usuário — garante que eventos "sem hora" apareçam corretamente
         "timeZone": "America/Sao_Paulo",
     }).execute()
+
+    # O calendário novo não está no cache de list_calendars() (TTL 5 min) — força
+    # um refetch na próxima chamada para que ele apareça na sidebar sem esperar o TTL.
+    global _calendars_cache_ts
+    _calendars_cache_ts = 0.0
 
     _dedicated_calendar_ids[name] = new_calendar["id"]
     return new_calendar["id"]
@@ -259,9 +296,10 @@ def ensure_habits_calendar() -> str:
 
     Calendário dedicado aos alertas de hábito (spec 067) — separado de
     "Kaguya — Tarefas" para que o usuário possa silenciar/ocultar hábitos no app do
-    Google sem afetar as tarefas. Excluído do fan-out de `list_events()` (ver
-    `_DEFAULT_EXCLUDE`) para não contaminar o Meu Dia nem o digest matinal com os
-    próprios alertas que a Kaguya criou.
+    Google sem afetar as tarefas. **NÃO** entra no `_DEFAULT_EXCLUDE` (decisão de
+    produto: os alertas devem aparecer na tela de Calendário do webapp). Quem não
+    deve vê-los — `tools_tasks._gcal_events_for_day` (Meu Dia) e
+    `digest.build_digest_context` — passa `exclude` explícito incluindo este nome.
 
     Returns:
         O ID do calendário "Kaguya — Hábitos" (string opaca do Google).
@@ -269,6 +307,29 @@ def ensure_habits_calendar() -> str:
     return _ensure_calendar(
         _HABITS_CALENDAR_NAME,
         "Alertas automáticos dos hábitos gerenciados pelo agente Kaguya.",
+    )
+
+
+def ensure_mirror_calendar(source_id: str) -> str:
+    """Garante que o calendário-espelho de uma fonte do Calendar Hub existe (spec 069).
+
+    Wrapper fino sobre `_ensure_calendar` — a lógica de criação/descoberta já é
+    genérica desde a spec 067. Usado por `gcal_mirror.reconcile_source`.
+
+    Args:
+        source_id: Chave da fonte no Calendar Hub (ex.: "nami", "mai"). Deve estar
+            em `MIRRORED_SOURCES`.
+
+    Returns:
+        O ID do calendário-espelho dessa fonte (string opaca do Google).
+
+    Raises:
+        KeyError: Se `source_id` não estiver em `MIRRORED_SOURCES`.
+    """
+    name = MIRRORED_SOURCES[source_id]
+    return _ensure_calendar(
+        name,
+        _MIRROR_CALENDAR_DESC.format(agent=name.split(" — ")[0]),
     )
 
 
@@ -401,7 +462,7 @@ def _fetch_cal_events(cal: dict, time_min: str, time_max: str) -> list[dict]:
 def list_events(
     date_from: str,
     date_to: str,
-    exclude: tuple[str, ...] = ("Kaguya — Tarefas", "TickTick"),
+    exclude: tuple[str, ...] = _DEFAULT_EXCLUDE,
 ) -> list[dict]:
     """Lista eventos de TODOS os calendários do usuário num intervalo de datas.
 
@@ -422,9 +483,14 @@ def list_events(
     de chamar ``calendarList().list()`` separadamente — elimina a chamada duplicada
     que existia na implementação anterior.
 
-    Calendários listados em `exclude` são pulados para evitar duplicatas:
+    Calendários listados em `exclude` são pulados para evitar duplicatas. O
+    padrão (`_DEFAULT_EXCLUDE`) cobre:
     - "Kaguya — Tarefas": já está representado nas tarefas do sistema
     - "TickTick": sincronização externa que duplicaria eventos do usuário
+    - os calendários-espelho do Calendar Hub (spec 069 — `MIRRORED_SOURCES`:
+      "Nami — Finanças", "Mai — Séries", ...): cada um já é uma fonte própria no
+      `calendar_hub.aggregate`, então incluí-los aqui os traria em dobro na tela
+      de Calendário e inflaria a capacidade do Meu Dia com filmes/diário/finanças.
 
     **"Kaguya — Hábitos" (spec 067) NÃO entra no exclude padrão** — os alertas de
     hábito devem aparecer na tela de Calendário do webapp, que chama esta função
@@ -509,6 +575,63 @@ def invalidate_events_cache() -> None:
     global _events_cache
     # Apaga todas as entradas — a próxima chamada a list_events() buscará dados frescos
     _events_cache.clear()
+
+
+# ---------------------------------------------------------------------------
+# Listagem crua de um calendário (spec 069 — reconciliação do espelho)
+# ---------------------------------------------------------------------------
+
+def list_raw_events(calendar_id: str, date_from: str, date_to: str) -> list[dict]:
+    """Lista os eventos de UM calendário numa janela, sem normalização nem cache.
+
+    Diferente de `list_events()` (que faz fan-out em todos os calendários,
+    normaliza o fuso, filtra `exclude` e cacheia 60s), esta função devolve o
+    mínimo necessário para `gcal_mirror.reconcile_source` fazer o diff contra o
+    estado desejado: `id`, `summary`, `start`, `end` — cru, exatamente como o
+    Google retorna. Sem cache (a reconciliação precisa do estado atual real) e
+    com paginação completa por `pageToken`.
+
+    `singleEvents=False`: os eventos-espelho são todos únicos (uma linha do
+    provider = um evento), não há recorrência para expandir — e expandir só
+    multiplicaria o trabalho do diff.
+
+    Args:
+        calendar_id: ID do calendário a ler (tipicamente um calendário-espelho).
+        date_from: Início da janela em YYYY-MM-DD.
+        date_to: Fim da janela em YYYY-MM-DD (inclusive).
+
+    Returns:
+        Lista de dicts crus com pelo menos `id`; `summary`/`start`/`end` quando
+        presentes no evento. Eventos cancelados (status="cancelled") são omitidos.
+    """
+    service = _get_service()
+    time_min = f"{date_from}T00:00:00-03:00"
+    time_max = f"{date_to}T23:59:59-03:00"
+
+    out: list[dict] = []
+    page_token: Optional[str] = None
+    while True:
+        resp = service.events().list(
+            calendarId=calendar_id,
+            timeMin=time_min,
+            timeMax=time_max,
+            maxResults=2500,        # máximo permitido pela API — menos round-trips
+            singleEvents=False,     # eventos-espelho são únicos; nada a expandir
+            showDeleted=False,
+            pageToken=page_token,
+        ).execute()
+        for ev in resp.get("items", []):
+            if ev.get("status") == "cancelled":
+                continue
+            out.append({
+                "id": ev.get("id", ""),
+                "summary": ev.get("summary", ""),
+                "start": ev.get("start", {}),
+                "end": ev.get("end", {}),
+            })
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            return out
 
 
 # ---------------------------------------------------------------------------

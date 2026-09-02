@@ -442,6 +442,24 @@ Sessão separada por domínio: `{chat_id}_filmes` — histórico de cinema não 
 
 ## Cross-agent com Kaguya
 
+### `calendar_provider.py` — fonte "akane" do Calendar Hub (spec 069)
+
+`list_calendar_events(start, end)` expõe dois tipos de item, ambos all-day: sessões do diário
+(`diary_entries.watched_date` → `▶️ Título`, `loc` = `★ nota`/`rewatch`) e filmes marcados como
+vistos sem sessão datada (`movies.last_watched_date`, tipicamente import do `watched.csv` —
+filtra fora quem já tem qualquer `diary_entries`). Registrado como `akane` em
+`agents/kaguya/calendar_hub.py` (antes era `lambda: []` — filmes não apareciam na aba
+Calendário). É consumido em duas superfícies: a tela de Calendário do webapp e o espelho
+`gcal_mirror` → calendário Google **"Akane — Filmes"**. Somente leitura, mesmo padrão de
+Mai/Marin.
+
+O helper `_touch_calendar()` em `tools.py` chama `gcal_mirror.mark_dirty("akane")` (best-effort,
+lazy import) no fim de `add_movie`/`log_watch`/`update_movie_status`/`delete_movie`/
+`delete_diary_entry`/`update_diary_entry`/`upsert_movie_from_letterboxd`/`_merge_into_existing_movie`
+— reconciliação do calendário-espelho ~1min depois.
+
+### `create_movie_reminder`
+
 `create_movie_reminder(movie_query, when)` importa `create_task` da Kaguya em runtime
 (importação tardia para evitar circular import):
 

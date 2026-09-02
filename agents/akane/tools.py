@@ -173,6 +173,20 @@ def _err(message: str) -> dict:
     return {"status": "error", "message": message}
 
 
+def _touch_calendar() -> None:
+    """Reconcilia o calendário-espelho "Akane — Filmes" no Google (spec 069).
+
+    Best-effort, debounced e fora do caminho crítico — lazy import + try/except,
+    mesmo padrão de `gcal_sync.push_task`. Chamado no fim das mutações que
+    produzem item de calendário (sessões do diário, filmes vistos).
+    """
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("akane")
+    except Exception:
+        pass
+
+
 def create_watch_location(name: str, kind: str) -> dict:
     """Criar ou reutilizar um local de sessao normalizado."""
     normalized = _norm(name)
@@ -496,6 +510,7 @@ def _merge_into_existing_movie(
                 "now": _now(),
             },
         )
+    _touch_calendar()
     return {
         "status": "merged",
         "id": movie_id,
@@ -726,6 +741,7 @@ def add_movie(
         },
     )
 
+    _touch_calendar()
     return _ok(id=movie_id, message=f"Filme '{final_title}' adicionado ao catálogo.")
 
 
@@ -867,6 +883,7 @@ def log_watch(
                 },
             )
 
+    _touch_calendar()
     return _ok(
         diary_id=diary_id,
         message=f"Sessão de '{movie['title']}' logada para {watch_date}.",
@@ -971,6 +988,7 @@ def update_movie_status(movie_id: str, status: str) -> dict:
         "UPDATE movies SET status = %(s)s, updated_at = %(now)s WHERE id = %(id)s",
         {"s": status, "now": _now(), "id": movie_id},
     )
+    _touch_calendar()
     return _ok(message=f"Status de '{rows[0]['title']}' atualizado para '{status}'.")
 
 
@@ -1417,6 +1435,7 @@ def delete_movie(movie_id: str) -> dict:
         "UPDATE movies SET deleted = TRUE, updated_at = %(now)s WHERE id = %(id)s",
         {"now": _now(), "id": movie_id},
     )
+    _touch_calendar()
     return _ok(message=f"'{rows[0]['title']}' removido do catálogo.")
 
 
@@ -1459,6 +1478,7 @@ def delete_diary_entry(diary_id: str) -> dict:
                 {"mid": movie_id, "now": _now()},
             )
 
+    _touch_calendar()
     return _ok(message="Sessão removida do diário.")
 
 
@@ -1573,6 +1593,7 @@ def update_diary_entry(
         "SELECT last_watched_date, times_watched FROM movies WHERE id = %(id)s",
         {"id": movie_id},
     )
+    _touch_calendar()
     return _ok(entry=entry[0], movie=movie[0])
 
 
@@ -2515,6 +2536,7 @@ def upsert_movie_from_letterboxd(
         },
     )
 
+    _touch_calendar()
     return {"status": "created" if movie_created else "updated", "id": movie_id}
 
 

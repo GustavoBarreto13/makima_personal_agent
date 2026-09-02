@@ -213,9 +213,13 @@ register(
     _violet_provider,
 )
 
-# 5. Akane — Filmes (stub)
-# agents/media/ está fora do escopo desta fatia. O provedor sempre retorna [].
-# Registrado para aparecer na sidebar e ser configurável via prefs.
+# 5. Akane — Filmes
+# Importa o provedor real de agents/akane/calendar_provider.py (spec 069).
+# Exibe sessões do diário de filmes e filmes vistos sem sessão datada.
+# Cor vermelho-rosado — cinema.
+_akane_provider = _try_import_provider(
+    "agents.akane.calendar_provider", "list_calendar_events"
+)
 register(
     {
         "id": "akane",
@@ -225,7 +229,7 @@ register(
         # Vermelho-rosado — associado a entretenimento e cinema
         "color": "oklch(0.68 0.18 15)",
     },
-    lambda start_date, end_date: [],  # stub: agents/media/ ainda não implementado
+    _akane_provider,
 )
 
 # 6. Marin — Animes

@@ -1070,14 +1070,18 @@ def calendar_sources_route(user: dict = Depends(require_user)) -> list[dict]:
 
         # Busca os calendários reais da conta Google.
         # Se o Google estiver offline, silencia o erro e continua sem fontes gcal.
+        from agents.kaguya import gcal as gcal_mod
         try:
-            from agents.kaguya import gcal as gcal_mod
             gcal_calendars = gcal_mod.list_calendars()
         except Exception:
             gcal_calendars = []
 
-        # Calendários a pular: espelho de tarefas (já representado por "kaguya") e TickTick
-        _SKIP_NAMES = {"TickTick"}
+        # Calendários a pular: espelho de tarefas (já representado por "kaguya"),
+        # TickTick, e os calendários-espelho do Calendar Hub (spec 069 —
+        # "Nami — Finanças", "Mai — Séries", ...): esses já são fontes próprias na
+        # seção "Makima" da sidebar; listá-los aqui de novo, na seção "Google",
+        # duplicaria cada um. "Kaguya — Hábitos" NÃO entra (aparece de propósito).
+        _SKIP_NAMES = {"TickTick", *gcal_mod.MIRRORED_SOURCES.values()}
 
         for idx, c in enumerate(gcal_calendars):
             if c.get("is_kaguya"):

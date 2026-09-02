@@ -42,6 +42,20 @@ def _ok(**kwargs) -> dict:
     return {"status": "ok", **kwargs}
 
 
+def _touch_calendar() -> None:
+    """Reconcilia o calendário-espelho "Mai — Séries" no Google (spec 069).
+
+    Best-effort, debounced e fora do caminho crítico — lazy import + try/except,
+    mesmo padrão de `gcal_sync.push_task`. Chamado no fim das mutações que
+    produzem item de calendário (sessões, marcos de série, cache de episódios).
+    """
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("mai")
+    except Exception:
+        pass
+
+
 def _err(message: str) -> dict:
     """Monta resposta de erro com status='error' + mensagem.
 
@@ -251,6 +265,7 @@ def add_series(
                 series_id, tmdb_id, exc,
             )
 
+    _touch_calendar()
     return _ok(series_id=series_id, title=display_title)
 
 
@@ -357,6 +372,7 @@ def log_watch(
             (log_date, series_id),
         )
 
+    _touch_calendar()
     return _ok(log_id=log_id, episodes_count=episodes_count or 0, series_title=series_title)
 
 
@@ -393,6 +409,7 @@ def update_status(series_id: str, status: str) -> dict:
             (status, series_id),
         )
 
+    _touch_calendar()
     return _ok(series_id=series_id, new_status=status)
 
 
@@ -947,6 +964,7 @@ def delete_series(series_id: str) -> dict:
         "UPDATE series SET deleted = TRUE, updated_at = NOW() WHERE id = %s",
         (series_id,),
     )
+    _touch_calendar()
     return _ok(series_id=series_id, title=title)
 
 
@@ -1032,6 +1050,7 @@ def sync_metadata(series_id: str) -> dict:
     except Exception as exc:
         return _err(f"Erro ao sincronizar temporadas: {exc}")
 
+    _touch_calendar()
     return _ok(series_id=series_id, **stats)
 
 
@@ -1166,6 +1185,7 @@ def set_episode_watched(
             (series_id,),
         )
 
+    _touch_calendar()
     return _ok(
         series_id=series_id,
         season_number=season_number,
@@ -1246,6 +1266,7 @@ def set_season_watched(
             (series_id,),
         )
 
+    _touch_calendar()
     return _ok(
         series_id=series_id,
         season_number=season_number,

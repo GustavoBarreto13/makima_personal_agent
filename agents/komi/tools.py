@@ -438,6 +438,13 @@ def add_important_date(
         except Exception:
             pass
 
+        # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Komi — Pessoas"
+        try:
+            from agents.kaguya import gcal_mirror as _gm
+            _gm.mark_dirty("komi")
+        except Exception:
+            pass
+
         return {"status": "ok", "id": date_id, "message": f"Data '{label}' ({date}) adicionada com sucesso."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -519,6 +526,13 @@ def update_important_date(
         except Exception:
             pass
 
+        # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Komi — Pessoas"
+        try:
+            from agents.kaguya import gcal_mirror as _gm
+            _gm.mark_dirty("komi")
+        except Exception:
+            pass
+
         return {"status": "ok", "message": "Data atualizada."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -566,6 +580,13 @@ def delete_important_date(date_id: int) -> dict:
                 _ks.remove_person_date(linked_task_id)
             except Exception:
                 pass
+
+        # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Komi — Pessoas"
+        try:
+            from agents.kaguya import gcal_mirror as _gm
+            _gm.mark_dirty("komi")
+        except Exception:
+            pass
 
         return {"status": "ok", "message": "Data removida."}
     except Exception as e:

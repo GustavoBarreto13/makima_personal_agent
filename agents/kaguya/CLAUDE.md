@@ -44,8 +44,9 @@ agents/kaguya/
 ├── tools_focus.py        # camada de lógica: sessões de foco (start/finish/cancel/stats/heatmap/achievements) — spec 037 + 062
 ├── capacity.py           # motor PURO (sem banco): compute_capacity() — janela 8h–22h — fatia 016
 ├── digest.py             # digest matinal (tarefas/agenda) → WhatsApp: contexto + sugestão Gemini + tools de resposta pendente
-├── gcal.py               # cliente Google Calendar compartilhado (read all / write main) — fatia 019
+├── gcal.py               # cliente Google Calendar compartilhado (read all / write main) — fatia 019 + MIRRORED_SOURCES/ensure_mirror_calendar/list_raw_events (spec 069)
 ├── gcal_sync.py          # espelho best-effort: push/remove tarefas no GCal "Kaguya — Tarefas" — fatia 019
+├── gcal_mirror.py        # espelho best-effort: Calendar Hub → 7 calendários Google dedicados (id de evento determinístico, diff) — spec 069
 ├── calendar_prefs.py     # CRUD da tabela calendar_prefs (visibilidade + cor + contexto Trabalho/Pessoal) — fatia 019 / spec 038
 ├── calendar_hub.py       # agregador: register/list_sources/aggregate fan-out best-effort — fatia 019
 ├── komi_sync.py          # sync bidirecional best-effort de aniversários Komi ↔ Kaguya — fase 026
@@ -882,7 +883,7 @@ Cada item retornado por um provedor deve seguir o TypedDict `CalendarItem`:
 | `nami` | Finanças | `agents/nami/calendar_provider.py` | laranja |
 | `frieren` | Livros | `agents/frieren/calendar_provider.py` | verde-azulado |
 | `violet` | Diário | `agents/journal/calendar_provider.py` | roxo-magenta |
-| `akane` | Filmes | stub (`[]`) — `agents/media/` ainda não implementado | vermelho |
+| `akane` | Filmes | `agents/akane/calendar_provider.py` — sessões do diário + filmes vistos (spec 069; era stub) | vermelho |
 
 ### gcal.py — cliente Google Calendar compartilhado
 
@@ -926,6 +927,61 @@ Funções principais:
   (Meu Dia) e `build_digest_context` (digest matinal) pedem `exclude` explícito para escondê-los;
   ver a seção de Hábitos acima.
 - `invalidate_events_cache()` — limpa o cache de eventos (chamado pelas rotas POST/PATCH/DELETE do webapp)
+- **`MIRRORED_SOURCES: dict[str, str]`** (spec 069) — `source_id` do hub → nome do calendário
+  Google dedicado. Os 7: `nami`→"Nami — Finanças", `frieren`→"Frieren — Livros",
+  `violet`→"Violet — Diário", `akane`→"Akane — Filmes", `marin`→"Marin — Animes",
+  `mai`→"Mai — Séries", `komi`→"Komi — Pessoas". Fonte única — alimenta o `_DEFAULT_EXCLUDE`
+  de `list_events()` **e** o `_SKIP_NAMES` da sidebar (`webapp/backend/routers/tasks.py`).
+- `_DEFAULT_EXCLUDE` = `("Kaguya — Tarefas", "TickTick", *MIRRORED_SOURCES.values())` — o
+  default de `list_events()`. Os call sites que já passavam `exclude` explícito para esconder
+  "Kaguya — Hábitos" (`_gcal_events_for_day`, `digest.build_digest_context`) agora passam
+  `(*gcal._DEFAULT_EXCLUDE, "Kaguya — Hábitos")`.
+- `ensure_mirror_calendar(source_id)` — wrapper de `_ensure_calendar` para um calendário-espelho.
+- `list_raw_events(calendar_id, from, to)` — listagem crua (`id`/`summary`/`start`/`end`), **sem
+  cache**, paginada — o que `gcal_mirror` usa para o diff (`list_events` normaliza/cacheia/faz
+  fan-out, nada disso serve para reconciliar).
+
+### gcal_mirror.py — espelho Calendar Hub → Google Calendar (spec 069)
+
+Dá a cada fonte do Calendar Hub um calendário Google dedicado (`MIRRORED_SOURCES`), no mesmo
+molde de "Kaguya — Tarefas"/"Kaguya — Hábitos": criado sob demanda, idempotente, best-effort,
+reconciliado por **diff** (nunca apaga-e-recria). Mesmo executor de 1 worker e mesmo
+`GCAL_SYNC_ENABLED` de `gcal_sync`.
+
+**Sem estado novo no banco.** Tarefa/hábito guardam `google_event_id` numa coluna; os itens do
+hub são derivados e não têm onde. Em vez de `ALTER TABLE` em ~10 tabelas, o id do evento no
+Google é **determinístico**: `event_id_for(item) = md5(f"{cal}|{kind}|{ref_id}|{date}")` (32
+hex — subconjunto válido do base32hex que a API aceita para ids escolhidos pelo cliente). Como
+cada fonte tem calendário próprio, tudo lá dentro é nosso → a reconciliação é um diff de
+conjuntos puro.
+
+| Função | O que faz |
+|---|---|
+| `event_id_for(item)` | id determinístico e estável (nada de `hash()` salgado — mesma disciplina de Akane/Marin, spec 049/052) |
+| `reconcile_source(source_id, start, end)` | síncrono, nunca levanta: chama `calendar_hub._PROVIDERS[source_id]` (o mesmo provider da aba), monta `desired = {eid: body}`, lê `gcal.list_raw_events`, faz insert/patch/delete. 409 (id de evento apagado ainda não purgado) → `patch` com `status=confirmed` (revive). Teto `_MAX_EVENTS_PER_SOURCE=500` (protege contra `marin`/`mai` `_upcoming_episode_events`, que não filtram por status) |
+| `reconcile_all(start, end)` | todas as 7 fontes, best-effort |
+| `mark_dirty(source_id)` | **API pública dos agentes** — debounce de ~60s (`threading.Timer`), janela estreita (−30d/+90d); no-op se `GCAL_SYNC_ENABLED=false` |
+| `full_window()` | `(hoje−365, hoje+365)` — usada pelo job/backfill |
+
+**Payload (`_event_body`)**: `all_day`/sem `start` → dia inteiro com `end = date + 1` (exclusivo
+na API — diferente da convenção `end == start` legada de `gcal_sync`, tolerada lá); `start` sem
+`end` (só a Nami produz isso) → `+30min`. `description` = `loc` + `deep_link` do webapp (ganho novo —
+`gcal_sync` nunca preencheu `description`). `reminders` **vazio** (`useDefault: False`,
+`overrides: []`) — a maioria é histórico, notificação em massa seria spam; quem quiser aviso liga
+a notificação padrão DO calendário na UI do Google. `transparency: transparent`.
+
+**Gatilhos nas mutações dos 7 agentes**: `mark_dirty(source_id)` best-effort (lazy import +
+`try/except`, pós-commit — padrão `gcal_sync.push_task`). Cada agente tem um helper
+`_touch_calendar()` (Nami/Akane/Mai/Marin) ou chama inline (Komi/Violet/Frieren). Cobre
+create/log/update/delete de transações/assinaturas/cartões (Nami), sessões/livros (Frieren),
+bullets (Violet), sessões/filmes (Akane), sessões/animes + pull do MAL (Marin),
+sessões/séries/episódios (Mai), datas de pessoas (Komi). O que o gatilho perder, o job pega.
+
+**Job `gcal_mirror`** (`scheduler/`, de hora em hora, `scripts/sync_gcal_mirror.py`) — janela
+cheia (±365d), rede de segurança + backfill inicial. Ver `scheduler/CLAUDE.md`.
+
+Limitação: sync **one-way** (editar o evento no Google não volta; a próxima reconciliação
+sobrescreve/apaga) — mesma de tarefas/hábitos.
 
 ### komi_sync.py — sync bidirecional de aniversários Komi ↔ Kaguya (fase 026)
 

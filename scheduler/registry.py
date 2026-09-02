@@ -27,6 +27,7 @@ from scheduler.jobs import (
     run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest, run_kaguya_digest,
     run_weekly_review_reminder,
     run_recurring_charges, run_budget_alert, run_monthly_report, run_marin_mal_sync,
+    run_gcal_mirror,
 )
 
 # Fuso horário do usuário. Todos os horários dos jobs são interpretados nele —
@@ -190,6 +191,16 @@ JOBS: list[ScheduledJob] = [
         func=run_marin_mal_sync,
         trigger=every(hours=6),
         description="Sync delta com o MyAnimeList (Marin): pull cria sessões de ajuste, coexiste com o push best-effort das mutações locais",
+    ),
+    # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia as 7 fontes
+    # (Nami/Frieren/Violet/Akane/Marin/Mai/Komi) contra seus calendários Google
+    # dedicados na janela cheia (±365d). Rede de segurança do gatilho
+    # gcal_mirror.mark_dirty (janela estreita, por mutação). A cada hora.
+    ScheduledJob(
+        name="gcal_mirror",
+        func=run_gcal_mirror,
+        trigger=every(hours=1),
+        description="Espelho Calendar Hub → Google Calendar (Nami/Frieren/Violet/Akane/Marin/Mai/Komi)",
     ),
     # kaguya_due_reminders (lembrete pontual de tarefas via WhatsApp) — DESATIVADO a
     # pedido do usuário logo depois de testado em produção ("não gostei, deixa só pelo

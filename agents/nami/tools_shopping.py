@@ -525,6 +525,12 @@ def finish_shopping(
                     " WHERE list_id = %(old_id)s AND checked = FALSE",
                     {"new_id": new_list_id, "old_id": lst["id"]},
                 )
+        # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Nami — Finanças"
+        try:
+            from agents.nami.tools import _touch_calendar as _tc
+            _tc()
+        except Exception:
+            pass
         return {
             "status": "ok", "transaction_id": tx["id"], "new_list_id": new_list_id,
             "message": f"Compra de R${valor_total:.2f} finalizada — lista '{lst['name']}' arquivada",

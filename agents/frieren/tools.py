@@ -570,6 +570,13 @@ def add_book(
                 for pid in person_ids:
                     link_person_on_cursor(cur, pid, "book", book_id)
 
+    # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("frieren")
+    except Exception:
+        pass
+
     # ── 8. Monta a mensagem de confirmação ────────────────────────────────────
     titulo_final = meta.get("title", title)
     autor_final  = meta.get("author") or "autor desconhecido"
@@ -734,6 +741,13 @@ def log_reading(
             "book_id": book_id,
         }
         run_dml(sql_update, update_params)
+
+    # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("frieren")
+    except Exception:
+        pass
 
     # ── 10. Monta a mensagem de confirmação com o progresso ───────────────────
     titulo = book["title"]
@@ -1022,6 +1036,13 @@ def update_book_status(book_query: str, status: str) -> str:
         "book_id":    book["id"],
     }
     run_dml(sql, params)
+
+    # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("frieren")
+    except Exception:
+        pass
 
     return f"<b>{book['title']}</b> → status atualizado para <b>{status}</b>."
 
@@ -1313,6 +1334,13 @@ def delete_book(book_id: str) -> str:
         {"book_id": book_id, "now": _now()},
     )
 
+    # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("frieren")
+    except Exception:
+        pass
+
     return f"🗑️ <b>{titulo}</b> removido do catálogo."
 
 
@@ -1341,6 +1369,13 @@ def delete_reading_log(log_id: str) -> str:
 
     # Hard delete: remove permanentemente o registro
     run_dml("DELETE FROM reading_logs WHERE id = %(log_id)s", {"log_id": log_id})
+
+    # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("frieren")
+    except Exception:
+        pass
 
     return (
         f"🗑️ Log removido: <b>{log['book_title']}</b> — "
@@ -1406,6 +1441,13 @@ def update_book_by_id(
     sets.append("updated_at = %(now)s")
     sql = f"UPDATE books SET {', '.join(sets)} WHERE id = %(book_id)s"
     run_dml(sql, params)
+
+    # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("frieren")
+    except Exception:
+        pass
 
 
 def update_book_metadata_by_id(
@@ -1560,6 +1602,13 @@ def update_book_metadata_by_id(
     # Se nenhuma linha foi afetada, o book_id informado não existe na tabela
     if affected == 0:
         return f"❌ Livro com ID '{book_id}' não encontrado."
+
+    # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("frieren")
+    except Exception:
+        pass
 
     return "✅ Livro atualizado com sucesso."
 

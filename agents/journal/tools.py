@@ -837,6 +837,12 @@ def upsert_bullet(page_id: int, position: int, content: str, kind: str = 'bullet
                 pass
 
         conn.commit()
+        # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Violet — Diário"
+        try:
+            from agents.kaguya import gcal_mirror as _gm
+            _gm.mark_dirty("violet")
+        except Exception:
+            pass
         return {"status": "ok", "bullet": bullet}
     except psycopg2.errors.ForeignKeyViolation:
         # page_id não existe em journal_pages — retorna erro amigável em vez de HTTP 500
@@ -873,6 +879,12 @@ def delete_bullet(bullet_id: int) -> dict:
                 return {"status": "error", "message": "bullet não encontrado"}
 
         conn.commit()
+        # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Violet — Diário"
+        try:
+            from agents.kaguya import gcal_mirror as _gm
+            _gm.mark_dirty("violet")
+        except Exception:
+            pass
         return {"status": "ok"}
     finally:
         conn.close()

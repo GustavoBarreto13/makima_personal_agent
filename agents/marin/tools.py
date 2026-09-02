@@ -181,6 +181,20 @@ def _err(message: str) -> dict:
     return {"status": "error", "message": message}
 
 
+def _touch_calendar() -> None:
+    """Reconcilia o calendário-espelho "Marin — Animes" no Google (spec 069).
+
+    Best-effort, debounced e fora do caminho crítico — lazy import + try/except,
+    mesmo padrão de `_push_best_effort`. Chamado no fim das mutações que produzem
+    item de calendário (sessões, marcos de anime, cache de episódios).
+    """
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("marin")
+    except Exception:
+        pass
+
+
 def _push_best_effort(
     mal_id: int | None,
     status: str | None = None,
@@ -464,6 +478,7 @@ def add_anime(mal_id: int) -> dict:
                         },
                     )
 
+    _touch_calendar()
     return _ok(
         id=anime_id,
         message=f"'{titulo}' adicionado à watchlist com sucesso!",
@@ -809,6 +824,7 @@ def log_watch(
     elif ep_count:
         ep_desc = f" ({ep_count} ep)"
 
+    _touch_calendar()
     return _ok(
         log_id=log_id,
         message=f"Sessão de '{anime['title']}'{ep_desc} registrada para {watch_date}.",
@@ -940,6 +956,7 @@ def delete_watch_log(log_id: str) -> dict:
                 num_watched_episodes=atualizado[0]["episodes_watched"],
             )
 
+    _touch_calendar()
     return _ok(message="Sessão removida do diário.")
 
 
@@ -1210,6 +1227,7 @@ def update_anime_status(anime_id_or_query: str, status: str) -> dict:
     if anime.get("mal_id"):
         _push_best_effort(anime["mal_id"], status=status)
 
+    _touch_calendar()
     return _ok(
         message=f"Status de '{anime['title']}' atualizado para '{status}'.",
         id=anime["id"],
@@ -1299,6 +1317,7 @@ def delete_anime(anime_id_or_query: str) -> dict:
         except Exception:
             pass
 
+    _touch_calendar()
     return _ok(message=f"'{anime['title']}' removido do catálogo. Histórico preservado.")
 
 

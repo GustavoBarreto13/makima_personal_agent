@@ -978,4 +978,13 @@ def sync_mal(full: bool = False) -> dict:
         total_fetched, total_updated, total_created, total_skipped, len(erros)
     )
 
+    # Espelho Calendar Hub → Google Calendar (spec 069): o pull pode ter criado
+    # animes/episódios novos — reconcilia "Marin — Animes" (best-effort, debounced).
+    if total_created or total_updated:
+        try:
+            from agents.kaguya import gcal_mirror as _gm
+            _gm.mark_dirty("marin")
+        except Exception:
+            pass
+
     return resultado_final

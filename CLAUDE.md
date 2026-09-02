@@ -224,6 +224,7 @@ makima_personal_agent/
 │   │   ├── komi_sync.py        # sync bidirecional de aniversários com a Komi — spec 026
 │   │   ├── gcal.py             # cliente Google Calendar (read all / write main) — fatia 019
 │   │   ├── gcal_sync.py        # espelho best-effort de tarefas → GCal "Kaguya — Tarefas" — fatia 019
+│   │   ├── gcal_mirror.py      # espelho best-effort: Calendar Hub → 7 calendários Google dedicados (id determinístico + diff) — spec 069
 │   │   ├── calendar_prefs.py   # CRUD da tabela calendar_prefs — fatia 019
 │   │   ├── calendar_hub.py     # agregador fan-out: register/list_sources/aggregate — fatia 019
 │   │   ├── tools.py            # fachada: re-exporta a lógica + cross-agent (Nami) + Calendar Hub
@@ -253,6 +254,7 @@ makima_personal_agent/
 │   ├── akane/           # agente de filmes — Fase 015 ✅
 │   │   ├── __init__.py
 │   │   ├── tools.py     # PostgreSQL + TMDB + sync Letterboxd (RSS/CSV)
+│   │   ├── calendar_provider.py # fonte "akane" do Calendar Hub — sessões + filmes vistos (spec 069)
 │   │   ├── agent.py     # akane_agent — singleton
 │   │   ├── schema_pg.sql # schema das 7 tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, schema, TMDB/Letterboxd, personalidade
@@ -331,6 +333,7 @@ makima_personal_agent/
 │   ├── setup_kurisu_rag.py    # cria o corpus Vertex AI RAG e ingere o vault — spec 027
 │   ├── sync_kurisu_memory.py  # sync incremental da memória unificada — spec 028
 │   ├── sync_letterboxd.py     # sync RSS do Letterboxd (Akane)
+│   ├── sync_gcal_mirror.py    # reconcilia Calendar Hub → Google Calendar (job gcal_mirror + backfill manual) — spec 069
 │   ├── import_letterboxd_csv.py # importação one-time do CSV histórico do Letterboxd
 │   ├── backup_postgres.py     # pg_dump → Google Cloud Storage (agendado pelo scheduler/ — job diário)
 │   ├── send_lucy_digest.py    # digest matinal de emails (Lucy) — agendado pelo scheduler/ (spec 032)
