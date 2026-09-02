@@ -1080,8 +1080,19 @@ def calendar_sources_route(user: dict = Depends(require_user)) -> list[dict]:
         # TickTick, e os calendários-espelho do Calendar Hub (spec 069 —
         # "Nami — Finanças", "Mai — Séries", ...): esses já são fontes próprias na
         # seção "Makima" da sidebar; listá-los aqui de novo, na seção "Google",
-        # duplicaria cada um. "Kaguya — Hábitos" NÃO entra (aparece de propósito).
+        # duplicaria cada um.
         _SKIP_NAMES = {"TickTick", *gcal_mod.MIRRORED_SOURCES.values()}
+
+        # "Kaguya — Hábitos" (spec 067) NÃO é uma fonte do hub — os alertas são
+        # eventos recorrentes reais do Google, que chegam pelo feed /calendar/events
+        # e são filtrados client-side por "gcal:<calendar_id>". Então a entrada aqui
+        # PRECISA continuar com id "gcal:<id>" (senão os alertas somem do grid), mas
+        # é reformatada para viver na seção "Makima" (kind "base", conta "makima"),
+        # sem o toggle Trabalho/Pessoal — igual às demais fontes gerenciadas pela Kaguya.
+        _HABITS_CAL_NAME = "Kaguya — Hábitos"
+
+        # Índice da fonte "kaguya" (Tarefas) — para inserir os Hábitos logo em seguida.
+        _kaguya_idx = next((i for i, s in enumerate(sources) if s.get("id") == "kaguya"), -1)
 
         for idx, c in enumerate(gcal_calendars):
             if c.get("is_kaguya"):
@@ -1092,6 +1103,25 @@ def calendar_sources_route(user: dict = Depends(require_user)) -> list[dict]:
             # Cada calendário Google vira uma fonte "gcal:<id>" — chave única
             source_id = f"gcal:{c['id']}"
             pref = prefs_by_id.get(source_id, {})
+
+            if c.get("name") == _HABITS_CAL_NAME:
+                habits_entry = {
+                    "id": source_id,  # mantém "gcal:<id>" p/ o feed de eventos e o filtro de visibilidade
+                    "account": "makima",
+                    "kind": "base",
+                    "name": "Kaguya · Hábitos",
+                    "color": pref.get("color") or c.get("bg_color") or "oklch(0.62 0.19 290)",
+                    "visible": pref.get("visible", True),
+                    "position": pref.get("position", 1),
+                    "writable": c.get("writable", False),
+                }
+                if _kaguya_idx >= 0:
+                    sources.insert(_kaguya_idx + 1, habits_entry)
+                    _kaguya_idx = -1  # não inserir de novo se o loop revisitar (defensivo)
+                else:
+                    sources.append(habits_entry)
+                continue
+
             sources.append({
                 "id": source_id,
                 # Conta separada na sidebar para distinguir da suíte Makima

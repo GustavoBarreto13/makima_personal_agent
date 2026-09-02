@@ -201,8 +201,9 @@ export function CalendarsAside({
     return acc
   }, {})
 
-  // ID do primeiro calendário Google da lista — o aviso ⚠️ de desconexão aparece só nele
-  const firstGcalId = sources.find((s) => isGcal(s.id))?.id
+  // ID do primeiro calendário Google DE INTEGRAÇÃO — o aviso ⚠️ de desconexão aparece só nele.
+  // Exclui "Kaguya · Hábitos" (id "gcal:<id>" mas kind "base", vive na seção Makima — spec 069).
+  const firstGcalId = sources.find((s) => isGcal(s.id) && s.kind === 'integration')?.id
 
   const hasTray = (unscheduled?.length ?? 0) > 0
 
@@ -328,9 +329,11 @@ export function CalendarsAside({
                 {/* ci-tag: badge "padrão" para o calendário principal da Kaguya */}
                 {cal.id === 'kaguya' && <span className="ci-tag">padrão</span>}
 
-                {/* Contexto Trabalho/Pessoal (spec 038) — só para calendários Google conectados;
-                    decide contra qual capacity do Meu Dia os eventos deste calendário contam. */}
-                {isGcal(cal.id) && (
+                {/* Contexto Trabalho/Pessoal (spec 038) — só para calendários Google de
+                    INTEGRAÇÃO; decide contra qual capacity do Meu Dia os eventos deste
+                    calendário contam. "Kaguya · Hábitos" (kind "base") não entra: seus
+                    alertas nem chegam à capacity do Meu Dia (spec 067/069). */}
+                {isGcal(cal.id) && cal.kind === 'integration' && (
                   <button
                     className="ci-eye"
                     onClick={() => toggleContext(cal)}
