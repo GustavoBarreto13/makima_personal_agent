@@ -690,6 +690,7 @@ Alimentada pelo Calendar Hub — os detalhes da fatia vivem em `agents/kaguya/CL
 | `visible` | BOOL | NÃO | `TRUE` | Mostrar/ocultar a fonte no grid e no mês. |
 | `color` | TEXT | SIM | — | Cor OKLCH sobrescrita (NULL = cor padrão da fonte). |
 | `position` | INT | NÃO | `0` | Ordem na coluna lateral. |
+| `context` | TEXT | NÃO | `'personal'` | `personal`\|`work` (spec 038, via `ALTER … ADD COLUMN IF NOT EXISTS` + CHECK) — decide contra qual capacity do Meu Dia os eventos da fonte contam. |
 
 ### `birthday_sync_links` *(fase 026)*
 

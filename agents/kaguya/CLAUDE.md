@@ -936,6 +936,14 @@ Funções principais:
   default de `list_events()`. Os call sites que já passavam `exclude` explícito para esconder
   "Kaguya — Hábitos" (`_gcal_events_for_day`, `digest.build_digest_context`) agora passam
   `(*gcal._DEFAULT_EXCLUDE, "Kaguya — Hábitos")`.
+- **Sidebar do webapp** (`calendar_sources_route`, `webapp/backend/routers/tasks.py`): o
+  mesmo `MIRRORED_SOURCES` alimenta o `_SKIP_NAMES`, que tira os 7 espelhos da seção "Google"
+  (a fonte do hub já os cobre na seção "Makima"). "Kaguya — Hábitos" também é reformatado lá
+  para a seção "Makima" (`account:"makima"`, `kind:"base"`, `name:"Kaguya · Hábitos"`, logo
+  após a fonte `kaguya`), mas o `id` **continua** `gcal:<id>` — os alertas de hábito são
+  eventos recorrentes reais do Google, servidos por `/calendar/events` e ligados/desligados
+  client-side (`CalendarScreen.tsx`) casando `gcal:<calendar_id>`. Só a apresentação muda; o
+  pipeline de eventos, não.
 - `ensure_mirror_calendar(source_id)` — wrapper de `_ensure_calendar` para um calendário-espelho.
 - `list_raw_events(calendar_id, from, to)` — listagem crua (`id`/`summary`/`start`/`end`), **sem
   cache**, paginada — o que `gcal_mirror` usa para o diff (`list_events` normaliza/cacheia/faz

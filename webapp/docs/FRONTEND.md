@@ -267,7 +267,7 @@ do app: sidebar própria com listas/grupos, smart-lists, Command Palette (⌘K) 
 | `group-list` | GroupListScreen | Tarefas de todas as listas de um grupo, em visão de lista |
 | `kanban` | KanbanScreen | Board Kanban da lista, com views configuráveis (spec 024) |
 | `group` | GroupBoardScreen | Board agregado do grupo — colunas de mesmo nome unificadas (spec 025) |
-| `calendar` | CalendarScreen | Calendário mês/semana: tarefas datadas, ocorrências virtuais e eventos Google (Calendar Hub) |
+| `calendar` | CalendarScreen | Calendário mês/semana: tarefas datadas, ocorrências virtuais e eventos Google (Calendar Hub); sidebar `CalendarsAside` com seções Makima × Google (spec 069, ver abaixo) |
 | `eisenhower` | EisenhowerScreen | Matriz 2×2 urgência × prioridade com drag-and-drop |
 | `habits` | HabitsScreen | Hábitos com anel de consistência, check-in de hoje e heatmap anual |
 | `experiments` | ExperimentsScreen / ExperimentDetailScreen | Tiny Experiments (spec 029): aderência, check-ins, pausa/retomada e revisão |
@@ -353,7 +353,8 @@ a coluna direita mostra duas `CapacityBar` (uma por contexto, via o novo prop op
 `DayTimeline` permanece única nos dois modos (FR-007). `ProjectModal` ganha o seletor
 Pessoal/Trabalho (oculto para o Inbox); `GroupModal` ganha a ação em massa "Marcar todas as
 listas do grupo como Pessoal/Trabalho" (spec 038, FR-003); `CalendarsAside` ganha um botão de
-contexto (ícones 💼/🏠) por calendário Google conectado.
+contexto (ícones 💼/🏠) por calendário Google de terceiros (`kind === 'integration'` — desde
+a spec 069 não aparece nas fontes gerenciadas pela Kaguya, ver abaixo).
 
 **Arquivar listas + localização nos eventos (spec 039):** `SortableListItem` ganha um botão
 de arquivar revelado no hover (ao lado do grip), 1 clique e sem confirmação (arquivar não
@@ -366,6 +367,18 @@ Command Palette (busca global) mostram "· arquivada" quando a tarefa vem de uma
 arquivada. O local do evento (agenda, popover e agora também Meu Dia) virou link clicável
 para o Google Maps via `lib/maps.ts::mapsLinkFor` (abre a própria URL se o local já for um
 link, ex.: Google Meet).
+
+**Sidebar do Calendário — seções Makima × Google (spec 069):** `CalendarsAside` agrupa as
+fontes de `GET /api/tasks/calendar/sources` por `account` — a seção **Makima** reúne a suíte
+de agentes (`kaguya`, `nami`, `frieren`, `violet`, `akane`, `marin`, `mai`, `komi` + `Kaguya
+· Hábitos`), a seção **Google** só os calendários externos de terceiros. Os 7
+calendários-espelho que a spec 069 cria no Google (`Nami — Finanças` … `Komi — Pessoas`)
+**não** entram na seção Google — o backend os filtra (`_SKIP_NAMES`), a fonte do hub já os
+representa. `Kaguya · Hábitos` é servido com `kind: 'base'` (não `'integration'`), então não
+ganha o botão de contexto 💼/🏠 nem ancora o aviso "Google desconectado" (`firstGcalId`), mas
+seu `id` continua `gcal:<id>`: `CalendarScreen.tsx::calEvents` liga/desliga os eventos de
+alerta de hábito casando `cal === "gcal:<id>"` com `visibleGcal`, igual a qualquer calendário
+Google.
 
 **Particularidades:**
 - **DnD** com `@dnd-kit` (única dependência de drag-and-drop do app) — árvore de tarefas, Kanban e Eisenhower.

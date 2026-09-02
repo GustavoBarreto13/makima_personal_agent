@@ -465,16 +465,31 @@ Campo dedicado (não tag) — no máximo um contexto por tarefa.
 | Método | Rota | O que faz |
 |---|---|---|
 | `GET` | `/api/tasks/calendar` | Tarefas datadas + ocorrências virtuais das recorrentes na janela (`?start=&end=&project_id=`). |
-| `GET` | `/api/tasks/calendar/sources` | Fontes de calendário do hub (kaguya, nami, frieren, violet, akane + calendários Google), com prefs. |
+| `GET` | `/api/tasks/calendar/sources` | Fontes de calendário do hub (kaguya, nami, frieren, violet, akane, marin, mai, komi + calendários Google), com prefs. Os 7 calendários-espelho da spec 069 (`Nami — Finanças` … `Komi — Pessoas`) são **omitidos** — a fonte do hub já os representa; ver o parágrafo abaixo. |
 | `GET` | `/api/tasks/calendar/aggregate` | Agrega eventos de todos os provedores num feed único (`?start=&end=&sources=`). |
 | `GET` | `/api/tasks/calendar/prefs` | Preferências de exibição (cor/visibilidade) de todos os calendários. |
 | `PATCH` | `/api/tasks/calendar/prefs/{calendar_id}` | Atualiza as preferências de um calendário (upsert parcial); `context` (`personal`\|`work`, spec 038) decide contra qual capacity do Meu Dia os eventos contam. |
 | `GET` | `/api/tasks/calendar/calendars` | Lista os calendários Google da conta (com `is_main`/`is_kaguya`). |
-| `GET` | `/api/tasks/calendar/events` | Eventos Google no intervalo (exclui "Kaguya — Tarefas" e "TickTick"; falha vira lista vazia). |
+| `GET` | `/api/tasks/calendar/events` | Eventos Google no intervalo. Exclui `gcal._DEFAULT_EXCLUDE` ("Kaguya — Tarefas", "TickTick" e os 7 espelhos da spec 069) — mas **não** "Kaguya — Hábitos": os alertas de hábito (spec 067) precisam chegar ao grid. Falha vira lista vazia. |
 | `GET` | `/api/tasks/calendar/gcal-status` | Verifica se o Google Calendar está autenticado (`{connected, reason}`). |
 | `POST` | `/api/tasks/calendar/events` | Cria evento no calendário principal (GOOGLE_CALENDAR_MAIN_CALENDAR_ID). |
 | `PATCH` | `/api/tasks/calendar/events/{event_id}` | Atualiza campos de um evento Google (parcial). |
 | `DELETE` | `/api/tasks/calendar/events/{event_id}` | Remove um evento Google (irreversível; `?calendar_id=` para secundários). |
+
+Cada item de `/calendar/sources` traz `id`, `account` (`"makima"` para a suíte de agentes,
+`"Google"` para calendários externos), `kind` (`"base"` p/ fonte gerenciada, `"integration"`
+p/ calendário Google de terceiros), `name`, `color` (OKLCH ou hex), `visible`, `position`,
+`writable` e `context` (`personal`\|`work`, só nas `integration`). Dois casos especiais no
+endpoint (`calendar_sources_route`):
+
+- **Espelhos da spec 069** — `_SKIP_NAMES` (= `gcal.MIRRORED_SOURCES.values()` + `"TickTick"`)
+  filtra os 7 calendários-espelho da injeção de fontes Google; a fonte do hub (`nami`,
+  `frieren`, …) já os cobre na seção "Makima". Sem isso cada agente apareceria em dobro.
+- **"Kaguya — Hábitos"** (spec 067) — não é fonte do hub (os alertas são eventos recorrentes
+  reais do Google, servidos por `/calendar/events` e filtrados client-side por
+  `gcal:<calendar_id>`). O endpoint reformata essa entrada para viver na seção "Makima":
+  `account:"makima"`, `kind:"base"`, `name:"Kaguya · Hábitos"`, inserida logo após a fonte
+  `kaguya` — mas o `id` **continua** `gcal:<id>` (senão os alertas somem do grid).
 
 ### Hábitos (fatia 014 de tasks)
 
