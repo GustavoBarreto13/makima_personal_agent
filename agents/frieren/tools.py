@@ -231,6 +231,70 @@ def _find_book_by_query(query: str) -> dict | None:
     return rows[0]
 
 
+def _parse_volume(volume_id: str, info: dict) -> dict:
+    """Extrai os metadados de um `volumeInfo` da Google Books API para o formato interno.
+
+    Compartilhado por _fetch_google_books (busca textual) e add_book (busca direta por
+    ID) — mesma extração de título, autor, ISBN, capa, categorias e ano em um só lugar,
+    para os dois caminhos nunca divergirem.
+    """
+    # Título do livro — fallback para string vazia se ausente
+    title = info.get("title", "")
+
+    # Autores podem ser uma lista; juntamos com vírgula para um único campo de texto
+    authors = info.get("authors", [])
+    author = ", ".join(authors) if authors else ""
+
+    # Número total de páginas — None se não informado pela Google Books
+    total_pages = info.get("pageCount", None)
+
+    # ISBN: preferimos o ISBN-13 (mais moderno e universal) ao ISBN-10 (legado)
+    isbn = None
+    for identifier in info.get("industryIdentifiers", []):
+        if identifier.get("type") == "ISBN_13":
+            isbn = identifier.get("identifier")
+            break
+        elif identifier.get("type") == "ISBN_10" and isbn is None:
+            isbn = identifier.get("identifier")
+
+    # URLs de capa: preferimos 'thumbnail' (maior) sobre 'smallThumbnail' (menor)
+    image_links = info.get("imageLinks", {})
+    cover_url = image_links.get("thumbnail") or image_links.get("smallThumbnail")
+
+    # Descrição truncada em 500 caracteres para não ocupar espaço excessivo no banco
+    description_full = info.get("description", "")
+    description = description_full[:500] if description_full else ""
+
+    # Categorias/gêneros podem ser uma lista; juntamos com vírgula
+    categories = info.get("categories", [])
+    genre = ", ".join(categories) if categories else ""
+
+    # Idioma do livro (ex.: "pt", "en")
+    language = info.get("language", "")
+
+    # Ano de publicação: extraímos apenas os 4 primeiros caracteres da data
+    published_date = info.get("publishedDate", "")
+    published_year = None
+    if published_date and len(published_date) >= 4:
+        try:
+            published_year = int(published_date[:4])
+        except ValueError:
+            published_year = None
+
+    return {
+        "google_books_id": volume_id,
+        "title": title,
+        "author": author,
+        "total_pages": total_pages,
+        "isbn": isbn,
+        "cover_url": cover_url,
+        "description": description,
+        "genre": genre,
+        "language": language,
+        "published_year": published_year,
+    }
+
+
 def _fetch_google_books(query: str, max_results: int = 5) -> list[dict]:
     """Busca metadados de livros na Google Books API.
 
@@ -285,65 +349,46 @@ def _fetch_google_books(query: str, max_results: int = 5) -> list[dict]:
         # Cada item tem um 'id' único na Google Books e um objeto 'volumeInfo' com metadados
         volume_id = item.get("id", "")
         info = item.get("volumeInfo", {})
-
-        # Título do livro — fallback para string vazia se ausente
-        title = info.get("title", "")
-
-        # Autores podem ser uma lista; juntamos com vírgula para um único campo de texto
-        authors = info.get("authors", [])
-        author = ", ".join(authors) if authors else ""
-
-        # Número total de páginas — None se não informado pela Google Books
-        total_pages = info.get("pageCount", None)
-
-        # ISBN: preferimos o ISBN-13 (mais moderno e universal) ao ISBN-10 (legado)
-        isbn = None
-        for identifier in info.get("industryIdentifiers", []):
-            if identifier.get("type") == "ISBN_13":
-                isbn = identifier.get("identifier")
-                break
-            elif identifier.get("type") == "ISBN_10" and isbn is None:
-                isbn = identifier.get("identifier")
-
-        # URLs de capa: preferimos 'thumbnail' (maior) sobre 'smallThumbnail' (menor)
-        image_links = info.get("imageLinks", {})
-        cover_url = image_links.get("thumbnail") or image_links.get("smallThumbnail")
-
-        # Descrição truncada em 500 caracteres para não ocupar espaço excessivo no banco
-        description_full = info.get("description", "")
-        description = description_full[:500] if description_full else ""
-
-        # Categorias/gêneros podem ser uma lista; juntamos com vírgula
-        categories = info.get("categories", [])
-        genre = ", ".join(categories) if categories else ""
-
-        # Idioma do livro (ex.: "pt", "en")
-        language = info.get("language", "")
-
-        # Ano de publicação: extraímos apenas os 4 primeiros caracteres da data
-        published_date = info.get("publishedDate", "")
-        published_year = None
-        if published_date and len(published_date) >= 4:
-            try:
-                published_year = int(published_date[:4])
-            except ValueError:
-                published_year = None
-
-        # Monta o dicionário com todos os metadados extraídos deste volume
-        results.append({
-            "google_books_id": volume_id,
-            "title": title,
-            "author": author,
-            "total_pages": total_pages,
-            "isbn": isbn,
-            "cover_url": cover_url,
-            "description": description,
-            "genre": genre,
-            "language": language,
-            "published_year": published_year,
-        })
+        results.append(_parse_volume(volume_id, info))
 
     return results
+
+
+def _fetch_google_book_by_id(volume_id: str) -> dict | None:
+    """Busca um volume específico da Google Books API pelo seu ID exato.
+
+    Ao contrário de _fetch_google_books (busca textual), este endpoint retorna
+    exatamente a edição pedida — essencial quando o usuário já escolheu um
+    resultado específico numa lista (ex.: seleção no modal "Adicionar livro" do
+    webapp) e não pode receber uma edição diferente por engano.
+
+    Retorna o dict de metadados (mesmo formato de _fetch_google_books) ou None
+    em caso de erro de rede/HTTP/parsing — nunca lança exceção.
+    """
+    request_params = {}
+    api_key = os.environ.get("GOOGLE_BOOKS_API_KEY", "")
+    if api_key:
+        request_params["key"] = api_key
+
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    _log.info(f"[books_api] GET {_BOOKS_API_URL}/{volume_id} params={request_params}")
+
+    try:
+        response = requests.get(
+            f"{_BOOKS_API_URL}/{volume_id}",
+            params=request_params,
+            timeout=10,
+        )
+        _log.info(f"[books_api] status={response.status_code} body={response.text[:500]!r}")
+        response.raise_for_status()
+        item = response.json()
+    except (requests.RequestException, ValueError) as e:
+        # RequestException cobre rede/HTTP; ValueError cobre resp.json() com corpo inválido
+        _log.warning(f"[books_api] erro ao buscar volume {volume_id!r}: {e}")
+        return None
+
+    return _parse_volume(volume_id, item.get("volumeInfo", {}))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -408,18 +453,37 @@ def add_book(
     author: str | None = None,
     total_pages: int | None = None,
     person_ids: list[str] | None = None,
+    isbn: str | None = None,
+    cover_url: str | None = None,
+    description: str | None = None,
+    genre: str | None = None,
+    language: str | None = None,
+    published_year: int | None = None,
 ) -> str:
     """Adiciona um livro ao catálogo. Enriquece metadados via Google Books API automaticamente.
 
-    Se google_books_id for fornecido, busca aquele volume específico.
+    Se google_books_id for fornecido junto com os demais metadados (isbn, cover_url,
+    description, genre, language, published_year), eles são usados diretamente — sem
+    nenhuma chamada à Google Books API. É o caminho do webapp: o modal de busca já tem
+    todos esses campos do resultado que o usuário selecionou, então reenviá-los evita um
+    round-trip que, se falhasse, faria o livro cair silenciosamente para outra edição.
+
+    Se google_books_id for fornecido SOZINHO (sem os demais metadados — caminho do
+    agente do Telegram, que só conhece o ID), busca aquele volume específico na API.
 
     Args:
         title: Título do livro.
         status: Estado de leitura (padrão: ``quero_ler``).
-        google_books_id: ID Google Books para busca direta (opcional).
+        google_books_id: ID Google Books da edição exata (opcional).
         author: Autor manual — sobrescreve o retornado pela API.
         total_pages: Total de páginas manual — sobrescreve o da API.
         person_ids: Lista de UUIDs de pessoas a vincular ao livro (spec 014 / FR-009).
+        isbn: ISBN da edição — junto com google_books_id, evita busca na API.
+        cover_url: URL da capa — junto com google_books_id, evita busca na API.
+        description: Sinopse — junto com google_books_id, evita busca na API.
+        genre: Gênero/categorias — junto com google_books_id, evita busca na API.
+        language: Código do idioma — junto com google_books_id, evita busca na API.
+        published_year: Ano de publicação — junto com google_books_id, evita busca na API.
     """
     # ── 1. Valida o status informado ──────────────────────────────────────────
     if status not in VALID_STATUSES:
@@ -429,82 +493,76 @@ def add_book(
         )
 
     # ── 2. Verifica duplicatas no catálogo ────────────────────────────────────
-    existente = _find_book_by_query(title)
-    if existente and _norm(existente["title"]) == _norm(title):
-        return (
-            f"<b>{existente['title']}</b> já está no catálogo "
-            f"com status <b>{existente['status']}</b>."
+    # Com google_books_id: só bloqueia se a MESMA edição exata já estiver cadastrada —
+    # edições diferentes do mesmo título podem coexistir (ex.: capa dura e brochura).
+    # Sem google_books_id (adição manual pelo título): mantém o fuzzy match por título.
+    if google_books_id:
+        existentes = run_select(
+            "SELECT id, title, status FROM books "
+            "WHERE google_books_id = %(gid)s AND deleted = FALSE LIMIT 1",
+            {"gid": google_books_id},
         )
+        if existentes:
+            existente = existentes[0]
+            return (
+                f"<b>{existente['title']}</b> já está no catálogo "
+                f"com status <b>{existente['status']}</b>."
+            )
+    else:
+        existente = _find_book_by_query(title)
+        if existente and _norm(existente["title"]) == _norm(title):
+            return (
+                f"<b>{existente['title']}</b> já está no catálogo "
+                f"com status <b>{existente['status']}</b>."
+            )
 
     # ── 3. Obtém metadados do livro ───────────────────────────────────────────
     meta: dict = {}
 
-    if google_books_id:
-        # Se o usuário informou um ID específico, busca diretamente aquele volume
-        try:
-            resp = requests.get(
-                f"{_BOOKS_API_URL}/{google_books_id}",
-                timeout=10,
-            )
-            resp.raise_for_status()
-            item = resp.json()
-            info = item.get("volumeInfo", {})
+    # Metadados já vieram prontos (webapp) — usa direto, sem chamar a API de novo.
+    # A presença de qualquer um desses campos é o sinal de que o chamador já tem o
+    # resultado completo (ex.: o item selecionado na lista de busca do modal).
+    if google_books_id and any(
+        v is not None for v in (isbn, cover_url, description, genre, language, published_year)
+    ):
+        meta = {
+            "google_books_id": google_books_id,
+            "title": title,
+            "author": author or "",
+            "total_pages": total_pages,
+            "isbn": isbn,
+            "cover_url": cover_url,
+            "description": description or "",
+            "genre": genre or "",
+            "language": language or "",
+            "published_year": published_year,
+        }
+    elif google_books_id:
+        # Só o ID foi informado (caminho do agente) — busca aquele volume específico.
+        meta = _fetch_google_book_by_id(google_books_id) or {}
+        # Importante: se a busca direta falhar, NÃO cai para busca textual por título —
+        # isso devolveria a primeira edição encontrada, que pode não ser a que o
+        # usuário escolheu. Prefere-se o cadastro manual (menos completo, mas correto).
 
-            authors_list = info.get("authors", [])
-            categories = info.get("categories", [])
-            image_links = info.get("imageLinks", {})
-            description_full = info.get("description", "")
-            published_date = info.get("publishedDate", "")
-
-            pub_year = None
-            if published_date and len(published_date) >= 4:
-                try:
-                    pub_year = int(published_date[:4])
-                except ValueError:
-                    pub_year = None
-
-            isbn_val = None
-            for identifier in info.get("industryIdentifiers", []):
-                if identifier.get("type") == "ISBN_13":
-                    isbn_val = identifier.get("identifier")
-                    break
-                elif identifier.get("type") == "ISBN_10" and isbn_val is None:
-                    isbn_val = identifier.get("identifier")
-
-            meta = {
-                "google_books_id": google_books_id,
-                "title": info.get("title", title),
-                "author": ", ".join(authors_list) if authors_list else "",
-                "total_pages": info.get("pageCount"),
-                "isbn": isbn_val,
-                "cover_url": image_links.get("thumbnail") or image_links.get("smallThumbnail"),
-                "description": description_full[:500] if description_full else "",
-                "genre": ", ".join(categories) if categories else "",
-                "language": info.get("language", ""),
-                "published_year": pub_year,
-            }
-        except requests.RequestException:
-            meta = {}
-
-    # Se ainda não temos metadados, tenta busca textual
-    if not meta:
+    # Sem google_books_id (adição manual pelo título): tenta enriquecer via busca textual.
+    if not meta and not google_books_id:
         resultados = _fetch_google_books(title, max_results=1)
         if resultados:
             meta = resultados[0]
 
-    # Se mesmo a busca textual não retornou nada, monta um dict manual
+    # Se nada retornou metadados, monta um dict manual só com o que foi informado
     if not meta:
         meta = {
-            "google_books_id": None,
+            "google_books_id": google_books_id,
             "title": title,
             "author": author or "",
             "total_pages": total_pages,
-            "isbn": None,
-            "cover_url": None,
-            "description": "",
-            "genre": "",
-            "language": "",
-            "published_year": None,
+            "isbn": isbn,
+            "cover_url": cover_url,
+            "description": description or "",
+            "genre": genre or "",
+            "language": language or "",
+            "published_year": published_year,
         }
 
     # ── 4. Sobrescreve campos se o usuário forneceu manualmente ───────────────

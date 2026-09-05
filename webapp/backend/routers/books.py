@@ -176,6 +176,15 @@ class AddBookBody(BaseModel):
     google_books_id: Optional[str] = None  # ID da Google Books para buscar metadados precisos
     author: Optional[str] = None           # Autor (opcional — Frieren tenta buscar via API)
     total_pages: Optional[int] = None      # Total de páginas da edição física do usuário
+    # Demais metadados do resultado já selecionado na busca (GoogleBookResult do frontend).
+    # Enviados junto com google_books_id, evitam que add_book precise rebuscar na API —
+    # e portanto evitam que uma falha nesse round-trip troque a edição adicionada.
+    isbn: Optional[str] = None
+    cover_url: Optional[str] = None
+    description: Optional[str] = None
+    genre: Optional[str] = None
+    language: Optional[str] = None
+    published_year: Optional[int] = None
 
 
 class LogReadingBody(BaseModel):
@@ -750,6 +759,12 @@ def add_book_endpoint(
         google_books_id=body.google_books_id,
         author=body.author,
         total_pages=body.total_pages,
+        isbn=body.isbn,
+        cover_url=body.cover_url,
+        description=body.description,
+        genre=body.genre,
+        language=body.language,
+        published_year=body.published_year,
     )
     # Verifica se a tool retornou uma mensagem de erro e converte para HTTP 400 se sim
     return _books_check(msg)

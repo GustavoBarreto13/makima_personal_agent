@@ -129,13 +129,27 @@ Retorna lista HTML numerada com até 5 resultados (título, autor, páginas, ID 
 
 ---
 
-### `add_book(title, status, google_books_id, author, total_pages)`
+### `add_book(title, status, google_books_id, author, total_pages, isbn, cover_url, description, genre, language, published_year)`
 Adiciona um livro ao catálogo.
+
+Os 6 parâmetros de metadados (`isbn`, `cover_url`, `description`, `genre`, `language`,
+`published_year`) existem para o **webapp**: o modal "Adicionar livro" já tem esses campos
+do resultado que o usuário selecionou na busca (`GoogleBookResult`) e os reenvia junto com
+`google_books_id`, evitando que `add_book` precise rebuscar aquele volume na API — uma falha
+nesse round-trip (ex.: 403 sem API key) não pode fazer o livro cair silenciosamente para outra
+edição. O agente do Telegram, que só conhece o `google_books_id` (via `search_book`), continua
+sem passar esses campos — nesse caso o volume é buscado na API por ID.
 
 **Fluxo interno:**
 1. Valida o `status`
-2. Verifica duplicatas pelo título (fuzzy match)
-3. Obtém metadados: por `google_books_id` específico → busca textual → fallback manual
+2. Verifica duplicatas: com `google_books_id`, bloqueia só se a **mesma edição exata** já
+   estiver cadastrada (permite coexistir edições diferentes do mesmo título); sem
+   `google_books_id` (adição manual pelo título), mantém o fuzzy match por título
+3. Obtém metadados, na ordem: (a) parâmetros de metadados junto com `google_books_id` → usa
+   direto, sem chamar a API; (b) só `google_books_id` → busca aquele volume específico na
+   API (`_fetch_google_book_by_id`) — se falhar, **não** cai para busca textual (evitaria
+   trocar de edição); (c) sem `google_books_id` → busca textual pelo título, 1º resultado;
+   (d) nada retornou → dict manual só com o que foi informado
 4. Sobrescreve `total_pages` e `author` se fornecidos manualmente (edição física pode diferir)
 5. Gera UUID para o livro
 6. Define `date_started = hoje` se `status == "lendo"`

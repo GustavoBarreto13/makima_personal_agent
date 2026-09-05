@@ -678,13 +678,21 @@ export const booksApi = {
     ),
 
   /** Adiciona um livro ao catálogo. status deve ser em português (padrão "quero_ler").
-   *  Enriquece metadados via Google Books API se google_books_id for fornecido. */
+   *  Enriquece metadados via Google Books API se google_books_id for fornecido — ou,
+   *  se os demais metadados do resultado selecionado vierem junto, usa-os diretamente
+   *  sem round-trip (evita trocar de edição por falha na busca direta). */
   addBook: (body: {
     title: string
     status?: string
     google_books_id?: string
     author?: string
     total_pages?: number
+    isbn?: string
+    cover_url?: string
+    description?: string
+    genre?: string
+    language?: string
+    published_year?: number
   }) =>
     api.post<{ status: string; message: string }>('/api/books', body),
 

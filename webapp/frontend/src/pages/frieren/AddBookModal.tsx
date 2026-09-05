@@ -14,6 +14,15 @@ export interface AddBookPayload {
   google_books_id?: string
   author?: string
   total_pages?: number
+  // Demais metadados do resultado selecionado — enviados junto com google_books_id
+  // para o backend não precisar rebuscar na Google Books API (evita trocar de edição
+  // se esse round-trip falhar).
+  isbn?: string
+  cover_url?: string
+  description?: string
+  genre?: string
+  language?: string
+  published_year?: number
 }
 
 interface AddBookModalProps {
@@ -82,10 +91,18 @@ export function AddBookModal({ open, onClose, onAdd }: AddBookModalProps) {
       await onAdd({
         title:           titulo,
         status,
-        // Passa o ID Google Books para o backend enriquecer os metadados automaticamente
+        // Passa o resultado selecionado por inteiro — o backend usa esses metadados
+        // diretamente, sem precisar rebuscar a Google Books API por ID (evita que uma
+        // falha nesse round-trip troque a edição adicionada por outra).
         google_books_id: selected?.google_books_id || undefined,
         author:          selected?.author          || undefined,
         total_pages:     selected?.total_pages     ?? undefined,
+        isbn:            selected?.isbn            || undefined,
+        cover_url:       selected?.cover_url       || undefined,
+        description:     selected?.description     || undefined,
+        genre:           selected?.genre           || undefined,
+        language:        selected?.language        || undefined,
+        published_year:  selected?.published_year  ?? undefined,
       })
       onClose() // só fecha após sucesso — erro mantém o modal aberto
     } catch {
