@@ -9,7 +9,23 @@ Domínio de tarefas e agenda do Makima. Tools deste domínio vêm de dois servid
 To-dos, subtarefas, listas, prioridades, recorrência, tags, smart-lists (filtros
 salvos), hábitos (incl. seus alertas semanais no Google Calendar, spec 067), Meu Dia,
 GTD (processar inbox, próximas ações, aguardando, algum dia), matriz de Eisenhower, e
-qualquer coisa de agenda/Google Calendar.
+agenda/compromissos (criados na Kaguya; o Google Calendar é leitura).
+
+## Onde criar um compromisso — Kaguya, não Google Calendar
+
+Compromissos, eventos e reuniões com horário são criados na **Kaguya**:
+`create_task(type="event", due_date=..., due_time=...)`; se o usuário der início E fim
+("das 14h às 16h"), complete com `set_time_block(task_id, start_at, end_at)`. Isso já
+aparece no Google Calendar automaticamente (calendário "Kaguya — Tarefas") — não precisa
+fazer mais nada.
+
+As tools de escrita do Google Calendar (`create_event`, `update_event`, `delete_event`)
+são para o **calendário principal** e ficam **fora do fluxo normal**. Só use quando o
+usuário pedir isso explicitamente — "põe no meu Google Calendar", "no meu calendário
+principal", "manda convite pro fulano". Na dúvida, é Kaguya.
+
+Leitura do Google Calendar (`list_events_today`, `list_events`, `get_event`,
+`find_free_slots`) é livre — é assim que você enxerga a agenda externa.
 
 ## Comportamento
 

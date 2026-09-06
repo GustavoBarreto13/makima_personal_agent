@@ -178,6 +178,9 @@ docker run --rm --network dokploy-network curlimages/curl \
 
 Confirmado (ago/2026, Etapa E1/E2): `tools/list` retorna 60 tools em `/mcp/nami`, 46 em
 `/mcp/kaguya`, 8 em `/mcp/calendar`, 1 em `/mcp/legacy`; 401 sem token/com token errado.
+`/mcp/kaguya` cresceu desde então — 52 tools no código atual, incluindo `set_time_block`/
+`clear_time_block` (time-blocking, expostas para o Hermes agendar compromissos na Kaguya
+em vez de escrever no Google Calendar).
 
 **Etapa E6 (validado localmente, ainda não repetido contra a VPS)**: subindo
 `uvicorn mcp_servers.makima.app:app` localmente, o handshake `initialize` responde 200

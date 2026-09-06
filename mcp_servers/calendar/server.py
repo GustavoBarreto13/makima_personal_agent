@@ -1,8 +1,16 @@
-"""Servidor MCP do Google Calendar — expõe tools de leitura e escrita de eventos.
+"""Servidor MCP do Google Calendar — leitura livre, escrita só sob pedido explícito.
 
-Roda como processo filho do agente Kaguya, iniciado pelo ADK via McpToolset (protocolo stdio).
-Leitura permitida em todos os calendários disponíveis na conta Google.
-Escrita (criar, editar, deletar) permitida apenas no GOOGLE_CALENDAR_MAIN_CALENDAR_ID.
+Roda como processo filho do agente Kaguya, iniciado pelo ADK via McpToolset (protocolo stdio),
+e também é montado sob /mcp/calendar pelo host makima-mcp (consumido pelo Hermes).
+
+Política de uso:
+- Leitura (list_*, get_event, find_free_slots): livre, em todos os calendários da conta.
+  É assim que o agente enxerga a agenda externa.
+- Escrita (create_event, update_event, delete_event): apenas no
+  GOOGLE_CALENDAR_MAIN_CALENDAR_ID e SOMENTE quando o usuário pedir explicitamente para
+  gravar no Google Calendar / calendário principal. No fluxo normal, compromissos e
+  eventos do usuário são criados na Kaguya (create_task com type="event" + set_time_block),
+  não aqui — a Kaguya já os espelha no Google automaticamente.
 
 Usage:
     Iniciado automaticamente pelo ADK em agents/kaguya/agent.py (create_kaguya_agent).
@@ -23,6 +31,16 @@ mcp = FastMCP("google_calendar")
 
 # Escopo OAuth necessário (leitura + escrita)
 _SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
+# Calendários que não devem aparecer na varredura de "hoje" (list_events_today):
+# o TickTick (integração externa), o espelho "Kaguya — Tarefas" e os 7 calendários-
+# espelho da spec 069 — todos já chegam ao agente pela Kaguya, mostrá-los aqui de novo
+# duplicaria o item no "o que tenho hoje?". Reusa a lista canônica da Kaguya; se o
+# import falhar (ambiente sem o pacote agents), cai no mínimo histórico só com TickTick.
+try:
+    from agents.kaguya.gcal import _DEFAULT_EXCLUDE as _BLOCKED_CALENDARS
+except Exception:  # pragma: no cover - fallback defensivo
+    _BLOCKED_CALENDARS = ("TickTick",)
 
 # Cache do cliente da API e das credenciais em memória
 _service = None
@@ -166,14 +184,15 @@ def list_events_today() -> dict:
     time_min = f"{date_str}T00:00:00-03:00"
     time_max = f"{date_str}T23:59:59-03:00"
 
-    # Calendários externos sincronizados que não devem aparecer na agenda
-    _BLOCKED_CALENDARS = {"TickTick"}
-
     all_events: dict[str, list] = {}
     for cal in calendars:
         cal_id = cal["id"]
         cal_name = cal.get("summary", cal_id)
 
+        # Pula o TickTick (integração externa), o espelho "Kaguya — Tarefas" e os 7
+        # calendários-espelho da spec 069: esses itens já chegam ao agente pela Kaguya
+        # (list_tasks_today / Calendar Hub) — mostrá-los aqui também os duplicaria no
+        # "o que tenho hoje?". Fonte única da lista: agents/kaguya/gcal._DEFAULT_EXCLUDE.
         if cal_name in _BLOCKED_CALENDARS:
             continue
 
@@ -221,7 +240,14 @@ def create_event(
     location: str = "",
     attendees: list[str] = None,
 ) -> dict:
-    """Cria um novo evento no calendário principal do usuário.
+    """NÃO USE por padrão. Cria um evento no calendário PRINCIPAL do Google.
+
+    Compromissos e eventos do usuário são criados na Kaguya (`create_task` com
+    `type="event"` + `set_time_block`), não aqui — e já aparecem no Google
+    automaticamente. Use esta tool SOMENTE quando o usuário pedir explicitamente para
+    gravar no Google Calendar / no calendário principal (ex.: "põe isso no meu Google
+    Calendar", "manda um convite pro fulano"). Escreve no calendário principal real,
+    visível para quem ele é compartilhado.
 
     Args:
         summary: Título do evento.
@@ -263,7 +289,11 @@ def update_event(
     description: str = None,
     location: str = None,
 ) -> dict:
-    """Atualiza campos de um evento existente no calendário principal.
+    """NÃO USE por padrão. Edita um evento do calendário PRINCIPAL do Google.
+
+    Só para eventos que já vivem no calendário principal do Google. Compromissos da
+    Kaguya são editados com `update_task` / `set_time_block`, não aqui. Use esta tool
+    SOMENTE quando o usuário pedir explicitamente para alterar algo no Google Calendar.
 
     Args:
         event_id: ID do evento a atualizar.
@@ -302,7 +332,10 @@ def update_event(
 
 @mcp.tool()
 def delete_event(event_id: str) -> dict:
-    """Remove um evento do calendário principal. Esta ação é irreversível.
+    """NÃO USE por padrão. Remove um evento do calendário PRINCIPAL do Google. Irreversível.
+
+    Compromissos da Kaguya são removidos com `delete_task`, não aqui. Use esta tool
+    SOMENTE quando o usuário pedir explicitamente para apagar algo do Google Calendar.
 
     Args:
         event_id: ID do evento a remover.

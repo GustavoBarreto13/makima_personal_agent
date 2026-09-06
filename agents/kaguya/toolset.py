@@ -28,6 +28,8 @@ from agents.kaguya.tools import (
     plan_my_day, my_day_status,
     add_to_my_day_by_name, remove_from_my_day_by_name,
     set_estimate_by_name,
+    # Time-blocking: compromisso com início e fim reais (fatia 016)
+    set_time_block, clear_time_block,
     # Eisenhower (fatia 017)
     eisenhower_status,
     # Calendar Hub (fatia 019)
@@ -63,6 +65,8 @@ TOOLS = [
     plan_my_day, my_day_status,
     add_to_my_day_by_name, remove_from_my_day_by_name,
     set_estimate_by_name,
+    # Time-blocking: compromisso com início e fim reais (fatia 016)
+    set_time_block, clear_time_block,
     # Eisenhower (fatia 017)
     eisenhower_status,
     # Cross-agent (Kaguya + Nami)

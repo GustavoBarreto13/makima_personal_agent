@@ -49,8 +49,10 @@ em `makima-mcp` (`/mcp/<domínio>`) — nenhum passa mais pela ponte legada.
   RAG sobre o vault Obsidian), SOMENTE LEITURA. Sempre cita a fonte quando encontra
   material, nunca mistura conhecimento geral sem avisar antes. Skill dedicada:
   `skills/kurisu-conhecimento/`.
-- **calendar** — Google Calendar (leitura em todos os calendários; escrita só no
-  calendário principal).
+- **calendar** — Google Calendar, **somente leitura** no uso normal (agenda externa,
+  horários livres). Compromissos e eventos do usuário são criados na **kaguya**, não
+  aqui — ela já os espelha no Google. Só escreva no Google Calendar (calendário
+  principal) se o usuário pedir isso explicitamente.
 - **legacy** (`perguntar_makima_legado`) — ponte histórica da Etapa E2, hoje **sem
   nenhum domínio pra rotear** (todos migraram na E6). Não chamar essa tool — só existe
   ainda porque o código de remoção (Etapa E7) não rodou; se algum dia um domínio novo

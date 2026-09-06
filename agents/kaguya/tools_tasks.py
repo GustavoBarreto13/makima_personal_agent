@@ -943,6 +943,13 @@ def create_task(
 ) -> dict:
     """Cria uma tarefa (ou subtarefa) e a posiciona no fim da sua lista/escopo.
 
+    Também é a forma de **agendar um compromisso/evento/reunião com horário**: use
+    ``type="event"`` + ``due_date``/``due_time``. Se o compromisso tem início E fim (ex.:
+    "reunião das 14h às 16h"), crie aqui e em seguida chame ``set_time_block`` com o
+    intervalo. **Esta é a forma correta de agendar — não use as tools de escrita do
+    Google Calendar (`create_event`), que são só para o calendário principal sob pedido
+    explícito.** Compromissos criados aqui já aparecem no Google Calendar automaticamente.
+
     Resolução da lista: ``project_id`` tem prioridade; senão tenta ``project_name``
     (usado pelo agente); se nada resolver, cai no **Inbox** (captura órfã).
 
@@ -958,7 +965,8 @@ def create_task(
         project_name: Nome da lista (agente envia isto; resolvido por prefixo).
         parent_id: Se informado, cria subtarefa (N níveis) sob essa tarefa-pai.
         priority: 0..3 (nenhuma/baixa/média/alta).
-        type: ``task`` | ``event`` | ``birthday``.
+        type: ``task`` (a fazer) | ``event`` (compromisso/reunião/evento com horário —
+            use quando o pedido tiver hora marcada) | ``birthday``.
         due_date: "YYYY-MM-DD" (opcional).
         due_time: "HH:MM" (exige ``due_date``).
         description: Notas (opcional).
@@ -2028,6 +2036,11 @@ def set_time_block(
     duration_min: Optional[int] = None,
 ) -> dict:
     """Grava o bloco de tempo de uma tarefa (time-blocking).
+
+    É o passo que dá a um compromisso um **início e um fim reais** ("das 14h às 16h").
+    Use depois de ``create_task(type="event", due_date=..., due_time=...)`` quando o
+    usuário informar o horário de término — sem isso, o espelho no Google Calendar trata
+    o evento como um bloco fixo de 30 min. Não usar as tools do Google Calendar para isso.
 
     Se ``end_at`` não for informado, é derivado de ``start_at + (duration_min or 30min)``.
     Valida a CHECK do schema: ``end_at`` exige ``start_at`` (nunca levanta IntegrityError 500).

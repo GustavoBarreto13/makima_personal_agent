@@ -723,6 +723,8 @@ URL quando o local já é um link (Google Meet etc.).
 | `add_to_my_day_by_name(task, date?)` | adiciona ao Meu Dia por id ou nome — fatia 016 |
 | `remove_from_my_day_by_name(task)` | retira do Meu Dia por id ou nome — fatia 016 |
 | `set_estimate_by_name(task, minutes)` | grava estimativa de duração por id ou nome — fatia 016 |
+| `set_time_block(task_id, start_at, end_at?, duration_min?)` | dá a um compromisso início/fim reais (time-blocking); usar após `create_task(type="event", ...)` quando há hora de término — o espelho no Google respeita a duração. Exposto no MCP p/ o Hermes agendar compromissos sem tocar no Google Calendar |
+| `clear_time_block(task_id)` | remove o bloco de tempo (a tarefa fica no Meu Dia, sai da timeline) |
 | `eisenhower_status()` | relato textual dos 4 quadrantes da matriz de Eisenhower — fatia 017 |
 | `process_inbox_item(task_id, decision, ...)` | aplica uma das 6 decisões do processamento guiado do inbox — spec 034 |
 | `resolve_view_by_name(name)` | resolve "todas"/"hoje"/"amanhã"/"próximos 7 dias"/"inbox" (paridade FR-014) — spec 034 |
@@ -1105,10 +1107,15 @@ As mesmas do MCP Calendar, mais:
 
 Único MCP da Kaguya. Detalhes de configuração/OAuth em `coordinator/CLAUDE.md`.
 
-- **Leitura**: todos os calendários. **Escrita**: apenas `GOOGLE_CALENDAR_MAIN_CALENDAR_ID`.
-- `list_events_today` filtra o calendário externo **"TickTick"** (um calendário Google
-  sincronizado de fora) via `_BLOCKED_CALENDARS` — isso é um **nome de calendário**, não tem
-  relação com o antigo backend de tarefas.
+- **Leitura**: todos os calendários — livre. **Escrita** (`create_event`/`update_event`/
+  `delete_event`): apenas `GOOGLE_CALENDAR_MAIN_CALENDAR_ID` e **só sob pedido explícito**
+  do usuário ("põe no meu Google Calendar"). No fluxo normal, compromissos são criados na
+  Kaguya (`create_task` com `type="event"` + `set_time_block`) — as docstrings das 3 tools
+  de escrita começam com "NÃO USE por padrão" para guiar o roteamento do Hermes.
+- `list_events_today` reusa `agents/kaguya/gcal._DEFAULT_EXCLUDE` como `_BLOCKED_CALENDARS`:
+  pula **"TickTick"**, o espelho **"Kaguya — Tarefas"** e os 7 calendários-espelho da spec
+  069 — todos já chegam ao agente pela Kaguya (`list_tasks_today` / Calendar Hub), então
+  mostrá-los aqui também duplicaria o item. Import com fallback defensivo (`("TickTick",)`).
 - Tools: `list_calendars`, `list_events`, `list_events_today`, `get_event`, `create_event`,
   `update_event`, `delete_event`, `find_free_slots`.
 

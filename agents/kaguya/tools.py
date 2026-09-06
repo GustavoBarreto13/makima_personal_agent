@@ -23,6 +23,7 @@ from agents.kaguya.tools_tasks import (  # noqa: F401
     list_tasks, list_tasks_today, search_tasks, create_task, update_task,
     complete_task, reopen_task, delete_task, restore_task, clear_recurrence,
     list_inbox_queue, process_inbox_item,
+    set_time_block, clear_time_block,
 )
 from agents.kaguya.tools_projects import (  # noqa: F401
     get_sidebar, create_project, update_project, delete_project,
