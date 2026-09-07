@@ -13,12 +13,33 @@
 # `hermes config get` / `hermes --help` antes do primeiro boot.
 
 # Fuso horário do usuário — lido por hermes_time.py (prioridade 2, atrás só de
-# HERMES_TIMEZONE) e usado por agent/system_prompt.py pra injetar "a data/hora de agora"
-# no system prompt a cada turno. Sem isso, o Hermes usa o relógio do container (UTC) —
-# achado em produção em 15/ago/2026: às 23h de Brasília, perguntar "hoje" já respondia
-# como se fosse o dia seguinte (23h BRT = ~02h UTC). run.py faz a ponte sozinho no boot
-# (config.yaml → env var HERMES_TIMEZONE), não precisa setar nada no Environment do Dokploy.
+# HERMES_TIMEZONE). run.py faz a ponte sozinho no boot (config.yaml → env var
+# HERMES_TIMEZONE), não precisa setar nada no Environment do Dokploy. Sem isso, o Hermes
+# usa o relógio do container (UTC) — achado em produção em 15/ago/2026: às 23h de Brasília,
+# perguntar "hoje" já respondia como se fosse o dia seguinte (23h BRT = ~02h UTC).
+#
+# ATENÇÃO (achado em set/2026): `timezone:` sozinho NÃO basta. agent/system_prompt.py
+# injeta só a linha `Conversation started: <data>` (data, sem hora), e build_system_prompt()
+# é chamado UMA VEZ por sessão (cache; rebuild só em compressão de contexto) — não "a cada
+# turno". Numa sessão de canal que nunca recicla, essa data congela na criação e o modelo
+# passa a calcular "hoje/amanhã" a partir dela (visto em prod: sessão de 09/ago ainda
+# ativa em 06/set respondendo "amanhã = 10/ago"). Por isso o bloco `session_reset` abaixo
+# é obrigatório. O horário/data exatos o modelo obtém via a tool `get_current_datetime`
+# (domínio kaguya) — ver a regra em SOUL.md e skills/kaguya-tarefas/SKILL.md.
 timezone: America/Sao_Paulo
+
+# Reset automático das sessões de canal — RESTAURA o default que o Hermes tinha ATÉ
+# jul/2026 ("both": reset diário às 4h + após ocioso). O upstream trocou o default para
+# "none" (SessionResetPolicy em gateway/config.py) "por surpreender quem esperava
+# conversas persistentes" — mas com "none" a linha `Conversation started` do system prompt
+# (ver comentário do `timezone:` acima) nunca é atualizada e o bot erra a data por semanas.
+# `at_hour` usa o fuso de `timezone:` acima. `notify: true` avisa o usuário quando a
+# sessão vira ("nova conversa" no chat).
+session_reset:
+  mode: both
+  at_hour: 4
+  idle_minutes: 720   # 12h — mais curto que o default histórico de 1440 (24h)
+  notify: true
 
 model:
   provider: custom

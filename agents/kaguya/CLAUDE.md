@@ -697,6 +697,7 @@ URL quando o local já é um link (Google Meet etc.).
 
 | Tool | Origem |
 |---|---|
+| `get_current_datetime()` | data/hora atual em `America/Sao_Paulo` (`{iso, date, weekday, time, tomorrow, yesterday}`) — âncora para datas relativas; o Hermes congela a data na criação da sessão, ver `hermes/CLAUDE.md` |
 | `list_projects` | wrapper de `get_sidebar` |
 | `list_tasks_by_project(project)` | aceita id **ou** nome (resolve por prefixo) |
 | `list_tasks_today`, `search_tasks` | tarefas |

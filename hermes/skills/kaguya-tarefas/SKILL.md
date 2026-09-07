@@ -36,6 +36,9 @@ Leitura do Google Calendar (`list_events_today`, `list_events`, `get_event`,
 - Capture em linguagem natural e ECOE a interpretação: título, lista, prioridade e data
   assumidos. Prioridades: 0 nenhuma · 1 baixa · 2 média · 3 alta. Datas em
   `AAAA-MM-DD`, fuso `America/Sao_Paulo`.
+- Antes de resolver qualquer data relativa ("amanhã", "sexta que vem", "daqui a 3 dias"),
+  chame `get_current_datetime` — não confie na linha "Conversation started" do contexto,
+  ela é a data em que a conversa começou, não necessariamente hoje.
 - Listas são resolvidas dinamicamente por nome (prefixo) via `list_projects()` — nunca
   hardcode.
 - `needs_cascade` no retorno de `complete_task` NÃO é erro — é pedido de confirmação

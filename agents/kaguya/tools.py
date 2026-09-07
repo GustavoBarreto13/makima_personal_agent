@@ -102,6 +102,38 @@ from agents.kaguya.tools_focus import (  # noqa: F401
 # ─────────────────────────────────────────────────────────────────────────────
 # Wrappers amigáveis ao agente (nomes do contrato kaguya-tools.md)
 # ─────────────────────────────────────────────────────────────────────────────
+def get_current_datetime() -> dict:
+    """Retorna a data e a hora **atuais** no fuso do usuário (America/Sao_Paulo).
+
+    Use SEMPRE que precisar saber que dia é hoje ou resolver uma data relativa
+    ("amanhã", "ontem", "hoje", "sexta que vem", "daqui a 3 dias"). A linha
+    "Conversation started" do contexto é a data em que a conversa começou — **não**
+    necessariamente hoje. Nunca deduza a data atual do histórico da conversa.
+
+    Returns:
+        ``{"iso", "date", "weekday", "time", "tomorrow", "yesterday"}`` — ``date``,
+        ``tomorrow`` e ``yesterday`` em ``AAAA-MM-DD``; ``weekday`` em pt-BR;
+        ``time`` em ``HH:MM``; ``iso`` é o datetime completo com offset.
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    from zoneinfo import ZoneInfo
+
+    _WEEKDAYS_PT = [
+        "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira",
+        "sexta-feira", "sábado", "domingo",
+    ]
+    now = _dt.now(ZoneInfo("America/Sao_Paulo"))
+    today = now.date()
+    return {
+        "iso": now.isoformat(timespec="seconds"),
+        "date": today.isoformat(),
+        "weekday": _WEEKDAYS_PT[today.weekday()],
+        "time": now.strftime("%H:%M"),
+        "tomorrow": (today + _td(days=1)).isoformat(),
+        "yesterday": (today - _td(days=1)).isoformat(),
+    }
+
+
 def list_projects() -> dict:
     """Lista as listas (e grupos), com contagem de tarefas abertas, para a Kaguya.
 

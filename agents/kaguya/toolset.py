@@ -10,6 +10,8 @@ MCP) — essas seguem privadas, chamadas internamente pelas fachadas públicas.
 """
 
 from agents.kaguya.tools import (
+    # Data/hora atual — âncora para resolver datas relativas ("amanhã", "ontem"…)
+    get_current_datetime,
     list_projects, create_project, update_project, delete_project,
     archive_project, restore_project, list_archived_projects,
     list_tasks_today, list_tasks_by_project, search_tasks,
@@ -40,6 +42,9 @@ from agents.kaguya.tools import (
 from agents.kaguya.digest import get_pending_kaguya_digest, apply_kaguya_digest_selection
 
 TOOLS = [
+    # Data/hora atual (America/Sao_Paulo) — âncora p/ datas relativas; a linha
+    # "Conversation started" do Hermes congela na criação da sessão, não serve.
+    get_current_datetime,
     # Listas e tarefas (camada de lógica própria)
     list_projects, create_project, update_project, delete_project,
     # Arquivar/restaurar listas (spec 039) — distinto de excluir

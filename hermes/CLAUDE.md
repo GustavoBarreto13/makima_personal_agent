@@ -598,13 +598,12 @@ oficial não muda isso). Achado em produção em 15/ago/2026: às 23h de Brasíl
 "hoje" ao Hermes já respondia como se fosse o dia seguinte.
 
 Causa raiz (lida direto no código-fonte dentro do container, mesma técnica das outras
-seções): `/opt/hermes/agent/system_prompt.py:543` importa `hermes_time.now()` — é essa
-chamada que injeta "a data/hora de agora" no system prompt a cada turno, a fonte real do
-"hoje" do modelo. `/opt/hermes/hermes_time.py` resolve o fuso nesta ordem: (1) env var
-`HERMES_TIMEZONE`, (2) chave `timezone` no `config.yaml`, (3) fallback pro relógio local
-do servidor (UTC, daí o bug). `/opt/hermes/gateway/run.py:2265-2268` já faz a ponte
-`config.yaml → env var` sozinho no boot — não precisa setar nada no Environment do
-Dokploy, só declarar no `config.yaml` (versionado, git):
+seções): `/opt/hermes/agent/system_prompt.py:543` importa `hermes_time.now()`.
+`/opt/hermes/hermes_time.py` resolve o fuso nesta ordem: (1) env var `HERMES_TIMEZONE`,
+(2) chave `timezone` no `config.yaml`, (3) fallback pro relógio local do servidor (UTC,
+daí o bug). `/opt/hermes/gateway/run.py:2265-2268` já faz a ponte `config.yaml → env var`
+sozinho no boot — não precisa setar nada no Environment do Dokploy, só declarar no
+`config.yaml` (versionado, git):
 
 ```yaml
 timezone: America/Sao_Paulo
@@ -612,6 +611,42 @@ timezone: America/Sao_Paulo
 
 Confirmar depois do redeploy: `docker exec makima-hermes hermes config get timezone`
 deve devolver `"America/Sao_Paulo"`.
+
+### `timezone:` sozinho NÃO basta — a data congela na criação da sessão (set/2026)
+
+Segundo achado, mais grave que o fuso: em 06/set/2026 o Hermes respondeu "amanhã =
+segunda, 10 de agosto" — ~4 semanas de defasagem, com o fuso já correto. Lendo o código:
+
+- `system_prompt.py:551` injeta **só** a linha `Conversation started: {%A, %B %d, %Y}` —
+  data, sem hora, e rotulada como "quando a conversa começou".
+- `build_system_prompt()` (docstring no mesmo arquivo): *"Called once per session (cached
+  on `agent._cached_system_prompt`) and only rebuilt after context compression."* Ou seja,
+  essa linha **congela na criação da sessão** — o comentário antigo aqui ("injeta a
+  data/hora de agora a cada turno") estava errado.
+- `gateway/config.py:485-501` — `SessionResetPolicy.mode` tem **default `"none"`** desde
+  jul/2026 (era `"both"`: 4h + ocioso 24h). Sem bloco `session_reset` no `config.yaml`, as
+  sessões de canal **nunca reciclam**.
+- `hermes sessions list` confirmou: a sessão de Telegram/WhatsApp `20260809_224329_...`
+  criada em 09/ago ainda estava ativa em 06/set. Todo cálculo de "hoje/amanhã" do modelo
+  partia de 09/ago.
+
+Correção (spec deste repo, set/2026), em `hermes/config.yaml`:
+
+```yaml
+session_reset:
+  mode: both
+  at_hour: 4
+  idle_minutes: 720
+  notify: true
+```
+
+mais a tool **`get_current_datetime`** no domínio kaguya (`agents/kaguya/tools.py` →
+`toolset.py`), com regra em `SOUL.md` ("## A data de hoje") e
+`skills/kaguya-tarefas/SKILL.md` mandando chamá-la antes de resolver qualquer data
+relativa. Conferir depois do redeploy:
+`docker exec makima-hermes hermes config get session_reset --json` → `mode: both`;
+`hermes mcp test kaguya` deve listar `get_current_datetime`. Sessão velha some sozinha às
+4h seguintes (ou o usuário manda `/new` no chat para forçar na hora).
 
 ## Notificações multi-canal (spec 064, User Story 5 / FR-011+FR-012)
 
