@@ -126,3 +126,55 @@ export function fmtDateLabel(iso: string): string {
   // MONTHS_PT é 0-indexado, mas o mês no ISO é 1-indexado
   return `${d} ${MONTHS_PT[m - 1]} ${y}`
 }
+
+// ─── Rótulo relativo de vencimento (pt-BR) ────────────────────────────────────
+// Espelha dueLabel()/dueClass() do Kanban (TaskCard.tsx) para que Lista e Kanban
+// falem a mesma língua. Tudo em datas locais — nunca toISOString().
+
+const WEEKDAYS_PT = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado']
+
+/** Diferença em dias civis (alvo − hoje), usando datas locais. */
+export function diffDays(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number)
+  const target = new Date(y, m - 1, d)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return Math.round((target.getTime() - today.getTime()) / 86_400_000)
+}
+
+/**
+ * Rótulo relativo pt-BR: Hoje / Ontem / Amanhã / N dias atrás /
+ * dia-da-semana próximo (≤6 dias) / "DD/MM" (ou "DD/MM/AAAA" se outro ano).
+ */
+export function dueLabel(iso: string): string {
+  if (!iso) return ''
+  const n = diffDays(iso)
+  if (n === 0) return 'Hoje'
+  if (n === -1) return 'Ontem'
+  if (n === 1) return 'Amanhã'
+  if (n < -1 && n >= -7) return `${-n} dias atrás`
+  const [y, m, d] = iso.split('-').map(Number)
+  if (n > 1 && n <= 6) return WEEKDAYS_PT[new Date(y, m - 1, d).getDay()]
+  const thisYear = new Date().getFullYear()
+  return y === thisYear ? `${d}/${m}` : `${d}/${m}/${y}`
+}
+
+/** Classe de urgência do chip de data: overdue / today / soon (≤2 dias) / ''. */
+export function dueClass(iso: string, done: boolean): string {
+  if (done || !iso) return ''
+  const n = diffDays(iso)
+  if (n < 0) return 'overdue'
+  if (n === 0) return 'today'
+  if (n <= 2) return 'soon'
+  return ''
+}
+
+// ─── Estimativa de duração ────────────────────────────────────────────────────
+
+/** "20min" / "1h" / "1.5h" / "3h" a partir de minutos. "" quando 0/nulo. */
+export function fmtEst(min: number | null | undefined): string {
+  if (!min || min <= 0) return ''
+  if (min < 60) return `${min}min`
+  const h = min / 60
+  return `${Number.isInteger(h) ? h : h.toFixed(1)}h`
+}

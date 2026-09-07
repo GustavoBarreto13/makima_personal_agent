@@ -1,165 +1,51 @@
-// ListScreen — visão de lista como árvore hierárquica (fatia 025).
+// ListScreen — visão de lista como árvore hierárquica (fatia 025 / Rodada 2).
 //
-// Casca fina: gerencia a toolbar (prioridade + ordenação + mostrar concluídas)
-// e delega toda a lógica de dados e a árvore para `ListSection`.
-//
-// Refatorado para permitir reutilização por GroupListScreen (que precisa de uma
-// única toolbar para N ListSections). O comportamento visível é idêntico ao anterior.
+// Casca fina: instancia os controles compartilhados (agrupar / ordenar / filtrar
+// por faceta, lembrados por lista) e delega dados + árvore ao `ListSection`.
+// Mesmo conjunto de controles do GroupListScreen — a diferença é só o escopo.
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import type { Task } from '../types'
-import { Icon } from '../ui/Icons'
 import { ListSection } from '../components/ListSection'
-
-// ── Tipos internos ────────────────────────────────────────────────────────────
-
-type SortMode = 'manual' | 'due' | 'prio'
-
-const SORT_LABELS: Record<SortMode, string> = {
-  manual: 'Manual',
-  due:    'Vencimento',
-  prio:   'Prioridade',
-}
-
-const SORT_CYCLE: SortMode[] = ['manual', 'due', 'prio']
-
-// Preferências da toolbar são lembradas POR LISTA em localStorage (o shell não remonta
-// a ListScreen ao trocar de lista, só muda o prop projectId — por isso há um useEffect
-// que relê tudo ao trocar). Chaves: kg:list:{sort,prio,done}:<projectId>.
-const readSort = (projectId: number): SortMode => {
-  try {
-    const v = localStorage.getItem(`kg:list:sort:${projectId}`)
-    return (SORT_CYCLE as string[]).includes(v ?? '') ? (v as SortMode) : 'manual'
-  } catch { return 'manual' }
-}
-const readPrio = (projectId: number): number => {
-  try {
-    const v = Number(localStorage.getItem(`kg:list:prio:${projectId}`))
-    return v >= 0 && v <= 3 ? v : 0
-  } catch { return 0 }
-}
-const readDone = (projectId: number): boolean => {
-  try { return localStorage.getItem(`kg:list:done:${projectId}`) === '1' } catch { return false }
-}
-
-// ── Props ─────────────────────────────────────────────────────────────────────
+import { ListToolbar } from '../components/ListToolbar'
+import { ListFilterSheet } from '../components/ListFilterSheet'
+import { useListControls } from '../lib/listControls'
 
 interface ListScreenProps {
   projectId: number
   projectName: string
   projectColor?: string | null
-  reloadKey: number              // incrementa no shell após salvar modal → re-fetch silencioso
+  reloadKey: number
   onOpenTask: (task: Task) => void
   onNewTask: (projectId: number) => void
   toast: (msg: string, kind?: 'ok' | 'err') => void
 }
 
-// ── Componente ────────────────────────────────────────────────────────────────
-
 export function ListScreen({
   projectId, projectName, projectColor, reloadKey,
   onOpenTask, onNewTask, toast,
 }: ListScreenProps) {
-
-  // ── Estado da toolbar ─────────────────────────────────────────────────────
-
-  // prioFilter: nível mínimo de prioridade exibido (0 = todos, 1 = Baixa+, 2 = Média+, 3 = Alta).
-  const [prioFilter, setPrioFilterState] = useState<number>(() => readPrio(projectId))
-
-  // showCompleted: controla a visibilidade da seção de concluídas na árvore.
-  const [showCompleted, setShowCompletedState] = useState<boolean>(() => readDone(projectId))
-
-  // sortMode: ordenação aplicada em cada nível da árvore — lembrada por lista.
-  const [sortMode, setSortMode] = useState<SortMode>(() => readSort(projectId))
-
-  // Ao trocar de lista (projectId muda sem remontar), relê as preferências salvas daquela lista.
-  useEffect(() => {
-    setPrioFilterState(readPrio(projectId))
-    setShowCompletedState(readDone(projectId))
-    setSortMode(readSort(projectId))
-  }, [projectId])
-
-  // Setters que persistem a escolha na chave da lista atual.
-  const setPrioFilter = (v: number) => {
-    setPrioFilterState(v)
-    try { localStorage.setItem(`kg:list:prio:${projectId}`, String(v)) } catch { /* ignore */ }
-  }
-  const toggleShowCompleted = () => {
-    const next = !showCompleted
-    setShowCompletedState(next)
-    try { localStorage.setItem(`kg:list:done:${projectId}`, next ? '1' : '0') } catch { /* ignore */ }
-  }
-  const cycleSort = () => {
-    const next = SORT_CYCLE[(SORT_CYCLE.indexOf(sortMode) + 1) % SORT_CYCLE.length]
-    setSortMode(next)
-    try { localStorage.setItem(`kg:list:sort:${projectId}`, next) } catch { /* ignore */ }
-  }
-
-  // ── Renderização ──────────────────────────────────────────────────────────
+  const controls = useListControls(`list-${projectId}`)
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   return (
     <div className="kg-page">
+      <ListToolbar controls={controls} onOpenFilters={() => setFiltersOpen(true)} />
 
-      {/* Toolbar — filtros de prioridade, toggle Concluídas, ordenação */}
-      <div className="kg-toolbar">
-
-        {/* Chips de prioridade: Tudo / Baixa+ / Média+ / Alta */}
-        <div className="kg-toolbar-group">
-          {[
-            { v: 0, label: 'Tudo' },
-            { v: 1, label: 'Baixa+' },
-            { v: 2, label: 'Média+' },
-            { v: 3, label: 'Alta' },
-          ].map(({ v, label }) => (
-            <button
-              key={v}
-              type="button"
-              className={`kg-toolbar-chip${prioFilter === v ? ' active' : ''}`}
-              onClick={() => setPrioFilter(v)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* Separador visual */}
-        <div className="kg-toolbar-sep" />
-
-        {/* Toggle: mostrar/ocultar concluídas */}
-        <button
-          type="button"
-          className={`kg-toolbar-chip${showCompleted ? ' active' : ''}`}
-          onClick={toggleShowCompleted}
-        >
-          {showCompleted ? 'Ocultar concluídas' : 'Mostrar concluídas'}
-        </button>
-
-        {/* Botão de ordenação: cicla entre Manual / Vencimento / Prioridade */}
-        <button
-          type="button"
-          className="kg-toolbar-chip kg-toolbar-sort"
-          title={`Ordenação: ${SORT_LABELS[sortMode]}`}
-          onClick={cycleSort}
-        >
-          <Icon name="sort" size={13} />
-          {SORT_LABELS[sortMode]}
-        </button>
-      </div>
-
-      {/* Seção da lista — delega dados, callbacks e renderização ao ListSection */}
       <ListSection
         projectId={projectId}
         projectName={projectName}
         projectColor={projectColor}
         reloadKey={reloadKey}
-        prioFilter={prioFilter}
-        sortMode={sortMode}
-        showCompleted={showCompleted}
+        controls={controls}
         onOpenTask={onOpenTask}
         onNewTask={onNewTask}
         toast={toast}
       />
 
+      {filtersOpen && (
+        <ListFilterSheet controls={controls} onClose={() => setFiltersOpen(false)} toast={toast} />
+      )}
     </div>
   )
 }

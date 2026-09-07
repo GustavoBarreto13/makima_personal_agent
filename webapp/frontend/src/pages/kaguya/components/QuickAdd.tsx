@@ -14,9 +14,12 @@ interface QuickAddProps {
   onCreated: (id?: number) => void   // id opcional (backwards-compatible com callers antigos)
   toast: (msg: string, kind?: 'ok' | 'err') => void
   placeholder?: string               // texto do input (Meu Dia usa "Adicionar ao dia…")
+  // Lista de destino quando o texto NÃO traz um token @lista (usado pelo quick-add da Lista,
+  // que já está no contexto de uma lista específica). Sem isso, cai no Inbox.
+  defaultProjectId?: number
 }
 
-export function QuickAdd({ projects, onCreated, toast, placeholder }: QuickAddProps) {
+export function QuickAdd({ projects, onCreated, toast, placeholder, defaultProjectId }: QuickAddProps) {
   const [text, setText] = useState('')
 
   // Reparseia a cada tecla (barato) para alimentar o mirror.
@@ -26,6 +29,10 @@ export function QuickAdd({ projects, onCreated, toast, placeholder }: QuickAddPr
     if (!parsed.title) return
     // taskFromParse resolve @projectToken e inclui recorrência (fatia 018).
     const params = taskFromParse(parsed, projects)
+    // Sem token @lista → usa a lista de destino do contexto (quick-add da Lista).
+    if (!parsed.projectToken && defaultProjectId != null) {
+      params.project_id = defaultProjectId
+    }
     // Token de lista informado mas não encontrado → cai no Inbox, avisa.
     if (parsed.projectToken && !params.project_id) {
       toast(`Lista "@${parsed.projectToken}" não encontrada — fui pro Inbox.`, 'err')

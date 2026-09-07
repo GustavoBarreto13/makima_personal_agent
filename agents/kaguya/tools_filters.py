@@ -49,7 +49,18 @@ _FIELD_OPS = {
     # spec 034: status GTD real (não mais tag heurística) e contexto de execução.
     "gtd_status": {"eq", "none"},
     "context_id": {"eq", "none"},
+    # Rodada 2 (redesign da Lista): responsável (Komi) + sinalizadores booleanos.
+    "assignee": {"has", "not_has"},
+    "has_children": {"eq"},
+    "recurring": {"eq"},
+    "has_description": {"eq"},
+    "my_day": {"eq"},
 }
+
+
+def _truthy(value) -> bool:
+    """Interpreta o valor de um sinalizador booleano da DSL (aceita bool, "true"/"false", 1/0)."""
+    return str(value).strip().lower() not in ("false", "0", "", "none", "no")
 
 
 def _today() -> date:
@@ -156,95 +167,138 @@ def _build_where_from_rules(rules: dict, default_open: bool = True):
         condições combinadas; ``params`` é o dict de valores; ``orphans`` é a lista de
         condições órfãs ``[{"field", "op", "value"}, ...]``.
     """
-    conditions = (rules or {}).get("conditions") or []
-    combinator = (rules or {}).get("combinator", "and")
-    # Junta com AND/OR conforme o combinador; qualquer coisa fora do esperado vira AND.
-    joiner = " OR " if combinator == "or" else " AND "
-
-    fragments: list[str] = []          # pedaços de SQL (um por condição)
     params: dict = {}                  # valores, sempre por placeholder
     orphans: list[dict] = []           # condições com referência quebrada
-    has_state = False                  # alguma condição mexeu em "state"?
+    state_seen = {"v": False}          # alguma condição (em qualquer nível) mexeu em "state"?
 
-    for i, cond in enumerate(conditions):
-        field = cond.get("field")
-        op = cond.get("op")
-        value = cond.get("value")
-        key = f"c{i}"                  # placeholder único desta condição
+    def walk(node: dict, prefix: str) -> str:
+        """Traduz um nó da DSL (grupo) num fragmento SQL. Recursivo — grupos aninhados
+        (item ``{combinator, conditions}`` sem ``field``) ganham parênteses próprios.
+        ``prefix`` garante placeholders únicos entre níveis (Rodada 2)."""
+        conds = (node or {}).get("conditions") or []
+        combinator = (node or {}).get("combinator", "and")
+        # Junta com AND/OR conforme o combinador; qualquer coisa fora do esperado vira AND.
+        joiner = " OR " if combinator == "or" else " AND "
+        fragments: list[str] = []
 
-        # Ignora condições com campo/operador desconhecido (defensivo — não quebra).
-        if field not in _FIELD_OPS or op not in _FIELD_OPS[field]:
-            continue
+        for i, cond in enumerate(conds):
+            key = f"{prefix}c{i}"      # placeholder único desta condição
 
-        if field == "project_id":
-            ids = value if isinstance(value, list) else [value]
-            params[key] = ids
-            # in = pertence à lista; not_in = não pertence (via ALL para tratar bem o vazio).
-            if op == "in":
-                fragments.append(f"t.project_id = ANY(%({key})s)")
-            else:  # not_in
-                fragments.append(f"(t.project_id <> ALL(%({key})s))")
-            # Órfã: nenhum dos ids referenciados existe mais.
-            if ids and not _existing_project_ids(ids):
-                orphans.append({"field": field, "op": op, "value": value})
+            # Grupo aninhado: sem "field", com "conditions" próprio → recursão.
+            if "field" not in cond and isinstance(cond.get("conditions"), list):
+                sub = walk(cond, f"{key}_")
+                if sub:
+                    fragments.append(f"({sub})")
+                continue
 
-        elif field == "priority":
-            params[key] = int(value)
-            sql_op = {"eq": "=", "gte": ">=", "lte": "<="}[op]
-            fragments.append(f"t.priority {sql_op} %({key})s")
+            field = cond.get("field")
+            op = cond.get("op")
+            value = cond.get("value")
 
-        elif field == "due_date":
-            if op == "none":
-                fragments.append("t.due_date IS NULL")  # sem valor → sem placeholder
-            elif op == "overdue":
-                # Vencida = data no passado (CURRENT_DATE é palavra SQL, não entrada do usuário).
-                fragments.append("t.due_date < CURRENT_DATE")
-            elif op == "within":
-                # Janela [hoje, hoje+N]: resolve o atalho em Python e parametriza as duas pontas.
-                hi = _resolve_relative_date(value) or _today()
-                params[f"{key}_lo"] = _today()
-                params[f"{key}_hi"] = hi
-                fragments.append(f"t.due_date BETWEEN %({key}_lo)s AND %({key}_hi)s")
-            else:  # eq | before | after
-                params[key] = _resolve_relative_date(value)
-                sql_op = {"eq": "=", "before": "<", "after": ">"}[op]
-                fragments.append(f"t.due_date {sql_op} %({key})s")
+            # Ignora condições com campo/operador desconhecido (defensivo — não quebra).
+            if field not in _FIELD_OPS or op not in _FIELD_OPS[field]:
+                continue
 
-        elif field == "tag":
-            params[key] = value
-            exists_sql = (
-                "EXISTS (SELECT 1 FROM task_tag_links l JOIN task_tags g ON g.id = l.tag_id "
-                f"WHERE l.task_id = t.id AND LOWER(g.name) = LOWER(%({key})s))"
-            )
-            fragments.append(exists_sql if op == "has" else f"NOT {exists_sql}")
-            # Órfã: a tag referenciada não existe (some do vocabulário).
-            if not _tag_exists(str(value)):
-                orphans.append({"field": field, "op": op, "value": value})
+            if field == "project_id":
+                ids = value if isinstance(value, list) else [value]
+                params[key] = ids
+                # in = pertence à lista; not_in = não pertence (via ALL para tratar bem o vazio).
+                if op == "in":
+                    fragments.append(f"t.project_id = ANY(%({key})s)")
+                else:  # not_in
+                    fragments.append(f"(t.project_id <> ALL(%({key})s))")
+                # Órfã: nenhum dos ids referenciados existe mais.
+                if ids and not _existing_project_ids(ids):
+                    orphans.append({"field": field, "op": op, "value": value})
 
-        elif field == "state":
-            has_state = True
-            fragments.append(
-                "t.completed_at IS NULL" if value == "open" else "t.completed_at IS NOT NULL"
-            )
-
-        elif field == "text":
-            params[key] = f"%{value}%"
-            fragments.append(f"(t.title ILIKE %({key})s OR t.description ILIKE %({key})s)")
-
-        elif field == "gtd_status":
-            # "none" = não classificada (gtd_status IS NULL); "eq" = valor exato.
-            if op == "none":
-                fragments.append("t.gtd_status IS NULL")
-            else:
-                params[key] = value
-                fragments.append(f"t.gtd_status = %({key})s")
-
-        elif field == "context_id":
-            if op == "none":
-                fragments.append("t.context_id IS NULL")
-            else:
+            elif field == "priority":
                 params[key] = int(value)
-                fragments.append(f"t.context_id = %({key})s")
+                sql_op = {"eq": "=", "gte": ">=", "lte": "<="}[op]
+                fragments.append(f"t.priority {sql_op} %({key})s")
+
+            elif field == "due_date":
+                if op == "none":
+                    fragments.append("t.due_date IS NULL")  # sem valor → sem placeholder
+                elif op == "overdue":
+                    # Vencida = data no passado (CURRENT_DATE é palavra SQL, não entrada do usuário).
+                    fragments.append("t.due_date < CURRENT_DATE")
+                elif op == "within":
+                    # Janela [hoje, hoje+N]: resolve o atalho em Python e parametriza as duas pontas.
+                    hi = _resolve_relative_date(value) or _today()
+                    params[f"{key}_lo"] = _today()
+                    params[f"{key}_hi"] = hi
+                    fragments.append(f"t.due_date BETWEEN %({key}_lo)s AND %({key}_hi)s")
+                else:  # eq | before | after
+                    params[key] = _resolve_relative_date(value)
+                    sql_op = {"eq": "=", "before": "<", "after": ">"}[op]
+                    fragments.append(f"t.due_date {sql_op} %({key})s")
+
+            elif field == "tag":
+                params[key] = value
+                exists_sql = (
+                    "EXISTS (SELECT 1 FROM task_tag_links l JOIN task_tags g ON g.id = l.tag_id "
+                    f"WHERE l.task_id = t.id AND LOWER(g.name) = LOWER(%({key})s))"
+                )
+                fragments.append(exists_sql if op == "has" else f"NOT {exists_sql}")
+                # Órfã: a tag referenciada não existe (some do vocabulário).
+                if not _tag_exists(str(value)):
+                    orphans.append({"field": field, "op": op, "value": value})
+
+            elif field == "state":
+                state_seen["v"] = True
+                fragments.append(
+                    "t.completed_at IS NULL" if value == "open" else "t.completed_at IS NOT NULL"
+                )
+
+            elif field == "text":
+                params[key] = f"%{value}%"
+                fragments.append(f"(t.title ILIKE %({key})s OR t.description ILIKE %({key})s)")
+
+            elif field == "gtd_status":
+                # "none" = não classificada (gtd_status IS NULL); "eq" = valor exato.
+                if op == "none":
+                    fragments.append("t.gtd_status IS NULL")
+                else:
+                    params[key] = value
+                    fragments.append(f"t.gtd_status = %({key})s")
+
+            elif field == "context_id":
+                if op == "none":
+                    fragments.append("t.context_id IS NULL")
+                else:
+                    params[key] = int(value)
+                    fragments.append(f"t.context_id = %({key})s")
+
+            elif field == "assignee":
+                # Responsável (Komi) — person_links.person_id e people.id são TEXT (UUID).
+                params[key] = str(value)
+                exists_sql = (
+                    "EXISTS (SELECT 1 FROM person_links pl WHERE pl.entity_type = 'task' "
+                    f"AND pl.entity_id = t.id::text AND pl.person_id = %({key})s)"
+                )
+                fragments.append(exists_sql if op == "has" else f"NOT {exists_sql}")
+
+            elif field == "has_children":
+                sub = "EXISTS (SELECT 1 FROM tasks ch WHERE ch.parent_id = t.id AND ch.deleted_at IS NULL)"
+                fragments.append(sub if _truthy(value) else f"NOT {sub}")
+
+            elif field == "recurring":
+                sub = "EXISTS (SELECT 1 FROM task_recurrences tr WHERE tr.task_id = t.id AND tr.active)"
+                fragments.append(sub if _truthy(value) else f"NOT {sub}")
+
+            elif field == "has_description":
+                sub = "(t.description IS NOT NULL AND btrim(t.description) <> '')"
+                fragments.append(sub if _truthy(value) else f"NOT {sub}")
+
+            elif field == "my_day":
+                fragments.append(
+                    "t.my_day_date IS NOT NULL" if _truthy(value) else "t.my_day_date IS NULL"
+                )
+
+        return joiner.join(fragments)
+
+    combined = walk(rules or {}, "")
+    has_state = state_seen["v"]
 
     # Base: tarefas vivas (qualquer nível — fatia 025 removeu o filtro parent_id IS NULL).
     # O Kanban mantém o filtro root-only na sua própria query (list_board_tasks), não aqui.
@@ -260,8 +314,8 @@ def _build_where_from_rules(rules: dict, default_open: bool = True):
     if default_open and not has_state:
         base += " AND t.completed_at IS NULL"
 
-    if fragments:
-        where_sql = f"{base} AND ({joiner.join(fragments)})"
+    if combined:
+        where_sql = f"{base} AND ({combined})"
     else:
         # Sem condições válidas: só a base (não deveria acontecer — create_filter exige ≥1).
         where_sql = base
