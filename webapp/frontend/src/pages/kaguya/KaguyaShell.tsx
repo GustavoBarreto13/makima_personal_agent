@@ -13,7 +13,7 @@ import { SidebarNav } from './components/SidebarNav'
 import { TaskRow } from './components/TaskRow'
 import { Toast } from './components/Toast'
 import { TweaksPanel } from './TweaksPanel'
-import { TaskModal } from './modals/TaskModal'
+import { TaskModal, type ColumnTarget } from './modals/TaskModal'
 import { ProjectModal } from './modals/ProjectModal'
 import { GroupModal } from './modals/GroupModal'
 import { FilterModal } from './modals/FilterModal'
@@ -105,7 +105,12 @@ export function KaguyaShell() {
     mode: 'create' | 'edit'
     task?: Task
     projectId?: number | null
-    defaults?: { dueDate?: string; dueTime?: string; duration?: number }
+    defaults?: {
+      dueDate?: string; dueTime?: string; duration?: number
+      columnId?: number                 // Kanban de lista: cria direto nesta coluna
+      columnTargets?: ColumnTarget[]     // Kanban de grupo: alvos do <select> de Lista
+      pickMemoryKey?: string             // localStorage p/ lembrar a lista escolhida
+    }
   } | null>(null)
   const [projectModal, setProjectModal] = useState<{ mode: 'create' | 'edit'; project?: import('./types').Project } | null>(null)
   const [groupModal, setGroupModal] = useState<{ mode: 'create' | 'edit'; group?: import('./types').Group } | null>(null)
@@ -284,8 +289,13 @@ export function KaguyaShell() {
     }
     if (view === 'today') return <TodayScreen projects={sidebar?.projects ?? []} reloadKey={reloadKey} onChanged={loadSidebar} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} toast={showToast} />
     if (view === 'list' && param != null) return <ListScreen projectId={param} projectName={titleMap.list} projectColor={project?.color} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onNewTask={(pid) => setTaskModal({ mode: 'create', projectId: pid })} toast={showToast} />
-    if (view === 'kanban' && param != null) return <KanbanScreen projectId={param} projectName={titleMap.kanban} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onChanged={loadSidebar} toast={showToast} boards={(sidebar?.projects ?? []).filter(p => p.has_board && p.id !== param).map(p => ({ id: p.id, name: p.name, icon: p.icon }))} />
-    if (view === 'group' && param != null) return <GroupBoardScreen groupId={param} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onChanged={loadSidebar} toast={showToast} />
+    if (view === 'kanban' && param != null) return <KanbanScreen projectId={param} projectName={titleMap.kanban} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onChanged={loadSidebar} toast={showToast} onAddTask={(pid, cid) => setTaskModal({ mode: 'create', projectId: pid, defaults: { columnId: cid } })} projects={sidebar?.projects ?? []} groups={sidebar?.groups ?? []} />
+    if (view === 'group' && param != null) return <GroupBoardScreen groupId={param} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onChanged={loadSidebar} toast={showToast} onAddTask={(targets) => {
+      const memKey = `kaguya:group:add-list:${param}`
+      const remembered = Number(localStorage.getItem(memKey))
+      const pick = targets.find(t => t.projectId === remembered) ?? targets[0]
+      setTaskModal({ mode: 'create', projectId: pick?.projectId ?? null, defaults: { columnTargets: targets, pickMemoryKey: memKey } })
+    }} />
     // Visão de Lista do grupo: seções empilhadas, uma por lista-filha.
     // `lists` é filtrado do sidebar para apenas as listas que pertencem ao grupo.
     if (view === 'group-list' && param != null) return (
@@ -546,6 +556,7 @@ export function KaguyaShell() {
           mode={taskModal.mode}
           task={taskModal.task}
           projects={sidebar?.projects ?? []}
+          groups={sidebar?.groups ?? []}
           defaultProjectId={taskModal.projectId}
           // Pré-preenchimento de slot (usado ao criar a partir de arrasto no calendário).
           defaults={taskModal.defaults}
@@ -588,6 +599,7 @@ export function KaguyaShell() {
           mode={filterModal.mode}
           filter={filterModal.filter}
           projects={sidebar?.projects ?? []}
+          groups={sidebar?.groups ?? []}
           onClose={() => setFilterModal(null)}
           // Após salvar/excluir, recarrega a sidebar (e as views). Se a smart-list aberta
           // foi excluída, volta para "Meu Dia" para não ficar numa view órfã.

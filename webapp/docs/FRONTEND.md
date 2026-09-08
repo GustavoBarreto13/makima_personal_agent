@@ -381,9 +381,22 @@ alerta de hábito casando `cal === "gcal:<id>"` com `visibleGcal`, igual a qualq
 Google.
 
 **Reforma do `TaskModal` (modal de criação/edição de tarefa):**
+- **`TaskModal` é o único modal de tarefa em todo o shell.** O antigo `AddTaskModal` (só
+  título) foi aposentado: o "+ Adicionar tarefa" de cada coluna no Kanban de lista e no
+  Kanban de grupo agora abre o `TaskModal` completo do shell via callback `onAddTask`.
+  `defaults.columnId` (Kanban de lista) fixa a coluna de nascimento; `defaults.columnTargets`
+  (Kanban de grupo) restringe o `<select>` de Lista às listas-membro da coluna unificada e a
+  escolha resolve o `column_id`; `defaults.pickMemoryKey` lembra a última lista escolhida.
 - **Zona essencial** sempre visível (título, lista+tipo, prioridade, data início/fim,
   início·fim·estimativa, tags, pessoas) + gaveta **"Mais opções"** recolhível (repetir, GTD,
   contexto, sinalizadores read-only) — estado em `localStorage: kg:taskmodal:more`.
+- **GTD (Status + Contexto) também na CRIAÇÃO** (antes só em edição). `create_task` não
+  aceita esses campos → o modal faz um `PATCH` de follow-up (`updateTask`) logo após criar,
+  só quando algo foi escolhido (mesmo padrão do time-block).
+- **Seletores de lista agrupados por grupo** (`components/ProjectSelectOptions.tsx`): Inbox +
+  listas soltas no topo, depois um `<optgroup>` por grupo (ordem da sidebar). Usado no
+  `<select>` de Lista do `TaskModal`, na regra `project_id` do `FilterModal` e no "copiar
+  board de…" do Kanban vazio. O switcher de board do topbar já era assim (referência).
 - **Título com parser na criação:** o campo aceita a mesma sintaxe do quick-add da Lista
   (`@lista !alta/!alto #tag amanhã 15h toda segunda`) — reusa `lib/parseTask.ts` + o mirror
   (`.kg-qa-wrap`/`.kg-mirror` sob `.kg-tm-title`). Os tokens reconhecidos preenchem os campos

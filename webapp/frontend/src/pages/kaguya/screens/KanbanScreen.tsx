@@ -10,14 +10,14 @@
 //   • Sem spinner a cada drop: spinner só no carregamento inicial.
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import type { Task, Column, KanbanView, KanbanViewDisplay } from '../types'
+import type { Task, Column, Project, Group, KanbanView, KanbanViewDisplay } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { TaskCard } from '../components/TaskCard'
 import { SortableTaskCard } from '../components/SortableTaskCard'
 import { SummaryFooter } from '../components/SummaryFooter'
 import { KanbanViewModal } from '../components/KanbanViewModal'
 import { ColumnModal } from '../modals/ColumnModal'
-import { AddTaskModal } from '../modals/AddTaskModal'
+import { ProjectSelectOptions } from '../components/ProjectSelectOptions'
 import { Icon } from '../ui/Icons'
 import {
   DndContext,
@@ -49,9 +49,12 @@ interface KanbanScreenProps {
   onOpenTask: (task: Task) => void
   onChanged: () => void
   toast: (msg: string, kind?: 'ok' | 'err') => void
-  // Outras listas que já têm board — usadas no seletor "copiar de outro board"
-  // do estado vazio. Lista vazia = opção de cópia não aparece.
-  boards: { id: number; name: string; icon: string | null }[]
+  // "+ Adicionar tarefa" numa coluna → abre o TaskModal completo do shell.
+  onAddTask: (projectId: number, columnId: number) => void
+  // Listas + grupos da sidebar — alimentam o seletor "copiar board de…" do
+  // estado vazio (agrupado por grupo, igual aos demais seletores de lista).
+  projects: Project[]
+  groups: Group[]
 }
 
 // ── Componente de coluna ──────────────────────────────────────────────────────
@@ -161,7 +164,9 @@ export function KanbanScreen({
   onOpenTask,
   onChanged,
   toast,
-  boards,
+  onAddTask,
+  projects,
+  groups,
 }: KanbanScreenProps) {
   const [columns, setColumns]   = useState<Column[]>([])
   const [tasks, setTasks]       = useState<Task[]>([])
@@ -192,9 +197,12 @@ export function KanbanScreen({
   const [copySource, setCopySource] = useState<number | null>(null)
   const [copying, setCopying] = useState(false)
 
-  // Modais de coluna (criar/editar/excluir) e de adicionar tarefa — substituem os window.prompt.
+  // Modal de coluna (criar/editar/excluir) — substitui o window.prompt.
+  // "+ Adicionar tarefa" agora abre o TaskModal completo do shell (via onAddTask).
   const [columnModal, setColumnModal] = useState<{ mode: 'create' | 'edit'; column?: Column } | null>(null)
-  const [addTaskCol, setAddTaskCol] = useState<Column | null>(null)
+
+  // Boards de outras listas — origem do seletor "copiar colunas de…" do estado vazio.
+  const copyableBoards = projects.filter((p) => p.has_board && p.id !== projectId)
 
   // Chave de persistência da view ativa POR LISTA (R7/R25): cada board reabre na última.
   const lsKey = `kaguya:kanban:active-view:${projectId}`
@@ -485,8 +493,9 @@ export function KanbanScreen({
   // Abre o modal de criar coluna (substitui o window.prompt).
   const addColumn = () => setColumnModal({ mode: 'create' })
 
-  // Abre o modal leve de adicionar tarefa numa coluna (substitui o window.prompt).
-  const addTask = (col: Column) => setAddTaskCol(col)
+  // "+ Adicionar tarefa" numa coluna → TaskModal completo do shell, já apontado
+  // para esta lista e esta coluna.
+  const addTask = (col: Column) => onAddTask(projectId, col.id)
 
   // ── Renderização ──────────────────────────────────────────────────────────────
 
@@ -514,7 +523,7 @@ export function KanbanScreen({
             <button className="kg-btn kg-btn-primary" onClick={addColumn}>+ Criar coluna do zero</button>
           </div>
           {/* Opção de cópia: só aparece se existir pelo menos outro board na instância */}
-          {boards.length > 0 && (
+          {copyableBoards.length > 0 && (
             <div style={{ marginTop: 12, display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
               <span className="kg-field-label">ou copiar de</span>
               <select
@@ -525,12 +534,8 @@ export function KanbanScreen({
                 onChange={e => setCopySource(e.target.value ? Number(e.target.value) : null)}
               >
                 <option value="">Escolher board…</option>
-                {/* Lista todos os outros boards disponíveis (filtragem feita pelo shell) */}
-                {boards.map(b => (
-                  <option key={b.id} value={b.id}>
-                    {b.icon ? `${b.icon} ` : ''}{b.name}
-                  </option>
-                ))}
+                {/* Outras listas com board, agrupadas por grupo (optgroup vazio some) */}
+                <ProjectSelectOptions projects={copyableBoards} groups={groups} />
               </select>
               <button
                 className="kg-btn"
@@ -711,17 +716,6 @@ export function KanbanScreen({
         />
       )}
 
-      {/* Modal leve de adicionar tarefa na coluna. Board de lista → destino único
-          (a própria lista), então o modal não mostra seletor de lista. */}
-      {addTaskCol && (
-        <AddTaskModal
-          columnName={addTaskCol.name}
-          targets={[{ project_id: projectId, column_id: addTaskCol.id, listName: projectName }]}
-          onClose={() => setAddTaskCol(null)}
-          onCreated={() => { load(); onChanged() }}
-          toast={toast}
-        />
-      )}
     </div>
   )
 }

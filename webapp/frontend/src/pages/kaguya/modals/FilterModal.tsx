@@ -4,18 +4,21 @@
 // Ao salvar, as linhas viram o objeto `rules` da DSL que o backend traduz em WHERE.
 
 import { useState, useEffect } from 'react'
-import type { Project, Filter, FilterField, FilterCondition, FilterCombinator, TaskContext } from '../types'
+import type { Project, Group, Filter, FilterField, FilterCondition, FilterCombinator, TaskContext } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 // todayISO() respeita o fuso UTC-3: usa partes locais, nunca toISOString()
 import { todayISO } from '../lib/dateUtils'
 // DatePicker no tema substitui <input type="date"> que ignora os tokens OKLCH
 import { DatePicker } from '../components/DatePicker'
+// Opções de <select> de lista agrupadas por grupo (mesmo agrupamento da sidebar).
+import { ProjectSelectOptions } from '../components/ProjectSelectOptions'
 
 interface FilterModalProps {
   mode: 'create' | 'edit'
   filter?: Filter
   projects: Project[]
+  groups: Group[]
   onClose: () => void
   onSaved: () => void
   toast: (msg: string, kind?: 'ok' | 'err') => void
@@ -79,7 +82,7 @@ function defaultValue(field: FilterField, op: string, projects: Project[]): unkn
   return ''  // tag, text
 }
 
-export function FilterModal({ mode, filter, projects, onClose, onSaved, toast }: FilterModalProps) {
+export function FilterModal({ mode, filter, projects, groups, onClose, onSaved, toast }: FilterModalProps) {
   const [name, setName] = useState(filter?.name ?? '')
   const [icon, setIcon] = useState(filter?.icon ?? '')
   const [combinator, setCombinator] = useState<FilterCombinator>(filter?.rules?.combinator ?? 'and')
@@ -142,7 +145,7 @@ export function FilterModal({ mode, filter, projects, onClose, onSaved, toast }:
       const current = Array.isArray(c.value) && c.value.length ? Number(c.value[0]) : ''
       return (
         <select className="kg-select" value={current} onChange={(e) => patchCond(i, { value: [Number(e.target.value)] })}>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          <ProjectSelectOptions projects={projects} groups={groups} />
         </select>
       )
     }

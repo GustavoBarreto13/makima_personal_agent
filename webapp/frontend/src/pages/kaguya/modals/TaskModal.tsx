@@ -11,7 +11,7 @@
 // pintam no mirror e preenchem os campos correspondentes automaticamente.
 
 import { useState, useEffect, useMemo } from 'react'
-import type { Task, Project, TaskType, RecurrenceMode, Tag, GtdStatus, TaskContext, TaskFocusSummary } from '../types'
+import type { Task, Project, Group, TaskType, RecurrenceMode, Tag, GtdStatus, TaskContext, TaskFocusSummary } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
 import { AvatarStack } from '../components/People'
@@ -21,6 +21,7 @@ import { DURATIONS, snapDuration } from '../lib/durations'
 import { localISO } from '../lib/dateUtils'
 import { MarkdownNotesEditor } from '../components/MarkdownNotesEditor'
 import { PersonSearch } from '../components/PersonSearch'
+import { ProjectSelectOptions } from '../components/ProjectSelectOptions'
 import { parseTask } from '../../../lib/parseTask'
 import { applyStart, applyEnd, applyEstimate, type TimeBlockState } from '../lib/timeBlock'
 
@@ -52,12 +53,29 @@ function buildRRule(freq: RecurFreq, due: string): string | null {
   return null
 }
 
+// Alvo de coluna para o "+ Adicionar tarefa" do Kanban de grupo: uma lista-membro
+// da coluna unificada + o column_id daquela lista. O <select> de Lista fica restrito
+// a estes alvos e a escolha define a coluna efetiva na criação.
+export interface ColumnTarget {
+  projectId: number
+  columnId: number
+  listName: string
+}
+
 interface TaskModalProps {
   mode: 'create' | 'edit'
   task?: Task
   projects: Project[]
+  groups: Group[]
   defaultProjectId?: number | null
-  defaults?: { dueDate?: string; dueTime?: string; duration?: number }
+  defaults?: {
+    dueDate?: string
+    dueTime?: string
+    duration?: number
+    columnId?: number             // Kanban de lista: cria direto nesta coluna
+    columnTargets?: ColumnTarget[] // Kanban de grupo: lista-alvo escolhida define a coluna
+    pickMemoryKey?: string        // localStorage p/ lembrar a lista escolhida (grupo)
+  }
   onClose: () => void
   onSaved: () => void
   toast: (msg: string, kind?: 'ok' | 'err') => void
@@ -98,7 +116,7 @@ function localTimePart(iso: string | null | undefined): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-export function TaskModal({ mode, task, projects, defaultProjectId, defaults, onClose, onSaved, toast, onPromote, onOpenTask, onFocus }: TaskModalProps) {
+export function TaskModal({ mode, task, projects, groups, defaultProjectId, defaults, onClose, onSaved, toast, onPromote, onOpenTask, onFocus }: TaskModalProps) {
   const [title, setTitle] = useState(task?.title ?? '')
   const [description, setDescription] = useState(task?.description ?? '')
   const [projectId, setProjectId] = useState<number | null>(task?.project_id ?? defaultProjectId ?? null)
@@ -173,6 +191,14 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
   }, [parsedTitle])
 
   const isBirthday = type === 'birthday'
+
+  // ── Coluna-alvo na criação (Kanban) ──────────────────────────────────────────
+  // Kanban de grupo: o <select> de Lista fica restrito aos alvos e a lista
+  // escolhida (projectId) resolve o column_id. Kanban de lista: coluna fixa.
+  const columnTargets = defaults?.columnTargets ?? null
+  const effectiveColumnId: number | undefined = columnTargets
+    ? columnTargets.find((t) => t.projectId === projectId)?.columnId
+    : defaults?.columnId
 
   // ── Layout do editor de notas (preferência global) ────────────────────────
   const NOTE_MIN = 300, NOTE_MAX = 720, NOTE_DEFAULT = 420
@@ -278,12 +304,29 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
         const r = await kaguyaApi.createTask({
           ...base,
           project_id: projectId ?? undefined,
+          column_id: effectiveColumnId,
           tags,
           person_ids: personIds.length > 0 ? personIds : undefined,
           ...(rrule ? { recurrence: { rrule, mode: recurMode } } : {}),
         })
         taskId = r.id
         toast('Tarefa criada.')
+
+        // GTD/contexto não são aceitos no create_task — aplica num PATCH de
+        // follow-up (mesmo padrão do time-block abaixo), só quando algo foi escolhido.
+        const gtdPatch: Parameters<typeof kaguyaApi.updateTask>[1] = {}
+        if (gtdStatus) gtdPatch.gtd_status = gtdStatus
+        if (gtdStatus === 'waiting' && waitingNote.trim()) gtdPatch.waiting_note = waitingNote.trim()
+        if (contextId != null) gtdPatch.context_id = contextId
+        if (taskId && Object.keys(gtdPatch).length > 0) {
+          try { await kaguyaApi.updateTask(taskId, gtdPatch) }
+          catch { toast('Classificação GTD não foi salva (o restante foi salvo).', 'err') }
+        }
+
+        // Kanban de grupo: lembra a lista usada para pré-selecionar da próxima vez.
+        if (defaults?.pickMemoryKey && projectId != null) {
+          try { localStorage.setItem(defaults.pickMemoryKey, String(projectId)) } catch { /* ignore */ }
+        }
       } else if (task) {
         taskId = task.id
         const upd: Parameters<typeof kaguyaApi.updateTask>[1] = {
@@ -518,10 +561,9 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
               <div className="kg-field">
                 <span className="kg-field-label">Lista</span>
                 <select className="kg-select" value={projectId ?? ''} onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : null)}>
-                  <option value="">Inbox</option>
-                  {projects.filter((p) => !p.is_inbox).map((p) => (
-                    <option key={p.id} value={p.id}>{p.icon ? `${p.icon} ` : ''}{p.name}</option>
-                  ))}
+                  {columnTargets
+                    ? columnTargets.map((t) => <option key={t.projectId} value={t.projectId}>{t.listName}</option>)
+                    : <ProjectSelectOptions projects={projects} groups={groups} inbox={{ label: 'Inbox', value: '' }} />}
                 </select>
               </div>
               <div className="kg-field">
@@ -654,39 +696,35 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
                     </div>
                   )}
 
-                  {/* Status GTD (só em edição) */}
-                  {mode === 'edit' && (
-                    <div className="kg-field">
-                      <span className="kg-field-label">Status GTD</span>
-                      <div className="kg-segment">
-                        <button className={`kg-seg-opt${gtdStatus === null ? ' active' : ''}`} onClick={() => setGtdStatus(null)}>Não classificada</button>
-                        <button className={`kg-seg-opt${gtdStatus === 'next_action' ? ' active' : ''}`} onClick={() => setGtdStatus('next_action')}>Próxima ação</button>
-                        <button className={`kg-seg-opt${gtdStatus === 'waiting' ? ' active' : ''}`} onClick={() => setGtdStatus('waiting')}>Aguardando</button>
-                        <button className={`kg-seg-opt${gtdStatus === 'someday' ? ' active' : ''}`} onClick={() => setGtdStatus('someday')}>Algum dia</button>
+                  {/* Status GTD — disponível na criação e na edição */}
+                  <div className="kg-field">
+                    <span className="kg-field-label">Status GTD</span>
+                    <div className="kg-segment">
+                      <button className={`kg-seg-opt${gtdStatus === null ? ' active' : ''}`} onClick={() => setGtdStatus(null)}>Não classificada</button>
+                      <button className={`kg-seg-opt${gtdStatus === 'next_action' ? ' active' : ''}`} onClick={() => setGtdStatus('next_action')}>Próxima ação</button>
+                      <button className={`kg-seg-opt${gtdStatus === 'waiting' ? ' active' : ''}`} onClick={() => setGtdStatus('waiting')}>Aguardando</button>
+                      <button className={`kg-seg-opt${gtdStatus === 'someday' ? ' active' : ''}`} onClick={() => setGtdStatus('someday')}>Algum dia</button>
+                    </div>
+                    {gtdStatus === 'waiting' && (
+                      <div style={{ marginTop: 8 }}>
+                        <input className="kg-input" value={waitingNote} onChange={(e) => setWaitingNote(e.target.value)} placeholder="Por quem/o quê espera (opcional)" />
+                        {task?.waiting_since && (
+                          <p className="kg-muted" style={{ marginTop: 4 }}>
+                            Aguardando desde {new Date(task.waiting_since).toLocaleDateString('pt-BR')}
+                          </p>
+                        )}
                       </div>
-                      {gtdStatus === 'waiting' && (
-                        <div style={{ marginTop: 8 }}>
-                          <input className="kg-input" value={waitingNote} onChange={(e) => setWaitingNote(e.target.value)} placeholder="Por quem/o quê espera (opcional)" />
-                          {task?.waiting_since && (
-                            <p className="kg-muted" style={{ marginTop: 4 }}>
-                              Aguardando desde {new Date(task.waiting_since).toLocaleDateString('pt-BR')}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    )}
+                  </div>
 
-                  {/* Contexto (só em edição) */}
-                  {mode === 'edit' && (
-                    <div className="kg-field">
-                      <span className="kg-field-label">Contexto</span>
-                      <select className="kg-select" value={contextId ?? ''} onChange={(e) => setContextId(e.target.value ? Number(e.target.value) : null)}>
-                        <option value="">Sem contexto</option>
-                        {contexts.map((c) => <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ''}{c.name}</option>)}
-                      </select>
-                    </div>
-                  )}
+                  {/* Contexto — disponível na criação e na edição */}
+                  <div className="kg-field">
+                    <span className="kg-field-label">Contexto</span>
+                    <select className="kg-select" value={contextId ?? ''} onChange={(e) => setContextId(e.target.value ? Number(e.target.value) : null)}>
+                      <option value="">Sem contexto</option>
+                      {contexts.map((c) => <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ''}{c.name}</option>)}
+                    </select>
+                  </div>
 
                   {/* Sinalizadores — leitura */}
                   <div className="kg-field">
