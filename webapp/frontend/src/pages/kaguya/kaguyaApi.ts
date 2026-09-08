@@ -371,6 +371,12 @@ export const kaguyaApi = {
   listPeople: () =>
     api.get<{ status: string; people: Person[] }>('/api/people/').then(r => r.people),
 
+  // Cadastro rápido de pessoa a partir do PersonSearch do TaskModal — só o nome.
+  // A Komi (router /api/people/) já expõe o endpoint; o resto do perfil se completa
+  // depois na tela Pessoas. Desembrulha .person para devolver Person direto.
+  createPerson: (name: string) =>
+    api.post<{ status: string; person: Person }>('/api/people/', { name }).then(r => r.person),
+
   // ── Calendar Hub — fatia 019 ──────────────────────────────────────────────
   // Fontes registradas no hub (Kaguya, Nami, Frieren, Violet, Akane, gcal)
   // Backend retorna lista direta (não envolvida em { sources: [...] })

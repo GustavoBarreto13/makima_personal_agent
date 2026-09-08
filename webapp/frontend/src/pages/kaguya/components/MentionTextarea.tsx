@@ -1,158 +1,219 @@
-// MentionTextarea — textarea controlado com autocomplete de @pessoa e [[task]].
+// MentionTextarea — textarea controlado com autocomplete de @pessoa e [[task]],
+// barra de formatação Markdown, atalhos de teclado, colar-link inteligente e
+// menu "/" de blocos (reforma do modal de tarefa).
 //
-// Detecta dois tipos de gatilho enquanto o usuário digita:
-//   @ → abre dropdown filtrado da lista de pessoas da Komi
-//   [[ → abre dropdown com busca de tasks (debounce 250ms via kaguyaApi.search)
+// Gatilhos de autocomplete enquanto o usuário digita:
+//   @  → dropdown filtrado da lista de pessoas da Komi
+//   [[ → dropdown com busca de tasks (debounce 250ms via kaguyaApi.search)
+//   /  no começo de uma linha → menu de blocos (título, lista, checklist, tabela…)
 //
-// Ao selecionar um item, insere o token no lugar do texto digitado:
+// Ao selecionar um item, insere no lugar do texto digitado:
 //   Pessoa: @[Nome Completo](komi:<uuid>)
 //   Task:   [[<id>|Título da Task]]
-//
-// O token fica visível no modo "Escrever" como texto cru; no modo "Visualizar"
-// (MarkdownPreview) ele é convertido para chip clicável.
+//   Bloco:  snippet Markdown (## , - [ ] , etc.)
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import type { Person, Task } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
+import { Icon } from '../ui/Icons'
 
 // ── Props ──────────────────────────────────────────────────────────────────────
 
 interface MentionTextareaProps {
-  // Conteúdo atual (Markdown cru com tokens de menção)
   value: string
-  // Chamado a cada mudança para atualizar o estado do pai
   onChange: (v: string) => void
-  // Placeholder exibido quando o textarea está vazio
   placeholder?: string
 }
 
 // ── Estado interno do dropdown ─────────────────────────────────────────────────
 
-type DropdownKind = 'person' | 'task'
+type DropdownKind = 'person' | 'task' | 'block'
 
 interface DropdownState {
-  kind: DropdownKind   // qual tipo de menção está sendo digitada
-  query: string        // texto digitado após o gatilho (ex.: "jo" em "@jo")
-  triggerStart: number // posição do caractere gatilho no texto (para substituição)
-  active: number       // índice do item destacado na lista (nav por teclado)
+  kind: DropdownKind
+  query: string
+  triggerStart: number
+  active: number
 }
+
+// ── Menu "/" de blocos — itens estáticos ─────────────────────────────────────
+
+interface BlockItem { label: string; hint: string; snippet: string }
+const BLOCKS: BlockItem[] = [
+  { label: 'Título', hint: '##', snippet: '## ' },
+  { label: 'Lista', hint: '-', snippet: '- ' },
+  { label: 'Checklist', hint: '[ ]', snippet: '- [ ] ' },
+  { label: 'Tabela', hint: '|', snippet: '\n| Coluna A | Coluna B |\n| --- | --- |\n|  |  |\n' },
+  { label: 'Citação', hint: '>', snippet: '> ' },
+  { label: 'Divisor', hint: '---', snippet: '\n\n---\n\n' },
+  { label: 'Código', hint: '```', snippet: '\n```\n\n```\n' },
+]
+
+// ── Barra de formatação — cada botão embrulha a seleção ou prefixa a linha ────
+
+type MdAction =
+  | { wrap: [string, string] }
+  | { line: string }
+  | { insert: string }
+
+interface MdButton { name: string; title: string; action: MdAction }
+const MD_BUTTONS: MdButton[] = [
+  { name: 'bold', title: 'Negrito  (Ctrl/⌘ B)', action: { wrap: ['**', '**'] } },
+  { name: 'italic', title: 'Itálico  (Ctrl/⌘ I)', action: { wrap: ['*', '*'] } },
+  { name: 'heading', title: 'Título', action: { line: '## ' } },
+  { name: 'list', title: 'Lista', action: { line: '- ' } },
+  { name: 'checklist', title: 'Checklist  (Ctrl/⌘ ⇧ X)', action: { line: '- [ ] ' } },
+  { name: 'quote', title: 'Citação', action: { line: '> ' } },
+  { name: 'code', title: 'Código', action: { wrap: ['`', '`'] } },
+  { name: 'link', title: 'Link  (Ctrl/⌘ K)', action: { wrap: ['[', '](https://)'] } },
+  { name: 'divider', title: 'Divisor', action: { insert: '\n\n---\n\n' } },
+]
+
+// Reconhece uma URL "solta" colada (para virar [texto](url)).
+const URL_RE = /^https?:\/\/\S+$/i
 
 // ── Componente ─────────────────────────────────────────────────────────────────
 
 export function MentionTextarea({ value, onChange, placeholder }: MentionTextareaProps) {
-  // Referência ao elemento <textarea> para controlar o caret manualmente
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Cache de pessoas da Komi — carregado uma vez ao montar, reutilizado em todas as buscas
   const [people, setPeople] = useState<Person[]>([])
-
-  // Resultados de busca de tasks (atualizado com debounce a cada mudança da query)
   const [taskResults, setTaskResults] = useState<Task[]>([])
-
-  // Estado do dropdown: null = fechado, DropdownState = aberto com os dados de contexto
   const [dropdown, setDropdown] = useState<DropdownState | null>(null)
-
-  // Timer de debounce para a busca de tasks (evita uma chamada de API por tecla)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Carrega a lista completa de pessoas da Komi uma única vez ao montar o componente.
-  // A busca de pessoas é feita localmente (filter client-side) sem roundtrip por keystroke.
   useEffect(() => {
-    kaguyaApi.listPeople().then(setPeople).catch(() => {
-      // Falha silenciosa: dropdown de pessoa simplesmente fica vazio
-    })
+    kaguyaApi.listPeople().then(setPeople).catch(() => { /* silencioso */ })
   }, [])
 
-  // ── Filtragem local de pessoas ─────────────────────────────────────────────
+  // ── Filtragem local ────────────────────────────────────────────────────────
 
-  // Filtra o cache de pessoas pela query atual (case e acento insensitivos, máximo 8 resultados)
   const filteredPeople = dropdown?.kind === 'person'
     ? people
         .filter(p => {
           const q = dropdown.query.toLowerCase()
-          // query vazia → mostra todos (estado inicial logo após digitar "@")
           return q === '' || p.name.toLowerCase().includes(q)
         })
         .slice(0, 8)
     : []
 
-  // ── Detecção do gatilho de menção ──────────────────────────────────────────
+  const filteredBlocks = dropdown?.kind === 'block'
+    ? BLOCKS.filter(b => {
+        const q = dropdown.query.toLowerCase()
+        return q === '' || b.label.toLowerCase().includes(q)
+      })
+    : []
 
-  // Analisa o texto antes do cursor para identificar se o usuário está escrevendo uma menção.
-  // Retorna o estado do dropdown a abrir, ou null se nenhum gatilho ativo.
+  // ── Edições da barra de formatação ────────────────────────────────────────
+
+  // Aplica (pre, post) em volta da seleção; reposiciona o caret dentro do trecho.
+  const applyWrap = useCallback((pre: string, post: string) => {
+    const el = textareaRef.current
+    const a = el?.selectionStart ?? value.length
+    const b = el?.selectionEnd ?? value.length
+    const sel = value.slice(a, b) || 'texto'
+    const next = value.slice(0, a) + pre + sel + post + value.slice(b)
+    onChange(next)
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        const p = a + pre.length
+        textareaRef.current.focus()
+        textareaRef.current.setSelectionRange(p, p + sel.length)
+      }
+    })
+  }, [value, onChange])
+
+  // Prefixa a linha do caret (títulos, listas, citação).
+  const applyLine = useCallback((prefix: string) => {
+    const el = textareaRef.current
+    const a = el?.selectionStart ?? value.length
+    const lineStart = value.lastIndexOf('\n', a - 1) + 1
+    const next = value.slice(0, lineStart) + prefix + value.slice(lineStart)
+    onChange(next)
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        const p = a + prefix.length
+        textareaRef.current.focus()
+        textareaRef.current.setSelectionRange(p, p)
+      }
+    })
+  }, [value, onChange])
+
+  // Insere um trecho na posição do caret (divisor, tabela vinda do "/").
+  const insertText = useCallback((text: string, dropTrailingSlash = false) => {
+    const el = textareaRef.current
+    const a = el?.selectionStart ?? value.length
+    let head = value.slice(0, a)
+    if (dropTrailingSlash && head.endsWith('/')) head = head.slice(0, -1)
+    const next = head + text + value.slice(a)
+    onChange(next)
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        const p = head.length + text.length
+        textareaRef.current.focus()
+        textareaRef.current.setSelectionRange(p, p)
+      }
+    })
+  }, [value, onChange])
+
+  const runAction = useCallback((action: MdAction) => {
+    if ('wrap' in action) applyWrap(action.wrap[0], action.wrap[1])
+    else if ('line' in action) applyLine(action.line)
+    else insertText(action.insert)
+  }, [applyWrap, applyLine, insertText])
+
+  // ── Detecção do gatilho de menção / bloco ─────────────────────────────────
+
   function detectMentionTrigger(text: string, cursor: number): DropdownState | null {
-    // Texto antes do cursor — é onde procuramos o gatilho
     const before = text.slice(0, cursor)
 
-    // ── Gatilho de task: [[ ────────────────────────────────────────────────
-    // Busca a última ocorrência de "[[" antes do cursor
+    // [[ — task
     const taskTriggerIdx = before.lastIndexOf('[[')
     if (taskTriggerIdx !== -1) {
-      // Tudo que o usuário digitou depois do "[["
       const afterTrigger = before.slice(taskTriggerIdx + 2)
-      // Só ativa se ainda não tiver fechado (]] ou quebra de linha encerram o gatilho)
       if (!afterTrigger.includes(']]') && !afterTrigger.includes('\n')) {
-        return {
-          kind: 'task',
-          query: afterTrigger,
-          triggerStart: taskTriggerIdx,
-          active: 0,
-        }
+        return { kind: 'task', query: afterTrigger, triggerStart: taskTriggerIdx, active: 0 }
       }
     }
 
-    // ── Gatilho de pessoa: @ ───────────────────────────────────────────────
-    // Regex que casa "@" seguido de letras/acentos no FINAL do texto (antes do cursor).
-    // \w não cobre acentos, então usamos [À-ÿ] para cobrir caracteres latinos acentuados.
+    // @ — pessoa
     const atMatch = before.match(/@([\wÀ-ÿ]*)$/)
     if (atMatch) {
-      return {
-        kind: 'person',
-        query: atMatch[1],
-        triggerStart: before.lastIndexOf('@'),
-        active: 0,
-      }
+      return { kind: 'person', query: atMatch[1], triggerStart: before.lastIndexOf('@'), active: 0 }
     }
 
-    // Nenhum gatilho ativo — fechar o dropdown
+    // / no começo da linha — menu de blocos
+    const lineStart = before.lastIndexOf('\n') + 1
+    const line = before.slice(lineStart)
+    const slashMatch = line.match(/^\/([\wÀ-ÿ]*)$/)
+    if (slashMatch) {
+      return { kind: 'block', query: slashMatch[1], triggerStart: lineStart, active: 0 }
+    }
+
     return null
   }
 
-  // ── Handler de mudança do textarea ────────────────────────────────────────
+  // ── Handler de mudança ────────────────────────────────────────────────────
 
   const handleInput = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const text = e.target.value
       onChange(text)
-
-      // Detecta menção baseada na posição atual do caret
       const cursor = e.target.selectionStart ?? text.length
       const trigger = detectMentionTrigger(text, cursor)
-
-      if (!trigger) {
-        // Nenhum gatilho: fecha o dropdown e limpa resultados de task
-        setDropdown(null)
-        return
-      }
-
-      // Mantém o estado do dropdown atualizado (query pode ter mudado a cada tecla)
+      if (!trigger) { setDropdown(null); return }
       setDropdown(trigger)
 
       if (trigger.kind === 'task') {
-        // ── Busca de tasks com debounce ────────────────────────────────────
-        // Só busca após pelo menos 1 caractere digitado (query vazia não vale)
         if (trigger.query.length >= 1) {
           if (debounceRef.current) clearTimeout(debounceRef.current)
           debounceRef.current = setTimeout(async () => {
             try {
               const results = await kaguyaApi.search(trigger.query)
               setTaskResults(results.slice(0, 8))
-            } catch {
-              setTaskResults([])
-            }
+            } catch { setTaskResults([]) }
           }, 250)
         } else {
-          // Query vazia: limpa resultados sem fazer chamada de API
           setTaskResults([])
         }
       }
@@ -160,41 +221,49 @@ export function MentionTextarea({ value, onChange, placeholder }: MentionTextare
     [onChange],
   )
 
-  // ── Inserção do token escolhido ────────────────────────────────────────────
+  // ── Colar link inteligente ────────────────────────────────────────────────
 
-  // Substitui o trecho do gatilho (texto bruto que o usuário digitou) pelo token de menção.
-  // Reposiciona o caret logo depois do token inserido.
-  const insertMention = useCallback(
-    (item: Person | Task, kind: DropdownKind) => {
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const pasted = e.clipboardData.getData('text').trim()
+    if (!URL_RE.test(pasted)) return           // não é URL solta → comportamento normal
+    const el = textareaRef.current
+    if (!el) return
+    const a = el.selectionStart, b = el.selectionEnd
+    if (a === b) return                        // sem seleção → cola a URL crua (normal)
+    e.preventDefault()
+    const sel = value.slice(a, b)
+    const next = value.slice(0, a) + `[${sel}](${pasted})` + value.slice(b)
+    onChange(next)
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        const p = a + `[${sel}](${pasted})`.length
+        textareaRef.current.focus()
+        textareaRef.current.setSelectionRange(p, p)
+      }
+    })
+  }, [value, onChange])
+
+  // ── Inserção do token / snippet escolhido ─────────────────────────────────
+
+  const insertChoice = useCallback(
+    (item: Person | Task | BlockItem, kind: DropdownKind) => {
       if (!dropdown || !textareaRef.current) return
-
-      // Posição atual do caret para saber até onde vai o texto do gatilho
       const cursor = textareaRef.current.selectionStart ?? value.length
-      // Texto antes do gatilho (intocado)
       const before = value.slice(0, dropdown.triggerStart)
-      // Texto depois do caret (intocado)
       const after = value.slice(cursor)
 
-      // Monta o token conforme o tipo de menção
       let token: string
       if (kind === 'person') {
-        const p = item as Person
-        // Formato: @[Nome Completo](komi:<uuid>) — legível e parsável pelo preview
-        token = `@[${p.name}](komi:${p.id})`
+        token = `@[${(item as Person).name}](komi:${(item as Person).id})`
+      } else if (kind === 'task') {
+        token = `[[${(item as Task).id}|${(item as Task).title}]]`
       } else {
-        const t = item as Task
-        // Formato: [[<id>|Título da Task]] — estilo Obsidian wiki-link
-        token = `[[${t.id}|${t.title}]]`
+        token = (item as BlockItem).snippet
       }
 
-      // Substitui o texto do gatilho pelo token completo e notifica o pai
       onChange(before + token + after)
-
-      // Fecha o dropdown e limpa resultados
       setDropdown(null)
       setTaskResults([])
-
-      // Reposiciona o caret imediatamente após o token (assíncrono: o DOM precisa atualizar)
       requestAnimationFrame(() => {
         if (textareaRef.current) {
           const newPos = before.length + token.length
@@ -206,79 +275,109 @@ export function MentionTextarea({ value, onChange, placeholder }: MentionTextare
     [dropdown, value, onChange],
   )
 
-  // ── Navegação por teclado no dropdown ─────────────────────────────────────
+  // ── Teclado: atalhos primeiro, depois navegação do dropdown ───────────────
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      // Se o dropdown estiver fechado, não interceptamos nenhuma tecla
-      if (!dropdown) return
+      const mod = e.metaKey || e.ctrlKey
+      // Atalhos de formatação (independentes do dropdown). NÃO capturamos Ctrl/⌘ Z.
+      if (mod && !e.altKey) {
+        const k = e.key.toLowerCase()
+        if (k === 'b') { e.preventDefault(); applyWrap('**', '**'); return }
+        if (k === 'i') { e.preventDefault(); applyWrap('*', '*'); return }
+        if (k === 'k') { e.preventDefault(); applyWrap('[', '](https://)'); return }
+        if (e.shiftKey && k === 'x') { e.preventDefault(); applyLine('- [ ] '); return }
+      }
 
-      // Itens visíveis no dropdown (pessoas ou tasks conforme o tipo)
-      const items = dropdown.kind === 'person' ? filteredPeople : taskResults
+      if (!dropdown) return
+      const items = dropdown.kind === 'person'
+        ? filteredPeople
+        : dropdown.kind === 'block'
+          ? filteredBlocks
+          : taskResults
       if (items.length === 0) return
 
       if (e.key === 'ArrowDown') {
-        // Move o destaque para o próximo item (não passa do último)
         e.preventDefault()
         setDropdown(d => d ? { ...d, active: Math.min(d.active + 1, items.length - 1) } : d)
       } else if (e.key === 'ArrowUp') {
-        // Move o destaque para o item anterior (não passa do primeiro)
         e.preventDefault()
         setDropdown(d => d ? { ...d, active: Math.max(d.active - 1, 0) } : d)
       } else if (e.key === 'Enter') {
-        // Confirma a seleção do item destacado (Enter normal: inserir quebra de linha)
         e.preventDefault()
         const chosen = items[dropdown.active]
-        if (chosen) insertMention(chosen as Person | Task, dropdown.kind)
+        if (chosen) insertChoice(chosen as Person | Task | BlockItem, dropdown.kind)
       } else if (e.key === 'Escape') {
-        // Fecha o dropdown sem inserir nada
         e.preventDefault()
         setDropdown(null)
       }
     },
-    [dropdown, filteredPeople, taskResults, insertMention],
+    [dropdown, filteredPeople, filteredBlocks, taskResults, insertChoice, applyWrap, applyLine],
   )
 
-  // ── Itens renderizados no dropdown ────────────────────────────────────────
-
-  // Define quais itens exibir com base no tipo de menção ativa
-  const dropdownItems = dropdown?.kind === 'person' ? filteredPeople : taskResults
+  const dropdownItems: (Person | Task | BlockItem)[] =
+    dropdown?.kind === 'person' ? filteredPeople
+      : dropdown?.kind === 'block' ? filteredBlocks
+        : taskResults
 
   return (
-    // Wrapper relativo para ancorar o dropdown absolutamente dentro do componente
     <div className="kg-mention-wrap">
+      {/* barra de formatação */}
+      <div className="kg-md-toolbar">
+        {MD_BUTTONS.map(b => (
+          <button
+            key={b.name}
+            type="button"
+            className="kg-md-tb-btn"
+            title={b.title}
+            onMouseDown={(e) => { e.preventDefault(); runAction(b.action) }}
+          >
+            <MdIcon name={b.name} />
+          </button>
+        ))}
+      </div>
+
       <textarea
         ref={textareaRef}
         className="kg-textarea kg-note-textarea"
         value={value}
         onChange={handleInput}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         placeholder={
           placeholder ??
-          'Detalhes, links, contexto…\n\n@nome para mencionar pessoa\n[[ para mencionar outra task'
+          'Detalhes, links, contexto…\n\n@nome menciona uma pessoa\n[[ menciona outra task\n/ abre o menu de blocos'
         }
       />
 
-      {/* Dropdown de menção: aparece apenas quando há gatilho ativo e resultados disponíveis */}
       {dropdown && dropdownItems.length > 0 && (
         <div className="kg-pop kg-mention-drop">
           {dropdownItems.map((item, i) => {
-            const isPerson = dropdown.kind === 'person'
-            // Usa onMouseDown (em vez de onClick) para não perder o foco do textarea
+            const cls = `kg-pop-item${i === dropdown.active ? ' active' : ''}`
+            if (dropdown.kind === 'block') {
+              const b = item as BlockItem
+              return (
+                <button key={b.label} type="button" className={cls}
+                  onMouseDown={(e) => { e.preventDefault(); insertChoice(b, 'block') }}>
+                  {b.label}
+                  <span className="kg-md-slash-hint">{b.hint}</span>
+                </button>
+              )
+            }
+            if (dropdown.kind === 'person') {
+              const p = item as Person
+              return (
+                <button key={p.id} type="button" className={cls}
+                  onMouseDown={(e) => { e.preventDefault(); insertChoice(p, 'person') }}>
+                  @{p.name}
+                </button>
+              )
+            }
+            const t = item as Task
             return (
-              <button
-                key={isPerson ? (item as Person).id : (item as Task).id}
-                type="button"
-                className={`kg-pop-item${i === dropdown.active ? ' active' : ''}`}
-                onMouseDown={(e) => {
-                  // Previne o blur do textarea (que fecharia o dropdown antes de inserir)
-                  e.preventDefault()
-                  insertMention(item as Person | Task, dropdown.kind)
-                }}
-              >
-                {isPerson
-                  ? `@${(item as Person).name}`
-                  : `#${(item as Task).id} ${(item as Task).title}`}
+              <button key={t.id} type="button" className={cls}
+                onMouseDown={(e) => { e.preventDefault(); insertChoice(t, 'task') }}>
+                #{t.id} {t.title}
               </button>
             )
           })}
@@ -286,4 +385,22 @@ export function MentionTextarea({ value, onChange, placeholder }: MentionTextare
       )}
     </div>
   )
+}
+
+// ── Ícones da barra (SVG inline, traço — estilo ui/Icons.tsx) ────────────────
+
+function MdIcon({ name }: { name: string }) {
+  const common = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  switch (name) {
+    case 'bold': return <span className="kg-md-tb-glyph" style={{ fontWeight: 800 }}>B</span>
+    case 'italic': return <span className="kg-md-tb-glyph" style={{ fontStyle: 'italic' }}>I</span>
+    case 'heading': return <svg {...common}><path d="M6 4v16M18 4v16M6 12h12" /></svg>
+    case 'list': return <Icon name="list" size={15} />
+    case 'checklist': return <svg {...common}><path d="m3 7 2 2 3-3M3 17l2 2 3-3M13 8h8M13 16h8" /></svg>
+    case 'quote': return <svg {...common}><path d="M6 17h3l2-4V6H4v7h3l-1 4zM16 17h3l2-4V6h-7v7h3l-1 4z" /></svg>
+    case 'code': return <svg {...common}><path d="m9 8-4 4 4 4M15 8l4 4-4 4" /></svg>
+    case 'link': return <svg {...common}><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" /></svg>
+    case 'divider': return <svg {...common}><path d="M4 12h16" /></svg>
+    default: return null
+  }
 }

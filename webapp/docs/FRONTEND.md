@@ -380,6 +380,30 @@ seu `id` continua `gcal:<id>`: `CalendarScreen.tsx::calEvents` liga/desliga os e
 alerta de hábito casando `cal === "gcal:<id>"` com `visibleGcal`, igual a qualquer calendário
 Google.
 
+**Reforma do `TaskModal` (modal de criação/edição de tarefa):**
+- **Zona essencial** sempre visível (título, lista+tipo, prioridade, data início/fim,
+  início·fim·estimativa, tags, pessoas) + gaveta **"Mais opções"** recolhível (repetir, GTD,
+  contexto, sinalizadores read-only) — estado em `localStorage: kg:taskmodal:more`.
+- **Título com parser na criação:** o campo aceita a mesma sintaxe do quick-add da Lista
+  (`@lista !alta/!alto #tag amanhã 15h toda segunda`) — reusa `lib/parseTask.ts` + o mirror
+  (`.kg-qa-wrap`/`.kg-mirror` sob `.kg-tm-title`). Os tokens reconhecidos preenchem os campos
+  automaticamente (aditivo: nunca zera ajuste manual nem remove tags). `parseTask` passou a
+  aceitar as duas flexões de gênero da prioridade (`!alta`/`!alto`).
+- **Data início + data fim** (dois `DatePicker`) + **início·fim·estimativa** (dois `TimePicker`
+  + select de duração) que se **espelham** via `lib/timeBlock.ts` (motor puro: editar dois
+  quaisquer resolve o terceiro, só no mesmo dia; multi-dia deixa a estimativa independente).
+  No save: `due_date` = início, `due_time` = hora de início; `setTimeBlock(start_at, end_at)`
+  quando há início+fim de hora **ou** data de fim ≠ início. Nenhuma mudança de schema.
+- **Campo "Pessoas"** (`components/PersonSearch.tsx`) — substitui o paredão de chips: busca
+  case/acento-insensível, selecionados no topo, e "Criar «Fulano»" no rodapé quando não há
+  match (`kaguyaApi.createPerson` → `POST /api/people/`). Rótulo genérico: serve para
+  responsável de tarefa **ou** acompanhante de evento (sempre `person_ids` da Komi).
+- **Editor de Markdown** (`MentionTextarea`): barra de formatação (B/I/H/lista/checklist/
+  citação/código/link/divisor), atalhos `⌘B`/`⌘I`/`⌘K`/`⌘⇧X`, colar URL sobre seleção vira
+  `[texto](url)`, e menu `/` de blocos no começo da linha (reusa o dropdown de `@menção`).
+  No preview (`MarkdownPreview`), os checkboxes de checklist ficam **clicáveis** quando o pai
+  passa `onChange` (marcar reescreve a n-ésima `- [ ]` ↔ `- [x]` no Markdown cru).
+
 **Particularidades:**
 - **DnD** com `@dnd-kit` (única dependência de drag-and-drop do app) — árvore de tarefas, Kanban e Eisenhower.
 - **Inputs custom obrigatórios:** `DatePicker`/`TimePicker`/`MiniCalendar` no lugar dos nativos

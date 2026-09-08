@@ -89,8 +89,9 @@ export function MarkdownNotesEditor({ value, onChange, onOpenTask, onCollapse }:
           // Modo edição: textarea com autocomplete de menções
           <MentionTextarea value={value} onChange={onChange} />
         ) : (
-          // Modo visualização: Markdown renderizado com chips de menção
-          <MarkdownPreview value={value} onOpenTask={onOpenTask} />
+          // Modo visualização: Markdown renderizado com chips de menção.
+          // onChange habilita os checkboxes de checklist (marcar reescreve o Markdown).
+          <MarkdownPreview value={value} onOpenTask={onOpenTask} onChange={onChange} />
         )}
       </div>
     </div>

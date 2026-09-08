@@ -36,8 +36,13 @@ export interface ParsedTask {
   segments: ParseSegment[]      // para o mirror
 }
 
-// Palavras de prioridade → nível numérico.
-const PRIO: Record<string, number> = { alta: 3, media: 2, 'média': 2, baixa: 1 }
+// Palavras de prioridade → nível numérico. Aceita as duas flexões de gênero
+// ("!alta" e "!alto") porque o usuário digita as duas formas.
+const PRIO: Record<string, number> = {
+  alta: 3, alto: 3,
+  media: 2, 'média': 2, medio: 2, 'médio': 2,
+  baixa: 1, baixo: 1,
+}
 
 // Mapa getDay() (JS: 0=domingo..6=sábado) → código iCal BYDAY (usado nas RRULEs semanais).
 // Ex.: WEEKDAY['sexta']=5 → ICAL_BY_GETDAY[5]='FR' → "FREQ=WEEKLY;BYDAY=FR".

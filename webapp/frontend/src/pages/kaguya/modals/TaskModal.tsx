@@ -1,22 +1,28 @@
-// TaskModal — criar/editar uma tarefa (guia §9.2). Campos: título, notas, lista,
-// prioridade, tipo (tarefa/evento/aniversário), data/hora e subtarefas ricas
-// (cada uma com prioridade + descrição próprias).
+// TaskModal — criar/editar uma tarefa (guia §9.2 + reforma do modal de tarefa).
+//
+// Anatomia nova:
+//   • Zona essencial (sempre visível): título, lista+tipo, prioridade, data
+//     início/fim, início·fim·estimativa, tags, pessoas.
+//   • Gaveta "Mais opções" (recolhível): repetir, GTD, contexto, sinalizadores.
+//   • Coluna direita: editor de notas Markdown (inalterado).
+//
+// Na CRIAÇÃO o campo de título aceita a mesma sintaxe do quick-add da visão de
+// Lista (@lista !alta #tag amanhã 15h toda segunda) — os tokens reconhecidos
+// pintam no mirror e preenchem os campos correspondentes automaticamente.
 
-import { useState, useEffect } from 'react'
-import type { Task, Project, TaskType, RecurrenceMode, Tag, Person, GtdStatus, TaskContext, TaskFocusSummary } from '../types'
+import { useState, useEffect, useMemo } from 'react'
+import type { Task, Project, TaskType, RecurrenceMode, Tag, GtdStatus, TaskContext, TaskFocusSummary } from '../types'
 import { kaguyaApi } from '../kaguyaApi'
 import { Icon } from '../ui/Icons'
-import { Avatar, AvatarStack } from '../components/People'
-// Pickers customizados no tema — substituem <input type="date"> e type="time">
-// nativos, que ignoram os tokens OKLCH e mostram o pop-up do sistema operacional.
+import { AvatarStack } from '../components/People'
 import { DatePicker } from '../components/DatePicker'
 import { TimePicker } from '../components/TimePicker'
-// Opções de duração compartilhadas com o EventPopover.
 import { DURATIONS, snapDuration } from '../lib/durations'
-// Helper de ISO local — monta "AAAA-MM-DDTHH:MM:00±HH:MM" sem usar toISOString() (fuso UTC-3).
 import { localISO } from '../lib/dateUtils'
-// Editor de notas em Markdown com autocomplete de @pessoa e [[task]]
 import { MarkdownNotesEditor } from '../components/MarkdownNotesEditor'
+import { PersonSearch } from '../components/PersonSearch'
+import { parseTask } from '../../../lib/parseTask'
+import { applyStart, applyEnd, applyEstimate, type TimeBlockState } from '../lib/timeBlock'
 
 // Presets de recorrência expostos na UI (mapeiam para RRULE no buildRRule).
 type RecurFreq = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
@@ -41,7 +47,6 @@ function buildRRule(freq: RecurFreq, due: string): string | null {
   if (freq === 'yearly') return 'FREQ=YEARLY'
   if (!due) return null
   const d = new Date(`${due}T00:00:00`)
-  // getDay(): 0=domingo..6=sábado → códigos iCal.
   if (freq === 'weekly') return `FREQ=WEEKLY;BYDAY=${['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][d.getDay()]}`
   if (freq === 'monthly') return `FREQ=MONTHLY;BYMONTHDAY=${d.getDate()}`
   return null
@@ -49,22 +54,15 @@ function buildRRule(freq: RecurFreq, due: string): string | null {
 
 interface TaskModalProps {
   mode: 'create' | 'edit'
-  task?: Task                 // presente em 'edit'
+  task?: Task
   projects: Project[]
   defaultProjectId?: number | null
-  // Pré-preenchimento opcional do modo criar (ex.: arrasto no calendário define o slot).
-  // Ignorado quando `task` está presente (edição usa os valores da própria tarefa).
   defaults?: { dueDate?: string; dueTime?: string; duration?: number }
   onClose: () => void
-  onSaved: () => void         // pai re-busca os dados
+  onSaved: () => void
   toast: (msg: string, kind?: 'ok' | 'err') => void
-  // Callback opcional para promover subtarefa a tarefa independente (fatia 025).
-  // Quando não fornecido, o botão "Tornar independente" não aparece.
   onPromote?: (task: Task) => Promise<void>
-  // Callback opcional para abrir uma subtarefa em seu próprio modal (T044).
   onOpenTask?: (task: Task) => void
-  // Callback opcional para iniciar uma sessão de foco nesta tarefa (spec 037).
-  // Ausente em criação (task ainda não existe); presente em edição.
   onFocus?: (task: Task) => void
 }
 
@@ -75,73 +73,109 @@ const PRIORITIES = [
 const TYPES: { v: TaskType; label: string }[] = [
   { v: 'task', label: 'Tarefa' }, { v: 'event', label: 'Evento' }, { v: 'birthday', label: 'Aniversário' },
 ]
-// Paleta de cores das tags (etiquetas). São cores FIXAS (OKLCH), independentes do acento
-// do shell — porque a cor é uma propriedade própria da tag (task_tags.color), não do tema.
-// Escolhidas para ler bem tanto no tema claro quanto no escuro.
 const TAG_COLORS = [
-  'oklch(0.62 0.20 25)',    // vermelho
-  'oklch(0.70 0.16 60)',    // laranja
-  'oklch(0.74 0.13 95)',    // dourado
-  'oklch(0.62 0.16 150)',   // verde
-  'oklch(0.60 0.13 230)',   // azul
-  'oklch(0.58 0.20 290)',   // violeta
-  'oklch(0.64 0.21 350)',   // rosa
+  'oklch(0.62 0.20 25)', 'oklch(0.70 0.16 60)', 'oklch(0.74 0.13 95)', 'oklch(0.62 0.16 150)',
+  'oklch(0.60 0.13 230)', 'oklch(0.58 0.20 290)', 'oklch(0.64 0.21 350)',
 ]
 
+// "HH:MM" → minuto do dia; null se vazio.
+function hhmmMin(t: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t)
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null
+}
+
+// Parte de data/hora LOCAL de um ISO 8601 (qualquer offset). Vazio se ausente.
+function localDatePart(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function localTimePart(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 export function TaskModal({ mode, task, projects, defaultProjectId, defaults, onClose, onSaved, toast, onPromote, onOpenTask, onFocus }: TaskModalProps) {
-  // Estado do formulário, inicializado da tarefa (edição) ou dos defaults (criação).
   const [title, setTitle] = useState(task?.title ?? '')
   const [description, setDescription] = useState(task?.description ?? '')
   const [projectId, setProjectId] = useState<number | null>(task?.project_id ?? defaultProjectId ?? null)
   const [priority, setPriority] = useState(task?.priority ?? 0)
   const [type, setType] = useState<TaskType>(task?.type ?? 'task')
-  // Status GTD real (spec 034) — só editável em tarefas existentes (create_task não aceita
-  // gtd_status; o status nasce pelo processamento do inbox ou por esta edição manual).
   const [gtdStatus, setGtdStatus] = useState<GtdStatus | null>(task?.gtd_status ?? null)
   const [waitingNote, setWaitingNote] = useState(task?.waiting_note ?? '')
   const [contextId, setContextId] = useState<number | null>(task?.context_id ?? null)
   const [contexts, setContexts] = useState<TaskContext[]>([])
-  // Se estamos criando e o calendário forneceu um slot (defaults), usa como segundo fallback.
-  // Em modo edição `task` sempre tem precedência; defaults é ignorado.
   const [dueDate, setDueDate] = useState(task?.due_date ?? defaults?.dueDate ?? '')
-  const [dueTime, setDueTime] = useState(task?.due_time ?? defaults?.dueTime ?? '')
-  // Recorrência: preset + modo, derivados da regra existente (edição).
+  // Data de fim — deriva da parte de data (local) do end_at do time-block existente.
+  const [endDate, setEndDate] = useState(localDatePart(task?.end_at))
+  // Hora de início (= due_time) e hora de fim (= parte de hora local do end_at).
+  // O time-block nasce no save quando há início+fim, ou quando a data de fim difere.
+  const [startTime, setStartTime] = useState(task?.due_time ?? defaults?.dueTime ?? '')
+  const [endTime, setEndTime] = useState(localTimePart(task?.end_at))
   const [recurFreq, setRecurFreq] = useState<RecurFreq>(rruleToFreq(task?.recurrence?.rrule))
   const [recurMode, setRecurMode] = useState<RecurrenceMode>(task?.recurrence?.mode ?? 'fixed')
-  // Tags (etiquetas) — lista de nomes; editável na criação e na edição.
   const [tags, setTags] = useState<string[]>(task?.tags?.map((t) => t.name) ?? [])
   const [newTag, setNewTag] = useState('')
-  // Catálogo de tags existentes (id + cor) — resolve nome→tag e mostra/edita a cor de cada
-  // chip. Começa com as tags da própria tarefa (edição) e é completado pelo listTags() no
-  // mount. A cor é uma propriedade GLOBAL da tag (vale em todo lugar onde ela aparece).
   const [tagCatalog, setTagCatalog] = useState<Tag[]>(task?.tags ?? [])
-  // Nome da tag cujo seletor de cor (popover) está aberto — só uma por vez (null = nenhum).
   const [paletteFor, setPaletteFor] = useState<string | null>(null)
-  // Subtarefas (só editáveis quando a tarefa-pai já existe).
   const [subtasks, setSubtasks] = useState<Task[]>(task?.subtasks ?? [])
   const [newSub, setNewSub] = useState('')
   const [saving, setSaving] = useState(false)
-  // Duração em minutos — alimenta a estimativa (capacity bar) e, se houver hora, o time-block.
-  // snapDuration aproxima um valor arbitrário para a opção mais próxima da lista.
-  // Se criando a partir de um arrasto no calendário (defaults.duration), pré-preenche com o
-  // intervalo arrastado (já é múltiplo de 15 ≥ 30, então snapDuration não perde precisão).
   const [duration, setDuration] = useState<number>(snapDuration(task?.duration_min ?? defaults?.duration ?? 0))
-  // Responsáveis da Komi (fatia 025) — IDs selecionados para esta tarefa.
-  const [personIds, setPersonIds] = useState<string[]>(
-    task?.assignees?.map(a => a.id) ?? []
-  )
-  // Catálogo completo de pessoas da Komi (carregado lazy no mount).
-  const [people, setPeople] = useState<Person[]>([])
-  const [askDelete, setAskDelete] = useState(false)   // confirmação de exclusão (escopo na recorrente)
-  // Tempo acumulado de foco nesta tarefa (spec 062) — só existe em edição (task_id real).
+  const [personIds, setPersonIds] = useState<string[]>(task?.assignees?.map(a => a.id) ?? [])
+  const [askDelete, setAskDelete] = useState(false)
   const [focusSummary, setFocusSummary] = useState<TaskFocusSummary | null>(null)
-  // Aniversário repete todo ano automaticamente no backend — escondemos o controle manual.
   const isRecurring = task?.recurrence?.active === true
 
-  // ── Layout do editor de notas (preferência global, lembrada entre tarefas) ─────
-  // Limites de largura do editor (px) — clamp de sanidade ao ler o localStorage e no drag.
+  // Gaveta "Mais opções" — estado lembrado entre tarefas.
+  const [moreOpen, setMoreOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem('kg:taskmodal:more') === '1' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('kg:taskmodal:more', moreOpen ? '1' : '0') } catch { /* ignore */ }
+  }, [moreOpen])
+
+  // ── Parser do título (só na criação) — igual ao quick-add da Lista ──────────
+  const parsedTitle = useMemo(
+    () => (mode === 'create' ? parseTask(title) : null),
+    [title, mode],
+  )
+
+  // Preenche os campos a partir dos tokens reconhecidos. Aditivo: só sobrescreve
+  // uma dimensão quando o token dela está presente; nunca zera o que o usuário
+  // ajustou à mão e nunca remove tags/pessoas.
+  useEffect(() => {
+    if (!parsedTitle) return
+    if (parsedTitle.priority != null) setPriority(parsedTitle.priority)
+    if (parsedTitle.dueDate) setDueDate(parsedTitle.dueDate)
+    if (parsedTitle.dueTime) setStartTime(parsedTitle.dueTime)
+    if (parsedTitle.tags.length) {
+      setTags((prev) => {
+        const lower = new Set(prev.map((t) => t.toLowerCase()))
+        const add = parsedTitle.tags.filter((t) => !lower.has(t.toLowerCase()))
+        return add.length ? [...prev, ...add] : prev
+      })
+    }
+    if (parsedTitle.recur) {
+      setRecurFreq(rruleToFreq(parsedTitle.recur.rule))
+      setRecurMode(parsedTitle.recur.mode)
+    }
+    if (parsedTitle.projectToken) {
+      const n = parsedTitle.projectToken.toLowerCase()
+      const proj = projects.find((p) => p.name.toLowerCase() === n)
+        ?? projects.find((p) => p.name.toLowerCase().startsWith(n))
+      if (proj) setProjectId(proj.id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsedTitle])
+
+  const isBirthday = type === 'birthday'
+
+  // ── Layout do editor de notas (preferência global) ────────────────────────
   const NOTE_MIN = 300, NOTE_MAX = 720, NOTE_DEFAULT = 420
-  // Estado inicial lido do localStorage (try/catch: SSR/quota/valor inválido caem no default).
   const [notesCollapsed, setNotesCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem('kg:notes:collapsed') === '1' } catch { return false }
   })
@@ -152,7 +186,6 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
     } catch { /* ignore */ }
     return NOTE_DEFAULT
   })
-  // Persiste as preferências ao mudar.
   useEffect(() => {
     try { localStorage.setItem('kg:notes:collapsed', notesCollapsed ? '1' : '0') } catch { /* ignore */ }
   }, [notesCollapsed])
@@ -160,9 +193,6 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
     try { localStorage.setItem('kg:notes:width', String(noteWidth)) } catch { /* ignore */ }
   }, [noteWidth])
 
-  // Arrastar o divisor entre formulário e notas. Reaproveita o padrão de
-  // mousedown→mousemove→mouseup do DayTimeline: registra listeners na window e
-  // limpa no mouseup. Arrastar para a ESQUERDA aumenta o editor (base + Δ negativo).
   const startResize = (startX: number, baseWidth: number) => {
     const onMove = (ev: MouseEvent) => {
       const next = Math.min(NOTE_MAX, Math.max(NOTE_MIN, baseWidth + (startX - ev.clientX)))
@@ -173,21 +203,16 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
       window.removeEventListener('mouseup', onUp)
       document.body.style.userSelect = ''
     }
-    document.body.style.userSelect = 'none'   // evita seleção de texto durante o drag
+    document.body.style.userSelect = 'none'
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
   }
 
-  // Abre a tarefa referenciada por um chip [[id|Título]] nas notas.
-  // Busca a task pelo id, fecha este modal e abre o da task mencionada via onOpenTask.
   const openMentionedTask = async (id: number) => {
     try {
       const fetched = await kaguyaApi.getTask(id)
-      // getTask retorna {status, ...taskFields} — verifica se encontrou
       if (fetched && onOpenTask) {
-        // Fecha o modal atual primeiro para não empilhar
         onClose()
-        // Reabre o mecanismo de edição com a task buscada
         onOpenTask(fetched as Task)
       }
     } catch {
@@ -195,49 +220,65 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
     }
   }
 
-  // Carrega o catálogo completo de tags ao abrir o modal (id + cor de cada nome). Se falhar,
-  // seguimos só com as tags da tarefa: o pior caso é o chip aparecer sem cor própria.
   useEffect(() => {
     kaguyaApi.listTags().then(setTagCatalog).catch(() => { /* silencioso */ })
-    // Carrega pessoas da Komi — usado na seção de responsáveis (fatia 025).
-    kaguyaApi.listPeople().then(setPeople).catch(() => { /* silencioso */ })
-    // Carrega contextos de execução — spec 034.
     kaguyaApi.listContexts().then(setContexts).catch(() => { /* silencioso */ })
-    // Tempo acumulado de foco (spec 062) — só em edição, a tarefa já tem id real.
     if (mode === 'edit' && task) {
-      kaguyaApi.focus.taskSummary(task.id).then(setFocusSummary).catch(() => { /* silencioso — badge só some */ })
+      kaguyaApi.focus.taskSummary(task.id).then(setFocusSummary).catch(() => { /* silencioso */ })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Salva a tarefa principal (cria ou edita), incluindo a recorrência e a duração.
+  // ── Espelhamento início · fim · estimativa ────────────────────────────────
+  const tbState = (): TimeBlockState => ({
+    startDate: dueDate, endDate, startTime, endTime, durationMin: duration,
+  })
+  const applyPatch = (patch: ReturnType<typeof applyStart>) => {
+    if (patch.startTime != null) setStartTime(patch.startTime)
+    if (patch.endTime != null) setEndTime(patch.endTime)
+    if (patch.durationMin != null) setDuration(patch.durationMin)
+  }
+  const onStartTime = (v: string) => applyPatch(applyStart(tbState(), v))
+  const onEndTime = (v: string) => applyPatch(applyEnd(tbState(), v))
+  const onEstimate = (min: number) => applyPatch(applyEstimate(tbState(), min))
+
+  // Ao mudar a data de início, se a de fim ficaria antes, arrasta-a junto.
+  const onStartDate = (iso: string) => {
+    setDueDate(iso)
+    if (endDate && iso && endDate < iso) setEndDate(iso)
+    if (!iso) { setStartTime(''); setEndTime(''); setEndDate('') }
+  }
+  const onEndDate = (iso: string) => {
+    if (iso && dueDate && iso < dueDate) { setEndDate(dueDate); return }
+    setEndDate(iso)
+  }
+
   const save = async () => {
-    if (!title.trim()) { toast('O título não pode ser vazio.', 'err'); return }
-    // Recorrência (exceto aniversário, que é automático) precisa de uma data-âncora.
+    // O título salvo é o texto limpo do parser (tokens fora) na criação.
+    const cleanTitle = (parsedTitle ? parsedTitle.title : title).trim()
+    if (!cleanTitle) { toast('O título não pode ser vazio.', 'err'); return }
     if (type !== 'birthday' && recurFreq !== 'none' && !dueDate) {
       toast('Recorrência precisa de uma data de vencimento.', 'err'); return
     }
     setSaving(true)
     try {
       const base = {
-        title: title.trim(),
+        title: cleanTitle,
         description: description || null,
         priority,
         type,
         due_date: dueDate || null,
-        due_time: dueTime || null,
+        due_time: startTime || null,
       }
-      // Monta a regra a partir do preset (só fora de aniversário, que o backend faz sozinho).
       const rrule = type !== 'birthday' && recurFreq !== 'none' ? buildRRule(recurFreq, dueDate) : null
 
       let taskId: number | undefined
 
       if (mode === 'create') {
-        // Captura o id retornado para poder persistir a duração logo abaixo.
         const r = await kaguyaApi.createTask({
           ...base,
           project_id: projectId ?? undefined,
-          tags,                                    // etiquetas escolhidas (pode ser vazia)
+          tags,
           person_ids: personIds.length > 0 ? personIds : undefined,
           ...(rrule ? { recurrence: { rrule, mode: recurMode } } : {}),
         })
@@ -245,54 +286,46 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
         toast('Tarefa criada.')
       } else if (task) {
         taskId = task.id
-        // tags e person_ids sempre enviados na edição → permite REMOVER todos (set vazio persiste).
         const upd: Parameters<typeof kaguyaApi.updateTask>[1] = {
           ...base,
           project_id: projectId ?? undefined,
           tags,
           person_ids: personIds,
-          // Inclui duration_min diretamente na atualização (null remove a estimativa).
           duration_min: duration > 0 ? duration : null,
-          // Status GTD real (spec 034) — null = "não classificada".
           gtd_status: gtdStatus,
-          // waiting_note só é enviado (e portanto só é tocado) quando o status é "waiting" —
-          // omitir a chave nos demais casos preserva a anotação no backend (data-model.md:
-          // "fica muda até a próxima vez"), em vez de apagá-la ao trocar de status.
           ...(gtdStatus === 'waiting' ? { waiting_note: waitingNote || null } : {}),
           context_id: contextId,
         }
         if (rrule) upd.recurrence = { rrule, mode: recurMode }
-        // Tinha regra e o usuário escolheu "não repete" → remove (sem mexer em aniversário).
         else if (task.recurrence && type !== 'birthday') upd.clear_recurrence = true
         await kaguyaApi.updateTask(task.id, upd)
         toast('Tarefa atualizada.')
       }
 
-      // ── Persistência da duração ─────────────────────────────────────────────
-      // Feita após o save principal para ter certeza que a task existe (create).
+      // ── Bloco de tempo (time-blocking) ────────────────────────────────────
+      // Existe um bloco quando há data + (início & fim de hora) OU quando a
+      // data de fim difere da de início (evento de vários dias).
       if (taskId) {
+        const multiDay = !!(dueDate && endDate && endDate !== dueDate)
+        const hasBlock = !!dueDate && ((!!startTime && !!endTime) || multiDay)
         try {
-          if (duration > 0 && dueDate && dueTime) {
-            // Tem data + hora + duração → cria/atualiza o time-block completo.
-            // Converte "HH:MM" para minuto do dia (ex.: "14:30" → 870).
-            const [hStr, mStr] = dueTime.split(':')
-            const startMin = (Number(hStr) * 60) + Number(mStr)
-            const endMin   = startMin + duration
-            // localISO: fuso local sem toISOString() (evita bug UTC-3).
+          if (hasBlock) {
+            const startMin = startTime ? hhmmMin(startTime)! : 0
+            const endMin = endTime ? hhmmMin(endTime)! : (multiDay ? 23 * 60 + 59 : startMin + (duration || 30))
             const startAt = localISO(dueDate, startMin)
-            const endAt   = localISO(dueDate, endMin)
-            await kaguyaApi.setTimeBlock(taskId, { start_at: startAt, end_at: endAt, duration_min: duration })
+            const endAt = localISO(endDate || dueDate, endMin)
+            await kaguyaApi.setTimeBlock(taskId, {
+              start_at: startAt,
+              end_at: endAt,
+              ...(duration > 0 ? { duration_min: duration } : {}),
+            })
           } else if (duration > 0 && mode === 'create') {
-            // Só estimativa (sem hora) na criação: persiste duration_min separado.
-            // Na edição já foi incluído no updateTask acima.
             await kaguyaApi.setEstimate(taskId, duration)
-          } else if (duration === 0 && task?.start_at) {
-            // Duração removida e task tinha time-block → limpa o bloco.
+          } else if (duration === 0 && !endTime && !endDate && task?.start_at) {
             await kaguyaApi.clearTimeBlock(taskId)
           }
         } catch {
-          // A duração não é crítica: avisa mas não desfaz o save do título/data etc.
-          toast('Duração não foi salva (o restante foi salvo).', 'err')
+          toast('Horários não foram salvos (o restante foi salvo).', 'err')
         }
       }
 
@@ -305,17 +338,15 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
     }
   }
 
-  // Encerra a série recorrente: conclui a ocorrência atual e não gera a próxima.
   const endSeries = async () => {
     if (!task) return
     try {
-      await kaguyaApi.complete(task.id, true, true)   // cascade + end_series
+      await kaguyaApi.complete(task.id, true, true)
       toast('Série encerrada.')
       onSaved(); onClose()
     } catch { toast('Falha ao encerrar a série.', 'err') }
   }
 
-  // Exclui a tarefa; numa recorrente, `scope` decide entre só esta ocorrência ou a série.
   const doDelete = async (scope: 'this' | 'series') => {
     if (!task) return
     try {
@@ -325,46 +356,35 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
     } catch { toast('Falha ao excluir.', 'err') }
   }
 
-  // Adiciona a tag digitada à lista local (cria de fato no backend ao salvar).
   const addTag = () => {
-    // Tira um eventual "#" digitado pelo usuário e espaços das pontas.
     const name = newTag.trim().replace(/^#+/, '').trim()
     if (!name) return
-    // Não duplica ignorando caixa ("Mercado" == "mercado").
     if (!tags.some((t) => t.toLowerCase() === name.toLowerCase())) setTags([...tags, name])
     setNewTag('')
   }
 
-  // Cor atual de uma tag pelo nome (case-insensitive), ou null se não tiver/não existir.
   const tagColor = (name: string): string | null => {
     const g = tagCatalog.find((x) => x.name.toLowerCase() === name.toLowerCase())
     return g?.color ?? null
   }
 
-  // Define (ou limpa, com color="") a cor de uma tag. Como a cor é GLOBAL, persiste já nos
-  // endpoints de tag — independente do save da tarefa. Atualiza o catálogo local para o chip
-  // recolorir na hora (otimista). Em erro de rede, avisa e mantém o estado anterior.
   const setTagColor = async (name: string, color: string) => {
-    setPaletteFor(null)                  // fecha o popover ao escolher
-    const colorVal = color || null       // "" significa "sem cor" → null no estado local
+    setPaletteFor(null)
+    const colorVal = color || null
     const existing = tagCatalog.find((x) => x.name.toLowerCase() === name.toLowerCase())
     try {
       if (existing) {
-        // Tag já existe → recolore (ou limpa) globalmente.
         await kaguyaApi.updateTag(existing.id, { color })
         setTagCatalog(tagCatalog.map((x) => (x.id === existing.id ? { ...x, color: colorVal } : x)))
       } else if (color) {
-        // Nome ainda não materializado + cor escolhida → cria a tag já colorida.
         const r = await kaguyaApi.createTag({ name, color })
         if (r.id) setTagCatalog([...tagCatalog, { id: r.id, name, color: colorVal }])
       }
-      // Nome novo + "sem cor": nada a persistir (será criada sem cor ao salvar a tarefa).
     } catch {
       toast('Não foi possível mudar a cor da tag.', 'err')
     }
   }
 
-  // Adiciona uma subtarefa (exige a tarefa-pai já existir).
   const addSub = async () => {
     if (!task || !newSub.trim()) return
     try {
@@ -374,7 +394,6 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
     } catch { toast('Falha ao adicionar subtarefa.', 'err') }
   }
 
-  // Atualiza prioridade/descrição de uma subtarefa existente.
   const patchSub = async (id: number, patch: Partial<Task>) => {
     setSubtasks(subtasks.map((s) => (s.id === id ? { ...s, ...patch } : s)))
     try { await kaguyaApi.updateTask(id, patch as never) } catch { toast('Falha ao salvar subtarefa.', 'err') }
@@ -385,13 +404,27 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
     try { await kaguyaApi.remove(id) } catch { toast('Falha ao excluir subtarefa.', 'err') }
   }
 
+  // Resumo da gaveta "Mais opções".
+  const moreSummaryParts: string[] = []
+  if (recurFreq !== 'none') moreSummaryParts.push('repete ' + (RECUR_OPTS.find(r => r.v === recurFreq)?.label.toLowerCase() ?? ''))
+  if (gtdStatus) moreSummaryParts.push({ next_action: 'próxima ação', waiting: 'aguardando', someday: 'algum dia' }[gtdStatus] ?? '')
+  if (contextId) moreSummaryParts.push('contexto')
+  const moreSummary = moreSummaryParts.filter(Boolean).join(' · ') || 'nada definido'
+
+  const sameDay = !endDate || endDate === dueDate
+  const tbHint = !dueDate
+    ? 'Defina uma data para marcar horários. Sem hora, só a estimativa é usada (Meu Dia).'
+    : !sameDay
+      ? 'Evento de vários dias — início e fim marcam os extremos; a estimativa fica independente.'
+      : !startTime
+        ? 'Sem hora de início: só a estimativa conta. Escolha um início para virar bloco na agenda.'
+        : 'Início/fim e estimativa se espelham (fim − início).'
+
   return (
     <div className="kg-scrim" onClick={onClose}>
-      {/* kg-modal-wide: duas colunas (config + notas). Colapsado → só o formulário. */}
       <div className={`kg-modal kg-modal-wide${notesCollapsed ? ' kg-notes-collapsed' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="kg-modal-head">
           <h3>{mode === 'create' ? 'Nova tarefa' : 'Editar tarefa'}</h3>
-          {/* Foco / Pomodoro (spec 037 + 062) — só em edição, tarefa já existe (task_id real). */}
           {mode === 'edit' && task && onFocus && (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
               {focusSummary != null && focusSummary.sessoes > 0 && (
@@ -416,7 +449,6 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
               </button>
             </div>
           )}
-          {/* Reabrir o editor de notas quando colapsado. Acento quando há nota escondida. */}
           {notesCollapsed && (
             <button
               className={`kg-icon-btn kg-notes-reopen${description.trim() ? ' has-note' : ''}`}
@@ -431,343 +463,324 @@ export function TaskModal({ mode, task, projects, defaultProjectId, defaults, on
           <button className="kg-icon-btn" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
         </div>
 
-        {/* kg-modal-split: flex row que divide formulário (esq.) e editor de notas (dir.) */}
         <div className="kg-modal-split">
 
-        {/* Coluna esquerda: formulário de configuração da tarefa */}
-        <div className="kg-modal-body">
-          {/* Banner de mãe (fatia 025) — aparece quando a tarefa é subtarefa de outra. */}
-          {mode === 'edit' && task && task.parent_id !== null && (
-            <div className="parent-banner">
-              <Icon name="arrowUpRight" size={13} />
-              <span>
-                Subtarefa de{' '}
-                {/* parent_title vem do backend (fatia 025); fallback para #id. */}
-                <b>{task.parent_title ?? `#${task.parent_id}`}</b>
-              </span>
-              {onPromote && (
-                <button
-                  type="button"
-                  className="pb-promote"
-                  onClick={async () => { await onPromote(task); onClose() }}
-                >
-                  Tornar independente
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="kg-field">
-            <span className="kg-field-label">Título</span>
-            <input className="kg-input" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="O que precisa ser feito?" />
-          </div>
-
-          <div className="kg-field">
-            <span className="kg-field-label">Lista</span>
-            <select className="kg-select" value={projectId ?? ''} onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : null)}>
-              <option value="">Inbox</option>
-              {projects.filter((p) => !p.is_inbox).map((p) => (
-                <option key={p.id} value={p.id}>{p.icon ? `${p.icon} ` : ''}{p.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="kg-field">
-            <span className="kg-field-label">Prioridade</span>
-            <div className="kg-segment">
-              {PRIORITIES.map((p) => (
-                <button key={p.v} className={`kg-seg-opt ${p.cls}${priority === p.v ? ' active' : ''}`} onClick={() => setPriority(p.v)}>{p.label}</button>
-              ))}
-            </div>
-          </div>
-
-          <div className="kg-field">
-            <span className="kg-field-label">Tipo</span>
-            <div className="kg-segment">
-              {TYPES.map((t) => (
-                <button key={t.v} className={`kg-seg-opt${type === t.v ? ' active' : ''}`} onClick={() => setType(t.v)}>{t.label}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* Status GTD real (spec 034) — só em tarefas existentes (create_task não aceita
-              gtd_status; o status nasce pelo processamento do inbox ou por esta edição). */}
-          {mode === 'edit' && (
-            <div className="kg-field">
-              <span className="kg-field-label">Status GTD</span>
-              <div className="kg-segment">
-                <button className={`kg-seg-opt${gtdStatus === null ? ' active' : ''}`} onClick={() => setGtdStatus(null)}>Não classificada</button>
-                <button className={`kg-seg-opt${gtdStatus === 'next_action' ? ' active' : ''}`} onClick={() => setGtdStatus('next_action')}>Próxima ação</button>
-                <button className={`kg-seg-opt${gtdStatus === 'waiting' ? ' active' : ''}`} onClick={() => setGtdStatus('waiting')}>Aguardando</button>
-                <button className={`kg-seg-opt${gtdStatus === 'someday' ? ' active' : ''}`} onClick={() => setGtdStatus('someday')}>Algum dia</button>
+          <div className="kg-modal-body">
+            {mode === 'edit' && task && task.parent_id !== null && (
+              <div className="parent-banner">
+                <Icon name="arrowUpRight" size={13} />
+                <span>Subtarefa de <b>{task.parent_title ?? `#${task.parent_id}`}</b></span>
+                {onPromote && (
+                  <button type="button" className="pb-promote" onClick={async () => { await onPromote(task); onClose() }}>
+                    Tornar independente
+                  </button>
+                )}
               </div>
-              {gtdStatus === 'waiting' && (
-                <div style={{ marginTop: 8 }}>
-                  <input
-                    className="kg-input"
-                    value={waitingNote}
-                    onChange={(e) => setWaitingNote(e.target.value)}
-                    placeholder="Por quem/o quê espera (opcional)"
-                  />
-                  {task?.waiting_since && (
-                    <p className="kg-muted" style={{ marginTop: 4 }}>
-                      Aguardando desde {new Date(task.waiting_since).toLocaleDateString('pt-BR')}
-                    </p>
+            )}
+
+            {/* ── Título ───────────────────────────────────────────────────── */}
+            <div className="kg-field">
+              <span className="kg-field-label">Título</span>
+              {mode === 'create' && parsedTitle ? (
+                <>
+                  <div className={`kg-qa-wrap kg-tm-title${title.trim() ? ' typing' : ''}`}>
+                    <div className="kg-mirror" aria-hidden="true">
+                      {parsedTitle.segments.map((s, i) => <span key={i} className={s.cls}>{s.text}</span>)}
+                    </div>
+                    <input
+                      className="kg-qa-input"
+                      autoFocus
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="O que precisa ser feito? — aceita @lista !alta #tag amanhã 15h"
+                    />
+                  </div>
+                  {(parsedTitle.projectToken || parsedTitle.priority != null || parsedTitle.dueDate || parsedTitle.tags.length > 0 || parsedTitle.recur) && (
+                    <span className="kg-tm-title-hint">
+                      Reconhecido:{' '}
+                      {[
+                        parsedTitle.projectToken && `@${parsedTitle.projectToken}`,
+                        parsedTitle.priority != null && `prioridade ${['', 'baixa', 'média', 'alta'][parsedTitle.priority]}`,
+                        parsedTitle.dueDate && (parsedTitle.dueDate.slice(8) + '/' + parsedTitle.dueDate.slice(5, 7) + (parsedTitle.dueTime ? ` ${parsedTitle.dueTime}` : '')),
+                        parsedTitle.recur && `↺ ${parsedTitle.recur.label}`,
+                        ...parsedTitle.tags.map((t) => `#${t}`),
+                      ].filter(Boolean).join(' · ')}
+                    </span>
                   )}
-                </div>
+                </>
+              ) : (
+                <input className="kg-input" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="O que precisa ser feito?" />
               )}
             </div>
-          )}
 
-          {/* Contexto de execução (spec 034) — no máximo um por tarefa. */}
-          {mode === 'edit' && (
-            <div className="kg-field">
-              <span className="kg-field-label">Contexto</span>
-              <select
-                className="kg-select"
-                value={contextId ?? ''}
-                onChange={(e) => setContextId(e.target.value ? Number(e.target.value) : null)}
-              >
-                <option value="">Sem contexto</option>
-                {contexts.map((c) => <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ''}{c.name}</option>)}
-              </select>
+            {/* ── Lista + Tipo ─────────────────────────────────────────────── */}
+            <div className="kg-field-row">
+              <div className="kg-field">
+                <span className="kg-field-label">Lista</span>
+                <select className="kg-select" value={projectId ?? ''} onChange={(e) => setProjectId(e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">Inbox</option>
+                  {projects.filter((p) => !p.is_inbox).map((p) => (
+                    <option key={p.id} value={p.id}>{p.icon ? `${p.icon} ` : ''}{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="kg-field">
+                <span className="kg-field-label">Tipo</span>
+                <div className="kg-segment">
+                  {TYPES.map((t) => (
+                    <button key={t.v} className={`kg-seg-opt${type === t.v ? ' active' : ''}`} onClick={() => setType(t.v)}>{t.label}</button>
+                  ))}
+                </div>
+              </div>
             </div>
-          )}
 
-          <div className="kg-field-row">
-            {/* DatePicker: seletor de data no tema, substitui <input type="date"> */}
+            {/* ── Prioridade ──────────────────────────────────────────────── */}
             <div className="kg-field">
-              <span className="kg-field-label">Vencimento</span>
-              <DatePicker
-                value={dueDate}
-                onChange={setDueDate}
-                placeholder="Sem data"
-              />
-            </div>
-            {/* TimePicker: seletor de hora no tema, substitui <input type="time">.
-                Fica desabilitado enquanto não há data selecionada. */}
-            <div className="kg-field">
-              <span className="kg-field-label">Hora (opcional)</span>
-              <TimePicker
-                value={dueTime}
-                onChange={setDueTime}
-                disabled={!dueDate}
-                placeholder="Sem hora"
-              />
-            </div>
-          </div>
-
-          {/* Duração — estimativa de quanto tempo a tarefa vai levar.
-              Com data + hora: cria um bloco de tempo (time-block) no calendário e no
-              timeline do Meu Dia. Sem hora: alimenta só a barra de capacidade do Meu Dia. */}
-          <div className="kg-field">
-            <span className="kg-field-label">Duração</span>
-            <select
-              className="kg-select"
-              value={duration}
-              onChange={(e) => setDuration(Number(e.target.value))}
-            >
-              {DURATIONS.map((d) => (
-                <option key={d.v} value={d.v}>{d.label}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Recorrência — aniversário é automático (todo ano), então só mostramos a dica */}
-          {type === 'birthday' ? (
-            <div className="kg-field">
-              <span className="kg-field-label">Repetir</span>
-              <div className="kg-hint">🎂 Aniversários repetem todo ano automaticamente.</div>
-            </div>
-          ) : (
-            <div className="kg-field">
-              <span className="kg-field-label">Repetir</span>
+              <span className="kg-field-label">Prioridade</span>
               <div className="kg-segment">
-                {RECUR_OPTS.map((r) => (
-                  <button key={r.v} className={`kg-seg-opt${recurFreq === r.v ? ' active' : ''}`} onClick={() => setRecurFreq(r.v)}>{r.label}</button>
+                {PRIORITIES.map((p) => (
+                  <button key={p.v} className={`kg-seg-opt ${p.cls}${priority === p.v ? ' active' : ''}`} onClick={() => setPriority(p.v)}>{p.label}</button>
                 ))}
               </div>
-              {/* Modo: data-fixa (a âncora manda) vs contar a partir da conclusão */}
-              {recurFreq !== 'none' && (
-                <div className="kg-segment" style={{ marginTop: 6 }}>
-                  <button className={`kg-seg-opt${recurMode === 'fixed' ? ' active' : ''}`} onClick={() => setRecurMode('fixed')}>Data fixa</button>
-                  <button className={`kg-seg-opt${recurMode === 'after_completion' ? ' active' : ''}`} onClick={() => setRecurMode('after_completion')}>Após concluir</button>
+            </div>
+
+            {/* ── Data início / fim ───────────────────────────────────────── */}
+            <div className="kg-field-row">
+              <div className="kg-field">
+                <span className="kg-field-label">Data início</span>
+                <DatePicker value={dueDate} onChange={onStartDate} placeholder="Sem data" />
+              </div>
+              <div className="kg-field">
+                <span className="kg-field-label">Data fim</span>
+                <DatePicker
+                  value={endDate}
+                  onChange={onEndDate}
+                  disabled={!dueDate}
+                  placeholder={dueDate ? 'Mesmo dia' : '—'}
+                />
+              </div>
+            </div>
+
+            {/* ── Início · Fim · Estimativa ──────────────────────────────── */}
+            <div className="kg-field">
+              <span className="kg-field-label">Início · Fim · Estimativa</span>
+              <div className="kg-tm-timeblock">
+                <TimePicker value={startTime} onChange={onStartTime} disabled={!dueDate} placeholder="Início" />
+                <span className="kg-tm-arrow">→</span>
+                <TimePicker value={endTime} onChange={onEndTime} disabled={!dueDate || !startTime} placeholder="Fim" />
+                <select className="kg-select kg-tm-est" value={duration} onChange={(e) => onEstimate(Number(e.target.value))}>
+                  {DURATIONS.map((d) => <option key={d.v} value={d.v}>{d.label}</option>)}
+                </select>
+              </div>
+              <span className="kg-tm-hint">{tbHint}</span>
+            </div>
+
+            {/* ── Tags ────────────────────────────────────────────────────── */}
+            <div className="kg-field">
+              <span className="kg-field-label">Tags</span>
+              <div className="kg-tag-edit">
+                {tags.map((t) => {
+                  const c = tagColor(t)
+                  const chipStyle = c ? { color: c, borderColor: c } : undefined
+                  return (
+                    <span key={t} className="kg-chip kg-chip-tag kg-tag-chip-edit" style={chipStyle}>
+                      <button
+                        type="button"
+                        className="kg-tag-swatch"
+                        style={{ background: c ?? 'transparent' }}
+                        onClick={() => setPaletteFor(paletteFor === t ? null : t)}
+                        aria-label={`Mudar a cor da tag ${t}`}
+                      />
+                      #{t}
+                      <button className="kg-tag-x" onClick={() => setTags(tags.filter((x) => x !== t))} aria-label={`Remover ${t}`}>×</button>
+                      {paletteFor === t && (
+                        <div className="kg-tag-palette">
+                          {TAG_COLORS.map((col) => (
+                            <button key={col} type="button" className="kg-tag-palette-opt" style={{ background: col }} onClick={() => setTagColor(t, col)} aria-label={`Definir cor ${col}`} />
+                          ))}
+                          <button type="button" className="kg-tag-palette-opt kg-tag-palette-none" onClick={() => setTagColor(t, '')} aria-label="Sem cor">×</button>
+                        </div>
+                      )}
+                    </span>
+                  )
+                })}
+                <input
+                  className="kg-input kg-tag-input"
+                  value={newTag}
+                  onChange={(e) => setNewTag(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
+                  placeholder="Adicionar tag + Enter"
+                />
+              </div>
+            </div>
+
+            {/* ── Pessoas ─────────────────────────────────────────────────── */}
+            <div className="kg-field">
+              <span className="kg-field-label">Pessoas</span>
+              <span className="kg-tm-title-hint">Responsáveis pela tarefa — ou quem vai com você num evento (acompanhantes, participantes).</span>
+              <PersonSearch selected={personIds} onChange={setPersonIds} toast={toast} />
+            </div>
+
+            {/* ── Gaveta "Mais opções" ───────────────────────────────────── */}
+            <div className="kg-tm-more">
+              <button type="button" className={`kg-tm-more-head${moreOpen ? ' open' : ''}`} onClick={() => setMoreOpen(!moreOpen)}>
+                <Icon name="chevron" size={13} />
+                <span className="kg-tm-more-lbl">Mais opções</span>
+                <span className="kg-tm-more-summ">{moreSummary}</span>
+              </button>
+
+              {moreOpen && (
+                <div className="kg-tm-more-body">
+                  {/* Repetir */}
+                  {isBirthday ? (
+                    <div className="kg-field">
+                      <span className="kg-field-label">Repetir</span>
+                      <div className="kg-hint">🎂 Aniversários repetem todo ano automaticamente.</div>
+                    </div>
+                  ) : (
+                    <div className="kg-field">
+                      <span className="kg-field-label">Repetir</span>
+                      <div className="kg-segment">
+                        {RECUR_OPTS.map((r) => (
+                          <button key={r.v} className={`kg-seg-opt${recurFreq === r.v ? ' active' : ''}`} onClick={() => setRecurFreq(r.v)}>{r.label}</button>
+                        ))}
+                      </div>
+                      {recurFreq !== 'none' && (
+                        <div className="kg-segment" style={{ marginTop: 6 }}>
+                          <button className={`kg-seg-opt${recurMode === 'fixed' ? ' active' : ''}`} onClick={() => setRecurMode('fixed')}>Data fixa</button>
+                          <button className={`kg-seg-opt${recurMode === 'after_completion' ? ' active' : ''}`} onClick={() => setRecurMode('after_completion')}>Após concluir</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Status GTD (só em edição) */}
+                  {mode === 'edit' && (
+                    <div className="kg-field">
+                      <span className="kg-field-label">Status GTD</span>
+                      <div className="kg-segment">
+                        <button className={`kg-seg-opt${gtdStatus === null ? ' active' : ''}`} onClick={() => setGtdStatus(null)}>Não classificada</button>
+                        <button className={`kg-seg-opt${gtdStatus === 'next_action' ? ' active' : ''}`} onClick={() => setGtdStatus('next_action')}>Próxima ação</button>
+                        <button className={`kg-seg-opt${gtdStatus === 'waiting' ? ' active' : ''}`} onClick={() => setGtdStatus('waiting')}>Aguardando</button>
+                        <button className={`kg-seg-opt${gtdStatus === 'someday' ? ' active' : ''}`} onClick={() => setGtdStatus('someday')}>Algum dia</button>
+                      </div>
+                      {gtdStatus === 'waiting' && (
+                        <div style={{ marginTop: 8 }}>
+                          <input className="kg-input" value={waitingNote} onChange={(e) => setWaitingNote(e.target.value)} placeholder="Por quem/o quê espera (opcional)" />
+                          {task?.waiting_since && (
+                            <p className="kg-muted" style={{ marginTop: 4 }}>
+                              Aguardando desde {new Date(task.waiting_since).toLocaleDateString('pt-BR')}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Contexto (só em edição) */}
+                  {mode === 'edit' && (
+                    <div className="kg-field">
+                      <span className="kg-field-label">Contexto</span>
+                      <select className="kg-select" value={contextId ?? ''} onChange={(e) => setContextId(e.target.value ? Number(e.target.value) : null)}>
+                        <option value="">Sem contexto</option>
+                        {contexts.map((c) => <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ''}{c.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Sinalizadores — leitura */}
+                  <div className="kg-field">
+                    <span className="kg-field-label">Sinalizadores</span>
+                    <div className="kg-tm-flags">
+                      <span className={recurFreq !== 'none' ? 'set' : ''}>Recorrente · {recurFreq !== 'none' ? 'sim' : 'não'}</span>
+                      <span className={description.trim() ? 'set' : ''}>Tem descrição · {description.trim() ? 'sim' : 'não'}</span>
+                      <span className={(dueDate && startTime && endTime) || (endDate && endDate !== dueDate) ? 'set' : ''}>
+                        Vira bloco na agenda · {(dueDate && startTime && endTime) || (endDate && endDate !== dueDate) ? 'sim' : 'não'}
+                      </span>
+                    </div>
+                    {mode === 'create' && (
+                      <div className="kg-tm-title-hint" style={{ marginTop: 4 }}>
+                        Subtarefas aparecem numa seção própria depois que a tarefa é criada.
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
-          )}
 
-          {/* Tags (etiquetas) — chips removíveis + input que adiciona por Enter (cria on-the-fly) */}
-          <div className="kg-field">
-            <span className="kg-field-label">Tags</span>
-            <div className="kg-tag-edit">
-              {tags.map((t) => {
-                const c = tagColor(t)
-                // Cor própria sobrescreve texto/borda do chip; sem cor, herda o acento (.kg-chip-tag).
-                const chipStyle = c ? { color: c, borderColor: c } : undefined
-                return (
-                  <span key={t} className="kg-chip kg-chip-tag kg-tag-chip-edit" style={chipStyle}>
-                    {/* botão-amostra: abre/fecha a paleta para escolher a cor desta tag */}
-                    <button
-                      type="button"
-                      className="kg-tag-swatch"
-                      style={{ background: c ?? 'transparent' }}
-                      onClick={() => setPaletteFor(paletteFor === t ? null : t)}
-                      aria-label={`Mudar a cor da tag ${t}`}
-                    />
-                    #{t}
-                    <button className="kg-tag-x" onClick={() => setTags(tags.filter((x) => x !== t))} aria-label={`Remover ${t}`}>×</button>
-                    {/* paleta de cores (popover) — só aparece para a tag selecionada */}
-                    {paletteFor === t && (
-                      <div className="kg-tag-palette">
-                        {TAG_COLORS.map((col) => (
-                          <button
-                            key={col}
-                            type="button"
-                            className="kg-tag-palette-opt"
-                            style={{ background: col }}
-                            onClick={() => setTagColor(t, col)}
-                            aria-label={`Definir cor ${col}`}
-                          />
-                        ))}
-                        {/* "sem cor": volta ao acento padrão do tema */}
-                        <button
-                          type="button"
-                          className="kg-tag-palette-opt kg-tag-palette-none"
-                          onClick={() => setTagColor(t, '')}
-                          aria-label="Sem cor"
-                        >×</button>
-                      </div>
-                    )}
-                  </span>
-                )
-              })}
-              <input
-                className="kg-input kg-tag-input"
-                value={newTag}
-                onChange={(e) => setNewTag(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
-                placeholder="Adicionar tag + Enter"
-              />
-            </div>
-          </div>
-
-          {/* Pessoas (Komi, fatia 025) — chips togláveis com avatar */}
-          {people.length > 0 && (
-            <div className="kg-field">
-              <span className="kg-field-label">Responsáveis</span>
-              <div className="people-pick">
-                {people.map((p) => {
-                  const selected = personIds.includes(p.id)
+            {/* ── Subtarefas (só em edição) ─────────────────────────────── */}
+            {mode === 'edit' && task && (
+              <div className="kg-field">
+                <span className="kg-field-label">Subtarefas</span>
+                {subtasks.map((s) => {
+                  const PRIO_CYCLE = [0, 1, 2, 3]
+                  const nextPrio = PRIO_CYCLE[(PRIO_CYCLE.indexOf(s.priority ?? 0) + 1) % PRIO_CYCLE.length]
+                  const PRIO_DOT_COLOR = ['transparent', 'var(--p-low)', 'var(--p-med)', 'var(--p-high)']
                   return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      // Chip com avatar + nome; borda destacada quando selecionado (classe .on).
-                      className={`person-chip${selected ? ' on' : ''}`}
-                      onClick={() =>
-                        setPersonIds(selected
-                          ? personIds.filter((x) => x !== p.id)
-                          : [...personIds, p.id]
-                        )
-                      }
-                    >
-                      <Avatar name={p.name} avatarUrl={p.avatar_url} size={18} />
-                      {p.name}
-                    </button>
+                    <div key={s.id} className="kg-subedit subtask-card">
+                      <button
+                        className={`kg-check${s.completed_at ? ' done' : ''}`}
+                        style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0 }}
+                        onClick={() => patchSub(s.id, { completed_at: s.completed_at ? null : new Date().toISOString() })}
+                        aria-label={s.completed_at ? 'Reabrir' : 'Concluir'}
+                      >
+                        {s.completed_at && <Icon name="check" size={10} />}
+                      </button>
+                      <span
+                        className={`sub-title${s.completed_at ? ' done-text' : ''}`}
+                        onClick={() => onOpenTask ? (onClose(), onOpenTask(s)) : undefined}
+                      >
+                        {s.title}
+                      </span>
+                      {(s.assignees ?? []).length > 0 && (
+                        <AvatarStack assignees={s.assignees ?? []} size={16} max={2} />
+                      )}
+                      <button
+                        className="kg-icon-btn"
+                        title={`Prioridade: ${PRIORITIES[s.priority ?? 0]?.label}`}
+                        style={{ border: 'none', padding: 4 }}
+                        onClick={() => patchSub(s.id, { priority: nextPrio })}
+                        aria-label="Ciclar prioridade"
+                      >
+                        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: PRIO_DOT_COLOR[s.priority ?? 0] ?? 'var(--line)', border: '1px solid var(--line)' }} />
+                      </button>
+                      <button className="kg-icon-btn" onClick={() => removeSub(s.id)} aria-label="Excluir subtarefa">
+                        <Icon name="trash" size={13} />
+                      </button>
+                    </div>
                   )
                 })}
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <input className="kg-input" placeholder="Adicionar subtarefa + Enter…" value={newSub} onChange={(e) => setNewSub(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addSub() }} />
+                  <button className="kg-btn" onClick={addSub}><Icon name="plus" size={14} /></button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>{/* fim .kg-modal-body */}
 
-          {/* Subtarefas ricas — só quando a tarefa-pai já existe (fatia 025: T044) */}
-          {/* Cada linha: check, título clicável (abre sub-modal), avatares, ciclar prio, excluir */}
-          {mode === 'edit' && task && (
-            <div className="kg-field">
-              <span className="kg-field-label">Subtarefas</span>
-              {subtasks.map((s) => {
-                const PRIO_CYCLE = [0, 1, 2, 3]
-                const nextPrio = PRIO_CYCLE[(PRIO_CYCLE.indexOf(s.priority ?? 0) + 1) % PRIO_CYCLE.length]
-                const PRIO_DOT_COLOR = ['transparent', 'var(--p-low)', 'var(--p-med)', 'var(--p-high)']
-                return (
-                  <div key={s.id} className="kg-subedit subtask-card">
-                    {/* Check: conclui/reabre a subtarefa */}
-                    <button
-                      className={`kg-check${s.completed_at ? ' done' : ''}`}
-                      style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0 }}
-                      onClick={() => patchSub(s.id, { completed_at: s.completed_at ? null : new Date().toISOString() })}
-                      aria-label={s.completed_at ? 'Reabrir' : 'Concluir'}
-                    >
-                      {s.completed_at && <Icon name="check" size={10} />}
-                    </button>
-
-                    {/* Título: clicável para abrir sub-modal (quando onOpenTask disponível) */}
-                    <span
-                      className={`sub-title${s.completed_at ? ' done-text' : ''}`}
-                      onClick={() => onOpenTask ? (onClose(), onOpenTask(s)) : undefined}
-                    >
-                      {s.title}
-                    </span>
-
-                    {/* Avatares dos responsáveis da subtarefa */}
-                    {(s.assignees ?? []).length > 0 && (
-                      <AvatarStack assignees={s.assignees ?? []} size={16} max={2} />
-                    )}
-
-                    {/* Ciclar prioridade: 0→1→2→3→0 (dot colorido) */}
-                    <button
-                      className="kg-icon-btn"
-                      title={`Prioridade: ${PRIORITIES[s.priority ?? 0]?.label}`}
-                      style={{ border: 'none', padding: 4 }}
-                      onClick={() => patchSub(s.id, { priority: nextPrio })}
-                      aria-label="Ciclar prioridade"
-                    >
-                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: PRIO_DOT_COLOR[s.priority ?? 0] ?? 'var(--line)', border: '1px solid var(--line)' }} />
-                    </button>
-
-                    {/* Excluir subtarefa */}
-                    <button className="kg-icon-btn" onClick={() => removeSub(s.id)} aria-label="Excluir subtarefa">
-                      <Icon name="trash" size={13} />
-                    </button>
-                  </div>
-                )
-              })}
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <input className="kg-input" placeholder="Adicionar subtarefa + Enter…" value={newSub} onChange={(e) => setNewSub(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addSub() }} />
-                <button className="kg-btn" onClick={addSub}><Icon name="plus" size={14} /></button>
-              </div>
-            </div>
-          )}
-        </div>{/* fim .kg-modal-body (coluna esquerda) */}
-
-        {/* Divisor arrastável + coluna de notas — escondidos quando colapsado.
-            Arrastar redistribui a largura entre o formulário e o editor. */}
-        {!notesCollapsed && (
-          <>
-            <div
-              className="kg-split-resize"
-              onMouseDown={(e) => { e.preventDefault(); startResize(e.clientX, noteWidth) }}
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Redimensionar notas"
-            />
-            {/* Coluna direita: editor de notas Markdown com @menções e [[tasks]] */}
-            <div className="kg-note-pane" style={{ flex: `0 0 ${noteWidth}px` }}>
-              <MarkdownNotesEditor
-                value={description}
-                onChange={setDescription}
-                onOpenTask={openMentionedTask}
-                onCollapse={() => setNotesCollapsed(true)}
+          {!notesCollapsed && (
+            <>
+              <div
+                className="kg-split-resize"
+                onMouseDown={(e) => { e.preventDefault(); startResize(e.clientX, noteWidth) }}
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Redimensionar notas"
               />
-            </div>
-          </>
-        )}
+              <div className="kg-note-pane" style={{ flex: `0 0 ${noteWidth}px` }}>
+                <MarkdownNotesEditor
+                  value={description}
+                  onChange={setDescription}
+                  onOpenTask={openMentionedTask}
+                  onCollapse={() => setNotesCollapsed(true)}
+                />
+              </div>
+            </>
+          )}
 
         </div>{/* fim .kg-modal-split */}
 
         <div className="kg-modal-foot">
-          {/* Excluir (edição): numa recorrente, pergunta o escopo só esta / série inteira */}
           {mode === 'edit' && task && !askDelete && (
             <button className="kg-btn kg-btn-ghost kg-btn-danger" style={{ marginRight: 'auto' }} onClick={() => setAskDelete(true)}>
               <Icon name="trash" size={14} /> Excluir
