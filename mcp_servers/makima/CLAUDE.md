@@ -2,14 +2,14 @@
 
 ## O que é
 
-**`makima-mcp`** — host HTTP único que expõe as tools dos 10 domínios de agente
-(Nami, Kaguya, Frieren, Akane, Komi, Marin, Mai, Lucy, Kurisu, Journal/Violet) mais
+**`makima-mcp`** — host HTTP único que expõe as tools dos 11 domínios de agente
+(Nami, Kaguya, Frieren, Akane, Komi, Marin, Mai, Lucy, Kurisu, Journal/Violet, Yato) mais
 Calendar pelo protocolo MCP, para qualquer cliente MCP consumir — o cliente real em
 produção é o Hermes Agent (`hermes/config.yaml::mcp_servers`).
 
 Status: **Etapas E1, E2 e E6 entregues**, mais a ativação da Violet (fora do roteiro
-original da spec 064, feita a pedido do usuário logo depois da E6) — os 10 domínios de
-agente têm `toolset.py` próprio e estão em `registry.py::DOMAINS`; `legacy.py` (ponte
+original da spec 064, feita a pedido do usuário logo depois da E6) — os 11 domínios de
+agente (os 10 originais + a Yato, spec 066) têm `toolset.py` próprio e estão em `registry.py::DOMAINS`; `legacy.py` (ponte
 ADK, Etapa E2) segue montada mas com `_LEGACY_DOMAIN_AGENTS` vazia, sem nenhum domínio
 pra rotear — só é removida de fato na Etapa E7. Ver `ROADMAP.md` (linha da fase 064)
 para o estado das demais etapas.
@@ -20,7 +20,7 @@ para o estado das demais etapas.
 
 ```
 mcp_servers/makima/
-├── registry.py   # DOMAINS: dict[str, list[Callable]] — os 10 domínios de agente
+├── registry.py   # DOMAINS: dict[str, list[Callable]] — os 11 domínios de agente
 ├── app.py        # host Starlette: monta um FastMCP por domínio sob /mcp/<domínio>
 ├── auth.py       # middleware bearer token (MAKIMA_MCP_TOKEN)
 ├── legacy.py     # tool perguntar_makima_legado() — Etapa E2, _LEGACY_DOMAIN_AGENTS
@@ -192,6 +192,53 @@ Mai, Lucy, Kurisu) não quebrou nada. `pytest` completo: os 9 testes de
 as 57 falhas restantes da suíte são pré-existentes (dependem de Postgres real — mesma
 contagem já documentada na Etapa E1). Falta repetir o `curl` via container efêmero contra
 a VPS depois do deploy do `makima-mcp` com as mudanças desta etapa, como foi feito na E1.
+
+---
+
+## Conectar um cliente MCP externo (Claude Code) — set/2026
+
+O `makima-mcp` continua **sem porta pública**. Para um cliente fora da `dokploy-network`
+(hoje: o Claude Code do Gustavo, no Windows) a `8090` é publicada só no **loopback** do VPS
+(`docker-compose.yml`, serviço `mcp`: `127.0.0.1:8090:8090`) e alcançada por túnel SSH:
+
+```
+Claude Code ─► localhost:8090 ══ ssh -N makima-tunnel ══► 127.0.0.1:8090 (VPS) ─► makima-mcp ─► PostgreSQL
+```
+
+- **Aliases** no `~/.ssh/config` da máquina cliente: `makima-vps` (comandos avulsos) e
+  `makima-tunnel` (só o túnel: `LocalForward 8090 127.0.0.1:8090` + `ExitOnForwardFailure yes`).
+  São dois de propósito: com o forward no mesmo alias dos comandos avulsos, qualquer
+  `ssh makima-vps "<cmd>"` falharia (exit 255) enquanto o túnel estivesse de pé. Ambos usam o
+  IP do VPS, `User root` e a chave `id_ed25519`.
+- **Registro** (escopo user, uma vez): `claude mcp add --scope user --transport http kaguya
+  http://localhost:8090/mcp/kaguya/ --header "Authorization: Bearer <token>"`. A **barra final**
+  é obrigatória por convenção: os sub-apps usam `streamable_http_path="/"`, então
+  `/mcp/kaguya` responde 307 para `/mcp/kaguya/`. O token é o `MAKIMA_MCP_TOKEN`: ler do
+  container direto para uma variável (`ssh makima-vps "docker exec makima-mcp printenv
+  MAKIMA_MCP_TOKEN"`), sem imprimi-lo.
+- **Túnel manual**: `ssh -N makima-tunnel` numa janela aberta. Sem ele o servidor aparece
+  "Failed to connect"; se o Claude Code abrir antes do túnel, reconectar pelo `/mcp`. Não há
+  túnel automático — decisão do usuário.
+- **Keepalive**: o `Host *` do `~/.ssh/config` do usuário usa `ServerAliveInterval 60` ×
+  `ServerAliveCountMax 30`, então o ssh leva até 30 min para perceber que a conexão caiu
+  (túnel "aberto" mas morto depois de suspender o PC). No `ssh_config` o primeiro valor
+  vence: um override precisa vir antes do `Host *` ou na linha de comando.
+- **Verificar**: `claude mcp list` → `kaguya √ Connected`. **Nunca `claude mcp get`**: ele
+  imprime o header `Authorization` em texto puro (o `add` redige, o `get` não).
+- **Segurança**: o bearer token vira a única barreira para quem alcançar o loopback do VPS
+  (root, ou o túnel); o anti-DNS-rebinding continua desligado (Gotcha 2). Conferir que a
+  porta NÃO está pública: de fora do VPS, `Test-NetConnection <ip> -Port 8090` deve falhar;
+  no VPS, `ss -ltn | grep :8090` deve mostrar só `127.0.0.1:8090`.
+- **Só a Kaguya está registrada** no Claude Code, então `list_events_today` (que vive em
+  `/mcp/calendar`) não existe nessa sessão. A skill global `kaguya-tarefas`
+  (`~/.claude/skills/`, fora deste repo) já considera isso e roteia compromissos para
+  `create_task(type="event")` — sem ela, um agente frio criava a reunião direto no Google
+  Calendar (medido em set/2026: 2 de 2; com a skill, 0 de 3).
+- **Memória do VPS**: 3,9 GB. Em 2026-09-21 o host ficou sem memória e reiniciou logo depois
+  de um push na `master` (causa não determinada); foi criado um `/swapfile` de 2 GB.
+  Todo push na `master` dispara o deploy automático do compose (rebuild + recriação dos
+  containers), e como o build context é a raiz do repo (`COPY . .`), até mudança só de doc
+  reconstrói as camadas finais das imagens.
 
 ---
 
