@@ -33,7 +33,8 @@ services:
   # Servidor MCP HTTP: expõe as tools de domínio (Nami, Kaguya, Calendar, ...) para
   # qualquer cliente MCP — hoje o Hermes (spec 064, ver docker-compose.hermes.yml). Um
   # FastMCP por domínio, montado sob /mcp/<domínio> num único processo
-  # Starlette/uvicorn. Só na rede interna (dokploy-network) — nenhuma porta pública.
+  # Starlette/uvicorn. Sem porta pública: só na rede interna (dokploy-network) + loopback
+  # do host (127.0.0.1:8090) para túnel SSH de clientes externos (ex. Claude Code).
   # Autenticado por MAKIMA_MCP_TOKEN.
   mcp:
     build:
@@ -43,6 +44,10 @@ services:
     container_name: makima-mcp
     env_file: .env
     restart: unless-stopped
+    ports:
+      # Vincula ao loopback para não expor publicamente — acesso por SSH tunnel
+      # (clientes MCP externos, ex. Claude Code). A internet continua sem alcance.
+      - "127.0.0.1:8090:8090"
     networks:
       - default
       - dokploy-network
