@@ -11,7 +11,7 @@ from datetime import datetime
 
 # Importa os helpers PostgreSQL compartilhados
 from agents.db import run_select, run_dml
-from agents.nami.tools import _TZ, _invalidate_accounts_cache
+from agents.nami.tools import _TZ, _invalidate_accounts_cache, _today
 
 # Tipos de conta bancária aceitos. Cartões de crédito são gerenciados
 # separadamente em credit_cards e NÃO são contas — não estão aqui.
@@ -197,17 +197,29 @@ def delete_account(account_id: str) -> dict:
         return {"status": "error", "message": str(e)}
 
 
+# Efeito de uma transação no saldo da conta: receita soma, despesa subtrai e transferência
+# soma o valor JÁ COM SINAL (negativo na origem, positivo no destino — spec 070).
+_BALANCE_DELTA_SQL = """
+    CASE WHEN t.tipo = 'Receita'       THEN  t.valor
+         WHEN t.tipo = 'Despesa'       THEN -t.valor
+         WHEN t.tipo = 'Transferencia' THEN  t.valor
+         ELSE 0 END
+"""
+
+
 def get_account_balance(account_id: str) -> dict:
     """Calcula o saldo atual de uma conta a partir das transações registradas.
 
-    Saldo atual = balance_inicial + SUM(Receitas) − SUM(Despesas) das
-    transactions com account_id correspondente e deleted = FALSE.
+    Saldo atual = balance_inicial + Receitas − Despesas + Transferências (com sinal) das
+    transactions com account_id correspondente, deleted = FALSE e data até hoje —
+    lançamentos futuros (parcelas, contas agendadas) só pesam no saldo quando chegam.
 
     Args:
         account_id: ID (UUID) da conta na tabela accounts.
 
     Returns:
-        Dicionário com saldo_inicial, total_receitas, total_despesas e saldo_atual.
+        Dicionário com saldo_inicial, total_receitas, total_despesas, total_transferencias
+        (líquido: entradas − saídas) e saldo_atual.
 
     Example:
         >>> get_account_balance("uuid-abc")
@@ -223,22 +235,23 @@ def get_account_balance(account_id: str) -> dict:
 
     acc = acc_rows[0]
 
-    # Soma receitas e despesas de todas as transações não deletadas desta conta
     # COALESCE garante que retorne 0 mesmo quando não há transações
     totals = run_select(
         """
         SELECT
-          COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0) AS receitas,
-          COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0) AS despesas
+          COALESCE(SUM(CASE WHEN tipo = 'Receita'       THEN valor ELSE 0 END), 0) AS receitas,
+          COALESCE(SUM(CASE WHEN tipo = 'Despesa'       THEN valor ELSE 0 END), 0) AS despesas,
+          COALESCE(SUM(CASE WHEN tipo = 'Transferencia' THEN valor ELSE 0 END), 0) AS transferencias
         FROM transactions
-        WHERE account_id = %(account_id)s AND deleted = FALSE
+        WHERE account_id = %(account_id)s AND deleted = FALSE AND data <= %(today)s
         """,
-        {"account_id": account_id},
+        {"account_id": account_id, "today": _today()},
     )
 
     receitas = float(totals[0]["receitas"]) if totals else 0.0
     despesas = float(totals[0]["despesas"]) if totals else 0.0
-    saldo = float(acc["balance_inicial"]) + receitas - despesas
+    transferencias = float(totals[0]["transferencias"]) if totals else 0.0
+    saldo = float(acc["balance_inicial"]) + receitas - despesas + transferencias
 
     return {
         "status": "ok",
@@ -247,5 +260,43 @@ def get_account_balance(account_id: str) -> dict:
         "saldo_inicial": float(acc["balance_inicial"]),
         "total_receitas": receitas,
         "total_despesas": despesas,
+        "total_transferencias": transferencias,
         "saldo_atual": round(saldo, 2),
+    }
+
+
+def get_accounts_overview() -> dict:
+    """Saldo real de todas as contas ativas numa só consulta, mais o total.
+
+    Mesma regra de `get_account_balance`, mas agregada — evita N consultas na tela inicial
+    e dá o "patrimônio" verdadeiro (antes era só a soma dos saldos iniciais).
+
+    Returns:
+        {"status": "ok", "accounts": [{id, name, type, saldo_inicial, saldo_atual}], "saldo_total": float}
+    """
+    rows = run_select(
+        f"""
+        SELECT a.id, a.name, a.type, a.balance_inicial,
+               COALESCE(SUM({_BALANCE_DELTA_SQL}), 0) AS movimento
+        FROM accounts a
+        LEFT JOIN transactions t
+               ON t.account_id = a.id AND t.deleted = FALSE AND t.data <= %(today)s
+        WHERE a.status = 'ativo'
+        GROUP BY a.id, a.name, a.type, a.balance_inicial
+        ORDER BY a.name
+        """,
+        {"today": _today()},
+    )
+    accounts = [
+        {
+            "id": r["id"], "name": r["name"], "type": r["type"],
+            "saldo_inicial": float(r["balance_inicial"] or 0),
+            "saldo_atual": round(float(r["balance_inicial"] or 0) + float(r["movimento"] or 0), 2),
+        }
+        for r in rows
+    ]
+    return {
+        "status": "ok",
+        "accounts": accounts,
+        "saldo_total": round(sum(a["saldo_atual"] for a in accounts), 2),
     }

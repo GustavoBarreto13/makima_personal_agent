@@ -69,6 +69,7 @@ from agents.nami.tools_accounts import (
     create_account,       # Cadastra nova conta financeira
     list_accounts,        # Lista contas por status
     get_account_balance,  # Saldo atual de uma conta específica
+    get_accounts_overview, # Saldo real de todas as contas + total (patrimônio) — spec 070
     update_account,       # Atualiza campos de uma conta (spec 043 — só faltava expor)
     delete_account,       # Encerra conta — status → 'encerrado'
 )
@@ -1120,8 +1121,8 @@ def card_payment_endpoint(
 ) -> dict:
     """Registrar pagamento de fatura de um cartão de crédito.
 
-    O pagamento é registrado como uma transação Receita vinculada ao cartão,
-    reduzindo o saldo devedor calculado pela tool `get_card_debt_summary`.
+    O pagamento é uma transferência da conta vinculada ao cartão para o cartão (spec 070):
+    debita a conta e reduz a dívida, sem contar como receita nem despesa.
 
     Args:
         card_id: ID único do cartão.
@@ -1135,7 +1136,6 @@ def card_payment_endpoint(
         HTTPException: 400 se o cartão não for encontrado.
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    # Registra o pagamento no BigQuery
     result = register_card_payment(
         card_id=card_id,
         valor=body.valor,
@@ -2100,13 +2100,12 @@ def get_stats(
     """, {"start": prev_start, "end": prev_end})
     prev_expense = float((prev_rows[0].get("expense") if prev_rows else 0) or 0)
 
-    # ── Patrimônio (saldo das contas) ─────────────────────────────────────────
-    pat_rows = run_select("""
-        SELECT COALESCE(SUM(balance_inicial), 0) AS patrimonio
-        FROM accounts
-        WHERE status = 'ativo'
-    """)
-    patrimonio = float((pat_rows[0].get("patrimonio") if pat_rows else 0) or 0)
+    # ── Patrimônio (saldo REAL das contas, menos a dívida dos cartões) ─────────
+    # Antes era a soma de balance_inicial e ignorava todas as transações (spec 070).
+    overview = get_accounts_overview()
+    patrimonio = float(overview.get("saldo_total", 0) or 0)
+    debt = get_card_debt_summary()
+    divida_cartoes = float(debt.get("total_divida", 0) or 0) if debt.get("status") == "ok" else 0.0
 
     # ── Breakdown por categoria ────────────────────────────────────────────────
     cat_rows = run_select("""
@@ -2180,7 +2179,8 @@ def get_stats(
         "prev_month_expense":  prev_expense,
         "savings_rate":        savings_rate,
         "patrimonio":          patrimonio,
-        "patrimonio_liquido":  patrimonio + net,
+        "divida_cartoes":      divida_cartoes,
+        "patrimonio_liquido":  patrimonio - divida_cartoes,
         "by_category":         by_category,
         "daily_spending":      daily_spending,
         "cashflow":            cashflow,

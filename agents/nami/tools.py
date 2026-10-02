@@ -576,96 +576,112 @@ def query_expenses(
         return {"status": "error", "message": str(e)}
 
 
+def _insert_transfer_pair(
+    cur,
+    *,
+    origin: dict,
+    dest: dict,
+    dest_is_card: bool,
+    valor: float,
+    data: str,
+    notes: str,
+    names: tuple[str, str],
+    source: str = "webapp",
+) -> str:
+    """Grava os dois lados de uma transferência no cursor recebido — retorna o transfer_id.
+
+    Convenção de sinal (spec 070): `tipo='Transferencia'` guarda `valor` COM SINAL — negativo
+    no lado de origem (sai da conta) e positivo no destino (entra na conta ou abate o cartão).
+    Assim somar `valor` já dá o efeito líquido no saldo, sem precisar de coluna de direção.
+
+    `origin` é sempre uma conta bancária {id, name}; `dest` é conta ou cartão ({id, name}),
+    conforme `dest_is_card` (account_id/card_id são mutuamente exclusivos em transactions).
+    """
+    transfer_id = str(uuid.uuid4())
+    sql = """
+        INSERT INTO transactions
+          (id, name, valor, tipo, categoria, conta, account_id, card_id,
+           data, source, notes, transfer_id, created_at, deleted)
+        VALUES
+          (%(id)s, %(name)s, %(valor)s, 'Transferencia', 'Transferencia',
+           %(conta)s, %(account_id)s, %(card_id)s, %(data)s, %(source)s, %(notes)s,
+           %(transfer_id)s, NOW(), FALSE)
+    """
+    common = {"data": data, "source": source, "notes": notes or None, "transfer_id": transfer_id}
+    cur.execute(sql, {
+        **common, "id": str(uuid.uuid4()), "name": names[0], "valor": -abs(float(valor)),
+        "conta": origin["name"], "account_id": origin["id"], "card_id": None,
+    })
+    cur.execute(sql, {
+        **common, "id": str(uuid.uuid4()), "name": names[1], "valor": abs(float(valor)),
+        "conta": dest["name"],
+        "account_id": None if dest_is_card else dest["id"],
+        "card_id": dest["id"] if dest_is_card else None,
+    })
+    return transfer_id
+
+
 def create_transfer(
     from_account: str,
-    to_account: str,
-    valor: float,
+    to_account: str = "",
+    valor: float = 0.0,
     data: str = "",
     notes: str = "",
+    to_card: str = "",
 ) -> dict:
-    """Registra uma transferência entre duas contas (spec 043) — par atômico.
+    """Registra uma transferência entre contas — ou de uma conta para um cartão — par atômico.
 
-    Cria duas transações vinculadas por `transfer_id`: uma Despesa* na conta de
-    origem e uma Receita* na conta de destino (*tipo real é "Transferencia" —
-    fora de receita/despesa nos relatórios, que filtram por tipo explicitamente).
-    Atômico via get_conn(): ou os dois lados são gravados, ou nenhum (rollback).
+    Grava duas transações `tipo='Transferencia'` ligadas por `transfer_id`: a de origem com
+    `valor` NEGATIVO e a de destino com `valor` POSITIVO (spec 070). Transferência não é
+    receita nem despesa: os relatórios filtram por tipo e a ignoram, mas o saldo das contas
+    e a dívida do cartão a consideram. Atômico via get_conn(): os dois lados ou nenhum.
 
     Args:
         from_account: Nome da conta de origem (débito).
-        to_account: Nome da conta de destino (crédito).
+        to_account: Nome da conta de destino (crédito). Ignorado se `to_card` for informado.
         valor: Valor transferido em reais (positivo).
         data: Data da transferência AAAA-MM-DD (padrão: hoje).
         notes: Observações opcionais.
+        to_card: Nome do cartão de destino — é assim que se paga uma fatura (spec 070).
 
     Returns:
         {"status": "ok", "transfer_id": ...} ou {"status": "error", "message": ...}.
     """
-    if _norm(from_account) == _norm(to_account):
-        return {"status": "error", "message": "Conta de origem e destino devem ser diferentes"}
+    if valor <= 0:
+        return {"status": "error", "message": "Valor da transferência deve ser positivo"}
 
     acc_from = _resolve_account(from_account)
     if acc_from is None:
         return {"status": "error", "message": f"Conta de origem não encontrada: '{from_account}'"}
 
-    acc_to = _resolve_account(to_account)
-    if acc_to is None:
-        return {"status": "error", "message": f"Conta de destino não encontrada: '{to_account}'"}
-
-    if valor <= 0:
-        return {"status": "error", "message": "Valor da transferência deve ser positivo"}
-
-    tx_date = data or _today()
-    transfer_id = str(uuid.uuid4())
+    if to_card:
+        dest = _resolve_credit_card(to_card)
+        if dest is None:
+            return {"status": "error", "message": f"Cartão de destino não encontrado: '{to_card}'"}
+        dest_is_card = True
+    else:
+        if _norm(from_account) == _norm(to_account):
+            return {"status": "error", "message": "Conta de origem e destino devem ser diferentes"}
+        dest = _resolve_account(to_account)
+        if dest is None:
+            return {"status": "error", "message": f"Conta de destino não encontrada: '{to_account}'"}
+        if dest["id"] == acc_from["id"]:
+            return {"status": "error", "message": "Conta de origem e destino devem ser diferentes"}
+        dest_is_card = False
 
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO transactions
-                      (id, name, valor, tipo, categoria, conta, account_id, card_id,
-                       data, source, notes, transfer_id, created_at, deleted)
-                    VALUES
-                      (%(id)s, %(name)s, %(valor)s, 'Transferencia', 'Transferencia',
-                       %(conta)s, %(account_id)s, NULL, %(data)s, 'webapp', %(notes)s,
-                       %(transfer_id)s, NOW(), FALSE)
-                    """,
-                    {
-                        "id": str(uuid.uuid4()),
-                        "name": f"Transferência para {acc_to['name']}",
-                        "valor": float(valor),
-                        "conta": acc_from["name"],
-                        "account_id": acc_from["id"],
-                        "data": tx_date,
-                        "notes": notes or None,
-                        "transfer_id": transfer_id,
-                    },
-                )
-                cur.execute(
-                    """
-                    INSERT INTO transactions
-                      (id, name, valor, tipo, categoria, conta, account_id, card_id,
-                       data, source, notes, transfer_id, created_at, deleted)
-                    VALUES
-                      (%(id)s, %(name)s, %(valor)s, 'Transferencia', 'Transferencia',
-                       %(conta)s, %(account_id)s, NULL, %(data)s, 'webapp', %(notes)s,
-                       %(transfer_id)s, NOW(), FALSE)
-                    """,
-                    {
-                        "id": str(uuid.uuid4()),
-                        "name": f"Transferência de {acc_from['name']}",
-                        "valor": float(valor),
-                        "conta": acc_to["name"],
-                        "account_id": acc_to["id"],
-                        "data": tx_date,
-                        "notes": notes or None,
-                        "transfer_id": transfer_id,
-                    },
+                transfer_id = _insert_transfer_pair(
+                    cur,
+                    origin=acc_from, dest=dest, dest_is_card=dest_is_card,
+                    valor=valor, data=data or _today(), notes=notes,
+                    names=(f"Transferência para {dest['name']}", f"Transferência de {acc_from['name']}"),
                 )
         _touch_calendar()
         return {
             "status": "ok", "transfer_id": transfer_id,
-            "message": f"Transferência de R${valor:.2f} de {acc_from['name']} para {acc_to['name']}",
+            "message": f"Transferência de R${valor:.2f} de {acc_from['name']} para {dest['name']}",
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -723,6 +739,10 @@ def get_spending_summary(period: str = "month", group_by: str = "categoria") -> 
         # Formato não reconhecido — retorna erro com as opções válidas
         return {"status": "error", "message": "period inválido. Use 'month', 'week', 'year' ou 'YYYY-MM'"}
 
+    # Gasto = só Despesa. Receita e Transferencia (movimentação entre contas) não são gasto;
+    # agrupando por tipo mantém Receita visível, mas Transferencia continua de fora.
+    tipo_filter = "tipo <> 'Transferencia'" if group_by == "tipo" else "tipo = 'Despesa'"
+
     # Query que soma os valores agrupados pelo campo escolhido
     # group_col vem do dicionário group_cols acima — nunca do input direto
     sql = f"""
@@ -730,6 +750,7 @@ def get_spending_summary(period: str = "month", group_by: str = "categoria") -> 
         FROM transactions
         WHERE data BETWEEN %(start)s AND %(end)s
           AND deleted = FALSE
+          AND {tipo_filter}
         GROUP BY {group_col}
         ORDER BY total DESC
     """
@@ -783,6 +804,7 @@ def get_spending_trend(months: int = 3) -> dict:
         FROM transactions
         WHERE data BETWEEN %(start)s AND %(end)s
           AND deleted = FALSE
+          AND tipo = 'Despesa'
         GROUP BY month
         ORDER BY month
     """
@@ -1172,6 +1194,25 @@ def _cycle_status(sub: dict, today: date) -> str:
     return "atrasada" if today > due else "pendente"
 
 
+def _roll_billing_date(current: date, ciclo: str, anchor_day: int | None = None) -> date:
+    """Próximo vencimento de uma recorrência — função pura, sem banco.
+
+    Mensal avança 1 mês e anual 1 ano. O dia vem de `anchor_day` (dia de cobrança original,
+    estável entre rolagens) e é ajustado ao último dia do mês quando ele não existe
+    (31 → 30 em abril, 28/29 em fevereiro). Como a âncora nunca é sobrescrita, a conta do
+    dia 31 volta ao 31 nos meses que têm — antes ela derivava para o dia 28 para sempre.
+    """
+    from calendar import monthrange
+
+    day = anchor_day or current.day
+    if ciclo == "anual":
+        year, month = current.year + 1, current.month
+    else:
+        year = current.year + (1 if current.month == 12 else 0)
+        month = 1 if current.month == 12 else current.month + 1
+    return date(year, month, min(day, monthrange(year, month)[1]))
+
+
 def get_recurring_status(kind: str = "", status: str = "ativa") -> dict:
     """Lista recorrências (assinaturas e/ou contas fixas) com o status do ciclo corrente.
 
@@ -1275,14 +1316,8 @@ def mark_subscription_paid(
 
     # Rola next_billing: mensal +1 mês, anual +1 ano — a partir do next_billing atual
     # (não de hoje), para não perder o dia de vencimento em pagamentos adiantados
-    from datetime import timedelta
     current_next = sub["next_billing"] if sub.get("next_billing") else _today_date()
-    if sub["ciclo"] == "anual":
-        new_next = current_next.replace(year=current_next.year + 1)
-    else:
-        new_next = (current_next.replace(day=1) + timedelta(days=32)).replace(
-            day=min(current_next.day, 28)
-        )
+    new_next = _roll_billing_date(current_next, sub["ciclo"], sub.get("next_billing_day"))
 
     try:
         with get_conn() as conn:
@@ -1338,22 +1373,17 @@ def skip_subscription_cycle(id: str) -> dict:
     Returns:
         {"status": "ok"} ou {"status": "error", "message": ...}.
     """
+    # SELECT * porque next_billing_day só existe em bancos que rodaram a migração do webapp
     rows = run_select(
-        "SELECT ciclo, next_billing FROM subscriptions WHERE id = %(id)s AND (deleted = FALSE OR deleted IS NULL)",
+        "SELECT * FROM subscriptions WHERE id = %(id)s AND (deleted = FALSE OR deleted IS NULL)",
         {"id": id},
     )
     if not rows:
         return {"status": "error", "message": f"Recorrência não encontrada: {id}"}
     sub = rows[0]
 
-    from datetime import timedelta
     current_next = sub["next_billing"] if sub.get("next_billing") else _today_date()
-    if sub["ciclo"] == "anual":
-        new_next = current_next.replace(year=current_next.year + 1)
-    else:
-        new_next = (current_next.replace(day=1) + timedelta(days=32)).replace(
-            day=min(current_next.day, 28)
-        )
+    new_next = _roll_billing_date(current_next, sub["ciclo"], sub.get("next_billing_day"))
 
     try:
         run_dml(

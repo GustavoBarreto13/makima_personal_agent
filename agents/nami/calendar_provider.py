@@ -204,6 +204,7 @@ def _transaction_events(start: str, end: str) -> list[dict]:
            (created_at AT TIME ZONE 'America/Sao_Paulo') AS created_local
     FROM transactions
     WHERE deleted = FALSE
+      AND tipo <> 'Transferencia'
       AND data BETWEEN %(start)s::date AND %(end)s::date
     ORDER BY data, created_at
     """
@@ -211,8 +212,10 @@ def _transaction_events(start: str, end: str) -> list[dict]:
 
     items = []
     for row in rows:
-        # Determina o tipo semântico — receita é positivo, o restante é despesa
-        kind = "income" if row["tipo"] == "receita" else "expense"
+        # Determina o tipo semântico — receita é positivo, o restante é despesa.
+        # Transferência fica de fora na query: é movimentação entre contas, não um evento.
+        # (tipo é gravado como "Receita"/"Despesa" — a comparação antiga em minúsculas nunca batia)
+        kind = "income" if (row["tipo"] or "").lower() == "receita" else "expense"
 
         # Formata o valor em reais no padrão brasileiro
         valor_fmt = f"R$ {row['valor']:.2f}".replace(".", ",")

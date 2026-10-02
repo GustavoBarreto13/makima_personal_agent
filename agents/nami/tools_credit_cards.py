@@ -5,8 +5,8 @@ e simular cenários de quitação usando o Método Avalanche.
 
 Arquitetura: `transactions` é a fonte da verdade para saldo de cartões.
 - Dívida inicial → transação tipo Despesa na conta do cartão
-- Pagamento de fatura → transação tipo Receita na conta do cartão
-- Saldo atual = SUM(Despesas) - SUM(Receitas) via account_id no ciclo de faturamento
+- Pagamento de fatura → transferência conta→cartão (spec 070), não receita
+- Dívida = SUM(Despesas) − SUM(Receitas) − SUM(Transferências recebidas) via card_id, acumulada
 
 A tabela `credit_cards` guarda apenas metadados (limite, taxa, dias de fechamento)
 e vincula ao cadastro em `accounts` via account_id (FK lógica).
@@ -24,8 +24,12 @@ from agents.db import run_select, run_dml
 from agents.nami.tools import (
     _resolve_account,
     _invalidate_cards_cache,
+    _insert_transfer_pair,
+    _today,
+    _touch_calendar,
     create_transaction,
 )
+from agents.db import get_conn
 
 
 def _billing_cycle(closing_day: int) -> tuple:
@@ -58,6 +62,32 @@ def _billing_cycle(closing_day: int) -> tuple:
         start = date(today.year, today.month, start_day)
 
     return start.isoformat(), today.isoformat()
+
+
+def _card_debt(card_id: str) -> float:
+    """Dívida acumulada do cartão até hoje, em reais (nunca negativa).
+
+    Soma tudo que já aconteceu no cartão, não só o ciclo corrente: uma fatura fechada e
+    ainda não paga continua devida, e um pagamento de fatura anterior só abate o que
+    realmente devia. Compras com data futura (parcelas) ficam de fora até chegarem.
+      + Despesa                       → aumenta a dívida
+      − Receita                       → estorno/crédito (e pagamentos legados, pré-spec 070)
+      − Transferencia (valor positivo) → pagamento de fatura vindo de uma conta
+    """
+    rows = run_select(
+        """
+        SELECT COALESCE(SUM(CASE WHEN tipo = 'Despesa'       THEN  valor
+                                 WHEN tipo = 'Receita'       THEN -valor
+                                 WHEN tipo = 'Transferencia' THEN -valor
+                                 ELSE 0 END), 0.0) AS saldo
+        FROM transactions
+        WHERE card_id = %(card_id)s
+          AND deleted = FALSE
+          AND data <= %(today)s
+        """,
+        {"card_id": card_id, "today": _today()},
+    )
+    return max(0.0, float(rows[0]["saldo"]) if rows else 0.0)
 
 
 def register_credit_card(
@@ -288,26 +318,7 @@ def get_card_debt_summary() -> dict:
         total_limite = 0.0
 
         for card in cards:
-            start_date, end_date = _billing_cycle(card["closing_day"])
-
-            # Filtra transactions pelo card_id — separa completamente das transações de conta bancária
-            sql_saldo = """
-                SELECT
-                    COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0.0)
-                  - COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0.0)
-                  AS saldo
-                FROM transactions
-                WHERE card_id = %(card_id)s
-                  AND deleted = FALSE
-                  AND data BETWEEN %(start_date)s AND %(end_date)s
-            """
-            params_saldo = {
-                "card_id":    card["id"],
-                "start_date": start_date,
-                "end_date":   end_date,
-            }
-            rows = run_select(sql_saldo, params_saldo)
-            divida = max(0.0, rows[0]["saldo"] if rows else 0.0)
+            divida = _card_debt(card["id"])
 
             utilizacao = divida / card["limite"] * 100 if card["limite"] > 0 else 0.0
             result.append({
@@ -331,51 +342,60 @@ def get_card_debt_summary() -> dict:
         return {"status": "error", "message": str(e)}
 
 
-def register_card_payment(card_id: str, valor: float, data: str = "") -> dict:
-    """Registra pagamento de fatura de cartão de crédito.
+def register_card_payment(card_id: str, valor: float, data: str = "", from_account: str = "") -> dict:
+    """Registra o pagamento de uma fatura de cartão de crédito.
 
-    Cria uma transação tipo Receita na conta do cartão — isso subtrai do saldo
-    calculado em get_card_debt_summary, efetivamente reduzindo a dívida.
+    Pagar fatura é MOVER dinheiro, não ganhar: grava uma transferência atômica da conta
+    que paga o cartão (a vinculada em `credit_cards.account_id`, ou `from_account` se
+    informada) para o cartão. O saldo da conta cai, a dívida do cartão cai e nada disso
+    entra como receita/despesa (spec 070). Antes era gravado como Receita no cartão, o que
+    inflava a renda do mês e nunca debitava a conta bancária.
 
     Args:
         card_id: ID do cartão (retornado por register_credit_card)
         valor: Valor pago em reais (positivo)
         data: Data do pagamento no formato AAAA-MM-DD (padrão: hoje)
+        from_account: Conta de onde sai o dinheiro (padrão: a conta vinculada ao cartão)
 
     Returns:
-        Dicionário com "status": "ok" ou "status": "error".
+        Dicionário com "status": "ok" (e "transfer_id") ou "status": "error".
     """
-    # Busca cartão com nome da conta via JOIN (necessário para create_transaction)
+    if valor <= 0:
+        return {"status": "error", "message": "Valor do pagamento deve ser positivo"}
+
     sql_card = """
         SELECT cc.id, cc.name, cc.account_id, a.name AS conta
         FROM credit_cards cc
         JOIN accounts a ON a.id = cc.account_id
         WHERE cc.id = %(id)s AND cc.status = 'ativo'
     """
-    params = {"id": card_id}
 
     try:
-        cards = run_select(sql_card, params)
+        cards = run_select(sql_card, {"id": card_id})
         if not cards:
             return {"status": "error", "message": f"Cartão não encontrado: {card_id}"}
-
         card = cards[0]
 
-        # Pagamento vira Receita vinculada ao cartão — reduz o saldo calculado em get_card_debt_summary
-        from agents.nami.tools import _today
-        tx = create_transaction(
-            name=f"Pagamento fatura — {card['name']}",
-            valor=float(valor),
-            tipo="Receita",
-            categoria="Inbox",
-            conta=card["name"],    # nome do cartão para exibição
-            card_id=card["id"],    # vincula ao cartão — account_id fica NULL
-            data=data or _today(),
-        )
-        if tx.get("status") != "ok":
-            return {"status": "error", "message": f"Erro ao registrar pagamento: {tx.get('message')}"}
+        if from_account:
+            origin = _resolve_account(from_account)
+            if origin is None:
+                return {"status": "error", "message": f"Conta de origem não encontrada: '{from_account}'"}
+        else:
+            origin = {"id": card["account_id"], "name": card["conta"]}
 
-        return {"status": "ok", "message": f"Pagamento de R${abs(valor):.2f} registrado no {card['name']}"}
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                transfer_id = _insert_transfer_pair(
+                    cur,
+                    origin=origin, dest={"id": card["id"], "name": card["name"]}, dest_is_card=True,
+                    valor=valor, data=data or _today(), notes="",
+                    names=(f"Pagamento fatura — {card['name']}", f"Pagamento recebido — {card['name']}"),
+                )
+        _touch_calendar()
+        return {
+            "status": "ok", "transfer_id": transfer_id,
+            "message": f"Pagamento de R${valor:.2f} do {card['name']} saiu de {origin['name']}",
+        }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -464,26 +484,7 @@ def get_minimum_payment_cost(card_id: str) -> dict:
             return {"status": "error", "message": f"Cartão não encontrado: {card_id}"}
 
         card = cards[0]
-        start_date, end_date = _billing_cycle(card["closing_day"])
-
-        # Busca saldo via card_id — separa completamente das transações de conta bancária
-        sql_saldo = """
-            SELECT
-                COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0.0)
-              - COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0.0)
-              AS saldo
-            FROM transactions
-            WHERE card_id = %(card_id)s
-              AND deleted = FALSE
-              AND data BETWEEN %(start_date)s AND %(end_date)s
-        """
-        params_saldo = {
-            "card_id":    card["id"],
-            "start_date": start_date,
-            "end_date":   end_date,
-        }
-        rows = run_select(sql_saldo, params_saldo)
-        divida = max(0.0, float(rows[0]["saldo"]) if rows else 0.0)
+        divida = _card_debt(card["id"])
 
         if divida <= 0:
             return {"status": "ok", "card_name": card["name"], "message": "Sem dívida neste cartão",
