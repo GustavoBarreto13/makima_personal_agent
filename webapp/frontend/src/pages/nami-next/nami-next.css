@@ -1,0 +1,47 @@
+/* Pedaços da Nami que o Design System ainda não tem. Só tokens --ds-*: nada de cor, raio ou fonte literal. */
+
+/* Barra "como o mês está dividido": gasto | ainda vai sair | livre */
+.nm-bar {
+  display: flex;
+  height: 14px;
+  border-radius: var(--ds-r-pill);
+  overflow: hidden;
+  background: var(--ds-line-2);
+}
+.nm-seg { min-width: 0; height: 100%; }
+.nm-seg-gasto { background: var(--ds-accent); }
+.nm-seg-asair { background: var(--ds-warn); }
+.nm-seg-livre { background: var(--ds-success); }
+
+.nm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-2) var(--ds-space-5);
+  margin: var(--ds-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ds-text-sm);
+  color: var(--ds-ink-2);
+}
+.nm-legend li { display: flex; align-items: center; gap: var(--ds-space-2); }
+.nm-sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.nm-legend b { color: var(--ds-ink-1); font-variant-numeric: tabular-nums; }
+
+/* valores */
+.nm-amt { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; color: var(--ds-ink-1); }
+.nm-in { color: var(--ds-success); }
+.nm-late { color: var(--ds-danger); }
+
+/* seletor de mês */
+.nm-month { display: flex; align-items: center; gap: var(--ds-space-2); }
+.nm-month .ds-mono { min-width: 8.5em; text-align: center; }
+
+/* formulário */
+.nm-date { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ds-space-2); }
+.nm-suggest { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ds-space-2); }
+
+/* linha com ação ("Paguei") */
+.nm-act { display: flex; align-items: center; gap: var(--ds-space-3); cursor: default; }
+.nm-act .ds-t { flex: 1; min-width: 0; }
+
+.nm-note { margin: var(--ds-space-3) 0 0; color: var(--ds-ink-3); font-size: var(--ds-text-sm); }

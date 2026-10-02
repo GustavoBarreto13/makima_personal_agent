@@ -523,3 +523,44 @@ def test_stats_com_year_usa_o_contrato_novo_e_sem_year_o_legado():
         assert m.call_args.args == (2026, None)
     assert client.get("/api/finances/stats?year=2026&month=2026-03").status_code == 400
     assert client.get("/api/finances/stats").status_code == 400     # legado exige month=YYYY-MM
+
+
+def test_rota_pagar_fatura_repassa_a_conta_de_origem():
+    with patch(R + "register_card_payment", return_value={"status": "ok", "transfer_id": "t1"}) as m:
+        r = client.post("/api/finances/cards/c1/payment", json={"valor": 250.0, "data": "2026-10-05", "from_account": "NuConta"})
+    assert r.status_code == 201
+    m.assert_called_once_with(card_id="c1", valor=250.0, data="2026-10-05", from_account="NuConta")
+    with patch(R + "register_card_payment", return_value={"status": "ok", "transfer_id": "t2"}) as m:
+        client.post("/api/finances/cards/c1/payment", json={"valor": 10.0})
+    assert m.call_args.kwargs["from_account"] == ""      # sem conta: a vinculada ao cartão
+
+
+# ─── Transferência: apagar o par e pagar fatura pela rota de transferência ────
+
+def test_delete_transfer_apaga_as_duas_pontas_de_uma_vez():
+    with patch.object(t, "run_dml", return_value=2) as dml, patch.object(t, "_touch_calendar"):
+        r = t.delete_transfer("t-1")
+    assert r == {"status": "ok", "deleted": 2}
+    sql, params = dml.call_args.args
+    assert "WHERE transfer_id = %(id)s" in sql and "deleted = FALSE" in sql and params == {"id": "t-1"}
+
+
+def test_delete_transfer_inexistente_e_erro():
+    with patch.object(t, "run_dml", return_value=0):
+        assert t.delete_transfer("nao-existe")["status"] == "error"
+
+
+def test_query_expenses_devolve_transfer_id_para_a_ui_tratar_o_par_como_um():
+    with patch.object(t, "run_select", return_value=[]) as sel:
+        t.query_expenses()
+    assert "transfer_id" in sel.call_args.args[0]
+
+
+def test_rota_delete_transfer_e_transfer_para_cartao():
+    with patch(R + "delete_transfer", return_value={"status": "ok", "deleted": 2}) as m:
+        assert client.delete("/api/finances/transfers/t-1").status_code == 200
+    m.assert_called_once_with("t-1")
+    with patch(R + "create_transfer", return_value={"status": "ok", "transfer_id": "x"}) as m:
+        r = client.post("/api/finances/transfers", json={"from_account": "Itau", "to_card": "Nubank", "valor": 100.0})
+    assert r.status_code == 201
+    assert m.call_args.kwargs["to_card"] == "Nubank" and m.call_args.kwargs["to_account"] == ""

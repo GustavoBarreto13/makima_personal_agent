@@ -138,10 +138,13 @@ describe('conformidade: manifesto × código', () => {
     const conf = audit.loadConformance()
     for (const a of audit.loadAgents()) expect(conf.pages[a.id], a.id).toBeDefined()
   })
-  it('toda página começa como legacy exceto a de referência', () => {
+  // Migrar uma página é decisão deliberada: ao começar a migrar um agente, acrescente-o aqui.
+  // Quem não está na lista continua `legacy` (um agente não "migra sozinho" por engano no manifesto).
+  const MIGRATED = new Set(['design', 'nami'])
+  it('só as páginas listadas como migradas saem de legacy', () => {
     const conf = audit.loadConformance()
     for (const [id, p] of Object.entries(conf.pages) as [string, { status: string }][]) {
-      if (id !== 'design') expect(p.status).toBe('legacy')
+      if (!MIGRATED.has(id)) expect(p.status, id).toBe('legacy')
     }
   })
 })

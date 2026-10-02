@@ -105,8 +105,9 @@
 .ds-qc{padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--ds-card);border:1px solid var(--ds-line);border-radius:var(--ds-r-md);box-shadow:var(--ds-shadow-sm)}
 .ds-qc-box{position:relative;height:44px;border:1px solid var(--ds-line);border-radius:var(--ds-r-sm);background:var(--ds-paper);transition:border-color var(--ds-dur-1),box-shadow var(--ds-dur-1)}
 .ds-qc-box:focus-within{border-color:var(--ds-accent);box-shadow:0 0 0 3px var(--ds-accent-tint)}
-.ds-qc-mirror,.ds-qc-in{position:absolute;inset:0;padding:0 14px;font:500 15px/42px var(--ds-font-sans);letter-spacing:0;white-space:pre;border:0;background:transparent;width:100%}
-.ds-qc-mirror{overflow:hidden;color:var(--ds-ink-1);pointer-events:none}.ds-qc-in{color:transparent;caret-color:var(--ds-ink-1);outline:0}.ds-qc-in::placeholder{color:var(--ds-ink-4)}
+/* .ds-frame no seletor: o reset de base.css (.ds-frame input) tem especificidade maior e anulava color/font do campo transparente */
+.ds-qc-mirror,.ds-frame .ds-qc-in{position:absolute;inset:0;padding:0 14px;font:500 15px/42px var(--ds-font-sans);letter-spacing:0;white-space:pre;border:0;background:transparent;width:100%}
+.ds-qc-mirror{overflow:hidden;color:var(--ds-ink-1);pointer-events:none}.ds-frame .ds-qc-in{color:transparent;caret-color:var(--ds-ink-1);outline:0}.ds-qc-in::placeholder{color:var(--ds-ink-4)}
 .ds-tk{border-radius:4px}.ds-tk-place{background:var(--ds-accent-tint);color:var(--ds-accent-deep)}.ds-tk-tag{background:var(--ds-card-2);color:var(--ds-ink-2)}.ds-tk-rate{background:var(--ds-warn-tint);color:var(--ds-star-deep)}
 .ds-tk-date{background:var(--ds-info-tint);color:var(--ds-info)}.ds-tk-load{background:var(--ds-success-tint);color:var(--ds-success)}.ds-tk-dur{background:var(--ds-danger-tint);color:var(--ds-danger)}
 .ds-qc-chips{display:flex;gap:6px;flex-wrap:wrap;min-height:26px;align-items:center}

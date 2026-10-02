@@ -540,7 +540,7 @@ def query_expenses(
     # data::text converte o campo date para string (equivalente ao CAST(data AS STRING) do BigQuery)
     sql = f"""
         SELECT id, name, valor, tipo, categoria, conta, account_id, card_id,
-               data::text AS data, source, notes, subscription_id
+               data::text AS data, source, notes, subscription_id, transfer_id
         FROM transactions
         WHERE {' AND '.join(where)}
         ORDER BY data DESC, created_at DESC
@@ -756,6 +756,33 @@ def create_transfer(
             "status": "ok", "transfer_id": transfer_id,
             "message": f"Transferência de R${valor:.2f} de {acc_from['name']} para {dest['name']}",
         }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def delete_transfer(transfer_id: str) -> dict:
+    """Apaga uma transferência inteira (soft delete das DUAS pontas, atômico) — spec 070.
+
+    Transferência e pagamento de fatura são sempre um par ligado por `transfer_id`. Apagar só
+    uma das pontas deixaria o saldo da conta ou a dívida do cartão errados, então a exclusão é
+    sempre do par.
+
+    Args:
+        transfer_id: ID do par (campo `transfer_id` das duas transações).
+
+    Returns:
+        {"status": "ok", "deleted": <linhas apagadas>} ou {"status": "error", "message": ...}.
+    """
+    try:
+        affected = run_dml(
+            "UPDATE transactions SET deleted = TRUE, updated_at = NOW() "
+            "WHERE transfer_id = %(id)s AND deleted = FALSE",
+            {"id": transfer_id},
+        )
+        if affected == 0:
+            return {"status": "error", "message": f"Transferência não encontrada: {transfer_id}"}
+        _touch_calendar()
+        return {"status": "ok", "deleted": affected}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

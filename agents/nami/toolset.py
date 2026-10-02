@@ -23,6 +23,7 @@ from agents.nami.tools import (
     mark_subscription_paid,
     skip_subscription_cycle,
     create_transfer,
+    delete_transfer,
 )
 from agents.nami.tools_installments import (
     create_installment,
@@ -102,6 +103,7 @@ TOOLS = [
     # Transações e consultas
     create_transaction,
     create_transfer,
+    delete_transfer,
     query_expenses,
     update_transaction,
     delete_transaction,

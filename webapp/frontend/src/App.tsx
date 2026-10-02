@@ -27,6 +27,7 @@ import { MakimaShell } from './pages/makima/MakimaShell'        // Hub central d
 
 // Referência viva do Design System (agente fictício). Carregada sob demanda: o CSS do padrão só vai
 // para o navegador quando /design é aberta, então nada muda nos shells existentes.
+const NamiNextShell = lazy(() => import('./pages/nami-next/NamiShell').then((m) => ({ default: m.NamiShell })))
 const DesignShell = lazy(() => import('./pages/design/DesignShell').then((m) => ({ default: m.DesignShell })))
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
@@ -126,6 +127,9 @@ function App() {
 
         {/* Design System Makima — página de referência (tokens, componentes, estados) com agente fictício.
             Antes do catch-all /* para não ser capturada por ele. */}
+        {/* Nova Nami (spec 070), em prévia até substituir /nami/*. */}
+        <Route path="/nami-next/*" element={<Suspense fallback={null}><NamiNextShell /></Suspense>} />
+
         <Route path="/design" element={<Suspense fallback={null}><DesignShell /></Suspense>} />
 
         {/* Makima · Hub — Centro de Controle em tela cheia (spec 023).

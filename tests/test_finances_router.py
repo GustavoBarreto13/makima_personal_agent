@@ -495,6 +495,7 @@ class TestCards:
             card_id="card-001",
             valor=200.0,
             data="",
+            from_account="",   # sem conta informada: a vinculada ao cartão (spec 070)
         )
 
 

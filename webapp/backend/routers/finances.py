@@ -46,6 +46,7 @@ from agents.nami.tools import (
     mark_subscription_paid,  # Confirma pagamento — cria despesa + rola vencimento (atômico, spec 044)
     skip_subscription_cycle, # Pula o ciclo sem lançar despesa (spec 044)
     create_transfer,       # Par atômico débito/crédito entre contas (spec 043)
+    delete_transfer,       # Apaga as duas pontas de uma transferência (spec 070)
     suggest_entry,         # Autocompletar lançamento a partir do histórico (spec 070)
     _today_date,           # Hoje no fuso America/Sao_Paulo (spec 040) — nunca date.today() (UTC do servidor)
 )
@@ -298,6 +299,7 @@ class CardPaymentBody(BaseModel):
     """Corpo da requisição para registrar pagamento de fatura de cartão."""
     valor: float    # Valor pago em reais (obrigatório)
     data: str = ""  # Data do pagamento (vazio = hoje)
+    from_account: str = ""  # Conta de onde sai o dinheiro (vazio = a conta vinculada ao cartão)
 
 
 class RegisterLoanBody(BaseModel):
@@ -393,7 +395,8 @@ class MarkSubscriptionPaidBody(BaseModel):
 class CreateTransferBody(BaseModel):
     """Corpo da requisição para registrar uma transferência entre contas (spec 043)."""
     from_account: str    # Nome da conta de origem
-    to_account: str      # Nome da conta de destino
+    to_account: str = ""  # Nome da conta de destino (ignorado se `to_card` vier)
+    to_card: str = ""     # Nome do cartão de destino — transferir para um cartão é pagar a fatura (spec 070)
     valor: float          # Valor transferido em reais
     data: str = ""        # Data no formato YYYY-MM-DD (vazio = hoje)
     notes: str = ""        # Observações opcionais
@@ -997,10 +1000,20 @@ def create_transfer_endpoint(
     return _check_result(create_transfer(
         from_account=body.from_account,
         to_account=body.to_account,
+        to_card=body.to_card,
         valor=body.valor,
         data=body.data,
         notes=body.notes,
     ))
+
+
+@router.delete("/transfers/{transfer_id}")
+def delete_transfer_endpoint(
+    transfer_id: str,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Apagar uma transferência (ou pagamento de fatura) inteira: as duas pontas de uma vez (spec 070)."""
+    return _check_result(delete_transfer(transfer_id))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1176,6 +1189,7 @@ def card_payment_endpoint(
         card_id=card_id,
         valor=body.valor,
         data=body.data,
+        from_account=body.from_account,
     )
     return _check_result(result)
 

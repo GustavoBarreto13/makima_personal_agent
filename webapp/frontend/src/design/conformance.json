@@ -133,23 +133,25 @@
       "mobile": false
     },
     "nami": {
-      "status": "legacy",
-      "dir": "src/pages/nami",
-      "shell": "src/pages/nami/NamiShell.tsx",
+      "status": "migrating",
+      "dir": "src/pages/nami-next",
+      "shell": "src/pages/nami-next/NamiShell.tsx",
       "art": "nautica",
-      "appShell": false,
-      "hero": false,
-      "theme": false,
-      "icons": false,
-      "collections": [],
-      "quickCapture": null,
+      "appShell": true,
+      "hero": true,
+      "theme": true,
+      "icons": true,
+      "collections": [
+        "nami:lancamentos"
+      ],
+      "quickCapture": "entry-line",
       "stats": {
         "page": false,
         "metrics": []
       },
       "detail": false,
-      "prefs": false,
-      "hotkeys": false,
+      "prefs": true,
+      "hotkeys": true,
       "mobile": false
     },
     "kaguya": {
