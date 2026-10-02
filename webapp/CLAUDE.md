@@ -195,6 +195,17 @@ Em desenvolvimento o CORS libera `localhost:5173`. Em produção (container), o 
 
 ### Padrões do frontend
 
+#### Design System (padrão único de UI)
+
+Telas novas e migrações usam `webapp/frontend/src/design/` (guia: [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md);
+referência viva: rota `/design`; status por página: [`docs/DESIGN_CONFORMANCE.md`](docs/DESIGN_CONFORMANCE.md)).
+Camadas `core/` (TS puro) → `headless/` (hooks) → `ui/` (componentes `.ds-*`, tokens `--ds-*`).
+**Toda mudança de UI passa pela skill `makima-design-system`.** Comandos (em `webapp/frontend`):
+`npm run tokens` (regenera `tokens.css`/`accents.css` de `tokens.json`/`agents.json`),
+`npm run lint:design`, `npm run audit:design` (lint + contraste WCAG por agente × tema + manifesto ×
+código; `-- --report` grava o relatório) e `npm test`. Os padrões abaixo (Kaguya) continuam valendo nos
+shells legados; no padrão novo, `DatePicker`/`TimePicker`/`Field` vêm de `design/`.
+
 #### Inputs, data e hora — padrão obrigatório (Kaguya)
 
 Aplica-se a todos os campos de formulário dentro do shell Kaguya (`pages/kaguya/`).
@@ -329,6 +340,7 @@ O diário usa bullets com parsing de `@pessoa` e `#tag`. O componente `RichText.
 | 025 | **Kanban de Grupo + melhorias de board (Kaguya)** — (a) **Board de grupo** (`GroupBoardScreen`): colunas unificadas por nome entre todas as listas do grupo; DnD move o status dentro da própria lista do card; card mostra chip da lista; balde "Sem coluna" (somente leitura); `GET /api/tasks/groups/{id}/board`. (b) **Navegação de grupo na sidebar**: nome do grupo abre o board; ícone ⚙ no hover edita/exclui. (c) **Seletor de board no topbar**: dropdown aparece em `view=kanban` e `view=group`; grupos como `<optgroup>` com opção "📋 Board do grupo" + listas filhas; valores prefixados `l:<id>` / `g:<id>`. (d) **Copiar colunas de outro board**: estado vazio "Sem board ainda" ganha seletor "ou copiar de…" + botão "Copiar" que chama `POST /api/tasks/projects/{id}/copy-columns`; copia nomes+ordem+`is_done_column` em transação atômica; só aparece se existir ≥1 outro board. (e) **"+ Adicionar tarefa" por coluna também no board de grupo**: `AddTaskModal` generalizado para aceitar N destinos (`AddTaskTarget[]`) — no board de lista continua com destino único (sem seletor); no board de grupo mostra um seletor de lista (uma coluna unificada agrega os `column_id` de várias listas), com a última lista escolhida lembrada por grupo (`localStorage: kaguya:group:add-list:<id>`); oculto na coluna concluída e no balde "Sem coluna" nos dois boards. Spec: `specs/025-task-list-rework/`. | ✅ |
 | 066 | **Yato (viagens)** — router `/api/travel/*` (`webapp/backend/routers/travel.py`): viagens + roteiro dia a dia, dossiê de mobilidade (protocolo de 7 passos), matriz de conforto (motor puro `comfort_matrix.py`), checklist pré-viagem e orçamento com lançamento atômico de gastos na Nami (`log_trip_expense`). Card do Yato no Hub (próxima viagem + prontidão do dossiê). Shell `/travel/*` (`pages/yato/`) portado do design handoff — estética "caderno de bordo/dossiê", `MobilityDossier` componente-assinatura + `ProtocolWizard` um passo por vez. | ✅ backend + front-end |
 | 069 | **Calendar Hub → Google Calendar (espelho)** — impacto no webapp da spec 069 (motor em `agents/kaguya/gcal_mirror.py`). `calendar_sources_route` (`routers/tasks.py`): `_SKIP_NAMES` (= `gcal.MIRRORED_SOURCES.values()` + `"TickTick"`) esconde os 7 calendários-espelho da injeção de fontes Google — a fonte do hub já os representa na seção "Makima"; e `"Kaguya — Hábitos"` (spec 067) é **reformatado** para essa seção (`account:"makima"`, `kind:"base"`, `name:"Kaguya · Hábitos"`, inserido após a fonte `kaguya`) mantendo `id: "gcal:<id>"` — os alertas são eventos recorrentes reais do Google e continuam vindo por `/calendar/events` + filtro client-side. `CalendarsAside.tsx`: botão de contexto 💼/🏠 e âncora do aviso `firstGcalId` passam a exigir `cal.kind === 'integration'` (não só `isGcal(id)`). Sem migração; sem mudança de schema. | ✅ backend + front-end |
+| DS | **Design System Makima (fundação)** — `src/design/` + rota `/design`: tokens, tema global, `AppShell`, `Hero`, coleções (filtros/agrupar/ordenar), captura rápida, `StatsPage`, estrelas 0–5 com meia estrela, ícones Lucide, camadas/feedback, paleta `Ctrl+K`; auditoria `audit:design`; skill `makima-design-system`. Nenhum shell migrado ainda. Guia: `docs/DESIGN_SYSTEM.md` | ✅ fundação |
 | 6 | Painel de chat (Makima) | — |
 
 ---

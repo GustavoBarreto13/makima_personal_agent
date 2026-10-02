@@ -1,0 +1,63 @@
+/* GERADO por scripts/gen-tokens.mjs a partir de src/design/tokens.json. NÃO EDITE.
+   Para mudar um token: edite tokens.json e rode `npm run tokens`. */
+/* Cor de identidade de cada agente. Uso: <AgentScope agent="nami"> ou data-agent="nami". */
+
+[data-agent="makima"] {
+  --ds-accent-h: 25;
+  --ds-accent-c: 0.19;
+}
+
+[data-agent="nami"] {
+  --ds-accent-h: 52;
+  --ds-accent-c: 0.17;
+}
+
+[data-agent="kaguya"] {
+  --ds-accent-h: 252;
+  --ds-accent-c: 0.15;
+}
+
+[data-agent="frieren"] {
+  --ds-accent-h: 190;
+  --ds-accent-c: 0.12;
+}
+
+[data-agent="akane"] {
+  --ds-accent-h: 357;
+  --ds-accent-c: 0.17;
+}
+
+[data-agent="marin"] {
+  --ds-accent-h: 205;
+  --ds-accent-c: 0.13;
+}
+
+[data-agent="mai"] {
+  --ds-accent-h: 268;
+  --ds-accent-c: 0.14;
+}
+
+[data-agent="komi"] {
+  --ds-accent-h: 288;
+  --ds-accent-c: 0.15;
+}
+
+[data-agent="violet"] {
+  --ds-accent-h: 305;
+  --ds-accent-c: 0.15;
+}
+
+[data-agent="yato"] {
+  --ds-accent-h: 230;
+  --ds-accent-c: 0.1;
+}
+
+[data-agent="kurisu"] {
+  --ds-accent-h: 225;
+  --ds-accent-c: 0.12;
+}
+
+[data-agent="lucy"] {
+  --ds-accent-h: 340;
+  --ds-accent-c: 0.15;
+}

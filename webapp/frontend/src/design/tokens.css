@@ -1,0 +1,227 @@
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Bricolage+Grotesque:wght@600;700;800&display=swap');
+
+/* GERADO por scripts/gen-tokens.mjs a partir de src/design/tokens.json. NÃO EDITE.
+   Para mudar um token: edite tokens.json e rode `npm run tokens`. */
+
+:root {
+  --ds-font-display: 'Hanken Grotesk', system-ui, sans-serif;
+  --ds-font-sans: 'DM Sans', system-ui, sans-serif;
+  --ds-font-mono: 'DM Mono', ui-monospace, monospace;
+  --ds-accent-h: 25;
+  --ds-accent-c: 0.17;
+  --ds-accent-ladj: 0;
+  --ds-accent-l: 0.52;
+  --ds-accent-l-deep: 0.42;
+  --ds-accent-l-bright: 0.69;
+  --ds-accent-tint-a: 0.12;
+  --ds-accent-tint-2-a: 0.2;
+  --ds-on-accent: #fff;
+  --ds-paper: oklch(0.991 0.005 350);
+  --ds-paper-2: oklch(0.974 0.008 350);
+  --ds-card: oklch(1 0.001 350);
+  --ds-card-2: oklch(0.978 0.007 350);
+  --ds-mist: oklch(0.962 0.016 348);
+  --ds-ink-1: oklch(0.275 0.02 348);
+  --ds-ink-2: oklch(0.452 0.02 348);
+  --ds-ink-3: oklch(0.5 0.02 348);
+  --ds-ink-4: oklch(0.55 0.02 348);
+  --ds-line: oklch(0.905 0.011 348);
+  --ds-line-2: oklch(0.944 0.008 348);
+  --ds-danger: oklch(0.5 0.2 22);
+  --ds-warn: oklch(0.5 0.11 70);
+  --ds-info: oklch(0.5 0.13 245);
+  --ds-success: oklch(0.46 0.12 158);
+  --ds-danger-tint: oklch(0.5 0.2 22 / 0.13);
+  --ds-warn-tint: oklch(0.735 0.135 78 / 0.2);
+  --ds-info-tint: oklch(0.5 0.13 245 / 0.13);
+  --ds-success-tint: oklch(0.46 0.12 158 / 0.14);
+  --ds-star: oklch(0.78 0.15 82);
+  --ds-star-deep: oklch(0.52 0.12 70);
+  --ds-star-empty: oklch(0.88 0.01 350);
+  --ds-scrim: oklch(0.2 0.03 300 / 0.38);
+  --ds-glass-bg: oklch(1 0.002 350 / 0.62);
+  --ds-glass-border: oklch(1 0 0 / 0.6);
+  --ds-glass-hi: oklch(1 0 0 / 0.7);
+  --ds-glass-shadow: 0 10px 34px oklch(0.32 0.05 348 / 0.1);
+  --ds-shadow-sm: 0 1px 2px oklch(0.4 0.02 350 / 0.06);
+  --ds-shadow-md: 0 4px 14px oklch(0.4 0.02 350 / 0.1);
+  --ds-shadow-lg: 0 12px 34px oklch(0.4 0.02 350 / 0.16);
+  --ds-on-danger: #ffffff;
+  --ds-white: #ffffff;
+  --ds-r-xs: 7px;
+  --ds-r-sm: 10px;
+  --ds-r-md: 14px;
+  --ds-r-lg: 20px;
+  --ds-r-pill: 999px;
+  --ds-space-1: 4px;
+  --ds-space-2: 8px;
+  --ds-space-3: 12px;
+  --ds-space-4: 16px;
+  --ds-space-5: 22px;
+  --ds-space-6: 32px;
+  --ds-space-8: 48px;
+  --ds-text-xs: 11px;
+  --ds-text-sm: 12.5px;
+  --ds-text-md: 14px;
+  --ds-text-lg: 16px;
+  --ds-text-xl: 20px;
+  --ds-text-2xl: 28px;
+  --ds-text-display: clamp(30px, 3.6vw, 44px);
+  --ds-dur-1: 120ms;
+  --ds-dur-2: 180ms;
+  --ds-dur-3: 260ms;
+  --ds-dur-4: 400ms;
+  --ds-ease: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --ds-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ds-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ds-z-base: 0;
+  --ds-z-sticky: 10;
+  --ds-z-topbar: 20;
+  --ds-z-drawer: 40;
+  --ds-z-modal: 50;
+  --ds-z-popover: 70;
+  --ds-z-toast: 90;
+  --ds-z-palette: 100;
+  --ds-w-prose: 680px;
+  --ds-w-content: 1120px;
+  --ds-w-wide: 1440px;
+  --ds-blur: 18px;
+  --ds-blur-soft: 10px;
+  --ds-icon-stroke: 1.75;
+  --ds-icon-sm: 14px;
+  --ds-icon-md: 16px;
+  --ds-icon-lg: 20px;
+  --ds-row-pad: 12px;
+  --ds-chart-1: oklch(0.55 0.17 262);
+  --ds-chart-2: oklch(0.58 0.15 160);
+  --ds-chart-3: oklch(0.62 0.16 52);
+  --ds-chart-4: oklch(0.56 0.2 12);
+  --ds-chart-5: oklch(0.55 0.17 310);
+  --ds-chart-6: oklch(0.58 0.12 200);
+  --ds-chart-7: oklch(0.6 0.13 100);
+  --ds-chart-8: oklch(0.5 0.03 260);
+  --ds-chart-positive: oklch(0.52 0.12 158);
+  --ds-chart-negative: oklch(0.55 0.2 22);
+  --ds-ambient: radial-gradient(120% 90% at 12% 0%, var(--ds-accent-tint), transparent 46%), radial-gradient(120% 90% at 92% 8%, oklch(0.62 0.15 340 / 0.09), transparent 44%), linear-gradient(160deg, var(--ds-mist), var(--ds-paper) 60%);
+  --ds-texture: linear-gradient(transparent, transparent);
+  color-scheme: light;
+}
+
+:root,
+[data-agent] {
+  --ds-accent: oklch(calc(var(--ds-accent-l) + var(--ds-accent-ladj)) var(--ds-accent-c) var(--ds-accent-h));
+  --ds-accent-deep: oklch(calc(var(--ds-accent-l-deep) + var(--ds-accent-ladj)) var(--ds-accent-c) var(--ds-accent-h));
+  --ds-accent-bright: oklch(calc(var(--ds-accent-l-bright) + var(--ds-accent-ladj)) var(--ds-accent-c) var(--ds-accent-h));
+  --ds-accent-tint: oklch(var(--ds-accent-l) var(--ds-accent-c) var(--ds-accent-h) / var(--ds-accent-tint-a));
+  --ds-accent-tint-2: oklch(var(--ds-accent-l) var(--ds-accent-c) var(--ds-accent-h) / var(--ds-accent-tint-2-a));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ds-theme="light"]) {
+    --ds-accent-l: 0.72;
+    --ds-accent-l-deep: 0.82;
+    --ds-accent-l-bright: 0.8;
+    --ds-accent-tint-a: 0.16;
+    --ds-accent-tint-2-a: 0.26;
+    --ds-on-accent: oklch(0.18 0.01 320);
+    --ds-paper: oklch(0.185 0.022 320);
+    --ds-paper-2: oklch(0.21 0.022 320);
+    --ds-card: oklch(0.238 0.022 320);
+    --ds-card-2: oklch(0.27 0.022 320);
+    --ds-mist: oklch(0.22 0.025 320);
+    --ds-ink-1: oklch(0.945 0.01 340);
+    --ds-ink-2: oklch(0.8 0.015 340);
+    --ds-ink-3: oklch(0.7 0.015 340);
+    --ds-ink-4: oklch(0.67 0.015 340);
+    --ds-line: oklch(0.36 0.02 320);
+    --ds-line-2: oklch(0.3 0.02 320);
+    --ds-danger: oklch(0.72 0.17 22);
+    --ds-warn: oklch(0.8 0.13 80);
+    --ds-info: oklch(0.76 0.11 245);
+    --ds-success: oklch(0.76 0.13 158);
+    --ds-danger-tint: oklch(0.72 0.17 22 / 0.18);
+    --ds-warn-tint: oklch(0.8 0.13 80 / 0.18);
+    --ds-info-tint: oklch(0.76 0.11 245 / 0.18);
+    --ds-success-tint: oklch(0.76 0.13 158 / 0.18);
+    --ds-star: oklch(0.82 0.15 85);
+    --ds-star-deep: oklch(0.85 0.12 85);
+    --ds-star-empty: oklch(0.4 0.02 330);
+    --ds-scrim: oklch(0 0 0 / 0.55);
+    --ds-glass-bg: oklch(0.32 0.02 348 / 0.42);
+    --ds-glass-border: oklch(1 0 0 / 0.08);
+    --ds-glass-hi: oklch(1 0 0 / 0.06);
+    --ds-glass-shadow: 0 10px 34px oklch(0 0 0 / 0.28);
+    --ds-shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3);
+    --ds-shadow-md: 0 4px 16px oklch(0 0 0 / 0.4);
+    --ds-shadow-lg: 0 14px 40px oklch(0 0 0 / 0.55);
+    --ds-on-danger: oklch(0.18 0.01 320);
+    --ds-white: #ffffff;
+    --ds-chart-1: oklch(0.74 0.14 262);
+    --ds-chart-2: oklch(0.77 0.14 160);
+    --ds-chart-3: oklch(0.78 0.14 60);
+    --ds-chart-4: oklch(0.75 0.15 12);
+    --ds-chart-5: oklch(0.76 0.14 310);
+    --ds-chart-6: oklch(0.78 0.11 200);
+    --ds-chart-7: oklch(0.8 0.12 100);
+    --ds-chart-8: oklch(0.72 0.03 260);
+    --ds-chart-positive: oklch(0.76 0.13 158);
+    --ds-chart-negative: oklch(0.72 0.17 22);
+    color-scheme: dark;
+}
+}
+
+:root[data-ds-theme="dark"] {
+  --ds-accent-l: 0.72;
+  --ds-accent-l-deep: 0.82;
+  --ds-accent-l-bright: 0.8;
+  --ds-accent-tint-a: 0.16;
+  --ds-accent-tint-2-a: 0.26;
+  --ds-on-accent: oklch(0.18 0.01 320);
+  --ds-paper: oklch(0.185 0.022 320);
+  --ds-paper-2: oklch(0.21 0.022 320);
+  --ds-card: oklch(0.238 0.022 320);
+  --ds-card-2: oklch(0.27 0.022 320);
+  --ds-mist: oklch(0.22 0.025 320);
+  --ds-ink-1: oklch(0.945 0.01 340);
+  --ds-ink-2: oklch(0.8 0.015 340);
+  --ds-ink-3: oklch(0.7 0.015 340);
+  --ds-ink-4: oklch(0.67 0.015 340);
+  --ds-line: oklch(0.36 0.02 320);
+  --ds-line-2: oklch(0.3 0.02 320);
+  --ds-danger: oklch(0.72 0.17 22);
+  --ds-warn: oklch(0.8 0.13 80);
+  --ds-info: oklch(0.76 0.11 245);
+  --ds-success: oklch(0.76 0.13 158);
+  --ds-danger-tint: oklch(0.72 0.17 22 / 0.18);
+  --ds-warn-tint: oklch(0.8 0.13 80 / 0.18);
+  --ds-info-tint: oklch(0.76 0.11 245 / 0.18);
+  --ds-success-tint: oklch(0.76 0.13 158 / 0.18);
+  --ds-star: oklch(0.82 0.15 85);
+  --ds-star-deep: oklch(0.85 0.12 85);
+  --ds-star-empty: oklch(0.4 0.02 330);
+  --ds-scrim: oklch(0 0 0 / 0.55);
+  --ds-glass-bg: oklch(0.32 0.02 348 / 0.42);
+  --ds-glass-border: oklch(1 0 0 / 0.08);
+  --ds-glass-hi: oklch(1 0 0 / 0.06);
+  --ds-glass-shadow: 0 10px 34px oklch(0 0 0 / 0.28);
+  --ds-shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3);
+  --ds-shadow-md: 0 4px 16px oklch(0 0 0 / 0.4);
+  --ds-shadow-lg: 0 14px 40px oklch(0 0 0 / 0.55);
+  --ds-on-danger: oklch(0.18 0.01 320);
+  --ds-white: #ffffff;
+  --ds-chart-1: oklch(0.74 0.14 262);
+  --ds-chart-2: oklch(0.77 0.14 160);
+  --ds-chart-3: oklch(0.78 0.14 60);
+  --ds-chart-4: oklch(0.75 0.15 12);
+  --ds-chart-5: oklch(0.76 0.14 310);
+  --ds-chart-6: oklch(0.78 0.11 200);
+  --ds-chart-7: oklch(0.8 0.12 100);
+  --ds-chart-8: oklch(0.72 0.03 260);
+  --ds-chart-positive: oklch(0.76 0.13 158);
+  --ds-chart-negative: oklch(0.72 0.17 22);
+  color-scheme: dark;
+}
+
+[data-ds-density="compact"] {
+  --ds-row-pad: 7px;
+}

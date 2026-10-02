@@ -1,0 +1,15 @@
+{
+  "name": "Makima",
+  "short_name": "Makima",
+  "description": "Agentes pessoais da Makima: finanças, tarefas, livros, filmes, animes, séries, pessoas, diário e viagens.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fcf8fa",
+  "theme_color": "#fcf8fa",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "/favicon.png", "sizes": "256x256", "type": "image/png", "purpose": "any" }
+  ]
+}

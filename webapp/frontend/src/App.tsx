@@ -3,7 +3,7 @@
 // Ao carregar, verifica com o backend se o usuário está autenticado via cookie de sessão.
 // Se autenticado, renderiza o layout completo com sidebar e as rotas de cada página.
 
-import { useEffect, useState } from 'react'             // Hooks do React: efeito colateral e estado local
+import { Suspense, lazy, useEffect, useState } from 'react'  // Hooks do React: efeito colateral, estado local e carregamento sob demanda
 import { BrowserRouter, Routes, Route } from 'react-router-dom'  // Roteamento de páginas SPA
 
 import Login         from './pages/Login'               // Tela de login com botão "Entrar com Google"
@@ -24,6 +24,10 @@ import { MaiShell }   from './pages/mai/MaiShell'              // Shell de séri
 import { KomiShell }  from './pages/komi/KomiShell'            // Shell de pessoas e contatos (Komi, spec 014)
 import { YatoShell }  from './pages/yato/YatoShell'            // Shell de viagens (Yato, spec 066)
 import { MakimaShell } from './pages/makima/MakimaShell'        // Hub central da Makima — rota / em tela cheia (spec 023)
+
+// Referência viva do Design System (agente fictício). Carregada sob demanda: o CSS do padrão só vai
+// para o navegador quando /design é aberta, então nada muda nos shells existentes.
+const DesignShell = lazy(() => import('./pages/design/DesignShell').then((m) => ({ default: m.DesignShell })))
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
@@ -119,6 +123,10 @@ function App() {
         {/* Yato · Viagens — roteiro, dossiê de mobilidade e orçamento (spec 066).
             Antes do catch-all /* para o shell assumir as sub-rotas de /travel. */}
         <Route path="/travel/*" element={<YatoShell />} />
+
+        {/* Design System Makima — página de referência (tokens, componentes, estados) com agente fictício.
+            Antes do catch-all /* para não ser capturada por ele. */}
+        <Route path="/design" element={<Suspense fallback={null}><DesignShell /></Suspense>} />
 
         {/* Makima · Hub — Centro de Controle em tela cheia (spec 023).
             Rota exata `/`, renderizada SEM o Layout/sidebar global. Deve vir

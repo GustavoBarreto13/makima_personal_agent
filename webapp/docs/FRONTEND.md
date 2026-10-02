@@ -634,6 +634,13 @@ Em erros HTTP (`!response.ok`), o wrapper lança `Error("HTTP <status>")`.
 
 ## Theming e personagens
 
+> **Design System Makima.** Existe um padrão compartilhado em `webapp/frontend/src/design/` (tokens
+> `--ds-*`, tema global, `AppShell`, componentes, coleções, captura rápida, estatísticas), com
+> página de referência em `/design`. Os shells abaixo ainda usam a identidade própria de cada
+> um (`legacy`) e migram um por vez — ver [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) (guia) e
+> [`DESIGN_CONFORMANCE.md`](DESIGN_CONFORMANCE.md) (status por página). No padrão, cada agente
+> mantém só a **cor de identidade** (`agents.json`) e o retrato; a estrutura é igual para todos.
+
 Cada shell tem identidade visual própria baseada num personagem de anime:
 
 | Shell | Personagem | Imagem | Arquivo CSS | Classe raiz |

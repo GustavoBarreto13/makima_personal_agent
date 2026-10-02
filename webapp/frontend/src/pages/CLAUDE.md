@@ -40,7 +40,25 @@ Cada Shell tem seu próprio arquivo CSS com tokens OKLCH (`--garnet`, `--sapphir
 
 - Usar somente os tokens declarados no CSS do próprio domínio.
 - Não importar `nami.css` dentro de `violet/`, nem o inverso.
-- Tokens globais (`--ink-*`, `--line-*`, `--mist`) vêm do CSS raiz da app.
+- Os shells **não** compartilham tokens: `--ink-*`, `--line-*`, `--mist` etc. são redeclarados em cada CSS de domínio (o `index.css` só tem a paleta hex legada do Tailwind). O padrão compartilhado é o Design System (abaixo).
+
+---
+
+### Design System — telas novas e migrações usam `src/design/`
+
+Existe um padrão único (tokens `--ds-*`, `AppShell`, `Hero`, `useCollection`, `QuickCapture`, `StatsPage`,
+`DetailPage`, `Stars`/`RateInput`, ícones Lucide, `Modal`/`Toast`/`confirm()`…). Guia completo:
+[`webapp/docs/DESIGN_SYSTEM.md`](../../../docs/DESIGN_SYSTEM.md); referência viva: rota `/design`;
+status por página: [`DESIGN_CONFORMANCE.md`](../../../docs/DESIGN_CONFORMANCE.md).
+
+- **Toda mudança de UI passa pela skill `makima-design-system`** (pergunta a direção de arte da
+  página, segue o checklist, roda `npm run audit:design` e atualiza `src/design/conformance.json`).
+- **Não crie** tokens, raios, fontes, ícones, Toast, TweaksPanel, modais, botões ou pickers locais:
+  use os do `design/`. Shells legados continuam como estão até serem migrados, um por vez.
+- **Ao entregar uma feature de domínio**, declare quais métricas ela acrescenta à `StatsPage` do
+  agente (métricas mínimas por domínio em `conformance.json` → `statsRequired`).
+- `npm test` inclui a auditoria (`audit.test.ts`) e os testes de componente; página `conformant`
+  que perder qualquer item do padrão falha o teste.
 
 ---
 

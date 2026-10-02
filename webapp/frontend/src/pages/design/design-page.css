@@ -1,0 +1,122 @@
+/* Estilos só da página de referência /design (não fazem parte do padrão): barra do topo e moldura do app. */
+
+.dp-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ds-paper);
+  color: var(--ds-ink-1);
+  font-family: var(--ds-font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.dp-root *,
+.dp-root *::before,
+.dp-root *::after {
+  box-sizing: border-box;
+}
+
+.dp-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 16px;
+}
+.dp-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dp-title b {
+  font-family: var(--ds-font-display);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+.dp-title span {
+  font-size: 12px;
+  color: var(--ds-ink-3);
+}
+.dp-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dp-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px 16px;
+}
+.dp-frame {
+  position: relative;
+  width: 100%;
+  max-width: 1440px;
+  border: 1px solid var(--ds-line);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--ds-shadow-lg);
+  background: var(--ds-paper);
+  transition: max-width var(--ds-dur-3) var(--ds-ease), border-radius var(--ds-dur-3);
+}
+.dp-frame.dp-phone {
+  max-width: 390px;
+  max-height: 820px;
+  border-radius: 34px;
+  border-width: 5px;
+}
+
+.dp-sw {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+}
+.dp-swc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ds-ink-3);
+}
+.dp-swc i {
+  display: block;
+  height: 42px;
+  border-radius: var(--ds-r-sm);
+  border: 1px solid var(--ds-line);
+}
+.dp-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.dp-srow {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.dp-icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+.dp-ic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 4px;
+  border: 1px solid var(--ds-line-2);
+  border-radius: var(--ds-r-sm);
+  color: var(--ds-ink-2);
+  text-align: center;
+}
+.ds-pop {
+  animation: ds-checkpop 0.4s var(--ds-ease);
+}

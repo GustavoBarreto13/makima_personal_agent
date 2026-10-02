@@ -1,0 +1,19 @@
+/* Estilo de arte "Caderno" (exemplo): papel, linhas de pauta, cantos retos, sombra seca.
+   REGRA: um estilo de arte muda só o VISUAL. Aqui só entram custom properties --ds-* visuais.
+   É proibido declarar layout (display, grid, flex, position, width, height, margin, padding, gap, order, z-index):
+   o lint:design rejeita, e o teste de "estrutura idêntica" compara o DOM com o estilo padrão. */
+
+.ds-app[data-ds-art="caderno"] {
+  --ds-font-display: 'Bricolage Grotesque', 'Hanken Grotesk', sans-serif;
+  --ds-r-xs: 4px;
+  --ds-r-sm: 6px;
+  --ds-r-md: 8px;
+  --ds-r-lg: 10px;
+  --ds-glass-bg: color-mix(in oklab, var(--ds-card) 94%, transparent);
+  --ds-glass-border: var(--ds-line);
+  --ds-glass-hi: transparent;
+  --ds-blur: 0px;
+  --ds-glass-shadow: 3px 3px 0 var(--ds-line);
+  --ds-texture: repeating-linear-gradient(transparent 0 31px, color-mix(in oklab, var(--ds-accent) 14%, transparent) 31px 32px);
+  --ds-ambient: linear-gradient(var(--ds-paper), var(--ds-paper));
+}

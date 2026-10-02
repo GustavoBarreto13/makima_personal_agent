@@ -1,0 +1,243 @@
+/* Componentes novos do padrão (não existiam na demo): dinheiro, etiquetas, seletor de pessoas, e utilidades. */
+
+.ds-datebtn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ds-money {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--ds-line);
+  background: var(--ds-card);
+  border-radius: var(--ds-r-sm);
+  color: var(--ds-ink-3);
+  transition: border-color var(--ds-dur-1), box-shadow var(--ds-dur-1);
+}
+.ds-money:focus-within {
+  border-color: var(--ds-accent);
+  box-shadow: 0 0 0 3px var(--ds-accent-tint);
+}
+.ds-money input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: 0;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-ink-1);
+}
+
+.ds-taginput {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: 38px;
+  padding: 5px 8px;
+  border: 1px solid var(--ds-line);
+  background: var(--ds-card);
+  border-radius: var(--ds-r-sm);
+  transition: border-color var(--ds-dur-1), box-shadow var(--ds-dur-1);
+}
+.ds-taginput:focus-within {
+  border-color: var(--ds-accent);
+  box-shadow: 0 0 0 3px var(--ds-accent-tint);
+}
+.ds-taginput input {
+  flex: 1;
+  min-width: 120px;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  outline: 0;
+  font-size: 14px;
+}
+
+.ds-combo {
+  position: relative;
+}
+.ds-combo-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: var(--ds-z-popover);
+  max-height: 260px;
+  overflow: auto;
+  padding: 6px;
+  background: var(--ds-card);
+  border: 1px solid var(--ds-line);
+  border-radius: var(--ds-r-md);
+  box-shadow: var(--ds-shadow-lg);
+  animation: ds-fadescale var(--ds-dur-2) var(--ds-ease);
+}
+.ds-combo-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--ds-r-xs);
+  background: transparent;
+  text-align: left;
+}
+.ds-combo-item:hover {
+  background: var(--ds-card-2);
+}
+.ds-combo-item small {
+  display: block;
+  font-size: 11.5px;
+  color: var(--ds-ink-3);
+}
+
+/* Barra de ações no rodapé do cartão, linhas de detalhe, etc. */
+.ds-row-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.ds-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ds-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Tabela que vira lista de cartões no celular. */
+.ds-table-wrap {
+  overflow-x: auto;
+}
+.ds-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ds-table th {
+  text-align: left;
+  padding: 8px 10px;
+  font: 500 10.5px var(--ds-font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ds-ink-4);
+  border-bottom: 1px solid var(--ds-line);
+}
+.ds-table td {
+  padding: var(--ds-row-pad) 10px;
+  border-bottom: 1px solid var(--ds-line-2);
+}
+@container ds-frame (max-width: 639px) {
+  .ds-table[data-mobile="cards"] thead {
+    display: none;
+  }
+  .ds-table[data-mobile="cards"] tr {
+    display: grid;
+    gap: 4px;
+    padding: 12px;
+    margin-bottom: 8px;
+    background: var(--ds-card);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+  }
+  .ds-table[data-mobile="cards"] td {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 2px 0;
+    border: 0;
+  }
+  .ds-table[data-mobile="cards"] td::before {
+    content: attr(data-label);
+    font: 500 10.5px var(--ds-font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ds-ink-4);
+  }
+}
+
+/* Imagem com proporção reservada e fade-in (sem pular o layout). */
+.ds-img {
+  position: relative;
+  overflow: hidden;
+  background: var(--ds-card-2);
+}
+.ds-img img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--ds-dur-3) var(--ds-ease);
+}
+.ds-img img[data-loaded="true"] {
+  opacity: 1;
+}
+.ds-ratio-poster { aspect-ratio: 2 / 3; }
+.ds-ratio-still { aspect-ratio: 16 / 9; }
+.ds-ratio-square { aspect-ratio: 1 / 1; }
+
+/* Toque: alvos de 44px em dispositivos de ponteiro grosso. */
+@media (pointer: coarse) {
+  .ds-frame .ds-btn,
+  .ds-frame .ds-chip,
+  .ds-frame .ds-iconbtn,
+  .ds-frame .ds-seg button,
+  .ds-frame .ds-input,
+  .ds-frame .ds-select,
+  .ds-frame .ds-mi,
+  .ds-frame .ds-nav-item {
+    min-height: 44px;
+  }
+  .ds-frame .ds-iconbtn {
+    min-width: 44px;
+  }
+  /* Ações que só apareciam no hover ficam sempre visíveis. */
+  .ds-frame [data-hover-actions] {
+    opacity: 1 !important;
+  }
+}
+
+/* Cores dos tokens da captura rápida que não existiam na demo (cada tipo = uma cor semântica ou de acento). */
+.ds-tk-person { background: var(--ds-accent-tint); color: var(--ds-accent-deep); }
+.ds-tk-priority { background: var(--ds-danger-tint); color: var(--ds-danger); }
+.ds-tk-recur { background: var(--ds-info-tint); color: var(--ds-info); }
+.ds-tk-amount { background: var(--ds-success-tint); color: var(--ds-success); }
+.ds-tk-progress { background: var(--ds-warn-tint); color: var(--ds-warn); }
+
+/* Chip de status sobre a capa colorida: fundo sólido para manter o contraste. */
+.ds-cv-l .ds-st {
+  background: color-mix(in oklab, var(--ds-card) 94%, transparent);
+  box-shadow: var(--ds-shadow-sm);
+}
+
+/* Controles segmentados dentro de grupos de filtro não esticam a largura toda. */
+.ds-fgrp > .ds-seg {
+  align-self: flex-start;
+}
+
+/* Celular: dicas mono longas do cabeçalho de seção saem (o título basta). */
+@container ds-frame (max-width: 639px) {
+  .ds-sec-h > .ds-mono {
+    display: none;
+  }
+}
+
+/* Grupo da nota: slider (estrelas) + valor + limpar. O botão fica FORA do slider (a11y: sem interativo aninhado). */
+.ds-rate-group {
+  display: inline-flex;
+  align-items: center;
+}

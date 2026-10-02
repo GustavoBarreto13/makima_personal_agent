@@ -1,0 +1,356 @@
+{
+  "$description": "Manifesto de conformidade por página. Lido pelo audit:design (scripts/lib/design-audit.mjs) e por conformance.ts. Status: legacy | migrating | conformant.",
+  "statsRequired": {
+    "frieren": [
+      "books_started",
+      "books_finished",
+      "books_abandoned",
+      "pages",
+      "pages_per_day",
+      "days_reading",
+      "days_per_book",
+      "longest_book",
+      "yearly_goal"
+    ],
+    "akane": [
+      "distinct_films",
+      "sessions",
+      "rewatches",
+      "hours",
+      "decades",
+      "country_language",
+      "cinema_vs_home",
+      "watchlist_added_vs_watched"
+    ],
+    "marin": [
+      "episodes",
+      "completed_in_year",
+      "dropped",
+      "release_season",
+      "studios",
+      "ratings"
+    ],
+    "mai": [
+      "series_finished",
+      "series_dropped",
+      "episodes",
+      "longest_binge",
+      "networks_by_episodes"
+    ],
+    "violet": [
+      "days",
+      "words",
+      "streaks",
+      "hours_local_tz",
+      "emotions_intensity",
+      "top_people_tags",
+      "highlight_rate"
+    ],
+    "kaguya": [
+      "completed_per_week",
+      "on_time_vs_late",
+      "by_list_tag",
+      "habits_percent",
+      "goals_experiments",
+      "focus"
+    ],
+    "nami": [
+      "income_expense_by_month",
+      "savings_rate",
+      "top_categories",
+      "net_worth_real"
+    ],
+    "komi": [
+      "interactions_per_month",
+      "people_without_contact",
+      "birthdays",
+      "cross_mentions"
+    ],
+    "yato": [
+      "trips",
+      "days_travelled",
+      "countries_cities",
+      "spend_per_day_vs_budget",
+      "categories"
+    ],
+    "design": [
+      "workouts",
+      "hours",
+      "volume",
+      "distance",
+      "active_days",
+      "avg_rating"
+    ]
+  },
+  "pages": {
+    "design": {
+      "status": "conformant",
+      "dir": "src/pages/design",
+      "shell": "src/pages/design/DesignShell.tsx",
+      "art": "default",
+      "appShell": true,
+      "hero": true,
+      "theme": true,
+      "icons": true,
+      "collections": [
+        "design:workouts"
+      ],
+      "quickCapture": "workout-log",
+      "stats": {
+        "page": true,
+        "metrics": [
+          "workouts",
+          "hours",
+          "volume",
+          "distance",
+          "active_days",
+          "avg_rating"
+        ]
+      },
+      "detail": true,
+      "prefs": true,
+      "hotkeys": true,
+      "mobile": true
+    },
+    "makima": {
+      "status": "legacy",
+      "dir": "src/pages/makima",
+      "shell": "src/pages/makima/MakimaShell.tsx",
+      "art": null,
+      "appShell": false,
+      "hero": false,
+      "theme": false,
+      "icons": false,
+      "collections": [],
+      "quickCapture": null,
+      "stats": {
+        "page": false,
+        "metrics": []
+      },
+      "detail": false,
+      "prefs": false,
+      "hotkeys": false,
+      "mobile": false
+    },
+    "nami": {
+      "status": "legacy",
+      "dir": "src/pages/nami",
+      "shell": "src/pages/nami/NamiShell.tsx",
+      "art": null,
+      "appShell": false,
+      "hero": false,
+      "theme": false,
+      "icons": false,
+      "collections": [],
+      "quickCapture": null,
+      "stats": {
+        "page": false,
+        "metrics": []
+      },
+      "detail": false,
+      "prefs": false,
+      "hotkeys": false,
+      "mobile": false
+    },
+    "kaguya": {
+      "status": "legacy",
+      "dir": "src/pages/kaguya",
+      "shell": "src/pages/kaguya/KaguyaShell.tsx",
+      "art": null,
+      "appShell": false,
+      "hero": false,
+      "theme": false,
+      "icons": false,
+      "collections": [],
+      "quickCapture": null,
+      "stats": {
+        "page": false,
+        "metrics": []
+      },
+      "detail": false,
+      "prefs": false,
+      "hotkeys": false,
+      "mobile": false
+    },
+    "frieren": {
+      "status": "legacy",
+      "dir": "src/pages/frieren",
+      "shell": "src/pages/frieren/FrierenShell.tsx",
+      "art": null,
+      "appShell": false,
+      "hero": false,
+      "theme": false,
+      "icons": false,
+      "collections": [],
+      "quickCapture": null,
+      "stats": {
+        "page": false,
+        "metrics": []
+      },
+      "detail": false,
+      "prefs": false,
+      "hotkeys": false,
+      "mobile": false
+    },
+    "akane": {
+      "status": "legacy",
+      "dir": "src/pages/akane",
+      "shell": "src/pages/akane/AkaneShell.tsx",
+      "art": null,
+      "appShell": false,
+      "hero": false,
+      "theme": false,
+      "icons": false,
+      "collections": [],
+      "quickCapture": null,
+      "stats": {
+        "page": false,
+        "metrics": []
+      },
+      "detail": false,
+      "prefs": false,
+      "hotkeys": false,
+      "mobile": false
+    },
+    "marin": {
+      "status": "legacy",
+      "dir": "src/pages/marin",
+      "shell": "src/pages/marin/MarinShell.tsx",
+      "art": null,
+      "appShell": false,
+      "hero": false,
+      "theme": false,
+      "icons": false,
+      "collections": [],
+      "quickCapture": null,
+      "stats": {
+        "page": false,
+        "metrics": []
+      },
+      "detail": false,
+      "prefs": false,
+      "hotkeys": false,
+      "mobile": false
+    },
+    "mai": {
+      "status": "legacy",
+      "dir": "src/pages/mai",
+      "shell": "src/pages/mai/MaiShell.tsx",
+      "art": null,
+      "appShell": false,
+      "hero": false,
+      "theme": false,
+      "icons": false,
+      "collections": [],
+      "quickCapture": null,
+      "stats": {
+        "page": false,
+        "metrics": []
+      },
+      "detail": false,
+      "prefs": false,
+      "hotkeys": false,
+      "mobile": false
+    },
+    "komi": {
+      "status": "legacy",
+      "dir": "src/pages/komi",
+      "shell": "src/pages/komi/KomiShell.tsx",
+      "art": null,
+      "appShell": false,
+      "hero": false,
+      "theme": false,
+      "icons": false,
+      "collections": [],
+      "quickCapture": null,
+      "stats": {
+        "page": false,
+        "metrics": []
+      },
+      "detail": false,
+      "prefs": false,
+      "hotkeys": false,
+      "mobile": false
+    },
+    "violet": {
+      "status": "legacy",
+      "dir": "src/pages/violet",
+      "shell": "src/pages/violet/VioletShell.tsx",
+      "art": null,
+      "appShell": false,
+      "hero": false,
+      "theme": false,
+      "icons": false,
+      "collections": [],
+      "quickCapture": null,
+      "stats": {
+        "page": false,
+        "metrics": []
+      },
+      "detail": false,
+      "prefs": false,
+      "hotkeys": false,
+      "mobile": false
+    },
+    "yato": {
+      "status": "legacy",
+      "dir": "src/pages/yato",
+      "shell": "src/pages/yato/YatoShell.tsx",
+      "art": null,
+      "appShell": false,
+      "hero": false,
+      "theme": false,
+      "icons": false,
+      "collections": [],
+      "quickCapture": null,
+      "stats": {
+        "page": false,
+        "metrics": []
+      },
+      "detail": false,
+      "prefs": false,
+      "hotkeys": false,
+      "mobile": false
+    },
+    "kurisu": {
+      "status": "legacy",
+      "dir": "src/pages/kurisu",
+      "shell": "src/pages/kurisu/KurisuShell.tsx",
+      "art": null,
+      "appShell": false,
+      "hero": false,
+      "theme": false,
+      "icons": false,
+      "collections": [],
+      "quickCapture": null,
+      "stats": {
+        "page": false,
+        "metrics": []
+      },
+      "detail": false,
+      "prefs": false,
+      "hotkeys": false,
+      "mobile": false
+    },
+    "lucy": {
+      "status": "legacy",
+      "dir": "src/pages/lucy",
+      "shell": "src/pages/lucy/LucyShell.tsx",
+      "art": null,
+      "appShell": false,
+      "hero": false,
+      "theme": false,
+      "icons": false,
+      "collections": [],
+      "quickCapture": null,
+      "stats": {
+        "page": false,
+        "metrics": []
+      },
+      "detail": false,
+      "prefs": false,
+      "hotkeys": false,
+      "mobile": false
+    }
+  }
+}

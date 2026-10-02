@@ -1,0 +1,8 @@
+/* Ponto de entrada de estilos do Design System. Importado uma vez por design/index.ts. */
+@import './tokens.css';
+@import './accents.css';
+@import './base.css';
+@import './ui/components.css';
+@import './ui/extras.css';
+@import './motion.css';
+@import './art/caderno.css';

@@ -1,0 +1,10 @@
+/* Movimento do Design System: catálogo FECHADO de padrões. Nenhum componente inventa animação própria.
+   Só animar transform e opacity. Respeita prefers-reduced-motion e [data-ds-motion="off"]. */
+
+/* Padrões: fade · fadescale (popover/menu) · slideup (toast/sheet mobile) · slideside (drawer/sheet) ·
+   rise (entrada de lista, com --ds-i para escalonar) · draw (barras) · shimmer (skeleton) · checkpop (concluir/avaliar) */
+@keyframes ds-fade{from{opacity:0}}@keyframes ds-fadescale{from{opacity:0;transform:translateY(-6px) scale(.98)}}@keyframes ds-slideup{from{opacity:0;transform:translateY(14px)}}
+@keyframes ds-slideside{from{transform:translateX(24px);opacity:0}}@keyframes ds-rise{from{opacity:0;transform:translateY(8px)}}@keyframes ds-draw{from{transform:scaleY(0)}}
+@keyframes ds-shimmer{to{background-position:-100% 0}}@keyframes ds-checkpop{0%{transform:scale(1)}40%{transform:scale(1.25)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.ds-frame *,.ds-frame *::before,.ds-frame *::after{animation-duration:.01ms!important;animation-delay:0ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+.ds-app[data-ds-motion="off"] *,.ds-app[data-ds-motion="off"] *::before,.ds-app[data-ds-motion="off"] *::after{animation-duration:.01ms!important;animation-delay:0ms!important;transition-duration:.01ms!important}

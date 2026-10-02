@@ -379,6 +379,16 @@ E7 aposentadoria do `coordinator/` e E8 QoL pendentes).
 
 ---
 
+## Design System do frontend
+
+Padrão único de UI em `webapp/frontend/src/design/` (tokens `--ds-*`, `AppShell`, `Hero`, coleções,
+captura rápida, estatísticas, estrelas 0–5 com meia estrela, ícones Lucide). Referência viva na rota
+`/design`; guia em `webapp/docs/DESIGN_SYSTEM.md`; **toda mudança de UI passa pela skill
+`makima-design-system`** (`.claude/skills/makima-design-system/`). Verificação: `npm run audit:design`
+e `npm test` em `webapp/frontend`. Os shells existentes seguem `legacy` até serem migrados, um por vez.
+
+---
+
 ## Como manter a documentação (guia da estrutura)
 
 A estrutura foi reorganizada em jul/2026 para eliminar duplicação — a regra geral é:
@@ -393,6 +403,7 @@ A estrutura foi reorganizada em jul/2026 para eliminar duplicação — a regra 
 | Schema do banco (tabelas coluna a coluna) | `docs/referencia/POSTGRES.md` | CLAUDE.md dos agentes (só nomes de tabelas) |
 | Tools e regras de cada agente | `agents/<nome>/CLAUDE.md` | tabela de agentes deste arquivo |
 | Rotas da API do webapp | `webapp/docs/API.md` | webapp/CLAUDE.md |
+| Design System do frontend (tokens, componentes, padrões, governança) | `webapp/docs/DESIGN_SYSTEM.md` (status por página em `webapp/docs/DESIGN_CONFORMANCE.md`, gerado) | webapp/CLAUDE.md, `pages/CLAUDE.md` |
 | Shells do frontend | `webapp/docs/FRONTEND.md` | webapp/frontend/src/pages/CLAUDE.md |
 | Visão geral leiga do projeto | `README.md` | — |
 
@@ -411,6 +422,7 @@ A estrutura foi reorganizada em jul/2026 para eliminar duplicação — a regra 
 4. Se criou rotas ou telas: atualizar `webapp/docs/API.md` e/ou `webapp/docs/FRONTEND.md`
 5. Se criou módulos novos: adicioná-los à árvore de arquivos deste `CLAUDE.md`
 6. Se a feature aparece para o usuário: 1 linha na tabela de páginas/funcionalidades do `README.md`
+7. Se criou/alterou **UI**: usar o Design System (`webapp/frontend/src/design/`, skill `makima-design-system`) e rodar `npm run audit:design` + `npm test` em `webapp/frontend`; atualizar `src/design/conformance.json`. Se a feature é de um domínio com estatísticas: declarar as métricas que ela acrescenta à `StatsPage` (métricas mínimas por agente em `webapp/docs/DESIGN_SYSTEM.md`)
 
 ### Ciclo de vida de um doc
 

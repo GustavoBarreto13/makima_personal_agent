@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 // Configuração do Vite — bundler de frontend para React.
@@ -14,5 +14,10 @@ export default defineConfig({
       '/api': 'http://localhost:8000',
       '/auth': 'http://localhost:8000',
     },
+  },
+  // Vitest: lógica pura roda em node; testes de componente declaram `// @vitest-environment jsdom`.
+  test: {
+    include: ['src/**/*.test.{ts,tsx}'],
+    css: false,
   },
 })
