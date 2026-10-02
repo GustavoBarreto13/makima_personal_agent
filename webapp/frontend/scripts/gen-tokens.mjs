@@ -135,9 +135,8 @@ const outputs = [
 
 let stale = 0
 for (const [file, content] of outputs) {
-  const current = existsSync(file) ? readFileSync(file, 'utf8').replace(/
-/g, '
-') : null
+  // Ignora CRLF: no Windows o git converte fim de linha e o arquivo gerado (LF) não pode virar "defasado".
+  const current = existsSync(file) ? readFileSync(file, 'utf8').split('\r\n').join('\n') : null
   if (check) {
     if (current !== content) {
       console.error(`DEFASADO: ${file.replace(root, '.')} (rode: npm run tokens)`)
