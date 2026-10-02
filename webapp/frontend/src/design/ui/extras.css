@@ -217,6 +217,7 @@
 .ds-tk-recur { background: var(--ds-info-tint); color: var(--ds-info); }
 .ds-tk-amount { background: var(--ds-success-tint); color: var(--ds-success); }
 .ds-tk-progress { background: var(--ds-warn-tint); color: var(--ds-warn); }
+.ds-tk-inst { background: var(--ds-info-tint); color: var(--ds-info); }
 
 /* Chip de status sobre a capa colorida: fundo sólido para manter o contraste. */
 .ds-cv-l .ds-st {

@@ -54,7 +54,7 @@ export function KpiGrid({ kpis, previousLabel }: { kpis: StatsKpi[]; previousLab
       {kpis.map((k) => (
         <div key={k.key} className="ds-kpi ds-card">
           <span className="ds-mono">{k.label}</span>
-          <span className="ds-v"><CountUp value={k.value} decimals={k.decimals ?? 0} />{k.unit && <small>{k.unit}</small>}</span>
+          <span className="ds-v">{k.prefix && <small>{k.prefix}</small>}<CountUp value={k.value} decimals={k.decimals ?? 0} />{k.unit && <small>{k.unit}</small>}</span>
           <DeltaBadge current={k.value} previous={k.prev} absolute={k.absoluteDelta} previousLabel={previousLabel} />
         </div>
       ))}

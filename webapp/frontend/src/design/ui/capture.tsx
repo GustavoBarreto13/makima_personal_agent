@@ -11,11 +11,11 @@ import { Stars } from './rating'
 
 const KIND_CLASS: Record<CaptureKind, string> = {
   place: 'ds-tk-place', person: 'ds-tk-person', tag: 'ds-tk-tag', priority: 'ds-tk-priority', date: 'ds-tk-date', recur: 'ds-tk-recur',
-  rating: 'ds-tk-rate', amount: 'ds-tk-amount', progress: 'ds-tk-progress', quantity: 'ds-tk-load', duration: 'ds-tk-dur',
+  rating: 'ds-tk-rate', amount: 'ds-tk-amount', progress: 'ds-tk-progress', quantity: 'ds-tk-load', duration: 'ds-tk-dur', installments: 'ds-tk-inst',
 }
 
 const KIND_ICON: Partial<Record<CaptureKind, IconName>> = {
-  place: 'place', person: 'person', date: 'calendar', recur: 'habit', priority: 'flag', amount: 'money', progress: 'play', quantity: 'energy', duration: 'clock',
+  place: 'place', person: 'person', date: 'calendar', recur: 'habit', priority: 'flag', amount: 'money', progress: 'play', quantity: 'energy', duration: 'clock', installments: 'card',
 }
 
 export interface CaptureLegendItem {

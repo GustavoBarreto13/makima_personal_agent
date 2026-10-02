@@ -158,6 +158,9 @@ uma faceta de status/tipo + uma data + ordenação por 2 campos. Estado persisti
 | `todo dia 5`, `toda sexta`, `a cada 2 dias` | recorrência |
 | `★4.5`, `*4.5`, `4.5/5` | nota (com a regra de nota ligada, `N/5` é nota, não data) |
 | `R$ 42,90`, `42,90` | valor |
+| `45`, `1.299,90` (regra `bareAmount`) | valor como número solto — vale o **último** que sobrar depois de data e parcelas; `R$` explícito tem prioridade |
+| `+3500` (regra `income`) | entrada com valor (`income: true`); `+` seguido de número deixa de ser pessoa. Sem a regra, `+Ana`/`+3500` seguem sendo pessoa |
+| `10x`, `em 10x` (regra `installments`) | nº de parcelas (2–60). O valor digitado é o **total**; o chip mostra "10x · R$ 120,00 cada". `4x8` continua sendo série (`sets`) |
 | `ep 3-5`, `p. 240` | progresso |
 | `4x8`, `80kg`, `6km`, `45min` | séries×repetições, carga, distância, duração |
 
@@ -263,8 +266,18 @@ estilos sugeridos pelo domínio (ex.: Yato "caderno de bordo", Akane "cinema noi
 "grimório", Marin "neon kawaii", Violet "papel de carta") e **Outro**. A resposta vai para o campo
 `art` em `agents.json` e em `conformance.json` (e nunca é perguntada de novo).
 
-Estilos existentes: `caderno` (exemplo). Direção de arte por agente: _nenhuma escolhida ainda_
-(todos `null`; `makima` e `design` usam `default`).
+Estilos existentes: `caderno` (exemplo) e `nautica` (**Nami** — "Carta náutica": papel creme + graticula
+no claro, marinho profundo no escuro). Direção de arte por agente: Nami = `nautica`; os demais _ainda não
+escolhida_ (`null`; `makima` e `design` usam `default`).
+
+**Armadilhas ao escrever um estilo de arte** (aprendidas no `nautica`):
+
+- Uma custom property **não pode citar a si mesma** no mesmo elemento (ciclo → inválida). Para tingir `paper`,
+  capture o valor original sob outro nome no `:root` (`--ds-art-base-paper: var(--ds-paper)`) e parta dele.
+- O lint barra cor literal, mas **o contraste de estilos de arte não é auditado**: derive cores por
+  `color-mix` de tokens (ou cor relativa `oklch(from var(--ds-info) …)`) e **confira WCAG à mão**, claro e
+  escuro, contra `ambient`, `paper`, `card`, `card-2` e `mist` — o primeiro palpite do `nautica` falhava (3.3:1).
+- No escuro, `card` precisa continuar **mais claro** que o fundo.
 
 ## Portabilidade (virar app)
 

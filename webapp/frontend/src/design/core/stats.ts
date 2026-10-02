@@ -17,6 +17,8 @@ export interface StatsKpi {
   label: string
   value: number
   unit?: string
+  /** Antes do número (ex.: "R$ "). Para moeda, que lê melhor como "R$ 1.200" do que "1200 R$". */
+  prefix?: string
   decimals?: number
   /** Mesmo período do ano anterior (null = sem base). */
   prev?: number | null

@@ -23,9 +23,15 @@ import { addDaysISO, fmtDuration, fmtMoney, fmtNumber, fmtRelative, isoDate, par
 export type CaptureRuleId =
   | 'place' | 'person' | 'tag' | 'priority' | 'date' | 'recur' | 'rating'
   | 'amount' | 'progress' | 'sets' | 'load' | 'distance' | 'duration'
+  /** Finanças (spec 070): "+3500" é entrada com valor (e "+" deixa de significar pessoa se o resto for número). */
+  | 'income'
+  /** Finanças: "10x" / "em 10x" = número de parcelas (2 a 60). Não colide com "4x8" (rule 'sets'). */
+  | 'installments'
+  /** Finanças: um número solto ("45", "1.200", "89,9") é o valor — vale o ÚLTIMO que sobrar depois de data/parcelas. */
+  | 'bareAmount'
 
 /** Categoria visual do token (cor no destaque ao vivo). */
-export type CaptureKind = 'place' | 'person' | 'tag' | 'priority' | 'date' | 'recur' | 'rating' | 'amount' | 'progress' | 'quantity' | 'duration'
+export type CaptureKind = 'place' | 'person' | 'tag' | 'priority' | 'date' | 'recur' | 'rating' | 'amount' | 'progress' | 'quantity' | 'duration' | 'installments'
 
 export interface CaptureOptions {
   rules: CaptureRuleId[]
@@ -57,6 +63,10 @@ export interface CaptureFields {
   load: number | null
   distance: number | null
   duration: number | null
+  /** Número de parcelas ("10x"), ou null. */
+  installments: number | null
+  /** true quando o valor veio de "+3500" (entrada). */
+  income: boolean
 }
 
 export interface CaptureToken {
@@ -95,12 +105,23 @@ const PRIO: Record<string, number> = { alta: 3, alto: 3, media: 2, 'média': 2, 
 const norm = (s: string): string => s.toLowerCase().replace(/[.,;:!?]+$/, '')
 const num = (s: string): number => parseFloat(s.replace(',', '.'))
 
+/** Número solto que parece dinheiro: "45", "1200", "89,9", "1.299,90", "12.5". */
+const RE_BARE_MONEY = /^(?:\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)$/
+const RE_THOUSANDS = /^\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?$/
+
+/** "1.299,90" → 1299.9 ; "12.5" → 12.5 ; "45" → 45. Ponto seguido de 3 dígitos é milhar, senão decimal. */
+function parseMoneyToken(raw: string): number {
+  if (RE_THOUSANDS.test(raw)) return parseFloat(raw.replace(/\./g, '').replace(',', '.'))
+  return num(raw)
+}
+
 const RE_TIME = /^(\d{1,2})h(\d{2})?$|^(\d{1,2}):(\d{2})$/i
 
 function emptyFields(): CaptureFields {
   return {
     title: '', place: null, people: [], tags: [], priority: null, dueDate: null, dueTime: null, recur: null,
     rating: null, amount: null, progress: null, sets: null, load: null, distance: null, duration: null,
+    installments: null, income: false,
   }
 }
 
@@ -142,6 +163,13 @@ export function createCaptureParser(opts: CaptureOptions): (text: string) => Cap
       let x: RegExpExecArray | null
 
       if (rules.has('place') && t.startsWith('@') && t.length > 1) { fields.place = t.slice(1).replace(/-/g, ' '); claim(i, 'place'); continue }
+      if (rules.has('income') && (x = /^\+(\d+(?:[.,]\d+)?)$/.exec(t))) { fields.amount = parseMoneyToken(x[1]); fields.income = true; claim(i, 'amount'); continue }
+      if (rules.has('installments') && (x = /^(\d{1,2})x$/i.exec(t)) && Number(x[1]) >= 2 && Number(x[1]) <= 60) {
+        fields.installments = Number(x[1]); claim(i, 'installments')
+        // "em 10x": o "em" também some do título
+        if (i > 0 && free(i - 1) && norm(words[i - 1].text) === 'em') claim(i - 1, 'installments')
+        continue
+      }
       if (rules.has('person') && t.startsWith('+') && t.length > 1) { fields.people.push(t.slice(1).replace(/-/g, ' ')); claim(i, 'person'); continue }
       if (rules.has('tag') && t.startsWith('#') && t.length > 1) {
         const name = t.slice(1).match(/^[\p{L}\p{N}_-]+/u)?.[0]
@@ -217,6 +245,13 @@ export function createCaptureParser(opts: CaptureOptions): (text: string) => Cap
       fields.dueTime = dueTime
     }
 
+    // 3b) Número solto = valor (finanças). Roda depois da data para "dia 30" seguir sendo data.
+    if (rules.has('bareAmount') && fields.amount === null) {
+      const candidates = [...words.keys()].filter((i) => free(i) && RE_BARE_MONEY.test(words[i].text))
+      const pick = candidates[candidates.length - 1]
+      if (pick !== undefined) { fields.amount = parseMoneyToken(words[pick].text); claim(pick, 'amount') }
+    }
+
     // 4) Recorrência × data explícita (mesma regra da Kaguya): data explícita vira âncora.
     if (recur) {
       if (fields.dueDate) recur = { ...recur, anchor: fields.dueDate }
@@ -279,7 +314,11 @@ export function captureChips(result: CaptureResult, today: string = isoDate(new 
   }
   if (f.distance) chips.push({ id: 'distance', kind: 'quantity', label: `${fmtNumber(f.distance, f.distance % 1 ? 1 : 0)} km`, tokenIdx: idxOf('quantity', (t) => /km$/i.test(t.text)) })
   if (f.duration) chips.push({ id: 'duration', kind: 'duration', label: fmtDuration(f.duration), tokenIdx: idxOf('duration') })
-  if (f.amount !== null) chips.push({ id: 'amount', kind: 'amount', label: fmtMoney(f.amount), tokenIdx: idxOf('amount') })
+  if (f.amount !== null) chips.push({ id: 'amount', kind: 'amount', label: f.income ? `Entrada ${fmtMoney(f.amount)}` : fmtMoney(f.amount), tokenIdx: idxOf('amount') })
+  if (f.installments) {
+    const total = f.amount !== null ? ` · ${fmtMoney(f.amount / f.installments)} cada` : ''
+    chips.push({ id: 'installments', kind: 'installments', label: `${f.installments}x${total}`, tokenIdx: idxOf('installments') })
+  }
   if (f.progress) {
     const u = f.progress.unit === 'ep' ? 'ep' : 'p.'
     const label = f.progress.from !== null ? `${u} ${f.progress.from}–${f.progress.to}` : `${u} ${f.progress.to}`

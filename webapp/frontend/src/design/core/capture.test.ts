@@ -141,3 +141,111 @@ describe('segmentos, chips e remoção', () => {
     expect(parse('treino ontem').fields.dueDate).toBe(addDaysISO('2026-10-02', -1))
   })
 })
+
+describe('registro financeiro (Nami, spec 070)', () => {
+  const parse = createCaptureParser({
+    rules: ['place', 'person', 'tag', 'amount', 'bareAmount', 'income', 'installments', 'date'],
+    dateDirection: 'past',
+    today: '2026-10-02',
+  })
+
+  it('"45 ifood @nubank": valor solto, descrição e cartão', () => {
+    const { fields: f } = parse('45 ifood @nubank')
+    expect(f.amount).toBe(45)
+    expect(f.title).toBe('ifood')
+    expect(f.place).toBe('nubank')
+    expect(f.installments).toBeNull()
+    expect(f.income).toBe(false)
+  })
+
+  it('"1200 tv 10x @nubank": o valor digitado é o TOTAL e 10x são as parcelas', () => {
+    const { fields: f } = parse('1200 tv 10x @nubank')
+    expect(f.amount).toBe(1200)
+    expect(f.installments).toBe(10)
+    expect(f.title).toBe('tv')
+    expect(f.place).toBe('nubank')
+  })
+
+  it('"em 10x" também some do título', () => {
+    expect(parse('1200 tv em 10x').fields.title).toBe('tv')
+    expect(parse('1200 tv em 10x').fields.installments).toBe(10)
+  })
+
+  it('"ontem 30 uber": registro no passado', () => {
+    const { fields: f } = parse('ontem 30 uber')
+    expect(f.dueDate).toBe('2026-10-01')
+    expect(f.amount).toBe(30)
+    expect(f.title).toBe('uber')
+  })
+
+  it('"+3500 salário" é entrada, e "+" seguido de número não vira pessoa', () => {
+    const { fields: f } = parse('+3500 salário')
+    expect(f.income).toBe(true)
+    expect(f.amount).toBe(3500)
+    expect(f.people).toEqual([])
+    expect(f.title).toBe('salário')
+  })
+
+  it('"+Ana" continua sendo pessoa, mesmo com a regra de entrada ligada', () => {
+    const { fields: f } = parse('25 almoço +Ana')
+    expect(f.people).toEqual(['Ana'])
+    expect(f.income).toBe(false)
+    expect(f.amount).toBe(25)
+  })
+
+  it.each([
+    ['1.299,90 geladeira', 1299.9],
+    ['89,9 padaria', 89.9],
+    ['12.5 café', 12.5],
+    ['1.200 notebook', 1200],      // ponto + 3 dígitos é milhar
+    ['R$ 42,90 mercado', 42.9],
+    ['R$42 feira', 42],
+  ])('valor "%s"', (input, esperado) => {
+    expect(parse(input).fields.amount).toBe(esperado)
+  })
+
+  it('com mais de um número solto, vale o último e os outros ficam na descrição', () => {
+    const { fields: f } = parse('3 cervejas 45')
+    expect(f.amount).toBe(45)
+    expect(f.title).toBe('3 cervejas')
+  })
+
+  it('valor explícito (R$) tem prioridade sobre número solto', () => {
+    const { fields: f } = parse('R$ 10 café 3')
+    expect(f.amount).toBe(10)
+    expect(f.title).toBe('café 3')
+  })
+
+  it('"1x" não é parcelamento e "4x8" não é parcela (é série de treino)', () => {
+    expect(parse('1x compra 20').fields.installments).toBeNull()
+    expect(parse('supino 4x8 30').fields.installments).toBeNull()
+    expect(parse('1x compra 20').fields.title).toBe('1x compra')
+  })
+
+  it('número dentro de etiqueta não vira valor', () => {
+    const { fields: f } = parse('50 teste #2024')
+    expect(f.amount).toBe(50)
+    expect(f.tags).toEqual(['2024'])
+  })
+
+  it('sem as regras novas o comportamento antigo se mantém (paridade com outros agentes)', () => {
+    const legacy = createCaptureParser({ rules: ['person', 'amount'], today: '2026-10-02' })
+    expect(legacy('+3500 salário').fields.people).toEqual(['3500'])
+    expect(legacy('45 ifood').fields.amount).toBeNull()
+    expect(legacy('tv 10x').fields.installments).toBeNull()
+  })
+
+  it('chips mostram entrada e parcelas já com o valor de cada uma', () => {
+    const r = parse('1200 tv 10x')
+    const chips = captureChips(r, '2026-10-02')
+    // fmtMoney usa espaço não separável depois do "R$" (não quebra linha no meio do valor)
+    expect(chips.find((c) => c.id === 'installments')?.label.replace(/ /g, ' ')).toBe('10x · R$ 120,00 cada')
+    expect(captureChips(parse('+3500 salário'), '2026-10-02').find((c) => c.id === 'amount')?.label).toContain('Entrada')
+  })
+
+  it('remover o chip de parcelas tira "em 10x" do texto', () => {
+    const r = parse('1200 tv em 10x @nubank')
+    const chip = captureChips(r, '2026-10-02').find((c) => c.id === 'installments')!
+    expect(removeTokens(r, chip.tokenIdx)).toBe('1200 tv @nubank')
+  })
+})

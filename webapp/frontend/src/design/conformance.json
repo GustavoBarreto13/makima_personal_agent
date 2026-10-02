@@ -136,7 +136,7 @@
       "status": "legacy",
       "dir": "src/pages/nami",
       "shell": "src/pages/nami/NamiShell.tsx",
-      "art": null,
+      "art": "nautica",
       "appShell": false,
       "hero": false,
       "theme": false,

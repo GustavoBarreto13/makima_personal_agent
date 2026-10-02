@@ -1,0 +1,83 @@
+/* Estilo de arte "Carta náutica" (Nami): papel de carta cartográfica, graticula de latitude/longitude,
+ * tinta azul-marinho, cantos pequenos e traço duplo no lugar do vidro. No escuro vira "carta noturna":
+ * a lavagem passa de creme para marinho profundo.
+ *
+ * REGRA: um estilo de arte muda só o VISUAL. Aqui só entram custom properties --ds-* visuais e nada
+ * de layout nem cor literal (o lint:design rejeita). Cores vêm de MISTURAS de tokens que já existem
+ * (star = creme, info = marinho), então acompanham o tema sozinhas.
+ *
+ * ARMADILHA: uma custom property não pode referenciar a si mesma no mesmo elemento (ciclo, vira
+ * inválida). Por isso as misturas partem de ink-1, line e do alias --ds-art-base-paper (o paper original
+ * do tema, capturado no :root); só no escuro o paper é redefinido, a partir desse alias.
+ *
+ * CONTRASTE: o audit:design não cobre estilos de arte, então os pesos das tintas foram verificados
+ * à mão (WCAG, claro e escuro, contra ambiente, paper-2, card, card-2 e mist). Pior par: 4.9:1 no
+ * claro e 5.9:1 no escuro; accent-deep do agente >= 7.7:1. Se mexer em qualquer peso de ink-* ou
+ * nos percentuais de lavagem, refaça essa conta antes de publicar. */
+
+/* Valor ORIGINAL de paper do tema, guardado sob outro nome: custom property não pode citar a si mesma,
+ * mas pode citar um alias capturado no :root (onde paper ainda é o do tema). */
+:root {
+  --ds-art-base-paper: var(--ds-paper);
+}
+
+.ds-app[data-ds-art="nautica"] {
+  --ds-art-wash: var(--ds-star);
+  --ds-art-amt: 8%;
+  --ds-art-amt-card: 5%;
+  --ds-art-amt-mist: 12%;
+
+  /* superfícies: papel creme (lavagem sobre o papel do tema) */
+  --ds-paper-2: color-mix(in oklab, var(--ds-art-base-paper), var(--ds-art-wash) var(--ds-art-amt));
+  --ds-card-2: color-mix(in oklab, var(--ds-card), var(--ds-art-wash) var(--ds-art-amt-card));
+  --ds-mist: color-mix(in oklab, var(--ds-art-base-paper), var(--ds-art-wash) var(--ds-art-amt-mist));
+  --ds-ambient: linear-gradient(color-mix(in oklab, var(--ds-art-base-paper), var(--ds-art-wash) var(--ds-art-amt)), color-mix(in oklab, var(--ds-art-base-paper), var(--ds-art-wash) var(--ds-art-amt)));
+
+  /* graticula: malha fina de latitude/longitude sobre o papel */
+  --ds-texture:
+    linear-gradient(color-mix(in oklab, var(--ds-info) 9%, transparent) 1px, transparent 1px) 0 0 / 56px 56px,
+    linear-gradient(90deg, color-mix(in oklab, var(--ds-info) 9%, transparent) 1px, transparent 1px) 0 0 / 56px 56px;
+
+  /* tinta: a escala secundária puxa para o marinho (ink-1 fica como está) */
+  --ds-ink-2: color-mix(in oklab, color-mix(in oklab, var(--ds-ink-1) 80%, var(--ds-info)) 90%, var(--ds-art-base-paper));
+  --ds-ink-3: color-mix(in oklab, color-mix(in oklab, var(--ds-ink-1) 70%, var(--ds-info)) 75%, var(--ds-art-base-paper));
+  --ds-ink-4: color-mix(in oklab, color-mix(in oklab, var(--ds-ink-1) 78%, var(--ds-info)) 70%, var(--ds-art-base-paper));
+
+  /* material: papel chapado com traço duplo, sem vidro nem desfoque */
+  --ds-glass-bg: color-mix(in oklab, var(--ds-card) 97%, transparent);
+  --ds-glass-border: color-mix(in oklab, var(--ds-info) 24%, var(--ds-line));
+  --ds-glass-hi: transparent;
+  --ds-blur: 0px;
+  --ds-blur-soft: 0px;
+  --ds-glass-shadow: 0 0 0 1px color-mix(in oklab, var(--ds-info) 12%, transparent), 0 2px 0 color-mix(in oklab, var(--ds-info) 9%, transparent);
+
+  /* cantos de instrumento, não de app */
+  --ds-r-xs: 3px;
+  --ds-r-sm: 5px;
+  --ds-r-md: 7px;
+  --ds-r-lg: 10px;
+}
+
+/* carta noturna: a lavagem vira marinho profundo (o azul do token info, escurecido por cor relativa).
+ * O card também ganha o tom (papel + lavagem + um toque de tinta) e continua mais claro que o fundo,
+ * como no tema escuro padrão. Verificado: nenhum par do audit (tinta, semânticas, gráficos, estrelas,
+ * acento do agente, toast) cai abaixo do mínimo WCAG. */
+:root[data-ds-theme="dark"] .ds-app[data-ds-art="nautica"] {
+  --ds-art-wash: oklch(from var(--ds-info) 0.22 c h);
+  --ds-art-amt: 65%;
+  --ds-art-amt-card: 10%;
+  --ds-art-amt-mist: 40%;
+  --ds-paper: color-mix(in oklab, var(--ds-art-base-paper), var(--ds-art-wash) var(--ds-art-amt));
+  --ds-card: color-mix(in oklab, color-mix(in oklab, var(--ds-art-base-paper), var(--ds-art-wash) var(--ds-art-amt)) 96%, var(--ds-ink-1));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ds-theme="light"]) .ds-app[data-ds-art="nautica"] {
+    --ds-art-wash: oklch(from var(--ds-info) 0.22 c h);
+    --ds-art-amt: 65%;
+    --ds-art-amt-card: 10%;
+    --ds-art-amt-mist: 40%;
+    --ds-paper: color-mix(in oklab, var(--ds-art-base-paper), var(--ds-art-wash) var(--ds-art-amt));
+    --ds-card: color-mix(in oklab, color-mix(in oklab, var(--ds-art-base-paper), var(--ds-art-wash) var(--ds-art-amt)) 96%, var(--ds-ink-1));
+  }
+}

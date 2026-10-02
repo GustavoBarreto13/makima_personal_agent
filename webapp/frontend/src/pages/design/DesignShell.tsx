@@ -29,7 +29,7 @@ const NAV: NavGroup[] = [
 
 const TITLES: Record<View, string> = { home: 'Início', workouts: 'Treinos', stats: 'Estatísticas', comp: 'Componentes' }
 
-const ART_OPTIONS = [{ value: 'default', label: 'Padrão' }, { value: 'caderno', label: 'Caderno' }]
+const ART_OPTIONS = [{ value: 'default', label: 'Padrão' }, { value: 'caderno', label: 'Caderno' }, { value: 'nautica', label: 'Carta náutica' }]
 
 export function DesignShell() {
   const today = useMemo(() => todayISO(), [])
@@ -60,7 +60,7 @@ export function DesignShell() {
       setWorkouts((cur) => cur.map((w) => (w.id === form.id ? { ...w, title: d.title, type: d.type, date: d.date, mins: d.mins, place: d.place, rating: d.rating, tags: d.tags, status: d.date > today ? 'planned' : 'done' } : w)))
       toast('Treino atualizado')
     } else {
-      const w = workoutFromCapture({ text: '', segments: [], tokens: [], fields: { title: d.title, place: d.place, people: [], tags: d.tags, priority: null, dueDate: d.date, dueTime: null, recur: null, rating: d.rating || null, amount: null, progress: null, sets: null, load: null, distance: null, duration: d.mins } }, today)
+      const w = workoutFromCapture({ text: '', segments: [], tokens: [], fields: { title: d.title, place: d.place, people: [], tags: d.tags, priority: null, dueDate: d.date, dueTime: null, recur: null, rating: d.rating || null, amount: null, progress: null, sets: null, load: null, distance: null, duration: d.mins, installments: null, income: false } }, today)
       add({ ...w, type: d.type })
     }
     setForm(null)

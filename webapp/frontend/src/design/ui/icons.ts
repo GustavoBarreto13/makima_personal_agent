@@ -3,11 +3,11 @@
 // só vale como conteúdo escolhido pelo usuário (ex.: o ícone de uma lista).
 
 import {
-  Activity, AlertTriangle, ArrowLeft, ArrowRight, AtSign, Award, Banknote, Bell, BookOpen, Brain, Calendar, CalendarDays, ChevronDown,
-  ChevronLeft, ChevronRight, ChevronUp, Check, CheckCircle2, Clapperboard, Clock, Command, Copy, Download, Dumbbell, Ellipsis, Eye, EyeOff,
-  FlaskConical, Film, Filter, Flag, Flame, Footprints, Grid2x2, Hash, Heart, HeartPulse, House, Inbox, Info, Keyboard, Layers, LayoutGrid,
-  Leaf, Library, Link, List, ListChecks, Mail, MapPin, Medal, Menu, MessageSquare, Minus, Monitor, Moon, Palette, Pencil, Plane, Play, Plus,
-  RefreshCw, Repeat, Route, Search, SlidersHorizontal, Smartphone, Sparkles, Star, Sun, Sunrise, Tag, Target, Timer, Trash2, TrendingDown,
+  Activity, AlertTriangle, ArrowLeft, ArrowLeftRight, ArrowRight, AtSign, Award, Banknote, Bell, BookOpen, Brain, Calendar, CalendarDays, CalendarSync, ChevronDown,
+  ChevronLeft, ChevronRight, ChevronUp, Check, CheckCircle2, Clapperboard, Clock, Command, Copy, CreditCard, Download, Dumbbell, Ellipsis, Eye, EyeOff,
+  FlaskConical, Film, Filter, Flag, Flame, Footprints, Grid2x2, HandCoins, Hash, Heart, HeartPulse, House, Inbox, Info, Keyboard, Landmark, Layers, LayoutGrid,
+  Leaf, Library, Link, List, ListChecks, Mail, MapPin, Medal, Menu, MessageSquare, Minus, Monitor, Moon, Palette, Pencil, PiggyBank, Plane, Play, Plus,
+  Receipt, RefreshCw, Repeat, Route, Search, ShoppingCart, SlidersHorizontal, Smartphone, Sparkles, Star, Sun, Sunrise, Tag, Target, Timer, Trash2, TrendingDown,
   TrendingUp, Trophy, Tv, Undo2, Upload, User, Users, Wallet, X, Zap, BarChart3, ArrowUpDown, type LucideIcon,
 } from 'lucide-react'
 
@@ -29,6 +29,9 @@ export const ICONS = {
   task: ListChecks, habit: Repeat, goal: Target, experiment: FlaskConical, focus: Timer, inbox: Inbox,
   book: BookOpen, movie: Film, anime: Clapperboard, series: Tv, person: User, people: Users, trip: Plane, money: Wallet, bank: Banknote,
   journal: MessageSquare, knowledge: Brain, library: Library, mail: Mail, tag: Tag, place: MapPin, mention: AtSign, hash: Hash, flag: Flag,
+  // finanças (Nami, spec 070)
+  card: CreditCard, invoice: Receipt, transfer: ArrowLeftRight, recurring: CalendarSync, income: TrendingUp, expense: TrendingDown,
+  savings: PiggyBank, cart: ShoppingCart, loan: HandCoins, institution: Landmark,
   // treino (agente de exemplo da página /design)
   workout: Dumbbell, run: Route, hiit: Flame, mobility: Leaf, steps: Footprints, heart: Heart, pulse: HeartPulse, energy: Zap, star: Star,
 } as const satisfies Record<string, LucideIcon>
