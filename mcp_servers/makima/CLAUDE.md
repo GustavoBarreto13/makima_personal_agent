@@ -93,13 +93,32 @@ só é removido na Etapa E7.
 ## Autenticação (`auth.py`)
 
 `BearerAuthMiddleware` envolve o app Starlette inteiro — roda **antes** de qualquer
-sub-app de domínio ser alcançado. Toda requisição precisa do header
-`Authorization: Bearer ${MAKIMA_MCP_TOKEN}`; ausente ou incorreto → `401`.
+sub-app de domínio ser alcançado. Toda requisição (exceto `GET /healthz`) precisa do
+header `Authorization: Bearer <token>`. Dois tipos de token, escopos diferentes:
 
-Cadastro do token: painel **Environment** do Dokploy (é o mesmo `.env` compartilhado por
-`makima`/`mcp`/`web`/`scheduler` — não é por serviço). Gerar com
+| Token | Env var | Escopo | Quem usa |
+|---|---|---|---|
+| Interno | `MAKIMA_MCP_TOKEN` | **Todos** os domínios | Hermes (rede interna, `dokploy-network`) |
+| Externo | `MAKIMA_MCP_EXTERNAL_TOKENS` (lista separada por vírgula) | Só os domínios em `MAKIMA_MCP_EXTERNAL_DOMAINS` (lista separada por vírgula, default `kaguya`) | Clientes MCP externos pela porta pública (ver seção abaixo) |
+
+Sem token, ou token que não bate com nenhum dos dois → `401`. Token externo válido mas
+fora do domínio liberado → `403` (não `401` — o token em si é válido, só não alcança
+aquele path). O match do domínio é feito pelo segmento do path (`/mcp/<domínio>` ou
+`/mcp/<domínio>/...`) — `/mcp/kaguyaX` não conta como `kaguya` (sem confusão de prefixo).
+
+Isso dá **duas camadas** de restrição para o token externo, independentes: a rede (o
+domínio público do Dokploy só roteia o path `/mcp/kaguya`, qualquer outro dá 404 do
+Traefik antes de chegar aqui) e a aplicação (mesmo que a config de rede seja alargada
+por engano, `auth.py` ainda bloqueia qualquer domínio fora de
+`MAKIMA_MCP_EXTERNAL_DOMAINS`). Liberar outro domínio no futuro = acrescentar o nome
+nessa env var + um path a mais no domínio do Dokploy — sem mudar código.
+
+Cadastro dos tokens: painel **Environment** do Dokploy (é o mesmo `.env` compartilhado
+por `makima`/`mcp`/`web`/`scheduler` — não é por serviço). Gerar com
 `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. Precisa de **redeploy**
-para o container novo ler o valor (env var só é lida na inicialização).
+para o container novo ler o valor (env var só é lida na inicialização). Rotação: trocar
+`MAKIMA_MCP_EXTERNAL_TOKENS` e redeployar invalida só os clientes externos, sem afetar o
+Hermes (`MAKIMA_MCP_TOKEN` é independente).
 
 ---
 
@@ -128,10 +147,14 @@ O `FastMCP` do SDK liga por padrão uma checagem de `Host` header que só aceita
 `app.py` desliga essa proteção em todo domínio (`_INSECURE_TRANSPORT =
 TransportSecuritySettings(enable_dns_rebinding_protection=False)`) — a defesa que ela
 oferece (impedir que uma página maliciosa no navegador force requisições autenticadas a
-um servidor interno via DNS rebinding) já é coberta por duas camadas mais fortes aqui:
-rede (`makima-mcp` só existe na `dokploy-network`, nunca tem porta publicada) e
-aplicação (`BearerAuthMiddleware`, que roda antes de qualquer domínio ser alcançado).
-Nenhum cliente deste servidor é um navegador.
+um servidor interno via DNS rebinding) é coberta por duas outras camadas aqui: o `Host`
+header de qualquer requisição que chega ao container (interna via `dokploy-network`, ou
+pública via o domínio `/mcp/kaguya` roteado pelo Traefik do Dokploy) é determinado pela
+infraestrutura, não por um atacante arbitrário; e `BearerAuthMiddleware` roda antes de
+qualquer domínio ser alcançado, bloqueando qualquer requisição sem o token certo
+independente do `Host`. Nenhum cliente deste servidor é um navegador — a classe de
+ataque que essa proteção previne (CSRF via DNS rebinding contra um servidor que confia na
+origem) não se aplica aqui.
 
 Se algum domínio novo for montado com seu próprio `FastMCP(...)` fora de
 `_build_domain_app`/`_build_calendar_app`/`_build_legacy_app`, lembrar de passar
@@ -195,14 +218,91 @@ a VPS depois do deploy do `makima-mcp` com as mudanças desta etapa, como foi fe
 
 ---
 
-## Conectar um cliente MCP externo (Claude Code) — set/2026
+## Conectar um cliente MCP externo (Claude Code, Cursor, VS Code, Claude Desktop…)
 
-O `makima-mcp` continua **sem porta pública**. Para um cliente fora da `dokploy-network`
-(hoje: o Claude Code do Gustavo, no Windows) a `8090` é publicada só no **loopback** do VPS
-(`docker-compose.yml`, serviço `mcp`: `127.0.0.1:8090:8090`) e alcançada por túnel SSH:
+Desde a exposição pública da Kaguya (out/2026), a Kaguya tem um domínio HTTPS próprio no
+Dokploy (`https://mcp.gusstavo42-vps.cloud/mcp/kaguya/`, roteado pelo Traefik — só esse
+path, nenhum outro domínio responde por ele) e aceita o token externo
+(`MAKIMA_MCP_EXTERNAL_TOKENS`, escopado por `MAKIMA_MCP_EXTERNAL_DOMAINS` — ver
+"Autenticação" acima). Qualquer cliente MCP com suporte a header customizado conecta
+direto, sem túnel:
 
+```text
+Cliente MCP ─► https://mcp.gusstavo42-vps.cloud/mcp/kaguya/ ─► Traefik ─► makima-mcp ─► PostgreSQL
 ```
-Claude Code ─► localhost:8090 ══ ssh -N makima-tunnel ══► 127.0.0.1:8090 (VPS) ─► makima-mcp ─► PostgreSQL
+
+**Importante**: isto só cobre clientes que aceitam um bearer fixo. **claude.ai** (web/app)
+e **ChatGPT** (conectores/GPTs) só aceitam servidores MCP com OAuth 2.1 (DCR + PKCE) — não
+conectam aqui. Dar suporte a eles exigiria implementar um servidor de autorização OAuth
+no `makima-mcp`, fora do escopo desta exposição.
+
+### Claude Code
+
+Registro (escopo user, uma vez):
+
+```bash
+claude mcp add --scope user --transport http kaguya \
+  https://mcp.gusstavo42-vps.cloud/mcp/kaguya/ \
+  --header "Authorization: Bearer <token externo>"
+```
+
+A **barra final** é obrigatória por convenção: os sub-apps usam
+`streamable_http_path="/"`, então `/mcp/kaguya` responde 307 para `/mcp/kaguya/`.
+Verificar com `claude mcp list` → `kaguya √ Connected`. **Nunca `claude mcp get`**: ele
+imprime o header `Authorization` em texto puro (o `add` redige, o `get` não).
+
+### Cursor / VS Code (via `mcp.json`)
+
+Cursor e VS Code (extensão oficial do Claude ou GitHub Copilot) leem `http`/`headers`
+nativamente num `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "kaguya": {
+      "url": "https://mcp.gusstavo42-vps.cloud/mcp/kaguya/",
+      "headers": { "Authorization": "Bearer <token externo>" }
+    }
+  }
+}
+```
+
+### Claude Desktop (via `mcp-remote`)
+
+Claude Desktop ainda não fala HTTP streamável nativo com headers customizados — usar o
+proxy `mcp-remote` (`npx mcp-remote`) no `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "kaguya": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.gusstavo42-vps.cloud/mcp/kaguya/",
+        "--header", "Authorization:Bearer <token externo>"
+      ]
+    }
+  }
+}
+```
+
+### Liberar outro domínio além da Kaguya
+
+1. Acrescentar o nome do domínio em `MAKIMA_MCP_EXTERNAL_DOMAINS` (Environment do
+   Dokploy) e redeployar.
+2. No painel **Domains** do serviço `mcp`, adicionar um path novo (`/mcp/<domínio>`) ao
+   mesmo domínio público (ou um domínio/path dedicado).
+3. Nenhuma mudança de código — `auth.py` já lê a lista do env.
+
+### Fallback: túnel SSH (loopback do VPS)
+
+Antes da exposição pública, o único caminho era túnel SSH para o loopback do VPS
+(`docker-compose.yml`, serviço `mcp`: `127.0.0.1:8090:8090`, ainda mantido). Continua
+funcionando como fallback se o domínio público cair, ou para testar com o token interno:
+
+```text
+Cliente MCP ─► localhost:8090 ══ ssh -N makima-tunnel ══► 127.0.0.1:8090 (VPS) ─► makima-mcp
 ```
 
 - **Aliases** no `~/.ssh/config` da máquina cliente: `makima-vps` (comandos avulsos) e
@@ -210,27 +310,23 @@ Claude Code ─► localhost:8090 ══ ssh -N makima-tunnel ══► 127.0.0.
   São dois de propósito: com o forward no mesmo alias dos comandos avulsos, qualquer
   `ssh makima-vps "<cmd>"` falharia (exit 255) enquanto o túnel estivesse de pé. Ambos usam o
   IP do VPS, `User root` e a chave `id_ed25519`.
-- **Registro** (escopo user, uma vez): `claude mcp add --scope user --transport http kaguya
-  http://localhost:8090/mcp/kaguya/ --header "Authorization: Bearer <token>"`. A **barra final**
-  é obrigatória por convenção: os sub-apps usam `streamable_http_path="/"`, então
-  `/mcp/kaguya` responde 307 para `/mcp/kaguya/`. O token é o `MAKIMA_MCP_TOKEN`: ler do
-  container direto para uma variável (`ssh makima-vps "docker exec makima-mcp printenv
-  MAKIMA_MCP_TOKEN"`), sem imprimi-lo.
+- **Registro** apontando para `http://localhost:8090/mcp/<domínio>/` em vez da URL
+  pública — os outros detalhes (barra final, `claude mcp list`, nunca `claude mcp get`)
+  são os mesmos de cima.
 - **Túnel manual**: `ssh -N makima-tunnel` numa janela aberta. Sem ele o servidor aparece
-  "Failed to connect"; se o Claude Code abrir antes do túnel, reconectar pelo `/mcp`. Não há
-  túnel automático — decisão do usuário.
+  "Failed to connect". Não há túnel automático — decisão do usuário.
 - **Keepalive**: o `Host *` do `~/.ssh/config` do usuário usa `ServerAliveInterval 60` ×
   `ServerAliveCountMax 30`, então o ssh leva até 30 min para perceber que a conexão caiu
   (túnel "aberto" mas morto depois de suspender o PC). No `ssh_config` o primeiro valor
   vence: um override precisa vir antes do `Host *` ou na linha de comando.
-- **Verificar**: `claude mcp list` → `kaguya √ Connected`. **Nunca `claude mcp get`**: ele
-  imprime o header `Authorization` em texto puro (o `add` redige, o `get` não).
-- **Segurança**: o bearer token vira a única barreira para quem alcançar o loopback do VPS
-  (root, ou o túnel); o anti-DNS-rebinding continua desligado (Gotcha 2). Conferir que a
-  porta NÃO está pública: de fora do VPS, `Test-NetConnection <ip> -Port 8090` deve falhar;
-  no VPS, `ss -ltn | grep :8090` deve mostrar só `127.0.0.1:8090`.
-- **Só a Kaguya está registrada** no Claude Code, então `list_events_today` (que vive em
-  `/mcp/calendar`) não existe nessa sessão. A skill global `kaguya-tarefas`
+- Conferir que a porta NÃO está pública diretamente: de fora do VPS,
+  `Test-NetConnection <ip> -Port 8090` deve falhar; no VPS, `ss -ltn | grep :8090` deve
+  mostrar só `127.0.0.1:8090`.
+
+### Outras notas
+
+- **Só a Kaguya tem tools de domínio externo** — `list_events_today` (que vive em
+  `/mcp/calendar`) não existe nessas sessões. A skill global `kaguya-tarefas`
   (`~/.claude/skills/`, fora deste repo) já considera isso e roteia compromissos para
   `create_task(type="event")` — sem ela, um agente frio criava a reunião direto no Google
   Calendar (medido em set/2026: 2 de 2; com a skill, 0 de 3).

@@ -67,6 +67,94 @@ def test_auth_middleware_accepts_correct_token():
     assert resp.text == "ok"
 
 
+def _dummy_multi_domain_app():
+    # Simula o shape real: /mcp/kaguya e /mcp/nami, para testar o escopo por domínio do
+    # token externo sem precisar montar os FastMCP de verdade.
+    async def _ok(request):
+        return PlainTextResponse("ok")
+
+    return Starlette(
+        routes=[
+            Route("/mcp/kaguya/ping", _ok),
+            Route("/mcp/nami/ping", _ok),
+        ],
+        middleware=[Middleware(BearerAuthMiddleware)],
+    )
+
+
+def test_external_token_allowed_on_scoped_domain(monkeypatch):
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_TOKENS", "ext-token")
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_DOMAINS", "kaguya")
+    client = TestClient(_dummy_multi_domain_app())
+    resp = client.get("/mcp/kaguya/ping", headers={"Authorization": "Bearer ext-token"})
+    assert resp.status_code == 200
+
+
+def test_external_token_forbidden_on_other_domain(monkeypatch):
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_TOKENS", "ext-token")
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_DOMAINS", "kaguya")
+    client = TestClient(_dummy_multi_domain_app())
+    resp = client.get("/mcp/nami/ping", headers={"Authorization": "Bearer ext-token"})
+    assert resp.status_code == 403
+
+
+def test_internal_token_still_allowed_on_any_domain(monkeypatch):
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_TOKENS", "ext-token")
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_DOMAINS", "kaguya")
+    client = TestClient(_dummy_multi_domain_app())
+    resp = client.get("/mcp/nami/ping", headers={"Authorization": "Bearer test-token"})
+    assert resp.status_code == 200
+
+
+def test_external_tokens_empty_rejects_blank_bearer(monkeypatch):
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_TOKENS", "")
+    client = TestClient(_dummy_multi_domain_app())
+    resp = client.get("/mcp/kaguya/ping", headers={"Authorization": "Bearer "})
+    assert resp.status_code == 401
+
+
+def test_external_tokens_list_with_spaces(monkeypatch):
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_TOKENS", "a, b")
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_DOMAINS", "kaguya")
+    client = TestClient(_dummy_multi_domain_app())
+    resp = client.get("/mcp/kaguya/ping", headers={"Authorization": "Bearer b"})
+    assert resp.status_code == 200
+
+
+def test_external_domains_custom_list(monkeypatch):
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_TOKENS", "ext-token")
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_DOMAINS", "kaguya,frieren")
+    client = TestClient(_dummy_multi_domain_app())
+    resp_kaguya = client.get("/mcp/kaguya/ping", headers={"Authorization": "Bearer ext-token"})
+    assert resp_kaguya.status_code == 200
+
+
+def test_external_token_path_prefix_confusion_is_forbidden(monkeypatch):
+    # /mcp/kaguyaX não deve contar como o domínio "kaguya" (confusão de prefixo).
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_TOKENS", "ext-token")
+    monkeypatch.setenv("MAKIMA_MCP_EXTERNAL_DOMAINS", "kaguya")
+
+    async def _ok(request):
+        return PlainTextResponse("ok")
+
+    app = Starlette(
+        routes=[Route("/mcp/kaguyaX/ping", _ok)],
+        middleware=[Middleware(BearerAuthMiddleware)],
+    )
+    client = TestClient(app)
+    resp = client.get("/mcp/kaguyaX/ping", headers={"Authorization": "Bearer ext-token"})
+    assert resp.status_code == 403
+
+
+def test_healthz_does_not_require_token():
+    import mcp_servers.makima.app as app_module
+
+    client = TestClient(app_module.app)
+    resp = client.get("/healthz")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
+
+
 def test_app_mounts_one_route_per_domain_plus_calendar():
     # Import isolado (fora do topo do arquivo) para dar tempo do MAKIMA_MCP_TOKEN
     # default já estar setado antes do módulo carregar suas dependências.

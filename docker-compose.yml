@@ -31,11 +31,17 @@ services:
   #     - dokploy-network
 
   # Servidor MCP HTTP: expõe as tools de domínio (Nami, Kaguya, Calendar, ...) para
-  # qualquer cliente MCP — hoje o Hermes (spec 064, ver docker-compose.hermes.yml). Um
-  # FastMCP por domínio, montado sob /mcp/<domínio> num único processo
-  # Starlette/uvicorn. Sem porta pública: só na rede interna (dokploy-network) + loopback
-  # do host (127.0.0.1:8090) para túnel SSH de clientes externos (ex. Claude Code).
-  # Autenticado por MAKIMA_MCP_TOKEN.
+  # qualquer cliente MCP — hoje o Hermes (spec 064, ver docker-compose.hermes.yml) e,
+  # desde a exposição pública da Kaguya, clientes MCP externos com suporte a bearer
+  # (Claude Code, Cursor, VS Code, Claude Desktop via mcp-remote...). Um FastMCP por
+  # domínio, montado sob /mcp/<domínio> num único processo Starlette/uvicorn.
+  #
+  # Rede: continua sem porta pública NESTE arquivo — "127.0.0.1:8090:8090" é só o
+  # loopback do host (túnel SSH, fallback para quem não quer depender do domínio
+  # público). O domínio público (mcp.<dominio>, path só /mcp/kaguya) é configurado no
+  # painel Domains do Dokploy, igual ao serviço `web` — não aparece aqui. Autenticado por
+  # MAKIMA_MCP_TOKEN (acesso total) ou MAKIMA_MCP_EXTERNAL_TOKENS (escopado por
+  # MAKIMA_MCP_EXTERNAL_DOMAINS, ver mcp_servers/makima/auth.py).
   mcp:
     build:
       # Contexto = raiz do repo (para COPY . . pegar agents/ e mcp_servers/).

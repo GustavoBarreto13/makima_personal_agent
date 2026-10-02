@@ -13,7 +13,8 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
-from starlette.routing import Mount
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
 
 from mcp_servers.makima.auth import BearerAuthMiddleware
 from mcp_servers.makima.registry import DOMAINS
@@ -26,12 +27,17 @@ from mcp_servers.makima.registry import DOMAINS
 #
 # Desligamos essa checagem neste host porque a defesa que ela oferece (impedir que uma
 # página maliciosa no navegador de alguém force requisições autenticadas a um servidor
-# interno via DNS rebinding) já é coberta por duas camadas mais fortes aqui: (1) rede —
-# makima-mcp só existe na dokploy-network, nunca tem porta publicada; (2) aplicação — o
+# interno via DNS rebinding) já é coberta por duas camadas mais fortes aqui: (1) o
+# domínio "/mcp/kaguya" exposto publicamente (via Traefik/Dokploy) tem o Host header
+# determinado pelo próprio Traefik, não por um atacante; (2) aplicação — o
 # BearerAuthMiddleware (auth.py) envolve TODO o app e roda antes de qualquer sub-app de
 # domínio ser alcançado, então uma requisição sem o token correto nunca chega perto do
 # código de negócio, independente do header Host. Nenhum cliente aqui é um navegador.
 _INSECURE_TRANSPORT = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+
+
+async def _healthz(_request):
+    return JSONResponse({"status": "ok"})
 
 
 def _build_domain_app(name: str, tools: list):
@@ -103,7 +109,10 @@ async def _lifespan(_app: Starlette):
 
 
 app = Starlette(
-    routes=[Mount(f"/mcp/{name}", app=sub_app) for name, sub_app in _domain_apps.items()],
+    routes=[
+        Route("/healthz", _healthz),
+        *(Mount(f"/mcp/{name}", app=sub_app) for name, sub_app in _domain_apps.items()),
+    ],
     middleware=[Middleware(BearerAuthMiddleware)],
     lifespan=_lifespan,
 )
