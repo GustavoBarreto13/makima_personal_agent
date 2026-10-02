@@ -12,13 +12,25 @@ import calendar
 from datetime import date
 
 # Importa os helpers PostgreSQL compartilhados
-from agents.db import run_select, run_dml
+from agents.db import run_select, run_dml, get_conn
 
 # Importa os helpers privados e constantes compartilhados do módulo principal
 from agents.nami.tools import (
     _match_category, _resolve_account, _load_cards,
     CATEGORIES,
 )
+
+
+def split_installments(total: float, n: int) -> tuple[float, float]:
+    """Divide um total em n parcelas sem perder centavos — função pura.
+
+    Devolve (valor_das_demais, valor_da_primeira). A divisão arredonda para 2 casas e a
+    diferença acumulada vai para a 1ª parcela, então a soma das n parcelas é sempre
+    exatamente o total (ex.: 100,00 em 3x → 33,34 + 33,33 + 33,33; antes dava 99,99).
+    """
+    base = round(total / n, 2)
+    primeira = round(total - base * (n - 1), 2)
+    return base, primeira
 
 
 def create_installment(
@@ -86,13 +98,11 @@ def create_installment(
     except (ValueError, TypeError):
         return {"status": "error", "message": f"first_due inválido: '{first_due}'. Use o formato AAAA-MM-DD."}
 
-    # Calcula o valor de cada parcela com 2 casas decimais
-    valor_parcela = round(float(total_valor) / num_parcelas, 2)
+    valor_parcela, primeira_parcela = split_installments(float(total_valor), num_parcelas)
 
-    # Gera ID único para o grupo de parcelas
     group_id = str(uuid.uuid4())
+    first_date = date.fromisoformat(first_due)
 
-    # Insere o registro do grupo na tabela installment_groups
     sql_group = """
         INSERT INTO installment_groups
           (id, name, total_valor, num_parcelas, valor_parcela, conta, account_id, card_id,
@@ -100,70 +110,59 @@ def create_installment(
         VALUES (%(id)s, %(name)s, %(total_valor)s, %(num_parcelas)s, %(valor_parcela)s, %(conta)s,
                 %(account_id)s, %(card_id)s, %(categoria)s, %(first_due)s, %(notes)s, NOW(), FALSE)
     """
-    params_group = {
-        "id":           group_id,
-        "name":         name,
-        "total_valor":  float(total_valor),
-        "num_parcelas": int(num_parcelas),
-        "valor_parcela": valor_parcela,
-        "conta":        origem_nome,
-        "account_id":   account_id,
-        "card_id":      card_id or None,
-        "categoria":    cat,
-        "first_due":    first_due,
-        "notes":        notes or None,
-    }
+    # account_id/card_id espelham a origem do grupo
+    sql_tx = """
+        INSERT INTO transactions
+          (id, name, valor, tipo, categoria, conta, account_id, card_id, data, source,
+           notes, subscription_id, installment_group_id, created_at, deleted)
+        VALUES (%(id)s, %(name)s, %(valor)s, 'Despesa', %(categoria)s, %(conta)s, %(account_id)s,
+                %(card_id)s, %(data)s, 'telegram', %(notes)s, NULL, %(group_id)s, NOW(), FALSE)
+    """
 
-    try:
-        run_dml(sql_group, params_group)
-    except Exception as e:
-        return {"status": "error", "message": f"Erro ao criar grupo de parcelas: {e}"}
-
-    # Gera uma transação para cada parcela com a data de vencimento correta
     tx_ids = []
-    first_date = date.fromisoformat(first_due)
+    try:
+        # Tudo numa transação só (spec 070): se qualquer parcela falhar, o grupo e as parcelas
+        # anteriores sofrem rollback — antes sobrava um grupo "pela metade" no banco.
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql_group, {
+                    "id":            group_id,
+                    "name":          name,
+                    "total_valor":   float(total_valor),
+                    "num_parcelas":  int(num_parcelas),
+                    "valor_parcela": valor_parcela,
+                    "conta":         origem_nome,
+                    "account_id":    account_id,
+                    "card_id":       card_id or None,
+                    "categoria":     cat,
+                    "first_due":     first_due,
+                    "notes":         notes or None,
+                })
 
-    for i in range(num_parcelas):
-        # Calcula o mês da parcela i: soma i meses à data da 1ª parcela
-        # Garante que o dia não ultrapasse o último dia do mês destino
-        total_months = first_date.month - 1 + i
-        year = first_date.year + total_months // 12
-        month = total_months % 12 + 1
-        day = min(first_date.day, calendar.monthrange(year, month)[1])
-        parcela_date = date(year, month, day).strftime("%Y-%m-%d")
+                for i in range(num_parcelas):
+                    # Mês da parcela i: soma i meses à data da 1ª, sem passar do último dia do mês
+                    total_months = first_date.month - 1 + i
+                    year = first_date.year + total_months // 12
+                    month = total_months % 12 + 1
+                    day = min(first_date.day, calendar.monthrange(year, month)[1])
 
-        tx_id = str(uuid.uuid4())
-        tx_ids.append(tx_id)
-
-        parcela_num = i + 1
-        parcela_name = f"{name} ({parcela_num}/{num_parcelas})"
-        parcela_notes = f"Parcela {parcela_num}/{num_parcelas}" + (f" — {notes}" if notes else "")
-
-        # Insere a transação individual da parcela — account_id/card_id espelham a origem do grupo
-        sql_tx = """
-            INSERT INTO transactions
-              (id, name, valor, tipo, categoria, conta, account_id, card_id, data, source,
-               notes, subscription_id, installment_group_id, created_at, deleted)
-            VALUES (%(id)s, %(name)s, %(valor)s, 'Despesa', %(categoria)s, %(conta)s, %(account_id)s,
-                    %(card_id)s, %(data)s, 'telegram', %(notes)s, NULL, %(group_id)s, NOW(), FALSE)
-        """
-        params_tx = {
-            "id":         tx_id,
-            "name":       parcela_name,
-            "valor":      valor_parcela,
-            "categoria":  cat,
-            "conta":      origem_nome,
-            "account_id": account_id,
-            "card_id":    card_id or None,
-            "data":       parcela_date,
-            "notes":      parcela_notes,
-            "group_id":   group_id,
-        }
-
-        try:
-            run_dml(sql_tx, params_tx)
-        except Exception as e:
-            return {"status": "error", "message": f"Erro ao criar parcela {parcela_num}: {e}"}
+                    tx_id = str(uuid.uuid4())
+                    tx_ids.append(tx_id)
+                    parcela_num = i + 1
+                    cur.execute(sql_tx, {
+                        "id":         tx_id,
+                        "name":       f"{name} ({parcela_num}/{num_parcelas})",
+                        "valor":      primeira_parcela if i == 0 else valor_parcela,
+                        "categoria":  cat,
+                        "conta":      origem_nome,
+                        "account_id": account_id,
+                        "card_id":    card_id or None,
+                        "data":       date(year, month, day).strftime("%Y-%m-%d"),
+                        "notes":      f"Parcela {parcela_num}/{num_parcelas}" + (f" — {notes}" if notes else ""),
+                        "group_id":   group_id,
+                    })
+    except Exception as e:
+        return {"status": "error", "message": f"Erro ao criar a compra parcelada: {e}"}
 
     return {
         "status": "ok",
@@ -241,6 +240,8 @@ def get_future_commitments(month: str) -> dict:
         FROM subscriptions
         WHERE next_billing BETWEEN %(start)s AND %(end)s
           AND status = 'ativa'
+          AND (deleted = FALSE OR deleted IS NULL)
+          AND COALESCE(kind, 'assinatura') <> 'renda'
     """
 
     params = {"start": start, "end": end}

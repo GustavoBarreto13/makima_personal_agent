@@ -46,6 +46,7 @@ from agents.nami.tools import (
     mark_subscription_paid,  # Confirma pagamento — cria despesa + rola vencimento (atômico, spec 044)
     skip_subscription_cycle, # Pula o ciclo sem lançar despesa (spec 044)
     create_transfer,       # Par atômico débito/crédito entre contas (spec 043)
+    suggest_entry,         # Autocompletar lançamento a partir do histórico (spec 070)
     _today_date,           # Hoje no fuso America/Sao_Paulo (spec 040) — nunca date.today() (UTC do servidor)
 )
 
@@ -79,11 +80,16 @@ from agents.nami.tools_credit_cards import (
     register_credit_card,   # Cadastra cartão vinculado a uma conta
     get_card_debt_summary,  # Resumo de dívidas em todos os cartões
     register_card_payment,  # Registra pagamento de fatura
+    get_card_invoices,      # Faturas derivadas: atual, em aberto e próximas (spec 070)
     update_credit_card,     # Atualiza campos de um cartão (spec 043 — só faltava expor)
     delete_credit_card,     # Encerra cartão — status → 'encerrado'
 )
 
 # Empréstimos e financiamentos
+# Plano do mês ("livre pra gastar") e estatísticas no contrato do Design System — spec 070
+from agents.nami.tools_plan import get_month_plan
+from agents.nami.tools_stats import get_stats_payload
+
 from agents.nami.tools_loans import (
     register_loan,               # Cadastra empréstimo PRICE ou SAC
     list_loans,                  # Lista empréstimos por status
@@ -351,7 +357,7 @@ class CreateSubscriptionBody(BaseModel):
     icon_url: Optional[str] = None       # URL de ícone do serviço (upload ou URL pública)
     next_billing_day: Optional[int] = None  # Dia do mês de cobrança (1-28, para cálculo de dias restantes)
     # Campos da spec 044 (Contas Fixas)
-    kind: str = "assinatura"             # "assinatura" ou "conta_fixa"
+    kind: str = "assinatura"             # "assinatura", "conta_fixa" ou "renda"
     auto_lancar: Optional[bool] = None   # None = usa o padrão por kind (assinatura=True, conta_fixa=False)
 
 
@@ -373,7 +379,7 @@ class UpdateSubscriptionBody(BaseModel):
     icon_url: Optional[str] = None
     next_billing_day: Optional[int] = None
     # Campos da spec 044 (Contas Fixas)
-    kind: str = ""                       # "assinatura" ou "conta_fixa" (vazio = não altera)
+    kind: str = ""                       # "assinatura", "conta_fixa" ou "renda" (vazio = não altera)
     auto_lancar: Optional[bool] = None    # None = não altera
 
 
@@ -464,6 +470,9 @@ def list_transactions(
     tipo: str = Query(default="", description="Filtra por 'Despesa'/'Receita'/'Transferencia' (spec 043)"),
     limit: int = Query(default=0, description="Tamanho da página — 0 = sem paginação (spec 043)"),
     offset: int = Query(default=0, description="Deslocamento da página (spec 043)"),
+    q: str = Query(default="", description="Busca por trecho no nome ou nas notas (spec 070)"),
+    account_id: str = Query(default="", description="Só transações desta conta (spec 070)"),
+    card_id: str = Query(default="", description="Só transações deste cartão (spec 070)"),
     # Dependência de autenticação — retorna 401 se o cookie de sessão for inválido
     user: dict = Depends(require_user),
 ) -> dict:
@@ -496,8 +505,29 @@ def list_transactions(
         tipo=tipo,
         limit=limit,
         offset=offset,
+        q=q,
+        account_id=account_id,
+        card_id=card_id,
     )
     return _check_result(result)
+
+
+@router.get("/suggest")
+def suggest_endpoint(
+    q: str = Query(description="Trecho da descrição (mínimo 2 caracteres)"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Sugestões de lançamento a partir do histórico (categoria e conta/cartão da última vez)."""
+    return _check_result(suggest_entry(q))
+
+
+@router.get("/plan")
+def plan_endpoint(
+    month: str = Query(default="", description="Mês AAAA-MM — vazio = mês corrente"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Plano do mês: renda, gasto, o que ainda vai sair e quanto está livre pra gastar (spec 070)."""
+    return _check_result(get_month_plan(month))
 
 
 @router.get("/transactions/export")
@@ -860,6 +890,12 @@ def create_account_endpoint(
     return result
 
 
+@router.get("/accounts/overview")
+def accounts_overview_endpoint(user: dict = Depends(require_user)) -> dict:
+    """Saldo real de cada conta ativa e o total (spec 070)."""
+    return _check_result(get_accounts_overview())
+
+
 @router.get("/accounts/{account_id}/balance")
 def account_balance(
     account_id: str,                    # ID da conta, vem na URL
@@ -1142,6 +1178,16 @@ def card_payment_endpoint(
         data=body.data,
     )
     return _check_result(result)
+
+
+@router.get("/cards/{card_id}/invoices")
+def card_invoices_endpoint(
+    card_id: str,
+    months: int = Query(default=3, ge=0, le=12, description="Faturas futuras além da atual"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Faturas do cartão: atual, anteriores em aberto e próximas já comprometidas (spec 070)."""
+    return _check_result(get_card_invoices(card_id, months))
 
 
 @router.get("/cards/{card_id}/installments")
@@ -2035,10 +2081,14 @@ def list_categories(user: dict = Depends(require_user)) -> list:
 
 @router.get("/stats")
 def get_stats(
-    month: str = Query(description="Mês no formato YYYY-MM (ex.: 2026-06)"),
+    month: str = Query(default="", description="Legado: YYYY-MM. Com `year`: número do mês (1-12), opcional"),
+    year: int = Query(default=0, description="Contrato do Design System (spec 070): ano da retrospectiva"),
     user: dict = Depends(require_user),
 ) -> dict:
-    """Calcular estatísticas financeiras consolidadas do mês.
+    """Calcular estatísticas financeiras.
+
+    Com `year` devolve o `StatsPayload` do Design System (tela Resumo, spec 070); sem ele,
+    mantém o formato antigo por `month=YYYY-MM` usado pelo Dashboard legado (sai na fase 6).
 
     Agrega receitas, despesas, breakdown por categoria e histórico de fluxo de caixa.
     Usado pelo Dashboard do NamiShell.
@@ -2054,6 +2104,11 @@ def get_stats(
         HTTPException: 400 se o formato do mês for inválido.
         HTTPException: 401 se o usuário não estiver autenticado.
     """
+    if year:
+        if month and not (month.isdigit() and 1 <= int(month) <= 12):
+            raise HTTPException(status_code=400, detail="Com `year`, month deve ser um número de 1 a 12.")
+        return _check_result(get_stats_payload(year, int(month) if month else None))
+
     # Valida o formato do mês (YYYY-MM)
     if not month or len(month) != 7 or '-' not in month:
         raise HTTPException(status_code=400, detail="Formato de mês inválido. Use YYYY-MM.")

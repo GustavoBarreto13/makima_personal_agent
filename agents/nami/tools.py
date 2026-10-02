@@ -24,6 +24,10 @@ _TZ = ZoneInfo("America/Sao_Paulo")
 
 # Lista de categorias válidas para classificar uma transação.
 # Qualquer valor fora dessa lista será rejeitado para manter consistência nos dados.
+# Tipos de recorrência. "renda" (spec 070) é entrada recorrente (salário): não entra no custo
+# fixo mensal e, ao confirmar, grava Receita em vez de Despesa.
+RECURRING_KINDS = ("assinatura", "conta_fixa", "renda")
+
 CATEGORIES = [
     "Alimentacao", "Comer Fora", "Saude", "Lazer", "Transporte",
     "Moradia", "Roupas", "Educacao", "Assinaturas", "Viagem",
@@ -485,6 +489,9 @@ def query_expenses(
     tipo: str = "",
     limit: int = 0,
     offset: int = 0,
+    q: str = "",
+    account_id: str = "",
+    card_id: str = "",
 ) -> dict:
     """Busca todas as transações em um período e retorna a lista com o total.
 
@@ -497,6 +504,9 @@ def query_expenses(
         tipo       — Filtra por "Despesa"/"Receita"/"Transferencia" (vazio = todos)
         limit      — Tamanho da página (spec 043). 0 = sem paginação (retorna tudo)
         offset     — Deslocamento da página (ignorado se limit=0)
+        q          — Busca por trecho no nome ou nas notas (sem diferenciar maiúsculas) — spec 070
+        account_id — Só transações dessa conta bancária (spec 070)
+        card_id    — Só transações desse cartão (spec 070)
 
     Retorna lista de transações, quantidade, soma total dos valores e `has_more`
     (True quando existem mais linhas além da página pedida).
@@ -514,6 +524,16 @@ def query_expenses(
     if tipo:
         where.append("tipo = %(tipo)s")
         params["tipo"] = tipo
+    if account_id:
+        where.append("account_id = %(account_id)s")
+        params["account_id"] = account_id
+    if card_id:
+        where.append("card_id = %(card_id)s")
+        params["card_id"] = card_id
+    if q.strip():
+        # Escapa % e _ digitados pelo usuário — senão "50%" viraria curinga
+        where.append("(name ILIKE %(q)s ESCAPE '!' OR notes ILIKE %(q)s ESCAPE '!')")
+        params["q"] = _like_pattern(q.strip())
 
     # account_id/card_id no SELECT — sem eles o formulário de edição não sabe
     # se a transação é de conta ou de cartão (bug descoberto na spec 043)
@@ -576,6 +596,59 @@ def query_expenses(
         return {"status": "error", "message": str(e)}
 
 
+def _like_pattern(text: str) -> str:
+    """Padrão ILIKE "contém" com os curingas do texto neutralizados (use com ESCAPE '!').
+
+    `%`, `_` e o próprio `!` digitados pelo usuário viram literais — sem isso "50%" casaria
+    com qualquer coisa que começasse por "50".
+    """
+    escaped = text.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+    return f"%{escaped}%"
+
+
+def suggest_entry(q: str, limit: int = 6) -> dict:
+    """Sugere como lançar algo parecido com o que já foi lançado antes (autocompletar).
+
+    Procura nos lançamentos avulsos (sem parcela nem recorrência) descrições que contenham
+    `q` e devolve, para cada descrição, categoria, conta/cartão e valor do uso mais recente —
+    quem digita "ifood" já recebe a categoria e o cartão que usou da última vez (spec 070).
+
+    Args:
+        q: Trecho da descrição (mínimo 2 caracteres).
+        limit: Máximo de sugestões (padrão 6).
+
+    Returns:
+        {"status": "ok", "suggestions": [{name, tipo, categoria, valor, conta, account_id,
+        card_id}]} — mais recentes primeiro.
+    """
+    q = (q or "").strip()
+    if len(q) < 2:
+        return {"status": "ok", "suggestions": []}
+    try:
+        rows = run_select(
+            """
+            SELECT DISTINCT ON (LOWER(name))
+                   name, tipo, categoria, valor, conta, account_id, card_id, data
+              FROM transactions
+             WHERE deleted = FALSE
+               AND tipo IN ('Despesa', 'Receita')
+               AND installment_group_id IS NULL
+               AND subscription_id IS NULL
+               AND name ILIKE %(q)s ESCAPE '!'
+             ORDER BY LOWER(name), data DESC, created_at DESC
+            """,
+            {"q": _like_pattern(q)},
+        )
+        rows.sort(key=lambda r: r["data"], reverse=True)
+        suggestions = [
+            {k: r[k] for k in ("name", "tipo", "categoria", "valor", "conta", "account_id", "card_id")}
+            for r in rows[: max(1, limit)]
+        ]
+        return {"status": "ok", "suggestions": suggestions}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 def _insert_transfer_pair(
     cur,
     *,
@@ -623,8 +696,8 @@ def _insert_transfer_pair(
 
 def create_transfer(
     from_account: str,
+    valor: float,
     to_account: str = "",
-    valor: float = 0.0,
     data: str = "",
     notes: str = "",
     to_card: str = "",
@@ -638,8 +711,8 @@ def create_transfer(
 
     Args:
         from_account: Nome da conta de origem (débito).
-        to_account: Nome da conta de destino (crédito). Ignorado se `to_card` for informado.
         valor: Valor transferido em reais (positivo).
+        to_account: Nome da conta de destino (crédito). Ignorado se `to_card` for informado.
         data: Data da transferência AAAA-MM-DD (padrão: hoje).
         notes: Observações opcionais.
         to_card: Nome do cartão de destino — é assim que se paga uma fatura (spec 070).
@@ -892,11 +965,12 @@ def create_subscription(
         conta        — Conta ou cartão usado para pagamento (resolvido dinamicamente)
         categoria    — Categoria da assinatura (deve estar em CATEGORIES)
         notes        — Observações opcionais
-        kind         — "assinatura" (padrão) ou "conta_fixa" — serviço digital de valor
-                       fixo é assinatura; conta doméstica de valor variável (luz, água,
-                       aluguel) é conta fixa.
-        auto_lancar  — Se None, usa o padrão por kind (assinatura=True, conta_fixa=False —
-                       FR-002). Contas fixas exigem confirmação manual do valor real.
+        kind         — "assinatura" (padrão), "conta_fixa" ou "renda" — serviço digital de
+                       valor fixo é assinatura; conta doméstica de valor variável (luz, água,
+                       aluguel) é conta fixa; salário/entrada recorrente é renda (spec 070:
+                       confirmar com mark_subscription_paid grava uma Receita, não Despesa).
+        auto_lancar  — Se None, usa o padrão por kind (assinatura=True; conta_fixa e renda=False
+                       — FR-002). Contas fixas e rendas exigem confirmação manual do valor real.
 
     Retorna "status": "ok" com o ID criado, ou "status": "error" se algo for inválido.
     """
@@ -904,8 +978,8 @@ def create_subscription(
     if ciclo not in ("mensal", "anual"):
         return {"status": "error", "message": "ciclo deve ser 'mensal' ou 'anual'"}
 
-    if kind not in ("assinatura", "conta_fixa"):
-        return {"status": "error", "message": "kind deve ser 'assinatura' ou 'conta_fixa'"}
+    if kind not in RECURRING_KINDS:
+        return {"status": "error", "message": "kind deve ser 'assinatura', 'conta_fixa' ou 'renda'"}
 
     # Padrão por kind (FR-002) quando o chamador não decidiu explicitamente
     if auto_lancar is None:
@@ -966,7 +1040,7 @@ def create_subscription(
     try:
         run_dml(sql, params)
         # Retorna confirmação com um resumo legível da assinatura criada
-        label = "Conta fixa" if kind == "conta_fixa" else "Assinatura"
+        label = {"conta_fixa": "Conta fixa", "renda": "Renda"}.get(kind, "Assinatura")
         _touch_calendar()
         return {"status": "ok", "id": sub_id, "message": f"{label} criada: {name} R${float(valor):.2f}/{ciclo}"}
     except Exception as e:
@@ -982,7 +1056,7 @@ def list_subscriptions(status: str = "ativa", kind: str = "") -> dict:
     Parâmetros:
         status — Filtro de status: "ativa" (padrão), "pausada", "cancelada" ou
                  "todas" (sem filtro de status — traz os três).
-        kind   — Filtro opcional: "assinatura" ou "conta_fixa" (spec 044). Vazio = ambos.
+        kind   — Filtro opcional: "assinatura", "conta_fixa" ou "renda". Vazio = todos.
 
     Retorna lista de recorrências e o custo mensal equivalente total.
     """
@@ -1017,12 +1091,17 @@ def list_subscriptions(status: str = "ativa", kind: str = "") -> dict:
         # Calcula o total mensal equivalente:
         # - Assinaturas mensais: usa o valor diretamente
         # - Assinaturas anuais: divide por 12 para obter o custo mensal proporcional
-        total_mensal = sum(
-            r["valor"] if r["ciclo"] == "mensal" else r["valor"] / 12
-            for r in rows
-        )
+        def _mensal(r: dict) -> float:
+            return r["valor"] if r["ciclo"] == "mensal" else r["valor"] / 12
 
-        return {"status": "ok", "subscriptions": rows, "total_mensal": round(total_mensal, 2)}
+        # Renda não é custo: fica fora do total_mensal e tem o próprio total
+        total_mensal = sum(_mensal(r) for r in rows if r["kind"] != "renda")
+        renda_mensal = sum(_mensal(r) for r in rows if r["kind"] == "renda")
+
+        return {
+            "status": "ok", "subscriptions": rows,
+            "total_mensal": round(total_mensal, 2), "renda_mensal": round(renda_mensal, 2),
+        }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -1048,7 +1127,7 @@ def update_subscription(
         id           — ID da recorrência a ser editada (obrigatório)
         Os demais parâmetros são opcionais — só os informados serão alterados.
         status       — Novo status: "ativa", "pausada" ou "cancelada"
-        kind         — "assinatura" ou "conta_fixa" (spec 044) — permite reclassificar
+        kind         — "assinatura", "conta_fixa" ou "renda" — permite reclassificar
         auto_lancar  — Liga/desliga o lançamento automático (spec 044/048)
 
     Retorna "status": "ok" se atualizado, "status": "error" se não encontrada ou inválida.
@@ -1115,8 +1194,8 @@ def update_subscription(
         params["notes"] = notes
 
     if kind:
-        if kind not in ("assinatura", "conta_fixa"):
-            return {"status": "error", "message": "kind deve ser 'assinatura' ou 'conta_fixa'"}
+        if kind not in RECURRING_KINDS:
+            return {"status": "error", "message": "kind deve ser 'assinatura', 'conta_fixa' ou 'renda'"}
         sets.append("kind = %(kind)s")
         params["kind"] = kind
 
@@ -1171,27 +1250,36 @@ def _cycle_status(sub: dict, today: date) -> str:
         checando a existência de uma transação vinculada no período; esta função só
         cobre o caso "ainda não paga".
     """
+    due = _cycle_due_date(sub, today)
+    if due is None:
+        return "agendada"
+    return "atrasada" if today > due else "pendente"
+
+
+def _cycle_due_date(sub: dict, today: date) -> date | None:
+    """Vencimento do ciclo corrente de uma recorrência, ou None se ela não vence este mês.
+
+    Usa `next_billing_day` (dia do mês, estável entre rolagens); sem ele, cai no dia do
+    `next_billing` (compat. com recorrências criadas antes do campo existir). Recorrência
+    anual só vence no mês de cobrança. Função pura — `_cycle_status` e o plano do mês usam a
+    mesma regra.
+    """
     from calendar import monthrange
 
     ciclo = sub.get("ciclo") or "mensal"
+    nb = sub.get("next_billing")
     day = sub.get("next_billing_day")
     if not day:
-        # Sem dia cadastrado — usa o dia do next_billing como fallback (compat. com
-        # recorrências antigas criadas antes do campo next_billing_day existir)
-        nb = sub.get("next_billing")
         day = date.fromisoformat(nb).day if nb else 1
 
     if ciclo == "anual":
         # Mês de cobrança fixo: persiste entre rolagens porque rolar soma 1 ano
         # (mês nunca muda). Fora desse mês, a conta não é urgente este mês.
-        nb = sub.get("next_billing")
         billing_month = date.fromisoformat(nb).month if nb else today.month
         if today.month != billing_month:
-            return "agendada"
+            return None
 
-    last_day = monthrange(today.year, today.month)[1]
-    due = date(today.year, today.month, min(day, last_day))
-    return "atrasada" if today > due else "pendente"
+    return date(today.year, today.month, min(day, monthrange(today.year, today.month)[1]))
 
 
 def _roll_billing_date(current: date, ciclo: str, anchor_day: int | None = None) -> date:
@@ -1221,13 +1309,14 @@ def get_recurring_status(kind: str = "", status: str = "ativa") -> dict:
     `_cycle_status` (pendente/atrasada/agendada).
 
     Args:
-        kind: Filtro opcional "assinatura" ou "conta_fixa" — vazio retorna ambos.
+        kind: Filtro opcional "assinatura", "conta_fixa" ou "renda" — vazio retorna todos.
         status: Filtro de status da recorrência (padrão "ativa").
 
     Returns:
         Dict com "status": "ok", lista "items" (cada um com "cycle_status"),
-        "custo_fixo_mensal" (soma de todos, anuais proporcionalizadas) e
-        "pendentes_count" (contas fixas com status pendente/atrasada).
+        "custo_fixo_mensal" (soma das despesas, anuais proporcionalizadas — renda fica de fora),
+        "pendentes_count" (despesas com status pendente/atrasada) e
+        "renda_pendente" (soma das rendas ainda não recebidas neste ciclo).
     """
     result = list_subscriptions(status=status, kind=kind)
     if result.get("status") != "ok":
@@ -1241,10 +1330,13 @@ def get_recurring_status(kind: str = "", status: str = "ativa") -> dict:
     items = []
     pendentes_count = 0
     custo_fixo_mensal = 0.0
+    renda_pendente = 0.0
 
     for sub in result.get("subscriptions", []):
         valor = float(sub["valor"])
-        custo_fixo_mensal += valor if sub["ciclo"] == "mensal" else valor / 12
+        is_renda = sub.get("kind") == "renda"
+        if not is_renda:
+            custo_fixo_mensal += valor if sub["ciclo"] == "mensal" else valor / 12
 
         # Verifica se já há transação vinculada a esta recorrência no mês corrente
         paid_rows = run_select(
@@ -1262,7 +1354,10 @@ def get_recurring_status(kind: str = "", status: str = "ativa") -> dict:
         else:
             cycle_status = _cycle_status(sub, today)
             if cycle_status in ("pendente", "atrasada"):
-                pendentes_count += 1
+                if is_renda:
+                    renda_pendente += valor
+                else:
+                    pendentes_count += 1
 
         items.append({**sub, "cycle_status": cycle_status})
 
@@ -1271,6 +1366,7 @@ def get_recurring_status(kind: str = "", status: str = "ativa") -> dict:
         "items": items,
         "custo_fixo_mensal": round(custo_fixo_mensal, 2),
         "pendentes_count": pendentes_count,
+        "renda_pendente": round(renda_pendente, 2),
     }
 
 
@@ -1333,11 +1429,12 @@ def mark_subscription_paid(
                     card_id = sub.get("card_id") or ""
                     payer = sub.get("conta") or ""
 
+                is_renda = (sub.get("kind") or "assinatura") == "renda"
                 tx = create_transaction_on_cursor(
                     cur,
-                    name=f"{sub['name']} (pago)",
+                    name=f"{sub['name']} ({'recebido' if is_renda else 'pago'})",
                     valor=float(valor),
-                    tipo="Despesa",
+                    tipo="Receita" if is_renda else "Despesa",
                     categoria=sub.get("categoria") or "Inbox",
                     conta=payer,
                     card_id=card_id,
@@ -1355,7 +1452,10 @@ def mark_subscription_paid(
         _touch_calendar()
         return {
             "status": "ok", "transaction_id": tx["id"],
-            "message": f"Pagamento de R${valor:.2f} confirmado para {sub['name']}",
+            "message": (
+                f"Recebimento de R${valor:.2f} confirmado para {sub['name']}" if is_renda
+                else f"Pagamento de R${valor:.2f} confirmado para {sub['name']}"
+            ),
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}

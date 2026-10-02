@@ -22,6 +22,7 @@ from agents.nami.tools import (
     get_recurring_status,
     mark_subscription_paid,
     skip_subscription_cycle,
+    create_transfer,
 )
 from agents.nami.tools_installments import (
     create_installment,
@@ -35,6 +36,7 @@ from agents.nami.tools_accounts import (
     create_account,
     list_accounts,
     get_account_balance,
+    get_accounts_overview,
     update_account,
     delete_account,
 )
@@ -46,6 +48,7 @@ from agents.nami.tools_credit_cards import (
     get_minimum_payment_cost,
     update_credit_card,
     delete_credit_card,
+    get_card_invoices,
 )
 from agents.nami.tools_loans import (
     register_loan,
@@ -66,6 +69,7 @@ from agents.nami.tools_budgets import (
     delete_budget,
 )
 from agents.nami.tools_health import get_financial_health_score
+from agents.nami.tools_plan import get_month_plan
 from agents.nami.tools_personal_loans import (
     list_personal_loans,
     create_personal_loan,
@@ -92,10 +96,12 @@ TOOLS = [
     create_account,
     list_accounts,
     get_account_balance,
+    get_accounts_overview,
     update_account,
     delete_account,
     # Transações e consultas
     create_transaction,
+    create_transfer,
     query_expenses,
     update_transaction,
     delete_transaction,
@@ -124,6 +130,7 @@ TOOLS = [
     get_minimum_payment_cost,
     update_credit_card,
     delete_credit_card,
+    get_card_invoices,
     # Empréstimos e financiamentos
     register_loan,
     list_loans,
@@ -140,6 +147,8 @@ TOOLS = [
     get_budget_status,
     check_category_budget,
     delete_budget,
+    # Plano do mês — "quanto ainda posso gastar" (spec 070)
+    get_month_plan,
     # Score de saúde financeira
     get_financial_health_score,
     # Empréstimos pessoa-a-pessoa (spec 046)

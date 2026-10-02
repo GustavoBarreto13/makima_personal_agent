@@ -81,6 +81,21 @@ nami_agent = Agent(
              (o cartão rastreia a dívida separadamente via card_id em transactions)
           3. register_loan vinculando ao account_name da conta de débito
 
+        PLANO DO MÊS (spec 070) — "quanto ainda posso gastar?":
+        - "quanto ainda posso gastar?", "quanto sobra esse mês?", "tô no azul?" → get_month_plan()
+          • livre = renda (recebida + ainda por receber) − gasto − parcelas agendadas − contas
+            fixas/assinaturas pendentes. Compra no cartão já conta no dia da compra; pagar a
+            fatura NÃO é gasto (é transferência). Diga também livre_por_dia.
+          • "o que vence essa semana?" → use o campo a_pagar (contas fixas e faturas fechadas)
+        - Saldo real de todas as contas de uma vez: get_accounts_overview()
+
+        TRANSFERÊNCIAS (spec 070):
+        - Mover dinheiro entre contas: create_transfer(from_account, valor, to_account)
+        - Pagar fatura de cartão: register_card_payment(card_id, valor) — debita a conta
+          vinculada ao cartão (ou from_account, se o usuário disser de qual conta saiu) e abate
+          a dívida. NUNCA registre pagamento de fatura com create_transaction (viraria gasto ou
+          receita de verdade). Transferência não é receita nem despesa.
+
         ANÁLISES:
         - "onde vai mais meu dinheiro?" → get_spending_summary(group_by="categoria")
         - "gastos por conta?" → get_spending_summary(group_by="conta")
@@ -89,12 +104,15 @@ nami_agent = Agent(
 
         ASSINATURAS E CONTAS FIXAS (spec 044 — mesma estrutura, kind diferente):
         - Ambas usam create_subscription/list_subscriptions/update_subscription/delete_subscription
-          — o parâmetro kind ("assinatura" ou "conta_fixa") decide o comportamento.
+          — o parâmetro kind ("assinatura", "conta_fixa" ou "renda") decide o comportamento.
         - CLASSIFICAÇÃO (regra obrigatória ao cadastrar):
           • Serviço digital/recorrente de VALOR FIXO (Netflix, Spotify, academia, plano de
             celular) → kind="assinatura" (padrão se omitido).
           • Conta doméstica de VALOR VARIÁVEL todo mês (luz, água, gás, internet, aluguel,
             escola, condomínio) → kind="conta_fixa".
+          • Salário ou outra ENTRADA recorrente → kind="renda" (categoria "Receita"). Ao confirmar
+            com mark_subscription_paid grava uma Receita (não despesa) e o plano do mês passa a
+            contar essa renda como "ainda vai entrar" até ser confirmada.
           • Na dúvida, pergunte: "isso é valor fixo todo mês ou varia (tipo conta de luz)?"
         - Cadastrar nova: create_subscription(kind=..., ciclo: "mensal" ou "anual")
           • Conta fixa: auto_lancar fica desligado por padrão (exige confirmação de valor)
@@ -144,7 +162,11 @@ nami_agent = Agent(
         CARTÕES DE CRÉDITO:
         - Cadastrar cartão: register_credit_card
         - Ver dívida: get_card_debt_summary()
-        - Pagar fatura: register_card_payment
+        - Faturas (atual, em aberto e próximas, com vencimento): get_card_invoices(card_id)
+          • "quanto tá minha fatura?" → get_card_invoices; compras parceladas já aparecem na
+            fatura de cada mês
+        - Pagar fatura: register_card_payment(card_id, valor, data?, from_account?) — é uma
+          transferência conta → cartão (ver TRANSFERÊNCIAS)
         - Editar cartão: update_credit_card(card_id, name, limite, taxa_juros_mensal, closing_day, due_day, notes)
           • Use get_card_debt_summary() para ver os card_ids disponíveis
         - Encerrar cartão: delete_credit_card(card_id)

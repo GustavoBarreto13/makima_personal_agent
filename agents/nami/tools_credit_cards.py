@@ -17,7 +17,7 @@ Usage:
 
 import uuid
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 
 # Importa os helpers PostgreSQL compartilhados
 from agents.db import run_select, run_dml
@@ -26,6 +26,7 @@ from agents.nami.tools import (
     _invalidate_cards_cache,
     _insert_transfer_pair,
     _today,
+    _today_date,
     _touch_calendar,
     create_transaction,
 )
@@ -88,6 +89,177 @@ def _card_debt(card_id: str) -> float:
         {"card_id": card_id, "today": _today()},
     )
     return max(0.0, float(rows[0]["saldo"]) if rows else 0.0)
+
+
+# ─── Faturas (derivadas — sem tabela nova) ────────────────────────────────────
+
+def _clamp_day(year: int, month: int, day: int) -> date:
+    """Data com o dia ajustado ao último dia do mês (dia 31 em abril → 30)."""
+    return date(year, month, min(day, monthrange(year, month)[1]))
+
+
+def _add_months(year: int, month: int, k: int) -> tuple[int, int]:
+    idx = year * 12 + (month - 1) + k
+    return idx // 12, idx % 12 + 1
+
+
+def _invoice_key(d: date, closing_day: int) -> tuple[int, int]:
+    """(ano, mês) do fechamento da fatura que recebe uma compra feita em `d`.
+
+    Compra até o dia de fechamento (inclusive) cai na fatura que fecha neste mês; depois
+    dele, na que fecha no mês seguinte.
+    """
+    if d <= _clamp_day(d.year, d.month, closing_day):
+        return d.year, d.month
+    return _add_months(d.year, d.month, 1)
+
+
+def _invoice_dates(key: tuple[int, int], closing_day: int, due_day: int) -> tuple[date, date, date]:
+    """(início, fechamento, vencimento) da fatura que fecha no mês `key`.
+
+    O vencimento cai no mesmo mês do fechamento se o dia dele for maior que o do fechamento
+    (fecha dia 6, vence dia 13) e no mês seguinte caso contrário (fecha dia 25, vence dia 5).
+    """
+    y, m = key
+    closing = _clamp_day(y, m, closing_day)
+    py, pm = _add_months(y, m, -1)
+    start = _clamp_day(py, pm, closing_day) + timedelta(days=1)
+    dy, dm = (y, m) if due_day > closing_day else _add_months(y, m, 1)
+    return start, closing, _clamp_day(dy, dm, due_day)
+
+
+def build_invoices(
+    purchases: list[dict],
+    payments_total: float,
+    closing_day: int,
+    due_day: int,
+    today: date,
+    months_ahead: int = 3,
+) -> list[dict]:
+    """Monta as faturas do cartão a partir das compras e dos pagamentos — função pura.
+
+    Cada compra (`valor`, `data`) cai numa fatura pelo dia de fechamento. Os pagamentos não
+    são ligados a uma fatura específica: são aplicados da mais antiga para a mais nova (o
+    que o banco faz na prática), então o que sobra em aberto soma exatamente a dívida.
+
+    Retorna, em ordem de fechamento: as 2 faturas anteriores à atual, as não pagas mais
+    antigas (fechadas/atrasadas), a atual e as `months_ahead` seguintes. Cada fatura traz
+    id ("AAAA-MM" do fechamento), start/closing/due (ISO), total, pago, restante, status
+    (paga | aberta | fechada | atrasada | futura) e `items` (as compras).
+    """
+    by_key: dict[tuple[int, int], list[dict]] = {}
+    for p in purchases:
+        by_key.setdefault(_invoice_key(p["data"], closing_day), []).append(p)
+
+    current = _invoice_key(today, closing_day)
+    keys = sorted(set(by_key) | {current})
+
+    remaining = max(0.0, float(payments_total))
+    out = []
+    for key in keys:
+        items = sorted(by_key.get(key, []), key=lambda p: (p["data"], p["name"]))
+        total = round(sum(float(p["valor"]) for p in items), 2)
+        pago = round(min(remaining, total), 2)
+        remaining -= pago
+        restante = round(total - pago, 2)
+        start, closing, due = _invoice_dates(key, closing_day, due_day)
+
+        if total > 0 and restante < 0.005:
+            status = "paga"
+        elif start > today:
+            status = "futura"
+        elif today <= closing:
+            status = "aberta"
+        elif today > due:
+            status = "atrasada"
+        else:
+            status = "fechada"
+
+        out.append({
+            "id": f"{key[0]}-{key[1]:02d}",
+            "start": start.isoformat(), "closing": closing.isoformat(), "due": due.isoformat(),
+            "total": total, "pago": pago, "restante": restante, "status": status,
+            "items": [
+                {"id": p.get("id"), "name": p["name"], "valor": float(p["valor"]),
+                 "data": p["data"].isoformat(), "parcelada": bool(p.get("installment_group_id"))}
+                for p in items
+            ],
+        })
+
+    lo = _add_months(*current, -2)
+    hi = _add_months(*current, months_ahead)
+    return [
+        inv for inv in out
+        if inv["status"] in ("fechada", "atrasada")
+        or lo <= (int(inv["id"][:4]), int(inv["id"][5:])) <= hi
+    ]
+
+
+def get_card_invoices(card_id: str, months: int = 3) -> dict:
+    """Faturas do cartão: a atual, as anteriores ainda em aberto e as próximas já comprometidas.
+
+    As faturas são derivadas das transações (`card_id`) e dos dias de fechamento/vencimento do
+    cartão; não existe tabela de faturas. Compras parceladas aparecem na fatura certa de cada
+    mês porque cada parcela é uma transação datada (spec 070).
+
+    Args:
+        card_id: ID do cartão.
+        months: Quantas faturas futuras incluir além da atual (padrão 3).
+
+    Returns:
+        {"status": "ok", "card": {id, name, limite, closing_day, due_day, divida_atual,
+        limite_disponivel}, "invoices": [...]} — ver `build_invoices`.
+    """
+    try:
+        cards = run_select(
+            """
+            SELECT id, name, limite, closing_day, due_day
+              FROM credit_cards WHERE id = %(id)s AND status = 'ativo'
+            """,
+            {"id": card_id},
+        )
+        if not cards:
+            return {"status": "error", "message": f"Cartão não encontrado: {card_id}"}
+        card = cards[0]
+
+        today = _today_date()
+        rows = run_select(
+            """
+            SELECT id, name, valor, tipo, data, installment_group_id
+              FROM transactions
+             WHERE card_id = %(id)s AND deleted = FALSE
+             ORDER BY data
+            """,
+            {"id": card_id},
+        )
+        for r in rows:
+            if isinstance(r["data"], str):
+                r["data"] = date.fromisoformat(r["data"])
+
+        purchases = [r for r in rows if r["tipo"] == "Despesa"]
+        # Pagamentos (transferência recebida) e créditos/estornos legados (Receita) abatem a dívida;
+        # o que tem data futura ainda não aconteceu.
+        payments_total = sum(
+            float(r["valor"]) for r in rows
+            if r["tipo"] in ("Transferencia", "Receita") and r["data"] <= today
+        )
+        invoices = build_invoices(
+            purchases, payments_total, int(card["closing_day"]), int(card["due_day"]), today, months,
+        )
+        divida = _card_debt(card_id)
+        limite = float(card["limite"] or 0)
+        return {
+            "status": "ok",
+            "card": {
+                "id": card["id"], "name": card["name"], "limite": limite,
+                "closing_day": int(card["closing_day"]), "due_day": int(card["due_day"]),
+                "divida_atual": round(divida, 2),
+                "limite_disponivel": round(max(0.0, limite - divida), 2),
+            },
+            "invoices": invoices,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 def register_credit_card(

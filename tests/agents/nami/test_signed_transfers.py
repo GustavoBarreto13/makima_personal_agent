@@ -136,7 +136,7 @@ def test_create_transfer_entre_contas_ok():
     cur = RecordingCursor()
     p1, p2, p3, p4 = _patch_transfer_env(cur)
     with p1, p2, p3, p4:
-        r = t.create_transfer("Itau", "NuConta", 100.0, data="2026-10-02")
+        r = t.create_transfer("Itau", 100.0, "NuConta", data="2026-10-02")
     assert r["status"] == "ok" and r["transfer_id"]
     assert [c[1]["valor"] for c in cur.calls] == [-100.0, 100.0]
 
