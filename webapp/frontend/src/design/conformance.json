@@ -204,7 +204,7 @@
       "status": "legacy",
       "dir": "src/pages/akane",
       "shell": "src/pages/akane/AkaneShell.tsx",
-      "art": null,
+      "art": "noir",
       "appShell": false,
       "hero": false,
       "theme": false,

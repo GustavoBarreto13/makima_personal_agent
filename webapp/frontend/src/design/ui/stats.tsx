@@ -215,6 +215,9 @@ export interface StatsPageProps {
   monthlyTitle?: string
 }
 
+/** Unidades da série mensal que são contagens inteiras (as demais mostram uma casa decimal). */
+const INTEGER_UNITS = new Set(['treinos', 'R$', 'sessões', 'filmes'])
+
 export function StatsPage({ payload, hero, minYear, maxYear, onYear, today, heatThresholds, formatDaily, metrics, metric, onMetric, ratings, renderMoment, emptyHint, heatmapTitle = 'Dias com registro', monthlyTitle = 'Ritmo por mês' }: StatsPageProps) {
   const year = payload?.period.year ?? maxYear
   const nav = <YearNav year={year} min={minYear} max={maxYear} onChange={onYear} />
@@ -247,7 +250,7 @@ export function StatsPage({ payload, hero, minYear, maxYear, onYear, today, heat
               </div>
             )}
           </div>
-          <BarSeries monthly={payload.monthly} unit={payload.monthlyUnit} decimals={payload.monthlyUnit === 'treinos' || payload.monthlyUnit === 'R$' ? 0 : 1} />
+          <BarSeries monthly={payload.monthly} unit={payload.monthlyUnit} decimals={INTEGER_UNITS.has(payload.monthlyUnit) ? 0 : 1} />
         </section>
         {dist.some((d) => d.count > 0) && (
           <section className="ds-panel ds-card"><h3>Como você avalia</h3><Distribution buckets={dist} /></section>

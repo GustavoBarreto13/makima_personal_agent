@@ -8,7 +8,8 @@ import {
   FlaskConical, Film, Filter, Flag, Flame, Footprints, Gamepad2, Gift, GraduationCap, Grid2x2, HandCoins, Hash, Heart, HeartPulse, House, Inbox, Info, Keyboard, Landmark, Laptop, Layers, LayoutGrid,
   Leaf, Library, Link, List, ListChecks, Mail, MapPin, Medal, Menu, MessageSquare, Minus, Monitor, Moon, Palette, PawPrint, Pencil, PiggyBank, Pill, Plane, Play, Plus,
   Receipt, RefreshCw, Repeat, Route, Search, Shirt, ShoppingCart, SlidersHorizontal, Smartphone, Sparkles, Star, Sun, Sunrise, Tag, Target, Timer, Trash2, TrendingDown,
-  TrendingUp, Trophy, Tv, Undo2, Upload, User, Users, Utensils, Wallet, X, Zap, BarChart3, ArrowUpDown, type LucideIcon,
+  TrendingUp, Trophy, Tv, Undo2, Upload, User, Users, Utensils, Wallet, X, Zap, BarChart3, ArrowUpDown,
+  Bookmark, Globe, Popcorn, RotateCcw, Sofa, Ticket, type LucideIcon,
 } from 'lucide-react'
 
 export const ICONS = {
@@ -32,6 +33,8 @@ export const ICONS = {
   // finanças (Nami, spec 071)
   card: CreditCard, invoice: Receipt, transfer: ArrowLeftRight, recurring: CalendarSync, income: TrendingUp, expense: TrendingDown,
   savings: PiggyBank, cart: ShoppingCart, loan: HandCoins, institution: Landmark,
+  // cinema (Akane, spec 072): `movie` (Film) já existe acima; revisto não pode ser `habit` (Repeat)
+  rewatch: RotateCcw, cinema: Ticket, couch: Sofa, watchlist: Bookmark, popcorn: Popcorn, globe: Globe,
   // categorias de gasto (Nami)
   food: Apple, dining: Utensils, game: Gamepad2, car: Car, shirt: Shirt, school: GraduationCap, gift: Gift, pill: Pill, laptop: Laptop, pet: PawPrint,
   // treino (agente de exemplo da página /design)

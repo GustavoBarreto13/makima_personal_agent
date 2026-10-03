@@ -266,9 +266,11 @@ estilos sugeridos pelo domínio (ex.: Yato "caderno de bordo", Akane "cinema noi
 "grimório", Marin "neon kawaii", Violet "papel de carta") e **Outro**. A resposta vai para o campo
 `art` em `agents.json` e em `conformance.json` (e nunca é perguntada de novo).
 
-Estilos existentes: `caderno` (exemplo) e `nautica` (**Nami** — "Carta náutica": papel creme + graticula
-no claro, marinho profundo no escuro). Direção de arte por agente: Nami = `nautica`; os demais _ainda não
-escolhida_ (`null`; `makima` e `design` usam `default`).
+Estilos existentes: `caderno` (exemplo), `nautica` (**Nami** — "Carta náutica": papel creme + graticula
+no claro, marinho profundo no escuro) e `noir` (**Akane** — "Cinema noir": prata com tinta quase preta
+no claro, "sala apagada" com vinheta carmim no escuro, cantos secos e linhas finas de película). Direção
+de arte por agente: Nami = `nautica`; Akane = `noir`; os demais _ainda não escolhida_ (`null`; `makima`
+e `design` usam `default`).
 
 **Armadilhas ao escrever um estilo de arte** (aprendidas no `nautica`):
 

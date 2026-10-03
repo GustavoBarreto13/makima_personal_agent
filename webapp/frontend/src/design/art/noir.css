@@ -1,0 +1,82 @@
+/* Estilo de arte "Cinema noir" (Akane): sala escura, tela de cinema, traço fino de película.
+ * No claro vira "prata": papel cinza-pérola com tinta quase preta e o carmim da Akane como único
+ * acento. No escuro vira "sala apagada": superfícies bem mais fundas que o tema padrão, o carmim
+ * brilha como luz de projetor (vinheta no topo).
+ *
+ * REGRA: um estilo de arte muda só o VISUAL. Aqui só entram custom properties --ds-* visuais e nada
+ * de layout nem cor literal (o lint:design rejeita). Cores vêm de MISTURAS de tokens que já existem
+ * (ink-1, line, accent), então acompanham o tema e o agente sozinhas.
+ *
+ * ARMADILHA: uma custom property não pode referenciar a si mesma no mesmo elemento (ciclo, vira
+ * inválida). Por isso as misturas partem de ink-1 (que este estilo não redefine) e dos aliases
+ * --ds-art-noir-paper/-card (o paper/card ORIGINAIS do tema, capturados no :root); só os tokens de
+ * superfície são redefinidos, sempre a partir desses aliases.
+ *
+ * CONTRASTE: o audit:design não cobre estilos de arte, então os pares foram calculados à parte (WCAG,
+ * mistura em oklab, tinta ink-1..4, accent-deep e accent contra paper, paper-2, card, card-2 e mist,
+ * acento da Akane). Pior par de texto: 5.5:1 no claro (ink-4 sobre mist); pior par gráfico: 4.7:1 no
+ * claro; no escuro todos >= 7.1:1. Cálculo, não conferência no navegador: olhe a tela antes de
+ * publicar. Se mexer em qualquer percentual de lavagem ou de tinta, refaça a conta. */
+
+/* paper/card ORIGINAIS do tema, guardados sob outro nome (ver ARMADILHA acima). No :root, onde
+ * ainda valem os do tema; no escuro, o :root já traz os tokens escuros. */
+:root {
+  --ds-art-noir-paper: var(--ds-paper);
+  --ds-art-noir-card: var(--ds-card);
+}
+
+.ds-app[data-ds-art="noir"] {
+  --ds-font-display: 'Bricolage Grotesque', 'Hanken Grotesk', sans-serif;
+
+  /* superfícies (claro): papel cinza-pérola, lavado com a tinta */
+  --ds-paper-2: color-mix(in oklab, var(--ds-art-noir-paper), var(--ds-ink-1) 7%);
+  --ds-card-2: color-mix(in oklab, var(--ds-art-noir-card), var(--ds-ink-1) 4%);
+  --ds-mist: color-mix(in oklab, var(--ds-art-noir-paper), var(--ds-ink-1) 11%);
+
+  /* tinta: a escala secundária fica mais perto de ink-1 (preto de película) que a do tema */
+  --ds-ink-2: color-mix(in oklab, var(--ds-ink-1) 88%, var(--ds-art-noir-paper));
+  --ds-ink-3: color-mix(in oklab, var(--ds-ink-1) 80%, var(--ds-art-noir-paper));
+  --ds-ink-4: color-mix(in oklab, var(--ds-ink-1) 74%, var(--ds-art-noir-paper));
+
+  /* ambiente: luz do projetor no topo, em carmim, sobre a sala */
+  --ds-ambient: radial-gradient(110% 70% at 50% -12%, var(--ds-accent-tint-2), transparent 58%), linear-gradient(var(--ds-paper-2), var(--ds-paper));
+
+  /* película: linhas finíssimas (varredura) e vinheta nas bordas */
+  --ds-texture:
+    repeating-linear-gradient(0deg, color-mix(in oklab, var(--ds-ink-1) 3.5%, transparent) 0 1px, transparent 1px 3px),
+    radial-gradient(130% 100% at 50% 0%, transparent 60%, color-mix(in oklab, var(--ds-ink-1) 9%, transparent));
+
+  /* material: tela quase opaca, borda carmim fina e sombra de projeção no lugar do vidro */
+  --ds-glass-bg: color-mix(in oklab, var(--ds-card) 92%, transparent);
+  --ds-glass-border: color-mix(in oklab, var(--ds-accent) 20%, var(--ds-line));
+  --ds-glass-hi: transparent;
+  --ds-blur: 4px;
+  --ds-blur-soft: 2px;
+  --ds-glass-shadow: 0 0 0 1px color-mix(in oklab, var(--ds-ink-1) 5%, transparent), 0 18px 32px -18px color-mix(in oklab, var(--ds-ink-1) 45%, transparent);
+
+  /* cantos de moldura de tela, mais secos que os do tema */
+  --ds-r-xs: 2px;
+  --ds-r-sm: 4px;
+  --ds-r-md: 6px;
+  --ds-r-lg: 9px;
+}
+
+/* sala apagada: superfícies bem mais fundas (luminosidade e croma reduzidos por cor relativa a partir
+ * dos aliases escuros). O card segue mais claro que o fundo, como no tema escuro padrão. */
+:root[data-ds-theme="dark"] .ds-app[data-ds-art="noir"] {
+  --ds-paper: oklch(from var(--ds-art-noir-paper) calc(l * 0.55) calc(c * 0.5) h);
+  --ds-paper-2: oklch(from var(--ds-art-noir-paper) calc(l * 0.7) calc(c * 0.5) h);
+  --ds-mist: oklch(from var(--ds-art-noir-paper) calc(l * 0.62) calc(c * 0.5) h);
+  --ds-card: oklch(from var(--ds-art-noir-card) calc(l * 0.62) calc(c * 0.5) h);
+  --ds-card-2: oklch(from var(--ds-art-noir-card) calc(l * 0.7) calc(c * 0.5) h);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ds-theme="light"]) .ds-app[data-ds-art="noir"] {
+    --ds-paper: oklch(from var(--ds-art-noir-paper) calc(l * 0.55) calc(c * 0.5) h);
+    --ds-paper-2: oklch(from var(--ds-art-noir-paper) calc(l * 0.7) calc(c * 0.5) h);
+    --ds-mist: oklch(from var(--ds-art-noir-paper) calc(l * 0.62) calc(c * 0.5) h);
+    --ds-card: oklch(from var(--ds-art-noir-card) calc(l * 0.62) calc(c * 0.5) h);
+    --ds-card-2: oklch(from var(--ds-art-noir-card) calc(l * 0.7) calc(c * 0.5) h);
+  }
+}
