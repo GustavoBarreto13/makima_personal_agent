@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from webapp.backend.deps import require_user
 
 # ─── Tools da Akane — importadas diretamente (sem instanciar agente ADK) ────
+from agents.akane.tools_stats import get_stats_payload
 from agents.akane.tools import (
     # ── Busca e catálogo ───────────────────────────────────────────────────────
     search_movie,          # Busca no TMDB por texto (sem gravar no banco)
@@ -339,6 +340,31 @@ def get_stats_endpoint(
         top_directors, rating_histogram.
     """
     return get_stats(year=year)
+
+
+@router.get("/stats/payload")
+def get_stats_payload_endpoint(
+    year: Optional[int] = Query(default=None, description="Ano de referência (padrão: ano atual)"),
+    month: Optional[int] = Query(default=None, ge=1, le=12, description="Mês 1-12 (padrão: ano inteiro)"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Estatísticas + Rewind no contrato `StatsPayload` do Design System (spec 072).
+
+    Convive com `/stats` (formato antigo) enquanto o shell legado existir; a fase de troca
+    do shell move este contrato para `/stats`.
+
+    Args:
+        year: Ano (padrão: ano atual).
+        month: Mês para fechar o foco; ausente = ano inteiro.
+        user: Usuário autenticado.
+
+    Returns:
+        StatsPayload: period, previous, kpis, daily, monthly, distribution, rankings, records, moments.
+    """
+    result = get_stats_payload(year=year or 0, month=month)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
 
 
 # ── Agregações — Onda 4 ───────────────────────────────────────────────────────

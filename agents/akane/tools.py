@@ -367,6 +367,9 @@ def _tmdb_detail(tmdb_id: int) -> dict | None:
         "director":    directors,
         "genres":      [g["name"] for g in details.get("genres", [])],
         "runtime":     details.get("runtime"),
+        # Idioma original e países de produção alimentam as estatísticas (spec 072)
+        "original_language": details.get("original_language") or None,
+        "countries":   [c["iso_3166_1"] for c in details.get("production_countries", []) if c.get("iso_3166_1")],
         # Trunca sinopse em 2000 chars para não exagerar no banco
         "overview":    (details.get("overview") or "")[:2000] or None,
         "poster_url":  poster_url,
@@ -706,14 +709,16 @@ def add_movie(
         """
         INSERT INTO movies (
             id, tmdb_id, imdb_id, letterboxd_uri, title, normalizado, year,
-            director, genres, runtime, overview, poster_url, backdrop_url,
-            poster_palette, status, rating, rating_source, source, created_at, updated_at
+            director, genres, runtime, original_language, countries, overview,
+            poster_url, backdrop_url, poster_palette, status, watchlist_added_at,
+            rating, rating_source, source, created_at, updated_at
         ) VALUES (
             %(id)s, %(tmdb_id)s, %(imdb_id)s, %(letterboxd_uri)s,
             %(title)s, %(normalizado)s, %(year)s,
-            %(director)s, %(genres)s, %(runtime)s, %(overview)s,
-            %(poster_url)s, %(backdrop_url)s, %(poster_palette)s,
-            %(status)s, %(rating)s, %(rating_source)s, %(source)s, %(now)s, %(now)s
+            %(director)s, %(genres)s, %(runtime)s, %(original_language)s, %(countries)s,
+            %(overview)s, %(poster_url)s, %(backdrop_url)s, %(poster_palette)s,
+            %(status)s, %(watchlist_added_at)s,
+            %(rating)s, %(rating_source)s, %(source)s, %(now)s, %(now)s
         )
         """,
         {
@@ -728,12 +733,16 @@ def add_movie(
             "director":        meta.get("director") or [],
             "genres":          meta.get("genres") or [],
             "runtime":         meta.get("runtime"),
+            "original_language": meta.get("original_language"),
+            "countries":       meta.get("countries") or [],
             "overview":        meta.get("overview"),
             "poster_url":      meta.get("poster_url"),
             "backdrop_url":    meta.get("backdrop_url"),
             # Paleta determinística para o pôster tipográfico de fallback
             "poster_palette":  _poster_palette(final_title),
             "status":          status,
+            # Só quem entra direto no "Quero ver" ganha a data de entrada (spec 072)
+            "watchlist_added_at": now if status == "watchlist" else None,
             "rating":          rating,
             "rating_source":   "letterboxd" if rating is not None else None,
             "source":          source,
@@ -871,6 +880,15 @@ def log_watch(
                                          WHEN %(rating)s IS NOT NULL THEN %(rating_source)s
                                          ELSE rating_source
                                        END,
+                    -- Logar um filme recém-criado como 'watchlist' (add_movie tem esse default e
+                    -- o fluxo "logar direto" passa por ele) não é um "Quero ver" de verdade:
+                    -- 1ª sessão em até 5 min da criação zera a data de entrada (spec 072).
+                    watchlist_added_at = CASE
+                                         WHEN times_watched = 0
+                                              AND watchlist_added_at > %(now)s - INTERVAL '5 minutes'
+                                         THEN NULL
+                                         ELSE watchlist_added_at
+                                       END,
                     updated_at       = %(now)s
                 WHERE id = %(movie_id)s
                 """,
@@ -984,8 +1002,18 @@ def update_movie_status(movie_id: str, status: str) -> dict:
     if not rows:
         return _err("Filme não encontrado.")
 
+    # Voltar para o "Quero ver" registra a entrada; a data nunca é apagada ao ver o
+    # filme (é o que permite medir "adicionados vs vistos" — spec 072).
     run_dml(
-        "UPDATE movies SET status = %(s)s, updated_at = %(now)s WHERE id = %(id)s",
+        """
+        UPDATE movies
+        SET status = %(s)s, updated_at = %(now)s,
+            watchlist_added_at = CASE
+                WHEN %(s)s = 'watchlist' AND status <> 'watchlist' THEN %(now)s
+                ELSE watchlist_added_at
+            END
+        WHERE id = %(id)s
+        """,
         {"s": status, "now": _now(), "id": movie_id},
     )
     _touch_calendar()
@@ -1055,6 +1083,7 @@ def refresh_movie_metadata(movie_id: str, tmdb_id: int | None = None) -> dict:
         SET tmdb_id = %(tmdb_id)s, imdb_id = %(imdb_id)s, title = %(title)s,
             normalizado = %(normalizado)s, year = %(year)s, director = %(director)s,
             genres = %(genres)s, runtime = %(runtime)s, overview = %(overview)s,
+            original_language = %(original_language)s, countries = %(countries)s,
             poster_url = %(poster_url)s, backdrop_url = %(backdrop_url)s,
             poster_palette = %(poster_palette)s, updated_at = %(now)s
         WHERE id = %(id)s
@@ -1069,6 +1098,8 @@ def refresh_movie_metadata(movie_id: str, tmdb_id: int | None = None) -> dict:
             "director":       detail.get("director") or [],
             "genres":         detail.get("genres") or [],
             "runtime":        detail.get("runtime"),
+            "original_language": detail.get("original_language"),
+            "countries":      detail.get("countries") or [],
             "overview":       detail.get("overview"),
             "poster_url":     detail.get("poster_url"),
             "backdrop_url":   detail.get("backdrop_url"),
@@ -1348,9 +1379,9 @@ def get_stats(year: int | None = None) -> dict:
     # UNNEST expande o array TEXT[] de gêneros em linhas individuais para agregar
     top_genres = run_select(
         """
-        SELECT genre, COUNT(*) AS count
+        SELECT genre, COUNT(DISTINCT movie_id) AS count
         FROM (
-            SELECT UNNEST(m.genres) AS genre
+            SELECT UNNEST(m.genres) AS genre, d.movie_id
             FROM diary_entries d
             JOIN movies m ON m.id = d.movie_id
             WHERE EXTRACT(YEAR FROM d.watched_date) = %(year)s
@@ -1366,9 +1397,9 @@ def get_stats(year: int | None = None) -> dict:
     # ── Top diretores ─────────────────────────────────────────────────────────
     top_directors = run_select(
         """
-        SELECT director, COUNT(*) AS count
+        SELECT director, COUNT(DISTINCT movie_id) AS count
         FROM (
-            SELECT UNNEST(m.director) AS director
+            SELECT UNNEST(m.director) AS director, d.movie_id
             FROM diary_entries d
             JOIN movies m ON m.id = d.movie_id
             WHERE EXTRACT(YEAR FROM d.watched_date) = %(year)s
@@ -1921,7 +1952,7 @@ def get_rewind(year: int | None = None) -> dict:
     # ── Década mais assistida ─────────────────────────────────────────────────
     decade_rows = run_select(
         """
-        SELECT (FLOOR(m.year / 10) * 10)::INTEGER AS decade, COUNT(*) AS count
+        SELECT (FLOOR(m.year / 10) * 10)::INTEGER AS decade, COUNT(DISTINCT d.movie_id) AS count
         FROM diary_entries d
         JOIN movies m ON m.id = d.movie_id
         WHERE EXTRACT(YEAR FROM d.watched_date) = %(year)s
@@ -2436,12 +2467,14 @@ def upsert_movie_from_letterboxd(
             """
             INSERT INTO movies (
                 id, tmdb_id, imdb_id, letterboxd_uri, title, normalizado, year,
-                director, genres, runtime, overview, poster_url, backdrop_url,
+                director, genres, runtime, original_language, countries, overview,
+                poster_url, backdrop_url,
                 poster_palette, status, rating, rating_source, source,
                 last_watched_date, times_watched, created_at, updated_at
             ) VALUES (
                 %(id)s, %(tmdb_id)s, %(imdb_id)s, %(uri)s, %(title)s, %(norm)s,
-                %(year)s, %(director)s, %(genres)s, %(runtime)s, %(overview)s,
+                %(year)s, %(director)s, %(genres)s, %(runtime)s,
+                %(original_language)s, %(countries)s, %(overview)s,
                 %(poster_url)s, %(backdrop_url)s, %(palette)s,
                 'watched', %(rating)s, %(rating_source)s, %(source)s,
                 %(watched_date)s, 1, %(now)s, %(now)s
@@ -2458,6 +2491,8 @@ def upsert_movie_from_letterboxd(
                 "director":      meta.get("director") or [],
                 "genres":        meta.get("genres") or [],
                 "runtime":       meta.get("runtime"),
+                "original_language": meta.get("original_language"),
+                "countries":     meta.get("countries") or [],
                 "overview":      meta.get("overview"),
                 "poster_url":    meta.get("poster_url"),
                 "backdrop_url":  meta.get("backdrop_url"),

@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS movies (
     director         TEXT[],                            -- Diretor(es) — TMDB credits (job='Director')
     genres           TEXT[],                            -- Gêneros — TMDB
     runtime          INTEGER,                           -- Duração em minutos — TMDB
+    original_language TEXT,                             -- Idioma original (ISO 639-1: 'en', 'ja'…) — TMDB (spec 072)
+    countries        TEXT[],                            -- Países de produção (ISO 3166-1: 'US', 'JP'…) — TMDB (spec 072)
+    watchlist_added_at TIMESTAMPTZ,                     -- Quando entrou no "Quero ver" (spec 072); NULL = nunca esteve
     overview         TEXT,                              -- Sinopse — TMDB (truncada em 2000 chars)
     poster_url       TEXT,                              -- URL do pôster TMDB (w500); NULL = pôster tipográfico
     backdrop_url     TEXT,                              -- URL do backdrop TMDB (w1280) — hero da página
@@ -46,6 +49,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_movies_letterboxd
 -- Lookup por tmdb_id (dedup secundária + busca por ID externo).
 CREATE INDEX IF NOT EXISTS idx_movies_tmdb
     ON movies (tmdb_id);
+
+-- Spec 072: bancos criados antes das colunas de estatísticas (idioma, países, entrada no
+-- "Quero ver") ganham-nas aqui; o CREATE TABLE acima já as traz para bancos novos.
+ALTER TABLE movies ADD COLUMN IF NOT EXISTS original_language TEXT;
+ALTER TABLE movies ADD COLUMN IF NOT EXISTS countries TEXT[];
+ALTER TABLE movies ADD COLUMN IF NOT EXISTS watchlist_added_at TIMESTAMPTZ;
 
 -- Filtro de grid por status (watched/watchlist).
 CREATE INDEX IF NOT EXISTS idx_movies_status
