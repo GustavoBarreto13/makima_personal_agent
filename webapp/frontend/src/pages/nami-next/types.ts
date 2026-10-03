@@ -71,15 +71,14 @@ export interface Card {
 
 // ── Orçamento ────────────────────────────────────────────────────────────────
 
-/** Envelope de orçamento mensal por categoria. */
-export interface Budget {
-  id: string
-  category_id: string   // slug da categoria
-  categoria: string     // alias (algumas respostas usam este campo)
-  limit_amount: number  // limite em reais
-  month: string         // YYYY-MM-DD (primeiro dia do mês)
-  spent?: number        // quanto já foi gasto (calculado pelo backend)
-  pct?: number          // percentual gasto (0–100+)
+/** Envelope de orçamento do mês, como o backend devolve (GET /budgets → `envelopes`). */
+export interface BudgetEnvelope {
+  categoria: string     // id da categoria
+  limite: number        // limite em reais
+  gasto: number         // quanto já foi gasto no mês
+  restante: number      // limite − gasto (negativo se estourou)
+  pct_usado: number     // 0–100+
+  estourado: boolean
 }
 
 // ── Assinatura ───────────────────────────────────────────────────────────────

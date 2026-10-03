@@ -142,17 +142,23 @@
       "theme": true,
       "icons": true,
       "collections": [
-        "nami:lancamentos"
+        "nami:lancamentos",
+        "nami:recorrentes"
       ],
       "quickCapture": "entry-line",
       "stats": {
-        "page": false,
-        "metrics": []
+        "page": true,
+        "metrics": [
+          "income_expense_by_month",
+          "savings_rate",
+          "top_categories",
+          "net_worth_real"
+        ]
       },
-      "detail": false,
+      "detail": true,
       "prefs": true,
       "hotkeys": true,
-      "mobile": false
+      "mobile": true
     },
     "kaguya": {
       "status": "legacy",

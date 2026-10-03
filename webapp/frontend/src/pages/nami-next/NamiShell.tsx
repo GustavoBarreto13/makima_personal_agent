@@ -2,7 +2,7 @@
 // Carrega contas, cartões e categorias uma vez, expõe as ações comuns pelo contexto (lançar, pagar,
 // desfazer) e troca de tela por hash (/nami#cartoes), mantendo os atalhos antigos funcionando.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '../../design'
 import { fmtMoney, MONTHS_LONG, todayISO } from '../../design/core/format'
@@ -11,7 +11,7 @@ import type { CaptureResult } from '../../design/core/capture'
 import { confirm } from '../../design/headless/confirm'
 import { toast } from '../../design/headless/toast'
 import { usePrefs } from '../../design/headless/usePrefs'
-import { AppShell, EmptyState, ErrorState, LoadingState, Page, SettingRow, Select, Toggle, type NavGroup } from '../../design'
+import { AppShell, ErrorState, LoadingState, Page, SettingRow, Select, Toggle, type NavGroup } from '../../design'
 import { EntryForm } from './components/EntryForm'
 import { PayModal } from './components/PayModal'
 import { NamiContext, type NamiCtx, type OpenEntry, type PayRequest, type ViewId } from './context'
@@ -19,7 +19,15 @@ import { applySuggestion, canSaveQuickly, draftFromCapture, emptyDraft, toSource
 import { VIEW_HASH, viewFromHash } from './lib/routes'
 import { recreateTransaction, submitEntry, updateEntry } from './lib/submit'
 import { namiApi } from './namiApi'
+import { Accounts } from './screens/Accounts'
+import { Budgets } from './screens/Budgets'
+import { Cards } from './screens/Cards'
 import { Home } from './screens/Home'
+import { Installments } from './screens/Installments'
+import { Loans } from './screens/Loans'
+import { Recurring } from './screens/Recurring'
+import { Shopping } from './screens/Shopping'
+import { Summary } from './screens/Summary'
 import { Transactions } from './screens/Transactions'
 import type { Account, Card, Category, Transaction } from './types'
 import './nami-next.css'
@@ -170,15 +178,21 @@ export function NamiShell() {
   }), [accounts, cards, categories, sources, defaultSource, rev, reload, prefs.hide, money, goto, openEntry, quickCapture, save, remove])
 
   const month = MONTHS_LONG[Number(today.slice(5, 7)) - 1]
-  const subtitle = view === 'home' ? `${month} de ${today.slice(0, 4)}` : view === 'transactions' ? 'Tudo que entrou e saiu' : 'Finanças'
+  const SUBTITLE: Partial<Record<ViewId, string>> = {
+    home: `${month} de ${today.slice(0, 4)}`, transactions: 'Tudo que entrou e saiu', cards: 'Faturas e limites', recurring: 'Todo mês', summary: 'Retrospectiva',
+    accounts: 'Saldo real', installments: 'Compras parceladas', loans: 'Dívidas', budgets: 'Limites por categoria', shopping: 'Mercado e mais',
+  }
+  const subtitle = SUBTITLE[view] ?? 'Finanças'
 
+  const SCREENS: Record<ViewId, () => ReactElement> = {
+    home: () => <Home />, transactions: () => <Transactions />, cards: () => <Cards />, recurring: () => <Recurring />, summary: () => <Summary />,
+    accounts: () => <Accounts />, installments: () => <Installments />, loans: () => <Loans />, budgets: () => <Budgets />, shopping: () => <Shopping />,
+  }
   const body = boot === 'loading'
     ? <Page><LoadingState variant="stat" count={4} /></Page>
     : boot === 'error'
       ? <Page><ErrorState onRetry={() => { setBoot('loading'); setTries((n) => n + 1) }} /></Page>
-      : view === 'home' ? <Home />
-        : view === 'transactions' ? <Transactions />
-          : <Page><EmptyState icon="sparkles" title={`${TITLES[view]} está sendo refeita`} hint="Esta tela chega na próxima etapa da nova Nami." /></Page>
+      : SCREENS[view]()
 
   return (
     <NamiContext.Provider value={ctx}>

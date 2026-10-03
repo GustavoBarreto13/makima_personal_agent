@@ -209,9 +209,13 @@ export interface StatsPageProps {
   renderMoment?: (m: StatsPayload['moments'][number], i: number) => ReactNode
   /** Estado vazio do período. */
   emptyHint?: string
+  /** Título do mapa de calor (padrão "Dias com registro"; finanças: "Dias com gasto"). */
+  heatmapTitle?: string
+  /** Título da série mensal (padrão "Ritmo por mês"). */
+  monthlyTitle?: string
 }
 
-export function StatsPage({ payload, hero, minYear, maxYear, onYear, today, heatThresholds, formatDaily, metrics, metric, onMetric, ratings, renderMoment, emptyHint }: StatsPageProps) {
+export function StatsPage({ payload, hero, minYear, maxYear, onYear, today, heatThresholds, formatDaily, metrics, metric, onMetric, ratings, renderMoment, emptyHint, heatmapTitle = 'Dias com registro', monthlyTitle = 'Ritmo por mês' }: StatsPageProps) {
   const year = payload?.period.year ?? maxYear
   const nav = <YearNav year={year} min={minYear} max={maxYear} onChange={onYear} />
   if (!payload || payload.kpis.every((k) => !k.value)) {
@@ -230,20 +234,20 @@ export function StatsPage({ payload, hero, minYear, maxYear, onYear, today, heat
       <Hero compact eyebrow={hero.eyebrow} eyebrowIcon="trophy" title={`${payload.period.label}`} meta={hero.summary} />
       <KpiGrid kpis={payload.kpis} previousLabel={prevLabel} />
       <section className="ds-panel ds-card" aria-labelledby="ds-hm-t">
-        <h3 id="ds-hm-t">Dias com registro</h3>
+        <h3 id="ds-hm-t">{heatmapTitle}</h3>
         <Heatmap year={year} daily={payload.daily} today={today} thresholds={heatThresholds} formatValue={formatDaily} />
       </section>
       <div className="ds-cols2">
         <section className="ds-panel ds-card">
           <div className="ds-row-between">
-            <h3>Ritmo por mês</h3>
+            <h3>{monthlyTitle}</h3>
             {metrics && metric && onMetric && (
               <div className="ds-seg" role="group" aria-label="Métrica">
                 {metrics.map((m) => <button key={m.value} type="button" className={cx(metric === m.value && 'ds-on')} aria-pressed={metric === m.value} onClick={() => onMetric(m.value)}>{m.label}</button>)}
               </div>
             )}
           </div>
-          <BarSeries monthly={payload.monthly} unit={payload.monthlyUnit} decimals={payload.monthlyUnit === 'treinos' ? 0 : 1} />
+          <BarSeries monthly={payload.monthly} unit={payload.monthlyUnit} decimals={payload.monthlyUnit === 'treinos' || payload.monthlyUnit === 'R$' ? 0 : 1} />
         </section>
         {dist.some((d) => d.count > 0) && (
           <section className="ds-panel ds-card"><h3>Como você avalia</h3><Distribution buckets={dist} /></section>

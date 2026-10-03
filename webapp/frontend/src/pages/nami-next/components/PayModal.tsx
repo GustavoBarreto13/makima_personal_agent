@@ -13,6 +13,7 @@ export function PayModal({ req, onClose }: { req: PayRequest; onClose: () => voi
   const nami = useNami()
   const accounts = nami.sources.filter((s) => s.kind === 'account')
   const isInvoice = req.kind === 'fatura'
+  const isIncome = req.kind === 'renda'
 
   // Fatura: a conta vinculada ao cartão. Conta fixa/assinatura: vazio = a conta já cadastrada nela.
   const linked = useMemo(() => {
@@ -42,7 +43,7 @@ export function PayModal({ req, onClose }: { req: PayRequest; onClose: () => voi
         toast(`Fatura do ${req.name}: ${nami.money(valor)} paga`, { tone: 'success', undo: () => { void namiApi.deleteTransfer(r.transfer_id).then(nami.reload) } })
       } else {
         await namiApi.paySubscription(req.id, { valor, data: date, conta: from || undefined })
-        toast(`${req.name}: ${nami.money(valor)} lançado`, { tone: 'success' })
+        toast(isIncome ? `${req.name}: ${nami.money(valor)} recebido` : `${req.name}: ${nami.money(valor)} lançado`, { tone: 'success' })
       }
     })
   }
@@ -55,21 +56,21 @@ export function PayModal({ req, onClose }: { req: PayRequest; onClose: () => voi
   return (
     <Modal
       size="sm"
-      title={isInvoice ? `Pagar fatura do ${req.name}` : `Confirmar ${req.name}`}
+      title={isInvoice ? `Pagar fatura do ${req.name}` : isIncome ? `Receber ${req.name}` : `Confirmar ${req.name}`}
       onClose={onClose}
       footer={
         <>
           {!isInvoice && <Button variant="ghost" onClick={skip} disabled={busy}>Pular este mês</Button>}
           <Button onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" onClick={confirmPay} disabled={busy}>{busy ? 'Salvando…' : isInvoice ? 'Pagar' : 'Confirmar'}</Button>
+          <Button variant="primary" onClick={confirmPay} disabled={busy}>{busy ? 'Salvando…' : isInvoice ? 'Pagar' : isIncome ? 'Recebi' : 'Confirmar'}</Button>
         </>
       }
     >
-      <Field label={isInvoice ? 'Valor pago' : 'Valor real'} hint={isInvoice ? 'Pode ser a fatura toda ou só uma parte.' : 'Pode ser diferente do esperado (conta de luz, por exemplo).'} error={error}>
+      <Field label={isInvoice ? 'Valor pago' : isIncome ? 'Valor recebido' : 'Valor real'} hint={isInvoice ? 'Pode ser a fatura toda ou só uma parte.' : isIncome ? 'Pode ser diferente do esperado.' : 'Pode ser diferente do esperado (conta de luz, por exemplo).'} error={error}>
         {(a) => <MoneyInput {...a} value={valor} onChange={(v) => { setValor(v); setError(null) }} />}
       </Field>
       <Field label="Data">{(a) => <DatePicker {...a} value={date} onChange={setDate} />}</Field>
-      <Field label="Pago com" hint={isInvoice ? 'Sai desta conta e abate a dívida do cartão.' : undefined}>
+      <Field label={isIncome ? 'Caiu em' : 'Pago com'} hint={isInvoice ? 'Sai desta conta e abate a dívida do cartão.' : undefined}>
         {(a) => (
           <Select {...a} value={from} onChange={(e) => setFrom(e.target.value)}>
             {!isInvoice && <option value="">A conta cadastrada nele</option>}

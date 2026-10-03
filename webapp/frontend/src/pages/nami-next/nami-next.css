@@ -41,7 +41,43 @@
 .nm-suggest { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ds-space-2); }
 
 /* linha com ação ("Paguei") */
-.nm-act { display: flex; align-items: center; gap: var(--ds-space-3); cursor: default; }
-.nm-act .ds-t { flex: 1; min-width: 0; }
+.nm-act { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ds-space-2) var(--ds-space-3); cursor: default; }
+/* o título ocupa o que sobra, com largura mínima: no celular o resto (situação, valor, ações) quebra para a linha de baixo */
+.nm-act .ds-t { flex: 1 1 13em; min-width: 0; }
+.nm-act .ds-lead { flex: none; }
 
-.nm-note { margin: var(--ds-space-3) 0 0; color: var(--ds-ink-3); font-size: var(--ds-text-sm); }
+.nm-note { margin: var(--ds-space-3) 0; color: var(--ds-ink-3); font-size: var(--ds-text-sm); }
+
+/* cartão (tela Cartões): bloco clicável com limite usado */
+.nm-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-5);
+  text-align: left;
+  cursor: pointer;
+}
+.nm-tile:hover { border-color: var(--ds-accent); }
+
+.nm-sub {
+  margin: 0 0 var(--ds-space-3);
+  font-family: var(--ds-font-display);
+  font-weight: 800;
+  font-size: var(--ds-text-lg);
+}
+
+/* lista de compras */
+.nm-lists { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ds-space-2); }
+.nm-add { display: flex; gap: var(--ds-space-2); }
+.nm-add .ds-input { flex: 1; min-width: 0; }
+.nm-item { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 2px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; }
+.nm-item span { color: var(--ds-ink-3); font-size: var(--ds-text-sm); }
+.nm-done b { text-decoration: line-through; color: var(--ds-ink-3); }
+.nm-total { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--ds-space-3); padding: var(--ds-space-4) var(--ds-space-5); }
+
+/* orçamento: a barra de progresso ocupa a largura da linha */
+.nm-budget .ds-t { display: flex; flex-direction: column; gap: var(--ds-space-1); }
+
+/* resultado do simulador */
+.nm-result { padding: var(--ds-space-4); line-height: 1.5; }

@@ -19,7 +19,7 @@ export interface OpenEntry {
 
 /** Pedido de pagamento: conta fixa/assinatura (confirmar valor real) ou fatura de cartão. */
 export type PayRequest =
-  | { kind: 'conta' | 'assinatura'; id: string; name: string; valor: number }
+  | { kind: 'conta' | 'assinatura' | 'renda'; id: string; name: string; valor: number }
   | { kind: 'fatura'; cardId: string; name: string; valor: number; invoice?: string }
 
 export interface NamiCtx {

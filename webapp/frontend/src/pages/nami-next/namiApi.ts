@@ -3,7 +3,7 @@
 
 import { api } from '../../lib/api'
 import type {
-  Transaction, Account, Card, Budget, Subscription, RecurringKind,
+  Transaction, Account, Card, BudgetEnvelope, Subscription, RecurringKind,
   PersonalLoan, BankLoan, PayoffPriorityItem, Category,
   Installment, InstallmentDetail, CardInstallment,
   RecurringStatusResponse, ShoppingList, ShoppingListDetail, ShoppingItem, FrequentItem,
@@ -152,7 +152,8 @@ export const namiApi = {
 
   // ── Orçamentos ───────────────────────────────────────────────────────────────
 
-  getBudgets: (month: string): Promise<{ budgets: Budget[] }> =>
+  /** Envelopes do mês: limite, gasto e % usado de cada categoria com orçamento. */
+  getBudgets: (month: string): Promise<{ month: string; envelopes: BudgetEnvelope[] }> =>
     api.get(`/api/finances/budgets?month=${month}`),
 
   createBudget: (body: {
@@ -171,7 +172,7 @@ export const namiApi = {
 
   createSubscription: (body: {
     name: string; valor: number; ciclo: string;
-    next_billing_day?: number; categoria?: string;
+    next_billing?: string; next_billing_day?: number; categoria?: string;
     color?: string; icon_url?: string; conta?: string;
     kind?: RecurringKind; auto_lancar?: boolean;
   }): Promise<{ status: string }> =>
