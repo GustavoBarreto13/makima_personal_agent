@@ -149,7 +149,7 @@ TOOLS = [
     get_budget_status,
     check_category_budget,
     delete_budget,
-    # Plano do mês — "quanto ainda posso gastar" (spec 070)
+    # Plano do mês — "quanto ainda posso gastar" (spec 071)
     get_month_plan,
     # Score de saúde financeira
     get_financial_health_score,

@@ -9,7 +9,7 @@ Dez Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
 | Pasta | Shell | API object | CSS | Rota |
 |---|---|---|---|---|
 | `violet/` | `VioletShell.tsx` | `violetApi` em `lib/api.ts` | `violet.css` | `/journal/*` |
-| `nami/` | `NamiShell.tsx` | `namiApi` em `nami/namiApi.ts` | `nami.css` | `/nami/*` |
+| `nami/` | `NamiShell.tsx` (sobre o `AppShell` do DS) | `namiApi` em `nami/namiApi.ts` | `nami.css` (só complementos do DS, tokens `--ds-*`) | `/nami/*` |
 | `frieren/` | `FrierenShell.tsx` | `booksApi` em `lib/api.ts` | `frieren.css` | `/books/*` |
 | `kaguya/` | `KaguyaShell.tsx` | `kaguyaApi` em `kaguya/kaguyaApi.ts` | `kaguya.css` | `/tasks/*` |
 | `akane/` | `AkaneShell.tsx` | `akaneApi` em `akane/akaneApi.ts` | `akane.css` | `/movies/*` |
@@ -75,7 +75,7 @@ Cada domínio usa seu objeto de API. Componentes nunca chamam `fetch` diretament
 ```ts
 // Correto:
 violetApi.heatmap(year)     // violet
-namiApi.getStats(month)     // nami
+namiApi.getStats(year)      // nami
 booksApi.list()             // frieren
 
 // Proibido:

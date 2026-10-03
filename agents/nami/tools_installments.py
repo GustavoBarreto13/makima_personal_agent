@@ -121,7 +121,7 @@ def create_installment(
 
     tx_ids = []
     try:
-        # Tudo numa transação só (spec 070): se qualquer parcela falhar, o grupo e as parcelas
+        # Tudo numa transação só (spec 071): se qualquer parcela falhar, o grupo e as parcelas
         # anteriores sofrem rollback — antes sobrava um grupo "pela metade" no banco.
         with get_conn() as conn:
             with conn.cursor() as cur:

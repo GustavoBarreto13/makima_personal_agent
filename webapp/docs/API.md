@@ -47,11 +47,15 @@ Todos os endpoints de finanças exigem autenticação. A maior parte chama as to
 | `DELETE` | `/api/finances/transactions/{tx_id}` | Soft-delete de uma transação. | — |
 | `GET` | `/api/finances/transactions/export` | Exporta as transações filtradas como CSV (`;` + BOM UTF-8, compatível com Excel pt-BR) — spec 043. | `?start_date=&end_date=&categoria=&tipo=` |
 
-### Transferências (spec 043)
+> **Spec 071:** `GET /transactions` aceita também `q` (busca em nome e notas, em qualquer período), `account_id` e `card_id`, e cada
+> transação devolve `transfer_id`. `GET /accounts/overview` traz o saldo real de cada conta.
+
+### Transferências (spec 043, 071)
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `POST` | `/api/finances/transfers` | Registra transferência atômica entre duas contas (`tipo='Transferencia'`, excluída de receita/despesa nos relatórios). | Body: `CreateTransferBody` |
+| `POST` | `/api/finances/transfers` | Registra transferência atômica (`tipo='Transferencia'`, origem negativa e destino positivo; excluída de receita/despesa nos relatórios). `to_card` em vez de `to_account` = pagar a fatura do cartão (spec 071). | Body: `CreateTransferBody` |
+| `DELETE` | `/api/finances/transfers/{transfer_id}` | Apaga as DUAS pontas (transferência ou pagamento de fatura) — spec 071. | — |
 
 ### Resumo e análises
 
@@ -61,11 +65,14 @@ Todos os endpoints de finanças exigem autenticação. A maior parte chama as to
 | `GET` | `/api/finances/trend` | Tendência mensal de receitas e despesas — card "Tendência de gastos" do Dashboard (spec 042). | `?months=N` |
 | `GET` | `/api/finances/health` | Score de saúde financeira (0–100) — card "Saúde financeira" do Dashboard (spec 042). | `?month=YYYY-MM` |
 | `GET` | `/api/finances/commitments/{month}` | Compromissos futuros (parcelas, assinaturas). | Path: `YYYY-MM` |
-| `GET` | `/api/finances/stats` ★ | Stats consolidados do mês (SQL agregado para o dashboard). | `?month=YYYY-MM` (obrigatório) |
+| `GET` | `/api/finances/plan` | **"Livre pra gastar"** do mês: renda, gasto, o que ainda vai sair, livre e livre por dia, saldo das contas, `a_pagar` (contas e faturas fechadas) e top categorias (spec 071). | `?month=YYYY-MM` (vazio = mês corrente) |
+| `GET` | `/api/finances/stats` ★ | Retrospectiva no contrato `StatsPayload` do Design System: KPIs com delta contra o mesmo trecho do ano anterior, taxa de poupança, patrimônio líquido real, gasto/entrada por mês, mapa de calor, categorias e recordes (spec 071). | `?year=YYYY` (vazio = ano corrente), `&month=1-12` opcional |
+| `GET` | `/api/finances/suggest` | Autocompletar um lançamento: categoria e conta/cartão de lançamentos parecidos (spec 071). | `?q=` (mín. 2 letras) |
+| `GET` | `/api/finances/accounts/overview` | Saldo real (inicial + movimentos, só até hoje) de cada conta ativa e o total (spec 071). | — |
 | `GET` | `/api/finances/categories` | Metadados fixos das categorias (ícone, cor, tipo). | — |
 
 ⚠ `/summary` **não tem consumidor na UI** (decisão da spec 042) — é redundante com `/stats`
-(que já traz o agregado por categoria pronto para o Dashboard). Existe só para o agente
+(a retrospectiva da tela Resumo, que também traz o ranking de categorias). Existe só para o agente
 responder no Telegram ("onde vai mais meu dinheiro?" → `get_spending_summary`).
 
 ### Contas
@@ -85,7 +92,8 @@ responder no Telegram ("onde vai mais meu dinheiro?" → `get_spending_summary`)
 | `GET` | `/api/finances/cards` | Lista cartões com resumo de fatura e campos visuais. | — |
 | `POST` | `/api/finances/cards` | Registra cartão (devolve 201). | Body: `RegisterCreditCardBody` |
 | `PATCH` | `/api/finances/cards/{card_id}` | Atualiza campos do cartão (limite, taxa, dias, campos visuais) — spec 043. Conta vinculada não é editável. | Body: `UpdateCardBody` |
-| `POST` | `/api/finances/cards/{card_id}/payment` | Registra pagamento de fatura (devolve 201). | Body: `CardPaymentBody` |
+| `POST` | `/api/finances/cards/{card_id}/payment` | Paga a fatura: **transferência** da conta vinculada (ou `from_account`) para o cartão — debita a conta e abate a dívida, sem virar receita/despesa (devolve 201, com `transfer_id`). | Body: `CardPaymentBody` (`valor`, `data`, `from_account`) |
+| `GET` | `/api/finances/cards/{card_id}/invoices` | Faturas derivadas: atual, anteriores em aberto e próximas (total, pago, restante, vencimento, status, compras) — spec 071. | `?months=0-12` (faturas futuras, padrão 3) |
 | `DELETE` | `/api/finances/cards/{card_id}` | Encerra o cartão. | — |
 
 ### Empréstimos bancários / financiamentos unificados (spec 046)

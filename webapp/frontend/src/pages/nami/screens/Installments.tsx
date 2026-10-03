@@ -1,345 +1,124 @@
-// Tela de Parcelamentos da seção Nami (spec 041).
-// Lista compras parceladas ativas com progresso, drill-down com a linha do tempo
-// das parcelas individuais, compromissos futuros (parcelas + assinaturas) e
-// criação de nova compra parcelada (conta ou cartão de crédito).
+// Parcelamentos: as compras parceladas em andamento, quanto pesam nos próximos meses e a linha do tempo de
+// cada uma. Compras novas parceladas nascem em Lançar ("1200 tv 10x"): aqui só se acompanha, cancela ou apaga.
 
-import { useState, useEffect, useCallback } from 'react'
+import { useMemo, useState } from 'react'
+import { fmtDate, MONTHS_LONG, todayISO } from '../../../design/core/format'
+import { confirm } from '../../../design/headless/confirm'
+import { toast } from '../../../design/headless/toast'
+import { Button, EmptyState, ErrorState, ListRow, LoadingState, Modal, Page, ProgressBar, SectionHeader, StatusChip, Timeline } from '../../../design'
+import { useNami } from '../context'
+import { useLoad } from '../lib/useLoad'
 import { namiApi } from '../namiApi'
-import type { Account, Card, Category, Installment, InstallmentDetail } from '../types'
-import { FormModal } from '../modals/FormModal'
-import { ConfirmDialog } from '../modals/ConfirmDialog'
-import { Icon } from '../icons'
-import { fmtMoney, fmtDay, monthShort } from '../ui'
+import type { Installment, InstallmentDetail } from '../types'
 
-interface InstallmentsProps {
-  accounts: Account[]
-  cards: Card[]
-  onToast: (msg: string) => void
-  month?: string; stats?: unknown; subscriptions?: unknown
-  onTransactionSaved?: unknown; onNavigate?: unknown; onOpenAddModal?: unknown
+const nextMonths = (today: string, n: number): string[] => {
+  const base = Number(today.slice(0, 4)) * 12 + Number(today.slice(5, 7)) - 1
+  return Array.from({ length: n }, (_, i) => { const idx = base + i + 1; return `${Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}` })
 }
 
-/** Próximos 3 meses no formato YYYY-MM, a partir do mês corrente. */
-function nextMonths(n: number): string[] {
-  const now = new Date()
-  return Array.from({ length: n }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-  })
-}
+export function Installments() {
+  const nami = useNami()
+  const today = useMemo(() => todayISO(), [])
+  const months = useMemo(() => nextMonths(today, 3), [today])
+  const { state, retry } = useLoad(
+    async () => ({ list: (await namiApi.getInstallments('ativo')).installments, commitments: await Promise.all(months.map((m) => namiApi.getFutureCommitments(m))) }),
+    [nami.rev, months],
+  )
+  const [open, setOpen] = useState<Installment | null>(null)
 
-export function Installments({ accounts, cards, onToast }: InstallmentsProps) {
-  const [installments, setInstallments] = useState<Installment[]>([])
-  const [loading, setLoading]           = useState(true)
-  const [showForm, setShowForm]         = useState(false)
-  const [editingInst, setEditingInst]   = useState<Installment | null>(null)
-  const [saving, setSaving]             = useState(false)
-  const [confirmCancel, setConfirmCancel] = useState<Installment | null>(null)
-  const [confirmDeleteFull, setConfirmDeleteFull] = useState<Installment | null>(null)
-
-  // Compromissos futuros (3 meses) — carregados em paralelo, um card por mês
-  const [commitments, setCommitments] = useState<Record<string, number>>({})
-
-  // Grupo expandido (drill-down) + detalhe carregado
-  const [expandedId, setExpandedId]   = useState<string | null>(null)
-  const [detail, setDetail]           = useState<InstallmentDetail | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
-
-  const [categories, setCategories] = useState<Category[]>([])
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const r = await namiApi.getInstallments('ativo')
-      setInstallments(r.installments ?? [])
-    } catch {
-      setInstallments([])
-      onToast('Erro ao carregar parcelamentos')
-    } finally {
-      setLoading(false)
-    }
-  }, [onToast])
-
-  useEffect(() => { load() }, [load])
-
-  // Destaque vindo da tela Cartões (spec 041, US3): "Parcelamentos ativos" do
-  // cartão navega para cá com a compra já expandida. Chave transiente lida
-  // uma única vez e removida — não deve reaparecer em navegações futuras.
-  useEffect(() => {
-    const highlightId = sessionStorage.getItem('nami:highlight-installment')
-    if (highlightId) {
-      sessionStorage.removeItem('nami:highlight-installment')
-      toggleExpand(highlightId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Carrega categorias uma vez para o formulário de criação
-  useEffect(() => {
-    namiApi.getCategories()
-      .then(setCategories)
-      .catch(() => onToast('Erro ao carregar categorias'))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Carrega os compromissos dos próximos 3 meses
-  useEffect(() => {
-    const months = nextMonths(3)
-    Promise.allSettled(months.map(m => namiApi.getFutureCommitments(m)))
-      .then(results => {
-        const next: Record<string, number> = {}
-        results.forEach((r, i) => {
-          next[months[i]] = r.status === 'fulfilled' ? r.value.total : 0
-        })
-        setCommitments(next)
-      })
-  }, [])
-
-  async function toggleExpand(id: string) {
-    if (expandedId === id) {
-      setExpandedId(null)
-      setDetail(null)
-      return
-    }
-    setExpandedId(id)
-    setDetail(null)
-    setDetailLoading(true)
-    try {
-      const d = await namiApi.getInstallmentDetail(id)
-      setDetail(d)
-    } catch {
-      onToast('Erro ao carregar detalhe do parcelamento')
-      setExpandedId(null)
-    } finally {
-      setDetailLoading(false)
-    }
-  }
-
-  async function handleCancelFuture(id: string) {
-    try {
-      await namiApi.cancelInstallment(id)
-      onToast('Parcelas futuras canceladas')
-      setExpandedId(null)
-      setDetail(null)
-      await load()
-    } catch {
-      onToast('Erro ao cancelar parcelas futuras')
-    } finally {
-      setConfirmCancel(null)
-    }
-  }
-
-  async function handleDeleteFull(id: string) {
-    try {
-      await namiApi.deleteInstallment(id)
-      onToast('Parcelamento removido')
-      setExpandedId(null)
-      setDetail(null)
-      await load()
-    } catch {
-      onToast('Erro ao remover parcelamento')
-    } finally {
-      setConfirmDeleteFull(null)
-    }
-  }
-
-  async function handleSave(values: Record<string, unknown>) {
-    setSaving(true)
-    try {
-      if (editingInst) {
-        // Edição (apenas nome/notas — valores financeiros são imutáveis)
-        await namiApi.updateInstallment(editingInst.id, {
-          name: String(values.name ?? ''),
-          notes: String(values.notes ?? '') || undefined,
-        })
-        onToast('Compra parcelada atualizada ✓')
-      } else {
-        const fonte = String(values.fonte ?? '')
-        const [kind, value] = fonte.split(':')
-        await namiApi.createInstallment({
-          name:         String(values.name ?? ''),
-          valor_total:  parseFloat(String(values.valor_total ?? '0').replace(',', '.')),
-          num_parcelas: parseInt(String(values.num_parcelas ?? '2')),
-          conta:        kind === 'card' ? undefined : value,
-          card_id:      kind === 'card' ? value : undefined,
-          categoria:    String(values.categoria ?? 'Inbox'),
-          data_inicio:  String(values.data_inicio ?? ''),
-        })
-        onToast('Compra parcelada criada ✓')
-      }
-      setShowForm(false)
-      setEditingInst(null)
-      await load()
-    } catch (err: unknown) {
-      throw err
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const fonteOptions = [
-    ...accounts.map(a => ({ value: `conta:${a.name}`, label: a.name })),
-    ...cards.map(c => ({ value: `card:${c.id}`, label: `⬛ ${c.name}` })),
-  ]
-  const categoriaOptions = categories.map(c => ({ value: c.id, label: c.name }))
+  if (state.status === 'loading') return <Page><LoadingState variant="stat" count={3} /></Page>
+  if (state.status === 'error') return <Page><ErrorState onRetry={retry} /></Page>
+  const { list, commitments } = state.data
 
   return (
-    <>
-      <div className="page-head">
-        <h2>Parcelamentos</h2>
-        <button className="btn btn-primary" onClick={() => { setEditingInst(null); setShowForm(true) }}>
-          <Icon name="plus" size={14} /> Nova compra parcelada
-        </button>
-      </div>
-
-      {/* Compromissos futuros — próximos 3 meses (parcelas + assinaturas) */}
-      <div className="stat-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 20 }}>
-        {nextMonths(3).map(m => (
-          <div className="stat-card" key={m}>
-            <div className="stat-label">Compromissos · {monthShort(m)}</div>
-            <div className="stat-val">
-              <span className="amount">{fmtMoney(commitments[m] ?? 0)}</span>
-            </div>
+    <Page wide>
+      <div className="ds-kpis">
+        {commitments.map((c) => (
+          <div key={c.month} className="ds-kpi ds-card">
+            <span className="ds-mono">Comprometido em {MONTHS_LONG[Number(c.month.slice(5, 7)) - 1]}</span>
+            <span className="ds-v nm-amt">{nami.money(c.total)}</span>
+            <span className="ds-hint">{nami.money(c.total_parcelas)} em parcelas · {nami.money(c.total_assinaturas)} em recorrentes</span>
           </div>
         ))}
       </div>
-
-      {loading ? (
-        <div className="loading">
-          <Icon name="card" size={20} /> Carregando parcelamentos…
-        </div>
-      ) : installments.length === 0 ? (
-        <div className="empty">
-          <Icon name="card" size={32} />
-          <p>Nenhuma compra parcelada ativa</p>
-          <button className="btn btn-primary" onClick={() => { setEditingInst(null); setShowForm(true) }}>
-            <Icon name="plus" size={14} /> Nova compra parcelada
-          </button>
-        </div>
+      <SectionHeader title="Compras parceladas" mono={`${list.length} em andamento`} />
+      {list.length === 0 ? (
+        <EmptyState icon="group" title="Nenhuma compra parcelada" hint="Para parcelar, lance com “Nx” na linha rápida, por exemplo: 1200 tv 10x @nubank." action={<Button variant="primary" icon="add" onClick={() => nami.openEntry()}>Lançar</Button>} />
       ) : (
-        <div className="loan-grid" style={{ gridTemplateColumns: '1fr' }}>
-          {installments.map(inst => {
-            const pct = inst.num_parcelas > 0 ? inst.parcelas_pagas / inst.num_parcelas : 0
-            const restante = inst.parcelas_pendentes * inst.valor_parcela
-            const isExpanded = expandedId === inst.id
-            const isCard = !!inst.card_id
-
-            return (
-              <div className="loan-card" key={inst.id}>
-                <div className="loan-head" style={{ cursor: 'pointer' }} onClick={() => toggleExpand(inst.id)}>
-                  <span className={`loan-dir ${isCard ? 'financing' : 'lent'}`}>
-                    <Icon name={isCard ? 'card' : 'bank'} size={11} /> {inst.conta}
-                  </span>
-                  <Icon name={isExpanded ? 'up' : 'down'} size={14} />
-                </div>
-
-                <div>
-                  <div className="loan-person">{inst.name}</div>
-                  <div className="loan-note">
-                    {inst.parcelas_pagas}/{inst.num_parcelas} parcelas · {fmtMoney(inst.valor_parcela)}/mês
-                  </div>
-                </div>
-
-                <div className="loan-amount amount">{fmtMoney(restante)} restante</div>
-
-                <div className="loan-track">
-                  <div className="loan-fill" style={{ width: `${Math.round(pct * 100)}%` }} />
-                </div>
-
-                <div className="loan-meta">
-                  <span>1ª parcela <strong>{fmtDay(inst.first_due)}</strong></span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="acct-del" onClick={e => { e.stopPropagation(); setEditingInst(inst); setShowForm(true) }} aria-label="Editar nome/notas" title="Editar nome/notas">
-                      <Icon name="edit" size={12} />
-                    </button>
-                    <button className="acct-del" onClick={e => { e.stopPropagation(); setConfirmCancel(inst) }} aria-label="Cancelar parcelas futuras" title="Cancelar parcelas futuras">
-                      <Icon name="x" size={12} />
-                    </button>
-                    <button className="acct-del" onClick={e => { e.stopPropagation(); setConfirmDeleteFull(inst) }} aria-label="Excluir por completo" title="Excluir por completo">
-                      <Icon name="trash" size={12} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Drill-down — linha do tempo das parcelas individuais */}
-                {isExpanded && (
-                  <div style={{ borderTop: '1px solid var(--line)', marginTop: 4, paddingTop: 10 }}>
-                    {detailLoading ? (
-                      <div className="loading" style={{ padding: 0 }}>Carregando parcelas…</div>
-                    ) : detail && detail.group.id === inst.id ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {detail.parcelas.map(p => (
-                          <div
-                            key={p.id}
-                            style={{
-                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                              fontSize: 12, padding: '4px 8px', borderRadius: 6,
-                              background: p.mes_corrente ? 'var(--accent-t)' : 'transparent',
-                            }}
-                          >
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <Icon name={p.pago ? 'check' : 'x'} size={11} />
-                              Parcela {p.numero}/{inst.num_parcelas} · {fmtDay(p.data)}
-                              {p.mes_corrente && <strong> (mês atual)</strong>}
-                            </span>
-                            <span className="amount">{fmtMoney(p.valor)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+        <div className="ds-list">
+          {list.map((g) => (
+            <ListRow
+              key={g.id}
+              title={g.name}
+              meta={`${g.conta} · ${g.parcelas_pagas} de ${g.num_parcelas} · ${nami.money(g.valor_parcela)} por mês`}
+              icon="group"
+              hue={25}
+              trailing={<span className="nm-amt">{nami.money(g.valor_parcela * g.parcelas_pendentes)} a pagar</span>}
+              onOpen={() => setOpen(g)}
+            />
+          ))}
         </div>
       )}
+      {open && <InstallmentModal group={open} onClose={() => setOpen(null)} />}
+    </Page>
+  )
+}
 
-      {showForm && (
-        <FormModal
-          title={editingInst ? `Editar ${editingInst.name}` : 'Nova compra parcelada'}
-          saving={saving}
-          onClose={() => { setShowForm(false); setEditingInst(null) }}
-          onSave={handleSave}
-          saveLabel={editingInst ? 'Salvar alterações' : 'Criar'}
-          initialValues={editingInst ? {
-            name: editingInst.name,
-            notes: editingInst.notes ?? '',
-          } : undefined}
-          fields={editingInst ? [
-            { key: 'name',  label: 'Nome da compra', type: 'text', required: true },
-            { key: 'notes', label: 'Observações',    type: 'text' },
-          ] : [
-            { key: 'name',         label: 'Nome da compra',   type: 'text',   required: true, placeholder: 'Ex.: Notebook Dell' },
-            { key: 'valor_total',  label: 'Valor total',      type: 'money',  required: true },
-            { key: 'num_parcelas', label: 'Número de parcelas', type: 'number', min: 2, placeholder: '12' },
-            { key: 'fonte',        label: 'Conta / Cartão',   type: 'select', required: true, options: fonteOptions },
-            { key: 'categoria',    label: 'Categoria',        type: 'select', options: categoriaOptions },
-            { key: 'data_inicio',  label: '1ª parcela',       type: 'date',   required: true },
-          ]}
+function InstallmentModal({ group, onClose }: { group: Installment; onClose: () => void }) {
+  const nami = useNami()
+  const { state, retry } = useLoad<InstallmentDetail>(() => namiApi.getInstallmentDetail(group.id), [group.id, nami.rev])
+
+  const cancel = async () => {
+    const ok = await confirm({ title: 'Cancelar as parcelas que faltam?', body: 'As parcelas já pagas ficam. As futuras somem e deixam de pesar nos próximos meses.', confirmLabel: 'Cancelar parcelas', danger: true })
+    if (!ok) return
+    try { await namiApi.cancelInstallment(group.id); toast(`${group.name}: parcelas futuras canceladas`); nami.reload(); onClose() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Não foi possível cancelar.', { tone: 'error' }) }
+  }
+  const remove = async () => {
+    const ok = await confirm({ title: 'Apagar a compra inteira?', body: 'Apaga as parcelas pagas e as futuras (use só se foi lançada por engano). Você poderá desfazer logo depois.', confirmLabel: 'Apagar tudo', danger: true })
+    if (!ok) return
+    try {
+      await namiApi.deleteInstallment(group.id)
+      nami.reload()
+      toast(`${group.name} apagada`, {
+        undo: () => {
+          void namiApi.createInstallment({
+            name: group.name, valor_total: group.total_valor, num_parcelas: group.num_parcelas, categoria: group.categoria, data_inicio: group.first_due,
+            ...(group.card_id ? { card_id: group.card_id } : { conta: group.conta }),
+          }).then(nami.reload)
+        },
+      })
+      onClose()
+    } catch (e) { toast(e instanceof Error ? e.message : 'Não foi possível apagar.', { tone: 'error' }) }
+  }
+
+  return (
+    <Modal
+      title={group.name}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" icon="delete" onClick={() => void remove()}>Apagar tudo</Button>
+          <Button onClick={() => void cancel()} disabled={group.parcelas_pendentes === 0}>Cancelar o que falta</Button>
+          <Button variant="primary" onClick={onClose}>Fechar</Button>
+        </>
+      }
+    >
+      <ProgressBar value={group.parcelas_pagas} max={group.num_parcelas} label={`${group.parcelas_pagas} de ${group.num_parcelas} parcelas pagas`} />
+      <p className="nm-note">
+        {nami.money(group.total_valor)} em {group.num_parcelas}x de {nami.money(group.valor_parcela)} · {group.conta} · 1ª parcela em {fmtDate(group.first_due)}
+      </p>
+      {state.status === 'loading' && <LoadingState variant="row" count={3} />}
+      {state.status === 'error' && <ErrorState onRetry={retry} />}
+      {state.status === 'ok' && (
+        <Timeline
+          entries={state.data.parcelas.map((p) => ({
+            title: `Parcela ${p.numero} de ${group.num_parcelas} · ${nami.money(p.valor)}`,
+            detail: `${fmtDate(p.data)} · ${p.pago ? 'paga' : 'a pagar'}${p.mes_corrente ? ' · neste mês' : ''}`,
+          }))}
         />
       )}
-
-      {/* Confirmação: cancelar parcelas futuras */}
-      {confirmCancel && (
-        <ConfirmDialog
-          title="Cancelar parcelas futuras"
-          message={`Cancelar as parcelas futuras de "${confirmCancel.name}"? As já pagas continuam no histórico.`}
-          confirmLabel="Cancelar parcelas"
-          onConfirm={() => handleCancelFuture(confirmCancel.id)}
-          onClose={() => setConfirmCancel(null)}
-        />
-      )}
-
-      {/* Confirmação: excluir por completo */}
-      {confirmDeleteFull && (
-        <ConfirmDialog
-          title="Excluir por completo"
-          message={`Excluir "${confirmDeleteFull.name}" por completo, incluindo o histórico de parcelas pagas? Esta ação não pode ser desfeita.`}
-          onConfirm={() => handleDeleteFull(confirmDeleteFull.id)}
-          onClose={() => setConfirmDeleteFull(null)}
-        />
-      )}
-    </>
+      {state.status === 'ok' && state.data.parcelas_pendentes === 0 && <StatusChip status="done" label="Quitada" />}
+    </Modal>
   )
 }

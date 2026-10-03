@@ -1,483 +1,209 @@
-// Tela de Lista de Compras da Nami (spec 045) — mobile-first.
-// Uso duplo: webapp (no mercado, pelo celular) e Telegram via Makima.
-// Quick-add com Enter, checkbox grande com risco, contador X/N no carrinho,
-// total estimado, itens frequentes com re-adição em 1 toque, múltiplas listas,
-// "Finalizar compra" que lança a despesa e arquiva a lista (atômico).
+// Lista de compras: adicione itens numa frase ("arroz, feijão 2kg, leite"), marque no carrinho e finalize —
+// a compra vira UM gasto de supermercado e a lista abre de novo com o que ficou faltando.
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState } from 'react'
+import { toast } from '../../../design/headless/toast'
+import { confirm } from '../../../design/headless/confirm'
+import { useHotkeys } from '../../../design/headless/useHotkeys'
+import { Button, Chip, EmptyState, ErrorState, Field, IconButton, Input, LoadingState, Modal, MoneyInput, Page, SectionHeader, Select, Tabs } from '../../../design'
+import { cx } from '../../../design/ui/primitives'
+import { useNami } from '../context'
+import { useLoad } from '../lib/useLoad'
 import { namiApi } from '../namiApi'
-import type { Account, Card, ShoppingList, ShoppingListDetail, ShoppingItem, FrequentItem } from '../types'
-import { FormModal } from '../modals/FormModal'
-import { ConfirmDialog } from '../modals/ConfirmDialog'
-import { Icon } from '../icons'
-import { fmtMoney } from '../ui'
+import type { ShoppingItem, ShoppingList, ShoppingListDetail } from '../types'
 
-interface ShoppingProps {
-  accounts: Account[]
-  cards: Card[]
-  onToast: (msg: string) => void
-  // Props do commonProps não usadas aqui
-  month?: string; stats?: unknown; subscriptions?: unknown
-  onTransactionSaved?: unknown; onNavigate?: unknown; onOpenAddModal?: unknown
-}
+export function Shopping() {
+  const nami = useNami()
+  const lists = useLoad(() => namiApi.getShoppingLists('ativa'), [nami.rev])
+  const [picked, setPicked] = useState<string | null>(null)
+  const [modal, setModal] = useState<'new' | 'rename' | 'finish' | { item: ShoppingItem } | null>(null)
 
-/**
- * Tela de Lista de Compras — mobile-first (spec 045).
- *
- * A lista ativa padrão "Mercado" é criada sob demanda na primeira visita
- * (nenhuma lista ativa ainda). O contador e o total estimado recalculam a
- * partir do `detail` recarregado após cada ação — sem estado otimista, para
- * manter uma única fonte de verdade com o Telegram (SC-004).
- */
-export function Shopping({ accounts, cards, onToast }: ShoppingProps) {
-  const [lists, setLists]           = useState<ShoppingList[]>([])
-  const [activeListId, setActiveListId] = useState<string>('')
-  const [detail, setDetail]         = useState<ShoppingListDetail | null>(null)
-  const [frequent, setFrequent]     = useState<FrequentItem[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [quickAdd, setQuickAdd]     = useState('')
-  const [adding, setAdding]         = useState(false)
-  const [showNewList, setShowNewList] = useState(false)
-  const [showRenameList, setShowRenameList] = useState(false)
-  const [confirmDeleteList, setConfirmDeleteList] = useState(false)
-  const [showFinish, setShowFinish] = useState(false)
-  const [editingItem, setEditingItem] = useState<ShoppingItem | null>(null)
-  const [saving, setSaving]         = useState(false)
-  const [busyItemId, setBusyItemId] = useState<string | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const all = lists.state.status === 'ok' ? lists.state.data.lists : []
+  const current = all.find((l) => l.id === picked) ?? all[0] ?? null
+  const detail = useLoad<ShoppingListDetail | null>(() => (current ? namiApi.getShoppingList(current.id) : Promise.resolve(null)), [current?.id])
+  const frequent = useLoad(() => namiApi.getFrequentItems(8), [current?.id, nami.rev])
+  const [text, setText] = useState('')
 
-  const fonteOptions = [
-    ...accounts.map(a => ({ value: `conta:${a.name}`, label: a.name })),
-    ...cards.map(c => ({ value: `card:${c.id}`, label: `⬛ ${c.name}` })),
-  ]
+  if (lists.state.status === 'loading') return <Page><LoadingState variant="row" count={4} /></Page>
+  if (lists.state.status === 'error') return <Page><ErrorState onRetry={lists.retry} /></Page>
 
-  const loadDetail = useCallback(async (listId: string) => {
-    if (!listId) { setDetail(null); return }
-    try {
-      const d = await namiApi.getShoppingList(listId)
-      setDetail(d)
-    } catch {
-      onToast('Erro ao carregar a lista')
-    }
-  }, [onToast])
+  const d = detail.state.status === 'ok' ? detail.state.data : null
 
-  const loadFrequent = useCallback(() => {
-    namiApi.getFrequentItems(8).then(r => setFrequent(r.items ?? [])).catch(() => {})
-  }, [])
-
-  const loadLists = useCallback(async () => {
-    setLoading(true)
-    try {
-      let r = await namiApi.getShoppingLists('ativa')
-      let allLists = r.lists ?? []
-      // Nenhuma lista ativa ainda — cria a lista padrão "Mercado" (FR-001).
-      if (allLists.length === 0) {
-        await namiApi.createShoppingList('Mercado')
-        r = await namiApi.getShoppingLists('ativa')
-        allLists = r.lists ?? []
-      }
-      setLists(allLists)
-      const stillActive = allLists.some(l => l.id === activeListId)
-      const nextId = stillActive ? activeListId : (allLists.find(l => l.name === 'Mercado')?.id ?? allLists[0]?.id ?? '')
-      setActiveListId(nextId)
-      await loadDetail(nextId)
-    } catch {
-      onToast('Erro ao carregar listas de compras')
-    } finally {
-      setLoading(false)
-    }
-    // activeListId intencionalmente fora das deps — só usado para decidir se preserva a seleção
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadDetail, onToast])
-
-  useEffect(() => { loadLists() }, [loadLists])
-  useEffect(() => { loadFrequent() }, [loadFrequent])
-
-  async function handleSwitchList(listId: string) {
-    setActiveListId(listId)
-    await loadDetail(listId)
+  const add = async (value: string) => {
+    if (!current || !value.trim()) return
+    try { await namiApi.addShoppingItems(current.id, value.trim()); setText(''); detail.refresh(); frequent.refresh() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Não foi possível adicionar.', { tone: 'error' }) }
   }
 
-  async function handleQuickAddSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const text = quickAdd.trim()
-    if (!text || !activeListId) return
-    setAdding(true)
-    try {
-      await namiApi.addShoppingItems(activeListId, text)
-      setQuickAdd('')
-      await loadDetail(activeListId)
-    } catch {
-      onToast('Erro ao adicionar item')
-    } finally {
-      setAdding(false)
-      inputRef.current?.focus()
-    }
+  const toggle = (it: ShoppingItem) => {
+    if (!d) return
+    // atualização otimista: o item vira "no carrinho" na hora; se o servidor recusar, volta
+    const items = d.items.map((x) => (x.id === it.id ? { ...x, checked: !x.checked } : x))
+    const checked = items.filter((x) => x.checked).length
+    detail.set({ ...d, items, checked_count: checked, pendentes_count: items.length - checked })
+    namiApi.updateShoppingItem(it.id, { checked: !it.checked }).catch(() => { toast('Não foi possível marcar o item.', { tone: 'error' }); detail.refresh() })
   }
 
-  async function handleToggle(itemId: string, checked: boolean) {
-    setBusyItemId(itemId)
-    try {
-      await namiApi.updateShoppingItem(itemId, { checked })
-      await loadDetail(activeListId)
-    } catch {
-      onToast('Erro ao atualizar item')
-    } finally {
-      setBusyItemId(null)
-    }
+  const removeItem = (it: ShoppingItem) => {
+    if (!d) return
+    detail.set({ ...d, items: d.items.filter((x) => x.id !== it.id) })
+    namiApi.deleteShoppingItem(it.id).then(
+      () => toast(`${it.name} removido`, { undo: () => { void namiApi.addShoppingItems(current!.id, it.name).then(detail.refresh) } }),
+      () => { toast('Não foi possível remover.', { tone: 'error' }); detail.refresh() },
+    )
   }
 
-  async function handleRemove(itemId: string) {
-    setBusyItemId(itemId)
-    try {
-      await namiApi.deleteShoppingItem(itemId)
-      await loadDetail(activeListId)
-    } catch {
-      onToast('Erro ao remover item')
-    } finally {
-      setBusyItemId(null)
-    }
+  const removeList = async (l: ShoppingList) => {
+    const ok = await confirm({ title: `Excluir a lista ${l.name}?`, body: 'Os itens dela somem junto.', confirmLabel: 'Excluir', danger: true })
+    if (!ok) return
+    try { await namiApi.deleteShoppingList(l.id); setPicked(null); lists.refresh(); toast(`Lista ${l.name} excluída`) }
+    catch (e) { toast(e instanceof Error ? e.message : 'Não foi possível excluir.', { tone: 'error' }) }
   }
 
-  async function handleAddFrequent(name: string) {
-    if (!activeListId) return
-    try {
-      await namiApi.addShoppingItems(activeListId, name)
-      await loadDetail(activeListId)
-    } catch {
-      onToast('Erro ao adicionar item')
-    }
+  if (all.length === 0) {
+    return (
+      <Page>
+        <EmptyState icon="cart" title="Nenhuma lista ainda" hint="Crie a primeira (Mercado, Farmácia…) e adicione itens numa frase só." action={<Button variant="primary" icon="add" onClick={() => setModal('new')}>Nova lista</Button>} />
+        {modal === 'new' && <ListModal list={null} onClose={() => setModal(null)} onDone={(id) => { setPicked(id); lists.refresh() }} />}
+      </Page>
+    )
   }
 
-  async function handleCreateList(values: Record<string, unknown>) {
-    setSaving(true)
-    try {
-      const name = String(values.name ?? '').trim()
-      if (!name) throw new Error('Informe um nome para a lista')
-      const r = await namiApi.createShoppingList(name)
-      setShowNewList(false)
-      await loadLists()
-      setActiveListId(r.id)
-      await loadDetail(r.id)
-      onToast(`Lista "${name}" criada ✓`)
-    } catch (err: unknown) {
-      throw err
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleRenameList(values: Record<string, unknown>) {
-    setSaving(true)
-    try {
-      const name = String(values.name ?? '').trim()
-      if (!name) throw new Error('Informe um nome para a lista')
-      await namiApi.updateShoppingList(activeListId, { name })
-      setShowRenameList(false)
-      await loadLists()
-      onToast('Lista renomeada ✓')
-    } catch (err: unknown) {
-      throw err
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleDeleteList() {
-    setSaving(true)
-    try {
-      await namiApi.deleteShoppingList(activeListId)
-      setConfirmDeleteList(false)
-      onToast('Lista removida')
-      await loadLists()
-    } catch {
-      onToast('Erro ao remover lista')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleEditItem(values: Record<string, unknown>) {
-    if (!editingItem) return
-    setSaving(true)
-    try {
-      const preco = String(values.preco_estimado ?? '').trim()
-      await namiApi.updateShoppingItem(editingItem.id, {
-        name: String(values.name ?? '') || undefined,
-        quantidade: String(values.quantidade ?? '') || undefined,
-        unidade: String(values.unidade ?? '') || undefined,
-        preco_estimado: preco ? parseFloat(preco.replace(',', '.')) : undefined,
-      })
-      setEditingItem(null)
-      await loadDetail(activeListId)
-      onToast('Item atualizado ✓')
-    } catch (err: unknown) {
-      throw err
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function resolveFonte(fonte: string) {
-    if (!fonte) return { conta: '', card_id: '' }
-    const [kind, value] = fonte.split(':')
-    return kind === 'card' ? { conta: '', card_id: value } : { conta: value, card_id: '' }
-  }
-
-  async function handleFinish(values: Record<string, unknown>) {
-    setSaving(true)
-    try {
-      const valor_total = parseFloat(String(values.valor ?? '0').replace(',', '.'))
-      if (!valor_total || valor_total <= 0) throw new Error('Informe o valor total da compra')
-      const { conta, card_id } = resolveFonte(String(values.fonte ?? ''))
-      const r = await namiApi.finishShopping(activeListId, { valor_total, conta: conta || undefined, card_id: card_id || undefined })
-      onToast(`Compra de ${fmtMoney(valor_total)} finalizada ✓`)
-      setShowFinish(false)
-      const listsR = await namiApi.getShoppingLists('ativa')
-      setLists(listsR.lists ?? [])
-      setActiveListId(r.new_list_id)
-      await loadDetail(r.new_list_id)
-      loadFrequent()
-    } catch (err: unknown) {
-      throw err
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const items = detail?.items ?? []
-  const activeList = lists.find(l => l.id === activeListId)
-
-  if (loading) {
-    return <div className="loading"><Icon name="cart" size={20} /> Carregando lista de compras…</div>
-  }
+  const pending = d?.items.filter((i) => !i.checked) ?? []
+  const inCart = d?.items.filter((i) => i.checked) ?? []
 
   return (
-    <div className="shop-screen">
-      <div className="page-head">
-        <h2>Lista de Compras</h2>
+    <Page>
+      <div className="nm-lists">
+        <Tabs label="Listas" value={current?.id ?? ''} onChange={setPicked} tabs={all.map((l) => ({ id: l.id, label: l.name }))} />
+        <IconButton icon="add" label="Nova lista" onClick={() => setModal('new')} />
+        {current && <IconButton icon="edit" label="Renomear lista" onClick={() => setModal('rename')} />}
+        {current && <IconButton icon="delete" label="Excluir lista" onClick={() => void removeList(current)} />}
       </div>
 
-      {/* Seletor de listas ativas + nova lista */}
-      <div className="shop-list-switch">
-        <select
-          className="shop-list-select"
-          value={activeListId}
-          onChange={e => handleSwitchList(e.target.value)}
-          aria-label="Escolher lista ativa"
-        >
-          {lists.map(l => (
-            <option key={l.id} value={l.id}>{l.name}</option>
-          ))}
-        </select>
-        <button
-          className="btn btn-ghost"
-          onClick={() => setShowRenameList(true)}
-          disabled={!activeListId}
-          aria-label="Renomear lista"
-          title="Renomear lista"
-        >
-          <Icon name="edit" size={14} />
-        </button>
-        <button
-          className="btn btn-ghost"
-          onClick={() => setConfirmDeleteList(true)}
-          disabled={!activeListId || lists.length < 2}
-          aria-label="Excluir lista"
-          title={lists.length < 2 ? 'Não é possível excluir a única lista' : 'Excluir lista'}
-        >
-          <Icon name="trash" size={14} />
-        </button>
-        <button className="btn btn-ghost" onClick={() => setShowNewList(true)}>
-          <Icon name="plus" size={14} /> Nova lista
-        </button>
-      </div>
-
-      {/* Quick-add — Enter adiciona */}
-      <form className="shop-quickadd" onSubmit={handleQuickAddSubmit}>
-        <Icon name="plus" size={16} />
-        <input
-          ref={inputRef}
-          type="text"
-          value={quickAdd}
-          onChange={e => setQuickAdd(e.target.value)}
-          placeholder="Adicionar item (ex.: arroz, feijão 2kg, leite)…"
-          disabled={adding}
-        />
-        <button type="submit" className="btn btn-primary" disabled={adding || !quickAdd.trim()}>
-          Adicionar
-        </button>
+      <form className="nm-add" onSubmit={(e) => { e.preventDefault(); void add(text) }}>
+        <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Adicionar: arroz, feijão 2kg, leite" aria-label="Adicionar itens à lista" autoComplete="off" />
+        <Button type="submit" variant="primary" icon="add" disabled={!text.trim()}>Adicionar</Button>
       </form>
 
-      {/* Contador + total estimado + finalizar */}
-      {detail && (
-        <div className="shop-summary">
-          <span className="shop-counter">
-            {detail.checked_count}/{items.length} no carrinho
-          </span>
-          {detail.total_estimado > 0 && (
-            <span className="shop-total">Estimado: {fmtMoney(detail.total_estimado)}</span>
+      {frequent.state.status === 'ok' && frequent.state.data.items.length > 0 && (
+        <div className="nm-suggest" role="group" aria-label="Itens frequentes">
+          <span className="ds-hint">Costuma comprar:</span>
+          {frequent.state.data.items.map((f) => <Chip key={f.name} icon="add" onClick={() => void add(f.name)}>{f.name}</Chip>)}
+        </div>
+      )}
+
+      {detail.state.status === 'loading' && <LoadingState variant="row" count={4} />}
+      {detail.state.status === 'error' && <ErrorState onRetry={detail.retry} />}
+      {d && d.items.length === 0 && <EmptyState icon="cart" title="Lista vazia" hint="Escreva os itens acima, separados por vírgula." />}
+
+      {d && d.items.length > 0 && (
+        <>
+          <SectionHeader title="Falta comprar" mono={`${pending.length}`} />
+          <div className="ds-list">{pending.map((it) => <ItemRow key={it.id} item={it} onToggle={toggle} onRemove={removeItem} onEdit={(i) => setModal({ item: i })} />)}</div>
+          {inCart.length > 0 && (
+            <>
+              <SectionHeader title="No carrinho" mono={`${inCart.length}`} />
+              <div className="ds-list">{inCart.map((it) => <ItemRow key={it.id} item={it} onToggle={toggle} onRemove={removeItem} onEdit={(i) => setModal({ item: i })} />)}</div>
+            </>
           )}
-          <span className="shop-spacer" />
-          <button
-            className="btn btn-primary"
-            disabled={items.length === 0}
-            onClick={() => setShowFinish(true)}
-          >
-            <Icon name="check" size={14} /> Finalizar compra
-          </button>
-        </div>
-      )}
-
-      {/* Lista de itens */}
-      {items.length === 0 ? (
-        <div className="empty">
-          <Icon name="cart" size={32} />
-          <p>Nenhum item em {activeList?.name ?? 'lista'}. Adicione algo acima.</p>
-        </div>
-      ) : (
-        <div className="panel shop-items">
-          {items.map(item => (
-            <div key={item.id} className={`shop-item${item.checked ? ' checked' : ''}`}>
-              <button
-                type="button"
-                className="shop-checkbox"
-                role="checkbox"
-                aria-checked={item.checked}
-                aria-label={item.checked ? `Desmarcar ${item.name}` : `Marcar ${item.name}`}
-                disabled={busyItemId === item.id}
-                onClick={() => handleToggle(item.id, !item.checked)}
-              >
-                {item.checked && <Icon name="check" size={16} />}
-              </button>
-              <div className="shop-item-body">
-                <span className="shop-item-name">{item.name}</span>
-                {(item.quantidade || item.preco_estimado) && (
-                  <span className="shop-item-meta">
-                    {item.quantidade}
-                    {item.quantidade && item.preco_estimado ? ' · ' : ''}
-                    {item.preco_estimado ? fmtMoney(item.preco_estimado) : ''}
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                className="shop-remove"
-                aria-label={`Editar ${item.name}`}
-                disabled={busyItemId === item.id}
-                onClick={() => setEditingItem(item)}
-              >
-                <Icon name="edit" size={14} />
-              </button>
-              <button
-                type="button"
-                className="shop-remove"
-                aria-label={`Remover ${item.name}`}
-                disabled={busyItemId === item.id}
-                onClick={() => handleRemove(item.id)}
-              >
-                <Icon name="x" size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Itens frequentes */}
-      {frequent.length > 0 && (
-        <div className="shop-freq">
-          <div className="shop-freq-label">Frequentes</div>
-          <div className="shop-freq-chips">
-            {frequent.map(f => (
-              <button key={f.name} className="chip" onClick={() => handleAddFrequent(f.name)}>
-                <Icon name="plus" size={11} /> {f.name}
-              </button>
-            ))}
+          <div className="nm-total ds-card">
+            <span>{d.checked_count} de {d.items.length} no carrinho · estimado <b className="nm-amt">{nami.money(d.total_estimado)}</b></span>
+            <Button variant="primary" icon="check" onClick={() => setModal('finish')}>Finalizar compra</Button>
           </div>
-        </div>
+        </>
       )}
 
-      {/* Modal: nova lista */}
-      {showNewList && (
-        <FormModal
-          title="Nova lista de compras"
-          saving={saving}
-          onClose={() => setShowNewList(false)}
-          onSave={handleCreateList}
-          saveLabel="Criar lista"
-          fields={[
-            { key: 'name', label: 'Nome', type: 'text', required: true, placeholder: 'Ex.: Farmácia, Petshop…' },
-          ]}
-        />
-      )}
+      {modal === 'new' && <ListModal list={null} onClose={() => setModal(null)} onDone={(id) => { setPicked(id); lists.refresh() }} />}
+      {modal === 'rename' && current && <ListModal list={current} onClose={() => setModal(null)} onDone={() => lists.refresh()} />}
+      {modal === 'finish' && current && d && <FinishModal list={current} estimated={d.total_estimado} onClose={() => setModal(null)} onDone={() => { lists.refresh(); detail.refresh(); nami.reload() }} />}
+      {modal && typeof modal === 'object' && <ItemModal item={modal.item} onClose={() => setModal(null)} onDone={detail.refresh} />}
+    </Page>
+  )
+}
 
-      {/* Modal: renomear lista */}
-      {showRenameList && (
-        <FormModal
-          title="Renomear lista"
-          saving={saving}
-          onClose={() => setShowRenameList(false)}
-          onSave={handleRenameList}
-          saveLabel="Salvar"
-          initialValues={{ name: activeList?.name ?? '' }}
-          fields={[
-            { key: 'name', label: 'Nome', type: 'text', required: true },
-          ]}
-        />
-      )}
-
-      {/* Modal: editar item */}
-      {editingItem && (
-        <FormModal
-          title={`Editar item — ${editingItem.name}`}
-          saving={saving}
-          onClose={() => setEditingItem(null)}
-          onSave={handleEditItem}
-          saveLabel="Salvar"
-          initialValues={{
-            name: editingItem.name,
-            quantidade: editingItem.quantidade ?? '',
-            unidade: editingItem.unidade ?? '',
-            preco_estimado: editingItem.preco_estimado ? String(editingItem.preco_estimado) : '',
-          }}
-          fields={[
-            { key: 'name',           label: 'Nome',           type: 'text',  required: true },
-            { key: 'quantidade',     label: 'Quantidade',     type: 'text',  placeholder: 'Ex.: 2kg' },
-            { key: 'unidade',        label: 'Unidade',        type: 'text',  placeholder: 'Ex.: un, kg, L' },
-            { key: 'preco_estimado', label: 'Preço estimado', type: 'money' },
-          ]}
-        />
-      )}
-
-      {/* Confirmação: excluir lista */}
-      {confirmDeleteList && (
-        <ConfirmDialog
-          title="Excluir lista"
-          message={`Excluir a lista "${activeList?.name ?? ''}" e todos os seus itens? Essa ação não pode ser desfeita.`}
-          busy={saving}
-          onConfirm={handleDeleteList}
-          onClose={() => setConfirmDeleteList(false)}
-        />
-      )}
-
-      {/* Modal: finalizar compra */}
-      {showFinish && (
-        <FormModal
-          title={`Finalizar compra — ${activeList?.name ?? ''}`}
-          saving={saving}
-          onClose={() => setShowFinish(false)}
-          onSave={handleFinish}
-          saveLabel="Confirmar e lançar despesa"
-          fields={[
-            { key: 'valor', label: 'Valor total real', type: 'money', required: true },
-            { key: 'fonte', label: 'Pagar com', type: 'select', options: fonteOptions },
-          ]}
-        >
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-            Categoria: Supermercado · Itens não marcados continuam na próxima lista.
-          </div>
-        </FormModal>
-      )}
+function ItemRow({ item, onToggle, onRemove, onEdit }: { item: ShoppingItem; onToggle: (i: ShoppingItem) => void; onRemove: (i: ShoppingItem) => void; onEdit: (i: ShoppingItem) => void }) {
+  const { money } = useNami()
+  return (
+    <div className="ds-lrow nm-act" style={{ cursor: 'default' }}>
+      <IconButton icon={item.checked ? 'success' : 'add'} label={item.checked ? `Tirar ${item.name} do carrinho` : `Colocar ${item.name} no carrinho`} onClick={() => onToggle(item)} />
+      <button type="button" className={cx('nm-item', item.checked && 'nm-done')} onClick={() => onEdit(item)}>
+        <b>{item.name}</b>
+        {(item.quantidade || item.preco_estimado) && <span>{[item.quantidade, item.preco_estimado ? money(item.preco_estimado) : ''].filter(Boolean).join(' · ')}</span>}
+      </button>
+      <IconButton icon="delete" label={`Remover ${item.name}`} onClick={() => onRemove(item)} />
     </div>
+  )
+}
+
+function ListModal({ list, onClose, onDone }: { list: ShoppingList | null; onClose: () => void; onDone: (id: string) => void }) {
+  const [name, setName] = useState(list?.name ?? '')
+  const [error, setError] = useState<string | null>(null)
+  const save = async () => {
+    if (!name.trim()) { setError('Dê um nome à lista.'); return }
+    try {
+      if (list) { await namiApi.updateShoppingList(list.id, { name: name.trim() }); onDone(list.id) }
+      else { const r = await namiApi.createShoppingList(name.trim()); onDone(r.id) }
+      onClose()
+    } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível salvar.') }
+  }
+  useHotkeys([{ keys: 'mod+enter', global: true, handler: (ev) => { ev.preventDefault(); void save() } }])
+  return (
+    <Modal size="sm" title={list ? 'Renomear lista' : 'Nova lista'} onClose={onClose} footer={<><Button onClick={onClose}>Cancelar</Button><Button variant="primary" onClick={() => void save()}>Salvar</Button></>}>
+      <Field label="Nome" error={error}>{(a) => <Input {...a} data-autofocus="" value={name} placeholder="Ex.: Farmácia" autoComplete="off" onChange={(e) => { setName(e.target.value); setError(null) }} />}</Field>
+    </Modal>
+  )
+}
+
+function ItemModal({ item, onClose, onDone }: { item: ShoppingItem; onClose: () => void; onDone: () => void }) {
+  const [name, setName] = useState(item.name)
+  const [qty, setQty] = useState(item.quantidade ?? '')
+  const [price, setPrice] = useState<number | null>(item.preco_estimado ?? null)
+  const save = async () => {
+    if (!name.trim()) return
+    try { await namiApi.updateShoppingItem(item.id, { name: name.trim(), quantidade: qty, preco_estimado: price ?? undefined }); onDone(); onClose() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Não foi possível salvar.', { tone: 'error' }) }
+  }
+  return (
+    <Modal size="sm" title="Editar item" onClose={onClose} footer={<><Button onClick={onClose}>Cancelar</Button><Button variant="primary" onClick={() => void save()}>Salvar</Button></>}>
+      <Field label="Nome">{(a) => <Input {...a} data-autofocus="" value={name} onChange={(e) => setName(e.target.value)} />}</Field>
+      <div className="ds-cols2" style={{ gap: 12 }}>
+        <Field label="Quantidade">{(a) => <Input {...a} value={qty} placeholder="Ex.: 2kg" onChange={(e) => setQty(e.target.value)} />}</Field>
+        <Field label="Preço estimado">{(a) => <MoneyInput {...a} value={price} onChange={setPrice} />}</Field>
+      </div>
+    </Modal>
+  )
+}
+
+function FinishModal({ list, estimated, onClose, onDone }: { list: ShoppingList; estimated: number; onClose: () => void; onDone: () => void }) {
+  const nami = useNami()
+  const [valor, setValor] = useState<number | null>(estimated > 0 ? estimated : null)
+  const [source, setSource] = useState(nami.defaultSource ? `${nami.defaultSource.kind}:${nami.defaultSource.id}` : '')
+  const [error, setError] = useState<string | null>(null)
+  const save = async () => {
+    if (valor === null || !(valor > 0)) { setError('Informe quanto deu a compra.'); return }
+    const s = nami.sources.find((x) => `${x.kind}:${x.id}` === source)
+    if (!s) { setError('Escolha com o que pagou.'); return }
+    try {
+      await namiApi.finishShopping(list.id, { valor_total: valor, ...(s.kind === 'card' ? { card_id: s.id } : { conta: s.name }) })
+      toast(`Compra de ${nami.money(valor)} lançada em Supermercado`, { tone: 'success' })
+      onDone()
+      onClose()
+    } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível finalizar.') }
+  }
+  useHotkeys([{ keys: 'mod+enter', global: true, handler: (ev) => { ev.preventDefault(); void save() } }])
+  return (
+    <Modal size="sm" title="Finalizar compra" onClose={onClose} footer={<><Button onClick={onClose}>Cancelar</Button><Button variant="primary" onClick={() => void save()}>Lançar gasto</Button></>}>
+      <Field label="Quanto deu" error={error} hint="O valor real do caixa, não o estimado. O que ficou sem marcar vai para a próxima lista.">
+        {(a) => <MoneyInput {...a} value={valor} onChange={(v) => { setValor(v); setError(null) }} />}
+      </Field>
+      <Field label="Pago com">
+        {(a) => (
+          <Select {...a} value={source} onChange={(e) => setSource(e.target.value)}>
+            {nami.sources.map((s) => <option key={`${s.kind}:${s.id}`} value={`${s.kind}:${s.id}`}>{s.name}</option>)}
+          </Select>
+        )}
+      </Field>
+    </Modal>
   )
 }

@@ -23,7 +23,7 @@ import { addDaysISO, fmtDuration, fmtMoney, fmtNumber, fmtRelative, isoDate, par
 export type CaptureRuleId =
   | 'place' | 'person' | 'tag' | 'priority' | 'date' | 'recur' | 'rating'
   | 'amount' | 'progress' | 'sets' | 'load' | 'distance' | 'duration'
-  /** Finanças (spec 070): "+3500" é entrada com valor (e "+" deixa de significar pessoa se o resto for número). */
+  /** Finanças (spec 071): "+3500" é entrada com valor (e "+" deixa de significar pessoa se o resto for número). */
   | 'income'
   /** Finanças: "10x" / "em 10x" = número de parcelas (2 a 60). Não colide com "4x8" (rule 'sets'). */
   | 'installments'

@@ -1,4 +1,4 @@
-"""Testes da spec 070 — fase 1: transferência com sinal, pagamento de fatura como transferência,
+"""Testes da spec 071 — fase 1: transferência com sinal, pagamento de fatura como transferência,
 saldo/dívida corretos e vencimento sem deriva para o dia 28.
 
 Sem banco: o cursor é substituído por um gravador, e `run_select` devolve linhas fixas.

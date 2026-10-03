@@ -97,19 +97,12 @@ Na ordem de registro do `App.tsx` (os shells vêm **antes** do catch-all `/*`):
 /people/*        → KomiShell      (pessoas e contatos)
 /travel/*        → YatoShell      (viagens — roteiro + dossiê de mobilidade)
 /                → MakimaShell    (Hub — tela cheia, SEM Layout global)
-/transactions    → Transactions   (legado — não linkado na sidebar)
-/accounts        → Accounts       (legado — não linkado na sidebar)
-/cards           → Cards          (legado — não linkado na sidebar)
-/loans           → Loans          (legado — não linkado na sidebar)
-/budgets         → Budgets        (legado — não linkado na sidebar)
-/subscriptions   → Subscriptions  (legado — não linkado na sidebar)
+/transactions … /subscriptions → redirecionam para /nami#… (endereços antigos das finanças)
+*                → redireciona para /  (Hub)
 ```
 
-> **Páginas legadas:** as rotas `/transactions`, `/accounts`, `/cards`, `/loans`, `/budgets`
-> e `/subscriptions` ainda existem no React Router (dentro do `Layout` global) mas **não
-> aparecem na sidebar** do app. A rota `/` deixou de ser o Dashboard de finanças — hoje ela
-> renderiza o `MakimaShell` (Hub). `Dashboard.tsx` ainda existe em `pages/` mas não está
-> mais roteado. O shell Nami (`pages/nami/`) é a implementação canônica e atual das finanças.
+> **Páginas legadas removidas (spec 071):** o `Layout` global e as páginas soltas `Transactions`, `Accounts`, `Cards`, `Loans`,
+> `Budgets`, `Subscriptions` e `Dashboard` foram apagados; as rotas antigas redirecionam. A rota `/` é o Hub (`MakimaShell`).
 
 ## Os dez shells
 
@@ -122,42 +115,50 @@ dentro de cada shell é por estado interno ou hash de URL (exceção: o `MakimaS
 
 ### NamiShell — Finanças (`src/pages/nami/`)
 
-**Roteamento:** deep-link por hash (`/nami#dashboard`, `/nami#transacoes`, `/nami#contas`…).
-O shell lê `window.location.hash` na montagem e ao navegar usa `history.replaceState`.
+Reconstruída na spec 071 sobre o Design System (`AppShell`, `Hero`, `useCollection`, `QuickCapture`, `StatsPage`, `DetailPage`),
+direção de arte **"Carta náutica"**; página `conformant` no manifesto. Detalhes de produto em `specs/071-nami-simples/spec.md`.
 
-**Telas (screens/):**
+**Roteamento:** deep-link por hash (`/nami#cartoes`). Os nomes antigos continuam valendo (`#dashboard`, `#transacoes`, `#assinaturas`,
+`#contas-fixas`, `#financiamentos`…) via `lib/routes.ts`. Os endereços soltos `/transactions`, `/accounts`, `/cards`, `/loans`, `/budgets`
+e `/subscriptions` redirecionam para a tela equivalente.
+
+**Telas (`screens/`):**
 
 | Hash | Tela | O que mostra |
 |---|---|---|
-| `#dashboard` | Dashboard | Hero (valor líquido), QuickAdd, 4 stat-cards, gráficos cashflow + donut, contas, compromissos, orçamentos, transações recentes |
-| `#transacoes` | Transactions | Transações agrupadas por dia com busca e filtros |
-| `#contas` | Accounts | Lista de contas com saldo |
-| `#cartoes` | Cards | Cartões de crédito com fatura e limite |
-| `#orcamentos` | Budgets | Envelopes de orçamento por categoria |
-| `#assinaturas` | Subscriptions | Assinaturas recorrentes |
-| `#emprestimos` | Loans | Empréstimos pessoais (pessoa a pessoa) |
-| `#financiamentos` | Financings | Financiamentos bancários |
+| `#inicio` | Home | Hero **"Livre pra gastar"** (valor, por dia, saldo), barra gasto/ainda vai sair/livre com seletor de mês, linha rápida de lançamento, **A pagar** (Paguei / Pagar / Lembrar na Kaguya), pra onde foi, últimos lançamentos |
+| `#lancamentos` | Transactions | Todos os movimentos: busca no servidor (todos os meses), filtros do padrão (tipo, conta/cartão, categoria, período), agrupar por dia/mês/categoria/conta, CSV; transferência é tratada como par |
+| `#cartoes` | Cards | Cartões com limite usado; detalhe (`DetailPage`) com **uma aba por fatura** e "Pagar fatura" |
+| `#recorrentes` | Recurring | Conta fixa + assinatura + entrada (salário) numa lista, com a situação do mês e Paguei/Recebi/Pular |
+| `#resumo` | Summary | Retrospectiva no `StatsPage` (patrimônio real, taxa de poupança, delta vs. ano anterior) |
+| `#contas` | Accounts | Saldo real por conta, dívida dos cartões, patrimônio líquido |
+| `#parcelamentos` | Installments | Compromissos dos próximos meses e linha do tempo de cada compra parcelada |
+| `#emprestimos` | Loans | Aba bancários (saldo devedor, simuladores, qual atacar primeiro) e aba entre pessoas |
+| `#orcamentos` | Budgets | Limite por categoria/mês com aviso aos 90% e quando estoura |
+| `#lista-compras` | Shopping | Itens numa frase, carrinho (otimista), frequentes, finalizar vira 1 gasto |
 
-**Componentes notáveis (nami/):**
+**Lançar (um jeito só):** `lib/entry.ts` (lógica pura) transforma texto em `EntryDraft` → pedido à API. A linha rápida
+(`components/EntryCapture.tsx`, `QuickCapture` do DS) entende `45 ifood @nubank`, `1200 tv 10x @nubank`, `+3500 salário`, `ontem 30 uber`,
+`#lazer`; salva direto quando entende tudo e abre o `EntryForm` preenchido quando não (`@` ambíguo, `+pessoa`, falta valor). O mesmo
+formulário faz gasto, entrada e transferência (para um cartão = pagar a fatura). `lib/submit.ts` salva, edita e **desfaz**.
+
+**Arquivos notáveis:**
 
 | Arquivo | O que faz |
 |---|---|
-| `components/CashflowChart.tsx` | Barras duplas SVG (receitas/despesas por mês) |
-| `components/DonutChart.tsx` | Donut chart SVG puro para breakdown de categorias |
-| `components/QuickAdd.tsx` | Barra inline de lançamento rápido de transação |
-| `components/TxRow.tsx` | Linha de transação com ícone de categoria e valor formatado |
-| `components/LoanCard.tsx` | Card de empréstimo/financiamento com indicador de parcelas |
-| `modals/AddModal.tsx` | Modal de nova transação |
-| `modals/FormModal.tsx` | Modal genérico orientado a schema |
-| `modals/IconField.tsx` | Campo para upload ou URL de ícone |
-| `namiApi.ts` | Cliente de API para todos os endpoints `/api/finances/*` |
-| `lib.ts` | Adaptadores de dados: `normalizeTx`, `groupByDay`, `buildCatMap`, `filterTxs`, etc. |
-| `ui.tsx` | Componentes de exibição: `Money`, `BigMoney`, `CatBadge`, `Donut`, `Spark`, `CashflowBars` + helpers de data |
-| `Toast.tsx` | Toast de feedback (sucesso/erro) |
-| `TweaksPanel.tsx` | Painel de personalização (tema, acento, densidade, privacidade) |
+| `NamiShell.tsx` | `AppShell`, nav, estado compartilhado (contas, cartões, categorias), ações comuns pelo contexto, atalhos, preferências |
+| `context.ts` | `NamiContext`: `openEntry`, `openPay`, `quickCapture`, `save`, `remove`, `money` (modo privacidade), `reload` |
+| `namiApi.ts` | Cliente tipado de `/api/finances/*` |
+| `lib/entry.ts`, `lib/submit.ts` | Rascunho, validação por campo, pedido à API, desfazer |
+| `lib/txSchema.ts`, `lib/recurring.ts` | Esquemas de coleção (lançamentos, recorrentes) e regras puras (próximo vencimento, resumo) |
+| `lib/useLoad.ts` | Estados carregando/erro/dados de cada tela |
+| `components/` | `EntryForm`, `PayModal`, `CardForm`, `RecurringForm`, `AccountForm`, `LoanForms`, `TxRow` |
+| `nami.css` | Só o que o DS não tem (barra do mês, valores, linhas de ação), com tokens `--ds-*` |
+| `testApi.ts` | API simulada para os testes de tela |
 
-**Upload de ícone:** `namiApi.ts` usa `fetch` cru com `FormData` (não o wrapper `api`) porque o
-wrapper typed não suporta `multipart/form-data`.
+**Preferências:** `ds:prefs:nami` (ocultar valores, origem padrão, estilo de arte). Tema é o global do DS.
+
+**Testes:** `lib/*.test.ts` (lógica pura) e `NamiShell.test.tsx` / `screens.test.tsx` (shell de verdade no jsdom, API simulada).
 
 ---
 

@@ -142,7 +142,7 @@ describe('segmentos, chips e remoção', () => {
   })
 })
 
-describe('registro financeiro (Nami, spec 070)', () => {
+describe('registro financeiro (Nami, spec 071)', () => {
   const parse = createCaptureParser({
     rules: ['place', 'person', 'tag', 'amount', 'bareAmount', 'income', 'installments', 'date'],
     dateDirection: 'past',

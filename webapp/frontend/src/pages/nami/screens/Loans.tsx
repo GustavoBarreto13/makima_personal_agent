@@ -1,227 +1,126 @@
-// Tela de Empréstimos da seção Nami.
-// Portada do handoff de referência (docs/.../nami/screens-b.jsx → Emprestimos).
-// Exibe stat-row (a receber / a pagar) e grade de cards de empréstimo informal.
+// Empréstimos: contratos com o banco (saldo devedor, simuladores, qual atacar primeiro) e empréstimos entre
+// pessoas (quem me deve, a quem devo). Duas abas, uma tela.
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { fmtPercent } from '../../../design/core/format'
+import { toast } from '../../../design/headless/toast'
+import { Button, EmptyState, ErrorState, IconButton, InfoRow, LoadingState, Page, ProgressBar, SectionHeader, StatusChip, Tabs } from '../../../design'
+import { LOAN_TYPES, LoanForm, PersonalLoanForm, SimulatorModal } from '../components/LoanForms'
+import { useNami } from '../context'
+import { useLoad } from '../lib/useLoad'
 import { namiApi } from '../namiApi'
-import type { PersonalLoan } from '../types'
-import { LoanCard } from '../components/LoanCard'
-import { FormModal } from '../modals/FormModal'
-import { ConfirmDialog } from '../modals/ConfirmDialog'
-import { Icon } from '../icons'
-import { fmtMoney } from '../ui'
+import type { BankLoan, PersonalLoan } from '../types'
 
-interface LoansProps {
-  onToast: (msg: string) => void
-  // Props do commonProps não usadas aqui
-  stats?: unknown; accounts?: unknown; cards?: unknown; subscriptions?: unknown; month?: string
-  onTransactionSaved?: unknown; onNavigate?: unknown; onOpenAddModal?: unknown
+export function Loans() {
+  const [tab, setTab] = useState('bank')
+  return (
+    <Page wide>
+      <Tabs label="Tipo de empréstimo" value={tab} onChange={setTab} tabs={[{ id: 'bank', label: 'Com o banco' }, { id: 'people', label: 'Entre pessoas' }]} />
+      {tab === 'bank' ? <BankLoans /> : <PeopleLoans />}
+    </Page>
+  )
 }
 
-export function Loans({ onToast }: LoansProps) {
-  const [loans, setLoans]           = useState<PersonalLoan[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [showForm, setShowForm]     = useState(false)
-  const [editingLoan, setEditingLoan] = useState<PersonalLoan | null>(null)
-  const [saving, setSaving]         = useState(false)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<PersonalLoan | null>(null)
-  const [payingId, setPayingId]     = useState<string | null>(null)
+function BankLoans() {
+  const nami = useNami()
+  const { state, retry } = useLoad(async () => ({ loans: (await namiApi.getLoans('ativo')).loans, priority: await namiApi.getPayoffPriority() }), [nami.rev])
+  const [form, setForm] = useState<{ loan: BankLoan | null } | null>(null)
+  const [sim, setSim] = useState<BankLoan | null>(null)
 
-  // Carrega empréstimos ao montar (não depende do mês)
-  useEffect(() => {
-    setLoading(true)
-    namiApi.getPersonalLoans()
-      .then(r => setLoans(r.loans ?? []))
-      .catch(() => setLoans([]))
-      .finally(() => setLoading(false))
-  }, [])
+  if (state.status === 'loading') return <LoadingState variant="row" count={3} />
+  if (state.status === 'error') return <ErrorState onRetry={retry} />
+  const { loans, priority } = state.data
 
-  // Valor a receber: soma dos saldos dos empréstimos que o usuário fez
-  const toReceive = loans
-    .filter(l => l.direction === 'lent')
-    .reduce((s, l) => {
-      const pct = l.installments > 0 ? l.paid_installments / l.installments : 0
-      return s + l.total_amount * (1 - pct)
-    }, 0)
-
-  // Valor a pagar: soma dos saldos dos empréstimos que o usuário tomou
-  const toPay = loans
-    .filter(l => l.direction === 'borrowed')
-    .reduce((s, l) => {
-      const pct = l.installments > 0 ? l.paid_installments / l.installments : 0
-      return s + l.total_amount * (1 - pct)
-    }, 0)
-
-  const lentCount     = loans.filter(l => l.direction === 'lent').length
-  const borrowedCount = loans.filter(l => l.direction === 'borrowed').length
-
-  async function handleSave(values: Record<string, unknown>) {
-    setSaving(true)
-    try {
-      if (editingLoan) {
-        await namiApi.updatePersonalLoan(editingLoan.id, {
-          person_name:  String(values.person ?? ''),
-          total_amount: parseFloat(String(values.total ?? '0').replace(',', '.')),
-          installments: parseInt(String(values.installments ?? '1')),
-          next_due_day: values.nextDay ? parseInt(String(values.nextDay)) : undefined,
-          note:         String(values.note ?? '') || undefined,
-        })
-        onToast('Empréstimo atualizado ✓')
-      } else {
-        await namiApi.createPersonalLoan({
-          direction:    String(values.dir ?? 'lent') as 'lent' | 'borrowed',
-          person_name:  String(values.person ?? ''),
-          total_amount: parseFloat(String(values.total ?? '0').replace(',', '.')),
-          installments: parseInt(String(values.installments ?? '1')),
-          next_due_day: values.nextDay ? parseInt(String(values.nextDay)) : undefined,
-          note:         String(values.note ?? '') || undefined,
-        })
-        onToast('Empréstimo registrado ✓')
-      }
-      setShowForm(false)
-      setEditingLoan(null)
-      const r = await namiApi.getPersonalLoans()
-      setLoans(r.loans ?? [])
-    } catch (err: unknown) {
-      throw err
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleDelete(id: string) {
-    setDeletingId(id)
-    try {
-      await namiApi.deletePersonalLoan(id)
-      setLoans(prev => prev.filter(l => l.id !== id))
-      onToast('Empréstimo removido')
-    } catch {
-      onToast('Erro ao remover empréstimo')
-    } finally {
-      setDeletingId(null)
-      setConfirmDelete(null)
-    }
-  }
-
-  async function handlePay(id: string) {
-    setPayingId(id)
-    try {
-      const r = await namiApi.payPersonalLoanInstallment(id)
-      setLoans(prev => prev.map(l => l.id === id ? { ...l, paid_installments: r.paid_installments } : l))
-      onToast(`Parcela ${r.paid_installments}/${r.installments} registrada ✓`)
-    } catch {
-      onToast('Erro ao registrar pagamento')
-    } finally {
-      setPayingId(null)
-    }
+  const payInstallment = async (l: BankLoan) => {
+    try { const r = await namiApi.payLoanInstallment(l.id); toast(r.message, { tone: 'success' }); nami.reload() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Não foi possível registrar a parcela.', { tone: 'error' }) }
   }
 
   return (
     <>
-      {/* Cabeçalho da página */}
-      <div className="page-head">
-        <h2>Empréstimos</h2>
-        <button className="btn btn-primary" onClick={() => { setEditingLoan(null); setShowForm(true) }}>
-          <Icon name="plus" size={14} /> Novo empréstimo
-        </button>
-      </div>
-
-      {/* Stat-row: a receber (verde) + a pagar (coral) */}
-      <div className="stat-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-        <div className="stat-card">
-          <div className="stat-label">A receber</div>
-          <div className="stat-val in">
-            <span className="amount">{fmtMoney(toReceive)}</span>
-          </div>
-          <div className="stat-detail">
-            {lentCount} pessoa{lentCount !== 1 ? 's' : ''} te devem
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">A pagar</div>
-          <div className="stat-val out">
-            <span className="amount">{fmtMoney(toPay)}</span>
-          </div>
-          <div className="stat-detail">
-            você deve a {borrowedCount} pessoa{borrowedCount !== 1 ? 's' : ''}
-          </div>
-        </div>
-      </div>
-
-      {/* Grade de cards de empréstimo */}
-      {loading ? (
-        <div className="loading">
-          <Icon name="handshake" size={20} /> Carregando empréstimos…
-        </div>
-      ) : loans.length === 0 ? (
-        <div className="empty">
-          <Icon name="handshake" size={32} />
-          <p>Nenhum empréstimo registrado</p>
-          <button className="btn btn-primary" onClick={() => { setEditingLoan(null); setShowForm(true) }}>
-            <Icon name="plus" size={14} /> Registrar empréstimo
-          </button>
-        </div>
+      <SectionHeader title="Contratos" mono={`${loans.length} ativos`} action={<Button variant="primary" icon="add" onClick={() => setForm({ loan: null })}>Novo empréstimo</Button>} />
+      {loans.length === 0 ? (
+        <EmptyState icon="loan" title="Nenhum empréstimo ou financiamento" hint="Cadastre os contratos com o banco para ver o saldo devedor e simular quitação." action={<Button variant="primary" icon="add" onClick={() => setForm({ loan: null })}>Cadastrar</Button>} />
       ) : (
-        <div className="loan-grid">
-          {loans.map(loan => (
-            <LoanCard
-              key={loan.id}
-              loan={loan}
-              onDelete={l => setConfirmDelete(l)}
-              onEdit={l => { setEditingLoan(l); setShowForm(true) }}
-              onPay={handlePay}
-              deleting={deletingId === loan.id}
-              paying={payingId === loan.id}
-            />
+        <div className="ds-list">
+          {loans.map((l) => (
+            <div key={l.id} className="ds-lrow nm-act nm-budget" style={{ cursor: 'default' }}>
+              <span className="ds-t">
+                <b>{l.name}</b>
+                <span>{LOAN_TYPES[l.tipo] ?? l.tipo} · {l.sistema_amortizacao} · {fmtPercent(l.taxa_juros_mensal, 2)} ao mês · {l.parcelas_pagas} de {l.num_parcelas_total} parcelas</span>
+                <ProgressBar value={l.parcelas_pagas} max={l.num_parcelas_total || 1} label={`${l.name}: ${l.parcelas_pagas} de ${l.num_parcelas_total} parcelas pagas`} />
+              </span>
+              <span className="nm-amt">{nami.money(l.saldo_devedor)}</span>
+              <Button size="sm" onClick={() => setSim(l)}>Simular</Button>
+              <Button size="sm" variant="primary" onClick={() => void payInstallment(l)}>Paguei a parcela</Button>
+              <IconButton icon="edit" label={`Editar ${l.name}`} onClick={() => setForm({ loan: l })} />
+            </div>
           ))}
         </div>
       )}
-
-      {/* Modal de novo empréstimo / edição — direção não é editável (é a identidade do registro) */}
-      {showForm && (
-        <FormModal
-          title={editingLoan ? `Editar empréstimo — ${editingLoan.person_name}` : 'Novo empréstimo'}
-          saving={saving}
-          onClose={() => { setShowForm(false); setEditingLoan(null) }}
-          onSave={handleSave}
-          saveLabel={editingLoan ? 'Salvar alterações' : 'Registrar'}
-          initialValues={editingLoan ? {
-            person: editingLoan.person_name,
-            total: String(editingLoan.total_amount ?? 0),
-            installments: String(editingLoan.installments ?? 1),
-            nextDay: String(editingLoan.next_due_day ?? ''),
-            note: editingLoan.note ?? '',
-          } : undefined}
-          fields={[
-            ...(editingLoan ? [] : [{
-              key: 'dir',
-              label: 'Direção',
-              type: 'segment' as const,
-              options: [
-                { value: 'lent',     label: 'Eu emprestei' },
-                { value: 'borrowed', label: 'Peguei emprestado' },
-              ],
-            }]),
-            { key: 'person',       label: 'Pessoa',                type: 'text',   required: true, placeholder: 'Ex: João, Maria…' },
-            { key: 'total',        label: 'Valor total',           type: 'money',  required: true },
-            { key: 'installments', label: 'Parcelas',              type: 'number', min: 1, placeholder: '1' },
-            { key: 'nextDay',      label: 'Dia do vencimento',     type: 'number', min: 1, max: 28, placeholder: '15' },
-            { key: 'note',         label: 'Observação (opcional)', type: 'text',   placeholder: 'Sobre o que foi?' },
-          ]}
-        />
+      {priority.priority.length > 0 && (
+        <section aria-labelledby="nm-prio">
+          <SectionHeader title="Qual dívida atacar primeiro" id="nm-prio" mono="maior juros primeiro" />
+          <p className="nm-note">{priority.recomendacao}</p>
+          <div className="ds-list">
+            {priority.priority.map((p, i) => <InfoRow key={`${p.tipo}-${p.name}`} title={`${i + 1}. ${p.name}`} detail={`${p.tipo === 'cartao' ? 'Cartão' : 'Empréstimo'} · ${fmtPercent(p.taxa_juros_anual, 1)} ao ano`} value={nami.money(p.saldo_devedor)} />)}
+          </div>
+        </section>
       )}
+      {form && <LoanForm key={form.loan?.id ?? 'novo'} loan={form.loan} onClose={() => setForm(null)} />}
+      {sim && <SimulatorModal loan={sim} onClose={() => setSim(null)} />}
+    </>
+  )
+}
 
-      {/* Confirmação de exclusão */}
-      {confirmDelete && (
-        <ConfirmDialog
-          title="Excluir empréstimo"
-          message={`Remover o empréstimo com "${confirmDelete.person_name}"? Essa ação não pode ser desfeita.`}
-          busy={deletingId === confirmDelete.id}
-          onConfirm={() => handleDelete(confirmDelete.id)}
-          onClose={() => setConfirmDelete(null)}
-        />
+function PeopleLoans() {
+  const nami = useNami()
+  const { state, retry } = useLoad(() => namiApi.getPersonalLoans(), [nami.rev])
+  const [form, setForm] = useState<{ loan: PersonalLoan | null } | null>(null)
+
+  if (state.status === 'loading') return <LoadingState variant="row" count={3} />
+  if (state.status === 'error') return <ErrorState onRetry={retry} />
+  const loans = state.data.loans
+
+  const remaining = (l: PersonalLoan) => (l.total_amount / (l.installments || 1)) * Math.max(0, l.installments - l.paid_installments)
+  const owedToMe = loans.filter((l) => l.direction === 'lent').reduce((s, l) => s + remaining(l), 0)
+  const iOwe = loans.filter((l) => l.direction === 'borrowed').reduce((s, l) => s + remaining(l), 0)
+
+  const pay = async (l: PersonalLoan) => {
+    try { await namiApi.payPersonalLoanInstallment(l.id); toast(`Parcela de ${l.person_name} registrada`, { tone: 'success' }); nami.reload() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Não foi possível registrar.', { tone: 'error' }) }
+  }
+
+  return (
+    <>
+      <div className="ds-kpis">
+        <div className="ds-kpi ds-card"><span className="ds-mono">Me devem</span><span className="ds-v nm-amt nm-in">{nami.money(owedToMe)}</span></div>
+        <div className="ds-kpi ds-card"><span className="ds-mono">Eu devo</span><span className="ds-v nm-amt">{nami.money(iOwe)}</span></div>
+      </div>
+      <SectionHeader title="Empréstimos entre pessoas" action={<Button variant="primary" icon="add" onClick={() => setForm({ loan: null })}>Novo</Button>} />
+      {loans.length === 0 ? (
+        <EmptyState icon="people" title="Ninguém te deve, e você não deve a ninguém" hint="Registre quando emprestar ou pegar dinheiro emprestado, para não esquecer." action={<Button variant="primary" icon="add" onClick={() => setForm({ loan: null })}>Registrar</Button>} />
+      ) : (
+        <div className="ds-list">
+          {loans.map((l) => {
+            const done = l.paid_installments >= l.installments
+            return (
+              <div key={l.id} className="ds-lrow nm-act nm-budget" style={{ cursor: 'default' }}>
+                <span className="ds-t">
+                  <b>{l.person_name}</b>
+                  <span>{l.installments > 1 ? `${l.paid_installments} de ${l.installments} parcelas` : 'À vista'}{l.next_due_day ? ` · dia ${l.next_due_day}` : ''}{l.note ? ` · ${l.note}` : ''}</span>
+                  <ProgressBar value={l.paid_installments} max={l.installments || 1} label={`${l.person_name}: ${l.paid_installments} de ${l.installments}`} />
+                </span>
+                <StatusChip status={done ? 'done' : l.direction === 'lent' ? 'planned' : 'paused'} label={done ? 'Quitado' : l.direction === 'lent' ? 'Emprestei' : 'Peguei'} />
+                <span className="nm-amt">{nami.money(l.total_amount)}</span>
+                {!done && <Button size="sm" variant="primary" onClick={() => void pay(l)}>{l.direction === 'lent' ? 'Recebi parcela' : 'Paguei parcela'}</Button>}
+                <IconButton icon="edit" label={`Editar empréstimo com ${l.person_name}`} onClick={() => setForm({ loan: l })} />
+              </div>
+            )
+          })}
+        </div>
       )}
+      {form && <PersonalLoanForm key={form.loan?.id ?? 'novo'} loan={form.loan} onClose={() => setForm(null)} />}
     </>
   )
 }

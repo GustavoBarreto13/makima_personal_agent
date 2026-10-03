@@ -9,6 +9,7 @@ Responsabilidades:
 - Gerenciar assinaturas recorrentes, compras parceladas e cartões de crédito
 - Controlar empréstimos e financiamentos (PRICE e SAC)
 - Monitorar orçamento por categoria e calcular score de saúde financeira
+- Responder "quanto ainda posso gastar?" (`get_month_plan`) e mostrar as faturas de cada cartão (`get_card_invoices`) — spec 071
 - Gerenciar contas financeiras (corrente, poupança, dinheiro, investimento)
 
 ---
@@ -30,6 +31,8 @@ nami_agent (Agent ADK — singleton)
     ├── tools_budgets.py      → orçamento por categoria
     ├── tools_health.py       → score de saúde financeira
     ├── tools_shopping.py     → lista de compras (spec 045) — listas, itens, finalizar
+    ├── tools_plan.py         → plano do mês: "livre pra gastar" + a pagar (spec 071)
+    ├── tools_stats.py        → retrospectiva no contrato StatsPayload do Design System (spec 071, só webapp)
     └── tools_rag.py          → consult_financial_knowledge() — stub de integração com a Kurisu (RAG)
         ↓ (todos)
     PostgreSQL (banco compartilhado — helpers em agents/db.py: run_select/run_dml)
@@ -108,9 +111,23 @@ def _resolve_credit_card(name: str) -> dict | None:
 
 Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitetura atual.
 
+### Transferência tem sinal (spec 071)
+
+`tipo='Transferencia'` guarda `valor` **com sinal**: **negativo** na ponta de origem (sai da conta) e **positivo** no destino
+(entra na conta, ou abate a dívida do cartão — aí a ponta tem `card_id`). As duas pontas compartilham `transfer_id` e são
+gravadas/apagadas juntas (`create_transfer`, `delete_transfer`). Não é receita nem despesa: os relatórios filtram por `tipo`
+e a ignoram; o saldo da conta e a dívida do cartão a somam.
+
+- **Pagar fatura = transferência conta → cartão** (`register_card_payment`). Nunca gravar como `Receita` no cartão (era o
+  modelo antigo: inflava a renda e não debitava a conta). Dados antigos: `scripts/migrate_nami_signed_transfers.py`.
+- **Dívida do cartão é acumulada** (`Despesa − Receita(estorno) − Transferencia recebida`, até hoje), não só o ciclo corrente.
+- **Faturas são derivadas**, sem tabela (`get_card_invoices`): compra cai na fatura pelo dia de fechamento; pagamentos
+  abatem da fatura mais antiga primeiro.
+- **Renda** = `Receita` em conta (`card_id IS NULL`). `Receita` em cartão é estorno.
+
 ---
 
-## Tools públicas (62 no total)
+## Tools públicas (67 no total)
 
 > As tabelas abaixo listam as principais. Além delas, cada módulo tem o CRUD complementar
 > (`update_*` / `delete_*` de contas, cartões, empréstimos, parcelamentos, orçamentos e
@@ -123,7 +140,8 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 |---|---|
 | `create_account` | `name, type, data_inicio` — types: `corrente\|poupanca\|dinheiro\|investimento` (cartões não são contas) |
 | `list_accounts` | `status="ativo"` — ou `"encerrado"`, `"todos"` |
-| `get_account_balance` | `account_id` — saldo = balance_inicial + receitas − despesas |
+| `get_account_balance` | `account_id` — saldo = balance_inicial + receitas − despesas + transferências (com sinal), só até hoje (spec 071) |
+| `get_accounts_overview` | saldo real de todas as contas ativas de uma vez + total (spec 071) |
 | `update_account` | `account_id` + campos opcionais (name/institution/notes/balance_inicial) — exposto via `PATCH /api/finances/accounts/{id}` desde a spec 043 (a tool já existia, só faltava o endpoint) |
 
 **Setup inicial obrigatório:** contas devem ser criadas antes de qualquer transação, cartão ou empréstimo.
@@ -133,24 +151,27 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 | Tool | Descrição |
 |---|---|
 | `create_transaction` | Registra gasto ou receita. Parâmetro `card_id` opcional: quando fornecido, `account_id` fica NULL (transação de cartão). Quando omitido, resolve conta via `_resolve_account`. |
-| `query_expenses` | Consulta lista detalhada com filtros de período + `categoria`/`tipo`/`limit`/`offset` (spec 043) — retorna `has_more` para paginação; cada transação traz `people: [{id, name}]` vinculada (spec 014/047), 1 query em lote, nunca N+1 |
+| `query_expenses` | Consulta lista detalhada com filtros de período + `categoria`/`tipo`/`limit`/`offset` (spec 043) + busca `q` (nome/notas, curingas escapados) e `account_id`/`card_id` (spec 071); devolve `transfer_id` — retorna `has_more` para paginação; cada transação traz `people: [{id, name}]` vinculada (spec 014/047), 1 query em lote, nunca N+1 |
 | `update_transaction` | Corrige campo(s) de uma transação existente pelo `id`. `card_id` (spec 043) tem prioridade sobre `conta` — troca a origem para cartão, zerando `account_id` (mutuamente exclusivos, mesmo bug corrigido que existia desde sempre: antes só `conta` era atualizado, nunca `account_id`/`card_id`) |
-| `create_transfer` | Transferência atômica entre 2 contas (spec 043) — par de transações `tipo='Transferencia'` vinculadas por `transfer_id`, via `get_conn()` |
+| `create_transfer` | Transferência atômica (`from_account`, `valor`, `to_account` ou `to_card`) — par de `tipo='Transferencia'` por `transfer_id`, origem negativa/destino positivo; `to_card` = pagar fatura (spec 043/071). Agora também exposta ao Telegram |
+| `delete_transfer` | Apaga as DUAS pontas de uma transferência pelo `transfer_id` (spec 071) |
+| `suggest_entry` | Sugere categoria e conta/cartão a partir de lançamentos parecidos (autocompletar — só webapp, spec 071) |
 | `delete_transaction` | Soft delete — marca `deleted=TRUE` |
-| `get_spending_summary` | Agrupa gastos por `categoria`, `conta` ou `tipo` |
+| `get_spending_summary` | Agrupa **despesas** por `categoria`, `conta` ou `tipo` (por `tipo` mostra Receita também; `Transferencia` nunca entra) |
 | `get_spending_trend` | Evolução mensal + projeção do mês atual |
-| `create_subscription` | Cadastra recorrência (mensal ou anual) — `kind` decide assinatura vs conta fixa (spec 044); `auto_lancar` (padrão por kind) indica lançamento automático futuro (spec 048) |
+| `create_subscription` | Cadastra recorrência (mensal ou anual) — `kind`: `assinatura`, `conta_fixa` ou `renda` (salário/entrada recorrente, spec 071); `auto_lancar` (padrão: só assinatura) indica lançamento automático futuro (spec 048) |
 | `list_subscriptions` | Lista recorrências ativas com próxima cobrança; filtro opcional `kind` |
 | `update_subscription` | Pausa, cancela, atualiza valor ou reclassifica (`kind`/`auto_lancar`) |
-| `get_recurring_status` | Enriquece cada recorrência com `cycle_status` (paga/pendente/atrasada/agendada) + custo fixo mensal total + contagem de pendências (spec 044) |
-| `mark_subscription_paid` | Confirma pagamento de conta fixa com o valor REAL — cria a despesa vinculada e rola `next_billing` **atomicamente** via `get_conn()` (spec 044) |
+| `get_recurring_status` | Enriquece cada recorrência com `cycle_status` (paga/pendente/atrasada/agendada) + custo fixo mensal + pendências de despesa + `renda_pendente` (renda fica fora do custo e das pendências — spec 044/071) |
+| `get_month_plan` | **"Livre pra gastar"** do mês: renda − gasto − parcelas agendadas − pendentes, `livre_por_dia`, `a_pagar` (contas + faturas fechadas), top categorias (spec 071) |
+| `mark_subscription_paid` | Confirma pagamento de conta fixa com o valor REAL — cria a despesa vinculada e rola `next_billing` **atomicamente** via `get_conn()` (spec 044). Em `kind='renda'` grava **Receita** ("recebi"). O dia de vencimento é preservado (`_roll_billing_date`: dia 31 volta ao 31 nos meses que têm) |
 | `skip_subscription_cycle` | Rola `next_billing` sem lançar despesa — mês sem fatura (spec 044) |
 
 ### Parcelas — `tools_installments.py`
 
 | Tool | Descrição |
 |---|---|
-| `create_installment` | Cria grupo + N transações com datas mensais consecutivas. Origem é conta OU cartão (`card_id` opcional, spec 041) — mutuamente exclusivos, mesma regra de `create_transaction` |
+| `create_installment` | Cria grupo + N transações com datas mensais consecutivas, **numa transação só** e sem perder centavos (o resto vai na 1ª parcela — spec 071). Origem é conta OU cartão (`card_id` opcional, spec 041) |
 | `list_installments` | Lista grupos com contagem de parcelas pagas/pendentes (inclui `account_id`/`card_id`) |
 | `get_installment_detail` | Detalhe de um grupo — cabeçalho + linha do tempo das parcelas (número, data, valor, pago/pendente) — spec 041 |
 | `get_future_commitments` | Soma parcelas + assinaturas de um mês futuro (formato `"YYYY-MM"`) |
@@ -165,8 +186,9 @@ Nunca popule os dois ao mesmo tempo. Esta é a regra mais importante da arquitet
 |---|---|
 | `register_credit_card` | Cadastra cartão vinculado a uma conta **corrente ou poupança** (`account_name`). Dívida inicial → transação com `card_id` |
 | `update_credit_card` | `card_id` + campos opcionais (name/limite/taxa/closing_day/due_day) — exposto via `PATCH /api/finances/cards/{id}` desde a spec 043 (a tool já existia, só faltava o endpoint) |
-| `get_card_debt_summary` | Dívida atual de todos os cartões. Filtra `transactions` por `card_id = credit_cards.id` |
-| `register_card_payment` | Registra pagamento da fatura — transação Receita com `card_id` (reduz a dívida) |
+| `get_card_debt_summary` | Dívida atual (acumulada até hoje) de todos os cartões. Filtra `transactions` por `card_id = credit_cards.id` |
+| `register_card_payment` | Paga a fatura: **transferência** da conta vinculada (ou `from_account`) para o cartão — debita a conta e abate a dívida, sem virar receita/despesa (spec 071) |
+| `get_card_invoices` | Faturas derivadas do cartão (atual, em aberto e próximas): total, pago, restante, vencimento, status, compras; parcelas na fatura certa (spec 071) |
 | `simulate_debt_payoff` | Simula meses para quitar dado um pagamento mensal |
 | `get_minimum_payment_cost` | Custo total de pagar apenas o mínimo até quitar |
 
@@ -250,7 +272,7 @@ Supermercado, Eletronicos, Pet, Investimento, Receita, Inbox
 ```
 
 Default quando não especificada: `Inbox`.
-Mapeamento de tipo de empréstimo → categoria em `register_loan_payment`: `veiculo` → `Transporte`, `pessoal` → `Saude`, `imovel` → `Moradia`.
+Mapeamento de tipo de empréstimo → categoria em `register_loan_payment`: `veiculo` → `Transporte`, `imobiliario` → `Moradia`; os demais tipos (`pessoal`, `consignado`, `outro`) caem em `Inbox`.
 
 ---
 
@@ -274,6 +296,10 @@ Mapeamento de tipo de empréstimo → categoria em `register_loan_payment`: `vei
 | "qual minha dívida no cartão?" | `get_card_debt_summary()` |
 | "como estão minhas finanças?" | `get_financial_health_score()` |
 | "to dentro do orçamento de lazer?" | `check_category_budget("Lazer")` |
+| "quanto ainda posso gastar esse mês?" | `get_month_plan()` |
+| "como tá a fatura do Nubank?" | `get_card_invoices(card_id)` |
+| "paguei a fatura do Nubank, 900" | `register_card_payment(card_id, 900)` — **não** `create_transaction` |
+| "transferi 500 do Itaú pro Nu" | `create_transfer("Itau", 500, "NuConta")` |
 | "quais contas fixas tenho pendentes?" | `get_recurring_status(kind="conta_fixa")` |
 | "paguei a luz, veio 287,45" | `mark_subscription_paid(id, valor=287.45)` |
 | "adiciona arroz, feijão 2kg e leite na lista do mercado" | `add_shopping_items(items="arroz, feijão 2kg, leite", list_name="mercado")` |
@@ -319,7 +345,9 @@ agente, só scripts standalone que reusam as tools já existentes:
 - **Não criar conta do tipo `cartao_credito`** — esse tipo foi removido. Cartões de crédito são entidades separadas em `credit_cards`, não em `accounts`. Use `create_account` apenas para corrente, poupança, dinheiro ou investimento.
 - **Não popular `account_id` em transações de cartão** — use `card_id`. Os dois são mutuamente exclusivos. Transação de conta bancária → `account_id` preenchido, `card_id` NULL. Transação de cartão → `card_id` preenchido, `account_id` NULL.
 - **Não usar `conta_key`** — foi removido (commit anterior). O campo legado não existe mais.
-- **Não criar `card_debt_entries`** — decisão arquitetural (commit `995ab53`): dívida inicial de cartão é uma transação Despesa com `card_id`; pagamento de fatura é uma transação Receita com `card_id`. A tabela `transactions` é a única fonte da verdade para saldos de cartão.
+- **Não criar `card_debt_entries`** — decisão arquitetural (commit `995ab53`): dívida inicial de cartão é uma transação Despesa com `card_id`; pagamento de fatura é uma **transferência** conta→cartão (spec 071; antes era Receita no cartão). A tabela `transactions` é a única fonte da verdade para saldos de cartão.
+- **Não gravar pagamento de fatura nem transferência como `Receita`/`Despesa`**: inflam a renda e o gasto. Use `register_card_payment` / `create_transfer`.
+- **Não criar tabela de faturas**: elas são derivadas (`get_card_invoices`).
 - **Não pedir confirmação** antes de `create_transaction` quando o usuário digitou os dados em texto — chamar imediatamente. **Exceção (spec 064, Etapa E5)**: quando os dados vêm de uma FOTO de recibo/nota fiscal (leitura por visão), a instrução exige confirmação explícita do usuário antes de `create_transaction` — o risco de erro de leitura (OCR/visão) é maior que o de digitação.
 - **Não usar markdown** (`*`, `_`, `~`) nas respostas — o Telegram renderiza HTML. Usar apenas tags HTML e emojis.
 - **Não criar nova tabela** para um novo tipo de dado sem verificar se cabe em `transactions` com uma categoria específica.
@@ -440,5 +468,7 @@ Sempre começa com `Nami:`. Tom ganancioso e dramático.
 | PRICE | Sistema de amortização com parcela fixa — amortização cresce ao longo do tempo |
 | SAC | Sistema de Amortização Constante — amortização fixa, juros decrescem |
 | `deleted` | Campo booleano em `transactions`, `installment_groups` — soft delete, nunca apaga dados |
+| `transfer_id` | Liga as duas pontas de uma transferência/pagamento de fatura. Origem com `valor` negativo, destino positivo (spec 071) |
+| `kind='renda'` | Recorrência de entrada (salário). Confirmar grava Receita; fora do custo fixo (spec 071) |
 | `balance_inicial` | Saldo da conta na data de início do rastreamento — base do cálculo de saldo atual |
 | `_norm` | Normalização: minúsculas + strip de acentos — usada para comparar strings de conta/categoria |

@@ -1,6 +1,8 @@
 // Tipos TypeScript para todas as entidades da seção Nami (finanças).
 // Espelham os shapes retornados pela API /api/finances/*.
 
+import type { StatsPayload } from '../../design/core/stats'
+
 // ── Categoria ─────────────────────────────────────────────────────────────────
 
 /** Uma das 15 categorias fixas de transação (seed no backend). */
@@ -26,6 +28,7 @@ export interface Transaction {
   notes?: string
   account_id?: string // preenchido quando a transação é de conta bancária (spec 043)
   card_id?: string    // preenchido quando a transação é de cartão
+  transfer_id?: string | null  // liga as duas pontas de uma transferência / pagamento de fatura (spec 071)
   people?: { id: string; name: string }[]  // pessoas vinculadas (spec 014/047)
 }
 
@@ -68,15 +71,14 @@ export interface Card {
 
 // ── Orçamento ────────────────────────────────────────────────────────────────
 
-/** Envelope de orçamento mensal por categoria. */
-export interface Budget {
-  id: string
-  category_id: string   // slug da categoria
-  categoria: string     // alias (algumas respostas usam este campo)
-  limit_amount: number  // limite em reais
-  month: string         // YYYY-MM-DD (primeiro dia do mês)
-  spent?: number        // quanto já foi gasto (calculado pelo backend)
-  pct?: number          // percentual gasto (0–100+)
+/** Envelope de orçamento do mês, como o backend devolve (GET /budgets → `envelopes`). */
+export interface BudgetEnvelope {
+  categoria: string     // id da categoria
+  limite: number        // limite em reais
+  gasto: number         // quanto já foi gasto no mês
+  restante: number      // limite − gasto (negativo se estourou)
+  pct_usado: number     // 0–100+
+  estourado: boolean
 }
 
 // ── Assinatura ───────────────────────────────────────────────────────────────
@@ -96,9 +98,12 @@ export interface Subscription {
   icon_url?: string
   next_billing_day?: number  // dia do mês (1–28)
   // Campos da spec 044 (Contas Fixas) — mesma tabela reaproveitada:
-  kind?: 'assinatura' | 'conta_fixa'   // default 'assinatura' (compat. com dados antigos)
+  kind?: RecurringKind                  // default 'assinatura' (compat. com dados antigos)
   auto_lancar?: boolean                 // indicador para o job de lançamento automático (spec 048, futuro)
 }
+
+/** Tipo de recorrência: 'renda' (spec 071) é entrada recorrente, como salário. */
+export type RecurringKind = 'assinatura' | 'conta_fixa' | 'renda'
 
 // ── Status do ciclo corrente (spec 044) ─────────────────────────────────────
 
@@ -112,6 +117,8 @@ export interface RecurringStatusResponse {
   items: RecurringStatusItem[]
   custo_fixo_mensal: number
   pendentes_count: number
+  /** Soma das rendas recorrentes ainda não recebidas neste ciclo (spec 071). */
+  renda_pendente: number
 }
 
 // ── Empréstimo pessoa-a-pessoa ───────────────────────────────────────────────
@@ -207,44 +214,13 @@ export interface CardInstallment {
   parcelas_pendentes: number
 }
 
-// ── Estatísticas mensais (derivadas) ────────────────────────────────────────
+// ── Resumo / retrospectiva (spec 071) ────────────────────────────────────────
 
-/** Shape do GET /api/finances/stats?month=YYYY-MM */
-export interface StatsResponse {
-  month: string
-  income: number
-  expense: number
-  net: number
-  income_count: number
-  expense_count: number
-  prev_month_expense: number
-  savings_rate: number      // 0–1 (ex.: 0.25 = 25%)
-  patrimonio: number
-  patrimonio_liquido: number
-  by_category: CategoryStat[]
-  daily_spending: DailyEntry[]
-  cashflow: MonthlyEntry[]
-}
-
-/** Gastos por categoria no mês. */
-export interface CategoryStat {
-  categoria: string  // slug
-  total: number
-  pct: number        // percentual sobre total de despesas
-}
-
-/** Entradas/saídas em um dia específico. */
-export interface DailyEntry {
-  day: string     // YYYY-MM-DD
-  income: number
-  expense: number
-}
-
-/** Entradas/saídas de um mês (para o gráfico de fluxo de caixa). */
-export interface MonthlyEntry {
-  month: string   // YYYY-MM
-  income: number
-  expense: number
+/** GET /api/finances/stats?year=: StatsPayload do Design System + extensões da Nami. */
+export interface NamiStats extends StatsPayload {
+  /** Receita por mês (1-12) — `monthly` traz a despesa. */
+  monthly_income: { month: number; value: number }[]
+  net_worth: { saldo_contas: number; divida_cartoes: number; patrimonio_liquido: number }
 }
 
 // ── Lista de Compras (spec 045) ──────────────────────────────────────────────
@@ -284,12 +260,96 @@ export interface FrequentItem {
   count: number
 }
 
-// ── Tweaks (preferências visuais) ─────────────────────────────────────────────
+// ── Plano do mês — "livre pra gastar" (spec 071) ─────────────────────────────
 
-/** Preferências visuais persistidas no localStorage. */
-export interface Tweaks {
-  tema: 'Claro' | 'Escuro'
-  acento: 'Tangerina' | 'Azul-maré' | 'Coral' | 'Ouro'
-  densidade: 'Confortável' | 'Compacto'
-  privacidade: boolean
+/** Item de "A pagar": conta fixa, assinatura ou fatura de cartão que vence em breve (ou já venceu). */
+export interface PlanPayable {
+  kind: 'conta' | 'assinatura' | 'fatura'
+  id: string            // id da recorrência, ou do cartão (fatura)
+  name: string
+  valor: number
+  due: string           // YYYY-MM-DD
+  status: 'pendente' | 'atrasada'
+  invoice?: string      // só fatura: "AAAA-MM" do fechamento
+}
+
+/** Shape do GET /api/finances/plan */
+export interface Plan {
+  month: string         // YYYY-MM
+  is_current: boolean
+  renda_recebida: number
+  renda_pendente: number
+  renda_total: number
+  gasto: number
+  agendado: number
+  pendente: number
+  a_sair: number        // agendado + pendente
+  livre: number         // pode ser negativo
+  livre_por_dia: number | null
+  dias_restantes: number
+  estourou: boolean
+  barra: { gasto: number; a_sair: number; livre: number }
+  saldo_contas: number | null
+  a_pagar: PlanPayable[]
+  top_categorias: { categoria: string; total: number; pct: number }[]
+}
+
+// ── Faturas de cartão derivadas (spec 071) ───────────────────────────────────
+
+export type InvoiceStatus = 'paga' | 'aberta' | 'fechada' | 'atrasada' | 'futura'
+
+export interface InvoiceItem {
+  id: string | null
+  name: string
+  valor: number
+  data: string
+  parcelada: boolean
+}
+
+export interface Invoice {
+  id: string            // "AAAA-MM" do mês de fechamento
+  start: string
+  closing: string
+  due: string
+  total: number
+  pago: number
+  restante: number
+  status: InvoiceStatus
+  items: InvoiceItem[]
+}
+
+/** Shape do GET /api/finances/cards/{id}/invoices */
+export interface CardInvoices {
+  card: {
+    id: string; name: string; limite: number; closing_day: number; due_day: number
+    divida_atual: number; limite_disponivel: number
+  }
+  invoices: Invoice[]
+}
+
+// ── Contas com saldo real (spec 071) ─────────────────────────────────────────
+
+export interface AccountBalance {
+  id: string
+  name: string
+  type: string
+  saldo_inicial: number
+  saldo_atual: number
+}
+
+export interface AccountsOverview {
+  accounts: AccountBalance[]
+  saldo_total: number
+}
+
+// ── Autocompletar lançamento (spec 071) ──────────────────────────────────────
+
+export interface EntrySuggestion {
+  name: string
+  tipo: 'Despesa' | 'Receita'
+  categoria: string
+  valor: number
+  conta: string
+  account_id: string | null
+  card_id: string | null
 }

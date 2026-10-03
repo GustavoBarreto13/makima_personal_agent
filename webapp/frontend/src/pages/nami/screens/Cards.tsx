@@ -1,281 +1,150 @@
-// Tela de Cartões de Crédito da seção Nami.
-// Portada do handoff de referência (docs/.../nami/screens-a.jsx → Cartoes).
+// Cartões, pensados como fatura: cada cartão mostra o limite usado e abre um detalhe com uma aba por fatura
+// (a atual, as anteriores ainda em aberto e as próximas já comprometidas — parcelas caem na fatura certa).
 
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
+import { fmtDate, MONTHS_SHORT, pluralize } from '../../../design/core/format'
+import { confirm } from '../../../design/headless/confirm'
+import { toast } from '../../../design/headless/toast'
+import { Button, DetailPage, EmptyState, ErrorState, InfoRow, LoadingState, Page, ProgressBar, SectionHeader, StatusChip, type Status } from '../../../design'
+import { CardForm } from '../components/CardForm'
+import { useNami } from '../context'
+import { useLoad } from '../lib/useLoad'
 import { namiApi } from '../namiApi'
-import type { Card, Account, CardInstallment } from '../types'
-import { FormModal } from '../modals/FormModal'
-import { ConfirmDialog } from '../modals/ConfirmDialog'
-import { Icon } from '../icons'
-import { fmtMoney, monthShort } from '../ui'
+import type { Card, Invoice, InvoiceStatus } from '../types'
 
-interface CardsProps {
-  cards: Card[]
-  accounts: Account[]
-  onToast: (msg: string) => void
-  onCardsChanged: () => void
-  onNavigate?: (view: string) => void
-  month?: string; stats?: unknown; subscriptions?: unknown
-  onTransactionSaved?: unknown; onOpenAddModal?: unknown
+const STATUS: Record<InvoiceStatus, { status: Status; label: string }> = {
+  paga: { status: 'done', label: 'Paga' },
+  aberta: { status: 'planned', label: 'Aberta' },
+  fechada: { status: 'paused', label: 'Fechada' },
+  atrasada: { status: 'dropped', label: 'Atrasada' },
+  futura: { status: 'planned', label: 'Futura' },
 }
 
-const BRAND_OPTIONS = [
-  { value: 'Mastercard',       label: 'Mastercard' },
-  { value: 'Visa',             label: 'Visa' },
-  { value: 'Elo',              label: 'Elo' },
-  { value: 'American Express', label: 'Amex' },
-]
+const tabLabel = (inv: Invoice) => {
+  const month = MONTHS_SHORT[Number(inv.id.slice(5, 7)) - 1]
+  return `${month[0].toUpperCase()}${month.slice(1)}/${inv.id.slice(2, 4)}${inv.status === 'aberta' ? ' · atual' : ''}`
+}
 
-const CARD_GRADS = [
-  { value: 'linear-gradient(135deg, oklch(0.25 0.08 260), oklch(0.15 0.05 280))', label: 'Grafite' },
-  { value: 'linear-gradient(135deg, oklch(0.40 0.12 260), oklch(0.28 0.08 280))', label: 'Azul noite' },
-  { value: 'linear-gradient(135deg, oklch(0.65 0.16 30), oklch(0.50 0.14 15))',   label: 'Coral' },
-  { value: 'linear-gradient(135deg, oklch(0.65 0.15 145), oklch(0.45 0.12 160))', label: 'Verde' },
-  { value: 'linear-gradient(135deg, oklch(0.70 0.14 85), oklch(0.55 0.12 70))',   label: 'Ouro' },
-  { value: 'linear-gradient(135deg, oklch(0.55 0.14 300), oklch(0.38 0.10 320))', label: 'Roxo' },
-]
+export function Cards() {
+  const nami = useNami()
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [form, setForm] = useState<{ card: Card | null } | null>(null)
+  const card = nami.cards.find((c) => c.id === openId) ?? null
 
-export function Cards({ cards, accounts, onToast, onCardsChanged, onNavigate }: CardsProps) {
-  const [showForm, setShowForm]     = useState(false)
-  const [editingCard, setEditingCard] = useState<Card | null>(null)
-  const [saving, setSaving]         = useState(false)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<Card | null>(null)
-
-  // Modal de pagamento de fatura (spec 042, US3)
-  const [payingCard, setPayingCard] = useState<Card | null>(null)
-  const [paySaving, setPaySaving]   = useState(false)
-
-  // Parcelamentos ativos por cartão (spec 041, US3) — carregados sob demanda,
-  // um mapa cardId → {installments, monthly_commitment, ends_month}
-  const [cardInstallments, setCardInstallments] = useState<Record<string, {
-    installments: CardInstallment[]; monthly_commitment: number; ends_month: string | null
-  }>>({})
-
-  useEffect(() => {
-    cards.forEach(card => {
-      namiApi.getCardInstallments(card.id)
-        .then(r => setCardInstallments(prev => ({ ...prev, [card.id]: r })))
-        .catch(() => {})
-    })
-  }, [cards])
-
-  function goToInstallment(groupId: string) {
-    sessionStorage.setItem('nami:highlight-installment', groupId)
-    onNavigate?.('parcelamentos')
+  if (card) {
+    return (
+      <>
+        <CardDetail card={card} onBack={() => setOpenId(null)} onEdit={() => setForm({ card })} />
+        {form && <CardForm card={form.card} onClose={() => setForm(null)} />}
+      </>
+    )
   }
+  return (
+    <Page wide>
+      <SectionHeader title="Seus cartões" action={<Button variant="primary" icon="add" onClick={() => setForm({ card: null })}>Novo cartão</Button>} />
+      {nami.cards.length === 0 ? (
+        <EmptyState
+          icon="card"
+          title="Nenhum cartão ainda"
+          hint="Cadastre um cartão para ver a fatura de cada mês e saber quanto cada compra parcelada pesa."
+          action={<Button variant="primary" icon="add" onClick={() => setForm({ card: null })}>Cadastrar cartão</Button>}
+        />
+      ) : (
+        <div className="ds-grid">
+          {nami.cards.map((c) => <CardTile key={c.id} card={c} onOpen={() => setOpenId(c.id)} />)}
+        </div>
+      )}
+      {form && <CardForm card={form.card} onClose={() => setForm(null)} />}
+    </Page>
+  )
+}
 
-  const accountOptions = accounts.map(a => ({ value: a.name, label: a.name }))
+function CardTile({ card, onOpen }: { card: Card; onOpen: () => void }) {
+  const { money } = useNami()
+  const debt = card.divida_atual ?? 0
+  return (
+    <button type="button" className="ds-card nm-tile" onClick={onOpen} aria-label={`Abrir faturas do ${card.name}`}>
+      <span className="ds-mono">{card.name}</span>
+      <span className="ds-v nm-amt">{money(debt)}</span>
+      <ProgressBar value={debt} max={card.limite || 1} label={`Limite usado do ${card.name}`} />
+      <span className="ds-hint">Limite {money(card.limite)} · disponível {money(Math.max(0, card.limite - debt))}</span>
+      <span className="ds-hint">Fecha dia {card.closing_day} · vence dia {card.due_day}</span>
+    </button>
+  )
+}
 
-  async function handleSave(values: Record<string, unknown>) {
-    setSaving(true)
-    try {
-      if (editingCard) {
-        // Edição (spec 043) — preserva o histórico de transações vinculadas ao cartão
-        await namiApi.updateCard(editingCard.id, {
-          name:        String(values.name ?? ''),
-          limite:      parseFloat(String(values.limite ?? '0').replace(',', '.')),
-          closing_day: parseInt(String(values.closing_day ?? '1')),
-          due_day:     parseInt(String(values.due_day ?? '1')),
-          brand:       String(values.brand ?? '') || undefined,
-          last4:       String(values.last4 ?? '') || undefined,
-          grad:        String(values.grad ?? '') || undefined,
-        })
-        onToast('Cartão atualizado ✓')
-      } else {
-        await namiApi.createCard({
-          name:         String(values.name ?? ''),
-          account_name: String(values.account_name ?? ''),
-          limite:       parseFloat(String(values.limite ?? '0').replace(',', '.')),
-          closing_day:  parseInt(String(values.closing_day ?? '1')),
-          due_day:      parseInt(String(values.due_day ?? '1')),
-          brand:        String(values.brand ?? '') || undefined,
-          last4:        String(values.last4 ?? '') || undefined,
-          grad:         String(values.grad ?? '') || undefined,
-        })
-        onToast('Cartão criado ✓')
-      }
-      setShowForm(false)
-      setEditingCard(null)
-      onCardsChanged()
-    } catch (err: unknown) { throw err }
-    finally { setSaving(false) }
-  }
+function CardDetail({ card, onBack, onEdit }: { card: Card; onBack: () => void; onEdit: () => void }) {
+  const nami = useNami()
+  const { state, retry } = useLoad(() => namiApi.getCardInvoices(card.id, 3), [card.id, nami.rev])
+  const [tab, setTab] = useState<string | null>(null)
 
-  async function handleDelete(id: string) {
-    setDeletingId(id)
-    try {
-      await namiApi.deleteCard(id)
-      onToast('Cartão removido')
-      onCardsChanged()
-    } catch { onToast('Erro ao remover cartão') }
-    finally { setDeletingId(null); setConfirmDelete(null) }
-  }
+  const invoices = state.status === 'ok' ? state.data.invoices : []
+  // O que pagar primeiro: a fatura mais antiga ainda devendo (pagamento abate da mais antiga).
+  const toPay = useMemo(() => invoices.find((i) => i.restante > 0 && i.status !== 'futura'), [invoices])
+  const current = invoices.find((i) => i.status === 'aberta') ?? toPay ?? invoices[0]
 
-  async function handlePay(values: Record<string, unknown>) {
-    if (!payingCard) return
-    setPaySaving(true)
-    try {
-      const valor = parseFloat(String(values.valor ?? '0').replace(',', '.'))
-      if (!valor || valor <= 0) throw new Error('Informe um valor válido')
-      await namiApi.payCardBill(payingCard.id, valor, String(values.data ?? '') || undefined)
-      onToast(`Pagamento de ${fmtMoney(valor)} registrado ✓`)
-      setPayingCard(null)
-      onCardsChanged()
-    } catch (err: unknown) { throw err }
-    finally { setPaySaving(false) }
+  if (state.status === 'loading') return <Page><LoadingState variant="stat" count={3} /></Page>
+  if (state.status === 'error') return <Page><ErrorState onRetry={retry} /></Page>
+
+  const { card: info } = state.data
+  const pay = () => nami.openPay({ kind: 'fatura', cardId: card.id, name: card.name, valor: toPay?.restante ?? info.divida_atual, invoice: toPay?.id })
+  const remove = async () => {
+    const ok = await confirm({ title: `Encerrar o cartão ${card.name}?`, body: 'Ele deixa de aparecer, mas os lançamentos antigos continuam nas contas e nos resumos.', confirmLabel: 'Encerrar', danger: true })
+    if (!ok) return
+    try { await namiApi.deleteCard(card.id); toast(`Cartão ${card.name} encerrado`); nami.reload(); onBack() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Não foi possível encerrar.', { tone: 'error' }) }
   }
 
   return (
+    <Page wide>
+      <DetailPage
+        backLabel="Cartões"
+        onBack={onBack}
+        title={card.name}
+        icon="card"
+        hue={25}
+        subtitle={`Limite ${nami.money(info.limite)} · disponível ${nami.money(info.limite_disponivel)} · fecha dia ${info.closing_day}, vence dia ${info.due_day}`}
+        chips={current ? <StatusChip status={STATUS[current.status].status} label={`Fatura ${STATUS[current.status].label.toLowerCase()}`} /> : undefined}
+        actions={
+          <>
+            <Button variant="primary" icon="invoice" onClick={pay} disabled={info.divida_atual <= 0}>Pagar fatura</Button>
+            <Button icon="edit" onClick={onEdit}>Editar</Button>
+            <Button variant="ghost" icon="delete" onClick={() => void remove()}>Encerrar</Button>
+          </>
+        }
+        tab={tab ?? current?.id ?? ''}
+        onTab={setTab}
+        tabs={invoices.map((inv) => ({ id: inv.id, label: tabLabel(inv), content: <InvoiceView invoice={inv} /> }))}
+      />
+      {invoices.length === 0 && <EmptyState icon="invoice" title="Nenhuma fatura ainda" hint="Lance uma compra neste cartão para ver a fatura." />}
+    </Page>
+  )
+}
+
+function InvoiceView({ invoice }: { invoice: Invoice }) {
+  const { money } = useNami()
+  const st = STATUS[invoice.status]
+  return (
     <>
-      <div className="page-head">
-        <h2>Cartões</h2>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-          <Icon name="plus" size={14} /> Novo cartão
-        </button>
+      <div className="ds-kpis">
+        <div className="ds-kpi ds-card"><span className="ds-mono">Total</span><span className="ds-v nm-amt">{money(invoice.total)}</span></div>
+        <div className="ds-kpi ds-card"><span className="ds-mono">Pago</span><span className="ds-v nm-amt">{money(invoice.pago)}</span></div>
+        <div className="ds-kpi ds-card"><span className="ds-mono">Falta pagar</span><span className="ds-v nm-amt">{money(invoice.restante)}</span></div>
+        <div className="ds-kpi ds-card"><span className="ds-mono">Vence</span><span className="ds-v">{fmtDate(invoice.due)}</span><StatusChip status={st.status} label={st.label} /></div>
       </div>
-
-      {cards.length === 0 ? (
-        <div className="empty">
-          <Icon name="card" size={32} />
-          <p>Nenhum cartão cadastrado</p>
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-            <Icon name="plus" size={14} /> Novo cartão
-          </button>
-        </div>
-      ) : (
-        <div className="cc-grid">
-          {cards.map(card => (
-            <div key={card.id} className="cc-card">
-              <div className="cc-plastic" style={{ background: card.grad ?? CARD_GRADS[0].value }}>
-                <div className="cc-chip" />
-                <div className="cc-num">•••• •••• •••• {card.last4 ?? '????'}</div>
-                <div className="cc-foot">
-                  <div className="cc-holder">{card.name}</div>
-                  {card.brand && <div className="cc-brand">{card.brand}</div>}
-                </div>
-              </div>
-              <div className="cc-info">
-                <div className="cc-name">{card.name}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
-                  <span style={{ color: 'var(--muted)' }}>Dívida atual</span>
-                  <span className="amount" style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                    {fmtMoney(card.divida_atual ?? 0)} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>/ {fmtMoney(card.limite)}</span>
-                  </span>
-                </div>
-                <div className="cc-limit-track">
-                  <div className="cc-limit-fill" style={{ width: `${Math.min(card.utilizacao_pct ?? 0, 100)}%` }} />
-                </div>
-                <div className="cc-dates">
-                  <span>Fecha dia <strong>{card.closing_day}</strong></span>
-                  <span>Vence dia <strong>{card.due_day}</strong></span>
-                </div>
-              </div>
-              <div className="cc-foot-row">
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{card.status}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => setPayingCard(card)}>
-                    Registrar pagamento
-                  </button>
-                  <button className="acct-del" onClick={() => { setEditingCard(card); setShowForm(true) }} aria-label="Editar cartão">
-                    <Icon name="edit" size={12} />
-                  </button>
-                  <button className="acct-del" onClick={() => setConfirmDelete(card)} disabled={deletingId === card.id} aria-label="Remover">
-                    <Icon name="trash" size={12} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Parcelamentos ativos do cartão — comprometimento mensal da fatura (spec 041) */}
-              {(cardInstallments[card.id]?.installments.length ?? 0) > 0 && (
-                <div style={{ borderTop: '1px solid var(--line)', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)' }}>
-                    <span>Parcelamentos ativos</span>
-                    <span>
-                      {fmtMoney(cardInstallments[card.id]!.monthly_commitment)}/mês
-                      {cardInstallments[card.id]!.ends_month && ` até ${monthShort(cardInstallments[card.id]!.ends_month!)}`}
-                    </span>
-                  </div>
-                  {cardInstallments[card.id]!.installments.map(inst => (
-                    <button
-                      key={inst.id}
-                      onClick={() => goToInstallment(inst.id)}
-                      style={{
-                        display: 'flex', justifyContent: 'space-between', fontSize: 12,
-                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0',
-                        color: 'var(--ink)', textAlign: 'left',
-                      }}
-                    >
-                      <span>{inst.name} · {inst.parcelas_pagas}/{inst.num_parcelas}</span>
-                      <span className="amount">{fmtMoney(inst.valor_parcela)}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+      <p className="nm-note">
+        Compras de {fmtDate(invoice.start)} a {fmtDate(invoice.closing)}. Pagamentos abatem da fatura mais antiga primeiro.
+      </p>
+      {invoice.items.length === 0
+        ? <p className="nm-note">Sem compras nesta fatura.</p>
+        : (
+          <div>
+            <h2 className="nm-sub">{pluralize(invoice.items.length, 'compra', 'compras')}</h2>
+            <div className="ds-list">
+              {invoice.items.map((it, i) => <InfoRow key={it.id ?? i} title={it.name} detail={`${fmtDate(it.data)}${it.parcelada ? ' · parcela' : ''}`} value={money(it.valor)} />)}
             </div>
-          ))}
-        </div>
-      )}
-
-      {showForm && (
-        <FormModal
-          title={editingCard ? `Editar ${editingCard.name}` : 'Novo cartão'}
-          saving={saving}
-          onClose={() => { setShowForm(false); setEditingCard(null) }}
-          onSave={handleSave}
-          saveLabel={editingCard ? 'Salvar alterações' : 'Criar cartão'}
-          initialValues={editingCard ? {
-            name: editingCard.name,
-            limite: String(editingCard.limite ?? 0),
-            closing_day: String(editingCard.closing_day ?? ''),
-            due_day: String(editingCard.due_day ?? ''),
-            brand: editingCard.brand ?? '',
-            last4: editingCard.last4 ?? '',
-            grad: editingCard.grad ?? '',
-          } : undefined}
-          fields={[
-            { key: 'name',         label: 'Nome do cartão',       type: 'text',   required: true, placeholder: 'Ex.: Nubank Roxinho' },
-            // Conta vinculada não é editável (update_credit_card não altera o account_id) — só na criação
-            ...(editingCard ? [] : [{ key: 'account_name', label: 'Conta vinculada', type: 'select' as const, options: accountOptions }]),
-            { key: 'limite',       label: 'Limite',               type: 'money',  required: true },
-            { key: 'closing_day',  label: 'Dia de fechamento',    type: 'number', min: 1, max: 28, placeholder: '25' },
-            { key: 'due_day',      label: 'Dia de vencimento',    type: 'number', min: 1, max: 28, placeholder: '5' },
-            { key: 'brand',        label: 'Bandeira',             type: 'select', options: BRAND_OPTIONS },
-            { key: 'last4',        label: 'Últimos 4 dígitos',    type: 'text',   placeholder: '1234' },
-            { key: 'grad',         label: 'Gradiente do plástico',type: 'select', options: CARD_GRADS },
-          ]}
-        />
-      )}
-
-      {/* Modal de pagamento de fatura (spec 042) */}
-      {payingCard && (
-        <FormModal
-          title={`Registrar pagamento — ${payingCard.name}`}
-          saving={paySaving}
-          onClose={() => setPayingCard(null)}
-          onSave={handlePay}
-          saveLabel="Registrar pagamento"
-          fields={[
-            { key: 'valor', label: 'Valor pago', type: 'money', required: true },
-            { key: 'data',  label: 'Data (vazio = hoje)', type: 'date' },
-          ]}
-        >
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-            Dívida atual: {fmtMoney(payingCard.divida_atual ?? 0)}
           </div>
-        </FormModal>
-      )}
-
-      {/* Confirmação de exclusão */}
-      {confirmDelete && (
-        <ConfirmDialog
-          title="Excluir cartão"
-          message={`Encerrar o cartão "${confirmDelete.name}"? O histórico de compras é preservado, mas o cartão some das opções de lançamento.`}
-          busy={deletingId === confirmDelete.id}
-          onConfirm={() => handleDelete(confirmDelete.id)}
-          onClose={() => setConfirmDelete(null)}
-        />
-      )}
+        )}
     </>
   )
 }

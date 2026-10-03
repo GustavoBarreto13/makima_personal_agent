@@ -4,16 +4,9 @@
 // Se autenticado, renderiza o layout completo com sidebar e as rotas de cada página.
 
 import { Suspense, lazy, useEffect, useState } from 'react'  // Hooks do React: efeito colateral, estado local e carregamento sob demanda
-import { BrowserRouter, Routes, Route } from 'react-router-dom'  // Roteamento de páginas SPA
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'  // Roteamento de páginas SPA
 
 import Login         from './pages/Login'               // Tela de login com botão "Entrar com Google"
-import Layout        from './components/Layout'         // Layout com sidebar de navegação
-import Transactions  from './pages/Transactions'        // CRUD de transações
-import Accounts      from './pages/Accounts'            // Listagem e criação de contas
-import Cards         from './pages/Cards'               // Cartões de crédito com progress bar
-import Loans         from './pages/Loans'               // Empréstimos e saldo devedor
-import Budgets       from './pages/Budgets'             // Orçamentos por categoria
-import Subscriptions from './pages/Subscriptions'       // Assinaturas recorrentes
 import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell completo da seção de livros
 import { VioletShell } from './pages/violet/VioletShell'     // Shell do diário Violet
 import { NamiShell }   from './pages/nami/NamiShell'         // Shell completo da seção de finanças (redesign)
@@ -27,7 +20,6 @@ import { MakimaShell } from './pages/makima/MakimaShell'        // Hub central d
 
 // Referência viva do Design System (agente fictício). Carregada sob demanda: o CSS do padrão só vai
 // para o navegador quando /design é aberta, então nada muda nos shells existentes.
-const NamiNextShell = lazy(() => import('./pages/nami-next/NamiShell').then((m) => ({ default: m.NamiShell })))
 const DesignShell = lazy(() => import('./pages/design/DesignShell').then((m) => ({ default: m.DesignShell })))
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
@@ -127,9 +119,6 @@ function App() {
 
         {/* Design System Makima — página de referência (tokens, componentes, estados) com agente fictício.
             Antes do catch-all /* para não ser capturada por ele. */}
-        {/* Nova Nami (spec 070), em prévia até substituir /nami/*. */}
-        <Route path="/nami-next/*" element={<Suspense fallback={null}><NamiNextShell /></Suspense>} />
-
         <Route path="/design" element={<Suspense fallback={null}><DesignShell /></Suspense>} />
 
         {/* Makima · Hub — Centro de Controle em tela cheia (spec 023).
@@ -137,35 +126,16 @@ function App() {
             antes do catch-all /* para não ser capturada por ele. */}
         <Route path="/" element={<MakimaShell />} />
 
-        {/* Todas as outras rotas usam o Layout principal com sidebar Makima */}
-        <Route path="/*" element={
-          <Layout>
-            <Routes>
-              {/* A rota `/` agora é o Hub da Makima (renderizado fora do Layout,
-                  acima). O Dashboard de finanças deixou de ser a home. */}
+        {/* Endereços antigos das finanças (antes da nova Nami): levam à tela equivalente, para não quebrar atalhos salvos. */}
+        <Route path="/transactions" element={<Navigate to="/nami#lancamentos" replace />} />
+        <Route path="/accounts" element={<Navigate to="/nami#contas" replace />} />
+        <Route path="/cards" element={<Navigate to="/nami#cartoes" replace />} />
+        <Route path="/loans" element={<Navigate to="/nami#emprestimos" replace />} />
+        <Route path="/budgets" element={<Navigate to="/nami#orcamentos" replace />} />
+        <Route path="/subscriptions" element={<Navigate to="/nami#recorrentes" replace />} />
 
-              {/* CRUD de transações financeiras */}
-              <Route path="/transactions" element={<Transactions />} />
-
-              {/* Listagem e criação de contas bancárias */}
-              <Route path="/accounts" element={<Accounts />} />
-
-              {/* Cartões de crédito com progresso de uso */}
-              <Route path="/cards" element={<Cards />} />
-
-              {/* Empréstimos e financiamentos */}
-              <Route path="/loans" element={<Loans />} />
-
-              {/* Orçamentos mensais por categoria */}
-              <Route path="/budgets" element={<Budgets />} />
-
-              {/* Assinaturas recorrentes */}
-              <Route path="/subscriptions" element={<Subscriptions />} />
-
-              {/* /journal é tratado pelo VioletShell acima — sem Route aqui */}
-            </Routes>
-          </Layout>
-        } />
+        {/* Qualquer outro endereço volta para o Hub. */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )

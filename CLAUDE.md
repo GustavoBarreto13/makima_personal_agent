@@ -41,7 +41,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 
 | Agente | Domínio | Status | Documentação |
 |---|---|---|---|
-| `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1, 040–048 | `agents/nami/CLAUDE.md` |
+| `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1, 040–048, 071 | `agents/nami/CLAUDE.md` |
 | `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + GTD/revisão semanal (034/035) + Foco gameficado (037/062) + modo férias (065) | ✅ Fases 2, 011–020, 024–026, 029–030, 034–039, 062, 065 | `agents/kaguya/CLAUDE.md` |
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada + Tutor de Idiomas (031) + Conselho do Dia (061) | ✅ Fases 027, 031, 061 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) | ✅ Fase 5a | `agents/frieren/CLAUDE.md` |
@@ -196,6 +196,8 @@ makima_personal_agent/
 │   │   ├── __init__.py
 │   │   ├── tools.py     # tools de acesso ao PostgreSQL
 │   │   ├── toolset.py   # TOOLS: list[Callable] — reaproveitado por mcp_servers/makima — spec 064
+│   │   ├── tools_plan.py  # plano do mês ("livre pra gastar") + a pagar — spec 071
+│   │   ├── tools_stats.py # retrospectiva no contrato StatsPayload do DS — spec 071
 │   │   ├── agent.py     # nami_agent
 │   │   ├── schema_pg.sql # schema das tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, categorias, formatação, personalidade
@@ -339,6 +341,7 @@ makima_personal_agent/
 │   ├── send_lucy_digest.py    # digest matinal de emails (Lucy) — agendado pelo scheduler/ (spec 032)
 │   ├── seed_mobility_apps.py  # semeia agents/yato/mobility_apps a partir do research.md — spec 066
 │   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)
+│   ├── migrate_nami_signed_transfers.py # transferências com sinal + pagamento de fatura como transferência — spec 071 (dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS)
 │   └── .gitignore             # exclui client_secret.json do git
 ├── docs/                    # organizada por tipo — ver docs/README.md (mapa completo)
 │   ├── README.md            # índice: o que é vivo, o que é plano, o que é histórico

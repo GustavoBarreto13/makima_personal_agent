@@ -5,7 +5,7 @@ e simular cenários de quitação usando o Método Avalanche.
 
 Arquitetura: `transactions` é a fonte da verdade para saldo de cartões.
 - Dívida inicial → transação tipo Despesa na conta do cartão
-- Pagamento de fatura → transferência conta→cartão (spec 070), não receita
+- Pagamento de fatura → transferência conta→cartão (spec 071), não receita
 - Dívida = SUM(Despesas) − SUM(Receitas) − SUM(Transferências recebidas) via card_id, acumulada
 
 A tabela `credit_cards` guarda apenas metadados (limite, taxa, dias de fechamento)
@@ -72,7 +72,7 @@ def _card_debt(card_id: str) -> float:
     ainda não paga continua devida, e um pagamento de fatura anterior só abate o que
     realmente devia. Compras com data futura (parcelas) ficam de fora até chegarem.
       + Despesa                       → aumenta a dívida
-      − Receita                       → estorno/crédito (e pagamentos legados, pré-spec 070)
+      − Receita                       → estorno/crédito (e pagamentos legados, pré-spec 071)
       − Transferencia (valor positivo) → pagamento de fatura vindo de uma conta
     """
     rows = run_select(
@@ -200,7 +200,7 @@ def get_card_invoices(card_id: str, months: int = 3) -> dict:
 
     As faturas são derivadas das transações (`card_id`) e dos dias de fechamento/vencimento do
     cartão; não existe tabela de faturas. Compras parceladas aparecem na fatura certa de cada
-    mês porque cada parcela é uma transação datada (spec 070).
+    mês porque cada parcela é uma transação datada (spec 071).
 
     Args:
         card_id: ID do cartão.
@@ -520,7 +520,7 @@ def register_card_payment(card_id: str, valor: float, data: str = "", from_accou
     Pagar fatura é MOVER dinheiro, não ganhar: grava uma transferência atômica da conta
     que paga o cartão (a vinculada em `credit_cards.account_id`, ou `from_account` se
     informada) para o cartão. O saldo da conta cai, a dívida do cartão cai e nada disso
-    entra como receita/despesa (spec 070). Antes era gravado como Receita no cartão, o que
+    entra como receita/despesa (spec 071). Antes era gravado como Receita no cartão, o que
     inflava a renda do mês e nunca debitava a conta bancária.
 
     Args:

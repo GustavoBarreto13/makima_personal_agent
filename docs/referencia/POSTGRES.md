@@ -150,8 +150,8 @@ O coração do domínio financeiro: todo gasto, receita ou transferência é uma
 |---|---|---|---|---|
 | `id` | TEXT | PK | — | Identificador único (UUID gerado no código). |
 | `name` | TEXT | NÃO | — | Nome/descrição da transação. |
-| `valor` | NUMERIC | NÃO | — | Valor em reais. |
-| `tipo` | TEXT | NÃO | — | `receita` \| `despesa` \| `transferencia`. |
+| `valor` | NUMERIC | NÃO | — | Valor em reais. Positivo em `Receita`/`Despesa`; em `Transferencia` **tem sinal**: negativo na origem, positivo no destino (spec 071). |
+| `tipo` | TEXT | NÃO | — | `Receita` \| `Despesa` \| `Transferencia` (inicial maiúscula, como o código grava). |
 | `categoria` | TEXT | NÃO | — | Categoria (ex.: Alimentacao, Lazer). Default lógico: `Inbox`. |
 | `conta` | TEXT | NÃO | — | Nome da conta **ou** do cartão (campo *display* denormalizado, evita JOIN). |
 | `account_id` | TEXT | SIM | — | FK lógica para `accounts.id`. Preenchido só em transação de **conta bancária**. |
@@ -160,6 +160,7 @@ O coração do domínio financeiro: todo gasto, receita ou transferência é uma
 | `notes` | TEXT | SIM | — | Anotações livres. |
 | `subscription_id` | TEXT | SIM | — | Liga a uma assinatura (`subscriptions.id`), se a transação for a cobrança de uma. |
 | `installment_group_id` | TEXT | SIM | — | Liga a um grupo de parcelamento (`installment_groups.id`). |
+| `transfer_id` | TEXT | SIM | — | Liga as duas pontas de uma transferência ou pagamento de fatura (spec 043/071). As duas são criadas e apagadas juntas. |
 | `source` | TEXT | SIM | — | Origem do registro (ex.: "telegram"). |
 | `created_at` | TIMESTAMPTZ | SIM | `NOW()` | Quando foi criada. |
 | `updated_at` | TIMESTAMPTZ | SIM | `NOW()` | Última atualização. |
@@ -173,6 +174,12 @@ tempo. Conta bancária (débito, Pix, dinheiro) → `account_id` preenchido, `ca
 crédito (compra ou pagamento de fatura) → `card_id` preenchido, `account_id` NULL. A tabela
 `transactions` é a **única fonte da verdade** para o saldo dos cartões (não existe tabela separada de
 dívida de cartão).
+
+**Transferência tem sinal (spec 071).** `tipo='Transferencia'` guarda `valor` negativo na ponta de origem (sai da conta) e positivo no
+destino (entra na conta, ou abate a dívida do cartão, caso em que a ponta tem `card_id`). Não é receita nem despesa: os relatórios a
+ignoram; o saldo da conta e a dívida do cartão a somam. **Pagar fatura é uma transferência conta → cartão** (antes era uma `Receita` no
+cartão, o que inflava a renda e não debitava a conta). A dívida do cartão é acumulada: `Despesa − Receita(estorno) − Transferencia`,
+até hoje. Renda é `Receita` em conta (`card_id IS NULL`). Migração dos dados antigos: `scripts/migrate_nami_signed_transfers.py`.
 
 ### `subscriptions`
 
@@ -190,6 +197,9 @@ Assinaturas recorrentes (Netflix, Spotify, etc.).
 | `card_id` | TEXT | SIM | — | FK lógica para `credit_cards.id` — pagador real, se resolvido como cartão (spec 040). Mutuamente exclusivo com `account_id`. |
 | `categoria` | TEXT | SIM | — | Categoria do gasto. |
 | `status` | TEXT | SIM | `'ativa'` | `ativa` / pausada / cancelada. |
+| `kind` | TEXT | SIM | `'assinatura'` | `assinatura` \| `conta_fixa` \| `renda` (spec 044/071). `renda` é entrada recorrente (salário): confirmar grava `Receita` e fica fora do custo fixo. Sem CHECK: não exigiu migração. |
+| `auto_lancar` | BOOLEAN | SIM | `TRUE` | Lança sozinho no vencimento (padrão: só assinatura; conta fixa e renda pedem confirmação do valor — spec 044/048). |
+| `next_billing_day` | INTEGER | SIM | — | Dia do mês da cobrança. É a âncora do vencimento: dia 31 volta ao 31 nos meses que têm (só existe em bancos que rodaram a migração do webapp). |
 | `notes` | TEXT | SIM | — | Anotações. |
 | `created_at` | TIMESTAMPTZ | SIM | `NOW()` | Criação. |
 | `updated_at` | TIMESTAMPTZ | SIM | `NOW()` | Atualização. |

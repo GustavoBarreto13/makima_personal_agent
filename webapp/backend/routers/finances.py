@@ -13,7 +13,6 @@ Usage:
 # Imports do FastAPI: APIRouter (agrupa rotas), Depends (injeção de dependências),
 # HTTPException (lança erros HTTP), Query (extrai query params tipados)
 from fastapi import APIRouter, Depends, HTTPException, Query
-import calendar  # Usado para calcular o último dia real de cada mês (evita datas inválidas como 2026-06-31)
 
 # BaseModel é a base para todos os modelos Pydantic (validação de body da requisição)
 from pydantic import BaseModel
@@ -21,8 +20,8 @@ from pydantic import BaseModel
 # Optional permite que campos sejam None além do tipo normal (ex.: Optional[float] = None)
 from typing import Optional
 
-# date e timedelta são usados para calcular datas padrão (hoje, primeiro do mês seguinte, etc.)
-from datetime import date, timedelta
+# timedelta é usado para calcular datas padrão (primeiro do mês seguinte, etc.)
+from datetime import timedelta
 
 # require_user é a dependência de autenticação — bloqueia rotas não autenticadas
 from webapp.backend.deps import require_user
@@ -46,8 +45,8 @@ from agents.nami.tools import (
     mark_subscription_paid,  # Confirma pagamento — cria despesa + rola vencimento (atômico, spec 044)
     skip_subscription_cycle, # Pula o ciclo sem lançar despesa (spec 044)
     create_transfer,       # Par atômico débito/crédito entre contas (spec 043)
-    delete_transfer,       # Apaga as duas pontas de uma transferência (spec 070)
-    suggest_entry,         # Autocompletar lançamento a partir do histórico (spec 070)
+    delete_transfer,       # Apaga as duas pontas de uma transferência (spec 071)
+    suggest_entry,         # Autocompletar lançamento a partir do histórico (spec 071)
     _today_date,           # Hoje no fuso America/Sao_Paulo (spec 040) — nunca date.today() (UTC do servidor)
 )
 
@@ -71,7 +70,7 @@ from agents.nami.tools_accounts import (
     create_account,       # Cadastra nova conta financeira
     list_accounts,        # Lista contas por status
     get_account_balance,  # Saldo atual de uma conta específica
-    get_accounts_overview, # Saldo real de todas as contas + total (patrimônio) — spec 070
+    get_accounts_overview, # Saldo real de todas as contas + total (patrimônio) — spec 071
     update_account,       # Atualiza campos de uma conta (spec 043 — só faltava expor)
     delete_account,       # Encerra conta — status → 'encerrado'
 )
@@ -81,13 +80,13 @@ from agents.nami.tools_credit_cards import (
     register_credit_card,   # Cadastra cartão vinculado a uma conta
     get_card_debt_summary,  # Resumo de dívidas em todos os cartões
     register_card_payment,  # Registra pagamento de fatura
-    get_card_invoices,      # Faturas derivadas: atual, em aberto e próximas (spec 070)
+    get_card_invoices,      # Faturas derivadas: atual, em aberto e próximas (spec 071)
     update_credit_card,     # Atualiza campos de um cartão (spec 043 — só faltava expor)
     delete_credit_card,     # Encerra cartão — status → 'encerrado'
 )
 
 # Empréstimos e financiamentos
-# Plano do mês ("livre pra gastar") e estatísticas no contrato do Design System — spec 070
+# Plano do mês ("livre pra gastar") e estatísticas no contrato do Design System — spec 071
 from agents.nami.tools_plan import get_month_plan
 from agents.nami.tools_stats import get_stats_payload
 
@@ -171,34 +170,6 @@ def _check_result(result: dict) -> dict:
         )
     # Retorna o resultado sem modificação para o cliente
     return result
-
-
-def _month_bounds(month: str) -> tuple[str, str]:
-    """Calcular o primeiro e o último dia reais de um mês YYYY-MM.
-
-    Evita datas inválidas como '2026-06-31' (junho tem 30 dias) que o PostgreSQL
-    rejeita com DatetimeFieldOverflow. O comentário antigo dizia que o PostgreSQL
-    trunca automaticamente — isso é falso. calendar.monthrange() retorna o número
-    correto de dias para qualquer mês, incluindo anos bissextos em fevereiro.
-
-    Args:
-        month: Mês no formato 'YYYY-MM' (ex.: '2026-06').
-
-    Returns:
-        Tupla (primeiro_dia, ultimo_dia) no formato 'YYYY-MM-DD'.
-
-    Example:
-        >>> _month_bounds('2026-06')
-        ('2026-06-01', '2026-06-30')
-        >>> _month_bounds('2024-02')   # ano bissexto
-        ('2024-02-01', '2024-02-29')
-    """
-    # Extrai ano e mês numéricos do formato YYYY-MM
-    ano, mes = int(month[:4]), int(month[5:7])
-    # monthrange(ano, mes)[1] retorna o número de dias do mês (ex.: 30 para junho)
-    ultimo_dia = calendar.monthrange(ano, mes)[1]
-    # Formata as datas no padrão YYYY-MM-DD aceito pelo PostgreSQL
-    return f"{month}-01", f"{month}-{ultimo_dia:02d}"
 
 
 # ─── Criação do router ────────────────────────────────────────────────────────
@@ -396,7 +367,7 @@ class CreateTransferBody(BaseModel):
     """Corpo da requisição para registrar uma transferência entre contas (spec 043)."""
     from_account: str    # Nome da conta de origem
     to_account: str = ""  # Nome da conta de destino (ignorado se `to_card` vier)
-    to_card: str = ""     # Nome do cartão de destino — transferir para um cartão é pagar a fatura (spec 070)
+    to_card: str = ""     # Nome do cartão de destino — transferir para um cartão é pagar a fatura (spec 071)
     valor: float          # Valor transferido em reais
     data: str = ""        # Data no formato YYYY-MM-DD (vazio = hoje)
     notes: str = ""        # Observações opcionais
@@ -473,9 +444,9 @@ def list_transactions(
     tipo: str = Query(default="", description="Filtra por 'Despesa'/'Receita'/'Transferencia' (spec 043)"),
     limit: int = Query(default=0, description="Tamanho da página — 0 = sem paginação (spec 043)"),
     offset: int = Query(default=0, description="Deslocamento da página (spec 043)"),
-    q: str = Query(default="", description="Busca por trecho no nome ou nas notas (spec 070)"),
-    account_id: str = Query(default="", description="Só transações desta conta (spec 070)"),
-    card_id: str = Query(default="", description="Só transações deste cartão (spec 070)"),
+    q: str = Query(default="", description="Busca por trecho no nome ou nas notas (spec 071)"),
+    account_id: str = Query(default="", description="Só transações desta conta (spec 071)"),
+    card_id: str = Query(default="", description="Só transações deste cartão (spec 071)"),
     # Dependência de autenticação — retorna 401 se o cookie de sessão for inválido
     user: dict = Depends(require_user),
 ) -> dict:
@@ -529,7 +500,7 @@ def plan_endpoint(
     month: str = Query(default="", description="Mês AAAA-MM — vazio = mês corrente"),
     user: dict = Depends(require_user),
 ) -> dict:
-    """Plano do mês: renda, gasto, o que ainda vai sair e quanto está livre pra gastar (spec 070)."""
+    """Plano do mês: renda, gasto, o que ainda vai sair e quanto está livre pra gastar (spec 071)."""
     return _check_result(get_month_plan(month))
 
 
@@ -895,7 +866,7 @@ def create_account_endpoint(
 
 @router.get("/accounts/overview")
 def accounts_overview_endpoint(user: dict = Depends(require_user)) -> dict:
-    """Saldo real de cada conta ativa e o total (spec 070)."""
+    """Saldo real de cada conta ativa e o total (spec 071)."""
     return _check_result(get_accounts_overview())
 
 
@@ -1012,7 +983,7 @@ def delete_transfer_endpoint(
     transfer_id: str,
     user: dict = Depends(require_user),
 ) -> dict:
-    """Apagar uma transferência (ou pagamento de fatura) inteira: as duas pontas de uma vez (spec 070)."""
+    """Apagar uma transferência (ou pagamento de fatura) inteira: as duas pontas de uma vez (spec 071)."""
     return _check_result(delete_transfer(transfer_id))
 
 
@@ -1170,7 +1141,7 @@ def card_payment_endpoint(
 ) -> dict:
     """Registrar pagamento de fatura de um cartão de crédito.
 
-    O pagamento é uma transferência da conta vinculada ao cartão para o cartão (spec 070):
+    O pagamento é uma transferência da conta vinculada ao cartão para o cartão (spec 071):
     debita a conta e reduz a dívida, sem contar como receita nem despesa.
 
     Args:
@@ -1200,7 +1171,7 @@ def card_invoices_endpoint(
     months: int = Query(default=3, ge=0, le=12, description="Faturas futuras além da atual"),
     user: dict = Depends(require_user),
 ) -> dict:
-    """Faturas do cartão: atual, anteriores em aberto e próximas já comprometidas (spec 070)."""
+    """Faturas do cartão: atual, anteriores em aberto e próximas já comprometidas (spec 071)."""
     return _check_result(get_card_invoices(card_id, months))
 
 
@@ -2095,165 +2066,26 @@ def list_categories(user: dict = Depends(require_user)) -> list:
 
 @router.get("/stats")
 def get_stats(
-    month: str = Query(default="", description="Legado: YYYY-MM. Com `year`: número do mês (1-12), opcional"),
-    year: int = Query(default=0, description="Contrato do Design System (spec 070): ano da retrospectiva"),
+    year: int = Query(default=0, description="Ano da retrospectiva (0 = ano corrente em America/Sao_Paulo)"),
+    month: int = Query(default=0, ge=0, le=12, description="Mês 1-12 para focar num mês do ano (0 = ano inteiro)"),
     user: dict = Depends(require_user),
 ) -> dict:
-    """Calcular estatísticas financeiras.
+    """Retrospectiva financeira no contrato `StatsPayload` do Design System (tela Resumo, spec 071).
 
-    Com `year` devolve o `StatsPayload` do Design System (tela Resumo, spec 070); sem ele,
-    mantém o formato antigo por `month=YYYY-MM` usado pelo Dashboard legado (sai na fase 6).
-
-    Agrega receitas, despesas, breakdown por categoria e histórico de fluxo de caixa.
-    Usado pelo Dashboard do NamiShell.
+    KPIs com delta contra o mesmo trecho do ano anterior, taxa de poupança, patrimônio líquido
+    real (saldo das contas − dívida dos cartões), gasto e entrada por mês, mapa de calor diário,
+    ranking de categorias e recordes. Toda a lógica vive em `agents.nami.tools_stats`.
 
     Args:
-        month: Mês no formato YYYY-MM.
+        year: Ano. 0 = ano corrente.
+        month: Mês do ano (1-12). 0 = ano inteiro.
         user: Dados do usuário autenticado.
 
-    Returns:
-        Dicionário com income, expense, net, by_category, daily_spending e cashflow.
-
     Raises:
-        HTTPException: 400 se o formato do mês for inválido.
+        HTTPException: 400 se o mês for inválido.
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    if year:
-        if month and not (month.isdigit() and 1 <= int(month) <= 12):
-            raise HTTPException(status_code=400, detail="Com `year`, month deve ser um número de 1 a 12.")
-        return _check_result(get_stats_payload(year, int(month) if month else None))
-
-    # Valida o formato do mês (YYYY-MM)
-    if not month or len(month) != 7 or '-' not in month:
-        raise HTTPException(status_code=400, detail="Formato de mês inválido. Use YYYY-MM.")
-
-    # Intervalo do mês selecionado — _month_bounds calcula o último dia real do mês.
-    # Não usar "-31" fixo: PostgreSQL NÃO trunca datas inválidas, lança DatetimeFieldOverflow.
-    start, end = _month_bounds(month)
-
-    # ── Totais do mês ──────────────────────────────────────────────────────────
-    totals_rows = run_select("""
-        SELECT
-            COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0) AS income,
-            COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0) AS expense,
-            COUNT(CASE WHEN tipo = 'Receita' THEN 1 END) AS income_count,
-            COUNT(CASE WHEN tipo = 'Despesa' THEN 1 END) AS expense_count
-        FROM transactions
-        WHERE data BETWEEN %(start)s AND %(end)s
-          AND deleted = FALSE
-    """, {"start": start, "end": end})
-
-    row = totals_rows[0] if totals_rows else {}
-    income        = float(row.get("income", 0) or 0)
-    expense       = float(row.get("expense", 0) or 0)
-    net           = income - expense
-    income_count  = int(row.get("income_count", 0) or 0)
-    expense_count = int(row.get("expense_count", 0) or 0)
-    savings_rate  = (net / income) if income > 0 else 0.0
-
-    # ── Mês anterior (para comparação) ────────────────────────────────────────
-    from datetime import date as _date
-    y, m = int(month[:4]), int(month[5:7])
-    # Se é janeiro, o mês anterior é dezembro do ano passado
-    if m == 1:
-        prev_y, prev_m = y - 1, 12
-    else:
-        prev_y, prev_m = y, m - 1
-    # Usa _month_bounds para calcular o fim real do mês anterior (evita "-31" inválido)
-    prev_start, prev_end = _month_bounds(f"{prev_y}-{prev_m:02d}")
-
-    prev_rows = run_select("""
-        SELECT COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0) AS expense
-        FROM transactions
-        WHERE data BETWEEN %(start)s AND %(end)s AND deleted = FALSE
-    """, {"start": prev_start, "end": prev_end})
-    prev_expense = float((prev_rows[0].get("expense") if prev_rows else 0) or 0)
-
-    # ── Patrimônio (saldo REAL das contas, menos a dívida dos cartões) ─────────
-    # Antes era a soma de balance_inicial e ignorava todas as transações (spec 070).
-    overview = get_accounts_overview()
-    patrimonio = float(overview.get("saldo_total", 0) or 0)
-    debt = get_card_debt_summary()
-    divida_cartoes = float(debt.get("total_divida", 0) or 0) if debt.get("status") == "ok" else 0.0
-
-    # ── Breakdown por categoria ────────────────────────────────────────────────
-    cat_rows = run_select("""
-        SELECT categoria, SUM(valor) AS total
-        FROM transactions
-        WHERE data BETWEEN %(start)s AND %(end)s
-          AND tipo = 'Despesa'
-          AND deleted = FALSE
-        GROUP BY categoria
-        ORDER BY total DESC
-    """, {"start": start, "end": end})
-
-    by_category = [
-        {
-            "categoria": r["categoria"],
-            "total": float(r["total"] or 0),
-            "pct": (float(r["total"] or 0) / expense * 100) if expense > 0 else 0,
-        }
-        for r in cat_rows
-    ]
-
-    # ── Gastos diários ─────────────────────────────────────────────────────────
-    daily_rows = run_select("""
-        SELECT data AS day,
-               COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0) AS income,
-               COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0) AS expense
-        FROM transactions
-        WHERE data BETWEEN %(start)s AND %(end)s AND deleted = FALSE
-        GROUP BY data
-        ORDER BY data
-    """, {"start": start, "end": end})
-
-    daily_spending = [
-        {
-            "day": str(r["day"]),
-            "income": float(r["income"] or 0),
-            "expense": float(r["expense"] or 0),
-        }
-        for r in daily_rows
-    ]
-
-    # ── Fluxo de caixa histórico (últimos 6 meses) ─────────────────────────────
-    cashflow_rows = run_select("""
-        SELECT TO_CHAR(data, 'YYYY-MM') AS month,
-               COALESCE(SUM(CASE WHEN tipo = 'Receita' THEN valor ELSE 0 END), 0) AS income,
-               COALESCE(SUM(CASE WHEN tipo = 'Despesa' THEN valor ELSE 0 END), 0) AS expense
-        FROM transactions
-        WHERE data >= (DATE %(start)s - INTERVAL '5 months')
-          AND data <= %(end)s
-          AND deleted = FALSE
-        GROUP BY TO_CHAR(data, 'YYYY-MM')
-        ORDER BY month
-    """, {"start": start, "end": end})
-
-    cashflow = [
-        {
-            "month": r["month"],
-            "income": float(r["income"] or 0),
-            "expense": float(r["expense"] or 0),
-        }
-        for r in cashflow_rows
-    ]
-
-    return {
-        "month":               month,
-        "income":              income,
-        "expense":             expense,
-        "net":                 net,
-        "income_count":        income_count,
-        "expense_count":       expense_count,
-        "prev_month_expense":  prev_expense,
-        "savings_rate":        savings_rate,
-        "patrimonio":          patrimonio,
-        "divida_cartoes":      divida_cartoes,
-        "patrimonio_liquido":  patrimonio - divida_cartoes,
-        "by_category":         by_category,
-        "daily_spending":      daily_spending,
-        "cashflow":            cashflow,
-    }
+    return _check_result(get_stats_payload(year, month or None))
 
 
 # ── Upload de ícone ───────────────────────────────────────────────────────────

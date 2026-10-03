@@ -43,13 +43,12 @@ Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na
 
 | Página | O que faz |
 |---|---|
-| Dashboard | Health score financeiro, gastos por categoria do mês |
-| Transações | CRUD completo — filtro por mês, criação e exclusão |
-| Contas | Listagem de contas bancárias, criação e consulta de saldo atual |
-| Cartões | Dívida por cartão, barra de uso do limite, registrar pagamento |
-| Empréstimos | Saldo devedor, parcelas restantes, registrar pagamento |
-| Orçamentos | Envelopes por categoria com barra de progresso, definir novo limite |
-| Assinaturas | Lista de assinaturas recorrentes com custo mensal total |
+| Nami · Início | "Livre pra gastar" do mês, barra gasto/ainda vai sair/livre, contas e faturas a pagar, linha rápida de lançamento |
+| Nami · Lançamentos | Todos os movimentos com busca em todos os meses, filtros e exportação CSV |
+| Nami · Cartões | Limite usado e uma aba por fatura (parcelas na fatura certa), pagar fatura |
+| Nami · Recorrentes | Contas fixas, assinaturas e salário numa lista, com Paguei/Recebi |
+| Nami · Resumo | Retrospectiva do ano: receitas, despesas, taxa de poupança, patrimônio real |
+| Nami · Mais | Contas (saldo real), Parcelamentos, Empréstimos (banco e entre pessoas, com simuladores), Orçamentos, Lista de compras |
 | Tarefas | Sub-app completa (Kaguya): listas/projetos, **Kanban "Vidro"** (board em vidro fosco com views configuráveis — adornos, métricas e filtro por view), Meu Dia com time-blocking, Matriz de Eisenhower, tags, smart-lists (filtros salvos), calendário (mês/semana com ocorrências recorrentes), hábitos (heatmap + força), **Tiny Experiments** (mini-experimentos com log de aderência, pausa e revisão) e **Metas** (metas por área da vida com marcos, vínculo a projetos/hábitos/experimentos e progresso) |
 | Livros | Sub-app completa (Frieren): Início com hero e heatmap anual, **Biblioteca** com tudo agrupado por status (Lendo/Quero ler/Wishlist/Lidos), filtro lembrado e ordenação; **detalhe do livro** totalmente editável (modal com todos os campos), **resenha inline** (editor estilo diário), **marcações coloridas** por trecho; Quero Ler, Wishlist com link de loja, **Estantes** (criar/editar/excluir + adicionar/remover livros), Atividade por data, Resenhas e Estatísticas do ano |
 | Diário | Bullet journal com timestamp por bullet, heatmap anual, `@pessoas`, `#tags` e busca full-text — sidebar direita com Insights (filtro por ano), Pessoas, Tags e Busca — tela Write com **registro emocional TCC** (situação → emoção → pensamento automático → resposta adaptativa → reavaliação) e aba Emoções nos Insights |
@@ -137,6 +136,9 @@ Inspirada na Nami de One Piece. Acessa o PostgreSQL para registrar e consultar t
 - Orçamento por categoria — alertas quando o limite está próximo
 - Score de saúde financeira 0-100 em 4 dimensões (poupança, dívidas, orçamento, tendência)
 - Contas financeiras — cadastro dinâmico (corrente, poupança, dinheiro, investimento)
+- "Quanto ainda posso gastar?" — renda − gasto − parcelas agendadas − contas pendentes, por dia (`get_month_plan`)
+- Faturas de cartão derivadas do fechamento e vencimento; pagar fatura e transferir entre contas não contam como gasto
+- Salário e outras entradas recorrentes (`kind='renda'`)
 
 **Armazenamento:** PostgreSQL — tabelas `transactions`, `accounts`, `credit_cards`, `loans`, `budgets`, `subscriptions`, `installment_groups`.
 

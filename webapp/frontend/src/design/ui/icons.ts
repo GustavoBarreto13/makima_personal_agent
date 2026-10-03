@@ -29,7 +29,7 @@ export const ICONS = {
   task: ListChecks, habit: Repeat, goal: Target, experiment: FlaskConical, focus: Timer, inbox: Inbox,
   book: BookOpen, movie: Film, anime: Clapperboard, series: Tv, person: User, people: Users, trip: Plane, money: Wallet, bank: Banknote,
   journal: MessageSquare, knowledge: Brain, library: Library, mail: Mail, tag: Tag, place: MapPin, mention: AtSign, hash: Hash, flag: Flag,
-  // finanças (Nami, spec 070)
+  // finanças (Nami, spec 071)
   card: CreditCard, invoice: Receipt, transfer: ArrowLeftRight, recurring: CalendarSync, income: TrendingUp, expense: TrendingDown,
   savings: PiggyBank, cart: ShoppingCart, loan: HandCoins, institution: Landmark,
   // categorias de gasto (Nami)

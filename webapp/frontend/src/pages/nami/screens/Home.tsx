@@ -3,12 +3,14 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { addDaysISO, fmtRelative, MONTHS_LONG, todayISO } from '../../../design/core/format'
+import { toast } from '../../../design/headless/toast'
 import { Button, EmptyState, ErrorState, Hero, Icon, IconButton, InfoRow, LoadingState, Page, SectionHeader, StatusChip } from '../../../design'
 import { cx } from '../../../design/ui/primitives'
 import { EntryCapture } from '../components/EntryCapture'
 import { TxRow } from '../components/TxRow'
 import { useNami } from '../context'
 import { categoryHue } from '../lib/categories'
+import { kaguyaApi } from '../../kaguya/kaguyaApi'
 import { namiApi } from '../namiApi'
 import type { Plan, PlanPayable, Transaction } from '../types'
 
@@ -145,12 +147,22 @@ function PayRow({ item, today }: { item: PlanPayable; today: string }) {
     ? { kind: 'fatura', cardId: item.id, name: item.name.replace(/^Fatura /, ''), valor: item.valor, invoice: item.invoice }
     : { kind: item.kind, id: item.id, name: item.name, valor: item.valor })
   const icon = item.kind === 'fatura' ? 'card' : item.kind === 'assinatura' ? 'recurring' : 'invoice'
+  const [reminded, setReminded] = useState(false)
+  // Lembrete na Kaguya (spec 047): vira tarefa com a data de vencimento. A proteção contra duplicata é do servidor.
+  const remind = async () => {
+    try {
+      const r = await kaguyaApi.createReminder({ title: item.kind === 'fatura' ? `Pagar fatura ${item.name.replace(/^Fatura /, '')}` : `Pagar ${item.name}`, due_date: item.due, amount: item.valor })
+      setReminded(true)
+      toast(r.duplicate ? 'Já existe um lembrete para este vencimento' : 'Lembrete criado na Kaguya', { tone: 'success' })
+    } catch { toast('Não foi possível criar o lembrete.', { tone: 'error' }) }
+  }
   return (
     <div className="ds-lrow nm-act" style={{ '--ds-ch': categoryHue(item.kind) } as CSSProperties}>
       <span className="ds-lead"><Icon name={icon} size={18} /></span>
       <span className="ds-t"><b>{item.name}</b><span>vence {fmtRelative(item.due, today)}</span></span>
       <StatusChip status={late ? 'dropped' : 'planned'} label={late ? 'Atrasada' : 'Pendente'} />
       <span className={cx('nm-amt', late && 'nm-late')}>{nami.money(item.valor)}</span>
+      <IconButton icon={reminded ? 'check' : 'bell'} label={reminded ? `Lembrete de ${item.name} criado` : `Lembrar de ${item.name} na Kaguya`} onClick={() => void remind()} disabled={reminded} />
       <Button size="sm" variant="primary" onClick={open}>{item.kind === 'fatura' ? 'Pagar' : 'Paguei'}</Button>
     </div>
   )

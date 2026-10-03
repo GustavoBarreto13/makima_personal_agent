@@ -1,4 +1,4 @@
-"""Migra as transferências e os pagamentos de fatura antigos da Nami para o modelo com sinal (spec 070).
+"""Migra as transferências e os pagamentos de fatura antigos da Nami para o modelo com sinal (spec 071).
 
 O que mudou no código:
 - Transferência passa a guardar `valor` COM SINAL: negativo na origem, positivo no destino.
@@ -228,7 +228,7 @@ def run(apply: bool) -> None:
                         VALUES
                           (%(id)s, %(name)s, %(valor)s, 'Transferencia', 'Transferencia',
                            %(conta)s, %(account_id)s, NULL, %(data)s, 'migration',
-                           'Gerado pela migração spec 070', %(tid)s, NOW(), FALSE)
+                           'Gerado pela migração spec 071', %(tid)s, NOW(), FALSE)
                         """,
                         {
                             "id": str(uuid.uuid4()), "name": p["name"], "valor": -abs(float(p["valor"])),
@@ -251,7 +251,7 @@ def run(apply: bool) -> None:
 
         # ── Relatório ─────────────────────────────────────────────────────────
         modo = "APLICANDO" if apply else "DRY-RUN (nada será gravado)"
-        print(f"=== Migração spec 070 — {modo} — hoje {today.isoformat()} ===\n")
+        print(f"=== Migração spec 071 — {modo} — hoje {today.isoformat()} ===\n")
         print(f"A) Transferências a negativar na origem: {len(fix_ids)}")
         for w in warnings:
             print(f"   AVISO: {w}")

@@ -1,290 +1,122 @@
-// Tela de Orçamentos da seção Nami.
-// Portada do handoff de referência (docs/.../nami/screens-b.jsx → Orcamentos).
-// Cada orçamento é um "envelope" mensal: ícone da categoria + barra de progresso.
+// Orçamentos: um limite por categoria, mês a mês. Cada linha mostra quanto já foi, quanto resta e avisa quando
+// passa de 90% (e quando estoura). Definir de novo a mesma categoria troca o limite.
 
-import { useState, useEffect, useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { fmtPercent, MONTHS_LONG, todayISO } from '../../../design/core/format'
+import { confirm } from '../../../design/headless/confirm'
+import { toast } from '../../../design/headless/toast'
+import { useHotkeys } from '../../../design/headless/useHotkeys'
+import { Button, EmptyState, ErrorState, Field, IconButton, LoadingState, Modal, MoneyInput, Page, ProgressBar, SectionHeader, Select, StatusChip } from '../../../design'
+import { cx } from '../../../design/ui/primitives'
+import { useNami } from '../context'
+import { useLoad } from '../lib/useLoad'
 import { namiApi } from '../namiApi'
-import type { Budget, Category } from '../types'
-import { FormModal } from '../modals/FormModal'
-import { ConfirmDialog } from '../modals/ConfirmDialog'
-import { Icon, lucideToKey } from '../icons'
-import { fmtMoney } from '../ui'
+import type { BudgetEnvelope } from '../types'
 
-interface BudgetsProps {
-  month: string
-  onToast: (msg: string) => void
-  // Props do commonProps não usadas aqui
-  stats?: unknown; accounts?: unknown; cards?: unknown; subscriptions?: unknown
-  onTransactionSaved?: unknown; onNavigate?: unknown; onOpenAddModal?: unknown
-}
+const monthLabel = (ym: string) => `${MONTHS_LONG[Number(ym.slice(5, 7)) - 1]} de ${ym.slice(0, 4)}`
+const shift = (ym: string, d: number) => { const i = Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1 + d; return `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}` }
 
-export function Budgets({ month, onToast }: BudgetsProps) {
-  const [budgets, setBudgets]       = useState<Budget[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [showForm, setShowForm]     = useState(false)
-  const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
-  const [saving, setSaving]         = useState(false)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<Budget | null>(null)
+export function Budgets() {
+  const nami = useNami()
+  const [month, setMonth] = useState(todayISO().slice(0, 7))
+  const { state, retry } = useLoad(() => namiApi.getBudgets(month), [month, nami.rev])
+  const [form, setForm] = useState<{ envelope: BudgetEnvelope | null } | null>(null)
+  const name = (id: string) => nami.categories.find((c) => c.id === id)?.name ?? id
 
-  // Carrega categorias uma vez (para ícone e cor nos envelopes)
-  useEffect(() => {
-    namiApi.getCategories()
-      .then(cats => setCategories(cats))
-      .catch(() => onToast('Erro ao carregar categorias'))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const envelopes = state.status === 'ok' ? state.data.envelopes : []
+  const totals = useMemo(() => ({ limite: envelopes.reduce((s, e) => s + e.limite, 0), gasto: envelopes.reduce((s, e) => s + e.gasto, 0) }), [envelopes])
 
-  // Recarrega orçamentos quando o mês muda
-  useEffect(() => {
-    setLoading(true)
-    namiApi.getBudgets(month)
-      .then(r => setBudgets(r.budgets ?? []))
-      .catch(() => setBudgets([]))
-      .finally(() => setLoading(false))
-  }, [month])
-
-  // Mapa de categorias por nome, id e slug lowercase — para lookup nos envelopes
-  const catByKey = useMemo(() => {
-    const m: Record<string, Category> = {}
-    categories.forEach(c => {
-      m[c.id] = c
-      m[c.name] = c
-      m[c.name.toLowerCase()] = c
-    })
-    return m
-  }, [categories])
-
-  // Categorias de despesa que ainda não têm orçamento (opções do formulário)
-  const freeCats = useMemo(() => {
-    const usados = new Set(budgets.flatMap(b => [b.categoria, b.category_id].filter(Boolean) as string[]))
-    return categories.filter(c => c.kind === 'out' && !usados.has(c.id) && !usados.has(c.name))
-  }, [categories, budgets])
-
-  // Totais para o painel de resumo
-  const totalLimit = budgets.reduce((a, b) => a + (b.limit_amount ?? 0), 0)
-  const totalSpent = budgets.reduce((a, b) => a + (b.spent ?? 0), 0)
-  const totalPct   = totalLimit > 0 ? Math.min(100, Math.round(totalSpent / totalLimit * 100)) : 0
-
-  async function handleSave(values: Record<string, unknown>) {
-    setSaving(true)
+  const remove = async (e: BudgetEnvelope) => {
+    const ok = await confirm({ title: `Remover o orçamento de ${name(e.categoria)}?`, body: 'Só o limite some; os gastos continuam. Você poderá desfazer logo depois.', confirmLabel: 'Remover', danger: true })
+    if (!ok) return
     try {
-      // Modo edição: categoria já é fixa (envelope existente) — só o limite muda.
-      // `createBudget` (POST /budgets) é upsert no backend (set_budget), então
-      // reenviar a mesma categoria atualiza o limite em vez de duplicar o envelope.
-      const categoria = editingBudget
-        ? (editingBudget.categoria ?? editingBudget.category_id)
-        : (categories.find(c => c.id === String(values.catId ?? ''))?.name ?? String(values.catId ?? ''))
-      await namiApi.createBudget({
-        month,
-        categoria,
-        limite: parseFloat(String(values.limite ?? '0').replace(',', '.')),
-      })
-      onToast(editingBudget ? 'Orçamento atualizado ✓' : 'Orçamento criado ✓')
-      setShowForm(false)
-      setEditingBudget(null)
-      const r = await namiApi.getBudgets(month)
-      setBudgets(r.budgets ?? [])
-    } catch (err: unknown) {
-      throw err
-    } finally {
-      setSaving(false)
-    }
+      await namiApi.deleteBudget(month, e.categoria)
+      nami.reload()
+      toast(`Orçamento de ${name(e.categoria)} removido`, { undo: () => { void namiApi.createBudget({ month, categoria: e.categoria, limite: e.limite }).then(nami.reload) } })
+    } catch (err) { toast(err instanceof Error ? err.message : 'Não foi possível remover.', { tone: 'error' }) }
   }
 
-  async function handleDelete(b: Budget) {
-    setDeletingId(b.id)
-    try {
-      const monthStr = b.month ? b.month.slice(0, 7) : month
-      await namiApi.deleteBudget(monthStr, b.categoria ?? b.category_id)
-      setBudgets(prev => prev.filter(x => x.id !== b.id))
-      onToast('Orçamento removido')
-    } catch {
-      onToast('Erro ao remover orçamento')
-    } finally {
-      setDeletingId(null)
-      setConfirmDelete(null)
-    }
-  }
+  const header = (
+    <SectionHeader
+      title="Limites do mês"
+      action={
+        <div className="nm-month">
+          <IconButton icon="left" label="Mês anterior" onClick={() => setMonth((m) => shift(m, -1))} />
+          <span className="ds-mono">{monthLabel(month)}</span>
+          <IconButton icon="right" label="Próximo mês" onClick={() => setMonth((m) => shift(m, 1))} />
+          <Button variant="primary" icon="add" onClick={() => setForm({ envelope: null })}>Novo limite</Button>
+        </div>
+      }
+    />
+  )
+
+  const modal = form && <BudgetForm month={month} envelope={form.envelope} taken={envelopes.map((e) => e.categoria)} onClose={() => setForm(null)} />
+  if (state.status === 'loading') return <Page>{header}<LoadingState variant="row" count={4} />{modal}</Page>
+  if (state.status === 'error') return <Page>{header}<ErrorState onRetry={retry} />{modal}</Page>
 
   return (
-    <>
-      {/* Cabeçalho da página */}
-      <div className="page-head">
-        <h2>Orçamentos</h2>
-        {freeCats.length > 0 && (
-          <button className="btn btn-primary" onClick={() => { setEditingBudget(null); setShowForm(true) }}>
-            <Icon name="plus" size={14} /> Novo orçamento
-          </button>
-        )}
-      </div>
-
-      {/* Painel de resumo total gasto vs orçado no mês */}
-      {!loading && budgets.length > 0 && (
-        <div className="panel">
-          <div className="panel-head">
-            <span className="panel-title">Gasto / orçado no mês</span>
-          </div>
-          <div className="panel-body">
-            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1 }}>
-                  <span className="amount" style={{ color: totalSpent > totalLimit ? 'var(--out)' : 'var(--ink)' }}>
-                    {fmtMoney(totalSpent)}
-                  </span>
-                  <span style={{ fontSize: 16, color: 'var(--muted)', fontWeight: 600 }}>
-                    {' '}/ <span className="amount">{fmtMoney(totalLimit)}</span>
-                  </span>
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 700, color: totalPct >= 100 ? 'var(--out)' : 'var(--accent)' }}>
-                  {totalPct}%
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }} className="amount">
-                  restam {fmtMoney(Math.max(0, totalLimit - totalSpent))}
-                </div>
-              </div>
-            </div>
-            {/* Barra de progresso geral */}
-            <div style={{ height: 8, borderRadius: 4, background: 'var(--line)', overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: totalPct + '%',
-                borderRadius: 4,
-                background: totalPct >= 100 ? 'var(--out)' : 'linear-gradient(90deg, var(--accent), var(--gold))',
-                transition: 'width 0.4s ease',
-              }} />
-            </div>
-          </div>
+    <Page wide>
+      {envelopes.length > 0 && (
+        <div className="ds-kpis">
+          <div className="ds-kpi ds-card"><span className="ds-mono">Gasto nas categorias com limite</span><span className="ds-v nm-amt">{nami.money(totals.gasto)}</span><ProgressBar value={totals.gasto} max={totals.limite || 1} label="Gasto contra o total de limites" /></div>
+          <div className="ds-kpi ds-card"><span className="ds-mono">Soma dos limites</span><span className="ds-v nm-amt">{nami.money(totals.limite)}</span></div>
         </div>
       )}
-
-      {/* Lista de envelopes */}
-      {loading ? (
-        <div className="loading">
-          <Icon name="target" size={20} /> Carregando orçamentos…
-        </div>
+      {header}
+      {envelopes.length === 0 ? (
+        <EmptyState icon="goal" title="Nenhum limite neste mês" hint="Escolha uma categoria (mercado, lazer…) e um valor. A Nami avisa quando passar de 90%." action={<Button variant="primary" icon="add" onClick={() => setForm({ envelope: null })}>Definir um limite</Button>} />
       ) : (
-        <div className="panel">
-          <div className="budget-list">
-            {budgets.map(b => {
-              const spent    = b.spent ?? 0
-              const limit    = b.limit_amount ?? 0
-              const pct      = limit > 0 ? Math.min(100, Math.round(spent / limit * 100)) : 0
-              const over     = spent > limit
-              const catKey   = b.categoria ?? b.category_id ?? ''
-              // Lookup da categoria pelo nome, id ou slug para obter ícone e cor
-              const cat      = catByKey[catKey] ?? catByKey[catKey.toLowerCase()]
-              const iconKey  = cat ? lucideToKey(cat.icon) : 'tag'
-              const catColor = cat?.color ?? 'var(--accent)'
-
-              // Cor da barra: vermelho se estourou, âmbar se acima de 85%, acento se normal
-              const barColor = over ? 'var(--out)' : (pct > 85 ? 'var(--gold)' : catColor)
-
-              return (
-                <div key={b.id} className="budget-row">
-                  {/* Ícone da categoria com fundo translúcido na cor da categoria */}
-                  <div className="budget-ico" style={{
-                    background: catColor.replace(')', ' / 0.14)'),
-                    color: catColor,
-                  }}>
-                    <Icon name={iconKey} size={14} />
-                  </div>
-
-                  {/* Corpo: nome + barra de progresso */}
-                  <div className="budget-body">
-                    <div className="budget-name">{b.categoria ?? b.category_id}</div>
-                    <div className="budget-bar">
-                      <div
-                        className={`budget-fill${over ? ' over' : ''}`}
-                        style={{ width: pct + '%', background: barColor }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Lado direito: valores + botão remover */}
-                  <div className="budget-right">
-                    <div className="budget-vals">
-                      <div className="budget-spent amount" style={{ color: over ? 'var(--out)' : undefined }}>
-                        {fmtMoney(spent)}
-                      </div>
-                      <div className="budget-limit amount">/ {fmtMoney(limit)}</div>
-                    </div>
-                    <button
-                      className="budget-del"
-                      title="Editar orçamento"
-                      onClick={() => { setEditingBudget(b); setShowForm(true) }}
-                      aria-label="Editar orçamento"
-                    >
-                      <Icon name="edit" size={12} />
-                    </button>
-                    <button
-                      className="budget-del"
-                      title="Remover orçamento"
-                      onClick={() => setConfirmDelete(b)}
-                      disabled={deletingId === b.id}
-                      aria-label="Remover orçamento"
-                    >
-                      <Icon name="trash" size={12} />
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-
-            {/* Estado vazio */}
-            {budgets.length === 0 && (
-              <div className="empty">
-                <Icon name="target" size={32} />
-                <p>Nenhum orçamento definido para este mês</p>
-                {/* Bug corrigido: antes aparecia mesmo com freeCats vazio, abrindo um
-                    formulário com o seletor de categoria sem nenhuma opção. */}
-                {freeCats.length > 0 && (
-                  <button className="btn btn-primary" onClick={() => { setEditingBudget(null); setShowForm(true) }}>
-                    <Icon name="plus" size={14} /> Criar envelope
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+        <div className="ds-list">
+          {envelopes.map((e) => (
+            <div key={e.categoria} className="ds-lrow nm-act nm-budget" style={{ cursor: 'default' }}>
+              <span className="ds-t">
+                <b>{name(e.categoria)}</b>
+                <span>{nami.money(e.gasto)} de {nami.money(e.limite)} · {e.estourado ? `estourou ${nami.money(-e.restante)}` : `restam ${nami.money(e.restante)}`}</span>
+                <ProgressBar value={Math.min(e.gasto, e.limite)} max={e.limite || 1} label={`${name(e.categoria)}: ${fmtPercent(e.pct_usado / 100)} do limite`} />
+              </span>
+              <StatusChip status={e.estourado ? 'dropped' : e.pct_usado >= 90 ? 'paused' : 'done'} label={e.estourado ? 'Estourou' : e.pct_usado >= 90 ? 'Quase' : 'No limite'} />
+              <span className={cx('nm-amt', e.estourado && 'nm-late')}>{fmtPercent(e.pct_usado / 100)}</span>
+              <IconButton icon="edit" label={`Editar limite de ${name(e.categoria)}`} onClick={() => setForm({ envelope: e })} />
+              <IconButton icon="delete" label={`Remover limite de ${name(e.categoria)}`} onClick={() => void remove(e)} />
+            </div>
+          ))}
         </div>
       )}
+      {modal}
+    </Page>
+  )
+}
 
-      {/* Modal de novo orçamento / edição — categoria é fixa em modo edição */}
-      {showForm && (
-        <FormModal
-          title={editingBudget ? `Editar orçamento — ${editingBudget.categoria ?? editingBudget.category_id}` : 'Novo orçamento'}
-          saving={saving}
-          onClose={() => { setShowForm(false); setEditingBudget(null) }}
-          onSave={handleSave}
-          saveLabel={editingBudget ? 'Salvar alterações' : 'Criar orçamento'}
-          initialValues={editingBudget ? { limite: String(editingBudget.limit_amount ?? 0) } : undefined}
-          fields={editingBudget ? [
-            { key: 'limite', label: 'Limite mensal', type: 'money', required: true },
-          ] : [
-            {
-              key: 'catId',
-              label: 'Categoria',
-              type: 'select',
-              options: freeCats.map(c => ({ value: c.id, label: c.name })),
-            },
-            { key: 'limite', label: 'Limite mensal', type: 'money', required: true },
-          ]}
-        />
-      )}
+function BudgetForm({ month, envelope, taken, onClose }: { month: string; envelope: BudgetEnvelope | null; taken: string[]; onClose: () => void }) {
+  const nami = useNami()
+  const options = nami.categories.filter((c) => c.kind === 'out' && (envelope?.categoria === c.id || !taken.includes(c.id)))
+  const [categoria, setCategoria] = useState(envelope?.categoria ?? options[0]?.id ?? '')
+  const [limite, setLimite] = useState<number | null>(envelope?.limite ?? null)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
-      {/* Confirmação de exclusão */}
-      {confirmDelete && (
-        <ConfirmDialog
-          title="Excluir orçamento"
-          message={`Remover o envelope de "${confirmDelete.categoria ?? confirmDelete.category_id}"? O limite definido para este mês será apagado.`}
-          busy={deletingId === confirmDelete.id}
-          onConfirm={() => handleDelete(confirmDelete)}
-          onClose={() => setConfirmDelete(null)}
-        />
-      )}
-    </>
+  const save = async () => {
+    if (!categoria) { setError('Escolha uma categoria.'); return }
+    if (limite === null || !(limite > 0)) { setError('Informe o limite do mês.'); return }
+    setSaving(true)
+    try {
+      await namiApi.createBudget({ month, categoria, limite })
+      toast(`Limite de ${nami.categories.find((c) => c.id === categoria)?.name ?? categoria} definido`, { tone: 'success' })
+      nami.reload()
+      onClose()
+    } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível salvar.') }
+    finally { setSaving(false) }
+  }
+  useHotkeys([{ keys: 'mod+enter', global: true, handler: (ev) => { ev.preventDefault(); void save() } }])
+
+  return (
+    <Modal size="sm" title={envelope ? 'Editar limite' : 'Novo limite'} onClose={onClose} footer={<><Button onClick={onClose}>Cancelar</Button><Button variant="primary" onClick={() => void save()} disabled={saving}>{saving ? 'Salvando…' : 'Salvar'}</Button></>}>
+      <Field label="Categoria">
+        {(a) => <Select {...a} value={categoria} disabled={!!envelope} onChange={(e) => setCategoria(e.target.value)}>{options.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select>}
+      </Field>
+      <Field label="Limite do mês" error={error} hint="Vale só para este mês. Ajuste de novo no mês que vem.">
+        {(a) => <MoneyInput {...a} value={limite} onChange={(v) => { setLimite(v); setError(null) }} />}
+      </Field>
+    </Modal>
   )
 }

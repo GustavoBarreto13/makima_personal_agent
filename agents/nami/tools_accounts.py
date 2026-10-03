@@ -198,7 +198,7 @@ def delete_account(account_id: str) -> dict:
 
 
 # Efeito de uma transação no saldo da conta: receita soma, despesa subtrai e transferência
-# soma o valor JÁ COM SINAL (negativo na origem, positivo no destino — spec 070).
+# soma o valor JÁ COM SINAL (negativo na origem, positivo no destino — spec 071).
 _BALANCE_DELTA_SQL = """
     CASE WHEN t.tipo = 'Receita'       THEN  t.valor
          WHEN t.tipo = 'Despesa'       THEN -t.valor

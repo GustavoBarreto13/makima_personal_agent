@@ -24,7 +24,7 @@ _TZ = ZoneInfo("America/Sao_Paulo")
 
 # Lista de categorias válidas para classificar uma transação.
 # Qualquer valor fora dessa lista será rejeitado para manter consistência nos dados.
-# Tipos de recorrência. "renda" (spec 070) é entrada recorrente (salário): não entra no custo
+# Tipos de recorrência. "renda" (spec 071) é entrada recorrente (salário): não entra no custo
 # fixo mensal e, ao confirmar, grava Receita em vez de Despesa.
 RECURRING_KINDS = ("assinatura", "conta_fixa", "renda")
 
@@ -504,9 +504,9 @@ def query_expenses(
         tipo       — Filtra por "Despesa"/"Receita"/"Transferencia" (vazio = todos)
         limit      — Tamanho da página (spec 043). 0 = sem paginação (retorna tudo)
         offset     — Deslocamento da página (ignorado se limit=0)
-        q          — Busca por trecho no nome ou nas notas (sem diferenciar maiúsculas) — spec 070
-        account_id — Só transações dessa conta bancária (spec 070)
-        card_id    — Só transações desse cartão (spec 070)
+        q          — Busca por trecho no nome ou nas notas (sem diferenciar maiúsculas) — spec 071
+        account_id — Só transações dessa conta bancária (spec 071)
+        card_id    — Só transações desse cartão (spec 071)
 
     Retorna lista de transações, quantidade, soma total dos valores e `has_more`
     (True quando existem mais linhas além da página pedida).
@@ -611,7 +611,7 @@ def suggest_entry(q: str, limit: int = 6) -> dict:
 
     Procura nos lançamentos avulsos (sem parcela nem recorrência) descrições que contenham
     `q` e devolve, para cada descrição, categoria, conta/cartão e valor do uso mais recente —
-    quem digita "ifood" já recebe a categoria e o cartão que usou da última vez (spec 070).
+    quem digita "ifood" já recebe a categoria e o cartão que usou da última vez (spec 071).
 
     Args:
         q: Trecho da descrição (mínimo 2 caracteres).
@@ -663,7 +663,7 @@ def _insert_transfer_pair(
 ) -> str:
     """Grava os dois lados de uma transferência no cursor recebido — retorna o transfer_id.
 
-    Convenção de sinal (spec 070): `tipo='Transferencia'` guarda `valor` COM SINAL — negativo
+    Convenção de sinal (spec 071): `tipo='Transferencia'` guarda `valor` COM SINAL — negativo
     no lado de origem (sai da conta) e positivo no destino (entra na conta ou abate o cartão).
     Assim somar `valor` já dá o efeito líquido no saldo, sem precisar de coluna de direção.
 
@@ -705,7 +705,7 @@ def create_transfer(
     """Registra uma transferência entre contas — ou de uma conta para um cartão — par atômico.
 
     Grava duas transações `tipo='Transferencia'` ligadas por `transfer_id`: a de origem com
-    `valor` NEGATIVO e a de destino com `valor` POSITIVO (spec 070). Transferência não é
+    `valor` NEGATIVO e a de destino com `valor` POSITIVO (spec 071). Transferência não é
     receita nem despesa: os relatórios filtram por tipo e a ignoram, mas o saldo das contas
     e a dívida do cartão a consideram. Atômico via get_conn(): os dois lados ou nenhum.
 
@@ -715,7 +715,7 @@ def create_transfer(
         to_account: Nome da conta de destino (crédito). Ignorado se `to_card` for informado.
         data: Data da transferência AAAA-MM-DD (padrão: hoje).
         notes: Observações opcionais.
-        to_card: Nome do cartão de destino — é assim que se paga uma fatura (spec 070).
+        to_card: Nome do cartão de destino — é assim que se paga uma fatura (spec 071).
 
     Returns:
         {"status": "ok", "transfer_id": ...} ou {"status": "error", "message": ...}.
@@ -761,7 +761,7 @@ def create_transfer(
 
 
 def delete_transfer(transfer_id: str) -> dict:
-    """Apaga uma transferência inteira (soft delete das DUAS pontas, atômico) — spec 070.
+    """Apaga uma transferência inteira (soft delete das DUAS pontas, atômico) — spec 071.
 
     Transferência e pagamento de fatura são sempre um par ligado por `transfer_id`. Apagar só
     uma das pontas deixaria o saldo da conta ou a dívida do cartão errados, então a exclusão é
@@ -994,7 +994,7 @@ def create_subscription(
         notes        — Observações opcionais
         kind         — "assinatura" (padrão), "conta_fixa" ou "renda" — serviço digital de
                        valor fixo é assinatura; conta doméstica de valor variável (luz, água,
-                       aluguel) é conta fixa; salário/entrada recorrente é renda (spec 070:
+                       aluguel) é conta fixa; salário/entrada recorrente é renda (spec 071:
                        confirmar com mark_subscription_paid grava uma Receita, não Despesa).
         auto_lancar  — Se None, usa o padrão por kind (assinatura=True; conta_fixa e renda=False
                        — FR-002). Contas fixas e rendas exigem confirmação manual do valor real.

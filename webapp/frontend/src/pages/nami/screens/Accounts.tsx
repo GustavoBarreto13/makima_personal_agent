@@ -1,256 +1,59 @@
-// Tela de Contas da seção Nami.
-// Portada do handoff de referência (docs/.../nami/screens-a.jsx → Contas).
+// Contas: saldo REAL de cada uma (saldo inicial + o que entrou − o que saiu, com transferências), o total e o
+// patrimônio líquido (contas menos a dívida dos cartões).
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { Button, EmptyState, ErrorState, ListRow, LoadingState, Page, SectionHeader } from '../../../design'
+import { cx } from '../../../design/ui/primitives'
+import { AccountForm, ACCOUNT_TYPES } from '../components/AccountForm'
+import { useNami } from '../context'
+import { useLoad } from '../lib/useLoad'
 import { namiApi } from '../namiApi'
 import type { Account } from '../types'
-import { FormModal } from '../modals/FormModal'
-import { TransferModal } from '../modals/TransferModal'
-import { ConfirmDialog } from '../modals/ConfirmDialog'
-import { Icon } from '../icons'
-import { fmtMoney } from '../ui'
 
-interface AccountsProps {
-  accounts: Account[]
-  onToast: (msg: string) => void
-  onAccountsChanged: () => void
-  month?: string; stats?: unknown; cards?: unknown; subscriptions?: unknown
-  onTransactionSaved?: unknown; onNavigate?: unknown; onOpenAddModal?: unknown
-}
+export function Accounts() {
+  const nami = useNami()
+  const { state, retry } = useLoad(() => namiApi.getAccountsOverview(), [nami.rev])
+  const [form, setForm] = useState<{ account: Account | null } | null>(null)
+  const debt = useMemo(() => nami.cards.reduce((s, c) => s + (c.divida_atual ?? 0), 0), [nami.cards])
 
-const ACCOUNT_TYPE_OPTIONS = [
-  { value: 'corrente',    label: 'Conta Corrente' },
-  { value: 'poupanca',    label: 'Poupança' },
-  { value: 'dinheiro',    label: 'Dinheiro (carteira)' },
-  { value: 'investimento',label: 'Investimento' },
-]
-
-const ACCOUNT_SWATCHES = [
-  'oklch(0.685 0.176 52)',  // tangerina
-  'oklch(0.56 0.104 234)',  // azul
-  'oklch(0.60 0.14 148)',   // verde
-  'oklch(0.62 0.16 26)',    // coral
-  'oklch(0.75 0.14 85)',    // ouro
-  'oklch(0.60 0.15 290)',   // lilás
-]
-
-export function Accounts({ accounts, onToast, onAccountsChanged }: AccountsProps) {
-  const [showForm, setShowForm] = useState(false)
-  const [editingAcc, setEditingAcc] = useState<Account | null>(null)
-  const [showTransfer, setShowTransfer] = useState(false)
-  const [saving, setSaving]     = useState(false)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<Account | null>(null)
-
-  const total = accounts.reduce((s, a) => s + (a.balance_inicial ?? 0), 0)
-
-  async function handleSave(values: Record<string, unknown>) {
-    setSaving(true)
-    try {
-      if (editingAcc) {
-        // Edição (spec 043) — preserva o histórico de transações vinculadas
-        await namiApi.updateAccount(editingAcc.id, {
-          name:            String(values.name ?? ''),
-          balance_inicial: parseFloat(String(values.balance ?? '0').replace(',', '.')),
-          color:           String(values.color ?? '') || undefined,
-          short:           String(values.short ?? '') || undefined,
-          icon_url:        String(values.icon_url ?? '') || undefined,
-        })
-        onToast('Conta atualizada ✓')
-      } else {
-        await namiApi.createAccount({
-          name:            String(values.name ?? ''),
-          type:            String(values.type ?? 'corrente'),
-          balance_inicial: parseFloat(String(values.balance ?? '0').replace(',', '.')),
-          color:           String(values.color ?? ''),
-          short:           String(values.short ?? ''),
-          icon_url:        String(values.icon_url ?? '') || undefined,
-        })
-        onToast('Conta criada ✓')
-      }
-      setShowForm(false)
-      setEditingAcc(null)
-      onAccountsChanged()
-    } catch (err: unknown) {
-      throw err
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleDelete(id: string) {
-    setDeletingId(id)
-    try {
-      await namiApi.deleteAccount(id)
-      onToast('Conta removida')
-      onAccountsChanged()
-    } catch {
-      onToast('Erro ao remover conta')
-    } finally {
-      setDeletingId(null)
-      setConfirmDelete(null)
-    }
-  }
+  if (state.status === 'loading') return <Page><LoadingState variant="stat" count={3} /></Page>
+  if (state.status === 'error') return <Page><ErrorState onRetry={retry} /></Page>
+  const { accounts, saldo_total } = state.data
 
   return (
-    <>
-      <div className="page-head">
-        <h2>Contas</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-ghost" onClick={() => setShowTransfer(true)} disabled={accounts.length < 2}>
-            <Icon name="arrowsLeftRight" size={14} /> Transferir
-          </button>
-          <button className="btn btn-primary" onClick={() => { setEditingAcc(null); setShowForm(true) }}>
-            <Icon name="plus" size={14} /> Nova conta
-          </button>
-        </div>
+    <Page wide>
+      <div className="ds-kpis">
+        <div className="ds-kpi ds-card"><span className="ds-mono">Saldo nas contas</span><span className="ds-v nm-amt">{nami.money(saldo_total)}</span></div>
+        <div className="ds-kpi ds-card"><span className="ds-mono">Dívida nos cartões</span><span className="ds-v nm-amt">{nami.money(debt)}</span></div>
+        <div className="ds-kpi ds-card"><span className="ds-mono">Patrimônio líquido</span><span className={cx('ds-v nm-amt', saldo_total - debt < 0 && 'nm-late')}>{nami.money(saldo_total - debt)}</span></div>
       </div>
-
-      {/* Patrimônio total */}
-      <div className="panel">
-        <div className="panel-head">
-          <span className="panel-title">Patrimônio total</span>
-          <span className="amount" style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--ink)' }}>
-            {fmtMoney(total)}
-          </span>
-        </div>
-
-        {/* Barra de composição do patrimônio */}
-        {accounts.length > 0 && (
-          <div className="panel-body">
-            <div className="patr-bar-wrap">
-              {accounts.map(acc => (
-                <div
-                  key={acc.id}
-                  className="patr-seg"
-                  style={{
-                    width: `${total > 0 ? ((acc.balance_inicial ?? 0) / total) * 100 : 0}%`,
-                    background: acc.color ?? 'var(--accent)',
-                  }}
-                />
-              ))}
-            </div>
-            <div className="patr-legend">
-              {accounts.map(acc => (
-                <div key={acc.id} className="patr-item">
-                  <div className="patr-dot" style={{ background: acc.color ?? 'var(--accent)' }} />
-                  <span className="patr-name">{acc.name}</span>
-                  <span className="patr-val amount">{fmtMoney(acc.balance_inicial ?? 0)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Grade de cards de conta */}
+      <SectionHeader
+        title="Contas"
+        action={
+          <>
+            <Button icon="transfer" onClick={() => nami.openEntry({ kind: 'transferencia' })} disabled={accounts.length < 2}>Transferir</Button>
+            <Button variant="primary" icon="add" onClick={() => setForm({ account: null })}>Nova conta</Button>
+          </>
+        }
+      />
       {accounts.length === 0 ? (
-        <div className="empty">
-          <Icon name="bank" size={32} />
-          <p>Nenhuma conta cadastrada</p>
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-            <Icon name="plus" size={14} /> Nova conta
-          </button>
-        </div>
+        <EmptyState icon="bank" title="Nenhuma conta ainda" hint="Cadastre as contas onde seu dinheiro fica (corrente, poupança, carteira)." action={<Button variant="primary" icon="add" onClick={() => setForm({ account: null })}>Cadastrar conta</Button>} />
       ) : (
-        <div className="acct-grid">
-          {accounts.map(acc => (
-            <div key={acc.id} className="acct-card">
-              {/* Barra de acento colorida no topo */}
-              <div className="accent-bar" style={{ background: acc.color ?? 'var(--accent)' }} />
-
-              <div className="acct-body">
-                {/* Logo ou sigla */}
-                <div className="acct-logo" style={{ background: acc.color ? acc.color.replace(')', ' / 0.15)') : 'var(--accent-t)' }}>
-                  {acc.icon_url ? (
-                    <img
-                      src={acc.icon_url}
-                      alt=""
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                    />
-                  ) : (
-                    <span style={{ color: acc.color ?? 'var(--accent)', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 11 }}>
-                      {acc.short ?? acc.name.slice(0, 2).toUpperCase()}
-                    </span>
-                  )}
-                </div>
-                <div className="acct-name">{acc.name}</div>
-                <div className="acct-type">{acc.type}</div>
-                <div className="acct-balance amount">{fmtMoney(acc.balance_inicial ?? 0)}</div>
-              </div>
-
-              <div className="acct-foot">
-                <span className="acct-status">{acc.status}</span>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button
-                    className="acct-del"
-                    onClick={() => { setEditingAcc(acc); setShowForm(true) }}
-                    aria-label="Editar conta"
-                  >
-                    <Icon name="edit" size={12} />
-                  </button>
-                  <button
-                    className="acct-del"
-                    onClick={() => setConfirmDelete(acc)}
-                    disabled={deletingId === acc.id}
-                    aria-label="Remover conta"
-                  >
-                    <Icon name="trash" size={12} />
-                  </button>
-                </div>
-              </div>
-            </div>
+        <div className="ds-list">
+          {accounts.map((a) => (
+            <ListRow
+              key={a.id}
+              title={a.name}
+              meta={ACCOUNT_TYPES[a.type] ?? a.type}
+              icon="bank"
+              hue={25}
+              trailing={<span className={cx('nm-amt', a.saldo_atual < 0 && 'nm-late')}>{nami.money(a.saldo_atual)}</span>}
+              onOpen={() => setForm({ account: nami.accounts.find((x) => x.id === a.id) ?? null })}
+            />
           ))}
         </div>
       )}
-
-      {/* Modal de nova conta / edição (spec 043) */}
-      {showForm && (
-        <FormModal
-          title={editingAcc ? `Editar ${editingAcc.name}` : 'Nova conta'}
-          saving={saving}
-          onClose={() => { setShowForm(false); setEditingAcc(null) }}
-          onSave={handleSave}
-          saveLabel={editingAcc ? 'Salvar alterações' : 'Criar conta'}
-          initialValues={editingAcc ? {
-            name: editingAcc.name,
-            type: editingAcc.type,
-            balance: String(editingAcc.balance_inicial ?? 0),
-            color: editingAcc.color ?? '',
-            short: editingAcc.short ?? '',
-            icon_url: editingAcc.icon_url ?? '',
-          } : undefined}
-          fields={[
-            { key: 'name',    label: 'Nome',        type: 'text',   required: true, placeholder: 'Ex.: Nubank, Caixa…' },
-            // Tipo não é editável (update_account não altera o tipo) — só aparece na criação
-            ...(editingAcc ? [] : [{ key: 'type', label: 'Tipo', type: 'segment' as const, options: ACCOUNT_TYPE_OPTIONS }]),
-            { key: 'balance', label: 'Saldo inicial', type: 'money', required: true },
-            { key: 'color',   label: 'Cor de acento', type: 'color',  swatches: ACCOUNT_SWATCHES },
-            { key: 'short',   label: 'Sigla (2 letras)', type: 'text', placeholder: 'Ex.: NU' },
-            { key: 'icon_url',label: 'Ícone (URL)',   type: 'image' },
-          ]}
-        />
-      )}
-
-      {/* Modal de transferência entre contas (spec 043) */}
-      {showTransfer && (
-        <TransferModal
-          accounts={accounts}
-          onClose={() => setShowTransfer(false)}
-          onSaved={async msg => { onToast(msg ?? 'Transferência registrada ✓'); onAccountsChanged() }}
-        />
-      )}
-
-      {/* Confirmação de exclusão */}
-      {confirmDelete && (
-        <ConfirmDialog
-          title="Excluir conta"
-          message={`Encerrar a conta "${confirmDelete.name}"? O histórico de transações é preservado, mas a conta some das opções de lançamento.`}
-          busy={deletingId === confirmDelete.id}
-          onConfirm={() => handleDelete(confirmDelete.id)}
-          onClose={() => setConfirmDelete(null)}
-        />
-      )}
-    </>
+      {form && <AccountForm key={form.account?.id ?? 'nova'} account={form.account} onClose={() => setForm(null)} />}
+    </Page>
   )
 }

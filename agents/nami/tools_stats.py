@@ -1,4 +1,4 @@
-"""Resumo/Rewind de finanças da Nami no contrato `StatsPayload` do Design System (spec 070).
+"""Resumo/Rewind de finanças da Nami no contrato `StatsPayload` do Design System (spec 071).
 
 Alimenta a tela "Resumo": KPIs com delta contra o mesmo período do ano anterior, gasto por mês
 e por dia, ranking de categorias, recordes e patrimônio líquido real. Respeita as regras de

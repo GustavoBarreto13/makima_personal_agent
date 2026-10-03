@@ -218,8 +218,8 @@ Encontrados na auditoria que originou o padrão:
   sem Rewind.
 - **Akane**: gêneros, diretores e décadas contam sessões (rewatches inflam,
   `tools.py:1351,1369,1924`); Stats é subconjunto do Rewind.
-- **Nami**: "Patrimônio" soma `balance_inicial` (`finances.py:2104`); `prev_month_expense`
-  calculado e nunca mostrado; sem visão anual.
+- ~~**Nami**: "Patrimônio" soma `balance_inicial`; sem visão anual~~ — **corrigido na spec 071** (patrimônio real, retrospectiva
+  anual no `StatsPage`).
 - **Hub**: livros contados por `updated_at` e `CURRENT_DATE` (`hub.py:237`); "episódios" são
   sessões (`:392`); `date.today()` em `:159,:299`.
 - **Sem tela de stats:** Komi, Yato, tarefas da Kaguya (só foco).

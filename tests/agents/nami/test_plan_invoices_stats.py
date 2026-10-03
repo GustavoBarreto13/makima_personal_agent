@@ -1,4 +1,4 @@
-"""Testes da spec 070 — fase 2: plano do mês, faturas derivadas, parcelamento atômico,
+"""Testes da spec 071 — fase 2: plano do mês, faturas derivadas, parcelamento atômico,
 renda recorrente, busca e estatísticas no contrato do Design System.
 
 Sem banco (cursor gravador / run_select simulado) — mesma abordagem de test_signed_transfers.py.
@@ -515,14 +515,20 @@ def test_rota_transactions_repassa_busca_e_filtros():
     assert kw["q"] == "ifood" and kw["account_id"] == "a1" and kw["card_id"] == "c1" and kw["limit"] == 10
 
 
-def test_stats_com_year_usa_o_contrato_novo_e_sem_year_o_legado():
+def test_stats_repassa_ano_e_mes_ao_contrato_do_design_system():
     with patch(R + "get_stats_payload", return_value={"status": "ok", "kpis": []}) as m:
         assert client.get("/api/finances/stats?year=2026&month=3").status_code == 200
         m.assert_called_once_with(2026, 3)
         client.get("/api/finances/stats?year=2026")
-        assert m.call_args.args == (2026, None)
-    assert client.get("/api/finances/stats?year=2026&month=2026-03").status_code == 400
-    assert client.get("/api/finances/stats").status_code == 400     # legado exige month=YYYY-MM
+        assert m.call_args.args == (2026, None)                    # mês 0 = ano inteiro
+        client.get("/api/finances/stats")
+        assert m.call_args.args == (0, None)                       # sem nada: ano corrente (a tool resolve o 0)
+
+
+def test_stats_rejeita_mes_fora_de_1_a_12():
+    assert client.get("/api/finances/stats?year=2026&month=13").status_code == 422
+    assert client.get("/api/finances/stats?year=2026&month=-1").status_code == 422
+
 
 
 def test_rota_pagar_fatura_repassa_a_conta_de_origem():

@@ -19,6 +19,8 @@ const api = vi.hoisted(() => ({
 }))
 vi.mock('./namiApi', () => ({ namiApi: api }))
 vi.mock('../komi/komiApi', () => ({ komiApi: { search: vi.fn(async () => ({ matches: [] })), create: vi.fn() } }))
+const createReminder = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', id: 1, duplicate: false })))
+vi.mock('../kaguya/kaguyaApi', () => ({ kaguyaApi: { createReminder } }))
 
 import { NamiShell } from './NamiShell'
 
@@ -154,6 +156,23 @@ describe('linha rápida', () => {
     await user.type(captureInput(), '45 ifood @nubank{Shift>}{Enter}{/Shift}')
     expect(await screen.findByRole('dialog')).toBeTruthy()
     expect(api.createTransaction).not.toHaveBeenCalled()
+  })
+})
+
+describe('lembrete na Kaguya', () => {
+  it('"Lembrar" numa conta cria a tarefa com o vencimento e o valor, uma vez só', async () => {
+    const user = await open()
+    const botao = within(screen.getByText('Internet').closest('.ds-lrow') as HTMLElement).getByRole('button', { name: 'Lembrar de Internet na Kaguya' })
+    await user.click(botao)
+    await waitFor(() => expect(createReminder).toHaveBeenCalledWith({ title: 'Pagar Internet', due_date: '2026-09-30', amount: 119.9 }))
+    expect(await screen.findByText('Lembrete criado na Kaguya')).toBeTruthy()
+    expect((within(screen.getByText('Internet').closest('.ds-lrow') as HTMLElement).getByRole('button', { name: /Lembrete de Internet criado/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('o título da fatura vem do nome do cartão', async () => {
+    const user = await open()
+    await user.click(within(screen.getByText('Fatura Nubank').closest('.ds-lrow') as HTMLElement).getByRole('button', { name: /Lembrar de Fatura Nubank/ }))
+    await waitFor(() => expect(createReminder).toHaveBeenCalledWith(expect.objectContaining({ title: 'Pagar fatura Nubank', amount: 1840.9 })))
   })
 })
 

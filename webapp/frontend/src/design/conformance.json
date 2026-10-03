@@ -133,9 +133,9 @@
       "mobile": false
     },
     "nami": {
-      "status": "migrating",
-      "dir": "src/pages/nami-next",
-      "shell": "src/pages/nami-next/NamiShell.tsx",
+      "status": "conformant",
+      "dir": "src/pages/nami",
+      "shell": "src/pages/nami/NamiShell.tsx",
       "art": "nautica",
       "appShell": true,
       "hero": true,

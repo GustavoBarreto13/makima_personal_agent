@@ -3,34 +3,24 @@
 
 import { api } from '../../lib/api'
 import type {
-  Transaction, Account, Card, Budget, Subscription,
-  PersonalLoan, BankLoan, PayoffPriorityItem, StatsResponse, Category,
+  Transaction, Account, Card, BudgetEnvelope, Subscription, RecurringKind,
+  PersonalLoan, BankLoan, PayoffPriorityItem, Category,
   Installment, InstallmentDetail, CardInstallment,
   RecurringStatusResponse, ShoppingList, ShoppingListDetail, ShoppingItem, FrequentItem,
+  Plan, CardInvoices, AccountsOverview, EntrySuggestion, NamiStats,
 } from './types'
 
-// ── Stats ─────────────────────────────────────────────────────────────────────
-
-/** Busca estatísticas consolidadas do mês (dashboard). */
 export const namiApi = {
 
-  getStats: (month: string): Promise<StatsResponse> =>
-    api.get(`/api/finances/stats?month=${month}`),
+  // ── Plano do mês e resumo (spec 071) ─────────────────────────────────────────
 
-  /** Score de saúde financeira 0-100 com 4 dimensões (spec 042). Mês vazio = mês atual. */
-  getHealth: (month: string = ''): Promise<{
-    score: number
-    breakdown: { taxa_gasto: number; taxa_poupanca: number; comprometimento_futuro: number; divida_cartao: number }
-    message: string
-  }> =>
-    api.get(`/api/finances/health${month ? `?month=${month}` : ''}`),
+  /** "Livre pra gastar": renda, gasto, o que ainda vai sair e quanto está livre. Mês vazio = corrente. */
+  getPlan: (month: string = ''): Promise<Plan> =>
+    api.get(`/api/finances/plan${month ? `?month=${month}` : ''}`),
 
-  /** Evolução mensal de gastos + projeção do mês corrente (spec 042). */
-  getTrend: (months: number = 6): Promise<{
-    trend: Record<string, number>
-    current_month_projected: number
-  }> =>
-    api.get(`/api/finances/trend?months=${months}`),
+  /** Retrospectiva no contrato StatsPayload do Design System. Sem `month` = ano inteiro. */
+  getStats: (year: number, month?: number): Promise<NamiStats> =>
+    api.get(`/api/finances/stats?year=${year}${month ? `&month=${month}` : ''}`),
 
   // ── Categorias ───────────────────────────────────────────────────────────────
 
@@ -39,34 +29,40 @@ export const namiApi = {
 
   // ── Transações ───────────────────────────────────────────────────────────────
 
-  /** Calcula o último dia real de um mês YYYY-MM (evita datas inválidas tipo "06-31"). */
-  _monthBounds: (month: string): { start: string; end: string } => {
-    const [y, m] = month.split('-').map(Number)
-    const lastDay = new Date(y, m, 0).getDate()
-    return { start: `${month}-01`, end: `${month}-${String(lastDay).padStart(2, '0')}` }
-  },
-
-  getTransactions: (
-    month: string,
-    opts?: { categoria?: string; tipo?: string; limit?: number; offset?: number },
-  ): Promise<{ transactions: Transaction[]; has_more?: boolean }> => {
-    const { start, end } = namiApi._monthBounds(month)
-    const params = new URLSearchParams({ start_date: start, end_date: end })
-    if (opts?.categoria) params.set('categoria', opts.categoria)
-    if (opts?.tipo)      params.set('tipo', opts.tipo)
-    if (opts?.limit)     params.set('limit', String(opts.limit))
-    if (opts?.offset)    params.set('offset', String(opts.offset))
+  /**
+   * Lançamentos num intervalo, com busca no servidor (nome e notas, em todos os meses) e filtro por
+   * conta/cartão. `limit` busca uma a mais para saber se há mais páginas (`has_more`).
+   */
+  listTransactions: (opts: {
+    start?: string; end?: string; q?: string; tipo?: string; categoria?: string
+    account_id?: string; card_id?: string; limit?: number; offset?: number
+  } = {}): Promise<{ transactions: Transaction[]; has_more?: boolean }> => {
+    const params = new URLSearchParams()
+    if (opts.start)      params.set('start_date', opts.start)
+    if (opts.end)        params.set('end_date', opts.end)
+    if (opts.q)          params.set('q', opts.q)
+    if (opts.tipo)       params.set('tipo', opts.tipo)
+    if (opts.categoria)  params.set('categoria', opts.categoria)
+    if (opts.account_id) params.set('account_id', opts.account_id)
+    if (opts.card_id)    params.set('card_id', opts.card_id)
+    if (opts.limit)      params.set('limit', String(opts.limit))
+    if (opts.offset)     params.set('offset', String(opts.offset))
     return api.get(`/api/finances/transactions?${params.toString()}`)
   },
 
-  /** Monta a URL de exportação CSV (spec 043) — navegação same-origin já leva o cookie de sessão. */
-  exportTransactionsUrl: (month: string, opts?: { categoria?: string; tipo?: string }): string => {
-    const { start, end } = namiApi._monthBounds(month)
-    const params = new URLSearchParams({ start_date: start, end_date: end })
-    if (opts?.categoria) params.set('categoria', opts.categoria)
-    if (opts?.tipo)      params.set('tipo', opts.tipo)
+  /** Monta a URL de exportação CSV — navegação same-origin já leva o cookie de sessão. */
+  exportTransactionsUrl: (opts: { start?: string; end?: string; categoria?: string; tipo?: string } = {}): string => {
+    const params = new URLSearchParams()
+    if (opts.start)     params.set('start_date', opts.start)
+    if (opts.end)       params.set('end_date', opts.end)
+    if (opts.categoria) params.set('categoria', opts.categoria)
+    if (opts.tipo)      params.set('tipo', opts.tipo)
     return `/api/finances/transactions/export?${params.toString()}`
   },
+
+  /** Como lançar algo parecido com o que já foi lançado (categoria e conta/cartão da última vez). */
+  suggestEntry: (q: string): Promise<{ suggestions: EntrySuggestion[] }> =>
+    api.get(`/api/finances/suggest?q=${encodeURIComponent(q)}`),
 
   createTransaction: (body: {
     name: string; valor: number; tipo: string; categoria: string;
@@ -84,16 +80,27 @@ export const namiApi = {
   deleteTransaction: (id: string): Promise<{ status: string }> =>
     api.del(`/api/finances/transactions/${id}`),
 
-  /** Transferência atômica entre duas contas (spec 043) — exclui de receita/despesa. */
+  /**
+   * Transferência atômica: conta → conta, ou conta → cartão (`to_card`, que é pagar a fatura).
+   * Não conta como receita nem despesa; origem sai negativa e destino entra positivo.
+   */
   createTransfer: (body: {
-    from_account: string; to_account: string; valor: number; data?: string; notes?: string;
+    from_account: string; to_account?: string; to_card?: string; valor: number; data?: string; notes?: string;
   }): Promise<{ status: string; transfer_id: string }> =>
     api.post('/api/finances/transfers', body),
+
+  /** Apaga a transferência (ou o pagamento de fatura) inteira: as duas pontas de uma vez. */
+  deleteTransfer: (transferId: string): Promise<{ status: string; deleted: number }> =>
+    api.del(`/api/finances/transfers/${transferId}`),
 
   // ── Contas ───────────────────────────────────────────────────────────────────
 
   getAccounts: (): Promise<{ accounts: Account[] }> =>
     api.get('/api/finances/accounts'),
+
+  /** Saldo REAL de cada conta (saldo inicial + movimentos) e o total — spec 071. */
+  getAccountsOverview: (): Promise<AccountsOverview> =>
+    api.get('/api/finances/accounts/overview'),
 
   createAccount: (body: {
     name: string; type: string; balance_inicial: number;
@@ -132,13 +139,21 @@ export const namiApi = {
   deleteCard: (id: string): Promise<{ status: string }> =>
     api.del(`/api/finances/cards/${id}`),
 
-  /** Registra pagamento de fatura — reduz a dívida calculada em getCards (spec 042). */
-  payCardBill: (cardId: string, valor: number, data?: string): Promise<{ status: string }> =>
-    api.post(`/api/finances/cards/${cardId}/payment`, { valor, data: data || '' }),
+  /**
+   * Paga a fatura: transferência da conta vinculada ao cartão (ou `fromAccount`) para o cartão.
+   * Debita a conta e abate a dívida, sem contar como receita nem despesa (spec 071).
+   */
+  payCardBill: (cardId: string, valor: number, opts: { data?: string; fromAccount?: string } = {}): Promise<{ status: string; transfer_id: string }> =>
+    api.post(`/api/finances/cards/${cardId}/payment`, { valor, data: opts.data ?? '', from_account: opts.fromAccount ?? '' }),
+
+  /** Faturas derivadas: atual, anteriores em aberto e as próximas já comprometidas (spec 071). */
+  getCardInvoices: (cardId: string, months: number = 3): Promise<CardInvoices> =>
+    api.get(`/api/finances/cards/${cardId}/invoices?months=${months}`),
 
   // ── Orçamentos ───────────────────────────────────────────────────────────────
 
-  getBudgets: (month: string): Promise<{ budgets: Budget[] }> =>
+  /** Envelopes do mês: limite, gasto e % usado de cada categoria com orçamento. */
+  getBudgets: (month: string): Promise<{ month: string; envelopes: BudgetEnvelope[] }> =>
     api.get(`/api/finances/budgets?month=${month}`),
 
   createBudget: (body: {
@@ -151,15 +166,15 @@ export const namiApi = {
 
   // ── Assinaturas ──────────────────────────────────────────────────────────────
 
-  /** kind (spec 044): 'assinatura' | 'conta_fixa' — vazio/omitido traz ambos. */
-  getSubscriptions: (status: string = 'ativa', kind?: string): Promise<{ subscriptions: Subscription[] }> =>
+  /** kind: 'assinatura' | 'conta_fixa' | 'renda' — vazio/omitido traz todos. */
+  getSubscriptions: (status: string = 'ativa', kind?: RecurringKind): Promise<{ subscriptions: Subscription[] }> =>
     api.get(`/api/finances/subscriptions?status=${status}${kind ? `&kind=${kind}` : ''}`),
 
   createSubscription: (body: {
     name: string; valor: number; ciclo: string;
-    next_billing_day?: number; categoria?: string;
+    next_billing?: string; next_billing_day?: number; categoria?: string;
     color?: string; icon_url?: string; conta?: string;
-    kind?: 'assinatura' | 'conta_fixa'; auto_lancar?: boolean;
+    kind?: RecurringKind; auto_lancar?: boolean;
   }): Promise<{ status: string }> =>
     api.post('/api/finances/subscriptions', body),
 
@@ -167,7 +182,7 @@ export const namiApi = {
     name?: string; valor?: number; ciclo?: string; next_billing?: string;
     conta?: string; status?: string; notes?: string;
     color?: string; icon_url?: string; next_billing_day?: number;
-    kind?: 'assinatura' | 'conta_fixa'; auto_lancar?: boolean;
+    kind?: RecurringKind; auto_lancar?: boolean;
   }): Promise<{ status: string }> =>
     api.patch(`/api/finances/subscriptions/${id}`, body),
 
@@ -177,7 +192,7 @@ export const namiApi = {
   // ── Contas Fixas (spec 044) ────────────────────────────────────────────────
 
   /** Status do ciclo corrente de cada recorrência (paga/pendente/atrasada/agendada). */
-  getRecurringStatus: (kind?: string): Promise<RecurringStatusResponse> =>
+  getRecurringStatus: (kind?: RecurringKind): Promise<RecurringStatusResponse> =>
     api.get(`/api/finances/recurring-status${kind ? `?kind=${kind}` : ''}`),
 
   /** Confirma o pagamento com o valor real — lança a despesa e rola o vencimento (atômico). */

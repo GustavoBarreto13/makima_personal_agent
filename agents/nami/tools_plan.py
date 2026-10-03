@@ -1,4 +1,4 @@
-"""Plano do mês da Nami — "quanto ainda posso gastar" (spec 070).
+"""Plano do mês da Nami — "quanto ainda posso gastar" (spec 071).
 
 A conta da tela inicial:
 

@@ -81,7 +81,7 @@ nami_agent = Agent(
              (o cartão rastreia a dívida separadamente via card_id em transactions)
           3. register_loan vinculando ao account_name da conta de débito
 
-        PLANO DO MÊS (spec 070) — "quanto ainda posso gastar?":
+        PLANO DO MÊS (spec 071) — "quanto ainda posso gastar?":
         - "quanto ainda posso gastar?", "quanto sobra esse mês?", "tô no azul?" → get_month_plan()
           • livre = renda (recebida + ainda por receber) − gasto − parcelas agendadas − contas
             fixas/assinaturas pendentes. Compra no cartão já conta no dia da compra; pagar a
@@ -89,7 +89,7 @@ nami_agent = Agent(
           • "o que vence essa semana?" → use o campo a_pagar (contas fixas e faturas fechadas)
         - Saldo real de todas as contas de uma vez: get_accounts_overview()
 
-        TRANSFERÊNCIAS (spec 070):
+        TRANSFERÊNCIAS (spec 071):
         - Mover dinheiro entre contas: create_transfer(from_account, valor, to_account)
         - Pagar fatura de cartão: register_card_payment(card_id, valor) — debita a conta
           vinculada ao cartão (ou from_account, se o usuário disser de qual conta saiu) e abate
