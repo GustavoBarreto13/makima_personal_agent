@@ -15,8 +15,10 @@
  * CONTRASTE: o audit:design não cobre estilos de arte, então os pares foram calculados à parte (WCAG,
  * mistura em oklab, tinta ink-1..4, accent-deep e accent contra paper, paper-2, card, card-2 e mist,
  * acento da Akane). Pior par de texto: 5.5:1 no claro (ink-4 sobre mist); pior par gráfico: 4.7:1 no
- * claro; no escuro todos >= 7.1:1. Cálculo, não conferência no navegador: olhe a tela antes de
- * publicar. Se mexer em qualquer percentual de lavagem ou de tinta, refaça a conta. */
+ * claro; no escuro todos >= 7.1:1. Hero (texto sobre o gradiente nas regiões mais claras/tingidas):
+ * título 8.3:1, citação 6.0:1, meta 4.8:1, eyebrow 5.2:1, botão primário 6.1:1 (claro); 9.2/6.9/5.7/5.2/7.0
+ * no escuro. Cálculo, não conferência no navegador: olhe a tela antes de publicar. Se mexer em qualquer
+ * percentual de lavagem ou de tinta, refaça a conta. */
 
 /* paper/card ORIGINAIS do tema, guardados sob outro nome (ver ARMADILHA acima). No :root, onde
  * ainda valem os do tema; no escuro, o :root já traz os tokens escuros. */
@@ -59,6 +61,30 @@
   --ds-r-sm: 4px;
   --ds-r-md: 6px;
   --ds-r-lg: 9px;
+
+  /* hero: em vez do bloco saturado do tema, a "tela" clara/escura da superfície com luz carmim e dourada,
+   * título em serifa de cartaz e retrato grande com halo (como era a cinemateca antes do DS) */
+  --ds-hero-bg:
+    radial-gradient(120% 130% at 86% 22%, var(--ds-accent-tint-2), transparent 52%),
+    radial-gradient(90% 120% at 10% 90%, color-mix(in oklab, var(--ds-star) 18%, transparent), transparent 60%),
+    linear-gradient(155deg, var(--ds-mist), var(--ds-card) 62%);
+  --ds-hero-veil: transparent;
+  --ds-hero-fg: var(--ds-ink-1);
+  --ds-hero-eyebrow: var(--ds-accent-deep);
+  --ds-hero-border: var(--ds-accent-tint-2);
+  --ds-hero-halo: radial-gradient(circle, var(--ds-accent-tint-2), color-mix(in oklab, var(--ds-star) 22%, transparent) 40%, transparent 68%);
+  --ds-hero-btn-bg: var(--ds-accent);
+  --ds-hero-btn-fg: var(--ds-on-accent);
+  --ds-hero-ghost-bg: var(--ds-card);
+  --ds-hero-ghost-fg: var(--ds-ink-1);
+  --ds-hero-ghost-border: var(--ds-line);
+  --ds-hero-font: var(--ds-font-serif-display);
+  --ds-hero-weight: 400;
+  --ds-hero-min: 340px;
+  --ds-hero-portrait: 300px;
+
+  /* serifa de cartaz para títulos da página (mês do diário, nome do filme) */
+  --ds-font-title: var(--ds-font-serif-display);
 }
 
 /* sala apagada: superfícies bem mais fundas (luminosidade e croma reduzidos por cor relativa a partir

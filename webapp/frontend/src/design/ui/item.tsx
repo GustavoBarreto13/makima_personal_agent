@@ -54,6 +54,8 @@ export interface MediaCardProps {
   hue: number
   rating?: number | null
   status?: Status
+  /** `poster`: capa retangular 2:3 (filmes, livros). Padrão: faixa baixa e larga. */
+  cover?: 'poster'
   /** Selo no canto superior direito (ex.: PR). */
   badge?: ReactNode
   /** Linha de baixo, à esquerda e à direita. */
@@ -64,7 +66,7 @@ export interface MediaCardProps {
   onOpen?: () => void
 }
 
-export function MediaCard({ title, subtitle, image, icon, hue, rating, status, badge, meta, metaRight, index = 0, onOpen }: MediaCardProps) {
+export function MediaCard({ title, subtitle, image, icon, hue, rating, status, cover, badge, meta, metaRight, index = 0, onOpen }: MediaCardProps) {
   const onKey = (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen?.() } }
   return (
     <article
@@ -76,7 +78,7 @@ export function MediaCard({ title, subtitle, image, icon, hue, rating, status, b
       onClick={onOpen}
       onKeyDown={onKey}
     >
-      <div className="ds-cover">
+      <div className={cx('ds-cover', cover === 'poster' && 'ds-cover-poster')}>
         {image ? <img src={image} alt="" loading="lazy" decoding="async" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} /> : <Icon name={icon} size={38} strokeWidth={1.5} />}
         {status && <span className="ds-cv-l"><StatusChip status={status} /></span>}
         {badge && <span className="ds-cv-r">{badge}</span>}

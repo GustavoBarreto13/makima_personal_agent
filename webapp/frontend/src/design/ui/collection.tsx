@@ -115,9 +115,13 @@ export interface CollectionBodyProps<T> {
   /** Estado vazio quando NÃO há nenhum item (convida ao primeiro registro). */
   firstRun?: ReactNode
   pageSize?: number
+  /** Classe da grade (ex.: `ds-grid-poster` para pôsteres 2:3). Padrão: `ds-grid`. */
+  gridClass?: string
+  /** Cabeçalho de cada grupo. Padrão: o título do grupo e a contagem. */
+  renderGroupHeader?: (key: string, count: number) => ReactNode
 }
 
-export function CollectionBody<T>({ c, view, renderCard, renderRow, loading, error, onRetry, emptyTitle = 'Nada com esses filtros', firstRun, pageSize = 40 }: CollectionBodyProps<T>) {
+export function CollectionBody<T>({ c, view, renderCard, renderRow, loading, error, onRetry, emptyTitle = 'Nada com esses filtros', firstRun, pageSize = 40, gridClass = 'ds-grid', renderGroupHeader }: CollectionBodyProps<T>) {
   const [limit, setLimit] = useState(pageSize)
   if (loading) return <LoadingState variant={view === 'grid' ? 'card' : 'row'} count={view === 'grid' ? 8 : 5} />
   if (error) return <ErrorState onRetry={onRetry} />
@@ -145,9 +149,9 @@ export function CollectionBody<T>({ c, view, renderCard, renderRow, loading, err
     <>
       {groups.map((g) => (
         <div key={g.key || 'all'}>
-          {g.key && <div className="ds-grp-h"><h3>{g.key}</h3><span className="ds-mono">{g.items.length}</span></div>}
+          {g.key && (renderGroupHeader ? renderGroupHeader(g.key, g.items.length) : <div className="ds-grp-h"><h3>{g.key}</h3><span className="ds-mono">{g.items.length}</span></div>)}
           {view === 'grid'
-            ? <div className="ds-grid">{g.slice.map((it) => renderCard(it, n++))}</div>
+            ? <div className={gridClass}>{g.slice.map((it) => renderCard(it, n++))}</div>
             : <div className="ds-list">{g.slice.map((it) => renderRow(it, n++))}</div>}
         </div>
       ))}

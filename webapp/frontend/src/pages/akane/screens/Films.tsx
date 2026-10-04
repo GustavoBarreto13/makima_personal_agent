@@ -47,6 +47,7 @@ function MovieCollection({ mode }: { mode: 'films' | 'watchlist' }) {
       <CollectionBody
         c={c}
         view={layout}
+        gridClass="ds-grid-poster"
         renderCard={(m, i) => <FilmCard key={m.id} movie={m} index={i} showStatus={mode === 'films'} />}
         renderRow={(m) => <FilmRow key={m.id} movie={m} />}
         loading={state.status === 'loading'}

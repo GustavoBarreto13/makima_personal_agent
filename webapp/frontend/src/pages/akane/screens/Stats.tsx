@@ -39,8 +39,9 @@ export function Stats() {
       heatThresholds={[1, 2, 3, 4]}
       formatDaily={(v) => `${v} ${v === 1 ? 'sessão' : 'sessões'}`}
       emptyHint="Logue um filme neste ano para ver as estatísticas."
+      momentsClass="ds-grid-poster"
       renderMoment={(m, i) => (
-        <MediaCard key={m.id} title={m.title} subtitle={m.subtitle} image={m.image} icon="movie" hue={hueFromName(m.title)} rating={m.rating} index={i} onOpen={() => akane.goto({ view: 'films', movieId: String(m.id) })} />
+        <MediaCard key={m.id} cover="poster" title={m.title} subtitle={m.subtitle} image={m.image} icon="movie" hue={hueFromName(m.title)} rating={m.rating} index={i} onOpen={() => akane.goto({ view: 'films', movieId: String(m.id) })} />
       )}
     />
   )

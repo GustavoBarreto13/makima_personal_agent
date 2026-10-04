@@ -10,7 +10,7 @@ import type { CaptureResult } from '../../design/core/capture'
 import { todayISO } from '../../design/core/format'
 import { toast } from '../../design/headless/toast'
 import { usePrefs } from '../../design/headless/usePrefs'
-import { AppShell, Button, SegmentedControl, SettingRow, type NavGroup } from '../../design'
+import { AppShell, Button, NumberInput, SegmentedControl, SettingRow, type NavGroup } from '../../design'
 import { akaneApi } from './akaneApi'
 import { LogForm } from './components/LogForm'
 import { ScreenBoundary } from './components/ScreenBoundary'
@@ -64,7 +64,7 @@ interface LogState { initial: LogDraft; results: TmdbResult[]; issues?: CaptureI
 export function AkaneShell() {
   const navigate = useNavigate()
   const today = useMemo(() => todayISO(), [])
-  const [prefs, setPrefs] = usePrefs<AkanePrefs>('akane', { art: AGENT.art ?? 'noir', layout: 'grid' })
+  const [prefs, setPrefs] = usePrefs<AkanePrefs>('akane', { art: AGENT.art ?? 'noir', layout: 'grid', yearlyGoal: 60 })
   const [route, setRoute] = useState<Route>(() => routeFromHash(window.location.hash))
   const [rev, setRev] = useState(0)
   const [locations, setLocations] = useState<WatchLocation[]>([])
@@ -174,6 +174,9 @@ export function AkaneShell() {
                 options={[{ value: 'grid', label: 'Pôsteres', icon: 'grid' }, { value: 'list', label: 'Lista', icon: 'list' }]}
                 onChange={(layout) => setPrefs({ layout })}
               />
+            </SettingRow>
+            <SettingRow title="Meta de filmes por ano" help="Aparece no cartão &quot;Filmes&quot; do Início.">
+              <NumberInput aria-label="Meta de filmes por ano" min={1} max={1000} value={prefs.yearlyGoal > 0 ? prefs.yearlyGoal : 60} onChange={(e) => { const n = Math.round(Number(e.target.value)); if (n >= 1 && n <= 1000) setPrefs({ yearlyGoal: n }) }} />
             </SettingRow>
             <SettingRow title="Letterboxd" help="Busca as sessões novas do seu perfil (acontece sozinho todo dia).">
               <Button icon="refresh" disabled={syncing} onClick={() => void sync()}>{syncing ? 'Sincronizando…' : 'Sincronizar agora'}</Button>

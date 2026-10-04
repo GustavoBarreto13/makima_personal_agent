@@ -41,7 +41,7 @@ export function Tags() {
           <SectionHeader title={`Filmes com “${picked}”`} id="ax-tag-films" mono={`${shown.length}`} />
           {shown.length === 0
             ? <p className="ds-hint">Nenhum filme do catálogo tem essa etiqueta agora (ela pode estar só em sessões).</p>
-            : <div className="ds-grid">{shown.map((m, i) => <FilmCard key={m.id} movie={m} index={i} />)}</div>}
+            : <div className="ds-grid-poster">{shown.map((m, i) => <FilmCard key={m.id} movie={m} index={i} />)}</div>}
         </section>
       )}
     </Page>

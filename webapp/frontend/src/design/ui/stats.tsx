@@ -207,6 +207,8 @@ export interface StatsPageProps {
   ratings?: number[]
   /** Cartões dos momentos do ano. */
   renderMoment?: (m: StatsPayload['moments'][number], i: number) => ReactNode
+  /** Classe da grade dos momentos (ex.: `ds-grid-poster` para capas 2:3). Padrão: `ds-grid`. */
+  momentsClass?: string
   /** Estado vazio do período. */
   emptyHint?: string
   /** Título do mapa de calor (padrão "Dias com registro"; finanças: "Dias com gasto"). */
@@ -218,7 +220,7 @@ export interface StatsPageProps {
 /** Unidades da série mensal que são contagens inteiras (as demais mostram uma casa decimal). */
 const INTEGER_UNITS = new Set(['treinos', 'R$', 'sessões', 'filmes'])
 
-export function StatsPage({ payload, hero, minYear, maxYear, onYear, today, heatThresholds, formatDaily, metrics, metric, onMetric, ratings, renderMoment, emptyHint, heatmapTitle = 'Dias com registro', monthlyTitle = 'Ritmo por mês' }: StatsPageProps) {
+export function StatsPage({ payload, hero, minYear, maxYear, onYear, today, heatThresholds, formatDaily, metrics, metric, onMetric, ratings, renderMoment, momentsClass = 'ds-grid', emptyHint, heatmapTitle = 'Dias com registro', monthlyTitle = 'Ritmo por mês' }: StatsPageProps) {
   const year = payload?.period.year ?? maxYear
   const nav = <YearNav year={year} min={minYear} max={maxYear} onChange={onYear} />
   if (!payload || payload.kpis.every((k) => !k.value)) {
@@ -272,7 +274,7 @@ export function StatsPage({ payload, hero, minYear, maxYear, onYear, today, heat
       {payload.moments.length > 0 && renderMoment && (
         <section aria-labelledby="ds-mom-t">
           <SectionHeader title="Momentos do ano" id="ds-mom-t" mono="os mais marcantes" />
-          <div className="ds-grid">{payload.moments.map(renderMoment)}</div>
+          <div className={momentsClass}>{payload.moments.map(renderMoment)}</div>
         </section>
       )}
     </Page>

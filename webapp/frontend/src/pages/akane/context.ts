@@ -11,6 +11,8 @@ export interface AkanePrefs {
   art: string
   /** Como Filmes e Quero ver mostram os itens. */
   layout: 'grid' | 'list'
+  /** Meta de filmes por ano (cartão do Início). Pode faltar em preferências salvas antes da meta existir. */
+  yearlyGoal: number
 }
 
 /** O que abrir no formulário de logar. */

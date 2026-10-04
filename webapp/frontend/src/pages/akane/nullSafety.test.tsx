@@ -48,6 +48,7 @@ const route = (url: string) => {
   if (url.startsWith('/api/movies/home')) return HOME
   if (url.startsWith('/api/movies/heatmap')) return { status: 'ok', year: 2026, days: [] }
   if (url.startsWith('/api/movies/tags')) return { status: 'ok', tags: [] }
+  if (url.startsWith('/api/movies/stats')) return { status: 'ok', first_year: 2024, kpis: [{ key: 'films', value: 12 }] }
   if (url.startsWith('/api/movies/lists')) return { status: 'ok', lists: [] }
   if (url === '/api/movies') return { status: 'ok', movies: [MOVIE('m1', 'Perfect Blue'), MOVIE('m3', 'Duna', { year: 2021, director: ['Denis Villeneuve'], genres: ['Ficção científica'] })] }
   if (url === '/api/movies/m1') return DETAIL
@@ -88,8 +89,9 @@ describe('payloads reais, com null', () => {
 
   it('o Início renderiza (favoritos, atividade recente e Quero ver)', async () => {
     openAt('#inicio')
-    expect(await screen.findByText('12 filmes vistos')).toBeTruthy()
-    expect(screen.getByText('Paprika')).toBeTruthy()
+    expect(await screen.findByText('Cinemateca de Akane')).toBeTruthy()
+    expect(screen.getAllByText('Paprika').length).toBeGreaterThan(0)   // no painel do Diário e na faixa do Quero ver
+    expect(screen.queryByText('Algo deu errado nesta tela')).toBeNull()
   })
 
   it('Filmes: digitar na busca filtra sem estourar (a busca lê as etiquetas)', async () => {

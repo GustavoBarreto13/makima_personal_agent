@@ -13,7 +13,7 @@ import { __resetToasts } from '../../design/headless/toast'
 const api = vi.hoisted(() => ({
   home: vi.fn(), heatmap: vi.fn(), watchLocations: vi.fn(), tmdbSearch: vi.fn(), add: vi.fn(), logWatch: vi.fn(), like: vi.fn(),
   createWatchLocation: vi.fn(), deleteDiary: vi.fn(), delete: vi.fn(), list: vi.fn(), watchlist: vi.fn(), diary: vi.fn(),
-  reorderDiary: vi.fn(), setFavorites: vi.fn(), updateDiaryEntry: vi.fn(), syncLetterboxd: vi.fn(),
+  reorderDiary: vi.fn(), setFavorites: vi.fn(), updateDiaryEntry: vi.fn(), syncLetterboxd: vi.fn(), statsPayload: vi.fn(),
 }))
 vi.mock('./akaneApi', () => ({ akaneApi: api }))
 vi.mock('../komi/komiApi', () => ({ komiApi: { search: vi.fn(async () => ({ matches: [] })), create: vi.fn() } }))
@@ -61,8 +61,9 @@ beforeEach(() => {
   api.delete.mockResolvedValue({ status: 'ok' })
   api.list.mockResolvedValue({ status: 'ok', movies: [MOVIE('m1', 'Perfect Blue'), MOVIE('m3', 'Duna', { year: 2021, genres: ['Ficção científica'], director: [] })] })
   api.watchlist.mockResolvedValue({ status: 'ok', movies: [MOVIE('m2', 'Paprika', { status: 'watchlist', rating: null })] })
-  api.diary.mockResolvedValue({ status: 'ok', entries: [] })
+  api.diary.mockResolvedValue({ status: 'ok', entries: [ENTRY('dRec', 'Perfect Blue', { rating: 5 })] })
   api.reorderDiary.mockResolvedValue({ status: 'ok' })
+  api.statsPayload.mockResolvedValue({ status: 'ok', kpis: [{ key: 'films', value: 12 }] })
   window.location.hash = ''
 })
 afterEach(() => { cleanup(); __resetToasts(); localStorage.clear(); setMockWidth(1200); document.documentElement.removeAttribute('data-ds-theme') })
@@ -70,18 +71,58 @@ afterEach(() => { cleanup(); __resetToasts(); localStorage.clear(); setMockWidth
 const open = async () => {
   const user = userEvent.setup()
   render(<MemoryRouter><AkaneShell /></MemoryRouter>)
-  await screen.findByText('12 filmes vistos')
+  await screen.findByText('Cinemateca de Akane')
   return user
 }
 const captureInput = () => screen.getByLabelText('Logar um filme em uma linha')
 
 describe('Início', () => {
-  it('mostra o total visto, a semana, a atividade recente e o Quero ver', async () => {
+  it('hero: saudação, última sessão, citação e os dois botões', async () => {
     await open()
-    expect(screen.getByText(/3 sessões nos últimos 7 dias \(\+2 que na semana anterior\)/)).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2, name: /^(Bom dia|Boa tarde|Boa noite|Boa madrugada)\.$/ })).toBeTruthy()
+    expect(screen.getByText(/Última sessão/)).toBeTruthy()
+    expect(screen.getByText(/O cinema é onde eu treino o olhar/)).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: 'Logar filme' }).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Abrir diário' })).toBeTruthy()
+  })
+
+  it('cartões de número: filmes no ano com a meta (60) e sessões da semana contra a anterior', async () => {
+    await open()
+    expect(screen.getByText(/Filmes · \d{4}/)).toBeTruthy()
+    expect(screen.getByText(/Meta de 60/)).toBeTruthy()
+    expect(screen.getByText('48')).toBeTruthy()                     // faltam 60 − 12
+    expect(screen.getByText('↑ 200%')).toBeTruthy()                 // 3 sessões vs 1 na semana anterior
+  })
+
+  it('a meta anual vem da preferência', async () => {
+    localStorage.setItem('ds:prefs:akane', JSON.stringify({ art: 'noir', layout: 'grid', yearlyGoal: 100 }))
+    await open()
+    expect(screen.getByText(/Meta de 100/)).toBeTruthy()
+    expect(screen.getByText('88')).toBeTruthy()
+  })
+
+  it('preferência salva antes da meta existir cai no padrão de 60 (sem NaN)', async () => {
+    localStorage.setItem('ds:prefs:akane', JSON.stringify({ art: 'noir', layout: 'grid' }))
+    await open()
+    expect(screen.getByText(/Meta de 60/)).toBeTruthy()
+  })
+
+  it('blocos de sempre: favoritos e atividade recente em pôsteres, painel Diário/Notas e Quero ver em destaque', async () => {
+    await open()
+    expect(screen.getByText('Filmes favoritos')).toBeTruthy()
     expect(screen.getByText('Atividade recente')).toBeTruthy()
+    expect(screen.getByRole('complementary', { name: 'Diário e notas' })).toBeTruthy()
+    expect(screen.getByText('Esperando no Quero ver')).toBeTruthy()
     expect(screen.getByText('Paprika')).toBeTruthy()
-    expect(screen.getAllByText('Perfect Blue').length).toBeGreaterThan(0)
+    // pôsteres retangulares: cada capa usa a capa 2:3 do DS (sem imagem, mostra o título na capa)
+    expect(document.querySelectorAll('.ds-cover-poster').length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('o painel agrupa as últimas sessões por mês', async () => {
+    await open()
+    const panel = screen.getByRole('complementary', { name: 'Diário e notas' })
+    expect(within(panel).getByLabelText(/de 2026$/)).toBeTruthy()
+    expect(within(panel).getByText('Perfect Blue')).toBeTruthy()
   })
 
   it('primeiro uso: convida a logar o primeiro filme', async () => {
@@ -217,8 +258,31 @@ describe('Diário', () => {
     expect(screen.queryByRole('button', { name: /na ordem do dia/ })).toBeNull()
   })
 
+  it('agrupa por mês com dia grande e dia da semana, e mostra a resenha em itálico', async () => {
+    window.location.hash = '#diario'
+    api.diary.mockResolvedValue({ status: 'ok', entries: [ENTRY('dA', 'Duna', { review: 'Visualmente deslumbrante', watched_date: '2026-10-02' }), ENTRY('dB', 'Her', { watched_date: '2026-09-12' })] })
+    render(<MemoryRouter><AkaneShell /></MemoryRouter>)
+    await screen.findByText('Duna')
+    expect(screen.getByText('Outubro')).toBeTruthy()
+    expect(screen.getByText('Setembro')).toBeTruthy()
+    expect(screen.getAllByText('1 sessão')).toHaveLength(2)
+    expect(screen.getByText('sex')).toBeTruthy()                   // 02/10/2026 é sexta
+    expect(screen.getByText('“Visualmente deslumbrante”')).toBeTruthy()
+  })
+
+  it('local e companhia aparecem como chips na linha', async () => {
+    window.location.hash = '#diario'
+    api.diary.mockResolvedValue({ status: 'ok', entries: [ENTRY('dA', 'Duna', { watch_location: { id: 'l1', name: 'Cinemark', kind: 'cinema' }, companions: [{ id: 'p1', name: 'Ana' }], rewatch: true })] })
+    render(<MemoryRouter><AkaneShell /></MemoryRouter>)
+    await screen.findByText('Duna')
+    expect(screen.getByText('Cinemark')).toBeTruthy()
+    expect(screen.getByText('Ana')).toBeTruthy()
+    expect(screen.getByLabelText('Revisão')).toBeTruthy()
+  })
+
   it('diário vazio convida a logar', async () => {
     window.location.hash = '#diario'
+    api.diary.mockResolvedValue({ status: 'ok', entries: [] })
     render(<MemoryRouter><AkaneShell /></MemoryRouter>)
     expect(await screen.findByText('O diário está vazio')).toBeTruthy()
   })
@@ -229,6 +293,8 @@ describe('Filmes e Quero ver', () => {
     window.location.hash = '#filmes'
     render(<MemoryRouter><AkaneShell /></MemoryRouter>)
     expect(await screen.findByText('Duna')).toBeTruthy()
+    expect(document.querySelector('.ds-grid-poster')).toBeTruthy()          // capas retangulares, não faixas
+    expect(document.querySelectorAll('.ds-cover-poster').length).toBe(2)
     cleanup()
     window.location.hash = '#quero-ver'
     render(<MemoryRouter><AkaneShell /></MemoryRouter>)

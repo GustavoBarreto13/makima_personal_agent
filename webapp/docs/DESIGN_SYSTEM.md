@@ -272,6 +272,19 @@ no claro, "sala apagada" com vinheta carmim no escuro, cantos secos e linhas fin
 de arte por agente: Nami = `nautica`; Akane = `noir`; os demais _ainda não escolhida_ (`null`; `makima`
 e `design` usam `default`).
 
+**Ganchos que a arte e as páginas podem usar (retrocompatíveis; sem eles nada muda):**
+
+- **Tokens do hero** (`--ds-hero-bg`, `-veil`, `-fg`, `-eyebrow`, `-border`, `-halo`, `-btn-bg`, `-btn-fg`, `-ghost-bg`,
+  `-ghost-fg`, `-ghost-border`, `-font`, `-weight`, `-min`, `-portrait`): a arte troca o visual do `Hero` (ex.: `noir` usa a
+  "tela" clara/escura da superfície com luz carmim e título em serifa, em vez do bloco saturado) sem tocar na estrutura.
+  Quem sobrescrever o fundo precisa **recalcular o contraste** do título, da citação, do eyebrow e dos botões.
+- **Serifa:** `--ds-font-serif` (Newsreader) e `--ds-font-serif-display` (DM Serif Display) nos tokens; a arte decide onde
+  usar (`noir` define `--ds-font-title` para o mês do Diário, o nome em cartaz e os números dos cartões).
+- **`MediaCard cover="poster"`:** capa retangular 2:3 (filmes, livros) em vez da faixa baixa; com `.ds-grid-poster`
+  (colunas ~150px, 3 por linha no celular). Sem imagem, a capa vira gradiente com ícone.
+- **`CollectionBody`:** `gridClass` (ex.: `ds-grid-poster`) e `renderGroupHeader(key, count)` para um cabeçalho de grupo próprio
+  (o mês em serifa do Diário). **`StatsPage`:** `momentsClass` para a grade dos momentos.
+
 **Armadilhas ao escrever um estilo de arte** (aprendidas no `nautica`):
 
 - Uma custom property **não pode citar a si mesma** no mesmo elemento (ciclo → inválida). Para tingir `paper`,

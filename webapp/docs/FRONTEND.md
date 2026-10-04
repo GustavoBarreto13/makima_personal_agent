@@ -440,13 +440,14 @@ Google.
 item aberto vivem no **hash** (`lib/routes.ts`): `#inicio`, `#diario`, `#filmes`, `#quero-ver`, `#listas`,
 `#etiquetas`, `#estatisticas`, `#filme/<id>`, `#lista/<id>` (`#rewind` cai em Estatísticas). Estado comum no
 `context.ts` (`useAkane()`: rota, locais, `openLog`, `quickLog`, `save`). Complementos de CSS só com tokens
-`--ds-*` em `akane.css` (prefixo `.ax-`).
+`--ds-*` em `akane.css` (prefixo `.ax-`). Capas sempre em **pôster 2:3** (`MediaCard cover="poster"` + `ds-grid-poster`; `Poster` nas prateleiras).
+**Os dados do banco chegam com `null`** (`tags` é NULL em todos os filmes): `lib/normalize.ts` os troca por listas vazias uma vez, em `akaneApi`, e o `ScreenBoundary` mostra erro em vez de tela branca se uma tela estourar.
 
 | Tela (`screens/`) | Padrão do DS | O que mostra |
 |---|---|---|
-| `Home` | `Hero` + `Heatmap` + `Distribution` | total visto, semana, **linha rápida de logar**, favoritos (até 4, `FavoritesPicker`), atividade recente, Quero ver, ritmo do ano |
+| `Home` | `Hero` (tokens `--ds-hero-*` da arte) + `StatCard` + `Poster` | hero (saudação serifada, última sessão, citação, *Logar filme*/*Abrir diário*, retrato), 2 cartões (filmes no ano com a **meta** — preferência `yearlyGoal`, padrão 60 — e sessões da semana com mini-gráfico), **linha rápida de logar**, **Favoritos** e **Atividade recente** (4) em pôsteres 2:3, painel **Diário** (por mês) + **Notas** (histograma) e **Quero ver** em destaque (faixa horizontal) |
 | `Films` (Filmes e Quero ver) | `useCollection` (`akane:filmes`, `akane:watchlist`) | grade de pôsteres ou lista; busca, situação/gênero/década/etiquetas/nota/curti/visto em |
-| `Diary` | `useCollection` (`akane:diario`) | sessões por mês; editar (`SessionEditor`), excluir com Desfazer, subir/descer na ordem do dia |
+| `Diary` | `useCollection` (`akane:diario`) + `renderGroupHeader` | lista por mês (nome em serifa, ano, contagem); linha com **dia grande + dia da semana**, pôster 44px, título em serifa, resenha em itálico, estrelas, chips de local/companhia; editar (`SessionEditor`), excluir com Desfazer, subir/descer na ordem do dia |
 | `MovieDetail` | `DetailPage` | ficha, sessões, notas, Cofre; logar, curtir, situação, adicionar à lista, editar dados, atualizar/trocar match do TMDB, excluir |
 | `Lists` / `ListDetail` | `useCollection` (`akane:listas`) + `DetailPage` | listas e seus filmes; criar/editar/excluir com Desfazer |
 | `Tags` | `Chip` | nuvem de etiquetas; escolher mostra os filmes |

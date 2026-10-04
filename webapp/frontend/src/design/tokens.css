@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Bricolage+Grotesque:wght@600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Bricolage+Grotesque:wght@600;700;800&family=DM+Serif+Display:ital@0;1&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&display=swap');
 
 /* GERADO por scripts/gen-tokens.mjs a partir de src/design/tokens.json. NÃO EDITE.
    Para mudar um token: edite tokens.json e rode `npm run tokens`. */
@@ -7,6 +7,8 @@
   --ds-font-display: 'Hanken Grotesk', system-ui, sans-serif;
   --ds-font-sans: 'DM Sans', system-ui, sans-serif;
   --ds-font-mono: 'DM Mono', ui-monospace, monospace;
+  --ds-font-serif: 'Newsreader', Georgia, serif;
+  --ds-font-serif-display: 'DM Serif Display', 'Newsreader', Georgia, serif;
   --ds-accent-h: 25;
   --ds-accent-c: 0.17;
   --ds-accent-ladj: 0;

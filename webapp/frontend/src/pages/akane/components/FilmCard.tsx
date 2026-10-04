@@ -15,6 +15,7 @@ export function FilmCard({ movie, index, showStatus = true }: { movie: Movie; in
       icon="movie"
       hue={hueFromName(movie.title)}
       rating={movie.status === 'watched' ? movie.rating : undefined}
+      cover="poster"
       status={showStatus && movie.status === 'watchlist' ? 'planned' : undefined}
       badge={movie.liked ? <Icon name="heart" size={14} label="Curtido" /> : undefined}
       metaRight={movie.times_watched > 1 ? <span className="ds-mono" title="Vezes que assisti">{movie.times_watched}×</span> : undefined}

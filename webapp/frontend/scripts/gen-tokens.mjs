@@ -33,6 +33,8 @@ const base = [
   decl('font-display', t.font.display),
   decl('font-sans', t.font.sans),
   decl('font-mono', t.font.mono),
+  decl('font-serif', t.font.serif),
+  decl('font-serif-display', t.font.serifDisplay),
   // Entradas do acento. [data-agent] sobrescreve h, c e ladj.
   decl('accent-h', t.accent.default.h),
   decl('accent-c', t.accent.default.c),
@@ -96,7 +98,7 @@ const header = `/* GERADO por scripts/gen-tokens.mjs a partir de src/design/toke
    Para mudar um token: edite tokens.json e rode \`npm run tokens\`. */\n`
 
 const fontImport =
-  "@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Bricolage+Grotesque:wght@600;700;800&display=swap');\n\n"
+  "@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Bricolage+Grotesque:wght@600;700;800&family=DM+Serif+Display:ital@0;1&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&display=swap');\n\n"
 
 const tokensCss =
   fontImport + header + '\n' +

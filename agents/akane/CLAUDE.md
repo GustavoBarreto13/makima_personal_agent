@@ -507,3 +507,6 @@ Acionado quando o usuário diz "me lembra de assistir X sábado".
 - **Pôster sem imagem**: capa tipográfica do próprio DS (`MediaCard`: gradiente + ícone). O campo `poster_palette`
   continua gravado, mas a UI nova não o usa.
 - **Estrelas**: `Stars`/`RateInput` do DS (0–5, meia estrela, cor fixa `--ds-star*`).
+- **Armadilha — colunas de array são NULL:** `movies.tags` é NULL em todos os filmes (o `INSERT` não grava) e
+  `diary_entries.tags` em boa parte das sessões; as tools devolvem `None` como veio (o agente do Telegram também lê isso).
+  O webapp normaliza na borda (`pages/akane/lib/normalize.ts`); não "conserte" no backend sem checar o agente.
