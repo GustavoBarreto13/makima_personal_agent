@@ -442,6 +442,24 @@ export function TaskModal({ mode, task, projects, groups, defaultProjectId, defa
     try { await kaguyaApi.updateTask(id, patch as never) } catch { toast('Falha ao salvar subtarefa.', 'err') }
   }
 
+  // Concluir/reabrir usa os endpoints dedicados — o PATCH ignora `completed_at`.
+  const toggleSub = async (s: Task) => {
+    try {
+      if (s.completed_at) {
+        await kaguyaApi.reopen(s.id)
+      } else {
+        const r = await kaguyaApi.complete(s.id)
+        if (r.needs_cascade) {
+          const ok = window.confirm(`Esta subtarefa tem ${r.open_subtasks} subtarefa(s) aberta(s). Concluir todas?`)
+          if (!ok) return
+          await kaguyaApi.complete(s.id, true)
+        }
+      }
+      setSubtasks((prev) => prev.map((x) => (x.id === s.id ? { ...x, completed_at: s.completed_at ? null : new Date().toISOString() } : x)))
+      onSaved()
+    } catch { toast('Falha ao salvar subtarefa.', 'err') }
+  }
+
   const removeSub = async (id: number) => {
     setSubtasks(subtasks.filter((s) => s.id !== id))
     try { await kaguyaApi.remove(id) } catch { toast('Falha ao excluir subtarefa.', 'err') }
@@ -759,7 +777,7 @@ export function TaskModal({ mode, task, projects, groups, defaultProjectId, defa
                       <button
                         className={`kg-check${s.completed_at ? ' done' : ''}`}
                         style={{ width: 17, height: 17, borderRadius: 5, flexShrink: 0 }}
-                        onClick={() => patchSub(s.id, { completed_at: s.completed_at ? null : new Date().toISOString() })}
+                        onClick={() => toggleSub(s)}
                         aria-label={s.completed_at ? 'Reabrir' : 'Concluir'}
                       >
                         {s.completed_at && <Icon name="check" size={10} />}
