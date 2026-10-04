@@ -68,6 +68,8 @@ beforeEach(() => {
   api.deleteDiary.mockResolvedValue({ status: 'ok' })
   api.delete.mockResolvedValue({ status: 'ok' })
   api.addVault.mockResolvedValue({ status: 'ok' })
+  api.updateDiaryEntry.mockResolvedValue({ status: 'ok' })
+  api.createWatchLocation.mockImplementation(async (name: string, kind: string) => ({ status: 'ok', created: true, location: { id: 'l-new', name, kind } }))
   api.deleteVault.mockResolvedValue({ status: 'ok' })
   api.lists.mockResolvedValue({ status: 'ok', lists: LISTS })
   api.listDetail.mockResolvedValue(LIST_DETAIL)
@@ -160,6 +162,30 @@ describe('detalhe do filme', () => {
     await waitFor(() => expect(api.deleteDiary).toHaveBeenCalledWith('dd1'))
     await user.click(await screen.findByRole('button', { name: /Desfazer/ }))
     await waitFor(() => expect(api.logWatch).toHaveBeenCalledWith('m1', expect.objectContaining({ watched_date: '2026-10-02', rating: 5, watch_location_id: 'l1' })))
+  })
+
+  it('na página do filme dá para cadastrar um cinema ao editar a sessão', async () => {
+    const user = await detail()
+    await user.click(screen.getByRole('button', { name: /Editar sessão de/ }))
+    const dialog = await screen.findByRole('dialog', { name: /Editar sessão/ })
+    expect(within(dialog).getByRole('button', { name: 'Remover Cinemark' })).toBeTruthy()          // o local atual da sessão
+    await user.click(within(dialog).getByRole('button', { name: 'Remover Cinemark' }))
+    await user.type(within(dialog).getByLabelText('Buscar ou cadastrar local'), 'Kinoplex')
+    await user.click(within(dialog).getByRole('button', { name: 'Cinema' }))
+    await waitFor(() => expect(api.createWatchLocation).toHaveBeenCalledWith('Kinoplex', 'cinema'))
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(api.updateDiaryEntry).toHaveBeenCalledTimes(1))
+    expect(api.updateDiaryEntry.mock.calls[0]).toEqual(['dd1', expect.objectContaining({ watch_location_id: 'l-new' })])
+  })
+
+  it('tirar o local da sessão manda null', async () => {
+    const user = await detail()
+    await user.click(screen.getByRole('button', { name: /Editar sessão de/ }))
+    const dialog = await screen.findByRole('dialog', { name: /Editar sessão/ })
+    await user.click(within(dialog).getByRole('button', { name: 'Remover Cinemark' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(api.updateDiaryEntry).toHaveBeenCalledTimes(1))
+    expect(api.updateDiaryEntry.mock.calls[0][1]).toMatchObject({ watch_location_id: null })
   })
 
   it('Cofre: título é obrigatório, link precisa ser http(s) e o item guardado vai com o domínio', async () => {

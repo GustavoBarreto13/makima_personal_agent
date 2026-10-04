@@ -458,6 +458,7 @@ Enter salva direto **só** se exatamente um resultado do TMDB tem o título digi
 confirmar; `+pessoa` (smart-match da Komi), `@local` desconhecido ou dúvida abrem o `LogForm` preenchido
 (Shift+Enter sempre abre). `lib/submit.ts` cria o filme se preciso, loga a sessão e devolve o Desfazer (apaga a sessão
 e, se o filme nasceu agora, o filme). Excluir **filme** não tem Desfazer (a API não restaura).
+**Onde assisti:** `PlacePicker` (campo de busca com lista, como o "Com quem"): digitar um nome novo oferece **Cadastrar como Cinema | Streaming**, que cria na hora e já seleciona; usado no `LogForm` e no `SessionEditor` (editar sessão no detalhe e no Diário). O `@local` que a linha rápida não reconhece abre o formulário com o nome já digitado.
 
 ### MarinShell — Animes (`src/pages/marin/`)
 

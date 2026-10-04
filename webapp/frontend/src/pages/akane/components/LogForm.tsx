@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  Button, Chip, DatePicker, Field, Icon, Img, Input, Modal, PersonPicker, RateInput, SegmentedControl, Select, TagInput, Textarea,
+  Button, Chip, DatePicker, Field, Icon, Img, Input, Modal, PersonPicker, RateInput, TagInput, Textarea,
   type PersonOption,
 } from '../../../design'
 import { komiApi } from '../../komi/komiApi'
@@ -11,8 +11,7 @@ import { akaneApi } from '../akaneApi'
 import { useAkane } from '../context'
 import { validateDraft, type CaptureIssues, type LogDraft } from '../lib/log'
 import type { TmdbResult } from '../types'
-
-const NEW_PLACE = '__new'
+import { PlacePicker } from './PlacePicker'
 
 export function LogForm({ initial, initialResults, issues, onClose }: {
   initial: LogDraft
@@ -26,7 +25,6 @@ export function LogForm({ initial, initialResults, issues, onClose }: {
   const [results, setResults] = useState<TmdbResult[]>(initialResults)
   const [searching, setSearching] = useState(false)
   const [searchFailed, setSearchFailed] = useState(false)
-  const [newPlace, setNewPlace] = useState({ name: '', kind: 'cinema' as 'cinema' | 'streaming' })
   const [error, setError] = useState<{ field: string; message: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const skipSearch = useRef(initialResults.length > 0 || !!initial.film)
@@ -48,13 +46,11 @@ export function LogForm({ initial, initialResults, issues, onClose }: {
     return () => { live = false; clearTimeout(t) }
   }, [query])
 
-  const placeValue = d.place ? ('id' in d.place ? d.place.id : NEW_PLACE) : ''
   const dirty = JSON.stringify(d) !== JSON.stringify(initial)
   const err = (field: string) => (error?.field === field ? error.message : null)
 
   const submit = async () => {
-    const draft: LogDraft = d.place && !('id' in d.place) ? { ...d, place: { name: newPlace.name.trim(), kind: newPlace.kind } } : d
-    if (draft.place && !('id' in draft.place) && !draft.place.name) { setError({ field: 'place', message: 'Dê um nome ao local (ex.: Cinemark).' }); return }
+    const draft = d
     const bad = validateDraft(draft, akane.today)
     if (bad) { setError(bad); return }
     setSaving(true)
@@ -121,34 +117,14 @@ export function LogForm({ initial, initialResults, issues, onClose }: {
           </Field>
         </div>
 
-        <Field label="Onde assisti" error={err('place')} hint={issues?.place && !d.place ? `Não achei o local “@${issues.place}”. Escolha um ou cadastre.` : undefined}>
+        <Field label="Onde assisti" hint={issues?.place && !d.place ? `Não achei o local “@${issues.place}”. Cadastre como cinema ou streaming.` : undefined}>
           {(a) => (
-            <div className="ds-stack">
-              <Select
-                {...a}
-                value={placeValue}
-                onChange={(e) => {
-                  const v = e.target.value
-                  set({ place: v === '' ? null : v === NEW_PLACE ? { name: issues?.place ?? newPlace.name, kind: newPlace.kind } : { id: v } })
-                  if (v === NEW_PLACE && issues?.place) setNewPlace((n) => ({ ...n, name: issues.place ?? '' }))
-                }}
-              >
-                <option value="">Não informar</option>
-                {akane.locations.map((l) => <option key={l.id} value={l.id}>{l.name} · {l.kind === 'cinema' ? 'cinema' : 'em casa'}</option>)}
-                <option value={NEW_PLACE}>Cadastrar novo local…</option>
-              </Select>
-              {placeValue === NEW_PLACE && (
-                <div className="ds-inline">
-                  <Input aria-label="Nome do novo local" value={newPlace.name} placeholder="Ex.: Cinemark" onChange={(e) => setNewPlace((n) => ({ ...n, name: e.target.value }))} />
-                  <SegmentedControl
-                    label="Tipo do local"
-                    value={newPlace.kind}
-                    options={[{ value: 'cinema', label: 'Cinema', icon: 'cinema' }, { value: 'streaming', label: 'Em casa', icon: 'couch' }]}
-                    onChange={(kind) => setNewPlace((n) => ({ ...n, kind }))}
-                  />
-                </div>
-              )}
-            </div>
+            <PlacePicker
+              id={a.id}
+              value={d.place && 'id' in d.place ? d.place.id : null}
+              onChange={(id) => set({ place: id ? { id } : null })}
+              initialQuery={issues?.place && !initial.place ? issues.place : ''}
+            />
           )}
         </Field>
 

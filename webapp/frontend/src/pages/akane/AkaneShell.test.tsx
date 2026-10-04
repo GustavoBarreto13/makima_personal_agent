@@ -57,6 +57,7 @@ beforeEach(() => {
   api.add.mockResolvedValue({ status: 'ok', id: 'm-new' })
   api.logWatch.mockResolvedValue({ status: 'ok', diary_id: 'd-new' })
   api.like.mockResolvedValue({ status: 'ok' })
+  api.createWatchLocation.mockImplementation(async (name: string, kind: string) => ({ status: 'ok', created: true, location: { id: 'l-new', name, kind } }))
   api.deleteDiary.mockResolvedValue({ status: 'ok' })
   api.delete.mockResolvedValue({ status: 'ok' })
   api.list.mockResolvedValue({ status: 'ok', movies: [MOVIE('m1', 'Perfect Blue'), MOVIE('m3', 'Duna', { year: 2021, genres: ['Ficção científica'], director: [] })] })
@@ -189,8 +190,10 @@ describe('linha rápida', () => {
   it('local desconhecido avisa e abre o formulário', async () => {
     const user = await open()
     await user.type(captureInput(), 'Perfect Blue @kinoplex{Enter}')
-    expect(await screen.findByRole('dialog', { name: 'Logar filme' })).toBeTruthy()
+    const dialog = await screen.findByRole('dialog', { name: 'Logar filme' })
     expect(await screen.findAllByText(/Não achei o local/)).not.toHaveLength(0)
+    expect((within(dialog).getByLabelText('Buscar ou cadastrar local') as HTMLInputElement).value).toBe('kinoplex')   // já digitado
+    expect(within(dialog).getByRole('button', { name: 'Streaming' })).toBeTruthy()                                     // e pronto para cadastrar
     expect(api.logWatch).not.toHaveBeenCalled()
   })
 
@@ -214,6 +217,31 @@ describe('formulário de logar', () => {
     await user.click(within(dialog).getByRole('button', { name: /Salvar/ }))
     expect(await within(dialog).findByText('Escolha o filme na lista de resultados.')).toBeTruthy()
     expect(api.logWatch).not.toHaveBeenCalled()
+  })
+
+  it('cadastra um local novo como streaming direto no formulário e a sessão sai com ele', async () => {
+    const { user, dialog } = await openForm()
+    await user.type(within(dialog).getByLabelText('Filme'), 'perfect')
+    await user.click(await within(dialog).findByRole('button', { name: /Perfect Blue/ }))
+    await user.type(within(dialog).getByLabelText('Buscar ou cadastrar local'), 'Kinoplex')
+    await user.click(within(dialog).getByRole('button', { name: 'Streaming' }))
+    await waitFor(() => expect(api.createWatchLocation).toHaveBeenCalledWith('Kinoplex', 'streaming'))
+    expect(within(dialog).getByRole('button', { name: 'Remover Kinoplex' })).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: /Salvar/ }))
+    await waitFor(() => expect(api.logWatch).toHaveBeenCalledTimes(1))
+    expect(api.logWatch.mock.calls[0][1]).toMatchObject({ watch_location_id: 'l-new' })
+  })
+
+  it('escolhe um local já cadastrado pela lista', async () => {
+    const { user, dialog } = await openForm()
+    await user.type(within(dialog).getByLabelText('Filme'), 'perfect')
+    await user.click(await within(dialog).findByRole('button', { name: /Perfect Blue/ }))
+    await user.click(within(dialog).getByLabelText('Buscar ou cadastrar local'))
+    await user.click(within(dialog).getByRole('option', { name: /Cinemark/ }))
+    await user.click(within(dialog).getByRole('button', { name: /Salvar/ }))
+    await waitFor(() => expect(api.logWatch).toHaveBeenCalledTimes(1))
+    expect(api.logWatch.mock.calls[0][1]).toMatchObject({ watch_location_id: 'l1' })
+    expect(api.createWatchLocation).not.toHaveBeenCalled()
   })
 
   it('busca no TMDB enquanto digita, escolhe o resultado e salva', async () => {

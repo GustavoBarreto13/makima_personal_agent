@@ -1,12 +1,13 @@
 // Editar uma sessão do diário: data, nota, onde, com quem, etiquetas e resenha.
 
 import { useState } from 'react'
-import { Button, DatePicker, Field, Modal, PersonPicker, RateInput, Select, TagInput, Textarea, type PersonOption } from '../../../design'
+import { Button, DatePicker, Field, Modal, PersonPicker, RateInput, TagInput, Textarea, type PersonOption } from '../../../design'
 import { toast } from '../../../design/headless/toast'
 import { komiApi } from '../../komi/komiApi'
 import { akaneApi } from '../akaneApi'
 import { useAkane } from '../context'
 import type { DiaryEntry } from '../types'
+import { PlacePicker } from './PlacePicker'
 
 export function SessionEditor({ entry, onClose }: { entry: DiaryEntry; onClose: () => void }) {
   const akane = useAkane()
@@ -14,13 +15,13 @@ export function SessionEditor({ entry, onClose }: { entry: DiaryEntry; onClose: 
   const [rating, setRating] = useState<number | null>(entry.rating)
   const [review, setReview] = useState(entry.review ?? '')
   const [tags, setTags] = useState(entry.tags)
-  const [place, setPlace] = useState(entry.watch_location?.id ?? '')
+  const [place, setPlace] = useState<string | null>(entry.watch_location?.id ?? null)
   const [people, setPeople] = useState<PersonOption[]>(entry.companions)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   const dirty = date !== entry.watched_date || rating !== entry.rating || review !== (entry.review ?? '')
-    || JSON.stringify(tags) !== JSON.stringify(entry.tags) || place !== (entry.watch_location?.id ?? '')
+    || JSON.stringify(tags) !== JSON.stringify(entry.tags) || place !== (entry.watch_location?.id ?? null)
     || JSON.stringify(people.map((p) => p.id)) !== JSON.stringify(entry.companions.map((p) => p.id))
 
   const save = async () => {
@@ -29,7 +30,7 @@ export function SessionEditor({ entry, onClose }: { entry: DiaryEntry; onClose: 
     setSaving(true)
     try {
       await akaneApi.updateDiaryEntry(entry.id, {
-        watched_date: date, ...(rating ? { rating } : {}), review, tags, companion_ids: people.map((p) => p.id), watch_location_id: place || null,
+        watched_date: date, ...(rating ? { rating } : {}), review, tags, companion_ids: people.map((p) => p.id), watch_location_id: place,
       })
       akane.reload()
       toast('Sessão atualizada', { tone: 'success' })
@@ -53,12 +54,7 @@ export function SessionEditor({ entry, onClose }: { entry: DiaryEntry; onClose: 
           <Field label="Nota">{() => <RateInput value={rating ?? 0} onChange={(v) => setRating(v || null)} />}</Field>
         </div>
         <Field label="Onde assisti">
-          {(a) => (
-            <Select {...a} value={place} onChange={(e) => setPlace(e.target.value)}>
-              <option value="">Não informar</option>
-              {akane.locations.map((l) => <option key={l.id} value={l.id}>{l.name} · {l.kind === 'cinema' ? 'cinema' : 'em casa'}</option>)}
-            </Select>
-          )}
+          {(a) => <PlacePicker id={a.id} value={place} onChange={setPlace} known={entry.watch_location ? [entry.watch_location] : []} />}
         </Field>
         <Field label="Com quem">
           {(a) => (

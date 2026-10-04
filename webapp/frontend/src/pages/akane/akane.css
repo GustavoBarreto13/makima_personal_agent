@@ -242,3 +242,9 @@
 .ax-srow .ds-t { flex: 1 1 220px; }
 .ax-sact { display: flex; align-items: center; gap: var(--ds-space-2); margin-left: auto; }
 .ds-lrow .ds-t .ax-srev { display: block; margin-top: 4px; color: var(--ds-ink-2); font-style: italic; line-height: 1.45; }
+
+/* ── Campo "Onde assisti" (PlacePicker): bloco de cadastro dentro da lista do combo ── */
+.ax-place-new { padding: 6px 8px 8px; border-top: 1px solid var(--ds-line-2); }
+.ax-place-new .ds-hint { margin: 0 0 var(--ds-space-2); }
+.ax-place-hint { padding: 4px 8px; }
+.ds-combo-list > .ax-place-new:first-child { border-top: 0; }
