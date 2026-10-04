@@ -22,6 +22,10 @@ import { MakimaShell } from './pages/makima/MakimaShell'        // Hub central d
 // para o navegador quando /design é aberta, então nada muda nos shells existentes.
 const DesignShell = lazy(() => import('./pages/design/DesignShell').then((m) => ({ default: m.DesignShell })))
 
+// Akane no Design System (spec 072): prévia em paralelo ao shell antigo de /movies. A troca de rota e a
+// remoção do legado ficam para a última fase da migração.
+const AkaneNextShell = lazy(() => import('./pages/akane-next/AkaneShell').then((m) => ({ default: m.AkaneShell })))
+
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
 // Tipo que representa os dados do usuário retornados pelo endpoint /auth/me
@@ -100,6 +104,7 @@ function App() {
         {/* Akane · Filmes — cinemateca pessoal estilo Letterboxd (spec 015).
             Antes do catch-all /* para o shell assumir as sub-rotas de /movies. */}
         <Route path="/movies/*" element={<AkaneShell />} />
+        <Route path="/movies-next/*" element={<Suspense fallback={null}><AkaneNextShell /></Suspense>} />
 
         {/* Marin · Animes — catálogo de animes com sync MAL e diário de episódios (spec 021).
             Antes do catch-all /* para o shell assumir as sub-rotas de /animes. */}

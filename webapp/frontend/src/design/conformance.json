@@ -201,24 +201,24 @@
       "mobile": false
     },
     "akane": {
-      "status": "legacy",
-      "dir": "src/pages/akane",
-      "shell": "src/pages/akane/AkaneShell.tsx",
+      "status": "migrating",
+      "dir": "src/pages/akane-next",
+      "shell": "src/pages/akane-next/AkaneShell.tsx",
       "art": "noir",
-      "appShell": false,
-      "hero": false,
-      "theme": false,
-      "icons": false,
-      "collections": [],
-      "quickCapture": null,
+      "appShell": true,
+      "hero": true,
+      "theme": true,
+      "icons": true,
+      "collections": ["akane:filmes", "akane:watchlist", "akane:diario"],
+      "quickCapture": "film-log",
       "stats": {
         "page": false,
         "metrics": []
       },
       "detail": false,
-      "prefs": false,
-      "hotkeys": false,
-      "mobile": false
+      "prefs": true,
+      "hotkeys": true,
+      "mobile": true
     },
     "marin": {
       "status": "legacy",
