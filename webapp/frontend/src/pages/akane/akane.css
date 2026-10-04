@@ -231,3 +231,14 @@
   .ax-dright { grid-column: 1 / -1; flex-wrap: wrap; justify-content: space-between; margin-top: 2px; }
   .ax-dmarks { justify-content: flex-start; }
 }
+
+/* ── Linhas de lista da Akane ── */
+/* O DS pinta o quadradinho do ícone com --ds-ch; sem ele o ícone branco some no tema claro. Só na Akane, e uma
+ * linha que defina o matiz por conta própria (estilo inline) continua mandando. */
+[data-agent="akane"] .ds-lrow { --ds-ch: var(--ds-accent-h); }
+
+/* Sessão no detalhe: o texto ocupa o que sobra e estrelas/ações descem para a linha de baixo quando falta espaço. */
+.ax-srow { flex-wrap: wrap; row-gap: var(--ds-space-2); }
+.ax-srow .ds-t { flex: 1 1 220px; }
+.ax-sact { display: flex; align-items: center; gap: var(--ds-space-2); margin-left: auto; }
+.ds-lrow .ds-t .ax-srev { display: block; margin-top: 4px; color: var(--ds-ink-2); font-style: italic; line-height: 1.45; }

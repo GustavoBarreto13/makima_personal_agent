@@ -125,9 +125,26 @@ describe('detalhe do filme', () => {
     await waitFor(() => expect(api.updateStatus).toHaveBeenLastCalledWith('m1', 'watched'))
   })
 
+  it('Sessões e Notas já aparecem na primeira página, sem clicar em aba nenhuma', async () => {
+    await detail()
+    expect(screen.getByRole('heading', { name: 'Sessões' })).toBeTruthy()
+    expect(screen.getByText('Obra-prima')).toBeTruthy()                                   // a resenha da sessão
+    expect(screen.getByRole('button', { name: /Editar sessão de/ })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Notas' })).toBeTruthy()
+    expect(screen.getByLabelText('Anotações sobre o filme')).toBeTruthy()
+    // só sobram duas abas: a página do filme e o Cofre
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Visão geral', 'Cofre (1)'])
+  })
+
+  it('filme sem sessões mostra o convite a logar dentro da página, ao lado das notas', async () => {
+    api.detail.mockResolvedValue({ ...DETAIL, diary: [] })
+    await detail()
+    expect(screen.getByText('Nenhuma sessão ainda')).toBeTruthy()
+    expect(screen.getByLabelText('Anotações sobre o filme')).toBeTruthy()
+  })
+
   it('anotações só podem ser salvas depois de mudar', async () => {
     const user = await detail()
-    await user.click(screen.getByRole('tab', { name: 'Notas' }))
     const save = screen.getByRole('button', { name: 'Salvar anotações' }) as HTMLButtonElement
     expect(save.disabled).toBe(true)
     await user.type(screen.getByLabelText('Anotações sobre o filme'), 'Rever com calma')
@@ -138,7 +155,6 @@ describe('detalhe do filme', () => {
 
   it('sessões: excluir pede confirmação e o Desfazer recria a sessão do mesmo filme', async () => {
     const user = await detail()
-    await user.click(screen.getByRole('tab', { name: /Sessões/ }))
     await user.click(screen.getByRole('button', { name: /Excluir sessão de/ }))
     await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Excluir' }))
     await waitFor(() => expect(api.deleteDiary).toHaveBeenCalledWith('dd1'))

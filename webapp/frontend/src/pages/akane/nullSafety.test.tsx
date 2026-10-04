@@ -82,7 +82,6 @@ describe('payloads reais, com null', () => {
   it('as sessões do detalhe abrem o editor mesmo sem etiquetas', async () => {
     const user = openAt('#filme/m1')
     await screen.findByRole('heading', { level: 2, name: 'Perfect Blue' })
-    await user.click(screen.getByRole('tab', { name: /Sessões/ }))
     await user.click(screen.getByRole('button', { name: /Editar sessão de/ }))
     expect(await screen.findByRole('dialog', { name: /Editar sessão/ })).toBeTruthy()
   })

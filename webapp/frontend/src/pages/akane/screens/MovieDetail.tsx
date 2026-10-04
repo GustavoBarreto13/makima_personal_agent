@@ -5,7 +5,7 @@ import { fmtDate, fmtDuration } from '../../../design/core/format'
 import { confirm } from '../../../design/headless/confirm'
 import { toast } from '../../../design/headless/toast'
 import {
-  Button, Chip, DetailPage, EmptyState, ErrorState, Field, Icon, IconButton, InfoRow, Input, LoadingState, Menu, Modal, Page, Select, Stars, StatusChip,
+  Button, Chip, DetailPage, EmptyState, ErrorState, Field, Icon, IconButton, InfoRow, Input, LoadingState, Menu, Modal, Page, SectionHeader, Select, Stars, StatusChip,
   Tag, Textarea, hueFromName, type MenuItem,
 } from '../../../design'
 import { akaneApi } from '../akaneApi'
@@ -123,6 +123,41 @@ export function MovieDetail({ id }: { id: string }) {
             content: (
               <>
                 <section className="ds-card ax-pad"><p>{movie.overview || 'Sem sinopse. Use “Atualizar dados do TMDB” ou “Editar dados”.'}</p></section>
+                <div className="ax-split">
+                  <section aria-labelledby="ax-sessoes">
+                    <SectionHeader title="Sessões" id="ax-sessoes" mono={diary.length ? String(diary.length) : undefined} />
+                    {diary.length === 0
+                      ? <EmptyState icon="movie" title="Nenhuma sessão ainda" hint="Registre quando você assistiu: data, nota, onde e com quem." action={<Button variant="primary" icon="add" onClick={() => akane.openLog({ film: asResult(movie) })}>Logar sessão</Button>} />
+                      : (
+                        <div className="ds-list">
+                          {diary.map((e) => (
+                            <div key={e.id} className="ds-lrow ax-session ax-srow">
+                              <span className="ds-lead"><Icon name={e.rewatch ? 'rewatch' : e.watch_location?.kind === 'cinema' ? 'cinema' : 'movie'} size={18} /></span>
+                              <span className="ds-t">
+                                <b>{fmtDate(e.watched_date)}</b>
+                                <span>{[e.watch_location?.name, e.companions.length ? `com ${e.companions.map((p) => p.name).join(', ')}` : null, e.rewatch ? 'revisão' : null].filter(Boolean).join(' · ') || 'Sem detalhes'}</span>
+                                {e.review && <span className="ax-srev">{e.review}</span>}
+                              </span>
+                              <span className="ax-sact">
+                                {e.rating ? <Stars value={e.rating} /> : null}
+                                <IconButton icon="edit" label={`Editar sessão de ${fmtDate(e.watched_date)}`} size={16} onClick={() => setEditing(e)} />
+                                <IconButton icon="delete" label={`Excluir sessão de ${fmtDate(e.watched_date)}`} size={16} onClick={() => void deleteSession(e, movie.title, akane.reload)} />
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                  </section>
+                  <section aria-labelledby="ax-notas">
+                    <SectionHeader title="Notas" id="ax-notas" />
+                    <div className="ds-stack">
+                      <Field label="Anotações sobre o filme" hint="Soltas, só suas. A resenha de cada sessão fica em Sessões.">
+                        {(a) => <Textarea {...a} rows={6} value={draftNotes} onChange={(e) => setNotes(e.target.value)} />}
+                      </Field>
+                      <div><Button variant="primary" icon="check" disabled={draftNotes === savedNotes} onClick={() => { void act(() => akaneApi.setNotes(movie.id, draftNotes), 'Anotações salvas').then(() => setNotes(null)) }}>Salvar anotações</Button></div>
+                    </div>
+                  </section>
+                </div>
                 {facts.length > 0 && <div className="ds-list">{facts.map((f) => <InfoRow key={f.title} title={f.title} value={f.value} />)}</div>}
                 {movie.tags.length > 0 && <div className="ds-inline">{movie.tags.map((t) => <Tag key={t}>{t}</Tag>)}</div>}
                 {people.length > 0 && (
@@ -131,39 +166,6 @@ export function MovieDetail({ id }: { id: string }) {
                   </div>
                 )}
               </>
-            ),
-          },
-          {
-            id: 'sessoes', label: `Sessões${diary.length ? ` (${diary.length})` : ''}`,
-            content: diary.length === 0
-              ? <EmptyState icon="movie" title="Nenhuma sessão ainda" hint="Registre quando você assistiu: data, nota, onde e com quem." action={<Button variant="primary" icon="add" onClick={() => akane.openLog({ film: asResult(movie) })}>Logar sessão</Button>} />
-              : (
-                <div className="ds-list">
-                  {diary.map((e) => (
-                    <div key={e.id} className="ds-lrow ax-session">
-                      <span className="ds-lead"><Icon name={e.rewatch ? 'rewatch' : e.watch_location?.kind === 'cinema' ? 'cinema' : 'movie'} size={18} /></span>
-                      <span className="ds-t">
-                        <b>{fmtDate(e.watched_date)}</b>
-                        <span>{[e.watch_location?.name, e.companions.length ? `com ${e.companions.map((p) => p.name).join(', ')}` : null, e.rewatch ? 'revisão' : null].filter(Boolean).join(' · ') || 'Sem detalhes'}</span>
-                        {e.review && <span>{e.review}</span>}
-                      </span>
-                      {e.rating ? <Stars value={e.rating} /> : null}
-                      <IconButton icon="edit" label={`Editar sessão de ${fmtDate(e.watched_date)}`} size={16} onClick={() => setEditing(e)} />
-                      <IconButton icon="delete" label={`Excluir sessão de ${fmtDate(e.watched_date)}`} size={16} onClick={() => void deleteSession(e, movie.title, akane.reload)} />
-                    </div>
-                  ))}
-                </div>
-              ),
-          },
-          {
-            id: 'notas', label: 'Notas',
-            content: (
-              <div className="ds-stack">
-                <Field label="Anotações sobre o filme" hint="Soltas, só suas. A resenha de cada sessão fica na aba Sessões.">
-                  {(a) => <Textarea {...a} rows={6} value={draftNotes} onChange={(e) => setNotes(e.target.value)} />}
-                </Field>
-                <div><Button variant="primary" icon="check" disabled={draftNotes === savedNotes} onClick={() => { void act(() => akaneApi.setNotes(movie.id, draftNotes), 'Anotações salvas').then(() => setNotes(null)) }}>Salvar anotações</Button></div>
-              </div>
             ),
           },
           {
