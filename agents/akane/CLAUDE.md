@@ -25,7 +25,8 @@ Makima (coordinator)
     ↓
 akane_agent (Agent ADK — singleton, sem MCP)
     ├── tools.py     → PostgreSQL (catálogo, diário, listas, cofre)
-    └── tools.py     → TMDB API v3 (metadados e pôsteres)
+    ├── tools.py     → TMDB API v3 (metadados e pôsteres)
+    └── tools_stats.py → estatísticas no contrato StatsPayload do Design System (spec 072, só webapp)
 
 Webapp (/movies/*)
     ↓
@@ -60,6 +61,9 @@ Catálogo principal de filmes.
 | `director` | TEXT[] | Lista de diretores |
 | `genres` | TEXT[] | Lista de gêneros |
 | `runtime` | INTEGER | Duração em minutos |
+| `original_language` | TEXT | Idioma original (ISO 639-1) — TMDB (spec 072); `''` = consultado, sem dado |
+| `countries` | TEXT[] | Países de produção (ISO 3166-1) — TMDB (spec 072) |
+| `watchlist_added_at` | TIMESTAMPTZ | Quando entrou no Quero ver (spec 072); preservada ao ver o filme, renovada ao voltar à lista; a 1ª sessão em até 5 min da criação a zera |
 | `overview` | TEXT | Sinopse |
 | `poster_url` | TEXT | URL do pôster TMDB (`w500`) |
 | `backdrop_url` | TEXT | URL do backdrop TMDB (`w1280`) |
@@ -305,6 +309,25 @@ O campo `poster_palette` em `movies` armazena a paleta calculada na inserção.
 | `add_vault_item(movie_id, type, title, url?, source?)` | Adiciona item ao Cofre |
 | `delete_vault_item(vault_id)` | Remove item do Cofre |
 
+### Estatísticas — `tools_stats.py` (spec 072, só webapp)
+
+`get_stats_payload(year=0, month=None)` devolve o **`StatsPayload`** do Design System (uma tela só: Estatísticas +
+Rewind), servido em `GET /api/movies/stats?year=&month=`. KPIs com `prev` do **mesmo trecho** do ano anterior
+(`period_bounds`): filmes, sessões, horas, revistos, nota média, cinema (%) e Quero ver adicionados/vistos.
+Regras de correção: soft delete fora da conta; **rankings contam filmes distintos** (gênero, diretor, década, país,
+idioma — rewatch não infla; companhia conta sessões); notas por filme distinto (a sessão mais recente do período);
+`watchlist_added_at` convertido para America/Sao_Paulo antes de virar dia. Extensão do domínio: `first_year`
+(limite do seletor de ano). `build_stats_payload` é pura (testável sem banco).
+
+`get_stats`/`get_rewind` (formato antigo) **seguem como tools do agente** (Telegram/Hermes), já contando filmes
+distintos em gênero/diretor/década; só as rotas HTTP `/stats` (formato antigo) e `/rewind` foram removidas.
+
+**Migração (spec 072):** `scripts/migrate_akane_stats_fields.py` (dry-run por padrão, `--apply` grava) cria as 3
+colunas novas, preenche `watchlist_added_at = created_at` para quem está hoje no Quero ver e busca idioma/países no
+TMDB (≈0,25 s por filme; filme que o TMDB não devolve fica sem idioma e é tentado na próxima rodada). No VPS, rodar de
+dentro do `makima-web` (ver `CLAUDE.md` raiz). Testes: `tests/agents/test_akane_stats.py` (puros + 8 de integração,
+que dão `DROP TABLE` — só em banco de teste).
+
 ### Cross-agent
 
 | Tool | Descrição |
@@ -477,7 +500,10 @@ Acionado quando o usuário diz "me lembra de assistir X sábado".
 ## Webapp
 
 - **Router**: `webapp/backend/routers/movies.py` — fachada fina, todos com `Depends(require_user)`
-- **Shell React**: `webapp/frontend/src/pages/akane/` — rota `/movies/*`
-- **CSS**: tokens OKLCH em `.akane-shell`, 4 acentos (default: teal), modo claro/escuro
-- **Paletas tipográficas**: 14 variantes com `[data-palette='X']` no CSS
-- **Estrelas**: cor fixa `--gold: oklch(0.815 0.135 86)` (verde Letterboxd) — independente do acento
+- **Shell React**: `webapp/frontend/src/pages/akane/` — rota `/movies/*`, no **Design System** desde a spec 072
+  (`AppShell`, `useCollection`, `QuickCapture`, `DetailPage`, `StatsPage`; `conformant`), arte **"Cinema noir"**.
+  Detalhes em `webapp/docs/FRONTEND.md` § AkaneShell.
+- **CSS**: só tokens `--ds-*` do DS + complementos `.ax-*` em `akane.css`; sem tokens/acentos/tema próprios.
+- **Pôster sem imagem**: capa tipográfica do próprio DS (`MediaCard`: gradiente + ícone). O campo `poster_palette`
+  continua gravado, mas a UI nova não o usa.
+- **Estrelas**: `Stars`/`RateInput` do DS (0–5, meia estrela, cor fixa `--ds-star*`).

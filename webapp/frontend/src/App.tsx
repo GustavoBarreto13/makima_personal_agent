@@ -11,7 +11,7 @@ import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell completo d
 import { VioletShell } from './pages/violet/VioletShell'     // Shell do diário Violet
 import { NamiShell }   from './pages/nami/NamiShell'         // Shell completo da seção de finanças (redesign)
 import { KaguyaShell } from './pages/kaguya/KaguyaShell'      // Shell de tarefas (sistema próprio, spec 011)
-import { AkaneShell }  from './pages/akane/AkaneShell'         // Shell de filmes (cinemateca pessoal, spec 015)
+import { AkaneShell }  from './pages/akane/AkaneShell'         // Shell de filmes (cinemateca pessoal, spec 015; no Design System desde a spec 072)
 import { MarinShell }  from './pages/marin/MarinShell'         // Shell de animes (catálogo Marin, spec 021)
 import { MaiShell }   from './pages/mai/MaiShell'              // Shell de séries de TV (Mai Sakurajima, spec 022)
 import { KomiShell }  from './pages/komi/KomiShell'            // Shell de pessoas e contatos (Komi, spec 014)
@@ -21,10 +21,6 @@ import { MakimaShell } from './pages/makima/MakimaShell'        // Hub central d
 // Referência viva do Design System (agente fictício). Carregada sob demanda: o CSS do padrão só vai
 // para o navegador quando /design é aberta, então nada muda nos shells existentes.
 const DesignShell = lazy(() => import('./pages/design/DesignShell').then((m) => ({ default: m.DesignShell })))
-
-// Akane no Design System (spec 072): prévia em paralelo ao shell antigo de /movies. A troca de rota e a
-// remoção do legado ficam para a última fase da migração.
-const AkaneNextShell = lazy(() => import('./pages/akane-next/AkaneShell').then((m) => ({ default: m.AkaneShell })))
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
 
@@ -104,7 +100,8 @@ function App() {
         {/* Akane · Filmes — cinemateca pessoal estilo Letterboxd (spec 015).
             Antes do catch-all /* para o shell assumir as sub-rotas de /movies. */}
         <Route path="/movies/*" element={<AkaneShell />} />
-        <Route path="/movies-next/*" element={<Suspense fallback={null}><AkaneNextShell /></Suspense>} />
+        {/* A prévia /movies-next virou o shell oficial (spec 072): quem tinha o link salvo cai em /movies. */}
+        <Route path="/movies-next/*" element={<Navigate to="/movies" replace />} />
 
         {/* Marin · Animes — catálogo de animes com sync MAL e diário de episódios (spec 021).
             Antes do catch-all /* para o shell assumir as sub-rotas de /animes. */}

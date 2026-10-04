@@ -1,70 +1,36 @@
-// Interfaces TypeScript do domínio Filmes (Akane).
-// Espelham os shapes retornados pela /api/movies/* (contracts/movies-api.md).
+// Interfaces TypeScript do domínio Filmes (Akane). Espelham os shapes da /api/movies/*
+// (contrato detalhado em specs/015-akane-filmes/contracts/movies-api.md).
 
-// ── Filme (catálogo) ────────────────────────────────────────────────────────
-
-/** Status de um filme no catálogo. */
 export type MovieStatus = 'watchlist' | 'watched'
-
-/** Origem da entrada. */
-export type MovieSource = 'manual' | 'letterboxd_rss' | 'letterboxd_csv'
-
-/** Origem da nota. */
 export type RatingSource = 'own' | 'letterboxd' | null
 
-/**
- * Filme no catálogo — campos para o grid e detalhe.
- * Retornado por GET /api/movies e GET /api/movies/{id}.
- */
+/** Filme no catálogo. */
 export interface Movie {
   id: string
   tmdb_id: number | null
   imdb_id: string | null
   letterboxd_uri: string | null
   title: string
-  normalizado: string
   year: number | null
   director: string[]
   genres: string[]
-  runtime: number | null          // Duração em minutos
-  overview: string | null         // Sinopse (até 2000 chars)
-  poster_url: string | null       // URL pôster TMDB (w500); NULL → pôster tipográfico
-  backdrop_url: string | null     // URL backdrop TMDB (w1280)
-  poster_palette: string          // Paleta do pôster tipográfico (uma das 14)
+  runtime: number | null
+  overview: string | null
+  poster_url: string | null
+  backdrop_url: string | null
+  poster_palette: string
   status: MovieStatus
-  rating: number | null           // Nota atual (0.5–5.0)
-  rating_source: RatingSource     // 'letterboxd' → exibe selo "via Letterboxd"
-  liked: boolean                  // Coração (curtir)
-  tags: string[]
-  notes: string | null            // Anotações soltas (≠ review da sessão)
-  last_watched_date: string | null // ISO date da sessão mais recente
-  times_watched: number           // Contagem de sessões (inclui rewatches)
-  source: MovieSource
-  created_at: string
-  updated_at: string
-  deleted: boolean
-}
-
-// ── Sessão do diário ────────────────────────────────────────────────────────
-
-/**
- * Entrada do diário — representa UMA sessão de visualização.
- * Um mesmo filme pode ter múltiplas entradas (rewatches).
- * Retornado por GET /api/movies/diary e dentro de GET /api/movies/{id}.
- */
-export interface DiaryEntry {
-  id: string
-  movie_id: string
-  movie_title: string | null      // Denormalizado para evitar JOIN na lista
-  poster_url: string | null       // Pôster do filme (vem do JOIN com movies)
-  poster_palette: string          // Paleta tipográfica do filme
-  watched_date: string            // ISO date
   rating: number | null
-  rewatch: boolean
-  review: string | null
+  rating_source: RatingSource
+  liked: boolean
   tags: string[]
-  companions: Array<{ id: string; name: string }>
-  watch_location: WatchLocation | null
+  notes: string | null
+  last_watched_date: string | null
+  times_watched: number
+  original_language: string | null
+  countries: string[] | null
+  watchlist_added_at: string | null
+  created_at: string
 }
 
 /** Local reutilizável onde uma sessão foi assistida. */
@@ -74,34 +40,40 @@ export interface WatchLocation {
   kind: 'cinema' | 'streaming'
 }
 
-// ── Pessoas (elenco/equipe) ─────────────────────────────────────────────────
+/** Uma sessão de visualização (um filme pode ter várias: revisões). */
+export interface DiaryEntry {
+  id: string
+  movie_id: string
+  movie_title: string | null
+  poster_url: string | null
+  poster_palette: string
+  watched_date: string
+  rating: number | null
+  rewatch: boolean
+  review: string | null
+  tags: string[]
+  companions: Array<{ id: string; name: string }>
+  watch_location: WatchLocation | null
+  /** Só no Início (atividade recente): o coração é do filme. */
+  liked?: boolean
+}
 
-/** Pessoa associada a um filme (diretor, ator, roteirista, etc.). */
 export interface MoviePerson {
   id: string
   name: string
-  role: string | null             // Ex.: "Direção", "Roteiro", "Fotografia"
-  is_person_tag: boolean          // TRUE se também é etiqueta em movies.tags
-  person_id: string | null        // RESERVADO — FK futura para hub 014
+  role: string | null
 }
 
-// ── Cofre de conteúdos ──────────────────────────────────────────────────────
-
-/** Tipo de conteúdo do Cofre. */
 export type VaultType = 'video' | 'article' | 'essay' | 'review'
 
-/** Item do Cofre — conteúdo salvo sobre um filme. */
 export interface VaultItem {
   id: string
   type: VaultType
   title: string
   url: string | null
-  source: string | null           // Domínio de exibição (ex.: youtube.com)
+  source: string | null
 }
 
-// ── Detalhe completo do filme ───────────────────────────────────────────────
-
-/** Shape completo retornado por GET /api/movies/{id}. */
 export interface MovieDetail {
   movie: Movie
   people: MoviePerson[]
@@ -109,36 +81,27 @@ export interface MovieDetail {
   diary: DiaryEntry[]
 }
 
-// ── Listas / Coleções ───────────────────────────────────────────────────────
-
-/** Metadados de uma lista (GET /api/movies/lists). */
 export interface MovieList {
   id: string
   name: string
   description: string
   accent: string | null
   ranked: boolean
-  count: number                   // Contagem de filmes na lista (calculada na query)
+  count: number
+  created_at?: string
 }
 
-/** Detalhe de uma lista com filmes. */
 export interface MovieListDetail {
   list: Omit<MovieList, 'count'>
   films: (Pick<Movie, 'id' | 'title' | 'year' | 'poster_url' | 'poster_palette' | 'rating' | 'liked'> & { position: number | null })[]
 }
 
-// ── Etiquetas ────────────────────────────────────────────────────────────────
-
-/** Etiqueta com contagem e flag de pessoa. */
 export interface Tag {
   name: string
   count: number
-  person: boolean   // TRUE = também é uma pessoa (via movie_people.is_person_tag)
+  person: boolean
 }
 
-// ── Favoritos ───────────────────────────────────────────────────────────────
-
-/** Item da vitrine de favoritos. */
 export interface FavoriteFilm {
   id: string
   title: string
@@ -147,45 +110,16 @@ export interface FavoriteFilm {
   position: number
 }
 
-// ── Estatísticas ─────────────────────────────────────────────────────────────
-
-/** Estatísticas do ano. */
-export interface Stats {
-  status: 'ok'
-  year: number
-  total_films: number
-  total_sessions: number
-  rewatches: number
-  avg_rating: number | null
-  top_genres: Array<{ genre: string; count: number }>
-  top_directors: Array<{ director: string; count: number }>
-  rating_histogram: Record<string, number>   // {"0.5": 0, "1.0": 3, ...}
-}
-
-/** Rewind (year-in-review enriquecido). */
-export interface Rewind extends Stats {
-  total_minutes: number
-  monthly: number[]              // 12 valores, jan→dez
-  liked_count: number
-  top_people: Array<{ name: string; count: number; roles: string[] }>
-  top_decade: { decade: number; count: number } | null
-  max_sessions: number           // Maior maratona (max sessões num dia)
-  favorite: { id: string; title: string; rating: number } | null
-}
-
-/** Dia do heatmap. */
 export interface HeatmapDay {
-  date: string                   // ISO date (YYYY-MM-DD)
-  count: number                  // Número de sessões naquele dia
+  date: string
+  count: number
 }
 
-// ── Tela Início ─────────────────────────────────────────────────────────────
-
-/** Shape do GET /api/movies/home. */
+/** GET /api/movies/home. */
 export interface HomeData {
   status: 'ok'
   favorites: FavoriteFilm[]
-  recent_activity: Array<DiaryEntry & { liked: boolean }>
+  recent_activity: DiaryEntry[]
   watchlist_highlight: Pick<Movie, 'id' | 'title' | 'year' | 'poster_url' | 'poster_palette' | 'director' | 'runtime'>[]
   rating_histogram: Record<string, number>
   sessions_7d: number
@@ -194,29 +128,9 @@ export interface HomeData {
   counts: { films_watched: number; diary: number; watchlist: number }
 }
 
-// ── Tweaks ──────────────────────────────────────────────────────────────────
+/** GET /api/movies/stats: o contrato do DS mais o ano da primeira sessão (limite do seletor de ano). */
+export type StatsResponse = import('../../design/core/stats').StatsPayload & { status: 'ok'; first_year: number }
 
-/** Configurações locais do Shell (localStorage). */
-export interface Tweaks {
-  theme: 'dark' | 'light'        // Tema
-  accent: 'teal' | '' | 'carmim' | 'ambar'  // Acento
-  density: 'large' | 'medium' | 'compact'   // Densidade do grid
-  postyle: 'tipografico' | 'minimal'        // Estilo do pôster tipográfico (handoff §9)
-  sort: 'recent' | 'rating' | 'title' | 'director' | 'year' | 'runtime'  // Ordenação padrão
-}
-
-/** Valores padrão de fábrica dos tweaks (iguais aos do design handoff §9). */
-export const TWEAK_DEFAULTS: Tweaks = {
-  theme:   'dark',
-  accent:  'teal',          // padrão de fábrica definido no design guide
-  density: 'compact',       // handoff: Compacto é o default de fábrica
-  postyle: 'tipografico',
-  sort:    'recent',
-}
-
-// ── Resultado de sync Letterboxd ─────────────────────────────────────────────
-
-/** Resultado do POST /api/movies/sync-letterboxd. */
 export interface SyncResult {
   status: 'ok'
   created: number
@@ -225,17 +139,13 @@ export interface SyncResult {
   errors: number
 }
 
-// ── Views internas do Shell ──────────────────────────────────────────────────
-
-/** Views possíveis do shell de filmes. */
-export type AkaneView =
-  | 'home'
-  | 'films'
-  | 'diary'
-  | 'watchlist'
-  | 'lists'
-  | 'list'
-  | 'tags'
-  | 'rewind'
-  | 'detail'
-  | 'stats'
+/** Resultado da busca no TMDB; `local_id` aponta para o filme se ele já está no catálogo. */
+export interface TmdbResult {
+  tmdb_id: number
+  title: string
+  year: number | null
+  poster_url: string | null
+  director: string[]
+  local_id: string | null
+  in_catalog: boolean
+}

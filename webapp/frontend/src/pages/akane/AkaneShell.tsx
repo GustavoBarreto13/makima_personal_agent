@@ -1,425 +1,188 @@
-// Shell principal da seção Akane — cinemateca pessoal de filmes.
-// Reformado na "reforma hi-fi" para seguir 1:1 o design handoff (spec 015):
-// sidebar 252px (marca + Logar filme + nav com contagens), topbar 56px com
-// busca pill, conteúdo com scroll e a barra "Próxima sessão" no rodapé.
-// Toda a lógica de dados (akaneApi) foi preservada — só o visual mudou.
+// Akane · Filmes — shell sobre o AppShell do Design System.
+// Guarda a rota por hash (/movies-next#diario), os locais de assistir e as ações comuns (logar, navegar),
+// que as telas leem pelo contexto.
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useNavigate } from 'react-router-dom'
+import '../../design'
+import { getAgent } from '../../design/core/agents'
+import type { CaptureResult } from '../../design/core/capture'
+import { todayISO } from '../../design/core/format'
+import { toast } from '../../design/headless/toast'
+import { usePrefs } from '../../design/headless/usePrefs'
+import { AppShell, Button, SegmentedControl, SettingRow, type NavGroup } from '../../design'
+import { akaneApi } from './akaneApi'
+import { LogForm } from './components/LogForm'
+import { AkaneContext, type AkaneCtx, type AkanePrefs, type OpenLog } from './context'
+import { canSaveQuickly, draftFromCapture, emptyDraft, pickConfident, type CaptureIssues, type LogDraft } from './lib/log'
+import { hashFor, routeFromHash, type Route, type ViewId } from './lib/routes'
+import { submitLog } from './lib/submit'
+import { Diary } from './screens/Diary'
+import { Films, Watchlist } from './screens/Films'
+import { Home } from './screens/Home'
+import { Lists, ListDetail } from './screens/Lists'
+import { MovieDetail } from './screens/MovieDetail'
+import { Stats } from './screens/Stats'
+import { Tags } from './screens/Tags'
+import type { TmdbResult, WatchLocation } from './types'
 import './akane.css'
 
-// API e tipos
-import { akaneApi } from './akaneApi'
-import type { AkaneView, Movie, Tweaks } from './types'
-import { TWEAK_DEFAULTS } from './types'
+const AGENT = getAgent('akane')
 
-// Telas
-import { FilmsScreen }      from './screens/FilmsScreen'
-import { DiaryScreen }      from './screens/DiaryScreen'
-import { WatchlistScreen }  from './screens/WatchlistScreen'
-import { StatsScreen }      from './screens/StatsScreen'
-import { HomeScreen }       from './screens/HomeScreen'
-import { RewindScreen }     from './screens/RewindScreen'
-import { ListsScreen }      from './screens/ListsScreen'
-import { TagsScreen }       from './screens/TagsScreen'
-import { MovieDetailScreen } from './screens/MovieDetailScreen'
-
-// Modais e componentes
-import { LogModal } from './modals/LogModal'
-import { Toast }    from './components/Toast'
-import { NextBar }  from './components/NextBar'
-import { TweaksPanel } from './TweaksPanel'
-import { Icon, type IconName } from './ui/Icon'
-import { useDocumentTitle } from '../../hooks/useDocumentTitle'
-import { AGENT_TABS } from '../../lib/agentTabs'
-
-// ── Constantes de navegação ──────────────────────────────────────────────────
-
-// Grupos da sidebar — ordem e ícones do design handoff §4.
-// A tela Stats é adição do app real (não existe no protótipo) e entra no
-// grupo Coleção com o mesmo tratamento visual.
-const NAV_CINEMATECA: { id: AkaneView; icon: IconName; label: string }[] = [
-  { id: 'home',      icon: 'inicio',    label: 'Início'    },
-  { id: 'films',     icon: 'filmes',    label: 'Filmes'    },
-  { id: 'diary',     icon: 'diario',    label: 'Diário'    },
-  { id: 'watchlist', icon: 'watchlist', label: 'Quero ver' },
+const NAV: NavGroup[] = [
+  {
+    label: 'Cinemateca',
+    items: [
+      { id: 'home', label: 'Início', icon: 'home', key: 'h' },
+      { id: 'diary', label: 'Diário', icon: 'days', key: 'd' },
+      { id: 'films', label: 'Filmes', icon: 'movie', key: 'f' },
+      { id: 'watchlist', label: 'Quero ver', icon: 'watchlist', key: 'q' },
+    ],
+  },
+  {
+    label: 'Coleção',
+    items: [
+      { id: 'lists', label: 'Listas', icon: 'list' },
+      { id: 'tags', label: 'Etiquetas', icon: 'tag' },
+      { id: 'stats', label: 'Estatísticas', icon: 'stats', key: 'e' },
+    ],
+  },
 ]
 
-const NAV_COLECAO: { id: AkaneView; icon: IconName; label: string }[] = [
-  { id: 'lists',  icon: 'listas', label: 'Listas'    },
-  { id: 'tags',   icon: 'tags',   label: 'Etiquetas' },
-  { id: 'rewind', icon: 'rewind', label: 'Rewind'    },
-  { id: 'stats',  icon: 'clock',  label: 'Stats'     },
-]
-
-// Mapeamento de view → título do topbar
-const TITLES: Record<string, string> = {
-  home:      'Início',
-  films:     'Filmes',
-  diary:     'Diário',
-  watchlist: 'Quero ver',
-  lists:     'Listas',
-  tags:      'Etiquetas',
-  rewind:    'Rewind',
-  stats:     'Estatísticas',
-  detail:    'Filme',
+const TITLES: Record<ViewId, string> = {
+  home: 'Início', diary: 'Diário', films: 'Filmes', watchlist: 'Quero ver', lists: 'Listas', tags: 'Etiquetas', stats: 'Estatísticas',
+}
+const SUBTITLES: Record<ViewId, string> = {
+  home: 'Sua cinemateca', diary: 'Cada sessão', films: 'O catálogo todo', watchlist: 'Para ver depois', lists: 'Coleções', tags: 'Etiquetas', stats: 'Retrospectiva',
 }
 
-// Views que têm conteúdo filtrável localmente — nas demais, digitar navega para "films"
-const FILTERABLE_VIEWS = new Set(['films', 'diary', 'watchlist', 'lists', 'tags'])
+const ART_OPTIONS = [{ value: 'default', label: 'Padrão' }, { value: 'noir', label: 'Cinema noir' }]
 
-// ── Helpers de tweaks (localStorage) ────────────────────────────────────────
+interface LogState { initial: LogDraft; results: TmdbResult[]; issues?: CaptureIssues }
 
-const TWEAKS_KEY = 'akane-tweaks'
-
-function loadTweaks(): Tweaks {
-  try {
-    const raw = localStorage.getItem(TWEAKS_KEY)
-    if (!raw) return { ...TWEAK_DEFAULTS }
-    // O spread com os defaults protege contra chaves novas (ex.: postyle)
-    // ausentes em preferências salvas antes da reforma
-    return { ...TWEAK_DEFAULTS, ...JSON.parse(raw) }
-  } catch {
-    return { ...TWEAK_DEFAULTS }
-  }
-}
-
-function saveTweaks(t: Tweaks) {
-  try {
-    localStorage.setItem(TWEAKS_KEY, JSON.stringify(t))
-  } catch {}
-}
-
-// ── Shell ────────────────────────────────────────────────────────────────────
-
-/**
- * Shell raiz da seção Akane.
- * Renderiza sidebar, topbar, tela ativa, NextBar, LogModal, Toast e Tweaks.
- */
 export function AkaneShell() {
-  useDocumentTitle(AGENT_TABS.akane.title, AGENT_TABS.akane.icon)
-
-  // ── Navegação interna (state-based, a URL não muda) ───────────────────────
-  const [view, setView] = useState<AkaneView>('home')
-  // ID do filme em detalhe (usado quando view='detail')
-  const [detailId, setDetailId] = useState<string | null>(null)
-  // Tag ativa (filtro de tag clicada na tela de etiquetas)
-  const [activeTag, setActiveTag] = useState<string | null>(null)
-  // Query da caixa de busca da topbar — contextual à tela ativa
-  const [query, setQuery] = useState('')
-  // Ref do container de scroll: navegar zera o scrollTop (regra do handoff)
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  // ── Tweaks (localStorage) ─────────────────────────────────────────────────
-  const [tweaks, setTweaks] = useState<Tweaks>(loadTweaks)
-  useEffect(() => { saveTweaks(tweaks) }, [tweaks])
-
-  /** Atualiza um tweak individual (repassado ao TweaksPanel). */
-  const setTweak = useCallback(<K extends keyof Tweaks>(key: K, value: Tweaks[K]) => {
-    setTweaks(t => ({ ...t, [key]: value }))
-  }, [])
-
-  // ── Modal de log de sessão ────────────────────────────────────────────────
-  const [logOpen, setLogOpen] = useState(false)
-  const [logPrefilledId,    setLogPrefilledId]    = useState<string | null>(null)
-  const [logPrefilledTitle, setLogPrefilledTitle] = useState<string | null>(null)
-
-  /** Abre o modal de log — com ou sem filme pré-selecionado. */
-  const openLog = useCallback((movieId?: string, title?: string) => {
-    setLogPrefilledId(movieId ?? null)
-    setLogPrefilledTitle(title ?? null)
-    setLogOpen(true)
-  }, [])
-
-  // ── Toast ─────────────────────────────────────────────────────────────────
-  const [toast, setToast] = useState<string | null>(null)
-
-  /** Exibe um toast por 2.6 segundos (duração do handoff). */
-  const showToast = useCallback((msg: string) => {
-    setToast(msg)
-    setTimeout(() => setToast(null), 2600)
-  }, [])
-
-  // ── Sincronização manual com o Letterboxd (spec 051, US3) ─────────────────
+  const navigate = useNavigate()
+  const today = useMemo(() => todayISO(), [])
+  const [prefs, setPrefs] = usePrefs<AkanePrefs>('akane', { art: AGENT.art ?? 'noir', layout: 'grid' })
+  const [route, setRoute] = useState<Route>(() => routeFromHash(window.location.hash))
+  const [rev, setRev] = useState(0)
+  const [locations, setLocations] = useState<WatchLocation[]>([])
+  const [log, setLog] = useState<LogState | null>(null)
   const [syncing, setSyncing] = useState(false)
 
-  const syncLetterboxd = useCallback(async () => {
-    if (syncing) return
+  const reload = useCallback(() => setRev((n) => n + 1), [])
+
+  useEffect(() => {
+    const onHash = () => setRoute(routeFromHash(window.location.hash))
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  // Locais de assistir: recarregam a cada gravação (um novo local pode ter nascido). Falhar não trava nada:
+  // a linha rápida só deixa de reconhecer "@local" e abre o formulário.
+  useEffect(() => {
+    let live = true
+    akaneApi.watchLocations().then((r) => { if (live) setLocations(r.locations) }).catch(() => { /* sem locais: segue */ })
+    return () => { live = false }
+  }, [rev])
+
+  const goto = useCallback((to: Route | ViewId) => {
+    const next: Route = typeof to === 'string' ? { view: to } : to
+    setRoute(next)
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}#${hashFor(next)}`)
+  }, [])
+
+  const save = useCallback(async (draft: LogDraft) => {
+    const result = await submitLog(draft, akaneApi)
+    reload()
+    toast(result.message, {
+      tone: 'success',
+      undo: () => { result.undo().then(reload).catch(() => toast('Não foi possível desfazer. Confira no Diário.', { tone: 'error' })) },
+    })
+  }, [reload])
+
+  const openLog = useCallback((open: OpenLog = {}) => {
+    const base = open.draft ?? emptyDraft(today)
+    setLog({ initial: open.film ? { ...base, film: open.film, title: open.film.title } : base, results: [] })
+  }, [today])
+
+  const quickLog = useCallback((r: CaptureResult, forceForm = false): boolean => {
+    const { draft, issues } = draftFromCapture(r, { today, locations })
+    if (!draft.title) { toast('Escreva o título do filme.'); return false }
+    void (async () => {
+      let results: TmdbResult[] = []
+      try { results = (await akaneApi.tmdbSearch(draft.title)).results } catch { /* sem TMDB: o formulário deixa buscar de novo */ }
+      const sure = pickConfident(draft.title, results)
+      const d = sure ? { ...draft, film: sure } : draft
+      if (forceForm || !sure || !canSaveQuickly(d, issues, today)) {
+        if (issues.place) toast(`Não achei o local “@${issues.place}”. Escolha ou cadastre no formulário.`)
+        setLog({ initial: d, results, issues })
+        return
+      }
+      await save(d)
+    })().catch((e: unknown) => toast(e instanceof Error ? e.message : 'Não foi possível salvar.', { tone: 'error' }))
+    return true
+  }, [today, locations, save])
+
+  const sync = useCallback(async () => {
     setSyncing(true)
     try {
       const r = await akaneApi.syncLetterboxd()
-      showToast(`Sincronizado: ${r.created} novos, ${r.updated} atualizados, ${r.skipped} sem mudança.`)
-    } catch {
-      showToast('Falha ao sincronizar com o Letterboxd.')
-    } finally {
-      setSyncing(false)
-    }
-  }, [syncing, showToast])
+      reload()
+      toast(`Letterboxd: ${r.created} novos, ${r.updated} atualizados`, { tone: 'success' })
+    } catch { toast('Não foi possível sincronizar com o Letterboxd.', { tone: 'error' }) }
+    setSyncing(false)
+  }, [reload])
 
-  // ── Dados globais do shell: watchlist (NextBar) + contagens da nav ────────
-  // A watchlist COMPLETA (não só a contagem) alimenta a barra "Próxima sessão".
-  const [watchlist, setWatchlist] = useState<Movie[]>([])
-  // Contagens dos badges da sidebar (filmes vistos / sessões do diário)
-  const [counts, setCounts] = useState<{ films: number; diary: number } | null>(null)
+  const ctx = useMemo<AkaneCtx>(
+    () => ({ rev, reload, today, route, goto, locations, prefs, setPrefs, openLog, save, quickLog }),
+    [rev, reload, today, route, goto, locations, prefs, setPrefs, openLog, save, quickLog],
+  )
 
-  /** Recarrega watchlist + contagens (chamado no mount e após cada log). */
-  const refreshShellData = useCallback(() => {
-    akaneApi.watchlist()
-      // Respostas antigas ou incompletas não podem quebrar a navegação inteira.
-      .then(res => setWatchlist(res.movies ?? []))
-      .catch(() => setWatchlist([]))
-    akaneApi.home()
-      .then(h => setCounts({ films: h.counts.films_watched, diary: h.counts.diary }))
-      .catch(() => setCounts(null))
-  }, [])
-
-  useEffect(() => { refreshShellData() }, [refreshShellData])
-
-  // ── Navegação ─────────────────────────────────────────────────────────────
-
-  /** Zera o scroll do conteúdo (toda navegação volta ao topo). */
-  const resetScroll = () => { if (scrollRef.current) scrollRef.current.scrollTop = 0 }
-
-  const goToDetail = useCallback((id: string) => {
-    setDetailId(id)
-    setView('detail')
-    setQuery('')
-    resetScroll()
-  }, [])
-
-  /** Volta para a tela anterior ao detalhe (filmes por padrão). */
-  const goBack = useCallback(() => {
-    setView('films')
-    setDetailId(null)
-    setQuery('')
-    resetScroll()
-  }, [])
-
-  /** Navega para outra view da sidebar, sempre limpando detalhe e busca. */
-  const goToView = useCallback((v: AkaneView) => {
-    setView(v)
-    setDetailId(null)
-    setActiveTag(null)
-    setQuery('')
-    resetScroll()
-  }, [])
-
-  // Item da nav destacado: telas "filhas" destacam o pai (regra do handoff)
-  const activeNav = view === 'detail' ? 'films' : view
-
-  // ── Tela ativa ────────────────────────────────────────────────────────────
-  function renderContent() {
-    switch (view) {
-      case 'home':
-        return (
-          <HomeScreen
-            tweaks={tweaks}
-            onSelectMovie={goToDetail}
-            onLog={(id, title) => openLog(id, title)}
-            onToast={showToast}
-            onOpenLog={() => openLog()}
-            onGoToView={goToView}
-          />
-        )
-      case 'films':
-        return (
-          <FilmsScreen
-            tweaks={tweaks}
-            onSelectMovie={goToDetail}
-            initialTag={activeTag}
-            query={query}
-          />
-        )
-      case 'diary':
-        return <DiaryScreen onSelectMovie={goToDetail} query={query} />
-      case 'watchlist':
-        return (
-          <WatchlistScreen
-            onSelectMovie={goToDetail}
-            onLogFilm={(id, title) => openLog(id, title)}
-            query={query}
-          />
-        )
-      case 'stats':
-        return <StatsScreen />
-      case 'detail':
-        return detailId ? (
-          <MovieDetailScreen
-            movieId={detailId}
-            onBack={goBack}
-            onLog={(id, title) => openLog(id, title)}
-            onToast={showToast}
-          />
-        ) : null
-      case 'lists':
-        return <ListsScreen onSelectMovie={goToDetail} query={query} />
-      case 'tags':
-        return (
-          <TagsScreen
-            onSelectTag={(tag) => {
-              setActiveTag(tag)
-              setView('films')
-              setQuery('')
-              resetScroll()
-            }}
-            query={query}
-          />
-        )
-      case 'rewind':
-        return <RewindScreen />
-      default:
-        return null
-    }
+  const SCREENS: Record<ViewId, () => ReactElement> = {
+    home: () => <Home />, diary: () => <Diary />, films: () => <Films />, watchlist: () => <Watchlist />,
+    lists: () => <Lists />, tags: () => <Tags />, stats: () => <Stats />,
   }
-
-  /** Renderiza um item da nav (ícone + label + badge de contagem opcional). */
-  const navItem = (item: { id: AkaneView; icon: IconName; label: string }) => {
-    // Contagens: filmes vistos, sessões do diário e tamanho da watchlist
-    const count =
-      item.id === 'films'     ? counts?.films :
-      item.id === 'diary'     ? counts?.diary :
-      item.id === 'watchlist' ? (watchlist.length || null) :
-      null
-    return (
-      <button
-        key={item.id}
-        className={'ak-nav-item' + (activeNav === item.id ? ' ak-active' : '')}
-        onClick={() => goToView(item.id)}
-        aria-current={view === item.id ? 'page' : undefined}
-      >
-        <Icon name={item.icon} /> <span>{item.label}</span>
-        {count != null && count > 0 && <span className="ak-nav-count">{count}</span>}
-      </button>
-    )
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────────
+  // Filme aberto (#filme/<id>) e lista aberta (#lista/<id>) ficam na URL; senão vale a tela do menu.
+  const body = route.movieId ? <MovieDetail id={route.movieId} /> : route.listId ? <ListDetail id={route.listId} /> : SCREENS[route.view]()
 
   return (
-    // Tema/acento/densidade/estilo-do-pôster entram como data-attrs no root
-    // (o akane.css escopa todos os overrides em .akane-shell[data-*])
-    <div
-      className="akane-shell"
-      data-theme={tweaks.theme}
-      data-accent={tweaks.accent || undefined}
-      data-density={tweaks.density}
-      data-postyle={tweaks.postyle}
-    >
-      <div className="ak-app" data-footbar={watchlist.length > 0 ? 'on' : 'off'}>
-
-        {/* ══ SIDEBAR ════════════════════════════════════════════════════════ */}
-        <aside className="ak-side">
-          {/* Marca: retrato da Akane com glow do acento + nome/função */}
-          <div className="ak-side-brand">
-            <div className="ak-brand-mark">
-              <img
-                src="/akane-hero.png"
-                alt="Akane Kurokawa"
-                onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+    <AkaneContext.Provider value={ctx}>
+      <AppShell
+        agent={{ id: 'akane', name: AGENT.name, subtitle: 'Filmes · Cinemateca', portrait: AGENT.portrait }}
+        nav={NAV}
+        active={route.movieId ? 'films' : route.listId ? 'lists' : route.view}
+        onNavigate={(id) => goto(id as ViewId)}
+        mobileTabs={['home', 'diary', 'films']}
+        primary={{ label: 'Logar filme', icon: 'add', key: 'n', onClick: () => openLog() }}
+        title={route.movieId ? 'Filme' : route.listId ? 'Lista' : TITLES[route.view]}
+        subtitle={route.movieId || route.listId ? 'Detalhe' : SUBTITLES[route.view]}
+        onGoAgent={(to) => navigate(to)}
+        art={{ value: prefs.art, options: ART_OPTIONS, onChange: (art) => setPrefs({ art }) }}
+        artValue={prefs.art}
+        commands={[
+          { id: 'akane.log', label: 'Logar um filme', icon: 'movie', keywords: 'assisti sessão registrar', run: () => openLog() },
+          { id: 'akane.sync', label: 'Sincronizar com o Letterboxd', icon: 'refresh', keywords: 'letterboxd rss importar', run: () => { void sync() } },
+        ]}
+        preferences={
+          <>
+            <SettingRow title="Mostrar filmes como" help="Vale para Filmes e Quero ver.">
+              <SegmentedControl
+                label="Layout de Filmes e Quero ver"
+                value={prefs.layout}
+                options={[{ value: 'grid', label: 'Pôsteres', icon: 'grid' }, { value: 'list', label: 'Lista', icon: 'list' }]}
+                onChange={(layout) => setPrefs({ layout })}
               />
-            </div>
-            <div className="ak-brand-text">
-              <div className="ak-brand-name">Akane</div>
-              <div className="ak-brand-role">Filmes</div>
-            </div>
-          </div>
-
-          {/* CTA principal — sempre visível */}
-          <button className="ak-side-log-btn" onClick={() => openLog()} aria-label="Logar sessão de filme">
-            <Icon name="plus" /> <span>Logar filme</span>
-          </button>
-
-          {/* Navegação em 2 grupos (Cinemateca / Coleção) + ações */}
-          <nav className="ak-side-nav">
-            <div className="ak-nav-group-label">Cinemateca</div>
-            {NAV_CINEMATECA.map(navItem)}
-
-            <div className="ak-nav-group-label">Coleção</div>
-            {NAV_COLECAO.map(navItem)}
-
-            {/* Sync manual do Letterboxd — extra do app real, estilizado como
-                item da nav para não quebrar o ritmo visual da sidebar */}
-            <div className="ak-nav-group-label">Ações</div>
-            <button
-              className={'ak-nav-item' + (syncing ? ' ak-syncing' : '')}
-              onClick={syncLetterboxd}
-              disabled={syncing}
-              aria-label="Sincronizar com o Letterboxd"
-            >
-              <Icon name="sync" />
-              <span>{syncing ? 'Sincronizando…' : 'Sync Letterboxd'}</span>
-            </button>
-          </nav>
-
-          {/* Rodapé: voltar ao hub */}
-          <div className="ak-side-foot">
-            <a className="ak-back-makima" href="/" title="Voltar à página principal">
-              <span className="ak-dot" /> Voltar à Makima
-            </a>
-          </div>
-        </aside>
-
-        {/* ══ ÁREA PRINCIPAL ═════════════════════════════════════════════════ */}
-        <main className="ak-main">
-          {/* Topbar: título da rota + busca pill */}
-          <div className="ak-topbar">
-            <span className="ak-topbar-title">{TITLES[view] ?? 'Akane'}</span>
-            <div className="ak-topbar-spacer" />
-            <div className="ak-search">
-              <Icon name="search" />
-              <input
-                value={query}
-                placeholder="Buscar título ou diretor…"
-                aria-label="Buscar na Akane"
-                onChange={e => {
-                  const val = e.target.value
-                  setQuery(val)
-                  // Telas sem lista própria: digitar navega para Filmes filtrado
-                  if (val && !FILTERABLE_VIEWS.has(view)) {
-                    setView('films')
-                    setDetailId(null)
-                  }
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Conteúdo com scroll */}
-          <div className="ak-scroll" ref={scrollRef}>
-            {renderContent()}
-          </div>
-        </main>
-
-        {/* ══ BARRA "PRÓXIMA SESSÃO" ═════════════════════════════════════════ */}
-        <NextBar
-          watchlist={watchlist}
-          onOpenDetail={goToDetail}
-          onLog={(id, title) => openLog(id, title)}
-        />
-      </div>
-
-      {/* ══ MODAIS E OVERLAYS ════════════════════════════════════════════════ */}
-
-      {logOpen && (
-        <LogModal
-          prefilledMovieId={logPrefilledId}
-          prefilledTitle={logPrefilledTitle}
-          onClose={() => {
-            setLogOpen(false)
-            setLogPrefilledId(null)
-            setLogPrefilledTitle(null)
-          }}
-          onSuccess={(msg) => {
-            showToast(msg)
-            // Logar pode tirar um filme da watchlist e muda as contagens
-            refreshShellData()
-          }}
-        />
-      )}
-
-      {toast && <Toast message={toast} />}
-
-      {/* Painel de tweaks flutuante (Tema/Acento/Densidade/Pôster/Ordenação) */}
-      <TweaksPanel tweaks={tweaks} setTweak={setTweak} />
-    </div>
+            </SettingRow>
+            <SettingRow title="Letterboxd" help="Busca as sessões novas do seu perfil (acontece sozinho todo dia).">
+              <Button icon="refresh" disabled={syncing} onClick={() => void sync()}>{syncing ? 'Sincronizando…' : 'Sincronizar agora'}</Button>
+            </SettingRow>
+          </>
+        }
+      >
+        {body}
+        {log && <LogForm key={log.initial.film?.tmdb_id ?? log.initial.title} initial={log.initial} initialResults={log.results} issues={log.issues} onClose={() => setLog(null)} />}
+      </AppShell>
+    </AkaneContext.Provider>
   )
 }

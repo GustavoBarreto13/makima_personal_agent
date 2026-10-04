@@ -1,6 +1,6 @@
 # Spec 072 — Akane no Design System
 
-**Status:** em andamento (fase 1 de 5 entregue: backend de estatísticas).
+**Status:** entregue (fases 1–5). Migração aplicada no VPS em 04/out/2026. Pendente: conferir no navegador e rodar os testes de integração SQL em banco de teste (ver `ROADMAP.md`).
 **Branch:** `feat/072-akane-ds` (a partir do `master`).
 **Plano de execução:** cinco fases, um commit por fase, como na Nami (spec 070/071).
 
@@ -34,8 +34,8 @@ muda, nada é linkável). As estatísticas também não fecham com o padrão:
   mesmo trecho do ano anterior, sessões por dia/mês, distribuição de notas por **filme distinto**, rankings
   (gêneros, diretores, décadas, países, idiomas, companhia), recordes e filmes com coração. Datas em
   America/Sao_Paulo, soft delete fora da conta.
-- `GET /api/movies/stats/payload?year=&month=`. O `/stats` antigo continua enquanto o shell legado existir
-  (ele o consome); a fase 5 move o contrato novo para `/stats`.
+- `GET /api/movies/stats?year=&month=` (o contrato novo ocupou o lugar do `/stats` antigo e do `/rewind`, removidos
+  junto com o shell legado; durante o rollout o payload ficou em `/stats/payload`).
 - `get_stats`/`get_rewind` passam a contar filmes distintos em gênero, diretor e década.
 - `watchlist_added_at` nasce com o filme no Quero ver, é preservada ao ver o filme e renovada ao voltar para a lista.
   Logar a 1ª sessão em até 5 min da criação (fluxo "logar direto", que passa por `add_movie` como `watchlist`) zera a

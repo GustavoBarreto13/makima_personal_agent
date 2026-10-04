@@ -45,7 +45,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + GTD/revisão semanal (034/035) + Foco gameficado (037/062) + modo férias (065) | ✅ Fases 2, 011–020, 024–026, 029–030, 034–039, 062, 065 | `agents/kaguya/CLAUDE.md` |
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada + Tutor de Idiomas (031) + Conselho do Dia (061) | ✅ Fases 027, 031, 061 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) | ✅ Fase 5a | `agents/frieren/CLAUDE.md` |
-| `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015 | `agents/akane/CLAUDE.md` |
+| `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015, 072 | `agents/akane/CLAUDE.md` |
 | `agents/marin/` | Animes (PostgreSQL + Jikan/AniList + MAL OAuth) | ✅ Fase 021 | `agents/marin/CLAUDE.md` |
 | `agents/mai/` | Séries de TV (PostgreSQL + TMDB API v3) | ✅ Fase 022 | `agents/mai/CLAUDE.md` |
 | `agents/komi/` | Pessoas e contatos (PostgreSQL) | ✅ Fase 014 | `agents/komi/CLAUDE.md` |
@@ -256,6 +256,7 @@ makima_personal_agent/
 │   ├── akane/           # agente de filmes — Fase 015 ✅
 │   │   ├── __init__.py
 │   │   ├── tools.py     # PostgreSQL + TMDB + sync Letterboxd (RSS/CSV)
+│   │   ├── tools_stats.py # estatísticas no contrato StatsPayload do DS — filmes distintos, 8 métricas (spec 072)
 │   │   ├── calendar_provider.py # fonte "akane" do Calendar Hub — sessões + filmes vistos (spec 069)
 │   │   ├── agent.py     # akane_agent — singleton
 │   │   ├── schema_pg.sql # schema das 7 tabelas PostgreSQL
@@ -338,6 +339,7 @@ makima_personal_agent/
 │   ├── sync_gcal_mirror.py    # reconcilia Calendar Hub → Google Calendar (job gcal_mirror + backfill manual) — spec 069
 │   ├── import_letterboxd_csv.py # importação one-time do CSV histórico do Letterboxd
 │   ├── backup_postgres.py     # pg_dump → Google Cloud Storage (agendado pelo scheduler/ — job diário)
+│   ├── migrate_akane_stats_fields.py # idioma/países (TMDB) e watchlist_added_at dos filmes — spec 072 (dry-run por padrão; já aplicada no VPS)
 │   ├── send_lucy_digest.py    # digest matinal de emails (Lucy) — agendado pelo scheduler/ (spec 032)
 │   ├── seed_mobility_apps.py  # semeia agents/yato/mobility_apps a partir do research.md — spec 066
 │   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)

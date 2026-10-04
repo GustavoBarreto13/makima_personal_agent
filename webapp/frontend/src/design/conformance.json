@@ -201,9 +201,9 @@
       "mobile": false
     },
     "akane": {
-      "status": "migrating",
-      "dir": "src/pages/akane-next",
-      "shell": "src/pages/akane-next/AkaneShell.tsx",
+      "status": "conformant",
+      "dir": "src/pages/akane",
+      "shell": "src/pages/akane/AkaneShell.tsx",
       "art": "noir",
       "appShell": true,
       "hero": true,

@@ -43,7 +43,6 @@ from agents.akane.tools import (
     get_watchlist,         # Todos os filmes com status='watchlist'
     get_diary,             # Histórico de sessões cronológico
     get_movie_detail,      # Detalhe completo: filme + people + vault + diary
-    get_stats,             # Estatísticas do ano (vazio-seguro)
     delete_movie,          # Soft delete
     delete_diary_entry,    # Remove sessão e recalcula contadores
     refresh_movie_metadata,  # Rebusca metadados no TMDB — "Buscar Dados" (spec 050)
@@ -52,7 +51,6 @@ from agents.akane.tools import (
     reorder_diary_entries,   # Reordena sessões do mesmo dia (spec 050)
     # ── Agregações (Onda 4) ────────────────────────────────────────────────────
     get_home,              # Todos os blocos do Início numa chamada
-    get_rewind,            # Year-in-review enriquecido
     get_heatmap,           # Sessões/dia do ano para o heatmap
     get_top_people,        # Pessoas com mais filmes no catálogo
     get_favorites,         # Vitrine de favoritos (ordered by position)
@@ -327,31 +325,12 @@ def get_diary_endpoint(
 @router.get("/stats")
 def get_stats_endpoint(
     year: Optional[int] = Query(default=None, description="Ano de referência (padrão: ano atual)"),
-    user: dict = Depends(require_user),
-) -> dict:
-    """Retornar estatísticas de filmes do ano (vazio-seguro — SC-006).
-
-    Args:
-        year: Ano (padrão: ano atual).
-        user: Usuário autenticado.
-
-    Returns:
-        Dict com total_films, total_sessions, avg_rating, top_genres,
-        top_directors, rating_histogram.
-    """
-    return get_stats(year=year)
-
-
-@router.get("/stats/payload")
-def get_stats_payload_endpoint(
-    year: Optional[int] = Query(default=None, description="Ano de referência (padrão: ano atual)"),
     month: Optional[int] = Query(default=None, ge=1, le=12, description="Mês 1-12 (padrão: ano inteiro)"),
     user: dict = Depends(require_user),
 ) -> dict:
     """Estatísticas + Rewind no contrato `StatsPayload` do Design System (spec 072).
 
-    Convive com `/stats` (formato antigo) enquanto o shell legado existir; a fase de troca
-    do shell move este contrato para `/stats`.
+    Substituiu o antigo `/stats` e o `/rewind`: uma tela só, um endpoint só.
 
     Args:
         year: Ano (padrão: ano atual).
@@ -380,20 +359,6 @@ def get_home_endpoint(user: dict = Depends(require_user)) -> dict:
         Dict com todos os blocos do Início.
     """
     return get_home()
-
-
-@router.get("/rewind")
-def get_rewind_endpoint(
-    year: Optional[int] = Query(default=None, description="Ano do Rewind (padrão: ano atual)"),
-    user: dict = Depends(require_user),
-) -> dict:
-    """Retornar o year-in-review com destaques do ano.
-
-    Returns:
-        Dict com stats + total_minutes, monthly[12], top_people,
-        top_decade, max_sessions, favorite, liked_count.
-    """
-    return get_rewind(year=year)
 
 
 @router.get("/heatmap")

@@ -12,7 +12,7 @@ Dez Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
 | `nami/` | `NamiShell.tsx` (sobre o `AppShell` do DS) | `namiApi` em `nami/namiApi.ts` | `nami.css` (só complementos do DS, tokens `--ds-*`) | `/nami/*` |
 | `frieren/` | `FrierenShell.tsx` | `booksApi` em `lib/api.ts` | `frieren.css` | `/books/*` |
 | `kaguya/` | `KaguyaShell.tsx` | `kaguyaApi` em `kaguya/kaguyaApi.ts` | `kaguya.css` | `/tasks/*` |
-| `akane/` | `AkaneShell.tsx` | `akaneApi` em `akane/akaneApi.ts` | `akane.css` | `/movies/*` |
+| `akane/` | `AkaneShell.tsx` (sobre o `AppShell` do DS) | `akaneApi` em `akane/akaneApi.ts` | `akane.css` (só complementos do DS, tokens `--ds-*`) | `/movies/*` |
 | `marin/` | `MarinShell.tsx` | `marinApi` em `marin/marinApi.ts` | `marin.css` | `/animes/*` |
 | `mai/` | `MaiShell.tsx` | `maiApi` em `mai/maiApi.ts` | `mai.css` | `/series/*` |
 | `komi/` | `KomiShell.tsx` | `komiApi` em `komi/komiApi.ts` | `komi.css` | `/people/*` |

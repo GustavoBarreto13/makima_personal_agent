@@ -216,8 +216,8 @@ Encontrados na auditoria que originou o padrão:
   key duplicada "Dez" (`components/Heatmap.tsx:68`); Stats e Rewind duplicados.
 - **Mai**: `date.today()` (`tools.py:776,893`); séries apagadas entram na conta (`:779-886`);
   sem Rewind.
-- **Akane**: gêneros, diretores e décadas contam sessões (rewatches inflam,
-  `tools.py:1351,1369,1924`); Stats é subconjunto do Rewind.
+- ~~**Akane**: gêneros, diretores e décadas contam sessões; Stats é subconjunto do Rewind~~ — **corrigido na spec 072**
+  (rankings por filme distinto; Stats e Rewind viraram uma tela só, `GET /api/movies/stats` no `StatsPayload`).
 - ~~**Nami**: "Patrimônio" soma `balance_inicial`; sem visão anual~~ — **corrigido na spec 071** (patrimônio real, retrospectiva
   anual no `StatsPage`).
 - **Hub**: livros contados por `updated_at` e `CURRENT_DATE` (`hub.py:237`); "episódios" são
@@ -337,7 +337,7 @@ imediato. Para ativar, use a skill `update-config`.
 7. Apagar o CSS e os componentes mortos; marcar `migrating` e, ao concluir, `conformant`.
 
 Ordem sugerida (do menor para o maior): Komi → Yato → Mai (ganha o "Voltar à Makima" que não tinha)
-→ Frieren → Akane → Violet → Marin → Nami → Kaguya. O Hub da Makima só adota tokens, tema e
+→ Frieren → ~~Akane~~ (feito, spec 072) → Violet → Marin → Nami → Kaguya. O Hub da Makima só adota tokens, tema e
 ícones (não tem sidebar).
 
 ## Guia de voz

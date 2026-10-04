@@ -674,8 +674,7 @@ metadados do TMDB e sincronização opcional com o Letterboxd (RSS). Contrato de
 | `GET` | `/api/movies/watch-locations` | Sugestões incrementais de locais, ordenadas por uso e nome. | `?q=texto` |
 | `POST` | `/api/movies/watch-locations` | Cria ou reutiliza local normalizado; `kind` é `cinema` ou `streaming`. | Body: `{name, kind}` |
 | `GET` | `/api/movies/home` | Todos os blocos da tela Início numa única chamada. | — |
-| `GET` | `/api/movies/stats` | Estatísticas de filmes do ano. | `?year=YYYY` |
-| `GET` | `/api/movies/rewind` | Year-in-review com destaques do ano. | `?year=YYYY` |
+| `GET` | `/api/movies/stats` | Estatísticas + Rewind no contrato `StatsPayload` (spec 072): `kpis` com `prev` do mesmo trecho do ano anterior, `daily`/`monthly` (sessões), `distribution` (notas por filme distinto), `rankings` (gêneros, diretores, décadas, países, idiomas, companhia — contam filmes distintos), `records`, `moments`; a extensão `first_year` limita o seletor de ano. Substituiu o antigo `/stats` e o `/rewind`. | `?year=YYYY&month=1-12` |
 | `GET` | `/api/movies/heatmap` | Sessões por dia do ano (para o heatmap). | `?year=YYYY` |
 | `GET` | `/api/movies/people` | Pessoas mais frequentes no catálogo (direção + elenco). | `?limit=N` |
 | `GET` | `/api/movies/tags` | Nuvem de etiquetas com contagem e flag de pessoa. | — |

@@ -847,6 +847,9 @@ Letterboxd) ou `tmdb_id` (buscados via TMDB); entradas manuais podem não ter ne
 | `director` | TEXT[] | SIM | — | Diretor(es) — créditos do TMDB. |
 | `genres` | TEXT[] | SIM | — | Gêneros (TMDB). |
 | `runtime` | INTEGER | SIM | — | Duração em minutos. |
+| `original_language` | TEXT | SIM | — | Idioma original (ISO 639-1: `en`, `ja`…) — TMDB (spec 072). `''` = consultado, o TMDB não informa. |
+| `countries` | TEXT[] | SIM | — | Países de produção (ISO 3166-1: `US`, `JP`…) — TMDB (spec 072). |
+| `watchlist_added_at` | TIMESTAMPTZ | SIM | — | Quando entrou no Quero ver (spec 072); NULL = nunca esteve. Preservada ao ver o filme; renovada ao voltar para a lista; a 1ª sessão em até 5 min da criação a zera (fluxo "logar direto"). |
 | `overview` | TEXT | SIM | — | Sinopse (truncada em 2000 chars). |
 | `poster_url` | TEXT | SIM | — | URL do pôster TMDB (`w500`); NULL → pôster tipográfico na UI. |
 | `backdrop_url` | TEXT | SIM | — | URL do backdrop TMDB (`w1280`) — hero da página. |

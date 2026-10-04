@@ -434,56 +434,29 @@ Google.
 
 ---
 
-### AkaneShell — Filmes (`src/pages/akane/`)
+### AkaneShell — Filmes (`src/pages/akane/`) — no Design System (spec 072)
 
-**Roteamento:** estado interno `{view, param}` (tipo `AkaneView` em `types.ts`).
+`conformant` no manifesto, direção de arte **"Cinema noir"** (`design/art/noir.css`). Um `AppShell`; a tela e o
+item aberto vivem no **hash** (`lib/routes.ts`): `#inicio`, `#diario`, `#filmes`, `#quero-ver`, `#listas`,
+`#etiquetas`, `#estatisticas`, `#filme/<id>`, `#lista/<id>` (`#rewind` cai em Estatísticas). Estado comum no
+`context.ts` (`useAkane()`: rota, locais, `openLog`, `quickLog`, `save`). Complementos de CSS só com tokens
+`--ds-*` em `akane.css` (prefixo `.ax-`).
 
-**Telas (screens/):**
-
-| View | Tela | O que mostra |
+| Tela (`screens/`) | Padrão do DS | O que mostra |
 |---|---|---|
-| `home` | HomeScreen | Blocos do início: favoritos, atividade recente, destaque da watchlist, histograma de notas |
-| `films` | FilmsScreen | Catálogo de filmes com filtros (status, gênero, etiqueta) e ordenações |
-| `diary` | DiaryScreen | Diário de sessões de visualização |
-| `watchlist` | WatchlistScreen | Filmes a assistir |
-| `lists` / `list` | ListsScreen | Listas/coleções de filmes (grade e detalhe de uma lista) |
-| `tags` | TagsScreen | Nuvem de etiquetas com contagem |
-| `rewind` | RewindScreen | Retrospectiva do ano (year-in-review) |
-| `stats` | StatsScreen | Estatísticas anuais |
-| `detail` | MovieDetailScreen | Detalhe do filme: nota, curtir, status, Cofre e diário |
+| `Home` | `Hero` + `Heatmap` + `Distribution` | total visto, semana, **linha rápida de logar**, favoritos (até 4, `FavoritesPicker`), atividade recente, Quero ver, ritmo do ano |
+| `Films` (Filmes e Quero ver) | `useCollection` (`akane:filmes`, `akane:watchlist`) | grade de pôsteres ou lista; busca, situação/gênero/década/etiquetas/nota/curti/visto em |
+| `Diary` | `useCollection` (`akane:diario`) | sessões por mês; editar (`SessionEditor`), excluir com Desfazer, subir/descer na ordem do dia |
+| `MovieDetail` | `DetailPage` | ficha, sessões, notas, Cofre; logar, curtir, situação, adicionar à lista, editar dados, atualizar/trocar match do TMDB, excluir |
+| `Lists` / `ListDetail` | `useCollection` (`akane:listas`) + `DetailPage` | listas e seus filmes; criar/editar/excluir com Desfazer |
+| `Tags` | `Chip` | nuvem de etiquetas; escolher mostra os filmes |
+| `Stats` | `StatsPage` | o ano em filmes (`GET /api/movies/stats`); une o antigo Stats e o Rewind |
 
-**Particularidades:** busca de filmes no TMDB no modal de adição (`/api/movies/tmdb/search`);
-o formulário de sessão reutiliza `SessionContextFields` para acompanhantes da Komi e local de cinema/streaming, tanto no modal de log quanto nas edições do Diário e do detalhe;
-botão de sync manual com o Letterboxd na sidebar (`POST /api/movies/sync-letterboxd`, spec
-051 — toast com o resumo criados/atualizados/pulados ou erro); preferências em
-`localStorage` (`akane-tweaks`). API: `akaneApi.ts` — todos os `/api/movies/*`.
-
-**Busca contextual na topbar** (`.ak-topbar-search`, estado `query` no `AkaneShell`): uma
-única caixa, presente em todas as telas, filtra **client-side** o conteúdo da tela ativa —
-o backend não expõe busca textual em `GET /api/movies` (só `status/sort/genre/tag/filter`),
-então cada tela filtra o array que já carregou usando `matches()`/`normalize()` de
-`searchUtils.ts` (ignora acento). Placeholder muda por view (`SEARCH_PLACEHOLDERS`). Telas
-com lista própria (`films`, `diary`, `watchlist`, `lists`, `tags`) filtram in-place; nas
-demais (`home`, `stats`, `rewind`, `detail`) digitar navega para `films` com a query
-aplicada. Trocar de tela pela sidebar (`goToView`) sempre limpa a busca. No `DiaryScreen`,
-o drag de reordenar sessões do mesmo dia fica desabilitado enquanto há busca ativa (a lista
-exibida é parcial).
-
-**Gaps de UI fechados (spec 051)** — backend já existia para todos, só faltava a UI:
-- `MovieDetailScreen`: botão "+ Adicionar a lista" (`AddToListModal`, idempotente — reusa
-  `add_to_list` do backend, seguro clicar 2×); Cofre editável (form inline + remover);
-  "Excluir filme" e exclusão por sessão do histórico, ambos com confirmação em 2 etapas.
-- `ListsScreen`: `CreateListModal` ganhou modo edição (nome/descrição/cor de destaque via
-  swatches OKLCH) + botão "Editar" na visão de detalhe da lista.
-- `RewindScreen`: bloco "Pessoas mais assistidas" (`top_people`, dado já fluía desde a spec
-  049) + heatmap de atividade do ano (`components/Heatmap.tsx`, porta de
-  `frieren/ui/Heatmap.tsx` trocando `pages` por `count`).
-- `HomeScreen`/`TagsScreen`/`ListsScreen`: erro de rede agora tem estado visual distinto
-  ("Não foi possível carregar" + botão de retry) do estado "genuinamente sem dados ainda".
-- `WatchlistScreen`: copy do estado vazio corrigida (referenciava um botão "+ Watchlist"
-  que não existe — orienta agora para "Logar filme" + fechar sem confirmar a sessão).
-
----
+**Logar filme:** `LogCapture` (`QuickCapture`, `lib/log.ts`) entende `Título ★4.5 ontem @local +pessoa #etiqueta`.
+Enter salva direto **só** se exatamente um resultado do TMDB tem o título digitado e a linha não deixou nada para
+confirmar; `+pessoa` (smart-match da Komi), `@local` desconhecido ou dúvida abrem o `LogForm` preenchido
+(Shift+Enter sempre abre). `lib/submit.ts` cria o filme se preciso, loga a sessão e devolve o Desfazer (apaga a sessão
+e, se o filme nasceu agora, o filme). Excluir **filme** não tem Desfazer (a API não restaura).
 
 ### MarinShell — Animes (`src/pages/marin/`)
 
@@ -650,7 +623,7 @@ Cada shell tem identidade visual própria baseada num personagem de anime:
 | VioletShell | Violet Evergarden | `violet.png` | `violet.css` | `.vl-app` |
 | FrierenShell | Frieren Beyond Journey's End | `frieren.png` | `frieren.css` | `.frieren-shell` (+ `.fr-app` interno) |
 | KaguyaShell | Kaguya (Kaguya-sama: Love is War) | `kaguya.jpg` | `kaguya.css` | `.kg-app` |
-| AkaneShell | Akane Kurokawa (Oshi no Ko) | `akane.png` | `akane.css` | `.akane-shell` (+ `.ak-app` interno) |
+| AkaneShell | Akane Kurokawa (Oshi no Ko) | `akane.png` | `akane.css` (só complementos `.ax-*` do DS) | `.ds-app` (Design System) |
 | MarinShell | Marin Kitagawa (Sono Bisque Doll) | `marin.png` | `marin.css` | `.marin-shell` |
 | MaiShell | Mai Sakurajima (Seishun Buta Yarou) | `mai.png` | `mai.css` | `.mai-shell` |
 | KomiShell | Komi Shouko (Komi-san) | `komi.png` | `komi.css` | `.km-app` |
