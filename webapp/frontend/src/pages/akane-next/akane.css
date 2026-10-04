@@ -39,3 +39,14 @@
 }
 
 .ax-session { align-items: center; }
+
+/* Menu de ações do cabeçalho do detalhe: o Menu do DS abre colado ao contêiner posicionado. */
+.ax-menu { position: relative; display: inline-flex; }
+
+.ax-pos {
+  min-width: 1.5em;
+  color: var(--ds-ink-3);
+  text-align: right;
+}
+
+.ax-cloud { flex-wrap: wrap; }

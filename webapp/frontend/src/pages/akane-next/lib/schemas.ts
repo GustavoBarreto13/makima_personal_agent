@@ -5,7 +5,7 @@
 
 import { defineCollection, type CollectionSchema } from '../../../design/core/collection'
 import { isoDate, MONTHS_LONG } from '../../../design/core/format'
-import type { DiaryEntry, Movie } from '../types'
+import type { DiaryEntry, Movie, MovieList } from '../types'
 
 /** Dia local (America/Sao_Paulo no navegador) de um instante ISO do servidor — nunca `slice(0, 10)` (UTC). */
 export function localDay(iso: string | null | undefined): string {
@@ -72,7 +72,25 @@ export function makeWatchlistSchema(movies: Movie[]): CollectionSchema<Movie> {
   })
 }
 
-export const placeKind = (e: DiaryEntry): string => e.watch_location?.kind ?? 'none'
+export function makeListsSchema(): CollectionSchema<MovieList> {
+  return defineCollection<MovieList>({
+    scope: 'akane:listas',
+    search: (l) => [l.name, l.description],
+    facets: [
+      { kind: 'flag', id: 'ranked', label: 'Só rankings', get: (l) => l.ranked },
+      { kind: 'dateRange', id: 'created', label: 'Criada em', get: (l) => localDay(l.created_at), buckets: ['last30', 'last90', 'thisYear', 'all'], defaultBucket: 'all' },
+    ],
+    groups: [],
+    sorts: [
+      { id: 'created', label: 'Mais recentes', value: (l) => localDay(l.created_at) },
+      { id: 'name', label: 'Nome', value: (l) => l.name.toLowerCase() },
+      { id: 'count', label: 'Nº de filmes', value: (l) => l.count },
+    ],
+    defaults: { groupBy: 'none', sortBy: 'created', dir: 'desc' },
+  })
+}
+
+export const placeKind =(e: DiaryEntry): string => e.watch_location?.kind ?? 'none'
 
 export function makeDiarySchema(): CollectionSchema<DiaryEntry> {
   return defineCollection<DiaryEntry>({

@@ -2091,7 +2091,7 @@ def get_lists() -> list[dict]:
     return run_select(
         """
         SELECT
-            l.id::TEXT, l.name, l.description, l.accent, l.ranked,
+            l.id::TEXT, l.name, l.description, l.accent, l.ranked, l.created_at,
             COUNT(li.movie_id) AS count
         FROM movie_lists l
         LEFT JOIN movie_list_items li ON li.list_id = l.id

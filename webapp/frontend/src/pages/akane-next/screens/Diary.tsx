@@ -3,13 +3,13 @@
 
 import { useMemo, useState } from 'react'
 import { fmtRelative } from '../../../design/core/format'
-import { confirm } from '../../../design/headless/confirm'
 import { toast } from '../../../design/headless/toast'
 import { useCollection } from '../../../design/headless/useCollection'
 import { Button, CollectionBody, CollectionMeta, CollectionToolbar, EmptyState, FilterSheet, Icon, IconButton, Page, Stars } from '../../../design'
 import { akaneApi } from '../akaneApi'
 import { SessionEditor } from '../components/SessionEditor'
 import { useAkane } from '../context'
+import { deleteSession } from '../lib/sessions'
 import { makeDiarySchema } from '../lib/schemas'
 import { useLoad } from '../lib/useLoad'
 import type { DiaryEntry } from '../types'
@@ -25,22 +25,7 @@ export function Diary() {
   const [filters, setFilters] = useState(false)
   const [editing, setEditing] = useState<DiaryEntry | null>(null)
 
-  const remove = async (e: DiaryEntry) => {
-    const ok = await confirm({ title: 'Excluir esta sessão?', body: `A sessão de ${e.movie_title ?? 'filme'} em ${e.watched_date.slice(8)}/${e.watched_date.slice(5, 7)} sai do diário. Você poderá desfazer logo depois.`, confirmLabel: 'Excluir', danger: true })
-    if (!ok) return
-    try {
-      await akaneApi.deleteDiary(e.id)
-      akane.reload()
-      toast('Sessão excluída', {
-        undo: () => {
-          void akaneApi.logWatch(e.movie_id, {
-            watched_date: e.watched_date, rating: e.rating, review: e.review, tags: e.tags, rewatch: e.rewatch,
-            companion_ids: e.companions.map((p) => p.id), watch_location_id: e.watch_location?.id ?? null, source: 'manual',
-          }).then(akane.reload).catch(() => toast('Não foi possível desfazer.', { tone: 'error' }))
-        },
-      })
-    } catch { toast('Não foi possível excluir a sessão.', { tone: 'error' }) }
-  }
+  const remove = (e: DiaryEntry) => deleteSession(e, e.movie_title ?? 'filme', akane.reload)
 
   // Sessões do mesmo dia, na ordem em que aparecem (mais nova primeiro). O backend quer a mais antiga primeiro.
   const move = async (e: DiaryEntry, dir: -1 | 1) => {

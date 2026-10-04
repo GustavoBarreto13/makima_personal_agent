@@ -128,6 +128,7 @@ def build_stats_payload(
     rankings: dict[str, list[dict]],
     most_rewatched: dict | None,
     liked: list[dict],
+    first_year: int | None = None,
 ) -> dict:
     """Monta o StatsPayload a partir de números já consultados — função pura, sem banco.
 
@@ -142,6 +143,7 @@ def build_stats_payload(
             [{label, count}] já ordenados, contando filmes distintos (companhia conta sessões).
         most_rewatched: {title, sessions} do filme mais revisto no período, ou None.
         liked: [{id, title, year, poster_url, rating}] de filmes com coração vistos no período.
+        first_year: Ano da primeira sessão registrada (limite do seletor de ano); None = o próprio ano.
     """
     has_prev = (prev_totals["sessions"] + prev_watchlist["added"]) > 0   # sem histórico → sem delta
 
@@ -219,6 +221,8 @@ def build_stats_payload(
         "distribution": distribution,
         "rankings": ranking_out,
         "records": records,
+        # extensão do domínio (o StatsPage ignora; a tela da Akane usa para limitar o seletor de ano)
+        "first_year": min(first_year or year, year),
         "moments": [
             {"id": m["id"], "title": m["title"], "subtitle": str(m["year"]) if m.get("year") else None,
              "image": m.get("poster_url"), "rating": float(m["rating"]) if m.get("rating") is not None else None}
@@ -406,6 +410,14 @@ def get_stats_payload(year: int = 0, month: int | None = None) -> dict:
             {"start": start, "end": end},
         )
 
+        first = run_select(
+            """
+            SELECT MIN(EXTRACT(YEAR FROM d.watched_date))::int AS y
+              FROM diary_entries d JOIN movies m ON m.id = d.movie_id
+             WHERE m.deleted = FALSE
+            """
+        )[0]["y"]
+
         payload = build_stats_payload(
             year=year, month=month, today=today,
             totals=_period_totals(start, end), prev_totals=_period_totals(prev_start, prev_end),
@@ -413,7 +425,7 @@ def get_stats_payload(year: int = 0, month: int | None = None) -> dict:
             daily=daily, ratings=ratings, rankings=_rankings(start, end),
             most_rewatched=({"title": rewatched[0]["title"], "sessions": int(rewatched[0]["sessions"])}
                             if rewatched else None),
-            liked=liked,
+            liked=liked, first_year=int(first) if first else None,
         )
         return {"status": "ok", **payload}
     except Exception as e:

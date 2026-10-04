@@ -209,13 +209,13 @@
       "hero": true,
       "theme": true,
       "icons": true,
-      "collections": ["akane:filmes", "akane:watchlist", "akane:diario"],
+      "collections": ["akane:filmes", "akane:watchlist", "akane:diario", "akane:listas"],
       "quickCapture": "film-log",
       "stats": {
-        "page": false,
-        "metrics": []
+        "page": true,
+        "metrics": ["distinct_films", "sessions", "rewatches", "hours", "decades", "country_language", "cinema_vs_home", "watchlist_added_vs_watched"]
       },
-      "detail": false,
+      "detail": true,
       "prefs": true,
       "hotkeys": true,
       "mobile": true

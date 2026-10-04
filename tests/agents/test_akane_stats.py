@@ -161,6 +161,12 @@ def test_payload_recordes_ignoram_dias_de_fora_do_periodo():
     assert "Sequência atual" not in by_label
 
 
+def test_payload_primeiro_ano_limita_o_seletor_e_nunca_passa_do_ano_pedido():
+    assert _build(first_year=2019)["first_year"] == 2019
+    assert _build()["first_year"] == 2026                      # sem histórico: o próprio ano
+    assert _build(first_year=2030)["first_year"] == 2026       # defesa: nunca depois do ano consultado
+
+
 def test_payload_momentos_trazem_poster_ano_e_nota():
     p = _build(liked=[{"id": "m1", "title": "Duna", "year": 2021, "poster_url": "http://x/p.jpg", "rating": 4.5}])
     assert p["moments"] == [{"id": "m1", "title": "Duna", "subtitle": "2021", "image": "http://x/p.jpg", "rating": 4.5}]

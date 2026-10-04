@@ -3,7 +3,7 @@
 
 import { api } from '../../lib/api'
 import type {
-  DiaryEntry, FavoriteFilm, HeatmapDay, HomeData, Movie, MovieDetail, MovieList, MovieListDetail, SyncResult,
+  DiaryEntry, FavoriteFilm, HeatmapDay, HomeData, Movie, MovieDetail, MovieList, MovieListDetail, StatsResponse, SyncResult,
   Tag, TmdbResult, VaultItem, WatchLocation,
 } from './types'
 
@@ -59,7 +59,7 @@ export const akaneApi = {
     if (year) q.set('year', String(year))
     if (month) q.set('month', String(month))
     const qs = q.toString()
-    return api.get<import('../../design/core/stats').StatsPayload & { status: 'ok' }>(`/api/movies/stats/payload${qs ? `?${qs}` : ''}`)
+    return api.get<StatsResponse>(`/api/movies/stats/payload${qs ? `?${qs}` : ''}`)
   },
   setFavorites: (ids: string[]) => api.put<{ status: 'ok'; favorites: FavoriteFilm[] }>('/api/movies/favorites', { ids }),
 

@@ -20,7 +20,10 @@ import { submitLog } from './lib/submit'
 import { Diary } from './screens/Diary'
 import { Films, Watchlist } from './screens/Films'
 import { Home } from './screens/Home'
-import { Soon } from './screens/Soon'
+import { Lists, ListDetail } from './screens/Lists'
+import { MovieDetail } from './screens/MovieDetail'
+import { Stats } from './screens/Stats'
+import { Tags } from './screens/Tags'
 import type { TmdbResult, WatchLocation } from './types'
 import './akane.css'
 
@@ -138,10 +141,10 @@ export function AkaneShell() {
 
   const SCREENS: Record<ViewId, () => ReactElement> = {
     home: () => <Home />, diary: () => <Diary />, films: () => <Films />, watchlist: () => <Watchlist />,
-    lists: () => <Soon title="Listas" />, tags: () => <Soon title="Etiquetas" />, stats: () => <Soon title="Estatísticas" />,
+    lists: () => <Lists />, tags: () => <Tags />, stats: () => <Stats />,
   }
-  // Detalhe de filme (#filme/<id>) e lista aberta (#lista/<id>) chegam na próxima etapa.
-  const body = route.movieId ? <Soon title="Detalhe do filme" /> : route.listId ? <Soon title="Lista" /> : SCREENS[route.view]()
+  // Filme aberto (#filme/<id>) e lista aberta (#lista/<id>) ficam na URL; senão vale a tela do menu.
+  const body = route.movieId ? <MovieDetail id={route.movieId} /> : route.listId ? <ListDetail id={route.listId} /> : SCREENS[route.view]()
 
   return (
     <AkaneContext.Provider value={ctx}>
@@ -152,8 +155,8 @@ export function AkaneShell() {
         onNavigate={(id) => goto(id as ViewId)}
         mobileTabs={['home', 'diary', 'films']}
         primary={{ label: 'Logar filme', icon: 'add', key: 'n', onClick: () => openLog() }}
-        title={route.movieId ? 'Filme' : TITLES[route.view]}
-        subtitle={route.movieId ? 'Detalhe' : SUBTITLES[route.view]}
+        title={route.movieId ? 'Filme' : route.listId ? 'Lista' : TITLES[route.view]}
+        subtitle={route.movieId || route.listId ? 'Detalhe' : SUBTITLES[route.view]}
         onGoAgent={(to) => navigate(to)}
         art={{ value: prefs.art, options: ART_OPTIONS, onChange: (art) => setPrefs({ art }) }}
         artValue={prefs.art}

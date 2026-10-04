@@ -88,6 +88,7 @@ export interface MovieList {
   accent: string | null
   ranked: boolean
   count: number
+  created_at?: string
 }
 
 export interface MovieListDetail {
@@ -126,6 +127,9 @@ export interface HomeData {
   last_session: { title: string; rating: number | null; watched_date: string } | null
   counts: { films_watched: number; diary: number; watchlist: number }
 }
+
+/** GET /api/movies/stats/payload: o contrato do DS mais o ano da primeira sessão (limite do seletor de ano). */
+export type StatsResponse = import('../../design/core/stats').StatsPayload & { status: 'ok'; first_year: number }
 
 export interface SyncResult {
   status: 'ok'
