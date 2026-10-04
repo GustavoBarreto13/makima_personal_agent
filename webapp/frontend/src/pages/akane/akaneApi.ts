@@ -2,6 +2,7 @@
 // Usa api.* de lib/api.ts (já inclui credentials:'include').
 
 import { api } from '../../lib/api'
+import { normalizeDetail, normalizeEntry, normalizeHome, normalizeMovie } from './lib/normalize'
 import type {
   DiaryEntry, FavoriteFilm, HeatmapDay, HomeData, Movie, MovieDetail, MovieList, MovieListDetail, StatsResponse, SyncResult,
   Tag, TmdbResult, VaultItem, WatchLocation,
@@ -21,13 +22,16 @@ export interface WatchBody {
   watch_location_id?: string | null
 }
 
+/** Lista de filmes sem `null` nas colunas de array (ver lib/normalize.ts). */
+const movies = (r: { status: 'ok'; movies: Movie[] }) => ({ ...r, movies: (r.movies ?? []).map(normalizeMovie) })
+
 export const akaneApi = {
   // ── busca e catálogo ──
   tmdbSearch: (q: string) => api.get<{ status: 'ok'; results: TmdbResult[] }>(`/api/movies/tmdb/search?q=${encodeURIComponent(q)}`),
-  list: () => api.get<{ status: 'ok'; movies: Movie[] }>('/api/movies'),
-  watchlist: () => api.get<{ status: 'ok'; movies: Movie[] }>('/api/movies/watchlist'),
-  diary: (limit = 500) => api.get<{ status: 'ok'; entries: DiaryEntry[] }>(`/api/movies/diary?limit=${limit}`),
-  detail: (id: string) => api.get<{ status: 'ok' } & MovieDetail>(`/api/movies/${id}`),
+  list: () => api.get<{ status: 'ok'; movies: Movie[] }>('/api/movies').then(movies),
+  watchlist: () => api.get<{ status: 'ok'; movies: Movie[] }>('/api/movies/watchlist').then(movies),
+  diary: (limit = 500) => api.get<{ status: 'ok'; entries: DiaryEntry[] }>(`/api/movies/diary?limit=${limit}`).then((r) => ({ ...r, entries: (r.entries ?? []).map(normalizeEntry) })),
+  detail: (id: string) => api.get<{ status: 'ok' } & MovieDetail>(`/api/movies/${id}`).then((r) => ({ ...r, ...normalizeDetail(r) })),
 
   // ── mutações do filme ──
   add: (body: { title?: string; tmdb_id?: number; status?: string; year?: number }) => api.post<Ok & { id?: string }>('/api/movies', body),
@@ -51,7 +55,7 @@ export const akaneApi = {
     api.post<{ status: 'ok'; location: WatchLocation; created: boolean }>('/api/movies/watch-locations', { name, kind }),
 
   // ── agregações ──
-  home: () => api.get<HomeData>('/api/movies/home'),
+  home: () => api.get<HomeData>('/api/movies/home').then((r) => ({ ...r, ...normalizeHome(r) })),
   heatmap: (year?: number) => api.get<{ status: 'ok'; year: number; days: HeatmapDay[] }>(`/api/movies/heatmap${year ? `?year=${year}` : ''}`),
   /** Estatísticas + Rewind no contrato StatsPayload (spec 072). */
   statsPayload: (year?: number, month?: number) => {

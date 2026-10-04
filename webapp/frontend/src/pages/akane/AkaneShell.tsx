@@ -13,6 +13,7 @@ import { usePrefs } from '../../design/headless/usePrefs'
 import { AppShell, Button, SegmentedControl, SettingRow, type NavGroup } from '../../design'
 import { akaneApi } from './akaneApi'
 import { LogForm } from './components/LogForm'
+import { ScreenBoundary } from './components/ScreenBoundary'
 import { AkaneContext, type AkaneCtx, type AkanePrefs, type OpenLog } from './context'
 import { canSaveQuickly, draftFromCapture, emptyDraft, pickConfident, type CaptureIssues, type LogDraft } from './lib/log'
 import { hashFor, routeFromHash, type Route, type ViewId } from './lib/routes'
@@ -180,7 +181,7 @@ export function AkaneShell() {
           </>
         }
       >
-        {body}
+        <ScreenBoundary resetKey={hashFor(route)} onHome={() => goto('home')}>{body}</ScreenBoundary>
         {log && <LogForm key={log.initial.film?.tmdb_id ?? log.initial.title} initial={log.initial} initialResults={log.results} issues={log.issues} onClose={() => setLog(null)} />}
       </AppShell>
     </AkaneContext.Provider>
