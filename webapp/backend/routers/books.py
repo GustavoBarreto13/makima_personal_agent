@@ -48,8 +48,6 @@ from agents.frieren.tools import (
 # Função de consulta estruturada — retorna dict (não string HTML)
 from agents.frieren.tools import get_book_by_id
 
-# "Hoje" no fuso de São Paulo — usado como ano padrão do endpoint de stats antigo
-from agents.frieren.tools import _today
 
 # Tools de estantes, feed de atividade e heatmap — retornam dicts com status
 from agents.frieren.tools import (
@@ -450,7 +448,7 @@ def books_home(user: dict = Depends(require_user)) -> dict:
     return _dict_check(get_books_home())
 
 
-@router.get("/stats/payload")
+@router.get("/stats")
 def stats_payload(
     year: int = Query(default=0, description="Ano (0 = ano corrente)"),
     month: Optional[int] = Query(default=None, description="Mês 1-12; vazio = ano inteiro"),
@@ -458,7 +456,8 @@ def stats_payload(
 ) -> dict:
     """Obter as estatísticas de leitura no contrato `StatsPayload` do Design System (spec 073).
 
-    Durante o rollout fica em `/stats/payload`; na fase 5 ocupa o lugar do `/stats` antigo.
+    Substituiu o `/stats` antigo (formato solto, que só o shell legado usava); o agente do Telegram
+    continua com a tool `get_reading_stats`.
 
     Args:
         year: Ano de referência (0 = ano corrente em America/Sao_Paulo).
@@ -489,96 +488,6 @@ def replace_favorites(body: FavoritesBody, user: dict = Depends(require_user)) -
         A vitrine nova.
     """
     return _dict_check(set_book_favorites(body.ids))
-
-
-@router.get("/stats")
-def reading_stats(
-    # Optional[int] porque o ano pode ser omitido (None = usa ano atual)
-    year: Optional[int] = Query(default=None, description="Ano de referência (padrão: ano atual)"),
-    user: dict = Depends(require_user),
-) -> dict:
-    """Obter estatísticas de leitura para um ano específico.
-
-    Executa 3 queries independentes no BigQuery para calcular:
-    1. Livros concluídos e avaliação média no ano
-    2. Total de páginas lidas e total de sessões no ano
-    3. Média de páginas por dia (calculada sobre os últimos 30 dias com leitura)
-
-    Args:
-        year: Ano de referência (padrão: ano atual).
-        user: Dados do usuário autenticado.
-
-    Returns:
-        Dicionário com métricas agregadas de leitura do ano.
-
-    Raises:
-        HTTPException: 401 se o usuário não estiver autenticado.
-    """
-    # Se o ano não foi informado, usa o ano atual no calendário brasileiro
-    # (_today() usa America/Sao_Paulo; date.today() seria o relógio UTC do servidor)
-    if year is None:
-        year = _today().year
-
-    # ── Query 1: Livros concluídos e avaliação média ───────────────────────────
-    sql_books = """
-        SELECT COUNT(*) AS books_finished, AVG(rating) AS avg_rating
-        FROM books
-        WHERE status = 'lido'
-          AND EXTRACT(YEAR FROM date_finished) = %(year)s
-          AND deleted = FALSE
-    """
-    rows_books = run_select(sql_books, {"year": year})
-
-    # ── Query 2: Total de páginas e sessões de leitura no ano ─────────────────
-    sql_logs = """
-        SELECT COALESCE(SUM(pages_read), 0) AS total_pages,
-               COUNT(*) AS total_sessions
-        FROM reading_logs
-        WHERE EXTRACT(YEAR FROM date) = %(year)s
-    """
-    rows_logs = run_select(sql_logs, {"year": year})
-
-    # ── Query 3: Ritmo diário — últimos 30 dias com leitura no ano ────────────
-    sql_pace = """
-        SELECT date, SUM(pages_read) AS daily_pages
-        FROM reading_logs
-        WHERE EXTRACT(YEAR FROM date) = %(year)s
-        GROUP BY date
-        ORDER BY date DESC
-        LIMIT 30
-    """
-    rows_pace = run_select(sql_pace, {"year": year})
-
-    # ── Extrai valores das queries ────────────────────────────────────────────
-
-    # Livros concluídos — garante int mesmo se BigQuery retornar Decimal
-    books_finished = int(rows_books[0]["books_finished"]) if rows_books else 0
-
-    # Avaliação média — None se nenhum livro avaliado (AVG de conjunto vazio = None)
-    avg_rating = rows_books[0]["avg_rating"] if rows_books else None
-
-    # Total de páginas — garante int
-    total_pages = int(rows_logs[0]["total_pages"]) if rows_logs else 0
-
-    # Total de sessões — garante int
-    total_sessions = int(rows_logs[0]["total_sessions"]) if rows_logs else 0
-
-    # Média diária: soma de páginas dos 30 dias dividida pela quantidade de dias com leitura.
-    # Se não houver nenhum dado de ritmo, deixa None para o frontend saber que não há dado.
-    avg_daily_pages: Optional[float] = None
-    if rows_pace:
-        soma = sum(r["daily_pages"] for r in rows_pace)
-        avg_daily_pages = round(soma / len(rows_pace), 1)
-
-    return {
-        "status": "ok",
-        "year": year,
-        "books_finished": books_finished,
-        "avg_rating": avg_rating,
-        "total_pages": total_pages,
-        "total_sessions": total_sessions,
-        "avg_daily_pages": avg_daily_pages,
-    }
 
 
 @router.get("/search-google")

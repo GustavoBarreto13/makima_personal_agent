@@ -1,870 +1,274 @@
-// Shell principal da seção Frieren — gerencia navegação interna, estado global
-// dos livros/estantes/atividade/heatmap, tweaks, modal de registro e toast.
-// Substitui o roteamento do React Router para esta seção: usa estado interno
-// { view, param } para não poluir a URL com sub-rotas de livros.
+// Frieren · Livros — shell sobre o AppShell do Design System (spec 073).
+// Guarda a rota por hash (/books#diario, /books#livro/<id>), o catálogo e as estantes (que várias telas usam:
+// contagens do menu, linha rápida, busca do topo e da paleta Ctrl+K) e as ações comuns (registrar leitura,
+// adicionar livro, navegar), que as telas leem pelo contexto.
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import './frieren.css'
-
-import { booksApi } from '../../lib/api'
-import type { ApiBook, ApiShelf, ApiActivityEntry, ApiHeatmapDay } from '../../lib/api'
-import type { Book, Shelf, ActivityEntry, HeatmapDay, Tweaks } from './types'
-import type { BookStatus } from './types'
-import { coverKeyFromId } from './coverKey'
-
-import { Icon } from './ui/Icons'
-import { NowBar } from './NowBar'
-import { LogModal } from './LogModal'
-import type { LogPayload } from './LogModal'
-// Modal de edição de sessões de leitura existentes
-import { EditLogModal } from './EditLogModal'
-import type { EditLogPayload } from './EditLogModal'
-import { AddBookModal } from './AddBookModal'
-import type { AddBookPayload } from './AddBookModal'
-import { Toast } from './Toast'
-import { TweaksPanel } from './TweaksPanel'
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useNavigate } from 'react-router-dom'
+import '../../design'
+import { getAgent } from '../../design/core/agents'
+import type { CaptureResult } from '../../design/core/capture'
+import { todayISO } from '../../design/core/format'
+import { useCommandProvider, type CommandProvider } from '../../design/headless/commands'
+import { toast } from '../../design/headless/toast'
+import { usePrefs } from '../../design/headless/usePrefs'
+import { AppShell, NumberInput, SegmentedControl, SettingRow, type NavGroup } from '../../design'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { AGENT_TABS } from '../../lib/agentTabs'
-
-// Importações das telas da seção Frieren
-import { Home } from './screens/Home'
-import { Catalog } from './screens/Catalog'
+import { AddBookForm } from './components/AddBookForm'
+import { LogForm } from './components/LogForm'
+import { ScreenBoundary } from './components/ScreenBoundary'
+import { DEFAULT_PREFS, FrierenContext, type FrierenCtx, type FrierenPrefs, type OpenLog } from './context'
+import { frierenApi } from './frierenApi'
+import { canSaveQuickly, draftFromCapture, emptyDraft, norm, type LogDraft } from './lib/log'
+import { hashFor, routeFromHash, type Route, type ViewId } from './lib/routes'
+import { TO_READ } from './lib/status'
+import { submitLog } from './lib/submit'
+import { useLoad } from './lib/useLoad'
 import { BookDetail } from './screens/BookDetail'
-import { EditBookModal } from './EditBookModal'
-import { ShelfModal } from './ShelfModal'
-import { ToRead } from './screens/ToRead'
-import { Wishlist } from './screens/Wishlist'
-import { Shelves } from './screens/Shelves'
-import { Activity } from './screens/Activity'
+import { Diary } from './screens/Diary'
+import { Home } from './screens/Home'
+import { Library, ToRead, Wishlist } from './screens/Library'
 import { Reviews } from './screens/Reviews'
+import { ShelfView, Shelves } from './screens/Shelves'
 import { Stats } from './screens/Stats'
+import type { Book, Shelf } from './types'
+import './frieren.css'
 
-// ── Mapeamento de status português → inglês ───────────────────────────────────
+const AGENT = getAgent('frieren')
 
-// O backend armazena status em português; o design system usa inglês
-const STATUS_MAP: Record<string, BookStatus> = {
-  lendo:      'reading',
-  lido:       'read',
-  quero_ler:  'owned',
-  wishlist:   'wishlist',
-  estante:    'owned',
-  pausado:    'owned',
-  abandonado: 'read',
+const TITLES: Record<ViewId, string> = {
+  home: 'Início', catalog: 'Biblioteca', toread: 'Quero ler', wishlist: 'Wishlist', diary: 'Diário',
+  shelves: 'Estantes', reviews: 'Resenhas', stats: 'Estatísticas',
+}
+const SUBTITLES: Record<ViewId, string> = {
+  home: 'Sua biblioteca', catalog: 'Todos os livros', toread: 'A pilha de próximos', wishlist: 'Para comprar',
+  diary: 'Cada sessão de leitura', shelves: 'Coleções', reviews: 'O que ficou de cada livro', stats: 'Seu ano em leitura',
 }
 
-// Converte um livro do formato do backend para o formato do frontend
-function toBook(b: ApiBook): Book {
-  // Mapeia o status português para o inglês esperado pelos componentes visuais
-  const status = (STATUS_MAP[b.status] ?? 'owned') as BookStatus
+const ART_OPTIONS = [{ value: 'default', label: 'Padrão' }, { value: 'elfica', label: 'Biblioteca élfica' }]
 
-  // Progresso (0–1) só faz sentido quando o livro está sendo lido
-  const progress =
-    status === 'reading' && b.total_pages && b.current_page
-      ? b.current_page / b.total_pages
-      : null
+// Referências estáveis enquanto carrega (as telas e coleções dependem delas).
+const NO_BOOKS: Book[] = []
+const NO_SHELVES: Shelf[] = []
 
-  return {
-    id:        b.id,
-    title:     b.title,
-    author:    b.author,
-    year:      b.published_year,
-    pages:     b.total_pages,
-    genre:     b.genre,
-    status,
-    progress,
-    page:      b.current_page,
-    started:   b.date_started,
-    finished:  b.date_finished,
-    addedAt:   b.created_at ?? null,
-    rating:    b.rating,
-    review:    b.notes ?? null,
-    shelves:   b.shelves ?? [],
-    storeLink: b.store_url ?? null,
-    coverUrl:  b.cover_url,
-    // CoverKey derivado deterministicamente do ID — mesma paleta sempre para o mesmo livro
-    coverKey:  coverKeyFromId(b.id),
-  }
-}
+type Dialog = { kind: 'log'; draft: LogDraft } | { kind: 'add'; title: string } | null
 
-// Converte uma estante do formato do backend para o formato do frontend
-function toShelf(s: ApiShelf): Shelf {
-  return {
-    id:     s.id,
-    name:   s.name,
-    desc:   s.description,
-    accent: s.accent,
-  }
-}
-
-// Converte uma entrada de atividade do formato do backend para o frontend
-function toActivity(a: ApiActivityEntry): ActivityEntry {
-  return {
-    id:     a.id,
-    date:   a.date,
-    bookId: a.book_id,
-    // Normaliza tipo para os valores aceitos pela interface ActivityEntry
-    type:   (a.type as ActivityEntry['type']) ?? 'progress',
-    pages:  a.pages,
-    page:   a.page,
-    note:   a.note,
-    rating: a.rating,
-  }
-}
-
-// ── Mapeamento de view → título do topbar ─────────────────────────────────────
-const TITLES: Record<string, string> = {
-  home:      'Início',
-  catalogo:  'Biblioteca',
-  querler:   'Quero ler',
-  wishlist:  'Wishlist',
-  listas:    'Estantes',
-  estante:   'Estante',
-  atividade: 'Atividade',
-  resenhas:  'Resenhas',
-  stats:     'Estatísticas',
-  detalhe:   'Livro',
-}
-
-// Mapeamento de density string → atributo data-density do CSS
-const DENSITY_MAP: Record<Tweaks['densidade'], string> = {
-  'Grande':   'grande',
-  'Médio':    'medio',
-  'Compacto': 'compacto',
-}
-
-// ── Tweaks default e persistência ────────────────────────────────────────────
-const TWEAK_DEFAULTS: Tweaks = {
-  tema:         'Claro',
-  layoutInicio: 'Cinemático',
-  densidade:    'Médio',
-  ordenacao:    'Adicionado',
-  statusFilter: 'todos',
-}
-
-// Chave do localStorage onde as preferências são salvas
-const TWEAKS_KEY = 'fr-tweaks'
-
-function loadTweaks(): Tweaks {
+/** Preferências do shell antigo ("fr-tweaks" no navegador) viram o ponto de partida das novas, para quem já
+ *  tinha escolhido densidade e estilo do topo não perder a escolha. Só vale enquanto não há preferência nova
+ *  salva (o usePrefs usa estes valores apenas como padrão). Exportada para teste. */
+export function legacyPrefs(base: FrierenPrefs, storage: Pick<Storage, 'getItem'> | null = safeLocalStorage()): FrierenPrefs {
   try {
-    const raw = localStorage.getItem(TWEAKS_KEY)
-    if (raw) return { ...TWEAK_DEFAULTS, ...JSON.parse(raw) }
+    const raw = storage?.getItem('fr-tweaks')
+    if (!raw) return base
+    const old = JSON.parse(raw) as { densidade?: string; layoutInicio?: string }
+    const density = ({ Grande: 'large', 'Médio': 'medium', Compacto: 'compact' } as const)[old.densidade as 'Grande'] ?? base.density
+    const heroLayout = ({ 'Cinemático': 'cinematic', Editorial: 'editorial', Galeria: 'gallery' } as const)[old.layoutInicio as 'Editorial'] ?? base.heroLayout
+    return { ...base, density, heroLayout }
   } catch {
-    // Se o JSON estiver corrompido, usa os defaults silenciosamente
+    return base
   }
-  return { ...TWEAK_DEFAULTS }
 }
 
-// ── Tipo de rota interna ──────────────────────────────────────────────────────
-interface Route {
-  view: string
-  param: string | null
+function safeLocalStorage(): Storage | null {
+  try { return window.localStorage } catch { return null }
 }
 
-// ── Componente Shell ──────────────────────────────────────────────────────────
-
-/**
- * Shell principal da seção de livros (Frieren).
- * Gerencia: carregamento de dados, navegação interna, tweaks, modal de registro
- * de leitura, notificações toast e barra "agora lendo".
- */
 export function FrierenShell() {
   useDocumentTitle(AGENT_TABS.frieren.title, AGENT_TABS.frieren.icon)
+  const navigate = useNavigate()
+  const today = useMemo(() => todayISO(), [])
+  const [prefs, setPrefs] = usePrefs<FrierenPrefs>('frieren', useMemo(() => legacyPrefs({ ...DEFAULT_PREFS, art: AGENT.art ?? DEFAULT_PREFS.art }), []))
+  const [route, setRoute] = useState<Route>(() => routeFromHash(window.location.hash))
+  const [rev, setRev] = useState(0)
+  const [dialog, setDialog] = useState<Dialog>(null)
+  const [topQuery, setTopQuery] = useState('')
 
-  // ── Estado de dados ────────────────────────────────────────────────────────
-  const [books,    setBooks]    = useState<Book[]>([])
-  const [shelves,  setShelves]  = useState<Shelf[]>([])
-  const [activity, setActivity] = useState<ActivityEntry[]>([])
-  const [heatmap,  setHeatmap]  = useState<HeatmapDay[]>([])
-  const [loading,  setLoading]  = useState(true)
+  const reload = useCallback(() => setRev((n) => n + 1), [])
 
-  // ── Navegação interna ──────────────────────────────────────────────────────
-  const [route, setRoute] = useState<Route>({ view: 'home', param: null })
+  // Catálogo e estantes: recarregam a cada gravação (rev). Estantes falharem não trava nada.
+  const { state: booksState, retry: retryBooks } = useLoad(() => frierenApi.list(), [rev])
+  const books = booksState.status === 'ok' ? booksState.data : NO_BOOKS
+  const { state: shelvesState } = useLoad(() => frierenApi.shelves(), [rev])
+  const shelves = shelvesState.status === 'ok' ? shelvesState.data : NO_SHELVES
 
-  // ── Busca textual ──────────────────────────────────────────────────────────
-  const [query, setQuery] = useState('')
-
-  // ── Modal de adição de livro ──────────────────────────────────────────────
-  const [addOpen, setAddOpen] = useState(false)
-
-  // ── Modal de registro de nova leitura ────────────────────────────────────
-  const [modal, setModal] = useState<{ open: boolean; presetBookId: string | null }>({
-    open: false,
-    presetBookId: null,
-  })
-
-  // ── Modal de edição de sessão existente ──────────────────────────────────
-  // null = modal fechado; ActivityEntry = entrada sendo editada
-  const [editingLog, setEditingLog] = useState<ActivityEntry | null>(null)
-
-  // ── Modal de edição completa de um livro ─────────────────────────────────
-  // null = modal fechado; string = id do livro sendo editado
-  const [editingBookId, setEditingBookId] = useState<string | null>(null)
-
-  // ── Modal de criação/edição de estante ───────────────────────────────────
-  // open controla a visibilidade; editing = estante em edição (null = criar nova)
-  const [shelfModal, setShelfModal] = useState<{ open: boolean; editing: Shelf | null }>({
-    open: false,
-    editing: null,
-  })
-
-  // ── Toast de feedback ──────────────────────────────────────────────────────
-  const [toast, setToast] = useState('')
-
-  // ── Tweaks (preferências visuais) ─────────────────────────────────────────
-  // Carregados do localStorage na inicialização
-  const [tweaks, setTweaksState] = useState<Tweaks>(loadTweaks)
-
-  // Referência ao container de scroll — para resetar ao trocar de view
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  // ── Carregamento inicial de dados ─────────────────────────────────────────
+  // Voltar/avançar do navegador (popstate) e links com #… (hashchange) trocam de tela.
   useEffect(() => {
-    const year = new Date().getFullYear()
-
-    // Carrega todos os dados em paralelo para reduzir o tempo de espera
-    Promise.all([
-      booksApi.list(),
-      booksApi.shelves(),
-      booksApi.heatmap(year),
-      booksApi.activity(100),
-    ])
-      .then(([booksRes, shelvesRes, heatmapRes, activityRes]) => {
-        setBooks(booksRes.books.map(toBook))
-        setShelves(shelvesRes.shelves.map(toShelf))
-        setHeatmap(heatmapRes.heatmap.map((h: ApiHeatmapDay) => ({ date: h.date, pages: h.pages })))
-        setActivity(activityRes.activity.map(toActivity))
-      })
-      .catch(err => {
-        // Erro silencioso na UI — os dados ficam vazios mas o shell não quebra
-        console.error('[FrierenShell] Erro ao carregar dados:', err)
-      })
-      .finally(() => setLoading(false))
-  }, [])
-
-  // ── Tema e densidade são agora aplicados via props React no wrapper .frieren-shell ──
-  // (os atributos data-theme e data-density vivem no elemento raiz, não no .fr-app)
-  const activeTheme = tweaks.tema === 'Escuro' ? 'dark' : 'light'
-  const activeDensity = DENSITY_MAP[tweaks.densidade] ?? 'medio'
-
-  // ── Toast: auto-some após 2,6 s ──────────────────────────────────────────
-  useEffect(() => {
-    if (!toast) return
-    const id = setTimeout(() => setToast(''), 2600)
-    return () => clearTimeout(id)
-  }, [toast])
-
-  // ── Helpers de navegação ─────────────────────────────────────────────────
-  const navigate = useCallback((view: string, param: string | null = null) => {
-    setRoute({ view, param })
-    // Rola o conteúdo de volta ao topo ao trocar de seção
-    if (scrollRef.current) scrollRef.current.scrollTop = 0
-    // Limpa a busca ao sair das views que suportam busca
-    if (!['catalogo', 'wishlist', 'querler'].includes(view)) {
-      setQuery('')
+    const onHash = () => setRoute(routeFromHash(window.location.hash))
+    window.addEventListener('hashchange', onHash)
+    window.addEventListener('popstate', onHash)
+    return () => {
+      window.removeEventListener('hashchange', onHash)
+      window.removeEventListener('popstate', onHash)
     }
   }, [])
 
-  const openLog = useCallback((presetBookId: string | null = null) => {
-    setModal({
-      open: true,
-      presetBookId: typeof presetBookId === 'string' ? presetBookId : null,
+  // Navegar grava no histórico (pushState): o Voltar do navegador volta para a tela anterior.
+  const goto = useCallback((to: Route | ViewId) => {
+    const next: Route = typeof to === 'string' ? { view: to } : to
+    setRoute(next)
+    const url = `${window.location.pathname}#${hashFor(next)}`
+    if (window.location.hash !== `#${hashFor(next)}`) window.history.pushState(window.history.state, '', url)
+    window.scrollTo?.({ top: 0 })
+  }, [])
+
+  const saveLog = useCallback(async (draft: LogDraft) => {
+    const book = books.find((b) => b.id === draft.bookId)
+    if (!book) throw new Error('Escolha o livro.')
+    const result = await submitLog(draft, book, frierenApi)
+    reload()
+    toast(result.message, {
+      tone: 'success',
+      undo: () => { result.undo().then(reload).catch(() => toast('Não foi possível desfazer. Confira no Diário.', { tone: 'error' })) },
     })
-  }, [])
+  }, [books, reload])
 
-  // ── Atualização de tweak com persistência no localStorage ─────────────────
-  function setTweak<K extends keyof Tweaks>(key: K, value: Tweaks[K]) {
-    setTweaksState(prev => {
-      const next = { ...prev, [key]: value }
-      // Persiste toda a estrutura de tweaks para sobreviver a reload
-      localStorage.setItem(TWEAKS_KEY, JSON.stringify(next))
-      return next
-    })
-  }
+  const openLog = useCallback((open: OpenLog = {}) => {
+    if (open.draft) { setDialog({ kind: 'log', draft: open.draft }); return }
+    // Sem livro escolhido: sugere o que está sendo lido (o primeiro da lista de candidatos do formulário).
+    const reading = books.filter((b) => b.status === 'lendo')
+    const id = open.bookId ?? (reading.length === 1 ? reading[0].id : null)
+    const book = books.find((b) => b.id === id)
+    setDialog({ kind: 'log', draft: emptyDraft(today, id, book ? book.page : null) })
+  }, [books, today])
 
-  // ── Registro de leitura — envia ao backend e re-sincroniza estado ─────────
-  const addLog = useCallback(async (payload: LogPayload) => {
-    // Página anterior do livro — usada para calcular o delta e evitar delta 0
-    const oldBook = books.find(b => b.id === payload.bookId)
-    const oldPage = oldBook?.page ?? 0
-    // Só há progresso real se a página nova for maior que a última registrada
-    const hasProgress = payload.page > oldPage
+  const openAdd = useCallback((title = '') => setDialog({ kind: 'add', title }), [])
 
-    // 1. Registra a sessão de leitura — mas só se houve páginas novas.
-    //    O backend rejeita com 400 "nenhum progresso" quando o delta é 0.
-    //    Os nomes dos campos batem com LogReadingBody (current_page, session_notes, log_date).
-    if (hasProgress) {
-      await booksApi.logReading(payload.bookId, {
-        current_page:  payload.page,
-        session_notes: payload.note || undefined,
-        log_date:      payload.date,              // data escolhida pelo usuário
-      })
+  const quickLog = useCallback((r: CaptureResult, forceForm = false): boolean => {
+    const draft = draftFromCapture(r, { today, books })
+    const book = books.find((b) => b.id === draft.bookId) ?? null
+    // Livro digitado que não está na biblioteca: oferece adicionar em vez de abrir um formulário vazio.
+    if (!book && draft.title && !books.some((b) => norm(b.title).includes(norm(draft.title)))) {
+      toast(`“${draft.title}” não está na biblioteca.`)
+      setDialog({ kind: 'add', title: draft.title })
+      return true
     }
-
-    // 2. Se o usuário marcou "terminei este livro", finaliza de verdade.
-    //    Usa o endpoint /finish (separado de /log) que atualiza status → "lido",
-    //    salva a avaliação e registra a data de conclusão informada.
-    if (payload.finished) {
-      await booksApi.finish(payload.bookId, {
-        rating:        payload.rating ?? undefined,
-        date_finished: payload.date,              // mesma data escolhida no seletor
-      })
+    if (forceForm || !canSaveQuickly(draft, book, today)) {
+      setDialog({ kind: 'log', draft })
+      return true
     }
+    void saveLog(draft).catch((e: unknown) => toast(e instanceof Error ? e.message : 'Não foi possível salvar.', { tone: 'error' }))
+    return true
+  }, [today, books, saveLog])
 
-    // Re-busca livros e atividade após salvar para refletir o progresso atualizado
-    const [booksRes, activityRes] = await Promise.all([
-      booksApi.list(),
-      booksApi.activity(100),
-    ])
-    setBooks(booksRes.books.map(toBook))
-    setActivity(activityRes.activity.map(toActivity))
+  const clearTopQuery = useCallback(() => setTopQuery(''), [])
 
-    // Calcula delta de páginas para a mensagem de toast (pode ser 0 se só terminou)
-    const delta = Math.max(0, payload.page - oldPage)
+  const ctx = useMemo<FrierenCtx>(
+    () => ({
+      rev, reload, today, route, goto, books, booksState, retryBooks, shelves, prefs, setPrefs,
+      openLog, openAdd, quickLog, saveLog, topQuery, clearTopQuery,
+    }),
+    [rev, reload, today, route, goto, books, booksState, retryBooks, shelves, prefs, setPrefs, openLog, openAdd, quickLog, saveLog, topQuery, clearTopQuery],
+  )
 
-    // Mensagem de sucesso contextual — prioridade: terminou > páginas > sem progresso
-    setToast(
-      payload.finished
-        ? 'Livro terminado — que jornada!'
-        : delta > 0
-          ? `+${delta} ${delta === 1 ? 'página registrada' : 'páginas registradas'}`
-          : 'Nenhuma página nova para registrar.',
-    )
-  }, [books])
+  // Paleta Ctrl+K: busca livros por título ou autor e abre a página do livro (substitui a busca do topo
+  // do shell antigo, que só filtrava a Biblioteca).
+  const provider = useMemo<CommandProvider>(() => ({
+    id: 'frieren.books',
+    search: (q) => {
+      const n = norm(q)
+      if (n.length < 2) return []
+      return books
+        .filter((b) => norm(b.title).includes(n) || norm(b.author).includes(n))
+        .slice(0, 8)
+        .map((b) => ({ id: `book:${b.id}`, label: b.author ? `${b.title} · ${b.author}` : b.title, group: 'Livros', icon: 'book', run: () => goto({ view: 'catalog', bookId: b.id }) }))
+    },
+  }), [books, goto])
+  useCommandProvider(provider)
 
-  // ── Adição de livro — envia ao backend e re-sincroniza a lista ───────────
-  const addBook = useCallback(async (payload: AddBookPayload) => {
-    await booksApi.addBook(payload)          // pode lançar (duplicado → 400) — tratado no modal
-    const booksRes = await booksApi.list()   // re-busca para refletir o novo livro na grade
-    setBooks(booksRes.books.map(toBook))
-    setToast('Livro adicionado à sua biblioteca.')
-  }, [])
-
-  // ── Helper de re-sincronização completa ──────────────────────────────────
-  // Rebusca livros, atividade E heatmap em paralelo após qualquer mutação que
-  // altere páginas lidas (editar ou apagar log). Centralizar aqui evita duplicar
-  // o mesmo Promise.all em cada handler que precisa atualizar os três estados.
-  const refreshAll = useCallback(async () => {
-    const year = new Date().getFullYear()
-    const [booksRes, activityRes, heatmapRes] = await Promise.all([
-      booksApi.list(),
-      booksApi.activity(100),
-      booksApi.heatmap(year),
-    ])
-    setBooks(booksRes.books.map(toBook))
-    setActivity(activityRes.activity.map(toActivity))
-    // Mapeia para o formato interno HeatmapDay { date, pages }
-    setHeatmap(heatmapRes.heatmap.map((h: ApiHeatmapDay) => ({ date: h.date, pages: h.pages })))
-  }, [])
-
-  // ── Remoção de livro — apaga no backend, re-sincroniza e volta à Biblioteca ─
-  const deleteBook = useCallback(async (bookId: string) => {
-    await booksApi.deleteBook(bookId)
-    const [booksRes, activityRes] = await Promise.all([
-      booksApi.list(),
-      booksApi.activity(100),
-    ])
-    setBooks(booksRes.books.map(toBook))
-    setActivity(activityRes.activity.map(toActivity))
-    navigate('catalogo')   // o livro sumiu — volta para a grade
-    setToast('Livro removido.')
-  }, [navigate])
-
-  // ── Abre o modal de edição de uma sessão de leitura ───────────────────────
-  // Chamado pelo LogActions quando o usuário clica no lápis
-  const editLog = useCallback((entry: ActivityEntry) => {
-    setEditingLog(entry)
-  }, [])
-
-  // ── Edição completa de um livro ───────────────────────────────────────────
-  // Abre o modal (chamado pelo botão "Editar" do BookDetail)
-  const openEditBook = useCallback((bookId: string) => {
-    setEditingBookId(bookId)
-  }, [])
-
-  // Chamado pelo EditBookModal após salvar — re-sincroniza tudo e avisa o usuário
-  const onBookSaved = useCallback(async () => {
-    await refreshAll()
-    setToast('Livro atualizado.')
-  }, [refreshAll])
-
-  // Chamado pelo editor de resenha inline (BookDetail) após salvar
-  const onReviewSaved = useCallback(async () => {
-    await refreshAll()
-    setToast('Resenha salva.')
-  }, [refreshAll])
-
-  // ── Estantes: mutações ────────────────────────────────────────────────────
-  // Re-busca só as estantes (usado após criar/editar/excluir).
-  const reloadShelves = useCallback(async () => {
-    const res = await booksApi.shelves()
-    setShelves(res.shelves.map(toShelf))
-  }, [])
-
-  // Re-busca livros + estantes juntos (usado ao (des)vincular livro a estante —
-  // muda tanto book.shelves quanto a contagem exibida no card).
-  const reloadBooksAndShelves = useCallback(async () => {
-    const [booksRes, shelvesRes] = await Promise.all([
-      booksApi.list(),
-      booksApi.shelves(),
-    ])
-    setBooks(booksRes.books.map(toBook))
-    setShelves(shelvesRes.shelves.map(toShelf))
-  }, [])
-
-  // Abre o modal para criar uma nova estante
-  const openCreateShelf = useCallback(() => {
-    setShelfModal({ open: true, editing: null })
-  }, [])
-
-  // Abre o modal para editar uma estante existente
-  const openEditShelf = useCallback((shelf: Shelf) => {
-    setShelfModal({ open: true, editing: shelf })
-  }, [])
-
-  // Submete o modal: cria ou edita conforme shelfModal.editing. O modal captura
-  // erros (mensagem inline), então aqui deixamos a exceção propagar.
-  const submitShelf = useCallback(async (name: string, description: string, accent: string) => {
-    if (shelfModal.editing) {
-      await booksApi.updateShelf(shelfModal.editing.id, { name, description, accent })
-      setToast('Estante atualizada.')
-    } else {
-      await booksApi.createShelf({ name, description, accent })
-      setToast('Estante criada.')
-    }
-    await reloadShelves()
-  }, [shelfModal.editing, reloadShelves])
-
-  // Exclui uma estante e, se o usuário estiver vendo justamente ela, volta à grade
-  const deleteShelf = useCallback(async (shelfId: string) => {
-    await booksApi.deleteShelf(shelfId)
-    await reloadShelves()
-    setRoute(r => (r.view === 'estante' && r.param === shelfId ? { view: 'listas', param: null } : r))
-    setToast('Estante removida.')
-  }, [reloadShelves])
-
-  // Vincula um livro a uma estante (idempotente no backend)
-  const addBookToShelf = useCallback(async (bookId: string, shelfId: string) => {
-    await booksApi.addToShelf(shelfId, bookId)
-    await reloadBooksAndShelves()
-  }, [reloadBooksAndShelves])
-
-  // Desvincula um livro de uma estante
-  const removeBookFromShelf = useCallback(async (bookId: string, shelfId: string) => {
-    await booksApi.removeFromShelf(shelfId, bookId)
-    await reloadBooksAndShelves()
-  }, [reloadBooksAndShelves])
-
-  // ── Salva as edições de uma sessão de leitura ─────────────────────────────
-  // Envia o payload ao backend, re-sincroniza todos os dados e fecha o modal
-  const saveLogEdit = useCallback(async (payload: EditLogPayload) => {
-    if (!editingLog) return
-    // Chama o endpoint PATCH — bookId é necessário pela URL do backend
-    await booksApi.updateLog(editingLog.bookId, editingLog.id, payload)
-    // Re-sincroniza livros + atividade + heatmap (as páginas lidas por dia mudaram)
-    await refreshAll()
-    // Fecha o modal de edição
-    setEditingLog(null)
-    setToast('Registro atualizado.')
-  }, [editingLog, refreshAll])
-
-  // ── Remove uma sessão de leitura do diário ────────────────────────────────
-  // Chamado pelo LogActions quando o usuário confirma o apagar
-  const deleteLog = useCallback(async (entry: ActivityEntry) => {
-    // Chama DELETE /api/books/{bookId}/logs/{logId}
-    await booksApi.deleteLog(entry.bookId, entry.id)
-    // Re-sincroniza livros + atividade + heatmap (a contagem de páginas mudou)
-    await refreshAll()
-    setToast('Registro removido.')
-  }, [refreshAll])
-
-  // ── Deriva nav ativa a partir da view atual ───────────────────────────────
-  const activeNav =
-    ['wishlist', 'querler', 'catalogo'].includes(route.view) ? route.view
-    : route.view === 'estante' ? 'listas'
-    : route.view === 'detalhe' ? 'catalogo'
-    : route.view
-
-  // ── Livros lendo agora — usados pela NowBar ───────────────────────────────
-  const readingBooks = books.filter(b => b.status === 'reading')
-  // O livro exibido na NowBar é o com maior progresso entre os lendo
-  const nowBook = readingBooks.sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))[0] ?? null
-
-  // ── Renderização das telas ────────────────────────────────────────────────
-  const renderView = () => {
-    switch (route.view) {
-
-      // Tela inicial com hero, stats, heatmap e atividade recente
-      case 'home':
-        return (
-          <Home
-            books={books}
-            heatmap={heatmap}
-            activity={activity}
-            navigate={navigate}
-            openLog={openLog}
-            tweaks={tweaks}
-            atual={nowBook}
-          />
-        )
-
-      // Biblioteca — todos os livros agrupados por status, com filtro e ordenação
-      case 'catalogo':
-        return (
-          <Catalog
-            books={books}
-            navigate={navigate}
-            query={query}
-            filter={tweaks.statusFilter}
-            onFilterChange={(f) => setTweak('statusFilter', f)}
-            sort={tweaks.ordenacao}
-            onSortChange={(s) => setTweak('ordenacao', s)}
-          />
-        )
-
-      // Pilha de livros comprados aguardando leitura
-      case 'querler':
-        return (
-          <ToRead
-            books={books}
-            navigate={navigate}
-            openLog={openLog}
-          />
-        )
-
-      // Lista de desejos com suporte a links de loja
-      case 'wishlist':
-        return (
-          <Wishlist
-            books={books}
-            navigate={navigate}
-            openLog={openLog}
-            onToast={setToast}
-          />
-        )
-
-      // Grade de todas as estantes
-      case 'listas':
-        return (
-          <Shelves
-            books={books}
-            shelves={shelves}
-            navigate={navigate}
-            shelfParam={null}
-            onCreate={openCreateShelf}
-            onEdit={openEditShelf}
-            onDelete={deleteShelf}
-            onAddBook={addBookToShelf}
-            onRemoveBook={removeBookFromShelf}
-          />
-        )
-
-      // Estante específica aberta pelo ID
-      case 'estante':
-        return (
-          <Shelves
-            books={books}
-            shelves={shelves}
-            navigate={navigate}
-            shelfParam={route.param}
-            onCreate={openCreateShelf}
-            onEdit={openEditShelf}
-            onDelete={deleteShelf}
-            onAddBook={addBookToShelf}
-            onRemoveBook={removeBookFromShelf}
-          />
-        )
-
-      // Diário de leitura completo agrupado por data
-      case 'atividade':
-        return (
-          <Activity
-            books={books}
-            activity={activity}
-            navigate={navigate}
-            onEditLog={editLog}
-            onDeleteLog={deleteLog}
-          />
-        )
-
-      // Livros com resenha escrita
-      case 'resenhas':
-        return (
-          <Reviews
-            books={books}
-            navigate={navigate}
-          />
-        )
-
-      // Estatísticas anuais: barras mensais, distribuição de notas, destaques
-      case 'stats':
-        return (
-          <Stats
-            books={books}
-            heatmap={heatmap}
-            activity={activity}
-          />
-        )
-
-      // Detalhe de um livro específico pelo ID
-      case 'detalhe':
-        return (
-          <BookDetail
-            bookId={route.param ?? ''}
-            books={books}
-            activity={activity}
-            shelves={shelves}
-            navigate={navigate}
-            openLog={openLog}
-            onEdit={openEditBook}
-            onReviewSaved={onReviewSaved}
-            onDelete={deleteBook}
-            onEditLog={editLog}
-            onDeleteLog={deleteLog}
-          />
-        )
-
-      // Fallback para views não reconhecidas
-      default:
-        return (
-          <div style={{ padding: 32, color: 'var(--ink-2)' }}>
-            View não encontrada: {route.view}
-          </div>
-        )
-    }
-  }
-
-  // ── Definição dos itens de navegação ─────────────────────────────────────
-  // Cada item define: id (para comparar activeNav), view (para navigate()),
-  // label (texto visível), icon (chave do componente Icon) e count (badge)
-  const navBiblioteca = [
+  // Contagens do menu (como o shell antigo mostrava ao lado de cada item).
+  const count = (pred: (b: Book) => boolean) => (books.length ? books.filter(pred).length || undefined : undefined)
+  const nav: NavGroup[] = [
     {
-      id: 'home',     view: 'home',     label: 'Início',      icon: 'inicio',
-      count: null,
+      label: 'Biblioteca',
+      items: [
+        { id: 'home', label: 'Início', icon: 'home', key: 'h' },
+        { id: 'catalog', label: 'Biblioteca', icon: 'library', key: 'b', count: books.length || undefined },
+        { id: 'toread', label: 'Quero ler', icon: 'watchlist', key: 'q', count: count((b) => TO_READ.includes(b.status)) },
+        { id: 'wishlist', label: 'Wishlist', icon: 'store', key: 'w', count: count((b) => b.status === 'wishlist') },
+        { id: 'diary', label: 'Diário', icon: 'days', key: 'd' },
+      ],
     },
     {
-      id: 'catalogo', view: 'catalogo', label: 'Biblioteca',  icon: 'catalogo',
-      count: books.length,
-    },
-    {
-      id: 'querler',  view: 'querler',  label: 'Quero ler',   icon: 'wishlist',
-      count: books.filter(b => b.status === 'owned').length,
-    },
-    {
-      id: 'wishlist', view: 'wishlist', label: 'Wishlist',    icon: 'sparkle',
-      count: books.filter(b => b.status === 'wishlist').length,
+      label: 'Coleção',
+      items: [
+        { id: 'shelves', label: 'Estantes', icon: 'shelf', key: 's', count: shelves.length || undefined },
+        { id: 'reviews', label: 'Resenhas', icon: 'review', count: count((b) => !!b.review.trim()) },
+        { id: 'stats', label: 'Estatísticas', icon: 'stats', key: 'e' },
+      ],
     },
   ]
 
-  const navColecao = [
-    {
-      id: 'listas',    view: 'listas',    label: 'Estantes',     icon: 'listas',
-      count: shelves.length,
-    },
-    {
-      id: 'atividade', view: 'atividade', label: 'Atividade',    icon: 'atividade',
-      count: null,
-    },
-    {
-      id: 'resenhas',  view: 'resenhas',  label: 'Resenhas',     icon: 'resenhas',
-      count: books.filter(b => b.review).length,
-    },
-    {
-      id: 'stats',     view: 'stats',     label: 'Estatísticas', icon: 'stats',
-      count: null,
-    },
-  ]
-
-  // ── Tela de carregamento ──────────────────────────────────────────────────
-  if (loading) {
-    return (
-      // Wrapper de escopo: garante que os tokens OKLCH da Frieren resolvam mesmo durante o load
-      <div className="frieren-shell" data-theme={activeTheme} data-density={activeDensity}>
-        <div className="fr-app">
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            height: '100%', color: 'var(--ink-3)',
-          }}>
-            {/* Spinner simples enquanto carrega os dados */}
-            <div style={{
-              width: 32, height: 32, border: '2px solid var(--line)',
-              borderTopColor: 'var(--teal)', borderRadius: '50%',
-              animation: 'spin 0.8s linear infinite',
-            }} />
-          </div>
-        </div>
-      </div>
-    )
+  const SCREENS: Record<ViewId, () => ReactElement> = {
+    home: () => <Home />, catalog: () => <Library />, toread: () => <ToRead />, wishlist: () => <Wishlist />,
+    diary: () => <Diary />, shelves: () => <Shelves />, reviews: () => <Reviews />, stats: () => <Stats />,
   }
+  // Livro aberto (#livro/<id>) e estante aberta (#estante/<id>) ficam na URL; senão vale a tela do menu.
+  const body = route.bookId ? <BookDetail id={route.bookId} /> : route.shelfId ? <ShelfView id={route.shelfId} /> : SCREENS[route.view]()
 
-  // ── Render principal ──────────────────────────────────────────────────────
   return (
-    // Wrapper de escopo — isola os tokens OKLCH da Frieren do resto da app.
-    // data-theme e data-density vivem aqui, como prop React (não via querySelector).
-    <div className="frieren-shell" data-theme={activeTheme} data-density={activeDensity}>
-    <div className="fr-app">
-
-      {/* ── Sidebar de navegação ── */}
-      <aside className="fr-side">
-
-        {/* Marca da seção — ícone circular com foto + nome e subtítulo */}
-        <div className="side-brand">
-          <div className="brand-mark">
-            {/* Imagem de identidade da seção Frieren */}
-            <img src="/frieren.png" alt="Frieren" />
-          </div>
-          <div className="brand-text">
-            <div className="brand-name">Frieren</div>
-            <div className="brand-role">Livros</div>
-          </div>
-        </div>
-
-        {/* Botão de ação principal — abre o modal de registro sem pré-selecionar livro */}
-        <button className="side-log-btn" onClick={() => openLog()}>
-          <Icon name="plus" /> <span>Registrar leitura</span>
-        </button>
-
-        {/* Botão secundário — abre o modal de adição de livro novo ao catálogo */}
-        <button className="side-add-btn" onClick={() => setAddOpen(true)}>
-          <Icon name="plus" /> <span>Adicionar livro</span>
-        </button>
-
-        {/* Navegação principal com dois grupos */}
-        <nav className="side-nav">
-
-          {/* Grupo "Biblioteca" — seções de status do livro */}
-          <div className="nav-group-label">Biblioteca</div>
-          {navBiblioteca.map(n => (
-            <button
-              key={n.id}
-              className={'nav-item' + (activeNav === n.id ? ' active' : '')}
-              onClick={() => navigate(n.view)}
-            >
-              <Icon name={n.icon} />
-              <span>{n.label}</span>
-              {/* Badge de contagem — só aparece quando count > 0 */}
-              {n.count != null && n.count > 0 && (
-                <span className="nav-count">{n.count}</span>
-              )}
-            </button>
-          ))}
-
-          {/* Grupo "Coleção" — estantes, atividade, resenhas e estatísticas */}
-          <div className="nav-group-label">Coleção</div>
-          {navColecao.map(n => (
-            <button
-              key={n.id}
-              className={'nav-item' + (activeNav === n.id ? ' active' : '')}
-              onClick={() => navigate(n.view)}
-            >
-              <Icon name={n.icon} />
-              <span>{n.label}</span>
-              {n.count != null && n.count > 0 && (
-                <span className="nav-count">{n.count}</span>
-              )}
-            </button>
-          ))}
-        </nav>
-
-        {/* Rodapé da sidebar — link para voltar ao dashboard principal */}
-        <div className="side-foot">
-          <a className="back-makima" href="/">
-            <span className="dot" /> Voltar à Makima
-          </a>
-        </div>
-      </aside>
-
-      {/* ── Conteúdo principal ── */}
-      <main className="fr-main">
-
-        {/* Barra superior com título da view atual e campo de busca */}
-        <div className="fr-topbar">
-          <span className="topbar-title">
-            {TITLES[route.view] ?? 'Frieren'}
-          </span>
-          <div className="topbar-spacer" />
-          {/* Campo de busca — ao digitar em outra view, navega para Biblioteca */}
-          <div className="search">
-            <Icon name="search" />
-            <input
-              value={query}
-              placeholder="Buscar título ou autor…"
-              onChange={e => {
-                setQuery(e.target.value)
-                // Redireciona para Biblioteca ao iniciar busca em outra view
-                if (
-                  e.target.value &&
-                  !['catalogo', 'wishlist', 'querler'].includes(route.view)
-                ) {
-                  navigate('catalogo')
-                }
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Área de scroll do conteúdo — referência usada para resetar ao trocar view */}
-        <div className="fr-scroll" ref={scrollRef}>
-          {renderView()}
-        </div>
-      </main>
-
-      {/* ── Barra "Agora lendo" — só aparece quando há livro sendo lido ── */}
-      {nowBook && (
-        <NowBar
-          book={nowBook}
-          books={books}
-          navigate={navigate}
-          openLog={openLog}
-        />
-      )}
-
-      {/* ── Modal de registro de leitura ── */}
-      <LogModal
-        open={modal.open}
-        presetBookId={modal.presetBookId}
-        books={books}
-        onClose={() => setModal({ open: false, presetBookId: null })}
-        onSave={addLog}
-      />
-
-      {/* ── Modal de edição de sessão de leitura ── */}
-      {/* Controlado por editingLog: null = fechado, ActivityEntry = aberto com dados da entrada */}
-      <EditLogModal
-        entry={editingLog}
-        onSave={saveLogEdit}
-        onClose={() => setEditingLog(null)}
-      />
-
-      {/* ── Modal de adição de livro ── */}
-      <AddBookModal
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        onAdd={addBook}
-      />
-
-      {/* ── Modal de edição completa do livro ── */}
-      {/* Controlado por editingBookId: null = fechado, string = aberto no livro */}
-      <EditBookModal
-        bookId={editingBookId}
-        onClose={() => setEditingBookId(null)}
-        onSaved={onBookSaved}
-      />
-
-      {/* ── Modal de criação/edição de estante ── */}
-      <ShelfModal
-        mode={shelfModal.editing ? 'edit' : 'create'}
-        shelf={shelfModal.editing}
-        open={shelfModal.open}
-        onClose={() => setShelfModal({ open: false, editing: null })}
-        onSubmit={submitShelf}
-      />
-
-      {/* ── Notificação toast de feedback ── */}
-      <Toast message={toast} />
-
-      {/* ── Painel de tweaks visuais ── */}
-      <TweaksPanel tweaks={tweaks} setTweak={setTweak} />
-    </div>
-    </div>
+    <FrierenContext.Provider value={ctx}>
+      <AppShell
+        agent={{ id: 'frieren', name: AGENT.name, subtitle: 'Livros · Biblioteca', portrait: AGENT.portrait }}
+        nav={nav}
+        active={route.bookId ? 'catalog' : route.shelfId ? 'shelves' : route.view}
+        onNavigate={(id) => goto(id as ViewId)}
+        mobileTabs={['home', 'catalog', 'diary']}
+        primary={{ label: 'Registrar leitura', icon: 'add', key: 'n', onClick: () => openLog() }}
+        title={route.bookId ? 'Livro' : route.shelfId ? 'Estante' : TITLES[route.view]}
+        subtitle={route.bookId || route.shelfId ? 'Detalhe' : SUBTITLES[route.view]}
+        // Busca do topo: leva para a Biblioteca já filtrada (como no shell antigo).
+        search={{ placeholder: 'Buscar livro…', onSubmit: (q) => { setTopQuery(q); goto('catalog') } }}
+        onGoAgent={(to) => navigate(to)}
+        art={{ value: prefs.art, options: ART_OPTIONS, onChange: (art) => setPrefs({ art }) }}
+        artValue={prefs.art}
+        commands={[
+          { id: 'frieren.log', label: 'Registrar leitura', icon: 'book', keywords: 'li página sessão progresso', run: () => openLog() },
+          { id: 'frieren.add', label: 'Adicionar livro', icon: 'add', keywords: 'novo google books cadastrar', run: () => openAdd() },
+          { id: 'frieren.shelf', label: 'Ver estantes', icon: 'shelf', keywords: 'coleção lista', run: () => goto('shelves') },
+        ]}
+        preferences={
+          <>
+            <SettingRow title="Mostrar livros como" help="Vale para a Biblioteca e o Quero ler.">
+              <SegmentedControl
+                label="Layout da Biblioteca"
+                value={prefs.layout}
+                options={[{ value: 'grid', label: 'Capas', icon: 'grid' }, { value: 'list', label: 'Lista', icon: 'list' }]}
+                onChange={(layout) => setPrefs({ layout })}
+              />
+            </SettingRow>
+            <SettingRow title="Tamanho das capas" help="A densidade da grade de livros.">
+              <SegmentedControl
+                label="Tamanho das capas"
+                value={prefs.density}
+                options={[{ value: 'large', label: 'Grande' }, { value: 'medium', label: 'Médio' }, { value: 'compact', label: 'Compacto' }]}
+                onChange={(density) => setPrefs({ density })}
+              />
+            </SettingRow>
+            <SettingRow title="Topo do Início" help="Cinemático: retrato da Frieren. Editorial: compacto. Galeria: a capa do livro atual.">
+              <SegmentedControl
+                label="Estilo do topo do Início"
+                value={prefs.heroLayout}
+                options={[{ value: 'cinematic', label: 'Cinemático' }, { value: 'editorial', label: 'Editorial' }, { value: 'gallery', label: 'Galeria' }]}
+                onChange={(heroLayout) => setPrefs({ heroLayout })}
+              />
+            </SettingRow>
+            <SettingRow title="Meta de livros por ano" help="Aparece no Início e nas Estatísticas.">
+              <NumberInput
+                aria-label="Meta de livros por ano"
+                min={1}
+                max={500}
+                value={prefs.yearlyGoal > 0 ? prefs.yearlyGoal : DEFAULT_PREFS.yearlyGoal}
+                onChange={(e) => { const n = Math.round(Number(e.target.value)); if (n >= 1 && n <= 500) setPrefs({ yearlyGoal: n }) }}
+              />
+            </SettingRow>
+          </>
+        }
+      >
+        <ScreenBoundary resetKey={hashFor(route)} onHome={() => goto('home')}>{body}</ScreenBoundary>
+        {dialog?.kind === 'log' && <LogForm key={`${dialog.draft.bookId}-${dialog.draft.title}`} initial={dialog.draft} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'add' && <AddBookForm initialTitle={dialog.title} onClose={() => setDialog(null)} />}
+      </AppShell>
+    </FrierenContext.Provider>
   )
 }

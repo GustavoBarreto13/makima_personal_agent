@@ -1,7 +1,7 @@
 # Spec 073 — Frieren no Design System
 
-**Status:** em andamento — fases 1–4 entregues (backend, arte élfica, shell novo em `/books-next`). Migração aplicada no VPS em
-07/out/2026 (2 abandonos datados). Pendente: validar `/books-next` no navegador e a fase 5 (troca e limpeza).
+**Status:** entregue (fases 1–5). Migração aplicada no VPS em 07/out/2026; `/books-next` validado pelo dono e
+promovido a `/books` (shell antigo removido, `/stats` no contrato `StatsPayload`).
 **Branch:** `073-frieren-ds` (a partir do `master`).
 **Plano de execução:** cinco fases, um commit por fase, como na Akane (spec 072).
 
@@ -45,7 +45,7 @@ As estatísticas não fecham com o padrão:
   idiomas), recordes (sequência real por dias de calendário, dia recorde, livro mais longo) e livros com coração.
   Datas em America/Sao_Paulo, soft delete fora da conta.
 - Rotas novas em `/api/books`: `GET /home`, `GET|PUT /favorites`, `PATCH /{id}/like`, `GET /stats/payload`
-  (durante o rollout; na fase 5 ocupa o lugar do `/stats` antigo).
+  (durante o rollout; na fase 5 assumiu o lugar do `/stats` antigo).
 
 ### Front (fases 2–5)
 

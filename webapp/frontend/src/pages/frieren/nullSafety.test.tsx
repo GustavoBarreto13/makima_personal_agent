@@ -43,7 +43,7 @@ const route = (url: string) => {
     return { status: 'ok', activity: [{ id: 'l1', date: '2026-10-01', book_id: 'b1', title: null, author: null, pages: null, page: null, note: null, rating: null, type: null }] }
   }
   if (url.startsWith('/api/books/heatmap')) return { status: 'ok', heatmap: null }
-  if (url.startsWith('/api/books/stats/payload')) {
+  if (url.startsWith('/api/books/stats')) {
     return {
       status: 'ok', period: { year: 2026, month: null, label: '2026' }, previous: null, kpis: [], daily: [], monthly: [], monthlyUnit: 'páginas',
       distribution: [], rankings: {}, records: [], moments: [], first_year: 2026,

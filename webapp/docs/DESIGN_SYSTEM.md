@@ -207,10 +207,9 @@ Encontrados na auditoria que originou o padrão:
   (40% aparece como 4000%); `agents/journal/tools.py:658` horários em UTC (barras 3h erradas) e
   `CURRENT_DATE`/`date.today()` em `:638,:680,:733,:1016`; sequência atual zera se hoje ainda não
   tem entrada (`Insights.tsx:76-86`).
-- **Frieren**: "maior sequência" e janelas de 7/14/30 dias contam *dias com leitura*, não dias
-  corridos (`Stats.tsx:98-110`, `Home.tsx:127-162`); `abandonado` é mapeado como `read`
-  (`FrierenShell.tsx:52`); o histograma de notas perde notas < 3 e as que não são meio-ponto
-  (`Stats.tsx:128`); `GET /books/stats` existe e ninguém usa (`books.py:382`).
+- ~~**Frieren**~~ (**corrigido**, spec 073): sequência e janelas de 7/30 dias agora contam dias corridos;
+  abandonado tem status e data próprios; distribuição de notas 0.5–5 completa; páginas de livros apagados
+  fora da conta; `GET /books/stats` virou o `StatsPayload`.
 - **Marin**: "Episódios por mês" conta *sessões* (`tools.py:1728`); "Completos" e `by_status` são
   all-time num tile anual (`:1745`, `:1832`); heatmap parseia `"YYYY-MM-DD"` como UTC → mês errado e
   key duplicada "Dez" (`components/Heatmap.tsx:68`); Stats e Rewind duplicados.
@@ -350,7 +349,7 @@ imediato. Para ativar, use a skill `update-config`.
 7. Apagar o CSS e os componentes mortos; marcar `migrating` e, ao concluir, `conformant`.
 
 Ordem sugerida (do menor para o maior): Komi → Yato → Mai (ganha o "Voltar à Makima" que não tinha)
-→ Frieren → ~~Akane~~ (feito, spec 072) → Violet → Marin → Nami → Kaguya. O Hub da Makima só adota tokens, tema e
+→ ~~Frieren~~ (feito, spec 073) → ~~Akane~~ (feito, spec 072) → Violet → Marin → Nami → Kaguya. O Hub da Makima só adota tokens, tema e
 ícones (não tem sidebar).
 
 ## Guia de voz

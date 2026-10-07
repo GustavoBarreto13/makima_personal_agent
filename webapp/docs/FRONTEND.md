@@ -204,55 +204,27 @@ de estudo (US4) — todos os endpoints em `violetApi.tutor*`/`*TutorGuide`.
 
 ---
 
-### FrierenShell — Livros (`src/pages/frieren/`)
+### FrierenShell — Livros (`src/pages/frieren/`) — no Design System (spec 073)
 
-**Roteamento:** estado interno `{view, param}`. Não usa hash nem React Router internamente.
+`conformant` no manifesto, direção de arte **"Biblioteca élfica"** (`design/art/elfica.css`). Um `AppShell`; a tela e o
+item aberto vivem no **hash** (`lib/routes.ts`): `#inicio`, `#biblioteca`, `#quero-ler`, `#wishlist`, `#diario`,
+`#estantes`, `#resenhas`, `#estatisticas`, `#livro/<id>`, `#estante/<id>` (aliases do shell antigo: `#catalogo`,
+`#atividade`, `#listas`; `/books-next` redireciona para `/books`). O shell carrega catálogo e estantes uma vez
+(contexto `useFrieren()`); `frierenApi.ts` normaliza na borda (`lib/normalize.ts`: os 7 status reais, nada de `null`).
 
-**Telas (screens/):**
-
-| View | Tela | O que mostra |
-|---|---|---|
-| `home` | Home | Hero com stats + heatmap de páginas + "agora lendo" + atividade recente |
-| `catalogo` | Biblioteca | **Todos** os livros **agrupados por status** (Lendo → Quero ler → Wishlist → Lidos, cada grupo com contagem), com filtro por status **lembrado entre sessões** e seletor de ordenação na toolbar |
-| `querler` | Quero ler | Lista to-read |
-| `wishlist` | Wishlist | Lista de desejos com links para lojas |
-| `listas` / `estante` | Estantes | Grade de estantes + estante aberta. **Criar/editar/excluir** estante e **adicionar/remover** livros pela UI |
-| `atividade` | Atividade | Diário de leitura por data |
-| `resenhas` | Resenhas | Avaliações dos livros lidos |
-| `stats` | Stats | "Ano em revisão" — estatísticas anuais de leitura |
-| `detalhe` | Detalhe | Página do livro: edição completa (modal), **resenha inline** (editor estilo Violet), **marcações coloridas**, registro/histórico de leitura e estantes |
-
-> A aba **"Lendo agora"** foi removida (era redundante com a Biblioteca); a NowBar do rodapé
-> ("agora lendo") permanece.
-
-**Ordenação (toolbar da Biblioteca + TweaksPanel):** fonte única `SORT_OPTIONS` em `types.ts` —
-Adicionado recentemente (usa `created_at`), Atividade recente, Avaliação, Título, Autor, Progresso,
-Nº de páginas. O filtro e a ordenação escolhidos são persistidos nos tweaks (`statusFilter`,
-`ordenacao`) via `localStorage` (`fr-tweaks`).
-
-**Modais e edição inline:**
-
-| Arquivo | O que faz |
-|---|---|
-| `AddBookModal.tsx` | Adicionar livro (busca Google Books) |
-| `LogModal.tsx` / `EditLogModal.tsx` | Registrar / editar uma sessão de leitura |
-| `EditBookModal.tsx` | Edição completa do livro — todos os campos (capa por URL, título, autor, gênero, ano, páginas, ISBN, idioma, descrição, status, nota, datas, resenha, loja, preço) |
-| `ShelfModal.tsx` | Criar/editar estante (nome, descrição, seletor de cor) |
-| `ReviewEditor` (em `screens/BookDetail.tsx`) | Editor de resenha inline (textarea serif transparente com auto-resize, estilo do editor da Violet; ⌘/Ctrl+Enter salva, Esc cancela) |
-| `BookMarks` (em `screens/BookDetail.tsx`) | Seção "Minhas marcações" — bullets coloridos (rosa/amarelo/verde/azul/laranja) com página opcional |
-
-**Componentes de UI (frieren/ui/):**
-
-| Arquivo | O que faz |
-|---|---|
-| `Cover.tsx` | Capa do livro: fotográfica (se houver URL) ou tipográfica (paleta determinística) |
-| `Heatmap.tsx` | Heatmap de páginas lidas por dia — meses em **linha única com scroll horizontal** (padrão do heatmap da Violet), cobrindo **o ano inteiro** (meses futuros aparecem apagados) |
-| `ProgressBar.tsx` | Barra de progresso de leitura |
-| `Spark.tsx` | Sparkline de barras verticais |
-| `Stars.tsx` | Avaliação em estrelas fracionárias via clip SVG |
-| `Icons.tsx` | Set de ícones SVG inline |
-
----
+- **Início** (modelo da Akane): hero (Cinemático/Editorial/Galeria nas Preferências), cartões de meta anual, páginas
+  em 7 dias, ritmo de 30 dias e sequência, linha rápida (`components/LogCapture.tsx`, parser em `lib/log.ts`:
+  `Duna p. 240 ontem`, `Hobbit terminei ★4.5`), vitrine de favoritos, lidos recentemente, painel Diário/Notas, lendo
+  agora e mapa de calor do ano. Dados: `GET /api/books/home`.
+- **Registrar leitura**: linha rápida salva direto só com livro e progresso claros; senão `LogForm` (carrossel de
+  capas, +10/+25/+50/terminei, data, nota do dia, nota com meia estrela). `lib/submit.ts` devolve o "Desfazer".
+- **Coleções** (`lib/schemas.ts`, `useCollection`): Biblioteca (7 status, agrupados na ordem natural por
+  `withStatusOrder`), Quero ler, Wishlist (link da loja inline), Diário (editar/excluir sessão com Desfazer), Resenhas.
+- **Detalhe** (`screens/BookDetail.tsx`, `DetailPage`): situação, curtir, vitrine, estantes, resenha inline, ficha,
+  sessões e marcações (`BookMarks`); editar em `BookForm` (`clear` apaga campos opcionais).
+- **Estantes**, **Estatísticas** (`StatsPage` com `GET /api/books/stats` + meta anual das Preferências).
+- CSS: só complementos `.fr-*` com tokens `--ds-*` em `frieren.css`. Testes: `FrierenShell.test.tsx`,
+  `screens.test.tsx`, `nullSafety.test.tsx` e `lib/*.test.ts`.
 
 ### KaguyaShell — Tarefas e agenda (`src/pages/kaguya/`)
 
@@ -623,7 +595,7 @@ Cada shell tem identidade visual própria baseada num personagem de anime:
 |---|---|---|---|---|
 | NamiShell | Nami (One Piece) | `nami.jpg`, `nami-hero.png` | `nami.css` | `.nami-app` |
 | VioletShell | Violet Evergarden | `violet.png` | `violet.css` | `.vl-app` |
-| FrierenShell | Frieren Beyond Journey's End | `frieren.png` | `frieren.css` | `.frieren-shell` (+ `.fr-app` interno) |
+| FrierenShell | Frieren Beyond Journey's End | `frieren.png` | `frieren.css` (só complementos `.fr-*` do DS) | `.ds-app` (Design System) |
 | KaguyaShell | Kaguya (Kaguya-sama: Love is War) | `kaguya.jpg` | `kaguya.css` | `.kg-app` |
 | AkaneShell | Akane Kurokawa (Oshi no Ko) | `akane.png` | `akane.css` (só complementos `.ax-*` do DS) | `.ds-app` (Design System) |
 | MarinShell | Marin Kitagawa (Sono Bisque Doll) | `marin.png` | `marin.css` | `.marin-shell` |
@@ -638,7 +610,6 @@ Cada shell tem identidade visual própria baseada num personagem de anime:
      `data-privacy` (embaralha valores `.amount`), `data-density`.
    - VioletShell: `data-theme`, `data-acento` (sapphire/gold/emerald/garnet como variáveis OKLCH
      injetadas por JS), `modo-foco`, `modo-amplo`, `tipo-tecnica`.
-   - FrierenShell: `data-theme`, `data-density`.
    - Shells novos (Kaguya, Akane, Marin, Mai, Komi, Makima): `data-theme` dark/light aplicado
      na classe raiz; densidade onde houver (ex.: Mai).
 3. Preferências são persistidas em `localStorage` (chaves `nami:*`, `vl-tweaks`, `fr-tweaks`,

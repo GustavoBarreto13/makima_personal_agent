@@ -10,8 +10,7 @@ Dez Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
 |---|---|---|---|---|
 | `violet/` | `VioletShell.tsx` | `violetApi` em `lib/api.ts` | `violet.css` | `/journal/*` |
 | `nami/` | `NamiShell.tsx` (sobre o `AppShell` do DS) | `namiApi` em `nami/namiApi.ts` | `nami.css` (só complementos do DS, tokens `--ds-*`) | `/nami/*` |
-| `frieren/` | `FrierenShell.tsx` (legado, sai na fase 5 da spec 073) | `booksApi` em `lib/api.ts` | `frieren.css` | `/books/*` |
-| `frieren-next/` | `FrierenShell.tsx` (sobre o `AppShell` do DS, spec 073) | `frierenApi` em `frieren-next/frierenApi.ts` | `frieren.css` (só complementos `.fr-*` do DS) | `/books-next/*` (prévia) |
+| `frieren/` | `FrierenShell.tsx` (sobre o `AppShell` do DS, spec 073) | `frierenApi` em `frieren/frierenApi.ts` | `frieren.css` (só complementos `.fr-*` do DS) | `/books/*` |
 | `kaguya/` | `KaguyaShell.tsx` | `kaguyaApi` em `kaguya/kaguyaApi.ts` | `kaguya.css` | `/tasks/*` |
 | `akane/` | `AkaneShell.tsx` (sobre o `AppShell` do DS) | `akaneApi` em `akane/akaneApi.ts` | `akane.css` (só complementos do DS, tokens `--ds-*`) | `/movies/*` |
 | `marin/` | `MarinShell.tsx` | `marinApi` em `marin/marinApi.ts` | `marin.css` | `/animes/*` |
@@ -77,7 +76,7 @@ Cada domínio usa seu objeto de API. Componentes nunca chamam `fetch` diretament
 // Correto:
 violetApi.heatmap(year)     // violet
 namiApi.getStats(year)      // nami
-booksApi.list()             // frieren
+frierenApi.list()           // frieren
 
 // Proibido:
 fetch('/api/journal/heatmap?year=2026', { credentials: 'include' })
@@ -99,7 +98,7 @@ fetch('/api/journal/heatmap?year=2026', { credentials: 'include' })
 └── ui/                  # primitivos visuais (charts, icons, etc.)
 ```
 
-`violetApi` e `booksApi` ficam em `lib/api.ts` por serem menores; todos os outros domínios têm arquivo de API próprio dentro da sua pasta (`nami/namiApi.ts`, `kaguya/kaguyaApi.ts`, `akane/akaneApi.ts`, `marin/marinApi.ts`, `mai/maiApi.ts`, `komi/komiApi.ts`, `yato/yatoApi.ts`, `makima/makimaApi.ts`).
+`violetApi` fica em `lib/api.ts` por serem menores; todos os outros domínios têm arquivo de API próprio dentro da sua pasta (`nami/namiApi.ts`, `kaguya/kaguyaApi.ts`, `akane/akaneApi.ts`, `marin/marinApi.ts`, `mai/maiApi.ts`, `komi/komiApi.ts`, `yato/yatoApi.ts`, `makima/makimaApi.ts`).
 
 ---
 

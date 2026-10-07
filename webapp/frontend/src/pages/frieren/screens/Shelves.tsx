@@ -1,399 +1,285 @@
-// Tela de estantes — exibe a grade de todas as estantes do usuário.
-// Quando shelfParam está definido, exibe os livros de uma estante específica.
-// Reutiliza o mesmo componente para as views "listas" e "estante" do shell.
-//
-// Gerenciamento (criar/editar/excluir estante + adicionar/remover livros) é feito
-// aqui: o shell passa os callbacks e re-sincroniza os dados após cada mutação.
+// Estantes: coleções temáticas de livros. A grade mostra cada estante com até 5 capas sobrepostas, a faixa de
+// cor, o nome, a descrição e quantos livros tem; a estante aberta mostra os livros, com adicionar e tirar.
+// Criar, editar e excluir estantes; tirar um livro e excluir a estante pedem confirmação e têm "Desfazer".
 
-import { useState } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
+import {
+  Button, EmptyState, Field, Icon, IconButton, Input, Menu, Modal, Page, SectionHeader, Textarea, type MenuItem,
+} from '../../../design'
+import { confirm } from '../../../design/headless/confirm'
+import { toast } from '../../../design/headless/toast'
+import { cx } from '../../../design/ui/primitives'
+import { BookCard } from '../components/BookCard'
+import { BookCover } from '../components/BookCover'
+import { useFrieren } from '../context'
+import { frierenApi } from '../frierenApi'
+import { norm } from '../lib/log'
+import { shelfTone } from '../lib/normalize'
 import type { Book, Shelf } from '../types'
-import { Icon } from '../ui/Icons'
-import { Cover } from '../ui/Cover'
-import { Stars } from '../ui/Stars'
 
-// Props recebidas da FrierenShell
-interface ShelvesProps {
-  books: Book[]
-  shelves: Shelf[]
-  navigate: (view: string, param?: string | null) => void
-  // ID da estante aberta, ou null para exibir a grade de todas as estantes
-  shelfParam: string | null
-  // Abre o modal de criação de estante
-  onCreate: () => void
-  // Abre o modal de edição de uma estante existente
-  onEdit: (shelf: Shelf) => void
-  // Exclui uma estante (backend + re-sync no shell)
-  onDelete: (shelfId: string) => Promise<void>
-  // Vincula um livro a uma estante
-  onAddBook: (bookId: string, shelfId: string) => Promise<void>
-  // Desvincula um livro de uma estante
-  onRemoveBook: (bookId: string, shelfId: string) => Promise<void>
+/** As 8 cores do shell antigo, agora guardadas como matiz (ou "neutral" para o cinza). */
+export const SHELF_COLORS: { value: string; label: string }[] = [
+  { value: '195', label: 'Verde-água' },
+  { value: '80', label: 'Dourado' },
+  { value: '18', label: 'Granada' },
+  { value: '250', label: 'Azul' },
+  { value: '155', label: 'Verde' },
+  { value: '300', label: 'Roxo' },
+  { value: '350', label: 'Rosa' },
+  { value: 'neutral', label: 'Cinza' },
+]
+
+/** Estilo de cor de uma estante: o matiz vai na variável --fr-sh (frieren.css monta a cor com o acento do DS). */
+function toneStyle(accent: string): { style: CSSProperties; neutral: boolean } {
+  const t = shelfTone(accent, 195)
+  return { style: { '--fr-sh': t.hue } as CSSProperties, neutral: t.neutral }
 }
 
-// ── GRADE DE ESTANTES ──────────────────────────────────────────────────────────
-// Exibe todas as estantes em cartões com miniaturas de capas
+/** Criar ou editar uma estante: nome (obrigatório), descrição e cor. */
+function ShelfForm({ shelf, onClose }: { shelf: Shelf | null; onClose: () => void }) {
+  const frieren = useFrieren()
+  const [name, setName] = useState(shelf?.name ?? '')
+  const [description, setDescription] = useState(shelf?.description ?? '')
+  // Estante antiga com cor no formato velho: mostra a cor equivalente selecionada.
+  const initialColor = (() => {
+    if (!shelf) return '195'
+    const t = shelfTone(shelf.accent, 195)
+    return t.neutral ? 'neutral' : SHELF_COLORS.find((c) => c.value === String(Math.round(t.hue)))?.value ?? String(Math.round(t.hue))
+  })()
+  const [color, setColor] = useState(initialColor)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
-function ShelfGrid({
-  books,
-  shelves,
-  navigate,
-  onCreate,
-  onEdit,
-  onDelete,
-}: {
-  books: Book[]
-  shelves: Shelf[]
-  navigate: (view: string, param?: string | null) => void
-  onCreate: () => void
-  onEdit: (shelf: Shelf) => void
-  onDelete: (shelfId: string) => Promise<void>
-}) {
-  // ID da estante aguardando confirmação de exclusão (null = nenhuma)
-  const [confirmId, setConfirmId] = useState<string | null>(null)
-
-  return (
-    <div className="page">
-      <div className="section-head" style={{ marginTop: 32 }}>
-        <div>
-          <h2 className="section-title" style={{ fontSize: 28 }}>Estantes</h2>
-          <span className="section-sub">coleções que você organizou</span>
-        </div>
-        {/* Botão de criação — abre o modal de nova estante */}
-        <button className="btn btn-primary" style={{ marginLeft: 'auto' }} onClick={onCreate}>
-          <Icon name="plus" /> Nova estante
-        </button>
-      </div>
-
-      {/* Grade responsiva de cartões de estante */}
-      <div className="shelf-grid">
-        {shelves.map(s => {
-          // Livros desta estante — limitado a 5 para as miniaturas de capa
-          const shelfBooks = books
-            .filter(b => b.shelves.includes(s.id))
-            .slice(0, 5)
-
-          // Total real de livros (não truncado) para o contador
-          const total = books.filter(b => b.shelves.includes(s.id)).length
-
-          return (
-            // Cartão clicável — abre a estante
-            <div
-              key={s.id}
-              className="shelf-card"
-              onClick={() => navigate('estante', s.id)}
-            >
-              {/* Ações de editar/excluir — aparecem no hover, no canto do card.
-                  stopPropagation impede que o clique abra a estante. */}
-              <div className="shelf-actions" onClick={e => e.stopPropagation()}>
-                <button className="shelf-act" title="Editar" onClick={() => onEdit(s)}>
-                  <Icon name="pencil" />
-                </button>
-                <button className="shelf-act" title="Excluir" onClick={() => setConfirmId(s.id)}>
-                  <Icon name="trash" />
-                </button>
-              </div>
-
-              {/* Miniaturas das capas — empilhadas horizontalmente com sobreposição */}
-              <div className="shelf-spines">
-                {shelfBooks.map((b, i) => (
-                  <div
-                    key={b.id}
-                    style={{
-                      // Sobreposição: cada capa desloca 22px à direita da anterior
-                      marginRight: i < shelfBooks.length - 1 ? -22 : 0,
-                      position: 'relative',
-                      zIndex: shelfBooks.length - i,
-                      // Tamanho fixo de 64px para as miniaturas da estante
-                      width: 64,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Cover book={b} />
-                  </div>
-                ))}
-              </div>
-
-              {/* Barra colorida com a cor da estante — identidade visual */}
-              <div
-                className="shelf-accent-bar"
-                style={{ background: s.accent, height: 3, marginTop: 12 }}
-              />
-
-              {/* Nome da estante em Newsreader */}
-              <div className="shelf-name">{s.name}</div>
-
-              {/* Descrição opcional da estante */}
-              {s.desc && <div className="shelf-desc">{s.desc}</div>}
-
-              {/* Contador de livros */}
-              <div className="shelf-count">
-                {total} {total === 1 ? 'livro' : 'livros'}
-              </div>
-
-              {/* Confirmação inline de exclusão */}
-              {confirmId === s.id && (
-                <div className="shelf-confirm" onClick={e => e.stopPropagation()}>
-                  <span>Excluir "{s.name}"?</span>
-                  <div className="shelf-confirm-actions">
-                    <button className="btn btn-ghost" onClick={() => setConfirmId(null)}>Cancelar</button>
-                    <button
-                      className="btn btn-danger"
-                      onClick={async () => { await onDelete(s.id); setConfirmId(null) }}
-                    >
-                      Excluir
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-
-        {/* Estado vazio */}
-        {shelves.length === 0 && (
-          <p style={{
-            color: 'var(--ink-3)',
-            fontStyle: 'italic',
-            fontFamily: 'var(--serif)',
-            marginTop: 32,
-          }}>
-            Nenhuma estante criada ainda. Clique em "Nova estante" para começar.
-          </p>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── ESTANTE ABERTA ─────────────────────────────────────────────────────────────
-// Exibe os livros de uma estante específica em grade de capas
-
-function ShelfView({
-  shelf,
-  books,
-  navigate,
-  onEdit,
-  onDelete,
-  onAddBook,
-  onRemoveBook,
-}: {
-  shelf: Shelf
-  books: Book[]
-  navigate: (view: string, param?: string | null) => void
-  onEdit: (shelf: Shelf) => void
-  onDelete: (shelfId: string) => Promise<void>
-  onAddBook: (bookId: string, shelfId: string) => Promise<void>
-  onRemoveBook: (bookId: string, shelfId: string) => Promise<void>
-}) {
-  // Controla o seletor de "adicionar livros" e a confirmação de exclusão da estante
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
-
-  // Livros dentro e fora desta estante (o "fora" alimenta o seletor)
-  const shelfBooks = books.filter(b => b.shelves.includes(shelf.id))
-  const outsideBooks = books.filter(b => !b.shelves.includes(shelf.id))
-
-  return (
-    <div className="page">
-      {/* Botão voltar para a grade de estantes */}
-      <button className="detail-back" onClick={() => navigate('listas')}>
-        <Icon name="arrowLeft" /> Estantes
-      </button>
-
-      {/* Cabeçalho da estante com barra de cor, nome e ações */}
-      <div style={{ marginTop: 18 }}>
-        {/* Barra colorida de identidade da estante */}
-        <div
-          className="shelf-accent-bar"
-          style={{ background: shelf.accent, width: 40, height: 4 }}
-        />
-
-        {/* Linha do título + ações (editar/excluir a estante) */}
-        <div className="shelf-view-head">
-          <h1 className="detail-title" style={{ fontSize: 38, marginTop: 8 }}>
-            {shelf.name}
-          </h1>
-          <div className="shelf-view-actions">
-            <button className="btn btn-ghost" onClick={() => onEdit(shelf)}>
-              <Icon name="pencil" /> Editar
-            </button>
-            {!confirmDelete ? (
-              <button className="btn btn-danger" onClick={() => setConfirmDelete(true)}>
-                <Icon name="trash" /> Excluir
-              </button>
-            ) : (
-              <>
-                <button className="btn btn-ghost" onClick={() => setConfirmDelete(false)}>Cancelar</button>
-                <button className="btn btn-danger" onClick={() => onDelete(shelf.id)}>Confirmar</button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Descrição da estante */}
-        {shelf.desc && (
-          <p className="shelf-desc" style={{ fontSize: 15, maxWidth: '54ch' }}>
-            {shelf.desc}
-          </p>
-        )}
-
-        {/* Contagem de livros + botão de adicionar */}
-        <div className="shelf-view-meta">
-          <div className="shelf-count">
-            {shelfBooks.length} {shelfBooks.length === 1 ? 'livro' : 'livros'}
-          </div>
-          <button className="btn btn-primary" onClick={() => setPickerOpen(true)}>
-            <Icon name="plus" /> Adicionar livros
-          </button>
-        </div>
-      </div>
-
-      {/* Grade de capas — mesma estrutura do Catalog, com botão de remover no hover */}
-      <div className="cover-grid" style={{ marginTop: 28 }}>
-        {shelfBooks.map(b => (
-          <div key={b.id} className="shelf-book">
-            {/* Botão remover da estante — sobre a capa, no hover */}
-            <button
-              className="shelf-remove"
-              title="Remover da estante"
-              onClick={(e) => { e.stopPropagation(); onRemoveBook(b.id, shelf.id) }}
-            >
-              <Icon name="x" />
-            </button>
-
-            <a
-              className="cover-link"
-              onClick={() => navigate('detalhe', b.id)}
-              style={{ cursor: 'pointer', textDecoration: 'none' }}
-            >
-              <Cover book={b} badge />
-              <div className="cover-meta">
-                <div className="cm-title">{b.title}</div>
-                <div className="cm-author">{b.author}</div>
-                <div className="cm-row">
-                  {b.rating != null ? (
-                    <Stars value={b.rating} />
-                  ) : b.status === 'reading' ? (
-                    <span className="result-count" style={{ color: 'var(--teal-deep)' }}>
-                      {b.progress != null ? Math.round(b.progress * 100) : 0}% lido
-                    </span>
-                  ) : (
-                    <span className="result-count">na wishlist</span>
-                  )}
-                </div>
-              </div>
-            </a>
-          </div>
-        ))}
-      </div>
-
-      {/* Estado vazio da estante */}
-      {shelfBooks.length === 0 && (
-        <p style={{ color: 'var(--ink-3)', marginTop: 40, textAlign: 'center' }}>
-          Nenhum livro nesta estante ainda. Use "Adicionar livros" para incluir.
-        </p>
-      )}
-
-      {/* ── SELETOR DE LIVROS PARA ADICIONAR ── */}
-      {pickerOpen && (
-        <div
-          className="modal-scrim"
-          onMouseDown={(e) => { if (e.target === e.currentTarget) setPickerOpen(false) }}
-        >
-          <div className="modal" role="dialog" aria-label="Adicionar livros à estante">
-            <div className="modal-head">
-              <span className="modal-title">Adicionar livros</span>
-              <button className="modal-x" onClick={() => setPickerOpen(false)} aria-label="Fechar">
-                <Icon name="x" />
-              </button>
-            </div>
-
-            <div className="modal-body">
-              <div className="shelf-picker-list">
-                {outsideBooks.map(b => (
-                  // Ao clicar, vincula o livro; o shell re-sincroniza e o item some da lista
-                  <button
-                    key={b.id}
-                    className="shelf-picker-item"
-                    onClick={() => onAddBook(b.id, shelf.id)}
-                  >
-                    <div style={{ width: 34, flexShrink: 0 }}>
-                      <Cover book={b} />
-                    </div>
-                    <div className="spi-meta">
-                      <div className="spi-title">{b.title}</div>
-                      <div className="spi-author">{b.author}</div>
-                    </div>
-                    <Icon name="plus" />
-                  </button>
-                ))}
-
-                {outsideBooks.length === 0 && (
-                  <p style={{ color: 'var(--ink-3)', fontSize: 14, padding: '8px 2px' }}>
-                    Todos os seus livros já estão nesta estante.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn btn-primary" onClick={() => setPickerOpen(false)}>Concluir</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── COMPONENTE PRINCIPAL ───────────────────────────────────────────────────────
-// Escolhe entre ShelfGrid e ShelfView com base no shelfParam
-
-export function Shelves({
-  books, shelves, navigate, shelfParam,
-  onCreate, onEdit, onDelete, onAddBook, onRemoveBook,
-}: ShelvesProps) {
-  // Se shelfParam for null, exibe a grade de todas as estantes
-  if (!shelfParam) {
-    return (
-      <ShelfGrid
-        books={books}
-        shelves={shelves}
-        navigate={navigate}
-        onCreate={onCreate}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />
-    )
+  const save = async () => {
+    if (!name.trim()) { setError('Dê um nome à estante.'); return }
+    setSaving(true)
+    try {
+      const body = { name: name.trim(), description: description.trim(), accent: color }
+      if (shelf) await frierenApi.updateShelf(shelf.id, body)
+      else await frierenApi.createShelf(body)
+      frieren.reload()
+      toast(shelf ? 'Estante atualizada' : 'Estante criada', { tone: 'success' })
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível salvar.')
+      setSaving(false)
+    }
   }
 
-  // Busca a estante pelo ID
-  const shelf = shelves.find(s => s.id === shelfParam)
+  return (
+    <Modal
+      title={shelf ? 'Editar estante' : 'Nova estante'}
+      size="sm"
+      dirty={name !== (shelf?.name ?? '') || description !== (shelf?.description ?? '') || color !== initialColor}
+      onClose={onClose}
+      footer={<><Button onClick={onClose}>Cancelar</Button><Button variant="primary" icon="check" disabled={saving} onClick={() => void save()}>Salvar</Button></>}
+    >
+      <div className="ds-stack" onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); void save() } }}>
+        <Field label="Nome" error={error && !name.trim() ? error : null}>
+          {(a) => <Input {...a} autoFocus value={name} placeholder="Ex.: Clássicos russos" onChange={(e) => { setName(e.target.value); setError('') }} />}
+        </Field>
+        <Field label="Descrição" hint="Opcional.">{(a) => <Textarea {...a} rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />}</Field>
+        <Field label="Cor">
+          {() => (
+            <div className="ds-inline fr-swatches" role="radiogroup" aria-label="Cor da estante">
+              {SHELF_COLORS.map((c) => {
+                const t = toneStyle(c.value)
+                return (
+                  <button
+                    key={c.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={color === c.value}
+                    aria-label={c.label}
+                    title={c.label}
+                    className={cx('fr-swatch fr-sh-swatch', t.neutral && 'fr-sh-neutral', color === c.value && 'fr-swatch-on')}
+                    style={t.style}
+                    onClick={() => setColor(c.value)}
+                  />
+                )
+              })}
+            </div>
+          )}
+        </Field>
+        {error && name.trim() && <p className="ds-errmsg" role="alert">{error}</p>}
+      </div>
+    </Modal>
+  )
+}
 
-  // Se a estante não for encontrada (ID inválido), volta para a grade
+/** Excluir estante: os livros continuam na biblioteca. "Desfazer" recria a estante com os mesmos livros. */
+async function removeShelf(shelf: Shelf, books: Book[], reload: () => void, after?: () => void) {
+  const ok = await confirm({
+    title: `Excluir a estante “${shelf.name}”?`,
+    body: 'Os livros continuam na biblioteca; só a estante some.',
+    confirmLabel: 'Excluir estante',
+    danger: true,
+  })
+  if (!ok) return
+  const members = books.filter((b) => b.shelves.includes(shelf.id)).map((b) => b.id)
+  try {
+    await frierenApi.deleteShelf(shelf.id)
+    reload()
+    after?.()
+    toast('Estante excluída', {
+      undo: () => {
+        void (async () => {
+          const created = await frierenApi.createShelf({ name: shelf.name, description: shelf.description, accent: shelf.accent })
+          for (const id of members) await frierenApi.addToShelf(created.id, id)
+          reload()
+        })().catch(() => toast('Não foi possível desfazer.', { tone: 'error' }))
+      },
+    })
+  } catch { toast('Não foi possível excluir a estante.', { tone: 'error' }) }
+}
+
+function ShelfCard({ shelf, books, onEdit }: { shelf: Shelf; books: Book[]; onEdit: () => void }) {
+  const frieren = useFrieren()
+  const [menu, setMenu] = useState(false)
+  const inside = books.filter((b) => b.shelves.includes(shelf.id))
+  const t = toneStyle(shelf.accent)
+  const items: MenuItem[] = [
+    { id: 'edit', label: 'Editar estante', onSelect: onEdit },
+    { id: 'delete', label: 'Excluir estante', onSelect: () => { void removeShelf(shelf, frieren.books, frieren.reload) } },
+  ]
+  return (
+    <article className={cx('ds-card fr-shelf', t.neutral && 'fr-sh-neutral')} style={t.style}>
+      <button type="button" className="fr-shelf-open" onClick={() => frieren.goto({ view: 'shelves', shelfId: shelf.id })} aria-label={`Abrir a estante ${shelf.name}`}>
+        <span className="fr-stack" aria-hidden="true">
+          {inside.slice(0, 5).map((b) => (
+            <span key={b.id} className="fr-stack-i"><BookCover title={b.title} src={b.coverUrl} small titleOnCover={false} /></span>
+          ))}
+          {inside.length === 0 && <span className="fr-stack-empty"><Icon name="shelf" size={28} /></span>}
+        </span>
+        <span className="fr-shelf-bar" />
+        <b className="fr-shelf-t">{shelf.name}</b>
+        {shelf.description && <span className="fr-shelf-d">{shelf.description}</span>}
+        <span className="ds-mono">{inside.length} {inside.length === 1 ? 'livro' : 'livros'}</span>
+      </button>
+      <span className="fr-menu fr-shelf-more">
+        <IconButton icon="more" label={`Ações da estante ${shelf.name}`} size={16} onClick={() => setMenu((v) => !v)} />
+        {menu && <Menu label="Ações da estante" items={items} onClose={() => setMenu(false)} />}
+      </span>
+    </article>
+  )
+}
+
+export function Shelves() {
+  const frieren = useFrieren()
+  const [form, setForm] = useState<{ shelf: Shelf | null } | null>(null)
+  const shelves = frieren.shelves
+
+  return (
+    <Page wide>
+      <SectionHeader title="Suas estantes" action={<Button variant="primary" icon="add" onClick={() => setForm({ shelf: null })}>Nova estante</Button>} />
+      {shelves.length === 0
+        ? (
+          <EmptyState
+            icon="shelf"
+            title="Nenhuma estante ainda"
+            hint="Agrupe livros por tema: clássicos, releituras, presentes, a pilha das férias…"
+            action={<Button variant="primary" icon="add" onClick={() => setForm({ shelf: null })}>Criar a primeira estante</Button>}
+          />
+        )
+        : <div className="fr-shelves">{shelves.map((s) => <ShelfCard key={s.id} shelf={s} books={frieren.books} onEdit={() => setForm({ shelf: s })} />)}</div>}
+      {form && <ShelfForm shelf={form.shelf} onClose={() => setForm(null)} />}
+    </Page>
+  )
+}
+
+/** Escolher livros para pôr na estante (um toque adiciona; a lista some com quem já entrou). */
+function AddBooks({ shelf, onClose }: { shelf: Shelf; onClose: () => void }) {
+  const frieren = useFrieren()
+  const [q, setQ] = useState('')
+  const [added, setAdded] = useState<string[]>([])
+  const outside = useMemo(() => {
+    const n = norm(q)
+    return frieren.books
+      .filter((b) => !b.shelves.includes(shelf.id) && !added.includes(b.id))
+      .filter((b) => !n || norm(b.title).includes(n) || norm(b.author).includes(n))
+  }, [frieren.books, shelf.id, added, q])
+
+  const add = async (b: Book) => {
+    try {
+      await frierenApi.addToShelf(shelf.id, b.id)
+      setAdded((cur) => [...cur, b.id])
+      frieren.reload()
+    } catch { toast('Não foi possível adicionar.', { tone: 'error' }) }
+  }
+
+  return (
+    <Modal title={`Adicionar livros · ${shelf.name}`} onClose={onClose} footer={<Button variant="primary" onClick={onClose}>Pronto{added.length ? ` (${added.length})` : ''}</Button>}>
+      <div className="ds-stack">
+        <Input aria-label="Buscar livro" placeholder="Buscar por título ou autor" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="ds-list">
+          {outside.map((b) => (
+            <button key={b.id} type="button" className="ds-lrow" onClick={() => void add(b)}>
+              <span className="ds-lead"><Icon name="add" size={18} /></span>
+              <span className="ds-t"><b>{b.title}</b>{b.author && <span>{b.author}</span>}</span>
+            </button>
+          ))}
+          {outside.length === 0 && <p className="ds-hint">{q ? 'Nada com esse título.' : 'Todos os livros já estão nesta estante.'}</p>}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+export function ShelfView({ id }: { id: string }) {
+  const frieren = useFrieren()
+  const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const shelf = frieren.shelves.find((s) => s.id === id)
+
+  // Estante que não existe (link velho, excluída): volta para a grade, como o shell antigo fazia.
   if (!shelf) {
     return (
-      <ShelfGrid
-        books={books}
-        shelves={shelves}
-        navigate={navigate}
-        onCreate={onCreate}
-        onEdit={onEdit}
-        onDelete={onDelete}
-      />
+      <Page>
+        <EmptyState icon="shelf" title="Estante não encontrada" hint="Ela pode ter sido excluída." action={<Button icon="left" onClick={() => frieren.goto('shelves')}>Ver estantes</Button>} />
+      </Page>
     )
   }
 
-  // Exibe os livros da estante selecionada
+  const inside = frieren.books.filter((b) => b.shelves.includes(shelf.id))
+  const t = toneStyle(shelf.accent)
+
+  const takeOut = async (b: Book) => {
+    const ok = await confirm({ title: `Tirar “${b.title}” desta estante?`, body: 'O livro continua na biblioteca.', confirmLabel: 'Tirar' })
+    if (!ok) return
+    try {
+      await frierenApi.removeFromShelf(shelf.id, b.id)
+      frieren.reload()
+      toast(`Saiu de ${shelf.name}`, { undo: () => { frierenApi.addToShelf(shelf.id, b.id).then(frieren.reload).catch(() => toast('Não foi possível desfazer.', { tone: 'error' })) } })
+    } catch { toast('Não foi possível tirar o livro.', { tone: 'error' }) }
+  }
+
   return (
-    <ShelfView
-      shelf={shelf}
-      books={books}
-      navigate={navigate}
-      onEdit={onEdit}
-      onDelete={onDelete}
-      onAddBook={onAddBook}
-      onRemoveBook={onRemoveBook}
-    />
+    <Page wide className={`fr-dens-${frieren.prefs.density}`}>
+      <div className={cx('fr-shelfhead', t.neutral && 'fr-sh-neutral')} style={t.style}>
+        <Button variant="ghost" size="sm" icon="left" onClick={() => frieren.goto('shelves')}>Estantes</Button>
+        <span className="fr-shelf-bar" />
+        <h2 className="fr-shelfname">{shelf.name}</h2>
+        {shelf.description && <p className="fr-shelf-d">{shelf.description}</p>}
+        <div className="ds-inline fr-wrap">
+          <Button variant="primary" icon="add" onClick={() => setAdding(true)}>Adicionar livros</Button>
+          <Button icon="edit" onClick={() => setEditing(true)}>Editar</Button>
+          <Button icon="delete" onClick={() => void removeShelf(shelf, frieren.books, frieren.reload, () => frieren.goto('shelves'))}>Excluir</Button>
+        </div>
+      </div>
+      {inside.length === 0
+        ? <EmptyState icon="book" title="Estante vazia" hint="Adicione livros da sua biblioteca a esta estante." action={<Button variant="primary" icon="add" onClick={() => setAdding(true)}>Adicionar livros</Button>} />
+        : (
+          <div className="ds-grid-poster">
+            {inside.map((b, i) => (
+              <div key={b.id} className="fr-inshelf">
+                <BookCard book={b} index={i} />
+                <IconButton className="fr-takeout" icon="close" label={`Tirar ${b.title} da estante`} size={15} onClick={() => void takeOut(b)} />
+              </div>
+            ))}
+          </div>
+        )}
+      {adding && <AddBooks shelf={shelf} onClose={() => setAdding(false)} />}
+      {editing && <ShelfForm shelf={shelf} onClose={() => setEditing(false)} />}
+    </Page>
   )
 }

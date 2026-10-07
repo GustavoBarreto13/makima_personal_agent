@@ -33,13 +33,13 @@ def test_home_chama_get_books_home(mock_home):
 
 @patch(f"{R}.get_stats_payload", return_value={"status": "ok", "kpis": []})
 def test_stats_payload_repassa_ano_e_mes(mock_stats):
-    assert client.get("/api/books/stats/payload?year=2025&month=3").status_code == 200
+    assert client.get("/api/books/stats?year=2025&month=3").status_code == 200
     mock_stats.assert_called_once_with(2025, 3)
 
 
 @patch(f"{R}.get_stats_payload", return_value={"status": "error", "message": "month deve estar entre 1 e 12"})
 def test_stats_payload_erro_vira_400(_):
-    assert client.get("/api/books/stats/payload?month=13").status_code == 400
+    assert client.get("/api/books/stats?month=13").status_code == 400
 
 
 # ─── favoritos e coração ──────────────────────────────────────────────────────

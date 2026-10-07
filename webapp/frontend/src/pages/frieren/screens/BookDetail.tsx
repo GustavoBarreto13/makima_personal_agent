@@ -1,679 +1,293 @@
-// Tela de detalhe de um livro — exibe todas as informações do livro:
-// capa, metadados, resenha, estantes e diário de leitura específico deste livro.
-// Layout em duas colunas: capa fixa à esquerda, informações scrolláveis à direita.
+// Página do livro (DetailPage do DS). Cabeçalho com capa, situação, gênero e nota; ações: registrar leitura,
+// curtir, trocar a situação (os 7 status, com "Desfazer"), estantes, e o menu ⋯ (editar, vitrine, excluir).
+// Abas: Visão geral (sinopse, resenha editável na própria página, ficha), Diário (as sessões deste livro,
+// com editar/excluir) e Marcações (trechos coloridos).
 
-import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Book, ActivityEntry, Shelf, BulletColor } from '../types'
-import { BULLET_COLOR_META } from '../types'
-import { Icon } from '../ui/Icons'
-import { Cover } from '../ui/Cover'
-import { Stars } from '../ui/Stars'
-import { ProgressBar } from '../ui/ProgressBar'
-// Componente de botões editar/apagar para cada entrada do diário
-import { LogActions } from '../ui/LogActions'
-import { booksApi } from '../../../lib/api'
-import type { ApiBookBullet } from '../../../lib/api'
+import { useState } from 'react'
+import {
+  Button, Chip, DetailPage, EmptyState, ErrorState, Field, hueFromName, Icon, IconButton, InfoRow, LoadingState, Menu, Page,
+  ProgressBar, SectionHeader, StatusChip, Tag, Textarea, type MenuItem,
+} from '../../../design'
+import { fmtDate, fmtMoney } from '../../../design/core/format'
+import { confirm } from '../../../design/headless/confirm'
+import { toast } from '../../../design/headless/toast'
+import { BookForm } from '../components/BookForm'
+import { BookMarks } from '../components/BookMarks'
+import { SessionEditor } from '../components/SessionEditor'
+import { ShelfPicker } from '../components/ShelfPicker'
+import { useFrieren } from '../context'
+import { frierenApi } from '../frierenApi'
+import { domainOf, normalizeBook, normalizeUrl } from '../lib/normalize'
+import { deleteSession } from '../lib/sessions'
+import { STATUS, STATUS_ORDER } from '../lib/status'
+import { useLoad } from '../lib/useLoad'
+import type { ApiHistoryLog, Book, BookStatus, Session } from '../types'
 
-// Props recebidas da FrierenShell
-interface BookDetailProps {
-  // ID do livro a exibir
-  bookId: string
-  books: Book[]
-  activity: ActivityEntry[]
-  shelves: Shelf[]
-  navigate: (view: string, param?: string | null) => void
-  openLog: (bookId?: string | null) => void
-  // Abre o modal de edição completa do livro (chama o shell)
-  onEdit: (bookId: string) => void
-  // Re-sincroniza os dados no shell após salvar a resenha inline
-  onReviewSaved: () => Promise<void>
-  // Remove o livro do catálogo (chama o backend e re-sincroniza no shell)
-  onDelete: (bookId: string) => Promise<void>
-  // Abre o modal de edição para uma entrada específica do diário
-  onEditLog: (entry: ActivityEntry) => void
-  // Remove uma entrada do diário (chama o backend e re-sincroniza no shell)
-  onDeleteLog: (entry: ActivityEntry) => Promise<void>
+const MAX_FAVORITES = 4
+
+/** Sessões do histórico no formato do Diário (para reaproveitar o editor e o excluir com "Desfazer"). */
+export function toSessions(logs: ApiHistoryLog[], book: Book): Session[] {
+  return [...logs].reverse().map((l) => {
+    const page = l.page_end ?? 0
+    const kind: Session['kind'] = book.finished && l.date.slice(0, 10) === book.finished ? 'finished' : (l.page_start ?? 0) <= 1 ? 'started' : 'progress'
+    return { id: l.id, date: l.date.slice(0, 10), bookId: book.id, title: book.title, author: book.author, pages: l.pages_read ?? 0, page, note: l.session_notes ?? '', kind }
+  })
 }
 
-// Formata data ISO em texto legível (ex.: "3 de Mar 2026")
-function fmtDate(iso: string): string {
-  const d = new Date(iso + 'T00:00:00')
-  const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
-                 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-  return `${d.getDate()} de ${MESES[d.getMonth()]} ${d.getFullYear()}`
-}
+/** Resenha editável na própria página (o editor inline do shell antigo): Ctrl+Enter salva, Esc cancela. */
+function Review({ book }: { book: Book }) {
+  const frieren = useFrieren()
+  const [draft, setDraft] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
-// Retorna tempo relativo legível (ex.: "hoje", "ontem", "há 3 dias")
-function relDate(iso: string): string {
-  const hoje = new Date().toISOString().slice(0, 10)
-  if (iso === hoje) return 'hoje'
-  const diff = Math.round(
-    (new Date(hoje).getTime() - new Date(iso + 'T00:00:00').getTime()) / 86400000
-  )
-  if (diff === 1) return 'ontem'
-  if (diff < 7) return `há ${diff} dias`
-  return fmtDate(iso)
-}
+  const save = async () => {
+    if (draft === null) return
+    setSaving(true)
+    try {
+      // Esvaziar apaga a resenha (antes um texto vazio não tinha como ser gravado).
+      await frierenApi.updateMetadata(book.id, draft.trim() ? { notes: draft.trim() } : { clear: ['notes'] })
+      frieren.reload()
+      toast(draft.trim() ? 'Resenha salva' : 'Resenha apagada', { tone: 'success' })
+      setDraft(null)
+    } catch { toast('Não foi possível salvar a resenha.', { tone: 'error' }) }
+    setSaving(false)
+  }
 
-// Componente principal do detalhe do livro
-export function BookDetail({ bookId, books, activity, shelves, navigate, openLog, onEdit, onReviewSaved, onDelete, onEditLog, onDeleteLog }: BookDetailProps) {
-  // Controla a confirmação inline de remoção (dois passos: mostrar → confirmar)
-  const [confirmando, setConfirmando] = useState(false)
-  // Spinner durante a chamada de remoção ao backend
-  const [removendo,   setRemovendo]   = useState(false)
-
-  // Busca o livro pelo ID na lista carregada pelo shell
-  const book = books.find(b => b.id === bookId)
-
-  // Estado de erro: livro não encontrado (ID inválido ou removido)
-  if (!book) {
+  if (draft !== null) {
     return (
-      <div className="page">
-        <p style={{ marginTop: 40, color: 'var(--ink-3)' }}>Livro não encontrado.</p>
+      <div className="ds-stack" onKeyDown={(e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); void save() }
+        if (e.key === 'Escape') { e.preventDefault(); setDraft(null) }
+      }}>
+        <Field label="Resenha" hint="Ctrl+Enter salva · Esc cancela">
+          {(a) => <Textarea {...a} rows={8} autoFocus value={draft} placeholder="O que esse livro deixou em você?" onChange={(e) => setDraft(e.target.value)} />}
+        </Field>
+        <div className="ds-inline">
+          <Button variant="primary" icon="check" kbd="Ctrl+↵" disabled={saving} onClick={() => void save()}>Salvar resenha</Button>
+          <Button variant="ghost" onClick={() => setDraft(null)}>Cancelar</Button>
+        </div>
       </div>
     )
   }
-
-  // Filtra as entradas de atividade específicas deste livro (diário do livro)
-  const bookActivity = activity.filter(a => a.bookId === book.id)
-
-  // Estantes que contêm este livro — usadas para exibir chips de estante
-  const bookShelves = shelves.filter(s => book.shelves.includes(s.id))
-
-  // Rótulo de status legível para o chip no cabeçalho
-  const statusLabel: Record<string, string> = {
-    reading:  'Lendo agora',
-    read:     'Lido',
-    owned:    'Quero ler',
-    wishlist: 'Wishlist',
-  }
-
-  // Cor do chip de status — verde para lendo, dourado para lido, neutro para os demais
-  const statusBg = {
-    reading:  'var(--teal)',
-    read:     'var(--gold-deep)',
-    owned:    'var(--card)',
-    wishlist: 'var(--card)',
-  }[book.status] ?? 'var(--card)'
-
-  return (
-    <div className="page">
-
-      {/* ── BOTÃO VOLTAR ── */}
-      <button className="detail-back" onClick={() => navigate('catalogo')}>
-        <Icon name="arrowLeft" /> Biblioteca
+  if (!book.review) {
+    return (
+      <button type="button" className="fr-review-empty" onClick={() => setDraft('')}>
+        <Icon name="review" size={18} /> Escrever uma resenha
       </button>
+    )
+  }
+  return (
+    <div className="ds-stack">
+      <button type="button" className="fr-review" title="Clique para editar" onClick={() => setDraft(book.review)}>{book.review}</button>
+      <div><Button size="sm" variant="ghost" icon="edit" onClick={() => setDraft(book.review)}>Editar resenha</Button></div>
+    </div>
+  )
+}
 
-      {/* ── LAYOUT DE DUAS COLUNAS ── */}
-      {/* Coluna esquerda: capa sticky + ações | Coluna direita: informações scrolláveis */}
-      <div className="detail-hero">
+export function BookDetail({ id }: { id: string }) {
+  const frieren = useFrieren()
+  const { state, retry } = useLoad(async () => {
+    const [detail, logs, favorites] = await Promise.all([
+      frierenApi.detail(id),
+      frierenApi.history(id).catch(() => [] as ApiHistoryLog[]),
+      frierenApi.favorites().catch(() => null),
+    ])
+    return { detail, logs, favorites }
+  }, [id, frieren.rev])
+  const [tab, setTab] = useState('geral')
+  const [menu, setMenu] = useState<'more' | 'status' | null>(null)
+  const [dialog, setDialog] = useState<'edit' | 'shelves' | null>(null)
+  const [editing, setEditing] = useState<Session | null>(null)
 
-        {/* ── COLUNA ESQUERDA: CAPA E AÇÕES ── */}
-        <div className="detail-cover-wrap">
-          {/* Capa do livro em tamanho maior */}
-          <Cover book={book} />
+  const back = () => frieren.goto('catalog')
+  if (state.status === 'loading') return <Page><LoadingState variant="card" count={2} /></Page>
+  if (state.status === 'error') {
+    return (
+      <Page>
+        <ErrorState title="Não foi possível abrir o livro" hint="Ele pode ter sido excluído, ou a conexão falhou." onRetry={retry} />
+        <div><Button icon="left" onClick={back}>Voltar para a Biblioteca</Button></div>
+      </Page>
+    )
+  }
 
-          {/* Barra de progresso — exibida apenas se o livro estiver sendo lido */}
-          {book.status === 'reading' && book.progress != null && (
-            <div>
-              <div className="rc-prog-meta" style={{ marginBottom: 6 }}>
-                <span>pág. {book.page} de {book.pages}</span>
-                <span>{Math.round(book.progress * 100)}%</span>
-              </div>
-              <ProgressBar value={book.progress} />
-            </div>
-          )}
+  const { detail, logs, favorites } = state.data
+  // O catálogo do shell traz a última leitura; o detalhe traz a sinopse. Junta os dois.
+  const listed = frieren.books.find((b) => b.id === id)
+  const book: Book = { ...normalizeBook({ ...detail, last_read: listed?.lastRead ?? null }), page: listed?.page ?? detail.current_page ?? 0, progress: listed?.progress ?? null }
+  const sessions = toSessions(logs, book)
+  const favIds = favorites?.map((f) => f.id) ?? []
+  const isFav = favIds.includes(book.id)
+  const meta = STATUS[book.status]
 
-          {/* Botão principal de registro de leitura */}
-          <button
-            className="btn btn-primary"
-            style={{ justifyContent: 'center' }}
-            onClick={() => openLog(book.id)}
-          >
-            <Icon name="plus" /> Registrar leitura
-          </button>
+  const changeStatus = async (next: BookStatus) => {
+    if (next === book.status) return
+    const prev = book.status
+    try {
+      await frierenApi.setStatus(book.id, next)
+      frieren.reload()
+      toast(`${book.title}: ${STATUS[next].label}`, {
+        tone: 'success',
+        undo: () => { frierenApi.setStatus(book.id, prev).then(frieren.reload).catch(() => toast('Não foi possível desfazer.', { tone: 'error' })) },
+      })
+    } catch { toast('Não foi possível mudar a situação.', { tone: 'error' }) }
+  }
 
-          {/* Edição completa do livro — abre o modal com todos os campos */}
-          <button
-            className="btn btn-ghost"
-            style={{ justifyContent: 'center' }}
-            onClick={() => onEdit(book.id)}
-          >
-            <Icon name="pencil" /> Editar livro
-          </button>
+  const toggleLike = async () => {
+    const next = !book.liked
+    try {
+      await frierenApi.like(book.id, next)
+      frieren.reload()
+      toast(next ? 'Curtido' : 'Curtida removida', { undo: () => { void frierenApi.like(book.id, !next).then(frieren.reload) } })
+    } catch { toast('Não foi possível curtir agora.', { tone: 'error' }) }
+  }
 
-          {/* Remoção do livro — confirmação inline em dois passos */}
-          {!confirmando ? (
-            <button
-              className="btn btn-danger"
-              style={{ justifyContent: 'center' }}
-              onClick={() => setConfirmando(true)}
-            >
-              <Icon name="x" /> Remover livro
-            </button>
-          ) : (
-            <div className="detail-confirm">
-              <span>Remover "{book.title}"?</span>
-              <div className="detail-confirm-actions">
-                <button
-                  className="btn btn-ghost"
-                  onClick={() => setConfirmando(false)}
-                  disabled={removendo}
-                >
-                  Cancelar
-                </button>
-                <button
-                  className="btn btn-danger"
-                  disabled={removendo}
-                  onClick={async () => {
-                    setRemovendo(true)
-                    try {
-                      await onDelete(book.id)  // shell navega para catalogo após remover
-                    } finally {
-                      setRemovendo(false)
-                      setConfirmando(false)
-                    }
-                  }}
-                >
-                  {removendo ? 'Removendo…' : 'Confirmar'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+  const toggleFavorite = async () => {
+    if (!favorites) return
+    if (!isFav && favIds.length >= MAX_FAVORITES) { toast(`A vitrine já tem ${MAX_FAVORITES} livros. Tire um no Início para abrir espaço.`); return }
+    const next = isFav ? favIds.filter((x) => x !== book.id) : [...favIds, book.id]
+    try {
+      await frierenApi.setFavorites(next)
+      frieren.reload()
+      toast(isFav ? 'Saiu da vitrine' : 'Entrou na vitrine de favoritos', { tone: 'success', undo: () => { void frierenApi.setFavorites(favIds).then(frieren.reload) } })
+    } catch { toast('Não foi possível mudar a vitrine.', { tone: 'error' }) }
+  }
 
-        {/* ── COLUNA DIREITA: INFORMAÇÕES ── */}
-        <div className="detail-info">
+  const remove = async () => {
+    const ok = await confirm({
+      title: `Excluir “${book.title}”?`,
+      body: 'O livro sai da biblioteca, das estantes e das estatísticas. Você pode desfazer logo em seguida.',
+      confirmLabel: 'Excluir',
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      await frierenApi.delete(book.id)
+      frieren.reload()
+      back()
+      toast('Livro excluído', { undo: () => { frierenApi.restore(book.id).then(frieren.reload).catch(() => toast('Não foi possível desfazer.', { tone: 'error' })) } })
+    } catch { toast('Não foi possível excluir o livro.', { tone: 'error' }) }
+  }
 
-          {/* Gênero em fonte mono — destaque sutil acima do título */}
-          {book.genre && (
-            <div className="detail-genre">{book.genre}</div>
-          )}
+  const moreItems: MenuItem[] = [
+    { id: 'edit', label: 'Editar dados', onSelect: () => setDialog('edit') },
+    { id: 'fav', label: isFav ? 'Tirar da vitrine de favoritos' : 'Pôr na vitrine de favoritos', disabled: !favorites, onSelect: () => { void toggleFavorite() } },
+    { id: 'delete', label: 'Excluir livro', onSelect: () => { void remove() } },
+  ]
+  const statusItems: MenuItem[] = STATUS_ORDER.map((s) => ({ id: s, label: STATUS[s].label, checked: s === book.status, onSelect: () => { void changeStatus(s) } }))
 
-          {/* Título principal em Newsreader (serif) */}
-          <h1 className="detail-title">{book.title}</h1>
+  const bookShelves = frieren.shelves.filter((s) => book.shelves.includes(s.id))
+  // Ficha do livro: só as linhas que têm valor.
+  const facts = [
+    book.pages ? { title: 'Páginas', value: book.page ? `${book.page} de ${book.pages}` : String(book.pages) } : null,
+    book.started ? { title: 'Comecei em', value: fmtDate(book.started) } : null,
+    book.finished ? { title: 'Terminei em', value: fmtDate(book.finished) } : null,
+    book.abandoned ? { title: 'Abandonei em', value: fmtDate(book.abandoned) } : null,
+    book.addedAt ? { title: 'Na biblioteca desde', value: fmtDate(book.addedAt) } : null,
+    book.genres.length ? { title: book.genres.length > 1 ? 'Gêneros' : 'Gênero', value: book.genres.join(', ') } : null,
+    book.language ? { title: 'Idioma', value: book.language } : null,
+    book.year ? { title: 'Publicado em', value: String(book.year) } : null,
+    book.isbn ? { title: 'ISBN', value: book.isbn } : null,
+    book.price != null ? { title: 'Preço', value: fmtMoney(book.price) } : null,
+  ].filter((x): x is { title: string; value: string } => !!x)
 
-          {/* Autor e ano de publicação */}
-          <p className="detail-author">
-            de <b>{book.author}</b>
-            {book.year != null && ` · ${book.year}`}
-          </p>
-
-          {/* Linha de avaliação: estrelas + número + chip de status */}
-          <div className="detail-rating-row">
-            {book.rating != null ? (
-              <>
-                <Stars value={book.rating} lg />
-                <span className="rating-num" style={{ fontSize: 14 }}>
-                  {book.rating.toFixed(1)}
-                </span>
-              </>
-            ) : (
-              <span style={{
-                color: 'var(--ink-3)',
-                fontStyle: 'italic',
-                fontFamily: 'var(--serif)',
-              }}>
-                Ainda sem nota
-              </span>
-            )}
-
-            {/* Chip de status com cor contextual */}
-            <span
-              className="chip active"
-              style={{
-                cursor: 'default',
-                background: statusBg,
-                borderColor: ['owned', 'wishlist'].includes(book.status)
-                  ? 'var(--line)'
-                  : 'transparent',
-                color: ['owned', 'wishlist'].includes(book.status) ? 'var(--ink-2)' : '#fff',
-              }}
-            >
-              {statusLabel[book.status] ?? book.status}
+  return (
+    <Page>
+      <DetailPage
+        backLabel="Biblioteca"
+        onBack={back}
+        title={book.title}
+        subtitle={[book.author, book.year].filter(Boolean).join(' · ') || undefined}
+        chips={
+          <>
+            {meta.tone ? <StatusChip status={meta.tone} label={meta.label} /> : <Tag>{meta.label}</Tag>}
+            {book.genres.slice(0, 3).map((g) => <Tag key={g}>{g}</Tag>)}
+          </>
+        }
+        rating={book.status === 'lido' ? book.rating : undefined}
+        image={book.coverUrl}
+        icon="book"
+        hue={hueFromName(book.title)}
+        tab={tab}
+        onTab={setTab}
+        actions={
+          <>
+            <Button variant="primary" icon="add" onClick={() => frieren.openLog({ bookId: book.id })}>Registrar leitura</Button>
+            <Chip on={book.liked} icon="heart" aria-pressed={book.liked} onClick={() => void toggleLike()}>Curti</Chip>
+            <span className="fr-menu">
+              <Button icon={meta.icon} iconRight="down" aria-haspopup="menu" aria-expanded={menu === 'status'} onClick={() => setMenu(menu === 'status' ? null : 'status')}>{meta.label}</Button>
+              {menu === 'status' && <Menu label="Mudar a situação" items={statusItems} onClose={() => setMenu(null)} />}
             </span>
-          </div>
-
-          {/* Grade de metadados: páginas, publicação, gênero, data de término */}
-          <div className="detail-meta-grid">
-            {book.pages != null && (
-              <div className="dm-cell">
-                <div className="k">Páginas</div>
-                <div className="v">{book.pages}</div>
-              </div>
-            )}
-            {book.year != null && (
-              <div className="dm-cell">
-                <div className="k">Publicado</div>
-                <div className="v">{book.year}</div>
-              </div>
-            )}
-            {book.genre && (
-              <div className="dm-cell">
-                <div className="k">Gênero</div>
-                <div className="v" style={{ fontSize: 13 }}>{book.genre}</div>
-              </div>
-            )}
-            {book.started && (
-              <div className="dm-cell">
-                <div className="k">Início</div>
-                <div className="v" style={{ fontSize: 13 }}>{fmtDate(book.started)}</div>
-              </div>
-            )}
-            {book.finished && (
-              <div className="dm-cell">
-                <div className="k">Terminado</div>
-                <div className="v" style={{ fontSize: 13 }}>{fmtDate(book.finished)}</div>
-              </div>
-            )}
-            {book.status === 'reading' && book.progress != null && (
-              <div className="dm-cell">
-                <div className="k">Progresso</div>
-                <div className="v">{Math.round(book.progress * 100)}%</div>
-              </div>
-            )}
-          </div>
-
-          {/* ── RESENHA PESSOAL (editor inline) ── */}
-          <ReviewEditor book={book} onSaved={onReviewSaved} />
-
-          {/* ── MINHAS MARCAÇÕES ── */}
-          <BookMarks bookId={book.id} />
-
-          {/* ── ESTANTES ── */}
-          {/* Só exibe se o livro pertencer a pelo menos uma estante */}
-          {bookShelves.length > 0 && (
-            <>
-              <div className="detail-section-title">Nas estantes</div>
-              <div className="chips">
-                {bookShelves.map(s => (
-                  // Chip clicável navega para a estante correspondente
-                  <button
-                    key={s.id}
-                    className="chip"
-                    onClick={() => navigate('estante', s.id)}
-                  >
-                    {/* Ponto colorido com a cor da estante */}
-                    <span style={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: '50%',
-                      background: s.accent,
-                      display: 'inline-block',
-                      marginRight: 6,
-                    }} />
-                    {s.name}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* ── DIÁRIO DESTE LIVRO ── */}
-          {/* Histórico de sessões de leitura específicas deste livro */}
-          {bookActivity.length > 0 && (
-            <>
-              <div className="detail-section-title">Diário deste livro</div>
-              <div className="feed">
-                {bookActivity.map(a => (
-                  <div key={a.id} className="feed-item" style={{ paddingLeft: 0 }}>
-                    {/* Linha vertical lateral indicando sequência do diário */}
-                    <div className="feed-body" style={{
-                      borderLeft: '2px solid var(--line)',
-                      paddingLeft: 16,
-                    }}>
-                      <div className="feed-line">
-                        {/* Texto descritivo por tipo de entrada */}
-                        {a.type === 'finished' ? (
-                          <b>Terminou o livro</b>
-                        ) : a.type === 'started' ? (
-                          <b>Começou a ler</b>
-                        ) : (
-                          <>
-                            <b>+{a.pages} páginas</b>
-                            {a.page != null && (
-                              <span className="verb"> — até a pág. {a.page}</span>
-                            )}
-                          </>
-                        )}
-                      </div>
-
-                      {/* Nota pessoal da sessão, se houver */}
-                      {a.note && <div className="feed-note">"{a.note}"</div>}
-
-                      <div className="feed-meta">
-                        <span>{relDate(a.date)}</span>
-                        {/* Estrelas de avaliação se a entrada tiver nota */}
-                        {a.rating != null && <Stars value={a.rating} />}
-                      </div>
+            <Button icon="shelf" onClick={() => setDialog('shelves')}>Estantes</Button>
+            <span className="fr-menu">
+              <IconButton icon="more" label="Mais ações do livro" onClick={() => setMenu(menu === 'more' ? null : 'more')} />
+              {menu === 'more' && <Menu label="Ações do livro" items={moreItems} onClose={() => setMenu(null)} />}
+            </span>
+          </>
+        }
+        tabs={[
+          {
+            id: 'geral', label: 'Visão geral',
+            content: (
+              <>
+                {book.status === 'lendo' && book.progress !== null && (
+                  <section className="ds-card fr-pad">
+                    <ProgressBar value={book.progress * 100} label={`${Math.round(book.progress * 100)}% lido · página ${book.page} de ${book.pages}`} />
+                  </section>
+                )}
+                <section className="ds-card fr-pad"><p className="fr-synopsis">{detail.description || 'Sem sinopse. Use “Editar dados” para escrever uma.'}</p></section>
+                <div className="fr-split">
+                  <section aria-labelledby="fr-resenha">
+                    <SectionHeader title="Resenha" id="fr-resenha" />
+                    <Review book={book} />
+                  </section>
+                  <section aria-labelledby="fr-ficha">
+                    <SectionHeader title="Ficha" id="fr-ficha" />
+                    <div className="ds-list">{facts.map((f) => <InfoRow key={f.title} title={f.title} value={f.value} />)}</div>
+                    {book.storeUrl && (
+                      <a className="fr-store fr-store-block" href={normalizeUrl(book.storeUrl)} target="_blank" rel="noopener noreferrer">
+                        <Icon name="store" size={14} /> Comprar em {domainOf(book.storeUrl)} <Icon name="forward" size={13} />
+                      </a>
+                    )}
+                    <div className="ds-inline fr-wrap fr-shelfchips">
+                      {bookShelves.map((s) => (
+                        <Chip key={s.id} icon="shelf" onClick={() => frieren.goto({ view: 'shelves', shelfId: s.id })}>{s.name}</Chip>
+                      ))}
+                      <Chip icon="add" onClick={() => setDialog('shelves')}>{bookShelves.length ? 'Estantes' : 'Pôr numa estante'}</Chip>
                     </div>
-
-                    {/* Botões de editar e apagar — aparecem discretamente à direita da entrada */}
-                    <LogActions
-                      entry={a}
-                      onEdit={onEditLog}
-                      onDelete={onDeleteLog}
-                    />
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-        </div>
-      </div>
-    </div>
-  )
-}
-
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Seção "Sua resenha" — editor inline (identidade visual do editor da Violet)
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Ajusta a altura de um textarea ao conteúdo (auto-resize, como no editor da Violet)
-function autoResize(el: HTMLTextAreaElement | null) {
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = el.scrollHeight + 'px'
-}
-
-// Editor de resenha: leitura + edição inline. Escreve a qualquer momento no campo
-// `notes` do livro via booksApi.updateMetadata; o shell re-sincroniza em onSaved.
-function ReviewEditor({ book, onSaved }: { book: Book; onSaved: () => Promise<void> }) {
-  const [editing, setEditing] = useState(false)
-  const [draft,   setDraft]   = useState('')
-  const [saving,  setSaving]  = useState(false)
-  const ref = useRef<HTMLTextAreaElement>(null)
-
-  // Ao entrar em edição, pré-preenche com a resenha atual e ajusta a altura
-  const startEdit = useCallback(() => {
-    setDraft(book.review ?? '')
-    setEditing(true)
-  }, [book.review])
-
-  // Foca e dimensiona o textarea quando o editor abre
-  useEffect(() => {
-    if (editing && ref.current) {
-      ref.current.focus()
-      autoResize(ref.current)
-    }
-  }, [editing])
-
-  // Salva a resenha (draft vazio limpa o campo) e re-sincroniza no shell
-  const save = useCallback(async () => {
-    setSaving(true)
-    try {
-      await booksApi.updateMetadata(book.id, { notes: draft.trim() })
-      await onSaved()
-      setEditing(false)
-    } catch {
-      // Silencioso — mantém o editor aberto para tentar de novo
-    } finally {
-      setSaving(false)
-    }
-  }, [book.id, draft, onSaved])
-
-  return (
-    <>
-      {/* Cabeçalho: título + botão editar/escrever (some durante a edição) */}
-      <div className="detail-section-row">
-        <span className="detail-section-title" style={{ margin: 0 }}>Sua resenha</span>
-        {!editing && (
-          <button className="review-edit-btn" onClick={startEdit}>
-            <Icon name="pencil" /> {book.review ? 'Editar' : 'Escrever'}
-          </button>
-        )}
-      </div>
-
-      {editing ? (
-        // ── MODO EDIÇÃO — superfície serif estilo Violet ──
-        <div className="review-editor">
-          <textarea
-            ref={ref}
-            className="review-textarea"
-            value={draft}
-            placeholder="Escreva o que achou deste livro…"
-            disabled={saving}
-            onChange={e => { setDraft(e.target.value); autoResize(e.target) }}
-            onKeyDown={e => {
-              // Ctrl/⌘+Enter salva; Esc cancela. Enter comum quebra linha.
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save() }
-              if (e.key === 'Escape') setEditing(false)
-            }}
-          />
-          <div className="review-foot">
-            <span className="review-hint">⌘/Ctrl+Enter salva · Esc cancela</span>
-            <button className="btn btn-ghost" onClick={() => setEditing(false)} disabled={saving}>Cancelar</button>
-            <button className="btn btn-primary" onClick={save} disabled={saving}>
-              {saving ? 'Salvando…' : 'Salvar'}
-            </button>
-          </div>
-        </div>
-      ) : book.review ? (
-        // Resenha existente — clicar no texto também abre a edição
-        <p className="detail-review" style={{ cursor: 'text' }} onClick={startEdit}>{book.review}</p>
-      ) : (
-        // Estado vazio — prompt clicável (entra em edição)
-        <p className="review-empty" onClick={startEdit}>
-          Escreva o que achou deste livro…
-        </p>
-      )}
-    </>
-  )
-}
-
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Seção "Minhas marcações" — bullets coloridos ancorados a um livro
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Componente autônomo: carrega as marcações do livro no mount (por bookId),
-// permite adicionar (texto + cor + página opcional), editar e apagar.
-function BookMarks({ bookId }: { bookId: string }) {
-  // Lista de marcações carregadas do backend
-  const [bullets, setBullets] = useState<ApiBookBullet[]>([])
-  const [loading, setLoading] = useState(true)
-
-  // ── Estado do formulário de nova marcação ────────────────────────────────
-  const [newText,  setNewText]  = useState('')
-  const [newColor, setNewColor] = useState<BulletColor>('rosa')
-  const [newPage,  setNewPage]  = useState('')       // string p/ o input; '' = sem página
-  const [adding,   setAdding]   = useState(false)
-
-  // ── Estado de edição inline de uma marcação existente ────────────────────
-  const [editId,    setEditId]    = useState<string | null>(null)
-  const [editText,  setEditText]  = useState('')
-  const [editColor, setEditColor] = useState<BulletColor>('rosa')
-  const [editPage,  setEditPage]  = useState('')
-
-  // Carrega as marcações sempre que o livro muda
-  useEffect(() => {
-    let cancelado = false
-    setLoading(true)
-    booksApi.listBullets(bookId)
-      .then(res => { if (!cancelado) setBullets(res.bullets ?? []) })
-      .catch(() => { if (!cancelado) setBullets([]) })
-      .finally(() => { if (!cancelado) setLoading(false) })
-    return () => { cancelado = true }
-  }, [bookId])
-
-  // Converte a string do input de página para número|null
-  const pageValue = (s: string): number | null => {
-    const t = s.trim()
-    if (t === '') return null
-    const n = Number(t)
-    return Number.isFinite(n) ? n : null
-  }
-
-  // ── Adicionar marcação ───────────────────────────────────────────────────
-  const addBullet = useCallback(async () => {
-    const content = newText.trim()
-    if (!content) return
-    setAdding(true)
-    try {
-      const res = await booksApi.createBullet(bookId, {
-        content,
-        color: newColor,
-        page_number: pageValue(newPage),
-      })
-      // Anexa a marcação retornada e limpa o formulário
-      setBullets(prev => [...prev, res.bullet])
-      setNewText('')
-      setNewPage('')
-    } catch {
-      // Silencioso — mantém o texto digitado para o usuário tentar de novo
-    } finally {
-      setAdding(false)
-    }
-  }, [bookId, newText, newColor, newPage])
-
-  // ── Abrir edição de uma marcação ─────────────────────────────────────────
-  const startEdit = (b: ApiBookBullet) => {
-    setEditId(b.id)
-    setEditText(b.content)
-    setEditColor(b.color)
-    setEditPage(b.page_number != null ? String(b.page_number) : '')
-  }
-
-  // ── Salvar edição ────────────────────────────────────────────────────────
-  const saveEdit = useCallback(async () => {
-    if (!editId) return
-    const content = editText.trim()
-    if (!content) return
-    try {
-      const res = await booksApi.updateBullet(editId, {
-        content,
-        color: editColor,
-        page_number: pageValue(editPage),
-      })
-      setBullets(prev => prev.map(b => (b.id === editId ? res.bullet : b)))
-      setEditId(null)
-    } catch {
-      // Mantém o editor aberto em caso de falha
-    }
-  }, [editId, editText, editColor, editPage])
-
-  // ── Apagar marcação (otimista com rollback) ──────────────────────────────
-  const removeBullet = useCallback(async (id: string) => {
-    const anterior = bullets
-    setBullets(prev => prev.filter(b => b.id !== id))
-    try {
-      await booksApi.deleteBullet(id)
-    } catch {
-      setBullets(anterior)   // desfaz se o backend falhar
-    }
-  }, [bullets])
-
-  // Seletor de cores reutilizável (usado no form de adicionar e no de editar)
-  const ColorSwatches = ({ value, onPick }: { value: BulletColor; onPick: (c: BulletColor) => void }) => (
-    <div className="mk-swatches">
-      {BULLET_COLOR_META.map(c => (
-        <button
-          key={c.key}
-          type="button"
-          className={'mk-swatch mk-swatch--' + c.key + (value === c.key ? ' sel' : '')}
-          title={c.label}
-          aria-label={c.label}
-          onClick={() => onPick(c.key)}
-        />
-      ))}
-    </div>
-  )
-
-  return (
-    <>
-      <div className="detail-section-title">Minhas marcações</div>
-
-      {/* Lista de marcações existentes */}
-      {!loading && bullets.length > 0 && (
-        <div className="mk-list">
-          {bullets.map(b => (
-            editId === b.id ? (
-              // ── Modo edição ──
-              <div key={b.id} className="mk-edit">
-                <textarea
-                  className="note-input"
-                  value={editText}
-                  onChange={e => setEditText(e.target.value)}
-                  autoFocus
-                />
-                <div className="mk-edit-row">
-                  <ColorSwatches value={editColor} onPick={setEditColor} />
-                  <input
-                    className="mk-page-input"
-                    type="number"
-                    min={0}
-                    placeholder="pág."
-                    value={editPage}
-                    onChange={e => setEditPage(e.target.value)}
-                  />
-                  <div className="mk-edit-actions">
-                    <button className="btn btn-ghost" onClick={() => setEditId(null)}>Cancelar</button>
-                    <button className="btn btn-primary" onClick={saveEdit}>Salvar</button>
-                  </div>
+                  </section>
                 </div>
-              </div>
-            ) : (
-              // ── Modo leitura ──
-              <div key={b.id} className={'mk-item mk-item--' + b.color}>
-                <div className="mk-item-body">
-                  <span className="mk-text">{b.content}</span>
-                  {b.page_number != null && <span className="mk-page">p. {b.page_number}</span>}
+              </>
+            ),
+          },
+          {
+            id: 'diario', label: `Diário${sessions.length ? ` (${sessions.length})` : ''}`,
+            content: sessions.length === 0
+              ? <EmptyState icon="days" title="Nenhuma sessão ainda" hint="Registre até onde você leu para acompanhar o ritmo deste livro." action={<Button variant="primary" icon="add" onClick={() => frieren.openLog({ bookId: book.id })}>Registrar leitura</Button>} />
+              : (
+                <div className="ds-list">
+                  {sessions.map((s) => (
+                    <div key={s.id} className="ds-lrow fr-srow">
+                      <span className="ds-lead"><Icon name={s.kind === 'finished' ? 'finished' : s.kind === 'started' ? 'book' : 'page'} size={18} /></span>
+                      <span className="ds-t">
+                        <b>{fmtDate(s.date)}</b>
+                        <span>{s.kind === 'finished' ? 'Terminou' : `+${s.pages} ${s.pages === 1 ? 'página' : 'páginas'}`} · até a página {s.page}</span>
+                        {s.note && <span className="fr-srev">{s.note}</span>}
+                      </span>
+                      <span className="fr-sact">
+                        <IconButton icon="edit" label={`Editar sessão de ${fmtDate(s.date)}`} size={16} onClick={() => setEditing(s)} />
+                        <IconButton icon="delete" label={`Excluir sessão de ${fmtDate(s.date)}`} size={16} onClick={() => void deleteSession(s, frieren.reload)} />
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                <div className="mk-item-actions">
-                  <button className="mk-act" title="Editar" onClick={() => startEdit(b)}>
-                    <Icon name="pencil" />
-                  </button>
-                  <button className="mk-act" title="Apagar" onClick={() => removeBullet(b.id)}>
-                    <Icon name="trash" />
-                  </button>
-                </div>
-              </div>
-            )
-          ))}
-        </div>
-      )}
-
-      {/* Estado vazio */}
-      {!loading && bullets.length === 0 && (
-        <p className="detail-empty-review" style={{ marginBottom: 4 }}>
-          Nenhuma marcação ainda. Salve seus trechos e anotações abaixo.
-        </p>
-      )}
-
-      {/* Formulário de nova marcação */}
-      <div className="mk-add">
-        <textarea
-          className="note-input"
-          placeholder="Escreva uma marcação, citação ou anotação…"
-          value={newText}
-          onChange={e => setNewText(e.target.value)}
-          onKeyDown={e => {
-            // Ctrl/Cmd+Enter adiciona rapidamente
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addBullet()
-          }}
-        />
-        <div className="mk-add-row">
-          <ColorSwatches value={newColor} onPick={setNewColor} />
-          <input
-            className="mk-page-input"
-            type="number"
-            min={0}
-            placeholder="pág."
-            value={newPage}
-            onChange={e => setNewPage(e.target.value)}
-          />
-          <button
-            className="btn btn-primary"
-            style={{ marginLeft: 'auto' }}
-            onClick={addBullet}
-            disabled={adding || !newText.trim()}
-          >
-            <Icon name="plus" /> {adding ? 'Salvando…' : 'Adicionar'}
-          </button>
-        </div>
-      </div>
-    </>
+              ),
+          },
+          { id: 'marcas', label: 'Marcações', content: <BookMarks bookId={book.id} /> },
+        ]}
+      />
+      {dialog === 'edit' && <BookForm book={detail} onClose={() => setDialog(null)} />}
+      {dialog === 'shelves' && <ShelfPicker book={book} onClose={() => setDialog(null)} />}
+      {editing && <SessionEditor key={editing.id} session={editing} onClose={() => setEditing(null)} />}
+    </Page>
   )
 }

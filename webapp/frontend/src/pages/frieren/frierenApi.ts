@@ -86,7 +86,7 @@ export const frierenApi = {
     if (year) q.set('year', String(year))
     if (month) q.set('month', String(month))
     const qs = q.toString()
-    return api.get<StatsResponse>(`/api/books/stats/payload${qs ? `?${qs}` : ''}`)
+    return api.get<StatsResponse>(`/api/books/stats${qs ? `?${qs}` : ''}`)
   },
   favorites: () => api.get<{ status: 'ok'; favorites: FavoriteBook[] }>('/api/books/favorites').then((r) => r.favorites ?? []),
   setFavorites: (ids: string[]) => api.put<{ status: 'ok'; favorites: FavoriteBook[] }>('/api/books/favorites', { ids }),

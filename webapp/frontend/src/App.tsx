@@ -7,8 +7,7 @@ import { Suspense, lazy, useEffect, useState } from 'react'  // Hooks do React: 
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'  // Roteamento de páginas SPA
 
 import Login         from './pages/Login'               // Tela de login com botão "Entrar com Google"
-import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell completo da seção de livros
-import { FrierenShell as FrierenNextShell } from './pages/frieren-next/FrierenShell'  // Prévia da Frieren no Design System (spec 073)
+import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell de livros (Frieren, no Design System desde a spec 073)
 import { VioletShell } from './pages/violet/VioletShell'     // Shell do diário Violet
 import { NamiShell }   from './pages/nami/NamiShell'         // Shell completo da seção de finanças (redesign)
 import { KaguyaShell } from './pages/kaguya/KaguyaShell'      // Shell de tarefas (sistema próprio, spec 011)
@@ -82,12 +81,10 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Frieren tem seu próprio shell com sidebar, navegação interna e tweaks.
-            O wildcard /* garante que sub-rotas internas (detalhe, estante, etc.)
-            não sejam interceptadas pelo React Router — o shell gerencia tudo internamente. */}
+        {/* Frieren (livros) sobre o AppShell do Design System; a tela e o livro aberto vivem no hash (#livro/<id>). */}
         <Route path="/books/*" element={<FrierenShell />} />
-        {/* Prévia da Frieren no Design System (spec 073): convive com /books até a troca na fase 5. */}
-        <Route path="/books-next/*" element={<FrierenNextShell />} />
+        {/* A prévia /books-next virou o shell oficial (spec 073): quem tinha o link salvo cai em /books. */}
+        <Route path="/books-next/*" element={<Navigate to="/books" replace />} />
 
         {/* Violet · Diário tem seu próprio shell com sidebar e tokens OKLCH isolados. */}
         <Route path="/journal/*" element={<VioletShell />} />

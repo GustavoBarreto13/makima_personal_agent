@@ -249,7 +249,7 @@ Cada domínio com UI própria é um **Shell**: componente raiz com sidebar/naveg
 
 ```tsx
 // App.tsx — ordem importa: Shells específicos antes do catch-all /*
-<Route path="/books/*"   element={<FrierenShell />} />   // src/pages/frieren/
+<Route path="/books/*"   element={<FrierenShell />} />   // src/pages/frieren/ (Design System, spec 073)
 <Route path="/journal/*" element={<VioletShell />} />    // src/pages/violet/
 <Route path="/nami/*"    element={<NamiShell />} />      // src/pages/nami/
 <Route path="/tasks/*"   element={<KaguyaShell />} />    // src/pages/kaguya/
@@ -291,8 +291,7 @@ export const namiApi = {
   // ...
 }
 
-// src/lib/api.ts — booksApi e violetApi ficam aqui (domínios sem pasta própria de API)
-export const booksApi = { list: () => api.get<{ books: ApiBook[] }>('/api/books'), ... }
+// src/lib/api.ts — violetApi fica aqui (domínio sem pasta própria de API)
 export const violetApi = { page: (date) => api.get(`/api/journal/page?date=${date}`), ... }
 ```
 
@@ -343,6 +342,7 @@ O diário usa bullets com parsing de `@pessoa` e `#tag`. O componente `RichText.
 | DS | **Design System Makima (fundação)** — `src/design/` + rota `/design`: tokens, tema global, `AppShell`, `Hero`, coleções (filtros/agrupar/ordenar), captura rápida, `StatsPage`, estrelas 0–5 com meia estrela, ícones Lucide, camadas/feedback, paleta `Ctrl+K`; auditoria `audit:design`; skill `makima-design-system`. Nenhum shell migrado ainda. Guia: `docs/DESIGN_SYSTEM.md` | ✅ fundação |
 | 071 | **Nami simples** — reconstrução de `pages/nami/` sobre o Design System (`conformant`): Início "Livre pra gastar", Lançamentos, Cartões por fatura, Recorrentes (conta fixa + assinatura + salário), Resumo (`StatsPage`) e Mais (Contas, Parcelamentos, Empréstimos, Orçamentos, Lista de compras); lançador único (linha rápida + formulário); Desfazer em tudo que dá. Novas rotas `/plan`, `/suggest`, `/accounts/overview`, `/cards/{id}/invoices`, `DELETE /transfers/{id}`; `/stats` agora é `?year=` no contrato `StatsPayload`. Páginas e `Layout` antigos removidos (rotas antigas redirecionam). Spec: `specs/071-nami-simples/`. | ✅ (migração dos dados antigos no VPS pendente) |
 | 072 | **Akane no Design System** — `pages/akane/` reconstruída sobre o padrão (`conformant`, arte "Cinema noir"): Início, linha rápida de logar, Filmes/Quero ver/Diário em `useCollection`, detalhe em `DetailPage`, Listas, Etiquetas e Estatísticas (`StatsPage`); rotas por hash (`#filme/<id>`). `GET /api/movies/stats` agora é o `StatsPayload` (une Stats e Rewind; `/rewind` removido). Shell antigo apagado. Spec: `specs/072-akane-ds/spec.md`. | ✅ (migração aplicada no VPS) |
+| 073 | **Frieren no Design System** — `pages/frieren/` reconstruída sobre o padrão (`conformant`, arte "Biblioteca élfica"): Início no modelo da Akane (vitrine de favoritos + coração), linha rápida de registrar leitura, Biblioteca com os 7 status, Quero ler, Wishlist, Diário, detalhe em `DetailPage` (resenha, sessões, marcações), Estantes, Resenhas e Estatísticas (`StatsPage`); rotas por hash (`#livro/<id>`). Rotas novas `/home`, `/favorites`, `/{id}/like`, `/{id}/restore`, `/{id}/logs/restore`; `GET /api/books/stats` agora é o `StatsPayload`. `booksApi` saiu de `lib/api.ts` (agora `pages/frieren/frierenApi.ts`). Spec: `specs/073-frieren-ds/spec.md`. | ✅ (migração aplicada no VPS) |
 | 6 | Painel de chat (Makima) | — |
 
 ---
@@ -356,6 +356,6 @@ O diário usa bullets com parsing de `@pessoa` e `#tag`. O componente `RichText.
 - **Não expor `SESSION_SECRET` em logs** — nunca fazer `logging.info(config.SESSION_SECRET)`
 - **Não usar `_check_result`** nos endpoints do journal que retornam lista/dict diretamente (`list_heatmap`, `list_mentions`, `get_bullets_by_mention`, `search_bullets`) — essas tools não têm campo `"status"`
 - **Não confundir o schema de erro do journal**: `get_or_create_page` retorna `{"error": "..."}`, não `{"status": "error"}` — verificar `result.get("error")` explicitamente
-- **Não fazer `fetch` diretamente em componentes React** — usar `namiApi`, `booksApi`, `violetApi` ou `api.*` de `lib/api.ts`
+- **Não fazer `fetch` diretamente em componentes React** — usar `namiApi`, `frierenApi`, `violetApi` ou `api.*` de `lib/api.ts`
 - **Não adicionar rotas de novo Shell após o `/*`** em `App.tsx` — o catch-all capturaria a rota antes do Shell
 - **Não criar arquivos em `frontend/dist/`** — é artefato de build; tudo que precisa ser servido deve ir em `frontend/public/` (imagens de personagens, ícones) ou em `/uploads/icons/` (ícones de conta enviados via webapp)

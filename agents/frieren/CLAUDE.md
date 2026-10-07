@@ -301,8 +301,8 @@ Não são tools do agente Telegram — o router `webapp/backend/routers/books.py
 
 ### `tools_stats.py` — Início e Estatísticas no padrão do Design System (spec 073, só webapp)
 
-- `get_stats_payload(year=0, month=None)` → contrato **`StatsPayload`** (`GET /api/books/stats/payload`;
-  na fase 5 da spec 073 assume o `/stats`). KPIs com `prev` do **mesmo trecho** do ano anterior
+- `get_stats_payload(year=0, month=None)` → contrato **`StatsPayload`** (`GET /api/books/stats`, que substituiu o
+  formato antigo na spec 073). KPIs com `prev` do **mesmo trecho** do ano anterior
   (`period_bounds`): livros lidos, começados e abandonados, páginas, páginas por dia (sobre **dias de
   calendário**), dias lendo, dias por livro, livro mais longo, nota média. Páginas por dia/mês, distribuição
   de notas 0.5–5 (os 10 degraus), rankings (gêneros, autores, idiomas — livros com sessão **ou** terminados
@@ -314,7 +314,10 @@ Não são tools do agente Telegram — o router `webapp/backend/routers/books.py
   livros terminados no ano, última sessão e contagem por status.
 - Regras: soft delete fora de toda conta (inclusive páginas dos logs); `build_stats_payload` e
   `build_home_rhythm` são puras (testes em `tests/agents/test_frieren_stats.py`).
-- `get_reading_stats` (formato antigo) segue como tool do agente do Telegram.
+- `get_reading_stats` (formato antigo) segue como tool do agente do Telegram (a rota HTTP antiga foi removida).
+
+O front que consome tudo isso é `webapp/frontend/src/pages/frieren/` (Design System, arte "Biblioteca élfica") —
+ver `webapp/docs/FRONTEND.md` § FrierenShell.
 
 **Migração (spec 073):** `scripts/migrate_frieren_ds.py` (dry-run por padrão, `--apply` grava) cria
 `books.liked`, `books.date_abandoned` e a tabela `book_favorites`, e data os livros já abandonados pelo

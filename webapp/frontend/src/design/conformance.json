@@ -181,9 +181,9 @@
       "mobile": false
     },
     "frieren": {
-      "status": "migrating",
-      "dir": "src/pages/frieren-next",
-      "shell": "src/pages/frieren-next/FrierenShell.tsx",
+      "status": "conformant",
+      "dir": "src/pages/frieren",
+      "shell": "src/pages/frieren/FrierenShell.tsx",
       "art": "elfica",
       "appShell": true,
       "hero": true,
