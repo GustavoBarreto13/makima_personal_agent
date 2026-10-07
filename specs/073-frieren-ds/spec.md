@@ -1,7 +1,7 @@
 # Spec 073 — Frieren no Design System
 
-**Status:** em andamento — fases 1–4 entregues (backend, arte élfica, shell novo em `/books-next`). Pendente: aplicar
-`scripts/migrate_frieren_ds.py` no VPS **antes** do deploy, validar `/books-next` no navegador e a fase 5 (troca e limpeza).
+**Status:** em andamento — fases 1–4 entregues (backend, arte élfica, shell novo em `/books-next`). Migração aplicada no VPS em
+07/out/2026 (2 abandonos datados). Pendente: validar `/books-next` no navegador e a fase 5 (troca e limpeza).
 **Branch:** `073-frieren-ds` (a partir do `master`).
 **Plano de execução:** cinco fases, um commit por fase, como na Akane (spec 072).
 
