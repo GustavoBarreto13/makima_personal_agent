@@ -89,7 +89,7 @@ function MarkRow({ mark, onChanged }: { mark: Bullet; onChanged: () => void }) {
   }
   return (
     <div className={cx('fr-mark', `fr-mk-${mark.color}`)}>
-      <p className="fr-mark-t">{mark.content}</p>
+      <p className="fr-mark-t"><span className="fr-mark-hl">{mark.content}</span></p>
       <div className="fr-mark-side">
         {mark.page_number != null && <span className="ds-mono">p. {mark.page_number}</span>}
         <IconButton icon="edit" label="Editar marcação" size={15} onClick={() => setEditing(true)} />

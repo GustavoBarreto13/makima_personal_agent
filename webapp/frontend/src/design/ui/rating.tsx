@@ -1,4 +1,6 @@
 // Avaliação por estrelas: de 0 a 5, COM MEIA ESTRELA. Porte 1:1 da Akane (a única sem bug).
+// Exibição: as estrelas não têm espaço entre si (o desenho já tem margem dentro do quadrado), então "70%" da
+// largura é exatamente 3,5 estrelas; a camada dourada é flex (sem linha de texto) para ficar alinhada à cinza.
 //   <Stars value size/>      exibição: duas camadas (vazia + preenchida cortada na nota)
 //   <RateInput value onChange/>  edição: cada estrela tem duas metades clicáveis (esq = n−0.5, dir = n)
 // Valores válidos: 0.5, 1, 1.5 … 5. 0 / null = sem nota (5 estrelas vazias).

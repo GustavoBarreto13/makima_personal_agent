@@ -26,8 +26,8 @@
 
 /* estrelas: duas camadas (vazia + preenchida cortada na nota), meia estrela incluída */
 .ds-stars{position:relative;display:inline-flex;vertical-align:middle;color:var(--ds-star-empty)}
-.ds-stars .ds-row{display:inline-flex;gap:1px}.ds-stars svg{width:13px;height:13px;flex-shrink:0;fill:currentColor;stroke:none}
-.ds-stars.ds-lg svg{width:19px;height:19px}.ds-stars .ds-st-fill{position:absolute;left:0;top:0;bottom:0;overflow:hidden;color:var(--ds-star)}
+.ds-stars .ds-row{display:inline-flex}.ds-stars svg{width:14px;height:14px;flex-shrink:0;fill:currentColor;stroke:none}
+.ds-stars.ds-lg svg{width:20px;height:20px}.ds-stars .ds-st-fill{position:absolute;left:0;top:0;bottom:0;display:flex;overflow:hidden;color:var(--ds-star)}
 .ds-rate{display:inline-flex;align-items:center;gap:3px;border-radius:8px}
 .ds-rs{position:relative;width:30px;height:30px;cursor:pointer;color:var(--ds-star-empty)}
 .ds-rs svg{position:absolute;inset:0;width:30px;height:30px;fill:currentColor;stroke:none}

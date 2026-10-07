@@ -279,9 +279,18 @@
   align-items: flex-start;
   gap: var(--ds-space-3);
   padding: 10px 12px;
-  border-left: 4px solid var(--fr-mk, var(--ds-line));
+  border: 1px solid var(--ds-line-2);
   border-radius: var(--ds-r-sm);
-  background: color-mix(in oklab, var(--fr-mk, var(--ds-card)) 9%, var(--ds-card));
+  background: var(--ds-card);
+}
+
+/* O texto da marcação é grifado como marca-texto, na cor escolhida (a faixa ocupa a metade de baixo da linha
+ * e acompanha as quebras de linha). */
+.fr-mark-hl {
+  padding: 0 2px;
+  background: linear-gradient(transparent 52%, color-mix(in oklab, var(--fr-mk, var(--ds-accent)) 38%, transparent) 52%);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .fr-mark-edit { flex-direction: column; align-items: stretch; }
