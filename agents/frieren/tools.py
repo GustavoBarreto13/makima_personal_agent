@@ -58,6 +58,64 @@ def _today() -> date:
     return _now().date()
 
 
+# Mensagem única de nota inválida. O router do webapp reconhece o trecho "a avaliação deve ser"
+# (lista _FRIEREN_ERRORS em webapp/backend/routers/books.py) para devolver HTTP 400.
+_RATING_ERROR = "A avaliação deve ser um valor entre <b>0.5</b> e <b>5.0</b>, em passos de 0.5."
+
+# Campos opcionais que a edição pelo webapp pode apagar (gravar NULL) — ver
+# `update_book_metadata_by_id(clear=...)`. Título e status ficam de fora: não podem ficar vazios.
+_CLEARABLE_FIELDS = frozenset({
+    "author", "cover_url", "total_pages", "genre", "published_year", "isbn", "language",
+    "description", "notes", "store_url", "price", "rating", "date_started", "date_finished",
+})
+
+
+def _rating_error(rating: float | None) -> str | None:
+    """Validar uma nota no padrão do Design System: 0.5 a 5.0, de meio em meio ponto.
+
+    Args:
+        rating: Nota informada (None = nenhuma nota, sempre válido).
+
+    Returns:
+        A mensagem de erro, ou None se a nota for válida.
+
+    Example:
+        >>> _rating_error(4.5) is None
+        True
+        >>> _rating_error(4.3) is None
+        False
+    """
+    if rating is None:
+        return None
+    # rating * 2 precisa ser um inteiro (4.5 → 9; 4.3 → 8.6 não serve).
+    if not (0.5 <= rating <= 5.0) or abs(rating * 2 - round(rating * 2)) > 1e-9:
+        return _RATING_ERROR
+    return None
+
+
+def _status_set_sql() -> str:
+    """Trecho SET que troca o status e mantém as datas coerentes com ele.
+
+    Usa os parâmetros %(status)s e %(today)s. Regras:
+      - indo para 'lendo' sem data de início → começa hoje;
+      - indo para 'abandonado' → registra o dia do abandono (mantém se já estava abandonado);
+      - saindo de 'abandonado' → a data de abandono é apagada (deixa de valer nas estatísticas).
+    """
+    return """
+        status         = %(status)s,
+        date_started   = CASE
+                             WHEN %(status)s = 'lendo' AND date_started IS NULL
+                             THEN %(today)s::date
+                             ELSE date_started
+                         END,
+        date_abandoned = CASE
+                             WHEN %(status)s = 'abandonado'
+                             THEN COALESCE(date_abandoned, %(today)s::date)
+                             ELSE NULL
+                         END
+    """
+
+
 def _norm(s: str) -> str:
     """Normaliza uma string para busca fuzzy: minúsculas, sem acentos, sem pontuação, sem espaços extras.
 
@@ -968,7 +1026,7 @@ def finish_book(
 
     Parâmetros:
         book_query    — Título parcial ou completo do livro a concluir
-        rating        — Nota de 1.0 a 5.0 (opcional)
+        rating        — Nota de 0.5 a 5.0 em passos de 0.5 (opcional)
         notes         — Anotações finais sobre o livro (opcional)
         date_finished — Data de conclusão no formato YYYY-MM-DD (padrão: hoje)
         date_started  — Data de início no formato YYYY-MM-DD (opcional — sobrescreve se informado)
@@ -980,10 +1038,39 @@ def finish_book(
             f"Nenhum livro encontrado para '<b>{book_query}</b>'. "
             "Verifique o título e tente novamente."
         )
+    return finish_book_by_id(book["id"], rating, notes, date_finished, date_started)
+
+
+def finish_book_by_id(
+    book_id: str,
+    rating: float | None = None,
+    notes: str | None = None,
+    date_finished: str | None = None,
+    date_started: str | None = None,
+) -> str:
+    """Marcar como lido o livro de um ID exato (usado pelo webapp e por `finish_book`).
+
+    Pelo ID não há risco de cair em outra edição com o mesmo título — o catálogo permite
+    edições diferentes do mesmo livro, e a busca por título pegaria só uma delas.
+
+    Args:
+        book_id: UUID do livro.
+        rating: Nota de 0.5 a 5.0 em passos de 0.5 (opcional).
+        notes: Anotações finais (None preserva as existentes).
+        date_finished: Data de conclusão YYYY-MM-DD (padrão: hoje).
+        date_started: Data de início YYYY-MM-DD (opcional — sobrescreve se informada).
+
+    Returns:
+        Mensagem HTML de confirmação, ou de erro.
+    """
+    book = get_book_by_id(book_id)
+    if book is None:
+        return f"❌ Livro com ID '{book_id}' não encontrado."
 
     # ── 2. Valida a avaliação se fornecida ────────────────────────────────────
-    if rating is not None and not (1.0 <= rating <= 5.0):
-        return "A avaliação deve ser um valor entre <b>1.0</b> e <b>5.0</b>."
+    erro = _rating_error(rating)
+    if erro:
+        return erro
 
     # ── 3. Calcula o total de páginas lidas nos logs ───────────────────────────
     book_id = book["id"]
@@ -1011,14 +1098,17 @@ def finish_book(
         else "date_started = COALESCE(date_started, %(date_started)s),"
     )
 
-    # COALESCE(%(notes)s, notes) preserva as anotações já existentes se não informadas
+    # COALESCE(%(notes)s, notes) preserva as anotações já existentes se não informadas.
+    # date_abandoned = NULL: um livro terminado deixa de contar como abandonado.
     sql_update = f"""
         UPDATE books
         SET
             status        = 'lido',
+            date_abandoned = NULL,
             date_finished = %(date_finished)s,
             {set_date_started}
-            rating        = %(rating)s,
+            -- sem nota nova, mantém a que já existia (antes a nota era apagada)
+            rating        = COALESCE(%(rating)s, rating),
             notes         = COALESCE(%(notes)s, notes),
             updated_at    = %(updated_at)s
         WHERE id = %(book_id)s
@@ -1069,29 +1159,43 @@ def update_book_status(book_query: str, status: str) -> str:
             "Verifique o título e tente novamente."
         )
 
-    # ── 3. Atualiza o status no PostgreSQL ──────────────────────────────────────
-    today_str = str(_today())
-    agora     = _now()
+    # ── 3. Atualiza o status pelo ID do livro encontrado ──────────────────────
+    return update_book_status_by_id(book["id"], status)
 
-    # CASE WHEN: se o novo status é 'lendo' E date_started ainda é NULL,
-    # registra hoje como data de início. Caso contrário, preserva o valor existente.
-    sql = """
+
+def update_book_status_by_id(book_id: str, status: str) -> str:
+    """Trocar o status do livro de um ID exato (usado pelo webapp e por `update_book_status`).
+
+    As datas acompanham o status (ver `_status_set_sql`): 'lendo' sem início começa hoje,
+    'abandonado' grava o dia do abandono, sair de 'abandonado' apaga essa data.
+
+    Args:
+        book_id: UUID do livro.
+        status: Novo status (um dos VALID_STATUSES).
+
+    Returns:
+        Mensagem HTML de confirmação, ou de erro.
+    """
+    if status not in VALID_STATUSES:
+        return (
+            f"Status inválido: <b>{status}</b>. "
+            f"Use um dos seguintes: {', '.join(VALID_STATUSES)}."
+        )
+    book = get_book_by_id(book_id)
+    if book is None:
+        return f"❌ Livro com ID '{book_id}' não encontrado."
+
+    sql = f"""
         UPDATE books
-        SET
-            status       = %(status)s,
-            date_started = CASE
-                               WHEN %(status)s = 'lendo' AND date_started IS NULL
-                               THEN %(today)s::date
-                               ELSE date_started
-                           END,
-            updated_at   = %(updated_at)s
+        SET {_status_set_sql()},
+            updated_at = %(updated_at)s
         WHERE id = %(book_id)s
     """
     params = {
         "status":     status,
-        "today":      today_str,
-        "updated_at": agora,
-        "book_id":    book["id"],
+        "today":      str(_today()),
+        "updated_at": _now(),
+        "book_id":    book_id,
     }
     run_dml(sql, params)
 
@@ -1472,6 +1576,13 @@ def update_book_by_id(
     if status is not None:
         sets.append("status = %(status)s")
         params["status"] = status
+        # Data de abandono acompanha o status (mesma regra de _status_set_sql):
+        # grava ao abandonar, apaga ao sair de 'abandonado'.
+        sets.append(
+            "date_abandoned = CASE WHEN %(status)s = 'abandonado' "
+            "THEN COALESCE(date_abandoned, %(today)s::date) ELSE NULL END"
+        )
+        params["today"] = str(_today())
         # Se marcando como lido, garante que date_started não fique nulo
         if status == "lido" and date_finished is None:
             date_finished = str(_today())
@@ -1525,11 +1636,13 @@ def update_book_metadata_by_id(
     rating: float | None = None,
     date_started: str | None = None,
     date_finished: str | None = None,
+    clear: list[str] | None = None,
 ) -> str:
     """Atualiza campos de metadados de um livro pelo ID exato.
 
     Recebe apenas os campos que devem ser sobrescritos — campos com valor None
-    são ignorados e permanecem inalterados no banco.
+    são ignorados e permanecem inalterados no banco. Para APAGAR um campo opcional
+    (ex.: tirar a nota ou o link da loja), passe o nome dele em `clear`.
     Sempre atualiza `updated_at` para o momento da chamada.
 
     Diferente de `update_book_by_id`, esta função trata campos de metadados
@@ -1550,9 +1663,11 @@ def update_book_metadata_by_id(
         notes: Anotações pessoais / resenha (sobrescreve o valor anterior).
         store_url: URL do anúncio na loja (Amazon, Estante Virtual, etc.).
         price: Preço visto na loja (principalmente wishlist).
-        rating: Avaliação pessoal de 1.0 a 5.0.
+        rating: Avaliação pessoal de 0.5 a 5.0, em passos de 0.5.
         date_started: Data de início da leitura no formato YYYY-MM-DD.
         date_finished: Data de conclusão no formato YYYY-MM-DD.
+        clear: Campos a gravar como NULL. Só aceita os de `_CLEARABLE_FIELDS`
+            (o título, por exemplo, nunca pode ficar vazio).
 
     Returns:
         Mensagem de confirmação em caso de sucesso, ou mensagem de erro
@@ -1627,8 +1742,9 @@ def update_book_metadata_by_id(
 
     if rating is not None:
         # Valida o intervalo antes de gravar (mesmo critério de finish_book)
-        if not (1.0 <= rating <= 5.0):
-            return "A avaliação deve ser um valor entre <b>1.0</b> e <b>5.0</b>."
+        erro = _rating_error(rating)
+        if erro:
+            return erro
         sets.append("rating = %(rating)s")
         params["rating"] = rating
 
@@ -1639,6 +1755,12 @@ def update_book_metadata_by_id(
     if date_finished is not None:
         sets.append("date_finished = %(date_finished)s")
         params["date_finished"] = date_finished
+
+    # Campos a apagar (NULL). O nome vem de uma lista fixa — nunca entra texto do usuário no SQL.
+    for field in clear or []:
+        if field not in _CLEARABLE_FIELDS:
+            return f"❌ Campo que não pode ser apagado: {field}."
+        sets.append(f"{field} = NULL")
 
     # Se nenhum campo foi fornecido, não há nada a atualizar — retorna feedback claro
     if not sets:
@@ -1669,6 +1791,158 @@ def update_book_metadata_by_id(
         pass
 
     return "✅ Livro atualizado com sucesso."
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Coração, vitrine de favoritos e "Desfazer" (spec 073 — webapp)
+# Retornam dicts {"status": "ok"|"error"} como as funções de estantes.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Tamanho máximo da vitrine de favoritos da tela Início.
+MAX_FAVORITES = 4
+
+
+def set_book_like(book_id: str, liked: bool) -> dict:
+    """Marcar ou desmarcar o coração ("Curti") de um livro.
+
+    Args:
+        book_id: UUID do livro.
+        liked: True para curtir, False para tirar o coração.
+
+    Returns:
+        {"status": "ok", "liked": bool} ou {"status": "error", "message": ...}.
+    """
+    affected = run_dml(
+        "UPDATE books SET liked = %(liked)s, updated_at = %(now)s WHERE id = %(id)s AND deleted = FALSE",
+        {"liked": liked, "now": _now(), "id": book_id},
+    )
+    if affected == 0:
+        return {"status": "error", "message": "Livro não encontrado."}
+    return {"status": "ok", "liked": liked}
+
+
+def get_book_favorites() -> dict:
+    """Listar a vitrine de favoritos na ordem escolhida.
+
+    Returns:
+        {"status": "ok", "favorites": [{id, title, author, cover_url, position}]}.
+    """
+    rows = run_select(
+        """
+        SELECT b.id, b.title, b.author, b.cover_url, f.position
+          FROM book_favorites f JOIN books b ON b.id = f.book_id
+         WHERE b.deleted = FALSE
+         ORDER BY f.position
+        """
+    )
+    return {"status": "ok", "favorites": rows}
+
+
+def set_book_favorites(ids: list[str]) -> dict:
+    """Substituir a vitrine de favoritos inteira (no máximo 4 livros, na ordem dada).
+
+    Apaga tudo e reinsere numa única transação: ou a vitrine nova entra inteira, ou nada muda.
+
+    Args:
+        ids: IDs dos livros na ordem desejada (posição 0, 1, 2, 3). Lista vazia esvazia a vitrine.
+
+    Returns:
+        A vitrine nova (mesmo formato de `get_book_favorites`), ou {"status": "error", ...}.
+    """
+    if len(ids) > MAX_FAVORITES:
+        return {"status": "error", "message": f"A vitrine aceita no máximo {MAX_FAVORITES} livros."}
+    if len(set(ids)) != len(ids):
+        return {"status": "error", "message": "O mesmo livro apareceu duas vezes na vitrine."}
+
+    if ids:
+        found = run_select(
+            "SELECT id FROM books WHERE id = ANY(%(ids)s) AND deleted = FALSE",
+            {"ids": ids},
+        )
+        if len(found) != len(ids):
+            return {"status": "error", "message": "Algum livro da vitrine não foi encontrado."}
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM book_favorites")
+            for pos, book_id in enumerate(ids):
+                cur.execute(
+                    "INSERT INTO book_favorites (book_id, position) VALUES (%(id)s, %(pos)s)",
+                    {"id": book_id, "pos": pos},
+                )
+    return get_book_favorites()
+
+
+def restore_book(book_id: str) -> dict:
+    """Desfazer a exclusão de um livro (o soft delete só marcou `deleted = TRUE`).
+
+    Args:
+        book_id: UUID do livro excluído.
+
+    Returns:
+        {"status": "ok"} ou {"status": "error", "message": ...}.
+    """
+    affected = run_dml(
+        "UPDATE books SET deleted = FALSE, updated_at = %(now)s WHERE id = %(id)s AND deleted = TRUE",
+        {"now": _now(), "id": book_id},
+    )
+    if affected == 0:
+        return {"status": "error", "message": "Livro não encontrado entre os excluídos."}
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("frieren")
+    except Exception:
+        pass
+    return {"status": "ok"}
+
+
+def restore_reading_log(
+    book_id: str,
+    log_id: str,
+    log_date: str,
+    page_start: int | None,
+    page_end: int | None,
+    pages_read: int | None,
+    session_notes: str | None = None,
+) -> dict:
+    """Desfazer a exclusão de uma sessão de leitura, regravando-a exatamente como era.
+
+    A sessão é apagada de verdade (hard delete), então o "Desfazer" do webapp guarda a linha
+    inteira e a devolve aqui, com o mesmo ID.
+
+    Args:
+        book_id: UUID do livro da sessão.
+        log_id: ID original da sessão.
+        log_date: Data da sessão (YYYY-MM-DD).
+        page_start: Página antes da sessão.
+        page_end: Página ao fim da sessão.
+        pages_read: Páginas lidas na sessão.
+        session_notes: Nota da sessão.
+
+    Returns:
+        {"status": "ok"} ou {"status": "error", "message": ...}.
+    """
+    book = get_book_by_id(book_id)
+    if book is None:
+        return {"status": "error", "message": "Livro não encontrado."}
+    exists = run_select("SELECT 1 FROM reading_logs WHERE id = %(id)s", {"id": log_id})
+    if exists:
+        return {"status": "error", "message": "Essa sessão já existe."}
+    run_dml(
+        """
+        INSERT INTO reading_logs (id, book_id, book_title, date, page_start, page_end, pages_read,
+                                  session_notes, created_at)
+        VALUES (%(id)s, %(book_id)s, %(title)s, %(date)s, %(start)s, %(end)s, %(read)s, %(notes)s, %(now)s)
+        """,
+        {"id": log_id, "book_id": book_id, "title": book["title"], "date": log_date,
+         "start": page_start, "end": page_end, "read": pages_read, "notes": session_notes, "now": _now()},
+    )
+    try:
+        from agents.kaguya import gcal_mirror as _gm
+        _gm.mark_dirty("frieren")
+    except Exception:
+        pass
+    return {"status": "ok"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════

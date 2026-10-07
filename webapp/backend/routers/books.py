@@ -17,9 +17,6 @@ Usage:
 # re é usado em _books_check para remover tags HTML das mensagens de erro
 import re
 
-# datetime.date é usado para obter o ano atual como valor padrão no endpoint de stats
-from datetime import date
-
 # Optional permite campos que podem ser None (ex.: author: Optional[str] = None)
 from typing import Optional
 
@@ -40,8 +37,8 @@ from webapp.backend.deps import require_user
 from agents.frieren.tools import (
     add_book,           # Adiciona livro ao catálogo (enriquece via Google Books)
     log_reading,        # Registra progresso de leitura de uma sessão
-    finish_book,        # Marca livro como lido, registra data e avaliação
-    update_book_status, # Atualiza o status de um livro (lendo, pausado, etc.)
+    finish_book_by_id,       # Marca livro como lido (pelo ID — não confunde edições de mesmo título)
+    update_book_status_by_id, # Troca o status pelo ID e mantém as datas coerentes (abandono etc.)
     update_book_pages,          # Corrige o total de páginas de uma edição
     update_book_metadata_by_id, # Atualiza campos de metadados do livro diretamente por ID
     delete_book,        # Soft delete — marca deleted=TRUE
@@ -50,6 +47,9 @@ from agents.frieren.tools import (
 
 # Função de consulta estruturada — retorna dict (não string HTML)
 from agents.frieren.tools import get_book_by_id
+
+# "Hoje" no fuso de São Paulo — usado como ano padrão do endpoint de stats antigo
+from agents.frieren.tools import _today
 
 # Tools de estantes, feed de atividade e heatmap — retornam dicts com status
 from agents.frieren.tools import (
@@ -62,6 +62,14 @@ from agents.frieren.tools import (
 from agents.frieren.tools import (
     list_book_bullets, create_book_bullet, update_book_bullet, delete_book_bullet,
 )
+
+# Spec 073: coração, vitrine de favoritos e "Desfazer" — retornam dicts com status
+from agents.frieren.tools import (
+    set_book_like, get_book_favorites, set_book_favorites, restore_book, restore_reading_log,
+)
+
+# Spec 073: Início e Estatísticas no contrato do Design System
+from agents.frieren.tools_stats import get_books_home, get_stats_payload
 
 # _fetch_google_books: busca metadados de livros na Google Books API
 from agents.frieren.tools import _fetch_google_books
@@ -90,7 +98,25 @@ _FRIEREN_ERRORS = [
     "não encontrado",            # book_id inexistente (update_book_metadata_by_id)
     "erro ao atualizar",         # Falha no BigQuery (update_book_metadata_by_id)
     "nenhum campo para atualizar", # Payload vazio (update_book_metadata_by_id)
+    "não pode ser apagado",      # Campo obrigatório em `clear` (update_book_metadata_by_id)
 ]
+
+
+def _dict_check(result: dict) -> dict:
+    """Converter o {"status": "error"} das funções que devolvem dict em HTTP 400.
+
+    Args:
+        result: Resposta de uma função da Frieren no formato {"status": ..., ...}.
+
+    Returns:
+        O próprio resultado, quando não é erro.
+
+    Raises:
+        HTTPException: 400 com a mensagem da função.
+    """
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
 
 
 def _books_check(msg: str) -> dict:
@@ -231,9 +257,32 @@ class UpdateBookMetadataBody(BaseModel):
     notes: Optional[str] = None           # Anotações pessoais / resenha do leitor
     store_url: Optional[str] = None       # URL do anúncio na loja (Amazon, Estante Virtual, etc.)
     price: Optional[float] = None         # Preço visto na loja (wishlist)
-    rating: Optional[float] = None        # Avaliação pessoal de 1.0 a 5.0
+    rating: Optional[float] = None        # Avaliação pessoal de 0.5 a 5.0 (passos de 0.5)
     date_started: Optional[str] = None    # Data de início da leitura (YYYY-MM-DD)
     date_finished: Optional[str] = None   # Data de conclusão da leitura (YYYY-MM-DD)
+    # Campos a apagar (gravar NULL) — ex.: ["rating"] tira a nota, ["store_url"] tira o link.
+    # Necessário porque um campo omitido (None) significa "não mexer", não "apagar".
+    clear: Optional[list[str]] = None
+
+
+class LikeBody(BaseModel):
+    """Corpo para marcar/desmarcar o coração de um livro."""
+    liked: bool
+
+
+class FavoritesBody(BaseModel):
+    """Corpo para substituir a vitrine de favoritos (até 4 IDs, na ordem desejada)."""
+    ids: list[str]
+
+
+class RestoreLogBody(BaseModel):
+    """Sessão de leitura apagada que o "Desfazer" do webapp devolve, com os mesmos valores."""
+    id: str
+    date: str                              # YYYY-MM-DD
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
+    pages_read: Optional[int] = None
+    session_notes: Optional[str] = None
 
 
 class CreateBulletBody(BaseModel):
@@ -330,13 +379,22 @@ def list_books(
             b.published_year,
             b.updated_at,
             b.created_at,
-            MAX(rl.page_end) AS current_page
+            -- spec 073: campos que as telas de Resenhas, Wishlist e filtros precisam na lista
+            -- (antes só vinham no detalhe, e essas telas liam sempre vazio)
+            b.language,
+            b.notes,
+            b.store_url,
+            b.price,
+            b.liked,
+            b.date_abandoned,
+            MAX(rl.page_end) AS current_page,
+            MAX(rl.date)     AS last_read
         FROM books b
         LEFT JOIN reading_logs rl ON rl.book_id = b.id
         WHERE b.deleted = FALSE
-        GROUP BY b.id, b.title, b.author, b.total_pages, b.status,
-                 b.cover_url, b.date_started, b.date_finished, b.rating,
-                 b.genre, b.isbn, b.published_year, b.updated_at, b.created_at
+        -- b.id é a chave primária: o PostgreSQL deixa selecionar as outras colunas de b
+        -- agrupando só por ela
+        GROUP BY b.id
         ORDER BY
             CASE b.status
                 WHEN 'lendo'      THEN 0
@@ -379,6 +437,60 @@ def list_books(
     return {"status": "ok", "books": books}
 
 
+@router.get("/home")
+def books_home(user: dict = Depends(require_user)) -> dict:
+    """Obter os blocos da tela Início (favoritos, lendo agora, ritmo, sequência, histograma).
+
+    Args:
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Dicionário com "status": "ok" e todos os blocos (ver `get_books_home`).
+    """
+    return _dict_check(get_books_home())
+
+
+@router.get("/stats/payload")
+def stats_payload(
+    year: int = Query(default=0, description="Ano (0 = ano corrente)"),
+    month: Optional[int] = Query(default=None, description="Mês 1-12; vazio = ano inteiro"),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Obter as estatísticas de leitura no contrato `StatsPayload` do Design System (spec 073).
+
+    Durante o rollout fica em `/stats/payload`; na fase 5 ocupa o lugar do `/stats` antigo.
+
+    Args:
+        year: Ano de referência (0 = ano corrente em America/Sao_Paulo).
+        month: Mês para fechar o foco; None = o ano inteiro.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        {"status": "ok", **StatsPayload}.
+    """
+    return _dict_check(get_stats_payload(year, month))
+
+
+@router.get("/favorites")
+def list_favorites(user: dict = Depends(require_user)) -> dict:
+    """Listar a vitrine de favoritos (até 4 livros, na ordem escolhida)."""
+    return _dict_check(get_book_favorites())
+
+
+@router.put("/favorites")
+def replace_favorites(body: FavoritesBody, user: dict = Depends(require_user)) -> dict:
+    """Substituir a vitrine de favoritos inteira.
+
+    Args:
+        body: IDs dos livros na ordem desejada (máximo 4; lista vazia esvazia a vitrine).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        A vitrine nova.
+    """
+    return _dict_check(set_book_favorites(body.ids))
+
+
 @router.get("/stats")
 def reading_stats(
     # Optional[int] porque o ano pode ser omitido (None = usa ano atual)
@@ -403,8 +515,9 @@ def reading_stats(
         HTTPException: 401 se o usuário não estiver autenticado.
     """
     # Se o ano não foi informado, usa o ano atual no calendário brasileiro
+    # (_today() usa America/Sao_Paulo; date.today() seria o relógio UTC do servidor)
     if year is None:
-        year = date.today().year
+        year = _today().year
 
     # ── Query 1: Livros concluídos e avaliação média ───────────────────────────
     sql_books = """
@@ -809,7 +922,16 @@ def log_reading_endpoint(
         session_notes=body.session_notes,
         log_date=body.log_date,
     )
-    return _books_check(msg)
+    result = _books_check(msg)
+
+    # Spec 073: devolve o ID da sessão recém-criada para o "Desfazer" do webapp poder apagá-la.
+    # A tool devolve só texto, então pegamos a sessão mais nova deste livro.
+    newest = run_select(
+        "SELECT id FROM reading_logs WHERE book_id = %(book_id)s ORDER BY created_at DESC LIMIT 1",
+        {"book_id": book_id},
+    )
+    result["log_id"] = newest[0]["id"] if newest else None
+    return result
 
 
 @router.post("/{book_id}/finish", status_code=200)
@@ -837,14 +959,14 @@ def finish_book_endpoint(
         HTTPException: 400 se o rating for fora do intervalo 1.0-5.0.
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    # Busca o livro pelo ID para obter o título
+    # Confere se o livro existe (404 em vez de 400 quando o ID não existe)
     book = get_book_by_id(book_id)
     if book is None:
         raise HTTPException(status_code=404, detail="Livro não encontrado.")
 
-    # Chama a tool de conclusão passando o título e os dados de avaliação
-    msg = finish_book(
-        book_query=book["title"],
+    # Conclui pelo ID: pelo título, edições diferentes do mesmo livro se confundiriam
+    msg = finish_book_by_id(
+        book_id,
         rating=body.rating,
         notes=body.notes,
         date_finished=body.date_finished,
@@ -877,17 +999,62 @@ def update_status_endpoint(
         HTTPException: 400 se o status informado for inválido.
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    # Busca o livro pelo ID para obter o título
+    # Confere se o livro existe (404 em vez de 400 quando o ID não existe)
     book = get_book_by_id(book_id)
     if book is None:
         raise HTTPException(status_code=404, detail="Livro não encontrado.")
 
-    # Chama a tool de atualização de status com o título e novo status
-    msg = update_book_status(
-        book_query=book["title"],
-        status=body.status,
-    )
+    # Troca pelo ID (pelo título, edições diferentes do mesmo livro se confundiriam).
+    # A tool também grava/apaga a data de abandono conforme o status.
+    msg = update_book_status_by_id(book_id, body.status)
     return _books_check(msg)
+
+
+@router.patch("/{book_id}/like")
+def like_endpoint(book_id: str, body: LikeBody, user: dict = Depends(require_user)) -> dict:
+    """Marcar ou desmarcar o coração ("Curti") de um livro.
+
+    Args:
+        book_id: ID único do livro.
+        body: {"liked": true|false}.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        {"status": "ok", "liked": bool}.
+    """
+    return _dict_check(set_book_like(book_id, body.liked))
+
+
+@router.post("/{book_id}/restore")
+def restore_book_endpoint(book_id: str, user: dict = Depends(require_user)) -> dict:
+    """Desfazer a exclusão de um livro (volta do soft delete).
+
+    Args:
+        book_id: ID do livro excluído.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        {"status": "ok"}.
+    """
+    return _dict_check(restore_book(book_id))
+
+
+@router.post("/{book_id}/logs/restore", status_code=201)
+def restore_log_endpoint(book_id: str, body: RestoreLogBody, user: dict = Depends(require_user)) -> dict:
+    """Desfazer a exclusão de uma sessão de leitura, regravando-a com os mesmos valores.
+
+    Args:
+        book_id: ID do livro da sessão.
+        body: A sessão como estava antes de ser apagada (inclui o ID original).
+        user: Dados do usuário autenticado.
+
+    Returns:
+        {"status": "ok"}.
+    """
+    return _dict_check(restore_reading_log(
+        book_id=book_id, log_id=body.id, log_date=body.date, page_start=body.page_start,
+        page_end=body.page_end, pages_read=body.pages_read, session_notes=body.session_notes,
+    ))
 
 
 @router.patch("/{book_id}/metadata")

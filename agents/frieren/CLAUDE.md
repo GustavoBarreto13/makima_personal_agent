@@ -32,7 +32,7 @@ Instância global `frieren_agent` em `agent.py`, importada diretamente em `coord
 
 ## Banco de dados PostgreSQL
 
-Banco compartilhado do projeto — schema em `agents/frieren/schema_pg.sql` (o `schema.sql` do BigQuery é legado da migração de jun/2026). Tabelas: `books`, `reading_logs`, `shelves`, `book_shelves`, `book_bullets`.
+Banco compartilhado do projeto — schema em `agents/frieren/schema_pg.sql` (o `schema.sql` do BigQuery é legado da migração de jun/2026). Tabelas: `books`, `reading_logs`, `shelves`, `book_shelves`, `book_bullets`, `book_favorites` (vitrine de até 4 livros, spec 073).
 
 ### Tabela `books`
 
@@ -54,8 +54,11 @@ Catálogo de livros e estado de leitura.
 | `status` | STRING | Estado da leitura (ver abaixo) |
 | `date_started` | DATE | Data de início da leitura |
 | `date_finished` | DATE | Data de conclusão |
-| `rating` | FLOAT64 | Avaliação pessoal de 1.0 a 5.0 |
+| `rating` | NUMERIC | Avaliação pessoal de 0.5 a 5.0, em passos de 0.5 (spec 073; antes 1.0–5.0) |
 | `notes` | STRING | Anotações pessoais / resenha |
+| `store_url` / `price` | TEXT / NUMERIC | Link e preço na loja (wishlist) |
+| `liked` | BOOLEAN | Coração "Curti" (spec 073) |
+| `date_abandoned` | DATE | Dia em que foi para `abandonado` (spec 073); apagada ao sair desse status |
 | `source` | STRING | Origem da entrada (sempre "telegram") |
 | `created_at` | TIMESTAMP | Criação do registro |
 | `updated_at` | TIMESTAMP | Última atualização |
@@ -69,12 +72,16 @@ Catálogo de livros e estado de leitura.
 ```
 lendo       — livro em leitura no momento
 lido        — leitura concluída
-quero_ler   — na lista de desejos
+quero_ler   — quer ler (ainda não tem)
+estante     — tem o livro, ainda não começou
+wishlist    — quer comprar
 pausado     — leitura pausada temporariamente
 abandonado  — desistiu do livro
 ```
 
-Qualquer outro valor é rejeitado pelas tools.
+Qualquer outro valor é rejeitado pelas tools. As datas acompanham o status (`_status_set_sql`):
+ir para `lendo` sem data de início grava hoje; ir para `abandonado` grava `date_abandoned`; sair de
+`abandonado` (ou terminar o livro) apaga essa data — abandonado nunca conta como lido nas estatísticas.
 
 ---
 
@@ -192,7 +199,7 @@ Se `status` for informado, filtra somente aquele grupo.
 Marca um livro como lido.
 
 - Aceita datas retroativas: `date_finished` e `date_started` em YYYY-MM-DD
-- `rating`: nota de 1.0 a 5.0 (opcional)
+- `rating`: nota de 0.5 a 5.0 em passos de 0.5 (opcional); sem nota, mantém a que já existia
 - `COALESCE(@notes, notes)`: preserva anotações anteriores se `notes=None`
 - Usa SET condicional para `date_started`: se o usuário informar, sobrescreve; caso contrário, preserva com `COALESCE`
 
@@ -282,10 +289,36 @@ Não são tools do agente Telegram — o router `webapp/backend/routers/books.py
 |---|---|
 | `get_shelves()` / `create_shelf(...)` / `delete_shelf(shelf_id)` | CRUD de estantes (coleções) |
 | `add_book_to_shelf(book_id, shelf_id)` / `remove_book_from_shelf(...)` | Vínculo N:N livro ↔ estante |
-| `update_book_metadata_by_id(...)` | Edição de metadados do livro pela UI. Além dos campos bibliográficos + `notes`, aceita `store_url`, `price`, `rating` (valida 1.0–5.0), `date_started` e `date_finished` — usado pelo modal "Editar livro" do webapp |
+| `update_book_metadata_by_id(...)` | Edição de metadados do livro pela UI. Além dos campos bibliográficos + `notes`, aceita `store_url`, `price`, `rating` (valida 0.5–5.0, passos de 0.5), `date_started` e `date_finished` — usado pelo modal "Editar livro" do webapp |
 | `list_book_bullets(book_id)` / `create_book_bullet(...)` / `update_book_bullet(...)` / `delete_book_bullet(bullet_id)` | Marcações coloridas por livro (tabela `book_bullets`). Cor ∈ rosa/amarelo/verde/azul/laranja; `page_number` opcional |
 | `get_activity_feed(limit)` | Feed de atividade agrupado por data (tela Atividade) |
 | `get_heatmap_data(year)` | Dados do heatmap anual de páginas lidas |
+| `finish_book_by_id(...)` / `update_book_status_by_id(id, status)` | Concluir / trocar status **pelo ID** (spec 073). As versões por título (`finish_book`, `update_book_status`, usadas pelo agente) delegam para estas. Pelo título, edições diferentes do mesmo livro se confundiriam |
+| `update_book_metadata_by_id(..., clear=[...])` | `clear` grava NULL nos campos listados (ex.: tirar a nota ou o link da loja); só aceita `_CLEARABLE_FIELDS` |
+| `set_book_like(id, liked)` | Coração "Curti" (spec 073) |
+| `get_book_favorites()` / `set_book_favorites(ids)` | Vitrine da Início: até 4 livros na ordem dada; troca atômica (apaga tudo + reinsere numa transação) |
+| `restore_book(id)` / `restore_reading_log(...)` | "Desfazer" do webapp: tira o livro do soft delete / regrava a sessão apagada com o mesmo ID |
+
+### `tools_stats.py` — Início e Estatísticas no padrão do Design System (spec 073, só webapp)
+
+- `get_stats_payload(year=0, month=None)` → contrato **`StatsPayload`** (`GET /api/books/stats/payload`;
+  na fase 5 da spec 073 assume o `/stats`). KPIs com `prev` do **mesmo trecho** do ano anterior
+  (`period_bounds`): livros lidos, começados e abandonados, páginas, páginas por dia (sobre **dias de
+  calendário**), dias lendo, dias por livro, livro mais longo, nota média. Páginas por dia/mês, distribuição
+  de notas 0.5–5 (os 10 degraus), rankings (gêneros, autores, idiomas — livros com sessão **ou** terminados
+  no período), recordes (dia recorde, maior sequência e sequência atual de **dias seguidos**, livro mais
+  longo, leitura mais rápida) e momentos (terminados no período, curtidos primeiro). Extensão: `first_year`.
+  A meta anual (`yearly_goal`) vive nas preferências do webapp, não no banco.
+- `get_books_home()` → todos os blocos da Início (`GET /api/books/home`): vitrine, lendo agora, últimos 4
+  terminados, histograma do ano, páginas em 7 dias (e os 7 anteriores), sparkline de 21 dias, sequência,
+  livros terminados no ano, última sessão e contagem por status.
+- Regras: soft delete fora de toda conta (inclusive páginas dos logs); `build_stats_payload` e
+  `build_home_rhythm` são puras (testes em `tests/agents/test_frieren_stats.py`).
+- `get_reading_stats` (formato antigo) segue como tool do agente do Telegram.
+
+**Migração (spec 073):** `scripts/migrate_frieren_ds.py` (dry-run por padrão, `--apply` grava) cria
+`books.liked`, `books.date_abandoned` e a tabela `book_favorites`, e data os livros já abandonados pelo
+`updated_at` convertido para America/Sao_Paulo. No VPS, rodar de dentro do `makima-web`.
 
 ---
 

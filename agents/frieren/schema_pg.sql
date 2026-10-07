@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS books (
     updated_at      TIMESTAMPTZ DEFAULT NOW(),
     deleted         BOOLEAN     DEFAULT FALSE
 );
+-- Spec 073 (Design System): coração "Curti" e data em que o livro foi abandonado.
+-- ADD COLUMN IF NOT EXISTS deixa o arquivo idempotente em bancos que já tinham a tabela.
+ALTER TABLE books ADD COLUMN IF NOT EXISTS liked          BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE books ADD COLUMN IF NOT EXISTS date_abandoned DATE;   -- preenchida ao ir para 'abandonado'
 CREATE INDEX IF NOT EXISTS idx_books_status     ON books(status);
 CREATE INDEX IF NOT EXISTS idx_books_deleted    ON books(deleted);
 CREATE INDEX IF NOT EXISTS idx_books_created_at ON books(created_at);
@@ -78,3 +82,11 @@ CREATE TABLE IF NOT EXISTS book_bullets (
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_book_bullets_book ON book_bullets(book_id);
+
+-- ── Vitrine de favoritos (spec 073) ─────────────────────────────────────────
+-- Até 4 livros escolhidos à mão para a tela Início, na ordem de `position`.
+-- Independe do coração (`books.liked`): curtir é sobre um livro; a vitrine é uma curadoria.
+CREATE TABLE IF NOT EXISTS book_favorites (
+    book_id  TEXT    PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0
+);
