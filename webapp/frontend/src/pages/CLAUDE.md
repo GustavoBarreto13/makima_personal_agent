@@ -32,7 +32,7 @@ Nunca misturar: código de Shell não chama componentes do `Layout`; páginas da
 
 ### CSS: isolamento por domínio
 
-Cada Shell tem seu próprio arquivo CSS com tokens OKLCH (`--garnet`, `--sapphire`, etc.) declarados dentro de um seletor de escopo — a classe raiz do Shell (`.vl-app`, `.nami-app`, `.frieren-shell`, `.kg-app`, `.akane-shell`, `.marin-shell`, `.mai-shell`, `.km-app`, `.yato-shell`, `.mkA`). Tokens de um domínio **não são visíveis** no outro.
+Cada Shell tem seu próprio arquivo CSS com tokens OKLCH (`--garnet`, `--sapphire`, etc.) declarados dentro de um seletor de escopo — a classe raiz do Shell (`.vl-app`, `.nami-app`, `.kg-app`, `.akane-shell`, `.marin-shell`, `.mai-shell`, `.km-app`, `.yato-shell`, `.mkA`). Tokens de um domínio **não são visíveis** no outro.
 
 > **Atenção (vazamento conhecido):** `violet.css` tem regras globais (não escopadas) e `mai.css`
 > tem classes genéricas (`.hero`, `.page`) que vazam entre shells no bundle único do Vite.

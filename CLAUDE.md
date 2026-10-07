@@ -44,7 +44,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1, 040–048, 071 | `agents/nami/CLAUDE.md` |
 | `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + GTD/revisão semanal (034/035) + Foco gameficado (037/062) + modo férias (065) | ✅ Fases 2, 011–020, 024–026, 029–030, 034–039, 062, 065 | `agents/kaguya/CLAUDE.md` |
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada + Tutor de Idiomas (031) + Conselho do Dia (061) | ✅ Fases 027, 031, 061 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
-| `agents/frieren/` | Livros (PostgreSQL + Google Books) | ✅ Fase 5a | `agents/frieren/CLAUDE.md` |
+| `agents/frieren/` | Livros (PostgreSQL + Google Books) + favoritos/coração + estatísticas no padrão do DS (073) | ✅ Fase 5a, 073 | `agents/frieren/CLAUDE.md` |
 | `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015, 072 | `agents/akane/CLAUDE.md` |
 | `agents/marin/` | Animes (PostgreSQL + Jikan/AniList + MAL OAuth) | ✅ Fase 021 | `agents/marin/CLAUDE.md` |
 | `agents/mai/` | Séries de TV (PostgreSQL + TMDB API v3) | ✅ Fase 022 | `agents/mai/CLAUDE.md` |
@@ -244,6 +244,7 @@ makima_personal_agent/
 │   ├── frieren/         # agente de livros — Fase 5a ✅
 │   │   ├── __init__.py
 │   │   ├── tools.py     # PostgreSQL + Google Books API
+│   │   ├── tools_stats.py # StatsPayload e blocos do Início (spec 073, só webapp)
 │   │   ├── agent.py     # frieren_agent
 │   │   ├── schema_pg.sql # schema das tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, schema PostgreSQL, menu interativo, personalidade
