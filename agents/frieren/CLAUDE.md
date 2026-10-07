@@ -307,10 +307,10 @@ Não são tools do agente Telegram — o router `webapp/backend/routers/books.py
   calendário**), dias lendo, dias por livro, livro mais longo, nota média. Páginas por dia/mês, distribuição
   de notas 0.5–5 (os 10 degraus), rankings (gêneros, autores, idiomas — livros com sessão **ou** terminados
   no período), recordes (dia recorde, maior sequência e sequência atual de **dias seguidos**, livro mais
-  longo, leitura mais rápida) e momentos (terminados no período, curtidos primeiro). Extensão: `first_year`.
+  longo, leitura mais rápida com 2+ livros, gêneros diferentes) e momentos (terminados no período, curtidos primeiro). Extensão: `first_year`.
   A meta anual (`yearly_goal`) vive nas preferências do webapp, não no banco.
 - `get_books_home()` → todos os blocos da Início (`GET /api/books/home`): vitrine, lendo agora, últimos 4
-  terminados, histograma do ano, páginas em 7 dias (e os 7 anteriores), sparkline de 21 dias, sequência,
+  terminados, histograma do ano, páginas em 7 dias (e os 7 anteriores) e em 30 dias, sparkline de 21 dias, sequência,
   livros terminados no ano, última sessão e contagem por status.
 - Regras: soft delete fora de toda conta (inclusive páginas dos logs); `build_stats_payload` e
   `build_home_rhythm` são puras (testes em `tests/agents/test_frieren_stats.py`).

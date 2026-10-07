@@ -122,6 +122,11 @@ def test_recordes_dia_recorde_sequencia_livro_mais_longo():
     assert rec["Leitura mais rápida"]["value"] == "1 dia"
 
 
+def test_generos_diferentes_entram_nos_recordes():
+    rec = {r["label"]: r["value"] for r in _payload(genre_count=5)["records"]}
+    assert rec["Gêneros diferentes"] == "5"
+
+
 def test_leitura_mais_rapida_so_aparece_com_dois_livros_ou_mais():
     p = _payload(totals=_totals(finished=1, sessions=1), fastest={"title": "Duna", "days": 37})
     assert "Leitura mais rápida" not in {r["label"] for r in p["records"]}
@@ -151,6 +156,7 @@ def test_ritmo_usa_dias_corridos_e_preenche_zeros():
     r = stats.build_home_rhythm(daily, HOJE)
     assert r["pages_7d"] == 30          # 1/out a 7/out
     assert r["pages_7d_prev"] == 99     # 24/set a 30/set
+    assert r["pages_30d"] == 129        # 8/set a 7/out
     assert len(r["spark"]) == 21 and r["spark"][-1] == {"date": "2026-10-07", "value": 20}
     assert r["spark"][-2]["value"] == 0  # 6/out sem leitura entra como zero
 

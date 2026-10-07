@@ -8,6 +8,7 @@ import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'  // Ro
 
 import Login         from './pages/Login'               // Tela de login com botão "Entrar com Google"
 import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell completo da seção de livros
+import { FrierenShell as FrierenNextShell } from './pages/frieren-next/FrierenShell'  // Prévia da Frieren no Design System (spec 073)
 import { VioletShell } from './pages/violet/VioletShell'     // Shell do diário Violet
 import { NamiShell }   from './pages/nami/NamiShell'         // Shell completo da seção de finanças (redesign)
 import { KaguyaShell } from './pages/kaguya/KaguyaShell'      // Shell de tarefas (sistema próprio, spec 011)
@@ -85,6 +86,8 @@ function App() {
             O wildcard /* garante que sub-rotas internas (detalhe, estante, etc.)
             não sejam interceptadas pelo React Router — o shell gerencia tudo internamente. */}
         <Route path="/books/*" element={<FrierenShell />} />
+        {/* Prévia da Frieren no Design System (spec 073): convive com /books até a troca na fase 5. */}
+        <Route path="/books-next/*" element={<FrierenNextShell />} />
 
         {/* Violet · Diário tem seu próprio shell com sidebar e tokens OKLCH isolados. */}
         <Route path="/journal/*" element={<VioletShell />} />

@@ -156,6 +156,7 @@ def build_stats_payload(
     fastest: dict | None,
     moments: list[dict],
     first_year: int | None = None,
+    genre_count: int = 0,
 ) -> dict:
     """Montar o StatsPayload a partir de números já consultados — função pura, sem banco.
 
@@ -173,6 +174,7 @@ def build_stats_payload(
         fastest: {title, days} da leitura mais rápida terminada no período, ou None.
         moments: [{id, title, author, cover_url, rating}] de livros terminados no período.
         first_year: Ano da primeira leitura registrada (limite do seletor de ano).
+        genre_count: Quantos gêneros diferentes foram lidos no período (o ranking mostra só os 8 primeiros).
 
     Returns:
         Dicionário no contrato `StatsPayload` (`src/design/core/stats.ts`) + `first_year`.
@@ -247,6 +249,10 @@ def build_stats_payload(
     if fastest and totals["finished"] > 1:
         records.append({"label": "Leitura mais rápida", "value": _plural(int(fastest["days"]), "dia", "dias"),
                         "detail": fastest["title"]})
+
+    # "Destaques do ano" do shell antigo: quantos gêneros diferentes passaram pelas mãos.
+    if genre_count > 1:
+        records.append({"label": "Gêneros diferentes", "value": str(genre_count)})
 
     titles = {"genres": "Gêneros", "authors": "Autores", "languages": "Idiomas"}
     ranking_out = {
@@ -483,8 +489,20 @@ def get_stats_payload(year: int = 0, month: int | None = None) -> dict:
             """
         )[0]["y"]
 
+        genre_count = run_select(
+            f"""
+            {_TOUCHED}
+            SELECT COUNT(DISTINCT LOWER(TRIM(x))) AS n
+              FROM books b
+              JOIN touched t ON t.id = b.id
+              CROSS JOIN LATERAL regexp_split_to_table(COALESCE(b.genre, ''), ',') AS x
+             WHERE TRIM(x) <> ''
+            """,
+            params,
+        )[0]["n"]
+
         payload = build_stats_payload(
-            year=year, month=month, today=today,
+            year=year, month=month, today=today, genre_count=int(genre_count),
             totals=_period_totals(start, end), prev_totals=_period_totals(prev_start, prev_end),
             daily=_daily_pages(date(year, 1, 1), date(year, 12, 31)),
             ratings=ratings, rankings=_rankings(start, end),
@@ -507,7 +525,7 @@ def build_home_rhythm(daily: list[dict], today: date) -> dict:
         today: Hoje no fuso local.
 
     Returns:
-        {pages_7d, pages_7d_prev, spark: [{date, value}] dos últimos 21 dias com zeros
+        {pages_7d, pages_7d_prev, pages_30d, spark: [{date, value}] dos últimos 21 dias com zeros
         preenchidos, streak: {best, current}}.
 
     Example:
@@ -526,12 +544,14 @@ def build_home_rhythm(daily: list[dict], today: date) -> dict:
     # Janelas de dias CORRIDOS (corrige o legado, que pegava "as últimas 7 entradas").
     pages_7d = _sum(today - timedelta(days=6), today)
     pages_7d_prev = _sum(today - timedelta(days=13), today - timedelta(days=7))
+    # Ritmo de 30 dias corridos (o cartão "média por dia" do Início divide por 30).
+    pages_30d = _sum(today - timedelta(days=29), today)
     spark = [
         {"date": (today - timedelta(days=i)).isoformat(),
          "value": by_day.get((today - timedelta(days=i)).isoformat(), 0)}
         for i in range(20, -1, -1)
     ]
-    return {"pages_7d": pages_7d, "pages_7d_prev": pages_7d_prev, "spark": spark,
+    return {"pages_7d": pages_7d, "pages_7d_prev": pages_7d_prev, "pages_30d": pages_30d, "spark": spark,
             "streak": compute_streaks(list(by_day.keys()), today)}
 
 

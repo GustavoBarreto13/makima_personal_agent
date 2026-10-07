@@ -10,7 +10,8 @@ Dez Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
 |---|---|---|---|---|
 | `violet/` | `VioletShell.tsx` | `violetApi` em `lib/api.ts` | `violet.css` | `/journal/*` |
 | `nami/` | `NamiShell.tsx` (sobre o `AppShell` do DS) | `namiApi` em `nami/namiApi.ts` | `nami.css` (só complementos do DS, tokens `--ds-*`) | `/nami/*` |
-| `frieren/` | `FrierenShell.tsx` | `booksApi` em `lib/api.ts` | `frieren.css` | `/books/*` |
+| `frieren/` | `FrierenShell.tsx` (legado, sai na fase 5 da spec 073) | `booksApi` em `lib/api.ts` | `frieren.css` | `/books/*` |
+| `frieren-next/` | `FrierenShell.tsx` (sobre o `AppShell` do DS, spec 073) | `frierenApi` em `frieren-next/frierenApi.ts` | `frieren.css` (só complementos `.fr-*` do DS) | `/books-next/*` (prévia) |
 | `kaguya/` | `KaguyaShell.tsx` | `kaguyaApi` em `kaguya/kaguyaApi.ts` | `kaguya.css` | `/tasks/*` |
 | `akane/` | `AkaneShell.tsx` (sobre o `AppShell` do DS) | `akaneApi` em `akane/akaneApi.ts` | `akane.css` (só complementos do DS, tokens `--ds-*`) | `/movies/*` |
 | `marin/` | `MarinShell.tsx` | `marinApi` em `marin/marinApi.ts` | `marin.css` | `/animes/*` |
