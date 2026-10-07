@@ -184,7 +184,7 @@
       "status": "legacy",
       "dir": "src/pages/frieren",
       "shell": "src/pages/frieren/FrierenShell.tsx",
-      "art": null,
+      "art": "elfica",
       "appShell": false,
       "hero": false,
       "theme": false,
