@@ -9,7 +9,8 @@ import {
   Leaf, Library, Link, List, ListChecks, Mail, MapPin, Medal, Menu, MessageSquare, Minus, Monitor, Moon, Palette, PawPrint, Pencil, PiggyBank, Pill, Plane, Play, Plus,
   Receipt, RefreshCw, Repeat, Route, Search, Shirt, ShoppingCart, SlidersHorizontal, Smartphone, Sparkles, Star, Sun, Sunrise, Tag, Target, Timer, Trash2, TrendingDown,
   TrendingUp, Trophy, Tv, Undo2, Upload, User, Users, Utensils, Wallet, X, Zap, BarChart3, ArrowUpDown,
-  Bookmark, Globe, Popcorn, RotateCcw, Sofa, Ticket, type LucideIcon,
+  Bookmark, Globe, Popcorn, RotateCcw, Sofa, Ticket,
+  BookCheck, BookX, Feather, FileText, Highlighter, LibraryBig, Pause, Store, type LucideIcon,
 } from 'lucide-react'
 
 export const ICONS = {
@@ -35,6 +36,9 @@ export const ICONS = {
   savings: PiggyBank, cart: ShoppingCart, loan: HandCoins, institution: Landmark,
   // cinema (Akane, spec 072): `movie` (Film) já existe acima; revisto não pode ser `habit` (Repeat)
   rewatch: RotateCcw, cinema: Ticket, couch: Sofa, watchlist: Bookmark, popcorn: Popcorn, globe: Globe,
+  // livros (Frieren, spec 073): `book`, `library` e `watchlist` (Quero ler = "para depois") já existem acima
+  shelf: LibraryBig, review: Feather, highlight: Highlighter, page: FileText, pause: Pause,
+  abandon: BookX, finished: BookCheck, store: Store,
   // categorias de gasto (Nami)
   food: Apple, dining: Utensils, game: Gamepad2, car: Car, shirt: Shirt, school: GraduationCap, gift: Gift, pill: Pill, laptop: Laptop, pet: PawPrint,
   // treino (agente de exemplo da página /design)

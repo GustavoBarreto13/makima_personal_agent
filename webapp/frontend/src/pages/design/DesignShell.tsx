@@ -29,7 +29,7 @@ const NAV: NavGroup[] = [
 
 const TITLES: Record<View, string> = { home: 'Início', workouts: 'Treinos', stats: 'Estatísticas', comp: 'Componentes' }
 
-const ART_OPTIONS = [{ value: 'default', label: 'Padrão' }, { value: 'caderno', label: 'Caderno' }, { value: 'nautica', label: 'Carta náutica' }, { value: 'noir', label: 'Cinema noir' }]
+const ART_OPTIONS = [{ value: 'default', label: 'Padrão' }, { value: 'caderno', label: 'Caderno' }, { value: 'nautica', label: 'Carta náutica' }, { value: 'noir', label: 'Cinema noir' }, { value: 'elfica', label: 'Biblioteca élfica' }]
 
 export function DesignShell() {
   const today = useMemo(() => todayISO(), [])

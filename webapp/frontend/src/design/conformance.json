@@ -181,24 +181,40 @@
       "mobile": false
     },
     "frieren": {
-      "status": "legacy",
-      "dir": "src/pages/frieren",
-      "shell": "src/pages/frieren/FrierenShell.tsx",
-      "art": null,
-      "appShell": false,
-      "hero": false,
-      "theme": false,
-      "icons": false,
-      "collections": [],
-      "quickCapture": null,
+      "status": "migrating",
+      "dir": "src/pages/frieren-next",
+      "shell": "src/pages/frieren-next/FrierenShell.tsx",
+      "art": "elfica",
+      "appShell": true,
+      "hero": true,
+      "theme": true,
+      "icons": true,
+      "collections": [
+        "frieren:livros",
+        "frieren:querler",
+        "frieren:wishlist",
+        "frieren:diario",
+        "frieren:resenhas"
+      ],
+      "quickCapture": "book-log",
       "stats": {
-        "page": false,
-        "metrics": []
+        "page": true,
+        "metrics": [
+          "books_started",
+          "books_finished",
+          "books_abandoned",
+          "pages",
+          "pages_per_day",
+          "days_reading",
+          "days_per_book",
+          "longest_book",
+          "yearly_goal"
+        ]
       },
-      "detail": false,
-      "prefs": false,
-      "hotkeys": false,
-      "mobile": false
+      "detail": true,
+      "prefs": true,
+      "hotkeys": true,
+      "mobile": true
     },
     "akane": {
       "status": "conformant",

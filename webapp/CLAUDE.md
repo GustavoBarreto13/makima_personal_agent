@@ -349,7 +349,7 @@ O diário usa bullets com parsing de `@pessoa` e `#tag`. O componente `RichText.
 
 ### O que NÃO fazer aqui
 
-- **Nunca modificar** `agents/nami/`, `agents/frieren/`, `agents/journal/`, `mcp_servers/` ou `coordinator/` — são importados como estão
+- **Não mexer em `agents/<domínio>/`, `mcp_servers/` ou `coordinator/` só para servir a tela** — o router é uma fachada fina sobre as tools. Quando a tela precisa de dado ou regra nova, a mudança vai na camada de lógica do agente (como nas specs 071 Nami, 072 Akane e 073 Frieren), sem quebrar as tools que o agente do Telegram/Hermes já usa
 - **Não instanciar** o ADK (`InMemoryRunner`, `Agent`) fora da Fatia 6 (chat) — os routers 2/3/4/5 chamam tools Python puras
 - **Não registrar** routers sem o `Depends(require_user)` em todas as rotas — vazamento de dados financeiros
 - **Não usar `git add .`** ao commitar — `webapp/frontend/dist/` (build) não vai para o git (está no `.gitignore`)
