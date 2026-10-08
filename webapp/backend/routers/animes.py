@@ -48,7 +48,6 @@ from agents.marin.tools import (
     get_watch_history,
     get_anime_details,
     get_airing_schedule,
-    get_stats,
     get_home,
     # Sincronização MAL
     sync_mal,
@@ -66,9 +65,17 @@ from agents.marin.tools import (
     get_tags,
     add_tag,
     remove_tag,
-    # Rewind anual (spec 054)
-    get_rewind,
+    # Design System (spec 074): coração, vitrine de favoritos e "Desfazer"
+    set_anime_liked,
+    get_favorites,
+    set_favorites,
+    restore_anime,
+    restore_watch_log,
 )
+
+# Estatísticas no contrato StatsPayload do Design System (spec 074) — une o antigo Stats e o Rewind.
+# `get_stats`/`get_rewind` (formato antigo) seguem como tools do agente no Telegram/Hermes.
+from agents.marin.tools_stats import get_stats_payload
 
 # Importação de run_select para a paginação de episódios (query thin sem lógica de domínio)
 from agents.db import run_select
@@ -127,6 +134,29 @@ class StatusBody(BaseModel):
 class ScoreBody(BaseModel):
     """Corpo da requisição para definir a nota de um anime."""
     score: float  # 0–10, passo 0.5 (0 = remover nota)
+
+
+class LikeBody(BaseModel):
+    """Corpo para marcar/desmarcar o coração de um anime."""
+    liked: bool
+
+
+class FavoritesBody(BaseModel):
+    """Corpo para substituir a vitrine de favoritos (até 4 IDs, na ordem desejada)."""
+    ids: list[str]
+
+
+class RestoreLogBody(BaseModel):
+    """Sessão apagada que o "Desfazer" do webapp devolve, com os mesmos valores."""
+    id: str
+    anime_id: str
+    watched_date: str                       # YYYY-MM-DD
+    ep_start: Optional[int] = None
+    ep_end: Optional[int] = None
+    episodes_count: Optional[int] = None
+    rating: Optional[float] = None
+    notes: Optional[str] = None
+    source: str = "manual"
 
 
 class SyncBody(BaseModel):
@@ -257,7 +287,7 @@ def list_animes_endpoint(
             id, mal_id, title, media_type, season, studio,
             episodes_total, episodes_watched, status, airing_status,
             score, poster_url, banner_url, genres, tags, date_started, updated_at,
-            created_at
+            created_at, liked, date_finished, date_abandoned
         FROM anime
         WHERE {where_clause}
         ORDER BY {order_clause}
@@ -307,20 +337,24 @@ def get_currently_watching_endpoint(user: dict = Depends(require_user)) -> dict:
 
 @router.get("/stats")
 def get_stats_endpoint(
-    year: Optional[int] = Query(default=None, description="Ano de referência (padrão: ano atual)"),
+    year: int = Query(default=0, description="Ano de referência (0 = ano atual)"),
+    month: Optional[int] = Query(default=None, description="Mês 1-12 (vazio = ano inteiro)"),
     user: dict = Depends(require_user),
 ) -> dict:
-    """Retornar estatísticas de animes do ano (vazio-seguro — SC-007).
+    """Retornar as estatísticas de animes no contrato `StatsPayload` (spec 074).
+
+    Une o antigo Stats e o Rewind. Episódios reais, completos e dropados do período,
+    rankings por anime distinto e notas em estrelas (0–5).
 
     Args:
-        year: Ano (padrão: ano atual).
+        year: Ano (0 = ano atual em America/Sao_Paulo).
+        month: Mês 1-12 para focar num mês.
         user: Usuário autenticado.
 
     Returns:
-        Dict com total_animes, total_episodes, total_hours, avg_score,
-        top_genres, top_studios, monthly[12], by_status, heatmap, highlight.
+        O `StatsPayload` (period, kpis, daily, monthly, distribution, rankings, records, moments).
     """
-    return get_stats(year=year)
+    return _check_result(get_stats_payload(year, month))
 
 
 @router.get("/schedule")
@@ -353,21 +387,26 @@ def get_home_endpoint(user: dict = Depends(require_user)) -> dict:
     return get_home()
 
 
-@router.get("/rewind")
-def get_rewind_endpoint(
-    year: Optional[int] = Query(default=None, description="Ano de referência (padrão: ano atual)"),
-    user: dict = Depends(require_user),
-) -> dict:
-    """Retornar a retrospectiva anual (Rewind) de animes (spec 054, FR-005).
+# ── Vitrine de favoritos (spec 074) — path fixo antes de /{anime_id} ─────────
+
+@router.get("/favorites")
+def list_favorites_endpoint(user: dict = Depends(require_user)) -> dict:
+    """Listar a vitrine de favoritos (até 4 animes, na ordem escolhida)."""
+    return _check_result(get_favorites())
+
+
+@router.put("/favorites")
+def replace_favorites_endpoint(body: FavoritesBody, user: dict = Depends(require_user)) -> dict:
+    """Substituir a vitrine de favoritos inteira.
 
     Args:
-        year: Ano (padrão: ano atual).
+        body: IDs dos animes na ordem desejada (máximo 4; lista vazia esvazia a vitrine).
         user: Usuário autenticado.
 
     Returns:
-        Mesmo shape de /stats — ver get_rewind_endpoint para os campos.
+        A vitrine nova.
     """
-    return get_rewind(year=year)
+    return _check_result(set_favorites(body.ids))
 
 
 # ── Listas personalizadas (spec 054) — path fixo antes de /{anime_id} ────────
@@ -425,6 +464,24 @@ def get_tags_endpoint(user: dict = Depends(require_user)) -> dict:
 
 
 # ── Logs de sessão — path fixo antes de /{anime_id} ──────────────────────────
+
+@router.post("/logs/restore", status_code=201)
+def restore_log_endpoint(body: RestoreLogBody, user: dict = Depends(require_user)) -> dict:
+    """Desfazer a exclusão de uma sessão do diário, regravando-a com os mesmos valores.
+
+    Args:
+        body: A sessão como estava antes de ser apagada (inclui o ID original).
+        user: Usuário autenticado.
+
+    Returns:
+        Dict com mensagem de confirmação.
+    """
+    return _check_result(restore_watch_log(
+        anime_id=body.anime_id, log_id=body.id, watched_date=body.watched_date,
+        ep_start=body.ep_start, ep_end=body.ep_end, episodes_count=body.episodes_count,
+        rating=body.rating, notes=body.notes, source=body.source,
+    ))
+
 
 @router.delete("/logs/{log_id}", status_code=200)
 def delete_log_endpoint(log_id: str, user: dict = Depends(require_user)) -> dict:
@@ -681,6 +738,18 @@ def add_tag_endpoint(anime_id: str, body: TagBody, user: dict = Depends(require_
 def remove_tag_endpoint(anime_id: str, tag: str, user: dict = Depends(require_user)) -> dict:
     """Remover uma etiqueta de um anime (spec 054, FR-004)."""
     return _check_result(remove_tag(anime_id_or_query=anime_id, tag=tag))
+
+
+@router.patch("/{anime_id}/like")
+def like_anime_endpoint(anime_id: str, body: LikeBody, user: dict = Depends(require_user)) -> dict:
+    """Marcar ou desmarcar o coração ("Curti") de um anime (spec 074)."""
+    return _check_result(set_anime_liked(anime_id_or_query=anime_id, liked=body.liked))
+
+
+@router.post("/{anime_id}/restore")
+def restore_anime_endpoint(anime_id: str, user: dict = Depends(require_user)) -> dict:
+    """Desfazer a exclusão de um anime (volta do soft delete) — spec 074."""
+    return _check_result(restore_anime(anime_id))
 
 
 @router.delete("/{anime_id}", status_code=200)

@@ -33,6 +33,9 @@ from agents.marin.tools import (
     add_tag,
     remove_tag,
     get_rewind,
+    set_anime_liked,
+    get_favorites,
+    set_favorites,
 )
 
 TOOLS = [
@@ -63,4 +66,7 @@ TOOLS = [
     add_tag,
     remove_tag,
     get_rewind,
+    set_anime_liked,
+    get_favorites,
+    set_favorites,
 ]

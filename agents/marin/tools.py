@@ -1218,9 +1218,17 @@ def update_anime_status(anime_id_or_query: str, status: str) -> dict:
         return _err(f"Anime '{anime_id_or_query}' não encontrado no catálogo.")
 
     now = _now()
+    # Spec 074: date_abandoned guarda o dia local do abandono. Ao entrar em 'abandonado' grava o
+    # dia de hoje (sem sobrescrever se já havia); ao sair, volta a NULL (CASE sem ELSE → NULL).
     run_dml(
-        "UPDATE anime SET status = %(s)s, updated_at = %(now)s, local_updated_at = %(now)s WHERE id = %(id)s",
-        {"s": status, "now": now, "id": anime["id"]},
+        """
+        UPDATE anime
+        SET status = %(s)s, updated_at = %(now)s, local_updated_at = %(now)s,
+            date_abandoned = CASE WHEN %(s)s = 'abandonado'
+                                  THEN COALESCE(date_abandoned, %(today)s) END
+        WHERE id = %(id)s
+        """,
+        {"s": status, "now": now, "today": _today(), "id": anime["id"]},
     )
 
     # Propaga para o MAL (best-effort, spec 053 FR-001)
@@ -1319,6 +1327,205 @@ def delete_anime(anime_id_or_query: str) -> dict:
 
     _touch_calendar()
     return _ok(message=f"'{anime['title']}' removido do catálogo. Histórico preservado.")
+
+
+def set_anime_liked(anime_id_or_query: str, liked: bool) -> dict:
+    """Marca ou desmarca o coração ("Curti") de um anime (spec 074).
+
+    Args:
+        anime_id_or_query: ID local, mal_id ou título fuzzy do anime.
+        liked: True para curtir, False para descurtir.
+
+    Returns:
+        Dict com status "ok" (e "liked") ou "error".
+    """
+    anime = _find_anime_by_query(anime_id_or_query)
+    if not anime:
+        return _err(f"Anime '{anime_id_or_query}' não encontrado no catálogo.")
+
+    # Coração é dado só do webapp: não mexe em local_updated_at (que serve ao sync com o MAL)
+    run_dml(
+        "UPDATE anime SET liked = %(l)s, updated_at = %(now)s WHERE id = %(id)s",
+        {"l": bool(liked), "now": _now(), "id": anime["id"]},
+    )
+    return _ok(liked=bool(liked), message=f"'{anime['title']}' {'curtido' if liked else 'descurtido'}.")
+
+
+def get_favorites() -> dict:
+    """Retorna a vitrine de favoritos do Início, na ordem escolhida (spec 074).
+
+    Returns:
+        Dict com "favorites": lista de animes (id, title, poster_url, score, ...) por posição.
+    """
+    rows = run_select(
+        """
+        SELECT a.id, a.title, a.poster_url, a.banner_url, a.status, a.score,
+               a.episodes_total, a.episodes_watched, a.studio, a.season, f.position
+        FROM anime_favorites f
+        JOIN anime a ON a.id = f.anime_id
+        WHERE a.deleted = FALSE
+        ORDER BY f.position
+        """,
+    )
+    for r in rows:
+        r["poster_key"] = _poster_key(r.get("title") or "")
+    return _ok(favorites=rows)
+
+
+def set_favorites(ids: list[str]) -> dict:
+    """Substitui a vitrine de favoritos (no máximo 4 animes), de forma atômica.
+
+    Args:
+        ids: IDs dos animes na ordem desejada (posição 0, 1, 2, 3). Lista vazia esvazia a vitrine.
+
+    Returns:
+        A vitrine nova (mesmo formato de `get_favorites`) ou "error" se algum ID for inválido.
+    """
+    if len(ids) > 4:
+        return _err("A vitrine de favoritos aceita no máximo 4 animes.")
+    if len(set(ids)) != len(ids):
+        return _err("A vitrine não pode repetir o mesmo anime.")
+
+    # Todos precisam existir no catálogo (não apagados) — uma consulta só
+    if ids:
+        found = run_select(
+            "SELECT id FROM anime WHERE id = ANY(%(ids)s) AND deleted = FALSE",
+            {"ids": ids},
+        )
+        if len(found) != len(ids):
+            return _err("Algum anime da vitrine não foi encontrado.")
+
+    # delete-all + insert na mesma transação: ou a vitrine nova entra inteira, ou nada muda
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM anime_favorites")
+            for pos, anime_id in enumerate(ids):
+                cur.execute(
+                    "INSERT INTO anime_favorites (anime_id, position) VALUES (%(id)s, %(pos)s)",
+                    {"id": anime_id, "pos": pos},
+                )
+    return get_favorites()
+
+
+def restore_anime(anime_id: str) -> dict:
+    """Desfaz a exclusão de um anime (o soft delete só marcou `deleted = TRUE`) — spec 074.
+
+    Os vínculos com listas apagados por `delete_anime` não voltam sozinhos; o histórico de
+    sessões e episódios nunca saiu do banco.
+
+    Args:
+        anime_id: UUID do anime excluído.
+
+    Returns:
+        Dict com status "ok" ou "error".
+    """
+    affected = run_dml(
+        "UPDATE anime SET deleted = FALSE, updated_at = %(now)s WHERE id = %(id)s AND deleted = TRUE",
+        {"now": _now(), "id": anime_id},
+    )
+    if affected == 0:
+        return _err("Anime não encontrado entre os excluídos.")
+    _touch_calendar()
+    return _ok(message="Anime restaurado.")
+
+
+def restore_watch_log(
+    anime_id: str,
+    log_id: str,
+    watched_date: str,
+    ep_start: int | None,
+    ep_end: int | None,
+    episodes_count: int | None,
+    rating: float | None = None,
+    notes: str | None = None,
+    source: str = "manual",
+) -> dict:
+    """Desfaz a exclusão de uma sessão do diário, regravando-a com o mesmo ID (spec 074).
+
+    A sessão é apagada de verdade (hard delete), então o "Desfazer" do webapp guarda a linha
+    e a devolve aqui. Recalcula o estado derivado do anime (episódios vistos, data de início,
+    episódios marcados e conclusão) como `delete_watch_log` faz no sentido inverso.
+
+    Args:
+        anime_id: UUID do anime da sessão.
+        log_id: ID original da sessão.
+        watched_date: Data da sessão (YYYY-MM-DD).
+        ep_start: Primeiro episódio (ou None).
+        ep_end: Último episódio (ou None).
+        episodes_count: Quantidade de episódios da sessão (ou None).
+        rating: Nota da sessão 0–10 (ou None).
+        notes: Observações da sessão.
+        source: Origem da sessão ('manual' ou 'mal_sync').
+
+    Returns:
+        Dict com status "ok" ou "error".
+    """
+    anime = run_select(
+        "SELECT id, title, mal_id, episodes_total FROM anime WHERE id = %(id)s AND deleted = FALSE",
+        {"id": anime_id},
+    )
+    if not anime:
+        return _err("Anime não encontrado.")
+    if run_select("SELECT 1 FROM watch_logs WHERE id = %(id)s", {"id": log_id}):
+        return _err("Essa sessão já existe.")
+    a = anime[0]
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO watch_logs (id, anime_id, anime_title, watched_date, ep_start, ep_end,
+                                        episodes_count, rating, notes, source, created_at)
+                VALUES (%(id)s, %(aid)s, %(title)s, %(wd)s, %(s)s, %(e)s, %(c)s, %(r)s, %(n)s, %(src)s, %(now)s)
+                """,
+                {"id": log_id, "aid": anime_id, "title": a["title"], "wd": watched_date,
+                 "s": ep_start, "e": ep_end, "c": episodes_count, "r": rating, "n": notes,
+                 "src": source, "now": _now()},
+            )
+            # Mesmos recálculos do delete_watch_log: soma de episódios e primeira data
+            cur.execute(
+                """
+                UPDATE anime
+                SET episodes_watched = (SELECT COALESCE(SUM(episodes_count), 0) FROM watch_logs
+                                        WHERE anime_id = %(id)s AND episodes_count IS NOT NULL),
+                    date_started = (SELECT MIN(watched_date) FROM watch_logs WHERE anime_id = %(id)s),
+                    updated_at = NOW(), local_updated_at = NOW()
+                WHERE id = %(id)s
+                """,
+                {"id": anime_id},
+            )
+            # Re-marca os episódios cobertos pela sessão devolvida
+            if ep_start is not None and ep_end is not None:
+                cur.execute(
+                    """
+                    UPDATE episodes
+                    SET watched = TRUE,
+                        watched_date = GREATEST(COALESCE(watched_date, %(wd)s), %(wd)s)
+                    WHERE anime_id = %(id)s AND number BETWEEN %(s)s AND %(e)s
+                    """,
+                    {"id": anime_id, "wd": watched_date, "s": ep_start, "e": ep_end},
+                )
+            # Se a sessão devolvida completa o anime, a conclusão (revertida na exclusão) volta
+            cur.execute(
+                """
+                UPDATE anime
+                SET status = 'completo',
+                    date_finished = (SELECT MAX(watched_date) FROM watch_logs WHERE anime_id = %(id)s)
+                WHERE id = %(id)s AND episodes_total IS NOT NULL
+                  AND episodes_watched >= episodes_total AND status = 'assistindo'
+                """,
+                {"id": anime_id},
+            )
+
+    if a.get("mal_id"):
+        atualizado = run_select(
+            "SELECT episodes_watched, status FROM anime WHERE id = %(id)s", {"id": anime_id},
+        )
+        if atualizado:
+            _push_best_effort(a["mal_id"], status=atualizado[0]["status"],
+                              num_watched_episodes=atualizado[0]["episodes_watched"])
+    _touch_calendar()
+    return _ok(message="Sessão restaurada.")
 
 
 def set_anime_notes(anime_id_or_query: str, notes: str) -> dict:
@@ -2044,6 +2251,8 @@ def get_home() -> dict:
         episodes_7d=episodes_7d,
         episodes_7d_prev=episodes_7d_prev,
         avg_score_year=avg_score_year,
+        # Spec 074: vitrine de favoritos do Início (antes ficava só no localStorage do navegador)
+        favorites=get_favorites()["favorites"],
     )
 
 

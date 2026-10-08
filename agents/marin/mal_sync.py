@@ -305,14 +305,14 @@ def _insert_enriched_anime(
             media_type, season, studio, episodes_total,
             airing_status, status, episodes_watched, score,
             overview, genres, poster_url, banner_url,
-            source, mal_updated_at, date_finished, created_at, updated_at
+            source, mal_updated_at, date_finished, date_abandoned, created_at, updated_at
         ) VALUES (
             %(id)s, %(mal_id)s, %(anilist_id)s, %(tmdb_id)s,
             %(title)s, %(title_english)s, %(title_japanese)s, %(normalizado)s,
             %(media_type)s, %(season)s, %(studio)s, %(episodes_total)s,
             %(airing_status)s, %(status)s, %(episodes_watched)s, %(score)s,
             %(overview)s, %(genres)s, %(poster_url)s, %(banner_url)s,
-            'mal_sync', %(mal_updated_at)s, %(date_finished)s, %(now)s, %(now)s
+            'mal_sync', %(mal_updated_at)s, %(date_finished)s, %(date_abandoned)s, %(now)s, %(now)s
         )
         ON CONFLICT DO NOTHING
         """,
@@ -339,6 +339,8 @@ def _insert_enriched_anime(
             "banner_url":       meta.get("banner_url"),
             "mal_updated_at":   mal_updated_at,
             "date_finished":    finish_date if status_banco == "completo" else None,
+            # Spec 074: dia local em que o MAL registrou o abandono (alimenta "dropados no período")
+            "date_abandoned":   mal_updated_at.astimezone(_TZ).date() if status_banco == "abandonado" else None,
             "now":              now,
         },
     )
@@ -572,6 +574,17 @@ def _upsert_mal_entry(
                     f"UPDATE anime SET {', '.join(sets)}, updated_at = NOW() WHERE id = %(id)s",
                     params,
                 )
+                if "status" in params:
+                    # Spec 074: entrou em 'abandonado' → grava o dia (sem sobrescrever); saiu → limpa
+                    cur.execute(
+                        """
+                        UPDATE anime
+                        SET date_abandoned = CASE WHEN status = 'abandonado'
+                                                  THEN COALESCE(date_abandoned, %(d)s) END
+                        WHERE id = %(id)s
+                        """,
+                        {"d": mal_updated_at.astimezone(_TZ).date(), "id": anime_id},
+                    )
                 changed = True
 
             # ── 3. Completo no MAL → completo local (FR-005) ──────────────────

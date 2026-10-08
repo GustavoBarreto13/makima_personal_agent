@@ -177,3 +177,18 @@ CREATE TABLE IF NOT EXISTS anime_list_items (
 -- Monta uma lista (todos os animes dela, ordenados por position).
 CREATE INDEX IF NOT EXISTS idx_anime_list_items_list
     ON anime_list_items (list_id);
+
+
+-- ── Design System da Marin (spec 074) ────────────────────────────────────────
+-- Coração ("Curti") por anime, igual ao movies.liked da Akane e ao books.liked da Frieren.
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS liked BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Dia (fuso America/Sao_Paulo) em que o anime foi abandonado. Alimenta a métrica "dropados no
+-- período" das estatísticas; gravada ao entrar em 'abandonado' e limpa ao sair dele.
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS date_abandoned DATE;
+
+-- Vitrine de até 4 favoritos do Início (substitui o localStorage 'marin.favorites').
+CREATE TABLE IF NOT EXISTS anime_favorites (
+    anime_id  TEXT     PRIMARY KEY REFERENCES anime(id) ON DELETE CASCADE,
+    position  INTEGER  NOT NULL                        -- 0..3, ordem escolhida pelo usuário
+);
