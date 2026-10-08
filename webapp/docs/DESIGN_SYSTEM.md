@@ -210,9 +210,9 @@ Encontrados na auditoria que originou o padrão:
 - ~~**Frieren**~~ (**corrigido**, spec 073): sequência e janelas de 7/30 dias agora contam dias corridos;
   abandonado tem status e data próprios; distribuição de notas 0.5–5 completa; páginas de livros apagados
   fora da conta; `GET /books/stats` virou o `StatsPayload`.
-- **Marin**: "Episódios por mês" conta *sessões* (`tools.py:1728`); "Completos" e `by_status` são
-  all-time num tile anual (`:1745`, `:1832`); heatmap parseia `"YYYY-MM-DD"` como UTC → mês errado e
-  key duplicada "Dez" (`components/Heatmap.tsx:68`); Stats e Rewind duplicados.
+- ~~**Marin**~~ (**corrigido**, spec 074): episódios são reais (soma de `episodes_count`, não sessões); completos e
+  dropados são do período (`date_finished`/`date_abandoned`); o heatmap e as datas dos episódios não usam mais UTC;
+  Stats e Rewind viraram uma tela só (`GET /api/animes/stats` no `StatsPayload`).
 - **Mai**: `date.today()` (`tools.py:776,893`); séries apagadas entram na conta (`:779-886`);
   sem Rewind.
 - ~~**Akane**: gêneros, diretores e décadas contam sessões; Stats é subconjunto do Rewind~~ — **corrigido na spec 072**
@@ -267,9 +267,12 @@ estilos sugeridos pelo domínio (ex.: Yato "caderno de bordo", Akane "cinema noi
 
 Estilos existentes: `caderno` (exemplo), `nautica` (**Nami** — "Carta náutica": papel creme + graticula
 no claro, marinho profundo no escuro) e `noir` (**Akane** — "Cinema noir": prata com tinta quase preta
-no claro, "sala apagada" com vinheta carmim no escuro, cantos secos e linhas finas de película). Direção
-de arte por agente: Nami = `nautica`; Akane = `noir`; os demais _ainda não escolhida_ (`null`; `makima`
-e `design` usam `default`).
+no claro, "sala apagada" com vinheta carmim no escuro, cantos secos e linhas finas de película), `elfica`
+(**Frieren** — "Biblioteca élfica") e `neon` (**Marin** — "Neon kawaii": papel claro com véu ciano-rosa e losangos
+finíssimos no claro; "fliperama de luz apagada" com bordas e halos neon no escuro; o rosa não é cor nova, nasce do acento
+girando o matiz em 145° com relative color; contraste calculado em `specs/074-marin-ds/contrast-neon.mjs`). Direção
+de arte por agente: Nami = `nautica`; Akane = `noir`; Frieren = `elfica`; Marin = `neon`; os demais _ainda não escolhida_
+(`null`; `makima` e `design` usam `default`).
 
 **Ganchos que a arte e as páginas podem usar (retrocompatíveis; sem eles nada muda):**
 
@@ -349,7 +352,7 @@ imediato. Para ativar, use a skill `update-config`.
 7. Apagar o CSS e os componentes mortos; marcar `migrating` e, ao concluir, `conformant`.
 
 Ordem sugerida (do menor para o maior): Komi → Yato → Mai (ganha o "Voltar à Makima" que não tinha)
-→ ~~Frieren~~ (feito, spec 073) → ~~Akane~~ (feito, spec 072) → Violet → Marin → Nami → Kaguya. O Hub da Makima só adota tokens, tema e
+→ ~~Frieren~~ (feito, spec 073) → ~~Akane~~ (feito, spec 072) → Violet → ~~Marin~~ (feito, spec 074) → Nami → Kaguya. O Hub da Makima só adota tokens, tema e
 ícones (não tem sidebar).
 
 ## Guia de voz
