@@ -62,7 +62,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); __resetToasts(); localStorage.clear(); window.location.hash = '' })
 
 const SCREENS: [string, string | RegExp][] = [
-  ['', 'Catálogo da Marin'],
+  ['', /Catálogo da Marin/],
   ['#catalogo', 'Estado estranho'],
   ['#quero-ver', 'Na fila'],
   ['#diario', /sessão/],

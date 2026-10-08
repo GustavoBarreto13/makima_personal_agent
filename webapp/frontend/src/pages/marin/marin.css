@@ -210,7 +210,9 @@
 .mr-dright { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 
 /* ── Detalhe do anime ── */
+.mr-actions-main, .mr-actions-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-2); flex-basis: 100%; }
 .mr-select { width: auto; min-width: 150px; }
+
 .mr-rate { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-2); }
 .mr-hint { display: flex; align-items: center; gap: 6px; margin: 0; }
 .mr-banner { display: block; width: 100%; max-height: 220px; border-radius: var(--ds-r-md); object-fit: cover; }

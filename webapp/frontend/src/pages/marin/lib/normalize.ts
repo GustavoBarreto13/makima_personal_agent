@@ -81,7 +81,8 @@ export function normalizeEpisode(e: ApiEpisode): Episode {
   return {
     id: e.id,
     number: e.number,
-    title: e.title ?? '',
+    // "Episódio 3" é só o número de novo (o shell antigo mostrava "Ep 3 · Episódio 3"): vira vazio
+    title: /^epis[óo]dio\s*\d+$/i.test((e.title ?? '').trim()) ? '' : (e.title ?? ''),
     aired: day(e.aired),
     scheduled: e.airing_status === 'agendado',
     watched: !!e.watched,

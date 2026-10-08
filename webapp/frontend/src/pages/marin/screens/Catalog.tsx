@@ -41,8 +41,8 @@ export function Catalog() {
         onOpenFilters={() => setFilters(true)}
         view={layout}
         onView={(v) => marin.setPrefs({ layout: v })}
-        searchPlaceholder="Buscar por título, estúdio, gênero ou etiqueta"
-        extra={<Button icon="add" kbd="A" onClick={() => marin.openAdd()}>Adicionar anime</Button>}
+        searchPlaceholder="Buscar no catálogo"
+        extra={<Button icon="add" onClick={() => marin.openAdd()}>Adicionar anime</Button>}
       />
       <CollectionMeta c={c} noun={NOUN} />
       <CollectionBody

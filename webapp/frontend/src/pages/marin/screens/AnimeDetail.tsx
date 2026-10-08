@@ -125,19 +125,23 @@ export function AnimeDetail({ id }: { id: string }) {
         onTab={setTab}
         actions={
           <>
-            <Button variant="primary" icon="episode" onClick={() => marin.openLog({ animeId: anime.id, episode: upNext ?? undefined })}>{upNext ? `Logar ep ${upNext}` : 'Logar sessão'}</Button>
-            <Chip on={anime.liked} icon="heart" aria-pressed={anime.liked} onClick={() => void toggleLike()}>Curti</Chip>
+            <span className="mr-actions-main">
+              <Button variant="primary" icon="episode" onClick={() => marin.openLog({ animeId: anime.id, episode: upNext ?? undefined })}>{upNext ? `Logar ep ${upNext}` : 'Logar sessão'}</Button>
+              <Chip on={anime.liked} icon="heart" aria-pressed={anime.liked} onClick={() => void toggleLike()}>Curti</Chip>
+              <Button icon="list" onClick={() => setListDialog(true)}>Adicionar à lista</Button>
+              <span className="mr-menu">
+                <IconButton icon="more" label="Mais ações do anime" onClick={() => setMenu((v) => !v)} />
+                {menu && <Menu label="Ações do anime" items={items} onClose={() => setMenu(false)} />}
+              </span>
+            </span>
+            <span className="mr-actions-sub">
             <Select className="mr-select" aria-label="Estado do anime" value={anime.status} onChange={(e) => void changeStatus(e.target.value as AnimeStatus)}>
               {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}
             </Select>
-            <span className="mr-rate">
-              <RateInput value={anime.rating ?? 0} onChange={(v) => void rate(v)} />
-              {malLabel(anime.rating) && <span className="ds-mono" title="Nota no MyAnimeList">{malLabel(anime.rating)}</span>}
-            </span>
-            <Button icon="list" onClick={() => setListDialog(true)}>Adicionar à lista</Button>
-            <span className="mr-menu">
-              <IconButton icon="more" label="Mais ações do anime" onClick={() => setMenu((v) => !v)} />
-              {menu && <Menu label="Ações do anime" items={items} onClose={() => setMenu(false)} />}
+              <span className="mr-rate">
+                <RateInput value={anime.rating ?? 0} onChange={(v) => void rate(v)} />
+                {malLabel(anime.rating) && <span className="ds-mono" title="Nota no MyAnimeList">{malLabel(anime.rating)}</span>}
+              </span>
             </span>
           </>
         }

@@ -67,9 +67,9 @@ export function Home() {
   return (
     <Page>
       <Hero
-        eyebrow="Catálogo da Marin"
+        eyebrow={`${greeting(new Date().getHours())} · Catálogo da Marin`}
         eyebrowIcon="anime"
-        title={last ? `${greeting(new Date().getHours())}. Continue ${last.anime.title}` : `${greeting(new Date().getHours())}.`}
+        title={last ? `Continue ${last.anime.title}` : 'Seu catálogo de animes'}
         tone={last ? { hue: hueFromName(last.anime.title) } : undefined}
         meta={
           <div className="mr-herometa">

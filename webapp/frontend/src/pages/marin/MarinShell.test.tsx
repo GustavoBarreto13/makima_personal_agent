@@ -77,7 +77,7 @@ afterEach(() => { cleanup(); __resetToasts(); localStorage.clear(); setMockWidth
 const open = async () => {
   const user = userEvent.setup()
   render(<MemoryRouter><MarinShell /></MemoryRouter>)
-  await screen.findByText('Catálogo da Marin')
+  await screen.findByText(/Catálogo da Marin/)
   return user
 }
 const captureInput = () => screen.getByLabelText('Logar episódio em uma linha')

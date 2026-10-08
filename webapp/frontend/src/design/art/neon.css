@@ -15,10 +15,10 @@
  *
  * CONTRASTE: o audit:design não cobre estilos de arte, então os pares foram calculados à parte (WCAG,
  * mistura em oklab, como o navegador faz no color-mix) por specs/074-marin-ds/contrast-neon.mjs, com o
- * acento da Marin (h 205, c 0.13) e o rosa (h 350). Pior par de texto: 5.6:1 no claro (ink-4 sobre
- * mist); no escuro todos >= 6.7:1; accent-deep >= 6.1:1 no claro e >= 9.6:1 no escuro. Hero, nas duas
+ * acento da Marin (h 205, c 0.13) e o rosa (h 350). Pior par de texto: 5.2:1 no claro (ink-4 sobre
+ * mist); no escuro todos >= 6.3:1; accent-deep >= 5.7:1 no claro e >= 9.1:1 no escuro. Hero, nas duas
  * regiões mais tingidas do gradiente (luz rosa atrás do retrato e névoa ciano no canto): título (ink-1)
- * >= 9.4:1 e eyebrow (accent-deep) >= 4.6:1 no claro; >= 8.7:1 e >= 6.1:1 no escuro.
+ * >= 8.2:1 e eyebrow (accent-deep misturado com ink-1) >= 5.2:1 no claro; >= 8.1:1 e >= 6.4:1 no escuro.
  * Cálculo, não conferência no navegador: se mexer em qualquer percentual, refaça a conta
  * (script em specs/074-marin-ds/contrast-neon.mjs). */
 
@@ -34,9 +34,9 @@
   --ds-art-neon-pink: oklch(from var(--ds-accent) l c calc(h + 145));
 
   /* superfícies: o papel do tema com um véu ciano e, por cima, um toque de rosa */
-  --ds-paper-2: color-mix(in oklab, color-mix(in oklab, var(--ds-art-neon-paper), var(--ds-accent) 4%), var(--ds-art-neon-pink) 3%);
-  --ds-card-2: color-mix(in oklab, var(--ds-art-neon-card), var(--ds-art-neon-pink) 3%);
-  --ds-mist: color-mix(in oklab, color-mix(in oklab, var(--ds-art-neon-paper), var(--ds-accent) 5%), var(--ds-art-neon-pink) 7%);
+  --ds-paper-2: color-mix(in oklab, color-mix(in oklab, var(--ds-art-neon-paper), var(--ds-accent) 4%), var(--ds-art-neon-pink) 6%);
+  --ds-card-2: color-mix(in oklab, var(--ds-art-neon-card), var(--ds-art-neon-pink) 5%);
+  --ds-mist: color-mix(in oklab, color-mix(in oklab, var(--ds-art-neon-paper), var(--ds-accent) 5%), var(--ds-art-neon-pink) 12%);
 
   /* tinta: a escala secundária fica mais perto de ink-1, para seguir legível sobre o véu colorido */
   --ds-ink-2: color-mix(in oklab, var(--ds-ink-1) 86%, var(--ds-art-neon-paper));
@@ -48,13 +48,13 @@
 
   /* ambiente: luz rosa no canto esquerdo e ciano no direito, como letreiro refletido no papel */
   --ds-ambient:
-    radial-gradient(70% 55% at 6% -8%, color-mix(in oklab, var(--ds-art-neon-pink) 16%, transparent), transparent 62%),
+    radial-gradient(70% 55% at 6% -8%, color-mix(in oklab, var(--ds-art-neon-pink) 26%, transparent), transparent 62%),
     radial-gradient(70% 55% at 94% -6%, var(--ds-accent-tint-2), transparent 60%),
     linear-gradient(var(--ds-paper-2), var(--ds-paper));
 
   /* losangos finíssimos (duas diagonais cruzadas), de papel de embrulho */
   --ds-texture:
-    repeating-linear-gradient(45deg, color-mix(in oklab, var(--ds-art-neon-pink) 5%, transparent) 0 1px, transparent 1px 16px),
+    repeating-linear-gradient(45deg, color-mix(in oklab, var(--ds-art-neon-pink) 9%, transparent) 0 1px, transparent 1px 16px),
     repeating-linear-gradient(-45deg, color-mix(in oklab, var(--ds-accent) 5%, transparent) 0 1px, transparent 1px 16px);
 
   /* material: vidro fosco com borda ciano e brilho rosado */
@@ -64,19 +64,19 @@
   --ds-glass-shadow: 0 1px 0 color-mix(in oklab, var(--ds-white) 60%, transparent) inset, 0 14px 30px -18px color-mix(in oklab, var(--ds-art-neon-pink) 55%, transparent);
 
   /* cantos de adesivo: bem mais redondos que os do tema */
-  --ds-r-sm: 10px;
-  --ds-r-md: 16px;
-  --ds-r-lg: 24px;
+  --ds-r-sm: 12px;
+  --ds-r-md: 18px;
+  --ds-r-lg: 28px;
 
   /* hero: bloco claro com a luz rosa atrás do retrato e uma névoa ciano embaixo */
   --ds-hero-bg:
-    radial-gradient(120% 130% at 84% 18%, color-mix(in oklab, var(--ds-art-neon-pink) 20%, transparent), transparent 54%),
+    radial-gradient(120% 130% at 84% 18%, color-mix(in oklab, var(--ds-art-neon-pink) 26%, transparent), transparent 54%),
     radial-gradient(90% 110% at 6% 100%, var(--ds-accent-tint-2), transparent 62%),
     linear-gradient(160deg, var(--ds-mist), var(--ds-card) 66%);
   --ds-hero-veil: transparent;
   --ds-hero-fg: var(--ds-ink-1);
-  --ds-hero-eyebrow: var(--ds-accent-deep);
-  --ds-hero-border: color-mix(in oklab, var(--ds-accent) 30%, var(--ds-line));
+  --ds-hero-eyebrow: color-mix(in oklab, var(--ds-accent-deep) 70%, var(--ds-ink-1));
+  --ds-hero-border: color-mix(in oklab, var(--ds-art-neon-pink) 45%, var(--ds-line));
   --ds-hero-halo: radial-gradient(circle, color-mix(in oklab, var(--ds-art-neon-pink) 30%, transparent), var(--ds-accent-tint-2) 44%, transparent 70%);
   --ds-hero-btn-bg: var(--ds-accent);
   --ds-hero-btn-fg: var(--ds-on-accent);

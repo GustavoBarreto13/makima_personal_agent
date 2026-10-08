@@ -1,7 +1,7 @@
 // Normalização na borda: o banco manda null onde as telas esperam valor (lógica pura).
 
 import { describe, expect, it } from 'vitest'
-import { localDay, normalizeAnime, normalizeHome, normalizeList, normalizeSchedule, normalizeSession } from './normalize'
+import { localDay, normalizeAnime, normalizeEpisode, normalizeHome, normalizeList, normalizeSchedule, normalizeSession } from './normalize'
 import type { ApiAnime } from '../types'
 
 const BARE: ApiAnime = {
@@ -24,6 +24,15 @@ describe('normalizeAnime', () => {
   })
   it('progresso nunca passa de 100%', () => {
     expect(normalizeAnime({ ...BARE, episodes_total: 12, episodes_watched: 20 }).progress).toBe(1)
+  })
+})
+
+describe('normalizeEpisode', () => {
+  it('título genérico "Episódio N" vira vazio; título de verdade fica', () => {
+    const base = { id: 'e1', number: 3, aired: null, airing_status: null, watched: false, watched_date: null }
+    expect(normalizeEpisode({ ...base, title: 'Episódio 3' }).title).toBe('')
+    expect(normalizeEpisode({ ...base, title: 'Aura' }).title).toBe('Aura')
+    expect(normalizeEpisode({ ...base, title: null }).title).toBe('')
   })
 })
 

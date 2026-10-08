@@ -74,9 +74,9 @@ for (const theme of ['light', 'dark']) {
   // superfícies do estilo (mesmos percentuais de neon.css)
   const surf = {
     paper, card,
-    'paper-2': mix(mix(paper, accent, 0.04), pink, 0.03),
-    'card-2': mix(card, pink, 0.03),
-    mist: mix(mix(paper, accent, 0.05), pink, 0.07),
+    'paper-2': mix(mix(paper, accent, 0.04), pink, 0.06),
+    'card-2': mix(card, pink, 0.05),
+    mist: mix(mix(paper, accent, 0.05), pink, 0.12),
   }
   const inks = {
     'ink-1': ink1,
@@ -99,11 +99,13 @@ for (const theme of ['light', 'dark']) {
   }
   // hero: as duas regiões mais tingidas do gradiente sobre o início (mist) — a luz rosa atrás do
   // retrato (20% no claro, 26% no escuro) e a névoa ciano no canto (accent-tint-2 / accent-tint)
-  const pinkA = theme === 'light' ? 0.2 : 0.26
+  const pinkA = theme === 'light' ? 0.26 : 0.26
   const cyanA = theme === 'light' ? tint2a : 0.16
   for (const [name, tintLab, a] of [['luz rosa', pink, pinkA], ['névoa ciano', accent, cyanA]]) {
     const heroBg = over({ ...tintLab, a }, surf.mist)
-    const t = ratio(ink1, heroBg), e = ratio(deep, heroBg)
+    // eyebrow do hero = accent-deep 70% + ink-1 30% (neon.css)
+    const eyebrow = mix(deep, ink1, 0.3)
+    const t = ratio(ink1, heroBg), e = ratio(eyebrow, heroBg)
     worstHero = Math.min(worstHero, t, e)
     console.log(`hero ${name.padEnd(11)} título ${t.toFixed(1)} · eyebrow ${e.toFixed(1)}`)
   }
