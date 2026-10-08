@@ -1,6 +1,6 @@
 # Spec 074 — Marin no Design System
 
-**Status:** entregue (fases 1–5 + revisão `impeccable`). Migração do banco **pendente no VPS** (ver Rollout).
+**Status:** entregue (fases 1–5 + revisão `impeccable`). Migração do banco aplicada no VPS em 08/out/2026.
 **Branch:** `074-marin-ds` (a partir do `master`).
 **Plano de execução:** cinco fases, um commit por fase, como na Akane (072) e na Frieren (073), mais uma
 revisão final com a skill `impeccable`.

@@ -345,7 +345,7 @@ makima_personal_agent/
 │   ├── send_lucy_digest.py    # digest matinal de emails (Lucy) — agendado pelo scheduler/ (spec 032)
 │   ├── seed_mobility_apps.py  # semeia agents/yato/mobility_apps a partir do research.md — spec 066
 │   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)
-│   ├── migrate_marin_ds.py    # coração, data de abandono e vitrine de favoritos dos animes — spec 074 (dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS)
+│   ├── migrate_marin_ds.py    # coração, data de abandono e vitrine de favoritos dos animes — spec 074 (dry-run por padrão, --apply grava; já aplicada no VPS em 08/out)
 │   ├── migrate_nami_signed_transfers.py # transferências com sinal + pagamento de fatura como transferência — spec 071 (dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS)
 │   └── .gitignore             # exclui client_secret.json do git
 ├── docs/                    # organizada por tipo — ver docs/README.md (mapa completo)
