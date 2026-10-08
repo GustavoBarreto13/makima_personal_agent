@@ -48,7 +48,7 @@ diferentes.
 | **Livros** | Agente Frieren | `books`, `reading_logs`, `shelves`, `book_shelves`, `book_bullets` |
 | **Tarefas / hábitos / experimentos / metas** | Agente Kaguya | `task_project_groups`, `task_projects`, `task_columns`, `tasks`, `task_recurrences`, `task_tags`, `task_tag_links`, `task_filters`, `kanban_views`, `habits`, `habit_checkins`, `habit_schedules`, `calendar_prefs`, `birthday_sync_links`, `tiny_experiments`, `tiny_experiment_logs`, `goals`, `goal_milestones` |
 | **Filmes** | Agente Akane | `movies`, `diary_entries`, `movie_lists`, `movie_list_items`, `movie_vault_items`, `movie_people`, `movie_favorites` |
-| **Animes** | Agente Marin | `anime`, `watch_logs`, `episodes`, `mal_sync_state` |
+| **Animes** | Agente Marin | `anime`, `watch_logs`, `episodes`, `mal_sync_state`, `anime_lists`, `anime_list_items`, `anime_favorites` |
 | **Séries de TV** | Agente Mai | `series`, `seasons`, `series_episodes`, `series_watch_logs` |
 | **Pessoas** | Agente Komi | `people`, `person_aliases`, `person_dates`, `person_links` |
 | **Diário** (webapp-only) | `agents/journal` | `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_emotions`, `journal_emotion_logs`, `journal_letters` |
@@ -1015,6 +1015,9 @@ Catálogo de animes. Dedup principal por `mal_id` (quando o anime foi encontrado
 | `date_finished` | DATE | SIM | — | Data em que `episodes_watched >= episodes_total` (inferida). |
 | `source` | TEXT | SIM | — | `manual` \| `mal_sync` \| `jikan`. |
 | `mal_updated_at` | TIMESTAMPTZ | SIM | — | `list_status.updated_at` do MAL — habilita o *delta sync*. |
+| `local_updated_at` | TIMESTAMPTZ | SIM | — | Última mutação **local** (log/status/nota); decide o vencedor de um conflito com o MAL (spec 053). |
+| `liked` | BOOLEAN | NÃO | `FALSE` | Coração ("Curti") — spec 074. |
+| `date_abandoned` | DATE | SIM | — | Dia local (America/Sao_Paulo) em que o anime foi abandonado; gravada ao entrar em `abandonado` e limpa ao sair. Alimenta "dropados no período" das estatísticas — spec 074. |
 | `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação. |
 | `updated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Atualização. |
 | `deleted` | BOOLEAN | NÃO | `FALSE` | *Soft delete*. |
@@ -1064,6 +1067,35 @@ incompleto para séries longas ou sem dados nas APIs.
 **Constraints:** `UNIQUE(anime_id, number)` — permite upsert sem duplicar.
 **Índices:** `idx_eps_anime` · `idx_eps_airing` em `(aired, airing_status)` · `idx_eps_watched`
 em `(anime_id, watched)`.
+
+### `anime_lists` e `anime_list_items`
+
+Coleções nomeadas de animes (spec 054), na mesma forma de `movie_lists`/`movie_list_items`.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `anime_lists.id` | UUID | PK | `gen_random_uuid()` | PK própria. |
+| `anime_lists.name` | TEXT | NÃO | — | Nome da lista. |
+| `anime_lists.description` | TEXT | NÃO | `''` | Descrição opcional. |
+| `anime_lists.accent` | TEXT | SIM | — | Cor de destaque. |
+| `anime_lists.ranked` | BOOLEAN | NÃO | `FALSE` | `TRUE` = ranking (a posição importa). |
+| `anime_list_items.anime_id` | TEXT | NÃO | — | **FK** → `anime(id)` `ON DELETE CASCADE`. |
+| `anime_list_items.list_id` | UUID | NÃO | — | **FK** → `anime_lists(id)` `ON DELETE CASCADE`. |
+| `anime_list_items.position` | INTEGER | SIM | — | Posição na lista (ranking). |
+
+**Constraints:** PK composta `(anime_id, list_id)`. **Índice:** `idx_anime_list_items_list`.
+
+### `anime_favorites`
+
+Vitrine de até 4 favoritos do Início da Marin (spec 074; antes vivia só no `localStorage` do navegador).
+`set_favorites()` substitui o conjunto inteiro numa transação e recusa mais de 4 ou repetidos.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `anime_id` | TEXT | PK | — | **FK** → `anime(id)` `ON DELETE CASCADE`. |
+| `position` | INTEGER | NÃO | — | Ordem na vitrine (0 a 3). |
+
+> Anime apagado (soft delete) some da vitrine na leitura e volta a ela se for restaurado.
 
 ### `mal_sync_state`
 

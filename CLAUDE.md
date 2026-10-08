@@ -46,7 +46,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada + Tutor de Idiomas (031) + Conselho do Dia (061) | ✅ Fases 027, 031, 061 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) + favoritos/coração + estatísticas no padrão do DS (073) | ✅ Fase 5a, 073 | `agents/frieren/CLAUDE.md` |
 | `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015, 072 | `agents/akane/CLAUDE.md` |
-| `agents/marin/` | Animes (PostgreSQL + Jikan/AniList + MAL OAuth) | ✅ Fase 021 | `agents/marin/CLAUDE.md` |
+| `agents/marin/` | Animes (PostgreSQL + Jikan/AniList + MAL OAuth) + favoritos/coração + estatísticas no padrão do DS (074) | ✅ Fase 021, 074 | `agents/marin/CLAUDE.md` |
 | `agents/mai/` | Séries de TV (PostgreSQL + TMDB API v3) | ✅ Fase 022 | `agents/mai/CLAUDE.md` |
 | `agents/komi/` | Pessoas e contatos (PostgreSQL) | ✅ Fase 014 | `agents/komi/CLAUDE.md` |
 | `agents/journal/` | Diário (Violet) — sub-agente ADK completo (`violet_agent`, ativado na spec 064) + consumido pelo router `/api/journal/*` do webapp | ✅ Fase 003/006/007 · ✅ agente | `agents/journal/CLAUDE.md` |
@@ -262,9 +262,10 @@ makima_personal_agent/
 │   │   ├── agent.py     # akane_agent — singleton
 │   │   ├── schema_pg.sql # schema das 7 tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, schema, TMDB/Letterboxd, personalidade
-│   ├── marin/           # agente de animes — Fase 021 ✅
+│   ├── marin/           # agente de animes — Fase 021 ✅ + 074 (DS)
 │   │   ├── __init__.py
 │   │   ├── tools.py     # PostgreSQL (anime, watch_logs, episodes, mal_sync_state)
+│   │   ├── tools_stats.py # StatsPayload do DS — episódios reais, completos/dropados do período, 6 métricas (spec 074, só webapp)
 │   │   ├── metadata.py  # search/enrich via Jikan + AniList + ARM
 │   │   ├── mal_auth.py  # OAuth2 PKCE do MyAnimeList (refresh automático)
 │   │   ├── mal_sync.py  # pull delta/full do MAL para o PostgreSQL
@@ -344,6 +345,7 @@ makima_personal_agent/
 │   ├── send_lucy_digest.py    # digest matinal de emails (Lucy) — agendado pelo scheduler/ (spec 032)
 │   ├── seed_mobility_apps.py  # semeia agents/yato/mobility_apps a partir do research.md — spec 066
 │   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)
+│   ├── migrate_marin_ds.py    # coração, data de abandono e vitrine de favoritos dos animes — spec 074 (dry-run por padrão, --apply grava; já aplicada no VPS em 08/out)
 │   ├── migrate_nami_signed_transfers.py # transferências com sinal + pagamento de fatura como transferência — spec 071 (dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS)
 │   └── .gitignore             # exclui client_secret.json do git
 ├── docs/                    # organizada por tipo — ver docs/README.md (mapa completo)

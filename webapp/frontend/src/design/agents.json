@@ -6,7 +6,7 @@
     { "id": "kaguya",  "name": "Kaguya",  "domain": "Tarefas e agenda",   "hue": 252, "chroma": 0.15, "route": "/tasks",   "portrait": "/kaguya.jpg",  "favicon": "/favicon-kaguya.jpg",  "status": "active", "art": null },
     { "id": "frieren", "name": "Frieren", "domain": "Livros",             "hue": 190, "chroma": 0.12, "route": "/books",   "portrait": "/frieren.png", "favicon": "/favicon-frieren.png", "status": "active", "art": "elfica" },
     { "id": "akane",   "name": "Akane",   "domain": "Filmes",             "hue": 357, "chroma": 0.17, "route": "/movies",  "portrait": "/akane.png",   "favicon": "/favicon-akane.png",   "status": "active", "art": "noir" },
-    { "id": "marin",   "name": "Marin",   "domain": "Animes",             "hue": 205, "chroma": 0.13, "route": "/animes",  "portrait": "/marin.png",   "favicon": "/favicon-marin.png",   "status": "active", "art": null },
+    { "id": "marin",   "name": "Marin",   "domain": "Animes",             "hue": 205, "chroma": 0.13, "route": "/animes",  "portrait": "/marin.png",   "favicon": "/favicon-marin.png",   "status": "active", "art": "neon" },
     { "id": "mai",     "name": "Mai",     "domain": "Séries de TV",       "hue": 268, "chroma": 0.14, "route": "/series",  "portrait": "/mai.png",     "favicon": "/favicon-mai.png",     "status": "active", "art": null },
     { "id": "komi",    "name": "Komi",    "domain": "Pessoas e contatos", "hue": 288, "chroma": 0.15, "route": "/people",  "portrait": "/komi.png",    "favicon": "/favicon-komi.png",    "status": "active", "art": null },
     { "id": "violet",  "name": "Violet",  "domain": "Diário",             "hue": 305, "chroma": 0.15, "route": "/journal", "portrait": "/violet.png",  "favicon": "/favicon-violet.png",  "status": "active", "art": null },

@@ -732,11 +732,12 @@ Contrato detalhado: `specs/021-marin-animes/contracts/api-anime.md`.
 | `GET` | `/api/animes/watchlist` | Animes com status `quero_assistir` (fila de espera). | — |
 | `GET` | `/api/animes/currently-watching` | ⚠ Animes com status `assistindo`. Sem consumidor na UI — o `HomeScreen` usa `get_home()`. Existe como endpoint de integração/agente (o `marin_agent` no Telegram chama a mesma função Python como ADK tool). | — |
 | `GET` | `/api/animes/diary` | Histórico de sessões em ordem cronológica decrescente. | `?limit=N` |
-| `GET` | `/api/animes/stats` | Estatísticas de animes do ano. | `?year=YYYY` |
+| `GET` | `/api/animes/stats` | Estatísticas no contrato `StatsPayload` do DS (spec 074): episódios reais, animes distintos, horas, completos e dropados **do período**, nota média em estrelas, rankings (estúdios, gêneros, temporada de lançamento, formato) por anime distinto, recordes e animes com coração. Une o antigo Stats e o Rewind. Extensão: `first_year`. | `?year=YYYY&month=M` |
 | `GET` | `/api/animes/schedule` | Episódios futuros dos animes em progresso. | `?days=N` |
-| `GET` | `/api/animes/home` | Todos os blocos da HomeScreen numa única chamada. | — |
+| `GET` | `/api/animes/home` | Todos os blocos do Início numa única chamada (inclui `favorites`, a vitrine de até 4). | — |
+| `GET` | `/api/animes/favorites` | Vitrine de favoritos (até 4, na ordem escolhida; spec 074). | — |
+| `PUT` | `/api/animes/favorites` | Substitui a vitrine inteira (atômico; máx. 4, sem repetir). | Body: `{ids: string[]}` |
 | `POST` | `/api/animes/sync` | Sincroniza com o MyAnimeList (delta ou full; idempotente; devolve 202). | Body: `{"full": bool}` |
-| `GET` | `/api/animes/rewind` | Retrospectiva anual (spec 054) — mesmo shape de `/stats`, camada fina sobre `get_stats`. | `?year=YYYY` |
 
 ### Listas personalizadas (spec 054)
 
@@ -766,11 +767,14 @@ Contrato detalhado: `specs/021-marin-animes/contracts/api-anime.md`.
 | `GET` | `/api/animes/{anime_id}/episodes` | Episódios paginados (12 por página). | `?page=N` |
 | `POST` | `/api/animes/{anime_id}/log` | Registra uma sessão de episódios assistidos (devolve 201). | Body: `LogWatchBody` |
 | `PATCH` | `/api/animes/{anime_id}/status` | Atualiza o status do anime na lista. | Body: `StatusBody` |
-| `PATCH` | `/api/animes/{anime_id}/score` | Define a nota pessoal (escala MAL: 0–10, passo 0.5). | Body: `ScoreBody` |
+| `PATCH` | `/api/animes/{anime_id}/score` | Define a nota pessoal (escala MAL: 0–10, passo 0.5; 0 remove). O front mostra em estrelas e converte (meia estrela = 1 ponto). | Body: `ScoreBody` |
 | `PATCH` | `/api/animes/{anime_id}/notes` | Salva o Caderno da Marin — anotações soltas (spec 054). Texto vazio limpa. | Body: `NotesBody` |
 | `POST` | `/api/animes/{anime_id}/refresh-metadata` | Rebusca metadados (Jikan+AniList+ARM+TMDB) — preenche campos faltantes sem tocar em nota/status/progresso/etiquetas/listas. Erro se o anime não tiver `mal_id` ou se nenhuma API responder. | — |
 | `DELETE` | `/api/animes/{anime_id}` | Soft delete (histórico preservado; remove também os vínculos de lista, spec 054 FR-006). | — |
 | `DELETE` | `/api/animes/logs/{log_id}` | Remove uma sessão do diário e recalcula `episodes_watched`. | — |
+| `POST` | `/api/animes/logs/restore` | Desfazer a exclusão de uma sessão: regrava-a com o mesmo ID e recalcula o progresso (spec 074; devolve 201). | Body: `RestoreLogBody` |
+| `PATCH` | `/api/animes/{anime_id}/like` | Marca/desmarca o coração (spec 074). | Body: `{liked: bool}` |
+| `POST` | `/api/animes/{anime_id}/restore` | Desfazer a exclusão de um anime (volta do soft delete; spec 074). | — |
 
 ---
 

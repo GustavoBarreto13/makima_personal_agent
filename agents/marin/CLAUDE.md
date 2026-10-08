@@ -26,7 +26,8 @@ Makima (coordinator)
 marin_agent (Agent ADK — singleton, sem MCP)
     ├── tools.py  → PostgreSQL (catálogo, diário, episódios)
     ├── tools.py  → Jikan + AniList + ARM + TMDB via metadata.py
-    └── tools.py  → MAL API v2 via mal_sync.py
+    ├── tools.py  → MAL API v2 via mal_sync.py
+    └── tools_stats.py → estatísticas no contrato StatsPayload do Design System (spec 074, só webapp)
 
 Webapp (/animes/*)
     ↓
@@ -74,6 +75,8 @@ Catálogo principal de animes.
 | `source` | TEXT | `'jikan'`, `'mal_sync'`, `'manual'` |
 | `mal_updated_at` | TIMESTAMPTZ | Timestamp `list_status.updated_at` do MAL — usado para delta sync |
 | `local_updated_at` | TIMESTAMPTZ | Timestamp da última mutação LOCAL (log_watch/status/nota) — usado pelo pull para decidir o vencedor de um conflito de convergência (spec 053) |
+| `liked` | BOOLEAN | Coração ("Curti") — spec 074 |
+| `date_abandoned` | DATE | Dia local em que foi abandonado (grava ao entrar em `abandonado`, inclusive no pull do MAL; limpa ao sair) — spec 074 |
 | `deleted` | BOOLEAN | Soft delete — nunca apaga fisicamente |
 | `created_at` | TIMESTAMPTZ | Criação do registro |
 | `updated_at` | TIMESTAMPTZ | Última atualização |
@@ -168,6 +171,13 @@ acento, preserva espaços — mais leve que `_norm()`, que também remove pontua
 
 ---
 
+### Tabela `anime_favorites` (spec 074)
+
+Vitrine de até 4 favoritos do Início: `anime_id` (PK, FK `ON DELETE CASCADE`) + `position`. `set_favorites(ids)` é atômico
+(apaga tudo e insere na mesma transação), recusa mais de 4 e repetidos, e só aceita animes não apagados.
+
+---
+
 ## Integrações externas
 
 ### Jikan (MAL unofficial API)
@@ -234,6 +244,9 @@ Score 0 = remover avaliação (NULL no banco).
 | `get_tags()` | Nuvem de etiquetas com contagem (spec 054) |
 | `add_tag(query, tag)` / `remove_tag(query, tag)` | Etiqueta/desetiqueta um anime, normalizado (spec 054) |
 | `get_rewind(year?)` | Retrospectiva anual — camada fina sobre `get_stats` (spec 054) |
+| `set_anime_liked(query, liked)` | Marca/desmarca o coração (spec 074) |
+| `get_favorites()` / `set_favorites(ids)` | Vitrine de até 4 favoritos do Início (spec 074) |
+| `restore_anime(id)` / `restore_watch_log(...)` | "Desfazer" do webapp: voltam um anime excluído e uma sessão apagada (mesmo ID), recalculando o progresso (spec 074; só webapp) |
 
 ### Helpers privados (não chamados pelo ADK)
 
@@ -341,10 +354,35 @@ no outro em até um ciclo de sync (6h) ou imediatamente via push.
 progresso aparecem no calendário unificado do webapp, ao lado dos eventos do Google Calendar e
 das demais fontes cross-agent. Somente leitura (mesmo padrão da Akane/Nami).
 
+## Estatísticas — `tools_stats.py` (spec 074, só webapp)
+
+`get_stats_payload(year=0, month=None)` devolve o **`StatsPayload`** do Design System (uma tela só: Estatísticas + Rewind),
+servido em `GET /api/animes/stats?year=&month=`. KPIs com `prev` do **mesmo trecho** do ano anterior (`period_bounds`):
+**episódios reais** (`SUM(episodes_count)`, nunca sessões), animes distintos, horas (episódios × 23 min), **completos**
+(`date_finished` no período), **dropados** (`date_abandoned` no período) e nota média. Rankings por **anime distinto**
+(estúdio, gênero, temporada de lançamento — `season_label` converte "winter 2024" em "Inverno 2024" —, formato); recordes
+(maratona, sequência em dias corridos, mais assistido); animes com coração como "momentos". A nota do MAL (0–10) vira
+estrelas (÷2) na distribuição e na média. Soft delete fora da conta; datas já locais. `build_stats_payload` é pura
+(testável sem banco).
+
+`get_stats`/`get_rewind` (formato antigo) **seguem como tools do agente** (Telegram/Hermes); só as rotas HTTP `/stats`
+(formato antigo) e `/rewind` foram trocadas/removidas.
+
+**Migração (spec 074):** `scripts/migrate_marin_ds.py` (dry-run por padrão, `--apply` grava) cria `liked`, `date_abandoned`
+e `anime_favorites`, e preenche `date_abandoned` dos já abandonados com `COALESCE(mal_updated_at, updated_at)` convertido
+para America/Sao_Paulo. No VPS, rodar de dentro do `makima-web` (ver `CLAUDE.md` raiz). Testes:
+`tests/agents/test_marin_stats.py` (puros + de integração, que dão `DROP TABLE` — só em banco de teste).
+
 ## Webapp
 
 - **Router**: `webapp/backend/routers/animes.py` — fachada fina, todos com `Depends(require_user)`
-- **Shell React**: `webapp/frontend/src/pages/marin/` — rota `/animes/*`
-- **CSS**: tokens OKLCH em `.marin-shell`, 4 acentos (default: Neon/cyan), modo claro/escuro
-- **Paletas tipográficas**: 12 variantes com `[data-palette='X']` no CSS
-- **Estrelas**: escala 10 — cor `--star: oklch(0.85 0.15 86)` (independente do acento)
+- **Shell React**: `webapp/frontend/src/pages/marin/` — rota `/animes/*`, no **Design System** desde a spec 074
+  (`AppShell`, `useCollection`, `QuickCapture`, `DetailPage`, `StatsPage`; `conformant`), arte **"Neon kawaii"**.
+  Detalhes em `webapp/docs/FRONTEND.md` § MarinShell.
+- **CSS**: só tokens `--ds-*` do DS + complementos `.mr-*` em `marin.css`; sem tokens/acentos/tema próprios.
+- **Pôster sem imagem**: capa tipográfica do próprio DS (gradiente na cor do título + ícone); as 12 paletas antigas
+  (`poster_key`) não são mais usadas pela UI.
+- **Nota**: o banco segue em 0–10 (escala MAL, é o que o sync com o MyAnimeList exige); a UI mostra `Stars`/`RateInput`
+  do DS (0–5, meia estrela) com **meia estrela = 1 ponto do MAL** (`lib/score.ts`).
+- **Armadilha — colunas de array são NULL:** `genres`/`tags` podem vir `null` do banco; o webapp normaliza na borda
+  (`pages/marin/lib/normalize.ts`). Não "conserte" no backend sem checar o agente.

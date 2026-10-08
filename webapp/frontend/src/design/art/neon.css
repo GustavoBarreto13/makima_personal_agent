@@ -1,0 +1,125 @@
+/* Estilo de arte "Neon kawaii" (Marin): fliperama de bairro às 3 da manhã, cheio de adesivo.
+ * No claro: papel claro com um véu rosa-ciano, losangos finíssimos de fundo, vidro fosco com borda
+ * ciano e cantos bem arredondados. No escuro: o mesmo fliperama com a luz apagada — superfícies
+ * escuras azuladas e brilho neon (ciano da Marin + rosa) nas bordas, no ambiente e no hero.
+ *
+ * REGRA: um estilo de arte muda só o VISUAL. Aqui só entram custom properties --ds-* visuais e nada
+ * de layout nem cor literal (o lint:design rejeita). O ciano é o acento da Marin (h 205, c 0.13); o
+ * rosa NÃO é uma cor nova: nasce do acento girando o matiz em 145 graus (relative color), então
+ * acompanha o tema claro/escuro e qualquer ajuste de acento sozinho.
+ *
+ * ARMADILHA: uma custom property não pode referenciar a si mesma no mesmo elemento (vira um ciclo e
+ * fica inválida). Por isso as misturas de superfície partem dos aliases --ds-art-neon-paper/-card
+ * (o paper/card ORIGINAIS do tema, guardados no :root) e a escala de tinta parte de ink-1, que este
+ * estilo não redefine.
+ *
+ * CONTRASTE: o audit:design não cobre estilos de arte, então os pares foram calculados à parte (WCAG,
+ * mistura em oklab, como o navegador faz no color-mix) por specs/074-marin-ds/contrast-neon.mjs, com o
+ * acento da Marin (h 205, c 0.13) e o rosa (h 350). Pior par de texto: 5.2:1 no claro (ink-4 sobre
+ * mist); no escuro todos >= 6.3:1; accent-deep >= 5.7:1 no claro e >= 9.1:1 no escuro. Hero, nas duas
+ * regiões mais tingidas do gradiente (luz rosa atrás do retrato e névoa ciano no canto): título (ink-1)
+ * >= 8.2:1 e eyebrow (accent-deep misturado com ink-1) >= 5.2:1 no claro; >= 8.1:1 e >= 6.4:1 no escuro.
+ * Cálculo, não conferência no navegador: se mexer em qualquer percentual, refaça a conta
+ * (script em specs/074-marin-ds/contrast-neon.mjs). */
+
+/* paper/card ORIGINAIS do tema, guardados sob outro nome (ver ARMADILHA acima). No :root ainda valem
+ * os do tema; no escuro o :root já traz os tokens escuros, então o estilo acompanha o tema. */
+:root {
+  --ds-art-neon-paper: var(--ds-paper);
+  --ds-art-neon-card: var(--ds-card);
+}
+
+.ds-app[data-ds-art="neon"] {
+  /* o rosa kawaii: o acento com o matiz girado (205 + 145 = 350) */
+  --ds-art-neon-pink: oklch(from var(--ds-accent) l c calc(h + 145));
+
+  /* superfícies: o papel do tema com um véu ciano e, por cima, um toque de rosa */
+  --ds-paper-2: color-mix(in oklab, color-mix(in oklab, var(--ds-art-neon-paper), var(--ds-accent) 4%), var(--ds-art-neon-pink) 6%);
+  --ds-card-2: color-mix(in oklab, var(--ds-art-neon-card), var(--ds-art-neon-pink) 5%);
+  --ds-mist: color-mix(in oklab, color-mix(in oklab, var(--ds-art-neon-paper), var(--ds-accent) 5%), var(--ds-art-neon-pink) 12%);
+
+  /* tinta: a escala secundária fica mais perto de ink-1, para seguir legível sobre o véu colorido */
+  --ds-ink-2: color-mix(in oklab, var(--ds-ink-1) 86%, var(--ds-art-neon-paper));
+  --ds-ink-3: color-mix(in oklab, var(--ds-ink-1) 79%, var(--ds-art-neon-paper));
+  --ds-ink-4: color-mix(in oklab, var(--ds-ink-1) 72%, var(--ds-art-neon-paper));
+
+  /* linhas: a linha do tema puxada para o rosa, bem de leve */
+  --ds-line-2: color-mix(in oklab, var(--ds-line), var(--ds-art-neon-pink) 14%);
+
+  /* ambiente: luz rosa no canto esquerdo e ciano no direito, como letreiro refletido no papel */
+  --ds-ambient:
+    radial-gradient(70% 55% at 6% -8%, color-mix(in oklab, var(--ds-art-neon-pink) 26%, transparent), transparent 62%),
+    radial-gradient(70% 55% at 94% -6%, var(--ds-accent-tint-2), transparent 60%),
+    linear-gradient(var(--ds-paper-2), var(--ds-paper));
+
+  /* losangos finíssimos (duas diagonais cruzadas), de papel de embrulho */
+  --ds-texture:
+    repeating-linear-gradient(45deg, color-mix(in oklab, var(--ds-art-neon-pink) 9%, transparent) 0 1px, transparent 1px 16px),
+    repeating-linear-gradient(-45deg, color-mix(in oklab, var(--ds-accent) 5%, transparent) 0 1px, transparent 1px 16px);
+
+  /* material: vidro fosco com borda ciano e brilho rosado */
+  --ds-glass-bg: color-mix(in oklab, var(--ds-card) 78%, transparent);
+  --ds-glass-border: color-mix(in oklab, var(--ds-line), var(--ds-accent) 34%);
+  --ds-glass-hi: color-mix(in oklab, var(--ds-white) 70%, transparent);
+  --ds-glass-shadow: 0 1px 0 color-mix(in oklab, var(--ds-white) 60%, transparent) inset, 0 14px 30px -18px color-mix(in oklab, var(--ds-art-neon-pink) 55%, transparent);
+
+  /* cantos de adesivo: bem mais redondos que os do tema */
+  --ds-r-sm: 12px;
+  --ds-r-md: 18px;
+  --ds-r-lg: 28px;
+
+  /* hero: bloco claro com a luz rosa atrás do retrato e uma névoa ciano embaixo */
+  --ds-hero-bg:
+    radial-gradient(120% 130% at 84% 18%, color-mix(in oklab, var(--ds-art-neon-pink) 26%, transparent), transparent 54%),
+    radial-gradient(90% 110% at 6% 100%, var(--ds-accent-tint-2), transparent 62%),
+    linear-gradient(160deg, var(--ds-mist), var(--ds-card) 66%);
+  --ds-hero-veil: transparent;
+  --ds-hero-fg: var(--ds-ink-1);
+  --ds-hero-eyebrow: color-mix(in oklab, var(--ds-accent-deep) 70%, var(--ds-ink-1));
+  --ds-hero-border: color-mix(in oklab, var(--ds-art-neon-pink) 45%, var(--ds-line));
+  --ds-hero-halo: radial-gradient(circle, color-mix(in oklab, var(--ds-art-neon-pink) 30%, transparent), var(--ds-accent-tint-2) 44%, transparent 70%);
+  --ds-hero-btn-bg: var(--ds-accent);
+  --ds-hero-btn-fg: var(--ds-on-accent);
+  --ds-hero-ghost-bg: var(--ds-card);
+  --ds-hero-ghost-fg: var(--ds-ink-1);
+  --ds-hero-ghost-border: var(--ds-line);
+  --ds-hero-weight: 700;
+  --ds-hero-min: 320px;
+  --ds-hero-portrait: 280px;
+}
+
+/* fliperama de luz apagada: no escuro as superfícies já são escuras (tokens do tema); o neon vem do
+ * brilho das bordas, do ambiente e do halo do hero, não de fundos claros atrás de texto claro. */
+:root[data-ds-theme="dark"] .ds-app[data-ds-art="neon"] {
+  --ds-line-2: color-mix(in oklab, var(--ds-line), var(--ds-accent) 16%);
+  --ds-ambient:
+    radial-gradient(70% 55% at 6% -8%, color-mix(in oklab, var(--ds-art-neon-pink) 20%, transparent), transparent 62%),
+    radial-gradient(70% 55% at 94% -6%, var(--ds-accent-tint), transparent 60%),
+    linear-gradient(var(--ds-paper-2), var(--ds-paper));
+  --ds-glass-border: color-mix(in oklab, var(--ds-line), var(--ds-accent) 48%);
+  --ds-glass-hi: color-mix(in oklab, var(--ds-accent) 14%, transparent);
+  --ds-glass-shadow: 0 1px 0 color-mix(in oklab, var(--ds-accent) 16%, transparent) inset, 0 0 24px -10px color-mix(in oklab, var(--ds-accent) 60%, transparent), 0 16px 32px -18px color-mix(in oklab, var(--ds-paper) 85%, transparent);
+  --ds-hero-bg:
+    radial-gradient(120% 130% at 84% 18%, color-mix(in oklab, var(--ds-art-neon-pink) 26%, transparent), transparent 54%),
+    radial-gradient(90% 110% at 6% 100%, var(--ds-accent-tint), transparent 62%),
+    linear-gradient(160deg, var(--ds-mist), var(--ds-card) 66%);
+  --ds-hero-halo: radial-gradient(circle, color-mix(in oklab, var(--ds-art-neon-pink) 42%, transparent), var(--ds-accent-tint) 44%, transparent 70%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ds-theme="light"]) .ds-app[data-ds-art="neon"] {
+    --ds-line-2: color-mix(in oklab, var(--ds-line), var(--ds-accent) 16%);
+    --ds-ambient:
+      radial-gradient(70% 55% at 6% -8%, color-mix(in oklab, var(--ds-art-neon-pink) 20%, transparent), transparent 62%),
+      radial-gradient(70% 55% at 94% -6%, var(--ds-accent-tint), transparent 60%),
+      linear-gradient(var(--ds-paper-2), var(--ds-paper));
+    --ds-glass-border: color-mix(in oklab, var(--ds-line), var(--ds-accent) 48%);
+    --ds-glass-hi: color-mix(in oklab, var(--ds-accent) 14%, transparent);
+    --ds-glass-shadow: 0 1px 0 color-mix(in oklab, var(--ds-accent) 16%, transparent) inset, 0 0 24px -10px color-mix(in oklab, var(--ds-accent) 60%, transparent), 0 16px 32px -18px color-mix(in oklab, var(--ds-paper) 85%, transparent);
+    --ds-hero-bg:
+      radial-gradient(120% 130% at 84% 18%, color-mix(in oklab, var(--ds-art-neon-pink) 26%, transparent), transparent 54%),
+      radial-gradient(90% 110% at 6% 100%, var(--ds-accent-tint), transparent 62%),
+      linear-gradient(160deg, var(--ds-mist), var(--ds-card) 66%);
+    --ds-hero-halo: radial-gradient(circle, color-mix(in oklab, var(--ds-art-neon-pink) 42%, transparent), var(--ds-accent-tint) 44%, transparent 70%);
+  }
+}

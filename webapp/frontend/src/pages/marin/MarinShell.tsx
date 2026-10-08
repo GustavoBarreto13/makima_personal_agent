@@ -1,549 +1,281 @@
-// Shell raiz da Marin — cinemateca de animes.
-// Gerencia: sidebar, navegação interna por estado (sem React Router interno),
-//           tweaks (tema/acento/densidade/ordenação), modais (log, add, tweaks),
-//           toast, sincronização com MAL, NextBar (schedule de próximos eps),
-//           busca global na topbar.
-//
-// Importa marin.css para aplicar os tokens OKLCH dentro de .marin-shell.
+// Marin · Animes — shell sobre o AppShell do Design System (spec 074).
+// Guarda a rota por hash (/animes#diario, /animes#anime/<id>), o catálogo (que várias telas usam: contagens do
+// menu, linha rápida, busca do topo e da paleta Ctrl+K) e as ações comuns (logar episódio, adicionar anime,
+// sincronizar com o MyAnimeList, navegar), que as telas leem pelo contexto.
 
-import './marin.css'
-import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Tweaks, ScheduleItem, Status, SyncResult } from './types'
-
-// Telas
-import { HomeScreen }     from './screens/HomeScreen'
-import { CatalogScreen }  from './screens/CatalogScreen'
-import { DiaryScreen }    from './screens/DiaryScreen'
-import { WatchlistScreen } from './screens/WatchlistScreen'
-import { ScheduleScreen } from './screens/ScheduleScreen'
-import { StatsScreen }    from './screens/StatsScreen'
-import { ListsScreen }    from './screens/ListsScreen'
-import { TagsScreen }     from './screens/TagsScreen'
-import { RewindScreen }   from './screens/RewindScreen'
-import { AnimeDetail }    from './AnimeDetail'
-
-// Modais
-import { LogWatchModal } from './modals/LogWatchModal'
-import { AddAnimeModal } from './modals/AddAnimeModal'
-import { MarinTweaks }   from './modals/MarinTweaks'
-
-// Componentes
-import { Toast }    from './components/Toast'
-import { Icon }     from './components/Icon'
-import { NextBar }  from './components/NextBar'
-
-// API
-import { marinApi } from './marinApi'
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useNavigate } from 'react-router-dom'
+import '../../design'
+import { getAgent } from '../../design/core/agents'
+import type { CaptureResult } from '../../design/core/capture'
+import { todayISO } from '../../design/core/format'
+import { useCommandProvider, type CommandProvider } from '../../design/headless/commands'
+import { toast } from '../../design/headless/toast'
+import { useHotkeys } from '../../design/headless/useHotkeys'
+import { usePrefs } from '../../design/headless/usePrefs'
+import { AppShell, Button, Select, SegmentedControl, SettingRow, type NavGroup } from '../../design'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { AGENT_TABS } from '../../lib/agentTabs'
+import { AddAnimeForm } from './components/AddAnimeForm'
+import { LogForm } from './components/LogForm'
+import { ScreenBoundary } from './components/ScreenBoundary'
+import { DEFAULT_PREFS, MarinContext, type MarinCtx, type MarinPrefs, type OpenLog } from './context'
+import { canSaveQuickly, draftFromCapture, emptyDraft, nextEpisode, norm, type LogDraft } from './lib/log'
+import { clearLegacyFavorites, legacyFavoriteIds, legacyPrefs } from './lib/legacy'
+import { hashFor, routeFromHash, type Route, type ViewId } from './lib/routes'
+import { submitLog } from './lib/submit'
+import { useLoad } from './lib/useLoad'
+import { marinApi } from './marinApi'
+import { AnimeDetail } from './screens/AnimeDetail'
+import { Catalog, Queue } from './screens/Catalog'
+import { Diary } from './screens/Diary'
+import { Home } from './screens/Home'
+import { ListDetail, Lists } from './screens/Lists'
+import { Schedule } from './screens/Schedule'
+import { Stats } from './screens/Stats'
+import { Tags } from './screens/Tags'
+import type { Anime } from './types'
+import './marin.css'
 
-// Tipo das views disponíveis
-type MarinView = 'home' | 'catalogo' | 'diario' | 'watchlist' | 'lancamentos' | 'stats' | 'listas' | 'etiquetas' | 'rewind' | 'detalhe'
+const AGENT = getAgent('marin')
 
-// Defaults de tweaks (carregados do localStorage ou esses valores)
-const DEFAULT_TWEAKS: Tweaks = {
-  tema: 'Escuro',
-  acento: 'Neon',
-  densidade: 'Médio',
-  ordenacao: 'Atualizado',
+const TITLES: Record<ViewId, string> = {
+  home: 'Início', catalog: 'Catálogo', queue: 'Quero assistir', diary: 'Diário', schedule: 'Lançamentos', lists: 'Listas', tags: 'Etiquetas', stats: 'Estatísticas',
+}
+const SUBTITLES: Record<ViewId, string> = {
+  home: 'Seu catálogo', catalog: 'Todos os animes', queue: 'A fila de próximos', diary: 'Cada sessão de episódios', schedule: 'Os próximos 14 dias',
+  lists: 'Coleções', tags: 'Etiquetas', stats: 'Seu ano em animes',
 }
 
-// Mapa acento → valor do data-accent no DOM.
-// O CSS define: [data-accent='neon'], [data-accent='sakura'], [data-accent='gold'].
-// Rosa-Magenta é o acento BASE (sem data-accent ou data-accent='') — NÃO existe
-// [data-accent='magenta'] no CSS, então usar string vazia para cair no base.
-const ACCENT_MAP: Record<string, string> = {
-  'Neon':         'neon',
-  'Rosa-Magenta': '',       // base: rosa-magenta é o padrão sem atributo
-  'Sakura':       'sakura',
-  'Gold':         'gold',
-}
+const ART_OPTIONS = [{ value: 'default', label: 'Padrão' }, { value: 'neon', label: 'Neon kawaii' }]
 
-// Mapa densidade → valor do data-density no DOM
-const DENSITY_MAP: Record<string, string> = {
-  'Grande':   'large',
-  'Médio':    'medium',
-  'Compacto': 'compact',
-}
+// Referência estável enquanto carrega (as telas e coleções dependem dela).
+const NO_ANIMES: Anime[] = []
 
-// Mapa de view → título com emoji para a topbar (fiel ao protótipo app.jsx)
-const TITLES: Record<MarinView, string> = {
-  home:        '📺 Início',
-  catalogo:    '🎌 Catálogo',
-  diario:      '📖 Diário',
-  watchlist:   '⭐ Quero assistir',
-  lancamentos: '📅 Lançamentos',
-  stats:       '📊 Estatísticas',
-  listas:      '🗂️ Listas',
-  etiquetas:   '🏷️ Etiquetas',
-  rewind:      '🎀 Rewind',
-  detalhe:     '🎞️ Anime',
-}
+type Dialog = { kind: 'log'; draft: LogDraft } | { kind: 'add'; title: string } | null
 
-/**
- * Lê os tweaks do localStorage; retorna os defaults se inválido/ausente.
- */
-function loadTweaks(): Tweaks {
-  try {
-    const raw = localStorage.getItem('mr-tweaks')
-    if (!raw) return DEFAULT_TWEAKS
-    return { ...DEFAULT_TWEAKS, ...JSON.parse(raw) }
-  } catch {
-    return DEFAULT_TWEAKS
-  }
-}
-
-/**
- * MarinShell — root shell da Marin.
- * Toda navegação é via estado (view + animeId).
- * Modais abertos via flags de estado (logModal, addOpen, tweaksOpen).
- * NextBar exibe o próximo episódio do schedule, com paginação ‹ ›.
- */
 export function MarinShell() {
   useDocumentTitle(AGENT_TABS.marin.title, AGENT_TABS.marin.icon)
-
-  // Estado de navegação
-  const [view, setView] = useState<MarinView>('home')
-  const [animeId, setAnimeId] = useState<string | null>(null)  // para a view 'detalhe'
-
-  // Tweaks persistidos no localStorage
-  const [tweaks, setTweaks] = useState<Tweaks>(loadTweaks)
-
-  // Modais
-  const [logModal, setLogModal] = useState<{
-    open: boolean
-    animeId?: string
-    ep?: number
-  }>({ open: false })
-  const [addOpen, setAddOpen] = useState(false)
-  const [tweaksOpen, setTweaksOpen] = useState(false)
-
-  // Toast
-  const [toast, setToast] = useState<string>('')
-
-  // Sincronização com MAL
+  const navigate = useNavigate()
+  const today = useMemo(() => todayISO(), [])
+  const [prefs, setPrefs] = usePrefs<MarinPrefs>('marin', useMemo(() => legacyPrefs({ ...DEFAULT_PREFS, art: AGENT.art ?? DEFAULT_PREFS.art }), []))
+  const [route, setRoute] = useState<Route>(() => routeFromHash(window.location.hash))
+  const [rev, setRev] = useState(0)
+  const [dialog, setDialog] = useState<Dialog>(null)
+  const [topQuery, setTopQuery] = useState('')
   const [syncing, setSyncing] = useState(false)
 
-  // Contagens para os itens de nav (carregadas uma vez)
-  const [navCounts, setNavCounts] = useState<{
-    assistindo?: number
-    watchlist?: number
-    catalogo?: number
-  }>({})
+  const reload = useCallback(() => setRev((n) => n + 1), [])
 
-  // Contagens brutas por status (Record<Status, number>) — passadas ao CatalogScreen
-  // para exibir totais no header sem fazer request adicional
-  const [homeCounts, setHomeCounts] = useState<Record<Status, number> | undefined>(undefined)
+  // Catálogo: recarrega a cada gravação (rev).
+  const { state: animesState, retry: retryAnimes } = useLoad(() => marinApi.list(), [rev])
+  const animes = animesState.status === 'ok' ? animesState.data : NO_ANIMES
 
-  // Schedule de próximos episódios — alimenta a NextBar
-  const [schedule, setSchedule] = useState<ScheduleItem[]>([])
-  // Índice atual na paginação da NextBar (‹ ›)
-  const [scheduleIdx, setScheduleIdx] = useState(0)
-
-  // Query de busca global da topbar
-  const [topbarQuery, setTopbarQuery] = useState('')
-
-  // FR-011 (spec 052): "carimbo" de recarregamento — incrementado após ações que
-  // mudam dados relevantes para blocos que já foram buscados (Home, contagens de
-  // nav, NextBar). Telas/efeitos que dependem dele voltam a rodar sem exigir
-  // renavegação, mesmo padrão de reloadKey já documentado para as telas DnD.
-  const [reloadKey, setReloadKey] = useState(0)
-  const bump = useCallback(() => setReloadKey(k => k + 1), [])
-
-  // Ref para o container de scroll (para reset ao navegar)
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  // Aplica tweaks como data-attrs no elemento do shell (CSS seleciona via data-*)
+  // Voltar/avançar do navegador (popstate) e links com #… (hashchange) trocam de tela.
   useEffect(() => {
-    const el = document.querySelector('.marin-shell')
-    if (!el) return
-    el.setAttribute('data-theme',   tweaks.tema === 'Claro' ? 'light' : 'dark')
-    el.setAttribute('data-accent',  ACCENT_MAP[tweaks.acento] ?? 'neon')
-    el.setAttribute('data-density', DENSITY_MAP[tweaks.densidade] ?? 'medium')
-  }, [tweaks])
-
-  // Busca contagens de nav ao montar e sempre que reloadKey muda (FR-011: refletir
-  // sync com o MAL sem precisar de reload manual da página).
-  useEffect(() => {
-    marinApi.home()
-      .then((res: any) => {
-        if (res?.counts) {
-          // Calcula total do catálogo como soma de todos os status
-          const total = Object.values(res.counts as Record<string, number>)
-            .reduce((acc: number, n) => acc + (n as number), 0)
-          setNavCounts({
-            assistindo: res.counts.assistindo ?? 0,
-            watchlist:  res.counts.quero_assistir ?? 0,
-            catalogo:   total,
-          })
-          // Guarda as contagens brutas por status — repassadas ao CatalogScreen
-          setHomeCounts(res.counts as Record<Status, number>)
-        }
-      })
-      .catch(() => {})
-  }, [reloadKey])
-
-  // Busca o schedule dos próximos 14 dias para alimentar a NextBar — idem, refeito
-  // após sync com o MAL para não deixar a barra de próximos eps desatualizada.
-  useEffect(() => {
-    marinApi.schedule(14)
-      .then(r => {
-        if (r.schedule && r.schedule.length > 0) {
-          setSchedule(r.schedule)
-          setScheduleIdx(0)  // reseta o índice ao carregar
-        }
-      })
-      .catch(() => {})
-  }, [reloadKey])
-
-  // Atalho de teclado: 'a' abre AddAnimeModal
-  const handleGlobalKey = useCallback((e: KeyboardEvent) => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-    if (e.key === 'a') setAddOpen(true)
+    const onHash = () => setRoute(routeFromHash(window.location.hash))
+    window.addEventListener('hashchange', onHash)
+    window.addEventListener('popstate', onHash)
+    return () => {
+      window.removeEventListener('hashchange', onHash)
+      window.removeEventListener('popstate', onHash)
+    }
   }, [])
 
+  // Os favoritos do shell antigo viviam só neste navegador. Na primeira visita com o catálogo carregado, sobem para
+  // o servidor (se ele ainda não tem vitrine) e a chave antiga é apagada, para nunca sobrescrever uma escolha nova.
   useEffect(() => {
-    window.addEventListener('keydown', handleGlobalKey)
-    return () => window.removeEventListener('keydown', handleGlobalKey)
-  }, [handleGlobalKey])
+    if (animesState.status !== 'ok') return
+    const ids = legacyFavoriteIds().filter((id) => animesState.data.some((a) => a.id === id))
+    if (ids.length === 0) { clearLegacyFavorites(); return }
+    let live = true
+    marinApi.favorites()
+      .then(async (current) => {
+        if (current.length === 0) await marinApi.setFavorites(ids)
+        clearLegacyFavorites()
+        if (live && current.length === 0) reload()
+      })
+      .catch(() => { /* sem rede agora: a chave antiga fica e a migração tenta na próxima visita */ })
+    return () => { live = false }
+  }, [animesState, reload])
 
-  /**
-   * Navega para uma nova view.
-   * Limpa a busca da topbar ao sair do catálogo.
-   * Reseta o scroll do container principal.
-   */
-  function navigateTo(v: MarinView, id?: string) {
-    setView(v)
-    if (id) setAnimeId(id)
-    else if (v !== 'detalhe') setAnimeId(null)
-    // Limpa a busca da topbar ao sair do catálogo
-    if (v !== 'catalogo') setTopbarQuery('')
-    // Reseta o scroll para o topo (fiel ao design: cada página começa do início)
-    if (scrollRef.current) scrollRef.current.scrollTop = 0
-  }
+  // Navegar grava no histórico (pushState): o Voltar do navegador volta para a tela anterior.
+  const goto = useCallback((to: Route | ViewId) => {
+    const next: Route = typeof to === 'string' ? { view: to } : to
+    setRoute(next)
+    const url = `${window.location.pathname}#${hashFor(next)}`
+    if (window.location.hash !== `#${hashFor(next)}`) window.history.pushState(window.history.state, '', url)
+    window.scrollTo?.({ top: 0 })
+  }, [])
 
-  function openLogModal(animeIdArg?: string, ep?: number) {
-    setLogModal({ open: true, animeId: animeIdArg, ep })
-  }
+  const saveLog = useCallback(async (draft: LogDraft) => {
+    const anime = animes.find((a) => a.id === draft.animeId)
+    if (!anime) throw new Error('Escolha o anime.')
+    const result = await submitLog(draft, anime, marinApi)
+    reload()
+    toast(result.message, {
+      tone: 'success',
+      undo: () => { result.undo().then(reload).catch(() => toast('Não foi possível desfazer. Confira no Diário.', { tone: 'error' })) },
+    })
+  }, [animes, reload])
 
-  function showToast(msg: string) {
-    setToast(msg)
-  }
+  const openLog = useCallback((open: OpenLog = {}) => {
+    if (open.draft) { setDialog({ kind: 'log', draft: open.draft }); return }
+    // Sem anime escolhido: sugere o único que está sendo assistido.
+    const watching = animes.filter((a) => a.status === 'assistindo')
+    const id = open.animeId ?? (watching.length === 1 ? watching[0].id : null)
+    const anime = animes.find((a) => a.id === id)
+    setDialog({ kind: 'log', draft: emptyDraft(today, id, open.episode ?? (anime ? nextEpisode(anime) : null)) })
+  }, [animes, today])
 
-  async function handleSyncMal() {
-    if (syncing) return
+  const openAdd = useCallback((title = '') => setDialog({ kind: 'add', title }), [])
+
+  const quickLog = useCallback((r: CaptureResult, forceForm = false): boolean => {
+    const draft = draftFromCapture(r, { today, animes })
+    const anime = animes.find((a) => a.id === draft.animeId) ?? null
+    // Anime digitado que não está no catálogo: oferece adicionar em vez de abrir um formulário vazio.
+    if (!anime && draft.title && !animes.some((a) => norm(a.title).includes(norm(draft.title)))) {
+      toast(`“${draft.title}” não está no catálogo.`)
+      setDialog({ kind: 'add', title: draft.title })
+      return true
+    }
+    if (forceForm || !canSaveQuickly(draft, anime, today)) {
+      setDialog({ kind: 'log', draft })
+      return true
+    }
+    void saveLog(draft).catch((e: unknown) => toast(e instanceof Error ? e.message : 'Não foi possível salvar.', { tone: 'error' }))
+    return true
+  }, [today, animes, saveLog])
+
+  const syncMal = useCallback(async (full = false) => {
     setSyncing(true)
     try {
-      const res = await marinApi.syncMal(false)
-      // O backend retorna SyncResult com campos 'created' e 'updated' (não 'added')
-      const r = res as SyncResult
-      showToast(
-        (r?.created ?? 0) > 0 || (r?.updated ?? 0) > 0
-          ? `Sync completo: ${r.created ?? 0} criados, ${r.updated ?? 0} atualizados`
-          : 'MAL sync: nada de novo'
-      )
-      // FR-011: contagens de nav e NextBar precisam refletir o que o sync mudou
-      bump()
-    } catch {
-      showToast('Erro ao sincronizar com o MAL.')
-    } finally {
-      setSyncing(false)
-    }
+      const r = await marinApi.syncMal(full)
+      reload()
+      const changed = r.created + r.updated
+      toast(changed ? `MyAnimeList: ${r.created} novos, ${r.updated} atualizados` : 'MyAnimeList: nada de novo', { tone: r.errors?.length ? 'error' : 'success' })
+    } catch { toast('Não foi possível sincronizar com o MyAnimeList.', { tone: 'error' }) }
+    setSyncing(false)
+  }, [reload])
+
+  const clearTopQuery = useCallback(() => setTopQuery(''), [])
+
+  const ctx = useMemo<MarinCtx>(
+    () => ({
+      rev, reload, today, route, goto, animes, animesState, retryAnimes, prefs, setPrefs,
+      openLog, openAdd, quickLog, saveLog, syncMal, syncing, topQuery, clearTopQuery,
+    }),
+    [rev, reload, today, route, goto, animes, animesState, retryAnimes, prefs, setPrefs, openLog, openAdd, quickLog, saveLog, syncMal, syncing, topQuery, clearTopQuery],
+  )
+
+  // Atalho "A": adicionar anime (como no shell antigo). Atalhos de uma tecla não valem dentro de campos de texto.
+  useHotkeys([{ keys: 'a', handler: (e) => { e.preventDefault(); openAdd() } }])
+
+  // Paleta Ctrl+K: busca animes por título (qualquer idioma) ou estúdio e abre a página do anime.
+  const provider = useMemo<CommandProvider>(() => ({
+    id: 'marin.animes',
+    search: (q) => {
+      const n = norm(q)
+      if (n.length < 2) return []
+      return animes
+        .filter((a) => [a.title, a.titleEnglish, a.titleJapanese, a.studio].some((x) => norm(x).includes(n)))
+        .slice(0, 8)
+        .map((a) => ({ id: `anime:${a.id}`, label: a.studio ? `${a.title} · ${a.studio}` : a.title, group: 'Animes', icon: 'anime', run: () => goto({ view: 'catalog', animeId: a.id }) }))
+    },
+  }), [animes, goto])
+  useCommandProvider(provider)
+
+  // Contagens do menu (como o shell antigo mostrava ao lado de cada item).
+  const nav: NavGroup[] = [
+    {
+      label: 'Acervo',
+      items: [
+        { id: 'home', label: 'Início', icon: 'home', key: 'h' },
+        { id: 'catalog', label: 'Catálogo', icon: 'anime', key: 'c', count: animes.length || undefined },
+        { id: 'diary', label: 'Diário', icon: 'days', key: 'd' },
+        { id: 'queue', label: 'Quero assistir', icon: 'watchlist', key: 'q', count: animes.filter((a) => a.status === 'quero_assistir').length || undefined },
+      ],
+    },
+    {
+      label: 'Descobrir',
+      items: [
+        { id: 'schedule', label: 'Lançamentos', icon: 'airing', key: 'l' },
+        { id: 'stats', label: 'Estatísticas', icon: 'stats', key: 'e' },
+        { id: 'lists', label: 'Listas', icon: 'list' },
+        { id: 'tags', label: 'Etiquetas', icon: 'tag' },
+      ],
+    },
+  ]
+
+  const SCREENS: Record<ViewId, () => ReactElement> = {
+    home: () => <Home />, catalog: () => <Catalog />, queue: () => <Queue />, diary: () => <Diary />,
+    schedule: () => <Schedule />, lists: () => <Lists />, tags: () => <Tags />, stats: () => <Stats />,
   }
-
-  // O nav "Acervo" agrupa as 4 views de catálogo pessoal (fiel ao design do protótipo)
-  const navAcervo: { id: MarinView; label: string; icon: string; count?: number }[] = [
-    { id: 'home',      label: 'Início',         icon: 'home'     },
-    { id: 'catalogo',  label: 'Catálogo',        icon: 'list',    count: navCounts.catalogo },
-    { id: 'diario',    label: 'Diário',          icon: 'book'     },
-    { id: 'watchlist', label: 'Quero assistir',  icon: 'clock',   count: navCounts.watchlist },
-  ]
-  // O nav "Descobrir" agrupa lançamentos e stats (fiel ao design do protótipo)
-  const navDescobrir: { id: MarinView; label: string; icon: string; count?: number }[] = [
-    { id: 'lancamentos', label: 'Lançamentos',  icon: 'calendar', count: schedule.length || undefined },
-    { id: 'stats',       label: 'Estatísticas', icon: 'stats'     },
-    { id: 'listas',      label: 'Listas',       icon: 'list'      },
-    { id: 'etiquetas',   label: 'Etiquetas',    icon: 'search'    },
-    { id: 'rewind',      label: 'Rewind',       icon: 'star'      },
-  ]
-
-  // Item do schedule atualmente exibido na NextBar
-  const currentScheduleItem = schedule[scheduleIdx]
+  // Anime aberto (#anime/<id>) e lista aberta (#lista/<id>) ficam na URL; senão vale a tela do menu.
+  const body = route.animeId ? <AnimeDetail id={route.animeId} /> : route.listId ? <ListDetail id={route.listId} /> : SCREENS[route.view]()
 
   return (
-    <div
-      className="marin-shell"
-      data-theme={tweaks.tema === 'Claro' ? 'light' : 'dark'}
-      data-accent={ACCENT_MAP[tweaks.acento] ?? 'neon'}
-      data-density={DENSITY_MAP[tweaks.densidade] ?? 'medium'}
-    >
-      {/* ── Sidebar ───────────────────────────────────────────────────────── */}
-      <aside className="mr-side">
-        {/* Identidade da Marin: avatar redondo com anel de acento + nome */}
-        <div className="mr-side-identity">
-          <div className="mr-side-avatar">
-            <img src="/marin.png" alt="Marin" />
-          </div>
-          <div className="mr-brand-text">
-            <p className="mr-side-name">Marin</p>
-            {/* "ANIMES" em caps monoespaçado — fiel ao protótipo */}
-            <p className="mr-side-sub">ANIMES</p>
-          </div>
-        </div>
-
-        {/* CTA: "+ Logar episódio" — botão principal destacado */}
-        <button
-          className="mr-btn mr-btn--primary mr-side-cta"
-          onClick={() => openLogModal()}
-        >
-          <Icon name="plus" />
-          <span className="mr-cta-label">Logar episódio</span>
-        </button>
-
-        {/* Grupo: Acervo — início, catálogo, diário, watchlist */}
-        <nav className="mr-side-nav" aria-label="Acervo">
-          <p className="mr-side-group-label">Acervo</p>
-          {navAcervo.map(item => (
-            <button
-              key={item.id}
-              className={`mr-side-item${view === item.id || (item.id === 'catalogo' && view === 'detalhe') ? ' mr-side-item--active' : ''}`}
-              onClick={() => navigateTo(item.id)}
-              aria-current={view === item.id ? 'page' : undefined}
-            >
-              <Icon name={item.icon as any} className="mr-side-icon" />
-              <span className="mr-side-label">{item.label}</span>
-              {/* Contagem de itens — exibe só quando > 0 */}
-              {item.count != null && item.count > 0 && (
-                <span className="mr-side-badge">{item.count}</span>
-              )}
-            </button>
-          ))}
-        </nav>
-
-        {/* Grupo: Descobrir — lançamentos e estatísticas */}
-        <nav className="mr-side-nav" aria-label="Descobrir">
-          <p className="mr-side-group-label">Descobrir</p>
-          {navDescobrir.map(item => (
-            <button
-              key={item.id}
-              className={`mr-side-item${view === item.id ? ' mr-side-item--active' : ''}`}
-              onClick={() => navigateTo(item.id)}
-              aria-current={view === item.id ? 'page' : undefined}
-            >
-              <Icon name={item.icon as any} className="mr-side-icon" />
-              <span className="mr-side-label">{item.label}</span>
-              {item.count != null && item.count > 0 && (
-                <span className="mr-side-badge">{item.count}</span>
-              )}
-            </button>
-          ))}
-        </nav>
-
-        {/* Rodapé da sidebar: Sync MAL + Voltar à Makima (com ponto vermelho) */}
-        <div className="mr-side-footer">
-          {/* Sync MAL — ícone gira enquanto syncing=true */}
-          <button
-            className="mr-side-action"
-            onClick={handleSyncMal}
-            disabled={syncing}
-            title="Sincronizar com MyAnimeList"
-          >
-            <Icon name="sync" className={syncing ? 'mr-spinning' : ''} />
-            <span className="mr-sync-label">{syncing ? 'Sincronizando...' : 'Sync MAL'}</span>
-          </button>
-
-          {/* Configurações — ícone de stats como engrenagem (icon disponível) */}
-          <button
-            className="mr-side-action"
-            onClick={() => setTweaksOpen(true)}
-            title="Configurações (tweaks)"
-          >
-            <Icon name="stats" />
-            <span>Configurações</span>
-          </button>
-
-          {/* Voltar à Makima — ponto vermelho + ícone + texto (fiel ao protótipo) */}
-          <a href="/" className="mr-side-action mr-side-back" title="Voltar à Makima">
-            {/* Ponto vermelho indicador — presente no design do protótipo */}
-            <span className="mr-side-back-dot" aria-hidden="true" />
-            <Icon name="arrow-left" />
-            <span>Voltar à Makima</span>
-          </a>
-        </div>
-      </aside>
-
-      {/* ── Área principal ────────────────────────────────────────────────── */}
-      <main className="mr-main">
-        {/* Topbar: título com emoji + busca global + botão "+" redondo */}
-        <div className="mr-topbar">
-          {/* Título da view atual com emoji (fiel ao protótipo) */}
-          <h1 className="mr-topbar-title">
-            {TITLES[view] ?? TITLES.home}
-          </h1>
-
-          {/* Campo de busca global — navega para catálogo ao digitar */}
-          <input
-            className="mr-topbar-search"
-            type="search"
-            placeholder="Buscar anime, estúdio ou gênero…"
-            value={topbarQuery}
-            onChange={e => {
-              const val = e.target.value
-              setTopbarQuery(val)
-              // Redireciona para o catálogo ao começar a digitar em outra tela
-              if (val && view !== 'catalogo') navigateTo('catalogo')
-            }}
-            aria-label="Buscar anime, estúdio ou gênero"
-          />
-
-          {/* Botão "+" redondo — abre modal de adicionar anime (fiel ao protótipo) */}
-          <button
-            className="mr-topbar-add"
-            onClick={() => setAddOpen(true)}
-            title="Adicionar anime (a)"
-            aria-label="Adicionar anime"
-          >
-            <Icon name="plus" />
-          </button>
-        </div>
-
-        {/* Conteúdo da view ativa — scroll independente do header */}
-        <div className="mr-scroll" ref={scrollRef}>
-          {view === 'home' && (
-            <HomeScreen
-              tweaks={tweaks}
-              reloadKey={reloadKey}
-              onSelectAnime={id => navigateTo('detalhe', id)}
-              onLog={(aid, ep) => openLogModal(aid, ep)}
-              onNav={screen => navigateTo(screen as MarinView)}
-              onToast={showToast}
-            />
-          )}
-
-          {view === 'catalogo' && (
-            <CatalogScreen
-              tweaks={tweaks}
-              onSelectAnime={id => navigateTo('detalhe', id)}
-              externalQuery={topbarQuery}
-              externalCounts={homeCounts}
-              onToast={showToast}
-            />
-          )}
-
-          {view === 'diario' && (
-            <DiaryScreen
-              onSelectAnime={id => navigateTo('detalhe', id)}
-              onLog={() => openLogModal()}
-              onToast={showToast}
-            />
-          )}
-
-          {view === 'watchlist' && (
-            <WatchlistScreen
-              onSelectAnime={id => navigateTo('detalhe', id)}
-              onStartAnime={id => openLogModal(id, 1)}
-              onToast={showToast}
-            />
-          )}
-
-          {view === 'lancamentos' && (
-            <ScheduleScreen
-              onSelectAnime={id => navigateTo('detalhe', id)}
-              onToast={showToast}
-            />
-          )}
-
-          {view === 'stats' && (
-            <StatsScreen />
-          )}
-
-          {view === 'listas' && (
-            <ListsScreen onSelectAnime={id => navigateTo('detalhe', id)} />
-          )}
-
-          {view === 'etiquetas' && (
-            <TagsScreen
-              onSelectTag={tag => { setTopbarQuery(tag); navigateTo('catalogo') }}
-              onToast={showToast}
-            />
-          )}
-
-          {view === 'rewind' && (
-            <RewindScreen onSelectAnime={id => navigateTo('detalhe', id)} />
-          )}
-
-          {view === 'detalhe' && animeId && (
-            <AnimeDetail
-              animeId={animeId}
-              onBack={() => navigateTo('catalogo')}
-              onLog={(id, ep) => openLogModal(id, ep)}
-              onToast={showToast}
-            />
-          )}
-        </div>
-      </main>
-
-      {/* ── NextBar — barra fixa de próximo episódio ──────────────────────── */}
-      {/* Montada fora do <main> pois é position:fixed (não afeta o layout) */}
-      {schedule.length > 0 && currentScheduleItem && (
-        <NextBar
-          episode={currentScheduleItem}
-          animeTitle={currentScheduleItem.anime_title}
-          animeId={currentScheduleItem.anime_id}
-          animeKey={currentScheduleItem.poster_key}
-          animeUrl={currentScheduleItem.poster_url}
-          onLog={(id, ep) => openLogModal(id, ep)}
-          onNavigate={id => navigateTo('detalhe', id)}
-          hasNext={scheduleIdx < schedule.length - 1}
-          hasPrev={scheduleIdx > 0}
-          onNext={() => setScheduleIdx(i => Math.min(i + 1, schedule.length - 1))}
-          onPrev={() => setScheduleIdx(i => Math.max(i - 1, 0))}
-        />
-      )}
-
-      {/* ── Modais ────────────────────────────────────────────────────────── */}
-      {logModal.open && (
-        <LogWatchModal
-          animeId={logModal.animeId}
-          defaultEp={logModal.ep}
-          onSubmit={() => {
-            setLogModal({ open: false })
-            // FR-011: Home/nav/NextBar precisam refletir a sessão recém-logada
-            // sem exigir renavegação. Se está no detalhe, a tela se auto-atualiza
-            // no próximo acesso (comportamento já existente, mantido).
-            bump()
-          }}
-          onClose={() => setLogModal({ open: false })}
-          onToast={showToast}
-        />
-      )}
-
-      {addOpen && (
-        <AddAnimeModal
-          onAdded={id => {
-            setAddOpen(false)
-            navigateTo('detalhe', id)
-          }}
-          onClose={() => setAddOpen(false)}
-          onToast={showToast}
-        />
-      )}
-
-      {tweaksOpen && (
-        <MarinTweaks
-          tweaks={tweaks}
-          onChange={setTweaks}
-          onClose={() => setTweaksOpen(false)}
-        />
-      )}
-
-      {/* ── Toast ─────────────────────────────────────────────────────────── */}
-      {toast && (
-        <Toast
-          message={toast}
-          onDismiss={() => setToast('')}
-        />
-      )}
-    </div>
+    <MarinContext.Provider value={ctx}>
+      <AppShell
+        agent={{ id: 'marin', name: AGENT.name, subtitle: 'Animes · Catálogo', portrait: AGENT.portrait }}
+        nav={nav}
+        active={route.animeId ? 'catalog' : route.listId ? 'lists' : route.view}
+        onNavigate={(id) => goto(id as ViewId)}
+        mobileTabs={['home', 'catalog', 'diary']}
+        primary={{ label: 'Logar episódio', icon: 'add', key: 'n', onClick: () => openLog() }}
+        title={route.animeId ? 'Anime' : route.listId ? 'Lista' : TITLES[route.view]}
+        subtitle={route.animeId || route.listId ? 'Detalhe' : SUBTITLES[route.view]}
+        // Busca do topo: leva para o Catálogo já filtrado (título, estúdio, gênero ou etiqueta).
+        search={{ placeholder: 'Buscar anime…', onSubmit: (q) => { setTopQuery(q); goto('catalog') } }}
+        onGoAgent={(to) => navigate(to)}
+        art={{ value: prefs.art, options: ART_OPTIONS, onChange: (art) => setPrefs({ art }) }}
+        artValue={prefs.art}
+        commands={[
+          { id: 'marin.log', label: 'Logar episódio', icon: 'episode', keywords: 'assisti sessão registrar ep', run: () => openLog() },
+          { id: 'marin.add', label: 'Adicionar anime', icon: 'add', keywords: 'novo jikan myanimelist cadastrar', run: () => openAdd() },
+          { id: 'marin.sync', label: 'Sincronizar com o MyAnimeList', icon: 'refresh', keywords: 'mal sync importar', run: () => { void syncMal(false) } },
+          { id: 'marin.schedule', label: 'Ver lançamentos', icon: 'airing', keywords: 'episódios novos agenda calendário', run: () => goto('schedule') },
+        ]}
+        preferences={
+          <>
+            <SettingRow title="Mostrar animes como" help="Vale para o Catálogo, o Quero assistir e as Listas.">
+              <SegmentedControl
+                label="Layout do Catálogo"
+                value={prefs.layout}
+                options={[{ value: 'grid', label: 'Pôsteres', icon: 'grid' }, { value: 'list', label: 'Lista', icon: 'list' }]}
+                onChange={(layout) => setPrefs({ layout })}
+              />
+            </SettingRow>
+            <SettingRow title="Tamanho dos pôsteres" help="A densidade da grade de animes.">
+              <SegmentedControl
+                label="Tamanho dos pôsteres"
+                value={prefs.density}
+                options={[{ value: 'large', label: 'Grande' }, { value: 'medium', label: 'Médio' }, { value: 'compact', label: 'Compacto' }]}
+                onChange={(density) => setPrefs({ density })}
+              />
+            </SettingRow>
+            <SettingRow title="Ordem inicial do Catálogo" help="Você ainda pode mudar a ordem na própria tela.">
+              <Select aria-label="Ordem inicial do Catálogo" value={prefs.sort} onChange={(e) => setPrefs({ sort: e.target.value as MarinPrefs['sort'] })}>
+                <option value="updated">Atualizado</option>
+                <option value="added">Adicionado</option>
+                <option value="rating">Nota</option>
+                <option value="title">Título</option>
+                <option value="progress">Progresso</option>
+              </Select>
+            </SettingRow>
+            <SettingRow title="MyAnimeList" help="Traz as mudanças feitas lá (acontece sozinho a cada 6 horas). O completo reprocessa a lista inteira.">
+              <div className="ds-inline">
+                <Button icon="refresh" disabled={syncing} onClick={() => void syncMal(false)}>{syncing ? 'Sincronizando…' : 'Sincronizar agora'}</Button>
+                <Button variant="ghost" disabled={syncing} onClick={() => void syncMal(true)}>Sync completo</Button>
+              </div>
+            </SettingRow>
+          </>
+        }
+      >
+        <ScreenBoundary resetKey={hashFor(route)} onHome={() => goto('home')}>{body}</ScreenBoundary>
+        {dialog?.kind === 'log' && <LogForm key={`${dialog.draft.animeId}-${dialog.draft.title}-${dialog.draft.epStart}`} initial={dialog.draft} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'add' && <AddAnimeForm initialTitle={dialog.title} onClose={() => setDialog(null)} />}
+      </AppShell>
+    </MarinContext.Provider>
   )
 }

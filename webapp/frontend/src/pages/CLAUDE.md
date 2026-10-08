@@ -13,7 +13,7 @@ Dez Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
 | `frieren/` | `FrierenShell.tsx` (sobre o `AppShell` do DS, spec 073) | `frierenApi` em `frieren/frierenApi.ts` | `frieren.css` (só complementos `.fr-*` do DS) | `/books/*` |
 | `kaguya/` | `KaguyaShell.tsx` | `kaguyaApi` em `kaguya/kaguyaApi.ts` | `kaguya.css` | `/tasks/*` |
 | `akane/` | `AkaneShell.tsx` (sobre o `AppShell` do DS) | `akaneApi` em `akane/akaneApi.ts` | `akane.css` (só complementos do DS, tokens `--ds-*`) | `/movies/*` |
-| `marin/` | `MarinShell.tsx` | `marinApi` em `marin/marinApi.ts` | `marin.css` | `/animes/*` |
+| `marin/` | `MarinShell.tsx` (sobre o `AppShell` do DS, spec 074) | `marinApi` em `marin/marinApi.ts` | `marin.css` (só complementos `.mr-*` do DS) | `/animes/*` |
 | `mai/` | `MaiShell.tsx` | `maiApi` em `mai/maiApi.ts` | `mai.css` | `/series/*` |
 | `komi/` | `KomiShell.tsx` | `komiApi` em `komi/komiApi.ts` | `komi.css` | `/people/*` |
 | `yato/` | `YatoShell.tsx` | `yatoApi` em `yato/yatoApi.ts` | `yato.css` | `/travel/*` |

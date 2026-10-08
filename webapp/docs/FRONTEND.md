@@ -434,12 +434,42 @@ e, se o filme nasceu agora, o filme). Excluir **filme** não tem Desfazer (a API
 
 ### MarinShell — Animes (`src/pages/marin/`)
 
-**Roteamento:** estado interno `{view, param}` (tipo `MarinView` no próprio `MarinShell.tsx`).
+No **Design System** desde a spec 074 (`conformant`, arte **"Neon kawaii"**): `AppShell`, `useCollection`,
+`QuickCapture`, `DetailPage`, `StatsPage`. Rota `/animes/*`.
 
-**Telas (screens/ + raiz):**
+**Roteamento:** por hash (`/animes#diario`, `#anime/<id>`, `#lista/<id>`) em `lib/routes.ts`; o shell guarda a rota,
+o catálogo (contagens do menu, linha rápida, busca do topo e Ctrl+K) e as ações comuns no `MarinContext`.
+Nomes do shell antigo (`#watchlist`, `#rewind`) seguem aceitos como apelidos.
 
-| View | Tela | O que mostra |
+| Hash | Tela | O que mostra |
 |---|---|---|
+| `#inicio` | `screens/Home.tsx` | Hero "continue assistindo", 3 cartões (acompanhados, episódios em 7 dias, nota média do ano), linha rápida, favoritos (vitrine de 4), assistindo agora, atividade recente, próximos episódios, acervo por estado e a fila |
+| `#catalogo` | `screens/Catalog.tsx` | Catálogo (5 estados) em pôsteres ou lista; busca, filtros (situação, gênero, formato, temporada, estúdio, etiqueta, nota, coração, data), agrupar e ordenar |
+| `#quero-ver` | `Queue` (mesmo arquivo) | Fila "Quero assistir" com o atalho "Começar" |
+| `#diario` | `screens/Diary.tsx` | Sessões agrupadas por mês; excluir com confirmação e Desfazer |
+| `#lancamentos` | `screens/Schedule.tsx` | Próximos 14 dias por dia, selo "Novo ep", horário JST/BRT quando houver hora, "Já vi" |
+| `#estatisticas` | `screens/Stats.tsx` | `StatsPage` sobre o `StatsPayload` (une o antigo Stats e o Rewind) |
+| `#listas`, `#lista/<id>` | `screens/Lists.tsx` | Coleções (com ranking), criar/editar/excluir com Desfazer |
+| `#etiquetas` | `screens/Tags.tsx` | Nuvem de etiquetas → animes da etiqueta |
+| `#anime/<id>` | `screens/AnimeDetail.tsx` | `DetailPage`: estado, nota, coração, "Adicionar à lista", menu (atualizar dados, remover); abas Visão geral (sinopse, progresso, sessões, caderno, ficha, etiquetas) e Episódios (12 por vez) |
+
+**Linha rápida:** `Frieren ep 12 ★4.5 ontem` (`lib/log.ts`: `ep 12`, `ep 5-8`, nota, data no passado). Sem episódio na linha, assume o
+próximo. Enter salva direto quando o anime e o episódio ficaram claros; Shift+Enter ou dúvida abre o `LogForm`. Logar episódio
+de anime da fila ou pausado o move para "assistindo" (o Desfazer devolve o estado).
+
+**Nota:** o banco e o MyAnimeList usam 0–10; as telas mostram 0–5 estrelas com meia estrela. **Meia estrela = 1 ponto do MAL**
+(`lib/score.ts`, que reaproveita `toFiveScale`/`fromFiveScale` do DS); a normalização acontece na borda (`lib/normalize.ts` e
+`marinApi.ts`) e as telas só veem estrelas.
+
+**Favoritos e Preferências:** a vitrine vive no servidor (`anime_favorites`); os favoritos que o shell antigo guardava em
+`localStorage` (`marin.favorites`) são enviados uma vez e a chave é apagada (`lib/legacy.ts`), sem sobrescrever uma vitrine
+que já exista. Preferências (`usePrefs('marin')`): layout, tamanho dos pôsteres, ordem inicial do Catálogo (lê o `mr-tweaks`
+antigo uma vez) e os botões do MyAnimeList (sync delta e **completo**). Atalho `A` abre "Adicionar anime".
+
+**API:** `marinApi.ts` — todos os `/api/animes/*` (estatísticas via `statsPayload`). Testes: `MarinShell.test.tsx`,
+`screens.test.tsx`, `nullSafety.test.tsx` (payloads cheios de `null`) e `lib/*.test.ts`.
+
+---|---|---|
 | `home` | HomeScreen | Blocos agregados: última sessão, assistindo agora, próximos episódios, watchlist |
 | `catalogo` | CatalogScreen | Catálogo de animes com filtros e ordenação |
 | `diario` | DiaryScreen | Histórico de sessões de episódios |

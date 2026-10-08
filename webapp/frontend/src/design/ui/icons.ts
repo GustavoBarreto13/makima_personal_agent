@@ -10,7 +10,8 @@ import {
   Receipt, RefreshCw, Repeat, Route, Search, Shirt, ShoppingCart, SlidersHorizontal, Smartphone, Sparkles, Star, Sun, Sunrise, Tag, Target, Timer, Trash2, TrendingDown,
   TrendingUp, Trophy, Tv, Undo2, Upload, User, Users, Utensils, Wallet, X, Zap, BarChart3, ArrowUpDown,
   Bookmark, Globe, Popcorn, RotateCcw, Sofa, Ticket,
-  BookCheck, BookX, Feather, FileText, Highlighter, LibraryBig, Pause, Store, type LucideIcon,
+  BookCheck, BookX, Feather, FileText, Highlighter, LibraryBig, Pause, Store,
+  Ban, Building2, MonitorPlay, RadioTower, type LucideIcon,
 } from 'lucide-react'
 
 export const ICONS = {
@@ -39,6 +40,8 @@ export const ICONS = {
   // livros (Frieren, spec 073): `book`, `library` e `watchlist` (Quero ler = "para depois") já existem acima
   shelf: LibraryBig, review: Feather, highlight: Highlighter, page: FileText, pause: Pause,
   abandon: BookX, finished: BookCheck, store: Store,
+  // animes (Marin, spec 074): `anime`, `watchlist`, `rewatch`, `pause`, `heart` e `star` já existem acima; concluir = `check`
+  episode: MonitorPlay, studio: Building2, airing: RadioTower, drop: Ban,
   // categorias de gasto (Nami)
   food: Apple, dining: Utensils, game: Gamepad2, car: Car, shirt: Shirt, school: GraduationCap, gift: Gift, pill: Pill, laptop: Laptop, pet: PawPrint,
   // treino (agente de exemplo da página /design)

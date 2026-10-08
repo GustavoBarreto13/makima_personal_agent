@@ -237,24 +237,36 @@
       "mobile": true
     },
     "marin": {
-      "status": "legacy",
+      "status": "conformant",
       "dir": "src/pages/marin",
       "shell": "src/pages/marin/MarinShell.tsx",
-      "art": null,
-      "appShell": false,
-      "hero": false,
-      "theme": false,
-      "icons": false,
-      "collections": [],
-      "quickCapture": null,
+      "art": "neon",
+      "appShell": true,
+      "hero": true,
+      "theme": true,
+      "icons": true,
+      "collections": [
+        "marin:animes",
+        "marin:querover",
+        "marin:diario",
+        "marin:listas"
+      ],
+      "quickCapture": "episode-log",
       "stats": {
-        "page": false,
-        "metrics": []
+        "page": true,
+        "metrics": [
+          "episodes",
+          "completed_in_year",
+          "dropped",
+          "release_season",
+          "studios",
+          "ratings"
+        ]
       },
-      "detail": false,
-      "prefs": false,
-      "hotkeys": false,
-      "mobile": false
+      "detail": true,
+      "prefs": true,
+      "hotkeys": true,
+      "mobile": true
     },
     "mai": {
       "status": "legacy",
