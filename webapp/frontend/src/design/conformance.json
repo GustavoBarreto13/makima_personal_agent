@@ -240,7 +240,7 @@
       "status": "legacy",
       "dir": "src/pages/marin",
       "shell": "src/pages/marin/MarinShell.tsx",
-      "art": null,
+      "art": "neon",
       "appShell": false,
       "hero": false,
       "theme": false,
