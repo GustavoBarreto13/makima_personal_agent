@@ -1050,10 +1050,11 @@ def calendar_route(
     start: str = Query(..., description="Início da janela (AAAA-MM-DD)"),
     end: str = Query(..., description="Fim da janela (AAAA-MM-DD)"),
     project_id: Optional[int] = Query(None, description="Restringe a uma lista"),
+    space: Optional[str] = Query(None, description="work | personal — espaço da lista (spec 075)"),
     user: dict = Depends(require_user),
 ) -> list[dict]:
     """Tarefas datadas + ocorrências virtuais das recorrentes na janela (sem materializar)."""
-    return list_tasks_in_range(start, end, project_id)  # listagem
+    return list_tasks_in_range(start, end, project_id, space)  # listagem
 
 
 # ─────────────────────────────────────────────────────────────────────────────

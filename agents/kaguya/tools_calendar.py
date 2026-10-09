@@ -21,7 +21,12 @@ from agents.db import run_select
 from agents.kaguya import recurrence as rec_engine
 
 
-def list_tasks_in_range(start_date: str, end_date: str, project_id: Optional[int] = None) -> list:
+def list_tasks_in_range(
+    start_date: str,
+    end_date: str,
+    project_id: Optional[int] = None,
+    space: Optional[str] = None,
+) -> list:
     """Lista as tarefas (reais + ocorrências virtuais) com data dentro de ``[start, end]``.
 
     Combina duas fontes:
@@ -37,9 +42,11 @@ def list_tasks_in_range(start_date: str, end_date: str, project_id: Optional[int
         start_date: Início da janela, ISO "AAAA-MM-DD" (inclusive).
         end_date: Fim da janela, ISO "AAAA-MM-DD" (inclusive).
         project_id: Se informado, restringe a uma lista específica.
+        space: ``work`` | ``personal`` restringe ao espaço da lista (spec 075); ``None`` = todos.
 
     Returns:
-        Lista de tarefas serializadas. Reais com ``is_virtual=False``; virtuais com
+        Lista de tarefas serializadas (cada uma com ``context`` herdado da lista).
+        Reais com ``is_virtual=False``; virtuais com
         ``is_virtual=True``, ``series_task_id`` e ``id=None``. **Listagem**.
     """
     # Import lazy: ``tools_tasks`` importa indiretamente deste domínio; evitamos ciclo.
@@ -48,13 +55,15 @@ def list_tasks_in_range(start_date: str, end_date: str, project_id: Optional[int
 
     # Filtro opcional por lista, sempre parametrizado.
     proj_clause = "AND t.project_id = %(pid)s" if project_id is not None else ""
-    params = {"start": start_date, "end": end_date, "pid": project_id}
+    if space in ("work", "personal"):
+        proj_clause += " AND p.context = %(space)s"
+    params = {"start": start_date, "end": end_date, "pid": project_id, "space": space}
 
     # ── 1) Tarefas reais datadas na janela (pais E subtarefas — spec 028) ──
     # LEFT JOIN tasks mae: traz o título da tarefa-mãe para subtarefas mostrarem o badge.
     real_rows = run_select(
         f"""
-        SELECT {_qualified("t")}, p.name AS project_name, mae.title AS parent_title
+        SELECT {_qualified("t")}, p.name AS project_name, p.context, mae.title AS parent_title
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
         LEFT JOIN tasks mae ON mae.id = t.parent_id
@@ -70,6 +79,7 @@ def list_tasks_in_range(start_date: str, end_date: str, project_id: Optional[int
     for r in real_rows:
         item = _serialize_task(r)
         item["project_name"] = r["project_name"]
+        item["context"] = r.get("context") or "personal"   # espaço herdado da lista (spec 075)
         # parent_title: None para tarefas raízes, título da mãe para subtarefas datadas.
         item["parent_title"] = r.get("parent_title")
         item["is_virtual"] = False  # linha real
@@ -82,7 +92,7 @@ def list_tasks_in_range(start_date: str, end_date: str, project_id: Optional[int
     # exatamente o que o motor de projeção espera.
     rec_rows = run_select(
         f"""
-        SELECT {_qualified("t")}, p.name AS project_name,
+        SELECT {_qualified("t")}, p.name AS project_name, p.context,
                r.rrule AS _rrule, r.mode AS _mode, r.anchor_date AS _anchor
         FROM task_recurrences r
         JOIN tasks t ON t.id = r.task_id
@@ -101,6 +111,7 @@ def list_tasks_in_range(start_date: str, end_date: str, project_id: Optional[int
     for r in rec_rows:
         live = _serialize_task(r)
         live["project_name"] = r["project_name"]
+        live["context"] = r.get("context") or "personal"
         live_serialized.append(live)
     live_serialized = _attach_tags(live_serialized)
     tags_por_id = {t["id"]: t.get("tags", []) for t in live_serialized}

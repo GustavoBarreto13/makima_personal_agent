@@ -692,7 +692,22 @@ def list_tasks(project_id: int, include_completed: bool = False, include_deferre
                 _collect(n["subtasks"])
     _collect(parents)
     _attach_assignees(flat)
+    _attach_blocked(flat)
     return parents
+
+
+def _attach_blocked(tasks: list[dict]) -> None:
+    """Marca ``blocked`` (bool) em cada tarefa: tem dependência cujo bloqueador ainda está aberto.
+
+    Em bloco (uma query), sem N+1. Se as tabelas da spec 075 ainda não existem, marca ``False``.
+    """
+    try:
+        from agents.kaguya.tools_dependencies import blocked_task_ids
+        blocked = blocked_task_ids([t["id"] for t in tasks if t.get("id") is not None])
+    except Exception:  # noqa: BLE001 — recurso novo nunca derruba a listagem
+        blocked = set()
+    for t in tasks:
+        t["blocked"] = t.get("id") in blocked
 
 
 def list_tasks_today(space: Optional[str] = None) -> dict:
