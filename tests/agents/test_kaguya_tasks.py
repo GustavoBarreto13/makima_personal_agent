@@ -387,3 +387,44 @@ def test_payment_invalid_account_rolls_back_everything(payment_inbox):
     task = next(t for t in T.list_tasks(payment_inbox, include_completed=True) if t["id"] == tid)
     assert task["completed_at"] is None
     assert run_select("SELECT count(*) AS c FROM transactions")[0]["c"] == 0
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Spec 075 — cascata em todos os níveis (a árvore vai até 12; antes só o 1º nível era alcançado)
+# ──────────────────────────────────────────────────────────────────────────────
+def _tree3(inbox_id):
+    """Cria avô → pai → neto e devolve os 3 ids."""
+    a = T.create_task("avô", project_id=inbox_id)["id"]
+    b = T.create_task("pai", project_id=inbox_id, parent_id=a)["id"]
+    c = T.create_task("neto", project_id=inbox_id, parent_id=b)["id"]
+    return a, b, c
+
+
+def _row(task_id):
+    return run_select(
+        "SELECT completed_at, deleted_at FROM tasks WHERE id = %(i)s", {"i": task_id}
+    )[0]
+
+
+def test_complete_cascade_reaches_grandchildren(inbox_id):
+    a, b, c = _tree3(inbox_id)
+    assert T.complete_task(a)["needs_cascade"] is True  # neto aberto também conta
+    assert T.complete_task(a, cascade=True)["status"] == "ok"
+    assert all(_row(i)["completed_at"] is not None for i in (a, b, c))
+
+
+def test_delete_and_restore_cover_every_level(inbox_id):
+    a, b, c = _tree3(inbox_id)
+    assert T.delete_task(a)["status"] == "ok"
+    assert all(_row(i)["deleted_at"] is not None for i in (a, b, c))
+    assert T.restore_task(a)["status"] == "ok"
+    assert all(_row(i)["deleted_at"] is None for i in (a, b, c))
+
+
+def test_restore_keeps_separately_deleted_descendant_in_trash(inbox_id):
+    a, b, c = _tree3(inbox_id)
+    T.delete_task(c)              # neto excluído antes, à parte
+    T.delete_task(a)              # depois a árvore toda
+    T.restore_task(a)
+    assert _row(b)["deleted_at"] is None
+    assert _row(c)["deleted_at"] is not None  # continua na lixeira

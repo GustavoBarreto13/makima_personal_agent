@@ -457,11 +457,13 @@ def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
     # Campos da ocorrência consumida (herdados pela próxima — inclui GTD/contexto, spec 034/R10).
     cur.execute(
         "SELECT project_id, title, description, type, priority, due_date, due_time, "
-        "gtd_status, context_id, waiting_note FROM tasks WHERE id = %s",
+        "gtd_status, context_id, waiting_note, duration_min, goal_id, column_id, start_at, end_at "
+        "FROM tasks WHERE id = %s",
         (task_id,),
     )
     (project_id, title, description, ttype, priority, due_date, due_time,
-     gtd_status, context_id, waiting_note) = cur.fetchone()
+     gtd_status, context_id, waiting_note, duration_min, goal_id, old_column_id,
+     start_at, end_at) = cur.fetchone()
 
     # Calcula a próxima data pela semântica do motor puro (research.md §3).
     nxt = rec_engine.next_occurrence(
@@ -472,25 +474,55 @@ def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
         cur.execute("UPDATE task_recurrences SET active = FALSE WHERE id = %s", (rec_id,))
         return None
 
-    # A nova ocorrência entra no fim da lista; em board, na primeira coluna (nunca na "done").
+    # A nova ocorrência entra no fim da lista. Em board, mantém a coluna da ocorrência consumida
+    # quando ela NÃO era a "done" (a tarefa concluída está na done); senão volta à primeira coluna.
     new_column = _first_column_id(cur, project_id)
+    if old_column_id is not None:
+        cur.execute(
+            "SELECT is_done_column FROM task_columns WHERE id = %s AND project_id = %s",
+            (old_column_id, project_id),
+        )
+        col = cur.fetchone()
+        if col and not col[0]:
+            new_column = old_column_id
     cur.execute(
         f"SELECT COALESCE(MAX(position), 0) + %s FROM tasks WHERE project_id = %s AND parent_id IS NULL",
         (_POSITION_STEP, project_id),
     )
     position = cur.fetchone()[0]
+
+    # O bloco de horário (start/end) acompanha o deslocamento do vencimento (mesmo horário, novo dia).
+    shift = timedelta(days=(nxt - due_date).days) if due_date else None
+    new_start = start_at + shift if (start_at and shift is not None) else None
+    new_end = end_at + shift if (end_at and shift is not None and new_start) else None
     cur.execute(
         """
         INSERT INTO tasks
             (project_id, column_id, parent_id, title, description, type, priority, due_date, due_time,
-             position, gtd_status, context_id, waiting_note)
-        VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             position, gtd_status, context_id, waiting_note, duration_min, goal_id, start_at, end_at)
+        VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
         (project_id, new_column, title, description, ttype, priority, nxt, due_time, position,
-         gtd_status, context_id, waiting_note),
+         gtd_status, context_id, waiting_note, duration_min, goal_id, new_start, new_end),
     )
     new_id = cur.fetchone()[0]
+
+    # Tags e pessoas vinculadas são da série, não de uma ocorrência: a próxima herda ambas.
+    cur.execute(
+        "INSERT INTO task_tag_links (task_id, tag_id) "
+        "SELECT %s, tag_id FROM task_tag_links WHERE task_id = %s ON CONFLICT DO NOTHING",
+        (new_id, task_id),
+    )
+    # person_links é da Komi (bancos sem o schema dela não têm a tabela — nesse caso não há o que copiar).
+    cur.execute("SELECT to_regclass('person_links')")
+    if cur.fetchone()[0]:
+        cur.execute(
+            "INSERT INTO person_links (person_id, entity_type, entity_id) "
+            "SELECT person_id, 'task', %s FROM person_links "
+            "WHERE entity_type = 'task' AND entity_id = %s ON CONFLICT DO NOTHING",
+            (str(new_id), str(task_id)),
+        )
 
     # Se o status herdado é "waiting", esta é uma NOVA espera (R10/clarificação) — o
     # timestamp reseta para agora, nunca herda o waiting_since da ocorrência anterior.
@@ -507,20 +539,29 @@ def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
     while queue:
         old_parent, new_parent = queue.pop(0)
         cur.execute(
-            "SELECT id, title, description, type, priority, position FROM tasks "
-            "WHERE parent_id = %s AND deleted_at IS NULL ORDER BY position, id",
+            "SELECT id, title, description, type, priority, position, duration_min, due_date, due_time "
+            "FROM tasks WHERE parent_id = %s AND deleted_at IS NULL ORDER BY position, id",
             (old_parent,),
         )
-        for old_id, s_title, s_desc, s_type, s_prio, s_pos in cur.fetchall():
+        for old_id, s_title, s_desc, s_type, s_prio, s_pos, s_dur, s_due, s_due_time in cur.fetchall():
+            # Subtarefa com data acompanha o deslocamento da série; estimativa e tags são herdadas.
+            s_new_due = s_due + shift if (s_due and shift is not None) else None
             cur.execute(
                 """
-                INSERT INTO tasks (project_id, parent_id, title, description, type, priority, position)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO tasks (project_id, parent_id, title, description, type, priority, position,
+                                   duration_min, due_date, due_time)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (project_id, new_parent, s_title, s_desc, s_type, s_prio, s_pos),
+                (project_id, new_parent, s_title, s_desc, s_type, s_prio, s_pos, s_dur, s_new_due,
+                 s_due_time if s_new_due else None),
             )
             new_child_id = cur.fetchone()[0]
+            cur.execute(
+                "INSERT INTO task_tag_links (task_id, tag_id) "
+                "SELECT %s, tag_id FROM task_tag_links WHERE task_id = %s ON CONFLICT DO NOTHING",
+                (new_child_id, old_id),
+            )
             # Enfileira para clonar os filhos deste nó no próximo nível.
             queue.append((old_id, new_child_id))
 
@@ -1389,6 +1430,17 @@ def update_task(
 # ─────────────────────────────────────────────────────────────────────────────
 # Concluir / reabrir
 # ─────────────────────────────────────────────────────────────────────────────
+# Descendentes vivos de uma tarefa (todos os níveis); o único parâmetro %s é o id da raiz. A raiz
+# NÃO entra em ``d``. Usado pela cascata de concluir/excluir/restaurar.
+_DESCENDANTS_CTE = (
+    "WITH RECURSIVE d AS ("
+    "  SELECT id FROM tasks WHERE parent_id = %s AND deleted_at IS NULL"
+    "  UNION ALL"
+    "  SELECT t.id FROM tasks t JOIN d ON t.parent_id = d.id WHERE t.deleted_at IS NULL"
+    ") "
+)
+
+
 def _complete_task_on_cursor(cur, task_id: int, cascade: bool = False, end_series: bool = False) -> dict:
     """Completa uma tarefa usando um cursor já aberto (sem abrir transação própria).
 
@@ -1416,10 +1468,11 @@ def _complete_task_on_cursor(cur, task_id: int, cascade: bool = False, end_serie
     if not row or row[2] is not None:
         return {"status": "error", "message": "Tarefa não encontrada."}
 
-    # Se for tarefa-pai, verifica subtarefas abertas antes de concluir.
+    # Se for tarefa-pai, verifica subtarefas abertas (em QUALQUER nível — a árvore vai até 12)
+    # antes de concluir.
     if row[0] is None:
         cur.execute(
-            "SELECT COUNT(*) FROM tasks WHERE parent_id = %s AND completed_at IS NULL AND deleted_at IS NULL",
+            _DESCENDANTS_CTE + "SELECT COUNT(*) FROM tasks WHERE id IN (SELECT id FROM d) AND completed_at IS NULL",
             (task_id,),
         )
         open_subs = cur.fetchone()[0]
@@ -1433,8 +1486,8 @@ def _complete_task_on_cursor(cur, task_id: int, cascade: bool = False, end_serie
             }
         if open_subs > 0 and cascade:
             cur.execute(
-                "UPDATE tasks SET completed_at = now(), updated_at = now() "
-                "WHERE parent_id = %s AND completed_at IS NULL AND deleted_at IS NULL",
+                _DESCENDANTS_CTE + "UPDATE tasks SET completed_at = now(), updated_at = now() "
+                "WHERE id IN (SELECT id FROM d) AND completed_at IS NULL",
                 (task_id,),
             )
 
@@ -1848,10 +1901,12 @@ def delete_task(task_id: int, scope: str = "this") -> dict:
                 else:  # "this": a série continua — gera a próxima ocorrência antes do soft delete
                     generated = _generate_next_occurrence(cur, task_id)
 
-            # Marca a tarefa e suas subtarefas vivas de uma vez (a própria + filhas).
+            # Marca a tarefa e TODAS as subtarefas vivas (qualquer nível) de uma vez. now() é fixo
+            # dentro da transação, então raiz e descendentes ficam com o MESMO deleted_at — é isso
+            # que permite ao restore trazer de volta só o que saiu junto.
             cur.execute(
-                "UPDATE tasks SET deleted_at = now(), updated_at = now() "
-                "WHERE (id = %s OR parent_id = %s) AND deleted_at IS NULL",
+                _DESCENDANTS_CTE + "UPDATE tasks SET deleted_at = now(), updated_at = now() "
+                "WHERE (id = %s OR id IN (SELECT id FROM d)) AND deleted_at IS NULL",
                 (task_id, task_id),
             )
     try:
@@ -1890,13 +1945,20 @@ def restore_task(task_id: int) -> dict:
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM tasks WHERE id = %s AND deleted_at IS NOT NULL", (task_id,))
-            if not cur.fetchone():
+            cur.execute("SELECT deleted_at FROM tasks WHERE id = %s AND deleted_at IS NOT NULL", (task_id,))
+            row = cur.fetchone()
+            if not row:
                 return {"status": "error", "message": "Tarefa não encontrada na lixeira."}
+            # Restaura a raiz e só os descendentes (qualquer nível) que saíram JUNTO com ela, isto é,
+            # com o mesmo deleted_at — subtarefas excluídas antes, à parte, continuam na lixeira.
             cur.execute(
-                "UPDATE tasks SET deleted_at = NULL, updated_at = now() "
-                "WHERE id = %s OR parent_id = %s",
-                (task_id, task_id),
+                "WITH RECURSIVE d AS ("
+                "  SELECT id FROM tasks WHERE parent_id = %s AND deleted_at = %s"
+                "  UNION ALL"
+                "  SELECT t.id FROM tasks t JOIN d ON t.parent_id = d.id WHERE t.deleted_at = %s"
+                ") UPDATE tasks SET deleted_at = NULL, updated_at = now() "
+                "WHERE id = %s OR id IN (SELECT id FROM d)",
+                (task_id, row[0], row[0], task_id),
             )
     try:
         from agents.kaguya import gcal_sync as _gs

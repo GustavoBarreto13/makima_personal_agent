@@ -466,3 +466,31 @@ def test_int_clear_recurrence(inbox_id):
     assert T.clear_recurrence(tid)["status"] == "ok"
     row = next(t for t in T.list_tasks(inbox_id) if t["id"] == tid)
     assert row["recurrence"] is None
+
+
+@integration
+def test_int_next_occurrence_preserves_tags_estimate_and_time_block(inbox_id):
+    """Spec 075: a próxima ocorrência herda tags e estimativa (antes eram perdidas a cada conclusão)."""
+    tid = T.create_task("treino", project_id=inbox_id, due_date="2026-06-05", tags=["saude"],
+                        recurrence={"rrule": R.build_rrule("DAILY"), "mode": "fixed"})["id"]
+    assert T.update_task(tid, duration_min=45)["status"] == "ok"
+
+    res = T.complete_task(tid)
+    nid = res["generated_task_id"]
+    nxt = next(t for t in T.list_tasks(inbox_id) if t["id"] == nid)
+    assert nxt["duration_min"] == 45
+    assert [t["name"] for t in nxt["tags"]] == ["saude"]
+
+
+@integration
+def test_int_next_occurrence_clones_subtask_estimate_and_tags(inbox_id):
+    """Spec 075: subtarefas clonadas mantêm estimativa e tags."""
+    tid = T.create_task("rotina", project_id=inbox_id, due_date="2026-06-05",
+                        recurrence={"rrule": R.build_rrule("DAILY"), "mode": "fixed"})["id"]
+    sid = T.create_task("alongar", project_id=inbox_id, parent_id=tid, tags=["corpo"])["id"]
+    T.update_task(sid, duration_min=10)
+
+    nid = T.complete_task(tid, cascade=True)["generated_task_id"]
+    new_parent = next(t for t in T.list_tasks(inbox_id) if t["id"] == nid)
+    sub = new_parent["subtasks"][0]
+    assert sub["duration_min"] == 10 and [t["name"] for t in sub["tags"]] == ["corpo"]
