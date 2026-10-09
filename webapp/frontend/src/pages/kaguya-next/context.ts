@@ -59,6 +59,8 @@ export interface KaguyaCtx {
   inboxId: number | undefined
   /** Abre o formulário de nova tarefa (opcionalmente já preenchido). */
   newTask: (defaults?: NewTaskDefaults) => void
+  /** Abre o formulário de foco (opcionalmente travado numa tarefa ou num hábito). */
+  startFocus: (target: { task?: Task; habitId?: number }) => void
   /** Conclui/reabre com aviso e "Desfazer". Confirma antes quando há subtarefas abertas. */
   toggleComplete: (task: Task) => Promise<void>
 }

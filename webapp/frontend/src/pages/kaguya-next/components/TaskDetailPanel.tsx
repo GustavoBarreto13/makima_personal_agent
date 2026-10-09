@@ -75,6 +75,7 @@ export function TaskDetailPanel({ taskId, onClose }: { taskId: number; onClose: 
               label="Ações da tarefa"
               onClose={() => setMenu(false)}
               items={[
+                { id: 'focus', label: 'Focar nesta tarefa', onSelect: () => k.startFocus({ task }) },
                 { id: 'dup', label: 'Duplicar', onSelect: () => void act.duplicate({ reload: k.reload }, task).then((id) => id && k.openTask(id)) },
                 { id: 'tpl', label: 'Salvar como template…', onSelect: () => setTemplateName(task.title) },
                 { id: 'del', label: 'Excluir', onSelect: () => void act.deleteTasks({ reload: k.reload }, [task]).then((ok) => ok && onClose()) },

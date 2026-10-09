@@ -81,7 +81,7 @@ def test_create_task_ok(mock_create):
     assert resp.status_code == 201
     assert resp.json()["id"] == 42
     # exclude_unset garante que só os campos enviados chegam à tool
-    mock_create.assert_called_once_with(title="nova", priority=2)
+    mock_create.assert_called_once_with(allow_empty_title=True, title="nova", priority=2)
 
 
 @patch("webapp.backend.routers.tasks.create_project")
@@ -180,7 +180,7 @@ def test_create_task_with_recurrence(mock_create):
     assert resp.status_code == 201
     # O modelo aninhado vira dict no model_dump → a tool recebe recurrence como dict.
     mock_create.assert_called_once_with(
-        title="aluguel", due_date="2026-06-05",
+        allow_empty_title=True, title="aluguel", due_date="2026-06-05",
         recurrence={"rrule": "FREQ=MONTHLY;BYMONTHDAY=5", "mode": "fixed"},
     )
 
@@ -191,7 +191,7 @@ def test_create_task_with_column(mock_create):
     mock_create.return_value = {"status": "ok", "id": 9, "project_id": 3}
     resp = client.post(_BASE, json={"title": "no board", "project_id": 3, "column_id": 8})
     assert resp.status_code == 201
-    mock_create.assert_called_once_with(title="no board", project_id=3, column_id=8)
+    mock_create.assert_called_once_with(allow_empty_title=True, title="no board", project_id=3, column_id=8)
 
 
 @patch("webapp.backend.routers.tasks.complete_task")
@@ -258,7 +258,7 @@ def test_create_task_with_tags(mock_create):
     mock_create.return_value = {"status": "ok", "id": 7, "project_id": 1}
     resp = client.post(_BASE, json={"title": "comprar pão", "tags": ["mercado", "5min"]})
     assert resp.status_code == 201
-    mock_create.assert_called_once_with(title="comprar pão", tags=["mercado", "5min"])
+    mock_create.assert_called_once_with(allow_empty_title=True, title="comprar pão", tags=["mercado", "5min"])
 
 
 @patch("webapp.backend.routers.tasks.list_tags")
@@ -314,3 +314,25 @@ def test_tasks_by_tag(mock_by_tag):
     assert resp.status_code == 200
     assert resp.json()[0]["id"] == 5
     mock_by_tag.assert_called_once_with("mercado")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Hábitos arquivados (spec 075): listar e restaurar
+# ─────────────────────────────────────────────────────────────────────────────
+@patch("webapp.backend.routers.tasks.list_archived_habits")
+def test_list_archived_habits(mock_list):
+    """GET /habits/archived NÃO cai em /habits/{id} e devolve a listagem."""
+    mock_list.return_value = [{"id": 3, "name": "Meditar", "icon": None, "archived_at": "2026-06-01T10:00:00-03:00"}]
+    resp = client.get(f"{_BASE}/habits/archived")
+    assert resp.status_code == 200
+    assert resp.json()[0]["name"] == "Meditar"
+
+
+@patch("webapp.backend.routers.tasks.unarchive_habit")
+def test_restore_habit(mock_restore):
+    """POST /habits/{id}/restore reativa; erro de negócio vira 400."""
+    mock_restore.return_value = {"status": "ok", "message": "Hábito reativado."}
+    assert client.post(f"{_BASE}/habits/3/restore").status_code == 200
+    mock_restore.assert_called_once_with(3)
+    mock_restore.return_value = {"status": "error", "message": "Hábito não encontrado ou já está ativo."}
+    assert client.post(f"{_BASE}/habits/3/restore").status_code == 400

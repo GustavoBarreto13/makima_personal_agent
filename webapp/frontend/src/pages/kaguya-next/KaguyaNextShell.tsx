@@ -9,7 +9,7 @@ import { getAgent } from '../../design/core/agents'
 import { todayISO } from '../../design/core/format'
 import { useCommandProvider, type CommandProvider } from '../../design/headless/commands'
 import { usePrefs } from '../../design/headless/usePrefs'
-import { AppShell, Chip, SegmentedControl, SettingRow, Toggle, type NavGroup } from '../../design'
+import { AppShell, Chip, SegmentedControl, SettingRow, Toggle, toast, type NavGroup } from '../../design'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { AGENT_TABS } from '../../lib/agentTabs'
 import { kaguyaApi, type Space } from './api'
@@ -27,10 +27,13 @@ import { DateScreen, FilterScreen, GroupListScreen, GtdScreen, ListScreen } from
 import { Pending } from './screens/Pending'
 import { Archived, Logbook, Tags, Templates, Trash } from './screens/Records'
 import { Stats } from './screens/Stats'
+import { FocusCancelModal, FocusStartModal, FocusWidget } from './components/FocusSession'
 import { Eisenhower } from './screens/Eisenhower'
+import { Focus } from './screens/Focus'
+import { Habits } from './screens/Habits'
 import { GroupBoardScreen, KanbanScreen } from './screens/Kanban'
 import { Today } from './screens/Today'
-import type { Filter, Group, Project, Sidebar, Task } from './types'
+import type { Filter, FocusSession, Group, Project, Sidebar, Task } from './types'
 import './kaguya-next.css'
 
 const AGENT = getAgent('kaguya')
@@ -41,7 +44,8 @@ const NO_GROUPS: Group[] = []
 const NO_FILTERS: Filter[] = []
 const NO_TASKS: Task[] = []
 
-type Dialog = { kind: 'new'; defaults?: NewTaskDefaults } | { kind: 'search'; q: string } | null
+type Dialog =
+  | { kind: 'new'; defaults?: NewTaskDefaults } | { kind: 'search'; q: string } | { kind: 'focus'; task?: Task; habitId?: number } | { kind: 'focus-cancel' } | null
 
 const SPACE_OPTIONS: { value: SpaceChoice; label: string; icon: 'apps' | 'work' | 'personal' }[] = [
   { value: 'all', label: 'Tudo', icon: 'apps' }, { value: 'work', label: 'Trabalho', icon: 'work' }, { value: 'personal', label: 'Pessoal', icon: 'personal' },
@@ -50,7 +54,7 @@ const SPACE_OPTIONS: { value: SpaceChoice; label: string; icon: 'apps' | 'work' 
 /** Telas ainda não migradas (viram `Pending` até a fase de cada uma). */
 const PENDING: Record<string, string> = {
   calendar: 'O calendário',
-  habits: 'Hábitos', goals: 'Metas', experiments: 'Experimentos', focus: 'Foco',
+  goals: 'Metas', experiments: 'Experimentos',
 }
 
 export function KaguyaNextShell() {
@@ -93,13 +97,36 @@ export function KaguyaNextShell() {
   }, [])
   const openTask = useCallback((id: number | undefined) => goto(withTask(route, id)), [goto, route])
 
+  // Foco (Pomodoro): a sessão ativa vive no servidor; aqui só se lê (ao montar, ao iniciar e a cada 30s, para pegar
+  // a que o servidor fechou por abandono). O relógio do widget deriva de `started_at`, nunca do zero.
+  const [activeFocus, setActiveFocus] = useState<FocusSession | null>(null)
+  const loadActiveFocus = useCallback(async () => {
+    try { setActiveFocus(await kaguyaApi.focus.active()) } catch { /* o widget só some */ }
+  }, [])
+  useEffect(() => { void loadActiveFocus() }, [loadActiveFocus])
+  useEffect(() => {
+    if (!activeFocus) return
+    const id = setInterval(() => { void loadActiveFocus() }, 30000)
+    return () => clearInterval(id)
+  }, [activeFocus, loadActiveFocus])
+  const startFocus = useCallback((target: { task?: Task; habitId?: number }) => setDialog({ kind: 'focus', ...target }), [])
+  const finishFocus = async () => {
+    if (!activeFocus) return
+    try {
+      const r = await kaguyaApi.focus.finish(activeFocus.id)
+      setActiveFocus(null)
+      reload()
+      toast(r.session?.habit_checked_in ? 'Sessão concluída — check-in do hábito registrado.' : 'Sessão concluída.', { tone: 'success' })
+    } catch (e) { toast(e instanceof Error && !/^HTTP \d+$/.test(e.message) ? e.message : 'Não foi possível concluir a sessão.', { tone: 'error' }) }
+  }
+
   const toggleComplete = useCallback((t: Task) => act.toggleComplete({ reload }, t), [reload])
   const newTask = useCallback((defaults?: NewTaskDefaults) => setDialog({ kind: 'new', defaults }), [])
 
   const ctx = useMemo<KaguyaCtx>(() => ({
     rev, reload, today, route, goto, openTask, prefs, setPrefs, space, projects, groups, filters, sidebarState, retrySidebar,
-    projectNames, inboxId, newTask, toggleComplete,
-  }), [rev, reload, today, route, goto, openTask, prefs, setPrefs, space, projects, groups, filters, sidebarState, retrySidebar, projectNames, inboxId, newTask, toggleComplete])
+    projectNames, inboxId, newTask, startFocus, toggleComplete,
+  }), [rev, reload, today, route, goto, openTask, prefs, setPrefs, space, projects, groups, filters, sidebarState, retrySidebar, projectNames, inboxId, newTask, startFocus, toggleComplete])
 
   // Paleta Ctrl+K: busca tarefas abertas no índice local e ABRE a escolhida (Enter nunca cria — o bug do shell antigo).
   const provider = useMemo<CommandProvider>(() => ({
@@ -131,6 +158,8 @@ export function KaguyaNextShell() {
       case 'group-list': return route.id !== undefined ? <GroupListScreen id={route.id} /> : <Today />
       case 'group': return route.id !== undefined ? <GroupBoardScreen groupId={route.id} /> : <Today />
       case 'eisenhower': return <Eisenhower />
+      case 'focus': return <Focus />
+      case 'habits': return <Habits />
       case 'stats': return <Stats />
       case 'logbook': return <Logbook />
       case 'trash': return <Trash />
@@ -172,6 +201,7 @@ export function KaguyaNextShell() {
         }
         commands={[
           { id: 'kaguya.new', label: 'Nova tarefa', icon: 'add', keywords: 'criar adicionar tarefa', run: () => newTask() },
+          { id: 'kaguya.focus', label: 'Iniciar foco', icon: 'timer', keywords: 'pomodoro concentrar', run: () => startFocus({}) },
           { id: 'kaguya.today', label: 'Ir para o Meu Dia', icon: 'sun', run: () => goto({ view: 'today' }) },
           { id: 'kaguya.search', label: 'Buscar tarefas (inclui concluídas)', icon: 'search', keywords: 'procurar', run: () => setDialog({ kind: 'search', q: '' }) },
           { id: 'kaguya.space.work', label: 'Espaço: só Trabalho', icon: 'work', run: () => setPrefs({ space: 'work' }) },
@@ -222,6 +252,16 @@ export function KaguyaNextShell() {
           )}
         </div>
         {dialog?.kind === 'new' && <NewTaskModal defaults={dialog.defaults} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'focus' && <FocusStartModal task={dialog.task} habitId={dialog.habitId} onClose={() => setDialog(null)} onStarted={() => { void loadActiveFocus() }} />}
+        {dialog?.kind === 'focus-cancel' && activeFocus && (
+          <FocusCancelModal
+            sessionId={activeFocus.id}
+            elapsedMin={Math.max(0, Math.floor((Date.now() - new Date(activeFocus.started_at).getTime()) / 60000))}
+            onClose={() => setDialog(null)}
+            onCancelled={() => { setActiveFocus(null); reload() }}
+          />
+        )}
+        {activeFocus && <FocusWidget session={activeFocus} onFinish={() => void finishFocus()} onCancel={() => setDialog({ kind: 'focus-cancel' })} />}
         {dialog?.kind === 'search' && <SearchModal initial={dialog.q} onClose={() => setDialog(null)} />}
       </AppShell>
     </KaguyaContext.Provider>

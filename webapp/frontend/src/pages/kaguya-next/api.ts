@@ -17,7 +17,7 @@ export function gcalCalendarId(cal: string): string {
 
 import { api } from '../../lib/api'
 import type { StatsPayload } from '../../design/core/stats'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, HabitSchedule, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry, FocusStats, FocusHeatDay, FocusAchievement, TaskFocusSummary, FinishFocusResult, WorkContext, ArchivedProject, SchedulePrefs, ScheduleOverride, Dependencies, BulkAction, BulkUndo, CompletedPage, ActivityEvent, TrashItem, TemplateInfo, TagCount, DueReviewProject } from './types'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, HabitSchedule, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry, FocusStats, FocusHeatDay, FocusAchievement, TaskFocusSummary, FinishFocusResult, WorkContext, ArchivedProject, SchedulePrefs, ScheduleOverride, Dependencies, BulkAction, BulkUndo, CompletedPage, ActivityEvent, TrashItem, TemplateInfo, TagCount, DueReviewProject, ArchivedHabit } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -284,6 +284,9 @@ export const kaguyaApi = {
   }>) => api.patch<MutationResult>(`${BASE}/habits/${id}`, body),
   // Excluir = arquivar (soft delete; o histórico fica).
   deleteHabit: (id: number) => api.del<MutationResult>(`${BASE}/habits/${id}`),
+  // Hábitos arquivados (para restaurar; o histórico volta intacto).
+  listArchivedHabits: () => api.get<ArchivedHabit[]>(`${BASE}/habits/archived`),
+  restoreHabit: (id: number) => api.post<MutationResult>(`${BASE}/habits/${id}/restore`, {}),
   // Check-in de um dia (date vazio = hoje; value para mensurável). Devolve a força recalculada.
   checkin: (id: number, body: { date?: string; value?: number | null } = {}) =>
     api.post<MutationResult>(`${BASE}/habits/${id}/checkin`, body),

@@ -509,6 +509,14 @@ export interface Habit {
   in_my_day: boolean             // selecionado para o Meu Dia de hoje
 }
 
+// Hábito arquivado (soft delete): aparece na aba “Arquivados” para restaurar.
+export interface ArchivedHabit {
+  id: number
+  name: string
+  icon: string | null
+  archived_at: string
+}
+
 // Um dia do histórico de check-ins (para o heatmap anual). Array esparso vindo do backend
 // (só dias com check-in); o componente de heatmap densifica para a grade contínua.
 export interface HabitHeatDay {

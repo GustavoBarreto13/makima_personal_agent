@@ -59,7 +59,7 @@ from agents.kaguya.tools_contexts import (  # noqa: F401
 from agents.kaguya.tools_habits import (  # noqa: F401
     list_habits, create_habit, update_habit, archive_habit,
     remove_check_in, get_habit, get_habit_history, resolve_habit_id_by_name,
-    list_habit_source_providers,
+    list_habit_source_providers, unarchive_habit, list_archived_habits,
 )
 # Tiny Experiments — spec 029. Webapp-first: as funções são re-exportadas aqui para o router
 # REST (/api/tasks/experiments/*), mas nesta fatia NÃO são registradas no agente ADK em

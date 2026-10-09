@@ -91,7 +91,7 @@ from agents.kaguya.calendar_prefs import get_calendar_prefs, set_calendar_pref
 # Hábitos — fatia 014 / Fase 4. CRUD + check-ins + histórico (força calculada na leitura).
 from agents.kaguya.tools_habits import (
     list_habits, get_habit, create_habit, update_habit,
-    archive_habit, check_in, remove_check_in, get_habit_history,
+    archive_habit, unarchive_habit, list_archived_habits, check_in, remove_check_in, get_habit_history,
     list_habit_source_providers,
     # Meu Dia (spec 067) — hábito selecionado entra no plano/capacidade do dia
     add_habit_to_my_day, remove_habit_from_my_day,
@@ -1422,6 +1422,13 @@ def list_habit_source_providers_route(user: dict = Depends(require_user)) -> lis
     return list_habit_source_providers()  # listagem — sem _check_result
 
 
+# Estático — antes de /habits/{habit_id}. Hábitos arquivados (para restaurar).
+@router.get("/habits/archived")
+def list_archived_habits_route(user: dict = Depends(require_user)) -> list[dict]:
+    """Lista os hábitos arquivados."""
+    return list_archived_habits()  # listagem — sem _check_result
+
+
 @router.get("/habits/{habit_id}")
 def get_habit_route(habit_id: int, user: dict = Depends(require_user)) -> dict:
     """Detalhe de um hábito (com força/aderência)."""
@@ -1440,6 +1447,12 @@ def update_habit_route(habit_id: int, body: UpdateHabitBody, user: dict = Depend
 def archive_habit_route(habit_id: int, user: dict = Depends(require_user)) -> dict:
     """Arquiva um hábito (soft delete — o histórico é preservado)."""
     return _check_result(archive_habit(habit_id))
+
+
+@router.post("/habits/{habit_id}/restore")
+def restore_habit_route(habit_id: int, user: dict = Depends(require_user)) -> dict:
+    """Reativa um hábito arquivado (o histórico volta intacto)."""
+    return _check_result(unarchive_habit(habit_id))
 
 
 @router.get("/habits/{habit_id}/history")

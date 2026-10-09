@@ -661,6 +661,22 @@ def archive_habit(habit_id: int) -> dict:
     return {"status": "ok", "message": "Hábito arquivado."}
 
 
+def list_archived_habits() -> list:
+    """Lista os hábitos arquivados (para restaurar), do arquivado mais recente ao mais antigo.
+
+    Returns:
+        Lista de ``{id, name, icon, archived_at}``. É uma **listagem**.
+    """
+    return run_select(
+        """
+        SELECT id, name, icon, archived_at
+        FROM habits
+        WHERE archived_at IS NOT NULL
+        ORDER BY archived_at DESC, id DESC
+        """
+    )
+
+
 def unarchive_habit(habit_id: int) -> dict:
     """Reativa um hábito arquivado (limpa o ``archived_at``).
 
