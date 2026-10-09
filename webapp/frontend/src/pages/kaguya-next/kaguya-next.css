@@ -124,3 +124,18 @@
 /* ── Preferências ── */
 .kn-sched, .kn-navprefs { display: flex; flex-direction: column; gap: var(--ds-space-3); }
 .kn-navpref { display: inline-flex; gap: 2px; }
+
+/* ── Estatísticas: achados e barras ── */
+.kn-insights { display: flex; flex-direction: column; gap: var(--ds-space-2); margin: 0; padding: 0; list-style: none; }
+.kn-insight { display: flex; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border: 1px solid var(--ds-line); border-inline-start-width: 4px; border-radius: var(--ds-r-md); background: var(--ds-card); }
+.kn-insight p { margin: 2px 0 0; }
+.kn-sev-alert { border-inline-start-color: var(--ds-danger); }
+.kn-sev-alert > .ds-ic { color: var(--ds-danger); }
+.kn-sev-warn { border-inline-start-color: var(--ds-warn); }
+.kn-sev-warn > .ds-ic { color: var(--ds-warn); }
+.kn-sev-info { border-inline-start-color: var(--ds-accent); }
+.kn-sev-info > .ds-ic { color: var(--ds-accent-deep); }
+.kn-ringrow { display: flex; align-items: center; gap: var(--ds-space-4); margin-bottom: var(--ds-space-3); }
+.kn-ringrow p { margin: 0; }
+.kn-bars { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.kn-bars li { display: grid; grid-template-columns: minmax(90px, 140px) 1fr 3ch; align-items: center; gap: var(--ds-space-3); font-size: var(--ds-text-sm); }
