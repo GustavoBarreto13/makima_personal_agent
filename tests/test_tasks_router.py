@@ -49,7 +49,16 @@ def test_list_tasks(mock_list):
     resp = client.get(f"{_BASE}?project_id=1")
     assert resp.status_code == 200
     assert resp.json()[0]["id"] == 10
-    mock_list.assert_called_once_with(1, False)
+    mock_list.assert_called_once_with(1, False, False)   # adiadas ficam de fora por padrão (spec 075)
+
+
+@patch("webapp.backend.routers.tasks.list_tasks")
+def test_list_tasks_include_deferred(mock_list):
+    """GET /?include_deferred=true traz também as adiadas."""
+    mock_list.return_value = []
+    resp = client.get(f"{_BASE}?project_id=1&include_deferred=true")
+    assert resp.status_code == 200
+    mock_list.assert_called_once_with(1, False, True)
 
 
 @patch("webapp.backend.routers.tasks.list_tasks_today")

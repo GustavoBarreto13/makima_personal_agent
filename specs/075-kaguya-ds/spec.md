@@ -1,6 +1,6 @@
 # Spec 075 — Kaguya no Design System (e um app de tarefas completo)
 
-**Status:** em andamento.
+**Status:** em andamento — fases 0–6 e 10 entregues; a 7 está parcial (ver "Estado da implementação").
 **Branch:** `075-kaguya-ds` (a partir do `master`).
 **Plano de execução:** fases 0–13, um commit por fase, como nas specs 072–074. Rollout em paralelo
 (`/tasks-next`, como a Frieren e a Akane) e revisão final com a skill `impeccable`.
@@ -96,3 +96,42 @@ Trabalho passa `space=work`. Pendência registrada em `agents/komi/CLAUDE.md`.
 - Reativar o pipeline de lembretes (`due_reminder_sent_at`).
 - Mudanças na Komi além do contrato descrito acima.
 - Auto-agendamento estilo Motion.
+
+## Estado da implementação (atualizado a cada marco)
+
+**Pronto e commitado na branch `075-kaguya-ds`** (o `/tasks` atual não foi tocado e segue funcionando):
+
+- **Backend (fases 1–5):** fuso único (`tz.py`); cascata em todos os níveis; recorrência que preserva tags/estimativa/meta/pessoas/bloco
+  e carimba `series_id`; PATCH limpa estimativa/coluna; coluna "Concluído" ≡ tarefa concluída; espelho do Google sem eventos órfãos;
+  schema + `scripts/migrate_kaguya_ds.py`; histórico `task_activity`; adiar (`start_date`); aguardando com cobrança; dependências;
+  edição em massa com desfazer; logbook, lixeira completa, templates/duplicar, gerenciador de tags; agenda (expediente, almoço,
+  acordar/dormir, exceções) com **dois tempos livres** e digest só com trabalho em dia de trabalho; espaço Trabalho/Pessoal em todas
+  as consultas; excluir lista ≠ arquivar; estatísticas (`StatsPayload` + planejamento); 74 tools no MCP (paridade com o webapp);
+  recorrência rica (vários dias, dias úteis, último dia do mês, fim por data/contagem).
+- **Design System (fase 6):** arte `shuchiin` (pior contraste 6,0:1), ícones, **editor/leitor de Markdown** (`design/core/markdown`,
+  `design/ui/markdown`).
+- **`/tasks-next` (fases 7, 8 e 10 parciais):** shell com espaço global, sidebar unificada (ocultar/fixar, desktop e celular), rota por hash
+  com a tarefa aberta; **Meu Dia**; listas, Inbox/Todas/Amanhã/7 dias, GTD e smart-lists no estilo TickTick (subtarefas, seleção,
+  teclado, ação em massa); **painel de detalhe**; Concluídas, Lixeira, Arquivadas, Templates, Etiquetas; **Estatísticas**; preferências
+  de agenda. Lint do DS (`migrating`) vigia a pasta nova.
+
+**Falta (nesta ordem sugerida):**
+
+1. Telas: Kanban e quadro de grupo (só reskin — a estrutura é a do shell antigo), Calendário, Eisenhower, Hábitos, Metas, Experimentos,
+   Foco (hoje mostram "ainda está na versão atual").
+2. Fluxos que o shell antigo tem e o novo ainda não: criar/editar/arquivar/excluir **lista**, **grupo**, **coluna** e **smart-list**;
+   **contextos** (@casa); revisão semanal; processamento da Inbox (wizard); arrastar para reordenar/aninhar na lista; modo férias já está.
+3. Fase 11 (troca): ver "Dependências externas" abaixo; fase 12 (documentação) e fase 13 (revisão `impeccable`).
+
+**Dependências externas da pasta antiga (resolver na troca):** `components/DatePicker.tsx` e `MiniCalendar.tsx` (usam
+`pages/kaguya/lib/dateUtils` e `ui/Icons`), `pages/nami/screens/Home.tsx` + teste e `pages/violet/components/CounselSection.tsx`
+(`kaguyaApi`).
+
+**Adiados de propósito:** unificar `list_tasks_today` com a DSL (semânticas diferentes: só tarefas-pai × qualquer nível); esconder a
+sentinela `_UNSET` do schema MCP; espelho do Google em dois calendários (Trabalho/Pessoal) — mexe em migração de eventos e na lista de
+exclusão do hub, não vale arriscar sem acesso ao Google.
+
+**Atenção — o que NÃO foi executado:** não há PostgreSQL nesta máquina. Os testes de integração (`DATABASE_URL`) estão escritos e
+são pulados; todo SQL novo foi validado só por sintaxe (`pglast`). Antes do deploy: rodar `pytest` com banco, e
+`scripts/migrate_kaguya_ds.py` (dry-run, depois `--apply`) **antes** do deploy do backend. Nada disso foi visto no navegador ainda.
+
