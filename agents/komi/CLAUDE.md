@@ -327,3 +327,19 @@ Executar de dentro do container: `docker exec makima-web python -m scripts.migra
 - **Não fazer import circular direto** — `agents.komi.tools` não importa de `agents.nami`, `agents.kaguya`, `agents.frieren` ou `agents.journal` no topo do módulo. Imports são lazy (dentro das funções).
 - **Não criar duplicata de nome** — o índice único parcial bloqueia no banco; o agente deve checar antes com `find_people`.
 - **Não usar markdown** nos templates de resposta — apenas HTML e emojis (Telegram renderiza HTML).
+
+---
+
+## Contrato com a Kaguya: pessoas de trabalho (spec 075 — PENDENTE na Komi)
+
+A Kaguya separa **Trabalho × Pessoal** em todas as telas. Pessoas relacionadas a trabalho devem aparecer na parte de trabalho da
+Kaguya (seletor de pessoas e "aguardando"). A Komi **ainda não distingue** pessoas de trabalho; a Kaguya já deixou a ponta
+pronta em `agents/kaguya/people_space.py::person_ids_for_space(space)`:
+
+- se a coluna `people.context` (`'personal'` \| `'work'`) **existir** — checado uma vez em `information_schema` —, o seletor de pessoas do
+  espaço Trabalho filtra por ela;
+- se **não existir**, devolve `None` e nada é filtrado (comportamento atual).
+
+Quando a Komi ganhar o campo, basta criar `people.context TEXT NOT NULL DEFAULT 'personal' CHECK (context IN ('personal','work'))`
+(e expô-lo na tela da Komi): a Kaguya passa a filtrar sozinha. Também falta um *deep link* da Kaguya para a pessoa (hoje a menção
+`@[Nome](komi:id)` abre `/people`).

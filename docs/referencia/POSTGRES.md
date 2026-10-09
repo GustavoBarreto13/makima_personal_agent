@@ -40,13 +40,13 @@ diferentes.
   Todos os schemas do repo são **idempotentes** (`CREATE TABLE IF NOT EXISTS`,
   `CREATE INDEX IF NOT EXISTS`), então rodar de novo não dá erro nem duplica dados.
 
-### Os dez domínios (59 tabelas no total)
+### Os dez domínios (64 tabelas no total)
 
 | Domínio | Onde | Tabelas |
 |---|---|---|
 | **Finanças** | Agente Nami | `transactions`, `subscriptions`, `installment_groups`, `accounts`, `credit_cards`, `loans`, `budgets` |
 | **Livros** | Agente Frieren | `books`, `reading_logs`, `shelves`, `book_shelves`, `book_bullets` |
-| **Tarefas / hábitos / experimentos / metas** | Agente Kaguya | `task_project_groups`, `task_projects`, `task_columns`, `tasks`, `task_recurrences`, `task_tags`, `task_tag_links`, `task_filters`, `kanban_views`, `habits`, `habit_checkins`, `habit_schedules`, `calendar_prefs`, `birthday_sync_links`, `tiny_experiments`, `tiny_experiment_logs`, `goals`, `goal_milestones` |
+| **Tarefas / hábitos / experimentos / metas** | Agente Kaguya | `task_project_groups`, `task_projects`, `task_columns`, `tasks`, `task_recurrences`, `task_tags`, `task_tag_links`, `task_filters`, `kanban_views`, `habits`, `habit_checkins`, `habit_schedules`, `calendar_prefs`, `birthday_sync_links`, `tiny_experiments`, `tiny_experiment_logs`, `goals`, `goal_milestones`, `kaguya_schedule_prefs`, `kaguya_schedule_overrides`, `task_dependencies`, `task_templates`, `task_activity` |
 | **Filmes** | Agente Akane | `movies`, `diary_entries`, `movie_lists`, `movie_list_items`, `movie_vault_items`, `movie_people`, `movie_favorites` |
 | **Animes** | Agente Marin | `anime`, `watch_logs`, `episodes`, `mal_sync_state`, `anime_lists`, `anime_list_items`, `anime_favorites` |
 | **Séries de TV** | Agente Mai | `series`, `seasons`, `series_episodes`, `series_watch_logs` |
@@ -430,6 +430,7 @@ Grupos de listas — as "pastas" da barra lateral (um nível só, sem aninhament
 | `id` | SERIAL | PK | — | ID. |
 | `name` | TEXT | NÃO | — | Nome do grupo na sidebar. |
 | `position` | BIGINT | NÃO | `0` | Ordem manual (posição esparsa ×1000). |
+| `context` | TEXT | NÃO | `'personal'` | *(spec 075)* Espaço do grupo: `personal` \| `work` (`CHECK`). As listas criadas depois nele **herdam**; `set_group_context` aplica às que já existem. |
 | `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação. |
 
 ### `task_projects`
@@ -447,6 +448,9 @@ As "Listas" (contextos GTD). Inclui o **Inbox** indelével.
 | `is_birthdays` | BOOLEAN | NÃO | `FALSE` | Marca a lista "Aniversários", gerenciada pelo sync Komi↔Kaguya (fase 026). Criada sob demanda pela lógica — nunca semeada pelo schema. |
 | `position` | BIGINT | NÃO | `0` | Ordem manual (esparsa ×1000). |
 | `archived_at` | TIMESTAMPTZ | SIM | — | Se preenchida, a lista está arquivada (some das views, preserva dados). |
+| `deleted_at` | TIMESTAMPTZ | SIM | — | *(spec 075)* Lista **excluída** (some de tudo; restaurável pela Lixeira). Antes, excluir só gravava `archived_at` — agora são coisas distintas. |
+| `review_interval_days` | INT | SIM | — | *(spec 075)* A cada quantos dias a lista precisa de revisão (`> 0`; NULL = sem cadência). Alimenta "precisa revisar" na revisão semanal. |
+| `sequential` | BOOLEAN | NÃO | `FALSE` | *(spec 075)* Projeto sequencial: só a próxima ação (primeira aberta por posição) aparece nas visões. |
 | `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação. |
 
 **Índices:** `uq_task_projects_inbox` — índice **único parcial** em `(is_inbox) WHERE is_inbox`, ou
@@ -494,6 +498,10 @@ O núcleo do sistema. Uma linha vira tarefa, subtarefa, evento ou aniversário.
 | `position` | BIGINT | NÃO | `0` | Ordem manual (esparsa ×1000). |
 | `completed_at` | TIMESTAMPTZ | SIM | — | NULL = aberta; preenchida = concluída. |
 | `deleted_at` | TIMESTAMPTZ | SIM | — | *Soft delete* (NULL = viva). |
+| `start_date` | DATE | SIM | — | *(spec 075)* **Adiar até**: a tarefa só aparece nas visões a partir deste dia. Diferente de `start_at` (bloco de horário). |
+| `waiting_person_id` | TEXT | SIM | — | *(spec 075)* Pessoa (id da Komi, `people.id`) de quem se espera uma resposta. Sem FK de propósito (como `person_links`). |
+| `follow_up_date` | DATE | SIM | — | *(spec 075)* Quando cobrar: no dia, a tarefa "aguardando" cai no Meu Dia. |
+| `series_id` | UUID | SIM | — | *(spec 075)* Identidade da série de uma recorrente: todas as ocorrências (concluídas e a viva) compartilham. |
 | `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação. |
 | `updated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Atualização. |
 
@@ -510,6 +518,8 @@ O núcleo do sistema. Uma linha vira tarefa, subtarefa, evento ou aniversário.
 - `idx_tasks_completed` — `(completed_at) WHERE completed_at IS NOT NULL`.
 - `idx_tasks_my_day` — `(my_day_date) WHERE my_day_date IS NOT NULL`.
 - `idx_tasks_goal` — `(goal_id) WHERE goal_id IS NOT NULL`.
+- `idx_tasks_start_date` / `idx_tasks_follow_up` *(spec 075)* — parciais, só abertas e vivas.
+- `idx_tasks_series` *(spec 075)* — `(series_id) WHERE series_id IS NOT NULL`.
 
 ### `task_recurrences` *(ativa desde a fatia 012)*
 
@@ -812,6 +822,77 @@ Marcos nomeados dentro de uma meta (contribuem para o progresso por marcos).
 | `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação (ordena a lista, ASC). |
 
 **Índices:** `idx_goal_milestones_goal` em `(goal_id)`.
+
+### `kaguya_schedule_prefs` *(spec 075 — agenda de trabalho)*
+
+Preferência global de 1 linha (como `myday_prefs`). É a base dos **dois tempos livres**: o do trabalho
+(expediente − almoço − compromissos) e o geral (acordar→dormir − expediente − compromissos), usados
+pelo Meu Dia, pelo digest e pelas estatísticas de sobrecarga (`capacity.compute_free_time`).
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | INT | PK | `1` | Sempre `1` (`CHECK (id = 1)`). |
+| `work_days` | SMALLINT[] | NÃO | `{1,2,3,4,5}` | Dias de trabalho em **ISO** (1 = segunda … 7 = domingo; `isoweekday`). |
+| `work_start` / `work_end` | TIME | NÃO | `09:00` / `18:00` | Expediente (`work_end > work_start`). |
+| `lunch_start` / `lunch_end` | TIME | SIM | `12:00` / `13:00` | Almoço, dentro do expediente (`lunch_end > lunch_start`). |
+| `lunch_is_free` | BOOLEAN | NÃO | `FALSE` | `TRUE` = o almoço conta como tempo livre; `FALSE` = é descontado do expediente. |
+| `wake_time` / `sleep_time` | TIME | NÃO | `07:00` / `23:00` | Acordar e dormir. `sleep_time < wake_time` = dorme depois da meia-noite. |
+| `updated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Atualização. |
+
+### `kaguya_schedule_overrides` *(spec 075)*
+
+Exceções pontuais à agenda: "vou trabalhar neste sábado" (`works = TRUE`) ou "folga nesta terça" (`works = FALSE`).
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `day` | DATE | PK | — | O dia da exceção (fuso America/Sao_Paulo). |
+| `works` | BOOLEAN | NÃO | — | Trabalha neste dia? |
+| `work_start` / `work_end` | TIME | SIM | — | Horário só deste dia; ambos NULL = usa o padrão (`CHECK`: os dois ou nenhum, `end > start`). |
+| `note` | TEXT | SIM | — | Observação. |
+| `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação. |
+
+### `task_dependencies` *(spec 075)*
+
+"Esta tarefa só pode começar depois daquela." Bloqueada = tem ao menos uma dependência cujo bloqueador ainda está aberto e vivo. Ciclos são barrados pela camada de lógica.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `task_id` | INT | PK | — | **FK** → `tasks(id)` `ON DELETE CASCADE`. A tarefa bloqueada. |
+| `blocked_by_id` | INT | PK | — | **FK** → `tasks(id)` `ON DELETE CASCADE`. A tarefa que precisa terminar antes (`CHECK task_id <> blocked_by_id`). |
+| `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação. |
+
+**Índices:** `idx_task_dependencies_blocker` em `(blocked_by_id)`.
+
+### `task_templates` *(spec 075)*
+
+Templates de tarefa e de lista (duplicar/reaplicar). O `payload` guarda um instantâneo com datas **relativas** ao momento da aplicação (ex.: `due_offset_days`).
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `kind` | TEXT | NÃO | — | `task` \| `project` (`CHECK`). |
+| `name` | TEXT | NÃO | — | Nome (único por `kind`, sem diferenciar caixa: `uq_task_templates_kind_name`). |
+| `context` | TEXT | NÃO | `'personal'` | `personal` \| `work`. |
+| `payload` | JSONB | NÃO | — | Instantâneo: tarefa com subtarefas/etiquetas/estimativa; lista com colunas e tarefas. |
+| `created_at` / `updated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação / atualização. |
+
+### `task_activity` *(spec 075)*
+
+Histórico de eventos da tarefa, *append-only*, gravado na **mesma transação** da ação que o gerou. Base do logbook (Concluídas), da aba Histórico do painel e das estatísticas de planejamento (quantas vezes uma tarefa foi empurrada, planejado × feito).
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | BIGSERIAL | PK | — | ID. |
+| `task_id` | INT | NÃO | — | **FK** → `tasks(id)` `ON DELETE CASCADE`. |
+| `kind` | TEXT | NÃO | — | `created` \| `completed` \| `reopened` \| `rescheduled` \| `my_day_in` \| `my_day_out` \| `deferred` \| `moved` \| `deleted` \| `restored` (`CHECK`). |
+| `from_value` / `to_value` | TEXT | SIM | — | Valor antes/depois como texto (data ISO, id de lista…). |
+| `at` | TIMESTAMPTZ | NÃO | `NOW()` | Quando. |
+
+**Índices:** `idx_task_activity_task` em `(task_id, at DESC)`; `idx_task_activity_kind_at` em `(kind, at DESC)`.
+
+> **Migração** — `scripts/migrate_kaguya_ds.py` (dry-run por padrão, `--apply` grava, idempotente) aplica o bloco
+> `-- BEGIN SPEC 075 … -- END SPEC 075` de `schema_tasks_pg.sql` e faz o *backfill* de `series_id` a partir das regras
+> vivas. Rodar **antes** do deploy do backend: as colunas novas entram nos `SELECT`.
 
 ### Seeds iniciais
 

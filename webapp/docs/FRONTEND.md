@@ -226,6 +226,36 @@ item aberto vivem no **hash** (`lib/routes.ts`): `#inicio`, `#biblioteca`, `#que
 - CSS: só complementos `.fr-*` com tokens `--ds-*` em `frieren.css`. Testes: `FrierenShell.test.tsx`,
   `screens.test.tsx`, `nullSafety.test.tsx` e `lib/*.test.ts`.
 
+### Kaguya no Design System — `/tasks-next` (`src/pages/kaguya-next/`, spec 075)
+
+Reconstrução da Kaguya sobre o padrão (`AppShell`, `useCollection`, `StatsPage`, `DetailPage`, `Modal`, `confirm()` + `toast`
+com Desfazer), arte **"Shuchiin aristocrático"** (`art/shuchiin.css`: vinho e dourado, papel timbrado). Convive com o shell
+antigo: **`/tasks` segue sendo o `KaguyaShell`** até a troca (fase 11) e `/tasks-next` é o novo. `conformance.json` marca a
+Kaguya como `migrating` (o lint vigia a pasta nova).
+
+- **Rotas por hash** (`lib/routes.ts`): `#hoje`, `#lista/12`, `#kanban/12`, `#grupo/3` (quadro) / `#grupo-lista/3`, `#visao/inbox|all|tomorrow|next7`,
+  `#gtd/waiting`, `#filtro/5`, `#calendario`, `#eisenhower`, `#habitos`, `#metas[/id]`, `#experimentos[/id]`, `#foco`, `#concluidas`,
+  `#estatisticas`, `#organizar`, `#etiquetas`, `#templates`, `#arquivadas`, `#lixeira`; o sufixo `/t/88` abre a tarefa no painel.
+- **Espaço global** (Tudo · Trabalho · Pessoal) na barra superior: filtra todas as telas pelo `?space=`; a barra lateral, o digest e
+  o Meu Dia respeitam. Menu lateral com ocultar e fixar itens (desktop e barra inferior do celular), nas Preferências.
+- **Lista no estilo TickTick**: 3 painéis (menu | lista | detalhe), adicionar no topo com chips ao vivo, subtarefas recolhíveis,
+  seleção (Ctrl/Shift + clique) com barra de ação em massa e Desfazer, teclado (↑↓ Espaço Enter 0–3 T A Delete, **Alt+setas** para
+  reordenar/aninhar), arrastar pela alça (antes/depois/dentro), concluídas recolhidas no fim, ordenar/agrupar/filtrar por tela.
+- **Painel de detalhe** (salva por campo): data/hora, prioridade, título, lista, repetição (+ modo), estimativa, adiar, **notas em
+  Markdown** (`MarkdownEditor` do DS: clica e edita, barra e atalhos, checklists clicáveis, callouts, `@pessoa` e `[[tarefa`),
+  subtarefas, etiquetas, GTD/aguardando (pessoa da Komi + cobrar em), tipo, horário (bloco), coluna, local (Onde @), pessoas,
+  dependências e aba **Histórico**.
+- **Meu Dia**: dois tempos livres (trabalho e geral), plano (dividido ou único), pendências, sugestões, follow-ups, experimentos,
+  hábitos, resumo do foco, modo férias e a **linha do dia** (arrastar a tarefa até uma hora reserva o horário).
+- **Kanban e quadro de grupo**: só a pele — estrutura idêntica ao shell antigo (views, filtro, colunas "Vidro", cards, dnd, rodapé).
+- **Calendário** (Dia/Semana/Mês): tarefas + Google + outros agentes, faixa de expediente/almoço, mover/redimensionar/criar por
+  arraste (com Desfazer), bandejas "Sem horário" e "Sem data", popover e menu de contexto.
+- **Organizar** (`#organizar`): listas, grupos, smart-lists (construtor de regras com todos os campos), locais (Onde @), revisão
+  semanal e processamento do Inbox (wizard com teclas 1–6).
+- **Estatísticas**: `StatsPage` + aba **Planejamento** (onde o plano falha). **Foco**, **Hábitos** (com arquivados), **Metas**,
+  **Experimentos** em `DetailPage`.
+- API: `kaguya-next/api.ts` (cópia estendida de `kaguyaApi.ts`; na troca vira o único cliente).
+
 ### KaguyaShell — Tarefas e agenda (`src/pages/kaguya/`)
 
 **Roteamento:** estado interno `{view, param}` (tipo `KaguyaView` em `types.ts`). O maior shell

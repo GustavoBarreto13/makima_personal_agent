@@ -561,6 +561,38 @@ férias.
 | `POST` | `/api/tasks/goals/{goal_id}/unlink` | Desvincula um item (ele permanece na sua seção). |
 | `POST` | `/api/tasks/goals/{goal_id}/review` | Encerra a meta com a revisão (desfecho + aprendizado). |
 
+### Spec 075 — espaço, agenda, edição em massa, histórico e planejamento
+
+Parâmetros novos em rotas existentes: `?space=work|personal` (omitido = tudo) em `/views/*`, `/views/counts`, `/today`,
+`/eisenhower`, `/calendar`, `/search`, `/filters/*/tasks`, `/filters/builtin/*/tasks` e `/stats`; `?include_deferred=true`
+em `GET /api/tasks` (por padrão as tarefas adiadas e as de projeto sequencial que não são a próxima ação ficam de fora).
+`PATCH /api/tasks/{id}` aceita `start_date` (adiar), `follow_up_date`, `waiting_person_id`, `duration_min` e `column_id`
+com `null` (limpa). `POST /api/tasks/groups` aceita `context`; `PATCH /projects/{id}` aceita `review_interval_days` e `sequential`.
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` / `PATCH` | `/api/tasks/schedule` | Agenda de trabalho (dias, expediente, almoço, acordar/dormir). Base dos dois tempos livres. |
+| `GET` | `/api/tasks/schedule/overrides` | Exceções por dia (sábado trabalhado, folga). |
+| `PUT` / `DELETE` | `/api/tasks/schedule/overrides/{day}` | Cria/atualiza ou remove a exceção de um dia (`AAAA-MM-DD`). |
+| `GET` / `POST` | `/api/tasks/{id}/dependencies` | Lista (`blocked_by`, `blocking`, `is_blocked`) ou adiciona "depende de" (ciclo → 400). |
+| `DELETE` | `/api/tasks/{id}/dependencies/{blocked_by_id}` | Remove a dependência. |
+| `POST` | `/api/tasks/bulk` | Ação em massa em uma transação (`complete`, `reopen`, `delete`, `set_project`, `set_priority`, `set_due_date`, `set_start_date`, `add_tag`, `remove_tag`, `add_to_my_day`, `remove_from_my_day`). Devolve `undo` (snapshot). |
+| `POST` | `/api/tasks/bulk/undo` | Desfaz uma ação em massa a partir do `undo` devolvido. |
+| `GET` | `/api/tasks/completed` | Logbook: concluídas por dia local (`?start=&end=&space=&project_id=&q=&limit=&offset=`), com a contagem por dia. |
+| `GET` | `/api/tasks/{id}/activity` | Histórico de eventos da tarefa (`task_activity`). |
+| `GET` | `/api/tasks/trash/detailed` | Lixeira com origem, data e nº de subtarefas. |
+| `POST` | `/api/tasks/trash/restore` · `/trash/purge` · `/trash/empty` | Restaura, exclui de vez ou esvazia (a UI confirma antes). |
+| `POST` | `/api/tasks/{id}/duplicate` · `/projects/{id}/duplicate` | Duplica a tarefa (com subtarefas) ou a lista. |
+| `GET` / `DELETE` | `/api/tasks/templates` · `/templates/{id}` | Lista / remove templates. |
+| `POST` | `/api/tasks/templates/task/{id}` · `/templates/project/{id}` | Salva a tarefa/lista como template. |
+| `POST` | `/api/tasks/templates/{id}/apply` | Aplica o template (datas relativas a hoje). |
+| `GET` | `/api/tasks/stats` | `StatsPayload` do DS (`?year=&month=&space=`) + bloco `planning` (planejado × feito, empurradas, estimativas, sobrecarga, idade, horas produtivas e `insights` com ação sugerida). |
+| `GET` | `/api/tasks/tags/counts` | Etiquetas com contagem de abertas/total. |
+| `POST` | `/api/tasks/tags/{id}/merge` | Mescla uma etiqueta em outra. |
+| `GET` | `/api/tasks/projects/deleted` · `POST /projects/{id}/restore-deleted` | Listas excluídas (Lixeira) e restauração. |
+| `GET` | `/api/tasks/projects/due-review` | Listas vencidas pela cadência de revisão (`review_interval_days`). |
+| `GET` | `/api/tasks/habits/archived` · `POST /habits/{id}/restore` | Hábitos arquivados e restauração (o histórico volta intacto). |
+
 ### Metas e Hábitos cross-agent (spec 036)
 
 | Método | Rota | O que faz |

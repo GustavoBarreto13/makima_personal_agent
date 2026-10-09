@@ -11,7 +11,7 @@ Política: `legacy` só aparece aqui; `migrating` falha o lint estático; `confo
 | design | conformant | default | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | makima | legacy | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | nami | conformant | nautica | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| kaguya | legacy | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| kaguya | migrating | shuchiin | 🟡 | 🟡 | 🟡 | 🟡 | ⬜ | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
 | frieren | conformant | elfica | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | akane | conformant | noir | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | marin | conformant | neon | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |

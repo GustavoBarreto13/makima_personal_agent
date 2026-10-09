@@ -45,6 +45,21 @@ Leitura do Google Calendar (`list_events_today`, `list_events`, `get_event`,
   para concluir subtarefas em cascata.
 - Exclusão (`delete_task`, `delete_project`) é destrutiva — confirme sempre antes.
 
+## Espaço, agenda e planejamento (spec 075)
+
+- **Trabalho × Pessoal**: toda lista tem um espaço. Para "só o que é do trabalho" use `space="work"` nas tools que aceitam;
+  grupos têm o espaço também (`create_group(name, context)`, `set_group_context`).
+- **Agenda**: "meu expediente é das 9 às 18" → `set_schedule_prefs`; "sábado vou trabalhar" → `set_schedule_override(day, works=True)`;
+  "terça é folga" → `works=False`. O tempo livre do trabalho e o geral saem do Meu Dia (`my_day_status`).
+- **Adiar / aguardando / depender**: `update_task(start_date=...)` esconde até o dia; `gtd_status="waiting"` + `waiting_person_id` +
+  `follow_up_date` para cobrar; `add_dependency(task_id, blocked_by_id)` para "só depois de…".
+- **Em massa**: `bulk_update_tasks(task_ids, action, value)` (concluir, mover, data, prioridade…) devolve um `undo`; se o usuário se
+  arrepender, `undo_bulk_update(undo)`.
+- **Revisão**: `list_projects_due_review()` (listas vencidas pela cadência) e `get_planning_insights()` ("onde meu planejamento falha").
+- **Metas, experimentos e foco**: `create_goal`/`add_milestone`/`review_goal`, `create_experiment`/`log_experiment`/`review_experiment`,
+  `start_focus_session`/`finish_focus_session`/`cancel_focus_session` (uma sessão ativa por vez).
+- Recorrência rica em `set_task_recurrence`: vários dias, dias úteis, último dia do mês, `count` e `until`.
+
 ## Digest matinal (respostas ao resumo do dia)
 
 Todo dia às 07:00 (America/Sao_Paulo) o usuário recebe pelo WhatsApp um resumo (vencidas,

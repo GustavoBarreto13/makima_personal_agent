@@ -165,20 +165,20 @@
       "dir": "src/pages/kaguya-next",
       "shell": "src/pages/kaguya-next/KaguyaNextShell.tsx",
       "art": "shuchiin",
-      "appShell": false,
-      "hero": false,
-      "theme": false,
-      "icons": false,
+      "appShell": true,
+      "hero": true,
+      "theme": true,
+      "icons": true,
       "collections": [],
-      "quickCapture": null,
+      "quickCapture": "task",
       "stats": {
-        "page": false,
-        "metrics": []
+        "page": true,
+        "metrics": ["completed_per_week", "on_time_vs_late", "by_list_tag", "habits_percent", "goals_experiments", "focus"]
       },
-      "detail": false,
-      "prefs": false,
-      "hotkeys": false,
-      "mobile": false
+      "detail": true,
+      "prefs": true,
+      "hotkeys": true,
+      "mobile": true
     },
     "frieren": {
       "status": "conformant",

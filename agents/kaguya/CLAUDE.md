@@ -42,7 +42,16 @@ agents/kaguya/
 ├── focus_achievements.py # motor PURO (sem banco): catálogo fixo de conquistas de foco — spec 062
 ├── focus_habit_provider.py   # provider da fonte automática "Foco (Kaguya)" p/ habit_source_providers — spec 062
 ├── tools_focus.py        # camada de lógica: sessões de foco (start/finish/cancel/stats/heatmap/achievements) — spec 037 + 062
-├── capacity.py           # motor PURO (sem banco): compute_capacity() — janela 8h–22h — fatia 016
+├── capacity.py           # motor PURO (sem banco): compute_capacity() + compute_free_time() (dois tempos livres) — fatia 016 + spec 075
+├── tz.py                 # "hoje"/"agora" em America/Sao_Paulo — fonte única de fuso (SP_TODAY_SQL, today_sp, now_sp) — spec 075
+├── tools_schedule.py     # agenda de trabalho: expediente, almoço, acordar/dormir + exceções por dia — spec 075
+├── tools_dependencies.py # dependências entre tarefas ("só começa depois de…", anti-ciclo) — spec 075
+├── tools_bulk.py         # edição em massa em uma transação + undo por snapshot — spec 075
+├── tools_logbook.py      # concluídas (logbook) e lixeira detalhada — spec 075
+├── tools_templates.py    # duplicar e templates de tarefa/lista — spec 075
+├── tools_stats.py        # StatsPayload do DS + bloco de planejamento (webapp) — spec 075
+├── planning_stats.py     # motor PURO: planejado × feito, empurradas, estimativas, sobrecarga, achados — spec 075
+├── people_space.py       # contrato com a Komi: pessoas de trabalho (people.context, se existir) — spec 075
 ├── digest.py             # digest matinal (tarefas/agenda) → WhatsApp: contexto + sugestão Gemini + tools de resposta pendente
 ├── gcal.py               # cliente Google Calendar compartilhado (read all / write main) — fatia 019 + MIRRORED_SOURCES/ensure_mirror_calendar/list_raw_events (spec 069)
 ├── gcal_sync.py          # espelho best-effort: push/remove tarefas no GCal "Kaguya — Tarefas" — fatia 019
@@ -692,6 +701,37 @@ O link para o Google Maps é uma função pura no frontend
 URL quando o local já é um link (Google Meet etc.).
 
 ---
+
+## Spec 075 — espaço Trabalho/Pessoal, agenda, adiar/aguardar/dependências e planejamento
+
+Resumo do que mudou na camada de lógica (detalhes de colunas em `docs/referencia/POSTGRES.md`):
+
+- **Fuso único** (`tz.py`): "hoje" é `(NOW() AT TIME ZONE 'America/Sao_Paulo')::date` / `today_sp()`. Nada de `date.today()` ou `CURRENT_DATE`
+  em lógica de usuário (o bug de "hoje vira amanhã depois das 21h" veio daí).
+- **Espaço** (`space=work|personal`): o campo existe no DSL (`space`, `group_id`) e em `list_tasks_today`, `list_eisenhower_tasks`, `search_tasks`,
+  calendário, views e stats. Listas guardam `context`; o **grupo** também (listas novas herdam; `set_group_context` aplica às existentes).
+- **Agenda** (`tools_schedule.py` + `capacity.compute_free_time`): expediente, almoço (`lunch_is_free` decide se conta como livre), acordar/dormir
+  (dormir antes de acordar = depois da meia-noite) e exceções por dia. O Meu Dia devolve `free_time = {works, work, general, total}` — o
+  tempo livre **do trabalho** e o **geral** (dois buckets). O digest só fala de trabalho em dia de trabalho (regra + exceção do dia).
+- **Adiar / aguardando / dependências**: `start_date` (some das visões até o dia), `waiting_person_id` + `follow_up_date` (no dia, cai no Meu Dia),
+  `task_dependencies` (`blocked` no payload; ciclo → erro), `task_projects.sequential` (só a próxima ação aparece). `list_tasks(include_deferred=False)`
+  esconde adiadas por padrão.
+- **Recorrência**: "concluir e gerar" copia etiquetas, estimativa, meta, pessoas, coluna e bloco relativo e carimba `series_id`; `build_rrule`
+  aceita vários dias, `WEEKDAYS`, último dia do mês, `COUNT` e `UNTIL` (`describe_rrule` descreve em português).
+- **Cascata**: concluir/excluir/restaurar usam CTE recursiva (todos os níveis); restaurar casa pelo mesmo `deleted_at`.
+- **PATCH com `null`**: `update_task` usa a sentinela `_UNSET` — `duration_min=None` e `column_id=None` **limpam**; omitir não mexe. Coluna
+  "Concluído" ≡ tarefa concluída (soltar nela conclui; concluir move o card).
+- **Edição em massa** (`bulk_update_tasks(task_ids, action, value)`) numa transação, devolvendo `undo` (snapshot, com `pairs` para recorrentes);
+  `undo_bulk_update(undo)` desfaz. **Histórico** em `task_activity` (mesma transação; `_log_activity` usa SAVEPOINT).
+- **Excluir lista ≠ arquivar** (`deleted_at`); `list_deleted_projects`/`restore_deleted_project`; `list_projects_due_review` (cadência).
+- **Estatísticas** (`tools_stats.get_stats_payload`, `get_planning_insights`): `StatsPayload` + achados com ação sugerida
+  ("você conclui só 30% do que coloca no Meu Dia"). O motor puro (`planning_stats.py`) é testado sem banco.
+- **Toolset do Hermes**: 109 tools (antes 53) — agenda, dependências, templates, logbook, planejamento, metas, experimentos, foco
+  (`start_focus_session`…), grupos, fila do Inbox, modo férias, edição em massa, hábitos arquivados. `tests/test_kaguya_toolset_075.py` garante
+  nomes únicos, docstring em todas e schema montável pelo FastMCP.
+- **Migração**: `scripts/migrate_kaguya_ds.py` (dry-run por padrão, `--apply` grava) — rodar no VPS **antes** do deploy do backend.
+- **Adiado de propósito**: unificar `list_tasks_today` com o DSL, esconder o `_UNSET` do schema MCP e dividir o espelho do Google em
+  dois calendários (Trabalho/Pessoal).
 
 ## Tools expostas ao agente (`tools.py`)
 

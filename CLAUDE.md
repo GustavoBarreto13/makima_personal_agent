@@ -42,7 +42,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | Agente | Domínio | Status | Documentação |
 |---|---|---|---|
 | `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1, 040–048, 071 | `agents/nami/CLAUDE.md` |
-| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + GTD/revisão semanal (034/035) + Foco gameficado (037/062) + modo férias (065) | ✅ Fases 2, 011–020, 024–026, 029–030, 034–039, 062, 065 | `agents/kaguya/CLAUDE.md` |
+| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + GTD/revisão semanal (034/035) + Foco gameficado (037/062) + modo férias (065) | ✅ Fases 2, 011–020, 024–026, 029–030, 034–039, 062, 065 · 🔧 075 (Design System + espaço Trabalho/Pessoal + agenda) | `agents/kaguya/CLAUDE.md` |
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada + Tutor de Idiomas (031) + Conselho do Dia (061) | ✅ Fases 027, 031, 061 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) + favoritos/coração + estatísticas no padrão do DS (073) | ✅ Fase 5a, 073 | `agents/frieren/CLAUDE.md` |
 | `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015, 072 | `agents/akane/CLAUDE.md` |
@@ -216,7 +216,16 @@ makima_personal_agent/
 │   │   ├── tools_goals.py      # Metas (áreas, marcos, vínculos, progresso) — spec 030
 │   │   ├── recurrence.py       # motor PURO de recorrência (RRULE) — fatia 012
 │   │   ├── habit_strength.py   # motor PURO da "força" do hábito (EMA) — fatia 014
-│   │   ├── capacity.py         # motor PURO (sem banco): compute_capacity() — fatia 016
+│   │   ├── capacity.py         # motor PURO (sem banco): compute_capacity() + compute_free_time() (dois tempos livres) — fatia 016 + spec 075
+│   │   ├── tz.py               # "hoje"/"agora" em America/Sao_Paulo (fonte única) — spec 075
+│   │   ├── tools_schedule.py   # agenda de trabalho: expediente, almoço, acordar/dormir, exceções por dia — spec 075
+│   │   ├── tools_dependencies.py # "só começa depois de…" (anti-ciclo) — spec 075
+│   │   ├── tools_bulk.py       # edição em massa com Desfazer (snapshot) — spec 075
+│   │   ├── tools_logbook.py    # concluídas (logbook) e lixeira detalhada — spec 075
+│   │   ├── tools_templates.py  # duplicar e templates de tarefa/lista — spec 075
+│   │   ├── tools_stats.py      # StatsPayload + planejamento (webapp) — spec 075
+│   │   ├── planning_stats.py   # motor PURO dos achados de planejamento — spec 075
+│   │   ├── people_space.py     # contrato com a Komi: pessoas de trabalho (people.context) — spec 075
 │   │   ├── experiment_adherence.py # motor PURO de aderência dos experimentos — spec 029
 │   │   ├── goal_progress.py    # motor PURO de progresso das metas — spec 030
 │   │   ├── tools_focus.py      # sessões de foco (start/finish/cancel/stats/heatmap/achievements) — spec 037 + 062

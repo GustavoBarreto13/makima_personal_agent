@@ -270,8 +270,9 @@ no claro, marinho profundo no escuro) e `noir` (**Akane** — "Cinema noir": pra
 no claro, "sala apagada" com vinheta carmim no escuro, cantos secos e linhas finas de película), `elfica`
 (**Frieren** — "Biblioteca élfica") e `neon` (**Marin** — "Neon kawaii": papel claro com véu ciano-rosa e losangos
 finíssimos no claro; "fliperama de luz apagada" com bordas e halos neon no escuro; o rosa não é cor nova, nasce do acento
-girando o matiz em 145° com relative color; contraste calculado em `specs/074-marin-ds/contrast-neon.mjs`). Direção
-de arte por agente: Nami = `nautica`; Akane = `noir`; Frieren = `elfica`; Marin = `neon`; os demais _ainda não escolhida_
+girando o matiz em 145° com relative color; contraste calculado em `specs/074-marin-ds/contrast-neon.mjs`). e `shuchiin` (**Kaguya** — "Shuchiin aristocrático": vinho derivado do acento (+100° de matiz) e dourado do `--ds-star`, papel timbrado
+claro com o herói claro também no escuro; pior contraste 6,0:1, calculado em `specs/075-kaguya-ds/contrast-shuchiin.mjs`). Direção
+de arte por agente: Nami = `nautica`; Akane = `noir`; Frieren = `elfica`; Marin = `neon`; Kaguya = `shuchiin`; os demais _ainda não escolhida_
 (`null`; `makima` e `design` usam `default`).
 
 **Ganchos que a arte e as páginas podem usar (retrocompatíveis; sem eles nada muda):**
