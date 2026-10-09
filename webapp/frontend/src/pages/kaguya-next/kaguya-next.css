@@ -294,3 +294,24 @@
 .kn-habit-val { width: 76px; }
 .kn-habit-heat { margin-top: var(--ds-space-4); padding-top: var(--ds-space-4); border-top: 1px solid var(--ds-line); overflow-x: auto; }
 .kn-habit-days { display: flex; flex-direction: column; gap: var(--ds-space-2); }
+
+/* ── Metas e experimentos ── */
+.kn-goals { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--ds-space-4); }
+.kn-goal { display: flex; flex-direction: column; gap: var(--ds-space-2); padding: var(--ds-space-4); border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); background: var(--ds-card); }
+.kn-goal p { margin: 0; }
+.kn-goal-closed { opacity: 0.85; }
+.kn-goal-h { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-2); }
+.kn-goal-title { padding: 0; border: 0; background: none; color: var(--ds-ink-1); font: inherit; font-family: var(--ds-font-display); font-size: var(--ds-text-lg); font-weight: 600; text-align: left; cursor: pointer; }
+.kn-goal-title:hover { color: var(--ds-accent-deep); }
+.kn-goal-title:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; border-radius: var(--ds-r-xs); }
+.kn-goal-meta { color: var(--ds-ink-3); font-size: var(--ds-text-xs); }
+.kn-ms { display: flex; flex-direction: column; gap: var(--ds-space-1); margin: 0 0 var(--ds-space-3); padding: 0; list-style: none; }
+.kn-ms li { display: flex; align-items: center; gap: var(--ds-space-3); padding: 4px 0; }
+.kn-ms .kn-title { flex: 1; }
+.kn-ms-done .kn-title { color: var(--ds-ink-4); text-decoration: line-through; }
+.kn-cover { width: 24px; height: 34px; border-radius: var(--ds-r-xs); object-fit: cover; }
+.kn-tracker { width: 100%; border-collapse: collapse; font-size: var(--ds-text-sm); }
+.kn-tracker caption { margin-bottom: var(--ds-space-2); text-align: left; }
+.kn-tracker th { padding: 6px 8px; border-bottom: 1px solid var(--ds-line); color: var(--ds-ink-3); font-weight: 500; text-align: left; }
+.kn-tracker td { padding: 6px 8px; border-bottom: 1px solid var(--ds-line); }
+.kn-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

@@ -120,9 +120,9 @@ describe('navegação e URL', () => {
   })
 
   it('telas ainda não migradas apontam para a versão atual', async () => {
-    window.location.hash = '#metas'
+    window.location.hash = '#calendario'
     render(<MemoryRouter><KaguyaNextShell /></MemoryRouter>)
-    expect(await screen.findByText(/Metas ainda está na versão atual/)).toBeTruthy()
+    expect(await screen.findByText(/O calendário ainda está na versão atual/)).toBeTruthy()
   })
 })
 

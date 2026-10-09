@@ -30,6 +30,8 @@ import { Stats } from './screens/Stats'
 import { FocusCancelModal, FocusStartModal, FocusWidget } from './components/FocusSession'
 import { Eisenhower } from './screens/Eisenhower'
 import { Focus } from './screens/Focus'
+import { Experiments, ExperimentDetail } from './screens/Experiments'
+import { GoalDetail, Goals } from './screens/Goals'
 import { Habits } from './screens/Habits'
 import { GroupBoardScreen, KanbanScreen } from './screens/Kanban'
 import { Today } from './screens/Today'
@@ -54,7 +56,7 @@ const SPACE_OPTIONS: { value: SpaceChoice; label: string; icon: 'apps' | 'work' 
 /** Telas ainda não migradas (viram `Pending` até a fase de cada uma). */
 const PENDING: Record<string, string> = {
   calendar: 'O calendário',
-  goals: 'Metas', experiments: 'Experimentos',
+
 }
 
 export function KaguyaNextShell() {
@@ -160,6 +162,8 @@ export function KaguyaNextShell() {
       case 'eisenhower': return <Eisenhower />
       case 'focus': return <Focus />
       case 'habits': return <Habits />
+      case 'goals': return route.id !== undefined ? <GoalDetail id={route.id} /> : <Goals />
+      case 'experiments': return route.id !== undefined ? <ExperimentDetail id={route.id} /> : <Experiments />
       case 'stats': return <Stats />
       case 'logbook': return <Logbook />
       case 'trash': return <Trash />
