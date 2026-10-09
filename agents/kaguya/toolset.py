@@ -40,6 +40,21 @@ from agents.kaguya.tools import (
     process_inbox_item, resolve_view_by_name,
 )
 from agents.kaguya.digest import get_pending_kaguya_digest, apply_kaguya_digest_selection
+# Spec 075 — paridade com o webapp: agenda, dependências, templates, logbook, revisão e planejamento.
+from agents.kaguya.tools_schedule import (
+    get_schedule_prefs, set_schedule_prefs,
+    list_schedule_overrides, set_schedule_override, clear_schedule_override,
+)
+from agents.kaguya.tools_dependencies import add_dependency, remove_dependency, list_dependencies
+from agents.kaguya.tools_templates import (
+    duplicate_task, duplicate_project, list_templates, apply_template,
+    create_task_template, create_project_template, delete_template,
+)
+from agents.kaguya.tools_logbook import list_completed, list_trash_detailed
+from agents.kaguya.tools_projects import list_projects_due_review
+from agents.kaguya.tools_stats import get_planning_insights
+from agents.kaguya.tools_tasks import get_task
+from agents.kaguya.tools_contexts import list_contexts
 
 TOOLS = [
     # Data/hora atual (America/Sao_Paulo) — âncora p/ datas relativas; a linha
@@ -80,4 +95,17 @@ TOOLS = [
     process_inbox_item, resolve_view_by_name,
     # Digest matinal (tarefas/agenda) → WhatsApp: reação do Hermes a uma resposta pendente
     get_pending_kaguya_digest, apply_kaguya_digest_selection,
+    # ── Spec 075 ──
+    # Agenda: expediente, almoço, acordar/dormir e exceções ("sábado vou trabalhar", "folga terça")
+    get_schedule_prefs, set_schedule_prefs,
+    list_schedule_overrides, set_schedule_override, clear_schedule_override,
+    # Dependências ("só começa depois de…") e leitura de uma tarefa pelo id
+    add_dependency, remove_dependency, list_dependencies, get_task,
+    # Duplicar e templates
+    duplicate_task, duplicate_project, list_templates, apply_template,
+    create_task_template, create_project_template, delete_template,
+    # Logbook (o que foi concluído), lixeira e contextos de execução (@casa, @rua…)
+    list_completed, list_trash_detailed, list_contexts,
+    # Revisão por cadência e onde o planejamento está falhando
+    list_projects_due_review, get_planning_insights,
 ]

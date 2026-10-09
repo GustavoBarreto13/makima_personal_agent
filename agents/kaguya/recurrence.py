@@ -250,6 +250,8 @@ def build_rrule(
     interval: int = 1,
     weekday: Optional[str] = None,
     monthday: Optional[int] = None,
+    count: Optional[int] = None,
+    until: Optional[str] = None,
 ) -> str:
     """Monta uma string RRULE a partir de uma intenção simples (sem o usuário ver RRULE crua).
 
@@ -260,14 +262,17 @@ def build_rrule(
     Args:
         freq: ``DAILY`` | ``WEEKLY`` | ``MONTHLY`` | ``YEARLY``.
         interval: A cada quantos períodos repete (ex.: ``interval=3`` + ``DAILY`` = a cada 3 dias).
-        weekday: Para ``WEEKLY``, o dia da semana em código iCal (``MO``..``SU``).
-        monthday: Para ``MONTHLY``, o dia do mês (1–31).
+        weekday: Para ``WEEKLY``, o dia da semana em código iCal (``MO``..``SU``); vários dias
+            separados por vírgula (``"MO,WE,FR"``) ou ``"WEEKDAYS"`` (segunda a sexta).
+        monthday: Para ``MONTHLY``, o dia do mês (1–31) ou ``-1`` para o ÚLTIMO dia do mês.
+        count: Encerra a série após N ocorrências (exclusivo com ``until``).
+        until: Encerra a série nesta data, ``YYYY-MM-DD`` (inclusive; exclusivo com ``count``).
 
     Returns:
         A string RRULE (ex.: ``FREQ=WEEKLY;BYDAY=MO``).
 
     Raises:
-        ValueError: Se ``freq`` for inválido ou ``interval`` < 1.
+        ValueError: Se ``freq`` for inválido, ``interval`` < 1, dia inválido ou ``count``+``until`` juntos.
 
     Example:
         >>> build_rrule("MONTHLY", monthday=5)
@@ -288,15 +293,28 @@ def build_rrule(
         parts.append(f"INTERVAL={interval}")
     # BYDAY: dia da semana fixo (só faz sentido em WEEKLY).
     if weekday is not None:
-        wd = weekday.upper()
-        if wd not in _WEEKDAY_CODES:
-            raise ValueError(f"Dia da semana inválido: {weekday!r} (use MO..SU).")
-        parts.append(f"BYDAY={wd}")
-    # BYMONTHDAY: dia do mês fixo (só faz sentido em MONTHLY).
+        wd = weekday.upper().replace(" ", "")
+        codes = list(_WEEKDAY_CODES[:5]) if wd == "WEEKDAYS" else wd.split(",")
+        if not codes or any(c not in _WEEKDAY_CODES for c in codes) or len(set(codes)) != len(codes):
+            raise ValueError(f"Dia da semana inválido: {weekday!r} (use MO..SU, separados por vírgula, ou WEEKDAYS).")
+        parts.append(f"BYDAY={','.join(codes)}")
+    # BYMONTHDAY: dia do mês fixo (só faz sentido em MONTHLY); -1 = último dia do mês.
     if monthday is not None:
-        if not 1 <= monthday <= 31:
-            raise ValueError("monthday deve estar entre 1 e 31.")
+        if monthday != -1 and not 1 <= monthday <= 31:
+            raise ValueError("monthday deve estar entre 1 e 31 (ou -1 para o último dia do mês).")
         parts.append(f"BYMONTHDAY={monthday}")
+    # Fim da série: por contagem OU por data (nunca os dois).
+    if count is not None and until is not None:
+        raise ValueError("Use count OU until, não os dois.")
+    if count is not None:
+        if count < 1:
+            raise ValueError("count deve ser >= 1.")
+        parts.append(f"COUNT={count}")
+    if until is not None:
+        try:
+            parts.append(f"UNTIL={date.fromisoformat(until).strftime('%Y%m%d')}")
+        except ValueError:
+            raise ValueError("until deve estar no formato YYYY-MM-DD.") from None
 
     return ";".join(parts)
 
@@ -321,6 +339,16 @@ def _parse_rrule_parts(rrule: str) -> dict[str, str]:
             key, value = chunk.split("=", 1)
             parts[key.strip().upper()] = value.strip()
     return parts
+
+
+def _end_suffix(parts: dict[str, str]) -> str:
+    """Complemento do fim da série para a descrição: `` (10 vezes)`` ou `` até 31/12/2026``."""
+    if parts.get("COUNT"):
+        return f" ({parts['COUNT']} vezes)"
+    until = parts.get("UNTIL", "")
+    if len(until) >= 8 and until[:8].isdigit():
+        return f" até {until[6:8]}/{until[4:6]}/{until[:4]}"
+    return ""
 
 
 def describe_rrule(rrule: str) -> str:
@@ -348,29 +376,39 @@ def describe_rrule(rrule: str) -> str:
 
     if freq == "DAILY":
         # "todo dia" quando interval=1; "a cada N dias" caso contrário.
-        return "todo dia" if interval == 1 else f"a cada {interval} dias"
+        return ("todo dia" if interval == 1 else f"a cada {interval} dias") + _end_suffix(parts)
+
+    suffix = _end_suffix(parts)
 
     if freq == "WEEKLY":
         byday = parts.get("BYDAY")
-        if byday and byday.upper() in _WEEKDAY_CODES:
-            # Traduz o código do dia (MO→segunda) e respeita o intervalo.
-            nome = _WEEKDAY_PT[_WEEKDAY_CODES.index(byday.upper())]
-            if interval == 1:
-                return f"toda {nome}"
-            return f"a cada {interval} semanas na {nome}"
-        return "toda semana" if interval == 1 else f"a cada {interval} semanas"
+        days = [d.strip().upper() for d in byday.split(",")] if byday else []
+        if days and all(d in _WEEKDAY_CODES for d in days):
+            if days == list(_WEEKDAY_CODES[:5]):
+                return ("em dias úteis" if interval == 1 else f"a cada {interval} semanas em dias úteis") + suffix
+            nomes = [_WEEKDAY_PT[_WEEKDAY_CODES.index(d)] for d in days]
+            if len(nomes) == 1:
+                nome = nomes[0]
+                base = f"toda {nome}" if interval == 1 else f"a cada {interval} semanas na {nome}"
+            else:
+                lista = ", ".join(nomes[:-1]) + " e " + nomes[-1]
+                base = f"toda {lista}" if interval == 1 else f"a cada {interval} semanas: {lista}"
+            return base + suffix
+        return ("toda semana" if interval == 1 else f"a cada {interval} semanas") + suffix
 
     if freq == "MONTHLY":
         monthday = parts.get("BYMONTHDAY")
+        if monthday == "-1":
+            return ("todo último dia do mês" if interval == 1 else f"a cada {interval} meses no último dia") + suffix
         if monthday:
             # "todo dia 5" (interval=1) ou "a cada N meses no dia 5".
             if interval == 1:
-                return f"todo dia {monthday}"
-            return f"a cada {interval} meses no dia {monthday}"
-        return "todo mês" if interval == 1 else f"a cada {interval} meses"
+                return f"todo dia {monthday}" + suffix
+            return f"a cada {interval} meses no dia {monthday}" + suffix
+        return ("todo mês" if interval == 1 else f"a cada {interval} meses") + suffix
 
     if freq == "YEARLY":
-        return "todo ano" if interval == 1 else f"a cada {interval} anos"
+        return ("todo ano" if interval == 1 else f"a cada {interval} anos") + suffix
 
     # Frequência desconhecida ou regra exótica → rótulo seguro.
     return "recorrente"

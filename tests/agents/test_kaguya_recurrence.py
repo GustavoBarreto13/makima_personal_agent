@@ -494,3 +494,54 @@ def test_int_next_occurrence_clones_subtask_estimate_and_tags(inbox_id):
     new_parent = next(t for t in T.list_tasks(inbox_id) if t["id"] == nid)
     sub = new_parent["subtasks"][0]
     assert sub["duration_min"] == 10 and [t["name"] for t in sub["tags"]] == ["corpo"]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Spec 075 — recorrência rica: vários dias, dias úteis, último dia do mês, fim por data/contagem
+# ──────────────────────────────────────────────────────────────────────────────
+def test_build_rrule_varios_dias_e_dias_uteis():
+    assert R.build_rrule("WEEKLY", weekday="mo, we ,fr") == "FREQ=WEEKLY;BYDAY=MO,WE,FR"
+    assert R.build_rrule("WEEKLY", weekday="WEEKDAYS") == "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+    for ruim in ("MO,XX", "MO,MO", ""):
+        with pytest.raises(ValueError):
+            R.build_rrule("WEEKLY", weekday=ruim)
+
+
+def test_build_rrule_ultimo_dia_e_fim_da_serie():
+    assert R.build_rrule("MONTHLY", monthday=-1) == "FREQ=MONTHLY;BYMONTHDAY=-1"
+    assert R.build_rrule("DAILY", count=5) == "FREQ=DAILY;COUNT=5"
+    assert R.build_rrule("WEEKLY", weekday="TU", until="2026-12-31") == "FREQ=WEEKLY;BYDAY=TU;UNTIL=20261231"
+    with pytest.raises(ValueError):
+        R.build_rrule("DAILY", count=3, until="2026-12-31")     # um OU outro
+    with pytest.raises(ValueError):
+        R.build_rrule("DAILY", until="31/12/2026")
+    with pytest.raises(ValueError):
+        R.build_rrule("DAILY", count=0)
+    with pytest.raises(ValueError):
+        R.build_rrule("MONTHLY", monthday=-2)
+
+
+def test_describe_rrule_novas_formas():
+    d = R.describe_rrule
+    assert d("FREQ=WEEKLY;BYDAY=MO,WE,FR") == "toda segunda, quarta e sexta"
+    assert d("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR") == "em dias úteis"
+    assert d("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH") == "a cada 2 semanas: segunda e quinta"
+    assert d("FREQ=MONTHLY;BYMONTHDAY=-1") == "todo último dia do mês"
+    assert d("FREQ=DAILY;COUNT=5") == "todo dia (5 vezes)"
+    assert d("FREQ=WEEKLY;BYDAY=TU;UNTIL=20261231") == "toda terça até 31/12/2026"
+    assert d("FREQ=YEARLY;COUNT=3") == "todo ano (3 vezes)"
+    assert d("FREQ=WEEKLY;BYDAY=MO") == "toda segunda"                     # formas antigas intactas
+
+
+def test_motor_entende_as_novas_regras():
+    seg = date(2026, 6, 1)
+    mwf = R.build_rrule("WEEKLY", weekday="MO,WE,FR")
+    assert R.next_occurrence(mwf, seg, R.MODE_FIXED, current_due=seg, completed_on=seg) == date(2026, 6, 3)
+    ultimo = R.build_rrule("MONTHLY", monthday=-1)
+    jan31 = date(2026, 1, 31)
+    assert R.next_occurrence(ultimo, jan31, R.MODE_FIXED, current_due=jan31, completed_on=jan31) == date(2026, 2, 28)
+    ate = R.build_rrule("WEEKLY", weekday="MO", until="2026-06-15")
+    assert R.next_occurrence(ate, seg, R.MODE_FIXED, current_due=date(2026, 6, 8), completed_on=date(2026, 6, 8)) == date(2026, 6, 15)
+    assert R.next_occurrence(ate, seg, R.MODE_FIXED, current_due=date(2026, 6, 15), completed_on=date(2026, 6, 15)) is None
+    tres = R.build_rrule("DAILY", count=2)
+    assert R.next_occurrence(tres, seg, R.MODE_FIXED, current_due=date(2026, 6, 2), completed_on=date(2026, 6, 2)) is None

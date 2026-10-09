@@ -213,6 +213,8 @@ def set_task_recurrence(
     weekday: str = "",
     monthday: int = 0,
     mode: str = "fixed",
+    count: int = 0,
+    until: str = "",
 ) -> dict:
     """Define a recorrência de uma tarefa a partir de uma intenção simples (sem RRULE crua).
 
@@ -224,10 +226,14 @@ def set_task_recurrence(
         freq: ``DAILY`` | ``WEEKLY`` | ``MONTHLY`` | ``YEARLY``.
         interval: A cada quantos períodos (ex.: ``freq=DAILY, interval=3`` = a cada 3 dias).
         weekday: Para ``WEEKLY``, o dia em código (``MO`` seg, ``TU`` ter, ``WE`` qua,
-            ``TH`` qui, ``FR`` sex, ``SA`` sáb, ``SU`` dom). Vazio = qualquer.
-        monthday: Para ``MONTHLY``, o dia do mês (1–31). 0 = sem dia fixo.
+            ``TH`` qui, ``FR`` sex, ``SA`` sáb, ``SU`` dom). Vários dias separados por vírgula
+            (``"MO,WE,FR"``) ou ``"WEEKDAYS"`` para segunda a sexta. Vazio = qualquer.
+        monthday: Para ``MONTHLY``, o dia do mês (1–31) ou ``-1`` para o último dia do mês.
+            0 = sem dia fixo.
         mode: ``fixed`` (data-fixa, padrão) ou ``after_completion`` (conta da conclusão real,
             ex.: "a cada 3 dias depois que eu fizer").
+        count: Encerra a série após N ocorrências. 0 = sem limite (exclusivo com ``until``).
+        until: Encerra a série nesta data (``YYYY-MM-DD``). Vazio = sem fim (exclusivo com ``count``).
 
     Returns:
         ``{"status": "ok", "recurrence_text": "todo dia 5"}`` ou erro em português.
@@ -238,7 +244,10 @@ def set_task_recurrence(
 
     try:
         # Converte 0/"" para None (os opcionais que o build_rrule entende como "não usar").
-        rrule = build_rrule(freq, interval=interval, weekday=weekday or None, monthday=monthday or None)
+        rrule = build_rrule(
+            freq, interval=interval, weekday=weekday or None, monthday=monthday or None,
+            count=count or None, until=until or None,
+        )
     except ValueError as e:
         return {"status": "error", "message": str(e)}
 

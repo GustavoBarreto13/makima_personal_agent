@@ -279,3 +279,40 @@ def get_stats_payload(year: Optional[int] = None, month: Optional[int] = None, s
         "space": space,
         "generated_for": today.isoformat(),
     }
+
+
+def get_planning_insights(year: Optional[int] = None, month: Optional[int] = None, space: Optional[str] = None) -> dict:
+    """Resumo enxuto de ONDE O PLANEJAMENTO ESTÁ FALHANDO (para o agente conversar sobre isso).
+
+    Versão curta de :func:`get_stats_payload`: só os achados acionáveis e os números-chave, sem
+    séries diárias nem rankings. Use quando o usuário perguntar "como estou me planejando?",
+    "por que não consigo cumprir meu dia?" ou pedir um diagnóstico da produtividade.
+
+    Args:
+        year: Ano (padrão: atual).
+        month: Mês 1–12 (padrão: o ano todo).
+        space: ``work`` | ``personal`` para olhar só um espaço.
+
+    Returns:
+        ``{"period", "insights": [{key, severity, text, action}], "numbers": {...}}``. Lista
+        ``insights`` vazia quando ainda há poucos dados (o histórico começa na primeira ação
+        registrada — veja ``data_since``).
+    """
+    payload = get_stats_payload(year, month, space)
+    pl = payload["planning"]
+    return {
+        "period": payload["period"]["label"],
+        "insights": pl["insights"],
+        "numbers": {
+            "completed": next(k["value"] for k in payload["kpis"] if k["key"] == "completed"),
+            "on_time_pct": pl["on_time"]["on_time_pct"],
+            "plan_done_rate": pl["plan"]["rate"],
+            "plan_planned": pl["plan"]["planned"],
+            "estimate_bias_pct": pl["estimates"]["bias_pct"],
+            "days_over_capacity": pl["overload"]["days_over"],
+            "median_days_to_complete": pl["lead_time_days"],
+            "inbox_old": pl["inbox_old"],
+        },
+        "data_since": pl["data_since"],
+    }
+
