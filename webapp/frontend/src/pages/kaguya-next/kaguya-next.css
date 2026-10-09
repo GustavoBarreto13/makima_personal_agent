@@ -48,6 +48,7 @@
   position: relative; display: flex; align-items: center; gap: var(--ds-space-2);
   padding-block: 6px; padding-inline-end: var(--ds-space-3);
   border-bottom: 1px solid var(--ds-line); border-radius: var(--ds-r-sm);
+  background: color-mix(in oklab, var(--ds-card) 10%, transparent);
   transition: background var(--ds-dur-1) var(--ds-ease);
 }
 .kn-row:hover { background: var(--ds-card-2); }
@@ -55,6 +56,10 @@
 .kn-row.kn-active { background: var(--ds-accent-tint); box-shadow: inset 3px 0 0 var(--ds-accent); }
 .kn-row.kn-focus { outline: 2px solid var(--ds-accent); outline-offset: -2px; }
 .kn-row.kn-done .kn-title { color: var(--ds-ink-4); text-decoration: line-through; }
+/* Evento e aniversário: um sinal leve (glifo + filete no canto), sem virar outra coisa. */
+.kn-row[data-type='event'] { box-shadow: inset 2px 0 0 var(--ds-info); }
+.kn-row[data-type='birthday'] { box-shadow: inset 2px 0 0 var(--ds-warn); }
+.kn-typeglyph { margin-inline-end: 6px; vertical-align: -2px; color: var(--ds-ink-3); }
 
 .kn-twist, .kn-twist-gap { flex: none; width: 20px; height: 20px; }
 .kn-twist { display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--ds-r-xs); background: none; color: var(--ds-ink-3); cursor: pointer; }
@@ -79,6 +84,17 @@
 .kn-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 2px 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .kn-main:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; border-radius: var(--ds-r-xs); }
 .kn-title { overflow: hidden; color: var(--ds-ink-1); font-size: var(--ds-text-md); text-overflow: ellipsis; white-space: nowrap; }
+/* Celular: o título quebra linha e os sinais descem para uma segunda linha, em vez de espremer o texto. */
+@container ds-frame (max-width: 639px) {
+  .kn-row { flex-wrap: wrap; align-items: flex-start; row-gap: 2px; }
+  .kn-main { flex: 1 1 0; }
+  .kn-title { display: -webkit-box; overflow: hidden; white-space: normal; -webkit-line-clamp: 3; -webkit-box-orient: vertical; line-height: 1.35; }
+  .kn-snippet { white-space: normal; -webkit-line-clamp: 1; display: -webkit-box; -webkit-box-orient: vertical; }
+  .kn-signals { order: 5; flex-basis: 100%; flex-wrap: wrap; padding-inline-start: 50px; padding-bottom: 4px; }
+  .kn-menu { order: 3; }
+  .kn-grip { display: none; }
+  .kn-check, .kn-twist, .kn-twist-gap { margin-top: 4px; }
+}
 .kn-snippet { overflow: hidden; color: var(--ds-ink-4); font-size: var(--ds-text-xs); text-overflow: ellipsis; white-space: nowrap; }
 
 .kn-signals { flex: none; display: inline-flex; align-items: center; gap: var(--ds-space-2); color: var(--ds-ink-3); font-size: var(--ds-text-xs); }
@@ -456,8 +472,14 @@
 .kn-drag-ghost { max-width: 360px; padding: 8px 14px; overflow: hidden; border: 1px solid var(--ds-accent); border-radius: var(--ds-r-md); background: var(--ds-card); box-shadow: var(--ds-shadow-lg); color: var(--ds-ink-1); text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Meu Dia: duas colunas (ritual + linha do dia) ── */
-.kn-day { display: grid; grid-template-columns: minmax(0, 1fr) 340px; align-items: start; gap: var(--ds-space-5); }
-.kn-day-main { display: flex; flex-direction: column; gap: var(--ds-space-5); min-width: 0; }
+.kn-day-page { --kn-day-side: 340px; }
+.ds-page.kn-day-page { max-width: 1760px; }
+[data-ds-width='full'] .ds-page.kn-day-page { max-width: none; --kn-day-side: 400px; }
+.kn-day { display: grid; grid-template-columns: minmax(0, 1fr) var(--kn-day-side); align-items: start; gap: var(--ds-space-5); }
+.kn-day-main { display: flex; flex-direction: column; gap: var(--ds-space-5); min-width: 0; container: knday / inline-size; }
+/* Trabalho | Pessoal lado a lado só se cada coluna tiver respiro; senão empilha (Trabalho em cima). */
+.kn-day-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--ds-space-5); }
+@container knday (min-width: 860px) { .kn-day-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .kn-day-side { position: sticky; top: var(--ds-space-4); }
 @media (max-width: 1100px) { .kn-day { grid-template-columns: 1fr; } .kn-day-side { position: static; } }
 .kn-focussum { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); background: var(--ds-card); }
@@ -479,14 +501,24 @@
 .kn-tl-hour { position: absolute; inset-inline: 0; border-top: 1px solid var(--ds-line); }
 .kn-tl-hour.kn-over { background: var(--ds-accent-tint); }
 .kn-tl-hour .ds-mono { position: absolute; inset-inline-start: 0; top: 2px; color: var(--ds-ink-4); font-size: var(--ds-text-xs); }
-.kn-tl-slot { position: absolute; z-index: 1; display: flex; flex-direction: column; gap: 1px; box-sizing: border-box; padding: 2px 6px; overflow: hidden; border-radius: var(--ds-r-xs); font-size: var(--ds-text-xs); inset-inline-end: 4px; inset-inline-start: 40px; }
-.kn-tl-slot b { overflow: hidden; color: var(--ds-ink-1); text-overflow: ellipsis; white-space: nowrap; }
+.kn-tl-hour { height: 56px; }
+.kn-tl-slot { position: absolute; z-index: 1; display: flex; flex-direction: column; justify-content: center; gap: 1px; box-sizing: border-box; padding: 3px 8px; overflow: hidden; border-radius: var(--ds-r-sm); font-size: 12px; inset-inline-end: 4px; inset-inline-start: 44px; }
+.kn-tl-slot b { display: -webkit-box; font-weight: 600; line-height: 1.25; white-space: normal; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.kn-tl-slot .ds-mono { font-size: 11px; }
+/* Bloco curto: uma linha só, horário e título lado a lado. */
+.kn-tl-tiny { flex-direction: row; align-items: center; gap: 6px; padding-block: 1px; }
+.kn-tl-tiny b, .kn-tl-tiny .kn-main b { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kn-tl-tiny .kn-main { flex-direction: row; align-items: center; gap: 6px; }
+.kn-tl-tiny .ds-mono { flex: none; }
+.kn-tl-slot b { color: var(--ds-ink-1); }
 .kn-tl-slot .ds-mono { color: var(--ds-ink-3); }
-.kn-tl-event { inset-inline-end: 50%; margin-inline-end: 2px; border-inline-start: 3px solid var(--kn-cc); background: color-mix(in oklab, var(--kn-cc) 16%, var(--ds-card)); }
+.kn-tl-event { border-inline-start: 3px solid var(--kn-cc); background: color-mix(in oklab, var(--kn-cc) 16%, var(--ds-card)); }
+.kn-tl-event.kn-tl-half { inset-inline-end: 50%; margin-inline-end: 2px; }
 .kn-tl-event a { overflow: hidden; color: var(--ds-accent-deep); text-overflow: ellipsis; white-space: nowrap; }
 .kn-tl-task { border-inline-start: 3px solid var(--ds-accent); background: var(--ds-accent-tint); }
-.kn-tl-task.kn-split { inset-inline-start: 50%; margin-inline-start: 2px; }
+.kn-tl-task.kn-tl-half { inset-inline-start: 50%; margin-inline-start: 2px; }
 .kn-tl-task .kn-main { padding: 0; }
+.kn-tl-task { padding-inline-end: 26px; }
 .kn-tl-task .ds-iconbtn { position: absolute; inset-inline-end: 2px; top: 2px; }
 .kn-tl-resize { position: absolute; inset-inline: 0; bottom: 0; height: 6px; cursor: ns-resize; touch-action: none; }
 .kn-tl-empty { position: absolute; inset-inline: 40px; top: 40%; margin: 0; text-align: center; pointer-events: none; }

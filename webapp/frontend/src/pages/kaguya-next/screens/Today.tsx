@@ -169,7 +169,7 @@ function TodayBody({ data }: { data: MyDayResponse }) {
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={(e: DragStartEvent) => setDragId(Number(e.active.id))} onDragEnd={(e) => void onDragEnd(e)} onDragCancel={() => setDragId(null)}>
-      <Page wide className="kn-page">
+      <Page wide className="kn-page kn-day-page">
         <Hero
           eyebrow={fmtDateLong(k.today)}
           eyebrowIcon="sun"
@@ -252,7 +252,7 @@ function TodayBody({ data }: { data: MyDayResponse }) {
             <section aria-labelledby="kn-plano">
               <SectionHeader id="kn-plano" title="Plano de hoje" mono={`${plano.length}`} />
               {split ? (
-                <div className="kn-cols">
+                <div className="kn-day-cols">
                   <div><h3 className="kn-h3"><Icon name="work" size={14} /> Trabalho</h3>{data.plano_work.length ? rows(data.plano_work, { plan: true }) : <p className="ds-hint">Nada de trabalho planejado.</p>}</div>
                   <div><h3 className="kn-h3"><Icon name="personal" size={14} /> Pessoal</h3>{data.plano_personal.length ? rows(data.plano_personal, { plan: true }) : <p className="ds-hint">Nada pessoal planejado.</p>}</div>
                 </div>

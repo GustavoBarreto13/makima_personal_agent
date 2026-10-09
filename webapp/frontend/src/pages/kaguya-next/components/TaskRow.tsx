@@ -62,6 +62,7 @@ export function TaskRow({
       className={cx('kn-row', done && 'kn-done', selected && 'kn-sel', active && 'kn-active', focused && 'kn-focus', dragging && 'kn-dragging', dropZone && `kn-drop-${dropZone}`)}
       style={{ paddingInlineStart: `calc(var(--ds-space-3) + ${depth} * var(--ds-space-5))` }}
       data-task-id={task.id}
+      data-type={task.type !== 'task' ? task.type : undefined}
       aria-selected={selected || undefined}
     >
       {grip}
@@ -83,7 +84,11 @@ export function TaskRow({
       </button>
 
       <button type="button" className="kn-main" onClick={click}>
-        <span className="kn-title">{task.title || <em>Sem título</em>}</span>
+        <span className="kn-title">
+          {task.type === 'event' && <Icon name="calendar" size={13} className="kn-typeglyph" label="Evento" />}
+          {task.type === 'birthday' && <Icon name="gift" size={13} className="kn-typeglyph" label="Aniversário" />}
+          {task.title || <em>Sem título</em>}
+        </span>
         {showDetails && hasNotes && !done && <span className="kn-snippet">{task.description!.replace(/[#>*_`\-[\]]/g, '').trim().slice(0, 90)}</span>}
       </button>
 

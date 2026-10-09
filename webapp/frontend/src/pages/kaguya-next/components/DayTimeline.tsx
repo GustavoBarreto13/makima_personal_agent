@@ -14,6 +14,9 @@ const START = 7
 const END = 23
 const HOURS = Array.from({ length: END - START }, (_, i) => START + i)
 const TOTAL = (END - START) * 60
+const HOUR_PX = 56
+/** Abaixo disto (min) o bloco vira uma linha só: título e horário lado a lado. */
+const TINY_MIN = 40
 
 const top = (min: number) => `${Math.max(0, ((min - START * 60) / TOTAL) * 100)}%`
 const height = (dur: number) => `${Math.max(0.5, (dur / TOTAL) * 100)}%`
@@ -111,7 +114,7 @@ export function DayTimeline({ today, plano, eventos, sources, onToggleCalendar, 
         </div>
       )}
 
-      <div className="kn-tl-body" ref={bodyRef} style={{ height: `${HOURS.length * 44}px` }}>
+      <div className="kn-tl-body" ref={bodyRef} style={{ height: `${HOURS.length * HOUR_PX}px` }}>
         {HOURS.map((h) => <Hour key={h} h={h} />)}
 
         {timed.map((e) => {
@@ -119,10 +122,10 @@ export function DayTimeline({ today, plano, eventos, sources, onToggleCalendar, 
           const s = timeToMin(e.start)
           const dur = Math.max((e.end ? timeToMin(e.end) : s + 30) - s, 15)
           return (
-            <div key={e.id} className="kn-tl-slot kn-tl-event" style={{ top: top(s), height: height(dur), '--kn-cc': e.color || 'var(--ds-ink-4)' } as CSSProperties} title={`${e.calendar_name}${e.title !== e.calendar_name ? ` — ${e.title}` : ''}`}>
+            <div key={e.id} className={`kn-tl-slot kn-tl-event${blocked.length > 0 ? ' kn-tl-half' : ''}${dur < TINY_MIN ? ' kn-tl-tiny' : ''}`} style={{ top: top(s), height: height(dur), '--kn-cc': e.color || 'var(--ds-ink-4)' } as CSSProperties} title={`${e.title} · ${minToLabel(s)}${e.end ? `–${minToLabel(timeToMin(e.end))}` : ''} · ${e.calendar_name}${e.location ? ` · ${e.location}` : ''}`}>
+              <span className="ds-mono">{minToLabel(s)}{e.end && dur >= TINY_MIN ? `–${minToLabel(timeToMin(e.end))}` : ''}</span>
               <b>{e.title}</b>
-              <span className="ds-mono">{minToLabel(s)}{e.end ? `–${minToLabel(timeToMin(e.end))}` : ''}</span>
-              {e.location && <a href={mapsLinkFor(e.location)} target="_blank" rel="noreferrer" title={e.location}>{e.location}</a>}
+              {e.location && dur >= TINY_MIN && <a href={mapsLinkFor(e.location)} target="_blank" rel="noreferrer" title={e.location}>{e.location}</a>}
             </div>
           )
         })}
@@ -132,10 +135,10 @@ export function DayTimeline({ today, plano, eventos, sources, onToggleCalendar, 
           const live = resize?.id === t.id ? resize.end : null
           const end = live ?? (t.end_at ? timeToMin(t.end_at) : s + (t.duration_min || 30))
           return (
-            <div key={t.id} className={`kn-tl-slot kn-tl-task${timed.length > 0 ? ' kn-split' : ''}`} style={{ top: top(s), height: height(end - s) }} title={t.title}>
+            <div key={t.id} className={`kn-tl-slot kn-tl-task${timed.length > 0 ? ' kn-tl-half' : ''}${end - s < TINY_MIN ? ' kn-tl-tiny' : ''}`} style={{ top: top(s), height: height(end - s) }} title={`${t.title} · ${minToLabel(s)}–${minToLabel(end)}`}>
               <button type="button" className="kn-main" onClick={() => onOpen(t.id)}>
+                <span className="ds-mono">{minToLabel(s)}{end - s >= TINY_MIN ? `–${minToLabel(end)}` : ''}</span>
                 <b>{t.title}</b>
-                <span className="ds-mono">{minToLabel(s)}–{minToLabel(end)}</span>
               </button>
               <IconButton icon="close" size={12} label={`Liberar o horário de ${t.title}`} onClick={() => onClearBlock(t)} />
               <div
