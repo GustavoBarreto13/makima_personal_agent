@@ -9,7 +9,7 @@
 // com a classe de cada pedaço do texto.
 
 import { parseDate, WEEKDAY, iso, midnight, nextWeekday } from './parseDate'
-import type { RecurrenceMode } from '../pages/kaguya/types'
+import type { RecurrenceMode } from '../pages/kaguya-next/types'
 
 // Um pedaço do texto com sua classe de destaque (vazia = texto comum).
 export interface ParseSegment {
