@@ -1,0 +1,549 @@
+// Client tipado do domínio Kaguya (shell no Design System, spec 075) — embrulha /api/tasks/* sobre lib/api.ts.
+// Componentes NUNCA fazem fetch direto: usam este objeto (cookie de sessão e
+// tratamento de erro já resolvidos por lib/api.ts).
+
+// Verifica se um source id pertence a um calendário Google (prefixo "gcal").
+// Cobre tanto o id raiz "gcal" (legado) quanto "gcal:<calendar_id>" (por-calendário).
+export function isGcal(cal: string): boolean {
+  return cal.startsWith('gcal')
+}
+
+// Extrai o ID do calendário Google a partir de um source id "gcal:<id>".
+// Retorna "primary" como fallback (calendário principal) quando não há sufixo.
+export function gcalCalendarId(cal: string): string {
+  const prefix = 'gcal:'
+  return cal.startsWith(prefix) ? cal.slice(prefix.length) : 'primary'
+}
+
+import { api } from '../../lib/api'
+import type { StatsPayload } from '../../design/core/stats'
+import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, HabitSchedule, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry, FocusStats, FocusHeatDay, FocusAchievement, TaskFocusSummary, FinishFocusResult, WorkContext, ArchivedProject, SchedulePrefs, ScheduleOverride, Dependencies, BulkAction, BulkUndo, CompletedPage, ActivityEvent, TrashItem, TemplateInfo, TagCount, DueReviewProject } from './types'
+
+// Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
+interface RecurrenceInput {
+  rrule: string
+  mode: RecurrenceMode
+}
+
+// Resposta padrão das mutações (as tools retornam {status, ...}).
+interface MutationResult {
+  status: string
+  message?: string
+  id?: number
+  // complete pode devolver needs_cascade (não é erro: é pedido de confirmação)
+  needs_cascade?: boolean
+  open_subtasks?: number
+  position?: number
+  project_id?: number
+  // numa recorrente, complete/delete devolvem a próxima ocorrência gerada
+  generated_task_id?: number | null
+  next_due_date?: string
+}
+
+const BASE = '/api/tasks'
+
+/** Espaço global: restringe consultas às listas de Trabalho ou Pessoais. `undefined`/'all' = tudo. */
+export type Space = 'work' | 'personal'
+
+/** Monta a query string ignorando valores vazios (undefined/null/''/false). */
+export function qs(params: Record<string, string | number | boolean | null | undefined>): string {
+  const q = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '' && v !== false)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    .join('&')
+  return q ? `?${q}` : ''
+}
+
+export const kaguyaApi = {
+  // ── Lembrete de pagamento cross-agent (Nami → Kaguya) — spec 047, US4 ────
+  createReminder: (body: { title: string; due_date: string; amount?: number; description?: string }) =>
+    api.post<{ status: string; id: number; duplicate: boolean; message?: string }>(`${BASE}/reminders`, body),
+
+  // ── Sidebar / listas / grupos / colunas ──────────────────────────────────
+  sidebar: () => api.get<Sidebar>(`${BASE}/sidebar`),
+
+  createProject: (body: { name: string; group_id?: number; color?: string; icon?: string; context?: WorkContext }) =>
+    api.post<MutationResult>(`${BASE}/projects`, body),
+  updateProject: (id: number, body: Partial<{ name: string; group_id: number; color: string; icon: string; position: number; context: WorkContext; review_interval_days: number | null; sequential: boolean }>) =>
+    api.patch<MutationResult>(`${BASE}/projects/${id}`, body),
+  deleteProject: (id: number, mode: 'move_to_inbox' | 'delete_tasks') =>
+    api.del<MutationResult>(`${BASE}/projects/${id}?mode=${mode}`),
+  // Arquivar/restaurar (spec 039) — distinto de excluir; não mexe em tarefas/colunas.
+  archiveProject: (id: number) => api.post<MutationResult>(`${BASE}/projects/${id}/archive`, {}),
+  restoreProject: (id: number) => api.post<MutationResult>(`${BASE}/projects/${id}/restore`, {}),
+  listArchivedProjects: () => api.get<ArchivedProject[]>(`${BASE}/projects/archived`),
+
+  createGroup: (name: string, context?: WorkContext) => api.post<MutationResult>(`${BASE}/groups`, { name, ...(context ? { context } : {}) }),
+  updateGroup: (id: number, body: Partial<{ name: string; position: number }>) =>
+    api.patch<MutationResult>(`${BASE}/groups/${id}`, body),
+  deleteGroup: (id: number) => api.del<MutationResult>(`${BASE}/groups/${id}`),
+  // Ação em massa de contexto Trabalho/Pessoal para todas as listas do grupo (spec 038).
+  setGroupContext: (id: number, context: WorkContext) =>
+    api.post<MutationResult & { updated: number }>(`${BASE}/groups/${id}/context`, { context }),
+
+  listColumns: (projectId: number) => api.get<Column[]>(`${BASE}/projects/${projectId}/columns`),
+  createColumn: (body: { project_id: number; name: string; is_done_column?: boolean }) =>
+    api.post<MutationResult>(`${BASE}/columns`, body),
+  updateColumn: (id: number, body: Partial<{ name: string; position: number; is_done_column: boolean }>) =>
+    api.patch<MutationResult>(`${BASE}/columns/${id}`, body),
+  deleteColumn: (id: number) => api.del<MutationResult>(`${BASE}/columns/${id}`),
+  // Copia a estrutura de colunas de sourceId para targetId (sem tarefas — só nomes+ordem+flag done).
+  copyColumns: (targetId: number, sourceId: number) =>
+    api.post<MutationResult>(`${BASE}/projects/${targetId}/copy-columns`, { source_project_id: sourceId }),
+
+  // ── Tarefas ───────────────────────────────────────────────────────────────
+  listTasks: (projectId: number, includeCompleted = false, includeDeferred = false) =>
+    api.get<Task[]>(`${BASE}?project_id=${projectId}&include_completed=${includeCompleted}&include_deferred=${includeDeferred}`),
+  today: (space?: Space) => api.get<TodayResponse>(`${BASE}/today${qs({ space })}`),
+  eisenhower: (space?: Space) => api.get<Task[]>(`${BASE}/eisenhower${qs({ space })}`),
+  search: (q: string, opts: { space?: Space; includeCompleted?: boolean } = {}) =>
+    api.get<Task[]>(`${BASE}/search${qs({ q, space: opts.space, include_completed: opts.includeCompleted })}`),
+  trash: (projectId?: number) =>
+    api.get<Task[]>(`${BASE}/trash${projectId ? `?project_id=${projectId}` : ''}`),
+
+  createTask: (body: {
+    title: string
+    project_id?: number
+    parent_id?: number
+    priority?: number
+    type?: string
+    due_date?: string | null
+    due_time?: string | null
+    description?: string | null
+    column_id?: number                  // coluna do Kanban (criar direto numa coluna)
+    recurrence?: RecurrenceInput        // recorrência opcional na criação
+    tags?: string[]                     // nomes das tags (criadas se não existirem)
+    person_ids?: string[]               // responsáveis Komi (fatia 025)
+  }) => api.post<MutationResult>(BASE, body),
+
+  // Busca uma tarefa específica pelo id — usado pelo chip de menção [[task]] no editor de notas.
+  getTask: (id: number) => api.get<Task>(`${BASE}/${id}`),
+
+  updateTask: (id: number, body: Partial<{
+    title: string; description: string | null; priority: number; type: string
+    due_date: string | null; due_time: string | null; project_id: number; column_id: number | null
+    recurrence: RecurrenceInput; clear_recurrence: boolean   // anexar/editar/remover regra
+    tags: string[]                                           // substitui o conjunto de tags
+    duration_min: number | null                              // estimativa de duração (Meu Dia)
+    person_ids: string[]                                     // substitui responsáveis (fatia 025)
+    gtd_status: GtdStatus | null                              // status GTD real (spec 034)
+    waiting_note: string | null                               // por quem/o quê espera
+    context_id: number | null                                 // contexto de execução
+    start_date: string | null                                 // adiar até (spec 075)
+    follow_up_date: string | null                             // quando cobrar (aguardando)
+    waiting_person_id: string | null                          // pessoa de quem se espera (Komi)
+  }>) => api.patch<MutationResult>(`${BASE}/${id}`, body),
+
+  // Mover tarefa para novo pai/posição com semântica 3 zonas (fatia 025)
+  moveTask: (id: number, body: {
+    new_parent_id: number | null
+    after_id?: number | null
+    before_id?: number | null
+  }) => api.post<MutationResult>(`${BASE}/${id}/move`, body),
+
+  // cascade conclui subtarefas; endSeries encerra a série recorrente (não gera a próxima).
+  complete: (id: number, cascade = false, endSeries = false) =>
+    api.post<MutationResult>(`${BASE}/${id}/complete`, { cascade, end_series: endSeries }),
+  reopen: (id: number) => api.post<MutationResult>(`${BASE}/${id}/reopen`, {}),
+  reorder: (id: number, body: { after_id?: number; before_id?: number }) =>
+    api.post<MutationResult>(`${BASE}/${id}/position`, body),
+  // scope: 'this' (só esta ocorrência) | 'series' (a série inteira) — só importa em recorrentes.
+  remove: (id: number, scope: 'this' | 'series' = 'this') =>
+    api.del<MutationResult>(`${BASE}/${id}?scope=${scope}`),
+  restore: (id: number) => api.post<MutationResult>(`${BASE}/${id}/restore`, {}),
+
+  // Atalhos de recorrência (o mesmo efeito de PATCH com recurrence/clear_recurrence).
+  setRecurrence: (id: number, body: RecurrenceInput) =>
+    api.post<MutationResult>(`${BASE}/${id}/recurrence`, body),
+  clearRecurrence: (id: number) => api.del<MutationResult>(`${BASE}/${id}/recurrence`),
+
+  // ── Tags (etiquetas) — fatia 013 ───────────────────────────────────────────
+  listTags: () => api.get<Tag[]>(`${BASE}/tags`),
+  createTag: (body: { name: string; color?: string }) =>
+    api.post<MutationResult>(`${BASE}/tags`, body),
+  updateTag: (id: number, body: Partial<{ name: string; color: string }>) =>
+    api.patch<MutationResult>(`${BASE}/tags/${id}`, body),
+  deleteTag: (id: number) => api.del<MutationResult>(`${BASE}/tags/${id}`),
+  // Tarefas abertas que têm uma determinada tag (busca por nome, com ou sem #).
+  tasksByTag: (name: string) => api.get<Task[]>(`${BASE}/by-tag?name=${encodeURIComponent(name)}`),
+
+  // ── Smart-lists (filtros salvos) — fatia 013 / P2 ──────────────────────────
+  listFilters: () => api.get<Filter[]>(`${BASE}/filters`),
+  createFilter: (body: { name: string; rules: FilterRules; default_view?: string; icon?: string | null }) =>
+    api.post<MutationResult>(`${BASE}/filters`, body),
+  updateFilter: (id: number, body: Partial<{ name: string; rules: FilterRules; default_view: string; icon: string | null; position: number }>) =>
+    api.patch<MutationResult>(`${BASE}/filters/${id}`, body),
+  deleteFilter: (id: number) => api.del<MutationResult>(`${BASE}/filters/${id}`),
+  // Abre uma smart-list salva: {tasks, orphans} (referências órfãs sinalizadas, sem erro).
+  filterTasks: (id: number, space?: Space) => api.get<FilterTasksResponse>(`${BASE}/filters/${id}/tasks${qs({ space })}`),
+  // Built-in "Hoje + Vencidas" (não persistida).
+  todayOverdue: (space?: Space) => api.get<Task[]>(`${BASE}/filters/today-overdue${qs({ space })}`),
+  // Built-ins GTD adicionais (não persistidos): abre um pela chave (next-actions, waiting…).
+  builtinTasks: (key: string, space?: Space) => api.get<Task[]>(`${BASE}/filters/builtin/${encodeURIComponent(key)}/tasks${qs({ space })}`),
+
+  // ── Processamento do inbox (GTD) — spec 034 ─────────────────────────────────
+  inboxQueue: () => api.get<InboxQueueResponse>(`${BASE}/inbox/queue`),
+  processInboxItem: (id: number, body: {
+    decision: InboxDecision
+    context_id?: number | null
+    project_id?: number | null
+    waiting_note?: string | null
+    due_date?: string | null
+  }) => api.post<MutationResult>(`${BASE}/inbox/${id}/process`, body),
+
+  // ── Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034 ──
+  viewTasks: (key: DateViewKey, space?: Space) => api.get<Task[]>(`${BASE}/views/${key}${qs({ space })}`),
+  viewCounts: (space?: Space) => api.get<DateViewCounts>(`${BASE}/views/counts${qs({ space })}`),
+
+  // ── Revisão semanal guiada — spec 035 ───────────────────────────────────────
+  reviewCurrent: () => api.get<WeeklyReview | null>(`${BASE}/reviews/current`),
+  reviewStart: () => api.post<WeeklyReview>(`${BASE}/reviews/start`, {}),
+  reviewMarkStep: (id: number, step: ReviewStep) =>
+    api.patch<MutationResult & { steps_seen?: ReviewStep[] }>(`${BASE}/reviews/${id}/step`, { step }),
+  reviewComplete: (id: number, note?: string | null) =>
+    api.post<CompleteReviewResult>(`${BASE}/reviews/${id}/complete`, { note: note ?? null }),
+  reviewLast: () => api.get<LastReview | null>(`${BASE}/reviews/last`),
+  reviewHistory: () => api.get<WeeklyReview[]>(`${BASE}/reviews/history`),
+  reviewWaitingOrdered: () => api.get<WaitingReviewItem[]>(`${BASE}/reviews/waiting-ordered`),
+  markProjectReviewed: (projectId: number) =>
+    api.post<MutationResult>(`${BASE}/projects/${projectId}/mark-reviewed`, {}),
+
+  // ── Contextos de execução — spec 034 ────────────────────────────────────────
+  listContexts: () => api.get<TaskContext[]>(`${BASE}/contexts`),
+  createContext: (body: { name: string; icon?: string | null }) =>
+    api.post<MutationResult>(`${BASE}/contexts`, body),
+  updateContext: (id: number, body: Partial<{ name: string; icon: string | null; position: number }>) =>
+    api.patch<MutationResult>(`${BASE}/contexts/${id}`, body),
+  deleteContext: (id: number) => api.del<MutationResult>(`${BASE}/contexts/${id}`),
+
+  // ── Views de Kanban configuráveis — spec 024 ────────────────────────────────
+  listKanbanViews: () => api.get<KanbanView[]>(`${BASE}/kanban-views`),
+  createKanbanView: (body: { name: string; display: KanbanViewDisplay; filter?: FilterRules | null }) =>
+    api.post<MutationResult>(`${BASE}/kanban-views`, body),
+  updateKanbanView: (id: number, body: Partial<{ name: string; display: KanbanViewDisplay; filter: FilterRules | null; clear_filter: boolean; position: number }>) =>
+    api.patch<MutationResult>(`${BASE}/kanban-views/${id}`, body),
+  deleteKanbanView: (id: number) => api.del<MutationResult>(`${BASE}/kanban-views/${id}`),
+  // Tarefas do board com o filtro da view aplicado (US3).
+  kanbanViewBoard: (viewId: number, projectId: number) =>
+    api.get<Task[]>(`${BASE}/kanban-views/${viewId}/board?project_id=${projectId}`),
+
+  // ── Board de Grupo — Kanban agregado por status unificado ────────────────────
+  // Retorna {group, lists, columns (unificadas), tasks} para renderizar o board do grupo.
+  // Colunas de mesmo nome (case-insensitive) de listas diferentes são mescladas.
+  groupBoard: (groupId: number) =>
+    api.get<GroupBoard>(`${BASE}/groups/${groupId}/board`),
+
+  // ── Calendário (consulta por intervalo) — fatia 013 / P3 ────────────────────
+  // Tarefas datadas + ocorrências virtuais das recorrentes na janela [start, end].
+  calendar: (start: string, end: string, projectId?: number, space?: Space) =>
+    api.get<Task[]>(`${BASE}/calendar${qs({ start, end, project_id: projectId, space })}`),
+
+  // ── Meu Dia — fatia 016 ───────────────────────────────────────────────────────
+  // Ritual do dia: plano + pendências de ontem + sugestões + capacity.
+  myDay: (date?: string) =>
+    api.get<MyDayResponse>(`${BASE}/my-day${date ? `?date=${date}` : ''}`),
+  // Marca/desmarca a tarefa no Meu Dia de uma data (ausente = hoje).
+  addToMyDay: (id: number, date?: string) =>
+    api.post<MutationResult>(`${BASE}/${id}/my-day`, date ? { date } : {}),
+  removeFromMyDay: (id: number) =>
+    api.del<MutationResult>(`${BASE}/${id}/my-day`),
+  // Atalho do ritual de pendências: today | tomorrow | later.
+  reschedule: (id: number, when: 'today' | 'tomorrow' | 'later') =>
+    api.post<MutationResult>(`${BASE}/${id}/reschedule`, { when }),
+  // Estimativa de duração (também via updateTask com duration_min).
+  setEstimate: (id: number, duration_min: number) =>
+    api.patch<MutationResult>(`${BASE}/${id}`, { duration_min }),
+  // Bloco de tempo (time-blocking). end_at derivado se ausente.
+  setTimeBlock: (id: number, body: { start_at: string; end_at?: string; duration_min?: number }) =>
+    api.post<MutationResult>(`${BASE}/${id}/time-block`, body),
+  clearTimeBlock: (id: number) =>
+    api.del<MutationResult>(`${BASE}/${id}/time-block`),
+  // Modo férias (spec 065): esconde tudo com contexto Trabalho no Meu Dia + digest matinal.
+  getMyDayPrefs: () => api.get<{ hide_work: boolean }>(`${BASE}/my-day/prefs`),
+  setMyDayPrefs: (hide_work: boolean) =>
+    api.patch<MutationResult>(`${BASE}/my-day/prefs`, { hide_work }),
+
+  // ── Hábitos (Fase 4 / fatia 014) ────────────────────────────────────────────
+  listHabits: () => api.get<Habit[]>(`${BASE}/habits`),
+  getHabit: (id: number) => api.get<Habit>(`${BASE}/habits/${id}`),
+  createHabit: (body: {
+    name: string; freq_num?: number; freq_den?: number
+    target_value?: number | null; unit?: string | null; icon?: string | null; color?: string | null
+    source_provider_id?: string | null
+    // Alertas no Google Calendar (spec 067) — independentes da frequência alvo.
+    schedules?: HabitSchedule[]; reminder_lead_min?: number; duration_min?: number | null
+  }) => api.post<MutationResult>(`${BASE}/habits`, body),
+  updateHabit: (id: number, body: Partial<{
+    name: string; freq_num: number; freq_den: number
+    target_value: number | null; unit: string | null; icon: string | null; color: string | null
+    clear_target: boolean; source_provider_id: string | null; clear_source: boolean
+    // schedules=undefined = não enviado (preserva o conjunto atual); enviar uma lista
+    // SUBSTITUI o conjunto inteiro (semântica de set) — [] remove todos os alertas.
+    schedules: HabitSchedule[]; reminder_lead_min: number
+    duration_min: number | null; clear_duration: boolean
+  }>) => api.patch<MutationResult>(`${BASE}/habits/${id}`, body),
+  // Excluir = arquivar (soft delete; o histórico fica).
+  deleteHabit: (id: number) => api.del<MutationResult>(`${BASE}/habits/${id}`),
+  // Check-in de um dia (date vazio = hoje; value para mensurável). Devolve a força recalculada.
+  checkin: (id: number, body: { date?: string; value?: number | null } = {}) =>
+    api.post<MutationResult>(`${BASE}/habits/${id}/checkin`, body),
+  removeCheckin: (id: number, date?: string) =>
+    api.del<MutationResult>(`${BASE}/habits/${id}/checkin${date ? `?date=${date}` : ''}`),
+  // Histórico anual (esparso) para o heatmap.
+  habitHistory: (id: number, year: number) =>
+    api.get<HabitHeatDay[]>(`${BASE}/habits/${id}/history?year=${year}`),
+  // Fontes automáticas de hábito registradas (spec 036) — ex.: diário da Violet, leitura da Frieren.
+  listHabitSourceProviders: () => api.get<HabitSourceProvider[]>(`${BASE}/habits/source-providers`),
+  // Meu Dia (spec 067) — hábito selecionado entra no plano/capacidade do dia (mesmo padrão
+  // de addToMyDay/removeFromMyDay das tarefas, abaixo).
+  addHabitToMyDay: (id: number, date?: string) =>
+    api.post<MutationResult>(`${BASE}/habits/${id}/my-day`, date ? { date } : {}),
+  removeHabitFromMyDay: (id: number) =>
+    api.del<MutationResult>(`${BASE}/habits/${id}/my-day`),
+
+  // ── Tiny Experiments — spec 029 ────────────────────────────────────────────
+  // CRUD + check-in + pausa/retoma + revisão. As métricas (aderência etc.) vêm calculadas
+  // na leitura no backend. Sub-objeto para agrupar os endpoints /api/tasks/experiments/*.
+  experiments: {
+    list: (includeCompleted = false) =>
+      api.get<Experiment[]>(`${BASE}/experiments?include_completed=${includeCompleted}`),
+    // Experimentos ativos do dia sem check-in (para a seção "Experimentos de hoje" no Meu Dia).
+    dueToday: () => api.get<ExperimentDue[]>(`${BASE}/experiments/due-today`),
+    get: (id: number) => api.get<Experiment>(`${BASE}/experiments/${id}`),
+    create: (body: {
+      title: string; start_date: string; end_date: string
+      why?: string | null; hypothesis?: string | null; cadence?: ExperimentCadence
+    }) => api.post<MutationResult>(`${BASE}/experiments`, body),
+    update: (id: number, body: Partial<{
+      title: string; why: string | null; hypothesis: string | null
+      cadence: ExperimentCadence; start_date: string; end_date: string
+    }>) => api.patch<MutationResult>(`${BASE}/experiments/${id}`, body),
+    del: (id: number) => api.del<MutationResult>(`${BASE}/experiments/${id}`),
+    // Check-in de um período (upsert; backfill dentro do intervalo).
+    log: (id: number, body: { period_date: string; done: boolean; feeling?: number | null; note?: string | null }) =>
+      api.post<MutationResult>(`${BASE}/experiments/${id}/log`, body),
+    removeLog: (id: number, periodDate: string) =>
+      api.del<MutationResult>(`${BASE}/experiments/${id}/log?period_date=${periodDate}`),
+    pause: (id: number) => api.post<MutationResult>(`${BASE}/experiments/${id}/pause`, {}),
+    resume: (id: number) => api.post<MutationResult>(`${BASE}/experiments/${id}/resume`, {}),
+    // Revisão de encerramento: veredicto + aprendizado (US2).
+    review: (id: number, body: { verdict: ExperimentVerdict; review: string }) =>
+      api.post<MutationResult>(`${BASE}/experiments/${id}/review`, body),
+  },
+
+  // ── Metas — spec 030 ────────────────────────────────────────────────────────
+  // CRUD + marcos + vínculo de movimentos + revisão. O progresso vem calculado na leitura.
+  goals: {
+    list: (includeCompleted = false) =>
+      api.get<Goal[]>(`${BASE}/goals?include_completed=${includeCompleted}`),
+    // Contagem de metas ativas por área da vida (SC-006).
+    areas: () => api.get<GoalAreaCount[]>(`${BASE}/goals/areas`),
+    // Itens vinculáveis de um tipo (com linked_goal_id para avisar reatribuição).
+    linkable: (itemType: MovementType) =>
+      api.get<LinkableItem[]>(`${BASE}/goals/linkable?item_type=${itemType}`),
+    get: (id: number) => api.get<Goal>(`${BASE}/goals/${id}`),
+    create: (body: {
+      title: string; deadline: string
+      why?: string | null; life_area?: string | null
+      metric_target?: number | null; metric_unit?: string | null
+      anti_goals?: string | null; accountability?: string | null
+    }) => api.post<MutationResult>(`${BASE}/goals`, body),
+    update: (id: number, body: Partial<{
+      title: string; why: string | null; life_area: string | null
+      metric_target: number | null; metric_unit: string | null; metric_current: number | null
+      deadline: string; anti_goals: string | null; accountability: string | null
+    }>) => api.patch<MutationResult>(`${BASE}/goals/${id}`, body),
+    del: (id: number) => api.del<MutationResult>(`${BASE}/goals/${id}`),
+    // Marcos.
+    addMilestone: (goalId: number, title: string) =>
+      api.post<MutationResult>(`${BASE}/goals/${goalId}/milestones`, { title }),
+    updateMilestone: (goalId: number, milestoneId: number, body: Partial<{ title: string; done: boolean }>) =>
+      api.patch<MutationResult>(`${BASE}/goals/${goalId}/milestones/${milestoneId}`, body),
+    delMilestone: (goalId: number, milestoneId: number) =>
+      api.del<MutationResult>(`${BASE}/goals/${goalId}/milestones/${milestoneId}`),
+    // Vínculo de movimentos (US2).
+    link: (goalId: number, itemType: MovementType, itemId: number) =>
+      api.post<MutationResult>(`${BASE}/goals/${goalId}/link`, { item_type: itemType, item_id: itemId }),
+    unlink: (goalId: number, itemType: MovementType, itemId: number) =>
+      api.post<MutationResult>(`${BASE}/goals/${goalId}/unlink`, { item_type: itemType, item_id: itemId }),
+    // Revisão de encerramento (US3).
+    review: (id: number, body: { outcome: GoalOutcome; review: string }) =>
+      api.post<MutationResult>(`${BASE}/goals/${id}/review`, body),
+    // Vínculo externo (cross-agent) + métrica automática — spec 036.
+    linkProviders: () => api.get<GoalLinkProvider[]>(`${BASE}/goals/link-providers`),
+    searchLinkItems: (providerId: string, q: string) =>
+      api.get<GoalExternalItem[]>(`${BASE}/goals/link-providers/${providerId}/search?q=${encodeURIComponent(q)}`),
+    linkExternal: (goalId: number, providerId: string, entityId: string) =>
+      api.post<MutationResult>(`${BASE}/goals/${goalId}/links`, { provider_id: providerId, entity_id: entityId }),
+    unlinkExternal: (goalId: number, providerId: string, entityId: string) =>
+      api.del<MutationResult>(`${BASE}/goals/${goalId}/links/${providerId}/${entityId}`),
+    setMetricMode: (goalId: number, mode: GoalMetricMode) =>
+      api.patch<MutationResult>(`${BASE}/goals/${goalId}/metric-mode`, { mode }),
+  },
+
+  // ── Pessoas (Komi) — fatia 025 ────────────────────────────────────────────
+  // Lista todos os contatos da Komi para o AssigneePicker.
+  // O endpoint /api/people/ retorna {"status":"ok","people":[...]} (embrulhado),
+  // então desembrulhamos .people aqui para que os consumidores recebam Person[] diretamente.
+  listPeople: () =>
+    api.get<{ status: string; people: Person[] }>('/api/people/').then(r => r.people),
+
+  // Cadastro rápido de pessoa a partir do PersonSearch do TaskModal — só o nome.
+  // A Komi (router /api/people/) já expõe o endpoint; o resto do perfil se completa
+  // depois na tela Pessoas. Desembrulha .person para devolver Person direto.
+  createPerson: (name: string) =>
+    api.post<{ status: string; person: Person }>('/api/people/', { name }).then(r => r.person),
+
+  // ── Calendar Hub — fatia 019 ──────────────────────────────────────────────
+  // Fontes registradas no hub (Kaguya, Nami, Frieren, Violet, Akane, gcal)
+  // Backend retorna lista direta (não envolvida em { sources: [...] })
+  calendarSources: () =>
+    api.get<Calendar[]>(`${BASE}/calendar/sources`),
+
+  // Agregação fan-out: itens de todas as fontes visíveis num intervalo
+  calendarAggregate: (start: string, end: string, sources?: string[]) => {
+    const params = new URLSearchParams({ start, end })
+    if (sources?.length) params.set('sources', sources.join(','))
+    return api.get<AggregateResponse>(`${BASE}/calendar/aggregate?${params}`)
+  },
+
+  // Preferências de visibilidade + cor por calendário
+  // Backend retorna lista direta (não envolvida em { prefs: [...] })
+  calendarPrefs: () =>
+    api.get<CalendarPref[]>(`${BASE}/calendar/prefs`),
+  setCalendarPref: (calId: string, patch: Partial<CalendarPref>) =>
+    api.patch<MutationResult>(`${BASE}/calendar/prefs/${encodeURIComponent(calId)}`, patch),
+
+  // Calendários reais do Google (excluindo espelho Kaguya e TickTick).
+  // Backend retorna lista direta (não envolvida em { calendars: [...] }).
+  calendarCalendars: () =>
+    api.get<Calendar[]>(`${BASE}/calendar/calendars`),
+
+  // Eventos da Agenda pessoal do Google no intervalo.
+  // Backend retorna lista direta de eventos (não envolvida em { events: [...] }).
+  // Cada item tem campos: id, summary, start, end, description, location, calendar_id, calendar_name.
+  calendarEvents: (start: string, end: string) =>
+    api.get<Array<{
+      id: string; summary: string; start: string; end: string
+      description: string; location: string; attendees: string[]
+      link: string; calendar_id: string; calendar_name: string
+    }>>(`${BASE}/calendar/events?start=${start}&end=${end}`),
+
+  // Verifica se o Google Calendar está autenticado e acessível.
+  // Retorna { connected: true } ou { connected: false, reason: string }.
+  // Usado por CalendarsAside para exibir aviso visível em vez de fonte silenciosa.
+  gcalStatus: () =>
+    api.get<{ connected: boolean; reason: string | null }>(`${BASE}/calendar/gcal-status`),
+
+  // CRUD de eventos dos calendários Google (cal="gcal:<id>")
+  createCalendarEvent: (body: Partial<CalEvent>) =>
+    api.post<MutationResult>(`${BASE}/calendar/events`, body),
+  updateCalendarEvent: (id: string, body: Partial<CalEvent> & { calendar_id?: string }) =>
+    api.patch<MutationResult>(`${BASE}/calendar/events/${id}`, body),
+  deleteCalendarEvent: (id: string, calendarId?: string) => {
+    const qs = calendarId ? `?calendar_id=${encodeURIComponent(calendarId)}` : ''
+    return api.del<MutationResult>(`${BASE}/calendar/events/${id}${qs}`)
+  },
+
+  // ── Foco / Pomodoro gameficado — spec 037 + spec 062 ─────────────────────────
+  // Tempo restante NUNCA é contado só no cliente — active() traz started_at/duration
+  // e o widget deriva o countdown local entre polls (R1/R7 do plano).
+  focus: {
+    prefs: () => api.get<FocusPrefs>(`${BASE}/focus/prefs`),
+    active: () => api.get<FocusSession | null>(`${BASE}/focus/active`),
+    start: (body: { task_id?: number | null; habit_id?: number | null; focus_min: number; break_min: number; force?: boolean }) =>
+      api.post<FocusSession>(`${BASE}/focus/start`, body),
+    finish: (id: number, note?: string) =>
+      api.post<FinishFocusResult>(`${BASE}/focus/${id}/finish`, { note }),
+    cancel: (id: number, reason?: string) =>
+      api.post<MutationResult>(`${BASE}/focus/${id}/cancel`, { reason }),
+    today: () => api.get<FocusDayStats>(`${BASE}/focus/today`),
+    week: () => api.get<FocusWeekStats>(`${BASE}/focus/week`),
+    history: (date?: string) =>
+      api.get<FocusHistoryEntry[]>(`${BASE}/focus/history${date ? `?date=${date}` : ''}`),
+    stats: (start: string, end: string) =>
+      api.get<FocusStats>(`${BASE}/focus/stats?start=${start}&end=${end}`),
+    heatmap: (year: number) =>
+      api.get<FocusHeatDay[]>(`${BASE}/focus/heatmap?year=${year}`),
+    achievements: () =>
+      api.get<FocusAchievement[]>(`${BASE}/focus/achievements`),
+    taskSummary: (taskId: number) =>
+      api.get<TaskFocusSummary>(`${BASE}/${taskId}/focus-summary`),
+  },
+
+  // ── Agenda: expediente, almoço, acordar/dormir e exceções por dia (spec 075) ──
+  schedule: {
+    get: () => api.get<SchedulePrefs>(`${BASE}/schedule`),
+    update: (body: Partial<SchedulePrefs> & { clear_lunch?: boolean }) =>
+      api.patch<MutationResult & { prefs?: SchedulePrefs }>(`${BASE}/schedule`, body),
+    overrides: (from?: string, to?: string) =>
+      api.get<ScheduleOverride[]>(`${BASE}/schedule/overrides${qs({ from, to })}`),
+    setOverride: (day: string, body: { works: boolean; work_start?: string | null; work_end?: string | null; note?: string | null }) =>
+      api.put<MutationResult>(`${BASE}/schedule/overrides/${day}`, body),
+    clearOverride: (day: string) => api.del<MutationResult>(`${BASE}/schedule/overrides/${day}`),
+  },
+
+  // ── Dependências ("só começa depois de…") ──
+  dependencies: (id: number) => api.get<Dependencies>(`${BASE}/${id}/dependencies`),
+  addDependency: (id: number, blockedById: number) =>
+    api.post<MutationResult>(`${BASE}/${id}/dependencies`, { blocked_by_id: blockedById }),
+  removeDependency: (id: number, blockedById: number) =>
+    api.del<MutationResult>(`${BASE}/${id}/dependencies/${blockedById}`),
+
+  // ── Edição em massa (uma transação) + Desfazer ──
+  bulk: (taskIds: number[], action: BulkAction, value?: unknown) =>
+    api.post<MutationResult & { affected: number; undo: BulkUndo }>(`${BASE}/bulk`, { task_ids: taskIds, action, value: value ?? null }),
+  bulkUndo: (undo: BulkUndo) => api.post<MutationResult>(`${BASE}/bulk/undo`, { undo }),
+
+  // ── Logbook, atividade e lixeira completa ──
+  completed: (opts: { start?: string; end?: string; space?: Space; projectId?: number; q?: string; limit?: number; offset?: number } = {}) =>
+    api.get<CompletedPage>(`${BASE}/completed${qs({ start: opts.start, end: opts.end, space: opts.space, project_id: opts.projectId, q: opts.q, limit: opts.limit, offset: opts.offset })}`),
+  activity: (id: number, limit = 100) => api.get<ActivityEvent[]>(`${BASE}/${id}/activity${qs({ limit })}`),
+  trashDetailed: (opts: { space?: Space; projectId?: number } = {}) =>
+    api.get<TrashItem[]>(`${BASE}/trash/detailed${qs({ space: opts.space, project_id: opts.projectId })}`),
+  trashRestore: (taskIds: number[]) => api.post<MutationResult & { restored: number }>(`${BASE}/trash/restore`, { task_ids: taskIds }),
+  trashPurge: (taskIds: number[]) => api.post<MutationResult & { purged: number }>(`${BASE}/trash/purge`, { task_ids: taskIds }),
+  trashEmpty: (olderThanDays?: number) => api.post<MutationResult & { purged: number }>(`${BASE}/trash/empty`, { older_than_days: olderThanDays ?? null }),
+  deletedProjects: () => api.get<ArchivedProject[]>(`${BASE}/projects/deleted`),
+  restoreDeletedProject: (id: number) => api.post<MutationResult>(`${BASE}/projects/${id}/restore-deleted`, {}),
+
+  // ── Duplicar e templates ──
+  duplicateTask: (id: number) => api.post<MutationResult>(`${BASE}/${id}/duplicate`, {}),
+  duplicateProject: (id: number, includeTasks = true) => api.post<MutationResult>(`${BASE}/projects/${id}/duplicate?include_tasks=${includeTasks}`, {}),
+  templates: (kind?: 'task' | 'project', space?: Space) => api.get<TemplateInfo[]>(`${BASE}/templates${qs({ kind, space })}`),
+  saveTaskTemplate: (taskId: number, name: string, space?: Space) =>
+    api.post<MutationResult>(`${BASE}/templates/task/${taskId}`, { name, space: space ?? null }),
+  saveProjectTemplate: (projectId: number, name: string) =>
+    api.post<MutationResult>(`${BASE}/templates/project/${projectId}`, { name }),
+  applyTemplate: (id: number, body: { project_id?: number; name?: string; base_date?: string } = {}) =>
+    api.post<MutationResult>(`${BASE}/templates/${id}/apply`, body),
+  deleteTemplate: (id: number) => api.del<MutationResult>(`${BASE}/templates/${id}`),
+
+  // ── Tags (gerenciador) e revisão por cadência ──
+  tagCounts: () => api.get<TagCount[]>(`${BASE}/tags/counts`),
+  mergeTags: (sourceId: number, targetId: number) => api.post<MutationResult>(`${BASE}/tags/${sourceId}/merge`, { target_id: targetId }),
+  dueReview: () => api.get<DueReviewProject[]>(`${BASE}/projects/due-review`),
+
+  // ── Estatísticas (StatsPayload do DS + planejamento) ──
+  stats: (opts: { year?: number; month?: number; space?: Space } = {}) =>
+    api.get<StatsPayload & { planning: PlanningStats }>(`${BASE}/stats${qs({ year: opts.year, month: opts.month, space: opts.space })}`),
+}
+
+export type { MutationResult }
+
+/** Bloco `planning` do payload de estatísticas: onde o planejamento falha. */
+export interface PlanningStats {
+  plan: { planned: number; done: number; rate: number | null; by_weekday: { bucket: string; planned: number; done: number; rate: number | null }[] }
+  pushed: { top: { task_id: number; title: string; count: number }[]; total_pushes: number; tasks_pushed: number }
+  estimates: { n: number; estimated_min: number; focused_min: number; ratio: number | null; bias_pct: number | null }
+  overload: { days_planned: number; days_over: number; worst: { day: string; planned_min: number; free_min: number; over_min: number }[] }
+  age: { bucket: string; count: number }[]
+  on_time: { on_time: number; late: number; no_due: number; on_time_pct: number | null }
+  inbox_old: number
+  waiting_no_followup: number
+  weekday: { bucket: string; count: number }[]
+  hours: { bucket: string; count: number }[]
+  lead_time_days: number | null
+  data_since: string | null
+  insights: { key: string; severity: 'info' | 'warn' | 'alert'; text: string; action: string }[]
+}

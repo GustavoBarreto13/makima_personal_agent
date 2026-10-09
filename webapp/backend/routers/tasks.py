@@ -677,10 +677,11 @@ def mark_project_reviewed_route(project_id: int, user: dict = Depends(require_us
 def list_tasks_route(
     project_id: int = Query(..., description="Id da lista"),
     include_completed: bool = Query(False),
+    include_deferred: bool = Query(False, description="Inclui as adiadas (start_date no futuro)"),
     user: dict = Depends(require_user),
 ) -> list[dict]:
     """Lista as tarefas de uma lista (com subtarefas aninhadas)."""
-    return list_tasks(project_id, include_completed)  # listagem
+    return list_tasks(project_id, include_completed, include_deferred)  # listagem
 
 
 @router.get("/today")

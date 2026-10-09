@@ -1,0 +1,993 @@
+// Tipos do shell Kaguya no Design System (spec 075) — espelham o contrato REST /api/tasks/*.
+// Partiram dos tipos do shell antigo e ganharam os campos da spec 075 (adiar, aguardando com pessoa,
+// série, bloqueio, espaço do grupo, agenda, tempo livre, estatísticas de planejamento).
+
+// Tipo de uma tarefa: tarefa comum, evento (com hora) ou aniversário (recorrência anual).
+export type TaskType = 'task' | 'event' | 'birthday'
+
+// Modo de recorrência: data-fixa (a âncora manda) ou pós-conclusão (conta de quando concluiu).
+export type RecurrenceMode = 'fixed' | 'after_completion'
+
+// Uma tag (etiqueta) — relação N:N com a tarefa. `color` é opcional (chip neutro sem ela).
+export interface Tag {
+  id: number
+  name: string
+  color: string | null
+}
+
+// Regra de recorrência de uma tarefa (1:1 com a tarefa viva da série).
+export interface Recurrence {
+  rrule: string               // regra RFC 5545 (ex.: "FREQ=MONTHLY;BYMONTHDAY=5")
+  mode: RecurrenceMode
+  anchor_date: string | null  // âncora da série ("YYYY-MM-DD")
+  active: boolean             // false = série encerrada
+}
+
+// Responsável de uma tarefa — person_id da Komi + nome + avatar.
+export interface Assignee {
+  id: string          // person_id (slug) da Komi, ex.: "p-lucas"
+  name: string        // nome completo
+  avatar_url: string | null  // null → exibir iniciais coloridas
+}
+
+// Pessoa do catálogo Komi para o AssigneePicker.
+export interface Person {
+  id: string
+  name: string
+  avatar_url: string | null
+}
+
+// Uma tarefa (ou subtarefa). Campos temporais chegam como string ISO do backend.
+export interface Task {
+  id: number
+  project_id: number
+  column_id: number | null
+  parent_id: number | null
+  title: string
+  description: string | null
+  type: TaskType
+  priority: number            // 0 nenhuma · 1 baixa · 2 média · 3 alta
+  due_date: string | null     // "YYYY-MM-DD"
+  due_time: string | null     // "HH:MM"
+  position: number
+  completed_at: string | null // null = aberta
+  created_at: string
+  // Meu Dia — fatia 016:
+  my_day_date: string | null  // "YYYY-MM-DD" — data para a qual está no Meu Dia (independente de due_date)
+  start_at: string | null     // ISO 8601 — início do bloco de tempo
+  end_at: string | null       // ISO 8601 — fim do bloco de tempo
+  duration_min: number | null // estimativa de duração em minutos (insumo da CapacityBar)
+  // Presente nas listagens com JOIN (today/search):
+  project_name?: string
+  // Recorrência ativa (quando houver) + descrição pt-BR (ex.: "todo dia 5"):
+  recurrence?: Recurrence | null
+  recurrence_text?: string | null
+  // Tags (etiquetas) da tarefa — anexadas nas listagens (sempre presente, pode ser vazia):
+  tags?: Tag[]
+  // Subtarefas aninhadas (profundidade N-níveis, retornadas por list_tasks):
+  subtasks?: Task[]
+  // Responsáveis da Komi (fatia 025) — presente em todas as respostas:
+  assignees?: Assignee[]
+  // Título da tarefa-mãe (fatia 025) — enviado quando parent_id IS NOT NULL:
+  parent_title?: string
+  // Calendário (fatia 013 / P3): ocorrência projetada (virtual) de uma recorrente.
+  // `is_virtual` = true → não tem linha própria; `series_task_id` aponta a tarefa viva da série.
+  // Calendar Hub — fatia 019: id do evento espelho no Google Calendar "Kaguya — Tarefas"
+  google_event_id?: string | null
+  is_virtual?: boolean
+  series_task_id?: number | null
+  // GTD real (spec 034): null = não classificada.
+  gtd_status?: GtdStatus | null
+  waiting_note?: string | null    // por quem/o quê espera (só com gtd_status === 'waiting')
+  waiting_since?: string | null   // ISO 8601 — desde quando está aguardando
+  context_id?: number | null      // contexto de execução (no máximo um por tarefa)
+  // Trabalho/Pessoal (spec 038) — herdado da lista atual, nunca persistido na tarefa.
+  context?: WorkContext
+  // spec 075: adiar (a tarefa só aparece a partir deste dia), aguardando com pessoa, série, bloqueio.
+  start_date?: string | null        // "YYYY-MM-DD" — adiada até este dia
+  follow_up_date?: string | null    // "YYYY-MM-DD" — quando cobrar (tarefa aguardando)
+  waiting_person_id?: string | null // id da pessoa na Komi
+  series_id?: string | null         // identidade da série de uma recorrente
+  blocked?: boolean                 // tem bloqueador aberto (dependência)
+  // Presente só nos resultados de busca global (spec 039) — true quando a lista dona
+  // está arquivada (a busca é a exceção que continua achando tarefas arquivadas).
+  archived?: boolean
+}
+
+// Contexto Trabalho/Pessoal (spec 038) — propriedade da LISTA (e do calendário), nunca da
+// tarefa. "personal" é o padrão retrocompatível (FR-010).
+export type WorkContext = 'personal' | 'work'
+
+// Status GTD real de uma tarefa (spec 034) — substitui as tags reservadas #aguardando/#algum-dia.
+export type GtdStatus = 'next_action' | 'waiting' | 'someday'
+
+// Um contexto de execução (spec 034) — nome único (case-insensitive), no máximo um por tarefa.
+export interface TaskContext {
+  id: number
+  name: string
+  icon: string | null
+  position: number
+}
+
+// ── Meu Dia — fatia 016 ───────────────────────────────────────────────────────
+
+// Métricas de capacity: cruzamento de estimativas de tarefas com eventos do Calendar.
+export interface CapacityStats {
+  no_plano: number        // quantidade de tarefas no plano
+  estimado_min: number    // total estimado de trabalho (soma de duration_min)
+  agenda_min: number      // duração dos eventos do Google Calendar dentro da janela útil
+  livre_min: number       // janela útil (8h–22h) menos agenda (≥ 0)
+  folga_min: number       // livre menos estimado (negativo = estouro)
+  excedeu: boolean        // true quando o plano excede a janela livre
+  calendar_ok: boolean    // false quando o Calendar não respondeu (agenda_min = 0)
+}
+
+// Evento do Google Calendar serializado pelo backend para a timeline do Meu Dia.
+// Produzido por _gcal_events_for_day em tools_tasks.py, já filtrado por visibilidade.
+export interface TimelineEvent {
+  id: string
+  title: string
+  start: string | null       // ISO 8601 "-03:00" (timed) ou null (all_day)
+  end: string | null         // ISO 8601 "-03:00" (timed) ou null (all_day)
+  all_day: boolean
+  calendar_id: string        // ID do calendário no Google
+  calendar_name: string      // Nome legível (ex.: "Gustavo Barreto")
+  color: string | null       // Cor do usuário (calendar_prefs) ou null para default
+  context: WorkContext       // Trabalho/Pessoal do calendário de origem (spec 038)
+  location?: string          // local do evento (spec 039) — pode ser "" (sem local)
+}
+
+// Resposta do endpoint GET /api/tasks/my-day.
+export interface MyDayResponse {
+  date: string              // "YYYY-MM-DD" do plano
+  plano: Task[]             // tarefas selecionadas para hoje (my_day_date == date) — união (visão única)
+  pendencias_ontem: Task[]  // abertas de dias anteriores (my_day_date < date) — união
+  sugestoes: Task[]         // vencem em ≤7 dias, fora do plano — união
+  capacity: CapacityStats   // capacity total (visão única)
+  eventos: TimelineEvent[]  // eventos do Google Calendar do dia (filtrados por visibilidade)
+  // Divisão por contexto (spec 038, US2) — sempre presentes, podem ser listas vazias.
+  plano_work: Task[]
+  plano_personal: Task[]
+  pendencias_ontem_work: Task[]
+  pendencias_ontem_personal: Task[]
+  sugestoes_work: Task[]
+  sugestoes_personal: Task[]
+  capacity_work: CapacityStats
+  capacity_personal: CapacityStats
+  // Modo férias (spec 065): true = o backend já excluiu tudo com contexto Trabalho
+  // (plano/pendencias/sugestoes/capacity acima já são só Pessoal; plano_work etc. vêm vazios).
+  hide_work: boolean
+  // Hábitos selecionados para o Meu Dia deste dia (spec 067) — hábito NÃO selecionado é
+  // invisível aqui; sua duration_min já está somada em capacity/capacity_personal (nunca
+  // capacity_work — hábitos não têm contexto) e NÃO é afetada pelo modo férias.
+  habitos: MyDayHabit[]
+  // spec 075: os DOIS tempos livres (trabalho e geral) pela agenda real; null se a agenda não pôde ser lida.
+  free_time?: FreeTime | null
+}
+
+// ── Agenda e tempo livre (spec 075) ───────────────────────────────────────────
+
+/** Um balde de tempo do dia (trabalho, geral ou total), em minutos. */
+export interface TimeBucket {
+  window_min: number    // tempo disponível antes dos compromissos
+  busy_min: number      // tomado por compromissos do calendário
+  livre_min: number     // o que sobra para tarefas
+  estimado_min: number  // estimativas do plano nesse espaço
+  folga_min: number     // livre − estimado (negativo = estouro)
+  excedeu: boolean
+}
+
+export interface FreeTime {
+  works: boolean
+  day_is_work?: boolean
+  work: TimeBucket
+  general: TimeBucket
+  total: TimeBucket
+  calendar_ok: boolean
+  schedule?: { work: [number, number] | null; lunch: [number, number] | null; lunch_is_free: boolean; awake: [number, number] }
+}
+
+export interface SchedulePrefs {
+  work_days: number[]   // ISO: 1 = segunda … 7 = domingo
+  work_start: string    // "HH:MM"
+  work_end: string
+  lunch_start: string | null
+  lunch_end: string | null
+  lunch_is_free: boolean
+  wake_time: string
+  sleep_time: string
+}
+
+export interface ScheduleOverride {
+  day: string           // "YYYY-MM-DD"
+  works: boolean
+  work_start: string | null
+  work_end: string | null
+  note: string | null
+}
+
+// ── Dependências, edição em massa, logbook, lixeira, templates (spec 075) ─────
+
+export interface DepRef { id: number; title: string; completed: boolean }
+export interface Dependencies { blocked_by: DepRef[]; blocking: DepRef[]; is_blocked: boolean }
+
+export type BulkAction =
+  | 'complete' | 'reopen' | 'delete' | 'set_project' | 'set_priority' | 'set_due_date'
+  | 'set_start_date' | 'add_tag' | 'remove_tag' | 'add_to_my_day' | 'remove_from_my_day'
+
+/** Snapshot devolvido por POST /bulk e aceito por POST /bulk/undo (opaco para a tela). */
+export type BulkUndo = Record<string, unknown>
+
+export interface CompletedPage {
+  items: Task[]
+  total: number
+  by_day: Record<string, number>
+}
+
+export interface ActivityEvent {
+  kind: 'created' | 'completed' | 'reopened' | 'rescheduled' | 'my_day_in' | 'my_day_out' | 'deferred' | 'moved' | 'deleted' | 'restored'
+  from_value: string | null
+  to_value: string | null
+  at: string
+}
+
+export interface TrashItem extends Task { project_name: string; descendants: number }
+
+export interface TemplateInfo { id: number; kind: 'task' | 'project'; name: string; context: WorkContext; created_at: string }
+
+export interface TagCount { id: number; name: string; color: string | null; open_count: number; total_count: number }
+
+export interface DueReviewProject {
+  id: number
+  name: string
+  context: WorkContext
+  review_interval_days: number
+  last_reviewed_at: string | null
+  days_overdue: number
+}
+
+// Um hábito selecionado para o Meu Dia (spec 067) — forma reduzida (não é o Habit completo
+// de HabitsScreen, só o necessário para o bloco do Meu Dia).
+export interface MyDayHabit {
+  id: number
+  name: string
+  icon: string | null
+  duration_min: number | null
+}
+
+// Uma lista (na UI "Lista"; no modelo "project").
+export interface Project {
+  id: number
+  name: string
+  group_id: number | null
+  color: string | null
+  icon: string | null
+  is_inbox: boolean
+  position: number
+  has_board: boolean   // tem ao menos uma coluna de Kanban
+  open_count: number   // tarefas-pai abertas
+  last_reviewed_at?: string | null   // passo 4 da revisão semanal (spec 035)
+  review_interval_days?: number | null // spec 075 — cadência de revisão (null = sem cadência)
+  sequential?: boolean               // spec 075 — só a próxima ação aparece
+  context: WorkContext // Trabalho/Pessoal (spec 038) — Inbox é sempre 'personal'
+  archived_at?: string | null  // spec 039 — não-nulo quando arquivada (não vem na sidebar, só na tela de arquivadas)
+}
+
+// Uma lista arquivada (spec 039) — resposta de GET /api/tasks/projects/archived.
+export interface ArchivedProject {
+  id: number
+  name: string
+  group_id: number | null
+  color: string | null
+  icon: string | null
+  archived_at: string
+  task_count: number
+}
+
+// Um grupo de listas (pasta da sidebar).
+export interface Group {
+  id: number
+  name: string
+  position: number
+  context?: WorkContext // spec 075 — espaço do grupo; listas novas herdam
+}
+
+// ── Smart-lists (filtros salvos) — fatia 013 / P2 ──────────────────────────────
+// Campos e operadores aceitos pela DSL (espelham agents/kaguya/tools_filters.py).
+export type FilterField = 'project_id' | 'priority' | 'due_date' | 'tag' | 'state' | 'text' | 'gtd_status' | 'context_id'
+export type FilterCombinator = 'and' | 'or'
+
+// Uma condição da regra: {campo, operador, valor}. O valor varia por campo (ver DSL).
+export interface FilterCondition {
+  field: FilterField
+  op: string
+  value: unknown   // número, string, lista de ids ou null — depende de field/op
+}
+
+// O objeto de regras de uma smart-list: combinador + lista de condições (≥1).
+export interface FilterRules {
+  combinator: FilterCombinator
+  conditions: FilterCondition[]
+}
+
+// Uma smart-list salva (objeto de 1ª classe — tabela task_filters).
+export interface Filter {
+  id: number
+  name: string
+  icon: string | null
+  rules: FilterRules
+  default_view: string
+  position: number
+}
+
+// Id-sentinela da smart-list built-in "Hoje + Vencidas" (não persistida no banco):
+// usado como `param` da view 'filter' para distinguir da abertura de um filtro salvo.
+export const BUILTIN_TODAY_OVERDUE = -1
+
+// Built-ins GTD adicionais (também não persistidos). Cada um tem um id-sentinela NEGATIVO
+// (não colide com ids reais de task_filters, que são positivos) e uma `key` que casa com a
+// rota do backend (GET /filters/builtin/{key}/tasks). Metadados estáticos no front, como a
+// "Hoje + Vencidas" — as regras vivem no backend (tools_filters.BUILTIN_FILTERS).
+export interface GtdBuiltin {
+  id: number       // sentinela usado como `param` da view 'filter'
+  key: string      // chave da rota do backend
+  name: string
+  icon: string
+}
+export const GTD_BUILTINS: GtdBuiltin[] = [
+  { id: -2, key: 'next-actions', name: 'Próximas Ações', icon: 'zap' },
+  { id: -3, key: 'waiting', name: 'Aguardando', icon: 'clock' },
+  { id: -4, key: 'someday', name: 'Algum dia', icon: 'inbox' },
+  { id: -5, key: 'quick', name: 'Rápidas (5 min)', icon: 'timer' },
+  { id: -6, key: 'energy', name: 'Alta energia', icon: 'flame' },
+]
+
+// ── Processamento do inbox (GTD) — spec 034 ────────────────────────────────────
+// As 6 decisões do wizard (FR-003) — mesmo vocabulário do backend (process_inbox_item).
+export type InboxDecision = 'next_action' | 'waiting' | 'someday' | 'schedule' | 'done' | 'trash'
+
+export interface InboxQueueResponse {
+  items: Task[]
+  total: number
+}
+
+// ── Revisão semanal guiada — spec 035 ──────────────────────────────────────────
+// Os 6 passos fixos do ritual, na ordem de exibição (mesmo vocabulário do backend).
+export type ReviewStep = 'inbox' | 'next_actions' | 'waiting' | 'lists' | 'calendar' | 'someday'
+
+export const REVIEW_STEPS: { key: ReviewStep; name: string; icon: string }[] = [
+  { key: 'inbox', name: 'Inbox zero', icon: 'inbox' },
+  { key: 'next_actions', name: 'Próximas ações', icon: 'zap' },
+  { key: 'waiting', name: 'Aguardando', icon: 'clock' },
+  { key: 'lists', name: 'Listas/projetos', icon: 'list' },
+  { key: 'calendar', name: 'Calendário', icon: 'calendar' },
+  { key: 'someday', name: 'Algum dia/talvez', icon: 'inbox' },
+]
+
+// Estado da revisão (aberta ou recém-iniciada/retomada) — GET .../current e POST .../start.
+export interface WeeklyReview {
+  id: number
+  started_at: string
+  completed_at: string | null
+  steps_seen: ReviewStep[]
+  note: string | null
+  resumed?: boolean   // só em POST /reviews/start — indica se retomou uma já aberta (US2)
+}
+
+// Indicador "última revisão há N dias" (US4) — GET /reviews/last.
+export interface LastReview {
+  completed_at: string
+  note: string | null
+}
+
+// Item do passo 3 (Aguardando), ordenado pelos mais antigos — GET /reviews/waiting-ordered.
+export interface WaitingReviewItem {
+  id: number
+  title: string
+  waiting_note: string | null
+  waiting_since: string | null
+  days_waiting: number | null
+}
+
+// Resposta de POST /reviews/{id}/complete quando faltam passos (não é erro — 200 c/ sinal).
+export interface CompleteReviewResult {
+  status: string
+  id?: number
+  completed_at?: string
+  error?: 'steps_pending'
+  missing?: ReviewStep[]
+}
+
+// ── Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034 ────
+// Bloco fixo no TOPO da sidebar, nesta ordem; não editável pelo usuário (research.md R7).
+// Nome "DATE_VIEWS" (não "FIXED_VIEWS") para não colidir com a const local de mesmo nome
+// em SidebarNav.tsx (as views de ROTA: Meu Dia/Kanban/Calendário/...) — módulos distintos,
+// mas ambos acabam importados no mesmo arquivo.
+export type DateViewKey = 'all' | 'today' | 'tomorrow' | 'next7' | 'inbox'
+
+export interface DateViewMeta {
+  key: DateViewKey
+  name: string
+  icon: string
+}
+
+export const DATE_VIEWS: DateViewMeta[] = [
+  { key: 'all', name: 'Todas', icon: 'list' },
+  { key: 'today', name: 'Hoje', icon: 'sun' },
+  { key: 'tomorrow', name: 'Amanhã', icon: 'sunrise' },
+  { key: 'next7', name: 'Próximos 7 Dias', icon: 'calendar' },
+  { key: 'inbox', name: 'Inbox', icon: 'inbox' },
+]
+
+export type DateViewCounts = Record<DateViewKey, number>
+
+// Resposta de "abrir uma smart-list": tarefas + referências órfãs (tag/lista excluída).
+export interface FilterTasksResponse {
+  tasks: Task[]
+  orphans: FilterCondition[]
+  missing?: boolean
+}
+
+// Uma coluna de Kanban.
+export interface Column {
+  id: number
+  project_id: number
+  name: string
+  position: number
+  is_done_column: boolean
+}
+
+// ── Views de Kanban configuráveis (spec 024) ───────────────────────────────────
+// Métricas disponíveis para os 3 slots do rodapé-resumo (catálogo da R15).
+export type SummaryMetric =
+  | 'abertas'
+  | 'tempo_estimado'
+  | 'concluidas'
+  | 'concluidas_hoje'
+  | 'em_andamento'
+
+// Configuração de exibição de uma view: quais adornos aparecem + métricas dos slots.
+export interface KanbanViewDisplay {
+  adornos: {
+    capacity_meter: boolean   // barra de 5 segmentos por coluna (R6)
+    subtask_ring: boolean     // anel de progresso no card (R12)
+    summary_footer: boolean   // rodapé-resumo (R14/R15)
+    card_chips: boolean       // chips data/estimativa/projeto no card (R11)
+  }
+  slots: SummaryMetric[]      // exatamente 3 chaves
+}
+
+// Uma view de Kanban salva (global, reutilizável). `filter` reusa o DSL das smart-lists.
+export interface KanbanView {
+  id: number
+  name: string
+  is_builtin: boolean         // true = view de sistema "Completa" (imutável)
+  display: KanbanViewDisplay
+  filter: FilterRules | null  // FilterRules inline ou null (sem filtro)
+  position: number
+}
+
+// Tendência do hábito (modelo caixa d'água): média rápida vs lenta.
+export type HabitTrend = 'up' | 'down' | 'flat'
+
+// Um alerta semanal de hábito no Google Calendar (spec 067). weekday é o código iCal
+// (MO..SU — NÃO confundir com WEEKDAY_1 de dateUtils.ts, que é domingo-first). time é
+// "HH:MM" ou null (evento de dia inteiro, sem push).
+export interface HabitSchedule {
+  weekday: string
+  time: string | null
+}
+
+// ── Hábitos (Fase 4 / fatia 014) ───────────────────────────────────────────────
+// Um hábito: rotina com frequência alvo (freq_num vezes a cada freq_den dias) e check-ins
+// diários. As métricas de score são DERIVADAS (calculadas na leitura no backend pelo modelo
+// "caixa d'água", nunca persistidas). `target_value`+`unit` => hábito mensurável; ausentes => sim/não.
+export interface Habit {
+  id: number
+  name: string
+  icon: string | null
+  color: string | null
+  freq_num: number
+  freq_den: number
+  target_value: number | null
+  unit: string | null
+  // Score em três dimensões (modelo caixa d'água):
+  consistency: number   // 0–100 — a "nota" (nível da caixa reescalado pela meta)
+  trend: HabitTrend     // tendência: subindo / caindo / estável
+  recent_done: number   // cumpridos nos últimos 14 dias (dado cru)
+  recent_total: number  // quanto a meta esperava em 2 semanas (meta_semanal × 2)
+  done_today: boolean   // se já houve check-in cumprido hoje
+  // Fonte automática de check-in (spec 036) — null = hábito 100% manual (comportamento atual).
+  source_provider_id: string | null
+  done_today_source: 'manual' | 'auto' | 'both' | null  // origem do cumprimento de hoje
+  // Alertas no Google Calendar (spec 067) — INDEPENDENTES do score (freq_num/freq_den):
+  schedules: HabitSchedule[]
+  reminder_lead_min: number      // antecedência do popup, em min (0 = na hora marcada)
+  duration_min: number | null    // duração do bloco no calendário; null = padrão de 30min
+  in_my_day: boolean             // selecionado para o Meu Dia de hoje
+}
+
+// Um dia do histórico de check-ins (para o heatmap anual). Array esparso vindo do backend
+// (só dias com check-in); o componente de heatmap densifica para a grade contínua.
+export interface HabitHeatDay {
+  date: string          // "YYYY-MM-DD"
+  value: number | null  // valor medido (mensurável) ou null (sim/não)
+  done: boolean         // cumpriu a meta naquele dia
+  source?: 'manual' | 'auto' | 'both'  // origem do dia (spec 036) — ausente em dias vazios (sem check-in)
+}
+
+// Fonte automática de hábito registrada (spec 036) — ex.: diário da Violet, leitura da Frieren.
+export interface HabitSourceProvider {
+  id: string
+  name: string
+}
+
+// ── Tiny Experiments (spec 029) ────────────────────────────────────────────────
+// Cadência do check-in: diária (um por dia) ou semanal (um por semana de calendário).
+export type ExperimentCadence = 'daily' | 'weekly'
+
+// Ciclo de vida do experimento: ativo ⇄ pausado → concluído (terminal).
+export type ExperimentStatus = 'active' | 'paused' | 'completed'
+
+// Veredicto da revisão de encerramento (US2): persistir / pausar / pivotar.
+export type ExperimentVerdict = 'persist' | 'pause' | 'pivot'
+
+// Um check-in de um período (o "tracker"). Datas como string ISO do backend.
+export interface ExperimentLog {
+  id: number
+  period_date: string          // "YYYY-MM-DD" (dia, ou segunda da semana na cadência semanal)
+  done: boolean                // fez?
+  feeling: number | null       // sensação 1–5 (opcional)
+  note: string | null          // nota livre (opcional)
+}
+
+// Um experimento testável com prazo. As métricas (aderência etc.) são DERIVADAS — calculadas
+// na leitura no backend pelo motor puro (razão simples que perdoa falhas), nunca persistidas.
+export interface Experiment {
+  id: number
+  title: string                // a fórmula "Vou [ação] por [duração]"
+  why: string | null           // porquê/motivação (opcional)
+  hypothesis: string | null    // "talvez se eu __, então __" (opcional)
+  cadence: ExperimentCadence
+  start_date: string           // "YYYY-MM-DD"
+  end_date: string             // "YYYY-MM-DD"
+  status: ExperimentStatus
+  verdict: ExperimentVerdict | null   // preenchido na revisão
+  review: string | null               // aprendizado registrado ao concluir
+  // Vínculo com uma Meta (spec 030) — opcional; goal_title vem do JOIN na leitura.
+  goal_id: number | null
+  goal_title: string | null
+  // Derivados (na resposta, não no banco):
+  periods_done: number         // check-ins com done=true
+  periods_expected: number     // períodos decorridos menos os pausados
+  adherence_pct: number        // 0–100, razão simples capada
+  logged_current: boolean      // já há check-in para o período corrente?
+  days_remaining: number       // end_date - hoje (negativo = atrasado)
+  is_overdue: boolean          // ativo e passou do fim
+  created_at: string
+  updated_at: string
+  // Presente só no detalhe (GET /experiments/{id}): check-ins ordenados por período.
+  logs?: ExperimentLog[]
+}
+
+// Item mínimo de "experimentos de hoje" (US3, GET /experiments/due-today).
+export interface ExperimentDue {
+  id: number
+  title: string
+  cadence: ExperimentCadence
+}
+
+// ── Metas (spec 030) ───────────────────────────────────────────────────────────
+export type GoalStatus = 'active' | 'closed'
+// Desfecho da revisão (US3): atingida / não atingida / revisar.
+export type GoalOutcome = 'achieved' | 'missed' | 'revise'
+// Tipo de um item de execução vinculável (movimento).
+export type MovementType = 'experiment' | 'task' | 'habit'
+
+// Um marco de uma meta (passo nomeado, concluído/pendente).
+export interface Milestone {
+  id: number
+  title: string
+  done: boolean
+}
+
+// Um item externo vinculado a uma meta (spec 036) — resolvido AO VIVO pelo provedor dono.
+export interface GoalExternalItem {
+  id: string
+  label: string
+  sublabel: string | null
+  cover_url: string | null
+  done: boolean
+  deep_link: string | null
+}
+
+// Grupo de itens externos de um mesmo provedor (spec 036).
+export interface GoalExternalGroup {
+  provider_name: string
+  unavailable: boolean          // true = o provedor falhou nesta consulta (FR-008)
+  items: GoalExternalItem[]
+}
+
+// Itens vinculados a uma meta, agrupados por tipo, cada um com status mínimo (FR-009).
+export interface GoalMovements {
+  experiments: { id: number; title: string; status: string; adherence_pct: number }[]
+  tasks: { id: number; title: string; completed: boolean }[]
+  habits: { id: number; name: string; consistency: number }[]
+  external?: Record<string, GoalExternalGroup>  // chave = provider_id (spec 036)
+}
+
+// Provedor de vínculo de meta registrado (spec 036) — ex.: livros da Frieren.
+export interface GoalLinkProvider {
+  id: string
+  name: string
+}
+
+export type GoalMetricMode = 'manual' | 'auto'
+
+// Uma meta. As métricas de progresso são DERIVADAS (calculadas na leitura no backend). `metric_*`
+// ausentes => sem métrica numérica; o progresso vem só dos marcos (ou é qualitativo).
+export interface Goal {
+  id: number
+  title: string
+  why: string | null
+  life_area: string | null
+  metric_target: number | null
+  metric_unit: string | null
+  metric_current: number | null
+  metric_mode: GoalMetricMode   // 'auto' = valor calculado ao vivo dos vínculos externos (spec 036)
+  deadline: string             // "YYYY-MM-DD"
+  anti_goals: string | null
+  accountability: string | null
+  status: GoalStatus
+  outcome: GoalOutcome | null   // preenchido na revisão
+  review: string | null         // aprendizado ao encerrar
+  // Derivados (na resposta, não no banco):
+  metric_pct: number | null     // % da métrica (null = sem métrica)
+  milestones_total: number
+  milestones_done: number
+  milestones_pct: number | null // % dos marcos (null = sem marcos)
+  progress_pct: number | null   // progresso combinado (null = meta direcional)
+  days_remaining: number        // deadline - hoje (negativo = atrasada)
+  is_overdue: boolean           // ativa e prazo vencido
+  created_at: string
+  updated_at: string
+  // Presente só no detalhe (GET /goals/{id}):
+  milestones?: Milestone[]
+  movements?: GoalMovements
+}
+
+// Contagem de metas ativas por área da vida (SC-006). `life_area` null = "sem área".
+export interface GoalAreaCount {
+  life_area: string | null
+  active_count: number
+}
+
+// Item vinculável no seletor de vínculo (US2). `linked_goal_id` != null => já pertence a outra meta.
+export interface LinkableItem {
+  id: number
+  label: string
+  linked_goal_id: number | null
+}
+
+// Payload único da sidebar.
+export interface Sidebar {
+  groups: Group[]
+  projects: Project[]
+  filters: Filter[]   // smart-lists salvas (fatia 013)
+}
+
+// Resposta da tela Hoje.
+export interface TodayResponse {
+  overdue: Task[]
+  today: Task[]
+}
+
+// Preferências visuais do shell (persistidas em localStorage).
+export interface Tweaks {
+  theme: 'light' | 'dark'
+  accent: 'blue' | 'pink' | 'violet' | 'gold'
+  density: 'confortavel' | 'compacta'
+  pmark: 'bar' | 'dot' | 'fill'   // estilo da marca de prioridade
+  anim: 'on' | 'off'
+  // Calendário (fatia 019): variante visual. Muda espaçamento, tipografia e posição do aside.
+  calVariant: 'agora' | 'helvetico' | 'editorial'
+}
+
+// View ativa do shell. 'list' usa o param como id da lista; 'filter' usa o param como
+// id da smart-list (ou BUILTIN_TODAY_OVERDUE para a built-in). 'group' usa o param como
+// id do grupo (task_project_groups) e abre o board Kanban agregado do grupo.
+// 'group-list' usa o param como id do grupo e exibe as tarefas em seções por lista.
+// 'date' abre uma das views fixas de mercado (spec 034) — o `param` é o sentinel
+// negativo de DATE_VIEW_IDS (mesmo truque de BUILTIN_TODAY_OVERDUE/GTD_BUILTINS).
+export type KaguyaView = 'today' | 'list' | 'kanban' | 'calendar' | 'eisenhower' | 'habits' | 'experiments' | 'goals' | 'focus' | 'trash' | 'archived' | 'filter' | 'group' | 'group-list' | 'date'
+
+// Sentinelas negativos para as 4 views fixas que abrem a tela 'date' (a 5ª, "inbox",
+// reusa a lista Inbox de verdade via view='list' — mesmo conteúdo, sem duplicar tela).
+export const DATE_VIEW_IDS: Record<Exclude<DateViewKey, 'inbox'>, number> = {
+  all: -10, today: -11, tomorrow: -12, next7: -13,
+}
+
+// ── Board de Grupo — Kanban agregado por status unificado ─────────────────────
+// Um membro de coluna unificada: indica qual column_id desta lista compõe a coluna.
+export interface GroupBoardMember {
+  project_id: number  // id da lista dona desta coluna
+  column_id: number   // id da coluna naquela lista
+}
+
+// Coluna unificada do board de grupo: agrupa colunas de mesmo nome de listas diferentes.
+// `key` = nome normalizado (lower+trim); `is_done` = verdadeiro se QUALQUER membro for done;
+// `position` = menor posição entre os membros (define a ordem das colunas no board).
+export interface GroupBoardColumn {
+  key: string
+  name: string
+  is_done: boolean
+  position: number
+  members: GroupBoardMember[]
+}
+
+// Metadados de uma lista no payload do board de grupo (subconjunto de Project).
+export interface GroupBoardList {
+  id: number
+  name: string
+  color: string | null
+  icon: string | null
+}
+
+// Payload completo retornado por GET /api/tasks/groups/{id}/board.
+export interface GroupBoard {
+  group: { id: number; name: string }
+  lists: GroupBoardList[]
+  columns: GroupBoardColumn[]
+  tasks: Task[]
+}
+
+// ── Calendar Hub — fatia 019 ───────────────────────────────────────────────────
+// CalAccount: conta Google ou Makima que agrupa calendários
+export interface CalAccount {
+  id: string
+  name: string
+  sub: string   // email ou "makima" para as bases internas
+}
+
+// Calendar: um calendário dentro de uma conta (fonte do hub ou agenda Google)
+export interface Calendar {
+  id: string
+  account: string         // id da CalAccount dona
+  kind: 'base' | 'integration'
+  name: string
+  color: string           // cor padrão (OKLCH)
+  avatar?: string         // URL do ícone (opcional)
+  visible: boolean        // vem das prefs; padrão true
+  primary?: boolean       // calendário "padrão" da conta (ex.: Kaguya Tarefas)
+  position?: number       // ordem na sidebar (das prefs)
+  writable?: boolean      // true quando o usuário tem permissão owner/writer no Google
+  // Trabalho/Pessoal (spec 038) — só presente/relevante nos calendários "gcal:<id>";
+  // decide contra qual capacity do Meu Dia os eventos deste calendário contam.
+  context?: WorkContext
+}
+
+// CalEvent: item normalizado para o grid (tarefas, eventos gcal, itens cross-agent)
+export interface CalEvent {
+  id: string
+  cal: string             // source id: "kaguya" | "gcal:<google_id>" | "nami" | "frieren" | "violet" | "akane"
+  day: string             // YYYY-MM-DD
+  start: string | null    // ISO datetime; null = all-day
+  end: string | null
+  allDay: boolean
+  color: string | null    // cor de exibição (pref sobrepõe cor padrão)
+  kind: 'event' | 'task'
+  title: string
+  loc?: string
+  taskId?: number         // para eventos Kaguya (permite editar via tasks API)
+  deepLink?: string       // para cross-agent read-only (ex.: "/nami/transactions")
+  description?: string
+}
+
+// CalendarItem: forma de wire do backend (snake_case, hub aggregate response)
+export interface CalendarItem {
+  cal: string
+  date: string            // YYYY-MM-DD
+  start?: string | null
+  end?: string | null
+  all_day: boolean
+  title: string
+  kind: string
+  ref_id?: string | null
+  deep_link?: string | null
+  color?: string | null
+  loc?: string | null
+}
+
+// CalendarPref: preferência de exibição de um calendário (persistida no banco)
+export interface CalendarPref {
+  calendar_id: string
+  visible: boolean
+  color: string | null
+  position: number
+  context: WorkContext  // Trabalho/Pessoal (spec 038) — decide a capacity que os eventos afetam
+}
+
+// Resposta do endpoint GET /api/tasks/calendar/aggregate
+export interface AggregateResponse {
+  sources: Calendar[]
+  items: CalendarItem[]
+  errors: string[]        // source_ids que falharam (best-effort)
+}
+
+// ── Foco / Pomodoro gameficado (spec 037 + spec 062) ────────────────────────────
+// Fase da sessão ativa — derivada no BACKEND a partir de started_at (nunca contada
+// do zero no cliente); o widget só deriva o countdown local entre polls (R1/R7).
+export type FocusPhase = 'foco' | 'pausa'
+
+// Desfecho de uma sessão encerrada (spec 062) — substitui o antigo `completed`
+// booleano. `null` = sessão ainda ativa. `cancelled` = o usuário desistiu ativamente;
+// `abandoned` = fechou a aba/travou e o servidor encerrou por timeout (R2). É essa
+// distinção que torna "onde eu falhei" visível no overview, não só "quanto foquei".
+export type FocusOutcome = 'completed' | 'cancelled' | 'abandoned' | null
+
+// Preferência de duração (foco/pausa), lembrada entre sessões no servidor (R4).
+export interface FocusPrefs {
+  focus_min: number
+  break_min: number
+}
+
+// Uma sessão de foco — ativa (com phase/remaining_sec/growth) ou já fechada.
+export interface FocusSession {
+  id: number
+  task_id: number | null
+  task_title: string | null       // null = sem tarefa vinculada
+  habit_id: number | null         // spec 062 — "focar NO hábito X"
+  habit_name: string | null
+  project_id: number | null       // lista da tarefa (via join) — cor/contexto da árvore
+  project_title: string | null
+  project_color: string | null
+  started_at: string              // ISO 8601 — base de toda derivação de tempo (R1)
+  ended_at: string | null         // null = sessão ainda ativa
+  duration_planned_min: number
+  break_planned_min: number
+  outcome: FocusOutcome
+  cancel_reason: string | null
+  note: string | null
+  // Presentes só na sessão ATIVA (GET /focus/active):
+  phase?: FocusPhase
+  remaining_sec?: number
+  growth?: number                 // 0..1 — progresso da copa da árvore (widget)
+}
+
+// Resumo agregado de um dia (GET /focus/today).
+export interface FocusDayStats {
+  date: string        // "YYYY-MM-DD"
+  total_min: number
+  sessoes: number
+}
+
+// Série dos últimos 7 dias locais (GET /focus/week).
+export interface FocusWeekStats {
+  days: FocusDayStats[]
+}
+
+// Uma entrada do histórico de um dia (GET /focus/history) — inclui falhas (spec 062).
+export interface FocusHistoryEntry {
+  id: number
+  task_id: number | null
+  task_title: string | null
+  habit_id: number | null
+  habit_name: string | null
+  project_id: number | null
+  project_title: string | null
+  project_color: string | null
+  started_at: string
+  duration_focused_min: number
+  outcome: FocusOutcome
+  cancel_reason: string | null
+  note: string | null
+}
+
+// Uma sessão "crua" dentro do payload de /focus/stats — usada pela Floresta (uma
+// árvore por sessão) e pelos rankings.
+export interface FocusStatSession {
+  id: number
+  task_id: number | null
+  task_title: string | null
+  habit_id: number | null
+  habit_name: string | null
+  project_id: number | null
+  project_title: string | null
+  project_color: string | null
+  context: 'personal' | 'work' | null
+  started_at: string
+  ended_at: string | null
+  date_local: string
+  hour_local: number
+  duration_planned_min: number
+  duration_focused_min: number
+  outcome: FocusOutcome
+  cancel_reason: string | null
+}
+
+export interface FocusHourStats {
+  hour: number             // 0..23
+  completed_min: number
+  completed_n: number
+  failed_n: number
+}
+
+export interface FocusOutcomeStats {
+  completed: number
+  cancelled: number
+  abandoned: number
+  completion_pct: number
+  avg_min_before_quit: number | null
+}
+
+export interface FocusTopEntry {
+  label: string
+  total_min: number
+  sessoes: number
+  task_id?: number
+  project_id?: number
+  habit_id?: number
+  context?: string
+}
+
+export interface FocusRecentReason {
+  date: string
+  reason: string
+  outcome: FocusOutcome
+}
+
+// Payload único da tela de Foco (GET /focus/stats?start=&end=) — spec 062.
+export interface FocusStats {
+  totals: { total_min: number; sessoes: number }
+  by_day: FocusDayStats[]
+  by_hour: FocusHourStats[]
+  outcome: FocusOutcomeStats
+  streak: number
+  longest_streak: number
+  top_tasks: FocusTopEntry[]
+  top_projects: FocusTopEntry[]
+  top_habits: FocusTopEntry[]
+  by_context: FocusTopEntry[]
+  recent_reasons: FocusRecentReason[]
+  sessions: FocusStatSession[]
+}
+
+// Entrada esparsa do heatmap anual (GET /focus/heatmap?year=).
+export interface FocusHeatDay {
+  date: string
+  total_min: number
+  sessoes: number
+}
+
+// Uma conquista já avaliada (GET /focus/achievements) — nunca persistida no
+// backend, recalculada do zero a cada chamada (spec 062).
+export interface FocusAchievement {
+  id: string
+  name: string
+  description: string
+  icon: string
+  axis: string
+  unlocked: boolean
+  unlocked_at: string | null
+  progress: number
+  target: number
+}
+
+// Tempo acumulado de foco numa tarefa (GET /tasks/{id}/focus-summary).
+export interface TaskFocusSummary {
+  total_min: number
+  sessoes: number
+  last_session_at: string | null
+}
+
+// Resposta de POST /focus/{id}/finish — ecoa se o hábito vinculado foi marcado
+// automaticamente (spec 062), pro frontend confirmar sem precisar de uma 2ª chamada.
+export interface FinishFocusResult {
+  status: string
+  session: {
+    id: number
+    duration_focused_min: number
+    outcome: 'completed'
+    habit_checked_in: boolean
+  }
+}
