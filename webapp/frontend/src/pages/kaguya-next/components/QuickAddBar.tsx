@@ -22,6 +22,9 @@ interface Props {
   due?: string
   /** Cria direto numa coluna do Kanban. */
   columnId?: number
+  /** Hora e duração iniciais (vindas do calendário). */
+  time?: string
+  duration?: number
   /** Também coloca a tarefa no Meu Dia (a tela Meu Dia). */
   myDay?: boolean
   placeholder?: string
@@ -31,9 +34,9 @@ interface Props {
 
 /** Cria a tarefa a partir do que a captura entendeu. Devolve false (mantém o texto) se não havia título. */
 export async function createFromCapture(
-  r: CaptureResult, ctx: { projects: { id: number; name: string }[]; projectId?: number; columnId?: number; due?: string; myDay?: boolean },
+  r: CaptureResult, ctx: { projects: { id: number; name: string }[]; projectId?: number; columnId?: number; due?: string; time?: string; duration?: number; myDay?: boolean },
 ): Promise<number | false> {
-  const out = captureToTask(r, { projects: ctx.projects, defaultProjectId: ctx.projectId, defaultDue: ctx.due })
+  const out = captureToTask(r, { projects: ctx.projects, defaultProjectId: ctx.projectId, defaultDue: ctx.due, defaultTime: ctx.time, defaultDuration: ctx.duration })
   if (!out) { toast('Escreva o título da tarefa.', { tone: 'error' }); return false }
   if (out.unknownList) toast(`Não achei a lista “${out.unknownList}”. A tarefa foi para a lista atual.`)
   // Criada pelo “+ Adicionar tarefa” de uma coluna: só vale se a lista não foi trocada por um @lista no texto.
@@ -48,7 +51,7 @@ export async function createFromCapture(
   }
 }
 
-export function QuickAddBar({ projectId, columnId, due, myDay, placeholder = 'Adicionar tarefa — Enter para criar', onCreated }: Props) {
+export function QuickAddBar({ projectId, columnId, due, time, duration, myDay, placeholder = 'Adicionar tarefa — Enter para criar', onCreated }: Props) {
   const k = useKaguya()
   return (
     <div className="kn-add">
@@ -59,14 +62,14 @@ export function QuickAddBar({ projectId, columnId, due, myDay, placeholder = 'Ad
         legend={LEGEND}
         today={k.today}
         onSubmit={(r) => {
-          void createFromCapture(r, { projects: k.projects, projectId: projectId ?? k.inboxId, columnId, due, myDay }).then((id) => {
+          void createFromCapture(r, { projects: k.projects, projectId: projectId ?? k.inboxId, columnId, due, time, duration, myDay }).then((id) => {
             if (id === false) return
             k.reload()
             toast('Tarefa criada.', { tone: 'success' })
             onCreated?.(id)
           })
         }}
-        onExpand={(r) => k.newTask({ projectId, columnId, due, title: r.fields.title })}
+        onExpand={(r) => k.newTask({ projectId, columnId, due, time, duration, title: r.fields.title })}
       />
     </div>
   )
@@ -92,6 +95,8 @@ export function NewTaskModal({ defaults, onClose }: { defaults?: NewTaskDefaults
         projectId={projectId}
         columnId={columnId}
         due={defaults?.due}
+        time={defaults?.time}
+        duration={defaults?.duration}
         placeholder={defaults?.title ? defaults.title : 'Ex.: Enviar relatório @trabalho !alta amanhã 17h'}
         onCreated={(id) => { onClose(); k.openTask(id) }}
       />

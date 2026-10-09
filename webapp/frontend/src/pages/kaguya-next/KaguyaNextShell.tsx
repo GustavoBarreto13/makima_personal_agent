@@ -24,10 +24,10 @@ import { DEFAULT_MOBILE_TABS, FIXED_NAV, buildNav, navIdToRoute, routeToNavId, t
 import { hashFor, routeFromHash, withTask, type Route } from './lib/routes'
 import { useLoad } from './lib/useLoad'
 import { DateScreen, FilterScreen, GroupListScreen, GtdScreen, ListScreen } from './screens/ListScreens'
-import { Pending } from './screens/Pending'
 import { Archived, Logbook, Tags, Templates, Trash } from './screens/Records'
 import { Stats } from './screens/Stats'
 import { FocusCancelModal, FocusStartModal, FocusWidget } from './components/FocusSession'
+import { Calendar } from './screens/Calendar'
 import { Eisenhower } from './screens/Eisenhower'
 import { Focus } from './screens/Focus'
 import { Experiments, ExperimentDetail } from './screens/Experiments'
@@ -52,12 +52,6 @@ type Dialog =
 const SPACE_OPTIONS: { value: SpaceChoice; label: string; icon: 'apps' | 'work' | 'personal' }[] = [
   { value: 'all', label: 'Tudo', icon: 'apps' }, { value: 'work', label: 'Trabalho', icon: 'work' }, { value: 'personal', label: 'Pessoal', icon: 'personal' },
 ]
-
-/** Telas ainda não migradas (viram `Pending` até a fase de cada uma). */
-const PENDING: Record<string, string> = {
-  calendar: 'O calendário',
-
-}
 
 export function KaguyaNextShell() {
   useDocumentTitle(AGENT_TABS.kaguya.title, AGENT_TABS.kaguya.icon)
@@ -160,6 +154,7 @@ export function KaguyaNextShell() {
       case 'group-list': return route.id !== undefined ? <GroupListScreen id={route.id} /> : <Today />
       case 'group': return route.id !== undefined ? <GroupBoardScreen groupId={route.id} /> : <Today />
       case 'eisenhower': return <Eisenhower />
+      case 'calendar': return <Calendar />
       case 'focus': return <Focus />
       case 'habits': return <Habits />
       case 'goals': return route.id !== undefined ? <GoalDetail id={route.id} /> : <Goals />
@@ -170,7 +165,7 @@ export function KaguyaNextShell() {
       case 'archived': return <Archived />
       case 'templates': return <Templates />
       case 'tags': return <Tags />
-      default: return <Pending name={PENDING[route.view] ?? 'Esta tela'} />
+      default: return <Today />
     }
   })()
 

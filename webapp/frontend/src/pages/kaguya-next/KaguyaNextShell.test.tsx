@@ -118,12 +118,6 @@ describe('navegação e URL', () => {
     expect(await screen.findByLabelText('Detalhe da tarefa')).toBeTruthy()
     expect((await screen.findByLabelText('Título')) as HTMLInputElement).toHaveProperty('value', 'Ligar para o dentista')
   })
-
-  it('telas ainda não migradas apontam para a versão atual', async () => {
-    window.location.hash = '#calendario'
-    render(<MemoryRouter><KaguyaNextShell /></MemoryRouter>)
-    expect(await screen.findByText(/O calendário ainda está na versão atual/)).toBeTruthy()
-  })
 })
 
 describe('criar, concluir e desfazer', () => {

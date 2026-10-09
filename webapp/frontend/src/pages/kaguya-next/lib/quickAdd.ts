@@ -39,6 +39,9 @@ export interface CaptureContext {
   defaultProjectId?: number
   /** Data padrão quando o texto não cita nenhuma (ex.: a tela "Hoje" cria para hoje). */
   defaultDue?: string
+  /** Hora e duração iniciais (criar arrastando um horário no calendário). Valem só quando o texto não traz as suas. */
+  defaultTime?: string
+  defaultDuration?: number
 }
 
 /** Corpo da API a partir do que o parser entendeu; `null` se não sobrou título. */
@@ -52,10 +55,12 @@ export function captureToTask(r: CaptureResult, ctx: CaptureContext): { body: Ne
   if (f.priority) body.priority = f.priority
   const due = f.dueDate ?? ctx.defaultDue
   if (due) body.due_date = due
-  if (f.dueTime && due) body.due_time = f.dueTime
+  const time = f.dueTime ?? (f.dueDate ? undefined : ctx.defaultTime)
+  if (time && due) body.due_time = time
   if (f.tags.length) body.tags = f.tags
   if (f.recur) body.recurrence = { rrule: f.recur.rule, mode: f.recur.mode }
-  if (f.duration && f.duration > 0) body.duration_min = Math.round(f.duration)
+  const duration = f.duration && f.duration > 0 ? f.duration : ctx.defaultDuration
+  if (duration && duration > 0) body.duration_min = Math.round(duration)
   // @lista digitada que não existe: a tarefa cai na lista padrão, mas a tela avisa em vez de calar.
   const unknownList = f.place && resolveProject(f.place, ctx.projects) === undefined ? f.place : null
   return { body, unknownList }

@@ -791,6 +791,8 @@ export interface CalEvent {
   taskId?: number         // para eventos Kaguya (permite editar via tasks API)
   deepLink?: string       // para cross-agent read-only (ex.: "/nami/transactions")
   description?: string
+  done?: boolean          // tarefa concluída (aparece riscada)
+  recurring?: boolean     // tarefa de uma série recorrente
 }
 
 // CalendarItem: forma de wire do backend (snake_case, hub aggregate response)
