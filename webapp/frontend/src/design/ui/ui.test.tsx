@@ -573,3 +573,16 @@ describe('ListPicker', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 })
+
+describe('Largura do conteúdo (preferência global)', () => {
+  it('padrão centralizada; “Tela inteira” marca o frame e fica salva', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<Shell />)
+    expect(container.querySelector('.ds-frame')!.hasAttribute('data-ds-width')).toBe(false)
+    await user.keyboard('?')
+    const sheet = await screen.findByRole('dialog', { name: 'Preferências' })
+    await user.click(within(sheet).getByRole('button', { name: 'Tela inteira' }))
+    expect(container.querySelector('.ds-frame')!.getAttribute('data-ds-width')).toBe('full')
+    expect(JSON.parse(localStorage.getItem('ds:prefs:appearance') ?? '{}').width).toBe('full')
+  })
+})

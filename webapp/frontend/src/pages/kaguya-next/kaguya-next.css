@@ -600,3 +600,15 @@
 .kn-nt-myday { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3); }
 .kn-nt-hint { margin-inline-end: auto; }
 @container ds-frame (max-width: 759px) { .kn-nt { grid-template-columns: 1fr; } }
+
+
+/* ── Ajustes ── */
+.ds-page.kn-settings { max-width: 880px; }
+.kn-card { display: flex; flex-direction: column; gap: var(--ds-space-3); padding: var(--ds-space-5); border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); background: var(--ds-card); }
+.kn-card .ds-sec-h { margin: 0; }
+.kn-card > .ds-hint { margin: 0; }
+.kn-set-group { display: flex; flex-direction: column; }
+.kn-set-row { display: flex; align-items: center; gap: var(--ds-space-3); padding: 6px 0; border-bottom: 1px solid var(--ds-line); color: var(--ds-ink-2); }
+.kn-set-row:last-child { border-bottom: 0; }
+.kn-set-name { flex: 1; min-width: 0; color: var(--ds-ink-1); font-size: var(--ds-text-sm); }
+.kn-set-row .ds-iconbtn.kn-on { color: var(--ds-accent-deep); background: var(--ds-accent-tint); }

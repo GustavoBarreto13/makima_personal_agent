@@ -4,7 +4,7 @@
 
 export type ViewId =
   | 'today' | 'list' | 'kanban' | 'group' | 'group-list' | 'calendar' | 'date' | 'gtd' | 'filter' | 'eisenhower'
-  | 'habits' | 'goals' | 'experiments' | 'focus' | 'logbook' | 'stats' | 'trash' | 'archived' | 'templates' | 'tags' | 'organize'
+  | 'habits' | 'goals' | 'experiments' | 'focus' | 'logbook' | 'stats' | 'trash' | 'archived' | 'templates' | 'tags' | 'organize' | 'settings'
 
 /** Chaves das visões de data (Todas, Amanhã…) — o `date` da rota. */
 export const DATE_KEYS = ['all', 'today', 'tomorrow', 'next7', 'inbox'] as const
@@ -22,7 +22,7 @@ export interface Route {
 /** Telas sem parâmetro: id da rota → trecho do hash. */
 const PLAIN: Partial<Record<ViewId, string>> = {
   today: 'hoje', calendar: 'calendario', eisenhower: 'eisenhower', habits: 'habitos', logbook: 'concluidas',
-  focus: 'foco', stats: 'estatisticas', trash: 'lixeira', archived: 'arquivadas', templates: 'templates', tags: 'etiquetas', organize: 'organizar',
+  focus: 'foco', stats: 'estatisticas', trash: 'lixeira', archived: 'arquivadas', templates: 'templates', tags: 'etiquetas', organize: 'organizar', settings: 'ajustes',
 }
 /** Telas com um id numérico opcional (lista, quadro, grupo, filtro, meta, experimento). */
 const WITH_ID: Partial<Record<ViewId, string>> = {
@@ -33,7 +33,7 @@ const WITH_ID: Partial<Record<ViewId, string>> = {
 const ALIASES: Record<string, string> = {
   today: 'hoje', 'meu-dia': 'hoje', calendar: 'calendario', calendário: 'calendario', habits: 'habitos', hábitos: 'habitos',
   done: 'concluidas', concluídas: 'concluidas', logbook: 'concluidas', stats: 'estatisticas', estatísticas: 'estatisticas',
-  trash: 'lixeira', archived: 'arquivadas', tags: 'etiquetas', goals: 'metas', experiments: 'experimentos', focus: 'foco',
+  trash: 'lixeira', archived: 'arquivadas', tags: 'etiquetas', settings: 'ajustes', preferences: 'ajustes', goals: 'metas', experiments: 'experimentos', focus: 'foco',
 }
 
 const isDateKey = (s: string): s is DateKey => (DATE_KEYS as readonly string[]).includes(s)

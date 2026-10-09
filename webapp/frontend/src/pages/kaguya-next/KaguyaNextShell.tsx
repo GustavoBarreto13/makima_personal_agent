@@ -9,23 +9,23 @@ import { getAgent } from '../../design/core/agents'
 import { todayISO } from '../../design/core/format'
 import { useCommandProvider, type CommandProvider } from '../../design/headless/commands'
 import { usePrefs } from '../../design/headless/usePrefs'
-import { AppShell, Chip, SegmentedControl, SettingRow, Toggle, toast, type NavGroup } from '../../design'
+import { AppShell, Button, SegmentedControl, SettingRow, toast, type NavGroup } from '../../design'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { AGENT_TABS } from '../../lib/agentTabs'
 import { kaguyaApi, type Space } from './api'
 import { NewTaskModal } from './components/NewTaskModal'
-import { ScheduleSettings } from './components/ScheduleSettings'
 import { ScreenBoundary } from './components/ScreenBoundary'
 import { SearchModal } from './components/SearchModal'
 import { SideNav } from './components/SideNav'
 import { TaskDetailPanel } from './components/TaskDetailPanel'
 import { DEFAULT_PREFS, KaguyaContext, type KaguyaCtx, type KaguyaPrefs, type ManageActions, type NewTaskDefaults } from './context'
 import * as act from './lib/actions'
-import { DEFAULT_MOBILE_TABS, FIXED_NAV, buildNav, navIdToRoute, routeToNavId, titleFor, type SpaceChoice } from './lib/nav'
+import { DEFAULT_MOBILE_TABS, buildNav, navIdToRoute, routeToNavId, titleFor, type SpaceChoice } from './lib/nav'
 import { hashFor, routeFromHash, withTask, type Route } from './lib/routes'
 import { useLoad } from './lib/useLoad'
 import { DateScreen, FilterScreen, GroupListScreen, GtdScreen, ListScreen } from './screens/ListScreens'
 import { Archived, Logbook, Tags, Templates, Trash } from './screens/Records'
+import { DisplaySettings, Settings } from './screens/Settings'
 import { Stats } from './screens/Stats'
 import { FocusCancelModal, FocusStartModal, FocusWidget } from './components/FocusSession'
 import { ContextsModal, GroupModal, ProjectModal, SmartListModal } from './components/OrganizeModals'
@@ -180,14 +180,11 @@ export function KaguyaNextShell() {
       case 'archived': return <Archived />
       case 'templates': return <Templates />
       case 'tags': return <Tags />
+      case 'settings': return <Settings />
       default: return <Today />
     }
   })()
 
-  const togglePref = (list: 'hiddenNav' | 'pinnedNav', id: string) => {
-    const cur = prefs[list]
-    setPrefs({ [list]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] } as Partial<KaguyaPrefs>)
-  }
   // Detalhe: ao lado (padrão) ou centralizado. Quadros e calendário ocupam a tela toda, então sempre abrem centralizado.
   const centered = prefs.detailMode === 'center' || route.view === 'kanban' || route.view === 'group' || route.view === 'calendar'
   const panelOpen = route.taskId !== undefined && !centered
@@ -225,6 +222,7 @@ export function KaguyaNextShell() {
           { id: 'kaguya.review', label: 'Revisão semanal', icon: 'weekly-review', keywords: 'gtd revisar semana', run: () => manage.review() },
           { id: 'kaguya.contexts', label: 'Locais (Onde @)', icon: 'place', keywords: 'contextos gtd casa', run: () => manage.contexts() },
           { id: 'kaguya.focus', label: 'Iniciar foco', icon: 'timer', keywords: 'pomodoro concentrar', run: () => startFocus({}) },
+          { id: 'kaguya.settings', label: 'Ajustes da Kaguya', icon: 'prefs', keywords: 'preferencias agenda menu', run: () => goto({ view: 'settings' }) },
           { id: 'kaguya.today', label: 'Ir para o Meu Dia', icon: 'sun', run: () => goto({ view: 'today' }) },
           { id: 'kaguya.search', label: 'Buscar tarefas (inclui concluídas)', icon: 'search', keywords: 'procurar', run: () => setDialog({ kind: 'search', q: '' }) },
           { id: 'kaguya.space.work', label: 'Espaço: só Trabalho', icon: 'work', run: () => setPrefs({ space: 'work' }) },
@@ -233,33 +231,9 @@ export function KaguyaNextShell() {
         ]}
         preferences={
           <>
-            <SettingRow title="Espaço" help="Filtra TODAS as telas: o que é de Trabalho e o que é Pessoal. O espaço de uma lista vem da própria lista (ou do grupo dela).">
-              <SegmentedControl label="Espaço" value={prefs.space} options={SPACE_OPTIONS} onChange={(v) => setPrefs({ space: v })} />
-            </SettingRow>
-            <SettingRow title="Meu Dia" help="Com “Tudo”, divide em Trabalho e Pessoal ou mostra numa lista só.">
-              <SegmentedControl label="Layout do Meu Dia" value={prefs.daySplit} options={[{ value: 'split', label: 'Dividido' }, { value: 'single', label: 'Único' }]} onChange={(v) => setPrefs({ daySplit: v })} />
-            </SettingRow>
-            <SettingRow title="Concluídas no fim da lista"><Toggle checked={prefs.showCompleted} onChange={(v) => setPrefs({ showCompleted: v })} label="Mostrar concluídas" /></SettingRow>
-            <SettingRow title="Detalhes na linha" help="Notas e etiquetas ao lado do título."><Toggle checked={prefs.showDetails} onChange={(v) => setPrefs({ showDetails: v })} label="Mostrar detalhes" /></SettingRow>
-            <SettingRow title="Menu lateral" help="Esconda o que não usa ou fixe no topo. Vale para o desktop e para o celular.">
-              <div className="kn-navprefs">
-                {FIXED_NAV.map((s) => (
-                  <div key={s.section}>
-                    <b className="kn-h3">{s.section}</b>
-                    <div className="kn-chips">
-                      {s.items.map((i) => (
-                        <span key={i.id} className="kn-navpref">
-                          <Chip on={!prefs.hiddenNav.includes(i.id)} aria-pressed={!prefs.hiddenNav.includes(i.id)} onClick={() => togglePref('hiddenNav', i.id)}>{i.label}</Chip>
-                          <Chip on={prefs.pinnedNav.includes(i.id)} icon="pin" aria-pressed={prefs.pinnedNav.includes(i.id)} aria-label={`Fixar ${i.label}`} onClick={() => togglePref('pinnedNav', i.id)} />
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </SettingRow>
-            <SettingRow title="Agenda" help="Expediente, almoço e sono definem seu tempo livre (do trabalho e geral). O digest só fala de trabalho nos dias de trabalho.">
-              <ScheduleSettings />
+            <DisplaySettings compact />
+            <SettingRow title="Mais ajustes" help="Agenda de trabalho, menu lateral e barra do celular.">
+              <Button size="sm" icon="forward" onClick={() => { goto({ view: 'settings' }); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) }}>Abrir Ajustes</Button>
             </SettingRow>
           </>
         }

@@ -237,19 +237,29 @@ Kaguya como `migrating` (o lint vigia a pasta nova).
   `#gtd/waiting`, `#filtro/5`, `#calendario`, `#eisenhower`, `#habitos`, `#metas[/id]`, `#experimentos[/id]`, `#foco`, `#concluidas`,
   `#estatisticas`, `#organizar`, `#etiquetas`, `#templates`, `#arquivadas`, `#lixeira`; o sufixo `/t/88` abre a tarefa no painel.
 - **Espaço global** (Tudo · Trabalho · Pessoal) na barra superior: filtra todas as telas pelo `?space=`; a barra lateral, o digest e
-  o Meu Dia respeitam. Menu lateral com ocultar e fixar itens (desktop e barra inferior do celular), nas Preferências.
+  o Meu Dia respeitam.
+- **Barra lateral** (`components/SideNav.tsx`, via `navSlot` do `AppShell`): grupos de listas que recolhem (lembrados em `prefs.collapsedGroups`),
+  o **nome do grupo abre o quadro dele**, lista com o ícone próprio, tudo **arrastável** (listas dentro do grupo e entre grupos, grupos entre si,
+  visões em qualquer ordem — `prefs.viewOrder`; regras puras em `lib/sideDnd.ts`). Ocultar e fixar itens ficam em **Ajustes**.
+- **Ajustes** (`#ajustes`): exibição (espaço, abrir a tarefa ao lado/no centro, Meu Dia, estilo e lateral do calendário), agenda de trabalho,
+  menu lateral (mostrar/fixar) e abas do celular. A gaveta de Preferências (`?`) fica só com o rápido e um botão para cá; a **largura do
+  conteúdo** (centralizada/tela inteira) é do DS e vale para todos os agentes.
 - **Lista no estilo TickTick**: 3 painéis (menu | lista | detalhe), adicionar no topo com chips ao vivo, subtarefas recolhíveis,
   seleção (Ctrl/Shift + clique) com barra de ação em massa e Desfazer, teclado (↑↓ Espaço Enter 0–3 T A Delete, **Alt+setas** para
   reordenar/aninhar), arrastar pela alça (antes/depois/dentro), concluídas recolhidas no fim, ordenar/agrupar/filtrar por tela.
-- **Painel de detalhe** (salva por campo): data/hora, prioridade, título, lista, repetição (+ modo), estimativa, adiar, **notas em
+- **Nova tarefa** (`NewTaskModal`, `Ctrl+N`/`n`): formulário completo (lista com busca/grupos/ícone, coluna, tipo, prioridade, data, horário, duração,
+  repetição, etiquetas, pessoas, GTD, Onde @, Meu Dia, subtarefas e notas), com o título lido ao vivo (`@lista #tag !alta amanhã 17h`).
+- **Painel de detalhe** (salva por campo; **ao lado** ou **centralizado** — `prefs.detailMode`, e sempre no centro a partir do Kanban/Calendário): data/hora, prioridade, título, lista, repetição (+ modo), estimativa, adiar, **notas em
   Markdown** (`MarkdownEditor` do DS: clica e edita, barra e atalhos, checklists clicáveis, callouts, `@pessoa` e `[[tarefa`),
   subtarefas, etiquetas, GTD/aguardando (pessoa da Komi + cobrar em), tipo, horário (bloco), coluna, local (Onde @), pessoas,
   dependências e aba **Histórico**.
 - **Meu Dia**: dois tempos livres (trabalho e geral), plano (dividido ou único), pendências, sugestões, follow-ups, experimentos,
   hábitos, resumo do foco, modo férias e a **linha do dia** (arrastar a tarefa até uma hora reserva o horário).
-- **Kanban e quadro de grupo**: só a pele — estrutura idêntica ao shell antigo (views, filtro, colunas "Vidro", cards, dnd, rodapé).
-- **Calendário** (Dia/Semana/Mês): tarefas + Google + outros agentes, faixa de expediente/almoço, mover/redimensionar/criar por
-  arraste (com Desfazer), bandejas "Sem horário" e "Sem data", popover e menu de contexto.
+- **Kanban e quadro de grupo**: estrutura e pele do shell antigo (título, linha de View, filtro com ordenação à direita, colunas "Vidro" com
+  blur, cards de vidro, dnd, rodapé), em **tela inteira** (`Page full`).
+- **Calendário** (Dia/Semana/Mês) com a estrutura do antigo (barra fixa, grade com rolagem própria, lateral de calendários com borda;
+  `Page full fill`): tarefas + Google + outros agentes, faixa de expediente/almoço, mover/redimensionar/criar por arraste (com
+  Desfazer), bandejas "Sem horário" e "Sem data", popover e menu de contexto, três estilos de evento.
 - **Organizar** (`#organizar`): listas, grupos, smart-lists (construtor de regras com todos os campos), locais (Onde @), revisão
   semanal e processamento do Inbox (wizard com teclas 1–6).
 - **Estatísticas**: `StatsPage` + aba **Planejamento** (onde o plano falha). **Foco**, **Hábitos** (com arquivados), **Metas**,

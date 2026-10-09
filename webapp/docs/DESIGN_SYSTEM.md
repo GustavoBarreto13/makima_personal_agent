@@ -115,8 +115,8 @@ halo; toda tela "Início" abre com ele, mostrando o contexto mais relevante do a
 |---|---|
 | Primitivos | `Button`, `IconButton`, `Chip`, `SegmentedControl`, `StatusChip`, `Tag`, `ProgressBar`, `ProgressRing`, `Avatar`, `Toggle`, `SettingRow`, `Kbd` |
 | Avaliação | `Stars` (exibição) e `RateInput` (edição) — **0 a 5, com meia estrela**; `snapHalf` é a única fonte do arredondamento; escalas de origem (MAL 1–10) convertem nas bordas com `toFiveScale/fromFiveScale` |
-| Formulário | `Field`, `Input`, `Textarea`, `Select`, `NumberInput`, `MoneyInput`, `TagInput`, `DatePicker` + `MiniCalendar`, `TimePicker`, `PersonPicker` (smart-match da Komi: 0 → cadastrar, 1 → confirmar, 2+ → escolher) |
-| Camadas | `Modal` (vira bottom sheet no celular; `dirty` pede confirmação), `Sheet`, `Menu`, `ConfirmHost` + `confirm()` (substitui `window.confirm`; perigo foca "Cancelar") |
+| Formulário | `Field`, `Input`, `Textarea`, `Select`, `NumberInput`, `MoneyInput`, `TagInput`, `DatePicker` + `MiniCalendar`, `TimePicker`, `PersonPicker` (smart-match da Komi: 0 → cadastrar, 1 → confirmar, 2+ → escolher), `ListPicker` (escolhe uma lista/pasta: busca, grupos, ícone, cor e teclado) |
+| Camadas | `Modal` (vira bottom sheet no celular; `dirty` pede confirmação; `size` sm/md/lg/**xl**; `headerExtra` para abas e ações no cabeçalho), `Sheet`, `Menu`, `ConfirmHost` + `confirm()` (substitui `window.confirm`; perigo foca "Cancelar") |
 | Feedback | `ToastHost` + `toast()` (com **Desfazer**), `Skeleton`, `LoadingState`, `EmptyState`, `ErrorState` |
 | Itens | `Img`, `MediaCard`, `ListRow`, `InfoRow`, `Timeline`, `Tabs`, `DetailPage`, `DataTable` (vira cartões no celular) |
 | Coleção | `CollectionToolbar`, `CollectionMeta`, `CollectionBody`, `FilterSheet` |
@@ -361,3 +361,13 @@ Ordem sugerida (do menor para o maior): Komi → Yato → Mai (ganha o "Voltar �
 Rótulos em *sentence case*; verbos nos botões ("Salvar livro", não "OK"); erros dizem o que
 aconteceu **e** o que fazer; vazios convidam à ação; a personalidade do agente aparece no hero e
 nos vazios, nunca em rótulos funcionais.
+
+
+### Largura do conteúdo e páginas de tela cheia
+
+- **Preferência global** (Preferências → Aparência → *Largura do conteúdo*): `Appearance.width = 'centered' | 'full'`. Em `full` o frame ganha
+  `data-ds-width="full"` e toda `.ds-page` perde o `max-width`. Vale para todos os agentes.
+- `Page` aceita `full` (sempre a largura toda, ex.: um quadro Kanban) e `fill` (ocupa a altura do conteúdo, sem padding, para telas com
+  rolagem interna, ex.: o calendário).
+- `AppShell` aceita `navSlot`: substitui a lista de navegação da barra lateral (ex.: grupos que recolhem e itens arrastáveis). O `nav`
+  continua obrigatório — alimenta a paleta, os atalhos `g`+letra e as abas do celular.

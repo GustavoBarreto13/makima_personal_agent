@@ -43,6 +43,7 @@ export const RECORD: Fixed[] = [
   { id: 'templates', label: 'Templates', icon: 'template' },
   { id: 'archived', label: 'Arquivadas', icon: 'archive' },
   { id: 'trash', label: 'Lixeira', icon: 'delete', key: 'x' },
+  { id: 'settings', label: 'Ajustes', icon: 'prefs' },
 ]
 
 /** Entradas fixas (sem listas/filtros) — o que a tela de preferências oferece para ocultar/fixar. */
