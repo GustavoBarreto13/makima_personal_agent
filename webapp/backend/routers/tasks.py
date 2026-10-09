@@ -13,7 +13,7 @@ Registrado em ``webapp/backend/main.py`` sob o prefixo ``/api/tasks``.
 Contrato: ``specs/011-tasks-mvp/contracts/api-tasks.md``.
 """
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -48,7 +48,23 @@ from agents.kaguya.tools_tasks import (
 )
 from agents.kaguya.tools_tags import (
     list_tags, create_tag, update_tag, delete_tag, list_tasks_by_tag,
+    list_tags_with_counts, merge_tags,    # gerenciador de tags — spec 075
 )
+# Spec 075: agenda, dependências, edição em massa, logbook/lixeira, templates e revisão de listas.
+from agents.kaguya.tools_schedule import (
+    get_schedule_prefs, set_schedule_prefs,
+    list_schedule_overrides, set_schedule_override, clear_schedule_override,
+)
+from agents.kaguya.tools_dependencies import add_dependency, remove_dependency, list_dependencies
+from agents.kaguya.tools_bulk import bulk_update_tasks, undo_bulk_update
+from agents.kaguya.tools_logbook import (
+    list_completed, get_task_activity, list_trash_detailed, restore_many, purge_tasks, empty_trash,
+)
+from agents.kaguya.tools_templates import (
+    duplicate_task, duplicate_project, create_task_template, create_project_template,
+    list_templates, apply_template, delete_template,
+)
+from agents.kaguya.tools_projects import list_projects_due_review
 # Smart-lists (filtros salvos) e calendário — fatia 013 (P2/P3).
 from agents.kaguya.tools_filters import (
     list_filters, create_filter, update_filter, delete_filter,
@@ -140,7 +156,7 @@ class CreateProjectBody(BaseModel):
     group_id: Optional[int] = None
     color: Optional[str] = None
     icon: Optional[str] = None
-    context: Literal["personal", "work"] = "personal"  # spec 038 — definível já na criação
+    context: Literal["personal", "work"] = "personal"  # spec 038 — omitido: herda o espaço do grupo (spec 075)
 
 
 class UpdateProjectBody(BaseModel):
@@ -151,6 +167,8 @@ class UpdateProjectBody(BaseModel):
     icon: Optional[str] = None
     position: Optional[int] = None
     context: Optional[Literal["personal", "work"]] = None  # spec 038 — Inbox recusa "work"
+    review_interval_days: Optional[int] = None  # spec 075 — cadência de revisão (None = sem cadência)
+    sequential: Optional[bool] = None           # spec 075 — só a próxima ação aparece
 
 
 class SetGroupContextBody(BaseModel):
@@ -161,6 +179,7 @@ class SetGroupContextBody(BaseModel):
 class CreateGroupBody(BaseModel):
     """Body de criação de grupo."""
     name: str
+    context: Literal["personal", "work"] = "personal"  # spec 075 — as listas novas do grupo herdam
 
 
 class UpdateGroupBody(BaseModel):
@@ -1966,6 +1985,245 @@ def create_expense_reminder_route(
         amount=body.amount, description=body.description,
     )
     return _check_result(result)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SPEC 075 — agenda, dependências, massa, logbook, lixeira, templates, tags
+# ═════════════════════════════════════════════════════════════════════════════
+
+class SchedulePrefsBody(BaseModel):
+    """PATCH da agenda padrão (expediente, almoço, acordar/dormir). Dias da semana em ISO (1=segunda)."""
+    work_days: Optional[list[int]] = None
+    work_start: Optional[str] = None
+    work_end: Optional[str] = None
+    lunch_start: Optional[str] = None
+    lunch_end: Optional[str] = None
+    lunch_is_free: Optional[bool] = None
+    wake_time: Optional[str] = None
+    sleep_time: Optional[str] = None
+    clear_lunch: bool = False
+
+
+class ScheduleOverrideBody(BaseModel):
+    """Exceção de um dia: trabalhar num dia livre (works=true) ou folgar num dia útil (works=false)."""
+    works: bool
+    work_start: Optional[str] = None
+    work_end: Optional[str] = None
+    note: Optional[str] = None
+
+
+@router.get("/schedule")
+def get_schedule_route(user: dict = Depends(require_user)) -> dict:
+    """Agenda padrão do usuário (expediente, almoço, acordar/dormir)."""
+    return get_schedule_prefs()
+
+
+@router.patch("/schedule")
+def patch_schedule_route(body: SchedulePrefsBody, user: dict = Depends(require_user)) -> dict:
+    """Atualiza a agenda padrão (PATCH parcial)."""
+    return _check_result(set_schedule_prefs(**body.model_dump(exclude_unset=True)))
+
+
+@router.get("/schedule/overrides")
+def list_schedule_overrides_route(
+    from_date: Optional[str] = Query(None, alias="from"),
+    to_date: Optional[str] = Query(None, alias="to"),
+    user: dict = Depends(require_user),
+) -> list:
+    """Exceções de agenda no intervalo (padrão: de hoje em diante)."""
+    return list_schedule_overrides(from_date, to_date)
+
+
+@router.put("/schedule/overrides/{day}")
+def put_schedule_override_route(day: str, body: ScheduleOverrideBody, user: dict = Depends(require_user)) -> dict:
+    """Define a exceção de um dia (``YYYY-MM-DD``)."""
+    return _check_result(set_schedule_override(day, **body.model_dump()))
+
+
+@router.delete("/schedule/overrides/{day}")
+def delete_schedule_override_route(day: str, user: dict = Depends(require_user)) -> dict:
+    """Remove a exceção de um dia (volta a valer a agenda padrão)."""
+    return _check_result(clear_schedule_override(day))
+
+
+# ── Dependências ───────────────────────────────────────────────────────────────
+
+class DependencyBody(BaseModel):
+    blocked_by_id: int
+
+
+@router.get("/{task_id}/dependencies")
+def list_dependencies_route(task_id: int, user: dict = Depends(require_user)) -> dict:
+    """De quem a tarefa depende e quem depende dela."""
+    return list_dependencies(task_id)
+
+
+@router.post("/{task_id}/dependencies", status_code=201)
+def add_dependency_route(task_id: int, body: DependencyBody, user: dict = Depends(require_user)) -> dict:
+    """Faz a tarefa depender de outra (barra ciclos)."""
+    return _check_result(add_dependency(task_id, body.blocked_by_id))
+
+
+@router.delete("/{task_id}/dependencies/{blocked_by_id}")
+def remove_dependency_route(task_id: int, blocked_by_id: int, user: dict = Depends(require_user)) -> dict:
+    """Remove uma dependência."""
+    return _check_result(remove_dependency(task_id, blocked_by_id))
+
+
+# ── Edição em massa ────────────────────────────────────────────────────────────
+
+class BulkBody(BaseModel):
+    task_ids: list[int]
+    action: str
+    value: Any = None
+
+
+class BulkUndoBody(BaseModel):
+    undo: dict
+
+
+@router.post("/bulk")
+def bulk_route(body: BulkBody, user: dict = Depends(require_user)) -> dict:
+    """Aplica UMA ação a várias tarefas numa transação; devolve ``undo`` para o "Desfazer"."""
+    return _check_result(bulk_update_tasks(body.task_ids, body.action, body.value))
+
+
+@router.post("/bulk/undo")
+def bulk_undo_route(body: BulkUndoBody, user: dict = Depends(require_user)) -> dict:
+    """Reverte uma ação em massa a partir do ``undo`` devolvido por ``POST /bulk``."""
+    return _check_result(undo_bulk_update(body.undo))
+
+
+# ── Logbook, atividade e lixeira ───────────────────────────────────────────────
+
+@router.get("/completed")
+def list_completed_route(
+    start: Optional[str] = None, end: Optional[str] = None, space: Optional[str] = None,
+    project_id: Optional[int] = None, q: Optional[str] = None,
+    limit: int = 100, offset: int = 0,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Logbook: tarefas concluídas por dia local, com filtro de espaço, lista e busca."""
+    return list_completed(start, end, space, project_id, q, limit, offset)
+
+
+@router.get("/{task_id}/activity")
+def task_activity_route(task_id: int, limit: int = 100, user: dict = Depends(require_user)) -> list:
+    """Linha do tempo da tarefa (criada, reagendada, no Meu Dia, concluída…)."""
+    return get_task_activity(task_id, limit)
+
+
+class TaskIdsBody(BaseModel):
+    task_ids: list[int]
+
+
+class EmptyTrashBody(BaseModel):
+    older_than_days: Optional[int] = None
+
+
+@router.get("/trash/detailed")
+def trash_detailed_route(space: Optional[str] = None, project_id: Optional[int] = None,
+                         user: dict = Depends(require_user)) -> list:
+    """Lixeira por árvore, com lista de origem, data e nº de descendentes."""
+    return list_trash_detailed(space, project_id)
+
+
+@router.post("/trash/restore")
+def trash_restore_route(body: TaskIdsBody, user: dict = Depends(require_user)) -> dict:
+    """Restaura várias árvores da lixeira."""
+    return _check_result(restore_many(body.task_ids))
+
+
+@router.post("/trash/purge")
+def trash_purge_route(body: TaskIdsBody, user: dict = Depends(require_user)) -> dict:
+    """Exclui de vez tarefas que já estão na lixeira (irreversível)."""
+    return _check_result(purge_tasks(body.task_ids))
+
+
+@router.post("/trash/empty")
+def trash_empty_route(body: EmptyTrashBody, user: dict = Depends(require_user)) -> dict:
+    """Esvazia a lixeira (opcionalmente só o excluído há mais de N dias). Irreversível."""
+    return _check_result(empty_trash(body.older_than_days))
+
+
+# ── Duplicar e templates ───────────────────────────────────────────────────────
+
+class TemplateNameBody(BaseModel):
+    name: str
+    space: Optional[str] = None
+
+
+class ApplyTemplateBody(BaseModel):
+    project_id: Optional[int] = None
+    name: Optional[str] = None
+    base_date: Optional[str] = None
+
+
+@router.post("/{task_id}/duplicate", status_code=201)
+def duplicate_task_route(task_id: int, user: dict = Depends(require_user)) -> dict:
+    """Duplica a tarefa com subtarefas e tags."""
+    return _check_result(duplicate_task(task_id))
+
+
+@router.post("/projects/{project_id}/duplicate", status_code=201)
+def duplicate_project_route(project_id: int, include_tasks: bool = True, user: dict = Depends(require_user)) -> dict:
+    """Duplica a lista (colunas e, opcionalmente, tarefas abertas)."""
+    return _check_result(duplicate_project(project_id, include_tasks))
+
+
+@router.get("/templates")
+def list_templates_route(kind: Optional[str] = None, space: Optional[str] = None,
+                         user: dict = Depends(require_user)) -> list:
+    """Templates de tarefa e de lista."""
+    return list_templates(kind, space)
+
+
+@router.post("/templates/task/{task_id}", status_code=201)
+def create_task_template_route(task_id: int, body: TemplateNameBody, user: dict = Depends(require_user)) -> dict:
+    """Salva uma tarefa como template."""
+    return _check_result(create_task_template(task_id, body.name, body.space))
+
+
+@router.post("/templates/project/{project_id}", status_code=201)
+def create_project_template_route(project_id: int, body: TemplateNameBody, user: dict = Depends(require_user)) -> dict:
+    """Salva uma lista como template."""
+    return _check_result(create_project_template(project_id, body.name))
+
+
+@router.post("/templates/{template_id}/apply", status_code=201)
+def apply_template_route(template_id: int, body: ApplyTemplateBody, user: dict = Depends(require_user)) -> dict:
+    """Aplica um template (cria a tarefa ou a lista)."""
+    return _check_result(apply_template(template_id, body.project_id, body.name, body.base_date))
+
+
+@router.delete("/templates/{template_id}")
+def delete_template_route(template_id: int, user: dict = Depends(require_user)) -> dict:
+    """Exclui um template."""
+    return _check_result(delete_template(template_id))
+
+
+# ── Tags (gerenciador) e revisão de listas ────────────────────────────────────
+
+class MergeTagsBody(BaseModel):
+    target_id: int
+
+
+@router.get("/tags/counts")
+def list_tags_counts_route(user: dict = Depends(require_user)) -> list:
+    """Tags com a contagem de tarefas que usam cada uma."""
+    return list_tags_with_counts()
+
+
+@router.post("/tags/{tag_id}/merge")
+def merge_tags_route(tag_id: int, body: MergeTagsBody, user: dict = Depends(require_user)) -> dict:
+    """Mescla a tag ``tag_id`` na ``target_id`` (a primeira some)."""
+    return _check_result(merge_tags(tag_id, body.target_id))
+
+
+@router.get("/projects/due-review")
+def projects_due_review_route(user: dict = Depends(require_user)) -> list:
+    """Listas que precisam de revisão (cadência vencida ou nunca revisadas)."""
+    return list_projects_due_review()
 
 
 # IMPORTANTE: este GET /{task_id} deve ficar no FINAL do arquivo, depois de TODAS as
