@@ -201,11 +201,22 @@ def build_digest_context(today: date | None = None) -> dict:
     is_weekend = weekday >= 5
 
     from agents.kaguya import gcal
-    from agents.kaguya.capacity import compute_capacity
+    from agents.kaguya.capacity import compute_free_time
     from agents.kaguya.tools_filters import list_tasks_by_builtin
     from agents.kaguya.tools_tasks import get_myday_prefs, list_tasks_today
 
-    hide_work = get_myday_prefs()["hide_work"]
+    # Trabalho só aparece em dia de trabalho (agenda do usuário + exceções, spec 075): em dia de folga
+    # ou fim de semana sem plantão o digest se comporta como no modo férias — só pessoal. Se a agenda
+    # não puder ser lida (migração pendente), cai no critério antigo (segunda a sexta).
+    schedule = None
+    try:
+        from agents.kaguya.tools_schedule import get_day_schedule
+        schedule = get_day_schedule(today)
+        work_day = bool(schedule["works"])
+    except Exception as exc:  # noqa: BLE001 — melhor esforço, nunca derruba o digest
+        logger.warning("Falha ao ler a agenda do usuário (%s); usando seg-sex.", exc)
+        work_day = not is_weekend
+    hide_work = get_myday_prefs()["hide_work"] or not work_day
 
     tasks_today = list_tasks_today()  # {"overdue": [...], "today": [...]}
     next_actions = list_tasks_by_builtin("next-actions")
@@ -251,19 +262,19 @@ def build_digest_context(today: date | None = None) -> dict:
         except Exception as exc:  # noqa: BLE001 — melhor esforço, nunca derruba o digest
             logger.warning("Falha ao filtrar eventos de trabalho do digest: %s", exc)
 
-    # Janela de capacidade — heurística v1 sem calendário de feriados/expediente real:
-    # dia útil = tempo livre real depois do expediente (19h-23h); fim de semana = dia
-    # inteiro (9h-22h). O usuário decide diariamente se aceita a sugestão de qualquer forma.
-    janela = (9 * 60, 22 * 60) if is_weekend else (19 * 60, 23 * 60)
-
     candidate_tasks = tasks_today["overdue"] + tasks_today["today"] + next_actions
     seen_ids: set[int] = set()
-    estimativas = []
+    estimado_work = estimado_personal = 0
+    no_plano = 0
     for t in candidate_tasks:
         if t["id"] in seen_ids:
             continue
         seen_ids.add(t["id"])
-        estimativas.append(t.get("duration_min"))
+        no_plano += 1
+        if t.get("context", "personal") == "work":
+            estimado_work += t.get("duration_min") or 0
+        else:
+            estimado_personal += t.get("duration_min") or 0
 
     eventos_tuplas = []
     for e in events:
@@ -272,7 +283,32 @@ def build_digest_context(today: date | None = None) -> dict:
         if ini is not None and fim is not None:
             eventos_tuplas.append((ini, fim))
 
-    capacity = compute_capacity(estimativas, eventos_tuplas, janela=janela, calendar_ok=calendar_ok)
+    # Tempo livre do dia a partir da agenda real do usuário (expediente, almoço, acordar/dormir) — no
+    # lugar da heurística fixa de antes (19h–23h em dia útil). `capacity` mantém o formato antigo
+    # (usado pelo prompt) e passa a refletir o total; `free_time` traz o detalhe dos dois baldes.
+    free_time = None
+    if schedule is not None:
+        free_time = compute_free_time(
+            schedule, eventos_tuplas,
+            estimado_work_min=estimado_work, estimado_personal_min=estimado_personal,
+            calendar_ok=calendar_ok,
+        )
+        total = free_time["total"]
+        capacity = {
+            "no_plano": no_plano,
+            "estimado_min": total["estimado_min"],
+            "agenda_min": total["busy_min"],
+            "livre_min": total["livre_min"],
+            "folga_min": total["folga_min"],
+            "excedeu": total["excedeu"],
+            "calendar_ok": calendar_ok,
+        }
+    else:  # agenda indisponível: mesma heurística de antes
+        from agents.kaguya.capacity import compute_capacity
+        janela = (9 * 60, 22 * 60) if is_weekend else (19 * 60, 23 * 60)
+        capacity = compute_capacity(
+            [t.get("duration_min") for t in candidate_tasks], eventos_tuplas, janela=janela, calendar_ok=calendar_ok
+        )
 
     journal_notes = _recent_journal_notes(today)
     rag_excerpts = _query_kurisu_context(weekday, candidate_tasks)
@@ -281,6 +317,7 @@ def build_digest_context(today: date | None = None) -> dict:
         "today": today.isoformat(),
         "weekday": weekday,
         "is_weekend": is_weekend,
+        "is_work_day": work_day,
         "overdue": tasks_today["overdue"],
         "today_tasks": tasks_today["today"],
         "next_actions": next_actions,
@@ -288,6 +325,7 @@ def build_digest_context(today: date | None = None) -> dict:
         "waiting": waiting,
         "events": events,
         "capacity": capacity,
+        "free_time": free_time,
         "journal_notes": journal_notes,
         "rag_excerpts": rag_excerpts,
     }

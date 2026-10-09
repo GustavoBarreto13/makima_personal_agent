@@ -2398,6 +2398,45 @@ def _gcal_events_for_day(day_str: str) -> tuple[list[dict], list[tuple[int, int]
         return [], [], [], [], False
 
 
+def _free_time_for_day(
+    day: date,
+    eventos_tuplas: list,
+    plano_work: list,
+    plano_personal: list,
+    habitos_duracoes: list,
+) -> Optional[dict]:
+    """Calcula os dois tempos livres de ``day`` (ver ``capacity.compute_free_time``).
+
+    Para o dia de HOJE conta só o que ainda resta (a partir da hora atual). Devolve ``None`` se a
+    agenda não puder ser lida (ex.: tabelas da spec 075 ainda não migradas) — o Meu Dia segue
+    funcionando sem o bloco novo.
+    """
+    try:
+        from agents.kaguya import capacity as _cap
+        from agents.kaguya import tools_schedule as _sched
+        from agents.kaguya.tz import now_sp as _now_sp
+
+        schedule = _sched.get_day_schedule(day)
+        now = _now_sp()
+        a_partir_de = now.hour * 60 + now.minute if day == now.date() else None
+        soma = lambda tarefas: sum(t.get("duration_min") or 0 for t in tarefas)   # noqa: E731
+        result = _cap.compute_free_time(
+            schedule,
+            eventos=eventos_tuplas,
+            estimado_work_min=soma(plano_work),
+            estimado_personal_min=soma(plano_personal) + sum(d or 0 for d in habitos_duracoes),
+            a_partir_de=a_partir_de,
+        )
+        result["day_is_work"] = schedule["works"]
+        result["schedule"] = {
+            "work": schedule["work"], "lunch": schedule["lunch"],
+            "lunch_is_free": schedule["lunch_is_free"], "awake": schedule["awake"],
+        }
+        return result
+    except Exception:
+        return None
+
+
 def list_my_day(date_str: Optional[str] = None) -> dict:
     """Monta o ritual do Meu Dia: plano, pendências de ontem, sugestões e capacity.
 
@@ -2563,6 +2602,11 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
     cap_personal = compute_capacity(estimativas_personal, eventos_tuplas_personal, calendar_ok=cal_ok)
     cap_personal["no_plano"] = len(plano_personal)
 
+    # Tempo livre v2 (spec 075): DOIS tempos livres — o do trabalho (expediente − almoço − compromissos)
+    # e o geral (acordar→dormir − expediente − compromissos) — a partir da agenda do usuário. As chaves
+    # antigas (capacity*) seguem iguais; `free_time` é aditivo e nunca derruba o Meu Dia.
+    free_time = _free_time_for_day(hoje, eventos_tuplas, plano_work, plano_personal, habitos_duracoes)
+
     # Modo férias (spec 065): com hide_work=true, a visão "única" (plano/pendencias/
     # sugestoes/capacity/eventos) vira, de fato, só Pessoal — nunca uma mistura filtrada
     # em outro lugar. plano_work/etc. voltam vazios (mesma forma da resposta, sem quebrar
@@ -2586,6 +2630,7 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
             "capacity_personal": cap_personal,
             "eventos": eventos_serial,
             "hide_work": True,
+            "free_time": free_time,
             # Hábitos selecionados (spec 067) — NÃO filtrados pelo modo férias (sem contexto).
             "habitos": habitos,
         }
@@ -2609,6 +2654,7 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         # Usados pela timeline do Meu Dia. Lista vazia quando o Google não responde.
         "eventos": eventos_serial,
         "hide_work": False,
+        "free_time": free_time,
         # Hábitos selecionados para o Meu Dia deste dia (spec 067) — [{id, name, icon, duration_min}].
         "habitos": habitos,
     }
