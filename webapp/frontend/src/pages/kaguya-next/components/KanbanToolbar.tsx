@@ -16,7 +16,8 @@ export function KanbanToolbar({ filters, onChange }: { filters: KanbanFilters; o
           <Chip key={v} on={filters.prio === v} aria-pressed={filters.prio === v} onClick={() => onChange({ ...filters, prio: v })}>{label}</Chip>
         ))}
       </div>
-      <Chip on={filters.sort !== 'manual'} title={`Ordenação: ${SORT_LABELS[filters.sort]} (clique para trocar)`} onClick={cycleSort}>
+      <span className="kn-ktool-sep" aria-hidden="true" />
+      <Chip className="kn-ktool-sort" on={filters.sort !== 'manual'} title={`Ordenação: ${SORT_LABELS[filters.sort]} (clique para trocar)`} onClick={cycleSort}>
         <Icon name="sort" size={13} />{SORT_LABELS[filters.sort]}
       </Chip>
       {dirty && <button type="button" className="kn-klink" onClick={() => onChange(KANBAN_DEFAULTS)}>Limpar</button>}

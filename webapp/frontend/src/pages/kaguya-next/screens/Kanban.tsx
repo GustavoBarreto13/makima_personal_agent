@@ -216,8 +216,8 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
     } catch (err) { toast(reason(err, 'Não foi possível copiar as colunas.'), { tone: 'error' }) } finally { setCopying(false) }
   }
 
-  if (status === 'loading') return <Page wide><LoadingState variant="card" count={3} /></Page>
-  if (status === 'error') return <Page wide><ErrorState onRetry={() => void load(false, activeView)} /></Page>
+  if (status === 'loading') return <Page full><LoadingState variant="card" count={3} /></Page>
+  if (status === 'error') return <Page full><ErrorState onRetry={() => void load(false, activeView)} /></Page>
 
   const copyable = k.projects.filter((p) => p.has_board && p.id !== projectId)
   const modals = (
@@ -229,7 +229,7 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
 
   if (columns.length === 0) {
     return (
-      <Page wide className="kn-page">
+      <Page full className="kn-page">
         <EmptyState
           icon="kanban"
           title="Sem quadro ainda"
@@ -259,20 +259,22 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
   const cardProps = () => ({ projectName, showChips: display.adornos.card_chips, showRing: display.adornos.subtask_ring })
 
   return (
-    <Page wide className="kn-page">
-      <div className="kn-quick">
+    <Page full className="kn-page">
+      <h2 className="kn-kpage-t"><Icon name="kanban" size={22} />{projectName}</h2>
+      <p className="kn-kpage-sub">Arraste entre colunas · soltar em concluídas conclui a tarefa.</p>
+      <div className="kn-kviews" role="group" aria-label="Views do quadro">
+        {views.length > 0 && (
+          <>
+            <label htmlFor="kn-view-sel">View</label>
+            <Select id="kn-view-sel" value={activeViewId ?? ''} onChange={(e) => selectView(Number(e.target.value))}>
+              {views.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </Select>
+            <Button size="sm" icon="prefs" disabled={!activeView} onClick={() => activeView && setViewModal({ view: activeView })}>Editar</Button>
+            <Button size="sm" icon="add" onClick={() => setViewModal({})}>View</Button>
+          </>
+        )}
         <Button size="sm" icon="list" onClick={() => k.goto({ view: 'list', id: projectId })}>Ver como lista</Button>
-        <p className="ds-hint">Arraste entre colunas · soltar em concluídas conclui a tarefa.</p>
       </div>
-      {views.length > 0 && (
-        <div className="kn-quick" role="group" aria-label="Views do quadro">
-          <Select aria-label="View do quadro" value={activeViewId ?? ''} onChange={(e) => selectView(Number(e.target.value))}>
-            {views.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </Select>
-          <Button size="sm" icon="prefs" disabled={!activeView} onClick={() => activeView && setViewModal({ view: activeView })}>Editar</Button>
-          <Button size="sm" icon="add" onClick={() => setViewModal({})}>View</Button>
-        </div>
-      )}
       <KanbanToolbar filters={filters} onChange={setFilters} />
 
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={(e: DragStartEvent) => setActiveId(e.active.id as number)} onDragOver={onDragOver} onDragEnd={(e) => void onDragEnd(e)}>
@@ -280,7 +282,8 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
           <div className="kn-kcols">
             {columns.map((col) => {
               // A primeira coluna acolhe as órfãs (sem coluna, ou com uma coluna que não existe mais aqui): nada some do quadro.
-              const raw = tasks.filter((t) => t.column_id === col.id || (col.id === firstId && (t.column_id == null || !colIds.has(t.column_id))))
+              // Concluída só aparece na coluna de concluídas: as contagens das outras são de abertas, como no quadro antigo.
+              const raw = tasks.filter((t) => (col.is_done_column || t.completed_at == null) && (t.column_id === col.id || (col.id === firstId && (t.column_id == null || !colIds.has(t.column_id)))))
               const cards = applyKanbanFilters(raw, filters)
               const est = cards.reduce((s, t) => s + (t.duration_min ?? 0), 0)
               return (
@@ -363,22 +366,24 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
     } catch (err) { setBoard(snapshot); toast(reason(err, 'Não foi possível mover o card.'), { tone: 'error' }) }
   }
 
-  if (status === 'loading') return <Page wide><LoadingState variant="card" count={3} /></Page>
-  if (status === 'error' || !board) return <Page wide><ErrorState onRetry={() => void load(false)} /></Page>
-  if (board.lists.length === 0) return <Page wide><EmptyState icon="folder" title="Grupo vazio" hint="Adicione listas a este grupo pela barra lateral para ver o quadro." /></Page>
-  if (board.columns.length === 0) return <Page wide><EmptyState icon="kanban" title="Nenhuma lista tem quadro Kanban" hint="Crie colunas em pelo menos uma lista do grupo para ativar este quadro." /></Page>
+  if (status === 'loading') return <Page full><LoadingState variant="card" count={3} /></Page>
+  if (status === 'error' || !board) return <Page full><ErrorState onRetry={() => void load(false)} /></Page>
+  if (board.lists.length === 0) return <Page full><EmptyState icon="folder" title="Grupo vazio" hint="Adicione listas a este grupo pela barra lateral para ver o quadro." /></Page>
+  if (board.columns.length === 0) return <Page full><EmptyState icon="kanban" title="Nenhuma lista tem quadro Kanban" hint="Crie colunas em pelo menos uma lista do grupo para ativar este quadro." /></Page>
 
   const known = new Set(board.columns.flatMap((c) => c.members.map((m) => m.column_id)))
   const without = applyKanbanFilters(board.tasks.filter((t) => t.parent_id == null && (t.column_id == null || !known.has(t.column_id))), filters)
+  const groupTitle = k.groups.find((g) => g.id === groupId)?.name ?? 'Grupo'
   const activeTask = board.tasks.find((t) => t.id === activeId)
   const cardProps = (t: Task) => ({ projectName: listName(t.project_id), showChips: true, showRing: true })
   const addTo = (col: GroupBoardColumn) => k.newTask({ targets: col.members.map((m) => ({ projectId: m.project_id, columnId: m.column_id, listName: listName(m.project_id) })) })
 
   return (
-    <Page wide className="kn-page">
-      <div className="kn-quick">
+    <Page full className="kn-page">
+      <h2 className="kn-kpage-t"><Icon name="kanban" size={22} />{groupTitle}</h2>
+      <p className="kn-kpage-sub">{board.lists.map((l) => l.name).join(' · ')}</p>
+      <div className="kn-kviews">
         <Button size="sm" icon="list" onClick={() => k.goto({ view: 'group-list', id: groupId })}>Ver como lista</Button>
-        <p className="ds-hint">{board.lists.map((l) => l.name).join(' · ')}</p>
       </div>
       <KanbanToolbar filters={filters} onChange={setFilters} />
       <DndContext
