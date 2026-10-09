@@ -1056,6 +1056,7 @@ def create_task(
         if err:
             return {"status": "error", "message": err}
 
+    fallback_warning = None   # preenchido quando o nome da lista não casa e a tarefa cai no Inbox
     with get_conn() as conn:
         with conn.cursor() as cur:
             # ── Subtarefa: valida o pai (existe, vivo, profundidade ≤ 12, não concluído) ──
@@ -1100,7 +1101,12 @@ def create_task(
                         return {"status": "error", "message": "Lista não encontrada."}
                     resolved_project = project_id
                 elif project_name:
-                    resolved_project = resolve_project_id_by_name(project_name) or _get_inbox_id(cur)
+                    resolved_project = resolve_project_id_by_name(project_name)
+                    if not resolved_project:
+                        # Nome sem correspondência: cai no Inbox, mas AVISA — antes era silencioso e
+                        # uma tarefa de trabalho podia aterrissar na lista pessoal sem ninguém notar.
+                        resolved_project = _get_inbox_id(cur)
+                        fallback_warning = f"Lista '{project_name}' não encontrada — a tarefa foi para o Inbox."
                 else:
                     resolved_project = _get_inbox_id(cur)
                 # ── Coluna do Kanban (só para tarefa-pai) ──
@@ -1159,6 +1165,8 @@ def create_task(
                     link_person_on_cursor(cur, pid, "task", new_id)
 
     result = {"status": "ok", "id": new_id, "project_id": resolved_project, "message": f"Tarefa '{title.strip()}' criada."}
+    if fallback_warning:
+        result["warning"] = fallback_warning
     # Espelha no Google Calendar fora da transação (best-effort; nunca bloqueia o CRUD)
     try:
         from agents.kaguya import gcal_sync as _gs
@@ -2412,7 +2420,7 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
 
     hoje = date.fromisoformat(date_str) if date_str else _today_sp()
     hoje_str = hoje.isoformat()
-    amanha_str = (hoje + timedelta(days=7)).isoformat()   # janela das sugestões (≤7 dias)
+    janela_fim_str = (hoje + timedelta(days=7)).isoformat()   # janela das sugestões (≤7 dias)
 
     # Usa _qualified("t") pois há JOIN com task_projects (evita colunas ambíguas).
     # run_select() retorna dicts via RealDictCursor — indispensável para que _serialize_task
@@ -2465,14 +2473,14 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
         LEFT JOIN tasks mae ON mae.id = t.parent_id
-        WHERE t.due_date BETWEEN %(hoje)s AND %(amanha)s
+        WHERE t.due_date BETWEEN %(hoje)s AND %(janela_fim)s
           AND (t.my_day_date IS NULL OR t.my_day_date != %(hoje)s)
           AND t.completed_at IS NULL
           AND t.deleted_at IS NULL
           AND p.archived_at IS NULL
         ORDER BY t.due_date, t.priority DESC
         """,
-        {"hoje": hoje_str, "amanha": amanha_str},
+        {"hoje": hoje_str, "janela_fim": janela_fim_str},
     )
 
     # Serializa, anexa tags e assignees em bloco (sem N+1).

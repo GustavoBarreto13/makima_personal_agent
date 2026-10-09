@@ -212,6 +212,7 @@ def list_waiting_ordered() -> list:
                EXTRACT(DAY FROM now() - waiting_since)::int AS days_waiting
         FROM tasks
         WHERE deleted_at IS NULL AND completed_at IS NULL AND gtd_status = 'waiting'
+          AND project_id IN (SELECT id FROM task_projects WHERE archived_at IS NULL)
         ORDER BY waiting_since ASC NULLS LAST, id
         """
     )
@@ -281,6 +282,7 @@ def get_reminder_summary() -> dict:
     stale = run_select(
         "SELECT COUNT(*) AS n FROM tasks "
         "WHERE deleted_at IS NULL AND completed_at IS NULL AND gtd_status = 'waiting' "
+        "AND project_id IN (SELECT id FROM task_projects WHERE archived_at IS NULL) "
         "AND waiting_since < %(cutoff)s",
         {"cutoff": seven_days_ago},
     )

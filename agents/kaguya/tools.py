@@ -16,7 +16,7 @@ as mesmas funções servem o router REST `/api/tasks/*`.
 
 from typing import Union
 
-from agents.db import get_conn
+from agents.db import get_conn, run_select
 from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
 
 # ── Re-exporta a camada de lógica (o agente registra estes nomes) ──
@@ -814,6 +814,24 @@ def create_expense_reminder(
     if amount and amount > 0:
         notes = f"Valor esperado: R${amount:.2f}. {description}".strip()
 
+    # Proteção contra duplicação (spec 047, FR-005/SC-004) — agora compartilhada com a rota HTTP: se já
+    # existe tarefa aberta com o mesmo título e vencimento na lista pedida (ou no Inbox, para onde o
+    # lembrete cai quando a lista não existe), devolve a existente.
+    prefix = (project_name or "Finanças")[:5] + "%"
+    existing = run_select(
+        """
+        SELECT t.id FROM tasks t JOIN task_projects p ON p.id = t.project_id
+         WHERE t.title = %(title)s AND t.due_date = %(due_date)s
+           AND t.deleted_at IS NULL AND t.completed_at IS NULL
+           AND (p.name ILIKE %(prefix)s OR p.is_inbox)
+         LIMIT 1
+        """,
+        {"title": title, "due_date": due_date, "prefix": prefix},
+    ) if due_date else []
+    if existing:
+        return {"status": "ok", "id": existing[0]["id"], "duplicate": True,
+                "message": "Já existe um lembrete para este vencimento"}
+
     r = create_task(
         title=title,
         project_name=project_name,          # resolvido por prefixo; sem match → Inbox
@@ -823,8 +841,12 @@ def create_expense_reminder(
     )
     if r.get("status") != "ok":
         return r
-    return {
+    out = {
         "status": "ok",
         "id": r["id"],
+        "duplicate": False,
         "message": f"Lembrete criado: '{title}'" + (f" em {project_name}" if project_name else ""),
     }
+    if r.get("warning"):
+        out["warning"] = r["warning"]
+    return out

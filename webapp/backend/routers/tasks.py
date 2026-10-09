@@ -1956,30 +1956,12 @@ def create_expense_reminder_route(
     Raises:
         HTTPException: 401 se o usuário não estiver autenticado.
     """
-    existing = run_select(
-        """
-        SELECT t.id
-          FROM tasks t
-          JOIN task_projects p ON p.id = t.project_id
-         WHERE t.title = %(title)s
-           AND t.due_date = %(due_date)s
-           AND t.deleted_at IS NULL
-           AND t.completed_at IS NULL
-           AND p.name ILIKE 'Finan%%'
-         LIMIT 1
-        """,
-        {"title": body.title, "due_date": body.due_date},
-    )
-    if existing:
-        return {"status": "ok", "id": existing[0]["id"], "duplicate": True,
-                "message": "Já existe um lembrete para este vencimento"}
-
+    # A checagem de duplicata vive em create_expense_reminder (compartilhada com o agente no Telegram).
     result = create_expense_reminder(
         title=body.title, due_date=body.due_date,
         amount=body.amount, description=body.description,
     )
-    _check_result(result)
-    return {**result, "duplicate": False}
+    return _check_result(result)
 
 
 # IMPORTANTE: este GET /{task_id} deve ficar no FINAL do arquivo, depois de TODAS as
