@@ -127,13 +127,13 @@
 
 /* ── Estatísticas: achados e barras ── */
 .kn-insights { display: flex; flex-direction: column; gap: var(--ds-space-2); margin: 0; padding: 0; list-style: none; }
-.kn-insight { display: flex; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border: 1px solid var(--ds-line); border-inline-start-width: 4px; border-radius: var(--ds-r-md); background: var(--ds-card); }
+.kn-insight { display: flex; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); background: var(--ds-card); }
 .kn-insight p { margin: 2px 0 0; }
-.kn-sev-alert { border-inline-start-color: var(--ds-danger); }
+.kn-sev-alert { border-color: var(--ds-danger); background: var(--ds-danger-tint); }
 .kn-sev-alert > .ds-ic { color: var(--ds-danger); }
-.kn-sev-warn { border-inline-start-color: var(--ds-warn); }
+.kn-sev-warn { border-color: var(--ds-warn); background: var(--ds-warn-tint); }
 .kn-sev-warn > .ds-ic { color: var(--ds-warn); }
-.kn-sev-info { border-inline-start-color: var(--ds-accent); }
+.kn-sev-info { border-color: var(--ds-accent); background: var(--ds-accent-tint); }
 .kn-sev-info > .ds-ic { color: var(--ds-accent-deep); }
 .kn-ringrow { display: flex; align-items: center; gap: var(--ds-space-4); margin-bottom: var(--ds-space-3); }
 .kn-ringrow p { margin: 0; }
@@ -473,3 +473,28 @@
 .kn-tagdot { display: inline-flex; color: var(--kn-cc); }
 .kn-tagswatches { flex-basis: 100%; padding-inline-start: 28px; }
 .kn-tag[data-colored] { background: color-mix(in oklab, var(--kn-cc) 18%, var(--ds-card)); color: var(--ds-ink-1); }
+
+/* ── Revisão de acessibilidade e celular (impeccable, spec 075) ── */
+/* Foco visível em todo controle próprio (o anel padrão do DS cobre os componentes do DS). */
+.kn-grip:focus-visible, .kn-more:focus-visible, .kn-klink:focus-visible, .kn-kadd:focus-visible, .kn-calbox:focus-visible,
+.kn-sw-btn:focus-visible, .kn-twist:focus-visible, .kn-tl-resize:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; opacity: 1; }
+/* Toque: alvos de 44px sem inchar o desenho (a área clicável cresce por um pseudo-elemento). */
+@media (pointer: coarse) {
+  .kn-check, .kn-more, .kn-grip, .kn-twist, .kn-calbox, .kn-sw-btn { position: relative; }
+  .kn-check::after, .kn-more::after, .kn-grip::after, .kn-twist::after, .kn-calbox::after, .kn-sw-btn::after { content: ''; position: absolute; inset: -12px; }
+  .kn-row { min-height: 44px; }
+  .kn-cmo-pill, .kn-cpill { min-height: 28px; }
+}
+/* Semana no celular: as 7 colunas ficam legíveis e a grade rola na horizontal em vez de espremer. */
+@media (max-width: 640px) {
+  .kn-cscroll { overflow-x: auto; }
+  .kn-cdayhead, .kn-callday, .kn-cgrid { min-width: 620px; }
+  .kn-cmo { overflow-x: auto; }
+  .kn-cmo-dow, .kn-cmo-weeks { min-width: 560px; }
+  .kn-quad { min-height: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kn-check, .kn-kcap i, .kn-kcard, .kn-tree * { transition: none; }
+  .kn-check:active { transform: none; }
+  .kn-koverlay .kn-kcard { transform: none; }
+}
