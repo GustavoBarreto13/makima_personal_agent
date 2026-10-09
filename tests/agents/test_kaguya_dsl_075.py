@@ -98,3 +98,21 @@ def test_sql_gerado_e_valido():
         v = params[k]
         sql = sql.replace(f"%({k})s", "ARRAY[1]" if isinstance(v, list) else "'x'" if isinstance(v, str) else "1")
     pglast.parse_sql(sql)
+
+
+def test_with_space_embrulha_sem_mudar_a_regra_original():
+    original = {"combinator": "or", "conditions": [{"field": "priority", "op": "gte", "value": 2}]}
+    wrapped = F.with_space(original, "work")
+    assert wrapped["combinator"] == "and" and wrapped["conditions"][0] is original
+    assert wrapped["conditions"][1] == {"field": "space", "op": "eq", "value": "work"}
+    # "tudo" (ou valor desconhecido) não restringe nada
+    assert F.with_space(original, None) is original and F.with_space(original, "all") is original
+
+
+def test_with_space_gera_sql_do_espaco_com_o_grupo_do_usuario_entre_parenteses():
+    rules = F.with_space({"combinator": "or", "conditions": [
+        {"field": "priority", "op": "gte", "value": 3}, {"field": "priority", "op": "eq", "value": 1}]}, "personal")
+    where, params, _ = F._build_where_from_rules(rules)
+    # o OR do usuário fica isolado entre parênteses; o espaço entra com AND por fora
+    assert "(t.priority >= %(c0_c0)s OR t.priority = %(c0_c1)s) AND (SELECT pp.context" in where
+    assert "pp.context" in where and "personal" in params.values()

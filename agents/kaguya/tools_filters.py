@@ -418,7 +418,21 @@ def _build_where_from_rules(rules: dict, default_open: bool = True):
     return where_sql, params, orphans
 
 
-def _run_filter_rules(rules: dict) -> dict:
+def with_space(rules: dict, space: Optional[str]) -> dict:
+    """Restringe uma regra da DSL a um espaço (``work`` | ``personal``); outro valor = sem restrição.
+
+    Embrulha a regra original num grupo aninhado e acrescenta a condição de espaço, sem alterar a
+    semântica (nem o combinador) do que o usuário montou.
+    """
+    if space not in ("work", "personal"):
+        return rules
+    return {"combinator": "and", "conditions": [
+        rules or {"combinator": "and", "conditions": []},
+        {"field": "space", "op": "eq", "value": space},
+    ]}
+
+
+def _run_filter_rules(rules: dict, space: Optional[str] = None) -> dict:
     """Executa uma regra da DSL e devolve as tarefas que casam + as referências órfãs.
 
     Mesmo shape de resposta de ``list_tasks_by_tag`` (``project_name`` + tags anexadas),
@@ -426,6 +440,7 @@ def _run_filter_rules(rules: dict) -> dict:
 
     Args:
         rules: O objeto da DSL ``{"combinator", "conditions"}``.
+        space: ``work`` | ``personal`` restringe ao espaço da lista da tarefa (spec 075).
 
     Returns:
         ``{"tasks": [...], "orphans": [...]}`` — ``tasks`` é a lista serializada (vazia se
@@ -435,7 +450,7 @@ def _run_filter_rules(rules: dict) -> dict:
     from agents.kaguya.tools_tasks import _qualified, _serialize_task
     from agents.kaguya.tools_tags import _attach_tags
 
-    where_sql, params, orphans = _build_where_from_rules(rules)
+    where_sql, params, orphans = _build_where_from_rules(with_space(rules, space))
     rows = run_select(
         f"""
         SELECT {_qualified("t")}, p.name AS project_name, p.context, mae.title AS parent_title
@@ -463,7 +478,7 @@ def _run_filter_rules(rules: dict) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # Built-in "Hoje + Vencidas" (filtro fixo do código, NÃO persistido — FR-010)
 # ─────────────────────────────────────────────────────────────────────────────
-def list_today_overdue() -> list:
+def list_today_overdue(space: Optional[str] = None) -> list:
     """Lista as tarefas abertas com ``due_date <= hoje`` (a smart-list built-in).
 
     É um filtro fixo do código (não há linha em ``task_filters``): a "Hoje + Vencidas"
@@ -477,7 +492,7 @@ def list_today_overdue() -> list:
         {"field": "due_date", "op": "before", "value": (_today() + timedelta(days=1)).isoformat()},
     ]}
     # ``before amanhã`` = ``<= hoje`` (datas civis): pega hoje e tudo que está vencido.
-    return _run_filter_rules(rules)["tasks"]
+    return _run_filter_rules(rules, space)["tasks"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -559,7 +574,7 @@ def list_builtin_filters() -> list:
     ]
 
 
-def list_tasks_by_builtin(key: str) -> list:
+def list_tasks_by_builtin(key: str, space: Optional[str] = None) -> list:
     """Abre um built-in GTD pela chave e devolve as tarefas que casam.
 
     As referências de tag reservada (``#aguardando``/``#algum-dia``) são intencionais — não
@@ -568,6 +583,7 @@ def list_tasks_by_builtin(key: str) -> list:
 
     Args:
         key: Chave do built-in (ex.: ``"next-actions"``, ``"waiting"``).
+        space: ``work`` | ``personal`` para restringir ao espaço (spec 075).
 
     Returns:
         Lista de tarefas serializadas (vazia se a chave não existir ou nada casar). **Listagem**.
@@ -575,7 +591,7 @@ def list_tasks_by_builtin(key: str) -> list:
     meta = BUILTIN_FILTERS.get(key)
     if not meta:
         return []
-    return _run_filter_rules(meta["rules"])["tasks"]
+    return _run_filter_rules(meta["rules"], space)["tasks"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -718,11 +734,12 @@ def delete_filter(filter_id: int) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # Abrir uma smart-list (executar suas regras) — webapp por id, Telegram por nome
 # ─────────────────────────────────────────────────────────────────────────────
-def list_tasks_by_filter(filter_id: int) -> dict:
+def list_tasks_by_filter(filter_id: int, space: Optional[str] = None) -> dict:
     """Abre uma smart-list salva e devolve as tarefas que casam (+ referências órfãs).
 
     Args:
         filter_id: Id da smart-list.
+        space: ``work`` | ``personal`` para restringir ao espaço (spec 075).
 
     Returns:
         ``{"tasks": [...], "orphans": [...]}``. Se a smart-list não existir, devolve
@@ -731,7 +748,7 @@ def list_tasks_by_filter(filter_id: int) -> dict:
     rows = run_select("SELECT rules FROM task_filters WHERE id = %(id)s", {"id": filter_id})
     if not rows:
         return {"tasks": [], "orphans": [], "missing": True}
-    return _run_filter_rules(rows[0]["rules"])
+    return _run_filter_rules(rows[0]["rules"], space)
 
 
 def list_tasks_by_filter_name(name: str) -> dict:

@@ -683,21 +683,24 @@ def list_tasks_route(
 
 
 @router.get("/today")
-def list_tasks_today_route(user: dict = Depends(require_user)) -> dict:
-    """Tarefas de hoje + vencidas (``{overdue, today}``)."""
-    return list_tasks_today()  # listagem
+def list_tasks_today_route(space: Optional[str] = None, user: dict = Depends(require_user)) -> dict:
+    """Tarefas de hoje + vencidas (``{overdue, today}``); ``space`` = work|personal."""
+    return list_tasks_today(space)  # listagem
 
 
 @router.get("/eisenhower")
-def list_eisenhower_route(user: dict = Depends(require_user)) -> list[dict]:
+def list_eisenhower_route(space: Optional[str] = None, user: dict = Depends(require_user)) -> list[dict]:
     """Todas as tarefas-pai abertas para a view Eisenhower (classificação derivada no front)."""
-    return list_eisenhower_tasks()  # listagem — sem _check_result
+    return list_eisenhower_tasks(space)  # listagem — sem _check_result
 
 
 @router.get("/search")
-def search_tasks_route(q: str = Query(...), user: dict = Depends(require_user)) -> list[dict]:
-    """Busca tarefas abertas por texto."""
-    return search_tasks(q)  # listagem
+def search_tasks_route(
+    q: str = Query(...), space: Optional[str] = None, include_completed: bool = False,
+    user: dict = Depends(require_user),
+) -> list[dict]:
+    """Busca tarefas por texto (abertas; ``include_completed`` inclui as concluídas)."""
+    return search_tasks(q, space, include_completed)  # listagem
 
 
 @router.get("/trash")
@@ -732,39 +735,39 @@ def process_inbox_item_route(
 # ─────────────────────────────────────────────────────────────────────────────
 # "/views" é caminho LITERAL — mesma garantia de /inbox/tags/filters/kanban-views.
 @router.get("/views/counts")
-def view_counts_route(user: dict = Depends(require_user)) -> dict:
+def view_counts_route(space: Optional[str] = None, user: dict = Depends(require_user)) -> dict:
     """Contadores das 5 views fixas, para os badges da sidebar."""
-    return get_view_counts()  # listagem — sem _check_result
+    return get_view_counts(space)  # listagem — sem _check_result
 
 
 @router.get("/views/all")
-def view_all_route(user: dict = Depends(require_user)) -> list[dict]:
+def view_all_route(space: Optional[str] = None, user: dict = Depends(require_user)) -> list[dict]:
     """View fixa "Todas" — todas as tarefas abertas, independente de lista ou data."""
-    return list_view_all()  # listagem
+    return list_view_all(space)  # listagem
 
 
 @router.get("/views/today")
-def view_today_route(user: dict = Depends(require_user)) -> list[dict]:
+def view_today_route(space: Optional[str] = None, user: dict = Depends(require_user)) -> list[dict]:
     """View fixa "Hoje" — vencem hoje + atrasadas."""
-    return list_view_today()  # listagem
+    return list_view_today(space)  # listagem
 
 
 @router.get("/views/tomorrow")
-def view_tomorrow_route(user: dict = Depends(require_user)) -> list[dict]:
+def view_tomorrow_route(space: Optional[str] = None, user: dict = Depends(require_user)) -> list[dict]:
     """View fixa "Amanhã"."""
-    return list_view_tomorrow()  # listagem
+    return list_view_tomorrow(space)  # listagem
 
 
 @router.get("/views/next7")
-def view_next7_route(user: dict = Depends(require_user)) -> list[dict]:
+def view_next7_route(space: Optional[str] = None, user: dict = Depends(require_user)) -> list[dict]:
     """View fixa "Próximos 7 Dias" (inclui hoje)."""
-    return list_view_next7()  # listagem
+    return list_view_next7(space)  # listagem
 
 
 @router.get("/views/inbox")
-def view_inbox_route(user: dict = Depends(require_user)) -> list[dict]:
+def view_inbox_route(space: Optional[str] = None, user: dict = Depends(require_user)) -> list[dict]:
     """View fixa "Inbox"."""
-    return list_view_inbox()  # listagem
+    return list_view_inbox(space)  # listagem
 
 
 @router.post("", status_code=201)
@@ -936,9 +939,9 @@ def list_filters_route(user: dict = Depends(require_user)) -> list[dict]:
 
 
 @router.get("/filters/today-overdue")
-def today_overdue_route(user: dict = Depends(require_user)) -> list[dict]:
+def today_overdue_route(space: Optional[str] = None, user: dict = Depends(require_user)) -> list[dict]:
     """Smart-list built-in "Hoje + Vencidas" (não persistida)."""
-    return list_today_overdue()  # listagem
+    return list_today_overdue(space)  # listagem
 
 
 @router.get("/filters/builtins")
@@ -948,9 +951,9 @@ def list_builtins_route(user: dict = Depends(require_user)) -> list[dict]:
 
 
 @router.get("/filters/builtin/{key}/tasks")
-def builtin_tasks_route(key: str, user: dict = Depends(require_user)) -> list[dict]:
+def builtin_tasks_route(key: str, space: Optional[str] = None, user: dict = Depends(require_user)) -> list[dict]:
     """Abre um built-in GTD pela chave e devolve as tarefas que casam (lista plana)."""
-    return list_tasks_by_builtin(key)  # listagem
+    return list_tasks_by_builtin(key, space)  # listagem
 
 
 @router.post("/filters", status_code=201)
@@ -972,9 +975,9 @@ def delete_filter_route(filter_id: int, user: dict = Depends(require_user)) -> d
 
 
 @router.get("/filters/{filter_id}/tasks")
-def filter_tasks_route(filter_id: int, user: dict = Depends(require_user)) -> dict:
+def filter_tasks_route(filter_id: int, space: Optional[str] = None, user: dict = Depends(require_user)) -> dict:
     """Abre uma smart-list: ``{tasks, orphans}`` (referências órfãs sinalizadas, sem erro)."""
-    return list_tasks_by_filter(filter_id)  # listagem
+    return list_tasks_by_filter(filter_id, space)  # listagem
 
 
 # ─────────────────────────────────────────────────────────────────────────────

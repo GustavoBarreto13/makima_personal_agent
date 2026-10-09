@@ -24,17 +24,17 @@ def _inbox_id() -> int:
             return _get_inbox_id(cur)
 
 
-def list_view_all() -> list:
+def list_view_all(space=None) -> list:
     """Todas as tarefas abertas, independentemente de lista ou data (FR-006/US2 cenário 1).
 
     Returns:
         Lista de tarefas serializadas (a base "abertas" da DSL, sem nenhuma condição extra).
         **Listagem**.
     """
-    return _run_filter_rules({"combinator": "and", "conditions": []})["tasks"]
+    return _run_filter_rules({"combinator": "and", "conditions": []}, space)["tasks"]
 
 
-def list_view_today() -> list:
+def list_view_today(space=None) -> list:
     """Tarefas de hoje + vencidas (a mesma regra da smart-list built-in "Hoje + Vencidas").
 
     Reexposta aqui (não duplicada) para a view fixa "Hoje" do bloco de mercado (FR-007).
@@ -42,10 +42,10 @@ def list_view_today() -> list:
     Returns:
         Lista de tarefas serializadas. **Listagem**.
     """
-    return list_today_overdue()
+    return list_today_overdue(space)
 
 
-def list_view_tomorrow() -> list:
+def list_view_tomorrow(space=None) -> list:
     """Tarefas que vencem amanhã (e só amanhã — não inclui hoje nem vencidas).
 
     Returns:
@@ -54,10 +54,10 @@ def list_view_tomorrow() -> list:
     rules = {"combinator": "and", "conditions": [
         {"field": "due_date", "op": "eq", "value": "tomorrow"},
     ]}
-    return _run_filter_rules(rules)["tasks"]
+    return _run_filter_rules(rules, space)["tasks"]
 
 
-def list_view_next7() -> list:
+def list_view_next7(space=None) -> list:
     """Tarefas que vencem nos próximos 7 dias corridos, **incluindo hoje** (research.md R7).
 
     Returns:
@@ -66,10 +66,10 @@ def list_view_next7() -> list:
     rules = {"combinator": "and", "conditions": [
         {"field": "due_date", "op": "within", "value": "7d"},
     ]}
-    return _run_filter_rules(rules)["tasks"]
+    return _run_filter_rules(rules, space)["tasks"]
 
 
-def list_view_inbox() -> list:
+def list_view_inbox(space=None) -> list:
     """Tarefas-pai abertas do Inbox (a mesma lista que aparece na sidebar).
 
     Returns:
@@ -78,7 +78,7 @@ def list_view_inbox() -> list:
     rules = {"combinator": "and", "conditions": [
         {"field": "project_id", "op": "in", "value": [_inbox_id()]},
     ]}
-    return _run_filter_rules(rules)["tasks"]
+    return _run_filter_rules(rules, space)["tasks"]
 
 
 _VIEW_FUNCS = {
@@ -90,7 +90,7 @@ _VIEW_FUNCS = {
 }
 
 
-def get_view_counts() -> dict:
+def get_view_counts(space=None) -> dict:
     """Conta os itens de cada view fixa, para os badges da sidebar (FR-006).
 
     Calculado na leitura (sem cache) — o volume de tarefas de um usuário único torna isso
@@ -99,4 +99,4 @@ def get_view_counts() -> dict:
     Returns:
         ``{"all": N, "today": N, "tomorrow": N, "next7": N, "inbox": N}``. **Listagem**.
     """
-    return {key: len(fn()) for key, fn in _VIEW_FUNCS.items()}
+    return {key: len(fn(space)) for key, fn in _VIEW_FUNCS.items()}

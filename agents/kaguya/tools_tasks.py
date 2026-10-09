@@ -695,8 +695,11 @@ def list_tasks(project_id: int, include_completed: bool = False, include_deferre
     return parents
 
 
-def list_tasks_today() -> dict:
+def list_tasks_today(space: Optional[str] = None) -> dict:
     """Lista tarefas de hoje e vencidas (abertas), com o nome da lista em cada uma.
+
+    Args:
+        space: ``work`` | ``personal`` restringe ao espaço da lista (spec 075); ``None`` = todos.
 
     Returns:
         ``{"overdue": [...], "today": [...]}`` — tarefas-pai abertas com ``due_date``
@@ -716,8 +719,10 @@ def list_tasks_today() -> dict:
           AND p.archived_at IS NULL
           AND p.deleted_at IS NULL
           AND (t.start_date IS NULL OR t.start_date <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date)
+          AND (%(space)s::text IS NULL OR p.context = %(space)s)
         ORDER BY t.due_date, t.priority DESC, t.position
-        """
+        """,
+        {"space": space if space in ("work", "personal") else None},
     )
     today = _tz_today_sp().isoformat()
     overdue, due_today = [], []
@@ -793,7 +798,7 @@ def mark_due_reminder_sent(task_ids: list[int]) -> None:
     )
 
 
-def list_eisenhower_tasks() -> list[dict]:
+def list_eisenhower_tasks(space: Optional[str] = None) -> list[dict]:
     """Lista todas as tarefas-pai abertas para a view Eisenhower.
 
     Retorna todas as tarefas abertas (não concluídas, não deletadas) sem filtro de
@@ -806,25 +811,35 @@ def list_eisenhower_tasks() -> list[dict]:
     """
     rows = run_select(
         f"""
-        SELECT {_qualified("t")}, p.name AS project_name
+        SELECT {_qualified("t")}, p.name AS project_name, p.context
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
         WHERE t.parent_id IS NULL
           AND t.completed_at IS NULL
           AND t.deleted_at IS NULL
           AND p.archived_at IS NULL
+          AND (%(space)s::text IS NULL OR p.context = %(space)s)
         ORDER BY
             t.due_date ASC NULLS LAST,
             t.priority DESC,
             t.position
         """,
+        {"space": space if space in ("work", "personal") else None},
     )
-    out = [_serialize_task(r) for r in rows]
+    out = []
+    for r in rows:
+        item = _serialize_task(r)
+        item["project_name"] = r["project_name"]
+        item["context"] = r["context"] or "personal"
+        out.append(item)
     return _attach_tags(out)
 
 
-def search_tasks(query: str) -> list[dict]:
-    """Busca tarefas abertas por texto no título ou na descrição (ILIKE, case-insensitive).
+def search_tasks(query: str, space: Optional[str] = None, include_completed: bool = False) -> list[dict]:
+    """Busca tarefas por texto no título ou na descrição (ILIKE, case-insensitive).
+
+    Por padrão só abertas; ``include_completed=True`` inclui as concluídas (a busca do logbook,
+    spec 075). ``space`` (``work`` | ``personal``) restringe ao espaço da lista da tarefa.
 
     Única view que continua trazendo tarefas de listas arquivadas (FR-003, spec 039) — a
     busca global "acha tudo"; cada item sinaliza a origem via ``archived``.
@@ -843,11 +858,13 @@ def search_tasks(query: str) -> list[dict]:
         SELECT {_qualified("t")}, p.name AS project_name,
                p.archived_at IS NOT NULL AS project_archived
         FROM tasks t JOIN task_projects p ON p.id = t.project_id
-        WHERE t.deleted_at IS NULL AND t.completed_at IS NULL
+        WHERE t.deleted_at IS NULL AND (%(inc)s OR t.completed_at IS NULL)
           AND (t.title ILIKE %(q)s OR t.description ILIKE %(q)s)
-        ORDER BY t.due_date NULLS LAST, t.priority DESC, t.position
+          AND (%(space)s::text IS NULL OR p.context = %(space)s)
+        ORDER BY t.completed_at IS NOT NULL, t.due_date NULLS LAST, t.priority DESC, t.position
         """,
-        {"q": f"%{query.strip()}%"},
+        {"q": f"%{query.strip()}%", "inc": bool(include_completed),
+         "space": space if space in ("work", "personal") else None},
     )
     out = []
     for r in rows:
