@@ -284,3 +284,9 @@
 .ds-md-a { color: var(--ds-accent-deep); text-decoration: underline; text-underline-offset: 2px; }
 .ds-md-a .ds-ic { margin-inline-start: 2px; vertical-align: -1px; opacity: 0.6; }
 .ds-md-empty { margin: 0; color: var(--ds-ink-4); }
+
+/* Menções (@pessoa, [[tarefa): lista de sugestões sob o texto */
+.ds-mde-mentions { margin: 4px 0 0; padding: 4px; list-style: none; border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); background: var(--ds-card); box-shadow: var(--ds-shadow-md); }
+.ds-mde-mentions li { display: flex; align-items: baseline; gap: var(--ds-space-2); padding: 6px 10px; border-radius: var(--ds-r-sm); color: var(--ds-ink-2); font-size: var(--ds-text-sm); cursor: pointer; }
+.ds-mde-mentions li.ds-on, .ds-mde-mentions li:hover { background: var(--ds-accent-tint); color: var(--ds-ink-1); }
+.ds-mde-mentions small { color: var(--ds-ink-4); }

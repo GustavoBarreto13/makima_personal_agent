@@ -2,9 +2,10 @@
 // perde ao fechar. Cabeçalho (concluir, data, prioridade, Meu Dia), título, propriedades (lista, repetição, estimativa,
 // adiar), notas em Markdown editadas no lugar, subtarefas, etiquetas, GTD/aguardando, dependências e histórico.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Button, DatePicker, EmptyState, ErrorState, Icon, IconButton, Input, LoadingState, Menu, Modal, Select, SegmentedControl, TagInput, TimePicker, Field, toast, MarkdownEditor,
+  type MentionSource,
 } from '../../../design'
 import { fmtDate } from '../../../design/core/format'
 import { kaguyaApi } from '../api'
@@ -15,6 +16,7 @@ import { presetLabels, presetOf, ruleFor, type RecurrencePreset } from '../lib/r
 import { dueInfo, PRIORITY_LABEL } from '../lib/taskView'
 import { useLoad } from '../lib/useLoad'
 import type { GtdStatus, Task } from '../types'
+import { TaskPanelExtras, usePeople } from './TaskPanelExtras'
 
 const GTD_OPTIONS: { value: GtdStatus | ''; label: string }[] = [
   { value: '', label: 'Sem classificação' }, { value: 'next_action', label: 'Próxima ação' },
@@ -122,6 +124,16 @@ function Details({ task, save }: { task: Task; save: (p: Parameters<typeof kaguy
   useEffect(() => setNotes(task.description ?? ''), [task.id, task.description])
   useEffect(() => setWait(task.waiting_note ?? ''), [task.id, task.waiting_note])
 
+  const people = usePeople()
+  // @pessoa (cadastro da Komi) e [[tarefa: o texto guarda `@[Nome](komi:id)` e `[[id|Título]]`, que o leitor desenha como link.
+  const mentions = useMemo<MentionSource[]>(() => [
+    { trigger: '@', search: (q) => people.search(q).map((p) => ({ id: p.id, label: p.name })), format: (i) => `@[${i.label}](komi:${i.id}) ` },
+    {
+      trigger: '[[',
+      search: async (q) => (q.trim().length < 2 ? [] : (await kaguyaApi.search(q.trim())).filter((t) => t.id !== task.id).slice(0, 6).map((t) => ({ id: String(t.id), label: t.title, hint: t.project_name ?? undefined }))),
+      format: (i) => `[[${i.id}|${i.label}]] `,
+    },
+  ], [people.search, task.id])
   const due = dueInfo(task, k.today)
   const preset = presetOf(task.recurrence?.active ? task.recurrence.rrule : null, task.due_date)
   const myDay = task.my_day_date === k.today
@@ -209,6 +221,7 @@ function Details({ task, save }: { task: Task; save: (p: Parameters<typeof kaguy
           onChange={setNotes}
           onCommit={(v) => { if (v !== (task.description ?? '')) void save({ description: v.trim() ? v : null }) }}
           label="Notas"
+          mentions={mentions}
           placeholder="Notas, links e checklists em Markdown…"
           renderLink={(href, children) => {
             if (href.startsWith('task:')) {
@@ -263,6 +276,8 @@ function Details({ task, save }: { task: Task; save: (p: Parameters<typeof kaguy
           </>
         )}
       </div>
+
+      <TaskPanelExtras task={task} save={save} />
 
       <Dependencies task={task} />
 

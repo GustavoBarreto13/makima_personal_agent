@@ -116,3 +116,63 @@ describe('MarkdownEditor — edição', () => {
     expect(screen.getByRole('button', { name: /Checklist/ })).toBeTruthy()
   })
 })
+
+describe('MarkdownEditor — menções', () => {
+  const people = [{ id: 'p1', label: 'Ana Souza' }, { id: 'p2', label: 'Antônio Lima' }, { id: 'p3', label: 'Bia' }]
+  const sources = [
+    { trigger: '@' as const, search: (q: string) => people.filter((p) => p.label.toLowerCase().includes(q.toLowerCase())), format: (i: { id: string; label: string }) => `@[${i.label}](komi:${i.id}) ` },
+    { trigger: '[[' as const, search: async (q: string) => (q.length < 2 ? [] : [{ id: '12', label: 'Comprar pão' }]), format: (i: { id: string; label: string }) => `[[${i.id}|${i.label}]] ` },
+  ]
+  function Mentions({ initial = '' }: { initial?: string }) {
+    const [v, setV] = useState(initial)
+    return <><MarkdownEditor value={v} onChange={setV} startEditing mentions={sources} /><output data-testid="out">{v}</output></>
+  }
+
+  it('digitar @ lista as pessoas, as setas navegam e Enter insere a menção', async () => {
+    const user = userEvent.setup()
+    render(<Mentions />)
+    const area = screen.getByRole('textbox') as HTMLTextAreaElement
+    await user.type(area, 'fale com @an')
+    const list = await screen.findByRole('listbox', { name: 'Pessoas' })
+    expect(list.querySelectorAll('[role="option"]').length).toBe(2)
+    await user.keyboard('{ArrowDown}{Enter}')
+    expect(screen.getByTestId('out').textContent).toBe('fale com @[Antônio Lima](komi:p2) ')
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('Esc fecha a lista sem sair da edição; e-mail não abre a lista', async () => {
+    const user = userEvent.setup()
+    render(<Mentions />)
+    const area = screen.getByRole('textbox')
+    await user.type(area, 'oi @bi')
+    await screen.findByRole('listbox')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(screen.getByRole('textbox')).toBeTruthy() // continua editando
+    await user.type(area, ' eu@gm')
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('[[ busca tarefas e insere [[id|Título]]; o leitor mostra como link de tarefa', async () => {
+    const user = userEvent.setup()
+    render(<Mentions />)
+    // No user-event, `[[` digita UM colchete literal: dois pares digitam o gatilho `[[`.
+    await user.type(screen.getByRole('textbox'), 'ver [[[[co')
+    const option = await screen.findByRole('option', { name: /Comprar pão/ })
+    await user.click(option)
+    expect(screen.getByTestId('out').textContent).toBe('ver [[12|Comprar pão]] ')
+  })
+
+  it('notas antigas com [[id|Título]] aparecem como link', () => {
+    render(<MarkdownEditor value="ver [[12|Comprar pão]]" onChange={() => {}} renderLink={(href, children) => (href.startsWith('task:') ? <button type="button">{children}</button> : undefined)} />)
+    expect(screen.getByRole('button', { name: 'Comprar pão' })).toBeTruthy()
+  })
+
+  it('sem fontes de menção o @ é só texto', async () => {
+    const user = userEvent.setup()
+    render(<Harness initial="" />)
+    await user.click(screen.getByText('Escreva em Markdown…'))
+    await user.type(screen.getByRole('textbox'), '@an')
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+})

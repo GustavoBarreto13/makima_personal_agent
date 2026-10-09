@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  checklistItems, checklistStats, continueList, indentLines, linkSelection, pasteUrlOverSelection, toggleChecklistItem, toggleLinePrefix, wrapSelection,
+  applyMention, checklistItems, checklistStats, continueList, expandLegacyMentions, findMention, indentLines, linkSelection, pasteUrlOverSelection, toggleChecklistItem, toggleLinePrefix, wrapSelection,
 } from './markdown'
 
 const DOC = ['- [ ] a', '- [x] b', '```', '- [ ] dentro do código', '```', '* [ ] c'].join('\n')
@@ -73,5 +73,31 @@ describe('formatação por seleção', () => {
     expect(pasteUrlOverSelection('veja aqui', 5, 9, 'https://x.com')!.text).toBe('veja [aqui](https://x.com)')
     expect(pasteUrlOverSelection('veja aqui', 5, 5, 'https://x.com')).toBeNull() // sem seleção
     expect(pasteUrlOverSelection('veja aqui', 5, 9, 'não é url')).toBeNull()
+  })
+})
+
+describe('menções', () => {
+  it('@ no começo de uma palavra abre a busca; e-mail não', () => {
+    expect(findMention('fale com @an', 12)).toEqual({ trigger: '@', start: 9, query: 'an' })
+    expect(findMention('@', 1)).toEqual({ trigger: '@', start: 0, query: '' })
+    expect(findMention('mande para eu@gmail', 19)).toBeNull()
+    expect(findMention('fale com @ana silva', 19)).toBeNull() // o espaço encerra a busca
+  })
+  it('[[ abre a busca de tarefa até fechar ]]', () => {
+    expect(findMention('ver [[comp', 10)).toEqual({ trigger: '[[', start: 4, query: 'comp' })
+    expect(findMention('ver [[12|Comprar]] e', 20)).toBeNull()
+    expect(findMention('linha 1\n[[x', 11)).toEqual({ trigger: '[[', start: 8, query: 'x' })
+  })
+  it('só considera os gatilhos pedidos', () => {
+    expect(findMention('@ana', 4, ['[['])).toBeNull()
+  })
+  it('aplicar troca o gatilho e a busca pelo texto escolhido', () => {
+    const m = findMention('oi @an e mais', 6)!
+    expect(applyMention('oi @an e mais', m, 6, '@[Ana](komi:p1) ')).toEqual({ text: 'oi @[Ana](komi:p1)  e mais', start: 19, end: 19 })
+  })
+  it('notas antigas com [[id|Título]] viram link de tarefa', () => {
+    expect(expandLegacyMentions('ver [[12|Comprar pão]] hoje')).toBe('ver [Comprar pão](task:12) hoje')
+    expect(expandLegacyMentions('[[7|]]')).toBe('[Tarefa 7](task:7)')
+    expect(expandLegacyMentions('texto [[sem id]]')).toBe('texto [[sem id]]')
   })
 })

@@ -18,10 +18,9 @@ import { localISO } from '../lib/calendar'
 import { useDndSensors } from '../lib/dnd'
 import { bucketView, showWorkBucket } from '../lib/freeTime'
 import { fmtMinutes } from '../lib/taskView'
-import { useLoad } from '../lib/useLoad'
+import { safe, useLoad } from '../lib/useLoad'
 import type { Calendar, ExperimentDue, FocusDayStats, MyDayResponse, Task, TimeBucket } from '../types'
 
-const safe = <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => Promise.resolve().then(fn).catch(() => fallback)
 const greeting = (hour: number): string => (hour < 6 ? 'Boa madrugada' : hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite')
 const reason = (e: unknown, fallback: string) => (e instanceof Error && e.message && !/^HTTP \d+$/.test(e.message) ? e.message : fallback)
 

@@ -158,3 +158,45 @@ export function pasteUrlOverSelection(text: string, start: number, end: number, 
   if (start === end || !/^https?:\/\/\S+$/i.test(pasted.trim())) return null
   return linkSelection(text, start, end, pasted.trim())
 }
+
+// ── Menções ────────────────────────────────────────────────────────────────────
+
+export interface MentionMatch {
+  /** O gatilho que abriu a busca (`@` para pessoa, `[[` para tarefa). */
+  trigger: string
+  /** Onde o gatilho começa no texto. */
+  start: number
+  /** O que foi digitado depois do gatilho. */
+  query: string
+}
+
+/**
+ * Há uma menção sendo digitada logo antes do cursor? `@` só vale no começo de uma palavra (e-mails não disparam) e a busca
+ * não pode ter espaço; `[[` vale até fechar `]]`, na mesma linha. Devolve o gatilho, onde ele começa e o que já foi digitado.
+ */
+export function findMention(text: string, caret: number, triggers: string[] = ['@', '[[']): MentionMatch | null {
+  const before = text.slice(0, caret)
+  const lineStart = before.lastIndexOf('\n') + 1
+  const line = before.slice(lineStart)
+  if (triggers.includes('[[')) {
+    const i = line.lastIndexOf('[[')
+    if (i !== -1 && !line.slice(i).includes(']]') && line.length - i <= 60) return { trigger: '[[', start: lineStart + i, query: line.slice(i + 2) }
+  }
+  if (triggers.includes('@')) {
+    const m = /(^|\s)@([^\s@\[\]()]{0,30})$/.exec(line)
+    if (m) return { trigger: '@', start: lineStart + line.length - m[2].length - 1, query: m[2] }
+  }
+  return null
+}
+
+/** Troca o gatilho + o que foi digitado pelo texto da menção escolhida e põe o cursor depois dela. */
+export function applyMention(text: string, match: MentionMatch, caret: number, insert: string): Edit {
+  const next = text.slice(0, match.start) + insert + text.slice(caret)
+  const pos = match.start + insert.length
+  return { text: next, start: pos, end: pos }
+}
+
+/** Notas antigas guardam a tarefa como `[[12|Título]]`: para exibir, vira o link `[Título](task:12)`. */
+export function expandLegacyMentions(md: string): string {
+  return md.replace(/\[\[(\d+)\|([^\]\n]*)\]\]/g, (_m, id: string, title: string) => `[${title || `Tarefa ${id}`}](task:${id})`)
+}

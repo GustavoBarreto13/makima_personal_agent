@@ -22,3 +22,6 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[]): { state: Lo
 
   return { state, retry: useCallback(() => { setState({ status: 'loading' }); setTries((n) => n + 1) }, []) }
 }
+
+/** Consulta OPCIONAL: se falhar (ou nem existir), devolve o valor padrão — a seção some, o resto da tela continua. */
+export const safe = <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => Promise.resolve().then(fn).catch(() => fallback)

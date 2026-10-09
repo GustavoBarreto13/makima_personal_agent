@@ -2,17 +2,28 @@
 // atalhos (Ctrl+B / I / K), continuação de listas no Enter, Tab para aninhar, colar URL sobre seleção vira link,
 // checklists clicáveis (a marcação reescreve o texto) com contagem "3/7", callouts (`> [!NOTE]`) e botão de copiar
 // nos blocos de código. Toda a lógica de texto vive em core/markdown (pura e testada); aqui só há o encaixe no DOM.
-// Sem rede: menções e links de domínio entram por `renderLink`.
+// Sem rede: as sugestões de `@pessoa` e `[[tarefa` vêm de `mentions` e os links de domínio entram por `renderLink`.
 
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
-  checklistStats, continueList, indentLines, linkSelection, pasteUrlOverSelection, toggleChecklistItem, toggleLinePrefix, wrapSelection, type Edit,
+  applyMention, checklistStats, continueList, expandLegacyMentions, findMention, indentLines, linkSelection, pasteUrlOverSelection, toggleChecklistItem, toggleLinePrefix, wrapSelection,
+  type Edit, type MentionMatch,
 } from '../core/markdown'
 import { Icon } from './Icon'
 import type { IconName } from './icons'
 import { cx } from './primitives'
+
+/** Um item sugerido ao digitar `@` ou `[[`. */
+export interface MentionItem { id: string; label: string; hint?: string }
+
+/** Uma fonte de menções: o gatilho, a busca e o texto Markdown que entra no lugar do gatilho. */
+export interface MentionSource {
+  trigger: '@' | '[['
+  search: (query: string) => MentionItem[] | Promise<MentionItem[]>
+  format: (item: MentionItem) => string
+}
 
 export interface MarkdownEditorProps {
   value: string
@@ -27,6 +38,8 @@ export interface MarkdownEditorProps {
   label?: string
   /** Começa editando (ex.: nota nova). */
   startEditing?: boolean
+  /** Sugestões ao digitar `@pessoa` e `[[tarefa`. Sem isto, só o texto é editado. */
+  mentions?: MentionSource[]
 }
 
 const TOOLS: { id: string; icon: IconName; label: string; run: (t: string, s: number, e: number) => Edit }[] = [
@@ -59,11 +72,32 @@ function textOf(node: ReactNode): string {
   return ''
 }
 
-export function MarkdownEditor({ value, onChange, onCommit, placeholder = 'Escreva em Markdown…', renderLink, label = 'Notas', startEditing }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, onCommit, placeholder = 'Escreva em Markdown…', renderLink, label = 'Notas', startEditing, mentions }: MarkdownEditorProps) {
   const [editing, setEditing] = useState(!!startEditing)
   const area = useRef<HTMLTextAreaElement>(null)
   const pendingSel = useRef<[number, number] | null>(null)
   const stats = checklistStats(value)
+
+  // Menções: ao digitar @ ou [[, busca (com um respiro, por causa da rede) e mostra a lista sob o texto.
+  const [mention, setMention] = useState<{ match: MentionMatch; source: MentionSource; items: MentionItem[]; index: number } | null>(null)
+  const searchSeq = useRef(0)
+  const detectMention = useCallback((text: string, caret: number) => {
+    if (!mentions?.length) return
+    const match = findMention(text, caret, mentions.map((m) => m.trigger))
+    const source = match && mentions.find((m) => m.trigger === match.trigger)
+    if (!match || !source) { setMention(null); return }
+    const seq = ++searchSeq.current
+    const run = () => Promise.resolve(source.search(match.query)).then((items) => { if (seq === searchSeq.current) setMention(items.length ? { match, source, items: items.slice(0, 6), index: 0 } : null) }).catch(() => { if (seq === searchSeq.current) setMention(null) })
+    if (source.trigger === '[[') window.setTimeout(() => { if (seq === searchSeq.current) void run() }, 220)
+    else void run()
+  }, [mentions])
+  const pickMention = useCallback((item: MentionItem) => {
+    if (!mention || !area.current) return
+    const edit = applyMention(value, mention.match, area.current.selectionStart, mention.source.format(item))
+    setMention(null)
+    pendingSel.current = [edit.start, edit.end]
+    onChange(edit.text)
+  }, [mention, value, onChange])
 
   // Depois de uma edição programática, devolve o cursor para onde a lógica pediu.
   useEffect(() => {
@@ -85,6 +119,12 @@ export function MarkdownEditor({ value, onChange, onCommit, placeholder = 'Escre
     const el = e.currentTarget
     const { selectionStart: s, selectionEnd: en } = el
     const mod = e.ctrlKey || e.metaKey
+    // Com a lista de menções aberta, as setas/Enter/Tab/Esc são dela.
+    if (mention) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setMention({ ...mention, index: (mention.index + (e.key === 'ArrowDown' ? 1 : -1) + mention.items.length) % mention.items.length }); return }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickMention(mention.items[mention.index]); return }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMention(null); return }
+    }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); commit(); return }
     if (mod && e.key === 'Enter') { e.preventDefault(); commit(); return }
     if (mod && e.key.toLowerCase() === 'b') { e.preventDefault(); apply(wrapSelection(value, s, en, '**')); return }
@@ -142,7 +182,7 @@ export function MarkdownEditor({ value, onChange, onCommit, placeholder = 'Escre
             pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
           }}
         >
-          {withCallouts(value)}
+          {withCallouts(expandLegacyMentions(value))}
         </ReactMarkdown>
       ) : (
         <p className="ds-md-empty">{placeholder}</p>
@@ -180,12 +220,23 @@ export function MarkdownEditor({ value, onChange, onCommit, placeholder = 'Escre
           placeholder={placeholder}
           aria-label={label}
           rows={Math.min(14, Math.max(5, value.split('\n').length + 1))}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => { onChange(e.target.value); detectMention(e.target.value, e.target.selectionStart) }}
+          onClick={(e) => detectMention(e.currentTarget.value, e.currentTarget.selectionStart)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
-          onBlur={(e) => { if (!e.relatedTarget || !(e.relatedTarget as HTMLElement).closest('.ds-mde-tools')) commit() }}
+          onBlur={(e) => { setMention(null); if (!e.relatedTarget || !(e.relatedTarget as HTMLElement).closest('.ds-mde-tools')) commit() }}
         />
       ) : read}
+      {editing && mention && (
+        <ul className="ds-mde-mentions" role="listbox" aria-label={mention.source.trigger === '@' ? 'Pessoas' : 'Tarefas'}>
+          {mention.items.map((it, i) => (
+            <li key={it.id} role="option" aria-selected={i === mention.index} className={i === mention.index ? 'ds-on' : undefined}
+              onMouseDown={(e) => { e.preventDefault(); pickMention(it) }}>
+              <b>{it.label}</b>{it.hint && <small>{it.hint}</small>}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
