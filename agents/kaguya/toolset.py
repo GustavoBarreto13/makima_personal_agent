@@ -55,6 +55,41 @@ from agents.kaguya.tools_projects import list_projects_due_review
 from agents.kaguya.tools_stats import get_planning_insights
 from agents.kaguya.tools_tasks import get_task
 from agents.kaguya.tools_contexts import list_contexts
+# Metas, experimentos, foco, grupos, modo férias, fila do Inbox e edição em massa — tudo que o webapp faz (spec 075).
+from agents.kaguya.tools_goals import (
+    create_goal, list_goals, get_goal, update_goal, delete_goal, add_milestone, update_milestone,
+    link_movement, unlink_movement, review_goal,
+)
+from agents.kaguya.tools_experiments import (
+    create_experiment, list_experiments, get_experiment, update_experiment, log_experiment,
+    pause_experiment, resume_experiment, review_experiment, list_experiments_due_today,
+)
+from agents.kaguya import tools_focus as _focus
+from agents.kaguya.tools_focus import get_focus_today, get_focus_stats
+from agents.kaguya.tools_projects import create_group, update_group, delete_group, set_group_context
+from agents.kaguya.tools_tasks import list_inbox_queue, set_myday_prefs
+from agents.kaguya.tools_bulk import bulk_update_tasks, undo_bulk_update
+
+
+def _named(fn, name: str):
+    """Mesma função com um nome mais claro para o LLM (``start_session`` sozinho não diz que é o foco).
+
+    ``functools.wraps`` preserva docstring e assinatura (o FastMCP monta o schema a partir delas).
+    """
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        return fn(*args, **kwargs)
+
+    wrapper.__name__ = wrapper.__qualname__ = name
+    return wrapper
+
+
+start_focus_session = _named(_focus.start_session, "start_focus_session")
+finish_focus_session = _named(_focus.finish_session, "finish_focus_session")
+cancel_focus_session = _named(_focus.cancel_session, "cancel_focus_session")
+get_active_focus_session = _named(_focus.get_active_session, "get_active_focus_session")
 
 TOOLS = [
     # Data/hora atual (America/Sao_Paulo) — âncora p/ datas relativas; a linha
@@ -108,4 +143,15 @@ TOOLS = [
     list_completed, list_trash_detailed, list_contexts,
     # Revisão por cadência e onde o planejamento está falhando
     list_projects_due_review, get_planning_insights,
+    # Metas (áreas, marcos, vínculos, revisão) e Tiny Experiments (check-in, pausa, veredicto)
+    create_goal, list_goals, get_goal, update_goal, delete_goal, add_milestone, update_milestone,
+    link_movement, unlink_movement, review_goal,
+    create_experiment, list_experiments, get_experiment, update_experiment, log_experiment,
+    pause_experiment, resume_experiment, review_experiment, list_experiments_due_today,
+    # Foco gamificado (Pomodoro): iniciar, concluir, desistir, e o resumo
+    start_focus_session, finish_focus_session, cancel_focus_session, get_active_focus_session,
+    get_focus_today, get_focus_stats,
+    # Grupos de listas (com o espaço Trabalho/Pessoal), fila do Inbox, modo férias e edição em massa
+    create_group, update_group, delete_group, set_group_context,
+    list_inbox_queue, set_myday_prefs, bulk_update_tasks, undo_bulk_update,
 ]
