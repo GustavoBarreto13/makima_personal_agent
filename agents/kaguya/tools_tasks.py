@@ -1188,11 +1188,11 @@ def update_task(
     due_date: Optional[str] = _UNSET,
     due_time: Optional[str] = _UNSET,
     project_id: Optional[int] = None,
-    column_id: Optional[int] = None,
+    column_id: Optional[int] = _UNSET,
     recurrence: Optional[dict] = None,
     clear_recurrence: bool = False,
     tags: Optional[list] = None,
-    duration_min: Optional[int] = None,
+    duration_min: Optional[int] = _UNSET,
     person_ids: Optional[list] = None,
     gtd_status: Optional[str] = _UNSET,
     waiting_note: Optional[str] = _UNSET,
@@ -1206,8 +1206,10 @@ def update_task(
 
     Args:
         task_id: Id da tarefa.
-        title/priority/type/project_id/column_id:
+        title/priority/type/project_id:
             Campos a atualizar (todos opcionais; PATCH parcial).
+        column_id: Coluna do Kanban. Omitido (``_UNSET``) = não mexe (ao trocar de lista, vai
+            para a primeira coluna do destino); ``None`` = tira do board (sem coluna); int = move.
         description: Notas. Omitido (``_UNSET``) = não mexe; ``None`` = limpa
             (grava NULL); string = grava — mesma semântica de ``due_date``.
         due_date: Data de vencimento (``YYYY-MM-DD``). Omitido = não mexe;
@@ -1221,6 +1223,7 @@ def update_task(
         tags: Se informado (lista de nomes), substitui o conjunto de tags da tarefa
             (lista vazia = remover todas). ``None`` = não mexe nas tags.
         duration_min: Estimativa de duração em minutos (insumo da CapacityBar do Meu Dia).
+            Omitido = não mexe; ``None`` = limpa a estimativa; int = grava.
         person_ids: Se informado (lista de UUIDs), **substitui** o conjunto de responsáveis
             (fatia 025). Lista vazia = remover todos. ``None`` = não mexe.
         gtd_status: Status GTD real (spec 034). Omitido (``_UNSET``) = não mexe; ``None`` =
@@ -1246,7 +1249,8 @@ def update_task(
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT due_date, project_id, gtd_status FROM tasks WHERE id = %s AND deleted_at IS NULL",
+                "SELECT due_date, project_id, gtd_status, completed_at "
+                "FROM tasks WHERE id = %s AND deleted_at IS NULL",
                 (task_id,),
             )
             existing = cur.fetchone()
@@ -1254,6 +1258,8 @@ def update_task(
                 return {"status": "error", "message": "Tarefa não encontrada."}
             current_project_id = existing[1]   # lista atual — base para detectar troca real de lista
             current_gtd_status = existing[2]   # status GTD atual — base das regras de transição (spec 034)
+            was_completed = existing[3] is not None
+            completed_via_column = False   # True quando soltar na coluna done concluiu a tarefa
 
             sets, params = [], {"id": task_id}
             if title is not None:
@@ -1307,28 +1313,46 @@ def update_task(
                     return {"status": "error", "message": "Lista de destino não encontrada."}
                 sets.append("project_id = %(project_id)s")
                 params["project_id"] = project_id
-                if column_id is None:
+                if column_id is _UNSET:
                     params["column_id"] = _first_column_id(cur, project_id)
                     sets.append("column_id = %(column_id)s")
-            if column_id is not None:
+            if column_id is None:
+                # Explícito: tirar do board (a tarefa continua na lista, sem coluna).
+                sets.append("column_id = NULL")
+            elif column_id is not _UNSET:
                 # Valida que a coluna pertence à lista efetiva da tarefa (após eventual troca
                 # de lista feita acima). Sem essa checagem, um column_id de outra lista seria
                 # gravado e o card ficaria invisível no board desta lista.
                 # Nota: create_task já faz essa validação em ~linha 647; aqui espelhamos.
                 effective_project = params.get("project_id", current_project_id)
                 cur.execute(
-                    "SELECT 1 FROM task_columns WHERE id = %s AND project_id = %s",
+                    "SELECT is_done_column FROM task_columns WHERE id = %s AND project_id = %s",
                     (column_id, effective_project),
                 )
-                if not cur.fetchone():
+                col_row = cur.fetchone()
+                if not col_row:
                     return {"status": "error", "message": "Coluna não pertence à lista da tarefa."}
-                sets.append("column_id = %(column_id)s")
-                params["column_id"] = column_id
+                # Coluna "Concluído" ≡ tarefa concluída (a regra vale no backend, não só no drop do
+                # front): soltar na done conclui (com recorrência e cascata, como o botão concluir);
+                # tirar de uma tarefa concluída para outra coluna a reabre.
+                if col_row[0] and not was_completed:
+                    done = _complete_task_on_cursor(cur, task_id, cascade=True)
+                    if done["status"] == "error":
+                        return done
+                    # _complete_task_on_cursor já levou o card para a coluna done.
+                    completed_via_column = True
+                else:
+                    sets.append("column_id = %(column_id)s")
+                    params["column_id"] = column_id
+                    if was_completed and not col_row[0]:
+                        sets.append("completed_at = NULL")
 
             # Estimativa de duração do Meu Dia (fatia 016).
-            if duration_min is not None:
+            if duration_min is not _UNSET:
+                if duration_min is not None and duration_min < 0:
+                    return {"status": "error", "message": "A estimativa não pode ser negativa."}
                 sets.append("duration_min = %(duration_min)s")
-                params["duration_min"] = duration_min
+                params["duration_min"] = duration_min   # None → limpa a estimativa
 
             # ── Status GTD real (spec 034) — regras de transição ──
             # gtd_status: _UNSET = não mexe · None = limpa (volta a "não classificada") · valor = grava.
@@ -1365,7 +1389,7 @@ def update_task(
                 # someday nunca seta waiting_since — nada a limpar aqui.
 
             # Há algo a fazer? campos OU recorrência OU tags OU responsáveis (fatia 025).
-            if (not sets and recurrence is None and not clear_recurrence
+            if (not sets and recurrence is None and not clear_recurrence and not completed_via_column
                     and type != "birthday" and tags is None and person_ids is None):
                 return {"status": "error", "message": "Nada para atualizar."}
 
@@ -1491,9 +1515,14 @@ def _complete_task_on_cursor(cur, task_id: int, cascade: bool = False, end_serie
                 (task_id,),
             )
 
-    # Completa a própria tarefa.
+    # Completa a própria tarefa — e, em lista com board, leva o card para a coluna "Concluído".
     cur.execute(
         "UPDATE tasks SET completed_at = now(), updated_at = now() WHERE id = %s", (task_id,)
+    )
+    cur.execute(
+        "UPDATE tasks t SET column_id = c.id FROM task_columns c "
+        "WHERE t.id = %s AND t.parent_id IS NULL AND c.project_id = t.project_id AND c.is_done_column",
+        (task_id,),
     )
 
     # ── Recorrência: gerar a próxima ocorrência ou encerrar a série ──
@@ -1577,6 +1606,14 @@ def reopen_task(task_id: int) -> dict:
                     }
             cur.execute(
                 "UPDATE tasks SET completed_at = NULL, updated_at = now() WHERE id = %s", (task_id,)
+            )
+            # Reabrir tira o card da coluna "Concluído": volta à primeira coluna do board.
+            cur.execute(
+                "UPDATE tasks t SET column_id = ("
+                "  SELECT id FROM task_columns WHERE project_id = t.project_id "
+                "  ORDER BY position, id LIMIT 1) "
+                "WHERE t.id = %s AND t.column_id IN (SELECT id FROM task_columns WHERE is_done_column)",
+                (task_id,),
             )
     try:
         from agents.kaguya import gcal_sync as _gs

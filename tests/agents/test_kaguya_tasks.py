@@ -428,3 +428,49 @@ def test_restore_keeps_separately_deleted_descendant_in_trash(inbox_id):
     T.restore_task(a)
     assert _row(b)["deleted_at"] is None
     assert _row(c)["deleted_at"] is not None  # continua na lixeira
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Spec 075 — PATCH limpa estimativa/coluna e a coluna "Concluído" ≡ tarefa concluída
+# ──────────────────────────────────────────────────────────────────────────────
+def _board(inbox_id):
+    """Dá um board (A fazer / Feito[done]) à Inbox e devolve (id_todo, id_done)."""
+    todo = P.create_column(inbox_id, "A fazer")["id"]
+    done = P.create_column(inbox_id, "Feito", is_done_column=True)["id"]
+    return todo, done
+
+
+def _col(task_id):
+    return run_select(
+        "SELECT column_id, completed_at FROM tasks WHERE id = %(i)s", {"i": task_id}
+    )[0]
+
+
+def test_patch_null_clears_duration_and_column(inbox_id):
+    todo, _ = _board(inbox_id)
+    tid = T.create_task("t", project_id=inbox_id, column_id=todo)["id"]
+    T.update_task(tid, duration_min=30)
+    assert T.update_task(tid, duration_min=None, column_id=None)["status"] == "ok"
+    row = run_select("SELECT duration_min, column_id FROM tasks WHERE id = %(i)s", {"i": tid})[0]
+    assert row["duration_min"] is None and row["column_id"] is None
+
+
+def test_column_done_completes_and_leaving_reopens(inbox_id):
+    todo, done = _board(inbox_id)
+    tid = T.create_task("t", project_id=inbox_id, column_id=todo)["id"]
+    assert T.update_task(tid, column_id=done)["status"] == "ok"      # só a coluna no PATCH
+    r = _col(tid)
+    assert r["column_id"] == done and r["completed_at"] is not None
+    assert T.update_task(tid, column_id=todo)["status"] == "ok"
+    r = _col(tid)
+    assert r["column_id"] == todo and r["completed_at"] is None
+
+
+def test_complete_moves_card_to_done_and_reopen_returns(inbox_id):
+    todo, done = _board(inbox_id)
+    tid = T.create_task("t", project_id=inbox_id, column_id=todo)["id"]
+    T.complete_task(tid)
+    assert _col(tid)["column_id"] == done
+    T.reopen_task(tid)
+    r = _col(tid)
+    assert r["column_id"] == todo and r["completed_at"] is None
