@@ -17,6 +17,7 @@ as mesmas funções servem o router REST `/api/tasks/*`.
 from typing import Union
 
 from agents.db import get_conn
+from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
 
 # ── Re-exporta a camada de lógica (o agente registra estes nomes) ──
 from agents.kaguya.tools_tasks import (  # noqa: F401
@@ -675,7 +676,7 @@ def eisenhower_status() -> str:
     from datetime import date as _date
     from agents.kaguya.tools_tasks import list_eisenhower_tasks
 
-    hoje = _date.today()
+    hoje = _tz_today_sp()
     tarefas = list_eisenhower_tasks()
 
     def _urgente(t: dict) -> bool:

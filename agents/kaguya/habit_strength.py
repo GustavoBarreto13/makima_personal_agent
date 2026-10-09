@@ -43,6 +43,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from typing import Iterable, Optional
+from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
 
 # ── Constantes do modelo (calibradas; ver docstring do módulo) ──
 # Peso do dia de hoje na EMA principal: 0.1 = histórico pesa 90% (estável, perdoa muito).
@@ -148,7 +149,7 @@ def summary(
         >>> summary(set(), 7)['trend']
         'flat'
     """
-    ref = today or date.today()
+    ref = today or _tz_today_sp()
     # Conjunto para teste de pertinência O(1) ao varrer a janela dia a dia.
     feitas = set(done_dates)
     esperado = expected_level(weekly_target)

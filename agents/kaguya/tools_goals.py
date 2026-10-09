@@ -31,6 +31,7 @@ from zoneinfo import ZoneInfo
 from agents.db import get_conn, run_select
 from agents.kaguya import goal_progress as GP
 from agents.kaguya import goal_link_providers as GLP
+from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
 
 # Fuso do usuário (UTC-3) — toda derivação de "hoje"/prazo passa por aqui (nunca CURRENT_DATE).
 _SP_TZ = ZoneInfo("America/Sao_Paulo")
@@ -71,7 +72,7 @@ _VALID_METRIC_MODES = {"manual", "auto"}
 # ─────────────────────────────────────────────────────────────────────────────
 def _today() -> date:
     """Retorna a data de "hoje" no fuso do usuário (UTC-3), nunca a data UTC do container."""
-    return datetime.now(_SP_TZ).date()
+    return _tz_today_sp()
 
 
 def _serialize_milestone(row: dict) -> dict:

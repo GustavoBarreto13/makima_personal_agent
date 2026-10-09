@@ -23,6 +23,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from agents.db import run_select, run_dml
+from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
 
 # Fuso do usuário (UTC-3) — toda janela de "7 dias"/"semana" passa por aqui, nunca CURRENT_DATE.
 _SP_TZ = ZoneInfo("America/Sao_Paulo")
@@ -34,7 +35,7 @@ _ALL_STEPS = ["inbox", "next_actions", "waiting", "lists", "calendar", "someday"
 
 def _now_sp() -> datetime:
     """Devolve o instante atual, aware, no fuso America/Sao_Paulo (nunca UTC puro)."""
-    return datetime.now(_SP_TZ)
+    return _tz_now_sp()
 
 
 def _serialize_review(row: dict) -> dict:

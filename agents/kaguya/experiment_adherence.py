@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from typing import Iterable, Mapping, Optional
+from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
 
 # Cadências válidas (espelha o CHECK do schema).
 _DAILY = "daily"
@@ -163,7 +164,7 @@ def summary(
         Dicionário com ``periods_done``, ``periods_expected``, ``adherence_pct``,
         ``logged_current``, ``days_remaining`` e ``is_overdue``.
     """
-    ref = today or date.today()
+    ref = today or _tz_today_sp()
 
     # Fim efetivo: nunca contamos períodos além de hoje nem além do fim (capa em min(hoje,end)).
     effective_end = min(ref, end_date)

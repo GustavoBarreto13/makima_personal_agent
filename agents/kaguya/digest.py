@@ -33,6 +33,7 @@ from zoneinfo import ZoneInfo
 from psycopg2.extras import Json
 
 from agents.db import get_conn, run_dml, run_select
+from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
 
 logger = logging.getLogger("kaguya.digest")
 
@@ -80,7 +81,7 @@ def _ensure_tables() -> None:
 # ─── Contexto (composição de dados, sem regra própria) ──────────────────────────
 
 def _today_sp() -> date:
-    return datetime.now(_TZ).date()
+    return _tz_today_sp()
 
 
 def _parse_minutes(value: str | None) -> int | None:

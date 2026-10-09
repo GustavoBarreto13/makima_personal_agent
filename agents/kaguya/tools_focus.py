@@ -41,6 +41,7 @@ from agents.db import get_conn, run_select
 
 from agents.kaguya import focus_achievements as FA
 from agents.kaguya import focus_stats as FS
+from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
 
 # Fuso do usuário (UTC-3) — toda derivação de "hoje" passa por aqui.
 _SP_TZ = ZoneInfo("America/Sao_Paulo")
@@ -69,7 +70,7 @@ _SESSION_COLUMNS = """
 
 def _today_sp() -> date:
     """Data de hoje no fuso do usuário (America/Sao_Paulo) — nunca UTC puro."""
-    return datetime.now(_SP_TZ).date()
+    return _tz_today_sp()
 
 
 def _serialize_session(row: dict) -> dict:

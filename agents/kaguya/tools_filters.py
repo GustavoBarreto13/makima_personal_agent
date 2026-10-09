@@ -30,6 +30,7 @@ from typing import Optional
 from psycopg2.extras import Json
 
 from agents.db import get_conn, run_select, run_dml
+from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
 
 # Incremento padrão entre posições manuais na sidebar (mesma constante semântica das listas).
 _POSITION_STEP = 1000
@@ -72,7 +73,7 @@ def _today() -> date:
     Returns:
         A data civil de hoje.
     """
-    return date.today()
+    return _tz_today_sp()
 
 
 def _resolve_relative_date(value) -> Optional[date]:
@@ -221,7 +222,7 @@ def _build_where_from_rules(rules: dict, default_open: bool = True):
                     fragments.append("t.due_date IS NULL")  # sem valor → sem placeholder
                 elif op == "overdue":
                     # Vencida = data no passado (CURRENT_DATE é palavra SQL, não entrada do usuário).
-                    fragments.append("t.due_date < CURRENT_DATE")
+                    fragments.append("t.due_date < (NOW() AT TIME ZONE 'America/Sao_Paulo')::date")
                 elif op == "within":
                     # Janela [hoje, hoje+N]: resolve o atalho em Python e parametriza as duas pontas.
                     hi = _resolve_relative_date(value) or _today()

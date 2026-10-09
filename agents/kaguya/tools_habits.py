@@ -29,6 +29,7 @@ from zoneinfo import ZoneInfo
 from agents.db import get_conn, run_select, run_dml
 from agents.kaguya import habit_strength as HS
 from agents.kaguya import habit_source_providers as HSP
+from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
 
 # Margem sobre a janela de 60 dias do motor de força (habit_strength._DEFAULT_WINDOW) — usada
 # para buscar a atividade automática só do período que o score realmente enxerga (spec 036).
@@ -42,7 +43,7 @@ _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 def _today_sp() -> date:
     """Retorna a data de hoje no fuso America/Sao_Paulo (mesmo helper local de digest.py/tools_tasks.py)."""
-    return datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+    return _tz_today_sp()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -739,7 +740,7 @@ def check_in(habit_id: int, date_iso: Optional[str] = None, value: Optional[floa
         ``{"status": "ok", "consistency": <0–100>, "trend": ..., "done_today": bool, ...}`` —
         já devolve o score recalculado para o canal ecoar; ou erro se o hábito não existir.
     """
-    dia = date_iso or date.today().isoformat()
+    dia = date_iso or _tz_today_sp().isoformat()
     with get_conn() as conn:
         with conn.cursor() as cur:
             if not _check_in_on_cursor(cur, habit_id, dia, value):
@@ -767,7 +768,7 @@ def remove_check_in(habit_id: int, date_iso: Optional[str] = None) -> dict:
     Returns:
         Dicionário de status (erro se não havia check-in naquele dia).
     """
-    dia = date_iso or date.today().isoformat()
+    dia = date_iso or _tz_today_sp().isoformat()
     affected = run_dml(
         "DELETE FROM habit_checkins WHERE habit_id = %(id)s AND date = %(d)s",
         {"id": habit_id, "d": dia},

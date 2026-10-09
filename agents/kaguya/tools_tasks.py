@@ -27,6 +27,7 @@ from agents.kaguya.tools_projects import resolve_project_id_by_name
 # Helpers de tags (etiquetas N:N). Import no topo é seguro: ``tools_tags`` só importa de
 # ``agents.db`` no topo dele (as funções que precisam de ``tools_tasks`` fazem import lazy).
 from agents.kaguya.tools_tags import _set_task_tags, _attach_tags
+from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
 
 # Incremento padrão entre posições manuais (mesma constante semântica do Journal).
 _POSITION_STEP = 1000
@@ -464,7 +465,7 @@ def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
 
     # Calcula a próxima data pela semântica do motor puro (research.md §3).
     nxt = rec_engine.next_occurrence(
-        rrule, anchor_date, mode, current_due=due_date, completed_on=date.today()
+        rrule, anchor_date, mode, current_due=due_date, completed_on=_tz_today_sp()
     )
     if nxt is None:
         # Série esgotada (COUNT/UNTIL): desativa a regra, não gera.
@@ -622,12 +623,12 @@ def list_tasks_today() -> dict:
           AND t.deleted_at IS NULL
           AND t.completed_at IS NULL
           AND t.due_date IS NOT NULL
-          AND t.due_date <= CURRENT_DATE
+          AND t.due_date <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
           AND p.archived_at IS NULL
         ORDER BY t.due_date, t.priority DESC, t.position
         """
     )
-    today = date.today().isoformat()
+    today = _tz_today_sp().isoformat()
     overdue, due_today = [], []
     for r in rows:
         item = _serialize_task(r)
@@ -1911,7 +1912,7 @@ def restore_task(task_id: int) -> dict:
 
 def _today_sp() -> date:
     """Retorna a data de hoje no fuso America/Sao_Paulo."""
-    return datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+    return _tz_today_sp()
 
 
 def add_to_my_day(task_id: int, date_str: Optional[str] = None) -> dict:

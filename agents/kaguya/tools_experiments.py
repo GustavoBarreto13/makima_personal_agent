@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 from agents.db import get_conn, run_select
 from agents.kaguya import experiment_adherence as ADH
+from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
 
 # Fuso do usuário (UTC-3). Toda derivação de "hoje" passa por aqui — nunca date.today() cru
 # nem CURRENT_DATE (que seriam a data UTC do container). Regra mandatória do projeto.
@@ -57,7 +58,7 @@ _EXP_COLUMNS_Q = ", ".join(f"te.{f}" for f in _EXP_FIELDS)
 # ─────────────────────────────────────────────────────────────────────────────
 def _today() -> date:
     """Retorna a data de "hoje" no fuso do usuário (UTC-3), nunca a data UTC do container."""
-    return datetime.now(_SP_TZ).date()
+    return _tz_today_sp()
 
 
 def _period_date(d: date, cadence: str) -> date:
