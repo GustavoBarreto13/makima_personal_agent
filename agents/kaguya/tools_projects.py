@@ -18,6 +18,9 @@ from typing import Optional
 
 from agents.db import get_conn, run_select, run_dml
 
+# Sentinela local "campo omitido" (distingue de None = limpar) — mesma ideia de tools_tasks._UNSET.
+_UNSET = object()
+
 # Incremento padrão entre posições manuais. Inserir um item entre dois vizinhos
 # usa a média; só renumeramos quando a média colide (ver tools_tasks.reorder_task).
 _POSITION_STEP = 1000
@@ -178,23 +181,26 @@ def get_sidebar() -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # Grupos de listas
 # ─────────────────────────────────────────────────────────────────────────────
-def create_group(name: str) -> dict:
+def create_group(name: str, context: str = "personal") -> dict:
     """Cria um grupo de listas (pasta da sidebar).
 
     Args:
         name: Nome do grupo (ex.: "Pessoal").
+        context: Espaço do grupo, ``"personal"`` (padrão) ou ``"work"`` — as listas novas dele herdam.
 
     Returns:
         ``{"status": "ok", "id": <int>}`` ou ``{"status": "error", "message": ...}``.
     """
     if not name or not name.strip():
         return {"status": "error", "message": "O nome do grupo não pode ser vazio."}
+    if context not in ("personal", "work"):
+        return {"status": "error", "message": "Contexto inválido (use 'personal' ou 'work')."}
     with get_conn() as conn:
         with conn.cursor() as cur:
             position = _next_position(cur, "task_project_groups", None, None)
             cur.execute(
-                "INSERT INTO task_project_groups (name, position) VALUES (%s, %s) RETURNING id",
-                (name.strip(), position),
+                "INSERT INTO task_project_groups (name, position, context) VALUES (%s, %s, %s) RETURNING id",
+                (name.strip(), position, context),
             )
             new_id = cur.fetchone()[0]
     return {"status": "ok", "id": new_id, "message": f"Grupo '{name.strip()}' criado."}
@@ -269,6 +275,8 @@ def set_group_context(group_id: int, context: str) -> dict:
         "UPDATE task_projects SET context = %(context)s WHERE group_id = %(gid)s AND NOT is_inbox",
         {"context": context, "gid": group_id},
     )
+    # O grupo passa a guardar o espaço (spec 075): listas criadas depois nele herdam.
+    run_dml("UPDATE task_project_groups SET context = %(context)s WHERE id = %(gid)s", {"context": context, "gid": group_id})
     return {"status": "ok", "updated": affected}
 
 
@@ -280,7 +288,7 @@ def create_project(
     group_id: Optional[int] = None,
     color: Optional[str] = None,
     icon: Optional[str] = None,
-    context: str = "personal",
+    context: Optional[str] = None,
 ) -> dict:
     """Cria uma lista (projeto).
 
@@ -289,17 +297,25 @@ def create_project(
         group_id: Grupo ao qual ela pertence (opcional).
         color: Cor de exibição (hex/oklch, opcional).
         icon: Emoji ou nome de ícone (opcional).
-        context: ``"personal"`` (padrão, FR-001) ou ``"work"`` — definível já na criação.
+        context: ``"personal"`` ou ``"work"``. Omitido: herda o espaço do grupo (spec 075) ou, sem
+            grupo, ``"personal"`` (FR-001).
 
     Returns:
         ``{"status": "ok", "id": <int>}`` ou erro.
     """
     if not name or not name.strip():
         return {"status": "error", "message": "O nome da lista não pode ser vazio."}
-    if context not in ("personal", "work"):
+    if context is not None and context not in ("personal", "work"):
         return {"status": "error", "message": "Contexto inválido (use 'personal' ou 'work')."}
     with get_conn() as conn:
         with conn.cursor() as cur:
+            if context is None:
+                context = "personal"
+                if group_id is not None:
+                    cur.execute("SELECT context FROM task_project_groups WHERE id = %s", (group_id,))
+                    row = cur.fetchone()
+                    if row:
+                        context = row[0]
             position = _next_position(cur, "task_projects", None, None)
             cur.execute(
                 """
@@ -320,6 +336,8 @@ def update_project(
     icon: Optional[str] = None,
     position: Optional[int] = None,
     context: Optional[str] = None,
+    review_interval_days: Optional[int] = _UNSET,
+    sequential: Optional[bool] = None,
 ) -> dict:
     """Renomeia, move de grupo, recolore, reordena ou muda o contexto de uma lista.
 
@@ -364,6 +382,15 @@ def update_project(
     if position is not None:
         sets.append("position = %(position)s")
         params["position"] = position
+    # spec 075: cadência de revisão (dias; omitido = não mexe, None = sem cadência) e modo sequencial.
+    if review_interval_days is not _UNSET:
+        if review_interval_days is not None and review_interval_days <= 0:
+            return {"status": "error", "message": "A cadência de revisão deve ser de pelo menos 1 dia."}
+        sets.append("review_interval_days = %(review_interval_days)s")
+        params["review_interval_days"] = review_interval_days
+    if sequential is not None:
+        sets.append("sequential = %(sequential)s")
+        params["sequential"] = bool(sequential)
     if not sets:
         return {"status": "error", "message": "Nada para atualizar."}
 
@@ -447,6 +474,36 @@ def delete_project(project_id: int, mode: str) -> dict:
 # Arquivar / restaurar listas (spec 039) — distinto de delete_project: aqui as
 # tarefas e as colunas do board NUNCA são tocadas, só a lista some das views.
 # ─────────────────────────────────────────────────────────────────────────────
+def list_projects_due_review() -> list[dict]:
+    """Listas com cadência de revisão cujo prazo venceu (nunca revisadas ou revisadas há mais que o intervalo).
+
+    Returns:
+        ``[{id, name, context, review_interval_days, last_reviewed_at, days_overdue}]`` — as mais
+        atrasadas primeiro. Só entra lista ativa com ``review_interval_days`` definido. **Listagem**.
+    """
+    rows = run_select(
+        """
+        SELECT id, name, context, review_interval_days, last_reviewed_at,
+               CASE WHEN last_reviewed_at IS NULL THEN review_interval_days
+                    ELSE ((NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+                          - (last_reviewed_at AT TIME ZONE 'America/Sao_Paulo')::date) END AS days_since
+          FROM task_projects
+         WHERE archived_at IS NULL AND deleted_at IS NULL AND review_interval_days IS NOT NULL
+        """
+    )
+    due = []
+    for r in rows:
+        overdue = int(r["days_since"]) - int(r["review_interval_days"])
+        if r["last_reviewed_at"] is None or overdue >= 0:
+            due.append({
+                "id": r["id"], "name": r["name"], "context": r["context"],
+                "review_interval_days": r["review_interval_days"],
+                "last_reviewed_at": r["last_reviewed_at"].isoformat() if r["last_reviewed_at"] else None,
+                "days_overdue": max(overdue, 0),
+            })
+    return sorted(due, key=lambda d: (-d["days_overdue"], d["name"].lower()))
+
+
 def archive_project(project_id: int) -> dict:
     """Arquiva uma lista sem mover nem apagar suas tarefas (FR-001).
 

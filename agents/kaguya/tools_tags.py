@@ -372,3 +372,56 @@ def list_tasks_by_tag(name: str) -> list:
         out.append(item)
     # Anexa TODAS as tags de cada tarefa (não só a filtrada) para os chips ficarem completos.
     return _attach_tags(out)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Gerenciador de tags (spec 075): contagem de uso e mesclagem
+# ─────────────────────────────────────────────────────────────────────────────
+def list_tags_with_counts() -> list:
+    """Lista as tags com quantas tarefas ABERTAS e vivas usam cada uma.
+
+    Returns:
+        ``[{id, name, color, open_count, total_count}]`` em ordem alfabética. **Listagem**.
+    """
+    return run_select(
+        """
+        SELECT g.id, g.name, g.color,
+               COUNT(t.id) FILTER (WHERE t.completed_at IS NULL) AS open_count,
+               COUNT(t.id) AS total_count
+          FROM task_tags g
+          LEFT JOIN task_tag_links l ON l.tag_id = g.id
+          LEFT JOIN tasks t ON t.id = l.task_id AND t.deleted_at IS NULL
+         GROUP BY g.id, g.name, g.color
+         ORDER BY LOWER(g.name)
+        """
+    )
+
+
+def merge_tags(source_id: int, target_id: int) -> dict:
+    """Mescla a tag ``source`` na ``target``: tudo que tinha a primeira passa a ter a segunda.
+
+    Os vínculos são movidos (sem duplicar quando a tarefa já tinha as duas) e a tag de origem é
+    excluída. Tudo numa transação.
+
+    Args:
+        source_id: Tag que desaparece.
+        target_id: Tag que fica.
+
+    Returns:
+        ``{"status": "ok", "moved": n}`` ou erro.
+    """
+    if source_id == target_id:
+        return {"status": "error", "message": "Escolha duas tags diferentes."}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM task_tags WHERE id = ANY(%s)", ([source_id, target_id],))
+            if cur.fetchone()[0] != 2:
+                return {"status": "error", "message": "Tag não encontrada."}
+            cur.execute(
+                "INSERT INTO task_tag_links (task_id, tag_id) "
+                "SELECT task_id, %s FROM task_tag_links WHERE tag_id = %s ON CONFLICT DO NOTHING",
+                (target_id, source_id),
+            )
+            moved = cur.rowcount
+            cur.execute("DELETE FROM task_tags WHERE id = %s", (source_id,))   # cascade limpa os vínculos antigos
+    return {"status": "ok", "moved": moved, "message": "Tags mescladas."}

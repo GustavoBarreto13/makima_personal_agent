@@ -474,3 +474,49 @@ def test_complete_moves_card_to_done_and_reopen_returns(inbox_id):
     T.reopen_task(tid)
     r = _col(tid)
     assert r["column_id"] == todo and r["completed_at"] is None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Spec 075 — espaço Trabalho/Pessoal herdado do grupo; histórico; adiar
+# ──────────────────────────────────────────────────────────────────────────────
+def test_lista_nova_herda_o_espaco_do_grupo(inbox_id):
+    gid = P.create_group("Empresa", context="work")["id"]
+    herdada = P.create_project("Sprint", group_id=gid)["id"]
+    explicita = P.create_project("Pessoal no grupo", group_id=gid, context="personal")["id"]
+    ctx = {r["id"]: r["context"] for r in run_select("SELECT id, context FROM task_projects WHERE id IN (%(a)s, %(b)s)",
+                                                       {"a": herdada, "b": explicita})}
+    assert ctx == {herdada: "work", explicita: "personal"}
+
+
+def test_set_group_context_grava_no_grupo(inbox_id):
+    gid = P.create_group("Casa")["id"]
+    P.set_group_context(gid, "work")
+    assert run_select("SELECT context FROM task_project_groups WHERE id = %(i)s", {"i": gid})[0]["context"] == "work"
+
+
+def test_historico_registra_criar_reagendar_concluir(inbox_id):
+    tid = T.create_task("t", project_id=inbox_id, due_date="2026-06-05")["id"]
+    T.update_task(tid, due_date="2026-06-09")
+    T.complete_task(tid)
+    kinds = [r["kind"] for r in run_select("SELECT kind FROM task_activity WHERE task_id = %(i)s ORDER BY id", {"i": tid})]
+    assert kinds == ["created", "rescheduled", "completed"]
+
+
+def test_adiar_esconde_da_lista_ate_o_dia(inbox_id):
+    amanha = (date.today() + timedelta(days=2)).isoformat()
+    tid = T.create_task("depois", project_id=inbox_id)["id"]
+    assert T.update_task(tid, start_date=amanha)["status"] == "ok"
+    assert tid not in [t["id"] for t in T.list_tasks(inbox_id)]
+    assert tid in [t["id"] for t in T.list_tasks(inbox_id, include_deferred=True)]
+    assert T.update_task(tid, start_date=None)["status"] == "ok"            # limpar traz de volta
+    assert tid in [t["id"] for t in T.list_tasks(inbox_id)]
+
+
+def test_adiar_nao_passa_do_vencimento(inbox_id):
+    tid = T.create_task("t", project_id=inbox_id, due_date="2026-06-05")["id"]
+    assert T.update_task(tid, start_date="2026-06-10")["status"] == "error"
+
+
+def test_lista_desconhecida_avisa_em_vez_de_cair_calado_no_inbox(inbox_id):
+    r = T.create_task("x", project_name="Lista que não existe")
+    assert r["status"] == "ok" and "warning" in r and r["project_id"] == inbox_id
