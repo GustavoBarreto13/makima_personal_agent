@@ -1,0 +1,130 @@
+/* Estilo de arte "Shuchiin aristocrático" (Kaguya): o conselho estudantil — papel timbrado marfim,
+ * vinho de brasão, filete dourado e cantos secos de moldura. No claro vira "papel de gabinete": marfim
+ * levemente aquecido, tinta quase preta e o acento da Kaguya como único azul. No escuro vira "biblioteca
+ * à luz de vela": superfícies fundas com um véu vinho, o dourado brilha nos filetes.
+ *
+ * REGRA: um estilo de arte muda só o VISUAL. Aqui só entram custom properties --ds-* visuais e nada
+ * de layout nem cor literal (o lint:design rejeita). Cores vêm de MISTURAS de tokens que já existem
+ * (ink-1, line, accent, star), então acompanham o tema e o agente sozinhas.
+ *
+ * O vinho nasce do acento girando o matiz em 100 graus (relative color), como o rosa do neon; o dourado
+ * é o token --ds-star do tema. Nenhum dos dois pinta texto — só fundos, filetes e brilhos — para o
+ * contraste do texto depender apenas da tinta e do accent-deep, que este estilo não troca.
+ *
+ * ARMADILHA: uma custom property não pode referenciar a si mesma no mesmo elemento (ciclo, vira
+ * inválida). Por isso as misturas partem de ink-1 (que este estilo não redefine) e dos aliases
+ * --ds-art-shuchiin-paper/-card (o paper/card ORIGINAIS do tema, capturados no :root); só os tokens
+ * de superfície são redefinidos, sempre a partir desses aliases.
+ *
+ * CONTRASTE: o audit:design não cobre estilos de arte; os pares são medidos por
+ * specs/075-kaguya-ds/contrast-shuchiin.mjs (WCAG, misturas em oklab como o navegador). Refaça a conta
+ * se mexer em qualquer percentual de lavagem ou de tinta. */
+
+/* paper/card ORIGINAIS do tema, guardados sob outro nome (ver ARMADILHA acima). */
+:root {
+  --ds-art-shuchiin-paper: var(--ds-paper);
+  --ds-art-shuchiin-card: var(--ds-card);
+}
+
+.ds-app[data-ds-art="shuchiin"] {
+  /* o vinho de brasão: o acento com o matiz girado (252 + 100 = 352) */
+  --ds-art-shuchiin-wine: oklch(from var(--ds-accent) l c calc(h + 100));
+
+  /* superfícies: o papel do tema com um véu dourado e, por cima, um toque de vinho */
+  --ds-paper-2: color-mix(in oklab, color-mix(in oklab, var(--ds-art-shuchiin-paper), var(--ds-star) 5%), var(--ds-art-shuchiin-wine) 3%);
+  --ds-card-2: color-mix(in oklab, var(--ds-art-shuchiin-card), var(--ds-star) 4%);
+  --ds-mist: color-mix(in oklab, color-mix(in oklab, var(--ds-art-shuchiin-paper), var(--ds-star) 8%), var(--ds-art-shuchiin-wine) 5%);
+
+  /* tinta: a escala secundária fica mais perto de ink-1, para seguir legível sobre o papel aquecido */
+  --ds-ink-2: color-mix(in oklab, var(--ds-ink-1) 88%, var(--ds-art-shuchiin-paper));
+  --ds-ink-3: color-mix(in oklab, var(--ds-ink-1) 80%, var(--ds-art-shuchiin-paper));
+  --ds-ink-4: color-mix(in oklab, var(--ds-ink-1) 73%, var(--ds-art-shuchiin-paper));
+
+  /* linhas: o filete do tema puxado para o dourado */
+  --ds-line-2: color-mix(in oklab, var(--ds-line), var(--ds-star) 22%);
+
+  /* ambiente: luz vinho no topo e um fio dourado, como o reflexo de um brasão no papel */
+  --ds-ambient:
+    radial-gradient(90% 60% at 50% -14%, color-mix(in oklab, var(--ds-art-shuchiin-wine) 16%, transparent), transparent 62%),
+    radial-gradient(60% 40% at 96% 0%, color-mix(in oklab, var(--ds-star) 12%, transparent), transparent 60%),
+    linear-gradient(var(--ds-paper-2), var(--ds-paper));
+
+  /* textura de papel timbrado: listras verticais finíssimas, como o rep de um uniforme */
+  --ds-texture:
+    repeating-linear-gradient(90deg, color-mix(in oklab, var(--ds-art-shuchiin-wine) 4%, transparent) 0 1px, transparent 1px 7px),
+    repeating-linear-gradient(0deg, color-mix(in oklab, var(--ds-star) 5%, transparent) 0 1px, transparent 1px 28px);
+
+  /* material: papel quase opaco com filete dourado no lugar do vidro */
+  --ds-glass-bg: color-mix(in oklab, var(--ds-card) 94%, transparent);
+  --ds-glass-border: color-mix(in oklab, var(--ds-line), var(--ds-star) 38%);
+  --ds-glass-hi: color-mix(in oklab, var(--ds-star) 20%, transparent);
+  --ds-blur: 3px;
+  --ds-blur-soft: 2px;
+  --ds-glass-shadow: 0 1px 0 color-mix(in oklab, var(--ds-star) 28%, transparent) inset, 0 14px 28px -18px color-mix(in oklab, var(--ds-art-shuchiin-wine) 40%, transparent);
+
+  /* cantos de moldura, secos como os de um brasão */
+  --ds-r-xs: 2px;
+  --ds-r-sm: 4px;
+  --ds-r-md: 6px;
+  --ds-r-lg: 10px;
+
+  /* hero: papel de gabinete com a luz do vinho atrás do retrato e um fio dourado embaixo; título em
+   * serifa de cartaz, sobre fundo claro (a tinta do tema segue valendo) */
+  --ds-hero-bg:
+    radial-gradient(120% 130% at 86% 20%, color-mix(in oklab, var(--ds-art-shuchiin-wine) 18%, transparent), transparent 54%),
+    radial-gradient(90% 110% at 8% 100%, color-mix(in oklab, var(--ds-star) 18%, transparent), transparent 62%),
+    linear-gradient(158deg, var(--ds-mist), var(--ds-card) 64%);
+  --ds-hero-veil: transparent;
+  --ds-hero-fg: var(--ds-ink-1);
+  --ds-hero-eyebrow: color-mix(in oklab, var(--ds-accent-deep) 72%, var(--ds-ink-1));
+  --ds-hero-border: color-mix(in oklab, var(--ds-star) 42%, var(--ds-line));
+  --ds-hero-halo: radial-gradient(circle, color-mix(in oklab, var(--ds-art-shuchiin-wine) 26%, transparent), color-mix(in oklab, var(--ds-star) 20%, transparent) 42%, transparent 70%);
+  --ds-hero-btn-bg: var(--ds-accent);
+  --ds-hero-btn-fg: var(--ds-on-accent);
+  --ds-hero-ghost-bg: var(--ds-card);
+  --ds-hero-ghost-fg: var(--ds-ink-1);
+  --ds-hero-ghost-border: var(--ds-line);
+  --ds-hero-font: var(--ds-font-serif-display);
+  --ds-hero-weight: 500;
+  --ds-hero-min: 320px;
+  --ds-hero-portrait: 280px;
+
+  /* serifa de cartaz nos títulos da página (nome da lista, mês do calendário) */
+  --ds-font-title: var(--ds-font-serif-display);
+}
+
+/* biblioteca à luz de vela: no escuro as superfícies já são escuras (tokens do tema); o vinho entra
+ * como véu e o dourado acende os filetes. O card segue mais claro que o fundo, como no tema escuro. */
+:root[data-ds-theme="dark"] .ds-app[data-ds-art="shuchiin"] {
+  --ds-line-2: color-mix(in oklab, var(--ds-line), var(--ds-star) 18%);
+  --ds-ambient:
+    radial-gradient(90% 60% at 50% -14%, color-mix(in oklab, var(--ds-art-shuchiin-wine) 22%, transparent), transparent 62%),
+    radial-gradient(60% 40% at 96% 0%, color-mix(in oklab, var(--ds-star) 10%, transparent), transparent 60%),
+    linear-gradient(var(--ds-paper-2), var(--ds-paper));
+  --ds-glass-border: color-mix(in oklab, var(--ds-line), var(--ds-star) 44%);
+  --ds-glass-hi: color-mix(in oklab, var(--ds-star) 12%, transparent);
+  --ds-glass-shadow: 0 1px 0 color-mix(in oklab, var(--ds-star) 20%, transparent) inset, 0 16px 32px -18px color-mix(in oklab, var(--ds-paper) 85%, transparent);
+  --ds-hero-bg:
+    radial-gradient(120% 130% at 86% 20%, color-mix(in oklab, var(--ds-art-shuchiin-wine) 28%, transparent), transparent 54%),
+    radial-gradient(90% 110% at 8% 100%, color-mix(in oklab, var(--ds-star) 14%, transparent), transparent 62%),
+    linear-gradient(158deg, var(--ds-mist), var(--ds-card) 64%);
+  --ds-hero-halo: radial-gradient(circle, color-mix(in oklab, var(--ds-art-shuchiin-wine) 38%, transparent), color-mix(in oklab, var(--ds-star) 16%, transparent) 42%, transparent 70%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ds-theme="light"]) .ds-app[data-ds-art="shuchiin"] {
+    --ds-line-2: color-mix(in oklab, var(--ds-line), var(--ds-star) 18%);
+    --ds-ambient:
+      radial-gradient(90% 60% at 50% -14%, color-mix(in oklab, var(--ds-art-shuchiin-wine) 22%, transparent), transparent 62%),
+      radial-gradient(60% 40% at 96% 0%, color-mix(in oklab, var(--ds-star) 10%, transparent), transparent 60%),
+      linear-gradient(var(--ds-paper-2), var(--ds-paper));
+    --ds-glass-border: color-mix(in oklab, var(--ds-line), var(--ds-star) 44%);
+    --ds-glass-hi: color-mix(in oklab, var(--ds-star) 12%, transparent);
+    --ds-glass-shadow: 0 1px 0 color-mix(in oklab, var(--ds-star) 20%, transparent) inset, 0 16px 32px -18px color-mix(in oklab, var(--ds-paper) 85%, transparent);
+    --ds-hero-bg:
+      radial-gradient(120% 130% at 86% 20%, color-mix(in oklab, var(--ds-art-shuchiin-wine) 28%, transparent), transparent 54%),
+      radial-gradient(90% 110% at 8% 100%, color-mix(in oklab, var(--ds-star) 14%, transparent), transparent 62%),
+      linear-gradient(158deg, var(--ds-mist), var(--ds-card) 64%);
+    --ds-hero-halo: radial-gradient(circle, color-mix(in oklab, var(--ds-art-shuchiin-wine) 38%, transparent), color-mix(in oklab, var(--ds-star) 16%, transparent) 42%, transparent 70%);
+  }
+}

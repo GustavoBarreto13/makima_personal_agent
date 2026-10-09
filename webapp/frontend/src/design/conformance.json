@@ -164,7 +164,7 @@
       "status": "legacy",
       "dir": "src/pages/kaguya",
       "shell": "src/pages/kaguya/KaguyaShell.tsx",
-      "art": null,
+      "art": "shuchiin",
       "appShell": false,
       "hero": false,
       "theme": false,

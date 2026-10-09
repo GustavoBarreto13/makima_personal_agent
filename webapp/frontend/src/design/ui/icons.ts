@@ -11,7 +11,10 @@ import {
   TrendingUp, Trophy, Tv, Undo2, Upload, User, Users, Utensils, Wallet, X, Zap, BarChart3, ArrowUpDown,
   Bookmark, Globe, Popcorn, RotateCcw, Sofa, Ticket,
   BookCheck, BookX, Feather, FileText, Highlighter, LibraryBig, Pause, Store,
-  Ban, Building2, MonitorPlay, RadioTower, type LucideIcon,
+  Ban, Building2, MonitorPlay, RadioTower,
+  Archive, ArchiveRestore, BedDouble, Bold, Briefcase, CalendarClock, ClipboardCheck, Code, Coffee, Columns3, Files, Folder, FolderOpen, GitBranch,
+  GripVertical, Heading2, Hourglass, Italic, Lightbulb, ListOrdered, ListTodo, ListTree, Lock, LockOpen, Notebook, PanelRight, Pin, Quote, Sunset,
+  Table, TreePine, AlarmClock, History, type LucideIcon,
 } from 'lucide-react'
 
 export const ICONS = {
@@ -42,6 +45,15 @@ export const ICONS = {
   abandon: BookX, finished: BookCheck, store: Store,
   // animes (Marin, spec 074): `anime`, `watchlist`, `rewatch`, `pause`, `heart` e `star` já existem acima; concluir = `check`
   episode: MonitorPlay, studio: Building2, airing: RadioTower, drop: Ban,
+  // tarefas (Kaguya, spec 075): `task`, `habit`, `goal`, `experiment`, `focus`, `inbox`, `tag`, `flag`, `recurring`,
+  // `calendar` e `grid` (Eisenhower) já existem acima. Um ícone por conceito.
+  kanban: Columns3, folder: Folder, 'folder-open': FolderOpen, 'weekly-review': ClipboardCheck, forest: TreePine,
+  archive: Archive, restore: ArchiveRestore, work: Briefcase, personal: House, blocked: Lock, unblocked: LockOpen,
+  waiting: Hourglass, defer: CalendarClock, 'follow-up': AlarmClock, dependency: GitBranch, template: Files, history: History,
+  subtasks: ListTree, drag: GripVertical, checklist: ListTodo, 'detail-panel': PanelRight, logbook: Notebook, pin: Pin,
+  insight: Lightbulb, lunch: Coffee, sleep: BedDouble, evening: Sunset,
+  // editor de Markdown (notas das tarefas): barra de formatação
+  bold: Bold, italic: Italic, code: Code, quote: Quote, table: Table, heading: Heading2, 'list-ordered': ListOrdered,
   // categorias de gasto (Nami)
   food: Apple, dining: Utensils, game: Gamepad2, car: Car, shirt: Shirt, school: GraduationCap, gift: Gift, pill: Pill, laptop: Laptop, pet: PawPrint,
   // treino (agente de exemplo da página /design)
