@@ -13,7 +13,7 @@ import { AppShell, Chip, SegmentedControl, SettingRow, Toggle, toast, type NavGr
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { AGENT_TABS } from '../../lib/agentTabs'
 import { kaguyaApi, type Space } from './api'
-import { NewTaskModal } from './components/QuickAddBar'
+import { NewTaskModal } from './components/NewTaskModal'
 import { ScheduleSettings } from './components/ScheduleSettings'
 import { ScreenBoundary } from './components/ScreenBoundary'
 import { SearchModal } from './components/SearchModal'
@@ -188,7 +188,9 @@ export function KaguyaNextShell() {
     const cur = prefs[list]
     setPrefs({ [list]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] } as Partial<KaguyaPrefs>)
   }
-  const panelOpen = route.taskId !== undefined
+  // Detalhe: ao lado (padrão) ou centralizado. Quadros e calendário ocupam a tela toda, então sempre abrem centralizado.
+  const centered = prefs.detailMode === 'center' || route.view === 'kanban' || route.view === 'group' || route.view === 'calendar'
+  const panelOpen = route.taskId !== undefined && !centered
 
   return (
     <KaguyaContext.Provider value={ctx}>
@@ -266,9 +268,9 @@ export function KaguyaNextShell() {
           <div className="kn-main-col">
             <ScreenBoundary resetKey={hashFor(withTask(route, undefined))} onHome={() => goto({ view: 'today' })}>{screen}</ScreenBoundary>
           </div>
-          {panelOpen && route.taskId !== undefined && (
+          {route.taskId !== undefined && (
             <ScreenBoundary resetKey={String(route.taskId)} onHome={() => openTask(undefined)}>
-              <TaskDetailPanel key={route.taskId} taskId={route.taskId} onClose={() => openTask(undefined)} />
+              <TaskDetailPanel key={`${route.taskId}-${centered}`} taskId={route.taskId} mode={centered ? 'center' : 'side'} onClose={() => openTask(undefined)} />
             </ScreenBoundary>
           )}
         </div>

@@ -1,12 +1,11 @@
-// Barra "Adicionar tarefa" (topo das listas e do Meu Dia) e o modal "Nova tarefa". Os dois usam a mesma captura:
+// Barra "Adicionar tarefa" (topo das listas e do Meu Dia). O modal "Nova tarefa" completo está em NewTaskModal. A captura:
 // o texto é lido ao vivo (@lista #etiqueta !prioridade data repetição duração), os chips mostram o que foi entendido
 // e Enter cria. Nunca cria tarefa vazia; lista citada que não existe avisa em vez de cair calada na Inbox.
 
-import { useState } from 'react'
-import { Button, Modal, QuickCapture, Select, Field, toast } from '../../../design'
+import { QuickCapture, toast } from '../../../design'
 import type { CaptureResult } from '../../../design/core/capture'
 import { kaguyaApi } from '../api'
-import { useKaguya, type NewTaskDefaults } from '../context'
+import { useKaguya } from '../context'
 import { captureToTask, taskParser } from '../lib/quickAdd'
 import { createTask } from '../lib/actions'
 
@@ -69,37 +68,8 @@ export function QuickAddBar({ projectId, columnId, due, time, duration, myDay, p
             onCreated?.(id)
           })
         }}
-        onExpand={(r) => k.newTask({ projectId, columnId, due, time, duration, title: r.fields.title })}
+        onExpand={(r) => k.newTask({ projectId, columnId, due, time, duration, title: r.text })}
       />
     </div>
-  )
-}
-
-/** Modal "Nova tarefa": a mesma captura, mais a escolha explícita da lista (ou só das listas-alvo do quadro do grupo). */
-export function NewTaskModal({ defaults, onClose }: { defaults?: NewTaskDefaults; onClose: () => void }) {
-  const k = useKaguya()
-  const targets = defaults?.targets
-  const [projectId, setProjectId] = useState<number | undefined>(targets?.[0]?.projectId ?? defaults?.projectId ?? k.inboxId)
-  // No quadro do grupo cada lista tem a SUA coluna; fora dele, a coluna vem do “+ Adicionar tarefa” de onde se clicou.
-  const columnId = targets ? targets.find((t) => t.projectId === projectId)?.columnId : defaults?.columnId
-  return (
-    <Modal title="Nova tarefa" size="md" onClose={onClose} footer={<Button variant="ghost" onClick={onClose}>Fechar</Button>}>
-      <Field label="Lista">{(c) => (
-        <Select {...c} value={projectId ?? ''} onChange={(e) => setProjectId(Number(e.target.value))}>
-          {targets
-            ? targets.map((t) => <option key={t.projectId} value={t.projectId}>{t.listName}</option>)
-            : k.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </Select>
-      )}</Field>
-      <QuickAddBar
-        projectId={projectId}
-        columnId={columnId}
-        due={defaults?.due}
-        time={defaults?.time}
-        duration={defaults?.duration}
-        placeholder={defaults?.title ? defaults.title : 'Ex.: Enviar relatório @trabalho !alta amanhã 17h'}
-        onCreated={(id) => { onClose(); k.openTask(id) }}
-      />
-    </Modal>
   )
 }

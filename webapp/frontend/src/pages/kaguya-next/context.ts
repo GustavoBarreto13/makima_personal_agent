@@ -43,7 +43,7 @@ export const DEFAULT_PREFS: KaguyaPrefs = {
 export interface NewTaskTarget { projectId: number; columnId: number; listName: string }
 
 /** Valores iniciais do formulário “Nova tarefa”. `columnId` cria direto numa coluna; `targets` restringe a lista. */
-export interface NewTaskDefaults { projectId?: number; due?: string; title?: string; columnId?: number; targets?: NewTaskTarget[]; time?: string; duration?: number }
+export interface NewTaskDefaults { projectId?: number; due?: string; title?: string; columnId?: number; targets?: NewTaskTarget[]; time?: string; duration?: number; myDay?: boolean }
 
 /** Abre os formulários de organização (lista, grupo, smart-list, locais). Sem argumento = criar. */
 export interface ManageActions {

@@ -2,9 +2,9 @@
 // perde ao fechar. Cabeçalho (concluir, data, prioridade, Meu Dia), título, propriedades (lista, repetição, estimativa,
 // adiar), notas em Markdown editadas no lugar, subtarefas, etiquetas, GTD/aguardando, dependências e histórico.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  Button, DatePicker, EmptyState, ErrorState, Icon, IconButton, Input, LoadingState, Menu, Modal, Select, SegmentedControl, TagInput, TimePicker, Field, toast, MarkdownEditor,
+  Button, DatePicker, EmptyState, ErrorState, Icon, IconButton, Input, ListPicker, LoadingState, Menu, Modal, Select, SegmentedControl, TagInput, TimePicker, Field, toast, MarkdownEditor,
   type MentionSource,
 } from '../../../design'
 import { fmtDate } from '../../../design/core/format'
@@ -12,6 +12,7 @@ import { kaguyaApi } from '../api'
 import { useKaguya } from '../context'
 import * as act from '../lib/actions'
 import { activityTime, describeActivity } from '../lib/activity'
+import { listOptions } from '../lib/listOptions'
 import { presetLabels, presetOf, ruleFor, type RecurrencePreset } from '../lib/recurrence'
 import { dueInfo, PRIORITY_LABEL } from '../lib/taskView'
 import { useLoad } from '../lib/useLoad'
@@ -26,7 +27,7 @@ const GTD_OPTIONS: { value: GtdStatus | ''; label: string }[] = [
 /** Edita o texto da mensagem de erro do servidor sem expor "HTTP 400". */
 const reason = (e: unknown) => (e instanceof Error && e.message && !/^HTTP \d+$/.test(e.message) ? e.message : 'Não foi possível salvar.')
 
-export function TaskDetailPanel({ taskId, onClose }: { taskId: number; onClose: () => void }) {
+export function TaskDetailPanel({ taskId, onClose, mode = 'side' }: { taskId: number; onClose: () => void; mode?: 'side' | 'center' }) {
   const k = useKaguya()
   const { state, retry } = useLoad(() => kaguyaApi.getTask(taskId), [taskId, k.rev])
   const [tab, setTab] = useState<'detalhes' | 'historico'>('detalhes')
@@ -36,8 +37,12 @@ export function TaskDetailPanel({ taskId, onClose }: { taskId: number; onClose: 
   // Voltar para "Detalhes" ao trocar de tarefa.
   useEffect(() => setTab('detalhes'), [taskId])
 
-  if (state.status === 'loading') return <aside className="kn-panel"><LoadingState variant="row" count={4} /></aside>
-  if (state.status === 'error') return <aside className="kn-panel"><ErrorState onRetry={retry} /></aside>
+  const center = mode === 'center'
+  const frame = (children: ReactNode) => center
+    ? <Modal title="Tarefa" size="xl" onClose={onClose}>{children}</Modal>
+    : <aside className="kn-panel">{children}</aside>
+  if (state.status === 'loading') return frame(<LoadingState variant="row" count={4} />)
+  if (state.status === 'error') return frame(<ErrorState onRetry={retry} />)
   const task = state.data
 
   const save = async (patch: Parameters<typeof kaguyaApi.updateTask>[1], okMsg?: string) => {
@@ -50,71 +55,92 @@ export function TaskDetailPanel({ taskId, onClose }: { taskId: number; onClose: 
     }
   }
 
+  const controls = (
+    <>
+      <button
+        type="button"
+        className={`kn-check kn-big kn-p${task.priority}${task.completed_at ? ' kn-checked' : ''}`}
+        role="checkbox"
+        aria-checked={!!task.completed_at}
+        aria-label={task.completed_at ? 'Reabrir tarefa' : 'Concluir tarefa'}
+        onClick={() => void act.toggleComplete({ reload: k.reload }, task)}
+      >
+        {task.completed_at && <Icon name="check" size={14} strokeWidth={3} />}
+      </button>
+      <div className="kn-panel-tabs" role="tablist" aria-label="Seções do detalhe">
+        {(['detalhes', 'historico'] as const).map((t) => (
+          <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? 'kn-on' : ''} onClick={() => setTab(t)}>
+            {t === 'detalhes' ? 'Detalhes' : 'Histórico'}
+          </button>
+        ))}
+      </div>
+      <span className="kn-menu">
+        <IconButton icon="more" label="Mais ações" onClick={() => setMenu((o) => !o)} />
+        {menu && (
+          <Menu
+            label="Ações da tarefa"
+            onClose={() => setMenu(false)}
+            items={[
+              { id: 'focus', label: 'Focar nesta tarefa', onSelect: () => k.startFocus({ task }) },
+              { id: 'dup', label: 'Duplicar', onSelect: () => void act.duplicate({ reload: k.reload }, task).then((id) => id && k.openTask(id)) },
+              { id: 'tpl', label: 'Salvar como template…', onSelect: () => setTemplateName(task.title) },
+              { id: 'del', label: 'Excluir', onSelect: () => void act.deleteTasks({ reload: k.reload }, [task]).then((ok) => ok && onClose()) },
+            ]}
+          />
+        )}
+      </span>
+      <IconButton
+        icon="detail-panel"
+        label={k.prefs.detailMode === 'center' ? 'Abrir ao lado da lista' : 'Abrir no centro da tela'}
+        onClick={() => k.setPrefs({ detailMode: k.prefs.detailMode === 'center' ? 'side' : 'center' })}
+      />
+    </>
+  )
+
+  const templateModal = templateName !== null && (
+    <Modal
+      title="Salvar como template"
+      size="sm"
+      onClose={() => setTemplateName(null)}
+      dirty={templateName !== task.title}
+      footer={<>
+        <Button variant="ghost" onClick={() => setTemplateName(null)}>Cancelar</Button>
+        <Button
+          variant="primary"
+          disabled={!templateName.trim()}
+          onClick={() => kaguyaApi.saveTaskTemplate(task.id, templateName.trim()).then(() => { toast('Template salvo.', { tone: 'success' }); setTemplateName(null) }).catch((e) => toast(reason(e), { tone: 'error' }))}
+        >Salvar</Button>
+      </>}
+    >
+      <Field label="Nome do template" hint="A tarefa, as subtarefas, as etiquetas e a estimativa entram; as datas viram deslocamentos em dias.">
+        {(c) => <Input {...c} value={templateName} onChange={(e) => setTemplateName(e.target.value)} autoFocus />}
+      </Field>
+    </Modal>
+  )
+
+  const body = tab === 'historico' ? <History taskId={task.id} /> : <Details task={task} save={save} wide={center} />
+
+  if (center) {
+    return (
+      <>
+        <Modal title="Tarefa" size="xl" onClose={onClose} headerExtra={<div className="kn-modal-extra">{controls}</div>}>{body}</Modal>
+        {templateModal}
+      </>
+    )
+  }
   return (
     <aside className="kn-panel" aria-label="Detalhe da tarefa">
       <header className="kn-panel-h">
-        <button
-          type="button"
-          className={`kn-check kn-big kn-p${task.priority}${task.completed_at ? ' kn-checked' : ''}`}
-          role="checkbox"
-          aria-checked={!!task.completed_at}
-          aria-label={task.completed_at ? 'Reabrir tarefa' : 'Concluir tarefa'}
-          onClick={() => void act.toggleComplete({ reload: k.reload }, task)}
-        >
-          {task.completed_at && <Icon name="check" size={14} strokeWidth={3} />}
-        </button>
-        <div className="kn-panel-tabs" role="tablist" aria-label="Seções do detalhe">
-          {(['detalhes', 'historico'] as const).map((t) => (
-            <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? 'kn-on' : ''} onClick={() => setTab(t)}>
-              {t === 'detalhes' ? 'Detalhes' : 'Histórico'}
-            </button>
-          ))}
-        </div>
-        <span className="kn-menu">
-          <IconButton icon="more" label="Mais ações" onClick={() => setMenu((o) => !o)} />
-          {menu && (
-            <Menu
-              label="Ações da tarefa"
-              onClose={() => setMenu(false)}
-              items={[
-                { id: 'focus', label: 'Focar nesta tarefa', onSelect: () => k.startFocus({ task }) },
-                { id: 'dup', label: 'Duplicar', onSelect: () => void act.duplicate({ reload: k.reload }, task).then((id) => id && k.openTask(id)) },
-                { id: 'tpl', label: 'Salvar como template…', onSelect: () => setTemplateName(task.title) },
-                { id: 'del', label: 'Excluir', onSelect: () => void act.deleteTasks({ reload: k.reload }, [task]).then((ok) => ok && onClose()) },
-              ]}
-            />
-          )}
-        </span>
+        {controls}
         <IconButton icon="close" label="Fechar painel" onClick={onClose} />
       </header>
-
-      {tab === 'historico' ? <History taskId={task.id} /> : <Details task={task} save={save} />}
-
-      {templateName !== null && (
-        <Modal
-          title="Salvar como template"
-          size="sm"
-          onClose={() => setTemplateName(null)}
-          dirty={templateName !== task.title}
-          footer={<>
-            <Button variant="ghost" onClick={() => setTemplateName(null)}>Cancelar</Button>
-            <Button
-              variant="primary"
-              disabled={!templateName.trim()}
-              onClick={() => kaguyaApi.saveTaskTemplate(task.id, templateName.trim()).then(() => { toast('Template salvo.', { tone: 'success' }); setTemplateName(null) }).catch((e) => toast(reason(e), { tone: 'error' }))}
-            >Salvar</Button>
-          </>}
-        >
-          <Field label="Nome do template" hint="A tarefa, as subtarefas, as etiquetas e a estimativa entram; as datas viram deslocamentos em dias.">
-            {(c) => <Input {...c} value={templateName} onChange={(e) => setTemplateName(e.target.value)} autoFocus />}
-          </Field>
-        </Modal>
-      )}
+      {body}
+      {templateModal}
     </aside>
   )
 }
 
-function Details({ task, save }: { task: Task; save: (p: Parameters<typeof kaguyaApi.updateTask>[1], ok?: string) => Promise<void> }) {
+function Details({ task, save, wide }: { task: Task; save: (p: Parameters<typeof kaguyaApi.updateTask>[1], ok?: string) => Promise<void>; wide?: boolean }) {
   const k = useKaguya()
   const [title, setTitle] = useState(task.title)
   const [notes, setNotes] = useState(task.description ?? '')
@@ -124,6 +150,7 @@ function Details({ task, save }: { task: Task; save: (p: Parameters<typeof kaguy
   useEffect(() => setNotes(task.description ?? ''), [task.id, task.description])
   useEffect(() => setWait(task.waiting_note ?? ''), [task.id, task.waiting_note])
 
+  const listOpts = useMemo(() => listOptions(k.projects, k.groups), [k.projects, k.groups])
   const people = usePeople()
   // @pessoa (cadastro da Komi) e [[tarefa: o texto guarda `@[Nome](komi:id)` e `[[id|Título]]`, que o leitor desenha como link.
   const mentions = useMemo<MentionSource[]>(() => [
@@ -156,7 +183,8 @@ function Details({ task, save }: { task: Task; save: (p: Parameters<typeof kaguy
   }
 
   return (
-    <div className="kn-panel-b">
+    <div className={`kn-panel-b${wide ? ' kn-pd-wide' : ''}`}>
+     <div className="kn-pd-top">
       <div className="kn-quick">
         <span className="kn-quick-i">
           <DatePicker value={task.due_date ?? ''} onChange={(iso) => void save({ due_date: iso })} aria-label="Vencimento" />
@@ -190,12 +218,12 @@ function Details({ task, save }: { task: Task; save: (p: Parameters<typeof kaguy
         onBlur={() => { const t = title.trim(); if (!t) setTitle(task.title); else if (t !== task.title) void save({ title: t }) }}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
       />
+     </div>
 
+     <div className="kn-pd-a1">
       <div className="kn-props">
         <Field label="Lista">{(c) => (
-          <Select {...c} value={task.project_id} onChange={(e) => void save({ project_id: Number(e.target.value) })}>
-            {k.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
+          <ListPicker id={c.id} value={String(task.project_id)} options={listOpts} onChange={(v) => void save({ project_id: Number(v) })} />
         )}</Field>
         <Field label="Repete">{(c) => (
           <Select {...c} value={preset} onChange={(e) => void setRecurrence(e.target.value as RecurrencePreset)}>
@@ -215,6 +243,9 @@ function Details({ task, save }: { task: Task; save: (p: Parameters<typeof kaguy
         )}</Field>
       </div>
 
+     </div>
+
+     <div className="kn-pd-main">
       <Field label="Notas">{() => (
         <MarkdownEditor
           value={notes}
@@ -255,6 +286,9 @@ function Details({ task, save }: { task: Task; save: (p: Parameters<typeof kaguy
         <TagInput {...c} value={(task.tags ?? []).map((t) => t.name)} onChange={(names) => void save({ tags: names })} />
       )}</Field>
 
+     </div>
+
+     <div className="kn-pd-a2">
       <div className="kn-props">
         <Field label="Classificação GTD">{(c) => (
           <Select {...c} value={task.gtd_status ?? ''} onChange={(e) => void save({ gtd_status: (e.target.value || null) as GtdStatus | null })}>
@@ -282,6 +316,7 @@ function Details({ task, save }: { task: Task; save: (p: Parameters<typeof kaguy
       <Dependencies task={task} />
 
       <p className="kn-foot">Criada em {fmtDate(task.created_at.slice(0, 10))}</p>
+     </div>
     </div>
   )
 }

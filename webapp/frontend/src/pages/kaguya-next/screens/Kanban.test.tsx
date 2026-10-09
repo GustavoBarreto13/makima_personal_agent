@@ -105,7 +105,7 @@ describe('Kanban da lista', () => {
     const user = await at('#kanban/1')
     await screen.findByText('Revisar PR')
     await user.click(within(column('Fazendo')).getByRole('button', { name: /Adicionar tarefa/ }))
-    const input = await screen.findByLabelText('Adicionar tarefa')
+    const input = await screen.findByLabelText('Título')
     await user.type(input, 'Nova coisa{Enter}')
     await waitFor(() => expect(api.createTask).toHaveBeenCalled())
     expect(api.createTask.mock.calls[0][0]).toMatchObject({ title: 'Nova coisa', project_id: 1, column_id: 11 })
@@ -198,9 +198,10 @@ describe('Quadro do grupo', () => {
     const user = await at('#grupo/3')
     await screen.findByText('Da lista 1')
     await user.click(within(column('A fazer')).getByRole('button', { name: /Adicionar tarefa/ }))
-    const select = await screen.findByLabelText('Lista')
-    expect(within(select).queryByRole('option', { name: 'Outro' })).toBeNull()
-    expect(within(select).getByRole('option', { name: 'Sprint' })).toBeTruthy()
+    await user.click(await screen.findByRole('button', { name: 'Lista' }))
+    const list = await screen.findByRole('listbox', { name: 'Lista' })
+    expect(within(list).queryByRole('option', { name: 'Outro' })).toBeNull()
+    expect(within(list).getByRole('option', { name: 'Sprint' })).toBeTruthy()
   })
 
   it('“Ver como lista” abre a lista do grupo com as tarefas de todas as listas', async () => {
