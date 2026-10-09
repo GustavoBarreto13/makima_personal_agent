@@ -25,6 +25,7 @@ import { hashFor, routeFromHash, withTask, type Route } from './lib/routes'
 import { useLoad } from './lib/useLoad'
 import { DateScreen, FilterScreen, GtdScreen, ListScreen } from './screens/ListScreens'
 import { Pending } from './screens/Pending'
+import { Archived, Logbook, Tags, Templates, Trash } from './screens/Records'
 import { Today } from './screens/Today'
 import type { Filter, Group, Project, Sidebar, Task } from './types'
 import './kaguya-next.css'
@@ -46,8 +47,7 @@ const SPACE_OPTIONS: { value: SpaceChoice; label: string; icon: 'apps' | 'work' 
 /** Telas ainda não migradas (viram `Pending` até a fase de cada uma). */
 const PENDING: Record<string, string> = {
   kanban: 'O quadro (Kanban)', group: 'O quadro do grupo', 'group-list': 'A lista do grupo', calendar: 'O calendário', eisenhower: 'A matriz de Eisenhower',
-  habits: 'Hábitos', goals: 'Metas', experiments: 'Experimentos', focus: 'Foco', logbook: 'Concluídas', stats: 'Estatísticas',
-  trash: 'A lixeira', archived: 'Arquivadas', templates: 'Templates', tags: 'Etiquetas',
+  habits: 'Hábitos', goals: 'Metas', experiments: 'Experimentos', focus: 'Foco', stats: 'Estatísticas',
 }
 
 export function KaguyaNextShell() {
@@ -124,6 +124,11 @@ export function KaguyaNextShell() {
       case 'date': return <DateScreen dateKey={(route.key ?? 'all') as Parameters<typeof DateScreen>[0]['dateKey']} />
       case 'gtd': return <GtdScreen gtdKey={route.key ?? 'next-actions'} />
       case 'filter': return route.id !== undefined ? <FilterScreen id={route.id} /> : <Today />
+      case 'logbook': return <Logbook />
+      case 'trash': return <Trash />
+      case 'archived': return <Archived />
+      case 'templates': return <Templates />
+      case 'tags': return <Tags />
       default: return <Pending name={PENDING[route.view] ?? 'Esta tela'} />
     }
   })()

@@ -92,6 +92,8 @@ export interface Task {
   // Presente só nos resultados de busca global (spec 039) — true quando a lista dona
   // está arquivada (a busca é a exceção que continua achando tarefas arquivadas).
   archived?: boolean
+  // Preenchido nas telas de lixeira: quando foi excluída.
+  deleted_at?: string | null
 }
 
 // Contexto Trabalho/Pessoal (spec 038) — propriedade da LISTA (e do calendário), nunca da
