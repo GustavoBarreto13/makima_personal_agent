@@ -43,6 +43,10 @@ _VALID_GTD_STATUSES = {"next_action", "waiting", "someday"}
 # Usado em update_task para que due_date=None signifique "limpar a data" e não "ignorar".
 _UNSET = object()
 
+# Tarefa "disponível": não está adiada (start_date) para depois de hoje. Exige o alias ``t``.
+# Vale nas visões de trabalho (listas, Hoje, Meu Dia, DSL); a visão "Adiadas" é a exceção.
+AVAILABLE_SQL = "(t.start_date IS NULL OR t.start_date <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date)"
+
 # Colunas da tarefa que viajam nas respostas (ordem estável; nested subtasks à parte).
 _TASK_FIELDS = [
     "id", "project_id", "column_id", "parent_id", "title", "description", "type", "priority",
@@ -52,6 +56,8 @@ _TASK_FIELDS = [
     "google_event_id",
     # spec 034: status GTD real + campos de espera + contexto de execução.
     "gtd_status", "waiting_note", "waiting_since", "context_id",
+    # spec 075: adiar (start_date), aguardando com pessoa + follow-up e identidade da série.
+    "start_date", "follow_up_date", "waiting_person_id", "series_id",
     "position", "completed_at", "deleted_at", "created_at", "updated_at",
 ]
 # Lista simples (sem alias) — para queries sem JOIN.
@@ -124,9 +130,11 @@ def _serialize_task(row: dict) -> dict:
     out.setdefault("assignees", [])
     out.setdefault("parent_title", None)
     # Datas simples → "YYYY-MM-DD"
-    for f in ("due_date", "my_day_date"):
+    for f in ("due_date", "my_day_date", "start_date", "follow_up_date"):
         if out.get(f) is not None:
             out[f] = out[f].isoformat()
+    if out.get("series_id") is not None:
+        out["series_id"] = str(out["series_id"])
     # Hora → "HH:MM" (corta segundos, que não usamos)
     if out.get("due_time") is not None:
         out["due_time"] = out["due_time"].strftime("%H:%M")
@@ -180,6 +188,33 @@ def _get_birthdays_list_id(cur) -> int:
         ("Aniversários", "🎂", "#FF6B6B"),
     )
     return cur.fetchone()[0]
+
+
+def _safe_exec(cur, sql: str, params: tuple = ()) -> None:
+    """Executa um SQL "acessório" sem poder derrubar a transação principal.
+
+    Usa SAVEPOINT: se falhar (ex.: tabela da spec 075 ainda não migrada), desfaz só este passo e a
+    operação principal segue. É o que permite gravar o histórico (``task_activity``) com segurança.
+    """
+    cur.execute("SAVEPOINT kg_safe")
+    try:
+        cur.execute(sql, params)
+        cur.execute("RELEASE SAVEPOINT kg_safe")
+    except Exception:  # noqa: BLE001 — acessório; nunca bloqueia a ação do usuário
+        cur.execute("ROLLBACK TO SAVEPOINT kg_safe")
+
+
+def _log_activity(cur, task_id: int, kind: str, from_value=None, to_value=None) -> None:
+    """Registra um evento no histórico da tarefa (``task_activity``), na MESMA transação da ação.
+
+    ``kind``: created | completed | reopened | rescheduled | my_day_in | my_day_out | deferred |
+    moved | deleted | restored. ``from_value``/``to_value`` viram texto (data ISO, id de lista…).
+    """
+    _safe_exec(
+        cur,
+        "INSERT INTO task_activity (task_id, kind, from_value, to_value) VALUES (%s, %s, %s, %s)",
+        (task_id, kind, None if from_value is None else str(from_value), None if to_value is None else str(to_value)),
+    )
 
 
 def _first_column_id(cur, project_id: int) -> Optional[int]:
@@ -614,7 +649,7 @@ def clear_recurrence(task_id: int) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # Listagens
 # ─────────────────────────────────────────────────────────────────────────────
-def list_tasks(project_id: int, include_completed: bool = False) -> list[dict]:
+def list_tasks(project_id: int, include_completed: bool = False, include_deferred: bool = False) -> list[dict]:
     """Lista as tarefas-pai de uma lista (com subtarefas aninhadas), ordenadas por posição.
 
     Serve tanto a view lista quanto o Kanban (o front agrupa por ``column_id``).
@@ -622,17 +657,23 @@ def list_tasks(project_id: int, include_completed: bool = False) -> list[dict]:
     Args:
         project_id: Id da lista.
         include_completed: Se True, inclui também as tarefas-pai concluídas.
+        include_deferred: Se True, inclui as adiadas (``start_date`` no futuro); por padrão elas
+            somem da lista até o dia de início (spec 075).
 
     Returns:
         Lista de tarefas-pai serializadas, cada uma com ``subtasks`` (lista). **Listagem**.
     """
     # Filtro de conclusão montado de forma parametrizada (sem interpolar valores).
     completed_clause = "" if include_completed else "AND completed_at IS NULL"
+    deferred_clause = "" if include_deferred else (
+        "AND (start_date IS NULL OR start_date <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date)"
+    )
     parents = run_select(
         f"""
         SELECT {_TASK_COLUMNS} FROM tasks
         WHERE project_id = %(pid)s AND parent_id IS NULL AND deleted_at IS NULL
         {completed_clause}
+        {deferred_clause}
         ORDER BY position, id
         """,
         {"pid": project_id},
@@ -673,6 +714,8 @@ def list_tasks_today() -> dict:
           AND t.due_date IS NOT NULL
           AND t.due_date <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
           AND p.archived_at IS NULL
+          AND p.deleted_at IS NULL
+          AND (t.start_date IS NULL OR t.start_date <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date)
         ORDER BY t.due_date, t.priority DESC, t.position
         """
     )
@@ -1155,6 +1198,7 @@ def create_task(
                 ),
             )
             new_id = cur.fetchone()[0]
+            _log_activity(cur, new_id, "created", to_value=resolved_project)
 
             # Recorrência: a tarefa já existe e a regra foi validada acima → anexa na mesma transação.
             if rec is not None:
@@ -1212,6 +1256,9 @@ def update_task(
     gtd_status: Optional[str] = _UNSET,
     waiting_note: Optional[str] = _UNSET,
     context_id: Optional[int] = _UNSET,
+    start_date: Optional[str] = _UNSET,
+    follow_up_date: Optional[str] = _UNSET,
+    waiting_person_id: Optional[str] = _UNSET,
 ) -> dict:
     """Edita campos de uma tarefa; mover de lista aplica a regra da coluna do destino.
 
@@ -1249,6 +1296,11 @@ def update_task(
             limpa; string = grava. Só tem efeito visível quando ``gtd_status = "waiting"``.
         context_id: Contexto de execução (spec 034). Omitido = não mexe; ``None`` =
             desassocia; int = associa (no máximo um contexto por tarefa).
+        start_date: Data de início / "adiar até" (``YYYY-MM-DD``, spec 075): a tarefa some das visões
+            até esse dia. Omitido = não mexe; ``None`` = limpa; não pode passar do vencimento.
+        follow_up_date: Quando cobrar uma tarefa "aguardando" (``YYYY-MM-DD``): no dia ela cai no
+            Meu Dia. Omitido = não mexe; ``None`` = limpa.
+        waiting_person_id: Pessoa (id da Komi) de quem se espera. Omitido = não mexe; ``None`` = limpa.
 
     Returns:
         Dicionário de status.
@@ -1392,6 +1444,22 @@ def update_task(
                 sets.append("context_id = %(context_id)s")
                 params["context_id"] = context_id
 
+            # ── Adiar / follow-up / aguardando com pessoa (spec 075) ──
+            deferred_to = _UNSET
+            if start_date is not _UNSET:
+                eff_due = due_date if due_date is not _UNSET else existing[0]
+                if start_date is not None and eff_due is not None and str(start_date) > str(eff_due):
+                    return {"status": "error", "message": "A data de início não pode ser depois do vencimento."}
+                sets.append("start_date = %(start_date)s")
+                params["start_date"] = start_date
+                deferred_to = start_date
+            if follow_up_date is not _UNSET:
+                sets.append("follow_up_date = %(follow_up_date)s")
+                params["follow_up_date"] = follow_up_date
+            if waiting_person_id is not _UNSET:
+                sets.append("waiting_person_id = %(waiting_person_id)s")
+                params["waiting_person_id"] = waiting_person_id
+
             # FR-012: agendar (devolver uma due_date real) limpa "algum dia" — os dois estados
             # são contraditórios pela própria definição do GTD ("algum dia" = ainda sem data).
             # Recalcula a data final (a nova, se enviada; senão a que já existia) e força
@@ -1412,6 +1480,13 @@ def update_task(
             if sets:
                 sets.append("updated_at = now()")
                 cur.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id = %(id)s", params)
+                # Histórico (base do logbook e das estatísticas de planejamento).
+                if due_date is not _UNSET and str(due_date) != str(existing[0]):
+                    _log_activity(cur, task_id, "rescheduled", from_value=existing[0], to_value=due_date)
+                if deferred_to is not _UNSET:
+                    _log_activity(cur, task_id, "deferred", to_value=deferred_to)
+                if "project_id" in params:
+                    _log_activity(cur, task_id, "moved", from_value=current_project_id, to_value=params["project_id"])
 
             # Tags: aplica o conjunto exato de etiquetas (lista vazia = remover todas).
             if tags is not None:
@@ -1524,6 +1599,12 @@ def _complete_task_on_cursor(cur, task_id: int, cascade: bool = False, end_serie
                 "message": f"Esta tarefa tem {open_subs} subtarefa(s) aberta(s). Concluir todas?",
             }
         if open_subs > 0 and cascade:
+            _safe_exec(
+                cur,
+                _DESCENDANTS_CTE + "INSERT INTO task_activity (task_id, kind) "
+                "SELECT id, 'completed' FROM tasks WHERE id IN (SELECT id FROM d) AND completed_at IS NULL",
+                (task_id,),
+            )
             cur.execute(
                 _DESCENDANTS_CTE + "UPDATE tasks SET completed_at = now(), updated_at = now() "
                 "WHERE id IN (SELECT id FROM d) AND completed_at IS NULL",
@@ -1539,6 +1620,7 @@ def _complete_task_on_cursor(cur, task_id: int, cascade: bool = False, end_serie
         "WHERE t.id = %s AND t.parent_id IS NULL AND c.project_id = t.project_id AND c.is_done_column",
         (task_id,),
     )
+    _log_activity(cur, task_id, "completed")
 
     # ── Recorrência: gerar a próxima ocorrência ou encerrar a série ──
     result = {"status": "ok"}
@@ -1632,6 +1714,7 @@ def reopen_task(task_id: int) -> dict:
                 "WHERE t.id = %s AND t.column_id IN (SELECT id FROM task_columns WHERE is_done_column)",
                 (task_id,),
             )
+            _log_activity(cur, task_id, "reopened")
     try:
         from agents.kaguya import gcal_sync as _gs
         _gs.push_task(task_id)
@@ -1963,6 +2046,7 @@ def delete_task(task_id: int, scope: str = "this") -> dict:
                 "WHERE (id = %s OR id IN (SELECT id FROM d)) AND deleted_at IS NULL",
                 (task_id, task_id),
             )
+            _log_activity(cur, task_id, "deleted")
     try:
         from agents.kaguya import gcal_sync as _gs
         _gs.remove_task_event(task_id)
@@ -2016,6 +2100,7 @@ def restore_task(task_id: int) -> dict:
                 "WHERE id = %s OR id IN (SELECT id FROM d)",
                 (task_id, row[0], row[0], task_id),
             )
+            _log_activity(cur, task_id, "restored")
     try:
         from agents.kaguya import gcal_sync as _gs
         _gs.push_task(task_id)
@@ -2051,14 +2136,16 @@ def add_to_my_day(task_id: int, date_str: Optional[str] = None) -> dict:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT 1 FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,)
+                "SELECT my_day_date FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,)
             )
-            if not cur.fetchone():
+            prev = cur.fetchone()
+            if not prev:
                 return {"status": "error", "message": "Tarefa não encontrada."}
             cur.execute(
                 "UPDATE tasks SET my_day_date = %s, updated_at = now() WHERE id = %s",
                 (target, task_id),
             )
+            _log_activity(cur, task_id, "my_day_in", from_value=prev[0], to_value=target)
     return {"status": "ok", "message": f"Adicionada ao Meu Dia de {target}."}
 
 
@@ -2074,14 +2161,16 @@ def remove_from_my_day(task_id: int) -> dict:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT 1 FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,)
+                "SELECT my_day_date FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,)
             )
-            if not cur.fetchone():
+            prev = cur.fetchone()
+            if not prev:
                 return {"status": "error", "message": "Tarefa não encontrada."}
             cur.execute(
                 "UPDATE tasks SET my_day_date = NULL, updated_at = now() WHERE id = %s",
                 (task_id,),
             )
+            _log_activity(cur, task_id, "my_day_out", from_value=prev[0])
     return {"status": "ok", "message": "Removida do Meu Dia."}
 
 
@@ -2110,14 +2199,19 @@ def reschedule_pending(task_id: int, when: str) -> dict:
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT 1 FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,)
+                "SELECT my_day_date FROM tasks WHERE id = %s AND deleted_at IS NULL", (task_id,)
             )
-            if not cur.fetchone():
+            prev = cur.fetchone()
+            if not prev:
                 return {"status": "error", "message": "Tarefa não encontrada."}
             cur.execute(
                 "UPDATE tasks SET my_day_date = %s, updated_at = now() WHERE id = %s",
                 (target, task_id),
             )
+            if target is None:
+                _log_activity(cur, task_id, "my_day_out", from_value=prev[0])
+            else:
+                _log_activity(cur, task_id, "my_day_in", from_value=prev[0], to_value=target)
     msg = {"today": "Movida para hoje.", "tomorrow": "Movida para amanhã.", "later": "Retirada do Meu Dia."}.get(when, "Atualizada.")
     return {"status": "ok", "message": msg}
 
@@ -2519,12 +2613,16 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
         LEFT JOIN tasks mae ON mae.id = t.parent_id
-        WHERE t.due_date BETWEEN %(hoje)s AND %(janela_fim)s
+        WHERE (t.due_date BETWEEN %(hoje)s AND %(janela_fim)s
+               -- Aguardando: chegou o dia de cobrar (follow-up) → vira sugestão do dia.
+               OR (t.gtd_status = 'waiting' AND t.follow_up_date IS NOT NULL AND t.follow_up_date <= %(hoje)s))
           AND (t.my_day_date IS NULL OR t.my_day_date != %(hoje)s)
           AND t.completed_at IS NULL
           AND t.deleted_at IS NULL
           AND p.archived_at IS NULL
-        ORDER BY t.due_date, t.priority DESC
+          AND p.deleted_at IS NULL
+          AND (t.start_date IS NULL OR t.start_date <= %(hoje)s)
+        ORDER BY t.due_date NULLS LAST, t.priority DESC
         """,
         {"hoje": hoje_str, "janela_fim": janela_fim_str},
     )

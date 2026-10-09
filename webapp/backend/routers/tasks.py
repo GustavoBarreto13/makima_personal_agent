@@ -229,6 +229,10 @@ class UpdateTaskBody(BaseModel):
     gtd_status: Optional[str] = None             # next_action | waiting | someday | None (limpa)
     waiting_note: Optional[str] = None           # por quem/o quê espera (só com gtd_status='waiting')
     context_id: Optional[int] = None             # None = desassocia contexto
+    # spec 075: adiar até uma data, follow-up e aguardando com pessoa (None = limpa).
+    start_date: Optional[str] = None
+    follow_up_date: Optional[str] = None
+    waiting_person_id: Optional[str] = None
 
 
 class MoveTaskBody(BaseModel):

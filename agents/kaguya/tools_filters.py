@@ -56,7 +56,24 @@ _FIELD_OPS = {
     "recurring": {"eq"},
     "has_description": {"eq"},
     "my_day": {"eq"},
+    # spec 075: espaço (Trabalho/Pessoal), grupo, adiar, bloqueio, estimativa, follow-up, conclusão.
+    "space": {"eq"},
+    "group_id": {"in", "not_in"},
+    "start_date": {"eq", "before", "after", "none", "deferred"},
+    "blocked": {"eq"},
+    "duration_min": {"eq", "gte", "lte", "none"},
+    "follow_up_date": {"eq", "before", "after", "within", "none"},
+    "waiting_person": {"has", "not_has"},
+    "completed_at": {"eq", "before", "after", "within"},
 }
+
+# Fragmento SQL "bloqueada": tem dependência cujo bloqueador ainda está aberto e vivo.
+_BLOCKED_SQL = (
+    "EXISTS (SELECT 1 FROM task_dependencies td JOIN tasks tb ON tb.id = td.blocked_by_id "
+    "WHERE td.task_id = t.id AND tb.completed_at IS NULL AND tb.deleted_at IS NULL)"
+)
+# Dia local de um timestamp de conclusão (nunca o dia UTC do servidor).
+_COMPLETED_DAY_SQL = "(t.completed_at AT TIME ZONE 'America/Sao_Paulo')::date"
 
 
 def _truthy(value) -> bool:
@@ -171,6 +188,7 @@ def _build_where_from_rules(rules: dict, default_open: bool = True):
     params: dict = {}                  # valores, sempre por placeholder
     orphans: list[dict] = []           # condições com referência quebrada
     state_seen = {"v": False}          # alguma condição (em qualquer nível) mexeu em "state"?
+    defer_seen = {"v": False}          # alguma condição mexeu em "start_date"? (então não esconde adiadas)
 
     def walk(node: dict, prefix: str) -> str:
         """Traduz um nó da DSL (grupo) num fragmento SQL. Recursivo — grupos aninhados
@@ -296,6 +314,73 @@ def _build_where_from_rules(rules: dict, default_open: bool = True):
                     "t.my_day_date IS NOT NULL" if _truthy(value) else "t.my_day_date IS NULL"
                 )
 
+            # ── spec 075 ──
+            elif field == "space":
+                # Espaço da lista da tarefa (a tarefa nunca guarda o próprio espaço — herda por JOIN).
+                params[key] = "work" if str(value) == "work" else "personal"
+                fragments.append(
+                    f"(SELECT pp.context FROM task_projects pp WHERE pp.id = t.project_id) = %({key})s"
+                )
+
+            elif field == "group_id":
+                ids = value if isinstance(value, list) else [value]
+                params[key] = [int(i) for i in ids]
+                member = f"t.project_id IN (SELECT pg.id FROM task_projects pg WHERE pg.group_id = ANY(%({key})s))"
+                fragments.append(member if op == "in" else f"NOT {member}")
+
+            elif field == "start_date":
+                defer_seen["v"] = True
+                if op == "none":
+                    fragments.append("t.start_date IS NULL")
+                elif op == "deferred":
+                    # Adiada = só volta a aparecer depois de hoje.
+                    fragments.append("t.start_date > (NOW() AT TIME ZONE 'America/Sao_Paulo')::date")
+                else:  # eq | before | after
+                    params[key] = _resolve_relative_date(value)
+                    sql_op = {"eq": "=", "before": "<", "after": ">"}[op]
+                    fragments.append(f"t.start_date {sql_op} %({key})s")
+
+            elif field == "blocked":
+                fragments.append(_BLOCKED_SQL if _truthy(value) else f"NOT {_BLOCKED_SQL}")
+
+            elif field == "duration_min":
+                if op == "none":
+                    fragments.append("t.duration_min IS NULL")
+                else:
+                    params[key] = int(value)
+                    sql_op = {"eq": "=", "gte": ">=", "lte": "<="}[op]
+                    fragments.append(f"t.duration_min {sql_op} %({key})s")
+
+            elif field == "follow_up_date":
+                if op == "none":
+                    fragments.append("t.follow_up_date IS NULL")
+                elif op == "within":
+                    hi = _resolve_relative_date(value) or _today()
+                    params[f"{key}_lo"] = _today()
+                    params[f"{key}_hi"] = hi
+                    fragments.append(f"t.follow_up_date BETWEEN %({key}_lo)s AND %({key}_hi)s")
+                else:  # eq | before | after
+                    params[key] = _resolve_relative_date(value)
+                    sql_op = {"eq": "=", "before": "<", "after": ">"}[op]
+                    fragments.append(f"t.follow_up_date {sql_op} %({key})s")
+
+            elif field == "waiting_person":
+                params[key] = str(value)
+                cond_sql = f"t.waiting_person_id = %({key})s"
+                fragments.append(cond_sql if op == "has" else f"(t.waiting_person_id IS DISTINCT FROM %({key})s)")
+
+            elif field == "completed_at":
+                # Dia LOCAL da conclusão. Exige state=done para fazer sentido (o consumidor decide).
+                if op == "within":
+                    hi = _resolve_relative_date(value) or _today()
+                    params[f"{key}_lo"] = _today()
+                    params[f"{key}_hi"] = hi
+                    fragments.append(f"{_COMPLETED_DAY_SQL} BETWEEN %({key}_lo)s AND %({key}_hi)s")
+                else:  # eq | before | after
+                    params[key] = _resolve_relative_date(value)
+                    sql_op = {"eq": "=", "before": "<", "after": ">"}[op]
+                    fragments.append(f"{_COMPLETED_DAY_SQL} {sql_op} %({key})s")
+
         return joiner.join(fragments)
 
     combined = walk(rules or {}, "")
@@ -311,7 +396,17 @@ def _build_where_from_rules(rules: dict, default_open: bool = True):
     # (_run_filter_rules); o board do Kanban (default_open=False) não tem esse JOIN e já é
     # escopado a um project_id que o usuário abriu diretamente.
     if default_open:
-        base += " AND p.archived_at IS NULL"
+        base += " AND p.archived_at IS NULL AND p.deleted_at IS NULL"
+        # Projeto sequencial: só a próxima ação (primeira aberta por posição) aparece nas visões.
+        base += (
+            " AND (NOT p.sequential OR t.parent_id IS NOT NULL OR t.id = ("
+            "SELECT t2.id FROM tasks t2 WHERE t2.project_id = t.project_id AND t2.parent_id IS NULL "
+            "AND t2.deleted_at IS NULL AND t2.completed_at IS NULL ORDER BY t2.position, t2.id LIMIT 1))"
+        )
+        # Tarefa adiada (start_date no futuro) some das visões, salvo se a regra falar de start_date
+        # (ex.: a visão "Adiadas") — aí o consumidor decide.
+        if not defer_seen["v"]:
+            base += " AND (t.start_date IS NULL OR t.start_date <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date)"
     if default_open and not has_state:
         base += " AND t.completed_at IS NULL"
 
