@@ -29,6 +29,8 @@ interface Props {
   completed?: Task[]
   sortBy?: TaskSchemaOptions['sortBy']
   groupBy?: TaskSchemaOptions['groupBy']
+  /** Esta tela é uma lista real: dá para arrastar (na ordem manual, sem agrupar). */
+  reorderable?: boolean
   emptyTitle: string
   emptyHint: string
   /** Botões extras ao lado da barra (ex.: "Quadro"). */
@@ -38,7 +40,7 @@ interface Props {
 }
 
 export function TaskCollection({
-  scope, load, deps = [], showProject, addProjectId, addDue, completed, sortBy, groupBy, emptyTitle, emptyHint, extra, banner,
+  scope, load, deps = [], showProject, addProjectId, addDue, completed, sortBy, groupBy, reorderable, emptyTitle, emptyHint, extra, banner,
 }: Props) {
   const k = useKaguya()
   const { state, retry } = useLoad(load, [k.rev, k.space, scope, ...deps])
@@ -65,7 +67,7 @@ export function TaskCollection({
         <EmptyState icon="filter" title="Nenhuma tarefa com esses filtros" hint="Tire algum filtro ou limpe a busca para ver tudo de novo." action={<Button onClick={c.clearAll}>Limpar filtros</Button>} />
       )}
       {state.status === 'ok' && (c.result.count > 0 || (completed?.length ?? 0) > 0) && (
-        <TaskList groups={c.result.groups} showProject={showProject} completed={completed} />
+        <TaskList groups={c.result.groups} showProject={showProject} completed={completed} reorderable={reorderable && c.state.sortBy === 'manual' && c.state.groupBy === 'none' && !c.hasActive} />
       )}
       {filters && <FilterSheet schema={schema} c={c} items={tasks} onClose={() => setFilters(false)} noun={NOUN} />}
     </Page>

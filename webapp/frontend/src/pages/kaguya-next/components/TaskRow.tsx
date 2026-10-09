@@ -2,7 +2,7 @@
 // vencimento, recorrência, subtarefas, notas, bloqueada/adiada). Hover mostra a alça e o menu "…". Só apresentação:
 // quem chama decide o que cada clique faz.
 
-import { useState, type MouseEvent, type ReactNode } from 'react'
+import { useState, type MouseEvent, type ReactNode, type Ref } from 'react'
 import { Icon, Menu, cx, type MenuItem } from '../../../design'
 import { deferLabel, dueInfo, fmtMinutes, followUpDue, subtaskProgress } from '../lib/taskView'
 import type { Task } from '../types'
@@ -27,6 +27,11 @@ export interface TaskRowProps {
   /** Clique com Ctrl/Shift/⌘ seleciona em vez de abrir. */
   onSelect?: (e: MouseEvent) => void
   menu?: MenuItem[]
+  /** Arrastar para reordenar/aninhar: a ref da linha, a alça e a zona de soltura sob o ponteiro. */
+  rowRef?: Ref<HTMLLIElement>
+  grip?: ReactNode
+  dropZone?: 'before' | 'after' | 'child' | null
+  dragging?: boolean
   /** Ações próprias da tela, logo depois dos sinais (ex.: Hoje/Amanhã nas pendências). */
   trailing?: ReactNode
 }
@@ -35,7 +40,7 @@ const PRIO_CLASS = ['', 'kn-p1', 'kn-p2', 'kn-p3']
 
 export function TaskRow({
   task, today, depth = 0, selected, active, focused, showProject, showDetails = true, expanded, onToggleExpand,
-  onToggle, onOpen, onSelect, menu, trailing,
+  onToggle, onOpen, onSelect, menu, trailing, rowRef, grip, dropZone, dragging,
 }: TaskRowProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const done = !!task.completed_at
@@ -53,11 +58,13 @@ export function TaskRow({
 
   return (
     <li
-      className={cx('kn-row', done && 'kn-done', selected && 'kn-sel', active && 'kn-active', focused && 'kn-focus')}
+      ref={rowRef}
+      className={cx('kn-row', done && 'kn-done', selected && 'kn-sel', active && 'kn-active', focused && 'kn-focus', dragging && 'kn-dragging', dropZone && `kn-drop-${dropZone}`)}
       style={{ paddingInlineStart: `calc(var(--ds-space-3) + ${depth} * var(--ds-space-5))` }}
       data-task-id={task.id}
       aria-selected={selected || undefined}
     >
+      {grip}
       {hasKids ? (
         <button type="button" className="kn-twist" aria-label={expanded ? 'Recolher subtarefas' : 'Expandir subtarefas'} aria-expanded={expanded} onClick={onToggleExpand}>
           <Icon name={expanded ? 'down' : 'right'} size={14} />

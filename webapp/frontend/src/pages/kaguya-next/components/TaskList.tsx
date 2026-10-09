@@ -2,12 +2,16 @@
 // (Ctrl/⌘ ou Shift + clique, ou a tecla X), teclado (↑↓ Espaço Enter 0–3 T A Delete) e a barra de ação em massa.
 // A ordenação/agrupamento/filtros vêm de fora (CollectionToolbar); aqui só se desenha e se age.
 
+import { DndContext, DragOverlay, closestCenter, useDraggable, useDroppable, type DragEndEvent, type DragOverEvent, type DragStartEvent } from '@dnd-kit/core'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { Icon, toast } from '../../../design'
 import type { Group } from '../../../design/core/collection'
 import { addDaysISO } from '../../../design/core/format'
+import { kaguyaApi } from '../api'
 import { useKaguya } from '../context'
 import * as act from '../lib/actions'
+import { useDndSensors } from '../lib/dnd'
+import { findTask, indentBody, isDescendant, moveBody, outdentBody, restoreBody, shiftBody, zoneAt, type DropZone, type MoveBody } from '../lib/reorder'
 import { PRIORITY_LABEL } from '../lib/taskView'
 import type { Task } from '../types'
 import { BulkBar } from './BulkBar'
@@ -19,6 +23,8 @@ interface Props {
   showProject?: boolean
   /** Concluídas do final da lista (já separadas pela tela). */
   completed?: Task[]
+  /** Permite arrastar para reordenar e aninhar (só faz sentido na ordem manual, sem agrupar). */
+  reorderable?: boolean
 }
 
 interface Visible { task: Task; depth: number }
@@ -31,7 +37,20 @@ function flatten(tasks: Task[], expanded: Set<number>, depth = 0): Visible[] {
   ])
 }
 
-export function TaskList({ groups, showProject, completed = [] }: Props) {
+/** A linha que se arrasta (pela alça) e recebe soltura: um só hook por linha, ref combinada. */
+function DndRow({ row, index, zone, dragging, children }: { row: Visible; index: number; zone: DropZone | null; dragging: boolean; children: (p: { rowRef: (n: HTMLLIElement | null) => void; grip: React.ReactNode; dropZone: DropZone | null; dragging: boolean }) => React.ReactNode }) {
+  const drag = useDraggable({ id: row.task.id })
+  const drop = useDroppable({ id: row.task.id })
+  const rowRef = (n: HTMLLIElement | null) => { drag.setNodeRef(n); drop.setNodeRef(n) }
+  const grip = (
+    <button type="button" className="kn-grip" aria-label={`Arrastar “${row.task.title}” (ou use Alt + setas)`} {...drag.attributes} {...drag.listeners} data-index={index}>
+      <Icon name="drag" size={14} />
+    </button>
+  )
+  return <>{children({ rowRef, grip, dropZone: zone, dragging })}</>
+}
+
+export function TaskList({ groups, showProject, completed = [], reorderable }: Props) {
   const k = useKaguya()
   const deps = useMemo(() => ({ reload: k.reload }), [k.reload])
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set())
@@ -41,6 +60,46 @@ export function TaskList({ groups, showProject, completed = [] }: Props) {
   const [showDone, setShowDone] = useState(false)
   const lastClicked = useRef<number | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
+
+  // ── Arrastar para reordenar/aninhar ──────────────────────────────────────────
+  const sensors = useDndSensors()
+  const pointerY = useRef(0)
+  const [dragId, setDragId] = useState<number | null>(null)
+  const [drop, setDrop] = useState<{ id: number; zone: DropZone } | null>(null)
+  const tree = useMemo(() => groups.flatMap((g) => g.items), [groups])
+  const trackPointer = useCallback((e: PointerEvent) => { pointerY.current = e.clientY }, [])
+  useEffect(() => () => window.removeEventListener('pointermove', trackPointer), [trackPointer])
+
+  const applyMove = useCallback(async (id: number, body: MoveBody | null, label: string) => {
+    if (!body) return
+    const undo = restoreBody(tree, id)
+    try {
+      await kaguyaApi.moveTask(id, body)
+      toast(label, { tone: 'success', undo: undo ? () => { void kaguyaApi.moveTask(id, undo).then(k.reload).catch(() => toast('Não foi possível desfazer.', { tone: 'error' })) } : undefined })
+      k.reload()
+    } catch (e) { toast(e instanceof Error && !/^HTTP \d+$/.test(e.message) ? e.message : 'Não foi possível mover a tarefa.', { tone: 'error' }) }
+  }, [tree, k])
+
+  const zoneFor = (targetId: number): DropZone => {
+    const el = document.querySelector(`[data-task-id="${targetId}"]`)
+    if (!el) return 'after'
+    const r = el.getBoundingClientRect()
+    return zoneAt((pointerY.current - r.top) / (r.height || 1))
+  }
+  const onDragStart = (e: DragStartEvent) => { setDragId(Number(e.active.id)); setDrop(null); window.addEventListener('pointermove', trackPointer) }
+  const onDragOver = (e: DragOverEvent) => {
+    const over = e.over ? Number(e.over.id) : null
+    const from = Number(e.active.id)
+    if (over == null || over === from || isDescendant(tree, from, over)) { setDrop(null); return }
+    const zone = zoneFor(over)
+    setDrop((p) => (p && p.id === over && p.zone === zone ? p : { id: over, zone }))
+  }
+  const endDrag = () => { window.removeEventListener('pointermove', trackPointer); setDragId(null); setDrop(null) }
+  const onDragEnd = (e: DragEndEvent) => {
+    const from = Number(e.active.id)
+    if (drop) void applyMove(from, moveBody(tree, from, drop.id, drop.zone), drop.zone === 'child' ? 'Virou subtarefa.' : 'Tarefa movida.')
+    endDrag()
+  }
 
   const sections = useMemo(
     () => groups.map((g) => ({ key: g.key, rows: collapsedGroups.has(g.key) ? [] : flatten(g.items, expanded), total: g.items.length })),
@@ -80,6 +139,12 @@ export function TaskList({ groups, showProject, completed = [] }: Props) {
 
   const menuFor = useCallback((t: Task) => [
     { id: 'open', label: 'Abrir', onSelect: () => k.openTask(t.id) },
+    ...(reorderable ? [
+      { id: 'up', label: 'Subir', disabled: !shiftBody(tree, t.id, -1), onSelect: () => void applyMove(t.id, shiftBody(tree, t.id, -1), 'Tarefa movida.') },
+      { id: 'down', label: 'Descer', disabled: !shiftBody(tree, t.id, 1), onSelect: () => void applyMove(t.id, shiftBody(tree, t.id, 1), 'Tarefa movida.') },
+      { id: 'indent', label: 'Tornar subtarefa da anterior', disabled: !indentBody(tree, t.id), onSelect: () => void applyMove(t.id, indentBody(tree, t.id), 'Virou subtarefa.') },
+      { id: 'outdent', label: 'Tirar de subtarefa', disabled: !outdentBody(tree, t.id), onSelect: () => void applyMove(t.id, outdentBody(tree, t.id), 'Agora é uma tarefa do nível acima.') },
+    ] : []),
     t.my_day_date === k.today
       ? { id: 'myday', label: 'Tirar do Meu Dia', onSelect: () => void act.removeFromMyDay(deps, [t.id]) }
       : { id: 'myday', label: 'Adicionar ao Meu Dia', onSelect: () => void act.addToMyDay(deps, [t.id]) },
@@ -87,12 +152,19 @@ export function TaskList({ groups, showProject, completed = [] }: Props) {
     { id: 'tomorrow', label: 'Vence amanhã', onSelect: () => void act.setDueDate(deps, [t.id], addDaysISO(k.today, 1)) },
     { id: 'dup', label: 'Duplicar', onSelect: () => void act.duplicate(deps, t) },
     { id: 'del', label: 'Excluir', onSelect: () => void act.deleteTasks(deps, [t]) },
-  ], [k, deps])
+  ], [k, deps, reorderable, tree, applyMove])
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement
     if (target.closest('input, textarea, select, [contenteditable="true"]')) return
     const cur = rows[cursor]?.task
+    // Alt + setas: reordenar e aninhar pelo teclado (o mesmo que arrastar).
+    if (reorderable && cur && e.altKey && e.key.startsWith('Arrow')) {
+      const body = e.key === 'ArrowUp' ? shiftBody(tree, cur.id, -1) : e.key === 'ArrowDown' ? shiftBody(tree, cur.id, 1) : e.key === 'ArrowRight' ? indentBody(tree, cur.id) : outdentBody(tree, cur.id)
+      e.preventDefault()
+      void applyMove(cur.id, body, e.key === 'ArrowRight' ? 'Virou subtarefa.' : 'Tarefa movida.')
+      return
+    }
     const move = (d: number) => { e.preventDefault(); setCursor(Math.min(rows.length - 1, Math.max(0, (cursor < 0 ? (d > 0 ? -1 : rows.length) : cursor) + d))) }
     switch (e.key) {
       case 'ArrowDown': return move(1)
@@ -123,10 +195,20 @@ export function TaskList({ groups, showProject, completed = [] }: Props) {
 
   const selectedTasks = [...selected].map((id) => byId.get(id)).filter((t): t is Task => !!t)
 
-  const renderRow = (r: Visible, i: number) => (
+  const renderRow = (r: Visible, i: number) => (reorderable ? (
+    <DndRow key={r.task.id} row={r} index={i} zone={drop?.id === r.task.id ? drop.zone : null} dragging={dragId === r.task.id}>
+      {(p) => rowFor(r, i, p)}
+    </DndRow>
+  ) : rowFor(r, i))
+
+  const rowFor = (r: Visible, i: number, dnd?: { rowRef: (n: HTMLLIElement | null) => void; grip: React.ReactNode; dropZone: DropZone | null; dragging: boolean }) => (
     <TaskRow
       key={r.task.id}
       task={r.task}
+      rowRef={dnd?.rowRef}
+      grip={dnd?.grip}
+      dropZone={dnd?.dropZone}
+      dragging={dnd?.dragging}
       today={k.today}
       depth={r.depth}
       selected={selected.has(r.task.id)}
@@ -144,7 +226,8 @@ export function TaskList({ groups, showProject, completed = [] }: Props) {
   )
 
   let offset = 0
-  return (
+  const dragged = dragId != null ? findTask(tree, dragId) : undefined
+  const body = (
     <div className="kn-list" ref={listRef} role="tree" aria-label="Tarefas" tabIndex={0} onKeyDown={onKeyDown}>
       {selectedTasks.length > 0 && (
         <BulkBar tasks={selectedTasks} today={k.today} projects={k.projects} reload={k.reload} onClear={() => setSelected(new Set())} />
@@ -191,4 +274,10 @@ export function TaskList({ groups, showProject, completed = [] }: Props) {
       )}
     </div>
   )
+  return reorderable ? (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={endDrag}>
+      {body}
+      <DragOverlay dropAnimation={null}>{dragged ? <div className="kn-drag-ghost">{dragged.title}</div> : null}</DragOverlay>
+    </DndContext>
+  ) : body
 }

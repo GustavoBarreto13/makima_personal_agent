@@ -421,3 +421,14 @@
 .kn-rev-wait { flex-wrap: wrap; }
 .kn-rev-edit { flex-basis: 100%; }
 .kn-err { margin: 0; color: var(--ds-danger); font-size: var(--ds-text-sm); }
+
+/* ── Arrastar para reordenar/aninhar ── */
+.kn-grip { display: inline-grid; place-items: center; width: 18px; padding: 0; border: 0; background: none; color: var(--ds-ink-4); cursor: grab; opacity: 0; touch-action: none; }
+.kn-row:hover .kn-grip, .kn-row:focus-within .kn-grip, .kn-grip:focus-visible { opacity: 1; }
+.kn-grip:active { cursor: grabbing; }
+@media (hover: none) { .kn-grip { opacity: 0.6; } }
+.kn-row.kn-dragging { opacity: 0.4; }
+.kn-row.kn-drop-before { box-shadow: inset 0 2px 0 var(--ds-accent); }
+.kn-row.kn-drop-after { box-shadow: inset 0 -2px 0 var(--ds-accent); }
+.kn-row.kn-drop-child { background: var(--ds-accent-tint); outline: 2px dashed var(--ds-accent); outline-offset: -2px; }
+.kn-drag-ghost { max-width: 360px; padding: 8px 14px; overflow: hidden; border: 1px solid var(--ds-accent); border-radius: var(--ds-r-md); background: var(--ds-card); box-shadow: var(--ds-shadow-lg); color: var(--ds-ink-1); text-overflow: ellipsis; white-space: nowrap; }

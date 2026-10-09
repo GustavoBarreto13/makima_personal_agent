@@ -28,6 +28,7 @@ export function ListScreen({ id }: { id: number }) {
       scope={`list:${id}`}
       load={load}
       addProjectId={id}
+      reorderable
       completed={done}
       emptyTitle={project?.is_inbox ? 'Inbox zerada' : 'Lista vazia'}
       emptyHint={project?.is_inbox ? 'Capture qualquer coisa na barra acima; organize depois, com calma.' : 'Adicione a primeira tarefa desta lista na barra acima.'}
