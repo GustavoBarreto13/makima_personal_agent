@@ -468,3 +468,8 @@
 .kn-tl-task .ds-iconbtn { position: absolute; inset-inline-end: 2px; top: 2px; }
 .kn-tl-resize { position: absolute; inset-inline: 0; bottom: 0; height: 6px; cursor: ns-resize; touch-action: none; }
 .kn-tl-empty { position: absolute; inset-inline: 40px; top: 40%; margin: 0; text-align: center; pointer-events: none; }
+
+/* ── Cor das etiquetas ── */
+.kn-tagdot { display: inline-flex; color: var(--kn-cc); }
+.kn-tagswatches { flex-basis: 100%; padding-inline-start: 28px; }
+.kn-tag[data-colored] { background: color-mix(in oklab, var(--kn-cc) 18%, var(--ds-card)); color: var(--ds-ink-1); }

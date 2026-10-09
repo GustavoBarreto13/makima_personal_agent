@@ -7,6 +7,7 @@ import {
 } from '../../../design'
 import { fmtDateLong } from '../../../design/core/format'
 import { kaguyaApi } from '../api'
+import { CAL_SWATCHES } from '../lib/calSwatches'
 import { TaskRow } from '../components/TaskRow'
 import { useKaguya } from '../context'
 import * as act from '../lib/actions'
@@ -210,6 +211,11 @@ export function Tags() {
   const k = useKaguya()
   const { state, retry } = useLoad(() => kaguyaApi.tagCounts(), [k.rev])
   const [editing, setEditing] = useState<{ id: number; name: string } | null>(null)
+  const [picking, setPicking] = useState<number | null>(null)
+  const recolor = async (id: number, color: string | null) => {
+    setPicking(null)
+    try { await kaguyaApi.updateTag(id, { color: color ?? '' }); k.reload() } catch (e) { toast(reason(e), { tone: 'error' }) }
+  }
 
   const rename = async () => {
     if (!editing) return
@@ -236,7 +242,7 @@ export function Tags() {
         <ul className="kn-sublist">
           {state.data.map((t) => (
             <li key={t.id}>
-              <Icon name="tag" size={16} />
+              <span className="kn-tagdot" style={{ '--kn-cc': t.color || 'var(--ds-ink-4)' } as React.CSSProperties}><Icon name="tag" size={16} /></span>
               {editing?.id === t.id ? (
                 <form className="kn-quick-i" onSubmit={(e) => { e.preventDefault(); void rename() }}>
                   <Input aria-label="Novo nome da etiqueta" value={editing.name} autoFocus onChange={(e) => setEditing({ id: t.id, name: e.target.value })} />
@@ -250,9 +256,18 @@ export function Tags() {
                     <option value="">Mesclar em…</option>
                     {state.data.filter((o) => o.id !== t.id).map((o) => <option key={o.id} value={o.id}>#{o.name}</option>)}
                   </Select>
+                  <IconButton icon="palette" label={`Mudar a cor de #${t.name}`} aria-expanded={picking === t.id} onClick={() => setPicking(picking === t.id ? null : t.id)} />
                   <IconButton icon="edit" label={`Renomear #${t.name}`} onClick={() => setEditing({ id: t.id, name: t.name })} />
                   <IconButton icon="delete" label={`Excluir #${t.name}`} onClick={() => void remove(t.id, t.name)} />
                 </>
+              )}
+              {picking === t.id && (
+                <div className="kn-swatches kn-tagswatches" role="listbox" aria-label={`Cor de #${t.name}`}>
+                  {CAL_SWATCHES.map((c, i) => (
+                    <button key={c} type="button" role="option" aria-selected={t.color === c} aria-label={`Cor ${i + 1}`} className={`kn-sw-btn${t.color === c ? ' kn-on' : ''}`} style={{ '--kn-cc': c } as React.CSSProperties} onClick={() => void recolor(t.id, c)} />
+                  ))}
+                  <Button size="sm" variant="ghost" onClick={() => void recolor(t.id, null)}>Sem cor</Button>
+                </div>
               )}
             </li>
           ))}

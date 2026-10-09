@@ -97,7 +97,7 @@ export function TaskRow({
         {task.recurrence?.active && <span className="kn-sig" title={task.recurrence_text ?? 'Recorrente'}><Icon name="recurring" size={13} label="Recorrente" /></span>}
         {task.duration_min ? <span className="kn-sig" title="Estimativa"><Icon name="timer" size={13} />{fmtMinutes(task.duration_min)}</span> : null}
         {task.my_day_date === today && <span className="kn-sig kn-accent" title="No Meu Dia"><Icon name="sun" size={13} label="No Meu Dia" /></span>}
-        {showDetails && tags.slice(0, 2).map((g) => <span key={g.id} className="kn-tag">#{g.name}</span>)}
+        {showDetails && tags.slice(0, 2).map((g) => <span key={g.id} className="kn-tag" style={g.color ? ({ '--kn-cc': g.color } as React.CSSProperties) : undefined} data-colored={g.color ? '' : undefined}>#{g.name}</span>)}
         {showProject && task.project_name && <span className="kn-proj">{task.project_name}</span>}
         {due.label && <span className={cx('kn-due', `kn-due-${due.tone}`)}>{due.label}</span>}
       </span>

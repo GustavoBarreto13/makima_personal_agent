@@ -160,4 +160,15 @@ describe('Arquivadas, Templates e Etiquetas', () => {
     await user.click(await screen.findByRole('button', { name: 'Excluir' }))
     await waitFor(() => expect(api.deleteTag).toHaveBeenCalledWith(1))
   })
+
+  it('etiquetas: a cor vem da paleta do DS e pode ser removida', async () => {
+    api.tagCounts.mockResolvedValue([{ id: 1, name: 'foco', color: null, open_count: 1, total_count: 1 }])
+    const user = await at('#etiquetas')
+    await user.click(await screen.findByRole('button', { name: 'Mudar a cor de #foco' }))
+    await user.click(within(screen.getByRole('listbox', { name: 'Cor de #foco' })).getByRole('option', { name: 'Cor 3' }))
+    await waitFor(() => expect(api.updateTag).toHaveBeenCalledWith(1, { color: 'var(--ds-chart-3)' }))
+    await user.click(await screen.findByRole('button', { name: 'Mudar a cor de #foco' }))
+    await user.click(screen.getByRole('button', { name: 'Sem cor' }))
+    await waitFor(() => expect(api.updateTag).toHaveBeenLastCalledWith(1, { color: '' }))
+  })
 })
