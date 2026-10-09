@@ -801,3 +801,138 @@ CREATE TABLE IF NOT EXISTS habit_schedules (
     CHECK (weekday IN ('MO','TU','WE','TH','FR','SA','SU'))
 );
 CREATE INDEX IF NOT EXISTS idx_habit_schedules_habit ON habit_schedules (habit_id);
+
+
+-- ============================================================================
+-- SPEC 075 — Kaguya no Design System + app de tarefas completo
+-- ----------------------------------------------------------------------------
+-- Tudo idempotente. O bloco entre os marcadores BEGIN/END abaixo é lido também por
+-- scripts/migrate_kaguya_ds.py (fonte única do DDL; o script só acrescenta os backfills).
+-- ============================================================================
+-- BEGIN SPEC 075
+
+-- ── Espaço Trabalho/Pessoal: o GRUPO guarda o espaço e as listas novas herdam dele ──────────────
+-- (task_projects.context já existe — spec 038. Só o grupo ganha o campo; a herança é da camada de lógica.)
+ALTER TABLE task_project_groups ADD COLUMN IF NOT EXISTS context TEXT NOT NULL DEFAULT 'personal';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'task_project_groups_context_check'
+    ) THEN
+        ALTER TABLE task_project_groups ADD CONSTRAINT task_project_groups_context_check
+            CHECK (context IN ('personal', 'work'));
+    END IF;
+END $$;
+
+-- ── Listas: excluir ≠ arquivar, cadência de revisão e projeto sequencial ─────────────────────────
+-- deleted_at: lista EXCLUÍDA (some de tudo, restaurável pela lixeira). archived_at continua sendo
+-- "arquivada" (some das views, aparece em Arquivadas). Antes, excluir só gravava archived_at.
+ALTER TABLE task_projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- A cada quantos dias a lista precisa de revisão (NULL = sem cadência). Alimenta "precisa revisar".
+ALTER TABLE task_projects ADD COLUMN IF NOT EXISTS review_interval_days INT
+    CHECK (review_interval_days IS NULL OR review_interval_days > 0);
+-- Projeto sequencial: só a próxima ação (a primeira tarefa aberta, por posição) aparece nas visões.
+ALTER TABLE task_projects ADD COLUMN IF NOT EXISTS sequential BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ── Tarefas: data de início (adiar), aguardando com pessoa e série de recorrência ────────────────
+-- start_date: a tarefa só aparece nas visões a partir deste dia (defer date do OmniFocus/Things).
+-- Diferente de start_at, que é o bloco de horário do calendário.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS start_date DATE;
+-- Aguardando com pessoa: id da pessoa na Komi (people.id é TEXT/UUID). Sem FK de propósito — a
+-- integridade é da camada de lógica, como em person_links (a Komi pode nem estar aplicada).
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS waiting_person_id TEXT;
+-- Quando cobrar: no dia, a tarefa "aguardando" cai no Meu Dia.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS follow_up_date DATE;
+-- Identidade da série de uma recorrente: todas as ocorrências (concluídas e a viva) compartilham.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS series_id UUID;
+
+CREATE INDEX IF NOT EXISTS idx_tasks_start_date ON tasks (start_date)
+    WHERE start_date IS NOT NULL AND deleted_at IS NULL AND completed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_follow_up ON tasks (follow_up_date)
+    WHERE follow_up_date IS NOT NULL AND deleted_at IS NULL AND completed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_series ON tasks (series_id) WHERE series_id IS NOT NULL;
+
+-- ── Agenda do usuário: expediente, almoço, acordar/dormir (linha única, como myday_prefs) ────────
+-- Base dos DOIS "tempos livres": o do trabalho (expediente − almoço − compromissos) e o geral
+-- (acordar→dormir − expediente − compromissos). weekday em ISO (1=segunda … 7=domingo; Python
+-- isoweekday) — o repo mistura outras convenções, então este campo é documentado explicitamente.
+-- sleep_time menor que wake_time = dorme depois da meia-noite (ex.: acorda 07:00, dorme 01:00).
+CREATE TABLE IF NOT EXISTS kaguya_schedule_prefs (
+    id            INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    work_days     SMALLINT[] NOT NULL DEFAULT '{1,2,3,4,5}',
+    work_start    TIME NOT NULL DEFAULT '09:00',
+    work_end      TIME NOT NULL DEFAULT '18:00',
+    lunch_start   TIME DEFAULT '12:00',
+    lunch_end     TIME DEFAULT '13:00',
+    -- TRUE = o almoço conta como tempo livre; FALSE (padrão) = é descontado do expediente.
+    lunch_is_free BOOLEAN NOT NULL DEFAULT FALSE,
+    wake_time     TIME NOT NULL DEFAULT '07:00',
+    sleep_time    TIME NOT NULL DEFAULT '23:00',
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (work_end > work_start),
+    CHECK (lunch_start IS NULL OR lunch_end IS NULL OR lunch_end > lunch_start)
+);
+
+INSERT INTO kaguya_schedule_prefs (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- Exceções pontuais: "vou trabalhar neste sábado" (works = TRUE) ou "folga nesta terça" (works = FALSE).
+-- work_start/work_end NULL = usa o horário padrão da agenda.
+CREATE TABLE IF NOT EXISTS kaguya_schedule_overrides (
+    day         DATE PRIMARY KEY,
+    works       BOOLEAN NOT NULL,
+    work_start  TIME,
+    work_end    TIME,
+    note        TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK ((work_start IS NULL) = (work_end IS NULL)),
+    CHECK (work_start IS NULL OR work_end > work_start)
+);
+
+-- ── Dependências: "esta tarefa só pode começar depois daquela" ───────────────────────────────────
+-- Bloqueada = tem pelo menos uma dependência com blocked_by_id ainda aberta. Ciclos são barrados
+-- pela camada de lógica (como o anti-ciclo de parent_id).
+CREATE TABLE IF NOT EXISTS task_dependencies (
+    task_id        INT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    blocked_by_id  INT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (task_id, blocked_by_id),
+    CHECK (task_id <> blocked_by_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_dependencies_blocker ON task_dependencies (blocked_by_id);
+
+-- ── Templates de tarefa e de lista (duplicar e reaplicar) ────────────────────────────────────────
+-- payload: snapshot em JSON (tarefa com subtarefas/tags/estimativa; lista com colunas e tarefas),
+-- com datas RELATIVAS ao momento da aplicação (ex.: due_offset_days).
+CREATE TABLE IF NOT EXISTS task_templates (
+    id          SERIAL PRIMARY KEY,
+    kind        TEXT NOT NULL CHECK (kind IN ('task', 'project')),
+    name        TEXT NOT NULL,
+    context     TEXT NOT NULL DEFAULT 'personal' CHECK (context IN ('personal', 'work')),
+    payload     JSONB NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_task_templates_kind_name ON task_templates (kind, LOWER(name));
+
+-- ── Histórico de eventos da tarefa ────────────────────────────────────────────────────────────────
+-- Base do logbook (concluídas), do painel Histórico e das estatísticas de planejamento (quantas vezes
+-- uma tarefa foi empurrada, planejado × feito no Meu Dia). Append-only; gravado na MESMA transação
+-- da ação que o gerou. from_value/to_value são texto (data ISO, id de lista, etc.).
+CREATE TABLE IF NOT EXISTS task_activity (
+    id          BIGSERIAL PRIMARY KEY,
+    task_id     INT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL CHECK (kind IN (
+                    'created', 'completed', 'reopened', 'rescheduled',
+                    'my_day_in', 'my_day_out', 'deferred', 'moved', 'deleted', 'restored')),
+    from_value  TEXT,
+    to_value    TEXT,
+    at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_activity_task ON task_activity (task_id, at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_activity_kind_at ON task_activity (kind, at DESC);
+
+-- END SPEC 075

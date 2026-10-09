@@ -17,6 +17,7 @@ Contrato REST: ``specs/011-tasks-mvp/contracts/api-tasks.md``.
 Regras detalhadas: ``specs/011-tasks-mvp/data-model.md``.
 """
 
+import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -457,13 +458,18 @@ def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
     # Campos da ocorrência consumida (herdados pela próxima — inclui GTD/contexto, spec 034/R10).
     cur.execute(
         "SELECT project_id, title, description, type, priority, due_date, due_time, "
-        "gtd_status, context_id, waiting_note, duration_min, goal_id, column_id, start_at, end_at "
-        "FROM tasks WHERE id = %s",
+        "gtd_status, context_id, waiting_note, duration_min, goal_id, column_id, start_at, end_at, "
+        "series_id FROM tasks WHERE id = %s",
         (task_id,),
     )
     (project_id, title, description, ttype, priority, due_date, due_time,
      gtd_status, context_id, waiting_note, duration_min, goal_id, old_column_id,
-     start_at, end_at) = cur.fetchone()
+     start_at, end_at, series_id) = cur.fetchone()
+    # Identidade da série: a 1ª geração batiza a ocorrência consumida; as seguintes só herdam. É o que
+    # permite reconstruir o histórico de uma recorrente (antes cada ocorrência era uma linha solta).
+    if series_id is None:
+        series_id = str(uuid.uuid4())
+        cur.execute("UPDATE tasks SET series_id = %s WHERE id = %s", (series_id, task_id))
 
     # Calcula a próxima data pela semântica do motor puro (research.md §3).
     nxt = rec_engine.next_occurrence(
@@ -499,12 +505,13 @@ def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
         """
         INSERT INTO tasks
             (project_id, column_id, parent_id, title, description, type, priority, due_date, due_time,
-             position, gtd_status, context_id, waiting_note, duration_min, goal_id, start_at, end_at)
-        VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             position, gtd_status, context_id, waiting_note, duration_min, goal_id, start_at, end_at,
+             series_id)
+        VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
         (project_id, new_column, title, description, ttype, priority, nxt, due_time, position,
-         gtd_status, context_id, waiting_note, duration_min, goal_id, new_start, new_end),
+         gtd_status, context_id, waiting_note, duration_min, goal_id, new_start, new_end, series_id),
     )
     new_id = cur.fetchone()[0]
 
