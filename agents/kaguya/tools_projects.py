@@ -150,7 +150,7 @@ def get_sidebar() -> dict:
     from agents.kaguya.tools_filters import list_filters
     # Grupos ordenados pela posição manual.
     groups = run_select(
-        "SELECT id, name, position FROM task_project_groups ORDER BY position, id"
+        "SELECT id, name, position, context FROM task_project_groups ORDER BY position, id"
     )
 
     # Listas vivas + contagem de tarefas abertas + se possuem board (subquery EXISTS).
@@ -161,6 +161,7 @@ def get_sidebar() -> dict:
             p.id, p.name, p.group_id, p.color, p.icon, p.is_inbox, p.position,
             p.context,            -- Pessoal/Trabalho (spec 038) — herdado pelas tarefas via JOIN
             p.last_reviewed_at,   -- passo 4 da revisão semanal (spec 035)
+            p.review_interval_days, p.sequential,   -- spec 075: cadência de revisão e modo sequencial
             EXISTS (SELECT 1 FROM task_columns c WHERE c.project_id = p.id) AS has_board,
             (
                 SELECT COUNT(*) FROM tasks t
@@ -170,7 +171,7 @@ def get_sidebar() -> dict:
                   AND t.parent_id IS NULL          -- conta só tarefas-pai (subtarefas não inflam o número)
             ) AS open_count
         FROM task_projects p
-        WHERE p.archived_at IS NULL
+        WHERE p.archived_at IS NULL AND p.deleted_at IS NULL
         ORDER BY p.is_inbox DESC, p.position, p.id   -- Inbox primeiro, depois por posição
         """
     )
@@ -462,8 +463,12 @@ def delete_project(project_id: int, mode: str) -> dict:
 
             # As colunas do board são removidas de fato (não fazem sentido sem a lista).
             cur.execute("DELETE FROM task_columns WHERE project_id = %s", (project_id,))
-            # A lista é arquivada (soft delete) — some das views, preserva o histórico.
-            cur.execute("UPDATE task_projects SET archived_at = now() WHERE id = %s", (project_id,))
+            # A lista é EXCLUÍDA (soft delete): grava deleted_at (spec 075) e também archived_at — assim
+            # toda query que já filtra ``archived_at IS NULL`` continua a excluí-la, e a tela de
+            # Arquivadas (que filtra ``deleted_at IS NULL``) não mistura excluídas com arquivadas.
+            cur.execute(
+                "UPDATE task_projects SET archived_at = now(), deleted_at = now() WHERE id = %s", (project_id,)
+            )
 
     if mode == "delete_tasks":
         _gcal("remove", project_id)   # as tarefas foram para a lixeira → os eventos do Google saem
@@ -555,6 +560,44 @@ def restore_project(project_id: int) -> dict:
     return {"status": "ok", "message": "Lista restaurada."}
 
 
+def list_deleted_projects() -> list[dict]:
+    """Lista as listas EXCLUÍDAS (restauráveis), da mais recente para a mais antiga.
+
+    Returns:
+        ``[{id, name, group_id, color, icon, deleted_at, task_count}]``. As colunas do board foram
+        apagadas na exclusão, então a restauração devolve a lista sem Kanban. **Listagem**.
+    """
+    rows = run_select(
+        """
+        SELECT p.id, p.name, p.group_id, p.color, p.icon, p.deleted_at,
+               (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.deleted_at IS NULL) AS task_count
+          FROM task_projects p
+         WHERE p.deleted_at IS NOT NULL
+         ORDER BY p.deleted_at DESC
+        """
+    )
+    return [{**r, "deleted_at": r["deleted_at"].isoformat()} for r in rows]
+
+
+def restore_deleted_project(project_id: int) -> dict:
+    """Restaura uma lista excluída (limpa ``deleted_at`` e ``archived_at``); volta sem as colunas do board.
+
+    Args:
+        project_id: Id da lista excluída.
+
+    Returns:
+        ``{"status": "ok"}`` ou erro se a lista não estiver excluída.
+    """
+    affected = run_dml(
+        "UPDATE task_projects SET deleted_at = NULL, archived_at = NULL WHERE id = %(id)s AND deleted_at IS NOT NULL",
+        {"id": project_id},
+    )
+    if not affected:
+        return {"status": "error", "message": "Lista excluída não encontrada."}
+    _gcal("push", project_id)
+    return {"status": "ok", "message": "Lista restaurada (sem o board)."}
+
+
 def list_archived_projects() -> list[dict]:
     """Lista as listas arquivadas, com data de arquivamento e contagem de tarefas (FR-004).
 
@@ -571,7 +614,7 @@ def list_archived_projects() -> list[dict]:
                 WHERE t.project_id = p.id AND t.deleted_at IS NULL
             ) AS task_count
         FROM task_projects p
-        WHERE p.archived_at IS NOT NULL
+        WHERE p.archived_at IS NOT NULL AND p.deleted_at IS NULL
         ORDER BY p.archived_at DESC
         """
     )

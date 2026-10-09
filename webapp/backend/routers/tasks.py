@@ -64,7 +64,7 @@ from agents.kaguya.tools_templates import (
     duplicate_task, duplicate_project, create_task_template, create_project_template,
     list_templates, apply_template, delete_template,
 )
-from agents.kaguya.tools_projects import list_projects_due_review
+from agents.kaguya.tools_projects import list_projects_due_review, list_deleted_projects, restore_deleted_project
 from agents.kaguya.tools_stats import get_stats_payload
 # Smart-lists (filtros salvos) e calendário — fatia 013 (P2/P3).
 from agents.kaguya.tools_filters import (
@@ -2234,6 +2234,18 @@ def list_tags_counts_route(user: dict = Depends(require_user)) -> list:
 def merge_tags_route(tag_id: int, body: MergeTagsBody, user: dict = Depends(require_user)) -> dict:
     """Mescla a tag ``tag_id`` na ``target_id`` (a primeira some)."""
     return _check_result(merge_tags(tag_id, body.target_id))
+
+
+@router.get("/projects/deleted")
+def list_deleted_projects_route(user: dict = Depends(require_user)) -> list:
+    """Listas excluídas (restauráveis, sem o board)."""
+    return list_deleted_projects()
+
+
+@router.post("/projects/{project_id}/restore-deleted")
+def restore_deleted_project_route(project_id: int, user: dict = Depends(require_user)) -> dict:
+    """Restaura uma lista excluída."""
+    return _check_result(restore_deleted_project(project_id))
 
 
 @router.get("/projects/due-review")

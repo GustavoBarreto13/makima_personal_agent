@@ -520,3 +520,21 @@ def test_adiar_nao_passa_do_vencimento(inbox_id):
 def test_lista_desconhecida_avisa_em_vez_de_cair_calado_no_inbox(inbox_id):
     r = T.create_task("x", project_name="Lista que não existe")
     assert r["status"] == "ok" and "warning" in r and r["project_id"] == inbox_id
+
+
+def test_excluir_lista_nao_aparece_em_arquivadas_e_restaura(inbox_id):
+    pid = P.create_project("Velha")["id"]
+    assert P.delete_project(pid, "move_to_inbox")["status"] == "ok"
+    assert pid not in [p["id"] for p in P.list_archived_projects()]          # excluída ≠ arquivada
+    assert pid not in [p["id"] for p in P.get_sidebar()["projects"]]
+    assert pid in [p["id"] for p in P.list_deleted_projects()]
+    assert P.restore_deleted_project(pid)["status"] == "ok"
+    assert pid in [p["id"] for p in P.get_sidebar()["projects"]]
+    assert P.restore_deleted_project(pid)["status"] == "error"               # já está ativa
+
+
+def test_arquivar_continua_separado_de_excluir(inbox_id):
+    pid = P.create_project("Parada")["id"]
+    P.archive_project(pid)
+    assert pid in [p["id"] for p in P.list_archived_projects()]
+    assert pid not in [p["id"] for p in P.list_deleted_projects()]
