@@ -9,33 +9,33 @@ import type { Route, ViewId } from './routes'
 
 export type SpaceChoice = 'all' | 'work' | 'personal'
 
-interface Fixed { id: string; label: string; icon: IconName; key?: string }
+export interface Fixed { id: string; label: string; icon: IconName; key?: string }
 
-const PLAN: Fixed[] = [
+export const PLAN: Fixed[] = [
   { id: 'today', label: 'Meu Dia', icon: 'sun', key: 'h' },
   { id: 'calendar', label: 'Calendário', icon: 'calendar', key: 'c' },
   { id: 'eisenhower', label: 'Eisenhower', icon: 'grid', key: 'e' },
 ]
-const DATE_VIEWS: Fixed[] = [
+export const DATE_VIEWS: Fixed[] = [
   { id: 'date:inbox', label: 'Inbox', icon: 'inbox', key: 'i' },
   { id: 'date:all', label: 'Todas', icon: 'list', key: 'a' },
   { id: 'date:tomorrow', label: 'Amanhã', icon: 'sunrise' },
   { id: 'date:next7', label: 'Próximos 7 dias', icon: 'days', key: '7' },
 ]
-const GTD: Fixed[] = [
+export const GTD: Fixed[] = [
   { id: 'gtd:next-actions', label: 'Próximas ações', icon: 'check' },
   { id: 'gtd:waiting', label: 'Aguardando', icon: 'waiting' },
   { id: 'gtd:someday', label: 'Algum dia', icon: 'watchlist' },
   { id: 'gtd:quick', label: 'Rápidas (5 min)', icon: 'timer' },
   { id: 'gtd:energy', label: 'Alta energia', icon: 'energy' },
 ]
-const LIFE: Fixed[] = [
+export const LIFE: Fixed[] = [
   { id: 'habits', label: 'Hábitos', icon: 'habit', key: 'b' },
   { id: 'goals', label: 'Metas', icon: 'goal', key: 'm' },
   { id: 'experiments', label: 'Experimentos', icon: 'experiment' },
   { id: 'focus', label: 'Foco', icon: 'focus', key: 'f' },
 ]
-const RECORD: Fixed[] = [
+export const RECORD: Fixed[] = [
   { id: 'logbook', label: 'Concluídas', icon: 'logbook', key: 'o' },
   { id: 'stats', label: 'Estatísticas', icon: 'stats', key: 's' },
   { id: 'organize', label: 'Organizar', icon: 'folder', key: 'g' },
@@ -64,7 +64,7 @@ export interface NavInput {
   pinned: string[]
 }
 
-const inSpace = (space: SpaceChoice, ctx: string | undefined): boolean => space === 'all' || (ctx ?? 'personal') === space
+export const inSpace = (space: SpaceChoice, ctx: string | undefined): boolean => space === 'all' || (ctx ?? 'personal') === space
 
 export function buildNav({ projects, groups, filters, counts, space, hidden, pinned }: NavInput): NavGroup[] {
   const hide = new Set(hidden)
@@ -95,7 +95,7 @@ export function buildNav({ projects, groups, filters, counts, space, hidden, pin
     ...groups.flatMap((g): NavGroup[] => {
       const lists = byGroup.get(g.id)
       if (!lists?.length) return []
-      return [{ label: g.name, items: [{ id: `group:${g.id}`, label: 'Visão do grupo', icon: 'kanban' }, ...lists.map(listEntry)] }]
+      return [{ label: g.name, items: [{ id: `group:${g.id}`, label: g.name, icon: 'kanban' }, ...lists.map(listEntry)] }]
     }),
     ...(loose.length ? [{ label: 'Listas', items: loose.map(listEntry) }] : []),
     { label: 'Vida', items: fixed(LIFE) },

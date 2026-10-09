@@ -17,6 +17,7 @@ import { NewTaskModal } from './components/QuickAddBar'
 import { ScheduleSettings } from './components/ScheduleSettings'
 import { ScreenBoundary } from './components/ScreenBoundary'
 import { SearchModal } from './components/SearchModal'
+import { SideNav } from './components/SideNav'
 import { TaskDetailPanel } from './components/TaskDetailPanel'
 import { DEFAULT_PREFS, KaguyaContext, type KaguyaCtx, type KaguyaPrefs, type ManageActions, type NewTaskDefaults } from './context'
 import * as act from './lib/actions'
@@ -194,6 +195,7 @@ export function KaguyaNextShell() {
       <AppShell
         agent={{ id: 'kaguya', name: AGENT.name, subtitle: 'Tarefas · Agenda', portrait: AGENT.portrait }}
         nav={nav}
+        navSlot={<SideNav counts={countsState.status === 'ok' ? countsState.data : null} onNavigate={(id) => goto(navIdToRoute(id))} />}
         active={routeToNavId(route)}
         onNavigate={(id) => goto(navIdToRoute(id))}
         mobileTabs={prefs.mobileTabs.length ? prefs.mobileTabs : DEFAULT_MOBILE_TABS}
