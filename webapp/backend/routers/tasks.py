@@ -65,6 +65,7 @@ from agents.kaguya.tools_templates import (
     list_templates, apply_template, delete_template,
 )
 from agents.kaguya.tools_projects import list_projects_due_review
+from agents.kaguya.tools_stats import get_stats_payload
 # Smart-lists (filtros salvos) e calendário — fatia 013 (P2/P3).
 from agents.kaguya.tools_filters import (
     list_filters, create_filter, update_filter, delete_filter,
@@ -2204,6 +2205,17 @@ def apply_template_route(template_id: int, body: ApplyTemplateBody, user: dict =
 def delete_template_route(template_id: int, user: dict = Depends(require_user)) -> dict:
     """Exclui um template."""
     return _check_result(delete_template(template_id))
+
+
+# ── Estatísticas (StatsPayload do Design System) ──────────────────────────────
+
+@router.get("/stats")
+def stats_route(
+    year: Optional[int] = None, month: Optional[int] = Query(None, ge=1, le=12),
+    space: Optional[str] = None, user: dict = Depends(require_user),
+) -> dict:
+    """Estatísticas de tarefas no contrato ``StatsPayload`` + bloco ``planning`` (onde o plano falha)."""
+    return get_stats_payload(year, month, space)
 
 
 # ── Tags (gerenciador) e revisão de listas ────────────────────────────────────
