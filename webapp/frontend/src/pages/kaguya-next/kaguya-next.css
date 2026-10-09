@@ -432,3 +432,39 @@
 .kn-row.kn-drop-after { box-shadow: inset 0 -2px 0 var(--ds-accent); }
 .kn-row.kn-drop-child { background: var(--ds-accent-tint); outline: 2px dashed var(--ds-accent); outline-offset: -2px; }
 .kn-drag-ghost { max-width: 360px; padding: 8px 14px; overflow: hidden; border: 1px solid var(--ds-accent); border-radius: var(--ds-r-md); background: var(--ds-card); box-shadow: var(--ds-shadow-lg); color: var(--ds-ink-1); text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Meu Dia: duas colunas (ritual + linha do dia) ── */
+.kn-day { display: grid; grid-template-columns: minmax(0, 1fr) 340px; align-items: start; gap: var(--ds-space-5); }
+.kn-day-main { display: flex; flex-direction: column; gap: var(--ds-space-5); min-width: 0; }
+.kn-day-side { position: sticky; top: var(--ds-space-4); }
+@media (max-width: 1100px) { .kn-day { grid-template-columns: 1fr; } .kn-day-side { position: static; } }
+.kn-focussum { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); background: var(--ds-card); }
+.kn-focussum p { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--ds-ink-2); font-size: var(--ds-text-sm); }
+.kn-focussum-week { display: flex; align-items: center; gap: 2px; }
+.kn-focussum-empty { display: inline-block; width: 8px; height: 8px; margin: 8px; border-radius: 50%; background: var(--ds-line); }
+
+.kn-tl { padding: var(--ds-space-4); border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); background: var(--ds-card); }
+.kn-tl-head { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-2); margin-bottom: var(--ds-space-3); }
+.kn-tl-head .kn-h3 { margin: 0; }
+.kn-tl-cals { position: relative; }
+.kn-tl-dots { display: inline-flex; gap: 2px; }
+.kn-tl-dots i, .kn-tl-calrow i { width: 8px; height: 8px; border-radius: 50%; background: var(--kn-cc); }
+.kn-tl-pop { position: absolute; inset-inline-end: 0; top: calc(100% + 6px); z-index: var(--ds-z-popover); display: flex; flex-direction: column; gap: 4px; min-width: 210px; padding: var(--ds-space-3); border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); background: var(--ds-card); box-shadow: var(--ds-shadow-lg); }
+.kn-tl-calrow { display: flex; align-items: center; gap: var(--ds-space-2); color: var(--ds-ink-2); font-size: var(--ds-text-sm); cursor: pointer; }
+.kn-tl-allday { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: var(--ds-space-2); }
+.kn-tl-chip { padding: 2px 8px; border: 1px solid var(--kn-cc); border-radius: var(--ds-r-pill); color: var(--ds-ink-2); font-size: var(--ds-text-xs); }
+.kn-tl-body { position: relative; }
+.kn-tl-hour { position: absolute; inset-inline: 0; border-top: 1px solid var(--ds-line); }
+.kn-tl-hour.kn-over { background: var(--ds-accent-tint); }
+.kn-tl-hour .ds-mono { position: absolute; inset-inline-start: 0; top: 2px; color: var(--ds-ink-4); font-size: var(--ds-text-xs); }
+.kn-tl-slot { position: absolute; z-index: 1; display: flex; flex-direction: column; gap: 1px; box-sizing: border-box; padding: 2px 6px; overflow: hidden; border-radius: var(--ds-r-xs); font-size: var(--ds-text-xs); inset-inline-end: 4px; inset-inline-start: 40px; }
+.kn-tl-slot b { overflow: hidden; color: var(--ds-ink-1); text-overflow: ellipsis; white-space: nowrap; }
+.kn-tl-slot .ds-mono { color: var(--ds-ink-3); }
+.kn-tl-event { inset-inline-end: 50%; margin-inline-end: 2px; border-inline-start: 3px solid var(--kn-cc); background: color-mix(in oklab, var(--kn-cc) 16%, var(--ds-card)); }
+.kn-tl-event a { overflow: hidden; color: var(--ds-accent-deep); text-overflow: ellipsis; white-space: nowrap; }
+.kn-tl-task { border-inline-start: 3px solid var(--ds-accent); background: var(--ds-accent-tint); }
+.kn-tl-task.kn-split { inset-inline-start: 50%; margin-inline-start: 2px; }
+.kn-tl-task .kn-main { padding: 0; }
+.kn-tl-task .ds-iconbtn { position: absolute; inset-inline-end: 2px; top: 2px; }
+.kn-tl-resize { position: absolute; inset-inline: 0; bottom: 0; height: 6px; cursor: ns-resize; touch-action: none; }
+.kn-tl-empty { position: absolute; inset-inline: 40px; top: 40%; margin: 0; text-align: center; pointer-events: none; }
