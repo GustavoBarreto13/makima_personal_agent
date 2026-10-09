@@ -214,3 +214,19 @@
 .kn-fb { display: flex; flex-direction: column; gap: var(--ds-space-3); margin-top: var(--ds-space-3); }
 .kn-fb-row { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(90px, 1fr) minmax(110px, 1.4fr) auto; align-items: center; gap: var(--ds-space-2); }
 @media (max-width: 640px) { .kn-fb-row { grid-template-columns: 1fr 1fr; } .kn-kcol { min-width: 82vw; } }
+
+/* ── Eisenhower ── */
+.kn-quads { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ds-space-4); }
+@media (max-width: 760px) { .kn-quads { grid-template-columns: 1fr; } }
+.kn-quad { display: flex; flex-direction: column; gap: var(--ds-space-2); min-height: 180px; padding: var(--ds-space-4); border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); background: var(--ds-card); }
+.kn-quad.kn-over { border-color: var(--ds-accent); background: var(--ds-accent-tint); }
+.kn-quad-h { display: flex; align-items: center; gap: var(--ds-space-2); }
+.kn-quad-h b { flex: 1; color: var(--ds-ink-1); font-family: var(--ds-font-display); }
+.kn-quad-mark { width: 10px; height: 10px; border-radius: var(--ds-r-xs); }
+.kn-quad-n { color: var(--ds-ink-3); }
+.kn-quad p { margin: 0; }
+.kn-quad-b { display: flex; flex-direction: column; gap: var(--ds-space-2); }
+.kn-quad-empty { padding: var(--ds-space-3) 0; text-align: center; }
+.kn-ecard { align-items: center; cursor: grab; }
+.kn-ebody { display: flex; flex-direction: column; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.kn-ebody:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; border-radius: var(--ds-r-xs); }

@@ -27,6 +27,7 @@ import { DateScreen, FilterScreen, GroupListScreen, GtdScreen, ListScreen } from
 import { Pending } from './screens/Pending'
 import { Archived, Logbook, Tags, Templates, Trash } from './screens/Records'
 import { Stats } from './screens/Stats'
+import { Eisenhower } from './screens/Eisenhower'
 import { GroupBoardScreen, KanbanScreen } from './screens/Kanban'
 import { Today } from './screens/Today'
 import type { Filter, Group, Project, Sidebar, Task } from './types'
@@ -48,7 +49,7 @@ const SPACE_OPTIONS: { value: SpaceChoice; label: string; icon: 'apps' | 'work' 
 
 /** Telas ainda não migradas (viram `Pending` até a fase de cada uma). */
 const PENDING: Record<string, string> = {
-  calendar: 'O calendário', eisenhower: 'A matriz de Eisenhower',
+  calendar: 'O calendário',
   habits: 'Hábitos', goals: 'Metas', experiments: 'Experimentos', focus: 'Foco',
 }
 
@@ -129,6 +130,7 @@ export function KaguyaNextShell() {
       case 'kanban': return route.id !== undefined ? <KanbanScreen projectId={route.id} /> : <Today />
       case 'group-list': return route.id !== undefined ? <GroupListScreen id={route.id} /> : <Today />
       case 'group': return route.id !== undefined ? <GroupBoardScreen groupId={route.id} /> : <Today />
+      case 'eisenhower': return <Eisenhower />
       case 'stats': return <Stats />
       case 'logbook': return <Logbook />
       case 'trash': return <Trash />
