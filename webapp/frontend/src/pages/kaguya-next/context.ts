@@ -36,6 +36,14 @@ export interface NewTaskTarget { projectId: number; columnId: number; listName: 
 /** Valores iniciais do formulário “Nova tarefa”. `columnId` cria direto numa coluna; `targets` restringe a lista. */
 export interface NewTaskDefaults { projectId?: number; due?: string; title?: string; columnId?: number; targets?: NewTaskTarget[]; time?: string; duration?: number }
 
+/** Abre os formulários de organização (lista, grupo, smart-list, locais). Sem argumento = criar. */
+export interface ManageActions {
+  project: (project?: Project, groupId?: number) => void
+  group: (group?: Group) => void
+  filter: (filter?: Filter) => void
+  contexts: () => void
+}
+
 export interface KaguyaCtx {
   /** Sobe a cada gravação: telas refazem suas consultas quando muda. */
   rev: number
@@ -59,6 +67,7 @@ export interface KaguyaCtx {
   inboxId: number | undefined
   /** Abre o formulário de nova tarefa (opcionalmente já preenchido). */
   newTask: (defaults?: NewTaskDefaults) => void
+  manage: ManageActions
   /** Abre o formulário de foco (opcionalmente travado numa tarefa ou num hábito). */
   startFocus: (target: { task?: Task; habitId?: number }) => void
   /** Conclui/reabre com aviso e "Desfazer". Confirma antes quando há subtarefas abertas. */

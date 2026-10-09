@@ -4,7 +4,7 @@
 
 export type ViewId =
   | 'today' | 'list' | 'kanban' | 'group' | 'group-list' | 'calendar' | 'date' | 'gtd' | 'filter' | 'eisenhower'
-  | 'habits' | 'goals' | 'experiments' | 'focus' | 'logbook' | 'stats' | 'trash' | 'archived' | 'templates' | 'tags'
+  | 'habits' | 'goals' | 'experiments' | 'focus' | 'logbook' | 'stats' | 'trash' | 'archived' | 'templates' | 'tags' | 'organize'
 
 /** Chaves das visões de data (Todas, Amanhã…) — o `date` da rota. */
 export const DATE_KEYS = ['all', 'today', 'tomorrow', 'next7', 'inbox'] as const
@@ -22,7 +22,7 @@ export interface Route {
 /** Telas sem parâmetro: id da rota → trecho do hash. */
 const PLAIN: Partial<Record<ViewId, string>> = {
   today: 'hoje', calendar: 'calendario', eisenhower: 'eisenhower', habits: 'habitos', logbook: 'concluidas',
-  focus: 'foco', stats: 'estatisticas', trash: 'lixeira', archived: 'arquivadas', templates: 'templates', tags: 'etiquetas',
+  focus: 'foco', stats: 'estatisticas', trash: 'lixeira', archived: 'arquivadas', templates: 'templates', tags: 'etiquetas', organize: 'organizar',
 }
 /** Telas com um id numérico opcional (lista, quadro, grupo, filtro, meta, experimento). */
 const WITH_ID: Partial<Record<ViewId, string>> = {

@@ -18,7 +18,7 @@ import { ScheduleSettings } from './components/ScheduleSettings'
 import { ScreenBoundary } from './components/ScreenBoundary'
 import { SearchModal } from './components/SearchModal'
 import { TaskDetailPanel } from './components/TaskDetailPanel'
-import { DEFAULT_PREFS, KaguyaContext, type KaguyaCtx, type KaguyaPrefs, type NewTaskDefaults } from './context'
+import { DEFAULT_PREFS, KaguyaContext, type KaguyaCtx, type KaguyaPrefs, type ManageActions, type NewTaskDefaults } from './context'
 import * as act from './lib/actions'
 import { DEFAULT_MOBILE_TABS, FIXED_NAV, buildNav, navIdToRoute, routeToNavId, titleFor, type SpaceChoice } from './lib/nav'
 import { hashFor, routeFromHash, withTask, type Route } from './lib/routes'
@@ -27,12 +27,14 @@ import { DateScreen, FilterScreen, GroupListScreen, GtdScreen, ListScreen } from
 import { Archived, Logbook, Tags, Templates, Trash } from './screens/Records'
 import { Stats } from './screens/Stats'
 import { FocusCancelModal, FocusStartModal, FocusWidget } from './components/FocusSession'
+import { ContextsModal, GroupModal, ProjectModal, SmartListModal } from './components/OrganizeModals'
 import { Calendar } from './screens/Calendar'
 import { Eisenhower } from './screens/Eisenhower'
 import { Focus } from './screens/Focus'
 import { Experiments, ExperimentDetail } from './screens/Experiments'
 import { GoalDetail, Goals } from './screens/Goals'
 import { Habits } from './screens/Habits'
+import { Organize } from './screens/Organize'
 import { GroupBoardScreen, KanbanScreen } from './screens/Kanban'
 import { Today } from './screens/Today'
 import type { Filter, FocusSession, Group, Project, Sidebar, Task } from './types'
@@ -47,7 +49,9 @@ const NO_FILTERS: Filter[] = []
 const NO_TASKS: Task[] = []
 
 type Dialog =
-  | { kind: 'new'; defaults?: NewTaskDefaults } | { kind: 'search'; q: string } | { kind: 'focus'; task?: Task; habitId?: number } | { kind: 'focus-cancel' } | null
+  | { kind: 'new'; defaults?: NewTaskDefaults } | { kind: 'search'; q: string }
+  | { kind: 'project'; project?: Project; groupId?: number } | { kind: 'group'; group?: Group } | { kind: 'filter'; filter?: Filter } | { kind: 'contexts' }
+  | { kind: 'focus'; task?: Task; habitId?: number } | { kind: 'focus-cancel' } | null
 
 const SPACE_OPTIONS: { value: SpaceChoice; label: string; icon: 'apps' | 'work' | 'personal' }[] = [
   { value: 'all', label: 'Tudo', icon: 'apps' }, { value: 'work', label: 'Trabalho', icon: 'work' }, { value: 'personal', label: 'Pessoal', icon: 'personal' },
@@ -105,6 +109,12 @@ export function KaguyaNextShell() {
     const id = setInterval(() => { void loadActiveFocus() }, 30000)
     return () => clearInterval(id)
   }, [activeFocus, loadActiveFocus])
+  const manage = useMemo<ManageActions>(() => ({
+    project: (project, groupId) => setDialog({ kind: 'project', project, groupId }),
+    group: (group) => setDialog({ kind: 'group', group }),
+    filter: (filter) => setDialog({ kind: 'filter', filter }),
+    contexts: () => setDialog({ kind: 'contexts' }),
+  }), [])
   const startFocus = useCallback((target: { task?: Task; habitId?: number }) => setDialog({ kind: 'focus', ...target }), [])
   const finishFocus = async () => {
     if (!activeFocus) return
@@ -121,8 +131,8 @@ export function KaguyaNextShell() {
 
   const ctx = useMemo<KaguyaCtx>(() => ({
     rev, reload, today, route, goto, openTask, prefs, setPrefs, space, projects, groups, filters, sidebarState, retrySidebar,
-    projectNames, inboxId, newTask, startFocus, toggleComplete,
-  }), [rev, reload, today, route, goto, openTask, prefs, setPrefs, space, projects, groups, filters, sidebarState, retrySidebar, projectNames, inboxId, newTask, startFocus, toggleComplete])
+    projectNames, inboxId, newTask, manage, startFocus, toggleComplete,
+  }), [rev, reload, today, route, goto, openTask, prefs, setPrefs, space, projects, groups, filters, sidebarState, retrySidebar, projectNames, inboxId, newTask, manage, startFocus, toggleComplete])
 
   // Paleta Ctrl+K: busca tarefas abertas no índice local e ABRE a escolhida (Enter nunca cria — o bug do shell antigo).
   const provider = useMemo<CommandProvider>(() => ({
@@ -157,6 +167,7 @@ export function KaguyaNextShell() {
       case 'calendar': return <Calendar />
       case 'focus': return <Focus />
       case 'habits': return <Habits />
+      case 'organize': return <Organize />
       case 'goals': return route.id !== undefined ? <GoalDetail id={route.id} /> : <Goals />
       case 'experiments': return route.id !== undefined ? <ExperimentDetail id={route.id} /> : <Experiments />
       case 'stats': return <Stats />
@@ -200,6 +211,10 @@ export function KaguyaNextShell() {
         }
         commands={[
           { id: 'kaguya.new', label: 'Nova tarefa', icon: 'add', keywords: 'criar adicionar tarefa', run: () => newTask() },
+          { id: 'kaguya.list.new', label: 'Nova lista', icon: 'folder', keywords: 'criar lista projeto', run: () => manage.project() },
+          { id: 'kaguya.group.new', label: 'Novo grupo', icon: 'folder-open', keywords: 'criar grupo pasta', run: () => manage.group() },
+          { id: 'kaguya.filter.new', label: 'Nova smart-list', icon: 'filter', keywords: 'criar filtro salvo', run: () => manage.filter() },
+          { id: 'kaguya.contexts', label: 'Locais (Onde @)', icon: 'place', keywords: 'contextos gtd casa', run: () => manage.contexts() },
           { id: 'kaguya.focus', label: 'Iniciar foco', icon: 'timer', keywords: 'pomodoro concentrar', run: () => startFocus({}) },
           { id: 'kaguya.today', label: 'Ir para o Meu Dia', icon: 'sun', run: () => goto({ view: 'today' }) },
           { id: 'kaguya.search', label: 'Buscar tarefas (inclui concluídas)', icon: 'search', keywords: 'procurar', run: () => setDialog({ kind: 'search', q: '' }) },
@@ -251,6 +266,10 @@ export function KaguyaNextShell() {
           )}
         </div>
         {dialog?.kind === 'new' && <NewTaskModal defaults={dialog.defaults} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'project' && <ProjectModal project={dialog.project} groupId={dialog.groupId} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'group' && <GroupModal group={dialog.group} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'filter' && <SmartListModal filter={dialog.filter} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'contexts' && <ContextsModal onClose={() => setDialog(null)} />}
         {dialog?.kind === 'focus' && <FocusStartModal task={dialog.task} habitId={dialog.habitId} onClose={() => setDialog(null)} onStarted={() => { void loadActiveFocus() }} />}
         {dialog?.kind === 'focus-cancel' && activeFocus && (
           <FocusCancelModal

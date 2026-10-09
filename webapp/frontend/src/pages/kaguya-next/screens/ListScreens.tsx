@@ -31,7 +31,12 @@ export function ListScreen({ id }: { id: number }) {
       completed={done}
       emptyTitle={project?.is_inbox ? 'Inbox zerada' : 'Lista vazia'}
       emptyHint={project?.is_inbox ? 'Capture qualquer coisa na barra acima; organize depois, com calma.' : 'Adicione a primeira tarefa desta lista na barra acima.'}
-      extra={<Button icon="kanban" onClick={() => k.goto({ view: 'kanban', id })}>{project?.has_board ? 'Quadro' : 'Criar quadro'}</Button>}
+      extra={(
+        <>
+          <Button icon="kanban" onClick={() => k.goto({ view: 'kanban', id })}>{project?.has_board ? 'Quadro' : 'Criar quadro'}</Button>
+          {project && <Button icon="edit" onClick={() => k.manage.project(project)}>Editar lista</Button>}
+        </>
+      )}
     />
   )
 }
@@ -52,7 +57,12 @@ export function GroupListScreen({ id }: { id: number }) {
       addProjectId={lists[0]?.id}
       emptyTitle={lists.length ? 'Grupo sem tarefas' : 'Grupo vazio'}
       emptyHint={lists.length ? 'Adicione tarefas na barra acima; elas vão para a primeira lista do grupo (use @lista para escolher outra).' : 'Adicione listas a este grupo pela barra lateral para ver as tarefas aqui.'}
-      extra={<Button icon="kanban" onClick={() => k.goto({ view: 'group', id })}>Quadro</Button>}
+      extra={(
+        <>
+          <Button icon="kanban" onClick={() => k.goto({ view: 'group', id })}>Quadro</Button>
+          {k.groups.find((g) => g.id === id) && <Button icon="edit" onClick={() => k.manage.group(k.groups.find((g) => g.id === id))}>Editar grupo</Button>}
+        </>
+      )}
     />
   )
 }
@@ -120,6 +130,7 @@ export function FilterScreen({ id }: { id: number }) {
       load={load}
       deps={[k.space]}
       showProject
+      extra={filter ? <Button icon="edit" onClick={() => k.manage.filter(filter)}>Editar smart-list</Button> : undefined}
       emptyTitle={filter ? `“${filter.name}” está vazia` : 'Smart-list não encontrada'}
       emptyHint="Nenhuma tarefa aberta atende às regras desta smart-list agora."
       banner={!filter ? <p className="ds-hint"><Icon name="warning" size={14} /> Esta smart-list não existe mais.</p> : undefined}

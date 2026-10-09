@@ -38,6 +38,7 @@ const LIFE: Fixed[] = [
 const RECORD: Fixed[] = [
   { id: 'logbook', label: 'Concluídas', icon: 'logbook', key: 'o' },
   { id: 'stats', label: 'Estatísticas', icon: 'stats', key: 's' },
+  { id: 'organize', label: 'Organizar', icon: 'folder', key: 'g' },
   { id: 'tags', label: 'Etiquetas', icon: 'tag' },
   { id: 'templates', label: 'Templates', icon: 'template' },
   { id: 'archived', label: 'Arquivadas', icon: 'archive' },
