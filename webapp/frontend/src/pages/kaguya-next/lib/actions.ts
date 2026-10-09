@@ -105,3 +105,11 @@ export async function duplicate(deps: ActionDeps, task: Task): Promise<number | 
     return undefined
   }
 }
+
+/** Cria a tarefa e grava a estimativa em seguida (a API de criação não recebe `duration_min`). Devolve o id. */
+export async function createTask(body: Parameters<typeof kaguyaApi.createTask>[0] & { duration_min?: number }): Promise<number> {
+  const { duration_min, ...payload } = body
+  const r = await kaguyaApi.createTask(payload)
+  if (r.id && duration_min) await kaguyaApi.updateTask(r.id, { duration_min })
+  return r.id as number
+}

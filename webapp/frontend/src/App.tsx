@@ -10,6 +10,7 @@ import Login         from './pages/Login'               // Tela de login com bot
 import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell de livros (Frieren, no Design System desde a spec 073)
 import { VioletShell } from './pages/violet/VioletShell'     // Shell do diário Violet
 import { NamiShell }   from './pages/nami/NamiShell'         // Shell completo da seção de finanças (redesign)
+import { KaguyaNextShell } from './pages/kaguya-next/KaguyaNextShell'  // Kaguya no Design System (spec 075) — convive com /tasks até a troca
 import { KaguyaShell } from './pages/kaguya/KaguyaShell'      // Shell de tarefas (sistema próprio, spec 011)
 import { AkaneShell }  from './pages/akane/AkaneShell'         // Shell de filmes (cinemateca pessoal, spec 015; no Design System desde a spec 072)
 import { MarinShell }  from './pages/marin/MarinShell'         // Shell de animes (catálogo Marin, spec 021)
@@ -96,6 +97,7 @@ function App() {
         {/* Kaguya · Tarefas — shell próprio com sidebar do domínio e navegação por estado.
             Antes do catch-all /* para o shell assumir as sub-rotas de /tasks. */}
         <Route path="/tasks/*" element={<KaguyaShell />} />
+        <Route path="/tasks-next/*" element={<KaguyaNextShell />} />
 
         {/* Akane · Filmes — cinemateca pessoal estilo Letterboxd (spec 015).
             Antes do catch-all /* para o shell assumir as sub-rotas de /movies. */}

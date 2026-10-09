@@ -1,0 +1,126 @@
+/* Complementos da Kaguya ao Design System. Só tokens --ds-*: sem cor, raio ou fonte literal.
+ * Todas as classes começam com `kn-` para não vazar para os outros shells. */
+
+/* ── Layout: coluna principal + painel de detalhe (3 painéis no desktop, folha cheia no celular) ── */
+.kn-split { display: flex; align-items: flex-start; gap: var(--ds-space-4); min-height: 100%; }
+.kn-main-col { flex: 1 1 0; min-width: 0; }
+.kn-panel {
+  flex: 0 0 min(440px, 38%);
+  position: sticky; top: var(--ds-space-4);
+  max-height: calc(100vh - var(--ds-space-8));
+  display: flex; flex-direction: column;
+  border: 1px solid var(--ds-glass-border, var(--ds-line)); border-radius: var(--ds-r-lg);
+  background: var(--ds-card); box-shadow: var(--ds-shadow-md); overflow: hidden;
+}
+@media (max-width: 900px) {
+  .kn-panel { position: fixed; inset: 0; z-index: var(--ds-z-drawer); flex: none; max-height: none; border-radius: 0; }
+}
+.kn-panel-h { display: flex; align-items: center; gap: var(--ds-space-2); padding: var(--ds-space-3); border-bottom: 1px solid var(--ds-line); }
+.kn-panel-tabs { display: flex; gap: 2px; margin-inline-end: auto; }
+.kn-panel-tabs button { padding: 4px 10px; border: 0; border-radius: var(--ds-r-pill); background: none; color: var(--ds-ink-3); font: inherit; font-size: var(--ds-text-sm); cursor: pointer; }
+.kn-panel-tabs button.kn-on { background: var(--ds-accent-tint); color: var(--ds-accent-deep); font-weight: 600; }
+.kn-panel-b { display: flex; flex-direction: column; gap: var(--ds-space-4); padding: var(--ds-space-4); overflow-y: auto; }
+.kn-title-in { font-family: var(--ds-font-title, var(--ds-font-display)); font-size: var(--ds-text-xl); font-weight: 600; }
+.kn-props { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--ds-space-3); }
+.kn-quick { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-2); }
+.kn-quick-i { display: inline-flex; align-items: center; gap: var(--ds-space-1); }
+.kn-h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 var(--ds-space-2); color: var(--ds-ink-3); font-family: var(--ds-font-mono); font-size: var(--ds-text-xs); font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; }
+.kn-foot { margin: 0; color: var(--ds-ink-4); font-size: var(--ds-text-xs); }
+.kn-mention { padding: 0 6px; border: 0; border-radius: var(--ds-r-pill); background: var(--ds-accent-tint); color: var(--ds-accent-deep); font: inherit; text-decoration: none; cursor: pointer; }
+.kn-history { margin: 0; padding: var(--ds-space-4); list-style: none; }
+.kn-history li { display: flex; flex-direction: column; gap: 2px; padding: var(--ds-space-2) 0; border-bottom: 1px solid var(--ds-line); }
+
+/* ── Página/colunas ── */
+.kn-page { display: flex; flex-direction: column; gap: var(--ds-space-4); }
+.kn-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--ds-space-5); }
+.kn-chips { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); }
+.kn-add { padding: var(--ds-space-3); border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); background: var(--ds-card); }
+
+/* ── Lista de tarefas (estilo TickTick) ── */
+.kn-list { display: flex; flex-direction: column; gap: var(--ds-space-3); outline: none; }
+.kn-list:focus-visible { box-shadow: 0 0 0 2px var(--ds-accent-tint-2); border-radius: var(--ds-r-md); }
+.kn-section { display: flex; flex-direction: column; }
+.kn-sec-h { display: flex; align-items: center; gap: 6px; padding: var(--ds-space-2) var(--ds-space-3); border: 0; background: none; color: var(--ds-ink-2); font: inherit; font-size: var(--ds-text-sm); font-weight: 600; text-align: left; cursor: pointer; }
+.kn-count { margin-inline-start: 4px; color: var(--ds-ink-4); font-family: var(--ds-font-mono); font-size: var(--ds-text-xs); font-weight: 400; }
+.kn-rows { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+
+.kn-row {
+  position: relative; display: flex; align-items: center; gap: var(--ds-space-2);
+  padding-block: 6px; padding-inline-end: var(--ds-space-3);
+  border-bottom: 1px solid var(--ds-line); border-radius: var(--ds-r-sm);
+  transition: background var(--ds-dur-1) var(--ds-ease);
+}
+.kn-row:hover { background: var(--ds-card-2); }
+.kn-row.kn-sel { background: var(--ds-accent-tint); }
+.kn-row.kn-active { background: var(--ds-accent-tint); box-shadow: inset 3px 0 0 var(--ds-accent); }
+.kn-row.kn-focus { outline: 2px solid var(--ds-accent); outline-offset: -2px; }
+.kn-row.kn-done .kn-title { color: var(--ds-ink-4); text-decoration: line-through; }
+
+.kn-twist, .kn-twist-gap { flex: none; width: 20px; height: 20px; }
+.kn-twist { display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: var(--ds-r-xs); background: none; color: var(--ds-ink-3); cursor: pointer; }
+.kn-twist:hover { background: var(--ds-mist); }
+
+/* O checkbox leva a cor da prioridade (alta = vermelho, média = âmbar, baixa = acento). */
+.kn-check {
+  --kn-pc: var(--ds-ink-4);
+  flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0;
+  border: 2px solid var(--kn-pc); border-radius: var(--ds-r-pill); background: none; color: var(--ds-on-accent); cursor: pointer;
+  transition: background var(--ds-dur-1) var(--ds-ease), transform var(--ds-dur-1) var(--ds-ease);
+}
+.kn-check.kn-p1 { --kn-pc: var(--ds-accent); }
+.kn-check.kn-p2 { --kn-pc: var(--ds-warn); }
+.kn-check.kn-p3 { --kn-pc: var(--ds-danger); }
+.kn-check:hover { background: color-mix(in oklab, var(--kn-pc) 18%, transparent); }
+.kn-check:active { transform: scale(0.9); }
+.kn-check.kn-checked { background: var(--kn-pc); }
+.kn-check.kn-big { width: 26px; height: 26px; }
+.kn-check:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+
+.kn-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 2px 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.kn-main:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; border-radius: var(--ds-r-xs); }
+.kn-title { overflow: hidden; color: var(--ds-ink-1); font-size: var(--ds-text-md); text-overflow: ellipsis; white-space: nowrap; }
+.kn-snippet { overflow: hidden; color: var(--ds-ink-4); font-size: var(--ds-text-xs); text-overflow: ellipsis; white-space: nowrap; }
+
+.kn-signals { flex: none; display: inline-flex; align-items: center; gap: var(--ds-space-2); color: var(--ds-ink-3); font-size: var(--ds-text-xs); }
+.kn-sig { display: inline-flex; align-items: center; gap: 3px; }
+.kn-sig.kn-warn { color: var(--ds-danger); }
+.kn-sig.kn-accent { color: var(--ds-accent-deep); }
+.kn-tag { padding: 1px 7px; border-radius: var(--ds-r-pill); background: var(--ds-mist); color: var(--ds-ink-3); }
+.kn-proj { color: var(--ds-ink-4); }
+.kn-due { padding: 1px 8px; border-radius: var(--ds-r-pill); font-weight: 500; }
+.kn-due-overdue { background: var(--ds-danger-tint); color: var(--ds-danger); }
+.kn-due-today { background: var(--ds-success-tint); color: var(--ds-success); }
+.kn-due-soon { background: var(--ds-warn-tint); color: var(--ds-warn); }
+.kn-due-later { color: var(--ds-ink-3); }
+.kn-trail { display: inline-flex; gap: var(--ds-space-1); }
+
+.kn-menu { position: relative; display: inline-flex; }
+.kn-more { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--ds-r-sm); background: none; color: var(--ds-ink-3); opacity: 0; cursor: pointer; }
+.kn-row:hover .kn-more, .kn-row:focus-within .kn-more, .kn-more[aria-expanded="true"] { opacity: 1; }
+.kn-more:hover { background: var(--ds-mist); }
+@media (hover: none) { .kn-more { opacity: 1; } }
+
+/* ── Barra de ação em massa ── */
+.kn-bulk { position: sticky; top: 0; z-index: var(--ds-z-sticky); display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-2); padding: var(--ds-space-2) var(--ds-space-3); border: 1px solid var(--ds-accent-tint-2); border-radius: var(--ds-r-md); background: var(--ds-card); box-shadow: var(--ds-shadow-md); }
+.kn-bulk-n { margin-inline-end: var(--ds-space-2); color: var(--ds-accent-deep); }
+.kn-popform { position: absolute; top: 100%; left: 0; z-index: var(--ds-z-popover); display: flex; gap: var(--ds-space-2); margin-top: 4px; padding: var(--ds-space-2); border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); background: var(--ds-card); box-shadow: var(--ds-shadow-md); }
+
+/* ── Subtarefas, dependências e resultados ── */
+.kn-subs { display: flex; flex-direction: column; gap: var(--ds-space-2); }
+.kn-sublist { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.kn-sublist li { display: flex; align-items: center; gap: var(--ds-space-2); padding: 4px 0; border-bottom: 1px solid var(--ds-line); }
+.kn-sublist li.kn-done .kn-title { color: var(--ds-ink-4); text-decoration: line-through; }
+
+/* ── Meu Dia ── */
+.kn-herometa { display: flex; flex-direction: column; gap: var(--ds-space-3); flex-basis: 100%; }
+.kn-now { margin: 0; font-size: clamp(15px, 1.7vw, 18px); line-height: 1.4; }
+.kn-buckets { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--ds-space-4); }
+.kn-bucket { display: flex; flex-direction: column; gap: 4px; }
+.kn-bucket-h { display: flex; align-items: center; gap: 6px; font-size: var(--ds-text-sm); }
+.kn-bucket[data-over] .kn-bucket-h b { color: var(--ds-danger); }
+.kn-events { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.kn-events li { display: flex; align-items: baseline; gap: var(--ds-space-3); padding: 6px 0; border-bottom: 1px solid var(--ds-line); }
+
+/* ── Preferências ── */
+.kn-sched, .kn-navprefs { display: flex; flex-direction: column; gap: var(--ds-space-3); }
+.kn-navpref { display: inline-flex; gap: 2px; }

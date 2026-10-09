@@ -161,9 +161,9 @@
       "mobile": true
     },
     "kaguya": {
-      "status": "legacy",
-      "dir": "src/pages/kaguya",
-      "shell": "src/pages/kaguya/KaguyaShell.tsx",
+      "status": "migrating",
+      "dir": "src/pages/kaguya-next",
+      "shell": "src/pages/kaguya-next/KaguyaNextShell.tsx",
       "art": "shuchiin",
       "appShell": false,
       "hero": false,

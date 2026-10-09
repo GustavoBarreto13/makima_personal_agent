@@ -140,7 +140,7 @@ describe('conformidade: manifesto × código', () => {
   })
   // Migrar uma página é decisão deliberada: ao começar a migrar um agente, acrescente-o aqui.
   // Quem não está na lista continua `legacy` (um agente não "migra sozinho" por engano no manifesto).
-  const MIGRATED = new Set(['design', 'nami', 'akane', 'frieren', 'marin'])
+  const MIGRATED = new Set(['design', 'nami', 'akane', 'frieren', 'marin', 'kaguya'])
   it('só as páginas listadas como migradas saem de legacy', () => {
     const conf = audit.loadConformance()
     for (const [id, p] of Object.entries(conf.pages) as [string, { status: string }][]) {

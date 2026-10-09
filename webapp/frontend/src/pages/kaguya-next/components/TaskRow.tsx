@@ -2,7 +2,7 @@
 // vencimento, recorrência, subtarefas, notas, bloqueada/adiada). Hover mostra a alça e o menu "…". Só apresentação:
 // quem chama decide o que cada clique faz.
 
-import { useState, type MouseEvent } from 'react'
+import { useState, type MouseEvent, type ReactNode } from 'react'
 import { Icon, Menu, cx, type MenuItem } from '../../../design'
 import { deferLabel, dueInfo, fmtMinutes, followUpDue, subtaskProgress } from '../lib/taskView'
 import type { Task } from '../types'
@@ -27,13 +27,15 @@ export interface TaskRowProps {
   /** Clique com Ctrl/Shift/⌘ seleciona em vez de abrir. */
   onSelect?: (e: MouseEvent) => void
   menu?: MenuItem[]
+  /** Ações próprias da tela, logo depois dos sinais (ex.: Hoje/Amanhã nas pendências). */
+  trailing?: ReactNode
 }
 
 const PRIO_CLASS = ['', 'kn-p1', 'kn-p2', 'kn-p3']
 
 export function TaskRow({
   task, today, depth = 0, selected, active, focused, showProject, showDetails = true, expanded, onToggleExpand,
-  onToggle, onOpen, onSelect, menu,
+  onToggle, onOpen, onSelect, menu, trailing,
 }: TaskRowProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const done = !!task.completed_at
@@ -92,6 +94,8 @@ export function TaskRow({
         {showProject && task.project_name && <span className="kn-proj">{task.project_name}</span>}
         {due.label && <span className={cx('kn-due', `kn-due-${due.tone}`)}>{due.label}</span>}
       </span>
+
+      {trailing}
 
       {menu && menu.length > 0 && (
         <span className="kn-menu">

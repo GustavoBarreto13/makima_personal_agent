@@ -8,7 +8,6 @@ import type { Group } from '../../../design/core/collection'
 import { addDaysISO } from '../../../design/core/format'
 import { useKaguya } from '../context'
 import * as act from '../lib/actions'
-import { kaguyaApi } from '../api'
 import { PRIORITY_LABEL } from '../lib/taskView'
 import type { Task } from '../types'
 import { BulkBar } from './BulkBar'
@@ -148,7 +147,7 @@ export function TaskList({ groups, showProject, completed = [] }: Props) {
   return (
     <div className="kn-list" ref={listRef} role="tree" aria-label="Tarefas" tabIndex={0} onKeyDown={onKeyDown}>
       {selectedTasks.length > 0 && (
-        <BulkBar tasks={selectedTasks} today={k.today} projects={k.projects.filter((p) => !p.is_inbox || true)} reload={k.reload} onClear={() => setSelected(new Set())} />
+        <BulkBar tasks={selectedTasks} today={k.today} projects={k.projects} reload={k.reload} onClear={() => setSelected(new Set())} />
       )}
       {sections.map((s) => {
         const start = offset
@@ -192,14 +191,4 @@ export function TaskList({ groups, showProject, completed = [] }: Props) {
       )}
     </div>
   )
-}
-
-/** Cria a tarefa já com a lista/data da tela e grava a estimativa (a API de criação não a recebe). */
-export async function createFromBody(
-  body: { title: string; duration_min?: number } & Record<string, unknown>,
-): Promise<number> {
-  const { duration_min, ...payload } = body
-  const r = await kaguyaApi.createTask(payload as Parameters<typeof kaguyaApi.createTask>[0])
-  if (r.id && duration_min) await kaguyaApi.updateTask(r.id, { duration_min })
-  return r.id as number
 }
