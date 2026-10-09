@@ -184,6 +184,8 @@ export interface Appearance {
   density: 'comfy' | 'compact'
   /** true = sem animações (além do que o sistema já pede). */
   reduceMotion: boolean
+  /** Largura do conteúdo das páginas: centralizada (padrão) ou a tela inteira. */
+  width?: 'centered' | 'full'
 }
 
 export interface PreferencesPanelProps {
@@ -214,6 +216,9 @@ export function PreferencesPanel({ onClose, appearance, onAppearance, agentName,
             <SegmentedControl label="Estilo de arte" value={art.value} onChange={art.onChange} options={art.options} />
           </SettingRow>
         )}
+        <SettingRow title="Largura do conteúdo" help="Vale para todas as páginas. “Tela inteira” aproveita monitores largos.">
+          <SegmentedControl label="Largura do conteúdo" value={appearance.width ?? 'centered'} onChange={(width) => onAppearance({ width })} options={[{ value: 'centered', label: 'Centralizada' }, { value: 'full', label: 'Tela inteira' }]} />
+        </SettingRow>
         <SettingRow title="Reduzir animações">
           <Toggle label="Reduzir animações" checked={appearance.reduceMotion} onChange={(reduceMotion) => onAppearance({ reduceMotion })} />
         </SettingRow>
@@ -282,12 +287,14 @@ export interface AppShellProps {
   mobileTabs?: string[]
   /** Área extra à direita da topbar. */
   topbarExtra?: ReactNode
+  /** Substitui a lista de navegação da barra lateral (o `nav` segue valendo para paleta, atalhos e abas do celular). */
+  navSlot?: ReactNode
   children: ReactNode
 }
 
 export function AppShell({
   agent, nav, active, onNavigate, primary, title, subtitle, search, onGoAgent, preferences, commands = [], art, artValue,
-  embedded, extraAgents, mobileTabs, topbarExtra, children,
+  embedded, extraAgents, mobileTabs, topbarExtra, navSlot, children,
 }: AppShellProps) {
   const frameRef = useRef<HTMLDivElement>(null)
   const [appEl, setAppEl] = useState<HTMLDivElement | null>(null)
@@ -332,7 +339,7 @@ export function AppShell({
 
   return (
     <AgentContext.Provider value={agent}>
-      <div ref={frameRef} className={cx('ds-frame', embedded && 'ds-embedded')} data-agent={agent.id} data-ds-density={appearance.density} style={accentStyle}>
+      <div ref={frameRef} className={cx('ds-frame', embedded && 'ds-embedded')} data-agent={agent.id} data-ds-density={appearance.density} data-ds-width={appearance.width === 'full' ? 'full' : undefined} style={accentStyle}>
         <div
           ref={setAppEl}
           className={cx('ds-app', drawer && 'ds-drawer-open')}
@@ -355,7 +362,7 @@ export function AppShell({
                 </Button>
               </div>
               <nav className="ds-nav" aria-label="Seções">
-                {nav.map((g, gi) => (
+                {navSlot ?? nav.map((g, gi) => (
                   <div key={gi} style={{ display: 'contents' }}>
                     {g.label && <span className="ds-nav-label ds-mono">{g.label}</span>}
                     {g.items.map((n) => (
@@ -437,8 +444,9 @@ export function AppShell({
 
 // ── Página e seção ───────────────────────────────────────────────────────────
 
-export function Page({ wide, children, className }: { wide?: boolean; children: ReactNode; className?: string }) {
-  return <div className={cx('ds-page', wide && 'ds-wide', className)}>{children}</div>
+/** `full`: sempre a largura toda. `fill`: ocupa a altura do conteúdo (telas com rolagem interna, como o calendário). */
+export function Page({ wide, full, fill, children, className }: { wide?: boolean; full?: boolean; fill?: boolean; children: ReactNode; className?: string }) {
+  return <div className={cx('ds-page', wide && 'ds-wide', full && 'ds-full', fill && 'ds-fill', className)}>{children}</div>
 }
 
 export function SectionHeader({ title, id, action, mono }: { title: string; id?: string; action?: ReactNode; mono?: ReactNode }) {

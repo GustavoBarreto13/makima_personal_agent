@@ -280,3 +280,91 @@ export function PersonPicker({ value, onChange, search, onCreate, id }: PersonPi
     </div>
   )
 }
+
+// ── ListPicker (escolha de uma lista/pasta: busca, grupos, ícone e cor) ──────
+
+export interface ListPickerOption {
+  id: string
+  label: string
+  /** Seção do grupo (ex.: nome do grupo de listas). Sem grupo = no topo. */
+  group?: string
+  /** Emoji ou texto curto antes do nome. */
+  glyph?: string
+  /** Ponto de cor (token ou cor CSS vinda de dados). */
+  color?: string | null
+  /** Texto à direita (ex.: contagem). */
+  hint?: string
+}
+
+export interface ListPickerProps {
+  value: string | null
+  options: ListPickerOption[]
+  onChange: (id: string) => void
+  id?: string
+  placeholder?: string
+  label?: string
+}
+
+export function ListPicker({ value, options, onChange, id, placeholder = 'Escolher…', label = 'Lista' }: ListPickerProps) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const [idx, setIdx] = useState(0)
+  const ref = useRef<HTMLDivElement>(null)
+  const close = () => { setOpen(false); setQ('') }
+  useDismissable(ref, close, open)
+
+  const current = options.find((o) => o.id === value)
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    return needle ? options.filter((o) => o.label.toLowerCase().includes(needle) || o.group?.toLowerCase().includes(needle)) : options
+  }, [options, q])
+  useEffect(() => { setIdx(0) }, [q, open])
+
+  const pick = (o: ListPickerOption) => { onChange(o.id); close() }
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setIdx((i) => Math.min(i + 1, shown.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setIdx((i) => Math.max(i - 1, 0)) }
+    else if (e.key === 'Enter') { e.preventDefault(); if (shown[idx]) pick(shown[idx]) }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close() }
+  }
+
+  let lastGroup: string | undefined | null = null
+  return (
+    <div className="ds-combo ds-lp" ref={ref}>
+      <button type="button" id={id} className="ds-select ds-lp-btn" aria-haspopup="listbox" aria-expanded={open} aria-label={label} onClick={() => setOpen((o) => !o)}>
+        {current ? (
+          <>
+            {current.color && <i className="ds-lp-dot" style={{ background: current.color }} />}
+            {current.glyph && <span className="ds-lp-glyph" aria-hidden="true">{current.glyph}</span>}
+            <span className="ds-lp-name">{current.label}</span>
+          </>
+        ) : <span className="ds-lp-name ds-lp-ph">{placeholder}</span>}
+        <Icon name="down" size={14} />
+      </button>
+      {open && (
+        <div className="ds-combo-list ds-lp-list">
+          <input className="ds-input ds-lp-q" autoFocus value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="Buscar…" aria-label={`Buscar ${label.toLowerCase()}`} autoComplete="off" />
+          <div role="listbox" aria-label={label}>
+            {shown.map((o, i) => {
+              const head = o.group !== lastGroup && o.group ? <span key={`g-${o.group}`} className="ds-lp-group ds-mono">{o.group}</span> : null
+              lastGroup = o.group
+              return (
+                <div key={o.id} style={{ display: 'contents' }}>
+                  {head}
+                  <button type="button" role="option" aria-selected={o.id === value} className={cx('ds-combo-item ds-lp-item', i === idx && 'ds-on')} onMouseEnter={() => setIdx(i)} onClick={() => pick(o)}>
+                    {o.color && <i className="ds-lp-dot" style={{ background: o.color }} />}
+                    {o.glyph && <span className="ds-lp-glyph" aria-hidden="true">{o.glyph}</span>}
+                    <span className="ds-lp-name">{o.label}</span>
+                    {o.hint && <small className="ds-lp-hint">{o.hint}</small>}
+                    {o.id === value && <Icon name="check" size={14} />}
+                  </button>
+                </div>
+              )
+            })}
+            {shown.length === 0 && <p className="ds-hint" style={{ padding: '6px 8px' }}>Nada encontrado.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

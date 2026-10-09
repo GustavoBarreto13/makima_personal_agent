@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event'
 import { axe } from 'vitest-axe'
 import { mockLayoutApis, mockMatchMedia, setMockWidth, stripIds } from '../test-utils'
 import {
-  AppShell, BackToMakima, Button, ConfirmHost, DataTable, DatePicker, EmptyState, ErrorState, Field, Heatmap, Input, LoadingState, MediaCard, Modal, PersonPicker,
+  AppShell, BackToMakima, Button, ConfirmHost, DataTable, DatePicker, EmptyState, ErrorState, Field, Heatmap, Input, LoadingState, ListPicker, MediaCard, Modal, PersonPicker,
   QuickCapture, RateInput, Stars, StatsPage, Tabs, ToastHost, confirm, createCaptureParser, toast, undoLast, type PersonOption, type StatsPayload,
 } from '../index'
 import { __resetToasts } from '../headless/toast'
@@ -541,5 +541,35 @@ describe('acessibilidade dos componentes soltos (axe)', () => {
       </main>,
     )
     expect(await violations(container)).toEqual([])
+  })
+})
+
+describe('ListPicker', () => {
+  const options = [
+    { id: 'inbox', label: 'Inbox' },
+    { id: 'a', label: 'Casa', group: 'Pessoal', glyph: 'C' },
+    { id: 'b', label: 'Reunião semanal', group: 'Trabalho', color: 'red' },
+  ]
+
+  it('abre, filtra pela busca e escolhe com o teclado', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(<ListPicker value="inbox" options={options} onChange={onChange} />)
+    await user.click(screen.getByRole('button', { name: 'Lista' }))
+    expect(screen.getByText('Trabalho')).toBeTruthy()
+    await user.type(screen.getByLabelText('Buscar lista'), 'reun')
+    expect(screen.queryByRole('option', { name: /Casa/ })).toBeNull()
+    await user.keyboard('{Enter}')
+    expect(onChange).toHaveBeenCalledWith('b')
+  })
+
+  it('Esc fecha sem escolher', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(<ListPicker value={null} options={options} onChange={onChange} />)
+    await user.click(screen.getByRole('button', { name: 'Lista' }))
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
   })
 })

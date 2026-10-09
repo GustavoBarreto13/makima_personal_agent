@@ -179,11 +179,11 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
 export function SettingRow({ title, help, children }: { title: ReactNode; help?: ReactNode; children: ReactNode }) {
   return (
     <div className="ds-setrow">
-      <div>
+      <div className="ds-setrow-t">
         <span>{title}</span>
         {help && <p>{help}</p>}
       </div>
-      {children}
+      <div className="ds-setrow-c">{children}</div>
     </div>
   )
 }

@@ -290,3 +290,18 @@
 .ds-mde-mentions li { display: flex; align-items: baseline; gap: var(--ds-space-2); padding: 6px 10px; border-radius: var(--ds-r-sm); color: var(--ds-ink-2); font-size: var(--ds-text-sm); cursor: pointer; }
 .ds-mde-mentions li.ds-on, .ds-mde-mentions li:hover { background: var(--ds-accent-tint); color: var(--ds-ink-1); }
 .ds-mde-mentions small { color: var(--ds-ink-4); }
+
+/* ListPicker */
+.ds-lp-btn { display: flex; align-items: center; gap: 8px; text-align: left; cursor: pointer; }
+.ds-lp-btn > svg:last-child { margin-inline-start: auto; color: var(--ds-ink-4); flex: none; }
+.ds-lp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-lp-ph { color: var(--ds-ink-4); }
+.ds-lp-dot { width: 9px; height: 9px; flex: none; border-radius: 50%; }
+.ds-lp-glyph { flex: none; width: 1.3em; text-align: center; }
+.ds-lp-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; }
+.ds-lp-q { flex: none; height: 34px; }
+.ds-lp-list [role='listbox'] { overflow: auto; min-height: 0; }
+.ds-lp-group { display: block; padding: 8px 8px 3px; color: var(--ds-ink-4); font-size: var(--ds-text-xs); }
+.ds-lp-item.ds-on { background: var(--ds-card-2); }
+.ds-lp-item[aria-selected='true'] { color: var(--ds-accent-deep); font-weight: 600; }
+.ds-lp-hint { margin-inline-start: auto; color: var(--ds-ink-4); font-family: var(--ds-font-mono); }

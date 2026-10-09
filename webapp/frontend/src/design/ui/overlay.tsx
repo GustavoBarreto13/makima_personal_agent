@@ -31,14 +31,16 @@ export interface ModalProps {
   onClose: () => void
   /** Há alterações não salvas? Fechar pede confirmação. */
   dirty?: boolean
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   footer?: ReactNode
+  /** Área extra no cabeçalho, antes do botão de fechar (abas, ações). */
+  headerExtra?: ReactNode
   children: ReactNode
 }
 
-const MODAL_WIDTH = { sm: 420, md: 540, lg: 720 } as const
+const MODAL_WIDTH = { sm: 420, md: 540, lg: 720, xl: 920 } as const
 
-export function Modal({ title, onClose, dirty, size = 'md', footer, children }: ModalProps) {
+export function Modal({ title, onClose, dirty, size = 'md', footer, headerExtra, children }: ModalProps) {
   const ref = useRef<HTMLDivElement>(null)
   const titleId = useRef(`m-${Math.random().toString(36).slice(2, 8)}`).current
 
@@ -68,6 +70,7 @@ export function Modal({ title, onClose, dirty, size = 'md', footer, children }: 
           <div className="ds-grab" aria-hidden="true" />
           <div className="ds-m-h">
             <h2 id={titleId}>{title}</h2>
+            {headerExtra}
             <IconButton icon="close" label="Fechar" onClick={() => void tryClose()} />
           </div>
           <div className="ds-m-b">{children}</div>

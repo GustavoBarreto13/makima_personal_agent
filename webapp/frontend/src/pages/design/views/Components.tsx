@@ -5,7 +5,7 @@ import { confirm } from '../../../design/headless/confirm'
 import { toast } from '../../../design/headless/toast'
 import {
   Avatar, Button, Chip, DataTable, DatePicker, EmptyState, ErrorState, Field, Icon, ICONS, Input, ListRow, LoadingState, Modal, MoneyInput, NumberInput, Page,
-  PersonPicker, ProgressBar, ProgressRing, RateInput, SegmentedControl, Select, SettingRow, Sheet, StatusChip, Stars, Tag, TagInput, TimePicker, Toggle, IconButton,
+  ListPicker, PersonPicker, ProgressBar, ProgressRing, RateInput, SegmentedControl, Select, SettingRow, Sheet, StatusChip, Stars, Tag, TagInput, TimePicker, Toggle, IconButton,
   type IconName, type PersonOption,
 } from '../../../design'
 import { TYPE_META, type Workout } from '../demoData'
@@ -34,6 +34,7 @@ export function ComponentsView({ workouts, onNew }: { workouts: Workout[]; onNew
   const [date, setDate] = useState('2026-10-02')
   const [time, setTime] = useState('18:00')
   const [people, setPeople] = useState<PersonOption[]>([])
+  const [listId, setListId] = useState<string | null>('inbox')
   const [toggle, setToggle] = useState(true)
   const [seg, setSeg] = useState<'week' | 'month' | 'year'>('week')
   const [modal, setModal] = useState(false)
@@ -101,6 +102,13 @@ export function ComponentsView({ workouts, onNew }: { workouts: Workout[]; onNew
           <Field label="Data (sem input nativo)">{(a) => <DatePicker {...a} value={date} onChange={setDate} />}</Field>
           <Field label="Hora (slots de 15 min)">{(a) => <TimePicker id={a.id} value={time} onChange={setTime} />}</Field>
           <Field label="Etiquetas">{(a) => <TagInput id={a.id} value={tags} onChange={setTags} />}</Field>
+          <Field label="Lista (busca, grupos, ícone e cor)">
+            {(a) => <ListPicker id={a.id} value={listId} onChange={setListId} options={[
+              { id: 'inbox', label: 'Inbox' },
+              { id: 'casa', label: 'Casa', group: 'Pessoal', glyph: 'C' },
+              { id: 'reuniao', label: 'Reuniões', group: 'Trabalho', color: 'var(--ds-accent)' },
+            ]} />}
+          </Field>
           <Field label="Pessoas (smart-match da Komi)" hint="Digite “Ana”: 2 resultados, escolha uma. Digite “Zeca”: oferece cadastrar.">
             {(a) => (
               <PersonPicker id={a.id} value={people} onChange={setPeople} search={(q) => PEOPLE.filter((p) => p.name.toLowerCase().includes(q.toLowerCase()))} onCreate={(name) => ({ id: `n-${name}`, name })} />
