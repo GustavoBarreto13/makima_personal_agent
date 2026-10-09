@@ -373,6 +373,15 @@ def update_project(
     return {"status": "ok", "message": "Lista atualizada."}
 
 
+def _gcal(action: str, project_id: int) -> None:
+    """Dispara (best-effort) o espelho GCal de uma lista: ``remove`` (arquivar/excluir) ou ``push`` (restaurar)."""
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        (_gs.remove_project_events if action == "remove" else _gs.push_project)(project_id)
+    except Exception:
+        pass
+
+
 def delete_project(project_id: int, mode: str) -> dict:
     """Exclui uma lista, decidindo o destino das tarefas dela.
 
@@ -429,6 +438,8 @@ def delete_project(project_id: int, mode: str) -> dict:
             # A lista é arquivada (soft delete) — some das views, preserva o histórico.
             cur.execute("UPDATE task_projects SET archived_at = now() WHERE id = %s", (project_id,))
 
+    if mode == "delete_tasks":
+        _gcal("remove", project_id)   # as tarefas foram para a lixeira → os eventos do Google saem
     return {"status": "ok", "message": f"Lista excluída ({detail})."}
 
 
@@ -461,6 +472,7 @@ def archive_project(project_id: int) -> dict:
         return {"status": "error", "message": "Esta lista já está arquivada."}
 
     run_dml("UPDATE task_projects SET archived_at = now() WHERE id = %(id)s", {"id": project_id})
+    _gcal("remove", project_id)   # lista arquivada some das views → os eventos do Google também
     return {"status": "ok", "message": "Lista arquivada."}
 
 
@@ -482,6 +494,7 @@ def restore_project(project_id: int) -> dict:
         return {"status": "error", "message": "Esta lista não está arquivada."}
 
     run_dml("UPDATE task_projects SET archived_at = NULL WHERE id = %(id)s", {"id": project_id})
+    _gcal("push", project_id)     # volta íntegra: recria os eventos das tarefas abertas e datadas
     return {"status": "ok", "message": "Lista restaurada."}
 
 

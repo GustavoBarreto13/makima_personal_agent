@@ -277,7 +277,11 @@ def _push_task_sync(task_id: int) -> None:
         # Monta o payload do evento
         payload = _build_event_payload(task)
         if not payload:
-            return   # Tarefa sem data — não espelha
+            # Tarefa sem data — não espelha. Se a data foi LIMPA depois de espelhada, o evento
+            # antigo ficaria órfão no Google: remove (e zera o google_event_id).
+            if task.get("google_event_id"):
+                _remove_task_event_sync(task_id)
+            return
 
         # Garante que o calendário "Kaguya — Tarefas" existe (idempotente)
         kaguya_cal_id = gcal.ensure_kaguya_calendar()
@@ -614,6 +618,50 @@ def push_task(task_id: int) -> None:
     if not _enabled():
         return
     _executor.submit(_push_task_sync, task_id)
+
+
+def _remove_project_events_sync(project_id: int) -> None:
+    """Remove do Google os eventos espelho de todas as tarefas (vivas) de uma lista (síncrono)."""
+    try:
+        rows = run_select(
+            "SELECT id FROM tasks WHERE project_id = %(pid)s AND google_event_id IS NOT NULL",
+            {"pid": project_id},
+        )
+        for r in rows:
+            _remove_task_event_sync(r["id"])
+    except Exception:
+        _log.warning("falha ao remover eventos GCal da lista=%s", project_id, exc_info=True)
+
+
+def remove_project_events(project_id: int) -> None:
+    """Agenda a remoção dos eventos espelho de todas as tarefas de uma lista (ao arquivar/excluir).
+
+    Fire-and-forget; no-op se GCAL_SYNC_ENABLED=false. Ao restaurar a lista, ``push_project`` recria.
+    """
+    if not _enabled():
+        return
+    _executor.submit(_remove_project_events_sync, project_id)
+
+
+def _push_project_sync(project_id: int) -> None:
+    """Re-espelha as tarefas abertas e datadas de uma lista (síncrono; usado ao restaurar)."""
+    try:
+        rows = run_select(
+            "SELECT id FROM tasks WHERE project_id = %(pid)s AND deleted_at IS NULL "
+            "AND completed_at IS NULL AND (due_date IS NOT NULL OR start_at IS NOT NULL)",
+            {"pid": project_id},
+        )
+        for r in rows:
+            _push_task_sync(r["id"])
+    except Exception:
+        _log.warning("falha ao re-espelhar a lista=%s", project_id, exc_info=True)
+
+
+def push_project(project_id: int) -> None:
+    """Agenda o re-espelhamento das tarefas de uma lista restaurada. No-op se o sync está desligado."""
+    if not _enabled():
+        return
+    _executor.submit(_push_project_sync, project_id)
 
 
 def remove_task_event(task_id: int) -> None:

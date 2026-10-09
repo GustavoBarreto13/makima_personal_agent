@@ -1570,6 +1570,8 @@ def complete_task(task_id: int, cascade: bool = False, end_series: bool = False)
         try:
             from agents.kaguya import gcal_sync as _gs
             _gs.push_task(task_id)
+            if result.get("generated_task_id"):
+                _gs.push_task(result["generated_task_id"])   # a próxima ocorrência também vai ao Google
         except Exception:
             pass
     return result
@@ -1949,6 +1951,8 @@ def delete_task(task_id: int, scope: str = "this") -> dict:
     try:
         from agents.kaguya import gcal_sync as _gs
         _gs.remove_task_event(task_id)
+        if generated:
+            _gs.push_task(generated["generated_task_id"])   # "só esta": a próxima ocorrência é espelhada
     except Exception:
         pass
     # Hook Kaguya→Komi: remove o person_date correspondente SOMENTE quando scope='series'
