@@ -18,15 +18,16 @@ import { ScheduleSettings } from './components/ScheduleSettings'
 import { ScreenBoundary } from './components/ScreenBoundary'
 import { SearchModal } from './components/SearchModal'
 import { TaskDetailPanel } from './components/TaskDetailPanel'
-import { DEFAULT_PREFS, KaguyaContext, type KaguyaCtx, type KaguyaPrefs } from './context'
+import { DEFAULT_PREFS, KaguyaContext, type KaguyaCtx, type KaguyaPrefs, type NewTaskDefaults } from './context'
 import * as act from './lib/actions'
 import { DEFAULT_MOBILE_TABS, FIXED_NAV, buildNav, navIdToRoute, routeToNavId, titleFor, type SpaceChoice } from './lib/nav'
 import { hashFor, routeFromHash, withTask, type Route } from './lib/routes'
 import { useLoad } from './lib/useLoad'
-import { DateScreen, FilterScreen, GtdScreen, ListScreen } from './screens/ListScreens'
+import { DateScreen, FilterScreen, GroupListScreen, GtdScreen, ListScreen } from './screens/ListScreens'
 import { Pending } from './screens/Pending'
 import { Archived, Logbook, Tags, Templates, Trash } from './screens/Records'
 import { Stats } from './screens/Stats'
+import { GroupBoardScreen, KanbanScreen } from './screens/Kanban'
 import { Today } from './screens/Today'
 import type { Filter, Group, Project, Sidebar, Task } from './types'
 import './kaguya-next.css'
@@ -39,7 +40,7 @@ const NO_GROUPS: Group[] = []
 const NO_FILTERS: Filter[] = []
 const NO_TASKS: Task[] = []
 
-type Dialog = { kind: 'new'; defaults?: { projectId?: number; due?: string; title?: string } } | { kind: 'search'; q: string } | null
+type Dialog = { kind: 'new'; defaults?: NewTaskDefaults } | { kind: 'search'; q: string } | null
 
 const SPACE_OPTIONS: { value: SpaceChoice; label: string; icon: 'apps' | 'work' | 'personal' }[] = [
   { value: 'all', label: 'Tudo', icon: 'apps' }, { value: 'work', label: 'Trabalho', icon: 'work' }, { value: 'personal', label: 'Pessoal', icon: 'personal' },
@@ -47,7 +48,7 @@ const SPACE_OPTIONS: { value: SpaceChoice; label: string; icon: 'apps' | 'work' 
 
 /** Telas ainda não migradas (viram `Pending` até a fase de cada uma). */
 const PENDING: Record<string, string> = {
-  kanban: 'O quadro (Kanban)', group: 'O quadro do grupo', 'group-list': 'A lista do grupo', calendar: 'O calendário', eisenhower: 'A matriz de Eisenhower',
+  calendar: 'O calendário', eisenhower: 'A matriz de Eisenhower',
   habits: 'Hábitos', goals: 'Metas', experiments: 'Experimentos', focus: 'Foco',
 }
 
@@ -92,7 +93,7 @@ export function KaguyaNextShell() {
   const openTask = useCallback((id: number | undefined) => goto(withTask(route, id)), [goto, route])
 
   const toggleComplete = useCallback((t: Task) => act.toggleComplete({ reload }, t), [reload])
-  const newTask = useCallback((defaults?: { projectId?: number; due?: string; title?: string }) => setDialog({ kind: 'new', defaults }), [])
+  const newTask = useCallback((defaults?: NewTaskDefaults) => setDialog({ kind: 'new', defaults }), [])
 
   const ctx = useMemo<KaguyaCtx>(() => ({
     rev, reload, today, route, goto, openTask, prefs, setPrefs, space, projects, groups, filters, sidebarState, retrySidebar,
@@ -125,6 +126,9 @@ export function KaguyaNextShell() {
       case 'date': return <DateScreen dateKey={(route.key ?? 'all') as Parameters<typeof DateScreen>[0]['dateKey']} />
       case 'gtd': return <GtdScreen gtdKey={route.key ?? 'next-actions'} />
       case 'filter': return route.id !== undefined ? <FilterScreen id={route.id} /> : <Today />
+      case 'kanban': return route.id !== undefined ? <KanbanScreen projectId={route.id} /> : <Today />
+      case 'group-list': return route.id !== undefined ? <GroupListScreen id={route.id} /> : <Today />
+      case 'group': return route.id !== undefined ? <GroupBoardScreen groupId={route.id} /> : <Today />
       case 'stats': return <Stats />
       case 'logbook': return <Logbook />
       case 'trash': return <Trash />

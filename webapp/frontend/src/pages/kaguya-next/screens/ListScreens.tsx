@@ -31,7 +31,28 @@ export function ListScreen({ id }: { id: number }) {
       completed={done}
       emptyTitle={project?.is_inbox ? 'Inbox zerada' : 'Lista vazia'}
       emptyHint={project?.is_inbox ? 'Capture qualquer coisa na barra acima; organize depois, com calma.' : 'Adicione a primeira tarefa desta lista na barra acima.'}
-      extra={project?.has_board ? <Button icon="kanban" onClick={() => k.goto({ view: 'kanban', id })}>Quadro</Button> : undefined}
+      extra={<Button icon="kanban" onClick={() => k.goto({ view: 'kanban', id })}>{project?.has_board ? 'Quadro' : 'Criar quadro'}</Button>}
+    />
+  )
+}
+
+/** Lista do grupo: as tarefas abertas de todas as listas dele, agrupadas por lista. Cada tarefa abre/edita como em qualquer lista. */
+export function GroupListScreen({ id }: { id: number }) {
+  const k = useKaguya()
+  const lists = k.projects.filter((p) => p.group_id === id)
+  const ids = lists.map((p) => p.id).join(',')
+  const load = useCallback(async () => (await Promise.all(lists.map((p) => kaguyaApi.listTasks(p.id, false)))).flat(), [ids]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <TaskCollection
+      scope={`group:${id}`}
+      load={load}
+      deps={[ids]}
+      showProject
+      groupBy="project"
+      addProjectId={lists[0]?.id}
+      emptyTitle={lists.length ? 'Grupo sem tarefas' : 'Grupo vazio'}
+      emptyHint={lists.length ? 'Adicione tarefas na barra acima; elas vão para a primeira lista do grupo (use @lista para escolher outra).' : 'Adicione listas a este grupo pela barra lateral para ver as tarefas aqui.'}
+      extra={<Button icon="kanban" onClick={() => k.goto({ view: 'group', id })}>Quadro</Button>}
     />
   )
 }

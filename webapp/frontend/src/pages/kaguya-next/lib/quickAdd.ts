@@ -10,6 +10,8 @@ export const taskParser = createCaptureParser({ rules: ['place', 'tag', 'priorit
 export interface NewTaskBody {
   title: string
   project_id?: number
+  /** Coluna do Kanban (a lista é a do `project_id`). */
+  column_id?: number
   priority?: number
   due_date?: string
   due_time?: string

@@ -30,6 +30,12 @@ export const DEFAULT_PREFS: KaguyaPrefs = {
   hiddenNav: [], pinnedNav: [], mobileTabs: [],
 }
 
+/** Alvo possível de uma tarefa nova no quadro do grupo: uma lista-membro e a coluna dela. */
+export interface NewTaskTarget { projectId: number; columnId: number; listName: string }
+
+/** Valores iniciais do formulário “Nova tarefa”. `columnId` cria direto numa coluna; `targets` restringe a lista. */
+export interface NewTaskDefaults { projectId?: number; due?: string; title?: string; columnId?: number; targets?: NewTaskTarget[] }
+
 export interface KaguyaCtx {
   /** Sobe a cada gravação: telas refazem suas consultas quando muda. */
   rev: number
@@ -52,7 +58,7 @@ export interface KaguyaCtx {
   projectNames: Record<number, string>
   inboxId: number | undefined
   /** Abre o formulário de nova tarefa (opcionalmente já preenchido). */
-  newTask: (defaults?: { projectId?: number; due?: string; title?: string }) => void
+  newTask: (defaults?: NewTaskDefaults) => void
   /** Conclui/reabre com aviso e "Desfazer". Confirma antes quando há subtarefas abertas. */
   toggleComplete: (task: Task) => Promise<void>
 }
