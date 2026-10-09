@@ -57,6 +57,8 @@ export function Organize() {
         <Button icon="folder" onClick={() => manage.group()}>Novo grupo</Button>
         <Button icon="filter" onClick={() => manage.filter()}>Nova smart-list</Button>
         <Button icon="place" onClick={() => manage.contexts()}>Onde (@)</Button>
+        <Button icon="weekly-review" onClick={() => manage.review()}>Revisão semanal</Button>
+        <Button icon="inbox" onClick={() => manage.inbox()}>Processar o Inbox</Button>
       </div>
       <p className="ds-hint">A ordem aqui é a ordem da barra lateral. O espaço (Trabalho/Pessoal) de cada lista filtra todas as telas.</p>
 

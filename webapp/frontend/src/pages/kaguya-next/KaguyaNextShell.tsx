@@ -28,6 +28,7 @@ import { Archived, Logbook, Tags, Templates, Trash } from './screens/Records'
 import { Stats } from './screens/Stats'
 import { FocusCancelModal, FocusStartModal, FocusWidget } from './components/FocusSession'
 import { ContextsModal, GroupModal, ProjectModal, SmartListModal } from './components/OrganizeModals'
+import { InboxWizard, WeeklyReviewModal } from './components/ReviewFlows'
 import { Calendar } from './screens/Calendar'
 import { Eisenhower } from './screens/Eisenhower'
 import { Focus } from './screens/Focus'
@@ -50,7 +51,7 @@ const NO_TASKS: Task[] = []
 
 type Dialog =
   | { kind: 'new'; defaults?: NewTaskDefaults } | { kind: 'search'; q: string }
-  | { kind: 'project'; project?: Project; groupId?: number } | { kind: 'group'; group?: Group } | { kind: 'filter'; filter?: Filter } | { kind: 'contexts' }
+  | { kind: 'project'; project?: Project; groupId?: number } | { kind: 'group'; group?: Group } | { kind: 'filter'; filter?: Filter } | { kind: 'contexts' } | { kind: 'inbox-wizard' } | { kind: 'weekly-review' }
   | { kind: 'focus'; task?: Task; habitId?: number } | { kind: 'focus-cancel' } | null
 
 const SPACE_OPTIONS: { value: SpaceChoice; label: string; icon: 'apps' | 'work' | 'personal' }[] = [
@@ -114,6 +115,8 @@ export function KaguyaNextShell() {
     group: (group) => setDialog({ kind: 'group', group }),
     filter: (filter) => setDialog({ kind: 'filter', filter }),
     contexts: () => setDialog({ kind: 'contexts' }),
+    inbox: () => setDialog({ kind: 'inbox-wizard' }),
+    review: () => setDialog({ kind: 'weekly-review' }),
   }), [])
   const startFocus = useCallback((target: { task?: Task; habitId?: number }) => setDialog({ kind: 'focus', ...target }), [])
   const finishFocus = async () => {
@@ -214,6 +217,8 @@ export function KaguyaNextShell() {
           { id: 'kaguya.list.new', label: 'Nova lista', icon: 'folder', keywords: 'criar lista projeto', run: () => manage.project() },
           { id: 'kaguya.group.new', label: 'Novo grupo', icon: 'folder-open', keywords: 'criar grupo pasta', run: () => manage.group() },
           { id: 'kaguya.filter.new', label: 'Nova smart-list', icon: 'filter', keywords: 'criar filtro salvo', run: () => manage.filter() },
+          { id: 'kaguya.inbox', label: 'Processar o Inbox', icon: 'inbox', keywords: 'gtd clarificar inbox zero', run: () => manage.inbox() },
+          { id: 'kaguya.review', label: 'Revisão semanal', icon: 'weekly-review', keywords: 'gtd revisar semana', run: () => manage.review() },
           { id: 'kaguya.contexts', label: 'Locais (Onde @)', icon: 'place', keywords: 'contextos gtd casa', run: () => manage.contexts() },
           { id: 'kaguya.focus', label: 'Iniciar foco', icon: 'timer', keywords: 'pomodoro concentrar', run: () => startFocus({}) },
           { id: 'kaguya.today', label: 'Ir para o Meu Dia', icon: 'sun', run: () => goto({ view: 'today' }) },
@@ -269,6 +274,8 @@ export function KaguyaNextShell() {
         {dialog?.kind === 'project' && <ProjectModal project={dialog.project} groupId={dialog.groupId} onClose={() => setDialog(null)} />}
         {dialog?.kind === 'group' && <GroupModal group={dialog.group} onClose={() => setDialog(null)} />}
         {dialog?.kind === 'filter' && <SmartListModal filter={dialog.filter} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'inbox-wizard' && <InboxWizard onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'weekly-review' && <WeeklyReviewModal onClose={() => setDialog(null)} />}
         {dialog?.kind === 'contexts' && <ContextsModal onClose={() => setDialog(null)} />}
         {dialog?.kind === 'focus' && <FocusStartModal task={dialog.task} habitId={dialog.habitId} onClose={() => setDialog(null)} onStarted={() => { void loadActiveFocus() }} />}
         {dialog?.kind === 'focus-cancel' && activeFocus && (

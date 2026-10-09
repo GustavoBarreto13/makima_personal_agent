@@ -34,6 +34,7 @@ export function ListScreen({ id }: { id: number }) {
       extra={(
         <>
           <Button icon="kanban" onClick={() => k.goto({ view: 'kanban', id })}>{project?.has_board ? 'Quadro' : 'Criar quadro'}</Button>
+          {project?.is_inbox && <Button icon="inbox" onClick={k.manage.inbox}>Processar o Inbox</Button>}
           {project && <Button icon="edit" onClick={() => k.manage.project(project)}>Editar lista</Button>}
         </>
       )}
@@ -95,6 +96,7 @@ export function DateScreen({ dateKey }: { dateKey: DateKey }) {
       addProjectId={key === 'inbox' ? k.inboxId : undefined}
       addDue={key === 'today' ? k.today : undefined}
       sortBy={key === 'all' ? 'due' : 'manual'}
+      extra={key === 'inbox' ? <Button icon="inbox" onClick={k.manage.inbox}>Processar o Inbox</Button> : undefined}
       emptyTitle={copy.title}
       emptyHint={copy.hint}
     />

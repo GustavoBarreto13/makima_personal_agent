@@ -42,6 +42,9 @@ export interface ManageActions {
   group: (group?: Group) => void
   filter: (filter?: Filter) => void
   contexts: () => void
+  /** Os rituais do GTD. */
+  inbox: () => void
+  review: () => void
 }
 
 export interface KaguyaCtx {

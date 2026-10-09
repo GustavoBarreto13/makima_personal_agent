@@ -414,3 +414,10 @@
 .kn-pop-actions { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); }
 .kn-ctx { position: fixed; z-index: var(--ds-z-popover); }
 .kn-ctx .kn-ctx-menu { position: static; }
+
+/* ── Rituais do GTD ── */
+.kn-decisions { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); }
+.kn-rev-body { min-height: 240px; }
+.kn-rev-wait { flex-wrap: wrap; }
+.kn-rev-edit { flex-basis: 100%; }
+.kn-err { margin: 0; color: var(--ds-danger); font-size: var(--ds-text-sm); }
