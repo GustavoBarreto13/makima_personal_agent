@@ -153,7 +153,8 @@ export function Calendar() {
   const goDay = (iso: string) => { setRef(iso); setView('day') }
 
   return (
-    <Page wide className="kn-page kn-cal">
+    <Page full fill className="kn-cal">
+     <div className="kn-calx" data-variant={k.prefs.calVariant} data-col={k.prefs.calSide}>
       <div className="kn-cbar">
         <div className="kn-ctitle">
           <h2>{title(view, ref)}</h2>
@@ -198,6 +199,7 @@ export function Calendar() {
 
       {popover && <EventPopover ev={popover.ev} cals={cals} pos={popover.pos} onClose={() => setPopover(null)} onRefresh={refresh} />}
       {menu && <EventMenu ev={menu.ev} cals={cals} pos={menu.pos} onClose={() => setMenu(null)} onRefresh={refresh} onOpen={() => { setPopover(menu); setMenu(null) }} />}
+     </div>
     </Page>
   )
 }

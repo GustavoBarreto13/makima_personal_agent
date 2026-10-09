@@ -86,7 +86,7 @@
 .ds-page.ds-wide{max-width:1280px}
 .ds-page.ds-full,[data-ds-width='full'] .ds-page{max-width:none}
 .ds-page.ds-fill{flex:1;min-height:0}
-.ds-content:has(>.ds-page.ds-fill){display:flex;flex-direction:column;padding-bottom:0;overflow:hidden}
+.ds-content:has(>.ds-page.ds-fill){display:flex;flex-direction:column;padding:0;overflow:hidden}
 .ds-sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px}.ds-sec-h h2{font-family:var(--ds-font-display);font-weight:800;font-size:17px;letter-spacing:-.02em}
 .ds-bottomnav,.ds-fab{display:none}
 
@@ -222,7 +222,7 @@
   .ds-back-row{flex-direction:row;align-items:stretch}.ds-back{flex:1;width:auto;height:auto;padding:7px 11px 7px 7px;justify-content:flex-start}.ds-back .ds-bt{display:flex}.ds-back .ds-arr{display:revert}.ds-agbtn{width:46px;height:auto}.ds-agsw{left:12px;bottom:122px;width:calc(100% - 24px)}
   .ds-scrim-d{position:absolute;inset:0;background:var(--ds-scrim);z-index:calc(var(--ds-z-drawer) - 1);animation:ds-fade var(--ds-dur-2)}
   .ds-menu-btn{display:inline-grid}.ds-search{display:none}.ds-cmdk{display:none}.ds-topbar .ds-iconbtn.ds-primary{display:none}
-  .ds-content{padding:16px 16px 96px}.ds-page{gap:22px}.ds-hero{min-height:230px}.ds-hero-in{max-width:100%;padding:24px 20px}.ds-hero-p{display:none}
+  .ds-content{padding:16px 16px 96px}.ds-content:has(>.ds-page.ds-fill){padding:0 0 64px}.ds-page{gap:22px}.ds-hero{min-height:230px}.ds-hero-in{max-width:100%;padding:24px 20px}.ds-hero-p{display:none}
   .ds-bottomnav{display:flex;position:absolute;left:0;right:0;bottom:0;z-index:var(--ds-z-topbar);padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));background:color-mix(in oklab,var(--ds-paper) 86%,transparent);backdrop-filter:blur(14px);border-top:1px solid var(--ds-line)}
   .ds-bottomnav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:48px;border:0;background:transparent;color:var(--ds-ink-3);font-size:10.5px;font-weight:600;border-radius:var(--ds-r-sm)}.ds-bottomnav button[aria-current="page"]{color:var(--ds-accent-deep)}
   .ds-fab{display:grid;place-items:center;position:absolute;right:16px;bottom:calc(76px + env(safe-area-inset-bottom,0px));width:54px;height:54px;border-radius:18px;border:0;background:var(--ds-accent);color:var(--ds-on-accent);box-shadow:var(--ds-shadow-lg);z-index:var(--ds-z-topbar)}

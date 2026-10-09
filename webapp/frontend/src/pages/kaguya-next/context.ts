@@ -23,11 +23,20 @@ export interface KaguyaPrefs {
   pinnedNav: string[]
   /** Até 3 itens da barra inferior do celular. */
   mobileTabs: string[]
+  /** Grupos de listas recolhidos na barra lateral (ids). */
+  collapsedGroups: number[]
+  /** Ordem manual das visões (datas, GTD, smart-lists) na barra lateral (ids de lib/nav). */
+  viewOrder: string[]
+  /** Onde abre o detalhe da tarefa: no painel ao lado ou centralizado na tela. */
+  detailMode: 'side' | 'center'
+  /** Estilo dos eventos do calendário e lado da barra de calendários. */
+  calVariant: 'agora' | 'helvetico' | 'editorial'
+  calSide: 'right' | 'left'
 }
 
 export const DEFAULT_PREFS: KaguyaPrefs = {
   art: 'shuchiin', space: 'all', daySplit: 'split', showCompleted: true, showDetails: true,
-  hiddenNav: [], pinnedNav: [], mobileTabs: [],
+  hiddenNav: [], pinnedNav: [], mobileTabs: [], collapsedGroups: [], viewOrder: [], detailMode: 'side', calVariant: 'agora', calSide: 'right',
 }
 
 /** Alvo possível de uma tarefa nova no quadro do grupo: uma lista-membro e a coluna dela. */
