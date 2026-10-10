@@ -100,30 +100,30 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: Common & { p
 
   return (
     <>
-      <div className="kn-pop-scrim" onClick={onClose} aria-hidden="true" />
-      <div ref={ref} className="kn-pop" style={{ '--kn-cc': resolveColor(ev, cals), left, top } as CSSProperties} role="dialog" aria-label={`Evento: ${ev.title}`}>
-        <div className="kn-pop-bar" />
-        <div className="kn-pop-body">
+      <div className="cal-pop-scrim" onClick={onClose} aria-hidden="true" />
+      <div ref={ref} className="cal-pop" style={{ '--cc': resolveColor(ev, cals), left, top } as CSSProperties} role="dialog" aria-label={`Evento: ${ev.title}`}>
+        <div className="cal-pop-bar" />
+        <div className="cal-pop-body">
           {editable
-            ? <input className="ds-input kn-pop-title" aria-label="Título do evento" value={title} disabled={busy} onChange={(e) => setTitle(e.target.value)} onBlur={saveTitle} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
-            : <b className="kn-pop-title">{ev.title}</b>}
-          <p className="kn-pop-meta"><Icon name="clock" size={13} />{fmtDate(ev.day)} · {time}{ev.recurring && <> · <Icon name="recurring" size={12} /> repete</>}</p>
+            ? <input className="cpop-title" aria-label="Título do evento" value={title} disabled={busy} onChange={(e) => setTitle(e.target.value)} onBlur={saveTitle} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
+            : <span className="cpop-title">{ev.title}</span>}
+          <div className="cpop-meta"><Icon name="clock" size={13} />{fmtDate(ev.day)} · {time}{ev.recurring && <> · <Icon name="recurring" size={12} /> repete</>}</div>
           {editable && !ev.allDay && ev.start && (
             <Select aria-label="Duração" value={duration} disabled={busy} onChange={(e) => changeDuration(Number(e.target.value))}>
               {DURATIONS.filter((d) => d.v > 0).map((d) => <option key={d.v} value={d.v}>{d.label}</option>)}
             </Select>
           )}
-          {ev.loc && <p className="kn-pop-meta"><Icon name="place" size={13} /><a href={mapsLinkFor(ev.loc)} target="_blank" rel="noreferrer">{ev.loc}</a></p>}
-          <p className="kn-pop-meta"><i className="kn-pop-dot" />{cal?.name ?? ev.cal}</p>
+          {ev.loc && <div className="cpop-meta"><Icon name="place" size={13} /><a href={mapsLinkFor(ev.loc)} target="_blank" rel="noreferrer">{ev.loc}</a></div>}
+          <div className="cpop-cal"><span className="pc-dot" />{cal?.name ?? ev.cal}</div>
 
           {colors && (
-            <div className="kn-swatches" role="listbox" aria-label="Cor do evento">
-              {CAL_SWATCHES.map((s, i) => <button key={s} type="button" role="option" aria-selected={ev.color === s} aria-label={`Cor ${i + 1}`} className={`kn-sw-btn${ev.color === s ? ' kn-on' : ''}`} style={{ '--kn-cc': s } as CSSProperties} onClick={() => color(s)} />)}
+            <div className="cal-colors" role="listbox" aria-label="Cor do evento">
+              {CAL_SWATCHES.map((s, i) => <button key={s} type="button" role="option" aria-selected={ev.color === s} aria-label={`Cor ${i + 1}`} className={`cal-sw${ev.color === s ? ' sel' : ''}`} style={{ background: s } as CSSProperties} onClick={() => color(s)} />)}
               <Button size="sm" variant="ghost" onClick={() => color(null)}>Cor do calendário</Button>
             </div>
           )}
 
-          <div className="kn-pop-actions">
+          <div className="cpop-actions">
             {ev.taskId && <Button size="sm" variant="primary" icon="detail-panel" onClick={() => { k.openTask(ev.taskId); onClose() }}>Abrir tarefa</Button>}
             {ev.taskId && <Button size="sm" icon={ev.done ? 'undo' : 'check'} disabled={busy} onClick={() => void run(() => toggleTaskOf(ev, k), 'Não foi possível concluir.')}>{ev.done ? 'Reabrir' : 'Concluir'}</Button>}
             {!editable && ev.deepLink && <Button size="sm" variant="primary" icon="link" onClick={() => { window.location.href = ev.deepLink! }}>Abrir em {cal?.name ?? ev.cal}</Button>}
@@ -154,8 +154,8 @@ export function EventMenu({ ev, cals, pos, onClose, onRefresh, onOpen }: Common 
   } else if (ev.deepLink) items.push({ id: 'link', label: `Abrir em ${cal?.name ?? ev.cal}`, onSelect: () => { window.location.href = ev.deepLink! } })
   return (
     <>
-      <div className="kn-pop-scrim" onClick={onClose} aria-hidden="true" />
-      <div className="kn-ctx" style={{ left: clamp(pos.x, 8, window.innerWidth - 220), top: clamp(pos.y, 8, window.innerHeight - 200) }}>
+      <div className="cal-pop-scrim" onClick={onClose} aria-hidden="true" />
+      <div className="cal-ctx" style={{ left: clamp(pos.x, 8, window.innerWidth - 220), top: clamp(pos.y, 8, window.innerHeight - 200) }}>
         <Menu items={items} onClose={onClose} label={`Ações de ${ev.title}`} className="kn-ctx-menu" />
       </div>
     </>

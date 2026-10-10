@@ -30,11 +30,11 @@ export function MonthGrid({ days, refDate, today, events, cals, onDay, onOpen, o
   const weeks = Array.from({ length: 6 }, (_, w) => days.slice(w * 7, w * 7 + 7))
 
   return (
-    <div className="kn-cmo" role="grid" aria-label="Mês">
-      <div className="kn-cmo-dow" role="row">{WEEKDAYS_SHORT.map((d) => <div key={d} role="columnheader" className="ds-mono">{d}</div>)}</div>
-      <div className="kn-cmo-weeks">
+    <div className="cmo-grid" role="grid" aria-label="Mês">
+      <div className="cmo-dow-row" role="row">{WEEKDAYS_SHORT.map((d) => <div key={d} role="columnheader" className="cmo-dow">{d}</div>)}</div>
+      <div className="cmo-weeks" style={{ gridTemplateRows: 'repeat(6, minmax(92px, 1fr))' }}>
         {weeks.map((week, w) => (
-          <div key={w} className="kn-cmo-week" role="row">
+          <div key={w} className="cmo-week" role="row">
             {week.map((iso) => {
               const d = parseISODate(iso)
               const list = byDay[iso] ?? []
@@ -44,33 +44,35 @@ export function MonthGrid({ days, refDate, today, events, cals, onDay, onOpen, o
                   key={iso}
                   role="gridcell"
                   tabIndex={0}
-                  className={`kn-cmo-cell${d.getMonth() !== month ? ' kn-dim' : ''}${iso === today ? ' kn-today' : ''}`}
+                  className={`cmo-cell${d.getMonth() !== month ? ' dim' : ''}${iso === today ? ' today' : ''}`}
                   aria-label={`${d.getDate()} de ${MONTHS_SHORT[d.getMonth()]}${list.length ? `, ${list.length} item(ns)` : ''}`}
                   onClick={() => onDay(iso)}
                   onKeyDown={(e) => { if (e.key === 'Enter') onDay(iso) }}
                   onDragOver={(e) => { if (e.dataTransfer.types.includes('text/task-id')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move' } }}
                   onDrop={(e) => { e.preventDefault(); const id = Number(e.dataTransfer.getData('text/task-id')); if (id) onDropTask(id, iso) }}
                 >
-                  <div className="kn-cmo-num ds-num">{d.getDate()}{d.getDate() === 1 && <span className="ds-mono"> {MONTHS_SHORT[d.getMonth()]}</span>}</div>
+                  <div className="cmo-numrow"><span className="cmo-num">{d.getDate()}{d.getDate() === 1 && <span className="cmo-month-abbr"> {MONTHS_SHORT[d.getMonth()]}</span>}</span></div>
                   {list.slice(0, MAX).map((ev, i) => (
                     <Fragment key={`${ev.id}-${i}`}>
-                      <button
-                        type="button"
-                        className={`kn-cmo-pill${ev.allDay || !ev.start ? ' kn-filled' : ''}${ev.done ? ' kn-cdone' : ''}`}
-                        style={{ '--kn-cc': resolveColor(ev, cals) } as CSSProperties}
+                      <div
+                        className={`cmo-pill${ev.allDay || !ev.start ? ' filled' : ''}${ev.done ? ' done' : ''}`}
+                        style={{ '--cc': resolveColor(ev, cals) } as CSSProperties}
+                        role="button"
+                        tabIndex={0}
                         title={ev.title}
                         draggable={ev.kind === 'task' && !!ev.taskId}
                         onDragStart={(e) => { if (ev.taskId) { e.dataTransfer.setData('text/task-id', String(ev.taskId)); e.dataTransfer.effectAllowed = 'move' } }}
                         onClick={(e) => { e.stopPropagation(); onOpen(ev, { x: e.clientX, y: e.clientY }) }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); onOpen(ev, { x: r.left, y: r.bottom }) } }}
                         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onMenu(ev, { x: e.clientX, y: e.clientY }) }}
                       >
-                        {!(ev.allDay || !ev.start) && <><i className="kn-cp-dot" /><span className="ds-mono kn-cp-t">{hhmm(ev.start)}</span></>}
+                        {!(ev.allDay || !ev.start) && <><span className="cp-dot" /><span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', flexShrink: 0 }}>{hhmm(ev.start)}</span></>}
                         {ev.recurring && <Icon name="recurring" size={10} />}
-                        <span className="kn-cp-title">{ev.title}</span>
-                      </button>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
+                      </div>
                     </Fragment>
                   ))}
-                  {extra > 0 && <div className="kn-cmo-more ds-mono">+{extra} mais</div>}
+                  {extra > 0 && <div className="cmo-more">+{extra} mais</div>}
                 </div>
               )
             })}

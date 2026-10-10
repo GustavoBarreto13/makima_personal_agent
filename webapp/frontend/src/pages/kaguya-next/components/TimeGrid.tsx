@@ -128,44 +128,48 @@ export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onM
   const byDay: Record<string, CalEvent[]> = {}
   for (const ev of events) if (ev.day) (byDay[ev.day] ??= []).push(ev)
 
-  const cols = { gridTemplateColumns: `var(--kn-gutter) repeat(${ncols}, 1fr)` }
+  const cols = { gridTemplateColumns: `var(--gutter) repeat(${ncols}, 1fr)` }
   return (
-    <div className="kn-cscroll" ref={scrollRef}>
-      <div className="kn-csticky">
-        <div className="kn-cdayhead" style={cols}>
-          <div className="kn-cdh-corner ds-mono">BRT</div>
+    <div className="cal-scroll" ref={scrollRef}>
+      <div className="cal-stickytop">
+        <div className="cal-dayhead" style={cols}>
+          <div className="cdh-corner"><span className="cdh-tz">BRT</span></div>
           {days.map((iso) => (
-            <div key={iso} className={`kn-cdh${iso === today ? ' kn-today' : ''}`}>
-              <span className="ds-mono">{WEEKDAYS_SHORT[parseISODate(iso).getDay()]}</span>
-              <b className="ds-num">{parseISODate(iso).getDate()}</b>
+            <div key={iso} className={`cdh-day${iso === today ? ' today' : ''}`}>
+              <span className="cdh-dow">{WEEKDAYS_SHORT[parseISODate(iso).getDay()]}</span>
+              <span className="cdh-num">{parseISODate(iso).getDate()}</span>
             </div>
           ))}
         </div>
-        <div className="kn-callday" style={cols}>
-          <div className="kn-cdh-corner ds-mono">dia todo</div>
+        <div className="cal-allday" style={cols}>
+          <div className="cad-label">Todo o dia</div>
           {days.map((iso) => (
-            <div key={iso} className="kn-cad-col">
+            <div key={iso} className="cad-col">
               {(byDay[iso] ?? []).filter((e) => e.allDay || !e.start).map((ev) => (
-                <button
+                <div
                   key={ev.id}
-                  type="button"
-                  className={`kn-cpill${ev.done ? ' kn-cdone' : ''}`}
-                  style={{ '--kn-cc': resolveColor(ev, cals) } as CSSProperties}
+                  className={`cad-pill${ev.done ? ' done' : ''}`}
+                  style={{ '--cc': resolveColor(ev, cals) } as CSSProperties}
+                  role="button"
+                  tabIndex={0}
                   title={ev.title}
                   onClick={(e) => onOpen(ev, { x: e.clientX, y: e.clientY })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { const r = e.currentTarget.getBoundingClientRect(); onOpen(ev, { x: r.left, y: r.bottom }) } }}
                   onContextMenu={(e) => { e.preventDefault(); onMenu(ev, { x: e.clientX, y: e.clientY }) }}
                 >
                   {ev.recurring && <Icon name="recurring" size={11} />}{ev.title}
-                </button>
+                </div>
               ))}
             </div>
           ))}
         </div>
       </div>
 
-      <div ref={gridRef} className="kn-cgrid" style={cols}>
-        <div className="kn-cg-gutter">
-          {Array.from({ length: 24 }, (_, h) => <div key={h} className="kn-cg-hour ds-mono">{h === 0 ? '' : `${String(h).padStart(2, '0')}:00`}</div>)}
+      <div ref={gridRef} className="cal-grid" style={{ ...cols, position: 'relative' }}>
+        <div className="cg-gutter">
+          {Array.from({ length: 24 }, (_, h) => (
+            <div key={h} className="cg-hourlabel" style={{ top: `${(h / 24) * 100}%` }}>{h === 0 ? '' : `${String(h).padStart(2, '0')}:00`}</div>
+          ))}
         </div>
         {days.map((iso, colIdx) => {
           const band = bands[iso]
@@ -173,8 +177,8 @@ export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onM
           return (
             <div
               key={iso}
-              className={`kn-cg-col${iso === today ? ' kn-today' : ''}`}
-              style={{ gridColumn: colIdx + 2 }}
+              className={`cg-col${iso === today ? ' today-col' : ''}`}
+              style={{ position: 'relative', height: '100%', gridColumn: colIdx + 2 }}
               data-day={iso}
               onPointerDown={(e) => colDown(e, iso)}
               onPointerMove={(e) => colMove(e, iso)}
@@ -186,17 +190,18 @@ export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onM
                 if (id) onDropTask(id, iso, localISO(iso, snapTo15(yToMin(e.clientY, e.currentTarget))))
               }}
             >
-              {band && <div className="kn-cg-work" style={{ top: pct(band.start), height: pct(band.end - band.start) }} aria-hidden="true" />}
-              {band?.lunch && <div className="kn-cg-lunch" style={{ top: pct(band.lunch[0]), height: pct(band.lunch[1] - band.lunch[0]) }} aria-hidden="true" />}
-              {iso === today && <div className="kn-cg-now" style={{ top: pct(nowMin) }} aria-label={`Agora: ${minToLabel(nowMin)}`} />}
+              {band && <div className="cg-work" style={{ top: pct(band.start), height: pct(band.end - band.start) }} aria-hidden="true" />}
+              {band?.lunch && <div className="cg-lunch" style={{ top: pct(band.lunch[0]), height: pct(band.lunch[1] - band.lunch[0]) }} aria-hidden="true" />}
+              {iso === today && <div className="cg-now" style={{ top: pct(nowMin) }} aria-label={`Agora: ${minToLabel(nowMin)}`} />}
               {timed.map(({ ev, lane, totalLanes, startMin, endMin }) => {
                 const editable = isEditable(ev, cals)
+                const heightPct = Math.max(((endMin - startMin) / 1440) * 100, 2)
                 return (
                   <div
                     key={ev.id}
-                    className={`kn-cg-ev${ev.kind === 'task' ? ' kn-ctask' : ''}${endMin - startMin <= 30 ? ' kn-tiny' : ''}${ev.done ? ' kn-cdone' : ''}`}
+                    className={['cg-event', ev.kind === 'task' ? 'task' : '', endMin - startMin <= 30 ? 'tiny' : '', ev.done ? 'done' : ''].filter(Boolean).join(' ')}
                     style={{
-                      '--kn-cc': resolveColor(ev, cals), top: pct(startMin), height: `max(${pct(endMin - startMin)}, 18px)`,
+                      '--cc': resolveColor(ev, cals), top: pct(startMin), height: `${heightPct}%`,
                       left: `${(lane / totalLanes) * 100}%`, width: `calc(${100 / totalLanes}% - 2px)`, cursor: editable ? 'grab' : 'default',
                     } as CSSProperties}
                     role="button"
@@ -208,9 +213,9 @@ export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onM
                     onContextMenu={(e) => { e.preventDefault(); onMenu(ev, { x: e.clientX, y: e.clientY }) }}
                     onPointerDown={editable ? (e) => startEventDrag(e, ev, 'move', startMin, endMin, iso) : undefined}
                   >
-                    <span className="kn-ce-title">{ev.recurring && <Icon name="recurring" size={11} />}{ev.title}</span>
-                    <span className="kn-ce-time ds-mono">{minToLabel(startMin)}</span>
-                    {editable && <div className="kn-cg-resize" aria-hidden="true" onPointerDown={(e) => { e.stopPropagation(); startEventDrag(e, ev, 'resize', startMin, endMin, iso) }} />}
+                    <span className="ce-title">{ev.recurring && <Icon name="recurring" size={11} />}{ev.title}</span>
+                    <span className="ce-time">{minToLabel(startMin)}</span>
+                    {editable && <div className="cg-resize" aria-hidden="true" onPointerDown={(e) => { e.stopPropagation(); startEventDrag(e, ev, 'resize', startMin, endMin, iso) }} />}
                   </div>
                 )
               })}
@@ -218,12 +223,11 @@ export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onM
           )
         })}
         {ghost && (
-          <div className="kn-cg-ghost" style={{ left: ghost.left, width: ghost.width, top: pct(ghost.startMin), height: pct(ghost.endMin - ghost.startMin) }}>
-            <span className="ds-mono">{minToLabel(ghost.startMin)} – {minToLabel(ghost.endMin)}</span>
+          <div className="cg-ghost" style={{ position: 'absolute', left: ghost.left, width: ghost.width, top: pct(ghost.startMin), height: pct(ghost.endMin - ghost.startMin), pointerEvents: 'none' }}>
+            <span className="gh-time">{minToLabel(ghost.startMin)} – {minToLabel(ghost.endMin)}</span>
           </div>
         )}
       </div>
     </div>
   )
 }
-

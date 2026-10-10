@@ -88,9 +88,9 @@ describe('Calendário — semana', () => {
   it('desenha a faixa de expediente e o almoço na coluna de hoje', async () => {
     await open()
     await screen.findByRole('button', { name: /Reunião/ })
-    const col = document.querySelector(`.kn-cg-col[data-day="${TODAY}"]`)!
-    expect(col.querySelector('.kn-cg-work')).toBeTruthy()
-    expect(col.querySelector('.kn-cg-lunch')).toBeTruthy()
+    const col = document.querySelector(`.cg-col[data-day="${TODAY}"]`)!
+    expect(col.querySelector('.cg-work')).toBeTruthy()
+    expect(col.querySelector('.cg-lunch')).toBeTruthy()
   })
 
   it('navegar muda a janela e “Hoje” volta', async () => {
@@ -205,7 +205,7 @@ describe('Calendário — fontes, bandejas e soltar', () => {
   it('soltar uma tarefa da bandeja na grade agenda o dia e o horário', async () => {
     await open()
     await screen.findByRole('region', { name: 'Sem horário' })
-    const col = document.querySelector(`.kn-cg-col[data-day="${TODAY}"]`)!
+    const col = document.querySelector(`.cg-col[data-day="${TODAY}"]`)!
     const data = { getData: () => '11', types: ['text/task-id'], dropEffect: 'move' }
     fireEvent.drop(col, { dataTransfer: data, clientY: 0 })
     await waitFor(() => expect(api.setTimeBlock).toHaveBeenCalled())

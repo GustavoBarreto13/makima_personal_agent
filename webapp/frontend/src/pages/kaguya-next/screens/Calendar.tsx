@@ -3,8 +3,8 @@
 // (com Desfazer), soltar tarefas da bandeja na grade, arrastar tarefas entre dias no mês, abrir/concluir pelo evento e a
 // faixa de expediente (com almoço e as exceções por dia) desenhada na grade. Respeita o espaço Trabalho/Pessoal.
 
-import { useCallback, useMemo, useState } from 'react'
-import { ErrorState, IconButton, LoadingState, Page, SegmentedControl, Button, toast } from '../../../design'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ErrorState, Icon, LoadingState, Page, toast } from '../../../design'
 import { MONTHS_LONG, WEEKDAYS_SHORT, parseISODate } from '../../../design/core/format'
 import { gcalCalendarId, kaguyaApi } from '../api'
 import { CalendarSide, type GcalStatus } from '../components/CalendarSide'
@@ -152,24 +152,30 @@ export function Calendar() {
   const loading = tasks.state.status === 'loading' || sources.state.status === 'loading'
   const goDay = (iso: string) => { setRef(iso); setView('day') }
 
+  const hint = useHint()
   return (
-    <Page full fill className="kn-cal">
-     <div className="kn-calx" data-variant={k.prefs.calVariant} data-col={k.prefs.calSide}>
-      <div className="kn-cbar">
-        <div className="kn-ctitle">
-          <h2>{title(view, ref)}</h2>
-          {view === 'week' && <span className="ds-mono">semana {isoWeek(ref)}</span>}
+    <Page full fill className="kn-cal kn-legacy">
+     <div className="calx" data-variant={k.prefs.calVariant} data-col={k.prefs.calSide}>
+      <div className="cal-bar">
+        <div className="cal-title">
+          <span className="cal-month">{title(view, ref)}</span>
+          {view === 'week' && <span className="cal-week-lbl">SEMANA {isoWeek(ref)}</span>}
         </div>
-        <div className="kn-quick-i">
-          <IconButton icon="left" label="Período anterior" onClick={() => setRef(shiftRef(view, ref, -1))} />
-          <Button onClick={() => setRef(k.today)}>Hoje</Button>
-          <IconButton icon="right" label="Próximo período" onClick={() => setRef(shiftRef(view, ref, 1))} />
+        <div className="cal-spacer" />
+        <div className="cal-nav">
+          <button type="button" className="cal-iconbtn" aria-label="Período anterior" title="Período anterior" onClick={() => setRef(shiftRef(view, ref, -1))}><Icon name="left" size={15} /></button>
+          <button type="button" className="cal-today" onClick={() => setRef(k.today)}>Hoje</button>
+          <button type="button" className="cal-iconbtn" aria-label="Próximo período" title="Próximo período" onClick={() => setRef(shiftRef(view, ref, 1))}><Icon name="right" size={15} /></button>
         </div>
-        <SegmentedControl<CalView> label="Visão do calendário" value={view} onChange={setView} options={[{ value: 'day', label: 'Dia' }, { value: 'week', label: 'Semana' }, { value: 'month', label: 'Mês' }]} />
+        <div className="cal-seg" role="group" aria-label="Visão do calendário">
+          {([['day', 'Dia'], ['week', 'Semana'], ['month', 'Mês']] as [CalView, string][]).map(([v, label]) => (
+            <button key={v} type="button" className={view === v ? 'on' : ''} aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>
+          ))}
+        </div>
       </div>
 
-      <div className="kn-cbody">
-        <div className="kn-cstage">
+      <div className="cal-body">
+        <div className="cal-stage">
           {tasks.state.status === 'error' && <ErrorState onRetry={tasks.retry} />}
           {loading && <LoadingState variant="card" count={2} />}
           {!loading && tasks.state.status === 'ok' && (view === 'month' ? (
@@ -186,7 +192,7 @@ export function Calendar() {
               onCreate={onCreate} onDropTask={(id, day, iso) => void onDropTask(id, day, iso)}
             />
           ))}
-          <p className="ds-hint">Arraste um horário vazio para criar · arraste um evento para mover · solte uma tarefa da lateral na grade para agendar.</p>
+          <div className={`cal-hint${hint ? ' show' : ''}`}>Clique em um horário vazio para criar • Arraste para mover • Solte uma tarefa da lateral na grade para agendar</div>
         </div>
         <CalendarSide
           refDate={ref} today={k.today} onPick={(iso) => setRef(iso)} cals={cals} gcal={status.state.status === 'ok' ? status.state.data : null}
@@ -202,4 +208,11 @@ export function Calendar() {
      </div>
     </Page>
   )
+}
+
+/** A dica de uso aparece ao entrar na tela e some depois de 4,2 s (como no calendário antigo). */
+function useHint(): boolean {
+  const [on, setOn] = useState(true)
+  useEffect(() => { const t = window.setTimeout(() => setOn(false), 4200); return () => window.clearTimeout(t) }, [])
+  return on
 }
