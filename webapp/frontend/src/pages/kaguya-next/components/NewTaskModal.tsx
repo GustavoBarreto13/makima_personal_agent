@@ -19,6 +19,7 @@ import { presetLabels, ruleFor, type RecurrencePreset } from '../lib/recurrence'
 import { PRIORITY_LABEL } from '../lib/taskView'
 import { safe, useLoad } from '../lib/useLoad'
 import type { Column, GtdStatus, RecurrenceMode, TaskContext, TaskType } from '../types'
+import { TaskFormLayout } from './TaskFormLayout'
 import { usePeople } from './TaskPanelExtras'
 
 const TYPES: { value: TaskType; label: string }[] = [{ value: 'task', label: 'Tarefa' }, { value: 'event', label: 'Evento' }, { value: 'birthday', label: 'Aniversário' }]
@@ -152,8 +153,10 @@ export function NewTaskModal({ defaults, onClose }: { defaults?: NewTaskDefaults
         <Button variant="primary" icon="add" disabled={saving || !f.title.trim()} onClick={() => void create()}>{saving ? 'Criando…' : 'Criar tarefa'}</Button>
       </>}
     >
-      <div className="kn-nt" onKeyDown={onKey}>
-        <div className="kn-nt-form">
+      <div onKeyDown={onKey}>
+       <TaskFormLayout
+        fields={(
+         <>
           <Field label="Título" hint={chips.length ? undefined : 'Dica: @lista #etiqueta !alta amanhã 17h toda sexta 45min'}>{(c) => (
             <Input {...c} autoFocus value={title} placeholder="O que precisa ser feito?" onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); void create() } }} />
           )}</Field>
@@ -249,9 +252,10 @@ export function NewTaskModal({ defaults, onClose }: { defaults?: NewTaskDefaults
             <span>Colocar no Meu Dia</span>
             <Toggle label="Colocar no Meu Dia" checked={myDay} onChange={setMyDay} />
           </div>
-        </div>
-
-        <div className="kn-nt-side">
+         </>
+        )}
+        side={(
+         <>
           <Field label="Notas">{() => <MarkdownEditor value={notes} onChange={setNotes} label="Notas" placeholder="Notas, links e checklists em Markdown…" />}</Field>
           <section aria-label="Subtarefas" className="kn-subs">
             <h3 className="kn-h3">Subtarefas</h3>
@@ -267,7 +271,9 @@ export function NewTaskModal({ defaults, onClose }: { defaults?: NewTaskDefaults
             )}
             <Input aria-label="Nova subtarefa" placeholder="Adicionar subtarefa e Enter" value={subDraft} onChange={(e) => setSubDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); e.stopPropagation(); addSub() } }} />
           </section>
-        </div>
+         </>
+        )}
+       />
       </div>
     </Modal>
   )

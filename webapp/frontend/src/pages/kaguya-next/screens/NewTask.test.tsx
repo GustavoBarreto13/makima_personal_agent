@@ -154,3 +154,27 @@ describe('Detalhe da tarefa: ao lado ou no centro', () => {
     expect(await screen.findByRole('dialog', { name: 'Tarefa' })).toBeTruthy()
   })
 })
+
+describe('Nova tarefa e Editar centralizado têm o mesmo layout', () => {
+  const labelsOf = (root: HTMLElement) => [...root.querySelectorAll('.kn-tf-fields .ds-field > label, .kn-tf-fields .ds-field > .ds-flabel')].map((l) => l.textContent?.trim() ?? '')
+
+  it('campos à esquerda e notas à direita nos dois, na mesma ordem', async () => {
+    const user = await shell()
+    const dlg = await openNew(user)
+    const novos = labelsOf(dlg)
+    expect(dlg.querySelector('.kn-tf-wide > .kn-tf-fields')).toBeTruthy()
+    expect(dlg.querySelector('.kn-tf-wide > .kn-tf-side')?.textContent).toContain('Notas')
+    cleanup()
+
+    localStorage.setItem('ds:prefs:kaguya', JSON.stringify({ detailMode: 'center' }))
+    await shell('#lista/1/t/7')
+    const edit = await screen.findByRole('dialog', { name: 'Tarefa' })
+    await within(edit).findByLabelText('Título')
+    const editar = labelsOf(edit)
+    expect(edit.querySelector('.kn-tf-wide > .kn-tf-side')?.textContent).toContain('Notas')
+
+    const comuns = novos.filter((l) => editar.includes(l))
+    expect(comuns.length).toBeGreaterThan(8)
+    expect(editar.filter((l) => novos.includes(l))).toEqual(comuns)
+  })
+})

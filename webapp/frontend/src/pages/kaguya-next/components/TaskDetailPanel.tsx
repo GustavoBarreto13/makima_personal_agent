@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  Button, DatePicker, EmptyState, ErrorState, Icon, IconButton, Input, ListPicker, LoadingState, Menu, Modal, Select, SegmentedControl, TagInput, TimePicker, Field, toast, MarkdownEditor,
+  Button, DatePicker, EmptyState, ErrorState, Icon, IconButton, Input, ListPicker, LoadingState, Menu, Modal, Select, SegmentedControl, TagInput, Toggle, Field, toast, MarkdownEditor,
   type MentionSource,
 } from '../../../design'
 import { fmtDate } from '../../../design/core/format'
@@ -12,12 +12,14 @@ import { kaguyaApi } from '../api'
 import { useKaguya } from '../context'
 import * as act from '../lib/actions'
 import { activityTime, describeActivity } from '../lib/activity'
+import { DURATIONS } from '../lib/durations'
 import { listOptions } from '../lib/listOptions'
 import { presetLabels, presetOf, ruleFor, type RecurrencePreset } from '../lib/recurrence'
 import { dueInfo, PRIORITY_LABEL } from '../lib/taskView'
 import { useLoad } from '../lib/useLoad'
 import type { GtdStatus, Task } from '../types'
-import { TaskPanelExtras, usePeople } from './TaskPanelExtras'
+import { TaskFormLayout } from './TaskFormLayout'
+import { useTaskExtras, usePeople } from './TaskPanelExtras'
 
 const GTD_OPTIONS: { value: GtdStatus | ''; label: string }[] = [
   { value: '', label: 'Sem classificação' }, { value: 'next_action', label: 'Próxima ação' },
@@ -152,6 +154,7 @@ function Details({ task, save, wide }: { task: Task; save: (p: Parameters<typeof
 
   const listOpts = useMemo(() => listOptions(k.projects, k.groups), [k.projects, k.groups])
   const people = usePeople()
+  const x = useTaskExtras(task, save)
   // @pessoa (cadastro da Komi) e [[tarefa: o texto guarda `@[Nome](komi:id)` e `[[id|Título]]`, que o leitor desenha como link.
   const mentions = useMemo<MentionSource[]>(() => [
     { trigger: '@', search: (q) => people.search(q).map((p) => ({ id: p.id, label: p.name })), format: (i) => `@[${i.label}](komi:${i.id}) ` },
@@ -182,70 +185,114 @@ function Details({ task, save, wide }: { task: Task; save: (p: Parameters<typeof
     } catch (e) { toast(reason(e), { tone: 'error' }) }
   }
 
-  return (
-    <div className={`kn-panel-b${wide ? ' kn-pd-wide' : ''}`}>
-     <div className="kn-pd-top">
-      <div className="kn-quick">
-        <span className="kn-quick-i">
-          <DatePicker value={task.due_date ?? ''} onChange={(iso) => void save({ due_date: iso })} aria-label="Vencimento" />
-          {task.due_date && <IconButton icon="close" label="Remover data" onClick={() => void save({ due_date: null })} />}
-        </span>
-        {task.due_date && (
-          task.due_time
-            ? <span className="kn-quick-i"><TimePicker value={task.due_time} onChange={(hhmm) => void save({ due_time: hhmm })} /><IconButton icon="close" label="Remover hora" onClick={() => void save({ due_time: null })} /></span>
-            : <Button size="sm" variant="ghost" icon="clock" onClick={() => void save({ due_time: '09:00' })}>Hora</Button>
-        )}
-        {due.label && <span className={`kn-due kn-due-${due.tone}`}>{due.label}</span>}
-        <Button size="sm" variant={myDay ? 'primary' : 'default'} icon="sun" aria-pressed={myDay}
-          onClick={() => void (myDay ? act.removeFromMyDay({ reload: k.reload }, [task.id]) : act.addToMyDay({ reload: k.reload }, [task.id]))}>
-          Meu Dia
-        </Button>
-      </div>
+  // Mesma ordem do “Nova tarefa”: título · lista/coluna · tipo · prioridade · data/duração · horário · repete · etiquetas ·
+  // pessoas · GTD/onde · Meu Dia. Aqui cada campo grava na hora.
+  const fields = (
+    <>
+      <Field label="Título">{(c) => (
+        <Input
+          {...c}
+          className="kn-title-in"
+          value={title}
+          placeholder="Título da tarefa"
+          onChange={(e) => setTitle(e.target.value)}
+          onBlur={() => { const t = title.trim(); if (!t) setTitle(task.title); else if (t !== task.title) void save({ title: t }) }}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        />
+      )}</Field>
 
-      <SegmentedControl
-        label="Prioridade"
-        value={String(task.priority)}
-        options={[3, 2, 1, 0].map((p) => ({ value: String(p), label: PRIORITY_LABEL[p] }))}
-        onChange={(v) => void save({ priority: Number(v) })}
-      />
-
-      <Input
-        className="kn-title-in"
-        aria-label="Título"
-        value={title}
-        placeholder="Título da tarefa"
-        onChange={(e) => setTitle(e.target.value)}
-        onBlur={() => { const t = title.trim(); if (!t) setTitle(task.title); else if (t !== task.title) void save({ title: t }) }}
-        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-      />
-     </div>
-
-     <div className="kn-pd-a1">
       <div className="kn-props">
         <Field label="Lista">{(c) => (
           <ListPicker id={c.id} value={String(task.project_id)} options={listOpts} onChange={(v) => void save({ project_id: Number(v) })} />
         )}</Field>
+        {x.column}
+      </div>
+
+      {x.type}
+
+      <Field label="Prioridade">{() => (
+        <SegmentedControl
+          label="Prioridade"
+          value={String(task.priority)}
+          options={[0, 1, 2, 3].map((p) => ({ value: String(p), label: PRIORITY_LABEL[p] }))}
+          onChange={(v) => void save({ priority: Number(v) })}
+        />
+      )}</Field>
+
+      <div className="kn-props">
+        <Field label="Data">{(c) => (
+          <span className="kn-quick-i">
+            <DatePicker id={c.id} value={task.due_date ?? ''} onChange={(iso) => void save({ due_date: iso })} />
+            {task.due_date && <IconButton icon="close" label="Remover data" onClick={() => void save({ due_date: null })} />}
+            {due.label && <span className={`kn-due kn-due-${due.tone}`}>{due.label}</span>}
+          </span>
+        )}</Field>
+        <Field label="Duração">{(c) => (
+          <Select {...c} value={task.duration_min ?? 0} onChange={(e) => void save({ duration_min: Number(e.target.value) || null })}>
+            {task.duration_min != null && !DURATIONS.some((d) => d.v === task.duration_min) && <option value={task.duration_min}>{task.duration_min} min</option>}
+            {DURATIONS.map((d) => <option key={d.v} value={d.v}>{d.label}</option>)}
+          </Select>
+        )}</Field>
+      </div>
+
+      {x.time}
+
+      <div className="kn-props">
         <Field label="Repete">{(c) => (
           <Select {...c} value={preset} onChange={(e) => void setRecurrence(e.target.value as RecurrencePreset)}>
             {presetLabels(task.due_date).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             {preset === 'custom' && <option value="custom">{task.recurrence_text ?? 'Personalizada'}</option>}
           </Select>
         )}</Field>
-        <Field label="Estimativa (min)">{(c) => (
-          <Input {...c} type="number" min={0} step={5} inputMode="numeric" defaultValue={task.duration_min ?? ''} key={`d${task.id}-${task.duration_min}`}
-            onBlur={(e) => { const v = e.target.value === '' ? null : Math.max(0, Number(e.target.value)); if (v !== (task.duration_min ?? null)) void save({ duration_min: v }) }} />
-        )}</Field>
-        <Field label="Adiar até" hint="Some das listas até este dia.">{(c) => (
-          <span className="kn-quick-i">
-            <DatePicker {...c} value={task.start_date ?? ''} onChange={(iso) => void save({ start_date: iso })} />
-            {task.start_date && <IconButton icon="close" label="Remover adiamento" onClick={() => void save({ start_date: null })} />}
-          </span>
-        )}</Field>
+        {x.recurrenceMode}
       </div>
 
-     </div>
+      <Field label="Adiar até" hint="Some das listas até este dia.">{(c) => (
+        <span className="kn-quick-i">
+          <DatePicker id={c.id} value={task.start_date ?? ''} onChange={(iso) => void save({ start_date: iso })} />
+          {task.start_date && <IconButton icon="close" label="Remover adiamento" onClick={() => void save({ start_date: null })} />}
+        </span>
+      )}</Field>
 
-     <div className="kn-pd-main">
+      <Field label="Etiquetas">{(c) => (
+        <TagInput id={c.id} value={(task.tags ?? []).map((t) => t.name)} onChange={(names) => void save({ tags: names })} />
+      )}</Field>
+
+      {x.people}
+
+      <div className="kn-props">
+        <Field label="Classificação GTD">{(c) => (
+          <Select {...c} value={task.gtd_status ?? ''} onChange={(e) => void save({ gtd_status: (e.target.value || null) as GtdStatus | null })}>
+            {GTD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </Select>
+        )}</Field>
+        {x.where}
+      </div>
+      {task.gtd_status === 'waiting' && (
+        <>
+          <Field label="Aguardando quem/o quê">{(c) => (
+            <Input {...c} value={wait} placeholder="Ex.: resposta do cliente" onChange={(e) => setWait(e.target.value)}
+              onBlur={() => { if (wait !== (task.waiting_note ?? '')) void save({ waiting_note: wait.trim() || null }) }} />
+          )}</Field>
+          {x.waiting}
+          <Field label="Cobrar em" hint="No dia, ela volta para o Meu Dia.">{(c) => (
+            <span className="kn-quick-i">
+              <DatePicker id={c.id} value={task.follow_up_date ?? ''} onChange={(iso) => void save({ follow_up_date: iso })} />
+              {task.follow_up_date && <IconButton icon="close" label="Remover cobrança" onClick={() => void save({ follow_up_date: null })} />}
+            </span>
+          )}</Field>
+        </>
+      )}
+
+      <div className="kn-nt-myday">
+        <span>Colocar no Meu Dia</span>
+        <Toggle label="Colocar no Meu Dia" checked={myDay} onChange={(v) => void (v ? act.addToMyDay({ reload: k.reload }, [task.id]) : act.removeFromMyDay({ reload: k.reload }, [task.id]))} />
+      </div>
+    </>
+  )
+
+  const side = (
+    <>
       <Field label="Notas">{() => (
         <MarkdownEditor
           value={notes}
@@ -282,43 +329,13 @@ function Details({ task, save, wide }: { task: Task; save: (p: Parameters<typeof
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addSub() } }} />
       </section>
 
-      <Field label="Etiquetas">{(c) => (
-        <TagInput {...c} value={(task.tags ?? []).map((t) => t.name)} onChange={(names) => void save({ tags: names })} />
-      )}</Field>
-
-     </div>
-
-     <div className="kn-pd-a2">
-      <div className="kn-props">
-        <Field label="Classificação GTD">{(c) => (
-          <Select {...c} value={task.gtd_status ?? ''} onChange={(e) => void save({ gtd_status: (e.target.value || null) as GtdStatus | null })}>
-            {GTD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </Select>
-        )}</Field>
-        {task.gtd_status === 'waiting' && (
-          <>
-            <Field label="Aguardando quem/o quê">{(c) => (
-              <Input {...c} value={wait} placeholder="Ex.: resposta do cliente" onChange={(e) => setWait(e.target.value)}
-                onBlur={() => { if (wait !== (task.waiting_note ?? '')) void save({ waiting_note: wait.trim() || null }) }} />
-            )}</Field>
-            <Field label="Cobrar em" hint="No dia, ela volta para o Meu Dia.">{(c) => (
-              <span className="kn-quick-i">
-                <DatePicker {...c} value={task.follow_up_date ?? ''} onChange={(iso) => void save({ follow_up_date: iso })} />
-                {task.follow_up_date && <IconButton icon="close" label="Remover cobrança" onClick={() => void save({ follow_up_date: null })} />}
-              </span>
-            )}</Field>
-          </>
-        )}
-      </div>
-
-      <TaskPanelExtras task={task} save={save} />
-
       <Dependencies task={task} />
 
       <p className="kn-foot">Criada em {fmtDate(task.created_at.slice(0, 10))}</p>
-     </div>
-    </div>
+    </>
   )
+
+  return <div className="kn-panel-b"><TaskFormLayout fields={fields} side={side} wide={!!wide} /></div>
 }
 
 /** "Depende de…": lista os bloqueadores e permite adicionar (busca por título) ou remover. */

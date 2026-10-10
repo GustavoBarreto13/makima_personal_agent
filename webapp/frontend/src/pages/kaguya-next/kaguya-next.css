@@ -585,21 +585,17 @@
 
 /* ── Detalhe centralizado e modal “Nova tarefa” ── */
 .kn-modal-extra { display: flex; flex: 1; align-items: center; justify-content: flex-end; gap: var(--ds-space-3); margin-inline: var(--ds-space-3); min-width: 0; }
-.kn-pd-top, .kn-pd-a1, .kn-pd-main, .kn-pd-a2 { display: flex; flex-direction: column; gap: var(--ds-space-4); }
+.kn-tf { display: block; }
+.kn-tf-fields, .kn-tf-side { display: flex; flex-direction: column; gap: var(--ds-space-4); min-width: 0; }
+.kn-tf-side { margin-top: var(--ds-space-4); }
+/* Duas colunas — campos à esquerda, notas e subtarefas à direita — no modal (Nova e Editar centralizado). */
 @container ds-frame (min-width: 760px) {
-  .kn-pd-wide { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); grid-template-areas: 'top top' 'main a1' 'main a2'; align-content: start; gap: var(--ds-space-4) var(--ds-space-6); }
-  .kn-pd-wide > .kn-pd-top { grid-area: top; }
-  .kn-pd-wide > .kn-pd-main { grid-area: main; }
-  .kn-pd-wide > .kn-pd-a1 { grid-area: a1; }
-  .kn-pd-wide > .kn-pd-a2 { grid-area: a2; }
-  .kn-pd-wide .kn-props { grid-template-columns: 1fr; }
+  .kn-tf-wide { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--ds-space-6); align-items: start; }
+  .kn-tf-wide > .kn-tf-side { margin-top: 0; }
 }
-.kn-nt { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--ds-space-6); align-items: start; }
-.kn-nt-form, .kn-nt-side { display: flex; flex-direction: column; gap: var(--ds-space-4); min-width: 0; }
 .kn-nt-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-2); margin: calc(var(--ds-space-2) * -1) 0 0; }
 .kn-nt-myday { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3); }
 .kn-nt-hint { margin-inline-end: auto; }
-@container ds-frame (max-width: 759px) { .kn-nt { grid-template-columns: 1fr; } }
 
 
 /* ── Ajustes ── */

@@ -32,7 +32,8 @@ export function usePeople() {
   return { all, search, create }
 }
 
-export function TaskPanelExtras({ task, save }: { task: Task; save: Save }) {
+/** Os campos do painel que vão além do básico, cada um como um bloco solto: quem monta a tela escolhe a ordem. */
+export function useTaskExtras(task: Task, save: Save) {
   const k = useKaguya()
   const people = usePeople()
   const project = k.projects.find((p) => p.id === task.project_id)
@@ -69,63 +70,75 @@ export function TaskPanelExtras({ task, save }: { task: Task; save: Save }) {
   const ctxs = contexts.state.status === 'ok' ? contexts.state.data : []
   const mode: RecurrenceMode = task.recurrence?.mode ?? 'fixed'
 
-  return (
-    <>
-      <Field label="Tipo">{() => (
-        <SegmentedControl<TaskType> label="Tipo" value={task.type} options={TYPES} onChange={(v) => void save({ type: v })} />
-      )}</Field>
-
-      <Field label="Horário" hint={day ? (startMin === null ? 'Sem horário: aparece como dia inteiro no calendário.' : 'Vira um bloco no calendário e entra na conta do tempo livre.') : 'Defina a data de vencimento para marcar um horário.'}>{() => (
-        <div className="kn-quick">
-          {startMin !== null && (
-            <>
-              <TimePicker value={minToLabel(startMin)} onChange={(v) => void block({ start: timeToMin(v) })} />
-              <span>até</span>
-              <TimePicker value={minToLabel(endMin ?? startMin + (task.duration_min || 30))} onChange={(v) => void block({ end: timeToMin(v) })} />
-              {endDate && endDate !== day && <DatePicker value={endDate} onChange={(iso) => { setEndDate(iso); void block({ endDay: iso }) }} />}
-              <IconButton icon="close" label="Tirar o horário" onClick={() => void block({ start: null })} />
-            </>
-          )}
-          {startMin === null && day && <Button size="sm" icon="clock" onClick={() => void block({ start: 9 * 60 })}>Marcar horário</Button>}
-        </div>
-      )}</Field>
-
-      <div className="kn-props">
-        {project?.has_board && cols.length > 0 && (
-          <Field label="Coluna do quadro">{(c) => (
-            <Select {...c} value={task.column_id ?? ''} onChange={(e) => void save({ column_id: e.target.value ? Number(e.target.value) : null })}>
-              <option value="">Sem coluna</option>
-              {cols.map((col) => <option key={col.id} value={col.id}>{col.name}{col.is_done_column ? ' (concluídas)' : ''}</option>)}
-            </Select>
-          )}</Field>
-        )}
-        <Field label="Onde (@)" hint="Onde a tarefa pode ser feita.">{(c) => (
-          <Select {...c} value={task.context_id ?? ''} onChange={(e) => void save({ context_id: e.target.value ? Number(e.target.value) : null })}>
-            <option value="">Sem local</option>
-            {ctxs.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-          </Select>
-        )}</Field>
-        {task.recurrence?.active && (
-          <Field label="A série se repete" hint={mode === 'fixed' ? 'A próxima vence na data da regra, mesmo que você atrase.' : 'A próxima conta a partir do dia em que você concluir.'}>{() => (
-            <SegmentedControl<RecurrenceMode>
-              label="Modo da repetição"
-              value={mode}
-              options={[{ value: 'fixed', label: 'Data fixa' }, { value: 'after_completion', label: 'Após concluir' }]}
-              onChange={(m) => void save({ recurrence: { rrule: task.recurrence!.rrule, mode: m } })}
-            />
-          )}</Field>
-        )}
-      </div>
-
-      <Field label="Pessoas" hint="Quem participa ou responde por esta tarefa (cadastro da Komi).">{(c) => (
-        <PersonPicker id={c.id} value={assignees} search={people.search} onCreate={people.create} onChange={(list) => void save({ person_ids: list.map((p) => p.id) })} />
-      )}</Field>
-
-      {task.gtd_status === 'waiting' && (
-        <Field label="Aguardando resposta de" hint="Escolha a pessoa para cobrar no dia certo.">{(c) => (
-          <PersonPicker id={c.id} value={waitingValue} search={people.search} onCreate={people.create} onChange={(list) => void save({ waiting_person_id: list.length ? list[list.length - 1].id : null })} />
-        )}</Field>
-      )}
-    </>
+  const type = (
+    <Field label="Tipo">{() => (
+      <SegmentedControl<TaskType> label="Tipo" value={task.type} options={TYPES} onChange={(v) => void save({ type: v })} />
+    )}</Field>
   )
+
+  const time = (
+    <Field label="Horário" hint={day ? (startMin === null ? 'Sem horário: aparece como dia inteiro no calendário.' : 'Vira um bloco no calendário e entra na conta do tempo livre.') : 'Defina a data de vencimento para marcar um horário.'}>{() => (
+      <div className="kn-quick">
+        {startMin !== null && (
+          <>
+            <TimePicker value={minToLabel(startMin)} onChange={(v) => void block({ start: timeToMin(v) })} />
+            <span>até</span>
+            <TimePicker value={minToLabel(endMin ?? startMin + (task.duration_min || 30))} onChange={(v) => void block({ end: timeToMin(v) })} />
+            {endDate && endDate !== day && <DatePicker value={endDate} onChange={(iso) => { setEndDate(iso); void block({ endDay: iso }) }} />}
+            <IconButton icon="close" label="Tirar o horário" onClick={() => void block({ start: null })} />
+          </>
+        )}
+        {startMin === null && day && <Button size="sm" icon="clock" onClick={() => void block({ start: 9 * 60 })}>Marcar horário</Button>}
+      </div>
+    )}</Field>
+  )
+
+  const column = project?.has_board && cols.length > 0 ? (
+    <Field label="Coluna do quadro">{(c) => (
+      <Select {...c} value={task.column_id ?? ''} onChange={(e) => void save({ column_id: e.target.value ? Number(e.target.value) : null })}>
+        <option value="">Sem coluna</option>
+        {cols.map((col) => <option key={col.id} value={col.id}>{col.name}{col.is_done_column ? ' (concluídas)' : ''}</option>)}
+      </Select>
+    )}</Field>
+  ) : null
+
+  const where = (
+    <Field label="Onde (@)" hint="Onde a tarefa pode ser feita.">{(c) => (
+      <Select {...c} value={task.context_id ?? ''} onChange={(e) => void save({ context_id: e.target.value ? Number(e.target.value) : null })}>
+        <option value="">Sem local</option>
+        {ctxs.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+      </Select>
+    )}</Field>
+  )
+
+  const recurrenceMode = task.recurrence?.active ? (
+    <Field label="A série se repete" hint={mode === 'fixed' ? 'A próxima vence na data da regra, mesmo que você atrase.' : 'A próxima conta a partir do dia em que você concluir.'}>{() => (
+      <SegmentedControl<RecurrenceMode>
+        label="Modo da repetição"
+        value={mode}
+        options={[{ value: 'fixed', label: 'Data fixa' }, { value: 'after_completion', label: 'Após concluir' }]}
+        onChange={(m) => void save({ recurrence: { rrule: task.recurrence!.rrule, mode: m } })}
+      />
+    )}</Field>
+  ) : null
+
+  const peopleField = (
+    <Field label="Pessoas" hint="Quem participa ou responde por esta tarefa (cadastro da Komi).">{(c) => (
+      <PersonPicker id={c.id} value={assignees} search={people.search} onCreate={people.create} onChange={(list) => void save({ person_ids: list.map((p) => p.id) })} />
+    )}</Field>
+  )
+
+  const waiting = task.gtd_status === 'waiting' ? (
+    <Field label="Aguardando resposta de" hint="Escolha a pessoa para cobrar no dia certo.">{(c) => (
+      <PersonPicker id={c.id} value={waitingValue} search={people.search} onCreate={people.create} onChange={(list) => void save({ waiting_person_id: list.length ? list[list.length - 1].id : null })} />
+    )}</Field>
+  ) : null
+
+  return { type, time, column, where, recurrenceMode, people: peopleField, waiting }
+}
+
+/** Todos os extras em sequência (a ordem do painel lateral original). */
+export function TaskPanelExtras({ task, save }: { task: Task; save: Save }) {
+  const x = useTaskExtras(task, save)
+  return <>{x.type}{x.time}<div className="kn-props">{x.column}{x.where}{x.recurrenceMode}</div>{x.people}{x.waiting}</>
 }
