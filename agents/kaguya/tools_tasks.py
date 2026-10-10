@@ -2649,6 +2649,8 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
                -- Aguardando: chegou o dia de cobrar (follow-up) → vira sugestão do dia.
                OR (t.gtd_status = 'waiting' AND t.follow_up_date IS NOT NULL AND t.follow_up_date <= %(hoje)s))
           AND (t.my_day_date IS NULL OR t.my_day_date != %(hoje)s)
+          -- Evento e aniversário têm data fixa: moram no calendário e na linha do dia, não são "a fazer".
+          AND t.type = 'task'
           AND t.completed_at IS NULL
           AND t.deleted_at IS NULL
           AND p.archived_at IS NULL
