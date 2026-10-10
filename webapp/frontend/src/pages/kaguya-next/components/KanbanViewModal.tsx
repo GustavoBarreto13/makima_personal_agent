@@ -7,7 +7,7 @@ import { Button, Chip, Field, Input, Modal, Select, confirm, toast } from '../..
 import { kaguyaApi } from '../api'
 import { useKaguya } from '../context'
 import type { FilterRules, KanbanView, KanbanViewDisplay, SummaryMetric } from '../types'
-import { FilterBuilder } from './FilterBuilder'
+import { FilterBuilder, SMARTLIST_FIELDS, useFilterLookups } from './FilterBuilder'
 import { DEFAULT_SLOTS } from './KanbanSummary'
 
 const ADORNOS: { key: keyof KanbanViewDisplay['adornos']; label: string }[] = [
@@ -27,6 +27,7 @@ const reason = (e: unknown, fallback: string) => (e instanceof Error && e.messag
 
 export function KanbanViewModal({ view, onClose, onSaved }: { view?: KanbanView; onClose: () => void; onSaved: () => void }) {
   const k = useKaguya()
+  const lookups = useFilterLookups()
   const [name, setName] = useState(view?.name ?? '')
   const [adornos, setAdornos] = useState(view?.display.adornos ?? DEFAULT_DISPLAY.adornos)
   const [slots, setSlots] = useState<SummaryMetric[]>(view?.display.slots?.length === 3 ? view.display.slots : DEFAULT_DISPLAY.slots)
@@ -101,7 +102,7 @@ export function KanbanViewModal({ view, onClose, onSaved }: { view?: KanbanView;
       <Field label="Filtro">{() => (
         <>
           <Chip on={hasFilter} aria-pressed={hasFilter} onClick={() => setHasFilter((f) => !f)}>Filtrar tarefas</Chip>
-          {hasFilter && <FilterBuilder value={rules} onChange={setRules} today={k.today} />}
+          {hasFilter && <FilterBuilder value={rules} onChange={setRules} today={k.today} fields={SMARTLIST_FIELDS} projects={k.projects} groups={k.groups} contexts={lookups.contexts} people={lookups.people} />}
         </>
       )}</Field>
     </Modal>

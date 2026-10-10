@@ -73,7 +73,7 @@ from agents.kaguya.tools_filters import (
     list_builtin_filters, list_tasks_by_builtin,
 )
 from agents.kaguya.tools_kanban_views import (
-    list_views, create_view, update_view, delete_view, list_board_for_view,
+    list_views, create_view, update_view, delete_view, list_board_for_view, filter_board,
 )
 from agents.kaguya.tools_calendar import list_tasks_in_range
 # Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034.
@@ -1009,6 +1009,18 @@ def update_kanban_view_route(view_id: int, body: UpdateKanbanViewBody, user: dic
 def delete_kanban_view_route(view_id: int, user: dict = Depends(require_user)) -> dict:
     """Exclui uma view customizada; a built-in "Completa" não pode ser excluída."""
     return _check_result(delete_view(view_id))
+
+
+class KanbanBoardBody(BaseModel):
+    """Board de uma lista com um filtro avulso (a mesma DSL das smart-lists), sem salvar view."""
+    project_id: int
+    rules: Optional[dict] = None
+
+
+@router.post("/kanban-board")
+def kanban_board_filtered_route(body: KanbanBoardBody, user: dict = Depends(require_user)) -> list[dict]:
+    """Tarefas do board de uma lista filtradas por regras avulsas (inclui concluídas)."""
+    return _check_result(filter_board(body.project_id, body.rules))["tasks"]
 
 
 @router.get("/kanban-views/{view_id}/board")

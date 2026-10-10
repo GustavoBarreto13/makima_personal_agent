@@ -8,7 +8,7 @@ import { Button, Field, IconButton, Input, Modal, NumberInput, SegmentedControl,
 import { kaguyaApi } from '../api'
 import { useKaguya } from '../context'
 import type { FilterRules, Filter, Group, Project, TaskContext, WorkContext } from '../types'
-import { FilterBuilder, SMARTLIST_FIELDS } from './FilterBuilder'
+import { FilterBuilder, SMARTLIST_FIELDS, useFilterLookups } from './FilterBuilder'
 
 const reason = (e: unknown, fallback: string) => (e instanceof Error && e.message && !/^HTTP \d+$/.test(e.message) ? e.message : fallback)
 const SPACES: { value: WorkContext; label: string }[] = [{ value: 'personal', label: 'Pessoal' }, { value: 'work', label: 'Trabalho' }]
@@ -200,12 +200,11 @@ export function GroupModal({ group, onClose, onSaved }: { group?: Group; onClose
 
 export function SmartListModal({ filter, onClose, onSaved }: { filter?: Filter; onClose: () => void; onSaved?: (id?: number) => void }) {
   const k = useKaguya()
+  const lookups = useFilterLookups()
   const [name, setName] = useState(filter?.name ?? '')
   const [rules, setRules] = useState<FilterRules>(filter?.rules?.conditions?.length ? filter.rules : { combinator: 'and', conditions: [{ field: 'priority', op: 'gte', value: 2 }] })
-  const [contexts, setContexts] = useState<TaskContext[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  useEffect(() => { kaguyaApi.listContexts().then(setContexts).catch(() => setContexts([])) }, [])
 
   const save = async () => {
     if (!name.trim()) { setError('Dê um nome à smart-list.'); return }
@@ -256,7 +255,7 @@ export function SmartListModal({ filter, onClose, onSaved }: { filter?: Filter; 
     >
       <Field label="Nome" error={error || undefined}>{(c) => <Input {...c} autoFocus value={name} placeholder="Ex.: Urgentes de trabalho" onChange={(e) => { setName(e.target.value); setError('') }} />}</Field>
       <Field label="Regras" hint="A smart-list mostra as tarefas que cumprem as condições, sempre atualizadas.">{() => (
-        <FilterBuilder value={rules} onChange={setRules} today={k.today} fields={SMARTLIST_FIELDS} projects={k.projects} groups={k.groups} contexts={contexts} />
+        <FilterBuilder value={rules} onChange={setRules} today={k.today} fields={SMARTLIST_FIELDS} projects={k.projects} groups={k.groups} contexts={lookups.contexts} people={lookups.people} />
       )}</Field>
     </Modal>
   )

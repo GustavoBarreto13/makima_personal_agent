@@ -230,7 +230,8 @@ def list_board_tasks(project_id: int, rules: Optional[dict] = None) -> list:
     # Import lazy: evita ciclo de import com tools_tasks (que não importa este módulo).
     from agents.kaguya.tools_tasks import list_tasks
 
-    parents = list_tasks(project_id, include_completed=False)
+    # As concluídas entram: a coluna de "concluídas" do quadro mostra o que já foi feito (o filtro decide o resto).
+    parents = list_tasks(project_id, include_completed=True)
     if not rules:
         return parents
 
@@ -259,3 +260,20 @@ def list_board_for_view(view_id: int, project_id: int) -> list:
     rows = run_select("SELECT filter FROM kanban_views WHERE id = %(id)s", {"id": view_id})
     rules = rows[0]["filter"] if rows else None
     return list_board_tasks(project_id, rules)
+
+
+def filter_board(project_id: int, rules: Optional[dict] = None) -> dict:
+    """Board de uma lista com um filtro **avulso** (não salvo numa view): valida a DSL e aplica.
+
+    Args:
+        project_id: Id da lista (board).
+        rules: ``FilterRules`` ou ``None`` (sem filtro = board completo).
+
+    Returns:
+        ``{"status": "ok", "tasks": [...]}`` ou ``{"status": "error", "message": ...}`` se a DSL for inválida.
+    """
+    if rules:
+        erro = _validate_rules(rules)
+        if erro:
+            return {"status": "error", "message": erro}
+    return {"status": "ok", "tasks": list_board_tasks(project_id, rules or None)}

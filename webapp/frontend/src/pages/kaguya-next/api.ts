@@ -224,6 +224,9 @@ export const kaguyaApi = {
     api.patch<MutationResult>(`${BASE}/kanban-views/${id}`, body),
   deleteKanbanView: (id: number) => api.del<MutationResult>(`${BASE}/kanban-views/${id}`),
   // Tarefas do board com o filtro da view aplicado (US3).
+  /** Board de uma lista com um filtro avulso (a mesma DSL das smart-lists), sem salvar view. Inclui as concluídas. */
+  kanbanBoard: (projectId: number, rules: FilterRules | null) =>
+    api.post<Task[]>(`${BASE}/kanban-board`, { project_id: projectId, rules }),
   kanbanViewBoard: (viewId: number, projectId: number) =>
     api.get<Task[]>(`${BASE}/kanban-views/${viewId}/board?project_id=${projectId}`),
 

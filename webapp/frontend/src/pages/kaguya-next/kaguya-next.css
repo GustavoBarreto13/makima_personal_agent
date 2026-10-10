@@ -611,3 +611,5 @@
 
 /* Lista ↔ Quadro: o mesmo controle, no mesmo lugar, nas duas visões */
 .kn-viewbar { display: flex; align-items: center; gap: var(--ds-space-3); }
+
+.kn-kviews-err { display: inline-flex; align-items: center; gap: var(--ds-space-2); color: var(--ds-danger); font-size: var(--ds-text-sm); }

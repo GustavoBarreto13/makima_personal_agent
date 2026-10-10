@@ -336,3 +336,25 @@ def test_restore_habit(mock_restore):
     mock_restore.assert_called_once_with(3)
     mock_restore.return_value = {"status": "error", "message": "Hábito não encontrado ou já está ativo."}
     assert client.post(f"{_BASE}/habits/3/restore").status_code == 400
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Kanban: filtro avulso do board (POST /kanban-board)
+# ─────────────────────────────────────────────────────────────────────────────
+@patch("webapp.backend.routers.tasks.filter_board")
+def test_kanban_board_filtro_avulso(mock_board):
+    """POST /kanban-board devolve só a lista de tarefas e repassa lista + regras."""
+    mock_board.return_value = {"status": "ok", "tasks": [{"id": 7, "title": "x"}]}
+    rules = {"combinator": "and", "conditions": [{"field": "priority", "op": "gte", "value": 2}]}
+    resp = client.post(f"{_BASE}/kanban-board", json={"project_id": 3, "rules": rules})
+    assert resp.status_code == 200
+    assert resp.json() == [{"id": 7, "title": "x"}]
+    mock_board.assert_called_once_with(3, rules)
+
+
+@patch("webapp.backend.routers.tasks.filter_board")
+def test_kanban_board_regra_invalida_vira_400(mock_board):
+    """DSL inválida = 400 com a mensagem da camada de lógica (nunca 500)."""
+    mock_board.return_value = {"status": "error", "message": "Campo inválido."}
+    resp = client.post(f"{_BASE}/kanban-board", json={"project_id": 3, "rules": {"combinator": "and", "conditions": [{"field": "x", "op": "y"}]}})
+    assert resp.status_code == 400

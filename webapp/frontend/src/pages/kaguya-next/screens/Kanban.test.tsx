@@ -10,7 +10,7 @@ import { mockLayoutApis, mockMatchMedia, setMockWidth } from '../../../design/te
 import { __resetToasts } from '../../../design/headless/toast'
 
 const api = vi.hoisted(() => ({
-  sidebar: vi.fn(), viewCounts: vi.fn(), viewTasks: vi.fn(), listColumns: vi.fn(), listTasks: vi.fn(), listKanbanViews: vi.fn(), kanbanViewBoard: vi.fn(),
+  sidebar: vi.fn(), viewCounts: vi.fn(), viewTasks: vi.fn(), listColumns: vi.fn(), listTasks: vi.fn(), listKanbanViews: vi.fn(), kanbanViewBoard: vi.fn(), kanbanBoard: vi.fn(), listContexts: vi.fn(), listPeople: vi.fn(),
   groupBoard: vi.fn(), createColumn: vi.fn(), updateColumn: vi.fn(), deleteColumn: vi.fn(), copyColumns: vi.fn(), createTask: vi.fn(), updateTask: vi.fn(),
   createKanbanView: vi.fn(), getTask: vi.fn(), activity: vi.fn(), dependencies: vi.fn(),
   schedule: { get: vi.fn(), overrides: vi.fn() },
@@ -39,6 +39,8 @@ beforeEach(() => {
   api.viewCounts.mockResolvedValue({ all: 0, today: 0, tomorrow: 0, next7: 0, inbox: 0 })
   api.viewTasks.mockResolvedValue([])
   api.listKanbanViews.mockResolvedValue([VIEW])
+  api.listContexts.mockResolvedValue([])
+  api.listPeople.mockResolvedValue([{ id: 'p1', name: 'Ana Souza', avatar_url: null }])
   api.listColumns.mockResolvedValue([col(10, 'A fazer'), col(11, 'Fazendo'), col(12, 'Feito', { is_done_column: true })])
   api.listTasks.mockResolvedValue([
     task({ id: 1, title: 'Escrever spec', priority: 3, duration_min: 90 }),
@@ -245,5 +247,46 @@ describe('Alternar Lista ↔ Quadro', () => {
     expect(within(sw).getAllByRole('button')).toHaveLength(2)
     await user.click(within(sw).getByRole('button', { name: label }))
     await waitFor(() => expect(window.location.hash).toBe(target))
+  })
+})
+
+describe('Filtros e Views do quadro', () => {
+  it('a linha de View aparece sempre; se as views falham, avisa e deixa tentar de novo', async () => {
+    api.listKanbanViews.mockRejectedValueOnce(new Error('HTTP 500'))
+    const user = await at('#kanban/1')
+    expect(await screen.findByText('Views indisponíveis agora.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'View' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(screen.queryByText('Views indisponíveis agora.')).toBeNull())
+    expect(screen.getByLabelText('View')).toBeTruthy()
+  })
+
+  it('“Filtrar” abre o construtor completo e aplica um filtro avulso pela rota do quadro', async () => {
+    api.kanbanBoard.mockResolvedValue([{ id: 2, project_id: 1, column_id: 11, parent_id: null, title: 'Só esta', description: null, type: 'task', priority: 3, due_date: null, due_time: null, position: 1, completed_at: null, created_at: '2026-06-01T10:00:00-03:00', my_day_date: null, start_at: null, end_at: null, duration_min: null, tags: [], subtasks: [] }])
+    const user = await at('#kanban/1')
+    await screen.findByText('Revisar PR')
+    await user.click(screen.getByRole('button', { name: 'Filtrar' }))
+    const dlg = await screen.findByRole('dialog', { name: 'Filtrar o quadro' })
+    const campo = within(dlg).getByLabelText('Campo da condição 1')
+    for (const label of ['Prioridade', 'Lista', 'Grupo', 'Espaço', 'Status GTD', 'Onde (@)', 'Estimativa', 'Adiada até', 'Cobrar em', 'Concluída em', 'No Meu Dia', 'Recorrente', 'Bloqueada', 'Tem subtarefas', 'Tem notas', 'Responsável', 'Aguardando resposta de']) {
+      expect(within(campo).getByRole('option', { name: label }), label).toBeTruthy()
+    }
+    await user.click(within(dlg).getByRole('button', { name: 'Aplicar' }))
+    await waitFor(() => expect(api.kanbanBoard).toHaveBeenCalledWith(1, { combinator: 'and', conditions: [{ field: 'priority', op: 'gte', value: 2 }] }))
+    expect(await screen.findByText('Só esta')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Filtro (1)' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Limpar o filtro do quadro' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Filtro (1)' })).toBeNull())
+  })
+
+  it('o filtro da View (modal) também tem todos os campos', async () => {
+    const user = await at('#kanban/1')
+    await screen.findByText('Revisar PR')
+    await user.click(screen.getByRole('button', { name: 'View' }))
+    const dlg = await screen.findByRole('dialog', { name: 'Nova view' })
+    await user.click(within(dlg).getByRole('button', { name: 'Filtrar tarefas' }))
+    const campo = within(dlg).getByLabelText('Campo da condição 1')
+    expect(within(campo).getByRole('option', { name: 'Responsável' })).toBeTruthy()
+    expect(within(campo).getByRole('option', { name: 'Estimativa' })).toBeTruthy()
   })
 })

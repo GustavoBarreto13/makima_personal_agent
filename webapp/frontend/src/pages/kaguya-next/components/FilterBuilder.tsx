@@ -3,6 +3,8 @@
 // tipo conforme o campo (prioridade, data, lista, etiqueta, estado, sim/não…).
 
 import { Button, DatePicker, IconButton, Input, Select, SegmentedControl } from '../../../design'
+import { kaguyaApi } from '../api'
+import { safe, useLoad } from '../lib/useLoad'
 import type { FilterCombinator, FilterCondition, FilterField, FilterRules, Group, Project, TaskContext } from '../types'
 import { ProjectOptions } from './ProjectOptions'
 
@@ -22,6 +24,7 @@ export const SMARTLIST_FIELDS: FieldDef[] = [
   { field: 'completed_at', label: 'Concluída em' },
   { field: 'my_day', label: 'No Meu Dia' }, { field: 'recurring', label: 'Recorrente' }, { field: 'blocked', label: 'Bloqueada' },
   { field: 'has_children', label: 'Tem subtarefas' }, { field: 'has_description', label: 'Tem notas' },
+  { field: 'assignee', label: 'Responsável' }, { field: 'waiting_person', label: 'Aguardando resposta de' },
 ]
 export const FILTER_FIELDS = KANBAN_FIELDS
 
@@ -78,9 +81,11 @@ interface Props {
   projects?: Project[]
   groups?: Group[]
   contexts?: TaskContext[]
+  /** Pessoas da Komi (campos Responsável e Aguardando resposta de). */
+  people?: { id: string; name: string }[]
 }
 
-export function FilterBuilder({ value, onChange, today, fields = KANBAN_FIELDS, projects = [], groups = [], contexts = [] }: Props) {
+export function FilterBuilder({ value, onChange, today, fields = KANBAN_FIELDS, projects = [], groups = [], contexts = [], people = [] }: Props) {
   const set = (conditions: FilterCondition[]) => onChange({ ...value, conditions })
   const patch = (i: number, p: Partial<FilterCondition>) => set(value.conditions.map((c, idx) => (idx === i ? { ...c, ...p } : c)))
   const changeField = (i: number, field: FilterField) => patch(i, { field, op: OPS[field][0].op, value: defaultValue(field, OPS[field][0].op, today) })
@@ -132,6 +137,11 @@ export function FilterBuilder({ value, onChange, today, fields = KANBAN_FIELDS, 
           <option value="">Escolher local…</option>{contexts.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </Select>
       )
+      case 'assignee': case 'waiting_person': return (
+        <Select aria-label={label} value={String(c.value ?? '')} onChange={(e) => patch(i, { value: e.target.value })}>
+          <option value="">Escolher pessoa…</option>{people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </Select>
+      )
       case 'duration_min': return <Input aria-label="Minutos" type="number" min={0} value={Number(c.value) || 0} onChange={(e) => patch(i, { value: Math.max(0, Number(e.target.value) || 0) })} />
       case 'due_date': case 'follow_up_date': case 'completed_at': case 'start_date':
         if (c.op === 'within') {
@@ -166,4 +176,14 @@ export function FilterBuilder({ value, onChange, today, fields = KANBAN_FIELDS, 
       <Button size="sm" icon="add" onClick={() => set([...value.conditions, { field: 'tag', op: 'has', value: '' }])}>Adicionar condição</Button>
     </div>
   )
+}
+
+/** O que os seletores de valor do construtor precisam além das listas e grupos: os locais e as pessoas (Komi). */
+export function useFilterLookups() {
+  const contexts = useLoad<TaskContext[]>(() => safe(() => kaguyaApi.listContexts(), []), [])
+  const people = useLoad<{ id: string; name: string }[]>(() => safe(() => kaguyaApi.listPeople().then((all) => all.map((p) => ({ id: p.id, name: p.name }))), []), [])
+  return {
+    contexts: contexts.state.status === 'ok' ? contexts.state.data : [],
+    people: people.state.status === 'ok' ? people.state.data : [],
+  }
 }

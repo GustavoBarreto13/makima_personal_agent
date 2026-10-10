@@ -18,13 +18,14 @@ import { KanbanCard, KanbanSortableCard } from '../components/KanbanCard'
 import { KanbanSummary, DEFAULT_SLOTS } from '../components/KanbanSummary'
 import { KanbanToolbar } from '../components/KanbanToolbar'
 import { ViewSwitch } from '../components/ViewSwitch'
+import { BoardFilterModal } from '../components/BoardFilterModal'
 import { DEFAULT_DISPLAY, KanbanViewModal } from '../components/KanbanViewModal'
 import { ProjectOptions } from '../components/ProjectOptions'
 import { useKaguya } from '../context'
 import { midPosition, useDndSensors } from '../lib/dnd'
 import { applyKanbanFilters, KANBAN_DEFAULTS, type KanbanFilters } from '../lib/kanbanFilter'
 import { fmtMinutes } from '../lib/taskView'
-import type { Column, GroupBoard, GroupBoardColumn, KanbanView, Task } from '../types'
+import type { Column, FilterRules, GroupBoard, GroupBoardColumn, KanbanView, Task } from '../types'
 
 const reason = (e: unknown, fallback: string) => (e instanceof Error && e.message && !/^HTTP \d+$/.test(e.message) ? e.message : fallback)
 const sortCols = (cols: Column[]) => [...cols].sort((a, b) => a.position - b.position)
@@ -101,6 +102,10 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [status, setStatus] = useState<'loading' | 'error' | 'ok'>('loading')
   const [views, setViews] = useState<KanbanView[]>([])
+  const [viewsError, setViewsError] = useState(false)
+  // Filtro avulso do quadro (o construtor completo, sem salvar): vale por cima da view e some ao trocar de lista.
+  const [adHoc, setAdHoc] = useState<FilterRules | null>(null)
+  const [boardFilter, setBoardFilter] = useState(false)
   const [activeViewId, setActiveViewId] = useState<number | null>(null)
   const [viewModal, setViewModal] = useState<{ view?: KanbanView } | null>(null)
   const [columnModal, setColumnModal] = useState<{ column?: Column } | null>(null)
@@ -113,17 +118,18 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
   const activeView = views.find((v) => v.id === activeViewId) ?? null
   const display = activeView?.display ?? DEFAULT_DISPLAY
   // As concluídas entram no quadro: a coluna de concluídas mostra o que já foi feito (o backend a trata como “concluída”).
-  const fetchTasks = useCallback((v: KanbanView | null) => (v?.filter ? kaguyaApi.kanbanViewBoard(v.id, projectId) : kaguyaApi.listTasks(projectId, true)), [projectId])
+  const fetchTasks = useCallback((v: KanbanView | null) => (adHoc ? kaguyaApi.kanbanBoard(projectId, adHoc) : v?.filter ? kaguyaApi.kanbanViewBoard(v.id, projectId) : kaguyaApi.listTasks(projectId, true)), [projectId, adHoc])
 
   // As views são opcionais: sem elas o quadro usa “tudo ligado”. A ativa é lembrada por lista.
   const loadViews = useCallback(async () => {
     try {
       const vs = await kaguyaApi.listKanbanViews()
       setViews(vs)
+      setViewsError(false)
       let stored = NaN
       try { stored = Number(localStorage.getItem(viewKey(projectId))) } catch { /* sem armazenamento: cai na “Completa” */ }
       setActiveViewId(vs.find((v) => v.id === stored)?.id ?? vs.find((v) => v.is_builtin)?.id ?? vs[0]?.id ?? null)
-    } catch { setViews([]); setActiveViewId(null) }
+    } catch { setViews([]); setActiveViewId(null); setViewsError(true) }
   }, [projectId])
 
   const load = useCallback(async (silent: boolean, view: KanbanView | null) => {
@@ -137,18 +143,18 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
     } catch { if (!silent) setStatus('error') }
   }, [projectId, fetchTasks])
 
-  useEffect(() => { setFilters(KANBAN_DEFAULTS); void loadViews() }, [loadViews])
+  useEffect(() => { setFilters(KANBAN_DEFAULTS); setAdHoc(null); void loadViews() }, [loadViews])
   const viewRef = useRef<KanbanView | null>(null)
   viewRef.current = activeView
   // O que a última carga usou (view + filtro + revisão): evita recarregar à toa e pega a view que chegou depois dos dados.
   const loadedKey = useRef('')
-  const keyFor = (v: KanbanView | null) => `${v?.id ?? ''}|${JSON.stringify(v?.filter ?? null)}|${k.rev}`
+  const keyFor = (v: KanbanView | null) => `${v?.id ?? ''}|${JSON.stringify(v?.filter ?? null)}|${JSON.stringify(adHoc)}|${k.rev}`
   const keyRef = useRef(keyFor)
   keyRef.current = keyFor
   // Troca de lista: carga com “Carregando…”. Troca de view ou gravação (rev): silenciosa.
   useEffect(() => { void load(false, viewRef.current) }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
   // Só depois da primeira carga, e só se a view/filtro/revisão mudou desde a última (não duplica a consulta nem esconde o erro).
-  useEffect(() => { if (status === 'ok' && loadedKey.current !== keyFor(activeView)) void load(true, activeView) }, [status, activeViewId, views, k.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (status === 'ok' && loadedKey.current !== keyFor(activeView)) void load(true, activeView) }, [status, activeViewId, views, adHoc, k.rev]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectView = (id: number) => {
     setActiveViewId(id)
@@ -224,6 +230,7 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
   const modals = (
     <>
       {viewModal && <KanbanViewModal view={viewModal.view} onClose={() => setViewModal(null)} onSaved={() => { void loadViews() }} />}
+      {boardFilter && <BoardFilterModal current={adHoc} onApply={setAdHoc} onClose={() => setBoardFilter(false)} onViewSaved={() => { void loadViews() }} />}
       {columnModal && <ColumnModal column={columnModal.column} projectId={projectId} onClose={() => setColumnModal(null)} onSaved={() => { k.reload() }} />}
     </>
   )
@@ -265,16 +272,22 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
       <h2 className="kn-kpage-t"><Icon name="kanban" size={22} />{projectName}</h2>
       <p className="kn-kpage-sub">Arraste entre colunas · soltar em concluídas conclui a tarefa.</p>
       <div className="kn-kviews" role="group" aria-label="Views do quadro">
+        <label htmlFor="kn-view-sel">View</label>
         {views.length > 0 && (
-          <>
-            <label htmlFor="kn-view-sel">View</label>
-            <Select id="kn-view-sel" value={activeViewId ?? ''} onChange={(e) => selectView(Number(e.target.value))}>
-              {views.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </Select>
-            <Button size="sm" icon="prefs" disabled={!activeView} onClick={() => activeView && setViewModal({ view: activeView })}>Editar</Button>
-            <Button size="sm" icon="add" onClick={() => setViewModal({})}>View</Button>
-          </>
+          <Select id="kn-view-sel" value={activeViewId ?? ''} onChange={(e) => selectView(Number(e.target.value))}>
+            {views.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </Select>
         )}
+        {viewsError && (
+          <span className="kn-kviews-err" role="status">
+            Views indisponíveis agora.
+            <button type="button" className="kn-klink" onClick={() => void loadViews()}>Tentar de novo</button>
+          </span>
+        )}
+        <Button size="sm" icon="prefs" disabled={!activeView} onClick={() => activeView && setViewModal({ view: activeView })}>Editar</Button>
+        <Button size="sm" icon="add" onClick={() => setViewModal({})}>View</Button>
+        <Button size="sm" icon="filter" aria-pressed={!!adHoc} onClick={() => setBoardFilter(true)}>{adHoc ? `Filtro (${adHoc.conditions.length})` : 'Filtrar'}</Button>
+        {adHoc && <IconButton icon="close" size={14} label="Limpar o filtro do quadro" onClick={() => setAdHoc(null)} />}
       </div>
       <KanbanToolbar filters={filters} onChange={setFilters} />
 
