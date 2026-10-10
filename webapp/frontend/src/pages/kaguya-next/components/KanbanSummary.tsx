@@ -24,10 +24,13 @@ export function KanbanSummary({ tasks, columns, slots = DEFAULT_SLOTS, today }: 
     }
   }
   return (
-    <dl className="kn-ksum" aria-label="Resumo do quadro">
-      {slots.slice(0, 3).map((m) => (
-        <div key={m} className="kn-ksum-i"><dd className="ds-num">{value(m)}</dd><dt className="ds-mono">{LABEL[m]}</dt></div>
+    <div className="ksummary" role="group" aria-label="Resumo do quadro">
+      {slots.slice(0, 3).map((m, i) => (
+        <div key={m} style={{ display: 'contents' }}>
+          {i > 0 && <div className="ks-sep" />}
+          <div className="ks-stat"><span className="ks-v">{value(m)}</span><span className="ks-k">{LABEL[m]}</span></div>
+        </div>
       ))}
-    </dl>
+    </div>
   )
 }

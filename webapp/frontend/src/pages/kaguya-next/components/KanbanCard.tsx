@@ -10,7 +10,7 @@ import { useKaguya } from '../context'
 import { dueInfo, fmtMinutes, subtaskProgress } from '../lib/taskView'
 import type { Task } from '../types'
 
-const PRIO_COLOR = ['transparent', 'var(--ds-info)', 'var(--ds-warn)', 'var(--ds-danger)']
+const PRIO_COLOR = ['transparent', 'var(--p-low)', 'var(--p-med)', 'var(--p-high)']
 
 interface CardProps {
   task: Task
@@ -32,36 +32,37 @@ export function KanbanCard({ task, onOpen, projectName, showChips = true, showRi
 
   return (
     <div
-      className={`kn-kcard${done ? ' kn-kdone' : ''}`}
+      className={`kcard${done ? ' done' : ''}`}
       data-prio={prio}
-      style={{ '--kn-pr': PRIO_COLOR[prio] } as CSSProperties}
+      style={{ '--pr-color': PRIO_COLOR[prio] } as CSSProperties}
       role="button"
       tabIndex={0}
       onClick={() => onOpen(task)}
       onKeyDown={(e) => { if (e.key === 'Enter') onOpen(task) }}
     >
-      <div className="kn-kbody">
-        <div className="kn-ktitle">{task.title}</div>
+      <span className="kcard-prio-dot" />
+      <div className="kcard-body">
+        <div className="kcard-title">{task.title}</div>
         {showChips && hasMeta && (
-          <div className="kn-kmeta">
+          <div className="kcard-meta">
             {due && (
-              <span className={`kn-kdate kn-due kn-due-${due.tone}`}><Icon name="calendar" size={11} />{due.label}</span>
+              <span className={`kcard-date${due.tone === 'later' ? '' : ` ${due.tone}`}`}><Icon name="calendar" size={11} />{due.label}</span>
             )}
-            {task.duration_min != null && !done && <span className="kn-kest ds-mono">{fmtMinutes(task.duration_min)}</span>}
-            {projectName && <span className="kn-kproj"><i /><span>{projectName}</span></span>}
+            {task.duration_min != null && !done && <span className="kcard-est">{fmtMinutes(task.duration_min)}</span>}
+            {projectName && <span className="kcard-proj"><i /><span>{projectName}</span></span>}
           </div>
         )}
       </div>
-      <div className="kn-kright">
+      <div className="kcard-right">
         {task.assignees && task.assignees.length > 0 && (
           <span className="kn-kavs">{task.assignees.slice(0, 2).map((a) => <Avatar key={a.id} name={a.name} src={a.avatar_url} size={18} />)}</span>
         )}
         {done ? (
-          <span className="kn-kcheck" aria-label="Concluída"><Icon name="check" size={11} /></span>
+          <span className="kcard-done" aria-label="Concluída"><Icon name="check" size={11} /></span>
         ) : showRing && sub ? (
-          <span className="kn-kring">
+          <span className="kcard-ring">
             <ProgressRing value={sub.done / sub.total} size={30} label={`${sub.done} de ${sub.total} subtarefas`} />
-            <span className="kn-krl ds-mono" aria-hidden="true">{sub.done}/{sub.total}</span>
+            <span className="kr-lbl" aria-hidden="true">{sub.done}/{sub.total}</span>
           </span>
         ) : null}
       </div>

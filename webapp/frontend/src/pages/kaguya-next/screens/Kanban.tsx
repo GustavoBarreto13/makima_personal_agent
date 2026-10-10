@@ -61,24 +61,32 @@ interface ColumnProps {
 function KanbanColumn({ id, name, count, sub, done, isOver, capacity, cards, activeId, cardProps, onOpen, onAdd, onEdit }: ColumnProps) {
   // O corpo é um alvo de soltura: pega colunas vazias e o espaço abaixo dos cards.
   const { setNodeRef } = useDroppable({ id })
+  const accent = done ? 'var(--done)' : 'var(--kg)'
   return (
-    <section className={`kn-kcol${isOver ? ' kn-over' : ''}${done ? ' kn-kcol-done' : ''}`} aria-label={name}>
-      <header className="kn-khead">
-        <div className="kn-krow">
-          <span className="kn-knum ds-num">{count}</span>
-          <div className="kn-kname"><b><i className="kn-kdot" />{name}</b><span className="ds-mono">{sub}</span></div>
-          {onEdit && <IconButton icon="prefs" label={`Editar a coluna ${name}`} size={14} onClick={onEdit} />}
+    <section className={`kcol${isOver ? ' is-over' : ''}`} aria-label={name} style={{ '--kc-color': accent } as React.CSSProperties}>
+      <div className="kcol-head">
+        <div className="kc-row1">
+          <span className="kc-num">{count}</span>
+          <div className="kc-namewrap">
+            <span className="kc-name"><span className="kc-dot" style={{ background: accent }} />{name}</span>
+            <span className="kc-sub">{sub}</span>
+          </div>
+          {onEdit && (
+            <button type="button" className="kc-settings" title="Editar coluna" aria-label={`Editar a coluna ${name}`} onClick={onEdit}>
+              <Icon name="prefs" size={14} />
+            </button>
+          )}
         </div>
         {capacity !== null && !done && (
-          <div className="kn-kcap" role="img" aria-label={`Capacidade da coluna: ${capacity} de 5`}>{[0, 1, 2, 3, 4].map((i) => <i key={i} className={i < capacity ? 'kn-on' : ''} />)}</div>
+          <div className="kcol-cap" role="img" aria-label={`Capacidade da coluna: ${capacity} de 5`}>{[0, 1, 2, 3, 4].map((i) => <i key={i} className={i < capacity ? 'on' : ''} />)}</div>
         )}
-      </header>
-      <div ref={setNodeRef} className="kn-kbodycol">
+      </div>
+      <div ref={setNodeRef} className="kcol-body">
         <SortableContext items={cards.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {cards.map((t) => <KanbanSortableCard key={t.id} task={t} onOpen={onOpen} isBeingDragged={activeId === t.id} {...cardProps(t)} />)}
         </SortableContext>
       </div>
-      {onAdd && !done && <button type="button" className="kn-kadd" onClick={onAdd}><Icon name="add" size={13} />Adicionar tarefa</button>}
+      {onAdd && !done && <button type="button" className="kcol-add" onClick={onAdd}><Icon name="add" size={13} />Adicionar tarefa</button>}
     </section>
   )
 }
@@ -87,7 +95,7 @@ function KanbanColumn({ id, name, count, sub, done, isOver, capacity, cards, act
 function Overlay({ task, projectName }: { task: Task | undefined; projectName?: string }) {
   return (
     <DragOverlay dropAnimation={null}>
-      {task ? <div className="kn-koverlay"><KanbanCard task={task} onOpen={() => {}} projectName={projectName} /></div> : null}
+      {task ? <div className="kg-drag-overlay"><KanbanCard task={task} onOpen={() => {}} projectName={projectName} /></div> : null}
     </DragOverlay>
   )
 }
@@ -237,7 +245,7 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
 
   if (columns.length === 0) {
     return (
-      <Page full className="kn-page">
+      <Page full className="kn-page kn-legacy">
         <EmptyState
           icon="kanban"
           title="Sem quadro ainda"
@@ -267,10 +275,10 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
   const cardProps = () => ({ projectName, showChips: display.adornos.card_chips, showRing: display.adornos.subtask_ring })
 
   return (
-    <Page full className="kn-page">
+    <Page full className="kn-page kn-legacy">
       <div className="kn-viewbar"><ViewSwitch side="board" kind="list" id={projectId} hasBoard /></div>
-      <h2 className="kn-kpage-t"><Icon name="kanban" size={22} />{projectName}</h2>
-      <p className="kn-kpage-sub">Arraste entre colunas · soltar em concluídas conclui a tarefa.</p>
+      <h1 className="kg-page-title"><Icon name="kanban" size={22} /> {projectName}</h1>
+      <p className="kg-page-sub">Arraste entre colunas · soltar em concluídas conclui a tarefa.</p>
       <div className="kn-kviews" role="group" aria-label="Views do quadro">
         <label htmlFor="kn-view-sel">View</label>
         {views.length > 0 && (
@@ -292,8 +300,8 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
       <KanbanToolbar filters={filters} onChange={setFilters} />
 
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={(e: DragStartEvent) => setActiveId(e.active.id as number)} onDragOver={onDragOver} onDragEnd={(e) => void onDragEnd(e)}>
-        <div className="kn-board">
-          <div className="kn-kcols">
+        <div className="kg-board">
+          <div className="kcols">
             {columns.map((col) => {
               // A primeira coluna acolhe as órfãs (sem coluna, ou com uma coluna que não existe mais aqui): nada some do quadro.
               // Concluída só aparece na coluna de concluídas: as contagens das outras são de abertas, como no quadro antigo.
@@ -404,10 +412,10 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
   const addTo = (col: GroupBoardColumn) => k.newTask({ targets: col.members.map((m) => ({ projectId: m.project_id, columnId: m.column_id, listName: listName(m.project_id) })) })
 
   return (
-    <Page full className="kn-page">
+    <Page full className="kn-page kn-legacy">
       <div className="kn-viewbar"><ViewSwitch side="board" kind="group" id={groupId} /></div>
-      <h2 className="kn-kpage-t"><Icon name="kanban" size={22} />{groupTitle}</h2>
-      <p className="kn-kpage-sub">{board.lists.map((l) => l.name).join(' · ')}</p>
+      <h1 className="kg-page-title"><Icon name="kanban" size={22} /> {groupTitle}</h1>
+      <p className="kg-page-sub">{board.lists.map((l) => l.name).join(' · ')}</p>
       <div className="kn-kviews" role="group" aria-label="Filtro do quadro do grupo">
         <Button size="sm" icon="filter" aria-pressed={!!adHoc} onClick={() => setBoardFilter(true)}>{adHoc ? `Filtro (${adHoc.conditions.length})` : 'Filtrar'}</Button>
         {adHoc && <IconButton icon="close" size={14} label="Limpar o filtro do quadro" onClick={() => setAdHoc(null)} />}
@@ -420,8 +428,8 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
         onDragOver={(e: DragOverEvent) => setOverKey(e.over ? keyOf(e.over.id) : null)}
         onDragEnd={(e) => void onDragEnd(e)}
       >
-        <div className="kn-board">
-          <div className="kn-kcols">
+        <div className="kg-board">
+          <div className="kcols">
             {board.columns.map((col) => {
               const ids = new Set(col.members.map((m) => m.column_id))
               const cards = applyKanbanFilters(board.tasks.filter((t) => shown(t) && t.parent_id == null && t.column_id != null && ids.has(t.column_id)), filters)
@@ -445,7 +453,7 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
             })}
             {/* Tarefas de listas sem quadro: só leitura (não é alvo de soltura). */}
             {without.length > 0 && (
-              <section className="kn-kcol kn-kcol-ro" aria-label="Sem coluna">
+              <section className="kcol kcol-ro" aria-label="Sem coluna">
                 <header className="kn-khead"><div className="kn-krow"><span className="kn-knum ds-num">{without.length}</span><div className="kn-kname"><b>Sem coluna</b><span className="ds-mono">listas sem quadro</span></div></div></header>
                 <div className="kn-kbodycol">{without.map((t) => <KanbanCard key={t.id} task={t} onOpen={(x) => k.openTask(x.id)} {...cardProps(t)} />)}</div>
               </section>

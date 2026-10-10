@@ -1,0 +1,150 @@
+/* ═══════════════════════════════════════════════════════════════════════════════════════════════
+   Porte literal do visual do shell antigo (Kanban e Calendário) — mesmos nomes de classe, mesmos números, mesma estrutura.
+   O único ajuste é de COR: o CSS antigo lia variáveis próprias (--paper, --ink, --kg…); aqui elas apontam para os tokens do
+   Design System (--ds-*), então a paleta (e o claro/escuro) vem do DS e o resto fica idêntico ao que existia.
+   Escopo: tudo vive dentro de `.kn-legacy`, que as telas põem na raiz.
+   ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+.kn-legacy {
+  /* tipografia */
+  --display: var(--ds-font-display);
+  --serif: var(--ds-font-serif);
+  --sans: var(--ds-font-sans);
+  --mono: var(--ds-font-mono);
+  /* superfícies e tinta */
+  --paper: var(--ds-paper);
+  --paper-2: var(--ds-paper-2);
+  --card: var(--ds-card);
+  --card-2: var(--ds-card-2);
+  --mist: var(--ds-mist);
+  --ink: var(--ds-ink-1);
+  --ink-2: var(--ds-ink-2);
+  --ink-3: var(--ds-ink-3);
+  --ink-4: var(--ds-ink-4);
+  --line: var(--ds-line);
+  --line-2: var(--ds-line-2);
+  /* acento */
+  --kg: var(--ds-accent);
+  --kg-deep: var(--ds-accent-deep);
+  --kg-bright: var(--ds-accent-bright);
+  --kg-tint: var(--ds-accent-tint);
+  --kg-tint-2: var(--ds-accent-tint-2);
+  /* prioridade e conclusão */
+  --p-high: var(--ds-danger);
+  --p-med: var(--ds-warn);
+  --p-low: var(--ds-info);
+  --done: var(--ds-success);
+  /* raios, sombras e barra translúcida */
+  --kg-r-sm: var(--ds-r-sm);
+  --kg-r-md: var(--ds-r-md);
+  --kg-r-lg: var(--ds-r-lg);
+  --shadow-sm: var(--ds-shadow-sm);
+  --shadow-md: var(--ds-shadow-md);
+  --shadow-lg: var(--ds-shadow-lg);
+  --topbar-bg: color-mix(in oklab, var(--ds-paper) 72%, transparent);
+  font-family: var(--sans);
+  color: var(--ink);
+}
+
+/* ─── Título da página e toolbar de filtro/ordenação (kaguya.css 232, 299-311) ─── */
+.kn-legacy .kg-page-title { font-family: var(--display); font-weight: 800; font-size: 28px; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
+.kn-legacy .kg-page-sub { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-4); margin: 0 0 20px; }
+.kn-legacy .kg-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 4px; flex-wrap: wrap; }
+.kn-legacy .kg-toolbar-group { display: flex; gap: 4px; }
+.kn-legacy .kg-toolbar-sep { width: 1px; height: 18px; background: var(--line-2); margin: 0 4px; }
+.kn-legacy .kg-toolbar-chip {
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink-3); font-family: var(--sans);
+  font-size: 12px; cursor: pointer; transition: all 0.12s;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.kn-legacy .kg-toolbar-chip:hover { border-color: var(--ink-4); color: var(--ink-2); }
+.kn-legacy .kg-toolbar-chip.active { border-color: var(--kg); background: var(--kg-tint); color: var(--kg-deep); font-weight: 600; }
+.kn-legacy .kg-toolbar-sort { margin-left: auto; }
+
+/* ═══ Kanban "Vidro" (kaguya.css 706-790) — colunas em vidro fosco sobre gradiente ═══ */
+.kn-legacy .kg-board { position: relative; border-radius: var(--kg-r-lg); overflow: hidden; min-height: 62vh;
+  display: flex; flex-direction: column;
+  background:
+    radial-gradient(120% 90% at 12% 0%, var(--kg-tint), transparent 46%),
+    radial-gradient(120% 90% at 92% 8%, color-mix(in oklab, var(--kg-bright) 12%, transparent), transparent 44%),
+    linear-gradient(160deg, var(--mist), var(--paper) 60%);
+  border: 1px solid var(--line); }
+.kn-legacy .kcols { display: flex; gap: 16px; align-items: flex-start; padding: 22px 22px 16px; overflow-x: auto; flex: 1; }
+.kn-legacy .kcols::-webkit-scrollbar { height: 10px; }
+.kn-legacy .kcols::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--ink-3) 30%, transparent); border-radius: 6px; border: 3px solid transparent; background-clip: padding-box; }
+
+.kn-legacy .kcol { flex: 1 1 0; min-width: 270px; max-width: 360px;
+  background: var(--ds-glass-bg); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid var(--ds-glass-border); border-radius: 20px;
+  box-shadow: 0 1px 0 var(--ds-glass-hi) inset, var(--ds-glass-shadow);
+  display: flex; flex-direction: column; max-height: calc(100vh - 230px);
+  contain: paint; /* perf: isola o repaint da coluna durante o drag */ }
+.kn-legacy .kcol.is-over, .kn-legacy .kcol.drop-target { border-color: var(--kg); box-shadow: 0 0 0 2px var(--kg-tint), var(--ds-glass-shadow); }
+.kn-legacy .kcol.kcol-ro { opacity: .7; }
+.kn-legacy .kcol-head { padding: 17px 17px 14px; }
+.kn-legacy .kcol-head .kc-row1 { display: flex; align-items: flex-start; gap: 11px; }
+.kn-legacy .kcol-head .kc-num { font-family: var(--display); font-size: 30px; font-weight: 800; line-height: 0.9; letter-spacing: -0.03em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.kn-legacy .kcol-head .kc-namewrap { display: flex; flex-direction: column; gap: 3px; padding-top: 2px; min-width: 0; }
+.kn-legacy .kcol-head .kc-name { display: inline-flex; align-items: center; gap: 7px; font-family: var(--sans); font-size: 13px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); white-space: nowrap; }
+.kn-legacy .kcol-head .kc-name .kc-dot { width: 8px; height: 8px; border-radius: 3px; flex-shrink: 0; }
+.kn-legacy .kcol-head .kc-sub { font-family: var(--mono); font-size: 10px; color: var(--ink-4); white-space: nowrap; }
+.kn-legacy .kcol-head .kc-settings { margin-left: auto; background: none; border: none; cursor: pointer; padding: 3px; display: inline-flex; align-items: center; flex-shrink: 0; color: var(--ink-4); transition: color .12s; }
+.kn-legacy .kcol-head .kc-settings:hover { color: var(--kg-deep); }
+.kn-legacy .kcol-cap { display: flex; gap: 3px; margin-top: 13px; }
+.kn-legacy .kcol-cap i { height: 4px; border-radius: 2px; flex: 1; background: var(--kc-color, var(--kg)); opacity: 0.2; transition: opacity .3s; }
+.kn-legacy .kcol-cap i.on { opacity: 0.7; }
+.kn-legacy .kcol-body { padding: 4px 12px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; min-height: 40px; scrollbar-width: thin; flex: 1; }
+.kn-legacy .kcol-add { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px; margin: 0 12px 14px; border: 1px dashed color-mix(in oklab, var(--ink-3) 35%, transparent); border-radius: 12px;
+  font-family: var(--sans); font-size: 12px; color: var(--ink-4); cursor: pointer; background: color-mix(in oklab, var(--card) 25%, transparent); transition: all .12s; }
+.kn-legacy .kcol-add:hover { border-color: var(--kg); color: var(--kg-deep); background: var(--kg-tint); }
+.kn-legacy .kcol-add svg { width: 13px; height: 13px; }
+
+.kn-legacy .kcard { position: relative; display: flex; gap: 11px; align-items: flex-start;
+  background: color-mix(in oklab, var(--card) 78%, transparent); border: 1px solid var(--ds-glass-border); border-radius: 14px;
+  padding: 13px 14px; box-shadow: 0 2px 10px color-mix(in oklab, var(--ink) 7%, transparent); cursor: grab; transition: box-shadow 0.14s, border-color .14s; user-select: none; }
+.kn-legacy .kcard:hover { box-shadow: 0 4px 16px color-mix(in oklab, var(--ink) 13%, transparent); border-color: var(--ds-glass-hi); }
+.kn-legacy .kcard:focus-visible { outline: 2px solid var(--kg); outline-offset: 2px; }
+.kn-legacy .kcard::before { content: ''; position: absolute; left: 13px; right: 13px; top: 0; height: 2px; border-radius: 2px; background: var(--pr-color, transparent); }
+.kn-legacy .kcard-prio-dot { display: none; }
+.kn-legacy .kcard-body { flex: 1; min-width: 0; }
+.kn-legacy .kcard-title { font-size: 13.5px; color: var(--ink); letter-spacing: -0.005em; line-height: 1.4; text-wrap: pretty; }
+.kn-legacy .kcard-meta { display: flex; align-items: center; gap: 11px; margin-top: 10px; flex-wrap: wrap; }
+.kn-legacy .kcard-est { font-family: var(--mono); font-size: 11px; color: var(--ink-4); white-space: nowrap; }
+.kn-legacy .kcard-proj { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-3); min-width: 0; }
+.kn-legacy .kcard-proj i { width: 7px; height: 7px; border-radius: 2.5px; flex-shrink: 0; background: var(--kg); }
+.kn-legacy .kcard-proj span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kn-legacy .kcard-date { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+.kn-legacy .kcard-date svg { width: 11px; height: 11px; }
+.kn-legacy .kcard-date.today { color: var(--kg-deep); font-weight: 600; }
+.kn-legacy .kcard-date.overdue { color: var(--p-high); font-weight: 600; }
+.kn-legacy .kcard-date.soon { color: var(--p-med); }
+.kn-legacy .kcard-ring { flex-shrink: 0; position: relative; width: 30px; height: 30px; }
+.kn-legacy .kcard-ring .kr-lbl { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 8.5px; color: var(--ink-3); }
+.kn-legacy .kcard-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.kn-legacy .kcard-done { width: 18px; height: 18px; border-radius: 50%; background: var(--done); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.kn-legacy .kcard-done svg { width: 11px; height: 11px; color: var(--ds-on-accent); }
+.kn-legacy .kcard.done { background: color-mix(in oklab, var(--card) 50%, transparent); }
+.kn-legacy .kcard.done .kcard-title { text-decoration: line-through; color: var(--ink-3); }
+
+/* DragOverlay: card levantado SEM backdrop-filter (perf) + fundo sólido */
+.kg-drag-overlay { pointer-events: none; }
+.kg-drag-overlay .kcard { background: var(--ds-card); box-shadow: var(--ds-shadow-lg); transform: rotate(1.5deg); cursor: grabbing; backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* rodapé-resumo do board */
+.kn-legacy .ksummary { display: flex; align-items: center; gap: 26px; padding: 13px 30px; flex-wrap: wrap;
+  border-top: 1px solid var(--ds-glass-border); background: color-mix(in oklab, var(--card) 40%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.kn-legacy .ksummary .ks-stat { display: flex; align-items: baseline; gap: 7px; }
+.kn-legacy .ksummary .ks-v { font-family: var(--display); font-size: 19px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.kn-legacy .ksummary .ks-k { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-4); }
+.kn-legacy .ksummary .ks-sep { width: 1px; height: 22px; background: var(--line); }
+
+/* linha de View e botões do quadro (nesta tela usam os controles do DS, sobre o mesmo fundo) */
+.kn-legacy .kn-kviews { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-2); margin: 14px 0; }
+.kn-legacy .kn-kviews > label { color: var(--ink-3); font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
+.kn-legacy .kn-kviews .ds-select { width: auto; min-width: 150px; }
+
+.kn-legacy .kn-kaddcol { flex-shrink: 0; align-self: flex-start; margin-top: 22px; }
+.kn-legacy .kn-kempty { display: flex; flex-direction: column; align-items: center; gap: var(--ds-space-3); }
+.kn-legacy .kn-klink { padding: 0; border: 0; background: none; color: var(--kg-deep); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
+@media (max-width: 640px) { .kn-legacy .kcol { min-width: 82vw; } }

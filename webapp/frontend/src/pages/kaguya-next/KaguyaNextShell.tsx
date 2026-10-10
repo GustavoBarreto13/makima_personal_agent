@@ -41,6 +41,7 @@ import { GroupBoardScreen, KanbanScreen } from './screens/Kanban'
 import { Today } from './screens/Today'
 import type { Filter, FocusSession, Group, Project, Sidebar, Task } from './types'
 import './kaguya-next.css'
+import './legacy.css'
 
 const AGENT = getAgent('kaguya')
 
