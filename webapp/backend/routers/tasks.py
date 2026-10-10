@@ -73,7 +73,7 @@ from agents.kaguya.tools_filters import (
     list_builtin_filters, list_tasks_by_builtin,
 )
 from agents.kaguya.tools_kanban_views import (
-    list_views, create_view, update_view, delete_view, list_board_for_view, filter_board,
+    list_views, create_view, update_view, delete_view, list_board_for_view, filter_board, filter_group_board_ids,
 )
 from agents.kaguya.tools_calendar import list_tasks_in_range
 # Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034.
@@ -1039,6 +1039,17 @@ def kanban_view_board_route(
 # NOTA DE ROTA: o prefixo literal "/groups/" garante que esta rota nunca seja
 # capturada pelo conversor int do GET /{task_id} (que fica no final do arquivo).
 # Registrada aqui, junto dos outros endpoints estáticos, antes do /{task_id} final.
+class GroupBoardFilterBody(BaseModel):
+    """Filtro avulso do quadro de um grupo (mesma DSL das smart-lists)."""
+    rules: Optional[dict] = None
+
+
+@router.post("/groups/{group_id}/board-filter")
+def group_board_filter_route(group_id: int, body: GroupBoardFilterBody, user: dict = Depends(require_user)) -> dict:
+    """Ids das tarefas do grupo que cumprem as regras (``ids: null`` = sem filtro)."""
+    return _check_result(filter_group_board_ids(group_id, body.rules))
+
+
 @router.get("/groups/{group_id}/board")
 def group_board_route(group_id: int, user: dict = Depends(require_user)) -> dict:
     """Board agregado de um grupo: listas + colunas unificadas + tarefas.

@@ -337,6 +337,10 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
   const [board, setBoard] = useState<GroupBoard | null>(null)
   const [status, setStatus] = useState<'loading' | 'error' | 'ok'>('loading')
   const [filters, setFilters] = useState<KanbanFilters>(KANBAN_DEFAULTS)
+  // Filtro avulso (construtor completo): o servidor devolve os ids que casam; o quadro mostra só esses.
+  const [adHoc, setAdHoc] = useState<FilterRules | null>(null)
+  const [adHocIds, setAdHocIds] = useState<Set<number> | null>(null)
+  const [boardFilter, setBoardFilter] = useState(false)
   const [activeId, setActiveId] = useState<number | null>(null)
   const [overKey, setOverKey] = useState<string | null>(null)
   const sensors = useDndSensors()
@@ -349,7 +353,13 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
     loadedRev.current = revRef.current
     try { setBoard(await kaguyaApi.groupBoard(groupId)); setStatus('ok') } catch { if (!silent) setStatus('error') }
   }, [groupId])
-  useEffect(() => { setFilters(KANBAN_DEFAULTS); void load(false) }, [groupId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setFilters(KANBAN_DEFAULTS); setAdHoc(null); void load(false) }, [groupId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    let live = true
+    if (!adHoc) { setAdHocIds(null); return }
+    kaguyaApi.groupBoardFilter(groupId, adHoc).then((r) => { if (live) setAdHocIds(r.ids ? new Set(r.ids) : null) }).catch(() => { if (live) { setAdHoc(null); toast('Não foi possível aplicar o filtro.', { tone: 'error' }) } })
+    return () => { live = false }
+  }, [adHoc, groupId, k.rev])
   useEffect(() => { if (status === 'ok' && loadedRev.current !== k.rev) void load(true) }, [status, k.rev]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const listName = useCallback((pid: number) => board?.lists.find((l) => l.id === pid)?.name ?? '', [board])
@@ -386,7 +396,8 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
   if (board.columns.length === 0) return <Page full><EmptyState icon="kanban" title="Nenhuma lista tem quadro Kanban" hint="Crie colunas em pelo menos uma lista do grupo para ativar este quadro." /></Page>
 
   const known = new Set(board.columns.flatMap((c) => c.members.map((m) => m.column_id)))
-  const without = applyKanbanFilters(board.tasks.filter((t) => t.parent_id == null && (t.column_id == null || !known.has(t.column_id))), filters)
+  const shown = (t: Task) => adHocIds === null || adHocIds.has(t.id)
+  const without = applyKanbanFilters(board.tasks.filter((t) => shown(t) && t.parent_id == null && (t.column_id == null || !known.has(t.column_id))), filters)
   const groupTitle = k.groups.find((g) => g.id === groupId)?.name ?? 'Grupo'
   const activeTask = board.tasks.find((t) => t.id === activeId)
   const cardProps = (t: Task) => ({ projectName: listName(t.project_id), showChips: true, showRing: true })
@@ -397,6 +408,10 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
       <div className="kn-viewbar"><ViewSwitch side="board" kind="group" id={groupId} /></div>
       <h2 className="kn-kpage-t"><Icon name="kanban" size={22} />{groupTitle}</h2>
       <p className="kn-kpage-sub">{board.lists.map((l) => l.name).join(' · ')}</p>
+      <div className="kn-kviews" role="group" aria-label="Filtro do quadro do grupo">
+        <Button size="sm" icon="filter" aria-pressed={!!adHoc} onClick={() => setBoardFilter(true)}>{adHoc ? `Filtro (${adHoc.conditions.length})` : 'Filtrar'}</Button>
+        {adHoc && <IconButton icon="close" size={14} label="Limpar o filtro do quadro" onClick={() => setAdHoc(null)} />}
+      </div>
       <KanbanToolbar filters={filters} onChange={setFilters} />
       <DndContext
         sensors={sensors}
@@ -409,7 +424,7 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
           <div className="kn-kcols">
             {board.columns.map((col) => {
               const ids = new Set(col.members.map((m) => m.column_id))
-              const cards = applyKanbanFilters(board.tasks.filter((t) => t.parent_id == null && t.column_id != null && ids.has(t.column_id)), filters)
+              const cards = applyKanbanFilters(board.tasks.filter((t) => shown(t) && t.parent_id == null && t.column_id != null && ids.has(t.column_id)), filters)
               return (
                 <KanbanColumn
                   key={col.key}
@@ -439,6 +454,7 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
         </div>
         <Overlay task={activeTask} projectName={activeTask ? listName(activeTask.project_id) : undefined} />
       </DndContext>
+      {boardFilter && <BoardFilterModal current={adHoc} onApply={setAdHoc} onClose={() => setBoardFilter(false)} />}
     </Page>
   )
 }

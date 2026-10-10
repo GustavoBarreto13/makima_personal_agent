@@ -16,7 +16,8 @@ export function BoardFilterModal({ current, onApply, onClose, onViewSaved }: {
   current: FilterRules | null
   onApply: (rules: FilterRules | null) => void
   onClose: () => void
-  onViewSaved: () => void
+  /** Só o quadro de uma lista guarda views; o do grupo não mostra "Guardar como View". */
+  onViewSaved?: () => void
 }) {
   const k = useKaguya()
   const lookups = useFilterLookups()
@@ -31,7 +32,7 @@ export function BoardFilterModal({ current, onApply, onClose, onViewSaved }: {
     try {
       await kaguyaApi.createKanbanView({ name: viewName.trim(), display: DEFAULT_DISPLAY, filter: rules })
       toast('View salva.', { tone: 'success' })
-      onViewSaved()
+      onViewSaved?.()
       onApply(null)
       onClose()
     } catch (e) { toast(reason(e, 'Não foi possível salvar a view.'), { tone: 'error' }) } finally { setSaving(false) }
@@ -51,12 +52,12 @@ export function BoardFilterModal({ current, onApply, onClose, onViewSaved }: {
       )}
     >
       <FilterBuilder value={rules} onChange={setRules} today={k.today} fields={SMARTLIST_FIELDS} projects={k.projects} groups={k.groups} contexts={lookups.contexts} people={lookups.people} />
-      <Field label="Guardar como View" hint="Opcional: cria uma View do quadro com este filtro, para escolher depois no seletor.">{(c) => (
+      {onViewSaved && <Field label="Guardar como View" hint="Opcional: cria uma View do quadro com este filtro, para escolher depois no seletor.">{(c) => (
         <span className="kn-quick-i">
           <Input {...c} value={viewName} placeholder="Nome da view" onChange={(e) => setViewName(e.target.value)} />
           <Button icon="add" disabled={saving || !viewName.trim()} onClick={() => void saveAsView()}>Salvar view</Button>
         </span>
-      )}</Field>
+      )}</Field>}
     </Modal>
   )
 }

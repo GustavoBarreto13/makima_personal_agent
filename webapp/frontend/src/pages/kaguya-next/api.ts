@@ -227,6 +227,9 @@ export const kaguyaApi = {
   /** Board de uma lista com um filtro avulso (a mesma DSL das smart-lists), sem salvar view. Inclui as concluídas. */
   kanbanBoard: (projectId: number, rules: FilterRules | null) =>
     api.post<Task[]>(`${BASE}/kanban-board`, { project_id: projectId, rules }),
+  /** Ids das tarefas do grupo que cumprem o filtro avulso (`ids: null` = sem filtro). */
+  groupBoardFilter: (groupId: number, rules: FilterRules | null) =>
+    api.post<{ status: string; ids: number[] | null }>(`${BASE}/groups/${groupId}/board-filter`, { rules }),
   kanbanViewBoard: (viewId: number, projectId: number) =>
     api.get<Task[]>(`${BASE}/kanban-views/${viewId}/board?project_id=${projectId}`),
 

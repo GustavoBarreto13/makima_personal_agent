@@ -10,7 +10,7 @@ import { mockLayoutApis, mockMatchMedia, setMockWidth } from '../../../design/te
 import { __resetToasts } from '../../../design/headless/toast'
 
 const api = vi.hoisted(() => ({
-  sidebar: vi.fn(), viewCounts: vi.fn(), viewTasks: vi.fn(), listColumns: vi.fn(), listTasks: vi.fn(), listKanbanViews: vi.fn(), kanbanViewBoard: vi.fn(), kanbanBoard: vi.fn(), listContexts: vi.fn(), listPeople: vi.fn(),
+  sidebar: vi.fn(), viewCounts: vi.fn(), viewTasks: vi.fn(), listColumns: vi.fn(), listTasks: vi.fn(), listKanbanViews: vi.fn(), kanbanViewBoard: vi.fn(), kanbanBoard: vi.fn(), groupBoardFilter: vi.fn(), listContexts: vi.fn(), listPeople: vi.fn(),
   groupBoard: vi.fn(), createColumn: vi.fn(), updateColumn: vi.fn(), deleteColumn: vi.fn(), copyColumns: vi.fn(), createTask: vi.fn(), updateTask: vi.fn(),
   createKanbanView: vi.fn(), getTask: vi.fn(), activity: vi.fn(), dependencies: vi.fn(),
   schedule: { get: vi.fn(), overrides: vi.fn() },
@@ -288,5 +288,23 @@ describe('Filtros e Views do quadro', () => {
     const campo = within(dlg).getByLabelText('Campo da condição 1')
     expect(within(campo).getByRole('option', { name: 'Responsável' })).toBeTruthy()
     expect(within(campo).getByRole('option', { name: 'Estimativa' })).toBeTruthy()
+  })
+
+  it('o quadro do grupo também filtra (o servidor devolve os ids que casam)', async () => {
+    api.groupBoard.mockResolvedValue({
+      group: { id: 3, name: 'Sprint' }, lists: [{ id: 1, name: 'Sprint', color: null, icon: null }],
+      columns: [{ key: 'a fazer', name: 'A fazer', is_done: false, position: 1, members: [{ project_id: 1, column_id: 10 }] }],
+      tasks: [task({ id: 1, title: 'Fica' }), task({ id: 2, title: 'Some' })],
+    })
+    api.groupBoardFilter.mockResolvedValue({ status: 'ok', ids: [1] })
+    const user = await at('#grupo/3')
+    await screen.findByText('Some')
+    await user.click(screen.getByRole('button', { name: 'Filtrar' }))
+    const dlg = await screen.findByRole('dialog', { name: 'Filtrar o quadro' })
+    expect(within(dlg).queryByText('Guardar como View')).toBeNull()
+    await user.click(within(dlg).getByRole('button', { name: 'Aplicar' }))
+    await waitFor(() => expect(api.groupBoardFilter).toHaveBeenCalledWith(3, { combinator: 'and', conditions: [{ field: 'priority', op: 'gte', value: 2 }] }))
+    await waitFor(() => expect(screen.queryByText('Some')).toBeNull())
+    expect(screen.getByText('Fica')).toBeTruthy()
   })
 })

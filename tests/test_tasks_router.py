@@ -358,3 +358,12 @@ def test_kanban_board_regra_invalida_vira_400(mock_board):
     mock_board.return_value = {"status": "error", "message": "Campo inválido."}
     resp = client.post(f"{_BASE}/kanban-board", json={"project_id": 3, "rules": {"combinator": "and", "conditions": [{"field": "x", "op": "y"}]}})
     assert resp.status_code == 400
+
+
+@patch("webapp.backend.routers.tasks.filter_group_board_ids")
+def test_group_board_filter_devolve_ids(mock_ids):
+    mock_ids.return_value = {"status": "ok", "ids": [4, 9]}
+    rules = {"combinator": "or", "conditions": [{"field": "tag", "op": "has", "value": "x"}]}
+    resp = client.post(f"{_BASE}/groups/3/board-filter", json={"rules": rules})
+    assert resp.status_code == 200 and resp.json()["ids"] == [4, 9]
+    mock_ids.assert_called_once_with(3, rules)

@@ -277,3 +277,28 @@ def filter_board(project_id: int, rules: Optional[dict] = None) -> dict:
         if erro:
             return {"status": "error", "message": erro}
     return {"status": "ok", "tasks": list_board_tasks(project_id, rules or None)}
+
+
+def filter_group_board_ids(group_id: int, rules: Optional[dict] = None) -> dict:
+    """Ids das tarefas das listas de um grupo que cumprem um filtro avulso (o quadro do grupo filtra no cliente por eles).
+
+    Args:
+        group_id: Id do grupo.
+        rules: ``FilterRules`` (mesma DSL das smart-lists) ou ``None`` (sem filtro → todas).
+
+    Returns:
+        ``{"status": "ok", "ids": [...]}`` ou ``{"status": "error", "message": ...}`` se a DSL for inválida. Inclui concluídas.
+    """
+    if not rules:
+        return {"status": "ok", "ids": None}
+    erro = _validate_rules(rules)
+    if erro:
+        return {"status": "error", "message": erro}
+    where_sql, params, _orphans = _build_where_from_rules(rules, default_open=False)
+    params = {**params, "gid_board": group_id}
+    rows = run_select(
+        "SELECT t.id FROM tasks t JOIN task_projects pj ON pj.id = t.project_id "
+        f"WHERE pj.group_id = %(gid_board)s AND {where_sql}",
+        params,
+    )
+    return {"status": "ok", "ids": [r["id"] for r in rows]}
