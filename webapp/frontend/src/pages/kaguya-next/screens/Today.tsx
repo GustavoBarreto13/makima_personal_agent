@@ -4,8 +4,8 @@
 // (07h–23h) onde se reservam horários arrastando as tarefas do plano. Nada some em relação ao shell antigo.
 
 import { DndContext, DragOverlay, closestCenter, useDraggable, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
-import { useMemo, useState } from 'react'
-import { Button, EmptyState, ErrorState, Hero, Icon, IconButton, LoadingState, Page, ProgressBar, SectionHeader, Toggle, toast } from '../../../design'
+import { useEffect, useMemo, useState } from 'react'
+import { Button, EmptyState, ErrorState, Hero, Icon, IconButton, LoadingState, Page, ProgressBar, SectionHeader, toast } from '../../../design'
 import { fmtDateLong } from '../../../design/core/format'
 import { kaguyaApi } from '../api'
 import { DayTimeline } from '../components/DayTimeline'
@@ -67,8 +67,11 @@ function TodayBody({ data }: { data: MyDayResponse }) {
   const deps = useMemo(() => ({ reload: k.reload }), [k.reload])
   const sensors = useDndSensors()
   const [dragId, setDragId] = useState<number | null>(null)
+  // O Modo férias saiu da tela (o espaço Trabalho/Pessoal já cobre). Quem ainda o tinha ligado tem o trabalho escondido
+  // pelo servidor sem como desligar: desliga uma vez, em silêncio.
+  useEffect(() => { if (data.hide_work) void kaguyaApi.setMyDayPrefs(false).then(k.reload).catch(() => {}) }, [data.hide_work]) // eslint-disable-line react-hooks/exhaustive-deps
   const space = k.prefs.space
-  const split = k.prefs.daySplit === 'split' && space === 'all' && !data.hide_work
+  const split = k.prefs.daySplit === 'split' && space === 'all'
   const ft = data.free_time
 
   // Blocos opcionais: se a consulta falhar, a seção só não aparece (o resto do dia continua).
@@ -91,9 +94,6 @@ function TodayBody({ data }: { data: MyDayResponse }) {
   const fWeek = focusWeek.state.status === 'ok' ? focusWeek.state.data : null
   const hasFocus = !!fToday && (fToday.sessoes > 0 || !!fWeek?.days.some((d) => d.sessoes > 0))
 
-  const toggleVacation = async (on: boolean) => {
-    try { await kaguyaApi.setMyDayPrefs(on); k.reload() } catch { toast('Não foi possível mudar o modo férias.', { tone: 'error' }) }
-  }
   const move = (t: Task, when: 'today' | 'tomorrow' | 'later') =>
     kaguyaApi.reschedule(t.id, when).then(k.reload).catch(() => toast('Não foi possível mover a tarefa.', { tone: 'error' }))
   const checkin = async (e: ExperimentDue) => {
@@ -188,9 +188,6 @@ function TodayBody({ data }: { data: MyDayResponse }) {
                 <p className="kn-now">Livre hoje: <b>{fmtMinutes(Math.max(0, data.capacity.livre_min))}</b> · {data.capacity.excedeu ? 'plano acima do tempo' : `folga de ${fmtMinutes(Math.max(0, data.capacity.folga_min))}`}</p>
               )}
             </div>
-          }
-          actions={
-            <Toggle checked={data.hide_work} onChange={(v) => void toggleVacation(v)} label="Modo férias (esconde o trabalho)" />
           }
         />
 

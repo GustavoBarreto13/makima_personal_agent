@@ -13,7 +13,7 @@ import { streakOf } from './Today'
 
 const api = vi.hoisted(() => ({
   sidebar: vi.fn(), viewCounts: vi.fn(), viewTasks: vi.fn(), myDay: vi.fn(), calendarSources: vi.fn(), setCalendarPref: vi.fn(), removeHabitFromMyDay: vi.fn(),
-  setTimeBlock: vi.fn(), clearTimeBlock: vi.fn(), listContexts: vi.fn(),
+  setTimeBlock: vi.fn(), clearTimeBlock: vi.fn(), listContexts: vi.fn(), setMyDayPrefs: vi.fn(),
   experiments: { dueToday: vi.fn(), log: vi.fn(), removeLog: vi.fn() },
   focus: { active: vi.fn(), today: vi.fn(), week: vi.fn() },
   schedule: { get: vi.fn(), overrides: vi.fn() },
@@ -50,6 +50,7 @@ beforeEach(() => {
   api.setCalendarPref.mockResolvedValue({ status: 'ok' })
   api.removeHabitFromMyDay.mockResolvedValue({ status: 'ok' })
   api.setTimeBlock.mockResolvedValue({ status: 'ok' })
+  api.setMyDayPrefs.mockResolvedValue({ status: 'ok' })
   api.clearTimeBlock.mockResolvedValue({ status: 'ok' })
   api.experiments.dueToday.mockResolvedValue([{ id: 8, title: 'Vou ler 20 min', cadence: 'daily' }])
   api.experiments.log.mockResolvedValue({ status: 'ok' })
@@ -157,5 +158,19 @@ describe('Meu Dia — linha do dia', () => {
     api.myDay.mockResolvedValue(day({ plano: [task(2, 'Ligar para o banco')], plano_personal: [task(2, 'Ligar para o banco')], eventos: [] }))
     await open()
     expect(await screen.findByText(/Arraste uma tarefa do plano até uma hora/)).toBeTruthy()
+  })
+})
+
+describe('Meu Dia — sem Modo férias na tela', () => {
+  it('não há interruptor solto no banner', async () => {
+    await open()
+    expect(screen.queryByRole('switch')).toBeNull()
+    expect(screen.queryByLabelText(/Modo férias/)).toBeNull()
+  })
+
+  it('quem ainda tinha o Modo férias ligado volta ao normal sozinho', async () => {
+    api.myDay.mockResolvedValue(day({ hide_work: true }))
+    await open()
+    await waitFor(() => expect(api.setMyDayPrefs).toHaveBeenCalledWith(false))
   })
 })
