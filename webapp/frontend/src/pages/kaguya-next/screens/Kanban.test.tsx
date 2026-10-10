@@ -198,18 +198,18 @@ describe('Quadro do grupo', () => {
     const user = await at('#grupo/3')
     await screen.findByText('Da lista 1')
     await user.click(within(column('A fazer')).getByRole('button', { name: /Adicionar tarefa/ }))
-    await user.click(await screen.findByRole('button', { name: 'Lista' }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Nova tarefa' })).getByRole('button', { name: 'Lista' }))
     const list = await screen.findByRole('listbox', { name: 'Lista' })
     expect(within(list).queryByRole('option', { name: 'Outro' })).toBeNull()
     expect(within(list).getByRole('option', { name: 'Sprint' })).toBeTruthy()
   })
 
-  it('“Ver como lista” abre a lista do grupo com as tarefas de todas as listas', async () => {
+  it('“Lista” (no seletor Ver como) abre a lista do grupo com as tarefas de todas as listas', async () => {
     api.groupBoard.mockResolvedValue(BOARD)
     api.listTasks.mockImplementation(async (id: number) => (id === 1 ? [task({ id: 1, title: 'Da lista 1' })] : [task({ id: 5, project_id: 2, title: 'Da lista 2' })]))
     const user = await at('#grupo/3')
     await screen.findByText('Da lista 1')
-    await user.click(screen.getByRole('button', { name: 'Ver como lista' }))
+    await user.click(within(screen.getByRole('group', { name: 'Ver como' })).getByRole('button', { name: 'Lista' }))
     expect(await screen.findByText('Da lista 2')).toBeTruthy()
     expect(window.location.hash).toBe('#grupo-lista/3')
     expect(api.listTasks).toHaveBeenCalledWith(1, false)
@@ -224,5 +224,26 @@ describe('Quadro do grupo', () => {
     api.groupBoard.mockResolvedValue({ ...BOARD, columns: [], tasks: [] })
     await at('#grupo/3')
     expect(await screen.findByText('Nenhuma lista tem quadro Kanban')).toBeTruthy()
+  })
+})
+
+describe('Alternar Lista ↔ Quadro', () => {
+  it.each([
+    ['#lista/1', 'Quadro', '#kanban/1'],
+    ['#kanban/1', 'Lista', '#lista/1'],
+    ['#grupo-lista/3', 'Quadro', '#grupo/3'],
+    ['#grupo/3', 'Lista', '#grupo-lista/3'],
+  ])('%s: o mesmo seletor, no topo, leva para o outro lado', async (hash, label, target) => {
+    api.groupBoard.mockResolvedValue({
+      group: { id: 3, name: 'Sprint' }, lists: [{ id: 1, name: 'Sprint', color: null, icon: null }],
+      columns: [{ key: 'a fazer', name: 'A fazer', is_done: false, position: 1, members: [{ project_id: 1, column_id: 10 }] }], tasks: [],
+    })
+    const user = await at(hash)
+    const sw = await screen.findByRole('group', { name: 'Ver como' })
+    // É o primeiro item da página (acima da barra de filtros e do título).
+    expect(sw.closest('.kn-viewbar')).toBeTruthy()
+    expect(within(sw).getAllByRole('button')).toHaveLength(2)
+    await user.click(within(sw).getByRole('button', { name: label }))
+    await waitFor(() => expect(window.location.hash).toBe(target))
   })
 })

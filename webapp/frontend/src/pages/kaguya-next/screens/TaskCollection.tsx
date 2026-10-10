@@ -33,14 +33,16 @@ interface Props {
   reorderable?: boolean
   emptyTitle: string
   emptyHint: string
-  /** Botões extras ao lado da barra (ex.: "Quadro"). */
+  /** Botões extras ao lado da barra (ex.: "Editar lista"). */
   extra?: ReactNode
+  /** Alternar Lista ↔ Quadro: sempre o primeiro item do topo da página. */
+  viewSwitch?: ReactNode
   /** Cabeçalho acima da barra (aviso de smart-list quebrada etc.). */
   banner?: ReactNode
 }
 
 export function TaskCollection({
-  scope, load, deps = [], showProject, addProjectId, addDue, completed, sortBy, groupBy, reorderable, emptyTitle, emptyHint, extra, banner,
+  scope, load, deps = [], showProject, addProjectId, addDue, completed, sortBy, groupBy, reorderable, emptyTitle, emptyHint, extra, banner, viewSwitch,
 }: Props) {
   const k = useKaguya()
   const { state, retry } = useLoad(load, [k.rev, k.space, scope, ...deps])
@@ -54,6 +56,7 @@ export function TaskCollection({
 
   return (
     <Page wide className="kn-page">
+      {viewSwitch && <div className="kn-viewbar">{viewSwitch}</div>}
       {banner}
       <QuickAddBar projectId={addProjectId} due={addDue} />
       <CollectionToolbar schema={schema} c={c} onOpenFilters={() => setFilters(true)} searchPlaceholder="Buscar nesta lista" extra={extra} />

@@ -612,3 +612,6 @@
 .kn-set-row:last-child { border-bottom: 0; }
 .kn-set-name { flex: 1; min-width: 0; color: var(--ds-ink-1); font-size: var(--ds-text-sm); }
 .kn-set-row .ds-iconbtn.kn-on { color: var(--ds-accent-deep); background: var(--ds-accent-tint); }
+
+/* Lista ↔ Quadro: o mesmo controle, no mesmo lugar, nas duas visões */
+.kn-viewbar { display: flex; align-items: center; gap: var(--ds-space-3); }

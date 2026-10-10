@@ -17,6 +17,7 @@ import { ColumnModal } from '../components/ColumnModal'
 import { KanbanCard, KanbanSortableCard } from '../components/KanbanCard'
 import { KanbanSummary, DEFAULT_SLOTS } from '../components/KanbanSummary'
 import { KanbanToolbar } from '../components/KanbanToolbar'
+import { ViewSwitch } from '../components/ViewSwitch'
 import { DEFAULT_DISPLAY, KanbanViewModal } from '../components/KanbanViewModal'
 import { ProjectOptions } from '../components/ProjectOptions'
 import { useKaguya } from '../context'
@@ -260,6 +261,7 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
 
   return (
     <Page full className="kn-page">
+      <div className="kn-viewbar"><ViewSwitch side="board" kind="list" id={projectId} hasBoard /></div>
       <h2 className="kn-kpage-t"><Icon name="kanban" size={22} />{projectName}</h2>
       <p className="kn-kpage-sub">Arraste entre colunas · soltar em concluídas conclui a tarefa.</p>
       <div className="kn-kviews" role="group" aria-label="Views do quadro">
@@ -273,7 +275,6 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
             <Button size="sm" icon="add" onClick={() => setViewModal({})}>View</Button>
           </>
         )}
-        <Button size="sm" icon="list" onClick={() => k.goto({ view: 'list', id: projectId })}>Ver como lista</Button>
       </div>
       <KanbanToolbar filters={filters} onChange={setFilters} />
 
@@ -380,11 +381,9 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
 
   return (
     <Page full className="kn-page">
+      <div className="kn-viewbar"><ViewSwitch side="board" kind="group" id={groupId} /></div>
       <h2 className="kn-kpage-t"><Icon name="kanban" size={22} />{groupTitle}</h2>
       <p className="kn-kpage-sub">{board.lists.map((l) => l.name).join(' · ')}</p>
-      <div className="kn-kviews">
-        <Button size="sm" icon="list" onClick={() => k.goto({ view: 'group-list', id: groupId })}>Ver como lista</Button>
-      </div>
       <KanbanToolbar filters={filters} onChange={setFilters} />
       <DndContext
         sensors={sensors}
