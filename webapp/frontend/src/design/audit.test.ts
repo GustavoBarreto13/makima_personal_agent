@@ -23,7 +23,7 @@ describe('o repositório está em dia com o padrão', () => {
   })
   it('manifesto de conformidade bate com o código', () => {
     expect(audit.runConformance().violations).toEqual([])
-  })
+  }, 30000) // varre todas as páginas: passa de 5 s com a suíte inteira rodando
 })
 
 describe('lint estático reprova o que deve reprovar', () => {

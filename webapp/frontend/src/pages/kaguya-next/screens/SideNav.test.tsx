@@ -44,7 +44,7 @@ const open = async () => {
   window.location.hash = '#hoje'
   const user = userEvent.setup()
   render(<MemoryRouter><KaguyaNextShell /></MemoryRouter>)
-  await screen.findByRole('button', { name: 'Abrir o quadro de Casa' }, { timeout: 4000 }).catch(() => undefined)
+  await within(screen.getByRole('navigation', { name: 'Seções' })).findByText('Solta')
   return user
 }
 const side = () => screen.getByRole('navigation', { name: 'Seções' })
