@@ -1,11 +1,13 @@
 // O visual do Kanban e do calendário é o do shell antigo e NÃO pode depender dos tokens que a arte Shuchiin sobrescreve:
 // ela troca o vidro por "papel quase opaco" (--ds-glass-*), reduz o blur e quadra os cantos (--ds-r-*).
 import { describe, expect, it } from 'vitest'
-import raw from './legacy.css?raw'
+// @ts-expect-error o projeto não tem os tipos do Node; o teste roda no Node
+import { readFileSync } from 'node:fs'
 
-const css = raw.replace(/\/\*[\s\S]*?\*\//g, '')
+const css = readFileSync(new URL('./legacy.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
 
 describe('legacy.css (porte do visual antigo)', () => {
+  it('o arquivo foi lido', () => { expect(css.length).toBeGreaterThan(2000) })
   it('não usa os tokens de vidro nem de raio que a arte sobrescreve', () => {
     expect(css).not.toMatch(/var\(--ds-glass-/)
     expect(css).not.toMatch(/var\(--ds-r-/)
