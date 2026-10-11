@@ -11,7 +11,7 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, EmptyState, ErrorState, Icon, IconButton, LoadingState, Page, Select, confirm, toast } from '../../../design'
+import { Button, EmptyState, ErrorState, Icon, LoadingState, Page, Select, confirm, toast } from '../../../design'
 import { kaguyaApi } from '../api'
 import { ColumnModal } from '../components/ColumnModal'
 import { KanbanCard, KanbanSortableCard } from '../components/KanbanCard'
@@ -280,11 +280,11 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
       <h1 className="kg-page-title"><Icon name="kanban" size={22} /> {projectName}</h1>
       <p className="kg-page-sub">Arraste entre colunas · soltar em concluídas conclui a tarefa.</p>
       <div className="kn-kviews" role="group" aria-label="Views do quadro">
-        <label htmlFor="kn-view-sel">View</label>
+        <label className="kg-field-label" htmlFor="kn-view-sel">View</label>
         {views.length > 0 && (
-          <Select id="kn-view-sel" value={activeViewId ?? ''} onChange={(e) => selectView(Number(e.target.value))}>
+          <select id="kn-view-sel" className="kg-select" value={activeViewId ?? ''} onChange={(e) => selectView(Number(e.target.value))}>
             {views.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </Select>
+          </select>
         )}
         {viewsError && (
           <span className="kn-kviews-err" role="status">
@@ -292,10 +292,10 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
             <button type="button" className="kn-klink" onClick={() => void loadViews()}>Tentar de novo</button>
           </span>
         )}
-        <Button size="sm" icon="prefs" disabled={!activeView} onClick={() => activeView && setViewModal({ view: activeView })}>Editar</Button>
-        <Button size="sm" icon="add" onClick={() => setViewModal({})}>View</Button>
-        <Button size="sm" icon="filter" aria-pressed={!!adHoc} onClick={() => setBoardFilter(true)}>{adHoc ? `Filtro (${adHoc.conditions.length})` : 'Filtrar'}</Button>
-        {adHoc && <IconButton icon="close" size={14} label="Limpar o filtro do quadro" onClick={() => setAdHoc(null)} />}
+        <button type="button" className="kg-btn kg-btn-ghost" disabled={!activeView} title="Editar view" onClick={() => activeView && setViewModal({ view: activeView })}><Icon name="prefs" size={14} />Editar</button>
+        <button type="button" className="kg-btn kg-btn-ghost" onClick={() => setViewModal({})}><Icon name="add" size={14} />View</button>
+        <button type="button" className="kg-btn kg-btn-ghost" aria-pressed={!!adHoc} onClick={() => setBoardFilter(true)}><Icon name="filter" size={14} />{adHoc ? `Filtro (${adHoc.conditions.length})` : 'Filtrar'}</button>
+        {adHoc && <button type="button" className="kg-btn kg-btn-ghost" aria-label="Limpar o filtro do quadro" onClick={() => setAdHoc(null)}><Icon name="close" size={14} /></button>}
       </div>
       <KanbanToolbar filters={filters} onChange={setFilters} />
 
@@ -327,7 +327,7 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
                 />
               )
             })}
-            <Button className="kn-kaddcol" icon="add" onClick={() => setColumnModal({})}>Coluna</Button>
+            <button type="button" className="kg-btn" style={{ height: 44, flexShrink: 0, alignSelf: 'flex-start', marginTop: 22 }} onClick={() => setColumnModal({})}><Icon name="add" size={14} />Coluna</button>
           </div>
           {display.adornos.summary_footer && <KanbanSummary tasks={tasks} columns={columns} slots={display.slots ?? DEFAULT_SLOTS} today={k.today} />}
         </div>
@@ -417,8 +417,8 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
       <h1 className="kg-page-title"><Icon name="kanban" size={22} /> {groupTitle}</h1>
       <p className="kg-page-sub">{board.lists.map((l) => l.name).join(' · ')}</p>
       <div className="kn-kviews" role="group" aria-label="Filtro do quadro do grupo">
-        <Button size="sm" icon="filter" aria-pressed={!!adHoc} onClick={() => setBoardFilter(true)}>{adHoc ? `Filtro (${adHoc.conditions.length})` : 'Filtrar'}</Button>
-        {adHoc && <IconButton icon="close" size={14} label="Limpar o filtro do quadro" onClick={() => setAdHoc(null)} />}
+        <button type="button" className="kg-btn kg-btn-ghost" aria-pressed={!!adHoc} onClick={() => setBoardFilter(true)}><Icon name="filter" size={14} />{adHoc ? `Filtro (${adHoc.conditions.length})` : 'Filtrar'}</button>
+        {adHoc && <button type="button" className="kg-btn kg-btn-ghost" aria-label="Limpar o filtro do quadro" onClick={() => setAdHoc(null)}><Icon name="close" size={14} /></button>}
       </div>
       <KanbanToolbar filters={filters} onChange={setFilters} />
       <DndContext
