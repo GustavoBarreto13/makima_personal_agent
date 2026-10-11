@@ -13,7 +13,7 @@ import { MonthGrid } from '../components/MonthGrid'
 import { TimeGrid, type Placement } from '../components/TimeGrid'
 import { useKaguya } from '../context'
 import {
-  gcalToEvent, hubToEvent, isGcalId, isoWeek, localISO, shiftRef, taskToEvent, visibleInSpace, windowFor, workBand, type CalView, type GcalRaw,
+  gcalToEvent, hubToEvent, isGcalId, isoWeek, localISO, shiftRef, taskToEvent, visibleInSpace, visibleRange, windowFor, workBand, type CalView, type GcalRaw,
 } from '../lib/calendar'
 import { useLoad } from '../lib/useLoad'
 import type { CalEvent, Calendar, Task } from '../types'
@@ -153,6 +153,7 @@ export function Calendar() {
   const goDay = (iso: string) => { setRef(iso); setView('day') }
 
   const hint = useHint()
+  const range = useMemo(() => visibleRange(sched.state.status === 'ok' ? sched.state.data : null, events, k.prefs.calHideSleep), [sched.state, events, k.prefs.calHideSleep])
   return (
     <Page full fill className="kn-cal kn-legacy">
      <div className="calx" data-variant={k.prefs.calVariant} data-col={k.prefs.calSide}>
@@ -167,6 +168,11 @@ export function Calendar() {
           <button type="button" className="cal-today" onClick={() => setRef(k.today)}>Hoje</button>
           <button type="button" className="cal-iconbtn" aria-label="Próximo período" title="Próximo período" onClick={() => setRef(shiftRef(view, ref, 1))}><Icon name="right" size={15} /></button>
         </div>
+        {view !== 'month' && (
+          <button type="button" className={`cal-iconbtn${k.prefs.calHideSleep ? ' on' : ''}`} aria-pressed={k.prefs.calHideSleep} title={k.prefs.calHideSleep ? 'Mostrar as 24 horas' : 'Ocultar o período de sono'} aria-label={k.prefs.calHideSleep ? 'Mostrar as 24 horas' : 'Ocultar o período de sono'} onClick={() => k.setPrefs({ calHideSleep: !k.prefs.calHideSleep })}>
+            <Icon name="moon" size={15} />
+          </button>
+        )}
         <div className="cal-seg" role="group" aria-label="Visão do calendário">
           {([['day', 'Dia'], ['week', 'Semana'], ['month', 'Mês']] as [CalView, string][]).map(([v, label]) => (
             <button key={v} type="button" className={view === v ? 'on' : ''} aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>
@@ -189,7 +195,7 @@ export function Calendar() {
               days={win.days} today={k.today} events={events} cals={cals} bands={bands}
               onOpen={(ev, pos) => { setMenu(null); setPopover({ ev, pos }) }} onMenu={(ev, pos) => { setPopover(null); setMenu({ ev, pos }) }}
               onMove={(ev, to, from) => void onMove(ev, to, from)} onResize={(ev, to) => void onResize(ev, to)}
-              onCreate={onCreate} onDropTask={(id, day, iso) => void onDropTask(id, day, iso)}
+              onCreate={onCreate} onDropTask={(id, day, iso) => void onDropTask(id, day, iso)} range={range}
             />
           ))}
           <div className={`cal-hint${hint ? ' show' : ''}`}>Clique em um horário vazio para criar • Arraste para mover • Solte uma tarefa da lateral na grade para agendar</div>

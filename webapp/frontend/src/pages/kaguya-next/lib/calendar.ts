@@ -166,3 +166,33 @@ export function workBand(day: string, prefs: SchedulePrefs | null, overrides: Sc
   const lunch: [number, number] | null = prefs.lunch_start && prefs.lunch_end ? [timeToMin(prefs.lunch_start), timeToMin(prefs.lunch_end)] : null
   return { start, end, lunch: lunch && lunch[0] >= start && lunch[1] <= end && lunch[1] > lunch[0] ? lunch : null }
 }
+
+// ── Intervalo visível da grade ─────────────────────────────────────────────────
+
+export interface TimeRange { start: number; end: number }
+export const FULL_DAY: TimeRange = { start: 0, end: 1440 }
+const MIN_SPAN = 360 // a grade nunca fica com menos de 6 h
+
+/**
+ * Do que a grade de horas mostra. Com `hide`, vai de acordar a dormir (arredondado à hora); se dorme depois da meia-noite,
+ * vai até o fim do dia. Nunca esconde um item: se algum evento com horário cai fora, o intervalo se alarga para cobri-lo.
+ */
+export function visibleRange(prefs: SchedulePrefs | null, events: CalEvent[], hide: boolean): TimeRange {
+  if (!hide || !prefs) return FULL_DAY
+  const wake = timeToMin(prefs.wake_time)
+  const sleep = timeToMin(prefs.sleep_time)
+  let start = Math.floor(wake / 60) * 60
+  let end = sleep <= wake ? 1440 : Math.min(1440, Math.ceil(sleep / 60) * 60)
+  for (const ev of events) {
+    if (ev.allDay || !ev.start) continue
+    const s = timeToMin(ev.start)
+    const e = ev.end && timeToMin(ev.end) > s ? timeToMin(ev.end) : s + 30
+    start = Math.min(start, Math.floor(s / 60) * 60)
+    end = Math.max(end, Math.min(1440, Math.ceil(e / 60) * 60))
+  }
+  if (end - start < MIN_SPAN) {
+    end = Math.min(1440, start + MIN_SPAN)
+    start = Math.max(0, end - MIN_SPAN)
+  }
+  return { start, end }
+}

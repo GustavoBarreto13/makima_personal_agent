@@ -4,6 +4,9 @@
 /* ── Layout: coluna principal + painel de detalhe (3 painéis no desktop, folha cheia no celular) ── */
 .kn-split { display: flex; align-items: flex-start; gap: var(--ds-space-4); min-height: 100%; }
 .kn-main-col { flex: 1 1 0; min-width: 0; }
+/* Telas de altura cheia (calendário): a altura desce até a grade, e só ela rola. */
+.kn-split:has(.ds-page.ds-fill) { flex: 1; min-height: 0; align-items: stretch; }
+.kn-main-col:has(.ds-page.ds-fill) { display: flex; flex-direction: column; min-height: 0; }
 .kn-panel {
   flex: 0 0 min(440px, 38%);
   position: sticky; top: var(--ds-space-4);

@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { Icon } from '../../../design'
 import { parseISODate, WEEKDAYS_SHORT } from '../../../design/core/format'
-import { assignLanes, isEditable, localISO, minToLabel, resolveColor, snapTo15, type WorkBand } from '../lib/calendar'
+import { assignLanes, FULL_DAY, isEditable, localISO, minToLabel, resolveColor, snapTo15, type TimeRange, type WorkBand } from '../lib/calendar'
 import type { CalEvent, Calendar } from '../types'
 
 export interface Placement { day: string; startMin: number; endMin: number }
@@ -26,14 +26,20 @@ interface Props {
   onResize: (ev: CalEvent, to: Placement) => void
   onCreate: (day: string, startISO: string, endISO: string) => void
   onDropTask: (taskId: number, day: string, startISO: string) => void
+  /** Do que a grade mostra (padrão: o dia todo). Fora dele, eventos são recortados. */
+  range?: TimeRange
 }
 
 type Mode = 'move' | 'resize' | 'create'
 interface Drag { mode: Mode; ev?: CalEvent; startX: number; startY: number; originMin: number; originEnd: number; originDay: string; colEl: HTMLElement; offsetMin: number; dragging: boolean }
 
-const pct = (min: number) => `${(min / 1440) * 100}%`
 
-export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onMove, onResize, onCreate, onDropTask }: Props) {
+export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onMove, onResize, onCreate, onDropTask, range = FULL_DAY }: Props) {
+  const span = range.end - range.start
+  /** Posição vertical (%) de um minuto dentro do intervalo visível; fora dele fica no limite. */
+  const pct = (min: number) => `${(Math.min(Math.max(min, range.start), range.end) - range.start) / span * 100}%`
+  /** Altura (%) do trecho entre dois minutos, recortado ao intervalo visível. */
+  const hpct = (from: number, to: number) => `${(Math.min(Math.max(to, range.start), range.end) - Math.min(Math.max(from, range.start), range.end)) / span * 100}%`
   const scrollRef = useRef<HTMLDivElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
   const drag = useRef<Drag | null>(null)
@@ -42,11 +48,11 @@ export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onM
   const ncols = days.length
   const nowMin = (() => { const n = new Date(); return n.getHours() * 60 + n.getMinutes() })()
 
-  // Abre mostrando ~07:00.
-  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight * (7 / 24) }, [])
+  // Abre mostrando ~07:00 (ou o começo do intervalo, quando ele começa depois).
+  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight * Math.max(0, (420 - range.start) / span) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const colFromX = useCallback((x: number) => {
-    const cols = gridRef.current?.querySelectorAll<HTMLElement>('.kn-cg-col')
+    const cols = gridRef.current?.querySelectorAll<HTMLElement>('.cg-col')
     if (!cols) return null
     for (let i = 0; i < cols.length; i++) {
       const r = cols[i].getBoundingClientRect()
@@ -58,19 +64,19 @@ export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onM
   const yToMin = useCallback((y: number, col: HTMLElement) => {
     const r = col.getBoundingClientRect()
     const scale = r.height / (col.offsetHeight || r.height || 1)
-    return (((y - r.top) / scale) / (col.offsetHeight || r.height || 1)) * 1440
-  }, [])
+    return range.start + (((y - r.top) / scale) / (col.offsetHeight || r.height || 1)) * span
+  }, [range.start, span])
 
   const ghostAt = (day: string, startMin: number, endMin: number) => {
     const i = Math.max(0, days.indexOf(day))
-    setGhost({ day, startMin, endMin, left: `calc(var(--kn-gutter) + ${(i / ncols) * 100}%)`, width: `${100 / ncols}%` })
+    setGhost({ day, startMin, endMin, left: `calc(var(--gutter) + ${(i / ncols) * 100}%)`, width: `${100 / ncols}%` })
   }
 
   const startEventDrag = (e: ReactPointerEvent<HTMLElement>, ev: CalEvent, mode: 'move' | 'resize', startMin: number, endMin: number, day: string) => {
     if (!isEditable(ev, cals)) return
     e.preventDefault()
     e.stopPropagation()
-    const colEl = (e.currentTarget as HTMLElement).closest('.kn-cg-col') as HTMLElement | null
+    const colEl = (e.currentTarget as HTMLElement).closest('.cg-col') as HTMLElement | null
     if (!colEl) return
     const d: Drag = { mode, ev, startX: e.clientX, startY: e.clientY, originMin: startMin, originEnd: endMin, originDay: day, colEl, offsetMin: mode === 'move' ? yToMin(e.clientY, colEl) - startMin : 0, dragging: false }
     drag.current = d
@@ -103,7 +109,7 @@ export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onM
   }
 
   const colDown = (e: ReactPointerEvent<HTMLDivElement>, day: string) => {
-    if ((e.target as HTMLElement).closest('.kn-cg-ev')) return
+    if ((e.target as HTMLElement).closest('.cg-event')) return
     e.preventDefault()
     e.currentTarget.setPointerCapture?.(e.pointerId)
     drag.current = { mode: 'create', startX: e.clientX, startY: e.clientY, originMin: snapTo15(yToMin(e.clientY, e.currentTarget)), originEnd: 0, originDay: day, colEl: e.currentTarget, offsetMin: 0, dragging: false }
@@ -165,10 +171,10 @@ export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onM
         </div>
       </div>
 
-      <div ref={gridRef} className="cal-grid" style={{ ...cols, position: 'relative' }}>
+      <div ref={gridRef} className="cal-grid" style={{ ...cols, position: 'relative', height: `calc(${span / 60} * var(--hh))` }}>
         <div className="cg-gutter">
-          {Array.from({ length: 24 }, (_, h) => (
-            <div key={h} className="cg-hourlabel" style={{ top: `${(h / 24) * 100}%` }}>{h === 0 ? '' : `${String(h).padStart(2, '0')}:00`}</div>
+          {Array.from({ length: Math.floor(span / 60) + 1 }, (_, i) => range.start / 60 + i).map((h, i) => (
+            <div key={h} className="cg-hourlabel" style={{ top: `${(i * 60 / span) * 100}%` }}>{i === 0 || h === 24 ? '' : `${String(h).padStart(2, '0')}:00`}</div>
           ))}
         </div>
         {days.map((iso, colIdx) => {
@@ -190,12 +196,12 @@ export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onM
                 if (id) onDropTask(id, iso, localISO(iso, snapTo15(yToMin(e.clientY, e.currentTarget))))
               }}
             >
-              {band && <div className="cg-work" style={{ top: pct(band.start), height: pct(band.end - band.start) }} aria-hidden="true" />}
-              {band?.lunch && <div className="cg-lunch" style={{ top: pct(band.lunch[0]), height: pct(band.lunch[1] - band.lunch[0]) }} aria-hidden="true" />}
-              {iso === today && <div className="cg-now" style={{ top: pct(nowMin) }} aria-label={`Agora: ${minToLabel(nowMin)}`} />}
+              {band && <div className="cg-work" style={{ top: pct(band.start), height: hpct(band.start, band.end) }} aria-hidden="true" />}
+              {band?.lunch && <div className="cg-lunch" style={{ top: pct(band.lunch[0]), height: hpct(band.lunch[0], band.lunch[1]) }} aria-hidden="true" />}
+              {iso === today && nowMin >= range.start && nowMin <= range.end && <div className="cg-now" style={{ top: pct(nowMin) }} aria-label={`Agora: ${minToLabel(nowMin)}`} />}
               {timed.map(({ ev, lane, totalLanes, startMin, endMin }) => {
                 const editable = isEditable(ev, cals)
-                const heightPct = Math.max(((endMin - startMin) / 1440) * 100, 2)
+                const heightPct = Math.max(((Math.min(endMin, range.end) - Math.max(startMin, range.start)) / span) * 100, 2)
                 return (
                   <div
                     key={ev.id}
@@ -223,7 +229,7 @@ export function TimeGrid({ days, today, events, cals, bands, onOpen, onMenu, onM
           )
         })}
         {ghost && (
-          <div className="cg-ghost" style={{ position: 'absolute', left: ghost.left, width: ghost.width, top: pct(ghost.startMin), height: pct(ghost.endMin - ghost.startMin), pointerEvents: 'none' }}>
+          <div className="cg-ghost" style={{ position: 'absolute', left: ghost.left, width: ghost.width, top: pct(ghost.startMin), height: hpct(ghost.startMin, ghost.endMin), pointerEvents: 'none' }}>
             <span className="gh-time">{minToLabel(ghost.startMin)} – {minToLabel(ghost.endMin)}</span>
           </div>
         )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assignLanes, gcalToEvent, hubToEvent, isEditable, isoWeek, localISO, minToLabel, shiftRef, snapTo15, taskToEvent, timeToMin, visibleInSpace, windowFor, workBand } from './calendar'
+import { assignLanes, gcalToEvent, hubToEvent, isEditable, isoWeek, localISO, minToLabel, shiftRef, snapTo15, taskToEvent, timeToMin, visibleInSpace, visibleRange, windowFor, workBand } from './calendar'
 import type { Calendar, CalEvent, SchedulePrefs, Task } from '../types'
 
 const task = (over: Partial<Task> = {}) => ({ id: 1, title: 'T', due_date: null, due_time: null, start_at: null, end_at: null, completed_at: null, ...over }) as Task
@@ -113,5 +113,29 @@ describe('expediente no grid', () => {
   })
   it('sem preferências não há faixa', () => {
     expect(workBand('2026-06-10', null, [])).toBeNull()
+  })
+})
+
+describe('visibleRange (do acordar ao dormir)', () => {
+  const timed = (start: string, end: string) => ev({ allDay: false, start, end })
+  it('sem ocultar (ou sem agenda) mostra o dia todo', () => {
+    expect(visibleRange(prefs, [], false)).toEqual({ start: 0, end: 1440 })
+    expect(visibleRange(null, [], true)).toEqual({ start: 0, end: 1440 })
+  })
+  it('ocultando vai de acordar a dormir, arredondado à hora', () => {
+    expect(visibleRange({ ...prefs, wake_time: '07:30', sleep_time: '22:15' }, [], true)).toEqual({ start: 420, end: 1380 })
+  })
+  it('dormir depois da meia-noite vai até o fim do dia', () => {
+    expect(visibleRange({ ...prefs, sleep_time: '01:00' }, [], true)).toEqual({ start: 420, end: 1440 })
+  })
+  it('um evento fora do intervalo alarga a grade — nunca some', () => {
+    expect(visibleRange(prefs, [timed('2026-06-10T05:30:00-03:00', '2026-06-10T06:30:00-03:00')], true)).toEqual({ start: 300, end: 1380 })
+    expect(visibleRange(prefs, [timed('2026-06-10T23:30:00-03:00', '2026-06-10T23:50:00-03:00')], true).end).toBe(1440)
+  })
+  it('itens de dia inteiro não contam', () => {
+    expect(visibleRange(prefs, [ev({ allDay: true })], true)).toEqual({ start: 420, end: 1380 })
+  })
+  it('nunca fica com menos de 6 horas', () => {
+    expect(visibleRange({ ...prefs, wake_time: '08:00', sleep_time: '10:00' }, [], true)).toEqual({ start: 480, end: 840 })
   })
 })

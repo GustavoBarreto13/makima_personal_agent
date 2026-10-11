@@ -30,6 +30,9 @@ export function DisplaySettings({ compact }: { compact?: boolean }) {
           <SettingRow title="Estilo dos eventos no calendário" help="Suave (padrão), bloco sólido ou cartão editorial.">
             <SegmentedControl label="Estilo dos eventos" value={prefs.calVariant} options={[{ value: 'agora', label: 'Suave' }, { value: 'helvetico', label: 'Sólido' }, { value: 'editorial', label: 'Editorial' }]} onChange={(v) => setPrefs({ calVariant: v })} />
           </SettingRow>
+          <SettingRow title="Ocultar o período de sono" help="A grade do calendário vai só do horário de acordar ao de dormir (definidos na Agenda). Um evento fora dele alarga a grade.">
+            <Toggle checked={prefs.calHideSleep} onChange={(v) => setPrefs({ calHideSleep: v })} label="Ocultar o período de sono no calendário" />
+          </SettingRow>
           <SettingRow title="Lateral do calendário" help="Onde ficam o mini-mês e a lista de calendários.">
             <SegmentedControl label="Lateral do calendário" value={prefs.calSide} options={[{ value: 'left', label: 'Esquerda' }, { value: 'right', label: 'Direita' }]} onChange={(v) => setPrefs({ calSide: v })} />
           </SettingRow>

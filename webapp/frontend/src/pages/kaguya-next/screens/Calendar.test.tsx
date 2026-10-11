@@ -230,3 +230,62 @@ describe('Calendário — fontes, bandejas e soltar', () => {
     expect(screen.queryByRole('button', { name: 'Fatura do cartão' })).toBeNull()
   })
 })
+
+describe('Calendário — período de sono e arraste', () => {
+  const stored = () => JSON.parse(localStorage.getItem('ds:prefs:kaguya') ?? '{}')
+
+  it('o botão da barra esconde do dormir ao acordar e lembra a escolha', async () => {
+    const user = await open()
+    await screen.findByRole('button', { name: /Reunião/ })
+    expect(screen.getByText('03:00')).toBeTruthy()
+    const grid = () => document.querySelector('.cal-grid') as HTMLElement
+    expect(grid().style.height).toContain('24 * var(--hh)')
+    await user.click(screen.getByRole('button', { name: 'Ocultar o período de sono' }))
+    expect(screen.queryByText('03:00')).toBeNull()
+    expect(screen.getByText('08:00')).toBeTruthy()
+    expect(grid().style.height).toContain('16 * var(--hh)') // 07h–23h
+    expect(stored().calHideSleep).toBe(true)
+    await user.click(screen.getByRole('button', { name: 'Mostrar as 24 horas' }))
+    expect(screen.getByText('03:00')).toBeTruthy()
+  })
+
+  it('em Ajustes a mesma preferência liga e desliga', async () => {
+    window.location.hash = '#ajustes'
+    const user = userEvent.setup()
+    render(<MemoryRouter><KaguyaNextShell /></MemoryRouter>)
+    await user.click(await screen.findByRole('switch', { name: 'Ocultar o período de sono no calendário' }))
+    await waitFor(() => expect(stored().calHideSleep).toBe(true))
+  })
+
+  // A grade mede em pixels; no jsdom não há layout, então damos uma coluna de 1248 px (24 h × 52 px) para o ponteiro.
+  const withLayout = (col: HTMLElement) => {
+    const rect = { top: 0, left: 0, right: 100, bottom: 1248, width: 100, height: 1248, x: 0, y: 0, toJSON: () => ({}) }
+    col.getBoundingClientRect = () => rect as DOMRect
+    Object.defineProperty(col, 'offsetHeight', { configurable: true, value: 1248 })
+  }
+
+  it('arrastar um horário vazio abre “Nova tarefa” com o horário e a duração', async () => {
+    await open()
+    await screen.findByRole('button', { name: /Reunião/ })
+    const col = document.querySelector(`.cg-col[data-day="${TODAY}"]`) as HTMLElement
+    withLayout(col)
+    fireEvent.pointerDown(col, { clientX: 10, clientY: 520, pointerId: 1, button: 0 }) // 10:00
+    fireEvent.pointerMove(col, { clientX: 10, clientY: 650, pointerId: 1 }) // 12:30
+    fireEvent.pointerUp(col, { clientX: 10, clientY: 650, pointerId: 1 })
+    expect(await screen.findByRole('dialog', { name: 'Nova tarefa' })).toBeTruthy()
+  })
+
+  it('arrastar um evento muda o horário (e redimensionar muda o fim)', async () => {
+    await open()
+    const evBtn = await screen.findByRole('button', { name: /Reunião, 10:00 às 11:00/ })
+    withLayout(document.querySelector(`.cg-col[data-day="${TODAY}"]`) as HTMLElement)
+    fireEvent.pointerDown(evBtn, { clientX: 10, clientY: 520, pointerId: 1, button: 0 }) // 10:00
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 572, pointerId: 1 }) // +1 h
+    fireEvent.pointerUp(window, { clientX: 10, clientY: 572, pointerId: 1 })
+    await waitFor(() => expect(api.setTimeBlock).toHaveBeenCalled())
+    const [id, body] = api.setTimeBlock.mock.calls[0]
+    expect(id).toBe(10)
+    expect(body.start_at.slice(0, 16)).toBe(`${TODAY}T11:00`)
+    expect(body.end_at.slice(0, 16)).toBe(`${TODAY}T12:00`)
+  })
+})

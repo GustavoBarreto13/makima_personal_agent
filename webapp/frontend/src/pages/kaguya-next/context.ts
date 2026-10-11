@@ -32,11 +32,13 @@ export interface KaguyaPrefs {
   /** Estilo dos eventos do calendário e lado da barra de calendários. */
   calVariant: 'agora' | 'helvetico' | 'editorial'
   calSide: 'right' | 'left'
+  /** Grade do calendário só do acordar ao dormir (esconde a madrugada). */
+  calHideSleep: boolean
 }
 
 export const DEFAULT_PREFS: KaguyaPrefs = {
   art: 'shuchiin', space: 'all', daySplit: 'split', showCompleted: true, showDetails: true,
-  hiddenNav: [], pinnedNav: [], mobileTabs: [], collapsedGroups: [], viewOrder: [], detailMode: 'side', calVariant: 'agora', calSide: 'right',
+  hiddenNav: [], pinnedNav: [], mobileTabs: [], collapsedGroups: [], viewOrder: [], detailMode: 'side', calVariant: 'agora', calSide: 'right', calHideSleep: false,
 }
 
 /** Alvo possível de uma tarefa nova no quadro do grupo: uma lista-membro e a coluna dela. */

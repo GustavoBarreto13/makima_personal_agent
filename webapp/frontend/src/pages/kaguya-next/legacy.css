@@ -348,3 +348,5 @@
   .kn-legacy .cal-aside { width: 100%; border-left: 0; border-top: 1px solid var(--line); }
   .kn-legacy .cal-scroll { min-height: 70vh; }
 }
+.kn-legacy .cmo-grid { overflow-y: auto; }
+.kn-legacy .cal-iconbtn.on { background: var(--kg-tint); color: var(--kg-deep); }
