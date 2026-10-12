@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  applyMention, checklistItems, checklistStats, continueList, expandLegacyMentions, findMention, indentLines, linkSelection, pasteUrlOverSelection, toggleChecklistItem, toggleLinePrefix, wrapSelection,
+  applyMention, checklistItems, checklistStats, continueList, expandLegacyMentions, findMention, indentLines, linkSelection, pasteUrlOverSelection, splitSlashQuery, toggleChecklistItem, toggleLinePrefix, wrapSelection,
 } from './markdown'
 
 const DOC = ['- [ ] a', '- [x] b', '```', '- [ ] dentro do código', '```', '* [ ] c'].join('\n')
@@ -99,5 +99,24 @@ describe('menções', () => {
     expect(expandLegacyMentions('ver [[12|Comprar pão]] hoje')).toBe('ver [Comprar pão](task:12) hoje')
     expect(expandLegacyMentions('[[7|]]')).toBe('[Tarefa 7](task:7)')
     expect(expandLegacyMentions('texto [[sem id]]')).toBe('texto [[sem id]]')
+  })
+})
+
+describe('referência com / (spec 076)', () => {
+  const T = ['@', '/']
+  it('escolhe o agente e depois busca com espaços', () => {
+    expect(findMention('vi /ak', 6, T)).toEqual({ trigger: '/', start: 3, query: 'ak' })
+    expect(findMention('/', 1, T)).toEqual({ trigger: '/', start: 0, query: '' })
+    expect(findMention('vi /akane Matrix Rel', 20, T)).toEqual({ trigger: '/', start: 3, query: 'akane Matrix Rel' })
+    expect(splitSlashQuery('akane Matrix Rel')).toEqual({ agent: 'akane', term: 'Matrix Rel', choosing: false })
+    expect(splitSlashQuery('ak')).toEqual({ agent: 'ak', term: '', choosing: true })
+  })
+  it('URLs, datas e o gatilho desligado não disparam', () => {
+    expect(findMention('https://x.com', 13, T)).toBeNull()
+    expect(findMention('dia 12/10', 9, T)).toBeNull()
+    expect(findMention('vi /akane', 9)).toBeNull()
+  })
+  it('a pessoa dentro da busca encerra a referência', () => {
+    expect(findMention('vi /akane Matrix com @an', 24, T)).toEqual({ trigger: '@', start: 21, query: 'an' })
   })
 })

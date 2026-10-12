@@ -162,7 +162,7 @@ export function pasteUrlOverSelection(text: string, start: number, end: number, 
 // ── Menções ────────────────────────────────────────────────────────────────────
 
 export interface MentionMatch {
-  /** O gatilho que abriu a busca (`@` para pessoa, `[[` para tarefa). */
+  /** O gatilho que abriu a busca (`@` para pessoa, `[[` para tarefa, `/` para referência a outro agente). */
   trigger: string
   /** Onde o gatilho começa no texto. */
   start: number
@@ -173,6 +173,10 @@ export interface MentionMatch {
 /**
  * Há uma menção sendo digitada logo antes do cursor? `@` só vale no começo de uma palavra (e-mails não disparam) e a busca
  * não pode ter espaço; `[[` vale até fechar `]]`, na mesma linha. Devolve o gatilho, onde ele começa e o que já foi digitado.
+ *
+ * `/` (referência a outro agente) tem dois estágios: `/ak` (escolhendo o agente — a busca é só o nome, sem espaço) e
+ * `/akane Matr` (buscando no agente — a busca é `"akane Matr"`, com espaços, até 60 caracteres). `/` só vale no começo
+ * de uma palavra: URLs (`https://`) e datas (`12/10`) não disparam. Use `splitSlashQuery` para separar agente e termo.
  */
 export function findMention(text: string, caret: number, triggers: string[] = ['@', '[[']): MentionMatch | null {
   const before = text.slice(0, caret)
@@ -186,7 +190,21 @@ export function findMention(text: string, caret: number, triggers: string[] = ['
     const m = /(^|\s)@([^\s@\[\]()]{0,30})$/.exec(line)
     if (m) return { trigger: '@', start: lineStart + line.length - m[2].length - 1, query: m[2] }
   }
+  if (triggers.includes('/')) {
+    const m = /(^|\s)\/([A-Za-zÀ-ÿ]{0,12})(?:[ \t]([^\n@[\]/]{0,60}))?$/.exec(line)
+    if (m) {
+      const query = m[3] === undefined ? m[2] : `${m[2]} ${m[3]}`
+      return { trigger: '/', start: lineStart + m.index + m[1].length, query }
+    }
+  }
   return null
+}
+
+/** Separa a busca de `/`: `"akane Matr"` → `{ agent: 'akane', term: 'Matr', choosing: false }`; `"ak"` → escolhendo o agente. */
+export function splitSlashQuery(query: string): { agent: string; term: string; choosing: boolean } {
+  const i = query.indexOf(' ')
+  if (i === -1) return { agent: query, term: '', choosing: true }
+  return { agent: query.slice(0, i), term: query.slice(i + 1), choosing: false }
 }
 
 /** Troca o gatilho + o que foi digitado pelo texto da menção escolhida e põe o cursor depois dela. */

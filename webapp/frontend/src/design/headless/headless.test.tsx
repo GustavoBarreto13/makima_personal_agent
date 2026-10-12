@@ -6,6 +6,7 @@ import { act, cleanup, render, renderHook, screen } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { mockLayoutApis, mockMatchMedia } from '../test-utils'
 import { breakpointOf } from './useBreakpoint'
+import { keyboardInset } from './useKeyboardInset'
 import { useTheme, applyTheme } from './useTheme'
 import { useHotkeys } from './useHotkeys'
 import { useCollection } from './useCollection'
@@ -198,5 +199,14 @@ describe('paleta: filtro de comandos', () => {
     expect(filterCommands(cmds, 'retro').map((c) => c.id)).toEqual(['2'])
     expect(filterCommands(cmds, '').length).toBe(2)
     expect(filterCommands(cmds, 'zzz')).toEqual([])
+  })
+})
+
+describe('teclado virtual (useKeyboardInset)', () => {
+  it('conta só o teclado, não a barra de endereço', () => {
+    expect(keyboardInset(800, 800, 0)).toBe(0)
+    expect(keyboardInset(800, 760, 0)).toBe(0)       // barra do navegador encolhendo
+    expect(keyboardInset(800, 480, 0)).toBe(320)     // teclado aberto
+    expect(keyboardInset(800, 480, 100)).toBe(220)   // página rolada dentro do visualViewport
   })
 })
