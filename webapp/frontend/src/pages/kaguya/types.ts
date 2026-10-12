@@ -1,5 +1,6 @@
-// Tipos TypeScript do shell Kaguya — espelham o contrato REST /api/tasks/*
-// (specs/011-tasks-mvp/contracts/api-tasks.md) e o modelo do backend.
+// Tipos do shell Kaguya no Design System (spec 075) — espelham o contrato REST /api/tasks/*.
+// Partiram dos tipos do shell antigo e ganharam os campos da spec 075 (adiar, aguardando com pessoa,
+// série, bloqueio, espaço do grupo, agenda, tempo livre, estatísticas de planejamento).
 
 // Tipo de uma tarefa: tarefa comum, evento (com hora) ou aniversário (recorrência anual).
 export type TaskType = 'task' | 'event' | 'birthday'
@@ -82,9 +83,17 @@ export interface Task {
   context_id?: number | null      // contexto de execução (no máximo um por tarefa)
   // Trabalho/Pessoal (spec 038) — herdado da lista atual, nunca persistido na tarefa.
   context?: WorkContext
+  // spec 075: adiar (a tarefa só aparece a partir deste dia), aguardando com pessoa, série, bloqueio.
+  start_date?: string | null        // "YYYY-MM-DD" — adiada até este dia
+  follow_up_date?: string | null    // "YYYY-MM-DD" — quando cobrar (tarefa aguardando)
+  waiting_person_id?: string | null // id da pessoa na Komi
+  series_id?: string | null         // identidade da série de uma recorrente
+  blocked?: boolean                 // tem bloqueador aberto (dependência)
   // Presente só nos resultados de busca global (spec 039) — true quando a lista dona
   // está arquivada (a busca é a exceção que continua achando tarefas arquivadas).
   archived?: boolean
+  // Preenchido nas telas de lixeira: quando foi excluída.
+  deleted_at?: string | null
 }
 
 // Contexto Trabalho/Pessoal (spec 038) — propriedade da LISTA (e do calendário), nunca da
@@ -154,6 +163,89 @@ export interface MyDayResponse {
   // invisível aqui; sua duration_min já está somada em capacity/capacity_personal (nunca
   // capacity_work — hábitos não têm contexto) e NÃO é afetada pelo modo férias.
   habitos: MyDayHabit[]
+  // spec 075: os DOIS tempos livres (trabalho e geral) pela agenda real; null se a agenda não pôde ser lida.
+  free_time?: FreeTime | null
+}
+
+// ── Agenda e tempo livre (spec 075) ───────────────────────────────────────────
+
+/** Um balde de tempo do dia (trabalho, geral ou total), em minutos. */
+export interface TimeBucket {
+  window_min: number    // tempo disponível antes dos compromissos
+  busy_min: number      // tomado por compromissos do calendário
+  livre_min: number     // o que sobra para tarefas
+  estimado_min: number  // estimativas do plano nesse espaço
+  folga_min: number     // livre − estimado (negativo = estouro)
+  excedeu: boolean
+}
+
+export interface FreeTime {
+  works: boolean
+  day_is_work?: boolean
+  work: TimeBucket
+  general: TimeBucket
+  total: TimeBucket
+  calendar_ok: boolean
+  schedule?: { work: [number, number] | null; lunch: [number, number] | null; lunch_is_free: boolean; awake: [number, number] }
+}
+
+export interface SchedulePrefs {
+  work_days: number[]   // ISO: 1 = segunda … 7 = domingo
+  work_start: string    // "HH:MM"
+  work_end: string
+  lunch_start: string | null
+  lunch_end: string | null
+  lunch_is_free: boolean
+  wake_time: string
+  sleep_time: string
+}
+
+export interface ScheduleOverride {
+  day: string           // "YYYY-MM-DD"
+  works: boolean
+  work_start: string | null
+  work_end: string | null
+  note: string | null
+}
+
+// ── Dependências, edição em massa, logbook, lixeira, templates (spec 075) ─────
+
+export interface DepRef { id: number; title: string; completed: boolean }
+export interface Dependencies { blocked_by: DepRef[]; blocking: DepRef[]; is_blocked: boolean }
+
+export type BulkAction =
+  | 'complete' | 'reopen' | 'delete' | 'set_project' | 'set_priority' | 'set_due_date'
+  | 'set_start_date' | 'add_tag' | 'remove_tag' | 'add_to_my_day' | 'remove_from_my_day'
+
+/** Snapshot devolvido por POST /bulk e aceito por POST /bulk/undo (opaco para a tela). */
+export type BulkUndo = Record<string, unknown>
+
+export interface CompletedPage {
+  items: Task[]
+  total: number
+  by_day: Record<string, number>
+}
+
+export interface ActivityEvent {
+  kind: 'created' | 'completed' | 'reopened' | 'rescheduled' | 'my_day_in' | 'my_day_out' | 'deferred' | 'moved' | 'deleted' | 'restored'
+  from_value: string | null
+  to_value: string | null
+  at: string
+}
+
+export interface TrashItem extends Task { project_name: string; descendants: number }
+
+export interface TemplateInfo { id: number; kind: 'task' | 'project'; name: string; context: WorkContext; created_at: string }
+
+export interface TagCount { id: number; name: string; color: string | null; open_count: number; total_count: number }
+
+export interface DueReviewProject {
+  id: number
+  name: string
+  context: WorkContext
+  review_interval_days: number
+  last_reviewed_at: string | null
+  days_overdue: number
 }
 
 // Um hábito selecionado para o Meu Dia (spec 067) — forma reduzida (não é o Habit completo
@@ -177,6 +269,8 @@ export interface Project {
   has_board: boolean   // tem ao menos uma coluna de Kanban
   open_count: number   // tarefas-pai abertas
   last_reviewed_at?: string | null   // passo 4 da revisão semanal (spec 035)
+  review_interval_days?: number | null // spec 075 — cadência de revisão (null = sem cadência)
+  sequential?: boolean               // spec 075 — só a próxima ação aparece
   context: WorkContext // Trabalho/Pessoal (spec 038) — Inbox é sempre 'personal'
   archived_at?: string | null  // spec 039 — não-nulo quando arquivada (não vem na sidebar, só na tela de arquivadas)
 }
@@ -197,11 +291,16 @@ export interface Group {
   id: number
   name: string
   position: number
+  context?: WorkContext // spec 075 — espaço do grupo; listas novas herdam
 }
 
 // ── Smart-lists (filtros salvos) — fatia 013 / P2 ──────────────────────────────
 // Campos e operadores aceitos pela DSL (espelham agents/kaguya/tools_filters.py).
-export type FilterField = 'project_id' | 'priority' | 'due_date' | 'tag' | 'state' | 'text' | 'gtd_status' | 'context_id'
+export type FilterField =
+  | 'project_id' | 'priority' | 'due_date' | 'tag' | 'state' | 'text' | 'gtd_status' | 'context_id'
+  | 'assignee' | 'has_children' | 'recurring' | 'has_description' | 'my_day'
+  // spec 075: espaço, grupo, adiar, bloqueio, estimativa, follow-up, pessoa aguardada e conclusão
+  | 'space' | 'group_id' | 'start_date' | 'blocked' | 'duration_min' | 'follow_up_date' | 'waiting_person' | 'completed_at'
 export type FilterCombinator = 'and' | 'or'
 
 // Uma condição da regra: {campo, operador, valor}. O valor varia por campo (ver DSL).
@@ -412,6 +511,14 @@ export interface Habit {
   reminder_lead_min: number      // antecedência do popup, em min (0 = na hora marcada)
   duration_min: number | null    // duração do bloco no calendário; null = padrão de 30min
   in_my_day: boolean             // selecionado para o Meu Dia de hoje
+}
+
+// Hábito arquivado (soft delete): aparece na aba “Arquivados” para restaurar.
+export interface ArchivedHabit {
+  id: number
+  name: string
+  icon: string | null
+  archived_at: string
 }
 
 // Um dia do histórico de check-ins (para o heatmap anual). Array esparso vindo do backend
@@ -688,6 +795,8 @@ export interface CalEvent {
   taskId?: number         // para eventos Kaguya (permite editar via tasks API)
   deepLink?: string       // para cross-agent read-only (ex.: "/nami/transactions")
   description?: string
+  done?: boolean          // tarefa concluída (aparece riscada)
+  recurring?: boolean     // tarefa de uma série recorrente
 }
 
 // CalendarItem: forma de wire do backend (snake_case, hub aggregate response)

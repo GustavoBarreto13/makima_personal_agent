@@ -1,110 +1,122 @@
-// TaskRow — uma linha de tarefa (guia §4.1/§10). Checkbox com pop, traço de
-// prioridade (PrioFlag), título editável inline, chips e subtarefas ricas
-// expandidas por padrão. Descrição não aparece como texto: quando há nota, a
-// linha exibe apenas o ícone "note" (abre o modal), tanto no pai quanto na sub.
+// Linha de tarefa (estilo TickTick): checkbox colorido pela prioridade, título, e à direita os sinais (etiquetas, lista,
+// vencimento, recorrência, subtarefas, notas, bloqueada/adiada). Hover mostra a alça e o menu "…". Só apresentação:
+// quem chama decide o que cada clique faz.
 
-import { useState } from 'react'
+import { useState, type MouseEvent, type ReactNode, type Ref } from 'react'
+import { Icon, Menu, cx, type MenuItem } from '../../../design'
+import { deferLabel, dueInfo, fmtMinutes, followUpDue, subtaskProgress } from '../lib/taskView'
 import type { Task } from '../types'
-import { Icon } from '../ui/Icons'
-import { PrioFlag } from '../ui/PrioFlag'
-import { DateChip, ProjChip, TypeGlyph, RecurChip, TagChip } from '../ui/Chips'
 
-interface TaskRowProps {
+export interface TaskRowProps {
   task: Task
-  depth?: number              // 0 = pai, 1 = subtarefa
-  showProject?: boolean       // mostra o chip da lista (telas flat: Hoje/Busca)
-  onToggle: (task: Task) => void          // concluir/reabrir
-  onOpen: (task: Task) => void            // abrir o modal de edição
-  onRename: (task: Task, title: string) => void
+  today: string
+  depth?: number
+  /** Selecionada para ação em massa. */
+  selected?: boolean
+  /** Aberta no painel de detalhe. */
+  active?: boolean
+  /** Linha com foco do teclado (setas). */
+  focused?: boolean
+  showProject?: boolean
+  showDetails?: boolean
+  /** Subtarefas visíveis? (undefined = a tarefa não tem filhas). */
+  expanded?: boolean
+  onToggleExpand?: () => void
+  onToggle: () => void
+  onOpen: () => void
+  /** Clique com Ctrl/Shift/⌘ seleciona em vez de abrir. */
+  onSelect?: (e: MouseEvent) => void
+  menu?: MenuItem[]
+  /** Arrastar para reordenar/aninhar: a ref da linha, a alça e a zona de soltura sob o ponteiro. */
+  rowRef?: Ref<HTMLLIElement>
+  grip?: ReactNode
+  dropZone?: 'before' | 'after' | 'child' | null
+  dragging?: boolean
+  /** Ações próprias da tela, logo depois dos sinais (ex.: Hoje/Amanhã nas pendências). */
+  trailing?: ReactNode
 }
 
-export function TaskRow({ task, depth = 0, showProject = false, onToggle, onOpen, onRename }: TaskRowProps) {
-  const done = task.completed_at != null
-  // Edição inline do título: alterna entre <span> e <input>.
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(task.title)
+const PRIO_CLASS = ['', 'kn-p1', 'kn-p2', 'kn-p3']
 
-  // Vencida = aberta com data anterior a hoje (puxa o lacre para vermelho).
-  const today = new Date().toISOString().slice(0, 10)
-  const overdue = !done && task.due_date != null && task.due_date < today
+export function TaskRow({
+  task, today, depth = 0, selected, active, focused, showProject, showDetails = true, expanded, onToggleExpand,
+  onToggle, onOpen, onSelect, menu, trailing, rowRef, grip, dropZone, dragging,
+}: TaskRowProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const done = !!task.completed_at
+  const due = dueInfo(task, today)
+  const prog = subtaskProgress(task)
+  const defer = deferLabel(task, today)
+  const tags = task.tags ?? []
+  const hasNotes = !!task.description?.trim()
+  const hasKids = !!task.subtasks?.length
 
-  // Salva o título editado (se mudou e não ficou vazio).
-  const commit = () => {
-    setEditing(false)
-    const t = draft.trim()
-    if (t && t !== task.title) onRename(task, t)
-    else setDraft(task.title)
+  const click = (e: MouseEvent) => {
+    if ((e.ctrlKey || e.metaKey || e.shiftKey) && onSelect) { onSelect(e); return }
+    onOpen()
   }
 
   return (
-    <div className={`kg-row${done ? ' done' : ''}`}>
-      <PrioFlag priority={task.priority} overdue={overdue} />
+    <li
+      ref={rowRef}
+      className={cx('kn-row', done && 'kn-done', selected && 'kn-sel', active && 'kn-active', focused && 'kn-focus', dragging && 'kn-dragging', dropZone && `kn-drop-${dropZone}`)}
+      style={{ paddingInlineStart: `calc(var(--ds-space-3) + ${depth} * var(--ds-space-5))` }}
+      data-task-id={task.id}
+      data-type={task.type !== 'task' ? task.type : undefined}
+      aria-selected={selected || undefined}
+    >
+      {grip}
+      {hasKids ? (
+        <button type="button" className="kn-twist" aria-label={expanded ? 'Recolher subtarefas' : 'Expandir subtarefas'} aria-expanded={expanded} onClick={onToggleExpand}>
+          <Icon name={expanded ? 'down' : 'right'} size={14} />
+        </button>
+      ) : <span className="kn-twist-gap" aria-hidden="true" />}
 
-      <button className={`kg-check${done ? ' done' : ''}`} onClick={() => onToggle(task)} aria-label={done ? 'Reabrir' : 'Concluir'}>
-        {done && <Icon name="check" size={12} />}
+      <button
+        type="button"
+        className={cx('kn-check', PRIO_CLASS[task.priority], done && 'kn-checked')}
+        role="checkbox"
+        aria-checked={done}
+        aria-label={done ? `Reabrir “${task.title}”` : `Concluir “${task.title}”`}
+        onClick={onToggle}
+      >
+        {done && <Icon name="check" size={12} strokeWidth={3} />}
       </button>
 
-      <div className="kg-row-main">
-        <div className="kg-row-titleline">
-          <TypeGlyph type={task.type} />
-          {/* kg-input-sm: variante compacta de .kg-input — padding reduzido (kaguya.css).
-              Elimina os overrides inline que sobrescreviam o padrão antes. */}
-          {editing ? (
-            <input
-              className="kg-input kg-input-sm"
-              autoFocus
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={commit}
-              onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setEditing(false); setDraft(task.title) } }}
-            />
-          ) : (
-            // Clique no texto edita; clique no resto da linha abre o modal.
-            <span className="kg-row-title" onClick={() => setEditing(true)}>{task.title}</span>
-          )}
-          {/* Indicador de descrição: só um ícone (nunca o texto), pai ou subtarefa.
-              Clicar abre o modal onde a nota vive. */}
-          {task.description && task.description.trim() && (
-            <button
-              className="kg-icon-btn kg-note-flag"
-              style={{ border: 'none', padding: 4 }}
-              onClick={() => onOpen(task)}
-              aria-label="Tem descrição"
-              title="Tem descrição"
-            >
-              <Icon name="note" size={13} />
-            </button>
-          )}
-          {/* botão discreto para abrir o modal completo */}
-          <button className="kg-icon-btn" style={{ marginLeft: 'auto', border: 'none', padding: 4 }} onClick={() => onOpen(task)} aria-label="Detalhes">
-            <Icon name="dots" size={15} />
+      <button type="button" className="kn-main" onClick={click}>
+        <span className="kn-title">
+          {task.type === 'event' && <Icon name="calendar" size={13} className="kn-typeglyph" label="Evento" />}
+          {task.type === 'birthday' && <Icon name="gift" size={13} className="kn-typeglyph" label="Aniversário" />}
+          {task.title || <em>Sem título</em>}
+        </span>
+        {showDetails && hasNotes && !done && <span className="kn-snippet">{task.description!.replace(/[#>*_`\-[\]]/g, '').trim().slice(0, 90)}</span>}
+      </button>
+
+      <span className="kn-signals">
+        {task.blocked && <span className="kn-sig kn-warn" title="Bloqueada por outra tarefa"><Icon name="blocked" size={13} label="Bloqueada" /></span>}
+        {defer && <span className="kn-sig" title="Adiada"><Icon name="defer" size={13} />{defer}</span>}
+        {followUpDue(task, today) && <span className="kn-sig kn-warn" title="Hora de cobrar"><Icon name="follow-up" size={13} />Cobrar</span>}
+        {task.gtd_status === 'waiting' && !followUpDue(task, today) && <span className="kn-sig" title="Aguardando"><Icon name="waiting" size={13} /></span>}
+        {showDetails && hasNotes && <span className="kn-sig" title="Tem notas"><Icon name="page" size={13} label="Tem notas" /></span>}
+        {prog && <span className="kn-sig" title="Subtarefas concluídas"><Icon name="subtasks" size={13} />{prog.done}/{prog.total}</span>}
+        {task.recurrence?.active && <span className="kn-sig" title={task.recurrence_text ?? 'Recorrente'}><Icon name="recurring" size={13} label="Recorrente" /></span>}
+        {task.duration_min ? <span className="kn-sig" title="Estimativa"><Icon name="timer" size={13} />{fmtMinutes(task.duration_min)}</span> : null}
+        {task.my_day_date === today && <span className="kn-sig kn-accent" title="No Meu Dia"><Icon name="sun" size={13} label="No Meu Dia" /></span>}
+        {showDetails && tags.slice(0, 2).map((g) => <span key={g.id} className="kn-tag" style={g.color ? ({ '--kn-cc': g.color } as React.CSSProperties) : undefined} data-colored={g.color ? '' : undefined}>#{g.name}</span>)}
+        {showProject && task.project_name && <span className="kn-proj">{task.project_name}</span>}
+        {due.label && <span className={cx('kn-due', `kn-due-${due.tone}`)}>{due.label}</span>}
+      </span>
+
+      {trailing}
+
+      {menu && menu.length > 0 && (
+        <span className="kn-menu">
+          <button type="button" className="kn-more" aria-label={`Ações de “${task.title}”`} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
+            <Icon name="more" size={16} />
           </button>
-        </div>
-
-        {/* Badge de mãe (fatia 025) — quando a tarefa é subtarefa em lista flat. */}
-        {depth === 0 && task.parent_id !== null && task.parent_title && (
-          <div className="today-parent-chip">↳ {task.parent_title}</div>
-        )}
-
-        {(task.due_date || task.recurrence_text || (showProject && task.project_name) || (task.tags && task.tags.length > 0)) && (
-          <div className="kg-row-chips">
-            {task.due_date && <DateChip due_date={task.due_date} due_time={task.due_time} />}
-            {task.recurrence_text && <RecurChip text={task.recurrence_text} />}
-            {showProject && task.project_name && <ProjChip name={task.project_name} />}
-            {/* etiquetas da tarefa (fatia 013) */}
-            {task.tags?.map((t) => <TagChip key={t.id} name={t.name} color={t.color} />)}
-          </div>
-        )}
-
-        {/* subtarefas ricas, expandidas por padrão */}
-        {depth === 0 && task.subtasks && task.subtasks.length > 0 && (
-          <div className="kg-subtasks">
-            {task.subtasks.map((s) => (
-              <TaskRow key={s.id} task={s} depth={1} onToggle={onToggle} onOpen={onOpen} onRename={onRename} />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+          {menuOpen && <Menu label={`Ações de ${task.title}`} items={menu} onClose={() => setMenuOpen(false)} />}
+        </span>
+      )}
+    </li>
   )
 }

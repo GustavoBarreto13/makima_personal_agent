@@ -226,12 +226,13 @@ item aberto vivem no **hash** (`lib/routes.ts`): `#inicio`, `#biblioteca`, `#que
 - CSS: só complementos `.fr-*` com tokens `--ds-*` em `frieren.css`. Testes: `FrierenShell.test.tsx`,
   `screens.test.tsx`, `nullSafety.test.tsx` e `lib/*.test.ts`.
 
-### Kaguya no Design System — `/tasks-next` (`src/pages/kaguya-next/`, spec 075)
+### KaguyaShell — Tarefas e agenda (`src/pages/kaguya/`) — no Design System (spec 075)
 
 Reconstrução da Kaguya sobre o padrão (`AppShell`, `useCollection`, `StatsPage`, `DetailPage`, `Modal`, `confirm()` + `toast`
-com Desfazer), arte **"Shuchiin aristocrático"** (`art/shuchiin.css`: vinho e dourado, papel timbrado). Convive com o shell
-antigo: **`/tasks` segue sendo o `KaguyaShell`** até a troca (fase 11) e `/tasks-next` é o novo. `conformance.json` marca a
-Kaguya como `migrating` (o lint vigia a pasta nova).
+com Desfazer), arte **"Shuchiin aristocrático"** (`art/shuchiin.css`: vinho e dourado, papel timbrado). É o shell oficial de
+`/tasks` desde a fase 11; `/tasks-next` (a prévia) redireciona para `/tasks` mantendo o `#hash`. O shell antigo (~22 mil linhas,
+`kaguya.css`, TweaksPanel, Command Palette) foi removido. `conformance.json` marca a Kaguya como `conformant` (coleções com
+escopo dinâmico `kaguya:*` — o lint aceita o prefixo).
 
 - **Rotas por hash** (`lib/routes.ts`): `#hoje`, `#lista/12`, `#kanban/12`, `#grupo/3` (quadro) / `#grupo-lista/3`, `#visao/inbox|all|tomorrow|next7`,
   `#gtd/waiting`, `#filtro/5`, `#calendario`, `#eisenhower`, `#habitos`, `#metas[/id]`, `#experimentos[/id]`, `#foco`, `#concluidas`,
@@ -264,187 +265,11 @@ Kaguya como `migrating` (o lint vigia a pasta nova).
   semanal e processamento do Inbox (wizard com teclas 1–6).
 - **Estatísticas**: `StatsPage` + aba **Planejamento** (onde o plano falha). **Foco**, **Hábitos** (com arquivados), **Metas**,
   **Experimentos** em `DetailPage`.
-- API: `kaguya-next/api.ts` (cópia estendida de `kaguyaApi.ts`; na troca vira o único cliente).
-
-### KaguyaShell — Tarefas e agenda (`src/pages/kaguya/`)
-
-**Roteamento:** estado interno `{view, param}` (tipo `KaguyaView` em `types.ts`). O maior shell
-do app: sidebar própria com listas/grupos, smart-lists, Command Palette (⌘K) e TweaksPanel.
-
-**Telas (screens/):**
-
-| View | Tela | O que mostra |
-|---|---|---|
-| `today` | TodayScreen | Meu Dia — plano do dia, pendências de ontem, sugestões, capacity bar e time-blocking |
-| `list` | ListScreen | Tarefas da lista em árvore (subtarefas, quick-add com datas/recorrência/#tags, atalhos de teclado) |
-| `group-list` | GroupListScreen | Tarefas de todas as listas de um grupo, em visão de lista |
-| `kanban` | KanbanScreen | Board Kanban da lista, com views configuráveis (spec 024) |
-| `group` | GroupBoardScreen | Board agregado do grupo — colunas de mesmo nome unificadas (spec 025) |
-| `calendar` | CalendarScreen | Calendário mês/semana: tarefas datadas, ocorrências virtuais e eventos Google (Calendar Hub); sidebar `CalendarsAside` com seções Makima × Google (spec 069, ver abaixo) |
-| `eisenhower` | EisenhowerScreen | Matriz 2×2 urgência × prioridade com drag-and-drop |
-| `habits` | HabitsScreen | Hábitos com anel de consistência, check-in de hoje e heatmap anual |
-| `experiments` | ExperimentsScreen / ExperimentDetailScreen | Tiny Experiments (spec 029): aderência, check-ins, pausa/retomada e revisão |
-| `goals` | GoalsScreen / GoalDetailScreen | Metas (spec 030): agrupadas por área da vida, métrica, marcos e movimentos vinculados |
-| `filter` | FilterScreen | Smart-list salva (filtros), com aviso de referência órfã |
-| `date` | DateViewScreen | View fixa de mercado (spec 034): Todas/Hoje/Amanhã/Próximos 7 Dias — resolve a chave pelo sentinel numérico de `DATE_VIEW_IDS` |
-| `trash` | TrashScreen | Lixeira — restaurar tarefas soft-deletadas |
-
-**GTD core (spec 034):** a sidebar ganhou um bloco fixo no topo ("Navegação" —
-`SidebarNav.tsx`) com as 5 views de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox, com
-contadores via `GET /views/counts`); o item "Inbox" reusa a lista de verdade (`view='list'`)
-em vez de duplicar tela, e leva um botão ⚡ que abre o `InboxProcessModal` (wizard item-a-item
-do processamento guiado do inbox — 6 decisões, contador de progresso, resumível). O
-`TaskModal` ganhou os campos **Status GTD** (seletor + nota de espera + "há X dias") e
-**Contexto** (seletor, no máximo um). O `FilterModal` ganhou os campos `gtd_status` e
-`context_id` na DSL de condições. Novo modal `ContextsModal` (CRUD de contextos — criar,
-renomear, reordenar subir/descer, excluir).
-
-**Revisão semanal guiada (spec 035):** novo modal `WeeklyReviewModal` — wizard de 6 passos
-(Inbox zero, Próximas ações, Aguardando, Listas/projetos, Calendário, Algum dia/talvez) com
-chips de progresso clicáveis (navegação livre), cada passo buscando dados ao vivo e aplicando
-ações com efeito imediato (reusa `InboxProcessModal`'s `processInboxItem`, `complete`,
-`updateTask`, `remove`, e a agregação do Calendar Hub — nenhuma lógica duplicada). Ao abrir,
-sempre chama `POST /reviews/start`; se a resposta vier com `resumed: true`, pula direto para o
-primeiro passo ainda não visto (US2) e mostra "revisão em andamento desde…" no cabeçalho. O
-rodapé tem a nota final e o botão "Concluir revisão" (bloqueado com a lista de passos faltando
-se algum não foi visto). A `SidebarNav` ganhou o item "Revisão semanal" (abaixo do bloco fixo
-de views), com o nudge "última: há N dias"/"nunca" (US4) calculado no CLIENTE a partir de
-`GET /reviews/last` — nunca com `CURRENT_DATE` no backend (regra global do fuso UTC-3).
-
-**Metas e Hábitos cross-agent (spec 036):** `GoalDetailScreen` ganhou o toggle "🔗 Automática" /
-"✍️ Manual" ao lado do label "Métrica" (chama `setMetricMode`; em modo automático o input vira
-texto — "Valor calculado a partir dos itens vinculados"), e a seção de Movimentos ganhou um grupo
-por provedor externo (`movements.external`, capa/título/status, aviso "indisponível agora" se o
-provedor falhar) com um picker (select de provedor → busca → "Vincular") logo abaixo dos grupos.
-`HabitModal` ganhou o campo "Fonte automática" (select carregado de
-`listHabitSourceProviders()`; vazio = hábito manual). `HabitsScreen` mostra um badge "🔗 auto" ao
-lado da tendência quando `done_today_source` é `auto`/`both`. `HabitHeatmap`/`HabitHeatDay` ganhou
-`source?` opcional (ausente em dias vazios, presente — `manual`/`auto`/`both` — em dias com dado).
-
-**Foco / Pomodoro (spec 037):** `FocusWidget` — widget flutuante montado uma vez em
-`KaguyaShell.tsx` (fora do switch de views, mesmo nível de `Toast`), visível em **todas** as
-telas internas enquanto há sessão ativa. O countdown NUNCA é contado do zero na tela: deriva
-localmente (via `setInterval` de 1s) a partir do `started_at`/`duration_planned_min` recebidos
-do servidor em `GET /focus/active` — por isso sobrevive a reload sem perder precisão. O
-`KaguyaShell` também faz um poll de segurança a cada 30s enquanto há sessão ativa (cobre o caso
-de a sessão ter sido fechada por abandono). `FocusStartModal` — escolhe preset (25/5, 50/10) ou
-custom e inicia (confirma antes de encerrar uma sessão ativa existente); aberto a partir do
-botão "Focar" (ícone relógio) no cabeçalho do `TaskModal` (edição) ou do botão "Foco avulso" no
-topbar do shell (sem tarefa).
-
-**Foco gameficado (spec 062) — floresta, vínculo com hábitos, overview de falhas.** Nova aba
-🔲 **Foco** (view `'focus'`, ícone `timer` — estava sem uso desde sempre) na `SidebarNav`, com
-tela própria `FocusScreen.tsx`: hero (streak · total focado · sessões · taxa de conclusão) →
-`FocusForest` (uma árvore por sessão, agrupada por dia — clicável) → `FocusHeatmap` (grade
-anual, classes `kg-fheat-*` próprias, não reusa `.kg-heat-*` dos hábitos) → `HourBars`
-("quando eu foco × quando eu largo", 24 colunas com concluído pra cima/falha pra baixo) →
-rankings por tarefa/lista/hábito → "padrão de falha" (taxa, tempo médio antes de desistir,
-motivos recentes em texto livre) → `FocusAchievements` (grid de badges com barra de progresso
-nas bloqueadas). Toggle de período (7 dias/30 dias/ano/tudo) refaz uma única chamada a
-`GET /focus/stats?start=&end=`.
-
-`ui/FocusTree.tsx` é a peça central — SVG puro, sem lib de gráfico (nenhuma existe no
-`package.json`, mesmo padrão de `nami/ui.tsx`): a espécie (broto/pequena/média/grande/murcha)
-é **derivada** da duração + do desfecho da sessão, nunca escolhida pelo usuário. `FocusWidget`
-passa a mostrar essa árvore crescendo em tempo real (`growth` 0..1, escala a copa via
-`transform: scale()`) em vez de só o `MM:SS`; o timer segue derivado de `started_at`, sem
-mudança nesse princípio. Desistir abre `FocusCancelModal` (a árvore já murchando + campo
-"o que te tirou do foco?" opcional) em vez de cancelar direto — `POST /focus/{id}/cancel` ganha
-`reason?`. `FocusStartModal` ganha um seletor de alvo (tarefa/hábito/avulso, com `<select>` de
-hábitos) quando aberto sem tarefa pré-definida; `HabitsScreen` ganha o botão "Focar neste
-hábito" por card. `TaskModal` mostra o tempo acumulado de foco (`GET /{id}/focus-summary`) ao
-lado do botão "Focar". `TodayScreen` troca a tirinha de barras cruas por árvores reais + streak
-da semana visível.
-
-**Meu Dia — contexto Trabalho/Pessoal (spec 038):** `TodayScreen` ganha um toggle
-"Dividido/Único" (segmented control, preferência lembrada em `localStorage` — chave
-`kg:myday:view`, mesmo padrão de `readViewMode`/`writeViewMode` já usado em
-`KaguyaShell.tsx`). Em "Dividido" (default), a coluna esquerda mostra um bloco por contexto
-(💼 Trabalho / 🏠 Pessoal — pendências, plano, sugestões filtrados), recolhendo o bloco vazio;
-a coluna direita mostra duas `CapacityBar` (uma por contexto, via o novo prop opcional
-`title`). Em "Único", a tela volta ao layout anterior à spec (uma lista, uma capacity). A
-`DayTimeline` permanece única nos dois modos (FR-007). `ProjectModal` ganha o seletor
-Pessoal/Trabalho (oculto para o Inbox); `GroupModal` ganha a ação em massa "Marcar todas as
-listas do grupo como Pessoal/Trabalho" (spec 038, FR-003); `CalendarsAside` ganha um botão de
-contexto (ícones 💼/🏠) por calendário Google de terceiros (`kind === 'integration'` — desde
-a spec 069 não aparece nas fontes gerenciadas pela Kaguya, ver abaixo).
-
-**Arquivar listas + localização nos eventos (spec 039):** `SortableListItem` ganha um botão
-de arquivar revelado no hover (ao lado do grip), 1 clique e sem confirmação (arquivar não
-move/apaga nada) — chama `archiveProject` direto. `ProjectModal` ganha "Arquivar lista" (ou
-"Restaurar lista" quando já arquivada) ao lado da exclusão. Nova tela
-`ArchivedProjectsScreen` (view `'archived'`, item "Arquivadas" na sidebar perto da Lixeira,
-mesmo padrão de `TrashScreen`) lista as arquivadas com contagem de tarefas + data, com
-Restaurar e Editar (reaproveita o `ProjectModal` para a exclusão definitiva). Resultados do
-Command Palette (busca global) mostram "· arquivada" quando a tarefa vem de uma lista
-arquivada. O local do evento (agenda, popover e agora também Meu Dia) virou link clicável
-para o Google Maps via `lib/maps.ts::mapsLinkFor` (abre a própria URL se o local já for um
-link, ex.: Google Meet).
-
-**Sidebar do Calendário — seções Makima × Google (spec 069):** `CalendarsAside` agrupa as
-fontes de `GET /api/tasks/calendar/sources` por `account` — a seção **Makima** reúne a suíte
-de agentes (`kaguya`, `nami`, `frieren`, `violet`, `akane`, `marin`, `mai`, `komi` + `Kaguya
-· Hábitos`), a seção **Google** só os calendários externos de terceiros. Os 7
-calendários-espelho que a spec 069 cria no Google (`Nami — Finanças` … `Komi — Pessoas`)
-**não** entram na seção Google — o backend os filtra (`_SKIP_NAMES`), a fonte do hub já os
-representa. `Kaguya · Hábitos` é servido com `kind: 'base'` (não `'integration'`), então não
-ganha o botão de contexto 💼/🏠 nem ancora o aviso "Google desconectado" (`firstGcalId`), mas
-seu `id` continua `gcal:<id>`: `CalendarScreen.tsx::calEvents` liga/desliga os eventos de
-alerta de hábito casando `cal === "gcal:<id>"` com `visibleGcal`, igual a qualquer calendário
-Google.
-
-**Reforma do `TaskModal` (modal de criação/edição de tarefa):**
-- **`TaskModal` é o único modal de tarefa em todo o shell.** O antigo `AddTaskModal` (só
-  título) foi aposentado: o "+ Adicionar tarefa" de cada coluna no Kanban de lista e no
-  Kanban de grupo agora abre o `TaskModal` completo do shell via callback `onAddTask`.
-  `defaults.columnId` (Kanban de lista) fixa a coluna de nascimento; `defaults.columnTargets`
-  (Kanban de grupo) restringe o `<select>` de Lista às listas-membro da coluna unificada e a
-  escolha resolve o `column_id`; `defaults.pickMemoryKey` lembra a última lista escolhida.
-- **Zona essencial** sempre visível (título, lista+tipo, prioridade, data início/fim,
-  início·fim·estimativa, tags, pessoas) + gaveta **"Mais opções"** recolhível (repetir, GTD,
-  contexto, sinalizadores read-only) — estado em `localStorage: kg:taskmodal:more`.
-- **GTD (Status + Contexto) também na CRIAÇÃO** (antes só em edição). `create_task` não
-  aceita esses campos → o modal faz um `PATCH` de follow-up (`updateTask`) logo após criar,
-  só quando algo foi escolhido (mesmo padrão do time-block).
-- **Seletores de lista agrupados por grupo** (`components/ProjectSelectOptions.tsx`): Inbox +
-  listas soltas no topo, depois um `<optgroup>` por grupo (ordem da sidebar). Usado no
-  `<select>` de Lista do `TaskModal`, na regra `project_id` do `FilterModal` e no "copiar
-  board de…" do Kanban vazio. O switcher de board do topbar já era assim (referência).
-- **Título com parser na criação:** o campo aceita a mesma sintaxe do quick-add da Lista
-  (`@lista !alta/!alto #tag amanhã 15h toda segunda`) — reusa `lib/parseTask.ts` + o mirror
-  (`.kg-qa-wrap`/`.kg-mirror` sob `.kg-tm-title`). Os tokens reconhecidos preenchem os campos
-  automaticamente (aditivo: nunca zera ajuste manual nem remove tags). `parseTask` passou a
-  aceitar as duas flexões de gênero da prioridade (`!alta`/`!alto`).
-- **Data início + data fim** (dois `DatePicker`) + **início·fim·estimativa** (dois `TimePicker`
-  + select de duração) que se **espelham** via `lib/timeBlock.ts` (motor puro: editar dois
-  quaisquer resolve o terceiro, só no mesmo dia; multi-dia deixa a estimativa independente).
-  No save: `due_date` = início, `due_time` = hora de início; `setTimeBlock(start_at, end_at)`
-  quando há início+fim de hora **ou** data de fim ≠ início. Nenhuma mudança de schema.
-- **Campo "Pessoas"** (`components/PersonSearch.tsx`) — substitui o paredão de chips: busca
-  case/acento-insensível, selecionados no topo, e "Criar «Fulano»" no rodapé quando não há
-  match (`kaguyaApi.createPerson` → `POST /api/people/`). Rótulo genérico: serve para
-  responsável de tarefa **ou** acompanhante de evento (sempre `person_ids` da Komi).
-- **Editor de Markdown** (`MentionTextarea`): barra de formatação (B/I/H/lista/checklist/
-  citação/código/link/divisor), atalhos `⌘B`/`⌘I`/`⌘K`/`⌘⇧X`, colar URL sobre seleção vira
-  `[texto](url)`, e menu `/` de blocos no começo da linha (reusa o dropdown de `@menção`).
-  No preview (`MarkdownPreview`), os checkboxes de checklist ficam **clicáveis** quando o pai
-  passa `onChange` (marcar reescreve a n-ésima `- [ ]` ↔ `- [x]` no Markdown cru).
-
-**Particularidades:**
-- **DnD** com `@dnd-kit` (única dependência de drag-and-drop do app) — árvore de tarefas, Kanban e Eisenhower.
-- **Inputs custom obrigatórios:** `DatePicker`/`TimePicker`/`MiniCalendar` no lugar dos nativos
-  (ver "Padrões do frontend" em `webapp/CLAUDE.md`).
-- **Notas Markdown** por tarefa (`MarkdownNotesEditor` + `react-markdown`/`remark-gfm`), com
-  chips `[[id|Título]]` que reabrem tarefas mencionadas. No `TaskModal` o editor é
-  **redimensionável** (divisor arrastável entre formulário e notas) e **colapsável**
-  (fechar → modal só de formulário; reabrir pelo ícone de nota no cabeçalho) — largura e
-  estado ficam em `localStorage` (`kg:notes:width`, `kg:notes:collapsed`). Na lista, a
-  descrição **não** aparece como texto: a linha mostra só o ícone `note` (abre o modal).
-- **Preferências** em `localStorage`: `kg-tweaks` (tema etc.) e `kaguya:kanban:last-list`
-  (última lista aberta no Kanban).
-- API: `kaguyaApi.ts` — todos os `/api/tasks/*`.
-
----
+- API: `kaguya/api.ts` (`kaguyaApi`), usada também pela Nami (lembrete de pagamento) e pela Violet (ação do Conselho do Dia).
+- CSS: `kaguya.css` (complementos `.kn-*` com tokens `--ds-*`) e `legacy.css` (Kanban e Calendário no escopo `.kn-legacy`, com o vidro
+  e os raios do desenho original, independentes da arte). Testes: `KaguyaShell.test.tsx`, `screens/*.test.tsx`, `lib/*.test.ts`.
+- Preferências em `ds:prefs:kaguya` (as chaves de localStorage `kaguya-next:*` foram mantidas para não perder o que já estava salvo).
+- `components/DatePicker.tsx`/`MiniCalendar.tsx` (seletor de data com CSS próprio em `datepicker.css`) são da Komi, não da Kaguya.
 
 ### AkaneShell — Filmes (`src/pages/akane/`) — no Design System (spec 072)
 
@@ -641,7 +466,7 @@ Em erros HTTP (`!response.ok`), o wrapper lança `Error("HTTP <status>")`.
 | `violetApi` | `lib/api.ts` | todos os `/api/journal/*` |
 | `booksApi` | `lib/api.ts` | todos os `/api/books/*` |
 | `namiApi` | `pages/nami/namiApi.ts` | todos os `/api/finances/*` |
-| `kaguyaApi` | `pages/kaguya/kaguyaApi.ts` | todos os `/api/tasks/*` |
+| `kaguyaApi` | `pages/kaguya/api.ts` | todos os `/api/tasks/*` |
 | `akaneApi` | `pages/akane/akaneApi.ts` | todos os `/api/movies/*` |
 | `marinApi` | `pages/marin/marinApi.ts` | todos os `/api/animes/*` |
 | `maiApi` | `pages/mai/maiApi.ts` | todos os `/api/series/*` |
@@ -666,7 +491,7 @@ Cada shell tem identidade visual própria baseada num personagem de anime:
 | NamiShell | Nami (One Piece) | `nami.jpg`, `nami-hero.png` | `nami.css` | `.nami-app` |
 | VioletShell | Violet Evergarden | `violet.png` | `violet.css` | `.vl-app` |
 | FrierenShell | Frieren Beyond Journey's End | `frieren.png` | `frieren.css` (só complementos `.fr-*` do DS) | `.ds-app` (Design System) |
-| KaguyaShell | Kaguya (Kaguya-sama: Love is War) | `kaguya.jpg` | `kaguya.css` | `.kg-app` |
+| KaguyaShell | Kaguya (Kaguya-sama: Love is War) | `kaguya.jpg` | `kaguya.css` + `legacy.css` (só complementos `.kn-*` do DS) | `.ds-app` (Design System) |
 | AkaneShell | Akane Kurokawa (Oshi no Ko) | `akane.png` | `akane.css` (só complementos `.ax-*` do DS) | `.ds-app` (Design System) |
 | MarinShell | Marin Kitagawa (Sono Bisque Doll) | `marin.png` | `marin.css` | `.marin-shell` |
 | MaiShell | Mai Sakurajima (Seishun Buta Yarou) | `mai.png` | `mai.css` | `.mai-shell` |

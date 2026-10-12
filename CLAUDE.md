@@ -42,7 +42,7 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | Agente | Domínio | Status | Documentação |
 |---|---|---|---|
 | `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1, 040–048, 071 | `agents/nami/CLAUDE.md` |
-| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + GTD/revisão semanal (034/035) + Foco gameficado (037/062) + modo férias (065) | ✅ Fases 2, 011–020, 024–026, 029–030, 034–039, 062, 065 · 🔧 075 (Design System + espaço Trabalho/Pessoal + agenda) | `agents/kaguya/CLAUDE.md` |
+| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + GTD/revisão semanal (034/035) + Foco gameficado (037/062) + modo férias (065) | ✅ Fases 2, 011–020, 024–026, 029–030, 034–039, 062, 065 · ✅ 075 (Design System em `/tasks` + espaço Trabalho/Pessoal + agenda; falta a integração Komi `people.context`) | `agents/kaguya/CLAUDE.md` |
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada + Tutor de Idiomas (031) + Conselho do Dia (061) | ✅ Fases 027, 031, 061 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) + favoritos/coração + estatísticas no padrão do DS (073) | ✅ Fase 5a, 073 | `agents/frieren/CLAUDE.md` |
 | `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015, 072 | `agents/akane/CLAUDE.md` |

@@ -283,8 +283,10 @@ export function checkPage(id, p, required = []) {
   if (!grepDir(p.dir, /<AppShell\b/)) bad('code-appshell', 'não renderiza <AppShell>')
   if (p.hero && !grepDir(p.dir, /<Hero\b/)) bad('code-hero', 'a tela Início não usa <Hero>')
   for (const scope of p.collections) {
-    const esc = scope.replace(/[.*+?^${}()|[\]\\:/]/g, '\\$&')
-    if (!grepDir(p.dir, new RegExp("scope:\\s*['\"`]" + esc + "['\"`]"))) bad('code-collection', `esquema "${scope}" não encontrado`)
+    // `prefixo:*` = escopos dinâmicos (`prefixo:${id}`): basta o prefixo literal aparecer no `scope:` do esquema.
+    const prefix = scope.endsWith('*')
+    const esc = (prefix ? scope.slice(0, -1) : scope).replace(/[.*+?^${}()|[\]\\:/]/g, '\\$&')
+    if (!grepDir(p.dir, new RegExp("scope:\\s*['\"`]" + esc + (prefix ? '' : "['\"`]")))) bad('code-collection', `esquema "${scope}" não encontrado`)
   }
   if (p.collections.length && !grepDir(p.dir, /\buseCollection\(/)) bad('code-collection', 'nenhum useCollection()')
   if (p.quickCapture && !grepDir(p.dir, /<QuickCapture\b/)) bad('code-capture', 'declara captura rápida mas não usa <QuickCapture>')

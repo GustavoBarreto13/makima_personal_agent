@@ -1,11 +1,7 @@
 // DatePicker — seletor de data cross-shell, substitui <input type="date"> nativo.
 //
-// Extraído de pages/kaguya/components/DatePicker.tsx (fase 026) para ser
-// reutilizável em qualquer shell que precise de um seletor de data com tema.
-// O kaguya original agora re-exporta daqui — sem duplicação de lógica.
-//
-// Usa o tema Kaguya (.kg-input, .kg-datefield*, .mini-*) — funciona em qualquer
-// shell que carregue kaguya.css, incluindo a Komi (que herda o CSS base da app).
+// Reutilizável em qualquer shell que precise de um seletor de data com tema (hoje, a Komi).
+// Traz o próprio CSS (datepicker.css), com fallback para os tokens do shell que o hospeda.
 //
 // Props:
 //   value       — string ISO "AAAA-MM-DD" ou "" para sem data
@@ -14,9 +10,10 @@
 //   placeholder — texto quando não há data (padrão: "Sem data")
 
 import { useState, useRef, useEffect } from 'react'
+import './datepicker.css'
 import { MiniCalendar } from './MiniCalendar'
-import { todayISO, fmtDateLabel } from '../pages/kaguya/lib/dateUtils'
-import { Icon } from '../pages/kaguya/ui/Icons'
+import { todayISO, fmtDateLabel } from './dateUtils'
+import { Icon } from '../design'
 
 interface DatePickerProps {
   // Data atual em ISO "AAAA-MM-DD"; string vazia = sem data

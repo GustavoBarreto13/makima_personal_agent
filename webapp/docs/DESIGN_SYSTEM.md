@@ -318,7 +318,7 @@ de arte por agente: Nami = `nautica`; Akane = `noir`; Frieren = `elfica`; Marin 
 | `npm run lint:design` | lint estático (cores literais, `type=date`, `alert`, UTC, emoji, z-index, `@keyframes`, pureza do `core/`, camadas, rede, arte sem layout) em `src/design/` e nas páginas `migrating`/`conformant` |
 | `npm run audit:design` | tokens em dia + lint + contraste WCAG (agente × tema) + manifesto × código; `-- --report` grava `DESIGN_CONFORMANCE.md`; `-- --contrast` lista todos os pares |
 | `npm test` | inclui `audit.test.ts` (repositório em dia **e** casos negativos) e os testes de componente/hooks (jsdom + axe) |
-| `src/design/conformance.json` | manifesto por página: `legacy` só no relatório · `migrating` falha o lint · `conformant` falha em **qualquer** item |
+| `src/design/conformance.json` | manifesto por página: `legacy` só no relatório · `migrating` falha o lint · `conformant` falha em **qualquer** item | Em `collections`, `"prefixo:*"` cobre escopos dinâmicos (`prefixo:${id}`): basta o prefixo literal estar no `scope:` do esquema (a Kaguya usa `kaguya:*`).
 | Skill `makima-design-system` | roteiro para criar/migrar telas (pergunta arte → stats/facetas → checklist → auditoria → revisão `impeccable`) |
 
 **Hook opcional do Claude Code** (não ativado): `PostToolUse` em `Edit|Write` sob

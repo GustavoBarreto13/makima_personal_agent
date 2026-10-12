@@ -11,7 +11,7 @@ Dez Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
 | `violet/` | `VioletShell.tsx` | `violetApi` em `lib/api.ts` | `violet.css` | `/journal/*` |
 | `nami/` | `NamiShell.tsx` (sobre o `AppShell` do DS) | `namiApi` em `nami/namiApi.ts` | `nami.css` (só complementos do DS, tokens `--ds-*`) | `/nami/*` |
 | `frieren/` | `FrierenShell.tsx` (sobre o `AppShell` do DS, spec 073) | `frierenApi` em `frieren/frierenApi.ts` | `frieren.css` (só complementos `.fr-*` do DS) | `/books/*` |
-| `kaguya/` | `KaguyaShell.tsx` | `kaguyaApi` em `kaguya/kaguyaApi.ts` | `kaguya.css` | `/tasks/*` |
+| `kaguya/` | `KaguyaShell.tsx` | `kaguyaApi` em `kaguya/api.ts` | `kaguya.css` + `legacy.css` (Design System) | `/tasks/*` |
 | `akane/` | `AkaneShell.tsx` (sobre o `AppShell` do DS) | `akaneApi` em `akane/akaneApi.ts` | `akane.css` (só complementos do DS, tokens `--ds-*`) | `/movies/*` |
 | `marin/` | `MarinShell.tsx` (sobre o `AppShell` do DS, spec 074) | `marinApi` em `marin/marinApi.ts` | `marin.css` (só complementos `.mr-*` do DS) | `/animes/*` |
 | `mai/` | `MaiShell.tsx` | `maiApi` em `mai/maiApi.ts` | `mai.css` | `/series/*` |
@@ -32,7 +32,7 @@ Nunca misturar: código de Shell não chama componentes do `Layout`; páginas da
 
 ### CSS: isolamento por domínio
 
-Cada Shell tem seu próprio arquivo CSS com tokens OKLCH (`--garnet`, `--sapphire`, etc.) declarados dentro de um seletor de escopo — a classe raiz do Shell (`.vl-app`, `.nami-app`, `.kg-app`, `.akane-shell`, `.marin-shell`, `.mai-shell`, `.km-app`, `.yato-shell`, `.mkA`). Tokens de um domínio **não são visíveis** no outro.
+Cada Shell tem seu próprio arquivo CSS com tokens OKLCH (`--garnet`, `--sapphire`, etc.) declarados dentro de um seletor de escopo — a classe raiz do Shell (`.vl-app`, `.nami-app`, ``.akane-shell`, `.marin-shell`, `.mai-shell`, `.km-app`, `.yato-shell`, `.mkA`). Tokens de um domínio **não são visíveis** no outro.
 
 > **Atenção (vazamento conhecido):** `violet.css` tem regras globais (não escopadas) e `mai.css`
 > tem classes genéricas (`.hero`, `.page`) que vazam entre shells no bundle único do Vite.
@@ -98,7 +98,7 @@ fetch('/api/journal/heatmap?year=2026', { credentials: 'include' })
 └── ui/                  # primitivos visuais (charts, icons, etc.)
 ```
 
-`violetApi` fica em `lib/api.ts` por serem menores; todos os outros domínios têm arquivo de API próprio dentro da sua pasta (`nami/namiApi.ts`, `kaguya/kaguyaApi.ts`, `akane/akaneApi.ts`, `marin/marinApi.ts`, `mai/maiApi.ts`, `komi/komiApi.ts`, `yato/yatoApi.ts`, `makima/makimaApi.ts`).
+`violetApi` fica em `lib/api.ts` por serem menores; todos os outros domínios têm arquivo de API próprio dentro da sua pasta (`nami/namiApi.ts`, `kaguya/api.ts`, `akane/akaneApi.ts`, `marin/marinApi.ts`, `mai/maiApi.ts`, `komi/komiApi.ts`, `yato/yatoApi.ts`, `makima/makimaApi.ts`).
 
 ---
 

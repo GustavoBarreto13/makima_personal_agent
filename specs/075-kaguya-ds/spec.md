@@ -1,6 +1,6 @@
 # Spec 075 — Kaguya no Design System (e um app de tarefas completo)
 
-**Status:** em andamento — fases 0–6 e 10 entregues; a 7 está parcial (ver "Estado da implementação").
+**Status:** entregue — `/tasks` é o shell novo (fase 11, out/2026); falta só o que está em "Falta" (ver "Estado da implementação").
 **Branch:** `075-kaguya-ds` (a partir do `master`).
 **Plano de execução:** fases 0–13, um commit por fase, como nas specs 072–074. Rollout em paralelo
 (`/tasks-next`, como a Frieren e a Akane) e revisão final com a skill `impeccable`.
@@ -35,7 +35,7 @@ O pente fino do backend e da UX encontrou bugs reais, além de lacunas de produt
 - **Nada é removido**, só melhorado ou reorganizado.
 - **Kanban:** só visual — a estrutura (toolbar, views, colunas "Vidro", card, dnd) fica idêntica; foi a
   referência do padrão.
-- **Rollout em paralelo:** `pages/kaguya-next/` em `/tasks-next`; `/tasks` segue intacto até a troca.
+- **Rollout em paralelo:** `pages/kaguya-next/` em `/tasks-next`, com `/tasks` intacto até a troca (feita na fase 11: hoje é tudo `pages/kaguya/` em `/tasks`).
 - Direção de arte **"Shuchiin aristocrático"** (`src/design/art/shuchiin.css`).
 - **Lista de tarefas no estilo TickTick** (3 painéis, painel de detalhe, adicionar no topo) e **leitor/editor
   de Markdown melhorado**, reaproveitável pelo DS.
@@ -99,7 +99,7 @@ Trabalho passa `space=work`. Pendência registrada em `agents/komi/CLAUDE.md`.
 
 ## Estado da implementação (atualizado a cada marco)
 
-**Status:** pronto para uso real em `/tasks-next` (a branch `075-kaguya-ds` tem tudo; nada foi enviado). `/tasks` segue intacto.
+**Status:** o shell novo é o oficial em `/tasks` (fase 11 feita); `/tasks-next` redireciona para `/tasks` mantendo o `#hash`. Shell antigo removido.
 
 **Entregue**
 
@@ -117,10 +117,9 @@ Trabalho passa `space=work`. Pendência registrada em `agents/komi/CLAUDE.md`.
 **Falta (decisão sua)**
 
 1. **Conferir no navegador** (claro, escuro, < 640px) — nada foi visto rodando; só testes automatizados (885 no front) e o lint do DS.
-2. **Fase 11 — trocar `/tasks`** pelo novo: apontar `/tasks` para `KaguyaNextShell` (e `/tasks-next` redirecionar), mover para o novo
-   `DatePicker`/`MiniCalendar` os usos externos (`pages/nami/screens/Home.tsx` + `NamiShell.test.tsx`, `pages/violet/components/CounselSection.tsx` usam
-   `kaguyaApi` do shell antigo), apagar `pages/kaguya/` e passar a Kaguya a `conformant` (declarar `collections` com escopos literais — hoje o escopo
-   é um template `kaguya:${scope}`, que o lint de conformidade não enxerga).
+2. ~~**Fase 11 — trocar `/tasks`**~~ **feita:** `/tasks` aponta para o shell novo (`pages/kaguya-next` → `pages/kaguya`, `KaguyaNextShell` → `KaguyaShell`),
+   `/tasks-next` redireciona mantendo o hash, `pages/kaguya/` antigo apagado, Nami e Violet passam a usar `kaguya/api.ts`, o seletor de data da
+   Komi ganhou CSS próprio (`components/datepicker.css`) e a Kaguya está `conformant` (coleções `kaguya:*`; o lint aceita prefixo com `*`).
 3. **Banco:** rodar `pytest` com `DATABASE_URL` e `scripts/migrate_kaguya_ds.py` (dry-run, depois `--apply`) **antes** do deploy do backend.
 4. **Komi:** `people.context` (contrato em `agents/komi/CLAUDE.md`) e um *deep link* para a pessoa.
 

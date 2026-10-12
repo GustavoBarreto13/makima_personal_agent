@@ -1,11 +1,7 @@
 // MiniCalendar — grade de calendário mensal reutilizável, cross-shell.
 //
-// Extraída de pages/kaguya/components/MiniCalendar.tsx (fase 026) para ser
-// reutilizável em qualquer shell que precise de um seletor de data com tema.
-// O kaguya original agora re-exporta daqui — sem duplicação de lógica.
-//
-// Usa as classes .mini-* já definidas em kaguya.css (linhas 838-855), que
-// estão totalmente tematizadas com os tokens OKLCH (claro e escuro).
+// Reutilizável em qualquer shell que precise de um seletor de data com tema (hoje, a Komi).
+// As classes .mini-* vivem em datepicker.css, importado pelo DatePicker.
 //
 // Props:
 //   anchor     — Date com o ano/mês a exibir (qualquer dia; usamos só ano+mês)
@@ -13,8 +9,8 @@
 //   onSelect   — chamado com ISO quando o usuário clica em um dia
 //   onNavMonth — chamado com +1 ou -1 quando o usuário clica em ‹ ou ›
 
-import { Icon } from '../pages/kaguya/ui/Icons'
-import { toISO, addDays, todayISO, MONTHS_PT, WEEKDAY_1 } from '../pages/kaguya/lib/dateUtils'
+import { Icon } from '../design'
+import { toISO, addDays, todayISO, MONTHS_PT, WEEKDAY_1 } from './dateUtils'
 
 interface MiniCalendarProps {
   // Define qual mês a grade exibe (ano + mês extraídos; o dia é ignorado)
@@ -60,14 +56,14 @@ export function MiniCalendar({ anchor, selected, onSelect, onNavMonth }: MiniCal
             onClick={() => onNavMonth(-1)}
             aria-label="Mês anterior"
           >
-            <Icon name="back" size={12} />
+            <Icon name="left" size={12} />
           </button>
           <button
             type="button"
             onClick={() => onNavMonth(1)}
             aria-label="Próximo mês"
           >
-            <Icon name="chevron" size={12} />
+            <Icon name="right" size={12} />
           </button>
         </div>
       </div>

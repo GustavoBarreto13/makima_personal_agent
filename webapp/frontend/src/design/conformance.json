@@ -161,15 +161,15 @@
       "mobile": true
     },
     "kaguya": {
-      "status": "migrating",
-      "dir": "src/pages/kaguya-next",
-      "shell": "src/pages/kaguya-next/KaguyaNextShell.tsx",
+      "status": "conformant",
+      "dir": "src/pages/kaguya",
+      "shell": "src/pages/kaguya/KaguyaShell.tsx",
       "art": "shuchiin",
       "appShell": true,
       "hero": true,
       "theme": true,
       "icons": true,
-      "collections": [],
+      "collections": ["kaguya:*"],
       "quickCapture": "task",
       "stats": {
         "page": true,

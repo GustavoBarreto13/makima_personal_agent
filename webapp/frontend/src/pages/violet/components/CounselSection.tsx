@@ -19,7 +19,7 @@ import type { Counsel } from '../types'
 import { Icon } from '../ui/Icon'
 // kaguyaApi: cria a tarefa real a partir de uma ação sugerida (mesmo precedente de
 // LetterLog.tsx importando komiApi — a UI própria evita depender do CSS de outro shell).
-import { kaguyaApi } from '../../kaguya/kaguyaApi'
+import { kaguyaApi } from '../../kaguya/api'
 
 interface CounselSectionProps {
   pageId: number | null

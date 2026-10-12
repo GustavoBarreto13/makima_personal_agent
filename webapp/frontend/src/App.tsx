@@ -4,14 +4,13 @@
 // Se autenticado, renderiza o layout completo com sidebar e as rotas de cada página.
 
 import { Suspense, lazy, useEffect, useState } from 'react'  // Hooks do React: efeito colateral, estado local e carregamento sob demanda
-import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'  // Roteamento de páginas SPA
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-router-dom'  // Roteamento de páginas SPA
 
 import Login         from './pages/Login'               // Tela de login com botão "Entrar com Google"
 import { FrierenShell } from './pages/frieren/FrierenShell'  // Shell de livros (Frieren, no Design System desde a spec 073)
 import { VioletShell } from './pages/violet/VioletShell'     // Shell do diário Violet
 import { NamiShell }   from './pages/nami/NamiShell'         // Shell completo da seção de finanças (redesign)
-import { KaguyaNextShell } from './pages/kaguya-next/KaguyaNextShell'  // Kaguya no Design System (spec 075) — convive com /tasks até a troca
-import { KaguyaShell } from './pages/kaguya/KaguyaShell'      // Shell de tarefas (sistema próprio, spec 011)
+import { KaguyaShell } from './pages/kaguya/KaguyaShell'      // Shell de tarefas e agenda (Kaguya, no Design System desde a spec 075)
 import { AkaneShell }  from './pages/akane/AkaneShell'         // Shell de filmes (cinemateca pessoal, spec 015; no Design System desde a spec 072)
 import { MarinShell }  from './pages/marin/MarinShell'         // Shell de animes (catálogo Marin, spec 021)
 import { MaiShell }   from './pages/mai/MaiShell'              // Shell de séries de TV (Mai Sakurajima, spec 022)
@@ -29,6 +28,12 @@ import { api } from './lib/api'                          // Wrapper de fetch com
 interface User {
   email: string  // Email da conta Google autenticada
   name: string   // Nome completo da conta Google
+}
+
+/** /tasks-next → /tasks levando o hash junto (#lista/12, #kanban/3…); o Navigate puro o descartaria. */
+function TasksNextRedirect() {
+  const { hash } = useLocation()
+  return <Navigate to={{ pathname: '/tasks', hash }} replace />
 }
 
 function App() {
@@ -97,7 +102,8 @@ function App() {
         {/* Kaguya · Tarefas — shell próprio com sidebar do domínio e navegação por estado.
             Antes do catch-all /* para o shell assumir as sub-rotas de /tasks. */}
         <Route path="/tasks/*" element={<KaguyaShell />} />
-        <Route path="/tasks-next/*" element={<KaguyaNextShell />} />
+        {/* A prévia /tasks-next virou o shell oficial (spec 075): quem tinha o link salvo cai em /tasks, mantendo a tela (#hash). */}
+        <Route path="/tasks-next/*" element={<TasksNextRedirect />} />
 
         {/* Akane · Filmes — cinemateca pessoal estilo Letterboxd (spec 015).
             Antes do catch-all /* para o shell assumir as sub-rotas de /movies. */}

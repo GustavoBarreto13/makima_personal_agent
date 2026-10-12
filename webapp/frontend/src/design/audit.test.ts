@@ -134,6 +134,13 @@ describe('conformidade: manifesto × código', () => {
     expect(conf.pages.design.status).toBe('conformant')
     expect(audit.checkPage('design', conf.pages.design, conf.statsRequired.design)).toEqual([])
   })
+  it('coleção com escopo dinâmico ("prefixo:*") passa se o prefixo está no código e falha se não está', () => {
+    const conf = audit.loadConformance()
+    const k = conf.pages.kaguya
+    expect(audit.checkPage('kaguya', k, conf.statsRequired.kaguya).filter((x: { rule: string }) => x.rule === 'code-collection')).toEqual([])
+    const v = audit.checkPage('kaguya', { ...k, collections: ['naoexiste:*'] }, conf.statsRequired.kaguya)
+    expect(v.some((x: { rule: string }) => x.rule === 'code-collection')).toBe(true)
+  })
   it('todo agente do registro tem uma entrada no manifesto', () => {
     const conf = audit.loadConformance()
     for (const a of audit.loadAgents()) expect(conf.pages[a.id], a.id).toBeDefined()

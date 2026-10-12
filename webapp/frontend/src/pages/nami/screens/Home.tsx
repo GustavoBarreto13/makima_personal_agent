@@ -10,7 +10,7 @@ import { EntryCapture } from '../components/EntryCapture'
 import { TxRow } from '../components/TxRow'
 import { useNami } from '../context'
 import { categoryHue } from '../lib/categories'
-import { kaguyaApi } from '../../kaguya/kaguyaApi'
+import { kaguyaApi } from '../../kaguya/api'
 import { namiApi } from '../namiApi'
 import type { Plan, PlanPayable, Transaction } from '../types'
 

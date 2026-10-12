@@ -1,352 +1,161 @@
-// DayTimeline — régua de horas 07h–23h.
-// Renderiza dois tipos de bloco lado a lado, sem sobreposição:
-//   • Eventos do Google Calendar (read-only) — lane esquerda
-//   • Blocos de tarefas (draggable/droppable) — lane direita
-//
-// Acima da régua, uma faixa compacta (.kg-tl-allday) exibe os eventos de dia inteiro.
-// Um popover de toggle permite ligar/desligar calendários Google individuais.
-//
-// DnD via @dnd-kit (migrado do HTML5 nativo):
-//   • HourSlot: cada hora vira um droppable (@dnd-kit/core useDroppable).
-//   • A lógica de "o que acontece ao soltar" (construir start_at + chamar a API)
-//     ficou no TodayScreen (onDragEnd), que é quem tem o DndContext.
-//   • isOver (via useDroppable) aciona a classe .drop-ok sem manipular o DOM diretamente.
+// A linha do dia do Meu Dia (07h–23h): à esquerda os eventos do Google (só leitura, com o local abrindo no mapa), à direita os
+// blocos de tempo das tarefas do plano. Soltar uma tarefa do plano numa hora reserva o horário (a estimativa vira a duração);
+// a alça de baixo do bloco ajusta o fim e o “x” libera o horário. Os calendários que aparecem aqui se escolhem no botão
+// “Calendários”. O arraste é do DndContext da tela (as horas são alvos de soltura `hour:H`).
 
-import { useRef, useState, useEffect, useCallback } from 'react'
 import { useDroppable } from '@dnd-kit/core'
-import type { Task, TimelineEvent, Calendar } from '../types'
-import { kaguyaApi } from '../kaguyaApi'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { Icon, IconButton } from '../../../design'
+import { localISO, minToLabel, snapTo15, timeToMin } from '../lib/calendar'
 import { mapsLinkFor } from '../lib/maps'
-// localISO: monta ISO 8601 com offset local sem usar toISOString() (fuso UTC-3).
-// toISO: data "AAAA-MM-DD" em fuso local (extraída do start_at da task).
-import { localISO, toISO } from '../lib/dateUtils'
+import type { Calendar, Task, TimelineEvent } from '../types'
 
-// ── Constantes do protótipo (design-guide.md §Constantes) ────────────────────
-const DAY_START = 7   // 7h
-const DAY_END = 23    // 23h
-const HOURS = Array.from({ length: DAY_END - DAY_START }, (_, i) => DAY_START + i)
-const TOTAL_MIN = (DAY_END - DAY_START) * 60
+const START = 7
+const END = 23
+const HOURS = Array.from({ length: END - START }, (_, i) => START + i)
+const TOTAL = (END - START) * 60
+const HOUR_PX = 56
+/** Abaixo disto (min) o bloco vira uma linha só: título e horário lado a lado. */
+const TINY_MIN = 40
 
-// Converte um ISO datetime para o minuto do dia (ex.: "2024-01-01T14:30:00-03:00" → 870).
-function minuteOfDay(iso: string): number {
-  try {
-    const d = new Date(iso)
-    return d.getHours() * 60 + d.getMinutes()
-  } catch { return 0 }
-}
+const top = (min: number) => `${Math.max(0, ((min - START * 60) / TOTAL) * 100)}%`
+const height = (dur: number) => `${Math.max(0.5, (dur / TOTAL) * 100)}%`
 
-// Converte o minuto do dia para % vertical na régua (posição `top`).
-function topPct(startMin: number): number {
-  const rel = startMin - DAY_START * 60
-  return Math.max(0, (rel / TOTAL_MIN) * 100)
-}
-
-// Converte a duração em minutos para % de altura na régua.
-function heightPct(durMin: number): number {
-  return Math.max(0.5, (durMin / TOTAL_MIN) * 100)
-}
-
-// Formata um ISO datetime como "HH:MM" no fuso local.
-function fmtTime(iso: string): string {
-  try { return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }
-  catch { return '' }
-}
-
-// ─── HourSlot ────────────────────────────────────────────────────────────────
-// Componente interno: cada faixa de hora é uma zona de soltar (@dnd-kit).
-// O id segue o prefixo "hour:<h>" para que o onDragEnd do TodayScreen
-// saiba qual hora foi alvo do drop.
-function HourSlot({ h, totalHours }: { h: number; totalHours: number }) {
+function Hour({ h }: { h: number }) {
   const { setNodeRef, isOver } = useDroppable({ id: `hour:${h}` })
-
   return (
-    <div
-      ref={setNodeRef}
-      className={`kg-tl-hour${isOver ? ' drop-ok' : ''}`}
-      style={{
-        top: `${((h - DAY_START) / (DAY_END - DAY_START)) * 100}%`,
-        position: 'absolute',
-        width: '100%',
-        height: `${100 / totalHours}%`,
-      }}
-    >
-      <span className="kg-tl-hour-label">{String(h).padStart(2, '0')}h</span>
+    <div ref={setNodeRef} className={`kn-tl-hour${isOver ? ' kn-over' : ''}`} style={{ top: `${((h - START) / (END - START)) * 100}%`, height: `${100 / HOURS.length}%` }}>
+      <span className="ds-mono">{String(h).padStart(2, '0')}h</span>
     </div>
   )
 }
 
-// ─── DayTimeline ─────────────────────────────────────────────────────────────
-
-interface DayTimelineProps {
-  plano: Task[]                     // tarefas do plano de hoje (com start_at = time-block)
-  eventos: TimelineEvent[]          // eventos do Google Calendar do dia (já filtrados por visibilidade)
-  sources: Calendar[]               // fontes gcal:* para o toggle (com .visible e .color)
-  onToggleCalendar: (id: string, visible: boolean) => void  // persiste pref + reload
-  onChanged: () => void             // recarrega o Meu Dia (passado ao PlanCard se necessário)
-  onOpen: (task: Task) => void
-  toast: (msg: string, kind?: 'ok' | 'err') => void
+interface Props {
+  today: string
+  plano: Task[]
+  eventos: TimelineEvent[]
+  sources: Calendar[]
+  onToggleCalendar: (id: string, visible: boolean) => void
+  onOpen: (id: number) => void
+  onResize: (task: Task, endISO: string) => void
+  onClearBlock: (task: Task) => void
 }
 
-export function DayTimeline({ plano, eventos, sources, onToggleCalendar, onOpen, onChanged, toast }: DayTimelineProps) {
-  // Tarefas com bloco de tempo posicionadas na timeline.
-  const blocked = plano.filter(t => t.start_at)
-  // Eventos timed (com hora) posicionados na timeline.
-  const timedEvents = eventos.filter(e => !e.all_day && e.start)
-  // Eventos de dia inteiro mostrados acima da régua.
-  const allDayEvents = eventos.filter(e => e.all_day)
-
-  // Ref para o elemento .kg-tl-body (usado para converter posição Y em minuto do dia).
+export function DayTimeline({ today, plano, eventos, sources, onToggleCalendar, onOpen, onResize, onClearBlock }: Props) {
   const bodyRef = useRef<HTMLDivElement>(null)
-
-  // Estado de resize ativo: qual task está sendo redimensionada e a posição atual.
-  const [resize, setResize] = useState<{ id: number; startMin: number; endMin: number } | null>(null)
-
-  // Popover de toggle de calendários
-  const [showCalPop, setShowCalPop] = useState(false)
   const popRef = useRef<HTMLDivElement>(null)
+  const [pop, setPop] = useState(false)
+  const [resize, setResize] = useState<{ id: number; start: number; end: number } | null>(null)
+  const blocked = plano.filter((t) => t.start_at)
+  const timed = eventos.filter((e) => !e.all_day && e.start)
+  const allDay = eventos.filter((e) => e.all_day)
 
-  // Fecha o popover ao clicar fora ou pressionar Escape
   useEffect(() => {
-    if (!showCalPop) return
-    const handleMouseDown = (e: MouseEvent) => {
-      if (popRef.current && !popRef.current.contains(e.target as Node)) {
-        setShowCalPop(false)
-      }
-    }
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowCalPop(false)
-    }
-    document.addEventListener('mousedown', handleMouseDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handleMouseDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [showCalPop])
+    if (!pop) return
+    const onDown = (e: MouseEvent) => { if (popRef.current && !popRef.current.contains(e.target as Node)) setPop(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPop(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [pop])
 
-  // ── Lógica de resize da alça inferior dos blocos de tarefa ──────────────────
-
-  // Converte a posição Y do ponteiro em minuto do dia dentro do .kg-tl-body,
-  // com snap de 15 min. A altura do body é HOURS.length * 44px (fixo em CSS).
-  const yToMin = useCallback((clientY: number): number => {
+  const yToMin = useCallback((clientY: number) => {
     const el = bodyRef.current
-    if (!el) return DAY_START * 60
-    const rect = el.getBoundingClientRect()
-    // Proporção vertical dentro do body (0 = topo = DAY_START, 1 = base = DAY_END)
-    const ratio = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
-    const rawMin = DAY_START * 60 + ratio * TOTAL_MIN
-    // Snap de 15 min: arredonda para o múltiplo de 15 mais próximo
-    return Math.round(rawMin / 15) * 15
+    if (!el) return START * 60
+    const r = el.getBoundingClientRect()
+    return snapTo15(START * 60 + Math.max(0, Math.min(1, (clientY - r.top) / (r.height || 1))) * TOTAL)
   }, [])
 
-  // Iniciado na alça: armazena a tarefa e o endMin atual.
-  // O pointer capture garante que onPointerMove/Up chegam à alça mesmo fora dos limites.
-  const handleResizeStart = useCallback((
-    e: React.PointerEvent<HTMLDivElement>,
-    task: Task,
-    startMin: number,
-    endMin: number,
-  ) => {
-    e.stopPropagation()  // evita disparar o onClick do bloco (que abre o modal)
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-    setResize({ id: task.id, startMin, endMin })
-  }, [])
-
-  // Move: atualiza o endMin ao vivo com mínimo de startMin + 15 min.
-  const handleResizeMove = useCallback((
-    e: React.PointerEvent<HTMLDivElement>,
-    startMin: number,
-  ) => {
+  const startResize = (e: ReactPointerEvent<HTMLDivElement>, task: Task, start: number, end: number) => {
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    setResize({ id: task.id, start, end })
+  }
+  const moveResize = (e: ReactPointerEvent<HTMLDivElement>, start: number) => {
+    if (resize) setResize({ ...resize, end: Math.max(start + 15, yToMin(e.clientY)) })
+  }
+  const endResize = (e: ReactPointerEvent<HTMLDivElement>, task: Task, start: number) => {
     if (!resize) return
-    const raw = yToMin(e.clientY)
-    const newEnd = Math.max(startMin + 15, raw)
-    setResize(prev => prev ? { ...prev, endMin: newEnd } : null)
-  }, [resize, yToMin])
-
-  // Up: persiste o novo end_at via API, recarrega o Meu Dia.
-  const handleResizeEnd = useCallback(async (
-    e: React.PointerEvent<HTMLDivElement>,
-    task: Task,
-    startMin: number,
-  ) => {
-    if (!resize) return
-    const raw = yToMin(e.clientY)
-    const newEnd = Math.max(startMin + 15, raw)
+    const end = Math.max(start + 15, yToMin(e.clientY))
     setResize(null)
-    if (!task.start_at) return
-
-    // Extrai a data local do start_at existente (evita mudar o dia ao persistir).
-    // "2026-06-26T14:00:00-03:00" → new Date(...).getDate() etc. → toISO → "2026-06-26"
-    const startDate = toISO(new Date(task.start_at))
-    const endAt = localISO(startDate, newEnd)
-
-    try {
-      await kaguyaApi.setTimeBlock(task.id, { start_at: task.start_at, end_at: endAt })
-      onChanged()
-    } catch {
-      toast?.('Não foi possível salvar a duração.', 'err')
-    }
-  }, [resize, yToMin, onChanged, toast])
+    if (task.start_at) onResize(task, localISO(today, end))
+  }
 
   return (
-    <div className="kg-timeline">
-      {/* Cabeçalho com título e toggle de calendários */}
-      <div className="kg-tl-header">
-        <div className="kg-timeline-title">Timeline do dia</div>
+    <section className="kn-tl" aria-label="Linha do dia">
+      <header className="kn-tl-head">
+        <h3 className="kn-h3">Linha do dia</h3>
         {sources.length > 0 && (
-          <div className="kg-tl-cal-toggle" ref={popRef}>
-            <button
-              className="kg-tl-cal-btn"
-              onClick={() => setShowCalPop(v => !v)}
-              title="Calendários visíveis"
-            >
-              <span className="kg-tl-cal-dots">
-                {sources.slice(0, 3).map((s) => (
-                  <span
-                    key={s.id}
-                    className="kg-tl-cal-dot"
-                    style={{
-                      background: s.visible !== false
-                        ? (s.color || '#4285F4')
-                        : 'var(--ink-5)',
-                    }}
-                  />
-                ))}
+          <div className="kn-tl-cals" ref={popRef}>
+            <button type="button" className="ds-btn ds-sm" aria-expanded={pop} aria-haspopup="true" onClick={() => setPop((v) => !v)}>
+              <span className="kn-tl-dots" aria-hidden="true">
+                {sources.slice(0, 3).map((s) => <i key={s.id} style={{ '--kn-cc': s.visible !== false ? s.color || 'var(--ds-accent)' : 'var(--ds-line)' } as CSSProperties} />)}
               </span>
-              Calendários
+              <span className="ds-lbl">Calendários</span>
             </button>
-            {showCalPop && (
-              <div className="kg-tl-cal-pop">
+            {pop && (
+              <div className="kn-tl-pop" role="group" aria-label="Calendários visíveis">
                 {sources.map((s) => (
-                  <label key={s.id} className="kg-tl-cal-item">
-                    <input
-                      type="checkbox"
-                      checked={s.visible !== false}
-                      onChange={(e) => onToggleCalendar(s.id, e.target.checked)}
-                    />
-                    <span
-                      className="kg-tl-cal-swatch"
-                      style={{ background: s.color || '#4285F4' }}
-                    />
-                    <span className="kg-tl-cal-name">{s.name}</span>
+                  <label key={s.id} className="kn-tl-calrow">
+                    <input type="checkbox" checked={s.visible !== false} onChange={(e) => onToggleCalendar(s.id, e.target.checked)} />
+                    <i style={{ '--kn-cc': s.color || 'var(--ds-accent)' } as CSSProperties} aria-hidden="true" />
+                    <span>{s.name}</span>
                   </label>
                 ))}
               </div>
             )}
           </div>
         )}
-      </div>
+      </header>
 
-      {/* Faixa de eventos de dia inteiro (acima da régua) */}
-      {allDayEvents.length > 0 && (
-        <div className="kg-tl-allday">
-          {allDayEvents.map((ev) => (
-            <span
-              key={ev.id}
-              className="kg-tl-allday-chip"
-              style={{ borderColor: ev.color || 'var(--ink-4)' }}
-              title={`${ev.calendar_name} — dia inteiro`}
-            >
-              {ev.title}
-            </span>
-          ))}
+      {allDay.length > 0 && (
+        <div className="kn-tl-allday">
+          {allDay.map((e) => <span key={e.id} className="kn-tl-chip" style={{ '--kn-cc': e.color || 'var(--ds-ink-4)' } as CSSProperties} title={`${e.calendar_name} — dia inteiro`}>{e.title}</span>)}
         </div>
       )}
 
-      {/* Régua de horas */}
-      <div className="kg-tl-body" ref={bodyRef} style={{ height: `${HOURS.length * 44}px` }}>
+      <div className="kn-tl-body" ref={bodyRef} style={{ height: `${HOURS.length * HOUR_PX}px` }}>
+        {HOURS.map((h) => <Hour key={h} h={h} />)}
 
-        {/* Faixas de hora — cada uma é um HourSlot droppable */}
-        {HOURS.map(h => (
-          <HourSlot key={h} h={h} totalHours={HOURS.length} />
-        ))}
-
-        {/* Lane esquerda: eventos do Google Calendar (read-only) */}
-        {timedEvents.map(ev => {
-          if (!ev.start) return null
-          const startMin = minuteOfDay(ev.start)
-          const endMin   = ev.end ? minuteOfDay(ev.end) : startMin + 30
-          const durMin   = Math.max(endMin - startMin, 15)  // mínimo de 15 min para legibilidade
-          const borderColor = ev.color || 'var(--ink-4)'
+        {timed.map((e) => {
+          if (!e.start) return null
+          const s = timeToMin(e.start)
+          const dur = Math.max((e.end ? timeToMin(e.end) : s + 30) - s, 15)
           return (
-            <div
-              key={ev.id}
-              className="kg-tl-slot event"
-              style={{
-                top: `${topPct(startMin)}%`,
-                height: `${heightPct(durMin)}%`,
-                position: 'absolute',
-                left: 36,
-                right: '50%',
-                marginRight: 2,
-                borderLeftColor: borderColor,
-              }}
-              title={`${ev.calendar_name}${ev.title !== ev.calendar_name ? ` — ${ev.title}` : ''}`}
-            >
-              <div style={{ fontWeight: 500, fontSize: 11, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                {ev.title}
-              </div>
-              <div className="kg-tl-slot-time">
-                {fmtTime(ev.start)}{ev.end ? `–${fmtTime(ev.end)}` : ''}
-              </div>
-              {/* Local do evento (spec 039) — link p/ Maps; stopPropagation p/ não brigar com o drag do bloco */}
-              {ev.location && (
-                <a
-                  className="kg-tl-slot-loc"
-                  href={mapsLinkFor(ev.location)}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  title={ev.location}
-                >
-                  {ev.location}
-                </a>
-              )}
+            <div key={e.id} className={`kn-tl-slot kn-tl-event${blocked.length > 0 ? ' kn-tl-half' : ''}${dur < TINY_MIN ? ' kn-tl-tiny' : ''}`} style={{ top: top(s), height: height(dur), '--kn-cc': e.color || 'var(--ds-ink-4)' } as CSSProperties} title={`${e.title} · ${minToLabel(s)}${e.end ? `–${minToLabel(timeToMin(e.end))}` : ''} · ${e.calendar_name}${e.location ? ` · ${e.location}` : ''}`}>
+              <span className="ds-mono">{minToLabel(s)}{e.end && dur >= TINY_MIN ? `–${minToLabel(timeToMin(e.end))}` : ''}</span>
+              <b>{e.title}</b>
+              {e.location && dur >= TINY_MIN && <a href={mapsLinkFor(e.location)} target="_blank" rel="noreferrer" title={e.location}>{e.location}</a>}
             </div>
           )
         })}
 
-        {/* Lane direita: blocos de tarefas com time-block */}
-        {blocked.map(task => {
-          if (!task.start_at) return null
-          const startMin = minuteOfDay(task.start_at)
-          // Se esta tarefa está sendo redimensionada, usa o endMin ao vivo (feedback imediato).
-          const liveEnd  = resize?.id === task.id ? resize.endMin : null
-          const endMin   = liveEnd ?? (task.end_at ? minuteOfDay(task.end_at) : startMin + (task.duration_min || 30))
-          const durMin   = endMin - startMin
+        {blocked.map((t) => {
+          const s = timeToMin(t.start_at)
+          const live = resize?.id === t.id ? resize.end : null
+          const end = live ?? (t.end_at ? timeToMin(t.end_at) : s + (t.duration_min || 30))
           return (
-            <div
-              key={task.id}
-              className="kg-tl-slot task"
-              style={{
-                top: `${topPct(startMin)}%`,
-                height: `${heightPct(durMin)}%`,
-                position: 'absolute',
-                left: timedEvents.length > 0 ? '50%' : 36,
-                right: 4,
-                marginLeft: timedEvents.length > 0 ? 2 : 0,
-              }}
-              onClick={() => onOpen(task)}
-              title={task.title}
-            >
-              <div style={{ fontWeight: 500, fontSize: 12, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                {task.title}
-              </div>
-              <div className="kg-tl-slot-time">
-                {fmtTime(task.start_at)}{task.end_at ? `–${fmtTime(task.end_at)}` : ''}
-              </div>
-
-              {/* Alça de resize — arrastar para ajustar a duração do bloco */}
+            <div key={t.id} className={`kn-tl-slot kn-tl-task${timed.length > 0 ? ' kn-tl-half' : ''}${end - s < TINY_MIN ? ' kn-tl-tiny' : ''}`} style={{ top: top(s), height: height(end - s) }} title={`${t.title} · ${minToLabel(s)}–${minToLabel(end)}`}>
+              <button type="button" className="kn-main" onClick={() => onOpen(t.id)}>
+                <span className="ds-mono">{minToLabel(s)}{end - s >= TINY_MIN ? `–${minToLabel(end)}` : ''}</span>
+                <b>{t.title}</b>
+              </button>
+              <IconButton icon="close" size={12} label={`Liberar o horário de ${t.title}`} onClick={() => onClearBlock(t)} />
               <div
-                className="kg-tl-resize"
-                onPointerDown={(e) => handleResizeStart(e, task, startMin, endMin)}
-                onPointerMove={(e) => handleResizeMove(e, startMin)}
-                onPointerUp={(e) => handleResizeEnd(e, task, startMin)}
+                className="kn-tl-resize"
+                role="separator"
+                aria-label={`Ajustar o fim de ${t.title}`}
+                onPointerDown={(e) => startResize(e, t, s, end)}
+                onPointerMove={(e) => moveResize(e, s)}
+                onPointerUp={(e) => endResize(e, t, s)}
               />
             </div>
           )
         })}
+        {blocked.length === 0 && timed.length === 0 && (
+          <p className="ds-hint kn-tl-empty"><Icon name="drag" size={12} /> Arraste uma tarefa do plano até uma hora para reservar o horário.</p>
+        )}
       </div>
-    </div>
+    </section>
   )
 }

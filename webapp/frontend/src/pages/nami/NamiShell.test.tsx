@@ -20,7 +20,7 @@ const api = vi.hoisted(() => ({
 vi.mock('./namiApi', () => ({ namiApi: api }))
 vi.mock('../komi/komiApi', () => ({ komiApi: { search: vi.fn(async () => ({ matches: [] })), create: vi.fn() } }))
 const createReminder = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', id: 1, duplicate: false })))
-vi.mock('../kaguya/kaguyaApi', () => ({ kaguyaApi: { createReminder } }))
+vi.mock('../kaguya/api', () => ({ kaguyaApi: { createReminder } }))
 
 import { NamiShell } from './NamiShell'
 

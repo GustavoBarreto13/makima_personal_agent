@@ -1,737 +1,274 @@
-// KaguyaShell — raiz do shell de tarefas (guia §1/§5). Orquestra: tweaks
-// (tema/acento/densidade/pmark/anim, persistidos), sidebar, navegação interna
-// por estado {view, param} (sem React Router), modais, busca e toast.
+// Kaguya · Tarefas — shell sobre o AppShell do Design System (spec 075).
+// Guarda a rota por hash (/tasks#lista/12/t/88), o espaço global (Tudo/Trabalho/Pessoal), os dados da sidebar e as
+// ações comuns (abrir a tarefa no painel, concluir com "Desfazer", nova tarefa), que as telas leem pelo contexto.
 
-import { useEffect, useState, useCallback, type CSSProperties } from 'react'
-import './kaguya.css'
-
-import type { Sidebar, Task, Tweaks, KaguyaView, Filter, Habit, Experiment, Goal, FocusSession } from './types'
-import { BUILTIN_TODAY_OVERDUE, GTD_BUILTINS, DATE_VIEWS, DATE_VIEW_IDS } from './types'
-import { kaguyaApi } from './kaguyaApi'
-
-import { SidebarNav } from './components/SidebarNav'
-import { TaskRow } from './components/TaskRow'
-import { Toast } from './components/Toast'
-import { TweaksPanel } from './TweaksPanel'
-import { TaskModal, type ColumnTarget } from './modals/TaskModal'
-import { ProjectModal } from './modals/ProjectModal'
-import { GroupModal } from './modals/GroupModal'
-import { FilterModal } from './modals/FilterModal'
-import { InboxProcessModal } from './modals/InboxProcessModal'
-import { WeeklyReviewModal } from './modals/WeeklyReviewModal'
-import { ContextsModal } from './modals/ContextsModal'
-import type { TaskContext } from './types'
-import { HabitModal } from './modals/HabitModal'
-import { ExperimentModal } from './modals/ExperimentModal'
-import { GoalModal } from './modals/GoalModal'
-import { FocusStartModal } from './modals/FocusStartModal'
-import { FocusCancelModal } from './modals/FocusCancelModal'
-import { FocusWidget } from './components/FocusWidget'
-import { TodayScreen } from './screens/TodayScreen'
-import { ListScreen } from './screens/ListScreen'
-import { KanbanScreen } from './screens/KanbanScreen'
-import { TrashScreen } from './screens/TrashScreen'
-import { ArchivedProjectsScreen } from './screens/ArchivedProjectsScreen'
-import { FilterScreen } from './screens/FilterScreen'
-import { DateViewScreen } from './screens/DateViewScreen'
-import { CalendarScreen } from './screens/CalendarScreen'
-import { HabitsScreen } from './screens/HabitsScreen'
-import { ExperimentsScreen } from './screens/ExperimentsScreen'
-import { ExperimentDetailScreen } from './screens/ExperimentDetailScreen'
-import { GoalsScreen } from './screens/GoalsScreen'
-import { GoalDetailScreen } from './screens/GoalDetailScreen'
-import { FocusScreen } from './screens/FocusScreen'
-import { EisenhowerScreen } from './screens/EisenhowerScreen'
-import { GroupBoardScreen } from './screens/GroupBoardScreen'
-import { GroupListScreen } from './screens/GroupListScreen'
-import { CommandPalette } from './components/CommandPalette'
-import { Icon } from './ui/Icons'
-import { taskFromParse } from '../../lib/parseTask'
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useNavigate } from 'react-router-dom'
+import '../../design'
+import { getAgent } from '../../design/core/agents'
+import { todayISO } from '../../design/core/format'
+import { useCommandProvider, type CommandProvider } from '../../design/headless/commands'
+import { usePrefs } from '../../design/headless/usePrefs'
+import { AppShell, Button, SegmentedControl, SettingRow, toast, type NavGroup } from '../../design'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { AGENT_TABS } from '../../lib/agentTabs'
+import { kaguyaApi, type Space } from './api'
+import { NewTaskModal } from './components/NewTaskModal'
+import { ScreenBoundary } from './components/ScreenBoundary'
+import { SearchModal } from './components/SearchModal'
+import { SideNav } from './components/SideNav'
+import { TaskDetailPanel } from './components/TaskDetailPanel'
+import { DEFAULT_PREFS, KaguyaContext, type KaguyaCtx, type KaguyaPrefs, type ManageActions, type NewTaskDefaults } from './context'
+import * as act from './lib/actions'
+import { DEFAULT_MOBILE_TABS, buildNav, navIdToRoute, routeToNavId, titleFor, type SpaceChoice } from './lib/nav'
+import { hashFor, routeFromHash, withTask, type Route } from './lib/routes'
+import { useLoad } from './lib/useLoad'
+import { DateScreen, FilterScreen, GroupListScreen, GtdScreen, ListScreen } from './screens/ListScreens'
+import { Archived, Logbook, Tags, Templates, Trash } from './screens/Records'
+import { DisplaySettings, Settings } from './screens/Settings'
+import { Stats } from './screens/Stats'
+import { FocusCancelModal, FocusStartModal, FocusWidget } from './components/FocusSession'
+import { ContextsModal, GroupModal, ProjectModal, SmartListModal } from './components/OrganizeModals'
+import { InboxWizard, WeeklyReviewModal } from './components/ReviewFlows'
+import { Calendar } from './screens/Calendar'
+import { Eisenhower } from './screens/Eisenhower'
+import { Focus } from './screens/Focus'
+import { Experiments, ExperimentDetail } from './screens/Experiments'
+import { GoalDetail, Goals } from './screens/Goals'
+import { Habits } from './screens/Habits'
+import { Organize } from './screens/Organize'
+import { GroupBoardScreen, KanbanScreen } from './screens/Kanban'
+import { Today } from './screens/Today'
+import type { Filter, FocusSession, Group, Project, Sidebar, Task } from './types'
+import './kaguya.css'
+import './legacy.css'
 
-// Tweaks padrão (acento azul, claro, confortável, traço, animações ligadas, variante agora).
-const DEFAULT_TWEAKS: Tweaks = { theme: 'light', accent: 'blue', density: 'confortavel', pmark: 'bar', anim: 'on', calVariant: 'agora' }
+const AGENT = getAgent('kaguya')
 
-// PALETTE_MAP — sobrescreve os tokens --kg* por acento (guia §2.4). null = default azul (CSS).
-const PALETTE_MAP: Record<Tweaks['accent'], Record<string, string> | null> = {
-  blue: null,
-  pink: { '--kg': 'oklch(0.64 0.21 4)', '--kg-deep': 'oklch(0.55 0.21 6)', '--kg-bright': 'oklch(0.74 0.18 2)', '--kg-tint': 'oklch(0.64 0.21 4 / 0.12)', '--kg-tint-2': 'oklch(0.64 0.21 4 / 0.22)' },
-  violet: { '--kg': 'oklch(0.60 0.20 292)', '--kg-deep': 'oklch(0.52 0.20 294)', '--kg-bright': 'oklch(0.70 0.17 290)', '--kg-tint': 'oklch(0.60 0.20 292 / 0.12)', '--kg-tint-2': 'oklch(0.60 0.20 292 / 0.22)' },
-  gold: { '--kg': 'oklch(0.74 0.13 85)', '--kg-deep': 'oklch(0.64 0.13 82)', '--kg-bright': 'oklch(0.82 0.12 88)', '--kg-tint': 'oklch(0.74 0.13 85 / 0.14)', '--kg-tint-2': 'oklch(0.74 0.13 85 / 0.24)' },
-}
+const ART_OPTIONS = [{ value: 'default', label: 'Padrão' }, { value: 'shuchiin', label: 'Shuchiin aristocrático' }]
+const NO_PROJECTS: Project[] = []
+const NO_GROUPS: Group[] = []
+const NO_FILTERS: Filter[] = []
+const NO_TASKS: Task[] = []
 
-// ── Memória de visão por lista/grupo (Lista × Kanban) ────────────────────────
-// Ao abrir uma lista/grupo pela sidebar, respeitamos a última visão deixada nela.
-// Guardamos 'list' | 'kanban' por id. Para listas: 'list'→view 'list', 'kanban'→'kanban'.
-// Para grupos: 'kanban'→board do grupo (view 'group'), 'list'→seções (view 'group-list').
-// Default (sem memória): lista abre em 'list'; grupo abre em 'group' (Kanban) — igual ao atual.
-type ViewMode = 'list' | 'kanban'
-const readViewMode = (kind: 'list' | 'group', id: number, dflt: ViewMode): ViewMode => {
-  try {
-    const v = localStorage.getItem(`kg:${kind}:view:${id}`)
-    return v === 'list' || v === 'kanban' ? v : dflt
-  } catch { return dflt }
-}
-const writeViewMode = (kind: 'list' | 'group', id: number, mode: ViewMode) => {
-  try { localStorage.setItem(`kg:${kind}:view:${id}`, mode) } catch { /* ignore */ }
-}
+type Dialog =
+  | { kind: 'new'; defaults?: NewTaskDefaults } | { kind: 'search'; q: string }
+  | { kind: 'project'; project?: Project; groupId?: number } | { kind: 'group'; group?: Group } | { kind: 'filter'; filter?: Filter } | { kind: 'contexts' } | { kind: 'inbox-wizard' } | { kind: 'weekly-review' }
+  | { kind: 'focus'; task?: Task; habitId?: number } | { kind: 'focus-cancel' } | null
+
+const SPACE_OPTIONS: { value: SpaceChoice; label: string; icon: 'apps' | 'work' | 'personal' }[] = [
+  { value: 'all', label: 'Tudo', icon: 'apps' }, { value: 'work', label: 'Trabalho', icon: 'work' }, { value: 'personal', label: 'Pessoal', icon: 'personal' },
+]
 
 export function KaguyaShell() {
   useDocumentTitle(AGENT_TABS.kaguya.title, AGENT_TABS.kaguya.icon)
+  const navigate = useNavigate()
+  const today = useMemo(() => todayISO(), [])
+  const [prefs, setPrefs] = usePrefs<KaguyaPrefs>('kaguya', { ...DEFAULT_PREFS, art: AGENT.art ?? DEFAULT_PREFS.art })
+  const [route, setRoute] = useState<Route>(() => routeFromHash(window.location.hash))
+  const [rev, setRev] = useState(0)
+  const [dialog, setDialog] = useState<Dialog>(null)
+  const reload = useCallback(() => setRev((n) => n + 1), [])
+  const space: Space | undefined = prefs.space === 'all' ? undefined : prefs.space
 
-  // ── Tweaks (carregados do localStorage) ──
-  const [tweaks, setTweaks] = useState<Tweaks>(() => {
-    try { return { ...DEFAULT_TWEAKS, ...JSON.parse(localStorage.getItem('kg-tweaks') || '{}') } }
-    catch { return DEFAULT_TWEAKS }
-  })
-  const patchTweaks = (patch: Partial<Tweaks>) => {
-    const next = { ...tweaks, ...patch }
-    setTweaks(next)
-    localStorage.setItem('kg-tweaks', JSON.stringify(next))
-  }
+  const { state: sidebarState, retry: retrySidebar } = useLoad(() => kaguyaApi.sidebar(), [rev])
+  const sidebar: Sidebar | null = sidebarState.status === 'ok' ? sidebarState.data : null
+  const projects = sidebar?.projects ?? NO_PROJECTS
+  const groups = sidebar?.groups ?? NO_GROUPS
+  const filters = sidebar?.filters ?? NO_FILTERS
+  const { state: countsState } = useLoad(() => kaguyaApi.viewCounts(space), [rev, space])
+  // Índice local das tarefas abertas: alimenta a paleta (Ctrl+K), que busca de forma síncrona.
+  const { state: indexState } = useLoad(() => kaguyaApi.viewTasks('all', space), [rev, space])
+  const index = indexState.status === 'ok' ? indexState.data : NO_TASKS
 
-  // ── Dados e navegação ──
-  const [sidebar, setSidebar] = useState<Sidebar | null>(null)
-  const [view, setView] = useState<KaguyaView>('today')
-  const [param, setParam] = useState<number | null>(null)
-  const [reloadKey, setReloadKey] = useState(0)
+  const projectNames = useMemo(() => Object.fromEntries(projects.map((p) => [p.id, p.name])), [projects])
+  const inboxId = projects.find((p) => p.is_inbox)?.id
 
-  // ── UI ──
-  const [tweaksOpen, setTweaksOpen] = useState(false)
-  // taskModal carrega o estado do TaskModal compartilhado. O campo `defaults` é usado ao abrir
-  // em modo criar a partir do calendário: pré-preenche data, hora e duração do slot arrastado.
-  const [taskModal, setTaskModal] = useState<{
-    mode: 'create' | 'edit'
-    task?: Task
-    projectId?: number | null
-    defaults?: {
-      dueDate?: string; dueTime?: string; duration?: number
-      columnId?: number                 // Kanban de lista: cria direto nesta coluna
-      columnTargets?: ColumnTarget[]     // Kanban de grupo: alvos do <select> de Lista
-      pickMemoryKey?: string             // localStorage p/ lembrar a lista escolhida
-    }
-  } | null>(null)
-  const [projectModal, setProjectModal] = useState<{ mode: 'create' | 'edit'; project?: import('./types').Project } | null>(null)
-  const [groupModal, setGroupModal] = useState<{ mode: 'create' | 'edit'; group?: import('./types').Group } | null>(null)
-  const [filterModal, setFilterModal] = useState<{ mode: 'create' | 'edit'; filter?: Filter } | null>(null)
-  const [habitModal, setHabitModal] = useState<{ mode: 'create' | 'edit'; habit?: Habit } | null>(null)
-  const [experimentModal, setExperimentModal] = useState<{ mode: 'create' | 'edit'; experiment?: Experiment; goalId?: number } | null>(null)
-  const [goalModal, setGoalModal] = useState<{ mode: 'create' | 'edit'; goal?: Goal } | null>(null)
-  const [inboxProcessOpen, setInboxProcessOpen] = useState(false)  // wizard de clarify do inbox — spec 034
-  const [contextsModalOpen, setContextsModalOpen] = useState(false)  // CRUD de contextos — spec 034
-  const [weeklyReviewOpen, setWeeklyReviewOpen] = useState(false)  // wizard da revisão semanal — spec 035
-  const [contexts, setContexts] = useState<TaskContext[]>([])         // p/ o seletor no InboxProcessModal
-  const loadContexts = useCallback(async () => {
-    try { setContexts(await kaguyaApi.listContexts()) } catch { /* silencioso */ }
+  // Voltar/avançar do navegador (popstate) e links com #… (hashchange) trocam de tela.
+  useEffect(() => {
+    const onHash = () => setRoute(routeFromHash(window.location.hash))
+    window.addEventListener('hashchange', onHash)
+    window.addEventListener('popstate', onHash)
+    return () => { window.removeEventListener('hashchange', onHash); window.removeEventListener('popstate', onHash) }
   }, [])
-  useEffect(() => { loadContexts() }, [loadContexts])
-  const [paletteOpen, setPaletteOpen] = useState(false)
-  const [toast, setToast] = useState<{ msg: string; kind?: 'ok' | 'err' } | null>(null)
-  const [search, setSearch] = useState('')
-  const [searchResults, setSearchResults] = useState<Task[] | null>(null)
 
-  // Foco / Pomodoro (spec 037) — activeFocus é buscado no mount e a cada início de sessão;
-  // o widget deriva o countdown localmente entre buscas (nunca conta do zero na tela).
+  // Navegar grava no histórico (pushState): o Voltar volta à tela anterior.
+  const goto = useCallback((to: Route) => {
+    setRoute(to)
+    const h = `#${hashFor(to)}`
+    if (window.location.hash !== h) window.history.pushState(window.history.state, '', `${window.location.pathname}${h}`)
+  }, [])
+  const openTask = useCallback((id: number | undefined) => goto(withTask(route, id)), [goto, route])
+
+  // Foco (Pomodoro): a sessão ativa vive no servidor; aqui só se lê (ao montar, ao iniciar e a cada 30s, para pegar
+  // a que o servidor fechou por abandono). O relógio do widget deriva de `started_at`, nunca do zero.
   const [activeFocus, setActiveFocus] = useState<FocusSession | null>(null)
-  const [focusStartTarget, setFocusStartTarget] = useState<{ task?: Task; habitId?: number } | 'closed'>('closed')
-  // spec 062: "Desistir" no widget abre este modal (motivo opcional) em vez de cancelar direto.
-  const [focusCancelOpen, setFocusCancelOpen] = useState(false)
   const loadActiveFocus = useCallback(async () => {
-    try { setActiveFocus(await kaguyaApi.focus.active()) } catch { /* silencioso — widget só some */ }
+    try { setActiveFocus(await kaguyaApi.focus.active()) } catch { /* o widget só some */ }
   }, [])
-  useEffect(() => { loadActiveFocus() }, [loadActiveFocus])
-  // Poll de segurança (R16/T016): ressincroniza a cada 30s enquanto há sessão ativa — cobre
-  // o caso de a sessão ter sido fechada por abandono (ver tools_focus._close_if_abandoned).
+  useEffect(() => { void loadActiveFocus() }, [loadActiveFocus])
   useEffect(() => {
     if (!activeFocus) return
-    const id = setInterval(loadActiveFocus, 30000)
+    const id = setInterval(() => { void loadActiveFocus() }, 30000)
     return () => clearInterval(id)
   }, [activeFocus, loadActiveFocus])
-
-  const showToast = useCallback((msg: string, kind: 'ok' | 'err' = 'ok') => setToast({ msg, kind }), [])
-  const bump = () => setReloadKey((k) => k + 1)
-
-  // Busca a sidebar (lista, contagens). Re-chamada após mutações estruturais.
-  const loadSidebar = useCallback(async () => {
-    try { setSidebar(await kaguyaApi.sidebar()) } catch { showToast('Falha ao carregar a sidebar.', 'err') }
-  }, [showToast])
-  useEffect(() => { loadSidebar() }, [loadSidebar])
-
-  const inboxId = sidebar?.projects.find((p) => p.is_inbox)?.id ?? null
-
-  // Navegação: views que precisam de uma lista usam o Inbox por padrão quando sem param.
-  // Exceção: o Kanban tenta primeiro restaurar a última lista visitada (persistida em
-  // localStorage pela chave 'kaguya:kanban:last-list'). Se a lista salva não existir mais
-  // na sidebar (lista excluída/arquivada), cai no Inbox como fallback.
-  const navigate = (v: KaguyaView, p: number | null = null) => {
-    setSearchResults(null)
-    if (v === 'kanban' && p == null) {
-      // Lê a última lista usada no Kanban pelo menu global.
-      const stored = Number(localStorage.getItem('kaguya:kanban:last-list'))
-      const projs = sidebar?.projects ?? []
-      // Só usa se a lista ainda existir (evita abrir board de lista excluída).
-      p = (stored && projs.some(pr => pr.id === stored)) ? stored : inboxId
-    } else if (v === 'list' && p == null) {
-      // Lista sem param explícito → Inbox (comportamento original).
-      p = inboxId
-    }
-    setView(v); setParam(p)
+  const manage = useMemo<ManageActions>(() => ({
+    project: (project, groupId) => setDialog({ kind: 'project', project, groupId }),
+    group: (group) => setDialog({ kind: 'group', group }),
+    filter: (filter) => setDialog({ kind: 'filter', filter }),
+    contexts: () => setDialog({ kind: 'contexts' }),
+    inbox: () => setDialog({ kind: 'inbox-wizard' }),
+    review: () => setDialog({ kind: 'weekly-review' }),
+  }), [])
+  const startFocus = useCallback((target: { task?: Task; habitId?: number }) => setDialog({ kind: 'focus', ...target }), [])
+  const finishFocus = async () => {
+    if (!activeFocus) return
+    try {
+      const r = await kaguyaApi.focus.finish(activeFocus.id)
+      setActiveFocus(null)
+      reload()
+      toast(r.session?.habit_checked_in ? 'Sessão concluída — check-in do hábito registrado.' : 'Sessão concluída.', { tone: 'success' })
+    } catch (e) { toast(e instanceof Error && !/^HTTP \d+$/.test(e.message) ? e.message : 'Não foi possível concluir a sessão.', { tone: 'error' }) }
   }
 
-  // Abertura pela sidebar: respeita a última visão (Lista × Kanban) deixada na lista/grupo.
-  // Só intercepta cliques em lista/grupo; demais views (hoje, filtros, lixeira…) passam direto.
-  // Os toggles do topbar continuam chamando navigate() direto (escolha explícita do usuário).
-  const openFromSidebar = (v: KaguyaView, p: number | null = null) => {
-    if (v === 'list' && p != null) {
-      navigate(readViewMode('list', p, 'list') === 'kanban' ? 'kanban' : 'list', p)
-    } else if (v === 'group' && p != null) {
-      navigate(readViewMode('group', p, 'kanban') === 'list' ? 'group-list' : 'group', p)
-    } else {
-      navigate(v, p)
+  const toggleComplete = useCallback((t: Task) => act.toggleComplete({ reload }, t), [reload])
+  const newTask = useCallback((defaults?: NewTaskDefaults) => setDialog({ kind: 'new', defaults }), [])
+
+  const ctx = useMemo<KaguyaCtx>(() => ({
+    rev, reload, today, route, goto, openTask, prefs, setPrefs, space, projects, groups, filters, sidebarState, retrySidebar,
+    projectNames, inboxId, newTask, manage, startFocus, toggleComplete,
+  }), [rev, reload, today, route, goto, openTask, prefs, setPrefs, space, projects, groups, filters, sidebarState, retrySidebar, projectNames, inboxId, newTask, manage, startFocus, toggleComplete])
+
+  // Paleta Ctrl+K: busca tarefas abertas no índice local e ABRE a escolhida (Enter nunca cria — o bug do shell antigo).
+  const provider = useMemo<CommandProvider>(() => ({
+    id: 'kaguya.tasks',
+    search: (q) => {
+      const n = q.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+      if (n.length < 2) return []
+      return index
+        .filter((t) => `${t.title} ${t.project_name ?? ''}`.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().includes(n))
+        .slice(0, 8)
+        .map((t) => ({ id: `task:${t.id}`, label: t.project_name ? `${t.title} · ${t.project_name}` : t.title, group: 'Tarefas', icon: 'task', run: () => openTask(t.id) }))
+    },
+  }), [index, openTask])
+  useCommandProvider(provider)
+
+  const nav: NavGroup[] = useMemo(() => buildNav({
+    projects, groups, filters, counts: countsState.status === 'ok' ? countsState.data : null,
+    space: prefs.space, hidden: prefs.hiddenNav, pinned: prefs.pinnedNav,
+  }), [projects, groups, filters, countsState, prefs.space, prefs.hiddenNav, prefs.pinnedNav])
+
+  const screen = ((): ReactElement => {
+    switch (route.view) {
+      case 'today': return <Today />
+      case 'list': return route.id !== undefined ? <ListScreen id={route.id} /> : <Today />
+      case 'date': return <DateScreen dateKey={(route.key ?? 'all') as Parameters<typeof DateScreen>[0]['dateKey']} />
+      case 'gtd': return <GtdScreen gtdKey={route.key ?? 'next-actions'} />
+      case 'filter': return route.id !== undefined ? <FilterScreen id={route.id} /> : <Today />
+      case 'kanban': return route.id !== undefined ? <KanbanScreen projectId={route.id} /> : <Today />
+      case 'group-list': return route.id !== undefined ? <GroupListScreen id={route.id} /> : <Today />
+      case 'group': return route.id !== undefined ? <GroupBoardScreen groupId={route.id} /> : <Today />
+      case 'eisenhower': return <Eisenhower />
+      case 'calendar': return <Calendar />
+      case 'focus': return <Focus />
+      case 'habits': return <Habits />
+      case 'organize': return <Organize />
+      case 'goals': return route.id !== undefined ? <GoalDetail id={route.id} /> : <Goals />
+      case 'experiments': return route.id !== undefined ? <ExperimentDetail id={route.id} /> : <Experiments />
+      case 'stats': return <Stats />
+      case 'logbook': return <Logbook />
+      case 'trash': return <Trash />
+      case 'archived': return <Archived />
+      case 'templates': return <Templates />
+      case 'tags': return <Tags />
+      case 'settings': return <Settings />
+      default: return <Today />
     }
-  }
+  })()
 
-  // Atalhos globais de teclado (fatia 018):
-  //   ⌘K / Ctrl+K  → abre a Command Palette (sempre, mesmo dentro de input)
-  //   C             → nova tarefa (só fora de inputs — SC-003)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // ⌘K / Ctrl+K — abre a palette em qualquer contexto (preventDefault evita conflito com browser).
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault()
-        setPaletteOpen(true)
-        return
-      }
-      // Atalhos de letra só fora de campos de texto (SC-003).
-      const tag = (e.target as HTMLElement)?.tagName
-      const editable = (e.target as HTMLElement)?.isContentEditable
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || editable) return
-      if (e.key === 'c' || e.key === 'C') { e.preventDefault(); openNewTask() }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, param, inboxId])
-
-  const openNewTask = () => setTaskModal({ mode: 'create', projectId: view === 'list' ? param : null })
-  const afterSave = () => { loadSidebar(); bump() }
-
-  // Persiste a última lista visitada no Kanban global (menu "Kanban" da sidebar).
-  // Isso faz o menu reabrir no mesmo board da última vez, em vez de sempre cair no Inbox.
-  useEffect(() => {
-    if (view === 'kanban' && param != null) {
-      localStorage.setItem('kaguya:kanban:last-list', String(param))
-    }
-  }, [view, param])
-
-  // Lembra a última visão (Lista × Kanban) de cada lista/grupo, para a sidebar reabrir nela.
-  useEffect(() => {
-    if (param == null) return
-    if (view === 'list') writeViewMode('list', param, 'list')
-    else if (view === 'kanban') writeViewMode('list', param, 'kanban')
-    else if (view === 'group') writeViewMode('group', param, 'kanban')
-    else if (view === 'group-list') writeViewMode('group', param, 'list')
-  }, [view, param])
-
-  const runSearch = async () => {
-    if (!search.trim()) { setSearchResults(null); return }
-    try { setSearchResults(await kaguyaApi.search(search.trim())) } catch { showToast('Falha na busca.', 'err') }
-  }
-
-  // Título e nome da lista atual.
-  const project = param != null ? sidebar?.projects.find((p) => p.id === param) : undefined
-  // Smart-list atual (view='filter'): built-ins (id negativo) têm nome fixo; as salvas (id
-  // positivo) vêm da sidebar e são editáveis.
-  const currentFilter = view === 'filter' && param != null && param > 0
-    ? sidebar?.filters.find((f) => f.id === param) : undefined
-  const gtdBuiltin = view === 'filter' ? GTD_BUILTINS.find((b) => b.id === param) : undefined
-  const filterName = param === BUILTIN_TODAY_OVERDUE
-    ? 'Hoje + Vencidas'
-    : (gtdBuiltin?.name ?? currentFilter?.name ?? 'Smart list')
-  // Nome do grupo ativo (para view='group' e 'group-list'): busca nos grupos da sidebar.
-  const currentGroup = (view === 'group' || view === 'group-list') && param != null
-    ? sidebar?.groups.find(g => g.id === param) : undefined
-  // Views fixas de mercado (spec 034): resolve o nome pelo sentinel numérico do param.
-  const dateViewKey = view === 'date'
-    ? (Object.entries(DATE_VIEW_IDS).find(([, id]) => id === param)?.[0])
-    : undefined
-  const titleMap: Record<KaguyaView, string> = {
-    today: 'Meu Dia', kanban: project?.name ?? 'Kanban', list: project?.name ?? 'Lista',
-    calendar: 'Calendário', eisenhower: 'Eisenhower', habits: 'Hábitos',
-    experiments: 'Experimentos', goals: 'Metas', focus: 'Foco', trash: 'Lixeira', archived: 'Arquivadas',
-    filter: filterName,
-    // 'group': nome do grupo no Kanban agregado.
-    group: currentGroup?.name ?? 'Grupo',
-    // 'group-list': mesmo nome do grupo mas na visão de Lista em seções.
-    'group-list': currentGroup?.name ?? 'Grupo',
-    date: DATE_VIEWS.find((v) => v.key === dateViewKey)?.name ?? 'View',
-  }
-
-  // Estilo do root: data-attrs (tema/densidade/pmark/anim) + acento via PALETTE_MAP.
-  const animOff = tweaks.anim === 'off'
-  const rootStyle: CSSProperties = { ...(PALETTE_MAP[tweaks.accent] ?? {}) } as CSSProperties
-
-  // Conteúdo da área principal.
-  const renderMain = () => {
-    if (searchResults) {
-      return (
-        <div className="kg-page">
-          <h1 className="kg-page-title"><Icon name="search" size={22} /> Busca</h1>
-          <div className="kg-page-sub">{searchResults.length} resultado(s) para "{search}"</div>
-          <div className="kg-list">
-            {searchResults.map((t) => (
-              <TaskRow key={t.id} task={t} showProject onToggle={async (task) => { await kaguyaApi.complete(task.id); runSearch(); bump() }} onOpen={(task) => setTaskModal({ mode: 'edit', task })} onRename={async (task, title) => { await kaguyaApi.updateTask(task.id, { title }); runSearch() }} />
-            ))}
-          </div>
-        </div>
-      )
-    }
-    if (view === 'today') return <TodayScreen projects={sidebar?.projects ?? []} reloadKey={reloadKey} onChanged={loadSidebar} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} toast={showToast} />
-    if (view === 'list' && param != null) return <ListScreen projectId={param} projectName={titleMap.list} projectColor={project?.color} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onNewTask={(pid) => setTaskModal({ mode: 'create', projectId: pid })} toast={showToast} />
-    if (view === 'kanban' && param != null) return <KanbanScreen projectId={param} projectName={titleMap.kanban} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onChanged={loadSidebar} toast={showToast} onAddTask={(pid, cid) => setTaskModal({ mode: 'create', projectId: pid, defaults: { columnId: cid } })} projects={sidebar?.projects ?? []} groups={sidebar?.groups ?? []} />
-    if (view === 'group' && param != null) return <GroupBoardScreen groupId={param} reloadKey={reloadKey} onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })} onChanged={loadSidebar} toast={showToast} onAddTask={(targets) => {
-      const memKey = `kaguya:group:add-list:${param}`
-      const remembered = Number(localStorage.getItem(memKey))
-      const pick = targets.find(t => t.projectId === remembered) ?? targets[0]
-      setTaskModal({ mode: 'create', projectId: pick?.projectId ?? null, defaults: { columnTargets: targets, pickMemoryKey: memKey } })
-    }} />
-    // Visão de Lista do grupo: seções empilhadas, uma por lista-filha.
-    // `lists` é filtrado do sidebar para apenas as listas que pertencem ao grupo.
-    if (view === 'group-list' && param != null) return (
-      <GroupListScreen
-        groupId={param}
-        groupName={currentGroup?.name ?? 'Grupo'}
-        lists={(sidebar?.projects ?? [])
-          .filter(p => p.group_id === param)
-          .map(p => ({ id: p.id, name: p.name, color: p.color, icon: p.icon }))}
-        reloadKey={reloadKey}
-        onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
-        onNewTask={(pid) => setTaskModal({ mode: 'create', projectId: pid })}
-        toast={showToast}
-      />
-    )
-    if (view === 'calendar') return (
-      <CalendarScreen
-        reloadKey={reloadKey}
-        onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
-        // Arrasto em espaço vazio → abre o modal de criação pré-preenchido com o slot.
-        // O TaskModal usa dueDate+dueTime+duration para montar o time-block no save().
-        onCreateAt={(dueDate, dueTime, duration) =>
-          setTaskModal({ mode: 'create', defaults: { dueDate, dueTime, duration } })}
-        toast={showToast}
-        variant={tweaks.calVariant}
-      />
-    )
-    if (view === 'date' && param != null) return (
-      <DateViewScreen
-        viewId={param}
-        reloadKey={reloadKey}
-        onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
-        toast={showToast}
-      />
-    )
-    if (view === 'filter' && param != null) return (
-      <FilterScreen
-        filterId={param}
-        filterName={filterName}
-        reloadKey={reloadKey}
-        onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
-        onEditFilter={currentFilter ? () => setFilterModal({ mode: 'edit', filter: currentFilter }) : undefined}
-        toast={showToast}
-      />
-    )
-    if (view === 'trash') return <TrashScreen toast={showToast} />
-    if (view === 'archived') return (
-      <ArchivedProjectsScreen
-        toast={showToast}
-        onEditProject={(ap) => setProjectModal({
-          mode: 'edit',
-          // ArchivedProject não tem todos os campos de Project (não vem na sidebar) —
-          // completa com defaults inertes só para o ProjectModal poder editar/excluir.
-          project: {
-            id: ap.id, name: ap.name, group_id: ap.group_id, color: ap.color, icon: ap.icon,
-            is_inbox: false, position: 0, has_board: false, open_count: ap.task_count,
-            context: 'personal', archived_at: ap.archived_at,
-          },
-        })}
-      />
-    )
-    if (view === 'habits') return (
-      <HabitsScreen
-        reloadKey={reloadKey}
-        onNewHabit={() => setHabitModal({ mode: 'create' })}
-        onEditHabit={(h) => setHabitModal({ mode: 'edit', habit: h })}
-        // Abre o FocusStartModal já travado neste hábito (spec 062).
-        onFocusHabit={(h) => setFocusStartTarget({ habitId: h.id })}
-        toast={showToast}
-      />
-    )
-    // Experimentos: sem param → lista; com param → detalhe do experimento (spec 029).
-    if (view === 'experiments' && param == null) return (
-      <ExperimentsScreen
-        reloadKey={reloadKey}
-        onNew={() => setExperimentModal({ mode: 'create' })}
-        onOpenDetail={(id) => navigate('experiments', id)}
-        toast={showToast}
-      />
-    )
-    if (view === 'experiments' && param != null) return (
-      <ExperimentDetailScreen
-        experimentId={param}
-        reloadKey={reloadKey}
-        onBack={() => navigate('experiments')}
-        onEdit={(exp) => setExperimentModal({ mode: 'edit', experiment: exp })}
-        toast={showToast}
-      />
-    )
-    // Metas: sem param → lista; com param → detalhe da meta (spec 030).
-    if (view === 'goals' && param == null) return (
-      <GoalsScreen
-        reloadKey={reloadKey}
-        onNew={() => setGoalModal({ mode: 'create' })}
-        onOpenDetail={(id) => navigate('goals', id)}
-        toast={showToast}
-      />
-    )
-    if (view === 'goals' && param != null) return (
-      <GoalDetailScreen
-        goalId={param}
-        reloadKey={reloadKey}
-        onBack={() => navigate('goals')}
-        onEdit={(g) => setGoalModal({ mode: 'edit', goal: g })}
-        // FR-011: cria um experimento já vinculado a esta meta.
-        onNewLinkedExperiment={(goalId) => setExperimentModal({ mode: 'create', goalId })}
-        toast={showToast}
-      />
-    )
-    if (view === 'focus') return <FocusScreen reloadKey={reloadKey} toast={showToast} />
-    if (view === 'eisenhower') return (
-      <EisenhowerScreen
-        projects={sidebar?.projects ?? []}
-        reloadKey={reloadKey}
-        onChanged={() => { loadSidebar(); bump() }}
-        onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
-        toast={showToast}
-      />
-    )
-    // Views ainda não construídas (fases futuras)
-    return (
-      <div className="kg-page"><div className="kg-empty">
-        <div className="kg-empty-title">Em breve</div>
-      </div></div>
-    )
-  }
+  // Detalhe: ao lado (padrão) ou centralizado. Quadros e calendário ocupam a tela toda, então sempre abrem centralizado.
+  const centered = prefs.detailMode === 'center' || route.view === 'kanban' || route.view === 'group' || route.view === 'calendar'
+  const panelOpen = route.taskId !== undefined && !centered
 
   return (
-    <div
-      className="kg-app"
-      data-theme={tweaks.theme}
-      data-density={tweaks.density}
-      data-pmark={tweaks.pmark}
-      data-anim={animOff ? 'off' : 'on'}
-      data-variant={tweaks.calVariant}
-      style={rootStyle}
-    >
-      <div className="kg-shell">
-        <SidebarNav
-          sidebar={sidebar}
-          view={view}
-          param={param}
-          onNavigate={openFromSidebar}
-          onNewTask={openNewTask}
-          onNewProject={() => setProjectModal({ mode: 'create' })}
-          onNewGroup={() => setGroupModal({ mode: 'create' })}
-          onEditGroup={(group) => setGroupModal({ mode: 'edit', group })}
-          onNewFilter={() => setFilterModal({ mode: 'create' })}
-          onProcessInbox={() => setInboxProcessOpen(true)}
-          onManageContexts={() => setContextsModalOpen(true)}
-          onOpenWeeklyReview={() => setWeeklyReviewOpen(true)}
-          onOpenTweaks={() => setTweaksOpen(true)}
-          onReordered={loadSidebar}
-          toast={showToast}
-        />
-
-        <div className="kg-main">
-          <div className="kg-topbar">
-            <span className="kg-topbar-title">{titleMap[view]}</span>
-
-            {/* Seletor de board: aparece no Kanban (por-lista), board de Grupo e Lista do grupo.
-                Valores com prefixo: "l:<id>" = lista, "g:<id>" = grupo.
-                Listas sem grupo aparecem no topo; grupos usam <optgroup> com uma
-                opção "📋 Board do grupo" + as listas filhas abaixo. */}
-            {(view === 'kanban' || view === 'group' || view === 'group-list') && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="kg-field-label">Board</span>
-                <select
-                  className="kg-select"
-                  style={{ width: 'auto', minWidth: 160 }}
-                  value={(view === 'group' || view === 'group-list') ? `g:${param}` : `l:${param ?? ''}`}
-                  onChange={e => {
-                    const v = e.target.value
-                    // Prefixo "g:" → board do grupo; "l:" → kanban da lista.
-                    if (v.startsWith('g:')) navigate('group', Number(v.slice(2)))
-                    else navigate('kanban', Number(v.slice(2)))
-                  }}
-                >
-                  {/* Inbox e listas sem grupo (sem <optgroup>) */}
-                  {(sidebar?.projects ?? [])
-                    .filter(p => p.group_id == null)
-                    .map(proj => (
-                      <option key={`l:${proj.id}`} value={`l:${proj.id}`}>
-                        {proj.icon ? `${proj.icon} ` : ''}{proj.name}
-                      </option>
-                    ))}
-                  {/* Grupos: cada um vira um <optgroup> com o board do grupo + listas */}
-                  {(sidebar?.groups ?? []).map(g => {
-                    const inGroup = (sidebar?.projects ?? []).filter(p => p.group_id === g.id)
-                    return (
-                      <optgroup key={g.id} label={g.name}>
-                        {/* Opção para abrir o board agregado do grupo */}
-                        <option value={`g:${g.id}`}>📋 Board do grupo</option>
-                        {inGroup.map(proj => (
-                          <option key={`l:${proj.id}`} value={`l:${proj.id}`}>
-                            {proj.icon ? `${proj.icon} ` : ''}{proj.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )
-                  })}
-                </select>
-              </div>
-            )}
-            {/* alternador Lista ⇄ Kanban quando se está numa lista individual */}
-            {(view === 'list' || view === 'kanban') && param != null && (
-              <div className="kg-segment" style={{ width: 180 }}>
-                <button className={`kg-seg-opt${view === 'list' ? ' active' : ''}`} onClick={() => navigate('list', param)}>Lista</button>
-                <button className={`kg-seg-opt${view === 'kanban' ? ' active' : ''}`} onClick={() => navigate('kanban', param)}>Kanban</button>
-              </div>
-            )}
-            {/* alternador Lista ⇄ Kanban quando se está num grupo (board ou lista-de-grupo) */}
-            {(view === 'group' || view === 'group-list') && param != null && (
-              <div className="kg-segment" style={{ width: 180 }}>
-                <button
-                  className={`kg-seg-opt${view === 'group-list' ? ' active' : ''}`}
-                  onClick={() => navigate('group-list', param)}
-                >Lista</button>
-                <button
-                  className={`kg-seg-opt${view === 'group' ? ' active' : ''}`}
-                  onClick={() => navigate('group', param)}
-                >Kanban</button>
-              </div>
-            )}
-            {/* editar a lista atual */}
-            {view === 'list' && project && !project.is_inbox && (
-              <button className="kg-icon-btn" onClick={() => setProjectModal({ mode: 'edit', project })} aria-label="Editar lista"><Icon name="settings" size={15} /></button>
-            )}
-
-            {/* Foco avulso (spec 037) — sem tarefa vinculada. Some enquanto uma sessão já está ativa. */}
-            {!activeFocus && (
-              <button className="kg-icon-btn" onClick={() => setFocusStartTarget({})} aria-label="Foco avulso" title="Foco avulso">
-                <Icon name="clock" size={15} />
-              </button>
-            )}
-
-            <div className="kg-search">
-              <Icon name="search" size={15} />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') runSearch(); if (e.key === 'Escape') { setSearch(''); setSearchResults(null) } }}
-                placeholder="Buscar tarefas…"
-              />
-            </div>
+    <KaguyaContext.Provider value={ctx}>
+      <AppShell
+        agent={{ id: 'kaguya', name: AGENT.name, subtitle: 'Tarefas · Agenda', portrait: AGENT.portrait }}
+        nav={nav}
+        navSlot={<SideNav counts={countsState.status === 'ok' ? countsState.data : null} onNavigate={(id) => goto(navIdToRoute(id))} />}
+        active={routeToNavId(route)}
+        onNavigate={(id) => goto(navIdToRoute(id))}
+        mobileTabs={prefs.mobileTabs.length ? prefs.mobileTabs : DEFAULT_MOBILE_TABS}
+        primary={{ label: 'Nova tarefa', icon: 'add', key: 'n', onClick: () => newTask({ projectId: route.view === 'list' ? route.id : undefined }) }}
+        title={titleFor(route, projects, groups, filters)}
+        subtitle={prefs.space === 'all' ? undefined : prefs.space === 'work' ? 'Espaço: Trabalho' : 'Espaço: Pessoal'}
+        search={{ placeholder: 'Buscar tarefas…', onSubmit: (q) => setDialog({ kind: 'search', q }) }}
+        onGoAgent={(to) => navigate(to)}
+        art={{ value: prefs.art, options: ART_OPTIONS, onChange: (art) => setPrefs({ art }) }}
+        artValue={prefs.art}
+        topbarExtra={
+          <SegmentedControl
+            label="Espaço"
+            value={prefs.space}
+            options={SPACE_OPTIONS}
+            onChange={(v) => setPrefs({ space: v })}
+          />
+        }
+        commands={[
+          { id: 'kaguya.new', label: 'Nova tarefa', icon: 'add', keywords: 'criar adicionar tarefa', run: () => newTask() },
+          { id: 'kaguya.list.new', label: 'Nova lista', icon: 'folder', keywords: 'criar lista projeto', run: () => manage.project() },
+          { id: 'kaguya.group.new', label: 'Novo grupo', icon: 'folder-open', keywords: 'criar grupo pasta', run: () => manage.group() },
+          { id: 'kaguya.filter.new', label: 'Nova smart-list', icon: 'filter', keywords: 'criar filtro salvo', run: () => manage.filter() },
+          { id: 'kaguya.inbox', label: 'Processar o Inbox', icon: 'inbox', keywords: 'gtd clarificar inbox zero', run: () => manage.inbox() },
+          { id: 'kaguya.review', label: 'Revisão semanal', icon: 'weekly-review', keywords: 'gtd revisar semana', run: () => manage.review() },
+          { id: 'kaguya.contexts', label: 'Locais (Onde @)', icon: 'place', keywords: 'contextos gtd casa', run: () => manage.contexts() },
+          { id: 'kaguya.focus', label: 'Iniciar foco', icon: 'timer', keywords: 'pomodoro concentrar', run: () => startFocus({}) },
+          { id: 'kaguya.settings', label: 'Ajustes da Kaguya', icon: 'prefs', keywords: 'preferencias agenda menu', run: () => goto({ view: 'settings' }) },
+          { id: 'kaguya.today', label: 'Ir para o Meu Dia', icon: 'sun', run: () => goto({ view: 'today' }) },
+          { id: 'kaguya.search', label: 'Buscar tarefas (inclui concluídas)', icon: 'search', keywords: 'procurar', run: () => setDialog({ kind: 'search', q: '' }) },
+          { id: 'kaguya.space.work', label: 'Espaço: só Trabalho', icon: 'work', run: () => setPrefs({ space: 'work' }) },
+          { id: 'kaguya.space.personal', label: 'Espaço: só Pessoal', icon: 'personal', run: () => setPrefs({ space: 'personal' }) },
+          { id: 'kaguya.space.all', label: 'Espaço: Tudo', icon: 'apps', run: () => setPrefs({ space: 'all' }) },
+        ]}
+        preferences={
+          <>
+            <DisplaySettings compact />
+            <SettingRow title="Mais ajustes" help="Agenda de trabalho, menu lateral e barra do celular.">
+              <Button size="sm" icon="forward" onClick={() => { goto({ view: 'settings' }); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) }}>Abrir Ajustes</Button>
+            </SettingRow>
+          </>
+        }
+      >
+        <div className={`kn-split${panelOpen ? ' kn-with-panel' : ''}`}>
+          <div className="kn-main-col">
+            <ScreenBoundary resetKey={hashFor(withTask(route, undefined))} onHome={() => goto({ view: 'today' })}>{screen}</ScreenBoundary>
           </div>
-
-          <div className="kg-scroll">{renderMain()}</div>
-        </div>
-      </div>
-
-      {/* Painel de tweaks */}
-      {tweaksOpen && <TweaksPanel tweaks={tweaks} onChange={patchTweaks} onClose={() => setTweaksOpen(false)} />}
-
-      {/* Modais */}
-      {taskModal && (
-        <TaskModal
-          mode={taskModal.mode}
-          task={taskModal.task}
-          projects={sidebar?.projects ?? []}
-          groups={sidebar?.groups ?? []}
-          defaultProjectId={taskModal.projectId}
-          // Pré-preenchimento de slot (usado ao criar a partir de arrasto no calendário).
-          defaults={taskModal.defaults}
-          onClose={() => setTaskModal(null)}
-          onSaved={afterSave}
-          toast={showToast}
-          // Promove subtarefa a tarefa independente (fatia 025): move para parent_id = null.
-          onPromote={async (task) => {
-            await kaguyaApi.moveTask(task.id, { new_parent_id: null })
-            showToast('Agora é uma tarefa independente.', 'ok')
-            afterSave()
-          }}
-          // Abre uma subtarefa em seu próprio modal (T044).
-          onOpenTask={(subTask) => setTaskModal({ mode: 'edit', task: subTask })}
-          // Abre o FocusStartModal para esta tarefa (spec 037).
-          onFocus={(t) => setFocusStartTarget({ task: t })}
-        />
-      )}
-      {projectModal && (
-        <ProjectModal
-          mode={projectModal.mode}
-          project={projectModal.project}
-          groups={sidebar?.groups ?? []}
-          onClose={() => setProjectModal(null)}
-          onSaved={() => { afterSave(); if (projectModal.mode === 'edit') navigate('today') }}
-          toast={showToast}
-        />
-      )}
-      {groupModal && (
-        <GroupModal
-          mode={groupModal.mode}
-          group={groupModal.group}
-          onClose={() => setGroupModal(null)}
-          onSaved={afterSave}
-          toast={showToast}
-        />
-      )}
-      {filterModal && (
-        <FilterModal
-          mode={filterModal.mode}
-          filter={filterModal.filter}
-          projects={sidebar?.projects ?? []}
-          groups={sidebar?.groups ?? []}
-          onClose={() => setFilterModal(null)}
-          // Após salvar/excluir, recarrega a sidebar (e as views). Se a smart-list aberta
-          // foi excluída, volta para "Meu Dia" para não ficar numa view órfã.
-          onSaved={() => { afterSave(); if (filterModal.mode === 'edit') navigate('today') }}
-          toast={showToast}
-        />
-      )}
-      {inboxProcessOpen && (
-        <InboxProcessModal
-          onClose={() => setInboxProcessOpen(false)}
-          onChanged={bump}
-          toast={showToast}
-          contexts={contexts}
-        />
-      )}
-      {contextsModalOpen && (
-        <ContextsModal
-          onClose={() => setContextsModalOpen(false)}
-          onChanged={loadContexts}
-          toast={showToast}
-        />
-      )}
-      {weeklyReviewOpen && (
-        <WeeklyReviewModal
-          onClose={() => setWeeklyReviewOpen(false)}
-          onChanged={bump}
-          toast={showToast}
-        />
-      )}
-      {habitModal && (
-        <HabitModal
-          mode={habitModal.mode}
-          habit={habitModal.habit}
-          onClose={() => setHabitModal(null)}
-          // Após salvar/arquivar, só faz bump (a tela de hábitos recarrega pela reloadKey).
-          onSaved={bump}
-          toast={showToast}
-        />
-      )}
-      {experimentModal && (
-        <ExperimentModal
-          mode={experimentModal.mode}
-          experiment={experimentModal.experiment}
-          // Quando aberto a partir de uma meta (FR-011), o novo experimento nasce vinculado.
-          goalId={experimentModal.goalId}
-          onClose={() => setExperimentModal(null)}
-          // Após salvar/excluir, só faz bump (lista e detalhe recarregam pela reloadKey).
-          onSaved={bump}
-          // Se o experimento aberto no detalhe foi excluído, volta para a lista.
-          onDeleted={() => navigate('experiments')}
-          toast={showToast}
-        />
-      )}
-      {goalModal && (
-        <GoalModal
-          mode={goalModal.mode}
-          goal={goalModal.goal}
-          onClose={() => setGoalModal(null)}
-          // Após salvar/excluir, só faz bump (lista e detalhe recarregam pela reloadKey).
-          onSaved={bump}
-          // Se a meta aberta no detalhe foi excluída, volta para a lista.
-          onDeleted={() => navigate('goals')}
-          toast={showToast}
-        />
-      )}
-
-      {/* Command Palette ⌘K (fatia 018) */}
-      <CommandPalette
-        open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        projects={sidebar?.projects ?? []}
-        onNavigate={(v, p) => { setPaletteOpen(false); navigate(v, p ?? null) }}
-        onCreateTask={async (parsed) => {
-          // Resolve @projectToken e cria via o mesmo helper do QuickAdd (FR-007).
-          if (!parsed.title) return
-          const projs = sidebar?.projects ?? []
-          const params = taskFromParse(parsed, projs)
-          // Avisa quando a lista não foi encontrada (mesmo comportamento do QuickAdd).
-          if (parsed.projectToken && !params.project_id) {
-            showToast(`Lista "@${parsed.projectToken}" não encontrada — fui pro Inbox.`, 'err')
-          }
-          await kaguyaApi.createTask(params)
-          afterSave()
-          showToast('Tarefa criada.')
-        }}
-        onOpenTask={(t) => setTaskModal({ mode: 'edit', task: t })}
-        toast={showToast}
-      />
-
-      {/* Foco / Pomodoro gameficado (spec 037 + spec 062) */}
-      {focusStartTarget !== 'closed' && (
-        <FocusStartModal
-          task={focusStartTarget.task}
-          habitId={focusStartTarget.habitId}
-          onClose={() => setFocusStartTarget('closed')}
-          onStarted={loadActiveFocus}
-          toast={showToast}
-        />
-      )}
-      {activeFocus && (
-        <FocusWidget
-          session={activeFocus}
-          onFinish={async () => {
-            const result = await kaguyaApi.focus.finish(activeFocus.id)
-            setActiveFocus(null)
-            bump() // FocusScreen/HabitsScreen abertos em outra aba do shell recarregam
-            showToast(
-              result?.session?.habit_checked_in
-                ? 'Sessão concluída — hábito marcado como feito hoje.'
-                : 'Sessão de foco concluída.',
-            )
-          }}
-          onCancel={() => setFocusCancelOpen(true)}
-        />
-      )}
-      {focusCancelOpen && activeFocus && (
-        <FocusCancelModal
-          sessionId={activeFocus.id}
-          // Minutos já decorridos até agora, nunca mais que o planejado (mesmo teto
-          // de tools_focus._duration_focused_min) — só para o preview da árvore murcha.
-          elapsedMin={Math.min(
-            activeFocus.duration_planned_min,
-            Math.max(0, Math.round((Date.now() - new Date(activeFocus.started_at).getTime()) / 60000)),
+          {route.taskId !== undefined && (
+            <ScreenBoundary resetKey={String(route.taskId)} onHome={() => openTask(undefined)}>
+              <TaskDetailPanel key={`${route.taskId}-${centered}`} taskId={route.taskId} mode={centered ? 'center' : 'side'} onClose={() => openTask(undefined)} />
+            </ScreenBoundary>
           )}
-          onClose={() => setFocusCancelOpen(false)}
-          onCancelled={() => { setActiveFocus(null); bump() }}
-          toast={showToast}
-        />
-      )}
-
-      {/* Toast */}
-      {toast && <Toast message={toast.msg} kind={toast.kind} onDone={() => setToast(null)} />}
-    </div>
+        </div>
+        {dialog?.kind === 'new' && <NewTaskModal defaults={dialog.defaults} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'project' && <ProjectModal project={dialog.project} groupId={dialog.groupId} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'group' && <GroupModal group={dialog.group} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'filter' && <SmartListModal filter={dialog.filter} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'inbox-wizard' && <InboxWizard onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'weekly-review' && <WeeklyReviewModal onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'contexts' && <ContextsModal onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'focus' && <FocusStartModal task={dialog.task} habitId={dialog.habitId} onClose={() => setDialog(null)} onStarted={() => { void loadActiveFocus() }} />}
+        {dialog?.kind === 'focus-cancel' && activeFocus && (
+          <FocusCancelModal
+            sessionId={activeFocus.id}
+            elapsedMin={Math.max(0, Math.floor((Date.now() - new Date(activeFocus.started_at).getTime()) / 60000))}
+            onClose={() => setDialog(null)}
+            onCancelled={() => { setActiveFocus(null); reload() }}
+          />
+        )}
+        {activeFocus && <FocusWidget session={activeFocus} onFinish={() => void finishFocus()} onCancel={() => setDialog({ kind: 'focus-cancel' })} />}
+        {dialog?.kind === 'search' && <SearchModal initial={dialog.q} onClose={() => setDialog(null)} />}
+      </AppShell>
+    </KaguyaContext.Provider>
   )
 }
+

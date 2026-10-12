@@ -1,365 +1,162 @@
-// EventPopover — popover de evento do Calendar Hub (fatia 019, T025).
-// Estrutura do handoff (spec 019):
-//   .cal-pop-scrim  → overlay transparente; clique = fecha
-//   .cal-pop        → container com style {--cc, left, top}
-//     .cal-pop-bar  → barra de cor de 3px no topo (usa var(--cc) via CSS)
-//     .cal-pop-body → corpo scrollável
-//       .cpop-title-row  → .cpop-swatch + input.cpop-title (ou span para read-only)
-//       .cal-colors      → paleta inline (se showColors=true; só gcal)
-//       .cpop-meta       → linha de metadados (clock + data/hora)
-//       .cpop-cal        → calendário de origem (.pc-dot + nome)
-//       .cpop-actions    → botões de ação (.cpop-btn / .cpop-btn.danger)
-//
-// Fontes editáveis (kaguya/gcal): título editável, delete, recolor.
-// Fontes cross-agent: read-only com deep-link.
+// Detalhe de um evento do calendário (popover ancorado onde se clicou) e o menu de contexto (clique direito).
+// Tarefa: título editável, concluir/reabrir, abrir no painel, duração (regrava o bloco), duplicar e excluir.
+// Evento do Google (calendário com escrita): título, duração, cor própria, duplicar e excluir. Itens dos outros agentes
+// são só leitura, com o atalho para abrir na origem. Excluir sempre confirma.
 
-import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
-import type { CalEvent, Calendar } from '../types'
-import { Icon } from '../ui/Icons'
-import { kaguyaApi, CAL_SWATCHES, isGcal, gcalCalendarId } from '../kaguyaApi'
-import { mapsLinkFor } from '../lib/maps'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { Button, Icon, Menu, Select, confirm, toast, type MenuItem } from '../../../design'
+import { fmtDate } from '../../../design/core/format'
+import { gcalCalendarId, kaguyaApi } from '../api'
+import { useKaguya } from '../context'
+import * as act from '../lib/actions'
+import { isEditable, isGcalId, localISO, minToLabel, resolveColor, timeToMin } from '../lib/calendar'
+import { CAL_SWATCHES } from '../lib/calSwatches'
 import { DURATIONS, snapDuration } from '../lib/durations'
-// localISO: monta ISO 8601 com offset local sem toISOString() (fuso UTC-3).
-import { localISO } from '../lib/dateUtils'
+import { mapsLinkFor } from '../lib/maps'
+import type { CalEvent, Calendar } from '../types'
 
-// ── Props ────────────────────────────────────────────────────────────────────
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+const reason = (e: unknown, fallback: string) => (e instanceof Error && e.message && !/^HTTP \d+$/.test(e.message) ? e.message : fallback)
 
-interface EventPopoverProps {
-  ev: CalEvent
-  cals: Calendar[]
-  pos: { x: number; y: number }
-  onClose: () => void
-  onRefresh?: () => void
+interface Common { ev: CalEvent; cals: Calendar[]; onClose: () => void; onRefresh: () => void }
+
+/** Conclui/reabre a tarefa do evento. Busca a tarefa de verdade: com subtarefas abertas, a ação pede confirmação. */
+async function toggleTaskOf(ev: CalEvent, k: ReturnType<typeof useKaguya>): Promise<void> {
+  if (ev.taskId) await act.toggleComplete({ reload: k.reload }, await kaguyaApi.getTask(ev.taskId))
 }
 
-// Formata minutos como "HH:MM".
-function minToLabel(min: number): string {
-  const h = Math.floor(min / 60)
-  const m = min % 60
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-}
-
-// Converte string ISO datetime em minutos desde meia-noite, no fuso LOCAL.
-// Idêntico ao timeToMin do TimeGrid — usa new Date() para respeitar o offset do backend
-// (que devolve strings UTC "+00:00"). Split literal ignoraria o offset → +3h de erro.
-function timeToMin(t: string | null | undefined): number {
-  if (!t) return 0
-  // Datetime completo (com "T"): new Date() converte offset → hora local.
-  if (t.includes('T')) {
-    const d = new Date(t)
-    if (!isNaN(d.getTime())) return d.getHours() * 60 + d.getMinutes()
+/** Duplicar: tarefa (com subtarefas, pelo servidor) ou evento do Google no mesmo horário. */
+async function duplicate(ev: CalEvent, k: ReturnType<typeof useKaguya>): Promise<void> {
+  if (ev.cal === 'kaguya' && ev.taskId) {
+    const id = await act.duplicate({ reload: k.reload }, await kaguyaApi.getTask(ev.taskId))
+    if (id) k.openTask(id)
+  } else if (isGcalId(ev.cal)) {
+    await kaguyaApi.createCalendarEvent({ title: `${ev.title} (cópia)`, day: ev.day, start: ev.start ?? undefined, end: ev.end ?? undefined, allDay: ev.allDay })
+    toast('Evento duplicado.', { tone: 'success' })
   }
-  // Fallback: string pura "HH:MM" — split literal.
-  const part = t.includes('T') ? t.split('T')[1] : t
-  const [h, m] = part.split(':').map(Number)
-  return (h ?? 0) * 60 + (m ?? 0)
 }
 
-// Clamp numérico dentro de [min, max].
-function clamp(v: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, v))
+async function remove(ev: CalEvent): Promise<boolean> {
+  const ok = await confirm({ title: `Excluir “${ev.title}”?`, body: ev.cal === 'kaguya' ? 'A tarefa vai para a lixeira — dá para restaurar de lá.' : 'O evento será apagado do Google Calendar.', confirmLabel: 'Excluir', danger: true })
+  if (!ok) return false
+  if (ev.cal === 'kaguya' && ev.taskId) await kaguyaApi.remove(ev.taskId)
+  else if (isGcalId(ev.cal)) await kaguyaApi.deleteCalendarEvent(ev.id, gcalCalendarId(ev.cal))
+  toast('Excluído.', { tone: 'success' })
+  return true
 }
 
-// ── Componente ───────────────────────────────────────────────────────────────
-
-export function EventPopover({ ev, cals, pos, onClose, onRefresh }: EventPopoverProps) {
-  const [title, setTitle] = useState(ev.title)
-  const [saving, setSaving] = useState(false)
-  const [showColors, setShowColors] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
-
-  // Duração inicial: derivada de end - start (em minutos), aproximada para a lista.
-  // Só relevante para eventos com horário (start presente).
-  // Guardada em const fora do estado para usar no rollback do handleDurationChange.
-  const initialDuration = ev.start && ev.end
-    ? snapDuration(timeToMin(ev.end) - timeToMin(ev.start))
-    : 0
-  const [duration, setDuration] = useState<number>(initialDuration)
-  // ref para o initialDuration: disponível no closure dos handlers sem re-render.
-  const initialDurationRef = useRef(initialDuration)
-
-  const popRef = useRef<HTMLDivElement | null>(null)
-
+export function EventPopover({ ev, cals, pos, onClose, onRefresh }: Common & { pos: { x: number; y: number } }) {
+  const k = useKaguya()
   const cal = cals.find((c) => c.id === ev.cal)
-  // Editável: tarefas Kaguya sempre; eventos Google apenas se o calendário for owner/writer
-  const isEditable = ev.cal === 'kaguya' || (isGcal(ev.cal) && !!cal?.writable)
-  // calColor: cor própria do evento > cor do calendário > fallback azul Kaguya
-  const calColor = ev.color || cal?.color || 'var(--kg)'
-  const calName = cal?.name ?? ev.cal
+  const editable = isEditable(ev, cals)
+  const [title, setTitle] = useState(ev.title)
+  const [busy, setBusy] = useState(false)
+  const [colors, setColors] = useState(false)
+  const initial = ev.start && ev.end ? snapDuration(timeToMin(ev.end) - timeToMin(ev.start)) : 0
+  const [duration, setDuration] = useState(initial)
+  const ref = useRef<HTMLDivElement>(null)
 
-  // ── Fecha ao pressionar Escape ────────────────────────────────────────────
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
+  useEffect(() => { ref.current?.querySelector<HTMLElement>('input, button')?.focus() }, [])
 
-  // ── Posição clamped à viewport ────────────────────────────────────────────
-  // .cal-pop tem ~280px de largura e ~220px de altura estimados
-  const PAD   = 12
-  const POP_W = 280
-  const POP_H = 220
-  const left = clamp(pos.x, PAD, window.innerWidth - POP_W - PAD)
-  const top  = clamp(pos.y, PAD, window.innerHeight - POP_H - PAD)
-
-  // ── Handlers ─────────────────────────────────────────────────────────────
-
-  // Salva o título editado (disparado pelo onBlur do input)
-  async function saveTitle() {
-    if (title === ev.title || !isEditable) return
-    setSaving(true)
-    try {
-      if (ev.cal === 'kaguya' && ev.taskId) {
-        await kaguyaApi.updateTask(ev.taskId, { title })
-      } else if (isGcal(ev.cal)) {
-        await kaguyaApi.updateCalendarEvent(ev.id, { title, calendar_id: gcalCalendarId(ev.cal) })
-      }
-      onRefresh?.()
-    } catch {
-      setTitle(ev.title)  // restaura título em caso de erro
-    } finally {
-      setSaving(false)
-    }
+  const run = async (fn: () => Promise<unknown>, fallback: string) => {
+    setBusy(true)
+    try { await fn(); onRefresh() } catch (e) { toast(reason(e, fallback), { tone: 'error' }) } finally { setBusy(false) }
   }
 
-  // Deleta o evento (requer dois cliques para confirmar)
-  async function handleDelete() {
-    if (!confirmDelete) { setConfirmDelete(true); return }
-    setSaving(true)
-    try {
-      if (ev.cal === 'kaguya' && ev.taskId) {
-        await kaguyaApi.remove(ev.taskId)
-      } else if (isGcal(ev.cal)) {
-        await kaguyaApi.deleteCalendarEvent(ev.id, gcalCalendarId(ev.cal))
-      }
-      onClose()
-      onRefresh?.()
-    } catch {
-      setConfirmDelete(false)
-    } finally {
-      setSaving(false)
-    }
+  const saveTitle = () => {
+    if (!editable || title.trim() === ev.title || !title.trim()) { setTitle(ev.title); return }
+    void run(async () => {
+      if (ev.taskId) await kaguyaApi.updateTask(ev.taskId, { title: title.trim() })
+      else await kaguyaApi.updateCalendarEvent(ev.id, { title: title.trim(), calendar_id: gcalCalendarId(ev.cal) })
+    }, 'Não foi possível renomear.')
   }
 
-  // Atualiza a duração do evento/tarefa e persiste via API.
-  // Recalcula end_at a partir de start + nova duração; mantém start_at intacto.
-  async function handleDurationChange(newDuration: number) {
-    setDuration(newDuration)
-    if (!ev.start || !isEditable || newDuration <= 0) return
-    const startMin = timeToMin(ev.start)
-    const newEndMin = startMin + newDuration
-    // ev.day: "AAAA-MM-DD" (já local — vem do CalendarScreen.taskToCalEvent)
-    const newStart = localISO(ev.day, startMin)
-    const newEnd   = localISO(ev.day, newEndMin)
-    setSaving(true)
-    try {
-      if (ev.cal === 'kaguya' && ev.taskId) {
-        // Task Kaguya: atualiza o time-block (start_at + end_at).
-        await kaguyaApi.setTimeBlock(ev.taskId, { start_at: newStart, end_at: newEnd })
-      } else if (isGcal(ev.cal)) {
-        // Evento Google Calendar: atualiza start + end no calendário correto.
-        await kaguyaApi.updateCalendarEvent(ev.id, {
-          start: newStart,
-          end: newEnd,
-          day: ev.day,
-          calendar_id: gcalCalendarId(ev.cal),
-        })
-      }
-      onRefresh?.()
-    } catch {
-      // Em caso de erro, volta para a duração anterior (não altera o estado de UI).
-      setDuration(initialDurationRef.current)
-    } finally {
-      setSaving(false)
-    }
+  const changeDuration = (min: number) => {
+    setDuration(min)
+    if (!ev.start || !editable || min <= 0) return
+    const start = timeToMin(ev.start)
+    const s = localISO(ev.day, start)
+    const e = localISO(ev.day, start + min)
+    void run(async () => {
+      if (ev.taskId) await kaguyaApi.setTimeBlock(ev.taskId, { start_at: s, end_at: e })
+      else await kaguyaApi.updateCalendarEvent(ev.id, { start: s, end: e, day: ev.day, calendar_id: gcalCalendarId(ev.cal) })
+    }, 'Não foi possível mudar a duração.')
+    // Se falhar, a lista recarrega com a duração real (onRefresh) — o seletor volta junto.
   }
 
-  // Aplica cor customizada ao evento (só gcal suporta cor por evento atualmente)
-  async function applyColor(color: string | null) {
-    setShowColors(false)
-    if (!isEditable) return
-    try {
-      if (isGcal(ev.cal)) {
-        await kaguyaApi.updateCalendarEvent(ev.id, { color, calendar_id: gcalCalendarId(ev.cal) })
-        onRefresh?.()
-      }
-    } catch { /* ignora erro de cor */ }
+  const color = (c: string | null) => {
+    setColors(false)
+    void run(() => kaguyaApi.updateCalendarEvent(ev.id, { color: c, calendar_id: gcalCalendarId(ev.cal) }), 'Não foi possível mudar a cor.')
   }
 
-  // Label de horário: "Dia inteiro" ou "HH:MM – HH:MM"
-  const timeLabel = ev.allDay
-    ? 'Dia inteiro'
-    : `${minToLabel(timeToMin(ev.start))} – ${minToLabel(timeToMin(ev.end))}`
-
-  // ── Render ────────────────────────────────────────────────────────────────
+  const left = clamp(pos.x, 12, window.innerWidth - 292)
+  const top = clamp(pos.y, 12, window.innerHeight - 260)
+  const time = ev.allDay || !ev.start ? 'Dia inteiro' : `${minToLabel(timeToMin(ev.start))} – ${minToLabel(timeToMin(ev.end ?? ev.start) + (ev.end ? 0 : 30))}`
 
   return (
     <>
-      {/* Scrim: cobre o restante da tela. Clique fora do popover = fecha.
-          z-index inferior ao .cal-pop (998 vs 999) para não bloquear o popover. */}
-      <div
-        className="cal-pop-scrim"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* Popover principal */}
-      <div
-        ref={popRef}
-        className="cal-pop"
-        style={{ '--cc': calColor, left, top } as CSSProperties}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Evento: ${ev.title}`}
-      >
-        {/* Barra de cor de 3px no topo — usa var(--cc) via CSS */}
+      <div className="cal-pop-scrim" onClick={onClose} aria-hidden="true" />
+      <div ref={ref} className="cal-pop" style={{ '--cc': resolveColor(ev, cals), left, top } as CSSProperties} role="dialog" aria-label={`Evento: ${ev.title}`}>
         <div className="cal-pop-bar" />
-
         <div className="cal-pop-body">
-          {/* Linha de título: swatch colorido + título editável (ou texto para read-only) */}
-          <div className="cpop-title-row">
-            {/* Swatch: círculo pequeno com a cor do evento/calendário */}
-            <span className="cpop-swatch" />
+          {editable
+            ? <input className="cpop-title" aria-label="Título do evento" value={title} disabled={busy} onChange={(e) => setTitle(e.target.value)} onBlur={saveTitle} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
+            : <span className="cpop-title">{ev.title}</span>}
+          <div className="cpop-meta"><Icon name="clock" size={13} />{fmtDate(ev.day)} · {time}{ev.recurring && <> · <Icon name="recurring" size={12} /> repete</>}</div>
+          {editable && !ev.allDay && ev.start && (
+            <Select aria-label="Duração" value={duration} disabled={busy} onChange={(e) => changeDuration(Number(e.target.value))}>
+              {DURATIONS.filter((d) => d.v > 0).map((d) => <option key={d.v} value={d.v}>{d.label}</option>)}
+            </Select>
+          )}
+          {ev.loc && <div className="cpop-meta"><Icon name="place" size={13} /><a href={mapsLinkFor(ev.loc)} target="_blank" rel="noreferrer">{ev.loc}</a></div>}
+          <div className="cpop-cal"><span className="pc-dot" />{cal?.name ?? ev.cal}</div>
 
-            {isEditable
-              ? (
-                <input
-                  className="cpop-title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  onBlur={saveTitle}
-                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                  disabled={saving}
-                  aria-label="Título do evento"
-                />
-              )
-              : (
-                <span className="cpop-title">{ev.title}</span>
-              )
-            }
+          {colors && (
+            <div className="cal-colors" role="listbox" aria-label="Cor do evento">
+              {CAL_SWATCHES.map((s, i) => <button key={s} type="button" role="option" aria-selected={ev.color === s} aria-label={`Cor ${i + 1}`} className={`cal-sw${ev.color === s ? ' sel' : ''}`} style={{ background: s } as CSSProperties} onClick={() => color(s)} />)}
+              <Button size="sm" variant="ghost" onClick={() => color(null)}>Cor do calendário</Button>
+            </div>
+          )}
+
+          <div className="cpop-actions">
+            {ev.taskId && <Button size="sm" variant="primary" icon="detail-panel" onClick={() => { k.openTask(ev.taskId); onClose() }}>Abrir tarefa</Button>}
+            {ev.taskId && <Button size="sm" icon={ev.done ? 'undo' : 'check'} disabled={busy} onClick={() => void run(() => toggleTaskOf(ev, k), 'Não foi possível concluir.')}>{ev.done ? 'Reabrir' : 'Concluir'}</Button>}
+            {!editable && ev.deepLink && <Button size="sm" variant="primary" icon="link" onClick={() => { window.location.href = ev.deepLink! }}>Abrir em {cal?.name ?? ev.cal}</Button>}
+            {editable && isGcalId(ev.cal) && <Button size="sm" icon="palette" aria-pressed={colors} onClick={() => setColors((v) => !v)}>Cor</Button>}
+            {editable && <Button size="sm" icon="copy" disabled={busy} onClick={() => void run(() => duplicate(ev, k), 'Não foi possível duplicar.')}>Duplicar</Button>}
+            {editable && <Button size="sm" variant="danger" icon="delete" disabled={busy} onClick={() => void (async () => { try { if (await remove(ev)) { onClose(); onRefresh() } } catch (e) { toast(reason(e, 'Não foi possível excluir.'), { tone: 'error' }) } })()}>Excluir</Button>}
           </div>
-
-          {/* Paleta de cores inline — só para gcal, aparece ao clicar em "pincel" */}
-          {showColors && (
-            <div className="cal-colors">
-              {CAL_SWATCHES.map((s) => (
-                <button
-                  key={s}
-                  className={`cal-sw${ev.color === s ? ' on' : ''}`}
-                  style={{ '--cc': s } as CSSProperties}
-                  onClick={() => applyColor(s)}
-                  title={s}
-                />
-              ))}
-              {/* Botão de reset: volta para a cor do calendário */}
-              <button
-                className="cpop-btn"
-                onClick={() => applyColor(null)}
-                title="Cor do calendário"
-                style={{ marginLeft: 4 }}
-              >
-                <Icon name="loop" size={12} />
-              </button>
-            </div>
-          )}
-
-          {/* Metadados: data e horário */}
-          <div className="cpop-meta">
-            <Icon name="clock" size={13} />
-            <span>{ev.day} · {timeLabel}</span>
-          </div>
-
-          {/* Duração — seletor compacto apenas para eventos editáveis com horário.
-              Ao mudar, recalcula end_at e persiste via API (sem fechar o popover). */}
-          {isEditable && !ev.allDay && ev.start && (
-            <div className="cpop-meta" style={{ gap: 6 }}>
-              <Icon name="clock" size={13} />
-              <select
-                className="cpop-dur-select"
-                value={duration}
-                onChange={(e) => handleDurationChange(Number(e.target.value))}
-                disabled={saving}
-                title="Duração do evento"
-              >
-                {DURATIONS.filter(d => d.v > 0).map(d => (
-                  <option key={d.v} value={d.v}>{d.label}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Localização (quando disponível) — link p/ Google Maps (ou a própria URL, se for um link — spec 039) */}
-          {ev.loc && (
-            <div className="cpop-meta">
-              <a href={mapsLinkFor(ev.loc)} target="_blank" rel="noreferrer">{ev.loc}</a>
-            </div>
-          )}
-
-          {/* Calendário de origem */}
-          <div className="cpop-cal">
-            {/* Ponto colorido identificando o calendário */}
-            <span className="pc-dot" />
-            <span>{calName}</span>
-          </div>
-
-          {/* Deep-link para fontes cross-agent (nami, frieren, violet…) */}
-          {!isEditable && ev.deepLink && (
-            <a
-              href={ev.deepLink}
-              className="cpop-btn"
-              style={{ display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
-            >
-              <Icon name="link" size={13} />
-              Abrir em {calName}
-            </a>
-          )}
-
-          {/* Ações — só para fontes editáveis (kaguya / gcal) */}
-          {isEditable && (
-            <div className="cpop-actions">
-              {/* Botão de recolorir: só gcal suporta cor por evento */}
-              {isGcal(ev.cal) && (
-                <button
-                  className="cpop-btn"
-                  onClick={() => setShowColors((v) => !v)}
-                  title="Recolorir evento"
-                  aria-pressed={showColors}
-                >
-                  <Icon name="paint" size={13} />
-                </button>
-              )}
-
-              {/* Botão de excluir: fica vermelho no segundo clique (confirm) */}
-              <button
-                className={`cpop-btn${confirmDelete ? ' danger' : ''}`}
-                onClick={handleDelete}
-                disabled={saving}
-                title={confirmDelete ? 'Clique para confirmar exclusão' : 'Excluir evento'}
-              >
-                <Icon name="trash" size={13} />
-                {confirmDelete ? 'Confirmar' : 'Excluir'}
-              </button>
-
-              {/* Indicador de recorrência (sem ação; apenas visual) */}
-              {ev.kind === 'task' && (
-                // A recorrência é lida pelo 'recurrence' de CalEvent — mas CalEvent não tem esse campo.
-                // Por ora, omitir o ícone de loop (pode ser adicionado futuramente via `ev.recurrence`).
-                null
-              )}
-
-              {/* Botão de fechar */}
-              <button
-                className="cpop-btn"
-                onClick={onClose}
-                title="Fechar"
-                style={{ marginLeft: 'auto' }}
-              >
-                <Icon name="x" size={13} />
-              </button>
-            </div>
-          )}
         </div>
+      </div>
+    </>
+  )
+}
+
+/** Menu do clique direito: as ações mais usadas sem abrir o detalhe. */
+export function EventMenu({ ev, cals, pos, onClose, onRefresh, onOpen }: Common & { pos: { x: number; y: number }; onOpen: () => void }) {
+  const k = useKaguya()
+  const editable = isEditable(ev, cals)
+  const cal = cals.find((c) => c.id === ev.cal)
+  const guard = (fn: () => Promise<unknown>, fallback: string) => () => { void fn().then(onRefresh).catch((e) => toast(reason(e, fallback), { tone: 'error' })) }
+  const items: MenuItem[] = [{ id: 'open', label: 'Ver detalhes', onSelect: onOpen }]
+  if (ev.taskId) {
+    items.push({ id: 'panel', label: 'Abrir tarefa', onSelect: () => k.openTask(ev.taskId) })
+    items.push({ id: 'done', label: ev.done ? 'Reabrir' : 'Concluir', onSelect: guard(() => toggleTaskOf(ev, k), 'Não foi possível concluir.') })
+  }
+  if (editable) {
+    items.push({ id: 'dup', label: 'Duplicar', onSelect: guard(() => duplicate(ev, k), 'Não foi possível duplicar.') })
+    items.push({ id: 'del', label: 'Excluir', onSelect: guard(() => remove(ev), 'Não foi possível excluir.') })
+  } else if (ev.deepLink) items.push({ id: 'link', label: `Abrir em ${cal?.name ?? ev.cal}`, onSelect: () => { window.location.href = ev.deepLink! } })
+  return (
+    <>
+      <div className="cal-pop-scrim" onClick={onClose} aria-hidden="true" />
+      <div className="cal-ctx" style={{ left: clamp(pos.x, 8, window.innerWidth - 220), top: clamp(pos.y, 8, window.innerHeight - 200) }}>
+        <Menu items={items} onClose={onClose} label={`Ações de ${ev.title}`} className="kn-ctx-menu" />
       </div>
     </>
   )
