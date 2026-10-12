@@ -191,7 +191,7 @@ lugar só (`fmtPercent` recebe a **fração**); contagens de itens **distintos**
 | Akane | filmes distintos, sessões, revistos, horas, décadas, país/idioma, cinema vs casa, watchlist adicionados vs vistos |
 | Marin | episódios reais, completos no ano, dropados, temporada de lançamento, estúdios, notas |
 | Mai | séries terminadas e dropadas, episódios, maior maratona, redes por episódios |
-| Violet | dias, palavras, sequências, horários (fuso local), emoções/intensidade, pessoas/tags top, taxa real de destaque |
+| Violet | dias, palavras, **força da escrita** (motor dos hábitos — sem sequência/ofensiva), horários (fuso local), emoções/intensidade, pessoas/tags top, taxa real de destaque |
 | Kaguya | concluídas por semana, no prazo vs atrasadas, por lista/tag, % de hábitos, metas/experimentos, foco |
 | Nami | retrospectiva anual: receita/despesa por mês, taxa de poupança, top categorias, patrimônio real |
 | Komi | interações por mês, pessoas sem contato há N dias, aniversários, menções cruzadas |
@@ -203,10 +203,9 @@ Fonte: `STATS_REQUIRED` em `conformance.json`; uma página "conformant" precisa 
 
 Encontrados na auditoria que originou o padrão:
 
-- **Violet** `Insights.tsx:337`: percentual de destaque multiplicado por 100 duas vezes
-  (40% aparece como 4000%); `agents/journal/tools.py:658` horários em UTC (barras 3h erradas) e
-  `CURRENT_DATE`/`date.today()` em `:638,:680,:733,:1016`; sequência atual zera se hoje ainda não
-  tem entrada (`Insights.tsx:76-86`).
+- ~~**Violet**~~ (**corrigido**, spec 076): taxa de destaque é a fração de dias com destaque (sem o ×100 duplo);
+  horários e "hoje" em America/Sao_Paulo; a sequência deu lugar à força da escrita (não zera por um dia);
+  `GET /api/journal/stats` agora é o `StatsPayload`.
 - ~~**Frieren**~~ (**corrigido**, spec 073): sequência e janelas de 7/30 dias agora contam dias corridos;
   abandonado tem status e data próprios; distribuição de notas 0.5–5 completa; páginas de livros apagados
   fora da conta; `GET /books/stats` virou o `StatsPayload`.
@@ -273,7 +272,9 @@ finíssimos no claro; "fliperama de luz apagada" com bordas e halos neon no escu
 girando o matiz em 145° com relative color; contraste calculado em `specs/074-marin-ds/contrast-neon.mjs`). e `shuchiin` (**Kaguya** — "Shuchiin aristocrático": vinho derivado do acento (+100° de matiz) e dourado do `--ds-star`, papel timbrado
 claro com o herói claro também no escuro; pior contraste 6,0:1, calculado em `specs/075-kaguya-ds/contrast-shuchiin.mjs`). Direção
 de arte por agente: Nami = `nautica`; Akane = `noir`; Frieren = `elfica`; Marin = `neon`; Kaguya = `shuchiin`; os demais _ainda não escolhida_
-(`null`; `makima` e `design` usam `default`).
+(`null`; `makima` e `design` usam `default`). `papel` (**Violet** — "Papel de carta": papel marfim pautado com margem de carta,
+tinta azul-ardósia, serifa nos títulos, brilho safira e fio de ouro; pior contraste 4,9:1, calculado em
+`specs/076-violet-ds/contrast-papel.mjs`). Direção de arte da Violet = `papel`.
 
 **Ganchos que a arte e as páginas podem usar (retrocompatíveis; sem eles nada muda):**
 
@@ -353,7 +354,7 @@ imediato. Para ativar, use a skill `update-config`.
 7. Apagar o CSS e os componentes mortos; marcar `migrating` e, ao concluir, `conformant`.
 
 Ordem sugerida (do menor para o maior): Komi → Yato → Mai (ganha o "Voltar à Makima" que não tinha)
-→ ~~Frieren~~ (feito, spec 073) → ~~Akane~~ (feito, spec 072) → Violet → ~~Marin~~ (feito, spec 074) → Nami → Kaguya. O Hub da Makima só adota tokens, tema e
+→ ~~Frieren~~ (feito, spec 073) → ~~Akane~~ (feito, spec 072) → ~~Violet~~ (feito, spec 076) → ~~Marin~~ (feito, spec 074) → Nami → Kaguya. O Hub da Makima só adota tokens, tema e
 ícones (não tem sidebar).
 
 ## Guia de voz

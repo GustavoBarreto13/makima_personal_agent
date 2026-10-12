@@ -1,6 +1,6 @@
 # Spec 076 — Violet no Design System
 
-**Status:** em implementação.
+**Status:** entregue (backend, front, Hermes e documentação). Falta no VPS: conferir `VIOLET_GEMINI_MODEL`, rodar a limpeza de páginas vazias e, opcional, o backfill de distorções.
 **Branch:** `076-violet-ds` (a partir da `075-kaguya-ds`, que ainda não foi integrada ao `master` e traz o DS
 que esta spec usa).
 **Plano de execução:** fases com um commit cada, como nas specs 072–075, mais uma revisão final com a
@@ -88,12 +88,17 @@ Tags, Tutor de Idiomas, modo foco/amplo, voltar à Makima.
 
 ## Estado da implementação
 
-- [ ] Fase 1 — backend
-- [ ] Fase 2 — fundações do DS
-- [ ] Fase 3 — shell
-- [ ] Fase 4 — Escrever
-- [ ] Fase 5 — Arquivo, Cartas, Emoções, Pessoas, Tags, Coleções
-- [ ] Fase 6 — Refletir
-- [ ] Fase 7 — Insights, Conselho, Revisão semanal, Valores
-- [ ] Fase 8 — Hermes
-- [ ] Fase 9 — fechamento
+- [x] Fase 1 — backend
+- [x] Fase 2 — fundações do DS
+- [x] Fase 3 — shell
+- [x] Fase 4 — Escrever
+- [x] Fase 5 — Arquivo, Cartas, Emoções, Pessoas, Tags, Coleções
+- [x] Fase 6 — Refletir
+- [x] Fase 7 — Insights, Conselho, Revisão semanal, Valores
+- [x] Fase 8 — Hermes
+- [x] Fase 9 — fechamento
+
+Verificação: `pytest tests/agents/test_violet_076.py` (34 casos puros) e `tests/agents/test_violet_076_db.py` (17 casos
+contra um PostgreSQL real, com todos os schemas); a suíte inteira do backend tem as mesmas 84 falhas antigas de antes da
+spec (nenhuma nova). Front: `npm test` (1023 testes, inclui `VioletShell.test.tsx`), `npm run audit:design` e `npm run build`.
+Não verificado aqui: as chamadas reais ao Gemini (sem chave local) e o uso no celular de verdade.

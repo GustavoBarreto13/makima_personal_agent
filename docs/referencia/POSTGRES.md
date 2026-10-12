@@ -40,7 +40,7 @@ diferentes.
   Todos os schemas do repo são **idempotentes** (`CREATE TABLE IF NOT EXISTS`,
   `CREATE INDEX IF NOT EXISTS`), então rodar de novo não dá erro nem duplica dados.
 
-### Os dez domínios (64 tabelas no total)
+### Os dez domínios (71 tabelas no total)
 
 | Domínio | Onde | Tabelas |
 |---|---|---|
@@ -51,9 +51,9 @@ diferentes.
 | **Animes** | Agente Marin | `anime`, `watch_logs`, `episodes`, `mal_sync_state`, `anime_lists`, `anime_list_items`, `anime_favorites` |
 | **Séries de TV** | Agente Mai | `series`, `seasons`, `series_episodes`, `series_watch_logs` |
 | **Pessoas** | Agente Komi | `people`, `person_aliases`, `person_dates`, `person_links` |
-| **Diário** (webapp-only) | `agents/journal` | `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_emotions`, `journal_emotion_logs`, `journal_letters` |
+| **Diário** (Violet) | `agents/journal` | `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_refs`, `journal_emotions`, `journal_emotion_logs`, `journal_letters`, `journal_values_assessments`, `journal_values_areas`, `journal_values_commitments`, `journal_values_checkins` |
 | **Tutor de Idiomas** (cross-domain — FK p/ `journal_bullets`) | Agente Kurisu | `journal_tutor_analyses`, `journal_tutor_events`, `journal_tutor_skills`, `journal_tutor_guides` |
-| **Conselho do Dia** (cross-domain — FK p/ `journal_pages`) | Agente Kurisu | `journal_counsel` |
+| **Conselho do Dia, revisão semanal e leitura emocional** (cross-domain — IA da Violet) | Agente Kurisu | `journal_counsel`, `journal_weekly_reviews`, `journal_emotion_analyses` |
 | **Infraestrutura** (agendador de jobs) | `scheduler/` | `scheduler_runs` |
 
 ---
@@ -1417,9 +1417,13 @@ Uma página por (tipo, dia).
 | `type_id` | INT | SIM | `1` | **FK** → `journal_types(id)`. |
 | `date` | DATE | NÃO | — | Dia da página. |
 | `dream` | TEXT | SIM | — | Registro de sonho (adicionado depois via `set_dream`). |
+| `font` | TEXT | SIM | — | Fonte do dia: `normal` \| `roteiro` \| `cursiva` (CHECK); NULL = a fonte padrão das preferências (spec 076). |
 | `created_at` / `updated_at` | TIMESTAMPTZ | SIM | `NOW()` | Auditoria. |
 
 **Constraints:** `UNIQUE(type_id, date)` — uma página por tipo por dia.
+**Spec 076:** ler um dia não cria a página (`get_page`); ela nasce no primeiro registro. "Dia com conteúdo" (Arquivo,
+número do dia, heatmap) = bullet não vazio, sonho não vazio, registro emocional ou carta. Páginas vazias antigas:
+`scripts/cleanup_violet_empty_pages.py`.
 
 ### `journal_bullets`
 
@@ -1448,9 +1452,26 @@ Linhas (bullets) de cada página, com busca full-text em português.
 | `id` | SERIAL | PK | — | ID. |
 | `bullet_id` | INT | SIM | — | **FK** → `journal_bullets(id)` `ON DELETE CASCADE`. |
 | `kind` | TEXT | NÃO | — | `person` \| `tag` (CHECK). |
-| `value` | TEXT | NÃO | — | Palavra sem o símbolo (`@`/`#`). |
+| `value` | TEXT | NÃO | — | Nome/tag sem o símbolo (`@`/`#`). Para o token `@[Ana Lima](komi:id)`, o nome inteiro. |
+| `person_id` | TEXT | SIM | — | ID da pessoa na Komi quando a menção foi resolvida (token com id ou `@Nome` com match exato e único). Spec 076. |
 
-**Índices:** `idx_mentions_kind_value` em `(kind, value)`.
+**Índices:** `idx_mentions_kind_value` em `(kind, value)`; `idx_mentions_person` em `(person_id)`.
+
+### `journal_refs` *(spec 076)*
+
+Itens de outros agentes citados nos bullets com `/` — o token `[Rótulo](agente:tipo:id)` vira uma linha aqui.
+Base dos backlinks futuros (ex.: "este filme aparece no diário em 3 dias"). Delete + insert a cada upsert do bullet.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `bullet_id` | INT | NÃO | — | **FK** → `journal_bullets(id)` `ON DELETE CASCADE`. |
+| `agent` | TEXT | NÃO | — | `kaguya` \| `akane` \| `frieren` \| `marin` \| `mai` \| `yato`. |
+| `entity_type` | TEXT | NÃO | — | `task`/`habit`/`goal` (Kaguya), `movie`, `book`, `anime`, `series`, `trip`. |
+| `entity_id` | TEXT | NÃO | — | ID do item no agente dono (sem FK — polimórfico). |
+| `label` | TEXT | NÃO | — | Rótulo escrito no texto. |
+
+**Constraints:** `UNIQUE(bullet_id, agent, entity_type, entity_id)`. **Índices:** `idx_journal_refs_target` em `(agent, entity_type, entity_id)`.
 
 ### `journal_emotions`
 
@@ -1479,6 +1500,7 @@ bullet, não afetam heatmap/busca).
 | `automatic_thought` | TEXT | SIM | — | Pensamento automático. |
 | `adaptive_response` | TEXT | SIM | — | Resposta adaptativa (reenquadramento). |
 | `reappraised_intensity` | SMALLINT | SIM | — | Intensidade após reavaliar, 0–10 (CHECK). |
+| `distortions` | TEXT[] | SIM | — | Distorções cognitivas do pensamento automático (`catastrofizacao`, `leitura_mental`…; catálogo em `agents/journal/emotion_patterns.py`), classificadas best-effort pela IA ao salvar. NULL = ainda não classificado. Spec 076. |
 | `created_at` | TIMESTAMPTZ | SIM | `NOW()` | Criação. |
 
 **Índices:** `idx_emotion_logs_page` em `(page_id)`.
@@ -1498,6 +1520,7 @@ vinculadas a pessoas da Komi (`person_links` com `entity_type = 'journal_letter'
 | `body` | TEXT | NÃO | — | Corpo da carta. |
 | `status` | TEXT | NÃO | `'draft'` | `draft` (rascunho editável) \| `sealed` (lacrada, imutável) — CHECK. |
 | `sealed_at` | TIMESTAMPTZ | SIM | — | Momento em que foi lacrada (NULL enquanto rascunho). |
+| `font` | TEXT | NÃO | `'normal'` | Fonte da carta: `normal` \| `roteiro` \| `cursiva` (CHECK). Spec 076. |
 | `created_at` / `updated_at` | TIMESTAMPTZ | SIM | `NOW()` | Auditoria. |
 
 **Índices:** `idx_letters_page` em `(page_id)`.
@@ -1505,6 +1528,40 @@ vinculadas a pessoas da Komi (`person_links` com `entity_type = 'journal_letter'
 > Ao criar suas tabelas, o módulo do Journal também **amplia o CHECK** de `person_links` (Komi)
 > para aceitar `entity_type = 'journal_letter'` — de forma idempotente, e só se a tabela da Komi
 > já existir.
+
+### Avaliação dos Valores — `journal_values_*` *(spec 076, `agents/journal/values.py`)*
+
+#### `journal_values_assessments`
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `status` | TEXT | NÃO | `'draft'` | `draft` \| `complete` (CHECK). No máximo um rascunho (`uq_values_assessment_draft`). |
+| `started_at` | TIMESTAMPTZ | NÃO | `NOW()` | Início. |
+| `completed_at` | TIMESTAMPTZ | SIM | — | Conclusão. Refazer cria uma avaliação nova (histórico). |
+| `summary_md` | TEXT | SIM | — | Resumo determinístico gravado ao concluir. |
+
+#### `journal_values_areas`
+
+Uma linha por área (12 domínios: `familia`, `intimidade`, `parentalidade`, `amizades`, `carreira`, `educacao`,
+`lazer`, `espiritualidade`, `comunidade`, `saude`, `ambiente`, `arte`). **PK** `(assessment_id, domain_key)`,
+FK `journal_values_assessments(id) ON DELETE CASCADE`.
+
+| Coluna | Tipo | Nulo? | Descrição |
+|---|---|---|---|
+| `description` | TEXT | SIM | Fase I — o "você ideal" na área. |
+| `narrative` | TEXT | SIM | Fase III — a frase de direção. |
+| `skipped` | BOOLEAN | NÃO (`FALSE`) | Área pulada. |
+| `possibility`, `importance_now`, `importance_general`, `action`, `satisfaction`, `concern` | SMALLINT | SIM | Fase II — notas 1–10 (CHECK). `action`/`satisfaction` são da semana passada. |
+
+#### `journal_values_commitments`
+
+`id`, `assessment_id` (FK CASCADE), `domain_key`, `text`, `task_id` (INT, tarefa da Kaguya — sem FK), `created_at`.
+
+#### `journal_values_checkins`
+
+Check-in semanal leve: `id`, `week_start` (DATE, segunda), `domain_key`, `action`/`satisfaction` (1–10),
+`created_at`. **Constraints:** `UNIQUE(week_start, domain_key)`.
 
 ### Tutor de Idiomas — `journal_tutor_*` (dono: agente **Kurisu**, spec 031)
 
@@ -1604,7 +1661,10 @@ Kurisu. "Regerar" faz `UPSERT` (`ON CONFLICT (page_id) DO UPDATE`), nunca acumul
 | `signals_json` | JSONB | NÃO | `'{}'` | Snapshot leve do que foi lido na coleta (auditoria/depuração). |
 | `used_web` | BOOLEAN | NÃO | `FALSE` | Atalho: `TRUE` se algum item do toolkit veio da busca web complementar. |
 | `model` | TEXT | SIM | — | Nome do modelo Gemini usado na síntese. |
-| `tokens_in` / `tokens_out` | INT | SIM | — | Soma de `usage_metadata` de **todas** as chamadas Gemini do conselho (temas + busca web opcional + síntese), quando a SDK devolve a metadata. Exibido pequeno no rodapé do card. |
+| `tokens_in` / `tokens_out` | INT | SIM | — | Soma de `usage_metadata` de **todas** as chamadas Gemini do conselho, quando a SDK devolve a metadata. Exibido pequeno no rodapé do card. |
+| `essay_md` | TEXT | SIM | — | **Spec 076** — o conselho em Markdown (800–1.200 palavras) com citações `[N]`. NULL nos conselhos antigos (formato `toolkit_json`). |
+| `sources_json` | JSONB | NÃO | `'[]'` | Notas citadas, validadas no servidor: `[{n, fonte, uri, titulo}]`. |
+| `digest_json` | JSONB | NÃO | `'{}'` | Resumo estruturado (`humor`, `observacoes`, `principios`, `cobrancas`, `evolucao`, `fontes_citadas`, `recomendacoes`) lido pelos conselhos dos 7 dias seguintes. |
 | `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | 1ª geração — preservado nas regenerações. |
 | `updated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Atualizado a cada regeneração. |
 
@@ -1618,6 +1678,18 @@ declarada (Kaguya não sabe que o conselho existe — Self-Contained Agents).
 do produto — a profundidade foi redirecionada para o toolkit (`exemplo_hoje`/`lembrete`
 novos). `_ensure_counsel_tables()` roda `ALTER TABLE ... DROP COLUMN IF EXISTS question`
 idempotente para bancos que já tinham a coluna.
+
+### `journal_weekly_reviews` *(spec 076 — Revisão semanal, Kurisu)*
+
+Uma linha por semana. `week_start` (DATE, segunda) **UNIQUE**; `verdict`, `tone` (`tapa_na_cara` \| `guia`),
+`essay_md` (NÃO nulo), `digest_json`, `sources_json`, `actions_json` (`[{texto, motivo, task_id}]`),
+`metrics_json` (força, dias escritos, emoção, foco), `sent_at` (enviada pelo Hermes), `model`,
+`tokens_in`/`tokens_out`, `created_at`/`updated_at`.
+
+### `journal_emotion_analyses` *(spec 076 — leitura emocional da Violet, Kurisu)*
+
+Cache por período: `since`/`until` (DATE, **UNIQUE** juntos), `essay_md`, `experiments_json`, `sources_json`,
+`findings_json` (a camada 1 no momento da leitura), `log_count`, `model`, `tokens_in`/`tokens_out`, `created_at`.
 
 ---
 
@@ -1652,7 +1724,7 @@ Pontos que confundem quem olha o repositório pela primeira vez:
   sufixo `_pg`). Esses são os schemas **antigos do BigQuery** (com `PARTITION BY` / `CLUSTER BY`).
   Foram **substituídos** pelos arquivos `*_pg.sql` e **não fazem parte** do PostgreSQL atual — o
   `setup_schemas.py` nem os menciona. Ignore-os ao pensar no banco de hoje.
-- **Journal não está no `setup_schemas.py`:** as 7 tabelas `journal_*` são reais, mas são criadas
+- **Journal não está no `setup_schemas.py`:** as tabelas `journal_*` (inclusive as da Avaliação dos Valores, criadas por `agents/journal/values.py`) são reais, mas são criadas
   **sob demanda** por `agents/journal/tools.py` (`_ensure_tables()`) na importação do módulo — não por
   um arquivo `.sql` nem pelo `setup_schemas.py`. Por isso não aparecem ao olhar só os schemas `.sql`.
   É um domínio **webapp-only** (sem agente no Telegram).

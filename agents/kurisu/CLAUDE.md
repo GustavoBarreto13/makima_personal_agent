@@ -98,89 +98,64 @@ do progresso) → `skills` (cache materializado por conceito, recomputável dos 
 
 ---
 
-## Conselho do Dia na Violet (spec 061) — `counsel.py`
+## IA da Violet: Conselho do Dia, Revisão semanal e leitura emocional (specs 061 → 076)
 
-Uma seção no topo da tela Escrever (acima dos bullets) onde, sob demanda (um clique), a
-**Violet** lê o dia — bullets, registros emocionais (TCC), cartas — cruza com a **base de
-conhecimento pessoal do usuário** (mesmo RAG da Kurisu, via `buscar_na_base`) e devolve
-3 blocos fixos: **espelho do dia** (resumo empático), **da sua base: ferramentas e
-curadoria** (o bloco central — cada item traz `porque`/`como`/`exemplo_hoje`/`lembrete`,
-com citação real da fonte) e **ações sugeridas** (podem virar tarefa na Kaguya em um
-clique). O bloco "Pergunta para refletir" existiu na v1 e foi removido — o produto ficou
-mais forte concentrando a profundidade no toolkit. Uma análise por dia (`UNIQUE page_id`);
-"Regerar" sobrescreve. Objetivo do produto: lembrar o usuário, na hora em que precisa, da curadoria
-que ele mesmo já fez (ex.: um vídeo salvo sobre dias tristes).
+A *voz* é da Violet (persona no prompt); o *conhecimento e a recuperação* são da Kurisu, dona do RAG.
+`agents/journal/` continua sem depender da Kurisu: quem conhece os dois é `webapp/backend/routers/journal.py`
+e, no MCP, `agents/kurisu/violet_tools.py` (juntado ao domínio `journal` em `mcp_servers/makima/registry.py`).
+**Modelo único:** `models.py::VIOLET_MODEL` (env `VIOLET_GEMINI_MODEL`, padrão `gemini-3.8-flash`) — também
+usado pelo Tutor e pelo `violet_agent`.
 
-### Por que aqui e não em `agents/journal/`
+### Peças comuns
 
-Mesma decisão do Tutor de Idiomas: a *voz* que aparece na tela é da Violet (persona no
-prompt de síntese), mas o *conhecimento e a lógica de recuperação* são da Kurisu — dona do
-domínio RAG (Constitution, Princípio I). `agents/journal/` continua sem depender da
-Kurisu; `webapp/backend/routers/journal.py` é o único ponto que importa os dois agentes ao
-mesmo tempo (agora com **3** integrações cross-domain: Tutor, Conselho e a composição do
-campo `tutor` em `GET /page`). Isso também evita colidir com o plano pendente de rename
-`agents/journal → agents/violet` (`docs/planos/PLANO_VIOLET_EVERGARDEN.md`), que declara
-"sem novas tools em `tools.py`" para aquele pacote.
+- `violet_ai.py` — Gemini (`gemini_json`, `gemini_web`), **RAG amplo** (`recuperar_amplo`: até 8 consultas,
+  `buscar_na_wiki(q, top_n=8, top_k=15)`, no máx. 2 trechos por nota e 25 no total, intercalando as
+  consultas; complementa com `buscar_na_base` se a wiki render < 4), `penalizar_repetidas` (notas citadas nos
+  últimos dias vão para o fim da fila), `normalizar_citacoes` (os `[N]` do texto são validados contra os
+  trechos recuperados e renumerados por nota; índice inválido some) e `TOM_VIOLET` (franca: confronta o que vai
+  contra metas/valores/compromissos, dureza proporcional à evidência, nunca humilhação).
+- `violet_context.py` — leitura pura: `dias` (texto sem a sintaxe dos tokens), `conselhos` (digest + desfecho
+  das ações na Kaguya), `kaguya` (tarefas, hábitos, metas), `sinais` (força, emoção, foco: semana vs. anterior),
+  `valores` (Avaliação dos Valores), `padroes_emocionais`, `compromissos_da_ultima_revisao`.
 
-### Pipeline — `gerar_conselho(date, type_id=1)`
+### Conselho do Dia — `counsel.py`
 
-1. **Coleta** (`_coletar_dia`): bullets, `journal_emotion_logs`, `journal_letters` e
-   `dream` do dia; `_janela_7_dias` resume os 7 dias anteriores; `_conselhos_anteriores`
-   traz os 3 conselhos mais recentes (só `mirror`/`question`/textos de `actions`, para
-   continuidade); `_kaguya_do_dia` lê (best-effort, import lazy) `list_tasks_today` e
-   `list_habits` da Kaguya. Dia sem nenhum sinal → `{"status": "error"}` sem gerar nada.
-2. **Temas** (`_extrair_temas`): Gemini one-shot (`response_schema`) extrai de 2 a 4
-   consultas de busca + a carga emocional do dia — evita jogar o resumo cru no RAG.
-3. **RAG** (`_consultar_rag`): prioriza a **wiki curada** — `buscar_na_wiki` (só o corpus
-   027, sem a memória operacional) uma vez por tema (teto `_MAX_RAG_QUERIES = 4`). Só
-   recorre à `buscar_na_base` (wiki + memória operacional, complementar) se a wiki sozinha
-   render menos de `_MIN_TRECHOS_WIKI = 2` trechos, com um teto menor
-   (`_MAX_FALLBACK_QUERIES = 2`) para conter a latência. Deduplicado por `uri` via as
-   funções **puras** `_selecionar_queries`/`_consultar_varios`/`_merge_dedup_trechos`
-   (gate de `tests/agents/test_kurisu_counsel.py`, sem precisar mockar o Vertex).
-   > **Por que priorizar a wiki** (achado em produção, ver `research.md` R9): a mescla de
-   > `buscar_na_base` reordena por recência, e páginas da wiki (`doc_date=None`) sempre
-   > perdem esse desempate para bullets antigos do diário (que têm `doc_date` recente) —
-   > na prática a wiki nunca sobrevivia ao corte de `_TOP_N_NARROW`. `buscar_na_wiki`
-   > (novo em `tools.py`) existe para não competir com isso.
-4. **Web complementar** (US3): `_precisa_busca_web` (puro: `< 2 trechos relevantes`)
-   decide se dispara `_buscar_web` — chamada Gemini **separada**, com a tool
-   `google_search` habilitada e **sem** `response_schema` (as duas coisas são mutuamente
-   exclusivas na mesma chamada — restrição real da API, não escolha de design).
-5. **Síntese** (`_sintetizar`): Gemini one-shot (`response_schema`) produz os 3 blocos na
-   voz da Violet. Cada item do toolkit traz `titulo`, `porque` (o princípio por trás),
-   `como` (passo a passo prático), `exemplo_hoje` (ligado ao que a pessoa escreveu
-   especificamente hoje — nunca genérico) e `lembrete` (por que vale não esquecer disso
-   agora), além de `trecho_index` (o número `[N]` do trecho na lista numerada do prompt)
-   em vez de copiar `fonte`/`uri` como texto livre — copiar
-   uma uri inteira é frágil para o modelo (medido: ~33% de falha); um índice pequeno é
-   muito mais confiável (ver `research.md` R9).
-6. **Honestidade server-side** (`_normalize_toolkit`): `fonte`/`uri`/`origem` de cada item
-   do toolkit vêm **sempre** de `rag_trechos[trecho_index - 1]` no servidor — nunca do
-   texto do modelo. `trecho_index` inválido, fora do intervalo, ou `0` (o modelo sinaliza
-   "não veio de nenhum trecho listado") vira `origem: "web"` (mesmo espírito do
-   `_normalize_slug` do Tutor: nunca confiar na auto-declaração do modelo). Quando a base
-   não retornou nenhum trecho, uma frase honesta é prefixada ao `mirror`
-   deterministicamente (FR-009), independente do que o modelo tenha escrito.
-7. **Persistência**: `INSERT ... ON CONFLICT (page_id) DO UPDATE` — uma linha por dia;
-   regenerar preserva `task_id` de ações já convertidas (casamento por texto). `tokens_in`/
-   `tokens_out` gravam a soma de `usage_metadata` de todas as chamadas Gemini do conselho
-   (temas + web opcional + síntese), acumulada em `_novo_usage_acc`/`_acumular_usage` —
-   best-effort, nunca quebra a geração se a SDK não devolver a metadata.
+Antes (061): 2–4 cards presos a um trecho cada. Agora: **texto longo e denso (800–1.200 palavras)** que cruza
+várias notas. Pipeline (tudo antes da escrita no banco — falha não grava nada):
+temas (6–8 consultas) → RAG amplo → web só se a base vier quase vazia → **mapa de ideias** (JSON: espelho,
+humor, observações, evolução, cobranças, princípios × trechos) → **conselho** (Markdown com as seções "O que eu
+li no seu dia", "O que está acontecendo", "Como você evoluiu", "O que a sua base ensina sobre isso", "Como
+aplicar amanhã" + ações) → citações validadas. O contexto inclui os conselhos dos **últimos 7 dias**
+(`VIOLET_COUNSEL_HISTORY_DAYS`), os compromissos da última revisão semanal e os valores. Persistência em
+`journal_counsel` (`essay_md`, `sources_json`, `digest_json`; o digest alimenta os conselhos seguintes).
+Linhas antigas (só `toolkit_json`) continuam sendo exibidas no formato antigo.
 
-### Tabela (`journal_counsel`)
+### Revisão semanal — `weekly_review.py`
 
-Uma linha por `page_id` (`UNIQUE`, FK `journal_pages(id) ON DELETE CASCADE`): `mirror`,
-`toolkit_json` (`[{titulo, porque, como, exemplo_hoje, lembrete, fonte, uri, origem}]`),
-`actions_json` (`[{texto, motivo, task_id}]`), `signals_json` (auditoria), `used_web`,
-`model`. Coluna a coluna: `docs/referencia/POSTGRES.md`.
+`gerar_revisao_semanal(week)` lê a semana (segunda a domingo, America/Sao_Paulo): diário, conselhos com
+desfecho, sinais, Kaguya, valores, padrões emocionais e a revisão anterior (cobra o que ela exigiu). Texto com
+Veredito · Onde você foi bem · Onde você piorou · Comparado com a semana passada · Padrões · O que a sua base
+diz · Para esta semana; `tone` = `tapa_na_cara` | `guia` pela evidência. Uma linha por semana em
+`journal_weekly_reviews`. Envio: job `violet_weekly_review` (domingo 20:30, `VIOLET_WEEKLY_REVIEW_HOUR/MINUTE`)
+→ `scripts/send_violet_weekly_review.py` (idempotente; `--dry-run`, `--week`, `--force`) → Hermes
+(`scheduler/notify_channels.py`) com a versão curta e o link `WEBAPP_PUBLIC_URL/journal#refletir/semana/<data>`
+(sem a env, deriva de `OAUTH_REDIRECT_URL`).
+
+### Registro emocional — `emotion_analysis.py`
+
+- `classificar_distorcoes(log_id)`: rótulos de distorção cognitiva do pensamento automático (catálogo fixo em
+  `agents/journal/emotion_patterns.py::DISTORTIONS`), best-effort em segundo plano ao salvar o registro.
+  Backfill: `scripts/backfill_violet_distortions.py`.
+- `analisar_emocoes(since, until)`: a "leitura da Violet" (camada 2) sobre os achados determinísticos da
+  camada 1 + registros + valores + RAG (TCC). Cache por período em `journal_emotion_analyses`.
 
 ### Endpoints (`webapp/backend/routers/journal.py`)
 
-`POST/GET /api/journal/counsel`, `GET /api/journal/counsel/history`,
-`PATCH /api/journal/counsel/actions` — o `PATCH` só registra o vínculo; quem cria a
-tarefa é o frontend, chamando `kaguyaApi.createTask` primeiro (nenhum endpoint novo de
-tarefas).
+`POST/GET /counsel`, `GET /counsel/history`, `PATCH /counsel/actions`, `GET/POST /weekly-review`,
+`GET /weekly-review/history`, `PATCH /weekly-review/actions`, `GET/POST /emotion-analysis`.
+
+Testes: `tests/agents/test_kurisu_counsel.py` (peças puras do conselho) e `tests/agents/test_violet_076.py`
+(citações, RAG amplo, semanas).
 
 ---
 
@@ -204,7 +179,7 @@ Usuário → Makima → kurisu_agent
   a Vector Search API; a Discovery Engine API foi habilitada na ativação.
 - **Embeddings:** modelo multilíngue gerenciado do Vertex (`text-multilingual-embedding-002`),
   porque a wiki é PT/EN/JA.
-- **LLM:** `gemini-2.5-flash`.
+- **LLM:** `gemini-2.5-flash` (agente da Kurisu); a IA da Violet usa `VIOLET_MODEL` (ver acima).
 - **Singleton:** Kurisu não usa McpToolset (sem processo filho). A tool `buscar_na_base` é uma
   FunctionTool comum; o `vertexai.init` é lazy-singleton dentro de `tools.py`.
 

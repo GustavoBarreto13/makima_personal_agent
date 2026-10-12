@@ -8,7 +8,7 @@ Dez Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
 
 | Pasta | Shell | API object | CSS | Rota |
 |---|---|---|---|---|
-| `violet/` | `VioletShell.tsx` | `violetApi` em `lib/api.ts` | `violet.css` | `/journal/*` |
+| `violet/` | `VioletShell.tsx` (sobre o `AppShell` do DS, spec 076) | `violetApi` em `violet/violetApi.ts` | `violet.css` (só complementos `.vl-*` do DS) | `/journal/*` |
 | `nami/` | `NamiShell.tsx` (sobre o `AppShell` do DS) | `namiApi` em `nami/namiApi.ts` | `nami.css` (só complementos do DS, tokens `--ds-*`) | `/nami/*` |
 | `frieren/` | `FrierenShell.tsx` (sobre o `AppShell` do DS, spec 073) | `frierenApi` em `frieren/frierenApi.ts` | `frieren.css` (só complementos `.fr-*` do DS) | `/books/*` |
 | `kaguya/` | `KaguyaShell.tsx` | `kaguyaApi` em `kaguya/api.ts` | `kaguya.css` + `legacy.css` (Design System) | `/tasks/*` |
@@ -34,8 +34,8 @@ Nunca misturar: código de Shell não chama componentes do `Layout`; páginas da
 
 Cada Shell tem seu próprio arquivo CSS com tokens OKLCH (`--garnet`, `--sapphire`, etc.) declarados dentro de um seletor de escopo — a classe raiz do Shell (`.vl-app`, `.nami-app`, ``.akane-shell`, `.marin-shell`, `.mai-shell`, `.km-app`, `.yato-shell`, `.mkA`). Tokens de um domínio **não são visíveis** no outro.
 
-> **Atenção (vazamento conhecido):** `violet.css` tem regras globais (não escopadas) e `mai.css`
-> tem classes genéricas (`.hero`, `.page`) que vazam entre shells no bundle único do Vite.
+> **Atenção (vazamento conhecido):** `mai.css` tem classes genéricas (`.hero`, `.page`) que vazam entre
+> shells no bundle único do Vite (o da Violet acabou com a migração para o DS, spec 076).
 > Correções de vazamento devem ser escopadas na classe raiz do shell afetado, com resets explícitos.
 
 - Usar somente os tokens declarados no CSS do próprio domínio.
@@ -98,7 +98,7 @@ fetch('/api/journal/heatmap?year=2026', { credentials: 'include' })
 └── ui/                  # primitivos visuais (charts, icons, etc.)
 ```
 
-`violetApi` fica em `lib/api.ts` por serem menores; todos os outros domínios têm arquivo de API próprio dentro da sua pasta (`nami/namiApi.ts`, `kaguya/api.ts`, `akane/akaneApi.ts`, `marin/marinApi.ts`, `mai/maiApi.ts`, `komi/komiApi.ts`, `yato/yatoApi.ts`, `makima/makimaApi.ts`).
+Todos os domínios têm arquivo de API próprio dentro da sua pasta (`violet/violetApi.ts`, `nami/namiApi.ts`, `kaguya/api.ts`, `akane/akaneApi.ts`, `marin/marinApi.ts`, `mai/maiApi.ts`, `komi/komiApi.ts`, `yato/yatoApi.ts`, `makima/makimaApi.ts`); `lib/api.ts` guarda o wrapper base e o `booksApi` antigo.
 
 ---
 

@@ -117,8 +117,10 @@ necessário (tasks, journal_bullets).
 | `delete_important_date(date_id)` | date_id: int | DELETE físico; CASCADE remove o birthday_sync_links; hook Komi→Kaguya soft-deleta a tarefa (scope='series') |
 | `list_people()` | — | Retorna pessoas vivas com `link_count` + `category` via LEFT JOIN |
 | `find_people(query)` | — | Smart-match: UNION de pessoas + aliases; 0/1/N resultados |
+| `find_people_exact(name)` | — | Nome ou apelido **exatamente** igual (sem acento/caixa) — critério para vincular uma `@Menção` sem perguntar (spec 076) |
+| `suggest_people(query, limit=8)` | — | Autocomplete do `@` no diário: prefixo no nome (ou em qualquer palavra dele) ou apelido, com `avatar_url` e o apelido que casou; sem termo, os mais vinculados (spec 076) |
 | `get_person(person_id)` | — | Perfil + aliases + dates (sem vínculos cross-agent) |
-| `get_person_summary(person_id)` | — | Perfil + financas + tarefas + diario + livros |
+| `get_person_summary(person_id)` | — | Perfil + financas + tarefas + diario + cartas + livros |
 | `get_people_overview()` | — | Agregação cross-pessoa para a Home: `{id, name, category, avatar_url, dates[], finance_net, last_interaction}` por pessoa |
 | `link_person_on_cursor(cur, person_id, entity_type, entity_id)` | — | INSERT … ON CONFLICT DO NOTHING; chamado por outros agentes na mesma transação |
 
@@ -161,7 +163,8 @@ WHERE p.deleted = FALSE AND a.normalizado LIKE %(pattern)s
 | `perfil` | `people` + aliases + dates | get_person + contagem de vínculos |
 | `financas` | `transactions` via `person_links` | JOIN WHERE entity_type='transaction' |
 | `tarefas` | `tasks` via `person_links` | JOIN WHERE entity_type='task' e entity_id::int |
-| `diario` | `journal_bullets` + `journal_pages` via `person_links` | JOIN WHERE entity_type='journal_bullet' e entity_id::int |
+| `diario` | `journal_bullets` + `journal_pages` via `person_links` | JOIN WHERE entity_type='journal_bullet' e entity_id::int — `contagem` total + 10 trechos `{id, bullet_id, content, texto, date, deep_link}` |
+| `cartas` | `journal_letters` + `journal_pages` via `person_links` | JOIN WHERE entity_type='journal_letter' — `{id, recipient, title, status, font, date, trecho, deep_link}` (spec 076) |
 | `livros` | `books` via `person_links` | JOIN WHERE entity_type='book' |
 
 Bloco vazio = ausência de dados, nunca erro. Cada bloco tem seu próprio `try/except` para
@@ -192,12 +195,18 @@ if person_ids:
 | Frieren | `add_book` | `"book"` |
 | Journal | `upsert_bullet` | `"journal_bullet"` (+ auto-link de @menções) |
 
-### Auto-link de @menções no diário (Journal)
+### Vínculo do diário (Violet, spec 076)
 
-Quando `upsert_bullet` é chamado, além de `person_ids` explícitos, o auto-link detecta
-`@menções` no conteúdo via `_parse_mentions` e, para cada menção com **exatamente 1 match**
-em `find_people`, grava o vínculo automaticamente. Se não houver match ou houver ambiguidade,
-ignora silenciosamente (best-effort — nunca falha o bullet).
+O texto do bullet guarda a pessoa como token `@[Nome](komi:<id>)` (o webapp sugere ao digitar `@`, via
+`suggest_people`). A cada `upsert_bullet`, os `person_links` do bullet são **sincronizados**: viram
+exatamente as pessoas citadas agora — tokens, `person_ids` explícitos e `@Nome` legado com match **exato e
+único** (`find_people_exact`; antes era por prefixo e, por um bug de chave, nunca vinculava). Editar remove
+quem saiu; apagar o bullet remove os vínculos.
+
+**Contrato para a Komi DS (futuro):** o resumo da pessoa já traz `diario.trechos[].texto` (sem a sintaxe dos
+tokens), `bullet_id` e `deep_link` (`/journal#dia/<data>`) e o bloco `cartas` com `deep_link`
+(`/journal#carta/<id>`). A Komi legacy aceita `/people#pessoa/<id>` para abrir uma pessoa direto (usado pela
+Violet).
 
 ### Regra de smart-match (FR-007)
 

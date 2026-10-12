@@ -43,13 +43,13 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 |---|---|---|---|
 | `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1, 040–048, 071 | `agents/nami/CLAUDE.md` |
 | `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + GTD/revisão semanal (034/035) + Foco gameficado (037/062) + modo férias (065) | ✅ Fases 2, 011–020, 024–026, 029–030, 034–039, 062, 065 · ✅ 075 (Design System em `/tasks` + espaço Trabalho/Pessoal + agenda; falta a integração Komi `people.context`) | `agents/kaguya/CLAUDE.md` |
-| `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada + Tutor de Idiomas (031) + Conselho do Dia (061) | ✅ Fases 027, 031, 061 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
+| `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada + Tutor de Idiomas (031) + IA da Violet: Conselho do Dia, revisão semanal e leitura emocional (061/076) | ✅ Fases 027, 031, 061, 076 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) + favoritos/coração + estatísticas no padrão do DS (073) | ✅ Fase 5a, 073 | `agents/frieren/CLAUDE.md` |
 | `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015, 072 | `agents/akane/CLAUDE.md` |
 | `agents/marin/` | Animes (PostgreSQL + Jikan/AniList + MAL OAuth) + favoritos/coração + estatísticas no padrão do DS (074) | ✅ Fase 021, 074 | `agents/marin/CLAUDE.md` |
 | `agents/mai/` | Séries de TV (PostgreSQL + TMDB API v3) | ✅ Fase 022 | `agents/mai/CLAUDE.md` |
 | `agents/komi/` | Pessoas e contatos (PostgreSQL) | ✅ Fase 014 | `agents/komi/CLAUDE.md` |
-| `agents/journal/` | Diário (Violet) — sub-agente ADK completo (`violet_agent`, ativado na spec 064) + consumido pelo router `/api/journal/*` do webapp | ✅ Fase 003/006/007 · ✅ agente | `agents/journal/CLAUDE.md` |
+| `agents/journal/` | Diário (Violet) — sub-agente ADK completo (`violet_agent`, spec 064) + webapp no Design System (076): @Komi, /referências, fontes, Cartas, Emoções, Refletir, força, Avaliação dos Valores | ✅ Fase 003/006/007, 064, 076 | `agents/journal/CLAUDE.md` |
 | `agents/yato/` | Viagens — roteiro dia a dia + dossiê de mobilidade urbana (protocolo de 7 passos) + matriz economia×conforto + orçamento com lançamento atômico na Nami | ✅ Fase 066 (agente + webapp) | `agents/yato/CLAUDE.md` |
 | `agents/lucy/` | Email (Gmail) — agente somente leitura (IMAP) + digest matinal agendado | ✅ Fase 4 / 032 | `agents/lucy/CLAUDE.md` |
 
@@ -247,7 +247,13 @@ makima_personal_agent/
 │   │   ├── tools.py     # buscar_na_base() — busca no corpus Vertex AI RAG
 │   │   ├── recency.py   # ponderação por recência dos resultados
 │   │   ├── tutor.py     # Tutor de Idiomas (spec 031) — análise de escrita via Gemini
-│   │   ├── counsel.py   # Conselho do Dia (spec 061) — persona Violet, RAG + Gemini
+│   │   ├── counsel.py   # Conselho do Dia (specs 061/076) — RAG amplo, 7 dias de histórico, texto longo com citações
+│   │   ├── weekly_review.py   # Revisão semanal do diário (spec 076) — job de domingo → Hermes
+│   │   ├── emotion_analysis.py # leitura emocional da Violet + distorções cognitivas (spec 076)
+│   │   ├── violet_ai.py       # Gemini, RAG amplo, citações honestas e o tom da Violet (spec 076)
+│   │   ├── violet_context.py  # contexto lido antes de aconselhar: diário, conselhos, Kaguya, sinais, valores (spec 076)
+│   │   ├── violet_tools.py    # tools da Violet que dependem da Kurisu, para o Hermes (spec 076)
+│   │   ├── models.py          # VIOLET_MODEL — modelo único da IA da Violet (spec 076)
 │   │   ├── memory/      # memória unificada (spec 028): exporters.py, render.py, store.py, sync.py
 │   │   └── CLAUDE.md    # arquitetura RAG, setup Vertex AI, checklist de ativação, Tutor, Conselho do Dia
 │   ├── frieren/         # agente de livros — Fase 5a ✅
@@ -295,10 +301,18 @@ makima_personal_agent/
 │   │   ├── agent.py     # mai_agent — singleton
 │   │   ├── schema_pg.sql # schema das 4 tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, schema, TMDB Bearer, personalidade
-│   ├── journal/         # diário (Violet) — sub-agente ADK completo + webapp — spec 064 ✅
+│   ├── journal/         # diário (Violet) — sub-agente ADK completo + webapp — specs 064/076 ✅
 │   │   ├── __init__.py
 │   │   ├── tools.py     # PostgreSQL (pages, bullets, mentions, emoções, cartas) — cria tabelas sob demanda
 │   │   ├── toolset.py   # TOOLS: list[Callable] — reaproveitado por mcp_servers/makima — spec 064
+│   │   ├── markup.py    # motor PURO: tokens @[Nome](komi:id) / [Rótulo](agente:tipo:id), @legado, #tags — spec 076
+│   │   ├── references.py # provedores do "/" (Kaguya, Akane, Frieren, Marin, Mai, Yato) + texto livre do chat — spec 076
+│   │   ├── strength.py  # força da escrita (motor dos hábitos da Kaguya) — spec 076
+│   │   ├── reflect.py   # seções do Refletir (modelo do Journalistic) — spec 076
+│   │   ├── tools_stats.py # Insights no StatsPayload do DS — spec 076
+│   │   ├── emotion_patterns.py # análise emocional camada 1 (motor puro + banco) — spec 076
+│   │   ├── values.py / values_diagnosis.py # Avaliação dos Valores (persistência / roteiro e diagnóstico puros) — spec 076
+│   │   ├── chat_tools.py # tools para o chat (escrever_no_diario resolve @ e /) — spec 076
 │   │   ├── agent.py     # violet_agent — singleton, personalidade Auto Memory Doll
 │   │   └── CLAUDE.md    # tools, schema, personalidade, integração com o webapp
 │   └── yato/            # agente de viagens — spec 066 ✅ backend + webapp
@@ -352,6 +366,9 @@ makima_personal_agent/
 │   ├── backup_postgres.py     # pg_dump → Google Cloud Storage (agendado pelo scheduler/ — job diário)
 │   ├── migrate_akane_stats_fields.py # idioma/países (TMDB) e watchlist_added_at dos filmes — spec 072 (dry-run por padrão; já aplicada no VPS)
 │   ├── send_lucy_digest.py    # digest matinal de emails (Lucy) — agendado pelo scheduler/ (spec 032)
+│   ├── send_violet_weekly_review.py # revisão semanal do diário (domingo à noite → Hermes) — spec 076
+│   ├── cleanup_violet_empty_pages.py # remove páginas vazias do diário (dry-run por padrão) — spec 076
+│   ├── backfill_violet_distortions.py # classifica distorções dos registros emocionais antigos (dry-run) — spec 076
 │   ├── seed_mobility_apps.py  # semeia agents/yato/mobility_apps a partir do research.md — spec 066
 │   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)
 │   ├── migrate_marin_ds.py    # coração, data de abandono e vitrine de favoritos dos animes — spec 074 (dry-run por padrão, --apply grava; já aplicada no VPS em 08/out)

@@ -79,77 +79,23 @@ Fluxo: `GET /auth/login` → Google OIDC → `GET /auth/callback` → cookie `ma
 
 ---
 
-### Domínio: Journal (Diário pessoal)
+### Domínio: Journal (Diário pessoal — Violet)
 
-Router: `routers/journal.py` · Tools: `agents/journal/tools.py` · Storage: **PostgreSQL** (não BigQuery)
+Router: `routers/journal.py` · Lógica: `agents/journal/*` (diário) e `agents/kurisu/*` (IA da Violet) · Storage: PostgreSQL.
+**Rotas: [`docs/API.md`](docs/API.md#diário-apijournal)** (fonte única). Regras que valem para quem mexe no router:
 
-**Tutor de Idiomas (spec 031) e Conselho do Dia (spec 061) — cross-domain do router:** os
-endpoints `/api/journal/tutor/*`, `/api/journal/bullets/{id}/tutor` e `/api/journal/counsel*`
-chamam `agents.kurisu.tutor`/`agents.kurisu.counsel` (não `agents/journal/`) — as duas features
-são personas da Kurisu (dona do RAG) aplicadas à Violet. `routers/journal.py` é o único ponto que
-importa os dois agentes ao mesmo tempo; `GET /api/journal/page` compõe o campo `tutor` de cada
-bullet via `get_bullets_tutor_meta` **no router**, sem alterar `agents/journal/get_or_create_page`.
-Detalhes em `agents/kurisu/CLAUDE.md`.
-
-Todos os domínios (finanças, livros e journal) usam o mesmo PostgreSQL compartilhado com o ADK.
-
-**Modelo de dados:**
-- `journal_types` — tipos de diário (ex.: id=1 → "personal"); extensível
-- `journal_pages` — uma página por (type_id, date); criada sob demanda pelo `get_or_create_page`
-- `journal_bullets` — bullets numerados por posição dentro da página; cada bullet tem conteúdo livre
-- `journal_mentions` — extração automática de `@pessoa` e `#tag` de cada bullet
-
-**Endpoints disponíveis:**
-| Endpoint | Método | Descrição |
-|---|---|---|
-| `/api/journal/page?date=YYYY-MM-DD&type_id=1` | GET | Busca/cria página para uma data |
-| `/api/journal/bullets` | POST | Upsert de bullet (por page_id + position) |
-| `/api/journal/bullets/{id}` | DELETE | Remove bullet (cascade apaga menções) |
-| `/api/journal/heatmap?year=2026` | GET | Contagem de bullets por dia (para o heatmap) |
-| `/api/journal/mentions?kind=person\|tag` | GET | Lista menções distintas com count DESC |
-| `/api/journal/filter?kind=person\|tag&value=X` | GET | Bullets que mencionam uma pessoa ou tag |
-| `/api/journal/search?q=texto` | GET | Full-text search com dicionário `portuguese` |
-| `/api/journal/emotions` | GET | Lista o vocabulário de emoções (predefinidas + custom) |
-| `/api/journal/emotions` | POST | Cria emoção custom (idempotente, dedupe por `LOWER(name)`) |
-| `/api/journal/emotion-logs?page_id=N` | GET | Registros emocionais (TCC) de um dia |
-| `/api/journal/emotion-logs` | POST | Cria registro emocional |
-| `/api/journal/emotion-logs/{id}` | PATCH | Atualização parcial de um registro |
-| `/api/journal/emotion-logs/{id}` | DELETE | Remove um registro emocional |
-| `/api/journal/emotion-stats?year=2026` | GET | Agregações para a aba Emoções dos Insights |
-| `/api/journal/bullets/{id}/favorite` | PATCH | Define favorito de um bullet `{favorite: bool}` (Feature 007) |
-| `/api/journal/favorite-days?year=N` | GET | Lista datas do ano com ao menos um bullet favorito (Feature 007) |
-| `/api/journal/letters?page_id=N` | GET | Cartas de um dia, com pessoas vinculadas (`people:[{id,name}]`) |
-| `/api/journal/letters` | POST | Cria carta `{page_id, recipient, body, title?, status?, person_ids?}` |
-| `/api/journal/letters/{id}` | PATCH | Atualiza parcial (só rascunhos; `person_ids` regrava vínculos) |
-| `/api/journal/letters/{id}/seal` | POST | Lacra a carta (rascunho → lacrada, imutável) |
-| `/api/journal/letters/{id}` | DELETE | Remove a carta (permitido mesmo lacrada) |
-| `/api/journal/bullets/{id}/tutor` | POST | Analisa a escrita do bullet via Gemini (spec 031, persona Kurisu) `{language}` |
-| `/api/journal/bullets/{id}/tutor` | GET | Última análise do bullet (serve o toggle original↔corrigido) |
-| `/api/journal/tutor/progress?language=en` | GET | Skills por conceito + nível CEFR + próximo foco + guia ativo |
-| `/api/journal/tutor/analyses?language=en` | GET | Histórico de análises recentes |
-| `/api/journal/tutor/concepts` | GET | Lista canônica de conceitos gramaticais (seletor do guia) |
-| `/api/journal/tutor/guide` | GET/PUT/DELETE | CRUD do guia de estudo ativo (no máx. 1 por idioma) |
-| `/api/journal/counsel` | POST | Gera/regenera o conselho do dia (spec 061, persona Violet) `{date, type_id?}` — chamada longa, até ~60s |
-| `/api/journal/counsel` | GET | Conselho já gerado da data (leitura pura, não cria nada) `?date=&type_id=` |
-| `/api/journal/counsel/history` | GET | Histórico dos conselhos mais recentes `?limit=` |
-| `/api/journal/counsel/actions` | PATCH | Marca uma ação sugerida como já convertida em tarefa `{page_id, action_index, task_id}` |
-
-**Registro Emocional (TCC) — Feature 006.** Tabelas `journal_emotions` + `journal_emotion_logs`.
-Os registros são **ortogonais aos bullets** (não contam palavras nem afetam heatmap/coleções).
-Regra de negócio validada no router: `reappraised_intensity` só é aceita com `adaptive_response`
-não-vazia (senão HTTP 400). `list_emotions`, `list_emotion_logs` e `emotion-stats` retornam
-lista/dict direto — **não** usar `_check_result` neles.
-
-**Cartas.** Tabela `journal_letters` — texto expressivo livre ancorado ao dia (page_id),
-também **ortogonal aos bullets**. `status` é `'draft'` (rascunho editável) ou `'sealed'`
-(lacrada, imutável); `update_letter` rejeita editar carta lacrada (HTTP 400). Cartas podem ser
-vinculadas a pessoas da Komi (`entity_type='journal_letter'` em `person_links`) — o CHECK de
-`person_links` foi ampliado para aceitar esse tipo. `list_letters` retorna lista direto — **não**
-usar `_check_result` nele. Aparece na tela Escrever, logo abaixo do Registro Emocional.
-
-**Diferença na validação de resultado:**
-`list_heatmap`, `list_mentions`, `get_bullets_by_mention` e `search_bullets` retornam listas/dicts diretamente — **sem** campo `"status"`, então **não** usar `_check_result` neles.
-`get_or_create_page` retorna `{"error": "..."}` (não `{"status": "error"}`) quando `type_id` não existe — verificar `result.get("error")` explicitamente antes de chamar `_check_result`.
+- `routers/journal.py` é o único ponto que importa Journal + Kurisu ao mesmo tempo (Tutor, Conselho do Dia, revisão
+  semanal e leitura emocional são personas da Kurisu aplicadas à Violet). `GET /page` compõe o campo `tutor` de cada
+  bullet **no router** (`get_bullets_tutor_meta`).
+- **`GET /page` não cria a página** (spec 076): dia vazio volta com `page.id = null`; o front chama `POST /page` no
+  primeiro registro. Texto vazio em `POST /bullets` apaga o bullet da posição.
+- Vínculos com a Komi são sincronizados por bullet no backend (tokens `@[Nome](komi:id)`); o autocomplete de `@` usa
+  `GET /people/suggest` e o de `/` usa `GET /refs/providers` + `GET /refs/search`.
+- Registros emocionais e cartas são ortogonais aos bullets. `reappraised_intensity` só com `adaptive_response`
+  (validado no router, HTTP 400). Salvar um registro com pensamento automático agenda a classificação de distorções
+  (`BackgroundTasks`).
+- Tools que devolvem lista/dict sem `status` não passam por `_check_result`; `get_or_create_page`/`ensure_page`
+  devolvem `{"error"}`.
 
 ---
 
@@ -208,7 +154,7 @@ shells legados; no padrão novo, `DatePicker`/`TimePicker`/`Field` vêm de `desi
 
 #### Inputs, data e hora — padrão
 
-Nos shells no Design System (Nami, Akane, Frieren, Marin, Kaguya) os campos vêm de `design/`: `Field`, `DatePicker`, `TimePicker`
+Nos shells no Design System (Nami, Akane, Frieren, Marin, Kaguya, Violet) os campos vêm de `design/`: `Field`, `DatePicker`, `TimePicker`
 (nunca `<input type="date|time">` nativo — o popup do sistema ignora os tokens e varia por OS/browser) e datas sempre pelas partes
 **locais** do navegador (`getFullYear/getMonth/getDate`, **nunca** `toISOString().slice(0,10)` — fuso UTC-3). Popovers de campo:
 fechar ao clicar fora (`mousedown` + `ref.contains`) e no `Escape`; `z-index: 70` acima dos modais.
@@ -225,7 +171,7 @@ Cada domínio com UI própria é um **Shell**: componente raiz com sidebar/naveg
 ```tsx
 // App.tsx — ordem importa: Shells específicos antes do catch-all /*
 <Route path="/books/*"   element={<FrierenShell />} />   // src/pages/frieren/ (Design System, spec 073)
-<Route path="/journal/*" element={<VioletShell />} />    // src/pages/violet/
+<Route path="/journal/*" element={<VioletShell />} />    // src/pages/violet/ (Design System, spec 076)
 <Route path="/nami/*"    element={<NamiShell />} />      // src/pages/nami/
 <Route path="/tasks/*"   element={<KaguyaShell />} />    // src/pages/kaguya/ (/tasks-next redireciona para cá)
 <Route path="/movies/*"  element={<AkaneShell />} />     // src/pages/akane/
@@ -266,7 +212,7 @@ export const namiApi = {
   // ...
 }
 
-// src/lib/api.ts — violetApi fica aqui (domínio sem pasta própria de API)
+// src/pages/violet/violetApi.ts — wraps /api/journal/*
 export const violetApi = { page: (date) => api.get(`/api/journal/page?date=${date}`), ... }
 ```
 
@@ -278,13 +224,8 @@ export const violetApi = { page: (date) => api.get(`/api/journal/page?date=${dat
 
 ### Domínio: Violet (Diário pessoal — frontend)
 
-Shell: `pages/violet/VioletShell.tsx` · Rota: `/journal/*`
-
-Telas disponíveis: `Write` (editor de bullets), `Journal` (arquivo), `Reflect` (heatmap + insights), `People`, `Tags`, `Collection`, `Insights`.
-
-O diário usa bullets com parsing de `@pessoa` e `#tag`. O componente `RichText.tsx` faz o highlight visual. A API é `violetApi` em `lib/api.ts`.
-
-**Conselho do Dia (spec 061):** `components/CounselSection.tsx`, no topo da tela `Write` (acima do Registro Emocional/Cartas/bullets). Sob demanda, chama `violetApi.generateCounsel`/`getCounsel` e renderiza 3 blocos (espelho, ferramentas e curadoria da base — cada item com `porque`/`como`/`exemplo_hoje`/`lembrete`, ações); ações podem virar tarefa via `kaguyaApi.createTask` + `violetApi.markActionAsTask`. O card tem um toggle de fechar/expandir no cabeçalho (`cs-collapse-btn`, estado só de UI, não persiste) e um rodapé com a contagem de tokens (`tokens_in`/`tokens_out`) usados na geração. CSS com prefixo `.cs-*` no fim de `violet.css`.
+Shell: `pages/violet/VioletShell.tsx` (Design System, arte "Papel de carta") · Rota: `/journal/*` · API: `pages/violet/violetApi.ts`.
+Telas, rotas por hash e componentes: [`docs/FRONTEND.md`](docs/FRONTEND.md#violetshell--diário-srcpagesviolet--no-design-system-spec-076).
 
 ---
 
@@ -318,6 +259,7 @@ O diário usa bullets com parsing de `@pessoa` e `#tag`. O componente `RichText.
 | 071 | **Nami simples** — reconstrução de `pages/nami/` sobre o Design System (`conformant`): Início "Livre pra gastar", Lançamentos, Cartões por fatura, Recorrentes (conta fixa + assinatura + salário), Resumo (`StatsPage`) e Mais (Contas, Parcelamentos, Empréstimos, Orçamentos, Lista de compras); lançador único (linha rápida + formulário); Desfazer em tudo que dá. Novas rotas `/plan`, `/suggest`, `/accounts/overview`, `/cards/{id}/invoices`, `DELETE /transfers/{id}`; `/stats` agora é `?year=` no contrato `StatsPayload`. Páginas e `Layout` antigos removidos (rotas antigas redirecionam). Spec: `specs/071-nami-simples/`. | ✅ (migração dos dados antigos no VPS pendente) |
 | 072 | **Akane no Design System** — `pages/akane/` reconstruída sobre o padrão (`conformant`, arte "Cinema noir"): Início, linha rápida de logar, Filmes/Quero ver/Diário em `useCollection`, detalhe em `DetailPage`, Listas, Etiquetas e Estatísticas (`StatsPage`); rotas por hash (`#filme/<id>`). `GET /api/movies/stats` agora é o `StatsPayload` (une Stats e Rewind; `/rewind` removido). Shell antigo apagado. Spec: `specs/072-akane-ds/spec.md`. | ✅ (migração aplicada no VPS) |
 | 073 | **Frieren no Design System** — `pages/frieren/` reconstruída sobre o padrão (`conformant`, arte "Biblioteca élfica"): Início no modelo da Akane (vitrine de favoritos + coração), linha rápida de registrar leitura, Biblioteca com os 7 status, Quero ler, Wishlist, Diário, detalhe em `DetailPage` (resenha, sessões, marcações), Estantes, Resenhas e Estatísticas (`StatsPage`); rotas por hash (`#livro/<id>`). Rotas novas `/home`, `/favorites`, `/{id}/like`, `/{id}/restore`, `/{id}/logs/restore`; `GET /api/books/stats` agora é o `StatsPayload`. `booksApi` saiu de `lib/api.ts` (agora `pages/frieren/frierenApi.ts`). Spec: `specs/073-frieren-ds/spec.md`. | ✅ (migração aplicada no VPS) |
+| 076 | **Violet no Design System** — `pages/violet/` reconstruída sobre o padrão (`conformant`, arte "Papel de carta"): escrever pensado para o celular (barra acima do teclado, autosave, toque para editar), fontes Normal/Roteiro/Cursiva por dia e por carta, `@` com autocomplete da Komi (vínculo sincronizado), `/` cita itens da Kaguya/Akane/Frieren/Marin/Mai/Yato, Arquivo só com dias escritos, abas Cartas e Registro emocional (com análise), Refletir no modelo do Journalistic, Insights com a força da escrita, Avaliação dos Valores, Conselho do Dia reescrito e revisão semanal pelo Hermes. Spec: `specs/076-violet-ds/spec.md`. | ✅ (rodar `scripts/cleanup_violet_empty_pages.py` no VPS) |
 | 074 | **Marin no Design System** — `pages/marin/` reconstruída sobre o padrão (`conformant`, arte "Neon kawaii"): Início (hero "continue assistindo", vitrine de favoritos), linha rápida de logar episódio (`Frieren ep 12 ★4.5 ontem`), Catálogo, Quero assistir, Diário, Lançamentos, detalhe em `DetailPage`, Listas, Etiquetas e Estatísticas (`StatsPage`); rotas por hash (`#anime/<id>`). Nota: meia estrela = 1 ponto do MAL. Rotas novas `/favorites`, `/{id}/like`, `/{id}/restore`, `/logs/restore`; `GET /api/animes/stats` agora é o `StatsPayload` (une Stats e Rewind; `/rewind` removido). Spec: `specs/074-marin-ds/spec.md`. | ✅ (migração aplicada no VPS em 08/out) |
 | 6 | Painel de chat (Makima) | — |
 
@@ -332,6 +274,6 @@ O diário usa bullets com parsing de `@pessoa` e `#tag`. O componente `RichText.
 - **Não expor `SESSION_SECRET` em logs** — nunca fazer `logging.info(config.SESSION_SECRET)`
 - **Não usar `_check_result`** nos endpoints do journal que retornam lista/dict diretamente (`list_heatmap`, `list_mentions`, `get_bullets_by_mention`, `search_bullets`) — essas tools não têm campo `"status"`
 - **Não confundir o schema de erro do journal**: `get_or_create_page` retorna `{"error": "..."}`, não `{"status": "error"}` — verificar `result.get("error")` explicitamente
-- **Não fazer `fetch` diretamente em componentes React** — usar `namiApi`, `frierenApi`, `violetApi` ou `api.*` de `lib/api.ts`
+- **Não fazer `fetch` diretamente em componentes React** — usar o `*Api` do domínio (`namiApi`, `frierenApi`, `violetApi`…) ou `api.*` de `lib/api.ts`
 - **Não adicionar rotas de novo Shell após o `/*`** em `App.tsx` — o catch-all capturaria a rota antes do Shell
 - **Não criar arquivos em `frontend/dist/`** — é artefato de build; tudo que precisa ser servido deve ir em `frontend/public/` (imagens de personagens, ícones) ou em `/uploads/icons/` (ícones de conta enviados via webapp)

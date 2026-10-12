@@ -34,7 +34,7 @@ webapp/frontend/
     ├── main.tsx              # createRoot + StrictMode
     ├── App.tsx               # verificação de auth (/auth/me) + BrowserRouter + rotas
     ├── lib/
-    │   └── api.ts            # fetch tipado (api, violetApi, booksApi)
+    │   └── api.ts            # fetch tipado (api, booksApi)
     ├── components/
     │   └── Layout.tsx        # sidebar Makima (legado) + área de conteúdo
     ├── pages/
@@ -162,45 +162,39 @@ formulário faz gasto, entrada e transferência (para um cartão = pagar a fatur
 
 ---
 
-### VioletShell — Diário (`src/pages/violet/`)
+### VioletShell — Diário (`src/pages/violet/`) — no Design System (spec 076)
 
-**Roteamento:** estado interno `{view, param}`. Não usa hash nem React Router internamente.
+`conformant` no manifesto, direção de arte **"Papel de carta"** (`design/art/papel.css`: papel marfim pautado, tinta
+azul-ardósia, serifa, safira + fio de ouro; contraste em `specs/076-violet-ds/contrast-papel.mjs`). Acento da Violet em
+`agents.json`: safira (h 252). Um `AppShell`; a tela e o item aberto vivem no **hash** (`lib/routes.ts`): `#hoje`,
+`#dia/<data>`, `#arquivo`, `#refletir`, `#refletir/semana/<data>`, `#refletir/semanas`, `#insights`, `#cartas`,
+`#carta/<id>`, `#carta/nova`, `#emocoes`, `#emocao/<id>`, `#valores`, `#valores/editar`, `#valores/historico`,
+`#pessoas`, `#pessoa/<id|nome:X>`, `#tags`, `#tag/<x>`, `#colecao/<tipo>`, `#sonhos`, `#ref/<agente>/<tipo>/<id>`,
+`#tutor` (aliases do shell antigo e o `?date=` antigo do Calendário também abrem). API em `violetApi.ts` (saiu de `lib/api.ts`).
+Celular: barra inferior **Escrever · Arquivo · Refletir · Mais**; o botão flutuante começa um momento novo.
 
-**Telas (screens/):**
+- **Escrever** (`screens/Write.tsx`): hero compacto com o dia (setas, `DatePicker`, Hoje, fonte), sonho, Conselho do Dia,
+  emoções e cartas do dia, momentos. Ler não cria página (`POST /page` no primeiro registro). Toque edita, autosave
+  (800 ms), Enter cria o próximo, Backspace no vazio remove (Desfazer), deslizar troca de dia. **Barra de escrita**
+  (`.vl-writebar`) presa acima do teclado (`useKeyboardInset`) com tipo, `@`, `/`, fonte e Pronto. Menu ⋯ por momento:
+  favoritar, tipo, Tutor, apagar. Modo foco nas preferências.
+- **Marcação** (`lib/markup.ts`, espelho de `agents/journal/markup.py`): `@[Nome](komi:id)`, `[Rótulo](agente:tipo:id)`,
+  `@legado`, `#tag-com-hifen`. `components/SmartTextarea.tsx` sugere pessoas da Komi (com cadastro) ao digitar `@` e
+  agentes/itens ao digitar `/` (`/k` Kaguya, `/akane`, `/frieren`, `/marin`, `/mai`, `/yato`); `RichText` desenha os chips.
+- **Fontes**: Normal / Roteiro (`--ds-font-script`, Courier Prime) / Cursiva (`--ds-font-hand`, Caveat) — por dia
+  (padrão nas preferências) e por carta, escolhidas já na edição (`components/FontPicker.tsx`, classes `.vl-font-*`).
+- **Arquivo**: `useCollection` (`violet:arquivo`), só dias com conteúdo, busca no texto inteiro (servidor), excerpt na fonte do dia.
+- **Cartas**: `violet:cartas`, leitura em `DetailPage`, compositor (`LetterComposer`) com fonte, destinatário e pessoas.
+- **Registro emocional**: "como você tem estado", achados (camada 1) com evidência, leitura da Violet (camada 2),
+  lista `violet:emocoes`, detalhe TCC; formulário guiado passo a passo (`EmotionForm`).
+- **Refletir**: stream (revisão da semana, pergunta do dia respondível, gema/ideia, foco da Kaguya, ontem, semana,
+  fixados de 30 dias, um ano atrás, memory lane com dado), seções configuráveis; revisões semanais.
+- **Insights**: força da escrita (anel, tendência, série de 90 dias, meta semanal), horários, emoções × intensidade e o
+  `StatsPage`. **Valores**: resumo, wizard guiado (intro → 12 áreas → notas → diagnóstico → narrativa → ações),
+  check-in semanal e histórico. **Pessoas/Tags/Coleções** filtram de verdade; a página de uma referência abre o item no agente dono.
 
-| View | Tela | O que mostra |
-|---|---|---|
-| `write` | Write | Bullet journal do dia; bullets tipados + campo dream |
-| `journal` | Journal (Arquivo) | Entradas do passado agrupadas por mês, com busca |
-| `reflect` | Reflect | Cartões de reflexão inspiracionais (prompts Violet) |
-| `insights` | Insights | Heatmap anual + gráfico de área + big numbers + 7 tabs |
-| `dreams` | Dreams | Todas as entradas com `dream` preenchido |
-| `highlights` | Highlights | Coleção de bullets do tipo `highlight` |
-| `ideas` | Ideas | Coleção de bullets do tipo `idea` |
-| `wisdom` | Wisdom | Coleção de bullets do tipo `wisdom` |
-| `notes` | Notes | Coleção de bullets do tipo `note` |
-| `tags` | Tags | Nuvem de `#tags` por frequência |
-| `people` | People | Grid de `@pessoas` mencionadas com avatar de iniciais |
-| `tutor` | Tutor | Progresso do Tutor de Idiomas (spec 031): skills por conceito, nível CEFR, próximo foco e guia de estudo |
-
-**Tutor de Idiomas (spec 031 — persona Kurisu):** botão discreto (`.tt-icon-btn`, ícone
-`sparkles`) em cada bullet do `Write.tsx` pede uma análise de escrita via
-`violetApi.analyzeTutor`; o resultado abre em `components/TutorModal.tsx` (correção,
-reescrita natural, erros por conceito, resumo e nota). Bullets já analisados ganham um
-toggle inline (`.tt-toggle-btn`) para alternar entre o texto original (nunca sobrescrito)
-e a versão corrigida, buscada sob demanda via `violetApi.bulletAnalysis`. A tela `Tutor`
-(sidebar, ícone `graduation`) mostra a barra de maestria + glyph de tendência (📈/📉/➡️)
-por conceito, o nível CEFR estimado, a sugestão de próximo foco e o formulário do guia
-de estudo (US4) — todos os endpoints em `violetApi.tutor*`/`*TutorGuide`.
-
-**Componentes de UI (violet/ui/):**
-
-| Arquivo | O que faz |
-|---|---|
-| `AreaChart.tsx` | Gráfico de área SVG com curva Catmull-Rom→Bezier (12 pontos mensais) |
-| `HeatmapRow.tsx` | Heatmap estilo GitHub — grid anual de atividade de bullets por dia |
-| `RichText.tsx` | Parser de `@pessoa` e `#tag` em spans clicáveis |
-| `Icon.tsx` | Set de ícones SVG inline |
+**Testes:** `lib/*.test.ts` (markup, rotas, prefs antigas) e `VioletShell.test.tsx` (shell no jsdom com a API simulada:
+ler sem criar, escrever, `@`, `/`, fonte, Arquivo, Cartas, erro).
 
 ---
 
@@ -474,7 +468,7 @@ Em erros HTTP (`!response.ok`), o wrapper lança `Error("HTTP <status>")`.
 | Objeto | Onde | Endpoints cobertos |
 |---|---|---|
 | `api` | `lib/api.ts` | base; reexportado para usos avulsos |
-| `violetApi` | `lib/api.ts` | todos os `/api/journal/*` |
+| `violetApi` | `pages/violet/violetApi.ts` | todos os `/api/journal/*` |
 | `booksApi` | `lib/api.ts` | todos os `/api/books/*` |
 | `namiApi` | `pages/nami/namiApi.ts` | todos os `/api/finances/*` |
 | `kaguyaApi` | `pages/kaguya/api.ts` | todos os `/api/tasks/*` |
@@ -500,7 +494,7 @@ Cada shell tem identidade visual própria baseada num personagem de anime:
 | Shell | Personagem | Imagem | Arquivo CSS | Classe raiz |
 |---|---|---|---|---|
 | NamiShell | Nami (One Piece) | `nami.jpg`, `nami-hero.png` | `nami.css` | `.nami-app` |
-| VioletShell | Violet Evergarden | `violet.png` | `violet.css` | `.vl-app` |
+| VioletShell | Violet Evergarden | `violet.png` | `violet.css` (só complementos `.vl-*` do DS) | `.ds-app` (Design System) |
 | FrierenShell | Frieren Beyond Journey's End | `frieren.png` | `frieren.css` (só complementos `.fr-*` do DS) | `.ds-app` (Design System) |
 | KaguyaShell | Kaguya (Kaguya-sama: Love is War) | `kaguya.jpg` | `kaguya.css` + `legacy.css` (só complementos `.kn-*` do DS) | `.ds-app` (Design System) |
 | AkaneShell | Akane Kurokawa (Oshi no Ko) | `akane.png` | `akane.css` (só complementos `.ax-*` do DS) | `.ds-app` (Design System) |
@@ -514,11 +508,9 @@ Cada shell tem identidade visual própria baseada num personagem de anime:
 2. O shell aplica atributos `data-*` no elemento raiz:
    - NamiShell: `data-theme="dark|light"`, `data-acento="Tangerina|Azul-maré|Coral|Ouro"`,
      `data-privacy` (embaralha valores `.amount`), `data-density`.
-   - VioletShell: `data-theme`, `data-acento` (sapphire/gold/emerald/garnet como variáveis OKLCH
-     injetadas por JS), `modo-foco`, `modo-amplo`, `tipo-tecnica`.
    - Shells novos (Kaguya, Akane, Marin, Mai, Komi, Makima): `data-theme` dark/light aplicado
      na classe raiz; densidade onde houver (ex.: Mai).
-3. Preferências são persistidas em `localStorage` (chaves `nami:*`, `vl-tweaks`, `fr-tweaks`,
+3. Preferências são persistidas em `localStorage` (chaves `nami:*`, `fr-tweaks`,
    `kg-tweaks`, `akane-tweaks`, `mr-tweaks`, `mai-tweaks`, `km-tweaks`, `makima-hub-theme`).
 
 **Tokens Tailwind para cores de personagem** (`tailwind.config.js`):

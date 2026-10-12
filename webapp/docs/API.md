@@ -265,78 +265,108 @@ Todos os endpoints exigem autenticação. Chamam as tools da Frieren (`agents/fr
 
 ## Diário (`/api/journal/*`)
 
-Todos os endpoints exigem autenticação. Chamam as tools do Journal (`agents/journal/tools.py`).
+Todos os endpoints exigem autenticação. Chamam `agents/journal/*` (diário) e `agents/kurisu/*` (IA da Violet:
+Tutor, Conselho, revisão semanal, leitura emocional) — `routers/journal.py` é o único ponto que conhece os dois.
+Spec 076 (Violet no Design System) reescreveu o router.
 
-> **Atenção — validação diferente:** ao contrário das tools da Nami, várias tools do journal
-> **não retornam o campo `"status"`** (devolvem lista ou dict direto). Por isso, `_check_result`
-> **não** é usado nelas. Além disso, `get_or_create_page` retorna `{"error": "..."}` (não
-> `{"status": "error"}`) quando o `type_id` não existe — o router verifica `result.get("error")`
-> explicitamente.
+> **Validação:** várias tools devolvem lista/dict sem `"status"` — `_check_result` não é usado nelas.
+> `GET /page` **não cria** a página (dia vazio volta com `page.id = null`); o front chama `POST /page` no
+> primeiro registro.
 
-### Páginas e bullets
-
-| Método | Caminho | Descrição | Body / Query |
-|---|---|---|---|
-| `GET` | `/api/journal/page` | Busca (ou cria) a página de uma data. | `?date=YYYY-MM-DD&type_id=1` |
-| `POST` | `/api/journal/bullets` | Upsert de bullet (por `page_id` + `position`). | Body: `UpsertBulletBody` |
-| `DELETE` | `/api/journal/bullets/{bullet_id}` | Remove bullet (cascade apaga menções). | — |
-| `PUT` | `/api/journal/page/dream` | Define ou limpa o campo `dream` da página. | Body: `DreamBody` |
-
-### Busca e filtros
+### Dia (página, bullets, sonho, fonte)
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/journal/heatmap` | Contagem de bullets por dia (para o heatmap anual). | `?year=YYYY` |
-| `GET` | `/api/journal/mentions` | Lista menções (`@pessoa` ou `#tag`) distintas com contagem. | `?kind=person\|tag` |
-| `GET` | `/api/journal/filter` | Bullets que mencionam uma pessoa ou tag específica. | `?kind=person\|tag&value=X` |
-| `GET` | `/api/journal/search` | Full-text search nos bullets (dicionário português). | `?q=texto` |
-| `GET` | `/api/journal/entries` | Lista resumos de entradas (com busca opcional). | `?q=texto` (opcional) |
+| `GET` | `/api/journal/page` | Lê o dia **sem criar**; cada bullet traz `tutor` (composto no router). | `?date=YYYY-MM-DD&type_id=1` |
+| `POST` | `/api/journal/page` | Cria (se preciso) a página do dia — chamado no primeiro registro. | `{date, type_id?}` |
+| `PUT` | `/api/journal/page/font` | Fonte do dia (`normal`/`roteiro`/`cursiva`/null = padrão); cria a página se preciso. | `{date, font, type_id?}` |
+| `PUT` | `/api/journal/page/dream` | Define ou limpa o sonho. | `{page_id, dream}` |
+| `POST` | `/api/journal/bullets` | Upsert por `page_id`+`position`; **texto vazio apaga**. Sincroniza menções, `journal_refs` e vínculos da Komi. | `{page_id, position, content, kind, person_ids?}` |
+| `DELETE` | `/api/journal/bullets/{id}` | Apaga (e desvincula da Komi); devolve o bullet apagado para o Desfazer. | — |
+| `PATCH` | `/api/journal/bullets/{id}/favorite` | Favorito (estado-alvo). | `{favorite}` |
 
-### Coleções e insights
+### Arquivo, busca, pessoas e referências
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/journal/collection/{kind}` | Bullets de um tipo específico. | Path: `highlight\|dream\|idea\|wisdom\|note` |
-| `GET` | `/api/journal/dreams` | Todas as entradas que têm o campo `dream` preenchido. | — |
-| `GET` | `/api/journal/stats` | Insights agregados do ano (total de palavras, dias ativos, etc.). | `?year=YYYY` (obrigatório) |
+| `GET` | `/api/journal/entries` | Dias **com conteúdo**: `num` estável, excerpt, contadores, `font`, flags. | `?q=&limit=&before=` |
+| `GET` | `/api/journal/search` | Full-text nos bullets, agrupado por dia. | `?q=` |
+| `GET` | `/api/journal/mentions` | Menções distintas `{value, person_id, count, last_date}` (pessoas agrupadas pelo id da Komi). | `?kind=person\|tag` |
+| `GET` | `/api/journal/filter` | Bullets que citam uma pessoa (por `person_id` ou nome) ou tag. | `?kind=&value=&person_id=` |
+| `GET` | `/api/journal/filter/ref` | Bullets que citam um item de outro agente. | `?agent=&entity_type=&entity_id=` |
+| `GET` | `/api/journal/refs/providers` | Agentes citáveis com `/` (aliases). | — |
+| `GET` | `/api/journal/refs/search` | Busca no agente (biblioteca local) com o `token` pronto. | `?agent=&q=&limit=` |
+| `GET` | `/api/journal/refs` | Itens citados no diário com contagem. | `?agent=&since=&until=` |
+| `GET` | `/api/journal/people/suggest` | Autocomplete de `@` (Komi `suggest_people`). | `?q=&limit=` |
+| `GET` | `/api/journal/heatmap` · `/favorite-days` · `/years` | Palavras por dia · dias com favorito · anos. | `?year=` |
+
+### Coleções, Insights, força e Refletir
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/journal/collection/{kind}` | Bullets de um tipo (não vazios), com `font` e `entry_num` estável. | `highlight\|dream\|idea\|wisdom\|note` |
+| `GET` | `/api/journal/dreams` | Dias com sonho preenchido. | — |
+| `GET` | `/api/journal/stats` | Insights no contrato `StatsPayload` + `strength` e `emotions`. | `?year=&month=&weekly_target=` |
+| `GET` | `/api/journal/strength` | Força da escrita (motor dos hábitos da Kaguya) + série. | `?weekly_target=&days=` |
+| `GET` | `/api/journal/reflect` | Todas as seções do Refletir (+ revisão semanal mais recente). | `?date=&pins=tag:x,person:id&prompt=&gem=&idea=&memory=` |
+
+### Registro emocional
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET`/`POST` | `/api/journal/emotions` | Vocabulário / emoção custom. | `{name}` |
+| `GET` | `/api/journal/emotion-logs` | Registros de um dia. | `?page_id=` |
+| `GET` | `/api/journal/emotion-logs/all` | Todos os registros (com `date`), filtráveis. | `?emotion_id=&min_intensity=&q=&since=&until=&limit=&before=&ids=` |
+| `GET` | `/api/journal/emotion-logs/{id}` | Um registro. | — |
+| `POST` | `/api/journal/emotion-logs` | Cria; com pensamento automático, classifica as distorções em segundo plano. | `CreateEmotionLogBody` |
+| `PATCH`/`DELETE` | `/api/journal/emotion-logs/{id}` | Atualiza (reclassifica se mudou o pensamento) / apaga. | — |
+| `GET` | `/api/journal/emotion-stats` | Agregados do ano ou do intervalo. | `?year=` ou `?since=&until=` |
+| `GET` | `/api/journal/emotion-patterns` | Camada 1: `summary` + `findings` com evidência (sem IA). | `?since=&until=` |
+| `GET`/`POST` | `/api/journal/emotion-analysis` | Camada 2: leitura da Violet já gerada / gerar (chamada longa). | `?since=&until=` / `{since, until}` |
+
+### Cartas
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/journal/letters` | Cartas de um dia. | `?page_id=` |
+| `GET` | `/api/journal/letters/all` | Todas as cartas (com `date`, `font`, pessoas). | `?status=&person_id=&q=&limit=&before=` |
+| `GET` | `/api/journal/letters/{id}` | Uma carta. | — |
+| `POST` | `/api/journal/letters` | Cria (rascunho ou lacrada) com fonte e pessoas. | `{page_id, recipient, body, title?, status?, person_ids?, font?}` |
+| `PATCH` | `/api/journal/letters/{id}` | Atualiza rascunho (`person_ids` regrava vínculos). | campos opcionais + `font` |
+| `POST` | `/api/journal/letters/{id}/seal` · `DELETE /letters/{id}` | Lacra · rasga. | — |
+
+### Avaliação dos Valores
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/journal/values/domains` | O roteiro (intro, 12 áreas com perguntas, 6 notas, pergunta-chave). | — |
+| `GET` | `/api/journal/values/current` | Rascunho em andamento ou a última concluída (com diagnóstico). | — |
+| `POST` | `/api/journal/values` · `DELETE /values/draft` | Começa/retoma (refazer parte da anterior) · descarta o rascunho. | — |
+| `PATCH` | `/api/journal/values/{id}/areas/{key}` | Autosave de uma área (texto, narrativa, pular, notas 1–10). | `ValuesAreaBody` |
+| `POST` | `/api/journal/values/{id}/complete` | Conclui e grava o resumo. | — |
+| `GET` | `/api/journal/values/history` | Versões concluídas + evolução por área. | — |
+| `POST`/`PATCH`/`DELETE` | `/api/journal/values/{id}/commitments` · `/values/commitments/{cid}` | Ações compromissadas (`task_id` quando vira tarefa). | `{domain_key, text}` / `{text?, task_id?}` |
+| `POST`/`GET` | `/api/journal/values/checkin` · `/values/checkins` | Check-in semanal de uma área / últimas semanas. | `{domain_key, action, satisfaction}` / `?weeks=` |
 
 ### Tutor de Idiomas (spec 031 — persona Kurisu)
 
-Chamam a lógica de `agents/kurisu/tutor.py` (cross-domain intencional — ver
-`agents/kurisu/CLAUDE.md`). Detalhes campo a campo em
-`specs/031-violet-tutor-idiomas/contracts/api.md`.
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `POST`/`GET` | `/api/journal/bullets/{id}/tutor` | Analisa a escrita do bullet / última análise. | `{language}` |
+| `GET` | `/api/journal/tutor/progress` · `/tutor/analyses` · `/tutor/concepts` | Progresso, histórico e conceitos. | `?language=en` |
+| `GET`/`PUT`/`DELETE` | `/api/journal/tutor/guide` | Guia de estudo ativo. | `SaveTutorGuideBody` |
+
+### Conselho do Dia e Revisão semanal (persona Violet, lógica na Kurisu)
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `POST` | `/api/journal/bullets/{bullet_id}/tutor` | Analisa a escrita do bullet via Gemini (US1); falha da IA não grava nada. | Body: `AnalyzeTutorBody` `{language}` |
-| `GET` | `/api/journal/bullets/{bullet_id}/tutor` | Última análise do bullet — serve o toggle original↔corrigido (US2). | — |
-| `GET` | `/api/journal/tutor/progress` | Skills por conceito + nível CEFR + próximo foco + guia ativo (US3/US4). | `?language=en` |
-| `GET` | `/api/journal/tutor/analyses` | Histórico de análises recentes. | `?language=en&limit=20` |
-| `GET` | `/api/journal/tutor/concepts` | Lista canônica de conceitos gramaticais (popula o seletor do guia). | — |
-| `GET` | `/api/journal/tutor/guide` | Guia de estudo ativo do idioma, se houver. | `?language=en` |
-| `PUT` | `/api/journal/tutor/guide` | Cria/substitui o guia ativo (desativa o anterior na mesma transação). | Body: `SaveTutorGuideBody` |
-| `DELETE` | `/api/journal/tutor/guide` | Remove (desativa) o guia ativo — não afeta análises já salvas. | `?language=en` |
-
-> `GET /api/journal/page` também ganha um campo `tutor` (nullable) em cada bullet —
-> `{analysis_id, has_correction, error_count}` — composto **no router** via
-> `get_bullets_tutor_meta` (1 query agregada), sem alterar `agents/journal/get_or_create_page`.
-
-### Conselho do Dia (spec 061 — persona Violet, lógica na Kurisu)
-
-Chamam a lógica de `agents/kurisu/counsel.py` (cross-domain intencional — mesmo desenho do
-Tutor de Idiomas, ver `agents/kurisu/CLAUDE.md`). Detalhes campo a campo em
-`specs/061-violet-conselho-diario/contracts/rest-api.md`.
-
-| Método | Caminho | Descrição | Body / Query |
-|---|---|---|---|
-| `POST` | `/api/journal/counsel` | Gera (ou regenera) o conselho do dia — leitura do dia + RAG + síntese Gemini; até ~60s. Falha em qualquer etapa não grava nada. | Body: `GenerateCounselBody` `{date, type_id?}` |
-| `GET` | `/api/journal/counsel` | Conselho já gerado da data, sem gerar nada novo (leitura pura). | `?date=YYYY-MM-DD&type_id=1` |
-| `GET` | `/api/journal/counsel/history` | Histórico dos conselhos mais recentes (qualquer data). | `?limit=20` |
-| `PATCH` | `/api/journal/counsel/actions` | Marca uma ação sugerida como já convertida em tarefa (não cria a tarefa — só registra o vínculo). | Body: `MarkCounselActionBody` `{page_id, action_index, task_id}` |
-
-> A `origem` ("base"/"web") de cada item do bloco de ferramentas é decidida **no
-> servidor**, por checagem de `uri` contra os trechos realmente recuperados na base — nunca
-> confia na auto-declaração do modelo.
+| `POST` | `/api/journal/counsel` | Gera/regera o conselho (RAG amplo, 7 dias de histórico, texto com citações); até ~90s. | `{date, type_id?}` |
+| `GET` | `/api/journal/counsel` | Conselho já gerado (`essay_md`, `sources`, `digest`, `actions`; ou o formato antigo `toolkit`). | `?date=` |
+| `GET` | `/api/journal/counsel/history` | Trajetória: humor e princípios por dia. | `?limit=` |
+| `PATCH` | `/api/journal/counsel/actions` | Registra que uma ação virou tarefa. | `{page_id, action_index, task_id}` |
+| `GET`/`POST` | `/api/journal/weekly-review` | Revisão de uma semana (qualquer data dela) / gerar. | `?week=` / `{week?}` |
+| `GET` | `/api/journal/weekly-review/history` | Revisões anteriores. | `?limit=` |
+| `PATCH` | `/api/journal/weekly-review/actions` | Compromisso da revisão virou tarefa. | `{week_start, action_index, task_id}` |
 
 ---
 

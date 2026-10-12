@@ -1,124 +1,90 @@
 ## Módulo: agents/journal
 
-Gerencia o diário pessoal em bullet journal. Acesso direto ao PostgreSQL via psycopg2 síncrono — mesmo padrão das tools da Nami e Frieren.
+Gerencia o diário pessoal (Violet) em bullet journal. Acesso direto ao PostgreSQL via psycopg2 síncrono — mesmo padrão das tools da Nami e Frieren.
 
-> **Agora é um sub-agente ADK completo** (spec 064, ativação da Violet): `agent.py` define `violet_agent` — personalidade Violet Evergarden, ligada em `coordinator/agent.py::create_makima` (lista default de `sub_agents`) e exposta via `makima-mcp` em `/mcp/journal` (`mcp_servers/makima/registry.py`). O pacote continua chamado `agents/journal/` — só o `Agent` e a persona se chamam Violet; o rename da pasta pra `agents/violet/` (Parte A do `docs/planos/PLANO_VIOLET_EVERGARDEN.md`) segue **não executado**, decisão deliberada (blast radius grande nos `specs/*`, sem ganho de comportamento). `toolset.py` expõe 21 das tools abaixo ao agente (exclui `set_dream`, `list_entries`, `list_collection`, `list_dreams`, `get_stats`, `get_available_years` — helpers formatados pra telas específicas do webapp, ver `toolset.py`). O webapp continua usando `webapp/backend/routers/journal.py` → `agents.journal.tools` normalmente, sem nenhuma mudança. As tabelas são criadas sob demanda por `_ensure_tables()` em `tools.py` (não há `schema_pg.sql` aqui).
+> **Sub-agente ADK completo** (spec 064): `agent.py` define `violet_agent` — personalidade Violet Evergarden, ligada em `coordinator/agent.py::create_makima` e exposta via `makima-mcp` em `/mcp/journal` (`mcp_servers/makima/registry.py`, que junta ao domínio as tools da Kurisu para a Violet). O pacote continua `agents/journal/`; o rename para `agents/violet/` (Parte A do `docs/planos/PLANO_VIOLET_EVERGARDEN.md`) segue **não executado**, decisão deliberada. As tabelas são criadas sob demanda por `_ensure_tables()` em `tools.py` e `_ensure_values_tables()` em `values.py` (não há `schema_pg.sql`). Modelo de IA: `agents/kurisu/models.py::VIOLET_MODEL` (env `VIOLET_GEMINI_MODEL`, padrão `gemini-3.8-flash`).
+>
+> **Spec 076 (Violet no Design System)** trouxe: leitura que não cria página, Arquivo só com dias escritos, marcação com tokens (`markup.py`), vínculo sincronizado com a Komi, referências a outros agentes (`references.py`), fonte por dia/carta, força da escrita (`strength.py`), Refletir (`reflect.py`), Insights no `StatsPayload` (`tools_stats.py`), padrões emocionais (`emotion_patterns.py`), Avaliação dos Valores (`values.py` + `values_diagnosis.py`) e tools de chat para o Hermes (`chat_tools.py`).
+
+---
+
+### Módulos
+
+| Arquivo | O quê |
+|---|---|
+| `tools.py` | CRUD do diário: páginas, bullets, menções, emoções, cartas, favoritos, Arquivo, stats antigos |
+| `markup.py` | **puro** — tokens `@[Nome](komi:id)`, `[Rótulo](agente:tipo:id)`, `@legado`, `#tag-com-hifen`; `plain_text`, `word_count`. Espelho no front: `webapp/frontend/src/pages/violet/lib/markup.ts` (as regras precisam bater) |
+| `references.py` | registro dos provedores de "/" (kaguya `k`, akane, frieren, marin, mai, yato), `search(agent, q)` e `resolve_free_text` (texto livre do chat → tokens quando inequívoco) |
+| `strength.py` | força da escrita: `habit_strength.summary` da Kaguya sobre os dias escritos (`get_writing_strength`) |
+| `reflect.py` | seções do Refletir (pergunta, gema, ideia, foco, ontem, semana, fixados, um ano atrás, memory lane) com semente por data |
+| `tools_stats.py` | Insights no contrato `StatsPayload` + blocos `strength` e `emotions` (só webapp) |
+| `emotion_patterns.py` | análise emocional camada 1 — **puro** `analyze`/`summarize` + `get_emotion_patterns` (banco) |
+| `values_diagnosis.py` | **puro** — roteiro da Avaliação dos Valores (12 áreas, 6 notas, textos), alertas, gap, evolução, check-ins |
+| `values.py` | persistência da avaliação + `values_context_for_counsel()` (bloco que o Conselho e a Revisão semanal leem) |
+| `chat_tools.py` | tools pensadas para o chat (`escrever_no_diario` resolve `@`/`/`, `buscar_referencias`, `sugerir_pessoas`…) |
+| `calendar_provider.py`, `habit_provider.py` | fontes do Calendar Hub e do hábito automático da Kaguya |
+
+A **IA** da Violet (Conselho do Dia, Revisão semanal, leitura emocional, distorções, Tutor) vive na Kurisu (`agents/kurisu/`), dona do RAG — `agents/journal` não importa a Kurisu.
 
 ---
 
 ### Schema PostgreSQL
 
+Coluna a coluna em `docs/referencia/POSTGRES.md`. Resumo:
+
 ```
-journal_types       id, name, icon, color
-                    → tipo padrão: id=1, name='personal'
-
-journal_pages       id, type_id→journal_types, date (DATE), created_at, updated_at
-                    UNIQUE (type_id, date)
-
-journal_bullets     id, page_id→journal_pages, content, position (INT), created_at,
-                    search_vec TSVECTOR GENERATED (dicionário 'portuguese'),
-                    kind TEXT NOT NULL DEFAULT 'bullet',
-                    favorite BOOLEAN NOT NULL DEFAULT FALSE   [Feature 007]
-                    UNIQUE (page_id, position)
-
-journal_mentions    id, bullet_id→journal_bullets, kind CHECK('person','tag'), value
-                    CASCADE: deletar bullet apaga menções automaticamente
-
-journal_emotions       id, name, is_predefined (BOOL)        [Feature 006]
-                       UNIQUE LOWER(name) — dedupe case-insensitive
-                       → seed: 8 emoções base da TCC (is_predefined=TRUE)
-
-journal_emotion_logs   id, page_id→journal_pages (CASCADE), emotion_id→journal_emotions,
-                       intensity (0–10), situation, automatic_thought,
-                       adaptive_response, reappraised_intensity (0–10, nullable),
-                       created_at                              [Feature 006]
-
-journal_letters        id, page_id→journal_pages (CASCADE), recipient, title (nullable),
-                       body, status CHECK('draft','sealed'), sealed_at (nullable),
-                       created_at, updated_at                  [Cartas]
-                       → vínculo com pessoas via person_links (entity_type 'journal_letter')
+journal_types / journal_pages (+ dream, font NULL = padrão das preferências)
+journal_bullets      (kind, favorite, search_vec GENERATED; UNIQUE page_id+position)
+journal_mentions     (kind person|tag, value, person_id = id da Komi quando resolvida)
+journal_refs         (bullet_id, agent, entity_type, entity_id, label) — spec 076, base dos backlinks
+journal_emotions / journal_emotion_logs (+ distortions TEXT[] — rótulos de distorção cognitiva)
+journal_letters      (+ font NOT NULL DEFAULT 'normal')
+journal_values_assessments / _areas / _commitments / _checkins — Avaliação dos Valores
 ```
 
-O campo `search_vec` é **gerado pelo banco** a partir de `content` — não inserir nem atualizar manualmente.
+Tabelas da Kurisu sobre o diário: `journal_counsel` (+ `essay_md`, `sources_json`, `digest_json`), `journal_weekly_reviews`, `journal_emotion_analyses`, `journal_tutor_*`.
 
-**Registros emocionais são ortogonais aos bullets.** `journal_emotion_logs` NÃO conta como bullet — não afeta contagem de palavras, heatmap, coleções nem busca full-text. Não cruzar essas queries com a tabela de emoções.
+**"Dia com conteúdo"** = bullet não vazio, sonho não vazio, registro emocional ou carta (`_HAS_CONTENT_SQL`). Só esses dias entram no Arquivo e no número do dia (#N), que é estável (não muda com a busca).
 
-**Cartas também são ortogonais aos bullets.** `journal_letters` NÃO conta como bullet (mesma regra das emoções). Uma carta lacrada (`status='sealed'`) é imutável — `update_letter` recusa editá-la; `seal_letter` só lacra rascunhos. A constraint CHECK de `person_links.entity_type` foi ampliada (em `komi/schema_pg.sql` e, idempotente, no `_ensure_tables` do journal) para aceitar `'journal_letter'`; sem isso o INSERT do vínculo derrubaria a transação inteira da carta. `person_links` não tem FK para `journal_letters` (entity_id é polimórfico/TEXT), então `delete_letter` remove os vínculos explicitamente — não há CASCADE.
-
----
-
-### Provedor cross-agent para a Kaguya (spec 036)
-
-`habit_provider.py` — consumido **de fora**, via `importlib`, pelo registry
-`agents/kaguya/habit_source_providers.py` (registrado como `violet_diary`); nunca importado
-dentro de `agents/journal`. `get_activity(start, end)` devolve `1.0` nos dias com ao menos um
-`journal_bullets.content` não-vazio no intervalo — usado para o check-in automático do hábito
-binário "escrever no diário". Ver `agents/kaguya/CLAUDE.md` para o contrato completo.
-
-### Tools disponíveis
-
-| Função | Retorno |
-|---|---|
-| `get_or_create_page(date, type_id=1)` | `{"page": {id, date, type_id}, "bullets": [{id, content, position, created_at}, ...]}` |
-| `upsert_bullet(page_id, position, content)` | `{"status": "ok", "bullet": {id, content, position, created_at}}` |
-| `delete_bullet(bullet_id)` | `{"status": "ok"}` ou `{"status": "error", "message": ...}` |
-| `list_heatmap(year)` | `{"YYYY-MM-DD": count, ...}` |
-| `list_mentions(kind)` | `[{"value": str, "count": int}, ...]` |
-| `get_bullets_by_mention(kind, value)` | `[{"date": str, "bullets": [{id, content}]}, ...]` |
-| `search_bullets(query)` | `[{"date": str, "bullets": [{id, content}]}, ...]` |
-| `list_emotions()` | `[{id, name, is_predefined}, ...]` (predefinidas primeiro) |
-| `create_emotion(name)` | `{"status":"ok","emotion":{...}}` — dedupe por LOWER(name), idempotente |
-| `list_emotion_logs(page_id)` | `[{id, page_id, emotion_id, emotion_name, intensity, situation, automatic_thought, adaptive_response, reappraised_intensity, created_at}, ...]` |
-| `create_emotion_log(page_id, emotion_id, intensity, ...)` | `{"status":"ok","log":{...}}` |
-| `update_emotion_log(log_id, **campos)` | `{"status":"ok","log":{...}}` — atualização parcial |
-| `delete_emotion_log(log_id)` | `{"status":"ok"}` ou `{"status":"error", ...}` |
-| `get_emotion_stats(year)` | `{total, avg_intensity, top_emotion, by_emotion:[...], by_month:[12]}` |
-| `set_favorite(bullet_id, favorite)` | `{"status":"ok","favorite":bool}` — define favorito de um bullet por id (Feature 007) |
-| `list_favorite_days(year)` | `["YYYY-MM-DD", ...]` — datas com ao menos um bullet favorito no ano (Feature 007) |
-| `list_letters(page_id)` | `[{id, page_id, recipient, title, body, status, sealed_at, created_at, updated_at, people:[{id,name}]}, ...]` |
-| `create_letter(page_id, recipient, body, title=None, status='draft', person_ids=None)` | `{"status":"ok","letter":{...}}` |
-| `update_letter(letter_id, person_ids=None, **campos)` | `{"status":"ok","letter":{...}}` — só rascunhos; recusa carta lacrada |
-| `seal_letter(letter_id)` | `{"status":"ok","letter":{...}}` — lacra (só rascunho) |
-| `delete_letter(letter_id)` | `{"status":"ok"}` ou `{"status":"error", ...}` — remove vínculos juntos |
-
-#### `_check_result` não se aplica em algumas tools
-`list_emotions`, `list_emotion_logs`, `get_emotion_stats` e `list_letters` retornam dados direto (lista/dict), **sem** campo `"status"` — não passar para `_check_result`.
-
-#### `created_at` nos bullets
-`journal_bullets.created_at` é `TIMESTAMPTZ DEFAULT NOW()`. As tools já convertem para string ISO antes de retornar — o frontend recebe string, não objeto `datetime`.
+**Registros emocionais e cartas são ortogonais aos bullets** — não contam palavras nem a força. Carta lacrada é imutável. `person_links` não tem FK para bullets/cartas: apagar remove os vínculos explicitamente.
 
 ---
 
 ### Regras críticas
 
-**Upsert é por posição, não por ID.**
-`upsert_bullet` usa `ON CONFLICT (page_id, position)` — inserir o mesmo bullet com posição diferente cria uma nova linha. Para atualizar um bullet existente, sempre passar a mesma `position`.
+**Ler não cria.** Para só ler um dia use `get_page` (dia vazio volta com `page.id = None`). `get_or_create_page`/`ensure_page` só no primeiro write — o shell antigo criava página a cada data visitada e o Arquivo enchia de dias vazios (limpeza: `scripts/cleanup_violet_empty_pages.py`).
 
-**Espaçamento esparso de posições (×1000).**
-O frontend usa posições 0, 1000, 2000, ... para permitir inserção no meio sem reindexar (posição intermediária = média das adjacentes). Não assumir que posições são densas.
+**Upsert é por posição**, espaçamento ×1000 (intermediária = média). **Texto vazio apaga** o bullet da posição.
 
-**Menções: delete + insert.**
-A cada `upsert_bullet`, todas as menções do bullet são deletadas e re-inseridas. Não fazer update seletivo de menções — isso evita inconsistência quando o usuário edita um bullet.
+**Vínculo com a Komi é sincronizado por bullet** (`_sync_bullet_links_on_cursor`): a cada upsert os `person_links` do bullet passam a ser exatamente as pessoas citadas agora — tokens `@[..](komi:id)`, `person_ids` explícitos e `@Nome` legado **só com match exato e único** (`komi.find_people_exact`). A parte da Komi roda em SAVEPOINT (Komi ausente não derruba o bullet). Menções e referências: delete + insert.
 
-**`_check_result` não se aplica em 4 tools.**
-`list_heatmap`, `list_mentions`, `get_bullets_by_mention` e `search_bullets` retornam dados diretamente (dict ou lista), **sem** campo `"status"`. Não passar para `_check_result` no router.
+**`@`/`/` no chat**: o Hermes usa `escrever_no_diario`, que resolve o inequívoco e devolve `ambiguous` para o agente perguntar. Nunca vincular pessoa sem certeza.
 
-**Erro de `get_or_create_page` tem formato diferente.**
-Retorna `{"error": "type_id não encontrado"}` (não `{"status": "error"}`). Verificar com `result.get("error")` antes de chamar `_check_result`.
+**Força ≠ ofensiva.** Não existe mais ofensiva: a força é a "caixa d'água" dos hábitos (consistência 0–100, tendência, recente), com meta semanal de dias.
+
+**`_check_result` não se aplica** às tools que devolvem lista/dict sem `status` (`list_heatmap`, `list_mentions`, `get_bullets_by_mention`, `search_bullets`, `list_emotions`, `list_emotion_logs`, `get_emotion_stats`, `list_letters`, `list_all_*`, `list_refs`). `get_or_create_page` devolve `{"error"}` (não `status`).
 
 ---
+
+### Tools (agent/MCP)
+
+`toolset.py` expõe ao agente: `get_or_create_page`, `upsert_bullet`, `delete_bullet`, `list_heatmap`, `list_mentions`, `get_bullets_by_mention`, `search_bullets`, emoções (`list_emotions`, `create_emotion`, `list_emotion_logs`, `create/update/delete_emotion_log`, `get_emotion_stats`), favoritos, cartas (`list/create/update/seal/delete_letter`) e as de chat (`escrever_no_diario`, `buscar_referencias`, `sugerir_pessoas`, `definir_fonte_do_dia`, `forca_da_escrita`, `refletir`, `listar_cartas`, `ler_carta`, `listar_registros_emocionais`, `padroes_emocionais`, `resumo_dos_valores`, `checkin_de_valores`, `compromissos_de_valores`). O registry do MCP acrescenta as da Kurisu (`conselho_do_dia`, `gerar_conselho_do_dia`, `revisao_da_semana`, `gerar_revisao_da_semana`, `leitura_emocional`). Skill do Hermes: `hermes/skills/violet-diario/SKILL.md`.
+
+---
+
+### Provedores cross-agent
+
+- `habit_provider.py` → hábito automático "escrever no diário" da Kaguya (`violet_diary`).
+- `calendar_provider.py` → fonte "Violet · Diário" do Calendar Hub (deep link `/journal#dia/<data>`).
+- Komi: `get_person_summary` traz `diario.trechos[{bullet_id, texto, deep_link}]` e `cartas.cartas[]` (contrato que a Komi DS vai consumir).
 
 ### O que NÃO fazer aqui
 
-- **Não inserir/atualizar `search_vec` manualmente** — é coluna GENERATED, o banco cuida
-- **Não criar type_id diferente de 1** sem inserir antes em `journal_types` — gera FK violation silenciosa
-- **Não confiar que posições são sequenciais** — o frontend usa gaps intencionais (×1000)
-- **Não usar `_check_result`** em `list_heatmap`, `list_mentions`, `get_bullets_by_mention`, `search_bullets`
-- **Não modificar `journal_mentions` diretamente** — sempre via `upsert_bullet` que faz delete+insert
-
----
+- Não inserir/atualizar `search_vec` (GENERATED) nem `journal_mentions`/`journal_refs` direto — sempre via `upsert_bullet`
+- Não chamar `get_or_create_page` só para ler
+- Não vincular pessoa por prefixo
+- Não importar a Kurisu de dentro de `agents/journal`
 
 ### Endpoint de exposição (webapp)
 
-`webapp/backend/routers/journal.py` expõe todas as tools acima como REST.
-O router passa os dicts direto — **não transforma** os dados, apenas valida autenticação com `Depends(require_user)`.
+`webapp/backend/routers/journal.py` — rotas em `webapp/docs/API.md`.
