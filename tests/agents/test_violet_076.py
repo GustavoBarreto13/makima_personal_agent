@@ -214,3 +214,10 @@ def test_penalizar_repetidas_vai_para_o_fim():
 def test_semana_da_revisao(hoje, esperado):
     from agents.kurisu.weekly_review import last_closed_week
     assert last_closed_week(hoje)[0] == esperado
+
+
+def test_mapa_de_calor_marca_dias_com_favorito():
+    from agents.journal.tools_stats import build_daily
+    d1, d2 = date(2026, 10, 1), date(2026, 10, 2)
+    daily = build_daily({d2: 30, d1: 12}, {d2})
+    assert daily == [{"date": "2026-10-01", "value": 12}, {"date": "2026-10-02", "value": 30, "mark": True}]

@@ -5,7 +5,7 @@ import type { BulletKind, Font } from '../types'
 
 export const KINDS: { kind: BulletKind; label: string; icon: IconName; plural: string }[] = [
   { kind: 'bullet', label: 'Momento', icon: 'journal', plural: 'Momentos' },
-  { kind: 'highlight', label: 'Destaque', icon: 'heart', plural: 'Destaques' },
+  { kind: 'highlight', label: 'Destaque', icon: 'highlight', plural: 'Destaques' },
   { kind: 'dream', label: 'Sonho', icon: 'dream', plural: 'Sonhos' },
   { kind: 'idea', label: 'Ideia', icon: 'idea', plural: 'Ideias' },
   { kind: 'wisdom', label: 'Sabedoria', icon: 'wisdom', plural: 'Sabedoria' },

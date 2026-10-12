@@ -483,14 +483,14 @@ export function Hero({ eyebrow, eyebrowIcon = 'sparkles', title, meta, actions, 
   return (
     <section className="ds-hero" style={style} aria-label={eyebrow}>
       {texture === 'sparkle' && <div className="ds-spark" />}
-      <div className="ds-hero-in" style={compact ? { padding: '28px 32px', maxWidth: '70%' } : undefined}>
+      <div className={cx('ds-hero-in', compact && 'ds-hero-in-compact')}>
         <p className="ds-eyebrow"><Icon name={eyebrowIcon} size={14} /> {eyebrow}</p>
         <h2>{title}</h2>
         {meta && <div className="ds-meta">{meta}</div>}
         {actions && <div className="ds-inline" style={{ marginTop: 6 }}>{actions}</div>}
       </div>
       {showPortrait && (
-        <div className="ds-hero-p" style={compact ? { width: 170 } : undefined}>
+        <div className={cx('ds-hero-p', compact && 'ds-hero-p-compact')}>
           <div className="ds-halo" />
           {src ? <img src={src} alt="" className="ds-hero-img" /> : <PortraitArt size={230} />}
         </div>

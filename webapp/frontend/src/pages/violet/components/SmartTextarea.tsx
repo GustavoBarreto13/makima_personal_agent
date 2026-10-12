@@ -28,7 +28,8 @@ interface Item {
 interface Open { match: MentionMatch; items: Item[]; index: number; title: string; empty?: string }
 
 export interface SmartTextareaHandle {
-  focus: (atEnd?: boolean) => void
+  /** Foca o campo: ``true`` (padrão) põe o cursor no fim; um número põe o cursor nessa posição. */
+  focus: (at?: boolean | number) => void
   /** Insere texto no cursor (botões @ e / da barra de escrita) e reabre as sugestões. */
   insert: (text: string) => void
   el: HTMLTextAreaElement | null
@@ -153,11 +154,12 @@ export const SmartTextarea = forwardRef<SmartTextareaHandle, Props>(function Sma
 
   useImperativeHandle(ref, () => ({
     el: area.current,
-    focus: (atEnd = true) => {
+    focus: (at = true) => {
       const el = area.current
       if (!el) return
       el.focus()
-      if (atEnd) el.setSelectionRange(el.value.length, el.value.length)
+      const pos = typeof at === 'number' ? Math.max(0, Math.min(at, el.value.length)) : at ? el.value.length : null
+      if (pos !== null) el.setSelectionRange(pos, pos)
     },
     insert: (text: string) => {
       const el = area.current

@@ -26,7 +26,8 @@ export interface StatsKpi {
   absoluteDelta?: boolean
 }
 
-export interface DailyPoint { date: string; value: number }
+/** ``mark`` destaca o dia no mapa de calor (ex.: Violet — dia com momento favorito). */
+export interface DailyPoint { date: string; value: number; mark?: boolean }
 export interface MonthlyPoint { month: number; value: number }
 export interface DistributionBucket { bucket: string; count: number }
 export interface RankItem { label: string; count: number; image?: string }
@@ -95,6 +96,8 @@ export interface HeatCell {
   value: number
   level: 0 | 1 | 2 | 3 | 4
   future: boolean
+  /** Dia destacado (ver ``DailyPoint.mark``). */
+  mark?: boolean
 }
 
 export interface HeatMonth {
@@ -122,7 +125,11 @@ export function heatLevel(value: number, t: HeatThresholds): 0 | 1 | 2 | 3 | 4 {
  */
 export function buildHeatmapMonths(year: number, daily: DailyPoint[], today: string, thresholds: HeatThresholds = [1, 30, 60, 90]): HeatMonth[] {
   const byDate = new Map<string, number>()
-  daily.forEach((d) => byDate.set(d.date, (byDate.get(d.date) ?? 0) + d.value))
+  const marked = new Set<string>()
+  daily.forEach((d) => {
+    byDate.set(d.date, (byDate.get(d.date) ?? 0) + d.value)
+    if (d.mark) marked.add(d.date)
+  })
   const months: HeatMonth[] = []
   for (let m = 0; m < 12; m++) {
     const lead = new Date(year, m, 1).getDay()
@@ -131,7 +138,9 @@ export function buildHeatmapMonths(year: number, daily: DailyPoint[], today: str
     for (let d = 1; d <= n; d++) {
       const date = `${year}-${pad2(m + 1)}-${pad2(d)}`
       const value = byDate.get(date) ?? 0
-      cells.push({ date, value, level: heatLevel(value, thresholds), future: date > today })
+      const cell: HeatCell = { date, value, level: heatLevel(value, thresholds), future: date > today }
+      if (marked.has(date)) cell.mark = true
+      cells.push(cell)
     }
     while (cells.length % 7 !== 0) cells.push(null)
     months.push({ month: m, name: MONTHS_SHORT[m], cells })

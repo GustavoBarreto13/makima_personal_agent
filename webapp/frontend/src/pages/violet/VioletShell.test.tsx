@@ -59,9 +59,9 @@ const open = async (hash = '') => {
 describe('Escrever', () => {
   it('abrir o dia não cria página; escrever cria e salva o momento', async () => {
     const user = await open()
-    await screen.findByText('Como foi o seu dia?')
+    await screen.findByPlaceholderText(/Como foi o seu dia/)
     expect(api.ensurePage).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: /Registrar um momento/ }))
+    await user.click(screen.getByRole('textbox', { name: 'Novo momento' }))
     await user.type(screen.getByRole('textbox', { name: 'Momento' }), 'Dia calmo{Enter}')
     await waitFor(() => expect(api.upsertBullet).toHaveBeenCalledWith(expect.objectContaining({ page_id: 9, content: 'Dia calmo', kind: 'bullet' })))
     expect(api.ensurePage).toHaveBeenCalledTimes(1)
@@ -69,8 +69,8 @@ describe('Escrever', () => {
 
   it('@ sugere a Komi e grava o token com o id', async () => {
     const user = await open()
-    await screen.findByText('Como foi o seu dia?')
-    await user.click(screen.getByRole('button', { name: /Registrar um momento/ }))
+    await screen.findByPlaceholderText(/Como foi o seu dia/)
+    await user.click(screen.getByRole('textbox', { name: 'Novo momento' }))
     await user.type(screen.getByRole('textbox', { name: 'Momento' }), 'jantar com @Ful')
     await user.click(await screen.findByRole('option', { name: /Fulana/ }))
     await user.keyboard('{Enter}')
@@ -79,17 +79,40 @@ describe('Escrever', () => {
 
   it('/akane cita um filme da Akane', async () => {
     const user = await open()
-    await screen.findByText('Como foi o seu dia?')
-    await user.click(screen.getByRole('button', { name: /Registrar um momento/ }))
+    await screen.findByPlaceholderText(/Como foi o seu dia/)
+    await user.click(screen.getByRole('textbox', { name: 'Novo momento' }))
     await user.type(screen.getByRole('textbox', { name: 'Momento' }), 'vi /akane Mat')
     await user.click(await screen.findByRole('option', { name: /Matrix/ }))
     await user.keyboard('{Enter}')
     await waitFor(() => expect(api.upsertBullet).toHaveBeenCalledWith(expect.objectContaining({ content: 'vi [Matrix](akane:movie:m1)' })))
   })
 
+  it('escreve no próprio bullet: a última linha já é um campo e não há barra de escrita', async () => {
+    const user = await open()
+    const tail = await screen.findByRole('textbox', { name: 'Novo momento' })
+    await user.click(tail)
+    const editor = screen.getByRole('textbox', { name: 'Momento' })
+    expect(editor).toBe(tail)
+    expect(document.activeElement).toBe(editor)
+    expect(document.querySelector('.vl-writebar')).toBeNull()
+  })
+
+  it('tocar no texto de um momento edita ali mesmo', async () => {
+    api.page.mockResolvedValueOnce({ page: { id: 9, date: TODAY, dream: null, font: null, num: 1 }, bullets: [
+      { id: 5, page_id: 9, position: 1000, content: 'Café com calma', kind: 'bullet', favorite: false, created_at: `${TODAY}T10:00:00-03:00`, tutor: null },
+    ] })
+    const user = await open()
+    await user.click(await screen.findByText('Café com calma'))
+    const editor = screen.getByRole('textbox', { name: 'Momento' }) as HTMLTextAreaElement
+    expect(editor.value).toBe('Café com calma')
+    expect(document.activeElement).toBe(editor)
+    await user.type(editor, '!{Escape}')
+    await waitFor(() => expect(api.upsertBullet).toHaveBeenCalledWith(expect.objectContaining({ position: 1000, content: 'Café com calma!' })))
+  })
+
   it('a fonte do dia muda na hora', async () => {
     const user = await open()
-    await screen.findByText('Como foi o seu dia?')
+    await screen.findByPlaceholderText(/Como foi o seu dia/)
     await user.click(screen.getAllByRole('button', { name: /Normal/ })[0])
     await user.click(screen.getByRole('menuitem', { name: /Cursiva/ }))
     await waitFor(() => expect(api.setFont).toHaveBeenCalledWith(TODAY, 'cursiva'))

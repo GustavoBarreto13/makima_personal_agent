@@ -287,7 +287,10 @@ tinta azul-ardósia, serifa nos títulos, brilho safira e fio de ouro; pior cont
 - **`MediaCard cover="poster"`:** capa retangular 2:3 (filmes, livros) em vez da faixa baixa; com `.ds-grid-poster`
   (colunas ~150px, 3 por linha no celular). Sem imagem, a capa vira gradiente com ícone.
 - **`CollectionBody`:** `gridClass` (ex.: `ds-grid-poster`) e `renderGroupHeader(key, count)` para um cabeçalho de grupo próprio
-  (o mês em serifa do Diário). **`StatsPage`:** `momentsClass` para a grade dos momentos.
+  (o mês em serifa do Diário). **`StatsPage`:** `momentsClass` para a grade dos momentos; `hero.compact: false`
+  (hero grande, com retrato) e `hero.title`; `afterHero` para os blocos do domínio entre o hero e os KPIs (Violet: força
+  da escrita, horários, emoções); `heatMarkLabel` destaca em vermelho (`--ds-danger`) os dias com `DailyPoint.mark`
+  (Violet: dia com momento favorito), com legenda. O `Heatmap` avulso aceita o mesmo `markLabel`.
 
 **Armadilhas ao escrever um estilo de arte** (aprendidas no `nautica`):
 

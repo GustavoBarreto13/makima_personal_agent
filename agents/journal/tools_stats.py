@@ -58,6 +58,27 @@ def _words_by_day(a: date, b: date) -> dict[date, int]:
     return {d: w for d, w in out.items() if w > 0}
 
 
+def _favorite_days(a: date, b: date) -> set[date]:
+    """Dias com pelo menos um momento favoritado (pintados de vermelho no mapa de calor)."""
+    rows = run_select(
+        """SELECT DISTINCT p.date FROM journal_bullets b JOIN journal_pages p ON p.id = b.page_id
+           WHERE p.type_id = 1 AND p.date BETWEEN %(a)s AND %(b)s AND b.favorite AND btrim(b.content) <> ''""",
+        {"a": a, "b": b},
+    )
+    return {r["date"] for r in rows}
+
+
+def build_daily(words: dict[date, int], favorite_days: set[date]) -> list[dict]:
+    """Série do mapa de calor: palavras por dia; ``mark`` nos dias com favorito."""
+    out = []
+    for d, w in sorted(words.items()):
+        point = {"date": d.isoformat(), "value": w}
+        if d in favorite_days:
+            point["mark"] = True
+        out.append(point)
+    return out
+
+
 def _kpis_for(a: date, b: date) -> dict:
     words = _words_by_day(a, b)
     hl = run_select(
@@ -122,7 +143,7 @@ def get_stats_payload(year: int, month: int | None = None, weekly_target: float 
     ]
 
     words = cur["_words"]
-    daily = [{"date": d.isoformat(), "value": w} for d, w in sorted(words.items())]
+    daily = build_daily(words, _favorite_days(a, b))
     monthly_acc: dict[int, int] = defaultdict(int)
     for d, w in words.items():
         monthly_acc[d.month] += w

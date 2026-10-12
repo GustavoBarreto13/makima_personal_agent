@@ -302,6 +302,17 @@ describe('Heatmap: um bloco por mês', () => {
     expect(oct1.className).toContain('ds-l3')
     expect(container.querySelector('[title="03/10: sem registro"]')!.className).toContain('ds-fut')
   })
+
+  it('dias com mark ficam destacados (com legenda) só quando há markLabel', () => {
+    const daily = [{ date: '2026-10-01', value: 75, mark: true }, { date: '2026-09-30', value: 20 }]
+    const { container } = render(<Heatmap year={2026} today="2026-10-02" daily={daily} formatValue={(v) => `${v} min`} markLabel="Dia com favorito" />)
+    expect(container.querySelector('[title="01/10: 75 min · dia com favorito"]')!.className).toContain('ds-mark')
+    expect(container.querySelector('[title="30/09: 20 min"]')!.className).not.toContain('ds-mark')
+    expect(container.querySelector('.ds-hm-markleg')!.textContent).toContain('Dia com favorito')
+    cleanup()
+    const plain = render(<Heatmap year={2026} today="2026-10-02" daily={daily} />)
+    expect(plain.container.querySelector('.ds-mark')).toBeNull()
+  })
 })
 
 // ── captura rápida ───────────────────────────────────────────────────────────

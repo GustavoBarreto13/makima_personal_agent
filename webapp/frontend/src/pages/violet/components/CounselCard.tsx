@@ -135,7 +135,6 @@ export function CounselCard({ date, hasContent }: { date: string; hasContent: bo
             <Button size="sm" variant="ghost" icon="refresh" onClick={() => void generate()}>Regerar</Button>
             <Button size="sm" variant="ghost" icon="history" onClick={() => { setHistory([]); violetApi.counselHistory(14).then((r) => setHistory(r.items)).catch(() => setHistory(null)) }}>Trajetória</Button>
             <Button size="sm" variant="ghost" icon="values" onClick={() => goto('values')}>Valores</Button>
-            {counsel.tokens_in != null && <span className="vl-muted ds-mono vl-tokens">{counsel.tokens_in + (counsel.tokens_out ?? 0)} tokens</span>}
           </footer>
         </>
       )}

@@ -1,14 +1,16 @@
 // Escrever — o coração da Violet. A estrutura do diário antigo continua (data, sonho, Conselho, emoções, cartas,
-// momentos), mas a escrita foi refeita para o celular:
-//   • tocar num momento edita ali mesmo; o texto salva sozinho enquanto você escreve (e ao sair);
-//   • Enter cria o próximo momento; apagar tudo + Backspace remove (com Desfazer);
+// momentos) e a escrita é como era: no próprio bullet, sem janela nem barra.
+//   • tocar no texto de um momento edita ali mesmo, com o cursor onde você tocou; salva sozinho (e ao sair);
+//   • a última linha ("Registrar um momento…") já é um campo: é só tocar e escrever;
+//   • Enter cria o próximo momento; apagar tudo + Backspace remove (com Desfazer); Esc sai;
 //   • @ sugere pessoas da Komi e / cita filmes, livros, tarefas… de outros agentes (SmartTextarea);
-//   • a barra de escrita fica presa acima do teclado: tipo do momento, @, /, fonte (Aa) e Pronto;
-//   • a fonte do dia (Normal, Roteiro, Cursiva) muda na hora, inclusive o texto em edição;
+//   • os chips abaixo da lista escolhem o tipo do momento; o Aa do topo troca a fonte do dia na hora;
 //   • deslizar para os lados troca de dia (quando não está editando).
+// O foco vai para o campo na mesma tarefa do toque (flushSync), senão o teclado do celular não abre.
 // Ler um dia não cria nada: a página só nasce no primeiro registro (ensurePage).
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type TouchEvent } from 'react'
+import { flushSync } from 'react-dom'
 import {
   Button, DatePicker, EmptyState, ErrorState, Hero, Icon, IconButton, LoadingState, Menu, Page, toast, useBreakpoint, useKeyboardInset, type MenuItem,
 } from '../../../design'
@@ -23,6 +25,7 @@ import { RichText } from '../components/RichText'
 import { SmartTextarea, type SmartTextareaHandle } from '../components/SmartTextarea'
 import { TutorModal } from '../components/TutorModal'
 import { useViolet } from '../context'
+import { caretForEdit } from '../lib/caret'
 import { fontClass, KINDS, kindMeta } from '../lib/kinds'
 import { wordCount } from '../lib/markup'
 import { violetApi } from '../violetApi'
@@ -50,6 +53,8 @@ export function Write({ date }: { date: string }) {
   const [dream, setDream] = useState('')
   const [editing, setEditing] = useState<Editing | null>(null)
   const [menuFor, setMenuFor] = useState<number | null>(null)
+  const [tailKind, setTailKind] = useState<BulletKind>('bullet')
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [emotions, setEmotions] = useState<EmotionLog[]>([])
   const [letters, setLetters] = useState<Letter[]>([])
   const [emotionForm, setEmotionForm] = useState<EmotionLog | 'new' | null>(null)
@@ -63,6 +68,7 @@ export function Write({ date }: { date: string }) {
   const ensuring = useRef<Promise<number> | null>(null)
   const saved = useRef<Map<number, string>>(new Map())
   const editingRef = useRef<Editing | null>(null)
+  const failing = useRef(false)
   editingRef.current = editing
 
   const font: Font = page?.font ?? v.prefs.font
@@ -100,8 +106,13 @@ export function Write({ date }: { date: string }) {
     const content = e.text.replace(/\s+$/, '')
     if (saved.current.get(e.position) === content && e.id) return null
     if (!e.id && !content.trim()) return null
-    const id = await pageId()
-    const r = await violetApi.upsertBullet({ page_id: id, position: e.position, content, kind: e.kind })
+    setSaveState('saving')
+    let r: Awaited<ReturnType<typeof violetApi.upsertBullet>>
+    try {
+      const id = await pageId()
+      r = await violetApi.upsertBullet({ page_id: id, position: e.position, content, kind: e.kind })
+    } catch (err) { setSaveState('error'); throw err }
+    setSaveState('saved')
     if (r.bullet) {
       const b = r.bullet
       saved.current.set(e.position, b.content)
@@ -128,7 +139,12 @@ export function Write({ date }: { date: string }) {
   // Autosave com respiro de 800 ms enquanto digita.
   useEffect(() => {
     if (!editing) return
-    const t = window.setTimeout(() => { void persist(editing).catch(() => toast('Não consegui salvar — confira a conexão.', { tone: 'error' })) }, 800)
+    const t = window.setTimeout(() => {
+      void persist(editing).catch(() => {
+        if (!failing.current) toast('Não consegui salvar — o texto continua aqui; tento de novo enquanto você escreve.', { tone: 'error' })
+        failing.current = true
+      }).then(() => { failing.current = false })
+    }, 800)
     return () => window.clearTimeout(t)
   }, [editing, persist])
 
@@ -145,15 +161,18 @@ export function Write({ date }: { date: string }) {
 
   const startNew = (kind: BulletKind = editing?.kind ?? 'bullet', after?: number) => {
     setMenuFor(null)
-    setEditing({ position: newPosition(after), kind, text: '', id: null, original: '' })
-    window.setTimeout(() => editorRef.current?.focus(), 0)
+    flushSync(() => setEditing({ position: newPosition(after), kind, text: '', id: null, original: '' }))
+    editorRef.current?.focus()
   }
 
-  const startEdit = (b: Bullet) => {
+  /** Edita um momento ali mesmo; ``caret`` = posição do cursor (onde você tocou). */
+  const startEdit = (b: Bullet, caret?: number) => {
     setMenuFor(null)
-    setCorrected((s) => { const n = new Set(s); n.delete(b.id); return n })
-    setEditing({ position: b.position, kind: b.kind, text: b.content, id: b.id, original: b.content })
-    window.setTimeout(() => editorRef.current?.focus(), 0)
+    flushSync(() => {
+      setCorrected((s) => { const n = new Set(s); n.delete(b.id); return n })
+      setEditing({ position: b.position, kind: b.kind, text: b.content, id: b.id, original: b.content })
+    })
+    editorRef.current?.focus(caret ?? true)
   }
 
   /** Termina a edição: salva já, e se o texto ficou vazio o momento sai (com Desfazer). */
@@ -184,7 +203,7 @@ export function Write({ date }: { date: string }) {
       ev.preventDefault()
       const prev = [...ordered].reverse().find((b) => b.position < e.position)
       void commit(e)
-      if (prev) window.setTimeout(() => startEdit(prev), 0)
+      if (prev) startEdit(prev)
       return
     }
     if (ev.key === 'Escape') { ev.preventDefault(); void commit(e) }
@@ -203,6 +222,7 @@ export function Write({ date }: { date: string }) {
     const id = await pageId()
     const r = await violetApi.upsertBullet({ page_id: id, position: b.position, content: b.content, kind }).catch(() => null)
     if (r?.bullet) setBullets((p) => p.map((x) => (x.id === b.id ? { ...r.bullet as Bullet, tutor: x.tutor } : x)))
+    else toast('Não consegui trocar o tipo.', { tone: 'error' })
   }
 
   async function remove(b: Bullet) {
@@ -293,12 +313,30 @@ export function Write({ date }: { date: string }) {
   const words = ordered.reduce((s, b) => s + wordCount(b.content), 0) + wordCount(dream)
   const hasContent = ordered.length > 0 || !!dream.trim() || emotions.length > 0 || letters.length > 0
 
-  // Lista com o rascunho novo encaixado na posição dele.
+  // Lista com o rascunho novo encaixado na posição dele. As linhas têm chave pela POSIÇÃO: o rascunho que
+  // acabou de ser salvo continua sendo o mesmo campo (o foco e o teclado não piscam no autosave).
   type Row = { b: Bullet } | { draft: true; position: number }
+  const rowPos = (r: Row) => ('b' in r ? r.b.position : r.position)
   const rows: Row[] = ordered.map((b) => ({ b }) as Row)
   if (editing && !editing.id && !ordered.some((b) => b.position === editing.position)) {
     rows.push({ draft: true, position: editing.position })
-    rows.sort((a, c) => ('b' in a ? a.b.position : a.position) - ('b' in c ? c.b.position : c.position))
+    rows.sort((a, c) => rowPos(a) - rowPos(c))
+  }
+  // A última linha é sempre um campo vazio, pronto para escrever, na posição que o próximo momento terá.
+  // Quando é ela que está em edição, o rascunho ocupa o lugar dela (mesma chave = mesmo campo).
+  const lastRow = rows[rows.length - 1]
+  const tailPos = (lastRow ? rowPos(lastRow) : 0) + 1000
+  const showTail = !(editing && lastRow && rowPos(lastRow) === editing.position)
+  const startTail = (kind: BulletKind = tailKind, text = '') => {
+    setMenuFor(null)
+    setEditing({ position: tailPos, kind, text, id: null, original: '' })
+  }
+  const activeKind = editing?.kind ?? tailKind
+  const pickKind = (k: BulletKind) => {
+    if (editing) { setEditing({ ...editing, kind: k }); return }
+    setTailKind(k)
+    flushSync(() => startTail(k))
+    editorRef.current?.focus()
   }
 
   const editor = (
@@ -309,11 +347,11 @@ export function Write({ date }: { date: string }) {
       onChange={(text) => setEditing((cur) => (cur ? { ...cur, text } : cur))}
       onKeyDown={onKeyDown}
       onBlur={(ev) => {
-        // Tocar na barra de escrita (tipo, @, /, fonte) não encerra a edição.
-        if ((ev.relatedTarget as HTMLElement | null)?.closest('.vl-writebar, .vl-suggest')) return
+        // Escolher uma sugestão ou o tipo do momento não encerra a edição.
+        if ((ev.relatedTarget as HTMLElement | null)?.closest('.vl-suggest, .vl-kindrow')) return
         void commit()
       }}
-      placeholder="Registrar um momento…"
+      placeholder={ordered.length ? 'Registrar um momento…' : isToday ? 'Como foi o seu dia? Escreva aqui…' : 'Escrever sobre este dia…'}
       aria-label="Momento"
     />
   )
@@ -330,10 +368,17 @@ export function Write({ date }: { date: string }) {
       <div className={`vl-write ${fontClass(font)}`} style={{ ['--vl-kb' as string]: `${kb}px` }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         <Hero
           compact
-          eyebrow={`#${page?.num ?? '—'} · ${isToday ? 'hoje' : fmtRelative(date, v.today)}`}
+          eyebrow={page?.num ? `#${page.num} · ${isToday ? 'hoje' : fmtRelative(date, v.today)}` : isToday ? 'Hoje' : cap(fmtRelative(date, v.today))}
           eyebrowIcon="journal"
           title={cap(fmtDateLong(date))}
-          meta={hasContent ? `${pluralize(ordered.length, 'momento', 'momentos')} · ${pluralize(words, 'palavra', 'palavras')}` : 'Página em branco'}
+          meta={(
+            <>
+              {hasContent ? `${pluralize(ordered.length, 'momento', 'momentos')} · ${pluralize(words, 'palavra', 'palavras')}` : 'Página em branco'}
+              <span className="vl-savestate" role="status" aria-live="polite">
+                {saveState === 'saving' ? ' · salvando…' : saveState === 'saved' ? ' · salvo' : saveState === 'error' ? ' · não salvo ainda' : ''}
+              </span>
+            </>
+          )}
           actions={
             <div className="vl-daynav">
               <IconButton icon="left" label="Dia anterior" onClick={() => go(addDaysISO(date, -1))} />
@@ -380,15 +425,14 @@ export function Write({ date }: { date: string }) {
         )}
 
         <section className="vl-bullets" aria-label="Momentos do dia">
-          {rows.length === 0 && !editing && (
-            <EmptyState icon="journal" title={isToday ? 'Como foi o seu dia?' : 'Nada escrito neste dia'}
-              hint="Toque abaixo e escreva. @ cita uma pessoa, / cita um filme, livro ou tarefa." />
+          {rows.length === 0 && !editing && !isToday && !hasContent && (
+            <EmptyState icon="journal" title="Nada escrito neste dia" hint="Toque na linha abaixo e escreva. @ cita uma pessoa, / cita um filme, livro ou tarefa." />
           )}
-          {rows.map((row) => {
+          {[...rows.map((row) => {
             if (!('b' in row)) {
               return (
-                <div key={`draft-${row.position}`} className="vl-bullet vl-editing" data-kind={editing?.kind}>
-                  <span className="vl-mark" aria-hidden="true"><Icon name={kindMeta(editing?.kind ?? 'bullet').icon} size={15} /></span>
+                <div key={`p-${row.position}`} className="vl-bullet vl-editing" data-kind={editing?.kind}>
+                  <span className="vl-mark" aria-hidden="true">{editing?.kind === 'bullet' ? <span className="vl-dot" /> : <Icon name={kindMeta(editing?.kind ?? 'bullet').icon} size={15} />}</span>
                   <div className="vl-bullet-main">{editor}</div>
                 </div>
               )
@@ -397,15 +441,16 @@ export function Write({ date }: { date: string }) {
             const isEditing = editing?.id === b.id || (editing && !editing.id && editing.position === b.position)
             const shown = corrected.has(b.id) ? analysis[b.id]?.corrected_text ?? b.content : b.content
             return (
-              <div key={b.id} className={`vl-bullet${isEditing ? ' vl-editing' : ''}`} data-kind={b.kind} data-fav={b.favorite || undefined}>
+              <div key={`p-${b.position}`} className={`vl-bullet${isEditing ? ' vl-editing' : ''}`} data-kind={isEditing ? editing?.kind : b.kind} data-fav={b.favorite || undefined}>
                 <button type="button" className="vl-mark" onClick={() => void toggleFavorite(b)}
-                  aria-label={b.favorite ? 'Tirar dos favoritos' : 'Favoritar'} aria-pressed={b.favorite} title={kindMeta(b.kind).label}>
+                  aria-label={`${kindMeta(b.kind).label} — ${b.favorite ? 'tirar dos favoritos' : 'favoritar'}`} aria-pressed={b.favorite} title={kindMeta(b.kind).label}>
                   {b.favorite ? <Icon name="heart" size={15} /> : b.kind === 'bullet' ? <span className="vl-dot" /> : <Icon name={kindMeta(b.kind).icon} size={15} />}
                 </button>
                 <div className="vl-bullet-main">
                   {isEditing ? editor : (
-                    <div className="vl-bullet-text" role="button" tabIndex={0} onClick={() => startEdit(b)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); startEdit(b) } }}>
+                    <div className="vl-bullet-text" role="button" tabIndex={0} aria-description="toque para editar"
+                      onClick={(ev) => startEdit(b, corrected.has(b.id) ? undefined : caretForEdit(ev.currentTarget, b.content, ev.clientX, ev.clientY))}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit(b) } }}>
                       <RichText text={shown} />
                     </div>
                   )}
@@ -427,39 +472,30 @@ export function Write({ date }: { date: string }) {
                 )}
               </div>
             )
-          })}
-          {!editing && (
-            <button type="button" className="vl-newline" onClick={() => startNew('bullet')}>
-              <span className="vl-dot" aria-hidden="true" />Registrar um momento…
-            </button>
-          )}
-          {!editing && (
-            <div className="vl-kindrow" aria-label="Começar um momento de outro tipo">
-              {KINDS.filter((k) => k.kind !== 'bullet').map((k) => (
-                <button key={k.kind} type="button" className="vl-kindchip" onClick={() => startNew(k.kind)}><Icon name={k.icon} size={14} />{k.label}</button>
-              ))}
+          }), showTail ? (
+            <div key={`p-${tailPos}`} className="vl-bullet vl-tail" data-kind={tailKind}>
+              <span className="vl-mark" aria-hidden="true">{tailKind === 'bullet' ? <span className="vl-dot" /> : <Icon name={kindMeta(tailKind).icon} size={15} />}</span>
+              <div className="vl-bullet-main">
+                <SmartTextarea
+                  className="vl-bullet-input"
+                  value=""
+                  onChange={(text) => startTail(tailKind, text)}
+                  onFocus={() => startTail()}
+                  placeholder={ordered.length ? 'Registrar um momento…' : isToday ? 'Como foi o seu dia? Escreva aqui…' : 'Escrever sobre este dia…'}
+                  aria-label="Novo momento"
+                />
+              </div>
             </div>
-          )}
-        </section>
-
-        {editing && (
-          <div className="vl-writebar" role="toolbar" aria-label="Barra de escrita">
-            <div className="vl-writebar-kinds">
-              {KINDS.map((k) => (
-                <button key={k.kind} type="button" className={editing.kind === k.kind ? 'vl-on' : undefined} aria-pressed={editing.kind === k.kind}
-                  onMouseDown={(e) => e.preventDefault()} onClick={() => setEditing({ ...editing, kind: k.kind })} title={k.label}>
-                  <Icon name={k.icon} size={15} /><span>{k.label}</span>
-                </button>
-              ))}
-            </div>
-            <div className="vl-writebar-tools">
-              <button type="button" className="vl-wb-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => editorRef.current?.insert('@')} aria-label="Citar uma pessoa">@</button>
-              <button type="button" className="vl-wb-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => editorRef.current?.insert('/')} aria-label="Citar algo de outro agente">/</button>
-              <span className="vl-menu-up" onMouseDown={(e) => e.preventDefault()}><FontMenuButton value={font} onChange={(f) => void changeFont(f)} compact /></span>
-              <Button size="sm" variant="primary" icon="check" onMouseDown={(e) => e.preventDefault()} onClick={() => void commit()}>Pronto</Button>
-            </div>
+          ) : null]}
+          <div className="vl-kindrow" role="group" aria-label="Tipo do momento">
+            {KINDS.map((k) => (
+              <button key={k.kind} type="button" className={`vl-kindchip${activeKind === k.kind ? ' vl-on' : ''}`} aria-pressed={activeKind === k.kind}
+                onMouseDown={(e) => e.preventDefault()} onClick={() => pickKind(k.kind)}>
+                <Icon name={k.icon} size={14} />{k.label}
+              </button>
+            ))}
           </div>
-        )}
+        </section>
       </div>
 
       {modal && <TutorModal analysis={modal} onClose={() => setModal(null)} />}

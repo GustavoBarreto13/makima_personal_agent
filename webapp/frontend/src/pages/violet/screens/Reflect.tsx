@@ -71,7 +71,7 @@ function ReflectStream() {
 
       {showWeekly && weekly && (
         <section className={`vl-card vl-weekly vl-tone-${weekly.tone ?? 'guia'}`}>
-          <header className="vl-card-head"><Icon name="weekly-review" size={16} /><h3>Revisão da semana</h3><span className="vl-muted ds-mono">{fmtRange(weekly.week_start, weekly.week_end)}</span></header>
+          <header className="vl-card-head"><Icon name="weekly-review" size={16} /><h3>Revisão da semana</h3><span className="vl-muted ds-mono">{fmtRange(weekly.week_start, weekly.week_end)}</span>{weekly.tone === 'tapa_na_cara' && <span className="vl-pill vl-pill-warn">tapa na cara</span>}</header>
           {weekly.verdict && <p className="vl-verdict">{weekly.verdict}</p>}
           <div className="vl-row"><Button variant="primary" icon="journal" onClick={() => v.goto({ view: 'reflect', week: weekly.week_start })}>Ler a revisão</Button></div>
         </section>
@@ -321,7 +321,7 @@ function WeeklyReviewView({ week }: { week: string }) {
           action={<Button variant="primary" icon="sparkles" disabled={busy} onClick={() => void generate()}>{busy ? 'Escrevendo…' : 'Gerar a revisão'}</Button>} />
       ) : (
         <article className={`vl-card vl-weekly vl-tone-${r.tone ?? 'guia'}`}>
-          <header className="vl-card-head"><Icon name="weekly-review" size={16} /><h3>Revisão da semana</h3><span className="vl-muted ds-mono">{fmtRange(r.week_start, r.week_end)}</span></header>
+          <header className="vl-card-head"><Icon name="weekly-review" size={16} /><h3>Revisão da semana</h3><span className="vl-muted ds-mono">{fmtRange(r.week_start, r.week_end)}</span>{r.tone === 'tapa_na_cara' && <span className="vl-pill vl-pill-warn">tapa na cara</span>}</header>
           <div className="vl-kpis">
             {r.metrics.forca != null && <div className="vl-kpi"><b>{r.metrics.forca}%</b><span>força {r.metrics.forca_antes != null && `(antes ${r.metrics.forca_antes}%)`}</span></div>}
             {r.metrics.dias_escritos != null && <div className="vl-kpi"><b>{r.metrics.dias_escritos}</b><span>dias escritos</span></div>}

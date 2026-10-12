@@ -48,6 +48,12 @@ describe('delta contra o período anterior', () => {
 describe('mapa de calor por mês (modelo da Frieren)', () => {
   const months = buildHeatmapMonths(2026, [{ date: '2026-10-01', value: 45 }, { date: '2026-10-01', value: 30 }, { date: '2026-01-02', value: 10 }], '2026-10-02')
 
+  it('propaga mark para a célula do dia (e só nela)', () => {
+    const m = buildHeatmapMonths(2026, [{ date: '2026-10-01', value: 5, mark: true }, { date: '2026-10-02', value: 5 }], '2026-10-02')[9]
+    const cell = (d: string) => m.cells.find((c) => c?.date === d)
+    expect(cell('2026-10-01')?.mark).toBe(true)
+    expect(cell('2026-10-02')?.mark).toBeUndefined()
+  })
   it('sempre 12 meses, cada um com semanas completas de 7 linhas', () => {
     expect(months).toHaveLength(12)
     for (const m of months) expect(m.cells.length % 7).toBe(0)

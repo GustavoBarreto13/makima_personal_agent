@@ -75,10 +75,13 @@ export interface HeatmapProps {
   formatValue?: (value: number) => string
   /** Descrição acessível. */
   label?: string
+  /** Legenda dos dias com ``mark`` (célula em vermelho). Sem ela, a marca não aparece. */
+  markLabel?: string
 }
 
-export function Heatmap({ year, daily, today = todayISO(), thresholds, formatValue = (v) => String(v), label }: HeatmapProps) {
+export function Heatmap({ year, daily, today = todayISO(), thresholds, formatValue = (v) => String(v), label, markLabel }: HeatmapProps) {
   const months = buildHeatmapMonths(year, daily, today, thresholds)
+  const hasMark = !!markLabel && daily.some((d) => d.mark)
   return (
     <div>
       <div className="ds-hm-wrap">
@@ -89,7 +92,7 @@ export function Heatmap({ year, daily, today = todayISO(), thresholds, formatVal
               <div className="ds-hm-cells">
                 {m.cells.map((c, i) =>
                   c ? (
-                    <i key={i} className={cx('ds-hm-c', c.level > 0 && `ds-l${c.level}`, c.future && 'ds-fut')} title={`${c.date.slice(8)}/${c.date.slice(5, 7)}: ${c.value > 0 ? formatValue(c.value) : 'sem registro'}`} />
+                    <i key={i} className={cx('ds-hm-c', c.level > 0 && `ds-l${c.level}`, c.future && 'ds-fut', markLabel && c.mark && 'ds-mark')} title={`${c.date.slice(8)}/${c.date.slice(5, 7)}: ${c.value > 0 ? formatValue(c.value) : 'sem registro'}${markLabel && c.mark ? ` · ${markLabel.toLowerCase()}` : ''}`} />
                   ) : (
                     <i key={i} className="ds-hm-c ds-nul" />
                   ),
@@ -101,6 +104,7 @@ export function Heatmap({ year, daily, today = todayISO(), thresholds, formatVal
       </div>
       <div className="ds-hm-leg">
         menos {[0, 1, 2, 3, 4].map((l) => <i key={l} className={cx('ds-hm-c', l > 0 && `ds-l${l}`)} />)} mais
+        {hasMark && <span className="ds-hm-markleg"><i className="ds-hm-c ds-l3 ds-mark" />{markLabel}</span>}
       </div>
     </div>
   )
@@ -191,7 +195,11 @@ export function YearNav({ year, min, max, onChange }: { year: number; min: numbe
 export interface StatsPageProps {
   payload: StatsPayload | null
   /** "Seu ano em treino". */
-  hero: { eyebrow: string; summary: ReactNode }
+  hero: { eyebrow: string; summary: ReactNode; title?: string; compact?: boolean }
+  /** Conteúdo do domínio logo abaixo do hero (antes dos KPIs). */
+  afterHero?: ReactNode
+  /** Legenda dos dias destacados no mapa de calor (``DailyPoint.mark``). */
+  heatMarkLabel?: string
   /** Anos disponíveis (seletor de período; muda a query no backend). */
   minYear: number
   maxYear: number
@@ -220,7 +228,7 @@ export interface StatsPageProps {
 /** Unidades da série mensal que são contagens inteiras (as demais mostram uma casa decimal). */
 const INTEGER_UNITS = new Set(['treinos', 'R$', 'sessões', 'filmes'])
 
-export function StatsPage({ payload, hero, minYear, maxYear, onYear, today, heatThresholds, formatDaily, metrics, metric, onMetric, ratings, renderMoment, momentsClass = 'ds-grid', emptyHint, heatmapTitle = 'Dias com registro', monthlyTitle = 'Ritmo por mês' }: StatsPageProps) {
+export function StatsPage({ payload, hero, afterHero, heatMarkLabel, minYear, maxYear, onYear, today, heatThresholds, formatDaily, metrics, metric, onMetric, ratings, renderMoment, momentsClass = 'ds-grid', emptyHint, heatmapTitle = 'Dias com registro', monthlyTitle = 'Ritmo por mês' }: StatsPageProps) {
   const year = payload?.period.year ?? maxYear
   const nav = <YearNav year={year} min={minYear} max={maxYear} onChange={onYear} />
   if (!payload || payload.kpis.every((k) => !k.value)) {
@@ -236,11 +244,12 @@ export function StatsPage({ payload, hero, minYear, maxYear, onYear, today, heat
   return (
     <Page wide>
       <div className="ds-row-between">{nav}<span className="ds-mono">Compara com o mesmo período de {prevLabel}</span></div>
-      <Hero compact eyebrow={hero.eyebrow} eyebrowIcon="trophy" title={`${payload.period.label}`} meta={hero.summary} />
+      <Hero compact={hero.compact ?? true} eyebrow={hero.eyebrow} eyebrowIcon="trophy" title={hero.title ?? `${payload.period.label}`} meta={hero.summary} />
+      {afterHero}
       <KpiGrid kpis={payload.kpis} previousLabel={prevLabel} />
       <section className="ds-panel ds-card" aria-labelledby="ds-hm-t">
         <h3 id="ds-hm-t">{heatmapTitle}</h3>
-        <Heatmap year={year} daily={payload.daily} today={today} thresholds={heatThresholds} formatValue={formatDaily} />
+        <Heatmap year={year} daily={payload.daily} today={today} thresholds={heatThresholds} formatValue={formatDaily} markLabel={heatMarkLabel} />
       </section>
       <div className="ds-cols2">
         <section className="ds-panel ds-card">
