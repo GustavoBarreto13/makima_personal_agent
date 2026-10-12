@@ -11,7 +11,7 @@ import { __resetToasts } from '../../../design/headless/toast'
 import { addDaysISO, todayISO } from '../../../design/core/format'
 
 const api = vi.hoisted(() => ({
-  sidebar: vi.fn(), viewCounts: vi.fn(), viewTasks: vi.fn(), eisenhower: vi.fn(), eisenhowerFilter: vi.fn(), updateTask: vi.fn(), bulk: vi.fn(), getTask: vi.fn(), activity: vi.fn(), dependencies: vi.fn(),
+  sidebar: vi.fn(), viewCounts: vi.fn(), viewTasks: vi.fn(), eisenhower: vi.fn(), taskFilterIds: vi.fn(), updateTask: vi.fn(), bulk: vi.fn(), getTask: vi.fn(), activity: vi.fn(), dependencies: vi.fn(),
   schedule: { get: vi.fn(), overrides: vi.fn() },
 }))
 vi.mock('../api', () => ({ kaguyaApi: api }))
@@ -109,7 +109,7 @@ describe('Eisenhower', () => {
   })
 
   it('o Filtro avançado abre o construtor completo e filtra pelas regras no servidor', async () => {
-    api.eisenhowerFilter.mockResolvedValue({ status: 'ok', ids: [2] })
+    api.taskFilterIds.mockResolvedValue({ status: 'ok', ids: [2] })
     const user = await open()
     await screen.findByText('Declarar imposto')
     await user.click(screen.getByRole('button', { name: 'Filtro avançado' }))
@@ -120,7 +120,7 @@ describe('Eisenhower', () => {
     }
     expect(within(dlg).queryByText('Guardar como View')).toBeNull()
     await user.click(within(dlg).getByRole('button', { name: 'Aplicar' }))
-    await waitFor(() => expect(api.eisenhowerFilter).toHaveBeenCalledWith({ combinator: 'and', conditions: [{ field: 'priority', op: 'gte', value: 2 }] }, undefined))
+    await waitFor(() => expect(api.taskFilterIds).toHaveBeenCalledWith({ combinator: 'and', conditions: [{ field: 'priority', op: 'gte', value: 2 }] }, undefined))
     await waitFor(() => expect(screen.queryByText('Declarar imposto')).toBeNull())
     expect(screen.getByText('Planejar viagem')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Filtro avançado · 1' })).toBeTruthy()
@@ -129,7 +129,7 @@ describe('Eisenhower', () => {
   })
 
   it('o filtro avançado soma com os Filtros rápidos e pode esvaziar a matriz com aviso próprio', async () => {
-    api.eisenhowerFilter.mockResolvedValue({ status: 'ok', ids: [99] })
+    api.taskFilterIds.mockResolvedValue({ status: 'ok', ids: [99] })
     const user = await open()
     await screen.findByText('Declarar imposto')
     await user.click(screen.getByRole('button', { name: 'Filtro avançado' }))
@@ -141,7 +141,7 @@ describe('Eisenhower', () => {
   })
 
   it('se o servidor recusa o filtro, avisa e mostra tudo de novo', async () => {
-    api.eisenhowerFilter.mockRejectedValue(new Error('HTTP 400'))
+    api.taskFilterIds.mockRejectedValue(new Error('HTTP 400'))
     const user = await open()
     await screen.findByText('Declarar imposto')
     await user.click(screen.getByRole('button', { name: 'Filtro avançado' }))

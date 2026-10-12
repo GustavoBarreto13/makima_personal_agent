@@ -59,6 +59,7 @@ _FIELD_OPS = {
     # spec 075: espaço (Trabalho/Pessoal), grupo, adiar, bloqueio, estimativa, follow-up, conclusão.
     "space": {"eq"},
     "group_id": {"in", "not_in"},
+    "type": {"in", "not_in"},        # tarefa / evento / aniversário (lista de valores)
     "start_date": {"eq", "before", "after", "none", "deferred"},
     "blocked": {"eq"},
     "duration_min": {"eq", "gte", "lte", "none"},
@@ -219,7 +220,9 @@ def _build_where_from_rules(rules: dict, default_open: bool = True):
                 continue
 
             if field == "project_id":
-                ids = value if isinstance(value, list) else [value]
+                ids = [i for i in (value if isinstance(value, list) else [value]) if i is not None]
+                if not ids:
+                    continue  # condição ainda sem lista escolhida: não filtra nada (em vez de esvaziar o resultado)
                 params[key] = ids
                 # in = pertence à lista; not_in = não pertence (via ALL para tratar bem o vazio).
                 if op == "in":
@@ -322,8 +325,19 @@ def _build_where_from_rules(rules: dict, default_open: bool = True):
                     f"(SELECT pp.context FROM task_projects pp WHERE pp.id = t.project_id) = %({key})s"
                 )
 
+            elif field == "type":
+                # Tipo da tarefa: só valores conhecidos entram no SQL; condição vazia/ inválida não filtra.
+                kinds = [str(v) for v in (value if isinstance(value, list) else [value]) if str(v) in ("task", "event", "birthday")]
+                if not kinds:
+                    continue
+                params[key] = kinds
+                member = f"t.type = ANY(%({key})s)"
+                fragments.append(member if op == "in" else f"NOT {member}")
+
             elif field == "group_id":
-                ids = value if isinstance(value, list) else [value]
+                ids = [i for i in (value if isinstance(value, list) else [value]) if i is not None]
+                if not ids:
+                    continue
                 params[key] = [int(i) for i in ids]
                 member = f"t.project_id IN (SELECT pg.id FROM task_projects pg WHERE pg.group_id = ANY(%({key})s))"
                 fragments.append(member if op == "in" else f"NOT {member}")

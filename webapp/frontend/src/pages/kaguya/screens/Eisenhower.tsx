@@ -106,7 +106,7 @@ export function Eisenhower({ projectIds, scope = 'all', showProject = !projectId
   useEffect(() => {
     let live = true
     if (!adHoc) { setAdHocIds(null); return }
-    kaguyaApi.eisenhowerFilter(adHoc, k.space).then((r) => { if (live) setAdHocIds(r.ids ? new Set(r.ids) : null) }).catch(() => { if (live) { setAdHoc(null); toast('Não foi possível aplicar o filtro.', { tone: 'error' }) } })
+    kaguyaApi.taskFilterIds(adHoc, k.space).then((r) => { if (live) setAdHocIds(r.ids ? new Set(r.ids) : null) }).catch(() => { if (live) { setAdHoc(null); toast('Não foi possível aplicar o filtro.', { tone: 'error' }) } })
     return () => { live = false }
   }, [adHoc, k.space, k.rev])
 

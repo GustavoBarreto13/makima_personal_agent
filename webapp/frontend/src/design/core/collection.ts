@@ -16,11 +16,12 @@ interface FacetBase {
   label: string
 }
 
-/** Escolha entre opções (multi-seleção por padrão). */
+/** Escolha entre opções (multi-seleção por padrão). Com `excludable`, o `mode` `nothas` vira "todas menos as marcadas". */
 export interface EnumFacet<T> extends FacetBase {
   kind: 'enum'
   options: { value: string; label?: string }[]
   get: (item: T) => string
+  excludable?: boolean
 }
 
 /** Etiquetas livres, com modo "tem / não tem". Opções vêm dos próprios itens. */
@@ -91,7 +92,7 @@ export interface CollectionSchema<T> {
 export interface FacetValue {
   /** enum / tags / people: valores marcados. */
   values?: Record<string, boolean>
-  /** tags: "tem" ou "não tem". */
+  /** tags: "tem" ou "não tem". enum excludable: "só estas" ou "todas menos estas". */
   mode?: 'has' | 'nothas'
   /** range: mínimo escolhido (0 = sem filtro). */
   min?: number
@@ -161,7 +162,9 @@ function passesFacet<T>(f: Facet<T>, v: FacetValue | undefined, item: T, today: 
   switch (f.kind) {
     case 'enum': {
       const sel = selected(v.values)
-      return !sel.length || sel.includes(f.get(item))
+      if (!sel.length) return true
+      const has = sel.includes(f.get(item))
+      return f.excludable && v.mode === 'nothas' ? !has : has
     }
     case 'tags': {
       const sel = selected(v.values)
@@ -263,7 +266,8 @@ export function activeChips<T>(schema: CollectionSchema<T>, state: CollectionSta
     const v = state.facets[f.id]
     if (!v) continue
     if (f.kind === 'enum') {
-      for (const k of selected(v.values)) out.push({ facetId: f.id, value: k, label: f.options.find((o) => o.value === k)?.label ?? k })
+      const minus = f.excludable && v.mode === 'nothas' ? 'Sem ' : ''
+      for (const k of selected(v.values)) out.push({ facetId: f.id, value: k, label: `${minus}${f.options.find((o) => o.value === k)?.label ?? k}` })
     } else if (f.kind === 'tags') {
       for (const k of selected(v.values)) out.push({ facetId: f.id, value: k, label: `${v.mode === 'nothas' ? 'sem #' : '#'}${k}` })
     } else if (f.kind === 'people') {
@@ -330,7 +334,7 @@ export function stateToQuery<T>(schema: CollectionSchema<T>, state: CollectionSt
     if (f.kind === 'enum' || f.kind === 'tags' || f.kind === 'people') {
       const sel = selected(v.values)
       if (sel.length) p.set(`f.${f.id}`, sel.join(','))
-      if (f.kind === 'tags' && v.mode === 'nothas') p.set(`m.${f.id}`, 'nothas')
+      if ((f.kind === 'tags' || (f.kind === 'enum' && f.excludable)) && v.mode === 'nothas') p.set(`m.${f.id}`, 'nothas')
     } else if (f.kind === 'range' && v.min) p.set(`f.${f.id}`, String(v.min))
     else if (f.kind === 'flag' && v.flag) p.set(`f.${f.id}`, '1')
     else if (f.kind === 'dateRange' && v.bucket && v.bucket !== f.defaultBucket) p.set(`f.${f.id}`, v.bucket)
@@ -354,7 +358,7 @@ export function queryToState<T>(schema: CollectionSchema<T>, query: string): Col
     if (f.kind === 'enum' || f.kind === 'tags' || f.kind === 'people') {
       const values: Record<string, boolean> = {}
       raw.split(',').filter(Boolean).forEach((k) => (values[k] = true))
-      s.facets[f.id] = f.kind === 'tags' ? { values, mode: p.get(`m.${f.id}`) === 'nothas' ? 'nothas' : 'has' } : { values }
+      s.facets[f.id] = f.kind === 'tags' || (f.kind === 'enum' && f.excludable) ? { values, mode: p.get(`m.${f.id}`) === 'nothas' ? 'nothas' : 'has' } : { values }
     } else if (f.kind === 'range') s.facets[f.id] = { min: Number(raw) || 0 }
     else if (f.kind === 'flag') s.facets[f.id] = { flag: raw === '1' }
     else if (f.kind === 'dateRange' && (f.buckets as string[]).includes(raw)) s.facets[f.id] = { bucket: raw as DateBucket }

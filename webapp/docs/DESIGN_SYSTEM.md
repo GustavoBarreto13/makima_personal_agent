@@ -119,7 +119,7 @@ halo; toda tela "Início" abre com ele, mostrando o contexto mais relevante do a
 | Camadas | `Modal` (vira bottom sheet no celular; `dirty` pede confirmação; `size` sm/md/lg/**xl**; `headerExtra` para abas e ações no cabeçalho), `Sheet`, `Menu`, `ConfirmHost` + `confirm()` (substitui `window.confirm`; perigo foca "Cancelar") |
 | Feedback | `ToastHost` + `toast()` (com **Desfazer**), `Skeleton`, `LoadingState`, `EmptyState`, `ErrorState` |
 | Itens | `Img`, `MediaCard`, `ListRow`, `InfoRow`, `Timeline`, `Tabs`, `DetailPage`, `DataTable` (vira cartões no celular) |
-| Coleção | `CollectionToolbar`, `CollectionMeta`, `CollectionBody`, `FilterSheet` |
+| Coleção | `CollectionToolbar`, `CollectionMeta`, `CollectionBody`, `FilterSheet` (e o miolo `FilterFacets`, para modais de filtro próprios) |
 | Stats | `StatsPage`, `KpiGrid`, `DeltaBadge`, `CountUp`, `Heatmap`, `BarSeries`, `Distribution`, `RankList`, `RecordList`, `YearNav` |
 | Captura | `QuickCapture` |
 
@@ -137,7 +137,7 @@ uma lista), nunca em navegação, botões ou títulos.
 ### Coleções: filtros, agrupar e ordenar (modelo da lista da Kaguya)
 
 Toda tela com lista/grade de itens usa o motor `core/collection` via `useCollection`. O domínio só
-descreve o **esquema** (`defineCollection`): `search`, `facets` (enum, tags com "tem/não tem",
+descreve o **esquema** (`defineCollection`): `search`, `facets` (enum — com `excludable: true` vira "só estas / todas menos estas" —, tags com "tem/não tem",
 range de nota, janela de datas, flag, pessoas), `groups` e `sorts`. Mínimo obrigatório: busca +
 uma faceta de status/tipo + uma data + ordenação por 2 campos. Estado persistido em
 `ds:collection:<scope>` (a busca não é persistida); filtros/ordenação podem ir para a URL

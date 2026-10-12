@@ -71,3 +71,26 @@ def test_filter_task_ids_sem_regras_e_regra_invalida():
     assert V.filter_task_ids({}, "work") == {"status": "ok", "ids": None}
     assert V.filter_task_ids({"combinator": "talvez", "conditions": [{"field": "priority", "op": "eq", "value": 1}]})["status"] == "error"
 
+
+
+def test_dsl_tipo_e_varias_listas_viram_sql_parametrizado():
+    from agents.kaguya import tools_filters as F
+
+    where, params, _ = F._build_where_from_rules({"combinator": "and", "conditions": [
+        {"field": "type", "op": "in", "value": ["event", "birthday", "hacker'; DROP"]},
+        {"field": "group_id", "op": "not_in", "value": [3, 4]},
+    ]}, default_open=False)
+    assert "t.type = ANY(" in where and "NOT t.project_id IN (SELECT pg.id" in where  # grupo: "todas menos as listas destes grupos"
+    assert params["c0"] == ["event", "birthday"] and params["c1"] == [3, 4]  # valor desconhecido nunca chega ao SQL
+    assert "DROP" not in where
+
+    where2, _, _ = F._build_where_from_rules({"combinator": "and", "conditions": [{"field": "type", "op": "not_in", "value": ["task"]}]}, default_open=False)
+    assert "NOT t.type = ANY(" in where2
+
+
+def test_dsl_condicao_sem_valor_nao_filtra_nada():
+    from agents.kaguya import tools_filters as F
+
+    for cond in ({"field": "type", "op": "in", "value": []}, {"field": "project_id", "op": "in", "value": [None]}, {"field": "group_id", "op": "not_in", "value": None}):
+        where, params, _ = F._build_where_from_rules({"combinator": "and", "conditions": [cond]}, default_open=False)
+        assert params == {} and "ANY" not in where and "ALL(" not in where

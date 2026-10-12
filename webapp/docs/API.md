@@ -385,7 +385,7 @@ estão nos contratos das specs: `specs/011-tasks-mvp/contracts/`,
 | `GET` | `/api/tasks` | Lista as tarefas de uma lista, com subtarefas aninhadas (`?project_id=&include_completed=`). |
 | `GET` | `/api/tasks/today` | Tarefas de hoje + vencidas (`{overdue, today}`). |
 | `GET` | `/api/tasks/eisenhower` | Tarefas-pai abertas para a view Eisenhower (classificação derivada no front). |
-| `POST` | `/api/tasks/eisenhower/filter` | Filtro avançado da Matriz: body `{rules, space}` (mesma DSL das smart-lists) → `{ids}` das tarefas que casam (`ids: null` = sem filtro); regra inválida = 400. A matriz cruza os ids com o que já carregou. |
+| `POST` | `/api/tasks/filter-ids` | Regras avançadas do modal de Filtros (Lista, Quadro, Matriz e Calendário): body `{rules, space}` (mesma DSL das smart-lists, inclui `type` e várias listas/grupos) → `{ids}` das tarefas que casam (`ids: null` = sem filtro); regra inválida = 400. A tela cruza os ids com o que já carregou. |
 | `GET` | `/api/tasks/search` | Busca tarefas abertas por texto (`?q=`). Única view que também traz tarefas de listas arquivadas — cada item ganha `archived: bool` (spec 039, FR-003). |
 | `GET` | `/api/tasks/trash` | Lista a lixeira (soft delete), opcionalmente por lista. |
 | `GET` | `/api/tasks/{task_id}` | Busca uma tarefa pelo id (com subtarefas, recorrência, tags e responsáveis). |

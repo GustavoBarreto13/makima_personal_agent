@@ -177,7 +177,17 @@ export interface FilterSheetProps<T> {
   renderFacet?: (facet: Facet<T>, c: UseCollection<T>) => ReactNode
 }
 
-export function FilterSheet<T>({ schema, c, items, onClose, noun = ['item', 'itens'], renderFacet }: FilterSheetProps<T>) {
+export interface FilterFacetsProps<T> {
+  schema: CollectionSchema<T>
+  c: UseCollection<T>
+  /** Itens completos (para extrair as opções de etiquetas). */
+  items: T[]
+  /** Controle próprio de uma faceta (ex.: seletor de pessoas da Komi). */
+  renderFacet?: (facet: Facet<T>, c: UseCollection<T>) => ReactNode
+}
+
+/** O miolo da folha de filtros (um grupo por faceta): a `FilterSheet` e os modais de filtro dos domínios usam o mesmo. */
+export function FilterFacets<T>({ schema, c, items, renderFacet }: FilterFacetsProps<T>) {
   const tagsByFacet = useMemo(() => {
     const m: Record<string, string[]> = {}
     for (const f of schema.facets) if (f.kind === 'tags') m[f.id] = tagOptions(f, items)
@@ -190,7 +200,12 @@ export function FilterSheet<T>({ schema, c, items, onClose, noun = ['item', 'ite
     if (custom) return custom
     switch (f.kind) {
       case 'enum':
-        return <div className="ds-chips">{(f as EnumFacet<T>).options.map((o) => <Chip key={o.value} on={!!v.values?.[o.value]} onClick={() => c.toggleValue(f.id, o.value)}>{o.label ?? o.value}</Chip>)}</div>
+        return (
+          <>
+            <div className="ds-chips">{(f as EnumFacet<T>).options.map((o) => <Chip key={o.value} on={!!v.values?.[o.value]} onClick={() => c.toggleValue(f.id, o.value)}>{o.label ?? o.value}</Chip>)}</div>
+            {f.excludable && <SegmentedControl label={`Modo: ${f.label}`} value={v.mode ?? 'has'} onChange={(m) => c.setTagMode(f.id, m)} options={[{ value: 'has', label: 'Só estas' }, { value: 'nothas', label: 'Todas menos estas' }]} />}
+          </>
+        )
       case 'tags':
         return (
           <>
@@ -212,6 +227,19 @@ export function FilterSheet<T>({ schema, c, items, onClose, noun = ['item', 'ite
   }
 
   return (
+    <>
+      {schema.facets.map((f) => (
+        <div key={f.id} className={cx('ds-fgrp')}>
+          {f.kind !== 'flag' && <span className="ds-lbl-f">{f.label}</span>}
+          {facetControl(f)}
+        </div>
+      ))}
+    </>
+  )
+}
+
+export function FilterSheet<T>({ schema, c, items, onClose, noun = ['item', 'itens'], renderFacet }: FilterSheetProps<T>) {
+  return (
     <Sheet
       title="Filtros"
       onClose={onClose}
@@ -222,12 +250,7 @@ export function FilterSheet<T>({ schema, c, items, onClose, noun = ['item', 'ite
         </>
       }
     >
-      {schema.facets.map((f) => (
-        <div key={f.id} className={cx('ds-fgrp')}>
-          {f.kind !== 'flag' && <span className="ds-lbl-f">{f.label}</span>}
-          {facetControl(f)}
-        </div>
-      ))}
+      <FilterFacets schema={schema} c={c} items={items} renderFacet={renderFacet} />
     </Sheet>
   )
 }

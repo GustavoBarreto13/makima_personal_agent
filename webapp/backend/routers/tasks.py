@@ -690,15 +690,15 @@ def list_tasks_today_route(space: Optional[str] = None, user: dict = Depends(req
     return list_tasks_today(space)  # listagem
 
 
-class EisenhowerFilterBody(BaseModel):
-    """Filtro avulso da Matriz de Eisenhower: a DSL das smart-lists + o espaço Trabalho/Pessoal."""
+class FilterIdsBody(BaseModel):
+    """Filtro avulso das telas de tarefas (Lista, Quadro, Matriz, Calendário): a DSL das smart-lists + o espaço Trabalho/Pessoal."""
     rules: Optional[dict] = None
     space: Optional[str] = None
 
 
-@router.post("/eisenhower/filter")
-def eisenhower_filter_route(body: EisenhowerFilterBody, user: dict = Depends(require_user)) -> dict:
-    """Ids das tarefas que cumprem as regras (``ids: null`` = sem filtro); a matriz cruza com o que já carregou."""
+@router.post("/filter-ids")
+def filter_ids_route(body: FilterIdsBody, user: dict = Depends(require_user)) -> dict:
+    """Ids das tarefas que cumprem as regras (``ids: null`` = sem filtro); a tela cruza com o que já carregou."""
     return _check_result(filter_task_ids(body.rules, body.space))
 
 

@@ -166,3 +166,47 @@ describe('coleção: persistência e opções', () => {
     expect(tagOptions(schema.facets[1] as TagsFacet<Item>, items)).toEqual(['cardio', 'peito', 'pernas', 'pr'])
   })
 })
+
+describe('coleção: faceta enum excludable ("todas menos estas")', () => {
+  const ex: CollectionSchema<Item> = defineCollection<Item>({
+    scope: 'test:excludable',
+    search: (i) => [i.title],
+    facets: [
+      { kind: 'enum', id: 'type', label: 'Tipo', excludable: true, options: [{ value: 'Força' }, { value: 'Corrida' }, { value: 'Mobilidade', label: 'Mob.' }], get: (i) => i.type },
+    ],
+    groups: [],
+    sorts: [{ id: 'recent', label: 'Recentes', value: (i) => i.date }],
+  })
+  const ids2 = (s: ReturnType<typeof defaultState>) => runCollection(ex, s, items, TODAY).items.map((i) => i.id).sort()
+
+  it('só estas é o padrão; "nothas" inverte a seleção', () => {
+    const s = defaultState(ex)
+    s.facets.type = { values: { Força: true } }
+    expect(ids2(s)).toEqual([1, 3])
+    s.facets.type = { values: { Força: true }, mode: 'nothas' }
+    expect(ids2(s)).toEqual([2, 4])
+  })
+  it('sem nada marcado não filtra, em qualquer modo', () => {
+    const s = defaultState(ex)
+    s.facets.type = { values: {}, mode: 'nothas' }
+    expect(ids2(s)).toEqual([1, 2, 3, 4])
+  })
+  it('os chips dizem "Sem …" e remover o chip tira o valor', () => {
+    const s = defaultState(ex)
+    s.facets.type = { values: { Força: true, Mobilidade: true }, mode: 'nothas' }
+    expect(activeChips(ex, s).map((c) => c.label)).toEqual(['Sem Força', 'Sem Mob.'])
+    const t = clearChip(ex, s, activeChips(ex, s)[0])
+    expect(ids2(t)).toEqual([1, 2, 3])
+  })
+  it('o modo vai e volta pela URL só nas facetas excludable', () => {
+    const s = defaultState(ex)
+    s.facets.type = { values: { Força: true }, mode: 'nothas' }
+    const q = stateToQuery(ex, s)
+    expect(q).toContain('m.type=nothas')
+    expect(queryToState(ex, q).facets.type).toEqual({ values: { Força: true }, mode: 'nothas' })
+    // Uma faceta enum comum ignora o modo.
+    const plain = defaultState(schema)
+    plain.facets.type = { values: { Força: true }, mode: 'nothas' }
+    expect(stateToQuery(schema, plain)).not.toContain('m.type')
+  })
+})
