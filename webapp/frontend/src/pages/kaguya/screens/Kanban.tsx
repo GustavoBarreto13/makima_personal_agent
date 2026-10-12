@@ -18,14 +18,14 @@ import { KanbanCard, KanbanSortableCard } from '../components/KanbanCard'
 import { KanbanSummary, DEFAULT_SLOTS } from '../components/KanbanSummary'
 import { KanbanToolbar } from '../components/KanbanToolbar'
 import { ViewSwitch } from '../components/ViewSwitch'
-import { BoardFilterModal } from '../components/BoardFilterModal'
+import { useTaskFilter } from '../lib/useTaskFilter'
 import { DEFAULT_DISPLAY, KanbanViewModal } from '../components/KanbanViewModal'
 import { ProjectOptions } from '../components/ProjectOptions'
 import { useKaguya } from '../context'
 import { midPosition, useDndSensors } from '../lib/dnd'
 import { applyKanbanFilters, KANBAN_DEFAULTS, type KanbanFilters } from '../lib/kanbanFilter'
 import { fmtMinutes } from '../lib/taskView'
-import type { Column, FilterRules, GroupBoard, GroupBoardColumn, KanbanView, Task } from '../types'
+import type { Column, GroupBoard, GroupBoardColumn, KanbanView, Task } from '../types'
 
 const reason = (e: unknown, fallback: string) => (e instanceof Error && e.message && !/^HTTP \d+$/.test(e.message) ? e.message : fallback)
 const sortCols = (cols: Column[]) => [...cols].sort((a, b) => a.position - b.position)
@@ -111,9 +111,6 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
   const [status, setStatus] = useState<'loading' | 'error' | 'ok'>('loading')
   const [views, setViews] = useState<KanbanView[]>([])
   const [viewsError, setViewsError] = useState(false)
-  // Filtro avulso do quadro (o construtor completo, sem salvar): vale por cima da view e some ao trocar de lista.
-  const [adHoc, setAdHoc] = useState<FilterRules | null>(null)
-  const [boardFilter, setBoardFilter] = useState(false)
   const [activeViewId, setActiveViewId] = useState<number | null>(null)
   const [viewModal, setViewModal] = useState<{ view?: KanbanView } | null>(null)
   const [columnModal, setColumnModal] = useState<{ column?: Column } | null>(null)
@@ -126,7 +123,7 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
   const activeView = views.find((v) => v.id === activeViewId) ?? null
   const display = activeView?.display ?? DEFAULT_DISPLAY
   // As concluídas entram no quadro: a coluna de concluídas mostra o que já foi feito (o backend a trata como “concluída”).
-  const fetchTasks = useCallback((v: KanbanView | null) => (adHoc ? kaguyaApi.kanbanBoard(projectId, adHoc) : v?.filter ? kaguyaApi.kanbanViewBoard(v.id, projectId) : kaguyaApi.listTasks(projectId, true)), [projectId, adHoc])
+  const fetchTasks = useCallback((v: KanbanView | null) => (v?.filter ? kaguyaApi.kanbanViewBoard(v.id, projectId) : kaguyaApi.listTasks(projectId, true)), [projectId])
 
   // As views são opcionais: sem elas o quadro usa “tudo ligado”. A ativa é lembrada por lista.
   const loadViews = useCallback(async () => {
@@ -151,18 +148,22 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
     } catch { if (!silent) setStatus('error') }
   }, [projectId, fetchTasks])
 
-  useEffect(() => { setFilters(KANBAN_DEFAULTS); setAdHoc(null); void loadViews() }, [loadViews])
+  useEffect(() => { setFilters(KANBAN_DEFAULTS); void loadViews() }, [loadViews])
   const viewRef = useRef<KanbanView | null>(null)
   viewRef.current = activeView
   // O que a última carga usou (view + filtro + revisão): evita recarregar à toa e pega a view que chegou depois dos dados.
   const loadedKey = useRef('')
-  const keyFor = (v: KanbanView | null) => `${v?.id ?? ''}|${JSON.stringify(v?.filter ?? null)}|${JSON.stringify(adHoc)}|${k.rev}`
+  const keyFor = (v: KanbanView | null) => `${v?.id ?? ''}|${JSON.stringify(v?.filter ?? null)}|${k.rev}`
   const keyRef = useRef(keyFor)
   keyRef.current = keyFor
   // Troca de lista: carga com “Carregando…”. Troca de view ou gravação (rev): silenciosa.
   useEffect(() => { void load(false, viewRef.current) }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
   // Só depois da primeira carga, e só se a view/filtro/revisão mudou desde a última (não duplica a consulta nem esconde o erro).
-  useEffect(() => { if (status === 'ok' && loadedKey.current !== keyFor(activeView)) void load(true, activeView) }, [status, activeViewId, views, adHoc, k.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (status === 'ok' && loadedKey.current !== keyFor(activeView)) void load(true, activeView) }, [status, activeViewId, views, k.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // O mesmo modal de Filtros da Lista, da Matriz e do Calendário (num quadro de uma lista não há filtro de Lista nem de Grupo).
+  const f = useTaskFilter({ scope: `kanban:list:${projectId}`, tasks, onViewSaved: () => { void loadViews() } })
+  const shownIds = useMemo(() => new Set(f.c.result.items.map((t) => t.id)), [f.c.result.items])
 
   const selectView = (id: number) => {
     setActiveViewId(id)
@@ -238,7 +239,7 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
   const modals = (
     <>
       {viewModal && <KanbanViewModal view={viewModal.view} onClose={() => setViewModal(null)} onSaved={() => { void loadViews() }} />}
-      {boardFilter && <BoardFilterModal current={adHoc} onApply={setAdHoc} onClose={() => setBoardFilter(false)} onViewSaved={() => { void loadViews() }} />}
+      {f.modal}
       {columnModal && <ColumnModal column={columnModal.column} projectId={projectId} onClose={() => setColumnModal(null)} onSaved={() => { k.reload() }} />}
     </>
   )
@@ -294,8 +295,8 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
         )}
         <button type="button" className="kg-btn kg-btn-ghost" disabled={!activeView} title="Editar view" onClick={() => activeView && setViewModal({ view: activeView })}><Icon name="prefs" size={14} />Editar</button>
         <button type="button" className="kg-btn kg-btn-ghost" onClick={() => setViewModal({})}><Icon name="add" size={14} />View</button>
-        <button type="button" className="kg-btn kg-btn-ghost" aria-pressed={!!adHoc} onClick={() => setBoardFilter(true)}><Icon name="filter" size={14} />{adHoc ? `Filtro (${adHoc.conditions.length})` : 'Filtrar'}</button>
-        {adHoc && <button type="button" className="kg-btn kg-btn-ghost" aria-label="Limpar o filtro do quadro" onClick={() => setAdHoc(null)}><Icon name="close" size={14} /></button>}
+        <button type="button" className="kg-btn kg-btn-ghost" aria-pressed={f.activeCount > 0} onClick={f.open}><Icon name="filter" size={14} />{f.activeCount > 0 ? `Filtros · ${f.activeCount}` : 'Filtros'}</button>
+        {f.activeCount > 0 && <button type="button" className="kg-btn kg-btn-ghost" aria-label="Limpar os filtros do quadro" onClick={f.clearAll}><Icon name="close" size={14} /></button>}
       </div>
       <KanbanToolbar filters={filters} onChange={setFilters} />
 
@@ -306,7 +307,7 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
               // A primeira coluna acolhe as órfãs (sem coluna, ou com uma coluna que não existe mais aqui): nada some do quadro.
               // Concluída só aparece na coluna de concluídas: as contagens das outras são de abertas, como no quadro antigo.
               const raw = tasks.filter((t) => (col.is_done_column || t.completed_at == null) && (t.column_id === col.id || (col.id === firstId && (t.column_id == null || !colIds.has(t.column_id)))))
-              const cards = applyKanbanFilters(raw, filters)
+              const cards = applyKanbanFilters(raw, filters).filter((t) => shownIds.has(t.id))
               const est = cards.reduce((s, t) => s + (t.duration_min ?? 0), 0)
               return (
                 <KanbanColumn
@@ -338,6 +339,8 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
   )
 }
 
+const NO_TASKS: Task[] = []
+
 // ── Quadro de um grupo (colunas unificadas por nome) ──────────────────────────
 
 export function GroupBoardScreen({ groupId }: { groupId: number }) {
@@ -345,10 +348,6 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
   const [board, setBoard] = useState<GroupBoard | null>(null)
   const [status, setStatus] = useState<'loading' | 'error' | 'ok'>('loading')
   const [filters, setFilters] = useState<KanbanFilters>(KANBAN_DEFAULTS)
-  // Filtro avulso (construtor completo): o servidor devolve os ids que casam; o quadro mostra só esses.
-  const [adHoc, setAdHoc] = useState<FilterRules | null>(null)
-  const [adHocIds, setAdHocIds] = useState<Set<number> | null>(null)
-  const [boardFilter, setBoardFilter] = useState(false)
   const [activeId, setActiveId] = useState<number | null>(null)
   const [overKey, setOverKey] = useState<string | null>(null)
   const sensors = useDndSensors()
@@ -361,13 +360,10 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
     loadedRev.current = revRef.current
     try { setBoard(await kaguyaApi.groupBoard(groupId)); setStatus('ok') } catch { if (!silent) setStatus('error') }
   }, [groupId])
-  useEffect(() => { setFilters(KANBAN_DEFAULTS); setAdHoc(null); void load(false) }, [groupId]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    let live = true
-    if (!adHoc) { setAdHocIds(null); return }
-    kaguyaApi.groupBoardFilter(groupId, adHoc).then((r) => { if (live) setAdHocIds(r.ids ? new Set(r.ids) : null) }).catch(() => { if (live) { setAdHoc(null); toast('Não foi possível aplicar o filtro.', { tone: 'error' }) } })
-    return () => { live = false }
-  }, [adHoc, groupId, k.rev])
+  useEffect(() => { setFilters(KANBAN_DEFAULTS); void load(false) }, [groupId]) // eslint-disable-line react-hooks/exhaustive-deps
+  // O mesmo modal de Filtros dos demais quadros e telas; num quadro de grupo há o filtro de Lista, e não o de Grupo.
+  const f = useTaskFilter({ scope: `kanban:group:${groupId}`, tasks: board?.tasks ?? NO_TASKS, showProject: true })
+  const shownIds = useMemo(() => new Set(f.c.result.items.map((t) => t.id)), [f.c.result.items])
   useEffect(() => { if (status === 'ok' && loadedRev.current !== k.rev) void load(true) }, [status, k.rev]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const listName = useCallback((pid: number) => board?.lists.find((l) => l.id === pid)?.name ?? '', [board])
@@ -404,7 +400,7 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
   if (board.columns.length === 0) return <Page full><EmptyState icon="kanban" title="Nenhuma lista tem quadro Kanban" hint="Crie colunas em pelo menos uma lista do grupo para ativar este quadro." /></Page>
 
   const known = new Set(board.columns.flatMap((c) => c.members.map((m) => m.column_id)))
-  const shown = (t: Task) => adHocIds === null || adHocIds.has(t.id)
+  const shown = (t: Task) => shownIds.has(t.id)
   const without = applyKanbanFilters(board.tasks.filter((t) => shown(t) && t.parent_id == null && (t.column_id == null || !known.has(t.column_id))), filters)
   const groupTitle = k.groups.find((g) => g.id === groupId)?.name ?? 'Grupo'
   const activeTask = board.tasks.find((t) => t.id === activeId)
@@ -417,8 +413,8 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
       <h1 className="kg-page-title"><Icon name="kanban" size={22} /> {groupTitle}</h1>
       <p className="kg-page-sub">{board.lists.map((l) => l.name).join(' · ')}</p>
       <div className="kn-kviews" role="group" aria-label="Filtro do quadro do grupo">
-        <button type="button" className="kg-btn kg-btn-ghost" aria-pressed={!!adHoc} onClick={() => setBoardFilter(true)}><Icon name="filter" size={14} />{adHoc ? `Filtro (${adHoc.conditions.length})` : 'Filtrar'}</button>
-        {adHoc && <button type="button" className="kg-btn kg-btn-ghost" aria-label="Limpar o filtro do quadro" onClick={() => setAdHoc(null)}><Icon name="close" size={14} /></button>}
+        <button type="button" className="kg-btn kg-btn-ghost" aria-pressed={f.activeCount > 0} onClick={f.open}><Icon name="filter" size={14} />{f.activeCount > 0 ? `Filtros · ${f.activeCount}` : 'Filtros'}</button>
+        {f.activeCount > 0 && <button type="button" className="kg-btn kg-btn-ghost" aria-label="Limpar os filtros do quadro" onClick={f.clearAll}><Icon name="close" size={14} /></button>}
       </div>
       <KanbanToolbar filters={filters} onChange={setFilters} />
       <DndContext
@@ -467,7 +463,7 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
         </div>
         <Overlay task={activeTask} projectName={activeTask ? listName(activeTask.project_id) : undefined} />
       </DndContext>
-      {boardFilter && <BoardFilterModal current={adHoc} onApply={setAdHoc} onClose={() => setBoardFilter(false)} />}
+      {f.modal}
     </Page>
   )
 }

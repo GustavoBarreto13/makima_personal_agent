@@ -1,5 +1,5 @@
-// Esquema da coleção de tarefas (padrão useCollection): busca + prioridade/vencimento/etiquetas/lista + flags + 5
-// ordenações + 4 agrupamentos. Um escopo por tela (cada lista/visão guarda os próprios filtros e a própria ordem),
+// Esquema da coleção de tarefas (padrão useCollection): busca + tipo/lista/grupo ("só estas" ou "todas menos estas")/prioridade/
+// vencimento/etiquetas/GTD/local + flags + 5 ordenações + 4 agrupamentos. Um escopo por tela (cada lista/visão guarda os próprios filtros e a própria ordem),
 // no espírito do `kg:list:controls:<id>` do shell antigo — agora no motor do Design System.
 
 import { defineCollection, type CollectionSchema } from '../../../design/core/collection'
@@ -14,6 +14,11 @@ export interface TaskSchemaOptions {
   today: string
   /** Nomes das listas por id — para agrupar/filtrar por lista nas visões que cruzam listas. */
   projectNames?: Record<number, string>
+  /** Grupo de cada lista (id da lista → id do grupo) e nomes dos grupos: liga o filtro por grupo nas telas que cruzam grupos. */
+  projectGroups?: Record<number, number | null>
+  groupNames?: Record<number, string>
+  /** Locais (Onde @) por id: liga o filtro por local. */
+  contextNames?: Record<number, string>
   /** Ordenação inicial (padrão: manual — a ordem arrastada). */
   sortBy?: TaskSortId
   /** Agrupamento inicial. */
@@ -22,18 +27,34 @@ export interface TaskSchemaOptions {
 
 const searchText = (t: Task): string[] => [t.title, t.description ?? '', ...(t.tags ?? []).map((g) => g.name), t.project_name ?? '']
 
-export function makeTasksSchema({ scope, today, projectNames = {}, sortBy = 'manual', groupBy = 'none' }: TaskSchemaOptions): CollectionSchema<Task> {
+export const TYPE_OPTIONS: { value: string; label: string }[] = [{ value: 'task', label: 'Tarefa' }, { value: 'event', label: 'Evento' }, { value: 'birthday', label: 'Aniversário' }]
+export const GTD_OPTIONS: { value: string; label: string }[] = [
+  { value: 'next_action', label: 'Próxima ação' }, { value: 'waiting', label: 'Aguardando' }, { value: 'someday', label: 'Algum dia' }, { value: 'none', label: 'Sem status' },
+]
+
+export function makeTasksSchema({ scope, today, projectNames = {}, projectGroups = {}, groupNames = {}, contextNames = {}, sortBy = 'manual', groupBy = 'none' }: TaskSchemaOptions): CollectionSchema<Task> {
   const projectOptions = Object.entries(projectNames).map(([id, name]) => ({ value: id, label: name }))
+  const groupOptions = [...Object.entries(groupNames).map(([id, name]) => ({ value: id, label: name })), { value: 'none', label: 'Sem grupo' }]
+  const contextOptions = [...Object.entries(contextNames).map(([id, name]) => ({ value: id, label: name })), { value: 'none', label: 'Sem local' }]
   return defineCollection<Task>({
     scope,
     search: searchText,
     facets: [
+      { kind: 'enum', id: 'type', label: 'Tipo', options: TYPE_OPTIONS, get: (t) => t.type },
+      ...(projectOptions.length > 1
+        ? [{ kind: 'enum' as const, id: 'project', label: 'Lista', excludable: true, get: (t: Task) => String(t.project_id), options: projectOptions }]
+        : []),
+      ...(Object.keys(groupNames).length > 1
+        ? [{ kind: 'enum' as const, id: 'group', label: 'Grupo', excludable: true, get: (t: Task) => String(projectGroups[t.project_id] ?? 'none'), options: groupOptions }]
+        : []),
       { kind: 'enum', id: 'priority', label: 'Prioridade', get: (t) => String(t.priority), options: PRIORITY_ORDER.map((p) => ({ value: String(p), label: PRIORITY_LABEL[p] })) },
       { kind: 'enum', id: 'due', label: 'Vencimento', get: (t) => dueBucket(t, today), options: DUE_BUCKETS },
       { kind: 'tags', id: 'tags', label: 'Etiquetas', get: (t) => (t.tags ?? []).map((g) => g.name) },
-      ...(projectOptions.length > 1
-        ? [{ kind: 'enum' as const, id: 'project', label: 'Lista', get: (t: Task) => String(t.project_id), options: projectOptions }]
+      { kind: 'enum', id: 'gtd', label: 'Status GTD', get: (t) => t.gtd_status ?? 'none', options: GTD_OPTIONS },
+      ...(Object.keys(contextNames).length > 0
+        ? [{ kind: 'enum' as const, id: 'context', label: 'Onde (@)', get: (t: Task) => String(t.context_id ?? 'none'), options: contextOptions }]
         : []),
+      { kind: 'flag', id: 'myday', label: 'Só no Meu Dia', get: (t) => !!t.my_day_date },
       { kind: 'flag', id: 'recurring', label: 'Só recorrentes', get: (t) => !!t.recurrence },
       { kind: 'flag', id: 'blocked', label: 'Só bloqueadas', get: (t) => !!t.blocked },
       { kind: 'flag', id: 'notes', label: 'Só com notas', get: (t) => !!t.description?.trim() },

@@ -120,3 +120,47 @@ describe('esquema da coleção de tarefas', () => {
     expect(makeTasksSchema({ scope: 'a', today: TODAY, projectNames: { 1: 'A', 2: 'B' } }).facets.some((f) => f.id === 'project')).toBe(true)
   })
 })
+
+describe('esquema: Tipo, Lista/Grupo “todas menos estas”, GTD, local e Meu Dia', () => {
+  const rows = [
+    task({ id: 1, type: 'task', project_id: 1, gtd_status: 'next_action', context_id: 7 }),
+    task({ id: 2, type: 'event', project_id: 2, gtd_status: null, my_day_date: '2026-06-09' }),
+    task({ id: 3, type: 'birthday', project_id: 3 }),
+  ]
+  const opts = {
+    projectNames: { 1: 'Casa', 2: 'Banco', 3: 'Solta' }, projectGroups: { 1: 10, 2: 10, 3: null }, groupNames: { 10: 'Rotina', 11: 'Outro' }, contextNames: { 7: 'Casa' },
+  }
+  const ids = (patch: (s: ReturnType<typeof defaultState>) => void, o: object = opts) => {
+    const schema = makeTasksSchema({ scope: 't2', today: TODAY, ...o })
+    const state = defaultState(schema)
+    patch(state)
+    return runCollection(schema, state, rows, TODAY).items.map((t) => t.id).sort()
+  }
+
+  it('Tipo: tarefa, evento e aniversário', () => {
+    expect(ids((s) => { s.facets.type = { values: { birthday: true } } })).toEqual([3])
+    expect(ids((s) => { s.facets.type = { values: { task: true, event: true } } })).toEqual([1, 2])
+  })
+  it('Lista: só estas, ou todas menos estas', () => {
+    expect(ids((s) => { s.facets.project = { values: { 1: true, 2: true } } })).toEqual([1, 2])
+    expect(ids((s) => { s.facets.project = { values: { 1: true, 2: true }, mode: 'nothas' } })).toEqual([3])
+  })
+  it('Grupo: por grupo, com “sem grupo”, e também excluível', () => {
+    expect(ids((s) => { s.facets.group = { values: { 10: true } } })).toEqual([1, 2])
+    expect(ids((s) => { s.facets.group = { values: { none: true } } })).toEqual([3])
+    expect(ids((s) => { s.facets.group = { values: { 10: true }, mode: 'nothas' } })).toEqual([3])
+  })
+  it('Status GTD, Onde (@) e Só no Meu Dia', () => {
+    expect(ids((s) => { s.facets.gtd = { values: { next_action: true } } })).toEqual([1])
+    expect(ids((s) => { s.facets.gtd = { values: { none: true } } })).toEqual([2, 3])
+    expect(ids((s) => { s.facets.context = { values: { 7: true } } })).toEqual([1])
+    expect(ids((s) => { s.facets.myday = { flag: true } })).toEqual([2])
+  })
+  it('sem nomes de listas/grupos/locais as facetas de Lista, Grupo e Onde não existem (tela de uma lista só)', () => {
+    const f = makeTasksSchema({ scope: 't3', today: TODAY }).facets.map((x) => x.id)
+    expect(f).toContain('type')
+    expect(f).not.toContain('project')
+    expect(f).not.toContain('group')
+    expect(f).not.toContain('context')
+  })
+})

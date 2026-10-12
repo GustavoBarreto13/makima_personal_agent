@@ -2,11 +2,11 @@
 // do Kanban (poucos campos) e pela smart-list (todos). Os operadores espelham `_FIELD_OPS` do backend; o valor muda de
 // tipo conforme o campo (prioridade, data, lista, etiqueta, estado, sim/não…).
 
-import { Button, DatePicker, IconButton, Input, Select, SegmentedControl } from '../../../design'
+import { Button, Chip, DatePicker, IconButton, Input, Select, SegmentedControl } from '../../../design'
 import { kaguyaApi } from '../api'
 import { safe, useLoad } from '../lib/useLoad'
 import type { FilterCombinator, FilterCondition, FilterField, FilterRules, Group, Project, TaskContext } from '../types'
-import { ProjectOptions } from './ProjectOptions'
+import { TYPE_OPTIONS } from '../lib/schemas'
 
 interface FieldDef { field: FilterField; label: string }
 
@@ -18,7 +18,7 @@ export const KANBAN_FIELDS: FieldDef[] = [
 /** Todos os campos de uma smart-list. */
 export const SMARTLIST_FIELDS: FieldDef[] = [
   ...KANBAN_FIELDS,
-  { field: 'project_id', label: 'Lista' }, { field: 'group_id', label: 'Grupo' }, { field: 'space', label: 'Espaço' },
+  { field: 'type', label: 'Tipo' }, { field: 'project_id', label: 'Lista' }, { field: 'group_id', label: 'Grupo' }, { field: 'space', label: 'Espaço' },
   { field: 'gtd_status', label: 'Status GTD' }, { field: 'context_id', label: 'Onde (@)' },
   { field: 'duration_min', label: 'Estimativa' }, { field: 'start_date', label: 'Adiada até' }, { field: 'follow_up_date', label: 'Cobrar em' },
   { field: 'completed_at', label: 'Concluída em' },
@@ -36,8 +36,9 @@ const OPS: Record<FilterField, { op: string; label: string }[]> = {
   priority: [{ op: 'gte', label: '≥' }, { op: 'eq', label: '=' }, { op: 'lte', label: '≤' }],
   due_date: [{ op: 'within', label: 'dentro de' }, { op: 'overdue', label: 'vencidas' }, { op: 'before', label: 'antes de' }, { op: 'after', label: 'depois de' }, { op: 'eq', label: 'na data' }, { op: 'none', label: 'sem data' }],
   tag: [{ op: 'has', label: 'tem' }, { op: 'not_has', label: 'não tem' }],
-  project_id: [{ op: 'in', label: 'é' }, { op: 'not_in', label: 'não é' }],
-  group_id: [{ op: 'in', label: 'é' }, { op: 'not_in', label: 'não é' }],
+  project_id: [{ op: 'in', label: 'é uma de' }, { op: 'not_in', label: 'não é nenhuma de' }],
+  group_id: [{ op: 'in', label: 'é um de' }, { op: 'not_in', label: 'não é nenhum de' }],
+  type: [{ op: 'in', label: 'é' }, { op: 'not_in', label: 'não é' }],
   state: [{ op: 'eq', label: 'é' }],
   text: [{ op: 'contains', label: 'contém' }],
   gtd_status: [{ op: 'eq', label: 'é' }, { op: 'none', label: 'não classificada' }],
@@ -52,6 +53,8 @@ const OPS: Record<FilterField, { op: string; label: string }[]> = {
   waiting_person: [{ op: 'has', label: 'tem' }, { op: 'not_has', label: 'não tem' }],
 }
 
+/** Campos cujo valor é uma lista (escolhida por chips, abaixo do campo e do operador). */
+const MULTI_FIELDS: FilterField[] = ['project_id', 'group_id', 'type']
 const BOOLEAN_FIELDS: FilterField[] = ['my_day', 'recurring', 'blocked', 'has_children', 'has_description']
 const NO_VALUE_OPS = new Set(['overdue', 'none', 'deferred'])
 const GTD = [{ v: 'next_action', l: 'Próxima ação' }, { v: 'waiting', l: 'Aguardando' }, { v: 'someday', l: 'Algum dia' }]
@@ -66,11 +69,23 @@ export function defaultValue(field: FilterField, op: string, today: string): unk
     case 'space': return 'work'
     case 'gtd_status': return 'next_action'
     case 'duration_min': return 15
-    case 'project_id': case 'group_id': case 'context_id': return null
+    case 'project_id': case 'group_id': case 'type': return []
+    case 'context_id': return null
     case 'due_date': case 'follow_up_date': case 'completed_at': return op === 'within' ? '7d' : today
     case 'start_date': return today
     default: return ''
   }
+}
+
+/** Seleção múltipla por chips (listas, grupos, tipos): o valor da condição é uma lista de ids/valores. */
+function MultiPick({ label, value, options, onChange }: { label: string; value: unknown; options: { value: string | number; label: string }[]; onChange: (next: (string | number)[]) => void }) {
+  const cur = (Array.isArray(value) ? value : value == null || value === '' ? [] : [value]) as (string | number)[]
+  const toggle = (v: string | number) => onChange(cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v])
+  return (
+    <div className="kn-fb-multi" role="group" aria-label={label}>
+      {options.map((o) => <Chip key={o.value} on={cur.includes(o.value)} aria-pressed={cur.includes(o.value)} onClick={() => toggle(o.value)}>{o.label}</Chip>)}
+    </div>
+  )
 }
 
 interface Props {
@@ -122,16 +137,9 @@ export function FilterBuilder({ value, onChange, today, fields = KANBAN_FIELDS, 
           {GTD.map((g) => <option key={g.v} value={g.v}>{g.l}</option>)}
         </Select>
       )
-      case 'project_id': return (
-        <Select aria-label={label} value={Array.isArray(c.value) ? String(c.value[0] ?? '') : String(c.value ?? '')} onChange={(e) => patch(i, { value: e.target.value ? [Number(e.target.value)] : null })}>
-          <option value="">Escolher lista…</option><ProjectOptions projects={projects} groups={groups} />
-        </Select>
-      )
-      case 'group_id': return (
-        <Select aria-label={label} value={Array.isArray(c.value) ? String(c.value[0] ?? '') : String(c.value ?? '')} onChange={(e) => patch(i, { value: e.target.value ? [Number(e.target.value)] : null })}>
-          <option value="">Escolher grupo…</option>{groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-        </Select>
-      )
+      case 'project_id': return <MultiPick label={label} value={c.value} options={projects.map((p) => ({ value: p.id, label: p.name }))} onChange={(v) => patch(i, { value: v })} />
+      case 'group_id': return <MultiPick label={label} value={c.value} options={groups.map((g) => ({ value: g.id, label: g.name }))} onChange={(v) => patch(i, { value: v })} />
+      case 'type': return <MultiPick label={label} value={c.value} options={TYPE_OPTIONS} onChange={(v) => patch(i, { value: v })} />
       case 'context_id': return (
         <Select aria-label={label} value={String(c.value ?? '')} onChange={(e) => patch(i, { value: e.target.value ? Number(e.target.value) : null })}>
           <option value="">Escolher local…</option>{contexts.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
@@ -162,7 +170,7 @@ export function FilterBuilder({ value, onChange, today, fields = KANBAN_FIELDS, 
         options={[{ value: 'and', label: 'Todas (E)' }, { value: 'or', label: 'Qualquer (OU)' }]}
       />
       {value.conditions.map((c, i) => (
-        <div key={i} className="kn-fb-row">
+        <div key={i} className={`kn-fb-row${MULTI_FIELDS.includes(c.field) ? ' kn-fb-row-multi' : ''}`}>
           <Select aria-label={`Campo da condição ${i + 1}`} value={c.field} onChange={(e) => changeField(i, e.target.value as FilterField)}>
             {fields.map((f) => <option key={f.field} value={f.field}>{f.label}</option>)}
           </Select>

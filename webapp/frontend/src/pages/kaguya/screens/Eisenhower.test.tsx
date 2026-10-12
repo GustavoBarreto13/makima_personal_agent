@@ -71,7 +71,7 @@ describe('Eisenhower', () => {
     const user = await open()
     await screen.findByText('Declarar imposto')
     await user.click(screen.getByRole('button', { name: /^Filtros/ }))
-    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Banco' }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Filtros' })).getByRole('button', { name: 'Banco' }))
     expect(screen.queryByText('Declarar imposto')).toBeNull()
     expect(screen.getByText('Planejar viagem')).toBeTruthy()
   })
@@ -108,47 +108,81 @@ describe('Eisenhower', () => {
     expect(new Set(order())).toEqual(new Set(first))
   })
 
-  it('o Filtro avançado abre o construtor completo e filtra pelas regras no servidor', async () => {
-    api.taskFilterIds.mockResolvedValue({ status: 'ok', ids: [2] })
+  const openFilters = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: /^Filtros/ }))
+    return screen.findByRole('dialog', { name: 'Filtros' })
+  }
+
+  it('o modal de Filtros tem Tipo, Lista “todas menos estas” e as regras avançadas (E/OU) no mesmo lugar', async () => {
     const user = await open()
     await screen.findByText('Declarar imposto')
-    await user.click(screen.getByRole('button', { name: 'Filtro avançado' }))
-    const dlg = await screen.findByRole('dialog', { name: 'Filtrar a matriz' })
-    const campo = within(dlg).getByLabelText('Campo da condição 1')
-    for (const label of ['Prioridade', 'Lista', 'Grupo', 'Espaço', 'Status GTD', 'Estimativa', 'Responsável', 'Aguardando resposta de']) {
-      expect(within(campo).getByRole('option', { name: label }), label).toBeTruthy()
-    }
+    const dlg = await openFilters(user)
+    for (const g of ['Tipo', 'Lista', 'Prioridade', 'Vencimento', 'Status GTD']) expect(within(dlg).getByText(g), g).toBeTruthy()
+    expect(within(dlg).getByRole('group', { name: 'Modo: Lista' })).toBeTruthy()
+    expect(within(dlg).getByRole('heading', { name: 'Regras avançadas (E/OU)' })).toBeTruthy()
     expect(within(dlg).queryByText('Guardar como View')).toBeNull()
-    await user.click(within(dlg).getByRole('button', { name: 'Aplicar' }))
-    await waitFor(() => expect(api.taskFilterIds).toHaveBeenCalledWith({ combinator: 'and', conditions: [{ field: 'priority', op: 'gte', value: 2 }] }, undefined))
+  })
+
+  it('filtra por Tipo (tarefa / evento / aniversário)', async () => {
+    api.eisenhower.mockResolvedValue([
+      task({ id: 1, title: 'Reunião', type: 'event', priority: 3, due_date: addDaysISO(TODAY, 1) }),
+      task({ id: 2, title: 'Parabéns Ana', type: 'birthday', priority: 3, due_date: addDaysISO(TODAY, 1) }),
+      task({ id: 3, title: 'Relatório', type: 'task', priority: 3, due_date: addDaysISO(TODAY, 1) }),
+    ])
+    const user = await open()
+    await screen.findByText('Reunião')
+    const dlg = await openFilters(user)
+    await user.click(within(dlg).getByRole('button', { name: 'Aniversário' }))
+    expect(screen.queryByText('Reunião')).toBeNull()
+    expect(screen.getByText('Parabéns Ana')).toBeTruthy()
+    await user.click(within(dlg).getByRole('button', { name: 'Evento' }))
+    expect(screen.getByText('Reunião')).toBeTruthy()
+    expect(screen.queryByText('Relatório')).toBeNull()
+  })
+
+  it('Lista: “todas menos estas” tira as listas escolhidas', async () => {
+    const user = await open()
+    await screen.findByText('Declarar imposto')
+    const dlg = await openFilters(user)
+    await user.click(within(dlg).getByRole('button', { name: 'Todas menos estas' }))
+    await user.click(within(dlg).getByRole('button', { name: 'Banco' }))
+    expect(screen.queryByText('Planejar viagem')).toBeNull()
+    expect(screen.getByText('Declarar imposto')).toBeTruthy()
+    await user.click(within(dlg).getByRole('button', { name: 'Só estas' }))
+    expect(screen.queryByText('Declarar imposto')).toBeNull()
+    expect(screen.getByText('Planejar viagem')).toBeTruthy()
+  })
+
+  it('as regras avançadas rodam no servidor, somam com os filtros rápidos e aparecem como “Regras · N”', async () => {
+    api.taskFilterIds.mockResolvedValue({ status: 'ok', ids: [2, 3] })
+    const user = await open()
+    await screen.findByText('Declarar imposto')
+    const dlg = await openFilters(user)
+    await user.click(within(dlg).getByRole('button', { name: 'Adicionar condição' }))
+    await user.click(within(dlg).getByRole('button', { name: 'Aplicar regras' }))
+    await waitFor(() => expect(api.taskFilterIds).toHaveBeenCalledWith({ combinator: 'and', conditions: [{ field: 'tag', op: 'has', value: '' }] }, undefined))
     await waitFor(() => expect(screen.queryByText('Declarar imposto')).toBeNull())
     expect(screen.getByText('Planejar viagem')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Filtro avançado · 1' })).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Limpar o filtro avançado' }))
-    expect(await screen.findByText('Declarar imposto')).toBeTruthy()
+    // soma com um filtro rápido: só a lista “Casa”
+    await user.click(within(dlg).getByRole('button', { name: 'Casa' }))
+    expect(screen.queryByText('Planejar viagem')).toBeNull()
+    expect(screen.getByText('Responder e-mail')).toBeTruthy()
+    // sai do modal: o aviso fica na barra e limpa na hora
+    await user.click(within(dlg).getByRole('button', { name: /^Ver/ }))
+    expect(screen.getByRole('button', { name: 'Regras · 1' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Limpar as regras avançadas' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Regras · 1' })).toBeNull())
   })
 
-  it('o filtro avançado soma com os Filtros rápidos e pode esvaziar a matriz com aviso próprio', async () => {
-    api.taskFilterIds.mockResolvedValue({ status: 'ok', ids: [99] })
-    const user = await open()
-    await screen.findByText('Declarar imposto')
-    await user.click(screen.getByRole('button', { name: 'Filtro avançado' }))
-    await user.click(within(await screen.findByRole('dialog', { name: 'Filtrar a matriz' })).getByRole('button', { name: 'Aplicar' }))
-    expect(await screen.findByText('Nenhuma tarefa com esses filtros')).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Limpar filtros' }))
-    expect(await screen.findByText('Declarar imposto')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Filtro avançado' })).toBeTruthy()
-  })
-
-  it('se o servidor recusa o filtro, avisa e mostra tudo de novo', async () => {
+  it('se o servidor recusa as regras, avisa e mostra tudo de novo', async () => {
     api.taskFilterIds.mockRejectedValue(new Error('HTTP 400'))
     const user = await open()
     await screen.findByText('Declarar imposto')
-    await user.click(screen.getByRole('button', { name: 'Filtro avançado' }))
-    await user.click(within(await screen.findByRole('dialog', { name: 'Filtrar a matriz' })).getByRole('button', { name: 'Aplicar' }))
-    expect(await screen.findByText('Não foi possível aplicar o filtro.')).toBeTruthy()
+    const dlg = await openFilters(user)
+    await user.click(within(dlg).getByRole('button', { name: 'Adicionar condição' }))
+    await user.click(within(dlg).getByRole('button', { name: 'Aplicar regras' }))
+    expect(await screen.findByText('Não foi possível aplicar as regras.')).toBeTruthy()
     expect(screen.getByText('Declarar imposto')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Filtro avançado' })).toBeTruthy()
   })
 
   it('o checkbox conclui sem abrir a tarefa', async () => {
@@ -179,7 +213,7 @@ describe('Eisenhower', () => {
 describe('Matriz como visão de uma lista e de um grupo', () => {
   beforeEach(() => {
     api.sidebar.mockResolvedValue({
-      groups: [{ id: 3, name: 'Casa e banco', position: 1 }],
+      groups: [{ id: 3, name: 'Casa e banco', position: 1 }, { id: 4, name: 'Outro', position: 2 }],
       projects: [{ ...proj(1, 'Casa'), group_id: 3, has_board: true }, { ...proj(2, 'Banco'), group_id: 3 }, proj(9, 'Solta')],
       filters: [],
     })
@@ -212,7 +246,7 @@ describe('Matriz como visão de uma lista e de um grupo', () => {
     expect(screen.getByText('Trocar lâmpada')).toBeTruthy()
     expect(screen.queryByText('Tarefa de fora')).toBeNull()
     await user.click(screen.getByRole('button', { name: /^Filtros/ }))
-    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Banco' }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Filtros' })).getByRole('button', { name: 'Banco' }))
     expect(screen.queryByText('Trocar lâmpada')).toBeNull()
   })
 
@@ -224,12 +258,29 @@ describe('Matriz como visão de uma lista e de um grupo', () => {
     await waitFor(() => expect(window.location.hash).toBe('#lista/2'))
   })
 
-  it('o Filtro avançado também está na matriz de uma lista e de um grupo', async () => {
-    await openAt('#matriz/2')
-    expect(await screen.findByRole('button', { name: 'Filtro avançado' })).toBeTruthy()
+  it('o mesmo modal em toda matriz; Lista e Grupo só onde fazem sentido', async () => {
+    const modal = async (hash: string) => {
+      const user = await openAt(hash)
+      await screen.findByText('Declarar imposto')
+      await user.click(screen.getByRole('button', { name: /^Filtros/ }))
+      return screen.findByRole('dialog', { name: 'Filtros' })
+    }
+    // Uma lista só: sem Lista nem Grupo.
+    let dlg = await modal('#matriz/2')
+    expect(within(dlg).getByText('Tipo')).toBeTruthy()
+    expect(within(dlg).queryByRole('group', { name: 'Modo: Lista' })).toBeNull()
+    expect(within(dlg).queryByRole('group', { name: 'Modo: Grupo' })).toBeNull()
+    expect(within(dlg).getByRole('heading', { name: 'Regras avançadas (E/OU)' })).toBeTruthy()
     cleanup()
-    await openAt('#matriz-grupo/3')
-    expect(await screen.findByRole('button', { name: 'Filtro avançado' })).toBeTruthy()
+    // Um grupo: tem Lista, não tem Grupo.
+    dlg = await modal('#matriz-grupo/3')
+    expect(within(dlg).getByRole('group', { name: 'Modo: Lista' })).toBeTruthy()
+    expect(within(dlg).queryByRole('group', { name: 'Modo: Grupo' })).toBeNull()
+    cleanup()
+    // Geral: tem os dois.
+    dlg = await modal('#eisenhower')
+    expect(within(dlg).getByRole('group', { name: 'Modo: Lista' })).toBeTruthy()
+    expect(within(dlg).getByRole('group', { name: 'Modo: Grupo' })).toBeTruthy()
   })
 
   it('abrir uma tarefa na matriz guarda a tarefa na URL da matriz', async () => {

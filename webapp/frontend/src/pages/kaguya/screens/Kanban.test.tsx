@@ -10,7 +10,7 @@ import { mockLayoutApis, mockMatchMedia, setMockWidth } from '../../../design/te
 import { __resetToasts } from '../../../design/headless/toast'
 
 const api = vi.hoisted(() => ({
-  sidebar: vi.fn(), viewCounts: vi.fn(), viewTasks: vi.fn(), listColumns: vi.fn(), listTasks: vi.fn(), listKanbanViews: vi.fn(), kanbanViewBoard: vi.fn(), kanbanBoard: vi.fn(), groupBoardFilter: vi.fn(), listContexts: vi.fn(), listPeople: vi.fn(),
+  sidebar: vi.fn(), viewCounts: vi.fn(), viewTasks: vi.fn(), listColumns: vi.fn(), listTasks: vi.fn(), listKanbanViews: vi.fn(), kanbanViewBoard: vi.fn(), kanbanBoard: vi.fn(), groupBoardFilter: vi.fn(), taskFilterIds: vi.fn(), listContexts: vi.fn(), listPeople: vi.fn(),
   groupBoard: vi.fn(), createColumn: vi.fn(), updateColumn: vi.fn(), deleteColumn: vi.fn(), copyColumns: vi.fn(), createTask: vi.fn(), updateTask: vi.fn(),
   createKanbanView: vi.fn(), getTask: vi.fn(), activity: vi.fn(), dependencies: vi.fn(),
   schedule: { get: vi.fn(), overrides: vi.fn() },
@@ -265,22 +265,56 @@ describe('Filtros e Views do quadro', () => {
     expect(screen.getByLabelText('View')).toBeTruthy()
   })
 
-  it('“Filtrar” abre o construtor completo e aplica um filtro avulso pela rota do quadro', async () => {
-    api.kanbanBoard.mockResolvedValue([{ id: 2, project_id: 1, column_id: 11, parent_id: null, title: 'Só esta', description: null, type: 'task', priority: 3, due_date: null, due_time: null, position: 1, completed_at: null, created_at: '2026-06-01T10:00:00-03:00', my_day_date: null, start_at: null, end_at: null, duration_min: null, tags: [], subtasks: [] }])
+  it('“Filtros” abre o modal único (rápidos + regras avançadas) e filtra o quadro da lista', async () => {
     const user = await at('#kanban/1')
     await screen.findByText('Revisar PR')
-    await user.click(screen.getByRole('button', { name: 'Filtrar' }))
-    const dlg = await screen.findByRole('dialog', { name: 'Filtrar o quadro' })
+    expect(screen.queryByRole('button', { name: 'Filtrar' })).toBeNull() // o botão antigo não existe mais
+    await user.click(screen.getByRole('button', { name: 'Filtros' }))
+    const dlg = await screen.findByRole('dialog', { name: 'Filtros' })
+    // Quadro de uma lista: sem filtro de Lista nem de Grupo.
+    expect(within(dlg).queryByRole('group', { name: 'Modo: Lista' })).toBeNull()
+    expect(within(dlg).queryByRole('group', { name: 'Modo: Grupo' })).toBeNull()
+    await user.click(within(dlg).getByRole('button', { name: 'Alta' }))
+    await waitFor(() => expect(screen.queryByText('Revisar PR')).toBeNull())
+    expect(screen.getByText('Escrever spec')).toBeTruthy()
+    await user.click(within(dlg).getByRole('button', { name: /^Ver/ }))
+    expect(screen.getByRole('button', { name: 'Filtros · 1' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Limpar os filtros do quadro' }))
+    expect(await screen.findByText('Revisar PR')).toBeTruthy()
+  })
+
+  it('as regras avançadas ficam dentro do modal, com todos os campos, e filtram pelos ids do servidor', async () => {
+    api.taskFilterIds.mockResolvedValue({ status: 'ok', ids: [1] })
+    const user = await at('#kanban/1')
+    await screen.findByText('Revisar PR')
+    await user.click(screen.getByRole('button', { name: 'Filtros' }))
+    const dlg = await screen.findByRole('dialog', { name: 'Filtros' })
+    await user.click(within(dlg).getByRole('button', { name: 'Adicionar condição' }))
     const campo = within(dlg).getByLabelText('Campo da condição 1')
-    for (const label of ['Prioridade', 'Lista', 'Grupo', 'Espaço', 'Status GTD', 'Onde (@)', 'Estimativa', 'Adiada até', 'Cobrar em', 'Concluída em', 'No Meu Dia', 'Recorrente', 'Bloqueada', 'Tem subtarefas', 'Tem notas', 'Responsável', 'Aguardando resposta de']) {
+    for (const label of ['Tipo', 'Prioridade', 'Lista', 'Grupo', 'Espaço', 'Status GTD', 'Onde (@)', 'Estimativa', 'Adiada até', 'Cobrar em', 'Concluída em', 'No Meu Dia', 'Recorrente', 'Bloqueada', 'Tem subtarefas', 'Tem notas', 'Responsável', 'Aguardando resposta de']) {
       expect(within(campo).getByRole('option', { name: label }), label).toBeTruthy()
     }
-    await user.click(within(dlg).getByRole('button', { name: 'Aplicar' }))
-    await waitFor(() => expect(api.kanbanBoard).toHaveBeenCalledWith(1, { combinator: 'and', conditions: [{ field: 'priority', op: 'gte', value: 2 }] }))
-    expect(await screen.findByText('Só esta')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Filtro (1)' })).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: 'Limpar o filtro do quadro' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Filtro (1)' })).toBeNull())
+    await user.click(within(dlg).getByRole('button', { name: 'Aplicar regras' }))
+    await waitFor(() => expect(api.taskFilterIds).toHaveBeenCalledWith({ combinator: 'and', conditions: [{ field: 'tag', op: 'has', value: '' }] }, undefined))
+    await waitFor(() => expect(screen.queryByText('Revisar PR')).toBeNull())
+    expect(screen.getByText('Escrever spec')).toBeTruthy()
+    // “Guardar como View” continua disponível no quadro de uma lista.
+    expect(within(dlg).getByText('Guardar como View')).toBeTruthy()
+  })
+
+  it('a regra de Tipo aceita escolher vários e “não é” em Lista', async () => {
+    const user = await at('#kanban/1')
+    await screen.findByText('Revisar PR')
+    await user.click(screen.getByRole('button', { name: 'Filtros' }))
+    const dlg = await screen.findByRole('dialog', { name: 'Filtros' })
+    await user.click(within(dlg).getByRole('button', { name: 'Adicionar condição' }))
+    await user.selectOptions(within(dlg).getByLabelText('Campo da condição 1'), 'type')
+    expect(within(dlg).getByLabelText('Operador da condição 1')).toBeTruthy()
+    const valor = within(dlg).getByRole('group', { name: 'Valor da condição 1' })
+    await user.click(within(valor).getByRole('button', { name: 'Evento' }))
+    await user.click(within(valor).getByRole('button', { name: 'Aniversário' }))
+    await user.click(within(dlg).getByRole('button', { name: 'Aplicar regras' }))
+    await waitFor(() => expect(api.taskFilterIds).toHaveBeenCalledWith({ combinator: 'and', conditions: [{ field: 'type', op: 'in', value: ['event', 'birthday'] }] }, undefined))
   })
 
   it('o filtro da View (modal) também tem todos os campos', async () => {
@@ -294,20 +328,22 @@ describe('Filtros e Views do quadro', () => {
     expect(within(campo).getByRole('option', { name: 'Estimativa' })).toBeTruthy()
   })
 
-  it('o quadro do grupo também filtra (o servidor devolve os ids que casam)', async () => {
+  it('o quadro do grupo usa o mesmo modal (com Lista, sem Grupo) e filtra por “todas menos estas”', async () => {
     api.groupBoard.mockResolvedValue({
-      group: { id: 3, name: 'Sprint' }, lists: [{ id: 1, name: 'Sprint', color: null, icon: null }],
-      columns: [{ key: 'a fazer', name: 'A fazer', is_done: false, position: 1, members: [{ project_id: 1, column_id: 10 }] }],
-      tasks: [task({ id: 1, title: 'Fica' }), task({ id: 2, title: 'Some' })],
+      group: { id: 3, name: 'Sprint' }, lists: [{ id: 1, name: 'Sprint', color: null, icon: null }, { id: 2, name: 'Outro', color: null, icon: null }],
+      columns: [{ key: 'a fazer', name: 'A fazer', is_done: false, position: 1, members: [{ project_id: 1, column_id: 10 }, { project_id: 2, column_id: 20 }] }],
+      tasks: [task({ id: 1, title: 'Fica' }), task({ id: 2, title: 'Some', project_id: 2, column_id: 20 })],
     })
-    api.groupBoardFilter.mockResolvedValue({ status: 'ok', ids: [1] })
     const user = await at('#grupo/3')
     await screen.findByText('Some')
-    await user.click(screen.getByRole('button', { name: 'Filtrar' }))
-    const dlg = await screen.findByRole('dialog', { name: 'Filtrar o quadro' })
+    expect(screen.queryByRole('button', { name: 'Filtrar' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Filtros' }))
+    const dlg = await screen.findByRole('dialog', { name: 'Filtros' })
+    expect(within(dlg).getByRole('group', { name: 'Modo: Lista' })).toBeTruthy()
+    expect(within(dlg).queryByRole('group', { name: 'Modo: Grupo' })).toBeNull()
     expect(within(dlg).queryByText('Guardar como View')).toBeNull()
-    await user.click(within(dlg).getByRole('button', { name: 'Aplicar' }))
-    await waitFor(() => expect(api.groupBoardFilter).toHaveBeenCalledWith(3, { combinator: 'and', conditions: [{ field: 'priority', op: 'gte', value: 2 }] }))
+    await user.click(within(dlg).getByRole('button', { name: 'Todas menos estas' }))
+    await user.click(within(dlg).getByRole('button', { name: 'Outro' }))
     await waitFor(() => expect(screen.queryByText('Some')).toBeNull())
     expect(screen.getByText('Fica')).toBeTruthy()
   })

@@ -2,14 +2,15 @@
 // diz de onde vêm as tarefas (`load`); busca, filtros, ordenação, agrupamento, a barra de adicionar e a lista
 // (estilo TickTick) são os mesmos — e os controles de cada tela ficam guardados por escopo.
 
-import { useMemo, useState, type ReactNode } from 'react'
-import { useCollection } from '../../../design/headless/useCollection'
-import { Button, CollectionMeta, CollectionToolbar, EmptyState, ErrorState, FilterSheet, LoadingState, Page } from '../../../design'
+import { useMemo, type ReactNode } from 'react'
+import { Button, CollectionMeta, CollectionToolbar, EmptyState, ErrorState, LoadingState, Page } from '../../../design'
 import { useKaguya } from '../context'
-import { makeTasksSchema, type TaskSchemaOptions } from '../lib/schemas'
+import type { TaskSchemaOptions } from '../lib/schemas'
+import { useTaskFilter } from '../lib/useTaskFilter'
 import { useLoad } from '../lib/useLoad'
 import type { Task } from '../types'
 import { QuickAddBar } from '../components/QuickAddBar'
+import { RulesChip } from '../components/RulesChip'
 import { TaskList } from '../components/TaskList'
 
 const NOUN: [string, string] = ['tarefa', 'tarefas']
@@ -47,32 +48,29 @@ export function TaskCollection({
   const k = useKaguya()
   const { state, retry } = useLoad(load, [k.rev, k.space, scope, ...deps])
   const tasks = useMemo(() => (state.status === 'ok' ? state.data : []), [state])
-  const schema = useMemo(
-    () => makeTasksSchema({ scope: `kaguya:${scope}`, today: k.today, projectNames: showProject ? k.projectNames : undefined, sortBy, groupBy }),
-    [scope, k.today, showProject, k.projectNames, sortBy, groupBy],
-  )
-  const c = useCollection(schema, tasks, { today: k.today })
-  const [filters, setFilters] = useState(false)
+  // O modal de Filtros é o mesmo de todas as telas; a Lista só não oferece Lista/Grupo quando a tela é de uma lista só.
+  const f = useTaskFilter({ scope, tasks, showProject, showGroup: !!showProject && !scope.startsWith('group:'), sortBy, groupBy })
+  const { c, schema } = f
 
   return (
     <Page wide className="kn-page">
       {viewSwitch && <div className="kn-viewbar">{viewSwitch}</div>}
       {banner}
       <QuickAddBar projectId={addProjectId} due={addDue} />
-      <CollectionToolbar schema={schema} c={c} onOpenFilters={() => setFilters(true)} searchPlaceholder="Buscar nesta lista" extra={extra} />
-      <CollectionMeta c={c} noun={NOUN} />
+      <CollectionToolbar schema={schema} c={c} onOpenFilters={f.open} searchPlaceholder="Buscar nesta lista" extra={<><RulesChip rules={f.rules} onOpen={f.open} onClear={f.clearRules} />{extra}</>} />
+      <CollectionMeta c={{ ...c, clearAll: f.clearAll }} noun={NOUN} />
       {state.status === 'loading' && <LoadingState variant="row" count={5} />}
       {state.status === 'error' && <ErrorState onRetry={retry} />}
       {state.status === 'ok' && tasks.length === 0 && (completed?.length ?? 0) === 0 && (
         <EmptyState icon="task" title={emptyTitle} hint={emptyHint} action={<Button variant="primary" icon="add" onClick={() => k.newTask({ projectId: addProjectId, due: addDue })}>Nova tarefa</Button>} />
       )}
       {state.status === 'ok' && tasks.length > 0 && c.result.count === 0 && (
-        <EmptyState icon="filter" title="Nenhuma tarefa com esses filtros" hint="Tire algum filtro ou limpe a busca para ver tudo de novo." action={<Button onClick={c.clearAll}>Limpar filtros</Button>} />
+        <EmptyState icon="filter" title="Nenhuma tarefa com esses filtros" hint="Tire algum filtro ou limpe a busca para ver tudo de novo." action={<Button onClick={f.clearAll}>Limpar filtros</Button>} />
       )}
       {state.status === 'ok' && (c.result.count > 0 || (completed?.length ?? 0) > 0) && (
         <TaskList groups={c.result.groups} showProject={showProject} completed={completed} reorderable={reorderable && c.state.sortBy === 'manual' && c.state.groupBy === 'none' && !c.hasActive} />
       )}
-      {filters && <FilterSheet schema={schema} c={c} items={tasks} onClose={() => setFilters(false)} noun={NOUN} />}
+      {f.modal}
     </Page>
   )
 }

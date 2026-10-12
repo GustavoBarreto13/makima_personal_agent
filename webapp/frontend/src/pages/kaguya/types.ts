@@ -300,7 +300,7 @@ export type FilterField =
   | 'project_id' | 'priority' | 'due_date' | 'tag' | 'state' | 'text' | 'gtd_status' | 'context_id'
   | 'assignee' | 'has_children' | 'recurring' | 'has_description' | 'my_day'
   // spec 075: espaço, grupo, adiar, bloqueio, estimativa, follow-up, pessoa aguardada e conclusão
-  | 'space' | 'group_id' | 'start_date' | 'blocked' | 'duration_min' | 'follow_up_date' | 'waiting_person' | 'completed_at'
+  | 'type' | 'space' | 'group_id' | 'start_date' | 'blocked' | 'duration_min' | 'follow_up_date' | 'waiting_person' | 'completed_at'
 export type FilterCombinator = 'and' | 'or'
 
 // Uma condição da regra: {campo, operador, valor}. O valor varia por campo (ver DSL).
