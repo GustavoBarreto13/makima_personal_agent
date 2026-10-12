@@ -30,7 +30,7 @@ function Card({ task, projectName, dragging, onOpen, onToggle }: { task: Task; p
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); onToggle(task) }}
       />
-      <button type="button" className="kn-kbody kn-ebody" onClick={() => onOpen(task)}>
+      <button type="button" className="kn-ebody" onClick={() => onOpen(task)}>
         <span className="kn-ktitle">{task.title}</span>
         <span className="kn-kmeta">
           {due && <span className={`kn-kdate kn-due kn-due-${due.tone}`}><Icon name="calendar" size={11} />{due.label}</span>}

@@ -454,8 +454,13 @@ export function GroupBoardScreen({ groupId }: { groupId: number }) {
             {/* Tarefas de listas sem quadro: só leitura (não é alvo de soltura). */}
             {without.length > 0 && (
               <section className="kcol kcol-ro" aria-label="Sem coluna">
-                <header className="kn-khead"><div className="kn-krow"><span className="kn-knum ds-num">{without.length}</span><div className="kn-kname"><b>Sem coluna</b><span className="ds-mono">listas sem quadro</span></div></div></header>
-                <div className="kn-kbodycol">{without.map((t) => <KanbanCard key={t.id} task={t} onOpen={(x) => k.openTask(x.id)} {...cardProps(t)} />)}</div>
+                <div className="kcol-head">
+                  <div className="kc-row1">
+                    <span className="kc-num">{without.length}</span>
+                    <div className="kc-namewrap"><span className="kc-name"><span className="kc-dot" style={{ background: 'var(--ink-4)' }} />Sem coluna</span><span className="kc-sub">listas sem quadro</span></div>
+                  </div>
+                </div>
+                <div className="kcol-body">{without.map((t) => <KanbanCard key={t.id} task={t} onOpen={(x) => k.openTask(x.id)} {...cardProps(t)} />)}</div>
               </section>
             )}
           </div>

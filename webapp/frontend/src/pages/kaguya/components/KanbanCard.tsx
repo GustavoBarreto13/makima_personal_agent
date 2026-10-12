@@ -55,7 +55,7 @@ export function KanbanCard({ task, onOpen, projectName, showChips = true, showRi
       </div>
       <div className="kcard-right">
         {task.assignees && task.assignees.length > 0 && (
-          <span className="kn-kavs">{task.assignees.slice(0, 2).map((a) => <Avatar key={a.id} name={a.name} src={a.avatar_url} size={18} />)}</span>
+          <span className="kcard-avs">{task.assignees.slice(0, 2).map((a) => <Avatar key={a.id} name={a.name} src={a.avatar_url} size={18} />)}</span>
         )}
         {done ? (
           <span className="kcard-done" aria-label="Concluída"><Icon name="check" size={11} /></span>
