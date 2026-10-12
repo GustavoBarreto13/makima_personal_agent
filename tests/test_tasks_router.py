@@ -369,6 +369,22 @@ def test_group_board_filter_devolve_ids(mock_ids):
     mock_ids.assert_called_once_with(3, rules)
 
 
+@patch("webapp.backend.routers.tasks.filter_task_ids")
+def test_eisenhower_filter_devolve_ids_e_repassa_espaco(mock_ids):
+    mock_ids.return_value = {"status": "ok", "ids": [4, 9]}
+    rules = {"combinator": "and", "conditions": [{"field": "priority", "op": "gte", "value": 2}]}
+    resp = client.post(f"{_BASE}/eisenhower/filter", json={"rules": rules, "space": "work"})
+    assert resp.status_code == 200 and resp.json()["ids"] == [4, 9]
+    mock_ids.assert_called_once_with(rules, "work")
+
+
+@patch("webapp.backend.routers.tasks.filter_task_ids")
+def test_eisenhower_filter_regra_invalida_vira_400(mock_ids):
+    mock_ids.return_value = {"status": "error", "message": "Campo inválido."}
+    resp = client.post(f"{_BASE}/eisenhower/filter", json={"rules": {"combinator": "and", "conditions": [{"field": "x", "op": "y"}]}})
+    assert resp.status_code == 400
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Agenda de trabalho: PATCH /schedule não pode ser engolido por PATCH /{task_id}
 # ─────────────────────────────────────────────────────────────────────────────

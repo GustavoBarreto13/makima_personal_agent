@@ -230,6 +230,9 @@ export const kaguyaApi = {
   /** Ids das tarefas do grupo que cumprem o filtro avulso (`ids: null` = sem filtro). */
   groupBoardFilter: (groupId: number, rules: FilterRules | null) =>
     api.post<{ status: string; ids: number[] | null }>(`${BASE}/groups/${groupId}/board-filter`, { rules }),
+  /** Ids das tarefas (de qualquer lista) que cumprem o filtro avulso da Matriz de Eisenhower (`ids: null` = sem filtro). */
+  eisenhowerFilter: (rules: FilterRules | null, space?: Space) =>
+    api.post<{ status: string; ids: number[] | null }>(`${BASE}/eisenhower/filter`, { rules, space: space ?? null }),
   kanbanViewBoard: (viewId: number, projectId: number) =>
     api.get<Task[]>(`${BASE}/kanban-views/${viewId}/board?project_id=${projectId}`),
 

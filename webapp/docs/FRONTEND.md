@@ -248,7 +248,7 @@ escopo dinâmico `kaguya:*` — o lint aceita o prefixo).
 - **Ver como: Lista · Quadro · Matriz** (`components/ViewSwitch.tsx`): o mesmo controle, no topo à esquerda, em toda lista e todo grupo. A **Matriz**
   (`screens/Eisenhower.tsx`) usa a mesma barra da Lista (busca, Filtros, Ordenar e inverter, resumo "N de M" com Limpar filtros; sem "Agrupar",
   os quadrantes já agrupam; ordenação padrão por prioridade) com os controles guardados por escopo (`kaguya:matrix:list:12`). A Matriz geral
-  (`#eisenhower`, menu "Planejar") segue existindo, com o filtro Lista no menu de Filtros. As três abrem a tarefa centralizada.
+  (`#eisenhower`, menu "Planejar") segue existindo, com o filtro Lista no menu de Filtros. As três têm também o **Filtro avançado**: o mesmo construtor completo do "Filtrar" do Quadro (`BoardFilterModal`), aplicado no servidor por `POST /api/tasks/eisenhower/filter` e somado aos Filtros rápidos. As três abrem a tarefa centralizada.
 - **Lista no estilo TickTick**: 3 painéis (menu | lista | detalhe), adicionar no topo com chips ao vivo, subtarefas recolhíveis,
   seleção (Ctrl/Shift + clique) com barra de ação em massa e Desfazer, teclado (↑↓ Espaço Enter 0–3 T A Delete, **Alt+setas** para
   reordenar/aninhar), arrastar pela alça (antes/depois/dentro), concluídas recolhidas no fim, ordenar/agrupar/filtrar por tela.

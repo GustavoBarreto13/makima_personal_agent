@@ -73,7 +73,7 @@ from agents.kaguya.tools_filters import (
     list_builtin_filters, list_tasks_by_builtin,
 )
 from agents.kaguya.tools_kanban_views import (
-    list_views, create_view, update_view, delete_view, list_board_for_view, filter_board, filter_group_board_ids,
+    list_views, create_view, update_view, delete_view, list_board_for_view, filter_board, filter_group_board_ids, filter_task_ids,
 )
 from agents.kaguya.tools_calendar import list_tasks_in_range
 # Views fixas de mercado (Todas/Hoje/Amanhã/Próximos 7 Dias/Inbox) — spec 034.
@@ -688,6 +688,18 @@ def list_tasks_route(
 def list_tasks_today_route(space: Optional[str] = None, user: dict = Depends(require_user)) -> dict:
     """Tarefas de hoje + vencidas (``{overdue, today}``); ``space`` = work|personal."""
     return list_tasks_today(space)  # listagem
+
+
+class EisenhowerFilterBody(BaseModel):
+    """Filtro avulso da Matriz de Eisenhower: a DSL das smart-lists + o espaço Trabalho/Pessoal."""
+    rules: Optional[dict] = None
+    space: Optional[str] = None
+
+
+@router.post("/eisenhower/filter")
+def eisenhower_filter_route(body: EisenhowerFilterBody, user: dict = Depends(require_user)) -> dict:
+    """Ids das tarefas que cumprem as regras (``ids: null`` = sem filtro); a matriz cruza com o que já carregou."""
+    return _check_result(filter_task_ids(body.rules, body.space))
 
 
 @router.get("/eisenhower")

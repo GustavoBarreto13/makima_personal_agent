@@ -46,3 +46,28 @@ def test_filtro_avulso_invalido_devolve_erro():
 
     r = V.filter_board(5, {"combinator": "talvez", "conditions": [{"field": "priority", "op": "eq", "value": 1}]})
     assert r["status"] == "error"
+
+
+def test_filter_task_ids_devolve_so_os_ids_que_casam(monkeypatch):
+    from agents.kaguya import tools_kanban_views as V
+
+    visto = {}
+
+    def fake_select(sql, params=None):
+        visto["sql"], visto["params"] = sql, params
+        return [{"id": 3}, {"id": 8}]
+
+    monkeypatch.setattr(V, "run_select", fake_select)
+    r = V.filter_task_ids({"combinator": "and", "conditions": [{"field": "priority", "op": "gte", "value": 2}]}, "work")
+    assert r == {"status": "ok", "ids": [3, 8]}
+    # O espaço entra como condição extra (a tarefa herda o espaço da lista).
+    assert "pp.context" in visto["sql"] and "work" in visto["params"].values()
+
+
+def test_filter_task_ids_sem_regras_e_regra_invalida():
+    from agents.kaguya import tools_kanban_views as V
+
+    assert V.filter_task_ids(None) == {"status": "ok", "ids": None}
+    assert V.filter_task_ids({}, "work") == {"status": "ok", "ids": None}
+    assert V.filter_task_ids({"combinator": "talvez", "conditions": [{"field": "priority", "op": "eq", "value": 1}]})["status"] == "error"
+

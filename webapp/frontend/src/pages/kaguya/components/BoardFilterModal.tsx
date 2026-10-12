@@ -12,8 +12,10 @@ import { FilterBuilder, SMARTLIST_FIELDS, useFilterLookups } from './FilterBuild
 const START: FilterRules = { combinator: 'and', conditions: [{ field: 'priority', op: 'gte', value: 2 }] }
 const reason = (e: unknown, fallback: string) => (e instanceof Error && e.message && !/^HTTP \d+$/.test(e.message) ? e.message : fallback)
 
-export function BoardFilterModal({ current, onApply, onClose, onViewSaved }: {
+export function BoardFilterModal({ current, onApply, onClose, onViewSaved, title = 'Filtrar o quadro' }: {
   current: FilterRules | null
+  /** Título do modal (a Matriz de Eisenhower usa “Filtrar a matriz”). */
+  title?: string
   onApply: (rules: FilterRules | null) => void
   onClose: () => void
   /** Só o quadro de uma lista guarda views; o do grupo não mostra "Guardar como View". */
@@ -40,7 +42,7 @@ export function BoardFilterModal({ current, onApply, onClose, onViewSaved }: {
 
   return (
     <Modal
-      title="Filtrar o quadro"
+      title={title}
       size="lg"
       onClose={onClose}
       footer={(

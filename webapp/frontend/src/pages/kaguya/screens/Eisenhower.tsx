@@ -6,14 +6,15 @@
 import { DndContext, DragOverlay, closestCorners, useDraggable, useDroppable, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useCollection } from '../../../design/headless/useCollection'
-import { Button, CollectionMeta, CollectionToolbar, EmptyState, ErrorState, FilterSheet, Icon, LoadingState, Page, toast } from '../../../design'
+import { Button, Chip, CollectionMeta, CollectionToolbar, EmptyState, ErrorState, FilterSheet, Icon, IconButton, LoadingState, Page, toast } from '../../../design'
 import { kaguyaApi } from '../api'
 import { useKaguya } from '../context'
+import { BoardFilterModal } from '../components/BoardFilterModal'
 import { makeTasksSchema } from '../lib/schemas'
 import { buildDragPatch, getQuadrant, QUADS, undoPatch, type Quad, type QuadId } from '../lib/eisenhower'
 import { useDndSensors } from '../lib/dnd'
 import { dueInfo } from '../lib/taskView'
-import type { Task } from '../types'
+import type { FilterRules, Task } from '../types'
 
 const PRIO_CLASS = ['', 'kn-p1', 'kn-p2', 'kn-p3']
 const reason = (e: unknown, fallback: string) => (e instanceof Error && e.message && !/^HTTP \d+$/.test(e.message) ? e.message : fallback)
@@ -85,6 +86,10 @@ export function Eisenhower({ projectIds, scope = 'all', showProject = !projectId
   const [status, setStatus] = useState<'loading' | 'error' | 'ok'>('loading')
   const [activeId, setActiveId] = useState<number | null>(null)
   const [filters, setFilters] = useState(false)
+  // Filtro avançado: o construtor completo do Quadro (DSL das smart-lists). O servidor devolve os ids que casam e a matriz cruza com o que já carregou.
+  const [adHoc, setAdHoc] = useState<FilterRules | null>(null)
+  const [adHocIds, setAdHocIds] = useState<Set<number> | null>(null)
+  const [advanced, setAdvanced] = useState(false)
   const sensors = useDndSensors()
   const loadedRev = useRef(-1)
   const revRef = useRef(k.rev)
@@ -98,8 +103,18 @@ export function Eisenhower({ projectIds, scope = 'all', showProject = !projectId
   useEffect(() => { void load(false) }, [load])
   useEffect(() => { if (status === 'ok' && loadedRev.current !== k.rev) void load(true) }, [status, k.rev]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    let live = true
+    if (!adHoc) { setAdHocIds(null); return }
+    kaguyaApi.eisenhowerFilter(adHoc, k.space).then((r) => { if (live) setAdHocIds(r.ids ? new Set(r.ids) : null) }).catch(() => { if (live) { setAdHoc(null); toast('Não foi possível aplicar o filtro.', { tone: 'error' }) } })
+    return () => { live = false }
+  }, [adHoc, k.space, k.rev])
+
   const idsKey = projectIds?.join(',')
-  const scoped = useMemo(() => (projectIds ? tasks.filter((t) => projectIds.includes(t.project_id)) : tasks), [tasks, idsKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const scoped = useMemo(
+    () => tasks.filter((t) => (!projectIds || projectIds.includes(t.project_id)) && (adHocIds === null || adHocIds.has(t.id))),
+    [tasks, idsKey, adHocIds], // eslint-disable-line react-hooks/exhaustive-deps
+  )
   const schema = useMemo(
     () => makeTasksSchema({ scope: `kaguya:matrix:${scope}`, today: k.today, projectNames: showProject ? k.projectNames : undefined, sortBy: 'priority' }),
     [scope, k.today, showProject, k.projectNames],
@@ -107,8 +122,10 @@ export function Eisenhower({ projectIds, scope = 'all', showProject = !projectId
   // Os quadrantes já são o agrupamento: a barra não oferece "Agrupar".
   const barSchema = useMemo(() => ({ ...schema, groups: [] }), [schema])
   const c = useCollection(schema, scoped, { today: k.today })
+  const inScope = useMemo(() => (projectIds ? tasks.filter((t) => projectIds.includes(t.project_id)) : tasks), [tasks, idsKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const projectName = (t: Task) => (showProject ? k.projectNames[t.project_id] ?? '' : '')
   const activeTask = tasks.find((t) => t.id === activeId)
+  const clearAll = () => { c.clearAll(); setAdHoc(null) }
   const bar = viewSwitch ? <div className="kn-viewbar">{viewSwitch}</div> : null
 
   const onDragEnd = async (e: DragEndEvent) => {
@@ -143,14 +160,19 @@ export function Eisenhower({ projectIds, scope = 'all', showProject = !projectId
   return (
     <Page wide className="kn-page">
       {bar}
-      <CollectionToolbar schema={barSchema} c={c} onOpenFilters={() => setFilters(true)} searchPlaceholder="Buscar na matriz" />
-      <CollectionMeta c={c} noun={['tarefa', 'tarefas']} />
+      <CollectionToolbar schema={barSchema} c={c} onOpenFilters={() => setFilters(true)} searchPlaceholder="Buscar na matriz" extra={(
+        <>
+          <Chip on={!!adHoc} icon="filter" onClick={() => setAdvanced(true)}>Filtro avançado{adHoc ? ` · ${adHoc.conditions.length}` : ''}</Chip>
+          {adHoc && <IconButton icon="close" size={14} label="Limpar o filtro avançado" onClick={() => setAdHoc(null)} />}
+        </>
+      )} />
+      <CollectionMeta c={{ ...c, clearAll }} noun={['tarefa', 'tarefas']} />
       <p className="ds-hint">Derivada de prioridade × urgência (vence em até 2 dias). Arraste para ajustar.</p>
-      {scoped.length === 0 && (
+      {inScope.length === 0 && (
         <EmptyState icon="grid" title="Nada para priorizar" hint="Quando houver tarefas abertas com prioridade ou data, elas aparecem distribuídas nos quatro quadrantes." />
       )}
-      {scoped.length > 0 && c.result.count === 0 && (
-        <EmptyState icon="filter" title="Nenhuma tarefa com esses filtros" hint="Tire algum filtro ou limpe a busca para ver tudo de novo." action={<Button onClick={c.clearAll}>Limpar filtros</Button>} />
+      {inScope.length > 0 && c.result.count === 0 && (
+        <EmptyState icon="filter" title="Nenhuma tarefa com esses filtros" hint="Tire algum filtro ou limpe a busca para ver tudo de novo." action={<Button onClick={clearAll}>Limpar filtros</Button>} />
       )}
       {c.result.count > 0 && (
         <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={(e: DragStartEvent) => setActiveId(e.active.id as number)} onDragEnd={(e) => void onDragEnd(e)}>
@@ -172,6 +194,7 @@ export function Eisenhower({ projectIds, scope = 'all', showProject = !projectId
           </DragOverlay>
         </DndContext>
       )}
+      {advanced && <BoardFilterModal title="Filtrar a matriz" current={adHoc} onApply={setAdHoc} onClose={() => setAdvanced(false)} />}
       {filters && <FilterSheet schema={schema} c={c} items={scoped} onClose={() => setFilters(false)} noun={['tarefa', 'tarefas']} />}
     </Page>
   )

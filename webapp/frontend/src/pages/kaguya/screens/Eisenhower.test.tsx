@@ -11,7 +11,7 @@ import { __resetToasts } from '../../../design/headless/toast'
 import { addDaysISO, todayISO } from '../../../design/core/format'
 
 const api = vi.hoisted(() => ({
-  sidebar: vi.fn(), viewCounts: vi.fn(), viewTasks: vi.fn(), eisenhower: vi.fn(), updateTask: vi.fn(), bulk: vi.fn(), getTask: vi.fn(), activity: vi.fn(), dependencies: vi.fn(),
+  sidebar: vi.fn(), viewCounts: vi.fn(), viewTasks: vi.fn(), eisenhower: vi.fn(), eisenhowerFilter: vi.fn(), updateTask: vi.fn(), bulk: vi.fn(), getTask: vi.fn(), activity: vi.fn(), dependencies: vi.fn(),
   schedule: { get: vi.fn(), overrides: vi.fn() },
 }))
 vi.mock('../api', () => ({ kaguyaApi: api }))
@@ -108,6 +108,49 @@ describe('Eisenhower', () => {
     expect(new Set(order())).toEqual(new Set(first))
   })
 
+  it('o Filtro avançado abre o construtor completo e filtra pelas regras no servidor', async () => {
+    api.eisenhowerFilter.mockResolvedValue({ status: 'ok', ids: [2] })
+    const user = await open()
+    await screen.findByText('Declarar imposto')
+    await user.click(screen.getByRole('button', { name: 'Filtro avançado' }))
+    const dlg = await screen.findByRole('dialog', { name: 'Filtrar a matriz' })
+    const campo = within(dlg).getByLabelText('Campo da condição 1')
+    for (const label of ['Prioridade', 'Lista', 'Grupo', 'Espaço', 'Status GTD', 'Estimativa', 'Responsável', 'Aguardando resposta de']) {
+      expect(within(campo).getByRole('option', { name: label }), label).toBeTruthy()
+    }
+    expect(within(dlg).queryByText('Guardar como View')).toBeNull()
+    await user.click(within(dlg).getByRole('button', { name: 'Aplicar' }))
+    await waitFor(() => expect(api.eisenhowerFilter).toHaveBeenCalledWith({ combinator: 'and', conditions: [{ field: 'priority', op: 'gte', value: 2 }] }, undefined))
+    await waitFor(() => expect(screen.queryByText('Declarar imposto')).toBeNull())
+    expect(screen.getByText('Planejar viagem')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Filtro avançado · 1' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Limpar o filtro avançado' }))
+    expect(await screen.findByText('Declarar imposto')).toBeTruthy()
+  })
+
+  it('o filtro avançado soma com os Filtros rápidos e pode esvaziar a matriz com aviso próprio', async () => {
+    api.eisenhowerFilter.mockResolvedValue({ status: 'ok', ids: [99] })
+    const user = await open()
+    await screen.findByText('Declarar imposto')
+    await user.click(screen.getByRole('button', { name: 'Filtro avançado' }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Filtrar a matriz' })).getByRole('button', { name: 'Aplicar' }))
+    expect(await screen.findByText('Nenhuma tarefa com esses filtros')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Limpar filtros' }))
+    expect(await screen.findByText('Declarar imposto')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Filtro avançado' })).toBeTruthy()
+  })
+
+  it('se o servidor recusa o filtro, avisa e mostra tudo de novo', async () => {
+    api.eisenhowerFilter.mockRejectedValue(new Error('HTTP 400'))
+    const user = await open()
+    await screen.findByText('Declarar imposto')
+    await user.click(screen.getByRole('button', { name: 'Filtro avançado' }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Filtrar a matriz' })).getByRole('button', { name: 'Aplicar' }))
+    expect(await screen.findByText('Não foi possível aplicar o filtro.')).toBeTruthy()
+    expect(screen.getByText('Declarar imposto')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Filtro avançado' })).toBeTruthy()
+  })
+
   it('o checkbox conclui sem abrir a tarefa', async () => {
     const user = await open()
     await user.click(await screen.findByRole('checkbox', { name: 'Concluir “Ler artigo”' }))
@@ -179,6 +222,14 @@ describe('Matriz como visão de uma lista e de um grupo', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Banco' })).toBeTruthy()
     await user.click(within(screen.getByRole('group', { name: 'Ver como' })).getByRole('button', { name: 'Lista' }))
     await waitFor(() => expect(window.location.hash).toBe('#lista/2'))
+  })
+
+  it('o Filtro avançado também está na matriz de uma lista e de um grupo', async () => {
+    await openAt('#matriz/2')
+    expect(await screen.findByRole('button', { name: 'Filtro avançado' })).toBeTruthy()
+    cleanup()
+    await openAt('#matriz-grupo/3')
+    expect(await screen.findByRole('button', { name: 'Filtro avançado' })).toBeTruthy()
   })
 
   it('abrir uma tarefa na matriz guarda a tarefa na URL da matriz', async () => {

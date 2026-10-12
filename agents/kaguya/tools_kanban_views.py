@@ -25,7 +25,7 @@ from agents.db import get_conn, run_select, run_dml
 
 # Reuso do motor de filtros das smart-lists (mesmo DSL) — sem ciclo: tools_filters
 # não importa este módulo.
-from agents.kaguya.tools_filters import _validate_rules, _build_where_from_rules
+from agents.kaguya.tools_filters import _validate_rules, _build_where_from_rules, with_space
 
 # Incremento padrão entre posições (mesma constante semântica das listas/filtros).
 _POSITION_STEP = 1000
@@ -301,4 +301,25 @@ def filter_group_board_ids(group_id: int, rules: Optional[dict] = None) -> dict:
         f"WHERE pj.group_id = %(gid_board)s AND {where_sql}",
         params,
     )
+    return {"status": "ok", "ids": [r["id"] for r in rows]}
+
+
+def filter_task_ids(rules: Optional[dict] = None, space: Optional[str] = None) -> dict:
+    """Ids das tarefas (de qualquer lista) que cumprem um filtro avulso — a Matriz de Eisenhower filtra no cliente por eles.
+
+    Args:
+        rules: ``FilterRules`` (mesma DSL das smart-lists) ou ``None`` (sem filtro → ``ids: None``).
+        space: ``work`` | ``personal`` mantém o filtro dentro do espaço escolhido; outro valor = sem restrição.
+
+    Returns:
+        ``{"status": "ok", "ids": [...]}`` ou ``{"status": "error", "message": ...}`` se a DSL for inválida. Não força "só abertas":
+        quem chama já tem a lista de tarefas e só cruza os ids.
+    """
+    if not rules:
+        return {"status": "ok", "ids": None}
+    erro = _validate_rules(rules)
+    if erro:
+        return {"status": "error", "message": erro}
+    where_sql, params, _orphans = _build_where_from_rules(with_space(rules, space), default_open=False)
+    rows = run_select(f"SELECT t.id FROM tasks t WHERE {where_sql}", params)
     return {"status": "ok", "ids": [r["id"] for r in rows]}
