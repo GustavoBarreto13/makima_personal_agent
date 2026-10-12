@@ -3,7 +3,7 @@
 // tudo só em memória — recarregar sempre voltava ao Meu Dia).
 
 export type ViewId =
-  | 'today' | 'list' | 'kanban' | 'group' | 'group-list' | 'calendar' | 'date' | 'gtd' | 'filter' | 'eisenhower'
+  | 'today' | 'list' | 'kanban' | 'group' | 'group-list' | 'calendar' | 'date' | 'gtd' | 'filter' | 'eisenhower' | 'matrix' | 'group-matrix'
   | 'habits' | 'goals' | 'experiments' | 'focus' | 'logbook' | 'stats' | 'trash' | 'archived' | 'templates' | 'tags' | 'organize' | 'settings'
 
 /** Chaves das visões de data (Todas, Amanhã…) — o `date` da rota. */
@@ -26,7 +26,7 @@ const PLAIN: Partial<Record<ViewId, string>> = {
 }
 /** Telas com um id numérico opcional (lista, quadro, grupo, filtro, meta, experimento). */
 const WITH_ID: Partial<Record<ViewId, string>> = {
-  list: 'lista', kanban: 'kanban', group: 'grupo', 'group-list': 'grupo-lista', filter: 'filtro', goals: 'metas', experiments: 'experimentos',
+  list: 'lista', kanban: 'kanban', matrix: 'matriz', group: 'grupo', 'group-list': 'grupo-lista', 'group-matrix': 'matriz-grupo', filter: 'filtro', goals: 'metas', experiments: 'experimentos',
 }
 
 // Nomes aceitos na URL além dos oficiais: os do shell antigo e variações sem acento.

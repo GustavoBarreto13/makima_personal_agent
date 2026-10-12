@@ -128,8 +128,8 @@ export function routeToNavId(r: Route): string {
   switch (r.view) {
     case 'date': return `date:${r.key ?? 'all'}`
     case 'gtd': return `gtd:${r.key ?? ''}`
-    case 'list': case 'kanban': return `list:${r.id}`
-    case 'group': case 'group-list': return `group:${r.id}`
+    case 'list': case 'kanban': case 'matrix': return `list:${r.id}`
+    case 'group': case 'group-list': case 'group-matrix': return `group:${r.id}`
     case 'filter': return `filter:${r.id}`
     default: return r.view
   }
@@ -139,8 +139,8 @@ export function routeToNavId(r: Route): string {
 export function titleFor(r: Route, projects: Project[], groups: Group[], filters: Filter[]): string {
   const fixed = [...PLAN, ...DATE_VIEWS, ...GTD, ...LIFE, ...RECORD].find((f) => f.id === routeToNavId(r))
   if (fixed) return fixed.label
-  if (r.view === 'list' || r.view === 'kanban') return projects.find((p) => p.id === r.id)?.name ?? 'Lista'
-  if (r.view === 'group' || r.view === 'group-list') return groups.find((g) => g.id === r.id)?.name ?? 'Grupo'
+  if (r.view === 'list' || r.view === 'kanban' || r.view === 'matrix') return projects.find((p) => p.id === r.id)?.name ?? 'Lista'
+  if (r.view === 'group' || r.view === 'group-list' || r.view === 'group-matrix') return groups.find((g) => g.id === r.id)?.name ?? 'Grupo'
   if (r.view === 'filter') return filters.find((f) => f.id === r.id)?.name ?? 'Smart-list'
   return 'Tarefas'
 }

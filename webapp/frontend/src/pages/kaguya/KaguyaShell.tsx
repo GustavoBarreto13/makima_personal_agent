@@ -23,7 +23,7 @@ import * as act from './lib/actions'
 import { DEFAULT_MOBILE_TABS, buildNav, navIdToRoute, routeToNavId, titleFor, type SpaceChoice } from './lib/nav'
 import { hashFor, routeFromHash, withTask, type Route } from './lib/routes'
 import { useLoad } from './lib/useLoad'
-import { DateScreen, FilterScreen, GroupListScreen, GtdScreen, ListScreen } from './screens/ListScreens'
+import { DateScreen, FilterScreen, GroupListScreen, GroupMatrixScreen, GtdScreen, ListScreen, MatrixScreen } from './screens/ListScreens'
 import { Archived, Logbook, Tags, Templates, Trash } from './screens/Records'
 import { DisplaySettings, Settings } from './screens/Settings'
 import { Stats } from './screens/Stats'
@@ -169,6 +169,8 @@ export function KaguyaShell() {
       case 'group-list': return route.id !== undefined ? <GroupListScreen id={route.id} /> : <Today />
       case 'group': return route.id !== undefined ? <GroupBoardScreen groupId={route.id} /> : <Today />
       case 'eisenhower': return <Eisenhower />
+      case 'matrix': return route.id !== undefined ? <MatrixScreen id={route.id} /> : <Today />
+      case 'group-matrix': return route.id !== undefined ? <GroupMatrixScreen id={route.id} /> : <Today />
       case 'calendar': return <Calendar />
       case 'focus': return <Focus />
       case 'habits': return <Habits />
@@ -186,8 +188,8 @@ export function KaguyaShell() {
     }
   })()
 
-  // Detalhe: ao lado (padrão) ou centralizado. Quadros e calendário ocupam a tela toda, então sempre abrem centralizado.
-  const centered = prefs.detailMode === 'center' || route.view === 'kanban' || route.view === 'group' || route.view === 'calendar'
+  // Detalhe: ao lado (padrão) ou centralizado. Quadros, matrizes e calendário ocupam a tela toda, então sempre abrem centralizado.
+  const centered = prefs.detailMode === 'center' || route.view === 'kanban' || route.view === 'group' || route.view === 'calendar' || route.view === 'eisenhower' || route.view === 'matrix' || route.view === 'group-matrix'
   const panelOpen = route.taskId !== undefined && !centered
 
   return (

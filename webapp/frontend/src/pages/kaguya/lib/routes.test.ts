@@ -12,6 +12,8 @@ describe('rotas por hash da Kaguya', () => {
   it('lista, quadro, grupo e filtro carregam o id', () => {
     expect(routeFromHash('#lista/12')).toEqual({ view: 'list', id: 12 })
     expect(routeFromHash('#kanban/7')).toEqual({ view: 'kanban', id: 7 })
+    expect(routeFromHash('#matriz/4')).toEqual({ view: 'matrix', id: 4 })
+    expect(routeFromHash('#matriz-grupo/3')).toEqual({ view: 'group-matrix', id: 3 })
     expect(routeFromHash('#grupo/3')).toEqual({ view: 'group', id: 3 })
     expect(routeFromHash('#grupo-lista/3')).toEqual({ view: 'group-list', id: 3 })
     expect(routeFromHash('#filtro/5')).toEqual({ view: 'filter', id: 5 })
@@ -42,7 +44,7 @@ describe('rotas por hash da Kaguya', () => {
 
   it('ida e volta: hashFor ∘ routeFromHash é a identidade', () => {
     const routes: Route[] = [
-      { view: 'today' }, { view: 'list', id: 12 }, { view: 'kanban', id: 7 }, { view: 'group', id: 3 },
+      { view: 'today' }, { view: 'list', id: 12 }, { view: 'kanban', id: 7 }, { view: 'group', id: 3 }, { view: 'matrix', id: 4 }, { view: 'group-matrix', id: 3 },
       { view: 'date', key: 'tomorrow' }, { view: 'gtd', key: 'waiting' }, { view: 'filter', id: 5 }, { view: 'logbook' },
       { view: 'list', id: 12, taskId: 88 }, { view: 'date', key: 'inbox', taskId: 9 }, { view: 'experiments', id: 2 },
     ]

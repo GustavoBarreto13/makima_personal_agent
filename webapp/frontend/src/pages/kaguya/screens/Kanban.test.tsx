@@ -235,6 +235,10 @@ describe('Alternar Lista ↔ Quadro', () => {
     ['#kanban/1', 'Lista', '#lista/1'],
     ['#grupo-lista/3', 'Quadro', '#grupo/3'],
     ['#grupo/3', 'Lista', '#grupo-lista/3'],
+    ['#lista/1', 'Matriz', '#matriz/1'],
+    ['#kanban/1', 'Matriz', '#matriz/1'],
+    ['#grupo-lista/3', 'Matriz', '#matriz-grupo/3'],
+    ['#grupo/3', 'Matriz', '#matriz-grupo/3'],
   ])('%s: o mesmo seletor, no topo, leva para o outro lado', async (hash, label, target) => {
     api.groupBoard.mockResolvedValue({
       group: { id: 3, name: 'Sprint' }, lists: [{ id: 1, name: 'Sprint', color: null, icon: null }],
@@ -244,7 +248,7 @@ describe('Alternar Lista ↔ Quadro', () => {
     const sw = await screen.findByRole('group', { name: 'Ver como' })
     // É o primeiro item da página (acima da barra de filtros e do título).
     expect(sw.closest('.kn-viewbar')).toBeTruthy()
-    expect(within(sw).getAllByRole('button')).toHaveLength(2)
+    expect(within(sw).getAllByRole('button')).toHaveLength(3) // Lista · Quadro · Matriz
     await user.click(within(sw).getByRole('button', { name: label }))
     await waitFor(() => expect(window.location.hash).toBe(target))
   })

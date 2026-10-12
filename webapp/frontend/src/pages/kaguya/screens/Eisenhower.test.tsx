@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-// Eisenhower: quadrantes derivados de prioridade × urgência, filtro por lista, concluir pelo checkbox e estados vazio/erro.
+// Eisenhower: quadrantes derivados de prioridade × urgência, busca/filtros/ordenação, matriz de uma lista e de um grupo (a terceira
+// visão ao lado de Lista e Quadro), concluir pelo checkbox e estados vazio/erro.
 
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -66,12 +67,45 @@ describe('Eisenhower', () => {
     expect(api.eisenhower).toHaveBeenCalledWith(undefined)
   })
 
-  it('filtra por lista', async () => {
+  it('filtra por lista no menu de Filtros', async () => {
     const user = await open()
     await screen.findByText('Declarar imposto')
-    await user.selectOptions(screen.getByLabelText('Filtrar por lista'), '2')
+    await user.click(screen.getByRole('button', { name: /^Filtros/ }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Banco' }))
     expect(screen.queryByText('Declarar imposto')).toBeNull()
     expect(screen.getByText('Planejar viagem')).toBeTruthy()
+  })
+
+  it('busca, filtra por prioridade e limpa os filtros', async () => {
+    const user = await open()
+    await screen.findByText('Declarar imposto')
+    await user.type(screen.getByRole('searchbox', { name: 'Buscar na matriz' }), 'viagem')
+    expect(screen.queryByText('Declarar imposto')).toBeNull()
+    expect(screen.getByText('Planejar viagem')).toBeTruthy()
+    await user.clear(screen.getByRole('searchbox', { name: 'Buscar na matriz' }))
+    await user.click(screen.getByRole('button', { name: /^Filtros/ }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Alta' }))
+    expect(screen.getByText('Declarar imposto')).toBeTruthy()
+    expect(screen.queryByText('Planejar viagem')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Limpar tudo' }))
+    expect(screen.getByText('Planejar viagem')).toBeTruthy()
+  })
+
+  it('ordena por prioridade (padrão) e deixa trocar a ordenação e a direção', async () => {
+    api.eisenhower.mockResolvedValue([
+      task({ id: 1, title: 'Zebra', priority: 2, due_date: addDaysISO(TODAY, 20) }),
+      task({ id: 2, title: 'Abelha', priority: 3, due_date: addDaysISO(TODAY, 30) }),
+    ])
+    const user = await open()
+    await screen.findByText('Abelha')
+    const order = () => within(quad('Agende')).getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'))
+    expect(order()).toEqual(['Concluir “Abelha”', 'Concluir “Zebra”'])
+    await user.click(screen.getByRole('button', { name: /^Ordenar:/ }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Título' }))
+    const first = order()
+    await user.click(screen.getByRole('button', { name: /^Ordem/ }))
+    expect(order()).toEqual([...first].reverse()) // inverter a direção
+    expect(new Set(order())).toEqual(new Set(first))
   })
 
   it('o checkbox conclui sem abrir a tarefa', async () => {
@@ -96,5 +130,60 @@ describe('Eisenhower', () => {
     const user = await open()
     await user.click(await screen.findByRole('button', { name: /Tentar de novo/i }))
     expect(await screen.findByText('Declarar imposto')).toBeTruthy()
+  })
+})
+
+describe('Matriz como visão de uma lista e de um grupo', () => {
+  beforeEach(() => {
+    api.sidebar.mockResolvedValue({
+      groups: [{ id: 3, name: 'Casa e banco', position: 1 }],
+      projects: [{ ...proj(1, 'Casa'), group_id: 3, has_board: true }, { ...proj(2, 'Banco'), group_id: 3 }, proj(9, 'Solta')],
+      filters: [],
+    })
+    api.eisenhower.mockResolvedValue([
+      task({ id: 1, title: 'Declarar imposto', priority: 3, due_date: addDaysISO(TODAY, 1), project_id: 2 }),
+      task({ id: 2, title: 'Trocar lâmpada', priority: 2, due_date: addDaysISO(TODAY, 20), project_id: 1 }),
+      task({ id: 3, title: 'Tarefa de fora', project_id: 9 }),
+    ])
+  })
+  const openAt = async (hash: string) => {
+    window.location.hash = hash
+    const user = userEvent.setup()
+    render(<MemoryRouter><KaguyaShell /></MemoryRouter>)
+    return user
+  }
+
+  it('a matriz de uma lista mostra só as tarefas dela, com o seletor Lista · Quadro · Matriz no topo', async () => {
+    await openAt('#matriz/2')
+    expect(await screen.findByText('Declarar imposto')).toBeTruthy()
+    expect(screen.queryByText('Trocar lâmpada')).toBeNull()
+    expect(screen.queryByText('Tarefa de fora')).toBeNull()
+    const sw = screen.getByRole('group', { name: 'Ver como' })
+    expect(sw.closest('.kn-viewbar')).toBeTruthy()
+    expect(within(sw).getByRole('button', { name: 'Matriz' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('a matriz de um grupo reúne as listas dele e oferece o filtro por lista', async () => {
+    const user = await openAt('#matriz-grupo/3')
+    expect(await screen.findByText('Declarar imposto')).toBeTruthy()
+    expect(screen.getByText('Trocar lâmpada')).toBeTruthy()
+    expect(screen.queryByText('Tarefa de fora')).toBeNull()
+    await user.click(screen.getByRole('button', { name: /^Filtros/ }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Banco' }))
+    expect(screen.queryByText('Trocar lâmpada')).toBeNull()
+  })
+
+  it('o título segue a lista e o seletor volta para a Lista', async () => {
+    const user = await openAt('#matriz/2')
+    await screen.findByText('Declarar imposto')
+    expect(screen.getByRole('heading', { level: 1, name: 'Banco' })).toBeTruthy()
+    await user.click(within(screen.getByRole('group', { name: 'Ver como' })).getByRole('button', { name: 'Lista' }))
+    await waitFor(() => expect(window.location.hash).toBe('#lista/2'))
+  })
+
+  it('abrir uma tarefa na matriz guarda a tarefa na URL da matriz', async () => {
+    const user = await openAt('#matriz/2')
+    await user.click(await screen.findByText('Declarar imposto'))
+    expect(window.location.hash).toBe('#matriz/2/t/1')
   })
 })

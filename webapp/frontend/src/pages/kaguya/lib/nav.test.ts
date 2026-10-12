@@ -59,6 +59,8 @@ describe('ids ↔ rotas', () => {
   })
   it('o quadro e a lista de um grupo acendem o item da lista/grupo', () => {
     expect(routeToNavId({ view: 'kanban', id: 7 })).toBe('list:7')
+    expect(routeToNavId({ view: 'matrix', id: 7 })).toBe('list:7')
+    expect(routeToNavId({ view: 'group-matrix', id: 3 })).toBe('group:3')
     expect(routeToNavId({ view: 'group-list', id: 3 })).toBe('group:3')
   })
   it('títulos', () => {

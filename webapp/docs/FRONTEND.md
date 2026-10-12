@@ -234,7 +234,7 @@ com Desfazer), arte **"Shuchiin aristocrático"** (`art/shuchiin.css`: vinho e d
 `kaguya.css`, TweaksPanel, Command Palette) foi removido. `conformance.json` marca a Kaguya como `conformant` (coleções com
 escopo dinâmico `kaguya:*` — o lint aceita o prefixo).
 
-- **Rotas por hash** (`lib/routes.ts`): `#hoje`, `#lista/12`, `#kanban/12`, `#grupo/3` (quadro) / `#grupo-lista/3`, `#visao/inbox|all|tomorrow|next7`,
+- **Rotas por hash** (`lib/routes.ts`): `#hoje`, `#lista/12`, `#kanban/12`, `#grupo/3` (quadro) / `#grupo-lista/3`, `#matriz/12` (Matriz de Eisenhower de uma lista) / `#matriz-grupo/3` (de um grupo), `#visao/inbox|all|tomorrow|next7`,
   `#gtd/waiting`, `#filtro/5`, `#calendario`, `#eisenhower`, `#habitos`, `#metas[/id]`, `#experimentos[/id]`, `#foco`, `#concluidas`,
   `#estatisticas`, `#organizar`, `#etiquetas`, `#templates`, `#arquivadas`, `#lixeira`; o sufixo `/t/88` abre a tarefa no painel.
 - **Espaço global** (Tudo · Trabalho · Pessoal) na barra superior: filtra todas as telas pelo `?space=`; a barra lateral, o digest e
@@ -245,6 +245,10 @@ escopo dinâmico `kaguya:*` — o lint aceita o prefixo).
 - **Ajustes** (`#ajustes`): exibição (espaço, abrir a tarefa ao lado/no centro, Meu Dia, estilo e lateral do calendário), agenda de trabalho,
   menu lateral (mostrar/fixar) e abas do celular. A gaveta de Preferências (`?`) fica só com o rápido e um botão para cá; a **largura do
   conteúdo** (centralizada/tela inteira) é do DS e vale para todos os agentes.
+- **Ver como: Lista · Quadro · Matriz** (`components/ViewSwitch.tsx`): o mesmo controle, no topo à esquerda, em toda lista e todo grupo. A **Matriz**
+  (`screens/Eisenhower.tsx`) usa a mesma barra da Lista (busca, Filtros, Ordenar e inverter, resumo "N de M" com Limpar filtros; sem "Agrupar",
+  os quadrantes já agrupam; ordenação padrão por prioridade) com os controles guardados por escopo (`kaguya:matrix:list:12`). A Matriz geral
+  (`#eisenhower`, menu "Planejar") segue existindo, com o filtro Lista no menu de Filtros. As três abrem a tarefa centralizada.
 - **Lista no estilo TickTick**: 3 painéis (menu | lista | detalhe), adicionar no topo com chips ao vivo, subtarefas recolhíveis,
   seleção (Ctrl/Shift + clique) com barra de ação em massa e Desfazer, teclado (↑↓ Espaço Enter 0–3 T A Delete, **Alt+setas** para
   reordenar/aninhar), arrastar pela alça (antes/depois/dentro), concluídas recolhidas no fim, ordenar/agrupar/filtrar por tela.

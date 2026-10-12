@@ -9,6 +9,7 @@ import { useKaguya } from '../context'
 import { DATE_KEYS, type DateKey } from '../lib/routes'
 import type { DateViewKey, Task } from '../types'
 import { TaskCollection } from './TaskCollection'
+import { Eisenhower } from './Eisenhower'
 
 const DATE_COPY: Record<DateKey, { title: string; hint: string }> = {
   all: { title: 'Nada em aberto', hint: 'Todas as tarefas abertas de todas as listas aparecem aqui.' },
@@ -68,6 +69,20 @@ export function GroupListScreen({ id }: { id: number }) {
       )}
     />
   )
+}
+
+/** Matriz de Eisenhower de uma lista — a terceira visão, ao lado de Lista e Quadro. */
+export function MatrixScreen({ id }: { id: number }) {
+  const k = useKaguya()
+  const project = k.projects.find((p) => p.id === id)
+  return <Eisenhower projectIds={[id]} scope={`list:${id}`} viewSwitch={<ViewSwitch side="matrix" kind="list" id={id} hasBoard={!!project?.has_board} />} />
+}
+
+/** Matriz de Eisenhower de um grupo: as tarefas de todas as listas dele. */
+export function GroupMatrixScreen({ id }: { id: number }) {
+  const k = useKaguya()
+  const ids = k.projects.filter((p) => p.group_id === id).map((p) => p.id)
+  return <Eisenhower projectIds={ids} scope={`group:${id}`} showProject viewSwitch={<ViewSwitch side="matrix" kind="group" id={id} />} />
 }
 
 /** Concluídas da lista (carrega sob demanda quando a pref "Mostrar concluídas" está ligada). */

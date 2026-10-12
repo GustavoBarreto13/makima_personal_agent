@@ -1,13 +1,15 @@
 // Matriz de Eisenhower: 2×2 derivada de prioridade × urgência. Não cria campo: arrastar para outro quadrante ajusta a
-// prioridade e/ou o vencimento (com “Desfazer”). Melhorias sobre o shell antigo: concluir pelo checkbox, filtrar por lista
-// e respeitar o espaço Trabalho/Pessoal. O card pula de quadrante antes da resposta (otimista) e volta se a rede falhar.
+// prioridade e/ou o vencimento (com “Desfazer”). Vale para todas as listas, para uma lista ou para um grupo (a terceira visão, ao
+// lado de Lista e Quadro), com a mesma busca, filtros e ordenação da Lista. Melhorias sobre o shell antigo: concluir pelo
+// checkbox e respeitar o espaço Trabalho/Pessoal. O card pula de quadrante antes da resposta (otimista) e volta se a rede falhar.
 
 import { DndContext, DragOverlay, closestCorners, useDraggable, useDroppable, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { EmptyState, ErrorState, Icon, LoadingState, Page, Select, toast } from '../../../design'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCollection } from '../../../design/headless/useCollection'
+import { Button, CollectionMeta, CollectionToolbar, EmptyState, ErrorState, FilterSheet, Icon, LoadingState, Page, toast } from '../../../design'
 import { kaguyaApi } from '../api'
-import { ProjectOptions } from '../components/ProjectOptions'
 import { useKaguya } from '../context'
+import { makeTasksSchema } from '../lib/schemas'
 import { buildDragPatch, getQuadrant, QUADS, undoPatch, type Quad, type QuadId } from '../lib/eisenhower'
 import { useDndSensors } from '../lib/dnd'
 import { dueInfo } from '../lib/taskView'
@@ -66,12 +68,23 @@ function Quadrant({ quad, items, activeId, projectName, onOpen, onToggle }: { qu
   )
 }
 
-export function Eisenhower() {
+interface Props {
+  /** Só as tarefas destas listas (uma lista ou as de um grupo). Ausente = todas as listas. */
+  projectIds?: number[]
+  /** Escopo dos controles guardados (`list:12`, `group:3`); ausente = a matriz geral. */
+  scope?: string
+  /** Mostra a lista de origem nos cartões e oferece o filtro por lista. Padrão: só na matriz geral. */
+  showProject?: boolean
+  /** Alternar Lista ↔ Quadro ↔ Matriz: sempre o primeiro item do topo da página. */
+  viewSwitch?: ReactNode
+}
+
+export function Eisenhower({ projectIds, scope = 'all', showProject = !projectIds, viewSwitch }: Props = {}) {
   const k = useKaguya()
   const [tasks, setTasks] = useState<Task[]>([])
   const [status, setStatus] = useState<'loading' | 'error' | 'ok'>('loading')
   const [activeId, setActiveId] = useState<number | null>(null)
-  const [listId, setListId] = useState('')
+  const [filters, setFilters] = useState(false)
   const sensors = useDndSensors()
   const loadedRev = useRef(-1)
   const revRef = useRef(k.rev)
@@ -85,9 +98,18 @@ export function Eisenhower() {
   useEffect(() => { void load(false) }, [load])
   useEffect(() => { if (status === 'ok' && loadedRev.current !== k.rev) void load(true) }, [status, k.rev]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const visible = useMemo(() => (listId ? tasks.filter((t) => t.project_id === Number(listId)) : tasks), [tasks, listId])
-  const projectName = (t: Task) => k.projectNames[t.project_id] ?? ''
+  const idsKey = projectIds?.join(',')
+  const scoped = useMemo(() => (projectIds ? tasks.filter((t) => projectIds.includes(t.project_id)) : tasks), [tasks, idsKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const schema = useMemo(
+    () => makeTasksSchema({ scope: `kaguya:matrix:${scope}`, today: k.today, projectNames: showProject ? k.projectNames : undefined, sortBy: 'priority' }),
+    [scope, k.today, showProject, k.projectNames],
+  )
+  // Os quadrantes já são o agrupamento: a barra não oferece "Agrupar".
+  const barSchema = useMemo(() => ({ ...schema, groups: [] }), [schema])
+  const c = useCollection(schema, scoped, { today: k.today })
+  const projectName = (t: Task) => (showProject ? k.projectNames[t.project_id] ?? '' : '')
   const activeTask = tasks.find((t) => t.id === activeId)
+  const bar = viewSwitch ? <div className="kn-viewbar">{viewSwitch}</div> : null
 
   const onDragEnd = async (e: DragEndEvent) => {
     const { active, over } = e
@@ -115,28 +137,29 @@ export function Eisenhower() {
     }
   }
 
-  if (status === 'loading') return <Page wide><LoadingState variant="card" count={4} /></Page>
-  if (status === 'error') return <Page wide><ErrorState onRetry={() => void load(false)} /></Page>
+  if (status === 'loading') return <Page wide>{bar}<LoadingState variant="card" count={4} /></Page>
+  if (status === 'error') return <Page wide>{bar}<ErrorState onRetry={() => void load(false)} /></Page>
 
   return (
     <Page wide className="kn-page">
-      <div className="kn-quick">
-        <Select aria-label="Filtrar por lista" value={listId} onChange={(e) => setListId(e.target.value)}>
-          <option value="">Todas as listas</option>
-          <ProjectOptions projects={k.projects} groups={k.groups} />
-        </Select>
-        <p className="ds-hint">Derivada de prioridade × urgência (vence em até 2 dias). Arraste para ajustar.</p>
-      </div>
-      {tasks.length === 0 ? (
+      {bar}
+      <CollectionToolbar schema={barSchema} c={c} onOpenFilters={() => setFilters(true)} searchPlaceholder="Buscar na matriz" />
+      <CollectionMeta c={c} noun={['tarefa', 'tarefas']} />
+      <p className="ds-hint">Derivada de prioridade × urgência (vence em até 2 dias). Arraste para ajustar.</p>
+      {scoped.length === 0 && (
         <EmptyState icon="grid" title="Nada para priorizar" hint="Quando houver tarefas abertas com prioridade ou data, elas aparecem distribuídas nos quatro quadrantes." />
-      ) : (
+      )}
+      {scoped.length > 0 && c.result.count === 0 && (
+        <EmptyState icon="filter" title="Nenhuma tarefa com esses filtros" hint="Tire algum filtro ou limpe a busca para ver tudo de novo." action={<Button onClick={c.clearAll}>Limpar filtros</Button>} />
+      )}
+      {c.result.count > 0 && (
         <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={(e: DragStartEvent) => setActiveId(e.active.id as number)} onDragEnd={(e) => void onDragEnd(e)}>
           <div className="kn-quads">
             {QUADS.map((q) => (
               <Quadrant
                 key={q.id}
                 quad={q}
-                items={visible.filter((t) => getQuadrant(t, k.today) === q.id)}
+                items={c.result.items.filter((t) => getQuadrant(t, k.today) === q.id)}
                 activeId={activeId}
                 projectName={projectName}
                 onOpen={(t) => k.openTask(t.id)}
@@ -149,6 +172,7 @@ export function Eisenhower() {
           </DragOverlay>
         </DndContext>
       )}
+      {filters && <FilterSheet schema={schema} c={c} items={scoped} onClose={() => setFilters(false)} noun={['tarefa', 'tarefas']} />}
     </Page>
   )
 }
