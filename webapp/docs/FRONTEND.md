@@ -261,6 +261,7 @@ escopo dinâmico `kaguya:*` — o lint aceita o prefixo).
 - **Calendário** (Dia/Semana/Mês) com a estrutura do antigo (barra fixa, grade com rolagem própria, lateral de calendários com borda;
   `Page full fill`): tarefas + Google + outros agentes, faixa de expediente/almoço, mover/redimensionar/criar por arraste (com
   Desfazer), bandejas "Sem horário" e "Sem data", popover e menu de contexto, três estilos de evento.
+  Nota: `Page fill` dentro de `.kn-main-col` precisa de `width:100%; margin:0` (regra em `kaguya.css`): o `margin: 0 auto` do `.ds-page` encolhe a página num pai flex em coluna e o calendário vira uma coluna estreita no meio.
 - **Organizar** (`#organizar`): listas, grupos, smart-lists (construtor de regras com todos os campos), locais (Onde @), revisão
   semanal e processamento do Inbox (wizard com teclas 1–6).
 - **Estatísticas**: `StatsPage` + aba **Planejamento** (onde o plano falha). **Foco**, **Hábitos** (com arquivados), **Metas**,

@@ -50,3 +50,15 @@ describe('classes kn-* usadas nas telas', () => {
     expect([...missing]).toEqual([])
   })
 })
+
+// O `.ds-page` tem `margin: 0 auto`; dentro do `.kn-main-col` (flex em coluna) isso encolhe a página de altura cheia para a largura do
+// conteúdo e o calendário vira uma coluna estreita no meio (aparecia no espaço Trabalho, com poucas pílulas "Todo o dia").
+describe('página de altura cheia (calendário)', () => {
+  it('ocupa a coluna inteira, sem a margem automática do .ds-page', () => {
+    const main = readFileSync(new URL('./kaguya.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    const rule = main.match(/\.kn-main-col:has\(\.ds-page\.ds-fill\)\s*>\s*\.ds-page\s*\{([^}]*)\}/)
+    expect(rule, 'regra de largura total da página fill').not.toBeNull()
+    expect(rule![1]).toMatch(/width:\s*100%/)
+    expect(rule![1]).toMatch(/margin:\s*0\s*;/)
+  })
+})
