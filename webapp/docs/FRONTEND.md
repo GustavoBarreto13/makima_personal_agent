@@ -248,7 +248,13 @@ escopo dinâmico `kaguya:*` — o lint aceita o prefixo).
 - **Ver como: Lista · Quadro · Matriz** (`components/ViewSwitch.tsx`): o mesmo controle, no topo à esquerda, em toda lista e todo grupo. A **Matriz**
   (`screens/Eisenhower.tsx`) usa a mesma barra da Lista (busca, Filtros, Ordenar e inverter, resumo "N de M" com Limpar filtros; sem "Agrupar",
   os quadrantes já agrupam; ordenação padrão por prioridade) com os controles guardados por escopo (`kaguya:matrix:list:12`). A Matriz geral
-  (`#eisenhower`, menu "Planejar") segue existindo, com o filtro Lista no menu de Filtros. As três têm também o **Filtro avançado**: o mesmo construtor completo do "Filtrar" do Quadro (`BoardFilterModal`), aplicado no servidor por `POST /api/tasks/eisenhower/filter` e somado aos Filtros rápidos. As três abrem a tarefa centralizada.
+  (`#eisenhower`, menu "Planejar") segue existindo, com o filtro Lista no menu de Filtros. As três usam o **mesmo modal de Filtros** da Lista, do Quadro e do Calendário (veja abaixo). As três abrem a tarefa centralizada.
+- **Modal de Filtros único** (`components/TaskFilterModal.tsx` + `lib/useTaskFilter.tsx`): o mesmo na Lista, no Quadro (lista e grupo), na Matriz (geral, de lista, de
+  grupo) e no Calendário. **Filtros rápidos** (instantâneos, no cliente, com chips): Tipo (Tarefa/Evento/Aniversário), Lista e Grupo com "só estas / todas menos
+  estas", prioridade, vencimento, etiquetas, Status GTD, Onde @ e interruptores (recorrentes, bloqueadas, notas, subtarefas, no Meu Dia). Mais as **regras
+  avançadas (E/OU)** no fim do modal (o construtor completo das smart-lists; o servidor devolve os ids por `POST /api/tasks/filter-ids`); os dois se somam e as
+  regras aparecem na barra como "Regras · N". Telas de uma lista só não têm Lista nem Grupo; o quadro de uma lista guarda regras como View. Os filtros ficam
+  guardados por tela. No **Calendário** o botão "Filtros" (barra) vale só para o que é da Kaguya; Google e os outros agentes não são filtrados.
 - **Lista no estilo TickTick**: 3 painéis (menu | lista | detalhe), adicionar no topo com chips ao vivo, subtarefas recolhíveis,
   seleção (Ctrl/Shift + clique) com barra de ação em massa e Desfazer, teclado (↑↓ Espaço Enter 0–3 T A Delete, **Alt+setas** para
   reordenar/aninhar), arrastar pela alça (antes/depois/dentro), concluídas recolhidas no fim, ordenar/agrupar/filtrar por tela.

@@ -185,6 +185,8 @@
 .kn-legacy .cal-iconbtn svg { width: 17px; height: 17px; }
 .kn-legacy .cal-today { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink-2); font-family: var(--sans); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all .12s; }
 .kn-legacy .cal-today:hover { border-color: var(--ink-4); color: var(--ink); }
+.kn-legacy .cal-filter { display: inline-flex; align-items: center; gap: 6px; }
+.kn-legacy .cal-filter.on { border-color: var(--kg); background: var(--kg-tint); color: var(--kg-deep); }
 .kn-legacy .cal-spacer { flex: 1; }
 .kn-legacy .cal-seg { display: flex; padding: 3px; gap: 2px; background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; }
 .kn-legacy .cal-seg button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 13px; border: none; background: transparent; border-radius: 7px; font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--ink-3); cursor: pointer; transition: all .13s; }

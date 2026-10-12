@@ -2,9 +2,9 @@
 // tela (useCollection) e as regras avançadas (E/OU), busca no servidor os ids que as regras aceitam e devolve a lista já filtrada,
 // o contador de filtros ativos e o modal pronto. Cada tela só decide ONDE pôr o botão e o que fazer com `c.result`.
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from '../../../design'
-import type { CollectionSchema } from '../../../design/core/collection'
+import { filterItems, type CollectionSchema } from '../../../design/core/collection'
 import { useCollection, type UseCollection } from '../../../design/headless/useCollection'
 import { kaguyaApi } from '../api'
 import { TaskFilterModal } from '../components/TaskFilterModal'
@@ -37,6 +37,8 @@ export interface TaskFilter {
   /** Regras avançadas em vigor (ou nada). */
   rules: FilterRules | null
   clearRules: () => void
+  /** Aplica os filtros em vigor (rápidos + regras) a outra lista de tarefas, sem busca nem ordenação. */
+  apply: (list: Task[]) => Task[]
   /** Filtros rápidos ativos (sem a busca) + 1 se há regras avançadas. */
   activeCount: number
   open: () => void
@@ -80,9 +82,13 @@ export function useTaskFilter({ scope, tasks, showProject = false, showGroup = f
   )
   const c = useCollection(schema, pool, { today: k.today })
   const clearAll = () => { c.clearAll(); setRules(null) }
+  const apply = useCallback(
+    (list: Task[]) => filterItems(schema, { ...c.state, q: '' }, ids ? list.filter((t) => { const id = idOf(t); return id != null && ids.has(id) }) : list, k.today),
+    [schema, c.state, ids, k.today], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   return {
-    schema, c, rules, clearRules: () => setRules(null),
+    schema, c, rules, clearRules: () => setRules(null), apply,
     activeCount: c.chips.filter((x) => x.facetId !== 'q').length + (rules ? 1 : 0),
     open: () => setOpen(true),
     clearAll,

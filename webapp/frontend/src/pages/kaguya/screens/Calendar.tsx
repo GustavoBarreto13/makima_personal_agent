@@ -16,9 +16,11 @@ import {
   gcalToEvent, hubToEvent, isGcalId, isoWeek, localISO, shiftRef, taskToEvent, visibleInSpace, visibleRange, windowFor, workBand, type CalView, type GcalRaw,
 } from '../lib/calendar'
 import { useLoad } from '../lib/useLoad'
+import { useTaskFilter } from '../lib/useTaskFilter'
 import type { CalEvent, Calendar, Task } from '../types'
 
 const VIEW_KEY = 'kaguya-next:calendar-view'
+const NO_TASKS: Task[] = []
 const reason = (e: unknown, fallback: string) => (e instanceof Error && e.message && !/^HTTP \d+$/.test(e.message) ? e.message : fallback)
 
 function readView(): CalView {
@@ -53,16 +55,20 @@ export function Calendar() {
   const undatedAll = useLoad(() => kaguyaApi.viewTasks('all', k.space).catch(() => [] as Task[]), [k.rev, k.space])
 
   const cals: Calendar[] = localCals ?? (sources.state.status === 'ok' ? sources.state.data : [])
-  const taskList: Task[] = tasks.state.status === 'ok' ? tasks.state.data : []
+  const taskList: Task[] = useMemo(() => (tasks.state.status === 'ok' ? tasks.state.data : NO_TASKS), [tasks.state])
+  // O mesmo modal de Filtros do resto da Kaguya. Vale só para o que é da Kaguya (tarefas, eventos e aniversários dela):
+  // o Google e os itens dos outros agentes seguem como estão.
+  const f = useTaskFilter({ scope: 'calendar', tasks: taskList, showProject: true, showGroup: true })
+  const filteredTasks = useMemo(() => f.apply(taskList), [f.apply, taskList]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const events = useMemo(() => {
-    const own = taskList.flatMap((t) => { const e = taskToEvent(t); return e ? [e] : [] })
+    const own = filteredTasks.flatMap((t) => { const e = taskToEvent(t); return e ? [e] : [] })
     const hubEv = (hub.state.status === 'ok' ? hub.state.data : []).map(hubToEvent)
     // O filtro de visibilidade dos calendários Google é local: ligar/desligar é instantâneo e reversível, sem nova consulta.
     const visibleGcal = new Set(cals.filter((c) => isGcalId(c.id) && c.visible !== false).map((c) => c.id))
     const google = (gcal.state.status === 'ok' ? gcal.state.data : []).map(gcalToEvent).filter((e) => visibleGcal.has(e.cal))
     return [...own, ...hubEv, ...google].filter((e) => visibleInSpace(e, k.space, cals))
-  }, [taskList, hub.state, gcal.state, cals, k.space])
+  }, [filteredTasks, hub.state, gcal.state, cals, k.space])
 
   const bands = useMemo(() => {
     const prefs = sched.state.status === 'ok' ? sched.state.data : null
@@ -70,8 +76,8 @@ export function Calendar() {
     return Object.fromEntries(win.days.map((d) => [d, workBand(d, prefs, ov)]))
   }, [win.days, sched.state, overrides.state])
 
-  const unscheduled = useMemo(() => taskList.filter((t) => t.due_date && win.days.includes(t.due_date) && !t.start_at && !t.due_time && !t.completed_at), [taskList, win.days])
-  const undated = useMemo(() => (undatedAll.state.status === 'ok' ? undatedAll.state.data.filter((t) => !t.due_date && !t.completed_at && !t.parent_id).slice(0, 8) : []), [undatedAll.state])
+  const unscheduled = useMemo(() => filteredTasks.filter((t) => t.due_date && win.days.includes(t.due_date) && !t.start_at && !t.due_time && !t.completed_at), [filteredTasks, win.days])
+  const undated = useMemo(() => (undatedAll.state.status === 'ok' ? f.apply(undatedAll.state.data.filter((t) => !t.due_date && !t.completed_at && !t.parent_id)).slice(0, 8) : []), [undatedAll.state, f.apply]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const setView = (v: CalView) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v) } catch { /* só não lembra */ } }
   const refresh = useCallback(() => { setPopover(null); setMenu(null); setKeyed((n) => n + 1); k.reload() }, [k])
@@ -168,6 +174,10 @@ export function Calendar() {
           <button type="button" className="cal-today" onClick={() => setRef(k.today)}>Hoje</button>
           <button type="button" className="cal-iconbtn" aria-label="Próximo período" title="Próximo período" onClick={() => setRef(shiftRef(view, ref, 1))}><Icon name="right" size={15} /></button>
         </div>
+        <button type="button" className={`cal-today cal-filter${f.activeCount > 0 ? ' on' : ''}`} aria-pressed={f.activeCount > 0} title="Filtrar o que é da Kaguya (tarefas, eventos e aniversários)" onClick={f.open}>
+          <Icon name="filter" size={14} />{f.activeCount > 0 ? `Filtros · ${f.activeCount}` : 'Filtros'}
+        </button>
+        {f.activeCount > 0 && <button type="button" className="cal-iconbtn" aria-label="Limpar os filtros do calendário" title="Limpar os filtros" onClick={f.clearAll}><Icon name="close" size={15} /></button>}
         {view !== 'month' && (
           <button type="button" className={`cal-iconbtn${k.prefs.calHideSleep ? ' on' : ''}`} aria-pressed={k.prefs.calHideSleep} title={k.prefs.calHideSleep ? 'Mostrar as 24 horas' : 'Ocultar o período de sono'} aria-label={k.prefs.calHideSleep ? 'Mostrar as 24 horas' : 'Ocultar o período de sono'} onClick={() => k.setPrefs({ calHideSleep: !k.prefs.calHideSleep })}>
             <Icon name="moon" size={15} />
@@ -209,6 +219,7 @@ export function Calendar() {
         />
       </div>
 
+      {f.modal}
       {popover && <EventPopover ev={popover.ev} cals={cals} pos={popover.pos} onClose={() => setPopover(null)} onRefresh={refresh} />}
       {menu && <EventMenu ev={menu.ev} cals={cals} pos={menu.pos} onClose={() => setMenu(null)} onRefresh={refresh} onOpen={() => { setPopover(menu); setMenu(null) }} />}
      </div>

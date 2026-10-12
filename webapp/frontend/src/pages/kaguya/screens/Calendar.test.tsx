@@ -14,7 +14,7 @@ import { title } from './Calendar'
 
 const api = vi.hoisted(() => ({
   sidebar: vi.fn(), viewCounts: vi.fn(), viewTasks: vi.fn(), calendar: vi.fn(), calendarAggregate: vi.fn(), calendarEvents: vi.fn(), calendarSources: vi.fn(),
-  gcalStatus: vi.fn(), setCalendarPref: vi.fn(), updateTask: vi.fn(), setTimeBlock: vi.fn(), clearTimeBlock: vi.fn(), getTask: vi.fn(), bulk: vi.fn(), remove: vi.fn(),
+  gcalStatus: vi.fn(), taskFilterIds: vi.fn(), setCalendarPref: vi.fn(), updateTask: vi.fn(), setTimeBlock: vi.fn(), clearTimeBlock: vi.fn(), getTask: vi.fn(), bulk: vi.fn(), remove: vi.fn(),
   createCalendarEvent: vi.fn(), deleteCalendarEvent: vi.fn(), updateCalendarEvent: vi.fn(), duplicateTask: vi.fn(), activity: vi.fn(), dependencies: vi.fn(),
   focus: { active: vi.fn() },
   schedule: { get: vi.fn(), overrides: vi.fn() },
@@ -287,5 +287,80 @@ describe('Calendário — período de sono e arraste', () => {
     expect(id).toBe(10)
     expect(body.start_at.slice(0, 16)).toBe(`${TODAY}T11:00`)
     expect(body.end_at.slice(0, 16)).toBe(`${TODAY}T12:00`)
+  })
+})
+
+describe('Calendário — Filtros (só o que é da Kaguya)', () => {
+  const filters = async (user: ReturnType<typeof userEvent.setup>) => {
+    await screen.findByRole('button', { name: /Reunião/ })
+    await user.click(screen.getByRole('button', { name: /^Filtros/ }))
+    return screen.findByRole('dialog', { name: 'Filtros' })
+  }
+  beforeEach(() => {
+    api.calendar.mockResolvedValue([
+      task({ id: 10, title: 'Reunião', type: 'event', due_date: TODAY, due_time: '10:00', start_at: `${TODAY}T10:00:00-03:00`, end_at: `${TODAY}T11:00:00-03:00` }),
+      task({ id: 11, title: 'Pagar luz', type: 'task', due_date: TODAY }),
+      task({ id: 12, title: 'Aniversário da Ana', type: 'birthday', due_date: addDaysISO(TODAY, 1) }),
+    ])
+  })
+
+  it('tem o botão “Filtros” na barra e abre o mesmo modal das outras telas', async () => {
+    api.sidebar.mockResolvedValue({ groups: [], projects: [
+      { id: 1, name: 'Casa', group_id: null, color: null, icon: null, is_inbox: false, position: 1, has_board: false, open_count: 0, context: 'personal' },
+      { id: 2, name: 'Banco', group_id: null, color: null, icon: null, is_inbox: false, position: 2, has_board: false, open_count: 0, context: 'personal' },
+    ], filters: [] })
+    const user = await open()
+    const dlg = await filters(user)
+    for (const g of ['Tipo', 'Prioridade', 'Vencimento']) expect(within(dlg).getByText(g), g).toBeTruthy()
+    expect(within(dlg).getByRole('group', { name: 'Modo: Lista' })).toBeTruthy() // o calendário cruza listas
+    expect(within(dlg).getByRole('heading', { name: 'Regras avançadas (E/OU)' })).toBeTruthy()
+  })
+
+  it('filtra por Tipo e o contador aparece no botão; Google e outros agentes seguem aparecendo', async () => {
+    const user = await open()
+    const dlg = await filters(user)
+    await user.click(within(dlg).getByRole('button', { name: 'Aniversário' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Reunião/ })).toBeNull())
+    expect(screen.queryAllByRole('button', { name: 'Pagar luz' })).toHaveLength(0)
+    // O que não é da Kaguya não é filtrado:
+    expect(screen.getByRole('button', { name: /Dentista/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Fatura do cartão' })).toBeTruthy()
+    await user.click(within(dlg).getByRole('button', { name: /^Ver/ }))
+    expect(screen.getByRole('button', { name: 'Filtros · 1' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Limpar os filtros do calendário' }))
+    expect(await screen.findByRole('button', { name: /Reunião/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Filtros' })).toBeTruthy()
+  })
+
+  it('“todas menos estas” tira uma lista do calendário', async () => {
+    api.sidebar.mockResolvedValue({ groups: [], projects: [
+      { id: 1, name: 'Casa', group_id: null, color: null, icon: null, is_inbox: false, position: 1, has_board: false, open_count: 0, context: 'personal' },
+      { id: 2, name: 'Banco', group_id: null, color: null, icon: null, is_inbox: false, position: 2, has_board: false, open_count: 0, context: 'personal' },
+    ], filters: [] })
+    api.calendar.mockResolvedValue([
+      task({ id: 10, title: 'Reunião', project_id: 1, due_date: TODAY, due_time: '10:00', start_at: `${TODAY}T10:00:00-03:00`, end_at: `${TODAY}T11:00:00-03:00` }),
+      task({ id: 11, title: 'Pagar luz', project_id: 2, due_date: TODAY }),
+    ])
+    const user = await open()
+    const dlg = await filters(user)
+    await user.click(within(dlg).getByRole('button', { name: 'Todas menos estas' }))
+    await user.click(within(dlg).getByRole('button', { name: 'Banco' }))
+    await waitFor(() => expect(screen.queryAllByRole('button', { name: 'Pagar luz' })).toHaveLength(0))
+    expect(screen.getByRole('button', { name: /Reunião/ })).toBeTruthy()
+  })
+
+  it('as regras avançadas usam os ids do servidor (a série de uma recorrente conta pelo id da tarefa viva)', async () => {
+    api.taskFilterIds.mockResolvedValue({ status: 'ok', ids: [12] })
+    api.calendar.mockResolvedValue([
+      task({ id: 10, title: 'Reunião', due_date: TODAY, due_time: '10:00', start_at: `${TODAY}T10:00:00-03:00`, end_at: `${TODAY}T11:00:00-03:00` }),
+      { ...task({ id: 0, title: 'Ligar toda semana', due_date: addDaysISO(TODAY, 1) }), id: null as unknown as number, is_virtual: true, series_task_id: 12 },
+    ])
+    const user = await open()
+    const dlg = await filters(user)
+    await user.click(within(dlg).getByRole('button', { name: 'Adicionar condição' }))
+    await user.click(within(dlg).getByRole('button', { name: 'Aplicar regras' }))
+    await waitFor(() => expect(api.taskFilterIds).toHaveBeenCalledWith({ combinator: 'and', conditions: [{ field: 'tag', op: 'has', value: '' }] }, undefined))
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Reunião/ })).toBeNull())
+    expect(screen.getAllByRole('button', { name: /Ligar toda semana/ }).length).toBeGreaterThan(0)
   })
 })
