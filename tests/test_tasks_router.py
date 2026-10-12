@@ -394,17 +394,19 @@ def test_id_nao_numerico_nao_casa_com_task_id():
 
 
 def test_rotas_literais_de_um_segmento_nao_sao_engolidas_por_task_id():
-    """Para cada PATCH/PUT/DELETE literal de um segmento, a primeira rota que casa é a própria."""
+    """Para cada rota literal de um segmento (/schedule, /bulk…), a primeira rota do router que casa é a própria."""
     from starlette.routing import Match
 
-    routes = [r for r in app.routes if getattr(r, "path", "").startswith(_BASE)]
+    from webapp.backend.routers.tasks import router
+
+    routes = [r for r in router.routes if hasattr(r, "methods")]
+    checadas = 0
     for r in routes:
-        rest = r.path[len(_BASE):]
-        if rest.count("/") != 1 or "{" in rest:
-            continue  # só literais de um segmento (/schedule, /bulk…)
-        for method in r.methods or set():
-            if method not in {"PATCH", "PUT", "DELETE", "GET", "POST"}:
-                continue
+        if r.path.count("/") != 1 or "{" in r.path:
+            continue  # só literais de um segmento
+        for method in r.methods:
             scope = {"type": "http", "path": r.path, "method": method, "root_path": "", "query_string": b"", "headers": []}
-            first = next((x for x in routes if method in (x.methods or set()) and x.matches(scope)[0] == Match.FULL), None)
+            first = next((x for x in routes if method in x.methods and x.matches(scope)[0] == Match.FULL), None)
             assert first is r, f"{method} {r.path} é respondida por {first.path if first else None}"
+            checadas += 1
+    assert checadas > 10  # o guarda não pode ficar vazio de novo
