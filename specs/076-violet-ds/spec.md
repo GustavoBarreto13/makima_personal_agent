@@ -1,6 +1,6 @@
 # Spec 076 — Violet no Design System
 
-**Status:** entregue (backend, front, Hermes e documentação). Falta no VPS: conferir `VIOLET_GEMINI_MODEL`, rodar a limpeza de páginas vazias e, opcional, o backfill de distorções.
+**Status:** entregue e no ar (12/out/2026): deploy no `master`, limpeza de páginas vazias e backfill de distorções aplicados no VPS.
 **Branch:** `076-violet-ds` (a partir da `075-kaguya-ds`, que ainda não foi integrada ao `master` e traz o DS
 que esta spec usa).
 **Plano de execução:** fases com um commit cada, como nas specs 072–075, mais uma revisão final com a
