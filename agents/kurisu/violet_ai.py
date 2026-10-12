@@ -56,12 +56,20 @@ def acumular_usage(acc: Optional[dict], resp) -> None:
 
 # ─── Gemini ────────────────────────────────────────────────────────────────────
 
+_CLIENT = None
+
+
 def _client():
-    from google import genai  # noqa: PLC0415 — import lazy
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise VioletAIError("GEMINI_API_KEY não configurada")
-    return genai.Client(api_key=api_key)
+    """Cliente único e vivo: um ``genai.Client`` temporário é coletado (e fecha o httpx) enquanto
+    ``.models`` ainda está em uso — "Cannot send a request, as the client has been closed"."""
+    global _CLIENT
+    if _CLIENT is None:
+        from google import genai  # noqa: PLC0415 — import lazy
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise VioletAIError("GEMINI_API_KEY não configurada")
+        _CLIENT = genai.Client(api_key=api_key)
+    return _CLIENT
 
 
 def gemini_json(prompt: str, schema: dict, usage: Optional[dict] = None, temperature: float | None = None) -> dict:
