@@ -1,146 +1,98 @@
-// Tela Collection — exibe bullets de um tipo específico (highlights, dreams, ideas, wisdom, notes)
-// ou os sonhos registrados no campo dream das pages, em grid com accent bar por tipo.
+// Coleções: destaques, ideias, sabedoria, notas e sonhos (os momentos daquele tipo, de todos os dias), e a página
+// de uma referência a outro agente (todos os momentos que citam aquele filme, livro, tarefa…) com o atalho para
+// abrir o item no agente dono — o começo dos backlinks.
 
-import { useEffect, useState } from 'react'
-import { violetApi } from '../../../lib/api'
-import type { CollectionItem, DreamItem } from '../types'
-import { RichText } from '../ui/RichText'
+import { useMemo, useState } from 'react'
+import { Button, CollectionBody, CollectionMeta, CollectionToolbar, EmptyState, ErrorState, FilterSheet, Icon, LoadingState, Page } from '../../../design'
+import { fmtRelative } from '../../../design/core/format'
+import { useCollection } from '../../../design/headless/useCollection'
+import { DayBulletsList } from '../components/DayBulletsList'
+import { RichText } from '../components/RichText'
+import { useViolet } from '../context'
+import { fontClass, kindMeta } from '../lib/kinds'
+import { AGENT_META, refDeepLink, refIcon } from '../lib/refs'
+import { makeBulletsSchema } from '../lib/schemas'
+import { useLoad } from '../lib/useLoad'
+import { violetApi } from '../violetApi'
+import type { BulletKind, CollectionItem } from '../types'
+import { MonthHeader } from './Archive'
 
-interface CollectionProps {
-  // kind usa os nomes das views da sidebar (plural para combinar com o switch de rotas)
-  kind: 'dreams' | 'highlights' | 'ideas' | 'wisdom' | 'notes'
-  navigate: (view: string, param?: string | null) => void
+const NONE: CollectionItem[] = []
+
+export function Collection() {
+  const v = useViolet()
+  if (v.route.ref) return <RefView {...v.route.ref} />
+  return <KindCollection kind={v.route.kind ?? 'highlight'} />
 }
 
-// Mapeamento: view name → kind do backend + cor da accent bar + label
-const KIND_MAP: Record<string, { backendKind: string; barColor: string; label: string; italic: boolean }> = {
-  highlights: { backendKind: 'highlight', barColor: 'var(--garnet)', label: 'Destaques', italic: false },
-  dreams:     { backendKind: 'dream',     barColor: 'var(--gold)',   label: 'Sonhos',    italic: true  },
-  ideas:      { backendKind: 'idea',      barColor: 'var(--amber)',  label: 'Ideias',    italic: false },
-  wisdom:     { backendKind: 'wisdom',    barColor: 'var(--violet-c)', label: 'Sabedoria', italic: true },
-  notes:      { backendKind: 'note',      barColor: 'var(--ink-3)', label: 'Notas',     italic: false },
-}
+function KindCollection({ kind }: { kind: BulletKind | 'dreams' }) {
+  const v = useViolet()
+  // "Sonhos" junta o campo sonho dos dias com os momentos marcados como Sonho.
+  const { state, retry } = useLoad<CollectionItem[]>(async () => {
+    if (kind !== 'dreams') return violetApi.collection(kind)
+    const [pages, bullets] = await Promise.all([violetApi.dreams(), violetApi.collection('dream')])
+    return [
+      ...pages.map((d) => ({ id: -d.page_id, kind: 'dream' as const, content: d.dream, favorite: false, created_at: null, date: d.date, font: d.font, entry_num: d.entry_num })),
+      ...bullets,
+    ]
+  }, [kind, v.rev])
+  const items = state.status === 'ok' ? state.data : NONE
+  const schema = useMemo(() => makeBulletsSchema(), [])
+  const c = useCollection(schema, items, { today: v.today })
+  const [filters, setFilters] = useState(false)
+  const meta = kind === 'dreams' ? { plural: 'Sonhos', icon: 'dream' as const } : kindMeta(kind)
 
-// Nomes dos meses para formatar a data de origem
-const MONTHS_SHORT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
-
-function fmtDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T12:00:00')
-  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`
-}
-
-// Componente de card de um bullet de coleção (highlight/dream/idea/wisdom/note)
-function BulletCard({ item, barColor, italic, navigate }: {
-  item: CollectionItem
-  barColor: string
-  italic: boolean
-  navigate: (view: string, param?: string | null) => void
-}) {
   return (
-    <div className="col-card" style={{ '--bar': barColor } as React.CSSProperties}>
-      <div className="col-bar" />
-      <div className="col-content">
-        <p className="col-text" style={{ fontFamily: italic ? 'var(--serif)' : undefined, fontStyle: italic ? 'italic' : undefined }}>
-          <RichText content={item.content} />
-        </p>
-        {/* Link para a entry de origem */}
-        <button
-          className="col-origin"
-          onClick={() => navigate('write', item.date)}
-        >
-          #{item.entry_num} · {fmtDate(item.date)}
-        </button>
-      </div>
-    </div>
+    <Page wide>
+      <CollectionToolbar schema={schema} c={c} onOpenFilters={() => setFilters(true)} searchPlaceholder={`Buscar em ${meta.plural.toLowerCase()}`} />
+      <CollectionMeta c={c} noun={['item', 'itens']} />
+      <CollectionBody
+        c={c}
+        view="grid"
+        gridClass="vl-quotes"
+        renderGroupHeader={(key, count) => <MonthHeader name={key} count={count} noun={['item', 'itens']} />}
+        renderCard={(b) => (
+          <figure key={b.id} className={`vl-quote ${fontClass(b.font)}`} data-kind={b.kind}>
+            <blockquote><RichText text={b.content} /></blockquote>
+            <figcaption>
+              {b.favorite && <Icon name="heart" size={12} />}
+              <button type="button" className="vl-linklike" onClick={() => v.goto({ view: 'write', date: b.date })}>
+                {b.entry_num ? `#${b.entry_num} · ` : ''}{fmtRelative(b.date, v.today)}
+              </button>
+            </figcaption>
+          </figure>
+        )}
+        renderRow={() => null}
+        loading={state.status === 'loading'}
+        error={state.status === 'error'}
+        onRetry={retry}
+        emptyTitle="Nada com esses filtros"
+        firstRun={<EmptyState icon={meta.icon} title={`Nenhum item em ${meta.plural.toLowerCase()}`}
+          hint="No Escrever, escolha o tipo do momento (ou mude depois no menu ⋯)." action={<Button variant="primary" icon="edit" onClick={() => v.goto('write')}>Escrever</Button>} />}
+      />
+      {filters && <FilterSheet schema={schema} c={c} items={items} onClose={() => setFilters(false)} noun={['item', 'itens']} />}
+    </Page>
   )
 }
 
-// Card para um sonho registrado no campo dream da page (texto livre)
-function DreamCard({ item, navigate }: {
-  item: DreamItem
-  navigate: (view: string, param?: string | null) => void
-}) {
+function RefView({ agent, entityType, entityId }: { agent: string; entityType: string; entityId: string }) {
+  const v = useViolet()
+  const { state, retry } = useLoad(() => violetApi.filterRef(agent, entityType, entityId), [agent, entityType, entityId, v.rev])
+  const refs = useLoad(() => violetApi.refs({ agent }), [agent])
+  const label = refs.state.status === 'ok' ? refs.state.data.find((r) => r.entity_type === entityType && r.entity_id === entityId)?.label : undefined
+  const meta = AGENT_META[agent]
   return (
-    <div className="col-card" style={{ '--bar': 'var(--gold)' } as React.CSSProperties}>
-      <div className="col-bar" />
-      <div className="col-content">
-        <p className="col-text" style={{ fontFamily: 'var(--serif)', fontStyle: 'italic' }}>
-          {item.dream}
-        </p>
-        <button
-          className="col-origin"
-          onClick={() => navigate('write', item.date)}
-        >
-          #{item.entry_num} · {fmtDate(item.date)}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-export function Collection({ kind, navigate }: CollectionProps) {
-  const [items, setItems] = useState<(CollectionItem | DreamItem)[]>([])
-  const [loading, setLoading] = useState(true)
-  const cfg = KIND_MAP[kind]
-
-  useEffect(() => {
-    setLoading(true)
-    setItems([])
-
-    // Sonhos da tela "dreams" são os campos dream das pages, não bullets kind='dream'
-    const promise = kind === 'dreams'
-      ? violetApi.dreams()
-      : violetApi.collection(cfg.backendKind)
-
-    promise.then((list: unknown) => {
-      setItems(list as (CollectionItem | DreamItem)[])
-    }).catch(() => {
-      setItems([])
-    }).finally(() => setLoading(false))
-  }, [kind])
-
-  if (loading) {
-    return (
-      <div className="page" style={{ paddingTop: 40 }}>
-        <div style={{ color: 'var(--ink-4)', fontFamily: 'var(--mono)', fontSize: 12, textAlign: 'center', paddingTop: 60 }}>
-          carregando...
-        </div>
-      </div>
-    )
-  }
-
-  if (!items.length) {
-    return (
-      <div className="page" style={{ paddingTop: 40, textAlign: 'center' }}>
-        <div style={{ marginTop: 60 }}>
-          <div style={{ fontFamily: 'var(--serif)', fontSize: 22, color: 'var(--ink-2)', marginBottom: 10 }}>
-            Nenhum item ainda
-          </div>
-          <div style={{ color: 'var(--ink-4)', fontSize: 13 }}>
-            {cfg.label} aparecerão aqui conforme você escreve.
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="page" style={{ paddingTop: 32 }}>
-      <div className="col-header">
-        <span className="col-title">{cfg.label}</span>
-        <span className="col-count-badge">{items.length}</span>
-      </div>
-
-      <div className="col-grid">
-        {kind === 'dreams'
-          ? (items as DreamItem[]).map(item => (
-              <DreamCard key={item.page_id} item={item} navigate={navigate} />
-            ))
-          : (items as CollectionItem[]).map(item => (
-              <BulletCard key={item.id} item={item} barColor={cfg.barColor} italic={cfg.italic} navigate={navigate} />
-            ))
-        }
-      </div>
-    </div>
+    <Page>
+      <button type="button" className="ds-back-l" onClick={() => window.history.back()}><Icon name="left" size={16} /> Voltar</button>
+      <header className="vl-personhead">
+        <span className="vl-hash vl-hash-lg" data-agent={agent}><Icon name={refIcon(agent, entityType)} size={24} /></span>
+        <div><h2>{label ?? 'Item citado'}</h2><p className="vl-muted">{meta ? `${meta.label} · ${meta.hint}` : agent}</p></div>
+        <span className="vl-spacer" />
+        <Button icon="forward" onClick={() => v.openLink(refDeepLink(agent, entityType, entityId))}>Abrir na {meta?.label ?? agent}</Button>
+      </header>
+      {state.status === 'loading' && <LoadingState count={3} />}
+      {state.status === 'error' && <ErrorState onRetry={retry} />}
+      {state.status === 'ok' && (state.data.length ? <DayBulletsList days={state.data} /> : <EmptyState icon="link" title="Nenhum momento cita isso ainda" />)}
+    </Page>
   )
 }

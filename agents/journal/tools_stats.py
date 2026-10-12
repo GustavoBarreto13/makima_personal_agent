@@ -199,7 +199,7 @@ def get_stats_payload(year: int, month: int | None = None, weekly_target: float 
            ORDER BY b.favorite DESC, p.date DESC LIMIT 12""",
         params,
     )
-    moments = [{"id": r["id"], "title": markup.plain_text(r["content"])[:140], "subtitle": f"{r['date']:%d/%m/%Y}"}
+    moments = [{"id": r["id"], "title": markup.plain_text(r["content"])[:140], "subtitle": f"{r['date']:%d/%m/%Y}", "date": r["date"].isoformat()}
                for r in moments_rows]
 
     label = f"{MESES[month - 1]} de {year}" if month else str(year)

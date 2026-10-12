@@ -105,6 +105,9 @@ export interface BackendBullet {
   id: number
   content: string
   date: string  // "YYYY-MM-DD"
+  /** Spec 076: o texto sem a sintaxe dos tokens e o link para o dia na Violet. */
+  texto?: string
+  deep_link?: string
 }
 
 /** Um livro como o backend retorna. */
@@ -160,6 +163,8 @@ export interface DesignMention {
   date: string
   time: string
   text: string
+  /** Link para o dia no diário da Violet (spec 076). */
+  link?: string
 }
 
 /** Um livro no formato do design handoff. */

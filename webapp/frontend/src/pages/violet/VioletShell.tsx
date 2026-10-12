@@ -1,324 +1,198 @@
-// Shell principal do Violet · Diário — gerencia sidebar, topbar e roteamento interno.
-// Espelha o padrão do FrierenShell: estado interno {view, param} no lugar de React Router.
-// Importa violet.css que contém todos os tokens OKLCH isolados em .vl-app.
+// Violet · Diário — shell sobre o AppShell do Design System (spec 076), estilo de arte "Papel de carta".
+// Guarda a rota por hash (/journal#dia/2026-10-12, #carta/7, #refletir…), as preferências e as ações comuns
+// (navegar, abrir um link de outro agente, registrar uma emoção), que as telas leem pelo contexto.
+// Celular: barra inferior Escrever · Arquivo · Refletir · Mais; o botão flutuante começa um momento novo.
 
-import { useState, useEffect, useRef } from 'react'
-import './violet.css'
-import { violetApi } from '../../lib/api'
-// Helper de data local: evita o bug de UTC onde bullets após 21h ficam no dia seguinte
-import { todayLocalISO } from './dateUtils'
-import type { VioletPrefs, VioletRoute } from './types'
-import { DEFAULT_PREFS } from './types'
-import { Icon } from './ui/Icon'
-import { TweaksPanel } from './TweaksPanel'
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useNavigate } from 'react-router-dom'
+import '../../design'
+import { getAgent } from '../../design/core/agents'
+import { todayISO } from '../../design/core/format'
+import { useHotkeys } from '../../design/headless/useHotkeys'
+import { usePrefs } from '../../design/headless/usePrefs'
+import { AppShell, Button, SegmentedControl, SettingRow, Toggle, type NavGroup } from '../../design'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { AGENT_TABS } from '../../lib/agentTabs'
-
-// Telas
-import { Write } from './screens/Write'
-import { WriteFooter } from './screens/WriteFooter'
-import { JournalScreen } from './screens/Journal'
+import { EmotionForm } from './components/EmotionForm'
+import { FontChoice } from './components/FontPicker'
+import { ScreenBoundary } from './components/ScreenBoundary'
+import { DEFAULT_PREFS, VioletContext, type VioletCtx, type VioletPrefs } from './context'
+import { legacyPrefs } from './lib/legacy'
+import { hashFor, isInternal, navIdFor, routeFromHash, type CollectionKind, type Route, type ViewId } from './lib/routes'
+import { Archive } from './screens/Archive'
 import { Collection } from './screens/Collection'
-import { Tags } from './screens/Tags'
-import { People } from './screens/People'
+import { Emotions } from './screens/Emotions'
 import { Insights } from './screens/Insights'
+import { Letters } from './screens/Letters'
+import { People, Tags } from './screens/People'
 import { Reflect } from './screens/Reflect'
 import { Tutor } from './screens/Tutor'
+import { Values } from './screens/Values'
+import { Write } from './screens/Write'
+import './violet.css'
 
-// ── Paletas de acento (5 vars CSS por tema) ──────────────────────────────────
-const ACCENT_PALETTES: Record<string, Record<string, string>> = {
-  sapphire: {
-    '--accent':        'oklch(0.55 0.135 250)',
-    '--accent-deep':   'oklch(0.45 0.135 252)',
-    '--accent-bright': 'oklch(0.70 0.130 246)',
-    '--accent-tint':   'oklch(0.55 0.135 250 / 0.10)',
-    '--accent-tint-2': 'oklch(0.55 0.135 250 / 0.16)',
-  },
-  gold: {
-    '--accent':        'oklch(0.625 0.105 78)',
-    '--accent-deep':   'oklch(0.585 0.098 72)',
-    '--accent-bright': 'oklch(0.70 0.105 78)',
-    '--accent-tint':   'oklch(0.625 0.105 78 / 0.10)',
-    '--accent-tint-2': 'oklch(0.625 0.105 78 / 0.16)',
-  },
-  emerald: {
-    '--accent':        'oklch(0.585 0.105 165)',
-    '--accent-deep':   'oklch(0.52 0.105 165)',
-    '--accent-bright': 'oklch(0.65 0.105 165)',
-    '--accent-tint':   'oklch(0.585 0.105 165 / 0.10)',
-    '--accent-tint-2': 'oklch(0.585 0.105 165 / 0.16)',
-  },
-  garnet: {
-    '--accent':        'oklch(0.535 0.165 18)',
-    '--accent-deep':   'oklch(0.45 0.165 18)',
-    '--accent-bright': 'oklch(0.60 0.165 18)',
-    '--accent-tint':   'oklch(0.535 0.165 18 / 0.10)',
-    '--accent-tint-2': 'oklch(0.535 0.165 18 / 0.16)',
-  },
+const AGENT = getAgent('violet')
+const ART_OPTIONS = [{ value: 'default', label: 'Padrão' }, { value: 'papel', label: 'Papel de carta' }]
+
+const TITLES: Record<ViewId, [string, string]> = {
+  write: ['Escrever', 'O dia de hoje'],
+  archive: ['Arquivo', 'Todos os dias escritos'],
+  reflect: ['Refletir', 'Uns minutos para reler'],
+  insights: ['Insights', 'Seu ano no diário'],
+  letters: ['Cartas', 'Todas as cartas'],
+  emotions: ['Registro emocional', 'O que está acontecendo'],
+  values: ['Valores', 'O que realmente importa'],
+  people: ['Pessoas', 'Quem aparece no diário'],
+  tags: ['Tags', 'Os temas do diário'],
+  collection: ['Coleção', 'Momentos marcados'],
+  tutor: ['Tutor', 'Inglês com a Kurisu'],
 }
-
-// Lê as preferências salvas no localStorage, com fallback para os defaults
-function loadTweaks(): VioletPrefs {
-  try {
-    const raw = localStorage.getItem('vl-tweaks')
-    if (raw) return { ...DEFAULT_PREFS, ...JSON.parse(raw) }
-  } catch { /* ignora JSON malformado */ }
-  return DEFAULT_PREFS
-}
-
-// Aplica os tweaks no elemento .vl-app via atributos e CSS vars
-function applyTweaks(el: HTMLElement, prefs: VioletPrefs) {
-  el.setAttribute('data-theme', prefs.theme)
-
-  const palette = ACCENT_PALETTES[prefs.accent] ?? ACCENT_PALETTES.sapphire
-  for (const [prop, val] of Object.entries(palette)) {
-    el.style.setProperty(prop, val)
-  }
-
-  el.classList.toggle('modo-foco',   prefs.mode === 'focus')
-  el.classList.toggle('modo-amplo',  prefs.mode === 'wide')
-  el.classList.toggle('tipo-tecnica', prefs.typography === 'technical')
+const COLLECTION_TITLES: Record<CollectionKind, string> = {
+  highlight: 'Destaques', idea: 'Ideias', wisdom: 'Sabedoria', note: 'Notas', dream: 'Sonhos', dreams: 'Sonhos',
 }
 
 export function VioletShell() {
   useDocumentTitle(AGENT_TABS.violet.title, AGENT_TABS.violet.icon)
+  const navigate = useNavigate()
+  const today = useMemo(() => todayISO(), [])
+  const [prefs, setPrefs] = usePrefs<VioletPrefs>('violet', useMemo(() => legacyPrefs({ ...DEFAULT_PREFS, art: AGENT.art ?? DEFAULT_PREFS.art }), []))
+  const [route, setRoute] = useState<Route>(() => routeFromHash(window.location.hash, window.location.search))
+  const [rev, setRev] = useState(0)
+  const [emotionFor, setEmotionFor] = useState<string | null>(null)
 
-  const [route, setRoute] = useState<VioletRoute>({ view: 'write', param: null })
-  const [tweaks, setTweaks] = useState<VioletPrefs>(loadTweaks)
-  const [showTweaks, setShowTweaks] = useState(false)
-  const [query, setQuery] = useState('')
-  // Lista de datas das entries para navegação no WriteFooter
-  const [entryDates, setEntryDates] = useState<string[]>([])
-  // Contadores de coleção para a sidebar
-  const [counts, setCounts] = useState<Record<string, number>>({})
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const appRef = useRef<HTMLDivElement>(null)
+  const reload = useCallback(() => setRev((n) => n + 1), [])
 
-  // Aplica tweaks no .vl-app ao montar e a cada mudança
   useEffect(() => {
-    if (appRef.current) applyTweaks(appRef.current, tweaks)
-  }, [tweaks])
-
-  // Carrega datas das entries para navegação
-  useEffect(() => {
-    violetApi.entries().then((list: unknown[]) => {
-      const dates = (list as Array<{ date: string }>).map(e => e.date).reverse()
-      setEntryDates(dates)
-    }).catch(() => {})
+    const on = () => setRoute(routeFromHash(window.location.hash))
+    window.addEventListener('hashchange', on)
+    window.addEventListener('popstate', on)
+    return () => { window.removeEventListener('hashchange', on); window.removeEventListener('popstate', on) }
   }, [])
 
-  // Carrega contadores para a sidebar
-  useEffect(() => {
-    Promise.allSettled([
-      violetApi.collection('highlight'),
-      violetApi.collection('dream'),
-      violetApi.collection('idea'),
-      violetApi.collection('wisdom'),
-      violetApi.collection('note'),
-      violetApi.dreams(),
-      violetApi.mentions('tag'),
-      violetApi.mentions('person'),
-    ]).then(([hl, _dr, id, wi, no, dms, tags, ppl]) => {
-      setCounts({
-        highlights: hl.status === 'fulfilled' ? (hl.value as unknown[]).length : 0,
-        dreams:     dms.status === 'fulfilled' ? (dms.value as unknown[]).length : 0,
-        ideas:      id.status === 'fulfilled' ? (id.value as unknown[]).length : 0,
-        wisdom:     wi.status === 'fulfilled' ? (wi.value as unknown[]).length : 0,
-        notes:      no.status === 'fulfilled' ? (no.value as unknown[]).length : 0,
-        tags:       tags.status === 'fulfilled' ? (tags.value as unknown[]).length : 0,
-        people:     ppl.status === 'fulfilled' ? (ppl.value as unknown[]).length : 0,
-      })
-    })
+  const goto = useCallback((to: Route | ViewId) => {
+    const next: Route = typeof to === 'string' ? { view: to } : to
+    setRoute(next)
+    const hash = `#${hashFor(next)}`
+    if (window.location.hash !== hash) window.history.pushState(window.history.state, '', `${window.location.pathname}${hash}`)
+    window.scrollTo?.({ top: 0 })
   }, [])
 
-  // Navega para uma view, resetando scroll
-  function navigate(view: string, param: string | null = null) {
-    setRoute({ view, param })
-    if (scrollRef.current) scrollRef.current.scrollTop = 0
+  const openLink = useCallback((href: string) => {
+    if (isInternal(href)) {
+      if (href.startsWith('/journal')) { window.location.hash = href.split('#')[1] ?? ''; return }
+      navigate(href)
+    } else window.open(href, '_blank', 'noopener')
+  }, [navigate])
+
+  const openEmotion = useCallback((date?: string) => setEmotionFor(date ?? today), [today])
+
+  /** Novo momento: vai para hoje e abre o editor (o Escrever escuta o evento). */
+  const newMoment = useCallback(() => {
+    if (!(route.view === 'write' && !route.date)) goto('write')
+    window.setTimeout(() => window.dispatchEvent(new CustomEvent('violet:new-moment')), 60)
+  }, [route, goto])
+
+  const ctx = useMemo<VioletCtx>(() => ({ today, route, goto, openLink, rev, reload, prefs, setPrefs, openEmotion }),
+    [today, route, goto, openLink, rev, reload, prefs, setPrefs, openEmotion])
+
+  useHotkeys([
+    { keys: 'l', handler: (e) => { e.preventDefault(); goto({ view: 'letters', newLetter: true }) } },
+    { keys: 'm', handler: (e) => { e.preventDefault(); openEmotion() } },
+  ])
+
+  const nav: NavGroup[] = [
+    {
+      label: 'Diário',
+      items: [
+        { id: 'write', label: 'Escrever', icon: 'edit', key: 'e' },
+        { id: 'archive', label: 'Arquivo', icon: 'archive', key: 'a' },
+        { id: 'reflect', label: 'Refletir', icon: 'insight', key: 'r' },
+        { id: 'insights', label: 'Insights', icon: 'stats', key: 'i' },
+      ],
+    },
+    {
+      label: 'Práticas',
+      items: [
+        { id: 'letters', label: 'Cartas', icon: 'mail', key: 'c' },
+        { id: 'emotions', label: 'Registro emocional', icon: 'pulse', key: 'o' },
+        { id: 'values', label: 'Valores', icon: 'values', key: 'v' },
+        { id: 'tutor', label: 'Tutor', icon: 'school' },
+      ],
+    },
+    {
+      label: 'Coleções',
+      items: [
+        { id: 'people', label: 'Pessoas', icon: 'people', key: 'p' },
+        { id: 'tags', label: 'Tags', icon: 'hash', key: 't' },
+        { id: 'col-highlight', label: 'Destaques', icon: 'highlight' },
+        { id: 'col-dreams', label: 'Sonhos', icon: 'dream' },
+        { id: 'col-idea', label: 'Ideias', icon: 'idea' },
+        { id: 'col-wisdom', label: 'Sabedoria', icon: 'wisdom' },
+        { id: 'col-note', label: 'Notas', icon: 'pin' },
+      ],
+    },
+  ]
+
+  const onNavigate = (id: string) => {
+    if (id.startsWith('col-')) goto({ view: 'collection', kind: id.slice(4) as CollectionKind })
+    else goto(id as ViewId)
   }
 
-  function handleTweaks(t: VioletPrefs) {
-    setTweaks(t)
-    localStorage.setItem('vl-tweaks', JSON.stringify(t))
+  const date = route.view === 'write' ? route.date ?? today : today
+  const SCREENS: Record<ViewId, () => ReactElement> = {
+    write: () => <Write key={date} date={date} />,
+    archive: () => <Archive />, reflect: () => <Reflect />, insights: () => <Insights />, letters: () => <Letters />,
+    emotions: () => <Emotions />, values: () => <Values />, people: () => <People />, tags: () => <Tags />,
+    collection: () => <Collection />, tutor: () => <Tutor />,
   }
-
-  // Índice da entry ativa (para Write + WriteFooter)
-  const entryIdx = route.param
-    ? entryDates.indexOf(route.param)
-    : entryDates.length - 1
-
-  // Renderiza a tela ativa com base na rota
-  function renderView() {
-    switch (route.view) {
-      case 'write':
-        return (
-          <Write
-            date={route.param ?? entryDates[entryDates.length - 1] ?? todayLocalISO()}
-            entryIdx={entryIdx}
-            navigate={navigate}
-          />
-        )
-      case 'journal':
-        return <JournalScreen query={query} navigate={navigate} />
-      case 'reflect':
-        return <Reflect navigate={navigate} />
-      case 'tutor':
-        return <Tutor />
-      case 'insights':
-        // Feature 009: Insights agora recebe navigate para poder abrir dias no Write
-        return <Insights navigate={navigate} />
-      case 'dreams':
-        return <Collection kind="dreams" navigate={navigate} />
-      case 'highlights':
-        return <Collection kind="highlights" navigate={navigate} />
-      case 'ideas':
-        return <Collection kind="ideas" navigate={navigate} />
-      case 'wisdom':
-        return <Collection kind="wisdom" navigate={navigate} />
-      case 'notes':
-        return <Collection kind="notes" navigate={navigate} />
-      case 'tags':
-        return <Tags navigate={navigate} />
-      case 'people':
-        return <People navigate={navigate} />
-      default:
-        return null
-    }
-  }
-
-  // Títulos das views para a topbar
-  const TITLES: Record<string, string> = {
-    write: 'Escrever', journal: 'Arquivo', reflect: 'Refletir',
-    insights: 'Insights', dreams: 'Sonhos', highlights: 'Destaques',
-    ideas: 'Ideias', wisdom: 'Sabedoria', notes: 'Notas', tags: 'Tags', people: 'Pessoas',
-    tutor: 'Tutor',
-  }
+  const [title, subtitle] = TITLES[route.view]
+  const shownTitle = route.view === 'collection' ? (route.ref ? 'Citado no diário' : COLLECTION_TITLES[route.kind ?? 'highlight']) : title
 
   return (
-    <div className="vl-app" ref={appRef}>
-      {/* ── Sidebar ── */}
-      <aside className="vl-side">
-        <div className="side-brand">
-          <div className="brand-mark">
-            <img src="/violet.png" alt="Violet" />
-          </div>
-          <div className="brand-text">
-            <div className="brand-name">Violet</div>
-            <div className="brand-role">Auto Memory Doll</div>
-          </div>
-        </div>
-
-        <button className="side-write-btn" onClick={() => navigate('write')}>
-          <Icon name="write" size={16} />
-          <span>Escrever hoje</span>
-        </button>
-
-        <nav className="side-nav">
-          {/* Grupo 1: navegação principal */}
-          {([
-            { view: 'write',    icon: 'write',      label: 'Escrever' },
-            { view: 'journal',  icon: 'journal',    label: 'Arquivo' },
-            { view: 'reflect',  icon: 'reflect',    label: 'Refletir' },
-            { view: 'insights', icon: 'insights',   label: 'Insights' },
-            { view: 'tutor',    icon: 'graduation', label: 'Tutor' },
-          ] as const).map(item => (
-            <button
-              key={item.view}
-              className={`nav-item ${route.view === item.view ? 'active' : ''}`}
-              onClick={() => navigate(item.view)}
-            >
-              <span className="nav-chip"><Icon name={item.icon} size={15} /></span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-
-          <div className="nav-divider" />
-
-          {/* Grupo 2: coleções com contadores */}
-          {([
-            { view: 'dreams',     icon: 'moon',    label: 'Sonhos',    key: 'dreams' },
-            { view: 'highlights', icon: 'heart',   label: 'Destaques', key: 'highlights' },
-            { view: 'tags',       icon: 'hash',    label: 'Tags',      key: 'tags' },
-            { view: 'people',     icon: 'at',      label: 'Pessoas',   key: 'people' },
-            { view: 'notes',      icon: 'pin',     label: 'Notas',     key: 'notes' },
-            { view: 'wisdom',     icon: 'gem',     label: 'Sabedoria', key: 'wisdom' },
-            { view: 'ideas',      icon: 'bulb',    label: 'Ideias',    key: 'ideas' },
-          ] as const).map(item => (
-            <button
-              key={item.view}
-              className={`nav-item ${route.view === item.view ? 'active' : ''}`}
-              onClick={() => navigate(item.view)}
-            >
-              <span className="nav-chip"><Icon name={item.icon} size={15} /></span>
-              <span>{item.label}</span>
-              {counts[item.key] ? <span className="nav-count">{counts[item.key]}</span> : null}
-            </button>
-          ))}
-        </nav>
-
-        <div className="side-foot">
-          <button className="back-makima" onClick={() => window.location.href = '/'}>
-            <span className="dot" />
-            <span>Voltar à Makima</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* ── Main ── */}
-      <main className="vl-main">
-        <div className="vl-topbar">
-          <span className="topbar-title">{TITLES[route.view] ?? 'Diário'}</span>
-          <span className="topbar-spacer" />
-          {route.view === 'journal' && (
-            <div className="search">
-              <Icon name="search" size={15} />
-              <input
-                placeholder="Buscar entradas..."
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-              />
-            </div>
-          )}
-          <button className="icon-btn" onClick={() => setShowTweaks(true)} title="Personalizar">
-            <Icon name="sliders" size={16} />
-          </button>
-        </div>
-
-        <div className="vl-scroll" ref={scrollRef}>
-          {renderView()}
-        </div>
-
-        {route.view === 'write' && (
-          <WriteFooter
-            entryIdx={entryIdx < 0 ? entryDates.length - 1 : entryIdx}
-            totalEntries={entryDates.length}
-            onNav={(action) => {
-              if (action === 'first')  navigate('write', entryDates[0] ?? null)
-              if (action === 'prev')   navigate('write', entryDates[Math.max(0, (entryIdx < 0 ? entryDates.length - 1 : entryIdx) - 1)] ?? null)
-              if (action === 'next')   navigate('write', entryDates[Math.min(entryDates.length - 1, (entryIdx < 0 ? entryDates.length - 1 : entryIdx) + 1)] ?? null)
-              if (action === 'latest') navigate('write', entryDates[entryDates.length - 1] ?? null)
-              if (action === 'today')  navigate('write', null)
-              if (action === 'list')   navigate('journal')
-            }}
-            // Data atualmente exibida — o picker do calendário abre posicionado nela
-            currentDate={route.param ?? entryDates[entryDates.length - 1] ?? todayLocalISO()}
-            onPickDate={(date) => {
-              // Navega para a data escolhida (cria a entrada sob demanda via get_or_create_page)
-              navigate('write', date)
-              // Recarrega a lista de datas para incluir a nova entrada na navegação ‹ ›.
-              // Sem esse reload, a data recém-criada não aparece em entryDates até F5.
-              violetApi.entries().then((list: unknown[]) => {
-                const dates = (list as Array<{ date: string }>).map(e => e.date).reverse()
-                setEntryDates(dates)
-              }).catch(() => {})
-            }}
-          />
-        )}
-      </main>
-
-      {showTweaks && (
-        <TweaksPanel tweaks={tweaks} onTweaks={handleTweaks} onClose={() => setShowTweaks(false)} />
-      )}
-    </div>
+    <VioletContext.Provider value={ctx}>
+      <AppShell
+        agent={{ id: 'violet', name: AGENT.name, subtitle: 'Diário · Auto Memory Doll', portrait: AGENT.portrait }}
+        nav={nav}
+        active={navIdFor(route)}
+        onNavigate={onNavigate}
+        mobileTabs={['write', 'archive', 'reflect']}
+        primary={{ label: 'Novo momento', icon: 'edit', key: 'n', onClick: newMoment }}
+        title={shownTitle}
+        subtitle={route.view === 'write' && route.date ? 'Um dia do diário' : subtitle}
+        // Busca do topo: abre o Arquivo já buscando no texto inteiro (o Arquivo escuta o evento).
+        search={{ placeholder: 'Buscar no diário…', onSubmit: (q) => { goto('archive'); window.setTimeout(() => window.dispatchEvent(new CustomEvent('violet:search', { detail: q })), 60) } }}
+        onGoAgent={(to) => navigate(to)}
+        art={{ value: prefs.art, options: ART_OPTIONS, onChange: (art) => setPrefs({ art }) }}
+        artValue={prefs.art}
+        commands={[
+          { id: 'violet.today', label: 'Escrever hoje', icon: 'edit', keywords: 'diário hoje momento bullet', run: () => goto('write') },
+          { id: 'violet.letter', label: 'Nova carta', icon: 'mail', keywords: 'carta escrever para', run: () => goto({ view: 'letters', newLetter: true }) },
+          { id: 'violet.emotion', label: 'Registrar emoção', icon: 'pulse', keywords: 'emoção tcc sentimento registro', run: () => openEmotion() },
+          { id: 'violet.weekly', label: 'Revisão da semana', icon: 'weekly-review', keywords: 'semana revisão balanço', run: () => goto({ view: 'reflect', week: today }) },
+          { id: 'violet.values', label: 'Avaliação dos Valores', icon: 'values', keywords: 'valores áreas vida', run: () => goto('values') },
+          { id: 'violet.insights', label: 'Ver insights', icon: 'stats', keywords: 'força estatísticas ano', run: () => goto('insights') },
+        ]}
+        preferences={
+          <>
+            <SettingRow title="Fonte padrão" help="Vale para os dias que ainda não têm fonte. Cada dia (e cada carta) pode trocar na hora.">
+              <FontChoice value={prefs.font} onChange={(font) => setPrefs({ font })} label="Fonte padrão" />
+            </SettingRow>
+            <SettingRow title="Meta de escrita" help="Dias por semana. É a régua da força da escrita — dias de folga dentro da meta não pesam.">
+              <SegmentedControl label="Meta de dias por semana" value={String(prefs.weeklyTarget)} onChange={(x) => setPrefs({ weeklyTarget: Number(x) })}
+                options={['3', '4', '5', '6', '7'].map((n) => ({ value: n, label: n }))} />
+            </SettingRow>
+            <SettingRow title="Modo foco" help="No Escrever, mostra só a data, o sonho e os momentos (sem Conselho, emoções e cartas).">
+              <Toggle label="Modo foco" checked={prefs.focus} onChange={(focus) => setPrefs({ focus })} />
+            </SettingRow>
+            <SettingRow title="Refletir" help="Escolha as seções e os fixados na engrenagem do próprio Refletir.">
+              <Button size="sm" icon="insight" onClick={() => goto('reflect')}>Abrir o Refletir</Button>
+            </SettingRow>
+          </>
+        }
+      >
+        <ScreenBoundary resetKey={hashFor(route)} onHome={() => goto('write')}>{SCREENS[route.view]()}</ScreenBoundary>
+        {emotionFor && <EmotionForm date={emotionFor} onClose={() => setEmotionFor(null)} onSaved={() => reload()} />}
+      </AppShell>
+    </VioletContext.Provider>
   )
 }

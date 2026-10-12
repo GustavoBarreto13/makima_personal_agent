@@ -198,7 +198,9 @@ export function DiaryCard({ data }: DiaryCardProps) {
             ))}
           </div>
           {/* Data e hora da entrada (hora pode ser vazia se o backend não guarda) */}
-          <div className="ds-when">{fmtDayMonth(m.date)}{m.time ? ' · ' + m.time : ''}</div>
+          <div className="ds-when">
+            {m.link ? <a href={m.link}>{fmtDayMonth(m.date)}</a> : fmtDayMonth(m.date)}{m.time ? ' · ' + m.time : ''}
+          </div>
         </div>
       ))}
     </DomCard>

@@ -1,0 +1,110 @@
+/* Estilo de arte "Papel de carta" (Violet): a escrivaninha de uma Auto Memory Doll.
+ * No claro: papel marfim levemente frio, pautado em linhas finíssimas, tinta azul-ardósia, títulos em
+ * serifa (Newsreader, a fonte que a Violet já usava), um brilho safira no canto (os olhos) e um fio de
+ * ouro (os cabelos) do outro lado. Superfícies quase sólidas — é papel, não vidro. No escuro: "noite de
+ * tinta" — as superfícies escuras do tema com o mesmo véu safira e o ouro reduzido a uma brasa.
+ *
+ * REGRA: um estilo de arte muda só o VISUAL. Só custom properties --ds-* visuais; nada de layout nem cor
+ * literal (o lint:design rejeita). Cores vêm de misturas de tokens existentes (paper, card, ink-1, line,
+ * accent, star, white), então acompanham o tema claro/escuro sozinhas.
+ *
+ * ARMADILHA: custom property não pode citar a si mesma no mesmo elemento — as misturas de superfície
+ * partem de --ds-art-papel-paper/-card (o paper/card ORIGINAIS do tema, guardados no :root).
+ *
+ * CONTRASTE: calculado em specs/076-violet-ds/contrast-papel.mjs (WCAG, mistura em oklab como o
+ * color-mix do navegador). Se mexer em qualquer percentual, rode o script de novo. */
+
+:root {
+  --ds-art-papel-paper: var(--ds-paper);
+  --ds-art-papel-card: var(--ds-card);
+}
+
+.ds-app[data-ds-art="papel"] {
+  /* superfícies: o papel do tema com um véu safira levíssimo — marfim frio, como o papel de carta */
+  --ds-paper-2: color-mix(in oklab, var(--ds-art-papel-paper), var(--ds-accent) 3%);
+  --ds-card-2: color-mix(in oklab, var(--ds-art-papel-card), var(--ds-accent) 2%);
+  --ds-mist: color-mix(in oklab, var(--ds-art-papel-paper), var(--ds-accent) 7%);
+
+  /* tinta azul-ardósia: a escala secundária mais perto de ink-1, legível sobre o papel tingido */
+  --ds-ink-2: color-mix(in oklab, var(--ds-ink-1) 84%, var(--ds-art-papel-paper));
+  --ds-ink-3: color-mix(in oklab, var(--ds-ink-1) 74%, var(--ds-art-papel-paper));
+  --ds-ink-4: color-mix(in oklab, var(--ds-ink-1) 66%, var(--ds-art-papel-paper));
+
+  /* linhas de pauta: a linha do tema puxada para o acento */
+  --ds-line-2: color-mix(in oklab, var(--ds-line), var(--ds-accent) 6%);
+
+  /* ambiente: luz safira no alto à esquerda, fio de ouro à direita, papel embaixo */
+  --ds-ambient:
+    radial-gradient(70% 55% at 6% -12%, var(--ds-accent-tint), transparent 64%),
+    radial-gradient(55% 45% at 96% -8%, color-mix(in oklab, var(--ds-star) 14%, transparent), transparent 60%),
+    linear-gradient(var(--ds-paper-2), var(--ds-paper));
+
+  /* papel pautado: linhas horizontais finíssimas e uma margem de carta à esquerda */
+  --ds-texture:
+    repeating-linear-gradient(180deg, transparent 0 31px, color-mix(in oklab, var(--ds-accent) 5%, transparent) 31px 32px),
+    linear-gradient(90deg, transparent 0 56px, color-mix(in oklab, var(--ds-danger) 6%, transparent) 56px 57px, transparent 57px);
+
+  /* material: papel quase opaco, borda de linha fina e sombra curta de folha sobre a mesa */
+  --ds-glass-bg: color-mix(in oklab, var(--ds-card) 94%, transparent);
+  --ds-glass-border: var(--ds-line);
+  --ds-glass-hi: color-mix(in oklab, var(--ds-white) 70%, transparent);
+  --ds-glass-shadow: 0 1px 2px color-mix(in oklab, var(--ds-ink-1) 6%, transparent), 0 10px 26px -18px color-mix(in oklab, var(--ds-accent-deep) 35%, transparent);
+
+  /* cantos do shell antigo da Violet */
+  --ds-r-sm: 7px;
+  --ds-r-md: 11px;
+  --ds-r-lg: 18px;
+
+  /* hero: folha clara com o brilho safira atrás do retrato e o fio de ouro no rodapé */
+  --ds-hero-bg:
+    radial-gradient(110% 120% at 86% 18%, var(--ds-accent-tint-2), transparent 56%),
+    radial-gradient(80% 90% at 6% 108%, color-mix(in oklab, var(--ds-star) 16%, transparent), transparent 60%),
+    linear-gradient(165deg, var(--ds-mist), var(--ds-card) 70%);
+  --ds-hero-veil: transparent;
+  --ds-hero-fg: var(--ds-ink-1);
+  --ds-hero-eyebrow: var(--ds-accent-deep);
+  --ds-hero-border: color-mix(in oklab, var(--ds-accent) 18%, var(--ds-line));
+  --ds-hero-halo: radial-gradient(circle, var(--ds-accent-tint-2), color-mix(in oklab, var(--ds-star) 18%, transparent) 46%, transparent 70%);
+  --ds-hero-btn-bg: var(--ds-accent);
+  --ds-hero-btn-fg: var(--ds-on-accent);
+  --ds-hero-ghost-bg: var(--ds-card);
+  --ds-hero-ghost-fg: var(--ds-ink-1);
+  --ds-hero-ghost-border: var(--ds-line);
+  --ds-hero-font: var(--ds-font-serif);
+  --ds-hero-weight: 500;
+
+  /* serifa de carta nos títulos (data do dia, mês do Arquivo, nome da carta) */
+  --ds-font-title: var(--ds-font-serif);
+}
+
+/* noite de tinta: no escuro, o "branco" do brilho vira a própria tinta do tema em pouca quantidade
+ * (uma mancha clara atrás de texto claro derrubaria o contraste) e o ouro vira brasa. */
+:root[data-ds-theme="dark"] .ds-app[data-ds-art="papel"] {
+  --ds-ambient:
+    radial-gradient(70% 55% at 6% -12%, var(--ds-accent-tint), transparent 64%),
+    radial-gradient(55% 45% at 96% -8%, color-mix(in oklab, var(--ds-star) 8%, transparent), transparent 60%),
+    linear-gradient(var(--ds-paper-2), var(--ds-paper));
+  --ds-glass-hi: color-mix(in oklab, var(--ds-ink-1) 7%, transparent);
+  --ds-glass-shadow: 0 1px 0 color-mix(in oklab, var(--ds-ink-1) 5%, transparent) inset, 0 16px 32px -18px color-mix(in oklab, var(--ds-paper) 80%, transparent);
+  --ds-hero-bg:
+    radial-gradient(110% 120% at 86% 18%, var(--ds-accent-tint), transparent 56%),
+    radial-gradient(80% 90% at 6% 108%, color-mix(in oklab, var(--ds-star) 8%, transparent), transparent 60%),
+    linear-gradient(165deg, var(--ds-mist), var(--ds-card) 70%);
+  --ds-hero-halo: radial-gradient(circle, var(--ds-accent-tint-2), color-mix(in oklab, var(--ds-ink-1) 8%, transparent) 46%, transparent 70%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ds-theme="light"]) .ds-app[data-ds-art="papel"] {
+    --ds-ambient:
+      radial-gradient(70% 55% at 6% -12%, var(--ds-accent-tint), transparent 64%),
+      radial-gradient(55% 45% at 96% -8%, color-mix(in oklab, var(--ds-star) 8%, transparent), transparent 60%),
+      linear-gradient(var(--ds-paper-2), var(--ds-paper));
+    --ds-glass-hi: color-mix(in oklab, var(--ds-ink-1) 7%, transparent);
+    --ds-glass-shadow: 0 1px 0 color-mix(in oklab, var(--ds-ink-1) 5%, transparent) inset, 0 16px 32px -18px color-mix(in oklab, var(--ds-paper) 80%, transparent);
+    --ds-hero-bg:
+      radial-gradient(110% 120% at 86% 18%, var(--ds-accent-tint), transparent 56%),
+      radial-gradient(80% 90% at 6% 108%, color-mix(in oklab, var(--ds-star) 8%, transparent), transparent 60%),
+      linear-gradient(165deg, var(--ds-mist), var(--ds-card) 70%);
+    --ds-hero-halo: radial-gradient(circle, var(--ds-accent-tint-2), color-mix(in oklab, var(--ds-ink-1) 8%, transparent) 46%, transparent 70%);
+  }
+}

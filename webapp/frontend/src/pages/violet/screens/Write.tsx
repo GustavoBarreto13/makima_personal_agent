@@ -1,429 +1,485 @@
-// Tela Write — entrada diária do bullet journal com bullets tipados e sonho.
+// Escrever — o coração da Violet. A estrutura do diário antigo continua (data, sonho, Conselho, emoções, cartas,
+// momentos), mas a escrita foi refeita para o celular:
+//   • tocar num momento edita ali mesmo; o texto salva sozinho enquanto você escreve (e ao sair);
+//   • Enter cria o próximo momento; apagar tudo + Backspace remove (com Desfazer);
+//   • @ sugere pessoas da Komi e / cita filmes, livros, tarefas… de outros agentes (SmartTextarea);
+//   • a barra de escrita fica presa acima do teclado: tipo do momento, @, /, fonte (Aa) e Pronto;
+//   • a fonte do dia (Normal, Roteiro, Cursiva) muda na hora, inclusive o texto em edição;
+//   • deslizar para os lados troca de dia (quando não está editando).
+// Ler um dia não cria nada: a página só nasce no primeiro registro (ensurePage).
 
-import { useEffect, useState, useRef, useLayoutEffect } from 'react'
-import { violetApi } from '../../../lib/api'
-// Helper de data local: evita o bug de UTC onde bullets após 21h ficam no dia seguinte
-import { todayLocalISO } from '../dateUtils'
-import type { Bullet, BulletKind, Entry, TutorAnalysis } from '../types'
-import { Icon } from '../ui/Icon'
-import { RichText } from '../ui/RichText'
-import { EmotionSection } from '../components/EmotionLog'
-import { LetterSection } from '../components/LetterLog'
-import { CounselSection } from '../components/CounselSection'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type TouchEvent } from 'react'
+import {
+  Button, DatePicker, EmptyState, ErrorState, Hero, Icon, IconButton, LoadingState, Menu, Page, toast, useBreakpoint, useKeyboardInset, type MenuItem,
+} from '../../../design'
+import { addDaysISO, fmtDateLong, fmtRelative, pluralize } from '../../../design/core/format'
+import { CounselCard } from '../components/CounselCard'
+import { EmotionCard } from '../components/EmotionCard'
+import { EmotionForm } from '../components/EmotionForm'
+import { FontMenuButton } from '../components/FontPicker'
+import { LetterCard } from '../components/LetterCard'
+import { LetterComposer } from '../components/LetterComposer'
+import { RichText } from '../components/RichText'
+import { SmartTextarea, type SmartTextareaHandle } from '../components/SmartTextarea'
 import { TutorModal } from '../components/TutorModal'
+import { useViolet } from '../context'
+import { fontClass, KINDS, kindMeta } from '../lib/kinds'
+import { wordCount } from '../lib/markup'
+import { violetApi } from '../violetApi'
+import type { Bullet, BulletKind, EmotionLog, Font, Letter, Page as DayPage, TutorAnalysis } from '../types'
 
-interface WriteProps {
-  date: string
-  entryIdx: number
-  navigate: (view: string, param?: string | null) => void
-}
+interface Editing { position: number; kind: BulletKind; text: string; id: number | null; original: string }
 
-const MONTHS_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
-const DAYS_PT   = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado']
-
-const KIND_CONFIG: Record<BulletKind, { label: string; icon: React.ReactNode }> = {
-  bullet:    { label: 'Bullet',    icon: <span className="b-mark"><span className="dot" /></span> },
-  highlight: { label: 'Destaque', icon: <Icon name="heart" size={15} /> },
-  dream:     { label: 'Sonho',    icon: <Icon name="moon" size={15} /> },
-  idea:      { label: 'Ideia',    icon: <Icon name="bulb" size={15} /> },
-  wisdom:    { label: 'Sabedoria',icon: <Icon name="gem" size={15} /> },
-  note:      { label: 'Nota',     icon: <Icon name="pin" size={15} /> },
-}
-
-function fmtTime(iso: string | null) {
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+const hhmm = (iso: string | null) => {
   if (!iso) return ''
   const d = new Date(iso)
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-export function Write({ date, navigate }: Omit<WriteProps, 'entryIdx'> & { entryIdx?: number }) {
-  const [page, setPage]     = useState<Entry | null>(null)
+export function Write({ date }: { date: string }) {
+  const v = useViolet()
+  const bp = useBreakpoint()
+  const phone = bp === 'sm'
+  const kb = useKeyboardInset()
+
+  const [state, setState] = useState<'loading' | 'error' | 'ok'>('loading')
+  const [tries, setTries] = useState(0)
+  const [page, setPage] = useState<DayPage | null>(null)
   const [bullets, setBullets] = useState<Bullet[]>([])
-  const [dream, setDream]   = useState('')
-  const [editing, setEditing] = useState<number | null>(null)
-  const [editText, setEditText] = useState('')
-  const [adding, setAdding]  = useState<BulletKind | null>(null)
-  const [newText, setNewText] = useState('')
-  const addRef  = useRef<HTMLTextAreaElement>(null)
-  const dreamRef = useRef<HTMLTextAreaElement>(null)
-  const editRef  = useRef<HTMLTextAreaElement>(null)
+  const [dream, setDream] = useState('')
+  const [editing, setEditing] = useState<Editing | null>(null)
+  const [menuFor, setMenuFor] = useState<number | null>(null)
+  const [emotions, setEmotions] = useState<EmotionLog[]>([])
+  const [letters, setLetters] = useState<Letter[]>([])
+  const [emotionForm, setEmotionForm] = useState<EmotionLog | 'new' | null>(null)
+  const [letterForm, setLetterForm] = useState<Letter | 'new' | null>(null)
+  const [analysis, setAnalysis] = useState<Record<number, TutorAnalysis>>({})
+  const [corrected, setCorrected] = useState<Set<number>>(new Set())
+  const [analyzing, setAnalyzing] = useState<number | null>(null)
+  const [modal, setModal] = useState<TutorAnalysis | null>(null)
 
-  // ── Tutor de Idiomas (spec 031 — persona Kurisu) ──────────────────────────
-  // Cache local das análises já buscadas (por bullet.id) — evita refetch a cada toggle.
-  const [analysisCache, setAnalysisCache] = useState<Record<number, TutorAnalysis>>({})
-  // Bullets atualmente exibindo a versão corrigida em vez do texto original.
-  const [showCorrected, setShowCorrected] = useState<Set<number>>(new Set())
-  // Bullet cuja análise está em andamento (mostra spinner no botão) — só um por vez.
-  const [analyzingId, setAnalyzingId] = useState<number | null>(null)
-  const [analyzeError, setAnalyzeError] = useState<string | null>(null)
-  // Análise aberta no modal de resultado (null = modal fechado)
-  const [modalAnalysis, setModalAnalysis] = useState<TutorAnalysis | null>(null)
+  const editorRef = useRef<SmartTextareaHandle>(null)
+  const ensuring = useRef<Promise<number> | null>(null)
+  const saved = useRef<Map<number, string>>(new Map())
+  const editingRef = useRef<Editing | null>(null)
+  editingRef.current = editing
 
-  // Redimensiona o textarea para caber todo o conteúdo sem barra de rolagem.
-  // Define height='auto' primeiro para encolher o elemento antes de medir o scrollHeight,
-  // evitando que o tamanho só cresça mas nunca encolha ao apagar texto.
-  function autoResize(el: HTMLTextAreaElement | null) {
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = el.scrollHeight + 'px'
-  }
+  const font: Font = page?.font ?? v.prefs.font
+  const isToday = date === v.today
 
-  // Redimensiona o campo de sonho quando o valor carrega da API (vem assíncrono)
-  useLayoutEffect(() => { autoResize(dreamRef.current) }, [dream])
-
-  // Redimensiona o campo de edição quando um bullet entra em modo de edição
-  useLayoutEffect(() => { autoResize(editRef.current) }, [editing, editText])
-
-  // Usa todayLocalISO() para obter a data de hoje no fuso do navegador (UTC-3).
-  // new Date().toISOString().slice(0,10) retornaria UTC e mudaria de dia às 21h,
-  // fazendo bullets noturnos caírem no dia seguinte — o bug que isso corrige.
-  const today = todayLocalISO()
-  const effectiveDate = date || today
-
+  // ── carregar o dia ──
   useEffect(() => {
-    setPage(null); setBullets([]); setDream('')
-    violetApi.page(effectiveDate).then((res: any) => {
-      setPage(res.page)
-      setBullets(res.bullets || [])
-      setDream(res.page?.dream || '')
-    }).catch(() => {})
-  }, [effectiveDate])
+    let live = true
+    setState('loading'); setEditing(null); setCorrected(new Set()); ensuring.current = null
+    violetApi.page(date).then(async (r) => {
+      if (!live) return
+      setPage(r.page); setBullets(r.bullets); setDream(r.page.dream ?? '')
+      saved.current = new Map(r.bullets.map((b) => [b.position, b.content]))
+      if (r.page.id) {
+        const [e, l] = await Promise.all([violetApi.emotionLogs(r.page.id).catch(() => []), violetApi.letters(r.page.id).catch(() => [])])
+        if (live) { setEmotions(e); setLetters(l.map((x) => ({ ...x, date }))) }
+      } else { setEmotions([]); setLetters([]) }
+      if (live) setState('ok')
+    }).catch(() => { if (live) setState('error') })
+    return () => { live = false }
+  }, [date, tries])
 
-  useEffect(() => {
-    if (adding && addRef.current) addRef.current.focus()
-  }, [adding])
+  /** O id da página, criando-a no primeiro registro. */
+  const pageId = useCallback(async (): Promise<number> => {
+    if (page?.id) return page.id
+    if (!ensuring.current) {
+      ensuring.current = violetApi.ensurePage(date).then((r) => { setPage(r.page); return r.page.id as number })
+    }
+    return ensuring.current
+  }, [page, date])
 
-  const d = new Date(effectiveDate + 'T12:00:00')
-  const diffDays = Math.round((new Date(today).getTime() - new Date(effectiveDate).getTime()) / 86400000)
-
-  async function saveDream() {
-    if (!page) return
-    await violetApi.setDream(page.id, dream).catch(() => {})
-  }
-
-  async function addBullet(kind: BulletKind, text: string) {
-    if (!page || !text.trim()) { setAdding(null); setNewText(''); return }
-    const pos = bullets.length > 0 ? (bullets[bullets.length-1].position + 1000) : 1000
-    const res: any = await violetApi.upsertBullet({ page_id: page.id, position: pos, content: text.trim(), kind }).catch(() => null)
-    if (res?.bullet) setBullets(prev => [...prev, res.bullet as Bullet])
-    setAdding(null); setNewText('')
-  }
-
-  async function saveBullet(bullet: Bullet, text: string) {
-    if (!page) return
-    // O texto realmente mudou? Só então a correção salva vira "desatualizada".
-    const changed = text.trim() !== bullet.content.trim()
-    const res: any = await violetApi.upsertBullet({ page_id: page.id, position: bullet.position, content: text, kind: bullet.kind }).catch(() => null)
-    if (res?.bullet) {
-      // O upsert_bullet do backend NÃO devolve o campo `tutor` (composto só no
-      // GET /page). Preservamos o metadado do bullet antigo — senão o toggle/estado
-      // do Tutor sumiria a cada edição. Se o texto mudou, marcamos como desatualizado.
-      const preservedTutor = bullet.tutor
-        ? { ...bullet.tutor, stale: changed ? true : bullet.tutor.stale }
-        : undefined
-      setBullets(prev => prev.map(b =>
-        b.position === bullet.position ? { ...(res.bullet as Bullet), tutor: preservedTutor } : b))
-
-      if (changed) {
-        // A correção salva não corresponde mais ao texto — esconde o toggle e
-        // descarta a análise em cache para não exibir a versão corrigida antiga.
-        setShowCorrected(prev => { const next = new Set(prev); next.delete(bullet.id); return next })
-        setAnalysisCache(prev => { const c = { ...prev }; delete c[bullet.id]; return c })
+  // ── salvar um momento (autosave) ──
+  const persist = useCallback(async (e: Editing): Promise<Bullet | null> => {
+    // Espaço no fim (deixado pela sugestão de @ e /) não vai para o banco.
+    const content = e.text.replace(/\s+$/, '')
+    if (saved.current.get(e.position) === content && e.id) return null
+    if (!e.id && !content.trim()) return null
+    const id = await pageId()
+    const r = await violetApi.upsertBullet({ page_id: id, position: e.position, content, kind: e.kind })
+    if (r.bullet) {
+      const b = r.bullet
+      saved.current.set(e.position, b.content)
+      setBullets((prev) => {
+        const old = prev.find((x) => x.position === b.position)
+        const tutor = old?.tutor ? { ...old.tutor, stale: old.content.trim() !== b.content.trim() ? true : old.tutor.stale } : old?.tutor
+        const next = old ? prev.map((x) => (x.position === b.position ? { ...b, tutor } : x)) : [...prev, b]
+        return next.sort((a, c) => a.position - c.position)
+      })
+      if (editingRef.current && editingRef.current.position === e.position && !editingRef.current.id) {
+        setEditing((cur) => (cur && cur.position === e.position ? { ...cur, id: b.id } : cur))
       }
+      v.reload()
+      return b
     }
+    if (r.deleted) {
+      saved.current.delete(e.position)
+      setBullets((prev) => prev.filter((x) => x.position !== e.position))
+      v.reload()
+    }
+    return null
+  }, [pageId, v])
+
+  // Autosave com respiro de 800 ms enquanto digita.
+  useEffect(() => {
+    if (!editing) return
+    const t = window.setTimeout(() => { void persist(editing).catch(() => toast('Não consegui salvar — confira a conexão.', { tone: 'error' })) }, 800)
+    return () => window.clearTimeout(t)
+  }, [editing, persist])
+
+  // ── edição ──
+  const ordered = useMemo(() => [...bullets].sort((a, b) => a.position - b.position), [bullets])
+
+  function newPosition(after?: number): number {
+    if (after === undefined) return (ordered[ordered.length - 1]?.position ?? 0) + 1000
+    const next = ordered.find((b) => b.position > after)
+    if (!next) return after + 1000
+    const mid = Math.floor((after + next.position) / 2)
+    return mid > after ? mid : (ordered[ordered.length - 1]?.position ?? 0) + 1000
+  }
+
+  const startNew = (kind: BulletKind = editing?.kind ?? 'bullet', after?: number) => {
+    setMenuFor(null)
+    setEditing({ position: newPosition(after), kind, text: '', id: null, original: '' })
+    window.setTimeout(() => editorRef.current?.focus(), 0)
+  }
+
+  const startEdit = (b: Bullet) => {
+    setMenuFor(null)
+    setCorrected((s) => { const n = new Set(s); n.delete(b.id); return n })
+    setEditing({ position: b.position, kind: b.kind, text: b.content, id: b.id, original: b.content })
+    window.setTimeout(() => editorRef.current?.focus(), 0)
+  }
+
+  /** Termina a edição: salva já, e se o texto ficou vazio o momento sai (com Desfazer). */
+  const commit = useCallback(async (e: Editing | null = editingRef.current) => {
+    if (!e) return
     setEditing(null)
-  }
-
-  // Renderiza o marcador (ícone/ponto) de um bullet.
-  // Quando favoritado (favorite=true), o marcador SEMPRE vira um coração garnet —
-  // independente do tipo — replicando visualmente o comportamento do Destaque (FR-003).
-  // O tipo original é preservado nos dados; só a exibição visual muda.
-  function renderMark(kind: BulletKind, favorite = false) {
-    // Favoritado: coração garnet em qualquer tipo — idêntico ao marcador do Destaque
-    if (favorite) {
-      return <span className="glyph is-fav"><Icon name="heart" size={15} /></span>
-    }
-    // Não favoritado: renderização normal por tipo
-    if (kind === 'bullet') return <span className="dot" />
-    const icons: Record<string, React.ReactNode> = {
-      highlight: <Icon name="heart" size={15} />,
-      dream:     <Icon name="moon" size={15} />,
-      idea:      <Icon name="bulb" size={15} />,
-      wisdom:    <Icon name="gem" size={15} />,
-      note:      <Icon name="pin" size={15} />,
-    }
-    return <span className="glyph">{icons[kind]}</span>
-  }
-
-  // Alterna o estado de favorito de um bullet com optimistic update + rollback (FR-008).
-  // 1. Guarda o valor anterior para rollback em caso de falha.
-  // 2. Atualiza o estado local imediatamente (< 200ms, SC-001).
-  // 3. Envia o estado-alvo explícito ao backend (set_favorite, não toggle no servidor).
-  // 4. Em caso de falha, reverte o estado local ao valor anterior — sem favorito "fantasma".
-  async function toggleFavorite(b: Bullet) {
-    // Salva o valor anterior antes de qualquer mudança — necessário para o rollback
-    const anterior = b.favorite
-    const novoValor = !anterior
-
-    // Optimistic update: atualiza visualmente antes da confirmação do servidor
-    setBullets(prev => prev.map(x => x.id === b.id ? { ...x, favorite: novoValor } : x))
-
     try {
-      await violetApi.setFavorite(b.id, novoValor)
-    } catch {
-      // Rollback: reverte ao estado anterior se a requisição falhar (FR-008)
-      setBullets(prev => prev.map(x => x.id === b.id ? { ...x, favorite: anterior } : x))
+      await persist(e)
+      if (e.id && !e.text.trim() && e.original.trim()) {
+        toast('Momento apagado.', {
+          undo: () => { void persist({ ...e, text: e.original, id: null }).catch(() => toast('Não consegui desfazer.', { tone: 'error' })) },
+        })
+      }
+    } catch { toast('Não consegui salvar — confira a conexão.', { tone: 'error' }) }
+  }, [persist])
+
+  const onKeyDown = (ev: KeyboardEvent<HTMLTextAreaElement>) => {
+    const e = editingRef.current
+    if (!e) return
+    if (ev.key === 'Enter' && !ev.shiftKey && !ev.nativeEvent.isComposing) {
+      ev.preventDefault()
+      if (!e.text.trim()) { void commit(e); return }
+      void commit(e)
+      startNew(e.kind, e.position)
+      return
+    }
+    if (ev.key === 'Backspace' && e.text === '') {
+      ev.preventDefault()
+      const prev = [...ordered].reverse().find((b) => b.position < e.position)
+      void commit(e)
+      if (prev) window.setTimeout(() => startEdit(prev), 0)
+      return
+    }
+    if (ev.key === 'Escape') { ev.preventDefault(); void commit(e) }
+  }
+
+  // ── ações de um momento ──
+  async function toggleFavorite(b: Bullet) {
+    setBullets((p) => p.map((x) => (x.id === b.id ? { ...x, favorite: !b.favorite } : x)))
+    try { await violetApi.setFavorite(b.id, !b.favorite) } catch {
+      setBullets((p) => p.map((x) => (x.id === b.id ? { ...x, favorite: b.favorite } : x)))
+      toast('Não consegui favoritar.', { tone: 'error' })
     }
   }
 
-  // ── Tutor de Idiomas (spec 031) ────────────────────────────────────────────
+  async function setKind(b: Bullet, kind: BulletKind) {
+    const id = await pageId()
+    const r = await violetApi.upsertBullet({ page_id: id, position: b.position, content: b.content, kind }).catch(() => null)
+    if (r?.bullet) setBullets((p) => p.map((x) => (x.id === b.id ? { ...r.bullet as Bullet, tutor: x.tutor } : x)))
+  }
 
-  // Busca a análise mais recente do bullet, usando o cache local quando disponível.
-  async function ensureAnalysisLoaded(b: Bullet): Promise<TutorAnalysis | null> {
-    const cached = analysisCache[b.id]
-    if (cached) return cached
-    const res = await violetApi.bulletAnalysis(b.id).catch(() => null)
-    if (res?.analysis) {
-      setAnalysisCache(prev => ({ ...prev, [b.id]: res.analysis as TutorAnalysis }))
-      return res.analysis
-    }
+  async function remove(b: Bullet) {
+    try {
+      await violetApi.deleteBullet(b.id)
+      saved.current.delete(b.position)
+      setBullets((p) => p.filter((x) => x.id !== b.id))
+      v.reload()
+      toast('Momento apagado.', {
+        undo: () => { void persist({ position: b.position, kind: b.kind, text: b.content, id: null, original: '' }).then((nb) => { if (nb && b.favorite) void violetApi.setFavorite(nb.id, true).then(() => setBullets((p) => p.map((x) => (x.id === nb.id ? { ...x, favorite: true } : x)))) }) },
+      })
+    } catch { toast('Não consegui apagar.', { tone: 'error' }) }
+  }
+
+  async function analyze(b: Bullet) {
+    setAnalyzing(b.id)
+    try {
+      const r = await violetApi.analyzeTutor(b.id, 'en')
+      setAnalysis((a) => ({ ...a, [b.id]: r.analysis }))
+      setBullets((p) => p.map((x) => (x.id === b.id ? { ...x, tutor: { analysis_id: r.analysis.id, has_correction: true, error_count: r.analysis.errors.length } } : x)))
+      setModal(r.analysis)
+    } catch (e) { toast(e instanceof Error ? e.message : 'A Kurisu não conseguiu analisar agora.', { tone: 'error' }) }
+    setAnalyzing(null)
+  }
+
+  async function loadAnalysis(b: Bullet): Promise<TutorAnalysis | null> {
+    if (analysis[b.id]) return analysis[b.id]
+    const r = await violetApi.bulletAnalysis(b.id).catch(() => null)
+    if (r?.analysis) { setAnalysis((a) => ({ ...a, [b.id]: r.analysis as TutorAnalysis })); return r.analysis }
     return null
   }
 
-  // Aciona a análise via Gemini (US1) — abre o modal de resultado ao concluir e
-  // atualiza o metadado leve do bullet (para o toggle aparecer sem recarregar a página).
-  async function analyzeBullet(b: Bullet) {
-    setAnalyzingId(b.id)
-    setAnalyzeError(null)
-    try {
-      const res = await violetApi.analyzeTutor(b.id, 'en')
-      setAnalysisCache(prev => ({ ...prev, [b.id]: res.analysis }))
-      setBullets(prev => prev.map(x => x.id === b.id
-        ? { ...x, tutor: { analysis_id: res.analysis.id, has_correction: true, error_count: res.analysis.errors.length } }
-        : x))
-      setModalAnalysis(res.analysis)
-    } catch (err) {
-      setAnalyzeError(err instanceof Error ? err.message : 'Não consegui analisar agora.')
-    } finally {
-      setAnalyzingId(null)
-    }
-  }
-
-  // Alterna a exibição do bullet entre o texto original (fonte da verdade, nunca
-  // sobrescrita) e a versão corrigida (US2) — busca a análise sob demanda se preciso.
   async function toggleCorrected(b: Bullet) {
-    if (showCorrected.has(b.id)) {
-      setShowCorrected(prev => { const next = new Set(prev); next.delete(b.id); return next })
-      return
-    }
-    const analysis = await ensureAnalysisLoaded(b)
-    if (analysis) setShowCorrected(prev => new Set(prev).add(b.id))
+    if (corrected.has(b.id)) { setCorrected((s) => { const n = new Set(s); n.delete(b.id); return n }); return }
+    if (await loadAnalysis(b)) setCorrected((s) => new Set(s).add(b.id))
   }
 
-  // Reabre o modal com a análise completa de um bullet já analisado.
-  async function reopenAnalysis(b: Bullet) {
-    const analysis = await ensureAnalysisLoaded(b)
-    if (analysis) setModalAnalysis(analysis)
+  // Botão flutuante / atalho N do shell: começa um momento novo.
+  useEffect(() => {
+    const on = () => { if (!editingRef.current) startNew('bullet') }
+    window.addEventListener('violet:new-moment', on)
+    return () => window.removeEventListener('violet:new-moment', on)
+  })
+
+  // ── sonho e fonte ──
+  async function saveDream() {
+    if ((page?.dream ?? '') === dream.trim()) return
+    if (!page?.id && !dream.trim()) return
+    try {
+      const id = await pageId()
+      await violetApi.setDream(id, dream)
+      setPage((p) => (p ? { ...p, dream: dream.trim() || null } : p))
+      v.reload()
+    } catch { toast('Não consegui salvar o sonho.', { tone: 'error' }) }
   }
+
+  async function changeFont(f: Font) {
+    const before = page?.font ?? null
+    setPage((p) => (p ? { ...p, font: f } : p))
+    try {
+      const r = await violetApi.setFont(date, f)
+      setPage((p) => (p ? { ...p, id: p.id ?? r.page_id, font: f } : p))
+    } catch {
+      setPage((p) => (p ? { ...p, font: before } : p))
+      toast('Não consegui trocar a fonte.', { tone: 'error' })
+    }
+  }
+
+  // ── deslizar para trocar de dia (celular) ──
+  const touch = useRef<{ x: number; y: number } | null>(null)
+  const onTouchStart = (e: TouchEvent) => { if (!editing) touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY } }
+  const onTouchEnd = (e: TouchEvent) => {
+    const t = touch.current
+    touch.current = null
+    if (!t || editing) return
+    const dx = e.changedTouches[0].clientX - t.x, dy = e.changedTouches[0].clientY - t.y
+    if (Math.abs(dx) > 80 && Math.abs(dy) < 50) {
+      const next = addDaysISO(date, dx < 0 ? 1 : -1)
+      if (next <= v.today) v.goto({ view: 'write', date: next === v.today ? undefined : next })
+    }
+  }
+
+  const go = (d: string) => v.goto({ view: 'write', date: d === v.today ? undefined : d })
+
+  if (state === 'loading') return <Page><LoadingState variant="row" count={5} label="Abrindo o dia…" /></Page>
+  if (state === 'error') return <Page><ErrorState onRetry={() => setTries((n) => n + 1)} /></Page>
+
+  const words = ordered.reduce((s, b) => s + wordCount(b.content), 0) + wordCount(dream)
+  const hasContent = ordered.length > 0 || !!dream.trim() || emotions.length > 0 || letters.length > 0
+
+  // Lista com o rascunho novo encaixado na posição dele.
+  type Row = { b: Bullet } | { draft: true; position: number }
+  const rows: Row[] = ordered.map((b) => ({ b }) as Row)
+  if (editing && !editing.id && !ordered.some((b) => b.position === editing.position)) {
+    rows.push({ draft: true, position: editing.position })
+    rows.sort((a, c) => ('b' in a ? a.b.position : a.position) - ('b' in c ? c.b.position : c.position))
+  }
+
+  const editor = (
+    <SmartTextarea
+      ref={editorRef}
+      className="vl-bullet-input"
+      value={editing?.text ?? ''}
+      onChange={(text) => setEditing((cur) => (cur ? { ...cur, text } : cur))}
+      onKeyDown={onKeyDown}
+      onBlur={(ev) => {
+        // Tocar na barra de escrita (tipo, @, /, fonte) não encerra a edição.
+        if ((ev.relatedTarget as HTMLElement | null)?.closest('.vl-writebar, .vl-suggest')) return
+        void commit()
+      }}
+      placeholder="Registrar um momento…"
+      aria-label="Momento"
+    />
+  )
+
+  const bulletMenu = (b: Bullet): MenuItem[] => [
+    { id: 'fav', label: b.favorite ? 'Tirar dos favoritos' : 'Favoritar', onSelect: () => void toggleFavorite(b) },
+    ...KINDS.map((k) => ({ id: `k-${k.kind}`, label: `Tipo: ${k.label}`, checked: b.kind === k.kind, onSelect: () => void setKind(b, k.kind) })),
+    { id: 'tutor', label: b.tutor?.has_correction && !b.tutor.stale ? 'Ver análise do Tutor' : 'Pedir análise ao Tutor (inglês)', onSelect: () => { if (b.tutor?.has_correction && !b.tutor.stale) void loadAnalysis(b).then((a) => a && setModal(a)); else void analyze(b) } },
+    { id: 'del', label: 'Apagar', onSelect: () => void remove(b) },
+  ]
 
   return (
-    <div className="write-wrap">
-      <div className="w-datehead">
-        <div className="w-month">{MONTHS_PT[d.getMonth()]} {d.getDate()}</div>
-        <div className="w-day">{DAYS_PT[d.getDay()]}</div>
-        <div className="w-meta">
-          <span className="w-num">#{page?.num ?? '—'}</span>
-          <span className="w-sep">·</span>
-          {diffDays === 0
-            ? <span className="w-today">Hoje</span>
-            : <span className="when">{diffDays === 1 ? 'Ontem' : `${diffDays} dias atrás`}</span>
+    <Page>
+      <div className={`vl-write ${fontClass(font)}`} style={{ ['--vl-kb' as string]: `${kb}px` }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        <Hero
+          compact
+          eyebrow={`#${page?.num ?? '—'} · ${isToday ? 'hoje' : fmtRelative(date, v.today)}`}
+          eyebrowIcon="journal"
+          title={cap(fmtDateLong(date))}
+          meta={hasContent ? `${pluralize(ordered.length, 'momento', 'momentos')} · ${pluralize(words, 'palavra', 'palavras')}` : 'Página em branco'}
+          actions={
+            <div className="vl-daynav">
+              <IconButton icon="left" label="Dia anterior" onClick={() => go(addDaysISO(date, -1))} />
+              <div className="vl-daypick"><DatePicker value={date} onChange={(d) => { if (d && d <= v.today) go(d) }} /></div>
+              <IconButton icon="right" label="Próximo dia" disabled={isToday} onClick={() => go(addDaysISO(date, 1))} />
+              {!isToday && <Button size="sm" onClick={() => go(v.today)}>Hoje</Button>}
+              <FontMenuButton value={font} onChange={(f) => void changeFont(f)} compact={phone} />
+            </div>
           }
-        </div>
-      </div>
-
-      {/* Prompt de sonho */}
-      <div className="w-prompt" onClick={() => document.getElementById('vl-dream')?.focus()}>
-        <span className="p-icon"><Icon name="moon" size={15} /></span>
-        <textarea
-          id="vl-dream"
-          ref={dreamRef}
-          className="p-text"
-          style={{ border:'none', outline:'none', background:'transparent', resize:'none', overflow:'hidden', width:'100%', fontFamily:'inherit', fontStyle:'inherit', fontSize:'inherit', color:'inherit' }}
-          placeholder="O que você sonhou?"
-          value={dream}
-          onChange={e => { setDream(e.target.value); autoResize(e.target) }}
-          onBlur={saveDream}
-          rows={1}
         />
-      </div>
 
-      {/* Conselho do Dia (spec 061) — sob demanda, a Violet lê o dia e cruza com a base
-          de conhecimento pessoal (RAG da Kurisu). Fica no topo, acima do Registro
-          Emocional/Cartas/bullets, para chamar atenção antes da escrita do dia. */}
-      <CounselSection pageId={page?.id ?? null} date={effectiveDate} />
+        <label className="vl-dream">
+          <Icon name="dream" size={16} />
+          <textarea
+            rows={1}
+            value={dream}
+            placeholder="O que você sonhou?"
+            aria-label="Sonho"
+            onChange={(e) => { setDream(e.target.value); e.target.style.height = 'auto'; e.target.style.height = `${e.target.scrollHeight}px` }}
+            onBlur={() => void saveDream()}
+          />
+        </label>
 
-      {/* Seção de registro emocional (TCC) — Feature 006.
-          Fica entre o prompt de sonho e os bullets; é ortogonal aos bullets
-          (não conta palavras nem afeta heatmap/coleções). */}
-      <EmotionSection pageId={page?.id ?? null} />
+        {!v.prefs.focus && (
+          <>
+            <CounselCard date={date} hasContent={hasContent} />
 
-      {/* Seção de Cartas — logo abaixo do Registro Emocional.
-          Também ancorada ao dia (page_id) e ortogonal aos bullets. */}
-      <LetterSection pageId={page?.id ?? null} />
+            <section className="vl-daysec" aria-label="Registro emocional">
+              <header><Icon name="heart" size={15} /><h3>Registro emocional</h3>{emotions.length > 0 && <span className="vl-muted">{emotions.length}</span>}</header>
+              {emotions.map((e) => <EmotionCard key={e.id} log={e} today={v.today} onOpen={() => v.goto({ view: 'emotions', emotionId: e.id })} />)}
+              <button type="button" className="vl-addline" onClick={() => setEmotionForm('new')}>
+                <Icon name="add" size={14} />{emotions.length ? 'Registrar outra emoção' : 'Como você se sentiu? Registrar emoção'}
+              </button>
+            </section>
 
-      {/* Lista de bullets */}
-      <div className="bullets">
-        {bullets.map(b => (
-          <div key={b.id} className="bgroup" data-kind={b.kind} data-fav={b.favorite ? 'true' : undefined}>
-            {/* Marcador clicável — um clique favorita ou desfavorita o bullet (FR-002).
-                role="button" torna o elemento semanticamente interativo para screen readers.
-                title e aria-label descrevem a ação ao cursor/hover e a leitores de tela (FR-004).
-                stopPropagation garante que o clique no marcador não propague ao bgroup. */}
-            <div
-              className="b-mark"
-              role="button"
-              title={b.favorite ? 'Desfavoritar' : 'Favoritar'}
-              aria-label={b.favorite ? 'Desfavoritar' : 'Favoritar'}
-              onClick={e => { e.stopPropagation(); toggleFavorite(b) }}
-            >
-              {renderMark(b.kind, b.favorite)}
-            </div>
-            <div className="b-lines">
-              {editing === b.position ? (
-                <textarea
-                  ref={editRef}
-                  className="bline"
-                  style={{ border:'none', outline:'none', background:'transparent', resize:'none', overflow:'hidden', width:'100%', fontFamily:'inherit', fontSize:'15.5px', color:'var(--ink)' }}
-                  value={editText}
-                  onChange={e => { setEditText(e.target.value); autoResize(e.target) }}
-                  onBlur={() => saveBullet(b, editText)}
-                  onKeyDown={e => { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); saveBullet(b, editText) } if(e.key==='Escape') setEditing(null) }}
-                  autoFocus
-                />
-              ) : (
-                <div
-                  className="bline lead"
-                  onDoubleClick={() => {
-                    // Editamos sempre o texto ORIGINAL (fonte da verdade, nunca a versão
-                    // corrigida) — então saímos da visão "corrigido" ao entrar na edição.
-                    setShowCorrected(prev => { const next = new Set(prev); next.delete(b.id); return next })
-                    setEditing(b.position)
-                    setEditText(b.content)
-                  }}
-                >
-                  <span className="b-text">
-                    <RichText
-                      content={showCorrected.has(b.id) ? (analysisCache[b.id]?.corrected_text ?? b.content) : b.content}
-                      onMentionClick={(kind, _val) => navigate(kind === 'person' ? 'people' : 'tags')}
-                    />
-                  </span>
-                  <span className="b-time">{fmtTime(b.created_at)}</span>
+            <section className="vl-daysec" aria-label="Cartas">
+              <header><Icon name="mail" size={15} /><h3>Cartas</h3>{letters.length > 0 && <button type="button" className="vl-linklike" onClick={() => v.goto('letters')}>todas as cartas</button>}</header>
+              <div className="vl-letters-row">
+                {letters.map((l) => <LetterCard key={l.id} letter={l} today={v.today} onOpen={() => (l.status === 'draft' ? setLetterForm(l) : v.goto({ view: 'letters', letterId: l.id }))} />)}
+              </div>
+              <button type="button" className="vl-addline" onClick={() => setLetterForm('new')}><Icon name="add" size={14} />Escrever uma carta</button>
+            </section>
+          </>
+        )}
+
+        <section className="vl-bullets" aria-label="Momentos do dia">
+          {rows.length === 0 && !editing && (
+            <EmptyState icon="journal" title={isToday ? 'Como foi o seu dia?' : 'Nada escrito neste dia'}
+              hint="Toque abaixo e escreva. @ cita uma pessoa, / cita um filme, livro ou tarefa." />
+          )}
+          {rows.map((row) => {
+            if (!('b' in row)) {
+              return (
+                <div key={`draft-${row.position}`} className="vl-bullet vl-editing" data-kind={editing?.kind}>
+                  <span className="vl-mark" aria-hidden="true"><Icon name={kindMeta(editing?.kind ?? 'bullet').icon} size={15} /></span>
+                  <div className="vl-bullet-main">{editor}</div>
                 </div>
-              )}
-
-              {/* Tutor de Idiomas (spec 031) — ações discretas, reveladas no hover do bullet */}
-              {editing !== b.position && (
-                <div className="tt-actions">
-                  {!b.tutor?.has_correction ? (
-                    <button
-                      type="button"
-                      className="tt-icon-btn"
-                      title="Pedir análise de escrita (Tutor)"
-                      aria-label="Pedir análise de escrita"
-                      disabled={analyzingId === b.id}
-                      onClick={() => analyzeBullet(b)}
-                    >
-                      <Icon name="sparkles" size={13} />
-                      <span>{analyzingId === b.id ? 'Analisando…' : 'Tutor'}</span>
-                    </button>
-                  ) : b.tutor.stale ? (
-                    // Correção desatualizada: o bullet foi editado depois da análise —
-                    // oferece re-analisar o texto atual (o backend gera uma análise nova).
-                    <button
-                      type="button"
-                      className="tt-icon-btn tt-stale"
-                      title="O texto mudou desde a última análise — analisar de novo"
-                      aria-label="Re-analisar o texto atual"
-                      disabled={analyzingId === b.id}
-                      onClick={() => analyzeBullet(b)}
-                    >
-                      <Icon name="sparkles" size={13} />
-                      <span>{analyzingId === b.id ? 'Analisando…' : 're-analisar'}</span>
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="tt-toggle-btn"
-                        title={showCorrected.has(b.id) ? 'Ver texto original' : 'Ver versão corrigida'}
-                        onClick={() => toggleCorrected(b)}
-                      >
-                        {showCorrected.has(b.id) ? '✓ corrigido' : 'ver corrigido'}
-                      </button>
-                      <button
-                        type="button"
-                        className="tt-icon-btn"
-                        title="Ver análise completa"
-                        aria-label="Ver análise completa"
-                        onClick={() => reopenAnalysis(b)}
-                      >
-                        <Icon name="sparkles" size={13} />
-                        {b.tutor.error_count > 0 && <span className="tt-error-count">{b.tutor.error_count}</span>}
-                      </button>
-                    </>
+              )
+            }
+            const b = row.b
+            const isEditing = editing?.id === b.id || (editing && !editing.id && editing.position === b.position)
+            const shown = corrected.has(b.id) ? analysis[b.id]?.corrected_text ?? b.content : b.content
+            return (
+              <div key={b.id} className={`vl-bullet${isEditing ? ' vl-editing' : ''}`} data-kind={b.kind} data-fav={b.favorite || undefined}>
+                <button type="button" className="vl-mark" onClick={() => void toggleFavorite(b)}
+                  aria-label={b.favorite ? 'Tirar dos favoritos' : 'Favoritar'} aria-pressed={b.favorite} title={kindMeta(b.kind).label}>
+                  {b.favorite ? <Icon name="heart" size={15} /> : b.kind === 'bullet' ? <span className="vl-dot" /> : <Icon name={kindMeta(b.kind).icon} size={15} />}
+                </button>
+                <div className="vl-bullet-main">
+                  {isEditing ? editor : (
+                    <div className="vl-bullet-text" role="button" tabIndex={0} onClick={() => startEdit(b)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); startEdit(b) } }}>
+                      <RichText text={shown} />
+                    </div>
                   )}
+                  {!isEditing && b.tutor?.has_correction && !b.tutor.stale && (
+                    <button type="button" className="vl-tutor-toggle" onClick={() => void toggleCorrected(b)}>
+                      <Icon name="school" size={12} />{corrected.has(b.id) ? 'corrigido · ver original' : 'ver corrigido'}{b.tutor.error_count > 0 && ` · ${b.tutor.error_count}`}
+                    </button>
+                  )}
+                  {analyzing === b.id && <span className="vl-muted vl-small">A Kurisu está lendo…</span>}
                 </div>
-              )}
+                {!isEditing && (
+                  <span className="vl-bullet-side">
+                    <span className="vl-time">{hhmm(b.created_at)}</span>
+                    <span className="vl-menuwrap">
+                      <IconButton icon="more" label="Ações do momento" size={16} onClick={() => setMenuFor(menuFor === b.id ? null : b.id)} />
+                      {menuFor === b.id && <Menu label="Ações do momento" items={bulletMenu(b)} onClose={() => setMenuFor(null)} />}
+                    </span>
+                  </span>
+                )}
+              </div>
+            )
+          })}
+          {!editing && (
+            <button type="button" className="vl-newline" onClick={() => startNew('bullet')}>
+              <span className="vl-dot" aria-hidden="true" />Registrar um momento…
+            </button>
+          )}
+          {!editing && (
+            <div className="vl-kindrow" aria-label="Começar um momento de outro tipo">
+              {KINDS.filter((k) => k.kind !== 'bullet').map((k) => (
+                <button key={k.kind} type="button" className="vl-kindchip" onClick={() => startNew(k.kind)}><Icon name={k.icon} size={14} />{k.label}</button>
+              ))}
             </div>
-          </div>
-        ))}
+          )}
+        </section>
 
-        {/* Placeholder "novo bullet" */}
-        {adding ? (
-          <div className="bgroup" data-kind={adding}>
-            <div className="b-mark">{renderMark(adding)}</div>
-            <div className="b-lines">
-              <textarea
-                ref={addRef}
-                className="bline"
-                style={{ border:'none', outline:'none', background:'transparent', resize:'none', overflow:'hidden', width:'100%', fontFamily:'inherit', fontSize:'15.5px', color:'var(--ink)' }}
-                placeholder="Registrar um momento..."
-                value={newText}
-                onChange={e => { setNewText(e.target.value); autoResize(e.target) }}
-                onBlur={() => addBullet(adding, newText)}
-                onKeyDown={e => { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); addBullet(adding, newText) } if(e.key==='Escape') { setAdding(null); setNewText('') } }}
-              />
+        {editing && (
+          <div className="vl-writebar" role="toolbar" aria-label="Barra de escrita">
+            <div className="vl-writebar-kinds">
+              {KINDS.map((k) => (
+                <button key={k.kind} type="button" className={editing.kind === k.kind ? 'vl-on' : undefined} aria-pressed={editing.kind === k.kind}
+                  onMouseDown={(e) => e.preventDefault()} onClick={() => setEditing({ ...editing, kind: k.kind })} title={k.label}>
+                  <Icon name={k.icon} size={15} /><span>{k.label}</span>
+                </button>
+              ))}
             </div>
-          </div>
-        ) : (
-          <div className="bnew" onClick={() => setAdding('bullet')}>
-            <div className="b-mark"><span className="dot" /></div>
-            <span className="ph">Registrar um momento...</span>
+            <div className="vl-writebar-tools">
+              <button type="button" className="vl-wb-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => editorRef.current?.insert('@')} aria-label="Citar uma pessoa">@</button>
+              <button type="button" className="vl-wb-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => editorRef.current?.insert('/')} aria-label="Citar algo de outro agente">/</button>
+              <span className="vl-menu-up" onMouseDown={(e) => e.preventDefault()}><FontMenuButton value={font} onChange={(f) => void changeFont(f)} compact /></span>
+              <Button size="sm" variant="primary" icon="check" onMouseDown={(e) => e.preventDefault()} onClick={() => void commit()}>Pronto</Button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Chips de tipo */}
-      <div className="w-types">
-        {(Object.entries(KIND_CONFIG) as [BulletKind, typeof KIND_CONFIG[BulletKind]][]).map(([kind, cfg]) => (
-          <button key={kind} className="type-chip" onClick={() => { setAdding(kind); setNewText('') }}>
-            <span className="tc-icon">{cfg.icon}</span>
-            {cfg.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tutor de Idiomas — erro amigável (falha da IA nunca grava nada — FR-010) */}
-      {analyzeError && (
-        <div className="tt-error-banner" onClick={() => setAnalyzeError(null)}>
-          {analyzeError} <span className="tt-dismiss">(clique para dispensar)</span>
-        </div>
+      {modal && <TutorModal analysis={modal} onClose={() => setModal(null)} />}
+      {emotionForm && (
+        <EmotionForm date={date} log={emotionForm === 'new' ? null : emotionForm} onClose={() => setEmotionForm(null)}
+          onSaved={(log) => {
+            setEmotions((p) => (p.some((x) => x.id === log.id) ? p.map((x) => (x.id === log.id ? log : x)) : [...p, log]))
+            if (!page?.id) setTries((n) => n + 1)
+            v.reload()
+          }} />
       )}
-
-      {/* Modal de resultado da análise (US1) */}
-      {modalAnalysis && (
-        <TutorModal analysis={modalAnalysis} onClose={() => setModalAnalysis(null)} />
+      {letterForm && (
+        <LetterComposer date={date} letter={letterForm === 'new' ? null : letterForm} defaultFont={font} onClose={() => setLetterForm(null)}
+          onSaved={(l) => {
+            if (!l) return
+            setLetters((p) => (p.some((x) => x.id === l.id) ? p.map((x) => (x.id === l.id ? l : x)) : [...p, l]))
+            if (!page?.id) setTries((n) => n + 1)
+            v.reload()
+          }} />
       )}
-    </div>
+    </Page>
   )
 }

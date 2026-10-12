@@ -52,10 +52,12 @@ export function toLinks(summary: PersonSummary): PersonLinks {
   // ── Diário ───────────────────────────────────────────────────────────────
   // Backend: {trechos[{content, date}]}
   // Design:  {mentions[{date, time, text}]}
+  // Spec 076: `texto` vem sem a sintaxe dos tokens (@[Nome](komi:id) → @Nome) e `deep_link` abre o dia na Violet.
   const mentions: DesignMention[] = (summary.diario?.trechos || []).map(b => ({
     date: b.date || '',
     time: '',  // O backend não guarda hora por bullet — fica vazio
-    text: b.content || '',
+    text: b.texto || b.content || '',
+    link: b.deep_link || (b.date ? `/journal#dia/${b.date}` : undefined),
   }))
 
   // ── Livros ───────────────────────────────────────────────────────────────

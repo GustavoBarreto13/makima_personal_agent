@@ -1,214 +1,118 @@
-// Tela Tutor — progresso do Tutor de Idiomas (spec 031): skills por conceito,
-// nível CEFR estimado, sugestão de próximo foco, histórico de análises e o
-// guia de estudo (US4) que orienta a ênfase das próximas análises.
+// Tutor de Idiomas (spec 031 — persona Kurisu): nível estimado (CEFR), próximo foco sugerido, guia de estudo,
+// maestria por conceito e as análises recentes. A análise em si é pedida no menu ⋯ de cada momento, no Escrever.
 
-import { useEffect, useState } from 'react'
-import { violetApi } from '../../../lib/api'
-import type { TutorProgress, TutorAnalysisSummary, TutorConcept } from '../types'
-import { Icon } from '../ui/Icon'
+import { useState } from 'react'
+import { Button, Chip, EmptyState, ErrorState, Field, Icon, LoadingState, Page, ProgressBar, SectionHeader, Textarea, confirm, toast } from '../../../design'
+import { fmtDate } from '../../../design/core/format'
+import { useViolet } from '../context'
+import { useLoad } from '../lib/useLoad'
+import { violetApi } from '../violetApi'
 
-// Glyph de tendência — mesmo padrão visual dos hábitos da Kaguya (📈/📉/➡️).
-const TREND_GLYPH: Record<string, string> = { up: '📈', down: '📉', flat: '➡️' }
-
-const LANGUAGE = 'en' // seletor fixo nesta spec — tabelas/tools já levam `language` p/ expandir depois
+const TREND = { up: 'trend-up', down: 'trend-down', flat: 'minus' } as const
 
 export function Tutor() {
-  const [progress, setProgress] = useState<TutorProgress | null>(null)
-  const [analyses, setAnalyses] = useState<TutorAnalysisSummary[]>([])
-  const [concepts, setConcepts] = useState<TutorConcept[]>([])
-  const [loading, setLoading] = useState(true)
+  const v = useViolet()
+  const { state, retry } = useLoad(() => Promise.all([violetApi.tutorProgress(), violetApi.tutorAnalyses(), violetApi.tutorConcepts()]), [v.rev])
+  const [editing, setEditing] = useState<{ description: string; targets: string[] } | null>(null)
+  const [saving, setSaving] = useState(false)
 
-  // Formulário de edição do guia de estudo (US4) — null = não está editando
-  const [editingGuide, setEditingGuide] = useState<{ description: string; targets: string[] } | null>(null)
-  const [savingGuide, setSavingGuide] = useState(false)
-
-  async function reload() {
-    const [prog, hist, concepts] = await Promise.all([
-      violetApi.tutorProgress(LANGUAGE).catch(() => null),
-      violetApi.tutorAnalyses(LANGUAGE).catch(() => []),
-      violetApi.tutorConcepts(LANGUAGE).catch(() => []),
-    ])
-    if (prog) setProgress(prog)
-    setAnalyses(hist)
-    setConcepts(concepts)
-  }
-
-  useEffect(() => {
-    setLoading(true)
-    reload().finally(() => setLoading(false))
-  }, [])
-
-  function startEditGuide() {
-    setEditingGuide({
-      description: progress?.active_guide?.description ?? '',
-      targets: progress?.active_guide?.target_concepts ?? [],
-    })
-  }
-
-  function toggleTarget(slug: string) {
-    if (!editingGuide) return
-    setEditingGuide({
-      ...editingGuide,
-      targets: editingGuide.targets.includes(slug)
-        ? editingGuide.targets.filter(s => s !== slug)
-        : [...editingGuide.targets, slug],
-    })
-  }
+  if (state.status === 'loading') return <Page><LoadingState count={4} /></Page>
+  if (state.status === 'error') return <Page><ErrorState onRetry={retry} /></Page>
+  const [progress, analyses, concepts] = state.data
+  const label = (slug: string) => concepts.find((c) => c.slug === slug)?.label ?? slug
 
   async function saveGuide() {
-    if (!editingGuide || !editingGuide.description.trim()) return
-    setSavingGuide(true)
-    try {
-      await violetApi.saveTutorGuide({
-        language: LANGUAGE,
-        description: editingGuide.description.trim(),
-        target_concepts: editingGuide.targets,
-      })
-      setEditingGuide(null)
-      await reload()
-    } catch {
-      // Erro amigável — silencioso aqui, o formulário permanece aberto p/ nova tentativa
-    } finally {
-      setSavingGuide(false)
-    }
+    if (!editing?.description.trim()) return
+    setSaving(true)
+    try { await violetApi.saveTutorGuide({ description: editing.description.trim(), target_concepts: editing.targets }); setEditing(null); retry() }
+    catch { toast('Não consegui salvar o guia.', { tone: 'error' }) }
+    setSaving(false)
   }
 
   async function removeGuide() {
-    if (!window.confirm('Remover o guia de estudo ativo? Isso não afeta análises já feitas.')) return
-    await violetApi.deleteTutorGuide(LANGUAGE).catch(() => {})
-    await reload()
+    if (!await confirm({ title: 'Remover o guia de estudo?', body: 'Isso não afeta as análises já feitas.', confirmLabel: 'Remover', danger: true })) return
+    await violetApi.deleteTutorGuide().catch(() => toast('Não consegui remover.', { tone: 'error' }))
+    retry()
   }
 
-  if (loading) return <div className="tt-page"><p className="tt-empty">Carregando progresso…</p></div>
-
-  const hasAnyData = (progress?.skills.length ?? 0) > 0 || analyses.length > 0
+  if (!progress.skills.length && !analyses.length) {
+    return (
+      <Page>
+        <EmptyState icon="school" title="Nenhuma análise ainda" hint="Escreva um momento em inglês e, no menu ⋯ dele, peça uma análise à Kurisu."
+          action={<Button variant="primary" icon="edit" onClick={() => v.goto('write')}>Escrever</Button>} />
+      </Page>
+    )
+  }
 
   return (
-    <div className="tt-page">
-      {!hasAnyData ? (
-        <p className="tt-empty">
-          Ainda não há nenhuma análise. Escreva um bullet em inglês e peça uma análise ao Tutor
-          para começar a acompanhar sua evolução.
-        </p>
-      ) : (
-        <>
-          {/* Nível CEFR estimado */}
-          {progress?.level.level && (
-            <div className="tt-level-card">
-              <span className="tt-level-badge">{progress.level.level}</span>
-              <div className="tt-level-info">
-                <span className="tt-level-label">Nível estimado (CEFR)</span>
-                {progress.level.preliminary && (
-                  <span className="tt-level-preliminary">Estimativa preliminar — poucas análises ainda</span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Sugestão de próximo foco */}
-          {progress?.next_focus && (
-            <div className="tt-focus-card">
-              <span className="tt-focus-label">Kurisu sugere focar em</span>
-              <span className="tt-focus-concept">{progress.next_focus.concept_label}</span>
-              <span className="tt-focus-reason">{progress.next_focus.reason}</span>
-            </div>
-          )}
-
-          {/* Guia de estudo (US4) */}
-          <section>
-            <h3 className="tt-section-title">Guia de estudo</h3>
-            {editingGuide ? (
-              <div className="tt-guide-card tt-guide-form">
-                <textarea
-                  className="lt-textarea"
-                  placeholder="Ex.: English Grammar in Use — capítulo 4 (passado simples)"
-                  value={editingGuide.description}
-                  onChange={e => setEditingGuide({ ...editingGuide, description: e.target.value })}
-                  rows={2}
-                />
-                <div className="tt-guide-concepts">
-                  {concepts.map(c => (
-                    <button
-                      key={c.slug}
-                      type="button"
-                      className={`tt-concept-toggle ${editingGuide.targets.includes(c.slug) ? 'selected' : ''}`}
-                      onClick={() => toggleTarget(c.slug)}
-                    >
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="tt-guide-actions">
-                  <button type="button" className="lt-save" disabled={savingGuide} onClick={saveGuide}>
-                    Salvar guia
-                  </button>
-                  <button type="button" className="lt-cancel" onClick={() => setEditingGuide(null)}>Cancelar</button>
-                </div>
-              </div>
-            ) : progress?.active_guide ? (
-              <div className="tt-guide-card">
-                <p className="tt-guide-desc">{progress.active_guide.description}</p>
-                {progress.active_guide.target_concepts.length > 0 && (
-                  <div className="tt-guide-targets">
-                    {progress.active_guide.target_concepts.map(slug => (
-                      <span key={slug} className="tt-concept-chip">
-                        {concepts.find(c => c.slug === slug)?.label ?? slug}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="tt-guide-actions">
-                  <button type="button" className="lt-link" onClick={startEditGuide}>editar</button>
-                  <button type="button" className="lt-link lt-danger" onClick={removeGuide}>remover</button>
-                </div>
-              </div>
-            ) : (
-              <button type="button" className="lt-add-trigger" onClick={startEditGuide}>
-                <Icon name="graduation" size={14} />
-                <span>Definir um guia de estudo (livro, método ou foco)</span>
-              </button>
-            )}
+    <Page>
+      <div className="vl-twocol">
+        {progress.level.level && (
+          <section className="vl-card vl-level">
+            <b className="vl-level-badge">{progress.level.level}</b>
+            <div><h4>Nível estimado (CEFR)</h4>{progress.level.preliminary && <p className="vl-muted">Estimativa preliminar — poucas análises ainda.</p>}</div>
           </section>
+        )}
+        {progress.next_focus && (
+          <section className="vl-card">
+            <h4 className="vl-card-title">A Kurisu sugere focar em</h4>
+            <p className="vl-strong">{progress.next_focus.concept_label}</p>
+            <p className="vl-muted">{progress.next_focus.reason}</p>
+          </section>
+        )}
+      </div>
 
-          {/* Skills por conceito */}
-          {progress && progress.skills.length > 0 && (
-            <section>
-              <h3 className="tt-section-title">Progresso por conceito</h3>
-              <div className="tt-skills">
-                {progress.skills.map(s => (
-                  <div key={s.concept_slug} className={`tt-skill ${s.is_target ? 'is-target' : ''}`}>
-                    <span className="tt-skill-name">{s.concept_label}</span>
-                    <span className="tt-skill-bar-wrap">
-                      <span className="tt-skill-bar" style={{ width: `${s.mastery_pct}%` }} />
-                    </span>
-                    <span className="tt-skill-pct">{s.mastery_pct}%</span>
-                    <span className="tt-skill-trend">{s.trend ? TREND_GLYPH[s.trend] : ''}</span>
-                    {!s.enough_data && <span className="tt-skill-badge">poucos dados</span>}
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+      <SectionHeader title="Guia de estudo" />
+      {editing ? (
+        <section className="vl-card">
+          <Field label="O que você está estudando" hint="Livro, método ou foco — a Kurisu dá ênfase a isso nas próximas análises.">
+            {(c) => (<Textarea {...c} rows={2} value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} placeholder="Ex.: English Grammar in Use — capítulo 4 (passado simples)" />)}
+          </Field>
+          <div className="vl-chips">
+            {concepts.map((c) => (
+              <Chip key={c.slug} on={editing.targets.includes(c.slug)}
+                onClick={() => setEditing({ ...editing, targets: editing.targets.includes(c.slug) ? editing.targets.filter((s) => s !== c.slug) : [...editing.targets, c.slug] })}>{c.label}</Chip>
+            ))}
+          </div>
+          <div className="vl-row vl-row-end"><Button variant="ghost" onClick={() => setEditing(null)}>Cancelar</Button><Button variant="primary" disabled={saving || !editing.description.trim()} onClick={() => void saveGuide()}>Salvar guia</Button></div>
+        </section>
+      ) : progress.active_guide ? (
+        <section className="vl-card">
+          <p>{progress.active_guide.description}</p>
+          <div className="vl-chips">{progress.active_guide.target_concepts.map((s) => <span key={s} className="vl-pill">{label(s)}</span>)}</div>
+          <div className="vl-row"><Button size="sm" icon="edit" onClick={() => setEditing({ description: progress.active_guide!.description, targets: progress.active_guide!.target_concepts })}>Editar</Button>
+            <Button size="sm" variant="ghost" icon="delete" onClick={() => void removeGuide()}>Remover</Button></div>
+        </section>
+      ) : (
+        <button type="button" className="vl-addline" onClick={() => setEditing({ description: '', targets: [] })}><Icon name="school" size={14} />Definir um guia de estudo</button>
+      )}
 
-          {/* Histórico de análises recentes */}
-          {analyses.length > 0 && (
-            <section>
-              <h3 className="tt-section-title">Análises recentes</h3>
-              <div className="tt-history">
-                {analyses.map(a => (
-                  <div key={a.id} className="tt-history-item">
-                    <span className="tt-history-score">{a.score}</span>
-                    <span className="tt-history-summary">{a.summary}</span>
-                    <span className="tt-history-date">
-                      {new Date(a.created_at).toLocaleDateString('pt-BR')}
-                    </span>
-                  </div>
-                ))}
+      {progress.skills.length > 0 && (
+        <>
+          <SectionHeader title="Progresso por conceito" />
+          <div className="vl-card vl-skills">
+            {progress.skills.map((s) => (
+              <div key={s.concept_slug} className={`vl-skill${s.is_target ? ' vl-on' : ''}`}>
+                <span>{s.concept_label}</span>
+                <ProgressBar value={s.mastery_pct} label={`${s.concept_label}: ${s.mastery_pct}%`} />
+                <span className="ds-mono">{s.mastery_pct}%</span>
+                {s.trend ? <Icon name={TREND[s.trend]} size={14} label={s.trend} /> : <span className="vl-muted vl-small">poucos dados</span>}
               </div>
-            </section>
-          )}
+            ))}
+          </div>
         </>
       )}
-    </div>
+
+      {analyses.length > 0 && (
+        <>
+          <SectionHeader title="Análises recentes" />
+          <div className="vl-card">
+            {analyses.map((a) => (
+              <div key={a.id} className="vl-rankrow"><b className="ds-mono">{a.score}</b><span>{a.summary}</span><span className="vl-muted ds-mono">{fmtDate(a.created_at.slice(0, 10))}</span></div>
+            ))}
+          </div>
+        </>
+      )}
+    </Page>
   )
 }

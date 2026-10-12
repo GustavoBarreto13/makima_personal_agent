@@ -42,8 +42,10 @@ export function KomiShell() {
   // ── Estado do shell ────────────────────────────────────────────────
   const [overview,   setOverview]   = useState<OverviewPerson[]>([])  // dados de todas as pessoas
   const [loading,    setLoading]    = useState(true)    // carregamento inicial do overview
-  const [view,       setView]       = useState<KomiView>('home')       // tela ativa
-  const [currentId,  setCurrentId]  = useState<string | null>(null)   // id da pessoa aberta
+  // Link direto para uma pessoa (/people#pessoa/<id>) — usado pela Violet (spec 076) e por quem mais quiser apontar.
+  const linkedId = /^#pessoa\/([\w-]+)$/.exec(window.location.hash)?.[1] ?? null
+  const [view,       setView]       = useState<KomiView>(linkedId ? 'person' : 'home')       // tela ativa
+  const [currentId,  setCurrentId]  = useState<string | null>(linkedId)   // id da pessoa aberta
   const [query,      setQuery]      = useState('')      // texto de busca (topbar)
   const [filter,     setFilter]     = useState('todos') // filtro de categoria (Directory)
   const [modal,      setModal]      = useState<ModalState>(null)  // estado do PersonModal

@@ -40,7 +40,7 @@
     "violet": [
       "days",
       "words",
-      "streaks",
+      "strength",
       "hours_local_tz",
       "emotions_intensity",
       "top_people_tags",
@@ -309,24 +309,24 @@
       "mobile": false
     },
     "violet": {
-      "status": "legacy",
+      "status": "conformant",
       "dir": "src/pages/violet",
       "shell": "src/pages/violet/VioletShell.tsx",
-      "art": null,
-      "appShell": false,
-      "hero": false,
-      "theme": false,
-      "icons": false,
-      "collections": [],
+      "art": "papel",
+      "appShell": true,
+      "hero": true,
+      "theme": true,
+      "icons": true,
+      "collections": ["violet:arquivo", "violet:cartas", "violet:emocoes", "violet:colecao"],
       "quickCapture": null,
       "stats": {
-        "page": false,
-        "metrics": []
+        "page": true,
+        "metrics": ["days", "words", "strength", "hours_local_tz", "emotions_intensity", "top_people_tags", "highlight_rate"]
       },
-      "detail": false,
-      "prefs": false,
-      "hotkeys": false,
-      "mobile": false
+      "detail": true,
+      "prefs": true,
+      "hotkeys": true,
+      "mobile": true
     },
     "yato": {
       "status": "legacy",

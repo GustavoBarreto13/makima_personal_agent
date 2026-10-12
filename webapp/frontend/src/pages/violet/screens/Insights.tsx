@@ -1,486 +1,109 @@
-// Tela Insights — painel analítico com heatmap, gráfico de área, big numbers e 8 abas.
-// Feature 005: seletor de ano no hero para analisar qualquer ano com registro.
+// Insights — o ano no diário (spec 076). No topo, a FORÇA da escrita: o mesmo motor dos hábitos da Kaguya
+// ("caixa d'água": escrever enche, faltar vaza um pouco; a régua é a sua meta semanal — dias de folga não são
+// falha). Depois, horários (fuso local) e emoções × intensidade. Embaixo, o StatsPage do padrão: dias, palavras,
+// taxa de destaque, ritmo por mês, pessoas/tags/emoções mais presentes, recordes e momentos favoritos.
 
-import { useEffect, useState } from 'react'
-import { violetApi } from '../../../lib/api'
-// Helper de data local: evita o bug de UTC onde "hoje" muda às 21h no UTC-3
-import { todayLocalISO } from '../dateUtils'
-import type { Stats, HeatmapData, EmotionStats } from '../types'
-import { HeatmapRow } from '../ui/HeatmapRow'
-import { AreaChart } from '../ui/AreaChart'
-import { Icon } from '../ui/Icon'
+import { useState } from 'react'
+import { ErrorState, Icon, LoadingState, Page, ProgressRing, SegmentedControl, StatsPage } from '../../../design'
+import { fmtDate, fmtNumber, MONTHS_SHORT, pluralize } from '../../../design/core/format'
+import { useViolet } from '../context'
+import { plainText } from '../lib/markup'
+import { useLoad } from '../lib/useLoad'
+import { violetApi } from '../violetApi'
 
-// Abas de navegação dos Insights
-const TABS = ['Diário', 'Palavras', 'Coleções', 'Horários', 'Pessoas', 'Tags', 'Emoções', 'Sequências'] as const
-type InsightTab = typeof TABS[number]
+const TREND = { up: { label: 'subindo', icon: 'trend-up' }, down: { label: 'caindo', icon: 'trend-down' }, flat: { label: 'estável', icon: 'minus' } } as const
 
-// Cria um array DENSO de todos os dias do ano, preenchendo zeros para dias sem escrita.
-// Para o ano corrente o limite final é hoje; para anos anteriores é 31/dez (ano completo).
-// Usa partes locais de data (não toISOString) para evitar o bug de fuso horário UTC/BRT.
-// Feature 008: recebe o conjunto de dias com favorito para marcar cada dia na saída.
-function buildHeatmapDays(
-  heatmap: HeatmapData,
-  year: number,
-  favoriteDays: Set<string>,
-): Array<{ date: string; words: number; favorite: boolean }> {
-  const days: Array<{ date: string; words: number; favorite: boolean }> = []
-  // Começa em 1º de janeiro do ano
-  const cur = new Date(year, 0, 1)
+export function Insights() {
+  const v = useViolet()
+  const maxYear = Number(v.today.slice(0, 4))
+  const [year, setYear] = useState(maxYear)
+  const { state, retry } = useLoad(() => violetApi.stats(year, v.prefs.weeklyTarget), [year, v.rev, v.prefs.weeklyTarget])
+  const years = useLoad(() => violetApi.years(), [])
 
-  // Sempre cobre o calendário completo (1º/jan → 31/dez do ano), inclusive no ano
-  // corrente: os dias futuros ficam com words=0 e são renderizados apagados (--heat-0),
-  // deixando os meses seguintes visíveis em vez de cortar no "year to date".
-  const end = new Date(year, 11, 31)
-
-  while (cur <= end) {
-    // Monta a string "YYYY-MM-DD" a partir de partes locais para não sofrer com UTC
-    const y = cur.getFullYear()
-    const m = String(cur.getMonth() + 1).padStart(2, '0')
-    const d = String(cur.getDate()).padStart(2, '0')
-    const dateStr = `${y}-${m}-${d}`
-    days.push({
-      date: dateStr,
-      words: heatmap[dateStr] ?? 0,
-      // Feature 008: marca como favorito se este dia está no conjunto retornado pelo backend
-      favorite: favoriteDays.has(dateStr),
-    })
-    // Avança um dia
-    cur.setDate(cur.getDate() + 1)
-  }
-  return days
-}
-
-// Calcula a sequência atual e a maior sequência de dias consecutivos escritos.
-// "Sequência atual" conta regressivamente a partir do HOJE REAL — por isso só é
-// exibida quando o ano selecionado é o corrente (FR-006).
-function calcStreaks(heatmap: HeatmapData): { current: number; longest: number } {
-  const dates = Object.keys(heatmap).filter(d => (heatmap[d] ?? 0) > 0).sort()
-  if (!dates.length) return { current: 0, longest: 0 }
-
-  let longest = 1
-  let cur = 1
-  for (let i = 1; i < dates.length; i++) {
-    const prev = new Date(dates[i - 1])
-    const next = new Date(dates[i])
-    const diff = Math.round((next.getTime() - prev.getTime()) / 86400000)
-    if (diff === 1) {
-      cur++
-      longest = Math.max(longest, cur)
-    } else {
-      cur = 1
-    }
-  }
-
-  // Sequência atual: conta para trás a partir de hoje (data real, no fuso local)
-  const today = todayLocalISO()
-  let currentStreak = 0
-  let d = new Date(today)
-  while (true) {
-    // Itera regressivamente: a cada passo subtrai 1 dia e verifica se há escrita
-    // todayLocalISO() garante que "hoje" é a data local — não UTC — evitando quebra de streak às 21h
-    const ds = d.toISOString().slice(0, 10)
-    if ((heatmap[ds] ?? 0) > 0) {
-      currentStreak++
-      d = new Date(d.getTime() - 86400000)
-    } else break
-  }
-
-  return { current: currentStreak, longest }
-}
-
-// Props recebidas do VioletShell — mesmo padrão das telas Journal, Collection e Reflect.
-interface InsightsProps {
-  // Feature 009: callback de navegação do shell para abrir um dia na tela Escrever.
-  navigate: (view: string, param?: string | null) => void
-}
-
-export function Insights({ navigate }: InsightsProps) {
-  // Ano selecionado pelo usuário — padrão: ano corrente (não persiste entre sessões, YAGNI)
-  const currentYear = new Date().getFullYear()
-  const [year, setYear] = useState(currentYear)
-  // Lista de anos disponíveis no diário (do corrente ao primeiro com registro)
-  const [years, setYears] = useState<number[]>([currentYear])
-
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [heatmap, setHeatmap] = useState<HeatmapData>({})
-  // Feature 008: Set de datas "YYYY-MM-DD" que contêm ao menos um bullet favorito.
-  // Usar Set para lookup O(1) na buildHeatmapDays — pode ser grande em anos prolíficos.
-  const [favoriteDays, setFavoriteDays] = useState<Set<string>>(new Set())
-  // Estatísticas de emoções do ano (aba Emoções) — Feature 006
-  const [emotionStats, setEmotionStats] = useState<EmotionStats | null>(null)
-  const [tab, setTab] = useState<InsightTab>('Diário')
-  const [loading, setLoading] = useState(true)
-
-  // Carrega a lista de anos disponíveis uma única vez no mount.
-  // Default já é [currentYear] — se falhar, o seletor mostra apenas o ano corrente.
-  useEffect(() => {
-    violetApi.years().then(setYears).catch(() => {})
-  }, [])
-
-  // Re-busca todos os dados sempre que o ano selecionado muda
-  useEffect(() => {
-    setLoading(true)
-    Promise.all([
-      violetApi.stats(year),
-      violetApi.heatmap(year),
-      violetApi.emotionStats(year),
-      // Feature 008: busca os dias com favorito junto das outras chamadas para manter
-      // a consistência de ano — FR-006 (filtro de ano) e FR-005 (reflete estado atual).
-      violetApi.favoriteDays(year),
-    ]).then(([s, h, e, f]) => {
-      const heatData = h as HeatmapData
-      const statsData = s as unknown as Stats
-      const streaks = calcStreaks(heatData)
-      statsData.longestStreak = streaks.longest
-      statsData.currentStreak = streaks.current
-      setStats(statsData)
-      setHeatmap(heatData)
-      setEmotionStats(e as EmotionStats)
-      // Constrói o Set a partir do array de strings "YYYY-MM-DD" retornado pelo backend
-      setFavoriteDays(new Set(f as string[]))
-    }).catch(() => {}).finally(() => setLoading(false))
-  }, [year])
-
-  // Ano corrente = true quando o selecionado é o ano atual; altera o comportamento
-  // do heatmap (FR-005) e da exibição da sequência atual (FR-006)
-  const isCurrentYear = year === currentYear
-
-  if (loading) {
-    return (
-      <div className="page" style={{ paddingTop: 40 }}>
-        <div style={{ color: 'var(--ink-4)', fontFamily: 'var(--mono)', fontSize: 12, textAlign: 'center', paddingTop: 60 }}>
-          carregando...
-        </div>
-      </div>
-    )
-  }
-
-  // Array denso de todos os dias do intervalo (zeros para dias sem escrita).
-  // Feature 008: passa o Set de favoritos para que cada dia saiba se deve pintar garnet.
-  const days = buildHeatmapDays(heatmap, year, favoriteDays)
+  if (state.status === 'loading') return <Page wide><LoadingState variant="stat" count={4} /></Page>
+  if (state.status === 'error') return <Page wide><ErrorState onRetry={retry} /></Page>
+  const p = state.data
+  const s = p.strength
+  const minYear = years.state.status === 'ok' ? Math.min(...years.state.data) : maxYear
+  const kpi = (key: string) => p.kpis.find((k) => k.key === key)?.value ?? 0
+  const maxHour = Math.max(1, ...p.distribution.map((d) => d.count))
+  const trend = TREND[s.trend]
 
   return (
-    <div className="page" style={{ paddingTop: 32 }}>
-      {/* ── Hero ── */}
-      <div className="ins-hero">
-        <div className="ins-hero-text">
-          {/* Eyebrow com seletor de ano — Feature 005 (FR-001) */}
-          <div className="ins-eyebrow ins-year-pick">
-            ANÁLISE
-            {/* Dropdown nativo: lista todos os anos do primeiro registro até o corrente */}
-            <select
-              value={year}
-              onChange={e => setYear(Number(e.target.value))}
-              aria-label="Selecionar ano"
-            >
-              {years.map(y => (
-                <option key={y} value={y}>{y}</option>
+    <>
+      <Page wide>
+        <section className="vl-card vl-strength" aria-labelledby="vl-strength-t">
+          <div className="vl-strength-ring"><ProgressRing value={s.consistency} size={112} label={`Força da escrita: ${s.consistency}%`} /></div>
+          <div className="vl-strength-body">
+            <h3 id="vl-strength-t">Força da escrita</h3>
+            <p className="vl-strength-n"><b>{s.consistency}%</b>
+              <span className={`vl-pill vl-trend-${s.trend}`}><Icon name={trend.icon} size={12} />{trend.label}</span></p>
+            <p className="vl-muted">{s.recent_done}/{s.recent_total} dias escritos nas últimas 2 semanas · melhor dos últimos 90 dias: {s.best}%</p>
+            <p className="vl-muted vl-small">Um dia sem escrever baixa um pouco; voltar a escrever sobe. Nada zera.</p>
+            <SegmentedControl label="Meta de dias por semana" value={String(v.prefs.weeklyTarget)} onChange={(x) => v.setPrefs({ weeklyTarget: Number(x) })}
+              options={['3', '4', '5', '6', '7'].map((n) => ({ value: n, label: `${n}×/sem` }))} />
+          </div>
+          <div className="vl-strength-chart" role="img" aria-label="Força nos últimos 90 dias">
+            {s.series.map((pt) => <span key={pt.date} title={`${fmtDate(pt.date)}: ${pt.value}%`} className={pt.done ? 'vl-on' : undefined} style={{ ['--vl-level' as string]: pt.value / 100 }} />)}
+          </div>
+        </section>
+
+        <div className="vl-twocol">
+          <section className="vl-card">
+            <h4 className="vl-card-title">Quando você escreve</h4>
+            <div className="vl-hours">
+              {p.distribution.map((d) => (
+                <span key={d.bucket} className="vl-hourcol" title={`${d.bucket}: ${pluralize(d.count, 'momento', 'momentos')}`}>
+                  <span style={{ ['--vl-level' as string]: d.count / maxHour }} /><small>{d.bucket}</small>
+                </span>
               ))}
-            </select>
-          </div>
-          <h1 className="ins-h1">
-            {stats?.days_written ?? 0} dias<br />escritos
-          </h1>
-          <p className="ins-hero-para">
-            {stats?.total_words?.toLocaleString('pt-BR') ?? 0} palavras,{' '}
-            {stats?.entries ?? 0} entradas,{' '}
-            {/* No ano corrente mostra sequência atual; em anos anteriores, a maior sequência (FR-006) */}
-            {isCurrentYear
-              ? <>sequência atual de {stats?.currentStreak ?? 0} {stats?.currentStreak === 1 ? 'dia' : 'dias'}.</>
-              : <>maior sequência de {stats?.longestStreak ?? 0} {stats?.longestStreak === 1 ? 'dia' : 'dias'}.</>
-            }
-          </p>
-        </div>
-        <div className="ins-hero-portrait">
-          <div className="ins-halo" />
-          <img src="/violet.png" alt="Violet" className="ins-portrait-img" />
-        </div>
-      </div>
-
-      {/* ── Abas ── */}
-      <div className="ins-tabs">
-        {TABS.map(t => (
-          <button
-            key={t}
-            className={`ins-tab ${tab === t ? 'active' : ''}`}
-            onClick={() => setTab(t)}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Conteúdo da aba ── */}
-      {tab === 'Diário' && (
-        <div className="ins-section">
-          {/* Big numbers — 3 métricas em destaque */}
-          <div className="ins-bignums">
-            <div className="ins-bignum">
-              <div className="bn-value">{stats?.entries ?? 0}</div>
-              <div className="bn-label">entradas</div>
             </div>
-            <div className="ins-bignum">
-              <div className="bn-value">{stats?.days_written ?? 0}</div>
-              <div className="bn-label">dias escritos</div>
-            </div>
-            <div className="ins-bignum">
-              <div className="bn-value">{Math.round(stats?.freq_per_week ?? 0)}</div>
-              <div className="bn-label">dias/semana</div>
-            </div>
-          </div>
-
-          {/* Heatmap de palavras — layout por mês estilo GitHub */}
-          <div className="ins-heatcard">
-            {/* Grade agrupada por mês: meses como colunas, 7 linhas de dias */}
-            {/* Feature 009: onDayClick navega para a tela Escrever na data clicada.
-                date já é "YYYY-MM-DD" local (sem round-trip Date) — sem shift de fuso. */}
-            <HeatmapRow data={days} onDayClick={(date) => navigate('write', date)} />
-            {/* Rodapé com chips de estatística e legenda de intensidade */}
-            <div className="heat-foot">
-              <span className="heat-stat">
-                <span className="hs-chip">
-                  <Icon name="journal" />
-                  {stats?.days_written ?? 0}
-                </span>
-                dias escritos
-              </span>
-              <span className="heat-stat">
-                <span className="hs-chip">
-                  <Icon name="write" />
-                  {stats?.entries ?? 0}
-                </span>
-                entradas
-              </span>
-              <span className="heat-stat">
-                <span className="hs-chip" style={{ color: 'var(--garnet)' }}>
-                  <Icon name="heart" />
-                  {stats?.longestStreak ?? 0}
-                </span>
-                maior sequência
-              </span>
-              {/* Legenda: menos → mais + swatch garnet para dias com favorito (FR-004) */}
-              <div className="heat-legend">
-                menos
-                {[0, 1, 2, 3, 4].map(n => (
-                  <i key={n} style={{ background: `var(--heat-${n})` }} />
-                ))}
-                mais
-                {/* Separador visual entre escala de intensidade e o indicador de favorito */}
-                <span style={{ margin: '0 4px', opacity: 0.35 }}>·</span>
-                {/* Swatch garnet + rótulo: comunica ao usuário o significado da célula vermelha */}
-                <i style={{ background: 'var(--garnet)' }} />
-                favorito
+          </section>
+          <section className="vl-card">
+            <h4 className="vl-card-title">Emoções × intensidade</h4>
+            {p.emotions.by_emotion.length === 0 && <p className="vl-muted">Nenhum registro emocional neste ano.</p>}
+            {p.emotions.by_emotion.slice(0, 7).map((e) => (
+              <div key={e.name} className="vl-rankrow">
+                <span>{e.name}</span>
+                <span className="vl-emo-bar"><span style={{ ['--vl-level' as string]: e.avg_intensity / 10 }} /></span>
+                <span className="ds-mono">{e.count}× · {fmtNumber(e.avg_intensity, 1)}{e.avg_relief ? ` · −${fmtNumber(e.avg_relief, 1)}` : ''}</span>
               </div>
-            </div>
-          </div>
-
-          {/* Chips de sequência — "sequência atual" só aparece no ano corrente (FR-006) */}
-          <div className="ins-stats-row">
-            {isCurrentYear && (
-              <div className="ins-stat-chip">
-                <span className="isc-value">{stats?.currentStreak ?? 0}</span>
-                <span className="isc-label">sequência atual</span>
-              </div>
+            ))}
+            {p.emotions.by_month.length > 0 && (
+              <p className="vl-muted vl-small">Mês mais pesado: {MONTHS_SHORT[[...p.emotions.by_month].sort((a, b) => b.avg - a.avg)[0].month - 1]} (média {fmtNumber([...p.emotions.by_month].sort((a, b) => b.avg - a.avg)[0].avg, 1)})</p>
             )}
-            <div className="ins-stat-chip">
-              <span className="isc-value">{stats?.longestStreak ?? 0}</span>
-              <span className="isc-label">maior sequência</span>
-            </div>
-            <div className="ins-stat-chip">
-              <span className="isc-value">{stats?.highlights ?? 0}</span>
-              <span className="isc-label">destaques</span>
-            </div>
-            <div className="ins-stat-chip">
-              <span className="isc-value">{stats?.dreams ?? 0}</span>
-              <span className="isc-label">sonhos</span>
-            </div>
-          </div>
+          </section>
         </div>
-      )}
-
-      {tab === 'Palavras' && (
-        <div className="ins-section">
-          <div className="ins-bignums">
-            <div className="ins-bignum">
-              <div className="bn-value">{stats?.total_words?.toLocaleString('pt-BR') ?? 0}</div>
-              <div className="bn-label">palavras totais</div>
-            </div>
-            <div className="ins-bignum">
-              <div className="bn-value">{Math.round(stats?.per_day ?? 0)}</div>
-              <div className="bn-label">palavras/dia</div>
-            </div>
-            <div className="ins-bignum">
-              <div className="bn-value">{stats?.bullets ?? 0}</div>
-              <div className="bn-label">bullets</div>
-            </div>
-          </div>
-
-          <div className="ins-block">
-            <div className="ins-block-title">Palavras por mês</div>
-            <AreaChart data={stats?.words_by_month ?? Array(12).fill(0)} />
-          </div>
-        </div>
-      )}
-
-      {tab === 'Coleções' && (
-        <div className="ins-section">
-          <div className="ins-bignums">
-            <div className="ins-bignum">
-              <div className="bn-value">{stats?.highlights ?? 0}</div>
-              <div className="bn-label">destaques</div>
-            </div>
-            <div className="ins-bignum">
-              <div className="bn-value">{stats?.dreams ?? 0}</div>
-              <div className="bn-label">sonhos</div>
-            </div>
-            <div className="ins-bignum">
-              <div className="bn-value">{Math.round((stats?.highlight_rate ?? 0) * 100)}%</div>
-              <div className="bn-label">entradas com destaque</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {tab === 'Horários' && (
-        <div className="ins-section">
-          <div className="ins-block">
-            <div className="ins-block-title">Bullets por horário (blocos de 2h)</div>
-            <div className="ins-bars">
-              {(stats?.daytime ?? Array(12).fill(0)).map((val, i) => {
-                const maxBar = Math.max(...(stats?.daytime ?? [1]), 1)
-                const pct = (val / maxBar) * 100
-                const hour = i * 2
-                return (
-                  <div key={i} className="ins-bar-group">
-                    {/* Barra de altura proporcional */}
-                    <div
-                      className="ins-bar"
-                      style={{ height: Math.max(pct * 0.8, 2) }}
-                    />
-                    {/* Label do horário em Mono */}
-                    <div className="ins-bar-label">{String(hour).padStart(2, '0')}h</div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {tab === 'Pessoas' && (
-        <div className="ins-section">
-          <div className="ins-bignums">
-            <div className="ins-bignum">
-              <div className="bn-value">{stats?.mentions ?? 0}</div>
-              <div className="bn-label">pessoas distintas</div>
-            </div>
-          </div>
-          <div style={{ color: 'var(--ink-3)', fontSize: 13, marginTop: 24 }}>
-            Veja a tela <em>Pessoas</em> para detalhe completo.
-          </div>
-        </div>
-      )}
-
-      {tab === 'Tags' && (
-        <div className="ins-section">
-          <div className="ins-bignums">
-            <div className="ins-bignum">
-              <div className="bn-value">{stats?.tags ?? 0}</div>
-              <div className="bn-label">tags distintas</div>
-            </div>
-          </div>
-          <div style={{ color: 'var(--ink-3)', fontSize: 13, marginTop: 24 }}>
-            Veja a tela <em>Tags</em> para a nuvem completa.
-          </div>
-        </div>
-      )}
-
-      {tab === 'Emoções' && (
-        <div className="ins-section">
-          {/* Estado vazio: nenhum registro emocional no ano selecionado */}
-          {(!emotionStats || emotionStats.total === 0) ? (
-            <div style={{ textAlign: 'center', marginTop: 40, color: 'var(--ink-3)', fontSize: 13 }}>
-              Nenhum registro emocional em {year}. Registre como você se sente na tela <em>Escrever</em>.
-            </div>
-          ) : (
+      </Page>
+      <StatsPage
+        payload={p}
+        hero={{
+          eyebrow: 'Seu ano no diário',
+          summary: (
             <>
-              {/* Big numbers — total, intensidade média, emoção mais frequente */}
-              <div className="ins-bignums">
-                <div className="ins-bignum">
-                  <div className="bn-value">{emotionStats.total}</div>
-                  <div className="bn-label">registros</div>
-                </div>
-                <div className="ins-bignum">
-                  <div className="bn-value">{emotionStats.avg_intensity}</div>
-                  <div className="bn-label">intensidade média</div>
-                </div>
-                <div className="ins-bignum">
-                  <div className="bn-value" style={{ fontSize: 22, textTransform: 'capitalize' }}>
-                    {emotionStats.top_emotion ?? '—'}
-                  </div>
-                  <div className="bn-label">mais frequente</div>
-                </div>
-              </div>
-
-              {/* Lista por emoção: contagem + intensidade média, ordenada por frequência */}
-              <div className="ins-block">
-                <div className="ins-block-title">Por emoção</div>
-                <div className="ins-bars">
-                  {emotionStats.by_emotion.map(emo => {
-                    // Maior contagem entre as emoções — base para a largura proporcional da barra
-                    const maxCount = Math.max(...emotionStats.by_emotion.map(x => x.count), 1)
-                    const pct = (emo.count / maxCount) * 100
-                    return (
-                      <div key={emo.name} className="ins-bar-group" style={{ width: '100%', flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                        {/* Nome da emoção */}
-                        <span style={{ minWidth: 90, fontSize: 13, color: 'var(--ink-2)', textTransform: 'capitalize' }}>
-                          {emo.name}
-                        </span>
-                        {/* Barra horizontal proporcional à contagem */}
-                        <div style={{ flex: 1, height: 8, background: 'var(--line-2)', borderRadius: 4, overflow: 'hidden' }}>
-                          <div style={{ width: `${pct}%`, height: '100%', background: 'var(--garnet)' }} />
-                        </div>
-                        {/* Contagem + intensidade média */}
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink-3)', minWidth: 70, textAlign: 'right' }}>
-                          {emo.count}× · {emo.avg_intensity}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Distribuição mensal dos registros */}
-              <div className="ins-block">
-                <div className="ins-block-title">Registros por mês</div>
-                <AreaChart data={emotionStats.by_month} />
-              </div>
+              <span>{pluralize(kpi('days'), 'dia escrito', 'dias escritos')}</span><span>·</span>
+              <span>{pluralize(kpi('words'), 'palavra', 'palavras')}</span><span>·</span>
+              <span>{kpi('highlight_rate')}% dos dias com destaque</span>
             </>
-          )}
-        </div>
-      )}
-
-      {tab === 'Sequências' && (
-        <div className="ins-section">
-          <div className="ins-bignums">
-            {/* "Sequência atual" só faz sentido no ano corrente (conta a partir do hoje real) */}
-            {isCurrentYear && (
-              <div className="ins-bignum">
-                <div className="bn-value">{stats?.currentStreak ?? 0}</div>
-                <div className="bn-label">sequência atual</div>
-              </div>
-            )}
-            <div className="ins-bignum">
-              <div className="bn-value">{stats?.longestStreak ?? 0}</div>
-              <div className="bn-label">maior sequência</div>
-            </div>
-            <div className="ins-bignum">
-              <div className="bn-value">{Math.round(stats?.freq_per_week ?? 0)}</div>
-              <div className="bn-label">dias/semana</div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+          ),
+        }}
+        minYear={minYear}
+        maxYear={maxYear}
+        onYear={setYear}
+        today={v.today}
+        ratings={[]}
+        heatThresholds={[1, 60, 200, 450]}
+        formatDaily={(n) => pluralize(n, 'palavra', 'palavras')}
+        heatmapTitle="Dias escritos (palavras)"
+        monthlyTitle="Palavras por mês"
+        emptyHint="Escreva neste ano para ver os insights."
+        renderMoment={(m) => (
+          <button key={m.id} type="button" className="vl-moment" onClick={() => v.goto({ view: 'write', date: (m as { date?: string }).date })}>
+            <Icon name="heart" size={14} /><span>{plainText(m.title)}</span><small className="ds-mono">{m.subtitle}</small>
+          </button>
+        )}
+        momentsClass="vl-moments"
+      />
+    </>
   )
 }
