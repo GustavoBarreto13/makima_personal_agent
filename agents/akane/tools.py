@@ -2666,3 +2666,37 @@ def create_movie_reminder(movie_query: str, when: str) -> dict:
             return _err(result.get("message", "Erro ao criar lembrete na Kaguya."))
     except Exception as e:
         return _err(f"Não foi possível criar o lembrete via Kaguya: {e}")
+
+
+# ─── Busca local (referências da Violet — spec 076) ─────────────────────────────
+
+def search_local(query: str, limit: int = 10) -> list[dict]:
+    """Buscar filmes da cinemateca local por título (sem chamar o TMDB).
+
+    Usado pelo autocomplete ``/akane`` do diário (spec 076). Casa pelo título normalizado
+    (sem acento/caixa); os que começam com o termo vêm primeiro.
+
+    Returns:
+        ``[{"id", "label", "sublabel", "cover_url", "deep_link"}]`` — até ``limit``.
+    """
+    termo = _norm(query or "")
+    if not termo:
+        return []
+    rows = run_select(
+        """
+        SELECT id, title, year, director, poster_url
+        FROM movies
+        WHERE deleted = FALSE AND normalizado LIKE %(q)s
+        ORDER BY (normalizado LIKE %(prefix)s) DESC, year DESC NULLS LAST, title
+        LIMIT %(limit)s
+        """,
+        {"q": f"%{termo}%", "prefix": f"{termo}%", "limit": max(1, min(int(limit), 30))},
+    )
+    out = []
+    for r in rows:
+        bits = [str(r["year"]) if r.get("year") else None, ", ".join(r.get("director") or []) or None]
+        out.append({
+            "id": r["id"], "label": r["title"], "sublabel": " · ".join(b for b in bits if b) or None,
+            "cover_url": r.get("poster_url"), "deep_link": f"/movies#filme/{r['id']}",
+        })
+    return out

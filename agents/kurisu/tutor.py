@@ -34,6 +34,7 @@ import psycopg2.extras
 
 from webapp.backend.config import DATABASE_URL as _DATABASE_URL
 from agents.kurisu import tutor_mastery as _mastery
+from agents.kurisu.models import VIOLET_MODEL  # spec 076 — modelo único da Violet
 
 logger = logging.getLogger("kurisu.tutor")
 
@@ -297,7 +298,7 @@ def _call_gemini(prompt: str) -> dict:
 
         client = genai.Client(api_key=api_key)
         resp = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=VIOLET_MODEL,
             contents=prompt,
             config={
                 "response_mime_type": "application/json",

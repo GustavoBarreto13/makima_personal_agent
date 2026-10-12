@@ -332,3 +332,29 @@ def run_kaguya_digest() -> None:
             f"send_kaguya_digest saiu com código {resultado.returncode}.\n"
             f"stderr:\n{resultado.stderr}"
         )
+
+
+def run_violet_weekly_review() -> None:
+    """Executa a revisão semanal do diário (Violet, spec 076) → canais do Hermes.
+
+    Roda `scripts/send_violet_weekly_review.py` num subprocesso (mesmo motivo dos digests:
+    `sys.exit(1)` em falha estrutural vira código de retorno que o runner detecta). Semana já
+    enviada é sucesso — o script sai com 0.
+
+    Raises:
+        RuntimeError: Se o job falhar (código de saída ≠ 0), com o stderr do processo.
+    """
+    resultado = subprocess.run(
+        [sys.executable, "-m", "scripts.send_violet_weekly_review"],
+        capture_output=True,
+        text=True,
+    )
+
+    if resultado.stdout:
+        print(resultado.stdout, end="")
+
+    if resultado.returncode != 0:
+        raise RuntimeError(
+            f"send_violet_weekly_review saiu com código {resultado.returncode}.\n"
+            f"stderr:\n{resultado.stderr}"
+        )

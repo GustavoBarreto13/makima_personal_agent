@@ -1048,3 +1048,37 @@ def get_trip_readiness(trip_id: str) -> dict:
         dossier_pending=dossier_pending,
         budget_defined=budget_defined,
     )
+
+
+# ─── Busca local (referências da Violet — spec 076) ─────────────────────────────
+
+def search_local(query: str, limit: int = 10) -> list[dict]:
+    """Buscar viagens por título ou cidade.
+
+    Usado pelo autocomplete ``/yato`` do diário (spec 076). As mais recentes primeiro.
+
+    Returns:
+        ``[{"id", "label", "sublabel", "cover_url", "deep_link"}]`` — até ``limit``.
+    """
+    termo = (query or "").strip()
+    if not termo:
+        return []
+    rows = run_select(
+        """
+        SELECT id, title, city, state_uf, start_date, end_date
+        FROM trips
+        WHERE deleted = FALSE AND (title ILIKE %(q)s OR city ILIKE %(q)s OR state_uf ILIKE %(q)s)
+        ORDER BY start_date DESC
+        LIMIT %(limit)s
+        """,
+        {"q": f"%{termo}%", "limit": max(1, min(int(limit), 30))},
+    )
+    out = []
+    for r in rows:
+        label = r.get("title") or f"{r['city']}/{r['state_uf']}"
+        when = f"{r['start_date']:%d/%m/%Y}" if r.get("start_date") else None
+        out.append({
+            "id": r["id"], "label": label, "sublabel": " · ".join(b for b in [f"{r['city']}/{r['state_uf']}", when] if b),
+            "cover_url": None, "deep_link": "/travel",
+        })
+    return out

@@ -22,6 +22,9 @@ from agents.lucy.toolset import TOOLS as _LUCY_TOOLS
 from agents.kurisu.toolset import TOOLS as _KURISU_TOOLS
 from agents.journal.toolset import TOOLS as _JOURNAL_TOOLS
 from agents.yato.toolset import TOOLS as _YATO_TOOLS
+# Spec 076 — Conselho, Revisão semanal e leitura emocional da Violet vivem na Kurisu (dona do
+# RAG); entram no domínio journal aqui, para agents/journal continuar sem depender da Kurisu.
+from agents.kurisu.violet_tools import VIOLET_KURISU_TOOLS as _VIOLET_KURISU_TOOLS
 
 DOMAINS: dict[str, list[Callable]] = {
     "nami": _NAMI_TOOLS,
@@ -33,6 +36,6 @@ DOMAINS: dict[str, list[Callable]] = {
     "mai": _MAI_TOOLS,
     "lucy": _LUCY_TOOLS,
     "kurisu": _KURISU_TOOLS,
-    "journal": _JOURNAL_TOOLS,
+    "journal": [*_JOURNAL_TOOLS, *_VIOLET_KURISU_TOOLS],
     "yato": _YATO_TOOLS,
 }

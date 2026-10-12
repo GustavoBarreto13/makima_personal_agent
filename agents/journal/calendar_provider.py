@@ -52,7 +52,7 @@ def list_calendar_events(start: str, end: str) -> list[dict]:
         jp.type_id,
         COUNT(jb.id) AS bullet_count
     FROM journal_pages jp
-    LEFT JOIN journal_bullets jb ON jb.page_id = jp.id
+    LEFT JOIN journal_bullets jb ON jb.page_id = jp.id AND btrim(jb.content) <> ''
     WHERE jp.date BETWEEN %(start)s::date AND %(end)s::date
     GROUP BY jp.id, jp.date, jp.type_id
     HAVING COUNT(jb.id) > 0
@@ -83,7 +83,7 @@ def list_calendar_events(start: str, end: str) -> list[dict]:
             # ref_id é o page_id para que o frontend possa navegar para a página
             "ref_id": str(row["page_id"]),
             # Deep link para a tela de escrita do diário com a data pré-selecionada
-            "deep_link": f"/journal?date={date_str}",
+            "deep_link": f"/journal#dia/{date_str}",  # rota por hash do shell novo (spec 076)
             "color": None,  # usa a cor padrão da fonte (roxo violet)
             "loc": None,
         })

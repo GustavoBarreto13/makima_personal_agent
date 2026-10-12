@@ -21,6 +21,8 @@ import psycopg2.extras   # Fornece RealDictCursor — retorna linhas como dicts
 # Importa DATABASE_URL do config centralizado da webapp — evita duplicar a leitura de os.environ
 from webapp.backend.config import DATABASE_URL as _DATABASE_URL
 
+from agents.journal import markup  # Spec 076 — tokens de pessoa/referência e tags (motor puro)
+
 
 # ─── Conexão ─────────────────────────────────────────────────────────────────
 
@@ -319,6 +321,46 @@ def _ensure_tables() -> None:
                         ('transaction','task','book','journal_bullet','journal_letter','movie_diary_entry'))
                 """)
 
+            # ── Spec 076 — fonte por dia e por carta ──────────────────────────
+            # NULL no dia = usa a fonte padrão das preferências; a carta sempre tem a sua.
+            cur.execute("ALTER TABLE journal_pages ADD COLUMN IF NOT EXISTS font TEXT")
+            cur.execute("ALTER TABLE journal_letters ADD COLUMN IF NOT EXISTS font TEXT NOT NULL DEFAULT 'normal'")
+            for table, nullable in (("journal_pages", True), ("journal_letters", False)):
+                cur.execute(
+                    "SELECT 1 FROM information_schema.table_constraints "
+                    "WHERE constraint_name = %s AND table_name = %s",
+                    (f"{table}_font_check", table),
+                )
+                if cur.fetchone() is None:
+                    cond = "font IS NULL OR " if nullable else ""
+                    cur.execute(
+                        f"ALTER TABLE {table} ADD CONSTRAINT {table}_font_check "
+                        f"CHECK ({cond}font IN ('normal','roteiro','cursiva'))"
+                    )
+
+            # ── Spec 076 — menção resolvida guarda o ID da pessoa na Komi ─────
+            cur.execute("ALTER TABLE journal_mentions ADD COLUMN IF NOT EXISTS person_id TEXT")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_mentions_person ON journal_mentions (person_id)")
+
+            # ── Spec 076 — referências a itens de outros agentes ──────────────
+            # Uma linha por token [Rótulo](agente:tipo:id) no bullet; base dos backlinks futuros.
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS journal_refs (
+                    id          SERIAL PRIMARY KEY,
+                    bullet_id   INT NOT NULL REFERENCES journal_bullets(id) ON DELETE CASCADE,
+                    agent       TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    entity_id   TEXT NOT NULL,
+                    label       TEXT NOT NULL,
+                    UNIQUE (bullet_id, agent, entity_type, entity_id)
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_journal_refs_target ON journal_refs (agent, entity_type, entity_id)")
+
+            # ── Spec 076 — distorções cognitivas por registro emocional ───────
+            # Rótulos curtos (catastrofizacao, leitura_mental...) gravados best-effort pela IA.
+            cur.execute("ALTER TABLE journal_emotion_logs ADD COLUMN IF NOT EXISTS distortions TEXT[]")
+
         # Commita todas as operações DDL acima de uma vez
         conn.commit()
     finally:
@@ -346,98 +388,159 @@ def _parse_mentions(content: str) -> list[tuple[str, str]]:
         >>> _parse_mentions("Conversei com @Ana sobre #python")
         [('person', 'Ana'), ('tag', 'python')]
     """
-    # r'@(\w+)' captura sequências de word chars (letras, dígitos, _) após @
-    people = [("person", m) for m in re.findall(r'@(\w+)', content)]
-    # r'#(\w+)' faz o mesmo para tags iniciadas com #
-    tags   = [("tag",    m) for m in re.findall(r'#(\w+)', content)]
-    # Retorna pessoas primeiro, depois tags — ordem de aparição não é garantida
-    return people + tags
+    # Spec 076: as regras vivem em markup.py (tokens @[Nome](komi:id), @legado e #tags com hífen).
+    parsed = markup.parse(content)
+    return [("person", p.name) for p in parsed.people] + [("tag", t) for t in parsed.tags]
+
+
+# ─── "Dia com conteúdo" (spec 076) ────────────────────────────────────────────
+#
+# Uma página só conta (Arquivo, número do dia, heatmap, força) quando tem algo escrito:
+# bullet não vazio, sonho não vazio, registro emocional ou carta. Visitar uma data não
+# conta mais — e o número #N do dia é calculado só sobre esses dias.
+_HAS_CONTENT_SQL = """(
+    EXISTS (SELECT 1 FROM journal_bullets xb WHERE xb.page_id = {p}.id AND btrim(xb.content) <> '')
+    OR NULLIF(btrim({p}.dream), '') IS NOT NULL
+    OR EXISTS (SELECT 1 FROM journal_emotion_logs xe WHERE xe.page_id = {p}.id)
+    OR EXISTS (SELECT 1 FROM journal_letters xl WHERE xl.page_id = {p}.id)
+)"""
+
+
+def _has_content(alias: str = "p") -> str:
+    return _HAS_CONTENT_SQL.format(p=alias)
+
+
+# CTE com o número estável de cada dia com conteúdo (#1 = o mais antigo).
+_NUMBERED_DAYS_CTE = f"""numbered AS (
+    SELECT p.id, ROW_NUMBER() OVER (ORDER BY p.date) AS num
+    FROM journal_pages p
+    WHERE p.type_id = %(type_id)s AND {_HAS_CONTENT_SQL.format(p='p')}
+)"""
+
+# Palavras de um texto em SQL (aproximação: separa por espaço em branco).
+_WORDS_SQL = "COALESCE(array_length(regexp_split_to_array(NULLIF(btrim({col}), ''), '\\s+'), 1), 0)"
+
+FONTS = ("normal", "roteiro", "cursiva")
+
+
+def _today_sp():
+    """Hoje em America/Sao_Paulo (o servidor roda em UTC)."""
+    import datetime as _dt  # noqa: PLC0415
+    from zoneinfo import ZoneInfo  # noqa: PLC0415
+    return _dt.datetime.now(ZoneInfo("America/Sao_Paulo")).date()
 
 
 # ─── Funções públicas ─────────────────────────────────────────────────────────
 
+def _serialize_page(row: dict) -> dict:
+    page = dict(row)
+    for f in ("created_at", "updated_at"):
+        if page.get(f):
+            page[f] = page[f].isoformat()
+    page["num"] = int(page["num"]) if page.get("num") is not None else None
+    return page
+
+
+def _load_page(cur, date: str, type_id: int) -> dict | None:
+    """Ler a página do dia (ou None) com o número estável do dia (#N).
+
+    #N = 1 + dias com conteúdo antes desta data — então é o mesmo número que o Arquivo
+    mostra, e um dia ainda vazio já exibe o número que vai ganhar ao receber conteúdo.
+    """
+    cur.execute(f"""
+        SELECT p.id, p.date::text AS date, p.type_id, p.dream, p.font,
+               p.created_at, p.updated_at,
+               1 + (SELECT COUNT(*) FROM journal_pages q
+                    WHERE q.type_id = p.type_id AND q.date < p.date AND {_has_content('q')}) AS num
+        FROM journal_pages p
+        WHERE p.type_id = %s AND p.date = %s
+    """, (type_id, date))
+    row = cur.fetchone()
+    return _serialize_page(row) if row else None
+
+
+def _load_bullets(cur, page_id: int) -> list:
+    cur.execute("""
+        SELECT id, page_id, kind, content, position, created_at, favorite
+        FROM journal_bullets
+        WHERE page_id = %s
+        ORDER BY position ASC
+    """, (page_id,))
+    return [
+        {**dict(r), "created_at": r["created_at"].isoformat() if r["created_at"] else None}
+        for r in cur.fetchall()
+    ]
+
+
+def ensure_page_on_cursor(cur, date: str, type_id: int = 1) -> int:
+    """Criar (se preciso) a página do dia dentro da transação do chamador e devolver o id."""
+    cur.execute("""
+        INSERT INTO journal_pages (type_id, date) VALUES (%s, %s)
+        ON CONFLICT (type_id, date) DO UPDATE SET updated_at = journal_pages.updated_at
+        RETURNING id
+    """, (type_id, date))
+    row = cur.fetchone()
+    return row["id"] if isinstance(row, dict) else row[0]
+
+
+def ensure_page(date: str, type_id: int = 1) -> dict:
+    """Criar (se preciso) a página do dia e devolvê-la — chamado no primeiro write do webapp.
+
+    Returns:
+        ``{"page": {...}, "bullets": [...]}`` (mesmo shape de ``get_page``) ou ``{"error"}``.
+    """
+    return get_or_create_page(date, type_id)
+
+
+def get_page(date: str, type_id: int = 1) -> dict:
+    """Ler o dia SEM criar nada (spec 076 — visitar uma data não cria página vazia).
+
+    Returns:
+        ``{"page": {...}, "bullets": [...]}``. Quando o dia ainda não existe, ``page`` é uma
+        página "virtual" com ``id: None`` (mesmo shape), e ``bullets`` é ``[]``.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            page = _load_page(cur, date, type_id)
+            if page is None:
+                cur.execute(
+                    f"""SELECT 1 + COUNT(*) AS num FROM journal_pages q
+                        WHERE q.type_id = %s AND q.date < %s AND {_has_content('q')}""",
+                    (type_id, date),
+                )
+                num = int(cur.fetchone()["num"])
+                page = {"id": None, "date": date, "type_id": type_id, "dream": None, "font": None,
+                        "created_at": None, "updated_at": None, "num": num}
+                return {"page": page, "bullets": []}
+            return {"page": page, "bullets": _load_bullets(cur, page["id"])}
+    finally:
+        conn.close()
+
+
 def get_or_create_page(date: str, type_id: int = 1) -> dict:
-    """Buscar ou criar uma página do diário para a data informada.
+    """Buscar ou criar a página do diário para a data informada.
 
-    Se já existir uma página para (type_id, date), retorna ela com seus bullets.
-    Se não existir, cria a página e retorna com lista de bullets vazia.
-
-    Usa INSERT ... ON CONFLICT DO NOTHING para evitar race conditions —
-    seguro para chamadas simultâneas (ex.: abertura dupla rápida no browser).
+    Mantida para os canais de escrita (Hermes/Telegram e o primeiro write no webapp): só
+    chame quando for escrever algo — para só ler, use ``get_page``.
 
     Args:
         date: Data no formato YYYY-MM-DD (ex.: "2026-06-06").
         type_id: ID do tipo de diário (padrão: 1 = personal).
 
     Returns:
-        Dicionário com:
-        - "page": {"id": int, "date": str, "type_id": int, "dream": str|None, "num": int}
-        - "bullets": [{"id": int, "kind": str, "content": str, "position": int, "created_at": str}, ...]
-          ordenados por position ASC.
+        ``{"page": {"id", "date", "type_id", "dream", "font", "num", ...}, "bullets": [...]}``
+        com os bullets ordenados por ``position``.
     """
     conn = _get_conn()
     try:
-        # RealDictCursor faz com que cada linha retornada seja um dict ({coluna: valor})
-        # em vez da tupla padrão — mais fácil de trabalhar
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-
-            # Tenta inserir a página; se já existir o par (type_id, date),
-            # não faz nada (ON CONFLICT DO NOTHING) e a SELECT abaixo ainda funciona
-            cur.execute("""
-                INSERT INTO journal_pages (type_id, date)
-                VALUES (%s, %s)
-                ON CONFLICT (type_id, date) DO NOTHING
-            """, (type_id, date))
-
-            # Busca a página com dream e num (número sequencial derivado por ROW_NUMBER).
-            # ROW_NUMBER() OVER (ORDER BY date) numera as entries da mais antiga (#1) à mais nova.
-            # A subquery garante que o num seja consistente independente de qual entry buscamos.
-            cur.execute("""
-                SELECT p.id,
-                       p.date::text AS date,
-                       p.type_id,
-                       p.dream,
-                       p.created_at,
-                       p.updated_at,
-                       rn.num
-                FROM journal_pages p
-                JOIN (
-                    SELECT id,
-                           ROW_NUMBER() OVER (ORDER BY date) AS num
-                    FROM journal_pages
-                    WHERE type_id = %s
-                ) rn ON rn.id = p.id
-                WHERE p.type_id = %s AND p.date = %s
-            """, (type_id, type_id, date))
-            row = cur.fetchone()
-
-            # Guarda contra None: só ocorre se type_id não existir em journal_types
-            if row is None:
+            ensure_page_on_cursor(cur, date, type_id)
+            page = _load_page(cur, date, type_id)
+            if page is None:
                 conn.rollback()
                 return {"page": None, "bullets": [], "error": "type_id não encontrado"}
-
-            page = dict(row)
-            # Converte campos datetime para string ISO
-            if page.get("created_at"):
-                page["created_at"] = page["created_at"].isoformat()
-            if page.get("updated_at"):
-                page["updated_at"] = page["updated_at"].isoformat()
-
-            # Busca todos os bullets da página, incluindo kind e favorite, ordenados por posição.
-            # O campo favorite é necessário para o frontend exibir o estado inicial de favorito
-            # de cada bullet ao carregar a página (FR-001: bullets antigos recebem FALSE).
-            cur.execute("""
-                SELECT id, page_id, kind, content, position, created_at, favorite
-                FROM journal_bullets
-                WHERE page_id = %s
-                ORDER BY position ASC
-            """, (page["id"],))
-            # Converte created_at (datetime) para string ISO antes de serializar em JSON
-            bullets = [
-                {**dict(r), "created_at": r["created_at"].isoformat() if r["created_at"] else None}
-                for r in cur.fetchall()
-            ]
-
+            bullets = _load_bullets(cur, page["id"])
         conn.commit()
         return {"page": page, "bullets": bullets}
     except psycopg2.errors.ForeignKeyViolation:
@@ -461,10 +564,10 @@ def set_dream(page_id: int, text: str) -> dict:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            # Salva NULL se texto vazio, para manter consistência com IS NOT NULL nas queries
-            dream_value = text if text else None
+            # Sonho só de espaços conta como vazio (senão o Arquivo marcava "sonho" à toa)
+            dream_value = text.strip() if text and text.strip() else None
             cur.execute(
-                "UPDATE journal_pages SET dream = %s WHERE id = %s",
+                "UPDATE journal_pages SET dream = %s, updated_at = NOW() WHERE id = %s",
                 (dream_value, page_id),
             )
             if cur.rowcount == 0:
@@ -476,59 +579,94 @@ def set_dream(page_id: int, text: str) -> dict:
         conn.close()
 
 
-def list_entries(query: str = '') -> list:
-    """Listar entries resumidas para o arquivo do diário (Journal screen).
+def set_page_font(date: str, font: str | None, type_id: int = 1) -> dict:
+    """Definir a fonte de um dia (``normal`` | ``roteiro`` | ``cursiva``; None = padrão).
 
-    Retorna cada entry com excerpt, contadores e flags, ordenada por data DESC.
-
-    Args:
-        query: Texto de busca opcional — filtra por full-text search no conteúdo dos bullets.
+    Cria a página se preciso (escolher a fonte antes de escrever é um caso comum).
 
     Returns:
-        Lista de dicts: {date, num, excerpt, bullet_count, has_highlight, has_dream}
+        ``{"status": "ok", "page_id", "font"}`` ou ``{"status": "error", "message"}``.
     """
+    if font is not None and font not in FONTS:
+        return {"status": "error", "message": f"fonte deve ser uma de {', '.join(FONTS)}"}
     conn = _get_conn()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            if query:
-                # Filtra entries que têm pelo menos um bullet correspondendo à busca
-                cur.execute("""
-                    SELECT p.date::text AS date,
-                           ROW_NUMBER() OVER (ORDER BY p.date) AS num,
-                           (SELECT content FROM journal_bullets WHERE page_id = p.id ORDER BY position LIMIT 1) AS excerpt,
-                           COUNT(b.id) AS bullet_count,
-                           BOOL_OR(b.kind = 'highlight') AS has_highlight,
-                           p.dream IS NOT NULL AS has_dream
-                    FROM journal_pages p
-                    LEFT JOIN journal_bullets b ON b.page_id = p.id
-                    WHERE EXISTS (
-                        SELECT 1 FROM journal_bullets jb
-                        WHERE jb.page_id = p.id
-                          AND jb.search_vec @@ plainto_tsquery('portuguese', %s)
-                    )
-                    GROUP BY p.id, p.date, p.dream
-                    ORDER BY p.date DESC
-                """, (query,))
-            else:
-                cur.execute("""
-                    SELECT p.date::text AS date,
-                           ROW_NUMBER() OVER (ORDER BY p.date) AS num,
-                           (SELECT content FROM journal_bullets WHERE page_id = p.id ORDER BY position LIMIT 1) AS excerpt,
-                           COUNT(b.id) AS bullet_count,
-                           BOOL_OR(b.kind = 'highlight') AS has_highlight,
-                           p.dream IS NOT NULL AS has_dream
-                    FROM journal_pages p
-                    LEFT JOIN journal_bullets b ON b.page_id = p.id
-                    GROUP BY p.id, p.date, p.dream
-                    ORDER BY p.date DESC
-                """)
+            page_id = ensure_page_on_cursor(cur, date, type_id)
+            cur.execute("UPDATE journal_pages SET font = %s WHERE id = %s", (font, page_id))
+        conn.commit()
+        return {"status": "ok", "page_id": page_id, "font": font}
+    except psycopg2.errors.ForeignKeyViolation:
+        conn.rollback()
+        return {"status": "error", "message": "type_id não encontrado"}
+    finally:
+        conn.close()
+
+
+def list_entries(query: str = '', limit: int | None = None, before: str | None = None, type_id: int = 1) -> list:
+    """Listar os dias com conteúdo para o Arquivo (spec 076 — antes listava toda página visitada).
+
+    Args:
+        query: Busca full-text opcional (bullets e sonho).
+        limit: Máximo de dias (None = todos).
+        before: Só dias anteriores a esta data (paginação: passe a data do último card).
+        type_id: Tipo de diário.
+
+    Returns:
+        ``[{date, num, excerpt, font, bullet_count, word_count, emotion_count, letter_count,
+        has_highlight, has_dream, has_favorite, has_counsel}]`` em ordem de data DESC.
+        ``num`` é estável (não muda com a busca).
+    """
+    params: dict = {"type_id": type_id, "q": query or None, "before": before, "limit": limit}
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # journal_counsel é da Kurisu (spec 061) e pode não existir — testa antes.
+            cur.execute("SELECT to_regclass('journal_counsel') IS NOT NULL AS ok")
+            counsel_sql = (
+                "EXISTS (SELECT 1 FROM journal_counsel c WHERE c.page_id = p.id)"
+                if cur.fetchone()["ok"] else "FALSE"
+            )
+            cur.execute(f"""
+                WITH {_NUMBERED_DAYS_CTE}
+                SELECT p.date::text AS date, n.num, p.font,
+                       NULLIF(btrim(p.dream), '') IS NOT NULL AS has_dream,
+                       (SELECT b.content FROM journal_bullets b
+                         WHERE b.page_id = p.id AND btrim(b.content) <> ''
+                         ORDER BY b.position LIMIT 1) AS first_bullet,
+                       NULLIF(btrim(p.dream), '') AS dream_text,
+                       (SELECT COALESCE(NULLIF(btrim(l.title), ''), 'Carta para ' || l.recipient)
+                          FROM journal_letters l WHERE l.page_id = p.id ORDER BY l.created_at LIMIT 1) AS first_letter,
+                       (SELECT COUNT(*) FROM journal_bullets b WHERE b.page_id = p.id AND btrim(b.content) <> '') AS bullet_count,
+                       (SELECT COALESCE(SUM({_WORDS_SQL.format(col='b.content')}), 0)
+                          FROM journal_bullets b WHERE b.page_id = p.id) + {_WORDS_SQL.format(col='p.dream')} AS word_count,
+                       (SELECT COUNT(*) FROM journal_emotion_logs e WHERE e.page_id = p.id) AS emotion_count,
+                       (SELECT COUNT(*) FROM journal_letters l WHERE l.page_id = p.id) AS letter_count,
+                       EXISTS (SELECT 1 FROM journal_bullets b WHERE b.page_id = p.id AND b.kind = 'highlight'
+                               AND btrim(b.content) <> '') AS has_highlight,
+                       EXISTS (SELECT 1 FROM journal_bullets b WHERE b.page_id = p.id AND b.favorite) AS has_favorite,
+                       {counsel_sql} AS has_counsel
+                FROM journal_pages p
+                JOIN numbered n ON n.id = p.id
+                WHERE (%(before)s::date IS NULL OR p.date < %(before)s::date)
+                  AND (%(q)s::text IS NULL
+                       OR EXISTS (SELECT 1 FROM journal_bullets jb WHERE jb.page_id = p.id
+                                  AND jb.search_vec @@ plainto_tsquery('portuguese', %(q)s))
+                       OR to_tsvector('portuguese', COALESCE(p.dream, '')) @@ plainto_tsquery('portuguese', %(q)s))
+                ORDER BY p.date DESC
+                LIMIT %(limit)s
+            """, params)
             rows = cur.fetchall()
         result = []
         for r in rows:
             d = dict(r)
-            # Trunca excerpt em 150 chars para o card do arquivo
-            excerpt = d.get("excerpt") or ""
-            d["excerpt"] = excerpt[:150]
+            first_bullet = d.pop("first_bullet", None)
+            dream_text = d.pop("dream_text", None)
+            first_letter = d.pop("first_letter", None)
+            d["excerpt"] = (first_bullet or dream_text or first_letter or "")[:240]
+            d["excerpt_kind"] = "bullet" if first_bullet else "dream" if dream_text else "letter" if first_letter else None
+            for k in ("num", "bullet_count", "word_count", "emotion_count", "letter_count"):
+                d[k] = int(d[k] or 0)
             result.append(d)
         return result
     finally:
@@ -548,16 +686,19 @@ def list_collection(kind: str) -> list:
     conn = _get_conn()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("""
-                SELECT b.id, b.kind, b.content,
+            # entry_num = número estável do dia (spec 076 — antes numerava os bullets do tipo).
+            cur.execute(f"""
+                WITH {_NUMBERED_DAYS_CTE}
+                SELECT b.id, b.kind, b.content, b.favorite,
                        b.created_at,
-                       p.date::text AS date,
-                       ROW_NUMBER() OVER (ORDER BY p.date) AS entry_num
+                       p.date::text AS date, p.font,
+                       n.num AS entry_num
                 FROM journal_bullets b
                 JOIN journal_pages p ON p.id = b.page_id
-                WHERE b.kind = %s
-                ORDER BY b.created_at DESC
-            """, (kind,))
+                LEFT JOIN numbered n ON n.id = p.id
+                WHERE b.kind = %(kind)s AND btrim(b.content) <> ''
+                ORDER BY p.date DESC, b.position
+            """, {"kind": kind, "type_id": 1})
             rows = cur.fetchall()
         return [
             {**dict(r), "created_at": r["created_at"].isoformat() if r["created_at"] else None}
@@ -577,15 +718,17 @@ def list_dreams() -> list:
     conn = _get_conn()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("""
+            cur.execute(f"""
+                WITH {_NUMBERED_DAYS_CTE}
                 SELECT p.id AS page_id,
-                       p.date::text AS date,
-                       ROW_NUMBER() OVER (ORDER BY p.date) AS entry_num,
+                       p.date::text AS date, p.font,
+                       n.num AS entry_num,
                        p.dream
                 FROM journal_pages p
-                WHERE p.dream IS NOT NULL
+                JOIN numbered n ON n.id = p.id
+                WHERE NULLIF(btrim(p.dream), '') IS NOT NULL
                 ORDER BY p.date DESC
-            """)
+            """, {"type_id": 1})
             rows = cur.fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -614,7 +757,8 @@ def get_stats(year: int) -> dict:
                     COUNT(b.id) FILTER (WHERE b.kind = 'highlight') AS highlights,
                     COUNT(DISTINCT jm_tag.value) AS tags,
                     COUNT(DISTINCT jm_per.value) AS mentions,
-                    COUNT(DISTINCT p.id) FILTER (WHERE p.dream IS NOT NULL) AS dreams
+                    COUNT(DISTINCT p.id) FILTER (WHERE NULLIF(btrim(p.dream), '') IS NOT NULL) AS dreams,
+                    COUNT(DISTINCT p.id) FILTER (WHERE b.kind = 'highlight' AND btrim(b.content) <> '') AS highlight_days
                 FROM journal_pages p
                 LEFT JOIN journal_bullets b ON b.page_id = p.id
                 LEFT JOIN journal_mentions jm_tag ON jm_tag.bullet_id = b.id AND jm_tag.kind = 'tag'
@@ -635,7 +779,7 @@ def get_stats(year: int) -> dict:
                 FROM journal_pages p
                 LEFT JOIN journal_bullets b ON b.page_id = p.id
                 WHERE EXTRACT(YEAR FROM p.date) = %s
-                  AND p.date <= CURRENT_DATE
+                  AND p.date <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
                 GROUP BY p.id, p.date, p.dream
                 HAVING COALESCE(SUM(
                     array_length(string_to_array(trim(b.content), ' '), 1)
@@ -655,7 +799,7 @@ def get_stats(year: int) -> dict:
 
             # Distribuição de bullets por hora (12 buckets bihourly, 0h=0 ... 22h=11)
             cur.execute("""
-                SELECT FLOOR(EXTRACT(HOUR FROM b.created_at AT TIME ZONE 'UTC') / 2)::int AS bucket,
+                SELECT FLOOR(EXTRACT(HOUR FROM b.created_at AT TIME ZONE 'America/Sao_Paulo') / 2)::int AS bucket,
                        COUNT(*) AS cnt
                 FROM journal_bullets b
                 JOIN journal_pages p ON p.id = b.page_id
@@ -677,7 +821,7 @@ def get_stats(year: int) -> dict:
 
         # Frequência por semana: dias escritos / semanas passadas no ano até hoje
         import datetime
-        today = datetime.date.today()
+        today = _today_sp()
         if today.year == year:
             day_of_year = today.timetuple().tm_yday
         else:
@@ -694,7 +838,9 @@ def get_stats(year: int) -> dict:
             "tags": tags,
             "mentions": mentions,
             "dreams": dreams,
-            "highlight_rate": round(highlights / entries * 100) if entries else 0,
+            # % dos dias escritos que tiveram ao menos um destaque (spec 076 — antes era
+            # destaques/entradas, que passa de 100% e ainda era multiplicado de novo no front).
+            "highlight_rate": round(int(totals.get("highlight_days") or 0) / days_written * 100) if days_written else 0,
             "freq_per_week": round(days_written / weeks, 1),
             "words_by_month": words_by_month,
             "daytime": daytime,
@@ -730,7 +876,7 @@ def get_available_years() -> list:
     finally:
         conn.close()
 
-    current = datetime.date.today().year
+    current = _today_sp().year
     if first is None:
         # Sem entradas ainda — oferece apenas o ano corrente
         return [current]
@@ -738,41 +884,132 @@ def get_available_years() -> list:
     return list(range(current, first - 1, -1))
 
 
+def _sync_bullet_links_on_cursor(cur, bullet_id: int, content: str, person_ids: list[str] | None = None) -> None:
+    """Regravar menções, referências e vínculos com a Komi de um bullet (spec 076).
+
+    - ``journal_mentions``: delete + insert; a menção guarda ``person_id`` quando resolvida.
+    - ``journal_refs``: delete + insert dos tokens ``[Rótulo](agente:tipo:id)``.
+    - ``person_links`` (Komi): o conjunto final é EXATAMENTE as pessoas citadas agora —
+      tokens ``@[Nome](komi:id)``, ``person_ids`` explícitos e ``@Nome`` legado com match
+      exato e único (nome ou apelido). Editar o texto remove o vínculo de quem saiu.
+
+    A parte da Komi roda num SAVEPOINT: se a Komi não estiver instalada (ou falhar), o
+    bullet é salvo do mesmo jeito.
+    """
+    parsed = markup.parse(content)
+
+    cur.execute("DELETE FROM journal_mentions WHERE bullet_id = %s", (bullet_id,))
+    cur.execute("DELETE FROM journal_refs WHERE bullet_id = %s", (bullet_id,))
+
+    resolved: dict[str, str] = {}  # nome citado (legado) → person_id
+    find_exact = None
+    try:
+        from agents.komi.tools import find_people_exact as find_exact  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        pass
+    for p in parsed.people:
+        if p.person_id is None and find_exact is not None:
+            hits = find_exact(p.name)
+            if len(hits) == 1:
+                resolved[p.name] = str(hits[0]["id"])
+
+    for p in parsed.people:
+        cur.execute(
+            "INSERT INTO journal_mentions (bullet_id, kind, value, person_id) VALUES (%s, 'person', %s, %s)",
+            (bullet_id, p.name, p.person_id or resolved.get(p.name)),
+        )
+    for tag in parsed.tags:
+        cur.execute(
+            "INSERT INTO journal_mentions (bullet_id, kind, value) VALUES (%s, 'tag', %s)",
+            (bullet_id, tag),
+        )
+    for r in parsed.refs:
+        cur.execute("""
+            INSERT INTO journal_refs (bullet_id, agent, entity_type, entity_id, label)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (bullet_id, agent, entity_type, entity_id) DO UPDATE SET label = EXCLUDED.label
+        """, (bullet_id, r.agent, r.entity_type, r.entity_id, r.label))
+
+    people_now = {p.person_id for p in parsed.people if p.person_id}
+    people_now |= set(resolved.values())
+    people_now |= {str(pid) for pid in (person_ids or [])}
+
+    cur.execute("SAVEPOINT komi_links")
+    try:
+        from agents.komi.tools import link_person_on_cursor, unlink_people_on_cursor  # noqa: PLC0415
+        unlink_people_on_cursor(cur, "journal_bullet", bullet_id)
+        for pid in sorted(people_now):
+            # Pessoa apagada/inexistente não pode derrubar o bullet: um savepoint por vínculo.
+            cur.execute("SAVEPOINT komi_link_one")
+            try:
+                cur.execute("SELECT 1 FROM people WHERE id = %s AND deleted = FALSE", (pid,))
+                if cur.fetchone() is not None:
+                    link_person_on_cursor(cur, pid, "journal_bullet", bullet_id)
+                cur.execute("RELEASE SAVEPOINT komi_link_one")
+            except Exception:  # noqa: BLE001
+                cur.execute("ROLLBACK TO SAVEPOINT komi_link_one")
+        cur.execute("RELEASE SAVEPOINT komi_links")
+    except Exception:  # noqa: BLE001 — Komi ausente: segue sem vínculo
+        cur.execute("ROLLBACK TO SAVEPOINT komi_links")
+
+
+def _unlink_bullet_on_cursor(cur, bullet_id: int) -> None:
+    """Remover os vínculos da Komi de um bullet apagado (person_links não tem FK)."""
+    cur.execute("SAVEPOINT komi_unlink")
+    try:
+        from agents.komi.tools import unlink_people_on_cursor  # noqa: PLC0415
+        unlink_people_on_cursor(cur, "journal_bullet", bullet_id)
+        cur.execute("RELEASE SAVEPOINT komi_unlink")
+    except Exception:  # noqa: BLE001
+        cur.execute("ROLLBACK TO SAVEPOINT komi_unlink")
+
+
+def _mark_violet_dirty() -> None:
+    # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Violet — Diário"
+    try:
+        from agents.kaguya import gcal_mirror as _gm  # noqa: PLC0415
+        _gm.mark_dirty("violet")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def upsert_bullet(page_id: int, position: int, content: str, kind: str = 'bullet', person_ids: list[str] | None = None) -> dict:
     """Inserir ou atualizar um bullet em uma posição específica da página.
 
-    Se já existir um bullet com (page_id, position), atualiza o content.
-    Se não existir, insere um novo bullet nessa posição.
+    Upsert por ``(page_id, position)``. Depois de salvar, regrava menções, referências e
+    vínculos com a Komi (ver ``_sync_bullet_links_on_cursor``).
 
-    Após salvar o bullet, re-extrai todas as menções (@pessoas, #tags) do
-    conteúdo e as substitui na tabela journal_mentions (delete + insert),
-    garantindo que as menções estejam sempre sincronizadas com o texto atual.
-
-    Vínculos de pessoas (spec 014 / FR-009): se ``person_ids`` for fornecido, grava
-    os vínculos em ``person_links`` na mesma transação. Adicionalmente, @menções com
-    match único em ``people`` são auto-linkadas (best-effort, nunca falham o bullet).
+    Texto vazio (só espaços) **apaga** o bullet daquela posição, se existir — o diário não
+    guarda mais bullets vazios (spec 076; eles apareciam como dias "vazios" no Arquivo).
 
     Args:
         page_id: ID da página onde o bullet pertence.
         position: Posição (linha) do bullet na página (esparso ×1000).
-        content: Texto do bullet.
+        content: Texto do bullet (pode conter ``@[Nome](komi:id)`` e ``[Rótulo](agente:tipo:id)``).
         kind: Tipo do bullet — bullet, highlight, dream, idea, wisdom, note. Default 'bullet'.
-        person_ids: UUIDs de pessoas a vincular explicitamente (spec 014).
+        person_ids: IDs de pessoas da Komi a vincular além das citadas no texto.
 
     Returns:
-        Dicionário com:
-        - "status": "ok"
-        - "bullet": {"id": int, "kind": str, "content": str, "position": int, "created_at": str}
+        ``{"status": "ok", "bullet": {...}}``; com texto vazio,
+        ``{"status": "ok", "bullet": None, "deleted": bool}``.
     """
     conn = _get_conn()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if not (content or "").strip():
+                cur.execute(
+                    "DELETE FROM journal_bullets WHERE page_id = %s AND position = %s RETURNING id",
+                    (page_id, position),
+                )
+                gone = cur.fetchone()
+                if gone:
+                    _unlink_bullet_on_cursor(cur, gone["id"])
+                conn.commit()
+                if gone:
+                    _mark_violet_dirty()
+                return {"status": "ok", "bullet": None, "deleted": bool(gone)}
 
-            # Upsert por (page_id, position) — atualiza content e kind se já existir.
-            # RETURNING retorna os dados do bullet inserido ou atualizado em uma só query.
-            # IMPORTANTE (FR-005): favorite NÃO entra no DO UPDATE SET — assim, editar o texto
-            # ou o tipo do bullet nunca reseta o estado de favorito. Só o endpoint dedicado
-            # PATCH /bullets/{id}/favorite pode alterar favorite (via set_favorite).
+            # favorite NÃO entra no DO UPDATE SET — editar texto ou tipo nunca reseta o favorito (FR-005).
             cur.execute("""
                 INSERT INTO journal_bullets (page_id, position, content, kind)
                 VALUES (%s, %s, %s, %s)
@@ -781,68 +1018,13 @@ def upsert_bullet(page_id: int, position: int, content: str, kind: str = 'bullet
                 RETURNING id, page_id, kind, content, position, created_at, favorite
             """, (page_id, position, content, kind))
             row = cur.fetchone()
-            # Converte created_at para string ISO para serialização JSON
             bullet = {**dict(row), "created_at": row["created_at"].isoformat() if row["created_at"] else None}
 
-            # Atualiza updated_at da página sempre que um bullet é modificado,
-            # para que o heatmap e listagens de páginas recentes fiquem atualizados
-            cur.execute("""
-                UPDATE journal_pages SET updated_at = NOW() WHERE id = %s
-            """, (page_id,))
-
-            bullet_id = bullet["id"]
-
-            # Remove todas as menções antigas deste bullet antes de re-inserir.
-            # Fazemos delete+insert em vez de update para não precisar comparar
-            # listas de menções antigas e novas — mais simples e correto.
-            cur.execute("""
-                DELETE FROM journal_mentions WHERE bullet_id = %s
-            """, (bullet_id,))
-
-            # Extrai as novas menções do conteúdo atualizado.
-            # Deduplica com set() para evitar contagem inflada quando a mesma
-            # @pessoa ou #tag aparece mais de uma vez no mesmo bullet
-            # (ex.: "falei com @Ana e @Ana concordou" → insere @Ana apenas uma vez).
-            mentions = list(set(_parse_mentions(content)))
-
-            # Insere cada menção encontrada no texto
-            for kind, value in mentions:
-                cur.execute("""
-                    INSERT INTO journal_mentions (bullet_id, kind, value)
-                    VALUES (%s, %s, %s)
-                """, (bullet_id, kind, value))
-
-            # Vínculos de pessoas — mesma transação (spec 014 / FR-009).
-            # Import lazy para evitar ciclo agents.journal → agents.komi → agents.journal.
-            try:
-                from agents.komi.tools import link_person_on_cursor, find_people  # noqa: PLC0415
-
-                # 1. Vínculos explícitos passados pelo chamador
-                if person_ids:
-                    for pid in person_ids:
-                        link_person_on_cursor(cur, pid, "journal_bullet", bullet_id)
-
-                # 2. Auto-link de @menções com match único na tabela people (best-effort)
-                person_mentions = [v for (k, v) in mentions if k == "person"]
-                for mention_name in person_mentions:
-                    try:
-                        result = find_people(mention_name)
-                        if result.get("status") == "ok" and len(result.get("people", [])) == 1:
-                            link_person_on_cursor(cur, result["people"][0]["id"], "journal_bullet", bullet_id)
-                    except Exception:
-                        # Auto-link é best-effort — nunca falha o bullet por não encontrar @menção
-                        pass
-            except Exception:
-                # Se komi não estiver disponível, continua sem vincular (graceful degradation)
-                pass
+            cur.execute("UPDATE journal_pages SET updated_at = NOW() WHERE id = %s", (page_id,))
+            _sync_bullet_links_on_cursor(cur, bullet["id"], content, person_ids)
 
         conn.commit()
-        # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Violet — Diário"
-        try:
-            from agents.kaguya import gcal_mirror as _gm
-            _gm.mark_dirty("violet")
-        except Exception:
-            pass
+        _mark_violet_dirty()
         return {"status": "ok", "bullet": bullet}
     except psycopg2.errors.ForeignKeyViolation:
         # page_id não existe em journal_pages — retorna erro amigável em vez de HTTP 500
@@ -855,37 +1037,30 @@ def upsert_bullet(page_id: int, position: int, content: str, kind: str = 'bullet
 def delete_bullet(bullet_id: int) -> dict:
     """Deletar um bullet pelo ID.
 
-    As menções associadas são removidas automaticamente pelo CASCADE
-    definido na criação da tabela journal_mentions.
+    Menções e referências saem pelo CASCADE; os vínculos com a Komi (sem FK) são removidos
+    explicitamente na mesma transação (spec 076 — antes ficavam órfãos).
 
     Args:
         bullet_id: ID único do bullet a ser removido.
 
     Returns:
-        Dicionário com "status": "ok".
+        ``{"status": "ok", "bullet": {...}}`` (o que foi apagado, para o Desfazer) ou erro.
     """
     conn = _get_conn()
     try:
-        with conn.cursor() as cur:
-            # DELETE simples — ON DELETE CASCADE cuida das menções
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("""
                 DELETE FROM journal_bullets WHERE id = %s
+                RETURNING id, page_id, kind, content, position, favorite
             """, (bullet_id,))
-
-            # cur.rowcount indica quantas linhas foram afetadas pelo DELETE.
-            # Se for 0, o bullet não existia — retornamos erro em vez de silenciar.
-            if cur.rowcount == 0:
+            gone = cur.fetchone()
+            if gone is None:
                 conn.rollback()
                 return {"status": "error", "message": "bullet não encontrado"}
-
+            _unlink_bullet_on_cursor(cur, bullet_id)
         conn.commit()
-        # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Violet — Diário"
-        try:
-            from agents.kaguya import gcal_mirror as _gm
-            _gm.mark_dirty("violet")
-        except Exception:
-            pass
-        return {"status": "ok"}
+        _mark_violet_dirty()
+        return {"status": "ok", "bullet": dict(gone)}
     finally:
         conn.close()
 
@@ -1013,7 +1188,7 @@ def list_heatmap(year: int) -> dict:
                 FROM journal_pages jp
                 LEFT JOIN journal_bullets jb ON jb.page_id = jp.id
                 WHERE EXTRACT(YEAR FROM jp.date) = %s
-                  AND jp.date <= CURRENT_DATE
+                  AND jp.date <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
                 GROUP BY jp.id, jp.date, jp.dream
                 HAVING COALESCE(SUM(
                     array_length(string_to_array(trim(jb.content), ' '), 1)
@@ -1046,21 +1221,39 @@ def list_mentions(kind: str) -> list:
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             # Agrupa por value (nome/tag), conta ocorrências e ordena por frequência
-            cur.execute("""
-                SELECT value, COUNT(*) AS count
-                FROM journal_mentions
-                WHERE kind = %s
-                GROUP BY value
-                ORDER BY count DESC
-            """, (kind,))
+            if kind == "person":
+                # Spec 076: menções resolvidas se agrupam pela pessoa (mesmo citada com nomes
+                # diferentes); o nome exibido é o mais usado. `last_date` ordena "recentes".
+                cur.execute("""
+                    SELECT MODE() WITHIN GROUP (ORDER BY m.value) AS value,
+                           m.person_id,
+                           COUNT(*) AS count,
+                           MAX(p.date)::text AS last_date
+                    FROM journal_mentions m
+                    JOIN journal_bullets b ON b.id = m.bullet_id
+                    JOIN journal_pages p ON p.id = b.page_id
+                    WHERE m.kind = 'person'
+                    GROUP BY m.person_id, CASE WHEN m.person_id IS NULL THEN lower(m.value) END
+                    ORDER BY count DESC
+                """)
+            else:
+                cur.execute("""
+                    SELECT m.value, NULL AS person_id, COUNT(*) AS count, MAX(p.date)::text AS last_date
+                    FROM journal_mentions m
+                    JOIN journal_bullets b ON b.id = m.bullet_id
+                    JOIN journal_pages p ON p.id = b.page_id
+                    WHERE m.kind = %s
+                    GROUP BY m.value
+                    ORDER BY count DESC
+                """, (kind,))
             rows = cur.fetchall()
 
-        return [dict(row) for row in rows]
+        return [{**dict(row), "count": int(row["count"])} for row in rows]
     finally:
         conn.close()
 
 
-def get_bullets_by_mention(kind: str, value: str) -> list:
+def get_bullets_by_mention(kind: str, value: str = "", person_id: str | None = None) -> list:
     """Buscar todos os bullets que mencionam uma pessoa ou tag específica.
 
     Retorna os resultados agrupados por data (página), com os bullets de
@@ -1084,16 +1277,18 @@ def get_bullets_by_mention(kind: str, value: str) -> list:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             # JOIN em três tabelas: mentions → bullets → pages
             # Filtra pela menção específica (kind + value) e ordena por data DESC
+            # person_id (spec 076) acha a pessoa por qualquer nome com que foi citada.
             cur.execute("""
-                SELECT jp.date::text AS date,
-                       jb.id,
-                       jb.content
+                SELECT DISTINCT jp.date::text AS date, jp.date AS d, jb.position,
+                       jb.id, jb.content, jb.kind, jb.favorite
                 FROM journal_mentions jm
                 JOIN journal_bullets jb ON jb.id = jm.bullet_id
                 JOIN journal_pages jp ON jp.id = jb.page_id
-                WHERE jm.kind = %s AND jm.value = %s
+                WHERE jm.kind = %(kind)s
+                  AND (CASE WHEN %(pid)s::text IS NOT NULL THEN jm.person_id = %(pid)s
+                            ELSE lower(jm.value) = lower(%(value)s) END)
                 ORDER BY jp.date DESC, jb.position ASC
-            """, (kind, value))
+            """, {"kind": kind, "value": value or "", "pid": person_id})
             rows = cur.fetchall()
 
         # Agrupa os bullets por data em uma estrutura hierárquica
@@ -1103,7 +1298,8 @@ def get_bullets_by_mention(kind: str, value: str) -> list:
             date_key = row["date"]
             if date_key not in grouped:
                 grouped[date_key] = []
-            grouped[date_key].append({"id": row["id"], "content": row["content"]})
+            grouped[date_key].append({"id": row["id"], "content": row["content"],
+                                      "kind": row["kind"], "favorite": row["favorite"]})
 
         # Converte o dict para a lista de dicts esperada pelo cliente
         return [{"date": d, "bullets": bullets} for d, bullets in grouped.items()]
@@ -1288,7 +1484,7 @@ def list_emotion_logs(page_id: int) -> list:
                        e.name AS emotion_name,
                        l.intensity, l.situation, l.automatic_thought,
                        l.adaptive_response, l.reappraised_intensity,
-                       l.created_at
+                       l.created_at, l.distortions
                 FROM journal_emotion_logs l
                 JOIN journal_emotions e ON e.id = l.emotion_id
                 WHERE l.page_id = %s
@@ -1339,7 +1535,7 @@ def create_emotion_log(
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, page_id, emotion_id, intensity, situation,
                           automatic_thought, adaptive_response,
-                          reappraised_intensity, created_at
+                          reappraised_intensity, created_at, distortions
             """, (page_id, emotion_id, intensity, situation,
                   automatic_thought, adaptive_response, reappraised_intensity))
             row = cur.fetchone()
@@ -1403,7 +1599,7 @@ def update_emotion_log(log_id: int, **fields) -> dict:
                 WHERE id = %s
                 RETURNING id, page_id, emotion_id, intensity, situation,
                           automatic_thought, adaptive_response,
-                          reappraised_intensity, created_at
+                          reappraised_intensity, created_at, distortions
             """, values)
             row = cur.fetchone()
             if row is None:
@@ -1454,7 +1650,7 @@ def delete_emotion_log(log_id: int) -> dict:
         conn.close()
 
 
-def get_emotion_stats(year: int) -> dict:
+def get_emotion_stats(year: int | None = None, since: str | None = None, until: str | None = None) -> dict:
     """Agregar os registros emocionais de um ano para a aba "Emoções" dos Insights.
 
     Calcula no banco (não no cliente) o total de registros, a intensidade média
@@ -1463,7 +1659,8 @@ def get_emotion_stats(year: int) -> dict:
     não a reavaliada, para as médias.
 
     Args:
-        year: Ano de referência (ex.: 2026).
+        year: Ano de referência (ex.: 2026); None = sem filtro de ano.
+        since / until: Intervalo de datas (YYYY-MM-DD, inclusivo) — aba Registro emocional (spec 076).
 
     Returns:
         {
@@ -1486,8 +1683,10 @@ def get_emotion_stats(year: int) -> dict:
                 FROM journal_emotion_logs l
                 JOIN journal_pages p ON p.id = l.page_id
                 JOIN journal_emotions e ON e.id = l.emotion_id
-                WHERE EXTRACT(YEAR FROM p.date) = %s
-            """, (year,))
+                WHERE (%(year)s::int IS NULL OR EXTRACT(YEAR FROM p.date) = %(year)s)
+                  AND (%(since)s::date IS NULL OR p.date >= %(since)s::date)
+                  AND (%(until)s::date IS NULL OR p.date <= %(until)s::date)
+            """, {"year": year, "since": since, "until": until})
             rows = cur.fetchall()
 
         total = len(rows)
@@ -1566,7 +1765,7 @@ def get_emotion_stats(year: int) -> dict:
 
 # Campos textuais da carta que update_letter aceita atualizar (status/sealed_at
 # são controlados por seal_letter, não por update_letter).
-_LETTER_TEXT_FIELDS = ("recipient", "title", "body")
+_LETTER_TEXT_FIELDS = ("recipient", "title", "body", "font")
 
 
 def _serialize_letter(row: dict) -> dict:
@@ -1645,7 +1844,7 @@ def list_letters(page_id: int) -> list:
             # quando a carta não tem nenhum vínculo (senão json_agg traria [null]).
             # entity_id é TEXT em person_links, por isso o cast l.id::text.
             cur.execute("""
-                SELECT l.id, l.page_id, l.recipient, l.title, l.body,
+                SELECT l.id, l.page_id, l.recipient, l.title, l.body, l.font,
                        l.status, l.sealed_at, l.created_at, l.updated_at,
                        COALESCE(
                          json_agg(json_build_object('id', pe.id, 'name', pe.name))
@@ -1675,6 +1874,7 @@ def create_letter(
     title: str | None = None,
     status: str = "draft",
     person_ids: list[str] | None = None,
+    font: str = "normal",
 ) -> dict:
     """Criar uma carta num dia (página), opcionalmente já lacrada e vinculada.
 
@@ -1699,6 +1899,8 @@ def create_letter(
     # uma mensagem amigável em vez de deixar estourar um erro de constraint)
     if status not in ("draft", "sealed"):
         return {"status": "error", "message": "status deve ser 'draft' ou 'sealed'"}
+    if font not in FONTS:
+        return {"status": "error", "message": f"fonte deve ser uma de {', '.join(FONTS)}"}
 
     # Carta lacrada na criação já recebe o carimbo de quando foi lacrada
     sealed_sql = "NOW()" if status == "sealed" else "NULL"
@@ -1710,11 +1912,11 @@ def create_letter(
             # sealed_at é injetado como literal SQL (NOW()/NULL), nunca como dado do usuário.
             cur.execute(f"""
                 INSERT INTO journal_letters
-                    (page_id, recipient, title, body, status, sealed_at)
-                VALUES (%s, %s, %s, %s, %s, {sealed_sql})
+                    (page_id, recipient, title, body, status, font, sealed_at)
+                VALUES (%s, %s, %s, %s, %s, %s, {sealed_sql})
                 RETURNING id, page_id, recipient, title, body,
-                          status, sealed_at, created_at, updated_at
-            """, (page_id, recipient, title, body, status))
+                          status, sealed_at, created_at, updated_at, font
+            """, (page_id, recipient, title, body, status, font))
             row = cur.fetchone()
             letter_id = row["id"]
 
@@ -1762,6 +1964,8 @@ def update_letter(letter_id: int, person_ids: list[str] | None = None, **fields)
     """
     # Filtra apenas os campos textuais permitidos que vieram na chamada
     updates = {k: v for k, v in fields.items() if k in _LETTER_TEXT_FIELDS}
+    if "font" in updates and updates["font"] not in FONTS:
+        return {"status": "error", "message": f"fonte deve ser uma de {', '.join(FONTS)}"}
 
     # Sem campos de texto E sem person_ids = nada a fazer
     if not updates and person_ids is None:
@@ -1795,7 +1999,7 @@ def update_letter(letter_id: int, person_ids: list[str] | None = None, **fields)
                 SET {", ".join(set_parts)}
                 WHERE id = %s
                 RETURNING id, page_id, recipient, title, body,
-                          status, sealed_at, created_at, updated_at
+                          status, sealed_at, created_at, updated_at, font
             """, values)
             row = cur.fetchone()
 
@@ -1842,7 +2046,7 @@ def seal_letter(letter_id: int) -> dict:
                 SET status = 'sealed', sealed_at = NOW(), updated_at = NOW()
                 WHERE id = %s AND status = 'draft'
                 RETURNING id, page_id, recipient, title, body,
-                          status, sealed_at, created_at, updated_at
+                          status, sealed_at, created_at, updated_at, font
             """, (letter_id,))
             row = cur.fetchone()
             if row is None:
@@ -1892,6 +2096,251 @@ def delete_letter(letter_id: int) -> dict:
                 pass
         conn.commit()
         return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Spec 076 — abas consolidadas (Cartas e Registro emocional)
+# ═════════════════════════════════════════════════════════════════════════════
+
+_LETTER_BASE_COLUMNS = """
+    l.id, l.page_id, p.date::text AS date, l.recipient, l.title, l.body, l.font,
+    l.status, l.sealed_at, l.created_at, l.updated_at"""
+
+_LETTER_PEOPLE_COLUMN = """,
+    COALESCE(
+      (SELECT json_agg(json_build_object('id', pe.id, 'name', pe.name, 'avatar_url', pe.avatar_url) ORDER BY pe.name)
+         FROM person_links pl JOIN people pe ON pe.id = pl.person_id AND pe.deleted = FALSE
+        WHERE pl.entity_type = 'journal_letter' AND pl.entity_id = l.id::text),
+      '[]'
+    ) AS people"""
+
+
+def _people_tables_exist(cur) -> bool:
+    cur.execute("SELECT to_regclass('person_links') IS NOT NULL AND to_regclass('people') IS NOT NULL AS ok")
+    return bool(cur.fetchone()["ok"])
+
+
+def _letter_columns(cur) -> str:
+    """Colunas da carta + pessoas vinculadas (ou lista vazia se a Komi não existir)."""
+    people = _LETTER_PEOPLE_COLUMN if _people_tables_exist(cur) else ", '[]'::json AS people"
+    return _LETTER_BASE_COLUMNS + people
+
+
+def list_all_letters(
+    status: str | None = None,
+    person_id: str | None = None,
+    q: str | None = None,
+    limit: int = 50,
+    before: str | None = None,
+) -> list:
+    """Todas as cartas, da mais recente para a mais antiga (aba Cartas — spec 076).
+
+    Args:
+        status: ``draft`` | ``sealed`` | None (todas).
+        person_id: Só cartas vinculadas a esta pessoa da Komi.
+        q: Busca (sem caixa) no destinatário, título e corpo.
+        limit: Máximo de cartas (1–200).
+        before: Paginação — só cartas de dias anteriores a esta data.
+
+    Returns:
+        ``[{id, page_id, date, recipient, title, body, font, status, sealed_at, created_at,
+        updated_at, people: [{id, name, avatar_url}]}]``.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cols = _letter_columns(cur)
+            person_filter = (
+                "AND EXISTS (SELECT 1 FROM person_links pl WHERE pl.entity_type = 'journal_letter' "
+                "AND pl.entity_id = l.id::text AND pl.person_id = %(pid)s)"
+                if person_id else ""
+            )
+            cur.execute(f"""
+                SELECT {cols}
+                FROM journal_letters l
+                JOIN journal_pages p ON p.id = l.page_id
+                WHERE (%(status)s::text IS NULL OR l.status = %(status)s)
+                  AND (%(before)s::date IS NULL OR p.date < %(before)s::date)
+                  AND (%(q)s::text IS NULL OR
+                       (l.recipient || ' ' || COALESCE(l.title, '') || ' ' || l.body) ILIKE %(qlike)s)
+                  {person_filter}
+                ORDER BY p.date DESC, l.created_at DESC
+                LIMIT %(limit)s
+            """, {"status": status if status in ("draft", "sealed") else None, "before": before,
+                  "q": q or None, "qlike": f"%{q}%" if q else None, "pid": person_id,
+                  "limit": max(1, min(int(limit), 200))})
+            return [_serialize_letter(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_letter(letter_id: int) -> dict:
+    """Uma carta com o dia e as pessoas vinculadas.
+
+    Returns:
+        ``{"status": "ok", "letter": {...}}`` ou ``{"status": "error", "message"}``.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cols = _letter_columns(cur)
+            cur.execute(f"""
+                SELECT {cols}
+                FROM journal_letters l JOIN journal_pages p ON p.id = l.page_id
+                WHERE l.id = %s
+            """, (letter_id,))
+            row = cur.fetchone()
+        if row is None:
+            return {"status": "error", "message": "carta não encontrada"}
+        return {"status": "ok", "letter": _serialize_letter(row)}
+    finally:
+        conn.close()
+
+
+_EMOTION_LOG_SELECT = """
+    SELECT l.id, l.page_id, p.date::text AS date, l.emotion_id, e.name AS emotion_name,
+           l.intensity, l.situation, l.automatic_thought, l.adaptive_response,
+           l.reappraised_intensity, l.distortions, l.created_at
+    FROM journal_emotion_logs l
+    JOIN journal_pages p ON p.id = l.page_id
+    JOIN journal_emotions e ON e.id = l.emotion_id
+"""
+
+
+def list_all_emotion_logs(
+    emotion_id: int | None = None,
+    min_intensity: int | None = None,
+    q: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    limit: int = 50,
+    before: str | None = None,
+) -> list:
+    """Todos os registros emocionais, do mais recente para o mais antigo (aba Registro emocional).
+
+    Args:
+        emotion_id: Só esta emoção.
+        min_intensity: Só registros com intensidade inicial >= este valor.
+        q: Busca (sem caixa) em situação, pensamento automático e resposta adaptativa.
+        since / until: Intervalo de datas do dia (YYYY-MM-DD, inclusivo).
+        limit: Máximo (1–1000).
+        before: Paginação — só dias anteriores a esta data.
+
+    Returns:
+        ``[{id, page_id, date, emotion_id, emotion_name, intensity, situation, automatic_thought,
+        adaptive_response, reappraised_intensity, distortions, created_at}]``.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(_EMOTION_LOG_SELECT + """
+                WHERE (%(eid)s::int IS NULL OR l.emotion_id = %(eid)s)
+                  AND (%(minI)s::int IS NULL OR l.intensity >= %(minI)s)
+                  AND (%(since)s::date IS NULL OR p.date >= %(since)s::date)
+                  AND (%(until)s::date IS NULL OR p.date <= %(until)s::date)
+                  AND (%(before)s::date IS NULL OR p.date < %(before)s::date)
+                  AND (%(q)s::text IS NULL OR
+                       (COALESCE(l.situation,'') || ' ' || COALESCE(l.automatic_thought,'') || ' ' ||
+                        COALESCE(l.adaptive_response,'')) ILIKE %(qlike)s)
+                ORDER BY p.date DESC, l.created_at DESC
+                LIMIT %(limit)s
+            """, {"eid": emotion_id, "minI": min_intensity, "since": since, "until": until,
+                  "before": before, "q": q or None, "qlike": f"%{q}%" if q else None,
+                  "limit": max(1, min(int(limit), 1000))})
+            return [_serialize_log(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def list_emotion_logs_by_ids(ids: list[int]) -> list:
+    """Registros emocionais pelos IDs (a evidência por trás de um achado da análise)."""
+    if not ids:
+        return []
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(_EMOTION_LOG_SELECT + """
+                WHERE l.id = ANY(%s)
+                ORDER BY p.date DESC, l.created_at DESC
+            """, ([int(i) for i in ids],))
+            return [_serialize_log(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_emotion_log(log_id: int) -> dict:
+    """Um registro emocional com o dia. ``{"status": "ok", "log"}`` ou erro."""
+    rows = list_emotion_logs_by_ids([log_id])
+    if not rows:
+        return {"status": "error", "message": "registro não encontrado"}
+    return {"status": "ok", "log": rows[0]}
+
+
+def set_emotion_distortions(log_id: int, distortions: list[str]) -> dict:
+    """Gravar os rótulos de distorção cognitiva de um registro (classificação best-effort)."""
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE journal_emotion_logs SET distortions = %s WHERE id = %s",
+                        (list(distortions or []), log_id))
+            if cur.rowcount == 0:
+                conn.rollback()
+                return {"status": "error", "message": "registro não encontrado"}
+        conn.commit()
+        return {"status": "ok"}
+    finally:
+        conn.close()
+
+
+def list_refs(agent: str | None = None, since: str | None = None, until: str | None = None) -> list:
+    """Referências a outros agentes citadas no diário (Refletir, Insights e backlinks futuros).
+
+    Returns:
+        ``[{agent, entity_type, entity_id, label, count, last_date}]`` ordenado por uso.
+    """
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT r.agent, r.entity_type, r.entity_id,
+                       MODE() WITHIN GROUP (ORDER BY r.label) AS label,
+                       COUNT(*) AS count, MAX(p.date)::text AS last_date
+                FROM journal_refs r
+                JOIN journal_bullets b ON b.id = r.bullet_id
+                JOIN journal_pages p ON p.id = b.page_id
+                WHERE (%(agent)s::text IS NULL OR r.agent = %(agent)s)
+                  AND (%(since)s::date IS NULL OR p.date >= %(since)s::date)
+                  AND (%(until)s::date IS NULL OR p.date <= %(until)s::date)
+                GROUP BY r.agent, r.entity_type, r.entity_id
+                ORDER BY count DESC, last_date DESC
+            """, {"agent": agent, "since": since, "until": until})
+            return [{**dict(r), "count": int(r["count"])} for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_bullets_by_ref(agent: str, entity_type: str, entity_id: str) -> list:
+    """Bullets que citam um item de outro agente, agrupados por dia (mesmo shape do filtro)."""
+    conn = _get_conn()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT p.date::text AS date, b.id, b.content, b.kind, b.favorite
+                FROM journal_refs r
+                JOIN journal_bullets b ON b.id = r.bullet_id
+                JOIN journal_pages p ON p.id = b.page_id
+                WHERE r.agent = %s AND r.entity_type = %s AND r.entity_id = %s
+                ORDER BY p.date DESC, b.position
+            """, (agent, entity_type, str(entity_id)))
+            rows = cur.fetchall()
+        grouped: dict[str, list] = {}
+        for r in rows:
+            grouped.setdefault(r["date"], []).append(
+                {"id": r["id"], "content": r["content"], "kind": r["kind"], "favorite": r["favorite"]}
+            )
+        return [{"date": d, "bullets": b} for d, b in grouped.items()]
     finally:
         conn.close()
 

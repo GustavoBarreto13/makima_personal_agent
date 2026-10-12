@@ -54,7 +54,7 @@ def test_dia_nao_vazio_so_com_carta():
 # ──────────────────────────────────────────────────────────────────────────────
 def test_selecionar_queries_respeita_o_teto():
     """No máximo _MAX_RAG_QUERIES consultas, mesmo que o modelo peça mais (research.md R3)."""
-    temas = {"queries": ["q1", "q2", "q3", "q4", "q5", "q6"]}
+    temas = {"queries": [f"q{i}" for i in range(12)]}
     assert len(C._selecionar_queries(temas)) == C._MAX_RAG_QUERIES
 
 

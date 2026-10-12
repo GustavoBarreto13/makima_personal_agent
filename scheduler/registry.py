@@ -12,6 +12,7 @@ Cada job tem:
     - uma descrição de uma linha (aparece no log de startup).
 """
 
+import os
 from dataclasses import dataclass, field
 from typing import Callable
 from zoneinfo import ZoneInfo
@@ -27,7 +28,7 @@ from scheduler.jobs import (
     run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest, run_kaguya_digest,
     run_weekly_review_reminder,
     run_recurring_charges, run_budget_alert, run_monthly_report, run_marin_mal_sync,
-    run_gcal_mirror,
+    run_gcal_mirror, run_violet_weekly_review,
 )
 
 # Fuso horário do usuário. Todos os horários dos jobs são interpretados nele —
@@ -158,6 +159,18 @@ JOBS: list[ScheduledJob] = [
         func=run_weekly_review_reminder,
         trigger=weekly_at("sun", 20, 0),
         description="Lembrete de revisão semanal (Kaguya) → Telegram, se a semana ficou sem revisão",
+    ),
+    # Revisão semanal do diário (Violet) — balanço franco da semana pelo Hermes (spec 076).
+    # Domingo 20:30 (depois do lembrete do GTD, 20:00); horário ajustável por env.
+    ScheduledJob(
+        name="violet_weekly_review",
+        func=run_violet_weekly_review,
+        trigger=weekly_at(
+            "sun",
+            int(os.environ.get("VIOLET_WEEKLY_REVIEW_HOUR", "20")),
+            int(os.environ.get("VIOLET_WEEKLY_REVIEW_MINUTE", "30")),
+        ),
+        description="Revisão semanal do diário (Violet/Kurisu) → Hermes: veredito, comparação e compromissos",
     ),
     # Cobranças recorrentes (Nami) — avisa D-3, lança assinaturas/contas fixas automáticas
     # no vencimento (rola next_billing), avisa contas fixas manuais para confirmar o valor.

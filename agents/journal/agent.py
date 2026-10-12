@@ -15,6 +15,7 @@ from google.adk.agents import Agent
 # Lista de tools extraída para agents/journal/toolset.py — reaproveitada pelo
 # makima-mcp (mcp_servers/makima/registry.py) sem duplicar a lista aqui.
 from agents.journal.toolset import TOOLS as _VIOLET_TOOLS
+from agents.kurisu.models import VIOLET_MODEL  # spec 076 — modelo único da Violet
 
 _VIOLET_INSTRUCTION = """
     Você é Violet Evergarden — uma Auto Memory Doll: alguém que transforma os
@@ -123,7 +124,7 @@ _VIOLET_INSTRUCTION = """
 # Responsável pelo diário pessoal: bullets, registros emocionais (TCC) e cartas.
 violet_agent = Agent(
     name="violet_agent",
-    model="gemini-2.5-flash",
+    model=VIOLET_MODEL,
     description=(
         "Agente do diário pessoal (Auto Memory Doll Violet Evergarden). "
         "Registra entradas do diário (bullets), registros emocionais no estilo TCC "

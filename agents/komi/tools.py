@@ -669,6 +669,78 @@ def find_people(query: str) -> dict:
         return {"status": "error", "message": str(e)}
 
 
+def find_people_exact(name: str) -> list[dict]:
+    """Pessoas vivas cujo nome OU apelido é exatamente ``name`` (sem acento/caixa).
+
+    Diferente de ``find_people`` (prefixo, para busca), aqui ``"Ana"`` não casa com
+    "Ana Lima". É o critério para vincular uma ``@Menção`` sem perguntar (spec 076).
+
+    Returns:
+        ``[{"id", "name"}]`` — vazio em erro (vínculo é best-effort).
+    """
+    if not name or not name.strip():
+        return []
+    try:
+        return run_select(
+            """
+            SELECT p.id, p.name FROM people p
+            WHERE p.deleted = FALSE AND p.normalizado = %(n)s
+            UNION
+            SELECT p.id, p.name FROM people p
+            JOIN person_aliases a ON a.person_id = p.id
+            WHERE p.deleted = FALSE AND a.normalizado = %(n)s
+            """,
+            {"n": _norm(name)},
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def suggest_people(query: str = "", limit: int = 8) -> dict:
+    """Sugestões para o autocomplete de ``@`` (spec 076): prefixo no nome ou apelido,
+    ou — sem termo — as pessoas mais vinculadas. Traz avatar e o apelido que casou.
+
+    Returns:
+        ``{"status": "ok", "people": [{"id", "name", "relationship", "avatar_url", "alias"}]}``.
+    """
+    limit = max(1, min(int(limit), 20))
+    norm_q = _norm(query or "")
+    try:
+        if not norm_q:
+            rows = run_select(
+                """
+                SELECT p.id, p.name, p.relationship, p.avatar_url, NULL AS alias
+                FROM people p LEFT JOIN person_links pl ON pl.person_id = p.id
+                WHERE p.deleted = FALSE
+                GROUP BY p.id ORDER BY COUNT(pl.id) DESC, p.name LIMIT %(n)s
+                """,
+                {"n": limit},
+            )
+        else:
+            rows = run_select(
+                """
+                SELECT DISTINCT ON (id) id, name, relationship, avatar_url, alias, rank FROM (
+                    SELECT p.id, p.name, p.relationship, p.avatar_url, NULL::text AS alias,
+                           CASE WHEN p.normalizado LIKE %(prefix)s THEN 0 ELSE 1 END AS rank
+                    FROM people p
+                    WHERE p.deleted = FALSE AND (p.normalizado LIKE %(prefix)s OR p.normalizado LIKE %(word)s)
+                    UNION ALL
+                    SELECT p.id, p.name, p.relationship, p.avatar_url, a.alias, 0 AS rank
+                    FROM people p JOIN person_aliases a ON a.person_id = p.id
+                    WHERE p.deleted = FALSE AND a.normalizado LIKE %(prefix)s
+                ) s
+                ORDER BY id, rank
+                """,
+                {"prefix": f"{norm_q}%", "word": f"% {norm_q}%"},
+            )
+            rows = sorted(rows, key=lambda r: (r["rank"], r["name"]))[:limit]
+            for r in rows:
+                r.pop("rank", None)
+        return {"status": "ok", "people": rows}
+    except Exception as e:  # noqa: BLE001
+        return {"status": "error", "message": str(e)}
+
+
 def get_person(person_id: str) -> dict:
     """Obter perfil completo de uma pessoa (sem vínculos cross-agent).
 
@@ -915,9 +987,39 @@ def get_person_summary(person_id: str) -> dict:
             """,
             {"pid": person_id},
         )
-        diario = {"contagem": len(bullet_rows), "trechos": bullet_rows}
+        total_rows = run_select(
+            "SELECT COUNT(*) AS n FROM person_links WHERE person_id = %(pid)s AND entity_type = 'journal_bullet'",
+            {"pid": person_id},
+        )
+        # Contrato com a Violet (spec 076): cada trecho leva o bullet e o link para o dia.
+        # `texto` é o conteúdo sem a sintaxe dos tokens (@[Nome](komi:id) → @Nome).
+        from agents.journal.markup import plain_text  # noqa: PLC0415 — puro, sem banco
+        trechos = [
+            {**r, "bullet_id": r["id"], "texto": plain_text(r["content"]), "deep_link": f"/journal#dia/{r['date']}"}
+            for r in bullet_rows
+        ]
+        diario = {"contagem": int(total_rows[0]["n"]) if total_rows else len(trechos), "trechos": trechos}
     except Exception:
         diario = {"contagem": 0, "trechos": []}
+
+    # ── Bloco: Cartas da Violet (journal_letters vinculadas — spec 076) ─────
+    try:
+        carta_rows = run_select(
+            """
+            SELECT l.id, l.recipient, l.title, l.status, l.font, jp.date::text AS date,
+                   LEFT(l.body, 240) AS trecho
+            FROM person_links pl
+            JOIN journal_letters l ON l.id = pl.entity_id::int
+            JOIN journal_pages jp ON jp.id = l.page_id
+            WHERE pl.person_id = %(pid)s AND pl.entity_type = 'journal_letter'
+            ORDER BY jp.date DESC
+            LIMIT 10
+            """,
+            {"pid": person_id},
+        )
+        cartas = {"cartas": [{**r, "deep_link": f"/journal#carta/{r['id']}"} for r in carta_rows]}
+    except Exception:
+        cartas = {"cartas": []}
 
     # ── Bloco: Livros (books vinculados — entity_id é UUID TEXT) ─────────────
     try:
@@ -941,6 +1043,7 @@ def get_person_summary(person_id: str) -> dict:
         "financas": financas,
         "tarefas": tarefas,
         "diario": diario,
+        "cartas": cartas,
         "livros": livros,
     }
 

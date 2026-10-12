@@ -1376,3 +1376,38 @@ def get_episodes_for_season(series_id: str, season_number: int) -> dict:
         episodes.append(ep)
 
     return _ok(episodes=episodes, season_number=season_number)
+
+
+# ─── Busca local (referências da Violet — spec 076) ─────────────────────────────
+
+def search_local(query: str, limit: int = 10) -> list[dict]:
+    """Buscar séries do catálogo local por título (exibição ou original), sem chamar o TMDB.
+
+    Usado pelo autocomplete ``/mai`` do diário (spec 076).
+
+    Returns:
+        ``[{"id", "label", "sublabel", "cover_url", "deep_link"}]`` — até ``limit``.
+    """
+    termo = _norm(query or "")
+    if not termo:
+        return []
+    rows = run_select(
+        """
+        SELECT id, title, title_original, network, first_air_date, poster_url
+        FROM series
+        WHERE deleted = FALSE AND (normalizado LIKE %(q)s OR title_original ILIKE %(raw)s)
+        ORDER BY (normalizado LIKE %(prefix)s) DESC, title
+        LIMIT %(limit)s
+        """,
+        {"q": f"%{termo}%", "prefix": f"{termo}%", "raw": f"%{(query or '').strip()}%",
+         "limit": max(1, min(int(limit), 30))},
+    )
+    out = []
+    for r in rows:
+        year = r["first_air_date"].year if r.get("first_air_date") else None
+        bits = [str(year) if year else None, r.get("network")]
+        out.append({
+            "id": r["id"], "label": r["title"], "sublabel": " · ".join(b for b in bits if b) or None,
+            "cover_url": r.get("poster_url"), "deep_link": "/series",
+        })
+    return out

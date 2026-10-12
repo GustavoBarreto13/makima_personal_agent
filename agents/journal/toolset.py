@@ -36,6 +36,8 @@ from agents.journal.tools import (
     seal_letter,
     delete_letter,
 )
+# Spec 076 — tools pensadas para o chat (resolvem @pessoas e /referências do texto livre).
+from agents.journal.chat_tools import CHAT_TOOLS
 
 TOOLS = [
     get_or_create_page,
@@ -59,4 +61,5 @@ TOOLS = [
     update_letter,
     seal_letter,
     delete_letter,
+    *CHAT_TOOLS,
 ]

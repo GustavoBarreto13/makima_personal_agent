@@ -1,7 +1,12 @@
-"""Router do journal — expõe as tools do diário pessoal como endpoints REST.
+"""Router do journal — expõe as tools do diário pessoal (Violet) como endpoints REST.
 
-Cada endpoint embrulha diretamente uma função de tool do journal (agents/journal/tools.py).
+Cada endpoint embrulha diretamente uma função de tool do journal (agents/journal/*).
 As tools retornam dicts com "status": "ok"/"error" — o router converte "error" em HTTP 400.
+
+Integrações cross-domain que só este router conhece (agents/journal/ não depende delas):
+    - Kurisu: Tutor de Idiomas (031), Conselho do Dia (061/076), Revisão semanal e
+      leitura emocional da Violet (076);
+    - Komi: sugestões do autocomplete de @ (076).
 
 Usage:
     # Em main.py:
@@ -12,29 +17,41 @@ Usage:
 import re
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from webapp.backend.deps import require_user
 
+from agents.journal import references as journal_refs
+from agents.journal import values as journal_values
+from agents.journal.emotion_patterns import get_emotion_patterns
+from agents.journal.reflect import get_reflect
+from agents.journal.strength import get_writing_strength
 from agents.journal.tools import (
-    get_or_create_page,
+    _today_sp,
+    get_page,
+    ensure_page,
+    set_page_font,
     upsert_bullet,
     delete_bullet,
     list_heatmap,
     list_mentions,
     get_bullets_by_mention,
+    get_bullets_by_ref,
+    list_refs,
     search_bullets,
     set_dream,
     list_entries,
     list_collection,
     list_dreams,
-    get_stats,
     get_available_years,
     # Feature 006 — Registro Emocional TCC
     list_emotions,
     create_emotion,
     list_emotion_logs,
+    list_all_emotion_logs,
+    list_emotion_logs_by_ids,
+    get_emotion_log,
     create_emotion_log,
     update_emotion_log,
     delete_emotion_log,
@@ -44,21 +61,20 @@ from agents.journal.tools import (
     list_favorite_days,
     # Cartas — registro expressivo livre ancorado ao dia
     list_letters,
+    list_all_letters,
+    get_letter,
     create_letter,
     update_letter,
     seal_letter,
     delete_letter,
 )
+from agents.journal.tools_stats import get_stats_payload
 
-# Tutor de Idiomas (spec 031) — persona Kurisu; a lógica mora em agents/kurisu/tutor.py
-# (cross-domain intencional, ver Constitution Check do plan.md da 031). Este router é o
-# único ponto que conhece os dois agentes ao mesmo tempo — agents/journal/ continua sem
-# depender da Kurisu.
+# Tutor de Idiomas (spec 031) — persona Kurisu; a lógica mora em agents/kurisu/tutor.py.
 from agents.kurisu.tutor import (
     analisar_escrita,
     get_bullet_analysis,
     get_bullets_tutor_meta,
-    list_skills,
     list_analyses,
     list_concepts,
     get_progress,
@@ -67,39 +83,45 @@ from agents.kurisu.tutor import (
     deactivate_guide,
 )
 
-# Conselho do Dia (spec 061) — persona Violet, lógica na Kurisu (dona do domínio RAG).
-# Mesmo desenho cross-domain do Tutor de Idiomas: este router é o único ponto que
-# conhece Journal + Kurisu ao mesmo tempo (ver research.md R1 da spec 061).
+# Conselho do Dia (spec 061, reescrito na 076) — persona Violet, lógica na Kurisu (dona do RAG).
 from agents.kurisu.counsel import (
     gerar_conselho,
     get_conselho,
     list_conselhos,
     marcar_acao_como_tarefa,
 )
+# Revisão semanal e leitura emocional (spec 076) — mesmo desenho do Conselho.
+from agents.kurisu.weekly_review import (
+    gerar_revisao_semanal,
+    get_revisao_semanal,
+    list_revisoes,
+    marcar_acao_como_tarefa as marcar_compromisso_como_tarefa,
+)
+from agents.kurisu.emotion_analysis import analisar_emocoes, get_analise_emocoes, classificar_distorcoes
 
 
-# ─── Helper interno ───────────────────────────────────────────────────────────
+# ─── Helpers internos ─────────────────────────────────────────────────────────
+
+_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
 
 def _check_result(result: dict) -> dict:
-    """Verificar o resultado de uma tool e lançar HTTP 400 se houve erro.
-
-    Args:
-        result: Dicionário retornado pela tool.
-
-    Returns:
-        O próprio `result` se status == "ok".
-
-    Raises:
-        HTTPException: 400 se a tool retornou "status": "error".
-    """
+    """Converter ``{"status": "error"}`` de uma tool em HTTP 400; deixar "ok" passar."""
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result.get("message", "Erro desconhecido"))
     return result
 
 
+def _check_date(value: Optional[str], name: str = "date") -> None:
+    if value is not None and not _DATE_RE.match(value):
+        raise HTTPException(status_code=400, detail=f"Formato de {name} inválido. Use YYYY-MM-DD.")
+
+
 # ─── Router ───────────────────────────────────────────────────────────────────
 
 router = APIRouter()
+
+Font = Literal["normal", "roteiro", "cursiva"]
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -107,11 +129,25 @@ router = APIRouter()
 # ═════════════════════════════════════════════════════════════════════════════
 
 class UpsertBulletBody(BaseModel):
-    """Corpo da requisição para inserir ou atualizar um bullet."""
+    """Inserir ou atualizar um bullet (texto vazio apaga o bullet da posição)."""
     page_id: int
     position: int
     content: str
     kind: str = 'bullet'  # default retrocompatível com bullets antigos
+    person_ids: Optional[list[str]] = None
+
+
+class EnsurePageBody(BaseModel):
+    """Criar (se preciso) a página de um dia — chamado no primeiro write."""
+    date: str
+    type_id: int = 1
+
+
+class PageFontBody(BaseModel):
+    """Fonte do dia; ``None`` volta ao padrão das preferências."""
+    date: str
+    font: Optional[Font] = None
+    type_id: int = 1
 
 
 class DreamBody(BaseModel):
@@ -120,20 +156,13 @@ class DreamBody(BaseModel):
     dream: Optional[str] = None  # None ou string vazia limpa o campo
 
 
-# ─── Modelos da Feature 006 (Registro Emocional TCC) ──────────────────────────
-
 class CreateEmotionBody(BaseModel):
     """Corpo da requisição para criar uma emoção custom."""
-    name: str  # nome da emoção; a tool valida não-vazio e deduplica por LOWER(name)
+    name: str
 
 
 class CreateEmotionLogBody(BaseModel):
-    """Corpo da requisição para criar um registro emocional (Registro de Pensamentos TCC).
-
-    Apenas page_id, emotion_id e intensity são obrigatórios. Os demais campos
-    refletem as etapas seguintes do registro TCC e podem ser preenchidos depois.
-    As intensidades são limitadas a 0–10 pelo Field(ge=0, le=10) do Pydantic.
-    """
+    """Registro de Pensamentos da TCC (só page_id, emotion_id e intensity são obrigatórios)."""
     page_id: int
     emotion_id: int
     intensity: int = Field(ge=0, le=10)
@@ -144,11 +173,7 @@ class CreateEmotionLogBody(BaseModel):
 
 
 class UpdateEmotionLogBody(BaseModel):
-    """Corpo da requisição para atualizar um registro emocional (atualização parcial).
-
-    Todos os campos são opcionais — só os enviados são atualizados, permitindo
-    completar o registro progressivamente (ex.: adicionar a resposta adaptativa depois).
-    """
+    """Atualização parcial de um registro emocional."""
     emotion_id: Optional[int] = None
     intensity: Optional[int] = Field(default=None, ge=0, le=10)
     situation: Optional[str] = None
@@ -157,79 +182,113 @@ class UpdateEmotionLogBody(BaseModel):
     reappraised_intensity: Optional[int] = Field(default=None, ge=0, le=10)
 
 
-# ─── Modelos da Feature 007 (Favoritar Bullet) ────────────────────────────────
-
 class SetFavoriteBody(BaseModel):
-    """Corpo da requisição para favoritar ou desfavoritar um bullet.
-
-    O campo favorite define o estado-alvo explícito (não toggle no servidor),
-    tornando a operação idempotente e robusta com optimistic updates no frontend.
-    """
-    # True para favoritar, False para desfavoritar — estado-alvo, não toggle
+    """Estado-alvo do favorito (não toggle — idempotente)."""
     favorite: bool
 
 
-# ─── Modelos das Cartas ───────────────────────────────────────────────────────
-
 class CreateLetterBody(BaseModel):
-    """Corpo da requisição para criar uma carta.
-
-    page_id, recipient e body são obrigatórios. `status` define se a carta nasce
-    como rascunho ('draft') ou já lacrada ('sealed'). `person_ids` vincula a carta
-    a pessoas da Komi (opcional).
-    """
+    """Criar uma carta (rascunho ou já lacrada), com fonte e pessoas da Komi opcionais."""
     page_id: int
-    recipient: str          # "para quem/o quê" — texto livre
-    body: str               # corpo da carta
+    recipient: str
+    body: str
     title: Optional[str] = None
     status: Literal["draft", "sealed"] = "draft"
     person_ids: Optional[list[str]] = None
+    font: Font = "normal"
 
 
-# ─── Modelos do Tutor de Idiomas (spec 031) ───────────────────────────────────
+class UpdateLetterBody(BaseModel):
+    """Atualização parcial de uma carta em rascunho. ``person_ids`` (se enviado) regrava os vínculos."""
+    recipient: Optional[str] = None
+    body: Optional[str] = None
+    title: Optional[str] = None
+    font: Optional[Font] = None
+    person_ids: Optional[list[str]] = None
+
 
 class AnalyzeTutorBody(BaseModel):
-    """Corpo da requisição para analisar a escrita de um bullet."""
-    language: str = 'en'  # idioma-alvo da análise (default inglês)
+    language: str = 'en'
 
 
 class SaveTutorGuideBody(BaseModel):
-    """Corpo da requisição para criar/atualizar o guia de estudo ativo."""
     language: str = 'en'
-    description: str                              # foco livre (livro/método/tópico)
-    target_concepts: Optional[list[str]] = None    # slugs da lista canônica
+    description: str
+    target_concepts: Optional[list[str]] = None
 
 
 class GenerateCounselBody(BaseModel):
-    """Corpo da requisição para gerar (ou regerar) o conselho do dia (spec 061)."""
-    date: str  # YYYY-MM-DD — validado por regex no endpoint, mesmo padrão do GET /page
+    """Gerar (ou regerar) o conselho do dia."""
+    date: str
     type_id: int = 1
 
 
 class MarkCounselActionBody(BaseModel):
-    """Corpo da requisição para marcar uma ação sugerida como já convertida em tarefa."""
     page_id: int
     action_index: int
     task_id: int
 
 
-class UpdateLetterBody(BaseModel):
-    """Corpo da requisição para atualizar uma carta (atualização parcial).
+class WeeklyReviewBody(BaseModel):
+    """Gerar (ou regerar) a revisão de uma semana (qualquer data dentro dela; default: a última)."""
+    week: Optional[str] = None
 
-    Todos os campos são opcionais — só os enviados são atualizados. `person_ids`,
-    se enviado (mesmo lista vazia), regrava os vínculos com pessoas; se omitido,
-    os vínculos existentes são preservados. Só rascunhos podem ser editados — a
-    tool rejeita a edição de cartas lacradas.
-    """
-    recipient: Optional[str] = None
-    body: Optional[str] = None
-    title: Optional[str] = None
-    person_ids: Optional[list[str]] = None
+
+class MarkWeeklyActionBody(BaseModel):
+    week_start: str
+    action_index: int
+    task_id: int
+
+
+class EmotionAnalysisBody(BaseModel):
+    since: Optional[str] = None
+    until: Optional[str] = None
+
+
+class ValuesAreaBody(BaseModel):
+    """Salvar parte de uma área da Avaliação dos Valores."""
+    description: Optional[str] = None
+    narrative: Optional[str] = None
+    skipped: Optional[bool] = None
+    possibility: Optional[int] = Field(default=None, ge=1, le=10)
+    importance_now: Optional[int] = Field(default=None, ge=1, le=10)
+    importance_general: Optional[int] = Field(default=None, ge=1, le=10)
+    action: Optional[int] = Field(default=None, ge=1, le=10)
+    satisfaction: Optional[int] = Field(default=None, ge=1, le=10)
+    concern: Optional[int] = Field(default=None, ge=1, le=10)
+
+
+class ValuesCommitmentBody(BaseModel):
+    domain_key: str
+    text: str
+    task_id: Optional[int] = None
+
+
+class ValuesCommitmentUpdateBody(BaseModel):
+    text: Optional[str] = None
+    task_id: Optional[int] = None
+
+
+class ValuesCheckinBody(BaseModel):
+    domain_key: str
+    action: Optional[int] = Field(default=None, ge=1, le=10)
+    satisfaction: Optional[int] = Field(default=None, ge=1, le=10)
+    week_start: Optional[str] = None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# ENDPOINTS EXISTENTES (atualizados)
+# DIA (página, bullets, sonho, fonte)
 # ═════════════════════════════════════════════════════════════════════════════
+
+def _with_tutor(result: dict) -> dict:
+    # Tutor de Idiomas (spec 031): compõe o campo `tutor` de cada bullet AQUI no router.
+    bullets = result.get("bullets") or []
+    if bullets:
+        meta = get_bullets_tutor_meta([b["id"] for b in bullets])
+        for b in bullets:
+            b["tutor"] = meta.get(b["id"])
+    return result
+
 
 @router.get("/page")
 def page_endpoint(
@@ -237,74 +296,46 @@ def page_endpoint(
     type_id: int = Query(default=1, description="ID do tipo de diário"),
     user: dict = Depends(require_user),
 ) -> dict:
-    """Buscar ou criar a página do diário para uma data.
+    """Ler o dia SEM criar (spec 076). Dia ainda vazio volta com ``page.id = null``."""
+    _check_date(date)
+    return _with_tutor(get_page(date=date, type_id=type_id))
 
-    Args:
-        date: Data da página no formato YYYY-MM-DD.
-        type_id: ID do tipo de diário (padrão: 1 = personal).
-        user: Dados do usuário autenticado.
 
-    Returns:
-        {"page": {id, date, type_id, dream, num, ...}, "bullets": [...]}
-
-    Raises:
-        HTTPException: 400 se data inválida ou type_id não encontrado.
-    """
-    if not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
-        raise HTTPException(status_code=400, detail="Formato de data inválido. Use YYYY-MM-DD.")
-    result = get_or_create_page(date=date, type_id=type_id)
+@router.post("/page")
+def ensure_page_endpoint(body: EnsurePageBody, user: dict = Depends(require_user)) -> dict:
+    """Criar (se preciso) a página do dia — o front chama antes do primeiro write."""
+    _check_date(body.date)
+    result = ensure_page(date=body.date, type_id=body.type_id)
     if result.get("error"):
         raise HTTPException(status_code=400, detail=result["error"])
+    return _with_tutor(result)
 
-    # Tutor de Idiomas (spec 031, US2): compõe o campo `tutor` (nullable) de cada bullet
-    # AQUI no router — não em agents/journal/ — via 1 query agregada. Mantém
-    # agents/journal/ sem depender da Kurisu (research.md R8).
-    bullets = result.get("bullets") or []
-    if bullets:
-        meta = get_bullets_tutor_meta([b["id"] for b in bullets])
-        for b in bullets:
-            b["tutor"] = meta.get(b["id"])
 
-    return _check_result(result)
+@router.put("/page/font")
+def set_page_font_endpoint(body: PageFontBody, user: dict = Depends(require_user)) -> dict:
+    """Fonte do dia (``normal`` | ``roteiro`` | ``cursiva`` | null = padrão)."""
+    _check_date(body.date)
+    return _check_result(set_page_font(date=body.date, font=body.font, type_id=body.type_id))
+
+
+@router.put("/page/dream")
+def set_dream_endpoint(body: DreamBody, user: dict = Depends(require_user)) -> dict:
+    """Atualizar o sonho do dia (vazio limpa)."""
+    return _check_result(set_dream(page_id=body.page_id, text=body.dream or ''))
 
 
 @router.post("/bullets", status_code=200)
-def upsert_bullet_endpoint(
-    body: UpsertBulletBody,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Inserir ou atualizar um bullet (cria ou atualiza por page_id + position).
-
-    Args:
-        body: {page_id, position, content, kind}
-        user: Dados do usuário autenticado.
-
-    Returns:
-        {"status": "ok", "bullet": {id, page_id, kind, content, position, created_at}}
-    """
-    result = upsert_bullet(
-        page_id=body.page_id,
-        position=body.position,
-        content=body.content,
-        kind=body.kind,
-    )
-    return _check_result(result)
+def upsert_bullet_endpoint(body: UpsertBulletBody, user: dict = Depends(require_user)) -> dict:
+    """Inserir/atualizar um bullet por (page_id, position). Texto vazio apaga."""
+    return _check_result(upsert_bullet(
+        page_id=body.page_id, position=body.position, content=body.content,
+        kind=body.kind, person_ids=body.person_ids,
+    ))
 
 
 @router.delete("/bullets/{bullet_id}")
-def delete_bullet_endpoint(
-    bullet_id: int,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Deletar um bullet pelo ID.
-
-    Args:
-        bullet_id: ID do bullet.
-        user: Dados do usuário autenticado.
-
-    Returns:
-        {"status": "ok"}
-    """
+def delete_bullet_endpoint(bullet_id: int, user: dict = Depends(require_user)) -> dict:
+    """Apagar um bullet (devolve o que foi apagado, para o Desfazer)."""
     result = delete_bullet(bullet_id=bullet_id)
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result.get("message", "bullet não encontrado"))
@@ -312,369 +343,267 @@ def delete_bullet_endpoint(
 
 
 @router.patch("/bullets/{bullet_id}/favorite")
-def set_favorite_endpoint(
-    bullet_id: int,
-    body: SetFavoriteBody,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Definir ou remover o estado de favorito de um bullet.
-
-    Endpoint dedicado para alternar favorito — separado do upsert_bullet para que
-    edições de texto nunca resetem o favorito (FR-005). O frontend envia o estado-alvo
-    explícito (não toggle), tornando a operação idempotente e segura com optimistic UI.
-
-    Args:
-        bullet_id: ID do bullet a ser alterado.
-        body: {favorite: bool} — estado desejado.
-        user: Dados do usuário autenticado.
-
-    Returns:
-        {"status": "ok", "favorite": bool}
-
-    Raises:
-        HTTPException: 404 se o bullet não existir.
-    """
+def set_favorite_endpoint(bullet_id: int, body: SetFavoriteBody, user: dict = Depends(require_user)) -> dict:
+    """Definir o favorito de um bullet (estado-alvo explícito)."""
     result = set_favorite(bullet_id=bullet_id, favorite=body.favorite)
-    # Reusamos _check_result para converter "error" em HTTP 400, mas realmente
-    # queremos 404 (bullet não existe) — portanto verificamos antes de chamar.
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result.get("message", "bullet não encontrado"))
     return result
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# ARQUIVO, BUSCA, MENÇÕES E REFERÊNCIAS
+# ═════════════════════════════════════════════════════════════════════════════
+
 @router.get("/favorite-days")
-def favorite_days_endpoint(
-    year: int = Query(..., description="Ano de referência"),
-    user: dict = Depends(require_user),
-) -> list:
-    """Retornar as datas do ano que possuem ao menos um bullet favorito.
-
-    Insumo para o heatmap de favoritos (spec 008, FR-007). Retorna somente datas
-    com bullet.favorite = TRUE — dias sem favorito não aparecem.
-
-    Args:
-        year: Ano de referência (ex.: 2026).
-        user: Dados do usuário autenticado.
-
-    Returns:
-        ["YYYY-MM-DD", ...] — lista de datas ordenadas ASC. Lista vazia [] se nenhum favorito.
-    """
-    # list_favorite_days retorna lista direta (sem campo "status") — não usar _check_result.
+def favorite_days_endpoint(year: int = Query(...), user: dict = Depends(require_user)) -> list:
+    """Datas do ano com ao menos um bullet favorito."""
     return list_favorite_days(year=year)
 
 
 @router.get("/heatmap")
-def heatmap_endpoint(
-    year: int = Query(..., description="Ano de referência"),
-    user: dict = Depends(require_user),
-) -> dict:
-    """Retornar palavras escritas por dia para o heatmap anual.
-
-    Args:
-        year: Ano de referência.
-
-    Returns:
-        {"YYYY-MM-DD": words, ...} — apenas dias com words > 0.
-    """
+def heatmap_endpoint(year: int = Query(...), user: dict = Depends(require_user)) -> dict:
+    """Palavras escritas por dia no ano ({"YYYY-MM-DD": words})."""
     return list_heatmap(year=year)
 
 
-@router.get("/mentions")
-def mentions_endpoint(
-    kind: Literal["person", "tag"] = Query(..., description="Tipo: 'person' ou 'tag'"),
+@router.get("/entries")
+def entries_endpoint(
+    q: str = Query(default='', description="Busca opcional"),
+    limit: Optional[int] = Query(default=None, ge=1, le=500),
+    before: Optional[str] = Query(default=None, description="Paginação: dias anteriores a esta data"),
     user: dict = Depends(require_user),
 ) -> list:
-    """Listar menções distintas com contagem.
+    """Dias com conteúdo para o Arquivo (spec 076): só o que tem algo escrito; ``num`` estável."""
+    _check_date(before, "before")
+    return list_entries(query=q, limit=limit, before=before)
 
-    Args:
-        kind: 'person' para @nomes, 'tag' para #tags.
 
-    Returns:
-        [{"value": str, "count": int}, ...]
-    """
+@router.get("/mentions")
+def mentions_endpoint(kind: Literal["person", "tag"] = Query(...), user: dict = Depends(require_user)) -> list:
+    """Menções distintas com contagem: ``[{value, person_id, count, last_date}]``."""
     return list_mentions(kind=kind)
 
 
 @router.get("/filter")
 def filter_by_mention_endpoint(
     kind: Literal["person", "tag"] = Query(...),
-    value: str = Query(...),
+    value: str = Query(default=""),
+    person_id: Optional[str] = Query(default=None),
     user: dict = Depends(require_user),
 ) -> list:
-    """Bullets que mencionam uma pessoa ou tag específica.
+    """Bullets que citam uma pessoa (por nome ou ``person_id`` da Komi) ou tag, agrupados por dia."""
+    if not value and not person_id:
+        raise HTTPException(status_code=400, detail="informe value ou person_id")
+    return get_bullets_by_mention(kind=kind, value=value, person_id=person_id)
 
-    Returns:
-        [{"date": str, "bullets": [{id, content, kind}]}, ...]
-    """
-    return get_bullets_by_mention(kind=kind, value=value)
+
+@router.get("/filter/ref")
+def filter_by_ref_endpoint(
+    agent: str = Query(...), entity_type: str = Query(...), entity_id: str = Query(...),
+    user: dict = Depends(require_user),
+) -> list:
+    """Bullets que citam um item de outro agente (``[Matrix](akane:movie:<id>)``)."""
+    return get_bullets_by_ref(agent=agent, entity_type=entity_type, entity_id=entity_id)
 
 
 @router.get("/search")
-def search_endpoint(
-    q: str = Query(..., description="Texto de busca"),
-    user: dict = Depends(require_user),
-) -> list:
-    """Busca full-text nos bullets.
-
-    Returns:
-        [{"date": str, "bullets": [{id, content, kind}]}, ...]
-    """
+def search_endpoint(q: str = Query(...), user: dict = Depends(require_user)) -> list:
+    """Busca full-text nos bullets, agrupada por dia."""
     return search_bullets(query=q)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# ENDPOINTS NOVOS (Violet · Diário)
-# ═════════════════════════════════════════════════════════════════════════════
+@router.get("/refs/providers")
+def refs_providers_endpoint(user: dict = Depends(require_user)) -> list:
+    """Agentes que dá para referenciar com "/" (o que aparece ao digitar só a barra)."""
+    return journal_refs.list_providers()
 
-@router.put("/page/dream")
-def set_dream_endpoint(
-    body: DreamBody,
+
+@router.get("/refs/search")
+def refs_search_endpoint(
+    agent: str = Query(...), q: str = Query(default=""), limit: int = Query(default=8, ge=1, le=20),
     user: dict = Depends(require_user),
 ) -> dict:
-    """Atualizar o campo dream de uma entry.
-
-    Args:
-        body: {page_id, dream} — dream=None ou "" limpa o campo.
-
-    Returns:
-        {"status": "ok"}
-    """
-    result = set_dream(page_id=body.page_id, text=body.dream or '')
-    return _check_result(result)
+    """Buscar itens de um agente para referenciar (``/akane Matrix``)."""
+    return _check_result(journal_refs.search(agent=agent, query=q, limit=limit))
 
 
-@router.get("/entries")
-def entries_endpoint(
-    q: str = Query(default='', description="Busca opcional"),
+@router.get("/refs")
+def refs_list_endpoint(
+    agent: Optional[str] = Query(default=None), since: Optional[str] = None, until: Optional[str] = None,
     user: dict = Depends(require_user),
 ) -> list:
-    """Listar entries resumidas para o arquivo do diário.
+    """Itens de outros agentes citados no diário (com contagem)."""
+    _check_date(since, "since")
+    _check_date(until, "until")
+    return list_refs(agent=agent, since=since, until=until)
 
-    Returns:
-        [{date, num, excerpt, bullet_count, has_highlight, has_dream}, ...]
-        Ordenado por date DESC.
-    """
-    return list_entries(query=q)
 
+@router.get("/people/suggest")
+def people_suggest_endpoint(
+    q: str = Query(default=""), limit: int = Query(default=8, ge=1, le=20), user: dict = Depends(require_user),
+) -> dict:
+    """Sugestões da Komi para o autocomplete de @ (prefixo no nome ou apelido)."""
+    from agents.komi.tools import suggest_people  # noqa: PLC0415 — Komi é opcional
+    return _check_result(suggest_people(query=q, limit=limit))
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# COLEÇÕES, INSIGHTS, FORÇA E REFLETIR
+# ═════════════════════════════════════════════════════════════════════════════
 
 @router.get("/collection/{kind}")
-def collection_endpoint(
-    kind: str,
-    user: dict = Depends(require_user),
-) -> list:
-    """Retornar bullets de um tipo específico.
-
-    Args:
-        kind: highlight, dream, idea, wisdom, note.
-
-    Returns:
-        [{id, kind, content, created_at, date, entry_num}, ...]
-
-    Raises:
-        HTTPException: 400 se kind inválido.
-    """
-    valid_kinds = {'highlight', 'dream', 'idea', 'wisdom', 'note'}
-    if kind not in valid_kinds:
+def collection_endpoint(kind: str, user: dict = Depends(require_user)) -> list:
+    """Bullets de um tipo (highlight, idea, wisdom, note, dream)."""
+    if kind not in {'highlight', 'dream', 'idea', 'wisdom', 'note'}:
         raise HTTPException(status_code=400, detail="kind inválido")
     return list_collection(kind=kind)
 
 
 @router.get("/dreams")
-def dreams_endpoint(
-    user: dict = Depends(require_user),
-) -> list:
-    """Retornar todas as entries com campo dream não nulo.
-
-    Returns:
-        [{page_id, date, entry_num, dream}, ...] ordenado por date DESC.
-    """
+def dreams_endpoint(user: dict = Depends(require_user)) -> list:
+    """Dias com o campo sonho preenchido."""
     return list_dreams()
 
 
 @router.get("/stats")
 def stats_endpoint(
-    year: int = Query(..., description="Ano de referência"),
+    year: int = Query(...),
+    month: Optional[int] = Query(default=None, ge=1, le=12),
+    weekly_target: float = Query(default=5, ge=1, le=7),
     user: dict = Depends(require_user),
 ) -> dict:
-    """Retornar estatísticas agregadas do ano para a tela Insights.
+    """Insights no contrato ``StatsPayload`` do DS (+ blocos ``strength`` e ``emotions``)."""
+    return get_stats_payload(year=year, month=month, weekly_target=weekly_target)
 
-    Returns:
-        {entries, bullets, days_written, total_words, per_day, highlights,
-         tags, mentions, dreams, highlight_rate, freq_per_week,
-         words_by_month, daytime}
-    """
-    return get_stats(year=year)
+
+@router.get("/strength")
+def strength_endpoint(
+    weekly_target: float = Query(default=5, ge=1, le=7),
+    days: int = Query(default=90, ge=7, le=365),
+    user: dict = Depends(require_user),
+) -> dict:
+    """Força da escrita (motor dos hábitos da Kaguya) com a série dos últimos ``days`` dias."""
+    return get_writing_strength(weekly_target=weekly_target, days=days)
 
 
 @router.get("/years")
 def years_endpoint(user: dict = Depends(require_user)) -> list:
-    """Listar os anos com registro no diário, do mais recente ao primeiro.
-
-    Usado para popular o seletor de ano na tela Insights. Retorna intervalo
-    contíguo do ano corrente até o ano da primeira entrada registrada.
-    Se ainda não há entradas, retorna apenas o ano corrente.
-
-    Returns:
-        Lista de inteiros em ordem decrescente, ex.: [2026, 2025].
-    """
-    # Retorna lista crua — sem campo "status", não usar _check_result
+    """Anos com registro no diário, do mais recente ao primeiro."""
     return get_available_years()
 
 
+@router.get("/reflect")
+def reflect_endpoint(
+    date: Optional[str] = Query(default=None),
+    pins: str = Query(default="", description="tag:x,person:<id>"),
+    prompt: int = 0, gem: int = 0, idea: int = 0, memory: int = 0,
+    user: dict = Depends(require_user),
+) -> dict:
+    """Todas as seções do Refletir (a semente muda por dia; os contadores sorteiam de novo)."""
+    from datetime import date as _date  # noqa: PLC0415
+    _check_date(date)
+    day = _date.fromisoformat(date) if date else _today_sp()
+    result = get_reflect(
+        day, pins=[p for p in pins.split(",") if p.strip()],
+        reroll={"prompt": prompt, "gem": gem, "idea": idea, "memory_lane": memory},
+    )
+    # Revisão semanal mais recente (aparece no topo do Refletir no domingo e na segunda).
+    try:
+        result["weekly_review"] = get_revisao_semanal(None)
+    except Exception:  # noqa: BLE001
+        result["weekly_review"] = None
+    return result
+
+
 # ═════════════════════════════════════════════════════════════════════════════
-# ENDPOINTS DA FEATURE 006 (Registro Emocional TCC)
+# REGISTRO EMOCIONAL (TCC)
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _validate_reappraisal(reappraised_intensity, adaptive_response) -> None:
-    """Garantir que a reavaliação de intensidade só venha com resposta adaptativa.
-
-    A reavaliação mede o efeito da resposta adaptativa — sem ela, não faz sentido.
-    Essa regra é validada aqui no router (além de na interface) para proteger a API.
-
-    Args:
-        reappraised_intensity: Intensidade reavaliada recebida (pode ser None).
-        adaptive_response: Resposta adaptativa recebida (pode ser None/vazia).
-
-    Raises:
-        HTTPException: 400 se reappraised_intensity vier preenchida mas
-            adaptive_response estiver ausente ou vazia.
-    """
-    # Só validamos quando o usuário enviou uma intensidade reavaliada
-    if reappraised_intensity is not None:
-        # adaptive_response precisa existir e não ser só espaços em branco
-        if not (adaptive_response and adaptive_response.strip()):
-            raise HTTPException(
-                status_code=400,
-                detail="A reavaliação de intensidade exige uma resposta adaptativa preenchida.",
-            )
+    """A reavaliação de intensidade só vale com resposta adaptativa preenchida."""
+    if reappraised_intensity is not None and not (adaptive_response and adaptive_response.strip()):
+        raise HTTPException(
+            status_code=400,
+            detail="A reavaliação de intensidade exige uma resposta adaptativa preenchida.",
+        )
 
 
 @router.get("/emotions")
-def list_emotions_endpoint(
-    user: dict = Depends(require_user),
-) -> list:
-    """Listar o vocabulário de emoções (predefinidas + custom).
-
-    Returns:
-        [{"id": int, "name": str, "is_predefined": bool}, ...]
-        (predefinidas primeiro, depois custom em ordem alfabética).
-    """
-    # Retorna a lista direto — sem _check_result (a tool não tem campo "status")
+def list_emotions_endpoint(user: dict = Depends(require_user)) -> list:
+    """Vocabulário de emoções (predefinidas primeiro)."""
     return list_emotions()
 
 
 @router.post("/emotions", status_code=201)
-def create_emotion_endpoint(
-    body: CreateEmotionBody,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Criar uma emoção custom (idempotente — retorna a existente se já houver).
-
-    Args:
-        body: {name} — nome da emoção.
-
-    Returns:
-        {"status": "ok", "emotion": {"id", "name", "is_predefined"}}
-
-    Raises:
-        HTTPException: 400 se o nome for vazio.
-    """
+def create_emotion_endpoint(body: CreateEmotionBody, user: dict = Depends(require_user)) -> dict:
+    """Criar emoção custom (idempotente)."""
     return _check_result(create_emotion(name=body.name))
 
 
 @router.get("/emotion-logs")
-def list_emotion_logs_endpoint(
-    page_id: int = Query(..., description="ID da página (dia) cujos registros queremos"),
+def list_emotion_logs_endpoint(page_id: int = Query(...), user: dict = Depends(require_user)) -> list:
+    """Registros emocionais de um dia."""
+    return list_emotion_logs(page_id=page_id)
+
+
+@router.get("/emotion-logs/all")
+def list_all_emotion_logs_endpoint(
+    emotion_id: Optional[int] = None,
+    min_intensity: Optional[int] = Query(default=None, ge=0, le=10),
+    q: Optional[str] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=1000),
+    before: Optional[str] = None,
+    ids: Optional[str] = Query(default=None, description="IDs separados por vírgula (evidência de um achado)"),
     user: dict = Depends(require_user),
 ) -> list:
-    """Listar os registros emocionais de um dia (página).
+    """Todos os registros emocionais (aba Registro emocional), com filtros."""
+    for v, n in ((since, "since"), (until, "until"), (before, "before")):
+        _check_date(v, n)
+    if ids:
+        return list_emotion_logs_by_ids([int(i) for i in ids.split(",") if i.strip().isdigit()])
+    return list_all_emotion_logs(emotion_id=emotion_id, min_intensity=min_intensity, q=q,
+                                 since=since, until=until, limit=limit, before=before)
 
-    Args:
-        page_id: ID da página.
 
-    Returns:
-        [{id, page_id, emotion_id, emotion_name, intensity, situation,
-          automatic_thought, adaptive_response, reappraised_intensity,
-          created_at}, ...] ordenado por created_at ASC.
-    """
-    # Retorna a lista direto — sem _check_result (a tool não tem campo "status")
-    return list_emotion_logs(page_id=page_id)
+@router.get("/emotion-logs/{log_id}")
+def get_emotion_log_endpoint(log_id: int, user: dict = Depends(require_user)) -> dict:
+    result = get_emotion_log(log_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result["message"])
+    return result
 
 
 @router.post("/emotion-logs", status_code=201)
 def create_emotion_log_endpoint(
-    body: CreateEmotionLogBody,
-    user: dict = Depends(require_user),
+    body: CreateEmotionLogBody, background: BackgroundTasks, user: dict = Depends(require_user),
 ) -> dict:
-    """Criar um registro emocional (Registro de Pensamentos da TCC).
-
-    Args:
-        body: {page_id, emotion_id, intensity, situation?, automatic_thought?,
-               adaptive_response?, reappraised_intensity?}
-
-    Returns:
-        {"status": "ok", "log": {...}}
-
-    Raises:
-        HTTPException: 400 se page_id/emotion_id não existirem, ou se a reavaliação
-            vier sem resposta adaptativa.
-    """
-    # Regra de negócio: reavaliação exige resposta adaptativa preenchida
+    """Criar um registro emocional. Se tiver pensamento automático, classifica as distorções
+    cognitivas em segundo plano (best-effort — falha só deixa o registro sem rótulo)."""
     _validate_reappraisal(body.reappraised_intensity, body.adaptive_response)
-    return _check_result(create_emotion_log(
-        page_id=body.page_id,
-        emotion_id=body.emotion_id,
-        intensity=body.intensity,
-        situation=body.situation,
-        automatic_thought=body.automatic_thought,
-        adaptive_response=body.adaptive_response,
-        reappraised_intensity=body.reappraised_intensity,
-    ))
+    result = _check_result(create_emotion_log(**body.model_dump()))
+    if (body.automatic_thought or "").strip():
+        background.add_task(classificar_distorcoes, result["log"]["id"])
+    return result
 
 
 @router.patch("/emotion-logs/{log_id}")
 def update_emotion_log_endpoint(
-    log_id: int,
-    body: UpdateEmotionLogBody,
-    user: dict = Depends(require_user),
+    log_id: int, body: UpdateEmotionLogBody, background: BackgroundTasks, user: dict = Depends(require_user),
 ) -> dict:
-    """Atualizar um registro emocional (atualização parcial dos campos enviados).
-
-    Args:
-        log_id: ID do registro.
-        body: Campos a atualizar (todos opcionais).
-
-    Returns:
-        {"status": "ok", "log": {...}}
-
-    Raises:
-        HTTPException: 400 se o registro não existir, emotion_id inválido, ou se a
-            reavaliação vier sem resposta adaptativa.
-    """
-    # Regra de negócio: reavaliação exige resposta adaptativa preenchida
+    """Atualização parcial; mudou o pensamento automático → reclassifica as distorções."""
     _validate_reappraisal(body.reappraised_intensity, body.adaptive_response)
-    # exclude_unset=True: só inclui no update os campos que o cliente realmente enviou,
-    # preservando os demais valores já salvos no banco
     updates = body.model_dump(exclude_unset=True)
-    return _check_result(update_emotion_log(log_id, **updates))
+    result = _check_result(update_emotion_log(log_id, **updates))
+    if "automatic_thought" in updates and (updates["automatic_thought"] or "").strip():
+        background.add_task(classificar_distorcoes, log_id)
+    return result
 
 
 @router.delete("/emotion-logs/{log_id}")
-def delete_emotion_log_endpoint(
-    log_id: int,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Deletar um registro emocional pelo ID.
-
-    Args:
-        log_id: ID do registro.
-
-    Returns:
-        {"status": "ok"}
-
-    Raises:
-        HTTPException: 404 se o registro não for encontrado.
-    """
+def delete_emotion_log_endpoint(log_id: int, user: dict = Depends(require_user)) -> dict:
     result = delete_emotion_log(log_id=log_id)
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result.get("message", "registro não encontrado"))
@@ -683,132 +612,97 @@ def delete_emotion_log_endpoint(
 
 @router.get("/emotion-stats")
 def emotion_stats_endpoint(
-    year: int = Query(..., description="Ano de referência"),
+    year: Optional[int] = None, since: Optional[str] = None, until: Optional[str] = None,
     user: dict = Depends(require_user),
 ) -> dict:
-    """Agregações de emoções do ano para a aba "Emoções" dos Insights.
+    """Agregações de emoções do ano ou de um intervalo."""
+    _check_date(since, "since")
+    _check_date(until, "until")
+    return get_emotion_stats(year=year, since=since, until=until)
 
-    Args:
-        year: Ano de referência.
 
-    Returns:
-        {total, avg_intensity, top_emotion, by_emotion:[{name, count, avg_intensity}],
-         by_month:[12]}
-    """
-    # Retorna o dict direto — sem _check_result (a tool não tem campo "status")
-    return get_emotion_stats(year=year)
+@router.get("/emotion-patterns")
+def emotion_patterns_endpoint(
+    since: Optional[str] = None, until: Optional[str] = None, user: dict = Depends(require_user),
+) -> dict:
+    """Camada 1 da análise: padrões determinísticos com evidência (sem IA)."""
+    _check_date(since, "since")
+    _check_date(until, "until")
+    return get_emotion_patterns(since=since, until=until)
+
+
+@router.get("/emotion-analysis")
+def get_emotion_analysis_endpoint(
+    since: Optional[str] = None, until: Optional[str] = None, user: dict = Depends(require_user),
+) -> dict:
+    """Leitura da Violet já gerada para o período (sem gerar)."""
+    _check_date(since, "since")
+    _check_date(until, "until")
+    return {"analysis": get_analise_emocoes(since=since, until=until)}
+
+
+@router.post("/emotion-analysis")
+def generate_emotion_analysis_endpoint(body: EmotionAnalysisBody, user: dict = Depends(require_user)) -> dict:
+    """Gerar a leitura da Violet sobre os registros do período (chamada longa)."""
+    _check_date(body.since, "since")
+    _check_date(body.until, "until")
+    return _check_result(analisar_emocoes(since=body.since, until=body.until))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# ENDPOINTS DAS CARTAS
+# CARTAS
 # ═════════════════════════════════════════════════════════════════════════════
 
 @router.get("/letters")
-def list_letters_endpoint(
-    page_id: int = Query(..., description="ID da página (dia) cujas cartas queremos"),
-    user: dict = Depends(require_user),
-) -> list:
-    """Listar as cartas de um dia (página), com as pessoas vinculadas.
-
-    Args:
-        page_id: ID da página.
-
-    Returns:
-        [{id, page_id, recipient, title, body, status, sealed_at, created_at,
-          updated_at, people:[{id, name}]}, ...] ordenado por created_at ASC.
-    """
-    # Retorna a lista direto — sem _check_result (a tool não tem campo "status")
+def list_letters_endpoint(page_id: int = Query(...), user: dict = Depends(require_user)) -> list:
+    """Cartas de um dia, com as pessoas vinculadas."""
     return list_letters(page_id=page_id)
 
 
-@router.post("/letters", status_code=201)
-def create_letter_endpoint(
-    body: CreateLetterBody,
+@router.get("/letters/all")
+def list_all_letters_endpoint(
+    status: Optional[Literal["draft", "sealed"]] = None,
+    person_id: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    before: Optional[str] = None,
     user: dict = Depends(require_user),
-) -> dict:
-    """Criar uma carta (rascunho ou já lacrada), opcionalmente vinculada a pessoas.
+) -> list:
+    """Todas as cartas (aba Cartas), da mais recente para a mais antiga."""
+    _check_date(before, "before")
+    return list_all_letters(status=status, person_id=person_id, q=q, limit=limit, before=before)
 
-    Args:
-        body: {page_id, recipient, body, title?, status?, person_ids?}
 
-    Returns:
-        {"status": "ok", "letter": {...}}
+@router.get("/letters/{letter_id}")
+def get_letter_endpoint(letter_id: int, user: dict = Depends(require_user)) -> dict:
+    result = get_letter(letter_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result["message"])
+    return result
 
-    Raises:
-        HTTPException: 400 se page_id não existir ou status for inválido.
-    """
-    return _check_result(create_letter(
-        page_id=body.page_id,
-        recipient=body.recipient,
-        body=body.body,
-        title=body.title,
-        status=body.status,
-        person_ids=body.person_ids,
-    ))
+
+@router.post("/letters", status_code=201)
+def create_letter_endpoint(body: CreateLetterBody, user: dict = Depends(require_user)) -> dict:
+    """Criar uma carta (rascunho ou lacrada), com fonte e pessoas."""
+    return _check_result(create_letter(**body.model_dump()))
 
 
 @router.patch("/letters/{letter_id}")
-def update_letter_endpoint(
-    letter_id: int,
-    body: UpdateLetterBody,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Atualizar uma carta em rascunho (atualização parcial dos campos enviados).
-
-    Args:
-        letter_id: ID da carta.
-        body: Campos a atualizar (todos opcionais). person_ids regrava vínculos.
-
-    Returns:
-        {"status": "ok", "letter": {...}}
-
-    Raises:
-        HTTPException: 400 se a carta não existir, estiver lacrada, ou nada válido
-            for enviado.
-    """
-    # exclude_unset=True: só inclui os campos que o cliente realmente enviou.
-    # person_ids é tratado à parte (None = não mexer; lista = regravar vínculos),
-    # por isso é extraído e passado como argumento nomeado em vez de via **fields.
+def update_letter_endpoint(letter_id: int, body: UpdateLetterBody, user: dict = Depends(require_user)) -> dict:
+    """Atualizar uma carta em rascunho. ``person_ids`` (se enviado) regrava os vínculos."""
     updates = body.model_dump(exclude_unset=True)
     person_ids = updates.pop("person_ids", None)
     return _check_result(update_letter(letter_id, person_ids=person_ids, **updates))
 
 
 @router.post("/letters/{letter_id}/seal")
-def seal_letter_endpoint(
-    letter_id: int,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Lacrar uma carta (rascunho → lacrada): torna-a um registro imutável.
-
-    Args:
-        letter_id: ID da carta.
-
-    Returns:
-        {"status": "ok", "letter": {...}} com status='sealed' e sealed_at preenchido.
-
-    Raises:
-        HTTPException: 400 se a carta não existir ou já estiver lacrada.
-    """
+def seal_letter_endpoint(letter_id: int, user: dict = Depends(require_user)) -> dict:
+    """Lacrar uma carta (vira registro imutável)."""
     return _check_result(seal_letter(letter_id=letter_id))
 
 
 @router.delete("/letters/{letter_id}")
-def delete_letter_endpoint(
-    letter_id: int,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Deletar uma carta pelo ID (permitido mesmo lacrada).
-
-    Args:
-        letter_id: ID da carta.
-
-    Returns:
-        {"status": "ok"}
-
-    Raises:
-        HTTPException: 404 se a carta não for encontrada.
-    """
+def delete_letter_endpoint(letter_id: int, user: dict = Depends(require_user)) -> dict:
     result = delete_letter(letter_id=letter_id)
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result.get("message", "carta não encontrada"))
@@ -816,216 +710,187 @@ def delete_letter_endpoint(
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# ENDPOINTS DO TUTOR DE IDIOMAS (spec 031 — persona Kurisu)
+# AVALIAÇÃO DOS VALORES (spec 076)
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.get("/values/domains")
+def values_domains_endpoint(user: dict = Depends(require_user)) -> dict:
+    """O roteiro: introdução, 12 áreas com perguntas-guia, as 6 notas e a pergunta-chave."""
+    return journal_values.get_domains()
+
+
+@router.get("/values/current")
+def values_current_endpoint(user: dict = Depends(require_user)) -> dict:
+    """Rascunho em andamento ou a última avaliação concluída (com diagnóstico)."""
+    return journal_values.get_current()
+
+
+@router.post("/values")
+def values_start_endpoint(user: dict = Depends(require_user)) -> dict:
+    """Começar (ou retomar) uma avaliação — refazer parte da anterior pré-preenchida."""
+    return journal_values.start_assessment()
+
+
+@router.delete("/values/draft")
+def values_discard_endpoint(user: dict = Depends(require_user)) -> dict:
+    return journal_values.discard_draft()
+
+
+@router.patch("/values/{assessment_id}/areas/{domain_key}")
+def values_area_endpoint(
+    assessment_id: int, domain_key: str, body: ValuesAreaBody, user: dict = Depends(require_user),
+) -> dict:
+    """Autosave de uma área (texto, narrativa, pular, notas 1–10)."""
+    return _check_result(journal_values.update_area(assessment_id, domain_key, **body.model_dump(exclude_unset=True)))
+
+
+@router.post("/values/{assessment_id}/complete")
+def values_complete_endpoint(assessment_id: int, user: dict = Depends(require_user)) -> dict:
+    return _check_result(journal_values.complete_assessment(assessment_id))
+
+
+@router.get("/values/history")
+def values_history_endpoint(user: dict = Depends(require_user)) -> dict:
+    """Avaliações concluídas + evolução por área."""
+    return journal_values.list_history()
+
+
+@router.post("/values/{assessment_id}/commitments", status_code=201)
+def values_add_commitment_endpoint(
+    assessment_id: int, body: ValuesCommitmentBody, user: dict = Depends(require_user),
+) -> dict:
+    return _check_result(journal_values.add_commitment(assessment_id, body.domain_key, body.text, body.task_id))
+
+
+@router.patch("/values/commitments/{commitment_id}")
+def values_update_commitment_endpoint(
+    commitment_id: int, body: ValuesCommitmentUpdateBody, user: dict = Depends(require_user),
+) -> dict:
+    return _check_result(journal_values.update_commitment(commitment_id, body.text, body.task_id))
+
+
+@router.delete("/values/commitments/{commitment_id}")
+def values_delete_commitment_endpoint(commitment_id: int, user: dict = Depends(require_user)) -> dict:
+    return journal_values.delete_commitment(commitment_id)
+
+
+@router.post("/values/checkin")
+def values_checkin_endpoint(body: ValuesCheckinBody, user: dict = Depends(require_user)) -> dict:
+    """Check-in semanal leve (ação e satisfação da semana que passou) de uma área."""
+    _check_date(body.week_start, "week_start")
+    return _check_result(journal_values.checkin(body.domain_key, body.action, body.satisfaction, body.week_start))
+
+
+@router.get("/values/checkins")
+def values_checkins_endpoint(weeks: int = Query(default=8, ge=1, le=52), user: dict = Depends(require_user)) -> list:
+    return journal_values.list_checkins(weeks)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# TUTOR DE IDIOMAS (spec 031 — persona Kurisu)
 # ═════════════════════════════════════════════════════════════════════════════
 
 @router.post("/bullets/{bullet_id}/tutor")
-def analyze_tutor_endpoint(
-    bullet_id: int,
-    body: AnalyzeTutorBody,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Analisar a escrita de um bullet via Gemini (US1).
-
-    Args:
-        bullet_id: ID do bullet a analisar.
-        body: {language} — idioma-alvo da análise.
-
-    Returns:
-        {"status": "ok", "analysis": {...}, "skills_touched": [...]}
-
-    Raises:
-        HTTPException: 400 se o bullet não existir, estiver vazio, ou a IA falhar
-            (nesse caso nada é salvo — FR-010).
-    """
+def analyze_tutor_endpoint(bullet_id: int, body: AnalyzeTutorBody, user: dict = Depends(require_user)) -> dict:
+    """Analisar a escrita de um bullet via Gemini."""
     return _check_result(analisar_escrita(bullet_id=bullet_id, language=body.language))
 
 
 @router.get("/bullets/{bullet_id}/tutor")
-def bullet_tutor_analysis_endpoint(
-    bullet_id: int,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Última análise de um bullet — serve o toggle original↔corrigido (US2).
-
-    Returns:
-        {"analysis": {...} | None}
-    """
+def bullet_tutor_analysis_endpoint(bullet_id: int, user: dict = Depends(require_user)) -> dict:
+    """Última análise de um bullet (toggle original↔corrigido)."""
     return {"analysis": get_bullet_analysis(bullet_id=bullet_id)}
 
 
 @router.get("/tutor/progress")
-def tutor_progress_endpoint(
-    language: str = Query(default='en', description="Idioma-alvo"),
-    user: dict = Depends(require_user),
-) -> dict:
-    """Dados da tela de progresso: skills + nível CEFR + próximo foco + guia ativo (US3/US4).
-
-    Returns:
-        {language, level, next_focus, active_guide, skills: [...]}
-    """
-    # Retorna o dict direto — sem _check_result (a tool não tem campo "status")
+def tutor_progress_endpoint(language: str = 'en', user: dict = Depends(require_user)) -> dict:
     return get_progress(language=language)
 
 
 @router.get("/tutor/analyses")
-def tutor_analyses_endpoint(
-    language: str = Query(default='en', description="Idioma-alvo"),
-    limit: int = Query(default=20, description="Máximo de análises a retornar"),
-    user: dict = Depends(require_user),
-) -> list:
-    """Histórico de análises recentes de um idioma (US3).
-
-    Returns:
-        [{id, bullet_id, score, error_count, summary, created_at}, ...]
-    """
+def tutor_analyses_endpoint(language: str = 'en', limit: int = 20, user: dict = Depends(require_user)) -> list:
     return list_analyses(language=language, limit=limit)
 
 
 @router.get("/tutor/concepts")
-def tutor_concepts_endpoint(
-    user: dict = Depends(require_user),
-) -> list:
-    """Lista canônica de conceitos gramaticais — popula o seletor de alvos do guia (US4).
-
-    Returns:
-        [{"slug": str, "label": str}, ...]
-    """
+def tutor_concepts_endpoint(user: dict = Depends(require_user)) -> list:
     return list_concepts()
 
 
 @router.get("/tutor/guide")
-def get_tutor_guide_endpoint(
-    language: str = Query(default='en', description="Idioma-alvo"),
-    user: dict = Depends(require_user),
-) -> dict:
-    """Guia de estudo ativo do idioma, se houver (US4).
-
-    Returns:
-        {"guide": {...} | None}
-    """
+def get_tutor_guide_endpoint(language: str = 'en', user: dict = Depends(require_user)) -> dict:
     return {"guide": get_active_guide(language=language)}
 
 
 @router.put("/tutor/guide")
-def save_tutor_guide_endpoint(
-    body: SaveTutorGuideBody,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Criar/substituir o guia de estudo ativo (US4, FR-015).
-
-    Args:
-        body: {language, description, target_concepts?}
-
-    Returns:
-        {"status": "ok", "guide": {...}}
-
-    Raises:
-        HTTPException: 400 se a descrição for vazia ou algum conceito-alvo for inválido.
-    """
+def save_tutor_guide_endpoint(body: SaveTutorGuideBody, user: dict = Depends(require_user)) -> dict:
     return _check_result(set_active_guide(
-        language=body.language,
-        description=body.description,
-        target_concepts=body.target_concepts,
+        language=body.language, description=body.description, target_concepts=body.target_concepts,
     ))
 
 
 @router.delete("/tutor/guide")
-def delete_tutor_guide_endpoint(
-    language: str = Query(default='en', description="Idioma-alvo"),
-    user: dict = Depends(require_user),
-) -> dict:
-    """Remover (desativar) o guia de estudo ativo — não afeta análises já salvas (FR-018).
-
-    Returns:
-        {"status": "ok"}
-    """
+def delete_tutor_guide_endpoint(language: str = 'en', user: dict = Depends(require_user)) -> dict:
     return _check_result(deactivate_guide(language=language))
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# ENDPOINTS DO CONSELHO DO DIA (spec 061 — persona Violet, lógica na Kurisu)
+# CONSELHO DO DIA E REVISÃO SEMANAL (persona Violet, lógica na Kurisu)
 # ═════════════════════════════════════════════════════════════════════════════
 
 @router.post("/counsel")
-def generate_counsel_endpoint(
-    body: GenerateCounselBody,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Gerar (ou regenerar) o conselho do dia (US1).
-
-    A chamada é longa (até ~60s — SC-007 da spec 061): lê o dia, consulta a base de
-    conhecimento, e sintetiza os 4 blocos via Gemini. Falha em qualquer etapa não grava
-    nada (FR-015).
-
-    Args:
-        body: {date, type_id?}
-
-    Returns:
-        {"status": "ok", "counsel": {...}}
-
-    Raises:
-        HTTPException: 400 se a data for inválida, o dia estiver vazio, ou a IA falhar.
-    """
-    if not re.match(r'^\d{4}-\d{2}-\d{2}$', body.date):
-        raise HTTPException(status_code=400, detail="Formato de data inválido. Use YYYY-MM-DD.")
+def generate_counsel_endpoint(body: GenerateCounselBody, user: dict = Depends(require_user)) -> dict:
+    """Gerar (ou regerar) o conselho do dia — chamada longa (até ~90s)."""
+    _check_date(body.date)
     return _check_result(gerar_conselho(date=body.date, type_id=body.type_id))
 
 
 @router.get("/counsel")
-def get_counsel_endpoint(
-    date: str = Query(..., description="Data no formato YYYY-MM-DD"),
-    type_id: int = Query(default=1, description="ID do tipo de diário"),
-    user: dict = Depends(require_user),
-) -> dict:
-    """Devolver o conselho já gerado de uma data, sem gerar nada novo (leitura pura).
-
-    Returns:
-        {"counsel": {...} | None}
-    """
-    if not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
-        raise HTTPException(status_code=400, detail="Formato de data inválido. Use YYYY-MM-DD.")
+def get_counsel_endpoint(date: str = Query(...), type_id: int = 1, user: dict = Depends(require_user)) -> dict:
+    """Conselho já gerado de uma data (leitura pura)."""
+    _check_date(date)
     return {"counsel": get_conselho(date=date, type_id=type_id)}
 
 
 @router.get("/counsel/history")
-def counsel_history_endpoint(
-    limit: int = Query(default=20, description="Máximo de conselhos a retornar"),
-    user: dict = Depends(require_user),
-) -> dict:
-    """Listar os conselhos mais recentes (qualquer data).
-
-    Returns:
-        {"items": [{page_id, date, mirror, used_web, created_at}, ...]}
-    """
+def counsel_history_endpoint(limit: int = 20, user: dict = Depends(require_user)) -> dict:
+    """Conselhos mais recentes (trajetória: humor e princípios por dia)."""
     return {"items": list_conselhos(limit=limit)}
 
 
 @router.patch("/counsel/actions")
-def mark_counsel_action_endpoint(
-    body: MarkCounselActionBody,
-    user: dict = Depends(require_user),
-) -> dict:
-    """Marcar uma ação sugerida como já convertida em tarefa (US2, FR-014).
-
-    Este endpoint NÃO cria a tarefa — o frontend cria a tarefa via `/api/tasks` primeiro
-    e só depois registra aqui que aquela ação específica já foi convertida.
-
-    Args:
-        body: {page_id, action_index, task_id}
-
-    Returns:
-        {"status": "ok", "counsel": {...}}
-
-    Raises:
-        HTTPException: 404 se não houver conselho para o `page_id`, ou o índice estiver
-            fora do intervalo de ações.
-    """
-    result = marcar_acao_como_tarefa(
-        page_id=body.page_id,
-        action_index=body.action_index,
-        task_id=body.task_id,
-    )
+def mark_counsel_action_endpoint(body: MarkCounselActionBody, user: dict = Depends(require_user)) -> dict:
+    """Registrar que uma ação sugerida virou tarefa (o front cria a tarefa antes)."""
+    result = marcar_acao_como_tarefa(page_id=body.page_id, action_index=body.action_index, task_id=body.task_id)
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result.get("message", "conselho não encontrado"))
+    return result
+
+
+@router.get("/weekly-review")
+def get_weekly_review_endpoint(week: Optional[str] = None, user: dict = Depends(require_user)) -> dict:
+    """Revisão de uma semana (qualquer data dentro dela); sem ``week``, a mais recente."""
+    _check_date(week, "week")
+    return {"review": get_revisao_semanal(week)}
+
+
+@router.post("/weekly-review")
+def generate_weekly_review_endpoint(body: WeeklyReviewBody, user: dict = Depends(require_user)) -> dict:
+    """Gerar (ou regerar) a revisão semanal — chamada longa."""
+    _check_date(body.week, "week")
+    return _check_result(gerar_revisao_semanal(body.week))
+
+
+@router.get("/weekly-review/history")
+def weekly_review_history_endpoint(limit: int = 12, user: dict = Depends(require_user)) -> dict:
+    return {"items": list_revisoes(limit=limit)}
+
+
+@router.patch("/weekly-review/actions")
+def mark_weekly_action_endpoint(body: MarkWeeklyActionBody, user: dict = Depends(require_user)) -> dict:
+    """Registrar que um compromisso da revisão semanal virou tarefa (o front cria a tarefa antes)."""
+    _check_date(body.week_start, "week_start")
+    result = marcar_compromisso_como_tarefa(body.week_start, body.action_index, body.task_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result["message"])
     return result

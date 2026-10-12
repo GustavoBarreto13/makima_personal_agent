@@ -2276,3 +2276,38 @@ def get_rewind(year: int | None = None) -> dict:
         Mesmo shape de get_stats(year) — ver essa função para os campos.
     """
     return get_stats(year)
+
+
+# ─── Busca local (referências da Violet — spec 076) ─────────────────────────────
+
+def search_local(query: str, limit: int = 10) -> list[dict]:
+    """Buscar animes do catálogo local por título (pt, romaji ou inglês), sem chamar o Jikan.
+
+    Usado pelo autocomplete ``/marin`` do diário (spec 076).
+
+    Returns:
+        ``[{"id", "label", "sublabel", "cover_url", "deep_link"}]`` — até ``limit``.
+    """
+    termo = _norm(query or "")
+    if not termo:
+        return []
+    rows = run_select(
+        """
+        SELECT id, title, title_english, season, media_type, poster_url
+        FROM anime
+        WHERE deleted = FALSE
+          AND (normalizado LIKE %(q)s OR title_english ILIKE %(raw)s OR title_japanese ILIKE %(raw)s)
+        ORDER BY (normalizado LIKE %(prefix)s) DESC, title
+        LIMIT %(limit)s
+        """,
+        {"q": f"%{termo}%", "prefix": f"{termo}%", "raw": f"%{(query or '').strip()}%",
+         "limit": max(1, min(int(limit), 30))},
+    )
+    out = []
+    for r in rows:
+        bits = [r.get("title_english") if r.get("title_english") != r["title"] else None, r.get("season")]
+        out.append({
+            "id": r["id"], "label": r["title"], "sublabel": " · ".join(b for b in bits if b) or None,
+            "cover_url": r.get("poster_url"), "deep_link": f"/animes#anime/{r['id']}",
+        })
+    return out

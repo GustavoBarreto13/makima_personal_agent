@@ -118,11 +118,11 @@ def _slim_tasks(tasks: list[dict]) -> list[dict]:
 def _recent_journal_notes(today: date, days: int = 3) -> list[dict]:
     """Últimos dias com conteúdo no diário (Violet) — heurística simples de humor/cansaço.
 
-    Usa `list_heatmap` primeiro pra saber QUAIS dias têm conteúdo, e só então chama
-    `get_or_create_page` — evita criar páginas vazias pra dias sem entrada (a função se
-    chama "get_OR_CREATE" e criaria uma página em branco se chamada direto).
+    Usa `list_heatmap` primeiro pra saber QUAIS dias têm conteúdo, e só então lê cada um com
+    `get_page` (leitura pura — spec 076).
     """
-    from agents.journal.tools import get_or_create_page, list_emotion_logs, list_heatmap
+    from agents.journal.markup import plain_text
+    from agents.journal.tools import get_page, list_emotion_logs, list_heatmap
 
     years = {today.year, (today - timedelta(days=days)).year}
     heatmap: dict[str, int] = {}
@@ -139,7 +139,7 @@ def _recent_journal_notes(today: date, days: int = 3) -> list[dict]:
         if not heatmap.get(d_str):
             continue  # sem conteúdo nesse dia — não cria página vazia
         try:
-            result = get_or_create_page(d_str)
+            result = get_page(d_str)  # leitura pura (spec 076) — não cria página
         except Exception as exc:  # noqa: BLE001
             logger.warning("Falha ao ler o diário de %s: %s", d_str, exc)
             continue
@@ -147,7 +147,7 @@ def _recent_journal_notes(today: date, days: int = 3) -> list[dict]:
         bullets = result.get("bullets") or []
         if not page or not bullets:
             continue
-        text = " ".join(b.get("content", "") for b in bullets if b.get("content"))
+        text = " ".join(plain_text(b["content"]) for b in bullets if b.get("content"))
         emotions: list[str] = []
         try:
             logs = list_emotion_logs(page["id"])

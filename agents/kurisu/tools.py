@@ -196,7 +196,7 @@ def _extrair_meta_operacional(source_uri: str) -> tuple:
     return domain, doc_date
 
 
-def _consultar_corpus(corpus_name: str, query: str) -> list:
+def _consultar_corpus(corpus_name: str, query: str, top_k: int | None = None) -> list:
     """Faz UMA `retrieval_query` num único corpus e devolve os trechos relevantes.
 
     A API do Vertex aceita só 1 corpus por chamada (`Currently only support 1 RagResource`),
@@ -215,7 +215,7 @@ def _consultar_corpus(corpus_name: str, query: str) -> list:
         text=query,
         rag_resources=[rag.RagResource(rag_corpus=corpus_name)],
         rag_retrieval_config=rag.RagRetrievalConfig(
-            top_k=_TOP_K_WIDE,
+            top_k=top_k or _TOP_K_WIDE,
             ranking=rag.Ranking(
                 rank_service=rag.RankService(model_name="semantic-ranker-default-004")
             ),
@@ -244,7 +244,7 @@ def _consultar_corpus(corpus_name: str, query: str) -> list:
     return trechos
 
 
-def buscar_na_wiki(query: str) -> dict:
+def buscar_na_wiki(query: str, top_n: int | None = None, top_k: int | None = None) -> dict:
     """Busca trechos SOMENTE na wiki curada (027) — sem mesclar com a memória operacional.
 
     Existe porque `buscar_na_base` mescla wiki + memória operacional (028) e a
@@ -261,6 +261,9 @@ def buscar_na_wiki(query: str) -> dict:
 
     Args:
         query: A pergunta do usuário em linguagem natural (PT/EN/JA).
+        top_n: Quantos trechos devolver (default `KURISU_TOP_N_NARROW`). O Conselho da Violet
+            (spec 076) pede mais para cruzar várias notas; o agente segue no default.
+        top_k: Candidatos da busca densa antes do rerank (default `KURISU_TOP_K_WIDE`).
 
     Returns:
         Mesmo formato de `buscar_na_base`: `{status, trechos, mensagem}`.
@@ -284,7 +287,7 @@ def buscar_na_wiki(query: str) -> dict:
         }
 
     try:
-        trechos = _consultar_corpus(corpus_wiki, query)
+        trechos = _consultar_corpus(corpus_wiki, query, top_k=top_k)
     except Exception as exc:
         logger.error("Erro ao consultar o corpus da wiki: %s", exc, exc_info=True)
         return {
@@ -300,7 +303,7 @@ def buscar_na_wiki(query: str) -> dict:
             "mensagem": "Nenhum trecho com relevância suficiente encontrado na base.",
         }
 
-    ordenados = aplicar_recencia(trechos)[:_TOP_N_NARROW]
+    ordenados = aplicar_recencia(trechos)[:(top_n or _TOP_N_NARROW)]
     return {"status": "ok", "trechos": ordenados, "mensagem": None}
 
 
