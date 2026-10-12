@@ -367,3 +367,44 @@ def test_group_board_filter_devolve_ids(mock_ids):
     resp = client.post(f"{_BASE}/groups/3/board-filter", json={"rules": rules})
     assert resp.status_code == 200 and resp.json()["ids"] == [4, 9]
     mock_ids.assert_called_once_with(3, rules)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Agenda de trabalho: PATCH /schedule não pode ser engolido por PATCH /{task_id}
+# ─────────────────────────────────────────────────────────────────────────────
+@patch("webapp.backend.routers.tasks.set_schedule_prefs")
+def test_patch_schedule_nao_cai_em_task_id(mock_set):
+    """Regressão do 422: 'schedule' não é um id; a rota literal precisa ser a que responde."""
+    mock_set.return_value = {"status": "ok", "prefs": {"work_days": [1, 2, 3]}}
+    resp = client.patch(f"{_BASE}/schedule", json={"work_days": [1, 2, 3], "work_start": "09:00"})
+    assert resp.status_code == 200
+    mock_set.assert_called_once_with(work_days=[1, 2, 3], work_start="09:00")
+
+
+@patch("webapp.backend.routers.tasks.set_schedule_prefs")
+def test_patch_schedule_erro_da_logica_vira_400(mock_set):
+    mock_set.return_value = {"status": "error", "message": "Dias de trabalho devem ir de 1 a 7."}
+    resp = client.patch(f"{_BASE}/schedule", json={"work_days": [9]})
+    assert resp.status_code == 400
+
+
+def test_id_nao_numerico_nao_casa_com_task_id():
+    """Com o conversor int, 'abc' não é tarefa: 404/405, nunca um 422 enganoso de validação."""
+    assert client.patch(f"{_BASE}/abc", json={"title": "x"}).status_code in (404, 405)
+
+
+def test_rotas_literais_de_um_segmento_nao_sao_engolidas_por_task_id():
+    """Para cada PATCH/PUT/DELETE literal de um segmento, a primeira rota que casa é a própria."""
+    from starlette.routing import Match
+
+    routes = [r for r in app.routes if getattr(r, "path", "").startswith(_BASE)]
+    for r in routes:
+        rest = r.path[len(_BASE):]
+        if rest.count("/") != 1 or "{" in rest:
+            continue  # só literais de um segmento (/schedule, /bulk…)
+        for method in r.methods or set():
+            if method not in {"PATCH", "PUT", "DELETE", "GET", "POST"}:
+                continue
+            scope = {"type": "http", "path": r.path, "method": method, "root_path": "", "query_string": b"", "headers": []}
+            first = next((x for x in routes if method in (x.methods or set()) and x.matches(scope)[0] == Match.FULL), None)
+            assert first is r, f"{method} {r.path} é respondida por {first.path if first else None}"

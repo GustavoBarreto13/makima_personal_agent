@@ -783,7 +783,7 @@ def create_task_route(body: CreateTaskBody, user: dict = Depends(require_user)) 
     return _check_result(create_task(allow_empty_title=True, **body.model_dump(exclude_unset=True)))
 
 
-@router.patch("/{task_id}")
+@router.patch("/{task_id:int}")
 def update_task_route(task_id: int, body: UpdateTaskBody, user: dict = Depends(require_user)) -> dict:
     """Edita uma tarefa (mover de lista aplica a regra da coluna)."""
     return _check_result(update_task(task_id, **body.model_dump(exclude_unset=True)))
@@ -829,7 +829,7 @@ def move_task_route(task_id: int, body: MoveTaskBody, user: dict = Depends(requi
     )
 
 
-@router.delete("/{task_id}")
+@router.delete("/{task_id:int}")
 def delete_task_route(
     task_id: int,
     scope: str = Query("this", description="this (só esta ocorrência) | series (a série inteira)"),
@@ -2295,7 +2295,7 @@ def projects_due_review_route(user: dict = Depends(require_user)) -> list:
 # rotas estáticas (my-day, kanban-views, tags, calendar, habits, etc.).
 # Se estiver antes delas, o FastAPI captura "/my-day" como task_id="my-day",
 # falha ao converter para int e devolve 422 para todas essas rotas.
-@router.get("/{task_id}")
+@router.get("/{task_id:int}")
 def get_task_route(task_id: int, user: dict = Depends(require_user)) -> dict:
     """Busca uma tarefa específica pelo id (com subtarefas, recorrência, tags e responsáveis).
 
