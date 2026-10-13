@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 2,
+  "title": "Design System: Makima",
+  "extensions": {
+    "shadows": [
+      {
+        "name": "shadow-sm",
+        "value": "0 1px 2px oklch(0.4 0.02 350 / 0.06)",
+        "purpose": "Superfícies sólidas sobre o vidro."
+      },
+      {
+        "name": "shadow-md",
+        "value": "0 4px 14px oklch(0.4 0.02 350 / 0.1)",
+        "purpose": "Superfícies sólidas sobre o vidro."
+      },
+      {
+        "name": "shadow-lg",
+        "value": "0 12px 34px oklch(0.4 0.02 350 / 0.16)",
+        "purpose": "Superfícies sólidas sobre o vidro."
+      },
+      {
+        "name": "glass-shadow",
+        "value": "0 10px 34px oklch(0.32 0.05 348 / 0.1)",
+        "purpose": "Painéis de vidro sobre o fundo ambiente."
+      }
+    ],
+    "motion": [
+      {
+        "name": "dur-1",
+        "value": "120ms",
+        "purpose": "Catálogo fechado em src/design/motion.css."
+      },
+      {
+        "name": "dur-2",
+        "value": "180ms",
+        "purpose": "Catálogo fechado em src/design/motion.css."
+      },
+      {
+        "name": "dur-3",
+        "value": "260ms",
+        "purpose": "Catálogo fechado em src/design/motion.css."
+      },
+      {
+        "name": "dur-4",
+        "value": "400ms",
+        "purpose": "Catálogo fechado em src/design/motion.css."
+      },
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.2, 0.8, 0.3, 1)",
+        "purpose": "Catálogo fechado em src/design/motion.css."
+      },
+      {
+        "name": "ease-in",
+        "value": "cubic-bezier(0.4, 0, 1, 1)",
+        "purpose": "Catálogo fechado em src/design/motion.css."
+      },
+      {
+        "name": "ease-spring",
+        "value": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "purpose": "Catálogo fechado em src/design/motion.css."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "900px"
+      },
+      {
+        "name": "lg",
+        "value": "1280px"
+      }
+    ]
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "O Ateliê de Vidro",
+    "overview": "Vidro sobre fundo ambiente; cor de identidade por agente; uma estrutura para todos. Ver DESIGN.md.",
+    "keyCharacteristics": [
+      "Uma ação primária por contexto",
+      "Vidro nunca sobre vidro",
+      "4 estados em toda tela"
+    ],
+    "rules": [
+      {
+        "name": "The Token Only Rule",
+        "body": "Nenhuma cor, raio ou fonte literal em tela: sempre --ds-*.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do usar tokens --ds-* e componentes de design/"
+    ],
+    "donts": [
+      "Don't criar visual fora do Design System"
+    ]
+  }
+}

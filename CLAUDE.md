@@ -413,13 +413,37 @@ E7 aposentadoria do `coordinator/` e E8 QoL pendentes).
 
 ---
 
-## Design System do frontend
+## Design System do frontend + fluxo Impeccable (obrigatório)
 
 Padrão único de UI em `webapp/frontend/src/design/` (tokens `--ds-*`, `AppShell`, `Hero`, coleções,
 captura rápida, estatísticas, estrelas 0–5 com meia estrela, ícones Lucide). Referência viva na rota
-`/design`; guia em `webapp/docs/DESIGN_SYSTEM.md`; **toda mudança de UI passa pela skill
-`makima-design-system`** (`.claude/skills/makima-design-system/`). Verificação: `npm run audit:design`
-e `npm test` em `webapp/frontend`. Os shells existentes seguem `legacy` até serem migrados, um por vez.
+`/design`; guia em `webapp/docs/DESIGN_SYSTEM.md`.
+
+**Toda alteração de front-end (tela, componente, estilo, copy de UI, estado vazio/erro, responsivo)
+segue o fluxo da skill `impeccable`** (`.claude/skills/impeccable/`, v4.5.2) **aplicado sobre o
+Design System** — nunca só um dos dois:
+
+1. **Contexto:** rodar `.claude/skills/impeccable/scripts/impeccable context --target <arquivo|rota>` uma vez por sessão
+   (carrega `PRODUCT.md`/`DESIGN.md`). Se não existir `PRODUCT.md`, oferecer `/impeccable init`.
+2. **Comando certo do Impeccable** conforme o pedido: tela/superfície nova → `shape` + `new-work`/`craft`;
+   ajuste em tela existente → `polish`, `layout`, `typeset`, `colorize`, `adapt`, `clarify`, `distill`,
+   `harden`, `animate`, `optimize`…; revisão → `critique` / `audit`.
+3. **Autoridade visual = Design System Makima:** o Impeccable decide *como pensar e refinar*; a skill
+   `makima-design-system` define *do que é feito* (tokens `--ds-*`, componentes de `design/`, arte por
+   página via `src/design/art/`, regras do lint). Em conflito, **o Design System vence** — o Impeccable
+   nunca introduz cor/fonte/raio/ícone/componente fora dele (se faltar algo, evoluir o `design/`).
+4. **Verificação:** `impeccable detect --json <arquivos alterados>` + `npm run audit:design` + `npm test`
+   em `webapp/frontend`; checar claro/escuro e celular (< 640px).
+5. **Fechamento:** atualizar `src/design/conformance.json` (+ `npm run audit:design -- --report`) e a doc
+   (checklist de fase, seção acima).
+
+**O Impeccable lê o Design System direto:** o `DESIGN.md` (raiz) e o `.impeccable/design.json` são
+**gerados** de `src/design/tokens.json` + `src/design/DESIGN.body.md` por
+`webapp/frontend/scripts/gen-design-md.mjs` (roda dentro do `npm run tokens`; o `audit:design` falha se
+estiverem defasados). Nunca edite o `DESIGN.md` à mão: mude o JSON/o corpo e rode `npm run tokens`.
+`PRODUCT.md` (público, tom, restrições) vem do `/impeccable init`, que é uma entrevista.
+
+Os shells existentes seguem `legacy` até serem migrados, um por vez. Não vale para backend.
 
 ---
 
@@ -456,7 +480,7 @@ A estrutura foi reorganizada em jul/2026 para eliminar duplicação — a regra 
 4. Se criou rotas ou telas: atualizar `webapp/docs/API.md` e/ou `webapp/docs/FRONTEND.md`
 5. Se criou módulos novos: adicioná-los à árvore de arquivos deste `CLAUDE.md`
 6. Se a feature aparece para o usuário: 1 linha na tabela de páginas/funcionalidades do `README.md`
-7. Se criou/alterou **UI**: usar o Design System (`webapp/frontend/src/design/`, skill `makima-design-system`) e rodar `npm run audit:design` + `npm test` em `webapp/frontend`; atualizar `src/design/conformance.json`. Se a feature é de um domínio com estatísticas: declarar as métricas que ela acrescenta à `StatsPage` (métricas mínimas por agente em `webapp/docs/DESIGN_SYSTEM.md`)
+7. Se criou/alterou **UI**: seguir o fluxo `impeccable` (seção "Design System do frontend + fluxo Impeccable") e usar o Design System (`webapp/frontend/src/design/`, skill `makima-design-system`) e rodar `npm run audit:design` + `npm test` em `webapp/frontend`; atualizar `src/design/conformance.json`. Se a feature é de um domínio com estatísticas: declarar as métricas que ela acrescenta à `StatsPage` (métricas mínimas por agente em `webapp/docs/DESIGN_SYSTEM.md`)
 
 ### Ciclo de vida de um doc
 

@@ -7,7 +7,10 @@ disable-model-invocation: false
 
 # Design System Makima — roteiro de tela
 
-Toda mudança de UI em `webapp/frontend` passa por este roteiro. O padrão vive em
+Toda mudança de UI em `webapp/frontend` passa por este roteiro **dentro do fluxo da skill `impeccable`**:
+antes de começar, invocar `/impeccable` (roda `impeccable context --target <alvo>`, escolhe o comando:
+`shape`/`craft`/`polish`/`critique`/…); este roteiro é a **autoridade visual** — tokens, componentes e
+arte vêm daqui, e em conflito com o Impeccable **o Design System vence**. O padrão vive em
 `webapp/frontend/src/design/`; a referência viva é a rota `/design`; o guia é
 `webapp/docs/DESIGN_SYSTEM.md` (leia antes de começar). Status de adoção: `webapp/docs/DESIGN_CONFORMANCE.md`.
 
@@ -39,7 +42,9 @@ Toda mudança de UI em `webapp/frontend` passa por este roteiro. O padrão vive 
 6. **Rodar** (em `webapp/frontend`): `npm run audit:design` e `npm test`; corrigir até passar.
    Para ver o resultado: `npm run dev` e abrir a página (e `/design` para comparar), verificando
    tema claro/escuro e celular (< 640px: gaveta, barra inferior, FAB, bottom sheet).
-7. **Revisão visual:** rodar a skill `impeccable` em modo *critique/audit* sobre a tela pronta.
+7. **Revisão visual (obrigatória):** `impeccable detect --json <arquivos alterados>` e a skill
+   `impeccable` em *critique/audit* (ou `polish`) sobre a tela pronta; aplicar os achados respeitando
+   as regras do passo 5.
 8. **Atualizar** `conformance.json` (status → `migrating`/`conformant`, itens adotados, métricas de
    stats), regenerar o relatório com `npm run audit:design -- --report`, e a documentação:
    `agents/<nome>/CLAUDE.md` se mudou tool/rota, `webapp/docs/FRONTEND.md`, `ROADMAP.md`.

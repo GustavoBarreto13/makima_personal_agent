@@ -159,7 +159,11 @@ export function runLint() {
 
 export function checkTokensFresh() {
   const r = spawnSync(process.execPath, [join(ROOT, 'scripts', 'gen-tokens.mjs'), '--check'], { encoding: 'utf8' })
-  return r.status === 0 ? [] : [{ file: 'src/design/tokens.css', line: 1, rule: 'tokens-fresh', message: (r.stderr || r.stdout || 'tokens defasados (rode: npm run tokens)').trim() }]
+  const out = r.status === 0 ? [] : [{ file: 'src/design/tokens.css', line: 1, rule: 'tokens-fresh', message: (r.stderr || r.stdout || 'tokens defasados (rode: npm run tokens)').trim() }]
+  // DESIGN.md (lido pelo Impeccable) também é gerado do tokens.json: não pode ficar para trás.
+  const d = spawnSync(process.execPath, [join(ROOT, 'scripts', 'gen-design-md.mjs'), '--check'], { encoding: 'utf8' })
+  if (d.status !== 0) out.push({ file: 'DESIGN.md', line: 1, rule: 'tokens-fresh', message: (d.stderr || d.stdout || 'DESIGN.md defasado (rode: npm run tokens)').trim() })
+  return out
 }
 
 // ── contraste WCAG ───────────────────────────────────────────────────────────

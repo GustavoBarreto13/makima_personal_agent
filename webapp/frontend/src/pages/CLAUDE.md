@@ -51,8 +51,10 @@ Existe um padrão único (tokens `--ds-*`, `AppShell`, `Hero`, `useCollection`, 
 [`webapp/docs/DESIGN_SYSTEM.md`](../../../docs/DESIGN_SYSTEM.md); referência viva: rota `/design`;
 status por página: [`DESIGN_CONFORMANCE.md`](../../../docs/DESIGN_CONFORMANCE.md).
 
-- **Toda mudança de UI passa pela skill `makima-design-system`** (pergunta a direção de arte da
-  página, segue o checklist, roda `npm run audit:design` e atualiza `src/design/conformance.json`).
+- **Toda mudança de UI segue o fluxo da skill `impeccable`** (`impeccable context` → comando adequado:
+  `shape`/`craft`/`polish`/`critique`… → `impeccable detect`) **sobre a skill `makima-design-system`**
+  (pergunta a direção de arte da página, segue o checklist, roda `npm run audit:design` e atualiza
+  `src/design/conformance.json`). Conflito entre os dois: o Design System vence.
 - **Não crie** tokens, raios, fontes, ícones, Toast, TweaksPanel, modais, botões ou pickers locais:
   use os do `design/`. Shells legados continuam como estão até serem migrados, um por vez.
 - **Ao entregar uma feature de domínio**, declare quais métricas ela acrescenta à `StatsPage` do

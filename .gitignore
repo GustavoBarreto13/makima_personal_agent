@@ -35,3 +35,7 @@ webapp/frontend/dist/
 .claude/*
 # Slash-skills do Spec Kit devem ser versionados para sobreviver a re-clone
 !.claude/skills/
+
+# Impeccable: binário do Linux é baixado pelo launcher sob demanda (o do Windows fica versionado)
+.claude/skills/impeccable/scripts/bin/linux-x64/
+!.impeccable/design.json

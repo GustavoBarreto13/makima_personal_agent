@@ -146,7 +146,7 @@ Em desenvolvimento o CORS libera `localhost:5173`. Em produção (container), o 
 Telas novas e migrações usam `webapp/frontend/src/design/` (guia: [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md);
 referência viva: rota `/design`; status por página: [`docs/DESIGN_CONFORMANCE.md`](docs/DESIGN_CONFORMANCE.md)).
 Camadas `core/` (TS puro) → `headless/` (hooks) → `ui/` (componentes `.ds-*`, tokens `--ds-*`).
-**Toda mudança de UI passa pela skill `makima-design-system`.** Comandos (em `webapp/frontend`):
+**Toda mudança de UI segue o fluxo da skill `impeccable` (`context` → comando → `detect`) aplicado sobre a skill `makima-design-system`** (o Design System é a autoridade visual; ver `CLAUDE.md` da raiz, seção "Design System do frontend + fluxo Impeccable"). Comandos (em `webapp/frontend`):
 `npm run tokens` (regenera `tokens.css`/`accents.css` de `tokens.json`/`agents.json`),
 `npm run lint:design`, `npm run audit:design` (lint + contraste WCAG por agente × tema + manifesto ×
 código; `-- --report` grava o relatório) e `npm test`. Os padrões abaixo (Kaguya) continuam valendo nos
