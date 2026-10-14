@@ -82,6 +82,7 @@ export function Home() {
         actions={
           <>
             <Button variant="primary" icon="add" onClick={() => frieren.openLog()}>Registrar leitura</Button>
+            <Button icon="add" onClick={() => frieren.openAdd()}>Adicionar livro</Button>
             {current
               ? <Button variant="ghost" icon="book" onClick={() => frieren.goto({ view: 'catalog', bookId: current.id })}>Continuar {current.title.length > 18 ? 'leitura' : current.title}</Button>
               : <Button variant="ghost" icon="days" onClick={() => frieren.goto('diary')}>Abrir diário</Button>}

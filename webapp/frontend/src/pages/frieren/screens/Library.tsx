@@ -47,6 +47,7 @@ export function Library() {
         view={layout}
         onView={(v) => frieren.setPrefs({ layout: v })}
         searchPlaceholder="Buscar por título, autor ou gênero"
+        extra={<Button variant="primary" size="sm" icon="add" onClick={() => frieren.openAdd()}>Adicionar livro</Button>}
       />
       <CollectionMeta c={c} noun={NOUN} />
       <CollectionBody
@@ -102,7 +103,7 @@ export function ToRead() {
 
   return (
     <Page wide className={densityClass(frieren.prefs.density)}>
-      <CollectionToolbar schema={schema} c={c} onOpenFilters={() => setFilters(true)} view={layout} onView={(v) => frieren.setPrefs({ layout: v })} searchPlaceholder="Buscar na pilha" />
+      <CollectionToolbar schema={schema} c={c} onOpenFilters={() => setFilters(true)} view={layout} onView={(v) => frieren.setPrefs({ layout: v })} searchPlaceholder="Buscar na pilha" extra={<Button variant="primary" size="sm" icon="add" onClick={() => frieren.openAdd()}>Adicionar livro</Button>} />
       <CollectionMeta c={c} noun={['livro na pilha', 'livros na pilha']} />
       <CollectionBody
         c={c}
@@ -207,7 +208,7 @@ export function Wishlist() {
 
   return (
     <Page wide>
-      <CollectionToolbar schema={schema} c={c} onOpenFilters={() => setFilters(true)} searchPlaceholder="Buscar na wishlist" />
+      <CollectionToolbar schema={schema} c={c} onOpenFilters={() => setFilters(true)} searchPlaceholder="Buscar na wishlist" extra={<Button variant="primary" size="sm" icon="add" onClick={() => frieren.openAdd()}>Adicionar livro</Button>} />
       <CollectionMeta c={c} noun={['livro pra comprar', 'livros pra comprar']} />
       <CollectionBody
         c={c}
