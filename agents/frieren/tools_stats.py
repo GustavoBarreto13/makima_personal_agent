@@ -233,9 +233,11 @@ def build_stats_payload(
 
     records: list[dict] = []
     if in_period:
+        # Dias só de quadrinho têm 0 páginas: contam para a sequência, mas não disputam o recorde.
         top_day = max(in_period, key=lambda d: (d["value"], d["date"]))
-        records.append({"label": "Dia recorde", "value": _plural(int(top_day["value"]), "página", "páginas"),
-                        "detail": _fmt_dmy(top_day["date"])})
+        if top_day["value"] > 0:
+            records.append({"label": "Dia recorde", "value": _plural(int(top_day["value"]), "página", "páginas"),
+                            "detail": _fmt_dmy(top_day["date"])})
         streaks = compute_streaks([d["date"] for d in in_period], today)
         if streaks["best"] > 1:
             records.append({"label": "Maior sequência", "value": _plural(streaks["best"], "dia", "dias")})
@@ -290,6 +292,13 @@ _FROM_LOGS = """
     WHERE b.deleted = FALSE AND rl.date BETWEEN %(start)s AND %(end)s
 """
 
+# Quadrinhos/graphic novels: leitura por página não faz sentido (cada edição tem paginação e ritmo
+# muito diferentes). Eles NÃO somam páginas nas estatísticas, mas o dia de leitura continua contando.
+# TODO: contar por capítulos e volumes (próxima etapa).
+_COMIC = "COALESCE(b.genre, '') ILIKE '%%Comics & Graphic Novels%%'"
+# Páginas de uma sessão para somar: zero quando o livro é quadrinho.
+_PAGES = f"CASE WHEN {_COMIC} THEN 0 ELSE COALESCE(rl.pages_read, 0) END"
+
 # "Terminado no período": tem data de término dentro dele e não está abandonado.
 _FINISHED = """
     b.deleted = FALSE AND b.status <> 'abandonado'
@@ -320,9 +329,9 @@ def _period_totals(start: date, end: date) -> dict:
     params = {"start": start, "end": end}
     logs = run_select(
         f"""
-        SELECT COALESCE(SUM(rl.pages_read), 0) AS pages,
+        SELECT COALESCE(SUM({_PAGES}), 0) AS pages,
                COUNT(*) AS sessions,
-               COUNT(DISTINCT rl.date) FILTER (WHERE COALESCE(rl.pages_read, 0) > 0) AS days_reading
+               COUNT(DISTINCT rl.date) FILTER (WHERE COALESCE(rl.pages_read, 0) > 0 OR {_COMIC}) AS days_reading
         {_FROM_LOGS}
         """,
         params,
@@ -340,7 +349,7 @@ def _period_totals(start: date, end: date) -> dict:
             (SELECT AVG(b.date_finished - b.date_started + 1) FROM books b
               WHERE {_FINISHED} AND b.date_started IS NOT NULL
                 AND b.date_started <= b.date_finished) AS days_per_book,
-            (SELECT COALESCE(MAX(b.total_pages), 0) FROM books b WHERE {_FINISHED}) AS longest_pages,
+            (SELECT COALESCE(MAX(b.total_pages), 0) FROM books b WHERE {_FINISHED} AND NOT ({_COMIC})) AS longest_pages,
             (SELECT AVG(b.rating) FROM books b WHERE {_FINISHED} AND b.rating IS NOT NULL) AS avg_rating
         """,
         params,
@@ -418,9 +427,9 @@ def _daily_pages(start: date, end: date) -> list[dict]:
         {"date": r["day"], "value": int(r["pages"])}
         for r in run_select(
             f"""
-            SELECT rl.date::text AS day, SUM(rl.pages_read) AS pages
+            SELECT rl.date::text AS day, SUM({_PAGES}) AS pages
             {_FROM_LOGS}
-            GROUP BY rl.date HAVING SUM(rl.pages_read) > 0 ORDER BY rl.date
+            GROUP BY rl.date HAVING SUM(rl.pages_read) > 0 OR BOOL_OR({_COMIC}) ORDER BY rl.date
             """,
             {"start": start, "end": end},
         )
@@ -454,7 +463,7 @@ def get_stats_payload(year: int = 0, month: int | None = None) -> dict:
         longest = run_select(
             f"""
             SELECT b.title, b.total_pages AS pages FROM books b
-             WHERE {_FINISHED} AND b.total_pages IS NOT NULL
+             WHERE {_FINISHED} AND b.total_pages IS NOT NULL AND NOT ({_COMIC})
              ORDER BY b.total_pages DESC, b.title LIMIT 1
             """,
             params,
@@ -608,11 +617,11 @@ def get_books_home() -> dict:
 
         # Sequência atual precisa de todo o histórico (pode atravessar a virada do ano).
         all_days = run_select(
-            """
-            SELECT rl.date::text AS day, SUM(rl.pages_read) AS pages
+            f"""
+            SELECT rl.date::text AS day, SUM({_PAGES}) AS pages
               FROM reading_logs rl JOIN books b ON b.id = rl.book_id
              WHERE b.deleted = FALSE
-             GROUP BY rl.date HAVING SUM(rl.pages_read) > 0
+             GROUP BY rl.date HAVING SUM(rl.pages_read) > 0 OR BOOL_OR({_COMIC})
             """
         )
         rhythm = build_home_rhythm([{"date": r["day"], "value": int(r["pages"])} for r in all_days], today)
