@@ -281,9 +281,8 @@ def create_transaction_on_cursor(
     # Grava vínculos de pessoas na mesma transação — tudo-ou-nada (spec 014 / FR-009).
     # Import lazy para evitar ciclo agents.nami → agents.komi → agents.nami.
     if person_ids:
-        from agents.komi.tools import link_person_on_cursor  # noqa: PLC0415
-        for pid in person_ids:
-            link_person_on_cursor(cur, pid, "transaction", tx_id)
+        from agents.komi.integration import link_people  # noqa: PLC0415
+        link_people(cur, "transaction", tx_id, person_ids)
 
     return {"status": "ok", "id": tx_id, "message": f"Transação criada: {name} R${float(valor):.2f} ({cat})"}
 

@@ -131,7 +131,7 @@ def test_watchlist_empty_is_always_a_list():
 def test_watch_context_is_per_session_and_can_be_cleared():
     """Vincular pessoas e local à sessão sem herdar o contexto em um rewatch."""
     movie_id = _add_mock_movie("Aftersun", 2022)
-    person = create_person("Ana", category="amigos")["person"]
+    person = {"id": create_person("Ana", category="amigos")["id"]}   # create_person devolve {"status","id",...}
     cinema = create_watch_location("Cinemark", "cinema")["location"]
     streaming = create_watch_location("Mubi", "streaming")["location"]
 

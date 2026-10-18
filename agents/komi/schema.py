@@ -69,6 +69,10 @@ def ensure_schema(force: bool = False) -> bool:
             sql = _SCHEMA_PATH.read_text(encoding="utf-8")
             with get_conn() as conn:
                 with conn.cursor() as cur:
+                    # Se um ALTER TABLE esperar por um lock de outra transação (por exemplo, a de
+                    # quem nos chamou no meio de uma gravação), desiste em 5s em vez de travar
+                    # para sempre: a falha é registrada e a próxima tentativa vem depois.
+                    cur.execute("SET LOCAL lock_timeout = '5s'")
                     # O lock vale até o fim desta transação (xact) e é liberado sozinho.
                     cur.execute("SELECT pg_advisory_xact_lock(%s)", (_ADVISORY_KEY,))
                     # Sem parâmetros: o psycopg2 não mexe nos "%" do script.

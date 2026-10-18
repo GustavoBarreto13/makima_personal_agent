@@ -559,12 +559,8 @@ def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
     # person_links é da Komi (bancos sem o schema dela não têm a tabela — nesse caso não há o que copiar).
     cur.execute("SELECT to_regclass('person_links')")
     if cur.fetchone()[0]:
-        cur.execute(
-            "INSERT INTO person_links (person_id, entity_type, entity_id) "
-            "SELECT person_id, 'task', %s FROM person_links "
-            "WHERE entity_type = 'task' AND entity_id = %s ON CONFLICT DO NOTHING",
-            (str(new_id), str(task_id)),
-        )
+        from agents.komi.integration import copy_links  # noqa: PLC0415 — contrato da Komi (spec 077)
+        copy_links(cur, "task", task_id, new_id)
 
     # Se o status herdado é "waiting", esta é uma NOVA espera (R10/clarificação) — o
     # timestamp reseta para agora, nunca herda o waiting_since da ocorrência anterior.
@@ -1243,9 +1239,8 @@ def create_task(
             # Vínculos de pessoas — mesma transação (spec 014 / FR-009). Import lazy para
             # evitar ciclo agents.kaguya → agents.komi → agents.kaguya.
             if person_ids:
-                from agents.komi.tools import link_person_on_cursor  # noqa: PLC0415
-                for pid in person_ids:
-                    link_person_on_cursor(cur, pid, "task", new_id)
+                from agents.komi.integration import link_people  # noqa: PLC0415
+                link_people(cur, "task", new_id, person_ids)
 
     result = {"status": "ok", "id": new_id, "project_id": resolved_project, "message": f"Tarefa '{title.strip()}' criada."}
     if fallback_warning:
@@ -1524,13 +1519,11 @@ def update_task(
             if tags is not None:
                 _set_task_tags(cur, task_id, tags)
 
-            # Responsáveis (Komi) — semântica de substituição: apaga os antigos e insere os novos.
-            # Import lazy dentro da transação para evitar ciclo circular entre módulos.
+            # Responsáveis (Komi) — semântica de substituição: o conjunto final é exatamente o enviado
+            # (quem continua é preservado; quem saiu é desvinculado). Import lazy contra ciclo de módulos.
             if person_ids is not None:
-                from agents.komi.tools import unlink_people_on_cursor, link_person_on_cursor  # noqa: PLC0415
-                unlink_people_on_cursor(cur, "task", task_id)
-                for pid in person_ids:
-                    link_person_on_cursor(cur, pid, "task", task_id)
+                from agents.komi.integration import sync_people  # noqa: PLC0415
+                sync_people(cur, "task", task_id, person_ids)
 
             # ── Recorrência: limpar, definir, ou garantir a anual ao virar aniversário ──
             rec_result = None

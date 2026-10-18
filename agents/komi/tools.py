@@ -18,6 +18,7 @@ import psycopg2.extras  # RealDictCursor — retorna linhas como dicts
 
 from agents.db import get_conn as _raw_get_conn, run_select as _raw_run_select  # Helpers PostgreSQL
 from agents.komi import naming  # Regras puras: normalização, espaço, aniversário
+from agents.komi.rows import valor  # Lê coluna de linha tupla ou dict (cursor do chamador)
 from agents.komi.schema import ensure_schema  # Aplica o schema no 1º acesso do processo
 
 
@@ -117,7 +118,7 @@ def _conflito_de_nome(cur, person_id: str | None, name: str, nickname: str | Non
         return None
     cur.execute(
         """
-        SELECT p.name, k.chave FROM (
+        SELECT p.name AS name, k.chave AS chave FROM (
             SELECT id, name, normalizado AS chave FROM people WHERE deleted = FALSE
             UNION ALL
             SELECT id, name, nickname_norm FROM people WHERE deleted = FALSE AND nickname_norm IS NOT NULL
@@ -133,7 +134,7 @@ def _conflito_de_nome(cur, person_id: str | None, name: str, nickname: str | Non
     achado = cur.fetchone()
     if not achado:
         return None
-    dono, chave = achado[0], achado[1]
+    dono, chave = valor(achado, 0, "name"), valor(achado, 1, "chave")
     # Mostra o texto como a pessoa digitou (não a chave sem acento/caixa).
     digitado = {naming.norm(n): n for n in (name, nickname) if n}.get(chave, chave)
     return f"'{digitado}' já é o nome ou apelido de {dono}. Escolha outro para não confundir as duas pessoas."
@@ -177,7 +178,7 @@ def _anotar_no_cursor(
         """,
         (person_id, kind, context, text, naming.norm(text), source, json.dumps(source_refs or []), status),
     )
-    return cur.fetchone()[0]
+    return valor(cur.fetchone(), 0, "id")
 
 
 def _inserir_pessoa(
@@ -1223,33 +1224,27 @@ def link_person_on_cursor(
 ) -> None:
     """Inserir vínculo pessoa↔item usando o cursor do chamador (sem commitar).
 
-    Idempotente via ON CONFLICT DO NOTHING — citar a mesma pessoa duas vezes
-    no mesmo item não cria linha duplicada.
-
-    Deve ser chamado dentro de uma transação já aberta pelo agente dono do item
-    (Nami/Kaguya/Frieren/Journal). O commit ou rollback é responsabilidade do chamador.
+    Fachada de compatibilidade: o contrato oficial é ``agents.komi.integration.link_people``
+    (vários agentes já importam este nome, então ele continua existindo). Idempotente.
 
     Args:
         cur: Cursor psycopg2 ativo (dentro de uma transação do chamador).
         person_id: UUID da pessoa a vincular.
-        entity_type: Tipo do item — "transaction", "task", "book" ou "journal_bullet".
+        entity_type: Tipo do item ("transaction", "task", "book", "journal_bullet"...).
+            Qualquer agente pode registrar o seu; ver ``integration.validate_entity_type``.
         entity_id: ID do item (UUID como str ou SERIAL int — coagido para str).
 
+    Raises:
+        ValueError: Se ``entity_type`` tiver formato inválido.
+
     Example:
-        >>> with get_conn() as conn:
+        >>> with get_conn() as conn:                                              # doctest: +SKIP
         ...     with conn.cursor() as cur:
-        ...         result = create_transaction_on_cursor(cur, ...)
-        ...         link_person_on_cursor(cur, "uuid...", "transaction", result["id"])
+        ...         link_person_on_cursor(cur, "uuid...", "transaction", "tx-1")
     """
-    # entity_id é sempre armazenado como TEXT (absorve UUID e int SERIAL)
-    cur.execute(
-        """
-        INSERT INTO person_links (person_id, entity_type, entity_id)
-        VALUES (%s, %s, %s)
-        ON CONFLICT (person_id, entity_type, entity_id) DO NOTHING
-        """,
-        (person_id, entity_type, str(entity_id)),
-    )
+    from agents.komi import integration  # noqa: PLC0415 — import lazy: integration importa este módulo
+
+    integration.link_people(cur, entity_type, entity_id, [person_id])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1261,58 +1256,63 @@ def unlink_people_on_cursor(
     entity_type: str,
     entity_id: str | int,
 ) -> None:
-    """Remove todos os vínculos pessoa↔item de um dado item usando o cursor do chamador.
+    """Remover todos os vínculos pessoa↔item de um item usando o cursor do chamador.
 
-    Usado pela semântica de substituição em ``update_task(person_ids=[...])`` — antes
-    de inserir os novos vínculos, apaga os existentes para garantir que o conjunto final
-    seja exatamente o enviado (não uma adição ao anterior).
-
-    Idempotente: não falha se não houver vínculos. O commit/rollback é do chamador.
+    Fachada de compatibilidade de ``agents.komi.integration.unlink_all`` (e, para trocar o
+    conjunto inteiro de uma vez, prefira ``integration.sync_people``). Idempotente.
 
     Args:
         cur: Cursor psycopg2 ativo (dentro de uma transação do chamador).
         entity_type: Tipo do item — ``"task"``, ``"transaction"``, ``"book"`` etc.
         entity_id: ID do item (UUID como str ou SERIAL int — coagido para str).
 
-    Example:
-        >>> # Dentro de uma transação de update_task
-        >>> unlink_people_on_cursor(cur, "task", task_id)
-        >>> for pid in new_person_ids:
-        ...     link_person_on_cursor(cur, pid, "task", task_id)
+    Raises:
+        ValueError: Se ``entity_type`` tiver formato inválido.
     """
-    # entity_id é sempre TEXT na tabela (absorve UUID e int SERIAL)
-    cur.execute(
-        "DELETE FROM person_links WHERE entity_type = %s AND entity_id = %s",
-        (entity_type, str(entity_id)),
-    )
+    from agents.komi import integration  # noqa: PLC0415
+
+    integration.unlink_all(cur, entity_type, entity_id)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Hub de agregação — Onda 3 / US3 (T014)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_person_summary(person_id: str) -> dict:
-    """Retornar resumo completo de uma pessoa com vínculos de todos os domínios.
+# Blocos que o resumo SEMPRE devolve (o Hermes e o webapp contam com estas chaves). Quando o
+# provedor do agente falha, o bloco fica vazio em vez de sumir.
+_BLOCOS_PADRAO = {
+    "financas": {"saldo": 0.0, "transacoes": []},
+    "tarefas": {"abertas": [], "concluidas": []},
+    "diario": {"contagem": 0, "trechos": []},
+    "cartas": {"cartas": []},
+    "livros": {"livros": []},
+}
 
-    Agrega em 5 blocos: perfil (people + aliases + datas), financas (transações),
-    tarefas, diario (bullets) e livros. Uma query por domínio (sem N+1).
-    Cada bloco retorna vazio sem erro quando não há vínculos (SC-005).
+
+def get_person_summary(person_id: str) -> dict:
+    """Retornar o resumo de uma pessoa com os blocos de todos os agentes.
+
+    O perfil (pessoa + outras formas + datas) vem da própria Komi. Cada bloco por assunto
+    (``financas``, ``tarefas``, ``diario``, ``cartas``, ``livros``, ``filmes``...) vem do
+    PROVEDOR do agente dono (``agents/<agente>/komi_provider.py``) — a Komi não consulta
+    mais as tabelas dos outros agentes. Agente novo com provedor entra aqui sozinho.
+
+    Bloco vazio = ausência de dados, nunca erro: se um provedor falhar, o bloco dele fica
+    no formato padrão vazio e o resto do resumo é entregue.
 
     Args:
         person_id: UUID da pessoa.
 
     Returns:
-        {
-            "status": "ok",
-            "perfil": {..., "aliases": [...], "datas": [...]},
-            "financas": {"saldo": float, "transacoes": [...]},
-            "tarefas": {"abertas": [...], "concluidas": [...]},
-            "diario": {"contagem": int, "trechos": [...]},
-            "livros": {"livros": [...]},
-        }
-        ou {"status": "error", "message": ...}.
+        ``{"status": "ok", "perfil": {..., "aliases": [...], "datas": [...]}, "financas": {...},
+        "tarefas": {...}, "diario": {...}, "cartas": {...}, "livros": {...}, ...}``
+        (mais um bloco por provedor extra) ou ``{"status": "error", "message": ...}``.
     """
-    # Verifica se a pessoa existe (viva ou não — o resumo pode ser pedido de excluídas via UI)
+    import copy  # noqa: PLC0415 — só este resumo precisa
+
+    from agents.komi import integration  # noqa: PLC0415 — import lazy: integration importa este módulo
+
+    # A pessoa pode estar excluída: o resumo ainda pode ser pedido pela interface.
     rows = run_select("SELECT * FROM people WHERE id = %(id)s", {"id": person_id})
     if not rows:
         return {"status": "error", "message": "Pessoa não encontrada."}
@@ -1333,134 +1333,10 @@ def get_person_summary(person_id: str) -> dict:
     perfil["aliases"] = [r["alias"] for r in aliases]
     perfil["datas"] = datas
 
-    # ── Bloco: Finanças (transações vinculadas via person_links) ──────────────
-    try:
-        tx_rows = run_select(
-            """
-            SELECT t.id, t.name, t.valor, t.tipo, t.categoria, t.data::text
-            FROM person_links pl
-            JOIN transactions t ON t.id = pl.entity_id AND t.deleted = FALSE
-            WHERE pl.person_id = %(pid)s AND pl.entity_type = 'transaction'
-            ORDER BY t.data DESC
-            LIMIT 10
-            """,
-            {"pid": person_id},
-        )
-        # Saldo = soma de receitas − soma de despesas das transações vinculadas
-        saldo_rows = run_select(
-            """
-            SELECT COALESCE(SUM(CASE WHEN t.tipo = 'Receita' THEN t.valor ELSE -t.valor END), 0) AS saldo
-            FROM person_links pl
-            JOIN transactions t ON t.id = pl.entity_id AND t.deleted = FALSE
-            WHERE pl.person_id = %(pid)s AND pl.entity_type = 'transaction'
-            """,
-            {"pid": person_id},
-        )
-        saldo = float(saldo_rows[0]["saldo"]) if saldo_rows else 0.0
-        financas = {"saldo": saldo, "transacoes": tx_rows}
-    except Exception:
-        financas = {"saldo": 0.0, "transacoes": []}
-
-    # ── Bloco: Tarefas (tasks vinculadas — entity_id é SERIAL int → cast) ────
-    try:
-        tarefas_abertas = run_select(
-            """
-            SELECT t.id, t.title, t.due_date::text, t.priority
-            FROM person_links pl
-            JOIN tasks t ON t.id = pl.entity_id::int AND t.deleted_at IS NULL AND t.completed_at IS NULL
-            WHERE pl.person_id = %(pid)s AND pl.entity_type = 'task'
-            ORDER BY t.due_date NULLS LAST, t.created_at
-            """,
-            {"pid": person_id},
-        )
-        tarefas_concluidas = run_select(
-            """
-            SELECT t.id, t.title, t.completed_at::text
-            FROM person_links pl
-            JOIN tasks t ON t.id = pl.entity_id::int AND t.completed_at IS NOT NULL
-            WHERE pl.person_id = %(pid)s AND pl.entity_type = 'task'
-            ORDER BY t.completed_at DESC
-            LIMIT 5
-            """,
-            {"pid": person_id},
-        )
-        tarefas = {"abertas": tarefas_abertas, "concluidas": tarefas_concluidas}
-    except Exception:
-        tarefas = {"abertas": [], "concluidas": []}
-
-    # ── Bloco: Diário (journal_bullets vinculados — entity_id é SERIAL int) ──
-    try:
-        bullet_rows = run_select(
-            """
-            SELECT b.id, b.content, jp.date::text AS date
-            FROM person_links pl
-            JOIN journal_bullets b ON b.id = pl.entity_id::int
-            JOIN journal_pages jp ON jp.id = b.page_id
-            WHERE pl.person_id = %(pid)s AND pl.entity_type = 'journal_bullet'
-            ORDER BY jp.date DESC, b.position
-            LIMIT 10
-            """,
-            {"pid": person_id},
-        )
-        total_rows = run_select(
-            "SELECT COUNT(*) AS n FROM person_links WHERE person_id = %(pid)s AND entity_type = 'journal_bullet'",
-            {"pid": person_id},
-        )
-        # Contrato com a Violet (spec 076): cada trecho leva o bullet e o link para o dia.
-        # `texto` é o conteúdo sem a sintaxe dos tokens (@[Nome](komi:id) → @Nome).
-        from agents.journal.markup import plain_text  # noqa: PLC0415 — puro, sem banco
-        trechos = [
-            {**r, "bullet_id": r["id"], "texto": plain_text(r["content"]), "deep_link": f"/journal#dia/{r['date']}"}
-            for r in bullet_rows
-        ]
-        diario = {"contagem": int(total_rows[0]["n"]) if total_rows else len(trechos), "trechos": trechos}
-    except Exception:
-        diario = {"contagem": 0, "trechos": []}
-
-    # ── Bloco: Cartas da Violet (journal_letters vinculadas — spec 076) ─────
-    try:
-        carta_rows = run_select(
-            """
-            SELECT l.id, l.recipient, l.title, l.status, l.font, jp.date::text AS date,
-                   LEFT(l.body, 240) AS trecho
-            FROM person_links pl
-            JOIN journal_letters l ON l.id = pl.entity_id::int
-            JOIN journal_pages jp ON jp.id = l.page_id
-            WHERE pl.person_id = %(pid)s AND pl.entity_type = 'journal_letter'
-            ORDER BY jp.date DESC
-            LIMIT 10
-            """,
-            {"pid": person_id},
-        )
-        cartas = {"cartas": [{**r, "deep_link": f"/journal#carta/{r['id']}"} for r in carta_rows]}
-    except Exception:
-        cartas = {"cartas": []}
-
-    # ── Bloco: Livros (books vinculados — entity_id é UUID TEXT) ─────────────
-    try:
-        livro_rows = run_select(
-            """
-            SELECT bk.id, bk.title, bk.author, bk.status, bk.rating
-            FROM person_links pl
-            JOIN books bk ON bk.id = pl.entity_id AND bk.deleted = FALSE
-            WHERE pl.person_id = %(pid)s AND pl.entity_type = 'book'
-            ORDER BY bk.title
-            """,
-            {"pid": person_id},
-        )
-        livros = {"livros": livro_rows}
-    except Exception:
-        livros = {"livros": []}
-
-    return {
-        "status": "ok",
-        "perfil": perfil,
-        "financas": financas,
-        "tarefas": tarefas,
-        "diario": diario,
-        "cartas": cartas,
-        "livros": livros,
-    }
+    # Padrão vazio por cima, blocos dos provedores por baixo (os que falharam ficam no padrão).
+    blocos = copy.deepcopy(_BLOCOS_PADRAO)
+    blocos.update(integration.summary_blocks(person_id))
+    return {"status": "ok", "perfil": perfil, **blocos}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

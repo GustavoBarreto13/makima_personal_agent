@@ -863,8 +863,9 @@ def log_watch(
                     "now":            now,
                 },
             )
-            for person_id in unique_companion_ids:
-                cur.execute("INSERT INTO person_links (person_id, entity_type, entity_id) VALUES (%s, 'movie_diary_entry', %s) ON CONFLICT DO NOTHING", (person_id, diary_id))
+            if unique_companion_ids:
+                from agents.komi.integration import link_people  # noqa: PLC0415 — contrato da Komi (spec 077)
+                link_people(cur, "movie_diary_entry", diary_id, unique_companion_ids)
 
             # Atualiza o catálogo: status→watched, contagem de sessões, data e nota
             cur.execute(
@@ -1489,7 +1490,8 @@ def delete_diary_entry(diary_id: str) -> dict:
     with get_conn() as conn:
         with conn.cursor() as cur:
             # Remove a sessão
-            cur.execute("DELETE FROM person_links WHERE entity_type = 'movie_diary_entry' AND entity_id = %s", (diary_id,))
+            from agents.komi.integration import unlink_all  # noqa: PLC0415 — contrato da Komi (spec 077)
+            unlink_all(cur, "movie_diary_entry", diary_id)
             cur.execute("DELETE FROM diary_entries WHERE id = %(id)s", {"id": diary_id})
 
             # Recalcula times_watched e last_watched_date a partir das sessões restantes
@@ -1602,9 +1604,8 @@ def update_diary_entry(
                     {**fields, "id": diary_id},
                 )
             if companion_ids is not None:
-                cur.execute("DELETE FROM person_links WHERE entity_type = 'movie_diary_entry' AND entity_id = %s", (diary_id,))
-                for person_id in unique_companion_ids:
-                    cur.execute("INSERT INTO person_links (person_id, entity_type, entity_id) VALUES (%s, 'movie_diary_entry', %s) ON CONFLICT DO NOTHING", (person_id, diary_id))
+                from agents.komi.integration import sync_people  # noqa: PLC0415 — contrato da Komi (spec 077)
+                sync_people(cur, "movie_diary_entry", diary_id, unique_companion_ids)
             # Recalcula os agregados do filme — a edição pode ter mudado qual
             # sessão é a mais recente, ou o total (embora o total não mude aqui)
             cur.execute(

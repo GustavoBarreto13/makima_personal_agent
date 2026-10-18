@@ -292,34 +292,9 @@ def _ensure_tables() -> None:
                 ON journal_letters (page_id)
             """)
 
-            # ── Migração: liberar 'journal_letter' no CHECK de person_links ────
-            # As cartas podem ser vinculadas a pessoas da Komi (entity_type
-            # 'journal_letter'). A tabela person_links é da Komi e tem um CHECK
-            # que lista os entity_type permitidos; sem 'journal_letter' lá, o
-            # INSERT do vínculo seria rejeitado e derrubaria a transação inteira
-            # da carta. Aqui ampliamos o CHECK de forma idempotente (drop + add),
-            # rodando no import deste módulo (no startup da webapp) — assim o
-            # recurso funciona após um simples redeploy, sem re-rodar manualmente
-            # o setup_schemas.py. Guardado por uma checagem de existência da
-            # tabela: se a Komi ainda não foi instalada, simplesmente pulamos.
-            cur.execute("""
-                SELECT 1 FROM information_schema.tables
-                WHERE table_name = 'person_links'
-            """)
-            if cur.fetchone():
-                # DROP IF EXISTS torna o bloco re-executável sem erro; o nome
-                # 'person_links_entity_type_check' é o que o PostgreSQL gera
-                # automaticamente para um CHECK inline na coluna entity_type.
-                cur.execute(
-                    "ALTER TABLE person_links "
-                    "DROP CONSTRAINT IF EXISTS person_links_entity_type_check"
-                )
-                cur.execute("""
-                    ALTER TABLE person_links
-                    ADD CONSTRAINT person_links_entity_type_check
-                    CHECK (entity_type IN
-                        ('transaction','task','book','journal_bullet','journal_letter','movie_diary_entry'))
-                """)
+            # (Spec 077) O CHECK fixo de entity_type em person_links SAIU: a Komi agora aceita qualquer
+            # tipo no formato certo (agents/komi/integration.py), então não é mais preciso alargar a
+            # lista aqui para 'journal_letter'. O schema da Komi cuida disso em ensure_schema().
 
             # ── Spec 076 — fonte por dia e por carta ──────────────────────────
             # NULL no dia = usa a fonte padrão das preferências; a carta sempre tem a sua.
@@ -936,18 +911,10 @@ def _sync_bullet_links_on_cursor(cur, bullet_id: int, content: str, person_ids: 
 
     cur.execute("SAVEPOINT komi_links")
     try:
-        from agents.komi.tools import link_person_on_cursor, unlink_people_on_cursor  # noqa: PLC0415
-        unlink_people_on_cursor(cur, "journal_bullet", bullet_id)
-        for pid in sorted(people_now):
-            # Pessoa apagada/inexistente não pode derrubar o bullet: um savepoint por vínculo.
-            cur.execute("SAVEPOINT komi_link_one")
-            try:
-                cur.execute("SELECT 1 FROM people WHERE id = %s AND deleted = FALSE", (pid,))
-                if cur.fetchone() is not None:
-                    link_person_on_cursor(cur, pid, "journal_bullet", bullet_id)
-                cur.execute("RELEASE SAVEPOINT komi_link_one")
-            except Exception:  # noqa: BLE001
-                cur.execute("ROLLBACK TO SAVEPOINT komi_link_one")
+        # sync_people deixa o conjunto de pessoas do bullet EXATAMENTE igual ao citado agora e
+        # já ignora pessoa apagada/inexistente — por isso não precisa mais de um savepoint por vínculo.
+        from agents.komi.integration import sync_people  # noqa: PLC0415
+        sync_people(cur, "journal_bullet", bullet_id, sorted(people_now))
         cur.execute("RELEASE SAVEPOINT komi_links")
     except Exception:  # noqa: BLE001 — Komi ausente: segue sem vínculo
         cur.execute("ROLLBACK TO SAVEPOINT komi_links")
@@ -957,8 +924,8 @@ def _unlink_bullet_on_cursor(cur, bullet_id: int) -> None:
     """Remover os vínculos da Komi de um bullet apagado (person_links não tem FK)."""
     cur.execute("SAVEPOINT komi_unlink")
     try:
-        from agents.komi.tools import unlink_people_on_cursor  # noqa: PLC0415
-        unlink_people_on_cursor(cur, "journal_bullet", bullet_id)
+        from agents.komi.integration import unlink_all  # noqa: PLC0415
+        unlink_all(cur, "journal_bullet", bullet_id)
         cur.execute("RELEASE SAVEPOINT komi_unlink")
     except Exception:  # noqa: BLE001
         cur.execute("ROLLBACK TO SAVEPOINT komi_unlink")
@@ -1923,9 +1890,8 @@ def create_letter(
             # Vínculos com pessoas da Komi — mesma transação (atômico).
             # Import lazy para evitar ciclo agents.journal → agents.komi → agents.journal.
             if person_ids:
-                from agents.komi.tools import link_person_on_cursor  # noqa: PLC0415
-                for pid in person_ids:
-                    link_person_on_cursor(cur, pid, "journal_letter", letter_id)
+                from agents.komi.integration import link_people  # noqa: PLC0415
+                link_people(cur, "journal_letter", letter_id, person_ids)
         conn.commit()
         letter = _serialize_letter(row)
         # people é lido após o commit (conexão própria) — não falha a carta se a Komi sumir
@@ -2006,15 +1972,9 @@ def update_letter(letter_id: int, person_ids: list[str] | None = None, **fields)
             # Regrava vínculos se person_ids foi explicitamente fornecido.
             # Import lazy para evitar ciclo de import com a Komi.
             if person_ids is not None:
-                from agents.komi.tools import (  # noqa: PLC0415
-                    link_person_on_cursor,
-                    unlink_people_on_cursor,
-                )
-                # Remove todos os vínculos atuais da carta e insere os novos —
-                # mesmo padrão "delete + insert" usado nas menções dos bullets.
-                unlink_people_on_cursor(cur, "journal_letter", letter_id)
-                for pid in person_ids:
-                    link_person_on_cursor(cur, pid, "journal_letter", letter_id)
+                from agents.komi.integration import sync_people  # noqa: PLC0415
+                # O conjunto final da carta é exatamente o enviado (quem continua é preservado).
+                sync_people(cur, "journal_letter", letter_id, person_ids)
         conn.commit()
         letter = _serialize_letter(row)
         letter["people"] = _fetch_letter_people(letter_id)
@@ -2089,8 +2049,8 @@ def delete_letter(letter_id: int) -> dict:
             # Remove os vínculos pessoa↔carta na mesma transação (best-effort:
             # se a Komi não estiver instalada, simplesmente não há o que limpar).
             try:
-                from agents.komi.tools import unlink_people_on_cursor  # noqa: PLC0415
-                unlink_people_on_cursor(cur, "journal_letter", letter_id)
+                from agents.komi.integration import unlink_all  # noqa: PLC0415
+                unlink_all(cur, "journal_letter", letter_id)
             except Exception:  # noqa: BLE001
                 # Komi ausente — sem vínculos para remover; não falha a exclusão
                 pass

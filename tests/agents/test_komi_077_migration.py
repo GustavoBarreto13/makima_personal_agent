@@ -104,3 +104,4 @@ def test_dry_run_nao_grava_nada_e_apply_converte_e_e_idempotente(capsys):
         assert cur.fetchone()[0] == "personal"
         cur.execute("SELECT count(*) FROM person_notes")
         assert cur.fetchone()[0] == 2                              # sem notas duplicadas
+    reset()   # limpa ao terminar: o banco de teste é compartilhado com os testes de outros agentes

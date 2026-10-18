@@ -30,9 +30,10 @@ from tests.agents.komi_testing import reset_komi_schema  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _banco_limpo():
-    """Recria o schema da Komi antes de cada teste (isolamento total)."""
+    """Recria o schema da Komi antes de cada teste (isolamento total) e limpa ao terminar."""
     reset_komi_schema()
     yield
+    reset_komi_schema()   # não deixa "Ana", "Bia"... no banco compartilhado para os testes de outros agentes
 
 
 def _criar(name: str, **extra) -> str:

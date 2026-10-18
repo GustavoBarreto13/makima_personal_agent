@@ -682,9 +682,8 @@ def add_book(
         with conn.cursor() as cur:
             cur.execute(sql, params)
             if person_ids:
-                from agents.komi.tools import link_person_on_cursor  # noqa: PLC0415
-                for pid in person_ids:
-                    link_person_on_cursor(cur, pid, "book", book_id)
+                from agents.komi.integration import link_people  # noqa: PLC0415
+                link_people(cur, "book", book_id, person_ids)
 
     # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
     try:

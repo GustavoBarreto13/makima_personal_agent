@@ -1,55 +1,57 @@
-"""Pessoas por espaço (spec 075) — contrato pronto para quando a Komi distinguir pessoas de trabalho.
+"""Pessoas por espaço (specs 075 e 077) — fachada do contrato de integração da Komi.
 
-Hoje a Komi não tem o conceito. Esta ponte devolve ``None`` ("sem filtro") enquanto a coluna
-``people.context`` não existir e passa a filtrar sozinha assim que ela for criada — sem mudança na
-Kaguya. A checagem do catálogo roda uma vez por processo e o resultado fica em cache.
+A Kaguya separa **Trabalho × Pessoal** em todas as telas. Desde a spec 077 a Komi guarda o
+espaço de cada pessoa em ``people.context`` (``personal`` | ``work`` | ``both``; "ambos"
+aparece nos dois espaços) e é DONA da regra: a consulta mora em
+``agents.komi.integration.people_for_space``. Este módulo só mantém a API que a Kaguya já
+importava (``person_ids_for_space`` & cia.), sem repetir SQL de outro agente.
 
-Contrato esperado da Komi (pendência registrada em ``agents/komi/CLAUDE.md``): ``people.context`` com
-``'personal' | 'work' | 'both'``; ``'both'`` aparece nos dois espaços.
+Usage:
+    >>> from agents.kaguya.people_space import person_ids_for_space
+    >>> person_ids_for_space(None) is None        # sem espaço = sem filtro
+    True
 """
 
 from __future__ import annotations
 
 from typing import Optional
 
-from agents.db import run_select
-
-_has_context_column: Optional[bool] = None
-
 
 def komi_supports_space() -> bool:
-    """Diz se a Komi já tem ``people.context`` (consulta o catálogo uma vez e guarda o resultado)."""
-    global _has_context_column
-    if _has_context_column is None:
-        try:
-            rows = run_select(
-                "SELECT 1 FROM information_schema.columns WHERE table_name = 'people' AND column_name = 'context'"
-            )
-            _has_context_column = bool(rows)
-        except Exception:  # noqa: BLE001 — sem banco/sem tabela: trata como "ainda não suporta"
-            _has_context_column = False
-    return _has_context_column
+    """Dizer se a Komi está disponível com o conceito de espaço.
+
+    Desde a spec 077 o ``ensure_schema`` da Komi cria ``people.context`` sozinho, então a
+    pergunta virou "o banco da Komi existe?".
+
+    Returns:
+        ``True`` se o schema da Komi está aplicado; ``False`` se não deu para aplicá-lo
+        (ex.: banco sem a Komi) — nesse caso nada é filtrado.
+    """
+    try:
+        from agents.komi.schema import ensure_schema  # noqa: PLC0415 — Komi é opcional para a Kaguya
+        return ensure_schema()
+    except Exception:  # noqa: BLE001 — sem banco/sem Komi: trata como "não suporta"
+        return False
 
 
 def person_ids_for_space(space: Optional[str]) -> Optional[list[str]]:
-    """Ids de pessoas visíveis no espaço pedido.
+    """IDs de pessoas visíveis no espaço pedido.
 
     Args:
         space: ``work`` | ``personal`` | ``None``.
 
     Returns:
-        Lista de ids (inclui as marcadas ``both``) — ou ``None`` quando não há o que filtrar
-        (espaço não informado ou a Komi ainda não distingue), significando "todas as pessoas".
+        Lista de IDs (inclui as marcadas ``both``) — ou ``None`` quando não há o que filtrar
+        (espaço não informado/desconhecido, ou a Komi indisponível), significando "todas as pessoas".
     """
-    if space not in ("work", "personal") or not komi_supports_space():
+    if space not in ("work", "personal"):
         return None
-    rows = run_select(
-        "SELECT id FROM people WHERE context IN (%(space)s, 'both')", {"space": space}
-    )
-    return [r["id"] for r in rows]
+    try:
+        from agents.komi.integration import people_for_space  # noqa: PLC0415
+        return people_for_space(space)
+    except Exception:  # noqa: BLE001 — Komi fora do ar: melhor mostrar todas do que nenhuma
+        return None
 
 
 def reset_cache() -> None:
-    """Esquece o resultado em cache (para testes e para quando a Komi migrar com o app no ar)."""
-    global _has_context_column
-    _has_context_column = None
+    """Compatibilidade: antes esquecia o cache da checagem de coluna; hoje não há cache."""

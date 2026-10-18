@@ -193,15 +193,37 @@ def test_create_person_on_cursor_then_commit():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SC-007 — entity_type inválido é rejeitado
+# SC-007 — entity_type: contrato aberto, mas com formato (spec 077)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_link_invalid_entity_type_raises():
-    """link_person_on_cursor com entity_type não reconhecido falha no CHECK do banco."""
+def test_link_entity_type_com_formato_invalido_e_rejeitado():
+    """Formato inválido é barrado pela função (ValueError) E pelo banco (CHECK de formato)."""
     pid = _make_person("Tipo Inválido")
 
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            with pytest.raises(ValueError):
+                K.link_person_on_cursor(cur, pid, "Tipo Inválido!", "any-id")
+
+    # Mesmo escrevendo SQL cru, o banco recusa lixo no entity_type.
     with pytest.raises(Exception):
         with get_conn() as conn:
             with conn.cursor() as cur:
-                # "invoice" não está no CHECK (entity_type IN (...))
-                K.link_person_on_cursor(cur, pid, "invoice", "any-id")
+                cur.execute(
+                    "INSERT INTO person_links (person_id, entity_type, entity_id) VALUES (%s, 'Tipo Ruim', 'x')",
+                    (pid,),
+                )
+
+
+def test_link_entity_type_novo_e_aceito_sem_alterar_o_schema():
+    """'invoice' não está numa lista fixa: qualquer agente novo registra o seu tipo."""
+    pid = _make_person("Tipo Novo")
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            K.link_person_on_cursor(cur, pid, "invoice", "inv-1")
+
+    rows = run_select(
+        "SELECT entity_type FROM person_links WHERE person_id = %s AND entity_id = %s", (pid, "inv-1")
+    )
+    assert [r["entity_type"] for r in rows] == ["invoice"]
