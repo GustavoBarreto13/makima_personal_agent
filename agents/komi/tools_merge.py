@@ -190,8 +190,11 @@ def preview_merge(keep_id: str, drop_id: str) -> dict:
 def merge_people(keep_id: str, drop_id: str) -> dict:
     """Mesclar ``drop_id`` em ``keep_id``: tudo da absorvida passa para quem fica.
 
-    NÃO tem "Desfazer" — confira com ``preview_merge`` antes. A absorvida vai para a lixeira
-    (``merged_into`` aponta para quem ficou) e não pode ser restaurada.
+    ATENÇÃO — AÇÃO SEM DESFAZER. Só chame depois de (1) rodar ``preview_merge``, (2) mostrar ao
+    usuário quem fica, quem é absorvida e o que será movido, e (3) ele confirmar EXPLICITAMENTE.
+    Nunca mescle por conta própria nem por palpite de "parecem a mesma pessoa" (use
+    ``find_duplicates`` só para sugerir). A absorvida vai para a lixeira (``merged_into`` aponta
+    para quem ficou) e não pode ser restaurada.
 
     Args:
         keep_id: Quem fica.

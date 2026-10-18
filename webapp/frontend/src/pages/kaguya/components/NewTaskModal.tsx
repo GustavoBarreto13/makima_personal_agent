@@ -22,7 +22,8 @@ import type { Column, GtdStatus, RecurrenceMode, TaskContext, TaskType } from '.
 import { TaskFormLayout } from './TaskFormLayout'
 import { usePeople } from './TaskPanelExtras'
 
-const TYPES: { value: TaskType; label: string }[] = [{ value: 'task', label: 'Tarefa' }, { value: 'event', label: 'Evento' }, { value: 'birthday', label: 'Aniversário' }]
+// Aniversário NÃO é mais tarefa (spec 077): é um campo da pessoa na Komi, que o põe no calendário com lembrete.
+const TYPES: { value: TaskType; label: string }[] = [{ value: 'task', label: 'Tarefa' }, { value: 'event', label: 'Evento' }]
 const GTD: { value: GtdStatus | ''; label: string }[] = [
   { value: '', label: 'Sem classificação' }, { value: 'next_action', label: 'Próxima ação' }, { value: 'waiting', label: 'Aguardando' }, { value: 'someday', label: 'Algum dia' },
 ]
@@ -33,10 +34,11 @@ const readCol = (projectId: number): number | null => { try { const v = localSto
 export function NewTaskModal({ defaults, onClose }: { defaults?: NewTaskDefaults; onClose: () => void }) {
   const k = useKaguya()
   const targets = defaults?.targets
-  const people = usePeople()
 
   const [title, setTitle] = useState(defaults?.title ?? '')
   const [projectId, setProjectId] = useState<number | undefined>(targets?.[0]?.projectId ?? defaults?.projectId ?? k.inboxId)
+  // A busca de pessoas segue o espaço (trabalho/pessoal) da lista escolhida (spec 077).
+  const people = usePeople(k.projects.find((p) => p.id === projectId)?.context)
   const [projectTouched, setProjectTouched] = useState(false)
   const [columnId, setColumnId] = useState<number | null>(defaults?.columnId ?? null)
   const [type, setType] = useState<TaskType>('task')

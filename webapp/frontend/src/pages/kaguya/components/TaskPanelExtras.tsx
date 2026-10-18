@@ -9,21 +9,38 @@ import { kaguyaApi } from '../api'
 import { useKaguya } from '../context'
 import { localISO, localDayOf, minToLabel, timeToMin } from '../lib/calendar'
 import { safe, useLoad } from '../lib/useLoad'
-import type { Column, Person, RecurrenceMode, Task, TaskContext, TaskType } from '../types'
+import type { Column, Person, RecurrenceMode, Task, TaskContext, TaskType, WorkContext } from '../types'
 
 type Save = (p: Parameters<typeof kaguyaApi.updateTask>[1], ok?: string) => Promise<void>
 
-const TYPES: { value: TaskType; label: string }[] = [{ value: 'task', label: 'Tarefa' }, { value: 'event', label: 'Evento' }, { value: 'birthday', label: 'Aniversário' }]
+// Aniversário NÃO é mais tarefa (spec 077): é um campo da pessoa na Komi, que o põe no calendário com lembrete.
+const TYPES: { value: TaskType; label: string }[] = [{ value: 'task', label: 'Tarefa' }, { value: 'event', label: 'Evento' }]
+/** Uma tarefa antiga do tipo aniversário (de antes da mudança) ainda mostra o tipo certo no seletor. */
+const typesFor = (current: TaskType) => (current === 'birthday' ? [...TYPES, { value: 'birthday' as TaskType, label: 'Aniversário' }] : TYPES)
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 const reason = (e: unknown) => (e instanceof Error && e.message && !/^HTTP \d+$/.test(e.message) ? e.message : 'Não foi possível salvar.')
 const opt = (p: Person): PersonOption => ({ id: p.id, name: p.name, avatar: p.avatar_url })
 
-/** O catálogo da Komi é carregado uma vez por abertura do painel e filtrado aqui (sem acento nem caixa). */
-export function usePeople() {
+/**
+ * O catálogo da Komi é carregado uma vez por abertura do painel e filtrado aqui (sem acento nem caixa).
+ *
+ * Com `space`, a BUSCA só sugere quem vale naquele espaço (pessoas "trabalho" e "ambos" no espaço Trabalho;
+ * "pessoal" e "ambos" no Pessoal). `all` continua com todo mundo, para quem já está atribuído a uma tarefa
+ * seguir com o nome aparecendo mesmo que mude de espaço.
+ */
+export function usePeople(space?: WorkContext) {
   const { state } = useLoad<Person[]>(() => safe(() => kaguyaApi.listPeople(), []), [])
   const [added, setAdded] = useState<Person[]>([])
   const all = useMemo(() => [...(state.status === 'ok' ? state.data : []), ...added], [state, added])
-  const search = useCallback((q: string) => all.filter((p) => norm(p.name).includes(norm(q))).slice(0, 8).map(opt), [all])
+  const search = useCallback(
+    (q: string) =>
+      all
+        .filter((p) => !space || (p.context ?? 'personal') === space || p.context === 'both')
+        .filter((p) => norm(p.name).includes(norm(q)))
+        .slice(0, 8)
+        .map(opt),
+    [all, space],
+  )
   const create = useCallback(async (name: string) => {
     const p = await kaguyaApi.createPerson(name)
     setAdded((cur) => [...cur, p])
@@ -35,8 +52,8 @@ export function usePeople() {
 /** Os campos do painel que vão além do básico, cada um como um bloco solto: quem monta a tela escolhe a ordem. */
 export function useTaskExtras(task: Task, save: Save) {
   const k = useKaguya()
-  const people = usePeople()
   const project = k.projects.find((p) => p.id === task.project_id)
+  const people = usePeople(project?.context)
   const columns = useLoad<Column[]>(() => (project?.has_board ? safe(() => kaguyaApi.listColumns(task.project_id), []) : Promise.resolve([])), [task.project_id, project?.has_board])
   const cols = columns.state.status === 'ok' ? columns.state.data : []
   const contexts = useLoad<TaskContext[]>(() => safe(() => kaguyaApi.listContexts(), []), [])
@@ -72,7 +89,7 @@ export function useTaskExtras(task: Task, save: Save) {
 
   const type = (
     <Field label="Tipo">{() => (
-      <SegmentedControl<TaskType> label="Tipo" value={task.type} options={TYPES} onChange={(v) => void save({ type: v })} />
+      <SegmentedControl<TaskType> label="Tipo" value={task.type} options={typesFor(task.type)} onChange={(v) => void save({ type: v })} />
     )}</Field>
   )
 

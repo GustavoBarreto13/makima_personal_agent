@@ -153,7 +153,7 @@ function Details({ task, save, wide }: { task: Task; save: (p: Parameters<typeof
   useEffect(() => setWait(task.waiting_note ?? ''), [task.id, task.waiting_note])
 
   const listOpts = useMemo(() => listOptions(k.projects, k.groups), [k.projects, k.groups])
-  const people = usePeople()
+  const people = usePeople(k.projects.find((p) => p.id === task.project_id)?.context)
   const x = useTaskExtras(task, save)
   // @pessoa (cadastro da Komi) e [[tarefa: o texto guarda `@[Nome](komi:id)` e `[[id|Título]]`, que o leitor desenha como link.
   const mentions = useMemo<MentionSource[]>(() => [
@@ -306,7 +306,8 @@ function Details({ task, save, wide }: { task: Task; save: (p: Parameters<typeof
               const id = Number(href.slice(5))
               return <button type="button" className="kn-mention" onClick={() => k.openTask(id)}>{children}</button>
             }
-            if (href.startsWith('komi:')) return <a className="kn-mention" href="/people">{children}</a>
+            // @[Nome](komi:id) abre direto a pessoa na Komi (spec 077)
+            if (href.startsWith('komi:')) return <a className="kn-mention" href={`/people#pessoa/${href.slice('komi:'.length)}`}>{children}</a>
             return undefined
           }}
         />

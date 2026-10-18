@@ -35,6 +35,8 @@ export interface Person {
   id: string
   name: string
   avatar_url: string | null
+  /** Espaço da pessoa na Komi (spec 077): quem é "both" aparece nos dois espaços. Ausente = pessoal. */
+  context?: 'personal' | 'work' | 'both'
 }
 
 // Uma tarefa (ou subtarefa). Campos temporais chegam como string ISO do backend.

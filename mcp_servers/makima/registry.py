@@ -25,13 +25,16 @@ from agents.yato.toolset import TOOLS as _YATO_TOOLS
 # Spec 076 — Conselho, Revisão semanal e leitura emocional da Violet vivem na Kurisu (dona do
 # RAG); entram no domínio journal aqui, para agents/journal continuar sem depender da Kurisu.
 from agents.kurisu.violet_tools import VIOLET_KURISU_TOOLS as _VIOLET_KURISU_TOOLS
+# Spec 077 — o resumo de IA da Memória das pessoas vive na Kurisu; entra no domínio komi aqui, para
+# agents/komi continuar sem depender da Kurisu.
+from agents.kurisu.komi_tools import KOMI_KURISU_TOOLS as _KOMI_KURISU_TOOLS
 
 DOMAINS: dict[str, list[Callable]] = {
     "nami": _NAMI_TOOLS,
     "kaguya": _KAGUYA_TOOLS,
     "frieren": _FRIEREN_TOOLS,
     "akane": _AKANE_TOOLS,
-    "komi": _KOMI_TOOLS,
+    "komi": [*_KOMI_TOOLS, *_KOMI_KURISU_TOOLS],
     "marin": _MARIN_TOOLS,
     "mai": _MAI_TOOLS,
     "lucy": _LUCY_TOOLS,
