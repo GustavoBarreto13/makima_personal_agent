@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import calendar
 import unicodedata
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 # Valores aceitos para o espaço (contexto) de uma pessoa.
 CONTEXTS = ("personal", "work", "both")
@@ -296,3 +297,24 @@ def name_keys(*nomes: str | None) -> list[str]:
         if chave and chave not in vistas:
             vistas.append(chave)
     return vistas
+
+
+def today_sp(agora: datetime | None = None) -> date:
+    """Dizer que dia é "hoje" para o dono: fuso America/Sao_Paulo (UTC-3), nunca o do servidor.
+
+    O servidor roda em UTC; depois das 21h locais a data UTC já é a de amanhã (bug histórico
+    do projeto). Toda conta de "hoje" da Komi passa por aqui.
+
+    Args:
+        agora: Instante de referência (``None`` = agora). Útil para testes.
+
+    Returns:
+        A data local em São Paulo.
+
+    Example:
+        >>> from datetime import timezone
+        >>> today_sp(datetime(2026, 10, 18, 1, 30, tzinfo=timezone.utc))   # 22h30 do dia 17 em SP
+        datetime.date(2026, 10, 17)
+    """
+    fuso = ZoneInfo("America/Sao_Paulo")
+    return (agora or datetime.now(fuso)).astimezone(fuso).date()

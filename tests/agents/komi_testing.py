@@ -30,3 +30,67 @@ def reset_komi_schema() -> None:
             cur.execute(f"DROP TABLE IF EXISTS {KOMI_TABLES.replace(' ', ', ')} CASCADE")
     schema.reset_for_tests()
     assert schema.ensure_schema(force=True), "não foi possível aplicar o schema da Komi no banco de teste"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Banco temporário com os schemas de TODOS os agentes que a Komi integra
+# ─────────────────────────────────────────────────────────────────────────────
+import contextlib
+import os
+from pathlib import Path
+
+# A Komi vem ANTES da Kaguya: o schema da Kaguya referencia person_dates (ponte do sync antigo).
+SCHEMAS_COMPLETOS = [
+    "agents/komi/schema_pg.sql", "agents/nami/schema_pg.sql", "agents/frieren/schema_pg.sql",
+    "agents/kaguya/schema_tasks_pg.sql", "agents/akane/schema_pg.sql",
+]
+
+
+@contextlib.contextmanager
+def banco_completo(nome: str = "komi_prov_pytest"):
+    """Criar um banco temporário com as tabelas reais de Komi, Nami, Frieren, Kaguya, Akane e Violet.
+
+    Aponta ``DATABASE_URL`` (e o DSN fixo da Violet, lido só no import) para o banco novo durante
+    o ``with`` e restaura tudo no fim, apagando o banco.
+
+    Args:
+        nome: Nome do banco temporário.
+
+    Yields:
+        O DSN do banco temporário.
+    """
+    import psycopg2
+
+    raiz = Path(__file__).resolve().parents[2]
+    original = os.environ["DATABASE_URL"]
+    admin = psycopg2.connect(original)
+    admin.autocommit = True
+    with admin.cursor() as cur:
+        cur.execute(f"DROP DATABASE IF EXISTS {nome}")
+        cur.execute(f"CREATE DATABASE {nome}")
+    novo = original.rsplit("/", 1)[0] + "/" + nome
+    os.environ["DATABASE_URL"] = novo
+    violet = None
+    dsn_violet = None
+    try:
+        conn = psycopg2.connect(novo)
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            for arq in SCHEMAS_COMPLETOS:
+                cur.execute((raiz / arq).read_text(encoding="utf-8"))
+        conn.close()
+        from agents.journal import tools as violet
+        dsn_violet = violet._DATABASE_URL          # a Violet lê o DSN uma só vez, no import
+        violet._DATABASE_URL = novo
+        violet._ensure_tables()
+        from agents.komi import integration
+        schema.reset_for_tests()
+        integration.reset_providers()
+        yield novo
+    finally:
+        if violet is not None:
+            violet._DATABASE_URL = dsn_violet
+        os.environ["DATABASE_URL"] = original
+        with admin.cursor() as cur:
+            cur.execute(f"DROP DATABASE IF EXISTS {nome}")
+        admin.close()

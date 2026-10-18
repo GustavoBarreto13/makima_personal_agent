@@ -587,7 +587,7 @@ def list_raw_events(calendar_id: str, date_from: str, date_to: str) -> list[dict
     Diferente de `list_events()` (que faz fan-out em todos os calendários,
     normaliza o fuso, filtra `exclude` e cacheia 60s), esta função devolve o
     mínimo necessário para `gcal_mirror.reconcile_source` fazer o diff contra o
-    estado desejado: `id`, `summary`, `start`, `end` — cru, exatamente como o
+    estado desejado: `id`, `summary`, `start`, `end`, `reminders` — cru, exatamente como o
     Google retorna. Sem cache (a reconciliação precisa do estado atual real) e
     com paginação completa por `pageToken`.
 
@@ -628,6 +628,8 @@ def list_raw_events(calendar_id: str, date_from: str, date_to: str) -> list[dict
                 "summary": ev.get("summary", ""),
                 "start": ev.get("start", {}),
                 "end": ev.get("end", {}),
+                # Lembretes (spec 077): o espelho precisa saber se o alerta mudou para fazer o patch.
+                "reminders": ev.get("reminders", {}),
             })
         page_token = resp.get("nextPageToken")
         if not page_token:

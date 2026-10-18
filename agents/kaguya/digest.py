@@ -175,6 +175,51 @@ def _query_kurisu_context(weekday: int, candidate_tasks: list[dict]) -> list[dic
     return result.get("trechos", [])[:5]
 
 
+def _upcoming_birthdays(today: date, hide_work: bool) -> list[dict]:
+    """Aniversários de hoje até 7 dias à frente, vindos da Komi (spec 077).
+
+    Em dia/modo sem trabalho (férias, folga, fim de semana) só entram pessoas do espaço
+    pessoal ou "ambos" — o digest nunca mostra gente que só existe no trabalho.
+
+    Args:
+        today: Dia de referência.
+        hide_work: Se True, esconde quem é só do espaço trabalho.
+
+    Returns:
+        Lista de aniversariantes (``name``, ``in_days``, ``date``, ``turning``, ``gift_ideas``...).
+        Vazia se a Komi falhar — o digest nunca cai por causa dela.
+    """
+    try:
+        from agents.komi.tools import upcoming_birthdays  # noqa: PLC0415 — Komi é opcional aqui
+        r = upcoming_birthdays(days=7, space="personal" if hide_work else None, today=today.isoformat())
+        return r["birthdays"] if r.get("status") == "ok" else []
+    except Exception as exc:  # noqa: BLE001 — melhor esforço
+        logger.warning("Falha ao ler os aniversários da Komi (%s); seguindo sem eles.", exc)
+        return []
+
+
+def _fmt_birthday(b: dict) -> str:
+    """Formatar uma linha de aniversariante para o digest.
+
+    Args:
+        b: Item de ``upcoming_birthdays`` (``name``, ``in_days``, ``date``, ``turning``, ``gift_ideas``).
+
+    Returns:
+        Texto como "Bia faz 30 anos hoje — ideias: orquídea; livro".
+
+    Example:
+        >>> _fmt_birthday({"name": "Bia", "in_days": 0, "date": "2026-05-15", "turning": 30, "gift_ideas": ["orquídea"]})
+        'Bia faz 30 anos hoje — ideias: orquídea'
+        >>> _fmt_birthday({"name": "Caio", "in_days": 3, "date": "2026-05-18", "turning": None, "gift_ideas": []})
+        'Caio em 3 dias (18/05)'
+    """
+    d = b["in_days"]
+    quando = "hoje" if d == 0 else ("amanhã" if d == 1 else f"em {d} dias ({b['date'][8:10]}/{b['date'][5:7]})")
+    idade = f" faz {b['turning']} anos" if b.get("turning") else ""
+    ideias = f" — ideias: {'; '.join(b['gift_ideas'])}" if b.get("gift_ideas") else ""
+    return f"{b['name']}{idade} {quando}{ideias}"
+
+
 def build_digest_context(today: date | None = None) -> dict:
     """Junta tudo que o digest precisa: tarefas, agenda, capacidade, diário, RAG.
 
@@ -193,7 +238,7 @@ def build_digest_context(today: date | None = None) -> dict:
     Returns:
         Dict com `today`, `weekday`, `is_weekend`, `overdue`, `today_tasks`,
         `next_actions`, `quick`, `waiting`, `events`, `capacity`, `journal_notes`,
-        `rag_excerpts`. Quando o modo férias (spec 065) está ligado, tarefas/eventos com
+        `rag_excerpts`, `birthdays` (aniversários dos próximos 7 dias, da Komi). Quando o modo férias (spec 065) está ligado, tarefas/eventos com
         contexto Trabalho já saem excluídos daqui — o digest nunca os vê.
     """
     today = today or _today_sp()
@@ -312,6 +357,7 @@ def build_digest_context(today: date | None = None) -> dict:
 
     journal_notes = _recent_journal_notes(today)
     rag_excerpts = _query_kurisu_context(weekday, candidate_tasks)
+    birthdays = _upcoming_birthdays(today, hide_work)
 
     return {
         "today": today.isoformat(),
@@ -328,6 +374,7 @@ def build_digest_context(today: date | None = None) -> dict:
         "free_time": free_time,
         "journal_notes": journal_notes,
         "rag_excerpts": rag_excerpts,
+        "birthdays": birthdays,
     }
 
 
@@ -503,6 +550,12 @@ def build_whatsapp_digest(context: dict, suggestion: dict) -> str:
         lines.append("🗓️ <b>Agenda</b>")
         for e in context["events"]:
             lines.append(f"  • {e.get('summary')} — {_fmt_event_time(e)}")
+        lines.append("")
+
+    if context.get("birthdays"):
+        lines.append("🎂 <b>Aniversários</b>")
+        for b in context["birthdays"]:
+            lines.append(f"  • {_fmt_birthday(b)}")
         lines.append("")
 
     if context["next_actions"]:

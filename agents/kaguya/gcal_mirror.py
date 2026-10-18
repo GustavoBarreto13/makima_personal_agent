@@ -134,6 +134,21 @@ def _description(item: dict) -> str:
     return "\n".join(parts)
 
 
+def _lembretes_do_item(item: dict) -> list[dict]:
+    """Converter os `reminders` de um item do hub (minutos antes) em alertas do Google.
+
+    O Google aceita no máximo 5 alertas por evento e minutos entre 0 e 40320 (4 semanas).
+
+    Args:
+        item: CalendarItem do hub; `item["reminders"]` é uma lista opcional de minutos.
+
+    Returns:
+        Lista de `{"method": "popup", "minutes": N}` (vazia se o item não pede aviso).
+    """
+    validos = [m for m in (item.get("reminders") or []) if isinstance(m, int) and 0 <= m <= 40320]
+    return [{"method": "popup", "minutes": m} for m in validos[:5]]
+
+
 def _event_body(item: dict) -> dict:
     """Traduz um `CalendarItem` no corpo de evento aceito pela Google Calendar API.
 
@@ -144,11 +159,11 @@ def _event_body(item: dict) -> dict:
     - `start` sem `end` (só a Nami produz isso — transação usa a hora de criação)
       → `end = start + 30min`, mesma escolha de `gcal_sync._build_event_payload`.
 
-    `reminders` explicitamente vazio: a esmagadora maioria dos itens é histórico
+    `reminders` vazio por padrão: a esmagadora maioria dos itens é histórico
     (filme assistido, bullet, sessão de leitura) — notificação em massa seria
-    spam. Quem quiser aviso de vencimento liga a notificação padrão DO calendário
-    "Nami — Finanças" na UI do Google. `transparency=transparent` para o espelho
-    não marcar o usuário como ocupado.
+    spam. A exceção é o item que PEDE aviso (`item["reminders"]` = minutos antes do
+    início, ex.: aniversário da Komi, spec 077): vira um alerta `popup` de verdade.
+    `transparency=transparent` para o espelho não marcar o usuário como ocupado.
     """
     summary = (item.get("title") or "(sem título)")[:1024]
 
@@ -173,7 +188,7 @@ def _event_body(item: dict) -> dict:
         "summary": summary,
         "start": start_field,
         "end": end_field,
-        "reminders": {"useDefault": False, "overrides": []},
+        "reminders": {"useDefault": False, "overrides": _lembretes_do_item(item)},
         "transparency": "transparent",
     }
     desc = _description(item)
@@ -195,13 +210,32 @@ def _norm_point(field: dict) -> str:
         return dt
 
 
+def _minutos_de_alerta(reminders: dict | None) -> list[int]:
+    """Extrair, ordenados, os minutos dos alertas `popup` de um bloco `reminders` do Google.
+
+    Só os minutos entram na comparação: `useDefault`/ausência de `overrides` equivalem a
+    "sem alerta nosso", e comparar o resto geraria patch à toa em evento que ninguém mudou.
+
+    Args:
+        reminders: O bloco `reminders` do evento (cru do Google ou o corpo desejado).
+
+    Returns:
+        Lista ordenada de minutos (vazia se não há alerta).
+    """
+    overrides = (reminders or {}).get("overrides") or []
+    return sorted(o["minutes"] for o in overrides if o.get("method") == "popup" and "minutes" in o)
+
+
 def _differs(current: dict, desired: dict) -> bool:
-    """True se o evento atual no Google divergir do desejado em summary/start/end."""
+    """True se o evento atual no Google divergir do desejado em summary/start/end/alertas."""
     if (current.get("summary") or "") != desired["summary"]:
         return True
     if _norm_point(current.get("start") or {}) != _norm_point(desired["start"]):
         return True
     if _norm_point(current.get("end") or {}) != _norm_point(desired["end"]):
+        return True
+    # Alertas (spec 077): mudar "lembrar 1 dia antes" para "3 dias" tem que atualizar o evento.
+    if _minutos_de_alerta(current.get("reminders")) != _minutos_de_alerta(desired.get("reminders")):
         return True
     return False
 
@@ -246,12 +280,12 @@ def _insert(svc, cal_id: str, event_id: str, body: dict) -> bool:
 
 
 def _patch(svc, cal_id: str, event_id: str, body: dict) -> bool:
-    """Atualiza só os campos que o diff compara (summary/start/end)."""
+    """Atualiza só os campos que o diff compara (summary/start/end/reminders)."""
     try:
         svc.events().patch(
             calendarId=cal_id,
             eventId=event_id,
-            body={"summary": body["summary"], "start": body["start"], "end": body["end"]},
+            body={k: body[k] for k in ("summary", "start", "end", "reminders") if k in body},
         ).execute()
         return True
     except Exception:

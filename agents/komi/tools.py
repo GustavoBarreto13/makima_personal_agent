@@ -729,39 +729,113 @@ def _normalize_important_date(date_str: str) -> str:
         )
 
 
+def _lembrete_da_data(dias: int | None) -> int | None:
+    """Interpretar o lembrete de uma data importante vindo de formulário, API ou agente.
+
+    ``-1`` significa "sem lembrete" (e ``None`` num UPDATE significa "não mexer"), por isso
+    ele não colide com o valor ``None`` do banco nem exige um parâmetro-sentinela nas tools.
+
+    Args:
+        dias: Dias antes (0 a 365) ou ``-1`` para desligar o lembrete.
+
+    Returns:
+        O número de dias, ou ``None`` quando o lembrete deve ficar desligado.
+
+    Raises:
+        ValueError: Se não for um inteiro entre 0 e 365 (ou -1).
+    """
+    if dias == -1:
+        return None
+    return _lembrete_valido(dias)
+
+
+def set_birthday(
+    person_id: str,
+    birth_day: int,
+    birth_month: int,
+    birth_year: int | None = None,
+    remind_days: int | None = None,
+) -> dict:
+    """Definir o aniversário de uma pessoa (dia e mês; ano é opcional).
+
+    O aniversário é um campo da pessoa — aparece sozinho no calendário (e no espelho do
+    Google) com lembrete e entra no resumo da manhã. Para tirar o aniversário, use
+    ``update_person(person_id, birth_day=None, birth_month=None)``.
+
+    Args:
+        person_id: UUID da pessoa.
+        birth_day: Dia do mês (1 a 31).
+        birth_month: Mês (1 a 12).
+        birth_year: Ano de nascimento (opcional; a idade só aparece com ele). Se omitido,
+            um ano já cadastrado é preservado.
+        remind_days: Dias antes para lembrar (0 = no dia). Se omitido, o lembrete atual é
+            preservado; ``-1`` desliga o lembrete.
+
+    Returns:
+        ``{"status": "ok", "message": "..."}`` ou ``{"status": "error", "message": ...}``.
+
+    Example:
+        >>> set_birthday("uuid...", 15, 5, 1998)      # doctest: +SKIP
+        {'status': 'ok', 'message': 'Perfil atualizado com sucesso.'}
+    """
+    campos: dict = {"birth_day": birth_day, "birth_month": birth_month}
+    if birth_year is not None:
+        campos["birth_year"] = birth_year
+    if remind_days is not None:
+        try:
+            campos["birthday_remind_days"] = _lembrete_da_data(remind_days)
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}
+    return update_person(person_id, **campos)
+
+
 def add_important_date(
     person_id: str,
     label: str,
     date: str,
     recurring: bool = True,
+    remind_days_before: int = 1,
 ) -> dict:
-    """Adicionar uma data importante a uma pessoa.
+    """Adicionar uma data importante a uma pessoa (casamento, formatura...).
 
-    A partir da fase 026, o INSERT usa RETURNING id para que o hook de sync
-    Komi→Kaguya saiba qual person_date_id foi gerado sem precisar de query adicional.
+    O ANIVERSÁRIO não é uma data solta: é um campo da pessoa (``set_birthday``). Por isso,
+    adicionar uma data recorrente com o rótulo exato "aniversário" grava o campo da pessoa
+    — assim o chat e o Hermes continuam funcionando como sempre.
 
     Args:
         person_id: UUID da pessoa.
-        label: Descrição da data (ex.: "aniversário", "formatura").
-        date: Data no formato YYYY-MM-DD.
-        recurring: Se True, a data repete todo ano (útil para aniversários).
+        label: Descrição da data (ex.: "casamento", "formatura").
+        date: Data no formato AAAA-MM-DD ou MM-DD (sem ano).
+        recurring: Se True, a data repete todo ano.
+        remind_days_before: Quantos dias antes lembrar (0 = no dia; ``-1`` = sem lembrete).
 
     Returns:
-        {"status": "ok", "id": int, "message": "..."} ou {"status": "error", "message": ...}.
-        O campo "id" contém o ID gerado do person_date — necessário para gravar birthday_sync_links.
+        ``{"status": "ok", "id": int, "message": "..."}`` ou ``{"status": "error", "message": ...}``.
+        Para o aniversário o ``id`` é ``None`` (não há linha em ``person_dates``).
     """
     if not label or not label.strip():
         return {"status": "error", "message": "O label não pode ser vazio."}
     if not date:
         return {"status": "error", "message": "A data é obrigatória (MM-DD ou AAAA-MM-DD)."}
 
-    # Aceita MM-DD (sem ano) e AAAA-MM-DD — como o campo da UI promete — e
-    # converte para o AAAA-MM-DD que o Postgres exige. Sem isto, um MM-DD vira
-    # erro cru do banco → HTTP 400 engolido pela tela ("não salva nada").
+    # Aceita MM-DD (sem ano) e AAAA-MM-DD — como o campo da UI promete — e converte para o
+    # AAAA-MM-DD que o Postgres exige.
     try:
         date = _normalize_important_date(date)
+        lembrete = _lembrete_da_data(remind_days_before)
     except ValueError as e:
         return {"status": "error", "message": str(e)}
+
+    # O aniversário é um campo da pessoa, não uma data solta (spec 077).
+    if recurring and naming.norm(label) == "aniversario":
+        d = _date.fromisoformat(date)
+        campos = {"birth_day": d.day, "birth_month": d.month}
+        if d.year != _SENTINEL_YEAR:  # o ano-sentinela só marca "veio sem ano"
+            campos["birth_year"] = d.year
+        resultado = update_person(person_id, **campos)
+        if resultado["status"] != "ok":
+            return resultado
+        return {"status": "ok", "id": None, "message": f"Aniversário ({d.day:02d}/{d.month:02d}) registrado no cadastro da pessoa."}
 
     try:
         with get_conn() as conn:
@@ -769,33 +843,17 @@ def add_important_date(
                 cur.execute("SELECT 1 FROM people WHERE id = %s AND deleted = FALSE", (person_id,))
                 if not cur.fetchone():
                     return {"status": "error", "message": "Pessoa não encontrada."}
-
-                # RETURNING id: permite ao hook de sync saber o id criado sem query extra
                 cur.execute(
-                    "INSERT INTO person_dates (person_id, label, date, recurring) "
-                    "VALUES (%s, %s, %s, %s) RETURNING id",
-                    (person_id, label.strip(), date, recurring),
+                    "INSERT INTO person_dates (person_id, label, date, recurring, remind_days_before) "
+                    "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                    (person_id, label.strip(), date, recurring, lembrete),
                 )
-                date_id = cur.fetchone()[0]  # id do registro recém-criado
-
-        # Hook best-effort Komi→Kaguya: propaga aniversário para a Kaguya como tarefa type=birthday.
-        # Fica FORA do bloco with get_conn() para não abortar o CRUD principal se o sync falhar.
-        # O date_id foi obtido pelo RETURNING id acima — disponível aqui.
-        try:
-            from agents.kaguya import komi_sync as _ks
-            _ks.push_person_date(date_id)
-        except Exception:
-            pass
+                date_id = cur.fetchone()[0]
 
         # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Komi — Pessoas"
-        try:
-            from agents.kaguya import gcal_mirror as _gm
-            _gm.mark_dirty("komi")
-        except Exception:
-            pass
-
+        _marcar_calendario_sujo(True)
         return {"status": "ok", "id": date_id, "message": f"Data '{label}' ({date}) adicionada com sucesso."}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"status": "error", "message": str(e)}
 
 
@@ -805,140 +863,146 @@ def update_important_date(
     date: str | None = None,
     label: str | None = None,
     recurring: bool | None = None,
+    remind_days_before: int | None = None,
 ) -> dict:
     """Atualizar campos de uma data importante por ID (UPDATE parcial).
 
-    Só altera os campos keyword-only passados. Permite editar label, data ou
-    flag de recorrência de forma independente, sem sobrescrever os demais.
-    Após a atualização, o hook Komi→Kaguya propaga a mudança para a tarefa
-    correspondente (se existir link em birthday_sync_links).
+    Só altera os campos passados. Permite editar rótulo, data, recorrência e lembrete de
+    forma independente.
 
     Args:
-        date_id: ID numérico da person_date a atualizar.
-        date: Nova data no formato YYYY-MM-DD (opcional).
-        label: Novo label/descrição da data (opcional).
-        recurring: Novo valor do flag de recorrência anual (opcional).
+        date_id: ID numérico da ``person_dates`` a atualizar.
+        date: Nova data (AAAA-MM-DD ou MM-DD), opcional.
+        label: Novo rótulo, opcional.
+        recurring: Novo valor da recorrência anual, opcional.
+        remind_days_before: Novo lembrete em dias antes (0 = no dia; ``-1`` desliga), opcional.
 
     Returns:
-        {"status": "ok", "message": "Data atualizada."} ou {"status": "error", "message": ...}.
+        ``{"status": "ok", "message": "Data atualizada."}`` ou ``{"status": "error", "message": ...}``.
 
     Example:
-        >>> update_important_date(42, date="2026-07-10")
-        {"status": "ok", "message": "Data atualizada."}
-        >>> update_important_date(42, label="aniversário de namoro", recurring=True)
-        {"status": "ok", "message": "Data atualizada."}
+        >>> update_important_date(42, date="2026-07-10")        # doctest: +SKIP
+        {'status': 'ok', 'message': 'Data atualizada.'}
     """
-    # Exige pelo menos um campo — sem payload = erro claro (não UPDATE sem SET)
-    if date is None and label is None and recurring is None:
+    if date is None and label is None and recurring is None and remind_days_before is None:
         return {"status": "error", "message": "Nenhum campo para atualizar."}
 
-    # Normaliza a data (MM-DD ou AAAA-MM-DD) antes de montar o UPDATE — mesma
-    # regra do add_important_date, evita o erro cru do Postgres num PATCH.
-    if date is not None:
-        try:
-            date = _normalize_important_date(date)
-        except ValueError as e:
-            return {"status": "error", "message": str(e)}
-
-    # Monta UPDATE parcial dinamicamente — apenas os campos passados entram no SET
-    sets = []
+    sets: list[str] = []
     values: list = []
-    if date is not None:
-        sets.append("date = %s")
-        values.append(date)
+    try:
+        if date is not None:
+            sets.append("date = %s")
+            values.append(_normalize_important_date(date))
+        if remind_days_before is not None:
+            sets.append("remind_days_before = %s")
+            values.append(_lembrete_da_data(remind_days_before))
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
     if label is not None:
         sets.append("label = %s")
         values.append(label)
     if recurring is not None:
         sets.append("recurring = %s")
         values.append(recurring)
-
-    # date_id no final dos parâmetros (para o WHERE id = %s)
     values.append(date_id)
 
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"UPDATE person_dates SET {', '.join(sets)} WHERE id = %s",
-                    values,
-                )
+                cur.execute(f"UPDATE person_dates SET {', '.join(sets)} WHERE id = %s", values)
                 if cur.rowcount == 0:
-                    # Nenhuma linha afetada = date_id não existe
                     return {"status": "error", "message": "Data não encontrada."}
-
-        # Hook best-effort Komi→Kaguya: propaga a mudança para a tarefa correspondente.
-        # O komi_sync.push_person_date compara o valor atual com o salvo — no-op se idêntico (anti-loop).
-        try:
-            from agents.kaguya import komi_sync as _ks
-            _ks.push_person_date(date_id)
-        except Exception:
-            pass
-
-        # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Komi — Pessoas"
-        try:
-            from agents.kaguya import gcal_mirror as _gm
-            _gm.mark_dirty("komi")
-        except Exception:
-            pass
-
+        _marcar_calendario_sujo(True)
         return {"status": "ok", "message": "Data atualizada."}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"status": "error", "message": str(e)}
 
 
 def delete_important_date(date_id: int) -> dict:
     """Remover uma data importante por ID (DELETE físico).
 
-    Remove a linha de person_dates permanentemente. O banco apaga o link em
-    birthday_sync_links automaticamente via ON DELETE CASCADE (sem DELETE explícito aqui).
-
-    O task_id é lido ANTES do DELETE porque o CASCADE remove o link junto com a
-    person_date — após o commit, o link já não existe e não seria possível lê-lo.
-
     Args:
-        date_id: ID numérico da person_date a remover.
+        date_id: ID numérico da ``person_dates`` a remover.
 
     Returns:
-        {"status": "ok", "message": "Data removida."} ou {"status": "error", "message": ...}.
+        ``{"status": "ok", "message": "Data removida."}`` ou ``{"status": "error", "message": ...}``.
     """
-    from agents.db import run_select  # importado aqui para não duplicar no topo
-
-    # Lê o task_id do link ANTES do DELETE (o CASCADE vai apagá-lo junto)
-    # Caso não haja link (data sem aniversário), linked_task_id fica None
-    link_rows = run_select(
-        "SELECT task_id FROM birthday_sync_links WHERE person_date_id = %s", (date_id,)
-    )
-    linked_task_id = link_rows[0]["task_id"] if link_rows else None
-
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM person_dates WHERE id = %s", (date_id,))
                 if cur.rowcount == 0:
                     return {"status": "error", "message": "Data não encontrada."}
-                # Nota: birthday_sync_links com person_date_id = date_id é removido
-                # automaticamente pelo ON DELETE CASCADE definido na tabela.
-
-        # Hook best-effort Komi→Kaguya: soft-deleta a tarefa correspondente (scope='series').
-        # remove_person_date recebe task_id (não date_id) para poder chamar delete_task.
-        # O task_id foi lido ANTES do DELETE porque o CASCADE apaga o link junto com a date.
-        if linked_task_id:
-            try:
-                from agents.kaguya import komi_sync as _ks
-                _ks.remove_person_date(linked_task_id)
-            except Exception:
-                pass
-
-        # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Komi — Pessoas"
-        try:
-            from agents.kaguya import gcal_mirror as _gm
-            _gm.mark_dirty("komi")
-        except Exception:
-            pass
-
+        _marcar_calendario_sujo(True)
         return {"status": "ok", "message": "Data removida."}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
+        return {"status": "error", "message": str(e)}
+
+
+def upcoming_birthdays(days: int = 7, space: str | None = None, today: str | None = None) -> dict:
+    """Listar os aniversários de hoje até daqui a N dias, com ideias de presente.
+
+    É o que alimenta o resumo da manhã (digest) e o Hermes ("quem faz aniversário essa
+    semana?"). Cada item traz as anotações ativas do tipo ``presente`` e ``gosta`` da
+    pessoa, para o lembrete já vir com sugestões. O 29/02 em ano comum cai em 28/02.
+
+    Args:
+        days: Janela em dias a partir de hoje (0 = só hoje; máximo 366).
+        space: ``"personal"`` ou ``"work"`` para só considerar quem vale naquele espaço
+            (quem é "ambos" sempre entra); vazio considera todos.
+        today: Data de referência ``AAAA-MM-DD`` (padrão: hoje em America/Sao_Paulo).
+
+    Returns:
+        ``{"status": "ok", "birthdays": [{person_id, name, nickname, date, in_days, turning,
+        gift_ideas, likes}, ...]}`` ordenado do mais próximo ao mais distante, ou
+        ``{"status": "error", "message": ...}``. ``turning`` é a idade que a pessoa completa
+        (``None`` sem ano de nascimento).
+    """
+    try:
+        espacos = naming.spaces_matching(space)
+        hoje = _date.fromisoformat(today) if today else naming.today_sp()
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+    janela = max(0, min(int(days), 366))
+
+    filtro = "AND context = ANY(%(espacos)s)" if espacos else ""
+    try:
+        pessoas = run_select(
+            f"""
+            SELECT id, name, nickname, birth_day, birth_month, birth_year
+            FROM people WHERE deleted = FALSE AND birth_day IS NOT NULL {filtro}
+            """,
+            {"espacos": list(espacos)} if espacos else None,
+        )
+        proximos = []
+        for p in pessoas:
+            quando = naming.next_birthday(p["birth_day"], p["birth_month"], hoje)
+            faltam = (quando - hoje).days
+            if faltam <= janela:
+                proximos.append({
+                    "person_id": p["id"], "name": p["name"], "nickname": p["nickname"],
+                    "date": quando.isoformat(), "in_days": faltam,
+                    "turning": (quando.year - p["birth_year"]) if p["birth_year"] else None,
+                    "gift_ideas": [], "likes": [],
+                })
+        if proximos:
+            notas = run_select(
+                """
+                SELECT person_id, kind, text FROM person_notes
+                WHERE person_id = ANY(%(ids)s) AND deleted = FALSE AND status = 'ativa'
+                  AND kind IN ('presente', 'gosta')
+                ORDER BY created_at DESC
+                """,
+                {"ids": [p["person_id"] for p in proximos]},
+            )
+            por_pessoa = {p["person_id"]: p for p in proximos}
+            for n in notas:
+                lista = por_pessoa[n["person_id"]]["gift_ideas" if n["kind"] == "presente" else "likes"]
+                if len(lista) < 3:  # poucas ideias por pessoa: é um lembrete, não um dossiê
+                    lista.append(n["text"])
+        proximos.sort(key=lambda p: (p["in_days"], p["name"]))
+        return {"status": "ok", "birthdays": proximos}
+    except Exception as e:  # noqa: BLE001
         return {"status": "error", "message": str(e)}
 
 
@@ -1189,18 +1253,12 @@ def get_person(person_id: str) -> dict:
         )
 
         # Próximas datas: ordena pela diferença em relação a hoje (ano ignorado nos recorrentes).
-        # fase 026: inclui id (para PATCH/DELETE) e is_synced (True = tem tarefa Kaguya correspondente).
-        # LEFT JOIN birthday_sync_links: se o link existir, is_synced = TRUE; senão = FALSE.
+        # Inclui o id (para PATCH/DELETE) e o lembrete de cada data. O aniversário NÃO está aqui:
+        # é um campo do perfil (birth_day/birth_month/birth_year), spec 077.
         datas = run_select(
             """
-            SELECT
-                pd.id,
-                pd.label,
-                pd.date::text,
-                pd.recurring,
-                CASE WHEN bsl.person_date_id IS NOT NULL THEN TRUE ELSE FALSE END AS is_synced
+            SELECT pd.id, pd.label, pd.date::text, pd.recurring, pd.remind_days_before
             FROM person_dates pd
-            LEFT JOIN birthday_sync_links bsl ON bsl.person_date_id = pd.id
             WHERE pd.person_id = %(id)s
             ORDER BY pd.date
             """,
@@ -1327,7 +1385,7 @@ def get_person_summary(person_id: str) -> dict:
         {"id": person_id},
     )
     datas = run_select(
-        "SELECT label, date::text, recurring FROM person_dates WHERE person_id = %(id)s ORDER BY date",
+        "SELECT label, date::text, recurring, remind_days_before FROM person_dates WHERE person_id = %(id)s ORDER BY date",
         {"id": person_id},
     )
     perfil["aliases"] = [r["alias"] for r in aliases]
@@ -1385,7 +1443,8 @@ def get_people_overview() -> dict:
         # ── 1. Busca todas as pessoas vivas ───────────────────────────────────
         pessoas = run_select(
             """
-            SELECT id, name, relationship, category, avatar_url
+            SELECT id, name, nickname, full_name, relationship, category, context, city, avatar_url,
+                   birth_day, birth_month, birth_year, birthday_remind_days
             FROM people
             WHERE deleted = FALSE
             ORDER BY name
@@ -1406,7 +1465,7 @@ def get_people_overview() -> dict:
     try:
         datas = run_select(
             """
-            SELECT person_id, label, date::text AS date, recurring
+            SELECT person_id, label, date::text AS date, recurring, remind_days_before
             FROM person_dates
             WHERE person_id = ANY(%(ids)s)
             ORDER BY date
@@ -1421,6 +1480,7 @@ def get_people_overview() -> dict:
                     "label": d["label"],
                     "date": d["date"],
                     "recurring": d["recurring"],
+                    "remind_days_before": d["remind_days_before"],
                 })
     except Exception:
         # Se a tabela não existir, ignora — datas ficam vazias

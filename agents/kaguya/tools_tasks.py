@@ -1086,13 +1086,13 @@ def create_task(
         parent_id: Se informado, cria subtarefa (N níveis) sob essa tarefa-pai.
         priority: 0..3 (nenhuma/baixa/média/alta).
         type: ``task`` (a fazer) | ``event`` (compromisso/reunião/evento com horário —
-            use quando o pedido tiver hora marcada) | ``birthday``.
+            use quando o pedido tiver hora marcada) | ``birthday`` (NÃO cria tarefa: registra o
+            aniversário na pessoa da Komi — ver ``agents.kaguya.birthdays``; spec 077).
         due_date: "YYYY-MM-DD" (opcional).
         due_time: "HH:MM" (exige ``due_date``).
         description: Notas (opcional).
         recurrence: ``{"rrule": str, "mode": "fixed"|"after_completion"}`` (opcional). Exige
-            ``due_date`` (a âncora). ``type="birthday"`` + ``due_date`` cria recorrência anual
-            automática mesmo sem este parâmetro.
+            ``due_date`` (a âncora).
         column_id: Coluna de Kanban onde criar a tarefa (opcional). Ignorado em subtarefas. Se
             omitido e a lista tiver board, usa a primeira coluna automaticamente.
         tags: Lista de nomes de tag a vincular (opcional). Tags inexistentes são criadas
@@ -1122,11 +1122,14 @@ def create_task(
     if due_time and not due_date:
         return {"status": "error", "message": "Hora de vencimento exige uma data."}
 
+    # Aniversário NÃO é tarefa (spec 077): vira o campo da pessoa na Komi, que o põe sozinha no
+    # calendário com lembrete. Nada é criado no banco da Kaguya.
+    if type == "birthday":
+        from agents.kaguya.birthdays import register_birthday  # noqa: PLC0415
+        return register_birthday(title, due_date, person_ids)
+
     # ── Recorrência: resolve a intenção e valida ANTES de escrever (get_conn commita no return) ──
-    # Aniversário com data vira recorrência anual automática (mesmo sem o parâmetro explícito).
     rec = recurrence
-    if type == "birthday" and due_date and rec is None:
-        rec = {"rrule": rec_engine.build_rrule("YEARLY"), "mode": "fixed"}
     if rec is not None:
         if parent_id is not None:
             return {"status": "error", "message": "Subtarefas não podem ser recorrentes."}
@@ -1251,14 +1254,6 @@ def create_task(
         _gs.push_task(new_id)
     except Exception:
         pass
-    # Hook Kaguya→Komi: cria person_date na Komi quando a tarefa é de aniversário (fase 026).
-    # Lazy import dentro do try/except evita ciclo agents.kaguya → agents.komi → agents.kaguya.
-    if type == "birthday":
-        try:
-            from agents.kaguya import komi_sync as _ks
-            _ks.push_birthday(new_id)
-        except Exception:
-            pass
     return result
 
 
@@ -1336,7 +1331,9 @@ def update_task(
     if priority is not None and priority not in _VALID_PRIORITIES:
         return {"status": "error", "message": "Prioridade inválida (use 0, 1, 2 ou 3)."}
     if type is not None and type not in _VALID_TYPES:
-        return {"status": "error", "message": "Tipo inválido (use task, event ou birthday)."}
+        return {"status": "error", "message": "Tipo inválido (use task ou event)."}
+    if type == "birthday":
+        return {"status": "error", "message": "Aniversário não é tarefa: ele fica na Komi (campo da pessoa) e já aparece no calendário com lembrete."}
     if gtd_status is not _UNSET and gtd_status is not None and gtd_status not in _VALID_GTD_STATUSES:
         return {"status": "error", "message": "Status GTD inválido (use next_action, waiting ou someday)."}
 
@@ -1500,7 +1497,7 @@ def update_task(
 
             # Há algo a fazer? campos OU recorrência OU tags OU responsáveis (fatia 025).
             if (not sets and recurrence is None and not clear_recurrence and not completed_via_column
-                    and type != "birthday" and tags is None and person_ids is None):
+                    and tags is None and person_ids is None):
                 return {"status": "error", "message": "Nada para atualizar."}
 
             # Aplica as mudanças de campo (se houver) antes de mexer na recorrência.
@@ -1533,16 +1530,6 @@ def update_task(
                 rec_result = _set_recurrence_on_cursor(
                     cur, task_id, recurrence.get("rrule", ""), recurrence.get("mode", "fixed")
                 )
-            elif type == "birthday":
-                # Virou aniversário: se tiver data e ainda não tiver regra, cria a anual automática.
-                cur.execute("SELECT due_date FROM tasks WHERE id = %s", (task_id,))
-                dd = cur.fetchone()[0]
-                if dd is not None:
-                    cur.execute("SELECT 1 FROM task_recurrences WHERE task_id = %s AND active", (task_id,))
-                    if not cur.fetchone():
-                        rec_result = _set_recurrence_on_cursor(
-                            cur, task_id, rec_engine.build_rrule("YEARLY"), "fixed"
-                        )
             # Regra inválida → desfaz tudo (a edição de campos também) para não persistir pela metade.
             if rec_result is not None and rec_result["status"] == "error":
                 conn.rollback()
@@ -1550,17 +1537,6 @@ def update_task(
     try:
         from agents.kaguya import gcal_sync as _gs
         _gs.push_task(task_id)
-    except Exception:
-        pass
-    # Hook Kaguya→Komi: propaga para Komi se a tarefa é (ou virou) aniversário (fase 026).
-    # O SELECT do type ocorre APÓS o commit para pegar o valor atualizado.
-    # O komi_sync.push_birthday compara due_date atual — no-op se já sincronizado (anti-loop).
-    try:
-        from agents.db import run_select as _rs
-        _type_rows = _rs("SELECT type FROM tasks WHERE id = %(tid)s", {"tid": task_id})
-        if _type_rows and _type_rows[0]["type"] == "birthday":
-            from agents.kaguya import komi_sync as _ks
-            _ks.push_birthday(task_id)
     except Exception:
         pass
     return {"status": "ok", "message": "Tarefa atualizada."}
@@ -2079,20 +2055,6 @@ def delete_task(task_id: int, scope: str = "this") -> dict:
             _gs.push_task(generated["generated_task_id"])   # "só esta": a próxima ocorrência é espelhada
     except Exception:
         pass
-    # Hook Kaguya→Komi: remove o person_date correspondente SOMENTE quando scope='series'
-    # (encerra a série inteira). scope='this' apaga apenas a ocorrência — a série continua,
-    # então o person_date é preservado.
-    # A tarefa já está soft-deleted quando este hook roda (deleted_at IS NOT NULL), mas o
-    # birthday_sync_links ainda existe porque soft-delete NÃO dispara ON DELETE CASCADE.
-    if scope == "series":
-        try:
-            from agents.db import run_select as _rs
-            _type_rows = _rs("SELECT type FROM tasks WHERE id = %(tid)s", {"tid": task_id})
-            if _type_rows and _type_rows[0]["type"] == "birthday":
-                from agents.kaguya import komi_sync as _ks
-                _ks.remove_birthday(task_id)
-        except Exception:
-            pass
     result = {"status": "ok", "message": "Tarefa enviada para a lixeira."}
     if generated:
         result["generated_task_id"] = generated["generated_task_id"]

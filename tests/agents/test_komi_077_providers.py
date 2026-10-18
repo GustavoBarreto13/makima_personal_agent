@@ -10,59 +10,21 @@ Como rodar:
 """
 
 import os
-from pathlib import Path
 
 import pytest
 
 if not os.environ.get("DATABASE_URL"):
     pytest.skip("DATABASE_URL não definida — testes de integração da Komi pulados.", allow_module_level=True)
 
-import psycopg2  # noqa: E402
 
-RAIZ = Path(__file__).resolve().parents[2]
-# A Komi vem ANTES da Kaguya: o schema da Kaguya referencia person_dates (sync de aniversário).
-SCHEMAS = ["agents/komi/schema_pg.sql", "agents/nami/schema_pg.sql", "agents/frieren/schema_pg.sql",
-           "agents/kaguya/schema_tasks_pg.sql", "agents/akane/schema_pg.sql"]
-NOME_BANCO = "komi_prov_pytest"
 
 
 @pytest.fixture(scope="module")
 def banco():
-    """Banco temporário com os schemas de todos os agentes; restaura o DATABASE_URL no fim."""
-    original = os.environ["DATABASE_URL"]
-    admin = psycopg2.connect(original)
-    admin.autocommit = True
-    with admin.cursor() as cur:
-        cur.execute(f"DROP DATABASE IF EXISTS {NOME_BANCO}")
-        cur.execute(f"CREATE DATABASE {NOME_BANCO}")
-    novo = original.rsplit("/", 1)[0] + "/" + NOME_BANCO
-    os.environ["DATABASE_URL"] = novo
-    try:
-        conn = psycopg2.connect(novo)
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            for arq in SCHEMAS:
-                cur.execute((RAIZ / arq).read_text(encoding="utf-8"))
-        conn.close()
-        from agents.journal import tools as J
-        # A Violet lê o DSN uma única vez, no import (constante de módulo): aponta para o banco
-        # temporário só durante o teste e restaura depois.
-        dsn_violet = J._DATABASE_URL
-        J._DATABASE_URL = novo
-        J._ensure_tables()
-        from agents.komi import integration, schema
-        schema.reset_for_tests()
-        integration.reset_providers()
-        yield novo
-    finally:
-        try:
-            J._DATABASE_URL = dsn_violet
-        except NameError:  # a fixture falhou antes de importar o módulo
-            pass
-        os.environ["DATABASE_URL"] = original
-        with admin.cursor() as cur:
-            cur.execute(f"DROP DATABASE IF EXISTS {NOME_BANCO}")
-        admin.close()
+    """Banco temporário com os schemas de todos os agentes (ver tests/agents/komi_testing.py)."""
+    from tests.agents.komi_testing import banco_completo
+    with banco_completo("komi_prov_pytest") as dsn:
+        yield dsn
 
 
 def _sql(sql, params=None, um=False):

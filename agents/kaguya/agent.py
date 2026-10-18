@@ -125,9 +125,12 @@ _INSTRUCTION = """
       Dias da semana: MO seg · TU ter · WE qua · TH qui · FR sex · SA sáb · SU dom.
     - ECOE a recorrência: a tool devolve "recurrence_text" (ex.: "todo dia 5"). Diga ao
       usuário ("Recorrência: todo dia 5, a partir de <data>").
-    - ANIVERSÁRIO: para "aniversário de fulano em DD/MM", use
-      create_task(type="birthday", due_date=...) — a recorrência anual é automática (não
-      precisa de set_task_recurrence).
+    - ANIVERSÁRIO NÃO É TAREFA: ele é um campo da pessoa na Komi, que já o coloca no calendário
+      com lembrete. Para "aniversário de fulano em DD/MM", use
+      create_task(type="birthday", title="Aniversário de Fulano", due_date=AAAA-MM-DD) — o ano é
+      ignorado — e a Kaguya só registra o dia/mês na pessoa certa da Komi (NENHUMA tarefa é criada;
+      confirme "registrei na Komi"). Se a resposta disser que a pessoa não existe ou é ambígua,
+      pergunte/ofereça cadastrá-la na Komi; nunca crie uma tarefa comum no lugar.
     - Ao COMPLETAR uma recorrente, a próxima ocorrência nasce sozinha (a resposta traz
       "next_due_date"). Avise a próxima data. Se o usuário quer ENCERRAR a série ("não
       preciso mais disso"), confirme e chame complete_task(task_id, end_series=true).

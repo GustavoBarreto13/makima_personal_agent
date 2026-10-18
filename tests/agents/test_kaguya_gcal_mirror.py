@@ -252,3 +252,44 @@ def test_reconcile_insert_409_falls_back_to_patch():
 
     assert result["inserted"] == 1          # 409 → patch de revival conta como inserido
     assert eid in fake_events.patched
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Lembretes por item (spec 077 — aniversários da Komi)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_body_vira_alerta_popup_quando_o_item_pede_aviso():
+    body = gcal_mirror._event_body(_item(all_day=True, date="2026-09-02", reminders=[900, 2340]))
+    assert body["reminders"] == {
+        "useDefault": False,
+        "overrides": [{"method": "popup", "minutes": 900}, {"method": "popup", "minutes": 2340}],
+    }
+
+
+def test_body_descarta_lembretes_invalidos_e_limita_a_cinco():
+    body = gcal_mirror._event_body(_item(all_day=True, date="2026-09-02", reminders=[-5, 40321, "x", 10, 20, 30, 40, 50, 60]))
+    assert [o["minutes"] for o in body["reminders"]["overrides"]] == [10, 20, 30, 40, 50]   # só os válidos, no máximo 5
+
+
+def test_reconcile_patcha_evento_antigo_que_ganhou_lembrete_e_depois_nao_mexe_mais():
+    it = _item(ref_id="a", date="2026-09-02", title="🎂 aniversário — Bia", reminders=[900])
+    eid = gcal_mirror.event_id_for(it)
+    body = gcal_mirror._event_body(it)
+    sem_alerta = [{"id": eid, "summary": body["summary"], "start": body["start"], "end": body["end"],
+                   "reminders": {"useDefault": False, "overrides": []}}]          # evento espelhado ANTES do alerta existir
+    result, fake = _run_reconcile([it], existing_raw=sem_alerta)
+    assert result["updated"] == 1 and fake.patched == [eid]
+
+    ja_com_alerta = [{**sem_alerta[0], "reminders": body["reminders"]}]
+    result, fake = _run_reconcile([it], existing_raw=ja_com_alerta)
+    assert (result["inserted"], result["updated"], result["deleted"]) == (0, 0, 0)
+
+
+def test_diff_ignora_use_default_e_ausencia_de_overrides():
+    """O Google devolve `reminders` de formas diferentes para "nenhum alerta nosso"; nada disso é divergência."""
+    it = _item(ref_id="b", date="2026-09-03")
+    body = gcal_mirror._event_body(it)
+    base = {"summary": body["summary"], "start": body["start"], "end": body["end"]}
+    for reminders in ({}, {"useDefault": True}, {"useDefault": False}, {"useDefault": False, "overrides": []}):
+        assert gcal_mirror._differs({**base, "reminders": reminders}, body) is False
+    assert gcal_mirror._differs(base, body) is False                                  # sem a chave `reminders`

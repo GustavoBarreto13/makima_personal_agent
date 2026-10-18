@@ -256,14 +256,16 @@ def test_update_person_partial():
 
 
 def test_add_important_date():
-    """add_important_date persiste a data e ela aparece no get_person."""
+    """Uma data comum persiste e aparece em `datas`; o ANIVERSÁRIO vai para o campo do perfil (spec 077)."""
     r = _create("Camila Torres")
     pid = r["id"]
+    K.add_important_date(pid, "casamento", "2018-06-20", recurring=True)
     K.add_important_date(pid, "aniversário", "1995-07-22", recurring=True)
 
     result = K.get_person(pid)
-    dates = result.get("dates", [])
-    assert any(d["label"] == "aniversário" for d in dates)
+    assert [d["label"] for d in result["datas"]] == ["casamento"]
+    perfil = result["perfil"]
+    assert (perfil["birth_day"], perfil["birth_month"], perfil["birth_year"]) == (22, 7, 1995)
 
 
 def test_list_people_shows_only_alive():
