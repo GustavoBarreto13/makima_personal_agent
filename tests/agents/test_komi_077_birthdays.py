@@ -254,7 +254,9 @@ def test_overview_traz_nomes_espaco_aniversario_e_datas_com_lembrete(banco):
     from agents.komi import tools as K
     pid = _pessoa("Beatriz", nickname="Bia", full_name="Beatriz Silva", context="both", birth_day=15, birth_month=5)
     K.add_important_date(pid, "casamento", "2018-06-20", remind_days_before=3)
+    K.add_alias(pid, "Betinha")
     p = K.get_people_overview()["people"][0]
     assert (p["name"], p["nickname"], p["full_name"], p["context"]) == ("Beatriz", "Bia", "Beatriz Silva", "both")
+    assert p["aliases"] == ["Betinha"] and p["link_count"] == 0 and p["groups"] == []
     assert (p["birth_day"], p["birth_month"], p["birth_year"], p["birthday_remind_days"]) == (15, 5, None, 1)
     assert p["dates"] == [{"label": "casamento", "date": "2018-06-20", "recurring": True, "remind_days_before": 3}]

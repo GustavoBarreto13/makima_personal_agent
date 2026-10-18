@@ -154,13 +154,10 @@ shells legados; no padrão novo, `DatePicker`/`TimePicker`/`Field` vêm de `desi
 
 #### Inputs, data e hora — padrão
 
-Nos shells no Design System (Nami, Akane, Frieren, Marin, Kaguya, Violet) os campos vêm de `design/`: `Field`, `DatePicker`, `TimePicker`
+Nos shells no Design System (Nami, Akane, Frieren, Marin, Kaguya, Violet, Komi) os campos vêm de `design/`: `Field`, `DatePicker`, `TimePicker`
 (nunca `<input type="date|time">` nativo — o popup do sistema ignora os tokens e varia por OS/browser) e datas sempre pelas partes
 **locais** do navegador (`getFullYear/getMonth/getDate`, **nunca** `toISOString().slice(0,10)` — fuso UTC-3). Popovers de campo:
 fechar ao clicar fora (`mousedown` + `ref.contains`) e no `Escape`; `z-index: 70` acima dos modais.
-
-Exceção: a **Komi** (legacy) usa `components/DatePicker.tsx` + `components/MiniCalendar.tsx`, que trazem o próprio CSS
-(`components/datepicker.css`) e helpers (`components/dateUtils.ts`); saem quando a Komi migrar.
 
 ---
 
@@ -177,7 +174,7 @@ Cada domínio com UI própria é um **Shell**: componente raiz com sidebar/naveg
 <Route path="/movies/*"  element={<AkaneShell />} />     // src/pages/akane/
 <Route path="/animes/*"  element={<MarinShell />} />     // src/pages/marin/ (Design System, spec 074)
 <Route path="/series/*"  element={<MaiShell />} />       // src/pages/mai/
-<Route path="/people/*"  element={<KomiShell />} />      // src/pages/komi/
+<Route path="/people/*"  element={<KomiShell />} />      // src/pages/komi/ (Design System, spec 077)
 <Route path="/"          element={<MakimaShell />} />    // src/pages/makima/ — Hub, tela cheia
 <Route path="/*"         element={<Layout>...</Layout>} /> // rotas legadas
 ```
@@ -243,6 +240,7 @@ Telas, rotas por hash e componentes: [`docs/FRONTEND.md`](docs/FRONTEND.md#viole
 | 021 | Animes (Marin) — shell `/animes/*` (router `/api/animes/*`); catálogo com metadados Jikan/AniList, sync MyAnimeList (delta/full), diário de episódios, schedule de lançamentos e stats. Spec: `specs/021-marin-animes/`. | ✅ |
 | 022 | Séries de TV (Mai) — shell `/series/*` (router `/api/series/*`); TMDB API v4 (Bearer), temporadas/episódios com toggle individual e por temporada, diário de sessões, upcoming e stats. Spec: `specs/022-mai-series/`. | ✅ |
 | 014-pessoas | Pessoas (Komi) — shell `/people/*` (router `/api/people/*`); diretório com avatar (upload multipart), datas importantes, perfil com vínculos cross-agent (finanças, tarefas, livros, diário). Spec: `specs/014-pessoas/`. | ✅ |
+| 077 | **Komi no Design System** — `pages/komi/` reconstruída sobre o padrão (`conformant`, arte "Caderno de bilhetes"): Início, linha rápida de contato (`+Bia café ontem`), Pessoas, Datas, Estatísticas (`StatsPage`) e perfil em `DetailPage` (Memória com backlinks de todos os agentes e resumo por IA, Anotações com sugestões da IA, Interações, Datas); três nomes, espaço pessoal/trabalho/ambos (seletor Tudo · Pessoal · Trabalho), relacionamentos configuráveis, mesclar. Router reescrito (55 rotas; `GET /overview` traz `aliases`/`groups`/`link_count`). Aniversário deixou de ser tarefa. `components/DatePicker`/`MiniCalendar`/`dateUtils` globais removidos. Spec: `specs/077-komi-ds/spec.md`. | ✅ (migração `scripts/migrate_komi_ds.py` pendente no VPS) |
 | 023 | Hub (Makima) — shell em tela cheia na rota `/` (router `/api/hub/summary`); hero + 8 cards de agente com 2 stats reais cada, calculados em try/except isolado (falha vira "—", nunca 500). Substituiu o Dashboard de finanças como home. Spec: `specs/023-makima-hub/`. | ✅ |
 | 024 | Kanban "Vidro" (Kaguya) — reskin glass do board (handoff fiel, perf `@dnd-kit` preservada) + **views configuráveis** (tabela `kanban_views`, `/api/tasks/kanban-views/*`): adornos visíveis + métricas do rodapé + filtro `FilterRules` opcional; view ativa lembrada por lista. Spec: `specs/024-kanban-rework/`. | ✅ frontend + backend (migração pendente no VPS) |
 | 044 | **Contas Fixas (Nami)** — nova tela `/nami#contas-fixas`, separada de Assinaturas mas reaproveitando a mesma tabela `subscriptions` (`kind='conta_fixa'`, `auto_lancar` — spec 044). Cada conta fixa mostra o status do ciclo corrente (paga/pendente/atrasada/agendada, via novo `GET /recurring-status`, função pura `_cycle_status` em `tools.py`); "Marcar como paga" confirma o valor real (pode diferir do esperado), lança a despesa vinculada e rola o vencimento **atomicamente** (`mark_subscription_paid` via `get_conn()`); "Pular" rola sem lançar despesa. `Subscriptions.tsx` passa a filtrar só `kind='assinatura'` do array já compartilhado pelo shell (uma leitura só). Dashboard ganha o card "Custo fixo mensal" (contas fixas + assinaturas, anuais proporcionalizadas) com aviso "N contas a confirmar". Agente Nami (Telegram) ganha as duas tools novas e regra de classificação (serviço digital de valor fixo → assinatura; conta doméstica de valor variável → conta fixa). Migração idempotente (`subscriptions.kind`/`auto_lancar`) já rodada em produção. | ✅ |

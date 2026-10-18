@@ -877,25 +877,86 @@ metadados do TMDB (API v4 Bearer). Contrato detalhado: `specs/022-mai-series/con
 
 ## Pessoas (`/api/people/*`)
 
-Todos os endpoints exigem autenticação. Chamam as tools da Komi (`agents/komi/tools.py`) —
-identidade canônica de pessoas com apelidos, datas importantes e vínculos cross-agent.
-Contrato detalhado: `specs/014-pessoas/contracts/api-pessoas.md`.
+Todos os endpoints exigem autenticação. Chamam as tools da Komi (`agents/komi/*`) — identidade canônica de pessoas
+(três nomes, espaço pessoal/trabalho/ambos, aniversário e datas com lembrete, Memória com backlinks de todos os
+agentes, anotações, interações, relações e grupos). Spec: `specs/077-komi-ds/spec.md`.
+
+**Ordem no router:** as rotas fixas (`/overview`, `/search`, `/suggest`, `/stats`, `/duplicates`, `/merge…`,
+`/categories…`, `/relation-kinds`, `/groups…`, `/interactions/{id}…`, `/notes/{id}…`, `/uploads/avatar`) vêm **antes**
+de `/{person_id}`. `PATCH` usa `exclude_unset`: não enviar o campo não mexe; enviar `null` limpa. Erros de negócio
+voltam como `400` com `detail` em pt-BR (ex.: `'Bia' já é o nome ou apelido de Beatriz…`).
+
+### Pessoas, nomes e busca
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/people/` | Lista todas as pessoas vivas com contagem de vínculos. | — |
-| `GET` | `/api/people/search` | Busca pessoas por nome ou apelido (smart-match). | `?q=termo` (obrigatório) |
-| `GET` | `/api/people/overview` | Visão agregada de todas as pessoas para a Home do frontend. | — |
-| `POST` | `/api/people/uploads/avatar` | Upload de avatar (PNG/JPEG/WebP/GIF, máx 1 MB). Retorna `{"url": "/uploads/icons/<nome>"}`. | Multipart: campo `file` |
-| `POST` | `/api/people/` | Cadastra uma nova pessoa (devolve 201). | Body: `CreatePersonBody` |
-| `GET` | `/api/people/{person_id}` | Perfil completo de uma pessoa (sem vínculos cross-agent). | — |
-| `GET` | `/api/people/{person_id}/summary` | Resumo com vínculos cross-agent (finanças, tarefas, livros, diário). | — |
-| `PATCH` | `/api/people/{person_id}` | Atualiza campos do perfil. | Body: `UpdatePersonBody` |
-| `DELETE` | `/api/people/{person_id}` | Soft delete (vínculos preservados; devolve 204). | — |
-| `POST` | `/api/people/{person_id}/aliases` | Adiciona um apelido (devolve 201). | Body: `AddAliasBody` |
-| `POST` | `/api/people/{person_id}/dates` | Adiciona uma data importante (devolve 201). | Body: `AddImportantDateBody` |
-| `PATCH` | `/api/people/{person_id}/dates/{date_id}` | Atualiza uma data importante. | Body |
-| `DELETE` | `/api/people/{person_id}/dates/{date_id}` | Remove uma data importante (devolve 204). | — |
+| `GET` | `/api/people/` | Pessoas vivas com `link_count`. | `?space=personal\|work` (quem é "ambos" entra nos dois) |
+| `GET` | `/api/people/overview` | Início/coleções: nomes, espaço, cidade, aniversário, `aliases`, `groups`, `dates`, `finance_net` (Nami), `last_interaction`. | — |
+| `GET` | `/api/people/search` | Smart-match por Nome, Apelido, Nome completo ou outras formas (0/1/N). | `?q=` |
+| `GET` | `/api/people/suggest` | Autocomplete do `@` (Violet): prefixo no nome/apelido, com `avatar_url`; vazio = as mais vinculadas. | `?q=&limit=&space=` |
+| `POST` | `/api/people/` | Cadastra (201). Devolve `{status, id}`. | `CreatePersonBody` (`name`, `nickname`, `full_name`, `category`, `context`, `birth_day/month/year`, `birthday_remind_days`…) |
+| `GET` | `/api/people/{id}` | Perfil: `perfil` (todos os campos), `aliases[{id, alias}]`, `datas[{id, label, date, recurring, remind_days_before}]`. | — |
+| `GET` | `/api/people/{id}/summary` | Resumo por blocos dos agentes (compat. com Hub/Hermes). | — |
+| `PATCH` | `/api/people/{id}` | Edita campos. | `UpdatePersonBody` |
+| `DELETE` | `/api/people/{id}` | Lixeira (204). Vínculos preservados. | — |
+| `POST` | `/api/people/{id}/restore` | Tira da lixeira (o "Desfazer"). | — |
+| `POST` / `DELETE` | `/api/people/{id}/aliases` · `/aliases/{alias_id}` | Outras formas de chamar. | `{alias}` |
+| `POST` | `/api/people/uploads/avatar` | Foto (PNG/JPEG/WebP/GIF, máx 1 MB) → `{url}`. | Multipart `file` |
+
+### Datas (o aniversário é campo da pessoa; aqui ficam as outras)
+
+| Método | Caminho | Descrição | Body |
+|---|---|---|---|
+| `POST` | `/api/people/{id}/dates` | Nova data importante (201). `remind_days_before`: `0` = no dia, `-1` = sem lembrete. | `{label, date, recurring, remind_days_before}` |
+| `PATCH` / `DELETE` | `/api/people/{id}/dates/{date_id}` | Edita / remove (204). | parcial |
+
+### Memória, resumo de IA e briefing
+
+| Método | Caminho | Descrição |
+|---|---|---|
+| `GET` | `/api/people/{id}/memory?context=` | Linha do tempo de todos os agentes: `items[{entity_type, entity_id, agent, label, icon, title, snippet, date, deep_link, context}]`, `counts`, `by_context`, `unavailable[]` (agentes que não responderam). |
+| `GET` | `/api/people/{id}/memory/summary?context=` | Resumo **guardado** (sem chamar IA): `{summary, stale, generated_at}`. |
+| `POST` | `/api/people/{id}/memory/summary` | Gera/atualiza (Kurisu). Body `{context: all\|personal\|work, force}`. Também cria **sugestões** de anotação (`status='sugerida'`). `400` se a IA falhar — nada é gravado. |
+| `GET` | `/api/people/{id}/briefing` | Resumo para o topo do perfil: aniversário, datas, anotações ativas, pendências (Nami/Kaguya), último contato, relações, grupos. |
+| `DELETE` | `/api/people/{id}/links/{entity_type}/{entity_id}` | Desvincula (tira também a menção do texto do diário). `{removed, undoable}`. |
+| `POST` | `/api/people/{id}/links` | Revincula (o "Desfazer"). `{entity_type, entity_id}`. |
+
+### Anotações e interações
+
+| Método | Caminho | Descrição | Body |
+|---|---|---|---|
+| `GET` / `POST` | `/api/people/{id}/notes` | Lista (`?context=&status=`; padrão = ativas e sugeridas) / cria. | `{text, kind: presente\|gosta\|nao_gosta\|nota, context?}` |
+| `PATCH` / `DELETE` | `/api/people/notes/{note_id}` | Edita / apaga (204). | parcial |
+| `POST` | `/api/people/notes/{note_id}/restore` · `/accept` · `/dismiss` | Desfaz a exclusão · aceita a sugestão (opcionalmente editada) · descarta (não volta a ser sugerida). | `accept`: `{text?, kind?}` |
+| `GET` / `POST` | `/api/people/{id}/interactions` | Lista (`?context=&limit=`) / registra. | `{kind: mensagem\|ligacao\|encontro\|video\|outro, happened_at?, note?, context?}` |
+| `PATCH` / `DELETE` | `/api/people/interactions/{interaction_id}` | Edita / apaga (204). | parcial |
+| `POST` | `/api/people/interactions/{interaction_id}/restore` | Desfaz a exclusão. | — |
+
+### Relacionamentos, relações e grupos
+
+| Método | Caminho | Descrição | Body |
+|---|---|---|---|
+| `GET` | `/api/people/categories` | Relacionamentos (`?include_archived=true`): `{slug, label, icon, position, archived, people_count}`. | — |
+| `POST` | `/api/people/categories` | Cria (201). | `{label, icon, slug?}` |
+| `PATCH` | `/api/people/categories/{slug}` | Renomeia / troca o ícone. | `{label?, icon?}` |
+| `POST` | `/api/people/categories/reorder` | Reordena. | `{slugs: []}` |
+| `POST` | `/api/people/categories/{slug}/archive` · `/unarchive` | Arquiva movendo as pessoas (`409` com `people_count` se faltar `move_to`) · restaura. | `{move_to?}` |
+| `GET` | `/api/people/relation-kinds` | Tipos de relação, com `inverse_slug`. | — |
+| `GET` / `POST` | `/api/people/{id}/relations` | Lista / liga a outra pessoa (o lado de lá é automático). | `{other_id, kind}` |
+| `DELETE` | `/api/people/{id}/relations/{other_id}?kind=` | Remove a ligação (204). | — |
+| `GET` / `POST` | `/api/people/groups` | Grupos com `member_count` / cria (201). | `{name}` |
+| `PATCH` / `DELETE` | `/api/people/groups/{group_id}` | Renomeia / apaga (204). | `{name}` |
+| `POST` / `DELETE` | `/api/people/groups/{group_id}/members` · `/members/{person_id}` | Entra / sai do grupo. | `{person_id}` |
+| `GET` | `/api/people/{id}/groups` | Grupos da pessoa. | — |
+
+### Duplicadas, mesclar e estatísticas
+
+| Método | Caminho | Descrição | Body |
+|---|---|---|---|
+| `GET` | `/api/people/duplicates` | Pares que podem ser a mesma pessoa: `[{a, b, reasons, score}]`. | `?limit=` |
+| `POST` | `/api/people/merge/preview` | Mostra o que a mescla moveria, **sem mudar nada**. | `{keep_id, drop_id}` |
+| `POST` | `/api/people/merge` | Mescla `drop_id` em `keep_id`. **Sem desfazer.** | `{keep_id, drop_id}` |
+| `GET` | `/api/people/stats` | `StatsPayload` do Design System: contatos por mês e por dia, pessoas contatadas, aniversários, sem contato há +30 dias, tipos de contato, mais contatadas, menções cruzadas por agente; `first_year`. | `?year=&month=` |
 
 ---
 

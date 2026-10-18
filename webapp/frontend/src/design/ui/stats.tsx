@@ -226,7 +226,7 @@ export interface StatsPageProps {
 }
 
 /** Unidades da série mensal que são contagens inteiras (as demais mostram uma casa decimal). */
-const INTEGER_UNITS = new Set(['treinos', 'R$', 'sessões', 'filmes'])
+const INTEGER_UNITS = new Set(['treinos', 'R$', 'sessões', 'filmes', 'interações'])
 
 export function StatsPage({ payload, hero, afterHero, heatMarkLabel, minYear, maxYear, onYear, today, heatThresholds, formatDaily, metrics, metric, onMetric, ratings, renderMoment, momentsClass = 'ds-grid', emptyHint, heatmapTitle = 'Dias com registro', monthlyTitle = 'Ritmo por mês' }: StatsPageProps) {
   const year = payload?.period.year ?? maxYear

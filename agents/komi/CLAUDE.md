@@ -2,353 +2,178 @@
 
 ## O que é este agente
 
-**Komi** é o agente especialista em identidade canônica de pessoas. Inspirada em Komi-san wa
-Comyushou desu — tímida, mas extremamente cuidadosa com cada detalhe das pessoas ao seu redor.
+**Komi** é a dona da **identidade canônica de pessoas** (inspirada em Komi-san wa Comyushou desu —
+tímida, mas cuidadosa com cada detalhe de quem está ao redor). Todo agente que fala de uma pessoa
+(Nami, Kaguya, Violet, Akane, Frieren, Yato…) aponta para a mesma linha em `people`.
 
 Responsabilidades:
-- Cadastrar, buscar, editar e remover (soft delete) pessoas
-- Gerenciar apelidos (aliases globais) e datas importantes (aniversários, formaturas...)
-- Agregar vínculos cross-agent: transações (Nami), tarefas (Kaguya), livros (Frieren), diário (Journal)
-- Fornecer resumo completo de tudo que envolve uma pessoa (`get_person_summary`)
-- Ser chamada como smart-match por outros agentes antes de criar vínculos
+- Cadastrar, editar, apagar (lixeira) e restaurar pessoas, com **três nomes** (Nome, Apelido, Nome completo).
+- **Espaço** da pessoa: pessoal, trabalho ou os dois (a Kaguya filtra por ele).
+- **Aniversário** como campo de toda pessoa + outras datas importantes, cada uma com **lembrete**.
+- **Memória** da pessoa: os backlinks de todos os agentes numa linha do tempo, com **resumo por IA**.
+- **Anotações** (presentes, gosta, não gosta, notas) — a IA só *sugere*, o dono aceita.
+- **Interações** ("falei com X ontem") → "sem contato há N dias", estatísticas.
+- **Relacionamentos** configuráveis, **relações entre pessoas**, **grupos**, **mesclar** duplicadas, **briefing**.
+- Expor o **contrato de integração** (`integration.py`) que qualquer agente atual ou futuro usa.
 
-Spec: `specs/014-pessoas/`
+Specs: `specs/014-pessoas/` (base), `specs/077-komi-ds/spec.md` (esta reforma).
 
 ---
 
 ## Arquitetura
 
 ```
-Telegram (usuário)
-    ↓
-Makima (coordinator)
-    ↓
-komi_agent (Agent ADK — singleton)
-    └── tools.py   → PostgreSQL (people, person_aliases, person_dates, person_links)
+Hermes / Telegram → komi_agent (ADK, singleton) ─┐
+Webapp /people  → routers/pessoas.py ───────────┼→ agents/komi/*  → PostgreSQL
+Hermes (MCP)    → mcp_servers/makima (domínio komi, 34 tools + resumo da Kurisu)
 ```
 
-**Komi é singleton** — não usa `McpToolset`, não precisa de factory function.
-Instância global `komi_agent` em `agent.py`, importada diretamente pelo coordinator.
+| Módulo | Papel |
+|---|---|
+| `tools.py` | CRUD de pessoas, nomes, datas, aniversário, busca (`find_people`, `suggest_people`), `get_person_summary`, `get_people_overview` |
+| `integration.py` | **Contrato** para outros agentes: vínculos, resolver pessoa, menções, memória, mesclagem |
+| `naming.py` | Motor puro: `norm`, validação de espaço/aniversário, idade, próximo aniversário, `today_sp` |
+| `schema.py` + `schema_pg.sql` | Schema idempotente; `ensure_schema()` roda sob demanda (lock consultivo) |
+| `tools_notes.py` / `tools_interactions.py` / `tools_categories.py` / `tools_relations.py` | Anotações, interações, relacionamentos configuráveis, relações e grupos |
+| `tools_merge.py` + `duplicates.py` | Mesclar (prévia → confirmar, **sem desfazer**) e sugestão de duplicatas |
+| `briefing.py` | "O que eu preciso saber antes de falar com ela?" (cada bloco isolado) |
+| `summaries.py` | Cache do resumo de IA (`person_memory_summaries`) |
+| `tools_stats.py` | `StatsPayload` do Design System (contatos por mês, sem contato, aniversários, menções cruzadas) |
+| `calendar_provider.py` | Fonte `komi` do Calendar Hub da Kaguya: aniversários e datas **no calendário, não como tarefa** |
+| `toolset.py` | `TOOLS` (34) reaproveitadas pelo host MCP e pelo agente ADK |
+| `rows.py` | `valor()` — leitura de linha agnóstica ao tipo de cursor |
 
-```python
-from agents.komi.agent import komi_agent
-```
+A IA do resumo vive na **Kurisu**: `agents/kurisu/person_summary.py` (modelo `KOMI_MODEL`, env
+`KOMI_GEMINI_MODEL`, padrão = o da Violet) e `agents/kurisu/komi_tools.py` (tool `summarize_person_memory`,
+juntada ao domínio `komi` em `mcp_servers/makima/registry.py`). `agents/komi/` **não** importa a Kurisu.
 
 ---
 
 ## Schema PostgreSQL
 
-4 tabelas, aplicadas por `scripts/setup_schemas.py` via `agents/komi/schema_pg.sql`.
+Coluna a coluna em [`docs/referencia/POSTGRES.md`](../../docs/referencia/POSTGRES.md#9-domínio-komi--pessoas). Resumo:
 
-### `people` — identidade canônica
+| Tabela | Para quê |
+|---|---|
+| `people` | Identidade: `name` (**Nome**, o que o dono escolhe), `nickname` (**Apelido**), `full_name` (**Nome completo**) + colunas `_norm`; `context` (`personal`/`work`/`both`); `birth_day/month/year` + `birthday_remind_days`; `category` (slug); `merged_into` |
+| `person_aliases` | "Outras formas" de chamar (só para a busca achar) |
+| `person_dates` | Outras datas importantes (casamento, formatura…) com `remind_days_before` |
+| `person_links` | Vínculo polimórfico pessoa ↔ item de qualquer agente (`entity_type` livre, validado por formato) |
+| `person_categories` | **Relacionamentos** como lista configurável (slug, rótulo, ícone do DS, ordem, arquivado) |
+| `person_notes` | Anotações: `kind` (presente/gosta/nao_gosta/nota), `context`, `source` (manual/ia), `source_refs`, `status` (ativa/sugerida/descartada) |
+| `person_interactions` | Contatos: `kind` (mensagem/ligacao/encontro/video/outro), `context`, `happened_at` |
+| `person_memory_summaries` | Cache do resumo de IA por (pessoa, espaço) com `source_hash` → "desatualizado" |
+| `person_relation_kinds` / `person_relations` | Tipos de relação com inverso (pai↔filho) e o par canônico |
+| `person_groups` / `person_group_members` | Grupos livres ("turma da faculdade") |
+| `komi_migrations` | Etapas de dados já aplicadas por `scripts/migrate_komi_ds.py` |
 
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `id` | TEXT (UUID) PK | Gerado por `uuid.uuid4()` em Python |
-| `name` | TEXT NOT NULL | Nome completo |
-| `normalizado` | TEXT NOT NULL | `_norm(name)` — NFD sem acentos + lower |
-| `relationship` | TEXT | "amigo/amiga", "família", "trabalho"... |
-| `category` | TEXT DEFAULT 'outros' | Categoria canônica: `familia` \| `amigos` \| `trabalho` \| `outros` — dirige filtros e cores no frontend |
-| `phone` / `email` / `instagram` / `telegram` | TEXT | Campos de contato |
-| `city` | TEXT | Cidade atual |
-| `avatar_url` | TEXT | URL da foto de perfil |
-| `notes` | TEXT | Observações livres |
-| `created_at` | TIMESTAMPTZ | Data de cadastro |
-| `updated_at` | TIMESTAMPTZ | Última atualização |
-| `deleted` | BOOLEAN DEFAULT FALSE | Soft delete — nunca deleta fisicamente |
+### Regras que não se quebram
 
-**Índice único parcial:** `idx_people_normalizado_vivo ON people (normalizado) WHERE deleted = FALSE`
-→ Garante que não há dois registros vivos com o mesmo nome normalizado.
-→ Após soft delete, o mesmo nome pode ser recadastrado (novo UUID, nova linha).
-
-### `person_aliases` — apelidos globais únicos
-
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `id` | SERIAL PK | Autoincrement |
-| `person_id` | TEXT FK → people(id) CASCADE DELETE | Dono do apelido |
-| `alias` | TEXT NOT NULL | Apelido exato |
-| `normalizado` | TEXT NOT NULL | `_norm(alias)` |
-
-**Índice único:** `idx_alias_normalizado ON person_aliases (normalizado)` — apelido é global:
-um alias só pode pertencer a uma pessoa no sistema inteiro.
-
-### `person_dates` — datas importantes
-
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `id` | SERIAL PK | Autoincrement |
-| `person_id` | TEXT FK → people(id) CASCADE DELETE | Dono da data |
-| `label` | TEXT NOT NULL | "aniversário", "formatura", "casamento"... |
-| `date` | DATE NOT NULL | Data em YYYY-MM-DD |
-| `recurring` | BOOLEAN DEFAULT TRUE | Se repete todo ano |
-
-### `person_links` — vínculo polimórfico N:N
-
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `id` | SERIAL PK | Autoincrement |
-| `person_id` | TEXT FK → people(id) CASCADE DELETE | Pessoa vinculada |
-| `entity_type` | TEXT CHECK IN ('transaction','task','book','journal_bullet','journal_letter') | Tipo da entidade |
-| `entity_id` | TEXT NOT NULL | ID da entidade (sempre string — UUIDs e SERIALs ficam como str) |
-| `created_at` | TIMESTAMPTZ | Quando o vínculo foi criado |
-
-**Constraint único:** `uq_person_link UNIQUE (person_id, entity_type, entity_id)` — idempotente.
-
-**Por que `entity_id` é TEXT?**
-Nami usa UUIDs (TEXT), Kaguya usa SERIAL INT, Journal usa SERIAL INT. Colocar tudo como TEXT
-evita migrar o schema se algum domínio mudar o tipo de PK. `link_person_on_cursor` sempre
-faz `str(entity_id)` antes de inserir. Ao fazer JOIN, casta com `entity_id::int` quando
-necessário (tasks, journal_bullets).
+- **Nome, Apelido e "outras formas" são chaves de resolução**: nenhum pode colidir com o de outra pessoa
+  viva (`_conflito_de_nome`, mensagem cita de quem é). `@Bia` e `@Beatriz` resolvem a mesma pessoa.
+- **Soft delete sempre** (`deleted=TRUE`); vínculos históricos ficam e voltam no `restore_person`.
+- **Interação/anotação/item da memória têm espaço `personal` ou `work` — nunca `both`**. "Ambos" é só da
+  pessoa; é isso que separa trabalho de pessoal nas abas.
+- **Datas no fuso America/Sao_Paulo** (`naming.today_sp`, `AT TIME ZONE`); nunca `CURRENT_DATE`.
+- **Aniversário não é tarefa.** Dia + mês andam juntos (CHECK), ano é opcional (sem ano, sem idade);
+  29/02 cai em 28/02 em ano comum. Lembrete = `birthday_remind_days` (`NULL` = sem; `0` = no dia).
+- **Anotação sugerida pela IA nunca vira ativa sozinha**; descartada guarda `text_norm` para não voltar.
+- **Mesclar não tem desfazer** (a tool, o router e a tela dizem isso antes); apagar pessoa tem.
 
 ---
 
-## Tools públicas
+## Como integrar um agente com a Komi (3 passos)
 
-| Tool | Parâmetros | Descrição |
+Contrato completo (e docstring) em [`integration.py`](integration.py). Nada na Komi nem na tela dela muda.
+
+1. **Gravar o vínculo** na mesma transação do item (import lazy, evita ciclo):
+   ```python
+   from agents.komi.integration import link_people, sync_people
+   link_people(cur, "meu_tipo", item_id, person_ids)   # ao criar (acrescenta)
+   sync_people(cur, "meu_tipo", item_id, person_ids)   # ao editar (substitui o conjunto)
+   ```
+   `entity_type` é livre (minúsculas, números e `_`). Antes de vincular, o agente resolve a pessoa com
+   `resolve_person(texto)` — **0** matches: oferecer cadastro; **1**: usar e dizer "encontrei [Nome]";
+   **2+**: perguntar qual. Nunca vincular sem confirmação quando há dúvida.
+2. **Criar `agents/<agente>/komi_provider.py`** com `LINK_TYPES = [{entity_type, agent, label, icon, resolve, …}]`
+   (campos opcionais: `by_person`, `summary_key`/`summary`, `last_activity`/`activity_kind`, `on_unlink`,
+   `on_merge`). A Komi descobre o arquivo sozinha. `resolve(ids)` devolve itens com `entity_id`, `title`,
+   `snippet`, `date`, `deep_link` e `context` (`personal`/`work`).
+3. **Pronto**: o agente aparece na Memória, nos filtros por agente, no briefing e no "há quanto tempo". Um
+   provedor com erro **nunca** derruba o perfil (a Memória avisa "pode estar incompleta").
+
+Outros usos do contrato: `people_for_space(space)` (pessoas de trabalho × pessoais), `parse_mentions` /
+`render_mention` / `plain_text` / `replace_mention_id` (token `@[Nome](komi:id)`, o mesmo da Violet),
+`unlink_item` / `link_item` (desvincular com Desfazer), `copy_links` (duplicar item).
+
+| Agente | entity_type | Provedor |
 |---|---|---|
-| `create_person(name, ...)` | name obrigatório; `category` (default `"outros"`) e demais opcionais | Cadastra pessoa; falha se nome normalizado já vivo |
-| `create_person_on_cursor(cur, name, ...)` | cursor psycopg2 ativo | Versão transacional — sem commit próprio; para uso cross-agent |
-| `update_person(person_id, **campos)` | só campos enviados são alterados, inclui `category` | PATCH parcial; recalcula `normalizado` se `name` muda |
-| `delete_person(person_id)` | — | Soft delete (`deleted=TRUE`); vínculos preservados |
-| `add_alias(person_id, alias)` | — | Apelido único global; erro claro se já pertence a outro |
-| `add_important_date(person_id, label, date, recurring)` | date em YYYY-MM-DD | Persiste data importante; retorna `{"status","id","message"}` — o campo `id` é o person_date_id (usado pelo hook de sync) |
-| `update_important_date(date_id, *, date?, label?, recurring?)` | date_id: int; keyword args opcionais | UPDATE parcial de um person_date por ID; hook Komi→Kaguya propaga a mudança |
-| `delete_important_date(date_id)` | date_id: int | DELETE físico; CASCADE remove o birthday_sync_links; hook Komi→Kaguya soft-deleta a tarefa (scope='series') |
-| `list_people()` | — | Retorna pessoas vivas com `link_count` + `category` via LEFT JOIN |
-| `find_people(query)` | — | Smart-match: UNION de pessoas + aliases; 0/1/N resultados |
-| `find_people_exact(name)` | — | Nome ou apelido **exatamente** igual (sem acento/caixa) — critério para vincular uma `@Menção` sem perguntar (spec 076) |
-| `suggest_people(query, limit=8)` | — | Autocomplete do `@` no diário: prefixo no nome (ou em qualquer palavra dele) ou apelido, com `avatar_url` e o apelido que casou; sem termo, os mais vinculados (spec 076) |
-| `get_person(person_id)` | — | Perfil + aliases + dates (sem vínculos cross-agent) |
-| `get_person_summary(person_id)` | — | Perfil + financas + tarefas + diario + cartas + livros |
-| `get_people_overview()` | — | Agregação cross-pessoa para a Home: `{id, name, category, avatar_url, dates[], finance_net, last_interaction}` por pessoa |
-| `link_person_on_cursor(cur, person_id, entity_type, entity_id)` | — | INSERT … ON CONFLICT DO NOTHING; chamado por outros agentes na mesma transação |
-
-### `_norm(s)` — normalização canônica
-
-```python
-def _norm(s: str) -> str:
-    s = s.strip().lower()
-    nfd = unicodedata.normalize("NFD", s)
-    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
-```
-
-Usada em todos os campos `normalizado` e nas comparações de busca.
-`"João"` == `"joao"` == `"JOÃO"` → mesmo `normalizado`.
-
-### `find_people(query)` — smart-match
-
-Estratégia UNION para buscar em nome e alias com um único round-trip:
-
-```sql
-SELECT p.id, p.name, p.relationship, p.deleted
-FROM people p
-WHERE p.deleted = FALSE AND p.normalizado LIKE %(pattern)s
-UNION
-SELECT p.id, p.name, p.relationship, p.deleted
-FROM people p
-JOIN person_aliases a ON a.person_id = p.id
-WHERE p.deleted = FALSE AND a.normalizado LIKE %(pattern)s
-```
-
-`pattern = f"{_norm(query)}%"` — prefixo, portanto `find_people("Ana")` casa `"Ana Lima"`,
-`"Ana Costa"` e qualquer alias iniciando com "ana".
-
-### `get_person_summary(person_id)` — hub cross-agent
-
-5 blocos retornados, cada um com sua query independente:
-
-| Bloco | Fonte | Query principal |
-|---|---|---|
-| `perfil` | `people` + aliases + dates | get_person + contagem de vínculos |
-| `financas` | `transactions` via `person_links` | JOIN WHERE entity_type='transaction' |
-| `tarefas` | `tasks` via `person_links` | JOIN WHERE entity_type='task' e entity_id::int |
-| `diario` | `journal_bullets` + `journal_pages` via `person_links` | JOIN WHERE entity_type='journal_bullet' e entity_id::int — `contagem` total + 10 trechos `{id, bullet_id, content, texto, date, deep_link}` |
-| `cartas` | `journal_letters` + `journal_pages` via `person_links` | JOIN WHERE entity_type='journal_letter' — `{id, recipient, title, status, font, date, trecho, deep_link}` (spec 076) |
-| `livros` | `books` via `person_links` | JOIN WHERE entity_type='book' |
-
-Bloco vazio = ausência de dados, nunca erro. Cada bloco tem seu próprio `try/except` para
-não derrubar o resumo inteiro se uma tabela não existir.
+| Nami | `transaction` | `agents/nami/komi_provider.py` |
+| Kaguya | `task` (+ `task_waiting` via `waiting_person_id`) | `agents/kaguya/komi_provider.py` |
+| Frieren | `book` | `agents/frieren/komi_provider.py` |
+| Violet | `journal_bullet`, `journal_letter` | `agents/journal/komi_provider.py` |
+| Akane | `movie_diary_entry` | `agents/akane/komi_provider.py` |
+| Komi | `interaction` (e datas) | embutido na própria Komi |
 
 ---
 
-## Integração cross-agent (FR-009)
+## Tools (34 no Hermes/MCP + `summarize_person_memory` da Kurisu)
 
-### Como vincular uma pessoa durante a criação de outra entidade
+| Grupo | Tools |
+|---|---|
+| Pessoa | `create_person`, `update_person`, `delete_person`, `restore_person`, `get_person`, `get_person_summary`, `list_people`, `find_people`, `resolve_person` |
+| Nomes | `add_alias`, `remove_alias` (Nome/Apelido/Nome completo vão em `create_person`/`update_person`) |
+| Datas | `set_birthday`, `upcoming_birthdays`, `add_important_date`, `update_important_date`, `delete_important_date` |
+| Memória | `get_person_memory`, `get_person_briefing`, `add_person_note`, `list_person_notes`, `log_interaction`, `list_interactions` |
+| Relacionamentos | `list_categories`, `create_category`, `list_relation_kinds`, `relate_person`, `list_relations`, `create_people_group`, `list_people_groups`, `add_person_to_group`, `remove_person_from_group` |
+| Duplicadas | `find_duplicates`, `preview_merge`, `merge_people` (**irreversível**: sempre com confirmação explícita) |
 
-Todos os agentes que aceitam `person_ids` seguem este padrão:
-
-```python
-# Dentro da transação (with get_conn() as conn / with conn.cursor() as cur)
-if person_ids:
-    from agents.komi.tools import link_person_on_cursor  # import lazy — evita ciclo
-    for pid in person_ids:
-        link_person_on_cursor(cur, pid, "transaction", tx_id)  # ou "task", "book", "journal_bullet"
-```
-
-### Agentes modificados
-
-| Agente | Função | entity_type |
-|---|---|---|
-| Nami | `create_transaction_on_cursor` / `create_transaction` | `"transaction"` |
-| Kaguya | `create_task` | `"task"` |
-| Frieren | `add_book` | `"book"` |
-| Journal | `upsert_bullet` | `"journal_bullet"` (+ auto-link de @menções) |
-
-### Vínculo do diário (Violet, spec 076)
-
-O texto do bullet guarda a pessoa como token `@[Nome](komi:<id>)` (o webapp sugere ao digitar `@`, via
-`suggest_people`). A cada `upsert_bullet`, os `person_links` do bullet são **sincronizados**: viram
-exatamente as pessoas citadas agora — tokens, `person_ids` explícitos e `@Nome` legado com match **exato e
-único** (`find_people_exact`; antes era por prefixo e, por um bug de chave, nunca vinculava). Editar remove
-quem saiu; apagar o bullet remove os vínculos.
-
-**Contrato para a Komi DS (futuro):** o resumo da pessoa já traz `diario.trechos[].texto` (sem a sintaxe dos
-tokens), `bullet_id` e `deep_link` (`/journal#dia/<data>`) e o bloco `cartas` com `deep_link`
-(`/journal#carta/<id>`). A Komi legacy aceita `/people#pessoa/<id>` para abrir uma pessoa direto (usado pela
-Violet).
-
-### Regra de smart-match (FR-007)
-
-Antes de vincular, o agente/usuário deve:
-- 0 resultados → oferecer cadastro
-- 1 resultado → usar diretamente; confirmar na resposta: "encontrei [Nome]"
-- 2+ resultados → perguntar qual antes de vincular
-
-`link_person_on_cursor` não valida smart-match — isso é responsabilidade do chamador (agente/coordinator).
-
-### Atomicidade
-
-`link_person_on_cursor` opera no cursor ativo do chamador. Se o chamador fizer rollback, o
-vínculo é descartado junto. Não há transação parcial.
-
----
-
-## Comportamento da Komi no Telegram
-
-- Sempre começa com `Komi:`
-- Tom tímido mas preciso; às vezes hesita antes de falar
-- **NUNCA cria duplicata silenciosamente** — sempre verifica smart-match antes
-- Confirma sempre a interpretação: "Vou cadastrar Ana Silva como amiga, certo?"
-- Soft delete: pede confirmação antes de remover
-
-### Formatação HTML (Telegram)
-
-```
-👤 <b>Nome</b> · relacionamento
-📱 telefone · 📧 email · 📍 cidade
-
-Resumo (get_person_summary):
-💰 Finanças: X transações · saldo R$X,XX
-📋 Tarefas: X abertas · X concluídas
-📔 Diário: X menções
-📚 Livros: X livros
-
-Erros: ❌ descrição do problema
-Confirmação: ✅ <b>Nome</b> — descrição
-```
+Roteamento: "falei com X ontem" → `log_interaction`; "a Bia gosta de orquídeas" → `add_person_note` (`gosta`);
+**aniversário → Komi** (`set_birthday`), nunca tarefa na Kaguya (`create_task(type="birthday")` redireciona para cá).
+Skill do Hermes: `hermes/skills/komi-pessoas/SKILL.md`.
 
 ---
 
 ## Router REST — `/api/people/*`
 
-Exposto em `webapp/backend/routers/pessoas.py`, registrado em `main.py` com prefixo `/api/people`.
-
-| Método | Path | Tool / Ação |
-|---|---|---|
-| GET | `/api/people/` | `list_people` |
-| GET | `/api/people/search?q=...` | `find_people` |
-| GET | `/api/people/overview` | `get_people_overview` — agregação cross-pessoa para a Home |
-| POST | `/api/people/` | `create_person` |
-| GET | `/api/people/{id}` | `get_person` — inclui `id` e `is_synced` por data (fase 026) |
-| GET | `/api/people/{id}/summary` | `get_person_summary` |
-| PATCH | `/api/people/{id}` | `update_person` |
-| DELETE | `/api/people/{id}` | `delete_person` (soft) |
-| POST | `/api/people/{id}/aliases` | `add_alias` |
-| POST | `/api/people/{id}/dates` | `add_important_date` — retorna `{"status","id","message"}` |
-| PATCH | `/api/people/{id}/dates/{date_id}` | `update_important_date` (fase 026) — PATCH parcial; propaga para Kaguya |
-| DELETE | `/api/people/{id}/dates/{date_id}` | `delete_important_date` (fase 026) — DELETE físico; CASCADE + hook Kaguya |
-| POST | `/api/people/uploads/avatar` | Upload de foto (multipart/form-data) → `{"url": "/uploads/icons/<filename>"}` |
-
-Todas as rotas requerem `Depends(require_user)`.
-
-**Atenção:** `/overview`, `/search` e `/uploads/avatar` devem ser registrados ANTES de `/{person_id}`
-no router para não serem capturadas pela rota de parâmetro dinâmico.
+Rotas completas em [`webapp/docs/API.md`](../../webapp/docs/API.md#pessoas-apipeople). Todas com
+`Depends(require_user)`. **Rotas fixas (`/overview`, `/search`, `/suggest`, `/stats`, `/categories`, `/groups`,
+`/duplicates`, `/merge`, `/notes/…`, `/interactions/…`, `/uploads/avatar`) são declaradas ANTES de `/{person_id}`.**
+`PATCH` usa `exclude_unset` (enviar `null` limpa o campo; não enviar não mexe).
 
 ---
 
+## Calendário e lembretes (aniversário ≠ tarefa)
+
+- `calendar_provider.py` entrega ao Calendar Hub da Kaguya o aniversário (campo da pessoa, com idade quando há
+  ano) e as outras datas; o espelho Google "Komi — Pessoas" (`agents/kaguya/gcal_mirror.py`) leva o **lembrete**
+  como `popup` `dias × 1440 − 540` minutos antes (evento de dia inteiro, avisa às 9h).
+- O digest matinal da Kaguya traz "Aniversários hoje e nos próximos 7 dias" com as ideias de presente
+  (`upcoming_birthdays`).
+- O sync antigo Komi↔Kaguya (spec 026: `birthday_sync_links`, `komi_sync.py`) foi **removido**; a migração
+  `scripts/migrate_komi_ds.py` leva as tarefas `birthday` antigas para a lixeira depois de garantir o campo.
+
 ---
 
-## Sync Komi ↔ Kaguya (fase 026)
+## Comportamento no Telegram / WhatsApp
 
-Todo `person_date` com `label ILIKE '%anivers%'` é espelhado como tarefa `type=birthday`
-na lista "Aniversários" da Kaguya. O sync é bidirecional e best-effort.
-
-### Tabela de ponte
-
-`birthday_sync_links` (em `schema_tasks_pg.sql` da Kaguya):
-
-```sql
-person_date_id  INT NOT NULL UNIQUE REFERENCES person_dates(id) ON DELETE CASCADE
-task_id         INT NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE CASCADE
-komi_label      TEXT  -- cópia do label para diagnóstico
-```
-
-1:1 por person_date (não por pessoa — uma pessoa pode ter múltiplos aniversários).
-
-### Módulo de sync
-
-`agents/kaguya/komi_sync.py` — nunca importar no topo de `agents.komi.tools` (ciclo!).
-Todas as chamadas são **lazy** e dentro de `try/except`.
-
-| Função | Disparada por | Ação |
-|---|---|---|
-| `push_person_date(date_id)` | `add_important_date` e `update_important_date` | Cria/atualiza tarefa birthday na Kaguya |
-| `remove_person_date(task_id)` | `delete_important_date` | Soft-delete da tarefa (scope='series') |
-| `push_birthday(task_id)` | `create_task`/`update_task` type=birthday | Cria/atualiza person_date na Komi |
-| `remove_birthday(task_id)` | `delete_task` scope='series' type=birthday | Apaga o person_date correspondente |
-
-### Anti-loop por convergência de valor
-
-Antes de escrever, cada função compara o valor atual no banco com o valor recebido.
-Se idênticos → no-op. Isso evita propagação em cascata (A→B→A→B…).
-
-### Feature flag
-
-`KOMI_SYNC_ENABLED=false` desativa todas as propagações sem afetar o CRUD.
-
-### Dedup na agenda
-
-`calendar_provider.py` faz `LEFT JOIN birthday_sync_links WHERE bsl.person_date_id IS NULL`:
-aniversários com link são omitidos da listagem da Komi (já aparecem como tarefa Kaguya).
-
-### Migração retroativa
-
-`scripts/migrate_birthday_sync.py` — cria links para aniversários existentes sem link.
-Executar de dentro do container: `docker exec makima-web python -m scripts.migrate_birthday_sync`.
+- Sempre começa com `Komi:`; tímida mas precisa. **Nunca cria duplicata silenciosamente** (confere
+  `find_people` antes); confirma a interpretação ("Vou cadastrar Ana Silva como amiga, certo?").
+- Apagar pede confirmação; **mesclar** mostra a prévia e avisa que não desfaz.
+- Formatação HTML (`<b>`, `<i>`), nunca markdown; erros com ❌, confirmações com ✅.
 
 ---
 
 ## O que NÃO fazer aqui
 
-- **Não deletar fisicamente** — sempre soft delete (`deleted=TRUE`); vínculos históricos são preservados.
-- **Não vincular sem smart-match** — verificar 0/1/N resultados de `find_people` antes de chamar `link_person_on_cursor`.
-- **Não fazer import circular direto** — `agents.komi.tools` não importa de `agents.nami`, `agents.kaguya`, `agents.frieren` ou `agents.journal` no topo do módulo. Imports são lazy (dentro das funções).
-- **Não criar duplicata de nome** — o índice único parcial bloqueia no banco; o agente deve checar antes com `find_people`.
-- **Não usar markdown** nos templates de resposta — apenas HTML e emojis (Telegram renderiza HTML).
+- **Não deletar fisicamente** pessoa, interação ou anotação — soft delete.
+- **Não importar `agents.nami/kaguya/frieren/journal/akane` no topo** de `agents/komi/*`: ciclos. Os provedores
+  moram no pacote de cada agente e são descobertos em tempo de execução.
+- **Não duplicar a regra de resolução** (0/1/2+) nem o token `@[Nome](komi:id)` num agente: use `integration.py`.
+- **Não criar tarefa de aniversário** na Kaguya nem reintroduzir o sync antigo.
+- **Não gravar vínculo fora da transação do item**: `link_people`/`sync_people` recebem o cursor do chamador.
+- **Não assumir que `person_links.entity_type` é uma lista fechada**: o banco só impõe o formato.
+- **Não usar `CURRENT_DATE`/`date.today()`** em regra de aniversário ou "há quanto tempo" (UTC no container).
 
----
-
-## Contrato com a Kaguya: pessoas de trabalho (spec 075 — PENDENTE na Komi)
-
-A Kaguya separa **Trabalho × Pessoal** em todas as telas. Pessoas relacionadas a trabalho devem aparecer na parte de trabalho da
-Kaguya (seletor de pessoas e "aguardando"). A Komi **ainda não distingue** pessoas de trabalho; a Kaguya já deixou a ponta
-pronta em `agents/kaguya/people_space.py::person_ids_for_space(space)`:
-
-- se a coluna `people.context` (`'personal'` \| `'work'`) **existir** — checado uma vez em `information_schema` —, o seletor de pessoas do
-  espaço Trabalho filtra por ela;
-- se **não existir**, devolve `None` e nada é filtrado (comportamento atual).
-
-Quando a Komi ganhar o campo, basta criar `people.context TEXT NOT NULL DEFAULT 'personal' CHECK (context IN ('personal','work'))`
-(e expô-lo na tela da Komi): a Kaguya passa a filtrar sozinha. Também falta um *deep link* da Kaguya para a pessoa (hoje a menção
-`@[Nome](komi:id)` abre `/people`).
+Testes: `tests/agents/test_komi*.py` (+ `komi_testing.py`, que monta um banco com o schema de todos os agentes),
+`tests/test_people_router.py`, `tests/test_komi_toolset.py`.

@@ -1,210 +1,186 @@
-// komiApi.ts — Camada de API da Komi (Pessoas).
-// Todos os componentes usam este objeto — NUNCA fetch diretamente nos componentes.
-// Encapsula as URLs dos endpoints REST e converte os shapes do backend.
+// Camada de API da Komi (Pessoas) — tudo que a tela pede ao servidor passa por aqui.
+// Componentes NUNCA chamam fetch direto. `create` e `search` mantêm a assinatura antiga porque
+// outras telas (Violet) cadastram pessoas por eles.
 
 import { api } from '../../lib/api'
 import type {
-  Person,
-  PersonDetail,
-  OverviewPerson,
-  PersonSummary,
-  PersonLinks,
-  DesignTransaction,
-  DesignTask,
-  DesignMention,
-  DesignBook,
+  AiSummary, Briefing, Category, DuplicatePair, Group, GeneratedSummary, Interaction, InteractionKind, Memory, MergePreview,
+  NoteKind, PersonDetail, PersonInput, PersonNote, PersonRow, Relation, RelationKind, RecordSpace, SummaryState,
 } from './types'
+import type { StatsPayload } from '../../design/core/stats'
 
-// ─── Adaptador de summary ─────────────────────────────────────────────────
-// Converte o shape cru de get_person_summary (backend) para o shape do design
-// handoff (PersonLinks), consumido pelos 4 cards de domínio na PersonPage.
-// Esta é a única fronteira de impedância entre os dois shapes — se o backend
-// mudar, só este adaptador precisa ser atualizado.
+const BASE = '/api/people'
 
-export function toLinks(summary: PersonSummary): PersonLinks {
-  // ── Finanças ─────────────────────────────────────────────────────────────
-  // Backend: {saldo, transacoes[{name, valor, tipo, categoria, data}]}
-  // Design:  {net, txns[{date, desc, amount, method}]}
-  const txns: DesignTransaction[] = (summary.financas?.transacoes || []).map(t => ({
-    date: t.data || '',
-    desc: t.name || '',
-    // Receita = dinheiro que entra (+), Despesa = dinheiro que sai (-)
-    amount: t.tipo === 'Receita' ? Math.abs(t.valor) : -Math.abs(t.valor),
-    method: t.categoria || '',
-  }))
-
-  // ── Tarefas ──────────────────────────────────────────────────────────────
-  // Backend: {abertas[{title, due_date, priority}], concluidas[{title, completed_at}]}
-  // Design:  {items[{title, done, due, prio}]}
-  const abertas: DesignTask[] = (summary.tarefas?.abertas || []).map(t => ({
-    title: t.title,
-    done: false,
-    due: t.due_date || null,
-    prio: t.priority,
-  }))
-  const concluidas: DesignTask[] = (summary.tarefas?.concluidas || []).map(t => ({
-    title: t.title,
-    done: true,
-    due: t.completed_at || null,
-    prio: 0,
-  }))
-
-  // ── Diário ───────────────────────────────────────────────────────────────
-  // Backend: {trechos[{content, date}]}
-  // Design:  {mentions[{date, time, text}]}
-  // Spec 076: `texto` vem sem a sintaxe dos tokens (@[Nome](komi:id) → @Nome) e `deep_link` abre o dia na Violet.
-  const mentions: DesignMention[] = (summary.diario?.trechos || []).map(b => ({
-    date: b.date || '',
-    time: '',  // O backend não guarda hora por bullet — fica vazio
-    text: b.texto || b.content || '',
-    link: b.deep_link || (b.date ? `/journal#dia/${b.date}` : undefined),
-  }))
-
-  // ── Livros ───────────────────────────────────────────────────────────────
-  // Backend: {livros[{title, author, status}]}
-  // Design:  [{title, author, status}]
-  const books: DesignBook[] = (summary.livros?.livros || []).map(bk => ({
-    title: bk.title,
-    author: bk.author || '',
-    status: bk.status || '',
-  }))
-
+/** O banco tem campo vazio demais para confiar: listas que vêm null viram [], números e textos ficam como estão. */
+export function normalizeRow(p: PersonRow): PersonRow {
   return {
-    finances: { net: summary.financas?.saldo ?? 0, txns },
-    tasks:    { items: [...abertas, ...concluidas] },
-    journal:  { mentions },
-    books,
+    ...p,
+    nickname: p.nickname ?? null,
+    full_name: p.full_name ?? null,
+    aliases: p.aliases ?? [],
+    groups: p.groups ?? [],
+    dates: p.dates ?? [],
+    link_count: p.link_count ?? 0,
+    finance_net: p.finance_net ?? 0,
+    last_interaction: p.last_interaction ?? null,
+    context: p.context ?? 'personal',
+    category: p.category ?? 'outros',
+  }
+}
+const q = (params: Record<string, string | number | undefined | null>): string => {
+  const usable = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  return usable.length ? `?${usable.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&')}` : ''
+}
+
+/** Perfil: apelidos e datas que vêm null viram listas vazias. */
+function normalizeDetail(d: PersonDetail & { status: string }): PersonDetail & { status: string } {
+  return {
+    ...d,
+    perfil: { ...d.perfil, context: d.perfil.context ?? 'personal', category: d.perfil.category ?? 'outros' },
+    aliases: d.aliases ?? [],
+    datas: (d.datas ?? []).filter((x) => !!x?.date),
   }
 }
 
-// ─── API da Komi ─────────────────────────────────────────────────────────
+/** Memória: nenhuma lista pode chegar null nas telas. */
+function normalizeMemory(m: Memory & { status: string }): Memory & { status: string } {
+  return {
+    ...m,
+    items: m.items ?? [],
+    counts: m.counts ?? {},
+    by_context: m.by_context ?? { personal: 0, work: 0 },
+    unavailable: m.unavailable ?? [],
+  }
+}
+
+/** Briefing: blocos vazios viram listas e objetos vazios, para o cartão decidir o que mostrar. */
+function normalizeBriefing(b: Briefing & { status: string }): Briefing & { status: string } {
+  return {
+    ...b,
+    dates: b.dates ?? [],
+    notes: b.notes ?? {},
+    suggestions_pending: b.suggestions_pending ?? 0,
+    ai: b.ai ?? null,
+    pending: { balance: b.pending?.balance ?? 0, open_tasks: b.pending?.open_tasks ?? 0, waiting: b.pending?.waiting ?? [] },
+    contact: { last: b.contact?.last ?? null, days_since: b.contact?.days_since ?? null, recent_interactions: b.contact?.recent_interactions ?? [] },
+    relations: b.relations ?? [],
+    groups: b.groups ?? [],
+  }
+}
+
+/** Campos que o servidor aceita ao criar/editar uma pessoa (o formulário manda só o que mudou). */
+export type PersonPatch = Partial<Omit<PersonInput, 'birth_day' | 'birth_month' | 'birth_year'>> & {
+  birth_day?: number | null
+  birth_month?: number | null
+  birth_year?: number | null
+}
 
 export const komiApi = {
-  // ── Listagem e busca ─────────────────────────────────────────────────────
+  // ── Pessoas ────────────────────────────────────────────────────────────────
+  /** Todas as pessoas vivas, com o que o Início e as coleções precisam. */
+  overview: () => api.get<{ people: PersonRow[] }>(`${BASE}/overview`).then((r) => (r.people ?? []).map(normalizeRow)),
 
-  /** Lista todas as pessoas vivas com link_count. */
-  list: () =>
-    api.get<{ status: string; people: Person[] }>('/api/people/'),
+  /** Busca por nome, apelido ou nome completo (0, 1 ou várias). */
+  search: (text: string) =>
+    api.get<{ status: string; matches: { id: string; name: string; relationship: string | null }[] }>(`${BASE}/search${q({ q: text })}`),
 
-  /** Agregação cross-pessoa para a Home (dates, finance_net, last_interaction). */
-  overview: () =>
-    api.get<{ status: string; people: OverviewPerson[] }>('/api/people/overview'),
+  get: (id: string) => api.get<PersonDetail & { status: string }>(`${BASE}/${id}`).then(normalizeDetail),
 
-  /** Perfil completo de uma pessoa (sem cross-agent). */
-  get: (id: string) =>
-    api.get<{ status: string; perfil: PersonDetail; aliases: string[]; datas: any[] }>(
-      `/api/people/${id}`
-    ),
+  /** Cadastra. Devolve o id da pessoa nova. */
+  create: (body: PersonPatch & { name: string }) => api.post<{ status: string; id: string }>(`${BASE}/`, body),
 
-  /** Resumo agregado com vínculos cross-agent (finanças, tarefas, diário, livros). */
-  summary: (id: string) =>
-    api.get<PersonSummary>(`/api/people/${id}/summary`),
+  update: (id: string, body: PersonPatch) => api.patch<{ status: string }>(`${BASE}/${id}`, body),
 
-  /** Busca por nome ou apelido (smart-match, retorna 0/1/N resultados). */
-  search: (q: string) =>
-    api.get<{ status: string; matches: { id: string; name: string; relationship: string }[] }>(
-      `/api/people/search?q=${encodeURIComponent(q)}`
-    ),
+  /** Vai para a lixeira (dá para restaurar). */
+  remove: (id: string) => api.del<void>(`${BASE}/${id}`),
+  restore: (id: string) => api.post<{ status: string }>(`${BASE}/${id}/restore`, {}),
 
-  // ── CRUD ──────────────────────────────────────────────────────────────────
+  addAlias: (id: string, alias: string) => api.post<{ status: string }>(`${BASE}/${id}/aliases`, { alias }),
+  removeAlias: (id: string, aliasId: number) => api.del<void>(`${BASE}/${id}/aliases/${aliasId}`),
 
-  /** Cadastra uma nova pessoa. Retorna {status, id, message}. */
-  create: (body: {
-    name: string
-    relationship?: string
-    category?: string
-    phone?: string
-    email?: string
-    instagram?: string
-    telegram?: string
-    city?: string
-    avatar_url?: string
-    notes?: string
-  }) => api.post<{ status: string; id: string }>('/api/people/', body),
+  // ── Datas importantes (o aniversário é campo da pessoa) ────────────────────
+  addDate: (id: string, body: { label: string; date: string; recurring: boolean; remind_days_before: number }) =>
+    api.post<{ status: string; id: number }>(`${BASE}/${id}/dates`, body),
+  updateDate: (id: string, dateId: number, body: Partial<{ label: string; date: string; recurring: boolean; remind_days_before: number }>) =>
+    api.patch<{ status: string }>(`${BASE}/${id}/dates/${dateId}`, body),
+  removeDate: (id: string, dateId: number) => api.del<void>(`${BASE}/${id}/dates/${dateId}`),
 
-  /** Atualiza campos de uma pessoa (PATCH parcial). */
-  update: (id: string, body: Partial<{
-    name: string
-    relationship: string
-    category: string
-    phone: string
-    email: string
-    instagram: string
-    telegram: string
-    city: string
-    avatar_url: string
-    notes: string
-  }>) => api.patch<{ status: string }>(`/api/people/${id}`, body),
+  // ── Memória, resumo e briefing ─────────────────────────────────────────────
+  memory: (id: string, context?: RecordSpace) => api.get<Memory & { status: string }>(`${BASE}/${id}/memory${q({ context })}`).then(normalizeMemory),
+  summary: (id: string, context = 'all') => api.get<SummaryState & { status: string }>(`${BASE}/${id}/memory/summary${q({ context })}`),
+  /** Pede à IA. Pode demorar e pode falhar (ex.: sem chave): a tela mostra a mensagem. */
+  generateSummary: (id: string, context = 'all', force = false) =>
+    api.post<GeneratedSummary & { status: string }>(`${BASE}/${id}/memory/summary`, { context, force }),
+  briefing: (id: string) => api.get<Briefing & { status: string }>(`${BASE}/${id}/briefing`).then(normalizeBriefing),
 
-  /** Soft delete de uma pessoa (204 No Content). */
-  del: (id: string) =>
-    api.del<void>(`/api/people/${id}`),
+  /** Tira a pessoa de um item de outro agente. `undoable` diz se `relink` desfaz. */
+  unlink: (id: string, entityType: string, entityId: string) =>
+    api.del<{ status: string; removed: number; undoable: boolean }>(`${BASE}/${id}/links/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}`),
+  relink: (id: string, entityType: string, entityId: string) =>
+    api.post<{ status: string }>(`${BASE}/${id}/links`, { entity_type: entityType, entity_id: entityId }),
 
-  // ── Apelidos e datas ──────────────────────────────────────────────────────
+  // ── Anotações ──────────────────────────────────────────────────────────────
+  notes: (id: string, status?: string) => api.get<{ notes: PersonNote[] }>(`${BASE}/${id}/notes${q({ status })}`).then((r) => r.notes ?? []),
+  addNote: (id: string, body: { text: string; kind: NoteKind; context?: RecordSpace }) =>
+    api.post<{ status: string; id: number }>(`${BASE}/${id}/notes`, body),
+  updateNote: (noteId: number, body: Partial<{ text: string; kind: NoteKind; context: RecordSpace }>) =>
+    api.patch<{ status: string }>(`${BASE}/notes/${noteId}`, body),
+  removeNote: (noteId: number) => api.del<void>(`${BASE}/notes/${noteId}`),
+  restoreNote: (noteId: number) => api.post<{ status: string }>(`${BASE}/notes/${noteId}/restore`, {}),
+  acceptNote: (noteId: number, body?: { text?: string; kind?: NoteKind }) => api.post<{ status: string }>(`${BASE}/notes/${noteId}/accept`, body ?? {}),
+  dismissNote: (noteId: number) => api.post<{ status: string }>(`${BASE}/notes/${noteId}/dismiss`, {}),
 
-  /** Adiciona um apelido a uma pessoa. */
-  addAlias: (id: string, alias: string) =>
-    api.post<{ status: string }>(`/api/people/${id}/aliases`, { alias }),
+  // ── Interações ─────────────────────────────────────────────────────────────
+  interactions: (id: string, limit = 100) =>
+    api.get<{ interactions: Interaction[] }>(`${BASE}/${id}/interactions${q({ limit })}`).then((r) => r.interactions ?? []),
+  addInteraction: (id: string, body: { kind: InteractionKind; happened_at?: string; note?: string; context?: RecordSpace }) =>
+    api.post<{ status: string; id: number }>(`${BASE}/${id}/interactions`, body),
+  updateInteraction: (interactionId: number, body: Partial<{ kind: InteractionKind; happened_at: string; note: string; context: RecordSpace }>) =>
+    api.patch<{ status: string }>(`${BASE}/interactions/${interactionId}`, body),
+  removeInteraction: (interactionId: number) => api.del<void>(`${BASE}/interactions/${interactionId}`),
+  restoreInteraction: (interactionId: number) => api.post<{ status: string }>(`${BASE}/interactions/${interactionId}/restore`, {}),
 
-  /** Adiciona uma data importante a uma pessoa. Retorna o id gerado (fase 026). */
-  addDate: (id: string, date: { label: string; date: string; recurring: boolean }) =>
-    api.post<{ status: string; id: number }>(`/api/people/${id}/dates`, date),
+  // ── Relacionamentos (a lista configurável) ─────────────────────────────────
+  categories: (includeArchived = false) =>
+    api.get<{ categories: Category[] }>(`${BASE}/categories${q({ include_archived: includeArchived ? 'true' : undefined })}`).then((r) => r.categories ?? []),
+  addCategory: (body: { label: string; icon: string }) => api.post<{ status: string; slug: string }>(`${BASE}/categories`, body),
+  updateCategory: (slug: string, body: Partial<{ label: string; icon: string }>) => api.patch<{ status: string }>(`${BASE}/categories/${slug}`, body),
+  reorderCategories: (slugs: string[]) => api.post<{ status: string }>(`${BASE}/categories/reorder`, { slugs }),
+  archiveCategory: (slug: string, moveTo?: string) => api.post<{ status: string; moved: number }>(`${BASE}/categories/${slug}/archive`, { move_to: moveTo ?? null }),
+  unarchiveCategory: (slug: string) => api.post<{ status: string }>(`${BASE}/categories/${slug}/unarchive`, {}),
 
-  /**
-   * Atualiza campos de uma data importante (PATCH parcial — fase 026).
-   * Só os campos enviados são alterados. O hook Komi→Kaguya propaga automaticamente.
-   *
-   * @param personId - UUID da pessoa
-   * @param dateId   - ID numérico do person_date
-   * @param campos   - Campos a alterar: label?, date?, recurring?
-   */
-  updateDate: (personId: string, dateId: number, campos: Partial<{
-    label: string
-    date: string
-    recurring: boolean
-  }>) =>
-    api.patch<{ status: string; message: string }>(
-      `/api/people/${personId}/dates/${dateId}`,
-      campos
-    ),
+  // ── Relações entre pessoas e grupos ────────────────────────────────────────
+  relationKinds: () => api.get<{ kinds: RelationKind[] }>(`${BASE}/relation-kinds`).then((r) => r.kinds ?? []),
+  relations: (id: string) => api.get<{ relations: Relation[] }>(`${BASE}/${id}/relations`).then((r) => r.relations ?? []),
+  relate: (id: string, otherId: string, kind: string) => api.post<{ status: string }>(`${BASE}/${id}/relations`, { other_id: otherId, kind }),
+  unrelate: (id: string, otherId: string, kind?: string) => api.del<void>(`${BASE}/${id}/relations/${otherId}${q({ kind })}`),
+  groups: () => api.get<{ groups: Group[] }>(`${BASE}/groups`).then((r) => r.groups ?? []),
+  personGroups: (id: string) => api.get<{ groups: Group[] }>(`${BASE}/${id}/groups`).then((r) => r.groups ?? []),
+  addGroup: (name: string) => api.post<{ status: string; id: number }>(`${BASE}/groups`, { name }),
+  removeGroup: (groupId: number) => api.del<void>(`${BASE}/groups/${groupId}`),
+  addToGroup: (groupId: number, personId: string) => api.post<{ status: string }>(`${BASE}/groups/${groupId}/members`, { person_id: personId }),
+  removeFromGroup: (groupId: number, personId: string) => api.del<void>(`${BASE}/groups/${groupId}/members/${personId}`),
 
-  /**
-   * Remove uma data importante (DELETE físico — fase 026).
-   * O hook Komi→Kaguya soft-deleta a tarefa correspondente (scope='series').
-   *
-   * @param personId - UUID da pessoa
-   * @param dateId   - ID numérico do person_date
-   * @returns 204 No Content (void)
-   */
-  deleteDate: (personId: string, dateId: number) =>
-    api.del<void>(`/api/people/${personId}/dates/${dateId}`),
+  // ── Duplicadas e mesclar ───────────────────────────────────────────────────
+  duplicates: () => api.get<{ pairs: DuplicatePair[] }>(`${BASE}/duplicates`).then((r) => r.pairs ?? []),
+  mergePreview: (keepId: string, dropId: string) => api.post<MergePreview & { status: string }>(`${BASE}/merge/preview`, { keep_id: keepId, drop_id: dropId }),
+  merge: (keepId: string, dropId: string) => api.post<{ status: string; message: string; warnings?: string[] }>(`${BASE}/merge`, { keep_id: keepId, drop_id: dropId }),
 
-  // ── Upload de avatar ──────────────────────────────────────────────────────
+  // ── Estatísticas ───────────────────────────────────────────────────────────
+  stats: (year: number) => api.get<StatsPayload & { first_year: number }>(`${BASE}/stats${q({ year })}`),
 
-  /**
-   * Faz upload de uma imagem de avatar via multipart/form-data.
-   * Retorna {url: "/uploads/icons/<filename>"} para guardar em avatar_url.
-   *
-   * @param file - Arquivo de imagem (png, jpeg, webp ou gif; máx 1 MB)
-   */
+  // ── Foto ───────────────────────────────────────────────────────────────────
+  /** Envia a foto (multipart: o `api.post` só fala JSON, então este é o único fetch direto). */
   uploadAvatar: async (file: File): Promise<{ url: string }> => {
-    // Monta FormData com o arquivo (padrão multipart/form-data)
-    const formData = new FormData()
-    formData.append('file', file)
-
-    // fetch direto só aqui — api.post serializa para JSON, não suporta FormData
-    // credentials: 'include' envia o cookie de sessão (obrigatório)
-    const res = await fetch('/api/people/uploads/avatar', {
-      method: 'POST',
-      credentials: 'include',
-      body: formData,
-    })
-
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`${BASE}/uploads/avatar`, { method: 'POST', credentials: 'include', body: form })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }))
-      throw new Error(err.detail || 'Erro ao fazer upload do avatar.')
+      throw new Error(typeof err.detail === 'string' ? err.detail : 'Não foi possível enviar a foto.')
     }
-
     return res.json()
   },
 }
+
+export type { AiSummary }

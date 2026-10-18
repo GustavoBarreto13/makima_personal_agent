@@ -1,471 +1,236 @@
-// KomiShell.tsx — Shell raiz da Komi (Pessoas).
-// Gerencia: sidebar (marca, nav, relacionamentos), topbar (busca, back, ações),
-//           roteamento interno por estado (home | grid | dates | person),
-//           modal de criar/editar pessoa, TweaksPanel (tema/acento/serifa).
-//
-// O shell carrega overview() uma vez e recarrega após criar/editar/excluir.
-// Ao abrir uma pessoa, PersonPage carrega summary() de forma independente.
-//
-// Importa komi.css para aplicar os tokens OKLCH dentro de .km-app.
+// Komi · Pessoas — shell sobre o AppShell do Design System (spec 077).
+// Guarda a rota por hash (/people#pessoas, /people#pessoa/<id>), as pessoas e os relacionamentos (que várias telas
+// usam: contagens do menu, linha rápida, busca do topo e da paleta Ctrl+K), o espaço escolhido (Tudo · Pessoal ·
+// Trabalho) e as ações comuns (cadastrar, registrar contato, navegar), que as telas leem pelo contexto.
 
-import './komi.css'
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Icon } from './icons'
-import { TweaksPanel, loadTweaks, saveTweaks } from './TweaksPanel'
-import type { KomiTweaks } from './TweaksPanel'
-import { Home }          from './screens/Home'
-import { Directory }     from './screens/Directory'
-import { UpcomingDates } from './screens/UpcomingDates'
-import { PersonPage }    from './screens/PersonPage'
-import { PersonModal }   from './modals/PersonModal'
-import { REL_CATS, daysUntil } from './lib'
-import { KM_PALETTES } from './lib'
-import { komiApi } from './komiApi'
-import type { OverviewPerson, PersonDetail } from './types'
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useNavigate } from 'react-router-dom'
+import '../../design'
+import { getAgent } from '../../design/core/agents'
+import type { CaptureResult } from '../../design/core/capture'
+import { todayISO } from '../../design/core/format'
+import { useCommandProvider, type CommandProvider } from '../../design/headless/commands'
+import { toast } from '../../design/headless/toast'
+import { usePrefs } from '../../design/headless/usePrefs'
+import { AppShell, NumberInput, SegmentedControl, SettingRow, type NavGroup } from '../../design'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { AGENT_TABS } from '../../lib/agentTabs'
+import { CategoryEditor } from './components/CategoryEditor'
+import { ContactForm } from './components/ContactForm'
+import { PersonForm } from './components/PersonForm'
+import { ScreenBoundary } from './components/ScreenBoundary'
+import { DEFAULT_PREFS, KomiContext, type KomiCtx, type KomiPrefs, type PersonFormOpen } from './context'
+import { komiApi } from './komiApi'
+import { canSaveQuickly, draftFromCapture, emptyContact, type ContactDraft } from './lib/capture'
+import { RECORD_SPACE } from './lib/kinds'
+import { inSpace, namesOf, norm } from './lib/people'
+import { hashFor, routeFromHash, type Route, type ViewId } from './lib/routes'
+import { useLoad } from './lib/useLoad'
+import { Dates } from './screens/Dates'
+import { Home } from './screens/Home'
+import { PersonDetailScreen } from './screens/PersonDetail'
+import { People } from './screens/People'
+import { Stats } from './screens/Stats'
+import type { Category, PersonRow, RecordSpace, SpaceFilter } from './types'
+import './komi.css'
 
-// Views disponíveis no shell (roteamento interno por estado)
-type KomiView = 'home' | 'grid' | 'dates' | 'person'
+const AGENT = getAgent('komi')
 
-// Estado do modal: null = fechado; 'new' = criar; PersonDetail = editar
-type ModalState = null | 'new' | PersonDetail
+const TITLES: Record<ViewId, string> = { home: 'Início', people: 'Pessoas', dates: 'Datas', stats: 'Estatísticas' }
+const SUBTITLES: Record<ViewId, string> = {
+  home: 'Quem importa', people: 'Todo mundo que você conhece', dates: 'Aniversários e datas importantes', stats: 'Seu ano em contatos',
+}
 
-/**
- * Shell raiz da seção de Pessoas (Komi).
- * Exportado para ser registrado em App.tsx como <Route path="/people/*" />.
- * Não usa React Router interno — todo o roteamento é por estado (useState).
- */
+const ART_OPTIONS = [{ value: 'default', label: 'Padrão' }, { value: 'bilhetes', label: 'Caderno de bilhetes' }]
+
+// Referências estáveis enquanto carrega (as telas e coleções dependem delas).
+const NO_PEOPLE: PersonRow[] = []
+const NO_CATEGORIES: Category[] = []
+
+type Dialog = { kind: 'person'; open: PersonFormOpen } | { kind: 'contact'; draft: ContactDraft } | null
+
+const SPACE_OPTIONS: { value: SpaceFilter; label: string; icon: 'apps' | 'personal' | 'work' }[] = [
+  { value: 'all', label: 'Tudo', icon: 'apps' }, { value: 'personal', label: 'Pessoal', icon: 'personal' }, { value: 'work', label: 'Trabalho', icon: 'work' },
+]
+
 export function KomiShell() {
   useDocumentTitle(AGENT_TABS.komi.title, AGENT_TABS.komi.icon)
+  const navigate = useNavigate()
+  const today = useMemo(() => todayISO(), [])
+  const [prefs, setPrefs] = usePrefs<KomiPrefs>('komi', useMemo(() => ({ ...DEFAULT_PREFS, art: AGENT.art ?? DEFAULT_PREFS.art }), []))
+  const [route, setRoute] = useState<Route>(() => routeFromHash(window.location.hash))
+  const [rev, setRev] = useState(0)
+  const [dialog, setDialog] = useState<Dialog>(null)
+  const [topQuery, setTopQuery] = useState('')
 
-  // ── Estado do shell ────────────────────────────────────────────────
-  const [overview,   setOverview]   = useState<OverviewPerson[]>([])  // dados de todas as pessoas
-  const [loading,    setLoading]    = useState(true)    // carregamento inicial do overview
-  // Link direto para uma pessoa (/people#pessoa/<id>) — usado pela Violet (spec 076) e por quem mais quiser apontar.
-  const linkedId = /^#pessoa\/([\w-]+)$/.exec(window.location.hash)?.[1] ?? null
-  const [view,       setView]       = useState<KomiView>(linkedId ? 'person' : 'home')       // tela ativa
-  const [currentId,  setCurrentId]  = useState<string | null>(linkedId)   // id da pessoa aberta
-  const [query,      setQuery]      = useState('')      // texto de busca (topbar)
-  const [filter,     setFilter]     = useState('todos') // filtro de categoria (Directory)
-  const [modal,      setModal]      = useState<ModalState>(null)  // estado do PersonModal
-  const [tweaksOpen, setTweaksOpen] = useState(false)   // TweaksPanel aberto?
+  const reload = useCallback(() => setRev((n) => n + 1), [])
 
-  // Tweaks (tema/acento/nomes): carregados do localStorage na montagem
-  const [tweaks, setTweaksState] = useState<KomiTweaks>(() => loadTweaks())
+  // Pessoas e relacionamentos recarregam a cada gravação (rev). Os relacionamentos falharem não trava nada.
+  const { state: peopleState, retry: retryPeople } = useLoad(() => komiApi.overview(), [rev])
+  const people = peopleState.status === 'ok' ? peopleState.data : NO_PEOPLE
+  const [catRev, setCatRev] = useState(0)
+  const { state: categoriesState } = useLoad(() => komiApi.categories(), [rev, catRev])
+  const categories = categoriesState.status === 'ok' ? categoriesState.data : NO_CATEGORIES
+  const reloadCategories = useCallback(() => setCatRev((n) => n + 1), [])
 
-  // Ref do container de scroll — resetado ao trocar de view
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const space = prefs.space
+  const visible = useMemo(() => people.filter((p) => inSpace(p, space)), [people, space])
 
-  // ── Carregar overview ─────────────────────────────────────────────
-
-  /**
-   * Carrega (ou recarrega) a lista de pessoas do /api/people/overview.
-   * Chamado na montagem e após criar/editar/excluir uma pessoa.
-   */
-  const reloadOverview = useCallback(async () => {
-    setLoading(true)
-    try {
-      const data = await komiApi.overview()
-      setOverview(data.people || [])
-    } catch {
-      // Falha silenciosa: mantém o estado anterior e o shell continua funcional
-    } finally {
-      setLoading(false)
+  // Voltar/avançar do navegador (popstate) e links com #… (hashchange) trocam de tela.
+  useEffect(() => {
+    const onHash = () => setRoute(routeFromHash(window.location.hash))
+    window.addEventListener('hashchange', onHash)
+    window.addEventListener('popstate', onHash)
+    return () => {
+      window.removeEventListener('hashchange', onHash)
+      window.removeEventListener('popstate', onHash)
     }
   }, [])
 
-  // Carrega ao montar o shell
-  useEffect(() => { reloadOverview() }, [reloadOverview])
+  // Navegar grava no histórico (pushState): o Voltar do navegador volta para a tela anterior.
+  const goto = useCallback((to: Route | ViewId) => {
+    const next: Route = typeof to === 'string' ? { view: to } : to
+    setRoute(next)
+    const url = `${window.location.pathname}#${hashFor(next)}`
+    if (window.location.hash !== `#${hashFor(next)}`) window.history.pushState(window.history.state, '', url)
+    window.scrollTo?.({ top: 0 })
+  }, [])
 
-  // ── Efeitos de tweaks ─────────────────────────────────────────────
+  const saveContact = useCallback(async (draft: ContactDraft) => {
+    const person = people.find((p) => p.id === draft.personId)
+    if (!person) throw new Error('Escolha com quem foi o contato.')
+    const context: RecordSpace = person.context === 'both' ? draft.context ?? 'personal' : person.context
+    const r = await komiApi.addInteraction(person.id, { kind: draft.kind, happened_at: draft.date, note: draft.note.trim() || undefined, context })
+    reload()
+    toast(`Contato com ${person.name} registrado${person.context === 'both' ? ` (${RECORD_SPACE[context].toLowerCase()})` : ''}`, {
+      tone: 'success',
+      undo: () => { komiApi.removeInteraction(r.id).then(reload).catch(() => toast('Não foi possível desfazer. Confira na aba Interações.', { tone: 'error' })) },
+    })
+  }, [people, reload])
 
-  /**
-   * Aplica o tema (Claro/Escuro) como atributo data-theme no .km-app.
-   * O CSS usa [data-theme='dark'] para inverter os tokens de cor.
-   */
-  useEffect(() => {
-    const el = document.querySelector('.km-app')
-    if (el) el.setAttribute('data-theme', tweaks.tema === 'Escuro' ? 'dark' : 'light')
-  }, [tweaks.tema])
+  const defaultContext: RecordSpace | null = space === 'all' ? null : space
 
-  /**
-   * Aplica a paleta de acento como variáveis CSS inline no .km-app.
-   * O CSS lê --km, --km-deep, --km-bright, --km-tint, --km-tint-2.
-   */
-  useEffect(() => {
-    const p = KM_PALETTES[tweaks.acento] || KM_PALETTES['#5A4FCF']
-    const el = document.querySelector('.km-app') as HTMLElement | null
-    if (!el) return
-    el.style.setProperty('--km',         p.base)
-    el.style.setProperty('--km-deep',    p.deep)
-    el.style.setProperty('--km-bright',  p.bright)
-    el.style.setProperty('--km-tint',    p.t1)
-    el.style.setProperty('--km-tint-2',  p.t2)
-  }, [tweaks.acento])
+  const openPerson = useCallback((open: PersonFormOpen = { mode: 'create' }) => setDialog({ kind: 'person', open }), [])
+  const openContact = useCallback((draft?: ContactDraft) => setDialog({ kind: 'contact', draft: draft ?? emptyContact(today, null, defaultContext) }), [today, defaultContext])
 
-  /**
-   * Aplica a tipografia dos nomes via --serif.
-   * Serifa: Playfair Display / Georgia; Sem serifa: Hanken Grotesk / DM Sans.
-   */
-  useEffect(() => {
-    const el = document.querySelector('.km-app') as HTMLElement | null
-    if (!el) return
-    el.style.setProperty(
-      '--serif',
-      tweaks.nomes === 'Sem serifa'
-        ? "'Hanken Grotesk', 'DM Sans', system-ui, sans-serif"
-        : "'Playfair Display', Georgia, serif"
-    )
-  }, [tweaks.nomes])
-
-  // ── Atalhos de teclado ────────────────────────────────────────────
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Não dispara atalhos quando modal está aberto ou foco em input
-      if (modal) return
-      const tag = (e.target as HTMLElement).tagName?.toLowerCase()
-      if (tag === 'input' || tag === 'textarea') return
-
-      // N: abre modal de nova pessoa
-      if (e.key === 'n' || e.key === 'N') {
-        e.preventDefault()
-        setModal('new')
-      }
-      // Esc: volta da person page para o diretório
-      if (e.key === 'Escape' && view === 'person') {
-        goGrid()
-      }
+  const quickContact = useCallback((r: CaptureResult, forceForm = false): boolean => {
+    const draft = draftFromCapture(r, { today, people: visible.length ? visible : people, defaultContext })
+    if (forceForm || !canSaveQuickly(draft, today)) {
+      setDialog({ kind: 'contact', draft })
+      return true
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [modal, view])  // re-registra quando modal ou view mudam
+    void saveContact(draft).catch((e: unknown) => toast(e instanceof Error ? e.message : 'Não foi possível salvar.', { tone: 'error' }))
+    return true
+  }, [today, visible, people, defaultContext, saveContact])
 
-  // ── Navegação ─────────────────────────────────────────────────────
+  const clearTopQuery = useCallback(() => setTopQuery(''), [])
 
-  /** Reseta o scroll e navega para uma view qualquer. */
-  function goView(v: KomiView) {
-    setView(v)
-    setCurrentId(null)
-    if (scrollRef.current) scrollRef.current.scrollTop = 0
-  }
+  const ctx = useMemo<KomiCtx>(
+    () => ({
+      rev, reload, today, route, goto, people, peopleState, retryPeople, visible, categories, reloadCategories, prefs, setPrefs,
+      openPerson, openContact, quickContact, saveContact, topQuery, clearTopQuery,
+    }),
+    [rev, reload, today, route, goto, people, peopleState, retryPeople, visible, categories, reloadCategories, prefs, setPrefs, openPerson, openContact, quickContact, saveContact, topQuery, clearTopQuery],
+  )
 
-  /** Navega para o diretório (grid). Atalho para o botão "back" e Esc. */
-  function goGrid() {
-    setQuery('')     // limpa a busca ao voltar para o diretório
-    goView('grid')
-  }
+  // Paleta Ctrl+K: busca pessoas por qualquer um dos nomes e abre o perfil.
+  const provider = useMemo<CommandProvider>(() => ({
+    id: 'komi.people',
+    search: (q) => {
+      const n = norm(q)
+      if (n.length < 2) return []
+      return people
+        .filter((p) => namesOf(p).some((x) => norm(x).includes(n)))
+        .slice(0, 8)
+        .map((p) => ({ id: `person:${p.id}`, label: p.nickname && norm(p.nickname) !== norm(p.name) ? `${p.name} · ${p.nickname}` : p.name, group: 'Pessoas', icon: 'person', run: () => goto({ view: 'people', personId: p.id }) }))
+    },
+  }), [people, goto])
+  useCommandProvider(provider)
 
-  /** Abre o perfil de uma pessoa. */
-  function openPerson(id: string) {
-    setCurrentId(id)
-    setView('person')
-    if (scrollRef.current) scrollRef.current.scrollTop = 0
-  }
+  // Contagens do menu: quantas pessoas há em cada relacionamento (dentro do espaço escolhido).
+  const countBy = (slug: string) => visible.filter((p) => p.category === slug).length || undefined
+  const nav: NavGroup[] = [
+    {
+      label: 'Pessoas',
+      items: [
+        { id: 'home', label: 'Início', icon: 'home', key: 'h' },
+        { id: 'people', label: 'Todas as pessoas', icon: 'people', key: 'p', count: visible.length || undefined },
+        { id: 'dates', label: 'Datas', icon: 'days', key: 'd' },
+        { id: 'stats', label: 'Estatísticas', icon: 'stats', key: 'e' },
+      ],
+    },
+    ...(categories.length
+      ? [{
+          label: 'Relacionamentos',
+          items: categories.map((c) => ({ id: `cat:${c.slug}`, label: c.label, icon: (c.icon || 'person') as 'person', count: countBy(c.slug) })),
+        }]
+      : []),
+  ]
 
-  // ── Callbacks do modal ────────────────────────────────────────────
-
-  /**
-   * Após salvar (criar ou editar), recarrega o overview e navega apropriadamente.
-   * @param id - id da pessoa salva
-   * @param isNew - true = criação (abre o perfil), false = edição (permanece na view)
-   */
-  async function handleSaved(id: string, isNew: boolean) {
-    setModal(null)
-    await reloadOverview()   // atualiza sidebar e dados do home/grid
-    if (isNew) {
-      openPerson(id)          // criação: abre o perfil da nova pessoa
-    }
-    // edição: permanece na view atual (personPage se recarregará com os dados novos)
-  }
-
-  /**
-   * Após excluir (soft delete), recarrega o overview e volta para o diretório.
-   */
-  async function handleDeleted() {
-    setModal(null)
-    await reloadOverview()
-    goGrid()
-  }
-
-  // ── Dados derivados para a sidebar ───────────────────────────────
-
-  // Contagem de datas nos próximos 60 dias (ícone de bolo na sidebar)
-  const upcomingCount = useMemo(() => {
-    let n = 0
-    overview.forEach(p => (p.dates || []).forEach(d => {
-      const days = daysUntil(d.date, d.recurring)
-      if (days >= 0 && days <= 60) n++
-    }))
-    return n
-  }, [overview])
-
-  // Contagem de pessoas por categoria (sidebar Relacionamentos)
-  const catCounts = useMemo(() => {
-    const m: Record<string, number> = {}
-    overview.forEach(p => { m[p.category] = (m[p.category] || 0) + 1 })
-    return m
-  }, [overview])
-
-  // Pessoa atual aberta (para o título da topbar e o modal de edição)
-  const currentPerson = overview.find(p => p.id === currentId)
-
-  // ── Render ────────────────────────────────────────────────────────
+  const SCREENS: Record<ViewId, () => ReactElement> = { home: () => <Home />, people: () => <People />, dates: () => <Dates />, stats: () => <Stats /> }
+  // Pessoa aberta (#pessoa/<id>) fica na URL; senão vale a tela do menu.
+  const body = route.personId ? <PersonDetailScreen id={route.personId} tab={route.tab} /> : SCREENS[route.view]()
+  const active = route.personId ? 'people' : route.view === 'people' && route.category ? `cat:${route.category}` : route.view
 
   return (
-    <div className="km-app">
-
-      {/* ── Sidebar ────────────────────────────────────────────────── */}
-      <aside className="km-side">
-        {/* Marca: logo + nome + subtítulo */}
-        <div className="side-brand">
-          <div className="brand-mark">
-            <img src="/komi.png" alt="Komi" />
-          </div>
-          <div className="brand-text">
-            <div className="brand-name">Komi</div>
-            <div className="brand-role">Pessoas</div>
-          </div>
-        </div>
-
-        {/* Botão de nova pessoa (atalho N) */}
-        <button className="side-add" onClick={() => setModal('new')}>
-          <Icon name="plus" /><span className="grow">Nova pessoa</span><kbd>N</kbd>
-        </button>
-
-        {/* Navegação principal */}
-        <nav className="side-nav">
-          <div className="nav-group-label">Diretório</div>
-
-          {/* Início */}
-          <button
-            className={'nav-item' + (view === 'home' ? ' active' : '')}
-            onClick={() => goView('home')}
-          >
-            <Icon name="sparkles" />
-            <span className="nav-label">Início</span>
-          </button>
-
-          {/* Todas as pessoas */}
-          <button
-            className={'nav-item' + (view === 'grid' ? ' active' : '')}
-            onClick={goGrid}
-          >
-            <Icon name="users" />
-            <span className="nav-label">Todas as pessoas</span>
-            <span className="nav-count">{overview.length}</span>
-          </button>
-
-          {/* Próximas datas */}
-          <button
-            className={'nav-item' + (view === 'dates' ? ' active' : '')}
-            onClick={() => goView('dates')}
-          >
-            <Icon name="cake" />
-            <span className="nav-label">Próximas datas</span>
-            {upcomingCount > 0 && <span className="nav-count">{upcomingCount}</span>}
-          </button>
-
-          <div className="nav-group-label">Relacionamentos</div>
-
-          {/* Uma entrada por categoria: Família / Amigos / Trabalho / Outros */}
-          {Object.entries(REL_CATS).map(([key, meta]) => (
-            <button
-              key={key}
-              className={'nav-item' + (view === 'grid' && filter === key ? ' active' : '')}
-              onClick={() => { setFilter(key); goGrid() }}
-            >
-              {/* Dot colorido com a cor da categoria */}
-              <span className="nav-dot" style={{ background: meta.color }} />
-              <span className="nav-label">{meta.label}</span>
-              {/* Contagem de pessoas nesta categoria */}
-              <span className="nav-count">{catCounts[key] || 0}</span>
-            </button>
-          ))}
-        </nav>
-
-        {/* Rodapé: link para voltar à Makima e botão de tweaks */}
-        <div className="side-foot">
-          <a className="back-makima" href="/">
-            <span className="dot" /><span>Voltar à Makima</span>
-          </a>
-          {/* Botão de configurações (abre TweaksPanel) */}
-          <button
-            className="side-tweaks"
-            onClick={() => setTweaksOpen(true)}
-            title="Aparência"
-          >
-            <Icon name="settings" />
-          </button>
-        </div>
-      </aside>
-
-      {/* ── Main ───────────────────────────────────────────────────── */}
-      <main className="km-main">
-        {/* Topbar: back / título / busca / ações */}
-        <div className="km-topbar">
-          {/* Botão "back" ao ver o perfil; título nas outras views */}
-          {view === 'person' ? (
-            <button className="topbar-back" onClick={goGrid}>
-              <Icon name="chevL" />Diretório
-            </button>
-          ) : (
-            <span className="topbar-title">
-              <span className="t-dot" />
-              {view === 'dates' ? 'Próximas datas' : view === 'home' ? 'Início' : 'Pessoas'}
-            </span>
-          )}
-
-          <span className="topbar-spacer" />
-
-          {/* Campo de busca: aparece só no diretório */}
-          {view === 'grid' && (
-            <div className="km-search">
-              <Icon name="search" />
-              <input
-                value={query}
-                placeholder="Buscar pessoa, apelido, cidade…"
-                onChange={(e) => setQuery(e.target.value)}
+    <KomiContext.Provider value={ctx}>
+      <AppShell
+        agent={{ id: 'komi', name: AGENT.name, subtitle: 'Pessoas · Contatos', portrait: AGENT.portrait }}
+        nav={nav}
+        active={active}
+        onNavigate={(id) => (id.startsWith('cat:') ? goto({ view: 'people', category: id.slice(4) }) : goto(id as ViewId))}
+        mobileTabs={['home', 'people', 'dates']}
+        primary={{ label: 'Nova pessoa', icon: 'add', key: 'n', onClick: () => openPerson() }}
+        title={route.personId ? 'Pessoa' : TITLES[route.view]}
+        subtitle={route.personId ? 'Perfil' : SUBTITLES[route.view]}
+        // Busca do topo: leva para a tela Pessoas já filtrada.
+        search={{ placeholder: 'Buscar pessoa…', onSubmit: (q) => { setTopQuery(q); goto('people') } }}
+        onGoAgent={(to) => navigate(to)}
+        art={{ value: prefs.art, options: ART_OPTIONS, onChange: (art) => setPrefs({ art }) }}
+        artValue={prefs.art}
+        topbarExtra={
+          <SegmentedControl<SpaceFilter>
+            label="Espaço: tudo, pessoal ou trabalho"
+            value={space}
+            options={SPACE_OPTIONS}
+            onChange={(v) => setPrefs({ space: v })}
+          />
+        }
+        commands={[
+          { id: 'komi.contact', label: 'Registrar contato', icon: 'phone', keywords: 'falei conversei encontro ligação mensagem interação', run: () => openContact() },
+          { id: 'komi.new', label: 'Nova pessoa', icon: 'add', keywords: 'cadastrar adicionar contato', run: () => openPerson() },
+          { id: 'komi.dates', label: 'Ver datas', icon: 'days', keywords: 'aniversário lembrete', run: () => goto('dates') },
+          { id: 'komi.space.all', label: 'Mostrar tudo (pessoal e trabalho)', icon: 'apps', keywords: 'espaço filtro', run: () => setPrefs({ space: 'all' }) },
+          { id: 'komi.space.work', label: 'Mostrar só trabalho', icon: 'work', keywords: 'espaço filtro', run: () => setPrefs({ space: 'work' }) },
+          { id: 'komi.space.personal', label: 'Mostrar só pessoal', icon: 'personal', keywords: 'espaço filtro', run: () => setPrefs({ space: 'personal' }) },
+        ]}
+        preferences={
+          <>
+            <SettingRow title="Mostrar pessoas como" help="Vale para a tela Pessoas.">
+              <SegmentedControl
+                label="Layout das pessoas"
+                value={prefs.layout}
+                options={[{ value: 'grid', label: 'Cartões', icon: 'grid' }, { value: 'list', label: 'Lista', icon: 'list' }]}
+                onChange={(layout) => setPrefs({ layout })}
               />
-              {/* Limpa a busca quando há texto */}
-              {query && (
-                <button className="search-clear" onClick={() => setQuery('')}>
-                  <Icon name="x" />
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Botão Editar: aparece no perfil de uma pessoa */}
-          {view === 'person' && currentPerson && (
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={async () => {
-                // Carrega o PersonDetail completo para preencher o modal de edição
-                try {
-                  const data = await komiApi.get(currentPerson.id)
-                  setModal(data.perfil)
-                } catch {
-                  // Fallback: abre modal com dados parciais do overview
-                  setModal({
-                    id: currentPerson.id,
-                    name: currentPerson.name,
-                    normalizado: '',
-                    relationship: currentPerson.relationship,
-                    category: currentPerson.category,
-                    phone: null, email: null, instagram: null,
-                    telegram: null, city: null,
-                    avatar_url: currentPerson.avatar_url,
-                    notes: null,
-                    created_at: '', updated_at: '',
-                    deleted: false,
-                    aliases: [],
-                    datas: [],
-                  })
-                }
-              }}
-            >
-              <Icon name="edit" />Editar
-            </button>
-          )}
-
-          {/* Botão Nova pessoa: sempre visível */}
-          <button className="btn btn-primary btn-sm" onClick={() => setModal('new')}>
-            <Icon name="plus" />Nova
-          </button>
-        </div>
-
-        {/* Área de scroll — cada tela ocupa 100% da área disponível */}
-        <div className="km-scroll" ref={scrollRef}>
-          {/* ── Home ──────────────────────────────────────────────── */}
-          {view === 'home' && (
-            <Home
-              overview={overview}
-              onOpen={openPerson}
-              onNew={() => setModal('new')}
-              goView={(v) => goView(v as KomiView)}
-            />
-          )}
-
-          {/* ── Diretório ─────────────────────────────────────────── */}
-          {view === 'grid' && (
-            <Directory
-              people={overview}
-              query={query}
-              filter={filter}
-              setFilter={setFilter}
-              onOpen={openPerson}
-              onNew={() => setModal('new')}
-            />
-          )}
-
-          {/* ── Próximas datas ────────────────────────────────────── */}
-          {view === 'dates' && (
-            <UpcomingDates people={overview} onOpen={openPerson} />
-          )}
-
-          {/* ── Perfil de pessoa ──────────────────────────────────── */}
-          {view === 'person' && currentId && (
-            <PersonPage
-              personId={currentId}
-              partialName={currentPerson?.name}
-              onEdit={async (id) => {
-                // Carrega PersonDetail completo para o modal de edição
-                try {
-                  const data = await komiApi.get(id)
-                  setModal(data.perfil)
-                } catch {
-                  setModal('new')  // fallback improvável
-                }
-              }}
-            />
-          )}
-
-          {/* Fallback: person view sem ID (não deveria acontecer) */}
-          {view === 'person' && !currentId && (
-            <div className="empty-state">
-              <div className="es-icon"><Icon name="user" /></div>
-              <div className="es-title">Pessoa não encontrada</div>
-              <button
-                className="btn btn-ghost btn-sm"
-                style={{ marginTop: 14 }}
-                onClick={goGrid}
-              >
-                Voltar ao diretório
-              </button>
-            </div>
-          )}
-
-          {/* Spinner de carregamento inicial */}
-          {loading && overview.length === 0 && (
-            <div className="empty-state">
-              <div className="km-spinner" />
-              <div className="es-sub">Carregando pessoas…</div>
-            </div>
-          )}
-        </div>
-      </main>
-
-      {/* ── PersonModal (criar / editar) ───────────────────────────── */}
-      {modal && (
-        <PersonModal
-          // null = criar; PersonDetail = editar
-          person={modal === 'new' ? null : modal as PersonDetail}
-          onClose={() => setModal(null)}
-          onSaved={handleSaved}
-          onDeleted={handleDeleted}
-        />
-      )}
-
-      {/* ── TweaksPanel (aparência) ────────────────────────────────── */}
-      {tweaksOpen && (
-        <TweaksPanel
-          tweaks={tweaks}
-          onChange={(t) => { setTweaksState(t); saveTweaks(t) }}
-          onClose={() => setTweaksOpen(false)}
-        />
-      )}
-    </div>
+            </SettingRow>
+            <SettingRow title="Sugerir reconexão após" help="Dias sem contato para a pessoa aparecer no Início.">
+              <NumberInput
+                aria-label="Dias sem contato para sugerir reconexão"
+                min={7}
+                max={365}
+                value={prefs.reconnectDays}
+                onChange={(e) => { const n = Math.round(Number(e.target.value)); if (n >= 7 && n <= 365) setPrefs({ reconnectDays: n }) }}
+              />
+            </SettingRow>
+            <CategoryEditor categories={categories} onChanged={() => { reloadCategories(); reload() }} />
+          </>
+        }
+      >
+        <ScreenBoundary resetKey={hashFor(route)} onHome={() => goto('home')}>{body}</ScreenBoundary>
+        {dialog?.kind === 'person' && <PersonForm open={dialog.open} onClose={() => setDialog(null)} />}
+        {dialog?.kind === 'contact' && <ContactForm key={`${dialog.draft.personId}-${dialog.draft.typedName}`} initial={dialog.draft} onClose={() => setDialog(null)} />}
+      </AppShell>
+    </KomiContext.Provider>
   )
 }

@@ -42,13 +42,13 @@ Cada agente especialista é um pacote local em `agents/`. Cada um tem seu própr
 | Agente | Domínio | Status | Documentação |
 |---|---|---|---|
 | `agents/nami/` | Finanças (PostgreSQL) | ✅ Fase 1, 040–048, 071 | `agents/nami/CLAUDE.md` |
-| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + GTD/revisão semanal (034/035) + Foco gameficado (037/062) + modo férias (065) | ✅ Fases 2, 011–020, 024–026, 029–030, 034–039, 062, 065 · ✅ 075 (Design System em `/tasks` + espaço Trabalho/Pessoal + agenda; falta a integração Komi `people.context`) | `agents/kaguya/CLAUDE.md` |
+| `agents/kaguya/` | Tarefas + Agenda (PostgreSQL próprio + Calendar via MCP) + Calendar Hub (019) + Meu Dia (016) + Kanban views (024) + Tiny Experiments (029) + Metas (030) + GTD/revisão semanal (034/035) + Foco gameficado (037/062) + modo férias (065) | ✅ Fases 2, 011–020, 024–026, 029–030, 034–039, 062, 065 · ✅ 075 (Design System em `/tasks` + espaço Trabalho/Pessoal + agenda; a integração Komi `people.context` foi resolvida na spec 077) | `agents/kaguya/CLAUDE.md` |
 | `agents/kurisu/` | Knowledge base (Vertex AI RAG — corpus ativo) + memória unificada + Tutor de Idiomas (031) + IA da Violet: Conselho do Dia, revisão semanal e leitura emocional (061/076) | ✅ Fases 027, 031, 061, 076 · 🔧 028 parcial | `agents/kurisu/CLAUDE.md` |
 | `agents/frieren/` | Livros (PostgreSQL + Google Books) + favoritos/coração + estatísticas no padrão do DS (073) | ✅ Fase 5a, 073 | `agents/frieren/CLAUDE.md` |
 | `agents/akane/` | Filmes (PostgreSQL + TMDB + Letterboxd) | ✅ Fase 015, 072 | `agents/akane/CLAUDE.md` |
 | `agents/marin/` | Animes (PostgreSQL + Jikan/AniList + MAL OAuth) + favoritos/coração + estatísticas no padrão do DS (074) | ✅ Fase 021, 074 | `agents/marin/CLAUDE.md` |
 | `agents/mai/` | Séries de TV (PostgreSQL + TMDB API v3) | ✅ Fase 022 | `agents/mai/CLAUDE.md` |
-| `agents/komi/` | Pessoas e contatos (PostgreSQL) | ✅ Fase 014 | `agents/komi/CLAUDE.md` |
+| `agents/komi/` | Pessoas e contatos (PostgreSQL): três nomes, espaço pessoal/trabalho/ambos, aniversário + lembretes (calendário, não tarefa), Memória com backlinks de todos os agentes + resumo por IA, anotações, interações, mesclar, relações e grupos + **contrato de integração** (`integration.py`) para qualquer agente | ✅ Fase 014 · ✅ 077 (webapp no Design System, arte "Caderno de bilhetes") | `agents/komi/CLAUDE.md` |
 | `agents/journal/` | Diário (Violet) — sub-agente ADK completo (`violet_agent`, spec 064) + webapp no Design System (076): @Komi, /referências, fontes, Cartas, Emoções, Refletir, força, Avaliação dos Valores | ✅ Fase 003/006/007, 064, 076 | `agents/journal/CLAUDE.md` |
 | `agents/yato/` | Viagens — roteiro dia a dia + dossiê de mobilidade urbana (protocolo de 7 passos) + matriz economia×conforto + orçamento com lançamento atômico na Nami | ✅ Fase 066 (agente + webapp) | `agents/yato/CLAUDE.md` |
 | `agents/lucy/` | Email (Gmail) — agente somente leitura (IMAP) + digest matinal agendado | ✅ Fase 4 / 032 | `agents/lucy/CLAUDE.md` |
@@ -145,38 +145,50 @@ Makima conhece os fluxos duplos e roteia corretamente:
 
 ---
 
-## Integração cross-agent: Komi — vínculo de pessoas (spec 014)
+## Integração cross-agent: Komi — contrato de integração (specs 014 → 077)
 
-**Komi** gerencia a identidade canônica de pessoas. Qualquer agente pode vincular uma pessoa
-a um item criado, usando `link_person_on_cursor` na **mesma transação** — atomicidade tudo-ou-nada.
+**Komi** é a dona da identidade canônica de pessoas. **Todo** agente (atual ou futuro) se liga a ela pelo
+**contrato único** `agents/komi/integration.py` — nenhum agente faz `INSERT` em `person_links` nem repete a
+regra de resolução. Detalhes e o formato do provedor: `agents/komi/CLAUDE.md` § "Como integrar um agente".
 
-### `link_person_on_cursor(cur, person_id, entity_type, entity_id)`
+### Integrar um agente novo (3 passos)
 
-Import lazy (dentro da função) para evitar ciclos:
+1. **Gravar o vínculo** na mesma transação do item (import lazy — evita ciclo; atômico, tudo-ou-nada):
+   ```python
+   from agents.komi.integration import link_people, sync_people
+   link_people(cur, "meu_tipo", item_id, person_ids)   # ao criar (acrescenta)
+   sync_people(cur, "meu_tipo", item_id, person_ids)   # ao editar (substitui o conjunto)
+   ```
+   `entity_type` é livre (minúsculas/números/`_`); o banco só valida o formato. Idempotente; `entity_id` vira `str`.
+2. **Criar `agents/<agente>/komi_provider.py`** com `LINK_TYPES = [{entity_type, agent, label, icon, resolve, …}]` —
+   a Komi descobre o arquivo sozinha.
+3. **Pronto**: os itens do agente aparecem na **Memória** da pessoa (filtro por agente, briefing, "há quanto tempo"),
+   sem mexer na Komi nem na tela dela. Provedor com erro nunca derruba o perfil.
 
-```python
-from agents.komi.tools import link_person_on_cursor  # lazy — evita ciclo
-```
-
-Idempotente: `INSERT … ON CONFLICT (person_id, entity_type, entity_id) DO NOTHING`.
-`entity_id` é sempre coercido para `str` (UUIDs e SERIALs ficam como TEXT na tabela).
-
-### Agentes com suporte a `person_ids`
+### Agentes já integrados
 
 | Agente | Função | entity_type |
 |---|---|---|
 | Nami | `create_transaction` / `create_transaction_on_cursor` | `"transaction"` |
-| Kaguya | `create_task` | `"task"` |
+| Kaguya | `create_task` (+ "aguardando" via `waiting_person_id`) | `"task"` |
 | Frieren | `add_book` | `"book"` |
-| Violet | `upsert_bullet` | `"journal_bullet"` (+ auto-link @menções único) |
-| Violet | `create_letter` / `update_letter` | `"journal_letter"` (cartas da Violet) |
+| Violet | `upsert_bullet` (sincroniza os tokens `@[Nome](komi:id)`) | `"journal_bullet"` |
+| Violet | `create_letter` / `update_letter` | `"journal_letter"` |
+| Akane | sessões do diário (acompanhantes) | `"movie_diary_entry"` |
 
-### Regra de smart-match antes de vincular
+### Regra de resolução (0/1/2+) antes de vincular
 
-Antes de passar `person_ids`, o agente deve chamar `find_people(query)`:
+Antes de passar `person_ids`, o agente chama `resolve_person(texto)` (ou `find_people(query)`): o **Nome**, o
+**Apelido**, o **Nome completo** e as "outras formas" resolvem a mesma pessoa.
 - 0 matches → oferecer cadastro (`create_person`)
 - 1 match → usar diretamente; confirmar: "encontrei [Nome]"
-- 2+ matches → pedir disambiguação; NUNCA vincular sem confirmação
+- 2+ matches → pedir desambiguação; NUNCA vincular sem confirmação
+
+### Aniversários e espaço (Komi ↔ Kaguya)
+
+O aniversário é **campo de toda pessoa** (não é mais tarefa): aparece no calendário da Kaguya como evento da
+fonte `komi`, com lembrete, e no digest matinal. `people.context` (`personal`/`work`/`both`) é o que a Kaguya
+usa para separar pessoas de Trabalho e Pessoal (`agents/kaguya/people_space.py` → `people_for_space`).
 
 ---
 
@@ -225,14 +237,14 @@ makima_personal_agent/
 │   │   ├── tools_templates.py  # duplicar e templates de tarefa/lista — spec 075
 │   │   ├── tools_stats.py      # StatsPayload + planejamento (webapp) — spec 075
 │   │   ├── planning_stats.py   # motor PURO dos achados de planejamento — spec 075
-│   │   ├── people_space.py     # contrato com a Komi: pessoas de trabalho (people.context) — spec 075
+│   │   ├── people_space.py     # pessoas por espaço Trabalho/Pessoal: fachada de integration.people_for_space — spec 075/077
 │   │   ├── experiment_adherence.py # motor PURO de aderência dos experimentos — spec 029
 │   │   ├── goal_progress.py    # motor PURO de progresso das metas — spec 030
 │   │   ├── tools_focus.py      # sessões de foco (start/finish/cancel/stats/heatmap/achievements) — spec 037 + 062
 │   │   ├── focus_stats.py      # motor PURO de estatísticas de foco (dia/hora/desfecho/streak/ranking) — spec 037 + 062
 │   │   ├── focus_achievements.py # motor PURO: catálogo fixo de conquistas de foco — spec 062
 │   │   ├── focus_habit_provider.py # fonte automática "Foco (Kaguya)" p/ habit_source_providers — spec 062
-│   │   ├── komi_sync.py        # sync bidirecional de aniversários com a Komi — spec 026
+│   │   ├── birthdays.py        # ponte: create_task(type=birthday) grava o aniversário na Komi, NÃO cria tarefa — spec 077
 │   │   ├── gcal.py             # cliente Google Calendar (read all / write main) — fatia 019
 │   │   ├── gcal_sync.py        # espelho best-effort de tarefas → GCal "Kaguya — Tarefas" — fatia 019
 │   │   ├── gcal_mirror.py      # espelho best-effort: Calendar Hub → 7 calendários Google dedicados (id determinístico + diff) — spec 069
@@ -263,12 +275,23 @@ makima_personal_agent/
 │   │   ├── agent.py     # frieren_agent
 │   │   ├── schema_pg.sql # schema das tabelas PostgreSQL
 │   │   └── CLAUDE.md    # tools, schema PostgreSQL, menu interativo, personalidade
-│   ├── komi/            # agente de pessoas e contatos — Fase 014 ✅
+│   ├── komi/            # agente de pessoas e contatos — Fase 014 ✅ + 077 (webapp no DS)
 │   │   ├── __init__.py
-│   │   ├── tools.py     # PostgreSQL (people, aliases, dates, links) + smart-match + hub
-│   │   ├── agent.py     # komi_agent — singleton
-│   │   ├── schema_pg.sql # schema das 4 tabelas PostgreSQL
-│   │   └── CLAUDE.md    # tools, schema, cross-agent, personalidade
+│   │   ├── tools.py          # PostgreSQL (people, aliases, dates, links) + nomes + aniversário + busca/smart-match + hub
+│   │   ├── integration.py    # CONTRATO para qualquer agente: link_people/sync_people, resolve_person, menções, Memória, mesclagem — spec 077
+│   │   ├── naming.py         # motor PURO: norm, espaço, validação de aniversário, idade, próximo aniversário, today_sp — spec 077
+│   │   ├── schema.py         # ensure_schema(): schema idempotente sob demanda (lock consultivo) — spec 077
+│   │   ├── rows.py           # valor(): leitura de linha agnóstica ao tipo de cursor — spec 077
+│   │   ├── tools_notes.py / tools_interactions.py / tools_categories.py / tools_relations.py  # anotações (IA sugere), contatos, relacionamentos configuráveis, relações/grupos — spec 077
+│   │   ├── tools_merge.py + duplicates.py  # mesclar (prévia, sem desfazer) e sugestão de duplicatas — spec 077
+│   │   ├── briefing.py       # "antes de falar com ela" — blocos isolados — spec 077
+│   │   ├── summaries.py      # cache do resumo de IA (person_memory_summaries) — spec 077
+│   │   ├── tools_stats.py    # StatsPayload do DS (contatos, sem contato, aniversários, menções cruzadas) — spec 077
+│   │   ├── calendar_provider.py # fonte "komi" do Calendar Hub: aniversários e datas COMO EVENTO, com lembrete — spec 069/077
+│   │   ├── toolset.py        # TOOLS (34) — reaproveitado por mcp_servers/makima
+│   │   ├── agent.py          # komi_agent — singleton
+│   │   ├── schema_pg.sql     # schema das 13 tabelas PostgreSQL
+│   │   └── CLAUDE.md         # tools, schema, contrato de integração (3 passos), aniversários, personalidade
 │   ├── akane/           # agente de filmes — Fase 015 ✅
 │   │   ├── __init__.py
 │   │   ├── tools.py     # PostgreSQL + TMDB + sync Letterboxd (RSS/CSV)
@@ -342,6 +365,7 @@ makima_personal_agent/
 │   ├── skills/
 │   │   ├── nami-financas/SKILL.md
 │   │   ├── kaguya-tarefas/SKILL.md
+│   │   ├── komi-pessoas/SKILL.md
 │   │   └── yato-viagens/SKILL.md
 │   └── CLAUDE.md          # como ativar com segurança (app Dokploy separada, cutover do Telegram)
 ├── scheduler/           # agendador de jobs recorrentes (container makima-scheduler) — APScheduler
@@ -371,13 +395,14 @@ makima_personal_agent/
 │   ├── backfill_violet_distortions.py # classifica distorções dos registros emocionais antigos (dry-run) — spec 076
 │   ├── seed_mobility_apps.py  # semeia agents/yato/mobility_apps a partir do research.md — spec 066
 │   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)
+│   ├── migrate_komi_ds.py     # espaço, apelido, aniversário (tarefas birthday → lixeira) e notas das pessoas — spec 077 (dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS)
 │   ├── migrate_marin_ds.py    # coração, data de abandono e vitrine de favoritos dos animes — spec 074 (dry-run por padrão, --apply grava; já aplicada no VPS em 08/out)
 │   ├── migrate_nami_signed_transfers.py # transferências com sinal + pagamento de fatura como transferência — spec 071 (dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS)
 │   └── .gitignore             # exclui client_secret.json do git
 ├── docs/                    # organizada por tipo — ver docs/README.md (mapa completo)
 │   ├── README.md            # índice: o que é vivo, o que é plano, o que é histórico
-│   ├── referencia/          # docs VIVAS: POSTGRES.md (54 tabelas), BACKUP_POSTGRES.md, KURISU_BASE_CONHECIMENTO.md (leiga)
-│   ├── planos/              # planos FUTUROS: PLANO_VIOLET_EVERGARDEN.md, PLANO_INTEGRACAO_VIOLET_KOMI.md
+│   ├── referencia/          # docs VIVAS: POSTGRES.md (63 tabelas), BACKUP_POSTGRES.md, KURISU_BASE_CONHECIMENTO.md (leiga)
+│   ├── planos/              # planos FUTUROS: PLANO_VIOLET_EVERGARDEN.md, PLANO_KAGUYA_MELHORIAS_2026H2.md…
 │   ├── arquivo/             # HISTÓRICO: PLAN.md original, MIGRACAO_POSTGRES.md, persistencia-sessao, setup-hook, superpowers/
 │   └── claude_design/       # design handoffs (HTML/CSS de referência) dos shells
 ├── requirements.txt

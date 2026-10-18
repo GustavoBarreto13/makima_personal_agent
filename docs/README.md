@@ -16,7 +16,7 @@ o que é intenção futura e o que é só registro do passado:
 
 ## Referência viva
 
-- [`referencia/POSTGRES.md`](referencia/POSTGRES.md) — o banco inteiro: 8 domínios, 54 tabelas coluna a coluna, padrões e pegadinhas
+- [`referencia/POSTGRES.md`](referencia/POSTGRES.md) — o banco inteiro: 8 domínios, 63 tabelas coluna a coluna, padrões e pegadinhas
 - [`referencia/BACKUP_POSTGRES.md`](referencia/BACKUP_POSTGRES.md) — como o backup diário funciona, como verificar e restaurar
 - [`referencia/KURISU_BASE_CONHECIMENTO.md`](referencia/KURISU_BASE_CONHECIMENTO.md) — explicação **em linguagem leiga** da base de conhecimento (RAG) da Kurisu
 - [`../webapp/docs/DESIGN_SYSTEM.md`](../webapp/docs/DESIGN_SYSTEM.md) — Design System do frontend (tokens, componentes, padrões de coleção/captura/estatísticas, governança) e [`DESIGN_CONFORMANCE.md`](../webapp/docs/DESIGN_CONFORMANCE.md) (status de adoção por página, gerado)
@@ -24,13 +24,13 @@ o que é intenção futura e o que é só registro do passado:
 ## Planos futuros
 
 - [`planos/PLANO_VIOLET_EVERGARDEN.md`](planos/PLANO_VIOLET_EVERGARDEN.md) — personalidade Violet + rename `agents/journal → agents/violet`
-- [`planos/PLANO_INTEGRACAO_VIOLET_KOMI.md`](planos/PLANO_INTEGRACAO_VIOLET_KOMI.md) — autocomplete `@menção` no diário usando a Komi
 - [`planos/PLANO_KAGUYA_MELHORIAS_2026H2.md`](planos/PLANO_KAGUYA_MELHORIAS_2026H2.md) — roadmap das 6 melhorias da Kaguya (specs 034–039: GTD core, weekly review, vínculos cross-agent, pomodoro, work/pessoal no Meu Dia, QoL)
 - [`planos/PLANO_NAMI_REFORMA_2026H2.md`](planos/PLANO_NAMI_REFORMA_2026H2.md) — reforma completa do webapp de finanças (specs 040–048: bugs/timezone, parcelamentos com drill-down, dashboard insights, QoL, contas fixas, lista de compras, unificação de dívidas, cross-agent, jobs do scheduler)
 - [`planos/PLANO_ANKI_KAGUYA.md`](planos/PLANO_ANKI_KAGUYA.md) — hábito automatizado de flashcards (spec 068): Anki Sync Server no VPS + espelho do revlog no Postgres + provider `habit_source_providers` + tela de estatísticas na Kaguya
 
 ## Arquivo (histórico)
 
+- [`arquivo/PLANO_INTEGRACAO_VIOLET_KOMI.md`](arquivo/PLANO_INTEGRACAO_VIOLET_KOMI.md) — autocomplete `@menção` no diário usando a Komi (✅ implementado nas specs 076/077)
 - [`arquivo/PLAN.md`](arquivo/PLAN.md) — design original do projeto (congelado ~jun/2026); o roadmap atual é o [`ROADMAP.md`](../ROADMAP.md) na raiz
 - [`arquivo/MIGRACAO_POSTGRES.md`](arquivo/MIGRACAO_POSTGRES.md) — checklist da migração BigQuery → PostgreSQL (concluída em 2026-06-28)
 - [`arquivo/persistencia-sessao-postgres.md`](arquivo/persistencia-sessao-postgres.md) — plano da persistência de sessões ADK (já implementado)

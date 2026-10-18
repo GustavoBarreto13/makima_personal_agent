@@ -1,0 +1,117 @@
+/* Estilo de arte "Caderno de bilhetes" (Komi): a Komi conversa por bilhetes escritos à mão.
+ * No claro: o fundo é papel QUADRICULADO lilás (o acento da Komi, bem diluído) e os cartões são bilhetes
+ * cremes — o papel do tema com um véu do dourado das estrelas —, com sombra curta de papel sobre a mesa.
+ * Títulos em letra de mão (Caveat). No escuro: caderno à luz de abajur — papel roxo-noite com a quadrícula
+ * quase apagada e os bilhetes um pouco mais claros que o fundo, com um fio de ouro.
+ *
+ * REGRA: um estilo de arte muda só o VISUAL. Só custom properties --ds-* visuais; nada de layout nem cor
+ * literal (o lint:design rejeita). Cores vêm de misturas de tokens existentes (paper, card, ink-1, line,
+ * accent, star, white), então acompanham o tema claro/escuro sozinhas.
+ *
+ * ARMADILHA: custom property não pode citar a si mesma no mesmo elemento — as misturas de superfície
+ * partem de --ds-art-bilhetes-paper/-card (o paper/card ORIGINAIS do tema, guardados no :root).
+ *
+ * CONTRASTE: calculado em specs/077-komi-ds/contrast-bilhetes.mjs (WCAG, mistura em oklab como o
+ * color-mix do navegador). Se mexer em qualquer percentual, rode o script de novo. */
+
+:root {
+  --ds-art-bilhetes-paper: var(--ds-paper);
+  --ds-art-bilhetes-card: var(--ds-card);
+}
+
+.ds-app[data-ds-art="bilhetes"] {
+  /* superfícies: página lilás-quadriculada; cartões e painéis são bilhetes cremes */
+  --ds-paper-2: color-mix(in oklab, var(--ds-art-bilhetes-paper), var(--ds-accent) 5%);
+  --ds-mist: color-mix(in oklab, var(--ds-art-bilhetes-paper), var(--ds-accent) 9%);
+  --ds-card: color-mix(in oklab, var(--ds-art-bilhetes-card), var(--ds-star) 3%);
+  --ds-card-2: color-mix(in oklab, var(--ds-art-bilhetes-card), var(--ds-star) 8%);
+
+  /* tinta: a escala secundária fica mais perto de ink-1, legível sobre o creme */
+  --ds-ink-2: color-mix(in oklab, var(--ds-ink-1) 86%, var(--ds-art-bilhetes-paper));
+  --ds-ink-3: color-mix(in oklab, var(--ds-ink-1) 76%, var(--ds-art-bilhetes-paper));
+  --ds-ink-4: color-mix(in oklab, var(--ds-ink-1) 68%, var(--ds-art-bilhetes-paper));
+
+  /* linhas: a linha do tema puxada para o acento, como o traço do lápis na quadrícula */
+  --ds-line-2: color-mix(in oklab, var(--ds-line), var(--ds-accent) 8%);
+
+  /* ambiente: luz lilás no canto, um fio de ouro do outro lado e o papel embaixo */
+  --ds-ambient:
+    radial-gradient(60% 50% at 4% -10%, var(--ds-accent-tint), transparent 62%),
+    radial-gradient(50% 40% at 100% 0%, color-mix(in oklab, var(--ds-star) 10%, transparent), transparent 60%),
+    linear-gradient(var(--ds-paper-2), var(--ds-paper));
+
+  /* caderno quadriculado: quadrados de 24px, traço fino do acento */
+  --ds-texture:
+    repeating-linear-gradient(0deg, transparent 0 23px, color-mix(in oklab, var(--ds-accent) 8%, transparent) 23px 24px),
+    repeating-linear-gradient(90deg, transparent 0 23px, color-mix(in oklab, var(--ds-accent) 8%, transparent) 23px 24px);
+
+  /* material: papel (sem vidro), borda fina com um toque de ouro e sombra curta de bilhete sobre a mesa */
+  --ds-blur: 0px;
+  --ds-blur-soft: 0px;
+  --ds-glass-bg: color-mix(in oklab, var(--ds-card) 97%, transparent);
+  --ds-glass-border: color-mix(in oklab, var(--ds-line), var(--ds-star) 20%);
+  --ds-glass-hi: color-mix(in oklab, var(--ds-white) 60%, transparent);
+  --ds-glass-shadow: 0 1px 2px color-mix(in oklab, var(--ds-ink-1) 7%, transparent), 0 8px 18px -12px color-mix(in oklab, var(--ds-accent-deep) 32%, transparent);
+
+  /* cantos de bilhete: menos redondos que o padrão */
+  --ds-r-xs: 5px;
+  --ds-r-sm: 8px;
+  --ds-r-md: 11px;
+  --ds-r-lg: 16px;
+
+  /* hero: um bilhete grande — creme com o brilho lilás atrás do retrato */
+  --ds-hero-bg:
+    radial-gradient(110% 120% at 88% 12%, var(--ds-accent-tint-2), transparent 56%),
+    linear-gradient(165deg, color-mix(in oklab, var(--ds-card), var(--ds-star) 8%), var(--ds-card) 72%);
+  --ds-hero-veil: transparent;
+  --ds-hero-fg: var(--ds-ink-1);
+  --ds-hero-eyebrow: var(--ds-accent-deep);
+  --ds-hero-border: color-mix(in oklab, var(--ds-accent) 16%, var(--ds-line));
+  --ds-hero-halo: radial-gradient(circle, var(--ds-accent-tint-2), color-mix(in oklab, var(--ds-star) 16%, transparent) 46%, transparent 70%);
+  --ds-hero-btn-bg: var(--ds-accent);
+  --ds-hero-btn-fg: var(--ds-on-accent);
+  --ds-hero-ghost-bg: var(--ds-card);
+  --ds-hero-ghost-fg: var(--ds-ink-1);
+  --ds-hero-ghost-border: var(--ds-line);
+  --ds-hero-font: var(--ds-font-hand);
+  --ds-hero-weight: 700;
+
+  /* letra de mão nos títulos (nome da pessoa, mês, cabeçalhos de bilhete) */
+  --ds-font-title: var(--ds-font-hand);
+}
+
+/* caderno à luz de abajur: no escuro o "branco" do brilho vira a própria tinta do tema em pouca quantidade
+ * (uma mancha clara atrás de texto claro derrubaria o contraste) e a quadrícula quase se apaga. */
+:root[data-ds-theme="dark"] .ds-app[data-ds-art="bilhetes"] {
+  --ds-ambient:
+    radial-gradient(60% 50% at 4% -10%, var(--ds-accent-tint), transparent 62%),
+    radial-gradient(50% 40% at 100% 0%, color-mix(in oklab, var(--ds-star) 7%, transparent), transparent 60%),
+    linear-gradient(var(--ds-paper-2), var(--ds-paper));
+  --ds-texture:
+    repeating-linear-gradient(0deg, transparent 0 23px, color-mix(in oklab, var(--ds-accent) 6%, transparent) 23px 24px),
+    repeating-linear-gradient(90deg, transparent 0 23px, color-mix(in oklab, var(--ds-accent) 6%, transparent) 23px 24px);
+  --ds-glass-hi: color-mix(in oklab, var(--ds-ink-1) 7%, transparent);
+  --ds-glass-shadow: 0 1px 0 color-mix(in oklab, var(--ds-ink-1) 5%, transparent) inset, 0 14px 28px -16px color-mix(in oklab, var(--ds-paper) 80%, transparent);
+  --ds-hero-bg:
+    radial-gradient(110% 120% at 88% 12%, var(--ds-accent-tint), transparent 56%),
+    linear-gradient(165deg, color-mix(in oklab, var(--ds-card), var(--ds-star) 5%), var(--ds-card) 72%);
+  --ds-hero-halo: radial-gradient(circle, var(--ds-accent-tint-2), color-mix(in oklab, var(--ds-ink-1) 8%, transparent) 46%, transparent 70%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ds-theme="light"]) .ds-app[data-ds-art="bilhetes"] {
+    --ds-ambient:
+      radial-gradient(60% 50% at 4% -10%, var(--ds-accent-tint), transparent 62%),
+      radial-gradient(50% 40% at 100% 0%, color-mix(in oklab, var(--ds-star) 7%, transparent), transparent 60%),
+      linear-gradient(var(--ds-paper-2), var(--ds-paper));
+    --ds-texture:
+      repeating-linear-gradient(0deg, transparent 0 23px, color-mix(in oklab, var(--ds-accent) 6%, transparent) 23px 24px),
+      repeating-linear-gradient(90deg, transparent 0 23px, color-mix(in oklab, var(--ds-accent) 6%, transparent) 23px 24px);
+    --ds-glass-hi: color-mix(in oklab, var(--ds-ink-1) 7%, transparent);
+    --ds-glass-shadow: 0 1px 0 color-mix(in oklab, var(--ds-ink-1) 5%, transparent) inset, 0 14px 28px -16px color-mix(in oklab, var(--ds-paper) 80%, transparent);
+    --ds-hero-bg:
+      radial-gradient(110% 120% at 88% 12%, var(--ds-accent-tint), transparent 56%),
+      linear-gradient(165deg, color-mix(in oklab, var(--ds-card), var(--ds-star) 5%), var(--ds-card) 72%);
+    --ds-hero-halo: radial-gradient(circle, var(--ds-accent-tint-2), color-mix(in oklab, var(--ds-ink-1) 8%, transparent) 46%, transparent 70%);
+  }
+}

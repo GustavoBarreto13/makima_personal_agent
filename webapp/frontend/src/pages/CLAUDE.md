@@ -15,7 +15,7 @@ Dez Shells ativos (desenvolvimento contínuo) + páginas legado na raiz.
 | `akane/` | `AkaneShell.tsx` (sobre o `AppShell` do DS) | `akaneApi` em `akane/akaneApi.ts` | `akane.css` (só complementos do DS, tokens `--ds-*`) | `/movies/*` |
 | `marin/` | `MarinShell.tsx` (sobre o `AppShell` do DS, spec 074) | `marinApi` em `marin/marinApi.ts` | `marin.css` (só complementos `.mr-*` do DS) | `/animes/*` |
 | `mai/` | `MaiShell.tsx` | `maiApi` em `mai/maiApi.ts` | `mai.css` | `/series/*` |
-| `komi/` | `KomiShell.tsx` | `komiApi` em `komi/komiApi.ts` | `komi.css` | `/people/*` |
+| `komi/` | `KomiShell.tsx` (sobre o `AppShell` do DS, spec 077) | `komiApi` em `komi/komiApi.ts` | `komi.css` (só complementos `.km-*` do DS) | `/people/*` |
 | `yato/` | `YatoShell.tsx` | `yatoApi` em `yato/yatoApi.ts` | `yato.css` | `/travel/*` |
 | `makima/` | `MakimaShell.tsx` | `makimaApi` em `makima/makimaApi.ts` | `makima.css` | `/` (exata, tela cheia) |
 | raiz (`pages/*.tsx`) | — (layout global) | `api.*` de `lib/api.ts` | global CSS | `/transactions`, `/accounts`, etc. (legado) |
@@ -32,7 +32,7 @@ Nunca misturar: código de Shell não chama componentes do `Layout`; páginas da
 
 ### CSS: isolamento por domínio
 
-Cada Shell tem seu próprio arquivo CSS com tokens OKLCH (`--garnet`, `--sapphire`, etc.) declarados dentro de um seletor de escopo — a classe raiz do Shell (`.vl-app`, `.nami-app`, ``.akane-shell`, `.marin-shell`, `.mai-shell`, `.km-app`, `.yato-shell`, `.mkA`). Tokens de um domínio **não são visíveis** no outro.
+Cada Shell tem seu próprio arquivo CSS com tokens OKLCH (`--garnet`, `--sapphire`, etc.) declarados dentro de um seletor de escopo — a classe raiz do Shell (`.vl-app`, `.nami-app`, ``.akane-shell`, `.marin-shell`, `.mai-shell`, `.yato-shell`, `.mkA`). Tokens de um domínio **não são visíveis** no outro.
 
 > **Atenção (vazamento conhecido):** `mai.css` tem classes genéricas (`.hero`, `.page`) que vazam entre
 > shells no bundle único do Vite (o da Violet acabou com a migração para o DS, spec 076).

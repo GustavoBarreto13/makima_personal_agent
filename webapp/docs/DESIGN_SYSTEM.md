@@ -220,7 +220,7 @@ Encontrados na auditoria que originou o padrão:
   anual no `StatsPage`).
 - **Hub**: livros contados por `updated_at` e `CURRENT_DATE` (`hub.py:237`); "episódios" são
   sessões (`:392`); `date.today()` em `:159,:299`.
-- **Sem tela de stats:** Komi, Yato, tarefas da Kaguya (só foco).
+- **Sem tela de stats:** Yato, tarefas da Kaguya (só foco). *(A Komi ganhou a sua na spec 077.)*
 
 ## Movimento
 
@@ -274,7 +274,9 @@ claro com o herói claro também no escuro; pior contraste 6,0:1, calculado em `
 de arte por agente: Nami = `nautica`; Akane = `noir`; Frieren = `elfica`; Marin = `neon`; Kaguya = `shuchiin`; os demais _ainda não escolhida_
 (`null`; `makima` e `design` usam `default`). `papel` (**Violet** — "Papel de carta": papel marfim pautado com margem de carta,
 tinta azul-ardósia, serifa nos títulos, brilho safira e fio de ouro; pior contraste 4,9:1, calculado em
-`specs/076-violet-ds/contrast-papel.mjs`). Direção de arte da Violet = `papel`.
+`specs/076-violet-ds/contrast-papel.mjs`). Direção de arte da Violet = `papel`. `bilhetes` (**Komi** — "Caderno de bilhetes": papel
+quadriculado de 24 px, títulos em letra de mão (`--ds-font-title` = Caveat, já carregada), cantos pequenos de bilhete e uma "fita" nos
+cartões; sem desfoque; pior contraste 4,9:1, calculado em `specs/077-komi-ds/contrast-bilhetes.mjs`). Direção de arte da Komi = `bilhetes`.
 
 **Ganchos que a arte e as páginas podem usar (retrocompatíveis; sem eles nada muda):**
 
@@ -356,7 +358,7 @@ imediato. Para ativar, use a skill `update-config`.
 6. Listas → `useCollection`; criação → `QuickCapture`; stats → `StatsPage`; detalhe → `DetailPage`.
 7. Apagar o CSS e os componentes mortos; marcar `migrating` e, ao concluir, `conformant`.
 
-Ordem sugerida (do menor para o maior): Komi → Yato → Mai (ganha o "Voltar à Makima" que não tinha)
+Ordem sugerida (do menor para o maior): ~~Komi~~ (feito, spec 077) → Yato → Mai (ganha o "Voltar à Makima" que não tinha)
 → ~~Frieren~~ (feito, spec 073) → ~~Akane~~ (feito, spec 072) → ~~Violet~~ (feito, spec 076) → ~~Marin~~ (feito, spec 074) → Nami → Kaguya. O Hub da Makima só adota tokens, tema e
 ícones (não tem sidebar).
 

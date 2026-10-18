@@ -14,7 +14,7 @@ import {
   Ban, Building2, MonitorPlay, RadioTower,
   Archive, ArchiveRestore, BedDouble, Bold, Briefcase, CalendarClock, ClipboardCheck, Code, Coffee, Columns3, Files, Folder, FolderOpen, GitBranch,
   GripVertical, Heading2, Hourglass, Italic, Lightbulb, ListOrdered, ListTodo, ListTree, Lock, LockOpen, Notebook, PanelRight, Pin, Quote, Sunset,
-  Table, TreePine, AlarmClock, History, CloudMoon, Compass, Dices, Gem, Stamp, Type, type LucideIcon,
+  Table, TreePine, AlarmClock, History, CloudMoon, Compass, Dices, Gem, Stamp, Type, Cake, GitMerge, Video, type LucideIcon,
 } from 'lucide-react'
 
 export const ICONS = {
@@ -60,6 +60,8 @@ export const ICONS = {
   workout: Dumbbell, run: Route, hiit: Flame, mobility: Leaf, steps: Footprints, heart: Heart, pulse: HeartPulse, energy: Zap, star: Star,
   // diário (Violet, spec 076): tipos de bullet, fonte, cartas, valores e o dado do Memory lane
   idea: Lightbulb, wisdom: Gem, dream: CloudMoon, font: Type, seal: Stamp, values: Compass, dice: Dices,
+  // pessoas (Komi, spec 077): aniversário, chamada de vídeo e mesclar duas pessoas; `gift`, `phone`, `people`, `heart` e `work` já existem acima
+  cake: Cake, video: Video, merge: GitMerge,
 } as const satisfies Record<string, LucideIcon>
 
 export type IconName = keyof typeof ICONS

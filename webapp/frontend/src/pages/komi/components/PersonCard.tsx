@@ -1,85 +1,57 @@
-// PersonCard.tsx — Card de pessoa no grid do diretório da Komi.
-// Exibe avatar, nome, relacionamento, categoria, aniversário e datas.
-// Recebe OverviewPerson (do endpoint /overview) que já tem as datas cadastradas.
+// Cartão e linha de pessoa (tela Pessoas, resultados e listas). O cartão tem cara de bilhete: foto, Nome em letra
+// de mão, Apelido · Nome completo embaixo, relacionamento, espaço e o último contato.
 
-import { Icon } from '../icons'
-import { Avatar } from '../icons'
-import { REL_CATS, fmtDayMonth, daysUntil } from '../lib'
-import type { OverviewPerson } from '../types'
+import { Avatar, Icon, Tag } from '../../../design'
+import { useKomi } from '../context'
+import { daysSince, sinceLabel } from '../lib/dates'
+import { SPACE } from '../lib/kinds'
+import { nameDetail } from '../lib/people'
+import type { PersonRow } from '../types'
 
-interface PersonCardProps {
-  p: OverviewPerson   // dados da pessoa vindos do overview (tem dates para aniversário)
-  onOpen: (id: string) => void  // callback ao clicar no card
+/** Relacionamento mostrado ao lado do nome: o rótulo da lista configurável ou o texto livre ("mãe"). */
+function useRelationLabel(p: PersonRow): string {
+  const { categories } = useKomi()
+  return p.relationship || categories.find((c) => c.slug === p.category)?.label || ''
 }
 
-/**
- * Card de pessoa no diretório (grid).
- * Clique abre o perfil completo (PersonPage) via onOpen(id).
- * A cor do dot de categoria vem de REL_CATS via variável CSS --rel-color.
- */
-export function PersonCard({ p, onOpen }: PersonCardProps) {
-  // Metadados da categoria: cor e tint para o dot colorido
-  const cat = REL_CATS[p.category] || REL_CATS.outros
+function ContactLine({ p }: { p: PersonRow }) {
+  const { today } = useKomi()
+  const days = daysSince(p.last_interaction?.date, today)
+  return <span className="km-contact"><Icon name="history" size={12} /> {days === null ? 'sem contato registrado' : `contato ${sinceLabel(days)}`}</span>
+}
 
-  // Busca o aniversário nas datas (label contém "anivers", sem distinção de case)
-  // O overview já traz todas as datas cadastradas para a pessoa
-  const bday = (p.dates || []).find(d => /anivers/i.test(d.label))
-
-  // Indica se há saldo financeiro pendente (te devem ou você deve)
-  const hasFinance = p.finance_net !== 0
-
-  // Variável CSS da cor da categoria — usada pelo .pc-rel .rd (dot colorido)
-  const style = { '--rel-color': cat.color } as React.CSSProperties
-
+export function PersonCard({ person, onOpen }: { person: PersonRow; onOpen: () => void }) {
+  const relation = useRelationLabel(person)
+  const detail = nameDetail(person)
   return (
-    // Clique no card inteiro abre o perfil
-    <div className="ppl-card" style={style} onClick={() => onOpen(p.id)}>
-      {/* Linha superior: avatar + nome + relacionamento com dot de categoria */}
-      <div className="pc-top">
-        <Avatar person={p} size={48} />
-        <div style={{ minWidth: 0 }}>
-          <div className="pc-name">{p.name}</div>
-          {/* .rd é o dot colorido — a cor vem da variável CSS --rel-color */}
-          <div className="pc-rel"><span className="rd" />{p.relationship}</div>
-        </div>
-      </div>
-
-      {/* Meta: aniversário (se cadastrado) */}
-      {bday && (
-        <div className="pc-meta">
-          <span className="pc-birth">
-            <Icon name="cake" />{fmtDayMonth(bday.date)}
-          </span>
-          {/* Alerta de data chegando (< 30 dias) */}
-          {(() => {
-            const days = daysUntil(bday.date, bday.recurring)
-            return days >= 0 && days <= 30
-              ? <span style={{ color: 'var(--ink-4)', fontSize: 10 }}>· em {days}d</span>
-              : null
-          })()}
-        </div>
-      )}
-
-      {/* Indicadores de vínculos */}
-      <div className="pc-links">
-        {/* Indicador financeiro: verde se tem saldo, muted se não */}
-        <span className={'pc-linkdot fin' + (hasFinance ? '' : ' muted')} title="Finanças">
-          <Icon name="wallet" />
-          {hasFinance ? '1' : '0'}
+    <button type="button" className="ds-card km-card" onClick={onOpen} aria-label={`Abrir ${person.name}`}>
+      <span className="km-tape" aria-hidden="true" />
+      <Avatar name={person.name} src={person.avatar_url} size={56} />
+      <span className="km-card-body">
+        <b className="km-name">{person.name}</b>
+        {detail && <span className="km-detail">{detail}</span>}
+        <span className="km-tags">
+          {relation && <Tag>{relation}</Tag>}
+          {person.context !== 'personal' && <Tag pr>{SPACE[person.context].label}</Tag>}
         </span>
-        {/* Tarefas, diário e livros: overview não tem contagem individual
-            (esses dados só vêm do summary(), carregado no PersonPage) */}
-        <span className="pc-linkdot task muted" title="Tarefas"><Icon name="checks" />–</span>
-        <span className="pc-linkdot diary muted" title="Diário"><Icon name="feather" />–</span>
-        <span className="pc-linkdot book muted" title="Livros"><Icon name="book" />–</span>
-        <span className="pc-links-spacer" />
-        {/* Total de datas cadastradas como indicador de "riqueza" do perfil */}
-        {(p.dates?.length ?? 0) > 0 && (
-          <span className="pc-total">
-            {p.dates.length} {p.dates.length === 1 ? 'data' : 'datas'}
-          </span>
-        )}
-      </div>
-    </div>
+        <ContactLine p={person} />
+      </span>
+    </button>
+  )
+}
+
+export function PersonRowItem({ person, onOpen }: { person: PersonRow; onOpen: () => void }) {
+  const relation = useRelationLabel(person)
+  const detail = nameDetail(person)
+  return (
+    <button type="button" className="km-row" onClick={onOpen} aria-label={`Abrir ${person.name}`}>
+      <Avatar name={person.name} src={person.avatar_url} size={40} />
+      <span className="km-row-main">
+        <b className="km-name">{person.name}</b>
+        <span className="km-detail">{[detail, relation].filter(Boolean).join(' · ')}</span>
+      </span>
+      {person.context !== 'personal' && <Tag pr>{SPACE[person.context].label}</Tag>}
+      <ContactLine p={person} />
+    </button>
   )
 }

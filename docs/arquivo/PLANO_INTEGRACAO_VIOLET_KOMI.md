@@ -1,7 +1,10 @@
+> ✅ **IMPLEMENTADO** — superado pela **spec 076** (`specs/076-violet-ds/`: `@` com autocomplete da Komi e vínculo
+> sincronizado no diário) e pela **spec 077** (`specs/077-komi-ds/`: o contrato `agents/komi/integration.py` que todos os
+> agentes usam). Mantido só como registro histórico; **não seguir como guia**.
+
 # Plano — Integração Violet ↔ Komi (`@menção` no diário aponta para uma pessoa canônica)
 
-> **Status: planejamento.** Este documento descreve a ponte Violet→Komi. Nada foi implementado
-> ainda. A implementação só começa quando aprovada explicitamente.
+> **Status (na época): planejamento.** Descrevia a ponte Violet→Komi; foi implementada depois (ver o banner acima).
 
 ## Contexto
 

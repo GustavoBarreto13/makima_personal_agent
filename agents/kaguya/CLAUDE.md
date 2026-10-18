@@ -51,14 +51,14 @@ agents/kaguya/
 ├── tools_templates.py    # duplicar e templates de tarefa/lista — spec 075
 ├── tools_stats.py        # StatsPayload do DS + bloco de planejamento (webapp) — spec 075
 ├── planning_stats.py     # motor PURO: planejado × feito, empurradas, estimativas, sobrecarga, achados — spec 075
-├── people_space.py       # contrato com a Komi: pessoas de trabalho (people.context, se existir) — spec 075
+├── people_space.py       # pessoas por espaço Trabalho/Pessoal: reexporta o contrato da Komi (people.context) — spec 075/077
+├── birthdays.py          # ponte: create_task(type=birthday) grava o aniversário na Komi (NÃO cria tarefa) — spec 077
 ├── digest.py             # digest matinal (tarefas/agenda) → WhatsApp: contexto + sugestão Gemini + tools de resposta pendente
 ├── gcal.py               # cliente Google Calendar compartilhado (read all / write main) — fatia 019 + MIRRORED_SOURCES/ensure_mirror_calendar/list_raw_events (spec 069)
 ├── gcal_sync.py          # espelho best-effort: push/remove tarefas no GCal "Kaguya — Tarefas" — fatia 019
 ├── gcal_mirror.py        # espelho best-effort: Calendar Hub → 7 calendários Google dedicados (id de evento determinístico, diff) — spec 069
 ├── calendar_prefs.py     # CRUD da tabela calendar_prefs (visibilidade + cor + contexto Trabalho/Pessoal) — fatia 019 / spec 038
 ├── calendar_hub.py       # agregador: register/list_sources/aggregate fan-out best-effort — fatia 019
-├── komi_sync.py          # sync bidirecional best-effort de aniversários Komi ↔ Kaguya — fase 026
 ├── tools.py              # FACHADA: re-exporta a lógica + wrappers + cross-agent (Nami + Calendar Hub)
 ├── agent.py              # create_kaguya_agent() — factory (só o McpToolset do Calendar)
 └── CLAUDE.md             # este arquivo
@@ -97,7 +97,7 @@ As tools de tarefas são **funções Python** registradas direto (não MCP).
 | `list_tasks_today()` | `{overdue, today}` — abertas com `due_date <= hoje` |
 | `search_tasks(query)` | busca por título/descrição (ILIKE) |
 | `list_trash(project_id?)` | soft-deletadas (restauráveis) |
-| `create_task(..., column_id?, recurrence?, tags?)` | cria tarefa/subtarefa; sem lista → Inbox; lista **com board** → 1ª coluna (ou `column_id` explícito) para aparecer no Kanban; `recurrence={rrule,mode}` opcional; `type=birthday`+data → recorrência anual automática; `tags=["mercado",...]` cria/vincula etiquetas |
+| `create_task(..., column_id?, recurrence?, tags?)` | cria tarefa/subtarefa; sem lista → Inbox; lista **com board** → 1ª coluna (ou `column_id` explícito) para aparecer no Kanban; `recurrence={rrule,mode}` opcional; `type=birthday`+data → **não cria tarefa**: grava o aniversário na pessoa da Komi (spec 077); `tags=["mercado",...]` cria/vincula etiquetas |
 | `update_task(task_id, ..., recurrence?, clear_recurrence?, tags?)` | edita; trocar de lista aplica a regra da coluna; anexa/edita/remove recorrência; `tags=[...]` **substitui** o conjunto de tags (lista vazia = remover todas) |
 | `complete_task(task_id, cascade, end_series?)` | completa; subtarefas abertas sem cascade → `needs_cascade`; numa recorrente gera a próxima (`generated_task_id`); `end_series=True` encerra a série |
 | `reopen_task(task_id)` | reabre; bloqueia se o pai está concluído |
@@ -1034,31 +1034,23 @@ cheia (±365d), rede de segurança + backfill inicial. Ver `scheduler/CLAUDE.md`
 Limitação: sync **one-way** (editar o evento no Google não volta; a próxima reconciliação
 sobrescreve/apaga) — mesma de tarefas/hábitos.
 
-### komi_sync.py — sync bidirecional de aniversários Komi ↔ Kaguya (fase 026)
+### Aniversários: campo da pessoa na Komi, NÃO tarefa (spec 077 — substitui o sync da fase 026)
 
-`agents/kaguya/komi_sync.py` sincroniza person_dates com label ILIKE '%anivers%' da Komi
-como tarefas `type=birthday` na lista "Aniversários" da Kaguya. Opera de forma **best-effort**
-— nunca levanta exceção; falha no sync não aborta o CRUD principal.
+Antes (`komi_sync.py`, fase 026) cada aniversário virava uma tarefa `type=birthday` na lista "Aniversários",
+espelhada nos dois sentidos. **Isso acabou**: o aniversário é um campo de TODA pessoa na Komi
+(`people.birth_day/month/year` + `birthday_remind_days`) e aparece no calendário da Kaguya como **evento** da
+fonte `komi` do Calendar Hub (`agents/komi/calendar_provider.py`) — com lembrete, sem tarefa.
 
-**Direção Komi → Kaguya:**
-- `push_person_date(date_id)` — chamado por `add_important_date` e `update_important_date` na Komi.
-  Cria ou atualiza a tarefa correspondente; anti-loop por convergência de valor.
-- `remove_person_date(task_id)` — chamado por `delete_important_date` na Komi. Soft-delete da tarefa.
-
-**Direção Kaguya → Komi:**
-- `push_birthday(task_id)` — chamado por `create_task`/`update_task` quando `type='birthday'`.
-  Cria ou atualiza o person_date "aniversário" na Komi.
-- `remove_birthday(task_id)` — chamado por `delete_task` com `scope='series'` e `type='birthday'`.
-  Apaga o person_date correspondente.
-
-**Tabela de ponte:** `birthday_sync_links` em `schema_tasks_pg.sql` (1:1 por person_date).
-
-**Feature flag:** `KOMI_SYNC_ENABLED=false` desabilita todas as propagações sem afetar o CRUD.
-Padrão: `true`.
-
-**Lista "Aniversários":** criada sob demanda por `_get_birthdays_list_id(cur)` em `tools_tasks.py`
-(análogo a `_get_inbox_id`, com `is_birthdays=TRUE`). Nunca semeada pelo schema — só existe se
-o sync já criou pelo menos um aniversário.
+- **Calendário / Meu Dia / espelho Google:** vêm da fonte `komi`; o espelho "Komi — Pessoas" (`gcal_mirror.py`)
+  leva o **lembrete** (`reminders` do item → `popup` `dias × 1440 − 540` min antes, evento de dia inteiro).
+- **Digest matinal** (`digest.py`): ganhou "Aniversários hoje e nos próximos 7 dias", com as ideias de presente
+  da Komi (`upcoming_birthdays`).
+- **`create_task(type="birthday")`** (chat/Hermes) **não cria tarefa**: `birthdays.py` extrai o nome do título
+  ("Aniversário da Bia"), resolve a pessoa na Komi (0/1/2+) e grava o dia/mês nela. A tool devolve o que fez.
+- **Removidos:** `komi_sync.py`, `scripts/migrate_birthday_sync.py`, a flag `KOMI_SYNC_ENABLED`, os hooks em
+  `add/update/delete_important_date` e o dedup do `calendar_provider`. A tabela `birthday_sync_links` e a lista
+  "Aniversários" (`is_birthdays`) ficam no banco só como histórico; `scripts/migrate_komi_ds.py` leva as tarefas
+  `birthday` antigas para a lixeira depois de garantir o aniversário na pessoa (dry-run por padrão).
 
 ### gcal_sync.py — espelho best-effort de tarefas E hábitos no GCal
 
@@ -1125,7 +1117,7 @@ As mesmas do MCP Calendar, mais:
 - `list_tasks_today` já traz as vencidas em `overdue` — não chame nada redundante.
 - **`needs_cascade`** não é erro: pergunte ao usuário e repita com `cascade=true`.
 - **Recorrência**: tarefa precisa de data; crie e chame `set_task_recurrence(id, freq, ...)`; ecoe
-  o `recurrence_text`. Aniversário (`type=birthday`+data) recorre todo ano sozinho. Ao concluir
+  o `recurrence_text`. Aniversário **não é tarefa** (spec 077): `type=birthday` grava o campo na Komi e não cria nada aqui. Ao concluir
   uma recorrente a próxima nasce (avise `next_due_date`); "encerrar a série" → `complete_task(id, end_series=true)`.
 - `delete_task` e `delete_project` são destrutivas → **confirme sempre antes**.
   Recorrente: pergunte o escopo (`scope="this"` só esta · `scope="series"` a série inteira).

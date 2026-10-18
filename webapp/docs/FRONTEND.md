@@ -274,7 +274,6 @@ escopo dinâmico `kaguya:*` — o lint aceita o prefixo).
 - CSS: `kaguya.css` (complementos `.kn-*` com tokens `--ds-*`) e `legacy.css` (Kanban e Calendário no escopo `.kn-legacy`, com o vidro
   e os raios do desenho original, independentes da arte). Testes: `KaguyaShell.test.tsx`, `screens/*.test.tsx`, `lib/*.test.ts`.
 - Preferências em `ds:prefs:kaguya` (as chaves de localStorage `kaguya-next:*` foram mantidas para não perder o que já estava salvo).
-- `components/DatePicker.tsx`/`MiniCalendar.tsx` (seletor de data com CSS próprio em `datepicker.css`) são da Komi, não da Kaguya.
 
 ### AkaneShell — Filmes (`src/pages/akane/`) — no Design System (spec 072)
 
@@ -377,22 +376,34 @@ densidade `compact|medium|cozy`). API: `maiApi.ts` — todos os `/api/series/*`.
 
 ---
 
-### KomiShell — Pessoas (`src/pages/komi/`)
+### KomiShell — Pessoas (`src/pages/komi/`) — no Design System (spec 077)
 
-**Roteamento:** estado interno `{view, param}` (tipo `KomiView` no próprio `KomiShell.tsx`).
+Arte **"Caderno de bilhetes"** (`design/art/bilhetes.css`: papel quadriculado, títulos em letra de mão, "fita" nos
+cartões). Sobre o `AppShell`; CTA único **Nova pessoa** (`N`); seletor **Tudo · Pessoal · Trabalho** no topo
+(lembrado em `ds:prefs:komi`), que recorta todas as telas — quem é "ambos" aparece nos dois.
 
-**Telas (screens/):**
+**Rotas por hash** (`lib/routes.ts`): `#inicio`, `#pessoas` (e `#pessoas/<relacionamento>` vindo do menu), `#datas`,
+`#estatisticas`, `#pessoa/<id>` (+ `/memoria|anotacoes|interacoes|datas`). O `#pessoa/<id>` é o link que a Violet e a
+Kaguya usam para abrir uma pessoa — **não mude o nome**.
 
-| View | Tela | O que mostra |
-|---|---|---|
-| `home` | Home | Visão geral (`/api/people/overview`): cards por domínio, sugestões de reconexão, datas próximas |
-| `grid` | Directory | Diretório de todas as pessoas (cards com avatar e contagem de vínculos) |
-| `dates` | UpcomingDates | Datas importantes próximas (aniversários etc.) |
-| `person` | PersonPage | Perfil da pessoa: apelidos, datas e vínculos cross-agent (finanças, tarefas, livros, diário) |
+| Tela | O que mostra |
+|---|---|
+| **Início** (`screens/Home.tsx`) | `Hero` (aniversário de hoje ou o próximo, e quem pede um oi), 4 cartões, **linha rápida** `+Bia café ontem` (`QuickCapture`, `lib/capture.ts`), próximas datas, "Reconectar" (sem contato há N dias — Preferências), "A acertar" (saldo da Nami), "Parecem a mesma pessoa" (mesclar) |
+| **Pessoas** | `useCollection` (`komi:pessoas`): busca por Nome, Apelido, Nome completo, outras formas, cidade e grupo; facetas relacionamento, espaço, grupo, aniversário, último contato; agrupar; 3 ordenações; cartões ou lista |
+| **Datas** | `useCollection` (`komi:datas`): aniversários e outras datas, a mais próxima primeiro, com o lembrete de cada uma |
+| **Estatísticas** | `StatsPage` (`GET /api/people/stats`): contatos por mês e dia, pessoas contatadas, aniversários, sem contato, menções cruzadas |
+| **Pessoa** (`screens/PersonDetail.tsx`, `DetailPage`) | Cabeçalho com os três nomes, relacionamento, espaço e contatos; ações Registrar contato · Editar · Mesclar com… · Apagar (com Desfazer). Abas: **Memória** (briefing, resumo com IA, linha do tempo dos agentes com filtro e "Desvincular", faixas Pessoal/Trabalho para "ambos", pessoas ligadas e grupos), **Anotações** (presentes/gosta/não gosta/notas + bloco de sugestões da IA com aceitar/editar/descartar), **Interações**, **Datas** (aniversário fixo + outras datas) |
 
-**Particularidades:** upload de avatar (`POST /api/people/uploads/avatar`, multipart);
-`PersonModal` de criação/edição; preferências em `localStorage` (`km-tweaks`) com `data-theme`.
-API: `komiApi.ts` — todos os `/api/people/*`.
+**Particularidades:** a Memória é desenhada só com o que o servidor manda (`label`, `icon`, `deep_link` de cada agente) —
+agente novo aparece sem mudar a tela; agente que não respondeu vira aviso "pode estar incompleta". Formulário de pessoa e de
+contato em `Modal` + `Field` (conflito de Nome/Apelido volta no próprio campo). O editor da lista de **relacionamentos**
+(criar, renomear, ícone, reordenar, arquivar com destino das pessoas) fica em Preferências (`components/CategoryEditor.tsx`).
+Mesclar mostra a prévia (`MergeDialog`) e avisa que **não desfaz**. A foto é o único `fetch` direto (`multipart`).
+`komiApi.create`/`search` mantêm a assinatura antiga (a Violet cadastra pessoas por elas).
+Ícones novos no registro do DS: `cake`, `video`, `merge`.
+
+API: `komiApi.ts` — todos os `/api/people/*` (normaliza `null` em listas). CSS: `komi.css` (só complementos `.km-*`). Testes:
+`KomiShell.test.tsx`, `nullSafety.test.tsx`, `lib/*.test.ts`.
 
 ---
 
@@ -500,7 +511,7 @@ Cada shell tem identidade visual própria baseada num personagem de anime:
 | AkaneShell | Akane Kurokawa (Oshi no Ko) | `akane.png` | `akane.css` (só complementos `.ax-*` do DS) | `.ds-app` (Design System) |
 | MarinShell | Marin Kitagawa (Sono Bisque Doll) | `marin.png` | `marin.css` | `.marin-shell` |
 | MaiShell | Mai Sakurajima (Seishun Buta Yarou) | `mai.png` | `mai.css` | `.mai-shell` |
-| KomiShell | Komi Shouko (Komi-san) | `komi.png` | `komi.css` | `.km-app` |
+| KomiShell | Komi Shouko (Komi-san) | `komi.png` | `komi.css` (só complementos `.km-*` do DS) | `.ds-app` (Design System) |
 | MakimaShell | Makima (Chainsaw Man) | `makima.png` | `makima.css` | `.mkA` |
 
 **Como o theming funciona:**
@@ -508,10 +519,10 @@ Cada shell tem identidade visual própria baseada num personagem de anime:
 2. O shell aplica atributos `data-*` no elemento raiz:
    - NamiShell: `data-theme="dark|light"`, `data-acento="Tangerina|Azul-maré|Coral|Ouro"`,
      `data-privacy` (embaralha valores `.amount`), `data-density`.
-   - Shells novos (Kaguya, Akane, Marin, Mai, Komi, Makima): `data-theme` dark/light aplicado
+   - Shells novos (Mai, Makima): `data-theme` dark/light aplicado
      na classe raiz; densidade onde houver (ex.: Mai).
 3. Preferências são persistidas em `localStorage` (chaves `nami:*`, `fr-tweaks`,
-   `kg-tweaks`, `akane-tweaks`, `mr-tweaks`, `mai-tweaks`, `km-tweaks`, `makima-hub-theme`).
+   `kg-tweaks`, `akane-tweaks`, `mr-tweaks`, `mai-tweaks`, `makima-hub-theme`).
 
 **Tokens Tailwind para cores de personagem** (`tailwind.config.js`):
 `c-makima`, `c-nami`, `c-frieren`, `c-kaguya`, `c-kurisu`, `c-journal`.

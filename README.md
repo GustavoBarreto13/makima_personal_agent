@@ -29,6 +29,8 @@ Envie mensagens pelo Telegram. Makima identifica o domínio e roteia automaticam
 | "quem é a Ana?" | Komi 👤 | Busca a pessoa no cadastro e retorna o perfil completo |
 | "adiciona o João, amigo, aniversário 12/03" | Komi 👤 | Cadastra pessoa com data importante |
 | "o que tenho com a Ana?" | Komi 👤 | Resumo: finanças, tarefas, livros e diário ligados a ela |
+| "falei com a Ana ontem" | Komi 👤 | Registra o contato (alimenta o "sem contato há N dias") |
+| "a Bia gosta de orquídeas" | Komi 👤 | Guarda a anotação (gosto, presente ou nota) na pessoa |
 | "Lucy, meus emails não lidos" | Lucy 📧 | Lista emails ao vivo via IMAP (somente leitura) |
 
 ---
@@ -56,7 +58,7 @@ Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na
 | Filmes | Sub-app completa (Akane): catálogo estilo Letterboxd — grid de pôsteres TMDB + fallback tipográfico, diário de sessões com rewatch, acompanhantes da Komi e local cinema/streaming, watchlist, notas e reviews, histograma de notas, estatísticas e Rewind do ano numa tela só, listas/coleções, nuvem de etiquetas, Cofre de conteúdos, vitrine de favoritos (4 slots) e sync RSS/CSV do Letterboxd |
 | Animes | Sub-app completa (Marin): catálogo de animes com sync OAuth MAL — Início com "continue assistindo" e vitrine de favoritos, **linha rápida** (`Frieren ep 12 ★4.5 ontem`), Catálogo e fila "Quero assistir", diário de episódios, Lançamentos (próximos 14 dias, "Já vi"), detalhe com nota, caderno, etiquetas e episódios, listas e estatísticas do ano (episódios reais, completos e dropados); no Design System, arte "Neon kawaii" (`/animes/*`) |
 | Séries | Sub-app completa (Mai): catálogo de séries via TMDB API v3 — seasons/episodes sincronizados, log de watch com nota (0.5–5.0), status por temporada, shell React `/series/*` |
-| Pessoas | Sub-app (Komi): cadastro de pessoas com busca, apelidos, datas importantes e visão geral dos vínculos cross-agent (`/people/*`) |
+| Pessoas | Sub-app (Komi, arte "Caderno de bilhetes"): cadastro com três nomes (Nome, Apelido, Nome completo — qualquer um acha a pessoa nos outros agentes), espaço pessoal/trabalho/ambos, aniversário e datas importantes com lembrete no calendário (não viram tarefa), **Memória** com tudo que os outros agentes sabem da pessoa e resumo por IA, anotações (presentes, gostos — a IA só sugere), registro de contatos (`+Bia café ontem`), relacionamentos configuráveis, relações e grupos, mesclar duplicadas e estatísticas (`/people/*`) |
 | Hub | Página inicial (Makima): agregador com resumo de todos os domínios em um só lugar (`/api/hub/summary`) |
 
 **Stack:** FastAPI (backend) + React 19 + TypeScript + Tailwind CSS (frontend) — servidos pelo mesmo container.
@@ -157,7 +159,7 @@ Inspirada na Kaguya Shinomiya de Kaguya-sama. Aristocrática e organizada. Geren
 - Meu Dia com time-blocking e barra de capacidade (fatia 016)
 - Tiny Experiments — mini-experimentos com duração definida, log diário e revisão (spec 029)
 - Metas por área da vida com marcos e vínculo a projetos, hábitos e experimentos (spec 030)
-- Sync de aniversários com a Komi — datas importantes viram tarefas recorrentes (spec 026)
+- ~~Sync de aniversários com a Komi (datas viravam tarefas, spec 026)~~ — substituído na spec 077: o aniversário é campo da pessoa e aparece no calendário com lembrete, sem tarefa
 - Foco/Pomodoro gameficado — cada sessão vira uma árvore (murcha se você desistir), floresta do período, streak, conquistas e vínculo com hábitos (specs 037/062)
 
 Possui tools cross-agent que integram com a Nami numa **única transação PostgreSQL** (tudo-ou-nada):

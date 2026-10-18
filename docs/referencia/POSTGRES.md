@@ -50,7 +50,7 @@ diferentes.
 | **Filmes** | Agente Akane | `movies`, `diary_entries`, `movie_lists`, `movie_list_items`, `movie_vault_items`, `movie_people`, `movie_favorites` |
 | **Animes** | Agente Marin | `anime`, `watch_logs`, `episodes`, `mal_sync_state`, `anime_lists`, `anime_list_items`, `anime_favorites` |
 | **Séries de TV** | Agente Mai | `series`, `seasons`, `series_episodes`, `series_watch_logs` |
-| **Pessoas** | Agente Komi | `people`, `person_aliases`, `person_dates`, `person_links` |
+| **Pessoas** | Agente Komi | `people`, `person_aliases`, `person_dates`, `person_links`, `person_categories`, `person_notes`, `person_interactions`, `person_memory_summaries`, `person_relation_kinds`, `person_relations`, `person_groups`, `person_group_members`, `komi_migrations` |
 | **Diário** (Violet) | `agents/journal` | `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_refs`, `journal_emotions`, `journal_emotion_logs`, `journal_letters`, `journal_values_assessments`, `journal_values_areas`, `journal_values_commitments`, `journal_values_checkins` |
 | **Tutor de Idiomas** (cross-domain — FK p/ `journal_bullets`) | Agente Kurisu | `journal_tutor_analyses`, `journal_tutor_events`, `journal_tutor_skills`, `journal_tutor_guides` |
 | **Conselho do Dia, revisão semanal e leitura emocional** (cross-domain — IA da Violet) | Agente Kurisu | `journal_counsel`, `journal_weekly_reviews`, `journal_emotion_analyses` |
@@ -118,6 +118,13 @@ erDiagram
     people ||--o{ person_aliases : "person_id (FK)"
     people ||--o{ person_dates : "person_id (FK)"
     people ||--o{ person_links : "person_id (FK)"
+    people ||--o{ person_notes : "person_id (FK)"
+    people ||--o{ person_interactions : "person_id (FK)"
+    people ||--o{ person_memory_summaries : "person_id (FK)"
+    people ||--o{ person_relations : "person_a / person_b (FK)"
+    people ||--o{ person_group_members : "person_id (FK)"
+    person_groups ||--o{ person_group_members : "group_id (FK)"
+    person_relation_kinds ||--o{ person_relations : "kind (FK)"
 
     %% ---------- Diário (Journal, webapp-only) ----------
     journal_types ||--o{ journal_pages : "type_id (FK)"
@@ -1309,83 +1316,176 @@ Fonte de verdade para `series.episodes_watched` (recomputado via `COUNT`, nunca 
 
 ## 9. Domínio Komi — Pessoas
 
-Fonte: `agents/komi/schema_pg.sql` (spec 014). `people.id` é `TEXT` (UUID gerado no código, padrão
-Nami/Frieren); as demais tabelas usam `SERIAL`.
+Fonte: `agents/komi/schema_pg.sql` (spec 014; reformado na **spec 077**). `people.id` é `TEXT` (UUID gerado no
+código, padrão Nami/Frieren); as demais tabelas usam `SERIAL`. O schema é **idempotente** e também é aplicado
+sob demanda por `agents/komi/schema.py::ensure_schema()` (lock consultivo + `lock_timeout` de 5 s), então um
+agente que só importa `agents.komi` nunca encontra tabela faltando. Etapas de **dados** (não de estrutura) ficam
+em `scripts/migrate_komi_ds.py` e são registradas em `komi_migrations`.
 
 ### `people`
 
-Identidade canônica de cada pessoa. O campo `normalizado` (nome minúsculo sem acentos, gerado no
-código) é a chave de resolução usada pelo smart-match.
+Identidade canônica de cada pessoa. Os três nomes têm uma coluna `_norm` (minúsculo, sem acento, gerada no
+código) que é a chave de resolução: **Nome, Apelido, Nome completo e "outras formas" resolvem a mesma pessoa em
+qualquer agente**, por isso nenhum deles pode colidir com o de outra pessoa viva (checado pela aplicação).
 
 | Coluna | Tipo | Nulo? | Default | Descrição |
 |---|---|---|---|---|
 | `id` | TEXT | PK | — | UUID gerado no código. |
-| `name` | TEXT | NÃO | — | Nome de exibição. |
-| `normalizado` | TEXT | NÃO | — | Minúsculo + sem acento — chave de resolução. |
-| `relationship` | TEXT | SIM | — | "amigo/amiga", "família", "trabalho"... |
-| `category` | TEXT | SIM | `'outros'` | `familia` \| `amigos` \| `trabalho` \| `outros` — dirige filtros e cores. |
-| `phone` | TEXT | SIM | — | Telefone. |
-| `email` | TEXT | SIM | — | E-mail. |
-| `instagram` | TEXT | SIM | — | Handle do Instagram. |
-| `telegram` | TEXT | SIM | — | Handle do Telegram. |
+| `name` | TEXT | NÃO | — | **Nome** — o que o dono escolhe; aparece em todo lugar. |
+| `normalizado` | TEXT | NÃO | — | `name` normalizado. |
+| `nickname` | TEXT | SIM | — | **Apelido** *(spec 077)*. |
+| `nickname_norm` | TEXT | SIM | — | Apelido normalizado. |
+| `full_name` | TEXT | SIM | — | **Nome completo** *(spec 077)*. |
+| `full_name_norm` | TEXT | SIM | — | Nome completo normalizado. |
+| `relationship` | TEXT | SIM | — | Texto livre: "mãe", "colega de equipe". |
+| `category` | TEXT | SIM | `'outros'` | **Slug** de `person_categories` (relacionamento). |
+| `context` | TEXT | NÃO | `'personal'` | Espaço da pessoa: `personal` \| `work` \| `both` (CHECK) *(spec 077)*. A Kaguya filtra por ele (`people_space.py`). |
+| `phone` / `email` / `instagram` / `telegram` | TEXT | SIM | — | Contatos. |
 | `city` | TEXT | SIM | — | Cidade. |
 | `avatar_url` | TEXT | SIM | — | URL do avatar; a UI cai para iniciais se NULL. |
-| `notes` | TEXT | SIM | — | Observações livres. |
-| `created_at` | TIMESTAMPTZ | SIM | `NOW()` | Criação. |
-| `updated_at` | TIMESTAMPTZ | SIM | `NOW()` | Atualização. |
+| `birth_day` | SMALLINT | SIM | — | Dia do aniversário *(spec 077)*. |
+| `birth_month` | SMALLINT | SIM | — | Mês do aniversário. |
+| `birth_year` | SMALLINT | SIM | — | Ano (opcional: sem ele não há idade). |
+| `birthday_remind_days` | INT | SIM | `1` | Dias antes para lembrar; `0` = no dia; `NULL` = sem lembrete. |
+| `notes` | TEXT | SIM | — | **Legado**: a migração 077 move o conteúdo para `person_notes` (`nota`, pessoal). |
+| `merged_into` | TEXT | SIM | — | Se a pessoa foi absorvida numa mescla, o id de quem ficou (rastro; impede restaurar). |
+| `created_at` / `updated_at` | TIMESTAMPTZ | SIM | `NOW()` | Criação / atualização. |
 | `deleted` | BOOLEAN | SIM | `FALSE` | *Soft delete* — nunca apaga fisicamente. |
 
-**Índices:** `idx_people_normalizado_vivo` — **único parcial** em `(normalizado) WHERE deleted =
-FALSE`: não há duas pessoas **vivas** com o mesmo nome normalizado (após soft delete, o nome pode
-ser recadastrado) · `idx_people_deleted`.
+**Constraints:** `people_context_check` (`context` válido) · `people_birth_check` (dia e mês juntos; ano só com
+dia/mês; faixas 1–12 e 1–31 — dia 31 em mês de 30 dias é barrado pela aplicação).
+**Índices:** `idx_people_normalizado_vivo` e `idx_people_nickname_vivo` — **únicos parciais**
+(`WHERE deleted = FALSE`) · `idx_people_fullname_norm` · `idx_people_context` · `idx_people_deleted`.
+
+### `person_categories`
+
+**Relacionamentos** (família, amigos…) como lista configurável *(spec 077)*. Semeada com Família / Amigos /
+Trabalho / Outros (`ON CONFLICT DO NOTHING`: renomear ou arquivar não é desfeito). `people.category` guarda o `slug`.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `slug` | TEXT | NÃO, **UNIQUE** | — | Chave estável (`familia`, `amigos`…). |
+| `label` | TEXT | NÃO | — | Nome mostrado. |
+| `icon` | TEXT | NÃO | `'person'` | Nome do registro de ícones do Design System. |
+| `position` | INT | NÃO | `0` | Ordem no menu. |
+| `archived` | BOOLEAN | NÃO | `FALSE` | Arquivado (a aplicação pede para onde mover as pessoas). |
 
 ### `person_aliases`
 
-Apelidos — nomes alternativos que resolvem para a mesma pessoa ("Aninha" → Ana).
+"Outras formas" de chamar — nomes alternativos que resolvem para a mesma pessoa ("Betinha" → Beatriz). Mostradas só
+em "Mais detalhes"; o Apelido principal é `people.nickname`.
 
 | Coluna | Tipo | Nulo? | Default | Descrição |
 |---|---|---|---|---|
 | `id` | SERIAL | PK | — | ID. |
 | `person_id` | TEXT | NÃO | — | **FK** → `people(id)` `ON DELETE CASCADE`. |
-| `alias` | TEXT | NÃO | — | Apelido como exibido. |
-| `normalizado` | TEXT | NÃO | — | Apelido normalizado (chave de busca). |
+| `alias` | TEXT | NÃO | — | Como exibido. |
+| `normalizado` | TEXT | NÃO | — | Normalizado (chave de busca). |
 
-**Índices:** `idx_alias_normalizado` — **único GLOBAL** em `(normalizado)`: um apelido aponta para
-no máximo **uma** pessoa no sistema inteiro · `idx_alias_person`.
+**Índices:** `idx_alias_normalizado` — **único GLOBAL** em `(normalizado)` · `idx_alias_person`.
 
 ### `person_dates`
 
-Datas importantes (aniversário, casamento...). `recurring = TRUE` = repete todo ano. As datas com
-label de aniversário são espelhadas como tarefas na Kaguya via `birthday_sync_links` (fase 026).
+**Outras** datas importantes (casamento, formatura…). **O aniversário não mora aqui**: é campo de `people`
+(a migração 077 trouxe os antigos para lá). Nada disso vira tarefa: aparece no Calendar Hub da Kaguya como evento.
 
 | Coluna | Tipo | Nulo? | Default | Descrição |
 |---|---|---|---|---|
 | `id` | SERIAL | PK | — | ID. |
 | `person_id` | TEXT | NÃO | — | **FK** → `people(id)` `ON DELETE CASCADE`. |
-| `label` | TEXT | NÃO | — | "aniversário", "casamento"... |
-| `date` | DATE | NÃO | — | A data (o ano pode ser placeholder se recorrente). |
+| `label` | TEXT | NÃO | — | "casamento", "formatura"… |
+| `date` | DATE | NÃO | — | A data. |
 | `recurring` | BOOLEAN | SIM | `TRUE` | Repete todo ano? |
+| `remind_days_before` | INT | SIM | `1` | Dias antes do lembrete; `0` = no dia; `NULL` = sem lembrete *(spec 077)*. |
 
 **Índices:** `idx_dates_person` em `(person_id)`.
 
 ### `person_links`
 
-Vínculo **polimórfico** N:N entre uma pessoa e um item de qualquer domínio (transação da Nami,
-tarefa da Kaguya, livro da Frieren, bullet ou carta do Journal). Não há FK de banco para o item —
-os IDs de origem têm tipos divergentes (UUID TEXT vs SERIAL INT), então `entity_id` é `TEXT` e a
-integridade é garantida pela camada de aplicação.
+Vínculo **polimórfico** N:N entre uma pessoa e um item de qualquer agente. Não há FK de banco para o item (IDs de
+origem com tipos divergentes), então `entity_id` é `TEXT` e a integridade é da aplicação (`integration.py`).
 
 | Coluna | Tipo | Nulo? | Default | Descrição |
 |---|---|---|---|---|
 | `id` | SERIAL | PK | — | ID. |
 | `person_id` | TEXT | NÃO | — | **FK** → `people(id)` `ON DELETE CASCADE`. |
-| `entity_type` | TEXT | NÃO | — | `transaction` \| `task` \| `book` \| `journal_bullet` \| `journal_letter` (CHECK). |
-| `entity_id` | TEXT | NÃO | — | ID do item vinculado (TEXT absorve UUID e SERIAL). |
+| `entity_type` | TEXT | NÃO | — | Tipo **livre**, validado só por formato (`^[a-z][a-z0-9_]{1,40}$`): `transaction`, `task`, `book`, `journal_bullet`, `journal_letter`, `movie_diary_entry`… Agente novo cria o seu *(spec 077 removeu o CHECK com lista fixa)*. |
+| `entity_id` | TEXT | NÃO | — | ID do item vinculado. |
 | `created_at` | TIMESTAMPTZ | SIM | `NOW()` | Criação do vínculo. |
 
-**Constraints:** `uq_person_link UNIQUE (person_id, entity_type, entity_id)` — escrita idempotente
-via `INSERT ... ON CONFLICT DO NOTHING`.
+**Constraints:** `uq_person_link UNIQUE (person_id, entity_type, entity_id)` · `person_links_entity_type_format`.
 **Índices:** `idx_links_entity` em `(entity_type, entity_id)` · `idx_links_person` em `(person_id)`.
+
+### `person_notes` *(spec 077)*
+
+Anotações da pessoa. A IA pode **sugerir** (`source='ia'`, `status='sugerida'`, com os backlinks de origem em
+`source_refs`); nada vira `ativa` sem o dono aceitar. `descartada` fica guardada (`text_norm`) para a IA não repetir.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `person_id` | TEXT | NÃO | — | **FK** → `people(id)` `ON DELETE CASCADE`. |
+| `kind` | TEXT | NÃO | `'nota'` | `presente` \| `gosta` \| `nao_gosta` \| `nota` (CHECK). |
+| `context` | TEXT | NÃO | `'personal'` | `personal` \| `work` (CHECK) — nunca `both`. |
+| `text` / `text_norm` | TEXT | NÃO | — | Texto e versão normalizada (anti-repetição). |
+| `source` | TEXT | NÃO | `'manual'` | `manual` \| `ia`. |
+| `source_refs` | JSONB | NÃO | `'[]'` | Backlinks que originaram a sugestão. |
+| `status` | TEXT | NÃO | `'ativa'` | `ativa` \| `sugerida` \| `descartada`. |
+| `created_at` / `updated_at` | TIMESTAMPTZ | SIM | `NOW()` | Datas. |
+| `deleted` | BOOLEAN | SIM | `FALSE` | Soft delete (a lixeira tem Desfazer). |
+
+**Índices:** `idx_person_notes_person` em `(person_id) WHERE deleted = FALSE`.
+
+### `person_interactions` *(spec 077)*
+
+"Falei com fulano": alimenta "sem contato há N dias", o heatmap das estatísticas e a Memória.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `person_id` | TEXT | NÃO | — | **FK** → `people(id)` `ON DELETE CASCADE`. |
+| `kind` | TEXT | NÃO | `'outro'` | `mensagem` \| `ligacao` \| `encontro` \| `video` \| `outro` (CHECK). |
+| `context` | TEXT | NÃO | `'personal'` | `personal` \| `work` (CHECK). |
+| `happened_at` | TIMESTAMPTZ | NÃO | `NOW()` | Quando foi (o dia local usa `AT TIME ZONE 'America/Sao_Paulo'`). |
+| `note` | TEXT | SIM | — | Uma linha sobre o contato. |
+| `created_at` | TIMESTAMPTZ | SIM | `NOW()` | Criação. |
+| `deleted` | BOOLEAN | SIM | `FALSE` | Soft delete. |
+
+**Índices:** `idx_person_interactions_person` em `(person_id, happened_at DESC) WHERE deleted = FALSE`.
+
+### `person_memory_summaries` *(spec 077)*
+
+Cache do resumo de IA da Memória. `source_hash` é o hash dos backlinks usados: se a Memória muda, a tela mostra
+"desatualizado" em vez de regerar sozinha (e gastar IA).
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `person_id` | TEXT | NÃO | — | **FK** → `people(id)` `ON DELETE CASCADE`. |
+| `context` | TEXT | NÃO | `'all'` | `all` \| `personal` \| `work` (CHECK). **PK** `(person_id, context)`. |
+| `summary` | JSONB | NÃO | — | `{resumo, pontos[], pendencias[], sugestoes[]}`, cada item com suas fontes. |
+| `source_hash` | TEXT | NÃO | — | Impressão digital da Memória usada. |
+| `generated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Geração. |
+
+### `person_relation_kinds` / `person_relations` / `person_groups` / `person_group_members` *(spec 077)*
+
+- `person_relation_kinds(slug PK, label, inverse_slug, position)` — tipos configuráveis com inverso
+  (`pai_mae` ↔ `filho`; igual ao próprio slug = simétrica). Sementes: irmão, pai/mãe, filho, cônjuge, amigo,
+  colega, chefe, subordinado, outra relação.
+- `person_relations(id, person_a, person_b, kind, created_at)` — "A é `kind` de B"; só a forma canônica é gravada
+  (`CHECK person_a <> person_b`, `UNIQUE (person_a, person_b, kind)`), então o mesmo par nunca aparece duas vezes.
+  `person_a`/`person_b` são **FK** → `people(id)` `ON DELETE CASCADE`.
+- `person_groups(id, name, normalizado UNIQUE, created_at)` — grupos livres ("turma da faculdade").
+- `person_group_members(group_id, person_id)` — **PK composta**; FKs com `CASCADE`; `idx_group_members_person`.
+
+### `komi_migrations` *(spec 077)*
+
+`name TEXT PK`, `applied_at TIMESTAMPTZ` — etapas de **dados** já aplicadas por `scripts/migrate_komi_ds.py`
+(`context_from_category`, `nickname_from_alias`, `birthday_from_dates`, `notes_to_person_notes`), para uma etapa
+one-time nunca rodar duas vezes e desfazer uma escolha posterior do dono.
+
+> `birthday_sync_links` (Kaguya, spec 026) **não é mais usada**: aniversário deixou de ser tarefa. A tabela fica no
+> banco como histórico; o código que a alimentava foi removido.
 
 ---
 
@@ -1525,9 +1625,9 @@ vinculadas a pessoas da Komi (`person_links` com `entity_type = 'journal_letter'
 
 **Índices:** `idx_letters_page` em `(page_id)`.
 
-> Ao criar suas tabelas, o módulo do Journal também **amplia o CHECK** de `person_links` (Komi)
-> para aceitar `entity_type = 'journal_letter'` — de forma idempotente, e só se a tabela da Komi
-> já existir.
+> Os vínculos pessoa ↔ carta usam `person_links` (Komi) com `entity_type = 'journal_letter'`. Desde a
+> spec 077 o `entity_type` é livre (só o formato é validado), então o Journal **não altera mais** nenhuma
+> constraint da Komi — os vínculos passam por `agents.komi.integration`.
 
 ### Avaliação dos Valores — `journal_values_*` *(spec 076, `agents/journal/values.py`)*
 

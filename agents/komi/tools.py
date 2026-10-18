@@ -1282,7 +1282,7 @@ def get_person(person_id: str) -> dict:
                 perfil[f] = perfil[f].isoformat()
 
         aliases = run_select(
-            "SELECT alias, normalizado FROM person_aliases WHERE person_id = %(id)s ORDER BY alias",
+            "SELECT id, alias FROM person_aliases WHERE person_id = %(id)s ORDER BY alias",
             {"id": person_id},
         )
 
@@ -1439,7 +1439,7 @@ def get_people_overview() -> dict:
     """Retornar visão agregada de todas as pessoas vivas para a Home do frontend.
 
     Faz uma única passada por todas as pessoas vivas, retornando para cada uma:
-    - dados de perfil (id, name, relationship, category, avatar_url)
+    - dados de perfil (nomes, relacionamento, espaço, cidade, avatar, aniversário, outras formas e nº de vínculos)
     - datas importantes (para calcular próximas datas no frontend)
     - saldo financeiro (finance_net) — positivo = te devem, negativo = você deve
     - última interação conhecida (last_interaction) — a mais recente entre as interações registradas
@@ -1479,7 +1479,11 @@ def get_people_overview() -> dict:
         pessoas = run_select(
             """
             SELECT id, name, nickname, full_name, relationship, category, context, city, avatar_url,
-                   birth_day, birth_month, birth_year, birthday_remind_days
+                   birth_day, birth_month, birth_year, birthday_remind_days,
+                   COALESCE((SELECT array_agg(a.alias ORDER BY a.alias) FROM person_aliases a WHERE a.person_id = people.id), '{}') AS aliases,
+                   (SELECT COUNT(*) FROM person_links pl WHERE pl.person_id = people.id) AS link_count,
+                   COALESCE((SELECT array_agg(g.name ORDER BY g.name) FROM person_group_members m
+                             JOIN person_groups g ON g.id = m.group_id WHERE m.person_id = people.id), '{}') AS groups
             FROM people
             WHERE deleted = FALSE
             ORDER BY name

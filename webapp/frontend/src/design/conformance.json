@@ -289,24 +289,32 @@
       "mobile": false
     },
     "komi": {
-      "status": "legacy",
+      "status": "conformant",
       "dir": "src/pages/komi",
       "shell": "src/pages/komi/KomiShell.tsx",
-      "art": null,
-      "appShell": false,
-      "hero": false,
-      "theme": false,
-      "icons": false,
-      "collections": [],
-      "quickCapture": null,
+      "art": "bilhetes",
+      "appShell": true,
+      "hero": true,
+      "theme": true,
+      "icons": true,
+      "collections": [
+        "komi:pessoas",
+        "komi:datas"
+      ],
+      "quickCapture": "contact-log",
       "stats": {
-        "page": false,
-        "metrics": []
+        "page": true,
+        "metrics": [
+          "interactions_per_month",
+          "people_without_contact",
+          "birthdays",
+          "cross_mentions"
+        ]
       },
-      "detail": false,
-      "prefs": false,
-      "hotkeys": false,
-      "mobile": false
+      "detail": true,
+      "prefs": true,
+      "hotkeys": true,
+      "mobile": true
     },
     "violet": {
       "status": "conformant",

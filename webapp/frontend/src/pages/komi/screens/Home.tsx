@@ -1,235 +1,182 @@
-// Home.tsx — Tela inicial da Komi.
-// Exibe: hero com saudação, estatísticas resumo, seção "Que tal entrar em contato?"
-// (quem está há mais tempo sem interação), coluna de próximas datas e coluna "A acertar"
-// (saldos financeiros pendentes).
-//
-// Todos os dados vêm do overview() — uma única chamada cross-pessoa que já calcula
-// last_interaction, finance_net e dates para cada pessoa.
+// Início: o caderno de relance.
+//   Hero (aniversário de hoje ou o próximo, e quem pede um oi) → 4 cartões → registrar contato em uma linha →
+//   [Próximas datas | Reconectar] → A acertar (Nami) → Parecem a mesma pessoa.
+// Só as pessoas são essenciais: duplicadas são complemento e, se falharem, o resto da tela segue de pé.
 
-import { useMemo } from 'react'
-import { Icon } from '../icons'
-import { Avatar } from '../icons'
-import { ReconnectCard } from '../components/ReconnectCard'
-import { daysUntil, fmtDayMonth, brl, daysSince, greeting } from '../lib'
-import type { OverviewPerson } from '../types'
+import { useMemo, useState } from 'react'
+import { Avatar, Button, EmptyState, ErrorState, Hero, LoadingState, Page, QuickCapture, SectionHeader, type CaptureLegendItem } from '../../../design'
+import { fmtMoney, fmtNumber } from '../../../design/core/format'
+import { greeting } from '../lib/greeting'
+import { MergeDialog } from '../components/MergeDialog'
+import { StatTile } from '../components/Tiles'
+import { useKomi } from '../context'
+import { komiApi } from '../komiApi'
+import { contactParser, emptyContact } from '../lib/capture'
+import { daysSince, inLabel, sinceLabel, upcomingDates } from '../lib/dates'
+import { reconnectCandidates } from '../lib/people'
+import { useLoad } from '../lib/useLoad'
+import { DateRow } from './Dates'
+import type { DuplicatePair } from '../types'
 
-interface HomeProps {
-  /** Lista de todas as pessoas vivas com dados agregados do overview(). */
-  overview: OverviewPerson[]
-  /** Abre o perfil de uma pessoa. */
-  onOpen: (id: string) => void
-  /** Abre o modal de criação de pessoa. */
-  onNew: () => void
-  /** Navega para outra view (ex.: 'dates'). */
-  goView: (v: string) => void
-}
+const EXAMPLES = ['+Bia café ontem', 'Caio ligação', 'Ana mensagem #trabalho', 'Marcos vídeo sexta']
+const LEGEND: CaptureLegendItem[] = [
+  { kind: 'person', sample: '+Bia (ou só o nome)' },
+  { kind: 'date', sample: 'ontem · sexta · 12/09' },
+  { kind: 'tag', sample: '#trabalho · #pessoal' },
+]
 
-/**
- * Tela Home da Komi.
- * Mostra um hero de boas-vindas e 3 seções de insights:
- * 1. Reconectar — pessoas com > 7 dias sem interação (top 4)
- * 2. Próximas datas — eventos nos próximos 60 dias (top 5)
- * 3. A acertar — saldos financeiros pendentes (top 5)
- */
-export function Home({ overview, onOpen, onNew, goView }: HomeProps) {
-  // ── Estatísticas globais ────────────────────────────────────────────────
+const NO_PAIRS: DuplicatePair[] = []
 
-  // Número de datas no próximo mês (para o hero sub)
-  const datesThisMonth = useMemo(() => {
-    let count = 0
-    overview.forEach(p => (p.dates || []).forEach(d => {
-      const days = daysUntil(d.date, d.recurring)
-      if (days >= 0 && days <= 31) count++
-    }))
-    return count
-  }, [overview])
+export function Home() {
+  const komi = useKomi()
+  const [merging, setMerging] = useState<DuplicatePair | null>(null)
+  const dup = useLoad(() => komiApi.duplicates().catch(() => NO_PAIRS), [komi.rev])
 
-  // ── Seção Reconectar ───────────────────────────────────────────────────
+  const dates = useMemo(() => upcomingDates(komi.visible, komi.today, 60), [komi.visible, komi.today])
+  const birthdays = dates.filter((d) => d.isBirthday)
+  const reconnect = useMemo(() => reconnectCandidates(komi.visible, komi.today, komi.prefs.reconnectDays, false), [komi.visible, komi.today, komi.prefs.reconnectDays])
+  const owing = useMemo(
+    () => komi.visible.filter((p) => Math.abs(p.finance_net) >= 0.005).sort((a, b) => Math.abs(b.finance_net) - Math.abs(a.finance_net)).slice(0, 5),
+    [komi.visible],
+  )
+  const recentContacts = komi.visible.filter((p) => {
+    const d = daysSince(p.last_interaction?.date, komi.today)
+    return d !== null && d <= 30
+  }).length
 
-  // Filtra pessoas com last_interaction há >= 7 dias, ordena pela mais distante
-  // e pega as 4 primeiras para exibir no grid de reconexão
-  const reconnect = useMemo(() => {
-    return overview
-      .filter(p => p.last_interaction !== null)
-      .map(p => ({
-        p,
-        last: p.last_interaction!,    // ! = seguro pois filtramos null acima
-        days: daysSince(p.last_interaction!.date) ?? 0,
-      }))
-      .filter(x => x.days >= 7)       // só quem está há >= 7 dias sem contato
-      .sort((a, b) => b.days - a.days)  // mais tempo primeiro
-      .slice(0, 4)                    // limita a 4 cards
-  }, [overview])
+  if (komi.peopleState.status === 'loading') return <Page><LoadingState variant="stat" count={4} /></Page>
+  if (komi.peopleState.status === 'error') return <Page><ErrorState onRetry={komi.retryPeople} /></Page>
 
-  // ── Seção Próximas datas ──────────────────────────────────────────────
+  // Primeiro uso: ninguém cadastrado.
+  if (komi.people.length === 0) {
+    return (
+      <Page>
+        <EmptyState
+          icon="people"
+          title="Seu caderno de pessoas começa aqui"
+          hint="Cadastre quem importa. A Komi guarda os três nomes, o aniversário (com lembrete no calendário), anotações de presente e tudo que os outros agentes souberem sobre a pessoa."
+          action={<Button variant="primary" icon="add" onClick={() => komi.openPerson()}>Nova pessoa</Button>}
+        />
+      </Page>
+    )
+  }
 
-  // Coleta todas as datas futuras de todas as pessoas, ordena por proximidade
-  const upcoming = useMemo(() => {
-    const out: Array<{
-      person: OverviewPerson
-      label: string
-      date: string
-      recurring: boolean
-      days: number
-    }> = []
-    overview.forEach(p => (p.dates || []).forEach(d => {
-      const days = daysUntil(d.date, d.recurring)
-      // Inclui datas no futuro (days >= 0) e nos próximos 365 dias
-      if (days >= 0) out.push({ person: p, label: d.label, date: d.date, recurring: d.recurring, days })
-    }))
-    return out.sort((a, b) => a.days - b.days)  // mais próxima primeiro
-  }, [overview])
-
-  // ── Seção A acertar ───────────────────────────────────────────────────
-
-  // Pessoas com saldo financeiro não-zerado (te devem ou você deve)
-  // Ordenadas pelo valor absoluto do saldo (maior pendência primeiro)
-  const settle = useMemo(() => {
-    return overview
-      .filter(p => p.finance_net !== 0)  // só quem tem saldo pendente
-      .map(p => ({ p, net: p.finance_net }))
-      .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))  // maior primeiro
-  }, [overview])
+  const today = birthdays.filter((d) => d.inDays === 0)
+  const next = birthdays[0] ?? null
+  const mostStale = reconnect[0] ?? null
+  const pairs = dup.state.status === 'ok' ? dup.state.data : NO_PAIRS
+  const names = (list: { personName: string }[]) => list.map((d) => d.personName).join(' e ')
 
   return (
-    <div className="home">
-      {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <div className="km-hero">
-        <div className="hero-copy">
-          {/* Eyebrow (rótulo pequeno acima do título) */}
-          <div className="hero-eyebrow">Komi · Pessoas</div>
-
-          {/* Saudação baseada no horário: "Bom dia.", "Boa tarde.", etc. */}
-          <div className="hero-title">{greeting()}.</div>
-
-          {/* Resumo de insights: pessoas, conversas pendentes, datas chegando */}
-          <div className="hero-sub">
-            Você acompanha <b>{overview.length} {overview.length === 1 ? 'pessoa' : 'pessoas'}</b>
-            {reconnect.length > 0 && (
-              <> · <b>{reconnect.length} conversa{reconnect.length > 1 ? 's' : ''}</b> pra retomar</>
-            )}
-            {datesThisMonth > 0 && (
-              <> · <b>{datesThisMonth} data{datesThisMonth > 1 ? 's' : ''}</b> chegando</>
-            )}.
+    <Page>
+      <Hero
+        eyebrow="Caderno de bilhetes"
+        eyebrowIcon="people"
+        title={today.length ? `Hoje é aniversário de ${names(today)}.` : `${greeting(new Date().getHours())}.`}
+        meta={
+          <div className="km-herometa">
+            {next && !today.length && <p className="km-heronow">Próximo aniversário: <em>{next.personName}</em>, {inLabel(next.inDays)}{next.years ? ` (faz ${next.years})` : ''}.</p>}
+            {mostStale && <p className="km-heronow">{mostStale.person.name} está {mostStale.days === null ? 'sem contato registrado' : `sem contato ${sinceLabel(mostStale.days)}`}.</p>}
+            {!next && !mostStale && <p className="km-heronow">Tudo em dia por aqui.</p>}
           </div>
+        }
+        actions={
+          <>
+            <Button variant="primary" icon="phone" onClick={() => komi.openContact()}>Registrar contato</Button>
+            <Button icon="add" onClick={() => komi.openPerson()}>Nova pessoa</Button>
+            <Button variant="ghost" icon="days" onClick={() => komi.goto('dates')}>Ver datas</Button>
+          </>
+        }
+      />
 
-          {/* 3 estatísticas numéricas */}
-          <div className="hero-stats">
-            <div className="hstat">
-              <div className="hs-num">{overview.length}</div>
-              <div className="hs-lbl">Pessoas</div>
-            </div>
-            <div className="hstat">
-              <div className="hs-num">{reconnect.length}</div>
-              <div className="hs-lbl">Pra retomar</div>
-            </div>
-            <div className="hstat">
-              <div className="hs-num">{datesThisMonth}</div>
-              <div className="hs-lbl">Datas / mês</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Glow decorativo atrás da ilustração */}
-        <div className="hero-glow" />
-        {/* Ilustração da Komi no canto direito */}
-        <img className="hero-art" src="/komi.png" alt="Komi" />
+      <div className="km-stats">
+        <StatTile icon="people" label="Pessoas" value={fmtNumber(komi.visible.length)} foot={komi.prefs.space === 'all' ? 'no caderno' : komi.prefs.space === 'work' ? 'em trabalho' : 'no pessoal'} />
+        <StatTile
+          icon="cake"
+          label="Próximo aniversário"
+          value={next ? (next.inDays === 0 ? 'hoje' : fmtNumber(next.inDays)) : '—'}
+          unit={next && next.inDays > 0 ? (next.inDays === 1 ? 'dia' : 'dias') : undefined}
+          foot={next ? next.personName : 'nenhum cadastrado'}
+        />
+        <StatTile icon="phone" label="Contatos · 30 dias" value={fmtNumber(recentContacts)} unit={recentContacts === 1 ? 'pessoa' : 'pessoas'} foot="com quem você falou" />
+        <StatTile icon="history" label={`Sem contato · ${komi.prefs.reconnectDays}+ dias`} value={fmtNumber(reconnect.length)} unit={reconnect.length === 1 ? 'pessoa' : 'pessoas'} foot={reconnect.length ? 'pedindo um oi' : 'todo mundo em dia'} />
       </div>
 
-      {/* ── Seção Reconectar ─────────────────────────────────────────────── */}
-      <div className="home-section">
-        <div className="home-sec-head">
-          <div className="home-sec-title">Que tal entrar em contato?</div>
-          <div className="home-sec-sub">mais tempo sem falar</div>
-          {/* Link para criar nova pessoa */}
-          <button className="home-sec-link" onClick={onNew}>
-            <Icon name="plus" />Nova pessoa
-          </button>
-        </div>
+      <section aria-labelledby="km-log">
+        <SectionHeader title="Registrar contato" id="km-log" mono="Enter salva · Shift+Enter abre o formulário" />
+        <QuickCapture
+          parser={contactParser}
+          label="Registrar contato em uma linha"
+          placeholder="Ex.: +Bia café ontem"
+          examples={EXAMPLES}
+          legend={LEGEND}
+          today={komi.today}
+          onSubmit={komi.quickContact}
+          onExpand={(r) => { komi.quickContact(r, true) }}
+        />
+      </section>
 
-        {/* Grid de cards de reconexão ou mensagem de estado vazio */}
-        {reconnect.length === 0 ? (
-          <div className="home-empty">
-            Você está em dia com todo mundo — nada pra retomar agora.
-          </div>
-        ) : (
-          <div className="reconnect-grid">
-            {reconnect.map(({ p, last }) => (
-              <ReconnectCard key={p.id} p={p} last={last} onOpen={onOpen} />
+      <div className="km-split">
+        <section aria-labelledby="km-dates" className="km-col">
+          <SectionHeader title="Próximas datas" id="km-dates" action={<Button size="sm" variant="ghost" iconRight="forward" onClick={() => komi.goto('dates')}>Ver todas</Button>} />
+          {dates.length === 0
+            ? <p className="ds-hint">Nenhuma data nos próximos 60 dias.</p>
+            : <div className="ds-card km-list">{dates.slice(0, 6).map((d) => <DateRow key={d.key} d={d} onOpen={() => komi.goto({ view: 'people', personId: d.personId, tab: 'dates' })} />)}</div>}
+        </section>
+
+        <section aria-labelledby="km-recon" className="km-col">
+          <SectionHeader title="Reconectar" id="km-recon" mono={`sem contato há ${komi.prefs.reconnectDays}+ dias`} />
+          {reconnect.length === 0
+            ? <p className="ds-hint">Ninguém esquecido. Bom trabalho.</p>
+            : (
+              <div className="ds-card km-list">
+                {reconnect.slice(0, 6).map(({ person, days }) => (
+                  <div key={person.id} className="km-row km-row-static">
+                    <Avatar name={person.name} src={person.avatar_url} size={40} />
+                    <button type="button" className="km-link km-row-main" onClick={() => komi.goto({ view: 'people', personId: person.id })}>
+                      <b className="km-name">{person.name}</b>
+                      <span className="km-detail">{days === null ? 'sem contato registrado' : `último contato ${sinceLabel(days)}`}</span>
+                    </button>
+                    <Button size="sm" icon="phone" onClick={() => komi.openContact(emptyContact(komi.today, person.id, person.context === 'both' ? (komi.prefs.space === 'work' ? 'work' : null) : null))}>Registrar</Button>
+                  </div>
+                ))}
+              </div>
+            )}
+        </section>
+      </div>
+
+      {owing.length > 0 && (
+        <section aria-labelledby="km-owe">
+          <SectionHeader title="A acertar" id="km-owe" mono="saldo das transações vinculadas na Nami" />
+          <div className="ds-card km-list">
+            {owing.map((p) => (
+              <button key={p.id} type="button" className="km-row" onClick={() => komi.goto({ view: 'people', personId: p.id })}>
+                <Avatar name={p.name} src={p.avatar_url} size={40} />
+                <span className="km-row-main"><b className="km-name">{p.name}</b><span className="km-detail">{p.finance_net > 0 ? 'te deve' : 'você deve'}</span></span>
+                <span className={`ds-num ${p.finance_net > 0 ? 'km-pos' : 'km-neg'}`}>{fmtMoney(Math.abs(p.finance_net))}</span>
+              </button>
             ))}
           </div>
-        )}
-      </div>
+        </section>
+      )}
 
-      {/* ── Colunas: Próximas datas + A acertar ──────────────────────────── */}
-      <div className="home-cols">
-        {/* Coluna esquerda: próximas datas */}
-        <div className="home-panel">
-          <div className="home-panel-head">
-            {/* Ícone com a cor de "datas" (garnet) */}
-            <span className="hp-icon" style={{ background: 'var(--garnet-t)', color: 'var(--garnet)' }}>
-              <Icon name="cake" />
-            </span>
-            <span className="hp-title">Próximas datas</span>
-            {/* Link para ver todas as datas */}
-            <span className="home-sec-link" onClick={() => goView('dates')}>ver todas</span>
+      {pairs.length > 0 && (
+        <section aria-labelledby="km-dup">
+          <SectionHeader title="Parecem a mesma pessoa" id="km-dup" mono="confira e mescle" />
+          <div className="ds-card km-list">
+            {pairs.slice(0, 4).map((pair) => (
+              <div key={`${pair.a.id}-${pair.b.id}`} className="km-row km-row-static">
+                <span className="km-row-main">
+                  <b className="km-name">{pair.a.name} <span className="km-detail">e</span> {pair.b.name}</b>
+                  <span className="km-detail">{pair.reasons.join(' · ')}</span>
+                </span>
+                <Button size="sm" icon="merge" onClick={() => setMerging(pair)}>Mesclar…</Button>
+              </div>
+            ))}
           </div>
-          <div className="home-panel-body">
-            {upcoming.length === 0 ? (
-              <div className="home-empty">Nenhuma data cadastrada.</div>
-            ) : (
-              // Mostra as 5 mais próximas
-              upcoming.slice(0, 5).map((d, i) => (
-                <div className="mini-row" key={i} onClick={() => onOpen(d.person.id)}>
-                  <Avatar person={d.person} size={28} />
-                  <div className="mr-body">
-                    <div className="mr-name">{d.person.name}</div>
-                    <div className="mr-sub">{d.label} · {fmtDayMonth(d.date)}</div>
-                  </div>
-                  {/* Badge de contagem regressiva */}
-                  <div className="mr-when">
-                    <div className="mrw-big">{d.days === 0 ? 'hoje' : d.days}</div>
-                    {d.days !== 0 && <div>{d.days === 1 ? 'dia' : 'dias'}</div>}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Coluna direita: saldos pendentes */}
-        <div className="home-panel">
-          <div className="home-panel-head">
-            {/* Ícone com a cor de "finanças" (fin) */}
-            <span className="hp-icon" style={{ background: 'var(--fin-t)', color: 'var(--fin)' }}>
-              <Icon name="wallet" />
-            </span>
-            <span className="hp-title">A acertar</span>
-            <span className="hp-count">
-              {settle.length} pessoa{settle.length === 1 ? '' : 's'}
-            </span>
-          </div>
-          <div className="home-panel-body">
-            {settle.length === 0 ? (
-              <div className="home-empty">Nenhuma conta pendente.</div>
-            ) : (
-              // Mostra as 5 com maior saldo pendente
-              settle.slice(0, 5).map(({ p, net }, i) => (
-                <div className="mini-row" key={i} onClick={() => onOpen(p.id)}>
-                  <Avatar person={p} size={28} />
-                  <div className="mr-body">
-                    <div className="mr-name">{p.name}</div>
-                    {/* Distingue quem deve a quem */}
-                    <div className="mr-sub">{net > 0 ? 'te devem' : 'você deve'}</div>
-                  </div>
-                  {/* Valor com cor: verde = te devem, vermelho = você deve */}
-                  <div className={'mr-amt ' + (net > 0 ? 'pos' : 'neg')}>{brl(net)}</div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+        </section>
+      )}
+      {merging && <MergeDialog firstId={merging.a.id} secondId={merging.b.id} onClose={() => setMerging(null)} />}
+    </Page>
   )
 }
