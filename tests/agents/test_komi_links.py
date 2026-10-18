@@ -31,7 +31,11 @@ _SCHEMA_PATH = os.path.join(
     "agents", "komi", "schema_pg.sql",
 )
 
-_KOMI_TABLES = "person_links person_dates person_aliases people"
+_KOMI_TABLES = (  # todas as tabelas da Komi (spec 077), dependentes primeiro
+    "person_group_members person_groups person_relations person_relation_kinds "
+    "person_memory_summaries person_interactions person_notes person_categories "
+    "komi_migrations person_links person_dates person_aliases people"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -50,7 +54,7 @@ def _make_person(name: str = "Teste Pessoa") -> str:
     """Cria uma pessoa e retorna seu ID."""
     r = K.create_person(name=name)
     assert r["status"] == "ok"
-    return r["person"]["id"]
+    return r["id"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -157,7 +161,7 @@ def test_create_person_on_cursor_no_auto_commit():
         with conn.cursor() as cur:
             result = K.create_person_on_cursor(cur, name=name)
         assert result["status"] == "ok"
-        pid = result["person"]["id"]
+        pid = result["id"]
         conn.rollback()
     finally:
         conn.close()
@@ -177,7 +181,7 @@ def test_create_person_on_cursor_then_commit():
         with conn.cursor() as cur:
             result = K.create_person_on_cursor(cur, name=name)
         assert result["status"] == "ok"
-        saved_pid = result["person"]["id"]
+        saved_pid = result["id"]
         conn.commit()
     finally:
         conn.close()
@@ -185,7 +189,7 @@ def test_create_person_on_cursor_then_commit():
     # Pessoa deve existir após commit
     result2 = K.get_person(saved_pid)
     assert result2["status"] == "ok"
-    assert result2["person"]["name"] == name
+    assert result2["perfil"]["name"] == name
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -36,7 +36,11 @@ _SCHEMA_PATH = os.path.join(
 )
 
 # Tabelas do domínio Komi, dependentes primeiro (para DROP CASCADE ser seguro)
-_KOMI_TABLES = "person_links person_dates person_aliases people"
+_KOMI_TABLES = (  # todas as tabelas da Komi (spec 077), dependentes primeiro
+    "person_group_members person_groups person_relations person_relation_kinds "
+    "person_memory_summaries person_interactions person_notes person_categories "
+    "komi_migrations person_links person_dates person_aliases people"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -68,7 +72,7 @@ def test_find_people_zero_matches():
     """find_people sem nenhuma pessoa cadastrada retorna lista vazia."""
     result = K.find_people("Ana")
     assert result["status"] == "ok"
-    assert result["people"] == []
+    assert result["matches"] == []
 
 
 def test_find_people_one_match():
@@ -77,23 +81,23 @@ def test_find_people_one_match():
     assert r["status"] == "ok"
     result = K.find_people("Ana")
     assert result["status"] == "ok"
-    assert len(result["people"]) == 1
-    assert result["people"][0]["name"] == "Ana Silva"
+    assert len(result["matches"]) == 1
+    assert result["matches"][0]["name"] == "Ana Silva"
 
 
 def test_find_people_case_insensitive():
     """find_people ignora maiúsculas/minúsculas e acentos."""
     _create("João Ferreira")
     result = K.find_people("joao")
-    assert len(result["people"]) == 1
-    assert "João" in result["people"][0]["name"]
+    assert len(result["matches"]) == 1
+    assert "João" in result["matches"][0]["name"]
 
 
 def test_find_people_accent_insensitive():
     """find_people ignora acentos na busca."""
     _create("Ângela Mendes")
     result = K.find_people("Angela")
-    assert len(result["people"]) == 1
+    assert len(result["matches"]) == 1
 
 
 def test_find_people_multiple_matches():
@@ -102,7 +106,7 @@ def test_find_people_multiple_matches():
     _create("Ana Costa")
     result = K.find_people("Ana")
     assert result["status"] == "ok"
-    assert len(result["people"]) == 2
+    assert len(result["matches"]) == 2
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -112,24 +116,24 @@ def test_find_people_multiple_matches():
 def test_alias_resolves_in_find_people():
     """find_people encontra pessoa pelo apelido (alias)."""
     r = _create("Gustavo Barreto")
-    pid = r["person"]["id"]
+    pid = r["id"]
     K.add_alias(pid, "Gus")
 
     result = K.find_people("Gus")
     assert result["status"] == "ok"
-    assert len(result["people"]) == 1
-    assert result["people"][0]["id"] == pid
+    assert len(result["matches"]) == 1
+    assert result["matches"][0]["id"] == pid
 
 
 def test_alias_case_insensitive():
     """Alias é resolvido sem considerar maiúsculas/minúsculas."""
     r = _create("Maria Clara")
-    pid = r["person"]["id"]
+    pid = r["id"]
     K.add_alias(pid, "MC")
 
     result = K.find_people("mc")
-    assert len(result["people"]) == 1
-    assert result["people"][0]["id"] == pid
+    assert len(result["matches"]) == 1
+    assert result["matches"][0]["id"] == pid
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -159,7 +163,7 @@ def test_create_person_different_names_allowed():
 def test_soft_delete_removes_from_list_people():
     """Pessoa deletada não aparece em list_people."""
     r = _create("Carlos Mendes")
-    pid = r["person"]["id"]
+    pid = r["id"]
     K.delete_person(pid)
 
     result = K.list_people()
@@ -171,13 +175,13 @@ def test_soft_delete_removes_from_list_people():
 def test_soft_delete_allows_same_name_recreation():
     """Após soft delete, o mesmo nome pode ser recadastrado."""
     r = _create("Carlos Mendes")
-    pid = r["person"]["id"]
+    pid = r["id"]
     K.delete_person(pid)
 
     # Deve ser possível recriar com o mesmo nome
     r2 = _create("Carlos Mendes")
     assert r2["status"] == "ok"
-    assert r2["person"]["id"] != pid  # nova entidade
+    assert r2["id"] != pid  # nova entidade
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -188,8 +192,8 @@ def test_alias_duplicate_across_persons():
     """Alias já vinculado a outra pessoa retorna erro claro."""
     r1 = _create("Bruno Silva")
     r2 = _create("Beatriz Santos")
-    pid1 = r1["person"]["id"]
-    pid2 = r2["person"]["id"]
+    pid1 = r1["id"]
+    pid2 = r2["id"]
 
     K.add_alias(pid1, "Bê")
     result = K.add_alias(pid2, "Bê")  # conflito global
@@ -201,7 +205,7 @@ def test_alias_duplicate_across_persons():
 def test_alias_same_person_idempotent():
     """Adicionar o mesmo alias à mesma pessoa é bloqueado pelo índice único."""
     r = _create("Rafael Costa")
-    pid = r["person"]["id"]
+    pid = r["id"]
     r1 = K.add_alias(pid, "Rafa")
     # Segunda chamada deve retornar erro (violação de unicidade)
     r2 = K.add_alias(pid, "Rafa")
@@ -217,44 +221,44 @@ def test_create_person_returns_id():
     """create_person retorna UUID válido."""
     r = _create("Fernanda Oliveira")
     assert r["status"] == "ok"
-    assert "id" in r["person"]
-    assert len(r["person"]["id"]) == 36  # UUID v4
+    assert "id" in r
+    assert len(r["id"]) == 36  # UUID v4
 
 
 def test_get_person_returns_profile():
     """get_person retorna o perfil correto."""
     r = _create("Letícia Moura")
-    pid = r["person"]["id"]
+    pid = r["id"]
     result = K.get_person(pid)
     assert result["status"] == "ok"
-    assert result["person"]["name"] == "Letícia Moura"
+    assert result["perfil"]["name"] == "Letícia Moura"
 
 
 def test_update_person_name():
     """update_person altera o nome e recalcula normalizado."""
     r = _create("Vinicius Rocha")
-    pid = r["person"]["id"]
+    pid = r["id"]
     K.update_person(pid, name="Vinícius Rocha")
 
     result = K.get_person(pid)
-    assert result["person"]["name"] == "Vinícius Rocha"
+    assert result["perfil"]["name"] == "Vinícius Rocha"
 
 
 def test_update_person_partial():
     """update_person atualiza só o campo informado, preserva os demais."""
     r = _create("Lucas Pinto", relationship="trabalho")
-    pid = r["person"]["id"]
+    pid = r["id"]
     K.update_person(pid, city="São Paulo")
 
     result = K.get_person(pid)
-    assert result["person"]["city"] == "São Paulo"
-    assert result["person"]["relationship"] == "trabalho"
+    assert result["perfil"]["city"] == "São Paulo"
+    assert result["perfil"]["relationship"] == "trabalho"
 
 
 def test_add_important_date():
     """add_important_date persiste a data e ela aparece no get_person."""
     r = _create("Camila Torres")
-    pid = r["person"]["id"]
+    pid = r["id"]
     K.add_important_date(pid, "aniversário", "1995-07-22", recurring=True)
 
     result = K.get_person(pid)
@@ -266,7 +270,7 @@ def test_list_people_shows_only_alive():
     """list_people exclui pessoas com deleted=TRUE."""
     r1 = _create("Pessoa Viva")
     r2 = _create("Pessoa Deletada")
-    K.delete_person(r2["person"]["id"])
+    K.delete_person(r2["id"])
 
     result = K.list_people()
     names = [p["name"] for p in result["people"]]
@@ -281,7 +285,7 @@ def test_list_people_shows_only_alive():
 def test_get_person_summary_empty():
     """get_person_summary com pessoa sem vínculos retorna blocos vazios sem erro."""
     r = _create("Joana Azevedo")
-    pid = r["person"]["id"]
+    pid = r["id"]
     result = K.get_person_summary(pid)
 
     assert result["status"] == "ok"
@@ -306,7 +310,7 @@ def test_get_person_summary_not_found():
 def test_link_person_on_cursor_idempotent():
     """link_person_on_cursor com mesmos argumentos não cria duplicata."""
     r = _create("Tiago Nunes")
-    pid = r["person"]["id"]
+    pid = r["id"]
 
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -326,7 +330,7 @@ def test_link_person_on_cursor_idempotent():
 def test_link_person_on_cursor_entity_id_coerced_to_str():
     """link_person_on_cursor aceita entity_id inteiro (coercido para str)."""
     r = _create("Rebeca Alves")
-    pid = r["person"]["id"]
+    pid = r["id"]
 
     with get_conn() as conn:
         with conn.cursor() as cur:

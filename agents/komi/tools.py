@@ -11,44 +11,309 @@ Usage:
     from agents.komi.tools import create_person, find_people, get_person_summary
 """
 
-import unicodedata  # Para remover acentos na normalização (smart-match)
 import uuid         # Para gerar IDs únicos de pessoas (UUID v4)
 from datetime import date as _date  # Para datas importantes
 
 import psycopg2.extras  # RealDictCursor — retorna linhas como dicts
 
-from agents.db import get_conn, run_select  # Helpers PostgreSQL compartilhados
+from agents.db import get_conn as _raw_get_conn, run_select as _raw_run_select  # Helpers PostgreSQL
+from agents.komi import naming  # Regras puras: normalização, espaço, aniversário
+from agents.komi.schema import ensure_schema  # Aplica o schema no 1º acesso do processo
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Acesso ao banco com schema garantido
+# ─────────────────────────────────────────────────────────────────────────────
+# O schema da Komi cresceu (spec 077) e o deploy do código acontece antes da migração
+# manual. Estes dois wrappers chamam ensure_schema() antes de qualquer consulta: depois
+# da 1ª vez no processo é só uma checagem de variável (nenhuma ida ao banco).
+
+def get_conn():
+    """Abrir uma conexão PostgreSQL (commit automático ao sair) com o schema garantido.
+
+    Returns:
+        O gerenciador de contexto de ``agents.db.get_conn``.
+    """
+    ensure_schema()
+    return _raw_get_conn()
+
+
+def run_select(sql: str, params=None) -> list[dict]:
+    """Executar um SELECT com o schema da Komi garantido.
+
+    Args:
+        sql: Consulta SQL (placeholders ``%(nome)s`` ou ``%s``).
+        params: Parâmetros da consulta.
+
+    Returns:
+        Lista de linhas como dicionários.
+    """
+    ensure_schema()
+    return _raw_run_select(sql, params)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper de normalização (núcleo do smart-match)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _norm(s: str) -> str:
-    """Normalizar string para resolução case/acento-insensitive.
+# A normalização vive em naming.norm (módulo puro, testável sem banco). O nome antigo
+# `_norm` continua existindo porque o restante deste módulo e os testes o usam.
+_norm = naming.norm
 
-    Converte para minúsculas e remove acentos via decomposição NFD.
-    Usado para comparar nomes e apelidos sem depender de caixa ou acento.
 
-    Ex.: "Ana", "ANA", "Aná" → todos resultam em "ana".
+# Campos de texto livre que aceitam "limpar" (string vazia vira NULL no banco).
+_CAMPOS_TEXTO_OPCIONAIS = ("relationship", "phone", "email", "instagram", "telegram", "city", "avatar_url", "notes")
+
+# Campos que update_person aceita. Lista fechada de propósito: os nomes das colunas
+# entram direto no SQL, então nada que venha de fora pode escolher a coluna.
+_CAMPOS_EDITAVEIS = frozenset(
+    _CAMPOS_TEXTO_OPCIONAIS
+    + ("name", "category", "nickname", "full_name", "context",
+       "birth_day", "birth_month", "birth_year", "birthday_remind_days")
+)
+
+# Categorias de reserva caso a tabela person_categories ainda não exista ou falhe.
+_CATEGORIAS_PADRAO = ("familia", "amigos", "trabalho", "outros")
+
+
+def _categoria_valida(cur, category: str | None) -> str:
+    """Resolver a categoria de uma pessoa contra a lista configurável.
 
     Args:
-        s: String original (pode ter acentos, maiúsculas, espaços extras).
+        cur: Cursor psycopg2 ativo.
+        category: Slug pedido (ex.: ``"amigos"``). Vazio ou desconhecido cai em ``"outros"``.
 
     Returns:
-        String normalizada (minúscula, sem acentos).
+        O slug de uma categoria existente e não arquivada, ou ``"outros"``.
     """
-    # strip() remove espaços nas bordas; lower() deixa tudo minúsculo
-    s = s.strip().lower()
-    # NFD decompõe caracteres acentuados em letra base + acento separado
-    nfd = unicodedata.normalize("NFD", s)
-    # Mantém apenas os caracteres que NÃO são marcas combinantes (acentos)
-    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    slug = (category or "").strip()
+    if not slug:
+        return "outros"
+    try:
+        cur.execute("SELECT 1 FROM person_categories WHERE slug = %s AND archived = FALSE", (slug,))
+        return slug if cur.fetchone() else "outros"
+    except Exception:  # noqa: BLE001 — tabela ausente: usa a lista de reserva
+        return slug if slug in _CATEGORIAS_PADRAO else "outros"
+
+
+def _conflito_de_nome(cur, person_id: str | None, name: str, nickname: str | None) -> str | None:
+    """Detectar se o Nome ou o Apelido já pertence a OUTRA pessoa viva.
+
+    O Nome, o Apelido e as "outras formas" (``person_aliases``) são todos chaves de
+    resolução: ``@Bia`` precisa apontar para uma pessoa só. Um índice de banco não cobre
+    colunas e tabelas diferentes, então a checagem cruzada é feita aqui.
+
+    Args:
+        cur: Cursor psycopg2 ativo (dentro da transação do chamador).
+        person_id: Pessoa que está sendo editada (ignorada na checagem); ``None`` na criação.
+        name: Nome de exibição pretendido.
+        nickname: Apelido pretendido (ou ``None``).
+
+    Returns:
+        Mensagem de erro em pt-BR citando de quem é o nome, ou ``None`` se estiver livre.
+    """
+    chaves = naming.name_keys(name, nickname)
+    if not chaves:
+        return None
+    cur.execute(
+        """
+        SELECT p.name, k.chave FROM (
+            SELECT id, name, normalizado AS chave FROM people WHERE deleted = FALSE
+            UNION ALL
+            SELECT id, name, nickname_norm FROM people WHERE deleted = FALSE AND nickname_norm IS NOT NULL
+            UNION ALL
+            SELECT p2.id, p2.name, a.normalizado
+              FROM person_aliases a JOIN people p2 ON p2.id = a.person_id WHERE p2.deleted = FALSE
+        ) k JOIN people p ON p.id = k.id
+        WHERE k.chave = ANY(%s) AND (%s::text IS NULL OR p.id <> %s::text)
+        LIMIT 1
+        """,
+        (chaves, person_id, person_id),
+    )
+    achado = cur.fetchone()
+    if not achado:
+        return None
+    dono, chave = achado[0], achado[1]
+    # Mostra o texto como a pessoa digitou (não a chave sem acento/caixa).
+    digitado = {naming.norm(n): n for n in (name, nickname) if n}.get(chave, chave)
+    return f"'{digitado}' já é o nome ou apelido de {dono}. Escolha outro para não confundir as duas pessoas."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CRUD de identidade — Onda 1 / US1
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _anotar_no_cursor(
+    cur,
+    person_id: str,
+    text: str,
+    kind: str = "nota",
+    context: str = "personal",
+    source: str = "manual",
+    source_refs: list | None = None,
+    status: str = "ativa",
+) -> int:
+    """Inserir uma anotação da pessoa no cursor do chamador (sem commit).
+
+    Args:
+        cur: Cursor psycopg2 ativo.
+        person_id: UUID da pessoa dona da anotação.
+        text: Texto da anotação (já aparado e não vazio).
+        kind: ``presente`` | ``gosta`` | ``nao_gosta`` | ``nota``.
+        context: ``personal`` ou ``work``.
+        source: ``manual`` (dono/agente) ou ``ia`` (sugerida a partir da memória).
+        source_refs: Backlinks que originaram a anotação (só para ``ia``).
+        status: ``ativa`` | ``sugerida`` | ``descartada``.
+
+    Returns:
+        O ID da anotação criada.
+    """
+    import json  # noqa: PLC0415 — só este helper precisa; evita custo no import do módulo
+
+    cur.execute(
+        """
+        INSERT INTO person_notes (person_id, kind, context, text, text_norm, source, source_refs, status)
+        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s) RETURNING id
+        """,
+        (person_id, kind, context, text, naming.norm(text), source, json.dumps(source_refs or []), status),
+    )
+    return cur.fetchone()[0]
+
+
+def _inserir_pessoa(
+    cur,
+    name: str,
+    relationship: str,
+    category: str,
+    phone: str,
+    email: str,
+    instagram: str,
+    telegram: str,
+    city: str,
+    avatar_url: str,
+    notes: str,
+    nickname: str,
+    full_name: str,
+    context: str,
+    birth_day: int | None,
+    birth_month: int | None,
+    birth_year: int | None,
+    birthday_remind_days: int | None,
+) -> dict:
+    """Validar e inserir uma pessoa no cursor recebido (base de create_person*).
+
+    Args:
+        cur: Cursor psycopg2 ativo (a transação é do chamador; não há commit aqui).
+        Demais parâmetros: os mesmos de ``create_person``.
+
+    Returns:
+        ``{"status": "ok", "id": <uuid>}`` ou ``{"status": "error", "message": ...}``.
+    """
+    nome = naming.clean(name)
+    if not nome:
+        return {"status": "error", "message": "O nome não pode ser vazio."}
+
+    # Valida tudo ANTES de tocar no banco: erro de formulário nunca deixa lixo.
+    try:
+        ctx = naming.valid_context(context)
+        dia, mes, ano = naming.validate_birth(birth_day, birth_month, birth_year)
+        lembrete = _lembrete_valido(birthday_remind_days)
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+
+    apelido = naming.clean(nickname)
+    # Apelido igual ao nome não acrescenta nada: guarda só o nome.
+    if apelido and naming.norm(apelido) == naming.norm(nome):
+        apelido = None
+    completo = naming.clean(full_name)
+
+    conflito = _conflito_de_nome(cur, None, nome, apelido)
+    if conflito:
+        return {"status": "error", "message": conflito}
+
+    person_id = str(uuid.uuid4())
+    cur.execute(
+        """
+        INSERT INTO people
+            (id, name, normalizado, nickname, nickname_norm, full_name, full_name_norm,
+             relationship, category, context, phone, email, instagram, telegram, city, avatar_url,
+             birth_day, birth_month, birth_year, birthday_remind_days)
+        VALUES
+            (%(id)s, %(name)s, %(normalizado)s, %(nickname)s, %(nickname_norm)s, %(full_name)s, %(full_name_norm)s,
+             %(relationship)s, %(category)s, %(context)s, %(phone)s, %(email)s, %(instagram)s, %(telegram)s,
+             %(city)s, %(avatar_url)s, %(birth_day)s, %(birth_month)s, %(birth_year)s, %(lembrete)s)
+        """,
+        {
+            "id": person_id,
+            "name": nome,
+            "normalizado": naming.norm(nome),
+            "nickname": apelido,
+            "nickname_norm": naming.norm(apelido) or None,
+            "full_name": completo,
+            "full_name_norm": naming.norm(completo) or None,
+            "relationship": naming.clean(relationship),
+            "category": _categoria_valida(cur, category),
+            "context": ctx,
+            "phone": naming.clean(phone),
+            "email": naming.clean(email),
+            "instagram": naming.clean(instagram),
+            "telegram": naming.clean(telegram),
+            "city": naming.clean(city),
+            "avatar_url": naming.clean(avatar_url),
+            "birth_day": dia,
+            "birth_month": mes,
+            "birth_year": ano,
+            "lembrete": lembrete,
+        },
+    )
+
+    # `notes` é o jeito antigo de guardar observações. Agora vira uma anotação da pessoa
+    # (aparece na aba Anotações); no espaço trabalho a anotação nasce como de trabalho.
+    texto_nota = naming.clean(notes)
+    if texto_nota:
+        _anotar_no_cursor(cur, person_id, texto_nota, context="work" if ctx == "work" else "personal")
+    return {"status": "ok", "id": person_id}
+
+
+def _lembrete_valido(dias: int | None) -> int | None:
+    """Validar o lembrete (em dias antes) de um aniversário ou data importante.
+
+    Args:
+        dias: Quantos dias antes avisar (0 = no dia). ``None`` = sem lembrete.
+
+    Returns:
+        O valor validado.
+
+    Raises:
+        ValueError: Se não for um inteiro entre 0 e 365.
+    """
+    if dias is None:
+        return None
+    try:
+        valor = int(dias)
+    except (TypeError, ValueError):
+        raise ValueError("O lembrete deve ser um número de dias (0 a 365).") from None
+    if not 0 <= valor <= 365:
+        raise ValueError("O lembrete deve ser um número de dias (0 a 365).")
+    return valor
+
+
+def _erro_de_unicidade(e: Exception, nome: str) -> dict:
+    """Traduzir uma violação de índice único do PostgreSQL em mensagem do usuário.
+
+    Args:
+        e: Exceção levantada pelo driver.
+        nome: Nome que estava sendo gravado (para citar na mensagem).
+
+    Returns:
+        ``{"status": "error", "message": ...}`` — a mensagem crua do banco só aparece
+        quando o erro não é de unicidade.
+    """
+    msg = str(e)
+    if "idx_people_normalizado_vivo" in msg or "idx_people_nickname_vivo" in msg or "unique" in msg.lower():
+        return {"status": "error", "message": f"Já existe uma pessoa viva com o nome ou apelido '{nome}' (ou variação sem acento/caixa)."}
+    return {"status": "error", "message": msg}
+
 
 def create_person(
     name: str,
@@ -61,75 +326,61 @@ def create_person(
     city: str = "",
     avatar_url: str = "",
     notes: str = "",
+    nickname: str = "",
+    full_name: str = "",
+    context: str = "personal",
+    birth_day: int | None = None,
+    birth_month: int | None = None,
+    birth_year: int | None = None,
+    birthday_remind_days: int | None = 1,
 ) -> dict:
     """Criar uma nova pessoa no cadastro canônico.
 
-    Gera um UUID único, calcula o campo `normalizado` e insere na tabela `people`.
-    Retorna erro se já existir uma pessoa viva com o mesmo nome normalizado.
+    Gera um UUID, valida os nomes (o Nome e o Apelido não podem ser de outra pessoa viva)
+    e insere em ``people``. Em qualquer agente, o Nome e o Apelido servem para
+    referenciar a pessoa.
 
     Args:
-        name: Nome de exibição (obrigatório, não-vazio).
-        relationship: Tipo de relação — "amigo/amiga", "família", "trabalho"... (livre).
-        category: Categoria canônica — "familia", "amigos", "trabalho" ou "outros".
-                  Dirige os filtros e as cores do frontend.
+        name: Nome — o que o dono escolhe e aparece em todo lugar (obrigatório).
+        relationship: Como a pessoa se relaciona com o dono ("mãe", "colega de equipe"...), texto livre.
+        category: Relacionamento da lista configurável ("familia", "amigos", "trabalho", "outros"...).
+            Desconhecido cai em "outros".
         phone: Telefone de contato.
         email: E-mail de contato.
-        instagram: Handle do Instagram (sem normalizar).
+        instagram: Handle do Instagram.
         telegram: Handle do Telegram.
         city: Cidade.
         avatar_url: URL do avatar; a UI usa iniciais quando ausente.
-        notes: Observações livres.
+        notes: Observação inicial; vira uma anotação da pessoa.
+        nickname: Apelido ("Bia"). Também resolve a pessoa nos outros agentes.
+        full_name: Nome completo ("Beatriz Silva Souza").
+        context: Espaço da pessoa: "personal" (pessoal), "work" (trabalho) ou "both" (ambos).
+        birth_day: Dia do aniversário (junto com ``birth_month``).
+        birth_month: Mês do aniversário.
+        birth_year: Ano de nascimento (opcional; a idade só aparece com ele).
+        birthday_remind_days: Dias antes para lembrar o aniversário (0 = no dia; ``None`` = sem lembrete).
 
     Returns:
-        {"status": "ok", "id": <uuid>, "message": "..."} ou {"status": "error", "message": ...}.
+        ``{"status": "ok", "id": <uuid>, "message": "..."}`` ou ``{"status": "error", "message": ...}``.
+
+    Example:
+        >>> create_person("Beatriz", nickname="Bia", birth_day=15, birth_month=5)  # doctest: +SKIP
+        {'status': 'ok', 'id': '...', 'message': 'Beatriz cadastrada com sucesso.'}
     """
-    if not name or not name.strip():
-        return {"status": "error", "message": "O nome não pode ser vazio."}
-
-    # Valida a categoria; cai em "outros" se inválida
-    categorias_validas = {"familia", "amigos", "trabalho", "outros"}
-    if category not in categorias_validas:
-        category = "outros"
-
-    # O campo normalizado é a chave de resolução — gerado aqui, nunca pelo banco
-    normalizado = _norm(name)
-    person_id = str(uuid.uuid4())
-
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO people
-                        (id, name, normalizado, relationship, category, phone, email,
-                         instagram, telegram, city, avatar_url, notes)
-                    VALUES
-                        (%(id)s, %(name)s, %(normalizado)s, %(relationship)s, %(category)s,
-                         %(phone)s, %(email)s, %(instagram)s, %(telegram)s, %(city)s,
-                         %(avatar_url)s, %(notes)s)
-                    """,
-                    {
-                        "id": person_id,
-                        "name": name.strip(),
-                        "normalizado": normalizado,
-                        "relationship": relationship or None,
-                        "category": category,
-                        "phone": phone or None,
-                        "email": email or None,
-                        "instagram": instagram or None,
-                        "telegram": telegram or None,
-                        "city": city or None,
-                        "avatar_url": avatar_url or None,
-                        "notes": notes or None,
-                    },
+                resultado = _inserir_pessoa(
+                    cur, name, relationship, category, phone, email, instagram, telegram, city,
+                    avatar_url, notes, nickname, full_name, context,
+                    birth_day, birth_month, birth_year, birthday_remind_days,
                 )
-        return {"status": "ok", "id": person_id, "message": f"{name} cadastrada com sucesso."}
-    except Exception as e:
-        msg = str(e)
-        # Índice único parcial disparado: pessoa viva com mesmo nome normalizado já existe
-        if "idx_people_normalizado_vivo" in msg or "unique" in msg.lower():
-            return {"status": "error", "message": f"Já existe uma pessoa viva com o nome '{name}' (ou variação sem acento/caixa)."}
-        return {"status": "error", "message": msg}
+        if resultado["status"] == "ok":
+            _marcar_calendario_sujo(birth_day is not None)
+            resultado["message"] = f"{naming.clean(name)} cadastrada com sucesso."
+        return resultado
+    except Exception as e:  # noqa: BLE001 — traduz unicidade; o resto vira mensagem de erro
+        return _erro_de_unicidade(e, naming.clean(name) or "")
 
 
 def create_person_on_cursor(
@@ -144,106 +395,168 @@ def create_person_on_cursor(
     city: str = "",
     avatar_url: str = "",
     notes: str = "",
+    nickname: str = "",
+    full_name: str = "",
+    context: str = "personal",
+    birth_day: int | None = None,
+    birth_month: int | None = None,
+    birth_year: int | None = None,
+    birthday_remind_days: int | None = 1,
 ) -> dict:
     """Inserir pessoa usando um cursor já aberto (sem abrir conexão própria).
 
-    Versão transacional de create_person — opera no cursor do chamador sem commitar.
+    Versão transacional de ``create_person`` — opera no cursor do chamador sem commitar.
     Permite criar uma pessoa e vinculá-la a um item na mesma transação (tudo-ou-nada).
 
     Args:
         cur: Cursor psycopg2 ativo (dentro de uma transação do chamador).
-        category: Categoria canônica — "familia", "amigos", "trabalho" ou "outros".
-        Demais parâmetros: idênticos a create_person.
+        Demais parâmetros: idênticos a ``create_person``.
 
     Returns:
-        {"status": "ok", "id": <uuid>} ou {"status": "error", "message": ...}.
+        ``{"status": "ok", "id": <uuid>}`` ou ``{"status": "error", "message": ...}``.
         Em caso de erro o chamador deve abortar a transação.
     """
-    if not name or not name.strip():
-        return {"status": "error", "message": "O nome não pode ser vazio."}
-
-    # Valida categoria
-    categorias_validas = {"familia", "amigos", "trabalho", "outros"}
-    if category not in categorias_validas:
-        category = "outros"
-
-    normalizado = _norm(name)
-    person_id = str(uuid.uuid4())
-
+    ensure_schema()  # o cursor é do chamador: garante o schema antes de usá-lo
     try:
-        cur.execute(
-            """
-            INSERT INTO people
-                (id, name, normalizado, relationship, category, phone, email,
-                 instagram, telegram, city, avatar_url, notes)
-            VALUES
-                (%(id)s, %(name)s, %(normalizado)s, %(relationship)s, %(category)s,
-                 %(phone)s, %(email)s, %(instagram)s, %(telegram)s, %(city)s,
-                 %(avatar_url)s, %(notes)s)
-            """,
-            {
-                "id": person_id,
-                "name": name.strip(),
-                "normalizado": normalizado,
-                "relationship": relationship or None,
-                "category": category,
-                "phone": phone or None,
-                "email": email or None,
-                "instagram": instagram or None,
-                "telegram": telegram or None,
-                "city": city or None,
-                "avatar_url": avatar_url or None,
-                "notes": notes or None,
-            },
+        return _inserir_pessoa(
+            cur, name, relationship, category, phone, email, instagram, telegram, city,
+            avatar_url, notes, nickname, full_name, context,
+            birth_day, birth_month, birth_year, birthday_remind_days,
         )
-        return {"status": "ok", "id": person_id}
-    except Exception as e:
-        msg = str(e)
-        if "idx_people_normalizado_vivo" in msg or "unique" in msg.lower():
-            return {"status": "error", "message": f"Já existe uma pessoa viva com o nome '{name}'."}
-        return {"status": "error", "message": msg}
+    except Exception as e:  # noqa: BLE001
+        return _erro_de_unicidade(e, naming.clean(name) or "")
+
+
+def _marcar_calendario_sujo(mudou: bool) -> None:
+    """Avisar o espelho do Google Calendar que os aniversários/datas podem ter mudado.
+
+    Best-effort: qualquer falha é ignorada (o cadastro nunca depende do espelho).
+
+    Args:
+        mudou: Só dispara se algo que aparece no calendário foi alterado.
+    """
+    if not mudou:
+        return
+    try:
+        from agents.kaguya import gcal_mirror as _gm  # noqa: PLC0415 — evita ciclo de import
+        _gm.mark_dirty("komi")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def update_person(person_id: str, **campos) -> dict:
     """Atualizar campos do perfil de uma pessoa existente.
 
-    Só altera os campos passados (atualização parcial). Recalcula `normalizado`
-    automaticamente quando `name` é alterado. Toca `updated_at` sempre.
+    Só altera os campos passados (atualização parcial). Recalcula as chaves de busca
+    quando o Nome, o Apelido ou o Nome completo mudam, e confere que não colidem com
+    os de outra pessoa. Toca ``updated_at`` sempre.
 
     Args:
         person_id: UUID da pessoa a editar.
-        **campos: Campos a atualizar — name, relationship, phone, email,
-                  instagram, telegram, city, avatar_url, notes.
+        **campos: Campos a atualizar — ``name``, ``nickname``, ``full_name``, ``relationship``,
+            ``category``, ``context``, ``phone``, ``email``, ``instagram``, ``telegram``, ``city``,
+            ``avatar_url``, ``birth_day``, ``birth_month``, ``birth_year``,
+            ``birthday_remind_days`` e ``notes`` (este último ACRESCENTA uma anotação em vez de
+            substituir algo). Texto vazio limpa o campo.
 
     Returns:
-        {"status": "ok", "message": "..."} ou {"status": "error", "message": ...}.
+        ``{"status": "ok", "message": "..."}`` ou ``{"status": "error", "message": ...}``.
     """
     if not campos:
         return {"status": "error", "message": "Nenhum campo fornecido para atualizar."}
-
-    # Se o nome mudou, recalcula o campo normalizado
-    if "name" in campos:
-        campos["normalizado"] = _norm(campos["name"])
-
-    # Monta o SET dinâmico com apenas os campos fornecidos
-    # updated_at entra uma única vez, no literal do SQL — não via campos (evita coluna duplicada)
-    updates = ", ".join(f"{k} = %({k})s" for k in campos)
+    desconhecidos = sorted(set(campos) - _CAMPOS_EDITAVEIS)
+    if desconhecidos:
+        return {"status": "error", "message": f"Campo não editável: {', '.join(desconhecidos)}."}
 
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"UPDATE people SET {updates}, updated_at = NOW() WHERE id = %(person_id)s AND deleted = FALSE",
-                    {**campos, "person_id": person_id},
+                    "SELECT name, nickname, birth_day, birth_month, birth_year, context "
+                    "FROM people WHERE id = %s AND deleted = FALSE",
+                    (person_id,),
                 )
-                if cur.rowcount == 0:
+                atual = cur.fetchone()
+                if not atual:
                     return {"status": "error", "message": "Pessoa não encontrada ou já excluída."}
+                nome_atual, apelido_atual, dia_atual, mes_atual, ano_atual, ctx_atual = atual
+
+                sets: dict = {}  # coluna -> valor; as chaves vêm só de literais deste bloco
+
+                # ── nomes ────────────────────────────────────────────────────────
+                nome = nome_atual
+                if "name" in campos:
+                    nome = naming.clean(campos["name"])
+                    if not nome:
+                        return {"status": "error", "message": "O nome não pode ser vazio."}
+                    sets["name"], sets["normalizado"] = nome, naming.norm(nome)
+
+                apelido = naming.clean(campos["nickname"]) if "nickname" in campos else apelido_atual
+                # Apelido igual ao nome (inclusive depois de renomear) é redundante.
+                if apelido and naming.norm(apelido) == naming.norm(nome):
+                    apelido = None
+                if apelido != apelido_atual:
+                    sets["nickname"], sets["nickname_norm"] = apelido, (naming.norm(apelido) or None)
+
+                if "full_name" in campos:
+                    completo = naming.clean(campos["full_name"])
+                    sets["full_name"], sets["full_name_norm"] = completo, (naming.norm(completo) or None)
+
+                if "name" in sets or "nickname" in sets:
+                    conflito = _conflito_de_nome(cur, person_id, nome, apelido)
+                    if conflito:
+                        return {"status": "error", "message": conflito}
+
+                # ── espaço e relacionamento ──────────────────────────────────────
+                if "context" in campos:
+                    try:
+                        sets["context"] = naming.valid_context(campos["context"], padrao=ctx_atual)
+                    except ValueError as e:
+                        return {"status": "error", "message": str(e)}
+                if "category" in campos:
+                    pedida = naming.clean(campos["category"]) or "outros"
+                    if _categoria_valida(cur, pedida) != pedida:
+                        return {"status": "error", "message": f"O relacionamento '{pedida}' não existe ou está arquivado."}
+                    sets["category"] = pedida
+
+                # ── aniversário (dia/mês/ano validados JUNTOS, contra o valor atual) ─
+                if any(k in campos for k in ("birth_day", "birth_month", "birth_year")):
+                    try:
+                        dia, mes, ano = naming.validate_birth(
+                            campos.get("birth_day", dia_atual),
+                            campos.get("birth_month", mes_atual),
+                            campos.get("birth_year", ano_atual),
+                        )
+                    except ValueError as e:
+                        return {"status": "error", "message": str(e)}
+                    sets["birth_day"], sets["birth_month"], sets["birth_year"] = dia, mes, ano
+                if "birthday_remind_days" in campos:
+                    try:
+                        sets["birthday_remind_days"] = _lembrete_valido(campos["birthday_remind_days"])
+                    except ValueError as e:
+                        return {"status": "error", "message": str(e)}
+
+                # ── texto livre ──────────────────────────────────────────────────
+                for chave in _CAMPOS_TEXTO_OPCIONAIS:
+                    if chave in campos and chave != "notes":
+                        sets[chave] = naming.clean(campos[chave])
+                texto_nota = naming.clean(campos.get("notes"))
+                if texto_nota:
+                    ctx_final = sets.get("context", ctx_atual)
+                    _anotar_no_cursor(cur, person_id, texto_nota, context="work" if ctx_final == "work" else "personal")
+
+                if sets:
+                    atribuicoes = ", ".join(f"{col} = %({col})s" for col in sets)
+                    cur.execute(
+                        f"UPDATE people SET {atribuicoes}, updated_at = NOW() WHERE id = %(person_id)s AND deleted = FALSE",
+                        {**sets, "person_id": person_id},
+                    )
+                elif texto_nota:
+                    cur.execute("UPDATE people SET updated_at = NOW() WHERE id = %s", (person_id,))
+        _marcar_calendario_sujo(any(k in campos for k in ("name", "birth_day", "birth_month", "birth_year", "birthday_remind_days")))
         return {"status": "ok", "message": "Perfil atualizado com sucesso."}
-    except Exception as e:
-        msg = str(e)
-        if "idx_people_normalizado_vivo" in msg or "unique" in msg.lower():
-            return {"status": "error", "message": "Já existe outra pessoa viva com esse nome."}
-        return {"status": "error", "message": msg}
+    except Exception as e:  # noqa: BLE001
+        return _erro_de_unicidade(e, naming.clean(campos.get("name")) or naming.clean(campos.get("nickname")) or "")
 
 
 def delete_person(person_id: str) -> dict:
@@ -298,11 +611,18 @@ def add_alias(person_id: str, alias: str) -> dict:
                 if not cur.fetchone():
                     return {"status": "error", "message": "Pessoa não encontrada."}
 
+                # Uma "outra forma" também resolve a pessoa nos outros agentes, então não
+                # pode coincidir com o Nome/Apelido/forma de OUTRA pessoa.
+                conflito = _conflito_de_nome(cur, person_id, alias, None)
+                if conflito:
+                    return {"status": "error", "message": conflito}
+
                 cur.execute(
-                    "INSERT INTO person_aliases (person_id, alias, normalizado) VALUES (%s, %s, %s)",
+                    "INSERT INTO person_aliases (person_id, alias, normalizado) VALUES (%s, %s, %s) RETURNING id",
                     (person_id, alias.strip(), normalizado),
                 )
-        return {"status": "ok", "message": f"Apelido '{alias}' adicionado com sucesso."}
+                alias_id = cur.fetchone()[0]
+        return {"status": "ok", "id": alias_id, "message": f"Apelido '{alias}' adicionado com sucesso."}
     except Exception as e:
         msg = str(e)
         if "idx_alias_normalizado" in msg or "unique" in msg.lower():
@@ -314,6 +634,34 @@ def add_alias(person_id: str, alias: str) -> dict:
             dono = rows[0]["name"] if rows else "outra pessoa"
             return {"status": "error", "message": f"O apelido '{alias}' já pertence a {dono}."}
         return {"status": "error", "message": msg}
+
+
+def remove_alias(alias_id: int, person_id: str | None = None) -> dict:
+    """Remover uma "outra forma de chamar" (apelido extra) de uma pessoa.
+
+    Resolve o buraco da spec 060: um apelido errado não tinha como ser removido. Remover
+    não afeta o Nome nem o Apelido principal — esses se editam em ``update_person``.
+
+    Args:
+        alias_id: ID da linha em ``person_aliases``.
+        person_id: Se informado, só remove quando o apelido pertence a essa pessoa
+            (evita apagar o apelido de outra por engano).
+
+    Returns:
+        ``{"status": "ok", "message": "..."}`` ou ``{"status": "error", "message": ...}``.
+    """
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM person_aliases WHERE id = %s AND (%s::text IS NULL OR person_id = %s::text)",
+                    (alias_id, person_id, person_id),
+                )
+                if cur.rowcount == 0:
+                    return {"status": "error", "message": "Apelido não encontrado."}
+        return {"status": "ok", "message": "Apelido removido."}
+    except Exception as e:  # noqa: BLE001
+        return {"status": "error", "message": str(e)}
 
 
 # Ano-sentinela para datas informadas apenas como MM-DD (mês-dia, sem ano).
@@ -593,42 +941,76 @@ def delete_important_date(date_id: int) -> dict:
         return {"status": "error", "message": str(e)}
 
 
-def list_people() -> dict:
-    """Listar todas as pessoas vivas com a contagem de vínculos.
+def _like_prefixo(termo_normalizado: str) -> str:
+    """Montar um padrão ``LIKE`` de prefixo, escapando os curingas digitados pelo usuário.
 
-    Retorna dados para o grid: avatar/iniciais, nome, relacionamento e
-    número de itens vinculados (link_count) em todos os domínios.
+    Sem isto, buscar ``a_b`` casaria ``axb`` (``_`` é curinga em LIKE) e ``%`` casaria tudo.
+
+    Args:
+        termo_normalizado: Termo já normalizado por ``naming.norm``.
 
     Returns:
-        {"status": "ok", "people": [{"id", "name", "relationship", "avatar_url", "link_count"}, ...]}.
+        O padrão para usar em ``LIKE`` (``\\`` é o escape padrão do PostgreSQL).
+
+    Example:
+        >>> _like_prefixo("a_b")
+        'a\\\\_b%'
+    """
+    escapado = termo_normalizado.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"{escapado}%"
+
+
+def list_people(space: str | None = None) -> dict:
+    """Listar as pessoas vivas com a contagem de vínculos.
+
+    Retorna dados para o diretório: nomes, relacionamento, espaço, cidade, aniversário,
+    outras formas de chamar e o número de itens vinculados (``link_count``) em todos os
+    domínios. Quem é "ambos" aparece nos dois espaços.
+
+    Args:
+        space: ``"personal"`` ou ``"work"`` para filtrar por espaço; vazio/``"all"`` traz todos.
+
+    Returns:
+        ``{"status": "ok", "people": [{"id", "name", "nickname", "full_name", "relationship",
+        "category", "context", "city", "avatar_url", "birth_day", "birth_month", "birth_year",
+        "aliases", "link_count"}, ...]}``.
     """
     try:
+        espacos = naming.spaces_matching(space)
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+
+    # O filtro entra como texto fixo (sem dados do usuário); o valor vai por parâmetro.
+    filtro = "AND p.context = ANY(%(espacos)s)" if espacos else ""
+    try:
         rows = run_select(
-            """
+            f"""
             SELECT
-                p.id,
-                p.name,
-                p.relationship,
-                p.category,
-                p.avatar_url,
-                COUNT(pl.id) AS link_count
+                p.id, p.name, p.nickname, p.full_name, p.relationship, p.category, p.context,
+                p.city, p.avatar_url, p.birth_day, p.birth_month, p.birth_year,
+                COUNT(pl.id) AS link_count,
+                COALESCE(
+                    (SELECT array_agg(a.alias ORDER BY a.alias) FROM person_aliases a WHERE a.person_id = p.id),
+                    '{{}}'
+                ) AS aliases
             FROM people p
             LEFT JOIN person_links pl ON pl.person_id = p.id
-            WHERE p.deleted = FALSE
-            GROUP BY p.id, p.name, p.relationship, p.category, p.avatar_url
+            WHERE p.deleted = FALSE {filtro}
+            GROUP BY p.id
             ORDER BY p.name
-            """
+            """,
+            {"espacos": list(espacos)} if espacos else None,
         )
         return {"status": "ok", "people": rows}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"status": "error", "message": str(e)}
 
 
 def find_people(query: str) -> dict:
-    """Buscar pessoas por nome ou apelido (smart-match case/acento-insensitive).
+    """Buscar pessoas por nome, apelido, nome completo ou outra forma (smart-match).
 
-    Casa o `query` normalizado contra `people.normalizado` E `person_aliases.normalizado`
-    (UNION). Só retorna pessoas vivas (deleted = FALSE).
+    Casa o ``query`` normalizado (sem caixa nem acento) como PREFIXO de qualquer um dos
+    nomes da pessoa. Só retorna pessoas vivas.
 
     A cardinalidade dirige o comportamento do agente (FR-007):
       - 0 matches → agente oferece criar a pessoa
@@ -639,99 +1021,132 @@ def find_people(query: str) -> dict:
         query: Nome ou apelido digitado pelo usuário.
 
     Returns:
-        {"status": "ok", "matches": [{"id", "name", "relationship"}, ...]}.
+        ``{"status": "ok", "matches": [{"id", "name", "nickname", "relationship"}, ...]}``.
     """
     if not query or not query.strip():
         return {"status": "ok", "matches": []}
 
-    norm_q = _norm(query)
-
     try:
         rows = run_select(
             """
-            SELECT DISTINCT p.id, p.name, p.relationship
+            SELECT p.id, p.name, p.nickname, p.relationship
             FROM people p
-            WHERE p.deleted = FALSE AND p.normalizado LIKE %(pattern)s
-
-            UNION
-
-            SELECT DISTINCT p.id, p.name, p.relationship
-            FROM people p
-            JOIN person_aliases a ON a.person_id = p.id
-            WHERE p.deleted = FALSE AND a.normalizado LIKE %(pattern)s
-
-            ORDER BY name
+            WHERE p.deleted = FALSE AND (
+                p.normalizado LIKE %(pattern)s
+                OR p.nickname_norm LIKE %(pattern)s
+                OR p.full_name_norm LIKE %(pattern)s
+                OR EXISTS (
+                    SELECT 1 FROM person_aliases a
+                    WHERE a.person_id = p.id AND a.normalizado LIKE %(pattern)s
+                )
+            )
+            ORDER BY p.name
             """,
-            {"pattern": f"{norm_q}%"},
+            {"pattern": _like_prefixo(naming.norm(query))},
         )
         return {"status": "ok", "matches": rows}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"status": "error", "message": str(e)}
 
 
 def find_people_exact(name: str) -> list[dict]:
-    """Pessoas vivas cujo nome OU apelido é exatamente ``name`` (sem acento/caixa).
+    """Pessoas vivas cujo Nome, Apelido, Nome completo ou outra forma é exatamente ``name``.
 
     Diferente de ``find_people`` (prefixo, para busca), aqui ``"Ana"`` não casa com
-    "Ana Lima". É o critério para vincular uma ``@Menção`` sem perguntar (spec 076).
+    "Ana Lima". É o critério para vincular uma ``@Menção`` sem perguntar (spec 076):
+    ``@Bia`` e ``@Beatriz`` apontam para a mesma pessoa.
+
+    Args:
+        name: Texto exato (sem acento/caixa) a procurar.
 
     Returns:
         ``[{"id", "name"}]`` — vazio em erro (vínculo é best-effort).
     """
-    if not name or not name.strip():
+    chave = naming.norm(name)
+    if not chave:
         return []
     try:
         return run_select(
             """
             SELECT p.id, p.name FROM people p
-            WHERE p.deleted = FALSE AND p.normalizado = %(n)s
-            UNION
-            SELECT p.id, p.name FROM people p
-            JOIN person_aliases a ON a.person_id = p.id
-            WHERE p.deleted = FALSE AND a.normalizado = %(n)s
+            WHERE p.deleted = FALSE AND (
+                p.normalizado = %(n)s
+                OR p.nickname_norm = %(n)s
+                OR p.full_name_norm = %(n)s
+                OR EXISTS (SELECT 1 FROM person_aliases a WHERE a.person_id = p.id AND a.normalizado = %(n)s)
+            )
+            ORDER BY p.name
             """,
-            {"n": _norm(name)},
+            {"n": chave},
         )
     except Exception:  # noqa: BLE001
         return []
 
 
-def suggest_people(query: str = "", limit: int = 8) -> dict:
-    """Sugestões para o autocomplete de ``@`` (spec 076): prefixo no nome ou apelido,
-    ou — sem termo — as pessoas mais vinculadas. Traz avatar e o apelido que casou.
+def suggest_people(query: str = "", limit: int = 8, space: str | None = None) -> dict:
+    """Sugestões para o autocomplete de ``@``: prefixo no nome, apelido ou outra forma.
+
+    Sem termo, traz as pessoas mais vinculadas. Cada sugestão traz o avatar e a forma que
+    casou (``alias``: o apelido ou a outra forma — a interface mostra "(Bia)").
+
+    Args:
+        query: O que a pessoa digitou depois do ``@``.
+        limit: Máximo de sugestões (1 a 20).
+        space: ``"personal"`` ou ``"work"`` para só sugerir quem vale naquele espaço
+            (quem é "ambos" sempre entra).
 
     Returns:
-        ``{"status": "ok", "people": [{"id", "name", "relationship", "avatar_url", "alias"}]}``.
+        ``{"status": "ok", "people": [{"id", "name", "nickname", "relationship", "avatar_url", "alias"}]}``.
     """
     limit = max(1, min(int(limit), 20))
-    norm_q = _norm(query or "")
+    norm_q = naming.norm(query or "")
+    try:
+        espacos = naming.spaces_matching(space)
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+    filtro = "AND p.context = ANY(%(espacos)s)" if espacos else ""
+    base = {"espacos": list(espacos)} if espacos else {}
     try:
         if not norm_q:
             rows = run_select(
-                """
-                SELECT p.id, p.name, p.relationship, p.avatar_url, NULL AS alias
+                f"""
+                SELECT p.id, p.name, p.nickname, p.relationship, p.avatar_url, NULL AS alias
                 FROM people p LEFT JOIN person_links pl ON pl.person_id = p.id
-                WHERE p.deleted = FALSE
+                WHERE p.deleted = FALSE {filtro}
                 GROUP BY p.id ORDER BY COUNT(pl.id) DESC, p.name LIMIT %(n)s
                 """,
-                {"n": limit},
+                {**base, "n": limit},
             )
         else:
             rows = run_select(
-                """
-                SELECT DISTINCT ON (id) id, name, relationship, avatar_url, alias, rank FROM (
-                    SELECT p.id, p.name, p.relationship, p.avatar_url, NULL::text AS alias,
+                f"""
+                SELECT DISTINCT ON (id) id, name, nickname, relationship, avatar_url, alias, rank FROM (
+                    -- Nome: prefixo (rank 0) ou início de qualquer palavra (rank 1)
+                    SELECT p.id, p.name, p.nickname, p.relationship, p.avatar_url, NULL::text AS alias,
                            CASE WHEN p.normalizado LIKE %(prefix)s THEN 0 ELSE 1 END AS rank
                     FROM people p
-                    WHERE p.deleted = FALSE AND (p.normalizado LIKE %(prefix)s OR p.normalizado LIKE %(word)s)
+                    WHERE p.deleted = FALSE {filtro}
+                      AND (p.normalizado LIKE %(prefix)s OR p.normalizado LIKE %(word)s)
                     UNION ALL
-                    SELECT p.id, p.name, p.relationship, p.avatar_url, a.alias, 0 AS rank
+                    -- Apelido: prefixo (mostra o apelido como a forma que casou)
+                    SELECT p.id, p.name, p.nickname, p.relationship, p.avatar_url, p.nickname AS alias, 0 AS rank
+                    FROM people p
+                    WHERE p.deleted = FALSE {filtro} AND p.nickname_norm LIKE %(prefix)s
+                    UNION ALL
+                    -- Nome completo: início de qualquer palavra (ex.: digitar o sobrenome)
+                    SELECT p.id, p.name, p.nickname, p.relationship, p.avatar_url, p.full_name AS alias, 2 AS rank
+                    FROM people p
+                    WHERE p.deleted = FALSE {filtro}
+                      AND (p.full_name_norm LIKE %(prefix)s OR p.full_name_norm LIKE %(word)s)
+                    UNION ALL
+                    -- Outras formas de chamar
+                    SELECT p.id, p.name, p.nickname, p.relationship, p.avatar_url, a.alias, 0 AS rank
                     FROM people p JOIN person_aliases a ON a.person_id = p.id
-                    WHERE p.deleted = FALSE AND a.normalizado LIKE %(prefix)s
+                    WHERE p.deleted = FALSE {filtro} AND a.normalizado LIKE %(prefix)s
                 ) s
                 ORDER BY id, rank
                 """,
-                {"prefix": f"{norm_q}%", "word": f"% {norm_q}%"},
+                {**base, "prefix": _like_prefixo(norm_q), "word": "% " + _like_prefixo(norm_q)},
             )
             rows = sorted(rows, key=lambda r: (r["rank"], r["name"]))[:limit]
             for r in rows:
