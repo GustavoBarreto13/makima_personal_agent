@@ -15,8 +15,10 @@ Usage:
 
 from __future__ import annotations
 
-from agents.db import run_select
-from agents.komi.integration import plain_text
+import re
+
+from agents.db import get_conn, run_select
+from agents.komi.integration import plain_text, replace_mention_id
 
 
 def _ids_inteiros(ids: list[str]) -> list[int]:
@@ -142,10 +144,88 @@ def _summary_letters(person_id: str) -> dict:
     return {"cartas": [{**r, "deep_link": f"/journal#carta/{r['id']}"} for r in cartas]}
 
 
+def _last_activity(person_ids: list[str]) -> list[dict]:
+    """Último dia do diário que cita cada pessoa.
+
+    Args:
+        person_ids: IDs das pessoas.
+
+    Returns:
+        ``[{person_id, date, text}]`` — uma linha por pessoa citada.
+    """
+    linhas = run_select(
+        """
+        SELECT DISTINCT ON (pl.person_id) pl.person_id, jp.date::text AS date, b.content AS text
+        FROM person_links pl
+        JOIN journal_bullets b ON b.id = pl.entity_id::int
+        JOIN journal_pages jp ON jp.id = b.page_id
+        WHERE pl.entity_type = 'journal_bullet' AND pl.person_id = ANY(%(ids)s)
+        ORDER BY pl.person_id, jp.date DESC
+        """,
+        {"ids": person_ids},
+    )
+    return [{**r, "text": plain_text(r["text"])} for r in linhas]
+
+
+def _on_unlink_bullet(person_id: str, bullet_id: str) -> bool:
+    """Tirar a menção da pessoa do TEXTO do bullet (``@[Bia](komi:id)`` → ``Bia``).
+
+    Sem isso o vínculo voltaria na próxima edição, porque a Violet recalcula as pessoas do bullet a
+    partir dos tokens do texto. Regrava pelo ``upsert_bullet`` (que refaz menções e vínculos).
+
+    Args:
+        person_id: A pessoa a desvincular.
+        bullet_id: ID do bullet.
+
+    Returns:
+        ``True`` se o texto mudou; ``False`` se a pessoa estava vinculada só por seleção explícita
+        (sem menção no texto) — nesse caso o vínculo em ``person_links`` é o único a remover.
+    """
+    if not str(bullet_id).isdigit():
+        return False
+    linhas = run_select("SELECT page_id, position, content, kind FROM journal_bullets WHERE id = %(id)s", {"id": int(bullet_id)})
+    if not linhas:
+        return False
+    b = linhas[0]
+    novo = re.sub(r"@\[([^\]\n]{1,80})\]\(komi:%s\)" % re.escape(person_id), r"\1", b["content"] or "")
+    if novo == b["content"]:
+        return False
+    from agents.journal.tools import upsert_bullet  # noqa: PLC0415 — evita ciclo no import
+    return upsert_bullet(b["page_id"], b["position"], novo, kind=b["kind"]).get("status") == "ok"
+
+
+def _on_merge(drop_id: str, keep_id: str, keep_name: str) -> int:
+    """Reapontar as menções da pessoa mesclada nos bullets, nas cartas e no índice de menções.
+
+    Args:
+        drop_id: ID da pessoa absorvida.
+        keep_id: ID da pessoa que fica.
+        keep_name: Nome que passa a aparecer nos tokens.
+
+    Returns:
+        Quantos textos (bullets + cartas) foram reescritos.
+    """
+    padrao = f"%(komi:{drop_id})%"
+    mudou = 0
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, content FROM journal_bullets WHERE content LIKE %s", (padrao,))
+        for bid, texto in cur.fetchall():
+            cur.execute("UPDATE journal_bullets SET content = %s WHERE id = %s", (replace_mention_id(texto, drop_id, keep_id, keep_name), bid))
+            mudou += 1
+        cur.execute("SELECT id, body FROM journal_letters WHERE body LIKE %s", (padrao,))
+        for lid, texto in cur.fetchall():
+            cur.execute("UPDATE journal_letters SET body = %s WHERE id = %s", (replace_mention_id(texto, drop_id, keep_id, keep_name), lid))
+            mudou += 1
+        cur.execute("UPDATE journal_mentions SET person_id = %s WHERE person_id = %s", (keep_id, drop_id))
+    return mudou
+
+
 LINK_TYPES = [
     {
         "entity_type": "journal_bullet", "agent": "violet", "label": "Diário", "icon": "journal",
         "resolve": _resolve_bullets, "summary_key": "diario", "summary": _summary_diary,
+        "last_activity": _last_activity, "activity_kind": "diário",
+        "on_unlink": _on_unlink_bullet, "on_merge": _on_merge,
     },
     {
         "entity_type": "journal_letter", "agent": "violet", "label": "Cartas", "icon": "mail",

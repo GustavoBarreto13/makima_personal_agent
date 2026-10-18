@@ -65,6 +65,26 @@ def _summary(person_id: str) -> dict:
                         "deep_link": f"/movies#filme/{s['movie_id']}"} for s in sessoes]}
 
 
+def _last_activity(person_ids: list[str]) -> list[dict]:
+    """Última sessão de filme vista com cada pessoa.
+
+    Args:
+        person_ids: IDs das pessoas.
+
+    Returns:
+        ``[{person_id, date, text}]`` — uma linha por pessoa que foi acompanhante.
+    """
+    return run_select(
+        """
+        SELECT DISTINCT ON (pl.person_id) pl.person_id, d.watched_date::text AS date, d.movie_title AS text
+        FROM person_links pl JOIN diary_entries d ON d.id = pl.entity_id
+        WHERE pl.entity_type = 'movie_diary_entry' AND pl.person_id = ANY(%(ids)s)
+        ORDER BY pl.person_id, d.watched_date DESC
+        """,
+        {"ids": person_ids},
+    )
+
+
 LINK_TYPES = [
     {
         "entity_type": "movie_diary_entry",
@@ -74,5 +94,7 @@ LINK_TYPES = [
         "resolve": _resolve,
         "summary_key": "filmes",
         "summary": _summary,
+        "last_activity": _last_activity,
+        "activity_kind": "filme",
     }
 ]

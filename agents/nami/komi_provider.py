@@ -94,6 +94,26 @@ def _summary(person_id: str) -> dict:
     return {"saldo": float(saldo[0]["saldo"]) if saldo else 0.0, "transacoes": transacoes}
 
 
+def _last_activity(person_ids: list[str]) -> list[dict]:
+    """Última transação (não apagada) vinculada a cada pessoa.
+
+    Args:
+        person_ids: IDs das pessoas.
+
+    Returns:
+        ``[{person_id, date, text}]`` — uma linha por pessoa com transação.
+    """
+    return run_select(
+        """
+        SELECT DISTINCT ON (pl.person_id) pl.person_id, t.data::text AS date, t.name AS text
+        FROM person_links pl JOIN transactions t ON t.id = pl.entity_id AND t.deleted = FALSE
+        WHERE pl.entity_type = 'transaction' AND pl.person_id = ANY(%(ids)s)
+        ORDER BY pl.person_id, t.data DESC
+        """,
+        {"ids": person_ids},
+    )
+
+
 LINK_TYPES = [
     {
         "entity_type": "transaction",
@@ -103,5 +123,7 @@ LINK_TYPES = [
         "resolve": _resolve,
         "summary_key": "financas",
         "summary": _summary,
+        "last_activity": _last_activity,
+        "activity_kind": "finanças",
     }
 ]

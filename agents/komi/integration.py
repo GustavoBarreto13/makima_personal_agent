@@ -34,6 +34,10 @@ Formato de um provedor (``LINK_TYPES``)::
         "by_person": waiting_for,       # (person_id: str) -> list[item]; itens achados SEM person_links
         "summary_key": "tarefas",       # chave do bloco no get_person_summary (compat. com o Hermes)
         "summary": summarize_tasks,     # (person_id: str) -> dict (o bloco)
+        "last_activity": last_by_person,  # (person_ids: list[str]) -> [{person_id, date, text}]; alimenta "há quanto tempo"
+        "activity_kind": "tarefa",      # rótulo curto da atividade ("diário", "finanças"...)
+        "on_unlink": strip_mention,     # (person_id, entity_id) -> None; limpa o que o agente guarda FORA de person_links
+        "on_merge": repoint_person,     # (drop_id, keep_id, keep_name) -> int; reaponta o ID da pessoa ao mesclar
     }]
 
 Cada ``item`` devolvido por ``resolve``/``by_person`` é um dict com: ``entity_id`` (str),
@@ -52,6 +56,7 @@ Usage:
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import logging
 import re
@@ -501,6 +506,9 @@ def _validar_spec(spec: dict, origem: str) -> dict:
         raise ValueError(f"{origem}: o provedor '{spec['entity_type']}' precisa de resolve ou by_person.")
     if spec.get("summary") and not spec.get("summary_key"):
         raise ValueError(f"{origem}: o provedor '{spec['entity_type']}' tem summary mas não summary_key.")
+    for gancho in ("last_activity", "on_unlink", "on_merge"):
+        if spec.get(gancho) is not None and not callable(spec[gancho]):
+            raise ValueError(f"{origem}: '{gancho}' do provedor '{spec['entity_type']}' precisa ser uma função.")
     return spec
 
 
@@ -778,3 +786,183 @@ def summary_blocks(person_id: str) -> dict[str, dict]:
         except Exception:  # noqa: BLE001
             logger.warning("Komi: resumo do provedor '%s' falhou.", spec["entity_type"], exc_info=True)
     return blocos
+
+
+def last_activity_map(person_ids: list[str]) -> dict[str, dict]:
+    """Descobrir, para cada pessoa, a atividade mais recente em QUALQUER agente.
+
+    Cada provedor com ``last_activity`` informa a última coisa que fez com cada pessoa; a
+    Komi soma as próprias interações registradas e fica com a mais recente de cada uma.
+    É o que alimenta "sem contato há N dias" no Início. Provedor que falha é ignorado.
+
+    Args:
+        person_ids: IDs das pessoas a consultar.
+
+    Returns:
+        ``{person_id: {"date": "AAAA-MM-DD", "kind": "diário"|"interação"|..., "text": str}}``
+        — só as pessoas que têm alguma atividade.
+    """
+    from agents.komi import tools as K  # noqa: PLC0415
+
+    ids = _ids_unicos(person_ids)
+    if not ids:
+        return {}
+    melhor: dict[str, dict] = {}
+
+    def candidato(pid: str, data, tipo: str, texto: str | None) -> None:
+        dia = _texto_data(data)
+        if dia and (pid not in melhor or dia > melhor[pid]["date"]):
+            melhor[pid] = {"date": dia, "kind": tipo, "text": texto or ""}
+
+    for spec in providers().values():
+        buscar = spec.get("last_activity")
+        if not callable(buscar):
+            continue
+        try:
+            for linha in buscar(ids) or []:
+                candidato(linha["person_id"], linha.get("date"), spec.get("activity_kind") or spec["label"].lower(), linha.get("text"))
+        except Exception:  # noqa: BLE001
+            logger.warning("Komi: last_activity do provedor '%s' falhou.", spec["entity_type"], exc_info=True)
+
+    try:
+        for r in K.run_select(
+            """
+            SELECT person_id, (happened_at AT TIME ZONE 'America/Sao_Paulo')::date::text AS dia, kind, note
+            FROM person_interactions WHERE person_id = ANY(%(ids)s) AND deleted = FALSE
+            ORDER BY happened_at DESC
+            """,
+            {"ids": ids},
+        ):
+            candidato(r["person_id"], r["dia"], "interação", r["note"] or _ROTULO_INTERACAO.get(r["kind"], "Contato"))
+    except Exception:  # noqa: BLE001
+        logger.warning("Komi: não foi possível ler as interações para a última atividade.", exc_info=True)
+    return melhor
+
+
+def run_merge_hooks(drop_id: str, keep_id: str, keep_name: str) -> tuple[dict[str, int], list[str]]:
+    """Pedir aos agentes que reapontem o ID de uma pessoa mesclada (gancho ``on_merge``).
+
+    Alguns agentes guardam o ID da pessoa FORA de ``person_links`` — tokens ``@[Nome](komi:id)``
+    em textos, o "aguardando" da Kaguya. Ao mesclar, cada um troca ``drop_id`` por ``keep_id`` com a
+    própria transação. Os ganchos devem ser idempotentes (rodar de novo não faz mal).
+
+    Args:
+        drop_id: ID da pessoa absorvida.
+        keep_id: ID da pessoa que fica.
+        keep_name: Nome da pessoa que fica (para reescrever o texto dos tokens).
+
+    Returns:
+        ``({agente: quantos itens mudaram}, [avisos])`` — ``avisos`` cita os agentes cujo gancho falhou.
+    """
+    mudancas: dict[str, int] = {}
+    avisos: list[str] = []
+    for spec in providers().values():
+        gancho = spec.get("on_merge")
+        if not callable(gancho):
+            continue
+        try:
+            mudou = int(gancho(drop_id, keep_id, keep_name) or 0)
+            if mudou:
+                mudancas[spec["agent"]] = mudancas.get(spec["agent"], 0) + mudou
+        except Exception:  # noqa: BLE001 — um agente com problema não impede a mescla
+            logger.warning("Komi: on_merge do provedor '%s' falhou.", spec["entity_type"], exc_info=True)
+            avisos.append(f"Não consegui atualizar {spec['label']} ({spec['agent']}); alguns links dela podem ficar apontando para a pessoa mesclada.")
+    return mudancas, avisos
+
+
+def link_item(person_id: str, entity_type: str, entity_id: str | int) -> dict:
+    """Vincular UMA pessoa a UM item já existente (o "Desfazer" do desvincular).
+
+    Confere com o provedor do agente que o item existe, para a API nunca criar vínculo com lixo.
+
+    Args:
+        person_id: A pessoa.
+        entity_type: Tipo do item.
+        entity_id: ID do item.
+
+    Returns:
+        ``{"status": "ok", "message": ...}`` ou ``{"status": "error", "message": ...}``.
+    """
+    from agents.komi.tools import get_conn  # noqa: PLC0415
+
+    try:
+        tipo = validate_entity_type(entity_type)
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+    spec = providers().get(tipo)
+    if spec is None or not callable(spec.get("resolve")):
+        return {"status": "error", "message": "Esse tipo de item não pode ser vinculado por aqui."}
+    try:
+        if not spec["resolve"]([str(entity_id)]):
+            return {"status": "error", "message": "Item não encontrado."}
+        with get_conn() as conn, conn.cursor() as cur:
+            ligadas = link_people(cur, tipo, entity_id, [person_id])
+        if not ligadas:
+            return {"status": "error", "message": "Pessoa não encontrada."}
+        return {"status": "ok", "message": "Vínculo restaurado."}
+    except Exception as e:  # noqa: BLE001
+        return {"status": "error", "message": str(e)}
+
+
+def unlink_item(person_id: str, entity_type: str, entity_id: str | int) -> dict:
+    """Desvincular uma pessoa de um item (a ação "Desvincular" da Memória).
+
+    Se o agente do item guarda a pessoa FORA de ``person_links`` (o token ``@[Nome](komi:id)`` num
+    bullet do diário, o "aguardando" de uma tarefa), o gancho ``on_unlink`` do provedor limpa isso
+    também — senão o vínculo seria recriado na próxima edição do texto.
+
+    Args:
+        person_id: A pessoa.
+        entity_type: Tipo do item.
+        entity_id: ID do item.
+
+    Returns:
+        ``{"status": "ok", "removed": 0|1, "undoable": bool}`` ou ``{"status": "error", "message": ...}``.
+        ``undoable`` é ``True`` quando basta ``link_item`` para desfazer (sem gancho do agente).
+    """
+    from agents.komi.tools import get_conn  # noqa: PLC0415
+
+    try:
+        tipo = validate_entity_type(entity_type)
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
+    spec = providers().get(tipo) or {}
+    gancho = spec.get("on_unlink")
+    mudou = False
+    try:
+        if callable(gancho):
+            mudou = bool(gancho(person_id, str(entity_id)))
+        with get_conn() as conn, conn.cursor() as cur:
+            removidos = unlink_person(cur, person_id, tipo, entity_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Komi: não foi possível desvincular.", exc_info=True)
+        return {"status": "error", "message": str(e)}
+    if not removidos and not mudou:
+        return {"status": "error", "message": "Esse vínculo não existe."}
+    return {"status": "ok", "removed": 1, "undoable": not callable(gancho)}
+
+
+def memory_fingerprint(items: list[dict]) -> str:
+    """Calcular uma "impressão digital" da Memória de uma pessoa.
+
+    Serve para saber se o resumo de IA guardado ficou velho: se os itens da Memória mudaram
+    (ou apareceu/sumiu algum), a impressão digital muda — sem precisar chamar a IA para descobrir.
+
+    Args:
+        items: Os itens da Memória (``get_person_memory()["items"]``).
+
+    Returns:
+        Um hash SHA-256 em hexadecimal, independente da ordem dos itens.
+
+    Example:
+        >>> a = {"entity_type": "task", "entity_id": "1", "title": "t", "snippet": None, "date": "2026-10-01"}
+        >>> memory_fingerprint([a]) == memory_fingerprint([dict(a)])
+        True
+        >>> memory_fingerprint([a]) == memory_fingerprint([{**a, "title": "outro"}])
+        False
+    """
+    linhas = sorted(
+        f"{i['entity_type']}|{i['entity_id']}|{i.get('title') or ''}|{i.get('snippet') or ''}|{i.get('date') or ''}"
+        for i in items
+    )
+    return hashlib.sha256("\n".join(linhas).encode("utf-8")).hexdigest()

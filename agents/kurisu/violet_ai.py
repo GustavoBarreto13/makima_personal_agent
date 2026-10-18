@@ -72,13 +72,14 @@ def _client():
     return _CLIENT
 
 
-def gemini_json(prompt: str, schema: dict, usage: Optional[dict] = None, temperature: float | None = None) -> dict:
-    """Chamada one-shot com JSON validado contra ``schema``."""
+def gemini_json(prompt: str, schema: dict, usage: Optional[dict] = None, temperature: float | None = None,
+                model: str | None = None) -> dict:
+    """Chamada one-shot com JSON validado contra ``schema`` (``model`` padrão: o da Violet)."""
     try:
         config = {"response_mime_type": "application/json", "response_schema": schema}
         if temperature is not None:
             config["temperature"] = temperature
-        resp = _client().models.generate_content(model=VIOLET_MODEL, contents=prompt, config=config)
+        resp = _client().models.generate_content(model=model or VIOLET_MODEL, contents=prompt, config=config)
         acumular_usage(usage, resp)
         return json.loads(resp.text)
     except VioletAIError:

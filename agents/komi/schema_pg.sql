@@ -153,6 +153,10 @@ ALTER TABLE people ADD COLUMN IF NOT EXISTS birth_month          SMALLINT;
 ALTER TABLE people ADD COLUMN IF NOT EXISTS birth_year           SMALLINT;
 ALTER TABLE people ADD COLUMN IF NOT EXISTS birthday_remind_days INT DEFAULT 1;
 
+-- Se a pessoa foi absorvida por outra ao mesclar, aqui fica o ID de quem ficou (rastro e trava
+-- para não "restaurar" uma pessoa que já virou outra).
+ALTER TABLE people ADD COLUMN IF NOT EXISTS merged_into TEXT;
+
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'people_context_check') THEN

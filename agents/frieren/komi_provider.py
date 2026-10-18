@@ -66,6 +66,27 @@ def _summary(person_id: str) -> dict:
     return {"livros": livros}
 
 
+def _last_activity(person_ids: list[str]) -> list[dict]:
+    """Último livro vinculado a cada pessoa (data de término, início ou cadastro).
+
+    Args:
+        person_ids: IDs das pessoas.
+
+    Returns:
+        ``[{person_id, date, text}]`` — uma linha por pessoa com livro vinculado.
+    """
+    return run_select(
+        """
+        SELECT DISTINCT ON (pl.person_id) pl.person_id, bk.title AS text,
+               COALESCE(bk.date_finished, bk.date_started, bk.created_at::date)::text AS date
+        FROM person_links pl JOIN books bk ON bk.id = pl.entity_id AND bk.deleted = FALSE
+        WHERE pl.entity_type = 'book' AND pl.person_id = ANY(%(ids)s)
+        ORDER BY pl.person_id, COALESCE(bk.date_finished, bk.date_started, bk.created_at::date) DESC
+        """,
+        {"ids": person_ids},
+    )
+
+
 LINK_TYPES = [
     {
         "entity_type": "book",
@@ -75,5 +96,7 @@ LINK_TYPES = [
         "resolve": _resolve,
         "summary_key": "livros",
         "summary": _summary,
+        "last_activity": _last_activity,
+        "activity_kind": "livro",
     }
 ]

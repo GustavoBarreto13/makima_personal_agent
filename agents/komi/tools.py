@@ -586,6 +586,40 @@ def delete_person(person_id: str) -> dict:
         return {"status": "error", "message": str(e)}
 
 
+def restore_person(person_id: str) -> dict:
+    """Desfazer a exclusão de uma pessoa (o "Desfazer" da interface).
+
+    Recusa se a pessoa foi MESCLADA em outra (ela já "virou" a outra) ou se o Nome/Apelido dela
+    foi ocupado por outra pessoa enquanto estava na lixeira.
+
+    Args:
+        person_id: UUID da pessoa excluída.
+
+    Returns:
+        ``{"status": "ok", "message": ...}`` ou ``{"status": "error", "message": ...}``.
+    """
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT name, nickname, deleted, merged_into FROM people WHERE id = %s", (person_id,))
+                achado = cur.fetchone()
+                if not achado:
+                    return {"status": "error", "message": "Pessoa não encontrada."}
+                nome, apelido, excluida, mesclada_em = (valor(achado, i, c) for i, c in enumerate(("name", "nickname", "deleted", "merged_into")))
+                if not excluida:
+                    return {"status": "error", "message": "Essa pessoa não está excluída."}
+                if mesclada_em:
+                    return {"status": "error", "message": "Essa pessoa foi mesclada em outra e não pode ser restaurada."}
+                conflito = _conflito_de_nome(cur, person_id, nome, apelido)
+                if conflito:
+                    return {"status": "error", "message": conflito}
+                cur.execute("UPDATE people SET deleted = FALSE, updated_at = NOW() WHERE id = %s", (person_id,))
+        _marcar_calendario_sujo(True)
+        return {"status": "ok", "message": "Pessoa restaurada."}
+    except Exception as e:  # noqa: BLE001
+        return _erro_de_unicidade(e, "")
+
+
 def add_alias(person_id: str, alias: str) -> dict:
     """Adicionar um apelido a uma pessoa.
 
@@ -1408,7 +1442,8 @@ def get_people_overview() -> dict:
     - dados de perfil (id, name, relationship, category, avatar_url)
     - datas importantes (para calcular próximas datas no frontend)
     - saldo financeiro (finance_net) — positivo = te devem, negativo = você deve
-    - última interação conhecida (last_interaction) — max entre diário, finanças e tarefas
+    - última interação conhecida (last_interaction) — a mais recente entre as interações registradas
+      na Komi e a última atividade que CADA agente informa pelo contrato (integration.last_activity_map)
 
     O frontend usa este endpoint para montar a Home (hero, reconectar, próximas
     datas, a-acertar) sem precisar chamar get_person_summary uma vez por pessoa.
@@ -1430,7 +1465,7 @@ def get_people_overview() -> dict:
               "finance_net": float,          # 0.0 se sem vínculos financeiros
               "last_interaction": {          # None se sem qualquer interação
                 "date": str,               # YYYY-MM-DD
-                "kind": str,               # "diário" | "finanças" | "tarefa"
+                "kind": str,               # "interação" | "diário" | "finanças" | "tarefa" | ... (vem do agente)
                 "text": str
               } | None,
             },
@@ -1512,95 +1547,16 @@ def get_people_overview() -> dict:
         # Nami não disponível — todos os saldos ficam em 0.0
         pass
 
-    # ── 4. Última interação — 3 fontes (diário, finanças, tarefas concluídas) ─
-    # Cada fonte em try/except separado para degradar parcialmente
-
-    # Dicionário temporário: {person_id → lista de candidatos de interação}
-    # Cada candidato é {"date": "YYYY-MM-DD", "kind": str, "text": str}
-    interacoes: dict = {pid: [] for pid in ids}
-
-    # 4a. Menções no diário (journal_bullets → journal_pages para a data)
+    # ── 4. Última interação — de QUALQUER agente + as interações registradas na Komi ──
+    # Cada agente informa a sua pela chave `last_activity` do provedor (contrato de integração);
+    # a Komi não consulta mais as tabelas dos outros.
     try:
-        diario_rows = run_select(
-            """
-            SELECT pl.person_id, jp.date::text AS date, b.content AS text
-            FROM person_links pl
-            JOIN journal_bullets b ON b.id = pl.entity_id::int
-            JOIN journal_pages jp ON jp.id = b.page_id
-            WHERE pl.entity_type = 'journal_bullet'
-              AND pl.person_id = ANY(%(ids)s)
-            ORDER BY jp.date DESC
-            """,
-            {"ids": ids},
-        )
-        for row in diario_rows:
-            pid = row["person_id"]
-            if pid in interacoes:
-                interacoes[pid].append({
-                    "date": row["date"],
-                    "kind": "diário",
-                    "text": row["text"] or "",
-                })
-    except Exception:
-        # Journal não disponível — ignora
+        from agents.komi import integration  # noqa: PLC0415 — import lazy: integration importa este módulo
+        for pid, ultima in integration.last_activity_map(ids).items():
+            if pid in data:
+                data[pid]["last_interaction"] = ultima
+    except Exception:  # noqa: BLE001 — sem provedores: o Início só fica sem "último contato"
         pass
-
-    # 4b. Transações financeiras (usa a data da transação)
-    try:
-        fin_rows = run_select(
-            """
-            SELECT pl.person_id, t.data::text AS date, t.name AS text
-            FROM person_links pl
-            JOIN transactions t ON t.id = pl.entity_id AND t.deleted = FALSE
-            WHERE pl.entity_type = 'transaction'
-              AND pl.person_id = ANY(%(ids)s)
-            ORDER BY t.data DESC
-            """,
-            {"ids": ids},
-        )
-        for row in fin_rows:
-            pid = row["person_id"]
-            if pid in interacoes:
-                interacoes[pid].append({
-                    "date": row["date"],
-                    "kind": "finanças",
-                    "text": row["text"] or "",
-                })
-    except Exception:
-        # Nami não disponível — ignora
-        pass
-
-    # 4c. Tarefas concluídas (usa completed_at)
-    try:
-        task_rows = run_select(
-            """
-            SELECT pl.person_id, t.completed_at::date::text AS date, t.title AS text
-            FROM person_links pl
-            JOIN tasks t ON t.id = pl.entity_id::int AND t.completed_at IS NOT NULL
-            WHERE pl.entity_type = 'task'
-              AND pl.person_id = ANY(%(ids)s)
-            ORDER BY t.completed_at DESC
-            """,
-            {"ids": ids},
-        )
-        for row in task_rows:
-            pid = row["person_id"]
-            if pid in interacoes:
-                interacoes[pid].append({
-                    "date": row["date"],
-                    "kind": "tarefa",
-                    "text": row["text"] or "",
-                })
-    except Exception:
-        # Kaguya não disponível — ignora
-        pass
-
-    # Para cada pessoa, escolhe a interação mais recente (max por date lexicográfica)
-    for pid, candidatos in interacoes.items():
-        if candidatos and pid in data:
-            # Datas YYYY-MM-DD ordenam lexicograficamente — descendente
-            candidatos.sort(key=lambda x: x["date"], reverse=True)
-            data[pid]["last_interaction"] = candidatos[0]
 
     # ── 5. Monta resposta final ───────────────────────────────────────────────
     return {"status": "ok", "people": list(data.values())}

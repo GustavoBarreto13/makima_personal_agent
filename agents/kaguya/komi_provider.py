@@ -17,7 +17,8 @@ Usage:
 
 from __future__ import annotations
 
-from agents.db import run_select
+from agents.db import get_conn, run_select
+from agents.komi.integration import replace_mention_id
 
 # "Dia" de uma tarefa na Memória: vencimento, senão conclusão, senão criação — sempre no
 # fuso America/Sao_Paulo (nunca a data UTC do servidor).
@@ -150,13 +151,79 @@ def _summary_waiting(person_id: str) -> dict:
     return {"itens": itens}
 
 
+def _last_activity(person_ids: list[str]) -> list[dict]:
+    """Última tarefa CONCLUÍDA vinculada a cada pessoa (dia local de São Paulo).
+
+    Args:
+        person_ids: IDs das pessoas.
+
+    Returns:
+        ``[{person_id, date, text}]`` — uma linha por pessoa com tarefa concluída.
+    """
+    return run_select(
+        """
+        SELECT DISTINCT ON (pl.person_id) pl.person_id,
+               (t.completed_at AT TIME ZONE 'America/Sao_Paulo')::date::text AS date, t.title AS text
+        FROM person_links pl JOIN tasks t ON t.id = pl.entity_id::int AND t.completed_at IS NOT NULL
+        WHERE pl.entity_type = 'task' AND pl.person_id = ANY(%(ids)s)
+        ORDER BY pl.person_id, t.completed_at DESC
+        """,
+        {"ids": person_ids},
+    )
+
+
+def _on_unlink_waiting(person_id: str, task_id: str) -> bool:
+    """Parar de "aguardar" a pessoa numa tarefa (limpa ``waiting_person_id`` e a data de cobrança).
+
+    Args:
+        person_id: A pessoa que a tarefa aguardava.
+        task_id: ID da tarefa.
+
+    Returns:
+        ``True`` se a tarefa aguardava mesmo essa pessoa e foi liberada.
+    """
+    if not str(task_id).isdigit():
+        return False
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE tasks SET waiting_person_id = NULL, follow_up_date = NULL, updated_at = now() "
+            "WHERE id = %s AND waiting_person_id = %s",
+            (int(task_id), person_id),
+        )
+        return cur.rowcount > 0
+
+
+def _on_merge(drop_id: str, keep_id: str, keep_name: str) -> int:
+    """Reapontar para a pessoa que ficou: tarefas "aguardando" e menções nas descrições.
+
+    Args:
+        drop_id: ID da pessoa absorvida.
+        keep_id: ID da pessoa que fica.
+        keep_name: Nome que passa a aparecer nos tokens ``@[Nome](komi:id)``.
+
+    Returns:
+        Quantas tarefas foram atualizadas.
+    """
+    tarefas: set[int] = set()
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE tasks SET waiting_person_id = %s WHERE waiting_person_id = %s RETURNING id", (keep_id, drop_id))
+        tarefas.update(r[0] for r in cur.fetchall())
+        cur.execute("SELECT id, description FROM tasks WHERE description LIKE %s", (f"%(komi:{drop_id})%",))
+        for tid, texto in cur.fetchall():
+            cur.execute("UPDATE tasks SET description = %s WHERE id = %s", (replace_mention_id(texto, drop_id, keep_id, keep_name), tid))
+            tarefas.add(tid)
+    return len(tarefas)
+
+
 LINK_TYPES = [
     {
         "entity_type": "task", "agent": "kaguya", "label": "Tarefas", "icon": "task",
         "resolve": _resolve, "summary_key": "tarefas", "summary": _summary_tasks,
+        "last_activity": _last_activity, "activity_kind": "tarefa",
     },
     {
         "entity_type": "task_waiting", "agent": "kaguya", "label": "Aguardando", "icon": "waiting",
         "by_person": _waiting, "summary_key": "aguardando", "summary": _summary_waiting,
+        "on_unlink": _on_unlink_waiting, "on_merge": _on_merge,
     },
 ]
