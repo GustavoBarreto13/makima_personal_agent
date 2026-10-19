@@ -82,7 +82,7 @@ export const komiApi = {
 
   /** Busca por nome, apelido ou nome completo (0, 1 ou várias). */
   search: (text: string) =>
-    api.get<{ status: string; matches: { id: string; name: string; relationship: string | null }[] }>(`${BASE}/search${q({ q: text })}`),
+    api.get<{ status: string; matches: { id: string; name: string; relationship: string }[] }>(`${BASE}/search${q({ q: text })}`),
 
   get: (id: string) => api.get<PersonDetail & { status: string }>(`${BASE}/${id}`).then(normalizeDetail),
 
