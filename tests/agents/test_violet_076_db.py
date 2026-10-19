@@ -278,3 +278,46 @@ def test_contexto_da_violet_monta_sem_erro():
     assert isinstance(CTX.sinais(d), dict)
     assert isinstance(CTX.bloco_kaguya(CTX.kaguya()), str)
     assert CTX.conselhos(d - timedelta(days=7), d) == []
+
+
+# ─── conversa sobre o Conselho do Dia (IA substituída) ─────────────────────────
+
+def _ia_falsa(monkeypatch):
+    from agents.kurisu import counsel as C
+    from agents.kurisu import violet_ai as AI
+    monkeypatch.setattr(C, "_extrair_temas", lambda *a: {"queries": ["sono"], "carga_emocional": "cansado"})
+    monkeypatch.setattr(C, "_mapear", lambda *a: {"espelho": "Dia cansado.", "humor": "cansado", "principios": []})
+    monkeypatch.setattr(C, "_escrever", lambda *a: {"essay_md": "## O que eu li no seu dia\nDurma [1].", "actions": []})
+    monkeypatch.setattr(AI, "recuperar_amplo", lambda q, citadas=None: [{"fonte": "sono.md", "uri": "gs://sono.md", "texto": "dormir"}])
+    monkeypatch.setattr(AI, "gemini_web", lambda *a, **k: None)
+    respostas = iter([{"queries": ["sono"]}, {"reply_md": "Então durma às 23h [1]."}] * 5)
+    monkeypatch.setattr(AI, "gemini_json", lambda *a, **k: next(respostas))
+
+
+def test_conversa_do_conselho_persiste_e_regerar_mantem_com_divisoria(monkeypatch):
+    from agents.kurisu import counsel as C
+    from agents.kurisu import counsel_chat as CC
+    C._ensure_counsel_tables()
+    _ia_falsa(monkeypatch)
+    d = "2026-10-03"
+    pid = T.ensure_page(d)["page"]["id"]
+    T.upsert_bullet(pid, 0, "dormi às 3h de novo")
+
+    assert CC.responder_conselho(d, "oi")["status"] == "error"  # ainda sem conselho
+    assert C.gerar_conselho(d)["counsel"]["messages"] == []
+
+    r = CC.responder_conselho(d, "Mas eu precisava terminar o trabalho.")
+    assert r["status"] == "ok"
+    assert [m["role"] for m in r["messages"]] == ["user", "violet"]
+    assert r["messages"][1]["sources"][0]["fonte"] == "sono.md"
+
+    lida = C.get_conselho(d)
+    assert [m["content_md"] for m in lida["messages"]][0] == "Mas eu precisava terminar o trabalho."
+
+    regerado = C.gerar_conselho(d)["counsel"]
+    assert [m["role"] for m in regerado["messages"]] == ["user", "violet", "marker"]
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM journal_counsel WHERE page_id = %s", (pid,))
+    assert run_select("SELECT 1 FROM journal_counsel_messages") == []

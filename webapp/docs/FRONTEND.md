@@ -178,6 +178,11 @@ Celular: barra inferior **Escrever · Arquivo · Refletir · Mais**; o botão fl
   (800 ms), Enter cria o próximo, Backspace no vazio remove (Desfazer), deslizar troca de dia. **Barra de escrita**
   (`.vl-writebar`) presa acima do teclado (`useKeyboardInset`) com tipo, `@`, `/`, fonte e Pronto. Menu ⋯ por momento:
   favoritar, tipo, Tutor, apagar. Modo foco nas preferências.
+- **Conversa no Conselho do Dia** (`components/CounselThread.tsx`, dentro do `CounselCard`): abaixo do conselho aberto,
+  você responde e a Violet responde de volta (`POST /counsel/messages`); o fio vem em `GET /counsel` (`messages`) e
+  reaparece ao reabrir o dia. Sua fala num bloco tingido, a da Violet no `Essay` (citações `[N]` tocáveis); regerar o
+  conselho insere a divisória "Conselho regerado · HH:MM". Envio otimista, "A Violet está escrevendo…" (`role=status`),
+  erro devolve o texto ao campo; Ctrl+Enter envia (no celular, só o botão Enviar). Ícone `send` novo no registro do DS.
 - **Marcação** (`lib/markup.ts`, espelho de `agents/journal/markup.py`): `@[Nome](komi:id)`, `[Rótulo](agente:tipo:id)`,
   `@legado`, `#tag-com-hifen`. `components/SmartTextarea.tsx` sugere pessoas da Komi (com cadastro) ao digitar `@` e
   agentes/itens ao digitar `/` (`/k` Kaguya, `/akane`, `/frieren`, `/marin`, `/mai`, `/yato`); `RichText` desenha os chips.

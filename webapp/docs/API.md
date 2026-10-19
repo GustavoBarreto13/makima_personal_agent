@@ -361,7 +361,8 @@ Spec 076 (Violet no Design System) reescreveu o router.
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
 | `POST` | `/api/journal/counsel` | Gera/regera o conselho (RAG amplo, 7 dias de histórico, texto com citações); até ~90s. | `{date, type_id?}` |
-| `GET` | `/api/journal/counsel` | Conselho já gerado (`essay_md`, `sources`, `digest`, `actions`; ou o formato antigo `toolkit`). | `?date=` |
+| `GET` | `/api/journal/counsel` | Conselho já gerado (`essay_md`, `sources`, `digest`, `actions`; ou o formato antigo `toolkit`) + `messages` (a conversa do dia: `[{id, role: user\|violet\|marker, content_md, sources, created_at}]`). `POST /counsel` e `PATCH /counsel/actions` também devolvem `messages`. | `?date=` |
+| `POST` | `/api/journal/counsel/messages` | Responde ao conselho: grava a mensagem e a resposta da Violet (mesmo tom e contexto do conselho, RAG curto, citações validadas). Devolve `{status, messages: [sua, da_violet]}`; falha de IA → 400 sem gravar nada. ~10–20s. | `{date, message (≤4000), type_id?}` |
 | `GET` | `/api/journal/counsel/history` | Trajetória: humor e princípios por dia. | `?limit=` |
 | `PATCH` | `/api/journal/counsel/actions` | Registra que uma ação virou tarefa. | `{page_id, action_index, task_id}` |
 | `GET`/`POST` | `/api/journal/weekly-review` | Revisão de uma semana (qualquer data dela) / gerar. | `?week=` / `{week?}` |

@@ -130,6 +130,18 @@ aplicar amanhã" + ações) → citações validadas. O contexto inclui os conse
 `journal_counsel` (`essay_md`, `sources_json`, `digest_json`; o digest alimenta os conselhos seguintes).
 Linhas antigas (só `toolkit_json`) continuam sendo exibidas no formato antigo.
 
+### Conversa sobre o conselho — `counsel_chat.py`
+
+O conselho vira conversa: o usuário responde e a Violet responde de volta, um fio por dia em
+`journal_counsel_messages` (o payload do conselho traz `messages`; regerar mantém o fio com um `marker`).
+`responder_conselho(date, message)` — tudo antes da escrita no banco (falha não grava nada, nem a mensagem dele):
+conselho do dia + últimas 20 mensagens → 1–3 buscas curtas (JSON) → `recuperar_amplo` cortado em 10 trechos (notas já
+citadas no conselho/conversa no fim da fila) → resposta de 80–300 palavras com `TOM_VIOLET` e o mesmo bloco de contexto do
+conselho (`counsel._contexto`/`_bloco_contexto`) → `normalizar_citacoes` (fontes por mensagem) → INSERT das duas
+mensagens numa transação. Sem trecho que sustente, a resposta diz que a base não tem e não cita. Só web por enquanto
+(sem tool no MCP/Hermes). Peças puras: `validar_mensagem`, `bloco_historico`, `bloco_conselho`, `fontes_da_conversa`,
+`montar_prompt_resposta`.
+
 ### Revisão semanal — `weekly_review.py`
 
 `gerar_revisao_semanal(week)` lê a semana (segunda a domingo, America/Sao_Paulo): diário, conselhos com
@@ -151,10 +163,10 @@ diz · Para esta semana; `tone` = `tapa_na_cara` | `guia` pela evidência. Uma l
 
 ### Endpoints (`webapp/backend/routers/journal.py`)
 
-`POST/GET /counsel`, `GET /counsel/history`, `PATCH /counsel/actions`, `GET/POST /weekly-review`,
+`POST/GET /counsel`, `POST /counsel/messages`, `GET /counsel/history`, `PATCH /counsel/actions`, `GET/POST /weekly-review`,
 `GET /weekly-review/history`, `PATCH /weekly-review/actions`, `GET/POST /emotion-analysis`.
 
-Testes: `tests/agents/test_kurisu_counsel.py` (peças puras do conselho) e `tests/agents/test_violet_076.py`
+Testes: `tests/agents/test_kurisu_counsel.py` (peças puras do conselho), `tests/agents/test_kurisu_counsel_chat.py` (conversa) e `tests/agents/test_violet_076.py`
 (citações, RAG amplo, semanas).
 
 ---

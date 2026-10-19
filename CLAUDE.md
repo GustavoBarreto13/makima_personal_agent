@@ -260,6 +260,7 @@ makima_personal_agent/
 │   │   ├── recency.py   # ponderação por recência dos resultados
 │   │   ├── tutor.py     # Tutor de Idiomas (spec 031) — análise de escrita via Gemini
 │   │   ├── counsel.py   # Conselho do Dia (specs 061/076) — RAG amplo, 7 dias de histórico, texto longo com citações
+│   │   ├── counsel_chat.py # conversa sobre o Conselho do Dia — responder e a Violet responde (RAG curto, citações) + journal_counsel_messages
 │   │   ├── weekly_review.py   # Revisão semanal do diário (spec 076) — job de domingo → Hermes
 │   │   ├── emotion_analysis.py # leitura emocional da Violet + distorções cognitivas (spec 076)
 │   │   ├── violet_ai.py       # Gemini, RAG amplo, citações honestas e o tom da Violet (spec 076)

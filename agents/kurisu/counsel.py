@@ -85,6 +85,21 @@ def _ensure_counsel_tables() -> None:
             cur.execute("ALTER TABLE journal_counsel ADD COLUMN IF NOT EXISTS essay_md TEXT")
             cur.execute("ALTER TABLE journal_counsel ADD COLUMN IF NOT EXISTS sources_json JSONB NOT NULL DEFAULT '[]'")
             cur.execute("ALTER TABLE journal_counsel ADD COLUMN IF NOT EXISTS digest_json JSONB NOT NULL DEFAULT '{}'")
+            # Conversa sobre o conselho (counsel_chat.py): 1 fio por conselho = por dia.
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS journal_counsel_messages (
+                    id            SERIAL PRIMARY KEY,
+                    counsel_id    INT NOT NULL REFERENCES journal_counsel(id) ON DELETE CASCADE,
+                    role          TEXT NOT NULL CHECK (role IN ('user', 'violet', 'marker')),
+                    content_md    TEXT NOT NULL,
+                    sources_json  JSONB NOT NULL DEFAULT '[]',
+                    model         TEXT,
+                    tokens_in     INT,
+                    tokens_out    INT,
+                    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_counsel_msgs ON journal_counsel_messages (counsel_id, id)")
         conn.commit()
     finally:
         conn.close()
@@ -151,7 +166,27 @@ def _json(v, default):
     return v if isinstance(v, (list, dict)) else json.loads(v)
 
 
-def _serialize_counsel_row(row: dict, date: str) -> dict:
+def serialize_message(row: dict) -> dict:
+    """Linha de ``journal_counsel_messages`` → forma ``CounselMessage`` da API."""
+    return {
+        "id": row["id"],
+        "role": row["role"],
+        "content_md": row["content_md"],
+        "sources": _json(row.get("sources_json"), []),
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+    }
+
+
+def list_messages(cur, counsel_id: int) -> list:
+    """A conversa de um conselho, em ordem (``cur`` com ``RealDictCursor``)."""
+    cur.execute("""
+        SELECT id, role, content_md, sources_json, created_at FROM journal_counsel_messages
+        WHERE counsel_id = %s ORDER BY id
+    """, (counsel_id,))
+    return [serialize_message(r) for r in cur.fetchall()]
+
+
+def _serialize_counsel_row(row: dict, date: str, messages: Optional[list] = None) -> dict:
     """Linha de ``journal_counsel`` → forma ``Counsel`` da API (formatos novo e antigo)."""
     return {
         "page_id": row["page_id"],
@@ -167,6 +202,7 @@ def _serialize_counsel_row(row: dict, date: str) -> dict:
         "tokens_out": row.get("tokens_out"),
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        "messages": messages or [],
     }
 
 
@@ -442,13 +478,21 @@ def gerar_conselho(date: str, type_id: int = 1) -> dict:
             """, (page_id, mirror, json.dumps(actions), json.dumps(signals), bool(web), _MODEL_NAME,
                   usage["in"], usage["out"], essay, json.dumps(sources), json.dumps(digest)))
             row = cur.fetchone()
+            # Regerar mantém a conversa: uma divisória marca que o texto mudou.
+            if prev:
+                cur.execute("""
+                    INSERT INTO journal_counsel_messages (counsel_id, role, content_md)
+                    SELECT %s, 'marker', 'Conselho regerado'
+                    WHERE EXISTS (SELECT 1 FROM journal_counsel_messages WHERE counsel_id = %s)
+                """, (row["id"], row["id"]))
+            messages = list_messages(cur, row["id"])
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
-    return {"status": "ok", "counsel": _serialize_counsel_row(row, date)}
+    return {"status": "ok", "counsel": _serialize_counsel_row(row, date, messages)}
 
 
 # ─── Leituras ────────────────────────────────────────────────────────────────────
@@ -463,7 +507,9 @@ def get_conselho(date: str, type_id: int = 1) -> Optional[dict]:
                 WHERE p.type_id = %s AND p.date = %s
             """, (type_id, date))
             row = cur.fetchone()
-        return _serialize_counsel_row(row, date) if row else None
+            if not row:
+                return None
+            return _serialize_counsel_row(row, date, list_messages(cur, row["id"]))
     finally:
         conn.close()
 
@@ -513,8 +559,9 @@ def marcar_acao_como_tarefa(page_id: int, action_index: int, task_id: int) -> di
             """, (json.dumps(actions), row["id"]))
             updated = cur.fetchone()
             date_str = row["date"]
+            messages = list_messages(cur, row["id"])
         conn.commit()
-        return {"status": "ok", "counsel": _serialize_counsel_row(updated, date_str)}
+        return {"status": "ok", "counsel": _serialize_counsel_row(updated, date_str, messages)}
     except Exception:
         conn.rollback()
         raise

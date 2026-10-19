@@ -90,6 +90,7 @@ from agents.kurisu.counsel import (
     list_conselhos,
     marcar_acao_como_tarefa,
 )
+from agents.kurisu.counsel_chat import MAX_MESSAGE_CHARS, responder_conselho
 # Revisão semanal e leitura emocional (spec 076) — mesmo desenho do Conselho.
 from agents.kurisu.weekly_review import (
     gerar_revisao_semanal,
@@ -220,6 +221,13 @@ class SaveTutorGuideBody(BaseModel):
 class GenerateCounselBody(BaseModel):
     """Gerar (ou regerar) o conselho do dia."""
     date: str
+    type_id: int = 1
+
+
+class CounselReplyBody(BaseModel):
+    """Responder ao conselho do dia (a Violet responde de volta)."""
+    date: str
+    message: str = Field(max_length=MAX_MESSAGE_CHARS)
     type_id: int = 1
 
 
@@ -850,6 +858,13 @@ def get_counsel_endpoint(date: str = Query(...), type_id: int = 1, user: dict = 
     """Conselho já gerado de uma data (leitura pura)."""
     _check_date(date)
     return {"counsel": get_conselho(date=date, type_id=type_id)}
+
+
+@router.post("/counsel/messages")
+def reply_counsel_endpoint(body: CounselReplyBody, user: dict = Depends(require_user)) -> dict:
+    """Responder ao conselho: grava a mensagem e a resposta da Violet (RAG curto) — ~10–20s."""
+    _check_date(body.date)
+    return _check_result(responder_conselho(date=body.date, message=body.message, type_id=body.type_id))
 
 
 @router.get("/counsel/history")

@@ -172,6 +172,15 @@ export interface CounselToolkitItem {
   titulo: string; porque: string; como: string; exemplo_hoje: string; lembrete: string; fonte: string; uri: string; origem: 'base' | 'web'
 }
 
+/** Conversa sobre o conselho: fala dele, resposta da Violet ou divisória de "conselho regerado". */
+export interface CounselMessage {
+  id: number
+  role: 'user' | 'violet' | 'marker'
+  content_md: string
+  sources: Source[]
+  created_at: string | null
+}
+
 export interface Counsel {
   page_id: number
   date: string
@@ -187,6 +196,7 @@ export interface Counsel {
   tokens_out: number | null
   created_at: string | null
   updated_at: string | null
+  messages: CounselMessage[]
 }
 
 export interface CounselHistoryItem { page_id: number; date: string; mirror: string; humor: string | null; principios: string[] }

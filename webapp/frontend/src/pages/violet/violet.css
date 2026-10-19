@@ -158,6 +158,30 @@ span.vl-chip { cursor: default; }
 .vl-refs summary { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--ds-ink-2); min-height: 36px; }
 .vl-refs ol { margin: var(--ds-space-2) 0 0; padding-left: 1.6em; display: grid; gap: 4px; }
 
+/* conversa sobre o conselho (CounselThread) — a sua fala recuada num bloco tingido; a da Violet direto no papel */
+.vl-thread { display: grid; gap: var(--ds-space-3); border-top: 1px dashed var(--ds-line); padding-top: var(--ds-space-3); }
+.vl-thread h4 { margin: 0; font-size: var(--ds-text-sm); font-family: var(--ds-font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--ds-ink-3); }
+.vl-thread-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--ds-space-4); }
+.vl-msg { display: grid; gap: var(--ds-space-1); min-width: 0; }
+.vl-msg-who { font-family: var(--ds-font-mono); font-size: var(--ds-text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--ds-ink-3); }
+.vl-msg-user { margin-left: var(--ds-space-6); padding: var(--ds-space-2) var(--ds-space-3); background: var(--ds-accent-tint); border-radius: var(--ds-r-md); }
+.vl-msg-user p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ds-ink-1); line-height: 1.55; }
+.vl-msg-violet .vl-msg-who { color: var(--ds-accent-deep); }
+.vl-msg-violet .vl-essay-reply { font-size: 1rem; }
+.vl-msg-violet .vl-essay-reply p:last-child { margin-bottom: 0; }
+.vl-msg-pending { color: var(--ds-accent-deep); font-weight: 600; }
+.vl-msg-marker { display: flex; align-items: center; gap: var(--ds-space-2); color: var(--ds-ink-3); font-size: var(--ds-text-xs); font-family: var(--ds-font-mono); }
+.vl-msg-marker::before, .vl-msg-marker::after { content: ''; flex: 1; border-top: 1px solid var(--ds-line-2); }
+.vl-thread-compose { display: grid; gap: var(--ds-space-2); justify-items: end; }
+.vl-thread-compose .ds-field { width: 100%; }
+.vl-thread-compose .ds-textarea { max-height: 40vh; resize: none; overflow-y: auto; }
+.vl-thread-compose .ds-btn { min-height: 44px; }
+@media (max-width: 639px) {
+  .vl-msg-user { margin-left: var(--ds-space-3); }
+  .vl-thread-compose { justify-items: stretch; }
+  .vl-thread-compose .ds-hint { display: none; }
+}
+
 /* ── Emoções ───────────────────────────────────────────────────────────── */
 .vl-intensity { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; }
 .vl-score-1to10 { grid-template-columns: repeat(10, 1fr); }

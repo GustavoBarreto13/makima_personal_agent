@@ -14,13 +14,13 @@ import {
   Ban, Building2, MonitorPlay, RadioTower,
   Archive, ArchiveRestore, BedDouble, Bold, Briefcase, CalendarClock, ClipboardCheck, Code, Coffee, Columns3, Files, Folder, FolderOpen, GitBranch,
   GripVertical, Heading2, Hourglass, Italic, Lightbulb, ListOrdered, ListTodo, ListTree, Lock, LockOpen, Notebook, PanelRight, Pin, Quote, Sunset,
-  Table, TreePine, AlarmClock, History, CloudMoon, Compass, Dices, Gem, Stamp, Type, Cake, GitMerge, Video, type LucideIcon,
+  Table, TreePine, AlarmClock, History, CloudMoon, Compass, Dices, Gem, Stamp, Type, Cake, GitMerge, Video, SendHorizontal, type LucideIcon,
 } from 'lucide-react'
 
 export const ICONS = {
   // ações
   add: Plus, close: X, check: Check, edit: Pencil, delete: Trash2, undo: Undo2, copy: Copy, refresh: RefreshCw, download: Download, upload: Upload,
-  search: Search, filter: Filter, sort: ArrowUpDown, group: Layers, more: Ellipsis, play: Play, link: Link, eye: Eye, 'eye-off': EyeOff,
+  search: Search, filter: Filter, sort: ArrowUpDown, group: Layers, more: Ellipsis, play: Play, link: Link, eye: Eye, 'eye-off': EyeOff, send: SendHorizontal,
   // navegação
   home: House, back: ArrowLeft, forward: ArrowRight, left: ChevronLeft, right: ChevronRight, up: ChevronUp, down: ChevronDown, menu: Menu,
   apps: LayoutGrid, grid: Grid2x2, list: List, command: Command, keyboard: Keyboard,

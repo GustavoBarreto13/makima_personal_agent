@@ -1,6 +1,7 @@
 // Conselho do Dia (spec 061, reescrito na 076): a Violet lê o dia, os últimos 7 conselhos, seus valores, a
 // Kaguya e a sua base de conhecimento, e escreve um conselho franco, com as notas citadas. Sob demanda (é uma
 // chamada longa). O espelho aparece logo; o texto inteiro abre em "Ler o conselho". As ações viram tarefa.
+// Abaixo, a conversa (CounselThread): você responde e a Violet responde de volta, um fio por dia.
 
 import { useEffect, useRef, useState } from 'react'
 import { Button, Icon, IconButton, Sheet, toast } from '../../../design'
@@ -9,6 +10,7 @@ import { kaguyaApi } from '../../kaguya/api'
 import { useViolet } from '../context'
 import { violetApi } from '../violetApi'
 import type { Counsel, CounselHistoryItem } from '../types'
+import { CounselThread } from './CounselThread'
 import { Essay } from './Essay'
 
 const STEPS = ['Lendo o seu dia…', 'Relendo os últimos conselhos…', 'Procurando na sua base…', 'Cruzando as notas…', 'Escrevendo o conselho…']
@@ -130,6 +132,13 @@ export function CounselCard({ date, hasContent }: { date: string; hasContent: bo
                 </div>
               ))}
             </div>
+          )}
+          {(open || !isNew || (counsel.messages?.length ?? 0) > 0) && (
+            <CounselThread
+              date={counsel.date}
+              messages={counsel.messages ?? []}
+              onChange={(messages) => setCounsel((c) => (c ? { ...c, messages } : c))}
+            />
           )}
           <footer className="vl-card-foot">
             <Button size="sm" variant="ghost" icon="refresh" onClick={() => void generate()}>Regerar</Button>

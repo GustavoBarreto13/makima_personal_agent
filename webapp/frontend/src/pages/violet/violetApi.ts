@@ -3,7 +3,7 @@
 
 import { api } from '../../lib/api'
 import type {
-  Bullet, BulletKind, Counsel, CounselHistoryItem, DayBullets, DreamItem, Emotion, EmotionAnalysis, EmotionLog, EmotionPatterns,
+  Bullet, BulletKind, Counsel, CounselHistoryItem, CounselMessage, DayBullets, DreamItem, Emotion, EmotionAnalysis, EmotionLog, EmotionPatterns,
   EntryListItem, Font, Letter, MentionCount, PageResponse, PersonSuggestion, RefCount, ReflectPayload, RefProvider, RefResult,
   ScoreKey, Strength, TutorAnalysis, TutorAnalysisSummary, TutorConcept, TutorGuide, TutorProgress, ValuesArea, ValuesAssessment,
   ValuesGuide, WeeklyReview, WeeklyReviewItem, CollectionItem,
@@ -88,6 +88,8 @@ export const violetApi = {
   // ── conselho e revisão semanal ──
   getCounsel: (date: string) => api.get<{ counsel: Counsel | null }>(`${B}/counsel${qs({ date })}`),
   generateCounsel: (date: string) => api.post<{ status: string; counsel: Counsel }>(`${B}/counsel`, { date }),
+  replyCounsel: (date: string, message: string) =>
+    api.post<{ status: string; messages: CounselMessage[] }>(`${B}/counsel/messages`, { date, message }),
   counselHistory: (limit = 14) => api.get<{ items: CounselHistoryItem[] }>(`${B}/counsel/history${qs({ limit })}`),
   markActionAsTask: (page_id: number, action_index: number, task_id: number) =>
     api.patch<{ status: string; counsel: Counsel }>(`${B}/counsel/actions`, { page_id, action_index, task_id }),

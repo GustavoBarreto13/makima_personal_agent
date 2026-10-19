@@ -53,7 +53,7 @@ diferentes.
 | **Pessoas** | Agente Komi | `people`, `person_aliases`, `person_dates`, `person_links`, `person_categories`, `person_notes`, `person_interactions`, `person_memory_summaries`, `person_relation_kinds`, `person_relations`, `person_groups`, `person_group_members`, `komi_migrations` |
 | **Diário** (Violet) | `agents/journal` | `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_refs`, `journal_emotions`, `journal_emotion_logs`, `journal_letters`, `journal_values_assessments`, `journal_values_areas`, `journal_values_commitments`, `journal_values_checkins` |
 | **Tutor de Idiomas** (cross-domain — FK p/ `journal_bullets`) | Agente Kurisu | `journal_tutor_analyses`, `journal_tutor_events`, `journal_tutor_skills`, `journal_tutor_guides` |
-| **Conselho do Dia, revisão semanal e leitura emocional** (cross-domain — IA da Violet) | Agente Kurisu | `journal_counsel`, `journal_weekly_reviews`, `journal_emotion_analyses` |
+| **Conselho do Dia, revisão semanal e leitura emocional** (cross-domain — IA da Violet) | Agente Kurisu | `journal_counsel`, `journal_counsel_messages`, `journal_weekly_reviews`, `journal_emotion_analyses` |
 | **Infraestrutura** (agendador de jobs) | `scheduler/` | `scheduler_runs` |
 
 ---
@@ -1778,6 +1778,26 @@ declarada (Kaguya não sabe que o conselho existe — Self-Contained Agents).
 do produto — a profundidade foi redirecionada para o toolkit (`exemplo_hoje`/`lembrete`
 novos). `_ensure_counsel_tables()` roda `ALTER TABLE ... DROP COLUMN IF EXISTS question`
 idempotente para bancos que já tinham a coluna.
+
+### `journal_counsel_messages` *(conversa sobre o Conselho do Dia — Kurisu, `counsel_chat.py`)*
+
+A conversa do dia com a Violet sobre o conselho: um fio por conselho (= por dia). Criada por
+`counsel._ensure_counsel_tables()` (idempotente). Regerar o conselho preserva o `id` da linha de
+`journal_counsel` e, se já havia mensagens, insere um `marker` na mesma transação.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID interno; também a ordem do fio. |
+| `counsel_id` | INT | NÃO | — | FK `journal_counsel(id) ON DELETE CASCADE`. |
+| `role` | TEXT | NÃO | — | `CHECK IN ('user','violet','marker')` — fala dele, resposta da Violet ou divisória "Conselho regerado". |
+| `content_md` | TEXT | NÃO | — | Texto (Markdown na resposta da Violet, com citações `[N]` já validadas). |
+| `sources_json` | JSONB | NÃO | `'[]'` | Só `violet`: notas citadas na mensagem, `[{n, fonte, uri, titulo}]` (numeração própria de cada mensagem). |
+| `model` | TEXT | SIM | — | Modelo usado na resposta (`VIOLET_MODEL`). |
+| `tokens_in` / `tokens_out` | INT | SIM | — | Soma das chamadas Gemini da resposta (buscas + resposta). |
+| `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Quando foi escrita (a UI mostra em America/Sao_Paulo). |
+
+**Índices:** `idx_counsel_msgs` em `(counsel_id, id)`. A mensagem dele e a resposta são gravadas juntas,
+numa transação, só depois que a IA respondeu (falha não grava nada).
 
 ### `journal_weekly_reviews` *(spec 076 — Revisão semanal, Kurisu)*
 

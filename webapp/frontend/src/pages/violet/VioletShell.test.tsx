@@ -67,6 +67,22 @@ describe('Escrever', () => {
     expect(api.ensurePage).toHaveBeenCalledTimes(1)
   })
 
+  it('reabrir o dia traz a conversa com a Violet sobre o conselho', async () => {
+    api.page.mockResolvedValue({ ...PAGE, bullets: [{ id: 1, page_id: 9, kind: 'bullet', content: 'Dormi tarde', position: 0, created_at: null, favorite: false }] })
+    api.getCounsel.mockResolvedValue({ counsel: {
+      page_id: 9, date: TODAY, mirror: 'Você dormiu tarde de novo.', essay_md: 'Texto do conselho.', sources: [], digest: {},
+      toolkit: [], actions: [], used_web: false, tokens_in: null, tokens_out: null, created_at: null, updated_at: null,
+      messages: [
+        { id: 1, role: 'user', content_md: 'Eu precisava terminar o trabalho.', sources: [], created_at: null },
+        { id: 2, role: 'violet', content_md: 'E o trabalho de amanhã, com sono?', sources: [], created_at: null },
+      ],
+    } })
+    await open()
+    expect(await screen.findByText('Eu precisava terminar o trabalho.')).toBeTruthy()
+    expect(screen.getByText('E o trabalho de amanhã, com sono?')).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Responder à Violet' })).toBeTruthy()
+  })
+
   it('@ sugere a Komi e grava o token com o id', async () => {
     const user = await open()
     await screen.findByPlaceholderText(/Como foi o seu dia/)

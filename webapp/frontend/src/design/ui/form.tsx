@@ -3,7 +3,7 @@
 // Regras: nunca <input type="date|time"> (o popup do sistema ignora os tokens); validação inline
 // embaixo do campo, nunca em alert; toda mensagem de erro diz o que fazer.
 
-import { useEffect, useMemo, useRef, useState, type InputHTMLAttributes, type KeyboardEvent, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import { useEffect, useMemo, useRef, useState, type InputHTMLAttributes, type KeyboardEvent, type ReactNode, type Ref, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import { fmtDate, fmtNumber, isoDate, MONTHS_LONG, parseISODate, todayISO, WEEKDAYS_SHORT } from '../core/format'
 import { useDismissable } from '../headless/overlay'
 import { Avatar, cx, useFieldId } from './primitives'
@@ -47,7 +47,7 @@ export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputEleme
   return <input className={cx('ds-input', className)} {...rest} />
 }
 
-export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { ref?: Ref<HTMLTextAreaElement> }) {
   return <textarea className={cx('ds-textarea', className)} {...rest} />
 }
 
