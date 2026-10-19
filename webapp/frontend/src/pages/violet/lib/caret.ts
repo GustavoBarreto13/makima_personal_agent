@@ -1,6 +1,8 @@
 // Onde o cursor deve cair quando você toca no texto de um momento já escrito: a posição (em caracteres)
-// do ponto tocado dentro do texto desenhado. Só vale quando o texto desenhado é igual ao texto guardado
-// (sem chips de pessoa/referência, que mudam o comprimento); caso contrário o cursor vai para o fim.
+// do ponto tocado dentro do texto desenhado, traduzida para o texto de exibição do campo (onde os chips
+// aparecem só com o nome). Se o desenho não bater com o texto guardado, o cursor vai para o fim.
+
+import { displayOffsetFromRendered, renderedText, toDisplay } from './markup'
 
 type CaretDoc = Document & {
   caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
@@ -26,8 +28,10 @@ export function caretOffsetFromPoint(container: HTMLElement, x: number, y: numbe
   return range.toString().length
 }
 
-/** Posição do cursor para editar ``raw`` depois de um toque no texto desenhado em ``container``. */
+/** Posição do cursor (no texto de exibição) para editar ``raw`` depois de um toque em ``container``. */
 export function caretForEdit(container: HTMLElement, raw: string, x: number, y: number): number {
-  if ((container.textContent ?? '') !== raw) return raw.length
-  return caretOffsetFromPoint(container, x, y) ?? raw.length
+  const end = toDisplay(raw).text.length
+  if ((container.textContent ?? '') !== renderedText(raw)) return end
+  const at = caretOffsetFromPoint(container, x, y)
+  return at === null ? end : displayOffsetFromRendered(raw, at) ?? end
 }

@@ -86,3 +86,88 @@ export const refToken = (label: string, agent: string, entityType: string, entit
 
 /** Palavras do texto já sem a sintaxe. */
 export const wordCount = (text: string): number => plainText(text).split(/\s+/).filter(Boolean).length
+
+// ── Texto de exibição (o que aparece no campo enquanto você edita) ─────────────────────────────────
+// No campo, `@[Carla](komi:1)` aparece só como `Carla` e `[Matrix](akane:movie:3)` como `Matrix` — o mesmo
+// texto que o `RichText` desenha. Cada trecho desses guarda o token original; o resto é texto comum.
+
+export interface DisplayToken { start: number; end: number; raw: string; kind: 'person' | 'ref' }
+export interface Display { text: string; tokens: DisplayToken[] }
+
+/** Texto guardado → texto de exibição + onde estão os tokens. */
+export function toDisplay(raw: string): Display {
+  const src = raw ?? ''
+  let text = ''
+  const tokens: DisplayToken[] = []
+  let at = 0
+  for (const h of collect(src)) {
+    const s = h.seg
+    const label = s.type === 'person' && s.personId ? s.name : s.type === 'ref' ? s.label : null
+    if (label === null) continue
+    text += src.slice(at, h.start)
+    tokens.push({ start: text.length, end: text.length + label.length, raw: src.slice(h.start, h.end), kind: s.type === 'ref' ? 'ref' : 'person' })
+    text += label
+    at = h.end
+  }
+  return { text: text + src.slice(at), tokens }
+}
+
+/** Texto de exibição → texto guardado (os tokens voltam no lugar dos rótulos). */
+export function fromDisplay(d: Display): string {
+  let out = ''
+  let at = 0
+  for (const t of d.tokens) {
+    out += d.text.slice(at, t.start) + t.raw
+    at = t.end
+  }
+  return out + d.text.slice(at)
+}
+
+/** Troca `[start, end)` do texto de exibição por `ins`. Tokens tocados pelo trecho viram texto comum. */
+export function spliceDisplay(d: Display, start: number, end: number, ins: Display): Display {
+  const delta = ins.text.length - (end - start)
+  const tokens: DisplayToken[] = []
+  for (const t of d.tokens) {
+    if (t.end <= start) tokens.push(t)
+    else if (t.start >= end) tokens.push({ ...t, start: t.start + delta, end: t.end + delta })
+  }
+  for (const t of ins.tokens) tokens.push({ ...t, start: t.start + start, end: t.end + start })
+  tokens.sort((a, b) => a.start - b.start)
+  return { text: d.text.slice(0, start) + ins.text + d.text.slice(end), tokens }
+}
+
+/**
+ * O campo mudou de `prev.text` para `next`: acha o trecho alterado (prefixo e sufixo comuns; `caret`, o cursor depois
+ * da mudança, desfaz a ambiguidade de letras repetidas) e aplica. O que foi digitado entra como texto comum.
+ */
+export function editDisplay(prev: Display, next: string, caret = next.length): Display {
+  const a = prev.text
+  let s = 0
+  const maxS = Math.min(a.length, next.length - Math.min(caret, next.length))
+  while (s < maxS && a[a.length - 1 - s] === next[next.length - 1 - s]) s++
+  let p = 0
+  const maxP = Math.min(a.length - s, next.length - s)
+  while (p < maxP && a[p] === next[p]) p++
+  return spliceDisplay(prev, p, a.length - s, { text: next.slice(p, next.length - s), tokens: [] })
+}
+
+/**
+ * Posição no texto de exibição que corresponde a `rendered` caracteres do texto desenhado pelo `RichText`
+ * (que mostra o `@Ana` legado sem o `@`). Devolve `null` se `rendered` passar do fim.
+ */
+export function displayOffsetFromRendered(raw: string, rendered: number): number | null {
+  let r = 0
+  let d = 0
+  for (const s of segments(raw ?? '')) {
+    const shown = s.type === 'text' ? s.text.length : s.type === 'person' ? s.name.length : s.type === 'ref' ? s.label.length : s.tag.length + 1
+    const lead = s.type === 'person' && !s.personId ? 1 : 0 // o "@" do legado existe no campo, não no desenho
+    if (rendered <= r + shown) return d + lead + (rendered - r)
+    r += shown
+    d += shown + lead
+  }
+  return rendered === r ? d : null
+}
+
+/** O texto que o `RichText` desenha para `raw` (para conferir se o toque caiu no texto certo). */
+export const renderedText = (raw: string): string =>
+  segments(raw ?? '').map((s) => (s.type === 'text' ? s.text : s.type === 'person' ? s.name : s.type === 'ref' ? s.label : `#${s.tag}`)).join('')

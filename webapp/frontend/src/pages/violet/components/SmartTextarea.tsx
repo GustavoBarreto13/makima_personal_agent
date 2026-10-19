@@ -3,12 +3,15 @@
 //   /            → os agentes que dá para citar (Kaguya, Akane, Frieren, Marin, Mai, Yato)
 //   /akane Matr  → filmes da Akane; escolher vira [Matrix](akane:movie:<id>)
 // Setas/Enter/Tab escolhem, Esc fecha. No celular a lista fica presa acima do teclado (CSS .vl-suggest).
+// `value`/`onChange` são o texto guardado (com tokens); o campo mostra o texto de exibição — só "Carla" e
+// "Matrix", com o fundo de chip pintado por um espelho atrás do textarea. Backspace/Delete colado no chip
+// apaga o chip inteiro; editar no meio dele o transforma em texto comum.
 // A detecção do gatilho é a do design (core/markdown: findMention/splitSlashQuery); a busca é da Violet.
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type TextareaHTMLAttributes } from 'react'
+import { Fragment, forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type TextareaHTMLAttributes } from 'react'
 import { Avatar, Icon, toast, type IconName } from '../../../design'
 import { applyMention, findMention, splitSlashQuery, type MentionMatch } from '../../../design/core/markdown'
-import { personToken } from '../lib/markup'
+import { editDisplay, fromDisplay, personToken, spliceDisplay, toDisplay, type Display } from '../lib/markup'
 import { createPerson, searchPeople } from '../lib/people'
 import { AGENT_META, matchAgent, refIcon } from '../lib/refs'
 import { violetApi } from '../violetApi'
@@ -58,13 +61,23 @@ export const SmartTextarea = forwardRef<SmartTextareaHandle, Props>(function Sma
   const [open, setOpen] = useState<Open | null>(null)
   const seq = useRef(0)
 
+  // Texto de exibição derivado do guardado; só é refeito quando o `value` vem de fora (não do que emitimos).
+  const disp = useRef<{ raw: string; d: Display }>({ raw: value, d: toDisplay(value) })
+  if (disp.current.raw !== value) disp.current = { raw: value, d: toDisplay(value) }
+  const shown = disp.current.d
+  const emit = useCallback((d: Display) => {
+    const raw = fromDisplay(d)
+    disp.current = { raw, d }
+    onChange(raw)
+  }, [onChange])
+
   // Cresce com o conteúdo (encolhe ao apagar).
   useLayoutEffect(() => {
     const el = area.current
     if (!el) return
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
-  }, [value])
+  }, [shown.text])
 
   useEffect(() => {
     if (pendingSel.current !== null && area.current) {
@@ -144,13 +157,16 @@ export const SmartTextarea = forwardRef<SmartTextareaHandle, Props>(function Sma
     setOpen(null)
     let text: string
     try { text = await item.insert() } catch { toast('Não consegui cadastrar agora.', { tone: 'error' }); return }
-    const edit = applyMention(value, match, caret, text)
-    pendingSel.current = edit.start
-    onChange(edit.text)
+    const ins = toDisplay(text)
+    const cur = disp.current.d
+    const next = spliceDisplay(cur, match.start, Math.max(caret, match.start), ins)
+    const pos = applyMention(cur.text, match, caret, ins.text).start
+    pendingSel.current = pos
+    emit(next)
     // Escolher o agente ("/akane ") já abre a busca dele.
-    if (text.startsWith('/')) window.setTimeout(() => detect(edit.text, edit.start), 0)
+    if (text.startsWith('/')) window.setTimeout(() => detect(next.text, pos), 0)
     area.current.focus()
-  }, [open, value, onChange, detect])
+  }, [open, emit, detect])
 
   useImperativeHandle(ref, () => ({
     el: area.current,
@@ -164,18 +180,19 @@ export const SmartTextarea = forwardRef<SmartTextareaHandle, Props>(function Sma
     insert: (text: string) => {
       const el = area.current
       if (!el) return
-      const s = el.selectionStart ?? value.length, e = el.selectionEnd ?? value.length
+      const cur = disp.current.d
+      const s = el.selectionStart ?? cur.text.length, e = el.selectionEnd ?? cur.text.length
       // O gatilho só vale no começo de palavra: põe um espaço antes se precisar.
-      const before = value.slice(0, s)
+      const before = cur.text.slice(0, s)
       const lead = before && !/\s$/.test(before) ? ' ' : ''
-      const next = before + lead + text + value.slice(e)
+      const next = spliceDisplay(cur, s, e, { text: lead + text, tokens: [] })
       const caret = s + lead.length + text.length
       pendingSel.current = caret
-      onChange(next)
+      emit(next)
       el.focus()
-      window.setTimeout(() => detect(next, caret), 0)
+      window.setTimeout(() => detect(next.text, caret), 0)
     },
-  }), [value, onChange, detect])
+  }), [emit, detect])
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (open && open.items.length) {
@@ -187,17 +204,42 @@ export const SmartTextarea = forwardRef<SmartTextareaHandle, Props>(function Sma
       if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); void pick(open.items[open.index]); return }
     }
     if (open && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(null); return }
+    // Backspace logo depois de um chip (ou Delete logo antes) apaga o chip inteiro.
+    if ((e.key === 'Backspace' || e.key === 'Delete') && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      const el = e.currentTarget
+      const at = el.selectionStart
+      const cur = disp.current.d
+      const t = at === el.selectionEnd && cur.tokens.find((x) => (e.key === 'Backspace' ? x.end === at : x.start === at))
+      if (t) {
+        e.preventDefault()
+        pendingSel.current = t.start
+        const next = spliceDisplay(cur, t.start, t.end, { text: '', tokens: [] })
+        emit(next)
+        detect(next.text, t.start)
+        return
+      }
+    }
     onKeyDown?.(e)
   }
 
   return (
     <div className="vl-smart">
+      {shown.tokens.length > 0 && (
+        <div className={`${className ?? ''} vl-smart-mirror`} aria-hidden="true">
+          {mirror(shown)}
+        </div>
+      )}
       <textarea
         ref={area}
         rows={1}
         className={className}
-        value={value}
-        onChange={(e) => { onChange(e.target.value); detect(e.target.value, e.target.selectionStart) }}
+        value={shown.text}
+        onChange={(e) => {
+          const caret = e.target.selectionStart
+          const next = editDisplay(disp.current.d, e.target.value, caret)
+          emit(next)
+          detect(next.text, caret)
+        }}
         onClick={(e) => detect(e.currentTarget.value, e.currentTarget.selectionStart)}
         onKeyDown={onKey}
         aria-autocomplete="list"
@@ -229,3 +271,17 @@ export const SmartTextarea = forwardRef<SmartTextareaHandle, Props>(function Sma
     </div>
   )
 })
+
+/** O espelho: o mesmo texto, com os trechos de token marcados (só o fundo aparece). */
+function mirror(d: Display) {
+  const out: ReactNode[] = []
+  let at = 0
+  for (const t of d.tokens) {
+    if (t.start > at) out.push(<Fragment key={`t${at}`}>{d.text.slice(at, t.start)}</Fragment>)
+    out.push(<mark key={`k${t.start}`} className="vl-smart-chip" data-kind={t.kind}>{d.text.slice(t.start, t.end)}</mark>)
+    at = t.end
+  }
+  // Uma quebra de linha no fim precisa de algo depois para ocupar a linha.
+  out.push(<Fragment key="end">{d.text.slice(at)}{d.text.endsWith('\n') ? ' ' : ''}</Fragment>)
+  return out
+}
