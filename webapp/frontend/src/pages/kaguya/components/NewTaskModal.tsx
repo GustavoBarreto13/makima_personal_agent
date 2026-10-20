@@ -11,8 +11,8 @@ import {
 import { captureChips } from '../../../design/core/capture'
 import { kaguyaApi } from '../api'
 import { useKaguya, type NewTaskDefaults } from '../context'
-import { localISO, timeToMin } from '../lib/calendar'
-import { DURATIONS } from '../lib/durations'
+import { localISO, minToLabel, timeToMin } from '../lib/calendar'
+import { DURATIONS, durationBetween, endFromDuration } from '../lib/durations'
 import { listOptions } from '../lib/listOptions'
 import { resolveProject, taskParser } from '../lib/quickAdd'
 import { presetLabels, ruleFor, type RecurrencePreset } from '../lib/recurrence'
@@ -85,6 +85,33 @@ export function NewTaskModal({ defaults, onClose }: { defaults?: NewTaskDefaults
   const dirty = !!(title.trim() || notes.trim() || subs.length || tags.length || assignees.length || due !== (defaults?.due ?? ''))
   const f = parsed.fields
   const effDue = due || f.dueDate || ''
+
+  // Duração e horário andam juntos (como no Google Calendar): com horário marcado, mexer em um ajusta o outro.
+  // O bloco não atravessa a meia-noite aqui — o fim é limitado a 23:59 do mesmo dia.
+  const DAY_END = 23 * 60 + 59
+  const changeDuration = (minutes: number) => {
+    setDuration(minutes)
+    if (start) setEnd(minToLabel(Math.min(endFromDuration(timeToMin(start), minutes), DAY_END)))
+  }
+  const changeStart = (value: string) => {
+    // Mantém a duração: o fim acompanha o novo início.
+    const dur = duration || (end ? durationBetween(timeToMin(start), timeToMin(end)) : 30)
+    setStart(value)
+    setEnd(minToLabel(Math.min(endFromDuration(timeToMin(value), dur), DAY_END)))
+    if (!duration) setDuration(dur)
+  }
+  const changeEnd = (value: string) => {
+    // Fim antes (ou igual) ao início não existe: vale o mínimo de 15 min.
+    const dur = durationBetween(timeToMin(start), timeToMin(value))
+    setEnd(minToLabel(Math.min(timeToMin(start) + dur, DAY_END)))
+    setDuration(dur)
+  }
+  const startBlock = () => {
+    const dur = duration || 30
+    setStart('09:00')
+    setEnd(minToLabel(endFromDuration(9 * 60, dur)))
+    setDuration(dur)
+  }
 
   const create = async () => {
     const cleanTitle = f.title.trim()
@@ -197,7 +224,8 @@ export function NewTaskModal({ defaults, onClose }: { defaults?: NewTaskDefaults
               </span>
             )}</Field>
             <Field label="Duração">{(c) => (
-              <Select {...c} value={DURATIONS.some((d) => d.v === duration) ? duration : 0} onChange={(e) => setDuration(Number(e.target.value))}>
+              <Select {...c} value={duration} onChange={(e) => changeDuration(Number(e.target.value))}>
+                {duration > 0 && !DURATIONS.some((d) => d.v === duration) && <option value={duration}>{duration} min</option>}
                 {DURATIONS.map((d) => <option key={d.v} value={d.v}>{d.label}</option>)}
               </Select>
             )}</Field>
@@ -207,12 +235,12 @@ export function NewTaskModal({ defaults, onClose }: { defaults?: NewTaskDefaults
             <div className="kn-quick">
               {start ? (
                 <>
-                  <TimePicker value={start} onChange={setStart} />
+                  <TimePicker value={start} onChange={changeStart} />
                   <span>até</span>
-                  <TimePicker value={end || start} onChange={setEnd} />
+                  <TimePicker value={end || start} onChange={changeEnd} />
                   <IconButton icon="close" label="Tirar o horário" onClick={() => { setStart(''); setEnd('') }} />
                 </>
-              ) : <Button size="sm" icon="clock" disabled={!effDue} onClick={() => setStart('09:00')}>Marcar horário</Button>}
+              ) : <Button size="sm" icon="clock" disabled={!effDue} onClick={startBlock}>Marcar horário</Button>}
             </div>
           )}</Field>
 

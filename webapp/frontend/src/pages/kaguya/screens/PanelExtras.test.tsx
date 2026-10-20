@@ -83,6 +83,17 @@ describe('Painel — propriedades extras', () => {
     await waitFor(() => expect(api.clearTimeBlock).toHaveBeenCalledWith(7))
   })
 
+  it('com bloco: trocar a duração para 2 h move o fim e grava a duração junto', async () => {
+    api.getTask.mockResolvedValue(base({ start_at: `${TODAY}T14:00:00-03:00`, end_at: `${TODAY}T15:30:00-03:00`, duration_min: 90 }))
+    const user = await open()
+    await user.selectOptions(await screen.findByLabelText('Duração'), '120')
+    await waitFor(() => expect(api.setTimeBlock).toHaveBeenCalled())
+    const body = api.setTimeBlock.mock.calls[0][1]
+    expect(body.end_at.startsWith(`${TODAY}T16:00:00`)).toBe(true)
+    expect(body.duration_min).toBe(120)
+    expect(api.updateTask).not.toHaveBeenCalled()
+  })
+
   it('sem vencimento o horário pede a data primeiro', async () => {
     api.getTask.mockResolvedValue(base({ due_date: null }))
     await open()

@@ -5,9 +5,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, DatePicker, Field, IconButton, PersonPicker, SegmentedControl, Select, TimePicker, toast, type PersonOption } from '../../../design'
+import { addDaysISO, diffDays } from '../../../design/core/format'
 import { kaguyaApi } from '../api'
 import { useKaguya } from '../context'
 import { localISO, localDayOf, minToLabel, timeToMin } from '../lib/calendar'
+import { durationBetween, endFromDuration } from '../lib/durations'
 import { safe, useLoad } from '../lib/useLoad'
 import type { Column, Person, RecurrenceMode, Task, TaskContext, TaskType, WorkContext } from '../types'
 
@@ -66,17 +68,35 @@ export function useTaskExtras(task: Task, save: Save) {
   const [endDate, setEndDate] = useState(endDay ?? '')
   useEffect(() => setEndDate(endDay ?? ''), [task.id, task.end_at, task.due_date]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const block = async (patch: { start?: number | null; end?: number | null; endDay?: string }) => {
+  // Salva o bloco de tempo mantendo a duração coerente: o fim é a verdade, a duração é a diferença (e vice-versa).
+  // `patch.duration` move o fim; `patch.end`/`endDay` recalculam a duração; mudar só o início preserva a duração.
+  const block = async (patch: { start?: number | null; end?: number | null; endDay?: string; duration?: number }) => {
     if (!day) { toast('Defina a data de vencimento antes do horário.', { tone: 'error' }); return }
     const s = patch.start === undefined ? startMin : patch.start
     if (s === null) {
       try { await kaguyaApi.clearTimeBlock(task.id); k.reload() } catch (e) { toast(reason(e), { tone: 'error' }) }
       return
     }
-    const e: number = patch.end ?? endMin ?? s + (task.duration_min || 30)
-    const ed = patch.endDay ?? endDay ?? day
+    const currentDur = task.duration_min || (startMin !== null && endMin !== null ? durationBetween(startMin, endMin, diffDays(day, endDay ?? day)) : 30)
+    let dur: number
+    let ed = patch.endDay ?? endDay ?? day
+    let e: number
+    if (patch.duration !== undefined) {
+      dur = patch.duration > 0 ? patch.duration : 30
+      e = endFromDuration(s, dur)
+      ed = day
+    } else if (patch.end !== undefined || patch.endDay !== undefined) {
+      e = patch.end ?? endMin ?? endFromDuration(s, currentDur)
+      dur = durationBetween(s, e, diffDays(day, ed))
+    } else {
+      dur = currentDur
+      e = endFromDuration(s, dur)
+      ed = day
+    }
+    // Fim depois da meia-noite vira o dia seguinte.
+    if (e >= 1440) { ed = addDaysISO(ed, Math.floor(e / 1440)); e %= 1440 }
     try {
-      await kaguyaApi.setTimeBlock(task.id, { start_at: localISO(day, s), end_at: localISO(ed, ed === day ? Math.max(e, s + 15) : e) })
+      await kaguyaApi.setTimeBlock(task.id, { start_at: localISO(day, s), end_at: localISO(ed, ed === day ? Math.max(e, s + 15) : e), duration_min: dur })
       k.reload()
     } catch (err) { toast(reason(err), { tone: 'error' }) }
   }
@@ -105,7 +125,7 @@ export function useTaskExtras(task: Task, save: Save) {
             <IconButton icon="close" label="Tirar o horário" onClick={() => void block({ start: null })} />
           </>
         )}
-        {startMin === null && day && <Button size="sm" icon="clock" onClick={() => void block({ start: 9 * 60 })}>Marcar horário</Button>}
+        {startMin === null && day && <Button size="sm" icon="clock" onClick={() => void block({ start: 9 * 60, duration: task.duration_min ?? 30 })}>Marcar horário</Button>}
       </div>
     )}</Field>
   )
@@ -151,7 +171,11 @@ export function useTaskExtras(task: Task, save: Save) {
     )}</Field>
   ) : null
 
-  return { type, time, column, where, recurrenceMode, people: peopleField, waiting }
+  // Duração do painel: com bloco no calendário ela move o fim; sem bloco é só a estimativa.
+  const hasBlock = startMin !== null
+  const setDuration = (minutes: number) => (hasBlock ? block({ duration: minutes }) : save({ duration_min: minutes || null }))
+
+  return { type, time, column, where, recurrenceMode, people: peopleField, waiting, setDuration }
 }
 
 /** Todos os extras em sequência (a ordem do painel lateral original). */

@@ -39,3 +39,28 @@ export function snapDuration(minutes: number): number {
   }
   return 0
 }
+
+/**
+ * Calcula o minuto do dia em que um bloco termina.
+ *
+ * O resultado pode passar de 1440 (meia-noite) — quem chama decide se isso vira o dia seguinte.
+ *
+ * @param startMin - Minuto do dia em que o bloco começa.
+ * @param durationMin - Duração em minutos (0 ou vazio vira o bloco padrão de 30 min).
+ * @returns Minuto do dia do fim do bloco.
+ */
+export function endFromDuration(startMin: number, durationMin: number): number {
+  return startMin + (durationMin > 0 ? durationMin : 30)
+}
+
+/**
+ * Calcula a duração entre início e fim (mínimo de 15 min, como o bloco de tempo exige).
+ *
+ * @param startMin - Minuto do dia do início.
+ * @param endMin - Minuto do dia do fim.
+ * @param dayOffset - Quantos dias depois do início o fim cai (0 = mesmo dia).
+ * @returns Duração em minutos.
+ */
+export function durationBetween(startMin: number, endMin: number, dayOffset = 0): number {
+  return Math.max(15, endMin + dayOffset * 1440 - startMin)
+}

@@ -228,7 +228,7 @@ function Details({ task, save, wide }: { task: Task; save: (p: Parameters<typeof
           </span>
         )}</Field>
         <Field label="Duração">{(c) => (
-          <Select {...c} value={task.duration_min ?? 0} onChange={(e) => void save({ duration_min: Number(e.target.value) || null })}>
+          <Select {...c} value={task.duration_min ?? 0} onChange={(e) => void x.setDuration(Number(e.target.value))}>
             {task.duration_min != null && !DURATIONS.some((d) => d.v === task.duration_min) && <option value={task.duration_min}>{task.duration_min} min</option>}
             {DURATIONS.map((d) => <option key={d.v} value={d.v}>{d.label}</option>)}
           </Select>

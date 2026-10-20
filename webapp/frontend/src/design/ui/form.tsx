@@ -4,6 +4,8 @@
 // embaixo do campo, nunca em alert; toda mensagem de erro diz o que fazer.
 
 import { useEffect, useMemo, useRef, useState, type InputHTMLAttributes, type KeyboardEvent, type ReactNode, type Ref, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import { TimepickerUI } from 'timepicker-ui'
+import 'timepicker-ui/main.css'
 import { fmtDate, fmtNumber, isoDate, MONTHS_LONG, parseISODate, todayISO, WEEKDAYS_SHORT } from '../core/format'
 import { useDismissable } from '../headless/overlay'
 import { Avatar, cx, useFieldId } from './primitives'
@@ -195,16 +197,49 @@ export function DatePicker({ value, onChange, ...a11y }: DatePickerProps) {
   )
 }
 
-// ── TimePicker (slots de 15 minutos) ─────────────────────────────────────────
+// ── TimePicker (relógio 24 h — biblioteca timepicker-ui) ─────────────────────
 
-const SLOTS = Array.from({ length: 96 }, (_, i) => `${String(Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`)
-
+/**
+ * Seletor de hora em 24 h: um botão-campo (igual ao DatePicker) que abre o relógio da `timepicker-ui`.
+ * A biblioteca precisa de um <input> para ler/escrever; ele fica escondido e o botão abre o relógio.
+ * As cores vêm dos tokens `--ds-*` (ver `.ds-tp` em extras.css), então claro/escuro e o acento já valem.
+ */
 export function TimePicker({ value, onChange, id }: { value: string; onChange: (hhmm: string) => void; id?: string }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const pickerRef = useRef<TimepickerUI | null>(null)
+  // O callback da biblioteca é fixado na criação; a ref garante que ele chame sempre o onChange mais recente.
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    const picker = new TimepickerUI(input, {
+      clock: { type: '24h', incrementMinutes: 5 },
+      ui: { mode: 'clock', animation: true, cssClass: 'ds-tp' },
+      labels: { ok: 'OK', cancel: 'Cancelar', time: 'Escolha o horário', mobileTime: 'Escolha o horário' },
+      callbacks: {
+        onConfirm: (d) => onChangeRef.current(`${String(d.hour).padStart(2, '0')}:${String(d.minutes).padStart(2, '0')}`),
+      },
+    })
+    picker.create()
+    pickerRef.current = picker
+    return () => { picker.destroy(); pickerRef.current = null }
+  }, [])
+
+  // Mantém o relógio na hora que o formulário mostra.
+  useEffect(() => {
+    if (value) pickerRef.current?.setValue(value)
+  }, [value])
+
   return (
-    <select id={id} className="ds-select ds-num" value={value} onChange={(e) => onChange(e.target.value)}>
-      {value && !SLOTS.includes(value) && <option value={value}>{value}</option>}
-      {SLOTS.map((s) => <option key={s} value={s}>{s}</option>)}
-    </select>
+    <div className="ds-anchor">
+      <button type="button" id={id} className="ds-input ds-datebtn" aria-haspopup="dialog" onClick={() => pickerRef.current?.open()}>
+        <span className="ds-num">{value || '--:--'}</span>
+        <Icon name="clock" size={16} />
+      </button>
+      <input ref={inputRef} className="ds-tp-input" defaultValue={value} readOnly tabIndex={-1} aria-hidden="true" />
+    </div>
   )
 }
 

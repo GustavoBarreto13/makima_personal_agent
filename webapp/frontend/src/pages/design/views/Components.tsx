@@ -100,7 +100,7 @@ export function ComponentsView({ workouts, onNew }: { workouts: Workout[]; onNew
           <Field label="Valor">{(a) => <MoneyInput {...a} value={money} onChange={setMoney} />}</Field>
           <Field label="Repetições">{(a) => <NumberInput {...a} defaultValue={8} min={1} max={50} />}</Field>
           <Field label="Data (sem input nativo)">{(a) => <DatePicker {...a} value={date} onChange={setDate} />}</Field>
-          <Field label="Hora (slots de 15 min)">{(a) => <TimePicker id={a.id} value={time} onChange={setTime} />}</Field>
+          <Field label="Hora (relógio 24 h)">{(a) => <TimePicker id={a.id} value={time} onChange={setTime} />}</Field>
           <Field label="Etiquetas">{(a) => <TagInput id={a.id} value={tags} onChange={setTags} />}</Field>
           <Field label="Lista (busca, grupos, ícone e cor)">
             {(a) => <ListPicker id={a.id} value={listId} onChange={setListId} options={[

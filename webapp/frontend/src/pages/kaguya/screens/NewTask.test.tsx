@@ -114,6 +114,18 @@ describe('Nova tarefa — formulário completo', () => {
     expect(api.setTimeBlock.mock.calls[0][1].start_at.startsWith(`${TODAY}T09:00:00`)).toBe(true)
   })
 
+  it('duração e horário andam juntos: 2 h move o fim para 11:00', async () => {
+    const user = await shell()
+    const dlg = await openNew(user)
+    await user.type(within(dlg).getByLabelText('Título'), 'Dentista hoje')
+    await user.click(within(dlg).getByRole('button', { name: 'Marcar horário' }))
+    await user.selectOptions(within(dlg).getByLabelText('Duração'), '120')
+    await user.click(within(dlg).getByRole('button', { name: 'Criar tarefa' }))
+    await waitFor(() => expect(api.setTimeBlock).toHaveBeenCalled())
+    expect(api.setTimeBlock.mock.calls[0][1].end_at.startsWith(`${TODAY}T11:00:00`)).toBe(true)
+    expect(api.updateTask).toHaveBeenCalledWith(99, { duration_min: 120 })
+  })
+
   it('não cria sem título', async () => {
     const user = await shell()
     const dlg = await openNew(user)

@@ -305,3 +305,48 @@
 .ds-lp-item.ds-on { background: var(--ds-card-2); }
 .ds-lp-item[aria-selected='true'] { color: var(--ds-accent-deep); font-weight: 600; }
 .ds-lp-hint { margin-inline-start: auto; color: var(--ds-ink-4); font-family: var(--ds-font-mono); }
+
+/* ── TimePicker (timepicker-ui): relógio 24 h pintado com os tokens do DS ────────────────────────────────
+   A biblioteca lê variáveis --tp-*; aqui elas apontam para --ds-*, então claro/escuro e o acento do agente valem. */
+.ds-tp-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tp-ui-modal,
+.tp-ui-wrapper {
+  --tp-bg: var(--ds-card);
+  --tp-surface: var(--ds-card-2);
+  --tp-surface-hover: var(--ds-accent-tint);
+  --tp-input-bg: var(--ds-card-2);
+  --tp-surface-container: var(--ds-card-2);
+  --tp-text: var(--ds-ink-1);
+  --tp-text-secondary: var(--ds-ink-3);
+  --tp-text-disabled: var(--ds-ink-4);
+  --tp-text-type-time: var(--ds-ink-3);
+  --tp-text-icon: var(--ds-ink-3);
+  --tp-on-surface: var(--ds-ink-1);
+  --tp-on-surface-variant: var(--ds-ink-3);
+  --tp-primary: var(--ds-accent);
+  --tp-on-primary: var(--ds-on-accent);
+  --tp-primary-container: var(--ds-accent-tint);
+  --tp-on-primary-container: var(--ds-ink-1);
+  --tp-am-pm-active: var(--ds-accent-tint);
+  --tp-am-pm-text-selected: var(--ds-ink-1);
+  --tp-am-pm-text-unselected: var(--ds-ink-3);
+  --tp-outline: var(--ds-accent);
+  --tp-outline-variant: var(--ds-line);
+  --tp-border: var(--ds-line);
+  --tp-hover-bg: var(--ds-accent-tint);
+  --tp-dropdown-option-bg: var(--ds-card);
+  --tp-dropdown-option-text: var(--ds-ink-1);
+  --tp-error: var(--ds-danger);
+  --tp-border-radius: var(--ds-r-lg);
+  --tp-btn-radius: var(--ds-r-md);
+  --tp-backdrop: var(--ds-scrim);
+  font-family: var(--ds-font-sans);
+}

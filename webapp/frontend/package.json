@@ -22,7 +22,8 @@
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.6.1",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "timepicker-ui": "4.4.0"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",

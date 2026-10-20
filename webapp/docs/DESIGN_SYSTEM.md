@@ -115,7 +115,7 @@ halo; toda tela "Início" abre com ele, mostrando o contexto mais relevante do a
 |---|---|
 | Primitivos | `Button`, `IconButton`, `Chip`, `SegmentedControl`, `StatusChip`, `Tag`, `ProgressBar`, `ProgressRing`, `Avatar`, `Toggle`, `SettingRow`, `Kbd` |
 | Avaliação | `Stars` (exibição) e `RateInput` (edição) — **0 a 5, com meia estrela**; `snapHalf` é a única fonte do arredondamento; escalas de origem (MAL 1–10) convertem nas bordas com `toFiveScale/fromFiveScale` |
-| Formulário | `Field`, `Input`, `Textarea`, `Select`, `NumberInput`, `MoneyInput`, `TagInput`, `DatePicker` + `MiniCalendar`, `TimePicker`, `PersonPicker` (smart-match da Komi: 0 → cadastrar, 1 → confirmar, 2+ → escolher), `ListPicker` (escolhe uma lista/pasta: busca, grupos, ícone, cor e teclado) |
+| Formulário | `Field`, `Input`, `Textarea`, `Select`, `NumberInput`, `MoneyInput`, `TagInput`, `DatePicker` + `MiniCalendar`, `TimePicker` (relógio 24 h da `timepicker-ui`, pintado com os tokens `--ds-*` em `extras.css`), `PersonPicker` (smart-match da Komi: 0 → cadastrar, 1 → confirmar, 2+ → escolher), `ListPicker` (escolhe uma lista/pasta: busca, grupos, ícone, cor e teclado) |
 | Camadas | `Modal` (vira bottom sheet no celular; `dirty` pede confirmação; `size` sm/md/lg/**xl**; `headerExtra` para abas e ações no cabeçalho), `Sheet`, `Menu`, `ConfirmHost` + `confirm()` (substitui `window.confirm`; perigo foca "Cancelar") |
 | Feedback | `ToastHost` + `toast()` (com **Desfazer**), `Skeleton`, `LoadingState`, `EmptyState`, `ErrorState` |
 | Itens | `Img`, `MediaCard`, `ListRow`, `InfoRow`, `Timeline`, `Tabs`, `DetailPage`, `DataTable` (vira cartões no celular) |
