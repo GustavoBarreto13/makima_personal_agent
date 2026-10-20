@@ -17,7 +17,7 @@ export function gcalCalendarId(cal: string): string {
 
 import { api } from '../../lib/api'
 import type { StatsPayload } from '../../design/core/stats'
-import type { Sidebar, Task, Column, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, HabitSchedule, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry, FocusStats, FocusHeatDay, FocusAchievement, TaskFocusSummary, FinishFocusResult, WorkContext, ArchivedProject, SchedulePrefs, ScheduleOverride, Dependencies, BulkAction, BulkUndo, CompletedPage, ActivityEvent, TrashItem, TemplateInfo, TagCount, DueReviewProject, ArchivedHabit } from './types'
+import type { Sidebar, Task, Column, ColumnKind, Tag, TodayResponse, RecurrenceMode, Filter, FilterRules, FilterTasksResponse, Habit, HabitHeatDay, HabitSourceProvider, HabitSchedule, MyDayResponse, Calendar, CalEvent, CalendarPref, AggregateResponse, KanbanView, KanbanViewDisplay, Person, GroupBoard, Experiment, ExperimentDue, ExperimentCadence, ExperimentVerdict, Goal, GoalAreaCount, LinkableItem, MovementType, GoalOutcome, GoalLinkProvider, GoalExternalItem, GoalMetricMode, GtdStatus, TaskContext, InboxDecision, InboxQueueResponse, DateViewKey, DateViewCounts, WeeklyReview, LastReview, WaitingReviewItem, CompleteReviewResult, ReviewStep, FocusPrefs, FocusSession, FocusDayStats, FocusWeekStats, FocusHistoryEntry, FocusStats, FocusHeatDay, FocusAchievement, TaskFocusSummary, FinishFocusResult, WorkContext, ArchivedProject, SchedulePrefs, ScheduleOverride, Dependencies, BulkAction, BulkUndo, CompletedPage, ActivityEvent, TrashItem, TemplateInfo, TagCount, DueReviewProject, ArchivedHabit } from './types'
 
 // Regra de recorrência enviada ao backend (a âncora é derivada do due_date lá).
 interface RecurrenceInput {
@@ -82,9 +82,9 @@ export const kaguyaApi = {
     api.post<MutationResult & { updated: number }>(`${BASE}/groups/${id}/context`, { context }),
 
   listColumns: (projectId: number) => api.get<Column[]>(`${BASE}/projects/${projectId}/columns`),
-  createColumn: (body: { project_id: number; name: string; is_done_column?: boolean }) =>
+  createColumn: (body: { project_id: number; name: string; is_done_column?: boolean; kind?: ColumnKind | 'auto' }) =>
     api.post<MutationResult>(`${BASE}/columns`, body),
-  updateColumn: (id: number, body: Partial<{ name: string; position: number; is_done_column: boolean }>) =>
+  updateColumn: (id: number, body: Partial<{ name: string; position: number; is_done_column: boolean; kind: ColumnKind | 'auto' }>) =>
     api.patch<MutationResult>(`${BASE}/columns/${id}`, body),
   deleteColumn: (id: number) => api.del<MutationResult>(`${BASE}/columns/${id}`),
   // Copia a estrutura de colunas de sourceId para targetId (sem tarefas — só nomes+ordem+flag done).

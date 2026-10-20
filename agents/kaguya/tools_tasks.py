@@ -29,6 +29,8 @@ from agents.kaguya.tools_projects import resolve_project_id_by_name
 # ``agents.db`` no topo dele (as funções que precisam de ``tools_tasks`` fazem import lazy).
 from agents.kaguya.tools_tags import _set_task_tags, _attach_tags
 from agents.kaguya.tz import now_sp as _tz_now_sp, today_sp as _tz_today_sp
+# Regra única de "o que cobra": tipo da coluna do Kanban + status GTD (ver task_state.py).
+from agents.kaguya.task_state import chargeable_sql, flow_state
 
 # Incremento padrão entre posições manuais (mesma constante semântica do Journal).
 _POSITION_STEP = 1000
@@ -706,22 +708,27 @@ def _attach_blocked(tasks: list[dict]) -> None:
         t["blocked"] = t.get("id") in blocked
 
 
-def list_tasks_today(space: Optional[str] = None) -> dict:
+def list_tasks_today(space: Optional[str] = None, only_chargeable: bool = False) -> dict:
     """Lista tarefas de hoje e vencidas (abertas), com o nome da lista em cada uma.
 
     Args:
         space: ``work`` | ``personal`` restringe ao espaço da lista (spec 075); ``None`` = todos.
+        only_chargeable: True = tira o que NÃO é pendência do usuário (colunas Homolog/Blocked/
+            Backlog e GTD aguardando/algum dia — ver ``task_state``). Usar em IAs e alarmes que
+            "cobram"; a tela do webapp segue mostrando tudo.
 
     Returns:
         ``{"overdue": [...], "today": [...]}`` — tarefas-pai abertas com ``due_date``
         anterior a hoje (overdue) ou igual a hoje (today). Cada item traz
         ``project_name`` e ``context`` (herdado da lista, spec 038) para o consumidor
-        agrupar/filtrar. **Listagem**.
+        agrupar/filtrar, mais ``column_kind`` e ``flow_state`` (o que a tarefa está
+        esperando). **Listagem**.
     """
     rows = run_select(
         f"""
-        SELECT {_qualified("t")}, p.name AS project_name, p.context
+        SELECT {_qualified("t")}, p.name AS project_name, p.context, c.kind AS column_kind
         FROM tasks t JOIN task_projects p ON p.id = t.project_id
+        LEFT JOIN task_columns c ON c.id = t.column_id
         WHERE t.parent_id IS NULL
           AND t.deleted_at IS NULL
           AND t.completed_at IS NULL
@@ -731,9 +738,10 @@ def list_tasks_today(space: Optional[str] = None) -> dict:
           AND p.deleted_at IS NULL
           AND (t.start_date IS NULL OR t.start_date <= (NOW() AT TIME ZONE 'America/Sao_Paulo')::date)
           AND (%(space)s::text IS NULL OR p.context = %(space)s)
+          AND (NOT %(only_chargeable)s OR {chargeable_sql()})
         ORDER BY t.due_date, t.priority DESC, t.position
         """,
-        {"space": space if space in ("work", "personal") else None},
+        {"space": space if space in ("work", "personal") else None, "only_chargeable": only_chargeable},
     )
     today = _tz_today_sp().isoformat()
     overdue, due_today = [], []
@@ -741,6 +749,7 @@ def list_tasks_today(space: Optional[str] = None) -> dict:
         item = _serialize_task(r)
         item["project_name"] = r["project_name"]
         item["context"] = r.get("context") or "personal"
+        item["flow_state"] = flow_state(item)
         # due_date já é string ISO aqui; compara como texto (ISO ordena cronologicamente).
         (due_today if item["due_date"] == today else overdue).append(item)
     # Anexa a recorrência ativa (glyph/eco) e as tags às tarefas das duas seções.
@@ -749,6 +758,73 @@ def list_tasks_today(space: Optional[str] = None) -> dict:
     _attach_tags(overdue)
     _attach_tags(due_today)
     return {"overdue": overdue, "today": due_today}
+
+
+def list_tasks_awaiting() -> list[dict]:
+    """Listar tarefas-pai abertas que estão esperando validação ou desbloqueio (Homolog/Blocked).
+
+    Complementa o filtro de "cobráveis": o que sai das vencidas/hoje por estar em homologação
+    ou bloqueado não some — as IAs recebem esta lista só como contexto ("aguardando"), nunca
+    como cobrança.
+
+    Returns:
+        Tarefas com ``project_name``, ``context``, ``column_kind`` e ``flow_state``,
+        das mais antigas às mais novas. **Listagem**.
+    """
+    rows = run_select(
+        f"""
+        SELECT {_qualified("t")}, p.name AS project_name, p.context, c.kind AS column_kind
+        FROM tasks t
+        JOIN task_projects p ON p.id = t.project_id
+        JOIN task_columns c ON c.id = t.column_id
+        WHERE t.parent_id IS NULL
+          AND t.deleted_at IS NULL
+          AND t.completed_at IS NULL
+          AND c.kind IN ('review', 'blocked')
+          AND p.archived_at IS NULL
+          AND p.deleted_at IS NULL
+        ORDER BY t.updated_at, t.position
+        """
+    )
+    items = []
+    for r in rows:
+        item = _serialize_task(r)
+        item["project_name"] = r["project_name"]
+        item["context"] = r.get("context") or "personal"
+        item["flow_state"] = flow_state(item)
+        items.append(item)
+    return items
+
+
+def annotate_flow_state(tasks: list[dict]) -> list[dict]:
+    """Anexar ``column_kind`` e ``flow_state`` a tarefas que vieram de outra query (em lote).
+
+    Serve às listas que não passam por ``list_tasks_today`` (ex.: Próximas Ações do GTD):
+    uma única consulta traz o tipo da coluna de todas e a regra de ``task_state`` decide o
+    resto. Modifica os dicts no lugar e devolve a mesma lista.
+
+    Args:
+        tasks: Tarefas serializadas (precisam de ``id``; ``gtd_status`` já vem nelas).
+
+    Returns:
+        A mesma lista, com ``column_kind`` e ``flow_state`` preenchidos em cada item.
+    """
+    ids = [t["id"] for t in tasks if t.get("id") is not None]
+    kinds: dict[int, Optional[str]] = {}
+    if ids:
+        rows = run_select(
+            """
+            SELECT t.id, c.kind FROM tasks t
+            LEFT JOIN task_columns c ON c.id = t.column_id
+            WHERE t.id = ANY(%(ids)s)
+            """,
+            {"ids": ids},
+        )
+        kinds = {r["id"]: r["kind"] for r in rows}
+    for t in tasks:
+        t["column_kind"] = kinds.get(t.get("id"))
+        t["flow_state"] = flow_state(t)
+    return tasks
 
 
 def list_tasks_due_for_reminder() -> list[dict]:
@@ -761,17 +837,22 @@ def list_tasks_due_for_reminder() -> list[dict]:
     a cada rodada. Vencimento "chegou" = `due_date` antes de hoje, OU `due_date` de hoje com
     `due_time` nulo (dia inteiro, considerado vencido assim que o dia começa) ou já passado.
 
+    Só entram tarefas "cobráveis" (``task_state.chargeable_sql``): o que está em homologação,
+    bloqueado, em backlog, delegado ou "algum dia" não dispara alarme — não é pendência sua.
+
     Returns:
         Tarefas-pai (com `project_name`) que acabaram de vencer e ainda não notificaram.
         Quem chama deve marcar como notificadas via `mark_due_reminder_sent` após o envio.
     """
     rows = run_select(
         f"""
-        SELECT {_qualified("t")}, p.name AS project_name
+        SELECT {_qualified("t")}, p.name AS project_name, c.kind AS column_kind
         FROM tasks t JOIN task_projects p ON p.id = t.project_id
+        LEFT JOIN task_columns c ON c.id = t.column_id
         WHERE t.parent_id IS NULL
           AND t.deleted_at IS NULL
           AND t.completed_at IS NULL
+          AND {chargeable_sql()}
           AND t.due_reminder_sent_at IS NULL
           AND t.due_date IS NOT NULL
           AND p.archived_at IS NULL
@@ -2599,8 +2680,9 @@ def list_my_day(date_str: Optional[str] = None) -> dict:
         SELECT {campos}, p.name AS project_name, p.context, mae.title AS parent_title
         FROM tasks t
         JOIN task_projects p ON p.id = t.project_id
+        LEFT JOIN task_columns c ON c.id = t.column_id
         LEFT JOIN tasks mae ON mae.id = t.parent_id
-        WHERE (t.due_date BETWEEN %(hoje)s AND %(janela_fim)s
+        WHERE ((t.due_date BETWEEN %(hoje)s AND %(janela_fim)s AND {chargeable_sql()})
                -- Aguardando: chegou o dia de cobrar (follow-up) → vira sugestão do dia.
                OR (t.gtd_status = 'waiting' AND t.follow_up_date IS NOT NULL AND t.follow_up_date <= %(hoje)s))
           AND (t.my_day_date IS NULL OR t.my_day_date != %(hoje)s)

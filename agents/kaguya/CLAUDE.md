@@ -20,6 +20,7 @@ utilizável sem o bot e vice-versa.
 agents/kaguya/
 ├── __init__.py
 ├── schema_tasks_pg.sql   # schema completo do domínio (aplicado por scripts/setup_schemas.py)
+├── task_state.py         # motor PURO: o que cada coluna/status SIGNIFICA (tipo da coluna, flow_state, "cobrável") — fonte única de quem cobra
 ├── tools_tasks.py        # camada de lógica: CRUD de tarefas/subtarefas, completar, posições
 ├── tools_projects.py     # camada de lógica: listas, grupos, colunas (Kanban), sidebar
 ├── tools_tags.py         # camada de lógica: etiquetas (tags) N:N — fatia 013 / P1
@@ -94,7 +95,7 @@ As tools de tarefas são **funções Python** registradas direto (não MCP).
 | Função | O que faz |
 |---|---|
 | `list_tasks(project_id, include_completed)` | tarefas-pai da lista, com subtarefas aninhadas |
-| `list_tasks_today()` | `{overdue, today}` — abertas com `due_date <= hoje` |
+| `list_tasks_today(space?, only_chargeable?)` | `{overdue, today}` — abertas com `due_date <= hoje`; `only_chargeable=True` tira Homolog/Blocked/Backlog e GTD aguardando/algum dia (ver "Estados que não cobram") |
 | `search_tasks(query)` | busca por título/descrição (ILIKE) |
 | `list_trash(project_id?)` | soft-deletadas (restauráveis) |
 | `create_task(..., column_id?, recurrence?, tags?)` | cria tarefa/subtarefa; sem lista → Inbox; lista **com board** → 1ª coluna (ou `column_id` explícito) para aparecer no Kanban; `recurrence={rrule,mode}` opcional; `type=birthday`+data → **não cria tarefa**: grava o aniversário na pessoa da Komi (spec 077); `tags=["mercado",...]` cria/vincula etiquetas |
@@ -732,6 +733,30 @@ Resumo do que mudou na camada de lógica (detalhes de colunas em `docs/referenci
 - **Migração**: `scripts/migrate_kaguya_ds.py` (dry-run por padrão, `--apply` grava) — rodar no VPS **antes** do deploy do backend.
 - **Adiado de propósito**: unificar `list_tasks_today` com o DSL, esconder o `_UNSET` do schema MCP e dividir o espelho do Google em
   dois calendários (Trabalho/Pessoal).
+
+## Estados que não cobram (`task_state.py`)
+
+Colunas do Kanban (Backlog, Blocked, To Do, Doing, Homolog, Done) e status GTD têm **significado**, e
+as IAs/alarmes leem pelo que significam — uma tarefa em Homolog não é pendência do usuário (espera
+validação), nem uma delegada ou "algum dia". Antes disso o digest, o Conselho do Dia e o alarme
+"vence agora" cobravam essas tarefas só porque tinham `due_date`.
+
+- **`task_columns.kind`** (`backlog`/`blocked`/`todo`/`doing`/`review`/`done`) é inferido **pelo nome**
+  (`infer_column_kind`: Homolog/Homologação/Review/QA → `review`, Ideia/Backlog → `backlog`, Blocked →
+  `blocked`…) em `create_column`/`update_column`/`copy_columns`. Renomear para um nome livre mantém o
+  tipo atual; nome desconhecido = `NULL` = cobrável (comportamento antigo). **Seletor na UI:** o modal da coluna (`ColumnModal`) tem "Tipo da coluna" — `create_column`/`update_column(kind=…)` aceitam um tipo explícito (vence o nome) ou `"auto"` (reinfere pelo nome); `done` só pelo interruptor de concluídas. Colunas antigas:
+  `scripts/migrate_kaguya_column_kind.py` (dry-run por padrão, `--apply` grava, nunca sobrescreve).
+- **Não cobra** = coluna `backlog`/`blocked`/`review` **ou** `gtd_status` `waiting`/`someday`.
+  `chargeable_sql()` (SQL, exige `LEFT JOIN task_columns c`) e `is_chargeable()` (Python) são a regra única;
+  `flow_state()`/`flow_label()` dão o estado para rotular nos prompts.
+- **Quem usa:** `list_tasks_today(only_chargeable=True)` (digest, Violet — `violet_context.kaguya` —, contador
+  do Hub; a tela do webapp segue mostrando tudo, com `flow_state` em cada item), `list_tasks_due_for_reminder`
+  (alarme pontual, sempre filtrado), sugestões do Meu Dia (ramo por data; o follow-up de delegada continua).
+  `list_tasks_awaiting()` (Homolog/Blocked) e a lista GTD `waiting` vão para as IAs só como **contexto**
+  ("aguardando — não cobre"); o prompt do digest e do Hermes proíbem cobrar esses estados.
+- `annotate_flow_state(tasks)` anexa `column_kind`/`flow_state` a listas de outras queries (Próximas Ações, Rápidas).
+
+---
 
 ## Tools expostas ao agente (`tools.py`)
 

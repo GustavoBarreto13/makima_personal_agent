@@ -50,9 +50,11 @@ def _build(monkeypatch, day, override=None):
     from agents.kaguya import gcal, tools_filters, tools_schedule, tools_tasks
 
     monkeypatch.setattr(tools_tasks, "get_myday_prefs", lambda: {"hide_work": False})
-    monkeypatch.setattr(tools_tasks, "list_tasks_today", lambda: {
+    monkeypatch.setattr(tools_tasks, "list_tasks_today", lambda **kw: {
         "overdue": [], "today": [_task(1, "work", 60), _task(2, "personal", 30)]})
     monkeypatch.setattr(tools_filters, "list_tasks_by_builtin", lambda key: [])
+    monkeypatch.setattr(tools_tasks, "list_tasks_awaiting", lambda: [])          # hermético: sem banco
+    monkeypatch.setattr(tools_tasks, "annotate_flow_state", lambda tasks: tasks)  # hermético: sem banco
     monkeypatch.setattr(gcal, "list_events", lambda *a, **k: [])
     monkeypatch.setattr(tools_schedule, "get_day_schedule",
                         lambda d: cap.resolve_day_schedule(_PREFS, d, override))
@@ -108,8 +110,10 @@ def _build_with_birthdays(monkeypatch, aniv):
     from agents.kaguya import digest as D
     from agents.kaguya import gcal, tools_filters, tools_schedule, tools_tasks
     monkeypatch.setattr(tools_tasks, "get_myday_prefs", lambda: {"hide_work": False})
-    monkeypatch.setattr(tools_tasks, "list_tasks_today", lambda: {"overdue": [], "today": []})
+    monkeypatch.setattr(tools_tasks, "list_tasks_today", lambda **kw: {"overdue": [], "today": []})
     monkeypatch.setattr(tools_filters, "list_tasks_by_builtin", lambda key: [])
+    monkeypatch.setattr(tools_tasks, "list_tasks_awaiting", lambda: [])
+    monkeypatch.setattr(tools_tasks, "annotate_flow_state", lambda tasks: tasks)
     monkeypatch.setattr(gcal, "list_events", lambda *a, **k: [])
     monkeypatch.setattr(tools_schedule, "get_day_schedule", lambda d: cap.resolve_day_schedule(_PREFS, d, None))
     monkeypatch.setattr(D, "_recent_journal_notes", lambda today: [])

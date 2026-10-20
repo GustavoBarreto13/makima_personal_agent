@@ -316,7 +316,8 @@ def _kaguya() -> dict:
     from agents.kaguya.tools_tasks import list_tasks_today
 
     # list_tasks_today() retorna {"today": [...], "overdue": [...]}.
-    t = list_tasks_today()
+    # only_chargeable: homologação/bloqueadas/delegadas/algum dia não contam como atrasadas.
+    t = list_tasks_today(only_chargeable=True)
     stat = _stat(str(len(t["today"])), "tarefas hoje")
     stat2 = _stat(str(len(t["overdue"])), "atrasadas")
 

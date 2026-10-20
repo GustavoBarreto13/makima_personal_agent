@@ -110,6 +110,7 @@ def _slim_tasks(tasks: list[dict]) -> list[dict]:
             "priority": t.get("priority"),
             "duration_min": t.get("duration_min"),
             "project_name": t.get("project_name"),
+            "estado": t.get("flow_state"),
         }
         for t in tasks
     ]
@@ -248,7 +249,10 @@ def build_digest_context(today: date | None = None) -> dict:
     from agents.kaguya import gcal
     from agents.kaguya.capacity import compute_free_time
     from agents.kaguya.tools_filters import list_tasks_by_builtin
-    from agents.kaguya.tools_tasks import get_myday_prefs, list_tasks_today
+    from agents.kaguya.task_state import is_chargeable
+    from agents.kaguya.tools_tasks import (
+        annotate_flow_state, get_myday_prefs, list_tasks_awaiting, list_tasks_today,
+    )
 
     # Trabalho só aparece em dia de trabalho (agenda do usuário + exceções, spec 075): em dia de folga
     # ou fim de semana sem plantão o digest se comporta como no modo férias — só pessoal. Se a agenda
@@ -263,10 +267,18 @@ def build_digest_context(today: date | None = None) -> dict:
         work_day = not is_weekend
     hide_work = get_myday_prefs()["hide_work"] or not work_day
 
-    tasks_today = list_tasks_today()  # {"overdue": [...], "today": [...]}
-    next_actions = list_tasks_by_builtin("next-actions")
-    quick = list_tasks_by_builtin("quick")
-    waiting = list_tasks_by_builtin("waiting")
+    # Só cobra o que é pendência real do usuário: Homolog/Blocked/Backlog e GTD aguardando/algum dia
+    # ficam de fora das listas de ação e vão para `aguardando` (contexto, nunca cobrança).
+    tasks_today = list_tasks_today(only_chargeable=True)  # {"overdue": [...], "today": [...]}
+    next_actions = [t for t in annotate_flow_state(list_tasks_by_builtin("next-actions")) if is_chargeable(t)]
+    quick = [t for t in annotate_flow_state(list_tasks_by_builtin("quick")) if is_chargeable(t)]
+    delegadas = list_tasks_by_builtin("waiting")
+    try:
+        em_espera = list_tasks_awaiting()  # homologação / bloqueadas
+    except Exception as exc:  # noqa: BLE001 — melhor esforço, só contexto
+        logger.warning("Falha ao listar tarefas em homologação/bloqueadas: %s", exc)
+        em_espera = []
+    waiting = annotate_flow_state(delegadas) + em_espera
 
     if hide_work:
         def _personal_only(items: list[dict]) -> list[dict]:
@@ -386,7 +398,9 @@ _SYSTEM_PROMPT = (
     "histórico) e monte uma sugestão REALISTA de plano para hoje, respeitando a "
     "capacidade (tempo livre estimado). Priorize nesta ordem: 1) tarefas vencidas, "
     "2) tarefas de hoje com horário marcado, 3) Próximas Ações do GTD, 4) tarefas rápidas "
-    "se sobrar pouco tempo ou energia. Use as entradas recentes do diário (se houver) para "
+    "se sobrar pouco tempo ou energia. Tarefas em 'aguardando_nao_cobrar' (em homologação, "
+    "bloqueadas, delegadas, em backlog ou 'algum dia') NÃO são pendências do usuário: nunca as "
+    "cobre nem as sugira como item; no máximo cite, em uma frase, que estão aguardando. Use as entradas recentes do diário (se houver) para "
     "calibrar quanto sugerir — num dia que pareceu cansativo, sugira menos e mais leve. "
     "Sugira no máximo 6 itens. Cada item DEVE referenciar um id REAL de uma das listas "
     "fornecidas — nunca invente um id. 'narrative' é um parágrafo curto (2-3 frases) no "
@@ -439,6 +453,8 @@ def generate_suggestion(context: dict) -> dict:
         "hoje_tarefas": _slim_tasks(context["today_tasks"]),
         "proximas_acoes": _slim_tasks(context["next_actions"]),
         "rapidas": _slim_tasks(context["quick"]),
+        # Só contexto: esperando terceiros/validação/desbloqueio — NÃO são pendências do usuário.
+        "aguardando_nao_cobrar": _slim_tasks(context["waiting"][:10]),
         "capacidade": context["capacity"],
         "agenda": [
             {"summary": e.get("summary"), "start": e.get("start"), "end": e.get("end")}

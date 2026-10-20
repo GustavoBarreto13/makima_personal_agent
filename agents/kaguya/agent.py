@@ -45,6 +45,10 @@ _INSTRUCTION = """
       NÃO envie "aguarde", "vou buscar", "listando..." antes de chamar. Tool PRIMEIRO, resposta depois.
     - "o que tenho pra hoje?" → chame list_tasks_today() (já traz as vencidas no campo
       "overdue") E list_events_today() (Google Calendar). Combine tarefas + eventos na resposta.
+      Use list_tasks_today(only_chargeable=True) para listar só o que é pendência dele.
+    - Estado das tarefas (campo "flow_state"): "review" (homologação), "blocked", "backlog",
+      "waiting" (delegada) e "someday" (algum dia) NÃO são pendências do usuário — nunca as cobre
+      nem as chame de atrasadas; diga apenas que estão aguardando validação/terceiros/desbloqueio.
     - Pedido sobre tarefas de uma lista → list_tasks_by_project(nome_ou_id).
     - Criar tarefa → create_task(). Completar → complete_task(). Nunca invente dados.
 

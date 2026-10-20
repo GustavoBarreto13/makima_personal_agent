@@ -87,6 +87,23 @@ CREATE TABLE IF NOT EXISTS task_columns (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_task_columns_done
     ON task_columns (project_id) WHERE is_done_column;
 
+-- Tipo semântico da coluna (backlog/blocked/todo/doing/review/done): é o que diz às IAs e aos
+-- alarmes que "Homolog" é espera por validação, não pendência do usuário. NULL = não reconhecida
+-- (tratada como cobrável, como era antes). Preenchido pelo nome em create/update_column e pelo
+-- script scripts/migrate_kaguya_column_kind.py nas colunas antigas (regra: agents/kaguya/task_state.py).
+ALTER TABLE task_columns ADD COLUMN IF NOT EXISTS kind TEXT;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'task_columns_kind_check'
+    ) THEN
+        ALTER TABLE task_columns ADD CONSTRAINT task_columns_kind_check
+            CHECK (kind IS NULL OR kind IN ('backlog', 'blocked', 'todo', 'doing', 'review', 'done'));
+    END IF;
+END $$;
+-- A coluna "concluído" já é conhecida pelo flag; idempotente (só preenche o que está vazio).
+UPDATE task_columns SET kind = 'done' WHERE is_done_column AND kind IS NULL;
+
 
 -- ----------------------------------------------------------------------------
 -- tasks — o núcleo do sistema

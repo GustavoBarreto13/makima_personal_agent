@@ -436,6 +436,9 @@ export interface FilterTasksResponse {
   missing?: boolean
 }
 
+// Tipo semântico de uma coluna: decide se as tarefas dela contam como pendência (backlog/blocked/review não cobram).
+export type ColumnKind = 'backlog' | 'blocked' | 'todo' | 'doing' | 'review' | 'done'
+
 // Uma coluna de Kanban.
 export interface Column {
   id: number
@@ -443,6 +446,7 @@ export interface Column {
   name: string
   position: number
   is_done_column: boolean
+  kind?: ColumnKind | null
 }
 
 // ── Views de Kanban configuráveis (spec 024) ───────────────────────────────────

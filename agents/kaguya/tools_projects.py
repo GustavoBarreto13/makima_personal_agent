@@ -17,6 +17,7 @@ Contrato REST: ``specs/011-tasks-mvp/contracts/api-tasks.md``.
 from typing import Optional
 
 from agents.db import get_conn, run_select, run_dml
+from agents.kaguya.task_state import COLUMN_KINDS, infer_column_kind
 
 # Sentinela local "campo omitido" (distingue de None = limpar) — mesma ideia de tools_tasks._UNSET.
 _UNSET = object()
@@ -623,6 +624,28 @@ def list_archived_projects() -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Colunas de Kanban
 # ─────────────────────────────────────────────────────────────────────────────
+def _resolve_kind(kind: Optional[str], name: str, is_done: bool) -> tuple[bool, Optional[str], Optional[str]]:
+    """Resolver o ``kind`` pedido pelo usuário para o valor a gravar.
+
+    Args:
+        kind: ``None`` = não mexe; ``"auto"`` = reinfere pelo nome; um item de ``COLUMN_KINDS`` = escolha manual.
+        name: Nome (já final) da coluna.
+        is_done: Se a coluna é a de concluídas (vira sempre ``done``).
+
+    Returns:
+        ``(deve_gravar, valor, erro)`` — ``erro`` preenchido quando o tipo é inválido.
+    """
+    if kind is None:
+        return False, None, None
+    if is_done:
+        return True, "done", None  # a coluna de concluídas é sempre `done`
+    if kind == "auto":
+        return True, infer_column_kind(name), None
+    if kind not in COLUMN_KINDS or kind == "done":
+        return False, None, "Tipo de coluna inválido."
+    return True, kind, None
+
+
 def list_columns(project_id: int) -> list[dict]:
     """Lista as colunas do board de uma lista, ordenadas por posição.
 
@@ -634,14 +657,14 @@ def list_columns(project_id: int) -> list[dict]:
     """
     return run_select(
         """
-        SELECT id, project_id, name, position, is_done_column
+        SELECT id, project_id, name, position, is_done_column, kind
         FROM task_columns WHERE project_id = %(pid)s ORDER BY position, id
         """,
         {"pid": project_id},
     )
 
 
-def create_column(project_id: int, name: str, is_done_column: bool = False) -> dict:
+def create_column(project_id: int, name: str, is_done_column: bool = False, kind: Optional[str] = None) -> dict:
     """Cria uma coluna no board de uma lista (a primeira coluna ativa o Kanban).
 
     Garante no máximo uma coluna "concluído" por lista: se ``is_done_column`` for True
@@ -651,6 +674,8 @@ def create_column(project_id: int, name: str, is_done_column: bool = False) -> d
         project_id: Id da lista dona do board.
         name: Nome da coluna.
         is_done_column: Se True, soltar um card aqui completa a tarefa.
+        kind: Tipo da coluna (``backlog``/``blocked``/``todo``/``doing``/``review``). Omitido
+            ou ``"auto"`` = inferido pelo nome.
 
     Returns:
         ``{"status": "ok", "id": <int>}`` ou erro.
@@ -670,12 +695,17 @@ def create_column(project_id: int, name: str, is_done_column: bool = False) -> d
                 if cur.fetchone():
                     return {"status": "error", "message": "Já existe uma coluna 'concluído' nesta lista."}
             position = _next_position(cur, "task_columns", "project_id", project_id)
+            # Tipo semântico pelo nome (Homolog→review…); None se o nome não for reconhecido.
+            _, kind_val, kind_err = _resolve_kind(kind or "auto", name, is_done_column)
+            if kind_err:
+                return {"status": "error", "message": kind_err}
+            kind = kind_val
             cur.execute(
                 """
-                INSERT INTO task_columns (project_id, name, is_done_column, position)
-                VALUES (%s, %s, %s, %s) RETURNING id
+                INSERT INTO task_columns (project_id, name, is_done_column, position, kind)
+                VALUES (%s, %s, %s, %s, %s) RETURNING id
                 """,
-                (project_id, name.strip(), is_done_column, position),
+                (project_id, name.strip(), is_done_column, position, kind),
             )
             new_id = cur.fetchone()[0]
     return {"status": "ok", "id": new_id, "message": f"Coluna '{name.strip()}' criada."}
@@ -720,7 +750,7 @@ def copy_columns(source_project_id: int, target_project_id: int) -> dict:
             # Lê as colunas da origem ordenadas por posição (reproduz a ordem visual).
             cur.execute(
                 """
-                SELECT name, is_done_column
+                SELECT name, is_done_column, kind
                 FROM task_columns
                 WHERE project_id = %s
                 ORDER BY position, id
@@ -735,13 +765,13 @@ def copy_columns(source_project_id: int, target_project_id: int) -> dict:
             # Insere cada coluna no destino preservando nome, flag done e a ordem.
             # Usa posições sequenciais simples (1, 2, 3, …) — o destino está vazio,
             # então não há colisão com posições existentes.
-            for i, (col_name, col_is_done) in enumerate(source_cols, start=1):
+            for i, (col_name, col_is_done, col_kind) in enumerate(source_cols, start=1):
                 cur.execute(
                     """
-                    INSERT INTO task_columns (project_id, name, is_done_column, position)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO task_columns (project_id, name, is_done_column, position, kind)
+                    VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (target_project_id, col_name, col_is_done, i),
+                    (target_project_id, col_name, col_is_done, i, col_kind),
                 )
 
     # Retorna o número de colunas copiadas para feedback na UI.
@@ -754,6 +784,7 @@ def update_column(
     name: Optional[str] = None,
     position: Optional[int] = None,
     is_done_column: Optional[bool] = None,
+    kind: Optional[str] = None,
 ) -> dict:
     """Renomeia, reordena ou marca/desmarca uma coluna como "concluído".
 
@@ -762,6 +793,8 @@ def update_column(
     Args:
         column_id: Id da coluna.
         name/position/is_done_column: Campos a atualizar (todos opcionais).
+        kind: Tipo semântico (``backlog``/``blocked``/``todo``/``doing``/``review``) ou ``"auto"``
+            para reinferir pelo nome. Omitido = mantém (renomear só reclassifica se reconhecer o nome).
 
     Returns:
         Dicionário de status.
@@ -780,6 +813,12 @@ def update_column(
                     return {"status": "error", "message": "O nome da coluna não pode ser vazio."}
                 sets.append("name = %(name)s")
                 params["name"] = name.strip()
+                # Renomear reclassifica só se o novo nome for reconhecido; senão mantém o tipo
+                # atual (ex.: "Homolog" → "QA do cliente" continua em homologação).
+                novo_kind = infer_column_kind(name)
+                if novo_kind is not None:
+                    sets.append("kind = %(kind)s")
+                    params["kind"] = novo_kind
             if position is not None:
                 sets.append("position = %(position)s")
                 params["position"] = position
@@ -794,6 +833,27 @@ def update_column(
                         return {"status": "error", "message": "Já existe uma coluna 'concluído' nesta lista."}
                 sets.append("is_done_column = %(done)s")
                 params["done"] = is_done_column
+                if is_done_column:
+                    sets = [x for x in sets if not x.startswith("kind =")]
+                    sets.append("kind = 'done'")
+                else:
+                    # Deixou de ser a coluna de concluídas: reinfere pelo nome (o novo, se veio junto).
+                    cur.execute("SELECT name FROM task_columns WHERE id = %s", (column_id,))
+                    nome_atual = params.get("name") or cur.fetchone()[0]
+                    sets = [x for x in sets if not x.startswith("kind =")]
+                    sets.append("kind = %(kind_undone)s")
+                    params["kind_undone"] = infer_column_kind(nome_atual)
+            if kind is not None:
+                # Escolha explícita do usuário vence a inferência automática por nome.
+                cur.execute("SELECT name, is_done_column FROM task_columns WHERE id = %s", (column_id,))
+                nome_db, done_db = cur.fetchone()
+                final_done = is_done_column if is_done_column is not None else done_db
+                _, kind_val, kind_err = _resolve_kind(kind, params.get("name") or nome_db, final_done)
+                if kind_err:
+                    return {"status": "error", "message": kind_err}
+                sets = [x for x in sets if not x.startswith("kind =")]
+                sets.append("kind = %(kind_explicit)s")
+                params["kind_explicit"] = kind_val
             if not sets:
                 return {"status": "error", "message": "Nada para atualizar."}
 

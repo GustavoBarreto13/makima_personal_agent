@@ -475,6 +475,7 @@ Colunas de Kanban (board) por lista.
 | `name` | TEXT | NÃO | — | Nome da coluna. |
 | `position` | BIGINT | NÃO | `0` | Ordem no board (esparsa ×1000). |
 | `is_done_column` | BOOLEAN | NÃO | `FALSE` | Coluna "concluído": soltar um card aqui completa a tarefa. |
+| `kind` | TEXT | SIM | — | Tipo semântico da coluna: `backlog`/`blocked`/`todo`/`doing`/`review`/`done` (CHECK). Inferido do nome (`agents/kaguya/task_state.py`); `NULL` = nome não reconhecido (cobrável). `backlog`/`blocked`/`review` não entram nas cobranças de IA e alarmes. |
 | `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação. |
 
 **Índices:** `uq_task_columns_done` — índice único parcial em `(project_id) WHERE is_done_column`:

@@ -176,9 +176,14 @@ def bloco_conselhos(items: list[dict]) -> str:
 def kaguya() -> dict:
     """Tarefas de hoje/atrasadas, hábitos e metas ativas (leitura, best-effort)."""
     def tasks():
-        from agents.kaguya.tools_tasks import list_tasks_today  # noqa: PLC0415
-        hoje = list_tasks_today()
-        return {"hoje": hoje.get("today") or [], "atrasadas": hoje.get("overdue") or []}
+        from agents.kaguya.tools_tasks import list_tasks_awaiting, list_tasks_today  # noqa: PLC0415
+        # Só o que é pendência real: Homolog/Blocked/Backlog e GTD aguardando/algum dia não cobram.
+        hoje = list_tasks_today(only_chargeable=True)
+        try:
+            aguardando = list_tasks_awaiting()
+        except Exception:  # noqa: BLE001 — só contexto, nunca derruba o conselho
+            aguardando = []
+        return {"hoje": hoje.get("today") or [], "atrasadas": hoje.get("overdue") or [], "aguardando": aguardando}
 
     def habits():
         from agents.kaguya.tools_habits import list_habits  # noqa: PLC0415
@@ -198,6 +203,12 @@ def bloco_kaguya(k: dict) -> str:
         linhas.append(f"Tarefas atrasadas ({len(t['atrasadas'])}): " + "; ".join(x.get("title", "") for x in t["atrasadas"][:8]))
     if t.get("hoje"):
         linhas.append(f"Tarefas de hoje ({len(t['hoje'])}): " + "; ".join(x.get("title", "") for x in t["hoje"][:8]))
+    if t.get("aguardando"):
+        # Rotulado como NÃO pendente para a IA não cobrar o que depende de validação/terceiros.
+        linhas.append(
+            f"Aguardando validação/desbloqueio ({len(t['aguardando'])}) — NÃO são pendências do usuário, não cobre: "
+            + "; ".join(f"{x.get('title', '')} ({x.get('flow_state')})" for x in t["aguardando"][:8])
+        )
     hs = k.get("habits") or []
     if hs:
         linhas.append("Hábitos (força 0–100, tendência, feito hoje?): " + "; ".join(

@@ -217,6 +217,7 @@ makima_personal_agent/
 │   │   ├── __init__.py
 │   │   ├── toolset.py          # TOOLS: list[Callable] — reaproveitado por mcp_servers/makima — spec 064
 │   │   ├── schema_tasks_pg.sql # schema do sistema de tarefas (spec 011+) + calendar_prefs
+│   │   ├── task_state.py       # motor PURO: tipo da coluna do Kanban + flow_state + regra "cobrável" (Homolog/Blocked/Backlog, GTD aguardando/algum dia não cobram)
 │   │   ├── tools_tasks.py      # camada de lógica: CRUD de tarefas/subtarefas, posições + Meu Dia
 │   │   ├── tools_projects.py   # camada de lógica: listas, grupos, colunas (Kanban)
 │   │   ├── tools_tags.py       # tags N:N — fatia 013
@@ -395,6 +396,7 @@ makima_personal_agent/
 │   ├── cleanup_violet_empty_pages.py # remove páginas vazias do diário (dry-run por padrão) — spec 076
 │   ├── backfill_violet_distortions.py # classifica distorções dos registros emocionais antigos (dry-run) — spec 076
 │   ├── seed_mobility_apps.py  # semeia agents/yato/mobility_apps a partir do research.md — spec 066
+│   ├── migrate_kaguya_column_kind.py # tipo semântico das colunas do Kanban (Homolog→review…) — dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS
 │   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)
 │   ├── migrate_komi_ds.py     # espaço, apelido, aniversário (tarefas birthday → lixeira) e notas das pessoas — spec 077 (dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS)
 │   ├── migrate_marin_ds.py    # coração, data de abandono e vitrine de favoritos dos animes — spec 074 (dry-run por padrão, --apply grava; já aplicada no VPS em 08/out)

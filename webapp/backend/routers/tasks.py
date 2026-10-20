@@ -194,6 +194,7 @@ class CreateColumnBody(BaseModel):
     project_id: int
     name: str
     is_done_column: bool = False
+    kind: Optional[str] = None  # backlog|blocked|todo|doing|review|auto (auto/omitido = pelo nome)
 
 
 class UpdateColumnBody(BaseModel):
@@ -201,6 +202,7 @@ class UpdateColumnBody(BaseModel):
     name: Optional[str] = None
     position: Optional[int] = None
     is_done_column: Optional[bool] = None
+    kind: Optional[str] = None  # backlog|blocked|todo|doing|review|auto
 
 
 class CopyColumnsBody(BaseModel):
