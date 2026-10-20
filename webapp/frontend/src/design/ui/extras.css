@@ -357,3 +357,14 @@
 .tp-ui-wrapper .tp-ui-minutes-time {
   font-size: 15px;
 }
+
+/* A bolinha que marca o horário acompanha os números menores (a biblioteca usa 46px / 36px). */
+.tp-ui-wrapper .tp-ui-circle-hand {
+  width: 38px;
+  height: 38px;
+}
+
+.tp-ui-wrapper .tp-ui-circle-hand.small-circle {
+  width: 30px;
+  height: 30px;
+}
