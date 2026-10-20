@@ -6,14 +6,16 @@
 // Recarga silenciosa depois de gravar: o quadro nunca pisca “Carregando…” numa mutação.
 
 import {
-  DndContext, DragOverlay, closestCorners, useDroppable,
-  type DragEndEvent, type DragOverEvent, type DragStartEvent,
+  DndContext, DragOverlay, closestCenter, closestCorners, useDroppable,
+  type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from '@dnd-kit/core'
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { arrayMove, horizontalListSortingStrategy, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Button, EmptyState, ErrorState, Icon, LoadingState, Page, Select, confirm, toast } from '../../../design'
 import { kaguyaApi } from '../api'
 import { ColumnModal } from '../components/ColumnModal'
+import { ColumnsManagerModal } from '../components/ColumnsManagerModal'
 import { KanbanCard, KanbanSortableCard } from '../components/KanbanCard'
 import { KanbanSummary, DEFAULT_SLOTS } from '../components/KanbanSummary'
 import { KanbanToolbar } from '../components/KanbanToolbar'
@@ -56,16 +58,19 @@ interface ColumnProps {
   onOpen: (t: Task) => void
   onAdd?: () => void
   onEdit?: () => void
+  /** Só no quadro de uma lista: deixa arrastar a coluna para reordenar (alça no cabeçalho). */
+  sort?: { setNodeRef: (el: HTMLElement | null) => void; style: CSSProperties; grip: ReactNode }
 }
 
-function KanbanColumn({ id, name, count, sub, done, isOver, capacity, cards, activeId, cardProps, onOpen, onAdd, onEdit }: ColumnProps) {
+function KanbanColumn({ id, name, count, sub, done, isOver, capacity, cards, activeId, cardProps, onOpen, onAdd, onEdit, sort }: ColumnProps) {
   // O corpo é um alvo de soltura: pega colunas vazias e o espaço abaixo dos cards.
   const { setNodeRef } = useDroppable({ id })
   const accent = done ? 'var(--done)' : 'var(--kg)'
   return (
-    <section className={`kcol${isOver ? ' is-over' : ''}`} aria-label={name} style={{ '--kc-color': accent } as React.CSSProperties}>
+    <section ref={sort?.setNodeRef} className={`kcol${isOver ? ' is-over' : ''}`} aria-label={name} style={{ '--kc-color': accent, ...sort?.style } as React.CSSProperties}>
       <div className="kcol-head">
         <div className="kc-row1">
+          {sort?.grip}
           <span className="kc-num">{count}</span>
           <div className="kc-namewrap">
             <span className="kc-name"><span className="kc-dot" style={{ background: accent }} />{name}</span>
@@ -91,6 +96,25 @@ function KanbanColumn({ id, name, count, sub, done, isOver, capacity, cards, act
   )
 }
 
+/** Coluna do quadro de uma lista: igual à `KanbanColumn`, mais a alça que permite arrastá-la (id `colsort:<id>`). */
+export const COL_SORT = 'colsort:'
+function SortableKanbanColumn(props: Omit<ColumnProps, 'sort'> & { colId: number }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: `${COL_SORT}${props.colId}` })
+  const grip = (
+    <button type="button" ref={setActivatorNodeRef} className="kc-grip" aria-label={`Arrastar a coluna ${props.name}`} {...attributes} {...listeners}>
+      <Icon name="drag" size={14} />
+    </button>
+  )
+  return <KanbanColumn {...props} sort={{ setNodeRef, grip, style: { transform: CSS.Translate.toString(transform), transition, opacity: isDragging ? 0.6 : undefined } }} />
+}
+
+/** Arrastar uma coluna só “enxerga” outras colunas; arrastar um card nunca mira nas alças das colunas. */
+const collision: CollisionDetection = (args) => {
+  const dragsColumn = String(args.active.id).startsWith(COL_SORT)
+  const containers = args.droppableContainers.filter((c) => String(c.id).startsWith(COL_SORT) === dragsColumn)
+  return (dragsColumn ? closestCenter : closestCorners)({ ...args, droppableContainers: containers })
+}
+
 /** O que cada board entrega ao “levantar” o card que segue o cursor. */
 function Overlay({ task, projectName }: { task: Task | undefined; projectName?: string }) {
   return (
@@ -114,6 +138,7 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
   const [activeViewId, setActiveViewId] = useState<number | null>(null)
   const [viewModal, setViewModal] = useState<{ view?: KanbanView } | null>(null)
   const [columnModal, setColumnModal] = useState<{ column?: Column } | null>(null)
+  const [managerOpen, setManagerOpen] = useState(false)
   const [filters, setFilters] = useState<KanbanFilters>(KANBAN_DEFAULTS)
   const [activeId, setActiveId] = useState<number | null>(null)
   const [overCol, setOverCol] = useState<number | null>(null)
@@ -180,9 +205,30 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
 
   const onDragOver = (e: DragOverEvent) => setOverCol(e.over ? colOf(e.over.id) : null)
 
+  // Reordenar colunas: otimista (a coluna muda de lugar na hora); em erro volta a ordem anterior.
+  const reorderColumns = async (e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const from = columns.findIndex((c) => `${COL_SORT}${c.id}` === active.id)
+    const to = columns.findIndex((c) => `${COL_SORT}${c.id}` === over.id)
+    if (from < 0 || to < 0) return
+    const snapshot = columns
+    const next = arrayMove(columns, from, to)
+    setColumns(next)
+    try {
+      const r = await kaguyaApi.reorderColumns(projectId, next.map((c) => c.id))
+      if (r.status === 'error') throw new Error(r.message)
+      k.reload()
+    } catch (err) {
+      setColumns(snapshot)
+      toast(reason(err, 'Não foi possível reordenar as colunas.'), { tone: 'error' })
+    }
+  }
+
   const onDragEnd = async (e: DragEndEvent) => {
     const { active, over } = e
     setActiveId(null); setOverCol(null)
+    if (String(active.id).startsWith(COL_SORT)) { await reorderColumns(e); return }
     if (!over) return
     const taskId = active.id as number
     const task = tasks.find((t) => t.id === taskId)
@@ -241,6 +287,7 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
       {viewModal && <KanbanViewModal view={viewModal.view} onClose={() => setViewModal(null)} onSaved={() => { void loadViews() }} />}
       {f.modal}
       {columnModal && <ColumnModal column={columnModal.column} projectId={projectId} onClose={() => setColumnModal(null)} onSaved={() => { k.reload() }} />}
+      {managerOpen && <ColumnsManagerModal columns={columns} projectId={projectId} onClose={() => setManagerOpen(false)} onSaved={() => { k.reload() }} />}
     </>
   )
 
@@ -293,6 +340,7 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
             <button type="button" className="kn-klink" onClick={() => void loadViews()}>Tentar de novo</button>
           </span>
         )}
+        <button type="button" className="kg-btn kg-btn-ghost" title="Editar, criar e reordenar as colunas desta lista" onClick={() => setManagerOpen(true)}><Icon name="prefs" size={14} />Colunas</button>
         <button type="button" className="kg-btn kg-btn-ghost" disabled={!activeView} title="Editar view" onClick={() => activeView && setViewModal({ view: activeView })}><Icon name="prefs" size={14} />Editar</button>
         <button type="button" className="kg-btn kg-btn-ghost" onClick={() => setViewModal({})}><Icon name="add" size={14} />View</button>
         <button type="button" className="kg-btn kg-btn-ghost" aria-pressed={f.activeCount > 0} onClick={f.open}><Icon name="filter" size={14} />{f.activeCount > 0 ? `Filtros · ${f.activeCount}` : 'Filtros'}</button>
@@ -300,8 +348,9 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
       </div>
       <KanbanToolbar filters={filters} onChange={setFilters} />
 
-      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={(e: DragStartEvent) => setActiveId(e.active.id as number)} onDragOver={onDragOver} onDragEnd={(e) => void onDragEnd(e)}>
+      <DndContext sensors={sensors} collisionDetection={collision} onDragStart={(e: DragStartEvent) => setActiveId(typeof e.active.id === 'number' ? e.active.id : null)} onDragOver={onDragOver} onDragEnd={(e) => void onDragEnd(e)}>
         <div className="kg-board">
+          <SortableContext items={columns.map((c) => `${COL_SORT}${c.id}`)} strategy={horizontalListSortingStrategy}>
           <div className="kcols">
             {columns.map((col) => {
               // A primeira coluna acolhe as órfãs (sem coluna, ou com uma coluna que não existe mais aqui): nada some do quadro.
@@ -310,8 +359,9 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
               const cards = applyKanbanFilters(raw, filters).filter((t) => shownIds.has(t.id))
               const est = cards.reduce((s, t) => s + (t.duration_min ?? 0), 0)
               return (
-                <KanbanColumn
+                <SortableKanbanColumn
                   key={col.id}
+                  colId={col.id}
                   id={`col:${col.id}`}
                   name={col.name}
                   count={cards.length}
@@ -330,6 +380,7 @@ export function KanbanScreen({ projectId }: { projectId: number }) {
             })}
             <button type="button" className="kg-btn" style={{ height: 44, flexShrink: 0, alignSelf: 'flex-start', marginTop: 22 }} onClick={() => setColumnModal({})}><Icon name="add" size={14} />Coluna</button>
           </div>
+          </SortableContext>
           {display.adornos.summary_footer && <KanbanSummary tasks={tasks} columns={columns} slots={display.slots ?? DEFAULT_SLOTS} today={k.today} />}
         </div>
         <Overlay task={activeTask} projectName={projectName} />

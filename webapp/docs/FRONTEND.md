@@ -267,6 +267,7 @@ escopo dinâmico `kaguya:*` — o lint aceita o prefixo).
   hábitos, resumo do foco, modo férias e a **linha do dia** (arrastar a tarefa até uma hora reserva o horário).
 - **Kanban e quadro de grupo**: estrutura e pele do shell antigo (título, linha de View, filtro com ordenação à direita, colunas "Vidro" com
   blur, cards de vidro, dnd, rodapé), em **tela inteira** (`Page full`).
+- **Colunas do quadro de uma lista**: alça no cabeçalho para arrastar e reordenar (`colsort:<id>` no mesmo `DndContext` dos cards; colisão filtrada por tipo de arraste) e o botão **Colunas** → `ColumnsManagerModal` (nome, tipo da coluna, concluídas, excluir, criar, subir/descer; salva em ordem segura e manda a ordem final em `PUT …/columns/order`). Tipos em `lib/columnKinds.ts`, compartilhados com o `ColumnModal`.
 - **Calendário** (Dia/Semana/Mês) com a estrutura do antigo (barra fixa, grade com rolagem própria, lateral de calendários com borda;
   `Page full fill`): tarefas + Google + outros agentes, faixa de expediente/almoço, mover/redimensionar/criar por arraste (com
   Desfazer), bandejas "Sem horário" e "Sem data", popover e menu de contexto, três estilos de evento.

@@ -405,7 +405,8 @@ estão nos contratos das specs: `specs/011-tasks-mvp/contracts/`,
 | `POST` | `/api/tasks/groups/{group_id}/context` | Define o contexto (`personal`\|`work`) de todas as listas do grupo de uma vez (spec 038, FR-003). |
 | `GET` | `/api/tasks/projects/{project_id}/columns` | Lista as colunas do board de uma lista. |
 | `POST` | `/api/tasks/columns` | Cria uma coluna (a primeira ativa o Kanban). |
-| `PATCH` | `/api/tasks/columns/{column_id}` | Renomeia/reordena/marca "done" uma coluna. |
+| `PATCH` | `/api/tasks/columns/{column_id}` | Renomeia/reordena/marca "done" uma coluna; `kind` (`backlog`/`blocked`/`todo`/`doing`/`review`, ou `auto` = pelo nome) define o tipo — ver `agents/kaguya/CLAUDE.md` § Estados que não cobram. |
+| `PUT` | `/api/tasks/projects/{project_id}/columns/order` | Reordena as colunas de uma lista de uma vez: body `{ids: [...]}` com TODAS as colunas na ordem final (atômico; ids diferentes das colunas da lista → 400). |
 | `DELETE` | `/api/tasks/columns/{column_id}` | Exclui uma coluna (as tarefas dela ficam sem coluna). |
 | `POST` | `/api/tasks/projects/{project_id}/copy-columns` | Copia a estrutura de colunas de outro board (sem tarefas; só se o destino ainda não tiver board). |
 

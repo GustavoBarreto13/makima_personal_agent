@@ -861,6 +861,34 @@ def update_column(
     return {"status": "ok", "message": "Coluna atualizada."}
 
 
+def reorder_columns(project_id: int, ordered_ids: list[int]) -> dict:
+    """Reordenar as colunas do board de uma lista de uma só vez (tudo-ou-nada).
+
+    Recebe a ordem final completa e regrava ``position`` esparso (×1000) numa única
+    transação — evita ficar com meia ordem se uma das gravações falhar.
+
+    Args:
+        project_id: Id da lista dona do board.
+        ordered_ids: Ids das colunas na ordem desejada. Precisa conter EXATAMENTE as colunas
+            da lista (sem faltar, sobrar nem repetir).
+
+    Returns:
+        ``{"status": "ok"}`` ou erro (lista de ids diferente das colunas da lista).
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM task_columns WHERE project_id = %s", (project_id,))
+            existentes = {row[0] for row in cur.fetchall()}
+            if len(ordered_ids) != len(set(ordered_ids)) or set(ordered_ids) != existentes:
+                return {"status": "error", "message": "A ordem enviada não bate com as colunas desta lista."}
+            for i, col_id in enumerate(ordered_ids, start=1):
+                cur.execute(
+                    "UPDATE task_columns SET position = %s WHERE id = %s AND project_id = %s",
+                    (i * _POSITION_STEP, col_id, project_id),
+                )
+    return {"status": "ok", "message": "Colunas reordenadas."}
+
+
 def delete_column(column_id: int) -> dict:
     """Exclui uma coluna; as tarefas dela ficam sem coluna (``column_id = NULL``).
 

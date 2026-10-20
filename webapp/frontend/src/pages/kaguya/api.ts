@@ -87,6 +87,9 @@ export const kaguyaApi = {
   updateColumn: (id: number, body: Partial<{ name: string; position: number; is_done_column: boolean; kind: ColumnKind | 'auto' }>) =>
     api.patch<MutationResult>(`${BASE}/columns/${id}`, body),
   deleteColumn: (id: number) => api.del<MutationResult>(`${BASE}/columns/${id}`),
+  // Reordena as colunas de uma lista de uma vez: `ids` = TODAS as colunas na ordem final (atômico no servidor).
+  reorderColumns: (projectId: number, ids: number[]) =>
+    api.put<MutationResult>(`${BASE}/projects/${projectId}/columns/order`, { ids }),
   // Copia a estrutura de colunas de sourceId para targetId (sem tarefas — só nomes+ordem+flag done).
   copyColumns: (targetId: number, sourceId: number) =>
     api.post<MutationResult>(`${BASE}/projects/${targetId}/copy-columns`, { source_project_id: sourceId }),

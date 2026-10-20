@@ -200,3 +200,20 @@ def test_kind_explicito_vence_o_nome_e_auto_reinfere(board):
     assert P.update_column(col, kind="done")["status"] == "error"  # done só pelo interruptor
     novo = P.create_column(board["pid"], "Coluna livre", kind="blocked")["id"]
     assert {c["id"]: c["kind"] for c in P.list_columns(board["pid"])}[novo] == "blocked"
+
+
+@requires_db
+def test_reorder_columns_persiste_a_ordem_e_valida(board):
+    """reorder_columns grava a ordem inteira (×1000) e recusa conjunto diferente do da lista."""
+    ids = [c["id"] for c in P.list_columns(board["pid"])]
+    nova = list(reversed(ids))
+    assert P.reorder_columns(board["pid"], nova)["status"] == "ok"
+    cols = P.list_columns(board["pid"])
+    assert [c["id"] for c in cols] == nova
+    assert [c["position"] for c in cols] == [1000 * i for i in range(1, len(nova) + 1)]
+    # incompleta, duplicada e de outra lista são recusadas sem mexer na ordem
+    assert P.reorder_columns(board["pid"], nova[:-1])["status"] == "error"
+    assert P.reorder_columns(board["pid"], nova + [nova[0]])["status"] == "error"
+    outra = P.create_project("Outra")["id"]
+    assert P.reorder_columns(outra, nova)["status"] == "error"
+    assert [c["id"] for c in P.list_columns(board["pid"])] == nova

@@ -251,7 +251,7 @@ badge ↳. A projeção virtual continua só nas raízes (recorrência é 1:1 co
 
 `get_sidebar`, `create_project`, `update_project`, `delete_project(mode)`, `create_group`,
 `update_group`, `delete_group`, `list_columns`, `create_column`, `update_column`,
-`delete_column`, `resolve_project_id_by_name`.
+`delete_column`, `reorder_columns`, `resolve_project_id_by_name`.
 
 **Funções adicionadas (spec 025):**
 
@@ -268,6 +268,12 @@ badge ↳. A projeção virtual continua só nas raízes (recorrência é 1:1 co
   `position=min` dos membros. Chama `list_tasks` por lista e concatena. Retorna
   `{group, lists, columns (unificadas), tasks}`.
   Exposto via `GET /api/tasks/groups/{id}/board`.
+
+- **`reorder_columns(project_id, ordered_ids)`** — reordena as colunas do board de uma lista numa
+  transação: exige TODAS as colunas da lista, sem repetir (senão erro) e regrava `position` ×1000.
+  `PUT /api/tasks/projects/{id}/columns/order`. No quadro de uma lista, a UI arrasta a coluna pela
+  alça do cabeçalho; o botão "Colunas" abre o `ColumnsManagerModal` (renomear, tipo, concluídas,
+  excluir, criar e reordenar num lugar só; grava tudo ao salvar). O board de grupo não reordena.
 
 **Regras de negócio** (validadas aqui): Inbox indelével/inarquivável; no máximo uma coluna
 `is_done_column` por lista; captura órfã → Inbox; mover entre listas → primeira coluna do
