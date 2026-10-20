@@ -126,6 +126,15 @@ halo; toda tela "Início" abre com ele, mostrando o contexto mais relevante do a
 Nunca usar `<input type="date|time">`, `alert/confirm/prompt`, emoji como ícone de UI,
 `new Date('YYYY-MM-DD')` (UTC) nem `toISOString().slice(0,10)`. O `lint:design` barra tudo isso.
 
+#### Relógio (`TimePicker`) — padrão de hora
+
+Toda escolha de hora usa o `TimePicker` de `src/design/ui/form.tsx` (biblioteca `timepicker-ui`); não criar `<select>` de horários nem outro relógio.
+
+- **24 h**, sem AM/PM; minutos de 5 em 5; valor sempre `"HH:MM"`; textos em português (OK, Cancelar, "Escolha o horário").
+- Visual: botão-campo igual ao `DatePicker` (hora em `ds-num` + ícone `clock`); o relógio abre em modal. Cores, raios e fonte vêm só dos tokens `--ds-*`, mapeados para as variáveis `--tp-*` da lib no fim de `ui/extras.css` (claro/escuro e acento do agente valem sozinhos).
+- Medidas ajustadas em `extras.css`: números do mostrador **15px** (lib: 17,6px) e bolinha de seleção **38px** / **30px** na versão pequena (lib: 46/36px). Mudar o tamanho é mudar lá, nunca num shell.
+- Hora e duração andam juntas quando há as duas: início + duração = fim, e mexer no fim recalcula a duração (exemplo: Kaguya, `pages/kaguya/lib/durations.ts`).
+
 ### Ícones — um vocabulário só
 
 `ui/icons.ts` é o registro semântico `nome → componente Lucide` (`lucide-react`, tree-shaken):

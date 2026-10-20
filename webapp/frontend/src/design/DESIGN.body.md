@@ -88,6 +88,7 @@ Vêm sempre de `src/design/` (guia completo: `webapp/docs/DESIGN_SYSTEM.md`): `A
 `confirm()` + `toast(..., { undo })`, `useCollection` + `CollectionToolbar`, `QuickCapture`,
 `StatsPage`, `DetailPage`, `Stars`/`RateInput` (0–5 com meia estrela), `EmptyState`/`ErrorState`/`Skeleton`.
 Nunca criar Toast, Modal, TweaksPanel, botão, picker ou ícone locais.
+Hora = `TimePicker`: relógio 24 h (minutos de 5 em 5, valor `HH:MM`), pintado só com tokens `--ds-*`; números do mostrador 15px e bolinha 38px. Nunca `<select>` de horários nem outro relógio.
 
 ## Do's and Don'ts
 
