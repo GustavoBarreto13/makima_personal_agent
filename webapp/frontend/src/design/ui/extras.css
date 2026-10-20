@@ -350,3 +350,10 @@
   --tp-backdrop: var(--ds-scrim);
   font-family: var(--ds-font-sans);
 }
+
+/* Números do mostrador do relógio um tico menores (a biblioteca fixa 17.6px). */
+.tp-ui-wrapper .tp-ui-hour-time-12,
+.tp-ui-wrapper .tp-ui-hour-time-24,
+.tp-ui-wrapper .tp-ui-minutes-time {
+  font-size: 15px;
+}
