@@ -3,6 +3,7 @@
 import { hueFromName, Icon, MediaCard, ProgressBar, StatusChip } from '../../../design'
 import { useFrieren } from '../context'
 import { STATUS } from '../lib/status'
+import { positionLabel } from '../lib/units'
 import type { Book } from '../types'
 
 /** "Frank Herbert · 1965" (o que houver). */
@@ -24,7 +25,7 @@ export function BookCard({ book, index, showStatus = true }: { book: Book; index
       status={showStatus && tone && tone !== 'done' ? tone : undefined}
       badge={book.liked ? <Icon name="heart" size={14} label="Curti" /> : undefined}
       meta={book.status === 'lendo' && book.progress !== null ? <ProgressBar value={book.progress * 100} label={`${Math.round(book.progress * 100)}% lido`} /> : undefined}
-      metaRight={book.status === 'lendo' && book.pages ? <span className="ds-mono">p. {book.page}/{book.pages}</span> : undefined}
+      metaRight={book.status === 'lendo' && book.pages ? <span className="ds-mono">{positionLabel(book.unit, book.page)}/{book.pages}</span> : undefined}
       index={index}
       onOpen={() => frieren.goto({ view: 'catalog', bookId: book.id })}
     />

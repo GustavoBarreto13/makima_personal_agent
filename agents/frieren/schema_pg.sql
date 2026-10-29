@@ -37,6 +37,11 @@ ALTER TABLE books ADD COLUMN IF NOT EXISTS date_abandoned DATE;   -- preenchida 
 -- antigos foram mantidos de propósito para não quebrar hub, calendário e estatísticas.
 ALTER TABLE books ADD COLUMN IF NOT EXISTS format        TEXT NOT NULL DEFAULT 'fisico';
 ALTER TABLE books ADD COLUMN IF NOT EXISTS progress_unit TEXT NOT NULL DEFAULT 'pages';
+-- Número da primeira unidade (capítulo/volume inicial). Mangás costumam numerar os capítulos de forma
+-- contínua entre volumes (o Vol. 2 começa no cap. 24). A posição base do livro é `first_unit - 1`;
+-- `total_pages` segue sendo o ÚLTIMO número (36), então a quantidade é `total_pages - first_unit + 1`.
+-- Em livros contados em páginas vale sempre 1.
+ALTER TABLE books ADD COLUMN IF NOT EXISTS first_unit INTEGER NOT NULL DEFAULT 1;
 DO $$
 BEGIN
     -- CHECK idempotente: só cria se ainda não existir (ADD CONSTRAINT não tem IF NOT EXISTS).
@@ -47,6 +52,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'books_progress_unit_check') THEN
         ALTER TABLE books ADD CONSTRAINT books_progress_unit_check
             CHECK (progress_unit IN ('pages', 'chapters', 'volumes'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'books_first_unit_check') THEN
+        ALTER TABLE books ADD CONSTRAINT books_first_unit_check CHECK (first_unit >= 1);
     END IF;
 END $$;
 CREATE INDEX IF NOT EXISTS idx_books_status     ON books(status);

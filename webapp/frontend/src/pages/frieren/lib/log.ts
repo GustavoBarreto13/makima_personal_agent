@@ -3,7 +3,7 @@
 
 import { createCaptureParser, type CaptureResult } from '../../../design/core/capture'
 import type { Book } from '../types'
-import { stoppedLabel, unitCount, unitFromCapture, withArticle } from './units'
+import { basePosition, stoppedLabel, unitCount, unitFromCapture, withArticle } from './units'
 
 /** Página (`p. 240`), nota (`★4.5`) e data no passado (`ontem`, `sexta`, `12/09`). */
 export const logParser = createCaptureParser({ rules: ['progress', 'bookUnits', 'rating', 'date'], dateDirection: 'past' })
@@ -103,6 +103,9 @@ export function validateDraft(d: LogDraft, book: Book | null, today: string): { 
   if (d.page !== null) {
     if (!Number.isInteger(d.page) || d.page < 0) return { field: 'page', message: 'Informe um número inteiro.' }
     if (book.pages && d.page > book.pages) return { field: 'page', message: `O livro tem ${unitCount(book.unit, book.pages)}.` }
+    // Mangá de numeração contínua: o Vol. 2 que começa no cap. 24 não aceita "cap. 20".
+    const base = basePosition(book.first, book.unit)
+    if (d.page < base) return { field: 'page', message: `Este livro começa ${stoppedLabel(book.unit)} ${base + 1}.` }
   }
   const advances = d.page !== null && d.page > book.page
   // Sem página nova e sem terminar, não há nada para registrar (o servidor recusaria "nenhum progresso").

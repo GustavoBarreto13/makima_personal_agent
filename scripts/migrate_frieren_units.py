@@ -1,8 +1,8 @@
 """Migrar o banco da Frieren para formatos e unidades de progresso (páginas, capítulos, volumes).
 
 O que faz:
-  1. Cria as colunas `books.format` (físico/ebook/audiobook/quadrinho) e `books.progress_unit`
-     (pages/chapters/volumes) com suas restrições (CHECK). Tudo idempotente: rodar duas vezes
+  1. Cria as colunas `books.format` (físico/ebook/audiobook/quadrinho), `books.progress_unit`
+     (pages/chapters/volumes) e `books.first_unit` (capítulo/volume inicial) com suas restrições (CHECK). Tudo idempotente: rodar duas vezes
      não muda nada.
   2. Marca como `format = 'quadrinho'` os livros do gênero "Comics & Graphic Novels" — antes
      as estatísticas adivinhavam quadrinho por esse gênero.
@@ -28,7 +28,7 @@ import argparse
 from agents.db import get_conn, run_select
 
 # Colunas novas em `books` — usadas para descobrir o que ainda falta criar.
-_COLUMNS = ("format", "progress_unit")
+_COLUMNS = ("format", "progress_unit", "first_unit")
 
 # Critério antigo de "quadrinho" das estatísticas. O `%%` é obrigatório: `run_select` sempre entrega um
 # dict de parâmetros (mesmo vazio) ao psycopg2, que então trata `%` como marcador e exige escapá-lo.
@@ -59,6 +59,8 @@ def _create_schema() -> None:
         with conn.cursor() as cur:
             cur.execute("ALTER TABLE books ADD COLUMN IF NOT EXISTS format TEXT NOT NULL DEFAULT 'fisico'")
             cur.execute("ALTER TABLE books ADD COLUMN IF NOT EXISTS progress_unit TEXT NOT NULL DEFAULT 'pages'")
+            # Capítulo/volume inicial (mangás de numeração contínua entre volumes); 1 = começa do começo.
+            cur.execute("ALTER TABLE books ADD COLUMN IF NOT EXISTS first_unit INTEGER NOT NULL DEFAULT 1")
             # ADD CONSTRAINT não tem IF NOT EXISTS: só cria a restrição se ela ainda não existe.
             cur.execute(
                 """
@@ -71,6 +73,9 @@ def _create_schema() -> None:
                     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'books_progress_unit_check') THEN
                         ALTER TABLE books ADD CONSTRAINT books_progress_unit_check
                             CHECK (progress_unit IN ('pages', 'chapters', 'volumes'));
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'books_first_unit_check') THEN
+                        ALTER TABLE books ADD CONSTRAINT books_first_unit_check CHECK (first_unit >= 1);
                     END IF;
                 END $$;
                 """
@@ -115,7 +120,8 @@ def main(apply: bool = False) -> dict:
 
     # Dry-run antes da 1ª aplicação: as colunas não existem, então não dá para filtrar por elas.
     # Todo livro do gênero conta como candidato (ainda não foi tratado por ninguém).
-    if missing:
+    # (Só quando faltam as colunas de formato/unidade: faltar apenas `first_unit` não muda os candidatos.)
+    if {"format", "progress_unit"} & set(missing):
         rows = run_select(
             f"""
             SELECT b.id, b.title,

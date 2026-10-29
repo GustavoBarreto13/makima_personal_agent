@@ -19,7 +19,7 @@ import { useFrieren } from '../context'
 import { frierenApi } from '../frierenApi'
 import { domainOf, normalizeBook, normalizeUrl } from '../lib/normalize'
 import { deleteSession } from '../lib/sessions'
-import { formatLabel, unitCount, unitName, unitSingular, withArticle } from '../lib/units'
+import { formatLabel, rangeLabel, unitCount, unitName, unitSingular, withArticle } from '../lib/units'
 import { STATUS, STATUS_ORDER } from '../lib/status'
 import { useLoad } from '../lib/useLoad'
 import type { ApiHistoryLog, Book, BookStatus, Session } from '../types'
@@ -181,6 +181,8 @@ export function BookDetail({ id }: { id: string }) {
   const facts = [
     // Formato (sempre que não for o padrão) e o total na unidade do livro: páginas, capítulos ou volumes.
     book.format !== 'fisico' ? { title: 'Formato', value: formatLabel(book.format) } : null,
+    // Mangá de numeração contínua: mostra a faixa do volume (ex.: "cap. 24–36").
+    rangeLabel(book.first, book.pages, book.unit) ? { title: 'Faixa', value: rangeLabel(book.first, book.pages, book.unit) as string } : null,
     book.pages ? { title: unitName(book.unit).charAt(0).toUpperCase() + unitName(book.unit).slice(1), value: book.page ? `${book.page} de ${book.pages}` : String(book.pages) } : null,
     book.started ? { title: 'Comecei em', value: fmtDate(book.started) } : null,
     book.finished ? { title: 'Terminei em', value: fmtDate(book.finished) } : null,

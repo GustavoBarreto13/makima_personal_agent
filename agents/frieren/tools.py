@@ -17,8 +17,10 @@ from agents.db import run_select, run_dml, get_conn
 
 # Vocabulário de unidades (página/capítulo/volume) e formatos (físico/ebook/audiobook/mangá).
 from agents.frieren.units import (
-    VALID_FORMATS, VALID_UNITS, default_unit_for, normalize_unit, unit_label, stopped_label,
+    VALID_FORMATS, VALID_UNITS, base_position, default_unit_for, normalize_unit, progress_fraction,
+    stopped_label, unit_count_total, unit_label,
 )
+from agents.frieren.units import DEFAULT_UNIT
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -81,6 +83,28 @@ _UNIT_LOCKED_ERROR = (
     "Este livro já tem sessões de leitura registradas, então a unidade não pode mudar "
     "(os números antigos passariam a significar outra coisa). Confirme a troca para manter as sessões."
 )
+
+
+def _check_first_unit(first_unit: int | None) -> str | None:
+    """Validar o número da primeira unidade do livro (capítulo/volume inicial).
+
+    Args:
+        first_unit: Valor informado; None significa "não informado" e é aceito.
+
+    Returns:
+        Mensagem de erro, ou None quando o valor é válido (inteiro maior ou igual a 1).
+
+    Example:
+        >>> _check_first_unit(24) is None
+        True
+        >>> "inicial inválido" in _check_first_unit(0)
+        True
+    """
+    if first_unit is None:
+        return None
+    if isinstance(first_unit, bool) or not isinstance(first_unit, int) or first_unit < 1:
+        return f"Capítulo inicial inválido: <b>{first_unit}</b>. Use um número inteiro a partir de 1."
+    return None
 
 
 def _resolve_format_unit(book_format: str | None, progress_unit: str | None) -> tuple[str, str, str | None]:
@@ -591,6 +615,7 @@ def add_book(
     published_year: int | None = None,
     format: str | None = None,
     progress_unit: str | None = None,
+    first_unit: int | None = None,
 ) -> str:
     """Adiciona um livro ao catálogo. Enriquece metadados via Google Books API automaticamente.
 
@@ -621,11 +646,19 @@ def add_book(
         progress_unit: Unidade em que o progresso é contado — ``pages``, ``chapters`` ou ``volumes``.
             Sem valor, usa a sugerida pelo formato (audiobook e mangá → capítulos). Com unidade
             diferente de páginas, o ``total_pages`` é o total NESSA unidade (ex.: 120 capítulos).
+        first_unit: Número do capítulo/volume em que o livro começa (padrão 1). Serve para mangás
+            de numeração contínua: o Vol. 2 pode começar no capítulo 24 e ``total_pages`` ser 36
+            (o último). Ignorado quando a unidade é páginas.
     """
-    # ── 0. Valida formato e unidade ───────────────────────────────────────────
+    # ── 0. Valida formato, unidade e capítulo inicial ─────────────────────────
     book_format, progress_unit, erro_fmt = _resolve_format_unit(format, progress_unit)
     if erro_fmt:
         return erro_fmt
+    erro_inicio = _check_first_unit(first_unit)
+    if erro_inicio:
+        return erro_inicio
+    # Em páginas não existe "capítulo inicial": o livro sempre começa do zero.
+    first_unit = 1 if progress_unit == "pages" else (first_unit or 1)
 
     # ── 1. Valida o status informado ──────────────────────────────────────────
     if status not in VALID_STATUSES:
@@ -736,12 +769,12 @@ def add_book(
             id, google_books_id, title, author, total_pages,
             isbn, cover_url, description, genre, language, published_year,
             status, date_started, date_finished, rating, notes,
-            source, created_at, updated_at, deleted, format, progress_unit
+            source, created_at, updated_at, deleted, format, progress_unit, first_unit
         ) VALUES (
             %(id)s, %(google_books_id)s, %(title)s, %(author)s, %(total_pages)s,
             %(isbn)s, %(cover_url)s, %(description)s, %(genre)s, %(language)s, %(published_year)s,
             %(status)s, %(date_started)s, NULL, NULL, NULL,
-            %(source)s, %(created_at)s, %(updated_at)s, FALSE, %(format)s, %(progress_unit)s
+            %(source)s, %(created_at)s, %(updated_at)s, FALSE, %(format)s, %(progress_unit)s, %(first_unit)s
         )
     """
 
@@ -764,6 +797,7 @@ def add_book(
         "updated_at":      agora,
         "format":          book_format,
         "progress_unit":   progress_unit,
+        "first_unit":      first_unit,
     }
 
     # Executa o INSERT e grava vínculos de pessoas na mesma transação (spec 014 / FR-009).
@@ -802,7 +836,7 @@ def _get_last_logged_book() -> dict | None:
     # Junta reading_logs com books para obter todos os campos do livro
     sql = """
         SELECT b.id, b.title, b.author, b.total_pages, b.status,
-               b.date_started, b.date_finished, b.progress_unit, b.format
+               b.date_started, b.date_finished, b.progress_unit, b.format, b.first_unit
         FROM reading_logs rl
         JOIN books b ON b.id = rl.book_id
         ORDER BY rl.date DESC, rl.created_at DESC
@@ -879,8 +913,15 @@ def log_reading(
     last_params = {"book_id": book_id}
     last_logs = run_select(sql_last, last_params)
 
-    # page_start = última posição registrada, ou 0 se nunca houve nenhum log
-    page_start = last_logs[0]["page_end"] if last_logs else 0
+    # page_start = última posição registrada; sem logs, a posição base do livro (0, ou capítulo
+    # inicial - 1 nos mangás de numeração contínua: o Vol. 2 começando no cap. 24 parte do 23).
+    base = base_position(book.get("first_unit"), unidade)
+    page_start = last_logs[0]["page_end"] if last_logs else base
+    if current_page < base:
+        return (
+            f"A posição <b>{current_page}</b> vem antes do início de <b>{book['title']}</b>, "
+            f"que começa {stopped_label(unidade)} <b>{base + 1}</b>."
+        )
 
     # ── 5. Calcula as páginas lidas nesta sessão ──────────────────────────────
     pages_read = current_page - page_start
@@ -964,7 +1005,8 @@ def log_reading(
     titulo = book["title"]
 
     if total_pages:
-        percent = round((current_page / total_pages) * 100, 1)
+        # Percentual e "restantes" contam só o que o livro tem (descontando o capítulo inicial).
+        percent = round(progress_fraction(current_page, total_pages, book.get("first_unit"), unidade) * 100, 1)
         remaining = total_pages - current_page
 
         return (
@@ -995,13 +1037,14 @@ def get_current_reading() -> str:
             b.author,
             b.total_pages,
             b.progress_unit,
+            b.first_unit,
             b.date_started,
             MAX(rl.page_end)  AS current_page,
             COUNT(rl.id)      AS total_sessions
         FROM books b
         LEFT JOIN reading_logs rl ON rl.book_id = b.id
         WHERE b.status = 'lendo' AND b.deleted = FALSE
-        GROUP BY b.id, b.title, b.author, b.total_pages, b.progress_unit, b.date_started
+        GROUP BY b.id, b.title, b.author, b.total_pages, b.progress_unit, b.first_unit, b.date_started
         ORDER BY b.updated_at DESC
     """
 
@@ -1025,7 +1068,8 @@ def get_current_reading() -> str:
 
         unidade = normalize_unit(row.get("progress_unit"))
         if total_pages and current_page is not None:
-            percent = round((current_page / total_pages) * 100, 1)
+            fracao = progress_fraction(current_page, total_pages, row.get("first_unit"), unidade) or 0
+            percent = round(fracao * 100, 1)
             progresso_txt = f"{percent}% ({current_page}/{unit_label(unidade, total_pages)})"
         elif current_page is not None:
             progresso_txt = f"{unit_label(unidade, 1).split(' ', 1)[1]} {current_page}"
@@ -1359,7 +1403,7 @@ def update_book_pages(book_query: str, total_pages: int) -> str:
     # Monta a resposta com o novo progresso percentual, se aplicável
     if last_logs and last_logs[0]["page_end"]:
         current = last_logs[0]["page_end"]
-        percent = round((current / total_pages) * 100, 1)
+        percent = round((progress_fraction(current, total_pages, book.get("first_unit"), unidade) or 0) * 100, 1)
         progress = f" · progresso recalculado: {percent}% ({current}/{unit_label(unidade, total_pages)})"
     else:
         progress = ""
@@ -1565,6 +1609,8 @@ def get_book_menu_data(book_query: str) -> str:
         # Unidade em que current_page/total_pages estão (pages | chapters | volumes).
         "progress_unit": normalize_unit(book.get("progress_unit")),
         "format":        book.get("format") or "fisico",
+        # Número da primeira unidade (capítulo/volume inicial); 1 na maioria dos livros.
+        "first_unit":    book.get("first_unit") or 1,
         "date_started":  str(book["date_started"]) if book.get("date_started") else None,
         "date_finished": str(book["date_finished"]) if book.get("date_finished") else None,
         "cover_url":     book.get("cover_url"),
@@ -1745,6 +1791,7 @@ def update_book_metadata_by_id(
     format: str | None = None,
     progress_unit: str | None = None,
     allow_unit_change: bool = False,
+    first_unit: int | None = None,
 ) -> str:
     """Atualiza campos de metadados de um livro pelo ID exato.
 
@@ -1778,8 +1825,11 @@ def update_book_metadata_by_id(
             (o título, por exemplo, nunca pode ficar vazio).
         format: Formato do livro (``fisico``, ``ebook``, ``audiobook`` ou ``quadrinho``).
             Trocar o formato nunca mexe na unidade — ela é escolhida à parte.
-        progress_unit: Unidade do progresso (``pages``, ``chapters`` ou ``volumes``). Só pode mudar
-            enquanto o livro NÃO tem sessões de leitura (senão os números antigos mudariam de sentido).
+        progress_unit: Unidade do progresso (``pages``, ``chapters`` ou ``volumes``). Com sessões de
+            leitura, só muda se ``allow_unit_change`` for True (os números antigos mudariam de sentido).
+        allow_unit_change: Confirma a troca de unidade de um livro que já tem sessões.
+        first_unit: Capítulo/volume em que o livro começa (inteiro >= 1), para mangás de numeração
+            contínua entre volumes. Ignorado (volta a 1) quando a unidade é páginas.
 
     Returns:
         Mensagem de confirmação em caso de sucesso, ou mensagem de erro
@@ -1825,6 +1875,26 @@ def update_book_metadata_by_id(
                 return _UNIT_LOCKED_ERROR
             sets.append("progress_unit = %(progress_unit)s")
             params["progress_unit"] = unidade_nova
+
+    # ── Capítulo/volume inicial ───────────────────────────────────────────────
+    # Vale só para capítulos e volumes; em páginas o livro sempre começa do zero (first_unit = 1).
+    erro_inicio = _check_first_unit(first_unit)
+    if erro_inicio:
+        return erro_inicio
+    if first_unit is not None or "progress_unit" in params:
+        unidade_efetiva = params.get("progress_unit")
+        if unidade_efetiva is None:
+            # A unidade não mudou agora: vale a que está gravada.
+            gravada = run_select(
+                "SELECT progress_unit FROM books WHERE id = %(id)s AND deleted = FALSE", {"id": book_id}
+            )
+            unidade_efetiva = normalize_unit(gravada[0]["progress_unit"]) if gravada else DEFAULT_UNIT
+        if unidade_efetiva == "pages":
+            # Trocar para páginas (ou editar um livro em páginas) zera o capítulo inicial.
+            sets.append("first_unit = 1")
+        elif first_unit is not None:
+            sets.append("first_unit = %(first_unit)s")
+            params["first_unit"] = first_unit
 
     if title is not None:
         sets.append("title = %(title)s")

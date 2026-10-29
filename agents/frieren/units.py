@@ -147,3 +147,82 @@ def stopped_label(unit: str | None) -> str:
         'no capítulo'
     """
     return _UNITS[normalize_unit(unit)]["stopped"]
+
+
+def base_position(first_unit: int | None, unit: str | None = "chapters") -> int:
+    """Calcular a posição "zero" do livro: onde o leitor está antes de ler qualquer coisa.
+
+    Mangás costumam numerar os capítulos de forma contínua entre os volumes (o Vol. 2 pode
+    começar no capítulo 24). Então a leitura começa na posição ``first_unit - 1`` (23), e só
+    o que passa daí conta como avanço. Em páginas o início é sempre 0.
+
+    Args:
+        first_unit: Número da primeira unidade do livro (``books.first_unit``); None vale 1.
+        unit: Unidade do livro; em ``pages`` o valor de ``first_unit`` é ignorado.
+
+    Returns:
+        A posição base (0 para livros que começam no 1 ou contados em páginas).
+
+    Example:
+        >>> base_position(24, "chapters")
+        23
+        >>> base_position(None, "chapters")
+        0
+        >>> base_position(24, "pages")
+        0
+    """
+    if normalize_unit(unit) == "pages":
+        return 0
+    return max(1, int(first_unit or 1)) - 1
+
+
+def unit_count_total(total: int | None, first_unit: int | None = 1, unit: str | None = "chapters") -> int | None:
+    """Calcular quantas unidades o livro tem de fato (último número - base).
+
+    Args:
+        total: Último número do livro (``books.total_pages``), ex.: 36.
+        first_unit: Número da primeira unidade, ex.: 24.
+        unit: Unidade do livro.
+
+    Returns:
+        A quantidade (13 no exemplo) ou None se o total não é conhecido.
+
+    Example:
+        >>> unit_count_total(36, 24, "chapters")
+        13
+        >>> unit_count_total(120, 1, "chapters")
+        120
+        >>> unit_count_total(None, 24, "chapters") is None
+        True
+    """
+    if not total:
+        return None
+    return max(0, int(total) - base_position(first_unit, unit))
+
+
+def progress_fraction(position: int | None, total: int | None, first_unit: int | None = 1,
+                      unit: str | None = "chapters") -> float | None:
+    """Calcular a fração lida (0 a 1) descontando a base do livro.
+
+    Args:
+        position: Posição atual (último ``page_end``), ex.: 30.
+        total: Último número do livro, ex.: 36.
+        first_unit: Número da primeira unidade, ex.: 24.
+        unit: Unidade do livro.
+
+    Returns:
+        Fração entre 0 e 1, ou None se não dá para calcular (sem total ou sem quantidade).
+
+    Example:
+        >>> round(progress_fraction(30, 36, 24, "chapters"), 3)
+        0.538
+        >>> progress_fraction(40, 120, 1, "chapters") == 40 / 120
+        True
+        >>> progress_fraction(5, None) is None
+        True
+    """
+    quantidade = unit_count_total(total, first_unit, unit)
+    if not quantidade or position is None:
+        return None
+    lido = int(position) - base_position(first_unit, unit)
+    return min(1.0, max(0.0, lido / quantidade))

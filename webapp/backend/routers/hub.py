@@ -34,6 +34,8 @@ from webapp.backend.deps import require_user
 
 # run_select executa SELECT no PostgreSQL compartilhado e retorna lista de dicts.
 from agents.db import run_select
+# Progresso descontando o capítulo/volume inicial dos mangás (módulo puro da Frieren).
+from agents.frieren.units import progress_fraction
 
 # Score de saúde financeira (spec 047, US3) — mesma tool usada pela tela da Nami.
 from agents.nami.tools_health import get_financial_health_score
@@ -205,12 +207,14 @@ def _frieren() -> dict:
         """
         SELECT b.title,
                b.total_pages,
+               b.progress_unit,
+               b.first_unit,
                COALESCE(MAX(rl.page_end), 0) AS current_page
         FROM books b
         LEFT JOIN reading_logs rl ON rl.book_id = b.id
         WHERE b.status = 'lendo'
           AND b.deleted = FALSE
-        GROUP BY b.id, b.title, b.total_pages
+        GROUP BY b.id, b.title, b.total_pages, b.progress_unit, b.first_unit
         ORDER BY b.updated_at DESC
         LIMIT 1
         """
@@ -223,7 +227,8 @@ def _frieren() -> dict:
         total = livro["total_pages"]
         atual = int(livro["current_page"] or 0)
         # Percentual só faz sentido se total_pages for truthy (evita divisão por zero).
-        pct = round(atual * 100 / total) if total else 0
+        # Descontando o capítulo/volume inicial (mangá que começa no cap. 24).
+        pct = round((progress_fraction(atual, total, livro.get("first_unit"), livro.get("progress_unit") or "pages") or 0) * 100) if total else 0
         # Formato: "Título · 47%" (título truncado a 14 chars).
         stat = _stat(f"{_trunc(livro['title'])} · {pct}%", "lendo agora")
 

@@ -47,6 +47,7 @@ Catálogo de livros e estado de leitura.
 | `total_pages` | INT64 | **Total na unidade do livro** (`progress_unit`): páginas, capítulos ou volumes. Nome histórico, não renomeado |
 | `format` | TEXT | `fisico` (padrão) \| `ebook` \| `audiobook` \| `quadrinho` (mangá/HQ) — ver "Formatos e unidades" |
 | `progress_unit` | TEXT | `pages` (padrão) \| `chapters` \| `volumes` — unidade dos números das sessões |
+| `first_unit` | INTEGER | Capítulo/volume inicial (padrão 1) — mangá de numeração contínua: Vol. 2 do cap. 24 ao 36 = `first_unit` 24 + `total_pages` 36 |
 | `isbn` | STRING | ISBN-13 (preferido) ou ISBN-10 como fallback |
 | `cover_url` | STRING | URL da capa (Google Books API) |
 | `description` | STRING | Sinopse (truncada em 500 caracteres) |
@@ -118,6 +119,11 @@ frontend espelha em `webapp/frontend/src/pages/frieren/lib/units.ts` — mudou u
 - **Trava com saída:** com sessões, a unidade só muda se quem chama passar `allow_unit_change=True` (`_book_has_logs`;
   sem isso, `_UNIT_LOCKED_ERROR` → HTTP 400). O modal "Editar livro" confirma sozinho e avisa no campo: as sessões
   mantêm os números, agora lidos na unidade nova (revise-as). O agente/Hermes não passa a flag. O **formato** muda sempre.
+- **Capítulo inicial (`first_unit`):** mangás numeram os capítulos de forma contínua entre volumes. O livro guarda o
+  inicial (24) e o ÚLTIMO número em `total_pages` (36); a posição base é `first_unit - 1` (23), a quantidade é
+  `total_pages - first_unit + 1` (13) e o percentual conta só o volume. A posição registrada é sempre o número real do
+  capítulo ("até o cap 30" ⇒ avanço de 7). `log_reading` recusa posição antes do início. Ignorado (volta a 1) em páginas.
+  Helpers puros em `units.py` (`base_position`, `unit_count_total`, `progress_fraction`) e espelho em `lib/units.ts`.
 - **Google Books:** com unidade ≠ páginas, `add_book` descarta o `pageCount` (são páginas impressas) — o total
   vem do usuário ou fica vazio.
 - **Somas nunca misturam unidades:** estatísticas, heatmap e o hábito `frieren_reading` somam **só** livros em

@@ -8,7 +8,7 @@ import { Button, DatePicker, Field, Input, Modal, NumberInput, RateInput, Textar
 import { useFrieren } from '../context'
 import { searchBooks, validateDraft, type LogDraft } from '../lib/log'
 import { STATUS } from '../lib/status'
-import { stoppedLabel, unitName, type ProgressUnit } from '../lib/units'
+import { basePosition, progressFraction, rangeLabel, stoppedLabel, unitName, type ProgressUnit } from '../lib/units'
 import { BookCover } from './BookCover'
 
 // Atalhos de "+N" de cada unidade: 10 páginas é um bom passo, mas 10 volumes não.
@@ -49,14 +49,19 @@ export function LogForm({ initial, onClose }: { initial: LogDraft; onClose: () =
   // Trocar de livro pré-preenche a página com a atual dele (fica fácil só somar).
   const choose = (id: string) => {
     const b = frieren.books.find((x) => x.id === id)
-    set({ bookId: id, page: b ? b.page : null, finished: false, rating: null })
+    // Sem leitura ainda, parte da posição base do livro (o Vol. 2 que começa no cap. 24 parte do 23).
+    set({ bookId: id, page: b ? Math.max(b.page, basePosition(b.first, b.unit)) : null, finished: false, rating: null })
   }
 
   const total = book?.pages ?? 0
   // Unidade do livro escolhido (sem livro ainda, mostra páginas).
   const unit: ProgressUnit = book?.unit ?? 'pages'
-  const bump = (n: number) => set({ page: Math.min(total || Infinity, Math.max(0, (d.page ?? book?.page ?? 0) + n)) })
-  const pct = total && d.page !== null ? Math.round((d.page / total) * 100) : null
+  const base = book ? basePosition(book.first, unit) : 0
+  const bump = (n: number) => set({ page: Math.min(total || Infinity, Math.max(base, (d.page ?? book?.page ?? base) + n)) })
+  // Porcentagem sobre o que o livro tem de fato (descontando o capítulo/volume inicial).
+  const frac = book && total && d.page !== null ? progressFraction(d.page, total, book.first, unit) : null
+  const pct = frac !== null ? Math.round(frac * 100) : null
+  const faixa = book ? rangeLabel(book.first, total || null, unit) : null
 
   const dirty = JSON.stringify(d) !== JSON.stringify(initial)
   const err = (field: string) => (error?.field === field ? error.message : null)
@@ -100,10 +105,10 @@ export function LogForm({ initial, onClose }: { initial: LogDraft; onClose: () =
           {list.length === 0 && <p className="ds-hint">Nenhum livro encontrado. Adicione-o à biblioteca primeiro.</p>}
         </div>
 
-        <Field label={`Você parou ${stoppedLabel(unit)}…`} error={err('page')} hint={total ? `de ${total}${pct !== null ? ` · ${pct}%` : ''}` : `O livro não tem total de ${unitName(unit)} cadastrado.`}>
+        <Field label={`Você parou ${stoppedLabel(unit)}…`} error={err('page')} hint={total ? `${faixa ? `${faixa} · ` : ''}de ${total}${pct !== null ? ` · ${pct}%` : ''}` : `O livro não tem total de ${unitName(unit)} cadastrado.`}>
           {(a) => (
             <div className="ds-inline fr-pagerow">
-              <NumberInput {...a} min={0} max={total || undefined} value={d.page ?? ''} onChange={(e) => set({ page: e.target.value === '' ? null : Math.round(Number(e.target.value)) })} />
+              <NumberInput {...a} min={base} max={total || undefined} value={d.page ?? ''} onChange={(e) => set({ page: e.target.value === '' ? null : Math.round(Number(e.target.value)) })} />
               {STEPS[unit].map((n) => <Button key={n} size="sm" disabled={!book} onClick={() => bump(n)}>+{n}</Button>)}
               <Button size="sm" icon="finished" disabled={!book} onClick={() => set({ page: total || d.page, finished: true })}>terminei</Button>
             </div>

@@ -107,3 +107,27 @@ describe('capítulos e volumes (mangá, audiobook)', () => {
     expect(validateDraft({ ...base, page: 41 }, MANGA, TODAY)).toBeNull()
   })
 })
+
+describe('validateDraft com capítulo inicial', () => {
+  // Vol. 2 de um mangá: capítulos 24 a 36, ainda sem leitura.
+  const vol2 = book('v2', 'Berserk 2', { format: 'quadrinho', progress_unit: 'chapters', first_unit: 24, total_pages: 36, current_page: null })
+  const rascunho = (page: number) => ({ ...draftFromCapture(logParser('Berserk 2'), { today: TODAY, books: [vol2] }), page })
+
+  it('recusa posição antes do início do volume', () => {
+    const e = validateDraft(rascunho(20), vol2, TODAY)
+    expect(e?.field).toBe('page')
+    expect(e?.message).toMatch(/começa no capítulo 24/)
+  })
+
+  it('aceita um capítulo dentro da faixa e calcula o progresso só do volume', () => {
+    expect(validateDraft(rascunho(30), vol2, TODAY)).toBeNull()
+    expect(normalizeBook({ ...vol2Api(), current_page: 30 }).progress).toBeCloseTo(7 / 13)
+  })
+
+  const vol2Api = (): ApiBook => ({
+    id: 'v2', title: 'Berserk 2', author: 'Autor', total_pages: 36, format: 'quadrinho', progress_unit: 'chapters', first_unit: 24,
+    status: 'lendo', cover_url: null, date_started: '2026-09-01', date_finished: null, date_abandoned: null, rating: null,
+    genre: 'Ação', isbn: null, published_year: 2000, language: 'pt', notes: null, store_url: null, price: null, liked: false,
+    created_at: '2026-01-01T12:00:00-03:00', updated_at: null, current_page: null, last_read: null, shelves: [],
+  })
+})

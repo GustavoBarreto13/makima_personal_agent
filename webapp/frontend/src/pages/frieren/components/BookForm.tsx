@@ -10,7 +10,8 @@ import { useFrieren } from '../context'
 import { frierenApi, type MetadataPatch } from '../frierenApi'
 import { normalizeUrl } from '../lib/normalize'
 import { STATUS, STATUS_ORDER } from '../lib/status'
-import { asFormat, asUnit, defaultUnitFor, FORMATS, formatLabel, totalLabel, UNITS, unitName, type BookFormat, type ProgressUnit } from '../lib/units'
+import { asFormat, asUnit, defaultUnitFor, FORMATS, formatLabel, totalLabel, UNITS, unitName, validateRange, type BookFormat, type ProgressUnit } from '../lib/units'
+import { UnitRangeFields } from './UnitRangeFields'
 import type { ApiBookDetail, BookStatus } from '../types'
 
 /** Formulário em texto (o que está nos campos); vira o patch na hora de salvar. */
@@ -24,6 +25,8 @@ interface FormState {
   total_pages: string
   format: BookFormat
   progress_unit: ProgressUnit
+  /** Capítulo/volume inicial (texto; "1" na maioria dos livros). Só vale fora de páginas. */
+  first_unit: string
   isbn: string
   language: string
   status: BookStatus
@@ -45,6 +48,7 @@ const fromDetail = (b: ApiBookDetail): FormState => ({
   total_pages: b.total_pages != null ? String(b.total_pages) : '',
   format: asFormat(b.format),
   progress_unit: asUnit(b.progress_unit),
+  first_unit: String(b.first_unit && b.first_unit > 0 ? b.first_unit : 1),
   isbn: b.isbn ?? '',
   language: b.language ?? '',
   status: (STATUS_ORDER as string[]).includes(b.status) ? (b.status as BookStatus) : 'quero_ler',
@@ -68,6 +72,10 @@ export function buildPatch(before: FormState, after: FormState): MetadataPatch {
   if (after.title.trim() !== before.title.trim()) patch.title = after.title.trim()
   if (after.format !== before.format) patch.format = after.format
   if (after.progress_unit !== before.progress_unit) patch.progress_unit = after.progress_unit
+  // Capítulo/volume inicial: só vai quando muda e o livro não é contado em páginas (lá o servidor zera).
+  if (after.progress_unit !== 'pages' && after.first_unit.trim() !== before.first_unit.trim() && after.first_unit.trim()) {
+    patch.first_unit = Math.round(Number(after.first_unit))
+  }
   for (const k of TEXT) {
     const v = after[k].trim()
     if (v === before[k].trim()) continue
@@ -105,6 +113,12 @@ export function validateForm(f: FormState, today: string): Record<string, string
   const e: Record<string, string> = {}
   if (!f.title.trim()) e.title = 'O título é obrigatório.'
   if (f.total_pages.trim() && !(Number(f.total_pages) > 0)) e.total_pages = 'Use um número maior que zero.'
+  // Fora de páginas, confere também o capítulo/volume inicial e se o último não vem antes dele.
+  if (f.progress_unit !== 'pages') {
+    const r = validateRange({ first: f.first_unit, last: f.total_pages })
+    if (r.first) e.first_unit = r.first
+    if (r.last && !e.total_pages) e.total_pages = r.last
+  }
   if (f.published_year.trim() && !/^\d{1,4}$/.test(f.published_year.trim())) e.published_year = 'Ano com até 4 dígitos.'
   if (f.price.trim() && !(Number(f.price.replace(',', '.')) >= 0)) e.price = 'Preço inválido.'
   if (f.date_started && f.date_started > today) e.date_started = 'O início não pode ser no futuro.'
@@ -199,7 +213,10 @@ export function BookForm({ book, onClose }: { book: ApiBookDetail; onClose: () =
               </Select>
             )}
           </Field>
-          <Field label={totalLabel(f.progress_unit)} error={errors.total_pages}>{(a) => <NumberInput {...a} min={1} value={f.total_pages} onChange={(e) => set({ total_pages: e.target.value })} />}</Field>
+          {f.progress_unit === 'pages'
+            ? <Field label={totalLabel(f.progress_unit)} error={errors.total_pages}>{(a) => <NumberInput {...a} min={1} value={f.total_pages} onChange={(e) => set({ total_pages: e.target.value })} />}</Field>
+            : <UnitRangeFields unit={f.progress_unit} value={{ first: f.first_unit, last: f.total_pages }} errors={{ first: errors.first_unit, last: errors.total_pages }}
+                onChange={(r) => set({ first_unit: r.first, total_pages: r.last })} />}
           {text('isbn', 'ISBN')}
           <Field label="Situação">
             {(a) => (

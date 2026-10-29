@@ -31,6 +31,9 @@ _FRIEREN_INSTRUCTION = """
         capítulos ou volumes — passe format="audiobook"/"quadrinho" (a unidade já vem sugerida) ou
         progress_unit="volumes" se o usuário disser que acompanha por volume
       • Com unidade diferente de páginas, total_pages é o total NESSA unidade (ex.: 120 capítulos, 42 volumes)
+      • Mangá de numeração contínua: use first_unit (capítulo/volume inicial) — o Vol. 2 pode começar no
+        capítulo 24 e ir até o 36 (total_pages = 36, o ÚLTIMO número). A posição que o usuário fala é o
+        número real do capítulo ("até o cap 30"), nunca a contagem dentro do volume
     - Registrar progresso (página atual, páginas lidas na sessão): use log_reading
       • Frases do usuário que indicam log_reading: "li até a página X", "cheguei na página X", "li X páginas",
         "ouvi até o capítulo X", "li até o volume X", "terminei o capítulo X"

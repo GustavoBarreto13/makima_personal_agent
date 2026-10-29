@@ -18,6 +18,8 @@ export interface ApiBook {
   /** Formato e unidade (podem faltar em respostas antigas: assume físico/páginas). */
   format?: string | null
   progress_unit?: string | null
+  /** Capítulo/volume em que o livro começa (padrão 1; mangá de numeração contínua entre volumes). */
+  first_unit?: number | null
   status: string
   cover_url: string | null
   date_started: string | null
@@ -53,6 +55,8 @@ export interface Book {
   format: BookFormat
   /** Unidade em que `pages`/`page` e as sessões são contados. */
   unit: ProgressUnit
+  /** Número da primeira unidade (capítulo/volume inicial); 1 na maioria dos livros. `pages` é o ÚLTIMO número. */
+  first: number
   /** Primeiro gênero (para facetas e agrupamento). */
   genre: string
   /** Todos os gêneros (o banco guarda "Fantasia, Aventura"). */

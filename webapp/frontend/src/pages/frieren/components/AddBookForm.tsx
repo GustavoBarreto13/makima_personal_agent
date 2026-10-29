@@ -2,12 +2,13 @@
 // fora do ar), adiciona só pelo título digitado. O erro de livro repetido aparece no próprio formulário.
 
 import { useState } from 'react'
-import { Button, Chip, Field, Icon, Img, Input, Modal, NumberInput } from '../../../design'
+import { Button, Chip, Field, Icon, Img, Input, Modal } from '../../../design'
 import { toast } from '../../../design/headless/toast'
 import { useFrieren } from '../context'
 import { frierenApi } from '../frierenApi'
 import { STATUS } from '../lib/status'
-import { defaultUnitFor, FORMATS, formatLabel, totalLabel, UNITS, unitName, type BookFormat, type ProgressUnit } from '../lib/units'
+import { defaultUnitFor, FORMATS, formatLabel, UNITS, unitName, validateRange, type BookFormat, type ProgressUnit, type RangeText } from '../lib/units'
+import { UnitRangeFields } from './UnitRangeFields'
 import type { BookStatus, GoogleBook } from '../types'
 
 // Os mesmos status iniciais do shell antigo, mais "Na estante" (tenho o livro, ainda não comecei).
@@ -25,7 +26,8 @@ export function AddBookForm({ initialTitle = '', onClose }: { initialTitle?: str
   const [format, setFormat] = useState<BookFormat>('fisico')
   const [unit, setUnit] = useState<ProgressUnit>('pages')
   // Total de capítulos/volumes digitado à mão: o Google só conhece páginas impressas.
-  const [manualTotal, setManualTotal] = useState('')
+  // Faixa do livro: capítulo/volume inicial e último (o Vol. 2 de um mangá pode ir do 24 ao 36).
+  const [range, setRange] = useState<RangeText>({ first: '1', last: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -46,6 +48,7 @@ export function AddBookForm({ initialTitle = '', onClose }: { initialTitle?: str
   const add = async () => {
     const title = (selected?.title ?? query).trim()
     if (!title) { setError('Digite o título do livro.'); return }
+    if (unit !== 'pages' && Object.keys(validateRange(range)).length) { setError('Confira o capítulo inicial e o último.'); return }
     setSaving(true); setError('')
     try {
       // Os metadados da edição escolhida vão junto: o servidor não precisa rebuscar (e não troca de edição).
@@ -55,7 +58,8 @@ export function AddBookForm({ initialTitle = '', onClose }: { initialTitle?: str
         format,
         progress_unit: unit,
         // Fora de páginas, o total vem do campo manual (o pageCount do Google não serve para capítulos/volumes).
-        ...(unit !== 'pages' && manualTotal.trim() ? { total_pages: Math.round(Number(manualTotal)) } : {}),
+        ...(unit !== 'pages' && range.last.trim() ? { total_pages: Math.round(Number(range.last)) } : {}),
+        ...(unit !== 'pages' && Math.round(Number(range.first)) > 1 ? { first_unit: Math.round(Number(range.first)) } : {}),
         ...(selected ? {
           google_books_id: selected.google_books_id || undefined,
           author: selected.author || undefined,
@@ -147,7 +151,7 @@ export function AddBookForm({ initialTitle = '', onClose }: { initialTitle?: str
             <div className="ds-inline fr-wrap" role="radiogroup" aria-label="Formato">
               {FORMATS.map((x) => (
                 <Chip key={x} on={format === x} role="radio" aria-checked={format === x}
-                  onClick={() => { setFormat(x); setUnit(defaultUnitFor(x)); setManualTotal('') }}>{formatLabel(x)}</Chip>
+                  onClick={() => { setFormat(x); setUnit(defaultUnitFor(x)); setRange({ first: '1', last: '' }) }}>{formatLabel(x)}</Chip>
               ))}
             </div>
           )}
@@ -157,7 +161,7 @@ export function AddBookForm({ initialTitle = '', onClose }: { initialTitle?: str
           {() => (
             <div className="ds-inline fr-wrap" role="radiogroup" aria-label="Unidade do progresso">
               {UNITS.map((u) => (
-                <Chip key={u} on={unit === u} role="radio" aria-checked={unit === u} onClick={() => { setUnit(u); setManualTotal('') }}>
+                <Chip key={u} on={unit === u} role="radio" aria-checked={unit === u} onClick={() => { setUnit(u); setRange({ first: '1', last: '' }) }}>
                   {unitName(u).charAt(0).toUpperCase() + unitName(u).slice(1)}
                 </Chip>
               ))}
@@ -166,9 +170,7 @@ export function AddBookForm({ initialTitle = '', onClose }: { initialTitle?: str
         </Field>
 
         {unit !== 'pages' && (
-          <Field label={`${totalLabel(unit)} (opcional)`} hint="Com o total, o app mostra a porcentagem lida. Dá para preencher depois.">
-            {(a) => <NumberInput {...a} min={1} value={manualTotal} onChange={(e) => setManualTotal(e.target.value)} />}
-          </Field>
+          <UnitRangeFields unit={unit} value={range} onChange={setRange} errors={validateRange(range)} optionalLast />
         )}
 
         {error && <p className="ds-errmsg" role="alert">{error}</p>}

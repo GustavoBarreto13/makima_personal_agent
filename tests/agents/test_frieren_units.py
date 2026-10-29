@@ -260,3 +260,84 @@ def test_habito_de_paginas_ignora_livros_em_capitulos(monkeypatch):
     monkeypatch.setattr(habit, "run_select", lambda sql, params=None: vistos.append(sql) or [])
     assert habit.get_activity("2026-10-01", "2026-10-31") == {}
     assert "progress_unit = 'pages'" in vistos[0]
+
+
+# ─── capítulo inicial (numeração contínua entre volumes) ─────────────────────
+
+def test_base_quantidade_e_fracao_do_capitulo_inicial():
+    # Vol. 2 do mangá: capítulos 24 a 36 → base 23, 13 capítulos.
+    assert units.base_position(24, "chapters") == 23
+    assert units.unit_count_total(36, 24, "chapters") == 13
+    assert round(units.progress_fraction(30, 36, 24, "chapters"), 3) == 0.538
+    # Livro que começa no 1 (e livros antigos sem o campo) se comportam como antes.
+    assert units.base_position(None, "chapters") == 0
+    assert units.progress_fraction(40, 120, 1, "chapters") == 40 / 120
+    # Em páginas o capítulo inicial é ignorado.
+    assert units.base_position(24, "pages") == 0
+
+
+def test_log_reading_do_volume_2_parte_do_capitulo_anterior_ao_inicial(monkeypatch):
+    dml = []
+    monkeypatch.setattr(tools, "_find_book_by_query",
+                        lambda q: _livro(total_pages=36, first_unit=24))
+    monkeypatch.setattr(tools, "run_select", lambda sql, params=None: [])  # nenhuma sessão ainda
+    monkeypatch.setattr(tools, "run_dml", lambda sql, params=None: dml.append((sql, params)) or 1)
+    msg = tools.log_reading("Berserk", 30)
+    insert = next(p for sql, p in dml if "INSERT INTO reading_logs" in sql)
+    # Avançou 7 capítulos (24 a 30), não 30.
+    assert (insert["page_start"], insert["page_end"], insert["pages_read"]) == (23, 30, 7)
+    assert "7 capítulos nesta sessão" in msg and "53.8%" in msg
+
+
+def test_log_reading_recusa_posicao_antes_do_capitulo_inicial(monkeypatch):
+    monkeypatch.setattr(tools, "_find_book_by_query", lambda q: _livro(total_pages=36, first_unit=24))
+    monkeypatch.setattr(tools, "run_select", lambda sql, params=None: [])
+    monkeypatch.setattr(tools, "run_dml", lambda *a, **k: pytest.fail("não podia gravar"))
+    msg = tools.log_reading("Berserk", 20)
+    assert "vem antes do início" in msg and "<b>24</b>" in msg
+
+
+def test_capitulo_inicial_invalido():
+    assert tools._check_first_unit(None) is None
+    assert tools._check_first_unit(24) is None
+    assert "inicial inválido" in tools._check_first_unit(0)
+    assert "inicial inválido" in tools._check_first_unit(-3)
+    assert "inicial inválido" in tools.update_book_metadata_by_id("b1", first_unit=0)
+
+
+def test_add_book_grava_capitulo_inicial_e_zera_em_paginas(monkeypatch):
+    gravados = []
+    monkeypatch.setattr(tools, "run_select", lambda sql, params=None: [])
+    monkeypatch.setattr(tools, "_find_book_by_query", lambda q: None)
+    monkeypatch.setattr(tools, "_fetch_google_books", lambda q, max_results=1: [])
+
+    class _Cur:
+        def execute(self, sql, params=None): gravados.append(params)
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    class _Conn:
+        def cursor(self): return _Cur()
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(tools, "get_conn", lambda: _Conn())
+    tools.add_book("Berserk 2", format="quadrinho", total_pages=36, first_unit=24)
+    assert gravados[-1]["first_unit"] == 24 and gravados[-1]["progress_unit"] == "chapters"
+    tools.add_book("Duna", format="fisico", first_unit=24)
+    # Em páginas o capítulo inicial é ignorado.
+    assert gravados[-1]["first_unit"] == 1
+
+
+def test_editar_capitulo_inicial_grava_e_volta_a_1_ao_ir_para_paginas(monkeypatch):
+    gravados = []
+    def select(sql, params=None):
+        if "FROM books" in sql:
+            return [{"progress_unit": "chapters"}]
+        return []
+    monkeypatch.setattr(tools, "run_select", select)
+    monkeypatch.setattr(tools, "run_dml", lambda sql, params=None: gravados.append((sql, params)) or 1)
+    tools.update_book_metadata_by_id("b1", first_unit=24)
+    assert "first_unit = %(first_unit)s" in gravados[-1][0] and gravados[-1][1]["first_unit"] == 24
+    tools.update_book_metadata_by_id("b1", progress_unit="pages")
+    assert "first_unit = 1" in gravados[-1][0]

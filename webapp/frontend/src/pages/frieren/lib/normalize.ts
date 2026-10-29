@@ -4,7 +4,7 @@
 import { isoDate } from '../../../design/core/format'
 import type { ApiBook, ApiSession, ApiShelf, Book, Session, Shelf } from '../types'
 import { isBookStatus } from './status'
-import { asFormat, asUnit } from './units'
+import { asFormat, asUnit, progressFraction } from './units'
 
 /** Dia local (America/Sao_Paulo no navegador) de um instante ISO do servidor — nunca `slice(0, 10)` (UTC). */
 export function localDay(iso: string | null | undefined): string {
@@ -33,13 +33,15 @@ export function normalizeBook(b: ApiBook): Book {
     pages,
     format: asFormat(b.format),
     unit: asUnit(b.progress_unit),
+    first: b.first_unit && b.first_unit > 0 ? b.first_unit : 1,
     genre: genres[0] ?? '',
     genres,
     language: b.language ?? '',
     status,
     page,
     // Progresso só quando dá para calcular e há alguma leitura; limitado a 100%.
-    progress: pages && page > 0 ? Math.min(1, page / pages) : null,
+    // Desconta o capítulo/volume inicial (Vol. 2 do cap. 24 ao 36 com 30 lido = 7 de 13).
+    progress: pages && page > 0 ? progressFraction(page, pages, b.first_unit, asUnit(b.progress_unit)) : null,
     started: day(b.date_started),
     finished: day(b.date_finished),
     abandoned: day(b.date_abandoned),

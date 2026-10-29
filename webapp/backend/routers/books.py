@@ -101,6 +101,7 @@ _FRIEREN_ERRORS = [
     "total inválido",            # Total zerado/negativo (update_book_pages)
     "formato inválido",          # Formato fora de fisico/ebook/audiobook/quadrinho
     "unidade inválida",          # Unidade fora de pages/chapters/volumes
+    "inicial inválido",          # Capítulo/volume inicial fora do intervalo (inteiro >= 1)
     "já tem sessões",            # Troca de unidade bloqueada: o livro já tem sessões registradas
 ]
 
@@ -218,6 +219,7 @@ class AddBookBody(BaseModel):
     # Sem unidade, vale a sugerida pelo formato. Com unidade ≠ pages, total_pages é o total NESSA unidade.
     format: Optional[str] = None
     progress_unit: Optional[str] = None
+    first_unit: Optional[int] = None      # capítulo/volume inicial (mangá de numeração contínua); padrão 1
 
 
 class LogReadingBody(BaseModel):
@@ -270,6 +272,7 @@ class UpdateBookMetadataBody(BaseModel):
     format: Optional[str] = None          # fisico | ebook | audiobook | quadrinho
     progress_unit: Optional[str] = None   # pages | chapters | volumes — com sessões, exige allow_unit_change
     allow_unit_change: Optional[bool] = None  # confirma trocar a unidade de um livro que já tem sessões
+    first_unit: Optional[int] = None      # capítulo/volume inicial (inteiro >= 1); ignorado em livros em páginas
     # Campos a apagar (gravar NULL) — ex.: ["rating"] tira a nota, ["store_url"] tira o link.
     # Necessário porque um campo omitido (None) significa "não mexer", não "apagar".
     clear: Optional[list[str]] = None
@@ -381,6 +384,7 @@ def list_books(
             b.total_pages,
             b.format,
             b.progress_unit,
+            b.first_unit,
             b.status,
             b.cover_url,
             b.date_started,
@@ -803,6 +807,7 @@ def add_book_endpoint(
         published_year=body.published_year,
         format=body.format,
         progress_unit=body.progress_unit,
+        first_unit=body.first_unit,
     )
     # Verifica se a tool retornou uma mensagem de erro e converte para HTTP 400 se sim
     return _books_check(msg)

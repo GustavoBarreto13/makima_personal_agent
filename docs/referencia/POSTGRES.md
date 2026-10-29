@@ -334,7 +334,8 @@ Catálogo pessoal de livros com estado de leitura.
 | `author` | TEXT | SIM | — | Autor(es), separados por vírgula. |
 | `total_pages` | INTEGER | SIM | — | **Total NA UNIDADE do livro** (`progress_unit`): páginas, capítulos ou volumes. O nome é histórico — não foi renomeado para não quebrar hub, calendário e estatísticas. |
 | `format` | TEXT | NÃO | `'fisico'` | `fisico` \| `ebook` \| `audiobook` \| `quadrinho` (mangá/HQ). CHECK `books_format_check`. Sugere a unidade ao cadastrar. |
-| `progress_unit` | TEXT | NÃO | `'pages'` | Unidade em que o progresso é contado: `pages` \| `chapters` \| `volumes`. CHECK `books_progress_unit_check`. Só pode mudar enquanto o livro não tem sessões em `reading_logs`. |
+| `progress_unit` | TEXT | NÃO | `'pages'` | Unidade em que o progresso é contado: `pages` \| `chapters` \| `volumes`. CHECK `books_progress_unit_check`. Com sessões em `reading_logs`, só muda com confirmação explícita (modal Editar livro). |
+| `first_unit` | INTEGER | NÃO | `1` | Número da primeira unidade do livro (capítulo/volume inicial), para mangás de numeração contínua entre volumes (Vol. 2 do cap. 24 ao 36 ⇒ `first_unit = 24`, `total_pages = 36`). A posição base é `first_unit - 1`; a quantidade é `total_pages - first_unit + 1`. Sempre 1 em livros em páginas. CHECK `books_first_unit_check` (`>= 1`). |
 | `isbn` | TEXT | SIM | — | ISBN-13 (preferido) ou ISBN-10. |
 | `cover_url` | TEXT | SIM | — | URL da capa. |
 | `description` | TEXT | SIM | — | Sinopse. |

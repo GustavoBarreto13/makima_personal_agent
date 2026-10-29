@@ -16,6 +16,8 @@ export type MetadataPatch = Partial<{
   /** Formato (fisico | ebook | audiobook | quadrinho) e unidade (pages | chapters | volumes). */
   format: string
   progress_unit: string
+  /** Capítulo/volume inicial (inteiro ≥ 1); ignorado em livros contados em páginas. */
+  first_unit: number
   /** Confirma trocar a unidade de um livro que já tem sessões (os números antigos são mantidos). */
   allow_unit_change: boolean
   title: string
@@ -52,6 +54,8 @@ export interface AddBookBody {
   format?: string
   /** pages | chapters | volumes (padrão: o sugerido pelo formato). `total_pages` é o total nessa unidade. */
   progress_unit?: string
+  /** Capítulo/volume em que o livro começa (padrão 1). Com `total_pages` = último número, ex.: início 24, total 36. */
+  first_unit?: number
 }
 
 export const frierenApi = {

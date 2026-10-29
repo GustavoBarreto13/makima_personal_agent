@@ -7,7 +7,7 @@ const F = {
   title: 'Duna', author: 'Frank Herbert', cover_url: '', genre: 'Ficção', published_year: '1965', total_pages: '680', isbn: '',
   language: 'en', status: 'lido' as const, rating: 4 as number | null, date_started: '2026-01-01', date_finished: '2026-02-01',
   description: '', notes: 'Ótimo', store_url: '', price: '',
-  format: 'fisico' as const, progress_unit: 'pages' as const,
+  format: 'fisico' as const, progress_unit: 'pages' as const, first_unit: '1',
 }
 
 describe('buildPatch', () => {
@@ -40,5 +40,23 @@ describe('validateForm', () => {
     expect(validateForm({ ...F, date_finished: '2025-12-01' }, '2026-10-07').date_finished).toMatch(/antes do início/)
     expect(validateForm({ ...F, date_started: '2027-01-01', date_finished: '' }, '2026-10-07').date_started).toBeTruthy()
     expect(validateForm(F, '2026-10-07')).toEqual({})
+  })
+})
+
+describe('capítulo inicial (numeração contínua entre volumes)', () => {
+  const MANGA = { ...F, format: 'quadrinho' as const, progress_unit: 'chapters' as const, total_pages: '36', first_unit: '24' }
+
+  it('mudar o capítulo inicial vai no patch', () => {
+    expect(buildPatch(MANGA, { ...MANGA, first_unit: '30' })).toEqual({ first_unit: 30 })
+  })
+
+  it('em páginas o capítulo inicial nunca vai', () => {
+    expect(buildPatch(F, { ...F, first_unit: '24' })).toEqual({})
+  })
+
+  it('valida o inicial e o último', () => {
+    expect(validateForm({ ...MANGA, first_unit: '0' }, '2026-10-29').first_unit).toBeTruthy()
+    expect(validateForm({ ...MANGA, first_unit: '40' }, '2026-10-29').total_pages).toMatch(/antes do inicial/)
+    expect(validateForm(MANGA, '2026-10-29')).toEqual({})
   })
 })

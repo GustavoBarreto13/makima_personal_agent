@@ -220,7 +220,10 @@ item aberto vivem no **hash** (`lib/routes.ts`): `#inicio`, `#biblioteca`, `#que
 - **Formato e unidade** (mangá, audiobook): cada livro tem `format` (Físico/E-book/Audiobook/Mangá-HQ) e `unit`
   (páginas, capítulos ou volumes). `lib/units.ts` (espelho de `agents/frieren/units.py`) dá o vocabulário; `AddBookForm`
   e `BookForm` escolhem o formato (que sugere a unidade) e a unidade (editável sempre; com sessões o campo avisa que os números antigos passam a ser lidos na nova unidade).
-  `LogForm`, `SessionEditor`, Diário, detalhe e Início falam a unidade do livro (+1/+3/+5 em capítulos). A linha rápida
+  Fora de páginas, `components/UnitRangeFields` mostra **Capítulo/Volume inicial + Último + Quantidade** ligados (mangá de
+  numeração contínua: Vol. 2 = cap. 24 ao 36; `first_unit` + `total_pages`; funções puras `rangeCountText`/`rangeWithCount`/
+  `validateRange` em `lib/units.ts`). `LogForm`, `SessionEditor`, Diário, detalhe e Início falam a unidade do livro (+1/+3/+5 em capítulos); o
+  progresso e a validação descontam o capítulo inicial. A linha rápida
   entende `cap 12`/`vol 3` pela regra opt-in `bookUnits` da captura (`design/core/capture.ts`) — só vale se a
   unidade digitada é a do livro. A Biblioteca filtra e agrupa por Formato. Estatísticas separam Páginas, Capítulos e
   Volumes (KPIs só aparecem com leitura na unidade) e ganham o ranking "Formatos".
