@@ -124,8 +124,8 @@ frontend espelha em `webapp/frontend/src/pages/frieren/lib/units.ts` — mudou u
   unidade. Substituiu a regra antiga que adivinhava quadrinho pelo gênero (`_COMIC`).
 - **Migração:** `scripts/migrate_frieren_units.py` (dry-run por padrão, `--apply` grava) cria as colunas, marca como
   `quadrinho` os livros do gênero "Comics & Graphic Novels" e passa para capítulos só os que **não têm sessões**
-  (os com sessões ficam em páginas e voltam a somar páginas nas estatísticas — o relatório lista quais). **Ainda não
-  rodada no VPS.**
+  (os com sessões ficam em páginas e voltam a somar páginas nas estatísticas — o relatório lista quais). **Aplicada
+  no VPS em 29/out/2026** (Punpun vol. 2 e Solanin ficaram em páginas por terem sessões).
 
 ### Tabelas `shelves` e `book_shelves` — estantes (coleções)
 

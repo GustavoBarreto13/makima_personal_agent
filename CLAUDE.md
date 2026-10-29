@@ -400,7 +400,7 @@ makima_personal_agent/
 │   ├── migrate_kaguya_column_kind.py # tipo semântico das colunas do Kanban (Homolog→review…) — dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS
 │   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)
 │   ├── migrate_komi_ds.py     # espaço, apelido, aniversário (tarefas birthday → lixeira) e notas das pessoas — spec 077 (dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS)
-│   ├── migrate_frieren_units.py # formato e unidade de progresso dos livros (mangá/audiobook em capítulos/volumes) — dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS
+│   ├── migrate_frieren_units.py # formato e unidade de progresso dos livros (mangá/audiobook em capítulos/volumes) — dry-run por padrão, --apply grava; já aplicada no VPS em 29/out
 │   ├── migrate_marin_ds.py    # coração, data de abandono e vitrine de favoritos dos animes — spec 074 (dry-run por padrão, --apply grava; já aplicada no VPS em 08/out)
 │   ├── migrate_nami_signed_transfers.py # transferências com sinal + pagamento de fatura como transferência — spec 071 (dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS)
 │   └── .gitignore             # exclui client_secret.json do git
