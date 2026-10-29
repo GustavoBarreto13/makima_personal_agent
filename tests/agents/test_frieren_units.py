@@ -340,4 +340,5 @@ def test_editar_capitulo_inicial_grava_e_volta_a_1_ao_ir_para_paginas(monkeypatc
     tools.update_book_metadata_by_id("b1", first_unit=24)
     assert "first_unit = %(first_unit)s" in gravados[-1][0] and gravados[-1][1]["first_unit"] == 24
     tools.update_book_metadata_by_id("b1", progress_unit="pages")
-    assert "first_unit = 1" in gravados[-1][0]
+    # (a última gravação é o carimbo local_updated_at; o UPDATE do livro vem antes)
+    assert any("first_unit = 1" in sql for sql, _ in gravados)

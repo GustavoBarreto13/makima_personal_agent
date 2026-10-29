@@ -28,7 +28,7 @@ from scheduler.jobs import (
     run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest, run_kaguya_digest,
     run_weekly_review_reminder,
     run_recurring_charges, run_budget_alert, run_monthly_report, run_marin_mal_sync,
-    run_gcal_mirror, run_violet_weekly_review,
+    run_frieren_mal_sync, run_gcal_mirror, run_violet_weekly_review,
 )
 
 # Fuso horário do usuário. Todos os horários dos jobs são interpretados nele —
@@ -204,6 +204,15 @@ JOBS: list[ScheduledJob] = [
         func=run_marin_mal_sync,
         trigger=every(hours=6),
         description="Sync delta com o MyAnimeList (Marin): pull cria sessões de ajuste, coexiste com o push best-effort das mutações locais",
+    ),
+    # Sincronização delta dos mangás da Frieren com o MyAnimeList — espelho bidirecional (o push sai das tools).
+    # Horários fixos às xx:30 (de 6 em 6h) para não cair junto com o sync de animes da Marin, que divide o
+    # mesmo token e a mesma cota da API do MAL.
+    ScheduledJob(
+        name="frieren_mal_sync",
+        func=run_frieren_mal_sync,
+        trigger=CronTrigger(hour="1,7,13,19", minute=30, timezone=TZ),
+        description="Sync delta dos mangás com o MyAnimeList (Frieren): pull cria livros/sessões de ajuste, coexiste com o push best-effort das tools",
     ),
     # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia as 7 fontes
     # (Nami/Frieren/Violet/Akane/Marin/Mai/Komi) contra seus calendários Google

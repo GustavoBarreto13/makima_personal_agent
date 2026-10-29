@@ -19,6 +19,8 @@ from agents.frieren.tools import (
     get_book_menu_data,
     delete_book,
     delete_reading_log,
+    sync_mal_manga,
+    link_book_to_mal,
 )
 
 TOOLS = [
@@ -35,4 +37,6 @@ TOOLS = [
     get_book_menu_data,
     delete_book,
     delete_reading_log,
+    sync_mal_manga,
+    link_book_to_mal,
 ]

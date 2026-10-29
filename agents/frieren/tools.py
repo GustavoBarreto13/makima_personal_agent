@@ -148,6 +148,48 @@ def _book_has_logs(book_id: str) -> bool:
     return bool(rows)
 
 
+def _after_local_change(book_id: str) -> None:
+    """Registrar uma mudança LOCAL no livro e propagá-la ao MyAnimeList (best-effort).
+
+    Faz duas coisas, sempre DEPOIS de a mutação já estar gravada:
+      1. carimba ``books.local_updated_at`` (é o que decide o vencedor quando status/nota mudam dos
+         dois lados entre dois syncs — o pull do MAL nunca mexe nesta coluna);
+      2. se o livro está vinculado a um mangá do MAL (``mal_manga_id``), envia status, nota e a posição
+         atual (capítulos OU volumes, conforme a unidade — páginas nunca vão).
+
+    Qualquer falha é engolida: o MAL fora do ar ou um token vencido jamais desfazem nem bloqueiam o
+    que o usuário acabou de gravar.
+
+    Args:
+        book_id: ID do livro que acabou de mudar.
+    """
+    try:
+        run_dml("UPDATE books SET local_updated_at = %(now)s WHERE id = %(id)s", {"now": _now(), "id": book_id})
+        rows = run_select(
+            "SELECT mal_manga_id, status, rating, progress_unit FROM books WHERE id = %(id)s", {"id": book_id}
+        )
+        livro = rows[0] if rows else {}
+        if not livro.get("mal_manga_id"):
+            return  # sem vínculo com o MAL: nada a propagar (o caso da maioria dos livros)
+        unidade = normalize_unit(livro.get("progress_unit"))
+        pos_rows = run_select(
+            "SELECT COALESCE(MAX(page_end), 0) AS pos FROM reading_logs WHERE book_id = %(id)s", {"id": book_id}
+        )
+        posicao = int(pos_rows[0]["pos"]) if pos_rows else 0
+        # Import lazy: o módulo do MAL só carrega quando existe mesmo um livro vinculado.
+        from agents.frieren.mal_sync import push_manga_status
+        push_manga_status(
+            livro["mal_manga_id"],
+            status=livro.get("status"),
+            rating=float(livro["rating"]) if livro.get("rating") is not None else None,
+            chapters_read=posicao if unidade == "chapters" else None,
+            volumes_read=posicao if unidade == "volumes" else None,
+        )
+    except Exception:
+        # Best-effort: nunca propaga (nem o carimbo é essencial para a operação local).
+        pass
+
+
 def _abbr(unit: str | None) -> str:
     """Prefixo curto de posição para listas: ``p.``, ``cap.`` ou ``vol.`` (com espaço final nos dois últimos).
 
@@ -994,6 +1036,9 @@ def log_reading(
         }
         run_dml(sql_update, update_params)
 
+    # Carimba a mudança local e leva status/posição ao MyAnimeList (best-effort).
+    _after_local_change(book_id)
+
     # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
     try:
         from agents.kaguya import gcal_mirror as _gm
@@ -1264,6 +1309,9 @@ def finish_book_by_id(
     }
     run_dml(sql_update, update_params)
 
+    # Carimba a mudança local e leva status/nota/posição ao MyAnimeList (best-effort).
+    _after_local_change(book_id)
+
     # ── 5. Monta a mensagem de confirmação ────────────────────────────────────
     titulo      = book["title"]
     rating_txt  = f" · ⭐ {rating}/5.0" if rating is not None else ""
@@ -1339,6 +1387,9 @@ def update_book_status_by_id(book_id: str, status: str) -> str:
         "book_id":    book_id,
     }
     run_dml(sql, params)
+
+    # Carimba a mudança local e leva o status ao MyAnimeList (best-effort).
+    _after_local_change(book_id)
 
     # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
     try:
@@ -1641,11 +1692,27 @@ def delete_book(book_id: str) -> str:
 
     titulo = title_rows[0]["title"]
 
+    # Lê o vínculo com o MAL ANTES de apagar (depois o livro some das consultas normais).
+    mal_manga_id = None
+    try:
+        vinc = run_select("SELECT mal_manga_id FROM books WHERE id = %(id)s", {"id": book_id})
+        mal_manga_id = vinc[0].get("mal_manga_id") if vinc else None
+    except Exception:
+        pass
+
     # Soft delete: marca deleted=TRUE e atualiza o timestamp
     run_dml(
         "UPDATE books SET deleted = TRUE, updated_at = %(now)s WHERE id = %(book_id)s",
         {"book_id": book_id, "now": _now()},
     )
+
+    # Livro vinculado ao MAL: tira o mangá da lista de lá também (best-effort, 404 conta como ok).
+    if mal_manga_id:
+        try:
+            from agents.frieren.mal_sync import push_manga_delete
+            push_manga_delete(mal_manga_id)
+        except Exception:
+            pass
 
     # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
     try:
@@ -1672,7 +1739,7 @@ def delete_reading_log(log_id: str) -> str:
     """
     # Busca detalhes do log antes de deletar para exibir na confirmação
     log_rows = run_select(
-        "SELECT book_title, date, pages_read FROM reading_logs WHERE id = %(log_id)s",
+        "SELECT book_id, book_title, date, pages_read FROM reading_logs WHERE id = %(log_id)s",
         {"log_id": log_id},
     )
     if not log_rows:
@@ -1682,6 +1749,10 @@ def delete_reading_log(log_id: str) -> str:
 
     # Hard delete: remove permanentemente o registro
     run_dml("DELETE FROM reading_logs WHERE id = %(log_id)s", {"log_id": log_id})
+
+    # A posição do livro mudou: carimba e leva a nova posição ao MyAnimeList (best-effort).
+    if log.get("book_id"):
+        _after_local_change(log["book_id"])
 
     # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
     try:
@@ -1761,6 +1832,9 @@ def update_book_by_id(
     sets.append("updated_at = %(now)s")
     sql = f"UPDATE books SET {', '.join(sets)} WHERE id = %(book_id)s"
     run_dml(sql, params)
+
+    # Carimba a mudança local e leva status/nota ao MyAnimeList (best-effort).
+    _after_local_change(book_id)
 
     # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
     try:
@@ -1987,6 +2061,10 @@ def update_book_metadata_by_id(
     # Se nenhuma linha foi afetada, o book_id informado não existe na tabela
     if affected == 0:
         return f"❌ Livro com ID '{book_id}' não encontrado."
+
+    # Mudou a nota (ou a unidade/total, que alteram o que vai ao MAL): carimba e propaga (best-effort).
+    if rating is not None or "rating" in (clear or []) or "progress_unit" in params:
+        _after_local_change(book_id)
 
     # Espelho Calendar Hub → Google Calendar (spec 069) — reconcilia "Frieren — Livros"
     try:
@@ -2499,3 +2577,70 @@ def get_heatmap_data(year: int = None) -> dict:
             ORDER BY rl.date
         """)
     return {"status": "ok", "heatmap": rows}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Sincronização de mangás com o MyAnimeList
+# A lógica vive em agents/frieren/mal_sync.py; aqui ficam só as tools expostas ao agente/webapp.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def sync_mal_manga(full: bool = False) -> str:
+    """Sincroniza os mangás da Frieren com a lista de mangás do MyAnimeList (pull).
+
+    Traz para a Frieren o que mudou no MyAnimeList: mangás novos viram livros (Mangá/HQ, contados em
+    capítulos), e nos que já existem o progresso avança, e status/nota seguem a mudança mais recente.
+    O envio no sentido contrário (Frieren → MyAnimeList) é automático a cada leitura registrada.
+
+    Args:
+        full: Se True, processa a lista inteira (primeira importação ou correção); por padrão só o que
+            mudou desde o último sync.
+
+    Returns:
+        Resumo em HTML: quantos mangás foram criados, atualizados e pulados, e erros, se houver.
+    """
+    try:
+        from agents.frieren.mal_sync import sync_manga_mal
+        r = sync_manga_mal(full=full)
+    except Exception as exc:
+        return f"❌ Não consegui sincronizar com o MyAnimeList: {exc}"
+    if not r["ok"]:
+        return "❌ O MyAnimeList não respondeu agora. Tente de novo em instantes."
+    erros = f"\n⚠️ {len(r['errors'])} entrada(s) com erro (veja o log)." if r["errors"] else ""
+    return (
+        f"🔄 MyAnimeList (mangás) — {r['mal_entries_fetched']} verificados: "
+        f"<b>{r['created']}</b> novos, <b>{r['updated']}</b> atualizados, {r['skipped']} sem mudança.{erros}"
+    )
+
+
+def link_book_to_mal(book_query: str, mal_manga_id: int) -> str:
+    """Vincula um livro já cadastrado a um mangá do MyAnimeList (para sincronizar os dois).
+
+    Use quando o livro já existe na Frieren e você quer espelhá-lo com a lista do MyAnimeList em vez de
+    deixar o sync criar um livro novo. O ID é o número da URL do mangá (myanimelist.net/manga/<ID>).
+    Livros de volume avulso (capítulo inicial maior que 1) não devem ser vinculados: o MyAnimeList
+    conta a série inteira.
+
+    Args:
+        book_query: Título (ou parte) do livro na Frieren.
+        mal_manga_id: ID da série no MyAnimeList.
+
+    Returns:
+        Mensagem HTML de confirmação ou de erro.
+    """
+    if not isinstance(mal_manga_id, int) or mal_manga_id <= 0:
+        return f"ID do MyAnimeList inválido: <b>{mal_manga_id}</b>."
+    book = _find_book_by_query(book_query)
+    if book is None:
+        return f"Nenhum livro encontrado para '<b>{book_query}</b>'."
+    outro = run_select(
+        "SELECT title FROM books WHERE mal_manga_id = %(m)s AND id <> %(id)s AND deleted = FALSE",
+        {"m": mal_manga_id, "id": book["id"]},
+    )
+    if outro:
+        return f"O mangá {mal_manga_id} do MyAnimeList já está vinculado a <b>{outro[0]['title']}</b>."
+    run_dml("UPDATE books SET mal_manga_id = %(m)s, updated_at = %(now)s WHERE id = %(id)s",
+            {"m": mal_manga_id, "now": _now(), "id": book["id"]})
+    return (
+        f"<b>{book['title']}</b> vinculado ao mangá {mal_manga_id} do MyAnimeList. "
+        "No próximo sync os dois lados se alinham."
+    )

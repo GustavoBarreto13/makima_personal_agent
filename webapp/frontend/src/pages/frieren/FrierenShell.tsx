@@ -12,7 +12,7 @@ import { todayISO } from '../../design/core/format'
 import { useCommandProvider, type CommandProvider } from '../../design/headless/commands'
 import { toast } from '../../design/headless/toast'
 import { usePrefs } from '../../design/headless/usePrefs'
-import { AppShell, NumberInput, SegmentedControl, SettingRow, type NavGroup } from '../../design'
+import { AppShell, Button, NumberInput, SegmentedControl, SettingRow, type NavGroup } from '../../design'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { AGENT_TABS } from '../../lib/agentTabs'
 import { AddBookForm } from './components/AddBookForm'
@@ -83,8 +83,21 @@ export function FrierenShell() {
   const [rev, setRev] = useState(0)
   const [dialog, setDialog] = useState<Dialog>(null)
   const [topQuery, setTopQuery] = useState('')
+  const [syncing, setSyncing] = useState(false)
 
   const reload = useCallback(() => setRev((n) => n + 1), [])
+
+  // Traz a lista de mangás do MyAnimeList (o envio no sentido contrário é automático a cada leitura registrada).
+  const syncMal = useCallback(async (full = false) => {
+    setSyncing(true)
+    try {
+      const r = await frierenApi.syncMal(full)
+      reload()
+      const changed = r.created + r.updated
+      toast(changed ? `MyAnimeList: ${r.created} novos, ${r.updated} atualizados` : 'MyAnimeList: nada de novo', { tone: r.errors?.length ? 'error' : 'success' })
+    } catch { toast('Não foi possível sincronizar com o MyAnimeList.', { tone: 'error' }) }
+    setSyncing(false)
+  }, [reload])
 
   // Catálogo e estantes: recarregam a cada gravação (rev). Estantes falharem não trava nada.
   const { state: booksState, retry: retryBooks } = useLoad(() => frierenApi.list(), [rev])
@@ -225,6 +238,7 @@ export function FrierenShell() {
         commands={[
           { id: 'frieren.log', label: 'Registrar leitura', icon: 'book', keywords: 'li página sessão progresso', run: () => openLog() },
           { id: 'frieren.add', label: 'Adicionar livro', icon: 'add', keywords: 'novo google books cadastrar', run: () => openAdd() },
+          { id: 'frieren.sync', label: 'Sincronizar mangás com o MyAnimeList', icon: 'refresh', keywords: 'mal sync importar mangá', run: () => { void syncMal(false) } },
           { id: 'frieren.shelf', label: 'Ver estantes', icon: 'shelf', keywords: 'coleção lista', run: () => goto('shelves') },
         ]}
         preferences={
@@ -261,6 +275,12 @@ export function FrierenShell() {
                 value={prefs.yearlyGoal > 0 ? prefs.yearlyGoal : DEFAULT_PREFS.yearlyGoal}
                 onChange={(e) => { const n = Math.round(Number(e.target.value)); if (n >= 1 && n <= 500) setPrefs({ yearlyGoal: n }) }}
               />
+            </SettingRow>
+            <SettingRow title="MyAnimeList" help="Mangás: traz as mudanças feitas lá (acontece sozinho a cada 6 horas); o que você registra aqui vai para lá automaticamente. O completo reprocessa a lista inteira.">
+              <div className="ds-inline">
+                <Button icon="refresh" disabled={syncing} onClick={() => void syncMal(false)}>{syncing ? 'Sincronizando…' : 'Sincronizar agora'}</Button>
+                <Button variant="ghost" disabled={syncing} onClick={() => void syncMal(true)}>Sync completo</Button>
+              </div>
             </SettingRow>
           </>
         }

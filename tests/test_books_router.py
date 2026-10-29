@@ -155,3 +155,32 @@ def test_trocar_unidade_com_sessoes_vira_400_com_o_motivo(_):
 def test_unidade_invalida_vira_400(_):
     assert client.patch("/api/books/b1/metadata", json={"progress_unit": "paginas"}).status_code == 400
 
+
+
+# ─── sync de mangás com o MyAnimeList ─────────────────────────────────────────
+
+_SYNC_OK = {"ok": True, "full": False, "created": 1, "updated": 2, "skipped": 0, "errors": [], "mal_entries_fetched": 3}
+
+
+@patch("agents.frieren.mal_sync.sync_manga_mal", return_value=_SYNC_OK)
+def test_sync_mal_repassa_full_e_devolve_o_resumo(mock_sync):
+    r = client.post("/api/books/sync-mal", json={"full": True})
+    assert r.status_code == 200 and r.json()["created"] == 1
+    mock_sync.assert_called_once_with(full=True)
+
+
+@patch("agents.frieren.mal_sync.sync_manga_mal", return_value=_SYNC_OK)
+def test_sync_mal_sem_corpo_cheio_e_delta(mock_sync):
+    assert client.post("/api/books/sync-mal", json={}).status_code == 200
+    mock_sync.assert_called_once_with(full=False)
+
+
+@patch("agents.frieren.mal_sync.sync_manga_mal", return_value={**_SYNC_OK, "ok": False})
+def test_sync_mal_indisponivel_vira_502(_):
+    assert client.post("/api/books/sync-mal", json={}).status_code == 502
+
+
+@patch(f"{R}.update_book_metadata_by_id", return_value="✅ Livro atualizado com sucesso.")
+def test_editar_capitulo_inicial_chega_na_tool(mock_upd):
+    assert client.patch("/api/books/b1/metadata", json={"first_unit": 24}).status_code == 200
+    mock_upd.assert_called_once_with("b1", first_unit=24)

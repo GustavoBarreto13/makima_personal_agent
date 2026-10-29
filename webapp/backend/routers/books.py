@@ -385,6 +385,7 @@ def list_books(
             b.format,
             b.progress_unit,
             b.first_unit,
+            b.mal_manga_id,
             b.status,
             b.cover_url,
             b.date_started,
@@ -451,6 +452,37 @@ def list_books(
             b["shelves"] = []
 
     return {"status": "ok", "books": books}
+
+
+class SyncMalBody(BaseModel):
+    """Corpo do POST /sync-mal."""
+    full: bool = False   # True reprocessa a lista inteira do MyAnimeList (primeira importação ou correção)
+
+
+@router.post("/sync-mal")
+def sync_mal_endpoint(body: SyncMalBody, user: dict = Depends(require_user)) -> dict:
+    """Sincronizar os mangás com a lista do MyAnimeList (pull; o push sai sozinho das tools).
+
+    Traz mangás novos como livros (Mangá/HQ em capítulos) e converge progresso, status e nota dos que
+    já existem. Idempotente: sem mudanças no MyAnimeList, nada é gravado.
+
+    Args:
+        body: ``{"full": false}`` para o delta (padrão) ou ``{"full": true}`` para reprocessar tudo.
+        user: Dados do usuário autenticado.
+
+    Returns:
+        Resumo do sync: ok, full, timestamp, mal_entries_fetched, created, updated, skipped, errors.
+
+    Raises:
+        HTTPException: 502 se o MyAnimeList não responder (nada foi gravado, o delta não avança).
+    """
+    # Import lazy: o módulo do MAL (OAuth da Marin) só carrega quando alguém aciona o sync.
+    from agents.frieren.mal_sync import sync_manga_mal
+
+    resultado = sync_manga_mal(full=body.full)
+    if not resultado["ok"]:
+        raise HTTPException(status_code=502, detail="O MyAnimeList não respondeu agora. Tente de novo em instantes.")
+    return resultado
 
 
 @router.get("/home")

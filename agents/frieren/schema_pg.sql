@@ -57,6 +57,15 @@ BEGIN
         ALTER TABLE books ADD CONSTRAINT books_first_unit_check CHECK (first_unit >= 1);
     END IF;
 END $$;
+-- Sincronização de mangá com o MyAnimeList (espelho da lista de mangás do MAL).
+-- mal_manga_id: id da SÉRIE no MAL (índice único parcial = dedup do pull). Livros importados são a série
+--   inteira; um volume avulso (first_unit > 1) fica sem vínculo.
+-- mal_updated_at: carimbo `list_status.updated_at` do MAL; local_updated_at: só mutações LOCAIS mexem.
+--   Os dois decidem quem vence quando status/nota mudam dos dois lados entre dois syncs.
+ALTER TABLE books ADD COLUMN IF NOT EXISTS mal_manga_id     INTEGER;
+ALTER TABLE books ADD COLUMN IF NOT EXISTS mal_updated_at   TIMESTAMPTZ;
+ALTER TABLE books ADD COLUMN IF NOT EXISTS local_updated_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_books_mal_manga ON books(mal_manga_id) WHERE mal_manga_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_books_status     ON books(status);
 CREATE INDEX IF NOT EXISTS idx_books_deleted    ON books(deleted);
 CREATE INDEX IF NOT EXISTS idx_books_created_at ON books(created_at);
@@ -73,6 +82,8 @@ CREATE TABLE IF NOT EXISTS reading_logs (
     session_notes TEXT,
     created_at    TIMESTAMPTZ DEFAULT NOW()
 );
+-- Origem da sessão: 'manual' (registrada por você) ou 'mal_sync' (ajuste criado pelo pull do MyAnimeList).
+ALTER TABLE reading_logs ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual';
 CREATE INDEX IF NOT EXISTS idx_reading_logs_date    ON reading_logs(date);
 CREATE INDEX IF NOT EXISTS idx_reading_logs_book_id ON reading_logs(book_id);
 
@@ -115,4 +126,13 @@ CREATE INDEX IF NOT EXISTS idx_book_bullets_book ON book_bullets(book_id);
 CREATE TABLE IF NOT EXISTS book_favorites (
     book_id  TEXT    PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
     position INTEGER NOT NULL DEFAULT 0
+);
+
+-- ── Estado do sync de mangá com o MyAnimeList ───────────────────────────────
+-- Singleton (id = 1): guarda só o `last_sync_at` do DELTA de mangá. Os tokens OAuth continuam na tabela
+-- `mal_sync_state` da Marin (agents/marin), compartilhados — um token só cobre anime e mangá.
+CREATE TABLE IF NOT EXISTS frieren_mal_state (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    last_sync_at TIMESTAMPTZ,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

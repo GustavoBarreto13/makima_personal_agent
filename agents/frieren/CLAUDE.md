@@ -47,6 +47,7 @@ Catálogo de livros e estado de leitura.
 | `total_pages` | INT64 | **Total na unidade do livro** (`progress_unit`): páginas, capítulos ou volumes. Nome histórico, não renomeado |
 | `format` | TEXT | `fisico` (padrão) \| `ebook` \| `audiobook` \| `quadrinho` (mangá/HQ) — ver "Formatos e unidades" |
 | `progress_unit` | TEXT | `pages` (padrão) \| `chapters` \| `volumes` — unidade dos números das sessões |
+| `mal_manga_id` | INTEGER | Id da série no MyAnimeList (livro sincronizado) — ver "Sincronização com o MyAnimeList" |
 | `first_unit` | INTEGER | Capítulo/volume inicial (padrão 1) — mangá de numeração contínua: Vol. 2 do cap. 24 ao 36 = `first_unit` 24 + `total_pages` 36 |
 | `isbn` | STRING | ISBN-13 (preferido) ou ISBN-10 como fallback |
 | `cover_url` | STRING | URL da capa (Google Books API) |
@@ -133,6 +134,37 @@ frontend espelha em `webapp/frontend/src/pages/frieren/lib/units.ts` — mudou u
   `quadrinho` os livros do gênero "Comics & Graphic Novels" e passa para capítulos só os que **não têm sessões**
   (os com sessões ficam em páginas e voltam a somar páginas nas estatísticas — o relatório lista quais). **Aplicada
   no VPS em 29/out/2026** (Punpun vol. 2 e Solanin ficaram em páginas por terem sessões).
+
+### Sincronização de mangás com o MyAnimeList (`mal_sync.py`)
+
+Espelho da lista de **mangás** do MyAnimeList (a Marin faz o mesmo com a de animes — spec 053). Reaproveita o OAuth da Marin
+(`MALAuth`, tabela `mal_sync_state`): um token cobre anime e mangá, sem reautorizar.
+
+| MAL | Frieren |
+|---|---|
+| `reading` / `completed` / `on_hold` / `dropped` / `plan_to_read` | `lendo` / `lido` / `pausado` / `abandonado` / `quero_ler` (`estante` e `wishlist` não existem no MAL: não vão no push) |
+| `num_chapters_read` (ou `num_volumes_read`) | posição (`page_end`) na unidade do livro |
+| `num_chapters` / `num_volumes` | `total_pages` (0 no MAL = ainda em publicação ⇒ total vazio) |
+| `score` 0–10 inteiro | `rating` = score ÷ 2 (meia estrela = 1 ponto, igual à Marin); o push envia `round(rating × 2)` |
+| `start_date` / `finish_date` | `date_started` / `date_finished` (só onde ainda não há data) |
+
+- **Pull** (`sync_manga_mal(full=False, dry_run=False)`; job `frieren_mal_sync` a cada 6h, às xx:30): lê `GET /v2/users/@me/mangalist`
+  (já com capa, autores, gêneros, sinopse e totais — não usa o Jikan) e para no delta quando `updated_at <= frieren_mal_state.last_sync_at`.
+  Mangá **novo** vira livro novo (`format='quadrinho'`, `progress_unit='chapters'`, ou `volumes` se só há volumes lidos, `first_unit=1`,
+  `source='mal_sync'`; novel/light novel entram como `fisico`). Livro **existente** converge: o progresso só **avança** por uma *sessão de
+  ajuste* (`reading_logs.source='mal_sync'`; "maior progresso vence"), e status/nota seguem o carimbo mais recente
+  (`books.local_updated_at` vs `books.mal_updated_at`). Excluído localmente **não ressuscita**. `dry_run` só relata e não avança o delta.
+- **Push** (`push_manga_status` / `push_manga_delete`): as tools de mutação local (`log_reading`, `update_book_status(_by_id)`,
+  `finish_book_by_id`, `update_book_by_id`, nota em `update_book_metadata_by_id`, `delete_reading_log`, `delete_book`) chamam
+  `_after_local_change(book_id)` DEPOIS de gravar: carimba `local_updated_at` e, se há `mal_manga_id`, envia status, nota e a posição
+  (**capítulos OU volumes** conforme a unidade; livros em páginas nunca mandam posição). Best-effort: falha do MAL nunca desfaz o local.
+- **Anti-eco:** o pull grava direto no banco e nunca chama as tools públicas; só escreve o que difere do local ⇒ ciclo sem mudança não grava nada.
+- **Série inteira, não volume:** livros importados têm `first_unit = 1`. Um volume avulso (capítulo inicial > 1) **não** deve ser vinculado.
+- **Tools do agente:** `sync_mal_manga(full=False)` e `link_book_to_mal(book_query, mal_manga_id)` (vincula um livro que já existe; o sync
+  nunca casa por título — cada mangá do MAL sem vínculo vira livro novo).
+- **1ª importação:** `python -m scripts.sync_frieren_mal --full` (dry-run) → conferir contagens e títulos → `--full --apply`.
+  Migração do schema: `scripts/migrate_frieren_mal.py` (**rodar antes do deploy**: o código lê as colunas novas).
+- Webapp: `POST /api/books/sync-mal` + botões na engrenagem da Frieren; `GET /api/books` traz `mal_manga_id`.
 
 ### Tabelas `shelves` e `book_shelves` — estantes (coleções)
 

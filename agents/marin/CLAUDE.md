@@ -195,7 +195,7 @@ Vitrine de até 4 favoritos do Início: `anime_id` (PK, FK `ON DELETE CASCADE`) 
 - **Base URL**: `https://api.myanimelist.net/v2`
 - **Auth**: OAuth2 PKCE S256 — gerenciado por `agents/marin/mal_auth.py`
 - **Token refresh**: automático via `MALAuth.get_valid_token()` — atualiza `mal_sync_state` no banco
-- **Bootstrap**: `python -m scripts.authorize_mal` (interativo, uma única vez)
+- **Bootstrap**: `python -m scripts.authorize_mal` (interativo, uma única vez). O mesmo token também serve à **lista de mangás** da Frieren (`agents/frieren/mal_sync.py` reutiliza `MALAuth` e o GET com retry `mal_get`, alias público de `_mal_get`; jobs com horários diferentes)
 - **Pull**: `mal_sync.sync_mal(full=False)` — delta, agendado a cada 6h (job `marin_mal_sync`)
 - **Push (spec 053)**: `mal_sync.push_list_status(mal_id, status?, score?, num_watched_episodes?)`
   (`PATCH /v2/anime/{mal_id}/my_list_status`) e `mal_sync.push_delete(mal_id)`

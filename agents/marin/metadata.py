@@ -383,6 +383,10 @@ def search_anime(query: str, limit: int = 5) -> list[dict]:
     return resultados
 
 
+# Alias público: a Frieren (mangá) reaproveita o GET com retry do Jikan sem importar nome privado.
+http_get = _http_get
+
+
 def jikan_get_full(mal_id: int) -> dict | None:
     """Busca metadados completos de um anime no Jikan.
 

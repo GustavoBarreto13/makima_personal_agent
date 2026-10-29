@@ -203,6 +203,32 @@ def run_monthly_report() -> None:
         )
 
 
+def run_frieren_mal_sync() -> None:
+    """Executa a sincronização delta dos mangás da Frieren com o MyAnimeList.
+
+    Espelho do `run_marin_mal_sync`: chama `sync_manga_mal()` direto e converte as entradas com erro
+    (que o sync só conta em `errors`) em exceção, para o runner detectar a falha e alertar no Telegram.
+
+    Raises:
+        RuntimeError: Se o sync falhar de ponta a ponta ou reportar entradas com erro.
+    """
+    # Import lazy — só carrega o código da Frieren quando este job realmente roda.
+    from agents.frieren.mal_sync import sync_manga_mal
+
+    resultado = sync_manga_mal(full=False)
+    print(
+        f"[frieren-mal-sync] buscados: {resultado['mal_entries_fetched']}, "
+        f"criados: {resultado['created']}, atualizados: {resultado['updated']}, "
+        f"pulados: {resultado['skipped']}, erros: {len(resultado['errors'])}"
+    )
+
+    if not resultado["ok"] or resultado["errors"]:
+        raise RuntimeError(
+            f"sync_manga_mal (Frieren) terminou com {len(resultado['errors'])} erro(s) — "
+            f"ver o log acima para detalhes."
+        )
+
+
 def run_marin_mal_sync() -> None:
     """Executa a sincronização delta com o MyAnimeList (Marin) — spec 053, US3.
 

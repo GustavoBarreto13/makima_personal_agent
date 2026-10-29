@@ -336,6 +336,9 @@ Catálogo pessoal de livros com estado de leitura.
 | `format` | TEXT | NÃO | `'fisico'` | `fisico` \| `ebook` \| `audiobook` \| `quadrinho` (mangá/HQ). CHECK `books_format_check`. Sugere a unidade ao cadastrar. |
 | `progress_unit` | TEXT | NÃO | `'pages'` | Unidade em que o progresso é contado: `pages` \| `chapters` \| `volumes`. CHECK `books_progress_unit_check`. Com sessões em `reading_logs`, só muda com confirmação explícita (modal Editar livro). |
 | `first_unit` | INTEGER | NÃO | `1` | Número da primeira unidade do livro (capítulo/volume inicial), para mangás de numeração contínua entre volumes (Vol. 2 do cap. 24 ao 36 ⇒ `first_unit = 24`, `total_pages = 36`). A posição base é `first_unit - 1`; a quantidade é `total_pages - first_unit + 1`. Sempre 1 em livros em páginas. CHECK `books_first_unit_check` (`>= 1`). |
+| `mal_manga_id` | INTEGER | SIM | — | Id da **série** no MyAnimeList quando o livro está sincronizado com a lista de mangás de lá. Índice único parcial `idx_books_mal_manga` (um mangá do MAL = no máximo um livro). Livros de volume avulso (`first_unit > 1`) ficam sem vínculo. |
+| `mal_updated_at` | TIMESTAMPTZ | SIM | — | `list_status.updated_at` do MAL na última leitura (o pull sempre grava). |
+| `local_updated_at` | TIMESTAMPTZ | SIM | — | Última mudança **local** (leitura, status, nota, exclusão de sessão). Só as tools gravam; o pull nunca. Junto com `mal_updated_at`, decide quem vence um conflito de status/nota. |
 | `isbn` | TEXT | SIM | — | ISBN-13 (preferido) ou ISBN-10. |
 | `cover_url` | TEXT | SIM | — | URL da capa. |
 | `description` | TEXT | SIM | — | Sinopse. |
@@ -371,10 +374,23 @@ naquele dia".
 | `page_end` | INTEGER | SIM | — | Posição APÓS a sessão, na mesma unidade. |
 | `pages_read` | INTEGER | SIM | — | Avanço (`page_end - page_start`), na mesma unidade. Só se soma entre livros da mesma unidade. |
 | `session_notes` | TEXT | SIM | — | Anotações da sessão. |
+| `source` | TEXT | NÃO | `'manual'` | Origem: `manual` (registrada por você) ou `mal_sync` (sessão de ajuste criada pelo pull do MyAnimeList). |
 | `created_at` | TIMESTAMPTZ | SIM | `NOW()` | Quando o log foi inserido. |
 
 **Índices:** `idx_reading_logs_date` (date), `idx_reading_logs_book_id` (book_id).
 **FKs:** `book_id → books(id)`.
+
+
+### `frieren_mal_state`
+
+Estado do sync **delta** de mangá com o MyAnimeList. Singleton (`id = 1`). Os tokens OAuth NÃO ficam aqui: continuam em
+`mal_sync_state` (Marin), compartilhados — um token cobre anime e mangá.
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | INTEGER | PK | — | Sempre 1 (`CHECK (id = 1)`). |
+| `last_sync_at` | TIMESTAMPTZ | SIM | — | Início do último sync de mangá bem-sucedido (ponto de corte do delta). |
+| `updated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Última gravação. |
 
 ### `shelves`
 

@@ -56,3 +56,17 @@ describe('estantes e links', () => {
     expect(splitList(null)).toEqual([])
   })
 })
+
+describe('vínculo com o MyAnimeList', () => {
+  const cru = {
+    id: 'b', title: 'Berserk', author: null, total_pages: 364, status: 'lendo', cover_url: null, date_started: null,
+    date_finished: null, date_abandoned: null, rating: null, genre: null, isbn: null, published_year: null, language: null,
+    notes: null, store_url: null, price: null, liked: false, created_at: null, updated_at: null, current_page: 0,
+    last_read: null, shelves: [],
+  } as unknown as ApiBook
+
+  it('lê o id da série (ou null quando o livro não está sincronizado)', () => {
+    expect(normalizeBook(cru).malId).toBeNull()
+    expect(normalizeBook({ ...cru, mal_manga_id: 2 }).malId).toBe(2)
+  })
+})

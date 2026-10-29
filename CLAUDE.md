@@ -274,6 +274,7 @@ makima_personal_agent/
 │   │   ├── __init__.py
 │   │   ├── tools.py     # PostgreSQL + Google Books API
 │   │   ├── tools_stats.py # StatsPayload e blocos do Início (spec 073, só webapp) — páginas/capítulos/volumes separados
+│   │   ├── mal_sync.py  # sync de mangás com o MyAnimeList: pull (mangalist → livros/sessões de ajuste) + push best-effort (reusa o OAuth da Marin)
 │   │   ├── units.py     # motor PURO: unidades (páginas/capítulos/volumes) e formatos (físico/ebook/audiobook/mangá) — espelhado em frontend lib/units.ts
 │   │   ├── agent.py     # frieren_agent
 │   │   ├── schema_pg.sql # schema das tabelas PostgreSQL
@@ -401,12 +402,14 @@ makima_personal_agent/
 │   ├── migrate_*.py           # migrações one-time já executadas (BQ→PG, shelves, aniversários, timezone…)
 │   ├── migrate_komi_ds.py     # espaço, apelido, aniversário (tarefas birthday → lixeira) e notas das pessoas — spec 077 (dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS)
 │   ├── migrate_frieren_units.py # formato e unidade de progresso dos livros (mangá/audiobook em capítulos/volumes) — dry-run por padrão, --apply grava; já aplicada no VPS em 29/out
+│   ├── migrate_frieren_mal.py # colunas de vínculo com o MyAnimeList (mal_manga_id, mal_updated_at, local_updated_at, reading_logs.source) + frieren_mal_state — dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS
+│   ├── sync_frieren_mal.py    # importação/pull manual dos mangás do MyAnimeList (dry-run por padrão; --full --apply na 1ª vez)
 │   ├── migrate_marin_ds.py    # coração, data de abandono e vitrine de favoritos dos animes — spec 074 (dry-run por padrão, --apply grava; já aplicada no VPS em 08/out)
 │   ├── migrate_nami_signed_transfers.py # transferências com sinal + pagamento de fatura como transferência — spec 071 (dry-run por padrão, --apply grava; AINDA NÃO RODADA no VPS)
 │   └── .gitignore             # exclui client_secret.json do git
 ├── docs/                    # organizada por tipo — ver docs/README.md (mapa completo)
 │   ├── README.md            # índice: o que é vivo, o que é plano, o que é histórico
-│   ├── referencia/          # docs VIVAS: POSTGRES.md (63 tabelas), BACKUP_POSTGRES.md, KURISU_BASE_CONHECIMENTO.md (leiga)
+│   ├── referencia/          # docs VIVAS: POSTGRES.md (64 tabelas), BACKUP_POSTGRES.md, KURISU_BASE_CONHECIMENTO.md (leiga)
 │   ├── planos/              # planos FUTUROS: PLANO_VIOLET_EVERGARDEN.md, PLANO_KAGUYA_MELHORIAS_2026H2.md…
 │   ├── arquivo/             # HISTÓRICO: PLAN.md original, MIGRACAO_POSTGRES.md, persistencia-sessao, setup-hook, superpowers/
 │   └── claude_design/       # design handoffs (HTML/CSS de referência) dos shells

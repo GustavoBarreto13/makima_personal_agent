@@ -184,6 +184,8 @@ export function BookDetail({ id }: { id: string }) {
     // Mangá de numeração contínua: mostra a faixa do volume (ex.: "cap. 24–36").
     rangeLabel(book.first, book.pages, book.unit) ? { title: 'Faixa', value: rangeLabel(book.first, book.pages, book.unit) as string } : null,
     book.pages ? { title: unitName(book.unit).charAt(0).toUpperCase() + unitName(book.unit).slice(1), value: book.page ? `${book.page} de ${book.pages}` : String(book.pages) } : null,
+    // Livro sincronizado com a lista de mangás do MyAnimeList (o link para a série fica abaixo da ficha).
+    book.malId ? { title: 'MyAnimeList', value: `mangá ${book.malId}` } : null,
     book.started ? { title: 'Comecei em', value: fmtDate(book.started) } : null,
     book.finished ? { title: 'Terminei em', value: fmtDate(book.finished) } : null,
     book.abandoned ? { title: 'Abandonei em', value: fmtDate(book.abandoned) } : null,
@@ -251,6 +253,11 @@ export function BookDetail({ id }: { id: string }) {
                     {book.storeUrl && (
                       <a className="fr-store fr-store-block" href={normalizeUrl(book.storeUrl)} target="_blank" rel="noopener noreferrer">
                         <Icon name="store" size={14} /> Comprar em {domainOf(book.storeUrl)} <Icon name="forward" size={13} />
+                      </a>
+                    )}
+                    {book.malId && (
+                      <a className="fr-store fr-store-block" href={`https://myanimelist.net/manga/${book.malId}`} target="_blank" rel="noopener noreferrer">
+                        <Icon name="forward" size={14} /> Ver no MyAnimeList <Icon name="forward" size={13} />
                       </a>
                     )}
                     <div className="ds-inline fr-wrap fr-shelfchips">

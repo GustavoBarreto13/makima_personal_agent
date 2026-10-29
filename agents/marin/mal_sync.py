@@ -207,6 +207,10 @@ def _mal_get(
     return None
 
 
+# Alias público: a Frieren (mangá) reaproveita o GET com retry/backoff da Marin sem importar nome privado.
+mal_get = _mal_get
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPERS PRIVADOS — banco de dados
 # ─────────────────────────────────────────────────────────────────────────────

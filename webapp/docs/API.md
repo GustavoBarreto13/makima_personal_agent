@@ -234,6 +234,7 @@ Todos os endpoints exigem autenticação. Chamam as tools da Frieren (`agents/fr
 | `POST` | `/api/books/{book_id}/log` | Registra sessão de leitura (devolve 201). | Body: `LogReadingBody` |
 | `POST` | `/api/books/{book_id}/finish` | Marca livro como lido. | Body: `FinishBookBody` |
 | `PATCH` | `/api/books/{book_id}/status` | Atualiza status do livro. | Body: `UpdateStatusBody` |
+| `POST` | `/api/books/sync-mal` | Sincroniza os mangás com a lista do MyAnimeList (pull; o push sai sozinho das tools). Devolve o resumo (`created`/`updated`/`skipped`/`errors`); **502** se o MAL não responder. | Body: `{full: bool}` |
 | `PATCH` | `/api/books/{book_id}/metadata` | Atualiza metadados (título, autor, capa, nota, datas, resenha, preço, `format`, `progress_unit`, `first_unit` (capítulo/volume inicial)…). Trocar `progress_unit` de um livro que já tem sessões devolve **400** ("já tem sessões") a menos que o body traga `allow_unit_change: true` (o modal Editar livro envia). | Body: `UpdateBookMetadataBody` |
 | `PATCH` | `/api/books/{book_id}/pages` | Atualiza o total do livro, na unidade dele (páginas, capítulos ou volumes). | Body: `UpdatePagesBody` |
 | `DELETE` | `/api/books/{book_id}` | Soft-delete do livro. | — |

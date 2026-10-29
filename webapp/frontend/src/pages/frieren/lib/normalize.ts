@@ -34,6 +34,7 @@ export function normalizeBook(b: ApiBook): Book {
     format: asFormat(b.format),
     unit: asUnit(b.progress_unit),
     first: b.first_unit && b.first_unit > 0 ? b.first_unit : 1,
+    malId: b.mal_manga_id && b.mal_manga_id > 0 ? b.mal_manga_id : null,
     genre: genres[0] ?? '',
     genres,
     language: b.language ?? '',

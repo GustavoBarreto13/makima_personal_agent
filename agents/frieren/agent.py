@@ -62,6 +62,14 @@ _FRIEREN_INSTRUCTION = """
       • Use quando o usuário registrou uma sessão com página errada ou data errada
       • Peça confirmação com os detalhes do log antes de executar
 
+    MANGÁS E MYANIMELIST:
+    - Sincronizar mangás com a lista do MyAnimeList: use sync_mal_manga (full=True só na primeira importação)
+      • Traz mangás novos como livros (Mangá/HQ, em capítulos) e atualiza progresso/status/nota
+      • O envio de volta (Frieren → MyAnimeList) é automático a cada leitura/status/nota que você registra
+    - Vincular um livro que JÁ existe a um mangá do MyAnimeList: use link_book_to_mal(book_query, mal_manga_id)
+      • O ID é o número da URL do mangá (myanimelist.net/manga/<ID>); só vincule a série inteira,
+        nunca um volume avulso (capítulo inicial maior que 1)
+
     COMPORTAMENTO:
     - Chame a ferramenta PRIMEIRO, DEPOIS responda com o resultado — nunca diga "aguarde" ou "vou verificar"
     - Se o usuário quer logar leitura mas o livro não está no catálogo, pergunte se quer adicioná-lo

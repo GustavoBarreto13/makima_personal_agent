@@ -38,6 +38,17 @@ export type MetadataPatch = Partial<{
   clear: string[]
 }>
 
+/** Resumo devolvido por POST /api/books/sync-mal. */
+export interface SyncResult {
+  ok: boolean
+  full: boolean
+  mal_entries_fetched: number
+  created: number
+  updated: number
+  skipped: number
+  errors: { mal_id: number | string | null; msg: string }[]
+}
+
 export interface AddBookBody {
   title: string
   status?: string
@@ -65,6 +76,8 @@ export const frierenApi = {
   history: (id: string) => api.get<{ status: 'ok'; logs: ApiHistoryLog[] }>(`/api/books/${id}/history`).then((r) => r.logs ?? []),
   searchGoogle: (q: string) =>
     api.get<{ status: 'ok'; results: GoogleBook[] }>(`/api/books/search-google?q=${encodeURIComponent(q)}`).then((r) => r.results ?? []),
+  /** Sincroniza os mangás com a lista do MyAnimeList (delta; `full` reprocessa tudo). */
+  syncMal: (full = false) => api.post<SyncResult>('/api/books/sync-mal', { full }),
   add: (body: AddBookBody) => api.post<Ok>('/api/books', body),
   delete: (id: string) => api.del<Ok>(`/api/books/${id}`),
   /** Desfaz a exclusão (o livro só tinha sido marcado como apagado). */
