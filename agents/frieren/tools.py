@@ -79,7 +79,7 @@ _CLEARABLE_FIELDS = frozenset({
 # O router do webapp reconhece o trecho "já tem sessões" (lista _FRIEREN_ERRORS) para devolver HTTP 400.
 _UNIT_LOCKED_ERROR = (
     "Este livro já tem sessões de leitura registradas, então a unidade não pode mudar "
-    "(os números antigos passariam a significar outra coisa). Apague as sessões antes de trocar."
+    "(os números antigos passariam a significar outra coisa). Confirme a troca para manter as sessões."
 )
 
 
@@ -1744,6 +1744,7 @@ def update_book_metadata_by_id(
     clear: list[str] | None = None,
     format: str | None = None,
     progress_unit: str | None = None,
+    allow_unit_change: bool = False,
 ) -> str:
     """Atualiza campos de metadados de um livro pelo ID exato.
 
@@ -1818,7 +1819,9 @@ def update_book_metadata_by_id(
         )
         # Só é mudança de verdade se a unidade nova difere da gravada — repetir a mesma é inofensivo.
         if atual and atual[0]["progress_unit"] != unidade_nova:
-            if _book_has_logs(book_id):
+            # Com sessões, só troca se quem chamou confirmou (allow_unit_change): os números antigos
+            # são mantidos e passam a ser lidos na unidade nova.
+            if _book_has_logs(book_id) and not allow_unit_change:
                 return _UNIT_LOCKED_ERROR
             sets.append("progress_unit = %(progress_unit)s")
             params["progress_unit"] = unidade_nova

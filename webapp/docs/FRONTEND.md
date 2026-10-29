@@ -219,7 +219,7 @@ item aberto vivem no **hash** (`lib/routes.ts`): `#inicio`, `#biblioteca`, `#que
   capas, +10/+25/+50/terminei, data, nota do dia, nota com meia estrela). `lib/submit.ts` devolve o "Desfazer".
 - **Formato e unidade** (mangá, audiobook): cada livro tem `format` (Físico/E-book/Audiobook/Mangá-HQ) e `unit`
   (páginas, capítulos ou volumes). `lib/units.ts` (espelho de `agents/frieren/units.py`) dá o vocabulário; `AddBookForm`
-  e `BookForm` escolhem o formato (que sugere a unidade) e a unidade (travada no editar se o livro já tem sessões).
+  e `BookForm` escolhem o formato (que sugere a unidade) e a unidade (editável sempre; com sessões o campo avisa que os números antigos passam a ser lidos na nova unidade).
   `LogForm`, `SessionEditor`, Diário, detalhe e Início falam a unidade do livro (+1/+3/+5 em capítulos). A linha rápida
   entende `cap 12`/`vol 3` pela regra opt-in `bookUnits` da captura (`design/core/capture.ts`) — só vale se a
   unidade digitada é a do livro. A Biblioteca filtra e agrupa por Formato. Estatísticas separam Páginas, Capítulos e

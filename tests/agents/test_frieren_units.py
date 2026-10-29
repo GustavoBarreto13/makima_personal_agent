@@ -121,6 +121,20 @@ def test_trocar_unidade_com_sessoes_e_recusado(monkeypatch):
     assert "já tem sessões" in msg
 
 
+def test_trocar_unidade_com_sessoes_confirmada_grava(monkeypatch):
+    gravados = []
+    def select(sql, params=None):
+        if "FROM books" in sql:
+            return [{"progress_unit": "pages"}]
+        if "FROM reading_logs" in sql:
+            return [{"x": 1}]  # já tem sessão
+        return []
+    monkeypatch.setattr(tools, "run_select", select)
+    monkeypatch.setattr(tools, "run_dml", lambda sql, params=None: gravados.append((sql, params)) or 1)
+    tools.update_book_metadata_by_id("b1", progress_unit="chapters", allow_unit_change=True)
+    assert gravados[0][1]["progress_unit"] == "chapters"
+
+
 def test_trocar_unidade_sem_sessoes_grava(monkeypatch):
     gravados = []
     def select(sql, params=None):

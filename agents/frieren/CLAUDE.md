@@ -115,8 +115,9 @@ frontend espelha em `webapp/frontend/src/pages/frieren/lib/units.ts` — mudou u
 - **Sem renomear colunas:** `books.total_pages`, `reading_logs.page_end` e `pages_read` passam a significar
   total/posição/avanço **na unidade do livro**. Renomear quebraria hub, calendário, estatísticas e testes.
 - **O formato só sugere a unidade** (audiobook e mangá → capítulos; físico e e-book → páginas); dá para trocar.
-- **Trava:** a unidade só muda enquanto o livro **não tem sessões** (`_book_has_logs`; mensagem `_UNIT_LOCKED_ERROR`,
-  que o router converte em HTTP 400). Com sessões, os números antigos mudariam de sentido. O **formato** muda sempre.
+- **Trava com saída:** com sessões, a unidade só muda se quem chama passar `allow_unit_change=True` (`_book_has_logs`;
+  sem isso, `_UNIT_LOCKED_ERROR` → HTTP 400). O modal "Editar livro" confirma sozinho e avisa no campo: as sessões
+  mantêm os números, agora lidos na unidade nova (revise-as). O agente/Hermes não passa a flag. O **formato** muda sempre.
 - **Google Books:** com unidade ≠ páginas, `add_book` descarta o `pageCount` (são páginas impressas) — o total
   vem do usuário ou fica vazio.
 - **Somas nunca misturam unidades:** estatísticas, heatmap e o hábito `frieren_reading` somam **só** livros em

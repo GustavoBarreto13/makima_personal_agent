@@ -268,7 +268,8 @@ class UpdateBookMetadataBody(BaseModel):
     date_started: Optional[str] = None    # Data de início da leitura (YYYY-MM-DD)
     date_finished: Optional[str] = None   # Data de conclusão da leitura (YYYY-MM-DD)
     format: Optional[str] = None          # fisico | ebook | audiobook | quadrinho
-    progress_unit: Optional[str] = None   # pages | chapters | volumes — só muda se o livro não tem sessões
+    progress_unit: Optional[str] = None   # pages | chapters | volumes — com sessões, exige allow_unit_change
+    allow_unit_change: Optional[bool] = None  # confirma trocar a unidade de um livro que já tem sessões
     # Campos a apagar (gravar NULL) — ex.: ["rating"] tira a nota, ["store_url"] tira o link.
     # Necessário porque um campo omitido (None) significa "não mexer", não "apagar".
     clear: Optional[list[str]] = None

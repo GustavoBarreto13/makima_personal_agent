@@ -234,7 +234,7 @@ Todos os endpoints exigem autenticação. Chamam as tools da Frieren (`agents/fr
 | `POST` | `/api/books/{book_id}/log` | Registra sessão de leitura (devolve 201). | Body: `LogReadingBody` |
 | `POST` | `/api/books/{book_id}/finish` | Marca livro como lido. | Body: `FinishBookBody` |
 | `PATCH` | `/api/books/{book_id}/status` | Atualiza status do livro. | Body: `UpdateStatusBody` |
-| `PATCH` | `/api/books/{book_id}/metadata` | Atualiza metadados (título, autor, capa, nota, datas, resenha, preço, `format`, `progress_unit`…). Trocar `progress_unit` de um livro que já tem sessões devolve **400** ("já tem sessões"). | Body: `UpdateBookMetadataBody` |
+| `PATCH` | `/api/books/{book_id}/metadata` | Atualiza metadados (título, autor, capa, nota, datas, resenha, preço, `format`, `progress_unit`…). Trocar `progress_unit` de um livro que já tem sessões devolve **400** ("já tem sessões") a menos que o body traga `allow_unit_change: true` (o modal Editar livro envia). | Body: `UpdateBookMetadataBody` |
 | `PATCH` | `/api/books/{book_id}/pages` | Atualiza o total do livro, na unidade dele (páginas, capítulos ou volumes). | Body: `UpdatePagesBody` |
 | `DELETE` | `/api/books/{book_id}` | Soft-delete do livro. | — |
 | `DELETE` | `/api/books/{book_id}/logs/{log_id}` | Remove uma sessão de leitura. | — |

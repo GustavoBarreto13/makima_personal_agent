@@ -124,13 +124,13 @@ export function BookForm({ book, onClose }: { book: ApiBookDetail; onClose: () =
   const dirty = JSON.stringify(f) !== JSON.stringify(initial)
   // Com sessões registradas a unidade fica travada: os números antigos passariam a significar outra coisa.
   // (current_page vem da última sessão; o servidor também recusa a troca.)
-  const unitLocked = (book.current_page ?? 0) > 0
+  const hasSessions = (book.current_page ?? 0) > 0
 
   // Trocar o formato sugere a unidade dele — mas só enquanto ela ainda é a sugestão do formato anterior
   // (quem já escolheu outra à mão não é surpreendido) e se não está travada.
   const changeFormat = (format: BookFormat) => {
     const followsSuggestion = f.progress_unit === defaultUnitFor(f.format)
-    set(!unitLocked && followsSuggestion ? { format, progress_unit: defaultUnitFor(format) } : { format })
+    set(!hasSessions && followsSuggestion ? { format, progress_unit: defaultUnitFor(format) } : { format })
   }
 
   const submit = async () => {
@@ -140,6 +140,8 @@ export function BookForm({ book, onClose }: { book: ApiBookDetail; onClose: () =
     setSaving(true)
     try {
       const patch = buildPatch(initial, f)
+      // Livro com sessões: a troca de unidade vai confirmada pelo próprio formulário (o aviso fica no campo).
+      if (patch.progress_unit && hasSessions) patch.allow_unit_change = true
       if (Object.keys(patch).length) await frierenApi.updateMetadata(book.id, patch)
       // O status vai à parte: o servidor ajusta as datas junto (início ao ler, data do abandono…).
       if (f.status !== initial.status) await frierenApi.setStatus(book.id, f.status)
@@ -188,9 +190,11 @@ export function BookForm({ book, onClose }: { book: ApiBookDetail; onClose: () =
               </Select>
             )}
           </Field>
-          <Field label="Contar em" hint={unitLocked ? 'Este livro já tem sessões, então a unidade não muda.' : 'A unidade dos registros de leitura.'}>
+          <Field label="Contar em" hint={hasSessions && f.progress_unit !== initial.progress_unit
+              ? 'As sessões já registradas mantêm os números, agora lidos nesta unidade. Revise-as depois.'
+              : 'A unidade dos registros de leitura.'}>
             {(a) => (
-              <Select {...a} value={f.progress_unit} disabled={unitLocked} onChange={(e) => set({ progress_unit: e.target.value as ProgressUnit })}>
+              <Select {...a} value={f.progress_unit} onChange={(e) => set({ progress_unit: e.target.value as ProgressUnit })}>
                 {UNITS.map((u) => <option key={u} value={u}>{unitName(u).charAt(0).toUpperCase() + unitName(u).slice(1)}</option>)}
               </Select>
             )}

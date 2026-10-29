@@ -16,6 +16,8 @@ export type MetadataPatch = Partial<{
   /** Formato (fisico | ebook | audiobook | quadrinho) e unidade (pages | chapters | volumes). */
   format: string
   progress_unit: string
+  /** Confirma trocar a unidade de um livro que já tem sessões (os números antigos são mantidos). */
+  allow_unit_change: boolean
   title: string
   author: string
   cover_url: string
