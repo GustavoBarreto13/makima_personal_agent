@@ -196,7 +196,7 @@ lugar só (`fmtPercent` recebe a **fração**); contagens de itens **distintos**
 
 | Agente | Métricas |
 |---|---|
-| Frieren | livros iniciados/terminados/abandonados, páginas, páginas/dia, dias lendo, dias por livro, mais longo, meta anual |
+| Frieren | livros iniciados/terminados/abandonados, páginas, páginas/dia, dias lendo, dias por livro, mais longo, meta anual; capítulos e volumes (só com leitura nessa unidade) e ranking de formatos |
 | Akane | filmes distintos, sessões, revistos, horas, décadas, país/idioma, cinema vs casa, watchlist adicionados vs vistos |
 | Marin | episódios reais, completos no ano, dropados, temporada de lançamento, estúdios, notas |
 | Mai | séries terminadas e dropadas, episódios, maior maratona, redes por episódios |

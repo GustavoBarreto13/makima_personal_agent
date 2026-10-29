@@ -15,6 +15,11 @@ import requests                    # Cliente HTTP para chamar a Google Books API
 # Importa os helpers PostgreSQL compartilhados — substituem o BigQuery _run_select/_run_dml
 from agents.db import run_select, run_dml, get_conn
 
+# Vocabulário de unidades (página/capítulo/volume) e formatos (físico/ebook/audiobook/mangá).
+from agents.frieren.units import (
+    VALID_FORMATS, VALID_UNITS, default_unit_for, normalize_unit, unit_label, stopped_label,
+)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTES GLOBAIS
@@ -68,6 +73,73 @@ _CLEARABLE_FIELDS = frozenset({
     "author", "cover_url", "total_pages", "genre", "published_year", "isbn", "language",
     "description", "notes", "store_url", "price", "rating", "date_started", "date_finished",
 })
+
+
+# Mensagem única quando se tenta trocar a unidade de um livro que já tem sessões registradas.
+# O router do webapp reconhece o trecho "já tem sessões" (lista _FRIEREN_ERRORS) para devolver HTTP 400.
+_UNIT_LOCKED_ERROR = (
+    "Este livro já tem sessões de leitura registradas, então a unidade não pode mudar "
+    "(os números antigos passariam a significar outra coisa). Apague as sessões antes de trocar."
+)
+
+
+def _resolve_format_unit(book_format: str | None, progress_unit: str | None) -> tuple[str, str, str | None]:
+    """Validar formato e unidade e preencher a unidade sugerida quando ela não foi informada.
+
+    Args:
+        book_format: Formato informado (None = físico).
+        progress_unit: Unidade informada (None = a sugerida pelo formato).
+
+    Returns:
+        Tupla ``(formato, unidade, erro)``; ``erro`` é None quando tudo é válido.
+
+    Example:
+        >>> _resolve_format_unit("audiobook", None)
+        ('audiobook', 'chapters', None)
+        >>> _resolve_format_unit("fisico", "capitulos")[2] is None
+        False
+    """
+    fmt = (book_format or "fisico").strip().lower()
+    if fmt not in VALID_FORMATS:
+        return fmt, "pages", f"Formato inválido: <b>{book_format}</b>. Use: {', '.join(VALID_FORMATS)}."
+    # Sem unidade informada, vale a sugerida pelo formato (audiobook → capítulos).
+    if progress_unit is None or not str(progress_unit).strip():
+        return fmt, default_unit_for(fmt), None
+    unit = str(progress_unit).strip().lower()
+    if unit not in VALID_UNITS:
+        return fmt, "pages", f"Unidade inválida: <b>{progress_unit}</b>. Use: {', '.join(VALID_UNITS)}."
+    return fmt, unit, None
+
+
+def _book_has_logs(book_id: str) -> bool:
+    """Dizer se o livro já tem alguma sessão de leitura (trava a troca de unidade).
+
+    Args:
+        book_id: ID do livro.
+
+    Returns:
+        True se existe ao menos uma linha em ``reading_logs`` para o livro.
+    """
+    rows = run_select("SELECT 1 AS x FROM reading_logs WHERE book_id = %(id)s LIMIT 1", {"id": book_id})
+    return bool(rows)
+
+
+def _abbr(unit: str | None) -> str:
+    """Prefixo curto de posição para listas: ``p.``, ``cap.`` ou ``vol.`` (com espaço final nos dois últimos).
+
+    Args:
+        unit: Unidade de progresso do livro.
+
+    Returns:
+        O prefixo, pronto para colar antes do número.
+
+    Example:
+        >>> _abbr("pages") + "10"
+        'p.10'
+        >>> _abbr("chapters") + "3"
+        'cap. 3'
+    """
+    return {"pages": "p.", "chapters": "cap. ", "volumes": "vol. "}[normalize_unit(unit)]
 
 
 def _rating_error(rating: float | None) -> str | None:
@@ -517,6 +589,8 @@ def add_book(
     genre: str | None = None,
     language: str | None = None,
     published_year: int | None = None,
+    format: str | None = None,
+    progress_unit: str | None = None,
 ) -> str:
     """Adiciona um livro ao catálogo. Enriquece metadados via Google Books API automaticamente.
 
@@ -542,7 +616,17 @@ def add_book(
         genre: Gênero/categorias — junto com google_books_id, evita busca na API.
         language: Código do idioma — junto com google_books_id, evita busca na API.
         published_year: Ano de publicação — junto com google_books_id, evita busca na API.
+        format: Formato do livro — ``fisico`` (padrão), ``ebook``, ``audiobook`` ou ``quadrinho``
+            (mangá/HQ). Sugere a unidade de progresso.
+        progress_unit: Unidade em que o progresso é contado — ``pages``, ``chapters`` ou ``volumes``.
+            Sem valor, usa a sugerida pelo formato (audiobook e mangá → capítulos). Com unidade
+            diferente de páginas, o ``total_pages`` é o total NESSA unidade (ex.: 120 capítulos).
     """
+    # ── 0. Valida formato e unidade ───────────────────────────────────────────
+    book_format, progress_unit, erro_fmt = _resolve_format_unit(format, progress_unit)
+    if erro_fmt:
+        return erro_fmt
+
     # ── 1. Valida o status informado ──────────────────────────────────────────
     if status not in VALID_STATUSES:
         return (
@@ -624,6 +708,10 @@ def add_book(
         }
 
     # ── 4. Sobrescreve campos se o usuário forneceu manualmente ───────────────
+    # O pageCount do Google Books é a contagem de páginas IMPRESSAS: não serve como total de
+    # capítulos/volumes, então é descartado quando a unidade do livro não é página.
+    if progress_unit != "pages":
+        meta["total_pages"] = None
     # A edição física do usuário pode ter número de páginas diferente do cadastrado na API
     if total_pages is not None:
         meta["total_pages"] = total_pages
@@ -648,12 +736,12 @@ def add_book(
             id, google_books_id, title, author, total_pages,
             isbn, cover_url, description, genre, language, published_year,
             status, date_started, date_finished, rating, notes,
-            source, created_at, updated_at, deleted
+            source, created_at, updated_at, deleted, format, progress_unit
         ) VALUES (
             %(id)s, %(google_books_id)s, %(title)s, %(author)s, %(total_pages)s,
             %(isbn)s, %(cover_url)s, %(description)s, %(genre)s, %(language)s, %(published_year)s,
             %(status)s, %(date_started)s, NULL, NULL, NULL,
-            %(source)s, %(created_at)s, %(updated_at)s, FALSE
+            %(source)s, %(created_at)s, %(updated_at)s, FALSE, %(format)s, %(progress_unit)s
         )
     """
 
@@ -674,6 +762,8 @@ def add_book(
         "source":          "telegram",
         "created_at":      agora,
         "updated_at":      agora,
+        "format":          book_format,
+        "progress_unit":   progress_unit,
     }
 
     # Executa o INSERT e grava vínculos de pessoas na mesma transação (spec 014 / FR-009).
@@ -695,7 +785,7 @@ def add_book(
     # ── 8. Monta a mensagem de confirmação ────────────────────────────────────
     titulo_final = meta.get("title", title)
     autor_final  = meta.get("author") or "autor desconhecido"
-    paginas_txt  = f" ({meta.get('total_pages')} páginas)" if meta.get("total_pages") else ""
+    paginas_txt  = f" ({unit_label(progress_unit, meta.get('total_pages'))})" if meta.get("total_pages") else ""
 
     return (
         f"<b>{titulo_final}</b> de {autor_final}{paginas_txt} "
@@ -712,7 +802,7 @@ def _get_last_logged_book() -> dict | None:
     # Junta reading_logs com books para obter todos os campos do livro
     sql = """
         SELECT b.id, b.title, b.author, b.total_pages, b.status,
-               b.date_started, b.date_finished
+               b.date_started, b.date_finished, b.progress_unit, b.format
         FROM reading_logs rl
         JOIN books b ON b.id = rl.book_id
         ORDER BY rl.date DESC, rl.created_at DESC
@@ -731,11 +821,14 @@ def log_reading(
     """
     Registra o progresso de leitura de um livro.
     'Li o Duna até a página 80' → loga a sessão calculando delta desde o último registro.
+    'Ouvi até o capítulo 12' / 'terminei o volume 5' → o mesmo, na unidade em que o livro é contado.
 
     Parâmetros:
         book_query    — Título parcial ou completo do livro (ex: "Duna", "Harry Potter").
                         Se vazio ou omitido, usa automaticamente o livro com o log mais recente.
-        current_page  — Página atual do leitor após a sessão de leitura
+        current_page  — POSIÇÃO atual do leitor após a sessão, na unidade do livro: página, capítulo
+                        ou volume (mangás e audiobooks costumam ser contados em capítulos/volumes).
+                        O nome é histórico; o livro diz a unidade (campo progress_unit).
         session_notes — Anotações opcionais sobre a sessão (impressões, citações, etc.)
         log_date      — Data da leitura no formato YYYY-MM-DD (padrão: hoje)
     """
@@ -758,16 +851,19 @@ def log_reading(
                 "Informe o título do livro para registrar o progresso."
             )
 
-    # ── 2. Valida que a página informada é um número não-negativo ─────────────
-    if current_page < 0:
-        return "O número de página não pode ser negativo."
+    # Unidade em que ESTE livro é contado (página, capítulo ou volume).
+    unidade = normalize_unit(book.get("progress_unit"))
 
-    # ── 3. Valida que a página não ultrapassa o total do livro ────────────────
+    # ── 2. Valida que a posição informada é um número não-negativo ────────────
+    if current_page < 0:
+        return "A posição de leitura não pode ser negativa."
+
+    # ── 3. Valida que a posição não ultrapassa o total do livro ───────────────
     total_pages = book.get("total_pages")
     if total_pages and current_page > total_pages:
         return (
-            f"A página <b>{current_page}</b> ultrapassa o total de páginas de "
-            f"<b>{book['title']}</b> ({total_pages} páginas). "
+            f"{stopped_label(unidade).capitalize()} <b>{current_page}</b> ultrapassa o total de "
+            f"<b>{book['title']}</b> ({unit_label(unidade, total_pages)}). "
             "Se você terminou o livro, use o comando de finalizar leitura."
         )
 
@@ -783,7 +879,7 @@ def log_reading(
     last_params = {"book_id": book_id}
     last_logs = run_select(sql_last, last_params)
 
-    # page_start = última página registrada, ou 0 se nunca houve nenhum log
+    # page_start = última posição registrada, ou 0 se nunca houve nenhum log
     page_start = last_logs[0]["page_end"] if last_logs else 0
 
     # ── 5. Calcula as páginas lidas nesta sessão ──────────────────────────────
@@ -792,15 +888,15 @@ def log_reading(
     # Detecta inconsistência: a página atual é MENOR que a última registrada
     if pages_read < 0:
         return (
-            f"A página <b>{current_page}</b> é menor que a última registrada "
-            f"(<b>{page_start}</b>) para <b>{book['title']}</b>. "
-            "Verifique se informou a página correta."
+            f"A posição <b>{current_page}</b> é menor que a última registrada "
+            f"(<b>{page_start}</b>) para <b>{book['title']}</b> "
+            f"(contado em {unit_label(unidade)}). Verifique se informou o número certo."
         )
 
     # Nenhuma página nova foi lida — evita criar um log inútil no banco
     if pages_read == 0:
         return (
-            f"<b>{book['title']}</b> já estava registrado na página <b>{page_start}</b>. "
+            f"<b>{book['title']}</b> já estava registrado {stopped_label(unidade)} <b>{page_start}</b>. "
             "Nenhum progresso novo para registrar."
         )
 
@@ -873,13 +969,13 @@ def log_reading(
 
         return (
             f"<b>{titulo}</b> — <b>{percent}%</b> concluído "
-            f"({current_page}/{total_pages} páginas, {remaining} restantes)\n"
-            f"📖 {pages_read} páginas lidas nesta sessão."
+            f"({current_page}/{unit_label(unidade, total_pages)}, {remaining} restantes)\n"
+            f"📖 {unit_label(unidade, pages_read)} nesta sessão."
         )
     else:
         return (
-            f"<b>{titulo}</b> — página <b>{current_page}</b>\n"
-            f"📖 {pages_read} páginas lidas nesta sessão."
+            f"<b>{titulo}</b> — {unit_label(unidade, 1).split(' ', 1)[1]} <b>{current_page}</b>\n"
+            f"📖 {unit_label(unidade, pages_read)} nesta sessão."
         )
 
 
@@ -898,13 +994,14 @@ def get_current_reading() -> str:
             b.title,
             b.author,
             b.total_pages,
+            b.progress_unit,
             b.date_started,
             MAX(rl.page_end)  AS current_page,
             COUNT(rl.id)      AS total_sessions
         FROM books b
         LEFT JOIN reading_logs rl ON rl.book_id = b.id
         WHERE b.status = 'lendo' AND b.deleted = FALSE
-        GROUP BY b.id, b.title, b.author, b.total_pages, b.date_started
+        GROUP BY b.id, b.title, b.author, b.total_pages, b.progress_unit, b.date_started
         ORDER BY b.updated_at DESC
     """
 
@@ -926,11 +1023,12 @@ def get_current_reading() -> str:
         # Formata a data de início como string legível, ou omite se ausente
         inicio_txt = f" · começou em {date_started}" if date_started else ""
 
+        unidade = normalize_unit(row.get("progress_unit"))
         if total_pages and current_page is not None:
             percent = round((current_page / total_pages) * 100, 1)
-            progresso_txt = f"{percent}% ({current_page}/{total_pages} páginas)"
+            progresso_txt = f"{percent}% ({current_page}/{unit_label(unidade, total_pages)})"
         elif current_page is not None:
-            progresso_txt = f"página {current_page}"
+            progresso_txt = f"{unit_label(unidade, 1).split(' ', 1)[1]} {current_page}"
         else:
             progresso_txt = "não iniciado"
 
@@ -1210,20 +1308,20 @@ def update_book_status_by_id(book_id: str, status: str) -> str:
 
 def update_book_pages(book_query: str, total_pages: int) -> str:
     """
-    Atualiza o total de páginas de um livro no catálogo.
-    Útil quando a Google Books API retornou um número errado ou
-    a edição física do usuário tem uma contagem diferente.
+    Atualiza o total de um livro no catálogo, NA UNIDADE em que ele é contado
+    (páginas, capítulos ou volumes). Útil quando a Google Books API retornou um
+    número errado, a edição física tem outra contagem ou o mangá ganhou novos volumes.
 
     Args:
         book_query: título ou trecho do título do livro
-        total_pages: número correto de páginas da edição do usuário
+        total_pages: total correto, na unidade do livro (o nome é histórico)
 
     Returns:
-        Confirmação com título e novo total de páginas.
+        Confirmação com título e novo total.
     """
-    # Valida que o número de páginas faz sentido
+    # Valida que o total faz sentido
     if total_pages <= 0:
-        return "Número de páginas inválido. Deve ser maior que zero."
+        return "Total inválido. Deve ser maior que zero."
 
     # Busca o livro no catálogo pelo título (fuzzy match)
     book = _find_book_by_query(book_query)
@@ -1231,8 +1329,10 @@ def update_book_pages(book_query: str, total_pages: int) -> str:
         return f"Não encontrei '{book_query}' no catálogo."
 
     now = _now()
+    # Unidade em que o livro é contado (o total acima está NELA).
+    unidade = normalize_unit(book.get("progress_unit"))
 
-    # Atualiza o total de páginas e o timestamp de atualização
+    # Atualiza o total e o timestamp de atualização
     sql = """
         UPDATE books
         SET
@@ -1260,12 +1360,12 @@ def update_book_pages(book_query: str, total_pages: int) -> str:
     if last_logs and last_logs[0]["page_end"]:
         current = last_logs[0]["page_end"]
         percent = round((current / total_pages) * 100, 1)
-        progress = f" · progresso recalculado: {percent}% ({current}/{total_pages} páginas)"
+        progress = f" · progresso recalculado: {percent}% ({current}/{unit_label(unidade, total_pages)})"
     else:
         progress = ""
 
     return (
-        f"<b>{book['title']}</b> → total de páginas atualizado para "
+        f"<b>{book['title']}</b> → total de {unit_label(unidade)} atualizado para "
         f"<b>{total_pages}</b>{progress}."
     )
 
@@ -1356,7 +1456,7 @@ def get_reading_stats(year: int | None = None) -> str:
 def get_book_history(book_query: str) -> str:
     """
     Retorna o histórico completo de sessões de leitura de um livro específico.
-    Mostra data, intervalo de páginas, páginas lidas e anotações de cada sessão.
+    Mostra data, intervalo (páginas, capítulos ou volumes, conforme o livro), avanço e anotações.
 
     Parâmetros:
         book_query — Título parcial ou completo do livro
@@ -1391,12 +1491,14 @@ def get_book_history(book_query: str) -> str:
 
     # ── 4. Calcula totais para o cabeçalho do histórico ───────────────────────
     total_sessoes = len(logs)
-    total_paginas = sum(r["pages_read"] for r in logs)
+    # Soma o avanço na unidade do livro; sessões sem avanço gravado contam como 0.
+    unidade = normalize_unit(book.get("progress_unit"))
+    total_paginas = sum(r["pages_read"] or 0 for r in logs)
 
     # ── 5. Monta o cabeçalho ──────────────────────────────────────────────────
     cabecalho = (
         f"<b>{book['title']}</b> — histórico de leitura\n\n"
-        f"Total: {total_sessoes} sessões · {total_paginas} páginas\n"
+        f"Total: {total_sessoes} sessões · {unit_label(unidade, total_paginas)}\n"
     )
 
     # ── 6. Formata cada sessão como um item da lista ──────────────────────────
@@ -1411,7 +1513,8 @@ def get_book_history(book_query: str) -> str:
         notas_txt = f" — {notas}" if notas else ""
 
         itens.append(
-            f"• {data}: p.{page_start} → p.{page_end} ({pages_read} páginas){notas_txt}"
+            f"• {data}: {_abbr(unidade)}{page_start} → {_abbr(unidade)}{page_end} "
+            f"({unit_label(unidade, pages_read)}){notas_txt}"
         )
 
     return cabecalho + "\n".join(itens)
@@ -1459,6 +1562,9 @@ def get_book_menu_data(book_query: str) -> str:
         "rating":        book.get("rating"),
         "current_page":  current_page,
         "total_pages":   book.get("total_pages"),
+        # Unidade em que current_page/total_pages estão (pages | chapters | volumes).
+        "progress_unit": normalize_unit(book.get("progress_unit")),
+        "format":        book.get("format") or "fisico",
         "date_started":  str(book["date_started"]) if book.get("date_started") else None,
         "date_finished": str(book["date_finished"]) if book.get("date_finished") else None,
         "cover_url":     book.get("cover_url"),
@@ -1636,6 +1742,8 @@ def update_book_metadata_by_id(
     date_started: str | None = None,
     date_finished: str | None = None,
     clear: list[str] | None = None,
+    format: str | None = None,
+    progress_unit: str | None = None,
 ) -> str:
     """Atualiza campos de metadados de um livro pelo ID exato.
 
@@ -1667,6 +1775,10 @@ def update_book_metadata_by_id(
         date_finished: Data de conclusão no formato YYYY-MM-DD.
         clear: Campos a gravar como NULL. Só aceita os de `_CLEARABLE_FIELDS`
             (o título, por exemplo, nunca pode ficar vazio).
+        format: Formato do livro (``fisico``, ``ebook``, ``audiobook`` ou ``quadrinho``).
+            Trocar o formato nunca mexe na unidade — ela é escolhida à parte.
+        progress_unit: Unidade do progresso (``pages``, ``chapters`` ou ``volumes``). Só pode mudar
+            enquanto o livro NÃO tem sessões de leitura (senão os números antigos mudariam de sentido).
 
     Returns:
         Mensagem de confirmação em caso de sucesso, ou mensagem de erro
@@ -1689,6 +1801,27 @@ def update_book_metadata_by_id(
 
     # Para cada campo de metadados, só adicionamos ao SET se o valor foi fornecido.
     # Isso evita sobrescrever dados existentes com None acidentalmente.
+
+    if format is not None:
+        fmt = format.strip().lower()
+        if fmt not in VALID_FORMATS:
+            return f"Formato inválido: <b>{format}</b>. Use: {', '.join(VALID_FORMATS)}."
+        sets.append("format = %(format)s")
+        params["format"] = fmt
+
+    if progress_unit is not None:
+        unidade_nova = progress_unit.strip().lower()
+        if unidade_nova not in VALID_UNITS:
+            return f"Unidade inválida: <b>{progress_unit}</b>. Use: {', '.join(VALID_UNITS)}."
+        atual = run_select(
+            "SELECT progress_unit FROM books WHERE id = %(id)s AND deleted = FALSE", {"id": book_id}
+        )
+        # Só é mudança de verdade se a unidade nova difere da gravada — repetir a mesma é inofensivo.
+        if atual and atual[0]["progress_unit"] != unidade_nova:
+            if _book_has_logs(book_id):
+                return _UNIT_LOCKED_ERROR
+            sets.append("progress_unit = %(progress_unit)s")
+            params["progress_unit"] = unidade_nova
 
     if title is not None:
         sets.append("title = %(title)s")
@@ -2236,6 +2369,7 @@ def get_activity_feed(limit: int = 50) -> dict:
             b.author,
             rl.pages_read AS pages,
             rl.page_end AS page,
+            b.progress_unit AS unit,
             rl.session_notes AS note,
             b.rating,
             CASE
@@ -2270,7 +2404,9 @@ def get_heatmap_data(year: int = None) -> dict:
     if year:
         # Filtra pelo ano informado via EXTRACT para evitar conversão de string
         rows = run_select("""
-            SELECT rl.date::text AS date, COALESCE(SUM(rl.pages_read), 0)::int AS pages
+            -- só livros contados em páginas somam: capítulos/volumes não são a mesma régua
+            SELECT rl.date::text AS date,
+                   COALESCE(SUM(CASE WHEN b.progress_unit = 'pages' THEN rl.pages_read ELSE 0 END), 0)::int AS pages
             FROM reading_logs rl
             JOIN books b ON b.id = rl.book_id
             WHERE b.deleted = FALSE AND EXTRACT(YEAR FROM rl.date) = %s
@@ -2280,7 +2416,9 @@ def get_heatmap_data(year: int = None) -> dict:
     else:
         # Sem filtro de ano — retorna todos os registros históricos
         rows = run_select("""
-            SELECT rl.date::text AS date, COALESCE(SUM(rl.pages_read), 0)::int AS pages
+            -- só livros contados em páginas somam: capítulos/volumes não são a mesma régua
+            SELECT rl.date::text AS date,
+                   COALESCE(SUM(CASE WHEN b.progress_unit = 'pages' THEN rl.pages_read ELSE 0 END), 0)::int AS pages
             FROM reading_logs rl
             JOIN books b ON b.id = rl.book_id
             WHERE b.deleted = FALSE

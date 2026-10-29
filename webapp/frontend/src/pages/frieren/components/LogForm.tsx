@@ -1,5 +1,6 @@
 // Formulário de registrar leitura (o "Mais detalhes" da linha rápida; substitui o LogModal do shell antigo).
-// Escolher o livro (busca + carrossel de capas), a página onde parou (+10/+25/+50/terminei, com a % ao vivo),
+// Escolher o livro (busca + carrossel de capas), onde parou — página, capítulo ou volume, conforme o livro
+// (+10/+25/+50 em páginas, +1/+3/+5 em capítulos…; terminei; com a % ao vivo),
 // o dia, uma linha sobre hoje e, se terminou, a nota de meia a cinco estrelas. Ctrl+Enter salva.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -7,9 +8,11 @@ import { Button, DatePicker, Field, Input, Modal, NumberInput, RateInput, Textar
 import { useFrieren } from '../context'
 import { searchBooks, validateDraft, type LogDraft } from '../lib/log'
 import { STATUS } from '../lib/status'
+import { stoppedLabel, unitName, type ProgressUnit } from '../lib/units'
 import { BookCover } from './BookCover'
 
-const STEPS = [10, 25, 50]
+// Atalhos de "+N" de cada unidade: 10 páginas é um bom passo, mas 10 volumes não.
+const STEPS: Record<ProgressUnit, number[]> = { pages: [10, 25, 50], chapters: [1, 3, 5], volumes: [1, 2, 3] }
 
 export function LogForm({ initial, onClose }: { initial: LogDraft; onClose: () => void }) {
   const frieren = useFrieren()
@@ -50,6 +53,8 @@ export function LogForm({ initial, onClose }: { initial: LogDraft; onClose: () =
   }
 
   const total = book?.pages ?? 0
+  // Unidade do livro escolhido (sem livro ainda, mostra páginas).
+  const unit: ProgressUnit = book?.unit ?? 'pages'
   const bump = (n: number) => set({ page: Math.min(total || Infinity, Math.max(0, (d.page ?? book?.page ?? 0) + n)) })
   const pct = total && d.page !== null ? Math.round((d.page / total) * 100) : null
 
@@ -95,11 +100,11 @@ export function LogForm({ initial, onClose }: { initial: LogDraft; onClose: () =
           {list.length === 0 && <p className="ds-hint">Nenhum livro encontrado. Adicione-o à biblioteca primeiro.</p>}
         </div>
 
-        <Field label="Você parou na página…" error={err('page')} hint={total ? `de ${total}${pct !== null ? ` · ${pct}%` : ''}` : 'O livro não tem total de páginas cadastrado.'}>
+        <Field label={`Você parou ${stoppedLabel(unit)}…`} error={err('page')} hint={total ? `de ${total}${pct !== null ? ` · ${pct}%` : ''}` : `O livro não tem total de ${unitName(unit)} cadastrado.`}>
           {(a) => (
             <div className="ds-inline fr-pagerow">
               <NumberInput {...a} min={0} max={total || undefined} value={d.page ?? ''} onChange={(e) => set({ page: e.target.value === '' ? null : Math.round(Number(e.target.value)) })} />
-              {STEPS.map((n) => <Button key={n} size="sm" disabled={!book} onClick={() => bump(n)}>+{n}</Button>)}
+              {STEPS[unit].map((n) => <Button key={n} size="sm" disabled={!book} onClick={() => bump(n)}>+{n}</Button>)}
               <Button size="sm" icon="finished" disabled={!book} onClick={() => set({ page: total || d.page, finished: true })}>terminei</Button>
             </div>
           )}

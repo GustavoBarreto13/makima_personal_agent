@@ -17,6 +17,9 @@ from agents.db import run_select
 def get_activity(start_date: str, end_date: str) -> dict[str, float]:
     """Soma as páginas lidas por dia num intervalo, agregando todos os livros.
 
+    Só entram livros contados em páginas (``books.progress_unit = 'pages'``): sessões de mangás e
+    audiobooks em capítulos/volumes ficam de fora para não distorcer metas em páginas.
+
     Cada linha de ``reading_logs`` é uma sessão (pode haver mais de uma no mesmo dia, ex.: 15 +
     10 páginas) — a soma por dia é o valor que o hábito mensurável compara com sua meta.
 
@@ -29,10 +32,13 @@ def get_activity(start_date: str, end_date: str) -> dict[str, float]:
     """
     rows = run_select(
         """
-        SELECT date, SUM(pages_read) AS total
-        FROM reading_logs
-        WHERE date BETWEEN %(start)s AND %(end)s AND pages_read IS NOT NULL
-        GROUP BY date
+        SELECT rl.date, SUM(rl.pages_read) AS total
+        FROM reading_logs rl
+        JOIN books b ON b.id = rl.book_id
+        -- só livros contados em PÁGINAS: somar capítulos/volumes numa meta de "20 páginas" mentiria
+        WHERE rl.date BETWEEN %(start)s AND %(end)s AND rl.pages_read IS NOT NULL
+          AND b.progress_unit = 'pages'
+        GROUP BY rl.date
         """,
         {"start": start_date, "end": end_date},
     )

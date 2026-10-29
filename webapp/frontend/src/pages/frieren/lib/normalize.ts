@@ -4,6 +4,7 @@
 import { isoDate } from '../../../design/core/format'
 import type { ApiBook, ApiSession, ApiShelf, Book, Session, Shelf } from '../types'
 import { isBookStatus } from './status'
+import { asFormat, asUnit } from './units'
 
 /** Dia local (America/Sao_Paulo no navegador) de um instante ISO do servidor — nunca `slice(0, 10)` (UTC). */
 export function localDay(iso: string | null | undefined): string {
@@ -30,6 +31,8 @@ export function normalizeBook(b: ApiBook): Book {
     author: b.author ?? '',
     year: b.published_year ?? null,
     pages,
+    format: asFormat(b.format),
+    unit: asUnit(b.progress_unit),
     genre: genres[0] ?? '',
     genres,
     language: b.language ?? '',
@@ -63,6 +66,7 @@ export function normalizeSession(s: ApiSession): Session {
     author: s.author ?? '',
     pages: s.pages ?? 0,
     page: s.page ?? 0,
+    unit: asUnit(s.unit),
     note: s.note ?? '',
     kind,
   }

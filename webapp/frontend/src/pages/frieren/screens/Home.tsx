@@ -15,6 +15,7 @@ import { Spark, StatCard, Trend } from '../components/StatCard'
 import { DEFAULT_PREFS, useFrieren } from '../context'
 import { frierenApi } from '../frierenApi'
 import { greeting } from '../lib/greeting'
+import { asUnit, positionLabel } from '../lib/units'
 import { useLoad } from '../lib/useLoad'
 import type { Session } from '../types'
 
@@ -74,7 +75,7 @@ export function Home() {
         meta={
           <div className="fr-herometa">
             {current
-              ? <p className="fr-heronow">No meio de <em>{current.title}</em>{current.total_pages ? ` · pág. ${current.current_page} de ${current.total_pages}` : ''}</p>
+              ? <p className="fr-heronow">No meio de <em>{current.title}</em>{current.total_pages ? ` · ${positionLabel(asUnit(current.progress_unit), current.current_page)} de ${current.total_pages}` : ''}</p>
               : <p className="fr-heronow">Nenhum livro em leitura no momento.</p>}
             {layout !== 'editorial' && <blockquote className="fr-quote">{QUOTE}</blockquote>}
           </div>

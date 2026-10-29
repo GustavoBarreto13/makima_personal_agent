@@ -1,11 +1,12 @@
-// Editar uma sessão de leitura: página onde parou, dia e a nota do dia (o EditLogModal do shell antigo).
-// O servidor recalcula as páginas lidas a partir da página nova.
+// Editar uma sessão de leitura: onde parou (página, capítulo ou volume, conforme o livro), dia e a nota do dia
+// (o EditLogModal do shell antigo). O servidor recalcula o avanço a partir da posição nova.
 
 import { useState } from 'react'
 import { Button, DatePicker, Field, Modal, NumberInput, Textarea } from '../../../design'
 import { toast } from '../../../design/headless/toast'
 import { useFrieren } from '../context'
 import { frierenApi } from '../frierenApi'
+import { stoppedLabel } from '../lib/units'
 import type { Session } from '../types'
 
 export function SessionEditor({ session, onClose }: { session: Session; onClose: () => void }) {
@@ -16,13 +17,14 @@ export function SessionEditor({ session, onClose }: { session: Session; onClose:
   const [error, setError] = useState<{ field: string; message: string } | null>(null)
   const [saving, setSaving] = useState(false)
 
-  // Página em que a sessão começou: page_end − páginas lidas.
+  // Posição em que a sessão começou: page_end − avanço da sessão.
+  const onde = stoppedLabel(session.unit)
   const start = session.page - session.pages
   const dirty = page !== session.page || date !== session.date || note !== session.note
 
   const submit = async () => {
-    if (page === null || !Number.isInteger(page)) { setError({ field: 'page', message: 'Informe a página onde parou.' }); return }
-    if (page < start) { setError({ field: 'page', message: `A sessão começou na página ${start}.` }); return }
+    if (page === null || !Number.isInteger(page)) { setError({ field: 'page', message: 'Informe onde você parou.' }); return }
+    if (page < start) { setError({ field: 'page', message: `A sessão começou ${onde} ${start}.` }); return }
     if (!date) { setError({ field: 'date', message: 'Escolha o dia.' }); return }
     if (date > frieren.today) { setError({ field: 'date', message: 'A data não pode ser no futuro.' }); return }
     setSaving(true)
@@ -46,7 +48,7 @@ export function SessionEditor({ session, onClose }: { session: Session; onClose:
     >
       <div className="ds-stack" onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); void submit() } }}>
         <div className="ds-cols2">
-          <Field label="Parou na página" error={error?.field === 'page' ? error.message : null} hint={`Começou na página ${start}.`}>
+          <Field label={`Parou ${onde}`} error={error?.field === 'page' ? error.message : null} hint={`Começou ${onde} ${start}.`}>
             {(a) => <NumberInput {...a} min={start} value={page ?? ''} onChange={(e) => { setPage(e.target.value === '' ? null : Math.round(Number(e.target.value))); setError(null) }} />}
           </Field>
           <Field label="Dia" error={error?.field === 'date' ? error.message : null}>

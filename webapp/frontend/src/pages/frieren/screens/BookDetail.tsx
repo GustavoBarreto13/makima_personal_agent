@@ -19,6 +19,7 @@ import { useFrieren } from '../context'
 import { frierenApi } from '../frierenApi'
 import { domainOf, normalizeBook, normalizeUrl } from '../lib/normalize'
 import { deleteSession } from '../lib/sessions'
+import { formatLabel, unitCount, unitName, unitSingular, withArticle } from '../lib/units'
 import { STATUS, STATUS_ORDER } from '../lib/status'
 import { useLoad } from '../lib/useLoad'
 import type { ApiHistoryLog, Book, BookStatus, Session } from '../types'
@@ -30,7 +31,7 @@ export function toSessions(logs: ApiHistoryLog[], book: Book): Session[] {
   return [...logs].reverse().map((l) => {
     const page = l.page_end ?? 0
     const kind: Session['kind'] = book.finished && l.date.slice(0, 10) === book.finished ? 'finished' : (l.page_start ?? 0) <= 1 ? 'started' : 'progress'
-    return { id: l.id, date: l.date.slice(0, 10), bookId: book.id, title: book.title, author: book.author, pages: l.pages_read ?? 0, page, note: l.session_notes ?? '', kind }
+    return { id: l.id, date: l.date.slice(0, 10), bookId: book.id, title: book.title, author: book.author, pages: l.pages_read ?? 0, page, unit: book.unit, note: l.session_notes ?? '', kind }
   })
 }
 
@@ -178,7 +179,9 @@ export function BookDetail({ id }: { id: string }) {
   const bookShelves = frieren.shelves.filter((s) => book.shelves.includes(s.id))
   // Ficha do livro: só as linhas que têm valor.
   const facts = [
-    book.pages ? { title: 'Páginas', value: book.page ? `${book.page} de ${book.pages}` : String(book.pages) } : null,
+    // Formato (sempre que não for o padrão) e o total na unidade do livro: páginas, capítulos ou volumes.
+    book.format !== 'fisico' ? { title: 'Formato', value: formatLabel(book.format) } : null,
+    book.pages ? { title: unitName(book.unit).charAt(0).toUpperCase() + unitName(book.unit).slice(1), value: book.page ? `${book.page} de ${book.pages}` : String(book.pages) } : null,
     book.started ? { title: 'Comecei em', value: fmtDate(book.started) } : null,
     book.finished ? { title: 'Terminei em', value: fmtDate(book.finished) } : null,
     book.abandoned ? { title: 'Abandonei em', value: fmtDate(book.abandoned) } : null,
@@ -231,7 +234,7 @@ export function BookDetail({ id }: { id: string }) {
               <>
                 {book.status === 'lendo' && book.progress !== null && (
                   <section className="ds-card fr-pad">
-                    <ProgressBar value={book.progress * 100} label={`${Math.round(book.progress * 100)}% lido · página ${book.page} de ${book.pages}`} />
+                    <ProgressBar value={book.progress * 100} label={`${Math.round(book.progress * 100)}% lido · ${unitSingular(book.unit)} ${book.page} de ${book.pages}`} />
                   </section>
                 )}
                 <section className="ds-card fr-pad"><p className="fr-synopsis">{detail.description || 'Sem sinopse. Use “Editar dados” para escrever uma.'}</p></section>
@@ -270,7 +273,7 @@ export function BookDetail({ id }: { id: string }) {
                       <span className="ds-lead"><Icon name={s.kind === 'finished' ? 'finished' : s.kind === 'started' ? 'book' : 'page'} size={18} /></span>
                       <span className="ds-t">
                         <b>{fmtDate(s.date)}</b>
-                        <span>{s.kind === 'finished' ? 'Terminou' : `+${s.pages} ${s.pages === 1 ? 'página' : 'páginas'}`} · até a página {s.page}</span>
+                        <span>{s.kind === 'finished' ? 'Terminou' : `+${unitCount(s.unit, s.pages)}`} · até {withArticle(s.unit)} {s.page}</span>
                         {s.note && <span className="fr-srev">{s.note}</span>}
                       </span>
                       <span className="fr-sact">

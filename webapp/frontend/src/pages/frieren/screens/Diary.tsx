@@ -12,6 +12,7 @@ import { useFrieren } from '../context'
 import { frierenApi } from '../frierenApi'
 import { makeDiarySchema } from '../lib/schemas'
 import { deleteSession } from '../lib/sessions'
+import { positionLabel, sumByUnit } from '../lib/units'
 import { useLoad } from '../lib/useLoad'
 import type { Session } from '../types'
 
@@ -21,21 +22,23 @@ const NOUN: [string, string] = ['sessão', 'sessões']
 /** "outubro de 2026" → mês grande + ano pequeno. Agrupar por livro cai no título simples. */
 function GroupHeader({ name, sessions }: { name: string; sessions: Session[] }) {
   const m = /^(.+) de (\d{4})$/.exec(name)
-  const pages = sessions.reduce((a, s) => a + s.pages, 0)
+  // Soma por unidade: páginas, capítulos e volumes não se misturam.
+  const total = sumByUnit(sessions)
   return (
     <div className="fr-dmh">
       <span className="fr-dmn">{m ? m[1].charAt(0).toUpperCase() + m[1].slice(1) : name}</span>
       {m && <span className="fr-dmy">{m[2]}</span>}
-      <span className="fr-dmc">{sessions.length} {sessions.length === 1 ? 'sessão' : 'sessões'} · {pages} págs.</span>
+      <span className="fr-dmc">{sessions.length} {sessions.length === 1 ? 'sessão' : 'sessões'} · {total}</span>
     </div>
   )
 }
 
-/** O que a sessão foi, em uma etiqueta: começou, terminou ou +N páginas (até a página X). */
+/** O que a sessão foi, em uma etiqueta: começou, terminou ou +N (até a página, o capítulo ou o volume X). */
 function What({ s }: { s: Session }) {
-  if (s.kind === 'finished') return <span className="fr-chip fr-chip-on"><Icon name="finished" size={12} />Terminou · p. {s.page}</span>
-  if (s.kind === 'started') return <span className="fr-chip"><Icon name="book" size={12} />Começou · até p. {s.page}</span>
-  return <span className="fr-chip"><Icon name="page" size={12} />+{s.pages} · p. {s.page}</span>
+  const pos = positionLabel(s.unit, s.page)
+  if (s.kind === 'finished') return <span className="fr-chip fr-chip-on"><Icon name="finished" size={12} />Terminou · {pos}</span>
+  if (s.kind === 'started') return <span className="fr-chip"><Icon name="book" size={12} />Começou · até {pos}</span>
+  return <span className="fr-chip"><Icon name="page" size={12} />+{s.pages} · {pos}</span>
 }
 
 export function Diary() {

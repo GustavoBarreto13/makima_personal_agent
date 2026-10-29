@@ -15,6 +15,7 @@ import { frierenApi } from '../frierenApi'
 import { domainOf, normalizeUrl } from '../lib/normalize'
 import { makeLibrarySchema, makeToReadSchema, makeWishlistSchema, withStatusOrder } from '../lib/schemas'
 import { STATUS, TO_READ } from '../lib/status'
+import { unitCount } from '../lib/units'
 import type { Book } from '../types'
 
 const NOUN: [string, string] = ['livro', 'livros']
@@ -83,7 +84,7 @@ function ToReadRow({ book }: { book: Book }) {
       <BookCover title={book.title} src={book.coverUrl} small onOpen={() => frieren.goto({ view: 'catalog', bookId: book.id })} />
       <button type="button" className="fr-link fr-row-main" onClick={() => frieren.goto({ view: 'catalog', bookId: book.id })}>
         <b className="fr-row-t">{book.title}</b>
-        <span className="fr-row-s">{[byline(book), book.genre, book.pages ? `${book.pages} págs.` : null].filter(Boolean).join(' · ')}</span>
+        <span className="fr-row-s">{[byline(book), book.genre, book.pages ? unitCount(book.unit, book.pages, true) : null].filter(Boolean).join(' · ')}</span>
       </button>
       {tone && <StatusChip status={tone} label={STATUS[book.status].label} />}
       <Button variant="primary" size="sm" icon="book" onClick={() => frieren.openLog({ bookId: book.id })}>

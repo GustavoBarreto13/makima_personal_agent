@@ -2,11 +2,12 @@
 // fora do ar), adiciona só pelo título digitado. O erro de livro repetido aparece no próprio formulário.
 
 import { useState } from 'react'
-import { Button, Chip, Field, Icon, Img, Input, Modal } from '../../../design'
+import { Button, Chip, Field, Icon, Img, Input, Modal, NumberInput } from '../../../design'
 import { toast } from '../../../design/headless/toast'
 import { useFrieren } from '../context'
 import { frierenApi } from '../frierenApi'
 import { STATUS } from '../lib/status'
+import { defaultUnitFor, FORMATS, formatLabel, totalLabel, UNITS, unitName, type BookFormat, type ProgressUnit } from '../lib/units'
 import type { BookStatus, GoogleBook } from '../types'
 
 // Os mesmos status iniciais do shell antigo, mais "Na estante" (tenho o livro, ainda não comecei).
@@ -20,6 +21,11 @@ export function AddBookForm({ initialTitle = '', onClose }: { initialTitle?: str
   const [searched, setSearched] = useState(false)
   const [selected, setSelected] = useState<GoogleBook | null>(null)
   const [status, setStatus] = useState<BookStatus>('quero_ler')
+  // Formato (físico, e-book, audiobook, mangá/HQ) e a unidade em que o progresso será contado.
+  const [format, setFormat] = useState<BookFormat>('fisico')
+  const [unit, setUnit] = useState<ProgressUnit>('pages')
+  // Total de capítulos/volumes digitado à mão: o Google só conhece páginas impressas.
+  const [manualTotal, setManualTotal] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -46,10 +52,14 @@ export function AddBookForm({ initialTitle = '', onClose }: { initialTitle?: str
       await frierenApi.add({
         title,
         status,
+        format,
+        progress_unit: unit,
+        // Fora de páginas, o total vem do campo manual (o pageCount do Google não serve para capítulos/volumes).
+        ...(unit !== 'pages' && manualTotal.trim() ? { total_pages: Math.round(Number(manualTotal)) } : {}),
         ...(selected ? {
           google_books_id: selected.google_books_id || undefined,
           author: selected.author || undefined,
-          total_pages: selected.total_pages ?? undefined,
+          ...(unit === 'pages' ? { total_pages: selected.total_pages ?? undefined } : {}),
           isbn: selected.isbn || undefined,
           cover_url: selected.cover_url || undefined,
           description: selected.description || undefined,
@@ -131,6 +141,35 @@ export function AddBookForm({ initialTitle = '', onClose }: { initialTitle?: str
             </div>
           )}
         </Field>
+
+        <Field label="Formato" hint="Audiobook e mangá costumam ser acompanhados por capítulos ou volumes.">
+          {() => (
+            <div className="ds-inline fr-wrap" role="radiogroup" aria-label="Formato">
+              {FORMATS.map((x) => (
+                <Chip key={x} on={format === x} role="radio" aria-checked={format === x}
+                  onClick={() => { setFormat(x); setUnit(defaultUnitFor(x)); setManualTotal('') }}>{formatLabel(x)}</Chip>
+              ))}
+            </div>
+          )}
+        </Field>
+
+        <Field label="Contar em">
+          {() => (
+            <div className="ds-inline fr-wrap" role="radiogroup" aria-label="Unidade do progresso">
+              {UNITS.map((u) => (
+                <Chip key={u} on={unit === u} role="radio" aria-checked={unit === u} onClick={() => { setUnit(u); setManualTotal('') }}>
+                  {unitName(u).charAt(0).toUpperCase() + unitName(u).slice(1)}
+                </Chip>
+              ))}
+            </div>
+          )}
+        </Field>
+
+        {unit !== 'pages' && (
+          <Field label={`${totalLabel(unit)} (opcional)`} hint="Com o total, o app mostra a porcentagem lida. Dá para preencher depois.">
+            {(a) => <NumberInput {...a} min={1} value={manualTotal} onChange={(e) => setManualTotal(e.target.value)} />}
+          </Field>
+        )}
 
         {error && <p className="ds-errmsg" role="alert">{error}</p>}
       </div>

@@ -85,3 +85,25 @@ describe('candidates', () => {
     expect(candidates(BOOKS).map((b) => b.id)).toEqual(['b1', 'b2', 'b3'])
   })
 })
+
+describe('capítulos e volumes (mangá, audiobook)', () => {
+  const MANGA = book('m1', 'Berserk', { progress_unit: 'chapters', format: 'quadrinho', total_pages: 120, current_page: 40 })
+  const LIVROS = [...BOOKS, MANGA]
+
+  it('"cap 45" vira a posição quando o livro é contado em capítulos', () => {
+    const d = draftFromCapture(logParser('Berserk cap 45'), { today: TODAY, books: LIVROS })
+    expect(d.bookId).toBe('m1')
+    expect(d.page).toBe(45)
+  })
+  it('unidade diferente da do livro não vira posição ("cap 5" num livro em páginas)', () => {
+    const d = draftFromCapture(logParser('Duna cap 5'), { today: TODAY, books: LIVROS })
+    expect(d.bookId).toBe('b1')
+    expect(d.page).toBeNull()
+  })
+  it('as mensagens falam a unidade do livro', () => {
+    const base = { ...draftFromCapture(logParser('Berserk cap 40'), { today: TODAY, books: LIVROS }) }
+    expect(validateDraft({ ...base, page: 40 }, MANGA, TODAY)?.message).toMatch(/já estava no capítulo 40/)
+    expect(validateDraft({ ...base, page: 500 }, MANGA, TODAY)?.message).toMatch(/120 capítulos/)
+    expect(validateDraft({ ...base, page: 41 }, MANGA, TODAY)).toBeNull()
+  })
+})

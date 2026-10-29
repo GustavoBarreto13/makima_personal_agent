@@ -13,6 +13,9 @@ interface Ok { status: 'ok'; message?: string }
 
 /** Campos editáveis de um livro (PATCH /metadata). `clear` apaga (grava vazio) os campos listados. */
 export type MetadataPatch = Partial<{
+  /** Formato (fisico | ebook | audiobook | quadrinho) e unidade (pages | chapters | volumes). */
+  format: string
+  progress_unit: string
   title: string
   author: string
   cover_url: string
@@ -43,6 +46,10 @@ export interface AddBookBody {
   genre?: string
   language?: string
   published_year?: number
+  /** fisico | ebook | audiobook | quadrinho (padrão: físico). */
+  format?: string
+  /** pages | chapters | volumes (padrão: o sugerido pelo formato). `total_pages` é o total nessa unidade. */
+  progress_unit?: string
 }
 
 export const frierenApi = {

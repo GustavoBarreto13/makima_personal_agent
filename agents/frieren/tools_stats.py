@@ -27,6 +27,7 @@ from datetime import date, timedelta
 
 from agents.db import run_select
 from agents.frieren.tools import _today
+from agents.frieren.units import format_label
 
 # Nomes dos meses para os rótulos de período ("Março de 2026").
 MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto",
@@ -164,12 +165,12 @@ def build_stats_payload(
         year: Ano do período.
         month: Mês do período (None = ano).
         today: Hoje no fuso local.
-        totals / prev_totals: {started, finished, abandoned, pages, sessions, days_reading,
+        totals / prev_totals: {started, finished, abandoned, pages, chapters, volumes, sessions, days_reading,
             days_per_book (float|None), longest_pages, avg_rating (float|None)} do período e do
             mesmo trecho do ano anterior.
         daily: [{date (ISO), value}] de páginas lidas no ANO inteiro (só dias com leitura).
         ratings: Notas dos livros terminados no período (uma por livro).
-        rankings: {genres, authors, languages} → [{label, count}] já ordenados (livros distintos).
+        rankings: {genres, authors, languages, formats} → [{label, count}] já ordenados (livros distintos).
         longest: {title, pages} do livro terminado mais longo, ou None.
         fastest: {title, days} da leitura mais rápida terminada no período, ou None.
         moments: [{id, title, author, cover_url, rating}] de livros terminados no período.
@@ -212,6 +213,17 @@ def build_stats_payload(
         _kpi("avg_rating", "Nota média", round(float(totals["avg_rating"] or 0), 2),
              round(float(prev_totals["avg_rating"] or 0), 2), unit="/5", decimals=1, absoluteDelta=True),
     ]
+
+    # Capítulos e volumes (mangá/audiobook): só aparecem se o período atual OU o anterior teve leitura
+    # nessa unidade — quem só lê em páginas não ganha cartões zerados.
+    extra_kpis = []
+    for chave, rotulo in (("chapters", "Capítulos"), ("volumes", "Volumes")):
+        atual, anterior = totals.get(chave, 0), prev_totals.get(chave, 0)
+        if atual > 0 or anterior > 0:
+            extra_kpis.append(_kpi(chave, rotulo, atual, anterior, decimals=0))
+    # Entram logo depois de "Páginas por dia" para ficar junto das outras medidas de volume lido.
+    pos = next((i for i, k in enumerate(kpis) if k["key"] == "pages_per_day"), len(kpis) - 1) + 1
+    kpis[pos:pos] = extra_kpis
 
     # Páginas por mês, a partir do diário do ano inteiro.
     monthly_counts = [0] * 12
@@ -256,7 +268,7 @@ def build_stats_payload(
     if genre_count > 1:
         records.append({"label": "Gêneros diferentes", "value": str(genre_count)})
 
-    titles = {"genres": "Gêneros", "authors": "Autores", "languages": "Idiomas"}
+    titles = {"genres": "Gêneros", "authors": "Autores", "languages": "Idiomas", "formats": "Formatos"}
     ranking_out = {
         key: {"title": titles[key], "items": [{"label": i["label"], "count": int(i["count"])} for i in items]}
         for key, items in rankings.items() if items
@@ -292,12 +304,14 @@ _FROM_LOGS = """
     WHERE b.deleted = FALSE AND rl.date BETWEEN %(start)s AND %(end)s
 """
 
-# Quadrinhos/graphic novels: leitura por página não faz sentido (cada edição tem paginação e ritmo
-# muito diferentes). Eles NÃO somam páginas nas estatísticas, mas o dia de leitura continua contando.
-# TODO: contar por capítulos e volumes (próxima etapa).
-_COMIC = "COALESCE(b.genre, '') ILIKE '%%Comics & Graphic Novels%%'"
-# Páginas de uma sessão para somar: zero quando o livro é quadrinho.
-_PAGES = f"CASE WHEN {_COMIC} THEN 0 ELSE COALESCE(rl.pages_read, 0) END"
+# Cada livro é contado numa unidade (`books.progress_unit`): páginas, capítulos ou volumes. Os números
+# das sessões (`reading_logs.pages_read`) estão NESSA unidade, então só dá para somá-los entre livros
+# da mesma unidade. Livros fora de "pages" não entram em páginas, mas o dia de leitura continua contando.
+_NON_PAGE = "b.progress_unit <> 'pages'"
+# Avanço de uma sessão na unidade pedida (0 quando o livro é contado em outra unidade).
+_PAGES = "CASE WHEN b.progress_unit = 'pages' THEN COALESCE(rl.pages_read, 0) ELSE 0 END"
+_CHAPTERS = "CASE WHEN b.progress_unit = 'chapters' THEN COALESCE(rl.pages_read, 0) ELSE 0 END"
+_VOLUMES = "CASE WHEN b.progress_unit = 'volumes' THEN COALESCE(rl.pages_read, 0) ELSE 0 END"
 
 # "Terminado no período": tem data de término dentro dele e não está abandonado.
 _FINISHED = """
@@ -330,8 +344,10 @@ def _period_totals(start: date, end: date) -> dict:
     logs = run_select(
         f"""
         SELECT COALESCE(SUM({_PAGES}), 0) AS pages,
+               COALESCE(SUM({_CHAPTERS}), 0) AS chapters,
+               COALESCE(SUM({_VOLUMES}), 0) AS volumes,
                COUNT(*) AS sessions,
-               COUNT(DISTINCT rl.date) FILTER (WHERE COALESCE(rl.pages_read, 0) > 0 OR {_COMIC}) AS days_reading
+               COUNT(DISTINCT rl.date) FILTER (WHERE COALESCE(rl.pages_read, 0) > 0 OR {_NON_PAGE}) AS days_reading
         {_FROM_LOGS}
         """,
         params,
@@ -349,7 +365,7 @@ def _period_totals(start: date, end: date) -> dict:
             (SELECT AVG(b.date_finished - b.date_started + 1) FROM books b
               WHERE {_FINISHED} AND b.date_started IS NOT NULL
                 AND b.date_started <= b.date_finished) AS days_per_book,
-            (SELECT COALESCE(MAX(b.total_pages), 0) FROM books b WHERE {_FINISHED} AND NOT ({_COMIC})) AS longest_pages,
+            (SELECT COALESCE(MAX(b.total_pages), 0) FROM books b WHERE {_FINISHED} AND b.progress_unit = 'pages') AS longest_pages,
             (SELECT AVG(b.rating) FROM books b WHERE {_FINISHED} AND b.rating IS NOT NULL) AS avg_rating
         """,
         params,
@@ -357,7 +373,8 @@ def _period_totals(start: date, end: date) -> dict:
     return {
         "started": int(books["started"]), "finished": int(books["finished"]),
         "abandoned": int(books["abandoned"]),
-        "pages": int(logs["pages"]), "sessions": int(logs["sessions"]),
+        "pages": int(logs["pages"]), "chapters": int(logs["chapters"]), "volumes": int(logs["volumes"]),
+        "sessions": int(logs["sessions"]),
         "days_reading": int(logs["days_reading"]),
         "days_per_book": float(books["days_per_book"]) if books["days_per_book"] is not None else None,
         "longest_pages": int(books["longest_pages"]),
@@ -410,10 +427,24 @@ def _rankings(start: date, end: date) -> dict[str, list[dict]]:
         merged[label] = merged.get(label, 0) + int(r["count"])
     lang_items = sorted(({"label": k, "count": v} for k, v in merged.items()),
                         key=lambda i: (-i["count"], i["label"]))[:8]
+    # Formatos (físico/e-book/audiobook/mangá): livros distintos lidos ou terminados no período.
+    formats = run_select(
+        f"""
+        {_TOUCHED}
+        SELECT b.format AS code, COUNT(*) AS count
+          FROM books b JOIN touched t ON t.id = b.id
+         GROUP BY b.format
+         ORDER BY count DESC, b.format
+        """,
+        {"start": start, "end": end},
+    )
+    format_items = [{"label": format_label(r["code"]), "count": int(r["count"])} for r in formats]
     return {
         "genres": _rank_split("genre", start, end),
         "authors": _rank_split("author", start, end),
         "languages": lang_items,
+        # Com um formato só, o ranking não diz nada: aparece quando há comparação.
+        "formats": format_items if len(format_items) > 1 else [],
     }
 
 
@@ -429,7 +460,7 @@ def _daily_pages(start: date, end: date) -> list[dict]:
             f"""
             SELECT rl.date::text AS day, SUM({_PAGES}) AS pages
             {_FROM_LOGS}
-            GROUP BY rl.date HAVING SUM(rl.pages_read) > 0 OR BOOL_OR({_COMIC}) ORDER BY rl.date
+            GROUP BY rl.date HAVING SUM(rl.pages_read) > 0 OR BOOL_OR({_NON_PAGE}) ORDER BY rl.date
             """,
             {"start": start, "end": end},
         )
@@ -463,7 +494,7 @@ def get_stats_payload(year: int = 0, month: int | None = None) -> dict:
         longest = run_select(
             f"""
             SELECT b.title, b.total_pages AS pages FROM books b
-             WHERE {_FINISHED} AND b.total_pages IS NOT NULL AND NOT ({_COMIC})
+             WHERE {_FINISHED} AND b.total_pages IS NOT NULL AND b.progress_unit = 'pages'
              ORDER BY b.total_pages DESC, b.title LIMIT 1
             """,
             params,
@@ -585,7 +616,7 @@ def get_books_home() -> dict:
         # Lendo agora, com a página atual (maior page_end) e o último dia lido.
         reading = run_select(
             """
-            SELECT b.id, b.title, b.author, b.cover_url, b.total_pages, b.date_started,
+            SELECT b.id, b.title, b.author, b.cover_url, b.total_pages, b.date_started, b.progress_unit,
                    COALESCE(MAX(rl.page_end), 0) AS current_page, MAX(rl.date) AS last_read
               FROM books b LEFT JOIN reading_logs rl ON rl.book_id = b.id
              WHERE b.deleted = FALSE AND b.status = 'lendo'
@@ -621,7 +652,7 @@ def get_books_home() -> dict:
             SELECT rl.date::text AS day, SUM({_PAGES}) AS pages
               FROM reading_logs rl JOIN books b ON b.id = rl.book_id
              WHERE b.deleted = FALSE
-             GROUP BY rl.date HAVING SUM(rl.pages_read) > 0 OR BOOL_OR({_COMIC})
+             GROUP BY rl.date HAVING SUM(rl.pages_read) > 0 OR BOOL_OR({_NON_PAGE})
             """
         )
         rhythm = build_home_rhythm([{"date": r["day"], "value": int(r["pages"])} for r in all_days], today)
@@ -637,7 +668,7 @@ def get_books_home() -> dict:
 
         last = run_select(
             """
-            SELECT rl.book_id, b.title, rl.date, rl.page_end, rl.pages_read
+            SELECT rl.book_id, b.title, rl.date, rl.page_end, rl.pages_read, b.progress_unit
               FROM reading_logs rl JOIN books b ON b.id = rl.book_id
              WHERE b.deleted = FALSE
              ORDER BY rl.date DESC, rl.created_at DESC LIMIT 1

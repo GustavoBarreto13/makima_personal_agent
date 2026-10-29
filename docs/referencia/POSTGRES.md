@@ -332,7 +332,9 @@ Catálogo pessoal de livros com estado de leitura.
 | `google_books_id` | TEXT | SIM | — | ID na Google Books API (para capa e metadados). |
 | `title` | TEXT | NÃO | — | Título. |
 | `author` | TEXT | SIM | — | Autor(es), separados por vírgula. |
-| `total_pages` | INTEGER | SIM | — | Total de páginas da edição. |
+| `total_pages` | INTEGER | SIM | — | **Total NA UNIDADE do livro** (`progress_unit`): páginas, capítulos ou volumes. O nome é histórico — não foi renomeado para não quebrar hub, calendário e estatísticas. |
+| `format` | TEXT | NÃO | `'fisico'` | `fisico` \| `ebook` \| `audiobook` \| `quadrinho` (mangá/HQ). CHECK `books_format_check`. Sugere a unidade ao cadastrar. |
+| `progress_unit` | TEXT | NÃO | `'pages'` | Unidade em que o progresso é contado: `pages` \| `chapters` \| `volumes`. CHECK `books_progress_unit_check`. Só pode mudar enquanto o livro não tem sessões em `reading_logs`. |
 | `isbn` | TEXT | SIM | — | ISBN-13 (preferido) ou ISBN-10. |
 | `cover_url` | TEXT | SIM | — | URL da capa. |
 | `description` | TEXT | SIM | — | Sinopse. |
@@ -364,9 +366,9 @@ naquele dia".
 | `book_id` | TEXT | SIM | — | **FK declarada** → `books(id)`. |
 | `book_title` | TEXT | SIM | — | Título denormalizado (evita JOIN em consultas históricas). |
 | `date` | DATE | NÃO | — | Data da sessão. |
-| `page_start` | INTEGER | SIM | — | Página onde estava ANTES da sessão. |
-| `page_end` | INTEGER | SIM | — | Página atual APÓS a sessão. |
-| `pages_read` | INTEGER | SIM | — | Delta (`page_end - page_start`). |
+| `page_start` | INTEGER | SIM | — | Posição ANTES da sessão, na unidade do livro (`books.progress_unit`: página, capítulo ou volume). |
+| `page_end` | INTEGER | SIM | — | Posição APÓS a sessão, na mesma unidade. |
+| `pages_read` | INTEGER | SIM | — | Avanço (`page_end - page_start`), na mesma unidade. Só se soma entre livros da mesma unidade. |
 | `session_notes` | TEXT | SIM | — | Anotações da sessão. |
 | `created_at` | TIMESTAMPTZ | SIM | `NOW()` | Quando o log foi inserido. |
 

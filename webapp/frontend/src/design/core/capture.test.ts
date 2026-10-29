@@ -249,3 +249,23 @@ describe('registro financeiro (Nami, spec 071)', () => {
     expect(removeTokens(r, chip.tokenIdx)).toBe('1200 tv @nubank')
   })
 })
+
+describe('unidades de livro (regra opt-in bookUnits)', () => {
+  const livros = createCaptureParser({ rules: ['progress', 'bookUnits', 'rating', 'date'], dateDirection: 'past', today: '2026-10-02' })
+  const midia = createCaptureParser({ rules: ['progress', 'rating', 'date'], dateDirection: 'past', today: '2026-10-02' })
+
+  it('capítulo e volume, colados ou separados, com intervalo', () => {
+    expect(livros('Berserk cap 45').fields.progress).toEqual({ unit: 'chapter', from: null, to: 45 })
+    expect(livros('Berserk cap.45').fields.progress).toEqual({ unit: 'chapter', from: null, to: 45 })
+    expect(livros('Berserk vol. 3').fields.progress).toEqual({ unit: 'volume', from: null, to: 3 })
+    expect(livros('Berserk cap 10-12').fields.progress).toEqual({ unit: 'chapter', from: 10, to: 12 })
+    expect(livros('Berserk cap 45').fields.title).toBe('Berserk')
+  })
+  it('páginas continuam funcionando junto', () => {
+    expect(livros('Duna p. 240').fields.progress).toEqual({ unit: 'page', from: null, to: 240 })
+  })
+  it('sem a regra, "vol" e "cap" ficam no título (Marin, Mai, Akane não mudam)', () => {
+    expect(midia('Naruto vol 3').fields.progress).toBeNull()
+    expect(midia('Naruto vol 3').fields.title).toBe('Naruto vol 3')
+  })
+})

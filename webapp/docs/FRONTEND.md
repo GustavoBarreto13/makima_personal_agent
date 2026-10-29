@@ -217,6 +217,13 @@ item aberto vivem no **hash** (`lib/routes.ts`): `#inicio`, `#biblioteca`, `#que
   agora e mapa de calor do ano. Dados: `GET /api/books/home`.
 - **Registrar leitura**: linha rápida salva direto só com livro e progresso claros; senão `LogForm` (carrossel de
   capas, +10/+25/+50/terminei, data, nota do dia, nota com meia estrela). `lib/submit.ts` devolve o "Desfazer".
+- **Formato e unidade** (mangá, audiobook): cada livro tem `format` (Físico/E-book/Audiobook/Mangá-HQ) e `unit`
+  (páginas, capítulos ou volumes). `lib/units.ts` (espelho de `agents/frieren/units.py`) dá o vocabulário; `AddBookForm`
+  e `BookForm` escolhem o formato (que sugere a unidade) e a unidade (travada no editar se o livro já tem sessões).
+  `LogForm`, `SessionEditor`, Diário, detalhe e Início falam a unidade do livro (+1/+3/+5 em capítulos). A linha rápida
+  entende `cap 12`/`vol 3` pela regra opt-in `bookUnits` da captura (`design/core/capture.ts`) — só vale se a
+  unidade digitada é a do livro. A Biblioteca filtra e agrupa por Formato. Estatísticas separam Páginas, Capítulos e
+  Volumes (KPIs só aparecem com leitura na unidade) e ganham o ranking "Formatos".
 - **Coleções** (`lib/schemas.ts`, `useCollection`): Biblioteca (7 status, agrupados na ordem natural por
   `withStatusOrder`), Quero ler, Wishlist (link da loja inline), Diário (editar/excluir sessão com Desfazer), Resenhas.
 - **Detalhe** (`screens/BookDetail.tsx`, `DetailPage`): situação, curtir, vitrine, estantes, resenha inline, ficha,

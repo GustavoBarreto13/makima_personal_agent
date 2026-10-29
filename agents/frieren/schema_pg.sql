@@ -31,6 +31,24 @@ CREATE TABLE IF NOT EXISTS books (
 -- ADD COLUMN IF NOT EXISTS deixa o arquivo idempotente em bancos que já tinham a tabela.
 ALTER TABLE books ADD COLUMN IF NOT EXISTS liked          BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE books ADD COLUMN IF NOT EXISTS date_abandoned DATE;   -- preenchida ao ir para 'abandonado'
+-- Formato do livro e unidade em que o progresso é contado (mangá/audiobook não usam páginas).
+-- ATENÇÃO: `total_pages` guarda o total NA UNIDADE do livro (páginas, capítulos ou volumes) e, em
+-- `reading_logs`, `page_end` é a posição e `pages_read` o avanço nessa mesma unidade. Os nomes
+-- antigos foram mantidos de propósito para não quebrar hub, calendário e estatísticas.
+ALTER TABLE books ADD COLUMN IF NOT EXISTS format        TEXT NOT NULL DEFAULT 'fisico';
+ALTER TABLE books ADD COLUMN IF NOT EXISTS progress_unit TEXT NOT NULL DEFAULT 'pages';
+DO $$
+BEGIN
+    -- CHECK idempotente: só cria se ainda não existir (ADD CONSTRAINT não tem IF NOT EXISTS).
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'books_format_check') THEN
+        ALTER TABLE books ADD CONSTRAINT books_format_check
+            CHECK (format IN ('fisico', 'ebook', 'audiobook', 'quadrinho'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'books_progress_unit_check') THEN
+        ALTER TABLE books ADD CONSTRAINT books_progress_unit_check
+            CHECK (progress_unit IN ('pages', 'chapters', 'volumes'));
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_books_status     ON books(status);
 CREATE INDEX IF NOT EXISTS idx_books_deleted    ON books(deleted);
 CREATE INDEX IF NOT EXISTS idx_books_created_at ON books(created_at);

@@ -218,11 +218,11 @@ Todos os endpoints exigem autenticação. Chamam as tools da Frieren (`agents/fr
 
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
-| `GET` | `/api/books` | Lista todos os livros com a página atual de leitura (inclui `created_at`, usado na ordenação "Adicionado recentemente"). | — |
-| `POST` | `/api/books` | Adiciona livro à biblioteca (enriquece metadados pelo Google Books). | Body: `AddBookBody` |
+| `GET` | `/api/books` | Lista todos os livros com a posição atual de leitura (`current_page`, na unidade do livro) e `format`/`progress_unit` (inclui `created_at`, usado na ordenação "Adicionado recentemente"). | — |
+| `POST` | `/api/books` | Adiciona livro à biblioteca (enriquece metadados pelo Google Books). `format` (`fisico`/`ebook`/`audiobook`/`quadrinho`) e `progress_unit` (`pages`/`chapters`/`volumes`) são opcionais: sem unidade vale a sugerida pelo formato; fora de `pages`, `total_pages` é o total nessa unidade e o `pageCount` do Google é descartado. | Body: `AddBookBody` |
 | `GET` | `/api/books/stats` | Estatísticas de leitura do ano. | `?year=YYYY` |
-| `GET` | `/api/books/heatmap` | Páginas lidas por dia (para o heatmap). | `?year=YYYY` |
-| `GET` | `/api/books/activity` | Feed global de atividade de leitura. | `?limit=N` |
+| `GET` | `/api/books/heatmap` | Páginas lidas por dia (para o heatmap) — só livros contados em páginas. | `?year=YYYY` |
+| `GET` | `/api/books/activity` | Feed global de atividade de leitura (cada sessão traz `unit`: a unidade do livro). | `?limit=N` |
 | `GET` | `/api/books/search-google` | Busca livros na API do Google Books. | `?q=termo` (obrigatório) |
 
 ### Detalhe e ações por livro
@@ -234,8 +234,8 @@ Todos os endpoints exigem autenticação. Chamam as tools da Frieren (`agents/fr
 | `POST` | `/api/books/{book_id}/log` | Registra sessão de leitura (devolve 201). | Body: `LogReadingBody` |
 | `POST` | `/api/books/{book_id}/finish` | Marca livro como lido. | Body: `FinishBookBody` |
 | `PATCH` | `/api/books/{book_id}/status` | Atualiza status do livro. | Body: `UpdateStatusBody` |
-| `PATCH` | `/api/books/{book_id}/metadata` | Atualiza metadados (título, autor, capa, nota, datas, resenha, preço…). | Body: `UpdateBookMetadataBody` |
-| `PATCH` | `/api/books/{book_id}/pages` | Atualiza total de páginas. | Body: `UpdatePagesBody` |
+| `PATCH` | `/api/books/{book_id}/metadata` | Atualiza metadados (título, autor, capa, nota, datas, resenha, preço, `format`, `progress_unit`…). Trocar `progress_unit` de um livro que já tem sessões devolve **400** ("já tem sessões"). | Body: `UpdateBookMetadataBody` |
+| `PATCH` | `/api/books/{book_id}/pages` | Atualiza o total do livro, na unidade dele (páginas, capítulos ou volumes). | Body: `UpdatePagesBody` |
 | `DELETE` | `/api/books/{book_id}` | Soft-delete do livro. | — |
 | `DELETE` | `/api/books/{book_id}/logs/{log_id}` | Remove uma sessão de leitura. | — |
 

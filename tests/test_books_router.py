@@ -118,3 +118,40 @@ def test_restaurar_sessao_com_os_mesmos_valores(mock_restore):
     mock_restore.assert_called_once_with(
         book_id="b1", log_id="log-1", log_date="2026-10-01", page_start=100, page_end=120,
         pages_read=20, session_notes="bom capítulo")
+
+
+# ─── formato e unidade de progresso (capítulos, volumes) ──────────────────────
+
+@patch(f"{R}.add_book", return_value="<b>Berserk</b> adicionado.")
+def test_adicionar_livro_repassa_formato_e_unidade(mock_add):
+    r = client.post("/api/books", json={"title": "Berserk", "format": "quadrinho", "progress_unit": "volumes", "total_pages": 42})
+    assert r.status_code == 201
+    kwargs = mock_add.call_args.kwargs
+    assert kwargs["format"] == "quadrinho" and kwargs["progress_unit"] == "volumes" and kwargs["total_pages"] == 42
+
+
+@patch(f"{R}.add_book", return_value="<b>Duna</b> adicionado.")
+def test_adicionar_livro_sem_formato_deixa_o_padrao_para_a_tool(mock_add):
+    client.post("/api/books", json={"title": "Duna"})
+    assert mock_add.call_args.kwargs["format"] is None and mock_add.call_args.kwargs["progress_unit"] is None
+
+
+@patch(f"{R}.update_book_metadata_by_id", return_value="✅ Livro atualizado com sucesso.")
+def test_editar_formato_e_unidade_chega_na_tool(mock_upd):
+    r = client.patch("/api/books/b1/metadata", json={"format": "audiobook", "progress_unit": "chapters"})
+    assert r.status_code == 200
+    mock_upd.assert_called_once_with("b1", format="audiobook", progress_unit="chapters")
+
+
+@patch(f"{R}.update_book_metadata_by_id",
+       return_value="Este livro já tem sessões de leitura registradas, então a unidade não pode mudar.")
+def test_trocar_unidade_com_sessoes_vira_400_com_o_motivo(_):
+    r = client.patch("/api/books/b1/metadata", json={"progress_unit": "chapters"})
+    assert r.status_code == 400
+    assert "já tem sessões" in r.json()["detail"]
+
+
+@patch(f"{R}.update_book_metadata_by_id", return_value="Unidade inválida: <b>paginas</b>. Use: pages, chapters, volumes.")
+def test_unidade_invalida_vira_400(_):
+    assert client.patch("/api/books/b1/metadata", json={"progress_unit": "paginas"}).status_code == 400
+

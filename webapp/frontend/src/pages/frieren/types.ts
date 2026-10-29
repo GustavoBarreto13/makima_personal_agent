@@ -3,6 +3,7 @@
 // (lib/normalize.ts) que as telas usam: sem `null` em lista, datas como texto YYYY-MM-DD, nomes em português.
 
 import type { StatsPayload } from '../../design/core/stats'
+import type { BookFormat, ProgressUnit } from './lib/units'
 
 /** Os 7 status que o backend aceita (agents/frieren/tools.py → VALID_STATUSES). */
 export type BookStatus = 'lendo' | 'pausado' | 'quero_ler' | 'estante' | 'wishlist' | 'lido' | 'abandonado'
@@ -12,7 +13,11 @@ export interface ApiBook {
   id: string
   title: string
   author: string | null
+  /** Total NA UNIDADE do livro (páginas, capítulos ou volumes) — o nome é histórico. */
   total_pages: number | null
+  /** Formato e unidade (podem faltar em respostas antigas: assume físico/páginas). */
+  format?: string | null
+  progress_unit?: string | null
   status: string
   cover_url: string | null
   date_started: string | null
@@ -43,14 +48,18 @@ export interface Book {
   /** Autor(es) como o Google Books devolve ("A, B"); vazio quando não há. */
   author: string
   year: number | null
+  /** Total na unidade do livro (páginas, capítulos ou volumes). */
   pages: number | null
+  format: BookFormat
+  /** Unidade em que `pages`/`page` e as sessões são contados. */
+  unit: ProgressUnit
   /** Primeiro gênero (para facetas e agrupamento). */
   genre: string
   /** Todos os gêneros (o banco guarda "Fantasia, Aventura"). */
   genres: string[]
   language: string
   status: BookStatus
-  /** Página atual (0 = nunca registrou). */
+  /** Posição atual na unidade do livro (0 = nunca registrou). */
   page: number
   /** 0 a 1, só quando há total de páginas e alguma leitura. */
   progress: number | null
@@ -83,10 +92,12 @@ export interface ApiSession {
   book_id: string
   title: string
   author: string | null
-  /** Páginas lidas na sessão. */
+  /** Avanço da sessão, na unidade do livro. */
   pages: number | null
-  /** Página onde parou (page_end). */
+  /** Posição onde parou (page_end), na unidade do livro. */
   page: number | null
+  /** Unidade do livro desta sessão. */
+  unit?: string | null
   note: string | null
   rating: number | null
   /** Inferido pelo servidor: primeira sessão, a do dia do término ou progresso comum. */
@@ -99,8 +110,11 @@ export interface Session {
   bookId: string
   title: string
   author: string
+  /** Avanço da sessão, na unidade do livro. */
   pages: number
+  /** Posição onde parou, na unidade do livro. */
   page: number
+  unit: ProgressUnit
   note: string
   kind: 'started' | 'finished' | 'progress'
 }
@@ -180,6 +194,8 @@ export interface HomeData {
     date_started: string | null
     current_page: number
     last_read: string | null
+    /** Unidade do livro (pages | chapters | volumes) em que `current_page`/`total_pages` estão. */
+    progress_unit?: string | null
   }[]
   recent_finished: {
     id: string
@@ -201,7 +217,7 @@ export interface HomeData {
   spark: { date: string; value: number }[]
   streak: { best: number; current: number }
   finished_year: number
-  last_session: { book_id: string; title: string; date: string; page_end: number | null; pages_read: number | null } | null
+  last_session: { book_id: string; title: string; date: string; page_end: number | null; pages_read: number | null; progress_unit?: string | null } | null
   /** Quantos livros há em cada status (só os status com algum livro). */
   counts: Partial<Record<BookStatus, number>>
 }

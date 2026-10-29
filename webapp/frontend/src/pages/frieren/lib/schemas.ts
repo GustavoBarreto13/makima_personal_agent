@@ -10,6 +10,7 @@ import { MONTHS_LONG } from '../../../design/core/format'
 import type { UseCollection } from '../../../design/headless/useCollection'
 import type { Book, BookStatus, Session } from '../types'
 import { STATUS, STATUS_ORDER, TO_READ } from './status'
+import { FORMATS, formatLabel } from './units'
 
 const uniqueSorted = (values: string[]): string[] => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
 const options = (values: string[]) => uniqueSorted(values).map((value) => ({ value }))
@@ -42,7 +43,8 @@ const BOOK_SORTS: CollectionSchema<Book>['sorts'] = [
   { id: 'title', label: 'Título', value: (b) => b.title.toLowerCase() },
   { id: 'author', label: 'Autor', value: (b) => b.author.toLowerCase() },
   { id: 'progress', label: 'Progresso', value: (b) => b.progress ?? (b.status === 'lido' ? 1 : 0) },
-  { id: 'pages', label: 'Nº de páginas', value: (b) => b.pages ?? 0 },
+  // Só livros contados em páginas: 12 volumes não são "maiores" que 400 páginas.
+  { id: 'pages', label: 'Nº de páginas', value: (b) => (b.unit === 'pages' ? b.pages ?? 0 : 0) },
 ]
 
 export function makeLibrarySchema(books: Book[]): CollectionSchema<Book> {
@@ -53,6 +55,8 @@ export function makeLibrarySchema(books: Book[]): CollectionSchema<Book> {
       statusFacet(STATUS_ORDER),
       genreFacet(books),
       { kind: 'enum', id: 'language', label: 'Idioma', get: (b) => b.language, options: options(books.map((b) => b.language)) },
+      // Formato (físico, e-book, audiobook, mangá/HQ): só as opções que existem na biblioteca.
+      { kind: 'enum', id: 'format', label: 'Formato', get: (b) => formatLabel(b.format), options: FORMATS.filter((f) => books.some((b) => b.format === f)).map((f) => ({ value: formatLabel(f) })) },
       { kind: 'range', id: 'rating', label: 'Nota mínima', get: (b) => b.rating, min: 0.5, max: 5, step: 0.5, display: 'stars' },
       { kind: 'flag', id: 'liked', label: 'Só os que curti', get: (b) => b.liked },
       { kind: 'dateRange', id: 'finished', label: 'Terminado em', get: (b) => b.finished ?? '', buckets: ['last30', 'last90', 'thisYear', 'all'], defaultBucket: 'all' },
@@ -61,6 +65,7 @@ export function makeLibrarySchema(books: Book[]): CollectionSchema<Book> {
     groups: [
       { id: 'status', label: 'Situação', key: (b) => STATUS[b.status].label },
       { id: 'genre', label: 'Gênero', key: (b) => b.genre || 'Sem gênero' },
+      { id: 'format', label: 'Formato', key: (b) => formatLabel(b.format) },
       { id: 'finishedYear', label: 'Ano em que li', key: (b) => (b.finished ? b.finished.slice(0, 4) : 'Ainda não terminei') },
     ],
     sorts: BOOK_SORTS,

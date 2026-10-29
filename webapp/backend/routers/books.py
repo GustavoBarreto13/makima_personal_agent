@@ -97,6 +97,11 @@ _FRIEREN_ERRORS = [
     "erro ao atualizar",         # Falha no BigQuery (update_book_metadata_by_id)
     "nenhum campo para atualizar", # Payload vazio (update_book_metadata_by_id)
     "não pode ser apagado",      # Campo obrigatório em `clear` (update_book_metadata_by_id)
+    "não pode ser negativa",     # Posição de leitura negativa (log_reading, unidades genéricas)
+    "total inválido",            # Total zerado/negativo (update_book_pages)
+    "formato inválido",          # Formato fora de fisico/ebook/audiobook/quadrinho
+    "unidade inválida",          # Unidade fora de pages/chapters/volumes
+    "já tem sessões",            # Troca de unidade bloqueada: o livro já tem sessões registradas
 ]
 
 
@@ -209,6 +214,10 @@ class AddBookBody(BaseModel):
     genre: Optional[str] = None
     language: Optional[str] = None
     published_year: Optional[int] = None
+    # Formato (fisico | ebook | audiobook | quadrinho) e unidade do progresso (pages | chapters | volumes).
+    # Sem unidade, vale a sugerida pelo formato. Com unidade ≠ pages, total_pages é o total NESSA unidade.
+    format: Optional[str] = None
+    progress_unit: Optional[str] = None
 
 
 class LogReadingBody(BaseModel):
@@ -258,6 +267,8 @@ class UpdateBookMetadataBody(BaseModel):
     rating: Optional[float] = None        # Avaliação pessoal de 0.5 a 5.0 (passos de 0.5)
     date_started: Optional[str] = None    # Data de início da leitura (YYYY-MM-DD)
     date_finished: Optional[str] = None   # Data de conclusão da leitura (YYYY-MM-DD)
+    format: Optional[str] = None          # fisico | ebook | audiobook | quadrinho
+    progress_unit: Optional[str] = None   # pages | chapters | volumes — só muda se o livro não tem sessões
     # Campos a apagar (gravar NULL) — ex.: ["rating"] tira a nota, ["store_url"] tira o link.
     # Necessário porque um campo omitido (None) significa "não mexer", não "apagar".
     clear: Optional[list[str]] = None
@@ -367,6 +378,8 @@ def list_books(
             b.title,
             b.author,
             b.total_pages,
+            b.format,
+            b.progress_unit,
             b.status,
             b.cover_url,
             b.date_started,
@@ -787,6 +800,8 @@ def add_book_endpoint(
         genre=body.genre,
         language=body.language,
         published_year=body.published_year,
+        format=body.format,
+        progress_unit=body.progress_unit,
     )
     # Verifica se a tool retornou uma mensagem de erro e converte para HTTP 400 se sim
     return _books_check(msg)

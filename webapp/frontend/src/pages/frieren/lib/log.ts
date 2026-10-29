@@ -3,16 +3,17 @@
 
 import { createCaptureParser, type CaptureResult } from '../../../design/core/capture'
 import type { Book } from '../types'
+import { stoppedLabel, unitCount, unitFromCapture, withArticle } from './units'
 
 /** Página (`p. 240`), nota (`★4.5`) e data no passado (`ontem`, `sexta`, `12/09`). */
-export const logParser = createCaptureParser({ rules: ['progress', 'rating', 'date'], dateDirection: 'past' })
+export const logParser = createCaptureParser({ rules: ['progress', 'bookUnits', 'rating', 'date'], dateDirection: 'past' })
 
 export interface LogDraft {
   /** Livro escolhido (null = ainda não escolhido). */
   bookId: string | null
   /** O que foi digitado como título (para achar o livro). */
   title: string
-  /** Página onde parou. null = não informou (só vale se terminou). */
+  /** Posição onde parou, na unidade do livro (página, capítulo ou volume). null = não informou (só vale se terminou). */
   page: number | null
   date: string
   note: string
@@ -77,8 +78,10 @@ export function draftFromCapture(r: CaptureResult, ctx: { today: string; books: 
   const f = r.fields
   const { title, finished } = splitFinish(f.title)
   const book = pickBook(title, ctx.books)
-  // "p. 240" é a página onde parou; num intervalo ("p. 200-240") vale o fim.
-  let page = f.progress && f.progress.unit === 'page' ? f.progress.to : null
+  // "p. 240" / "cap 12" / "vol 3" é a posição onde parou; num intervalo ("p. 200-240") vale o fim.
+  // A unidade digitada precisa ser a do livro: "cap 5" num livro contado em páginas não vira página 5.
+  const typed = f.progress ? unitFromCapture(f.progress.unit) : null
+  let page = f.progress && typed && (!book || typed === book.unit) ? f.progress.to : null
   // "terminei" sem página: a página final é o total do livro (quando conhecido).
   if (finished && page === null && book?.pages) page = book.pages
   return {
@@ -98,13 +101,14 @@ export function validateDraft(d: LogDraft, book: Book | null, today: string): { 
   if (!d.date) return { field: 'date', message: 'Escolha o dia da leitura.' }
   if (d.date > today) return { field: 'date', message: 'A data não pode ser no futuro.' }
   if (d.page !== null) {
-    if (!Number.isInteger(d.page) || d.page < 0) return { field: 'page', message: 'A página precisa ser um número inteiro.' }
-    if (book.pages && d.page > book.pages) return { field: 'page', message: `O livro tem ${book.pages} páginas.` }
+    if (!Number.isInteger(d.page) || d.page < 0) return { field: 'page', message: 'Informe um número inteiro.' }
+    if (book.pages && d.page > book.pages) return { field: 'page', message: `O livro tem ${unitCount(book.unit, book.pages)}.` }
   }
   const advances = d.page !== null && d.page > book.page
   // Sem página nova e sem terminar, não há nada para registrar (o servidor recusaria "nenhum progresso").
   if (!advances && !d.finished) {
-    return { field: 'page', message: book.page > 0 ? `Você já estava na página ${book.page}. Informe uma página maior.` : 'Informe a página onde parou.' }
+    const onde = stoppedLabel(book.unit)
+    return { field: 'page', message: book.page > 0 ? `Você já estava ${onde} ${book.page}. Informe um número maior.` : `Informe ${withArticle(book.unit)} onde parou.` }
   }
   if (d.rating !== null && (d.rating < 0.5 || d.rating > 5 || Math.round(d.rating * 2) !== d.rating * 2)) {
     return { field: 'rating', message: 'A nota vai de meia a cinco estrelas.' }

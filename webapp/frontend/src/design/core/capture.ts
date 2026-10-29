@@ -29,6 +29,9 @@ export type CaptureRuleId =
   | 'installments'
   /** Finanças: um número solto ("45", "1.200", "89,9") é o valor — vale o ÚLTIMO que sobrar depois de data/parcelas. */
   | 'bareAmount'
+  /** Livros (Frieren): além de `progress`, "cap 12" / "vol. 3" / "c12" / "v3" contam capítulo e volume.
+   *  Opt-in: nos outros domínios "vol" e "cap" podem ser parte do título. */
+  | 'bookUnits'
 
 /** Categoria visual do token (cor no destaque ao vivo). */
 export type CaptureKind = 'place' | 'person' | 'tag' | 'priority' | 'date' | 'recur' | 'rating' | 'amount' | 'progress' | 'quantity' | 'duration' | 'installments'
@@ -58,7 +61,7 @@ export interface CaptureFields {
   recur: ParsedRecur | null
   rating: number | null
   amount: number | null
-  progress: { unit: 'ep' | 'page'; from: number | null; to: number } | null
+  progress: { unit: 'ep' | 'page' | 'chapter' | 'volume'; from: number | null; to: number } | null
   sets: [number, number] | null
   load: number | null
   distance: number | null
@@ -200,6 +203,19 @@ export function createCaptureParser(opts: CaptureOptions): (text: string) => Cap
           const unit = x[1].toLowerCase() === 'ep' ? 'ep' : 'page'
           fields.progress = x[3] ? { unit, from: Number(x[2]), to: Number(x[3]) } : { unit, from: null, to: Number(x[2]) }
           claim(i, 'progress'); continue
+        }
+        // Livros: "cap12", "vol3", "cap.12-15" (colado) e "cap 12", "vol. 3" (separado).
+        if (rules.has('bookUnits')) {
+          if ((x = /^(cap|vol)\.?(\d+)(?:-(\d+))?$/i.exec(t))) {
+            const unit = x[1].toLowerCase() === 'cap' ? 'chapter' : 'volume'
+            fields.progress = x[3] ? { unit, from: Number(x[2]), to: Number(x[3]) } : { unit, from: null, to: Number(x[2]) }
+            claim(i, 'progress'); continue
+          }
+          if (/^(cap|vol)\.?$/i.test(t) && free(i + 1) && (x = /^(\d+)(?:-(\d+))?$/.exec(words[i + 1].text))) {
+            const unit = /^cap/i.test(t) ? 'chapter' : 'volume'
+            fields.progress = x[2] ? { unit, from: Number(x[1]), to: Number(x[2]) } : { unit, from: null, to: Number(x[1]) }
+            claim(i, 'progress'); claim(i + 1, 'progress'); continue
+          }
         }
         // "ep 12", "p. 240", "pág 240"
         if (/^(ep|p\.?|pág\.?|pag\.?)$/i.test(t) && free(i + 1) && (x = /^(\d+)(?:-(\d+))?$/.exec(words[i + 1].text))) {

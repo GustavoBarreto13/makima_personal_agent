@@ -7,6 +7,7 @@ const F = {
   title: 'Duna', author: 'Frank Herbert', cover_url: '', genre: 'Ficção', published_year: '1965', total_pages: '680', isbn: '',
   language: 'en', status: 'lido' as const, rating: 4 as number | null, date_started: '2026-01-01', date_finished: '2026-02-01',
   description: '', notes: 'Ótimo', store_url: '', price: '',
+  format: 'fisico' as const, progress_unit: 'pages' as const,
 }
 
 describe('buildPatch', () => {
@@ -25,6 +26,11 @@ describe('buildPatch', () => {
   })
   it('nota com meia estrela', () => {
     expect(buildPatch(F, { ...F, rating: 4.5 })).toEqual({ rating: 4.5 })
+  })
+  it('formato e unidade só vão quando mudam', () => {
+    expect(buildPatch(F, { ...F, format: 'audiobook', progress_unit: 'chapters', total_pages: '45' }))
+      .toEqual({ format: 'audiobook', progress_unit: 'chapters', total_pages: 45 })
+    expect(buildPatch(F, { ...F, format: 'ebook' })).toEqual({ format: 'ebook' })
   })
 })
 

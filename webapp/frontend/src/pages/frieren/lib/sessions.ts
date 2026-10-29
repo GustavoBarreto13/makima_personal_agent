@@ -5,11 +5,12 @@ import { confirm } from '../../../design/headless/confirm'
 import { toast } from '../../../design/headless/toast'
 import { frierenApi } from '../frierenApi'
 import type { Session } from '../types'
+import { unitCount } from './units'
 
 export async function deleteSession(s: Session, reload: () => void): Promise<void> {
   const ok = await confirm({
     title: 'Excluir esta sessão?',
-    body: `${s.title} · ${s.pages} ${s.pages === 1 ? 'página' : 'páginas'} em ${s.date.split('-').reverse().join('/')}.`,
+    body: `${s.title} · ${unitCount(s.unit, s.pages)} em ${s.date.split('-').reverse().join('/')}.`,
     confirmLabel: 'Excluir',
     danger: true,
   })

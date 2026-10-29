@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 from agents.db import run_select
+from agents.frieren.units import normalize_unit, unit_label
 
 # Metadados desta fonte de calendário — espelhado no calendar_hub.py
 SOURCE = {
@@ -73,7 +74,7 @@ def _reading_session_events(start: str, end: str) -> list[dict]:
     # Seleciona todos os logs de leitura no período, trazendo o book_id para o deep_link
     sql = """
     SELECT rl.id, rl.book_id, rl.book_title, rl.date,
-           rl.pages_read, rl.page_start, rl.page_end
+           rl.pages_read, rl.page_start, rl.page_end, b.progress_unit
     FROM reading_logs rl
     JOIN books b ON b.id = rl.book_id AND b.deleted = FALSE
     WHERE rl.date BETWEEN %(start)s::date AND %(end)s::date
@@ -84,13 +85,16 @@ def _reading_session_events(start: str, end: str) -> list[dict]:
     items = []
     for row in rows:
         # Formata o título de forma compacta para o grid de calendário
+        # O avanço vem na unidade do livro: "12 pág.", "3 cap." ou "1 vol.".
+        unidade = row.get("progress_unit")
         pages = row.get("pages_read") or 0
-        title = f"📖 {row['book_title']} — {pages} pág."
+        title = f"📖 {row['book_title']} — {unit_label(unidade, pages, abbr=True)}"
 
         # Informação de página para detalhes (ex.: "p. 80 → p. 122")
         page_start = row.get("page_start")
         page_end = row.get("page_end")
-        detail = f"p. {page_start} → p. {page_end}" if page_start and page_end else None
+        prefixo = {"pages": "p. ", "chapters": "cap. ", "volumes": "vol. "}[normalize_unit(unidade)]
+        detail = f"{prefixo}{page_start} → {prefixo}{page_end}" if page_start and page_end else None
 
         # psycopg2 retorna DATE como objeto date — converter para string ISO
         date_str = row["date"].isoformat() if hasattr(row["date"], "isoformat") else str(row["date"])

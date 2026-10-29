@@ -4,6 +4,7 @@
 import type { FrierenApi, MetadataPatch } from '../frierenApi'
 import type { Book } from '../types'
 import type { LogDraft } from './log'
+import { unitCount } from './units'
 
 type Api = Pick<FrierenApi, 'log' | 'finish' | 'deleteSession' | 'setStatus' | 'updateMetadata'>
 
@@ -34,7 +35,7 @@ export async function submitLog(d: LogDraft, book: Book, api: Api): Promise<Subm
   const delta = advances && d.page !== null ? d.page - book.page : 0
   const message = d.finished
     ? `${book.title} terminado — que jornada!`
-    : `+${delta} ${delta === 1 ? 'página' : 'páginas'} em ${book.title}`
+    : `+${unitCount(book.unit, delta)} em ${book.title}`
 
   // Foto do livro antes da gravação: o "Desfazer" devolve status, datas e nota a estes valores.
   const before = { status: book.status, started: book.started, finished: book.finished, rating: book.rating }

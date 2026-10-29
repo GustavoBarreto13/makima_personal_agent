@@ -7,7 +7,7 @@ Inspirada em Frieren de *Frieren: Beyond Journey's End* — elfa maga milenar, c
 
 Responsabilidades:
 - Gerenciar um catálogo pessoal de livros com status de leitura
-- Registrar progresso de leitura por sessão (página atual, delta de páginas)
+- Registrar progresso de leitura por sessão (posição atual e avanço, em páginas, capítulos ou volumes — mangás e audiobooks)
 - Buscar e enriquecer metadados de livros via Google Books API
 - Gerar estatísticas e histórico de leitura
 - Exibir menu interativo com botões inline no Telegram
@@ -44,7 +44,9 @@ Catálogo de livros e estado de leitura.
 | `google_books_id` | STRING | ID da Google Books API — para buscar capa e detalhes |
 | `title` | STRING | Título do livro |
 | `author` | STRING | Autor(es) separados por vírgula |
-| `total_pages` | INT64 | Total de páginas da edição do usuário |
+| `total_pages` | INT64 | **Total na unidade do livro** (`progress_unit`): páginas, capítulos ou volumes. Nome histórico, não renomeado |
+| `format` | TEXT | `fisico` (padrão) \| `ebook` \| `audiobook` \| `quadrinho` (mangá/HQ) — ver "Formatos e unidades" |
+| `progress_unit` | TEXT | `pages` (padrão) \| `chapters` \| `volumes` — unidade dos números das sessões |
 | `isbn` | STRING | ISBN-13 (preferido) ou ISBN-10 como fallback |
 | `cover_url` | STRING | URL da capa (Google Books API) |
 | `description` | STRING | Sinopse (truncada em 500 caracteres) |
@@ -95,14 +97,35 @@ Registro imutável de sessões de leitura. Cada linha é uma sessão: quanto foi
 | `book_id` | STRING | FK para `books.id` |
 | `book_title` | STRING | Desnormalizado — facilita consultas sem JOIN |
 | `date` | DATE | Data da sessão de leitura |
-| `page_start` | INT64 | Página onde estava ANTES da sessão |
-| `page_end` | INT64 | Página atual APÓS a sessão |
-| `pages_read` | INT64 | Delta: `page_end - page_start` |
+| `page_start` | INT64 | Posição ANTES da sessão (na unidade do livro) |
+| `page_end` | INT64 | Posição APÓS a sessão (na unidade do livro) |
+| `pages_read` | INT64 | Avanço: `page_end - page_start` (na unidade do livro) |
 | `session_notes` | STRING | Anotações opcionais da sessão |
 | `created_at` | TIMESTAMP | Quando o log foi inserido |
 
 **Por que desnormalizar `book_title`?**
 Herança do design original em BigQuery. Duplicar o título nos logs permite consultas históricas sem JOIN — mantido após a migração para PostgreSQL.
+
+### Formatos e unidades (mangá, audiobook)
+
+Cada livro escolhe **uma** unidade para o progresso — `pages`, `chapters` ou `volumes` — e um **formato**
+(`fisico`, `ebook`, `audiobook`, `quadrinho`). O vocabulário vive em `agents/frieren/units.py` (módulo puro; o
+frontend espelha em `webapp/frontend/src/pages/frieren/lib/units.ts` — mudou um, mude o outro).
+
+- **Sem renomear colunas:** `books.total_pages`, `reading_logs.page_end` e `pages_read` passam a significar
+  total/posição/avanço **na unidade do livro**. Renomear quebraria hub, calendário, estatísticas e testes.
+- **O formato só sugere a unidade** (audiobook e mangá → capítulos; físico e e-book → páginas); dá para trocar.
+- **Trava:** a unidade só muda enquanto o livro **não tem sessões** (`_book_has_logs`; mensagem `_UNIT_LOCKED_ERROR`,
+  que o router converte em HTTP 400). Com sessões, os números antigos mudariam de sentido. O **formato** muda sempre.
+- **Google Books:** com unidade ≠ páginas, `add_book` descarta o `pageCount` (são páginas impressas) — o total
+  vem do usuário ou fica vazio.
+- **Somas nunca misturam unidades:** estatísticas, heatmap e o hábito `frieren_reading` somam **só** livros em
+  `pages`; capítulos e volumes têm KPIs próprios (aparecem só com leitura) e dias de leitura/sequência contam qualquer
+  unidade. Substituiu a regra antiga que adivinhava quadrinho pelo gênero (`_COMIC`).
+- **Migração:** `scripts/migrate_frieren_units.py` (dry-run por padrão, `--apply` grava) cria as colunas, marca como
+  `quadrinho` os livros do gênero "Comics & Graphic Novels" e passa para capítulos só os que **não têm sessões**
+  (os com sessões ficam em páginas e voltam a somar páginas nas estatísticas — o relatório lista quais). **Ainda não
+  rodada no VPS.**
 
 ### Tabelas `shelves` e `book_shelves` — estantes (coleções)
 
@@ -136,8 +159,9 @@ Retorna lista HTML numerada com até 5 resultados (título, autor, páginas, ID 
 
 ---
 
-### `add_book(title, status, google_books_id, author, total_pages, isbn, cover_url, description, genre, language, published_year)`
-Adiciona um livro ao catálogo.
+### `add_book(title, status, google_books_id, author, total_pages, isbn, cover_url, description, genre, language, published_year, format, progress_unit)`
+Adiciona um livro ao catálogo. `format`/`progress_unit` (opcionais) definem como ele é contado — sem unidade, vale a
+sugerida pelo formato; fora de páginas, `total_pages` é o total em capítulos/volumes.
 
 Os 6 parâmetros de metadados (`isbn`, `cover_url`, `description`, `genre`, `language`,
 `published_year`) existem para o **webapp**: o modal "Adicionar livro" já tem esses campos
@@ -165,7 +189,8 @@ sem passar esses campos — nesse caso o volume é buscado na API por ID.
 ---
 
 ### `log_reading(book_query, current_page, session_notes, log_date)`
-Registra progresso de leitura de uma sessão.
+Registra progresso de leitura de uma sessão. `current_page` é a **posição na unidade do livro** (página, capítulo ou
+volume — o nome do parâmetro é histórico); as mensagens falam a unidade ("cap. 45/120 · 5 capítulos nesta sessão").
 
 - `book_query`: título parcial. **Se vazio**, usa automaticamente o livro com o log mais recente
 - `current_page`: página atual do leitor ao fim da sessão
@@ -213,7 +238,7 @@ Usa `CASE WHEN` no SQL para não sobrescrever uma data de início existente.
 ---
 
 ### `update_book_pages(book_query, total_pages)`
-Corrige o total de páginas (quando a API retornou errado ou a edição física difere).
+Corrige o total do livro **na unidade dele** (quando a API retornou errado, a edição difere ou o mangá ganhou volumes).
 Recalcula e exibe o percentual de progresso atualizado se houver logs.
 
 ---
@@ -280,7 +305,7 @@ de `agents/frieren`. Ver `agents/kaguya/CLAUDE.md` para o contrato completo.
 | Módulo | Registrado como | Função |
 |---|---|---|
 | `goal_provider.py` | `frieren_books` | `search_items(query)`/`resolve_items(ids)` — livros vinculáveis a uma Meta; `done` = `status == "lido"` |
-| `habit_provider.py` | `frieren_reading` | `get_activity(start, end)` — soma de `reading_logs.pages_read` por dia, para hábitos mensuráveis de leitura |
+| `habit_provider.py` | `frieren_reading` | `get_activity(start, end)` — soma de `reading_logs.pages_read` por dia, **só de livros contados em páginas**, para hábitos mensuráveis (ex.: "20 páginas por dia"); capítulos/volumes ficam de fora para não distorcer a meta |
 
 ### Funções consumidas só pelo webapp (`/api/books/*`)
 Não são tools do agente Telegram — o router `webapp/backend/routers/books.py` as chama direto:
@@ -443,6 +468,7 @@ para processar callbacks de botões inline sem passar pelo agente.
 | Mensagem do usuário | Tool acionada |
 |---|---|
 | "li o Duna até a página 80" | `log_reading` |
+| "ouvi até o capítulo 12" / "li até o volume 5" | `log_reading` (na unidade do livro) |
 | "li 30 páginas" (sem título) | `log_reading(book_query="")` → usa último logado |
 | "adiciona Duna à minha lista" | `search_book` → `add_book` |
 | "terminei o Duna, nota 4.5" | `finish_book` |

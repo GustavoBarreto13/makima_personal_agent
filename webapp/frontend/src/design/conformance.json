@@ -208,7 +208,9 @@
           "days_reading",
           "days_per_book",
           "longest_book",
-          "yearly_goal"
+          "yearly_goal",
+          "chapters",
+          "volumes"
         ]
       },
       "detail": true,

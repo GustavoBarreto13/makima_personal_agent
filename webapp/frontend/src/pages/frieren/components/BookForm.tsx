@@ -10,6 +10,7 @@ import { useFrieren } from '../context'
 import { frierenApi, type MetadataPatch } from '../frierenApi'
 import { normalizeUrl } from '../lib/normalize'
 import { STATUS, STATUS_ORDER } from '../lib/status'
+import { asFormat, asUnit, defaultUnitFor, FORMATS, formatLabel, totalLabel, UNITS, unitName, type BookFormat, type ProgressUnit } from '../lib/units'
 import type { ApiBookDetail, BookStatus } from '../types'
 
 /** Formulário em texto (o que está nos campos); vira o patch na hora de salvar. */
@@ -19,7 +20,10 @@ interface FormState {
   cover_url: string
   genre: string
   published_year: string
+  /** Total na unidade do livro (páginas, capítulos ou volumes). */
   total_pages: string
+  format: BookFormat
+  progress_unit: ProgressUnit
   isbn: string
   language: string
   status: BookStatus
@@ -39,6 +43,8 @@ const fromDetail = (b: ApiBookDetail): FormState => ({
   genre: b.genre ?? '',
   published_year: b.published_year != null ? String(b.published_year) : '',
   total_pages: b.total_pages != null ? String(b.total_pages) : '',
+  format: asFormat(b.format),
+  progress_unit: asUnit(b.progress_unit),
   isbn: b.isbn ?? '',
   language: b.language ?? '',
   status: (STATUS_ORDER as string[]).includes(b.status) ? (b.status as BookStatus) : 'quero_ler',
@@ -60,6 +66,8 @@ export function buildPatch(before: FormState, after: FormState): MetadataPatch {
   const patch: MetadataPatch = {}
   const clear: string[] = []
   if (after.title.trim() !== before.title.trim()) patch.title = after.title.trim()
+  if (after.format !== before.format) patch.format = after.format
+  if (after.progress_unit !== before.progress_unit) patch.progress_unit = after.progress_unit
   for (const k of TEXT) {
     const v = after[k].trim()
     if (v === before[k].trim()) continue
@@ -114,6 +122,16 @@ export function BookForm({ book, onClose }: { book: ApiBookDetail; onClose: () =
   const set = (patch: Partial<FormState>) => { setF((cur) => ({ ...cur, ...patch })); setErrors({}) }
 
   const dirty = JSON.stringify(f) !== JSON.stringify(initial)
+  // Com sessões registradas a unidade fica travada: os números antigos passariam a significar outra coisa.
+  // (current_page vem da última sessão; o servidor também recusa a troca.)
+  const unitLocked = (book.current_page ?? 0) > 0
+
+  // Trocar o formato sugere a unidade dele — mas só enquanto ela ainda é a sugestão do formato anterior
+  // (quem já escolheu outra à mão não é surpreendido) e se não está travada.
+  const changeFormat = (format: BookFormat) => {
+    const followsSuggestion = f.progress_unit === defaultUnitFor(f.format)
+    set(!unitLocked && followsSuggestion ? { format, progress_unit: defaultUnitFor(format) } : { format })
+  }
 
   const submit = async () => {
     const e = validateForm(f, frieren.today)
@@ -163,7 +181,21 @@ export function BookForm({ book, onClose }: { book: ApiBookDetail; onClose: () =
           {text('genre', 'Gênero', 'Ex.: Fantasia, Aventura', 'Separe vários com vírgula.')}
           {text('language', 'Idioma', 'Ex.: pt, en')}
           <Field label="Ano de publicação" error={errors.published_year}>{(a) => <NumberInput {...a} value={f.published_year} onChange={(e) => set({ published_year: e.target.value })} />}</Field>
-          <Field label="Páginas" error={errors.total_pages}>{(a) => <NumberInput {...a} min={1} value={f.total_pages} onChange={(e) => set({ total_pages: e.target.value })} />}</Field>
+          <Field label="Formato">
+            {(a) => (
+              <Select {...a} value={f.format} onChange={(e) => changeFormat(e.target.value as BookFormat)}>
+                {FORMATS.map((x) => <option key={x} value={x}>{formatLabel(x)}</option>)}
+              </Select>
+            )}
+          </Field>
+          <Field label="Contar em" hint={unitLocked ? 'Este livro já tem sessões, então a unidade não muda.' : 'A unidade dos registros de leitura.'}>
+            {(a) => (
+              <Select {...a} value={f.progress_unit} disabled={unitLocked} onChange={(e) => set({ progress_unit: e.target.value as ProgressUnit })}>
+                {UNITS.map((u) => <option key={u} value={u}>{unitName(u).charAt(0).toUpperCase() + unitName(u).slice(1)}</option>)}
+              </Select>
+            )}
+          </Field>
+          <Field label={totalLabel(f.progress_unit)} error={errors.total_pages}>{(a) => <NumberInput {...a} min={1} value={f.total_pages} onChange={(e) => set({ total_pages: e.target.value })} />}</Field>
           {text('isbn', 'ISBN')}
           <Field label="Situação">
             {(a) => (
