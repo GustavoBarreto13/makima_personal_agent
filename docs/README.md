@@ -16,6 +16,8 @@ o que é intenção futura e o que é só registro do passado:
 
 ## Referência viva
 
+- [`../CHANGELOG.md`](../CHANGELOG.md) — histórico de versões (SemVer 0.x, tags `vX.Y.Z` na `master`); convenção em [`CLAUDE.md`](../CLAUDE.md) § "Versionamento"
+
 - [`referencia/POSTGRES.md`](referencia/POSTGRES.md) — o banco inteiro: 8 domínios, 64 tabelas coluna a coluna, padrões e pegadinhas
 - [`referencia/BACKUP_POSTGRES.md`](referencia/BACKUP_POSTGRES.md) — como o backup diário funciona, como verificar e restaurar
 - [`referencia/KURISU_BASE_CONHECIMENTO.md`](referencia/KURISU_BASE_CONHECIMENTO.md) — explicação **em linguagem leiga** da base de conhecimento (RAG) da Kurisu
