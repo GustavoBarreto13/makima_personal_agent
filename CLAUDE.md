@@ -480,6 +480,26 @@ Os shells existentes seguem `legacy` até serem migrados, um por vez. Não vale 
 
 ---
 
+## Versionamento
+
+Uma versão única para o monorepo inteiro (agentes + webapp + app), em **SemVer 0.x** — sem 1.0.0 até
+a base ser declarada estável.
+
+- **Fonte da verdade = tag git anotada** `vX.Y.Z` em um commit da linha principal da `master`
+  (`git tag -a v0.62.0 <sha> -m "Makima 0.62.0 — resumo"`). Nada de pasta `v1/` nem branch por versão.
+- **MINOR** (`0.N.0`): entrega de funcionalidade — agente novo, spec concluída ou bloco coeso de features.
+  Em 0.x, mudança que quebra compatibilidade (ex.: API que o app instalado usa) também sobe o MINOR.
+- **PATCH** (`0.N.x`): só correção, sem funcionalidade nova.
+- Specs continuam sendo a unidade de trabalho; a versão é a unidade de entrega (ex.: "0.62.0 = specs 078 + 079").
+- Commits `docs`/`chore` não geram versão.
+- **`CHANGELOG.md`** (Keep a Changelog): escrever em `[Unreleased]` durante o trabalho; ao lançar, virar seção
+  `[X.Y.Z] - data`, atualizar `webapp/frontend/package.json` (e o `package-lock.json`), commitar
+  `chore(release): vX.Y.Z`, taguear e só então `git push --tags`.
+- Histórico 0.1.0–0.61.0 marcado retroativamente (ver `CHANGELOG.md`). Próxima versão: 0.62.0.
+- Android: `versionName` = versão do repo; `versionCode` = inteiro sempre crescente.
+
+---
+
 ## Como manter a documentação (guia da estrutura)
 
 A estrutura foi reorganizada em jul/2026 para eliminar duplicação — a regra geral é:
