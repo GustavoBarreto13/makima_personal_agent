@@ -495,8 +495,36 @@ a base ser declarada estável.
 - **`CHANGELOG.md`** (Keep a Changelog): escrever em `[Unreleased]` durante o trabalho; ao lançar, virar seção
   `[X.Y.Z] - data`, atualizar `webapp/frontend/package.json` (e o `package-lock.json`), commitar
   `chore(release): vX.Y.Z`, taguear e só então `git push --tags`.
-- Histórico 0.1.0–0.61.0 marcado retroativamente (ver `CHANGELOG.md`). Próxima versão: 0.62.0.
+- Histórico 0.1.0–0.61.0 marcado retroativamente (ver `CHANGELOG.md`). A versão atual está em `CHANGELOG.md` / `git describe --tags`.
 - Android: `versionName` = versão do repo; `versionCode` = inteiro sempre crescente.
+
+### Como o agente lança uma versão (passo a passo)
+
+Pedido do tipo "lança a versão", "fecha a 0.62.0" ou "publica o release". O agente faz tudo; só pergunta
+a versão se não der para decidir por MINOR/PATCH (critério acima).
+
+1. **Estar na `master`**, com a árvore limpa e atualizada (`git checkout master && git pull`). Release sai
+   da `master`, nunca de branch de feature — o CHANGELOG descreve o que está na `master`.
+2. **Decidir o número**: `git describe --tags --abbrev=0` dá a última; incrementar MINOR (funcionalidade)
+   ou PATCH (só correção) conforme os commits desde a tag (`git log <ultima-tag>..HEAD --first-parent`).
+3. **Escrever as notas** em `CHANGELOG.md`: mover o que estiver em `[Unreleased]` para uma seção nova
+   `## [X.Y.Z] - AAAA-MM-DD` (data local, UTC-3) no topo. 2–6 bullets em português, escritos a partir dos
+   commits (`### Added` / `Changed` / `Fixed` / `Removed`) — descrever o efeito para o usuário, não copiar
+   mensagem de commit. Atualizar também os links de comparação no rodapé (`[Unreleased]` e `[X.Y.Z]`).
+4. **Subir a versão** em `webapp/frontend/package.json` e `package-lock.json` (as duas ocorrências do topo),
+   e `versionName`/`versionCode` do Android quando o app existir.
+5. **Commitar** `chore(release): vX.Y.Z` na `master`.
+6. **Taguear** o commit: `git tag -a vX.Y.Z -m "Makima X.Y.Z — resumo de uma linha"`.
+7. **Publicar**, com confirmação do usuário (publica no GitHub e notifica quem segue o repo):
+   `git push origin master && git push origin vX.Y.Z`, depois `scripts/publish_releases.sh --apply vX.Y.Z`
+   (usa a seção do CHANGELOG como descrição; sem `--apply` só simula).
+8. **Conferir**: `gh release view vX.Y.Z` e `git describe --tags`.
+
+Ambiente do agente: precisa do `gh` instalado e autenticado (`gh auth status`). Se faltar: instalar
+(`apt-get install gh` após adicionar o repositório oficial do GitHub CLI) e rodar
+`gh auth login --hostname github.com --git-protocol ssh --web --skip-ssh-key`; o código de uso único
+aparece no terminal e quem autoriza no navegador é o usuário. Retroativo (versão esquecida): taguear o commit
+certo (`git tag -a vX.Y.Z <sha>`, com `GIT_COMMITTER_DATE` igual ao do commit) e rodar o mesmo script.
 
 ---
 
