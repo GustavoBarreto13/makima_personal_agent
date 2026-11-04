@@ -16,7 +16,8 @@ Reduzir o esforço de registrar coisas: quanto menos toques, mais você usa.
    1. *Frieren:* escanear o código de barras (ISBN) → busca no Google Books (já integrado) → adicionar.
    2. *Nami:* foto do recibo → Gemini extrai valor, data, loja → **tela de confirmação** (nunca lança sozinho).
    3. *Violet:* anexar foto a um bullet.
-   Requer endpoints de upload generalizados (ver `01-backend-necessario.md` §6).
+   **Pré-requisito:** `POST /api/media` e o bucket privado `makima-media` (ver `01-backend-necessario.md` §6). Sem isso a foto não tem onde ficar.
+   *Você:* criar o bucket no Google Cloud e dar permissão à conta de serviço já usada nos backups.
 4. **Voz:** botão de microfone na captura rápida e no diário. O texto falado passa pelo `lib/parseTask.ts`
    ("pagar luz amanhã 180" → tarefa com data).
 5. **Captura universal** (opcional): um único campo que decide se é tarefa, gasto ou bullet.

@@ -53,7 +53,7 @@ Legenda: ✅ feito e testado · 🟡 parcial (código pronto, falta ligar/testar
 | 1 — PWA | 🟡 | Service worker, ícones, manifesto, aviso de versão, tela "sem conexão", abrir offline, limpeza de cache | **Você:** instalar no Chrome do celular e testar no modo avião; rodar Lighthouse |
 | 2 — Casca + login | 🟡 | Backend do login (`/auth/mobile`, refresh rotativo, aparelhos revogáveis, CORS), `apiUrl`/bearer no frontend, `deepLink.ts` | Capacitor (`cap add android`), login nativo Google, Keystore, portas nativas (`native.ts`), biometria, botão voltar, haptics, APK assinado |
 | 3 — Push | 🟡 | Tabela `push_devices`, rotas `/api/devices/push`, canal `"push"` nos jobs | Firebase real, `google-services.json`, `FIREBASE_CREDENTIALS_JSON`, plugin de push, canais Android por agente, botões de ação |
-| 4 — Entrada rápida | 🟡 | Parser de links compartilhados (`shareTarget.ts`) | Atalhos do app, receber "compartilhar", câmera, voz |
+| 4 — Entrada rápida | 🟡 | Parser de links compartilhados (`shareTarget.ts`) | **Mídia:** bucket GCS privado + `POST /api/media` (pré-requisito da câmera); atalhos do app, receber "compartilhar", câmera, voz |
 | 5 — Widgets | ⬜ | — | Endpoints `/api/widgets/*` (Bloco E, opcional ficou de fora), widgets em Kotlin/Glance, tile de foco, timer em serviço |
 | 6 — Offline | 🟡 | Fila de escritas persistente (`offlineQueue.ts`) | Ligar às telas (tarefa, gasto, bullet, hábito), selo "pendente", evento "voltou a internet", modo viagem da Yato |
 | 7 — Chat | ⬜ | — | Verificar API do Hermes, rota de streaming, tela de chat |
@@ -72,7 +72,9 @@ Legenda: ✅ feito e testado · 🟡 parcial (código pronto, falta ligar/testar
 
 ### Pendências técnicas já conhecidas
 
-- Imagens `/uploads/...` precisam passar por `apiUrl()` dentro do app.
+- Imagens `/uploads/...` (ícones e avatares) precisam passar por `apiUrl()` dentro do app.
+- **Mídia nova (recibo, livro, diário) → bucket privado `makima-media` no GCS**, com `POST /api/media`, chave no banco e URL assinada (desenho em `01-backend-necessario.md` §6). Não usar o bucket de backups (lifecycle de 30 dias). `/uploads` hoje é público, sem login: só serve para ícone/avatar.
+- Confirmar se `webapp/uploads` está num volume persistente no Dokploy.
 - Reenvio da fila offline pode duplicar se a resposta se perder (o `id` por item já existe para o servidor deduplicar).
 - Revisar o login com `/code-review` antes de qualquer deploy.
 - Node 18 local precisa de `NODE_OPTIONS=--experimental-global-webcrypto` para buildar o PWA (produção usa Node 20).
