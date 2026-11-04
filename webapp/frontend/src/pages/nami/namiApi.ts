@@ -1,7 +1,7 @@
 // Wrapper tipado sobre lib/api.ts para todos os endpoints de /api/finances/*.
 // Centraliza URLs e tipos de resposta — componentes não conhecem a URL diretamente.
 
-import { api } from '../../lib/api'
+import { api, authFetch } from '../../lib/api'
 import type {
   Transaction, Account, Card, BudgetEnvelope, Subscription, RecurringKind,
   PersonalLoan, BankLoan, PayoffPriorityItem, Category,
@@ -350,13 +350,12 @@ export const namiApi = {
   // ── Upload de ícone ───────────────────────────────────────────────────────────
 
   uploadIcon: async (file: File): Promise<{ url: string }> => {
-    // Usa fetch direto pois api.post não suporta multipart/form-data
+    // Usa authFetch pois api.post não suporta multipart/form-data (ele já envia cookie/bearer)
     const form = new FormData()
     form.append('file', file)
-    const res = await fetch('/api/finances/uploads/icon', {
+    const res = await authFetch('/api/finances/uploads/icon', {
       method: 'POST',
       body: form,
-      credentials: 'include',  // envia o cookie de sessão
     })
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))

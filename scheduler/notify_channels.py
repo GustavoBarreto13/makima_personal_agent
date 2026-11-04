@@ -22,6 +22,12 @@ Variáveis de ambiente usadas:
                                vírgula (ex. "whatsapp" ou "whatsapp,telegram,discord").
                                Hoje só "whatsapp" está ativo por decisão do usuário — ligar
                                os outros é só mudar esta env var, sem deploy de código novo.
+    FIREBASE_CREDENTIALS_JSON — JSON da conta de serviço do Firebase (conteúdo do arquivo, não o
+                               caminho). Necessário só para o canal "push" (app Android). Sem ela,
+                               o canal "push" é pulado com um aviso — nada quebra.
+
+O canal "push" (app Android) NÃO passa pelo Hermes: fala direto com o Firebase Cloud Messaging
+(FCM) e entrega nos aparelhos cadastrados em `push_devices`.
 """
 
 import hashlib
@@ -37,7 +43,10 @@ import requests
 log = logging.getLogger("scheduler.notify_channels")
 
 _TIMEOUT = 15
-_KNOWN_CHANNELS = ("whatsapp", "telegram", "discord")
+_KNOWN_CHANNELS = ("whatsapp", "telegram", "discord", "push")
+
+# O FCM aceita no máximo ~4 KB por mensagem; cortamos o texto para sobrar folga.
+_PUSH_MAX_CHARS = 1000
 
 
 def _webhook_url(channel: str) -> str | None:
@@ -72,7 +81,120 @@ def _to_whatsapp_text(html: str) -> str:
     return text
 
 
-def send_notification(message: str, channels: list[str] | None = None) -> bool:
+def _to_plain_text(html: str) -> str:
+    """Remove as tags HTML simples do texto (push mostra texto puro, sem formatação).
+
+    Example:
+        >>> _to_plain_text("<b>Oi</b> <i>mundo</i>")
+        'Oi mundo'
+    """
+    return re.sub(r"<[^>]+>", "", html).strip()
+
+
+def _fcm_multicast(
+    tokens: list[str], title: str, body: str, data: dict[str, str], channel_id: str
+) -> tuple[int, list[str]]:
+    """Envia a mesma notificação para vários aparelhos via Firebase Cloud Messaging.
+
+    Args:
+        tokens: Tokens FCM dos aparelhos (até 500 por chamada).
+        title: Título da notificação.
+        body: Texto da notificação.
+        data: Dados extras (ex.: `link` do deep link). Valores precisam ser texto.
+        channel_id: Canal de notificação do Android (um por agente: "kaguya", "nami"...).
+
+    Returns:
+        Tupla `(enviadas, tokens_mortos)`; "mortos" são tokens que o FCM disse não existirem mais.
+
+    Raises:
+        RuntimeError: Se `FIREBASE_CREDENTIALS_JSON` não estiver configurada.
+    """
+    raw = os.environ.get("FIREBASE_CREDENTIALS_JSON")
+    if not raw:
+        raise RuntimeError("FIREBASE_CREDENTIALS_JSON não configurada")
+
+    # Import tardio: quem nunca usa push não precisa ter o firebase-admin carregado.
+    import firebase_admin
+    from firebase_admin import credentials, messaging
+
+    # initialize_app só pode rodar uma vez por processo; reaproveitamos o app se já existir.
+    try:
+        app = firebase_admin.get_app()
+    except ValueError:
+        app = firebase_admin.initialize_app(credentials.Certificate(json.loads(raw)))
+
+    msg = messaging.MulticastMessage(
+        tokens=tokens,
+        notification=messaging.Notification(title=title, body=body),
+        data=data,
+        android=messaging.AndroidConfig(
+            priority="high",  # chega mesmo com o celular em modo de economia (Doze)
+            notification=messaging.AndroidNotification(channel_id=channel_id),
+        ),
+    )
+    batch = messaging.send_each_for_multicast(msg, app=app)
+
+    mortos: list[str] = []
+    for token, resp in zip(tokens, batch.responses):
+        # UnregisteredError = app desinstalado / token expirado; nunca mais vai funcionar.
+        # SenderIdMismatchError = token de outro projeto Firebase; idem.
+        if isinstance(resp.exception, (messaging.UnregisteredError, messaging.SenderIdMismatchError)):
+            mortos.append(token)
+    return batch.success_count, mortos
+
+
+def _send_push(message: str, title: str, link: str | None, agent: str | None) -> bool:
+    """Entrega o aviso nos aparelhos Android cadastrados e limpa os tokens que morreram.
+
+    Returns:
+        `True` se pelo menos um aparelho recebeu.
+    """
+    if not os.environ.get("FIREBASE_CREDENTIALS_JSON"):
+        log.warning("FIREBASE_CREDENTIALS_JSON não configurada — notificação NÃO enviada (push).")
+        return False
+
+    # Import tardio: o módulo depende do banco; só carrega quando o push realmente roda.
+    from webapp.backend.push_store import list_push_tokens, remove_tokens
+
+    try:
+        aparelhos = list_push_tokens()
+    except Exception as exc:  # banco fora do ar não pode derrubar os outros canais
+        log.warning("Falha ao ler os aparelhos de push: %s", exc)
+        return False
+    if not aparelhos:
+        log.info("Push: nenhum aparelho cadastrado.")
+        return False
+
+    data = {"link": link} if link else {}
+    try:
+        enviadas, mortos = _fcm_multicast(
+            [a["fcm_token"] for a in aparelhos],
+            title,
+            _to_plain_text(message)[:_PUSH_MAX_CHARS],
+            data,
+            agent or "makima",
+        )
+    except Exception as exc:
+        log.warning("Falha ao enviar notificação via push: %s", exc)
+        return False
+
+    if mortos:
+        try:
+            remove_tokens(mortos)
+        except Exception as exc:
+            log.warning("Falha ao limpar tokens de push mortos: %s", exc)
+    log.info("Notificação enviada via push (%d aparelho(s)).", enviadas)
+    return enviadas > 0
+
+
+def send_notification(
+    message: str,
+    channels: list[str] | None = None,
+    *,
+    title: str = "Makima",
+    link: str | None = None,
+    agent: str | None = None,
+) -> bool:
     """Manda `message` (HTML no padrão Telegram já usado pelos jobs) para os canais
     pedidos, via as rotas de notificação do Hermes.
 
@@ -86,8 +208,12 @@ def send_notification(message: str, channels: list[str] | None = None) -> bool:
     Args:
         message: Texto em HTML simples (`<b>`, `<i>`, `<code>`) — mesmo formato que os
             scripts de `scripts/send_*.py` já montam para o Telegram.
-        channels: Canais a notificar (`"whatsapp"`, `"telegram"`, `"discord"`). Se
+        channels: Canais a notificar (`"whatsapp"`, `"telegram"`, `"discord"`, `"push"`). Se
             omitido, usa `NOTIFY_DEFAULT_CHANNELS` (hoje só `"whatsapp"`).
+        title: Título da notificação push (os outros canais ignoram).
+        link: Deep link aberto ao tocar na notificação push (ex.: `"makima://kaguya/hoje"`).
+        agent: Agente de origem; vira o canal de notificação do Android ("kaguya", "nami"...)
+            para o usuário silenciar um agente sem silenciar os outros. Só vale no push.
 
     Returns:
         `True` se pelo menos um canal recebeu a notificação com sucesso.
@@ -104,6 +230,12 @@ def send_notification(message: str, channels: list[str] | None = None) -> bool:
     for channel in channels:
         if channel not in _KNOWN_CHANNELS:
             log.warning("Canal de notificação desconhecido: %r — ignorado.", channel)
+            continue
+
+        # Push (app Android) vai direto ao FCM — não usa as rotas do Hermes.
+        if channel == "push":
+            if _send_push(message, title, link, agent):
+                sent_any = True
             continue
 
         url = _webhook_url(channel)

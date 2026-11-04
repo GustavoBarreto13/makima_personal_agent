@@ -28,6 +28,7 @@ from webapp.backend.routers import series as series_router  # Mai — catálogo 
 from webapp.backend.routers import pessoas as pessoas_router  # Komi — identidade de pessoas (spec 014)
 from webapp.backend.routers import hub as hub_router  # Makima — hub agregador de stats (spec 023)
 from webapp.backend.routers import travel as travel_router  # Yato — viagens (spec 066)
+from webapp.backend.routers import devices as devices_router  # App Android — aparelhos e push
 from webapp.backend.config import SESSION_SECRET
 
 # Cria a instância principal da aplicação FastAPI.
@@ -96,6 +97,10 @@ app.include_router(hub_router.router, prefix="/api/hub", tags=["hub"])
 # Ex.: GET /api/travel/trips, GET /api/travel/dossiers/{uf}/{city}, GET /api/travel/comfort, etc.
 app.include_router(travel_router.router, prefix="/api/travel", tags=["travel"])
 
+# --- Router de aparelhos (app Android) ---
+# Aparelhos conectados (revogação) e tokens de push — docs/planos/app_android.
+app.include_router(devices_router.router, prefix="/api/devices", tags=["devices"])
+
 # --- CORS (Cross-Origin Resource Sharing) ---
 # O navegador bloqueia requisições entre origens diferentes por segurança.
 # Em desenvolvimento, o Vite roda em localhost:5173 e a API em localhost:8000 —
@@ -104,7 +109,10 @@ app.include_router(travel_router.router, prefix="/api/travel", tags=["travel"])
 # então esse CORS só importa para dev local.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Apenas o dev server do Vite
+    allow_origins=[
+        "http://localhost:5173",  # dev server do Vite
+        "https://localhost",  # origem padrão do app Android (Capacitor) — usa bearer, não cookie
+    ],
     allow_credentials=True,  # Permite enviar cookies (necessário para sessões OAuth)
     allow_methods=["*"],  # Permite todos os verbos HTTP (GET, POST, etc.)
     allow_headers=["*"],  # Permite todos os cabeçalhos HTTP

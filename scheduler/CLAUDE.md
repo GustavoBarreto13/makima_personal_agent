@@ -99,6 +99,7 @@ Além das que cada job já usa (`DATABASE_URL`, `GCP_*`, `GCS_BACKUP_BUCKET`,
 | `HERMES_WEBHOOK_BASE_URL` | Base da app Hermes na rede interna (`http://makima-hermes:8644`) — usada por `notify_channels.send_notification()` |
 | `WEBHOOK_SECRET` | Mesmo segredo HMAC cadastrado no Hermes (`hermes/config.yaml` → `platforms.webhook.extra.secret`) — assina os POSTs de notificação |
 | `NOTIFY_DEFAULT_CHANNELS` | Canais usados quando um job não passa `channels=[...]` explícito (hoje `"whatsapp"` — ligar Telegram/Discord é só acrescentar aqui, ex. `"whatsapp,telegram"`) |
+| `FIREBASE_CREDENTIALS_JSON` | **Só para o canal `"push"` (app Android).** Conteúdo (JSON) da chave da conta de serviço do Firebase. Sem ela o canal `push` é pulado com aviso — nada quebra. Ligar o push = criar o projeto Firebase, colar esta env no container do scheduler e acrescentar `push` em `NOTIFY_DEFAULT_CHANNELS` |
 
 ## Notificação para o usuário: `send_notification()` vs. `send_telegram_alert()`
 
@@ -119,6 +120,12 @@ from scheduler.notify_channels import send_notification
 if not send_notification("<b>Fez algo</b> que o usuário precisa saber."):
     raise RuntimeError("nenhum canal recebeu a notificação")
 ```
+
+**Canal `push` (app Android):** não passa pelo Hermes — fala direto com o Firebase Cloud Messaging e entrega nos aparelhos
+cadastrados em `push_devices` (`webapp/backend/push_store.py`). `send_notification(msg, channels=["push"], title="Kaguya",
+link="makima://kaguya/hoje", agent="kaguya")`: `agent` vira o canal de notificação do Android (silenciar um agente sem
+silenciar os outros) e `link` o deep link aberto no toque (`src/lib/deepLink.ts`). Tokens recusados pelo FCM são apagados.
+Os outros canais ignoram `title`/`link`/`agent`. Plano: `docs/planos/app_android/etapa-3-push.md`.
 
 `send_notification` nunca levanta exceção por conta própria (falha de UM canal não afeta
 os outros) — devolve `True`/`False` (pelo menos um canal recebeu?) para quem chama decidir

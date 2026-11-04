@@ -23,6 +23,10 @@ import { MakimaShell } from './pages/makima/MakimaShell'        // Hub central d
 const DesignShell = lazy(() => import('./pages/design/DesignShell').then((m) => ({ default: m.DesignShell })))
 
 import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
+import { checkSession } from './pwa/session'             // Sessão que entende "sem conexão" (PWA/app)
+import { clearOfflineData } from './pwa/register'        // Apaga do aparelho os dados em cache ao sair
+import { webStorage } from './design/headless/web'       // Porta de armazenamento do Design System
+import { ErrorState } from './design/ui/feedback'        // Estado de erro padrão (tela "sem conexão")
 
 // Tipo que representa os dados do usuário retornados pelo endpoint /auth/me
 interface User {
@@ -44,25 +48,31 @@ function App() {
   // Evita "flash" de tela de login antes de confirmar que o usuário está autenticado
   const [loading, setLoading] = useState(true)
 
-  // useEffect executa a função uma única vez após o componente montar (array vazio = sem dependências).
-  // Aqui usamos para verificar se o cookie de sessão é válido ao abrir a página.
+  // Sem sessão confirmada E sem nenhum login anterior neste aparelho: não há o que mostrar offline.
+  const [offlineNoUser, setOfflineNoUser] = useState(false)
+
+  // Verifica a sessão uma vez ao abrir (e de novo quando o usuário toca em "Tentar de novo").
+  // `checkSession` separa três casos: logado, não logado (401) e sem conexão — neste último,
+  // se já houve login neste aparelho, abrimos o app para ele ver o que está salvo em cache.
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
-    // Chama o endpoint /auth/me — retorna 200 com dados do usuário ou 401 se não autenticado
-    api.get<User>('/auth/me')
-      .then((userData) => {
-        // Usuário autenticado: salva os dados no estado
-        setUser(userData)
-      })
-      .catch(() => {
-        // 401 ou qualquer erro: trata como não autenticado
-        // (o api.get lança Error para status não-2xx)
-        setUser(null)
+    let cancelado = false
+    setLoading(true)
+    checkSession(() => api.get<User>('/auth/me'), webStorage, () => void clearOfflineData())
+      .then((res) => {
+        if (cancelado) return
+        if (res.kind === 'user') setUser(res.user)
+        else if (res.kind === 'offline' && res.user) setUser(res.user)
+        else setUser(null)
+        setOfflineNoUser(res.kind === 'offline' && !res.user)
       })
       .finally(() => {
-        // Em ambos os casos (sucesso ou erro), termina o carregamento
-        setLoading(false)
+        if (!cancelado) setLoading(false)
       })
-  }, []) // Array vazio: executa só uma vez, na montagem do componente
+    return () => {
+      cancelado = true
+    }
+  }, [attempt]) // roda de novo só quando o usuário pede para tentar outra vez
 
   // Enquanto verifica a sessão, mostra uma tela de carregamento neutra.
   // Isso evita que o usuário veja um flash da tela de login antes de ser redirecionado.
@@ -72,6 +82,19 @@ function App() {
       <div className="min-h-screen flex items-center justify-center bg-bg-app text-t1">
         {/* Spinner animado: borda com cor parcial que gira */}
         <div className="w-8 h-8 border-2 border-border-base border-t-t3 rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  // Sem internet e sem nenhum login anterior neste aparelho: tela de "sem conexão" (não a de login)
+  if (!user && offlineNoUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bg-app">
+        <ErrorState
+          title="Sem conexão"
+          hint="Não deu para falar com a Makima. Confira a internet e tente de novo."
+          onRetry={() => setAttempt((n) => n + 1)}
+        />
       </div>
     )
   }

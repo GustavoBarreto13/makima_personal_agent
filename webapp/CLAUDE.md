@@ -21,9 +21,13 @@ webapp/
 ├── backend/
 │   ├── main.py         # app FastAPI: registra routers, CORS (dev), SessionMiddleware, serve dist/
 │   ├── config.py       # todas as env vars do módulo (SESSION_SECRET, ALLOWED_EMAIL, etc.)
-│   ├── deps.py         # require_user() → valida cookie makima_session via itsdangerous
+│   ├── deps.py         # require_user() → valida Authorization: Bearer (app Android) OU cookie makima_session (itsdangerous)
+│   ├── mobile_auth.py  # login do app: ID token Google → access token curto + refresh rotativo + aparelhos (docs/planos/app_android)
+│   ├── push_store.py   # tabela push_devices (tokens FCM) — usada pelo router e pelo scheduler
+│   ├── schema_pg.sql   # mobile_devices + push_devices
 │   └── routers/
-│       ├── auth.py     # /auth/login → /auth/callback → cookie ; /auth/logout ; /auth/me
+│       ├── auth.py     # /auth/login → /auth/callback → cookie ; /auth/logout ; /auth/me ; /auth/mobile* (app Android)
+│       ├── devices.py  # /api/devices: aparelhos conectados (revogar) e tokens de push
 │       ├── finances.py # /api/finances/* → wraps tools da Nami (PostgreSQL)
 │       ├── books.py    # /api/books/*   → wraps tools da Frieren (PostgreSQL)
 │       ├── journal.py  # /api/journal/* → wraps tools do Journal (PostgreSQL)
@@ -75,6 +79,7 @@ Fluxo: `GET /auth/login` → Google OIDC → `GET /auth/callback` → cookie `ma
 - **SessionMiddleware** (Starlette): guarda o `state` CSRF do OAuth em `request.session`; deve ser adicionado **antes** do CORSMiddleware em `main.py`
 - **Cookie `makima_session`**: payload `{"email", "name"}` assinado pelo `itsdangerous.URLSafeTimedSerializer` (salt `"makima-session"`, 7 dias). Assinar/validar usa o mesmo salt e `SESSION_SECRET` em `auth.py` e `deps.py` — nunca mudar o salt
 - **Allowlist**: só o email em `ALLOWED_EMAIL` passa; comparação case-insensitive
+- **App Android**: `POST /auth/mobile` troca o ID token do Google por `access_token` (30 min, salt `makima-mobile`, **diferente** do cookie) + `refresh_token` rotativo (hash no banco, 90 dias deslizantes; reuso revoga o aparelho). `require_user` aceita `Authorization: Bearer` **ou** o cookie. CORS libera `https://localhost` (origem do Capacitor). Detalhes: `docs/planos/app_android/` e `webapp/docs/API.md`
 - **`require_user()`** em `deps.py`: extrai o cookie via `Cookie(default=None)`, valida com o serializer, lança 401 para ausente/expirado/inválido
 
 ---
@@ -113,6 +118,7 @@ Router: `routers/journal.py` · Lógica: `agents/journal/*` (diário) e `agents/
 | `GCP_PROJECT_ID` | sim | Necessário para o GCS backup (e Vertex AI RAG do Kurisu) |
 | `GCP_CREDENTIALS_JSON` | sim | Credenciais de serviço GCP (GCS backup + Vertex AI) |
 | `DATABASE_URL` | sim | PostgreSQL compartilhado — usado por todas as tools (finanças, livros, journal) |
+| `GOOGLE_MOBILE_CLIENT_IDS` | não | Client IDs do Google aceitos como `aud` do ID token do app Android (separados por vírgula). Vazio = `POST /auth/mobile` responde 503 e nada muda para o site |
 
 As variáveis de BigQuery/GCP são lidas pelas tools dos agentes diretamente do ambiente — `config.py` não as reexporta.
 

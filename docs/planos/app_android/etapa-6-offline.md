@@ -6,6 +6,9 @@
 Metrô, avião, viagem: criar tarefa, gasto ou bullet sem sinal e sincronizar quando voltar.
 A porta `OfflineQueue` já existe em `design/core/ports.ts`, mas hoje só vive na memória (some ao fechar).
 
+> **Adiantado:** item 1 (fila persistente, ordenada, idempotente por id) em `design/core/offlineQueue.ts`. **Falta:** ligá-la às telas
+> (item 2), o selo "pendente" e o modo viagem da Yato.
+
 ## Passo a passo
 
 1. Implementar `OfflineQueue` **persistente** (SQLite via plugin ou Preferences) em `design/headless/native.ts`.

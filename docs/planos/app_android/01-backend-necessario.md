@@ -24,7 +24,7 @@ O app **não** guarda dados próprios: fala com a mesma API FastAPI. Cinco mudan
 ## 3. Push (⭐⭐)
 
 - Tabela `push_devices` (token FCM, aparelho, criado_em, último_uso) → documentar em `docs/referencia/POSTGRES.md`.
-- `POST /api/devices` e `DELETE /api/devices/{id}`.
+- `POST /api/devices/push` e `DELETE /api/devices/push/{id}`.
 - Novo canal `"push"` em `scheduler/notify_channels.py` (`_KNOWN_CHANNELS`): assim **os 14 jobs** do
   `scheduler/registry.py` ganham push sem alterar a lógica deles. `NOTIFY_DEFAULT_CHANNELS` decide
   se chega por push, WhatsApp ou ambos.

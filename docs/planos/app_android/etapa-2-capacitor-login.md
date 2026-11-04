@@ -6,6 +6,9 @@
 O Capacitor cria um projeto Android de verdade (`webapp/frontend/android/`) que exibe o **mesmo site**
 dentro do app, com "portas" para recursos do celular. Aqui nasce o primeiro APK.
 
+> **Adiantado:** no backend, tudo da seção B (`/auth/mobile`, refresh rotativo, bearer, aparelhos, CORS) e, no frontend,
+> `apiUrl`/`authFetch`/`setAuthTokenProvider` e `deepLink.ts`. **Falta:** seções A, C (versão nativa das portas), D e E — dependem do PC.
+
 ## Passo a passo
 
 ### A. Criar a casca

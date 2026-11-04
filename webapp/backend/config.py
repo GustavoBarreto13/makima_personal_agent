@@ -56,6 +56,23 @@ SESSION_COOKIE_NAME: str = "makima_session"
 # Após esse período, o itsdangerous rejeita o token mesmo que a assinatura seja válida.
 SESSION_MAX_AGE: int = 60 * 60 * 24 * 7  # 604800 segundos
 
+# --- Login do app Android (Etapa 2 do docs/planos/app_android) ---
+
+# Client IDs do Google aceitos como "audiência" do ID token enviado pelo app, separados por vírgula.
+# Normalmente é o client ID "Web" do projeto OAuth (o plugin de login nativo pede o token para ele).
+# Vazio = o login mobile fica desligado (POST /auth/mobile responde 503) — nada muda para o site.
+GOOGLE_MOBILE_CLIENT_IDS: list[str] = [
+    cid.strip()
+    for cid in os.getenv("GOOGLE_MOBILE_CLIENT_IDS", "").split(",")
+    if cid.strip()
+]
+
+# Vida do token de acesso do app (curto, para limitar o estrago se vazar): 30 minutos.
+MOBILE_ACCESS_MAX_AGE: int = 60 * 30
+
+# Refresh token "deslizante": vale 90 dias a partir do último uso. Passou disso sem abrir o app, pede login de novo.
+MOBILE_REFRESH_MAX_AGE_DAYS: int = 90
+
 # --- Banco de dados ---
 
 # String de conexão ao PostgreSQL, no formato:

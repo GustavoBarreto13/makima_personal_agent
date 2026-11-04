@@ -7,6 +7,9 @@ Hoje existe só o `public/manifest.webmanifest` (um ícone de 256px). Falta o **
 "ajudante" que guarda cópias das telas no celular para abrir rápido e funcionar sem internet.
 Esta etapa serve ao navegador, ao celular e ao app da Etapa 2.
 
+> **Adiantado (código pronto e testado):** itens 1–4 e o aviso de nova versão. Falta só o item 7 (testar no celular) e,
+> se quiser, a lista exata do que fica em cache offline (hoje: Kaguya, Yato e hub — diário, finanças e pessoas de propósito não).
+
 ## Passo a passo
 
 1. Instalar `vite-plugin-pwa` e configurar em `webapp/frontend/vite.config.ts`.
