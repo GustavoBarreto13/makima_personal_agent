@@ -1,7 +1,7 @@
 // O visual do Kanban e do calendário é o do shell antigo e NÃO pode depender dos tokens que a arte Shuchiin sobrescreve:
 // ela troca o vidro por "papel quase opaco" (--ds-glass-*), reduz o blur e quadra os cantos (--ds-r-*).
 import { describe, expect, it } from 'vitest'
-// @ts-expect-error o projeto não tem os tipos do Node; o teste roda no Node
+// Os tipos do Node chegam pelo @capacitor/cli (via @types/fs-extra), então o import é tipado.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 
 const css = readFileSync(new URL('./legacy.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')

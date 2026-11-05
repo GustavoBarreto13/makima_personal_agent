@@ -22,10 +22,11 @@ import { MakimaShell } from './pages/makima/MakimaShell'        // Hub central d
 // para o navegador quando /design é aberta, então nada muda nos shells existentes.
 const DesignShell = lazy(() => import('./pages/design/DesignShell').then((m) => ({ default: m.DesignShell })))
 
-import { api } from './lib/api'                          // Wrapper de fetch com cookie de sessão automático
+import { ApiError, api } from './lib/api'                        // Wrapper de fetch com cookie de sessão automático
 import { checkSession } from './pwa/session'             // Sessão que entende "sem conexão" (PWA/app)
 import { clearOfflineData } from './pwa/register'        // Apaga do aparelho os dados em cache ao sair
 import { webStorage } from './design/headless/web'       // Porta de armazenamento do Design System
+import { clearNativeSession, isNativeApp, storedUser } from './native/nativeAuth' // Sessão do app Android
 import { ErrorState } from './design/ui/feedback'        // Estado de erro padrão (tela "sem conexão")
 
 // Tipo que representa os dados do usuário retornados pelo endpoint /auth/me
@@ -58,7 +59,22 @@ function App() {
   useEffect(() => {
     let cancelado = false
     setLoading(true)
-    checkSession(() => api.get<User>('/auth/me'), webStorage, () => void clearOfflineData())
+    checkSession(
+      async () => {
+        // App sem nenhum login guardado no aparelho: não há o que perguntar ao servidor.
+        // Vai direto para a tela de login (em vez de confundir uma falha de rede com "sem sessão").
+        if (isNativeApp() && !(await storedUser())) throw new ApiError('Sem sessão neste aparelho.', 401)
+        const me = await api.get<User>('/auth/me')
+        // No app, o token renovado não carrega o nome: usamos o que ficou guardado no aparelho.
+        if (!me.name && isNativeApp()) return { ...me, name: (await storedUser())?.name ?? '' }
+        return me
+      },
+      webStorage,
+      () => {
+        void clearOfflineData()
+        if (isNativeApp()) void clearNativeSession() // o servidor recusou: esquece os tokens daqui
+      },
+    )
       .then((res) => {
         if (cancelado) return
         if (res.kind === 'user') setUser(res.user)
@@ -101,7 +117,8 @@ function App() {
 
   // Se o usuário não está autenticado, mostra a tela de login
   if (!user) {
-    return <Login />
+    // No app, o login acontece sem sair da tela: ao terminar, conferimos a sessão de novo.
+    return <Login onLoggedIn={() => setAttempt((n) => n + 1)} />
   }
 
   // Usuário autenticado: configura o roteamento com BrowserRouter.

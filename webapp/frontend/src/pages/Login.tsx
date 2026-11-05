@@ -2,13 +2,39 @@
 // Exibida quando o usuário não está autenticado (cookie de sessão ausente ou expirado).
 // O login é feito exclusivamente via Google OAuth — não há formulário de senha.
 
+import { useState } from 'react'
+import { isNativeApp, LoginError, signInWithGoogle } from '../native/nativeAuth'
+
+interface LoginProps {
+  /** App Android: chamado quando o login nativo termina, para o App conferir a sessão. */
+  onLoggedIn?: () => void
+}
+
 // Componente da tela de login
-function Login() {
+function Login({ onLoggedIn }: LoginProps) {
+  // Só no app: o login nativo roda sem sair da tela, então precisa de "entrando…" e de mensagem de erro.
+  const [entrando, setEntrando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+
   // Função chamada ao clicar no botão "Entrar com Google".
   // Redireciona o navegador para o endpoint do backend que inicia o fluxo OAuth.
   // O backend (FastAPI) vai redirecionar para o Google, que pedirá autorização ao usuário.
-  const handleLogin = () => {
-    // Navega para a rota de login do backend — o Google vai assumir a partir daqui
+  const handleLogin = async () => {
+    // App Android: o Google bloqueia OAuth dentro de WebView, então usamos o seletor nativo de contas.
+    if (isNativeApp()) {
+      setEntrando(true)
+      setErro(null)
+      try {
+        await signInWithGoogle()
+        onLoggedIn?.()
+      } catch (err) {
+        setErro(err instanceof LoginError ? err.message : 'Não foi possível entrar. Tente de novo.')
+      } finally {
+        setEntrando(false)
+      }
+      return
+    }
+    // Site: navega para a rota de login do backend — o Google vai assumir a partir daqui
     window.location.href = '/auth/login'
   }
 
@@ -40,6 +66,7 @@ function Login() {
       {/* transition-colors: anima a mudança de cor no hover */}
       <button
         onClick={handleLogin}
+        disabled={entrando}
         className="flex items-center gap-3 bg-white text-gray-900 font-medium px-6 py-3 rounded-lg hover:bg-gray-100 transition-colors"
       >
         {/* Ícone do Google em SVG inline (não precisa de dependência externa) */}
@@ -73,8 +100,15 @@ function Login() {
         </svg>
 
         {/* Texto do botão */}
-        Entrar com Google
+        {entrando ? 'Entrando…' : 'Entrar com Google'}
       </button>
+
+      {/* Erro do login nativo (cancelou, sem conexão, conta não autorizada…) */}
+      {erro && (
+        <p role="alert" className="mt-4 max-w-xs text-center text-sm text-red-400">
+          {erro}
+        </p>
+      )}
 
     </div>
   )

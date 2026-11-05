@@ -6,6 +6,7 @@
 // no meio de uma anotação do diário).
 
 import { useSyncExternalStore } from 'react'
+import { Capacitor } from '@capacitor/core'
 
 export interface PwaState {
   /** Há uma versão nova pronta: mostrar o aviso "Atualizar". */
@@ -74,6 +75,10 @@ export async function initPwa(): Promise<void> {
 
   window.addEventListener('online', () => set({ offline: false }))
   window.addEventListener('offline', () => set({ offline: true }))
+
+  // Dentro do app Android o `dist/` já está embutido no APK: o service worker só serviria uma
+  // cópia antiga da tela por cima da versão instalada. Atualizar = instalar o APK novo.
+  if (Capacitor.isNativePlatform()) return
 
   // Em `npm run dev` não há service worker (o Vite serve módulos sob demanda): não registrar.
   if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return
