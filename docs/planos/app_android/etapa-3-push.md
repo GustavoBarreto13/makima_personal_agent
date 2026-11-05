@@ -6,8 +6,17 @@
 Hoje os avisos (digest da Kaguya, alerta de orçamento, revisão semanal…) saem pelo WhatsApp. Com push eles
 chegam como notificação do Android, com **botões** que agem sem abrir o app.
 
-> **Adiantado:** tabela `push_devices`, rotas `/api/devices/push` e o canal `"push"` em `notify_channels.py` (itens 3 e parte do 4).
-> **Falta:** itens 1, 2, 5, 6 (Firebase, permissão no app, botões de ação) — dependem do Firebase e do celular.
+> **Adiantado (código pronto, branch `feat/app-android-etapa2-cd`):**
+> - Backend: tabela `push_devices`, `/api/devices/push`, canal `"push"`; notificações de Nami/Violet/Lucy saem com
+>   `visibility=private` (conteúdo oculto na tela de bloqueio); os 8 scripts do scheduler agora mandam `agent`, título e
+>   `link` (deep link `makima://…`).
+> - App (`src/native/push.ts`, `pushChannels.ts`): pede permissão, cria 8 canais por agente, registra o token em
+>   `/api/devices/push`, toque na notificação abre a tela pelo deep link, logout remove o registro. Sem
+>   `google-services.json` o registro só loga um aviso — o app segue normal.
+>
+> **Falta (depende de você):** itens 1 e 7 abaixo (Firebase + `FIREBASE_CREDENTIALS_JSON` + `NOTIFY_DEFAULT_CHANNELS`).
+> **Falta (código, depois do Firebase):** botões de ação *Concluir · Adiar* (o plugin do Capacitor não desenha botões em
+> push: exige mensagem só de dados + notificação local ou código nativo).
 
 ## Passo a passo
 

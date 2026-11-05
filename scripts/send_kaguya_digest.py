@@ -48,7 +48,7 @@ def main() -> int:
 
     digest_text = build_whatsapp_digest(context, suggestion)
 
-    if not send_notification(digest_text):
+    if not send_notification(digest_text, title="Kaguya · Seu dia", link="makima://kaguya", agent="kaguya"):
         log.error("Falha ao enviar o digest: nenhum canal recebeu")
         return 1
 

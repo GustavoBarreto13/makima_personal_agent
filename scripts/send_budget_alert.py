@@ -57,7 +57,7 @@ def main() -> int:
         print(f"[budget-alert] {month}: todas as categorias dentro do limite — nada a enviar")
         return 0
 
-    if not send_notification(_build_message(envelopes_em_alerta)):
+    if not send_notification(_build_message(envelopes_em_alerta), title="Nami · Orçamento", link="makima://nami", agent="nami"):
         log.error("Falha ao enviar alerta: nenhum canal recebeu a notificação")
         return 1
 

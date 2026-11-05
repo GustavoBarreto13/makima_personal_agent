@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     from scheduler.notify_channels import send_notification
-    if not send_notification(message):
+    if not send_notification(message, title="Violet · Revisão da semana", link="makima://violet", agent="violet"):
         log.error("Falha ao enviar a revisão: nenhum canal recebeu")
         return 1
     W.marcar_enviada(review["week_start"])

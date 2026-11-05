@@ -26,8 +26,16 @@ let seq = 0
 const listeners = new Set<() => void>()
 const emit = () => listeners.forEach((l) => l())
 
+/** Ouvinte opcional chamado a cada toast (o app Android usa para vibrar). O design/ não conhece o Capacitor. */
+let toneListener: ((tone: ToastTone) => void) | null = null
+
+export function setToastToneListener(fn: ((tone: ToastTone) => void) | null): void {
+  toneListener = fn
+}
+
 export function toast(message: string, opts: ToastOptions = {}): number {
   const id = ++seq
+  toneListener?.(opts.tone ?? 'info')
   const item: ToastItem = {
     id,
     message,

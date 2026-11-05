@@ -27,20 +27,32 @@ dentro do app, com "portas" para recursos do celular. Aqui nasce o primeiro APK.
 - **Servidor:** merge na `master` (`07614dd`), `GOOGLE_MOBILE_CLIENT_IDS` no Dokploy e tabelas
   `mobile_devices`/`push_devices` aplicadas no VPS.
 
+### Feito depois (branch `feat/app-android-etapa2-cd`, 05/nov/2026) — falta testar no celular
+- **C — portas do DS: decisão, sem código.** `localStorage` persiste dentro da WebView do Capacitor (só some se limpar
+  os dados do app) e o CORS de `https://localhost` já está liberado; trocar a porta síncrona `Storage` por
+  `@capacitor/preferences` (assíncrono) seria reescrita sem ganho. `web.ts` vale no app; a `OfflineQueue` persistente
+  já usa essa porta. Revisitar só se aparecer perda de dados.
+- **D — parecer app** (`src/native/`):
+  - *Botão voltar* (`backButton.ts`): fecha o modal (dispara Esc, que o `useDismissable` já trata) → volta de tela → minimiza.
+  - *Deep links* `makima://` (`NativeBridge.tsx` + intent-filter no `AndroidManifest.xml`), abertura a frio e app aberto.
+  - *Vibração* (`haptics.ts`): todo toast de sucesso/erro vibra, via `setToastToneListener` em `design/headless/toast.ts`.
+  - *Barra de status* (`statusBar.ts`): ícones acompanham o tema. **Cor por agente ficou de fora**: no Android 15+ o
+    app desenha por baixo da barra (edge-to-edge) e a cor de fundo é ignorada.
+  - *Privacidade* (`privacy.ts`): `/journal` e `/nami` bloqueiam print e escondem a prévia em "apps recentes".
+  - *Biometria* (`AppLock.tsx`, `appLock.ts`): pede digital/rosto (ou PIN do celular) **ao abrir** e ao voltar depois de
+    2 min em segundo plano; sem nenhum bloqueio de tela no celular, avisa e deixa entrar.
+- **Sem internet × servidor com erro:** `checkSession` devolve `reason: 'network' | 'server'` (5xx) e a tela mostra
+  "Sem conexão" ou "A Makima está com problema".
+
 ### Falta fazer
-- **C — portas do Design System:** `design/headless/native.ts` (Storage → `@capacitor/preferences`, Http →
-  `CapacitorHttp`); a `OfflineQueue` segue em memória até a Etapa 6.
-- **D — parecer app:** biometria ao abrir, botão voltar do Android (fecha modais), cor da barra de status por
-  agente, vibração (`@capacitor/haptics`) e **deep links** `makima://…` registrados no `AndroidManifest`
-  (o `deepLink.ts` já existe; falta o intent-filter e o ouvinte do plugin `@capacitor/app`).
+- **Testar no celular** o que acima não dá para validar aqui (sem Java/SDK): `npm run android:sync` → ▶ e conferir
+  voltar, `adb shell am start -a android.intent.action.VIEW -d "makima://kaguya"`, biometria ao abrir e após 2 min,
+  print bloqueado em Diário/Finanças e liberado em Tarefas, vibração ao concluir tarefa.
 - **E — APK assinado:** *(você)* criar a keystore de release e guardar em **dois lugares seguros**; depois
   cadastrar o SHA-1 dela na credencial Android do Google Cloud (hoje só está o SHA-1 da chave de **depuração**,
   então um APK assinado com outra chave não consegue logar até isso ser feito).
-- **Pequenos acertos:** o app mostra "sem conexão" também quando o servidor responde erro (500) — separar
-  "sem internet" de "servidor com problema"; testes do backend de `/auth/mobile` contra banco real (parte da
-  suíte é pulada sem banco).
-- **Fechamento:** `npm run audit:design`, conferir `chrome://inspect` sem erros nos 10 agentes, testar revogar
-  o aparelho em `/api/devices`.
+- **Pendente menor:** testes do backend de `/auth/mobile` contra banco real (parte da suíte é pulada sem banco);
+  `npm run audit:design` e `chrome://inspect` sem erros nos 10 agentes; testar revogar o aparelho em `/api/devices`.
 
 ### Não-código (anotado para não esquecer)
 | Quando | O que é com você |

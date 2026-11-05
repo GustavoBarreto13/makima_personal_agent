@@ -58,7 +58,7 @@ def main() -> int:
         print("[kaguya-due-reminders] nada venceu desde a última rodada — nada a enviar")
         return 0
 
-    if not send_notification(_build_message(tasks)):
+    if not send_notification(_build_message(tasks), title="Kaguya · Vence hoje", link="makima://kaguya", agent="kaguya"):
         log.error("Falha ao enviar lembrete: nenhum canal recebeu — tenta de novo no próximo ciclo")
         return 1
 
