@@ -1,8 +1,9 @@
 # App Android da Makima
 
-> **Status: planejado, não executado.** Nenhuma linha de código do app existe ainda — esta pasta
-> é o estudo e o roteiro. Quando uma etapa for entregue, atualizar o `ROADMAP.md` e mover o que
-> estiver concluído para `docs/arquivo/`.
+> **Status: em andamento — parte do código já foi adiantada** (branch `feat/app-android-prep`, ver
+> "O que já foi adiantado" abaixo). **Ainda não existe o app Android em si** (casca Capacitor,
+> Firebase real, login nativo, widgets, câmera): isso depende do PC e do celular. Quando uma etapa
+> for entregue por inteiro, atualizar o `ROADMAP.md` e mover o que estiver concluído para `docs/arquivo/`.
 
 ## Objetivo
 
@@ -41,6 +42,64 @@ para widgets/tile.** Motivo: o frontend tem ~48 mil linhas de React; o Capacitor
 | [8 — Extras](etapa-8-extras.md) | Geofence, sono, contatos, notificação do banco | ⭐⭐⭐⭐ | sob demanda |
 
 **MVP útil = etapas 0–3** (~5–7 semanas).
+
+## Quadro de progresso (atualizado em 04/11/2026)
+
+Legenda: ✅ feito e testado · 🟡 parcial (código pronto, falta ligar/testar no aparelho) · ⬜ não começou.
+
+| Etapa | Status | Já feito (código) | Falta fazer |
+|---|---|---|---|
+| 0 — Preparar | ⬜ | — | **Você:** instalar Android Studio, ativar depuração USB, criar projeto Firebase |
+| 1 — PWA | 🟡 | Service worker, ícones, manifesto, aviso de versão, tela "sem conexão", abrir offline, limpeza de cache | **Você:** instalar no Chrome do celular e testar no modo avião; rodar Lighthouse |
+| 2 — Casca + login | 🟡 | Backend do login (`/auth/mobile`, refresh rotativo, aparelhos revogáveis, CORS), `apiUrl`/bearer no frontend, `deepLink.ts` | Capacitor (`cap add android`), login nativo Google, Keystore, portas nativas (`native.ts`), biometria, botão voltar, haptics, APK assinado |
+| 3 — Push | 🟡 | Tabela `push_devices`, rotas `/api/devices/push`, canal `"push"` nos jobs | Firebase real, `google-services.json`, `FIREBASE_CREDENTIALS_JSON`, plugin de push, canais Android por agente, botões de ação |
+| 4 — Entrada rápida | 🟡 | Parser de links compartilhados (`shareTarget.ts`) | **Mídia:** bucket GCS privado + `POST /api/media` (pré-requisito da câmera); atalhos do app, receber "compartilhar", câmera, voz |
+| 5 — Widgets | ⬜ | — | Endpoints `/api/widgets/*` (Bloco E, opcional ficou de fora), widgets em Kotlin/Glance, tile de foco, timer em serviço |
+| 6 — Offline | 🟡 | Fila de escritas persistente (`offlineQueue.ts`) | Ligar às telas (tarefa, gasto, bullet, hábito), selo "pendente", evento "voltou a internet", modo viagem da Yato |
+| 7 — Chat | ⬜ | — | Verificar API do Hermes, rota de streaming, tela de chat |
+| 8 — Extras | ⬜ | — | Sob demanda |
+
+### Próximos passos, em ordem
+
+1. **Antes de tudo (servidor):** rodar `setup_schemas.py` dentro do `makima-web` para criar `mobile_devices` e `push_devices`.
+   Sem isso, as rotas de aparelho/push dão erro. Não preencher `GOOGLE_MOBILE_CLIENT_IDS` ainda.
+2. **Você, no PC:** Etapa 0 (Android Studio, depuração USB, projeto Firebase).
+3. **Você, no celular:** testar a PWA da Etapa 1 (instalar + modo avião). Dá para fazer sem Android Studio.
+4. **Claude + você:** Etapa 2 (casca Capacitor + login nativo). Aqui sai o primeiro APK.
+   Criar o "OAuth client" Android no Google Cloud e preencher `GOOGLE_MOBILE_CLIENT_IDS`.
+5. **Claude + você:** Etapa 3 (push real com Firebase) → fecha o **MVP**.
+6. Depois: Etapas 4, 6, 5, 7 (nessa ordem sugerida: entrada rápida e offline dão mais valor por esforço).
+
+### Pendências técnicas já conhecidas
+
+- Imagens `/uploads/...` (ícones e avatares) precisam passar por `apiUrl()` dentro do app.
+- **Mídia nova (recibo, livro, diário) → bucket privado `makima-media` no GCS**, com `POST /api/media`, chave no banco e URL assinada (desenho em `01-backend-necessario.md` §6). Não usar o bucket de backups (lifecycle de 30 dias). `/uploads` hoje é público, sem login: só serve para ícone/avatar.
+- Confirmar se `webapp/uploads` está num volume persistente no Dokploy.
+- Reenvio da fila offline pode duplicar se a resposta se perder (o `id` por item já existe para o servidor deduplicar).
+- Revisar o login com `/code-review` antes de qualquer deploy.
+- Node 18 local precisa de `NODE_OPTIONS=--experimental-global-webcrypto` para buildar o PWA (produção usa Node 20).
+- Capacitor 7+ exige Node 20: usar o Node do PC ou fixar Capacitor 6.
+- Alterações da branch `feat/app-android-prep` ainda **não foram commitadas** nem mescladas na `master`.
+
+## O que já foi adiantado (só com código, sem Android Studio)
+
+Tudo abaixo está testado (pytest/vitest) e **inerte em produção** até as variáveis serem configuradas.
+
+| Parte | O que existe | Onde | Falta (PC/celular) |
+|---|---|---|---|
+| **Etapa 1 — PWA** | Service worker (`vite-plugin-pwa`, cache de app + leituras de Kaguya/Yato/hub; diário, finanças e pessoas **não** ficam em cache), ícones 192/512/maskable, aviso "nova versão" e "sem conexão", app que abre offline sem cair no login, cache apagado quando a sessão é recusada | `webapp/frontend/vite.config.ts`, `src/pwa/`, `scripts/gen-pwa-icons.mjs`, `public/pwa-*.png` | Instalar no Chrome do celular e testar no modo avião |
+| **Etapa 2 — login (backend)** | `POST /auth/mobile`, refresh rotativo, bearer em `require_user`, aparelhos revogáveis | `webapp/backend/mobile_auth.py`, `routers/auth.py`, `routers/devices.py` | Casca Capacitor, login nativo do Google, Keystore, biometria, APK; criar o "OAuth client" e preencher `GOOGLE_MOBILE_CLIENT_IDS` |
+| **Etapa 2 — frontend** | `apiUrl`/`authFetch`/`setAuthTokenProvider` (base da API + bearer), `shareTarget.ts`, `deepLink.ts` | `src/lib/` | Ligar ao plugin nativo |
+| **Etapa 3 — push (backend)** | Tabela `push_devices`, `POST /api/devices/push`, canal `"push"` no `send_notification` | `webapp/backend/push_store.py`, `scheduler/notify_channels.py` | Projeto Firebase, `google-services.json`, `FIREBASE_CREDENTIALS_JSON`, plugin de push no app, botões de ação |
+| **Etapa 6 — offline (lógica)** | Fila de escritas persistente, ordenada, com erros temporários × definitivos | `src/design/core/offlineQueue.ts` | Ligar às telas (tarefa, gasto, bullet) e ao evento "voltou a internet" |
+
+**Antes de ligar em produção:** rodar `setup_schemas.py` dentro do `makima-web` (cria `mobile_devices` e
+`push_devices`); só então configurar `GOOGLE_MOBILE_CLIENT_IDS` e, mais tarde, `FIREBASE_CREDENTIALS_JSON`.
+
+**Limitações conhecidas:** (1) imagens servidas pelo backend (`/uploads/...`) ainda usam caminho relativo — no app
+precisam passar por `apiUrl()`; (2) o reenvio da fila offline pode duplicar se a resposta se perder depois do servidor
+gravar (o `id` de cada item já está pronto para o servidor deduplicar no futuro); (3) o Node 18 não consegue rodar o
+build do PWA sem `NODE_OPTIONS=--experimental-global-webcrypto` (produção usa Node 20 e não precisa).
 
 ## Glossário rápido
 

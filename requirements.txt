@@ -23,6 +23,7 @@ sqlalchemy          # ORM usado internamente pelo ADK para criar e acessar as ta
 psycopg2-binary     # driver síncrono para PostgreSQL (usado pelas tools do journal)
 python-dateutil     # aritmética de recorrência RRULE (RFC 5545) — motor da Kaguya (Fase 2)
 apscheduler         # agendador de jobs recorrentes (container makima-scheduler) — ver scheduler/
+firebase-admin      # envio de push (FCM) para o app Android — canal "push" de scheduler/notify_channels.py
 
 # Web interface (webapp/)
 fastapi              # Framework web ASGI — define rotas e serialização JSON

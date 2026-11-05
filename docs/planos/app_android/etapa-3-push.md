@@ -6,13 +6,16 @@
 Hoje os avisos (digest da Kaguya, alerta de orçamento, revisão semanal…) saem pelo WhatsApp. Com push eles
 chegam como notificação do Android, com **botões** que agem sem abrir o app.
 
+> **Adiantado:** tabela `push_devices`, rotas `/api/devices/push` e o canal `"push"` em `notify_channels.py` (itens 3 e parte do 4).
+> **Falta:** itens 1, 2, 5, 6 (Firebase, permissão no app, botões de ação) — dependem do Firebase e do celular.
+
 ## Passo a passo
 
 1. *(você)* No Firebase: adicionar app Android com o `appId` da Etapa 2 → baixar `google-services.json`
    → entregar ao Claude (vai para `webapp/frontend/android/app/`). Gerar também a chave de conta de serviço
    (para o backend enviar) e guardar como segredo no Dokploy.
 2. Instalar `@capacitor/push-notifications`; pedir permissão de notificação no primeiro uso.
-3. O app registra o token do aparelho em `POST /api/devices` (tabela `push_devices`).
+3. O app registra o token do aparelho em `POST /api/devices/push` (tabela `push_devices`).
 4. Backend: `scheduler/notify_channels.py` ganha o canal `"push"` (via `firebase-admin`). Os 14 jobs de
    `scheduler/registry.py` passam a poder usar push **sem mudar a lógica deles**.
 5. **Canais Android por agente:** Kaguya, Nami, Aniversários, Violet, Lucy, Sistema. Você silencia um sem

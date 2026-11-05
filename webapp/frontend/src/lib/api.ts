@@ -12,6 +12,75 @@
 
 
 /**
+ * Base da API. Vazia no site (mesma origem do servidor: `/api/...` funciona direto).
+ * No app Android o `dist/` roda do próprio aparelho, então as chamadas precisam do endereço
+ * absoluto do servidor — definido no build por `VITE_API_BASE_URL` (ex.: https://makima.exemplo.com).
+ */
+let apiBase = normalizeBase(import.meta.env?.VITE_API_BASE_URL)
+
+/** Tira espaços e a barra final ("https://x.com/" → "https://x.com"). */
+function normalizeBase(value: unknown): string {
+  return typeof value === 'string' ? value.trim().replace(/\/+$/, '') : ''
+}
+
+/** Troca a base da API em tempo de execução (o app nativo e os testes usam). */
+export function setApiBase(url: string): void {
+  apiBase = normalizeBase(url)
+}
+
+/**
+ * Monta a URL final de uma rota do backend.
+ * Caminhos relativos ("/api/...") ganham a base; URLs absolutas passam intactas.
+ * Use também para `src` de imagens servidas pelo backend (ex.: `/uploads/...`) no app.
+ *
+ * @example apiUrl('/api/hub/summary') // site: '/api/hub/summary' · app: 'https://x.com/api/hub/summary'
+ */
+export function apiUrl(path: string): string {
+  return /^https?:\/\//i.test(path) ? path : `${apiBase}${path}`
+}
+
+/** Quem fornece o token de acesso do app (bearer). No site fica sem provedor e vale o cookie. */
+type TokenProvider = () => string | null | Promise<string | null>
+let tokenProvider: TokenProvider | null = null
+
+/**
+ * Registra a função que devolve o token de acesso atual (o app nativo a define no início).
+ * Pode ser assíncrona: é o lugar certo para renovar o token expirado antes de cada chamada.
+ * Passe `null` para voltar ao modo cookie.
+ */
+export function setAuthTokenProvider(provider: TokenProvider | null): void {
+  tokenProvider = provider
+}
+
+/**
+ * `fetch` do projeto: aplica a base da API, envia o cookie de sessão e, se houver token do app,
+ * o cabeçalho `Authorization: Bearer`. Todo acesso ao backend deve passar por aqui
+ * (inclusive uploads multipart, que o `api.post` — só JSON — não cobre).
+ *
+ * @param path - Rota do backend (ex.: '/api/finances/uploads/icon')
+ * @param init - Opções do fetch (método, corpo, cabeçalhos…)
+ */
+export async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers)
+  const token = tokenProvider ? await tokenProvider() : null
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  return fetch(apiUrl(path), { ...init, headers, credentials: 'include' })
+}
+
+/**
+ * Erro de uma resposta HTTP malsucedida. Carrega o `status` para quem precisa distinguir
+ * "sessão inválida" (401/403) de "servidor/rede fora do ar" (sem status, ou 5xx).
+ */
+export class ApiError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
+/**
  * Extrai a mensagem de erro de uma resposta HTTP malsucedida.
  *
  * O backend (FastAPI) devolve erros como JSON {"detail": "mensagem"}. Esta
@@ -22,7 +91,7 @@
  * @param res - Resposta fetch com res.ok === false
  * @returns Error com a mensagem mais informativa disponível
  */
-async function errorFromResponse(res: Response): Promise<Error> {
+async function errorFromResponse(res: Response): Promise<ApiError> {
   try {
     const data: any = await res.json()
     // FastAPI usa a chave "detail"; aceita também um corpo string direto
@@ -32,11 +101,11 @@ async function errorFromResponse(res: Response): Promise<Error> {
         : typeof data === 'string'
           ? data
           : null
-    if (msg) return new Error(msg)
+    if (msg) return new ApiError(msg, res.status)
   } catch {
     // corpo vazio ou não-JSON — usa o fallback genérico abaixo
   }
-  return new Error(`HTTP ${res.status}`)
+  return new ApiError(`HTTP ${res.status}`, res.status)
 }
 
 /**
@@ -55,7 +124,7 @@ export const api = {
     // credentials: 'include' instrui o navegador a enviar os cookies de sessão.
     // Sem isso, o cookie makima_session seria ignorado e todas as rotas protegidas
     // retornariam 401.
-    const res = await fetch(path, { credentials: 'include' })
+    const res = await authFetch(path)
 
     // Se o servidor retornou um erro (4xx, 5xx), lança uma exceção com o código HTTP
     if (!res.ok) throw await errorFromResponse(res)
@@ -73,7 +142,7 @@ export const api = {
    * @throws Error se a resposta HTTP não for 2xx
    */
   post: async <T>(path: string, body: unknown): Promise<T> => {
-    const res = await fetch(path, {
+    const res = await authFetch(path, {
       method: 'POST',
       headers: {
         // Informa ao servidor que o corpo da requisição é JSON
@@ -102,7 +171,7 @@ export const api = {
    * @throws Error se a resposta HTTP não for 2xx
    */
   patch: async <T>(path: string, body: unknown): Promise<T> => {
-    const res = await fetch(path, {
+    const res = await authFetch(path, {
       method: 'PATCH',
       headers: {
         // Informa ao servidor que o corpo da requisição é JSON
@@ -131,7 +200,7 @@ export const api = {
    * @throws Error se a resposta HTTP não for 2xx
    */
   put: async <T>(path: string, body: unknown): Promise<T> => {
-    const res = await fetch(path, {
+    const res = await authFetch(path, {
       method: 'PUT',
       headers: {
         // Informa ao servidor que o corpo da requisição é JSON
@@ -160,7 +229,7 @@ export const api = {
    * @throws Error se a resposta HTTP não for 2xx
    */
   del: async <T>(path: string): Promise<T> => {
-    const res = await fetch(path, {
+    const res = await authFetch(path, {
       method: 'DELETE',
       // Envia o cookie de sessão junto com a requisição
       credentials: 'include',

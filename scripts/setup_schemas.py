@@ -44,6 +44,9 @@ SCHEMA_FILES = [
     # mobility_dossiers, mobility_checks, trip_mobility_snapshots,
     # mobility_apps, trip_checklist_items, trip_budget_items.
     "agents/yato/schema_pg.sql",
+    # App Android (docs/planos/app_android). 2 tabelas: mobile_devices (aparelhos logados,
+    # refresh token em hash) e push_devices (tokens FCM para notificações push).
+    "webapp/backend/schema_pg.sql",
 ]
 
 

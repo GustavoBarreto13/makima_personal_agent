@@ -2,6 +2,7 @@
 // Regra de dependência: ui → headless → core. O core nunca importa react, window, document nem localStorage.
 
 export * from './ports'
+export * from './offlineQueue'
 export * from './format'
 export * from './hotkeys'
 export * from './theme'

@@ -55,6 +55,7 @@ diferentes.
 | **Tutor de Idiomas** (cross-domain — FK p/ `journal_bullets`) | Agente Kurisu | `journal_tutor_analyses`, `journal_tutor_events`, `journal_tutor_skills`, `journal_tutor_guides` |
 | **Conselho do Dia, revisão semanal e leitura emocional** (cross-domain — IA da Violet) | Agente Kurisu | `journal_counsel`, `journal_counsel_messages`, `journal_weekly_reviews`, `journal_emotion_analyses` |
 | **Infraestrutura** (agendador de jobs) | `scheduler/` | `scheduler_runs` |
+| **App Android** (aparelhos e push) | `webapp/backend/` | `mobile_devices`, `push_devices` |
 
 ---
 
@@ -1919,6 +1920,42 @@ loop não deixava rastro — foi assim que o backup ficou meses quebrado sem nin
 execuções de um job.
 
 Sem FKs (tabela de infraestrutura, independente dos domínios de negócio).
+
+---
+
+## 12.5.1. App Android — `mobile_devices` e `push_devices`
+
+Schema em `webapp/backend/schema_pg.sql` (registrado em `scripts/setup_schemas.py`). Usadas pelo login
+do app (`webapp/backend/mobile_auth.py`) e pelo canal `push` do `scheduler/notify_channels.py`.
+Plano completo: `docs/planos/app_android/`.
+
+**`mobile_devices`** — um aparelho que fez login no app.
+
+| Coluna | Tipo | Regras / propósito |
+|---|---|---|
+| `id` | `TEXT` | PK. UUID (hex) gerado no Python; vai embutido no refresh token (`<id>.<segredo>`). |
+| `email` | `TEXT NOT NULL` | Dono do aparelho (hoje sempre `ALLOWED_EMAIL`). |
+| `name` | `TEXT NOT NULL` | `DEFAULT 'Android'`. Nome amigável ("aparelhos conectados"). |
+| `refresh_hash` | `TEXT NOT NULL` | SHA-256 do refresh token **atual** (o token em si nunca é guardado). Muda a cada renovação. |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | `DEFAULT NOW()`. |
+| `last_used_at` | `TIMESTAMPTZ NOT NULL` | `DEFAULT NOW()`. Base da expiração deslizante de 90 dias. |
+| `revoked_at` | `TIMESTAMPTZ` | `NULL` = ativo. Preenchido no logout, ao "desconectar" ou ao detectar reuso de refresh. |
+
+**Índice:** `idx_mobile_devices_email (email) WHERE revoked_at IS NULL`.
+
+**`push_devices`** — token FCM (Firebase Cloud Messaging) de um aparelho.
+
+| Coluna | Tipo | Regras / propósito |
+|---|---|---|
+| `id` | `TEXT` | PK (UUID hex). |
+| `fcm_token` | `TEXT NOT NULL UNIQUE` | "Endereço" do aparelho no FCM. Upsert por este campo. |
+| `device_name` | `TEXT NOT NULL` | `DEFAULT 'Android'`. |
+| `mobile_device_id` | `TEXT` | FK `mobile_devices(id) ON DELETE SET NULL` — o push segue funcionando mesmo se o login for apagado. |
+| `created_at` / `last_used_at` | `TIMESTAMPTZ NOT NULL` | `DEFAULT NOW()`. |
+
+**Índice:** `idx_push_devices_mobile (mobile_device_id)`. Tokens que o FCM recusa (`UNREGISTERED`) são apagados no envio.
+
+**Migração:** só `CREATE TABLE IF NOT EXISTS` — aplicar com `setup_schemas.py` dentro do `makima-web`.
 
 ---
 

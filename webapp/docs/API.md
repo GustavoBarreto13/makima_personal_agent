@@ -20,7 +20,35 @@ Rotas públicas — não exigem cookie.
 | `GET` | `/auth/login` | Inicia o fluxo Google OIDC. Redireciona para a tela de login do Google. |
 | `GET` | `/auth/callback` | Google redireciona aqui após login. Valida o token, emite o cookie `makima_session` e redireciona para `/`. |
 | `GET` | `/auth/logout` | Apaga o cookie e redireciona para `/`. |
-| `GET` | `/auth/me` | Retorna `{"email": "...", "name": "..."}` do usuário logado, ou `401`. |
+| `GET` | `/auth/me` | Retorna `{"email": "...", "name": "..."}` do usuário logado (cookie **ou** `Authorization: Bearer`), ou `401`. |
+
+### Login do app Android (`/auth/mobile*`)
+
+Rotas públicas (a prova de identidade é o ID token do Google ou o refresh token). Desligadas
+(`503`) enquanto `GOOGLE_MOBILE_CLIENT_IDS` estiver vazia. O site **não** usa estas rotas — continua no cookie.
+Planejamento e porquês: `docs/planos/app_android/`.
+
+| Método | Caminho | Descrição |
+|---|---|---|
+| `POST` | `/auth/mobile` | Corpo `{id_token, device_name?}`. Valida o ID token do Google (assinatura, `aud` ∈ `GOOGLE_MOBILE_CLIENT_IDS`, e-mail verificado e igual a `ALLOWED_EMAIL`), cria o aparelho e devolve `{access_token, refresh_token, token_type:"Bearer", expires_in, device_id, user}`. `401` token inválido · `403` e-mail não autorizado · `503` não configurado. |
+| `POST` | `/auth/mobile/refresh` | Corpo `{refresh_token}`. Troca o refresh por um **par novo** (rotativo: cada refresh vale uma vez; reapresentar um antigo revoga o aparelho). Expira após 90 dias sem uso. `401` se inválido/expirado/revogado. |
+| `POST` | `/auth/mobile/logout` | Corpo `{refresh_token}`. Revoga o aparelho. Idempotente (`{"status":"ok"}` sempre). |
+
+O token de acesso (30 min) vai em `Authorization: Bearer <token>` em qualquer rota `/api/*`
+(`require_user` aceita bearer **ou** cookie). Salt próprio (`makima-mobile`): o cookie do site nunca vale como bearer.
+
+---
+
+## Aparelhos do app Android (`/api/devices/*`)
+
+Todas exigem login (cookie ou bearer). Tabelas `mobile_devices` e `push_devices` (ver `docs/referencia/POSTGRES.md` §12.5.1).
+
+| Método | Caminho | Descrição |
+|---|---|---|
+| `GET` | `/api/devices` | Aparelhos conectados `{devices:[{id,name,created_at,last_used_at,current}]}` — `current` marca o que fez a chamada. |
+| `DELETE` | `/api/devices/{id}` | Desconecta o aparelho (revoga o acesso em até ~1 min). `404` se não for do usuário. |
+| `POST` | `/api/devices/push` | Corpo `{fcm_token, device_name?}`. Registra/atualiza o token de push (idempotente — pode chamar a cada abertura). `201` `{status, id}`. |
+| `DELETE` | `/api/devices/push/{id}` | Remove o registro de push. `404` se não existir. |
 
 ---
 

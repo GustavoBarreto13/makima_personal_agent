@@ -2,7 +2,7 @@
 // Componentes NUNCA chamam fetch direto. `create` e `search` mantêm a assinatura antiga porque
 // outras telas (Violet) cadastram pessoas por eles.
 
-import { api } from '../../lib/api'
+import { api, authFetch } from '../../lib/api'
 import type {
   AiSummary, Briefing, Category, DuplicatePair, Group, GeneratedSummary, Interaction, InteractionKind, Memory, MergePreview,
   NoteKind, PersonDetail, PersonInput, PersonNote, PersonRow, Relation, RelationKind, RecordSpace, SummaryState,
@@ -170,11 +170,11 @@ export const komiApi = {
   stats: (year: number) => api.get<StatsPayload & { first_year: number }>(`${BASE}/stats${q({ year })}`),
 
   // ── Foto ───────────────────────────────────────────────────────────────────
-  /** Envia a foto (multipart: o `api.post` só fala JSON, então este é o único fetch direto). */
+  /** Envia a foto (multipart: o `api.post` só fala JSON, então usa o `authFetch` (base da API + bearer)). */
   uploadAvatar: async (file: File): Promise<{ url: string }> => {
     const form = new FormData()
     form.append('file', file)
-    const res = await fetch(`${BASE}/uploads/avatar`, { method: 'POST', credentials: 'include', body: form })
+    const res = await authFetch(`${BASE}/uploads/avatar`, { method: 'POST', body: form })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }))
       throw new Error(typeof err.detail === 'string' ? err.detail : 'Não foi possível enviar a foto.')

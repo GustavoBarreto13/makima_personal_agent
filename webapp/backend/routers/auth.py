@@ -13,12 +13,17 @@ Usage:
 
 import itsdangerous  # Biblioteca para assinar dados de forma segura (evita falsificação de cookies)
 from authlib.integrations.starlette_client import OAuth  # Cliente OAuth para Starlette/FastAPI
-from fastapi import APIRouter, Request  # APIRouter agrupa rotas; Request representa a requisição HTTP
+from fastapi import APIRouter, HTTPException, Request  # APIRouter agrupa rotas; Request representa a requisição HTTP
 from fastapi.responses import JSONResponse, RedirectResponse  # Tipos de resposta HTTP
+from pydantic import BaseModel  # Valida o corpo JSON das rotas do app
+
+from webapp.backend import mobile_auth  # Tokens e aparelhos do app Android
+from webapp.backend.deps import user_from_bearer  # Valida o cabeçalho Authorization
 
 # Importa as configurações centrais da aplicação
 from webapp.backend.config import (
     ALLOWED_EMAIL,  # Email autorizado a usar a webapp
+    MOBILE_ACCESS_MAX_AGE,  # Vida do token de acesso do app
     GOOGLE_OAUTH_CLIENT_ID,  # ID do app no Google Cloud Console
     GOOGLE_OAUTH_CLIENT_SECRET,  # Segredo do app no Google Cloud Console
     OAUTH_REDIRECT_URL,  # URL para onde o Google redireciona após o login
@@ -225,6 +230,17 @@ async def me(request: Request) -> JSONResponse:
         JSON com "email" e "name" do usuário autenticado.
         JSON com "error" e status 401 se o cookie estiver ausente, expirado ou inválido.
     """
+    # App Android: autentica pelo cabeçalho Authorization em vez do cookie
+    authorization = request.headers.get("authorization", "")
+    if authorization.lower().startswith("bearer "):
+        try:
+            user = user_from_bearer(authorization)
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+        return JSONResponse(
+            status_code=200, content={"email": user.get("email", ""), "name": user.get("name", "")}
+        )
+
     # Lê o cookie de sessão do cabeçalho da requisição
     signed_cookie = request.cookies.get(_COOKIE_NAME)
 
@@ -266,3 +282,106 @@ async def me(request: Request) -> JSONResponse:
         status_code=200,
         content={"email": payload.get("email", ""), "name": payload.get("name", "")},
     )
+
+
+# ─── Login do app Android (Etapa 2 do docs/planos/app_android) ───────────────
+# O site continua usando /auth/login + cookie. Estas rotas existem só para o app, que
+# troca o ID token do login nativo do Google por um token de acesso + refresh token.
+
+
+class MobileLoginBody(BaseModel):
+    """Corpo de `POST /auth/mobile`.
+
+    Attributes:
+        id_token: ID token devolvido pelo login nativo do Google.
+        device_name: Nome amigável do aparelho (aparece em "aparelhos conectados").
+    """
+
+    id_token: str
+    device_name: str = "Android"
+
+
+class RefreshBody(BaseModel):
+    """Corpo de `POST /auth/mobile/refresh` e `/auth/mobile/logout`.
+
+    Attributes:
+        refresh_token: Refresh token atual do app.
+    """
+
+    refresh_token: str
+
+
+def _mobile_tokens(email: str, name: str, device_id: str, refresh_token: str) -> dict:
+    """Montar a resposta padrão com o par de tokens e os dados do usuário."""
+    return {
+        "access_token": mobile_auth.issue_access_token(email, name, device_id),
+        "refresh_token": refresh_token,
+        "token_type": "Bearer",
+        "expires_in": MOBILE_ACCESS_MAX_AGE,
+        "device_id": device_id,
+        "user": {"email": email, "name": name},
+    }
+
+
+@router.post("/mobile")
+def mobile_login(body: MobileLoginBody) -> dict:
+    """Trocar o ID token do Google por tokens do app (primeiro login do aparelho).
+
+    É `def` (não `async def`) de propósito: a validação do token faz rede para buscar as
+    chaves do Google, e o FastAPI roda rotas síncronas em thread separada.
+
+    Args:
+        body: ID token + nome do aparelho.
+
+    Returns:
+        `access_token`, `refresh_token`, `expires_in`, `device_id` e `user`.
+
+    Raises:
+        HTTPException: 503 se o login mobile não está configurado; 401 se o token do Google
+            for inválido; 403 se o e-mail não for o autorizado; 500 se `ALLOWED_EMAIL` faltar.
+    """
+    if not ALLOWED_EMAIL:
+        raise HTTPException(status_code=500, detail="ALLOWED_EMAIL não está definido no servidor.")
+
+    try:
+        claims = mobile_auth.verify_google_id_token(body.id_token)
+    except mobile_auth.MobileAuthError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message)
+
+    email: str = claims.get("email", "")
+    # Um e-mail não verificado poderia ser de outra pessoa que só "declarou" ser o dono.
+    if not claims.get("email_verified"):
+        raise HTTPException(status_code=401, detail="E-mail do Google não verificado.")
+    if email.lower() != ALLOWED_EMAIL.lower():
+        raise HTTPException(status_code=403, detail="Acesso negado: e-mail não autorizado.")
+
+    name: str = claims.get("name", "")
+    device_id, refresh = mobile_auth.create_device(email, name, body.device_name)
+    return _mobile_tokens(email, name, device_id, refresh)
+
+
+@router.post("/mobile/refresh")
+def mobile_refresh(body: RefreshBody) -> dict:
+    """Renovar o par de tokens usando o refresh token (que é descartado e substituído).
+
+    Raises:
+        HTTPException: 401 se o refresh for inválido, expirado, revogado ou reutilizado.
+    """
+    try:
+        info = mobile_auth.rotate_refresh(body.refresh_token)
+    except mobile_auth.MobileAuthError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message)
+
+    # O nome da pessoa não fica no banco; o app já o conhece. Mantemos o do e-mail para o token.
+    return _mobile_tokens(info["email"], "", info["device_id"], info["refresh_token"])
+
+
+@router.post("/mobile/logout")
+def mobile_logout(body: RefreshBody) -> dict:
+    """Desconectar o aparelho (revoga o refresh e o acesso). Idempotente: sempre responde ok."""
+    try:
+        device_id = mobile_auth.split_refresh_token(body.refresh_token)
+    except mobile_auth.MobileAuthError:
+        return {"status": "ok"}  # token malformado: não há o que revogar
+    mobile_auth.revoke_device(device_id)
+    return {"status": "ok"}

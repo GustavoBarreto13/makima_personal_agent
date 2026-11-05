@@ -14,10 +14,11 @@ Usage:
 """
 
 import itsdangerous  # Biblioteca de assinatura segura de dados (mesmo usado em auth.py)
-from fastapi import Cookie, HTTPException  # Cookie extrai o valor do cookie; HTTPException retorna erros HTTP
+from fastapi import Cookie, HTTPException, Request  # Cookie lê o cookie; Request dá acesso aos cabeçalhos
 
 # Importa as constantes compartilhadas com o módulo de autenticação
-from webapp.backend.config import SESSION_COOKIE_NAME, SESSION_MAX_AGE, SESSION_SECRET
+from webapp.backend.config import ALLOWED_EMAIL, SESSION_COOKIE_NAME, SESSION_MAX_AGE, SESSION_SECRET
+from webapp.backend.mobile_auth import MobileAuthError, read_access_token  # Login do app Android
 
 # --- Serializer para validar os cookies de sessão ---
 
@@ -30,15 +31,42 @@ _COOKIE_MAX_AGE = SESSION_MAX_AGE    # 7 dias em segundos
 _COOKIE_NAME = SESSION_COOKIE_NAME   # "makima_session"
 
 
-def require_user(makima_session: str | None = Cookie(default=None)) -> dict:
-    """Validar o cookie de sessão e retornar os dados do usuário autenticado.
-
-    Esta função é usada como dependência FastAPI (`Depends(require_user)`).
-    O FastAPI extrai automaticamente o cookie `makima_session` da requisição
-    e passa como argumento. Se o cookie for inválido ou ausente, a requisição
-    é interrompida com HTTP 401 (Unauthorized).
+def user_from_bearer(authorization: str) -> dict:
+    """Validar um cabeçalho `Authorization: Bearer ...` do app Android.
 
     Args:
+        authorization: Valor completo do cabeçalho (ex.: "Bearer abc123").
+
+    Returns:
+        Dicionário com `email`, `name` e `did` (id do aparelho).
+
+    Raises:
+        HTTPException: 401 se o token for inválido/expirado/revogado; 403 se o e-mail
+            do token não for mais o autorizado.
+    """
+    # Corta o prefixo "Bearer " (6 letras + espaço) e tira espaços sobrando
+    token = authorization[7:].strip()
+    try:
+        payload = read_access_token(token)
+    except MobileAuthError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message)
+
+    # Se o ALLOWED_EMAIL mudar, tokens antigos de outro e-mail deixam de valer na hora.
+    if ALLOWED_EMAIL and payload.get("email", "").lower() != ALLOWED_EMAIL.lower():
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+    return payload
+
+
+def require_user(request: Request, makima_session: str | None = Cookie(default=None)) -> dict:
+    """Validar a sessão (bearer do app OU cookie do site) e retornar o usuário autenticado.
+
+    Esta função é usada como dependência FastAPI (`Depends(require_user)`).
+    Se a requisição trouxer `Authorization: Bearer ...` (app Android), valida o token do app.
+    Caso contrário, o FastAPI extrai o cookie `makima_session` e valida como sempre.
+    Se nada for válido, a requisição é interrompida com HTTP 401 (Unauthorized).
+
+    Args:
+        request: Requisição HTTP (para ler o cabeçalho Authorization).
         makima_session: Valor do cookie de sessão assinado, ou None se ausente.
 
     Returns:
@@ -55,6 +83,12 @@ def require_user(makima_session: str | None = Cookie(default=None)) -> dict:
         >>> async def dados(user: dict = Depends(require_user)):
         >>>     return {"mensagem": f"Olá, {user['name']}!"}
     """
+    # App Android: o token vem no cabeçalho, não em cookie. Tem prioridade para que um
+    # token ruim dê 401 claro em vez de cair silenciosamente no caminho do cookie.
+    authorization = request.headers.get("authorization", "")
+    if authorization.lower().startswith("bearer "):
+        return user_from_bearer(authorization)
+
     # Se o cookie não foi enviado na requisição, o usuário não está autenticado
     if makima_session is None:
         raise HTTPException(
