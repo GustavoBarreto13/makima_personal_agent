@@ -1,9 +1,10 @@
 # App Android da Makima
 
-> **Status: em andamento — parte do código já foi adiantada** (branch `feat/app-android-prep`, ver
-> "O que já foi adiantado" abaixo). **Ainda não existe o app Android em si** (casca Capacitor,
-> Firebase real, login nativo, widgets, câmera): isso depende do PC e do celular. Quando uma etapa
-> for entregue por inteiro, atualizar o `ROADMAP.md` e mover o que estiver concluído para `docs/arquivo/`.
+> **Status: em execução — retomar na Etapa 2, seções C, D e E.** O app já instala e roda no celular, com
+> login nativo do Google funcionando (validado em 04/11/2026). Código e servidor estão na `master`.
+> Quando uma etapa for entregue por inteiro, atualizar o `ROADMAP.md` e mover o que estiver concluído para
+> `docs/arquivo/`. **Para retomar:** abrir [`etapa-2-capacitor-login.md`](etapa-2-capacitor-login.md), seção
+> "Estado atual" (feito / falta fazer / não-código / armadilhas já encontradas).
 
 ## Objetivo
 
@@ -49,9 +50,9 @@ Legenda: ✅ feito e testado · 🟡 parcial (código pronto, falta ligar/testar
 
 | Etapa | Status | Já feito (código) | Falta fazer |
 |---|---|---|---|
-| 0 — Preparar | ⬜ | — | **Você:** instalar Android Studio, ativar depuração USB, criar projeto Firebase |
-| 1 — PWA | 🟡 | Service worker, ícones, manifesto, aviso de versão, tela "sem conexão", abrir offline, limpeza de cache | **Você:** instalar no Chrome do celular e testar no modo avião; rodar Lighthouse |
-| 2 — Casca + login | 🟡 | Backend do login (`/auth/mobile`, refresh rotativo, aparelhos revogáveis, CORS), `apiUrl`/bearer no frontend, `deepLink.ts` | Capacitor (`cap add android`), login nativo Google, Keystore, portas nativas (`native.ts`), biometria, botão voltar, haptics, APK assinado |
+| 0 — Preparar | ✅ | Android Studio, depuração USB e projeto Firebase "Makima" prontos | — |
+| 1 — PWA | 🟡 | Service worker, ícones, manifesto, aviso de versão, tela "sem conexão", abrir offline, limpeza de cache (dentro do app o service worker fica desligado) | **Você:** instalar no Chrome do celular e testar no modo avião; rodar Lighthouse |
+| 2 — Casca + login | 🟡 | **A e B ✅ (testado no celular):** Capacitor + `android/`, login nativo Google, tokens no Keystore com refresh em fila única, `.env.android` + `npm run android:sync`, servidor ligado (`GOOGLE_MOBILE_CLIENT_IDS`, tabelas no VPS). Antes: backend do login, `apiUrl`/bearer, `deepLink.ts` | **C** portas nativas (`native.ts`); **D** biometria, botão voltar, barra de status, haptics, deep links no manifesto; **E** APK assinado (**você:** keystore de release em 2 lugares + SHA-1 dela no Google Cloud); separar "sem internet" de "erro do servidor" |
 | 3 — Push | 🟡 | Tabela `push_devices`, rotas `/api/devices/push`, canal `"push"` nos jobs | Firebase real, `google-services.json`, `FIREBASE_CREDENTIALS_JSON`, plugin de push, canais Android por agente, botões de ação |
 | 4 — Entrada rápida | 🟡 | Parser de links compartilhados (`shareTarget.ts`) | **Mídia:** bucket GCS privado + `POST /api/media` (pré-requisito da câmera); atalhos do app, receber "compartilhar", câmera, voz |
 | 5 — Widgets | ⬜ | — | Endpoints `/api/widgets/*` (Bloco E, opcional ficou de fora), widgets em Kotlin/Glance, tile de foco, timer em serviço |
