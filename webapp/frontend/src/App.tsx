@@ -28,6 +28,8 @@ import { clearOfflineData } from './pwa/register'        // Apaga do aparelho os
 import { webStorage } from './design/headless/web'       // Porta de armazenamento do Design System
 import { clearNativeSession, isNativeApp, storedUser } from './native/nativeAuth' // Sessão do app Android
 import { ErrorState } from './design/ui/feedback'        // Estado de erro padrão (tela "sem conexão")
+import { AppLock } from './native/AppLock'              // Bloqueio por biometria ao abrir o app Android
+import { NativeBridge } from './native/NativeBridge'    // Deep links, botão voltar, privacidade e push (app Android)
 
 // Tipo que representa os dados do usuário retornados pelo endpoint /auth/me
 interface User {
@@ -50,7 +52,7 @@ function App() {
   const [loading, setLoading] = useState(true)
 
   // Sem sessão confirmada E sem nenhum login anterior neste aparelho: não há o que mostrar offline.
-  const [offlineNoUser, setOfflineNoUser] = useState(false)
+  const [offlineNoUser, setOfflineNoUser] = useState<false | 'network' | 'server'>(false)
 
   // Verifica a sessão uma vez ao abrir (e de novo quando o usuário toca em "Tentar de novo").
   // `checkSession` separa três casos: logado, não logado (401) e sem conexão — neste último,
@@ -80,7 +82,7 @@ function App() {
         if (res.kind === 'user') setUser(res.user)
         else if (res.kind === 'offline' && res.user) setUser(res.user)
         else setUser(null)
-        setOfflineNoUser(res.kind === 'offline' && !res.user)
+        setOfflineNoUser(res.kind === 'offline' && !res.user ? res.reason : false)
       })
       .finally(() => {
         if (!cancelado) setLoading(false)
@@ -107,8 +109,10 @@ function App() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-bg-app">
         <ErrorState
-          title="Sem conexão"
-          hint="Não deu para falar com a Makima. Confira a internet e tente de novo."
+          title={offlineNoUser === 'server' ? 'A Makima está com problema' : 'Sem conexão'}
+          hint={offlineNoUser === 'server'
+            ? 'O servidor não respondeu direito. Tente de novo em instantes.'
+            : 'Não deu para falar com a Makima. Confira a internet e tente de novo.'}
           onRetry={() => setAttempt((n) => n + 1)}
         />
       </div>
@@ -126,6 +130,10 @@ function App() {
   // Layout envolve todas as rotas, garantindo que sidebar e header apareçam em todas as páginas.
   return (
     <BrowserRouter>
+      {/* App Android: ponte com o celular (links, voltar, privacidade, push). No site não faz nada. */}
+      <NativeBridge />
+      {/* App Android: bloqueio por biometria ao abrir; cobre a tela sem desmontar o que está aberto. */}
+      <AppLock />
       <Routes>
         {/* Frieren (livros) sobre o AppShell do Design System; a tela e o livro aberto vivem no hash (#livro/<id>). */}
         <Route path="/books/*" element={<FrierenShell />} />

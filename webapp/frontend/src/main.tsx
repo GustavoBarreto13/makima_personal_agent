@@ -9,9 +9,11 @@ import { initTheme } from './design/headless/useTheme'  // Tema global claro/esc
 import { PwaPrompt } from './pwa/PwaPrompt'         // Avisos de nova versão / sem conexão (PWA)
 import { initPwa } from './pwa/register'            // Registra o service worker (só em produção)
 import { initNativeAuth } from './native/nativeAuth' // Login/token do app Android (inerte no site)
+import { initHaptics } from './native/haptics'      // Vibração nos avisos de sucesso/erro (app Android)
 
 // App Android: registra quem fornece o token (bearer) antes de qualquer pedido. No site não faz nada.
 initNativeAuth()
+initHaptics()
 
 // Aplica o tema salvo (data-ds-theme no <html>) antes do primeiro render. O index.html já faz o mesmo
 // em um script inline para não piscar; aqui garante o estado do hook.

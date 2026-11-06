@@ -123,7 +123,7 @@ def main() -> int:
         print("[recurring-charges] nada a lançar ou avisar hoje")
         return 0
 
-    if not send_notification(summary["html"]):
+    if not send_notification(summary["html"], title="Nami · Cobranças", link="makima://nami", agent="nami"):
         log.error("Falha ao enviar notificação: nenhum canal recebeu")
         return 1
 

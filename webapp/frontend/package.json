@@ -16,10 +16,16 @@
     "audit:design": "node scripts/audit-design.mjs"
   },
   "dependencies": {
+    "@aparajita/capacitor-biometric-auth": "^10.0.0",
     "@aparajita/capacitor-secure-storage": "^8.0.1",
+    "@capacitor-community/privacy-screen": "^8.0.0",
     "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.6.0",
     "@capacitor/device": "^8.0.3",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/push-notifications": "^8.1.3",
+    "@capacitor/status-bar": "^8.0.4",
     "@capgo/capacitor-social-login": "^8.7.6",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",

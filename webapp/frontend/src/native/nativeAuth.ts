@@ -79,7 +79,7 @@ export function initNativeAuth(): void {
 }
 
 /** Nome do aparelho para a lista "aparelhos conectados" (ex.: "samsung SM-A546E"). */
-async function deviceName(): Promise<string> {
+export async function deviceName(): Promise<string> {
   try {
     const info = await Device.getInfo()
     return `${info.manufacturer ?? ''} ${info.model ?? ''}`.trim() || 'Android'
@@ -144,6 +144,13 @@ export function clearNativeSession(): Promise<void> {
 
 /** Sair: avisa o servidor (revoga o aparelho) e apaga os tokens locais. Nunca falha para o usuário. */
 export async function signOut(): Promise<void> {
+  // Para de receber notificações neste aparelho (antes de apagar os tokens, que a chamada precisa).
+  try {
+    const { unregisterPush } = await import('./push')
+    await unregisterPush()
+  } catch {
+    /* sem push configurado ou sem rede: o servidor limpa o token quando o FCM o recusar */
+  }
   const s = await session.current()
   if (s) {
     try {

@@ -117,3 +117,51 @@ def test_remover_push(client):
         assert client.delete("/api/devices/push/pid").status_code == 200
     with patch(f"{STORE}.remove_push_device", return_value=False):
         assert client.delete("/api/devices/push/nada").status_code == 404
+
+
+# ─── visibilidade na tela de bloqueio ────────────────────────────────────────
+
+def _visibilidade_enviada(monkeypatch, canal: str) -> str:
+    """Roda `_fcm_multicast` com o Firebase simulado e devolve a `visibility` mandada ao Android."""
+    import sys
+    import types
+
+    capturado = {}
+
+    class _Msg:
+        def __init__(self, **kw):
+            capturado.update(kw)
+
+    class _AndroidNotification:
+        def __init__(self, **kw):
+            capturado["android_notification"] = kw
+
+    fake_messaging = types.SimpleNamespace(
+        MulticastMessage=_Msg,
+        Notification=lambda **kw: kw,
+        AndroidConfig=lambda **kw: kw,
+        AndroidNotification=_AndroidNotification,
+        send_each_for_multicast=lambda msg, app=None: types.SimpleNamespace(responses=[types.SimpleNamespace(success=True, exception=None)], success_count=1),
+        UnregisteredError=type("UnregisteredError", (Exception,), {}),
+        SenderIdMismatchError=type("SenderIdMismatchError", (Exception,), {}),
+    )
+    fake_admin = types.SimpleNamespace(get_app=lambda: object(), initialize_app=lambda cred: object())
+    fake_credentials = types.SimpleNamespace(Certificate=lambda info: info)
+    monkeypatch.setenv("FIREBASE_CREDENTIALS_JSON", "{}")
+    monkeypatch.setitem(sys.modules, "firebase_admin", fake_admin)
+    monkeypatch.setitem(sys.modules, "firebase_admin.credentials", fake_credentials)
+    monkeypatch.setitem(sys.modules, "firebase_admin.messaging", fake_messaging)
+    fake_admin.credentials = fake_credentials
+    fake_admin.messaging = fake_messaging
+
+    nc._fcm_multicast(["tok-12345678901234567890"], "t", "b", {}, canal)
+    return capturado["android_notification"]["visibility"]
+
+
+@pytest.mark.parametrize("canal", ["nami", "violet", "lucy"])
+def test_canais_sensiveis_escondem_o_conteudo_na_tela_de_bloqueio(monkeypatch, canal):
+    assert _visibilidade_enviada(monkeypatch, canal) == "private"
+
+
+def test_canal_comum_mostra_o_conteudo(monkeypatch):
+    assert _visibilidade_enviada(monkeypatch, "kaguya") == "public"

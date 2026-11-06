@@ -49,7 +49,7 @@ def main() -> int:
         print("[weekly-review-reminder] revisão concluída nos últimos 7 dias — nada a enviar")
         return 0
 
-    if not send_notification(_build_message(summary)):
+    if not send_notification(_build_message(summary), title="Kaguya · Revisão semanal", link="makima://kaguya", agent="kaguya"):
         log.error("Falha ao enviar o lembrete: nenhum canal recebeu a notificação")
         return 1
 

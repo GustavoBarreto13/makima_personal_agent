@@ -21,7 +21,8 @@ export interface SessionUser {
 export type SessionCheck =
   | { kind: 'user'; user: SessionUser }
   | { kind: 'anonymous' }
-  | { kind: 'offline'; user: SessionUser | null }
+  // `reason`: 'network' = sem internet; 'server' = o servidor respondeu erro (5xx) — mensagens diferentes na tela.
+  | { kind: 'offline'; user: SessionUser | null; reason: 'network' | 'server' }
 
 /** Chave do último usuário conhecido (só nome e e-mail — nunca token ou cookie). */
 export const LAST_USER_KEY = 'makima-last-user'
@@ -53,7 +54,8 @@ export async function checkSession(
       onSignedOut()
       return { kind: 'anonymous' }
     }
-    return { kind: 'offline', user: readLastUser(storage) }
+    const reason = err instanceof ApiError && err.status >= 500 ? 'server' : 'network'
+    return { kind: 'offline', user: readLastUser(storage), reason }
   }
 }
 

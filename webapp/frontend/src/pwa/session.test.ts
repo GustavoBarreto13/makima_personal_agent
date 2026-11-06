@@ -40,13 +40,13 @@ describe('checkSession', () => {
 
     const res = await checkSession(async () => { throw new TypeError('Failed to fetch') }, storage, aoSair)
 
-    expect(res).toEqual({ kind: 'offline', user: USER })
+    expect(res).toEqual({ kind: 'offline', user: USER, reason: 'network' })
     expect(aoSair).not.toHaveBeenCalled() // offline NÃO apaga nada
   })
 
   it('sem rede e sem login anterior: offline sem usuário (tela "sem conexão")', async () => {
     const res = await checkSession(async () => { throw new TypeError('Failed to fetch') }, memoryStorage())
-    expect(res).toEqual({ kind: 'offline', user: null })
+    expect(res).toEqual({ kind: 'offline', user: null, reason: 'network' })
   })
 
   it('servidor fora do ar (502) é tratado como offline, não como "deslogado"', async () => {
@@ -54,6 +54,7 @@ describe('checkSession', () => {
     storage.set(LAST_USER_KEY, JSON.stringify(USER))
     const res = await checkSession(async () => { throw new ApiError('HTTP 502', 502) }, storage)
     expect(res.kind).toBe('offline')
+    expect(res.kind === 'offline' && res.reason).toBe('server') // 5xx: mensagem de "servidor com problema"
     expect(storage.get(LAST_USER_KEY)).not.toBeNull()
   })
 })

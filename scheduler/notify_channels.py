@@ -48,6 +48,9 @@ _KNOWN_CHANNELS = ("whatsapp", "telegram", "discord", "push")
 # O FCM aceita no máximo ~4 KB por mensagem; cortamos o texto para sobrar folga.
 _PUSH_MAX_CHARS = 1000
 
+# Canais Android cujo conteúdo é escondido na tela de bloqueio (dados sensíveis).
+_PRIVATE_CHANNELS = frozenset({"nami", "violet", "lucy"})
+
 
 def _webhook_url(channel: str) -> str | None:
     base = os.environ.get("HERMES_WEBHOOK_BASE_URL")
@@ -129,7 +132,13 @@ def _fcm_multicast(
         data=data,
         android=messaging.AndroidConfig(
             priority="high",  # chega mesmo com o celular em modo de economia (Doze)
-            notification=messaging.AndroidNotification(channel_id=channel_id),
+            # "private": na tela de bloqueio aparece só "conteúdo oculto" — Nami (valores), Violet (diário)
+            # e Lucy (e-mails) não devem ficar legíveis para quem pegar o celular. Vale mesmo que o canal
+            # ainda não exista no aparelho (dupla proteção com o canal criado pelo app).
+            notification=messaging.AndroidNotification(
+                channel_id=channel_id,
+                visibility="private" if channel_id in _PRIVATE_CHANNELS else "public",
+            ),
         ),
     )
     batch = messaging.send_each_for_multicast(msg, app=app)
