@@ -110,6 +110,19 @@ _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gcal-sync")
 
 
 # ---------------------------------------------------------------------------
+# Alertas do Google nos eventos espelho
+# ---------------------------------------------------------------------------
+
+def _reminders_for(payload: dict) -> dict | None:
+    """Alertas do Google que o evento espelho leva: nenhum (padrão) ou os do payload com ``GCAL_ALERTS_ENABLED=true``.
+
+    O app avisa sozinho por push (``reminder_engine``); alerta aqui também faria o celular tocar duas vezes.
+    Sempre explícito (``useDefault: False`` + lista vazia): ``None`` herdaria os alertas padrão do calendário.
+    """
+    return payload.get("reminders") if gcal.alerts_enabled() else dict(gcal.NO_ALERTS)
+
+
+# ---------------------------------------------------------------------------
 # Gate de feature — desabilita tudo sem afetar o CRUD de tarefas
 # ---------------------------------------------------------------------------
 
@@ -298,7 +311,7 @@ def _push_task_sync(task_id: int) -> None:
                 start=payload["start"],
                 end=payload["end"],
                 all_day=payload["all_day"],
-                reminders=payload.get("reminders"),
+                reminders=_reminders_for(payload),
             )
         else:
             # Evento ainda não existe — cria e salva o ID retornado
@@ -308,7 +321,7 @@ def _push_task_sync(task_id: int) -> None:
                 start=payload["start"],
                 end=payload["end"],
                 all_day=payload["all_day"],
-                reminders=payload.get("reminders"),
+                reminders=_reminders_for(payload),
             )
             new_event_id = result.get("id")
             if new_event_id:
@@ -509,7 +522,7 @@ def _push_habit_sync(habit_id: int) -> None:
                     end=payload["end"],
                     all_day=payload["all_day"],
                     recurrence=payload["recurrence"],
-                    reminders=payload.get("reminders"),
+                    reminders=_reminders_for(payload),
                 )
             else:
                 # Evento ainda não existe — cria e persiste o id na linha de schedule
@@ -520,7 +533,7 @@ def _push_habit_sync(habit_id: int) -> None:
                     end=payload["end"],
                     all_day=payload["all_day"],
                     recurrence=payload["recurrence"],
-                    reminders=payload.get("reminders"),
+                    reminders=_reminders_for(payload),
                 )
                 new_event_id = result.get("id")
                 if new_event_id:

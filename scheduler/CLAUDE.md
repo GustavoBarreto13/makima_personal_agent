@@ -44,6 +44,10 @@ Pronto — o job ganha log em `scheduler_runs` e alerta no Telegram em falha aut
 
 ## Observabilidade
 
+> **Jobs de alta frequência (`quiet_success=True` em `ScheduledJob`, ex.: `app_reminders`)** só gravam em `scheduler_runs` quando
+> **falham** (senão seriam 1440 linhas por dia) e o alerta no Telegram é limitado a **um a cada 30 min por job** (um banco
+> fora do ar não gera um alerta por minuto). Execuções com sucesso só aparecem no log em nível `DEBUG`.
+
 Toda execução grava uma linha em **`scheduler_runs`** (`job_name`, `started_at`,
 `finished_at`, `status` ∈ {running, success, error}, `error`, `duration_ms`). Em caso de
 `error`, o bot manda um alerta no Telegram para `TELEGRAM_ALERT_CHAT_ID`.
@@ -98,7 +102,9 @@ Além das que cada job já usa (`DATABASE_URL`, `GCP_*`, `GCS_BACKUP_BUCKET`,
 | `TELEGRAM_ALERT_CHAT_ID` | Chat que recebe os alertas de **falha de job** (`notify.py`, FR-011) |
 | `HERMES_WEBHOOK_BASE_URL` | Base da app Hermes na rede interna (`http://makima-hermes:8644`) — usada por `notify_channels.send_notification()` |
 | `WEBHOOK_SECRET` | Mesmo segredo HMAC cadastrado no Hermes (`hermes/config.yaml` → `platforms.webhook.extra.secret`) — assina os POSTs de notificação |
-| `NOTIFY_DEFAULT_CHANNELS` | Canais usados quando um job não passa `channels=[...]` explícito (hoje `"whatsapp"` — ligar Telegram/Discord é só acrescentar aqui, ex. `"whatsapp,telegram"`) |
+| `NOTIFY_DEFAULT_CHANNELS` | Canais dos **avisos curtos** (lembretes, alertas) quando o job não passa `channels=[...]`. Padrão `"push"` (app Android) |
+| `NOTIFY_LONG_CHANNELS` | Canais dos **textos longos** (digests, relatórios, revisões — jobs que chamam `send_notification(..., long=True)`). Padrão `"discord"`. Texto grande sai em blocos de até 1900 caracteres (limite do Discord é 2000) |
+| `GCAL_ALERTS_ENABLED` | `true` volta a gravar alertas do Google nos eventos espelhados (tarefas, hábitos, Komi). Padrão `false`: o app avisa por push (`app_reminders`) e o Google tocaria em dobro |
 | `FIREBASE_CREDENTIALS_JSON` | **Só para o canal `"push"` (app Android).** Conteúdo (JSON) da chave da conta de serviço do Firebase. Sem ela o canal `push` é pulado com aviso — nada quebra. Ligar o push = criar o projeto Firebase, colar esta env no container do scheduler e acrescentar `push` em `NOTIFY_DEFAULT_CHANNELS` |
 
 ## Notificação para o usuário: `send_notification()` vs. `send_telegram_alert()`
@@ -111,7 +117,7 @@ Dois caminhos de saída, propositalmente separados (spec 064, User Story 5 — F
 - **`notify_channels.send_notification(message, channels=None)`** — para **avisos voltados
   ao usuário** (lembretes, digests, relatórios). Usa as rotas de webhook `--deliver-only`
   do Hermes (ver `hermes/CLAUDE.md` § "Notificações multi-canal") — WhatsApp, Telegram e/ou
-  Discord, conforme `NOTIFY_DEFAULT_CHANNELS`. Todo job novo que precisa avisar o usuário
+  Discord, conforme `NOTIFY_DEFAULT_CHANNELS` (curto → push) ou `NOTIFY_LONG_CHANNELS` (longo → Discord). Todo job novo que precisa avisar o usuário
   deve chamar esta função, não reimplementar o POST direto ao Telegram.
 
 ```python
@@ -140,13 +146,14 @@ markdown leve nos canais que não são Telegram.
 | `sync_kurisu` | Todo dia 04:00 | Memória unificada da Kurisu: Postgres → Vertex RAG (`agents/kurisu/memory/sync.py`) |
 | `sync_letterboxd` | A cada 6h | Diário do Letterboxd (RSS) → catálogo da Akane (`scripts/sync_letterboxd.py`) |
 | `lucy_digest` | Todo dia 08:00 | Digest matinal de emails (Lucy): classificação Gemini + labels/arquivo no Gmail + Telegram + histórico (`scripts/send_lucy_digest.py`) |
-| `kaguya_digest` | Todo dia 07:00 | Digest matinal de tarefas/agenda (Kaguya): vencidas, hoje, Próximas Ações, Rápidas, agenda do dia, hábitos pendentes, capacidade, diário recente e RAG da Kurisu → sugestão de plano via Gemini → WhatsApp + histórico em `kaguya_digests` (`scripts/send_kaguya_digest.py`). A resposta do usuário é interpretada pelo próprio Hermes via `get_pending_kaguya_digest`/`apply_kaguya_digest_selection` — ver `hermes/skills/kaguya-tarefas/SKILL.md` |
+| `kaguya_digest` | Todo dia 07:00 | Digest matinal de tarefas/agenda (Kaguya): vencidas, hoje, Próximas Ações, Rápidas, agenda do dia, hábitos pendentes, capacidade, diário recente e RAG da Kurisu → sugestão de plano via Gemini → Discord (`long=True`) + histórico em `kaguya_digests` (`scripts/send_kaguya_digest.py`). A resposta do usuário é interpretada pelo próprio Hermes via `get_pending_kaguya_digest`/`apply_kaguya_digest_selection` — ver `hermes/skills/kaguya-tarefas/SKILL.md` |
 | `weekly_review_reminder` | Todo domingo 20:00 | Lembrete da revisão semanal do GTD (Kaguya) → Telegram, **somente se** nenhuma revisão foi concluída nos últimos 7 dias (`scripts/send_weekly_review_reminder.py`, spec 035) |
 | `violet_weekly_review` | Todo domingo 20:30 (`VIOLET_WEEKLY_REVIEW_HOUR`/`_MINUTE`) | Revisão semanal do diário (Violet/Kurisu): lê a semana inteira, os conselhos, a Kaguya e os valores, gera um balanço franco com compromissos e manda a versão curta + link pelo Hermes (`scripts/send_violet_weekly_review.py`, idempotente por semana; spec 076) |
 | `recurring_charges` | Todo dia 08:30 | Cobranças recorrentes (Nami): avisa D-3, lança automaticamente assinaturas/contas fixas com `auto_lancar=True` (via `mark_subscription_paid`, atômico) e pede confirmação das contas fixas manuais no vencimento — mensagens do dia agrupadas numa notificação só (`scripts/process_recurring_charges.py`, spec 048) |
 | `budget_alert` | Todo dia 09:00 | Alerta de orçamento (Nami): categorias ≥90% do limite ou estouradas no mês corrente → Telegram; silencioso se tudo dentro do limite (`scripts/send_budget_alert.py`, spec 048) |
 | `monthly_report` | Todo dia 1º 08:00 | Relatório do fechamento do mês anterior (Nami): top categorias, comparação com o mês anterior a esse, score de saúde financeira (`scripts/send_monthly_report.py`, spec 048) |
 | `gcal_mirror` | A cada 1h | Espelho Calendar Hub → Google Calendar (spec 069): reconcilia as 7 fontes (Nami/Frieren/Violet/Akane/Marin/Mai/Komi) contra seus calendários Google dedicados na janela cheia (±365d) — diff insert/patch/delete via `agents/kaguya/gcal_mirror.py::reconcile_all`. Rede de segurança do gatilho `mark_dirty` (best-effort, disparado nas mutações dos agentes, janela estreita); também faz o backfill inicial. Falha de ≥1 fonte → `raise` → alerta (`scripts/sync_gcal_mirror.py`) |
+| `app_reminders` | **A cada minuto** (`quiet_success`) | Lembretes do app por push, sem depender do Google Calendar: tarefas/eventos com hora, hábitos, aniversários da Komi, reuniões do Google e o resumo das 07:30. Reserva cada aviso em `app_reminder_log` (at-most-once) e tenta de novo se o push falhar, dentro de 15 min. Roda **em processo** (não subprocesso). Detalhes: `agents/kaguya/CLAUDE.md` § "Lembretes nativos do app" (`scripts/send_app_reminders.py`) |
 | `frieren_mal_sync` | A cada 6h (01:30/07:30/13:30/19:30) | Sync delta dos **mangás** com o MyAnimeList (Frieren): pull cria livros (Mangá/HQ, em capítulos) e sessões de ajuste, converge status/nota por timestamp; coexiste com o push best-effort das tools (`agents/frieren/mal_sync.py`). Horário fixo para não colidir com o `marin_mal_sync`, que divide token e cota da API |
 | `marin_mal_sync` | A cada 6h | Sync delta com o MyAnimeList (Marin): pull converte progresso novo em sessões de ajuste no diário (nunca sobrescreve o contador direto), converge status/nota por timestamp mais recente conhecido, enriquece automaticamente animes novos; coexiste com o push best-effort disparado pelas mutações locais (`log_watch`/`update_anime_status`/`rate_anime`/`delete_watch_log`/`delete_anime` em `agents/marin/tools.py`) (`agents/marin/mal_sync.py`, spec 053) |
-| ~~`kaguya_due_reminders`~~ | **Desativado** | Lembrete pontual de tarefas vencendo (Kaguya) via WhatsApp — implementado e validado em produção, mas **desativado a pedido do usuário** logo em seguida ("não gostei, deixa só pelo Calendar, vamos fazer de outra forma depois"). Código mantido (`scripts/send_kaguya_due_reminders.py`, `tools_tasks.py::list_tasks_due_for_reminder`/`mark_due_reminder_sent`, coluna `tasks.due_reminder_sent_at`) — só removido de `registry.py::JOBS`, não roda mais. Reaproveitar quando o novo desenho for definido |
+| ~~`kaguya_due_reminders`~~ | **Desativado — substituído pelo `app_reminders`** | Lembrete pontual de tarefas vencendo (Kaguya) via WhatsApp — implementado e validado em produção, mas **desativado a pedido do usuário** logo em seguida ("não gostei, deixa só pelo Calendar, vamos fazer de outra forma depois"). Código mantido (`scripts/send_kaguya_due_reminders.py`, `tools_tasks.py::list_tasks_due_for_reminder`/`mark_due_reminder_sent`, coluna `tasks.due_reminder_sent_at`) — só removido de `registry.py::JOBS`, não roda mais. Reaproveitar quando o novo desenho for definido |

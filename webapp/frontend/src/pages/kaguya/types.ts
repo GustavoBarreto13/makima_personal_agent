@@ -51,6 +51,7 @@ export interface Task {
   priority: number            // 0 nenhuma · 1 baixa · 2 média · 3 alta
   due_date: string | null     // "YYYY-MM-DD"
   due_time: string | null     // "HH:MM"
+  reminder_lead_min?: number | null  // aviso por push: min antes do horário (null = padrão 10 · 0 = na hora · -1 = sem aviso)
   position: number
   completed_at: string | null // null = aberta
   created_at: string

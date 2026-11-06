@@ -235,6 +235,8 @@ class CreateTaskBody(BaseModel):
     recurrence: Optional[RecurrenceBody] = None  # nested → model_dump vira dict para a tool
     tags: Optional[list[str]] = None             # nomes das tags (criadas se não existirem)
     person_ids: Optional[list[str]] = None       # responsáveis Komi (fatia 025)
+    # Antecedência do aviso por push, em minutos (None/omitido = padrão 10; 0 = na hora; -1 = sem aviso).
+    reminder_lead_min: Optional[int] = None
 
 
 class UpdateTaskBody(BaseModel):
@@ -260,6 +262,8 @@ class UpdateTaskBody(BaseModel):
     start_date: Optional[str] = None
     follow_up_date: Optional[str] = None
     waiting_person_id: Optional[str] = None
+    # Antecedência do aviso por push (minutos). Omitido = não mexe; null = volta ao padrão (10); -1 = sem aviso.
+    reminder_lead_min: Optional[int] = None
 
 
 class MoveTaskBody(BaseModel):

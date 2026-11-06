@@ -572,7 +572,8 @@ def _patch_habit_db(habit: dict | None, schedules: list | None = None):
 # _push_habit_sync — COM hora: evento cronometrado + recorrência + lembrete
 # ---------------------------------------------------------------------------
 
-def test_push_habit_sync_com_hora_cria_evento_recorrente_com_lembrete():
+def test_push_habit_sync_com_hora_cria_evento_recorrente_com_lembrete(monkeypatch):
+    monkeypatch.setenv("GCAL_ALERTS_ENABLED", "true")  # alertas do Google são opt-in desde o app_reminders
     """Dia COM horário vira evento cronometrado, RRULE semanal e popup reminder_lead_min antes."""
     schedule = {"id": 1, "weekday": "MO", "time_of_day": time(7, 0), "google_event_id": None}
 
@@ -634,7 +635,8 @@ def test_push_habit_sync_sem_hora_cria_evento_dia_inteiro_sem_reminders():
         assert kwargs["all_day"] is True
         assert kwargs["start"] == kwargs["end"]   # all-day: end repete o dia (mesma convenção de tarefas)
         assert kwargs["recurrence"] == ["RRULE:FREQ=WEEKLY;BYDAY=SA"]
-        assert kwargs["reminders"] is None
+        # Sem alerta do Google (o app avisa por push): explícito, para não herdar o padrão do calendário.
+        assert kwargs["reminders"] == {"useDefault": False, "overrides": []}
 
 
 # ---------------------------------------------------------------------------

@@ -40,7 +40,7 @@ diferentes.
   Todos os schemas do repo são **idempotentes** (`CREATE TABLE IF NOT EXISTS`,
   `CREATE INDEX IF NOT EXISTS`), então rodar de novo não dá erro nem duplica dados.
 
-### Os dez domínios (71 tabelas no total)
+### Os dez domínios (72 tabelas no total)
 
 | Domínio | Onde | Tabelas |
 |---|---|---|
@@ -530,11 +530,13 @@ O núcleo do sistema. Uma linha vira tarefa, subtarefa, evento ou aniversário.
 | `waiting_person_id` | TEXT | SIM | — | *(spec 075)* Pessoa (id da Komi, `people.id`) de quem se espera uma resposta. Sem FK de propósito (como `person_links`). |
 | `follow_up_date` | DATE | SIM | — | *(spec 075)* Quando cobrar: no dia, a tarefa "aguardando" cai no Meu Dia. |
 | `series_id` | UUID | SIM | — | *(spec 075)* Identidade da série de uma recorrente: todas as ocorrências (concluídas e a viva) compartilham. |
+| `reminder_lead_min` | SMALLINT | SIM | — | *(lembretes do app)* Antecedência do **aviso por push**, em minutos antes do horário (`due_time` ou bloco `start_at`). `NULL` = padrão do motor (10 min) · `0` = na hora · `-1` = sem aviso · até 10080 (7 dias). Tarefa só com data não tem aviso próprio (entra no resumo das 07:30). |
 | `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação. |
 | `updated_at` | TIMESTAMPTZ | NÃO | `NOW()` | Atualização. |
 
 **CHECKs:**
 - `type IN ('task','event','birthday')`.
+- `reminder_lead_min IS NULL OR reminder_lead_min BETWEEN -1 AND 10080` (`tasks_reminder_lead_min_check`).
 - `priority BETWEEN 0 AND 3`.
 - `end_at IS NULL OR start_at IS NOT NULL` — um bloco precisa de início para ter fim.
 - `due_time IS NULL OR due_date IS NOT NULL` — hora de vencimento exige dia de vencimento.
@@ -1897,6 +1899,21 @@ Pontos que confundem quem olha o repositório pela primeira vez:
   então rode o `setup_schemas.py` normalmente (tudo é idempotente).
 
 ---
+
+### `app_reminder_log` *(lembretes do app por push)*
+
+Trava de "já avisei" do job `app_reminders` (`scripts/send_app_reminders.py`, a cada minuto). Criada junto do schema da
+Kaguya (`agents/kaguya/schema_tasks_pg.sql`). O job grava a chave **antes** de enviar (`INSERT ... ON CONFLICT DO NOTHING`:
+no máximo um aviso por lembrete) e a apaga se o push falhar, para tentar de novo no minuto seguinte. Linhas com mais de
+7 dias são limpas pelo próprio job.
+
+| Coluna | Tipo | Nulo? | Padrão | Descrição |
+|---|---|---|---|---|
+| `key` | TEXT | NÃO | — | **PK.** Identifica UM lembrete de UMA ocorrência: `task:<id>:<início ISO>:<antecedência>`, `habit:<id>:<dia>:<hora>:<antecedência>`, `komi:<tipo>:<ref>:<dia>:<min>`, `gcal:<evento>:<início>:<antecedência>`, `summary:<dia>`. Reagendar muda a chave e rearma o aviso. |
+| `fire_at` | TIMESTAMPTZ | NÃO | — | Instante em que o aviso deveria sair. |
+| `sent_at` | TIMESTAMPTZ | NÃO | `NOW()` | Quando foi reservado/enviado (base da limpeza de 7 dias). |
+
+**Índices:** `idx_app_reminder_log_sent (sent_at)`.
 
 ## 12.5. Infraestrutura — `scheduler_runs`
 

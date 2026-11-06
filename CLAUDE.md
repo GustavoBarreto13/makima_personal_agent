@@ -231,6 +231,8 @@ makima_personal_agent/
 │   │   ├── habit_strength.py   # motor PURO da "força" do hábito (EMA) — fatia 014
 │   │   ├── capacity.py         # motor PURO (sem banco): compute_capacity() + compute_free_time() (dois tempos livres) — fatia 016 + spec 075
 │   │   ├── tz.py               # "hoje"/"agora" em America/Sao_Paulo (fonte única) — spec 075
+│   │   ├── reminder_engine.py  # motor PURO dos lembretes do app (push): quando e o quê avisar — tarefas, hábitos, Komi, Google, resumo 07:30
+│   │   ├── reminder_sources.py # leitura das 5 fontes de lembretes (banco, Komi, Google) com falha isolada por fonte
 │   │   ├── tools_schedule.py   # agenda de trabalho: expediente, almoço, acordar/dormir, exceções por dia — spec 075
 │   │   ├── tools_dependencies.py # "só começa depois de…" (anti-ciclo) — spec 075
 │   │   ├── tools_bulk.py       # edição em massa com Desfazer (snapshot) — spec 075
@@ -390,6 +392,8 @@ makima_personal_agent/
 │   ├── sync_kurisu_memory.py  # sync incremental da memória unificada — spec 028
 │   ├── sync_letterboxd.py     # sync RSS do Letterboxd (Akane)
 │   ├── sync_gcal_mirror.py    # reconcilia Calendar Hub → Google Calendar (job gcal_mirror + backfill manual) — spec 069
+│   ├── send_app_reminders.py  # lembretes do app por push (job app_reminders, a cada minuto, at-most-once via app_reminder_log)
+│   ├── strip_gcal_alerts.py   # tira os alertas do Google dos eventos de tarefas/hábitos já espelhados (dry-run por padrão, --apply grava; rodar 1 vez)
 │   ├── import_letterboxd_csv.py # importação one-time do CSV histórico do Letterboxd
 │   ├── backup_postgres.py     # pg_dump → Google Cloud Storage (agendado pelo scheduler/ — job diário)
 │   ├── migrate_akane_stats_fields.py # idioma/países (TMDB) e watchlist_added_at dos filmes — spec 072 (dry-run por padrão; já aplicada no VPS)

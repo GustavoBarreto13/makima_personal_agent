@@ -16,6 +16,7 @@ import { DURATIONS, durationBetween, endFromDuration } from '../lib/durations'
 import { listOptions } from '../lib/listOptions'
 import { resolveProject, taskParser } from '../lib/quickAdd'
 import { presetLabels, ruleFor, type RecurrencePreset } from '../lib/recurrence'
+import { DEFAULT_LEAD_VALUE, LEAD_OPTIONS, selectToLead } from '../lib/reminder'
 import { PRIORITY_LABEL } from '../lib/taskView'
 import { safe, useLoad } from '../lib/useLoad'
 import type { Column, GtdStatus, RecurrenceMode, TaskContext, TaskType } from '../types'
@@ -46,6 +47,7 @@ export function NewTaskModal({ defaults, onClose }: { defaults?: NewTaskDefaults
   const [due, setDue] = useState(defaults?.due ?? '')
   const [start, setStart] = useState(defaults?.time ?? '')
   const [end, setEnd] = useState('')
+  const [lead, setLead] = useState(DEFAULT_LEAD_VALUE) // antecedência do aviso por push (só com horário)
   const [duration, setDuration] = useState(defaults?.duration ?? 0)
   const [tags, setTags] = useState<string[]>([])
   const [assignees, setAssignees] = useState<PersonOption[]>([])
@@ -134,6 +136,7 @@ export function NewTaskModal({ defaults, onClose }: { defaults?: NewTaskDefaults
       if (pr) body.priority = pr
       if (finalDue) body.due_date = finalDue
       if (finalStart && finalDue) body.due_time = finalStart
+      if (finalStart && finalDue && lead !== DEFAULT_LEAD_VALUE) body.reminder_lead_min = selectToLead(lead)
       if (finalTags.length) body.tags = finalTags
       if (assignees.length) body.person_ids = assignees.map((p) => p.id)
       if (notes.trim()) body.description = notes
@@ -243,6 +246,13 @@ export function NewTaskModal({ defaults, onClose }: { defaults?: NewTaskDefaults
               ) : <Button size="sm" icon="clock" disabled={!effDue} onClick={startBlock}>Marcar horário</Button>}
             </div>
           )}</Field>
+          {start && (
+            <Field label="Avisar" hint="Chega como notificação no celular.">{(c) => (
+              <Select {...c} value={lead} onChange={(e) => setLead(e.target.value)}>
+                {LEAD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+            )}</Field>
+          )}
 
           <div className="kn-props">
             <Field label="Repete">{(c) => (

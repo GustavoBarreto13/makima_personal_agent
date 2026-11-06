@@ -91,6 +91,18 @@ _HABITS_CALENDAR_NAME = "Kaguya — Hábitos"   # spec 067 — alertas de hábit
 # vezes na tela de Calendário do webapp (uma via calendar_hub.aggregate, outra
 # via o feed gcal) e inflaria a capacidade do Meu Dia. Importar o gcal_mirror
 # aqui criaria um ciclo (ele importa gcal).
+# Alertas do Google nos eventos que a Makima ESPELHA (tarefas, hábitos e itens do hub).
+# Quem avisa agora é o app, por push (agents/kaguya/reminder_engine.py, job `app_reminders`); manter o alerta
+# do Google também faria o celular tocar duas vezes. Por isso o padrão é SEM alerta; defina
+# GCAL_ALERTS_ENABLED=true para voltar a gravar os alertas antigos nos espelhos.
+NO_ALERTS: dict = {"useDefault": False, "overrides": []}
+
+
+def alerts_enabled() -> bool:
+    """Os espelhos gravam alertas do Google? (``GCAL_ALERTS_ENABLED``, padrão ``false``; lido a cada chamada)."""
+    return os.environ.get("GCAL_ALERTS_ENABLED", "false").lower() == "true"
+
+
 MIRRORED_SOURCES: dict[str, str] = {
     "nami": "Nami — Finanças",
     "frieren": "Frieren — Livros",
@@ -925,4 +937,7 @@ def _format_event(event: dict) -> dict:
         # Lista de e-mails dos convidados (pode ser vazia)
         "attendees": [a.get("email", "") for a in event.get("attendees", [])],
         "link": event.get("htmlLink", ""),
+        # Alertas do próprio evento ({"useDefault": bool, "overrides": [{"method","minutes"}]}): o motor de
+        # lembretes do app (reminder_engine.google_leads) usa para avisar por push na antecedência certa.
+        "reminders": event.get("reminders", {}),
     }

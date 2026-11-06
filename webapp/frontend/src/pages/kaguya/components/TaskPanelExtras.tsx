@@ -10,6 +10,7 @@ import { kaguyaApi } from '../api'
 import { useKaguya } from '../context'
 import { localISO, localDayOf, minToLabel, timeToMin } from '../lib/calendar'
 import { durationBetween, endFromDuration } from '../lib/durations'
+import { leadOptionsFor, leadToSelect, selectToLead } from '../lib/reminder'
 import { safe, useLoad } from '../lib/useLoad'
 import type { Column, Person, RecurrenceMode, Task, TaskContext, TaskType, WorkContext } from '../types'
 
@@ -130,6 +131,15 @@ export function useTaskExtras(task: Task, save: Save) {
     )}</Field>
   )
 
+  // Antecedência do aviso por push: só faz sentido com horário (tarefa só com data entra no resumo das 7h30).
+  const remind = startMin !== null ? (
+    <Field label="Avisar" hint="Chega como notificação no celular.">{(c) => (
+      <Select {...c} value={leadToSelect(task.reminder_lead_min)} onChange={(e) => void save({ reminder_lead_min: selectToLead(e.target.value) })}>
+        {leadOptionsFor(task.reminder_lead_min).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </Select>
+    )}</Field>
+  ) : null
+
   const column = project?.has_board && cols.length > 0 ? (
     <Field label="Coluna do quadro">{(c) => (
       <Select {...c} value={task.column_id ?? ''} onChange={(e) => void save({ column_id: e.target.value ? Number(e.target.value) : null })}>
@@ -175,11 +185,11 @@ export function useTaskExtras(task: Task, save: Save) {
   const hasBlock = startMin !== null
   const setDuration = (minutes: number) => (hasBlock ? block({ duration: minutes }) : save({ duration_min: minutes || null }))
 
-  return { type, time, column, where, recurrenceMode, people: peopleField, waiting, setDuration }
+  return { type, time, remind, column, where, recurrenceMode, people: peopleField, waiting, setDuration }
 }
 
 /** Todos os extras em sequência (a ordem do painel lateral original). */
 export function TaskPanelExtras({ task, save }: { task: Task; save: Save }) {
   const x = useTaskExtras(task, save)
-  return <>{x.type}{x.time}<div className="kn-props">{x.column}{x.where}{x.recurrenceMode}</div>{x.people}{x.waiting}</>
+  return <>{x.type}{x.time}{x.remind}<div className="kn-props">{x.column}{x.where}{x.recurrenceMode}</div>{x.people}{x.waiting}</>
 }

@@ -629,7 +629,8 @@ Parâmetros novos em rotas existentes: `?space=work|personal` (omitido = tudo) e
 `/eisenhower`, `/calendar`, `/search`, `/filters/*/tasks`, `/filters/builtin/*/tasks` e `/stats`; `?include_deferred=true`
 em `GET /api/tasks` (por padrão as tarefas adiadas e as de projeto sequencial que não são a próxima ação ficam de fora).
 `PATCH /api/tasks/{id}` aceita `start_date` (adiar), `follow_up_date`, `waiting_person_id`, `duration_min` e `column_id`
-com `null` (limpa). `POST /api/tasks/groups` aceita `context`; `PATCH /projects/{id}` aceita `review_interval_days` e `sequential`.
+com `null` (limpa). `POST`/`PATCH /api/tasks` aceitam `reminder_lead_min` (minutos antes do horário em que o **app avisa por push**:
+omitido/`null` = padrão de 10 · `0` = na hora · `-1` = sem aviso; só vale para tarefa com horário). `POST /api/tasks/groups` aceita `context`; `PATCH /projects/{id}` aceita `review_interval_days` e `sequential`.
 
 | Método | Rota | O que faz |
 |---|---|---|

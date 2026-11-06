@@ -14,7 +14,21 @@ chegam como notificação do Android, com **botões** que agem sem abrir o app.
 >   `/api/devices/push`, toque na notificação abre a tela pelo deep link, logout remove o registro. Sem
 >   `google-services.json` o registro só loga um aviso — o app segue normal.
 >
-> **Falta (depende de você):** itens 1 e 7 abaixo (Firebase + `FIREBASE_CREDENTIALS_JSON` + `NOTIFY_DEFAULT_CHANNELS`).
+> **Validado no celular (05/nov/2026):** Firebase ligado (`google-services.json` em `android/app/`, fora do git; o
+> build detecta o arquivo sozinho e só então liga o push), `FIREBASE_CREDENTIALS_JSON` no Dokploy (makima-web e
+> makima-scheduler), token registrado em `push_devices` e **notificação de teste recebida** no aparelho.
+> **Falta (depende de você):** item 7 abaixo (`NOTIFY_DEFAULT_CHANNELS`: só push, ou push + WhatsApp).
+> **Armadilhas:** (1) o Dokploy guarda só a 1ª linha de uma variável multilinha — colar o JSON em UMA linha
+> (`ConvertTo-Json -Compress`); (2) sem o `google-services.json` o plugin lança exceção NATIVA e derruba o app;
+> (3) salvar a variável não basta, é preciso Deploy/Reload.
+>
+> **Lembretes nativos (05/nov/2026, código pronto — falta publicar e validar no celular):** o app passa a avisar sozinho,
+> sem depender do Google Calendar. Job `app_reminders` (a cada minuto) → push para tarefas/eventos com hora (antecedência
+> configurável por tarefa: campo "Avisar", padrão 10 min), hábitos, aniversários da Komi (9h), reuniões do Google e um
+> resumo curto às 07:30. Os espelhos do Google deixam de gravar alertas (`GCAL_ALERTS_ENABLED=false` por padrão; eventos
+> antigos: `scripts/strip_gcal_alerts.py --apply`). Detalhes: `agents/kaguya/CLAUDE.md` § "Lembretes nativos do app".
+> Digests longos (Kaguya, Lucy, relatório do mês, revisão da Violet) vão para o **Discord** (`NOTIFY_LONG_CHANNELS`, padrão
+> `discord`); avisos curtos para o push (`NOTIFY_DEFAULT_CHANNELS`, padrão `push`).
 > **Falta (código, depois do Firebase):** botões de ação *Concluir · Adiar* (o plugin do Capacitor não desenha botões em
 > push: exige mensagem só de dados + notificação local ou código nativo).
 

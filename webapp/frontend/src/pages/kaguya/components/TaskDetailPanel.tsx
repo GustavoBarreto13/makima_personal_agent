@@ -236,6 +236,7 @@ function Details({ task, save, wide }: { task: Task; save: (p: Parameters<typeof
       </div>
 
       {x.time}
+      {x.remind}
 
       <div className="kn-props">
         <Field label="Repete">{(c) => (

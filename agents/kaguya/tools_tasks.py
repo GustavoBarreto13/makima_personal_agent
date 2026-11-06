@@ -60,6 +60,8 @@ _TASK_FIELDS = [
     "gtd_status", "waiting_note", "waiting_since", "context_id",
     # spec 075: adiar (start_date), aguardando com pessoa + follow-up e identidade da série.
     "start_date", "follow_up_date", "waiting_person_id", "series_id",
+    # Antecedência do aviso por push (minutos; NULL = padrão 10; 0 = na hora; -1 = sem aviso).
+    "reminder_lead_min",
     "position", "completed_at", "deleted_at", "created_at", "updated_at",
 ]
 # Lista simples (sem alias) — para queries sem JOIN.
@@ -496,12 +498,12 @@ def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
     cur.execute(
         "SELECT project_id, title, description, type, priority, due_date, due_time, "
         "gtd_status, context_id, waiting_note, duration_min, goal_id, column_id, start_at, end_at, "
-        "series_id FROM tasks WHERE id = %s",
+        "series_id, reminder_lead_min FROM tasks WHERE id = %s",
         (task_id,),
     )
     (project_id, title, description, ttype, priority, due_date, due_time,
      gtd_status, context_id, waiting_note, duration_min, goal_id, old_column_id,
-     start_at, end_at, series_id) = cur.fetchone()
+     start_at, end_at, series_id, reminder_lead_min) = cur.fetchone()
     # Identidade da série: a 1ª geração batiza a ocorrência consumida; as seguintes só herdam. É o que
     # permite reconstruir o histórico de uma recorrente (antes cada ocorrência era uma linha solta).
     if series_id is None:
@@ -543,12 +545,13 @@ def _generate_next_occurrence(cur, task_id: int) -> Optional[dict]:
         INSERT INTO tasks
             (project_id, column_id, parent_id, title, description, type, priority, due_date, due_time,
              position, gtd_status, context_id, waiting_note, duration_min, goal_id, start_at, end_at,
-             series_id)
-        VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             series_id, reminder_lead_min)
+        VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
         (project_id, new_column, title, description, ttype, priority, nxt, due_time, position,
-         gtd_status, context_id, waiting_note, duration_min, goal_id, new_start, new_end, series_id),
+         gtd_status, context_id, waiting_note, duration_min, goal_id, new_start, new_end, series_id,
+         reminder_lead_min),
     )
     new_id = cur.fetchone()[0]
 
@@ -1126,6 +1129,15 @@ def process_inbox_item(
 # ─────────────────────────────────────────────────────────────────────────────
 # Criação
 # ─────────────────────────────────────────────────────────────────────────────
+def _check_reminder_lead(value) -> str | None:
+    """Valida ``reminder_lead_min`` (``None`` = padrão; ``-1`` = sem aviso; até 7 dias). Devolve a mensagem de erro."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or not -1 <= value <= 10080:
+        return "A antecedência do aviso deve ser um número de minutos entre 0 e 10080 (ou -1 para não avisar)."
+    return None
+
+
 def create_task(
     title: str,
     project_id: Optional[int] = None,
@@ -1141,6 +1153,7 @@ def create_task(
     tags: Optional[list] = None,
     person_ids: Optional[list] = None,
     allow_empty_title: bool = False,
+    reminder_lead_min: Optional[int] = None,
 ) -> dict:
     """Cria uma tarefa (ou subtarefa) e a posiciona no fim da sua lista/escopo.
 
@@ -1183,6 +1196,9 @@ def create_task(
             ``""``). Usado exclusivamente pelo router do webapp para criação inline na árvore
             de tarefas — o agente Telegram nunca passa ``True`` e continua recebendo erro
             amigável se tentar criar uma tarefa sem título.
+        reminder_lead_min: Quantos minutos ANTES do horário o app avisa por push (``due_time`` ou
+            bloco de tempo). Omitido = padrão de 10 min; ``0`` = na hora; ``-1`` = não avisar. Tarefa
+            só com data não tem aviso próprio (entra no resumo das 07:30).
 
     Returns:
         ``{"status": "ok", "id": <int>, "project_id": <int>}`` ou erro em português.
@@ -1202,6 +1218,8 @@ def create_task(
         return {"status": "error", "message": "Tipo inválido (use task, event ou birthday)."}
     if due_time and not due_date:
         return {"status": "error", "message": "Hora de vencimento exige uma data."}
+    if (erro := _check_reminder_lead(reminder_lead_min)) is not None:
+        return {"status": "error", "message": erro}
 
     # Aniversário NÃO é tarefa (spec 077): vira o campo da pessoa na Komi, que o põe sozinha no
     # calendário com lembrete. Nada é criado no banco da Kaguya.
@@ -1300,13 +1318,13 @@ def create_task(
                 """
                 INSERT INTO tasks
                     (project_id, column_id, parent_id, title, description, type, priority,
-                     due_date, due_time, position)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     due_date, due_time, position, reminder_lead_min)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
                     resolved_project, resolved_column, parent_id, title.strip(),
-                    description, type, priority, due_date, due_time, position,
+                    description, type, priority, due_date, due_time, position, reminder_lead_min,
                 ),
             )
             new_id = cur.fetchone()[0]
@@ -1362,6 +1380,7 @@ def update_task(
     start_date: Optional[str] = _UNSET,
     follow_up_date: Optional[str] = _UNSET,
     waiting_person_id: Optional[str] = _UNSET,
+    reminder_lead_min: Optional[int] = _UNSET,
 ) -> dict:
     """Edita campos de uma tarefa; mover de lista aplica a regra da coluna do destino.
 
@@ -1404,10 +1423,14 @@ def update_task(
         follow_up_date: Quando cobrar uma tarefa "aguardando" (``YYYY-MM-DD``): no dia ela cai no
             Meu Dia. Omitido = não mexe; ``None`` = limpa.
         waiting_person_id: Pessoa (id da Komi) de quem se espera. Omitido = não mexe; ``None`` = limpa.
+        reminder_lead_min: Minutos ANTES do horário em que o app avisa por push. Omitido = não mexe;
+            ``None`` = volta ao padrão (10 min); ``0`` = na hora; ``-1`` = não avisar.
 
     Returns:
         Dicionário de status.
     """
+    if reminder_lead_min is not _UNSET and (erro := _check_reminder_lead(reminder_lead_min)) is not None:
+        return {"status": "error", "message": erro}
     # Validações dos campos enumerados.
     if priority is not None and priority not in _VALID_PRIORITIES:
         return {"status": "error", "message": "Prioridade inválida (use 0, 1, 2 ou 3)."}
@@ -1518,6 +1541,11 @@ def update_task(
                     params["column_id"] = column_id
                     if was_completed and not col_row[0]:
                         sets.append("completed_at = NULL")
+
+            # Antecedência do aviso por push: _UNSET = não mexe · None = padrão · valor = grava.
+            if reminder_lead_min is not _UNSET:
+                sets.append("reminder_lead_min = %(reminder_lead_min)s")
+                params["reminder_lead_min"] = reminder_lead_min
 
             # Estimativa de duração do Meu Dia (fatia 016).
             if duration_min is not _UNSET:

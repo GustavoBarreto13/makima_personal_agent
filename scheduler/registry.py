@@ -28,7 +28,7 @@ from scheduler.jobs import (
     run_backup, run_kurisu_sync, run_letterboxd, run_lucy_digest, run_kaguya_digest,
     run_weekly_review_reminder,
     run_recurring_charges, run_budget_alert, run_monthly_report, run_marin_mal_sync,
-    run_frieren_mal_sync, run_gcal_mirror, run_violet_weekly_review,
+    run_frieren_mal_sync, run_gcal_mirror, run_violet_weekly_review, run_app_reminders,
 )
 
 # Fuso horário do usuário. Todos os horários dos jobs são interpretados nele —
@@ -47,6 +47,9 @@ class ScheduledJob:
             exceção se falhar — o runner captura, registra 'error' e alerta.
         trigger: Gatilho do APScheduler (use daily_at() ou every()).
         description: Frase curta explicando o job (aparece no log de startup).
+        quiet_success: Jobs de alta frequência (a cada minuto): só gravam em `scheduler_runs` quando
+            FALHAM (senão seriam 1440 linhas por dia) e o alerta no Telegram é limitado a um a cada
+            30 minutos por job (um banco fora do ar não pode gerar um alerta por minuto).
     """
 
     name: str
@@ -54,6 +57,7 @@ class ScheduledJob:
     # O tipo real é um trigger do APScheduler; usamos `object` para não amarrar.
     trigger: object
     description: str = field(default="")
+    quiet_success: bool = False
 
 
 def daily_at(hour: int, minute: int = 0) -> CronTrigger:
@@ -224,9 +228,19 @@ JOBS: list[ScheduledJob] = [
         trigger=every(hours=1),
         description="Espelho Calendar Hub → Google Calendar (Nami/Frieren/Violet/Akane/Marin/Mai/Komi)",
     ),
+    # Lembretes do app por push (tarefas/eventos com hora, hábitos, aniversários, reuniões do Google e o
+    # resumo das 07:30) — sem depender do app Google Calendar. A cada minuto; quiet_success: só grava em
+    # scheduler_runs quando falha (senão seriam 1440 linhas por dia). Motor: agents/kaguya/reminder_engine.py.
+    ScheduledJob(
+        name="app_reminders",
+        func=run_app_reminders,
+        trigger=every(minutes=1),
+        description="Lembretes do app por push: tarefas/eventos com hora, hábitos, aniversários, reuniões do Google e resumo das 07:30",
+        quiet_success=True,
+    ),
     # kaguya_due_reminders (lembrete pontual de tarefas via WhatsApp) — DESATIVADO a
     # pedido do usuário logo depois de testado em produção ("não gostei, deixa só pelo
-    # Calendar, vamos fazer de outra forma depois"). Código mantido (jobs.py::
+    # Calendar, vamos fazer de outra forma depois"). SUBSTITUÍDO pelo app_reminders acima. Código mantido (jobs.py::
     # run_kaguya_due_reminders, scripts/send_kaguya_due_reminders.py,
     # tools_tasks.py::list_tasks_due_for_reminder/mark_due_reminder_sent, coluna
     # tasks.due_reminder_sent_at) para reaproveitar quando o novo desenho for definido —

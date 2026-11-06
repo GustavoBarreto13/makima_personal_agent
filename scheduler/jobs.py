@@ -384,3 +384,18 @@ def run_violet_weekly_review() -> None:
             f"send_violet_weekly_review saiu com código {resultado.returncode}.\n"
             f"stderr:\n{resultado.stderr}"
         )
+
+
+def run_app_reminders() -> None:
+    """Uma rodada dos lembretes do app (push) — roda a cada minuto.
+
+    Diferente dos outros jobs, roda EM PROCESSO (e não em subprocesso): a cada minuto, o custo de subir
+    um interpretador novo seria desperdício. O trabalho está em `scripts/send_app_reminders.py::run`.
+
+    Raises:
+        RuntimeError: Se todas as fontes falharam ou algum push não foi entregue (vira alerta no Telegram).
+    """
+    from scripts.send_app_reminders import run
+
+    run()
+

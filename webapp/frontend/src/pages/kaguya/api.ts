@@ -117,6 +117,7 @@ export const kaguyaApi = {
     recurrence?: RecurrenceInput        // recorrência opcional na criação
     tags?: string[]                     // nomes das tags (criadas se não existirem)
     person_ids?: string[]               // responsáveis Komi (fatia 025)
+    reminder_lead_min?: number | null   // aviso por push: min antes do horário (omitido = padrão 10)
   }) => api.post<MutationResult>(BASE, body),
 
   // Busca uma tarefa específica pelo id — usado pelo chip de menção [[task]] no editor de notas.
@@ -128,6 +129,7 @@ export const kaguyaApi = {
     recurrence: RecurrenceInput; clear_recurrence: boolean   // anexar/editar/remover regra
     tags: string[]                                           // substitui o conjunto de tags
     duration_min: number | null                              // estimativa de duração (Meu Dia)
+    reminder_lead_min: number | null                         // aviso por push (null = padrão · 0 = na hora · -1 = sem aviso)
     person_ids: string[]                                     // substitui responsáveis (fatia 025)
     gtd_status: GtdStatus | null                              // status GTD real (spec 034)
     waiting_note: string | null                               // por quem/o quê espera

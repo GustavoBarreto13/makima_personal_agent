@@ -45,6 +45,8 @@ agents/kaguya/
 ├── tools_focus.py        # camada de lógica: sessões de foco (start/finish/cancel/stats/heatmap/achievements) — spec 037 + 062
 ├── capacity.py           # motor PURO (sem banco): compute_capacity() + compute_free_time() (dois tempos livres) — fatia 016 + spec 075
 ├── tz.py                 # "hoje"/"agora" em America/Sao_Paulo — fonte única de fuso (SP_TODAY_SQL, today_sp, now_sp) — spec 075
+├── reminder_engine.py    # motor PURO dos lembretes do app (push): quando/o quê avisar, janela de graça, chaves de dedupe
+├── reminder_sources.py   # leitura das fontes de lembretes (tarefas, hábitos, Komi, Google, resumo) com falha isolada
 ├── tools_schedule.py     # agenda de trabalho: expediente, almoço, acordar/dormir + exceções por dia — spec 075
 ├── tools_dependencies.py # dependências entre tarefas ("só começa depois de…", anti-ciclo) — spec 075
 ├── tools_bulk.py         # edição em massa em uma transação + undo por snapshot — spec 075
@@ -310,7 +312,8 @@ alguma; a régua de consistência continua sendo só `freq_num`/`freq_den`.
 **Alertas** — tabela `habit_schedules` (no máximo um horário por dia da semana, por hábito;
 `weekday` é o **código iCal** `MO`..`SU`, não um índice numérico — o repo tem duas convenções
 conflitantes de índice de dia: `recurrence.py` segunda=0, `dateUtils.ts` `WEEKDAY_1`
-domingo=0). Cada linha vira um evento **recorrente semanal** no calendário dedicado
+domingo=0). Cada linha vira um evento **recorrente semanal** (agora **sem alerta do Google** — quem avisa é o app por push, ver
+"Lembretes nativos do app") no calendário dedicado
 **"Kaguya — Hábitos"** (separado de "Kaguya — Tarefas" — o usuário pode silenciar/ocultar
 hábitos no app do Google sem afetar tarefas). `time_of_day = NULL` marca o dia como evento de
 **dia inteiro** (aparece na agenda, mas o Google não dispara push nesse tipo de evento por
@@ -739,6 +742,44 @@ Resumo do que mudou na camada de lógica (detalhes de colunas em `docs/referenci
 - **Migração**: `scripts/migrate_kaguya_ds.py` (dry-run por padrão, `--apply` grava) — rodar no VPS **antes** do deploy do backend.
 - **Adiado de propósito**: unificar `list_tasks_today` com o DSL, esconder o `_UNSET` do schema MCP e dividir o espelho do Google em
   dois calendários (Trabalho/Pessoal).
+
+## Lembretes nativos do app (push) — sem depender do Google Calendar
+
+O app Android avisa sozinho, por **push**, quando algo está chegando. Antes quem tocava no celular era o app Google
+Calendar (os espelhos gravavam um popup nos eventos); agora o Google só **mostra** a agenda e o app **avisa**.
+
+```
+scheduler (a cada 1 min, quiet_success) → scripts/send_app_reminders.py::run
+  ├── reminder_sources.collect_all(now)   → 5 fontes, falha isolada por fonte
+  │     tarefas · habitos · komi · google · resumo
+  ├── reminder_engine.select_due(...)     → motor PURO: janela de graça de 15 min
+  └── por lembrete: INSERT app_reminder_log ON CONFLICT DO NOTHING (reserva) → send_notification(channels=["push"])
+                    push falhou? apaga a reserva → o minuto seguinte tenta de novo até a janela fechar
+```
+
+| Fonte | Quando avisa | Link ao tocar |
+|---|---|---|
+| Tarefa/evento com `due_time` (ou bloco `start_at`, que vale mais) | início − `tasks.reminder_lead_min` (`NULL` = 10 min · `0` = na hora · `-1` = sem aviso) | `makima://kaguya/tarefa/<id>` |
+| Hábito (`habit_schedules.time_of_day`) | horário − `habits.reminder_lead_min`, só no dia da semana marcado e **se ainda sem check-in hoje** | `makima://kaguya/habitos` |
+| Aniversário/data da Komi (campo `reminders` do item do hub) | **09:00** do dia de aviso (aviso "no dia" sobe de 00:00 para 09:00; nunca de madrugada) | `makima://komi` |
+| Reunião só do Google | início − popup do próprio evento (sem configuração: 10 min) | `makima://kaguya/calendario` |
+| Resumo do dia | **07:30**: nº de tarefas hoje, atrasadas e o 1º compromisso com hora (vazio = não envia) | `makima://kaguya/hoje` |
+
+- **Só pendência real:** a fonte de tarefas usa `chargeable_sql()` (Homolog/Blocked/Backlog e GTD aguardando/algum dia não
+  avisam), ignora lista arquivada e tarefa adiada (`start_date` futuro).
+- **Reagendar rearma:** a chave inclui o instante do evento e a antecedência (`task:12:2026-11-06T14:00:10`).
+- **Sem aviso duplicado:** `gcal.list_events` já exclui "Kaguya — Tarefas" e os 7 espelhos; a fonte do Google ainda exclui
+  "Kaguya — Hábitos". `_format_event` agora carrega `reminders` do evento.
+- **Alertas do Google nos espelhos: DESLIGADOS por padrão** (`gcal.alerts_enabled()`, env `GCAL_ALERTS_ENABLED`, padrão `false`).
+  `gcal_sync._reminders_for` (tarefas e hábitos) e `gcal_mirror._lembretes_do_item` (Komi) gravam `{"useDefault": false,
+  "overrides": []}`; `true` volta ao comportamento antigo. Os eventos que já existiam no Google são limpos por
+  `scripts/strip_gcal_alerts.py` (dry-run por padrão, `--apply`); os do hub se corrigem sozinhos na reconciliação horária.
+- **Configurável por tarefa:** campo "Avisar" no painel da tarefa e no modal de nova tarefa (`pages/kaguya/lib/reminder.ts`);
+  `create_task`/`update_task` aceitam `reminder_lead_min` (o Hermes/Telegram também: "avisa 30 min antes").
+- **Escopo:** o job só manda push (`channels=["push"]` explícito, independe de `NOTIFY_DEFAULT_CHANNELS`). Botões
+  *Concluir/Adiar* na notificação ficam para depois (o plugin do Capacitor não desenha botões).
+- **Tabela:** `app_reminder_log` (ver `docs/referencia/POSTGRES.md`). Testes: `tests/agents/test_kaguya_reminder_engine.py`
+  (puro), `tests/test_app_reminders.py` (job, at-most-once, retry, runner quiet_success, alertas do Google).
 
 ## Estados que não cobram (`task_state.py`)
 

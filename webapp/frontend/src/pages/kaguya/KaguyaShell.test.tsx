@@ -180,6 +180,32 @@ describe('painel de detalhe', () => {
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith(20, { priority: 3 }))
   })
 
+  it('"Avisar" só aparece com horário e grava a antecedência do push', async () => {
+    const comHora = task({
+      ...INBOX_TASK, due_date: TODAY, due_time: '14:00', start_at: `${TODAY}T14:00:00-03:00`, end_at: `${TODAY}T14:30:00-03:00`, duration_min: 30,
+    })
+    api.viewTasks.mockImplementation(async (key: string) => (key === 'inbox' ? [comHora] : [REPORT, MERCADO, comHora]))
+    api.getTask.mockImplementation(async (id: number) => (id === 20 ? comHora : id === 10 ? REPORT : MERCADO))
+    const user = await open()
+    await goInbox(user)
+    await user.click(screen.getByText('Ligar para o dentista'))
+    const panel = await screen.findByLabelText('Detalhe da tarefa')
+    const avisar = within(panel).getByLabelText('Avisar') as HTMLSelectElement
+    expect(avisar.value).toBe('') // padrão (10 min antes)
+    await user.selectOptions(avisar, '30')
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith(20, { reminder_lead_min: 30 }))
+    await user.selectOptions(avisar, '')
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith(20, { reminder_lead_min: null }))
+  })
+
+  it('tarefa sem horário não tem o campo "Avisar"', async () => {
+    const user = await open()
+    await goInbox(user)
+    await user.click(screen.getByText('Ligar para o dentista'))
+    const panel = await screen.findByLabelText('Detalhe da tarefa')
+    expect(within(panel).queryByLabelText('Avisar')).toBeNull()
+  })
+
   it('fechar o painel tira a tarefa da URL', async () => {
     const user = await open()
     await goInbox(user)

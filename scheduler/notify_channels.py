@@ -18,10 +18,12 @@ lendo gateway/platforms/webhook.py dentro do container em produção). O segredo
 Variáveis de ambiente usadas:
     HERMES_WEBHOOK_BASE_URL — ex. "http://makima-hermes:8644" (rede interna dokploy-network).
     WEBHOOK_SECRET           — mesmo segredo cadastrado no Hermes (Environment do Dokploy).
-    NOTIFY_DEFAULT_CHANNELS  — canais usados quando `channels` não é passado, separados por
-                               vírgula (ex. "whatsapp" ou "whatsapp,telegram,discord").
-                               Hoje só "whatsapp" está ativo por decisão do usuário — ligar
-                               os outros é só mudar esta env var, sem deploy de código novo.
+    NOTIFY_DEFAULT_CHANNELS  — canais dos avisos CURTOS (lembretes, alertas) quando `channels` não
+                               é passado, separados por vírgula. Padrão "push" (app Android).
+    NOTIFY_LONG_CHANNELS     — canais dos textos LONGOS (digests, relatórios, revisões), usados quando
+                               o job chama com `long=True`. Padrão "discord": o push corta o texto e
+                               o app não é lugar de ler um resumo de várias telas.
+                               Mudar qualquer uma é só trocar a env var, sem deploy de código novo.
     FIREBASE_CREDENTIALS_JSON — JSON da conta de serviço do Firebase (conteúdo do arquivo, não o
                                caminho). Necessário só para o canal "push" (app Android). Sem ela,
                                o canal "push" é pulado com um aviso — nada quebra.
@@ -82,6 +84,49 @@ def _to_whatsapp_text(html: str) -> str:
     text = text.replace("<pre>", "```").replace("</pre>", "```")
     text = re.sub(r"<[^>]+>", "", text)
     return text
+
+
+# Limite do Discord por mensagem é 2000; deixamos folga para o que a rota do Hermes acrescentar.
+_DISCORD_MAX_CHARS = 1900
+
+
+def _to_discord_text(html: str) -> str:
+    """Converte a marcação HTML simples dos jobs para o markdown do Discord
+    (`**negrito**`, `*itálico*`, `` `código` ``) e remove qualquer outra tag.
+
+    Diferente do WhatsApp (`*negrito*`), no Discord um asterisco só vira ITÁLICO.
+    """
+    text = html
+    for tag, wrapper in (("b", "**"), ("strong", "**"), ("i", "*"), ("em", "*"), ("code", "`")):
+        text = text.replace(f"<{tag}>", wrapper).replace(f"</{tag}>", wrapper)
+    text = text.replace("<pre>", "```").replace("</pre>", "```")
+    return re.sub(r"<[^>]+>", "", text)
+
+
+def _split_for_discord(text: str, limit: int = _DISCORD_MAX_CHARS) -> list[str]:
+    """Quebra o texto em blocos de até `limit` caracteres, sempre entre linhas.
+
+    Um digest passa fácil de 2000 caracteres; sem isso o Discord recusaria a mensagem inteira.
+    Uma linha maior que o limite é cortada no limite (caso raro).
+    """
+    blocos: list[str] = []
+    atual = ""
+    for linha in text.split("\n"):
+        while len(linha) > limit:  # linha gigante: corta no limite
+            if atual:
+                blocos.append(atual)
+                atual = ""
+            blocos.append(linha[:limit])
+            linha = linha[limit:]
+        candidato = f"{atual}\n{linha}" if atual else linha
+        if len(candidato) > limit:
+            blocos.append(atual)
+            atual = linha
+        else:
+            atual = candidato
+    if atual.strip():
+        blocos.append(atual)
+    return blocos or [text]
 
 
 def _to_plain_text(html: str) -> str:
@@ -203,6 +248,7 @@ def send_notification(
     title: str = "Makima",
     link: str | None = None,
     agent: str | None = None,
+    long: bool = False,
 ) -> bool:
     """Manda `message` (HTML no padrão Telegram já usado pelos jobs) para os canais
     pedidos, via as rotas de notificação do Hermes.
@@ -218,9 +264,12 @@ def send_notification(
         message: Texto em HTML simples (`<b>`, `<i>`, `<code>`) — mesmo formato que os
             scripts de `scripts/send_*.py` já montam para o Telegram.
         channels: Canais a notificar (`"whatsapp"`, `"telegram"`, `"discord"`, `"push"`). Se
-            omitido, usa `NOTIFY_DEFAULT_CHANNELS` (hoje só `"whatsapp"`).
+            omitido, usa `NOTIFY_LONG_CHANNELS` (padrão `"discord"`) quando `long=True` e
+            `NOTIFY_DEFAULT_CHANNELS` (padrão `"push"`) nos demais casos.
         title: Título da notificação push (os outros canais ignoram).
         link: Deep link aberto ao tocar na notificação push (ex.: `"makima://kaguya/hoje"`).
+        long: `True` para textos longos (digests, relatórios, revisões): vão para os canais de
+            leitura (`NOTIFY_LONG_CHANNELS`) em vez dos de aviso rápido. Ignorado se `channels` vier.
         agent: Agente de origem; vira o canal de notificação do Android ("kaguya", "nami"...)
             para o usuário silenciar um agente sem silenciar os outros. Só vale no push.
 
@@ -228,11 +277,8 @@ def send_notification(
         `True` se pelo menos um canal recebeu a notificação com sucesso.
     """
     if channels is None:
-        channels = [
-            c.strip()
-            for c in os.environ.get("NOTIFY_DEFAULT_CHANNELS", "whatsapp").split(",")
-            if c.strip()
-        ]
+        var, padrao = ("NOTIFY_LONG_CHANNELS", "discord") if long else ("NOTIFY_DEFAULT_CHANNELS", "push")
+        channels = [c.strip() for c in os.environ.get(var, padrao).split(",") if c.strip()]
 
     sent_any = False
 
@@ -256,28 +302,41 @@ def send_notification(
             continue
 
         # Telegram entende a marcação HTML original (parse_mode=HTML aplicado no lado do
-        # Hermes/canal); os demais canais recebem a conversão para markdown leve.
-        text = message if channel == "telegram" else _to_whatsapp_text(message)
-        body = json.dumps({"message": text}).encode()
+        # Hermes/canal); Discord e WhatsApp recebem cada um o seu markdown. O Discord tem limite
+        # de 2000 caracteres por mensagem: textos longos saem em vários blocos, em ordem.
+        if channel == "telegram":
+            textos = [message]
+        elif channel == "discord":
+            textos = _split_for_discord(_to_discord_text(message))
+        else:
+            textos = [_to_whatsapp_text(message)]
 
-        signed = _sign(body)
-        if not signed:
-            log.warning("WEBHOOK_SECRET não configurado — notificação NÃO enviada (%s).", channel)
-            continue
-        timestamp, signature = signed
+        enviados = 0
+        for texto in textos:
+            body = json.dumps({"message": texto}).encode()
 
-        headers = {
-            "Content-Type": "application/json",
-            "X-Webhook-Timestamp": timestamp,
-            "X-Webhook-Signature-V2": signature,
-        }
+            signed = _sign(body)
+            if not signed:
+                log.warning("WEBHOOK_SECRET não configurado — notificação NÃO enviada (%s).", channel)
+                break
+            timestamp, signature = signed
 
-        try:
-            resp = requests.post(url, data=body, headers=headers, timeout=_TIMEOUT)
-            resp.raise_for_status()
-            log.info("Notificação enviada via %s.", channel)
+            headers = {
+                "Content-Type": "application/json",
+                "X-Webhook-Timestamp": timestamp,
+                "X-Webhook-Signature-V2": signature,
+            }
+
+            try:
+                resp = requests.post(url, data=body, headers=headers, timeout=_TIMEOUT)
+                resp.raise_for_status()
+                enviados += 1
+            except requests.RequestException as exc:
+                log.warning("Falha ao enviar notificação via %s: %s", channel, exc)
+                break  # não manda os blocos seguintes fora de ordem
+
+        if enviados:
+            log.info("Notificação enviada via %s (%d/%d bloco(s)).", channel, enviados, len(textos))
             sent_any = True
-        except requests.RequestException as exc:
-            log.warning("Falha ao enviar notificação via %s: %s", channel, exc)
 
     return sent_any

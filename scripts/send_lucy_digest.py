@@ -41,7 +41,7 @@ def main() -> int:
     if not emails:
         log.info("Nenhum email de ontem encontrado.")
         digest_html = build_telegram_digest([], {"prompt_tokens": 0, "candidates_tokens": 0})
-        if not send_notification(digest_html, title="Lucy · E-mails", link="makima://makima", agent="lucy"):
+        if not send_notification(digest_html, title="Lucy · E-mails", link="makima://makima", agent="lucy", long=True):
             log.error("Falha ao enviar digest (sem emails): nenhum canal recebeu")
             return 1
         print("[lucy-digest] 0 emails, nada a processar")
@@ -90,7 +90,7 @@ def main() -> int:
           "action": item["action"], "summary": item["summary"]} for item in merged],
         usage,
     )
-    if not send_notification(digest_html, title="Lucy · E-mails", link="makima://makima", agent="lucy"):
+    if not send_notification(digest_html, title="Lucy · E-mails", link="makima://makima", agent="lucy", long=True):
         log.error("Falha ao enviar digest: nenhum canal recebeu")
         return 1
 

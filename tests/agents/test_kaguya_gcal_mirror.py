@@ -258,7 +258,8 @@ def test_reconcile_insert_409_falls_back_to_patch():
 # Lembretes por item (spec 077 — aniversários da Komi)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def test_body_vira_alerta_popup_quando_o_item_pede_aviso():
+def test_body_vira_alerta_popup_quando_o_item_pede_aviso(monkeypatch):
+    monkeypatch.setenv("GCAL_ALERTS_ENABLED", "true")  # alertas do Google são opt-in desde o app_reminders
     body = gcal_mirror._event_body(_item(all_day=True, date="2026-09-02", reminders=[900, 2340]))
     assert body["reminders"] == {
         "useDefault": False,
@@ -266,12 +267,14 @@ def test_body_vira_alerta_popup_quando_o_item_pede_aviso():
     }
 
 
-def test_body_descarta_lembretes_invalidos_e_limita_a_cinco():
+def test_body_descarta_lembretes_invalidos_e_limita_a_cinco(monkeypatch):
+    monkeypatch.setenv("GCAL_ALERTS_ENABLED", "true")  # alertas do Google são opt-in desde o app_reminders
     body = gcal_mirror._event_body(_item(all_day=True, date="2026-09-02", reminders=[-5, 40321, "x", 10, 20, 30, 40, 50, 60]))
     assert [o["minutes"] for o in body["reminders"]["overrides"]] == [10, 20, 30, 40, 50]   # só os válidos, no máximo 5
 
 
-def test_reconcile_patcha_evento_antigo_que_ganhou_lembrete_e_depois_nao_mexe_mais():
+def test_reconcile_patcha_evento_antigo_que_ganhou_lembrete_e_depois_nao_mexe_mais(monkeypatch):
+    monkeypatch.setenv("GCAL_ALERTS_ENABLED", "true")  # alertas do Google são opt-in desde o app_reminders
     it = _item(ref_id="a", date="2026-09-02", title="🎂 aniversário — Bia", reminders=[900])
     eid = gcal_mirror.event_id_for(it)
     body = gcal_mirror._event_body(it)

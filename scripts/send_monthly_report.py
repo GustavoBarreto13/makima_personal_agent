@@ -92,7 +92,7 @@ def main() -> int:
         log.error("Falha ao montar o relatório mensal: %s", exc)
         return 1
 
-    if not send_notification(html, title="Nami · Relatório do mês", link="makima://nami", agent="nami"):
+    if not send_notification(html, title="Nami · Relatório do mês", link="makima://nami", agent="nami", long=True):
         log.error("Falha ao enviar o relatório: nenhum canal recebeu a notificação")
         return 1
 

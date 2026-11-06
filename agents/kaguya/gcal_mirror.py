@@ -145,6 +145,8 @@ def _lembretes_do_item(item: dict) -> list[dict]:
     Returns:
         Lista de `{"method": "popup", "minutes": N}` (vazia se o item não pede aviso).
     """
+    if not gcal.alerts_enabled():  # o app avisa por push (reminder_engine); alerta do Google tocaria em dobro
+        return []
     validos = [m for m in (item.get("reminders") or []) if isinstance(m, int) and 0 <= m <= 40320]
     return [{"method": "popup", "minutes": m} for m in validos[:5]]
 

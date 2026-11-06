@@ -953,3 +953,34 @@ CREATE INDEX IF NOT EXISTS idx_task_activity_task ON task_activity (task_id, at 
 CREATE INDEX IF NOT EXISTS idx_task_activity_kind_at ON task_activity (kind, at DESC);
 
 -- END SPEC 075
+
+
+-- ============================================================================
+-- Lembretes nativos do app (push) — antecedência por tarefa + trava de envio
+-- ----------------------------------------------------------------------------
+-- O job `app_reminders` (scheduler/, a cada minuto) avisa tarefas, eventos, hábitos, aniversários e
+-- reuniões do Google por PUSH, sem depender do app Google Calendar (agents/kaguya/reminder_engine.py).
+-- ============================================================================
+
+-- Antecedência do aviso, em minutos antes do horário da tarefa/evento.
+--   NULL = padrão do motor (10 min) · 0 = na hora · -1 = sem aviso · N>0 = N min antes (até 7 dias).
+-- Só vale para tarefas COM horário (due_time) ou com bloco (start_at); tarefa só com data entra no resumo das 7h30.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_lead_min SMALLINT;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tasks_reminder_lead_min_check') THEN
+        ALTER TABLE tasks ADD CONSTRAINT tasks_reminder_lead_min_check
+            CHECK (reminder_lead_min IS NULL OR reminder_lead_min BETWEEN -1 AND 10080);
+    END IF;
+END $$;
+
+-- Trava de "já avisei": a chave identifica UM lembrete de UMA ocorrência (ex.: task:12:2026-11-06T14:00:10).
+-- O job grava a chave ANTES de enviar (at-most-once) e a apaga se o push falhar, para tentar de novo.
+-- Reagendar muda a chave, então o aviso se rearma sozinho. Linhas com mais de 7 dias são limpas pelo job.
+CREATE TABLE IF NOT EXISTS app_reminder_log (
+    key      TEXT        PRIMARY KEY,
+    fire_at  TIMESTAMPTZ NOT NULL,      -- instante em que o aviso deveria sair
+    sent_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_app_reminder_log_sent ON app_reminder_log (sent_at);
