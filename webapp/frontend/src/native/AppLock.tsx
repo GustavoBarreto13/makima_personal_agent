@@ -11,14 +11,16 @@ import { BiometricAuth } from '@aparajita/capacitor-biometric-auth'
 import { Button, Icon } from '../design/ui'
 import { toast } from '../design/headless/toast'
 import { isNativeApp } from './nativeAuth'
-import { shouldLock } from './appLock'
+import { PROMPT_SETTLE_MS, shouldLock } from './appLockRules'
 
 /** Cobre o app e pede a biometria. Renderiza nada no site. */
 export function AppLock() {
   const native = isNativeApp()
   const [locked, setLocked] = useState(native) // abre bloqueado: nada aparece antes do desbloqueio
   const asking = useRef(false) // evita abrir dois pedidos de biometria ao mesmo tempo
-  const lastActiveAt = useRef<number | null>(null)
+  const backgroundedAt = useRef<number | null>(null)
+  const ignoreUntil = useRef(0) // o prompt da biometria é outra Activity: pausa/volta logo depois dele não conta
+  const [erro, setErro] = useState<string | null>(null)
 
   const unlock = useCallback(async () => {
     if (asking.current) return
@@ -37,11 +39,19 @@ export function AppLock() {
         androidSubtitle: 'Confirme que é você',
         allowDeviceCredential: true, // aceita o PIN/padrão do celular se a digital falhar
       })
+      setErro(null)
       setLocked(false)
-    } catch {
-      /* cancelou ou errou: continua bloqueado; o botão "Desbloquear" tenta de novo */
+    } catch (err) {
+      // Cancelou ou errou: continua bloqueado; o botão "Desbloquear" tenta de novo. Mostramos o motivo
+      // (sem isso, uma falha de configuração parece "não reconhece" e ninguém sabe o porquê).
+      console.warn('Biometria falhou:', err)
+      const code = (err as { code?: string })?.code
+      if (code !== 'userCancel' && code !== 'systemCancel' && code !== 'appCancel') {
+        setErro((err as { message?: string })?.message || 'Não foi possível confirmar. Tente de novo.')
+      }
     } finally {
       asking.current = false
+      ignoreUntil.current = Date.now() + PROMPT_SETTLE_MS
     }
   }, [])
 
@@ -55,12 +65,15 @@ export function AppLock() {
     if (!native) return
     let handle: { remove: () => Promise<void> } | undefined
     void CapApp.addListener('appStateChange', ({ isActive }) => {
-      if (asking.current) return // o próprio prompt da biometria alterna o estado do app
+      const now = Date.now()
+      if (asking.current || now < ignoreUntil.current) return // o próprio prompt alterna o estado do app
       if (!isActive) {
-        lastActiveAt.current = Date.now()
+        backgroundedAt.current = now
         return
       }
-      if (shouldLock({ lastActiveAt: lastActiveAt.current, now: Date.now() })) {
+      const since = backgroundedAt.current
+      backgroundedAt.current = null // cada ida ao segundo plano vale uma única vez
+      if (shouldLock({ backgroundedAt: since, now })) {
         setLocked(true)
         void unlock()
       }
@@ -79,6 +92,7 @@ export function AppLock() {
         <div className="ds-eic"><Icon name="blocked" size={24} /></div>
         <h3>Makima bloqueada</h3>
         <p>Use a digital, o rosto ou o PIN do celular para continuar.</p>
+        {erro && <p role="alert">{erro}</p>}
         <Button variant="primary" onClick={() => void unlock()}>Desbloquear</Button>
       </div>
     </div>

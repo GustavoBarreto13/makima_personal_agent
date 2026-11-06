@@ -1,11 +1,18 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { existsSync } from 'node:fs'
+
+// Push no app Android só funciona se o Firebase estiver configurado no projeto nativo. Sem o
+// google-services.json, o plugin lança uma exceção NATIVA em register() e o Android derruba o app.
+// Por isso o build descobre sozinho se o arquivo existe e o front só tenta o push nesse caso.
+const PUSH_ENABLED = existsSync(new URL('./android/app/google-services.json', import.meta.url))
 
 // Configuração do Vite — bundler de frontend para React.
 // Em desenvolvimento (npm run dev), o Vite serve os arquivos em modo HMR (Hot Module Replacement),
 // atualizando o browser automaticamente a cada mudança no código.
 export default defineConfig({
+  define: { __PUSH_ENABLED__: JSON.stringify(PUSH_ENABLED) },
   plugins: [
     react(),
     // PWA: gera o service worker (sw.js) no build. O "ajudante" guarda os arquivos do app e

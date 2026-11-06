@@ -5,8 +5,10 @@
 // avisar este celular (scheduler/notify_channels.py, canal "push"). Tocar numa notificação abre a tela
 // certa pelo deep link que veio nela.
 //
-// Sem o `google-services.json` do Firebase no projeto Android, `register()` falha — aqui só registramos
-// no console e seguimos (o app funciona normalmente, só não recebe push).
+// Sem o `google-services.json` do Firebase no projeto Android, `register()` lança uma exceção NATIVA
+// (não uma promessa rejeitada) e o Android derruba o app. Por isso o build (vite.config.ts) detecta o
+// arquivo e `__PUSH_ENABLED__` fica falso sem ele: nesse caso nem tentamos — o app funciona normalmente,
+// só não recebe push.
 
 import { PushNotifications } from '@capacitor/push-notifications'
 import { api } from '../lib/api'
@@ -17,6 +19,9 @@ import { PUSH_CHANNELS } from './pushChannels'
 /** Guarda o id do registro no servidor, para removê-lo ao sair. */
 const PUSH_ID_KEY = 'makima-push-id'
 
+/** Definido no build: o Firebase está configurado no projeto Android? */
+declare const __PUSH_ENABLED__: boolean
+
 let started = false
 
 /**
@@ -26,6 +31,7 @@ let started = false
  */
 export async function initPush(onLink: (link: string) => void): Promise<void> {
   if (!isNativeApp() || started) return
+  if (typeof __PUSH_ENABLED__ === 'undefined' || !__PUSH_ENABLED__) return // Firebase não configurado neste build
   started = true
   try {
     // Canais primeiro: precisam existir antes da primeira notificação chegar.
@@ -73,6 +79,7 @@ export async function initPush(onLink: (link: string) => void): Promise<void> {
 /** Remove este aparelho do push (ao sair da conta). Nunca lança. */
 export async function unregisterPush(): Promise<void> {
   if (!isNativeApp()) return
+  if (typeof __PUSH_ENABLED__ === 'undefined' || !__PUSH_ENABLED__) return
   try {
     const id = webStorage.get(PUSH_ID_KEY)
     if (id) await api.del(`/api/devices/push/${encodeURIComponent(id)}`)

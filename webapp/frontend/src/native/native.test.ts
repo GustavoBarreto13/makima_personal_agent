@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { closeTopOverlay, decideBack, hasOpenOverlay } from './backButton'
 import { isSensitiveRoute } from './privacy'
-import { LOCK_GRACE_MS, shouldLock } from './appLock'
+import { LOCK_GRACE_MS, shouldLock } from './appLockRules'
 import { DEFAULT_CHANNEL_ID, PUSH_CHANNELS, channelFor } from './pushChannels'
 import { parseDeepLink } from '../lib/deepLink'
 
@@ -48,14 +48,14 @@ describe('isSensitiveRoute', () => {
 })
 
 describe('shouldLock', () => {
-  it('abertura a frio sempre bloqueia', () => {
-    expect(shouldLock({ lastActiveAt: null, now: 1000 })).toBe(true)
+  it('sem registro de segundo plano não bloqueia (a volta do prompt da biometria não pode reabri-lo)', () => {
+    expect(shouldLock({ backgroundedAt: null, now: 1000 })).toBe(false)
   })
   it('troca rápida de app não bloqueia', () => {
-    expect(shouldLock({ lastActiveAt: 0, now: LOCK_GRACE_MS - 1 })).toBe(false)
+    expect(shouldLock({ backgroundedAt: 0, now: LOCK_GRACE_MS - 1 })).toBe(false)
   })
   it('ficar fora além do prazo bloqueia', () => {
-    expect(shouldLock({ lastActiveAt: 0, now: LOCK_GRACE_MS })).toBe(true)
+    expect(shouldLock({ backgroundedAt: 0, now: LOCK_GRACE_MS })).toBe(true)
   })
 })
 

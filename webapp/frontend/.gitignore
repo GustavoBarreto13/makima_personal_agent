@@ -1,3 +1,6 @@
 # No frontend, arquivos JSON são de configuração (package.json, tsconfig.json, etc.)
 # e precisam ser versionados — por isso excluímos a regra *.json do .gitignore raiz.
 !*.json
+
+# Configuração do Firebase do app Android (por instalação; não vai para o git)
+android/app/google-services.json

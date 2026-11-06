@@ -69,6 +69,26 @@ export async function clearOfflineData(): Promise<void> {
   }
 }
 
+/**
+ * App Android: remove service workers e caches de versões antigas. As primeiras versões do app
+ * registravam o service worker aqui dentro; ele ficava servindo a cópia ANTIGA do site por cima do
+ * APK novo (e o app seguia com bugs já corrigidos). Roda a cada abertura, é barato e nunca lança.
+ */
+async function removeStaleServiceWorkers(): Promise<void> {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(regs.map((r) => r.unregister()))
+    }
+    if (typeof caches !== 'undefined') {
+      const names = await caches.keys()
+      await Promise.all(names.map((n) => caches.delete(n)))
+    }
+  } catch {
+    /* sem suporte ou bloqueado: nada a limpar */
+  }
+}
+
 /** Liga tudo: registra o service worker (só em produção) e acompanha online/offline. */
 export async function initPwa(): Promise<void> {
   if (typeof window === 'undefined') return
@@ -78,7 +98,10 @@ export async function initPwa(): Promise<void> {
 
   // Dentro do app Android o `dist/` já está embutido no APK: o service worker só serviria uma
   // cópia antiga da tela por cima da versão instalada. Atualizar = instalar o APK novo.
-  if (Capacitor.isNativePlatform()) return
+  if (Capacitor.isNativePlatform()) {
+    void removeStaleServiceWorkers()
+    return
+  }
 
   // Em `npm run dev` não há service worker (o Vite serve módulos sob demanda): não registrar.
   if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return
