@@ -1,505 +1,256 @@
-﻿# Makima Personal Agent
+# Makima Personal Agent
 
-Agente pessoal multicanal (Telegram, WhatsApp e Discord) que recebe mensagens em linguagem natural e delega para especialistas de domínio — finanças, tarefas, agenda, livros, filmes, animes, séries, pessoas, email e diário.
+Assistente pessoal multicanal (Telegram, WhatsApp e Discord, mais um painel web e um app Android em construção) que entende mensagens em linguagem natural e delega para 11 especialistas: finanças, tarefas e agenda, conhecimento, livros, filmes, animes, séries, pessoas, email, diário e viagens.
 
-O gateway de conversa é o **Hermes Agent** (Nous Research), com memória de longo prazo real (resumo automático, busca por conteúdo) e um dashboard web próprio. Toda a lógica de negócio continua nos agentes especialistas construídos com **Google ADK** (pacotes em `agents/`), expostos ao Hermes via um host **MCP** (`mcp_servers/makima/`) — um servidor por domínio. Ver [Hermes Agent (multicanal)](#hermes-agent-multicanal) abaixo.
+Versões e histórico de mudanças: [CHANGELOG.md](CHANGELOG.md) · [Releases](https://github.com/GustavoBarreto13/makima_personal_agent/releases).
+
+---
+
+## Como funciona (em 30 segundos)
+
+```
+Telegram / WhatsApp / Discord      Painel web (React)      App Android (Capacitor)
+            ↓                              ↓                         ↓
+   Hermes Agent (gateway)             API FastAPI  ←──── mesmo login Google, mesmos dados
+            ↓ MCP HTTP (bearer token)       ↓
+   makima-mcp: um servidor por domínio      └──→ chama direto as funções dos agentes
+            ↓
+   agents/<nome>/  →  PostgreSQL + APIs externas (TMDB, MAL, Google, Gmail, Vertex AI…)
+```
+
+- **Hermes Agent** (Nous Research) é quem conversa com você: lembra do que foi dito, entende áudio e imagem e atende os três canais com a mesma memória.
+- **makima-mcp** (`mcp_servers/makima/`) expõe as ferramentas de cada agente ao Hermes — um servidor por domínio, de `/mcp/nami` a `/mcp/yato`, mais `/mcp/calendar` (Google Calendar).
+- **Agentes** (`agents/`) concentram **toda** a lógica de negócio: acesso ao banco e às APIs. Nem o Hermes nem o painel web reimplementam nada, só chamam essas funções.
+- **Scheduler** (`scheduler/`) roda os jobs agendados: backup do banco, digests da manhã, sincronizações, alertas.
+- Tudo grava no mesmo **PostgreSQL**: uma transação lançada no WhatsApp aparece na web e no app, e vice-versa.
+- O bot Telegram original (`coordinator/`, Google ADK) continua no repo para rodar localmente e como via de rollback, mas está desligado em produção.
 
 ---
 
 ## Uso rápido
 
-Envie mensagens pelo Telegram. Makima identifica o domínio e roteia automaticamente:
+Mande mensagens como se falasse com uma pessoa. A Makima identifica o domínio sozinha:
 
-| Mensagem | Agente | O que acontece |
+| Mensagem | Quem responde | O que acontece |
 |---|---|---|
-| "gastei 35 reais no almoço, débito Itaú" | Nami 💰 | Registra despesa no PostgreSQL |
-| "quanto gastei essa semana?" | Nami 💰 | Consulta e resume as transações |
-| "comprei no crédito em 12x, R$1200" | Nami 💰 | Cria parcelamento (12 transações) |
-| "qual minha dívida no Nubank?" | Nami 💰 | Calcula dívida atual do cartão |
-| "qual meu score de saúde financeira?" | Nami 💰 | Score 0-100 em 4 dimensões |
-| "adiciona tarefa: revisar relatório até sexta" | Kaguya 📋 | Cria tarefa no PostgreSQL próprio |
-| "o que tenho na agenda amanhã?" | Kaguya 📋 | Lista eventos do Google Calendar |
-| "paguei a Netflix, 55 reais" | Kaguya + Nami | Completa tarefa e lança despesa |
-| "o que é machine learning?" | Kurisu 🧠 | Busca no vault Obsidian via RAG |
-| "adiciona o livro Duna" | Frieren 📚 | Busca metadados e adiciona ao catálogo |
-| "li até a página 120" / "ouvi até o capítulo 12" | Frieren 📚 | Registra sessão de leitura (na unidade do livro: página, capítulo ou volume) |
-| "adiciona Dungeon Meshi na minha lista de animes" | Marin 📺 | Busca no MAL e adiciona ao catálogo |
-| "assisti os eps 1 a 4 de Frieren" | Marin 📺 | Registra sessão no diário de episódios |
-| "sincroniza meu MAL" | Marin 📺 | Puxa toda a lista do MyAnimeList via OAuth |
-| "quem é a Ana?" | Komi 👤 | Busca a pessoa no cadastro e retorna o perfil completo |
-| "adiciona o João, amigo, aniversário 12/03" | Komi 👤 | Cadastra pessoa com data importante |
-| "o que tenho com a Ana?" | Komi 👤 | Resumo: finanças, tarefas, livros e diário ligados a ela |
-| "falei com a Ana ontem" | Komi 👤 | Registra o contato (alimenta o "sem contato há N dias") |
-| "a Bia gosta de orquídeas" | Komi 👤 | Guarda a anotação (gosto, presente ou nota) na pessoa |
-| "Lucy, meus emails não lidos" | Lucy 📧 | Lista emails ao vivo via IMAP (somente leitura) |
+| "gastei 35 no almoço, débito Itaú" | Nami 💰 | Registra a despesa |
+| "quanto ainda posso gastar esse mês?" | Nami 💰 | Renda − gastos − parcelas e contas que ainda vão sair |
+| "paguei a Netflix, 55 reais" | Kaguya + Nami | Conclui a tarefa e lança a despesa na mesma transação |
+| "adiciona tarefa: revisar relatório até sexta" | Kaguya 📋 | Cria a tarefa (listas, tags, recorrência, Meu Dia) |
+| "marca dentista amanhã às 15h" | Kaguya 📋 | Cria o compromisso no calendário |
+| "o que é machine learning?" | Kurisu 🧠 | Busca nas suas notas (Obsidian) via RAG |
+| "li até a página 120" / "ouvi até o capítulo 12" | Frieren 📚 | Registra a leitura na unidade do livro |
+| "vi Duna 2, nota 4.5, fui com a Ana" | Akane 🎬 | Registra a sessão no diário de filmes |
+| "assisti os eps 1 a 4 de Frieren" | Marin 📺 | Registra no diário de animes (sincroniza com o MyAnimeList) |
+| "terminei a temporada 2 de Severance" | Mai 🍿 | Atualiza o progresso da série |
+| "falei com a Ana ontem" / "a Bia gosta de orquídeas" | Komi 👤 | Registra o contato / guarda a anotação |
+| "meus emails não lidos" | Lucy 📧 | Lista a caixa de entrada (somente leitura) |
+| "escreve no diário: dia puxado, mas rendeu" | Violet 📝 | Adiciona ao diário de hoje |
+| "monta o roteiro de 3 dias em Paraty" | Yato 🧭 | Roteiro dia a dia + como se locomover sem carro |
+
+Além de responder, ela **avisa por conta própria**: digest de tarefas e emails de manhã, alerta de orçamento, lembretes e a revisão semanal do diário (ver [jobs do scheduler](scheduler/CLAUDE.md)).
 
 ---
 
-## Interface Web (webapp)
+## Os agentes
 
-Painel web disponível em `makima.gusstavo42-vps.cloud` — acesso restrito ao e-mail do Gustavo via Google OAuth.
+Cada agente é um pacote em `agents/<nome>/` com personalidade própria (inspirada num personagem) e um `CLAUDE.md` com tools, regras e armazenamento. **O detalhe vive lá**; aqui fica o mapa.
 
-Compartilha os dados do bot: uma transação registrada pelo Telegram aparece na web e vice-versa.
+| Agente | Domínio | O que faz, em uma linha | Tela web |
+|---|---|---|---|
+| **Makima** (Chainsaw Man) | Coordenação | Só roteia; hoje é a persona do Hermes (`hermes/SOUL.md`) | `/` (Hub) |
+| **Nami** (One Piece) | Finanças | Transações, cartões e faturas, parcelas, empréstimos, orçamento, plano do mês, lista de compras | `/nami` |
+| **Kaguya** (Kaguya-sama) | Tarefas e agenda | Tarefas/listas/Kanban, Meu Dia, hábitos, metas, foco, calendário integrado ao Google, espaços Trabalho e Pessoal | `/tasks` |
+| **Kurisu** (Steins;Gate) | Conhecimento | RAG sobre as notas do Obsidian (Vertex AI), memória unificada, Tutor de Idiomas e Conselho do Dia da Violet | — |
+| **Frieren** (Frieren) | Livros | Catálogo, leitura por página/capítulo/volume, estantes, resenhas, mangás sincronizados com o MyAnimeList | `/books` |
+| **Akane** (Oshi no Ko) | Filmes | Cinemateca estilo Letterboxd: sessões, notas, listas, favoritos, sync com o Letterboxd | `/movies` |
+| **Marin** (My Dress-Up Darling) | Animes | Catálogo e diário de episódios, lançamentos, sync bidirecional com o MyAnimeList | `/animes` |
+| **Mai** (Bunny Girl Senpai) | Séries de TV | Catálogo, temporadas/episódios via TMDB, diário com nota | `/series` |
+| **Komi** (Komi-san) | Pessoas | Cadastro canônico (três nomes, espaço pessoal/trabalho), aniversários no calendário, Memória cruzando todos os agentes | `/people` |
+| **Lucy** (Cyberpunk: Edgerunners) | Email | Lê o Gmail (somente leitura) e manda o digest matinal classificado | — |
+| **Violet** (Violet Evergarden) | Diário | Bullet journal, registro emocional (TCC), cartas, Refletir, Insights, Conselho do Dia e revisão semanal. Código em `agents/journal/` | `/journal` |
+| **Yato** (Noragami) | Viagens | Roteiro dia a dia, dossiê de mobilidade urbana sem carro, checklist e orçamento (lança na Nami) | `/travel` |
 
-**Páginas disponíveis:**
+**Integração entre agentes:** a Komi é dona da identidade das pessoas e qualquer agente se liga a ela por um contrato único (`agents/komi/integration.py`) — o passo a passo está no [CLAUDE.md](CLAUDE.md). Kaguya + Nami compartilham a transação de "paguei, conclui e lança".
 
-| Página | O que faz |
+---
+
+## Interface web
+
+Painel em `makima.gusstavo42-vps.cloud`, com login Google restrito ao e-mail do Gustavo. Compartilha os dados do bot.
+
+| Rota | O que é |
 |---|---|
-| Nami · Início | "Livre pra gastar" do mês, barra gasto/ainda vai sair/livre, contas e faturas a pagar, linha rápida de lançamento |
-| Nami · Lançamentos | Todos os movimentos com busca em todos os meses, filtros e exportação CSV |
-| Nami · Cartões | Limite usado e uma aba por fatura (parcelas na fatura certa), pagar fatura |
-| Nami · Recorrentes | Contas fixas, assinaturas e salário numa lista, com Paguei/Recebi |
-| Nami · Resumo | Retrospectiva do ano: receitas, despesas, taxa de poupança, patrimônio real |
-| Nami · Mais | Contas (saldo real), Parcelamentos, Empréstimos (banco e entre pessoas, com simuladores), Orçamentos, Lista de compras |
-| Tarefas · Design System | A Kaguya reconstruída no Design System (`/tasks`): espaço **Trabalho/Pessoal**, agenda de trabalho com dois tempos livres, lista no estilo TickTick com painel de detalhe e notas em Markdown, edição em massa com Desfazer, adiar/dependências/templates, estatísticas de planejamento |
-| Tarefas | Sub-app completa (Kaguya): listas/projetos, **Kanban "Vidro"** (board em vidro fosco com views configuráveis — adornos, métricas e filtro por view), Meu Dia com time-blocking, Matriz de Eisenhower, tags, smart-lists (filtros salvos), calendário (mês/semana com ocorrências recorrentes), hábitos (heatmap + força), **Tiny Experiments** (mini-experimentos com log de aderência, pausa e revisão) e **Metas** (metas por área da vida com marcos, vínculo a projetos/hábitos/experimentos e progresso) |
-| Livros | Sub-app completa (Frieren): Início com hero e heatmap anual, **Biblioteca** com tudo agrupado por status (Lendo/Quero ler/Wishlist/Lidos), filtro lembrado e ordenação; **detalhe do livro** totalmente editável (modal com todos os campos), **resenha inline** (editor estilo diário), **marcações coloridas** por trecho; Quero Ler, Wishlist com link de loja, **Estantes** (criar/editar/excluir + adicionar/remover livros), Atividade por data, Resenhas e Estatísticas do ano; **mangás e audiobooks** acompanhados por capítulos ou volumes (formato + unidade por livro, com capítulo inicial para volumes de numeração contínua), **sincronizados com a lista de mangás do MyAnimeList** nos dois sentidos |
-| Diário (Violet) | Escrever pensado para o celular (autosave, barra acima do teclado), três fontes (Normal, Roteiro, Cursiva) por dia e por carta, `@pessoa` com sugestões da Komi, `/akane Matrix` e afins citam itens dos outros agentes, Arquivo, Cartas, Registro emocional com análise dos padrões, Refletir (pergunta do dia, ontem, um ano atrás, memory lane…), Insights com a força da escrita, Avaliação dos Valores, Conselho do Dia franco e revisão semanal no domingo pelo Hermes |
-| Filmes | Sub-app completa (Akane): catálogo estilo Letterboxd — grid de pôsteres TMDB + fallback tipográfico, diário de sessões com rewatch, acompanhantes da Komi e local cinema/streaming, watchlist, notas e reviews, histograma de notas, estatísticas e Rewind do ano numa tela só, listas/coleções, nuvem de etiquetas, Cofre de conteúdos, vitrine de favoritos (4 slots) e sync RSS/CSV do Letterboxd |
-| Animes | Sub-app completa (Marin): catálogo de animes com sync OAuth MAL — Início com "continue assistindo" e vitrine de favoritos, **linha rápida** (`Frieren ep 12 ★4.5 ontem`), Catálogo e fila "Quero assistir", diário de episódios, Lançamentos (próximos 14 dias, "Já vi"), detalhe com nota, caderno, etiquetas e episódios, listas e estatísticas do ano (episódios reais, completos e dropados); no Design System, arte "Neon kawaii" (`/animes/*`) |
-| Séries | Sub-app completa (Mai): catálogo de séries via TMDB API v3 — seasons/episodes sincronizados, log de watch com nota (0.5–5.0), status por temporada, shell React `/series/*` |
-| Pessoas | Sub-app (Komi, arte "Caderno de bilhetes"): cadastro com três nomes (Nome, Apelido, Nome completo — qualquer um acha a pessoa nos outros agentes), espaço pessoal/trabalho/ambos, aniversário e datas importantes com lembrete no calendário (não viram tarefa), **Memória** com tudo que os outros agentes sabem da pessoa e resumo por IA, anotações (presentes, gostos — a IA só sugere), registro de contatos (`+Bia café ontem`), relacionamentos configuráveis, relações e grupos, mesclar duplicadas e estatísticas (`/people/*`) |
-| Hub | Página inicial (Makima): agregador com resumo de todos os domínios em um só lugar (`/api/hub/summary`) |
+| `/` | **Hub**: resumo de todos os domínios |
+| `/nami` | Início ("livre pra gastar"), lançamentos, cartões e faturas, recorrentes, resumo do ano, contas, empréstimos, orçamentos, lista de compras |
+| `/tasks` | Meu Dia, listas e visões (lista, quadro, Kanban, Eisenhower), calendário, hábitos, foco, metas, experimentos, revisão semanal, estatísticas |
+| `/books` · `/movies` · `/animes` · `/series` | Catálogos de livros, filmes, animes e séries, cada um com diário, listas e estatísticas |
+| `/people` | Pessoas, Memória, aniversários, anotações e contatos |
+| `/journal` | Diário: escrever, Arquivo, Cartas, Emoções, Refletir, Insights, Conselho do Dia |
+| `/travel` | Viagens: roteiro, mobilidade, checklist, orçamento |
+| `/design` | Referência viva do Design System |
 
-**Stack:** FastAPI (backend) + React 19 + TypeScript + Tailwind CSS (frontend) — servidos pelo mesmo container.
+**Stack:** FastAPI + React 19 + TypeScript + Tailwind, servidos pelo mesmo container. As telas seguem o **Design System Makima** (`webapp/frontend/src/design/`, tokens `--ds-*`); Nami, Kaguya, Frieren, Akane, Marin, Komi e Violet já estão nele — Mai e Yato ainda não (status em [`webapp/docs/DESIGN_CONFORMANCE.md`](webapp/docs/DESIGN_CONFORMANCE.md)).
+
+**PWA e app Android (em andamento):** o site instala como PWA e o app Android (Capacitor, em `webapp/frontend/android/`) mostra o mesmo site com login nativo do Google, notificações push, biometria e links `makima://`. Já roda no celular; faltam as etapas finais (widgets, entrada rápida, chat). Estado atual e roteiro: [`docs/planos/app_android/README.md`](docs/planos/app_android/README.md).
 
 ---
 
-## Arquitetura
-
-```
-Telegram / WhatsApp / Discord (usuário)
-    ↓
-Hermes Agent  (gateway multicanal, Nous Research — memória de longo prazo, dashboard web)
-    ↓ MCP HTTP (bearer token)
-makima-mcp  (mcp_servers/makima/ — um servidor MCP por domínio)
-    ├── /mcp/nami      → PostgreSQL (finanças)
-    ├── /mcp/kaguya    → PostgreSQL próprio (tarefas) + Google Calendar MCP
-    ├── /mcp/kurisu    → Vertex AI RAG (base de conhecimento pessoal)
-    ├── /mcp/frieren   → PostgreSQL + Google Books API (livros)
-    ├── /mcp/akane     → PostgreSQL + TMDB + Letterboxd (filmes)
-    ├── /mcp/marin     → PostgreSQL + Jikan/AniList + MAL OAuth (animes)
-    ├── /mcp/mai       → PostgreSQL + TMDB API v3 (séries de TV)
-    ├── /mcp/komi      → PostgreSQL (pessoas + vínculos cross-agent)
-    ├── /mcp/lucy      → Gmail via IMAP (somente leitura) + digest agendado
-    ├── /mcp/journal   → PostgreSQL (diário — Violet, Auto Memory Doll)
-    └── /mcp/calendar  → Google Calendar (leitura de todos, escrita só no principal)
-```
-
-Cada domínio acima é um pacote independente em `agents/<nome>/` (agente Google ADK,
-com sua própria personalidade e tools) — o mesmo código é reaproveitado tanto pelo host
-MCP quanto por um bot Telegram ADK legado (`coordinator/`), mantido só como referência e
-via de rollback: em produção, o Hermes já assumiu os três canais. Toda a lógica de
-acesso a banco/APIs fica nos agentes especialistas — nem o Hermes nem a Makima (coordinator)
-executam ações diretamente, eles só roteiam.
-
-Todos os dados (finanças, livros, journal, sessões) ficam no mesmo PostgreSQL gerenciado pelo Dokploy.
-
----
-
-## Hermes Agent (multicanal)
-
-O **Hermes Agent** (Nous Research) é o gateway de conversa em produção — substituiu
-progressivamente o bot Telegram original (`coordinator/`) como interface com o usuário,
-sem mudar nenhuma lógica de negócio (as tools continuam nos agentes especialistas).
-
-**Canais ativos**, todos respondendo pelo mesmo agente e memória:
-- **Telegram** — mesmo bot de sempre, token migrado para o Hermes
-- **WhatsApp** — número dedicado pareado via QR code (Baileys/WhatsApp Web)
-- **Discord** — bot próprio, autorização por pareamento + allowlist
-
-**Por que trocar o gateway**: memória de longo prazo real — resumo/compressão
-automática de conversas antigas e busca por conteúdo (`session_search`), em vez do
-histórico bruto por sessão que o bot ADK original mantinha.
-
-**Como fala com os agentes**: o Hermes lê `hermes/config.yaml` e consulta cada domínio
-como um servidor MCP HTTP separado (`makima-mcp`, ver diagrama acima) — não reimplementa
-nenhuma tool, só chama as mesmas funções Python que os agentes já usavam.
-
-**Dashboard web**: acessível em `hermes.<domínio>` (basic auth) — logs, canais,
-sessões e configuração ao vivo, sem precisar de `docker logs`. Ver `hermes/CLAUDE.md`
-para o runbook completo (pareamento do WhatsApp, criação do bot Discord, subdomínio,
-segurança).
-
----
-
-## Agentes
-
-### Makima (coordinator)
-Inspirada na Makima de Chainsaw Man. Calma, autoritária, nunca usa frases de subordinação. Enquadra limitações como decisões ("Esse recurso ainda não foi ativado.").
-
-### Nami — finanças
-Inspirada na Nami de One Piece. Acessa o PostgreSQL para registrar e consultar transações financeiras. Reage com fúria em despesas, comemora receitas.
-
-**Funcionalidades:**
-- Transações (gastos e receitas) com categorias e contas
-- Compras parceladas — gera N transações automaticamente com datas mensais
-- Cartões de crédito — dívida atual, simulação de quitação, custo do mínimo
-- Empréstimos e financiamentos — sistemas PRICE e SAC, simulação de amortização
-- Orçamento por categoria — alertas quando o limite está próximo
-- Score de saúde financeira 0-100 em 4 dimensões (poupança, dívidas, orçamento, tendência)
-- Contas financeiras — cadastro dinâmico (corrente, poupança, dinheiro, investimento)
-- "Quanto ainda posso gastar?" — renda − gasto − parcelas agendadas − contas pendentes, por dia (`get_month_plan`)
-- Faturas de cartão derivadas do fechamento e vencimento; pagar fatura e transferir entre contas não contam como gasto
-- Salário e outras entradas recorrentes (`kind='renda'`)
-
-**Armazenamento:** PostgreSQL — tabelas `transactions`, `accounts`, `credit_cards`, `loans`, `budgets`, `subscriptions`, `installment_groups`.
-
-### Kaguya — tarefas e agenda
-Inspirada na Kaguya Shinomiya de Kaguya-sama. Aristocrática e organizada. Gerencia um **sistema de tarefas próprio em PostgreSQL** (o TickTick foi aposentado na spec 011) e os eventos do Google Calendar via servidor MCP.
-
-**Funcionalidades:**
-- Tarefas e subtarefas com posições, listas/projetos, grupos e colunas Kanban
-- Recorrência via RRULE (motor próprio em `recurrence.py`)
-- Tags N:N e smart-lists (filtros salvos via DSL)
-- Calendário (mês/semana) com projeção virtual das ocorrências de tarefas recorrentes
-- Hábitos com check-ins, heatmap anual e "força" (modelo caixa d'água / EMA)
-- Alertas de hábito no Google Calendar (dia da semana + horário configuráveis, calendário dedicado "Kaguya — Hábitos") e seleção para o Meu Dia (spec 067)
-- Espelho do Calendar Hub no Google Calendar: cada domínio (Nami, Frieren, Violet, Akane, Marin, Mai, Komi) ganha um calendário dedicado, atualizado por job de hora em hora + gatilho nas mutações (spec 069)
-- Meu Dia com time-blocking e barra de capacidade (fatia 016)
-- Tiny Experiments — mini-experimentos com duração definida, log diário e revisão (spec 029)
-- Metas por área da vida com marcos e vínculo a projetos, hábitos e experimentos (spec 030)
-- ~~Sync de aniversários com a Komi (datas viravam tarefas, spec 026)~~ — substituído na spec 077: o aniversário é campo da pessoa e aparece no calendário com lembrete, sem tarefa
-- Foco/Pomodoro gameficado — cada sessão vira uma árvore (murcha se você desistir), floresta do período, streak, conquistas e vínculo com hábitos (specs 037/062)
-
-Possui tools cross-agent que integram com a Nami numa **única transação PostgreSQL** (tudo-ou-nada):
-
-| Tool | O que faz |
-|---|---|
-| `complete_payment_task` | Completa a tarefa **e** lança a despesa da Nami na mesma transação |
-| `create_expense_reminder` | Cria lembrete de pagamento (sem lançar despesa ainda) |
-
-**Armazenamento:** PostgreSQL — schema próprio em `agents/kaguya/schema_tasks_pg.sql`.
-
-### Kurisu — knowledge base
-Inspirada na Kurisu Makise de Steins;Gate. Neurocientista prodígio, direta e levemente sarcástica. Acessa o vault de notas do Obsidian via Vertex AI RAG para explicar conceitos, cruzar informações entre notas e responder sobre estudos e memória pessoal.
-
-Opera em dois modos detectados automaticamente:
-- **Tutora** — notas de estudo e técnicas: tom rigoroso, referencia fontes do vault, sarcasmo saudável
-- **Amiga** — notas pessoais e diário: tom caloroso, linguagem natural, sem estrutura formal
-
-### Marin — animes
-Inspirada na Marin Kitagawa de *Sua Conduta Foi Adorável* — gyaru apaixonada por animes e cosplay. Gerencia o catálogo pessoal de animes com integração nativa ao MyAnimeList via OAuth2 PKCE.
-
-**Funcionalidades:**
-- Catálogo de animes com 5 status: `assistindo`, `completo`, `quero_assistir`, `pausado`, `abandonado`
-- Busca de animes no MAL via Jikan (sem limite de requisições para busca)
-- Enriquecimento automático de metadados via Jikan (pôster, sinopse, estúdio, gêneros) + AniList (banner) + ARM (ID bridging)
-- Diário de episódios: registro por intervalo (ep_start → ep_end), data, nota e notas textuais
-- Notas na escala MAL (0–10, passo 0.5) — diferente da escala Letterboxd da Akane (0.5–5.0)
-- Sync com MAL via OAuth2 PKCE (tokens armazenados em PostgreSQL — nunca em arquivo)
-- Cache de episódios com datas de exibição JST para schedule de lançamentos
-- Pôster tipográfico fallback determinístico (12 paletas OKLCH)
-- Estatísticas anuais: total de animes, episódios, horas, nota média, top gêneros/estúdios, heatmap
-
-**Armazenamento:** PostgreSQL — tabelas `anime`, `watch_logs`, `episodes`, `mal_sync_state`.
-
-### Akane — filmes
-Inspirada na Akane Kurokawa de *Oshi no Ko* — atriz analítica e perfeccionista. Gerencia a cinemateca pessoal com catálogo estilo Letterboxd, enriquecido automaticamente via TMDB API (pôster, diretor, gênero, runtime) e sincronizado com a conta do Letterboxd via RSS automático e importação de CSV histórico.
-
-**Funcionalidades:**
-- Catálogo com dois status: `watchlist` e `watched`
-- Registro de sessões com data, nota (0.5–5.0), review, tags e rewatch automático
-- Enriquecimento TMDB (pôster, backdrop, sinopse, diretor, gêneros, runtime)
-- Pôster tipográfico fallback determinístico (14 paletas, sem dependência de rede)
-- Sync Letterboxd: RSS automático diário + importação de CSV histórico (diary/reviews/watchlist/ratings)
-- Listas/coleções temáticas com suporte a ordenação ranked
-- Etiquetas de filmes e pessoas (via `movie_people`) com nuvem interativa
-- Cofre de conteúdos por filme (vídeos, artigos, essays, reviews)
-- Rewind anual: totais, gráfico mensal, top diretores/gêneros/pessoas, histograma de notas
-- Vitrine de favoritos (até 4 filmes, persistidos no servidor)
-- Cross-agent: `create_movie_reminder(movie_query, when)` → cria tarefa na Kaguya
-
-**Armazenamento:** PostgreSQL — tabelas `movies`, `diary_entries`, `movie_watch_locations`, `movie_lists`, `movie_list_items`, `movie_vault_items`, `movie_people`, `movie_favorites`. Acompanhantes da sessão usam `person_links` da Komi.
-
-### Mai — séries de TV
-Inspirada em Mai Sakurajima de *Rascal Does Not Dream of Bunny Girl Senpai* — direta, autoconfiante e sem paciência para devaneio. Gerencia o catálogo pessoal de séries de TV com metadados da TMDB API v3.
-
-**Funcionalidades:**
-- Catálogo de séries com status: `assistindo`, `completo`, `quero_assistir`, `pausado`, `abandonado`
-- Sincronização automática de seasons e episodes via TMDB API v3 (`TMDB_API_KEY`)
-- Diário de episódios: log de `ep_start → ep_end` por temporada, data, nota (0.5–5.0) e comentários
-- Notas por episódio/temporada, resumo por série
-- Shell React `/series/*` com grid de pôsteres TMDB e tela de detalhe por série
-
-**Armazenamento:** PostgreSQL — tabelas `series`, `seasons`, `series_episodes`, `series_watch_logs`.
-
-### Frieren — livros
-Inspirada em Frieren de *Frieren: Beyond Journey's End* — elfa maga milenar, contemplativa, paciente.
-
-Gerencia o catálogo pessoal de livros e rastreia o progresso de leitura por páginas. Integra com a Google Books API para enriquecer automaticamente os metadados (capa, autor, ISBN, sinopse) ao adicionar um livro.
-
-**Funcionalidades:**
-- 7 status de leitura: `lendo`, `lido`, `quero_ler`, `estante`, `wishlist`, `pausado`, `abandonado`
-- `estante` = livros físicos/Kindle que você possui mas ainda não leu
-- `wishlist` = livros que quer comprar, com preço e link da loja
-- Registrar sessões de leitura por página atual (calcula delta automaticamente)
-- Menu interativo com botões inline: avaliar, trocar status, adicionar nota, marcar como lido
-- Envio da capa do livro junto com o menu (via Google Books API)
-- Estatísticas anuais: livros lidos, páginas totais, ritmo médio de leitura
-
-**Armazenamento:** PostgreSQL — tabelas `books` e `reading_logs`.
-
-### Komi — pessoas e contatos
-Inspirada em Komi-san wa Comyushou desu — tímida, mas extremamente cuidadosa com cada detalhe das pessoas ao seu redor. Gerencia o cadastro canônico de pessoas e os vínculos com todos os outros domínios do sistema.
-
-**Funcionalidades:**
-- Cadastro de pessoas com nome, relacionamento, contatos (telefone, email, Instagram, Telegram), cidade e notas
-- Apelidos globais únicos (`alias`) — um apelido pertence a exatamente uma pessoa
-- Datas importantes (aniversários, formaturas, casamentos...) com suporte a recorrência anual
-- Smart-match (`find_people`): busca por nome ou apelido, insensível a maiúsculas e acentos
-- Soft delete — pessoa removida preserva todos os vínculos históricos
-- Resumo cross-agent (`get_person_summary`): consolida finanças, tarefas, livros e diário ligados à pessoa
-- Integração com outros agentes: `create_transaction`, `create_task`, `add_book` e `upsert_bullet` aceitam `person_ids` e gravam vínculos na mesma transação PostgreSQL (tudo-ou-nada)
-
-**Armazenamento:** PostgreSQL — tabelas `people`, `person_aliases`, `person_dates`, `person_links`.
-
----
-
-### Violet — diário pessoal (Journal)
-Inspirada em Violet Evergarden — uma Auto Memory Doll que transforma sentimentos em palavras escritas. Diário bullet journal com extração automática de menções (`@pessoa`, `#tag`) e busca full-text, além de registros emocionais (TCC) e cartas endereçadas. Usável via webapp (`/api/journal/*`, shell `violet/`) **e** como agente completo (Telegram/WhatsApp/Discord via Hermes, ver acima) — o pacote continua se chamando `agents/journal/`, só a personalidade do agente é a Violet.
-
-**Funcionalidades:**
-- Uma página por dia, criada automaticamente
-- Bullets numerados por posição (upsert por posição), com timestamp de criação (`created_at`)
-- Extração automática de `@pessoa` e `#tag` de cada bullet
-- Busca full-text com dicionário português
-- Heatmap anual de atividade (quantidade de bullets por dia)
-- **Registro emocional TCC** — formulário de Registro de Pensamentos: situação → emoção + intensidade (0–10) → pensamento automático → resposta adaptativa → reavaliação de intensidade; vocabulário de 8 emoções-base predefinidas + emoções custom criadas pelo usuário
-- **Aba Emoções nos Insights** — frequência, intensidade média e distribuição mensal das emoções registradas no ano selecionado
-- **Filtro de ano nos Insights** — seleciona qualquer ano com entradas no diário
-- **Cartas** — escrever, editar (só rascunhos) e lacrar cartas endereçadas por dia, com vínculo opcional a pessoas (Komi)
-
-**Armazenamento:** PostgreSQL — tabelas `journal_*` (páginas, bullets, menções, referências, emoções, cartas e a Avaliação dos Valores); a IA da Violet (conselho, revisão semanal, leitura emocional) grava em `journal_counsel`, `journal_weekly_reviews` e `journal_emotion_analyses`.
-
----
-
-## Estrutura de arquivos
+## Estrutura do repositório
 
 ```
 makima_personal_agent/
-├── coordinator/     # bot Telegram original (Agent ADK) — hoje aposentado do Telegram,
-│                    # mantido como referência/rollback — ver coordinator/CLAUDE.md
-├── agents/          # um pacote por especialista (nami, kaguya, kurisu, frieren,
-│                    # akane, marin, mai, komi, lucy, journal) — cada um com CLAUDE.md próprio
-├── mcp_servers/
-│   ├── calendar/    # servidor MCP do Google Calendar
-│   └── makima/      # host MCP HTTP multi-domínio (makima-mcp) — expõe os 10 agentes ao Hermes
-├── hermes/          # templates versionados do Hermes Agent (persona, config.yaml, skills)
-│                    # — ver hermes/CLAUDE.md para o runbook de canais/dashboard
-├── webapp/          # FastAPI + React: routers e shells — ver webapp/CLAUDE.md e webapp/docs/
-├── scripts/         # setup de schemas, OAuth (Calendar/MAL), syncs e migrações one-time
-├── specs/           # specs por fatia (Spec Kit) — artefatos históricos imutáveis
-├── docs/            # documentação por tipo: referencia/ · planos/ · arquivo/ — ver docs/README.md
-├── ROADMAP.md       # fonte única da verdade: fases, status atual e pendências
-└── CLAUDE.md        # guia do repo para desenvolvimento (inclui a árvore de arquivos detalhada)
+├── agents/          # um pacote por especialista (nami … yato), cada um com CLAUDE.md próprio
+├── mcp_servers/     # makima/ (host MCP multi-domínio) e calendar/ (Google Calendar)
+├── hermes/          # persona, config e skills do Hermes Agent — runbook em hermes/CLAUDE.md
+├── scheduler/       # jobs agendados (APScheduler) e envio multicanal de notificações
+├── webapp/          # backend FastAPI + frontend React/Capacitor — ver webapp/CLAUDE.md e webapp/docs/
+├── coordinator/     # bot Telegram original (Google ADK) — legado, só dev local/rollback
+├── scripts/         # setup de schemas, OAuth, syncs, migrações e publicação de Releases
+├── tests/           # testes de backend (pytest)
+├── specs/           # specs por fatia (Spec Kit) — histórico imutável
+├── docs/            # referencia/ · planos/ · arquivo/ — ver docs/README.md
+├── ROADMAP.md       # fonte única do status das fases e pendências
+├── CHANGELOG.md     # histórico de versões
+└── CLAUDE.md        # guia de desenvolvimento (árvore completa de arquivos, convenções)
 ```
 
-> A árvore detalhada, arquivo a arquivo, vive no [CLAUDE.md](CLAUDE.md) — aqui fica só o mapa de topo, para não manter duas árvores grandes em sincronia.
-
 ---
 
-## Comandos Telegram
+## Instalação
 
-| Comando | O que faz |
-|---|---|
-| `/limpar` | Reseta o contexto de todos os domínios (nova conversa do zero) |
-| `/limpar financas` | Reseta só o contexto de finanças (Nami) |
-| `/limpar livros` | Reseta só o contexto de livros (Frieren) |
-| `/limpar tarefas` | Reseta só o contexto de tarefas/agenda (Kaguya) |
-| `/limpar knowledge` | Reseta só o contexto de knowledge base (Kurisu) |
-| `/limpar filmes` | Reseta só o contexto de filmes (Akane) |
-| `/limpar animes` | Reseta só o contexto de animes (Marin) |
-| `/limpar series` | Reseta só o contexto de séries de TV (Mai) |
-| `/limpar pessoas` | Reseta só o contexto de pessoas e contatos (Komi) |
-| `/tokens` | Exibe o total de tokens consumidos por domínio nesta sessão do container |
-
-> O bot avisa automaticamente quando o contexto de um domínio está ficando grande e sugere o `/limpar <dominio>`.
-> O contador de `/tokens` reseta ao reiniciar o container.
-
----
-
-## Pré-requisitos
-
-- Python 3.12+
-- PostgreSQL (gerenciado pelo Dokploy no VPS)
-- Google Cloud com Calendar API habilitada
-- App OAuth 2.0 (tipo Desktop) no Google Cloud Console para o Calendar
-- App OAuth 2.0 (tipo Web Application) no Google Cloud Console para a webapp
-- Bot Telegram criado via [@BotFather](https://t.me/BotFather)
-
----
-
-## Instalação local
+Pré-requisitos: Python 3.12+, Node 20+ (frontend), PostgreSQL e uma conta Google Cloud (Calendar API, OAuth e Vertex AI). Produção roda em Docker (Dokploy).
 
 ```bash
-# Clonar e criar ambiente virtual
-git clone https://github.com/Gusstavo42/makima_personal_agent
+git clone https://github.com/GustavoBarreto13/makima_personal_agent
 cd makima_personal_agent
 python -m venv .venv
-
-# Ativar e instalar dependências
-.venv\Scripts\activate         # Windows
-# source .venv/bin/activate    # Linux/Mac
-pip install -r requirements.txt
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt  # a lista de dependências vive aqui
+touch .env                       # preencha conforme a próxima seção
 ```
 
----
+### Variáveis de ambiente
 
-## Variáveis de ambiente
-
-Crie um arquivo `.env` na raiz com as variáveis abaixo (ou configure no Dokploy para o VPS):
+Cada bloco só é necessário para o agente correspondente. A lista oficial do painel web está em [`webapp/docs/DEPLOY.md`](webapp/docs/DEPLOY.md); a do Hermes, em [`hermes/CLAUDE.md`](hermes/CLAUDE.md).
 
 ```env
-# Telegram
-TELEGRAM_BOT_TOKEN=
-
-# Google AI
-GEMINI_API_KEY=
-
-# PostgreSQL — banco compartilhado para todos os agentes e sessões ADK
+# Base (todos os agentes)
 DATABASE_URL=postgresql://user:pass@host:5432/db
-
-# Google Cloud Storage — backup automático do PostgreSQL
-GCP_CREDENTIALS_JSON=     # conteúdo JSON do service account como string (não path)
+GEMINI_API_KEY=                 # Google AI Studio
 GCP_PROJECT_ID=
-GCS_BACKUP_BUCKET=        # nome do bucket GCS para backups (ex: makima-backups)
+GCP_CREDENTIALS_JSON=           # JSON do service account como string (não é caminho)
 
-# Google Calendar OAuth
+# Painel web — login Google
+ALLOWED_EMAIL=
+SESSION_SECRET=                 # python -c "import secrets; print(secrets.token_hex(32))"
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+OAUTH_REDIRECT_URL=             # https://<domínio>/auth/callback
+WEBAPP_PUBLIC_URL=
+
+# App Android (opcional)
+GOOGLE_MOBILE_CLIENT_IDS=       # login nativo do Google
+FIREBASE_CREDENTIALS_JSON=      # push (FCM); sem ela o canal "push" é só pulado
+
+# Hermes ↔ makima-mcp e notificações
+MAKIMA_MCP_TOKEN=               # bearer token do host MCP
+HERMES_WEBHOOK_BASE_URL=
+WEBHOOK_SECRET=
+NOTIFY_DEFAULT_CHANNELS=        # whatsapp,telegram,discord,push
+TELEGRAM_BOT_TOKEN=             # hoje pertence ao Hermes
+TELEGRAM_ALERT_CHAT_ID=         # alertas de falha do scheduler
+
+# Kaguya — Google Calendar (espelho e Calendar Hub)
 GOOGLE_CALENDAR_CLIENT_ID=
 GOOGLE_CALENDAR_CLIENT_SECRET=
 GOOGLE_CALENDAR_ACCESS_TOKEN=
 GOOGLE_CALENDAR_REFRESH_TOKEN=
-GOOGLE_CALENDAR_TOKEN_EXPIRY=      # ISO 8601
-GOOGLE_CALENDAR_MAIN_CALENDAR_ID=  # geralmente o email Gmail
+GOOGLE_CALENDAR_TOKEN_EXPIRY=   # ISO 8601
+GOOGLE_CALENDAR_MAIN_CALENDAR_ID=
+GCAL_SYNC_ENABLED=true          # "false" desliga só o espelho
 
-# Frieren — Google Books API (opcional)
-# Sem a chave o limite é ~1.000 req/dia; com ela sobe para 10.000 req/dia
-GOOGLE_BOOKS_API_KEY=
+# Frieren, Akane, Marin, Mai
+GOOGLE_BOOKS_API_KEY=           # opcional: sobe o limite diário
+TMDB_API_KEY=                   # v3, usada por filmes e séries
+LETTERBOXD_USERNAME=
+MAL_CLIENT_ID=                  # MyAnimeList (Marin e mangás da Frieren)
+MAL_CLIENT_SECRET=              # tokens ficam no PostgreSQL, nunca aqui
 
-# Akane e Mai — TMDB (filmes e séries)
-TMDB_API_KEY=                  # API key v3 do TMDB (themoviedb.org → Settings → API), usada por filmes E séries
-LETTERBOXD_USERNAME=           # username do Letterboxd (ex: gustavobarreto) para sync do RSS (Akane)
+# Kurisu e Violet
+VERTEX_RAG_CORPUS=              # projects/<id>/locations/us-central1/ragCorpora/<id>
+VIOLET_WEEKLY_REVIEW_HOUR=      # opcional: hora da revisão semanal (padrão: domingo 20:30)
 
-# Marin — MyAnimeList OAuth2
-MAL_CLIENT_ID=                 # App ID do MAL (myanimelist.net → Account → API → Create Application)
-MAL_CLIENT_SECRET=             # Client Secret do mesmo app MAL
-# Tokens MAL são persistidos no PostgreSQL (mal_sync_state) — nunca colocar aqui
-# Gerar com: python scripts/authorize_mal.py (interativo, roda uma vez)
-
-# Kurisu — Vertex AI RAG (fase 3)
-VERTEX_RAG_CORPUS=             # projects/{PROJECT_ID}/locations/us-central1/ragCorpora/{ID}
-
-# Lucy — Gmail via IMAP (fase 4 / spec 032)
-GMAIL_USERNAME=                # endereço Gmail (login IMAP)
-GMAIL_APP_PASSWORD=            # senha de app do Gmail (não a senha normal — requer 2FA)
-TELEGRAM_ALERT_CHAT_ID=        # chat que recebe o digest matinal e os alertas do scheduler
-# GEMINI_MODEL=gemini-2.5-flash  # opcional — modelo usado na classificação do digest
-
-# Webapp (interface web)
-ALLOWED_EMAIL=                     # e-mail Google autorizado a logar na webapp
-SESSION_SECRET=                    # segredo para assinar cookies (gerar: python -c "import secrets; print(secrets.token_hex(32))")
-GOOGLE_OAUTH_CLIENT_ID=            # client ID do app OAuth tipo Web Application
-GOOGLE_OAUTH_CLIENT_SECRET=        # client secret do mesmo app
-OAUTH_REDIRECT_URL=                # URL de callback (ex: https://makima.seudominio.com/auth/callback)
+# Lucy
+GMAIL_USERNAME=
+GMAIL_APP_PASSWORD=             # senha de app (exige 2FA), não a senha normal
 ```
 
----
+Há ainda variáveis opcionais de ajuste (`GEMINI_MODEL`, `VIOLET_*`, `KURISU_*`, `KOMI_GEMINI_MODEL`); os padrões estão no código de cada agente.
 
-## Setup inicial
-
-### 1. Criar tabelas no PostgreSQL
+### Setup inicial
 
 ```bash
-DATABASE_URL=... python scripts/setup_schemas.py
+DATABASE_URL=... python scripts/setup_schemas.py   # cria as tabelas de todos os agentes
+python scripts/authorize_calendar.py               # OAuth do Google Calendar (uma vez)
+python scripts/authorize_mal.py                    # OAuth do MyAnimeList (uma vez, se for usar)
 ```
 
-### 2. Cadastrar contas bancárias (Nami)
-
-Antes de registrar transações, cadastre as contas via Telegram:
-
-```
-"Nami, cria uma conta chamada Itau, tipo corrente, início 2026-01-01"
-```
-
-Depois cadastre os cartões de crédito:
-
-```
-"Nami, cadastra meu cartão Nubank, conta Itau, limite 1600, taxa 16.1% ao mês, fechamento dia 6, vencimento dia 13"
-```
-
-> Cartões de crédito não são contas — não crie conta do tipo "cartão de crédito". O cartão rastreia a dívida separadamente.
-
-### 3. Autorizar o Google Calendar
-
-1. Google Cloud Console → **APIs → Biblioteca** → habilitar **Google Calendar API**
-2. Criar credencial **OAuth 2.0 tipo Desktop app** → baixar JSON → salvar como `scripts/client_secret.json`
-3. Executar:
-
-```bash
-python scripts/authorize_calendar.py
-```
-
-O script abre o browser, solicita permissão e imprime os valores para copiar ao `.env`.
+Depois, cadastre suas contas e cartões conversando com a Nami (`"cria uma conta Itaú, tipo corrente"`, `"cadastra meu cartão Nubank, limite 1600, fecha dia 6, vence dia 13"`). Cartão de crédito não é conta: ele rastreia a dívida separadamente.
 
 ---
 
 ## Rodar localmente
 
 ```bash
+# Painel web
+uvicorn webapp.backend.main:app --reload --port 8080
+cd webapp/frontend && npm install && npm run dev      # http://localhost:5173
+
+# Host MCP (o que o Hermes consome)
+uvicorn mcp_servers.makima.app:app --port 8090
+
+# Bot Telegram legado, sem precisar do Hermes
 python -m coordinator.main
 ```
 
-Os agentes usam `gemini-2.5-flash`. A chave é lida de `GEMINI_API_KEY` (Google AI Studio). Para usar Vertex AI, definir `GOOGLE_GENAI_USE_VERTEXAI=1`.
+Os agentes usam Gemini (`GEMINI_API_KEY`; para Vertex AI, `GOOGLE_GENAI_USE_VERTEXAI=1`).
 
-Para rodar a webapp localmente:
+### Testes
 
 ```bash
-# Backend
-uvicorn webapp.backend.main:app --reload --port 8080
-
-# Frontend (em webapp/frontend/)
-npm install && npm run dev   # dev server em localhost:5173
+pytest                                   # backend
+cd webapp/frontend && npm test           # frontend (vitest)
+cd webapp/frontend && npm run audit:design   # conformidade com o Design System
 ```
 
 ---
 
-## Deploy (VPS com Dokploy)
+## Deploy
 
-- Host: Hostinger com Dokploy
-- `docker-compose.yml`: `web` (FastAPI + React), `mcp` (host `makima-mcp`, um FastMCP por domínio) e `scheduler`; `makima` (bot Telegram original) hoje comentado — o Hermes já assumiu o Telegram
-- `docker-compose.hermes.yml`: app Docker Compose separada no mesmo projeto Dokploy — o Hermes Agent (Telegram/WhatsApp/Discord + dashboard web em `hermes.<domínio>`), ligada/desligada pelos botões nativos do Dokploy
-- Portas internas expostas pelo proxy reverso do Dokploy como HTTPS
-- Variáveis configuradas no painel do Dokploy (Environment)
-- Deploy automático via push para o GitHub
+VPS Hostinger com Dokploy; o deploy é automático por push na `master`.
 
----
-
-## Fases de implementação
-
-O histórico completo de fases e o status atual vivem no **[ROADMAP.md](ROADMAP.md)** — fonte única da verdade.
-
-Resumo (ago/2026): fases 001–027, 029, 030, 031, 032 (Lucy/email, scheduler) e 061 entregues; 028 (memória unificada da Kurisu) parcial. Spec 064 (Hermes Agent multicanal) em andamento: Telegram/WhatsApp/Discord e os 10 domínios de agente já migrados para MCP nativo em produção/local; restam voz/imagem (E5) e aposentar de vez o `coordinator/` (E7).
+- `docker-compose.yml`: `web` (FastAPI + React), `mcp` (host `makima-mcp`), `scheduler` e `adminer`. O serviço `makima` (bot Telegram legado) está comentado.
+- `docker-compose.hermes.yml`: o Hermes Agent em app separada no mesmo projeto Dokploy (Telegram, WhatsApp, Discord e dashboard em `hermes.<domínio>`).
+- Scripts de migração rodam **dentro** do container (`docker exec makima-web sh -c "cd /app && python -m scripts.<nome>"`), porque o hostname do PostgreSQL só existe na rede interna.
+- Detalhes: [`webapp/docs/DEPLOY.md`](webapp/docs/DEPLOY.md), [`scheduler/CLAUDE.md`](scheduler/CLAUDE.md), [`hermes/CLAUDE.md`](hermes/CLAUDE.md).
 
 ---
 
-## Dependências
+## Versionamento
 
-```
-google-adk               # framework de agentes (Agent, InMemoryRunner, McpToolset)
-python-telegram-bot      # bot Telegram
-python-dotenv            # carrega variáveis do arquivo .env
-requests                 # HTTP para APIs externas
-asyncpg                  # driver async PostgreSQL (ADK DatabaseSessionService)
-sqlalchemy               # ORM usado internamente pelo ADK
-psycopg2-binary          # driver síncrono PostgreSQL (tools dos agentes)
-google-cloud-storage     # backup automático para GCS
-mcp                      # Model Context Protocol (servidor MCP do Google Calendar)
-google-auth              # OAuth do Google Calendar
-google-auth-oauthlib     # fluxo OAuth desktop
-google-api-python-client # Google Calendar API v3
-fastapi                  # backend web
-uvicorn[standard]        # servidor ASGI
-authlib                  # Google OAuth (OIDC) para a webapp
-itsdangerous             # assina cookies de sessão
-```
+Uma versão única para o repositório, em SemVer `0.x`. Cada versão é uma tag `vX.Y.Z` na `master`, com notas no [CHANGELOG.md](CHANGELOG.md) e um [Release](https://github.com/GustavoBarreto13/makima_personal_agent/releases) no GitHub. MINOR = funcionalidade, PATCH = correção. O passo a passo para lançar uma versão está no [CLAUDE.md](CLAUDE.md), seção "Versionamento".
+
+---
+
+## Documentação
+
+| Documento | Para quê |
+|---|---|
+| [ROADMAP.md](ROADMAP.md) | Status de cada fase e pendências (fonte única da verdade) |
+| [CLAUDE.md](CLAUDE.md) | Guia de desenvolvimento: convenções, árvore de arquivos, integrações entre agentes |
+| [docs/README.md](docs/README.md) | Mapa da documentação (referência · planos · arquivo) |
+| [docs/referencia/POSTGRES.md](docs/referencia/POSTGRES.md) | O banco inteiro, tabela por tabela |
+| [webapp/docs/](webapp/docs/) | API, arquitetura, deploy, Design System e telas do webapp |
+| `agents/<nome>/CLAUDE.md` | Tools, schema e personalidade de cada agente |
+| [docs/planos/app_android/](docs/planos/app_android/README.md) | Estudo e roteiro do app Android |
