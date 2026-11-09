@@ -11,6 +11,18 @@ As versões 0.1.0–0.61.0 foram marcadas retroativamente sobre o histórico da 
 
 ## [Unreleased]
 
+### Added
+- App Android: botões *Concluir · Adiar 1h · Amanhã* direto na notificação do lembrete de tarefa.
+- App Android: criar tarefa, concluir tarefa, lançar gasto, marcar hábito e escrever um momento no diário **sem internet** — ficam no aparelho (com aviso "N aguardam a internet") e são enviados quando a conexão volta, sem duplicar.
+- App Android: atalhos ao segurar o ícone (nova tarefa, novo gasto, diário, iniciar foco), *Compartilhar → Makima* (links do Letterboxd, TMDB, MyAnimeList, AniList e Google Livros) e microfone na captura rápida.
+
+### Fixed
+- App Android: o **topo das telas não fica mais cortado** pela barra de status/câmera (Design System, Hub, Mai e Yato reservam a área segura em cima e embaixo; rodapé de modais, avisos e barra de gestos também).
+- App Android (menus): lupa no topo abre busca e comandos (antes sumiam no celular); "Mais" marca a seção atual; a gaveta prende o foco e leva "Voltar à Makima/Trocar de agente" para o topo; menus "…" não saem mais pela direita; captura rápida ganhou *Salvar* e *Formulário completo*; Voltar, abas e remover filtro com alvo de toque de 44px; barra de baixo e botão flutuante saem da frente quando o teclado abre.
+- App Android (Kaguya): arrastar cartão do Kanban só começa após segurar o dedo; botões da lista de calendários sempre visíveis no toque; Espaço no topo só com ícones.
+- Mai e Yato no celular: "Voltar à Makima" na Mai, barra de abas na Mai, ícones com rótulo no Yato; Hub com atalhos da Kaguya direto na ação e contagem de agentes correta.
+- App Android: tocar numa notificação ou link com o app já aberto na mesma tela agora abre o destino.
+
 ## [0.61.0] - 2026-10-29
 
 ### Added

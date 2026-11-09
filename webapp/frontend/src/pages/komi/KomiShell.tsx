@@ -191,6 +191,7 @@ export function KomiShell() {
         topbarExtra={
           <SegmentedControl<SpaceFilter>
             label="Espaço: tudo, pessoal ou trabalho"
+            className="ds-seg-compact"
             value={space}
             options={SPACE_OPTIONS}
             onChange={(v) => setPrefs({ space: v })}

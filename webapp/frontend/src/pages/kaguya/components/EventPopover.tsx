@@ -94,7 +94,7 @@ export function EventPopover({ ev, cals, pos, onClose, onRefresh }: Common & { p
     void run(() => kaguyaApi.updateCalendarEvent(ev.id, { color: c, calendar_id: gcalCalendarId(ev.cal) }), 'Não foi possível mudar a cor.')
   }
 
-  const left = clamp(pos.x, 12, window.innerWidth - 292)
+  const left = clamp(pos.x, 12, window.innerWidth - 308)
   const top = clamp(pos.y, 12, window.innerHeight - 260)
   const time = ev.allDay || !ev.start ? 'Dia inteiro' : `${minToLabel(timeToMin(ev.start))} – ${minToLabel(timeToMin(ev.end ?? ev.start) + (ev.end ? 0 : 30))}`
 

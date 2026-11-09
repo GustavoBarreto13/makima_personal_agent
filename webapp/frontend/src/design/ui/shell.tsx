@@ -13,7 +13,7 @@ import { useCommandProvider, type Command } from '../headless/commands'
 import { undoLast } from '../headless/toast'
 import { useContainerBreakpoint } from '../headless/useBreakpoint'
 import { useHotkeys } from '../headless/useHotkeys'
-import { useDismissable } from '../headless/overlay'
+import { useDismissable, useFocusTrap } from '../headless/overlay'
 import { usePrefs } from '../headless/usePrefs'
 import { useTheme } from '../headless/useTheme'
 import { shortcutLabel } from '../headless/web'
@@ -331,11 +331,25 @@ export function AppShell({
     ...ACTIVE_AGENTS.map((a) => ({ id: `agent.${a.id}`, label: `Ir para ${a.name}`, icon: 'apps' as IconName, group: 'Agentes', keywords: a.domain, run: () => onGoAgent(a.route, a) })),
     ...commands,
   ], [primary, entries, go, onGoAgent, commands, toggleTheme])
-  useCommandProvider(useMemo(() => ({ id: `shell:${agent.id}`, commands: shellCommands }), [agent.id, shellCommands]))
+  // Provedor da paleta: além dos comandos, oferece "Buscar “texto” em <agente>" — é o que mantém a busca
+  // do agente acessível no celular, onde o campo de busca do topo some.
+  const provider = useMemo(() => ({
+    id: `shell:${agent.id}`,
+    commands: shellCommands,
+    search: search
+      ? (q: string) => [{ id: 'agent-search', group: 'Buscar', label: `Buscar “${q}” em ${agent.name}`, icon: 'search', run: () => search.onSubmit(q) }]
+      : undefined,
+  }), [agent.id, agent.name, shellCommands, search])
+  useCommandProvider(provider)
+  // Gaveta aberta no celular: o foco fica preso dentro dela (como nos modais) e volta ao botão ao fechar.
+  const sideRef = useRef<HTMLElement>(null)
+  useFocusTrap(sideRef, isPhone && drawer)
 
   const tabs = (mobileTabs ?? entries.slice(0, 3).map((e) => e.id)).map((id) => entries.find((e) => e.id === id)).filter((e): e is NavEntry => !!e)
   const accentStyle = { ...(agent.hue !== undefined ? { '--ds-accent-h': agent.hue } : {}), ...(agent.chroma !== undefined ? { '--ds-accent-c': agent.chroma } : {}) } as CSSProperties
   const sideHidden = isPhone && !drawer
+  // "Mais" fica marcada quando a seção atual não está em nenhuma das abas de baixo (só na gaveta).
+  const moreActive = !tabs.some((t) => t.id === active)
 
   return (
     <AgentContext.Provider value={agent}>
@@ -349,7 +363,14 @@ export function AppShell({
           <OverlayRootContext.Provider value={appEl}>
             <a className="ds-skip" href="#ds-content">Pular para o conteúdo</a>
 
-            <aside className="ds-side" id="ds-side" aria-label={`Menu do ${agent.name}`} aria-hidden={sideHidden || undefined} inert={sideHidden}>
+            <aside ref={sideRef} className="ds-side" id="ds-side" aria-label={`Menu do ${agent.name}`} aria-hidden={sideHidden || undefined} inert={sideHidden}>
+              {isPhone && (
+                // No celular, "Voltar à Makima" e "Trocar de agente" ficam no topo da gaveta (no rodapé exigiam rolar a lista toda).
+                <div className="ds-back-row ds-back-top">
+                  <BackToMakima onGo={(r) => onGoAgent(r, { id: 'makima', name: 'Makima' })} />
+                  <AgentSwitcher currentId={agent.id} extra={extraAgents} onGo={onGoAgent} />
+                </div>
+              )}
               <div className="ds-brand">
                 <div className="ds-portrait">
                   {agent.portrait ? <img src={agent.portrait} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <PortraitArt />}
@@ -376,10 +397,12 @@ export function AppShell({
                 ))}
               </nav>
               <div className="ds-side-foot">
-                <div className="ds-back-row">
-                  <BackToMakima onGo={(r) => onGoAgent(r, { id: 'makima', name: 'Makima' })} />
-                  <AgentSwitcher currentId={agent.id} extra={extraAgents} onGo={onGoAgent} />
-                </div>
+                {!isPhone && (
+                  <div className="ds-back-row">
+                    <BackToMakima onGo={(r) => onGoAgent(r, { id: 'makima', name: 'Makima' })} />
+                    <AgentSwitcher currentId={agent.id} extra={extraAgents} onGo={onGoAgent} />
+                  </div>
+                )}
                 <div className="ds-foot-row">
                   <ThemeToggle />
                   <IconButton icon="prefs" label="Preferências" onClick={() => setPrefsOpen(true)} />
@@ -390,7 +413,7 @@ export function AppShell({
 
             <div className="ds-main">
               <header className="ds-topbar">
-                <IconButton className="ds-menu-btn" icon="menu" label="Abrir menu" size={20} onClick={() => setDrawer(true)} />
+                <IconButton className="ds-menu-btn" icon="menu" label="Abrir menu" size={20} aria-expanded={drawer} aria-controls="ds-side" onClick={() => setDrawer(true)} />
                 <div className="ds-tt">
                   <h1>{title}</h1>
                   {subtitle && <span className="ds-mono">{subtitle}</span>}
@@ -410,6 +433,8 @@ export function AppShell({
                       <kbd className="ds-kbd">/</kbd>
                     </label>
                   )}
+                  {/* Só no celular (CSS): a busca e o Ctrl+K do topo somem, então a lupa abre a paleta com busca e comandos. */}
+                  <IconButton className="ds-searchbtn" icon="search" label="Buscar e comandos" size={20} onClick={() => setPaletteOpen(true)} />
                   {topbarExtra}
                   <Button size="sm" className="ds-cmdk" aria-label="Abrir a paleta de comandos" title="Busca e comandos" onClick={() => setPaletteOpen(true)}>
                     <kbd className="ds-kbd">{shortcutLabel('mod+k')}</kbd>
@@ -424,9 +449,9 @@ export function AppShell({
                     <Icon name={n.icon} size={22} />{n.label}
                   </button>
                 ))}
-                <button type="button" onClick={() => setDrawer(true)}><Icon name="menu" size={22} />Mais</button>
+                <button type="button" aria-expanded={drawer} aria-controls="ds-side" aria-current={moreActive ? 'page' : undefined} onClick={() => setDrawer(true)}><Icon name="menu" size={22} />Mais</button>
               </nav>
-              <button type="button" className="ds-fab" aria-label={primary.label} onClick={primary.onClick}><Icon name="add" size={26} /></button>
+              <button type="button" className="ds-fab" aria-label={primary.label} onClick={primary.onClick}><Icon name={primary.icon ?? 'add'} size={26} /></button>
             </div>
 
             {prefsOpen && (

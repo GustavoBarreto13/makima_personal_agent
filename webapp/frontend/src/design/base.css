@@ -12,10 +12,29 @@
   font-size: var(--ds-text-md);
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+
+  /* Áreas seguras (barra de status, câmera, barra de gestos). No app Android o WebView desenha
+     por baixo delas (edge-to-edge) e só avisa o CSS: env() no navegador/WebView novo, e as
+     variáveis --safe-area-inset-* que o plugin SystemBars do Capacitor injeta como reserva.
+     O max() pega o maior dos dois; fora do app tudo vale 0px. */
+  --ds-safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --ds-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --ds-safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+  --ds-safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+}
+
+/* Os mesmos tokens na raiz do documento, para os shells legados (Hub, Mai, Yato) que ficam fora do .ds-frame. */
+:root {
+  --ds-safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --ds-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
 }
 
 /* Embutido: preenche o pai em vez da janela (página /design, moldura de celular, testes). */
 .ds-frame.ds-embedded {
+  --ds-safe-top: 0px;
+  --ds-safe-bottom: 0px;
+  --ds-safe-left: 0px;
+  --ds-safe-right: 0px;
   position: relative;
   inset: auto;
   width: 100%;

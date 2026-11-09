@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate as useRouterNavigate } from 'react-router-dom'
 import type { NavState, Tweaks, Trip, CheckKey, Period, MobilityCheck, DossierResponse, CheckSource } from './types'
 import { yatoApi } from './yatoApi'
 import { todayLocalISO, daysBetween, fmtRange, money } from './dateUtils'
@@ -106,6 +107,7 @@ export function YatoShell() {
     return () => clearTimeout(id)
   }, [toast])
 
+  const routerNavigate = useRouterNavigate()
   const navigate = useCallback((view: string, param?: string) => {
     setNav({ view: view as NavState['view'], param: param ?? null })
     if (scrollRef.current) scrollRef.current.scrollTop = 0
@@ -280,6 +282,7 @@ export function YatoShell() {
               : undefined
             return (
               <button key={n.id} className={'nav-item' + (nav.view === n.id ? ' active' : '')}
+                      title={n.label} aria-label={n.label} aria-current={nav.view === n.id ? 'page' : undefined}
                       onClick={() => navigate(n.id, n.id === 'trip' ? (activeTripId ?? undefined) : undefined)}>
                 <Icon name={n.icon} /> <span className="nav-label">{n.label}</span>
                 {count != null && <span className="nav-count">{count}</span>}
@@ -291,7 +294,8 @@ export function YatoShell() {
         <div className="side-foot">
           <p className="side-quote">"Só saio de casa quando sei como volto."</p>
           <button className="side-new" onClick={() => setNewTripOpen(true)}><Icon name="plus" /> <span>Nova viagem</span></button>
-          <a className="back-makima" href="/"><span className="dot" /> Voltar à Makima</a>
+          {/* Botão (e não <a href>) para voltar sem recarregar a página inteira. */}
+          <button type="button" className="back-makima" title="Voltar à Makima" aria-label="Voltar à Makima" onClick={() => routerNavigate('/')}><span className="dot" /> <span className="back-label">Voltar à Makima</span></button>
         </div>
       </aside>
 
@@ -326,7 +330,7 @@ export function YatoShell() {
           {nextPendingLabel ? <>{nextPendingLabel} · {activeTrip?.city}</> : 'checklist zerado — pode embarcar'}
         </button>
         <span className="fb-right">{itineraryCount} itens · {money(expensesTotal)} gastos</span>
-        <button className="btn btn-sm" style={{ padding: '4px 8px' }} title="preferências" onClick={() => setShowTweaks(true)}>
+        <button className="btn btn-sm fb-gear" style={{ padding: '4px 8px' }} title="preferências" aria-label="Preferências" onClick={() => setShowTweaks(true)}>
           <Icon name="gear" style={{ width: 14, height: 14 }} />
         </button>
       </div>

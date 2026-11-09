@@ -208,7 +208,7 @@ export function Calendar() {
               onCreate={onCreate} onDropTask={(id, day, iso) => void onDropTask(id, day, iso)} range={range}
             />
           ))}
-          <div className={`cal-hint${hint ? ' show' : ''}`}>Clique em um horário vazio para criar • Arraste para mover • Solte uma tarefa da lateral na grade para agendar</div>
+          <div className={`cal-hint${hint ? ' show' : ''}`}>{window.matchMedia?.('(hover: none)').matches ? 'Toque em um horário vazio para criar • Toque num evento para ver os detalhes' : 'Clique em um horário vazio para criar • Arraste para mover • Solte uma tarefa da lateral na grade para agendar'}</div>
         </div>
         <CalendarSide
           refDate={ref} today={k.today} onPick={(iso) => setRef(iso)} cals={cals} gcal={status.state.status === 'ok' ? status.state.data : null}

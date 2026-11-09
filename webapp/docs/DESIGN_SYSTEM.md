@@ -246,7 +246,9 @@ erro se o servidor falhar.
 - Breakpoints em token: `sm` < 640 · `md` 640–899 · `lg` 900–1279 · `xl` ≥ 1280
   (`useBreakpoint` na janela; `useContainerBreakpoint` no container).
 - Celular: gaveta, barra inferior, FAB, modal → bottom sheet, tabela → cartões, alvos de 44px em
-  `pointer: coarse`, hover nunca é o único caminho, `env(safe-area-inset-*)`, `100dvh`.
+  `pointer: coarse`, hover nunca é o único caminho, `100dvh`.
+- **Áreas seguras:** use sempre os tokens `--ds-safe-top/bottom` (`max(env(safe-area-inset-*), var(--safe-area-inset-*))`, definidos em `base.css`; valem 0 no `.ds-embedded`). No app Android o WebView desenha por baixo da barra de status (edge-to-edge) e só o CSS reserva o espaço — topbar, gaveta, painéis, rodapé de modal e avisos precisam somar o token.
+- **Busca no celular:** a lupa do topo abre a paleta, que oferece "Buscar … em <agente>"; nenhum comando pode existir só no Ctrl+K.
 - **Contraste WCAG AA** (4.5:1 texto, 3:1 gráficos) validado por script para **cada acento ×
   tema** (`npm run audit:design -- --contrast`). Foco visível único (`:focus-visible`, anel do
   acento). Teclado em tudo (roving tabindex em `Tabs`/`SegmentedControl`/menus). Landmarks, `aria-live`

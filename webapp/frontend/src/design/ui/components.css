@@ -75,7 +75,7 @@
 .ds-ag .ds-tx{display:flex;flex-direction:column;min-width:0;line-height:1.25}.ds-ag b{font-size:13.5px;font-weight:600}.ds-ag small{font-size:11.5px;color:var(--ds-ink-3)}.ds-ag .ds-here{margin-left:auto;font-family:var(--ds-font-mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ds-accent-deep)}
 .ds-foot-row{display:flex;gap:4px;padding-left:2px}
 .ds-main{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--ds-texture),var(--ds-ambient)}
-.ds-topbar{display:flex;align-items:center;gap:12px;padding:12px clamp(16px,3vw,32px);position:sticky;top:0;z-index:var(--ds-z-topbar);border-bottom:1px solid var(--ds-line);background:color-mix(in oklab,var(--ds-paper) 72%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.ds-topbar{display:flex;align-items:center;gap:12px;padding:calc(12px + var(--ds-safe-top)) clamp(16px,3vw,32px) 12px;position:sticky;top:0;z-index:var(--ds-z-topbar);border-bottom:1px solid var(--ds-line);background:color-mix(in oklab,var(--ds-paper) 72%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 .ds-tt{min-width:0;flex:1}.ds-tt h1{font-family:var(--ds-font-display);font-weight:800;font-size:22px;letter-spacing:-.02em;line-height:1.15;text-wrap:balance;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ds-tb-right{display:flex;align-items:center;gap:8px}
 .ds-search{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;background:var(--ds-card);border:1px solid var(--ds-line);border-radius:999px;color:var(--ds-ink-4);width:230px}
@@ -111,6 +111,11 @@
 /* .ds-frame no seletor: o reset de base.css (.ds-frame input) tem especificidade maior e anulava color/font do campo transparente */
 .ds-qc-mirror,.ds-frame .ds-qc-in{position:absolute;inset:0;padding:0 14px;font:500 15px/42px var(--ds-font-sans);letter-spacing:0;white-space:pre;border:0;background:transparent;width:100%}
 .ds-qc-mirror{overflow:hidden;color:var(--ds-ink-1);pointer-events:none}.ds-frame .ds-qc-in{color:transparent;caret-color:var(--ds-ink-1);outline:0}.ds-qc-in::placeholder{color:var(--ds-ink-4)}
+.ds-qc-voice .ds-qc-mirror,.ds-qc-voice.ds-qc-box .ds-qc-in{padding-right:48px}
+.ds-qc-mic{position:absolute;right:0;top:0;width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:var(--ds-r-sm);background:transparent;color:var(--ds-ink-3);cursor:pointer;transition:color var(--ds-dur-1),background var(--ds-dur-1)}
+.ds-qc-mic:hover{color:var(--ds-ink-1);background:var(--ds-accent-tint)}
+.ds-qc-mic:focus-visible{outline:2px solid var(--ds-accent);outline-offset:-2px}
+.ds-qc-mic[aria-pressed="true"]{color:var(--ds-accent);background:var(--ds-accent-tint)}
 .ds-tk{border-radius:4px}.ds-tk-place{background:var(--ds-accent-tint);color:var(--ds-accent-deep)}.ds-tk-tag{background:var(--ds-card-2);color:var(--ds-ink-2)}.ds-tk-rate{background:var(--ds-warn-tint);color:var(--ds-star-deep)}
 .ds-tk-date{background:var(--ds-info-tint);color:var(--ds-info)}.ds-tk-load{background:var(--ds-success-tint);color:var(--ds-success)}.ds-tk-dur{background:var(--ds-danger-tint);color:var(--ds-danger)}
 .ds-qc-chips{display:flex;gap:6px;flex-wrap:wrap;min-height:26px;align-items:center}
@@ -189,7 +194,7 @@
 .ds-ov-s{position:absolute;inset:0;background:var(--ds-scrim);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:ds-fade var(--ds-dur-2) both}
 .ds-modal{position:relative;width:100%;max-width:540px;max-height:100%;display:flex;flex-direction:column;background:var(--ds-card);border:1px solid var(--ds-line);border-radius:var(--ds-r-lg);box-shadow:var(--ds-shadow-lg);animation:ds-fadescale var(--ds-dur-3) var(--ds-ease)}
 .ds-m-h{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--ds-line-2)}.ds-m-h h2{font-family:var(--ds-font-display);font-weight:800;font-size:18px;letter-spacing:-.02em}
-.ds-m-b{padding:18px 20px;overflow:auto;display:flex;flex-direction:column;gap:16px}.ds-m-f{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--ds-line-2)}
+.ds-m-b{padding:18px 20px;overflow:auto;display:flex;flex-direction:column;gap:16px}.ds-m-f{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px calc(14px + var(--ds-safe-bottom));border-top:1px solid var(--ds-line-2)}
 .ds-grab{display:none;width:38px;height:4px;border-radius:9px;background:var(--ds-line);margin:8px auto 0}
 .ds-ov.ds-right{justify-content:flex-end;padding:0}.ds-sheet{position:relative;width:400px;max-width:100%;height:100%;display:flex;flex-direction:column;background:var(--ds-paper);border-left:1px solid var(--ds-line);box-shadow:var(--ds-shadow-lg);animation:ds-slideside var(--ds-dur-3) var(--ds-ease)}
 .ds-sheet .ds-m-b{flex:1}.ds-fgrp{display:flex;flex-direction:column;gap:8px}.ds-fgrp>.ds-lbl-f{display:flex;justify-content:space-between}.ds-chips{display:flex;gap:6px;flex-wrap:wrap}
@@ -216,24 +221,60 @@
 }
 @container ds-frame (max-width:639px){
   .ds-app{grid-template-columns:1fr}
-  .ds-side{position:absolute;left:0;top:0;bottom:0;width:280px;align-items:stretch;padding:16px 12px;transform:translateX(-102%);transition:transform var(--ds-dur-3) var(--ds-ease);box-shadow:var(--ds-shadow-lg)}
+  .ds-side{position:absolute;left:0;top:0;bottom:0;width:280px;align-items:stretch;padding:calc(16px + var(--ds-safe-top)) 12px calc(16px + var(--ds-safe-bottom));transform:translateX(-102%);transition:transform var(--ds-dur-3) var(--ds-ease);box-shadow:var(--ds-shadow-lg)}
   .ds-app.ds-drawer-open .ds-side{transform:none}
   .ds-side .ds-lbl,.ds-brand .ds-txt,.ds-nav-label{display:revert}.ds-nav-item .ds-cnt{display:inline}.ds-brand .ds-txt{display:flex}.ds-nav-item{justify-content:flex-start;padding:0 10px;width:100%;height:44px}.ds-side-cta .ds-btn{width:100%;padding:0 14px}.ds-foot-row{flex-direction:row}
-  .ds-back-row{flex-direction:row;align-items:stretch}.ds-back{flex:1;width:auto;height:auto;padding:7px 11px 7px 7px;justify-content:flex-start}.ds-back .ds-bt{display:flex}.ds-back .ds-arr{display:revert}.ds-agbtn{width:46px;height:auto}.ds-agsw{left:12px;bottom:122px;width:calc(100% - 24px)}
+  .ds-back-row{flex-direction:row;align-items:stretch}.ds-back{flex:1;width:auto;height:auto;padding:7px 11px 7px 7px;justify-content:flex-start}.ds-back .ds-bt{display:flex}.ds-back .ds-arr{display:revert}.ds-agbtn{width:46px;height:auto}.ds-agsw{left:12px;bottom:calc(122px + var(--ds-safe-bottom));width:calc(100% - 24px)}
   .ds-scrim-d{position:absolute;inset:0;background:var(--ds-scrim);z-index:calc(var(--ds-z-drawer) - 1);animation:ds-fade var(--ds-dur-2)}
   .ds-menu-btn{display:inline-grid}.ds-search{display:none}.ds-cmdk{display:none}.ds-topbar .ds-iconbtn.ds-primary{display:none}
-  .ds-content{padding:16px 16px 96px}.ds-content:has(.ds-page.ds-fill){padding:0 0 64px}.ds-page{gap:22px}.ds-hero{min-height:230px}.ds-hero-in,.ds-hero-in.ds-hero-in-compact{max-width:100%;padding:24px 20px}.ds-hero-p{display:none}
-  .ds-bottomnav{display:flex;position:absolute;left:0;right:0;bottom:0;z-index:var(--ds-z-topbar);padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));background:color-mix(in oklab,var(--ds-paper) 86%,transparent);backdrop-filter:blur(14px);border-top:1px solid var(--ds-line)}
+  .ds-content{padding:16px 16px calc(96px + var(--ds-safe-bottom))}.ds-content:has(.ds-page.ds-fill){padding:0 0 64px}.ds-page{gap:22px}.ds-hero{min-height:230px}.ds-hero-in,.ds-hero-in.ds-hero-in-compact{max-width:100%;padding:24px 20px}.ds-hero-p{display:none}
+  .ds-bottomnav{display:flex;position:absolute;left:0;right:0;bottom:0;z-index:var(--ds-z-topbar);padding:6px 8px calc(6px + var(--ds-safe-bottom));background:color-mix(in oklab,var(--ds-paper) 86%,transparent);backdrop-filter:blur(14px);border-top:1px solid var(--ds-line)}
   .ds-bottomnav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:48px;border:0;background:transparent;color:var(--ds-ink-3);font-size:10.5px;font-weight:600;border-radius:var(--ds-r-sm)}.ds-bottomnav button[aria-current="page"]{color:var(--ds-accent-deep)}
-  .ds-fab{display:grid;place-items:center;position:absolute;right:16px;bottom:calc(76px + env(safe-area-inset-bottom,0px));width:54px;height:54px;border-radius:18px;border:0;background:var(--ds-accent);color:var(--ds-on-accent);box-shadow:var(--ds-shadow-lg);z-index:var(--ds-z-topbar)}
+  .ds-fab{display:grid;place-items:center;position:absolute;right:16px;bottom:calc(76px + var(--ds-safe-bottom));width:54px;height:54px;border-radius:18px;border:0;background:var(--ds-accent);color:var(--ds-on-accent);box-shadow:var(--ds-shadow-lg);z-index:var(--ds-z-topbar)}
   .ds-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ds-cover{height:84px}.ds-cover-poster{height:auto}.ds-grid-poster{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 10px}.ds-mc-b{padding:10px 12px 12px}.ds-mc-b h3{font-size:14px}
   .ds-kpis{grid-template-columns:repeat(2,1fr)}.ds-kpi .ds-v{font-size:26px}.ds-dhead{flex-direction:column}.ds-dcover{width:100%;aspect-ratio:16/8}.ds-bars{gap:4px}.ds-bcol .ds-bv{display:none}
   .ds-toolbar .ds-search{display:flex;width:100%;order:-1}.ds-btn,.ds-chip,.ds-iconbtn,.ds-seg button,.ds-input,.ds-select{min-height:44px}.ds-iconbtn{width:44px;height:44px}.ds-btn.ds-sm{height:44px}.ds-chip{padding:0 14px}.ds-drow{grid-template-columns:62px 1fr 28px}
   .ds-ov{align-items:flex-end;padding:0}.ds-modal{max-width:100%;border-radius:var(--ds-r-lg) var(--ds-r-lg) 0 0;animation:ds-slideup var(--ds-dur-3) var(--ds-ease);max-height:92%}.ds-grab{display:block}
-  .ds-ov.ds-pal{align-items:flex-start;padding:12px}.ds-sheet{width:100%}.ds-toasts{right:12px;left:12px;bottom:84px;align-items:stretch}.ds-dp{left:auto;right:0}
+  .ds-ov.ds-pal{align-items:flex-start;padding:calc(12px + var(--ds-safe-top)) 12px 12px}.ds-sheet{width:100%}.ds-toasts{right:12px;left:12px;bottom:calc(84px + var(--ds-safe-bottom));align-items:stretch}.ds-dp{left:auto;right:0}
 }
 
 /* Retrato de reserva (silhueta) e imagem do hero. */
 .ds-pa-s1{stop-color:var(--ds-white);stop-opacity:.96}.ds-pa-s2{stop-color:var(--ds-white);stop-opacity:.62}.ds-pa-hair{fill:oklch(0.24 0.08 290 / 0.85)}
 .ds-hero-img{position:relative;width:100%;display:block;filter:drop-shadow(0 14px 26px oklch(0 0 0 / .5))}
 .ds-ov.ds-ov-confirm{z-index:var(--ds-z-popover)}
+
+/* Painel lateral (sheet): o cabeçalho desce abaixo da barra de status e o corpo respeita a barra de gestos. */
+.ds-sheet .ds-m-h{padding-top:calc(16px + var(--ds-safe-top))}
+
+/* Lupa do topo: só existe no celular (no desktop há o campo de busca e o Ctrl+K). */
+.ds-searchbtn{display:none}
+.ds-back-top{display:none}
+@container ds-frame (max-width:639px){
+  .ds-searchbtn{display:inline-grid}
+  /* "Voltar à Makima" e "Trocar de agente" no topo da gaveta */
+  .ds-back-top{display:flex;padding-bottom:12px;border-bottom:1px solid var(--ds-line)}
+}
+
+/* Menu que não cabe à direita abre alinhado pela borda direita do botão (ver Menu em overlay.tsx). */
+.ds-menu.ds-menu-r{left:auto;right:0}
+.ds-qc-actions{display:none}
+
+@container ds-frame (max-width:639px){
+  /* Captura rápida: botões no lugar de Enter / Shift+Enter */
+  .ds-qc-actions{display:flex;gap:8px;margin-top:8px}.ds-qc-actions .ds-btn{flex:1}
+  /* Alvos de toque de 44px que a regra geral não cobria */
+  .ds-back-l{min-height:44px;padding:0 12px 0 0}
+  .ds-tabs{overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity}.ds-tabs::-webkit-scrollbar{display:none}
+  .ds-tabs button{flex:none;min-height:44px;scroll-snap-align:start;white-space:nowrap}
+  /* Teclado aberto: barra de baixo e botão flutuante saem do caminho (senão sobem junto e cobrem o campo) */
+  .ds-frame:has(:is(input:not([type=checkbox]):not([type=radio]),textarea,select):focus) :is(.ds-bottomnav,.ds-fab){display:none}
+}
+@container ds-frame (max-width:639px){
+  /* Botão de remover chip/filtro continua pequeno de olho, mas com área de toque de ~44px (pseudo-elemento invisível) */
+  .ds-pchip button,.ds-fchip button{position:relative}
+  .ds-pchip button::after,.ds-fchip button::after{content:'';position:absolute;inset:-13px}
+}
+@container ds-frame (max-width:639px){
+  /* Seletor de Espaço (Tudo · Pessoal · Trabalho) no topo: só os ícones, para sobrar lugar ao título */
+  .ds-seg-compact .ds-seg-l{display:none}
+}

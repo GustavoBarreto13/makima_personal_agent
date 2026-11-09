@@ -2,7 +2,7 @@
 // Todas renderizam por portal dentro do .ds-app (OverlayRootContext), então cobrem sidebar e conteúdo
 // e respeitam a container query da moldura.
 
-import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { answerConfirm, confirm, usePendingConfirm } from '../headless/confirm'
 import { useDismissable, useFocusTrap } from '../headless/overlay'
@@ -131,8 +131,14 @@ export interface MenuItem {
 export function Menu({ items, onClose, label, className }: { items: MenuItem[]; onClose: () => void; label: string; className?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   useDismissable(ref, onClose)
+  // Menu perto da borda direita (ex.: "…" no fim da linha) abria para fora da tela; se não couber, alinha pela direita.
+  const [flip, setFlip] = useState(false)
+  useLayoutEffect(() => {
+    const r = ref.current?.getBoundingClientRect()
+    if (r && r.right > window.innerWidth - 8) setFlip(true)
+  }, [])
   return (
-    <div ref={ref} className={cx('ds-menu', className)} role="menu" aria-label={label}>
+    <div ref={ref} className={cx('ds-menu', flip && 'ds-menu-r', className)} role="menu" aria-label={label}>
       {items.map((it) => (
         <button
           key={it.id}

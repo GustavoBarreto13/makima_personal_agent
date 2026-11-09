@@ -2,6 +2,7 @@
 // Controla: navegação interna, modais globais, tweaks visuais e NextBar.
 
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { NavState, MaiView, Tweaks, UpcomingEpisode, MaiStatus } from './types'
 import { maiApi } from './maiApi'
 
@@ -61,6 +62,7 @@ const NAV_ITEMS: NavItem[] = [
 
 /** MaiShell — raiz do módulo de séries de TV. */
 export function MaiShell() {
+  const navigate = useNavigate()
   useDocumentTitle(AGENT_TABS.mai.title, AGENT_TABS.mai.icon)
 
   // Estado de navegação: qual tela + parâmetro (ex.: series_id)
@@ -80,7 +82,23 @@ export function MaiShell() {
   const [logPreId,   setLogPreId]   = useState<string | null>(null)
   const [logPreTitle,setLogPreTitle]= useState<string | null>(null)
   const [showAdd,    setShowAdd]    = useState(false)
+  const [addQuery,   setAddQuery]   = useState('')   // busca já preenchida (vinda de Compartilhar → Makima)
   const [showTweaks, setShowTweaks] = useState(false)
+
+  // "Compartilhar → Makima" (makima://mai/compartilhar/<busca> → #compartilhar/<busca>): abre o adicionar série
+  // já buscando o item compartilhado e limpa o hash, para não reabrir ao voltar ou recarregar.
+  useEffect(() => {
+    const run = () => {
+      const m = window.location.hash.replace(/^#/, '').match(/^compartilhar\/([\w-]+)$/)
+      if (!m) return
+      window.history.replaceState(window.history.state, '', window.location.pathname)
+      setAddQuery(m[1].replace(/-/g, ' '))
+      setShowAdd(true)
+    }
+    run()
+    window.addEventListener('hashchange', run)
+    return () => window.removeEventListener('hashchange', run)
+  }, [])
 
   // Persiste tweaks no localStorage sempre que mudam
   useEffect(() => {
@@ -188,7 +206,7 @@ export function MaiShell() {
         {/* CTA principal — abre modal de registro de sessão */}
         <button className="side-log-btn" onClick={() => openLog()}>
           <span>📺</span>
-          <span>Registrar sessão</span>
+          <span className="log-label">Registrar sessão</span>
         </button>
 
         {/* Itens de navegação */}
@@ -201,7 +219,7 @@ export function MaiShell() {
               title={item.label}
             >
               <span className="nav-emoji">{item.icon}</span>
-              {item.label}
+              <span className="nav-label">{item.label}</span>
             </button>
           ))}
         </nav>
@@ -213,6 +231,11 @@ export function MaiShell() {
             Série boa a gente revê.
             <span className="q-mark">"</span>
           </div>
+          {/* Sem este botão não havia como sair da Mai (o CSS do link já existia, o JSX nunca foi escrito). */}
+          <button type="button" className="back-makima" onClick={() => navigate('/')} title="Voltar à Makima" aria-label="Voltar à Makima">
+            <span className="dot" />
+            <span className="back-label">Voltar à Makima</span>
+          </button>
           <button
             className="btn btn-ghost"
             style={{ fontSize: 12, width: '100%', justifyContent: 'center' }}
@@ -284,7 +307,8 @@ export function MaiShell() {
 
       {showAdd && (
         <AddSeriesModal
-          onClose={() => setShowAdd(false)}
+          initialQuery={addQuery}
+          onClose={() => { setShowAdd(false); setAddQuery('') }}
           onSuccess={msg => { showToast(msg); go('catalog') }}
         />
       )}

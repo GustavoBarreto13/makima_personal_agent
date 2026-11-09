@@ -237,6 +237,8 @@
 .kn-legacy .cal-item .ci-tag { font-family: var(--mono); font-size: 8.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-4); border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; flex-shrink: 0; }
 .kn-legacy .cal-item .ci-eye { opacity: 0; color: var(--ink-4); display: inline-flex; flex-shrink: 0; transition: opacity .12s; cursor: pointer; }
 .kn-legacy .cal-item:hover .ci-eye { opacity: 1; }
+/* Toque não tem hover: os botões de contexto, cor e mostrar/ocultar ficam sempre visíveis. */
+@media (hover: none) { .kn-legacy .cal-item .ci-eye { opacity: 1; } }
 .kn-legacy .cal-item .ci-eye:hover { color: var(--ink); }
 .kn-legacy .cal-item .ci-eye svg { width: 14px; height: 14px; }
 .kn-legacy .cal-addacct { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 8px; margin-top: 14px; border: 1px dashed var(--line); border-radius: 9px; background: transparent; color: var(--ink-3); font-family: var(--sans); font-size: 12.5px; cursor: pointer; transition: all .12s; }
@@ -322,7 +324,7 @@
 .kn-legacy .cmo-pill.filled { background: color-mix(in oklab, var(--cc) 18%, var(--card)); color: var(--cc); font-weight: 600; }
 .kn-legacy .cmo-pill.filled .cp-dot { display: none; }
 .kn-legacy .calx[data-variant='helvetico'] .cmo-pill.filled { background: var(--cc); color: var(--ds-white); }
-.kn-legacy .cmo-more { font-family: var(--mono); font-size: 9px; color: var(--ink-4); padding-left: 4px; cursor: pointer; }
+.kn-legacy .cmo-more { font-family: var(--mono); font-size: 11px; padding-block: 2px; color: var(--ink-4); padding-left: 4px; cursor: pointer; }
 .kn-legacy .cal-pop-scrim { position: fixed; inset: 0; z-index: var(--ds-z-popover); }
 .kn-legacy .cal-pop { position: fixed; z-index: calc(var(--ds-z-popover) + 1); width: 300px; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg); overflow: hidden; animation: ds-fadescale var(--ds-dur-2) var(--ds-ease); }
 .kn-legacy .cal-pop-bar { height: 5px; background: var(--cc); }

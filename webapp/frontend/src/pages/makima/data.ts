@@ -109,8 +109,8 @@ export const AGENTS: Agent[] = [
     img: '/kaguya.jpg',
     href: '/tasks',
     does: 'Comanda seu tempo — tarefas, hábitos e a agenda da semana.',
-    action: { label: 'Nova tarefa', href: '/tasks', icon: 'check' },
-    action2: { label: 'Abrir agenda', href: '/tasks', icon: 'calendar' },
+    action: { label: 'Nova tarefa', href: '/tasks#nova', icon: 'check' }, // #nova abre o formulário já pronto
+    action2: { label: 'Abrir agenda', href: '/tasks#calendario', icon: 'calendar' },
     accent: 'oklch(0.72 0.165 340)',
     accentText: 'oklch(0.80 0.150 340)',
   },

@@ -19,7 +19,7 @@
   background: var(--ds-card); box-shadow: var(--ds-shadow-md); overflow: hidden;
 }
 @media (max-width: 900px) {
-  .kn-panel { position: fixed; inset: 0; z-index: var(--ds-z-drawer); flex: none; max-height: none; border-radius: 0; }
+  .kn-panel { position: fixed; inset: 0; padding-top: var(--ds-safe-top); padding-bottom: var(--ds-safe-bottom); z-index: var(--ds-z-drawer); flex: none; max-height: none; border-radius: 0; }
 }
 .kn-panel-h { display: flex; align-items: center; gap: var(--ds-space-2); padding: var(--ds-space-3); border-bottom: 1px solid var(--ds-line); }
 .kn-panel-tabs { display: flex; gap: 2px; margin-inline-end: auto; }

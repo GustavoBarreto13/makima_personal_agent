@@ -56,7 +56,8 @@
 
 /* ── topbar ───────────────────────────────────────────────────────────────── */
 .mkA .top {
-  display: flex; align-items: center; justify-content: space-between; height: 56px;
+  display: flex; align-items: center; justify-content: space-between; box-sizing: border-box;
+  height: calc(56px + var(--ds-safe-top)); padding-top: var(--ds-safe-top); /* desce abaixo da barra de status */
   border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 11px;
   letter-spacing: 0.18em; color: var(--ink3); text-transform: uppercase;
 }
@@ -211,4 +212,11 @@
   .mkA .meta { gap: 20px; }
   .mkA .card .body { width: 58%; }
   .mkA .hero { padding-top: 32px; }
+}
+
+/* Celular: alvos de toque de 44px (o ícone continua pequeno; a área invisível cresce) */
+@media (max-width: 680px) {
+  .mkA .themetog { min-height: 44px; padding-inline: 14px; }
+  .mkA .open { position: relative; }
+  .mkA .open::after { content: ''; position: absolute; inset: -8px; }
 }

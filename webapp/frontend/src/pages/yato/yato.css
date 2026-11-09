@@ -55,7 +55,7 @@
 }
 
 /* ─── Shell ─────────────────────────────────────────────────────────── */
-.yato-shell{display:grid;grid-template-columns:220px 1fr;grid-template-rows:1fr 44px;height:100vh;overflow:hidden;background:var(--paper);color:var(--ink);position:relative}
+.yato-shell{display:grid;grid-template-columns:220px 1fr;grid-template-rows:1fr 44px;height:100vh;height:100dvh;overflow:hidden;background:var(--paper);color:var(--ink);position:relative}
 .yato-shell a{color:var(--yato-deep);text-decoration:none}
 .yato-shell a:hover{color:var(--yato-bright);text-decoration:underline}
 .yato-shell ::selection{background:var(--yato-tint-2)}
@@ -103,13 +103,13 @@
 .side-new{display:flex;align-items:center;justify-content:center;gap:7px;padding:10px;border:none;border-radius:var(--r-md);background:var(--yato);color:oklch(0.99 0.01 250);font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer}
 .side-new:hover{filter:brightness(1.12)}
 .side-new svg{width:15px;height:15px}
-.back-makima{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-3)}
-.back-makima:hover{color:var(--ink);text-decoration:none}
-.back-makima .dot{width:6px;height:6px;border-radius:50%;background:oklch(0.66 0.145 5)}
+.yato-shell .back-makima{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-3);background:none;border:0;padding:0;cursor:pointer;font-family:inherit}
+.yato-shell .back-makima:hover{color:var(--ink);text-decoration:none}
+.yato-shell .back-makima .dot{width:6px;height:6px;border-radius:50%;background:oklch(0.66 0.145 5)}
 
 /* ─── Main / topbar / footbar ───────────────────────────────────────── */
 .yato-main{grid-column:2;grid-row:1;position:relative;z-index:1;min-width:0;overflow:hidden;display:flex;flex-direction:column}
-.yato-topbar{flex-shrink:0;height:56px;display:flex;align-items:center;gap:14px;padding:0 26px;border-bottom:1px solid var(--line);background:var(--topbar-bg);backdrop-filter:blur(10px);z-index:5}
+.yato-topbar{flex-shrink:0;box-sizing:border-box;height:calc(56px + var(--ds-safe-top));display:flex;align-items:center;gap:14px;padding:var(--ds-safe-top) 26px 0;border-bottom:1px solid var(--line);background:var(--topbar-bg);backdrop-filter:blur(10px);z-index:5}
 .topbar-title{font-family:var(--display);font-size:16px;font-weight:600;white-space:nowrap}
 .yato-shell .search{display:flex;align-items:center;gap:8px;height:32px;padding:0 11px;min-width:0;flex:1 1 190px;max-width:280px;background:var(--card);border:1px solid var(--line);border-radius:var(--r-pill)}
 .yato-shell .search:focus-within{border-color:var(--yato);box-shadow:0 0 0 3px var(--yato-tint)}
@@ -413,7 +413,7 @@
 .yato-shell .wiz-nav{display:flex;align-items:center;gap:8px;margin-left:auto}
 .yato-shell .wiz-nav button{width:28px;height:28px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--card);color:var(--ink-2);cursor:pointer}
 .yato-shell .wiz-nav button:disabled{opacity:.4;cursor:not-allowed}
-.yato-shell .toast{position:fixed;right:20px;bottom:56px;z-index:80;padding:10px 16px;border-radius:var(--r-pill);background:linear-gradient(100deg,var(--yato),var(--yato-deep));color:oklch(0.99 0.01 250);font-size:12.5px;font-weight:600;box-shadow:var(--shadow-md);animation:yato-toast-in .2s ease}
+.yato-shell .toast{position:fixed;right:20px;bottom:calc(56px + var(--ds-safe-bottom));z-index:80;padding:10px 16px;border-radius:var(--r-pill);background:linear-gradient(100deg,var(--yato),var(--yato-deep));color:oklch(0.99 0.01 250);font-size:12.5px;font-weight:600;box-shadow:var(--shadow-md);animation:yato-toast-in .2s ease}
 @keyframes yato-toast-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
 .yato-shell .empty{padding:44px 26px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:13px;color:var(--ink-2)}
@@ -432,7 +432,7 @@
 }
 @media (max-width:900px){
   .yato-shell{grid-template-columns:64px 1fr}
-  .yato-shell .nav-label,.yato-shell .brand-text,.yato-shell .side-quote,.yato-shell .side-trip .st-dates,.yato-shell .side-new span{display:none}
+  .yato-shell .nav-label,.yato-shell .back-makima .back-label,.yato-shell .brand-text,.yato-shell .side-quote,.yato-shell .side-trip .st-dates,.yato-shell .side-new span{display:none}
   .yato-shell .nav-item{justify-content:center}.yato-shell .nav-count{display:none}
   .yato-shell .side-brand{justify-content:center;padding:14px 8px}
   .yato-shell .side-trip{margin:2px 8px 8px;width:calc(100% - 16px);text-align:center;padding:8px 4px}
@@ -453,4 +453,13 @@
   .yato-shell .dos-stamp,.yato-shell .dos-src{grid-column:2;text-align:left;justify-content:flex-start}
   .yato-shell .tri-grid,.yato-shell .big3,.yato-shell .kpi-row,.yato-shell .row2{grid-template-columns:1fr}
   .yato-shell .trips-grid{grid-template-columns:1fr}
+}
+
+/* Celular: a topbar quebra em duas linhas (busca + viagem + checados não cabem em uma) e a engrenagem tem 44px de toque */
+@media (max-width:640px){
+  .yato-shell .yato-topbar{height:auto;min-height:calc(56px + var(--ds-safe-top));flex-wrap:wrap;padding:calc(var(--ds-safe-top) + 6px) 12px 6px;row-gap:6px}
+  .yato-shell .topbar-prot{flex-shrink:1;min-width:0}
+  .yato-shell .fb-gear{min-width:44px;min-height:44px}
+  .yato-shell{grid-template-rows:1fr calc(44px + var(--ds-safe-bottom))}
+  .yato-shell .footbar{box-sizing:border-box;padding-bottom:var(--ds-safe-bottom)}
 }

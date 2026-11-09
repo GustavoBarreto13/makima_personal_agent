@@ -102,7 +102,7 @@ export function MakimaShell() {
         <div className="top">
           <span className="b"><span className="dot" />{HERO_COPY.kicker}</span>
           <div className="topr">
-            <span>Hub · {AGENTS.length} agentes · 10 domínios</span>
+            <span>Hub · {AGENTS.length} agentes</span>
             <button
               className="themetog"
               title="Alternar tema claro / escuro"
@@ -126,8 +126,7 @@ export function MakimaShell() {
             <p className="manifesto">{HERO_COPY.manifesto}</p>
             <p className="tagline"><b>{HERO_COPY.lead}</b> {HERO_COPY.tagline}</p>
             <div className="meta">
-              <div><div className="n">8</div><div className="l">Agentes</div></div>
-              <div><div className="n">9</div><div className="l">Domínios</div></div>
+              <div><div className="n">{AGENTS.length}</div><div className="l">Agentes</div></div>
               <div><div className="n">1</div><div className="l">No comando</div></div>
             </div>
           </div>
@@ -145,7 +144,7 @@ export function MakimaShell() {
         <div className="seclbl">
           <span className="t">Os domínios</span>
           <span className="rule" />
-          <span className="num">/ 09</span>
+          <span className="num">/ {String(AGENTS.length).padStart(2, '0')}</span>
         </div>
 
         {/* ── roster (8 cards de agente) ──────────────────────────────────── */}

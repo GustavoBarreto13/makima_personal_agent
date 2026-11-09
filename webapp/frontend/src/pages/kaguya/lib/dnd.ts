@@ -6,7 +6,7 @@
 // código em cada arquivo, extraímos aqui para que qualquer ajuste futuro
 // (ex.: mudar o limiar de ativação) valha em todas as telas de uma vez.
 
-import { useSensors, useSensor, PointerSensor } from '@dnd-kit/core'
+import { useSensors, useSensor, MouseSensor, TouchSensor } from '@dnd-kit/core'
 
 // Tipo estrutural mínimo para midPosition: só lê `.position`.
 // Compatível com Task, Project e Group — todos têm o campo position.
@@ -22,11 +22,14 @@ type Positioned = { position: number }
 // Isso resolve o conflito clique vs. arraste sem precisar de onPointerDown manual.
 export function useDndSensors() {
   return useSensors(
-    useSensor(PointerSensor, {
-      // Usuário precisa mover o ponteiro pelo menos 5 pixels antes de o
-      // DnD considerar que ele está arrastando — não apenas clicando.
+    useSensor(MouseSensor, {
+      // Mouse: precisa mover pelo menos 5 pixels antes de o DnD considerar
+      // que ele está arrastando — não apenas clicando.
       activationConstraint: { distance: 5 },
     }),
+    // Toque: só vira arraste depois de segurar o dedo ~250ms. Sem isso, rolar a coluna
+    // do Kanban com o dedo era confundido com arrastar o cartão (e a rolagem travava).
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   )
 }
 

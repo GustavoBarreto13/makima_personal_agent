@@ -2,9 +2,11 @@
 // Destaque ao vivo dos tokens, chips de prévia removíveis ("o que foi entendido"), Enter salva,
 // Shift+Enter abre o formulário completo já preenchido. O motor é o core/capture.
 
-import { useRef, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import type { CaptureKind, CaptureResult } from '../core/capture'
+import { toast } from '../headless/toast'
 import { useCapture } from '../headless/useCapture'
+import { useVoiceProvider } from '../headless/voice'
 import { Icon } from './Icon'
 import type { IconName } from './icons'
 import { Stars } from './rating'
@@ -46,6 +48,24 @@ export function QuickCapture({ parser, placeholder, label, examples = [], legend
   const cap = useCapture(parser, today)
   const mirror = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLInputElement>(null)
+  // Microfone: só existe quando o app registrou um provedor de voz (o site não tem).
+  const voice = useVoiceProvider()
+  const [listening, setListening] = useState(false)
+
+  const speak = async () => {
+    if (!voice || listening) return
+    setListening(true)
+    try {
+      const said = (await voice()).trim()
+      // O texto falado entra no fim do que já estava digitado e passa pelo mesmo entendimento ao vivo.
+      if (said) cap.setText(cap.text.trim() ? `${cap.text.trim()} ${said}` : said)
+      input.current?.focus()
+    } catch (e) {
+      toast(e instanceof Error && e.message ? e.message : 'Não consegui ouvir agora. Tente de novo.', { tone: 'error' })
+    } finally {
+      setListening(false)
+    }
+  }
 
   const submit = (expand: boolean) => {
     if (!cap.text.trim()) return
@@ -55,7 +75,7 @@ export function QuickCapture({ parser, placeholder, label, examples = [], legend
 
   return (
     <div className="ds-qc">
-      <div className="ds-qc-box">
+      <div className={voice ? 'ds-qc-box ds-qc-voice' : 'ds-qc-box'}>
         <div className="ds-qc-mirror" ref={mirror} aria-hidden="true">
           {cap.result.segments.map((s, i) => (s.kind ? <span key={i} className={`ds-tk ${KIND_CLASS[s.kind]}`}>{s.text}</span> : <span key={i}>{s.text}</span>))}
         </div>
@@ -74,6 +94,20 @@ export function QuickCapture({ parser, placeholder, label, examples = [], legend
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); submit(e.shiftKey) }
           }}
         />
+        {voice && (
+          <button type="button" className="ds-qc-mic" aria-label="Falar" aria-pressed={listening} disabled={listening} onClick={() => void speak()}>
+            <Icon name="mic" size={18} />
+          </button>
+        )}
+      </div>
+      {/* Só no celular (CSS): teclado de celular não tem Shift+Enter, então salvar e abrir o formulário viram botões. */}
+      <div className="ds-qc-actions">
+        <button type="button" className="ds-btn ds-primary" disabled={!cap.text.trim()} onClick={() => submit(false)}>
+          <Icon name="send" size={16} />Salvar
+        </button>
+        {onExpand && (
+          <button type="button" className="ds-btn" disabled={!cap.text.trim()} onClick={() => submit(true)}>Formulário completo</button>
+        )}
       </div>
       <div className="ds-qc-chips" aria-live="polite">
         {extraChips?.(cap.result)}

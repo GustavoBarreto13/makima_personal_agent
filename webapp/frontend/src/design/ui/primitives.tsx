@@ -93,12 +93,12 @@ export function SegmentedControl<V extends string>({ value, options, onChange, l
           type="button"
           className={cx(value === o.value && 'ds-on')}
           aria-pressed={value === o.value}
-          aria-label={o.ariaLabel}
-          title={o.ariaLabel}
+          aria-label={o.ariaLabel ?? (o.icon && typeof o.label === 'string' ? o.label : undefined)}
+          title={o.ariaLabel ?? (o.icon && typeof o.label === 'string' ? o.label : undefined)}
           onClick={() => onChange(o.value)}
         >
           {o.icon && <Icon name={o.icon} size={15} />}
-          {o.label}
+          <span className="ds-seg-l">{o.label}</span>
         </button>
       ))}
     </div>

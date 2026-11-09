@@ -2,6 +2,7 @@
 // Guarda a rota por hash (/tasks#lista/12/t/88), o espaço global (Tudo/Trabalho/Pessoal), os dados da sidebar e as
 // ações comuns (abrir a tarefa no painel, concluir com "Desfazer", nova tarefa), que as telas leem pelo contexto.
 
+import { onOfflineSynced } from '../../lib/offlineWrites'
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '../../design'
@@ -57,7 +58,7 @@ type Dialog =
   | { kind: 'focus'; task?: Task; habitId?: number } | { kind: 'focus-cancel' } | null
 
 const SPACE_OPTIONS: { value: SpaceChoice; label: string; icon: 'apps' | 'work' | 'personal' }[] = [
-  { value: 'all', label: 'Tudo', icon: 'apps' }, { value: 'work', label: 'Trabalho', icon: 'work' }, { value: 'personal', label: 'Pessoal', icon: 'personal' },
+  { value: 'all', label: 'Tudo', icon: 'apps' }, { value: 'personal', label: 'Pessoal', icon: 'personal' }, { value: 'work', label: 'Trabalho', icon: 'work' },
 ]
 
 export function KaguyaShell() {
@@ -69,6 +70,8 @@ export function KaguyaShell() {
   const [rev, setRev] = useState(0)
   const [dialog, setDialog] = useState<Dialog>(null)
   const reload = useCallback(() => setRev((n) => n + 1), [])
+  // Escritas feitas sem internet foram enviadas: recarrega a tela para mostrar o que entrou.
+  useEffect(() => onOfflineSynced(reload), [reload])
   const space: Space | undefined = prefs.space === 'all' ? undefined : prefs.space
 
   const { state: sidebarState, retry: retrySidebar } = useLoad(() => kaguyaApi.sidebar(), [rev])
@@ -133,6 +136,23 @@ export function KaguyaShell() {
 
   const toggleComplete = useCallback((t: Task) => act.toggleComplete({ reload }, t), [reload])
   const newTask = useCallback((defaults?: NewTaskDefaults) => setDialog({ kind: 'new', defaults }), [])
+
+  // Atalhos do ícone do app (makima://kaguya/nova → #nova · makima://kaguya/foco/iniciar → #foco/iniciar):
+  // abrem o formulário já pronto e limpam o hash, para não reabrir ao voltar ou recarregar.
+  useEffect(() => {
+    const run = () => {
+      const h = window.location.hash.replace(/^#/, '')
+      if (h !== 'nova' && h !== 'foco/iniciar') return
+      const destino = h === 'nova' ? 'hoje' : 'foco'
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}#${destino}`)
+      setRoute(routeFromHash(`#${destino}`))
+      if (h === 'nova') newTask()
+      else startFocus({})
+    }
+    run()
+    window.addEventListener('hashchange', run)
+    return () => window.removeEventListener('hashchange', run)
+  }, [newTask, startFocus])
 
   const ctx = useMemo<KaguyaCtx>(() => ({
     rev, reload, today, route, goto, openTask, prefs, setPrefs, space, projects, groups, filters, sidebarState, retrySidebar,
@@ -211,6 +231,7 @@ export function KaguyaShell() {
         topbarExtra={
           <SegmentedControl
             label="Espaço"
+            className="ds-seg-compact"
             value={prefs.space}
             options={SPACE_OPTIONS}
             onChange={(v) => setPrefs({ space: v })}
