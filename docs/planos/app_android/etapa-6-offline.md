@@ -6,8 +6,18 @@
 Metrô, avião, viagem: criar tarefa, gasto ou bullet sem sinal e sincronizar quando voltar.
 A porta `OfflineQueue` já existe em `design/core/ports.ts`, mas hoje só vive na memória (some ao fechar).
 
-> **Adiantado:** item 1 (fila persistente, ordenada, idempotente por id) em `design/core/offlineQueue.ts`. **Falta:** ligá-la às telas
-> (item 2), o selo "pendente" e o modo viagem da Yato.
+> **Adiantado (06/nov/2026, código pronto — falta testar no celular):**
+> - Fila persistente (`design/core/offlineQueue.ts`) ligada em `src/lib/offlineWrites.ts` (`writeOrQueue`): tenta enviar na hora e, sem rede,
+>   guarda no aparelho **com o mesmo id** usado na tentativa. Reenvia ao abrir, no evento `online` e quando o app volta ao primeiro plano.
+> - **Servidor não duplica:** o id vai no cabeçalho `Idempotency-Key` (`webapp/backend/idempotency.py`, tabela `idempotency_keys`) — se a resposta
+>   se perdeu, o reenvio recebe a resposta guardada.
+> - **Ligado a:** criar tarefa (`+ Adicionar tarefa`), concluir tarefa (sem "Desfazer" offline), gasto/receita simples da Nami, check-in de hábito
+>   (com a data de hoje gravada na hora do toque) e **momento novo do diário** (o diário não fica salvo para leitura offline; sem internet a tela
+>   oferece guardar um momento, que entra no fim do dia quando a conexão voltar — `POST /api/journal/bullets` aceita `date`).
+> - Selo "N alterações aguardam a internet" e aviso de itens recusados (com "Descartar") em `pwa/PwaPrompt.tsx`; telas recarregam sozinhas após o envio.
+>   Sair do app (logout) apaga a fila.
+> - **Falta:** editar/excluir offline, gasto parcelado e transferência, estimativa de duração na criação offline, e o modo viagem da Yato.
+> - **Antes de usar:** rodar `setup_schemas.py` no `makima-web` (cria `idempotency_keys`).
 
 ## Passo a passo
 

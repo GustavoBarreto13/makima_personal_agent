@@ -1001,6 +1001,41 @@ def upsert_bullet(page_id: int, position: int, content: str, kind: str = 'bullet
         conn.close()
 
 
+def append_bullet(date: str, content: str, kind: str = 'bullet', person_ids: list[str] | None = None,
+                  type_id: int = 1) -> dict:
+    """Acrescentar um bullet NO FIM da página de um dia (cria a página se preciso).
+
+    Existe para a escrita offline do app: o celular sem internet não conhece o ``page_id`` nem as
+    posições já usadas, só a data. O servidor resolve os dois na hora do envio.
+
+    Args:
+        date: Dia no formato ``YYYY-MM-DD``.
+        content: Texto do bullet (vazio não grava nada).
+        kind: Tipo do bullet (padrão ``bullet``).
+        person_ids: IDs de pessoas da Komi a vincular.
+        type_id: Tipo de diário (padrão 1).
+
+    Returns:
+        O mesmo retorno de ``upsert_bullet`` (``{"status": "ok", "bullet": {...}}``) ou
+        ``{"status": "error", "message": ...}``.
+    """
+    if not (content or "").strip():
+        return {"status": "error", "message": "Texto vazio."}
+    page = ensure_page(date=date, type_id=type_id)
+    if page.get("error"):
+        return {"status": "error", "message": page["error"]}
+    page_id = page["page"]["id"]
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            # Posições são esparsas (×1000): o novo bullet vai uma casa depois do último.
+            cur.execute("SELECT COALESCE(MAX(position), 0) FROM journal_bullets WHERE page_id = %s", (page_id,))
+            position = int(cur.fetchone()[0]) + 1000
+    finally:
+        conn.close()
+    return upsert_bullet(page_id=page_id, position=position, content=content, kind=kind, person_ids=person_ids)
+
+
 def delete_bullet(bullet_id: int) -> dict:
     """Deletar um bullet pelo ID.
 

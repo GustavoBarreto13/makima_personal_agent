@@ -50,6 +50,20 @@ Todas exigem login (cookie ou bearer). Tabelas `mobile_devices` e `push_devices`
 | `POST` | `/api/devices/push` | Corpo `{fcm_token, device_name?}`. Registra/atualiza o token de push (idempotente — pode chamar a cada abertura). `201` `{status, id}`. |
 | `DELETE` | `/api/devices/push/{id}` | Remove o registro de push. `404` se não existir. |
 
+### Botões da notificação push (`/api/push/*`)
+
+| Método | Caminho | Descrição |
+|---|---|---|
+| `POST` | `/api/push/action` | **Sem login**: a credencial é o token assinado de UMA tarefa (`makima-push-action`, 36 h) que veio no push. Corpo `{token, action}` com `action` ∈ `complete` · `snooze_1h` · `tomorrow`. `200` ok (concluir uma tarefa já concluída também devolve ok, sem repetir); `400` ação inválida; `401` token inválido/vencido; `404` tarefa inexistente; `409` há subtarefas abertas (abrir o app). Adiar move o bloco de tempo (`start_at`) ou `due_date`/`due_time`. |
+
+### Escrita offline (`Idempotency-Key`)
+
+O app enfileira escritas sem internet e reenvia depois. Em `POST /api/tasks`, `/api/tasks/{id}/complete`,
+`/api/tasks/bulk`, `/api/tasks/habits/{id}/checkin`, `/api/finances/transactions` e `/api/journal/bullets`, o cabeçalho
+opcional `Idempotency-Key` faz o servidor devolver a **mesma resposta** (cabeçalho `Idempotent-Replay: true`) se a chave já
+terminou antes, em vez de gravar de novo; `503` se outra requisição com a mesma chave ainda está em andamento. Sem o
+cabeçalho nada muda. Tabela `idempotency_keys`.
+
 ---
 
 ## Health check
@@ -310,7 +324,7 @@ Spec 076 (Violet no Design System) reescreveu o router.
 | `POST` | `/api/journal/page` | Cria (se preciso) a página do dia — chamado no primeiro registro. | `{date, type_id?}` |
 | `PUT` | `/api/journal/page/font` | Fonte do dia (`normal`/`roteiro`/`cursiva`/null = padrão); cria a página se preciso. | `{date, font, type_id?}` |
 | `PUT` | `/api/journal/page/dream` | Define ou limpa o sonho. | `{page_id, dream}` |
-| `POST` | `/api/journal/bullets` | Upsert por `page_id`+`position`; **texto vazio apaga**. Sincroniza menções, `journal_refs` e vínculos da Komi. | `{page_id, position, content, kind, person_ids?}` |
+| `POST` | `/api/journal/bullets` | Upsert por `page_id`+`position`; **texto vazio apaga**. Sincroniza menções, `journal_refs` e vínculos da Komi. | `{page_id, position, content, kind, person_ids?}` ou, só para escrita offline, `{date, content, kind?, person_ids?}` (sem `page_id`/`position`: cria a página do dia se preciso e acrescenta o bullet no fim) |
 | `DELETE` | `/api/journal/bullets/{id}` | Apaga (e desvincula da Komi); devolve o bullet apagado para o Desfazer. | — |
 | `PATCH` | `/api/journal/bullets/{id}/favorite` | Favorito (estado-alvo). | `{favorite}` |
 

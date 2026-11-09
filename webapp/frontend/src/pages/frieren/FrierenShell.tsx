@@ -147,6 +147,21 @@ export function FrierenShell() {
 
   const openAdd = useCallback((title = '') => setDialog({ kind: 'add', title }), [])
 
+  // "Compartilhar → Makima" (makima://frieren/compartilhar/<busca> → #compartilhar/<busca>): abre o formulário de adicionar livro já buscando o
+  // item compartilhado e limpa o hash, para não reabrir ao voltar ou recarregar.
+  useEffect(() => {
+    const run = () => {
+      const m = window.location.hash.replace(/^#/, '').match(/^compartilhar\/([\w-]+)$/)
+      if (!m) return
+      window.history.replaceState(window.history.state, '', window.location.pathname)
+      const busca = m[1].replace(/-/g, ' ')
+      openAdd(busca)
+    }
+    run()
+    window.addEventListener('hashchange', run)
+    return () => window.removeEventListener('hashchange', run)
+  }, [openAdd])
+
   const quickLog = useCallback((r: CaptureResult, forceForm = false): boolean => {
     const draft = draftFromCapture(r, { today, books })
     const book = books.find((b) => b.id === draft.bookId) ?? null

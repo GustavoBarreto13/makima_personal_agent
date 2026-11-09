@@ -43,6 +43,35 @@ def _claim(key: str, fire_at: datetime) -> bool:
     )
 
 
+def _action_payload(r: eng.Reminder) -> tuple[dict[str, str] | None, bool]:
+    """Dados extras do push de um lembrete e se ele vai "só dados".
+
+    Lembretes de tarefa levam os botões (Concluir/Adiar 1h/Amanhã): o app desenha a notificação
+    (`data_only`) e o token assinado deixa cada botão agir só naquela tarefa, sem a sessão do usuário.
+    Os demais lembretes seguem como notificação comum.
+
+    Args:
+        r: O lembrete.
+
+    Returns:
+        Tupla `(dados_extras, so_dados)`; `(None, False)` quando não há botões.
+    """
+    if r.task_id is None or not r.actions:
+        return None, False
+    # Import tardio: só quem tem lembrete de tarefa precisa do segredo de assinatura carregado.
+    from webapp.backend.push_actions import sign_action_token
+
+    return (
+        {
+            "kind": "task_actions",
+            "task_id": str(r.task_id),
+            "token": sign_action_token(r.task_id),
+            "actions": ",".join(r.actions),
+        },
+        True,
+    )
+
+
 def _release(key: str) -> None:
     """Desfaz a reserva (o push falhou): o próximo minuto tenta de novo, dentro da janela de graça."""
     run_dml("DELETE FROM app_reminder_log WHERE key = %(k)s", {"k": key})
@@ -80,8 +109,10 @@ def run(now: datetime | None = None) -> dict:
     for r in vencidos:
         if not _claim(r.key, r.fire_at):
             continue  # já avisado (por esta ou por outra rodada)
+        push_data, data_only = _action_payload(r)
         ok = send_notification(
-            r.body, channels=["push"], title=r.title, link=r.link, agent=r.agent
+            r.body, channels=["push"], title=r.title, link=r.link, agent=r.agent,
+            push_data=push_data, push_data_only=data_only,
         )
         if ok:
             enviados += 1

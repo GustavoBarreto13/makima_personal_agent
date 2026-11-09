@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Atalhos de quem segura o ícone do app: cada um abre um deep link makima://… (src/lib/deepLink.ts) e o shell
+     da tela abre o formulário já pronto. O Android mostra os primeiros 4 nesta ordem. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="shortcut_nova_tarefa"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_task"
+        android:shortcutShortLabel="@string/shortcut_task_short"
+        android:shortcutLongLabel="@string/shortcut_task_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="makima://kaguya/nova"
+            android:targetPackage="br.com.gustavo.makima"
+            android:targetClass="br.com.gustavo.makima.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="shortcut_novo_gasto"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_expense"
+        android:shortcutShortLabel="@string/shortcut_expense_short"
+        android:shortcutLongLabel="@string/shortcut_expense_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="makima://nami/novo-gasto"
+            android:targetPackage="br.com.gustavo.makima"
+            android:targetClass="br.com.gustavo.makima.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="shortcut_diario"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_journal"
+        android:shortcutShortLabel="@string/shortcut_journal_short"
+        android:shortcutLongLabel="@string/shortcut_journal_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="makima://violet/novo"
+            android:targetPackage="br.com.gustavo.makima"
+            android:targetClass="br.com.gustavo.makima.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="shortcut_foco"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_focus"
+        android:shortcutShortLabel="@string/shortcut_focus_short"
+        android:shortcutLongLabel="@string/shortcut_focus_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="makima://kaguya/foco/iniciar"
+            android:targetPackage="br.com.gustavo.makima"
+            android:targetClass="br.com.gustavo.makima.MainActivity" />
+    </shortcut>
+</shortcuts>

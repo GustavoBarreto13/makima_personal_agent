@@ -4,4 +4,12 @@
     <string name="title_activity_main">Makima</string>
     <string name="package_name">br.com.gustavo.makima</string>
     <string name="custom_url_scheme">br.com.gustavo.makima</string>
+    <string name="shortcut_task_short">Nova tarefa</string>
+    <string name="shortcut_task_long">Criar uma tarefa</string>
+    <string name="shortcut_expense_short">Novo gasto</string>
+    <string name="shortcut_expense_long">Lançar um gasto</string>
+    <string name="shortcut_journal_short">Diário</string>
+    <string name="shortcut_journal_long">Escrever no diário</string>
+    <string name="shortcut_focus_short">Iniciar foco</string>
+    <string name="shortcut_focus_long">Iniciar uma sessão de foco</string>
 </resources>

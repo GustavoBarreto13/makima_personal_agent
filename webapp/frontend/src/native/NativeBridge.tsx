@@ -12,7 +12,10 @@ import { isNativeApp } from './nativeAuth'
 import { closeTopOverlay, decideBack, hasOpenOverlay } from './backButton'
 import { isSensitiveRoute } from './privacy'
 import { applyStatusBar } from './statusBar'
+import { flushOfflineWrites } from '../lib/offlineWrites'
 import { initPush } from './push'
+import { initShare } from './share'
+import { initVoice } from './voice'
 
 export function NativeBridge() {
   const navigate = useNavigate()
@@ -24,7 +27,11 @@ export function NativeBridge() {
     if (!isNativeApp()) return
     const open = (url: string) => {
       const rota = parseDeepLink(url)
-      if (rota) navigate(rota)
+      if (!rota) return
+      navigate(rota)
+      // O navigate só muda a URL (pushState): os shells escutam "hashchange" para trocar de tela / abrir o
+      // formulário do atalho. Sem este aviso, um link aberto com o app já na mesma tela não faria nada.
+      window.setTimeout(() => window.dispatchEvent(new HashChangeEvent('hashchange')), 0)
     }
     // App fechado e aberto por um link (ou toque numa notificação): o link de abertura.
     void CapApp.getLaunchUrl().then((r) => r?.url && open(r.url))
@@ -32,10 +39,29 @@ export function NativeBridge() {
     const sub = CapApp.addListener('appUrlOpen', (e) => open(e.url))
     // Toque numa notificação push traz o link no campo `data.link`.
     void initPush(open)
+    // "Compartilhar → Makima": links de filmes, animes e livros vindos de outros apps.
+    const stopShare = initShare(open)
+    return () => {
+      void sub.then((h) => h.remove())
+      stopShare()
+    }
+  }, [navigate])
+
+  // Voltou para o app: reenvia o que foi escrito sem internet (o evento "online" nem sempre dispara no celular).
+  useEffect(() => {
+    if (!isNativeApp()) return
+    const sub = CapApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) void flushOfflineWrites()
+    })
     return () => {
       void sub.then((h) => h.remove())
     }
-  }, [navigate])
+  }, [])
+
+  // Microfone da captura rápida (reconhecimento de voz do sistema).
+  useEffect(() => {
+    initVoice()
+  }, [])
 
   // Botão voltar do Android: fecha modal → volta de tela → minimiza o app.
   useEffect(() => {

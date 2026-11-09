@@ -29,7 +29,9 @@ from webapp.backend.routers import pessoas as pessoas_router  # Komi — identid
 from webapp.backend.routers import hub as hub_router  # Makima — hub agregador de stats (spec 023)
 from webapp.backend.routers import travel as travel_router  # Yato — viagens (spec 066)
 from webapp.backend.routers import devices as devices_router  # App Android — aparelhos e push
+from webapp.backend.routers import push_actions as push_actions_router  # Botões da notificação push
 from webapp.backend.config import SESSION_SECRET
+from webapp.backend.idempotency import IdempotencyMiddleware  # Reenvio da fila offline sem duplicar
 
 # Cria a instância principal da aplicação FastAPI.
 # Tudo (rotas, middleware, static files) é registrado neste objeto.
@@ -41,6 +43,10 @@ app = FastAPI(title="Makima Web Interface")
 # garantindo que o callback veio do mesmo navegador que iniciou o login.
 # IMPORTANTE: este middleware deve ser adicionado ANTES do CORSMiddleware.
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
+
+# --- Idempotência das escritas offline ---
+# Reenvio com o mesmo `Idempotency-Key` devolve a resposta guardada em vez de gravar de novo.
+app.add_middleware(IdempotencyMiddleware)
 
 # --- Router de autenticação ---
 # Registra as rotas /auth/login, /auth/callback, /auth/logout e /auth/me
@@ -100,6 +106,8 @@ app.include_router(travel_router.router, prefix="/api/travel", tags=["travel"])
 # --- Router de aparelhos (app Android) ---
 # Aparelhos conectados (revogação) e tokens de push — docs/planos/app_android.
 app.include_router(devices_router.router, prefix="/api/devices", tags=["devices"])
+# Botões da notificação (Concluir/Adiar): a credencial é o token assinado da tarefa, não a sessão.
+app.include_router(push_actions_router.router, prefix="/api/push", tags=["push"])
 
 # --- CORS (Cross-Origin Resource Sharing) ---
 # O navegador bloqueia requisições entre origens diferentes por segurança.

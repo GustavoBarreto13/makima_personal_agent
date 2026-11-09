@@ -2,6 +2,7 @@
 // Carrega contas, cartões e categorias uma vez, expõe as ações comuns pelo contexto (lançar, pagar,
 // desfazer) e troca de tela por hash (/nami#cartoes), mantendo os atalhos antigos funcionando.
 
+import { onOfflineSynced } from '../../lib/offlineWrites'
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '../../design'
@@ -81,6 +82,8 @@ export function NamiShell() {
   const [pay, setPay] = useState<PayRequest | null>(null)
 
   const reload = useCallback(() => setRev((n) => n + 1), [])
+  // Escritas feitas sem internet foram enviadas: recarrega a tela para mostrar o que entrou.
+  useEffect(() => onOfflineSynced(reload), [reload])
 
   // Contas e cartões recarregam a cada gravação (saldo e dívida mudam); categorias só uma vez.
   useEffect(() => {
@@ -115,6 +118,20 @@ export function NamiShell() {
     const source = kind === 'gasto' ? defaultSource : defaultSource?.kind === 'account' ? defaultSource : sources.find((s) => s.kind === 'account') ?? null
     setEntry({ initial: open.draft ?? emptyDraft(kind, source, today), editing: null })
   }, [sources, defaultSource, today])
+
+  // Atalho do ícone do app (makima://nami/novo-gasto → /nami#novo-gasto): abre o lançamento de gasto já pronto.
+  // Espera as contas carregarem para a conta padrão já vir escolhida.
+  useEffect(() => {
+    const run = () => {
+      if (window.location.hash.replace(/^#/, '') !== 'novo-gasto' || boot !== 'ok') return
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}#${VIEW_HASH.home}`) // não reabre ao voltar
+      setView('home')
+      openEntry({ kind: 'gasto' })
+    }
+    run()
+    window.addEventListener('hashchange', run)
+    return () => window.removeEventListener('hashchange', run)
+  }, [boot, openEntry])
 
   const save = useCallback(async (draft: EntryDraft, editing?: Transaction | null) => {
     const result = editing ? await updateEntry(editing, draft, namiApi, money) : await submitEntry(draft, namiApi, money)

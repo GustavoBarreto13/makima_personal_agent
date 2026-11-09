@@ -28,6 +28,9 @@ import { useViolet } from '../context'
 import { caretForEdit } from '../lib/caret'
 import { fontClass, KINDS, kindMeta } from '../lib/kinds'
 import { wordCount } from '../lib/markup'
+import { ApiError } from '../../../lib/api'
+import { OfflineNote } from '../components/OfflineNote'
+import { takePendingNewMoment } from '../lib/newMoment'
 import { violetApi } from '../violetApi'
 import type { Bullet, BulletKind, EmotionLog, Font, Letter, Page as DayPage, TutorAnalysis } from '../types'
 
@@ -46,7 +49,7 @@ export function Write({ date }: { date: string }) {
   const phone = bp === 'sm'
   const kb = useKeyboardInset()
 
-  const [state, setState] = useState<'loading' | 'error' | 'ok'>('loading')
+  const [state, setState] = useState<'loading' | 'error' | 'offline' | 'ok'>('loading')
   const [tries, setTries] = useState(0)
   const [page, setPage] = useState<DayPage | null>(null)
   const [bullets, setBullets] = useState<Bullet[]>([])
@@ -87,7 +90,7 @@ export function Write({ date }: { date: string }) {
         if (live) { setEmotions(e); setLetters(l.map((x) => ({ ...x, date }))) }
       } else { setEmotions([]); setLetters([]) }
       if (live) setState('ok')
-    }).catch(() => { if (live) setState('error') })
+    }).catch((err) => { if (live) setState(err instanceof ApiError ? 'error' : 'offline') }) // sem status HTTP = falta de rede
     return () => { live = false }
   }, [date, tries])
 
@@ -260,12 +263,24 @@ export function Write({ date }: { date: string }) {
     if (await loadAnalysis(b)) setCorrected((s) => new Set(s).add(b.id))
   }
 
-  // Botão flutuante / atalho N do shell: começa um momento novo.
+  // Botão flutuante / atalho N do shell / atalho do ícone do app: começa um momento novo.
+  // O pedido só vale com o dia carregado (senão o carregamento fecharia o editor logo depois): se chegou
+  // antes, fica guardado em newMoment.ts e o efeito abaixo o atende quando o dia ficar pronto.
+  const stateRef = useRef(state)
+  stateRef.current = state
   useEffect(() => {
-    const on = () => { if (!editingRef.current) startNew('bullet') }
+    const on = () => {
+      if (stateRef.current !== 'ok') return
+      takePendingNewMoment()
+      if (!editingRef.current) startNew('bullet')
+    }
     window.addEventListener('violet:new-moment', on)
     return () => window.removeEventListener('violet:new-moment', on)
   })
+  useEffect(() => {
+    if (state === 'ok' && takePendingNewMoment() && !editingRef.current) startNew('bullet')
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só reage ao dia ficar pronto
+  }, [state])
 
   // ── sonho e fonte ──
   async function saveDream() {
@@ -305,10 +320,12 @@ export function Write({ date }: { date: string }) {
     }
   }
 
+  const reloadDay = useCallback(() => setTries((n) => n + 1), [])
   const go = (d: string) => v.goto({ view: 'write', date: d === v.today ? undefined : d })
 
   if (state === 'loading') return <Page><LoadingState variant="row" count={5} label="Abrindo o dia…" /></Page>
   if (state === 'error') return <Page><ErrorState onRetry={() => setTries((n) => n + 1)} /></Page>
+  if (state === 'offline') return <Page><OfflineNote date={date} onSent={reloadDay} /></Page>
 
   const words = ordered.reduce((s, b) => s + wordCount(b.content), 0) + wordCount(dream)
   const hasContent = ordered.length > 0 || !!dream.trim() || emotions.length > 0 || letters.length > 0

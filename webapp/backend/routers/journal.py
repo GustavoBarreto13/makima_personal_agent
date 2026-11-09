@@ -33,6 +33,7 @@ from agents.journal.tools import (
     ensure_page,
     set_page_font,
     upsert_bullet,
+    append_bullet,
     delete_bullet,
     list_heatmap,
     list_mentions,
@@ -130,9 +131,14 @@ Font = Literal["normal", "roteiro", "cursiva"]
 # ═════════════════════════════════════════════════════════════════════════════
 
 class UpsertBulletBody(BaseModel):
-    """Inserir ou atualizar um bullet (texto vazio apaga o bullet da posição)."""
-    page_id: int
-    position: int
+    """Inserir ou atualizar um bullet (texto vazio apaga o bullet da posição).
+
+    Dois formatos: ``page_id`` + ``position`` (edição, como sempre) ou só ``date`` (escrita offline
+    do app: o servidor acha a página e põe o bullet no fim).
+    """
+    page_id: Optional[int] = None
+    position: Optional[int] = None
+    date: Optional[str] = None
     content: str
     kind: str = 'bullet'  # default retrocompatível com bullets antigos
     person_ids: Optional[list[str]] = None
@@ -334,7 +340,17 @@ def set_dream_endpoint(body: DreamBody, user: dict = Depends(require_user)) -> d
 
 @router.post("/bullets", status_code=200)
 def upsert_bullet_endpoint(body: UpsertBulletBody, user: dict = Depends(require_user)) -> dict:
-    """Inserir/atualizar um bullet por (page_id, position). Texto vazio apaga."""
+    """Inserir/atualizar um bullet por (page_id, position). Texto vazio apaga.
+
+    Com ``date`` no lugar de ``page_id``/``position``, acrescenta o bullet no fim da página do dia.
+    """
+    if body.page_id is None or body.position is None:
+        if not body.date:
+            raise HTTPException(status_code=422, detail="Informe page_id e position, ou date.")
+        _check_date(body.date)
+        return _check_result(append_bullet(
+            date=body.date, content=body.content, kind=body.kind, person_ids=body.person_ids,
+        ))
     return _check_result(upsert_bullet(
         page_id=body.page_id, position=body.position, content=body.content,
         kind=body.kind, person_ids=body.person_ids,

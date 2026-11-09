@@ -1,7 +1,8 @@
 // Testes do reconhecimento de links compartilhados (lib/shareTarget.ts).
 
 import { describe, expect, it } from 'vitest'
-import { parseSharedLink } from './shareTarget'
+import { parseDeepLink } from './deepLink'
+import { parseSharedLink, resolveShare, shareDeepLink, shareSearchText } from './shareTarget'
 
 describe('parseSharedLink', () => {
   it.each([
@@ -44,5 +45,42 @@ describe('parseSharedLink', () => {
     ['12345'],
   ])('não reconhece %j', (texto) => {
     expect(parseSharedLink(texto)).toBeNull()
+  })
+})
+
+describe('shareSearchText / shareDeepLink / resolveShare', () => {
+  it('tira o título do endereço (Letterboxd, TMDB, MAL, AniList)', () => {
+    const t = (u: string) => shareSearchText(parseSharedLink(u)!)
+    expect(t('https://letterboxd.com/film/parasite-2019/')).toBe('parasite 2019')
+    expect(t('https://www.themoviedb.org/movie/603-the-matrix')).toBe('the matrix')
+    expect(t('https://myanimelist.net/anime/5114/Fullmetal_Alchemist:_Brotherhood')).toBe('Fullmetal Alchemist: Brotherhood')
+    expect(t('https://anilist.co/anime/5114/Fullmetal-Alchemist-Brotherhood/')).toBe('Fullmetal Alchemist Brotherhood')
+  })
+
+  it('sem título no endereço (IMDb, código curto): sem texto de busca', () => {
+    expect(shareSearchText(parseSharedLink('https://www.imdb.com/title/tt0111161/')!)).toBe('')
+    expect(shareSearchText(parseSharedLink('https://boxd.it/abc12')!)).toBe('')
+  })
+
+  it('ISBN vale como busca', () => {
+    expect(shareSearchText(parseSharedLink('978-85-359-1484-9')!)).toBe('9788535914849')
+  })
+
+  it('gera um deep link seguro que o parseDeepLink aceita', () => {
+    const link = shareDeepLink(parseSharedLink('https://letterboxd.com/film/amélie-2001/')!, 'akane')
+    expect(link).toBe('makima://akane/compartilhar/amelie-2001')
+    expect(parseDeepLink(link)).toBe('/movies#compartilhar/amelie-2001')
+  })
+
+  it('sem texto, só abre a tela do agente', () => {
+    expect(shareDeepLink(parseSharedLink('https://www.imdb.com/title/tt0111161/')!, 'mai')).toBe('makima://mai')
+  })
+
+  it('resolveShare: um agente abre direto; IMDb pergunta; desconhecido desiste', () => {
+    expect(resolveShare('olha: https://www.themoviedb.org/tv/1399-game-of-thrones')).toEqual({ kind: 'open', link: 'makima://mai/compartilhar/game-of-thrones' })
+    const imdb = resolveShare('https://www.imdb.com/title/tt0111161/')
+    expect(imdb.kind).toBe('choose')
+    expect(imdb.kind === 'choose' && imdb.options.map((o) => o.label)).toEqual(['Filme', 'Série'])
+    expect(resolveShare('https://exemplo.com/x')).toEqual({ kind: 'unknown' })
   })
 })

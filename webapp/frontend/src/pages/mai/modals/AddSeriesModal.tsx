@@ -17,6 +17,8 @@ interface TmdbResult {
 }
 
 interface Props {
+  /** Busca já preenchida (ex.: série compartilhada de outro app). */
+  initialQuery?: string
   onClose: () => void
   onSuccess: (msg: string) => void
 }
@@ -30,8 +32,8 @@ const STATUS_OPTIONS: { value: MaiStatus; label: string }[] = [
 ]
 
 /** AddSeriesModal — busca série no TMDB e adiciona ao catálogo. */
-export function AddSeriesModal({ onClose, onSuccess }: Props) {
-  const [query,    setQuery]    = useState('')
+export function AddSeriesModal({ initialQuery = '', onClose, onSuccess }: Props) {
+  const [query,    setQuery]    = useState(initialQuery)
   const [results,  setResults]  = useState<TmdbResult[]>([])
   const [searching,setSearching]= useState(false)
   const [selected, setSelected] = useState<TmdbResult | null>(null)

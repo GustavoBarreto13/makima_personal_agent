@@ -29,8 +29,12 @@ chegam como notificação do Android, com **botões** que agem sem abrir o app.
 > antigos: `scripts/strip_gcal_alerts.py --apply`). Detalhes: `agents/kaguya/CLAUDE.md` § "Lembretes nativos do app".
 > Digests longos (Kaguya, Lucy, relatório do mês, revisão da Violet) vão para o **Discord** (`NOTIFY_LONG_CHANNELS`, padrão
 > `discord`); avisos curtos para o push (`NOTIFY_DEFAULT_CHANNELS`, padrão `push`).
-> **Falta (código, depois do Firebase):** botões de ação *Concluir · Adiar* (o plugin do Capacitor não desenha botões em
-> push: exige mensagem só de dados + notificação local ou código nativo).
+> **Botões *Concluir · Adiar 1h · Amanhã* (06/nov/2026, código pronto — falta publicar e validar no celular):** o lembrete de
+> tarefa passa a sair como push **só de dados** com um token assinado de UMA tarefa (36 h). `MakimaMessagingService.java`
+> (estende o serviço do plugin e repassa tudo que não é lembrete de tarefa) desenha a notificação com os botões e
+> `PushActionReceiver.java` chama `POST /api/push/action` — sem usar a sessão, que gira a cada uso. Subtarefas abertas → o botão
+> avisa "abra o app". Detalhes: `agents/kaguya/CLAUDE.md` § "Lembretes nativos do app". **Para testar:** deploy do backend +
+> scheduler, `npm run android:sync` → ▶, criar uma tarefa com hora daqui a ~12 min.
 
 ## Passo a passo
 
@@ -44,7 +48,7 @@ chegam como notificação do Android, com **botões** que agem sem abrir o app.
 5. **Canais Android por agente:** Kaguya, Nami, Aniversários, Violet, Lucy, Sistema. Você silencia um sem
    silenciar os outros (nas configurações do próprio Android).
 6. **Botões de ação** na notificação:
-   - Tarefa: *Concluir · Adiar 1h · Amanhã* (chamam a API da Kaguya direto).
+   - Tarefa: *Concluir · Adiar 1h · Amanhã* (chamam a API da Kaguya direto) — **feito**, ver nota no topo.
    - Aniversário: *Mandar mensagem* (abre o WhatsApp).
    - Conselho do Dia / revisão semanal: toque abre o fluxo via deep link.
 7. *(você)* Decidir `NOTIFY_DEFAULT_CHANNELS`: só push, ou push + WhatsApp (para não receber em dobro).

@@ -5,6 +5,16 @@
 ## O que é e por quê
 Reduzir o esforço de registrar coisas: quanto menos toques, mais você usa.
 
+> **Adiantado (06/nov/2026, código pronto — falta testar no celular):** itens 1, 2 e 4.
+> - **Atalhos:** `res/xml/shortcuts.xml` (4 atalhos estáticos) abre `makima://kaguya/nova`, `makima://nami/novo-gasto`,
+>   `makima://violet/novo` e `makima://kaguya/foco/iniciar`; cada shell trata o hash e abre o formulário já pronto.
+> - **Compartilhar → Makima:** `ShareIntentPlugin.java` + `src/native/share.ts` + `lib/shareTarget.ts` (`resolveShare`). Letterboxd, TMDB,
+>   MyAnimeList e AniList abrem a tela do agente já buscando pelo título tirado do endereço (`#compartilhar/<busca>` em Akane, Mai, Marin e
+>   Frieren); IMDb pergunta "Filme ou série?"; ISBN abre a Frieren. Links só com código (IMDb, `boxd.it`, Google Livros) abrem a tela sem busca.
+> - **Voz:** botão de microfone na `QuickCapture` (todas as telas que a usam), via `VoiceInputPlugin.java` (janela de voz do próprio Android,
+>   sem permissão de microfone) e a porta `setVoiceProvider` do Design System. Dentro do editor do diário ainda não (o teclado do Android já dita).
+> - **Falta:** câmera (ISBN, recibo, foto do diário) — depende do bucket e do `POST /api/media`.
+
 ## Passo a passo
 
 1. **Atalhos no ícone** (segurar o ícone): *Nova tarefa · Novo gasto · Escrever no diário · Iniciar foco*.

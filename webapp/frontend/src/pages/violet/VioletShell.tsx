@@ -3,6 +3,8 @@
 // (navegar, abrir um link de outro agente, registrar uma emoção), que as telas leem pelo contexto.
 // Celular: barra inferior Escrever · Arquivo · Refletir · Mais; o botão flutuante começa um momento novo.
 
+import { requestNewMoment } from './lib/newMoment'
+import { onOfflineSynced } from '../../lib/offlineWrites'
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '../../design'
@@ -61,6 +63,8 @@ export function VioletShell() {
   const [emotionFor, setEmotionFor] = useState<string | null>(null)
 
   const reload = useCallback(() => setRev((n) => n + 1), [])
+  // Escritas feitas sem internet foram enviadas: recarrega a tela para mostrar o que entrou.
+  useEffect(() => onOfflineSynced(reload), [reload])
 
   useEffect(() => {
     const on = () => setRoute(routeFromHash(window.location.hash))
@@ -89,8 +93,21 @@ export function VioletShell() {
   /** Novo momento: vai para hoje e abre o editor (o Escrever escuta o evento). */
   const newMoment = useCallback(() => {
     if (!(route.view === 'write' && !route.date)) goto('write')
-    window.setTimeout(() => window.dispatchEvent(new CustomEvent('violet:new-moment')), 60)
+    window.setTimeout(requestNewMoment, 60)
   }, [route, goto])
+
+  // Atalho do ícone do app (makima://violet/novo → /journal#novo): abre o dia de hoje já escrevendo.
+  useEffect(() => {
+    const run = () => {
+      if (window.location.hash.replace(/^#/, '') !== 'novo') return
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}#hoje`) // não reabre ao voltar
+      setRoute({ view: 'write' })
+      requestNewMoment()
+    }
+    run()
+    window.addEventListener('hashchange', run)
+    return () => window.removeEventListener('hashchange', run)
+  }, [])
 
   const ctx = useMemo<VioletCtx>(() => ({ today, route, goto, openLink, rev, reload, prefs, setPrefs, openEmotion }),
     [today, route, goto, openLink, rev, reload, prefs, setPrefs, openEmotion])

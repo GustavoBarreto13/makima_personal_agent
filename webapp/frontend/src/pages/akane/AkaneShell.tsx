@@ -107,6 +107,25 @@ export function AkaneShell() {
     setLog({ initial: open.film ? { ...base, film: open.film, title: open.film.title } : base, results: [] })
   }, [today])
 
+  // "Compartilhar → Makima" (makima://akane/compartilhar/<busca> → #compartilhar/<busca>): abre o registro de filme já buscando o
+  // item compartilhado e limpa o hash, para não reabrir ao voltar ou recarregar.
+  useEffect(() => {
+    const run = () => {
+      const m = window.location.hash.replace(/^#/, '').match(/^compartilhar\/([\w-]+)$/)
+      if (!m) return
+      window.history.replaceState(window.history.state, '', window.location.pathname)
+      const busca = m[1].replace(/-/g, ' ')
+      void (async () => {
+        let results: TmdbResult[] = []
+        try { results = (await akaneApi.tmdbSearch(busca)).results } catch { /* sem TMDB: o formulário deixa buscar de novo */ }
+        setLog({ initial: { ...emptyDraft(today), title: busca }, results })
+      })()
+    }
+    run()
+    window.addEventListener('hashchange', run)
+    return () => window.removeEventListener('hashchange', run)
+  }, [today])
+
   const quickLog = useCallback((r: CaptureResult, forceForm = false): boolean => {
     const { draft, issues } = draftFromCapture(r, { today, locations })
     if (!draft.title) { toast('Escreva o título do filme.'); return false }

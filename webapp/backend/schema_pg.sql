@@ -35,3 +35,20 @@ CREATE TABLE IF NOT EXISTS push_devices (
 -- Acelera "quais aparelhos ativos desse e-mail" e "qual push pertence a esse login".
 CREATE INDEX IF NOT EXISTS idx_mobile_devices_email ON mobile_devices (email) WHERE revoked_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_push_devices_mobile ON push_devices (mobile_device_id);
+
+-- Chaves de idempotência: o app pode reenviar uma escrita feita offline (a resposta se perdeu no caminho);
+-- com a mesma chave o servidor devolve a resposta guardada em vez de gravar de novo (sem duplicar).
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    -- Valor do cabeçalho Idempotency-Key (o app usa o id único do item da fila offline).
+    key        TEXT        PRIMARY KEY,
+    -- Rota que reservou a chave (só para depuração).
+    route      TEXT        NOT NULL,
+    -- NULL = requisição ainda em andamento; preenchido quando terminou com sucesso.
+    status     INTEGER,
+    -- Corpo JSON da resposta, devolvido idêntico nos reenvios.
+    response   TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Limpeza das chaves com mais de 30 dias.
+CREATE INDEX IF NOT EXISTS idx_idempotency_keys_created ON idempotency_keys (created_at);

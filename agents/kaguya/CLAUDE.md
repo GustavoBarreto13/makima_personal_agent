@@ -776,8 +776,15 @@ scheduler (a cada 1 min, quiet_success) → scripts/send_app_reminders.py::run
   `scripts/strip_gcal_alerts.py` (dry-run por padrão, `--apply`); os do hub se corrigem sozinhos na reconciliação horária.
 - **Configurável por tarefa:** campo "Avisar" no painel da tarefa e no modal de nova tarefa (`pages/kaguya/lib/reminder.ts`);
   `create_task`/`update_task` aceitam `reminder_lead_min` (o Hermes/Telegram também: "avisa 30 min antes").
-- **Escopo:** o job só manda push (`channels=["push"]` explícito, independe de `NOTIFY_DEFAULT_CHANNELS`). Botões
-  *Concluir/Adiar* na notificação ficam para depois (o plugin do Capacitor não desenha botões).
+- **Escopo:** o job só manda push (`channels=["push"]` explícito, independe de `NOTIFY_DEFAULT_CHANNELS`).
+- **Botões na notificação (Concluir · Adiar 1h · Amanhã):** só nos lembretes de **tarefa** (`Reminder.task_id` + `actions`).
+  O lembrete sai como push **só de dados** (`send_notification(push_data=…, push_data_only=True)`), com `kind=task_actions`,
+  `task_id` e um **token assinado** (`webapp/backend/push_actions.py`, salt `makima-push-action`, 36 h, vale só para aquela
+  tarefa). No celular, `MakimaMessagingService.java` desenha a notificação e `PushActionReceiver.java` chama
+  `POST /api/push/action` — sem usar a sessão (que gira a cada uso). No servidor: concluir = `complete_task` (sem cascata;
+  subtarefas abertas → 409), *Adiar 1h*/*Amanhã* = `snooze_task`/`postpone_to_tomorrow` (`tools_tasks.py`; movem o bloco
+  `start_at` quando existe, senão `due_date`/`due_time`; adiar parte do que for mais tarde entre o horário da tarefa e agora).
+  Como a chave do lembrete inclui o horário, o aviso se rearma sozinho.
 - **Tabela:** `app_reminder_log` (ver `docs/referencia/POSTGRES.md`). Testes: `tests/agents/test_kaguya_reminder_engine.py`
   (puro), `tests/test_app_reminders.py` (job, at-most-once, retry, runner quiet_success, alertas do Google).
 

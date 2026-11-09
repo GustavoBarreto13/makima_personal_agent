@@ -1940,7 +1940,7 @@ Sem FKs (tabela de infraestrutura, independente dos domínios de negócio).
 
 ---
 
-## 12.5.1. App Android — `mobile_devices` e `push_devices`
+## 12.5.1. App Android — `mobile_devices`, `push_devices` e `idempotency_keys`
 
 Schema em `webapp/backend/schema_pg.sql` (registrado em `scripts/setup_schemas.py`). Usadas pelo login
 do app (`webapp/backend/mobile_auth.py`) e pelo canal `push` do `scheduler/notify_channels.py`.
@@ -1971,6 +1971,18 @@ Plano completo: `docs/planos/app_android/`.
 | `created_at` / `last_used_at` | `TIMESTAMPTZ NOT NULL` | `DEFAULT NOW()`. |
 
 **Índice:** `idx_push_devices_mobile (mobile_device_id)`. Tokens que o FCM recusa (`UNREGISTERED`) são apagados no envio.
+
+**`idempotency_keys`** — reenvio seguro das escritas feitas offline (`webapp/backend/idempotency.py`).
+
+| Coluna | Tipo | Regras / propósito |
+|---|---|---|
+| `key` | `TEXT` | PK. Valor do cabeçalho `Idempotency-Key` (o app usa o id único do item da fila offline). |
+| `route` | `TEXT NOT NULL` | Rota que reservou a chave (só depuração). |
+| `status` | `INTEGER` | `NULL` = requisição ainda em andamento; preenchido (2xx) quando terminou. |
+| `response` | `TEXT` | Corpo JSON da resposta, devolvido idêntico nos reenvios. |
+| `created_at` | `TIMESTAMPTZ NOT NULL` | `DEFAULT NOW()`. Linhas com mais de 30 dias são apagadas no próprio uso; reserva sem resposta há mais de 2 min é retomada. |
+
+**Índice:** `idx_idempotency_keys_created (created_at)`.
 
 **Migração:** só `CREATE TABLE IF NOT EXISTS` — aplicar com `setup_schemas.py` dentro do `makima-web`.
 

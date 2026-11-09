@@ -91,7 +91,7 @@ export class ApiError extends Error {
  * @param res - Resposta fetch com res.ok === false
  * @returns Error com a mensagem mais informativa disponível
  */
-async function errorFromResponse(res: Response): Promise<ApiError> {
+export async function errorFromResponse(res: Response): Promise<ApiError> {
   try {
     const data: any = await res.json()
     // FastAPI usa a chave "detail"; aceita também um corpo string direto

@@ -4,6 +4,7 @@
 
 import { confirm } from '../../../design/headless/confirm'
 import { toast } from '../../../design/headless/toast'
+import { writeOrQueue } from '../../../lib/offlineWrites'
 import { kaguyaApi } from '../api'
 import type { BulkAction, BulkUndo, Task } from '../types'
 import { flattenTree } from './taskView'
@@ -27,6 +28,14 @@ export async function runBulk(
   deps: ActionDeps, ids: number[], action: BulkAction, value: unknown, message: string,
 ): Promise<boolean> {
   try {
+    // Concluir funciona sem internet: fica na fila do aparelho e o servidor aplica depois (sem "Desfazer").
+    if (action === 'complete') {
+      const w = await writeOrQueue<{ undo: BulkUndo }>('POST', '/api/tasks/bulk', { task_ids: ids, action, value: value ?? null })
+      if (w.queued) return true
+      deps.reload()
+      toast(message, { tone: 'success', undo: () => { kaguyaApi.bulkUndo(w.data.undo).then(deps.reload).catch(() => toast('Não foi possível desfazer. Confira a tarefa.', { tone: 'error' })) } })
+      return true
+    }
     const r = await kaguyaApi.bulk(ids, action, value)
     deps.reload()
     const undo: BulkUndo = r.undo
@@ -106,10 +115,14 @@ export async function duplicate(deps: ActionDeps, task: Task): Promise<number | 
   }
 }
 
-/** Cria a tarefa e grava a estimativa em seguida (a API de criação não recebe `duration_min`). Devolve o id. */
-export async function createTask(body: Parameters<typeof kaguyaApi.createTask>[0] & { duration_min?: number }): Promise<number> {
+/**
+ * Cria a tarefa e grava a estimativa em seguida (a API de criação não recebe `duration_min`). Devolve o id.
+ * Sem internet, a criação fica na fila do aparelho e devolve `null` (ainda não há id; a estimativa não vai).
+ */
+export async function createTask(body: Parameters<typeof kaguyaApi.createTask>[0] & { duration_min?: number }): Promise<number | null> {
   const { duration_min, ...payload } = body
-  const r = await kaguyaApi.createTask(payload)
-  if (r.id && duration_min) await kaguyaApi.updateTask(r.id, { duration_min })
-  return r.id as number
+  const w = await writeOrQueue<{ id: number }>('POST', '/api/tasks', payload)
+  if (w.queued) return null
+  if (w.data.id && duration_min) await kaguyaApi.updateTask(w.data.id, { duration_min })
+  return w.data.id
 }

@@ -2,6 +2,7 @@
 // Centraliza URLs e tipos de resposta — componentes não conhecem a URL diretamente.
 
 import { api, authFetch } from '../../lib/api'
+import { writeOrQueue } from '../../lib/offlineWrites'
 import type {
   Transaction, Account, Card, BudgetEnvelope, Subscription, RecurringKind,
   PersonalLoan, BankLoan, PayoffPriorityItem, Category,
@@ -69,7 +70,9 @@ export const namiApi = {
     conta?: string; card_id?: string; data?: string; notes?: string;
     person_ids?: string[];
   }): Promise<{ status: string; id: string }> =>
-    api.post('/api/finances/transactions', body),
+    // Funciona sem internet: guarda no aparelho e envia depois (id vazio = ainda não existe no servidor).
+    writeOrQueue<{ status: string; id: string }>('POST', '/api/finances/transactions', body)
+      .then((w) => (w.queued ? { status: 'queued', id: '' } : w.data)),
 
   updateTransaction: (id: string, body: {
     name?: string; valor?: number; tipo?: string; categoria?: string;

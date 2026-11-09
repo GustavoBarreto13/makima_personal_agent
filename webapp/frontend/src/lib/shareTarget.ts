@@ -103,3 +103,75 @@ export function parseSharedLink(text: string): SharedLink | null {
 
   return null
 }
+
+/** "parasite-2019" / "Fullmetal_Alchemist" → "parasite 2019" / "Fullmetal Alchemist". */
+function humanize(slug: string): string {
+  let s = slug
+  try {
+    s = decodeURIComponent(slug)
+  } catch {
+    /* % solto: usa como veio */
+  }
+  return s.replace(/[-_+]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Texto para buscar o item na tela do agente (o título "adivinhado" pelo endereço).
+ *
+ * Letterboxd, TMDB, MyAnimeList e AniList trazem o nome no endereço; IMDb, Google Livros e os links curtos
+ * do Letterboxd só trazem um código (devolve vazio: a tela do agente abre sem busca). ISBN vale por si.
+ *
+ * @example
+ *   shareSearchText(parseSharedLink('https://www.themoviedb.org/movie/603-the-matrix')!) // 'the matrix'
+ */
+export function shareSearchText(link: SharedLink): string {
+  if (link.provider === 'isbn') return link.id
+  let parts: string[]
+  try {
+    parts = new URL(link.url).pathname.split('/').filter(Boolean)
+  } catch {
+    return ''
+  }
+  switch (link.provider) {
+    case 'letterboxd': return link.kind === 'film' ? humanize(link.id) : ''
+    case 'tmdb': return humanize((parts[1] ?? '').replace(/^\d+-?/, ''))
+    case 'mal':
+    case 'anilist': return humanize(parts[2] ?? '')
+    default: return ''
+  }
+}
+
+/**
+ * Deep link que abre a tela do agente já buscando o item compartilhado (`makima://akane/compartilhar/the-matrix`).
+ * Cada shell trata `#compartilhar/<busca>` abrindo o formulário de adicionar/registrar. Sem texto para
+ * buscar, só abre a tela do agente.
+ */
+export function shareDeepLink(link: SharedLink, agent: ShareAgent): string {
+  const slug = shareSearchText(link)
+    .normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+  return slug ? `makima://${agent}/compartilhar/${slug}` : `makima://${agent}`
+}
+
+/** O que fazer com um texto compartilhado. */
+export type ShareAction =
+  | { kind: 'open'; link: string }
+  | { kind: 'choose'; options: { agent: ShareAgent; label: string; link: string }[] }
+  | { kind: 'unknown' }
+
+const AGENT_LABEL: Record<ShareAgent, string> = { akane: 'Filme', mai: 'Série', marin: 'Anime', frieren: 'Livro' }
+
+/**
+ * Decide o destino de um texto compartilhado: abre direto (um único agente possível), pergunta
+ * (IMDb não diz se é filme ou série) ou desiste (link de um serviço desconhecido).
+ */
+export function resolveShare(text: string): ShareAction {
+  const found = parseSharedLink(text)
+  if (!found) return { kind: 'unknown' }
+  if (found.agents.length === 1) return { kind: 'open', link: shareDeepLink(found, found.agents[0]) }
+  return {
+    kind: 'choose',
+    options: found.agents.map((agent) => ({ agent, label: AGENT_LABEL[agent], link: shareDeepLink(found, agent) })),
+  }
+}

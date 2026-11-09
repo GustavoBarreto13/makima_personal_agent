@@ -8,6 +8,7 @@ import App from './App.tsx'                 // Componente principal da aplicaç�
 import { initTheme } from './design/headless/useTheme'  // Tema global claro/escuro/sistema do Design System
 import { PwaPrompt } from './pwa/PwaPrompt'         // Avisos de nova versão / sem conexão (PWA)
 import { initPwa } from './pwa/register'            // Registra o service worker (só em produção)
+import { initOfflineWrites } from './lib/offlineWrites' // Reenvia as escritas feitas sem internet quando a conexão volta
 import { initNativeAuth } from './native/nativeAuth' // Login/token do app Android (inerte no site)
 import { initHaptics } from './native/haptics'      // Vibração nos avisos de sucesso/erro (app Android)
 
@@ -21,6 +22,7 @@ initTheme()
 
 // Registra o service worker (cache offline + aviso de nova versão). Não bloqueia o primeiro render.
 void initPwa()
+initOfflineWrites()
 
 // Busca o elemento <div id="root"> no HTML e monta o React dentro dele.
 // O '!' no final diz ao TypeScript: "tenho certeza que este elemento existe"

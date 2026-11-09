@@ -1784,6 +1784,116 @@ def complete_task(task_id: int, cascade: bool = False, end_series: bool = False)
     return result
 
 
+def _new_start(
+    due_date, due_time, start_at: Optional[datetime], now: datetime,
+    delta: Optional[timedelta], tomorrow: bool,
+) -> Optional[datetime]:
+    """Novo início de uma tarefa adiada (função pura, sem banco).
+
+    Adiar empurra a partir do que for mais tarde entre o horário da tarefa e "agora": uma tarefa
+    que já passou da hora não pode ser "adiada" para o passado. "Amanhã" mantém o mesmo horário,
+    no dia seguinte ao de hoje.
+
+    Args:
+        due_date: Data de vencimento (``date``) ou ``None``.
+        due_time: Hora de vencimento (``time``) ou ``None``.
+        start_at: Início do bloco de tempo (com fuso) ou ``None``.
+        now: Instante atual (com fuso de São Paulo).
+        delta: Quanto empurrar (ignorado quando ``tomorrow``).
+        tomorrow: Se True, leva para o mesmo horário de amanhã.
+
+    Returns:
+        O novo início (fuso de São Paulo), ou ``None`` se a tarefa não tem horário.
+    """
+    if start_at is not None:
+        atual = start_at.astimezone(now.tzinfo)
+    elif due_date is not None and due_time is not None:
+        atual = datetime.combine(due_date, due_time.replace(tzinfo=None), tzinfo=now.tzinfo)
+    else:
+        return None
+    if tomorrow:
+        return datetime.combine(now.date() + timedelta(days=1), atual.timetz())
+    return max(atual, now) + (delta or timedelta(0))
+
+
+def _reschedule_task(task_id: int, delta: Optional[timedelta], tomorrow: bool) -> dict:
+    """Move o horário de uma tarefa (base de ``snooze_task`` e ``postpone_to_tomorrow``).
+
+    Com bloco de tempo (``start_at``), o bloco inteiro anda junto, porque é ele que manda no
+    lembrete. Sem bloco, muda ``due_date``/``due_time``. A chave de "já avisei" do lembrete
+    inclui o horário, então o aviso se rearma sozinho.
+
+    Args:
+        task_id: Id da tarefa.
+        delta: Quanto empurrar (usado quando ``tomorrow`` é False).
+        tomorrow: Se True, leva a tarefa para o mesmo horário do dia seguinte.
+
+    Returns:
+        Dicionário de status, com ``start`` (ISO) do novo horário em caso de sucesso.
+    """
+    agora = _tz_now_sp()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT due_date, due_time, start_at, end_at, completed_at FROM tasks "
+                "WHERE id = %s AND deleted_at IS NULL",
+                (task_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return {"status": "error", "message": "Tarefa não encontrada."}
+            due_date, due_time, start_at, end_at, completed_at = row
+            if completed_at is not None:
+                return {"status": "error", "message": "A tarefa já está concluída."}
+
+            novo = _new_start(due_date, due_time, start_at, agora, delta, tomorrow)
+            if novo is None:
+                return {"status": "error", "message": "Tarefa sem horário."}
+
+            if start_at is not None:
+                duracao = (end_at - start_at) if end_at is not None else timedelta(minutes=30)
+                cur.execute(
+                    "UPDATE tasks SET start_at = %s, end_at = %s, updated_at = now() WHERE id = %s",
+                    (novo, novo + duracao, task_id),
+                )
+            else:
+                cur.execute(
+                    "UPDATE tasks SET due_date = %s, due_time = %s, updated_at = now() WHERE id = %s",
+                    (novo.date(), novo.timetz().replace(tzinfo=None), task_id),
+                )
+    try:
+        from agents.kaguya import gcal_sync as _gs
+        _gs.push_task(task_id)
+    except Exception:
+        pass
+    return {"status": "ok", "message": "Tarefa reagendada.", "start": novo.isoformat()}
+
+
+def snooze_task(task_id: int, minutes: int = 60) -> dict:
+    """Adia uma tarefa com horário por alguns minutos (botão "Adiar 1h" do lembrete).
+
+    Args:
+        task_id: Id da tarefa.
+        minutes: Quanto adiar, em minutos (padrão 60).
+
+    Returns:
+        Dicionário de status com o novo horário em ``start``.
+    """
+    return _reschedule_task(task_id, timedelta(minutes=minutes), tomorrow=False)
+
+
+def postpone_to_tomorrow(task_id: int) -> dict:
+    """Leva uma tarefa com horário para o mesmo horário de amanhã (botão "Amanhã" do lembrete).
+
+    Args:
+        task_id: Id da tarefa.
+
+    Returns:
+        Dicionário de status com o novo horário em ``start``.
+    """
+    return _reschedule_task(task_id, None, tomorrow=True)
+
+
 def reopen_task(task_id: int) -> dict:
     """Reabre uma tarefa concluída (limpa ``completed_at``).
 

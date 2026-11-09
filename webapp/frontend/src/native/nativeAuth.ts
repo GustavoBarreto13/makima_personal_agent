@@ -144,6 +144,13 @@ export function clearNativeSession(): Promise<void> {
 
 /** Sair: avisa o servidor (revoga o aparelho) e apaga os tokens locais. Nunca falha para o usuário. */
 export async function signOut(): Promise<void> {
+  // Sair apaga também o que estava guardado para enviar (texto do diário, gastos…): nada fica no aparelho.
+  try {
+    const { clearOfflineWrites } = await import('../lib/offlineWrites')
+    clearOfflineWrites()
+  } catch {
+    /* sem a fila não há o que limpar */
+  }
   // Para de receber notificações neste aparelho (antes de apagar os tokens, que a chamada precisa).
   try {
     const { unregisterPush } = await import('./push')

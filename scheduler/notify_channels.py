@@ -140,7 +140,8 @@ def _to_plain_text(html: str) -> str:
 
 
 def _fcm_multicast(
-    tokens: list[str], title: str, body: str, data: dict[str, str], channel_id: str
+    tokens: list[str], title: str, body: str, data: dict[str, str], channel_id: str,
+    data_only: bool = False,
 ) -> tuple[int, list[str]]:
     """Envia a mesma notificação para vários aparelhos via Firebase Cloud Messaging.
 
@@ -150,6 +151,9 @@ def _fcm_multicast(
         body: Texto da notificação.
         data: Dados extras (ex.: `link` do deep link). Valores precisam ser texto.
         channel_id: Canal de notificação do Android (um por agente: "kaguya", "nami"...).
+        data_only: Se `True`, não manda o bloco `notification`: título, texto e canal vão dentro de
+            `data` e quem desenha a notificação é o código do app (`MakimaMessagingService`). É o que
+            permite os botões (Concluir/Adiar); sem isso o Android desenha sozinho, sem botões.
 
     Returns:
         Tupla `(enviadas, tokens_mortos)`; "mortos" são tokens que o FCM disse não existirem mais.
@@ -171,16 +175,20 @@ def _fcm_multicast(
     except ValueError:
         app = firebase_admin.initialize_app(credentials.Certificate(json.loads(raw)))
 
+    if data_only:
+        # O app monta a notificação: precisa receber tudo como dado.
+        data = {**data, "title": title, "body": body, "channel_id": channel_id,
+                "private": "1" if channel_id in _PRIVATE_CHANNELS else "0"}
     msg = messaging.MulticastMessage(
         tokens=tokens,
-        notification=messaging.Notification(title=title, body=body),
+        notification=None if data_only else messaging.Notification(title=title, body=body),
         data=data,
         android=messaging.AndroidConfig(
             priority="high",  # chega mesmo com o celular em modo de economia (Doze)
             # "private": na tela de bloqueio aparece só "conteúdo oculto" — Nami (valores), Violet (diário)
             # e Lucy (e-mails) não devem ficar legíveis para quem pegar o celular. Vale mesmo que o canal
             # ainda não exista no aparelho (dupla proteção com o canal criado pelo app).
-            notification=messaging.AndroidNotification(
+            notification=None if data_only else messaging.AndroidNotification(
                 channel_id=channel_id,
                 visibility="private" if channel_id in _PRIVATE_CHANNELS else "public",
             ),
@@ -197,8 +205,19 @@ def _fcm_multicast(
     return batch.success_count, mortos
 
 
-def _send_push(message: str, title: str, link: str | None, agent: str | None) -> bool:
+def _send_push(
+    message: str, title: str, link: str | None, agent: str | None,
+    extra: dict[str, str] | None = None, data_only: bool = False,
+) -> bool:
     """Entrega o aviso nos aparelhos Android cadastrados e limpa os tokens que morreram.
+
+    Args:
+        message: Texto do aviso (HTML simples).
+        title: Título da notificação.
+        link: Deep link aberto ao tocar.
+        agent: Agente de origem (vira o canal do Android).
+        extra: Dados a mais para o app (ex.: id da tarefa e token dos botões).
+        data_only: Mensagem só de dados, desenhada pelo app (necessário para botões).
 
     Returns:
         `True` se pelo menos um aparelho recebeu.
@@ -220,6 +239,7 @@ def _send_push(message: str, title: str, link: str | None, agent: str | None) ->
         return False
 
     data = {"link": link} if link else {}
+    data.update({k: str(v) for k, v in (extra or {}).items()})
     try:
         enviadas, mortos = _fcm_multicast(
             [a["fcm_token"] for a in aparelhos],
@@ -227,6 +247,7 @@ def _send_push(message: str, title: str, link: str | None, agent: str | None) ->
             _to_plain_text(message)[:_PUSH_MAX_CHARS],
             data,
             agent or "makima",
+            data_only=data_only,
         )
     except Exception as exc:
         log.warning("Falha ao enviar notificação via push: %s", exc)
@@ -249,6 +270,8 @@ def send_notification(
     link: str | None = None,
     agent: str | None = None,
     long: bool = False,
+    push_data: dict[str, str] | None = None,
+    push_data_only: bool = False,
 ) -> bool:
     """Manda `message` (HTML no padrão Telegram já usado pelos jobs) para os canais
     pedidos, via as rotas de notificação do Hermes.
@@ -272,6 +295,8 @@ def send_notification(
             leitura (`NOTIFY_LONG_CHANNELS`) em vez dos de aviso rápido. Ignorado se `channels` vier.
         agent: Agente de origem; vira o canal de notificação do Android ("kaguya", "nami"...)
             para o usuário silenciar um agente sem silenciar os outros. Só vale no push.
+        push_data: Dados extras entregues ao app junto do push (ex.: botões da notificação).
+        push_data_only: Push só de dados, desenhado pelo app (precisa para ter botões).
 
     Returns:
         `True` se pelo menos um canal recebeu a notificação com sucesso.
@@ -289,7 +314,7 @@ def send_notification(
 
         # Push (app Android) vai direto ao FCM — não usa as rotas do Hermes.
         if channel == "push":
-            if _send_push(message, title, link, agent):
+            if _send_push(message, title, link, agent, push_data, push_data_only):
                 sent_any = True
             continue
 

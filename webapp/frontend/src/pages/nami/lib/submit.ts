@@ -46,9 +46,12 @@ export async function submitEntry(draft: EntryDraft, api: EntryApi, money: Money
   }
 
   const { id } = await api.createTransaction(op.body)
+  // id vazio = sem internet: o lançamento está na fila do aparelho e ainda não dá para desfazer.
+  const guardado = id === ''
+  const message = op.body.tipo === 'Receita' ? `Entrada de ${money(op.body.valor)}: ${op.body.name}` : `Gasto de ${money(op.body.valor)}: ${op.body.name}`
   return {
-    message: op.body.tipo === 'Receita' ? `Entrada de ${money(op.body.valor)}: ${op.body.name}` : `Gasto de ${money(op.body.valor)}: ${op.body.name}`,
-    undo: async () => { await api.deleteTransaction(id) },
+    message: guardado ? `${message} (salvo no aparelho)` : message,
+    undo: async () => { if (!guardado) await api.deleteTransaction(id) },
   }
 }
 

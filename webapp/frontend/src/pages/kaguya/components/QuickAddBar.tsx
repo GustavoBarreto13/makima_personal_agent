@@ -42,6 +42,7 @@ export async function createFromCapture(
   if (ctx.columnId !== undefined && (out.body.project_id === undefined || out.body.project_id === ctx.projectId)) out.body.column_id = ctx.columnId
   try {
     const id = await createTask(out.body)
+    if (id === null) return 0 // sem internet: guardada no aparelho (o aviso já foi mostrado); sem id ainda
     if (ctx.myDay) await kaguyaApi.addToMyDay(id)
     return id
   } catch (e) {
@@ -63,6 +64,7 @@ export function QuickAddBar({ projectId, columnId, due, time, duration, myDay, p
         onSubmit={(r) => {
           void createFromCapture(r, { projects: k.projects, projectId: projectId ?? k.inboxId, columnId, due, time, duration, myDay }).then((id) => {
             if (id === false) return
+            if (id === 0) return // guardada para enviar depois: o aviso de "salvo no aparelho" já saiu
             k.reload()
             toast('Tarefa criada.', { tone: 'success' })
             onCreated?.(id)

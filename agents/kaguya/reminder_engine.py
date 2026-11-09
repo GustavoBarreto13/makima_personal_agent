@@ -56,6 +56,8 @@ class Reminder:
         body: Texto da notificação.
         link: Deep link aberto ao tocar.
         agent: Canal de notificação do Android ("kaguya", "komi"…).
+        task_id: Id da tarefa, quando o lembrete é de uma tarefa (base dos botões da notificação).
+        actions: Botões da notificação ("complete", "snooze_1h", "tomorrow"); vazio = sem botões.
     """
 
     key: str
@@ -64,6 +66,12 @@ class Reminder:
     body: str
     link: str
     agent: str = "kaguya"
+    task_id: int | None = None
+    actions: tuple[str, ...] = ()
+
+
+# Botões dos lembretes de tarefa (tratados por webapp/backend/push_actions.py).
+TASK_ACTIONS = ("complete", "snooze_1h", "tomorrow")
 
 
 # ─── Utilidades ──────────────────────────────────────────────────────────────
@@ -171,6 +179,8 @@ def task_reminder(task: dict[str, Any]) -> Reminder | None:
         body=" · ".join(partes),
         link=f"makima://kaguya/tarefa/{task['id']}",
         agent="kaguya",
+        task_id=int(task["id"]),
+        actions=TASK_ACTIONS,
     )
 
 

@@ -61,10 +61,23 @@ def test_envia_so_por_push_com_titulo_corpo_link_e_canal(ambiente):
     estado["candidatos"] = [tarefa()]
     res = job.run(sp(13, 50))
     assert res["enviados"] == 1
+    # Lembrete de tarefa leva os botões: push só de dados + token assinado daquela tarefa.
+    extra = enviados[0].pop("push_data")
+    assert extra["kind"] == "task_actions" and extra["task_id"] == "7"
+    assert extra["actions"] == "complete,snooze_1h,tomorrow" and extra["token"]
     assert enviados == [{
         "message": "14:00 · em 10 min · Saúde", "channels": ["push"], "title": "Dentista",
-        "link": "makima://kaguya/tarefa/7", "agent": "kaguya",
+        "link": "makima://kaguya/tarefa/7", "agent": "kaguya", "push_data_only": True,
     }]
+
+
+def test_lembrete_sem_tarefa_nao_leva_botoes(ambiente):
+    _, enviados, estado = ambiente
+    estado["candidatos"] = [eng.Reminder(
+        key="komi:1", fire_at=sp(9), title="Aniversário", body="Bia faz anos", link="makima://komi", agent="komi",
+    )]
+    job.run(sp(9, 1))
+    assert enviados[0]["push_data"] is None and enviados[0]["push_data_only"] is False
 
 
 def test_nao_envia_antes_da_hora(ambiente):
