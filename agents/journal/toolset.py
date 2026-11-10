@@ -38,6 +38,8 @@ from agents.journal.tools import (
 )
 # Spec 076 — tools pensadas para o chat (resolvem @pessoas e /referências do texto livre).
 from agents.journal.chat_tools import CHAT_TOOLS
+# "Não ditos" — registrar/consultar/dar desfecho ao que não foi dito para alguém.
+from agents.journal.tools_unsaid import create_unsaid, list_all_unsaid, resolve_unsaid
 
 TOOLS = [
     get_or_create_page,
@@ -61,5 +63,8 @@ TOOLS = [
     update_letter,
     seal_letter,
     delete_letter,
+    create_unsaid,
+    list_all_unsaid,
+    resolve_unsaid,
     *CHAT_TOOLS,
 ]

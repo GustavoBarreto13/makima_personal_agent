@@ -12,6 +12,7 @@ As versões 0.1.0–0.61.0 foram marcadas retroativamente sobre o histórico da 
 ## [Unreleased]
 
 ### Added
+- Violet: **Não ditos** — um lugar para registrar o que você queria dizer a alguém e não pode, não quer ou não consegue. Escolha a pessoa (Komi), escreva, diga o porquê com um toque e depois marque *acabei falando* ou *deixei ir*. O texto fica borrado até tocar; na Komi aparece só "Algo não dito", sem o conteúdo; a Violet usa como contexto sem citar. Funciona no site e no app (inclusive sem internet e por atalho do ícone).
 - App Android: botões *Concluir · Adiar 1h · Amanhã* direto na notificação do lembrete de tarefa.
 - App Android: criar tarefa, concluir tarefa, lançar gasto, marcar hábito e escrever um momento no diário **sem internet** — ficam no aparelho (com aviso "N aguardam a internet") e são enviados quando a conexão volta, sem duplicar.
 - App Android: atalhos ao segurar o ícone (nova tarefa, novo gasto, diário, iniciar foco), *Compartilhar → Makima* (links do Letterboxd, TMDB, MyAnimeList, AniList e Google Livros) e microfone na captura rápida.

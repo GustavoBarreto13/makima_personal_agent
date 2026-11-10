@@ -174,6 +174,7 @@ regra de resolução. Detalhes e o formato do provedor: `agents/komi/CLAUDE.md` 
 | Frieren | `add_book` | `"book"` |
 | Violet | `upsert_bullet` (sincroniza os tokens `@[Nome](komi:id)`) | `"journal_bullet"` |
 | Violet | `create_letter` / `update_letter` | `"journal_letter"` |
+| Violet | `create_unsaid` / `update_unsaid` ("Não ditos" — a Memória mostra só que existe, sem o texto) | `"journal_unsaid"` |
 | Akane | sessões do diário (acompanhantes) | `"movie_diary_entry"` |
 
 ### Regra de resolução (0/1/2+) antes de vincular
@@ -334,6 +335,7 @@ makima_personal_agent/
 │   │   ├── __init__.py
 │   │   ├── tools.py     # PostgreSQL (pages, bullets, mentions, emoções, cartas) — cria tabelas sob demanda
 │   │   ├── toolset.py   # TOOLS: list[Callable] — reaproveitado por mcp_servers/makima — spec 064
+│   │   ├── tools_unsaid.py # "Não ditos": o que não foi dito a alguém (motivo + desfecho), vínculo Komi
 │   │   ├── markup.py    # motor PURO: tokens @[Nome](komi:id) / [Rótulo](agente:tipo:id), @legado, #tags — spec 076
 │   │   ├── references.py # provedores do "/" (Kaguya, Akane, Frieren, Marin, Mai, Yato) + texto livre do chat — spec 076
 │   │   ├── strength.py  # força da escrita (motor dos hábitos da Kaguya) — spec 076

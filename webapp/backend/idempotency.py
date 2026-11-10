@@ -30,7 +30,7 @@ log = logging.getLogger("webapp.idempotency")
 # Escritas que o app enfileira offline (ver webapp/frontend/src/lib/offlineWrites.ts).
 _ROUTES = re.compile(
     r"^/api/(tasks|tasks/bulk|tasks/\d+/complete|tasks/habits/\d+/checkin"
-    r"|finances/transactions|journal/bullets)$"
+    r"|finances/transactions|journal/bullets|journal/unsaid)$"
 )
 HEADER = "Idempotency-Key"
 _MAX_KEY_LEN = 100

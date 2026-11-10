@@ -59,6 +59,10 @@ def dias(since: date, until: date) -> list[dict]:
         "SELECT page_id, recipient, title, body, status FROM journal_letters WHERE page_id = ANY(%(ids)s) ORDER BY created_at",
         {"ids": ids},
     )
+    unsaid = run_select(
+        "SELECT page_id, recipient, body, reason, status FROM journal_unsaid WHERE page_id = ANY(%(ids)s) ORDER BY created_at",
+        {"ids": ids},
+    )
     out = []
     for p in pages:
         d = {
@@ -67,14 +71,15 @@ def dias(since: date, until: date) -> list[dict]:
                         for b in bullets if b["page_id"] == p["id"]],
             "emotion_logs": [dict(e) for e in emotions if e["page_id"] == p["id"]],
             "letters": [dict(l) for l in letters if l["page_id"] == p["id"]],
+            "unsaid": [dict(u) for u in unsaid if u["page_id"] == p["id"]],
         }
-        if d["bullets"] or d["dream"] or d["emotion_logs"] or d["letters"]:
+        if d["bullets"] or d["dream"] or d["emotion_logs"] or d["letters"] or d["unsaid"]:
             out.append(d)
     return out
 
 
 def dia_vazio(dia: dict) -> bool:
-    return not (dia.get("bullets") or dia.get("emotion_logs") or dia.get("letters") or dia.get("dream"))
+    return not (dia.get("bullets") or dia.get("emotion_logs") or dia.get("letters") or dia.get("unsaid") or dia.get("dream"))
 
 
 def resumir_dia(dia: dict, max_letter: int = 600) -> str:
@@ -98,6 +103,10 @@ def resumir_dia(dia: dict, max_letter: int = 600) -> str:
         partes.append(linha)
     for l in dia.get("letters", []):
         partes.append(f"Carta para {l['recipient']}: {(l.get('body') or '')[:max_letter]}")
+    for u in dia.get("unsaid", []):
+        motivo = {"nao_posso": "não pode", "nao_quero": "não quer", "nao_consigo": "não consegue"}.get(u["reason"], "não disse")
+        desfecho = {"said": "acabou falando", "let_go": "deixou ir"}.get(u["status"], "ainda guardado")
+        partes.append(f"Não dito para {u['recipient']} ({motivo}; {desfecho}): {(u.get('body') or '')[:300]}")
     return "\n".join(partes) if partes else "(sem conteúdo)"
 
 

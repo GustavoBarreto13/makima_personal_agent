@@ -6,6 +6,8 @@ describe('rotas da Violet', () => {
     const cases: Route[] = [
       { view: 'write' }, { view: 'write', date: '2026-10-12' }, { view: 'archive' }, { view: 'reflect' }, { view: 'reflect', week: '2026-10-05' },
       { view: 'reflect', weeks: true }, { view: 'letters' }, { view: 'letters', letterId: 7 }, { view: 'letters', newLetter: true },
+      { view: 'unsaid' }, { view: 'unsaid', unsaidId: 4 }, { view: 'unsaid', newUnsaid: true },
+      { view: 'unsaid', newUnsaid: true, unsaidPerson: 'abc-1' },
       { view: 'emotions' }, { view: 'emotions', emotionId: 3 }, { view: 'values' }, { view: 'values', valuesEdit: true },
       { view: 'values', valuesHistory: true }, { view: 'people' }, { view: 'people', person: 'abc-1' }, { view: 'people', person: 'nome:Ana' },
       { view: 'tags', tag: 'vida-adulta' }, { view: 'collection', kind: 'idea' }, { view: 'collection', kind: 'dreams' },

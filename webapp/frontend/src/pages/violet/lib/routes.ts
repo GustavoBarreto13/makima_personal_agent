@@ -3,7 +3,7 @@
 // O shell antigo guardava tudo só na memória.
 
 export type ViewId =
-  | 'write' | 'archive' | 'reflect' | 'insights' | 'letters' | 'emotions' | 'values' | 'people' | 'tags' | 'collection' | 'tutor'
+  | 'write' | 'archive' | 'reflect' | 'insights' | 'letters' | 'unsaid' | 'emotions' | 'values' | 'people' | 'tags' | 'collection' | 'tutor'
 
 export type CollectionKind = 'highlight' | 'idea' | 'wisdom' | 'note' | 'dream' | 'dreams'
 
@@ -15,6 +15,11 @@ export interface Route {
   /** Carta nova (composição em tela cheia). */
   newLetter?: boolean
   emotionId?: number
+  /** Não dito aberto (detalhe) ou novo (composer aberto). */
+  unsaidId?: number
+  newUnsaid?: boolean
+  /** Pré-preenche a pessoa do novo não dito (id da Komi). */
+  unsaidPerson?: string
   /** Pessoa aberta: id da Komi ou `nome:<valor>` (menção antiga sem id). */
   person?: string
   tag?: string
@@ -30,7 +35,7 @@ export interface Route {
 }
 
 const PLAIN: Partial<Record<ViewId, string>> = {
-  archive: 'arquivo', reflect: 'refletir', insights: 'insights', letters: 'cartas', emotions: 'emocoes', values: 'valores',
+  archive: 'arquivo', reflect: 'refletir', insights: 'insights', letters: 'cartas', unsaid: 'naodito', emotions: 'emocoes', values: 'valores',
   people: 'pessoas', tags: 'tags', tutor: 'tutor',
 }
 
@@ -62,6 +67,11 @@ export function routeFromHash(hash: string, search = ''): Route {
     const id = toId(parts[1])
     return id ? { view: 'letters', letterId: id } : { view: 'letters' }
   }
+  if (head === 'naodito' || head === 'naoditos') {
+    if (parts[1] === 'novo') return { view: 'unsaid', newUnsaid: true, unsaidPerson: parts[2] }
+    const id = toId(parts[1])
+    return id ? { view: 'unsaid', unsaidId: id } : { view: 'unsaid' }
+  }
   if (head === 'emocao') { const id = toId(parts[1]); return id ? { view: 'emotions', emotionId: id } : { view: 'emotions' } }
   if (head === 'pessoa' && parts[1]) return { view: 'people', person: parts.slice(1).join('/') }
   if (head === 'tag' && parts[1]) return { view: 'tags', tag: parts.slice(1).join('/') }
@@ -86,6 +96,7 @@ export function hashFor(r: Route): string {
   switch (r.view) {
     case 'write': return r.date ? `dia/${r.date}` : 'hoje'
     case 'letters': return r.newLetter ? 'carta/nova' : r.letterId ? `carta/${r.letterId}` : 'cartas'
+    case 'unsaid': return r.newUnsaid ? `naodito/novo${r.unsaidPerson ? `/${r.unsaidPerson}` : ''}` : r.unsaidId ? `naodito/${r.unsaidId}` : 'naodito'
     case 'emotions': return r.emotionId ? `emocao/${r.emotionId}` : 'emocoes'
     case 'people': return r.person ? `pessoa/${encodeURIComponent(r.person)}` : 'pessoas'
     case 'tags': return r.tag ? `tag/${encodeURIComponent(r.tag)}` : 'tags'

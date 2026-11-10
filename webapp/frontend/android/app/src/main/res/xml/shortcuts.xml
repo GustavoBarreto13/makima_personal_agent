@@ -50,4 +50,17 @@
             android:targetPackage="br.com.gustavo.makima"
             android:targetClass="br.com.gustavo.makima.MainActivity" />
     </shortcut>
+    <!-- 5º atalho: nem todo launcher mostra mais de 4; o deep link também funciona por voz/compartilhar. -->
+    <shortcut
+        android:shortcutId="shortcut_nao_dito"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_unsaid"
+        android:shortcutShortLabel="@string/shortcut_unsaid_short"
+        android:shortcutLongLabel="@string/shortcut_unsaid_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="makima://violet/naodito/novo"
+            android:targetPackage="br.com.gustavo.makima"
+            android:targetClass="br.com.gustavo.makima.MainActivity" />
+    </shortcut>
 </shortcuts>

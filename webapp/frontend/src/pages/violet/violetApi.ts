@@ -2,9 +2,10 @@
 // As telas nunca chamam fetch direto: usam este objeto.
 
 import { api } from '../../lib/api'
+import { writeOrQueue, type WriteResult } from '../../lib/offlineWrites'
 import type {
   Bullet, BulletKind, Counsel, CounselHistoryItem, CounselMessage, DayBullets, DreamItem, Emotion, EmotionAnalysis, EmotionLog, EmotionPatterns,
-  EntryListItem, Font, Letter, MentionCount, PageResponse, PersonSuggestion, RefCount, ReflectPayload, RefProvider, RefResult,
+  EntryListItem, Font, Letter, Unsaid, UnsaidReason, UnsaidStatus, MentionCount, PageResponse, PersonSuggestion, RefCount, ReflectPayload, RefProvider, RefResult,
   ScoreKey, Strength, TutorAnalysis, TutorAnalysisSummary, TutorConcept, TutorGuide, TutorProgress, ValuesArea, ValuesAssessment,
   ValuesGuide, WeeklyReview, WeeklyReviewItem, CollectionItem,
 } from './types'
@@ -73,6 +74,20 @@ export const violetApi = {
   emotionPatterns: (since?: string, until?: string) => api.get<EmotionPatterns & { status: string }>(`${B}/emotion-patterns${qs({ since, until })}`),
   emotionAnalysis: (since?: string, until?: string) => api.get<{ analysis: EmotionAnalysis | null }>(`${B}/emotion-analysis${qs({ since, until })}`),
   generateEmotionAnalysis: (since?: string, until?: string) => api.post<{ status: string; analysis: EmotionAnalysis }>(`${B}/emotion-analysis`, { since, until }),
+
+  // ── não ditos ──
+  unsaidOfDay: (pageId: number) => api.get<Unsaid[]>(`${B}/unsaid${qs({ page_id: pageId })}`),
+  allUnsaid: (opts: { status?: UnsaidStatus; reason?: UnsaidReason; person_id?: string; q?: string; limit?: number } = {}) =>
+    api.get<Unsaid[]>(`${B}/unsaid/all${qs(opts)}`),
+  unsaid: (id: number) => api.get<{ status: string; unsaid: Unsaid }>(`${B}/unsaid/${id}`),
+  /** Cria pelo dia (`date`): se estiver sem internet, fica na fila do aparelho e entra quando voltar. */
+  createUnsaid: (body: { date: string; recipient: string; body: string; reason: UnsaidReason; why?: string | null; person_ids?: string[] }): Promise<WriteResult<{ status: string; unsaid: Unsaid }>> =>
+    writeOrQueue<{ status: string; unsaid: Unsaid }>('POST', `${B}/unsaid`, body),
+  updateUnsaid: (id: number, body: Partial<{ recipient: string; body: string; reason: UnsaidReason; why: string | null; person_ids: string[] }>) =>
+    api.patch<{ status: string; unsaid: Unsaid }>(`${B}/unsaid/${id}`, body),
+  resolveUnsaid: (id: number, status: UnsaidStatus, outcome_note?: string | null) =>
+    api.post<{ status: string; unsaid: Unsaid }>(`${B}/unsaid/${id}/resolve`, { status, outcome_note: outcome_note ?? null }),
+  deleteUnsaid: (id: number) => api.del<{ status: string }>(`${B}/unsaid/${id}`),
 
   // ── cartas ──
   letters: (pageId: number) => api.get<Letter[]>(`${B}/letters${qs({ page_id: pageId })}`),

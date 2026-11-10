@@ -4,13 +4,14 @@ Dois tipos de backlink, seguindo o contrato de ``agents.komi.integration``:
 
 - ``journal_bullet`` — trechos do diário que citam a pessoa (``@[Nome](komi:id)``).
 - ``journal_letter`` — cartas escritas para/sobre a pessoa.
+- ``journal_unsaid`` — coisas que a pessoa queria dizer e não disse (o texto NUNCA vai para a Memória).
 
 Tudo no diário é pessoal (``context = "personal"``).
 
 Usage:
     >>> from agents.journal.komi_provider import LINK_TYPES
     >>> [t["entity_type"] for t in LINK_TYPES]
-    ['journal_bullet', 'journal_letter']
+    ['journal_bullet', 'journal_letter', 'journal_unsaid']
 """
 
 from __future__ import annotations
@@ -83,6 +84,38 @@ def _resolve_letters(ids: list[str]) -> list[dict]:
             "entity_id": r["id"], "title": r["title"] or f"Carta para {r['recipient'] or '—'}",
             "snippet": plain_text(r["trecho"]) or None, "date": r["dia"],
             "deep_link": f"/journal#carta/{r['id']}", "context": "personal",
+        }
+        for r in linhas
+    ]
+
+
+_DESFECHO_NAO_DITO = {"kept": "", "said": " · acabei falando", "let_go": " · deixei ir"}
+
+
+def _resolve_unsaid(ids: list[str]) -> list[dict]:
+    """Buscar os não ditos vinculados à pessoa, SEM o texto.
+
+    O conteúdo é íntimo: a Memória mostra só que existe algo guardado, a data e o desfecho.
+
+    Args:
+        ids: IDs (``journal_unsaid.id``) gravados em ``person_links``.
+
+    Returns:
+        Itens da Memória sem ``snippet``, com link para o não dito.
+    """
+    linhas = run_select(
+        """
+        SELECT u.id, u.status, jp.date::text AS dia
+        FROM journal_unsaid u JOIN journal_pages jp ON jp.id = u.page_id
+        WHERE u.id = ANY(%(ids)s)
+        """,
+        {"ids": _ids_inteiros(ids)},
+    )
+    return [
+        {
+            "entity_id": r["id"], "title": "Algo não dito" + _DESFECHO_NAO_DITO.get(r["status"], ""),
+            "snippet": None, "date": r["dia"], "deep_link": f"/journal#naodito/{r['id']}",
+            "context": "personal",
         }
         for r in linhas
     ]
@@ -230,5 +263,10 @@ LINK_TYPES = [
     {
         "entity_type": "journal_letter", "agent": "violet", "label": "Cartas", "icon": "mail",
         "resolve": _resolve_letters, "summary_key": "cartas", "summary": _summary_letters,
+    },
+    {
+        # Sem summary_key/summary: o resumo por IA da pessoa não recebe o texto dos não ditos.
+        "entity_type": "journal_unsaid", "agent": "violet", "label": "Não ditos", "icon": "mail",
+        "resolve": _resolve_unsaid,
     },
 ]

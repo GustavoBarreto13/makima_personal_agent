@@ -70,6 +70,16 @@ from agents.journal.tools import (
     delete_letter,
 )
 from agents.journal.tools_stats import get_stats_payload
+# "Não ditos" — o que a pessoa queria falar para alguém e não falou
+from agents.journal.tools_unsaid import (
+    list_unsaid,
+    list_all_unsaid,
+    get_unsaid,
+    create_unsaid,
+    update_unsaid,
+    resolve_unsaid,
+    delete_unsaid,
+)
 
 # Tutor de Idiomas (spec 031) — persona Kurisu; a lógica mora em agents/kurisu/tutor.py.
 from agents.kurisu.tutor import (
@@ -212,6 +222,39 @@ class UpdateLetterBody(BaseModel):
     title: Optional[str] = None
     font: Optional[Font] = None
     person_ids: Optional[list[str]] = None
+
+
+UnsaidReason = Literal["nao_posso", "nao_quero", "nao_consigo"]
+UnsaidStatus = Literal["kept", "said", "let_go"]
+
+
+class CreateUnsaidBody(BaseModel):
+    """Registrar algo que não foi dito, com motivo e pessoas da Komi opcionais.
+
+    ``page_id`` (dia já aberto) ou só ``date`` (escrita offline do app: o servidor acha/cria a página).
+    """
+    page_id: Optional[int] = None
+    date: Optional[str] = None
+    recipient: str
+    body: str
+    reason: UnsaidReason
+    why: Optional[str] = None
+    person_ids: Optional[list[str]] = None
+
+
+class UpdateUnsaidBody(BaseModel):
+    """Atualização parcial de um não dito. ``person_ids`` (se enviado) regrava os vínculos."""
+    recipient: Optional[str] = None
+    body: Optional[str] = None
+    reason: Optional[UnsaidReason] = None
+    why: Optional[str] = None
+    person_ids: Optional[list[str]] = None
+
+
+class ResolveUnsaidBody(BaseModel):
+    """Desfecho: ``said`` (acabei falando), ``let_go`` (deixei ir) ou ``kept`` (reabrir)."""
+    status: UnsaidStatus
+    outcome_note: Optional[str] = None
 
 
 class AnalyzeTutorBody(BaseModel):
@@ -730,6 +773,74 @@ def delete_letter_endpoint(letter_id: int, user: dict = Depends(require_user)) -
     result = delete_letter(letter_id=letter_id)
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result.get("message", "carta não encontrada"))
+    return result
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# NÃO DITOS
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.get("/unsaid")
+def list_unsaid_endpoint(page_id: int = Query(...), user: dict = Depends(require_user)) -> list:
+    """Não ditos de um dia, com as pessoas vinculadas."""
+    return list_unsaid(page_id=page_id)
+
+
+@router.get("/unsaid/all")
+def list_all_unsaid_endpoint(
+    status: Optional[UnsaidStatus] = None,
+    reason: Optional[UnsaidReason] = None,
+    person_id: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    before: Optional[str] = None,
+    user: dict = Depends(require_user),
+) -> list:
+    """Todos os não ditos (tela própria), do mais recente para o mais antigo."""
+    _check_date(before, "before")
+    return list_all_unsaid(status=status, person_id=person_id, reason=reason, q=q, limit=limit, before=before)
+
+
+@router.get("/unsaid/{unsaid_id}")
+def get_unsaid_endpoint(unsaid_id: int, user: dict = Depends(require_user)) -> dict:
+    result = get_unsaid(unsaid_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result["message"])
+    return result
+
+
+@router.post("/unsaid", status_code=201)
+def create_unsaid_endpoint(body: CreateUnsaidBody, user: dict = Depends(require_user)) -> dict:
+    """Registrar um não dito (aceita Idempotency-Key: entra na fila offline do app)."""
+    data = body.model_dump()
+    date = data.pop("date")
+    if data["page_id"] is None:
+        if not date:
+            raise HTTPException(status_code=422, detail="Informe page_id ou date.")
+        _check_date(date)
+        data["page_id"] = _check_result(ensure_page(date))["page"]["id"]
+    return _check_result(create_unsaid(**data))
+
+
+@router.patch("/unsaid/{unsaid_id}")
+def update_unsaid_endpoint(unsaid_id: int, body: UpdateUnsaidBody, user: dict = Depends(require_user)) -> dict:
+    """Editar texto, motivo ou pessoas de um não dito."""
+    updates = body.model_dump(exclude_unset=True)
+    person_ids = updates.pop("person_ids", None)
+    return _check_result(update_unsaid(unsaid_id, person_ids=person_ids, **updates))
+
+
+@router.post("/unsaid/{unsaid_id}/resolve")
+def resolve_unsaid_endpoint(unsaid_id: int, body: ResolveUnsaidBody, user: dict = Depends(require_user)) -> dict:
+    """Dar o desfecho (acabei falando / deixei ir) ou reabrir (kept)."""
+    return _check_result(resolve_unsaid(unsaid_id, body.status, body.outcome_note))
+
+
+@router.delete("/unsaid/{unsaid_id}")
+def delete_unsaid_endpoint(unsaid_id: int, user: dict = Depends(require_user)) -> dict:
+    result = delete_unsaid(unsaid_id)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result.get("message", "registro não encontrado"))
     return result
 
 

@@ -168,9 +168,10 @@ formulário faz gasto, entrada e transferência (para um cartão = pagar a fatur
 azul-ardósia, serifa, safira + fio de ouro; contraste em `specs/076-violet-ds/contrast-papel.mjs`). Acento da Violet em
 `agents.json`: safira (h 252). Um `AppShell`; a tela e o item aberto vivem no **hash** (`lib/routes.ts`): `#hoje`,
 `#dia/<data>`, `#arquivo`, `#refletir`, `#refletir/semana/<data>`, `#refletir/semanas`, `#insights`, `#cartas`,
-`#carta/<id>`, `#carta/nova`, `#emocoes`, `#emocao/<id>`, `#valores`, `#valores/editar`, `#valores/historico`,
+`#carta/<id>`, `#carta/nova`, `#naodito`, `#naodito/<id>`, `#naodito/novo[/<pessoa>]`, `#emocoes`, `#emocao/<id>`, `#valores`, `#valores/editar`, `#valores/historico`,
 `#pessoas`, `#pessoa/<id|nome:X>`, `#tags`, `#tag/<x>`, `#colecao/<tipo>`, `#sonhos`, `#ref/<agente>/<tipo>/<id>`,
 `#tutor` (aliases do shell antigo e o `?date=` antigo do Calendário também abrem). API em `violetApi.ts` (saiu de `lib/api.ts`).
+**Não ditos** (`screens/Unsaid.tsx`, `components/UnsaidCard|UnsaidComposer.tsx`, `lib/unsaid.ts`): seção no dia (entre Registro emocional e Cartas), tela própria em Práticas (atalho `n`), bloco na página da pessoa. Texto **borrado até tocar**; criar funciona offline (fila `writeOrQueue`); atalho Android `makima://violet/naodito/novo`.
 Celular: barra inferior **Escrever · Arquivo · Refletir · Mais**; o botão flutuante começa um momento novo.
 
 - **Escrever** (`screens/Write.tsx`): hero compacto com o dia (setas, `DatePicker`, Hoje, fonte), sonho, Conselho do Dia,

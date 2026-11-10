@@ -12,6 +12,7 @@ describe('parseDeepLink', () => {
     ['makima://frieren/livro/12', '/books#livro/12'],
     ['makima://kaguya/lista/7', '/tasks#lista/7'],
     ['makima://violet/hoje', '/journal#hoje'],
+    ['makima://violet/naodito/novo', '/journal#naodito/novo'], // atalho do ícone: registrar um não dito
     ['MAKIMA://Yato/viagem/3', '/travel#viagem/3'], // esquema e agente sem diferenciar maiúsculas
   ])('%s → %s', (link, rota) => {
     expect(parseDeepLink(link)).toBe(rota)

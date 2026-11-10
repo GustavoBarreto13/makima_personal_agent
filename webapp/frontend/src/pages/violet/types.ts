@@ -164,6 +164,28 @@ export interface Letter {
   people: LetterPerson[]
 }
 
+// ── Não ditos ───────────────────────────────────────────────────────────────
+
+export type UnsaidReason = 'nao_posso' | 'nao_quero' | 'nao_consigo'
+/** guardado · acabei falando · deixei ir */
+export type UnsaidStatus = 'kept' | 'said' | 'let_go'
+
+export interface Unsaid {
+  id: number
+  page_id: number
+  date?: string
+  recipient: string
+  body: string
+  reason: UnsaidReason
+  why: string | null
+  status: UnsaidStatus
+  outcome_note: string | null
+  resolved_at: string | null
+  created_at: string
+  updated_at: string | null
+  people: LetterPerson[]
+}
+
 // ── Conselho, revisão semanal ───────────────────────────────────────────────
 
 export interface CounselAction { texto: string; motivo: string; task_id: number | null }

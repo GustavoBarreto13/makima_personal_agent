@@ -26,6 +26,7 @@ import { Collection } from './screens/Collection'
 import { Emotions } from './screens/Emotions'
 import { Insights } from './screens/Insights'
 import { Letters } from './screens/Letters'
+import { Unsaid } from './screens/Unsaid'
 import { People, Tags } from './screens/People'
 import { Reflect } from './screens/Reflect'
 import { Tutor } from './screens/Tutor'
@@ -42,6 +43,7 @@ const TITLES: Record<ViewId, [string, string]> = {
   reflect: ['Refletir', 'Uns minutos para reler'],
   insights: ['Insights', 'Seu ano no diário'],
   letters: ['Cartas', 'Todas as cartas'],
+  unsaid: ['Não ditos', 'O que ficou preso na garganta'],
   emotions: ['Registro emocional', 'O que está acontecendo'],
   values: ['Valores', 'O que realmente importa'],
   people: ['Pessoas', 'Quem aparece no diário'],
@@ -113,6 +115,7 @@ export function VioletShell() {
     [today, route, goto, openLink, rev, reload, prefs, setPrefs, openEmotion])
 
   useHotkeys([
+    { keys: 'n', handler: (e) => { e.preventDefault(); goto({ view: 'unsaid', newUnsaid: true }) } },
     { keys: 'l', handler: (e) => { e.preventDefault(); goto({ view: 'letters', newLetter: true }) } },
     { keys: 'm', handler: (e) => { e.preventDefault(); openEmotion() } },
   ])
@@ -131,6 +134,7 @@ export function VioletShell() {
       label: 'Práticas',
       items: [
         { id: 'letters', label: 'Cartas', icon: 'mail', key: 'c' },
+        { id: 'unsaid', label: 'Não ditos', icon: 'quote' },
         { id: 'emotions', label: 'Registro emocional', icon: 'pulse', key: 'o' },
         { id: 'values', label: 'Valores', icon: 'values', key: 'v' },
         { id: 'tutor', label: 'Tutor', icon: 'school' },
@@ -158,7 +162,7 @@ export function VioletShell() {
   const date = route.view === 'write' ? route.date ?? today : today
   const SCREENS: Record<ViewId, () => ReactElement> = {
     write: () => <Write key={date} date={date} />,
-    archive: () => <Archive />, reflect: () => <Reflect />, insights: () => <Insights />, letters: () => <Letters />,
+    archive: () => <Archive />, reflect: () => <Reflect />, insights: () => <Insights />, letters: () => <Letters />, unsaid: () => <Unsaid />,
     emotions: () => <Emotions />, values: () => <Values />, people: () => <People />, tags: () => <Tags />,
     collection: () => <Collection />, tutor: () => <Tutor />,
   }
@@ -183,6 +187,7 @@ export function VioletShell() {
         artValue={prefs.art}
         commands={[
           { id: 'violet.today', label: 'Escrever hoje', icon: 'edit', keywords: 'diário hoje momento bullet', run: () => goto('write') },
+          { id: 'violet.unsaid', label: 'Registrar algo não dito', icon: 'quote', keywords: 'nao dito falar guardado desabafo', run: () => goto({ view: 'unsaid', newUnsaid: true }) },
           { id: 'violet.letter', label: 'Nova carta', icon: 'mail', keywords: 'carta escrever para', run: () => goto({ view: 'letters', newLetter: true }) },
           { id: 'violet.emotion', label: 'Registrar emoção', icon: 'pulse', keywords: 'emoção tcc sentimento registro', run: () => openEmotion() },
           { id: 'violet.weekly', label: 'Revisão da semana', icon: 'weekly-review', keywords: 'semana revisão balanço', run: () => goto({ view: 'reflect', week: today }) },

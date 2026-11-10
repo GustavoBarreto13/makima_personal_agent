@@ -39,6 +39,7 @@ journal_mentions     (kind person|tag, value, person_id = id da Komi quando reso
 journal_refs         (bullet_id, agent, entity_type, entity_id, label) — spec 076, base dos backlinks
 journal_emotions / journal_emotion_logs (+ distortions TEXT[] — rótulos de distorção cognitiva)
 journal_letters      (+ font NOT NULL DEFAULT 'normal')
+journal_unsaid       ("Não ditos": recipient, body, reason nao_posso|nao_quero|nao_consigo, status kept|said|let_go, outcome_note)
 journal_values_assessments / _areas / _commitments / _checkins — Avaliação dos Valores
 ```
 
@@ -88,3 +89,13 @@ Tabelas da Kurisu sobre o diário: `journal_counsel` (+ `essay_md`, `sources_jso
 ### Endpoint de exposição (webapp)
 
 `webapp/backend/routers/journal.py` — rotas em `webapp/docs/API.md`.
+
+## Não ditos — `tools_unsaid.py`
+
+O que a pessoa queria dizer a alguém e não disse (não posso / não quero / não consigo), com desfecho
+(guardado → acabei falando / deixei ir). Tools: `list_unsaid`, `list_all_unsaid`, `get_unsaid`, `create_unsaid`
+(vínculo Komi `journal_unsaid` na mesma transação), `update_unsaid`, `resolve_unsaid`, `delete_unsaid`; as três
+principais (`create_unsaid`, `list_all_unsaid`, `resolve_unsaid`) também estão no `toolset.py` (Hermes). Privacidade:
+o provedor da Komi (`komi_provider.py`) devolve só "Algo não dito" **sem snippet** e sem resumo por IA; a IA da Violet
+(`violet_context.py`) lê como contexto, com a regra no `TOM_VIOLET` de não citar o texto literal. Testes:
+`tests/agents/test_violet_unsaid_db.py`.

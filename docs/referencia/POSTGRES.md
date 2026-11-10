@@ -51,7 +51,7 @@ diferentes.
 | **Animes** | Agente Marin | `anime`, `watch_logs`, `episodes`, `mal_sync_state`, `anime_lists`, `anime_list_items`, `anime_favorites` |
 | **Séries de TV** | Agente Mai | `series`, `seasons`, `series_episodes`, `series_watch_logs` |
 | **Pessoas** | Agente Komi | `people`, `person_aliases`, `person_dates`, `person_links`, `person_categories`, `person_notes`, `person_interactions`, `person_memory_summaries`, `person_relation_kinds`, `person_relations`, `person_groups`, `person_group_members`, `komi_migrations` |
-| **Diário** (Violet) | `agents/journal` | `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_refs`, `journal_emotions`, `journal_emotion_logs`, `journal_letters`, `journal_values_assessments`, `journal_values_areas`, `journal_values_commitments`, `journal_values_checkins` |
+| **Diário** (Violet) | `agents/journal` | `journal_types`, `journal_pages`, `journal_bullets`, `journal_mentions`, `journal_refs`, `journal_emotions`, `journal_emotion_logs`, `journal_letters`, `journal_unsaid`, `journal_values_assessments`, `journal_values_areas`, `journal_values_commitments`, `journal_values_checkins` |
 | **Tutor de Idiomas** (cross-domain — FK p/ `journal_bullets`) | Agente Kurisu | `journal_tutor_analyses`, `journal_tutor_events`, `journal_tutor_skills`, `journal_tutor_guides` |
 | **Conselho do Dia, revisão semanal e leitura emocional** (cross-domain — IA da Violet) | Agente Kurisu | `journal_counsel`, `journal_counsel_messages`, `journal_weekly_reviews`, `journal_emotion_analyses` |
 | **Infraestrutura** (agendador de jobs) | `scheduler/` | `scheduler_runs` |
@@ -134,6 +134,7 @@ erDiagram
     journal_pages ||--o{ journal_emotion_logs : "page_id (FK)"
     journal_emotions ||--o{ journal_emotion_logs : "emotion_id (FK)"
     journal_pages ||--o{ journal_letters : "page_id (FK)"
+    journal_pages ||--o{ journal_unsaid : "page_id (FK)"
 ```
 
 > `||--o{` = um-para-muitos · `||--||` = um-para-um · tabelas de ligação N:N (muitos-para-muitos):
@@ -1647,6 +1648,27 @@ vinculadas a pessoas da Komi (`person_links` com `entity_type = 'journal_letter'
 | `created_at` / `updated_at` | TIMESTAMPTZ | SIM | `NOW()` | Auditoria. |
 
 **Índices:** `idx_letters_page` em `(page_id)`.
+
+### `journal_unsaid`
+
+"Não ditos" da Violet — o que a pessoa queria dizer a alguém e não disse, ancorado num dia. Tem motivo
+e desfecho. Vinculável a pessoas da Komi (`person_links` com `entity_type = 'journal_unsaid'`); o texto
+**nunca** vai para a Memória da Komi nem para o resumo por IA dela (só "Algo não dito · data").
+
+| Coluna | Tipo | Nulo? | Default | Descrição |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | — | ID. |
+| `page_id` | INT | SIM | — | **FK** → `journal_pages(id)` `ON DELETE CASCADE`. |
+| `recipient` | TEXT | NÃO | — | Para quem (nome da pessoa da Komi ou texto livre). |
+| `body` | TEXT | NÃO | — | O que queria dizer. |
+| `reason` | TEXT | NÃO | — | `nao_posso` \| `nao_quero` \| `nao_consigo` (CHECK). |
+| `why` | TEXT | SIM | — | O que impede de dizer (opcional). |
+| `status` | TEXT | NÃO | `'kept'` | `kept` (guardado) \| `said` (acabei falando) \| `let_go` (deixei ir) — CHECK. |
+| `outcome_note` | TEXT | SIM | — | Como foi (ao dar o desfecho). |
+| `resolved_at` | TIMESTAMPTZ | SIM | — | Quando recebeu o desfecho (NULL se guardado). |
+| `created_at` / `updated_at` | TIMESTAMPTZ | SIM | `NOW()` | Auditoria. |
+
+**Índices:** `idx_unsaid_page` em `(page_id)`, `idx_unsaid_status` em `(status)`.
 
 > Os vínculos pessoa ↔ carta usam `person_links` (Komi) com `entity_type = 'journal_letter'`. Desde a
 > spec 077 o `entity_type` é livre (só o formato é validado), então o Journal **não altera mais** nenhuma

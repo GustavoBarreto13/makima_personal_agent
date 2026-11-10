@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react'
 import { Avatar, Button, EmptyState, ErrorState, Icon, Input, LoadingState, Page, SectionHeader } from '../../../design'
 import { fmtRelative, pluralize } from '../../../design/core/format'
 import { DayBulletsList } from '../components/DayBulletsList'
+import { UnsaidCard } from '../components/UnsaidCard'
 import { useViolet } from '../context'
 import { useLoad } from '../lib/useLoad'
 import { violetApi } from '../violetApi'
@@ -81,7 +82,9 @@ function PersonView({ personKey }: { personKey: string }) {
         <span className="vl-spacer" />
         {!isName && <Button icon="person" onClick={() => v.openLink(`/people#pessoa/${personKey}`)}>Abrir na Komi</Button>}
         <Button variant="ghost" icon="mail" onClick={() => v.goto({ view: 'letters' })}>Cartas</Button>
+        {!isName && <Button variant="ghost" icon="quote" onClick={() => v.goto({ view: 'unsaid', newUnsaid: true, unsaidPerson: personKey })}>Registrar um não dito</Button>}
       </header>
+      {!isName && <PersonUnsaid personId={personKey} />}
       <SectionHeader title="No diário" />
       {state.status === 'loading' && <LoadingState count={4} />}
       {state.status === 'error' && <ErrorState onRetry={retry} />}
@@ -110,5 +113,21 @@ function TagView({ tag }: { tag: string }) {
       {state.status === 'error' && <ErrorState onRetry={retry} />}
       {state.status === 'ok' && (state.data.length ? <DayBulletsList days={state.data} /> : <EmptyState icon="hash" title={`Nada com #${tag}`} />)}
     </Page>
+  )
+}
+
+/** Não ditos guardados com a pessoa: só um aviso e os cartões (texto borrado). Some se não há nenhum. */
+function PersonUnsaid({ personId }: { personId: string }) {
+  const v = useViolet()
+  const { state } = useLoad(() => violetApi.allUnsaid({ person_id: personId, limit: 20 }), [personId, v.rev])
+  if (state.status !== 'ok' || !state.data.length) return null
+  const kept = state.data.filter((u) => u.status === 'kept').length
+  return (
+    <>
+      <SectionHeader title={kept ? `Não ditos guardados (${kept})` : 'Não ditos'} />
+      <div className="vl-letters-row">
+        {state.data.map((u) => <UnsaidCard key={u.id} item={u} today={v.today} showDate onOpen={() => v.goto({ view: 'unsaid', unsaidId: u.id })} />)}
+      </div>
+    </>
   )
 }

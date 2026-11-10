@@ -20,6 +20,8 @@ import { EmotionCard } from '../components/EmotionCard'
 import { EmotionForm } from '../components/EmotionForm'
 import { FontMenuButton } from '../components/FontPicker'
 import { LetterCard } from '../components/LetterCard'
+import { UnsaidCard } from '../components/UnsaidCard'
+import { UnsaidComposer } from '../components/UnsaidComposer'
 import { LetterComposer } from '../components/LetterComposer'
 import { RichText } from '../components/RichText'
 import { SmartTextarea, type SmartTextareaHandle } from '../components/SmartTextarea'
@@ -32,7 +34,7 @@ import { ApiError } from '../../../lib/api'
 import { OfflineNote } from '../components/OfflineNote'
 import { takePendingNewMoment } from '../lib/newMoment'
 import { violetApi } from '../violetApi'
-import type { Bullet, BulletKind, EmotionLog, Font, Letter, Page as DayPage, TutorAnalysis } from '../types'
+import type { Bullet, BulletKind, EmotionLog, Font, Letter, Unsaid, Page as DayPage, TutorAnalysis } from '../types'
 
 interface Editing { position: number; kind: BulletKind; text: string; id: number | null; original: string }
 
@@ -62,6 +64,8 @@ export function Write({ date }: { date: string }) {
   const [letters, setLetters] = useState<Letter[]>([])
   const [emotionForm, setEmotionForm] = useState<EmotionLog | 'new' | null>(null)
   const [letterForm, setLetterForm] = useState<Letter | 'new' | null>(null)
+  const [unsaid, setUnsaid] = useState<Unsaid[]>([])
+  const [unsaidForm, setUnsaidForm] = useState<Unsaid | 'new' | null>(null)
   const [analysis, setAnalysis] = useState<Record<number, TutorAnalysis>>({})
   const [corrected, setCorrected] = useState<Set<number>>(new Set())
   const [analyzing, setAnalyzing] = useState<number | null>(null)
@@ -86,9 +90,9 @@ export function Write({ date }: { date: string }) {
       setPage(r.page); setBullets(r.bullets); setDream(r.page.dream ?? '')
       saved.current = new Map(r.bullets.map((b) => [b.position, b.content]))
       if (r.page.id) {
-        const [e, l] = await Promise.all([violetApi.emotionLogs(r.page.id).catch(() => []), violetApi.letters(r.page.id).catch(() => [])])
-        if (live) { setEmotions(e); setLetters(l.map((x) => ({ ...x, date }))) }
-      } else { setEmotions([]); setLetters([]) }
+        const [e, l, u] = await Promise.all([violetApi.emotionLogs(r.page.id).catch(() => []), violetApi.letters(r.page.id).catch(() => []), violetApi.unsaidOfDay(r.page.id).catch(() => [])])
+        if (live) { setEmotions(e); setLetters(l.map((x) => ({ ...x, date }))); setUnsaid(u.map((x) => ({ ...x, date }))) }
+      } else { setEmotions([]); setLetters([]); setUnsaid([]) }
       if (live) setState('ok')
     }).catch((err) => { if (live) setState(err instanceof ApiError ? 'error' : 'offline') }) // sem status HTTP = falta de rede
     return () => { live = false }
@@ -328,7 +332,7 @@ export function Write({ date }: { date: string }) {
   if (state === 'offline') return <Page><OfflineNote date={date} onSent={reloadDay} /></Page>
 
   const words = ordered.reduce((s, b) => s + wordCount(b.content), 0) + wordCount(dream)
-  const hasContent = ordered.length > 0 || !!dream.trim() || emotions.length > 0 || letters.length > 0
+  const hasContent = ordered.length > 0 || !!dream.trim() || emotions.length > 0 || letters.length > 0 || unsaid.length > 0
 
   // Lista com o rascunho novo encaixado na posição dele. As linhas têm chave pela POSIÇÃO: o rascunho que
   // acabou de ser salvo continua sendo o mesmo campo (o foco e o teclado não piscam no autosave).
@@ -431,6 +435,16 @@ export function Write({ date }: { date: string }) {
               </button>
             </section>
 
+            <section className="vl-daysec" aria-label="Não ditos">
+              <header><Icon name="quote" size={15} /><h3>Não ditos</h3>{unsaid.length > 0 && <button type="button" className="vl-linklike" onClick={() => v.goto('unsaid')}>todos</button>}</header>
+              <div className="vl-letters-row">
+                {unsaid.map((u) => <UnsaidCard key={u.id} item={u} today={v.today} onOpen={() => v.goto({ view: 'unsaid', unsaidId: u.id })} />)}
+              </div>
+              <button type="button" className="vl-addline" onClick={() => setUnsaidForm('new')}>
+                <Icon name="add" size={14} />Algo que você queria dizer e não disse?
+              </button>
+            </section>
+
             <section className="vl-daysec" aria-label="Cartas">
               <header><Icon name="mail" size={15} /><h3>Cartas</h3>{letters.length > 0 && <button type="button" className="vl-linklike" onClick={() => v.goto('letters')}>todas as cartas</button>}</header>
               <div className="vl-letters-row">
@@ -523,6 +537,10 @@ export function Write({ date }: { date: string }) {
             if (!page?.id) setTries((n) => n + 1)
             v.reload()
           }} />
+      )}
+      {unsaidForm && (
+        <UnsaidComposer date={date} item={unsaidForm === 'new' ? null : unsaidForm} onClose={() => setUnsaidForm(null)}
+          onSaved={(u) => { if (u) setUnsaid((p) => (p.some((x) => x.id === u.id) ? p.map((x) => (x.id === u.id ? u : x)) : [...p, u])) }} />
       )}
       {letterForm && (
         <LetterComposer date={date} letter={letterForm === 'new' ? null : letterForm} defaultFont={font} onClose={() => setLetterForm(null)}

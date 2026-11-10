@@ -10,6 +10,8 @@
     <string name="shortcut_expense_long">Lançar um gasto</string>
     <string name="shortcut_journal_short">Diário</string>
     <string name="shortcut_journal_long">Escrever no diário</string>
+    <string name="shortcut_unsaid_short">Não dito</string>
+    <string name="shortcut_unsaid_long">Registrar algo que não disse</string>
     <string name="shortcut_focus_short">Iniciar foco</string>
     <string name="shortcut_focus_long">Iniciar uma sessão de foco</string>
 </resources>

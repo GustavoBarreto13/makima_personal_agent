@@ -378,6 +378,18 @@ Spec 076 (Violet no Design System) reescreveu o router.
 | `PATCH` | `/api/journal/letters/{id}` | Atualiza rascunho (`person_ids` regrava vínculos). | campos opcionais + `font` |
 | `POST` | `/api/journal/letters/{id}/seal` · `DELETE /letters/{id}` | Lacra · rasga. | — |
 
+### Não ditos
+
+| Método | Caminho | Descrição | Body / Query |
+|---|---|---|---|
+| `GET` | `/api/journal/unsaid` | Não ditos de um dia. | `?page_id=` |
+| `GET` | `/api/journal/unsaid/all` | Todos (com `date` e pessoas). | `?status=&reason=&person_id=&q=&limit=&before=` |
+| `GET` | `/api/journal/unsaid/{id}` | Um não dito. | — |
+| `POST` | `/api/journal/unsaid` | Registra (aceita `Idempotency-Key`, entra na fila offline do app). | `{page_id \| date, recipient, body, reason, why?, person_ids?}` |
+| `PATCH` | `/api/journal/unsaid/{id}` | Edita (`person_ids` regrava vínculos). | campos opcionais |
+| `POST` | `/api/journal/unsaid/{id}/resolve` | Desfecho: `said` · `let_go` · `kept` (reabre). | `{status, outcome_note?}` |
+| `DELETE` | `/api/journal/unsaid/{id}` | Apaga (e os vínculos com a Komi). | — |
+
 ### Avaliação dos Valores
 
 | Método | Caminho | Descrição | Body / Query |

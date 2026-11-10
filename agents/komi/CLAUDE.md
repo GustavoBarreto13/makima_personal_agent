@@ -111,7 +111,7 @@ Outros usos do contrato: `people_for_space(space)` (pessoas de trabalho × pesso
 | Nami | `transaction` | `agents/nami/komi_provider.py` |
 | Kaguya | `task` (+ `task_waiting` via `waiting_person_id`) | `agents/kaguya/komi_provider.py` |
 | Frieren | `book` | `agents/frieren/komi_provider.py` |
-| Violet | `journal_bullet`, `journal_letter` | `agents/journal/komi_provider.py` |
+| Violet | `journal_bullet`, `journal_letter`, `journal_unsaid` (sem texto) | `agents/journal/komi_provider.py` |
 | Akane | `movie_diary_entry` | `agents/akane/komi_provider.py` |
 | Komi | `interaction` (e datas) | embutido na própria Komi |
 

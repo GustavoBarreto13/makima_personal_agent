@@ -292,6 +292,31 @@ def _ensure_tables() -> None:
                 ON journal_letters (page_id)
             """)
 
+            # ── "Não ditos": o que a pessoa queria falar para alguém e não falou ──
+            # Também ORTOGONAL aos bullets (não conta palavra nem heatmap). Pessoas da
+            # Komi ficam em person_links (entity_type 'journal_unsaid'), como nas cartas.
+            #   reason → por que não disse: não posso / não quero / não consigo
+            #   status → 'kept' (guardado) | 'said' (acabei falando) | 'let_go' (deixei ir)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS journal_unsaid (
+                    id           SERIAL PRIMARY KEY,
+                    page_id      INT REFERENCES journal_pages(id) ON DELETE CASCADE,
+                    recipient    TEXT NOT NULL,
+                    body         TEXT NOT NULL,
+                    reason       TEXT NOT NULL
+                                 CHECK (reason IN ('nao_posso','nao_quero','nao_consigo')),
+                    why          TEXT,
+                    status       TEXT NOT NULL DEFAULT 'kept'
+                                 CHECK (status IN ('kept','said','let_go')),
+                    outcome_note TEXT,
+                    resolved_at  TIMESTAMPTZ,
+                    created_at   TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at   TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_unsaid_page ON journal_unsaid (page_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_unsaid_status ON journal_unsaid (status)")
+
             # (Spec 077) O CHECK fixo de entity_type em person_links SAIU: a Komi agora aceita qualquer
             # tipo no formato certo (agents/komi/integration.py), então não é mais preciso alargar a
             # lista aqui para 'journal_letter'. O schema da Komi cuida disso em ensure_schema().
@@ -378,6 +403,7 @@ _HAS_CONTENT_SQL = """(
     OR NULLIF(btrim({p}.dream), '') IS NOT NULL
     OR EXISTS (SELECT 1 FROM journal_emotion_logs xe WHERE xe.page_id = {p}.id)
     OR EXISTS (SELECT 1 FROM journal_letters xl WHERE xl.page_id = {p}.id)
+    OR EXISTS (SELECT 1 FROM journal_unsaid xu WHERE xu.page_id = {p}.id)
 )"""
 
 
@@ -588,7 +614,7 @@ def list_entries(query: str = '', limit: int | None = None, before: str | None =
         type_id: Tipo de diário.
 
     Returns:
-        ``[{date, num, excerpt, font, bullet_count, word_count, emotion_count, letter_count,
+        ``[{date, num, excerpt, font, bullet_count, word_count, emotion_count, letter_count, unsaid_count,
         has_highlight, has_dream, has_favorite, has_counsel}]`` em ordem de data DESC.
         ``num`` é estável (não muda com a busca).
     """
@@ -617,6 +643,7 @@ def list_entries(query: str = '', limit: int | None = None, before: str | None =
                           FROM journal_bullets b WHERE b.page_id = p.id) + {_WORDS_SQL.format(col='p.dream')} AS word_count,
                        (SELECT COUNT(*) FROM journal_emotion_logs e WHERE e.page_id = p.id) AS emotion_count,
                        (SELECT COUNT(*) FROM journal_letters l WHERE l.page_id = p.id) AS letter_count,
+                       (SELECT COUNT(*) FROM journal_unsaid u WHERE u.page_id = p.id) AS unsaid_count,
                        EXISTS (SELECT 1 FROM journal_bullets b WHERE b.page_id = p.id AND b.kind = 'highlight'
                                AND btrim(b.content) <> '') AS has_highlight,
                        EXISTS (SELECT 1 FROM journal_bullets b WHERE b.page_id = p.id AND b.favorite) AS has_favorite,
@@ -640,7 +667,7 @@ def list_entries(query: str = '', limit: int | None = None, before: str | None =
             first_letter = d.pop("first_letter", None)
             d["excerpt"] = (first_bullet or dream_text or first_letter or "")[:240]
             d["excerpt_kind"] = "bullet" if first_bullet else "dream" if dream_text else "letter" if first_letter else None
-            for k in ("num", "bullet_count", "word_count", "emotion_count", "letter_count"):
+            for k in ("num", "bullet_count", "word_count", "emotion_count", "letter_count", "unsaid_count"):
                 d[k] = int(d[k] or 0)
             result.append(d)
         return result

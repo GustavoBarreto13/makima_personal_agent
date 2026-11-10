@@ -380,3 +380,22 @@ span.vl-chip { cursor: default; }
   .vl-hourrow { grid-template-columns: 80px 1fr 28px; }
   .vl-wz-nav { bottom: 64px; }
 }
+
+/* ── Não ditos: o texto fica borrado até tocar (é íntimo) ── */
+.vl-unsaid { display: grid; gap: var(--ds-space-2); padding: var(--ds-space-4); border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); background: var(--ds-card); color: var(--ds-ink-1); }
+.vl-unsaid.vl-settled { background: color-mix(in oklab, var(--ds-success) 5%, var(--ds-card)); }
+.vl-unsaid-head { display: flex; align-items: center; gap: var(--ds-space-2); width: 100%; min-height: 32px; padding: 0; border: 0; background: transparent; color: var(--ds-accent-deep); font: inherit; text-align: left; cursor: pointer; flex-wrap: wrap; }
+.vl-unsaid-head b { flex: 1; min-width: 0; color: var(--ds-ink-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-unsaid-body, .vl-unsaid-read { position: relative; display: block; width: 100%; padding: 0; border: 0; background: transparent; color: var(--ds-ink-2); font-family: var(--vl-write-font); font-size: var(--vl-write-size); line-height: var(--vl-write-lh); text-align: left; cursor: pointer; }
+.vl-unsaid-body > span:first-child { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.vl-veiled > :not(.vl-unsaid-reveal) { filter: blur(7px); user-select: none; }
+.vl-unsaid-reveal { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--ds-ink-2); font-size: var(--ds-text-xs); font-family: var(--ds-font-mono); }
+.vl-unsaid-read { min-height: 96px; }
+.vl-unsaid-meta { color: var(--ds-ink-3); font-size: var(--ds-text-xs); font-family: var(--ds-font-mono); }
+.vl-unsaid-paper { background: color-mix(in oklab, var(--ds-accent) 5%, var(--ds-card)); }
+.vl-reasons { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--ds-space-2); }
+.vl-reason { display: grid; gap: 2px; align-content: center; min-height: 52px; padding: var(--ds-space-2) var(--ds-space-3); border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); background: var(--ds-card); color: var(--ds-ink-1); font: inherit; text-align: left; cursor: pointer; }
+.vl-reason small { color: var(--ds-ink-3); font-size: var(--ds-text-xs); }
+.vl-reason:hover { border-color: var(--ds-accent); }
+.vl-reason.vl-on { border-color: var(--ds-accent); background: var(--ds-accent-tint); color: var(--ds-accent-deep); }
+@media (max-width: 640px) { .vl-reasons { grid-template-columns: 1fr; } .vl-reason { min-height: 56px; } }

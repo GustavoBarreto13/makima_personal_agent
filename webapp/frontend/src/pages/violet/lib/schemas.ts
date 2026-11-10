@@ -6,10 +6,11 @@
 
 import { defineCollection, type CollectionSchema } from '../../../design/core/collection'
 import { MONTHS_LONG } from '../../../design/core/format'
-import type { CollectionItem, EmotionLog, EntryListItem, Letter } from '../types'
+import type { CollectionItem, EmotionLog, EntryListItem, Letter, Unsaid } from '../types'
 import { DISTORTION_LABEL } from './emotions'
 import { FONTS } from './kinds'
 import { plainText } from './markup'
+import { REASONS, STATUSES, unsaidTo } from './unsaid'
 
 const monthLabel = (iso?: string | null) => (iso ? `${MONTHS_LONG[Number(iso.slice(5, 7)) - 1]} de ${iso.slice(0, 4)}` : 'Sem data')
 const fontOptions = FONTS.map((f) => ({ value: f.value, label: f.label }))
@@ -64,6 +65,30 @@ export function makeLettersSchema(letters: Letter[]): CollectionSchema<Letter> {
       { id: 'length', label: 'Tamanho', value: (l) => l.body.length },
     ],
     defaults: { groupBy: 'month', sortBy: 'date', dir: 'desc' },
+  })
+}
+
+export function makeUnsaidSchema(): CollectionSchema<Unsaid> {
+  return defineCollection<Unsaid>({
+    scope: 'violet:naoditos',
+    search: (u) => [unsaidTo(u), plainText(u.body), u.why ?? '', ...u.people.map((p) => p.name)],
+    facets: [
+      { kind: 'enum', id: 'status', label: 'Situação', get: (u) => u.status, options: STATUSES.map((s) => ({ value: s.value, label: s.label })) },
+      { kind: 'enum', id: 'reason', label: 'Por que não disse', get: (u) => u.reason, options: REASONS.map((r) => ({ value: r.value, label: r.label })) },
+      { kind: 'people', id: 'people', label: 'Pessoas', get: (u) => u.people.map((p) => p.id) },
+      { kind: 'dateRange', id: 'date', label: 'Escrito em', get: (u) => u.date ?? '', buckets: ['last30', 'last90', 'thisYear', 'all'], defaultBucket: 'all' },
+    ],
+    groups: [
+      { id: 'person', label: 'Pessoa', key: (u) => unsaidTo(u) },
+      { id: 'month', label: 'Mês', key: (u) => monthLabel(u.date) },
+      { id: 'status', label: 'Situação', key: (u) => STATUSES.find((s) => s.value === u.status)?.label ?? 'Guardado' },
+    ],
+    sorts: [
+      { id: 'date', label: 'Data', value: (u) => `${u.date ?? ''}${u.created_at}` },
+      { id: 'person', label: 'Pessoa', value: (u) => unsaidTo(u).toLowerCase() },
+    ],
+    // Os guardados são o que ainda pesa: aparecem primeiro, agrupados por pessoa.
+    defaults: { groupBy: 'status', sortBy: 'date', dir: 'desc' },
   })
 }
 
