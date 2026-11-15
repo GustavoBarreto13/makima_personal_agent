@@ -278,3 +278,13 @@
   /* Seletor de Espaço (Tudo · Pessoal · Trabalho) no topo: só os ícones, para sobrar lugar ao título */
   .ds-seg-compact .ds-seg-l{display:none}
 }
+
+/* Texto formatado de IA (<RichText>): parágrafos curtos, listas e código discretos, só com tokens */
+.ds-prose{display:flex;flex-direction:column;gap:var(--ds-space-2);overflow-wrap:anywhere}
+.ds-prose p,.ds-prose ul,.ds-prose ol{margin:0}
+.ds-prose ul,.ds-prose ol{padding-left:1.25em;display:flex;flex-direction:column;gap:var(--ds-space-1)}
+.ds-prose ul{list-style:disc}.ds-prose ol{list-style:decimal}.ds-prose li::marker{color:var(--ds-ink-3)}
+.ds-prose strong{font-weight:700}
+.ds-prose code{font-family:var(--ds-font-mono);font-size:.9em;padding:1px 6px;border-radius:var(--ds-r-xs);background:var(--ds-mist)}
+.ds-prose a{color:var(--ds-accent-deep);text-decoration:underline;text-underline-offset:2px}
+.ds-prose a:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px;border-radius:var(--ds-r-xs)}

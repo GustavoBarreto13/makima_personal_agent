@@ -608,7 +608,7 @@ def _attention_block() -> list[dict]:
         if n:
             items.append({"id": "overdue", "agent": "kaguya", "tone": "danger",
                           "label": f"{n} tarefa{'s' if n != 1 else ''} vencida{'s' if n != 1 else ''}",
-                          "action": "Ver", "href": "/tasks#hoje"})
+                          "icon": "task", "action": "Ver", "href": "/tasks#hoje"})
     except Exception:
         pass
 
@@ -622,7 +622,7 @@ def _attention_block() -> list[dict]:
                 items.append({"id": f"pay-{c['kind']}-{c['id']}", "agent": "nami",
                               "tone": "danger" if atrasada else "warn",
                               "label": f"{c['name']} · {_brl(float(c['valor']))} · {c['due'][8:10]}/{c['due'][5:7]}",
-                              "action": "Pagar", "href": "/nami#recorrentes"})
+                              "icon": "money", "action": "Ver", "href": "/nami#recorrentes"})
     except Exception:
         pass
 
@@ -635,7 +635,7 @@ def _attention_block() -> list[dict]:
                 quando = "hoje" if b["in_days"] == 0 else "amanhã" if b["in_days"] == 1 else f"em {b['in_days']} dias"
                 items.append({"id": f"bday-{b['person_id']}", "agent": "komi", "tone": "info",
                               "label": f"Aniversário de {b['name']} · {quando}",
-                              "action": "Abrir", "href": f"/people#pessoa/{b['person_id']}"})
+                              "icon": "cake", "action": "Abrir", "href": f"/people#pessoa/{b['person_id']}"})
     except Exception:
         pass
 
@@ -761,6 +761,13 @@ def capture_parse(body: CaptureParseBody, user: dict = Depends(require_user)) ->
 
     r = parse_line(body.text, today_sp())
     r["people"], r["warnings"] = _resolve_mentions(r.pop("mentions", []))
+    # Categorias para o seletor da prévia (lista fixa da Nami); sem ela o front só esconde o campo.
+    try:
+        from agents.nami.tools import CATEGORIES
+
+        r["options"] = {"categories": list(CATEGORIES)}
+    except Exception:  # noqa: BLE001
+        r["options"] = {"categories": []}
     return r
 
 

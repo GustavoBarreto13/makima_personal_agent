@@ -461,19 +461,35 @@ API: `yatoApi.ts` — todos os `/api/travel/*`.
 
 ---
 
-### MakimaShell — Hub (`src/pages/makima/`)
+### MakimaShell — Home "Hoje" (`src/pages/makima/`, Design System)
 
-**Roteamento:** nenhum — é uma tela única na rota exata `/`, renderizada em **tela cheia,
-sem o `Layout` global** (spec 023).
+**Roteamento:** rota exata `/` sobre o `AppShell` do DS, com 3 abas por hash: `#hoje`, `#conversar`, `#agentes`
+(barra inferior no celular). O **título da barra do topo** é a saudação (Bom dia/Boa tarde/Boa noite, hora local) e o
+subtítulo a data de hoje; nada disso se repete na página. `Ctrl+K` abre qualquer agente e busca em todos os dados
+(`useGlobalSearch` → `GET /api/hub/search`).
 
-**O que mostra:** hero editorial + cards de agente (Nami, Frieren, Komi, Violet, Kaguya,
-Mai, Marin, Akane, Yato), cada um com 2 stats reais vindos de `GET /api/hub/summary` (uma única
-chamada no mount). Stat ausente/carregando/falho vira "—" (fallback gracioso). Os cards
-navegam para as rotas dos shells via `<Link>` (SPA, sem reload).
+**Hoje** (`screens/Today.tsx`): captura universal no topo (fica sempre no mesmo lugar da árvore, então o texto digitado
+não se perde quando o painel termina de carregar) + **Agora** (foco ativo com contagem que anda de 1 em 1 s e próximo
+compromisso), **Precisa de você** (selo com a contagem; ícone por tipo — tarefa/conta/aniversário; ação "Ver"/"Abrir",
+nunca "Pagar") e **Seus números** (widgets ocultáveis/reordenáveis pelo botão **Editar** da própria tela ou em
+Preferências; `usePrefs('makima')`). Os dados se renovam **sozinhos** (`hooks.ts::useAutoRefresh`: ao voltar ao app/aba e
+a cada 60 s só com a tela visível); uma recarga que falha **não troca** o que está na tela por erro.
 
-**Particularidades:** tema dark/light persistido em `localStorage` (`makima-hub-theme`,
-default dark); todo o CSS vive sob a classe raiz `.mkA` (zero vazamento); dados estáticos
-do roster em `data.ts`. API: `makimaApi.ts` — só o `/api/hub/summary`.
+**Captura** (`components/UniversalCapture.tsx`): Enter entende a frase → prévia **editável** (tipo Tarefa/Gasto/Receita,
+descrição, valor, categoria, data) com foco no **Salvar** → Enter salva, Esc cancela, toda gravação tem **Desfazer**.
+Frase sem gasto nem data entra como Tarefa com aviso. Sem internet: salvar vai para a fila do aparelho
+(`writeOrQueue`, sem Desfazer) e, se nem entender foi possível, oferece "Guardar como tarefa". O botão **Registrar**
+(sidebar/FAB) rola até o campo e abre o teclado.
+
+**Conversar** (`screens/Chat.tsx`, página `fill` do DS): resposta em tempo real (SSE), texto formatado com
+`<RichText>` (negrito, itálico, código, listas, links http(s); nunca HTML), cartões **em português** do que os agentes
+fizeram (`lib.ts::actionText`), horário por mensagem, indicador de 3 pontos, botão **Parar** durante a resposta,
+**Enter quebra a linha no celular** (`pointer: coarse`) e envia no computador, caixa que cresce, rolagem que só segue o
+fim se o usuário já estava lá ("Ir para o fim" com aviso). "Limpar conversa" fica no topo (com confirmação), longe do
+Enviar. A conversa reaberta aparece na hora (cache) e atualiza em silêncio.
+
+**Agentes** (`screens/Agents.tsx`): grade compacta (retrato, 1 número se existir, ação curta "+ Gasto/Tarefa…"); sem campo
+de busca. API: `makimaApi.ts` (`today`, `summary`, `capture*`, `search`, `chat*`). Detalhes de rotas: `webapp/docs/API.md`.
 
 ## Cliente de API
 

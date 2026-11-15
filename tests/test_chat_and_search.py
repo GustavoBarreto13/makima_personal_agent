@@ -25,13 +25,24 @@ def test_action_from_tool_escrita_vira_cartao():
     a = chat_router.action_from_tool("mcp_nami_create_transaction")
     assert a == {"agent": "nami", "tool": "create_transaction", "label": "Create transaction"}
     assert chat_router.action_from_tool("kaguya__complete_task")["agent"] == "kaguya"
-    assert chat_router.action_from_tool("mcp_journal_upsert_bullet") is None  # "upsert" não é prefixo de escrita conhecido
+    assert chat_router.action_from_tool("mcp_journal_upsert_bullet")["agent"] == "violet"  # escrever no diário também é ação
 
 
 def test_action_from_tool_leitura_nao_vira_cartao():
     assert chat_router.action_from_tool("mcp_nami_get_month_plan") is None
     assert chat_router.action_from_tool("list_tasks_today") is None
     assert chat_router.action_from_tool("") is None
+
+
+def test_verbos_novos_viram_cartao_e_leitura_com_verbo_de_escrita_nao():
+    assert chat_router.action_from_tool("mcp__kaguya__remove_from_my_day_by_name")["tool"] == "remove_from_my_day_by_name"
+    assert chat_router.action_from_tool("mcp__journal__escrever_no_diario")["agent"] == "violet"
+    assert chat_router.action_from_tool("mcp__kaguya__archive_habit") is not None
+    # só consulta o orçamento: não é "algo que foi feito"
+    assert chat_router.action_from_tool("mcp__nami__check_category_budget") is None
+    # nomes internos do Hermes (skill_view, tool_describe) nunca viram cartão
+    assert chat_router.action_from_tool("skill_view") is None
+    assert chat_router.action_from_tool("tool_describe") is None
 
 
 def test_alias_de_dominio():

@@ -16,6 +16,7 @@ As versões 0.1.0–0.61.0 foram marcadas retroativamente sobre o histórico da 
 - Home: **captura universal** — uma linha ("gastei 32 no ifood", "ligar pro contador amanhã", "comprar presente @Bia") vira gasto, receita ou tarefa, sempre mostrando o que foi entendido antes de salvar e com Desfazer.
 - Home: **busca em tudo** no `Ctrl+K` — acha tarefas, pessoas, livros, filmes, animes, séries e lançamentos de todos os agentes (o diário fica de fora).
 - Home: aba **Conversar** — chat com a Makima (Hermes) com resposta em tempo real e cartões do que os agentes fizeram. Fica desligado até o servidor do chat ser ativado (`hermes/CLAUDE.md`).
+- Home, polida de UX: a **captura** agora mostra uma prévia que dá para **corrigir** (tipo, descrição, valor, categoria, data), foca no Salvar, cancela com Esc e **guarda no aparelho quando falta internet**; o **chat** mostra a resposta formatada (negrito e listas), descreve em português o que a Makima fez, tem botão **Parar**, caixa que cresce e, no celular, Enter quebra a linha; a tela **Hoje** tem um título só, atualiza sozinha (a contagem do foco anda) e deixa editar os números ali mesmo; aba **Agentes** mais limpa e botões com alvo de toque de 44 px.
 - Violet: **Não ditos** — um lugar para registrar o que você queria dizer a alguém e não pode, não quer ou não consegue. Escolha a pessoa (Komi), escreva, diga o porquê com um toque e depois marque *acabei falando* ou *deixei ir*. O texto fica borrado até tocar; na Komi aparece só "Algo não dito", sem o conteúdo; a Violet usa como contexto sem citar. Funciona no site e no app (inclusive sem internet e por atalho do ícone).
 - App Android: botões *Concluir · Adiar 1h · Amanhã* direto na notificação do lembrete de tarefa.
 - App Android: criar tarefa, concluir tarefa, lançar gasto, marcar hábito e escrever um momento no diário **sem internet** — ficam no aparelho (com aviso "N aguardam a internet") e são enviados quando a conexão volta, sem duplicar.
@@ -23,6 +24,9 @@ As versões 0.1.0–0.61.0 foram marcadas retroativamente sobre o histórico da 
 - App Android: atalhos ao segurar o ícone (nova tarefa, novo gasto, diário, iniciar foco), *Compartilhar → Makima* (links do Letterboxd, TMDB, MyAnimeList, AniList e Google Livros) e microfone na captura rápida.
 
 ### Fixed
+- Chat: ao terminar uma resposta, a tela voltava ao histórico antigo e apagava as mensagens novas.
+- Chat: ferramentas só de consulta (como checar orçamento) apareciam como "algo que a Makima fez"; verbos como remover, arquivar e escrever no diário agora contam.
+- Tela Hoje: o aviso de conta dizia "Pagar" mas só abria a Nami; agora diz "Ver".
 - App Android: o **topo das telas não fica mais cortado** pela barra de status/câmera (Design System, Hub, Mai e Yato reservam a área segura em cima e embaixo; rodapé de modais, avisos e barra de gestos também).
 - App Android (menus): lupa no topo abre busca e comandos (antes sumiam no celular); "Mais" marca a seção atual; a gaveta prende o foco e leva "Voltar à Makima/Trocar de agente" para o topo; menus "…" não saem mais pela direita; captura rápida ganhou *Salvar* e *Formulário completo*; Voltar, abas e remover filtro com alvo de toque de 44px; barra de baixo e botão flutuante saem da frente quando o teclado abre.
 - App Android (Kaguya): arrastar cartão do Kanban só começa após segurar o dedo; botões da lista de calendários sempre visíveis no toque; Espaço no topo só com ícones.

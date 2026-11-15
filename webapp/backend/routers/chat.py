@@ -36,8 +36,12 @@ _AGENT_ALIAS = {"journal": "violet", "calendar": "kaguya"}
 # Só ferramentas que ESCREVEM viram cartão "o que foi feito"; leituras ficam de fora.
 _WRITE_PREFIXES = (
     "create", "add", "log", "complete", "update", "delete", "set", "check", "start", "finish",
-    "register", "mark", "link", "relate", "merge", "restore", "reopen", "process",
+    "register", "mark", "link", "relate", "merge", "restore", "reopen", "process", "remove",
+    "archive", "cancel", "pause", "resume", "duplicate", "apply", "bulk", "record", "upsert",
+    "escrever", "apagar", "salvar",
 )
+# Começam com um verbo de escrita mas só LEEM (não viram cartão "o que foi feito").
+_READ_ONLY = {"check_category_budget"}
 
 
 class ChatBody(BaseModel):
@@ -65,6 +69,8 @@ def action_from_tool(name: str) -> dict | None:
     if not tool_parts or not tool_parts[0].startswith(_WRITE_PREFIXES):
         return None
     tool = "_".join(tool_parts)
+    if tool in _READ_ONLY:
+        return None
     return {"agent": _AGENT_ALIAS.get(agent, agent) if agent else None, "tool": tool, "label": tool.replace("_", " ").capitalize()}
 
 

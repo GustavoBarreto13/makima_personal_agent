@@ -1,9 +1,12 @@
 /* Complementos da home da Makima ("Hoje") ao Design System. Só tokens --ds-*: sem cor, raio ou fonte literal.
- * Cada card de agente usa data-agent para herdar o acento do agente (accents.css). */
+ * Cada card de agente usa data-agent para herdar o acento do agente (accents.css).
+ * Em celular (< 640 px de largura do quadro) os alvos de toque ficam com 44 px, como no resto do DS. */
 
 .mk-stack { display: flex; flex-direction: column; gap: var(--ds-space-5); }
 
 .mk-label {
+  display: flex;
+  align-items: center;
   margin: 0 0 var(--ds-space-2);
   color: var(--ds-ink-3);
   font-family: var(--ds-font-mono);
@@ -13,10 +16,27 @@
   text-transform: uppercase;
 }
 
-.mk-two { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--ds-space-5); }
-@container (max-width: 760px) { .mk-two { grid-template-columns: minmax(0, 1fr); } }
+/* Contador ao lado de um rótulo de seção. */
+.mk-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: var(--ds-space-2);
+  padding: 0 6px;
+  border-radius: var(--ds-r-pill);
+  background: var(--ds-accent-tint);
+  color: var(--ds-accent-deep);
+  font-size: var(--ds-text-xs);
+  font-weight: 700;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
 
-/* Faixa de linha: cartão sólido com ícone de agente, texto e ação à direita. */
+.mk-two { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--ds-space-5); }
+@container ds-frame (max-width: 760px) { .mk-two { grid-template-columns: minmax(0, 1fr); } }
+
+/* Faixa de linha: cartão sólido com ícone, texto e ação à direita. */
 .mk-row {
   display: flex;
   align-items: center;
@@ -78,9 +98,11 @@
 .mk-num b { font-family: var(--ds-font-display); font-size: var(--ds-text-xl); font-weight: 800; font-variant-numeric: tabular-nums; }
 .mk-num span { color: var(--ds-ink-3); font-size: var(--ds-text-sm); }
 
-/* Agentes: grade de cartões compactos (retrato, número vivo, ação +). */
-.mk-agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: var(--ds-space-3); }
-@container (max-width: 520px) { .mk-agents { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.mk-wedit { display: flex; align-items: center; gap: var(--ds-space-2); }
+
+/* ── Agentes: grade compacta (retrato, número vivo, ação +) ─────────────────── */
+.mk-agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: var(--ds-space-3); }
+@container ds-frame (max-width: 520px) { .mk-agents { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .mk-agent {
   display: flex;
   flex-direction: column;
@@ -90,10 +112,12 @@
   border-radius: var(--ds-r-md);
   background: var(--ds-card);
 }
-.mk-agent-h {
+.mk-agent:hover { border-color: var(--ds-accent); }
+.mk-agent-main {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--ds-space-2);
+  flex: 1;
   padding: 0;
   border: 0;
   background: none;
@@ -102,22 +126,17 @@
   text-align: left;
   cursor: pointer;
 }
-.mk-agent-h:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; border-radius: var(--ds-r-xs); }
-.mk-agent-h img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; object-position: top; border: 2px solid var(--ds-accent); }
+.mk-agent-main:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 4px; border-radius: var(--ds-r-xs); }
+.mk-agent-h { display: flex; align-items: center; gap: var(--ds-space-2); }
+.mk-agent-h img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; object-position: top; border: 2px solid var(--ds-accent); }
 .mk-agent-h strong { display: block; font-weight: 700; }
 .mk-agent-h small { color: var(--ds-ink-3); font-size: var(--ds-text-xs); }
+.mk-agent-s { display: flex; flex-direction: column; }
 .mk-agent-n { font-family: var(--ds-font-display); font-weight: 800; font-variant-numeric: tabular-nums; }
 .mk-agent-k { color: var(--ds-ink-3); font-size: var(--ds-text-sm); }
-.mk-agent-add { margin-top: auto; align-self: flex-start; }
+.mk-agent-add { align-self: flex-start; }
 
-.mk-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ds-space-3); flex-wrap: wrap; }
-.mk-head h2 { margin: 0; font-family: var(--ds-font-display); font-size: var(--ds-text-2xl); font-weight: 800; letter-spacing: -0.01em; }
-.mk-head p { margin: 0; color: var(--ds-ink-3); }
-
-.mk-wedit { display: flex; align-items: center; gap: var(--ds-space-2); }
-.mk-wedit > span { flex: 1; }
-
-/* Captura universal */
+/* ── Captura universal ───────────────────────────────────────────────────── */
 .mk-cap { display: flex; flex-direction: column; gap: var(--ds-space-2); }
 .mk-cap-form {
   display: flex;
@@ -145,32 +164,104 @@
 }
 .mk-cap-chip:hover { border-color: var(--ds-accent); color: var(--ds-ink-1); }
 .mk-cap-chip:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+
 .mk-cap-prev {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
   gap: var(--ds-space-3);
   padding: var(--ds-space-3);
   border: 1px solid var(--ds-accent);
   border-radius: var(--ds-r-md);
-  background: var(--ds-accent-tint);
+  background: var(--ds-card);
+  animation: ds-rise var(--ds-dur-2) var(--ds-ease) both;
 }
-.mk-cap-prev .mk-row-t span { display: block; }
-.mk-cap-err { margin: 0; color: var(--ds-danger); font-size: var(--ds-text-sm); }
+.mk-cap-prev-h { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3); flex-wrap: wrap; }
+.mk-cap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ds-space-3); }
+.mk-cap-wide { grid-column: 1 / -1; }
+.mk-cap-date { display: flex; align-items: center; gap: var(--ds-space-2); }
+.mk-cap-date > .ds-anchor { flex: 1; min-width: 0; }
+.mk-cap-note { display: flex; align-items: center; gap: var(--ds-space-2); margin: 0; color: var(--ds-ink-2); font-size: var(--ds-text-sm); }
+.mk-cap-actions { display: flex; justify-content: flex-end; gap: var(--ds-space-2); }
+.mk-cap-err { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3); flex-wrap: wrap; color: var(--ds-danger); font-size: var(--ds-text-sm); }
+.mk-cap-err p { margin: 0; }
 
-/* Chat */
-.mk-chat { display: flex; flex-direction: column; gap: var(--ds-space-3); min-height: calc(100dvh - 220px); }
-.mk-chat-log { flex: 1; display: flex; flex-direction: column; gap: var(--ds-space-3); padding-bottom: var(--ds-space-2); }
-.mk-chat-empty { display: flex; flex-direction: column; align-items: center; gap: var(--ds-space-3); }
-.mk-msg { max-width: min(86%, var(--ds-w-prose)); padding: var(--ds-space-2) var(--ds-space-3); border-radius: var(--ds-r-md); background: var(--ds-card); border: 1px solid var(--ds-line); }
-.mk-msg p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* ── Chat ────────────────────────────────────────────────────────────────── */
+/* A página `fill` do DS dá a altura toda; a lista rola por dentro e o compositor fica sempre embaixo. */
+.mk-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--ds-space-2);
+  width: 100%;
+  max-width: var(--ds-w-content);
+  margin: 0 auto;
+  padding: var(--ds-space-3) var(--ds-space-4);
+}
+.mk-chat-top { display: flex; justify-content: flex-end; flex: none; }
+.mk-chat-main { position: relative; display: flex; flex: 1; min-height: 0; }
+.mk-chat-log {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: var(--ds-space-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--ds-space-1) 0;
+}
+.mk-chat-empty { display: flex; flex-direction: column; align-items: center; gap: var(--ds-space-3); margin: auto 0; }
+/* Com poucas mensagens, elas ficam junto do campo (como em qualquer chat), sem quebrar a rolagem. */
+.mk-chat-log > :first-child:not(.mk-chat-empty) { margin-top: auto; }
+.mk-chat-new {
+  position: absolute;
+  left: 50%;
+  bottom: var(--ds-space-2);
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  min-height: 36px;
+  padding: 0 var(--ds-space-3);
+  border: 1px solid var(--ds-line);
+  border-radius: var(--ds-r-pill);
+  background: var(--ds-card);
+  color: var(--ds-ink-1);
+  font: inherit;
+  font-size: var(--ds-text-sm);
+  box-shadow: var(--ds-shadow-md);
+  cursor: pointer;
+}
+.mk-chat-new:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 2px; }
+
+.mk-msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+  max-width: min(86%, var(--ds-w-prose));
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 1px solid var(--ds-line);
+  border-radius: var(--ds-r-md);
+  background: var(--ds-card);
+  animation: ds-rise var(--ds-dur-2) var(--ds-ease) both;
+}
+.mk-msg > p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mk-msg[data-role='user'] { align-self: flex-end; background: var(--ds-accent-tint); border-color: transparent; }
-.mk-msg[data-role='error'] { border-color: var(--ds-danger); display: flex; flex-direction: column; align-items: flex-start; gap: var(--ds-space-2); }
+.mk-msg[data-role='error'] { align-items: flex-start; gap: var(--ds-space-2); border-color: var(--ds-danger); }
 .mk-msg .mk-list { margin-top: var(--ds-space-2); }
+.mk-msg-time { align-self: flex-end; color: var(--ds-ink-3); font-size: var(--ds-text-xs); font-variant-numeric: tabular-nums; }
+.mk-msg-note { color: var(--ds-ink-3); font-size: var(--ds-text-sm); }
+
+/* "Respondendo…": três pontos que sobem e descem (parados quando o sistema pede menos movimento). */
+.mk-dots { display: inline-flex; gap: 5px; align-items: center; height: 22px; }
+.mk-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--ds-ink-3); animation: ds-dot 1.1s var(--ds-ease) infinite; }
+.mk-dots i:nth-child(2) { animation-delay: 0.15s; }
+.mk-dots i:nth-child(3) { animation-delay: 0.3s; }
+
 .mk-chat-bar {
-  position: sticky;
-  bottom: calc(var(--ds-safe-bottom, 0px) + var(--ds-space-2));
   display: flex;
   align-items: flex-end;
+  flex: none;
   gap: var(--ds-space-2);
   padding: var(--ds-space-2);
   border: 1px solid var(--ds-line);
@@ -178,4 +269,40 @@
   background: var(--ds-card);
   box-shadow: var(--ds-shadow-sm);
 }
-.mk-chat-in { flex: 1; min-width: 0; min-height: 40px; max-height: 140px; padding: var(--ds-space-2); border: 0; background: none; color: var(--ds-ink-1); font: inherit; resize: none; outline: none; }
+.mk-chat-bar:focus-within { border-color: var(--ds-accent); }
+.mk-chat-in {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  max-height: 140px;
+  padding: var(--ds-space-2);
+  border: 0;
+  background: none;
+  color: var(--ds-ink-1);
+  font: inherit;
+  line-height: 1.4;
+  resize: none;
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-dots i { animation: none; opacity: 0.7; }
+}
+
+/* ── Celular ─────────────────────────────────────────────────────────────── */
+@container ds-frame (max-width: 639px) {
+  .mk-cap-chip, .mk-chat-new { min-height: 44px; }
+  /* Exemplos numa linha que rola de lado (4 linhas de chips empurravam o dia para baixo). */
+  .mk-cap > .mk-cap-ex { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; margin-inline: calc(-1 * var(--ds-space-4)); padding-inline: var(--ds-space-4); }
+  .mk-cap > .mk-cap-ex::-webkit-scrollbar { display: none; }
+  .mk-cap > .mk-cap-ex .mk-cap-chip { flex: none; scroll-snap-align: start; white-space: nowrap; }
+  /* O botão flutuante "Registrar" cobriria o Enviar do chat; ali o campo de mensagem já é a ação. */
+  .ds-frame:has(.mk-chat) .ds-fab { display: none; }
+  .mk-cap-in, .mk-chat-in { min-height: 44px; }
+  .mk-cap-grid { grid-template-columns: minmax(0, 1fr); }
+  .mk-cap-actions .ds-btn { flex: 1; }
+  .mk-chat { padding: var(--ds-space-2) var(--ds-space-3); }
+  .mk-msg { max-width: 92%; }
+  /* Teclado aberto: a barra de baixo some (regra do DS), então a folga reservada para ela também. */
+  .ds-frame:has(.mk-chat-in:focus) .ds-content:has(.ds-page.ds-fill) { padding-bottom: 0; }
+}

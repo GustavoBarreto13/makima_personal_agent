@@ -30,6 +30,8 @@ export interface AttentionItem {
   id: string
   agent: string
   tone: AttentionTone
+  /** Ícone do tipo do aviso (tarefa, conta, aniversário). A cor vem do `tone`, o significado vem do ícone. */
+  icon?: 'task' | 'money' | 'cake'
   label: string
   action: string
   href: string
@@ -55,6 +57,8 @@ export interface CapturePreview {
   fields: Record<string, unknown>
   people: { id: string; name: string; mention: string }[]
   warnings: string[]
+  /** Categorias da Nami para o seletor da prévia editável. */
+  options?: { categories: string[] }
 }
 
 export interface CaptureUndo {
@@ -87,4 +91,6 @@ export interface ChatMessage {
   content: string
   actions: ChatAction[]
   created_at?: string
+  /** O usuário apertou Parar: a resposta ficou pela metade. */
+  stopped?: boolean
 }

@@ -79,6 +79,8 @@ def test_parse_endpoint_nao_grava_e_resolve_pessoa():
     assert r.status_code == 200
     body = r.json()
     assert body["people"] == [{"id": "p1", "name": "Beatriz", "mention": "Bia"}] and body["warnings"] == []
+    # a prévia editável precisa das categorias da Nami para o seletor
+    assert "Inbox" in body["options"]["categories"] and "Comer Fora" in body["options"]["categories"]
 
 
 def test_parse_pessoa_ambigua_vira_aviso_sem_vinculo():

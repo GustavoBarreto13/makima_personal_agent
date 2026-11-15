@@ -9,7 +9,7 @@ Política: `legacy` só aparece aqui; `migrating` falha o lint estático; `confo
 | Agente | Status | Arte | Shell | Hero | Tema | Ícones | Coleções | Captura | Stats | Detalhe | Prefs | Atalhos | Celular |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | design | conformant | default | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| makima | legacy | — | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| makima | migrating | default | 🟡 | ⬜ | 🟡 | 🟡 | ⬜ | ⬜ | ⬜ | ⬜ | 🟡 | 🟡 | 🟡 |
 | nami | conformant | nautica | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | kaguya | conformant | shuchiin | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | frieren | conformant | elfica | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |

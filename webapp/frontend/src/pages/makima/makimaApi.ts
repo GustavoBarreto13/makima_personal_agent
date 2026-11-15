@@ -1,8 +1,15 @@
 // Cliente tipado dos endpoints da home (/api/hub/*, /api/chat/*). Os componentes nunca chamam `fetch` direto.
 
 import { api, authFetch, errorFromResponse } from '../../lib/api'
+import { writeOrQueue, type WriteResult } from '../../lib/offlineWrites'
 import { parseSse } from './sse'
 import type { CaptureKind, CapturePreview, CaptureUndo, ChatAction, ChatMessage, HubSummary, SearchHit, TodayPayload } from './types'
+
+export interface CommitResult {
+  status: string
+  summary: string
+  undo: CaptureUndo
+}
 
 export interface ChatStreamHandlers {
   onDelta: (text: string) => void
@@ -19,16 +26,12 @@ export const makimaApi = {
 
   /** Prévia da captura universal — não grava nada. */
   captureParse: (text: string) => api.post<CapturePreview>('/api/hub/capture/parse', { text }),
-  /** Grava o que a prévia mostrou. `key` evita duplicar se o envio for repetido. */
-  captureCommit: async (kind: CaptureKind, fields: Record<string, unknown>, personIds: string[], key: string) => {
-    const res = await authFetch('/api/hub/capture/commit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
-      body: JSON.stringify({ kind, fields, person_ids: personIds }),
-    })
-    if (!res.ok) throw await errorFromResponse(res)
-    return (await res.json()) as { status: string; summary: string; undo: CaptureUndo }
-  },
+  /**
+   * Grava o que a prévia mostrou. Sem internet o pedido fica na fila do aparelho (`queued: true`, sem Desfazer)
+   * e é enviado quando a conexão volta, sem duplicar (Idempotency-Key da fila).
+   */
+  captureCommit: (kind: CaptureKind, fields: Record<string, unknown>, personIds: string[]): Promise<WriteResult<CommitResult>> =>
+    writeOrQueue<CommitResult>('POST', '/api/hub/capture/commit', { kind, fields, person_ids: personIds }),
   captureUndo: (undo: CaptureUndo) => api.post<{ status: string }>('/api/hub/capture/undo', undo),
 
   /** Busca por título/nome em todos os agentes (a partir de 2 letras). */

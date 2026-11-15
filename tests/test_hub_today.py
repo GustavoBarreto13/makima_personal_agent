@@ -49,3 +49,17 @@ def test_attention_block_isola_cada_fonte():
          patch("agents.komi.tools.upcoming_birthdays", side_effect=RuntimeError("x")):
         itens = _attention_block()
     assert len(itens) == 1 and itens[0]["agent"] == "nami" and itens[0]["label"].startswith("Luz · R$ 184")
+    # "Pagar" enganava (só abre a Nami): o rótulo honesto é "Ver", e cada tipo tem ícone próprio.
+    assert itens[0]["action"] == "Ver" and itens[0]["icon"] == "money"
+
+
+def test_attention_block_icones_por_tipo():
+    from webapp.backend.routers.hub import _attention_block
+
+    with patch("agents.kaguya.tools_tasks.list_tasks_today", return_value={"overdue": [{}, {}], "today": []}), \
+         patch("agents.nami.tools_plan.get_month_plan", return_value={"status": "ok", "a_pagar": []}), \
+         patch("agents.komi.tools.upcoming_birthdays", return_value={"status": "ok", "birthdays": [
+             {"person_id": "p1", "name": "Bia", "in_days": 1}]}):
+        itens = {i["id"]: i for i in _attention_block()}
+    assert itens["overdue"]["icon"] == "task" and itens["bday-p1"]["icon"] == "cake"
+    assert itens["bday-p1"]["label"] == "Aniversário de Bia · amanhã"
