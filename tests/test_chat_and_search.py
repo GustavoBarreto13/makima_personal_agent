@@ -50,14 +50,21 @@ def test_stream_valida_mensagem_vazia():
     assert client.post("/api/chat/stream", json={"message": ""}).status_code == 422
 
 
+def _frame(data: dict, event: str | None = None) -> str:
+    return (f"event: {event}\n" if event else "") + f"data: {json.dumps(data)}\n\n"
+
+
 def _hermes_sse() -> bytes:
-    chunks = [
-        {"choices": [{"delta": {"content": "Feito. "}}]},
-        {"choices": [{"delta": {"tool_calls": [{"function": {"name": "mcp_nami_create_transaction"}}]}}]},
-        {"choices": [{"delta": {"tool_calls": [{"function": {"name": "mcp_nami_get_month_plan"}}]}}]},
-        {"choices": [{"delta": {"content": "Lancei R$ 32."}}]},
+    """Formato REAL do api_server do Hermes: texto em chunks OpenAI + ferramentas em `event: hermes.tool.progress`."""
+    frames = [
+        _frame({"choices": [{"delta": {"content": "Feito. "}}]}),
+        _frame({"tool": "mcp_nami_create_transaction", "label": "create_transaction", "toolCallId": "c1", "status": "running"}, "hermes.tool.progress"),
+        _frame({"tool": "mcp_nami_create_transaction", "toolCallId": "c1", "status": "completed"}, "hermes.tool.progress"),
+        _frame({"tool": "mcp_nami_get_month_plan", "label": "get_month_plan", "toolCallId": "c2", "status": "running"}, "hermes.tool.progress"),
+        _frame({"tool": "_thinking", "toolCallId": "c3", "status": "running"}, "hermes.tool.progress"),
+        _frame({"choices": [{"delta": {"content": "Lancei R$ 32."}}]}),
     ]
-    return ("".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n").encode()
+    return ("".join(frames) + "data: [DONE]\n\n").encode()
 
 
 def _events(text: str) -> list[tuple[str, dict]]:

@@ -213,17 +213,22 @@ platforms:
       port: 8644
       secret: "${WEBHOOK_SECRET}"
 
-  # Chat do app (webapp/Android) com a Makima — spec do chat da home.
-  # NAO ATIVADO: o schema abaixo e uma HIPOTESE (espelha o `webhook` acima e a API OpenAI-compativel
-  # do gateway upstream). Confirme no container ANTES de descomentar (ver "Chat do app (API do
-  # gateway)" em hermes/CLAUDE.md): `hermes --help`, `hermes config get platforms --json`, e o
-  # modulo gateway/platforms/api_server.py. Chave desconhecida pode impedir o gateway de subir.
-  # api_server:
-  #   enabled: true
-  #   extra:
-  #     host: 0.0.0.0        # so dentro da dokploy-network, sem porta publica/Traefik
-  #     port: 8642
-  #     key: "${HERMES_API_KEY}"   # o mesmo valor vai em HERMES_API_KEY do makima-web
+  # Chat do app (webapp/Android) com a Makima. API compativel com OpenAI do gateway
+  # (`gateway/platforms/api_server.py`, chaves lidas no codigo da imagem em nov/2026:
+  # `extra.host` / `extra.port` / `extra.key`; padrao 127.0.0.1:8642). So dentro da
+  # dokploy-network (sem porta publica nem Traefik): o makima-web chama
+  # http://makima-hermes:8642/v1/chat/completions com `Authorization: Bearer <key>` e
+  # `X-Hermes-Session-Id` (continuidade de sessao exige a key). As ferramentas chegam no stream
+  # como `event: hermes.tool.progress`. A key vive em HERMES_API_KEY (volume hermes_data/.env,
+  # que sobrevive a deploy) e o MESMO valor em HERMES_API_KEY do makima-web.
+  # ATENCAO: `${VAR}` ausente NAO da erro, vira string literal — conferir depois do restart:
+  #   docker exec makima-hermes hermes config get platforms.api_server --json
+  api_server:
+    enabled: true
+    extra:
+      host: 0.0.0.0
+      port: 8642
+      key: "${HERMES_API_KEY}"
 
   discord:
     bot_token: "${DISCORD_BOT_TOKEN}"

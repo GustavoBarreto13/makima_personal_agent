@@ -90,19 +90,42 @@ def _stream_hermes(email: str, history: list[dict]) -> Iterator[str]:
         ) as resp:
             if resp.status_code >= 400:
                 raise RuntimeError(f"Hermes respondeu {resp.status_code}")
+            event = ""
             for line in resp.iter_lines():
+                if not line.strip():
+                    event = ""  # linha em branco separa os eventos do SSE
+                    continue
+                if line.startswith("event:"):
+                    event = line[6:].strip()
+                    continue
                 if not line.startswith("data:"):
                     continue
                 payload = line[5:].strip()
                 if payload == "[DONE]":
                     break
                 try:
-                    delta = json.loads(payload)["choices"][0].get("delta", {})
-                except (ValueError, KeyError, IndexError):
+                    data = json.loads(payload)
+                except ValueError:
+                    continue
+                if event == "hermes.tool.progress":
+                    # O Hermes anuncia cada ferramenta num evento próprio: {tool, label, toolCallId, status}.
+                    # Só o início ("running") vira cartão; o "completed" repete o mesmo toolCallId.
+                    key = str(data.get("toolCallId") or data.get("tool") or "")
+                    if data.get("status") == "running" and data.get("tool") and key not in seen_tools:
+                        seen_tools.add(key)
+                        act = action_from_tool(str(data["tool"]))
+                        if act:
+                            actions.append(act)
+                            yield _sse("action", act)
+                    continue
+                try:
+                    delta = data["choices"][0].get("delta", {})
+                except (KeyError, IndexError, TypeError, AttributeError):
                     continue
                 if delta.get("content"):
                     text_parts.append(delta["content"])
                     yield _sse("delta", {"text": delta["content"]})
+                # Reserva: servidores OpenAI "puros" mandam as ferramentas em delta.tool_calls.
                 for tc in delta.get("tool_calls") or []:
                     name = (tc.get("function") or {}).get("name")
                     if name and name not in seen_tools:

@@ -777,40 +777,33 @@ O app (site e Android) tem uma aba **Conversar** que fala com o Hermes pelo `mak
 interna `dokploy-network`, com `Authorization: Bearer {HERMES_API_KEY}` e o cabecalho
 `X-Hermes-Session-Id: app:<email>` (sessao propria do app; a memoria de longo prazo do Hermes e a mesma).
 
-**Estado: codigo pronto, servidor do Hermes NAO ativado.** Sem `HERMES_API_URL` no `makima-web` o chat fica
-desligado (`GET /api/chat/status` -> `{"enabled": false}`, a aba mostra "O chat ainda nao esta ligado") e nada
-mais muda.
+**Confirmado lendo o codigo da imagem (`/opt/hermes/gateway/platforms/api_server.py`, nov/2026):**
 
-### Ativar (passo a passo — exige acesso ao VPS)
+- A plataforma `api_server` existe. Chaves em `platforms.api_server.extra`: `host` (padrao `127.0.0.1` —
+  precisa ser `0.0.0.0` para o `makima-web` alcancar), `port` (padrao `8642`), `key` (Bearer).
+- `X-Hermes-Session-Id` so e aceito **com `key` configurada** (senao 403) e nao pode ter caracteres de
+  controle nem forma de path traversal (`_is_path_unsafe`). Quando enviado, o historico vem do `state.db`
+  do Hermes e o corpo da requisicao so precisa da ultima mensagem.
+- As ferramentas **nao** vem em `delta.tool_calls`: o stream traz um evento proprio,
+  `event: hermes.tool.progress` com `{tool, label, toolCallId, status: running|completed}`
+  (ferramentas internas que comecam com `_` ficam de fora). E isso que o `chat.py` le para os cartoes.
+- Rotas: `POST /v1/chat/completions`, `POST /v1/responses`, e tambem `/p/{profile}/...`.
 
-1. **Confirmar o schema no container** (nao ha confirmacao no repo — o bloco em `config.yaml` e uma hipotese):
+### Ativar / reativar (VPS)
+
+1. `HERMES_API_KEY` (gerar: `openssl rand -hex 32`) em **dois lugares**, o mesmo valor:
+   - **Hermes**: `/opt/data/.env` do volume (`docker exec makima-hermes sh -c 'echo HERMES_API_KEY=... >> /opt/data/.env'`),
+     que sobrevive a deploy do Dokploy (o gateway le esse arquivo no boot, como o `WHATSAPP_*`);
+   - **makima-web**: Environment da app no Dokploy, junto de `HERMES_API_URL=http://makima-hermes:8642`.
+     (O `.env` em `/etc/dokploy/compose/<app>/code/` e **regerado a cada deploy** a partir do Dokploy:
+     variavel so gravada la some no proximo push.)
+2. `hermes/config.yaml` ja traz o bloco `api_server` ativo. Recriar o container (`docker restart makima-hermes`)
+   e conferir: `docker exec makima-hermes hermes config get platforms.api_server --json` — `key` tem que ser o
+   valor real, nao a string `${HERMES_API_KEY}`.
+3. Recriar o `makima-web` para ler a variavel nova e testar de dentro dele:
    ```bash
-   docker exec makima-hermes hermes --help
-   docker exec makima-hermes sh -c "ls /opt/hermes*/gateway/platforms 2>/dev/null; find / -name 'api_server*' 2>/dev/null | head"
+   docker exec makima-web python -c "import httpx,os;r=httpx.post(os.environ['HERMES_API_URL']+'/v1/chat/completions',headers={'Authorization':'Bearer '+os.environ['HERMES_API_KEY']},json={'model':'hermes-agent','messages':[{'role':'user','content':'responda so: ok'}]},timeout=90);print(r.status_code,r.text[:200])"
    ```
-   Se existir `api_server`, ler o modulo para as chaves reais (porta, host, chave, cabecalho de sessao) e ajustar o
-   bloco comentado em `hermes/config.yaml`. Se NAO existir, alternativas: a rota de chat do dashboard (`:9119`) ou um
-   adaptador minimo — registrar a decisao numa spec nova antes de seguir.
-2. Gerar a chave: `python -c "import secrets;print(secrets.token_hex(32))"` e pôr em **`HERMES_API_KEY`** na
-   Environment das **duas** apps do Dokploy (hermes e makima-web).
-3. Descomentar `api_server` em `hermes/config.yaml`, redeployar a app do Hermes e conferir
-   `hermes config get platforms --json` (variavel `${...}` vazia falha em silencio).
-4. No `makima-web`: `HERMES_API_URL=http://makima-hermes:8642` (porta conforme o passo 1) e redeploy.
-5. Testar de dentro do `makima-web`:
-   ```bash
-   docker exec makima-web sh -c 'python - <<EOF
-   import httpx, os
-   r = httpx.post(os.environ["HERMES_API_URL"] + "/v1/chat/completions",
-       headers={"Authorization": "Bearer " + os.environ["HERMES_API_KEY"]},
-       json={"model": "hermes-agent", "messages": [{"role": "user", "content": "oi"}]}, timeout=60)
-   print(r.status_code, r.text[:300])
-   EOF'
-   ```
-6. Abrir `/#conversar` e mandar "lanca 5 no teste": deve aparecer o cartao "Nami · Create transaction".
+4. Abrir `/#conversar` e mandar "lanca 5 no teste": deve aparecer o cartao "Nami · Create transaction".
 
-### Pontos que dependem do Hermes (a confirmar no passo 1)
-
-- **Cartoes de acao**: o backend le `delta.tool_calls[].function.name` do stream. Se o Hermes nao repassar as
-  tool calls no stream, a conversa funciona normalmente mas sem cartoes (`action_from_tool` em `chat.py`).
-- **Sessao propria**: `X-Hermes-Session-Id` e a convencao assumida; se o gateway usar outro cabecalho/campo, trocar em
-  `_stream_hermes`. Sem isso a conversa do app pode cair na sessao padrao (e herdar o `session_reset` das 4h).
+Sem `HERMES_API_URL` no `makima-web` o chat fica desligado (`GET /api/chat/status` -> `{"enabled": false}`).
