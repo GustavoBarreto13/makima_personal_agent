@@ -103,7 +103,7 @@ do progresso) → `skills` (cache materializado por conceito, recomputável dos 
 A *voz* é da Violet (persona no prompt); o *conhecimento e a recuperação* são da Kurisu, dona do RAG.
 `agents/journal/` continua sem depender da Kurisu: quem conhece os dois é `webapp/backend/routers/journal.py`
 e, no MCP, `agents/kurisu/violet_tools.py` (juntado ao domínio `journal` em `mcp_servers/makima/registry.py`).
-**Modelo único:** `models.py::VIOLET_MODEL` (env `VIOLET_GEMINI_MODEL`, padrão `gemini-3.8-flash`) — também
+**Modelo único:** `models.py::VIOLET_MODEL` (env `VIOLET_GEMINI_MODEL`, padrão `gemini-4-hydrogen`) — também
 usado pelo Tutor e pelo `violet_agent`.
 
 ### Peças comuns
@@ -191,7 +191,7 @@ Usuário → Makima → kurisu_agent
   a Vector Search API; a Discovery Engine API foi habilitada na ativação.
 - **Embeddings:** modelo multilíngue gerenciado do Vertex (`text-multilingual-embedding-002`),
   porque a wiki é PT/EN/JA.
-- **LLM:** `gemini-2.5-flash` (agente da Kurisu); a IA da Violet usa `VIOLET_MODEL` (ver acima).
+- **LLM:** `gemini-4-hydrogen` (agente da Kurisu); a IA da Violet usa `VIOLET_MODEL` (ver acima).
 - **Singleton:** Kurisu não usa McpToolset (sem processo filho). A tool `buscar_na_base` é uma
   FunctionTool comum; o `vertexai.init` é lazy-singleton dentro de `tools.py`.
 

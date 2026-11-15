@@ -18,7 +18,7 @@ from agents.nami.toolset import TOOLS as _NAMI_TOOLS
 # porque não usa McpToolset (sem processo filho para gerenciar)
 nami_agent = Agent(
     name="nami_agent",
-    model="gemini-2.5-flash",
+    model="gemini-4-hydrogen",
     # Descrição usada pela Makima para decidir quando rotear para a Nami
     description="Especialista em finanças pessoais. Registra, consulta, corrige e remove "
                 "transações (gastos e receitas). Analisa gastos por categoria, evolução mensal "

@@ -111,7 +111,7 @@ usando a tool disponível — nunca responda de memória sem tentar.
 # O lazy init do vertexai dentro de tools.py é thread-safe para uso como singleton.
 kurisu_agent = Agent(
     name="kurisu_agent",
-    model="gemini-2.5-flash",
+    model="gemini-4-hydrogen",
     # Descrição usada pela Makima para decidir quando rotear para a Kurisu.
     description=(
         "Assistente da base de conhecimento pessoal. Acessa a wiki curada do usuário "

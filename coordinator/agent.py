@@ -156,7 +156,7 @@ def create_makima(sub_agents: list[Agent] | None = None) -> Agent:
 
     return Agent(
         name="makima",
-        model="gemini-2.5-flash",
+        model="gemini-4-hydrogen",
         instruction=_MAKIMA_INSTRUCTION,
         # tools=[knowledge_tool],
         sub_agents=sub_agents,

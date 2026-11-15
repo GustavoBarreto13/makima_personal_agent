@@ -115,7 +115,7 @@ _AKANE_INSTRUCTION = """
 # Todas as tools são funções Python puras sobre PostgreSQL + TMDB.
 akane_agent = Agent(
     name="akane_agent",
-    model="gemini-2.5-flash",
+    model="gemini-4-hydrogen",
     description=(
         "Agente de cinemateca pessoal estilo Letterboxd. "
         "Gerencia catálogo de filmes, loga sessões de assistência, busca metadados no TMDB, "

@@ -133,7 +133,7 @@ _MARIN_INSTRUCTION = """
 # Todas as tools são funções Python puras sobre PostgreSQL + Jikan + AniList.
 marin_agent = Agent(
     name="marin_agent",
-    model="gemini-2.5-flash",
+    model="gemini-4-hydrogen",
     description=(
         "Agente de catálogo de animes e diário de sessões estilo MAL. "
         "Gerencia watchlist, logs de episódios, notas (0–10), schedule de lançamentos, "

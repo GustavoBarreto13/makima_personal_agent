@@ -73,7 +73,7 @@ _LUCY_INSTRUCTION = """
 
 lucy_agent = Agent(
     name="lucy_agent",
-    model="gemini-2.5-flash",
+    model="gemini-4-hydrogen",
     description=(
         "Agente de email (Gmail), somente leitura. Lista emails recentes/não lidos, "
         "busca por remetente/assunto/palavra e abre o conteúdo de um email. "

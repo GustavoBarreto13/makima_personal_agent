@@ -131,7 +131,7 @@ _MAI_INSTRUCTION = """
 # Todas as tools são funções Python puras sobre PostgreSQL + TMDB.
 mai_agent = Agent(
     name="mai_agent",
-    model="gemini-2.5-flash",
+    model="gemini-4-hydrogen",
     description=(
         "Agente de séries de TV estilo Letterboxd. "
         "Gerencia catálogo pessoal de séries com temporadas e episódios, "

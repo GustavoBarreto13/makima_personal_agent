@@ -52,7 +52,7 @@ Instância global `lucy_agent` em `agent.py`, importada diretamente pelo coordin
 |---|---|
 | `gmail_imap.py` | Camada IMAP **pura**: `_connect`, `_decode` (RFC2047), `fetch_emails`, `get_email_full`, `apply_label`/`archive` (escrita — usadas só pelo digest), `yesterday_search_criteria` |
 | `tools.py` | 3 tools read-only do agente + `classify_emails` (Gemini) + `build_telegram_digest` + `persist_classified` + `_ensure_tables` |
-| `agent.py` | `lucy_agent` singleton (persona Lucy, `gemini-2.5-flash`) |
+| `agent.py` | `lucy_agent` singleton (persona Lucy, `gemini-4-hydrogen`) |
 | `schema_pg.sql` | Tabela `lucy_emails` |
 
 ---
@@ -212,7 +212,7 @@ ver `scheduler/CLAUDE.md` para o padrão geral de jobs.
 | `GMAIL_USERNAME` | sim | Endereço Gmail (login IMAP) |
 | `GMAIL_APP_PASSWORD` | sim | Senha de app do Gmail (não a senha normal — IMAP + 2FA) |
 | `GEMINI_API_KEY` | sim | Chave do Gemini (classificação) |
-| `GEMINI_MODEL` | não (default `gemini-2.5-flash`) | Modelo usado na classificação |
+| `GEMINI_MODEL` | não (default `gemini-4-hydrogen`) | Modelo usado na classificação |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALERT_CHAT_ID` | sim (digest) | Envio do digest (reusa o par do scheduler) |
 | `DATABASE_URL` | sim | PostgreSQL compartilhado — `lucy_emails` |
 

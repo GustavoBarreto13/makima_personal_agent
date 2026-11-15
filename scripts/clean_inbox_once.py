@@ -29,7 +29,7 @@ import requests
 
 from agents.lucy import gmail_imap
 
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-4-hydrogen")
 GEMINI_DELAY = 6.0  # segundos entre chamadas, folga pro rate limit do tier gratuito
 MAX_RETRIES = 5
 RETRY_BACKOFF = 15.0  # backoff exponencial em 429/5xx: 15s, 30s, 60s...

@@ -614,7 +614,7 @@ python -m venv .venv
 python -m coordinator.main
 ```
 
-> Os agentes usam o modelo `gemini-2.5-flash`. O ADK lê a chave do Gemini de `GEMINI_API_KEY` (Google AI Studio) ou usa Vertex se `GOOGLE_GENAI_USE_VERTEXAI=1` estiver setado.
+> Os agentes usam o modelo `gemini-4-hydrogen`. O ADK lê a chave do Gemini de `GEMINI_API_KEY` (Google AI Studio) ou usa Vertex se `GOOGLE_GENAI_USE_VERTEXAI=1` estiver setado.
 
 ---
 

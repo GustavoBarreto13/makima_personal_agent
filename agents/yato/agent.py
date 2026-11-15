@@ -180,7 +180,7 @@ _YATO_INSTRUCTION = """
 # Todas as tools são funções Python puras sobre PostgreSQL (+ cross-agent Nami).
 yato_agent = Agent(
     name="yato_agent",
-    model="gemini-2.5-flash",
+    model="gemini-4-hydrogen",
     description=(
         "Agente de viagens solo em cidades pequenas do Brasil. "
         "Cria viagens e roteiro dia a dia, conduz o protocolo de 7 passos do "

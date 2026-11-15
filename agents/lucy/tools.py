@@ -272,7 +272,7 @@ def classify_emails(emails: list[dict]) -> dict:
     if not api_key:
         raise ClassificationError("GEMINI_API_KEY não configurada")
 
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    model = os.environ.get("GEMINI_MODEL", "gemini-4-hydrogen")
     client = genai.Client(api_key=api_key)
 
     last_exc: Exception | None = None
@@ -381,7 +381,8 @@ def build_telegram_digest(classified: list[dict], usage: dict) -> str:
 
     in_tokens = usage.get("prompt_tokens", 0)
     out_tokens = usage.get("candidates_tokens", 0)
-    cost = (in_tokens / 1_000_000) * 0.10 + (out_tokens / 1_000_000) * 0.40
+    # gemini-4-hydrogen: US$ 1,50 / 1M entrada e US$ 7,50 / 1M saída (saída inclui os tokens de raciocínio). Confira o preço em ai.google.dev/pricing.
+    cost = (in_tokens / 1_000_000) * 1.50 + (out_tokens / 1_000_000) * 7.50
 
     lines.append(f"🧠 Tokens: {in_tokens:,} in | {out_tokens:,} out")
     lines.append(f"💸 Custo: ~${cost:.5f}")

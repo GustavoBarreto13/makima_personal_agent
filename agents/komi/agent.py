@@ -20,7 +20,7 @@ from agents.komi.toolset import TOOLS as _KOMI_TOOLS
 # Instância global do agente Komi — singleton, seguro porque não usa McpToolset
 komi_agent = Agent(
     name="komi_agent",
-    model="gemini-2.5-flash",
+    model="gemini-4-hydrogen",
     # Descrição usada pela Makima para decidir quando rotear para a Komi
     description=(
         "Especialista em pessoas e contatos. Gerencia o cadastro de pessoas (Nome, Apelido e Nome "

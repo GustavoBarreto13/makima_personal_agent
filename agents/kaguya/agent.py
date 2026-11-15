@@ -335,7 +335,7 @@ def create_kaguya_agent() -> Agent:
     # Monta o agente: tools de tarefas (Python) + cross-agent + o McpToolset do Calendar.
     return Agent(
         name="kaguya_agent",
-        model="gemini-2.5-flash",
+        model="gemini-4-hydrogen",
         description=(
             "Especialista em gestão de tarefas (sistema próprio em PostgreSQL), agenda "
             "via Google Calendar e Calendar Hub (visão integrada de tarefas, finanças, "

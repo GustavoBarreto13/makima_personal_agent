@@ -49,7 +49,9 @@ model:
   # errado ou pulava a chamada), enquanto o 3.6-flash consultou o schema (`tool_describe`)
   # antes de chamar e acertou 100% nos mesmos testes. Também evita a migração forçada do
   # 2.5-flash, que desliga em 16/out/2026.
-  model: gemini-3.6-flash
+  # Nov/2026: o dono trocou TODOS os modelos do bot para gemini-4-hydrogen. Ainda sem o teste de
+  # tool-calling descrito acima: se as ferramentas voltarem a falhar, reverta para gemini-3.6-flash.
+  model: gemini-4-hydrogen
   base_url: https://generativelanguage.googleapis.com/v1beta/openai/
   # api_key interpolado direto de ${GEMINI_API_KEY} (já presente no .env raiz do
   # repo/Environment do Dokploy, usado pelos outros serviços) — não precisa de um
@@ -210,6 +212,18 @@ platforms:
     extra:
       port: 8644
       secret: "${WEBHOOK_SECRET}"
+
+  # Chat do app (webapp/Android) com a Makima — spec do chat da home.
+  # NAO ATIVADO: o schema abaixo e uma HIPOTESE (espelha o `webhook` acima e a API OpenAI-compativel
+  # do gateway upstream). Confirme no container ANTES de descomentar (ver "Chat do app (API do
+  # gateway)" em hermes/CLAUDE.md): `hermes --help`, `hermes config get platforms --json`, e o
+  # modulo gateway/platforms/api_server.py. Chave desconhecida pode impedir o gateway de subir.
+  # api_server:
+  #   enabled: true
+  #   extra:
+  #     host: 0.0.0.0        # so dentro da dokploy-network, sem porta publica/Traefik
+  #     port: 8642
+  #     key: "${HERMES_API_KEY}"   # o mesmo valor vai em HERMES_API_KEY do makima-web
 
   discord:
     bot_token: "${DISCORD_BOT_TOKEN}"

@@ -145,7 +145,7 @@ _FRIEREN_INSTRUCTION = """
 #   - Google Books API: metadados (título, autor, ISBN, páginas)
 frieren_agent = Agent(
     name="frieren_agent",
-    model="gemini-2.5-flash",
+    model="gemini-4-hydrogen",
     description=(
         "Agente de rastreamento de leitura pessoal. "
         "Gerencia catálogo de livros, loga progresso de leitura (por páginas), "
