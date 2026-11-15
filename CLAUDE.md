@@ -415,7 +415,7 @@ makima_personal_agent/
 │   └── .gitignore             # exclui client_secret.json do git
 ├── docs/                    # organizada por tipo — ver docs/README.md (mapa completo)
 │   ├── README.md            # índice: o que é vivo, o que é plano, o que é histórico
-│   ├── referencia/          # docs VIVAS: POSTGRES.md (64 tabelas), BACKUP_POSTGRES.md, KURISU_BASE_CONHECIMENTO.md (leiga)
+│   ├── referencia/          # docs VIVAS: POSTGRES.md (64 tabelas), BACKUP_POSTGRES.md, APP_ANDROID_BUILD.md (chave/APK/recuperação), KURISU_BASE_CONHECIMENTO.md (leiga)
 │   ├── planos/              # planos FUTUROS: PLANO_VIOLET_EVERGARDEN.md, PLANO_KAGUYA_MELHORIAS_2026H2.md…
 │   ├── arquivo/             # HISTÓRICO: PLAN.md original, MIGRACAO_POSTGRES.md, persistencia-sessao, setup-hook, superpowers/
 │   └── claude_design/       # design handoffs (HTML/CSS de referência) dos shells

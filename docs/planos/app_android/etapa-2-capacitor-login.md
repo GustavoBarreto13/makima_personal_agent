@@ -78,6 +78,7 @@ O app **embute** o `dist/`. Mudança de **tela** = APK novo; mudança só de **b
 - Mesma chave = instala por cima sem perder login. Release e depuração **não** instalam um por cima do outro.
 
 ### Se perder o PC
+Passo a passo completo (onde está cada cópia da chave, secrets, pegadinhas): [`docs/referencia/APP_ANDROID_BUILD.md`](../../referencia/APP_ANDROID_BUILD.md).
 `git clone` + restaurar `makima-release.jks` do Bitwarden (ou do `.7z` no Drive) + baixar o `google-services.json`
 no console do Firebase + recriar `android/keystore.properties`. Ou nem isso: o APK sai pronto no GitHub Actions.
 Nunca criar uma keystore nova — o app instalado só aceita atualização assinada com a mesma chave.

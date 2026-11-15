@@ -4,7 +4,8 @@
 // Qual APK: se a chave de release estiver disponível (android/keystore.properties ou MAKIMA_KEYSTORE_FILE),
 // gera o de RELEASE, assinado com ela — o mesmo que o GitHub Actions gera. Sem a chave, cai no de
 // depuração e avisa: o Android não instala um por cima do outro (assinaturas diferentes).
-// Pré-requisito: o `npm run android:sync` já ter copiado o dist/ (os dois scripts npm já fazem isso).
+// Sempre roda o `npm run android:sync` antes (build das telas + cap sync): o APK EMBUTE as telas, e um APK
+// gerado sem isso sai com telas velhas — aconteceu em 15/nov/2026. `--no-sync` pula (só para quem sabe o que faz).
 //
 // Java: usa o JAVA_HOME; senão um JDK 21 instalado; por último o Java do Android Studio (jbr).
 // SDK: usa o ANDROID_HOME/ANDROID_SDK_ROOT se existir; senão a pasta padrão do Windows/macOS/Linux.
@@ -62,6 +63,11 @@ function run(cmd, args) {
   if (r.status !== 0) process.exit(r.status ?? 1)
 }
 
+if (!process.argv.includes('--no-sync')) {
+  const r = spawnSync('npm', ['run', 'android:sync'], { cwd: resolve(androidDir, '..'), env, stdio: 'inherit', shell: isWin })
+  if (r.status !== 0) process.exit(r.status ?? 1)
+}
+
 const release = Boolean(process.env.MAKIMA_KEYSTORE_FILE) || existsSync(join(androidDir, 'keystore.properties'))
 if (!release) {
   console.warn(
@@ -84,6 +90,40 @@ if (install) {
     console.error('adb não encontrado (SDK/platform-tools). Instale o APK manualmente.')
     process.exit(1)
   }
-  run(adb, ['install', '-r', apk])
-  run(adb, ['shell', 'monkey', '-p', 'br.com.gustavo.makima', '-c', 'android.intent.category.LAUNCHER', '1'])
+  const serial = findPhone(adb)
+  run(adb, ['-s', serial, 'install', '-r', apk])
+  run(adb, ['-s', serial, 'shell', 'monkey', '-p', 'br.com.gustavo.makima', '-c', 'android.intent.category.LAUNCHER', '1'])
+}
+
+// Acha o celular: pelo cabo ou pela "Depuração por Wi-Fi" (Wireless debugging). Se nada estiver conectado,
+// procura na rede um celular já pareado (`adb mdns services`) e conecta sozinho — a porta muda a cada vez
+// que o Wireless debugging liga, então não dá para guardar IP:porta. Parear é uma vez só (adb pair).
+function findPhone(adb) {
+  const out = (args) => spawnSync(adb, args, { env, encoding: 'utf8' }).stdout ?? ''
+  const connected = () =>
+    out(['devices'])
+      .split(/\r?\n/)
+      .map((l) => l.split('\t'))
+      .filter(([serial, state]) => serial && state === 'device')
+      .map(([serial]) => serial)
+
+  let phones = connected()
+  if (phones.length === 0) {
+    const announced = [...out(['mdns', 'services']).matchAll(/_adb-tls-connect\._tcp\.?\s+(\S+:\d+)/g)].map((m) => m[1])
+    for (const addr of announced) {
+      console.log(`Conectando pelo Wi-Fi em ${addr}…`)
+      out(['connect', addr])
+    }
+    phones = connected()
+  }
+  if (phones.length === 0) {
+    console.error(
+      '\nNenhum celular encontrado. Ligue o cabo USB, ou no celular: Settings → Developer options →' +
+        ' Wireless debugging ligado (mesma rede Wi-Fi do PC). Primeira vez por Wi-Fi: parear com' +
+        ' "Pair device with pairing code" + `adb pair IP:porta` (ver docs/referencia/APP_ANDROID_BUILD.md).',
+    )
+    process.exit(1)
+  }
+  // Cabo e Wi-Fi ao mesmo tempo = o mesmo celular duas vezes; qualquer um serve.
+  return phones[0]
 }

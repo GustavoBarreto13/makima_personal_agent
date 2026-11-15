@@ -20,6 +20,7 @@ o que é intenção futura e o que é só registro do passado:
 
 - [`referencia/POSTGRES.md`](referencia/POSTGRES.md) — o banco inteiro: 8 domínios, 64 tabelas coluna a coluna, padrões e pegadinhas
 - [`referencia/BACKUP_POSTGRES.md`](referencia/BACKUP_POSTGRES.md) — como o backup diário funciona, como verificar e restaurar
+- [`referencia/APP_ANDROID_BUILD.md`](referencia/APP_ANDROID_BUILD.md) — app Android: chave de assinatura (onde estão as cópias), como gerar/instalar o APK (PC ou GitHub Actions) e como recuperar tudo se perder o PC
 - [`referencia/KURISU_BASE_CONHECIMENTO.md`](referencia/KURISU_BASE_CONHECIMENTO.md) — explicação **em linguagem leiga** da base de conhecimento (RAG) da Kurisu
 - [`../webapp/docs/DESIGN_SYSTEM.md`](../webapp/docs/DESIGN_SYSTEM.md) — Design System do frontend (tokens, componentes, padrões de coleção/captura/estatísticas, governança) e [`DESIGN_CONFORMANCE.md`](../webapp/docs/DESIGN_CONFORMANCE.md) (status de adoção por página, gerado)
 
