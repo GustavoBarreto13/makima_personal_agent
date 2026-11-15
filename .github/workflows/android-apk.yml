@@ -1,0 +1,96 @@
+# Gera o APK de release do app Android (assinado com a chave de release) sem depender de PC nenhum.
+# Guia: docs/planos/app_android/etapa-2-capacitor-login.md, seção E.
+#
+# Secrets do repositório (Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64   — o makima-release.jks em base64
+#   ANDROID_KEYSTORE_PASSWORD — a senha da keystore (a mesma da chave)
+#   GOOGLE_SERVICES_JSON      — o conteúdo do android/app/google-services.json (Firebase/push)
+#
+# Só roda em push na master e no botão "Run workflow" — nunca em pull request de fork, que não
+# pode ter acesso à chave.
+name: APK Android
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'webapp/frontend/**'
+      - '.github/workflows/android-apk.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: webapp/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # o Capacitor 8 exige Node 22+
+          cache: npm
+          cache-dependency-path: webapp/frontend/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Build do webapp (modo android) + cap sync
+        run: npm run android:sync
+
+      - name: Chave de release e google-services.json
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Secret ANDROID_KEYSTORE_BASE64 não configurado — sem ele o APK sairia sem assinatura."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/makima-release.jks"
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          else
+            echo "::warning::Secret GOOGLE_SERVICES_JSON ausente — o APK sai sem push."
+          fi
+
+      - name: Gerar APK de release
+        working-directory: webapp/frontend/android
+        env:
+          MAKIMA_KEYSTORE_FILE: ${{ runner.temp }}/makima-release.jks
+          MAKIMA_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --console=plain
+
+      - name: Nome do arquivo
+        id: name
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "file=makima-${VERSION}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.name.outputs.file }}
+          path: webapp/frontend/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Apagar a chave do runner
+        if: always()
+        run: rm -f "$RUNNER_TEMP/makima-release.jks" android/app/google-services.json

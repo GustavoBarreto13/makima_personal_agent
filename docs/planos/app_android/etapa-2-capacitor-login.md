@@ -45,28 +45,42 @@ dentro do app, com "portas" para recursos do celular. Aqui nasce o primeiro APK.
   "Sem conexão" ou "A Makima está com problema".
 
 ### Falta fazer
-- **Testar no celular** o que acima não dá para validar aqui (sem Java/SDK): `npm run android:sync` → ▶ e conferir
+- **Testar no celular** o que acima não dá para validar aqui (sem Java/SDK): `npm run android:install` e conferir
   voltar, `adb shell am start -a android.intent.action.VIEW -d "makima://kaguya"`, biometria ao abrir e após 2 min,
   print bloqueado em Diário/Finanças e liberado em Tarefas, vibração ao concluir tarefa.
-- **E — APK assinado:** *(você)* criar a keystore de release e guardar em **dois lugares seguros**; depois
-  cadastrar o SHA-1 dela na credencial Android do Google Cloud (hoje só está o SHA-1 da chave de **depuração**,
-  então um APK assinado com outra chave não consegue logar até isso ser feito).
+- **E — APK assinado:** keystore de release criada em 15/nov/2026 (`makima-release.jks`, alias `makima`, mesma
+  senha para arquivo e chave), com backup no Bitwarden e em `G:\Meu Drive\Backups\makima-keystore.7z`; SHA-1
+  cadastrado no Google Cloud (credencial "Makima Android (release)", ao lado da de depuração). Código pronto:
+  `app/build.gradle` assina o release com a chave de `android/keystore.properties` (PC) ou das variáveis
+  `MAKIMA_KEYSTORE_FILE`/`MAKIMA_KEYSTORE_PASSWORD` (CI); `versionName`/`versionCode` saem do `package.json`
+  (0.61.0 → 6100). `npm run android:install` gera o release quando acha a chave. O GitHub Actions
+  (`.github/workflows/android-apk.yml`) gera o APK assinado a cada push na `master` que mexe no frontend.
+  **Falta:** secrets do repositório (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `GOOGLE_SERVICES_JSON`)
+  e trocar o app do celular de depuração para release (desinstalar uma vez, sem escrita offline pendente).
 - **Pendente menor:** testes do backend de `/auth/mobile` contra banco real (parte da suíte é pulada sem banco);
   `npm run audit:design` e `chrome://inspect` sem erros nos 10 agentes; testar revogar o aparelho em `/api/devices`.
 
 ### Não-código (anotado para não esquecer)
 | Quando | O que é com você |
 |---|---|
-| Etapa 2-E | Criar a keystore de release (dois backups) e depois o SHA-1 dela no Google Cloud |
+| Etapa 2-E | ✅ keystore + backups + SHA-1. Falta: secrets do GitHub e reinstalar o app como release |
 | Etapa 3 | Firebase: adicionar o app Android e baixar o `google-services.json`; decidir `NOTIFY_DEFAULT_CHANNELS` (só push ou push + WhatsApp) |
 | Etapa 4 | Criar o bucket privado `makima-media` no GCS e dar permissão à conta de serviço |
 | Etapa 5 | Android → Apps → Makima → Bateria → **Sem restrições** |
 | Sempre | Testar no celular real e relatar |
 
 ### Como atualizar o app (hoje)
-O app **embute** o `dist/`. Mudança de **tela** = `npm run android:sync` + ▶ no Android Studio. Mudança só de
-**backend** vale na hora, sem reinstalar. Depois da seção E, o dia a dia passa a ser instalar o APK assinado
-por cima (mesma chave = atualiza sem perder login). Live update e APK automático ficam para a Etapa 8.
+O app **embute** o `dist/`. Mudança de **tela** = APK novo; mudança só de **backend** vale na hora, sem reinstalar.
+- **No PC** (celular no USB): `npm run android:install` em `webapp/frontend` — build, `cap sync`, APK pelo Gradle e
+  instalação via adb, sem abrir o Android Studio. Precisa de JDK 21 (o Java 25 que o Studio passou a trazer quebra o
+  Gradle 8.14) e do SDK do Android; com `android/keystore.properties` sai o release.
+- **Sem PC:** GitHub → Actions → "APK Android" → última execução → baixar o artefato `makima-<versão>-<sha>`.
+- Mesma chave = instala por cima sem perder login. Release e depuração **não** instalam um por cima do outro.
+
+### Se perder o PC
+`git clone` + restaurar `makima-release.jks` do Bitwarden (ou do `.7z` no Drive) + baixar o `google-services.json`
+no console do Firebase + recriar `android/keystore.properties`. Ou nem isso: o APK sai pronto no GitHub Actions.
+Nunca criar uma keystore nova — o app instalado só aceita atualização assinada com a mesma chave.
 
 ### Armadilhas já encontradas (VPS)
 - Deploy **não cria tabelas novas**: rodar no container `makima-web`
@@ -82,7 +96,7 @@ por cima (mesma chave = atualiza sem perder login). Live update e APK automátic
 1. Instalar `@capacitor/core`, `@capacitor/cli`, `@capacitor/android` e rodar `npx cap init` /
    `npx cap add android` em `webapp/frontend/`.
 2. `capacitor.config.ts`: nome "Makima", `appId` (ex.: `br.com.gustavo.makima`), pasta `dist`.
-3. Fluxo de trabalho: `npm run build` → `npx cap sync android` → abrir no Android Studio → ▶.
+3. Fluxo de trabalho: `npm run android:install` (build + `cap sync` + APK pelo Gradle + instala via adb no celular conectado por USB), sem abrir o Android Studio. `npm run android:apk` só gera o APK em `android/app/build/outputs/apk/debug/`.
 
 ### B. Novo login (ver `01-backend-necessario.md`)
 1. Botão "Entrar com Google" usa o seletor nativo de contas (plugin social-login).

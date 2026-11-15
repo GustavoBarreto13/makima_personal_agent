@@ -34,7 +34,7 @@ chegam como notificação do Android, com **botões** que agem sem abrir o app.
 > (estende o serviço do plugin e repassa tudo que não é lembrete de tarefa) desenha a notificação com os botões e
 > `PushActionReceiver.java` chama `POST /api/push/action` — sem usar a sessão, que gira a cada uso. Subtarefas abertas → o botão
 > avisa "abra o app". Detalhes: `agents/kaguya/CLAUDE.md` § "Lembretes nativos do app". **Para testar:** deploy do backend +
-> scheduler, `npm run android:sync` → ▶, criar uma tarefa com hora daqui a ~12 min.
+> scheduler, `npm run android:install`, criar uma tarefa com hora daqui a ~12 min.
 
 ## Passo a passo
 

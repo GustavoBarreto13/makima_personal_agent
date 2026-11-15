@@ -11,8 +11,35 @@ if (envAndroid.exists()) {
     }
 }
 
+// Versão do app = versão do repo (webapp/frontend/package.json, ver CLAUDE.md § Versionamento).
+// versionCode precisa sempre crescer: 0.62.3 → 6203 (MAJOR*1_000_000 + MINOR*100 + PATCH).
+def appVersion = new groovy.json.JsonSlurper().parse(file('../../package.json')).version
+def (vMajor, vMinor, vPatch) = appVersion.tokenize('.-')[0..2].collect { it as int }
+def appVersionCode = vMajor * 1000000 + vMinor * 100 + vPatch
+
+// Chave de release (docs/planos/app_android/etapa-2-capacitor-login.md, seção E). A keystore e a senha
+// NUNCA entram no git: vêm de android/keystore.properties (no PC, ignorado pelo git) ou de variáveis de
+// ambiente (GitHub Actions). Sem nenhum dos dois, o APK de release sai sem assinatura.
+def keystoreProps = new Properties()
+def keystorePropsFile = rootProject.file('keystore.properties')
+if (keystorePropsFile.exists()) keystorePropsFile.withInputStream { keystoreProps.load(it) }
+def releaseStoreFile = System.getenv('MAKIMA_KEYSTORE_FILE') ?: keystoreProps.getProperty('storeFile')
+def releaseStorePassword = System.getenv('MAKIMA_KEYSTORE_PASSWORD') ?: keystoreProps.getProperty('storePassword')
+def hasReleaseKey = releaseStoreFile && releaseStorePassword && file(releaseStoreFile).exists()
+
 android {
     namespace = "br.com.gustavo.makima"
+    signingConfigs {
+        if (hasReleaseKey) {
+            release {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias System.getenv('MAKIMA_KEY_ALIAS') ?: keystoreProps.getProperty('keyAlias', 'makima')
+                // A keystore foi criada com a mesma senha para o arquivo e para a chave.
+                keyPassword System.getenv('MAKIMA_KEY_PASSWORD') ?: keystoreProps.getProperty('keyPassword', releaseStorePassword)
+            }
+        }
+    }
     compileSdk = rootProject.ext.compileSdkVersion
     buildFeatures {
         buildConfig = true
@@ -21,8 +48,8 @@ android {
         applicationId "br.com.gustavo.makima"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersion
         buildConfigField "String", "API_BASE_URL", "\"${apiBaseUrl}\""
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -34,6 +61,7 @@ android {
     buildTypes {
         release {
             minifyEnabled false
+            if (hasReleaseKey) signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }

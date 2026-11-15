@@ -7,7 +7,8 @@ import type { CapacitorConfig } from '@capacitor/cli'
 // na origem `https://localhost` (padrão do Capacitor no Android). As chamadas ao backend
 // saem com o endereço absoluto definido no build por `VITE_API_BASE_URL` (ver src/lib/api.ts).
 //
-// Fluxo de trabalho: `npm run build` → `npx cap sync android` → abrir `android/` no Android Studio → ▶.
+// Fluxo de trabalho: `npm run android:install` (build + cap sync + APK via Gradle + instala no celular pelo adb),
+// sem abrir o Android Studio — ver scripts/android-apk.mjs. `npm run android:apk` só gera o APK.
 const config: CapacitorConfig = {
   // Identificador único do app no Android (não muda depois de publicado: é o "RG" do app).
   appId: 'br.com.gustavo.makima',
