@@ -780,7 +780,9 @@ interna `dokploy-network`, com `Authorization: Bearer {HERMES_API_KEY}` e o cabe
 **Confirmado lendo o codigo da imagem (`/opt/hermes/gateway/platforms/api_server.py`, nov/2026):**
 
 - A plataforma `api_server` existe. Chaves em `platforms.api_server.extra`: `host` (padrao `127.0.0.1` —
-  precisa ser `0.0.0.0` para o `makima-web` alcancar), `port` (padrao `8642`), `key` (Bearer).
+  precisa ser `0.0.0.0` para o `makima-web` alcancar) e `port` (padrao `8642`). O Bearer vem do segredo
+  **`API_SERVER_KEY`** (`.env` do perfil). **Nao use `extra.key: "${VAR}"`**: o gateway usa o texto literal, sem
+  expandir, e toda chamada leva 401 (testado em nov/2026).
 - `X-Hermes-Session-Id` so e aceito **com `key` configurada** (senao 403) e nao pode ter caracteres de
   controle nem forma de path traversal (`_is_path_unsafe`). Quando enviado, o historico vem do `state.db`
   do Hermes e o corpo da requisicao so precisa da ultima mensagem.
@@ -791,15 +793,14 @@ interna `dokploy-network`, com `Authorization: Bearer {HERMES_API_KEY}` e o cabe
 
 ### Ativar / reativar (VPS)
 
-1. `HERMES_API_KEY` (gerar: `openssl rand -hex 32`) em **dois lugares**, o mesmo valor:
-   - **Hermes**: `/opt/data/.env` do volume (`docker exec makima-hermes sh -c 'echo HERMES_API_KEY=... >> /opt/data/.env'`),
+1. Uma chave (gerar: `openssl rand -hex 32`) em **dois lugares**, o mesmo valor:
+   - **Hermes**: `API_SERVER_KEY` em `/opt/data/.env` do volume (`docker exec makima-hermes sh -c 'echo API_SERVER_KEY=... >> /opt/data/.env'`),
      que sobrevive a deploy do Dokploy (o gateway le esse arquivo no boot, como o `WHATSAPP_*`);
-   - **makima-web**: Environment da app no Dokploy, junto de `HERMES_API_URL=http://makima-hermes:8642`.
+   - **makima-web**: `HERMES_API_KEY` no Environment da app no Dokploy, junto de `HERMES_API_URL=http://makima-hermes:8642`.
      (O `.env` em `/etc/dokploy/compose/<app>/code/` e **regerado a cada deploy** a partir do Dokploy:
      variavel so gravada la some no proximo push.)
-2. `hermes/config.yaml` ja traz o bloco `api_server` ativo. Recriar o container (`docker restart makima-hermes`)
-   e conferir: `docker exec makima-hermes hermes config get platforms.api_server --json` — `key` tem que ser o
-   valor real, nao a string `${HERMES_API_KEY}`.
+2. `hermes/config.yaml` ja traz o bloco `api_server` ativo (sem `key`). `docker restart makima-hermes` e conferir o log:
+   `docker logs makima-hermes | grep -i api_server` (aviso de 0.0.0.0 e normal: a porta nao e publicada).
 3. Recriar o `makima-web` para ler a variavel nova e testar de dentro dele:
    ```bash
    docker exec makima-web python -c "import httpx,os;r=httpx.post(os.environ['HERMES_API_URL']+'/v1/chat/completions',headers={'Authorization':'Bearer '+os.environ['HERMES_API_KEY']},json={'model':'hermes-agent','messages':[{'role':'user','content':'responda so: ok'}]},timeout=90);print(r.status_code,r.text[:200])"
