@@ -12,6 +12,10 @@ As versões 0.1.0–0.61.0 foram marcadas retroativamente sobre o histórico da 
 ## [Unreleased]
 
 ### Added
+- Página inicial **Hoje**: a home da Makima vira um painel do dia — o que está acontecendo agora (foco ativo e próximo compromisso), o que pede ação (tarefas vencidas, contas a pagar, aniversários) e "Seus números" que você escolhe, oculta e reordena. A aba **Agentes** traz a grade de agentes com um número vivo e a ação rápida de cada um. Barra inferior no celular.
+- Home: **captura universal** — uma linha ("gastei 32 no ifood", "ligar pro contador amanhã", "comprar presente @Bia") vira gasto, receita ou tarefa, sempre mostrando o que foi entendido antes de salvar e com Desfazer.
+- Home: **busca em tudo** no `Ctrl+K` — acha tarefas, pessoas, livros, filmes, animes, séries e lançamentos de todos os agentes (o diário fica de fora).
+- Home: aba **Conversar** — chat com a Makima (Hermes) com resposta em tempo real e cartões do que os agentes fizeram. Fica desligado até o servidor do chat ser ativado (`hermes/CLAUDE.md`).
 - Violet: **Não ditos** — um lugar para registrar o que você queria dizer a alguém e não pode, não quer ou não consegue. Escolha a pessoa (Komi), escreva, diga o porquê com um toque e depois marque *acabei falando* ou *deixei ir*. O texto fica borrado até tocar; na Komi aparece só "Algo não dito", sem o conteúdo; a Violet usa como contexto sem citar. Funciona no site e no app (inclusive sem internet e por atalho do ícone).
 - App Android: botões *Concluir · Adiar 1h · Amanhã* direto na notificação do lembrete de tarefa.
 - App Android: criar tarefa, concluir tarefa, lançar gasto, marcar hábito e escrever um momento no diário **sem internet** — ficam no aparelho (com aviso "N aguardam a internet") e são enviados quando a conexão volta, sem duplicar.

@@ -21,7 +21,9 @@ Usage:
 """
 
 # APIRouter agrupa as rotas; Depends injeta a dependência de autenticação.
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+
+from pydantic import BaseModel, Field
 
 # calendar.monthrange calcula o último dia real do mês (evita 31 em meses de 30 dias).
 import calendar
@@ -534,3 +536,332 @@ def hub_summary(user: dict = Depends(require_user)) -> dict:
 
     # Dicionário final com exatamente as 8 chaves de agente.
     return out
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ENDPOINT — GET /api/hub/today  (nova home "Hoje")
+# ═════════════════════════════════════════════════════════════════════════════
+# Cada bloco roda isolado: se falhar, a chave vira None/[] e o resto segue (sempre HTTP 200).
+# "Hoje" e "agora" SEMPRE no fuso America/Sao_Paulo (agents.kaguya.tz), nunca date.today().
+
+def _brl(v: float) -> str:
+    """Reais sem '+' para positivos; mantém o '−' (U+2212) dos negativos."""
+    t = _fmt_brl(v)
+    return t[1:] if t.startswith("+") else t
+
+
+def _now_block() -> dict:
+    """Foco ativo + próximo compromisso do dia."""
+    from datetime import datetime
+
+    from agents.kaguya import calendar_hub
+    from agents.kaguya.tools_focus import get_active_session
+    from agents.kaguya.tz import now_sp
+
+    focus = None
+    s = get_active_session()
+    if s:
+        focus = {
+            "id": s["id"],
+            "title": s.get("task_title") or s.get("habit_name") or "Foco livre",
+            "phase": s.get("phase"),
+            "remaining_sec": s.get("remaining_sec"),
+            "href": "/tasks#foco",
+        }
+
+    nxt = None
+    agora = now_sp()
+    dia = agora.date().isoformat()
+    try:
+        itens = calendar_hub.aggregate(dia, dia).get("items", [])
+    except Exception:
+        itens = []
+    com_hora = []
+    for it in itens:
+        ini = it.get("start")
+        if not ini or it.get("all_day"):
+            continue
+        try:
+            dt = datetime.fromisoformat(ini)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=agora.tzinfo)
+            dt = dt.astimezone(agora.tzinfo)
+        except ValueError:
+            continue
+        if dt >= agora:
+            com_hora.append((dt, it))
+    if com_hora:
+        dt, it = min(com_hora, key=lambda x: x[0])
+        nxt = {"title": it.get("title", ""), "time": dt.strftime("%H:%M"), "href": it.get("deep_link") or "/tasks"}
+    return {"focus": focus, "next": nxt}
+
+
+def _attention_block() -> list[dict]:
+    """O que pede ação: tarefas vencidas, contas a pagar, aniversários próximos."""
+    items: list[dict] = []
+
+    try:
+        from agents.kaguya.tools_tasks import list_tasks_today
+
+        t = list_tasks_today(only_chargeable=True)
+        n = len(t["overdue"])
+        if n:
+            items.append({"id": "overdue", "agent": "kaguya", "tone": "danger",
+                          "label": f"{n} tarefa{'s' if n != 1 else ''} vencida{'s' if n != 1 else ''}",
+                          "action": "Ver", "href": "/tasks#hoje"})
+    except Exception:
+        pass
+
+    try:
+        from agents.nami.tools_plan import get_month_plan
+
+        plano = get_month_plan("")
+        if plano.get("status") == "ok":
+            for c in (plano.get("a_pagar") or [])[:3]:
+                atrasada = c.get("status") == "atrasada"
+                items.append({"id": f"pay-{c['kind']}-{c['id']}", "agent": "nami",
+                              "tone": "danger" if atrasada else "warn",
+                              "label": f"{c['name']} · {_brl(float(c['valor']))} · {c['due'][8:10]}/{c['due'][5:7]}",
+                              "action": "Pagar", "href": "/nami#recorrentes"})
+    except Exception:
+        pass
+
+    try:
+        from agents.komi.tools import upcoming_birthdays
+
+        r = upcoming_birthdays(days=7)
+        if r.get("status") == "ok":
+            for b in r["birthdays"][:2]:
+                quando = "hoje" if b["in_days"] == 0 else "amanhã" if b["in_days"] == 1 else f"em {b['in_days']} dias"
+                items.append({"id": f"bday-{b['person_id']}", "agent": "komi", "tone": "info",
+                              "label": f"Aniversário de {b['name']} · {quando}",
+                              "action": "Abrir", "href": f"/people#pessoa/{b['person_id']}"})
+    except Exception:
+        pass
+
+    return items
+
+
+def _numbers_block() -> dict:
+    """Números dos widgets (cada um None se falhar). Valores já formatados."""
+    out: dict = {}
+
+    try:
+        from agents.nami.tools_plan import get_month_plan
+
+        p = get_month_plan("")
+        if p.get("status") == "ok":
+            out["nami_livre"] = {"v": _brl(float(p["livre"])), "k": "livre pra gastar", "href": "/nami"}
+    except Exception:
+        out["nami_livre"] = None
+
+    try:
+        from agents.kaguya.tools_tasks import list_tasks_today
+
+        t = list_tasks_today(only_chargeable=True)
+        out["kaguya_hoje"] = {"v": str(len(t["today"])), "k": "tarefas hoje", "href": "/tasks#hoje"}
+    except Exception:
+        out["kaguya_hoje"] = None
+
+    try:
+        from agents.kaguya.tools_habits import list_habits
+
+        hs = list_habits()
+        feitos = sum(1 for h in hs if h.get("done_today"))
+        out["habitos"] = {"v": f"{feitos} de {len(hs)}", "k": "hábitos feitos hoje", "href": "/tasks#habitos"} if hs else None
+    except Exception:
+        out["habitos"] = None
+
+    try:
+        from agents.journal.tools import get_stats as _journal_stats
+        from agents.kaguya.tz import today_sp
+
+        s = _journal_stats(year=today_sp().year)
+        out["violet_dias"] = {"v": str(s["days_written"]), "k": "dias escritos no ano", "href": "/journal"}
+    except Exception:
+        out["violet_dias"] = None
+
+    return out
+
+
+@router.get("/today")
+def hub_today(user: dict = Depends(require_user)) -> dict:
+    """Painel "Hoje" da home: agora, precisa de você e números.
+
+    Cada bloco é calculado em `try/except` isolado — falha vira `None`/`[]`, nunca 500.
+    Os cards dos agentes continuam vindo de `GET /api/hub/summary`.
+    """
+    from agents.kaguya.tz import today_sp
+
+    def seguro(fn, vazio):
+        try:
+            return fn()
+        except Exception:
+            return vazio
+
+    return {
+        "date": today_sp().isoformat(),
+        "now": seguro(_now_block, {"focus": None, "next": None}),
+        "attention": seguro(_attention_block, []),
+        "numbers": seguro(_numbers_block, {}),
+    }
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CAPTURA UNIVERSAL — POST /api/hub/capture/{parse,commit,undo}
+# ═════════════════════════════════════════════════════════════════════════════
+# parse NÃO grava: só classifica e devolve a prévia (e resolve @Nome pela regra 0/1/2+ da Komi).
+# commit grava via as tools de sempre (Nami/Kaguya) e devolve o que precisa para o Desfazer.
+# Pessoa ambígua ou desconhecida nunca é vinculada sem confirmação: vira aviso na prévia.
+
+class CaptureParseBody(BaseModel):
+    text: str = Field(default="", max_length=500)
+
+
+class CaptureCommitBody(BaseModel):
+    kind: str = Field(pattern="^(expense|income|task)$")
+    fields: dict
+    person_ids: list[str] = Field(default_factory=list)
+
+
+class CaptureUndoBody(BaseModel):
+    kind: str = Field(pattern="^(expense|income|task)$")
+    id: str
+
+
+def _resolve_mentions(names: list[str]) -> tuple[list[dict], list[str]]:
+    """@Nome → pessoa (1 match), ou aviso (0/2+). Falha da Komi nunca derruba a prévia."""
+    people: list[dict] = []
+    warnings: list[str] = []
+    if not names:
+        return people, warnings
+    try:
+        from agents.komi.integration import resolve_person
+
+        for n in names:
+            r = resolve_person(n)
+            if r.get("status") != "ok":
+                warnings.append(f"Não consegui procurar @{n} agora; não vinculei.")
+            elif r["match"] == "one":
+                people.append({"id": r["person"]["id"], "name": r["person"]["name"], "mention": n})
+            elif r["match"] == "none":
+                warnings.append(f"Não achei @{n} nas suas pessoas; não vinculei.")
+            else:
+                warnings.append(f"Mais de uma pessoa combina com @{n}; não vinculei. Use o nome completo.")
+    except Exception:  # noqa: BLE001
+        warnings.append("Não consegui procurar as pessoas agora; não vinculei ninguém.")
+    return people, warnings
+
+
+@router.post("/capture/parse")
+def capture_parse(body: CaptureParseBody, user: dict = Depends(require_user)) -> dict:
+    """Prévia da captura universal: o que a Makima entendeu, sem gravar nada."""
+    from agents.kaguya.tz import today_sp
+    from webapp.backend.universal_capture import parse_line
+
+    r = parse_line(body.text, today_sp())
+    r["people"], r["warnings"] = _resolve_mentions(r.pop("mentions", []))
+    return r
+
+
+@router.post("/capture/commit", status_code=201)
+def capture_commit(body: CaptureCommitBody, user: dict = Depends(require_user)) -> dict:
+    """Grava o que a prévia mostrou. Devolve `{status, summary, undo:{kind,id}}`. Aceita `Idempotency-Key`."""
+    f = body.fields
+    people = body.person_ids or None
+    if body.kind in ("expense", "income"):
+        from agents.nami.tools import create_transaction
+
+        try:
+            valor = float(f.get("valor"))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Valor inválido.")
+        if valor <= 0:
+            raise HTTPException(status_code=400, detail="O valor precisa ser maior que zero.")
+        tipo = "Despesa" if body.kind == "expense" else "Receita"
+        r = create_transaction(
+            name=str(f.get("name") or tipo), valor=valor, tipo=tipo,
+            categoria=str(f.get("categoria") or "Inbox"), data=str(f.get("data") or ""), person_ids=people,
+        )
+        if r.get("status") == "error":
+            raise HTTPException(status_code=400, detail=r.get("message"))
+        return {"status": "ok", "summary": r.get("message", "Lançado."), "undo": {"kind": body.kind, "id": str(r["id"])}}
+
+    from agents.kaguya.tools_tasks import create_task
+
+    title = str(f.get("title") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Escreva o que precisa ser feito.")
+    r = create_task(title=title, due_date=f.get("due_date") or None, person_ids=people)
+    if r.get("status") == "error":
+        raise HTTPException(status_code=400, detail=r.get("message"))
+    return {"status": "ok", "summary": f"Tarefa criada: {title}", "undo": {"kind": "task", "id": str(r["id"])}}
+
+
+@router.post("/capture/undo")
+def capture_undo(body: CaptureUndoBody, user: dict = Depends(require_user)) -> dict:
+    """Desfaz uma captura recém-gravada (transação → lixeira; tarefa → lixeira)."""
+    if body.kind in ("expense", "income"):
+        from agents.nami.tools import delete_transaction
+
+        r = delete_transaction(body.id)
+    else:
+        from agents.kaguya.tools_tasks import delete_task
+
+        try:
+            r = delete_task(int(body.id))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Identificador inválido.")
+    if isinstance(r, dict) and r.get("status") == "error":
+        raise HTTPException(status_code=400, detail=r.get("message"))
+    return {"status": "ok"}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# BUSCA GLOBAL — GET /api/hub/search?q=
+# ═════════════════════════════════════════════════════════════════════════════
+# Fan-out por agente, cada fonte isolada (uma tabela fora do ar não derruba as outras).
+# Só título/nome — o diário não entra (privacidade: nada do texto escrito vai para uma busca global).
+
+_SEARCH_SOURCES: list[tuple[str, str, str, str, str, str]] = [
+    # (grupo, agente, SQL, ícone, deep link com {id}, descrição curta)
+    ("Tarefas", "kaguya", "SELECT id::text AS id, title AS label FROM tasks WHERE deleted_at IS NULL AND completed_at IS NULL AND title ILIKE %(q)s ORDER BY updated_at DESC NULLS LAST LIMIT 5", "task", "/tasks", ""),
+    ("Pessoas", "komi", "SELECT id::text AS id, name AS label FROM people WHERE deleted = FALSE AND (name ILIKE %(q)s OR nickname ILIKE %(q)s OR full_name ILIKE %(q)s) ORDER BY name LIMIT 5", "person", "/people#pessoa/{id}", ""),
+    ("Livros", "frieren", "SELECT id::text AS id, title AS label FROM books WHERE deleted = FALSE AND title ILIKE %(q)s ORDER BY title LIMIT 5", "book", "/books#livro/{id}", ""),
+    ("Filmes", "akane", "SELECT id::text AS id, title AS label FROM movies WHERE deleted = FALSE AND title ILIKE %(q)s ORDER BY title LIMIT 5", "movie", "/movies#filme/{id}", ""),
+    ("Animes", "marin", "SELECT id::text AS id, title AS label FROM anime WHERE deleted = FALSE AND title ILIKE %(q)s ORDER BY title LIMIT 5", "anime", "/animes#anime/{id}", ""),
+    ("Séries", "mai", "SELECT id::text AS id, title AS label FROM series WHERE deleted = FALSE AND title ILIKE %(q)s ORDER BY title LIMIT 5", "series", "/series", ""),
+    ("Lançamentos", "nami", "SELECT id::text AS id, name || ' · R$ ' || valor::text AS label FROM transactions WHERE deleted = FALSE AND tipo IN ('Despesa','Receita') AND name ILIKE %(q)s ORDER BY data DESC LIMIT 5", "money", "/nami", ""),
+]
+
+
+def _like(q: str) -> str:
+    """Termo seguro para ILIKE: escapa % _ \ digitados pelo usuário."""
+    esc = q.replace("\\", "\\\\").replace("%", "\%").replace("_", "\_")
+    return f"%{esc}%"
+
+
+@router.get("/search")
+def hub_search(q: str = "", user: dict = Depends(require_user)) -> dict:
+    """Busca por título/nome em todos os agentes (até 5 por grupo). Cada fonte é isolada.
+
+    Returns:
+        ``{"q", "results": [{"id", "group", "agent", "label", "icon", "href"}], "errors": ["Tarefas", ...]}``.
+        Menos de 2 caracteres devolve vazio (a paleta só consulta a partir de 2).
+    """
+    termo = (q or "").strip()
+    if len(termo) < 2:
+        return {"q": termo, "results": [], "errors": []}
+    like = _like(termo[:80])
+    results: list[dict] = []
+    errors: list[str] = []
+    for group, agent, sql, icon, href, _ in _SEARCH_SOURCES:
+        try:
+            for r in run_select(sql, {"q": like}):
+                results.append({
+                    "id": f"{agent}:{r['id']}", "group": group, "agent": agent, "label": r["label"], "icon": icon,
+                    "href": href.replace("{id}", r["id"]),
+                })
+        except Exception:  # noqa: BLE001 — falha de uma fonte nunca derruba a busca
+            errors.append(group)
+    return {"q": termo, "results": results, "errors": errors}

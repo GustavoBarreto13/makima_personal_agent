@@ -1081,3 +1081,22 @@ Exige autenticação. Só **lê** dados: SQL direto via `run_select` ou tools j�
 | Método | Caminho | Descrição | Body / Query |
 |---|---|---|---|
 | `GET` | `/api/hub/summary` | Agrega 2 stats reais por agente para 9 domínios (Nami, Frieren, Komi, Violet, Kaguya, Mai, Marin, Akane, Yato). Cada agente é calculado em try/except isolado — falha vira `null` naquela chave, resposta sempre 200. Valores já vêm formatados como string. Card da Nami: stat = saldo do mês, stat2 = score de saúde financeira 0–100 (spec 047, mesma tool `get_financial_health_score` da tela — isolado em try/except próprio). Card do Yato: stat = próxima viagem (Cidade/UF · DD/MM), stat2 = prontidão do dossiê (`get_trip_readiness`, spec 066). | — |
+| `GET` | `/api/hub/today` | Painel "Hoje" da nova home: `now` (`focus` = sessão de foco ativa da Kaguya, `next` = próximo compromisso com hora do Calendar Hub), `attention[]` (tarefas vencidas, contas/faturas a pagar da Nami, aniversários em 7 dias da Komi; cada item com `tone`, `label`, `action`, `href`) e `numbers{}` (`nami_livre`, `kaguya_hoje`, `habitos`, `violet_dias`; valores já formatados). Cada bloco roda em try/except isolado — falha vira `null`/`[]`, resposta sempre 200. "Hoje" em America/Sao_Paulo (`agents.kaguya.tz`). | — |
+| `POST` | `/api/hub/capture/parse` | Captura universal: classifica uma linha (`{text}`) em gasto/receita/tarefa e devolve a **prévia** (`kind`, `summary`, `fields`, `confidence`, `people`, `warnings`) **sem gravar**. `@Nome` passa pela regra 0/1/2+ da Komi: só 1 match vira vínculo; 0 ou 2+ vira aviso. Motor puro: `webapp/backend/universal_capture.py`. | — |
+| `POST` | `/api/hub/capture/commit` | Grava o que a prévia mostrou (`{kind, fields, person_ids}`) via `create_transaction` (Nami) ou `create_task` (Kaguya). Devolve `{status, summary, undo:{kind,id}}`. Aceita `Idempotency-Key` (rota na lista de `idempotency.py`). | — |
+| `POST` | `/api/hub/capture/undo` | Desfaz uma captura (`{kind, id}`): transação ou tarefa vão para a lixeira. | — |
+| `GET` | `/api/hub/search?q=` | Busca global por título/nome (a partir de 2 letras, até 5 por grupo): tarefas abertas, pessoas, livros, filmes, animes, séries e lançamentos. Cada fonte isolada (`errors` lista as que falharam). O diário **não** entra. | — |
+
+
+## Chat com o Hermes (`/api/chat/*`)
+
+Chat da aba **Conversar** da home. O backend chama o Hermes por servidor (`HERMES_API_URL`, API compatível com
+OpenAI, `stream: true`); ver `hermes/CLAUDE.md` § "Chat do app". Conversa **própria do app** (tabela
+`app_chat_messages`); a memória de longo prazo do Hermes é a mesma do WhatsApp/Telegram.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `GET` | `/api/chat/status` | `{enabled}` — `false` quando `HERMES_API_URL` está vazia (a aba mostra "chat ainda não está ligado"). |
+| `GET` | `/api/chat/history?limit=` | Histórico (mais antigas primeiro): `{messages:[{id, role, content, actions, created_at}]}`. |
+| `DELETE` | `/api/chat/history` | Limpa o histórico do app (não apaga a memória do Hermes). |
+| `POST` | `/api/chat/stream` | `{message}` → **SSE**: `event: delta {text}`, `event: action {agent, tool, label}` (cartão de ferramenta de escrita), `event: error {message}`, `event: done {id}`. 503 se o chat estiver desligado; Hermes fora do ar vira `event: error`, nunca stack trace. |

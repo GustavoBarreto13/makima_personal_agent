@@ -113,14 +113,14 @@
       "mobile": true
     },
     "makima": {
-      "status": "legacy",
+      "status": "migrating",
       "dir": "src/pages/makima",
       "shell": "src/pages/makima/MakimaShell.tsx",
-      "art": null,
-      "appShell": false,
+      "art": "default",
+      "appShell": true,
       "hero": false,
-      "theme": false,
-      "icons": false,
+      "theme": true,
+      "icons": true,
       "collections": [],
       "quickCapture": null,
       "stats": {
@@ -128,9 +128,9 @@
         "metrics": []
       },
       "detail": false,
-      "prefs": false,
-      "hotkeys": false,
-      "mobile": false
+      "prefs": true,
+      "hotkeys": true,
+      "mobile": true
     },
     "nami": {
       "status": "conformant",

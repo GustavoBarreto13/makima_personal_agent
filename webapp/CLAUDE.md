@@ -119,6 +119,9 @@ Router: `routers/journal.py` · Lógica: `agents/journal/*` (diário) e `agents/
 | `GCP_CREDENTIALS_JSON` | sim | Credenciais de serviço GCP (GCS backup + Vertex AI) |
 | `DATABASE_URL` | sim | PostgreSQL compartilhado — usado por todas as tools (finanças, livros, journal) |
 | `GOOGLE_MOBILE_CLIENT_IDS` | não | Client IDs do Google aceitos como `aud` do ID token do app Android (separados por vírgula). Vazio = `POST /auth/mobile` responde 503 e nada muda para o site |
+| `HERMES_API_URL` | não | URL interna da API do Hermes para o chat do app (ex.: `http://makima-hermes:8642`). Vazio = aba Conversar mostra "chat ainda não está ligado". Ver `hermes/CLAUDE.md` § "Chat do app" |
+| `HERMES_API_KEY` | não | Chave Bearer da API do Hermes (só no backend; nunca vai ao navegador) |
+| `HERMES_API_MODEL` | não | Nome do modelo enviado ao Hermes (padrão `hermes-agent`) |
 
 As variáveis de BigQuery/GCP são lidas pelas tools dos agentes diretamente do ambiente — `config.py` não as reexporta.
 

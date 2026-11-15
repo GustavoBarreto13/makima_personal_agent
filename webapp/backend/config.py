@@ -106,3 +106,12 @@ GOOGLE_CALENDAR_MAIN_CALENDAR_ID: str = os.getenv("GOOGLE_CALENDAR_MAIN_CALENDAR
 # Liga/desliga o espelho automático de tarefas → Google Calendar.
 # Se "false" (qualquer caixa), o CRUD de tarefas funciona normalmente sem chamar o Google.
 GCAL_SYNC_ENABLED: bool = os.getenv("GCAL_SYNC_ENABLED", "true").lower() != "false"
+
+
+# --- Chat da home com o Hermes (API compativel com OpenAI exposta pelo gateway) ---
+# Vazio = chat desligado (POST /api/chat/stream responde 503 e o resto do site segue igual).
+# Ex.: http://makima-hermes:8642  (rede interna do Dokploy; o Hermes nunca ganha porta publica).
+HERMES_API_URL: str = os.getenv("HERMES_API_URL", "").rstrip("/")
+HERMES_API_KEY: str = os.getenv("HERMES_API_KEY", "")
+# Nome do modelo enviado ao servidor compativel com OpenAI.
+HERMES_API_MODEL: str = os.getenv("HERMES_API_MODEL", "hermes-agent")

@@ -48,7 +48,7 @@ webapp/frontend/
     │   ├── mai/              # shell de séries de TV (Mai)
     │   ├── komi/             # shell de pessoas (Komi)
     │   ├── yato/             # shell de viagens (Yato)
-    │   ├── makima/           # shell do Hub — rota / em tela cheia (Makima)
+    │   ├── makima/           # home "Hoje" (Makima) — rota /, AppShell do DS, abas #hoje e #agentes
     │   └── *.tsx             # páginas legadas de finanças (Transactions, Accounts, etc.)
     └── public/               # imagens copiadas para dist/ pelo Vite
         ├── nami.jpg / nami.png / nami-hero.png
@@ -96,7 +96,7 @@ Na ordem de registro do `App.tsx` (os shells vêm **antes** do catch-all `/*`):
 /series/*        → MaiShell       (séries de TV)
 /people/*        → KomiShell      (pessoas e contatos)
 /travel/*        → YatoShell      (viagens — roteiro + dossiê de mobilidade)
-/                → MakimaShell    (Hub — tela cheia, SEM Layout global)
+/                → MakimaShell    (Home "Hoje" — AppShell do Design System, abas #hoje/#agentes)
 /transactions … /subscriptions → redirecionam para /nami#… (endereços antigos das finanças)
 *                → redireciona para /  (Hub)
 ```

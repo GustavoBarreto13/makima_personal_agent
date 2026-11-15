@@ -1,94 +1,90 @@
-/**
- * types.ts — Makima · Hub (Centro de Controle, fatia 023)
- *
- * Interfaces TypeScript do domínio do Hub. Descrevem tanto os dados estáticos
- * de cada card de agente (definidos em data.ts) quanto o payload de stats reais
- * que vem do endpoint agregador `/api/hub/summary` (consumido por makimaApi.ts).
- *
- * A separação é proposital: o que é fixo (nome, role, descrição, cores, rota)
- * vive em `Agent`; o que muda com o banco (os dois números/labels) vive em
- * `AgentSummary` e é mesclado em tempo de render no MakimaShell.
- */
+// Tipos da home da Makima ("Hoje") — espelham GET /api/hub/today e GET /api/hub/summary.
 
-// ── Stat (valor já formatado) ───────────────────────────────────────────────
-
-/**
- * Um stat individual de um card.
- * O backend formata os números (ex.: "+R$ 2.480", "47%") — o frontend NÃO faz
- * formatação numérica, apenas exibe `v` em destaque e `k` como label mono.
- */
+/** Número já formatado pelo backend (o front só exibe). */
 export interface Stat {
-  v: string  // Valor pronto para exibir (string já formatada pelo backend)
-  k: string  // Label curto em fonte mono (ex.: "saldo do mês")
+  v: string
+  k: string
+  href?: string
 }
 
-// ── AgentAction (botão de ação de um card) ─────────────────────────────────
+/** Resumo por agente (GET /api/hub/summary). `null` = o agente falhou naquele cálculo. */
+export type HubSummary = Record<string, { stat: Stat; stat2: Stat } | null>
 
-/**
- * Uma ação de um card (botão primário ou ghost).
- * `href` é a rota SPA interna do app (ex.: `/nami`) — navegada via <Link>,
- * NUNCA um arquivo `.html`. `icon` é o nome de um ícone em icons.tsx.
- */
-export interface AgentAction {
-  label: string  // Texto do botão (ex.: "Adicionar transação")
-  href: string   // Rota SPA interna (ex.: "/nami")
-  icon: string   // Nome do ícone em icons.tsx (ex.: "plus")
+export interface FocusNow {
+  id: number
+  title: string
+  phase: 'foco' | 'pausa' | null
+  remaining_sec: number | null
+  href: string
 }
 
-// ── Agent (card estático, sem os stats) ────────────────────────────────────
-
-/**
- * Descreve cada card de agente do roster — apenas a parte estática.
- * Os stats (`stat` / `stat2`) NÃO ficam aqui: vêm da API em tempo de execução
- * e são resolvidos pelo MakimaShell a partir do `HubSummary`.
- */
-export interface Agent {
-  id: string             // Identificador estável (ex.: "nami") — chave no HubSummary
-  name: string           // Nome exibido (ex.: "Nami")
-  role: string           // Domínio em mono (ex.: "Finanças")
-  img: string            // Caminho absoluto do retrato em public/ (ex.: "/nami.png")
-  href: string           // Rota SPA do agente (usada pelo botão "abrir" ↗)
-  does: string           // Frase curta descrevendo o que o agente faz
-  action: AgentAction    // Ação primária (botão de fundo colorido)
-  action2?: AgentAction  // Ação secundária opcional (botão ghost) — ex.: Kaguya
-  accent: string         // Cor de acento OKLCH (--ac) — barra, glow, botão
-  accentText: string     // Cor de acento para texto OKLCH (--ac-t) — role, ênfases
+export interface NextEvent {
+  title: string
+  time: string
+  href: string
 }
 
-// ── AgentSummary (payload de stats de um agente vindo da API) ──────────────
+export type AttentionTone = 'danger' | 'warn' | 'info'
 
-/**
- * Os dois stats de um agente, conforme retornados por `/api/hub/summary`.
- * Sempre que o backend conseguir calcular, devolve este objeto; em caso de
- * falha isolada daquele agente, a chave correspondente vem `null` (ver HubSummary).
- */
-export interface AgentSummary {
-  stat: Stat   // Stat principal (ex.: saldo do mês)
-  stat2: Stat  // Stat secundário (ex.: lançamentos na semana)
+export interface AttentionItem {
+  id: string
+  agent: string
+  tone: AttentionTone
+  label: string
+  action: string
+  href: string
 }
 
-// ── HubSummary (resposta completa do endpoint) ─────────────────────────────
+export interface TodayPayload {
+  date: string
+  now: { focus: FocusNow | null; next: NextEvent | null }
+  attention: AttentionItem[]
+  numbers: Record<string, Stat | null>
+}
 
-/**
- * Resposta de `/api/hub/summary`: um mapa chave-de-agente → stats.
- * As chaves esperadas são: nami, frieren, komi, violet, kaguya, mai, marin, akane, yato.
- * O valor é `null` quando aquele agente falhou no backend (REQ-15) — nesse caso
- * o card cai no fallback gracioso ("—") sem quebrar.
- */
-export type HubSummary = Record<string, AgentSummary | null>
+// ── Captura universal ──────────────────────────────────────────────────────
 
-// ── HeroCopy (textos do hero) ──────────────────────────────────────────────
+export type CaptureKind = 'expense' | 'income' | 'task'
 
-/**
- * Toda a copy editorial do hero da Makima.
- * Textos fixos extraídos do handoff (data.js → window.MAKIMA.copy).
- */
-export interface HeroCopy {
-  kicker: string     // Kicker mono amarelo (ex.: "CENTRO DE CONTROLE")
-  role: string       // Papel da Makima (ex.: "Orquestradora")
-  hello: string      // Saudação itálica (ex.: "Bom te ver de volta.")
-  lead: string       // Frase-âncora em destaque na tagline
-  manifesto: string  // Parágrafo de manifesto
-  tagline: string    // Complemento da tagline
-  footer: string     // Texto do rodapé (ex.: "Tudo sob controle.")
+export interface CapturePreview {
+  kind: CaptureKind | 'empty'
+  agent: 'nami' | 'kaguya' | null
+  confidence: 'high' | 'low'
+  title: string
+  summary: string
+  fields: Record<string, unknown>
+  people: { id: string; name: string; mention: string }[]
+  warnings: string[]
+}
+
+export interface CaptureUndo {
+  kind: CaptureKind
+  id: string
+}
+
+// ── Busca global ───────────────────────────────────────────────────────────
+
+export interface SearchHit {
+  id: string
+  group: string
+  agent: string
+  label: string
+  icon: string
+  href: string
+}
+
+// ── Chat com o Hermes ──────────────────────────────────────────────────────
+
+export interface ChatAction {
+  agent: string | null
+  tool: string
+  label: string
+}
+
+export interface ChatMessage {
+  id: number | string
+  role: 'user' | 'assistant'
+  content: string
+  actions: ChatAction[]
+  created_at?: string
 }

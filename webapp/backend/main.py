@@ -27,6 +27,7 @@ from webapp.backend.routers import animes as animes_router  # Marin — catálog
 from webapp.backend.routers import series as series_router  # Mai — catálogo de séries de TV (spec 022)
 from webapp.backend.routers import pessoas as pessoas_router  # Komi — identidade de pessoas (spec 014)
 from webapp.backend.routers import hub as hub_router  # Makima — hub agregador de stats (spec 023)
+from webapp.backend.routers import chat as chat_router  # Chat da home com o Hermes
 from webapp.backend.routers import travel as travel_router  # Yato — viagens (spec 066)
 from webapp.backend.routers import devices as devices_router  # App Android — aparelhos e push
 from webapp.backend.routers import push_actions as push_actions_router  # Botões da notificação push
@@ -97,6 +98,9 @@ app.include_router(pessoas_router.router, prefix="/api/people", tags=["people"])
 # dos 8 domínios (Nami, Frieren, Komi, Violet, Kaguya, Mai, Marin, Akane) — spec 023.
 # Fica ANTES do catch-all SPA (@app.get("/{full_path:path}")) para não ser interceptado.
 app.include_router(hub_router.router, prefix="/api/hub", tags=["hub"])
+
+# --- Chat da home com o Hermes (SSE) - /api/chat/* ---
+app.include_router(chat_router.router, prefix="/api/chat", tags=["chat"])
 
 # --- Router de viagens (Yato) ---
 # Registra todos os endpoints do domínio de viagens sob /api/travel (spec 066)

@@ -2087,3 +2087,23 @@ docker exec makima-web sh -c "cd /app && python -m scripts.setup_schemas"
 
 (Se o script não estiver na imagem, copie antes com `docker cp scripts/setup_schemas.py
 makima-web:/app/scripts/`.)
+
+
+## Chat do app com o Hermes (webapp)
+
+Definida em `webapp/backend/schema_pg.sql` e criada sob demanda por `webapp/backend/chat_store.py`.
+
+### `app_chat_messages`
+
+Histórico da aba **Conversar** (conversa própria do app, separada de WhatsApp/Telegram).
+
+| Coluna | Tipo | Nulo | Padrão | Descrição |
+|---|---|---|---|---|
+| `id` | BIGSERIAL | PK | — | ID da mensagem. |
+| `email` | TEXT | NÃO | — | Dono da conversa (e-mail da sessão). |
+| `role` | TEXT | NÃO | — | `user` \| `assistant`. |
+| `content` | TEXT | NÃO | — | Texto da mensagem. |
+| `actions` | JSONB | NÃO | `'[]'` | Cartões do que os agentes fizeram nesta resposta: `[{agent, tool, label}]`. |
+| `created_at` | TIMESTAMPTZ | NÃO | `NOW()` | Criação. |
+
+Índice `idx_app_chat_messages_email (email, id DESC)`.

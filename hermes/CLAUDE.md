@@ -765,3 +765,52 @@ continua sendo: editar `hermes/config.yaml` neste repo + deploy pelo Dokploy.
 Páginas mais úteis pra depurar problemas de canal/autorização: **Logs** (agent/errors/
 gateway, com filtro por nível e componente — o mesmo conteúdo de `hermes logs`, mas sem
 precisar de SSH), **Channels**, **Pairing**, **MCP** (status de conexão dos 4 domínios).
+
+
+---
+
+## Chat do app (API do gateway)
+
+O app (site e Android) tem uma aba **Conversar** que fala com o Hermes pelo `makima-web`
+(`webapp/backend/routers/chat.py`, SSE). O navegador nunca conhece o Hermes: o backend chama
+`POST {HERMES_API_URL}/v1/chat/completions` (API compativel com OpenAI, `stream: true`) pela rede
+interna `dokploy-network`, com `Authorization: Bearer {HERMES_API_KEY}` e o cabecalho
+`X-Hermes-Session-Id: app:<email>` (sessao propria do app; a memoria de longo prazo do Hermes e a mesma).
+
+**Estado: codigo pronto, servidor do Hermes NAO ativado.** Sem `HERMES_API_URL` no `makima-web` o chat fica
+desligado (`GET /api/chat/status` -> `{"enabled": false}`, a aba mostra "O chat ainda nao esta ligado") e nada
+mais muda.
+
+### Ativar (passo a passo — exige acesso ao VPS)
+
+1. **Confirmar o schema no container** (nao ha confirmacao no repo — o bloco em `config.yaml` e uma hipotese):
+   ```bash
+   docker exec makima-hermes hermes --help
+   docker exec makima-hermes sh -c "ls /opt/hermes*/gateway/platforms 2>/dev/null; find / -name 'api_server*' 2>/dev/null | head"
+   ```
+   Se existir `api_server`, ler o modulo para as chaves reais (porta, host, chave, cabecalho de sessao) e ajustar o
+   bloco comentado em `hermes/config.yaml`. Se NAO existir, alternativas: a rota de chat do dashboard (`:9119`) ou um
+   adaptador minimo — registrar a decisao numa spec nova antes de seguir.
+2. Gerar a chave: `python -c "import secrets;print(secrets.token_hex(32))"` e pôr em **`HERMES_API_KEY`** na
+   Environment das **duas** apps do Dokploy (hermes e makima-web).
+3. Descomentar `api_server` em `hermes/config.yaml`, redeployar a app do Hermes e conferir
+   `hermes config get platforms --json` (variavel `${...}` vazia falha em silencio).
+4. No `makima-web`: `HERMES_API_URL=http://makima-hermes:8642` (porta conforme o passo 1) e redeploy.
+5. Testar de dentro do `makima-web`:
+   ```bash
+   docker exec makima-web sh -c 'python - <<EOF
+   import httpx, os
+   r = httpx.post(os.environ["HERMES_API_URL"] + "/v1/chat/completions",
+       headers={"Authorization": "Bearer " + os.environ["HERMES_API_KEY"]},
+       json={"model": "hermes-agent", "messages": [{"role": "user", "content": "oi"}]}, timeout=60)
+   print(r.status_code, r.text[:300])
+   EOF'
+   ```
+6. Abrir `/#conversar` e mandar "lanca 5 no teste": deve aparecer o cartao "Nami · Create transaction".
+
+### Pontos que dependem do Hermes (a confirmar no passo 1)
+
+- **Cartoes de acao**: o backend le `delta.tool_calls[].function.name` do stream. Se o Hermes nao repassar as
+  tool calls no stream, a conversa funciona normalmente mas sem cartoes (`action_from_tool` em `chat.py`).
+- **Sessao propria**: `X-Hermes-Session-Id` e a convencao assumida; se o gateway usar outro cabecalho/campo, trocar em
+  `_stream_hermes`. Sem isso a conversa do app pode cair na sessao padrao (e herdar o `session_reset` das 4h).

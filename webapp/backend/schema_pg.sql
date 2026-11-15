@@ -52,3 +52,15 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
 
 -- Limpeza das chaves com mais de 30 dias.
 CREATE INDEX IF NOT EXISTS idx_idempotency_keys_created ON idempotency_keys (created_at);
+
+-- Chat da home com o Hermes (conversa propria do app, separada de WhatsApp/Telegram).
+-- `actions` guarda os cartoes do que os agentes fizeram naquela resposta: [{agent, tool, label}].
+CREATE TABLE IF NOT EXISTS app_chat_messages (
+    id         BIGSERIAL   PRIMARY KEY,
+    email      TEXT        NOT NULL,
+    role       TEXT        NOT NULL CHECK (role IN ('user', 'assistant')),
+    content    TEXT        NOT NULL,
+    actions    JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_app_chat_messages_email ON app_chat_messages (email, id DESC);
